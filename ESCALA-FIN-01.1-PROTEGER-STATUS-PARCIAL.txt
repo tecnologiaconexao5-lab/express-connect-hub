@@ -1,0 +1,100 @@
+ESCALA-FIN-01.1-PROTEGER-STATUS-PARCIAL
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA
+
+==================================================
+CORREÇÃO
+==================================================
+
+Guarda FIN-01 de financeiro_pagar estendida para incluir 'parcial':
+  ANTES: status NOT IN ('pago','cancelado','cancelada')
+  DEPOIS: status NOT IN ('pago','parcial','cancelado','cancelada')
+em M66 (f_trg_propagar_financeiro_alocacao, ON CONFLICT (os_id) DO UPDATE ... WHERE) e
+M80 (f_trg_propagar_financeiro_os, UPDATE ... WHERE os_id = NEW.id::TEXT AND ...).
+
+Sem outras alterações. Sem ALTER TABLE. Sem DELETE.
+
+Migration: supabase/migrations/20260922000011_escala_fin_01_1_proteger_parcial.sql
+Rollback:  supabase/migrations/20260922000012_escala_fin_01_1_rollback.sql
+  (rollback = definições EXATAS anteriores, sem 'parcial')
+
+==================================================
+VALIDAÇÃO (BEGIN/ROLLBACK — sem operação real)
+==================================================
+
+CASO 58e5751e (parcial) — BEFORE / AFTER_M66 / AFTER_M80:
+  pag = 652.86/parcial  →  652.86/parcial  →  652.86/parcial
+  baixado = 520.00  →  520.00  →  520.00
+  saldo = 132.86  →  132.86  →  132.86
+  PARTIAL_STATUS_PROTECTED=YES
+  PARTIAL_VALUE_PROTECTED=YES
+  PARTIAL_BAIXAS_PRESERVED=YES
+  PARTIAL_SALDO_PRESERVED=YES
+
+CASO A (aberto): 520.00 → 620.00 ao mudar a origem → OPEN_RECALCULATION_PRESERVED=YES
+CASO D (pago, d1f34e73): 520.00/pago preservado → PAID_PROTECTION_PRESERVED=YES
+CASO E (cancelado, temp): 'cancelado' preservado → CANCELLED_PROTECTION_PRESERVED=YES
+
+Pós-deploy (função implantada, BEGIN/ROLLBACK):
+  f_trg_propagar_financeiro_alocacao has_parcial_guard=true
+  f_trg_propagar_financeiro_os has_parcial_guard=true
+  POSTDEPLOY_58E pag=652.86/parcial baixado=520.00 saldo=132.86
+  ROLLBACK_DONE
+
+REVALIDAR 58e5751e:
+  BEFORE_PAGAR_VALUE=652.86 | BEFORE_PAGAR_STATUS=parcial
+  BEFORE_BAIXADO=520.00 | BEFORE_SALDO=132.86
+  AFTER_M66_VALUE=652.86 | AFTER_M66_STATUS=parcial
+  AFTER_M80_VALUE=652.86 | AFTER_M80_STATUS=parcial
+  AFTER_BAIXADO=520.00 | AFTER_SALDO=132.86
+
+Preservado: E2E-05 atomicidade; E2E-03 cancelamento; FIN-01 (pago/cancelado/cancelada);
+OS-03 ordem OS→link; idempotência.
+
+==================================================
+RESULTADO
+==================================================
+
+PARTIAL_STATUS_PROTECTED=YES
+PARTIAL_VALUE_PROTECTED=YES
+PARTIAL_BAIXAS_PRESERVED=YES
+PARTIAL_SALDO_PRESERVED=YES
+OPEN_RECALCULATION_PRESERVED=YES
+PAID_PROTECTION_PRESERVED=YES
+CANCELLED_PROTECTION_PRESERVED=YES
+CASE_58E_SAFE_AFTER_FIX=YES
+PRODUCTION_DEPLOYED=YES
+ROLLBACK_PREPARED=YES
+
+FILES_MODIFIED=
+  supabase/migrations/20260922000011_escala_fin_01_1_proteger_parcial.sql (novo)
+  supabase/migrations/20260922000012_escala_fin_01_1_rollback.sql (novo)
+  src/test/escala_fin_01_1_proteger_parcial.test.ts (novo)
+
+TESTS=112/112 PASS (5 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 40.25s
+
+DB_WRITES=0 (somente DDL CREATE OR REPLACE FUNCTION)
+MIGRATIONS=1 (aplicada em produção)
+
+==================================================
+NÃO EXECUTADO (escopo de missões seguintes)
+==================================================
+
+- Criar/vincular OS dos 3 bloqueados (58e5751e, d1f34e73, ae30da69) — agora viáveis (Method B).
+- 67 Classe E; 16 Classe D; 9 divergências FIN-02; 27 órfãs; redundância M66/M80;
+  APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE persistente (validação em BEGIN/ROLLBACK).
+- Sem migration além desta. M66/M80 alterados SOMENTE na guarda. Não criou as 3 OS.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=1

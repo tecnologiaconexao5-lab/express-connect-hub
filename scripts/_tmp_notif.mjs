@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const t = await c.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND (table_name ILIKE '%notific%' OR table_name ILIKE '%mensag%' OR table_name ILIKE '%comunic%') ORDER BY table_name`);
+console.log("tabelas notific/mensag/comunic:", t.rows.map(r=>r.table_name).join(", "));
+const pc = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='prestadores' AND (column_name ILIKE '%whats%' OR column_name ILIKE '%tel%' OR column_name ILIKE '%liberado%' OR column_name ILIKE '%status%' OR column_name ILIKE '%regiao%' OR column_name ILIKE '%veiculo%') ORDER BY column_name`);
+console.log("prestadores cols:", pc.rows.map(r=>r.column_name).join(", "));
+await c.end();

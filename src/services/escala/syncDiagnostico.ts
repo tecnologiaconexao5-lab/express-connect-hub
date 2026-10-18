@@ -46,7 +46,7 @@ export interface DiagnosticoSincronizacao {
 
 const STATUS_SYNC_INFO: Record<DivergenciaTipo, { label: string; classe: string }> = {
   sincronizada:          { label: "Sincronizada",       classe: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  os_sem_escala:        { label: "OS sem Escala",      classe: "bg-amber-50 text-amber-700 border-amber-200" },
+  os_sem_escala:        { label: "OS sem Programação",      classe: "bg-amber-50 text-amber-700 border-amber-200" },
   escala_sem_os:        { label: "Sem OS",             classe: "bg-slate-100 text-slate-500 border-slate-200" },
   divergencia_prestador:{ label: "Prestador Divergente",classe: "bg-red-50 text-red-700 border-red-200" },
   divergencia_veiculo:  { label: "Veículo Divergente",  classe: "bg-red-50 text-red-700 border-red-200" },
@@ -72,8 +72,8 @@ export async function diagnosticarOS(osId: string): Promise<DiagnosticoSincroniz
   const resultado: DiagnosticoSincronizacao = {
     existeAlocacao: false,
     status: "os_sem_escala",
-    label: "OS sem Escala",
-    descricao: "Nenhuma alocação na escala vinculada a esta OS",
+    label: "OS sem Programação",
+    descricao: "Nenhuma alocação na Programação vinculada a esta OS",
     classeBadge: STATUS_SYNC_INFO.os_sem_escala.classe,
     divergencias: { prestador: false, veiculo: false, data: false, status: false },
   };
@@ -150,28 +150,28 @@ export async function diagnosticarOS(osId: string): Promise<DiagnosticoSincroniz
     if (prestadorOk && veiculoOk && dataOk && statusOk) {
       resultado.status = "sincronizada";
       resultado.label = "Sincronizada";
-      resultado.descricao = "OS e Escala estão consistentes";
+      resultado.descricao = "OS e Programação estão consistentes";
       resultado.classeBadge = STATUS_SYNC_INFO.sincronizada.classe;
     } else {
       if (!statusOk) {
         resultado.status = "divergencia_status";
         resultado.label = "Status Divergente";
-        resultado.descricao = `OS: ${osData.status} → Escala: ${alocacao.status} (esperado: ${statusEscalaEsperado})`;
+        resultado.descricao = `OS: ${osData.status} → Programação: ${alocacao.status} (esperado: ${statusEscalaEsperado})`;
         resultado.classeBadge = STATUS_SYNC_INFO.divergencia_status.classe;
       } else if (!prestadorOk) {
         resultado.status = "divergencia_prestador";
         resultado.label = "Prestador Divergente";
-        resultado.descricao = "Prestador da OS difere do prestador na Escala";
+        resultado.descricao = "Prestador da OS difere do prestador na Programação";
         resultado.classeBadge = STATUS_SYNC_INFO.divergencia_prestador.classe;
       } else if (!veiculoOk) {
         resultado.status = "divergencia_veiculo";
         resultado.label = "Veículo Divergente";
-        resultado.descricao = `OS: ${veiculoOS} ≠ Escala: ${veiculoAloc}`;
+        resultado.descricao = `OS: ${veiculoOS} ≠ Programação: ${veiculoAloc}`;
         resultado.classeBadge = STATUS_SYNC_INFO.divergencia_veiculo.classe;
       } else if (!dataOk) {
         resultado.status = "divergencia_data";
         resultado.label = "Data Divergente";
-        resultado.descricao = `OS: ${dataOS} ≠ Escala: ${dataAloc}`;
+        resultado.descricao = `OS: ${dataOS} ≠ Programação: ${dataAloc}`;
         resultado.classeBadge = STATUS_SYNC_INFO.divergencia_data.classe;
       }
     }

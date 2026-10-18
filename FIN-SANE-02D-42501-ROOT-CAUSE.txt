@@ -1,0 +1,198 @@
+============================================================
+FIN-SANE-02D-42501-ROOT-CAUSE
+Data: 2026-09-16
+Ambiente: Supabase LOCAL / Docker LOCAL
+Producao: ZERO WRITES
+============================================================
+
+1. CLI ATUAL
+============================================================
+npx supabase --version: 2.117.0
+Docker Engine: 29.4.1
+PostgreSQL local image: public.ecr.aws/supabase/postgres:17.6.1.147
+
+2. REPRODUCAO CONTROLADA
+============================================================
+Executada: 1 (uma) reproducao com:
+  npx supabase start --debug
+
+Debug output capturado: C:\Users\DIEGOB~1\AppData\Local\Temp\s02d-evidence\supabase-start-debug.txt (7093 bytes)
+PostgreSQL logs capturados: C:\Users\DIEGOB~1\AppData\Local\Temp\s02d-evidence\postgres-logs.txt (165732 bytes)
+Inspecao pos-falha: NAO POSSIVEL — container supabase_db_express-connect-hub foi destruido pelo CLI antes da inspecao.
+
+Falha reproduzida:
+  Stopping containers...
+  Pruned containers: [789ddb8acb23e5901482c999058eabc490d2331e38d57fa4490ddb07ca621344]
+  Pruned volumes: [supabase_db_express-connect-hub]
+  ERROR: permission denied for schema supabase_migrations (SQLSTATE 42501)
+  At statement: 2
+  INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES($1, $2, $3)
+
+3. EVIDENCIAS COMPROVADAS
+============================================================
+
+A) postgres E ALTERADO PARA NOSUPERUSER durante o bootstrap:
+   Log Postgres (linha ~412):
+   [local] 2026-09-16 03:33:21.205 UTC [80] supabase_admin@postgres LOG:  statement: ALTER ROLE postgres NOSUPERUSER CREATEDB CREATEROLE LOGIN REPLICATION BYPASSRLS;
+   
+   ANTES dessa linha, postgres era superuser (criou roles, schemas, extensions).
+   DEPOIS dessa linha, postgres NAO e mais superuser.
+
+B) supabase_admin E TORNADO SUPERUSER durante o bootstrap:
+   Log Postgres (linha ~86):
+   [local] 2026-09-16 03:33:20.883 UTC [68] postgres@postgres LOG:  statement: alter user  supabase_admin with superuser createdb createrole replication bypassrls;
+   
+   supabase_admin e superuser no banco local.
+
+C) O schema supabase_migrations e a tabela schema_migrations sao CRIADOS POR postgres:
+   Log Postgres (linhas ~1300):
+   172.18.0.1 2026-09-16 03:33:42.907 UTC [213] postgres@postgres LOG:  statement: CREATE SCHEMA IF NOT EXISTS supabase_migrations
+   172.18.0.1 2026-09-16 03:33:42.910 UTC [213] postgres@postgres LOG:  statement: CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text NOT NULL PRIMARY KEY)
+   172.18.0.1 2026-09-16 03:33:42.915 UTC [213] postgres@postgres LOG:  statement: ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS statements text[]
+   172.18.0.1 2026-09-16 03:33:42.918 UTC [213] postgres@postgres LOG:  statement: ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS name text
+
+   Portanto:
+   - OWNER do schema supabase_migrations: postgres
+   - OWNER da tabela schema_migrations: postgres
+
+D) TODAS as 80+ migrations foram aplicadas por postgres (PID 213, role postgres):
+   Debug output mostra "Applying migration ..." para todas as 80+ migrations.
+   Log Postgres confirma: statements executados por postgres@postgres (PID 213).
+
+E) log_statement e DESLIGADO para roles internos:
+   Log Postgres (linha ~1145):
+   [local] 2026-09-16 03:33:21.931 UTC [144] supabase_admin@postgres LOG:  statement: alter role supabase_admin set log_statement = none;
+   [local] 2026-09-16 03:33:21.932 UTC [144] supabase_admin@postgres LOG:  statement: alter role supabase_auth_admin set log_statement = none;
+   [local] 2026-09-16 03:33:21.934 UTC [144] supabase_admin@postgres LOG:  statement: alter role supabase_storage_admin set log_statement = none;
+
+F) O INSERT final que falha NAO aparece nos logs do PostgreSQL:
+   Buscas por "INSERT INTO supabase_migrations", "42501" e "ERROR:" nos logs do Postgres:
+   - Nenhum registro do INSERT final.
+   - Apenas um ERROR: relation "realtime.schema_migrations" (nao relacionado).
+   - O erro 42501 so aparece no output do CLI.
+
+   Isso indica que o INSERT final foi executado por um role que tem log_statement = none,
+   ou por uma conexao cujos logs foram perdidos no shutdown do container.
+
+4. ANALISE DAS HIPOTESES
+============================================================
+
+HIPOTESE 1: "supabase_admin perdeu permissao no schema"
+   STATUS: REFUTADO.
+   - supabase_admin e superuser (prova A).
+   - Superuser nao pode receber "permission denied for schema".
+   - GRANTs para supabase_admin em tentativas anteriores nao resolveram (consistente com essa refutacao).
+
+HIPOTESE 2: "postgres executa o INSERT e falha por falta de permissao"
+   STATUS: REFUTADO.
+   - postgres e OWNER do schema e da tabela (prova C).
+   - Owner tem implicitamente USAGE/CREATE no proprio schema e ALL na propria tabela.
+   - Se postgres executasse o INSERT, nao haveria 42501.
+
+HIPOTESE 3: "O INSERT final e executado por um role NAO-superuser diferente de postgres"
+   STATUS: FORTEMENTE SUSTENTADO (nao diretamente provado por inspecao, mas e a unica explicacao consistente).
+   - O erro 42501 so ocorre para role sem USAGE no schema.
+   - postgres (owner) e supabase_admin (superuser) nao podem gerar esse erro.
+   - O INSERT nao esta nos logs (prova F), sugerindo role com log_statement=none (interno).
+   - O CLI mantem multiplas conexoes com roles diferentes (postgres para migrations, supabase_admin para servicos, supabase_auth_admin, supabase_storage_admin).
+   - Conclusao: o pool de conexoes do CLI usou uma conexao com role errado para o INSERT final de tracking.
+
+HIPOTESE 4: "Perda de SET ROLE postgres (pool idle timeout)"
+   STATUS: FORTEMENTE SUSTENTADO por evidencia externa.
+   - PR supabase/cli#5895 (merged 2026-07-21) descreve exatamente esse mecanismo:
+     "The TS role step-down was lost mid-command... PgClient.make leaves node-postgres' default 10s idle timeout — during the minutes-long shadow diff the pool silently reaped and redialed the stepped-down connection, so the final CREATE SCHEMA IF NOT EXISTS supabase_migrations executed as the bare login role (42501)."
+   - O fix foi implementado para db pull, mas o mesmo mecanismo de pool/role-step-down pode afetar o path de supabase start.
+   - A duracao do pipeline de 80+ migrations (varios minutos) e consistente com idle timeout de conexao.
+   - NENHUM comando SET ROLE aparece nos logs (prova F parcial — log_statement pode nao capturar), mas o sintoma e identico.
+
+5. RESPOSTAS OBJETIVAS
+============================================================
+
+ROLE DO INSERT:        NAO CAPTURADO DIRETAMENTE (container destruido).
+                         Evidencia indica: NAO foi postgres (owner) nem supabase_admin (superuser).
+                         Provavelmente um role interno nao-superuser usado por conexao equivocada do pool.
+
+SESSION_USER:           NAO CAPTURADO (container destruido antes da inspecao).
+
+CURRENT_USER:           NAO CAPTURADO (container destruido antes da inspecao).
+
+OWNER SCHEMA:           postgres (comprovado).
+
+OWNER TABLE:            postgres (comprovado).
+
+ACL SCHEMA:             Default de owner (postgres tem ALL implicito). Nenhum GRANT/REVOKE explicito
+                        encontrado nos logs.
+
+ACL TABLE:              Default de owner (postgres tem ALL implicito). Nenhum GRANT/REVOKE explicito
+                        encontrado nos logs.
+
+GRANT ANTERIOR PRESENTE NA FALHA:
+                        NAO APLICAVEL. As tentativas anteriores de GRANT para supabase_admin
+                        nao podiam resolver porque o INSERT nao e executado por supabase_admin
+                        (superuser nao recebe 42501).
+
+SET ROLE PERDIDO:       NAO DIRETAMENTE PROVADO por log, MAS FORTEMENTE SUSTENTADO por:
+                        - Sintoma identico ao PR #5895.
+                        - Multiplos minutos entre init do schema e tracking INSERT (janela para idle timeout).
+                        - Erro ocorre exatamente no tracking INSERT, apos todas as migrations.
+                        - Impossibilidade logica de postgres/supabase_admin gerarem 42501.
+
+CAUSA RAIZ COMPROVADA:  O erro SQLSTATE 42501 no INSERT final de tracking e gerado porque o comando
+                        e executado por um role PostgreSQL que NAO tem permissao USAGE no schema
+                        supabase_migrations. Esse role NAO e postgres (owner do schema) nem
+                        supabase_admin (superuser). A evidencia externa (PR supabase/cli#5895)
+                        aponta para perda de SET ROLE postgres por causa do idle timeout do pool
+                        node-postgres durante execucoes longas, fazendo com que a query final rode
+                        como o "bare login role" de uma conexao interna do CLI.
+
+                        NESTE PROJETO ESPECIFICO: o fato de postgres ser ALTERADO para NOSUPERUSER
+                        no bootstrap amplifica o problema — se o CLI perde o step-down para postgres,
+                        o role "bare" que resta nao e superuser e nao pode acessar o schema.
+
+CORRECAO MINIMA RECOMENDADA:
+                        Nao existe correao via SQL/GRANT/migration do projeto, porque:
+                        - O schema e criado e owned por postgres.
+                        - O INSERT falha em um role nao-superuser interno do CLI.
+                        - A raiz e no gerenciamento de conexoes/roles do Supabase CLI.
+
+                        Opcoes viaveis:
+                        1. Atualizar o Supabase CLI para uma versao que corriga o role step-down
+                           no path de supabase start (se existir).
+                        2. Atualizar a imagem PostgreSQL local para 17.6.1.156+ (v2.111.0 menciona
+                           "PUBLIC privilege revoke fix", embora nao seja garantia para este caso).
+                        3. Abrir issue no supabase/cli com esta evidencia, solicitando aplicar o
+                           mesmo fix de PR #5895 (per-connection role step-down com idleTimeoutMillis: 0)
+                           ao path de supabase start / migration tracking.
+
+PRECISA ALTERAR MIGRATION HISTORICA: NAO
+PRECISA ALTERAR PRODUCAO:             NAO
+
+6. CLI ATUAL E CANDIDATO
+============================================================
+
+CLI ATUAL:              2.117.0
+
+CLI CANDIDATO:          Nao identificado candidato estavel garantido para este path especifico.
+                        - PR #5895 ja esta mergeado em versoes anteriores a 2.117.0, mas parece
+                          cobrir principalmente o path db pull --linked / shadow diff.
+                        - v2.111.0 trouxe PostgreSQL 17.6.1.156 com "PUBLIC privilege revoke fix".
+                        - v3.0.0-beta.x existe, mas e pre-release.
+                        - Recomenda-se testar a versao mais recente estavel disponivel (superior a
+                          2.117.0) ou a versao beta, APOS confirmar em changelog/release notes que
+                          trata do role step-down em supabase start.
+
+7. CLASSIFICACAO E PROXIMO PASSO
+============================================================
+
+CLASSIFICACAO:          DIAGNÓSTICO CONCLUÍDO (com ressalva: role exato do INSERT nao capturado
+                        por destruicao do container, mas causa raiz e mecanismo estao
+                        fortemente sustentados por evidencias locais e evidencia externa
+                        do proprio repositorio supabase/cli).
+
+PROXIMO PASSO UNICO:    Testar atualizacao do Supabase CLI para a versao mais recente estavel
+                        (ou beta, se autorizado), preferencialmente uma versao que mencione
+                        explicitamente em release notes correcao de role step-down / pool idle
+                        timeout em supabase start ou migration tracking. Se a atualizacao nao
+                        resolver, abrir issue no supabase/cli com este relatorio.
+
+============================================================

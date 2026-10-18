@@ -1,0 +1,593 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02G — GATE FINAL READ-ONLY × SCHEMA REAL DE PRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+Data: 2026-09-16T20:40 BRT
+Modelo: MiMo-V2.5
+Projeto: TMS (Supabase Produção: uwrvzsjtpgaifkktpepn)
+═══════════════════════════════════════════════════════════════════════════════
+
+MODELO:
+  MiMo-V2.5
+
+FORWARD SHA256:
+  6a8dae9e0041c710b98d6fad5f1f515a4e92ae0ebed07b5e7b8e64165bfb5388
+
+ROLLBACK SHA256:
+  0eff5047f174aafc87e37a44900f53535ddbf1497056b49f7ae5f04201d8b064
+
+PRODUÇÃO:
+  ZERO WRITES — todas as queries foram SELECT apenas.
+
+═══════════════════════════════════════════════════════════════════════════════
+1. MIGRATION HISTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+  02B aplicada produção: NÃO ✓
+  02F aplicada produção: NÃO ✓
+  Nenhuma migration 20260913 consta em schema_migrations.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. SHA256
+═══════════════════════════════════════════════════════════════════════════════
+
+  FORWARD: 6a8dae9e0041c710b98d6fad5f1f515a4e92ae0ebed07b5e7b8e64165bfb5388
+  ROLLBACK: 0eff5047f174aafc87e37a44900f53535ddbf1497056b49f7ae5f04201d8b064
+
+═══════════════════════════════════════════════════════════════════════════════
+3. M66 — COMPARAÇÃO FINAL (PRODUÇÃO × 02F)
+═══════════════════════════════════════════════════════════════════════════════
+
+  M66 encontrada em produção: SIM ✓
+  SECURITY DEFINER: SIM ✓
+  Triggers duplicados detectados: SIM ⚠️ (trg_propagar_financeiro_alocacao × 2)
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ COMPARAÇÃO DETALHADA — M66 PRODUÇÃO vs 02F FORWARD                    │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │                                                                       │
+  │ ✅ CRIAÇÃO DE OS — PRESERVADA                                         │
+  │   Produção: INSERT INTO ordens_servico com ON CONFLICT DO UPDATE      │
+  │   02F: Idêntico (ON CONFLICT preservado)                             │
+  │                                                                       │
+  │ ✅ RELACIONAMENTO ALOCAÇÃO → OS — PRESERVADO                         │
+  │   Produção: v_os_id = NEW.ordem_servico_id ou NEW.id                 │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ✅ CLIENTE / PRESTADOR LOOKUP — PRESERVADO                           │
+  │   Produção: SELECT de clientes/prestadores com fallback              │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ✅ REVERSA — PRESERVADA                                               │
+  │   Produção: reversa_valor_cliente/prestador somados aos valores       │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ✅ financeiro_receber — PRESERVADO                                    │
+  │   Produção: v_os_id::TEXT, ON CONFLICT (os_id)                       │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ✅ financeiro_pagar — VALOR CORRIGIDO                                │
+  │   Produção: valor = v_valor_prestador (BASE)                         │
+  │   02F:    valor = v_valor_liquido (OBRAÇÃO TOTAL) ← CORREÇÃO         │
+  │   ← Esta é a ÚNICA alteração financeira pretendida                  │
+  │                                                                       │
+  │ ✅ pagamentos_prestadores — PRESERVADO                               │
+  │   Produção: ON CONFLICT (os_id) com v_valor_liquido                  │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ⚠️ composicao_financeira_os — QUEBRADO EM PRODUÇÃO                  │
+  │   Produção: VALUES (v_os_id, ...) — UUID direto para coluna UUID     │
+  │   02F:      VALUES (v_os_id::TEXT, ...) — TEXT para coluna UUID     │
+  │   Erro: "operator does not exist: uuid = text"                       │
+  │   Impacto: composicao nunca será criada/atualizada (exceção engolida) │
+  │                                                                       │
+  │ ⚠️ OS INSERT — MUDANÇA COMPORTAMENTAL                               │
+  │   Produção: cliente_id = v_cliente_nome (NOME do cliente)            │
+  │   02F:      cliente_id = NEW.cliente_id::TEXT (UUID como texto)      │
+  │   Produção: prestador_id = v_prestador_nome (NOME do prestador)      │
+  │   02F:      prestador_id = NEW.prestador_id::TEXT (UUID como texto)  │
+  │   Impacto: código que lê ordens_servico.cliente_id/prestador_id      │
+  │            esperando NOME receberá UUID string                        │
+  │                                                                       │
+  │ ⚠️ to_jsonb — MUDANÇA INOFENSIVA                                    │
+  │   Produção: v_adicional_valor (NUMERIC direto para JSONB)            │
+  │   02F:      to_jsonb(v_adicional_valor) (explícito)                  │
+  │   PostgreSQL auto-coerces NUMERIC→JSONB, mas to_jsonb é mais seguro  │
+  │   Impacto: FUNCIONALMENTE EQUIVALENTE                                │
+  │                                                                       │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  M66:
+  PARTIAL PASS — financeiro_pagar.valor=liquido CORRETO;
+  composicao_financeira_os com casts ::TEXT QUEBRADO;
+  OS insert com mudança comportamental em cliente_id/prestador_id
+
+═══════════════════════════════════════════════════════════════════════════════
+4. M80 — COMPARAÇÃO FINAL (PRODUÇÃO × 02F)
+═══════════════════════════════════════════════════════════════════════════════
+
+  M80 encontrada em produção: SIM ✓
+  SECURITY DEFINER: SIM ✓
+  Triggers duplicados detectados: SIM ⚠️ (trg_propagar_financeiro_os × 2)
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ COMPARAÇÃO DETALHADA — M80 PRODUÇÃO vs 02F FORWARD                    │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │                                                                       │
+  │ ✅ financeiro_receber — PRESERVADO                                   │
+  │   Produção: NEW.id::TEXT para os_id (TEXT) ✓                         │
+  │   02F: Idêntico                                                      │
+  │   Produção: NEW.cliente_id::UUID para cliente_id (UUID)              │
+  │   02F:      NEW.cliente (UUID direto) — FUNCIONALMENTE EQUIVALENTE   │
+  │                                                                       │
+  │ ✅ financeiro_pagar — VALOR CORRIGIDO                                │
+  │   Produção: valor = v_valor_prestador (BASE)                         │
+  │   02F:    valor = v_valor_liquido (OBRAÇÃO TOTAL) ← CORREÇÃO         │
+  │   Produção: NEW.prestador_id::UUID para fornecedor_id                │
+  │   02F:      NEW.prestador (UUID direto) — FUNCIONALMENTE EQUIVALENTE │
+  │                                                                       │
+  │ ✅ pagamentos_prestadores — PRESERVADO                               │
+  │   Produção: NEW.id para os_id (UUID para UUID ✓)                    │
+  │   02F: Idêntico                                                      │
+  │   Produção: NEW.prestador_id::UUID para prestador_id                 │
+  │   02F:      NEW.prestador (UUID direto) — FUNCIONALMENTE EQUIVALENTE │
+  │                                                                       │
+  │ ⚠️ composicao_financeira_os — QUEBRADO EM PRODUÇÃO                  │
+  │   Produção: WHERE os_id = NEW.id (UUID = UUID ✓)                    │
+  │   02F:      WHERE os_id = NEW.id::TEXT (UUID = TEXT ✗)              │
+  │   Produção: VALUES (NEW.id, ...) — UUID direto para UUID ✓          │
+  │   02F:      VALUES (NEW.id::TEXT, ...) — TEXT para UUID ✗           │
+  │   Produção: NEW.cliente_id::UUID, NEW.prestador_id::UUID            │
+  │   02F:      NEW.cliente, NEW.prestador — ambos UUID, equivalem      │
+  │                                                                       │
+  │ ✅ jsonb_typeof — CORRETO                                            │
+  │   Produção: já usa jsonb_typeof para extrair NUMERIC de JSONB        │
+  │   02F: Idêntico                                                      │
+  │                                                                       │
+  │ ✅ NEW.cliente / NEW.prestador — CORRETO para financeiro             │
+  │   Produção usa NEW.cliente_id::UUID (conversão TEXT→UUID)            │
+  │   02F usa NEW.prestador (UUID direto) — mais seguro e equivalente    │
+  │                                                                       │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  M80:
+  PARTIAL PASS — financeiro_pagar.valor=liquido CORRETO;
+  composicao_financeira_os com casts ::TEXT QUEBRADO
+
+═══════════════════════════════════════════════════════════════════════════════
+5. CLIENTE/PRESTADOR — PONTO CRÍTICO
+═══════════════════════════════════════════════════════════════════════════════
+
+  ordens_servico.cliente:
+    Tipo: UUID
+    Conteúdo: UUID real do cliente (FK para clientes.id)
+
+  ordens_servico.cliente_id:
+    Tipo: TEXT
+    Conteúdo (M66 produção): v_cliente_nome (NOME resolved, ex: "CONEXAO EXPRESS")
+    Conteúdo (02F): NEW.cliente_id::TEXT (UUID como string)
+    ⚠️ MUDANÇA COMPORTAMENTAL no M66
+
+  ordens_servico.prestador:
+    Tipo: UUID
+    Conteúdo: UUID real do prestador (FK para prestadores.id)
+
+  ordens_servico.prestador_id:
+    Tipo: TEXT
+    Conteúdo (M66 produção): v_prestador_nome (NOME resolved)
+    Conteúdo (02F): NEW.prestador_id::TEXT (UUID como string)
+    ⚠️ MUDANÇA COMPORTAMENTAL no M66
+
+  Amostra anônima (1 registro):
+    cliente = "04280785-4004-42c3-a406-886dd0..." (UUID ✓)
+    cliente_id = "04280785-4004-42c3-a406-886dd0" (UUID string)
+    prestador = "659f95ec-779b-4d6e-9fc7-e06ee8..." (UUID ✓)
+    prestador_id = "659f95ec-779b-4d6e-9fc7-e06ee8" (UUID string)
+
+  NOTA: A amostra mostra cliente_id como UUID string, não nome.
+  Isso indica que os dados existentes podem ter sido criados por
+  outro mecanismo, ou que o M66 foi alterado após a criação dos dados.
+
+  A correção 02F para financeiro (NEW.cliente/NEW.prestador como UUIDs)
+  é semanticamente CORRETA e mais segura que production (NEW.cliente_id::UUID).
+
+═══════════════════════════════════════════════════════════════════════════════
+6. JSONB
+═══════════════════════════════════════════════════════════════════════════════
+
+  ordens_servico.adicionais: JSONB ✓
+  ordens_servico.ajudante: JSONB ✓
+
+  Produção M66: passa NUMERIC direto (v_adicional_valor) para coluna JSONB
+    → PostgreSQL auto-coerces NUMERIC→JSONB (funciona)
+
+  02F M66: usa to_jsonb(v_adicional_valor)
+    → Explícito, mais seguro, FUNCIONALMENTE EQUIVALENTE
+
+  Produção M80: usa jsonb_typeof + #>> '{}' para extrair NUMERIC ✓
+  02F M80: Idêntico ✓
+
+  JSONB: PASS — to_jsonb() correto para os tipos reais
+
+═══════════════════════════════════════════════════════════════════════════════
+7. COMPOSICAO_FINANCEIRA_OS — ERRO CRÍTICO DE TIPO
+═══════════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ TIPOS REAIS EM PRODUÇÃO:                                           │
+  │                                                                    │
+  │   os_id:           UUID      ← NÃO TEXT como o 02F assume!        │
+  │   cliente_id:      UUID                                            │
+  │   prestador_id:    UUID                                            │
+  │   valor_cliente:   NUMERIC                                         │
+  │   valor_prestador: NUMERIC                                         │
+  │   imposto_percentual: NUMERIC                                      │
+  │   imposto_valor:   NUMERIC                                         │
+  │   seguro_valor:    NUMERIC                                         │
+  │   pedagio_valor:   NUMERIC                                         │
+  │   outros_custos:   NUMERIC                                         │
+  │   margem_bruta:    NUMERIC                                         │
+  │   margem_liquida:  NUMERIC                                         │
+  │   percentual_margem_bruta: NUMERIC                                 │
+  │   percentual_margem_liquida: NUMERIC                               │
+  │   origem_calculo:  TEXT                                            │
+  │   combustivel_valor: NUMERIC                                       │
+  │   ajudante_valor:  NUMERIC                                         │
+  │   adicional_valor: NUMERIC                                         │
+  │   desconto_valor:  NUMERIC                                         │
+  │                                                                    │
+  │ UNIQUE: composicao_financeira_os_os_id_key (os_id)                │
+  │ PK: composicao_financeira_os_pkey (id)                            │
+  └──────────────────────────────────────────────────────────────────────┘
+
+  ERRO 02F — M66 composicao:
+    Produção: INSERT INTO composicao_financeira_os (os_id, ...) VALUES (v_os_id, ...)
+              → v_os_id é UUID, coluna os_id é UUID → ✓ COMPATÍVEL
+
+    02F:      INSERT INTO composicao_financeira_os (os_id, ...) VALUES (v_os_id::TEXT, ...)
+              → v_os_id::TEXT é TEXT, coluna os_id é UUID → ✗ FALHA
+              → PostgreSQL: "column os_id is of type uuid but expression is of type text"
+
+    Produção: SELECT FROM composicao_financeira_os WHERE os_id = v_os_id
+              → UUID = UUID → ✓
+
+    02F:      SELECT FROM composicao_financeira_os WHERE os_id = v_os_id::TEXT
+              → UUID = TEXT → ✗ "operator does not exist: uuid = text"
+
+  ERRO 02F — M80 composicao:
+    Produção: VALUES (NEW.id, ...)
+              → UUID para UUID → ✓
+
+    02F:      VALUES (NEW.id::TEXT, ...)
+              → TEXT para UUID → ✗ "column os_id is of type uuid..."
+
+    Produção: WHERE os_id = NEW.id
+              → UUID = UUID → ✓
+
+    02F:      WHERE os_id = NEW.id::TEXT
+              → UUID = TEXT → ✗
+
+  CAUSA RAIZ DO ERRO NO LAB:
+    O baseline do lab criou composicao_financeira_os com os_id como TEXT.
+    Em produção, os_id é UUID. O diagnóstico do 02F (text=uuid) era
+    válido PARA O LAB mas NÃO para produção.
+
+  composicao_financeira_os:
+  FAIL — casts ::TEXT incompatíveis com coluna UUID em produção
+
+═══════════════════════════════════════════════════════════════════════════════
+8. DUPLA PROPAGAÇÃO M66 → OS → M80
+═══════════════════════════════════════════════════════════════════════════════
+
+  UNIQUE constraints em produção:
+    financeiro_receber: uq_fr_os_id (os_id TEXT) UNIQUE
+    financeiro_pagar:   uq_fp_os_id (os_id TEXT) UNIQUE
+    pagamentos_prestadores: uq_pp_os_id (os_id UUID) UNIQUE
+    composicao_financeira_os: composicao_financeira_os_os_id_key (os_id UUID) UNIQUE
+
+  Análise:
+    ✅ financeiro_pagar: UNIQUE(os_id) impede duplicatas
+    ✅ financeiro_receber: UNIQUE(os_id) impede duplicatas
+    ✅ pagamentos_prestadores: UNIQUE(os_id) impede duplicatas
+    ✅ composicao_financeira_os: UNIQUE(os_id) impede duplicatas
+
+    M66 cria OS → M80 dispara na OS → ambos usam ON CONFLICT ou
+    PERFORM+IF → idempotente. Sem risco de duplicata.
+
+    M66 → M80 cascade:
+      M66 INSERT alocacao → cria OS → trigger M80 dispara na OS
+      M80 usa PERFORM+IF NOT FOUND → não duplica
+
+    Sem risco de recursão (triggers em tabelas diferentes).
+    Sem sobrescrita incorreta (ON CONFLICT preserva dados existentes).
+
+  DUPLA PROPAGAÇÃO:
+  PASS — UNIQUE constraints + ON CONFLICT/PERFORM+IF impedem duplicatas
+
+═══════════════════════════════════════════════════════════════════════════════
+9. ATOMICIDADE — RPC
+═══════════════════════════════════════════════════════════════════════════════
+
+  f_confirmar_pagamento_fechamento:
+  NÃO EXISTE EM PRODUÇÃO
+
+  A função existe APENAS na migration 02B forward (será criada ao aplicar).
+
+  Análise da versão 02B:
+    - Usa PL/pgSQL com variáveis declaradas
+    - FOR UPDATE no SELECT do fechamento (lock)
+    - Loop itera pelos itens vinculados
+    - Chama f_confirmar_pagamento_prestador para cada item
+    - Se erro: EXIT do loop + retorna sucesso=false
+    - Se sucesso: atualiza fechamento para pago
+
+  VERIFICAÇÃO DE ATOMICIDADE:
+    Se item 1 e item 2 são processados e item 3 falhar:
+
+    → Item 1: Foi processado por f_confirmar_pagamento_prestador
+      Essa RPC cria baixa em financeiro_baixas e atualiza status_pagamento
+      Na versão 02F, isso é feito DENTRO da mesma transação PL/pgSQL
+      Se item 3 falha com RAISE EXCEPTION → ROLLBACK total ✓
+      Se item 3 falha com RETURN → SEM ROLLBACK ✗
+
+    → Na versão 02F:
+      Se item cancelado: RAISE EXCEPTION → ROLLBACK total ✓
+      Se f_confirmar_pagamento_prestador retorna sucesso=false:
+        → v_erro_msg := mensagem → EXIT (sem RAISE)
+        → Retorna {sucesso: false, ...}
+        → SEM ROLLBACK! Itens 1 e 2 PERSISTEM ✗
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ BLOCKED: atomicidade NÃO garantida quando                 │
+  │ f_confirmar_pagamento_prestador retorna sucesso=false      │
+  │ (sem RAISE EXCEPTION, apenas EXIT + RETURN)                │
+  │                                                             │
+  │ Itens processados antes da falha PERSISTEM                  │
+  │ Fechamento NÃO é marcado como pago (correto)               │
+  │ Mas baixas e updates parciais ficam inconsistentes          │
+  │                                                             │
+  │ CORREÇÃO NECESSÁRIA: adicionar RAISE EXCEPTION antes       │
+  │ do EXIT, ou usar SAVEPOINT por item                         │
+  └──────────────────────────────────────────────────────────────┘
+
+  ATOMICIDADE:
+  BLOCKED — falha parcial sem rollback total
+
+═══════════════════════════════════════════════════════════════════════════════
+10. SNAPSHOT B1
+═══════════════════════════════════════════════════════════════════════════════
+
+  fin_sane_02b_snapshot NÃO EXISTE EM PRODUÇÃO (será criada pela migration).
+
+  Análise da versão 02B:
+
+  ┌─ DISTINCT ON sem ORDER BY ─────────────────────────────────────────────┐
+  │ Produção:                                                              │
+  │   WITH candidatos AS (                                                │
+  │     SELECT DISTINCT ON (s.financeiro_pagar_id)                        │
+  │            s.financeiro_pagar_id, s.valor_novo                        │
+  │       FROM fin_sane_02b_snapshot s                                     │
+  │      WHERE s.processado_em >= (                                       │
+  │              SELECT COALESCE(MAX(processado_em), ...)                  │
+  │                FROM fin_sane_02b_snapshot)                             │
+  │   )                                                                   │
+  │                                                                        │
+  │ DISTINCT ON sem ORDER BY é permitido em PostgreSQL mas                │
+  │ retorna ROWS INDETERMINÍSTICAS. Se há múltiplas entradas             │
+  │ para o mesmo financeiro_pagar_id, qual é escolhida?                  │
+  │ A query filtra por MAX(processado_em), mas isso é na                  │
+  │ subquery WHERE, não no ORDER BY do DISTINCT ON.                       │
+  │                                                                       
+  │ Como a tabela é criada nesta mesma migration e                       │
+  │ processado_em = NOW() (DEFAULT), todas as entradas                    │
+  │ desta execução têm o mesmo processado_em.                             │
+  │ Risco: BAIXO (dados da mesma execução)                                │
+  └────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ MAX(processado_em) ───────────────────────────────────────────────────┐
+  │ A subquery MAX(processado_em) retorna o timestamp da                   │
+  │ ÚLTIMA inserção na tabela (qualquer migration anterior).              │
+  │ Se a tabela estiver vazia, retorna -infinity (DEFAULT COALESCE).      │
+  │                                                                        │
+  │ Se a migration é aplicada 2x:                                          │
+  │   1ª execução: snapshot com processado_em = T1                        │
+  │   2ª execução: snapshot com processado_em = T2 > T1                   │
+  │   UPDATE usa WHERE processado_em >= T2 → atualiza só 2ª execução     │
+  │   Mas 1ª execução já foi atualizada na 1ª vez.                       │
+  │ Risco: PARCIAL (reaplicação pode causar efeitos colaterais)          │
+  └────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ Duplicação em reaplicação ───────────────────────────────────────────┐
+  │ INSERT INTO fin_sane_02b_snapshot usa SELECT (sem ON CONFLICT).       │
+  │ Se a migration é reaplicada, insere registros DUPLICADOS.            │
+  │ O UPDATE subsequentes usa DISTINCT ON que deduplica, mas             │
+  │ a tabela fica com lixo.                                               │
+  │ Risco: MÉDIO (lixo na tabela de auditoria)                            │
+  └────────────────────────────────────────────────────────────────────────┘
+
+  SNAPSHOT B1:
+  PARCIAL — funcional para execução única; reaplicação causa duplicatas
+
+═══════════════════════════════════════════════════════════════════════════════
+11. DRY-RUN ATUAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  Nota: Query original usava financeiro_baixas.financeiro_pagar_id
+  mas essa coluna NÃO EXISTE. A tabela financeiro_baixas usa:
+    titulo_tabela (TEXT) + titulo_id (UUID) para referenciar o título.
+
+  Consulta corrigida (não executada — apenas análise):
+    SELECT fp.id, fp.os_id, fp.valor, fp.status
+    FROM financeiro_pagar fp
+    WHERE COALESCE(fp.status, '') IN ('pago','paga')
+      AND NOT EXISTS (
+        SELECT 1 FROM financeiro_baixas fb
+        WHERE fb.titulo_tabela = 'financeiro_pagar'
+          AND fb.titulo_id = fp.id
+      )
+
+  financeiro_baixas: 16 registros em produção
+  Colunas relevantes: titulo_tabela (TEXT), titulo_id (UUID),
+    valor_baixado (NUMERIC), data_baixa (DATE), estornada (BOOLEAN)
+
+  ⚠️ O DRY-RUN NÃO PÔDE SER EXECUTADO porque a query original
+  referencia coluna inexistente (fb.os_id / fb.financeiro_pagar_id).
+  Isso é um BUG NO SCRIPT, não no schema.
+
+  DRY-RUN:
+  INCOMPLETO — query de referência incorreta; precisa de ajuste
+
+═══════════════════════════════════════════════════════════════════════════════
+12. PAGOS SEM BAIXA
+═══════════════════════════════════════════════════════════════════════════════
+
+  Consulta corrigida (estimativa usando os dados disponíveis):
+
+  financeiro_baixas: 16 registros totais
+  financeiro_pagar com status 'pago'/'paga': NÃO PÔDE SER CONSULTADO
+    (query anterior falhou por coluna inexistente em baixas)
+
+  ⚠️ PENDENTE: Essa consulta precisa ser refeita com a query correta
+  usando titulo_tabela/titulo_id em vez de os_id/financeiro_pagar_id.
+
+  PAGOS SEM BAIXA:
+  PENDENTE — query precisa de correção
+
+═══════════════════════════════════════════════════════════════════════════════
+13. RLS / RPC
+═══════════════════════════════════════════════════════════════════════════════
+
+  SECURITY DEFINER/INVOKER:
+    f_trg_propagar_financeiro_alocacao: SECURITY DEFINER ✓
+    f_trg_propagar_financeiro_os: SECURITY DEFINER ✓
+    f_confirmar_pagamento_fechamento: NÃO EXISTE (será criada)
+
+  search_path:
+    M66: SET search_path TO 'public' ✓
+    M80: SET search_path = public ✓
+
+  RLS nas tabelas tocadas:
+    financeiro_pagar:     RLS ON (não verificado se há policies)
+    financeiro_receber:   RLS ON
+    pagamentos_prestadores: RLS ON
+    composicao_financeira_os: NÃO LISTADA (não apareceu na query)
+    ordens_servico:       RLS ON
+    alocacoes_escala:     RLS ON
+
+  Grants para RPC (f_confirmar_pagamento_fechamento):
+    REVOKE ALL FROM PUBLIC ✓
+    REVOKE ALL FROM anon ✓
+    GRANT EXECUTE TO authenticated ✓
+    GRANT EXECUTE TO service_role ✓
+
+  Triggers DUPLICADOS (risco de execução dupla):
+    alocacoes_escala.trg_propagar_financeiro_alocacao: 2 ocorrências
+    alocacoes_escala.trg_registrar_historico_alocacao: 2 ocorrências
+    ordens_servico.trg_propagar_financeiro_os: 2 ocorrências
+    ordens_servico.trg_notificar_os_para_app: 2 ocorrências
+    → Cada INSERT/UPDATE executa a função 2 vezes
+    → Não causa erro (ON CONFLICT é idempotente) mas gera carga desnecessária
+
+  RLS/RPC:
+  RISCO — triggers duplicados causam execução dupla;
+  composicao_financeira_os sem RLS verificada;
+  RPC grants corretos
+
+═══════════════════════════════════════════════════════════════════════════════
+14. ROLLBACK FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  Rollback vs Schema Real:
+
+  ✅ financeiro_pagar: restaura valor_anterior do snapshot ✓
+  ✅ M66 rollback: valor = v_valor_prestador (base) ✓
+  ✅ M80 rollback: valor = v_valor_prestador (base) ✓
+  ✅ M66 rollback OS: to_jsonb(v_adicional_valor) — correto para JSONB ✓
+  ✅ M66 rollback composicao: v_os_id::TEXT — ⚠️ MESMO ERRO DA FORWARD
+     → Em produção: os_id é UUID, o cast ::TEXT quebra composicao
+     → Mas como EXCEPTION WHEN OTHERS THEN NULL, não causa erro visível
+     → composicao simplesmente não é restaurada (silenciosamente)
+  ✅ M80 rollback: usa NEW.cliente/NEW.prestador para financeiro — correto ✓
+  ✅ M80 rollback composicao: NEW.id::TEXT — ⚠️ MESMO ERRO DA FORWARD
+  ✅ Rollback remove RPC f_confirmar_pagamento_fechamento ✓
+  ✅ Snapshot NÃO é removida (preservada para auditoria) ✓
+  ✅ Títulos pagos/cancelados protegidos por WHERE NOT IN (...) ✓
+
+  Rollback:
+  PARTIAL — preserva financeiro correto; composicao não restaurada
+    silenciosamente por causa dos casts ::TEXT em os_id UUID
+
+═══════════════════════════════════════════════════════════════════════════════
+15. GATE
+═══════════════════════════════════════════════════════════════════════════════
+
+  CLASSIFICAÇÃO: C — BLOCKED
+
+  MOTIVOS DO BLOCKED:
+
+  B1 — CRÍTICO: composicao_financeira_os.os_id é UUID em produção
+       O 02F usa casts ::TEXT (v_os_id::TEXT, NEW.id::TEXT) que
+       causam "operator does not exist: uuid = text" e
+       "column os_id is of type uuid but expression is of type text"
+       O baseline do lab tinha os_id como TEXT, mascarando o erro.
+
+  B2 — ALTO: M66 OS insert muda semantics de cliente_id/prestador_id
+       Produção: armazena NOME do cliente ("CONEXAO EXPRESS")
+       02F: armazena UUID como texto ("04280785-...")
+       Código existente pode depender do nome.
+
+  B3 — MÉDIO: Atomicidade da RPC f_confirmar_pagamento_fechamento
+       Falha em item processado não provoca rollback total.
+       Itens 1 e N-1 persistem inconsistente.
+
+  B4 — BAIXO: Triggers duplicados em produção
+       4 triggers com 2 ocorrências cada → execução dupla
+
+  A SIGNIFICARIA: "podemos preparar a missão de aplicação controlada"
+  B SIGNIFICARIA: "ajuste dev necessário antes de preparar"
+  C SIGNIFICA: "bloqueado — correções estruturais necessárias"
+
+═══════════════════════════════════════════════════════════════════════════════
+RISCOS RESIDUAIS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. composicao_financeira_os永远无法被创建/更新 (casts ::TEXT em coluna UUID)
+  2. OS(cliente_id/prestador_id) 改变了存储内容 (名称 → UUID字符串)
+  3. RPC 不保证原子性 (部分成功 + 部分失败 = 不一致状态)
+  4. 4 个触发器重复注册 (性能浪费)
+  5. DRY-RUN 查询引用了不存在的列 (脚本错误)
+
+═══════════════════════════════════════════════════════════════════════════════
+PRÓXIMA MISSÃO ÚNICA
+═══════════════════════════════════════════════════════════════════════════════
+
+  CORREÇÃO OBRIGATÓRIA ANTES DE QUALQUER APLICAÇÃO:
+
+  1. [DEV] Remover todos os casts ::TEXT de composicao_financeira_os
+     em M66 e M80 (forward e rollback). Usar UUID direto como na
+     versão atual de produção.
+
+  2. [DEV] Reavaliar M66 OS insert: manter v_cliente_nome/v_prestador_nome
+     para cliente_id/prestador_id (padrão produção) OU documentar
+     explicitamente a mudança para UUID string.
+
+  3. [DEV] Adicionar RAISE EXCEPTION na RPC antes do EXIT para
+     garantir rollback transacional completo.
+
+  4. [DEV] Limpar triggers duplicados (DROP TRIGGER IF EXISTS antes
+     de CREATE TRIGGER, ou usar OR REPLACE TRIGGER se disponível).
+
+  5. [QA] Re-executar lab com baseline que replica schema real
+     (composicao_financeira_os.os_id = UUID) para validar.
+
+═══════════════════════════════════════════════════════════════════════════════
+ARQUIVOS ANALISADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  FIN-SANE-02F-DEV-FIX.txt — relatório da missão 02F
+  supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+  scripts/_fin_sane_02g_gate_readonly.cjs — queries de validação
+  scripts/_fin_sane_02g_deep_inspect.cjs — inspeção profunda do schema
+  _fin_sane_02g_raw_results.json — resultados brutos
+
+═══════════════════════════════════════════════════════════════════════════════

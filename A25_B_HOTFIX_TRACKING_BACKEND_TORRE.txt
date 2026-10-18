@@ -1,0 +1,194 @@
+================================================================================
+MISSÃO A25-B — HOTFIX CONTROLADO DO TRACKING (APP → GPS → BACKEND → TORRE)
+Projeto: EXPRESS CONNECT HUB (TMS) + Supabase Produção uwrvzsjtpgaifkktpepn
+App consultado (NÃO alterado): C:\src\conexao_prestador
+Data: 2026-08-14
+================================================================================
+
+STATUS: PRONTO PARA HOMOLOGAÇÃO FÍSICA NO REDMI
+(TRACKING ponta a ponta NÃO homologado ainda — depende da prova física do App real)
+
+================================================================================
+# RPC ANTES
+================================================================================
+
+ASSINATURA ANTERIOR (idêntica à atual em compatibilidade de parâmetros):
+  registrar_posicao_motorista(
+    p_latitude NUMERIC, p_longitude NUMERIC, p_alocacao_id UUID,
+    p_ordem_servico_id UUID DEFAULT NULL, p_captured_at TIMESTAMPTZ DEFAULT NOW(),
+    p_precisao NUMERIC DEFAULT 0, p_velocidade NUMERIC DEFAULT 0,
+    p_direcao NUMERIC DEFAULT 0, p_bateria NUMERIC DEFAULT NULL,
+    p_altitude NUMERIC DEFAULT NULL, p_status_operacional TEXT DEFAULT 'em_deslocamento',
+    p_origem TEXT DEFAULT 'app_motorista'
+  )
+
+DEFINIÇÃO ANTERIOR (backup completo para rollback):
+  scripts/_a25b_backup_rpc_registrar_posicao.sql (obtido via pg_get_functiondef)
+
+COLUNAS INVÁLIDAS no INSERT anterior (auditoria A25):
+  ordem_servico_id, motorista_id, altitude, status_operacional
+  → colunas NÃO existentes em portal_tracking_realtime (Produção).
+
+BACKUP/ROLLBACK:
+  - Definido em scripts/_a25b_backup_rpc_registrar_posicao.sql.
+  - Restauração: aplicar esse arquivo via SQL Editor / pg (CREATE OR REPLACE FUNCTION).
+
+================================================================================
+# RPC DEPOIS (ÚNICA alteração autorizada de Produção)
+================================================================================
+
+ASSINATURA (PRESERVADA — compatível com APK build 1306, sem novo APK):
+  registrar_posicao_motorista(
+    p_latitude NUMERIC, p_longitude NUMERIC, p_alocacao_id UUID,
+    p_ordem_servico_id UUID DEFAULT NULL, p_captured_at TIMESTAMPTZ DEFAULT NOW(),
+    p_precisao NUMERIC DEFAULT 0, p_velocidade NUMERIC DEFAULT 0,
+    p_direcao NUMERIC DEFAULT 0, p_bateria NUMERIC DEFAULT NULL,
+    p_altitude NUMERIC DEFAULT NULL, p_status_operacional TEXT DEFAULT 'em_deslocamento',
+    p_origem TEXT DEFAULT 'app_motorista'
+  )
+
+CAMPOS GRAVADOS (APENAS colunas existentes — verificado via information_schema):
+  alocacao_id, os_id, prestador_id, veiculo_id, cliente_id, tenant_id,
+  status='online', latitude, longitude, precisao, velocidade, direcao,
+  bateria, captured_at, origem, metadata
+
+  p_altitude e p_status_operacional (parâmetros do APK) preservados em
+  metadata (JSONB existente) — NENHUMA coluna nova criada.
+
+RELACIONAMENTOS DERIVADOS DO BANCO (nunca confiados no cliente):
+  - os_id        ← alocacoes_escala.ordem_servico_id (fallback p_ordem_servico_id)
+  - prestador_id ← prestadores.auth_user_id = auth.uid()
+  - veiculo_id   ← veiculos.prestador_vinculado = prestador (best-effort)
+  - cliente_id   ← alocacoes_escala.cliente_id
+  - tenant_id    ← prestadores.tenant_id
+
+VALIDAÇÕES PRESERVADAS (100% mantidas):
+  1. auth.uid() não nulo
+  2. prestador ativo + liberado_app
+  3. alocação existe
+  4. alocação pertence ao prestador autenticado
+  5. alocação ativa (não cancelada/concluida/recusada)
+  6. coordenadas não 0,0
+  7. coordenadas dentro dos limites geográficos
+  8. dedup 10s (mesma coordenada)
+  SECURITY DEFINER + search_path=public confirmados em Produção.
+
+COMPATIBILIDADE COM APK (confirmada no código do App):
+  - App envia (tracking_point.dart:101-115): p_alocacao_id, p_latitude,
+    p_longitude, p_velocidade, p_precisao, p_direcao, p_bateria, p_captured_at,
+    p_altitude, p_status_operacional, p_origem. TODOS existem na assinatura.
+  - NÃO exige novo APK.
+
+ARQUIVO DA MIGRAÇÃO DO HOTFIX: scripts/_a25b_fix_rpc_registrar_posicao.sql
+VERIFICAÇÃO PÓS-APLICAÇÃO (Produção):
+  - INSERT colunas: 16 (todas existentes) — NENHUMA coluna inválida.
+  - SECURITY DEFINER = true; search_path = public (proconfig confirmado).
+
+================================================================================
+# TORRE
+================================================================================
+
+LÓGICA ANTIGA (TorreControle.tsx:557-621):
+  1. extrairCoordenadasOS(os) → se null, DESCARTAR marcador;
+  2. procurar posição ao vivo por os_id (Object.values().find os_id === os.id);
+  3. usar GPS se válido, senão coordenada da OS.
+  → OS sem coordenada própria NUNCA aparecia no mapa, mesmo com GPS ativo.
+
+LÓGICA NOVA (TorreControle.tsx + markerAdapter.ts):
+  1. procurar posição GPS recente (resolverPosicaoMarcador por os_id e por
+     alocacao_id via mapa OS→alocações);
+  2. SE tracking recente válido → usa latitude/longitude do TRACKING;
+  3. SENÃO → usa coordenada da OS (fallback);
+  4. se nenhum dos dois → sem marcador.
+  → GPS REAL TEM PRIORIDADE SOBRE COORDENADA ESTÁTICA DA OS.
+  → OS sem coordenada cadastrada aparece quando o App transmite posição válida.
+
+PRIORIDADE GPS: montarMarcadorGPS(coords, posicao, alocStatus) — prioriza GPS.
+FALLBACK OS: usa coords da OS quando não há GPS.
+MATCH ALOCAÇÃO: montarMapaAlocacoesPorOS(posicoes) → resolverPosicaoMarcador
+  tenta por os_id e, complementarmente, por alocacao_id (tracking é por alocação).
+
+RECÊNCIA (buscarUltimasPosicoes em trackingService.ts):
+  - Só considera posições com captured_at (prioritário) OU created_at (fallback)
+    dentro dos últimos 60 minutos. Seed antigo de semanas NÃO é retornado.
+  - posicaoRecente() (markerAdapter) segue o mesmo limite (60min).
+
+MOTORISTAS ONLINE:
+  - KPI "Motoristas Online" = mapCounters.gpsAtivo = markers com
+    gpsState === "atualizado" (posição ≤15min).
+  - Como buscarUltimasPosicoes filtra 60min, seed antigo NÃO infla o KPI.
+  - Filtros GPS Ativo/Antigo/Sem GPS mantidos e coerentes (≤15 / ≤60 / sem GPS).
+
+REALTIME:
+  - Canal torre-realtime-tracking (portal_tracking_realtime INSERT) preservado.
+  - Nova posição → atualiza trackingPositions → marcador surge/atualiza mesmo
+    sem coordenada na OS. Sem novos canais (sem risco de duplicar subscribe).
+
+ARQUIVOS ALTERADOS (TMS):
+  - src/components/torre-controle/markerAdapter.ts (novos helpers puros)
+  - src/services/rastreamento/trackingService.ts (recência em buscarUltimasPosicoes)
+  - src/pages/TorreControle.tsx (markers com GPS priority + match por alocação)
+
+================================================================================
+# TESTES
+================================================================================
+  npx tsc --noEmit      →  0 erros ✅
+  npm run build         →  ✅ 41.42s — build ok
+  npx vitest run        →  ✅ 108/108 testes (11 arquivos)
+
+  Testes específicos A25-B (src/test/a25BTracking.test.ts — 10 cenários):
+    1. OS sem coordenada + GPS recente → marcador aparece ✅
+    2. OS com coordenada + GPS recente → usa GPS ✅
+    3. OS com coordenada + sem GPS → usa coordenada da OS ✅
+    4. OS sem coordenada + sem GPS → sem marcador ✅
+    5. match por alocacao_id ✅
+    6. fallback por os_id ✅
+    7. posição antiga (>60min) não conta como GPS ativo ✅
+    8. seed antigo não conta como motorista online ✅
+    9. novo evento Realtime atualiza marcador ✅
+   10. filtros GPS Ativo/Antigo/Sem GPS coerentes ✅
+
+================================================================================
+# SEGURANÇA
+================================================================================
+  - ÚNICA alteração de Produção realizada: CREATE OR REPLACE FUNCTION
+    registrar_posicao_motorista (autorizada por esta missão). CONFIRMADO.
+  - Nenhuma tabela criada ................................... CONFIRMADO
+  - Nenhuma coluna criada/removida .......................... CONFIRMADO
+  - Nenhuma RLS alterada .................................... CONFIRMADO
+  - Nenhuma outra RPC alterada .............................. CONFIRMADO
+  - Nenhum trigger alterado ................................. CONFIRMADO
+  - Nenhum dado manualmente alterado ........................ CONFIRMADO
+  - App Flutter (C:\src\conexao_prestador) NÃO alterado ...... CONFIRMADO
+  - Backup completo do RPC anterior disponível p/ rollback ... CONFIRMADO
+
+================================================================================
+# PRÓXIMO PASSO — ROTEIRO FÍSICO NO REDMI
+================================================================================
+1. Confirmar que o Redmi tem o APK conexao_express_motorista_v1.0.1_build1306
+   (ou mais novo). Se for mais antigo que o build 1305, reinstalar.
+2. Abrir o App, logar com PRESTADOR TESTE APP (CPF 12345678900).
+3. Permitir localização "o tempo todo", GPS ligado, notificações permitidas.
+4. Abrir a operação ativa (alocação aceita p/ o prestador).
+5. Executar a etapa "Sair em rota" (ou "Sair para entrega"/"Finalizar
+   carregamento") — ESTE é o gatilho do tracking (código real).
+6. Manter o App em primeiro plano 1–2 min (intervalo 15s).
+7. Abrir a Torre de Controle no TMS.
+8. Verificar KPI "Motoristas Online" > 0 e badge "GPS Ativo" no mapa.
+9. Verificar o marcador do PRESTADOR TESTE APP no mapa (GPS tem prioridade,
+   mesmo se a OS não tiver coordenada cadastrada).
+10. Caminhar alguns metros e confirmar que o marcador se move (Realtime).
+11. Bloquear a tela e confirmar atualização em background (30s).
+
+VALIDAÇÃO READ-ONLY PÓS-TESTE:
+  SELECT * FROM portal_tracking_realtime
+  WHERE alocacao_id = '<alocação>' ORDER BY captured_at DESC LIMIT 5;
+  → deve retornar linhas com created_at recente e status='online'.
+
+NOTA: A homologação física final (celular real → Torre) ainda NÃO foi realizada.
+Neste momento o status máximo é PRONTO PARA HOMOLOGAÇÃO FÍSICA NO REDMI.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-B
+STATUS: PRONTO PARA HOMOLOGAÇÃO FÍSICA NO REDMI ✅
+================================================================================

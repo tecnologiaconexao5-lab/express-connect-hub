@@ -1,0 +1,104 @@
+MISSAO 133-D.7.2 — Execucao Controlada do Teste Transacional de Avanco
+Data: 2026-07-27
+Status: CONCLUIDA — TODAS AS VALIDACOES PASSARAM
+Branch: auditoria-final-integracao
+Script base: scripts/m133d71_script_final.sql
+SHA256: 5784A82C5063B352D7A245A0B0B90AFD2DA1E5CB83838CA0A57883E44AFC59FF
+
+================================================================================
+1. PRE-CHECK (6/6)
+================================================================================
+  [OK] Branch auditoria-final-integracao
+  [OK] Script existe (11009 bytes, 255 linhas)
+  [OK] SHA256: 5784A82C...
+  [OK] BEGIN presente, ROLLBACK presente, COMMIT ausente
+  [OK] Sem DDL, sem chamadas externas, sem migration
+  [OK] Alocacao HML 76af8e4a-...: status=aguardando_aceite, etapa=NULL, sem OS
+
+================================================================================
+2. RESULTADO DA RPC
+================================================================================
+  etapa: viagem_aceita
+  status: aceita
+  message: "Etapa avancada com sucesso."
+  success: true
+  event_id: 9c8c0e2e-4a84-4886-a715-397f719e94ac
+  idempotent: false
+  etapa_anterior: ""
+
+================================================================================
+3. ASSERTIVAS (8/8)
+================================================================================
+  [OK] 1. status = aceita (obtido: aceita)
+  [OK] 2. aceite_prestador = true (obtido: true)
+  [OK] 3. data_aceite preenchida (obtido: 2026-07-27T17:44:50.513Z)
+  [OK] 4. etapa_atual = viagem_aceita (obtido: viagem_aceita)
+  [OK] 5. finalizada = false (obtido: false)
+  [OK] 6. eventos_oficiais criado (antes:1, durante:3)
+  [OK] 7. operation_timeline criado (antes:0, durante:1)
+  [OK] 8. historico criado trigger (antes:1, durante:3)
+
+================================================================================
+4. IDEMPOTENCIA
+================================================================================
+  Segunda chamada com mesma key: idempotent=true
+  Message: "Etapa ja registrada (idempotente)."
+  [OK] Nenhuma duplicacao de efeitos
+
+================================================================================
+5. CENARIOS NEGATIVOS (2/2)
+================================================================================
+  [OK] 5.1 AUTH_USER_ID_INVALIDO: rejeitado (error: AUTH_USER_ID_INVALIDO)
+  [OK] 5.3 TRANSICAO_INVALIDA: rejeitado (error: TRANSICAO_INVALIDA)
+        "Transicao invalida: de \"viagem_aceita\" para \"servico_finalizado\""
+
+================================================================================
+6. TABELA RESUMO
+================================================================================
+  Evidencia               | Antes             | Durante           | Depois    | Res
+  status alocacao         | aguardando_aceite | aceita            | aguardando | OK
+  etapa                   | NULL              | viagem_aceita     | NULL      | OK
+  aceite_prestador        | false             | true              | false     | OK
+  eventos_oficiais        | 1                 | 3                 | 1         | OK
+  timeline                | 0                 | 1                 | 0         | OK
+  historico               | 1                 | 3                 | 1         | OK
+  idempotency key         | NULL              | preenchida        | NULL      | OK
+  financeiro (OS)         | 0                 | 0                 | 0         | OK
+
+================================================================================
+7. VALIDACAO POS-ROLLBACK (9/9)
+================================================================================
+  [OK] V1: etapa voltou a NULL
+  [OK] V2: aceite_prestador voltou a false
+  [OK] V3: status voltou a aguardando_aceite
+  [OK] V4: data_aceite voltou a NULL
+  [OK] V5: finalizada continuou false
+  [OK] V6: idempotency key removida
+  [OK] V7: eventos_oficiais sem residuo
+  [OK] V8: operation_timeline sem residuo
+  [OK] V9: historico sem residuo
+
+================================================================================
+8. CLASSIFICACAO OFICIAL
+================================================================================
+  HOMOLOGADO (nivel SQL):
+    - Logica SQL de avanco testada
+    - auth.uid() testado
+    - ownership testado
+    - idempotencia testada
+    - efeitos transacionais testados
+    - rollback validado
+
+  NAO HOMOLOGADO:
+    - PostgREST (requer JWT real)
+    - App Flutter (requer PWA real)
+    - Fluxo ponta a ponta (requer ambos)
+
+================================================================================
+9. RESUMO FINAL
+================================================================================
+  LOGICA SQL DE AVANCO VALIDADA COM ROLLBACK —
+  POSTGREST E FLUTTER AINDA NAO HOMOLOGADOS
+
+  Percentual geral: 41% (inalterado)
+  Confianca no bloco RPC avancado etapa: ALTA

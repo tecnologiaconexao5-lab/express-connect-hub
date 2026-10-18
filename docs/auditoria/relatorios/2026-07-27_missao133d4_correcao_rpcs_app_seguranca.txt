@@ -1,0 +1,229 @@
+╔══════════════════════════════════════════════════════════════╗
+║       RELATORIO — MISSAO 133-D.4                            ║
+║       Correcao Controlada das RPCs do App Motorista         ║
+║       Data: 2026-07-27                                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+
+1. RESUMO EXECUTIVO
+────────────────────────────────────────────────────────────────
+
+CORRECAO DE SEGURANCA PREPARADA — NENHUMA MIGRACAO APLICADA
+
+  Funcao                          Anomalia       Correcao         Impacto App
+  ──────────────────────────────  ─────────────  ───────────────  ─────────────
+  f_buscar_operacoes_motorista    A03 — grants   Grants fix       Zero
+                                   (PUBLIC+anon)  (REVOKE anon)
+  f_avancar_etapa_app_motorista   A01 — STABLE   STABLE→VOLATILE  Zero
+                                   A03 — grants   Grants fix
+  f_atualizar_reversa_app         A02 — sem uid  auth.uid() +     Zero
+                                   A03 — grants   prestador check
+                                                  Grants fix
+
+PERCENTUAL DA MISSAO (preparacao):  100% (10/10 FASES concluidas)
+Percentual migracao:                 0%  (nao aplicada)
+Percentual geral oficial do projeto: 41%
+
+3 anomalias (A01, A02, A03) identificadas na Missao 133-D.3
+foram enderecadas com correcoes prontas, documentadas e
+validadas estaticamente. NENHUMA migration foi aplicada.
+
+ASSINATURAS PRESERVADAS — ZERO IMPACTO NO CONTRATO DO APP:
+  - f_buscar, f_avancar: corpo inalterado (grants apenas)
+  - f_atualizar_reversa: mesma assinatura date+jsonb, mesmo
+    retorno pt-BR (sucesso/erro)
+
+
+2. FASE 1 — ESTADO REMOTO CONGELADO
+────────────────────────────────────────────────────────────────
+
+SHA256 das definicoes remotas capturadas em 2026-07-27:
+
+  f_buscar_operacoes_motorista:
+    4ebdfbde2348534fb4e1a2cd92fdfeca9ee37ae19efcebd8adf4afd4be59fa34
+
+  f_avancar_etapa_app_motorista:
+    f385541ed0ecfba63185cd9c6e4eb9167f0804c549e31cf004da2126be1a3613
+
+  f_atualizar_reversa_app:
+    235912b88024657e39361a79c1426c8935f6d1afc3c16786ae3354f39ad610e4
+
+Arquivos congelados em: docs/auditoria/02_evidencias/sql/*_remota.sql
+
+
+3. FASE 2 — HISTORICO DE MIGRATIONS (LINEAGE)
+────────────────────────────────────────────────────────────────
+
+  RPC                                 Lineage
+  ───────────────────────────────────  ─────────────────────────────────────
+  f_buscar_operacoes_motorista        M111 (criacao)
+                                       → M133-D.2 (uuid fix)
+                                       → M133-D.4 (grants) ← AGORA
+
+  f_avancar_etapa_app_motorista       M133-D.2 (do block - falhou)
+                                       → M133-D.2 hotfix (recriacao)
+                                       → M133-D.4 (VOLATILE) ← AGORA
+
+  f_atualizar_reversa_app             M116 (criacao)
+                                       → M133-D.2 (recriacao - sobrescrita)
+                                       → M119 scripts (auth.users, sem uid)
+                                       → M133-D.4 (auth.uid() + grants) ← AGORA
+
+Migrations-chave:
+  - M111:     20260713_m111_app_integracao_tms.sql
+  - M116:     20260713_m116_reversa_cols.sql
+  - M133-D.2: 20260722_m133d2_fix_uuid_text_rpc_motorista.sql
+  - M133-D.2h:20260722_m133d2_hotfix_recriar_funcoes.sql
+  - M119:     scripts/m119_apply.cjs (causou sobrescrita)
+
+
+4. FASE 3 — AUDITORIA f_avancar_etapa_app_motorista
+────────────────────────────────────────────────────────────────
+
+ANOMALIA A01: STABLE com UPDATE/INSERT
+
+  Funcao contem:
+    - UPDATE alocacoes_escala
+    - INSERT eventos_oficiais
+    - INSERT operation_timeline_events
+
+  Mas e declarada: STABLE SECURITY DEFINER
+
+  Risco: PostgreSQL pode rejeitar write em STABLE em replicas
+  de leitura ou versoes futuras.
+
+  CORRECAO (migration): STABLE → VOLATILE
+  Corpo: IDÊNTICO ao remoto (nenhuma linha alterada)
+
+
+5. FASE 4 — AUDITORIA f_atualizar_reversa_app
+────────────────────────────────────────────────────────────────
+
+ANOMALIA A02: Sem auth.uid(), autenticacao fraca
+
+  PROBLEMA CRITICO:
+    A funcao NAO usa auth.uid(). Em vez disso, faz lookup
+    fraco em auth.users sem cruzar com prestador.
+
+    Isso significa que qualquer usuario autenticado pode
+    atualizar dados de reversa de QUALQUER alocacao, incluindo
+    financeiro_receber e financeiro_pagar vinculados.
+
+  TIPOS (preservados por compatibilidade):
+    p_reversa_data_realizada: date (nao timestamptz)
+    p_reversa_fotos:          jsonb (nao text[])
+    Retorno:                  pt-BR sucesso/erro
+
+  CORRECAO:
+    Adicionado antes da logica existente:
+      1. auth.uid() → NULL = USUARIO_NAO_AUTENTICADO
+      2. prestadores lookup → NULL = PRESTADOR_NAO_ENCONTRADO
+      3. alocacao ownership check → ALOCACAO_OUTRO_PRESTADOR
+
+
+6. FASE 5 — MATRIZ DE GRANTS
+────────────────────────────────────────────────────────────────
+
+ANTES (producao agora):
+  RPC                             anon    auth    public  svc_role
+  ──────────────────────────────  ──────  ──────  ──────  ────────
+  f_buscar_operacoes_motorista    ✅      ✅      ✅      ✅
+  f_avancar_etapa_app_motorista   ✅      ✅      ✅      ✅
+  f_atualizar_reversa_app         ✅      ✅      ✅      ✅
+
+DEPOIS (proposto):
+  RPC                             anon    auth    public  svc_role
+  ──────────────────────────────  ──────  ──────  ──────  ────────
+  f_buscar_operacoes_motorista    ❌      ✅      ❌      ✅
+  f_avancar_etapa_app_motorista   ❌      ✅      ❌      ✅
+  f_atualizar_reversa_app         ❌      ✅      ❌      ✅
+
+
+7. FASE 6 — CONTRATO COM APP MOTORISTA (FLUTTER)
+────────────────────────────────────────────────────────────────
+
+  Item                   f_buscar    f_avancar   f_atualizar
+  ─────────────────────  ──────────  ──────────  ──────────
+  Parametros             igual      igual       igual
+  Tipos                  igual      igual       igual
+  Defaults               igual      igual       igual
+  Ordem                  igual      igual       igual
+  Retorno (keys)         en-US      en-US       pt-BR
+  Novos erros possiveis  nenhum     nenhum      4 novos
+
+NOVOS ERROS em f_atualizar_reversa_app:
+  - USUARIO_NAO_AUTENTICADO
+  - AUTH_USER_ID_INVALIDO
+  - PRESTADOR_NAO_ENCONTRADO
+  - ALOCACAO_OUTRO_PRESTADOR
+
+Estes erros seguem o mesmo padrao das outras 2 RPCs.
+
+
+8. FASE 7 — MIGRACAO PROPOSTA
+────────────────────────────────────────────────────────────────
+
+  Arquivo:  20260722_m133d4_fix_rpc_app_security.sql
+  Tamanho:  418 linhas
+  Rollback: 20260722_m133d4_rollback.sql (382 linhas)
+
+  Estrutura:
+    1. REVOKE/GRANT para 3 RPCs (12 statements)
+    2. CREATE OR REPLACE f_avancar_etapa (VOLATILE)
+    3. CREATE OR REPLACE f_atualizar_reversa (auth.uid())
+    4. COMMENT ON f_buscar (grants update)
+
+  NAO APLICADA — aguarda autorizacao.
+
+
+9. FASE 8 — ROLLBACK
+────────────────────────────────────────────────────────────────
+
+  Restaura estado EXATO anterior (incluindo bugs):
+    - f_avancar_etapa → STABLE
+    - f_atualizar_reversa → sem auth.uid()
+    - Grants → PUBLIC + anon
+
+
+10. FASE 9 — VALIDACAO ESTATICA + DIFF
+────────────────────────────────────────────────────────────────
+
+  f_avancar_etapa: diff = 1 linha (STABLE → VOLATILE)
+  f_atualizar_reversa: +15 linhas (auth check), -1 linha (auth.users)
+  f_buscar: 0 linhas alteradas
+
+
+11. FASE 10 — PLANO DE TESTE CONTROLADO
+────────────────────────────────────────────────────────────────
+
+  Script: scripts/m133d4_test_plan.cjs
+
+  Fases:
+    A — Configuracao: SUPABASE_URL + SERVICE_ROLE_KEY
+    B — Schema: pg_catalog confirma existencia
+    C — Grants: has_function_privilege
+    D — Corpo: volatility, auth.uid(), prestador check, tipos
+    F — Checklist de regressao (revisao manual Flutter)
+
+
+12. CONCLUSAO
+────────────────────────────────────────────────────────────────
+
+MISSAO 133-D.4 CONCLUIDA — PREPARACAO DE CORRECAO DE SEGURANCA
+
+3 anomalias enderecadas:
+  A01 (STABLE→VOLATILE):  pronta, diff = 1 linha
+  A02 (auth.uid()):       pronta, assinatura preservada
+  A03 (grants):           pronto, 12 statements grant/revoke
+
+NENHUMA MIGRACAO FOI APLICADA.
+NENHUM DADO FOI MODIFICADO.
+NENHUM FLUXO REAL FOI EXECUTADO.
+
+Proximos passos:
+  P0 — Aplicar migration em producao (apos autorizacao)
+  P1 — Validar grants com has_function_privilege remoto
+  P2 — Testar f_atualizar_reversa com usuario autenticado real
+  P3 — Validar contratos com time Flutter (App Motorista)
+
+Percentual geral oficial do projeto: 41%

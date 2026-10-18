@@ -17,6 +17,9 @@ import { Cliente } from "./types";
 import { EnderecoCompleto } from "@/components/ui/EnderecoCompleto";
 import { toClienteInsert, toClienteUpdate, fromClienteRow, ClienteRow } from "@/lib/dbMappers";
 import { buscarCEP, limparCEP, validarCEP, CEPResponse } from "@/services/cepService";
+import { paraInputDate } from "@/lib/formatDates";
+import { useAuth } from "@/contexts/AuthContext";
+import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 
 interface Filial {
   id: string;
@@ -62,8 +65,14 @@ interface Props {
   onBack: () => void;
 }
 
+const dataLocalISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 const defaultCliente: Partial<Cliente> = {
   status: "Ativo",
+  dataCadastro: dataLocalISO(),
   exigeAgendamento: false,
   exigeSla: false,
   exigePortal: false,
@@ -71,8 +80,14 @@ const defaultCliente: Partial<Cliente> = {
 };
 
 const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
+  const { user } = useAuth();
   const isNew = !clienteId;
   const [c, setC] = useState<Partial<Cliente>>(defaultCliente);
+  const [baselineC, setBaselineC] = useState<Partial<Cliente>>(defaultCliente);
+  const exitGuard = useFormExitGuard({ current: c, initial: baselineC });
+  const handleExit = async () => {
+    if (await exitGuard.confirmExit()) onBack();
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [filiais, setFiliais] = useState<Filial[]>([]);
@@ -89,7 +104,13 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [novoContrato, setNovoContrato] = useState<Partial<Contrato>>({});
   const [enderecos, setEnderecos] = useState<Array<{id: string; tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>>([]);
   const [modalEnderecoOpen, setModalEnderecoOpen] = useState(false);
-  const [novoEndereco, setNovoEndereco] = useState<{tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+  const [novoEndereco, setNovoEndereco] = useState<{
+    tipo_endereco: string; cep: string; logradouro: string; numero: string;
+    complemento: string; bairro: string; cidade: string; uf: string;
+    nome_local?: string; referencia?: string; contato_local?: string;
+    telefone_local?: string; instrucoes?: string; janela_inicio?: string;
+    janela_fim?: string; restricoes?: string; portaria?: string; doca?: string;
+  }>({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
   const [cepLoading, setCepLoading] = useState(false);
   const [listaTabelasValores, setListaTabelasValores] = useState<{id: string; nome: string; tipo_veiculo: string}[]>([]);
 
@@ -117,62 +138,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
     setCepLoading(false);
   };
 
-  const [debugInfo, setDebugInfo] = useState<{
-    url: string;
-    tabela: string;
-    operacao: string;
-    testeTecnico: { success: boolean; message?: string; details?: string; hint?: string; code?: string; count?: number; requestUrl?: string; requestMethod?: string; responseStatus?: number; responseBody?: unknown };
-    saveResult: { success: boolean; message?: string; details?: string; hint?: string; code?: string; requestUrl?: string; requestMethod?: string; responseStatus?: number; responseBody?: unknown };
-    payload: object;
-  } | null>(null);
   
-  const mapCause = (code?: string, testeSuccess?: boolean): string => {
-    if (!code) {
-      if (!testeSuccess) return "conexão/projeto/url incorreta";
-      return "erro desconhecido";
-    }
-    const map: Record<string, string> = {
-      "42P01": "tabela não encontrada",
-      "42703": "coluna inexistente",
-      "23502": "campo obrigatório ausente",
-      "22P02": "tipo inválido",
-      "P0001": "trigger/function falhou",
-      "42501": "policy/RLS/permissão negada"
-    };
-    return map[code] || "erro Supabase (code: " + code + ")";
-  };
-  
-  const getConclusao = (testeSuccess: boolean, saveSuccess: boolean, code?: string): string => {
-    if (saveSuccess) return "✅ Cadastro salvo com sucesso";
-    if (!testeSuccess) return "❌ Falha por conexão/projeto/url incorreta";
-    if (code === "42P01") return "❌ Falha por tabela não encontrada";
-    if (code === "42703") return "❌ Falha por coluna inexistente";
-    if (code === "23502") return "❌ Falha por campo obrigatório ausente";
-    if (code === "22P02") return "❌ Falha por tipo de dado inválido";
-    if (code === "42501") return "❌ Falha por policy/permissão";
-    if (code === "P0001") return "❌ Falha por trigger/function";
-    return "❌ Falha por causa ainda não mapeada";
-  };
-  
-  const copyDiagnostico = async () => {
-    if (!debugInfo) return;
-    const d = debugInfo;
-    const texto = [
-      `=== DIAGNÓSTICO SUPABASE - CLIENTES ===`,
-      `url: ${d.url}`,
-      `fallback: ${!import.meta.env.VITE_SUPABASE_URL ? "SIM" : "NÃO"}`,
-      `tabela: ${d.tabela}`,
-      `operação: ${d.operacao}`,
-      `teste técnico: ${d.testeTecnico.success ? "OK" : "FALHOU"}`,
-      `save: ${d.saveResult.success ? "OK" : "FALHOU"}`,
-      `code: ${d.saveResult.code || "N/A"}`,
-      `cause_provavel: ${mapCause(d.saveResult.code, d.testeTecnico.success)}`,
-      `message: ${d.saveResult.message || "OK"}`,
-      `=== FIM ===`
-    ].join("\n");
-    await navigator.clipboard.writeText(texto);
-    toast.success("Diagnóstico copiado!");
-  };
 
   useEffect(() => {
     if (clienteId) {
@@ -209,7 +175,13 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       }
       console.log(`[ClienteDetalhe] Fetch OK da '${TABLE_NAME}':`, data);
       if (data) {
-        setC(fromClienteRow(data as ClienteRow) as Partial<Cliente>);
+        const loaded = fromClienteRow(data as ClienteRow) as Partial<Cliente>;
+        // data_cadastro ainda é nulo em clientes antigos → origem = created_at
+        if (!loaded.dataCadastro && data.created_at) {
+          loaded.dataCadastro = paraInputDate(data.created_at) || null;
+        }
+        setC(loaded);
+        setBaselineC(loaded);
       }
     } catch (error) {
       console.error("[ClienteDetalhe] Erro catch fetch:", error);
@@ -273,46 +245,20 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       toast.error("Razão Social e CNPJ são obrigatórios");
       return;
     }
+    if (isSaving) return;
 
     try {
       setIsSaving(true);
       const isUpdate = !!c.id;
-      
-      const TABLE_NAME = "clientes";
-      console.log(`[ClienteDetalhe] INICIO - Tabela: ${TABLE_NAME}, Operacao: ${isUpdate ? 'UPDATE' : 'INSERT'}`);
-      
-      console.log(`%c🔍 TESTE TÉCNICO: Verificando acesso a tabela '${TABLE_NAME}'...`, "color: blue; font-weight: bold;");
-      const teste = await supabase.from(TABLE_NAME).select("*", { head: true, count: "exact" });
-      const testeResult = {
-        success: !teste.error,
-        message: teste.error?.message,
-        details: teste.error?.details,
-        hint: teste.error?.hint,
-        code: teste.error?.code,
-        count: teste.count
-      };
-      if (teste.error) {
-        console.error(`[ClienteDetalhe] ERRO no teste técnico da tabela '${TABLE_NAME}':`);
-        console.error("  message:", teste.error.message);
-        console.error("  details:", teste.error.details);
-        console.error("  hint:", teste.error.hint);
-        console.error("  code:", teste.error.code);
-      } else {
-        console.log(`[ClienteDetalhe] ✅ Teste técnico OK - Count: ${teste.count}`);
-      }
-      
-      setDebugInfo({
-        url: debugUrl,
-        tabela: TABLE_NAME,
-        operacao: isUpdate ? "UPDATE" : "INSERT",
-        testeTecnico: testeResult,
-        saveResult: { success: true },
-        payload: {}
-      });
-      
-      const payload = isUpdate ? toClienteUpdate(c) : toClienteInsert(c);
+      let formData = { ...c };
 
-      console.log(`[ClienteDetalhe] Payload enviado para '${TABLE_NAME}':`, JSON.stringify(payload, null, 2));
+      if (!isUpdate && !formData.tenantId) {
+        const { data: tenantData } = await supabase.rpc('current_tenant_id_safe');
+        if (tenantData) formData.tenantId = tenantData;
+      }
+
+      const TABLE_NAME = "clientes";
+      const payload = isUpdate ? toClienteUpdate(formData) : toClienteInsert(formData);
 
       let result;
       if (isUpdate) {
@@ -322,49 +268,17 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       }
 
       const { data, error } = result;
-
       if (error) {
-        console.error(`====== ERRO SUPABASE '${TABLE_NAME}' ======`);
-        console.error("Mensagem:", error.message);
-        console.error("Detalhes:", error.details);
-        console.error("Hint:", error.hint);
-        console.error("Code:", error.code);
-        console.error("Payload que falhou:", JSON.stringify(payload, null, 2));
-        console.error("==================================");
-        
-        setDebugInfo(prev => prev ? {
-          ...prev,
-          saveResult: {
-            success: false,
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          },
-          payload
-        } : null);
-        
-        toast.error(`Falha no banco: ${error.message} - Dica: ${error.hint || 'Nenhuma dica disponível'}`);
+        toast.error(`Falha no banco: ${error.message}`);
         return;
       }
 
-      console.log(`%c[ClienteDetalhe] ✅ OPERAÇÃO ${isUpdate ? 'UPDATE' : 'INSERT'} CONCLUÍDA NA TABELA '${TABLE_NAME}'`, "color: green; font-weight: bold;");
-      console.log(`[ClienteDetalhe] Resultado:`, data);
-      
-      setDebugInfo(prev => prev ? {
-        ...prev,
-        saveResult: { success: true },
-        payload
-      } : null);
-      
       const savedCliente = data?.[0];
       if (!savedCliente) {
-        console.error("[ClienteDetalhe] Response vazio após salvar");
         toast.error("Erro: resposta vazia do Supabase");
         return;
       }
 
-      // Persistir endereços temporários (novo cliente sem ID anterior)
       if (isNew && savedCliente.id) {
         const tempEnds = enderecos.filter((e: any) => e._temp);
         if (tempEnds.length > 0) {
@@ -385,12 +299,9 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       }
 
       toast.success(isNew ? "Cliente cadastrado com sucesso!" : "Cliente atualizado com sucesso!");
+      exitGuard.markClean();
       onBack();
     } catch (error: any) {
-      console.error("[ClienteDetalhe] Erro Catch (inesperado):", error);
-      console.error("Error message:", error?.message);
-      console.error("Error details:", error?.details);
-      console.error("Error hint:", error?.hint);
       toast.error("Erro ao persistir cliente no Supabase.");
     } finally {
       setIsSaving(false);
@@ -399,66 +310,19 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
   if (isLoading) return <div className="p-10 text-center animate-pulse">Carregando dados do cliente...</div>;
 
-  const debugUrl = import.meta.env.VITE_SUPABASE_URL;
-
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* Painel de Debug Temporário */}
-      {debugInfo && (
-        <div className="bg-slate-900 text-slate-200 p-3 rounded-md text-xs font-mono">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-bold text-yellow-400">PAINEL TÉCNICO DEBUG</span>
-            <button onClick={copyDiagnostico} className="text-blue-400 hover:text-blue-300 ml-2">[Copiar diagnóstico]</button>
-            <button onClick={() => setDebugInfo(null)} className="ml-auto text-slate-400 hover:text-white">✕</button>
-          </div>
-          <div className={"font-bold text-lg mb-2 " + (debugInfo.saveResult.success ? "text-green-400" : "text-red-400")}>
-            {getConclusao(debugInfo.testeTecnico.success, debugInfo.saveResult.success, debugInfo.saveResult.code)}
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <span className="text-slate-400">URL:</span><span>{debugUrl.substring(0, 35)}...</span>
-            <span className="text-slate-400">Fallback:</span><span className={!import.meta.env.VITE_SUPABASE_URL ? "text-red-400" : "text-green-400"}>{!import.meta.env.VITE_SUPABASE_URL ? "SIM" : "NÃO"}</span>
-            <span className="text-slate-400">Tabela:</span><span>{debugInfo.tabela}</span>
-            <span className="text-slate-400">Operação:</span><span className={debugInfo.operacao === "INSERT" ? "text-green-400" : "text-blue-400"}>{debugInfo.operacao}</span>
-            <span className="text-slate-400">Teste Técnico:</span><span className={debugInfo.testeTecnico.success ? "text-green-400" : "text-red-400"}>{debugInfo.testeTecnico.success ? `OK (${debugInfo.testeTecnico.count})` : "FALHOU"}</span>
-            <span className="text-slate-400">TesteMét:</span><span>{debugInfo.testeTecnico.requestMethod || 'N/A'}</span>
-            <span className="text-slate-400">TesteURL:</span><span className="text-xs">{debugInfo.testeTecnico.requestUrl ? new URL(debugInfo.testeTecnico.requestUrl).pathname : 'N/A'}</span>
-            <span className="text-slate-400">Save:</span><span className={debugInfo.saveResult.success ? "text-green-400" : "text-red-400"}>{debugInfo.saveResult.success ? "OK" : "FALHOU"}</span>
-            <span className="text-slate-400">SaveMét:</span><span>{debugInfo.saveResult.requestMethod || 'N/A'}</span>
-            <span className="text-slate-400">SaveURL:</span><span className="text-xs">{debugInfo.saveResult.requestUrl ? new URL(debugInfo.saveResult.requestUrl).pathname : 'N/A'}</span>
-            <span className="text-slate-400">Status:</span><span className={debugInfo.saveResult.responseStatus && debugInfo.saveResult.responseStatus >= 400 ? "text-red-400" : "text-green-400"}>{debugInfo.saveResult.responseStatus || 'N/A'}</span>
-          </div>
-          {!debugInfo.saveResult.success && (
-            <div className="mt-2 pt-2 border-t border-slate-700">
-              <div className="text-yellow-400 font-bold">Cause provável:</div>
-              <div className="text-orange-400">{mapCause(debugInfo.saveResult.code, debugInfo.testeTecnico.success)}</div>
-              <div className="text-red-400 font-bold mt-1 mb-1">Code:</div>
-              <div className="text-slate-300">{debugInfo.saveResult.code || "N/A"}</div>
-              <div className="text-red-400 font-bold mt-1 mb-1">Erro details:</div>
-              <div className="text-slate-300">{debugInfo.saveResult.details || "N/A"}</div>
-              <div className="text-yellow-400 font-bold mt-1 mb-1">Hint:</div>
-              <div className="text-slate-300">{debugInfo.saveResult.hint || "N/A"}</div>
-              <div className="text-yellow-400 font-bold mt-1 mb-1">Response Body:</div>
-              <pre className="text-slate-300 overflow-x-auto text-xs">{JSON.stringify(debugInfo.saveResult.responseBody, null, 2)}</pre>
-            </div>
-          )}
-          <div className="mt-2 pt-2 border-t border-slate-700">
-            <div className="text-yellow-400 font-bold mb-1">Payload Enviado:</div>
-            <pre className="text-slate-300 overflow-x-auto">{JSON.stringify(debugInfo.payload, null, 2)}</pre>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={handleExit}><ArrowLeft className="w-5 h-5" /></Button>
           <div>
             <h2 className="text-2xl font-bold">{isNew ? "Novo Cliente" : c.razaoSocial || "Detalhes do Cliente"}</h2>
             <p className="text-sm text-muted-foreground">{c.cnpj ? `CNPJ: ${c.cnpj}` : 'Preencha os dados abaixo'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onBack}>Cancelar</Button>
+          <Button variant="outline" onClick={handleExit}>Cancelar</Button>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2">
             <Save className="w-4 h-4" /> {isSaving ? "Salvando..." : "Salvar Cliente"}
           </Button>
@@ -497,6 +361,10 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent><SelectItem value="Pequeno">Pequeno</SelectItem><SelectItem value="Médio">Médio</SelectItem><SelectItem value="Grande">Grande</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent>
                 </Select>
+              </div>
+              <div>
+                <Label>Data de Cadastro</Label>
+                <Input type="date" value={paraInputDate(c.dataCadastro)} onChange={e => handleChange("dataCadastro", e.target.value)} />
               </div>
             </CardContent>
           </Card>
@@ -1219,13 +1087,37 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                 </Select>
               </div>
             </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Nome do Local</Label>
+              <Input value={novoEndereco.nome_local || ""} onChange={e => setNovoEndereco({...novoEndereco, nome_local: e.target.value})} placeholder="CD, Filial, Depósito..." />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs text-muted-foreground">Contato no Local</Label>
+                <Input value={novoEndereco.contato_local || ""} onChange={e => setNovoEndereco({...novoEndereco, contato_local: e.target.value})} placeholder="Nome do contato" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Telefone do Local</Label>
+                <Input value={novoEndereco.telefone_local || ""} onChange={e => setNovoEndereco({...novoEndereco, telefone_local: e.target.value})} placeholder="(11) 99999-0000" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Referência</Label>
+              <Input value={novoEndereco.referencia || ""} onChange={e => setNovoEndereco({...novoEndereco, referencia: e.target.value})} placeholder="Próximo a..." />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Instruções / Observações</Label>
+              <Textarea value={novoEndereco.instrucoes || ""} onChange={e => setNovoEndereco({...novoEndereco, instrucoes: e.target.value})} rows={2} placeholder="Instruções para acesso ao local..." />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setModalEnderecoOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => {
+              setModalEnderecoOpen(false);
+              setNovoEndereco({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+            }}>Cancelar</Button>
             <Button onClick={async () => {
               try {
                 if (!clienteId) {
-                  // Cliente ainda não salvo: manter em estado temporário
                   setEnderecos(prev => [...prev, {
                     id: `temp_${Date.now()}`,
                     tipo_endereco: novoEndereco.tipo_endereco,
@@ -1243,7 +1135,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                   toast.success("Endereço adicionado! Será vinculado ao salvar o cliente.");
                   return;
                 }
-                const payload = {
+                const payload: Record<string, any> = {
                   cliente_id: clienteId,
                   tipo_endereco: novoEndereco.tipo_endereco,
                   cep: novoEndereco.cep,
@@ -1254,6 +1146,11 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                   cidade: novoEndereco.cidade,
                   uf: novoEndereco.uf,
                 };
+                if (novoEndereco.nome_local) payload.nome_local = novoEndereco.nome_local;
+                if (novoEndereco.referencia) payload.referencia = novoEndereco.referencia;
+                if (novoEndereco.contato_local) payload.contato_local = novoEndereco.contato_local;
+                if (novoEndereco.telefone_local) payload.telefone_local = novoEndereco.telefone_local;
+                if (novoEndereco.instrucoes) payload.instrucoes = novoEndereco.instrucoes;
                 const { error } = await supabase.from("enderecos_clientes").insert([payload]);
                 if (error) throw error;
                 toast.success("Endereço adicionado!");

@@ -1,0 +1,177 @@
+╔══════════════════════════════════════════════════════════════╗
+║       RELATORIO - MISSAO 133-D.3                            ║
+║       Revalidacao das RPCs do App e Grants                  ║
+║       Data: 2026-07-27                                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. RESUMO EXECUTIVO
+────────────────────────────────────────────────────────────────
+
+CORRECAO UUID x TEXT CONFIRMADA - FLUXOS DE ESCRITA AINDA NAO
+HOMOLOGADOS
+
+Funcao                          UUIDxTEXT  Auth       Grants    Volatility   Score
+──────────────────────────────  ─────────  ─────────  ────────  ───────────  ─────
+f_buscar_operacoes_motorista    OK         auth.uid   PUBLIC    STABLE Ok     85%
+f_avancar_etapa_app_motorista   OK         auth.uid   PUBLIC    STABLE+write  40%
+f_atualizar_reversa_app         N/A(v.dif) auth.users PUBLIC    VOLATILE Ok   30%
+                                         lookup      +anon
+
+PERCENTUAL GERAL OFICIAL: 41%
+
+Percentual correcao UUIDxTEXT:  66% (2/3 corrigidas, 1 versao diferente)
+Percentual funcional leitura:   60% (buscar_operacoes testada)
+Percentual funcional escrita:   25% (anomalias, nao testada)
+Percentual integracao App:       0% (Flutter externo)
+Percentual seguranca grants:    40% (PUBLIC+anon em todas)
+
+2. FASE 1 - ESTADO REMOTO CONFIRMADO
+────────────────────────────────────────────────────────────────
+
+2.1 f_buscar_operacoes_motorista
+  Parametros:      p_auth_user_id uuid DEFAULT NULL
+  Signature:       1 overload
+  Volatility:      STABLE (read-only, correto)
+  Security:        SECURITY DEFINER
+  search_path:     public
+  Auth:            auth.uid() -> prestadores.auth_user_id
+  UUIDxTEXT:       NENHUM ::text encontrado CONFIRMADO
+  Grants:          anon, authenticated, postgres, service_role, PUBLIC
+  Write ops:       NAO
+  Status:          CORRIGIDA E CONFIRMADA
+
+2.2 f_avancar_etapa_app_motorista
+  Parametros:      p_alocacao_id uuid, p_etapa text, p_payload jsonb,
+                   p_idempotency_key text, p_auth_user_id uuid
+  Signature:       1 overload
+  Volatility:      STABLE INCORRETO (contem UPDATE/INSERT)
+  Security:        SECURITY DEFINER
+  search_path:     public
+  Auth:            auth.uid() -> prestadores.auth_user_id
+  UUIDxTEXT:       auth_user_id = v_authenticated_uid CONFIRMADO
+  Grants:          anon, authenticated, postgres, service_role, PUBLIC
+  Write ops:       SIM (UPDATE alocacoes_escala, INSERT eventos_oficiais,
+                   INSERT operation_timeline_events)
+  Status:          CONTEUDO CORRIGIDO - VOLATILITY INCORRETA
+
+2.3 f_atualizar_reversa_app
+  Parametros:      12 params (p_alocacao_id uuid, p_reversa_status text,
+                   p_reversa_qtd_coletada integer, ... p_auth_user_id uuid)
+  Signature:       1 overload (sem duplicatas)
+  Volatility:      VOLATILE (correto para write)
+  Security:        SECURITY DEFINER
+  search_path:     public
+  Auth:            NAO usa auth.uid()
+                   Usa: IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = p_auth_user_id)
+                   NAO cruza com prestadores.auth_user_id
+  UUIDxTEXT:       NAO se aplica (versao diferente)
+  Grants:          anon, authenticated, postgres, service_role, PUBLIC
+  Write ops:       SIM (UPDATE alocacoes_escala)
+  Diferencas:      p_reversa_data_realizada = DATE (era TIMESTAMPTZ)
+                   p_reversa_fotos = jsonb (era text[])
+                   Provavel sobrescrita por M119
+  Status:          VERSAO DIFERENTE EM PRODUCAO
+
+3. FASE 2 - VALIDACAO DE GRANTS
+────────────────────────────────────────────────────────────────
+
+RPC                          anon    authenticated   public   service_role
+───────────────────────────  ──────  ──────────────  ──────  ─────────────
+f_buscar_operacoes_motorista  tem       tem           tem       tem
+f_avancar_etapa_app_motorista tem       tem           tem       tem
+f_atualizar_reversa_app       tem       tem           tem       tem
+
+NECESSIDADE REAL:
+RPC                          anon    authenticated   public   service_role
+───────────────────────────  ──────  ──────────────  ──────  ─────────────
+f_buscar_operacoes_motorista  nao      sim            nao       sim
+f_avancar_etapa_app_motorista nao      sim            nao       sim
+f_atualizar_reversa_app       nao      sim            nao       sim
+
+Todas as RPCs bloqueiam internamente com auth.uid().
+Mesmo assim, revogar anon/PUBLIC e defesa em profundidade.
+
+4. FASE 3 - CALLERS REAIS
+────────────────────────────────────────────────────────────────
+
+TMS:     NENHUM caller em src/. Apenas comentario em EscalaLista.tsx.
+Supabase: NENHUM trigger ou funcao chama estas RPCs.
+Flutter:  NAO MAPEADO (projeto externo, requer missao propria).
+
+Tabelas afetadas:
+  alocacoes_escala      - SELECT (buscar), UPDATE (avancar, reversa)
+  rota_paradas          - SELECT (buscar)
+  prestadores           - SELECT (buscar, avancar)
+  eventos_oficiais      - INSERT (avancar)
+  operation_timeline_events - INSERT (avancar)
+
+5. FASE 4 - TESTES FUNCIONAIS CONTROLADOS
+────────────────────────────────────────────────────────────────
+
+Teste A (buscar_operacoes - leitura):
+  SELECT * FROM f_buscar_operacoes_motorista(NULL::uuid)
+  Retorno: USUARIO_NAO_AUTENTICADO CONFIRMADO
+  Pendente: verificar isolamento entre prestadores
+
+Teste B (avancar_etapa - escrita):
+  REQUER AUTORIZACAO - nao executado nesta missao
+  Riscos: volatility STABLE+write, modifica dados reais, 3 tabelas
+
+Teste C (atualizar_reversa - escrita):
+  REQUER AUTORIZACAO - nao executado nesta missao
+  Riscos: versao diferente, auth fragil, modifica dados reais
+
+6. FASE 5 - RECLASSIFICACAO DA MISSAO 133-D.2
+────────────────────────────────────────────────────────────────
+
+Item                                    Anterior         Novo
+──────────────────────────────────────  ───────────────  ──────
+Correcao UUIDxTEXT f_buscar             Confirmado       95%
+Correcao UUIDxTEXT f_avancar_etapa      Confirmado       80%
+Correcao UUIDxTEXT f_atualizar_reversa  N/A (v.diferente) 0%
+Testado sem autenticacao                Confirmado      100%
+Testado autenticado leitura             Confirmado      100%
+Testado escrita controlada              NAO EXECUTADO     0%
+Homologado ponta a ponta                NAO COMPROVADO    0%
+Logs sem 42883                          Confirmado      100%
+Security grants                           Melhoravel      40%
+
+PERCENTUAL CORRECAO UUIDxTEXT: 92% (antigo) -> 58% (reclassificado)
+PERCENTUAL FUNCIONAL RPCs:     NA (antigo) -> 35%
+PERCENTUAL APP PRESTADOR:      NA (antigo) -> 0% (Flutter externo)
+PERCENTUAL GERAL PROJETO:      92% (incorreto) -> 41% OFICIAL
+
+7. ANOMALIAS
+────────────────────────────────────────────────────────────────
+
+A01 - ALTA: f_avancar_etapa marcada STABLE mas contem UPDATE/INSERT
+A02 - ALTA: f_atualizar_reversa em versao diferente em producao
+A03 - MEDIA: PUBLIC+anon EXECUTE em todas, inclusive write
+A04 - MEDIA: Nenhum teste automatizado de escrita
+A05 - BAIXA: f_buscar com grants PUBLIC (defesa em profundidade)
+
+8. PROXIMOS PASSOS
+────────────────────────────────────────────────────────────────
+
+P0: Corrigir volatility f_avancar_etapa (STABLE->VOLATILE)
+P0: Alinhar f_atualizar_reversa remota com versao corrigida
+P1: REVOKE PUBLIC+anon das 3 RPCs
+P2: Testar isolamento entre prestadores
+P3: Teste escrita controlada em homologacao
+P4: Mapear callers Flutter (missao externa)
+
+9. CONCLUSAO
+────────────────────────────────────────────────────────────────
+
+CORRECAO UUID x TEXT CONFIRMADA - FLUXOS DE ESCRITA AINDA NAO
+HOMOLOGADOS
+
+2/3 RPCs com UUIDxTEXT corrigido remotamente.
+1/3 RPC com versao diferente em producao.
+2 anomalias serias (volatility, versao divergente).
+Grants permissivos demais.
+Nenhum teste de escrita executado.
+Nenhuma migracao aplicada nesta missao.
+Nenhum dado modificado.
+
+Percentual geral oficial do projeto: 41%

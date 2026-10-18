@@ -1,0 +1,361 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2C.1-PREP — EXECUÇÃO REAL DAS 3 AUTOMAÇÕES
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 23:00 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [PREP COMPLETO — PRONTO PARA IMPLEMENTAÇÃO]
+
+═══════════════════════════════════════════════════════════════════════════════
+0. INFRAESTRUTURA EXISTENTE MAPEADA
+═══════════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────┬──────────────────────────────────────────┬──────────┐
+  │ Componente                      │ Arquivo(s)                               │ Reuso    │
+  ├─────────────────────────────────┼──────────────────────────────────────────┼──────────┤
+  │ Event Bus (publish + process)   │ eventBusService.ts, eventProcessorWorker │ P0       │
+  │ Rotinas Motor (scheduler)       │ rotinasMotorWorker.ts, rotinasMotorSvc   │ P0       │
+  │ Realtime candidatos             │ useKanbanRealtime.ts (table in pub)      │ P0       │
+  │ Task Queue                      │ centralIaService.criarTarefa()           │ P1       │
+  │ Audit Log                       │ centralIaService.registrarLog()          │ P1       │
+  │ Action Engine (dispatch)        │ actionEngineService.ts                   │ P1       │
+  │ Bridge Trigger pattern          │ trg_bridge_prestador_para_recrutamento   │ P1       │
+  │ Notification Queue              │ portal_notificacoes + trigger            │ P2       │
+  │ Edge Function proxy-ia          │ proxy-ia/index.ts                        │ P2       │
+  │ Recruitment Robot               │ roboRecrutamentoService.ts               │ P0       │
+  │ Criar Candidato Service         │ criarCandidatoService.ts                 │ P0       │
+  └─────────────────────────────────┴──────────────────────────────────────────┴──────────┘
+
+  GAP CRÍTICO: ZERO triggers em recrutamento_candidatos ou candidato_documentos.
+  Toda automação depende do client chamar criarCandidatoService.processarCandidato().
+
+═══════════════════════════════════════════════════════════════════════════════
+1. AUTOMAÇÃO: NOVO CANDIDATO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Evento fonte: INSERT em recrutamento_candidatos
+  Tabela/coluna: recrutamento_candidatos.id, recrutamento_candidatos.created_at
+
+  Mecanismo ideal: DB Trigger (AFTER INSERT)
+  Justificativa: já existe padrão idêntico (trg_bridge_prestador_para_recrutamento)
+  e a tabela já está no supabase_realtime publication.
+
+  Condição: Sempre (novo candidato criado por qualquer via)
+
+  Ação: INSERT em eventos_oficiais
+    event_type = 'recrutamento.candidato.criado'
+    entity_type = 'recrutamento_candidatos'
+    entity_id = NEW.id
+    payload = JSONB { nome, telefone, cidade, uf, stage, score }
+    source = 'trigger_db'
+    visibility = 'interna'
+
+  Processamento downstream (eventProcessorWorker):
+    case 'recrutamento.candidato.criado':
+      → registrarLog(robo_id=roboRecrutamento, acao='novo_candidato_detectado')
+      → criarTarefa(tipo='analise_candidato', prioridade='normal')
+      → atualizar recrutamento_automacoes WHERE tipo='whatsapp' AND status='ativa':
+        ultima_execucao = now(), total_execucoes += 1
+
+  Idempotência: trigger INSERT é atômico; dedup do eventBus (5s window)
+  protege contra duplicatas se houver múltiplos INSERTs rápidos.
+
+  Log/auditoria: automacoes_logs via centralIaService.registrarLog()
+
+  Atualização contadores: UPDATE recrutamento_automacoes SET
+    ultima_execucao = now(), total_execucoes = total_execucoes + 1
+
+  Tratamento de erro: trigger NÃO falha (INSERT em eventos_oficiais é best-effort;
+  se falhar, log via RAISE WARNING, não RAISE EXCEPTION)
+
+  Risco de duplicidade: BAIXO — trigger AFTER INSERT fires uma vez por row;
+  dedup do eventBus é camada extra de proteção.
+
+  Arquivos necessários:
+    1. supabase/migrations/20260907_rec_062c1_trigger_novo_candidato.sql
+       (CREATE FUNCTION + CREATE TRIGGER AFTER INSERT ON recrutamento_candidatos)
+    2. src/services/eventBus/eventProcessorWorker.ts
+       (adicionar case 'recrutamento.candidato.criado')
+    3. src/types/events.ts
+       (adicionar 'recrutamento.candidato.criado' ao EventType union)
+
+═══════════════════════════════════════════════════════════════════════════════
+2. AUTOMAÇÃO: SCORE
+═══════════════════════════════════════════════════════════════════════════════
+
+  Evento fonte: UPDATE em recrutamento_candidatos.score OU
+                UPDATE em recrutamento_candidatos.classificacao_comprometimento
+  Tabela/coluna: recrutamento_candidatos.score (numeric),
+                 recrutamento_candidatos.classificacao_comprometimento (text),
+                 recrutamento_candidatos.risco_desistencia (text)
+
+  Fonte REAL do score:
+    - score: calculado deterministicamente pelo scoreService.ts
+      (baseado em: tempo_medio_resposta_horas, quantidade_cobrancas,
+       confirmou_interesse, compareceu_primeiro_dia, completou_30_dias,
+       quantidade_reclamacoes, possui_outra_operacao_fixa)
+    - classificacao_comprometimento: derivada do score
+    - risco_desistencia: derivada do histórico
+    - NÃO usar Math.random() nem iaService stub
+
+  Mecanismo ideal: DB Trigger (AFTER UPDATE) + condição de limiar
+  Justificativa: permite detectar quando score cruza limite configurado
+  na automação (trigger JSONB field).
+
+  Condição:
+    OLD.score IS DISTINCT FROM NEW.score
+    AND EXISTS (
+      SELECT 1 FROM recrutamento_automacoes
+      WHERE tipo = 'score' AND status = 'ativa'
+      AND (trigger->>'score_min')::int IS NOT NULL
+      AND NEW.score >= (trigger->>'score_min')::int
+    )
+
+  Ação: INSERT em eventos_oficiais
+    event_type = 'recrutamento.score.limiar_cruzado'
+    entity_type = 'recrutamento_candidatos'
+    entity_id = NEW.id
+    payload = JSONB { nome, score_anterior: OLD.score, score_novo: NEW.score,
+                      classificacao: NEW.classificacao_comprometimento,
+                      limiar_configurado: (select trigger->>'score_min') }
+    source = 'trigger_db'
+    visibility = 'interna'
+
+  Processamento downstream (eventProcessorWorker):
+    case 'recrutamento.score.limiar_cruzado':
+      → registrarLog(robo_id=roboRecrutamento, acao='score_limiar_detectado')
+      → criarTarefa(tipo='revisao_score', prioridade='alta')
+      → atualizar recrutamento_automacoes WHERE tipo='score' AND status='ativa':
+        ultima_execucao = now(), total_execucoes += 1
+
+  Idempotência: trigger com OLD IS DISTINCT FROM NEW evita re-trigger
+  quando score não muda. Se score oscila (sobe/desce), cada cruzamento
+  gera 1 evento — comportamento correto.
+
+  Log/auditoria: automacoes_logs via centralIaService.registrarLog()
+
+  Atualização contadores: UPDATE recrutamento_automacoes SET
+    ultima_execucao = now(), total_execucoes = total_execucoes + 1
+
+  Tratamento de erro: trigger NÃO falha; se INSERT em eventos_oficiais falhar,
+  RAISE WARNING (não EXCEPTION).
+
+  Risco de duplicidade: MÉDIO — se score é atualizado múltiplas vezes no mesmo
+  segundo, pode gerar múltiplos eventos. Mitigação: dedup do eventBus (5s window)
+  OU adicionar coluna ultima_execucao por candidato na automação.
+
+  Arquivos necessários:
+    1. supabase/migrations/20260907_rec_062c1_trigger_score.sql
+       (CREATE FUNCTION + CREATE TRIGGER AFTER UPDATE ON recrutamento_candidatos)
+    2. src/services/eventBus/eventProcessorWorker.ts
+       (adicionar case 'recrutamento.score.limiar_cruzado')
+    3. src/types/events.ts
+       (adicionar 'recrutamento.score.limiar_cruzado' ao EventType union)
+
+═══════════════════════════════════════════════════════════════════════════════
+3. AUTOMAÇÃO: VALIDADE DOCUMENTAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  Evento fonte: INSERT/UPDATE em candidato_documentos
+  Tabela/coluna: candidato_documentos.validade (date),
+                 candidato_documentos.status (text),
+                 candidato_documentos.candidato_id (UUID FK)
+
+  Condição:
+    NEW.validade IS NOT NULL
+    AND NEW.validade <= (CURRENT_DATE + 30)  -- 30 dias de antecedência
+    AND (NEW.status IS NULL OR NEW.status != 'aprovado')
+
+  Mecanismo ideal: DB Trigger (AFTER INSERT OR UPDATE)
+  Justificativa: detecta documentos vencidos ou próximos do vencimento
+  no momento em que são cadastrados/atualizados.
+
+  Ação: INSERT em eventos_oficiais
+    event_type = 'recrutamento.documento.vencimento_proximo'
+    entity_type = 'candidato_documentos'
+    entity_id = NEW.id
+    payload = JSONB { candidato_id: NEW.candidato_id,
+                      tipo_documento: NEW.tipo,
+                      validade: NEW.validade,
+                      dias_para_vencer: (NEW.validade - CURRENT_DATE),
+                      status: NEW.status }
+    source = 'trigger_db'
+    visibility = 'interna'
+
+  Processamento downstream (eventProcessorWorker):
+    case 'recrutamento.documento.vencimento_proximo':
+      → registrarLog(robo_id=roboRecrutamento, acao='documento_vencimento_alerta')
+      → criarTarefa(tipo='renovacao_documento', prioridade='alta' se vencido, 'normal' se próximo)
+      → atualizar recrutamento_automacoes WHERE tipo='validade_documento' AND status='ativa':
+        ultima_execucao = now(), total_execucoes += 1
+
+  Idempotência: trigger com condição NEW.validade <= CURRENT_DATE + 30
+  evita eventos para documentos com validade distante. Se validade não muda,
+  trigger não dispara (OLD.validade IS NOT DISTINCT FROM NEW.validade → skip).
+
+  Log/auditoria: automacoes_logs via centralIaService.registrarLog()
+
+  Atualização contadores: UPDATE recrutamento_automacoes SET
+    ultima_execucao = now(), total_execucoes = total_execucoes + 1
+
+  Tratamento de erro: trigger NÃO falha; INSERT em eventos_oficiais é best-effort.
+
+  Risco de duplicidade: BAIXO — trigger dispara apenas quando validade muda
+  ou documento é inserido. Se documento é atualizado sem mudar validade,
+  não dispara novamente.
+
+  NÃO bloquear/liberar prestador: correto — esta automação apenas gera alerta.
+  Ação de bloqueio/liberação requer aprovação humana (fora do escopo).
+
+  Arquivos necessários:
+    1. supabase/migrations/20260907_rec_062c1_trigger_validade_documento.sql
+       (CREATE FUNCTION + CREATE TRIGGER AFTER INSERT OR UPDATE ON candidato_documentos)
+    2. src/services/eventBus/eventProcessorWorker.ts
+       (adicionar case 'recrutamento.documento.vencimento_proximo')
+    3. src/types/events.ts
+       (adicionar 'recrutamento.documento.vencimento_proximo' ao EventType union)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. SEQUÊNCIA DE IMPLEMENTAÇÃO MÍNIMA
+═══════════════════════════════════════════════════════════════════════════════
+
+  FASE 1 — Types + Event Bus (sem migration, sem DB change)
+  ─────────────────────────────────────────────────────────
+  1. src/types/events.ts:
+     Adicionar ao EventType union:
+       | 'recrutamento.candidato.criado'
+       | 'recrutamento.score.limiar_cruzado'
+       | 'recrutamento.documento.vencimento_proximo'
+
+  2. src/services/eventBus/eventProcessorWorker.ts:
+     Adicionar 3 cases no switch(event_type):
+       case 'recrutamento.candidato.criado':
+         → registrarLog + criarTarefa + atualizar automacao
+       case 'recrutamento.score.limiar_cruzado':
+         → registrarLog + criarTarefa + atualizar automacao
+       case 'recrutamento.documento.vencimento_proximo':
+         → registrarLog + criarTarefa + atualizar automacao
+
+  FASE 2 — Migrations (3 triggers DB)
+  ─────────────────────────────────────────────────────────
+  3. supabase/migrations/20260907_rec_062c1_trigger_novo_candidato.sql
+     CREATE FUNCTION f_trg_novo_candidato_evento()
+     CREATE TRIGGER trg_novo_candidato_evento
+       AFTER INSERT ON recrutamento_candidatos
+
+  4. supabase/migrations/20260907_rec_062c1_trigger_score.sql
+     CREATE FUNCTION f_trg_score_limiar_evento()
+     CREATE TRIGGER trg_score_limiar_evento
+       AFTER UPDATE ON recrutamento_candidatos
+       WHEN (OLD.score IS DISTINCT FROM NEW.score)
+
+  5. supabase/migrations/20260907_rec_062c1_trigger_validade_documento.sql
+     CREATE FUNCTION f_trg_validade_documento_evento()
+     CREATE TRIGGER trg_validade_documento_evento
+       AFTER INSERT OR UPDATE ON candidato_documentos
+
+  FASE 3 — Provas
+  ─────────────────────────────────────────────────────────
+  6. scripts/rec062c1_prova_triggers.cjs
+     Testar cada trigger:
+       a. INSERT recrutamento_candidatos → evento criado?
+       b. UPDATE score → evento criado quando cruza limiar?
+       c. INSERT candidato_documentos com validade próxima → evento criado?
+     Verificar:
+       - eventos_oficiais tem novos registros
+       - recrutamento_automacoes teve ultima_execucao/total_execucoes atualizados
+       - automacoes_logs tem registros de auditoria
+     Cleanup: remover registros de teste
+
+  FASE 4 — Regressão
+  ─────────────────────────────────────────────────────────
+  7. npx tsc --noEmit → 0 erros
+  8. npx vitest run → sem novas falhas
+  9. Bridge trigger não quebrado (trg_bridge_prestador_para_recrutamento)
+
+═══════════════════════════════════════════════════════════════════════════════
+5. PADRÃO DOS TRIGGERS (template)
+═══════════════════════════════════════════════════════════════════════════════
+
+  CREATE OR REPLACE FUNCTION public.f_trg_XXX()
+  RETURNS TRIGGER AS $$
+  DECLARE
+    v_automacao_id UUID;
+  BEGIN
+    -- Verificar se existe automação ativa do tipo correspondente
+    SELECT id INTO v_automacao_id
+    FROM recrutamento_automacoes
+    WHERE tipo = 'TIPO_XYZ' AND status = 'ativa'
+    LIMIT 1;
+
+    -- Se não há automação ativa, não fazer nada
+    IF v_automacao_id IS NULL THEN
+      RETURN NEW;
+    END IF;
+
+    -- Inserir evento no event bus (best-effort)
+    BEGIN
+      INSERT INTO eventos_oficiais (
+        event_type, entity_type, entity_id, payload, source, visibility
+      ) VALUES (
+        'recrutamento.XXX',
+        'TABLE_NAME',
+        NEW.id,
+        jsonb_build_object(...),
+        'trigger_db',
+        'interna'
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Falha ao inserir evento de automação: %', SQLERRM;
+    END;
+
+    -- Atualizar contadores da automação
+    UPDATE recrutamento_automacoes
+    SET ultima_execucao = now(),
+        total_execucoes = total_execucoes + 1
+    WHERE id = v_automacao_id;
+
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+═══════════════════════════════════════════════════════════════════════════════
+6. RISCOS E MITIGAÇÕES
+═══════════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────┬──────────────────────────────────────────┐
+  │ Risco                            │ Mitigação                                │
+  ├──────────────────────────────────┼──────────────────────────────────────────┤
+  │ Trigger falha e bloqueia INSERT  │ EXCEPTION WHEN OTHERS → RAISE WARNING    │
+  │ Trigger gera loop infinito       │ Trigger não UPDATE a tabela que disparou │
+  │ Trigger lento (query automacoes) │ INDEX on (tipo, status) já existe        │
+  │ Eventos duplicados               │ dedup eventBus (5s window)               │
+  │ Trigger quebra bridge existente  │ Bridge é AFTER INSERT ON prestadores;    │
+  │                                  │ novos triggers são em tabelas diferentes │
+  │ Score trigger dispara em loop    │ WHEN (OLD.score IS DISTINCT FROM NEW)    │
+  │ Documento trigger dispara sempre │ Condição: validade <= now() + 30 dias    │
+  └──────────────────────────────────┴──────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+7. ARQUIVOS EXATOS PARA IMPLEMENTAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Novos:
+    supabase/migrations/20260907_rec_062c1_trigger_novo_candidato.sql
+    supabase/migrations/20260907_rec_062c1_trigger_score.sql
+    supabase/migrations/20260907_rec_062c1_trigger_validade_documento.sql
+    scripts/rec062c1_prova_triggers.cjs
+
+  Modificados:
+    src/types/events.ts (adicionar 3 event types)
+    src/services/eventBus/eventProcessorWorker.ts (adicionar 3 cases)
+
+  NÃO alterados:
+    automacoesService.ts (já migrado para Supabase em REC-06.2C)
+    AutomacoesList.tsx (UI preservada)
+    Nenhum arquivo de Kanban/Score/IA/Documentos/WhatsApp/bridge
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2C.1-PREP
+[PREP COMPLETO — PRONTO PARA IMPLEMENTAÇÃO]
+═══════════════════════════════════════════════════════════════════════════════

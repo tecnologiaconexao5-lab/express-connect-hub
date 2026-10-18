@@ -1,0 +1,145 @@
+ESCALA-E2E-07B-TABELA-VUC-HOMOLOGACAO
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: PREPARAÇÃO CONTROLADA (PRECHECK falhou → criação NÃO executada)
+
+RESULTADO: BLOCKED_PROVIDER_COST
+HML_TABLE_CREATED=NO
+DB_WRITES=0
+
+==================================================
+PASSO 1 — PRECHECK READ-ONLY
+==================================================
+
+1) TABELAS VUC: NENHUMA (busca por tipo_veiculo ~ vuc/furgão) → confirmado.
+   Tabelas ativas existentes: fiorino(2), hr(2), tres_quartos(1), moto(1 universal).
+
+2) SCHEMA CANÔNICO de tabelas_valores (colunas reais usadas pela Escala):
+   - tipo_veiculo (NOT NULL) — canônico, ex.: 'vuc'
+   - nome (NOT NULL)
+   - valor_base, franquia_km, km_franquia, valor_km, valor_km_excedente
+   - percentual_prestador, tipo_repasse_prestador, valor_fixo_prestador
+   - universal (bool), cliente (TEXT — nome, não FK), ativo (bool)
+   - tenant_id (UUID) — usar 00000000-0000-0000-0000-000000000001
+   - vigência: data_inicio, data_fim (DATE, nullable)
+   - condição térmica: exigencia_termica / classificacao_termica (uso em ambiguidade)
+   - NOT NULL (obrigatórias): apenas id (default gen_random_uuid()), nome, tipo_veiculo.
+   → Nenhuma coluna inventada.
+
+3) VEÍCULO HML-A27B (87dceca0-3d81-45a9-8878-047019fa3a58):
+   tipo_veiculo='vuc' | tipo_carga='seca' (condição térmica REAL = seco) | status=Ativo
+   prestador_vinculado=e6646799 | temperatura_min/max = null
+
+4) CADASTRO DO PRESTADOR TESTE APP (e6646799):
+   status=ativo | liberado_app=true | tipo_parceiro=motorista
+   valor_diaria = NULL
+   valor_saida  = NULL
+   valor_km     = NULL
+   franquia_km  = NULL
+   fixo_mensal  = NULL
+   valor_ajudante/espera/reentrega/devolucao = NULL
+   regra de repasse existente = NENHUMA
+   tabela_prestador: só existe "Moto São Paulo" (tipo moto) — NÃO há custo para VUC.
+
+5) REGRA REAL DE REPASSE (código):
+   src/helpers/repassePrestador.ts — resolverRepassePrestadorBase, modo 'cadastro' (padrão):
+     base = valor_diaria (se >0) ?? valor_saida (se >0) ?? 0
+   EscalaLista.tsx:793 — "base = valor_diaria ?? valor_saida do prestador (sem usar % da tabela)".
+   → Sem valor_diaria e sem valor_saida ⇒ base = 0. NÃO há fallback oculto.
+
+CONCLUSÃO PASSO 1:
+   PRECHECK_PASS=NO
+   PROVIDER_COST_VALID=NO
+   PROVIDER_DEFAULT_SOURCE=(nenhum — valor_diaria e valor_saida ausentes)
+   PROVIDER_DEFAULT_VALUE=0.00
+   → BLOQUEADOR: BLOCKED_PROVIDER_COST.
+
+==================================================
+DECISÃO (conforme instrução)
+==================================================
+"Se o prestador teste não possuir valor de repasse válido (>0), PARAR com
+BLOCKED_PROVIDER_COST. Não alterar o cadastro do prestador nesta missão."
+→ Criação da tabela VUC NÃO executada (PASSO 3 exige todos os prechecks OK).
+→ Cadastro do prestador NÃO alterado.
+→ Nenhum INSERT/UPDATE/DELETE executado. DB_WRITES=0.
+
+==================================================
+PROPOSTA PRONTA (NÃO EXECUTADA) — para missão futura
+==================================================
+
+(A) Tabela VUC de homologação (1 linha) — INSERT proposto:
+  INSERT INTO tabelas_valores
+    (nome, tipo_veiculo, valor_base, franquia_km, km_franquia, valor_km_excedente,
+     percentual_prestador, tipo_repasse_prestador, universal, cliente, ativo,
+     data_inicio, data_fim, tenant_id)
+  VALUES
+    ('HML E2E VUC - HOMOLOGACAO APP', 'vuc', 300.00, 100, 100, 1.20,
+     80.00, 'percentual', false, 'HOMOLOGAÇÃO APP', true,
+     CURRENT_DATE, CURRENT_DATE + 7, '00000000-0000-0000-0000-000000000001');
+  Observação: cliente = nome exato 'HOMOLOGAÇÃO APP' para match NÍVEL 3/4 (não universal),
+  minimizando interferência em operação real.
+  Cleanup (a executar após E2E-08):
+    DELETE FROM tabelas_valores WHERE id = '<HML_TABLE_ID>';
+  (Se aprovado manter rótulo de homologação em vez de deletar, usar DELETE como rollback.)
+
+(B) Custo do prestador (bloqueador atual) — 2 opções, NÃO executar sem autorização:
+  B1) Preencher cadastro do PRESTADOR TESTE APP: valor_diaria > 0 (ex.: 350) — altera cadastro;
+  B2) Criar 1 linha em tabela_prestador para VUC (nome genérico + tipo_veiculo='vuc',
+      cidade/uf) — sem alterar o prestador.
+
+==================================================
+CENÁRIO PREVISTO (SE a tabela e o custo existissem)
+==================================================
+TEST_KM=150
+EXPECTED_CLIENT_BASE=300.00
+EXPECTED_EXCESS_KM=50
+EXPECTED_EXCESS_VALUE=60.00 (50 × 1.20)
+EXPECTED_CLIENT_VALUE=360.00
+EXPECTED_PROVIDER_VALUE=0.00 (cadastro do prestador ausente) → precisa B1/B2
+CLIENT_PROVIDER_VALUES_INDEPENDENT=YES
+
+==================================================
+MATCH / INTERFERÊNCIA
+==================================================
+TABLE_SELECTION_PROVEN=NO (não executado — tabela não criada)
+TYPE_MATCH=n/a
+CLIENT_MATCH=n/a
+THERMAL_MATCH=n/a (veículo 'seca' — sem ambiguidade térmica)
+INTERFERENCE_WITH_REAL_OPERATION=NO (nada criado)
+
+==================================================
+ENTREGÁVEIS
+==================================================
+PRECHECK_PASS=NO
+HML_TABLE_CREATED=NO
+TABLE_SELECTION_PROVEN=NO
+PROVIDER_COST_VALID=NO
+EXPECTED_CLIENT_VALUE=360.00 (teórico)
+EXPECTED_PROVIDER_VALUE=0.00
+INTERFERENCE_WITH_REAL_OPERATION=NO
+GO_FOR_E2E_08=NO
+BLOCKER=BLOCKED_PROVIDER_COST (PRESTADOR TESTE APP sem valor_diaria/valor_saida > 0;
+  sem tabela_prestador para VUC)
+
+==================================================
+NEXT_MINIMAL_MISSION
+==================================================
+Resolver SOMENTE o custo do prestador de teste (opção B2 preferida — não altera o cadastro):
+  ESCALA-E2E-07C-CUSTO-PRESTADOR-HML (criar 1 linha tabela_prestador VUC de homologação)
+  e, no mesmo passo, criar a tabela VUC de homologação (proposta A acima).
+  Depois: ESCALA-E2E-08-EXECUCAO-REAL-CONTROLADA.
+Alternativa: B1 (preencher valor_diaria do prestador teste) — exige autorização por alterar cadastro.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+- Não alterou prestador/BRUNO/veículo/cliente. Não criou alocação/OS/financeiro.
+- Não usou percentual de repasse automaticamente. Nenhuma migration.
+- Não tratou outras pendências. Nenhum dado criado/alterado/excluído.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0
+HML_TABLE_ID=(não criado)
+CLEANUP_FILE=(não aplicável — nada criado)

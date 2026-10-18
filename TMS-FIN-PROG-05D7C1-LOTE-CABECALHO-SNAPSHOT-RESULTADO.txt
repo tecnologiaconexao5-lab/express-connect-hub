@@ -1,0 +1,202 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7C.1-LOTE-CABECALHO-SNAPSHOT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (provas em transacao + ROLLBACK)
+MODELO: DeepSeek V4.1 Flash
+TIPO: extensao estrutural minima (cabecalho + snapshot). SEM iFi/CNAB/envio/baixa.
+RESULTADO: PASS — lote com cabecalho real; cada pagamento com snapshot imutavel;
+           all-or-nothing preservado; nenhum dinheiro movimentado.
+================================================================================
+
+--------------------------------------------------------------------------------
+0. AUDITORIA PRE (confirmada)
+--------------------------------------------------------------------------------
+- NAO existia tabela equivalente a lotes_pagamento (criada agora).
+- pagamentos_prestadores.lote_id existia SEM FK (agora com FK fk_pp_lote).
+- Dados bancarios canonicos: prestadores.banco/agencia/conta/digito/tipo_conta/
+  favorecido/cpf_cnpj_favorecido/chave_pix/tipo_chave_pix (todos NULLABLE).
+- Cobertura real: 40 prestadores, 2 com chave_pix, 0 com conta completa.
+- tenant derivavel por f_pp_tenant_id(os_id).
+- RPC 05D.7B.1 vigente (6981 chars) — evoluida nesta missao.
+=> Nada duplicado.
+
+--------------------------------------------------------------------------------
+1. SCHEMA CRIADO
+--------------------------------------------------------------------------------
+public.lotes_pagamento (cabecalho):
+  id uuid PK DEFAULT gen_random_uuid(); tenant_id uuid NOT NULL;
+  status text NOT NULL DEFAULT 'preparado' CHECK IN
+    ('preparado','enviado','processando','processado','erro','cancelado');
+  quantidade_pagamentos int NOT NULL; valor_total numeric NOT NULL;
+  provider text; id_externo_provider text; criado_por uuid;
+  created_at/updated_at timestamptz NOT NULL DEFAULT now();
+  enviado_at/processado_at timestamptz NULL. Index idx_lotes_pagamento_tenant.
+public.lotes_pagamento_itens (snapshot por item):
+  id uuid PK; lote_id uuid NOT NULL FK -> lotes_pagamento(id) ON DELETE CASCADE;
+  pagamento_prestador_id uuid NOT NULL FK -> pagamentos_prestadores(id) ON DELETE CASCADE;
+  prestador_id uuid; valor numeric NOT NULL; forma_destino text;
+  banco/agencia/conta/digito/tipo_conta/favorecido/documento_favorecido/
+  chave_pix/tipo_chave_pix text (SNAPSHOT); created_at timestamptz DEFAULT now().
+FK: pagamentos_prestadores.lote_id -> lotes_pagamento(id) ON DELETE SET NULL.
+
+--------------------------------------------------------------------------------
+2. FKs / UNIQUES
+--------------------------------------------------------------------------------
+- fk_pp_lote: FOREIGN KEY (lote_id) REFERENCES lotes_pagamento(id) ON DELETE SET NULL.
+- uq_lote_item: UNIQUE (lote_id, pagamento_prestador_id) — impede item duplicado.
+- Indices: idx_lotes_pagamento_tenant, idx_lotes_pagamento_itens_lote,
+  idx_lotes_pagamento_itens_pag.
+
+--------------------------------------------------------------------------------
+3. FLUXO RPC ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES (05D.7B.1): lock -> guards -> gen UUID -> UPDATE pp (lote_id, em_lote).
+DEPOIS (05D.7C.1), tudo em UMA transacao (ALL-OR-NOTHING):
+  lock pagamentos (FOR UPDATE)
+  -> guards existentes (+ NOVO guard DESTINO_INVALIDO)
+  -> validar destino bancario de cada prestador
+  -> gen UUID (v_novo)
+  -> INSERT lotes_pagamento (status 'preparado', quantidade, SUM(valor_liquido))
+  -> INSERT lotes_pagamento_itens (snapshot congelado do prestador)
+  -> UPDATE pagamentos_prestadores (lote_id=v_novo, status_pagamento='em_lote')
+  -> COMMIT
+Se qualquer id/prestador invalido: NAO cria cabecalho, NAO cria item, NAO altera pp.
+
+--------------------------------------------------------------------------------
+4. ORIGEM DOS DADOS BANCARIOS / REGRA DE VALIDACAO
+--------------------------------------------------------------------------------
+Fonte: tabela prestadores (por pagamentos_prestadores.prestador_id).
+Destino VALIDO = (chave_pix preenchida) OU (banco E agencia E conta preenchidos).
+NAO inventa PIX; NAO completa CPF/CNPJ; NAO usa conta da Conexao.
+Sem destino valido -> bloqueio DESTINO_INVALIDO (nao cria nada).
+
+--------------------------------------------------------------------------------
+5. SNAPSHOT / IMUTABILIDADE
+--------------------------------------------------------------------------------
+Cada item do lote congela os campos bancarios do prestador no momento da formacao.
+Alterar o cadastro do prestador DEPOIS nao altera o item do lote (provado em E).
+A futura execucao bancaria deve usar o SNAPSHOT, nunca o cadastro vivo.
+
+--------------------------------------------------------------------------------
+6. RLS
+--------------------------------------------------------------------------------
+lotes_pagamento: ENABLE RLS; SELECT TO authenticated
+  USING (EXISTS tenant_usuarios tu WHERE user_id=auth.uid() AND status='ativo'
+         AND tu.tenant_id = lotes_pagamento.tenant_id
+         AND tu.papel IN ('super_admin','admin_tenant','financeiro')).
+lotes_pagamento_itens: ENABLE RLS; SELECT TO authenticated via JOIN lotes_pagamento
+  (mesmo tenant/papel).
+- SEM policy de INSERT/UPDATE/DELETE -> a UI comum nao escreve/apaga (a RPC, que e
+  SECURITY DEFINER, e a unica autoridade de escrita).
+- REVOKE ALL de PUBLIC/anon; GRANT SELECT a authenticated.
+- Anon: sem acesso. Prestador: sem acesso ao lote/snapshot geral.
+- Snapshot bancario nao e exibido na listagem (apenas "Destino validado").
+
+--------------------------------------------------------------------------------
+7. PROVIDAS A-N (20/20 PASS + K PASS)
+--------------------------------------------------------------------------------
+A) 1 valido -> 1 header + 1 item + pp.lote_id=header + em_lote .............. PASS
+B) 3 validos -> 1 header + 3 itens (quantidade=3) .......................... PASS
+C) total: header.valor_total = SUM(itens.valor) = SUM(pp.valor_liquido) .... PASS
+   (600.00 = 600 = 600.00, sem diferenca de centavo)
+D) dois prestadores -> snapshots independentes (2 prestadores) ............. PASS
+E) snapshot imutavel apos alterar cadastro do prestador (permanece ORIGINAL). PASS
+F) sem destino bancario -> 0 header + 0 item + pp intacto (DESTINO_INVALIDO) PASS
+G) cross-tenant bloqueado ('Registro pertence a outro tenant') ............. PASS
+H) teste/HML bloqueado ..................................................... PASS
+I) pago e cancelado bloqueados ............................................ PASS
+J) reexecucao -> mesmo header, sem duplicar item (1 header/1 item, ja=1) ... PASS
+K) concorrencia -> 2a conexao bloqueada por lock (timeout); sem 2o lote .... PASS
+L) anon -> permission denied (REVOKE) ..................................... PASS
+M) prestador -> 0 linhas no lote/snapshot geral (RLS) ..................... PASS
+N) financeiro do tenant -> consulta lote do proprio tenant ................ PASS
+
+--------------------------------------------------------------------------------
+8. IDEMPOTENCIA / CONCORRENCIA
+--------------------------------------------------------------------------------
+- Mesmos ids ja no mesmo lote -> retorna o lote existente (lote_id), NAO cria
+  segundo cabecalho, NAO cria itens duplicados (uq_lote_item + guard JA_EM_LOTE).
+- Mistura sem-lote + em-lote -> bloqueia (MISTURA_JA_EM_LOTE_E_SEM_LOTE).
+- Lotes diferentes -> bloqueia (LOTES_DIFERENTES).
+- Locking: PERFORM ... FOR UPDATE preservado; concorrencia provada (K).
+
+--------------------------------------------------------------------------------
+9. TESOURARIA (leitura)
+--------------------------------------------------------------------------------
+PagamentoCNAB.tsx passa a LER lotes_pagamento (cabecalho) + lotes_pagamento_itens
+(para contar prestadores), mostrando: lote (id curto + copiar), pagamentos
+(header.quantidade), prestadores (distinct), gerado em, badge "Destino validado",
+status "Preparado / Aguardando execucao bancaria" e total (header.valor_total).
+NAO exibe PIX/conta. Botoes bancarios permanecem DESABILITADOS
+("Gerar Remessa/Importar Retorno/Enviar PIX — indisponivel"). Nenhum caminho de
+pagamento/baixa.
+
+--------------------------------------------------------------------------------
+10. ARQUIVOS / MIGRATION / ROLLBACK
+--------------------------------------------------------------------------------
+- supabase/migrations/20260924000016_fin_prog05d7c1_lote_cabecalho_snapshot.sql
+  (tabelas + FK + RLS + grants + CREATE OR REPLACE da RPC).
+- supabase/migrations/20260924000017_fin_prog05d7c1_lote_cabecalho_rollback.sql
+  (drop function, drop FK, drop itens, drop cabecalho; reaplicar 20260924000014
+   restaura a RPC 05D.7B.1).
+- src/components/financeiro/PagamentoCNAB.tsx (leitura do cabecalho/itens).
+NENHUMA alteracao em pagamentos_prestadores/financeiro_pagar/financeiro_baixas.
+
+--------------------------------------------------------------------------------
+11. BANCO ANTES = DEPOIS (provas em ROLLBACK)
+--------------------------------------------------------------------------------
+lotes_pagamento .............. 0
+lotes_pagamento_itens ........ 0
+pagamentos_prestadores ....... 137
+lote_id NOT NULL ............. 0
+status_pagamento='em_lote' ... 0
+financeiro_pagar ............. 178
+financeiro_baixas ............ 19
+soma valor_liquido ........... 90.229,96 (preservada)
+
+--------------------------------------------------------------------------------
+12. REGRESSAO
+--------------------------------------------------------------------------------
+- 05D.7C.1 provas A-N: 20/20 PASS + K (concorrencia) PASS.
+- 05D.7B.3 (fila aptos) 8/8; 05D.7B.2 15/15; 05D.6D.1 12/12; CONTA-01 7/7
+  (vitest: 9 arquivos / 182 testes PASS no subset executado).
+- 05D.6B.1 17/17; 05D.6B 20/20; 05D.6A 15/15; 05D.4 13/13 (scripts).
+- 05D.7B.1 (script legado 05D.7B.1): casos NEGATIVOS seguem PASS
+  (pago/cancelado/teste/cross-tenant/sem-tenant/papel/prestador). Casos POSITIVOS
+  e de "lotes diferentes" ficaram SUPERADOS: agora exigem destino valido e o
+  lote_id tem FK (o script antigo gravava lote_id ficticio -> viola fk_pp_lote).
+  Isso e o comportamento NOVO esperado, coberto pelas provas 7C.1.
+- npm run build: OK — "built in 59.42s".
+- tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+13. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Validacao de destino e rigorosa: hoje apenas 2/40 prestadores tem chave_pix e
+    0 tem conta completa -> a formacao de lote bloqueara ate o cadastro bancario
+    ser completado. (Esperado; evita pagar sem destino.)
+R2) Sem cancelamento operacional de lote nesta fase (pendencia). DELETE pela UI
+    comum esta impedido por ausencia de policy; a RPC (definer) e a autoridade.
+R3) Snapshot contem dado sensivel; protegido por RLS (tenant + papel). Nao ha
+    criptografia de coluna; exposicao limitada a financeiro/admin do tenant.
+R4) fk_pp_lote ON DELETE SET NULL: se um cabecalho for removido fora da RPC, o
+    lote_id do pagamento volta a NULL (sem policy de DELETE pela UI).
+R5) ORIGEM dos dados: f_pp_tenant_id usa OS/alocacao; registros sem vinculo
+    (21 indeterminados) continuam fora da fila (SEM_TENANT).
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+iFi; CNAB; envio PIX; baixa; conciliacao; f_confirmar_pagamento_prestador;
+financeiro_baixas; financeiro_pagar; M66/M80; faturas/AR; FIN-CONTA-01;
+contas financeiras da Conexao; MargemOperacional; 21 indeterminados; CESAR; APP;
+Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7C1-LOTE-CABECALHO-SNAPSHOT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7C1-LOTE-CABECALHO-SNAPSHOT-RESULTADO.txt
+Tamanho ..: 12191 bytes
+Data .....: 24/09/2026 18:43:55
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7C.1
+================================================================================

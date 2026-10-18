@@ -1,0 +1,197 @@
+{
+  "ts": "2026-10-04T23:15:06.268Z",
+  "checks": [
+    {
+      "name": "rpc_confirmar_prestador",
+      "ok": true,
+      "detail": "f_confirmar_pagamento_prestador presente"
+    },
+    {
+      "name": "rpc_confirmar_fechamento",
+      "ok": true,
+      "detail": "f_confirmar_pagamento_fechamento presente"
+    },
+    {
+      "name": "rpc_gerar_lote",
+      "ok": true,
+      "detail": "f_gerar_lote_pagamentos presente"
+    },
+    {
+      "name": "rpc_registrar_baixa",
+      "ok": true,
+      "detail": "f_registrar_baixa_financeira presente"
+    },
+    {
+      "name": "rpc_estornar",
+      "ok": true,
+      "detail": "f_estornar_pagamento_prestador presente"
+    },
+    {
+      "name": "guarda_pagar_sem_baixa",
+      "ok": true,
+      "detail": "[{\"tabela\":\"financeiro_receber\",\"tgname\":\"trg_guardar_receber_pago_sem_baixa\",\"funcao\":\"trg_guardar_receber_pago_sem_baixa\"},{\"tabela\":\"financeiro_pagar\",\"tgname\":\"trg_guardar_pagar_pago_sem_baixa\",\"funcao\":\"trg_guardar_pagar_pago_sem_baixa\"}]"
+    },
+    {
+      "name": "financeiro_pagar_pago_com_baixa",
+      "ok": true,
+      "detail": "0 titulos 'pago' SEM baixa"
+    },
+    {
+      "name": "baixa_saldo_integra",
+      "ok": true,
+      "detail": "0 baixas com saldo inconsistente"
+    },
+    {
+      "name": "baixa_nao_excede",
+      "ok": true,
+      "detail": "0 baixas excedem o titulo"
+    },
+    {
+      "name": "pp_pago_com_baixa",
+      "ok": false,
+      "detail": "2/5 PP 'pago' com baixa vinculada"
+    },
+    {
+      "name": "ciclo_pagar_pago",
+      "ok": false,
+      "detail": "2/5 com financeiro_pagar 'pago'"
+    }
+  ],
+  "pago_pp": [
+    {
+      "id": "4262fec6-b2a1-4f23-8605-32210905754e",
+      "prestador_nome": "M43_2026-06-29_18-24-20 Motorista Teste",
+      "os_id": "c4338964-d565-49fb-a72a-211246a60079",
+      "valor_liquido": "1430.00",
+      "status": "pago",
+      "status_pagamento": "pago",
+      "data_pagamento": "2026-09-18T03:00:00.000Z",
+      "origem_lancamento": "escala_direta",
+      "created_at": "2026-09-18T03:00:00.000Z",
+      "fp_id": "d4ae8efe-27e0-42c7-8c2b-d2fd04d87af3",
+      "fp_status": "pago",
+      "fp_valor": "1430.00",
+      "fb_id": "fe01c1a8-66aa-4e62-8508-941a9aa249d0",
+      "valor_baixado": "1430.00",
+      "conta_financeira_id": "9741ad36-79a6-4e1f-94a5-512e08758186",
+      "data_baixa": "2026-09-18T03:00:00.000Z"
+    },
+    {
+      "id": "3884e3c0-74ab-435f-b67d-55a6c6c4f938",
+      "prestador_nome": "MOTORISTA TESTE 02L",
+      "os_id": null,
+      "valor_liquido": "1430.00",
+      "status": "pago",
+      "status_pagamento": "pago",
+      "data_pagamento": "2026-09-18T03:00:00.000Z",
+      "origem_lancamento": "fechamento",
+      "created_at": "2026-09-18T03:00:00.000Z",
+      "fp_id": null,
+      "fp_status": null,
+      "fp_valor": null,
+      "fb_id": null,
+      "valor_baixado": null,
+      "conta_financeira_id": null,
+      "data_baixa": null
+    },
+    {
+      "id": "32fe474f-41c7-432b-a21e-7d0b2831c1bb",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "os_id": null,
+      "valor_liquido": "2177.92",
+      "status": "pago",
+      "status_pagamento": "pago",
+      "data_pagamento": "2026-09-05T03:00:00.000Z",
+      "origem_lancamento": "manual",
+      "created_at": "2026-08-20T03:00:00.000Z",
+      "fp_id": null,
+      "fp_status": null,
+      "fp_valor": null,
+      "fb_id": null,
+      "valor_baixado": null,
+      "conta_financeira_id": null,
+      "data_baixa": null
+    },
+    {
+      "id": "6266f2a1-8f42-4898-9e44-a1fbd23add7b",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "os_id": null,
+      "valor_liquido": "658.20",
+      "status": "pago",
+      "status_pagamento": "pago",
+      "data_pagamento": "2026-09-05T03:00:00.000Z",
+      "origem_lancamento": "manual",
+      "created_at": "2026-09-04T03:00:00.000Z",
+      "fp_id": null,
+      "fp_status": null,
+      "fp_valor": null,
+      "fb_id": null,
+      "valor_baixado": null,
+      "conta_financeira_id": null,
+      "data_baixa": null
+    },
+    {
+      "id": "7bf3107d-d14c-47a6-a45c-3eeb52412c59",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "os_id": "ae30da69-1d16-4600-a27d-edfa073ef239",
+      "valor_liquido": "520.00",
+      "status": "pago",
+      "status_pagamento": "pago",
+      "data_pagamento": "2026-09-06T03:00:00.000Z",
+      "origem_lancamento": "escala_direta",
+      "created_at": "2026-08-31T03:00:00.000Z",
+      "fp_id": "6f871e9f-764b-4df7-a8f9-349d6f960fed",
+      "fp_status": "pago",
+      "fp_valor": "520.00",
+      "fb_id": "c2a233cb-e429-46b3-a693-26268e7dba36",
+      "valor_baixado": "520.00",
+      "conta_financeira_id": "9741ad36-79a6-4e1f-94a5-512e08758186",
+      "data_baixa": "2026-09-06T03:00:00.000Z"
+    }
+  ],
+  "guardas": [
+    {
+      "tabela": "financeiro_receber",
+      "tgname": "trg_guardar_receber_pago_sem_baixa",
+      "funcao": "trg_guardar_receber_pago_sem_baixa"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "tgname": "trg_guardar_pagar_pago_sem_baixa",
+      "funcao": "trg_guardar_pagar_pago_sem_baixa"
+    }
+  ],
+  "baixas": {
+    "total": 16,
+    "saldo_errado": 0,
+    "excede": 0,
+    "zerada": 0,
+    "sem_conta": 9,
+    "pagar": 6,
+    "estornadas": 0
+  },
+  "elegibilidade": {
+    "conferido_aprovado": 3,
+    "elegivel": 4,
+    "em_lote": 0,
+    "com_lote": 0
+  },
+  "distribuicao": [
+    {
+      "s": "pendente",
+      "n": 82
+    },
+    {
+      "s": "nao_vencido",
+      "n": 8
+    },
+    {
+      "s": "cancelado",
+      "n": 5
+    },
+    {
+      "s": "pago",
+      "n": 5
+    }
+  ]
+}

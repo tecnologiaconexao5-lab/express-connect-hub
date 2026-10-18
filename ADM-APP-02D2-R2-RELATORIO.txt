@@ -1,0 +1,315 @@
+================================================================================
+ADM-APP-02D.2-R2 — RELATORIO FINAL
+Fechamento hibrido (TMS/PC + Supabase/Storage + Redmi) do gate 02D.2
+================================================================================
+Data de execucao ......: 01/10/2026 (21:30–22:20, horario local do dispositivo)
+Projeto TMS ...........: express-connect-hub (VS Code)
+Banco .................: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO — somente leitura,
+                         1 documento de teste criado e removido; nenhum dado real)
+App ...................: com.example.conexao_prestador v1.0.2 / build 1327
+Dispositivo ...........: Redmi a28e7167 (1080x2400, ROTATION_0, app em primeiro plano)
+TMS local .............: http://127.0.0.1:8800 (servidor ja ativo na sessao)
+Anterior ..............: ADM-APP-02D2-RELATORIO.txt (NAO PRONTO/BLOCKED-F-ENV) e
+                         ADM-APP-02D2-R1-REDMI-CLOSE-RELATORIO.txt (bucket PASS,
+                         metadados PASS, conteudo FAIL, GAP APP-DOC-UPLOAD-01)
+
+
+--------------------------------------------------------------------------------
+0. VEREDITO (resposta direta)
+--------------------------------------------------------------------------------
+ADM-APP-02D.2   = PENDENTE
+APP-DOC-UPLOAD-01 = GAP
+
+Justificativa:
+  * PENDENTE (nao PASS): a prova FISICA de CONTEUDO continua nao passando — o app
+    nao tem visualizador de documento (toque na linha "Outros" nao reage; imagem
+    nunca aberta). Isso foi provado fisicamente nesta R2 (2 capturas) e confirmado
+    no fonte Flutter (_compactRealDocRow sem onTap).
+  * PASSOU nesta R2 (subgates novos): entrada no fluxo operacional do app pelo
+    login real do prestador fixture; leitura da linha do documento TESTE no app;
+    bucket privado + negacao anon; escrita/leitura de conteudo via signed URL
+    provadas no banco/Storage (13/13).
+  * GAP (nao BLOCKED): APP-DOC-UPLOAD-01 nao e bloqueio de ambiente — e funcional
+    do app. Confirmado por codigo: uploadAndLink() e chamado APENAS pelo wizard de
+    cadastro (register_screen.dart:750); o Perfil do prestador logado e somente
+    leitura. NAO foi implementado nesta missao (fora de escopo).
+  * BLOCKED: nenhum bloqueio de ambiente nesta R2 (servidor :8800, dispositivo e
+    credenciais fixture disponiveis; fixture 02D.2 recriada pelo proprio script).
+
+
+--------------------------------------------------------------------------------
+1. SUBGATES — MATRIZ DE CLASSIFICACAO
+--------------------------------------------------------------------------------
+#  Subgate                                          Classificacao   Evidencia
+-- ------------------------------------------------ ---------------- -----------------
+1  Bucket documentos_prestadores privado             PASS           db_proof 4/13+5/13
+   (public=false; anon negado em /object/, sign     PASS           (400 x3,
+   sem auth e /object/public/)                                     public=false)
+2  Leitura de METADADOS no app (linha "Outros"       PASS           d2r2_app_perfil.png
+   aparece em "Documentos e Certificados" com        PASS           (22:07/22:09)
+   tipo vindos do banco)                            PASS
+3  Escrita TMS -> banco/Storage (upload do doc       PASS           spec R1 1 passed +
+   TESTE, path estável, sha256 igual)               PASS           db_proof 13/13
+4  Entrada do app no fluxo operacional (login        PASS (novo)    d2r2_app_home.png
+   real -> /home, "Boa noite, 02D2 FIXTURE...")      PASS
+5  Visualizacao do CONTEUDO no app (imagem           FAIL — G2      d2r2_state_antes_
+   aberta apos toque)                               (GAP do app)   tap_doc.png +
+                                                                    d2r2_app_doc_tap2.png
+6  Escrita APP -> Storage (upload pos-cadastro)      GAP            codigo-fonte
+   APP-DOC-UPLOAD-01                                (nao implementado aqui)
+7  Divergencia de status TMS x App                  GAP — G3       causa-raiz nova
+   (TMS "Valido" x App "Pendente")                                    (secao 5.4)
+8  Dados reais preservados na limpeza               PASS           cleanup 7/7 +
+                                                                    fixture down 12/12
+
+
+--------------------------------------------------------------------------------
+2. PREREQUISITOS VERIFICADOS (antes de qualquer acao)
+--------------------------------------------------------------------------------
+[OK] ADM-APP-02D2-RELATORIO.txt (16.082 b) — relatorio 02D.2
+[OK] scripts/_adm_app_02d2_fixture.mjs (5.751 b) — fixture A/B/T
+[OK] supabase/migrations/20260928000000_adm_app_02d2_bucket_documentos_privado.sql (7.655 b)
+[OK] supabase/migrations/20260928000001_adm_app_02d2_rollback.sql (4.021 b)
+[OK] test-results/02d2 INEXISTENTE -> recriado nesta missao
+[OK] adb (C:\Users\DIEGO BALBINO\Android_SDK\platform-tools\adb.exe) -> device unico a28e7167
+[OK] app instalado 1.0.2 / build 1327; porta 8800 ativa (TMS local)
+[OK] npx tsc --noEmit -> 0 erros (inclui o novo spec da R2)
+
+Restricoes cumpridas:
+  * Nenhum prestador novo criado (somente a fixture 02D.2 ja existente).
+  * Nenhuma migration aplicada nesta missao.
+  * Nenhum dado real alterado (provas 7/7 + 12/12 ao final).
+  * Nenhuma chave/credencial exposta neste relatorio (service_role referenciado
+    apenas como import de scripts/_adm_app_02d2_env.mjs, como na R1).
+  * Escrita em banco/Storage limitada a 1 documento de teste (e depois removido).
+  * Flutter (C:\src\conexao_prestador) lido SOMENTE para leitura — sem alteracao.
+  * AUTORIZACAO REGISTRADA: o usuario autorizou explicitamente o uso de "adb input"
+    nesta sessao (a missao original previa "sem adb input"); todos os toques/teclado
+    no Redmi foram feitos com essa autorizacao.
+
+
+--------------------------------------------------------------------------------
+3. CREDENCIAIS E IDS DA FIXTURE (existentes — nao inventadas)
+--------------------------------------------------------------------------------
+Fixture 02D.2 recriada por: node scripts/_adm_app_02d2_fixture.mjs up  (EXIT=0,
+  scripts/_adm_app_02d2_fixture.json ts=2026-10-02T00:37:56.245Z)
+  A  adm02d2_prest_a@teste.com / Adm02d2!PrestA_2026
+     user_id     61c9178d-a2b8-4cff-b8ba-8bfa33f5e54e
+     prestador   4601ed1f-45f5-4f2d-b276-56da75ad7777  "02D2 FIXTURE PREST A"
+  B  adm02d2_prest_b@teste.com / Adm02d2!PrestB_2026
+     user_id     af9a7da9-3e01-4eae-bfe5-e62889bf9e3b
+     prestador   fd30e512-e3b5-4817-b451-a0ece179b624
+  T  adm02d2_tms@teste.com / Adm02d2!Tms_2026 (usuario TMS do PC)
+Documento TESTE criado nesta R2:
+     row         7546f61c-4d0d-49c4-bbc8-734ef3767c4a
+     url (path)  doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png
+     tipo        Outros | origem: fluxo real do TMS (aba Documentacao)
+
+
+--------------------------------------------------------------------------------
+4. EXECUCAO PASSO A PASSO
+--------------------------------------------------------------------------------
+4.1 FIXTURE 02D.2 (preparacao, dados de teste)
+    node scripts/_adm_app_02d2_fixture.mjs up -> EXIT=0 (3 usuarios, 2 prestadores,
+    1 tenant_usuario). Sem criacao de prestador alem da fixture.
+
+4.2 UPLOAD DO DOCUMENTO TESTE PELO FLUXO REAL DO TMS (PC)
+    npx playwright test "tests/e2e/_adm_app_02d2_r1_upload_tms.spec.ts" \
+      --project=chromium --reporter=list  -> 1 passed (20,9s)
+    Resultado: toast "Outros enviado!"; card "Outros / Valido" na aba Documentacao;
+    row + objeto criados com path estavel (sem signed URL, sem token, sem http).
+
+4.3 PROVA DE BANCO + STORAGE — scripts/_adm_app_02d2r2_db_proof.mjs -> 13/13 (EXIT=0)
+    (evidencia: scripts/_adm_app_02d2r2_db_proof.json)
+      1 row no prestador A .................. OK
+      2 path estavel ........................ OK (coluna url guarda SO o path)
+      2b url nao e signed ................... OK
+      2c tipo Outros ....................... OK
+      3 objeto no bucket .................... OK
+      4 bucket public=false ................. OK
+      5 anon /object/ -> 400 ............... OK
+      5b anon sign sem auth -> 400 .......... OK
+      5c anon /object/public/ -> 400 ........ OK
+      6 signed URL com token ................ OK (token omitido no relatorio)
+      6b signed legivel sem credencial ...... OK (200 / 11755 b / image/png)
+      6c conteudo identico ao enviado ....... OK (sha256 ac291280a331f4ee = origem)
+      7 isolamento (outros prestadores) ..... OK (total=33, outros=32, prestador_B=0)
+    Bucket na epoca: 79 objetos.
+
+4.4 BLOQUEIO ENCONTRADO (e desfeito pela via oficial do TMS)
+    Apos login real no Redmi o app abriu a tela "Cadastro enviado para analise"
+    em vez do Home. Causa verificada em banco + codigo:
+      - prestadores.liberado_app = FALSE para o fixture A (o fixture.mjs so grava
+        nome_completo, auth_user_id, origem, status);
+      - Auth Gate homologado AG-07J.7 (auth_status_mapper.dart): acesso operacional
+        SO com (status == 'ativo'|'Aprovado') AND liberado_app = true; demais casos
+        -> /analysis (fail-closed). auth_provider.dart le prestadores por
+        auth_user_id (RLS do proprio usuario) e mapeia liberado_app=false -> 'analise'.
+      - Distribuicao antes: ativo+liberado true = 3 | ativo+false = 25 (nenhum fixture).
+    Observacao: em R1 o app entrou no Perfil porque a sessao anterior ja estava
+    estabelecida; nesta R2 a fixture foi recriada -> liberado_app volta a false.
+
+    Prepapacao executada pela via OFICIAL do TMS (PC/Playwright), nunca update
+    direto no banco:
+      npx playwright test "tests/e2e/_adm_app_02d2_r2_liberar_app.spec.ts" \
+        --project=chromium --reporter=list -> 1 passed (21,2s)
+      Passos: login TMS -> Cadastros Base/Prestadores -> "02D2 FIXTURE PREST A"
+      -> aba "Dados Gerais" -> preenche CPF/CNPJ 37921704697 pelo campo da UI
+      (fixture nasceu sem CPF e o handleSave recusa save sem CPF — toast
+      "Preencha os campos obrigatorios: CPF/CNPJ" capturado na 1a tentativa) ->
+      liga o switch #liberado_app -> "Salvar Prestador" ->
+      toast "Prestador atualizado com sucesso!".
+      Capturas: test-results/02d2/d2r2_tms_liberar_ante.png / _apos.png
+    Confirmacao em banco (scripts/_adm_app_02d2r2_status.mjs):
+      prestador A: status=ativo, liberado_app=TRUE, cpf_cnpj=37921704697,
+      tipo_parceiro=autonomo. Distribuicao: ativo+true 3 -> 4 (somente o fixture mudou;
+      nenhum prestador real tocado).
+
+4.5 PROVA FISICA NO REDMI (adb input, autorizado pelo usuario)
+    a) force-stop + monkey (mesmo procedimento da R1) -> app reaberto:
+       CAPTURA d2r2_app_home.png — HOME autenticado:
+       "Boa noite, 02D2 FIXTU..." + KPIs + nav inferior. -> PASS (entrada /home)
+    b) toque em "Perfil" -> CAPTURA d2r2_app_perfil.png — "Meu Perfil" do
+       02D2 FIXTURE PREST A, CPF/CNPJ 37921704697, secao "Documentos e
+       Certificados" com a linha "Outros / Pendente" (relogio alaranjado).
+       -> PASS (leitura de metadados do documento TESTE lida do banco pelo app)
+    c) toque na linha do documento (540,1392) -> CAPTURA d2r2_app_doc_tap2.png
+       (22:09) = TELA IDENTICA, nenhuma navegacao/visualizador.
+       Estado antes do toque preservado em d2r2_state_antes_tap_doc.png (22:07).
+       -> FAIL — G2 (app sem visualizador de documento)
+    d) Unicos "Visualizar" da tela pertencem a "Contratos e Termos"
+       (Contrato de Prestacao / Termo de Uso) — nao ao documento.
+
+4.6 LIMPEZA (somente o documento TESTE)
+    a) scripts/_adm_app_02d2r2_cleanup_doc.mjs -> 7/7 provas
+       ANTES: row=1, obj=1, bucket=79, rows fixture A=1, rows outros=29,
+              prestadores=41, tenant_usuarios=10
+       DEPOIS: row=0, obj=0, bucket=78, rows fixture A=0, rows outros=29,
+              prestadores=41, tenant_usuarios=10
+       provas: row_removida, obj_removido, bucket -1, nenhuma row fixture restou,
+               rows de outros prestadores intactas, prestadores intactos,
+               tenant_usuarios intactos — todas true.
+    b) node scripts/_adm_app_02d2r1_fixture_down_prova.mjs -> 12/12 provas
+       fixture_users 3->0, fixture_prestadores 2->0, tenant_usuarios 10->9,
+       prestadores 41->39; INTEIROS: clientes 28, ordens_servico 166,
+       alocacoes_escala 203, financeiro_receber 49, financeiro_pagar 116,
+       documentos_prestadores 32, storage bucket 78, storage global 131.
+       objetos fixture a remover: [] (nenhum residuo).
+    Resultado: NENHUM dado real alterado ou removido; somente o documento de
+    teste e a propria fixture (criada pela missao 02D.2) foram apagados.
+
+
+--------------------------------------------------------------------------------
+5. EVIDENCIAS DE CODIGO (Flutter — somente leitura)
+--------------------------------------------------------------------------------
+5.1 Auth Gate (por que o app abria em "analise")
+    lib/core/supabase/auth_status_mapper.dart — regra AG-07J.7:
+      "acesso operacional SO quando (status=='ativo'|'Aprovado') AND liberado_app=true"
+      userStatusFor: ativo/true -> 'ativo'; ativo/false -> 'analise' (bloqueio).
+      routeFor: somente 'ativo' -> '/home'; qualquer outro -> '/analysis'.
+    lib/core/supabase/auth_provider.dart — _fetchUserStatus(): le
+      prestadores.select('status, liberado_app, nome_completo').eq('auth_user_id', uid);
+      fallback prestadores_app; falha de leitura = fail-closed -> /analysis.
+
+5.2 Documentos no Perfil (por que a linha aparece)
+    lib/features/profile/profile_screen.dart
+      _loadDocuments() -> DriverDocumentsRepository().fetchByAuthUserId(userId)
+      _buildDocumentsListCard() (linha 898) monta a lista
+      _compactRealDocRow() (linha 945) = Padding/Row simples — SEM GestureDetector,
+      SEM InkWell, SEM onTap -> NAO ha acao de abertura (G2).
+
+5.3 Upload pos-cadastro (GAP APP-DOC-UPLOAD-01)
+    lib/core/repositories/driver_documents_repository.dart:201 uploadAndLink()
+      UNICO chamador: lib/features/auth/register_screen.dart:750 (wizard de cadastro).
+      Nenhuma rota/tela de upload para prestador ja logado (Perfil = leitura).
+    resolverUrl()/createSignedUrl() existe no repositorio mas so e usado dentro
+      do fluxo de upload (linha 234) — nunca para exibir documento existente.
+
+5.4 Causa-raiz nova da divergencia G3 (TMS "Valido" x App "Pendente")
+    Tabela documentos_prestadores NAO possui coluna "status" (verificado em banco:
+    column "status" does not exist). No app, DriverDocument.status tem DEFAULT
+    'pendente' no fromJson -> toda linha exibida pelo app nasce "Pendente";
+    o TMS deriva "Valido" do campo JSON documentos (PrestadorDetalhe.docGeral()).
+    Resultado: divergencia de exibicao estrutural, nao corrigida nesta missao (G3).
+
+
+--------------------------------------------------------------------------------
+6. MATRIZ FINAL DE CLASSIFICACAO (regra: sem fabricar PASS)
+--------------------------------------------------------------------------------
+PASS ................. bucket privado + anon negado; escrita TMS->Storage (path
+                       estavel + sha256); conteudo legivel via signed URL (13/13);
+                       leitura de metadados no app; entrada no /home do app;
+                       limpeza 7/7 e 12/12; tsc 0 erros.
+IMPLEMENTADO SEM PROVA: nenhum item nesta classe nesta R2.
+GAP .................. APP-DOC-UPLOAD-01 (upload so no cadastro; NAO implementado);
+                       G2 (app sem visualizador de conteudo);
+                       G3 (divergencia de status — causa-raiz identificada);
+                       G5 (screenshots de passos anteriores apagados pela limpeza
+                           automatica do Playwright ao rodar novos specs — ver 7).
+BLOCKED .............. nenhum (ambiente e credenciais disponiveis).
+PENDENTE ............. gate ADM-APP-02D.2 como um todo (prova fisica de CONTEUDO);
+                       D1 do plano 02D.1 (Chrome do Redmi -> TMS local:8800 com foto
+                       renderizando), nao executado por estar fora da R2.
+
+
+--------------------------------------------------------------------------------
+7. LIMITACOES E RESSALVAS HONESTAS
+--------------------------------------------------------------------------------
+* G2 confirmado fisicamente e no codigo: nao existe visualizador de documento no
+  app — a prova de CONTEUDO nao passou (motivo principal do veredito PENDENTE).
+* G5 (reincidencia): a execucao dos specs Playwright limpou test-results/,
+  apagando d2r1_tms_upload_ante/apos.png e d2r2_db_signed_lido.png desta sessao.
+  O que permanece como prova: JSONs _adm_app_02d2r1_db_proof.json,
+  _adm_app_02d2r2_db_proof.json, _adm_app_02d2r2_cleanup_doc.json, saida 12/12 do
+  fixture down, saida 1 passed dos dois specs e as 7 capturas R2 listadas na secao 8.
+* O CPF 37921704697 e o CPF TESTE gerado na R1 (tabela=0, RPC app_s6=false); foi
+  gravado no prestador FIXTURE pela UI do TMS apenas para satisfazer a validacao
+  obrigatoria do formulario (nenhum CPF real de prestador foi usado/alterado).
+* A liberacao do switch "Liberado no Aplicativo" foi feita pela UI do TMS sobre o
+  prestador FIXTURE (dados de teste) e morre junto com a fixture removida no 4.6b.
+* Nao ha como provar "imagem renderizada" no app enquanto o viewer nao existir —
+  nenhum PASS foi assumido por inferencia.
+
+
+--------------------------------------------------------------------------------
+8. EVIDENCIAS / ARQUIVOS
+--------------------------------------------------------------------------------
+Capturas (test-results/02d2/):
+  d2r2_tms_liberar_ante.png / d2r2_tms_liberar_apos.png  — switch + save no TMS
+  d2r2_app_home.png                                      — Home do app (PASS)
+  d2r2_app_perfil.png                                    — Perfil + linha "Outros"
+  d2r2_state_antes_tap_doc.png                           — estado antes do toque
+  d2r2_app_doc_tap.png / d2r2_app_doc_tap2.png           — apos toque (sem abertura)
+Scripts e evidencias (scripts/):
+  _adm_app_02d2_fixture.mjs + _adm_app_02d2_fixture.json  — fixture (up/down)
+  _adm_app_02d2r2_db_proof.mjs + .json                    — 13/13 banco/Storage
+  _adm_app_02d2r2_status.mjs                              — status/CPF/liberado (read-only)
+  _adm_app_02d2r2_cleanup_doc.mjs + .json                 — 7/7 limpeza do doc TESTE
+  _adm_app_02d2r1_fixture_down_prova.mjs                  — 12/12 teardown da fixture
+  _adm_app_02d2r2_status.mjs / _adm_app_02d2r2_cleanup_doc.mjs — gerados na R2
+Specs Playwright:
+  tests/e2e/_adm_app_02d2_r1_upload_tms.spec.ts           — 1 passed (upload TMS)
+  tests/e2e/_adm_app_02d2_r2_liberar_app.spec.ts          — 1 passed (liberacao TMS)
+Validacao:
+  npx tsc --noEmit -> 0 erros (sem nenhuma linha de erro no repo)
+
+
+--------------------------------------------------------------------------------
+9. O QUE FALTA E PROXIMA MICRO-MISSAO
+--------------------------------------------------------------------------------
+Falta para ADM-APP-02D.2 sair de PENDENTE:
+  1) Implementar no app a ABERTURA de documento (visualizador de imagem/PDF a partir
+     da linha do Perfil, usando DriverDocumentsRepository.resolverUrl() ja existente)
+     — fecha G2 e torna a prova fisica de conteudo PASS.
+  2) (Opcional, G3) alinhar status exibido pelo app com o TMS (coluna/derivacao).
+  3) D1 do plano 02D.1 (Chrome do Redmi -> TMS local:8800) — fora do escopo da R2.
+
+PROXIMA MICRO-MISSAO sugerida (nivel 7):
+  "APP-DOC-VIEW-01 — Visualizador de documento no Perfil do App"
+  (fecha G2 + permite nova R de ADM-APP-02D.2 com prova fisica PASS).
+  APP-DOC-UPLOAD-01 (upload pos-cadastro) permanece como micro-missao separada,
+  ja que e GAP funcional de outra funcao.
+
+================================================================================
+FIM — ADM-APP-02D.2-R2
+================================================================================

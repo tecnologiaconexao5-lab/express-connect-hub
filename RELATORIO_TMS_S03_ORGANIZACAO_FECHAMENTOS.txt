@@ -1,0 +1,187 @@
+RELATÓRIO TMS-S03 — ORGANIZAÇÃO DA TELA FECHAMENTOS E PAGAMENTOS
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/build/tests OK) + DEV SERVER ABERTO
+
+====================================================================
+1. ARQUIVO PRINCIPAL LOCALIZADO
+====================================================================
+
+src/components/financeiro/PagamentoPrestadores.tsx
+  Tela: Financeiro → Pagamentos → Pag. Prestadores → aba "Fechamentos e
+  Pagamentos" (valor de aba "listagem").
+
+Nenhuma auditoria geral do Financeiro foi feita (conforme escopo).
+
+====================================================================
+2. COMPONENTES LIDOS (somente os usados na página)
+====================================================================
+
+- src/components/ui/tabs.tsx        (Tabs/TabsList/TabsTrigger/TabsContent —
+  navegação interna reutilizada)
+- src/components/ui/card.tsx        (Card/CardHeader/CardContent/CardTitle/CardDescription)
+- src/components/ui/table.tsx       (Table já possui scroll horizontal controlado:
+  wrapper "relative w-full overflow-auto")
+- src/components/ui/select.tsx, button, badge, input, label, dialog, textarea
+- Helpers/services importados (NÃO alterados):
+  pagamentoPrestadorService, escalaFinanceiroAdapter, calculoRepassePrestador,
+  extratoPrestadorService, statusFinanceiroPrestador, fechamentoHelper,
+  dashboardPrestadorHelper, etc.
+
+====================================================================
+3. ESTRUTURA ANTERIOR (problema)
+====================================================================
+
+Dentro da aba "Fechamentos e Pagamentos" tudo ficava empilhado verticalmente
+numa única rolagem gigante:
+
+  1. Card de FILTROS + INDICADORES + TABELA DE FECHAMENTOS do período
+  2. Card "Pagamentos Manuais"
+  3. Card "Fechamentos Anteriores" (+ detalhes expandidos)
+  4. Card "Repasses da Escala Operacional"
+
+Resultado: o usuário precisava rolar muito e funções diferentes se
+misturavam na mesma área.
+
+====================================================================
+4. ESTRUTURA NOVA
+====================================================================
+
+CABEÇALHO DA PÁGINA (inalterado)
+  → Filtros gerais (Prestador, Período, Data Início/Fim, Cliente, Origem/Tipo
+     + botões Atualizar e Gerar Extrato) permanecem no TOPO, uma única vez.
+
+Depois dos filtros → NAVEGAÇÃO INTERNA (Tabs):
+
+  [Visão do Período]  [Pagamentos Manuais]  [Fechamentos Anteriores]  [Repasses da Escala]
+
+  · Visão do Período (padrão ao entrar)  → Indicadores + fechamentos do filtro
+  · Pagamentos Manuais                    → bloco de lançamentos manuais
+  · Fechamentos Anteriores                → histórico + detalhes expandidos
+  · Repasses da Escala                    → repasses da Escala Operacional
+
+Troca de área sem descer a página; filtros sempre acessíveis no topo.
+
+====================================================================
+5. SUBTELAS/TABS CRIADAS
+====================================================================
+
+Sub-navegação interna (Tabs) com 4 abas:
+
+  - "periodo"     → Visão do Período (default; state subAba = "periodo")
+  - "manuais"     → Pagamentos Manuais
+  - "anteriores"  → Fechamentos Anteriores
+  - "repasses"    → Repasses da Escala
+
+Os 4 indicadores (Total OS do período, Prestadores c/ OS, Total a pagar,
+Pagamentos confirmados) ficam SOMENTE na Visão do Período — não espalhados.
+
+====================================================================
+6. COMPONENTES REUTILIZADOS (não duplicados)
+====================================================================
+
+- Tabs/TabsList/TabsTrigger/TabsContent (shadcn) — já existiam e já eram
+  usados na página (abas Dashboard/Relatório/Conta Corrente).
+- Nenhum novo componente criado.
+- Nenhum Card/Tabela/Bloco recriado — os mesmos blocos foram apenas
+  envolvidos nas subtelas.
+- Não foi criado outro fechamento, outro histórico, outra tabela de
+  pagamentos nem outro mecanismo de repasse.
+
+====================================================================
+7. NENHUMA FUNCIONALIDADE REMOVIDA
+====================================================================
+
+SIM — nada foi removido. Todo o conteúdo foi movido para as subtelas:
+
+  Visão do Período:    4 indicadores + tabela de fechamentos por prestador
+                       (Qtd OS, Serviços, Pedágio/Adicional, Ajustes,
+                       Líquido, ações de detalhe).
+  Pagamentos Manuais:  Data, Prestador, Cliente/OS, Tipo Lançamento, Origem,
+                       Crédito, Débito, Valor Líquido, Status Fin., Forma
+                       Pagto, Status Conf., Status Pagto, Elegível Lote e
+                       todas as ações (conferir/aprovar/lote/marcar pago/
+                       cancelar).
+  Fechamentos Anteriores: Período, Prestador, Qtd OS, Serviços, Descontos,
+                       Líquido, Status, Divergências, ações Ver Extrato/PDF/
+                       Confirmar/Recalcular + expansão com Memória de Cálculo,
+                       Dados do Fechamento e Timeline de Pagamento.
+  Repasses da Escala:  filtro de Comprovante, agrupamento por prestador,
+                       colunas OS/Data/Comprovante/Valor/Adicionais/Descontos/
+                       Total/Entregas, total do período e botão "Gerar Repasse".
+
+====================================================================
+8. REGRAS FINANCEIRAS NÃO ALTERADAS
+====================================================================
+
+SIM. Nenhum cálculo, valor, fechamento, confirmação, pagamento, repasse,
+status, filtro funcional, query, banco, Supabase, migration ou RPC foi
+alterado. A mudança é 100% de composição/organização da interface (UX).
+
+====================================================================
+9. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/components/financeiro/PagamentoPrestadores.tsx  (único arquivo alterado)
+    · +1 estado de sub-navegação (subAba)
+    · Card de filtros encerrado logo após o CardHeader
+    · Wrapper de Tabs internas com 4 abas
+    · Blocos existentes movidos (sem edição de conteúdo) para cada subtela
+
+Nenhum outro arquivo modificado.
+
+====================================================================
+10. TESTES EXECUTADOS
+====================================================================
+
+- npx tsc --noEmit                              → ✅ 0 erros
+- npm run build                                 → ✅ 44,41s
+- npx vitest run src/test/f0e_pagamento_prestadores.test.ts → ✅ 11/11
+- npx vitest run src/test/extratoPrestadorService.test.ts    → ✅ 18/18
+- npx eslint (PagamentoPrestadores.tsx)         → apenas erros BASELINE
+                                                 pré-existentes (37 "any" +
+                                                 1 react-refresh em outros
+                                                 pontos do arquivo; nenhum
+                                                 na região alterada)
+
+====================================================================
+11. RESULTADO VISUAL
+====================================================================
+
+Tela "Fechamentos e Pagamentos" agora é uma área de trabalho organizada:
+filtros no topo e, logo abaixo, uma navegação por abas. Ao entrar, abre a
+"Visão do Período" com os indicadores e os fechamentos do filtro atual. As
+demais áreas (Manuais, Anteriores, Repasses) são acessadas por clique, sem
+rolagem gigante. Tabelas largas mantêm scroll horizontal controlado
+(comportamento nativo do componente Table).
+
+DEV SERVER local iniciado para conferência visual:
+  http://localhost:8801/
+  (navegar: Financeiro → Pagamentos → Pag. Prestadores → Fechamentos e
+  Pagamentos — requer login com usuário corporativo)
+
+====================================================================
+12. PENDÊNCIAS REAIS
+====================================================================
+
+- Conferência visual final do usuário (requer login real na tela local —
+  não é possível automatizar sem credenciais).
+- Dev server já rodando em segundo plano (porta 8801) — encerrar quando a
+  conferência terminar.
+- Erros eslint baseline pré-existentes no arquivo (fora do escopo desta
+  missão) permanecem.
+
+====================================================================
+RESULTADO
+====================================================================
+
+Página reorganizada em 4 subtelas com navegação interna clara, filtros no
+topo e nenhuma funcionalidade/regra alterada.
+
+VISÃO DO PERÍODO: OK
+PAGAMENTOS MANUAIS: OK
+FECHAMENTOS ANTERIORES: OK
+REPASSES DA ESCALA: OK
+FUNÇÕES REMOVIDAS: NÃO
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+TMS-S03: HOMOLOGADA SIM
+PRÓXIMA MISSÃO: TMS-S04 — FATURA/PDF PREMIUM DO CLIENTE

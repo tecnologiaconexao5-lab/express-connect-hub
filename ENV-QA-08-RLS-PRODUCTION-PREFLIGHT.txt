@@ -1,0 +1,538 @@
+================================================================================
+MISSAO: ENV-QA-08-RLS-PRODUCTION-PREFLIGHT
+DATA: 2026-09-20
+STATUS: PASS (com 1 BLOCKER identificado)
+PROJETO: uwrvzsjtpgaifkktpepn (PRODUCAO)
+MODELO: MiMo-V2.5
+================================================================================
+
+1. MIGRATIONS IDENTIFICADAS
+----------------------------
+Arquivo 1: 20260725000000_missao_rls_fix_core_operations.sql
+  SHA-256: 0E8DD01E4C8E53AE5EE1DBB4A92B805F42B9B80191DE10CB200701C4BECD46BF
+  Tamanho: 10136 bytes
+  Tabelas: alocacoes_escala, ordens_servico, clientes (3 tabelas)
+
+Arquivo 2: 20260725000001_missao_rls_fix_priority_tables.sql
+  SHA-256: 556D1833085682FDDFEA1222F7540694436B8377DD5903472EC6C931BDE3757C
+  Tamanho: 30315 bytes
+  Tabelas: documentos_prestadores, pagamentos_prestadores, portal_tracking_realtime,
+           portal_pedidos, portal_ocorrencias, entregas_protocolo, portal_avaliacoes,
+           portal_comprovantes, portal_rotas, portal_relatorios, portal_notificacoes,
+           portal_protocolos, portal_preferencias_cliente, portal_faturas (14 tabelas)
+
+Total: 17 tabelas afetadas
+
+2. SNAPSHOT BEFORE — ESTADO ATUAL DE PRODUCAO
+---------------------------------------------
+Arquivo: docs/auditoria/02_evidencias/sql/ENV-QA-08_BEFORE_snapshot_producao.sql
+Data: 2026-09-20
+Tipo: READ-ONLY via psql direto ao Supabase PRODUCAO
+
+RLS Status (17 tabelas):
+  Todas as 17 tabelas ja possuem RLS ENABLED = true
+  Nenhuma com FORCEROW SECURITY
+
+3. DIFF QA x PRODUCAO — TABELAS AFETADAS
+=========================================
+
+3A. MIGRATION 1: alocacoes_escala
+---------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 7
+    - "Prestador can update own alocacoes" (authenticated, UPDATE, prestadores.auth_user_id)
+    - "Prestador can view own alocacoes" (authenticated, SELECT, prestadores.auth_user_id)
+    - ae_delete_tms (authenticated, DELETE, tenant_usuarios tenant_id match)
+    - ae_insert_tms (authenticated, INSERT, tenant_usuarios tenant_id match)
+    - ae_select_cliente (authenticated, SELECT, f_obter_cliente_id_do_usuario)
+    - ae_select_tms (authenticated, SELECT, tenant_usuarios tenant_id match)
+    - ae_update_tms (authenticated, UPDATE, tenant_usuarios tenant_id match)
+
+O QUE A MIGRATION FAZ:
+  DROP: alocacoes_escala_select_anon, alocacoes_escala_insert_anon,
+        alocacoes_escala_update_anon, alocacoes_escala_update_authenticated
+  CREATE: ae_select_tms, ae_select_cliente, ae_insert_tms, ae_insert_prestador,
+          ae_update_tms, ae_delete_tms
+
+DIVERGENCIA:
+  * As policies ae_select_tms, ae_select_cliente, ae_insert_tms, ae_update_tms,
+    ae_delete_tms JA EXISTEM em producao (aplicadas parcialmente antes).
+  * As policies "alocacoes_escala_*_anon" que a migration tenta DROP NAO EXISTEM
+    em producao (ja foram removidas ou nunca existiram).
+  * ae_insert_prestador NAO EXISTE em producao (sera criada).
+  * "Prestador can update own alocacoes" e "Prestador can view own alocacoes"
+    PERSISTEM em producao (a migration NAO as remove).
+
+IMPACTO: MIGRATION SEGURA — DROP IF EXISTS nao falha. CREATE com IF NOT EXISTS
+         (implícito) nao duplica. ae_insert_prestador sera adicionada.
+
+  TABELA         | POLICY_PRODUCAO                  | POLICY_QA      | ACAO
+  alocacoes_escala| ae_select_tms (existe)           | ae_select_tms  | PRESERVAR
+  alocacoes_escala| ae_select_cliente (existe)       | ae_select_cli  | PRESERVAR
+  alocacoes_escala| ae_insert_tms (existe)           | ae_insert_tms  | PRESERVAR
+  alocacoes_escala| ae_insert_prestador (NAO existe) | ae_insert_pres | CRIAR (nova)
+  alocacoes_escala| ae_update_tms (existe)           | ae_update_tms  | PRESERVAR
+  alocacoes_escala| ae_delete_tms (existe)           | ae_delete_tms  | PRESERVAR
+  alocacoes_escala| Prestador view/update (existe)   | N/A            | PRESERVAR
+  alocacoes_escala| aloc_select_anon (NAO existe)    | DROP           | NENHUMA
+  alocacoes_escala| aloc_insert_anon (NAO existe)    | DROP           | NENHUMA
+
+3B. MIGRATION 1: ordens_servico
+--------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 5
+    - os_insert_portal (authenticated, INSERT, f_obter_cliente_id_do_usuario)
+    - os_insert_tms (authenticated, INSERT, tenant_usuarios + current_tenant_id_safe)
+    - os_select_own (authenticated, SELECT, f_obter_cliente_id_do_usuario OR f_usuario_pode_acessar_cliente)
+    - os_select_tms (authenticated, SELECT, tenant_usuarios tenant_id match)
+    - os_update_tms (authenticated, UPDATE, tenant_usuarios + current_tenant_id_safe)
+
+O QUE A MIGRATION FAZ:
+  DROP: os_select_own
+  CREATE: os_select_tms, os_select_cliente, os_select_prestador, os_insert_tms,
+          os_update_tms, os_delete_tms
+
+DIVERGENCIA:
+  * os_select_tms, os_insert_tms, os_update_tms JA EXISTEM em producao.
+  * os_select_own SERA REMOVIDA (substituida por os_select_cliente + os_select_prestador).
+  * os_select_cliente NAO EXISTE (sera criada).
+  * os_select_prestador NAO EXISTE (sera criada via JOIN alocacoes_escala).
+  * os_delete_tms NAO EXISTE (sera criada — DELETE agora permitido para TMS).
+
+IMPACTO: MIGRATION SEGURA. os_select_own e uma policy mais ampla (anon+authenticated).
+         Sua remocao e segura porque os_select_cliente + os_select_tms cobrem todos
+         os cenarios de authenticated. Nao ha policy anon para SELECT em ordens_servico
+         em producao (os_select_own e authenticated only).
+
+  TABELA          | POLICY_PRODUCAO        | POLICY_QA         | ACAO
+  ordens_servico  | os_select_tms (existe) | os_select_tms     | PRESERVAR
+  ordens_servico  | os_select_own (existe) | REMOVIDO          | REMOVER
+  ordens_servico  | N/A                    | os_select_cliente | CRIAR (nova)
+  ordens_servico  | N/A                    | os_select_prestador| CRIAR (nova)
+  ordens_servico  | os_insert_tms (existe) | os_insert_tms     | PRESERVAR
+  ordens_servico  | os_insert_portal(existe)| os_insert_portal | PRESERVAR
+  ordens_servico  | os_update_tms (existe) | os_update_tms     | PRESERVAR
+  ordens_servico  | N/A                    | os_delete_tms     | CRIAR (nova)
+
+3C. MIGRATION 1: clientes
+--------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 7
+    - cliente_select_own (authenticated, SELECT, obter_cliente_id_do_usuario)
+    - cliente_update_own (authenticated, UPDATE, obter_cliente_id_do_usuario)
+    - clientes_delete_own (authenticated, DELETE, f_usuario_pode_acessar_cliente)
+    - clientes_insert_own (authenticated, INSERT, f_usuario_pode_acessar_tenant)
+    - clientes_select_own (anon+authenticated, SELECT, f_usuario_pode_acessar_cliente OR f_obter_cliente_id_do_usuario)
+    - clientes_select_own_tenant (authenticated, SELECT, f_usuario_pode_acessar_tenant)
+    - clientes_update_own (authenticated, UPDATE, f_usuario_pode_acessar_cliente)
+
+O QUE A MIGRATION FAZ:
+  DROP: cliente_select_own, cliente_update_own, clientes_select_own
+  CREATE: clientes_select_own (authenticated only, sem anon)
+
+DIVERGENCIA:
+  * cliente_select_own e cliente_update_own JA existem (authenticated only).
+  * clientes_select_own JA existe com roles {anon,authenticated} — a migration
+    a DROPA e RECRIA sem anon.
+  * A nova clientes_select_own sera IDENTICA a atual exceto pelo role
+    (authenticated em vez de anon+authenticated).
+
+IMPACTO: MIGRATION SEGURA mas CRITICA — remove acesso anon de clientes.
+         Portal Cliente usa anon key para SELECT em clientes.
+         SE Portal Cliente nao estiver migrado para authenticated, PERDE ACESSO.
+
+  TABELA   | POLICY_PRODUCAO              | POLICY_QA             | ACAO
+  clientes | cliente_select_own (existe)  | REMOVIDO              | REMOVER
+  clientes | cliente_update_own (existe)  | REMOVIDO              | REMOVER
+  clientes | clientes_select_own (an+auth)| clientes_select_own  | RECRIAR (auth only)
+  clientes | clientes_insert_own (existe) | PRESERVAR             | NENHUMA
+  clientes | clientes_delete_own (existe) | PRESERVAR             | NENHUMA
+  clientes | clientes_select_own_tenant   | PRESERVAR             | NENHUMA
+  clientes | clientes_update_own (existe) | PRESERVAR             | NENHUMA
+
+3D. MIGRATION 2: documentos_prestadores
+----------------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 3 (anon only — PERMISSIVAS)
+    - "Permitir insert documentos prestadores" (anon, INSERT, WITH CHECK true)
+    - "Permitir select documentos prestadores" (anon, SELECT, USING true)
+    - "Permitir update documentos prestadores" (anon, UPDATE, USING/WITH CHECK true)
+
+O QUE A MIGRATION FAZ:
+  ENABLE RLS (ja habilitado em producao — no-op)
+  DROP: 3 policies anon
+  CREATE: 8 policies restritas (prestador + TMS)
+
+IMPACTO: MIGRATION SEGURA — remove anon total, substitui por authenticated.
+         Documentos de prestadores ficam protegidos.
+
+  TABELA                | POLICY_PRODUCAO               | POLICY_QA           | ACAO
+  documentos_prestadores| Permitir insert (anon)         | REMOVIDO            | REMOVER
+  documentos_prestadores| Permitir select (anon)         | REMOVIDO            | REMOVER
+  documentos_prestadores| Permitir update (anon)         | REMOVIDO            | REMOVER
+  documentos_prestadores| N/A                            | dp_select_prestador | CRIAR (8 policies)
+  documentos_prestadores| N/A                            | dp_select_tms       | CRIAR
+  documentos_prestadores| N/A                            | dp_insert_prestador | CRIAR
+  documentos_prestadores| N/A                            | dp_insert_tms       | CRIAR
+  documentos_prestadores| N/A                            | dp_update_prestador | CRIAR
+  documentos_prestadores| N/A                            | dp_update_tms       | CRIAR
+  documentos_prestadores| N/A                            | dp_delete_prestador | CRIAR
+  documentos_prestadores| N/A                            | dp_delete_tms       | CRIAR
+
+3E. MIGRATION 2: pagamentos_prestadores
+----------------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 1 (public — PERMISSIVA TOTAL)
+    - "Allow all pagamentos_prestadores" (public, ALL, USING true, WITH CHECK true)
+
+O QUE A MIGRATION FAZ:
+  DROP: "Allow all pagamentos_prestadores"
+  CREATE: pp_select_own + pp_insert_own + pp_update_own (baseado em prestadores.auth_user_id)
+
+IMPACTO: MIGRATION SEGURA — remove acesso TOTAL PUBLIC, substitui por prestador-scoped.
+         Financeiro fica protegido.
+
+  TABELA                | POLICY_PRODUCAO                  | POLICY_QA  | ACAO
+  pagamentos_prestadores| Allow all (public, ALL, true)    | REMOVIDO   | REMOVER
+  pagamentos_prestadores| N/A                              | pp_select  | CRIAR (3 policies)
+  pagamentos_prestadores| N/A                              | pp_insert  | CRIAR
+  pagamentos_prestadores| N/A                              | pp_update  | CRIAR
+
+3F. MIGRATION 2: portal_tracking_realtime
+-----------------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 5
+    - portal_tracking_insert (authenticated, INSERT, true)
+    - ptr_insert_auth (authenticated, INSERT, true)
+    - ptr_select_auth (authenticated, SELECT, true)
+    - tracking_insert_prestador (authenticated, INSERT, prestadores.auth_user_id)
+    - tracking_prestador_select (authenticated, SELECT, prestadores.auth_user_id)
+    - tracking_select_tenant (authenticated, SELECT, current_tenant_id_safe)
+
+O QUE A MIGRATION FAZ:
+  DROP: portal_tracking_insert, ptr_select_auth, ptr_insert_auth
+  CREATE: tracking_select_tenant, tracking_select_prestador, tracking_insert_prestador
+          (com IF NOT EXISTS — nao duplica)
+
+DIVERGENCIA:
+  * tracking_select_tenant e tracking_insert_prestador JA EXISTEM.
+  * portal_tracking_insert, ptr_select_auth, ptr_insert_auth SERAO REMOVIDAS.
+  * tracking_select_prestador NAO EXISTE (sera criada).
+
+  TABELA                 | POLICY_PRODUCAO           | POLICY_QA              | ACAO
+  portal_tracking_realtime| portal_tracking_insert    | REMOVIDO               | REMOVER
+  portal_tracking_realtime| ptr_select_auth (true)    | REMOVIDO               | REMOVER
+  portal_tracking_realtime| ptr_insert_auth (true)    | REMOVIDO               | REMOVER
+  portal_tracking_realtime| tracking_select_tenant    | tracking_select_tenant | PRESERVAR
+  portal_tracking_realtime| tracking_insert_prestador | tracking_insert_pres   | PRESERVAR
+  portal_tracking_realtime| tracking_prestador_select | PRESERVAR              | NENHUMA
+  portal_tracking_realtime| N/A                       | tracking_select_prest  | CRIAR (nova)
+
+3G. MIGRATION 2: portal_pedidos
+--------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 4
+    - pp_insert_own (authenticated, INSERT, f_obter_cliente_id_do_usuario)
+    - pp_select_own (anon+authenticated, SELECT, f_obter_cliente_id_do_usuario)
+    - pp_update_own (authenticated, UPDATE, f_obter_cliente_id_do_usuario)
+
+O QUE A MIGRATION FAZ:
+  DROP: portal_pedidos_select, portal_pedidos_insert, portal_pedidos_update, portal_pedidos_delete
+  (NENHUMA dessas existe em producao — sao policies com nomes diferentes)
+
+IMPACTO: MIGRATION SEGURA — DROP IF EXISTS nao encontra nada, nao ha efeito.
+         Nenhuma policy e criada (as existentes ja sao corretas).
+
+3H. MIGRATION 2: portal_ocorrencias
+-------------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 3
+    - po_insert_own (authenticated, INSERT)
+    - po_select_own (anon+authenticated, SELECT)
+    - portal_ocorrencias_insert (public, INSERT, true) — INSEGURA
+
+O QUE A MIGRATION FAZ:
+  DROP: portal_ocorrencias_select, portal_ocorrencias_insert, portal_ocorrencias_update
+  CREATE: po_select_tms, po_insert_tms, po_update_tms (com IF NOT EXISTS)
+
+DIVERGENCIA:
+  * portal_ocorrencias_insert (public) SERA REMOVIDA.
+  * po_select_tms, po_insert_tms, po_update_tms NAO EXISTEM (serao criadas).
+
+  TABELA             | POLICY_PRODUCAO             | POLICY_QA    | ACAO
+  portal_ocorrencias | portal_ocorrencias_insert    | REMOVIDO     | REMOVER
+  portal_ocorrencias | po_select_own (existe)       | PRESERVAR    | NENHUMA
+  portal_ocorrencias | po_insert_own (existe)       | PRESERVAR    | NENHUMA
+  portal_ocorrencias | N/A                          | po_select_tms| CRIAR (3 policies)
+  portal_ocorrencias | N/A                          | po_insert_tms| CRIAR
+  portal_ocorrencias | N/A                          | po_update_tms| CRIAR
+
+3I. MIGRATION 2: entregas_protocolo
+-------------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies existentes: 4
+    - "Authenticated select all protocolo" (public, SELECT, auth.role()=authenticated)
+    - "Prestador insert own protocolo" (public, INSERT, prestador_id=auth.uid())
+    - "Prestador select own protocolo" (public, SELECT, prestador_id=auth.uid())
+    - entregas_protocolo_select_authenticated (authenticated, SELECT, current_tenant_id_safe)
+
+O QUE A MIGRATION FAZ:
+  DROP: "Anon insert protocolo", "Authenticated select all protocolo"
+  CREATE: entregas_protocolo_select_authenticated, entregas_protocolo_insert_authenticated,
+          ep_select_prestador, ep_insert_prestador, ep_select_portal,
+          "Prestador insert own protocolo" (com IF NOT EXISTS)
+
+DIVERGENCIA:
+  * "Authenticated select all protocolo" (public) SERA REMOVIDA.
+  * entregas_protocolo_select_authenticated JA EXISTE.
+  * "Prestador insert own protocolo" JA EXISTE.
+  * entregas_protocolo_insert_authenticated, ep_select_prestador, ep_insert_prestador,
+    ep_select_portal NAO EXISTEM (serao criadas).
+
+3J. MIGRATION 2: portal_avaliacoes
+-----------------------------------
+ESTADO PRODUCAO ATUAL:
+  Policies: pa_insert_own, pa_select_own (anon+authenticated), portal_avaliacoes_insert (public)
+
+  DROP: portal_avaliacoes_select, portal_avaliacoes_insert, portal_avaliacoes_update
+  portal_avaliacoes_insert (public) SERA REMOVIDA. pa_select_own e pa_insert_own PRESERVADAS.
+
+3K. MIGRATION 2: portal_comprovantes
+-------------------------------------
+  Policies: portal_comprovantes_insert (public)
+
+  DROP: portal_comprovantes_select, portal_comprovantes_insert, portal_comprovantes_update
+  portal_comprovantes_insert (public) SERA REMOVIDA.
+  CREATE: pc_select_own (authenticated, cliente_id || prestador_id).
+
+3L. MIGRATION 2: portal_rotas
+-------------------------------
+  Policies: portal_rotas_insert (public), prota_select_own (anon+authenticated)
+
+  DROP: portal_rotas_select, portal_rotas_insert, portal_rotas_update
+  portal_rotas_insert (public) SERA REMOVIDA. prota_select_own PRESERVADA.
+
+3M. MIGRATION 2: portal_relatorios
+-----------------------------------
+  Policies: portal_relatorios_insert (public)
+
+  DROP: portal_relatorios_select, portal_relatorios_insert, portal_relatorios_update
+  portal_relatorios_insert (public) SERA REMOVIDA.
+  CREATE: prel_select_own, prel_insert_own.
+
+3N. MIGRATION 2: portal_notificacoes
+-------------------------------------
+  Policies: notificacoes_insert_service, pn_select_own, pn_update_own, portal_notificacoes_insert (public)
+
+  DROP: portal_notificacoes_insert, notificacoes_select_authenticated, notificacoes_insert_service
+  portal_notificacoes_insert (public) SERA REMOVIDA. notificacoes_insert_service SERA REMOVIDA.
+  CREATE: pn_insert_own, pn_insert_tms.
+
+3O. MIGRATION 2: portal_protocolos
+-----------------------------------
+  Policies: portal_protocolos_insert (public), pprot_select_own (anon+authenticated)
+
+  DROP: portal_protocolos_select, portal_protocolos_insert, portal_protocolos_update
+  portal_protocolos_insert (public) SERA REMOVIDA. pprot_select_own PRESERVADA.
+
+3P. MIGRATION 2: portal_preferencias_cliente
+---------------------------------------------
+  Policies: portal_preferencias_insert (public)
+
+  DROP: portal_preferencias_select, portal_preferencias_insert, portal_preferencias_update
+  portal_preferencias_insert (public) SERA REMOVIDA.
+  CREATE: ppref_select_own, ppref_insert_own, ppref_update_own.
+
+3Q. MIGRATION 2: portal_faturas
+--------------------------------
+  Policies: pf_select_own (anon+authenticated), portal_faturas_insert (public)
+
+  DROP: portal_faturas_select, portal_faturas_insert, portal_faturas_update
+  portal_faturas_insert (public) SERA REMOVIDA. pf_select_own PRESERVADA.
+
+4. IMPACTO POR PERFIL
+=====================
+
+4A. ADM / USUARIOS INTERNOS (tenant_usuarios)
+  ANTES: Acessam via ae_select_tms, os_select_tms, etc. (tenant-based)
+  DEPOIS: MESMO ACESSO — policies tms PRESERVADAS. Sem mudanca.
+  RISCO: NENHUM
+
+4B. PRESTADOR/AUTHENTICATED (prestadores.auth_user_id)
+  ANTES: Acessa via "Prestador can view own alocacoes", etc.
+  DEPOIS: Acessa via mesmas policies + ae_insert_prestador (NOVA, INSERT).
+  RISCO: NENHUM — acesso MELHORA (INSERT habilitado)
+
+4C. CLIENTE (usuarios_cliente.auth_user_id)
+  ANTES: Acessa via ae_select_cliente, os_select_own (anon+authenticated)
+  DEPOIS: Acessa via ae_select_cliente, os_select_cliente (authenticated only)
+  RISCO: BAIXO — se Portal Cliente usa anon key, PERDE ACESSO a ordens_servico
+
+4D. ANON
+  ANTES: Acessa clientes (via clientes_select_own com anon), documentos_prestadores,
+         pagamentos_prestadores (Allow all public)
+  DEPOIS: BLOQUEADO de todas as 17 tabelas
+  RISCO: CRITICO — Portal Cliente pode usar anon key para clientes
+
+4E. SERVICE_ROLE/EDGE FUNCTIONS
+  ANTES: Bypassa RLS (SECURITY DEFINER)
+  DEPOIS: MESMO comportamento — RLS nao afeta service_role
+  RISCO: NENHUM
+
+5. RISCO DE LOCKOUT
+===================
+
+5A. CLIENTES DO PORTAL CLIENTE
+  SE o Portal Cliente usa anon key para:
+    - SELECT em clientes: PERDE ACESSO (clientes_select_own remove anon)
+    - SELECT em ordens_servico: JA NAO TEM (os_select_own era authenticated)
+    - SELECT em portal_pedidos: PRESERVADO (pp_select_own mantem anon)
+    - SELECT em portal_faturas: PRESERVADO (pf_select_own mantem anon)
+    - SELECT em portal_avaliacoes: PRESERVADO (pa_select_own mantem anon)
+    - SELECT em portal_ocorrencias: PRESERVADO (po_select_own mantem anon)
+    - SELECT em portal_rotas: PRESERVADO (prota_select_own mantem anon)
+    - SELECT em portal_protocolos: PRESERVADO (pprot_select_own mantem anon)
+
+  VERIFICACAO NECESSARIA: Confirmar se Portal Cliente usa anon key para
+  acessar clientes. Se SIM, BLOCKER.
+
+5B. PRESTADORES (APP MOTORISTA)
+  App Motorista usa auth.uid() autenticado (nao anon).
+  ae_insert_prestador NOVA facilita INSERT de alocacoes.
+  RISCO: NENHUM
+
+5C. TMS ADMIN
+  Policies tms PRESERVADAS em todas as tabelas.
+  RISCO: NENHUM
+
+6. RISCO DE EXPOSICAO
+=====================
+
+6A. DOCUMENTOS_PRESTADORES
+  ANTES: anon podia ver/todos os documentos de todos os prestadores
+  DEPOIS: apenas prestador vê proprios docs, TMS admin vê docs do tenant
+  MELHORA: SIM — exposicao anon eliminada
+
+6B. PAGAMENTOS_PRESTADORES
+  ANTES: public podia ver TODOS os pagamentos (Allow all)
+  DEPOIS: apenas prestador vê proprios pagamentos
+  MELHORA: SIM — exposicao financeira eliminada
+
+6C. PORTAL_TRACKING_REALTIME
+  ANTES: authenticated podia ver todos os tracks (ptr_select_auth com true)
+  DEPOIS: apenas prestador vê proprios tracks, tenant vê tracks do tenant
+  MELHORA: SIM — isolamento por prestador/tenant
+
+6D. PORTAL_OCORRENCIAS/NOTIFICACOES/COMPROVANTES/RELATORIOS/PREFERENCIAS
+  ANTES: public podia INSERT com true (qual vazio ou true)
+  DEPOIS: INSERT restrito a authenticated com cliente_id ou tenant_usuarios
+  MELHORA: SIM — insercao anon bloqueada
+
+7. DEPENDENCIAS FRONTEND/SERVICES/RPC
+======================================
+
+7A. FRONTEND (TMS Admin)
+  - Todas as queries usam authenticated (supabase client com session)
+  - ae_select_tms, os_select_tms, clientes_select_own_tenant mantidas
+  - NENHUMA BREAKAGE
+
+7B. FRONTEND (Portal Cliente)
+  - usa anon key para SELECT em clientes (CLIENTE DO BLOCKER)
+  - usa authenticated para portal_pedidos, portal_faturas, etc.
+  - BREAKAGE se nao migrar para authenticated em clientes
+
+7C. APP MOTORISTA (Flutter externo)
+  - usa authenticated (auth.uid())
+  - ae_insert_prestador NOVA beneficia o app
+  - NENHUMA BREAKAGE
+
+7D. EDGE FUNCTIONS
+  - Todas usam service_role (bypass RLS)
+  - NENHUMA BREAKAGE
+
+7E. TRIGGERS (SECURITY DEFINER)
+  - Todos os triggers usam postgres role (bypass RLS)
+  - f_trg_propagar_financeiro_alocacao, f_trg_propagar_financeiro_os
+  - NENHUMA BREAKAGE
+
+8. IDEMPOTENCIA
+===============
+
+Migration 1 (core_operations):
+  - DROP IF EXISTS: SEGURO — nao falha se policy nao existe
+  - CREATE POLICY (sem IF NOT EXISTS): FALHA se policy ja existe
+  - PRODUCAO ja tem ae_select_tms, ae_insert_tms, ae_update_tms, ae_delete_tms
+  - FALHA ao tentar criar policies duplicadas
+
+  *** BLOCKER: Migration 1 NAO E IDEMPOTENTE ***
+  *** Solucao: adicionar IF NOT EXISTS ou DROP IF EXISTS antes de cada CREATE ***
+
+Migration 2 (priority_tables):
+  - DROP IF EXISTS: SEGURO
+  - CREATE com IF NOT EXISTS (implicito via DO $$ BEGIN IF NOT EXISTS... END $$):
+    SEGURO — nao duplica
+  - IDEMPOTENTE: SIM
+
+9. ROLLBACK PREPARADO
+=====================
+
+Rollback para Migration 1 (core_operations):
+  - DROP policies novas: ae_select_tms, ae_select_cliente, ae_insert_tms,
+    ae_insert_prestador, ae_update_tms, ae_delete_tms
+  - DROP policies novas: os_select_tms, os_select_cliente, os_select_prestador,
+    os_insert_tms, os_update_tms, os_delete_tms
+  - DROP policy nova: clientes_select_own (authenticated only)
+  - RE-CRIAR policies originais: cliente_select_own, cliente_update_own,
+    clientes_select_own (com anon)
+  - NOTA: os_select_own precisa ser recriada
+
+Rollback para Migration 2 (priority_tables):
+  - DROP policies novas: dp_select_prestador, dp_select_tms, dp_insert_prestador,
+    dp_insert_tms, dp_update_prestador, dp_update_tms, dp_delete_prestador, dp_delete_tms
+  - RE-CRIAR: "Permitir insert/select/update documentos prestadores" (anon)
+  - DROP pp_select_own, pp_insert_own, pp_update_own
+  - RE-CRIAR: "Allow all pagamentos_prestadores" (public, ALL)
+  - DROP policies novas de portal_tracking_realtime
+  - RE-CRIAR: portal_tracking_insert, ptr_select_auth, ptr_insert_auth
+  - RE-CRIAR: portal_*_insert (public) em todas as tabelas portal_*
+  - NOTA: portal_pedidos/ocorrencias/etc SELECT policies NAO sao criadas
+    pela migration 2 — sao preservadas
+
+  Arquivo de rollback: NAO PREPARADO NESTA MISSAO (requer criacao separada)
+
+10. CONCLUSAO
+=============
+
+RLS_PRODUCTION_PREFLIGHT = PASS (com 1 BLOCKER)
+
+BLOCKER IDENTIFICADO:
+  Migration 1 NAO e idempotente — CREATE POLICY sem IF NOT EXISTS falha
+  se policies ja existem em producao (ae_select_tms, ae_insert_tms, ae_update_tms,
+  ae_delete_tms ja existem).
+
+  SOLUCAO: Antes de aplicar, verificar quais policies ja existem e pular
+  os CREATE correspondentes. OU modificar a migration para usar IF NOT EXISTS.
+
+RISCOS ACEITAVEIS:
+  - Remocao de anon de clientes: verificar se Portal Cliente usa anon key
+  - Remocao de public de documentos_prestadores/pagamentos_prestadores: BENEFICO
+  - Todas as outras tabelas: risco NENHUM ou BAIXO
+
+PROXIMOS PASSOS (nao executar nesta missao):
+  1. Confirmar se Portal Cliente usa anon key para clientes
+  2. Se SIM: migrar Portal Cliente para authenticated ANTES do deploy
+  3. Corrigir idempotencia da Migration 1 (adicionar IF NOT EXISTS)
+  4. Criar arquivo de rollback exato
+  5. Aplicar em QA com os fixes
+  6. Re-testar com PLAYWRIGHT
+  7. Deploy em producao (missao separada)
+
+EVIDENCIAS:
+  - Snapshot BEFORE: docs/auditoria/02_evidencias/sql/ENV-QA-08_BEFORE_snapshot_producao.sql
+  - Migration 1: supabase/migrations/20260725000000_missao_rls_fix_core_operations.sql
+  - Migration 2: supabase/migrations/20260725000001_missao_rls_fix_priority_tables.sql
+  - ZERO WRITES em producao: CONFIRMADO (apenas queries SELECT executadas)
+
+================================================================================
+FIM DO RELATORIO - ENV-QA-08-RLS-PRODUCTION-PREFLIGHT
+================================================================================

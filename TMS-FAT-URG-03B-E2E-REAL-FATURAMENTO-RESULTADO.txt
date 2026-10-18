@@ -1,0 +1,149 @@
+================================================================================
+MISSAO: TMS-FAT-URG-03B-E2E-REAL-FATURAMENTO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (backend) / UI: ambiente sem credenciais
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: HOMOLOGACAO E2E REAL
+================================================================================
+
+RESULTADO: BLOCKED (UI) / PARTIAL (prova backend PASS).
+  - A jornada por TELA (navegador real + screenshots + PDF visual) NAO pode ser
+    executada neste ambiente: o proprio repositorio BLOQUEIA E2E em PRODUCAO e nao
+    ha credenciais de login. Ver secao "BLOQUEIO DE UI".
+  - A cadeia funcional FOI PROVADA ponta a ponta NO BANCO DE PRODUCAO, dentro de
+    UMA transacao BEGIN...ROLLBACK, exercitando as RPCs OFICIAIS, com ZERO lixo
+    (contagens before == after). Ver tabela e evidencias.
+  - Portanto NAO se declara PASS E2E (critério exige prova visual/tela + screenshots).
+    Declara-se PARTIAL backend + BLOCKED UI, sem correcao silenciosa.
+
+================================================================================
+BLOQUEIO DE UI (motivo objetivo)
+================================================================================
+1) tests/e2e/helpers/ambiente.ts: se o ambiente for PRODUCAO (ref uwrvzsjtpgaifkktpepn)
+   lanca excecao e bloqueia a execucao. (bypass PLAYWRIGHT_QA removido no R6 fix).
+   Projeto conectado = uwrvzsjtpgaifkktpepn (VITE_SUPABASE_URL e DATABASE_URL).
+2) Nao existem variaveis PLAYWRIGHT_*_PASSWORD no ambiente; tests/e2e/helpers/auth.ts
+   le a senha exclusivamente de env (sem fallback) -> login impossivel.
+3) tests/e2e/.auth/storageState.json possui 0 cookies (nenhuma sessao reutilizavel).
+4) playwright.config baseURL = http://localhost:8800 (dev server), nao a UI publicada.
+Consequencia: sem screenshots, sem clique em tela, sem auditoria visual de PDF.
+Recomendacao: executar a jornada de UI em ambiente QA (aqpfay...) ou com credenciais
+corporativas reais, conforme politica do repositorio.
+
+================================================================================
+TABELA E2E
+================================================================================
+ETAPA | TELA                         | ID BANCO (HML)                        | BEFORE | ACAO                                | AFTER                         | RESULTADO
+------+------------------------------+---------------------------------------+--------+-------------------------------------+-------------------------------+----------
+1     | Lancar Servico (UI)          | -                                     | -      | abrir tela / salvar                 | -                             | BLOCKED-UI (sem browser/credencial)
+1     | Backend equiv. (insert)      | alocacao fb869b94-7e8d-42bc-beb8-...  | n/a    | INSERT alocacoes_escala (concluida) | tenant 000...001, finalizada  | PASS (backend)
+2     | Conferencia (UI)             | -                                     | -      | visualizar/selecionar item          | -                             | BLOCKED-UI
+2     | Conferencia (RLS/query)      | alocacao fb869b94...                  | -      | SELECT sob RLS usuario financeiro   | visivel n=1                   | PASS (backend)
+2b    | Criar Fatura (UI)            | fatura 6bb45346-cc8c-4920-b722-...    | -      | rascunho + item                     | status rascunho, total 1000   | PASS (backend)
+3     | Regra pos-fatura             | alocacao fb869b94... / fatura ...      | -      | derivar faturamento via join        | fatura_status=emitida (apos E5)| PASS (backend)
+4     | Faturas (Enviar Validacao)   | fatura 6bb45346...                    | rascunho | f_mover -> aguardando_aprovacao  | success, aguardando_aprovacao | PASS (backend)
+4     | Faturas (Aprovar)            | fatura 6bb45346...                    | aguard. | f_mover -> aprovada              | success, aprovada             | PASS (backend)
+4     | Prova "validar nao cria AR"  | fatura 6bb45346...                    | -      | count financeiro_receber(fatura) | n=0 (antes e apos aprovacao)  | PASS (backend)
+5     | Emitir (acao oficial)        | fatura 6bb45346...                    | aprov. | f_emitir_fatura                  | emitida, FAT-2026-000019      | PASS (backend)
+5     | Exatamente 1 AR              | AR a8cf49d3-efd8-4141-90b2-...        | -      | count financeiro_receber(fatura) | n=1                           | PASS (backend)
+5     | Nao duplica ao repetir       | fatura 6bb45346...                    | -      | f_emitir_fatura (2x)             | FATURA_JA_EMITIDA, AR=1       | PASS (backend)
+6     | Contas a Receber (UI)        | AR a8cf49d3...                        | -      | localizar titulo                 | -                             | BLOCKED-UI
+6     | Contas a Receber (dados)     | AR a8cf49d3...                        | -      | SELECT campo a campo             | aberto, 1000, venc 2026-10-25 | PASS (backend)
+7     | PDF da fatura                | fatura 6bb45346...                    | -      | abrir/auditar visual             | -                             | BLOCKED-UI (sem PDF no backend)
+8     | Limpeza controlada           | todo o caso HML                       | n/d    | ROLLBACK (nada persistiu)        | before == after               | PASS (zero lixo)
+
+IDs do caso de homologacao (criados e REVERTIDOS por ROLLBACK; NAO persistem):
+  alocacao_id = fb869b94-7e8d-42bc-beb8-4c4f76127137
+  fatura_id   = 6bb45346-cc8c-4920-b722-846985e9761b
+  item_id     = 368115fb-9e7d-41a2-ab89-e311f6110dc7
+  AR_id       = a8cf49d3-efd8-4141-90b2-aab26c1b9949
+  numero fatura gerado no teste = FAT-2026-000019 (numero_cliente=1)
+  tenant = 00000000-0000-0000-0000-000000000001
+  cliente = 3d2d079d-708b-4d4d-9c0b-1ed9b894e37e
+  Obs.: os numeros FAT-2026-000019 / numero_cliente=1 foram consumidos pelo
+  contador dentro da transacao; o ROLLBACK impede persistencia do registro, mas o
+  contador de sequencia (nextval) NAO volta atras por design do Postgres.
+
+================================================================================
+QUERIES DE COMPROVACAO (sem segredo)
+================================================================================
+- Persistencia/tenant: INSERT ... RETURNING id::text, tenant_id::text, status, finalizada.
+- Conferencia visivel (RLS): SELECT count(*) FROM alocacoes_escala WHERE id=$1
+    AND status='concluida' AND finalizada=true; (SET LOCAL ROLE authenticated + claim sub).
+- AR pre/pos aprovacao: SELECT count(*) FROM financeiro_receber WHERE fatura_id=$1.
+- Emissao: SELECT public.f_emitir_fatura($1::uuid) -> {success, numero, numero_cliente,
+    valor_total, vencimento, conta_receber_id}.
+- AR final: SELECT id,status,valor,valor_liquido,cliente_id,data_vencimento,fatura_id,numero
+    FROM financeiro_receber WHERE fatura_id=$1.
+- Fatura final: SELECT status,numero,numero_cliente,conta_receber_id,valor_total,
+    vencimento,tenant_id FROM faturas WHERE id=$1.
+- Duplicidade: segunda chamada f_emitir_fatura -> {success:false, error:'FATURA_JA_EMITIDA'}.
+- Zero lixo: counts antes == depois (alocacoes 200, faturas 9, itens 46, AR 47,
+    pagar 113, pagamentos 96).
+
+================================================================================
+VALORES / CAMPOS PROVADOS
+================================================================================
+- Fatura: valor_total=1000.00 (recalculado pelo trigger dos itens), vencimento
+  2026-10-25, numero FAT-2026-000019, numero_cliente=1, status=emitida,
+  conta_receber_id preenchido, tenant 000...001.
+- AR: status=aberto, valor=1000.00, valor_liquido=1000.00, cliente_id conferido,
+  data_vencimento=2026-10-25, fatura_id vinculado, numero=FAT-2026-000019.
+- "Validar/Aprovar nao cria AR": count AR para a fatura = 0 antes e apos aprovacao.
+- Idempotencia de validacao (03A) e NAO duplicacao de AR (esta missao) confirmadas.
+- Conferencia: item passa a status derivado 'emitida' -> inelegivel a novo
+  faturamento (regra motivosBloqueio: faturamento != nao_faturado).
+
+================================================================================
+CRITERIO DE HOMOLOGACAO (autoavaliacao honesta)
+================================================================================
+[~] lancamento persiste ............... backend PASS (UI BLOCKED)
+[~] tenant correto .................... backend PASS (tenant explicito)
+[ ] aparece na Conferencia (visual) ... BLOCKED-UI (prova RLS/query PASS)
+[ ] selecao funciona (visual) ......... BLOCKED-UI
+[ ] Criar Fatura (visual) ............. BLOCKED-UI (prova INSERT PASS)
+[~] servico nao refatura 2x ........... backend PASS (derivacao faturado)
+[ ] fatura aparece em Faturas (visual)  BLOCKED-UI
+[ ] Enviar para Validacao (visual) .... BLOCKED-UI (prova RPC PASS)
+[ ] Aprovar (visual) .................. BLOCKED-UI (prova RPC PASS)
+[~] aprovacao NAO cria AR ............. backend PASS (n=0)
+[ ] Emitir (visual) ................... BLOCKED-UI (prova RPC PASS)
+[~] exatamente 1 AR ................... backend PASS (n=1)
+[ ] AR aparece em Contas a Receber .... BLOCKED-UI (prova dados PASS)
+[ ] reload preserva tudo (visual) ..... BLOCKED-UI
+[~] valores/cliente/vencimento ........ backend PASS
+[ ] PDF abre e corresponde ............ BLOCKED-UI
+[~] nenhuma duplicidade ............... backend PASS
+[~] nenhuma inconsistencia nova ....... backend PASS (zero lixo)
+=> Como itens de TELA/PDF nao foram provados, o resultado E2E NAO e PASS.
+
+================================================================================
+DIVERGENCIAS / RISCOS
+================================================================================
+R1. Sem prova visual/tela: bloqueio por politica (PROD) + ausencia de credenciais.
+R2. O contador de sequencia de numero de fatura (nextval) e consumido mesmo com
+    ROLLBACK (comportamento normal do Postgres). Nao gera lixo, apenas "pula" um
+    numero — irrelevante para integridade.
+R3. Recomenda-se executar a jornada de UI em QA (aqpfay...) com credenciais, ou
+    fornecer credenciais corporativas para E2E controlada, antes do PASS E2E.
+
+================================================================================
+NAO FEITO / NAO TOCADO
+================================================================================
+- Nenhum dado de negocio persistido (zero lixo; before == after).
+- Nao mexi em Comercial, APP, M66/M80, Pagamento de Prestadores, migrations,
+  Calvo/CESAR. Nenhuma correcao aplicada. Nenhum DML persistente.
+- Nao dei baixa/pagamento em nenhum titulo.
+
+================================================================================
+CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-03B-E2E-REAL-FATURAMENTO-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-03B-E2E-REAL-FATURAMENTO-RESULTADO.txt
+ TAMANHO ..: 11169 bytes
+ DATA/HORA : 25/09/2026 18:03:02
+
+================================================================================
+FIM DO RELATORIO — TMS-FAT-URG-03B-E2E-REAL-FATURAMENTO
+================================================================================

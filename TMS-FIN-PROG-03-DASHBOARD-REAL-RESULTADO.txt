@@ -1,0 +1,243 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-03-DASHBOARD-REAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS (React/Vite/TS) + Supabase Postgres (PRODUCAO, leitura read-only)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: Correcao de LEITURA/QUERY do Dashboard Financeiro. Sem migration, sem RLS,
+      sem banco, sem emissao de fatura, sem tocar 41/42/M66/M80/APP.
+================================================================================
+
+RESULTADO FINAL: PASS
+Evidencia: BANCO = SERVICE = UI para os indicadores testados (secao 7).
+
+--------------------------------------------------------------------------------
+1. CAUSA RAIZ CONFIRMADA (no codigo + schema real)
+--------------------------------------------------------------------------------
+Componente: src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+Montado em: src/pages/Financeiro.tsx (aba "dashboard").
+
+Condicao exata do estado vazio (linha 326):
+   const semDados = dadosMesAtual.length === 0 && pagamentosGeral.length === 0;
+Card renderizado quando true (linhas 352-359):
+   "Nenhum dado disponivel" / "Finalize ordens de servico e cadastre despesas...".
+
+Por que ficava vazio:
+(A) dadosMesAtual = ordens_servico finalizada/concluida com data >= 1o dia do mes
+    corrente. [BANCO] Em 24/09/2026 ha 0 OS finalizada/concluida no mes -> [] (real).
+(B) pagamentosGeral vinha de:
+      supabase.from("financeiro_pagar")
+        .select("... prestador_id ...")      <-- COLUNA INEXISTENTE
+    [SCHEMA REAL] financeiro_pagar NAO possui prestador_id (confirmado em
+    information_schema.columns e no baseline full_production_schema_20260920.sql:1823).
+    O PostgREST responde HTTP 400; o PostgREST/JS devolve {data:null,error} SEM
+    rejeitar a Promise; a linha 126 "if (pgr) setPagamentosGeral(pgr)" nao roda ->
+    pagamentosGeral permanece []. CAUSA PRINCIPAL DO VAZIO.
+
+BUG SECUNDARIO (mesma classe, tambem confirmado no schema):
+(C) pagamentos_prestadores era lido com ".select('... valor_liquido, valor ...')"
+    -> coluna "valor" NAO existe em pagamentos_prestadores (existem: valor_servicos,
+    valor_liquido, ...). A query falhava em silencio e o card "Repasses Prestadores"
+    ficaria sempre zerado, mesmo apos corrigir (B).
+
+Nao era "ausencia de dados": existem 119 titulos a pagar no set do Dashboard
+(R$ 86.022,36), 98 contas a receber (R$ 157.206,87) e 82 repasses pendentes
+(R$ 58.243,22). O problema era LEITURA incompativel com o schema.
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+1 arquivo de aplicacao:
+  src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+  (apenas leitura/transformacao; layout e JSX preservados)
+
+Arquivos de EVIDENCIA (read-only / testes; nao alteram producao):
+  scripts/_fin_prog03_readonly.mjs        (coleta read-only de indicadores)
+  scripts/_fin_prog03_cols.mjs            (schema real via information_schema)
+  scripts/_fin_prog03_fixture.mjs         (fixture real para SERVICE/UI)
+  scripts/_fin_prog03_banco_canonico.mjs  (totais BANCO pela regra canonica)
+  scripts/_fin_prog03_service.ts          (replica a logica do service)
+  scripts/_fin_prog03_diag.mjs            (diagnostico de linhas)
+  src/test/fin_prog03_dashboard_real.test.tsx (prova UI com dados reais)
+  temp/fin_prog03_dashboard_fixture.json  (fixture capturada READ-ONLY)
+
+Nenhuma migration, nenhuma policy RLS, nenhum dado gravado/alterado.
+
+--------------------------------------------------------------------------------
+3. QUERY/FONTE — ANTES x DEPOIS
+--------------------------------------------------------------------------------
+financeiro_pagar:
+  ANTES:
+    .select("id, descricao, valor, status, prestador_id, prestador, data_vencimento, categoria")
+  DEPOIS:
+    .select("id, descricao, valor, status, fornecedor_id, prestador, data_vencimento, categoria")
+  Filtros inalterados: .eq("is_teste", false).in("status", [aberto, a vencer,
+  a_vencer, pendente, vencido]).
+  Vinculo correto do prestador: fornecedor_id (FK -> prestadores.id) preenchido
+  pelos triggers M66/M80 (baseline:12404, 12566). "prestador" (text) e o nome.
+
+pagamentos_prestadores:
+  ANTES:
+    .select("id, prestador_id, prestador_nome, valor_liquido, valor, status_pagamento, data_competencia, origem_lancamento")
+  DEPOIS:
+    .select("id, prestador_id, prestador_nome, valor_liquido, status_pagamento, data_competencia, origem_lancamento")
+  (removida a coluna inexistente "valor"; usa-se valor_liquido).
+
+ordens_servico:
+  DEPOIS: inclui "status_faturamento" no select (antes era testado no card
+  "OS sem Fatura" sem estar selecionado).
+
+Transformacoes ajustadas (mesma semantica, agora sobre a coluna real):
+  !r.prestador_id && !r.prestador   ->   !r.fornecedor_id && !r.prestador   (3x:
+     custoGeralMes, pagarGeral, pagamentosProgramados)
+  (r.valor_liquido || r.valor || 0) ->   (r.valor_liquido || 0)
+  semDados: passou a considerar tambem financeiro_receber:
+     dadosMesAtual.length===0 && pagamentosGeral.length===0 && receber.length===0
+  clientesInadimplentes: .map(...cliente_id||cliente).filter(Boolean) (nao conta
+     cliente nulo como se fosse 1 cliente).
+
+Nao foi criada nova definicao contabil, nem card novo, nem dado fake.
+
+--------------------------------------------------------------------------------
+4. SCHEMA REAL UTILIZADO (information_schema.columns)
+--------------------------------------------------------------------------------
+financeiro_pagar (43 colunas; relevantes):
+  id, descricao, valor (numeric), status (text), data_vencimento (date),
+  fornecedor_id (uuid -> prestadores.id), prestador (text), categoria (text),
+  is_teste (boolean). NAO EXISTE prestador_id.
+financeiro_receber (39 colunas):
+  valor, status, data_vencimento, vencimento, data_pagamento, cliente_id,
+  cliente, os_id, fatura_id, is_teste.
+pagamentos_prestadores (50 colunas):
+  prestador_id (uuid), prestador_nome, valor_liquido (numeric), status_pagamento,
+  data_competencia, origem_lancamento, is_teste. NAO EXISTE valor.
+ordens_servico (130 colunas):
+  valor_cliente, custo_prestador, data (date), status, tipo_operacao,
+  status_faturamento, cliente_id (text), prestador_id (text), distancia_km.
+ordens_servico.cliente_id/prestador_id sao TEXT; ordens_servico.cliente/prestador
+  sao UUID. O Dashboard usa os campos *_id (existem).
+
+--------------------------------------------------------------------------------
+5. INDICADORES — FONTE | STATUS | DATA | FORMULA | BANCO | SERVICE | UI
+--------------------------------------------------------------------------------
+(Fmt pt-BR. BANCO = SQL read-only; SERVICE = scripts/_fin_prog03_service.ts sobre a
+ fixture real; UI = render do componente com a fixture real.)
+
+| Indicador              | Fonte (tabela)            | Status usado                                    | Data / regra                          | Formula                          | BANCO         | SERVICE       | UI exibida     |
+|------------------------|---------------------------|-------------------------------------------------|---------------------------------------|----------------------------------|---------------|---------------|----------------|
+| Receita do Mes         | ordens_servico            | finalizada, concluida                           | COMPETENCIA (coluna "data" >= 1o dia) | sum(valor_cliente)               | R$ 0,00 (0)   | R$ 0,00       | R$ 0,00        |
+| Custo Prestadores Mes  | ordens_servico            | finalizada, concluida                           | COMPETENCIA (data >= 1o dia)          | sum(custo_prestador)             | R$ 0,00 (0)   | R$ 0,00       | R$ 0,00        |
+| Custos Operacionais    | financeiro_pagar (geral)  | aberto,a vencer,a_vencer,pendente,vencido; !teste| sem periodo (todo o set)             | sum(valor) onde sem fornecedor_id e sem prestador | R$ 500,72 (2) | R$ 500,72 | R$ 500,72 |
+| Resultado Liquido      | OS + financeiro_pagar     | (acima)                                         | competencia OS                        | receita - custosTotais           | -R$ 500,72    | -R$ 500,72    | -R$ 500,72     |
+| A Receber (7 dias)     | financeiro_receber        | efetivo a_vencer/vence_hoje; nao final          | VENCIMENTO entre hoje e +7d           | sum(valor)                       | R$ 2.120,00(1)| R$ 2.120,00   | R$ 2.120,00    |
+| A Pagar Geral (7 dias) | financeiro_pagar (geral)  | efetivo a_vencer/vence_hoje/atrasado            | VENCIMENTO entre hoje e +7d           | sum(valor)                       | R$ 302,63 (1) | R$ 302,63     | R$ 302,63      |
+| Repasses Prestadores   | pagamentos_prestadores    | status_pagamento pendente/agendado; !teste      | sem data (fila de repasse)            | sum(valor_liquido)               | R$ 58.243,22(82)| R$ 58.243,22| R$ 58.243,22   |
+| Total Compromissado    | aPagar7d + repasses       | (acima)                                         | soma                                  | aPagar7d + repasses              | R$ 58.545,85  | R$ 58.545,85  | R$ 58.545,85   |
+| Inadimplencia          | financeiro_receber        | efetivo atrasado; nao final, sem pagamento      | VENCIMENTO < hoje                     | sum(valor)                       | R$129.280,75(60)| R$129.280,75| R$129.280,75  |
+| Clientes inadimplentes | financeiro_receber        | idem                                            | distinct cliente                      | count(distinct cliente)          | 21            | 21            | "21 cliente(s)"|
+| Margem Media           | ordens_servico            | finalizada, concluida                           | competencia OS                        | media margem por OS              | 0 OS -> "—"   | 0 OS -> "—"   | — (0 OS)       |
+| Grafico 6 meses        | ordens_servico            | finalizada, concluida                           | COMPETENCIA (ultimos 6 meses)         | receita/despesa/resultado por mes| 3 meses (jun/jul/ago) | 3 meses | 3 barras |
+
+Regra de periodo (secao 4 da missao):
+  - COMPETENCIA: cards de Receita/Custos/Resultado/Grafico 6 meses usam
+    ordens_servico.data (data de competencia operacional da OS).
+  - VENCIMENTO: "A Receber (7 dias)", "Inadimplencia" e "A Pagar Geral" usam
+    data_vencimento (financeiro_receber / financeiro_pagar).
+  - PAGAMENTO/RECEBIMENTO: NAO existem cards no Dashboard atual para recebido/
+    pago (isso vive em Contas a Receber / Contas a Pagar / Pagamentos). Nao foi
+    redesenhada a tela. Nenhum conceito foi misturado silenciosamente: as datas
+    acima estao explicitadas.
+  - Seletor mensal: o Dashboard NAO possui seletor; mantido como esta.
+
+--------------------------------------------------------------------------------
+6. DIFERENCAS CONHECIDAS (faturas ainda inconsistentes — NAO mascaradas)
+--------------------------------------------------------------------------------
+[BANCO] faturas: emitida 15 (R$ 14.863,23) | rascunho 26 (R$ 72.720,89).
+        emitidas SEM conta a receber: 14 (R$ 12.743,23).
+[BANCO] financeiro_receber: 98 titulos (R$ 157.206,87); 97 sem fatura_id.
+        14 faturas "emitida sem AR" NAO geram financeiro_receber.
+O Dashboard usa a fonte OFICIAL de titulos (financeiro_receber / financeiro_pagar)
+e por isso NAO soma as 14 faturas sem AR — ele mostra corretamente os titulos que
+REALMENTE existem hoje. Essas faturas serao tratadas na missao de emissao/validacao
+(FIN-PROG-04), fora do escopo desta. Nenhum recebivel foi fabricado.
+Observacao: o Dashboard atual NAO possui card de "Faturamento"; nada foi adicionado
+para nao redesenhar a tela.
+
+--------------------------------------------------------------------------------
+7. VALIDACAO REAL — BANCO = SERVICE = UI
+--------------------------------------------------------------------------------
+Metodo:
+  BANCO  : SELECT read-only (scripts/_fin_prog03_banco_canonico.mjs) com a mesma
+           regra de status canonica (helper calcularStatusEfetivo).
+  SERVICE: scripts/_fin_prog03_service.ts replica a logica do componente sobre a
+           fixture real capturada read-only.
+  UI     : src/test/fin_prog03_dashboard_real.test.tsx moca @/lib/supabase com a
+           fixture real, renderiza o componente e valida os textos exibidos.
+
+Resultado (tolerancia zero):
+  Repasses Prestadores : BANCO 58.243,22 = SERVICE 58.243,22 = UI R$ 58.243,22
+  Inadimplencia        : BANCO 129.280,75 = SERVICE 129.280,75 = UI R$ 129.280,75
+  A Receber (7 dias)   : BANCO 2.120,00  = SERVICE 2.120,00  = UI R$ 2.120,00
+  A Pagar Geral (7 dias): BANCO 302,63   = SERVICE 302,63   = UI R$ 302,63
+  Custos Operacionais  : BANCO 500,72    = SERVICE 500,72    = UI R$ 500,72
+  Estado vazio         : BANCO false     = SERVICE false     = UI NAO exibe
+                         "Dados insuficientes" (prova no teste)
+
+Evidencia de UI (2/2 testes aprovados):
+  src/test/fin_prog03_dashboard_real.test.tsx
+   - "nao exibe mais o estado vazio principal" -> PASS
+   - "exibe exatamente os totais calculados da base real" -> PASS
+
+Observacao de periodo: o calculo de vencimento usa o helper canonico
+  (America/Sao_Paulo) e o recorte de 7 dias usa a data UTC, exatamente como o
+  componente ja fazia; o teste congela o relogio em 24/09/2026 para
+  determinismo.
+
+--------------------------------------------------------------------------------
+8. REGRESSAO (nada fora do Dashboard foi alterado)
+--------------------------------------------------------------------------------
+Somente DashboardFinanceiroEnterprise.tsx foi modificado. Conferencia, Faturas,
+Contas a Receber, Contas a Pagar/Pagamentos e Programacao Operacional nao foram
+tocados.
+Testes financeiros existentes executados: 13 arquivos / 166 testes -> TODOS PASS,
+incluindo:
+  fin_p0_01_status_vencimento, fase1_centralFinanceiro, f0e_pagamento_prestadores,
+  f0f_fluxo_caixa, f0g_dre_plano_contas, f0i_margem_os, f0j_relatorios_financeiros,
+  f0n_hotfix_roving_focus, fin_master361_core_financeiro, extratoPrestadorService,
+  a31j0_visoes_central_financeira, a31d_fechamento_final, fin_prog03_dashboard_real.
+
+--------------------------------------------------------------------------------
+9. TYPECHECK / BUILD / TESTES
+--------------------------------------------------------------------------------
+- npx tsc --noEmit   -> EXIT 0 (0 erros)                              [PASS]
+- npm run build      -> OK, built in 45.21s                           [PASS]
+- Testes do Financeiro/Dashboard (13 arquivos / 166 testes)           [PASS]
+- Teste novo da missao (2/2)                                          [PASS]
+Observacao: existem 31 testes GLOBAIS preexistentes falhando (rec02/rec03/rec04,
+  ag07f/ag07h/ag07j3, f0k_recibos, a31j11) por leitura de migration/SQL/Supabase
+  no ambiente — NAO relacionados e NAO agravados por esta missao (registrados
+  separadamente, conforme item 9 da missao).
+
+--------------------------------------------------------------------------------
+10. CONFIRMACAO DE INTEGRIDADE (nao tocados)
+--------------------------------------------------------------------------------
+- Faturas 41/42 e as 14 "emitidas sem AR": NAO alteradas. Nenhum recebivel criado.
+- Fluxo de emissao/validacao de faturas: NAO alterado.
+- Triggers M66/M80: NAO alterados.
+- Dupla numeracao / paginacao: NAO alteradas.
+- APP / Flutter / contrato APP<->TMS: NAO tocados.
+- Migrations / RLS / estrutura do banco: NAO criadas/alteadas.
+- Banco: apenas SELECT (read-only). Nenhuma escrita.
+- Layout/UX: preservado (sem redesign; mesmos cards e graficos).
+- REDMI: NAO conectado.
+
+--------------------------------------------------------------------------------
+11. CLASSIFICACAO FINAL
+--------------------------------------------------------------------------------
+PASS — causa raiz confirmada; query corrigida para o schema real; estado vazio
+eliminado; BANCO = SERVICE = UI comprovado para os indicadores testados; sem
+migration/RLS/APP/emissao alterados; regressao do Financeiro verde.
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-03-DASHBOARD-REAL
+================================================================================

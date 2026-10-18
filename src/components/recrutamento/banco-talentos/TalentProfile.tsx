@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { X, MapPin, Truck, Star, Clock, FileText, Heart, Phone, Mail, Award, Shield, TrendingUp, Package, CheckCircle2, AlertTriangle, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore } from "@/stores/talentBankStore";
 import ScoreGauge, { ScoreBreakdownBar } from "@/components/onboarding/ScoreGauge";
 import { calculateScore } from "@/services/scoreEngine";
@@ -39,7 +40,7 @@ export default function TalentProfile({ onClose }: TalentProfileProps) {
         <div className="flex items-center gap-2">
           <div className="relative">
             <div className="w-9 h-9 rounded-lg overflow-hidden bg-muted ring-2 ring-primary/20">
-              <img src={t.foto} alt="" className="w-full h-full object-cover" />
+              <SafeImage src={t.foto} alt="" className="w-full h-full object-cover" />
             </div>
             <div className={cn("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background", t.disponivel ? "bg-green-500" : "bg-muted-foreground")} />
           </div>

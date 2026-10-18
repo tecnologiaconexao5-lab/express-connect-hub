@@ -1,0 +1,501 @@
+================================================================================
+MISSÃO ADM-APP-02A — AUDITORIA DE RETOMADA DO NÍVEL 7
+Projeto TMS CONEXÃO EXPRESS — Fluxo APP Pré-cadastro → Admin App Prestador
+→ Recrutamento → Cadastro Prestador → liberação do APP
+================================================================================
+Data.............: 2026-09-27
+Escopo...........: SOMENTE AUDITORIA (read-only). Nenhuma alteração de código,
+                   schema, migration, RLS, dado ou refatoração foi executada.
+Nível 8..........: FECHADO (não reabrir). Nível 7 retomado por esta missão.
+Saída............: este arquivo (raiz do TMS) — seções A–F obrigatórias.
+Scripts de prova.: scripts/_adm_app_02a_introspect.mjs
+                   scripts/_adm_app_02a_cols.mjs
+                   scripts/_adm_app_02a_docs.mjs
+                   scripts/_adm_app_02a_storage.mjs
+                   scripts/_adm_app_02a_rec01.mjs
+                   scripts/_adm_app_02a_rls.mjs
+                   scripts/_adm_app_02a_cols2.mjs
+                   scripts/_adm_app_02a_final.mjs
+                   (todos SELECT/read-only via pg + DATABASE_URL; prefixo "_")
+================================================================================
+
+--------------------------------------------------------------------------------
+0. RESUMO EXECUTIVO
+--------------------------------------------------------------------------------
+Classificação final: **NÃO PRONTO PARA PRODUÇÃO** (Score por etapa abaixo).
+
+O fluxo tem UMA entrada que funciona de ponta a ponta (App público → RPC →
+prestadores → trigger → recrutamento) e QUATRO conexões quebradas no meio:
+
+  ✅ Funciona : App (Flutter) → app_s6_criar_prestador → prestadores
+                → trg_bridge_prestador_para_recrutamento → recrutamento_*
+  ❌ Quebrado : Pré-cadastro público TMS (/cadastro-prestador) — INSERT 400
+  ❌ Quebrado : Sincronização Recrutamento → prestadores (coluna "veiculos")
+  ❌ Quebrado : Conversão candidato → prestador (gate documental inatingível
+                + mesma coluna "veiculos" no INSERT)
+  ❌ Quebrado : Admin App Prestador (/app-prestador) NÃO é console de aprovação
+  🔴 P0 seg. : migration REC-01 (20260831000000) NUNCA aplicada em produção
+  🔴 P0 seg. : bucket documentos_prestadores público + policies role=public
+
+Score por etapa (0–10):
+  1. Pré-cadastro público (App + /cadastro-prestador)........... 5/10 (App ok, TMS 0%)
+  2. Admin App Prestador (/app-prestador)....................... 2/10 (simulador)
+  3. Recrutamento (Kanban/pipeline)............................. 6/10 (leitura ok, sync quebrada)
+  4. Cadastro Prestador (TMS admin)............................. 8/10 (funciona)
+  5. Liberação do APP (liberado_app / gate AG-07F)............. 4/10 (lógica ok, auditoria/bloqueio ausentes)
+  6. Documentos (bucket + tabelas).............................. 3/10 (fluxo ok, exposição P0)
+  GERAL.......................................................... 4.7/10
+
+--------------------------------------------------------------------------------
+1. MAPA DO FLUXO REAL (comprovado com código + banco)
+--------------------------------------------------------------------------------
+ENTRADAS DE DADO (5 rotas distintas, todas convergindo para `prestadores`):
+
+ [E1] App Flutter (externo, C:\src\conexao_prestador)
+      register_screen.dart:649,674 → RPC app_s6_criar_prestador (SECURITY DEFINER,
+      grant para anon+authenticated+service_role) → INSERT prestadores
+      (status='em_analise', liberado_app=false hardcoded na função, cria auth user)
+      → AFTER INSERT trg_bridge_prestador_para_recrutamento (ATIVO, tgenabled='O')
+      → f_bridge_prestador_para_recrutamento → recrutamento_prestadores (10)
+                                                   + recrutamento_candidatos (25)
+      STATUS: ✅ FUNCIONA (3 prestadores com origem_cadastro='app_motorista',
+              5 com auth_user_id linkado; 10 candidatos vindos do bridge)
+
+ [E2] Pré-cadastro público TMS — rota /cadastro-prestador (App.tsx:101, FORA de
+      ProtectedRoute → pública; link compartilhado em Captacao.tsx:19
+      "https://conexoexpress.app/cadastro-prestador")
+      CadastroPrestador.tsx:135 → criarCandidatoService.criar() → INSERT
+      recrutamento_candidatos com 9 colunas INEXISTENTES
+      STATUS: 🔴 P0 QUEBRADO 100% (ver achado A-1)
+
+ [E3] Admin TMS — /cadastros/prestadores (App.tsx:118) → CadastrosPrestadores.tsx
+      → PrestadoresLista.tsx + PrestadorDetalhe.tsx → UPDATE/INSERT direto em
+      `prestadores` (dbMappers.toPrestadorInsert/Update)
+      STATUS: ✅ FUNCIONA (única UI que altera liberado_app manualmente,
+              com coerência E2E-05D em PrestadorDetalhe.tsx:621-624)
+
+ [E4] Módulo Recrutamento — /recrutamento (App.tsx:131) + /recrutamento/banco-talentos
+      → prestadoresService.ts (TABLE='recrutamento_prestadores') → sync
+      para `prestadores` em syncAtualizarOperacional() (linha 378-399)
+      STATUS: 🔴 QUEBRADO — UPDATE inclui coluna `veiculos` inexistente (A-3)
+
+ [E5] Conversão Kanban — DetalhesCandidatoPipelineSheet.tsx:143 →
+      conversaoCandidatoService.converterCandidatoParaPrestador() →
+      gate statusDocumental==='completo' → sincronizarComOperacao() (linha 323-344)
+      STATUS: 🔴 DUPLAMENTE QUEBRADO (gate inatingível A-4 + `veiculos` A-3)
+
+ [LEGADA] recrutamentoIntegracao.ativarPrestador() — chamado apenas por
+      Homologacao.tsx (rota INEXISTENTE em App.tsx/sidebarData → código morto)
+      e recrutamentoIA.ts:321. Prova de nunca ter funcionado:
+      `homologacoes` = 0 registros (linha 270-278 desse serviço).
+
+TABELAS REAIS CONFIRMADAS (public):
+  prestadores                 39 linhas / 81 colunas  (operacional, canônica)
+  prestadores_app              2 linhas / 25 colunas  (legado, lido pelo App)
+  recrutamento_prestadores    10 linhas / 31 colunas  (módulo recrutamento)
+  recrutamento_candidatos     25 linhas / 46 colunas  (pipeline)
+  candidato_documentos         0 linhas                (VAZIA)
+  documentos_prestadores      32 linhas /  5 colunas (id, prestador_id, tipo, url, created_at)
+  homologacoes                 0 linhas
+  prestadores_public         (view), vw_relatorio_prestadores_analise (view)
+
+TABELAS QUE NÃO EXISTEM (mas são referenciadas por código):
+  reservas_banco        → recrutamentoIntegracao.ts:187 e :268  (2 escritas órfãs)
+  liberado_app_audit    → migration REC-01 (não aplicada)
+  prestador_acesso / prestador_notificacoes / prestador_engajamento / recrutamento_historico
+
+--------------------------------------------------------------------------------
+2. MATRIZ DETALHADA — ETAPA | IMPLEMENTAÇÃO ATUAL | FONTE/TABELA | STATUS | GAP | PRÓXIMA AÇÃO
+--------------------------------------------------------------------------------
+# | ETAPA                       | IMPLEMENTAÇÃO ATUAL (arquivo:linha)          | FONTE/TABELA              | STATUS     | GAP (id)   | PRÓXIMA AÇÃO
+--+-----------------------------+----------------------------------------------+---------------------------+------------+------------+---------------------------------------------
+1 | Onboarding App (registro)   | register_screen.dart:649,674 → app_s6_criar_prestador | prestadores (+auth.users) | FUNCIONA   | —          | manter; validar grants anon (ver 5.3)
+2 | Snapshot App→Recrutamento   | trg_bridge_prestador_para_recrutamento (AFTER INSERT) | prestadores→recrutamento_* | FUNCIONA   | A-7        | adicionar sincronização de UPDATE (status/liberado_app não propagam)
+3 | Pré-cadastro público TMS    | CadastroPrestador.tsx:135 → criarCandidatoService.criar | recrutamento_candidatos   | QUEBRADO   | **A-1**    | micro-missão ADM-APP-02B
+4 | Documentos do onboarding    | StepDocuments/StepSignature coletam; submit não envia | (nada)                    | NÃO PERSISTE | **A-2**  | micro-missão ADM-APP-02B
+5 | Console Admin App Prestador | AppPrestador.tsx (Dashboard/Viagens/Checklist/Financeiro) | (leitura simulada)      | DECORATIVO | **A-6**    | micro-missão ADM-APP-02G
+6 | Cadastro admin (TMS)        | PrestadoresLista.tsx + PrestadorDetalhe.tsx:617-649 | prestadores             | FUNCIONA   | A-11       | sem ação (ok)
+7 | Ação liberado_app (admin)   | PrestadorDetalhe.tsx:920-924 (toggle) + E2E-05D :621 | prestadores.liberado_app | FUNCIONA   | **A-8/A-9**| micro-missão ADM-APP-02C (auditoria + bloqueio self)
+8 | Aprovação via recrutamento  | prestadoresService.atualizarStatus:303 → :378-399 | recrutamento_prestadores→prestadores | QUEBRADO | **A-3**  | micro-missão ADM-APP-02E
+9 | Conversão candidato→prestador | conversaoCandidatoService.ts:99 / :323-344      | prestadores              | QUEBRADO   | A-3 + A-4  | micro-missão ADM-APP-02E + 02F
+10| Gate documental de conversão | enterpriseKanbanService.calcularStatusDocumentalOperacional:38-75 | recrutamento_candidatos.documentos (jsonb) | INATINGÍVEL | **A-4** | micro-missão ADM-APP-02F
+11| Ponte docs candidato→prestador| documentosPrestadorService.vincularDocumentoCandidatoAPrestador:58 | candidato_documentos(0)→documentos_prestadores(32) | VAZIA   | A-4        | micro-missão ADM-APP-02F
+12| Upload docs (admin)         | PrestadorDetalhe.tsx:378-405 → getPublicUrl      | bucket documentos_prestadores + tabela | FUNCIONA | **A-10**   | micro-missão ADM-APP-02D
+13| Upload docs (App)           | driver_documents_repository.dart:98-141           | bucket + tabela documentos_prestadores | FUNCIONA | A-10       | micro-missão ADM-APP-02D
+14| Gate operacional (escala)   | eligibilidadeOperacionalService.ts:107-111,234     | prestadores.status+liberado_app | FUNCIONA | —          | manter (fail-closed)
+15| Dedup por identidade        | identidadePrestadorService.ts:66,75               | prestadores.cnh_validade (INEXISTENTE) | QUEBRADO | **A-5**    | micro-missão ADM-APP-02E
+16| App→Kanban (AG-07J.1)       | enterpriseKanbanService.ts:407                    | prestadores.veiculos (INEXISTENTE) | MORTO   | A-3/A-5    | micro-missão ADM-APP-02E
+17| Score de comprometimento    | recrutamentoScoreService.ts:33-52 (REC-06.2D.2F)  | recrutamento_candidatos   | OK         | —          | ver seção D
+18| Auditoria liberado_app      | (migration 20260831000000_rec01:147-218)          | liberado_app_audit        | NÃO APLICADA | **A-8**   | micro-missão ADM-APP-02C
+19| Bloqueio self-liberation    | (migration rec01:316 fn_block_self_liberado_app)   | trigger em prestadores    | NÃO APLICADA | **A-9**   | micro-missão ADM-APP-02C
+20| Privacidade dos documentos  | bucket public=true + policies role='public'       | storage.objects           | EXPOSTO    | **A-10**   | micro-missão ADM-APP-02D
+21| RLS recrutamento_*          | policies recrutamento_candidatos_* / _prestadores_* (role public, só auth) | recrutamento_* | SEM TENANT | A-12     | micro-missão ADM-APP-02C
+22| Web scan de validade docs   | eventProcessorWorker.ts:336-429                   | recrutamento_candidatos.documentos | INÓPERA  | A-4        | micro-missão ADM-APP-02F
+
+--------------------------------------------------------------------------------
+3. ACHADOS CRÍTICOS (com prova)
+--------------------------------------------------------------------------------
+
+A-1 — 🔴 P0: PRÉ-CADASTRO PÚBLICO TMS É 100% QUEBRADO
+  `src/services/recrutamento/criarCandidatoService.ts:42-61` insere em
+  `recrutamento_candidatos` estas 9 colunas que NÃO EXISTEM no banco
+  (verificado em information_schema: 46 colunas reais):
+      nome_completo, cpf, whatsapp, regiao, tipo_veiculo,
+      tipo_carroceria, mensagem_livre, canal_captacao, status
+  Colunas reais existentes que CASAM: nome, telefone, email, cidade, uf,
+  veiculo, placa, stage, data_entrada.
+  → PostgREST recusa o INSERT (400 "column ... does not exist") →
+  `criar()` retorna {sucesso:false, erro} → CadastroPrestador.tsx:149 lança
+  exceção → toast "Erro ao enviar cadastro".
+  Consequência: NENHUM candidato nasce do canal público TMS. Os 25 candidatos
+  existentes vieram do bridge do App (10) + seeds/testes.
+  TESTE QUE DEVERIA PEGAR ISSO: não existe.
+
+A-2 — 🔴 P0: ONBOARDING COLETA DOCUMENTOS E ASSINATURA, NÃO PERSISTE NADA
+  `CadastroPrestador.tsx:107` valida selfieUrl, cnhUrl, crlvUrl, comprovanteUrl,
+  fotosVeiculo, assinaturaDataUrl, chavePix, banco, regioes... mas o submit
+  (`:135-147`) envia apenas 11 campos textuais. Nenhum upload para o bucket
+  `documentos_prestadores`, nenhum INSERT em `candidato_documentos`,
+  nenhum registro de assinatura/LGPD/contrato.
+  Além disso envia `telefone: ""`, `whatsapp: ""`, `email: ""` hardcoded
+  (o formulário sequer tem esses campos) → candidato nasce sem contato.
+  UI mostra "Cadastro concluído com sucesso!" (falso sucesso).
+
+A-3 — 🔴 P0: SYNC RECUTAMENTO→PRESTADORES QUEBRADA POR COLUNA `veiculos`
+  `prestadores` NÃO possui as colunas `veiculos`, `cidade`, `uf` (confirmado:
+  81 colunas, presente=false para as 3).
+  Ocorrências que quebram a escrita inteira (PostgREST rejeita o payload todo):
+   • prestadoresService.ts:394-397  (UPDATE com veiculos)      → syncAtualizarOperacional falha
+   • conversaoCandidatoService.ts:340-343 (INSERT com veiculos) → criação de prestador falha
+   • recrutamentoIntegracao.ts:149-150 (UPDATE com cidade/uf)   → caminho duplicado falha
+   • recrutamentoIntegracao.ts:212-229 (INSERT com cidade/uf/veiculos) → falha
+   • redePrestadoresService.ts:389 (SELECT ... veiculos)         → leitura falha
+   • portalPrestadorService.ts:114, RoteirizadorWeb.tsx:155      → leitura falha
+   • identidadePrestadorService.ts:66,75 (SELECT cnh_validade)   → dedup falha (A-5)
+  Todos os erros são engolidos por `catch` + `console.error` → falha silenciosa.
+
+A-4 — 🔴 P0: GATE DOCUMENTAL DA CONVERSÃO É INATINGÍVEL (nenhum escritor)
+  enterpriseKanbanService.ts:113-114 deriva `statusDocumental` de
+  `row.documentos` (jsonb) via `calcularStatusDocumentalOperacional([])`.
+  Com array vazio → linha 49-52 retorna `{status:'pendente'}`.
+  BANCO: 0 de 25 candidatos têm `documentos` não-vazio (jsonb_array_length>0 = 0).
+  BANCO: `candidato_documentos` = 0 linhas.
+  → `statusDocumental` lido em runtime = 'pendente' para TODOS.
+  → conversaoCandidatoService.ts:84 exige `statusDocumental === 'completo'`
+    (teste ag07j11) → conversão BLOQUEADA para sempre.
+  (A coluna `status_documental` gravada = 'pendente' 21 / 'completo' 4 é
+   STALE — as 4 "completo" são linhas de teste com documentos vazios; a leitura
+   usa o jsonb, não a coluna.)
+  Nenhum código em src/ escreve `recrutamento_candidatos.documentos`
+  (único leitor: eventProcessorWorker.ts:356-359, que além disso filtra
+  `.not('documentos','is',null)` → 0 candidatos elegíveis).
+
+A-5 — 🟠 P1: DEDUP MORTO + 3 CPFs DUPLICADOS JÁ EM PRODUÇÃO
+  identidadePrestadorService.ts:66,75 seleciona `cnh_validade` (inexistente) →
+  query falha → retorna null → `buscarPrestadorOperacionalExistente()` nunca
+  acha nada → AG-07G (reutilizar prestador do App) desativado.
+  Prova de dado: CPF `17827696715` ×3, `17827686951` ×3, `500.299.018-55` ×2.
+
+A-6 — 🔴 P0 DE PRODUTO: "/app-prestador" NÃO É CONSOLE DE APROVAÇÃO
+  `src/pages/AppPrestador.tsx` (657 linhas) é um simulador/driver-panel:
+  abas Dashboard / Viagens / Checklist / Financeiro / Documentos, com aviso
+  explícito de que "não é o app real do motorista".
+  • 5 documentos hardcoded com badge "Válido"; botão Upload SEM onClick.
+  • Checklist apenas estado local (não persiste).
+  • Financeiro derivado do array `viagens` do próprio componente.
+  • ZERO ações de aprovar / reprovar / bloquear / liberar / histórico /
+    alteração de `liberado_app` ou `status` (grep `liberado_app` = 0 no arquivo).
+  • Nenhuma query de escrita em `prestadores`.
+  Sidebar rotula-o "Admin App Prestador" (sidebarData.ts:280) → expectativa
+  de console administrativa não atendida.
+
+A-7 — 🟠 P1: BRIDGE É SNAPSHOT DE INSERT, NÃO SINCRONIZA UPDATE
+  `trg_bridge_prestador_para_recrutamento` roda apenas AFTER INSERT.
+  Mudanças posteriores em `prestadores.status` / `liberado_app` (ex. aprovação
+  no admin E3) NÃO refletem em `recrutamento_prestadores` (colunas `status`,
+  `data_ativacao` congeladas) → visões divergem.
+
+A-8 — 🔴 P0 SEG: MIGRATION REC-01 NUNCA APLICADA (AUDITORIA AUSENTE)
+  `supabase/migrations/20260831000000_rec01_fundacao_seguranca.sql` cria
+  liberado_app_audit (:147), fn_audit_liberado_app (:182), trg_audit_liberado_app
+  (:215), mascarar_cpf (:254), mascarar_telefone (:283),
+  obter_documento_signed_url (:229), fn_block_self_liberado_app (:316),
+  policies rc_*/rp_*/ro_*/mop_*/laa_*.
+  VERIFICAÇÃO REMOTA: TODOS os 8 objetos verificados = NÃO EXISTEM.
+  Trigger em `prestadores` = APENAS trg_bridge_prestador_para_recrutamento.
+  A migration REC-02 (`20260831000001` linha 392) usa `IF EXISTS ... THEN`,
+  ou seja, pulou em silêncio a parte de `liberado_app_audit`.
+  DOCUMENTOS CONFLITANTES A CORRIGIR:
+   • PRE_REC_06_2B_REVALIDACAO_P0_P1.txt:109 "TABELA EXISTE (CONTRADIÇÃO RESOLVIDA)" ← ERRADO
+   • PRE_REC_06_2_MAPEAMENTO_READONLY.txt:158 "liberado_app_audit — Auditoria liberado_app ✅" ← ERRADO
+   • CORE_E2E_01_APP_RECRUTAMENTO_TMS.txt:151-152 "TABELA NAO EXISTE" ← CORRETO
+   • src/test/rec01_fundacao_seguranca.test.ts:177 só valida CONTEÚDO DO ARQUIVO,
+     não a presença em produção → falso verde.
+  Impacto: nenhuma alteração administrativa de `liberado_app` fica registrada.
+
+A-9 — 🔴 P0 SEG: MOTORISTA PODE SE AUTOLIBERAR (escala de privilégio)
+  Policy `prestadores_update_own` (USING = linha própria, auth_user_id=auth.uid())
+  tem `with_check = NULL` → novo valor livre.
+  Não existe: trigger fn_block_self_liberado_app (A-8), CHECK constraint
+  (apenas PK + FK em prestadores), nem coluna audit.
+  → um prestador linkado pode fazer
+    UPDATE prestadores SET liberado_app=true, status='ativo' WHERE id=<o seu>.
+  BANCO: 5 prestadores têm auth_user_id preenchido (2 já com liberado_app=true).
+  Quem deveria impedir: REC-01 fn_block_self_liberado_app — não aplicada.
+
+A-10 — 🔴 P0 SEG: BUCKET `documentos_prestadores` EXPOSTO (CNH/CRLV/assinaturas)
+  storage.buckets: name=documentos_prestadores, **public=true**, 78 objetos.
+  Policies em storage.objects (role `{public}` = inclui `anon`):
+    "Permitir leitura"  SELECT qual = bucket_id (sem role, sem prefixo)  → anon lista e lê
+    "Permitir update"   UPDATE qual = bucket_id                          → anon altera
+    "Permitir delete"   DELETE qual = bucket_id                          → anon apaga
+    "Permitir upload"   INSERT with_check = bucket_id                    → anon grava
+  Tabela `documentos_prestadores` tem RLS correta (dp_*_tms / dp_*_prestador),
+  mas é contornável: PrestadorDetalhe.tsx:390-394 grava **getPublicUrl()** e
+  persiste a URL pública na linha → qualquer pessoa com a URL lê o arquivo.
+  Contraste: bucket `driver-evidence` está correto (public=false,
+  policies authenticated + prefixo próprio).
+  buckets públicos também expostos: `contratos` (9 objs), `comprovantes-entrega` (8).
+
+A-11 — 🟠 P1: COERÊNCIA liberado_app SÓ NA MÃO DO ADMIN
+  PrestadorDetalhe.tsx:621-624 força liberadoApp=false quando status≠ativo
+  (bom), mas é a ÚNICA implementação desse guard. Nos demais escritores:
+   • conversaoCandidatoService:305/331 ok (deriva do stage)
+   • prestadoresService:389 ok, :432 ok, :640 ok
+   • recrutamentoIntegracao:221 fail-closed ok
+  → regra consistente no código; o que falta é a camada de banco (A-8/A-9).
+
+A-12 — 🟠 P1: RLS DO RECRUTAMENTO SEM ISOLAMENTO TENANT
+  Policies `recrutamento_candidatos_*`, `recrutamento_prestadores_*`,
+  `candidato_documentos_*` são role `{public}` com qual apenas
+  `auth.role() = 'authenticated'` → qualquer usuário autenticado de QUALQUER
+  tenant lê/edita/apaga todos os candidatos. (Documentado como
+  "rc_select_auth ... REC-01" que justamente não foi aplicada.)
+
+A-13 — 🟠 P1: DADOS ÓRFÃOS / INTEGRIDADE
+  • 15 de 25 candidatos com prestador_id NULL (nunca convertidos).
+  • 32 linhas em documentos_prestadores, 3 com prestador_id NULL (órfãs).
+  • `reservas_banco` não existe → 2 escritas órfãs (recrutamentoIntegracao:187,268).
+  • 3 CPFs duplicados (A-5).
+  • `prestadores_app` (2 linhas) e `prestadores` (39) são bases paralelas lidas
+    pelo App (driver_profile_repository.dart:29, financial_repository.dart:61-69).
+
+A-14 — 🟡 P2: STAGE `interesse_confirmado` FORA DO MAPA DO SCORE
+  criarCandidatoService grava `stage:'interesse_confirmado'`, mas
+  recrutamentoScoreService aplicaveis (linhas 33-52) só cobre os estágios
+  canônicos → calcularScoreComprometimento retorna null ("Dados insuficientes").
+  (Mantém REC-06.2D.2F correto — ver seção D — mas o canal nunca gera score.)
+
+--------------------------------------------------------------------------------
+4. SAÍDA A — O QUE JÁ EXISTE E PODE SER REAPROVEITADO (não refazer)
+--------------------------------------------------------------------------------
+A.1 App → prestadores: RPC `app_s6_criar_prestador` (SECURITY DEFINER, assinatura
+    completa, cria auth user, liberado_app=false) + `app_s6_cpf_cnpj_ja_cadastrado`
+    + `app_s6_resolver_identidade_legada` — contrato estável com o Flutter
+    (register_screen.dart). Usar como única porta de entrada de novos prestadores.
+A.2 Trigger `trg_bridge_prestador_para_recrutamento` →
+    `f_bridge_prestador_para_recrutamento` (ATIVO) — já cria recrutamento_* sozinho.
+A.3 Upload/leitura de documentos alinhado dos dois lados: App
+    `driver_documents_repository.dart` e TMS `PrestadorDetalhe.tsx` usam o MESMO
+    bucket `documentos_prestadores` e a MESMA tabela (id, prestador_id, tipo, url).
+A.4 Gate operacional fail-closed `eligibilidadeOperacionalService` (status +
+    liberado_app) — pronto e testado (AG-07F).
+A.5 Coerência E2E-05D no admin (`PrestadorDetalhe.tsx:621-624`).
+A.6 Score de comprometimento REC-06.2D.2F já implementado (seção D).
+A.7 Rota pública `/cadastro-prestador` fora do ProtectedRoute (App.tsx:101)
+    + link de captação (Captacao.tsx:19) — estrutura certa, só o INSERT está errado.
+A.8 `documentosPrestadorService` (verificarDocumentoDuplicado, vincular,
+    verificarDocumentosOrfaos, TIPOS_DOCUMENTO_VALIDOS) — alinhado ao schema real.
+A.9 Serviços de conversão com gates corretos em conceito
+    (conversaoCandidatoService, ag07j10_1, ag07j11 — testes existem).
+
+--------------------------------------------------------------------------------
+5. SAÍDA B — O QUE ESTÁ PARCIAL
+--------------------------------------------------------------------------------
+B.1 Cadastro admin (`PrestadoresLista` + `PrestadorDetalhe`) — grava certo,
+    mas NÃO tem botões de aprovar/reprovar/bloquear em lista (grep: 0 ocorrências
+    de aprovar/reprovar/liberado_app em PrestadoresLista.tsx); tudo no detalhe.
+B.2 Módulo Recrutamento — leitura/listagem ótimas; escrita de sync falha (A-3).
+B.3 Conversão Kanban — fluxo e gates certos; gate inatingível (A-4) e INSERT falha (A-3).
+B.4 App → TMS: criação ok; atualização posterior não propaga (A-7).
+B.5 Documentos: caminho App/TMS ok; exposição pública P0 (A-10);
+    ponte candidato→prestador vazia (A-4/A-13).
+B.6 `prestadores_public` / `vw_relatorio_prestadores_analise` existem como views.
+B.7 REC-06.2D.2F: código pronto, validação E2E 45/45 — falta fechar a documentação.
+
+--------------------------------------------------------------------------------
+6. SAÍDA C — O QUE FALTA (lacunas por prioridade)
+--------------------------------------------------------------------------------
+P0  C-1  Corrigir INSERT do pré-cadastro (colunas reais) — A-1
+P0  C-2  Persistir documentos/assinatura/LGPD do onboarding — A-2
+P0  C-3  Aplicar migration REC-01 (audit + bloqueio self + mascaramento) — A-8/A-9
+P0  C-4  Tornar privado o bucket documentos_prestadores + signed URLs — A-10
+P0  C-5  Remover colunas inexistentes dos payloads (veiculos/cidade/uf/status/cnh_validade) — A-3
+P1  C-6  Tornar alcançável o gate documental (escrever `documentos` jsonb) — A-4
+P1  C-7  Console de aprovação real no lugar do simulador /app-prestador — A-6
+P1  C-8  Isolamento tenant nas policies de recrutamento — A-12
+P1  C-9  Dedup real (corrigir cnh_validade) + limpar 3 CPFs duplicados — A-5/A-13
+P1  C-10 Sincronização UPDATE prestadores ↔ recrutamento_prestadores — A-7
+P2  C-11 Corrigir relatórios conflitantes sobre liberado_app_audit — A-8
+P2  C-12 Estender stage do score para `interesse_confirmado` — A-14
+P2  C-13 Tratar `reservas_banco` (tabela inexistente) e docs órfãos — A-13
+
+--------------------------------------------------------------------------------
+7. SAÍDA D — ONDE RETOMAR REC-06.2D.2F (checkpoint RESOLVIDO/STALE)
+--------------------------------------------------------------------------------
+ESTADO: **JÁ ESTÁ IMPLEMENTADO NO CÓDIGO** — NÃO reabrir, não reimplementar.
+  • `src/services/recrutamento/recrutamentoScoreService.ts:33-52`
+      — comentário "REC-06.2D.2F — estágio vazio comporta-se como contato_inicial"
+      — `aplicaveis` cobre todos os estágios canônicos; sem `minimoPorStage`
+      — `reprovado` → -1
+  • Teste: `src/test/rec06_2d2_score_comprometimento.test.ts` (existe, 14.658 bytes)
+  • `E2E-COMPLETO-03` (2026-09-22) = 45/45 PASS
+O QUE RESTA (documental, NÃO de código):
+  1. Fechar a nota obsoleta "pausado em REC-06.2D.2F" nos documentos:
+       E2E-COMPLETO-01-PLANO.txt:14              (diz PENDENTE)
+       FECHAMENTO-TMS-PENDENCIAS-FINAIS-01.txt:40 (diz PENDENTE)
+     mantendo o alinhamento com:
+       REC-AUTO-406-01-ROOT-CAUSE.txt:296         (diz COMPLIED — correto)
+  2. (Opcional) rodar `npx vitest run src/test/rec06_2d2_score_comprometimento.test.ts`
+     para reconfirmar — NÃO é requisito desta missão.
+  3. Não confundir com A-14: o score está ok; quem não gera score é o canal
+     público que nem chega a criar candidato (A-1).
+
+--------------------------------------------------------------------------------
+8. SAÍDA E — ADMIN APP PRESTADOR: COMPLETAR / INTEGRAR / CONECTAR
+--------------------------------------------------------------------------------
+ESTADO ATUAL: `/app-prestador` = simulador de motorista (A-6). Não aprova nada.
+OPÇÕES (decidir na micro-missão ADM-APP-02G):
+  E-1 COMPLETAR  — transformar AppPrestador.tsx em console administrativo:
+                   lista de candidatos/prestadores com ações Aprovar /
+                   Reprovar / Bloquear / Liberar App, exigindo
+                   status ativo + (novo) gate documental, gravando em
+                   `prestadores.status` + `prestadores.liberado_app` e
+                   registrando em `liberado_app_audit` (A-8).
+  E-2 INTEGRAR   — apontar a sidebar para um console já existente em vez de
+                   duplicar: `CadastrosPrestadores` (rota /cadastros/prestadores)
+                   + `PrestadorDetalhe` (já tem o toggle liberado_app) + aba do
+                   módulo Recrutamento (Kanban com conversão).
+                   Ação mínima: mover o item "Admin App Prestador"
+                   (sidebarData.ts:280) para rotas reais e aposentar o simulador.
+  E-3 CONECTAR   — se mantiver /app-prestador, conectar-o ao banco real:
+                   substituir `viagens`/docs hardcoded por queries a
+                   `prestadores` (status, liberado_app, documentos_prestadores),
+                   persistir checklist em `prestadores.onboarding`/tags e
+                   acionar `prestadoresService.atualizarStatus()` (que precisa
+                   antes do fix A-3).
+  E-4 OBRIGATÓRIO em qualquer opção: corrigir a percepção — hoje o item rotulado
+                   "Admin App Prestador" promete algo que não entrega.
+  E-5 INTEGRAÇÃO PENDENTE A VALIDAR: `prestadores_app` (2 linhas) vs `prestadores`
+                   (39) — o App lê as duas (driver_profile_repository.dart:29,
+                   financial_repository.dart:61-69); definir fonte única.
+
+--------------------------------------------------------------------------------
+9. SAÍDA F — MICRO-MISSÕES PROPOSTAS (3 a 6) — NÃO EXECUTAR
+--------------------------------------------------------------------------------
+[ADM-APP-02B] PRÉ-CADASTRO PÚBLICO FUNCIONAL                          (P0, 1–2d)
+    Corrigir criarCandidatoService para as 46 colunas reais (nome, telefone,
+    email, cidade, uf, veiculo, placa, stage, ...); adicionar campos de contato
+    no wizard; persistir uploads (selfie/CNH/CRLV/comprovante/fotos) no bucket
+    `documentos_prestadores` + `candidato_documentos`, assinatura/LGPD em
+    `recrutamento_candidatos.questionario_respostas` ou metadata; criar teste
+    unitário de colunas (previne regressão do tipo A-1).
+    Fecha A-1, A-2. Não mexe em schema.
+
+[ADM-APP-02C] FECHAMENTO DE SEGURANÇA REC-01                          (P0, 1d)
+    Aplicar `20260831000000_rec01_fundacao_seguranca.sql` + parte da REC-02
+    (liberado_app_audit, fn_audit_liberado_app, trg_audit_liberado_app,
+    fn_block_self_liberado_app, mascarar_cpf/telefone, policies rc_*/rp_*/
+    ro_*/mop_*/laa_*); RLS tenant em recrutamento_*; corrigir os 4 documentos
+    conflitantes (seção 3/A-8) e o teste rec01 (que só lê o arquivo).
+    Fecha A-8, A-9, A-12. Exige autorização de migration em produção.
+
+[ADM-APP-02D] PRIVACIDADE DOS DOCUMENTOS                               (P0, 0,5d)
+    Bucket `documentos_prestadores` → privado; policies storage com role
+    authenticated + prefixo por prestador; trocar getPublicUrl por
+    createSignedUrl em PrestadorDetalhe.tsx:390 e nos demais leitores
+    (AnaliseLote, StatusDocumental, portalPrestadorService, App Flutter);
+    auditar buckets `contratos` e `comprovantes-entrega` também públicos.
+    Fecha A-10. NÃO mexe no bucket `driver-evidence` (está correto).
+
+[ADM-APP-02E] UNIFICAÇÃO DE DADOS RECRUTAMENTO ↔ OPERAÇÃO              (P1, 1–2d)
+    Remover `veiculos`/`cidade`/`uf` dos payloads (usar `endereco` jsonb já
+    existente) e `cnh_validade` dos selects; corrigir `status` → `stage` nas
+    escritas de recrutamento_candidatos (recrutamentoIntegracao:181,262,298);
+    remover/escrever `reservas_banco`; adicionar sincronização UPDATE no
+    bridge (A-7); limpar 3 CPFs duplicados + docs órfãos.
+    Fecha A-3, A-5, A-7, A-13.
+
+[ADM-APP-02F] GATE DOCUMENTAL ALCANÇÁVEL                               (P1, 1d)
+    Passar a escrever `recrutamento_candidatos.documentos` (jsonb) a partir de
+    `documentos_prestadores` (fonte canônica) e/ou `candidato_documentos`;
+    fazer o ponte `vincularDocumentoCandidatoAPrestador` popular
+    `candidato_documentos` a partir do App; liberar o scan de validade
+    (eventProcessorWorker); estender o score a `interesse_confirmado` (A-14).
+    Fecha A-4, A-14. Mantém fail-closed do gate AG-07J11.
+
+[ADM-APP-02G] CONSOLE DE APROVAÇÃO (Admin App Prestador)               (P1, 2–3d)
+    Executar a opção E-1/E-2/E-3 da seção 8: ações aprovar/reprovar/bloquear/
+    liberar com auditoria, decidindo a origem (novo console vs. reaproveitar
+    CadastrosPrestadores + Kanban) e aposentando o simulador.
+    Fecha A-6. Depende de 02C (auditoria) e 02E (sync).
+
+Ordem sugerida: 02D (rápido, risco) → 02C (segurança) → 02B (entrada) →
+02E (dados) → 02F (gate) → 02G (console).
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+10. BACKLOG CUMULATIVO PRESERVADO (não reexecutar, não apagar)
+--------------------------------------------------------------------------------
+GAP-F2-01..06 · GAP-F3-04/05 · GAP-F4-01..05 · GAP-F5-03/04 ·
+APP-DATA-01 · APP-SCHEMA-01 · STORAGE-E2E11-PURGE = BLOCKED/EXTERNAL
+(4 objetos bucket privado `driver-evidence`, path
+ a5e51631-5ed8-430d-9041-4b185c03d821/pod/18d50f0b-704f-4361-8626-ed43c8000601/
+ 2026/09/27/..., ids eb740edf…, 3d85b226…, ecff3bc5…, ea43dad2…;
+ SQL direto proibido, sem SERVICE_ROLE_KEY — não solicitar/exibir) ·
+TEST-FIN-IS_TESTE-01 · tools/query_operation.dart · tools/dotenv ·
+OS esporádicos/motoboys · romaneio · KM/pedágio/adicionais/reembolsos ·
+financeiro prestador · Rede de Oportunidades · proximidade/raio/distância ·
+Radar · CAD-PERSIST · indicadores reais · dívida TypeScript TMS
+(npx tsc -p tsconfig.app.json --noEmit = 894 erros pré-existentes; NÃO reduzir
+ de 7→6 nesta missão).
+Prioridades herdadas: 3 (registros NULL), 4 (dashboard Financeiro), 5 (Romaneio),
+6 (KM/pedágio), 7 (cadastro prestador), 8 (Rede de Oportunidades),
+9 (proximidade), 10 (Radar), 11 (indicadores reais), 12 (Banco de Talentos).
+Missões 11C/11D/11E/11F concluídas (E2E PASS) — NÃO reexecutar.
+Nível 8 FECHADO.
+
+--------------------------------------------------------------------------------
+11. EVIDÊNCIAS (read-only)
+--------------------------------------------------------------------------------
+Consultas remotas (SELECT apenas) executadas via scripts/_adm_app_02a_*.mjs:
+  • existência de objetos REC-01 → 8/8 INEXISTENTES
+  • triggers de `prestadores` → apenas trg_bridge_prestador_para_recrutamento
+  • policies `prestadores` → prestadores_update_own com with_check = NULL
+  • storage: buckets + policies → documentos_prestadores public=true, role public
+  • contagens: prestadores 39, recrutamento_prestadores 10,
+    recrutamento_candidatos 25 (15 sem prestador_id), candidatos com documentos
+    jsonb = 0, candidato_documentos = 0, documentos_prestadores 32 (3 órfãs),
+    homologacoes = 0, prestadores_app = 2, liberado_app=true = 3 (2 com auth)
+  • information_schema: colunas de prestadores (81), recrutamento_candidatos (46),
+    recrutamento_prestadores (31), documentos_prestadores, homologacoes, prestadores_app
+  • CPFs duplicados: 3 valores / 8 linhas
+Leituras de código: App.tsx (rotas), sidebarData.ts, AppPrestador.tsx,
+CadastroPrestador.tsx, criarCandidatoService.ts, recrutamentoIntegracao.ts,
+prestadoresService.ts, conversaoCandidatoService.ts, enterpriseKanbanService.ts,
+identidadePrestadorService.ts, documentosPrestadorService.ts,
+PrestadorDetalhe.tsx, CadastrosPrestadores.tsx, eventProcessorWorker.ts,
+eligibilidadeOperacionalService.ts, recrutamentoScoreService.ts;
+APP (C:\src\conexao_prestador): register_screen.dart, driver_documents_repository.dart,
+storage_upload_service.dart, driver_profile_repository.dart, financial_repository.dart.
+
+VALIDAÇÃO DA MISSÃO:
+  • Nenhum arquivo de src/ ou supabase/ foi alterado (somente scripts de
+    auditoria prefixados com "_" foram criados).
+  • Nenhum dado foi inserido/atualizado/removido.
+  • Nenhuma migration foi aplicada.
+  • dívida TypeScript preservada (894 erros pré-existentes, não tocada).
+
+================================================================================
+FIM — ADM-APP-02A. Próximo passo: decisão humana sobre as micro-missões 02B–02G.
+================================================================================

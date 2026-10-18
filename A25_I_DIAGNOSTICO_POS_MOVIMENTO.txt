@@ -1,0 +1,239 @@
+================================================================================
+MISSÃO A25-I — DIAGNÓSTICO PÓS-MOVIMENTO REAL DO REDMI
+Projeto: EXPRESS CONNECT HUB — TMS CONEXÃO EXPRESS
+Supabase Produção: uwrvzsjtpgaifkktpepn
+APK: 1.0.1+1313 (NÃO alterado)
+Modo: SOMENTE LEITURA/DIAGNÓSTICO — ZERO ALTERAÇÕES
+Data: 2026-08-15 (consulta ~11:00Z)
+================================================================================
+
+# POSIÇÕES NO BANCO
+--------------------------------------------------------------------------------
+Tabela: portal_tracking_realtime | alocacao_id: ca5fe225-7114-42da-9997-c3d466e5df52
+Ordenado por captured_at DESC, created_at DESC (últimas 10 = todas as 4 existentes):
+
+1) id b7c215d6-9759-438b-a31c-ff9bf9cce0e6  ★ NOVA (pós-movimento)
+   captured_at: 2026-08-15T07:56:15.558Z
+   created_at : 2026-08-15T10:56:16.149Z   ← servidor, hora REAL (4min antes da consulta)
+   latitude: -23.6766402 | longitude: -46.5987658
+   precisao: 13.55 | velocidade: 0.415
+   status: online | origem: app_motorista
+   alocacao_id: ca5fe225 | os_id: null | prestador_id: e6646799
+
+2) id 14f4aae1-0e34-43ce-852f-75b3fa72246c  (flush H2)
+   captured_at: 2026-08-11T14:47:57Z | created_at: 2026-08-15T10:39:22Z
+   lat -23.6766679 lng -46.5987854 | precisao 28.24 | vel 0 | online | app_motorista
+
+3) id f5b883c7-02ad-4432-90dc-f260054f7a61  (flush H2)
+   captured_at: 2026-08-11T14:47:24Z | created_at: 2026-08-15T10:39:22Z
+   lat -23.6766125 lng -46.5988569 | precisao 24.41 | vel 0
+
+4) id 467ae32b-34ee-4699-ab3e-dd48258a4ef0  (flush H2)
+   captured_at: 2026-08-11T14:37:39Z | created_at: 2026-08-15T10:39:22Z
+   lat -23.676656 lng -46.5987825 | precisao 21.65 | vel 0 | altitude 770.8
+
+Observação chave na posição ★ nova:
+   created_at (10:56:16Z) − captured_at (07:56:15Z) = 10800.59 s = EXATAMENTE 3 horas.
+   created_at é now() do servidor (UTC) no momento do INSERT.
+   → captured_at foi gravado 3h no passado em relação ao momento real da captura.
+
+--------------------------------------------------------------------------------
+# POSIÇÃO NOVA APÓS MOVIMENTO
+--------------------------------------------------------------------------------
+SIM.
+
+A posição b7c215d6 foi CRIADA às 2026-08-15T10:56:16Z — aproximadamente 4 minutos antes
+da consulta (11:00Z) e cerca de 17min após o fix A25-H2 (flush às 10:39:22Z). Ela chegou
+APÓS o movimento físico do Redmi: origin app_motorista, velocidade 0.415 m/s (pequeno
+deslocamento), precisão 13.5m (GPS real melhorando fix).
+
+--------------------------------------------------------------------------------
+# CAPTURED_AT RECENTE
+--------------------------------------------------------------------------------
+NÃO.
+
+Apesar de a posição ser nova (created_at recente), o campo captured_at = 07:56:15Z está
+3 horas no passado. O servidor é timezone UTC. Em TODO o banco, 0 posições possuem
+captured_at nos últimos 2 horas — todas as posições do App têm captured_at deslocado -3h.
+
+--------------------------------------------------------------------------------
+# CAUSA DO DESLOCAMENTO -3h (TIMEZONE) — EVIDÊNCIA DE CÓDIGO
+--------------------------------------------------------------------------------
+Fluxo no App (não alterado; análise de código):
+- tracking_session_service.dart:139   → final now = DateTime.now();
+- tracking_session_service.dart:148   → capturedAt: now
+- real_tracking_service.dart:159      → capturedAt ??= DateTime.now();
+- real_tracking_service.dart:186      → createdAt: capturedAt
+- tracking_point.dart:110             → 'p_captured_at': createdAt.toIso8601String()
+
+PROBLEMA:
+- Em Flutter, DateTime.now() retorna hora LOCAL do dispositivo (Brasil = UTC-3, BRT).
+- Dart's toIso8601String() para um DateTime LOCAL NÃO anexa sufixo de offset nem 'Z'.
+  Ex.: "2026-08-15T07:56:15.558" (sem timezone).
+- O Postgres/Supabase interpreta string timestamp SEM timezone como UTC
+  (servidor configurado em UTC — confirmado via SHOW timezone).
+- Resultado: hora local 07:56 (BRT) = 10:56 UTC real, mas gravada como 07:56Z
+  → captured_at fica exatamente -3h (BRT) no passado.
+
+CONFIRMAÇÃO BANCO:
+- SHOW timezone → UTC.
+- captured_at sem DEFAULT (vem 100% do payload do App), sem trigger que reescreva.
+- created_at DEFAULT now() (UTC do servidor, correto).
+- diff created_at − captured_at da posição nova = 10800.59s = 3h exatas.
+
+--------------------------------------------------------------------------------
+# APP/BACKEND
+--------------------------------------------------------------------------------
+OK (com 1 bug de timezone no payload, não no transporte).
+
+- App envia posição: SIM (posição nova chegou após movimento).
+- RPC aceitou: SIM (b7c215d6 gravada; sem 22P02).
+- Banco recebeu: SIM.
+- Problema: o campo captured_at do payload é hora local sem timezone → -3h.
+  O RPC armazenou fielmente o valor recebido; não é defeito do RPC.
+
+--------------------------------------------------------------------------------
+# TORRE
+--------------------------------------------------------------------------------
+Trajeto completo da posição nova (onde ela desaparece):
+
+BANCO (posição b7c215d6 existe, created_at recente)
+   │
+   ▼
+1) buscarUltimasPosicoes() [trackingService.ts:217-242]
+   → usa captured_at PRIORITÁRIO (07:56Z) → idade = 183 min > 60 min → LINHA DESCARTADA
+   → trackingPositions NUNCA recebe a posição nova no carregamento inicial.
+   |
+   ▼
+2) Realtime (torre-realtime-tracking INSERT) [TorreControle.tsx:184-202]
+   → se a Torre estivesse aberta no momento do INSERT, adicionaria a posição a
+     trackingPositions. Porém:
+   |
+   ▼
+3) markers [TorreControle.tsx:570-657]
+   → GRUPO 2: alocacoesSemOS inclui ca5fe225 (em_rota, os_id null).
+   → montarMarcadorAlocacaoSemOS [markerAdapter.ts:321-371]
+     → posicaoRecente(posicao) [markerAdapter.ts:259-271]
+        → usa captured_at (07:56Z) → idade 183 min > 60 min → FALSE
+     → retorna NULL → marcador NÃO é criado.
+   → sem marcador para a alocação.
+   |
+   ▼
+4) filteredMarkers = markers (vazio)
+   |
+   ▼
+5) MapboxMap locations = [] → "Nenhuma localização" / sem marcador.
+   |
+   ▼
+6) Contador linha 889: {filteredMarkers.length} de {markers.length} OS
+   → 0 de 0 OS (markers.length=0).
+
+ONDE A POSIÇÃO DESAPARECE: NO FILTRO DE RECÊNCIA (captured_at 3h no passado).
+O elo quebrado NÃO está na Torre (filtros corretos e coerentes) — está no valor de
+captured_at produzido pelo App (timezone local sem sufixo).
+
+--------------------------------------------------------------------------------
+# 0 DE 0 OS
+--------------------------------------------------------------------------------
+CAUSA COMPROVADA (não é só "vazio"):
+
+- ordens_servico REAL: 120 registros existem. Porém a alocação da prova
+  (ca5fe225) tem ordem_servico_id = NULL → NÃO pertence ao GRUPO 1 (OS reais).
+  Ela pertence ao GRUPO 2 (alocações ativas sem OS).
+- buscarAlocacoesSemOS(50) [trackingService.ts:327-373]:
+  → SELECT status IN (aceita, em_rota, ocorrencia) AND ordem_servico_id IS NULL
+  → Retornaria 11 alocações ativas sem OS (reproduzido via SQL no banco).
+  → INCLUI ca5fe225 (status em_rota, prestador e6646799 vinculado).
+  → A alocação da prova ENTRA na coleção Grupo 2. ✅
+- Porém montarMarcadorAlocacaoSemOS() retorna NULL porque
+  posicaoRecente(posicao, 60min) falha (captured_at 07:56Z = 183min de idade).
+- Sem marcador, markers.length = 0 → contador "0 de 0 OS".
+- Nota: as outras 10 alocações sem OS têm prestador NULL e NENHUMA posição —
+  corretamente não geram marcador.
+
+RESUMO: a alocação ca5fe225 é CORRETAMENTE encontrada e qualificada para o mapa,
+mas o marcador é bloqueado pelo filtro de recência que recebe captured_at errado (-3h).
+
+--------------------------------------------------------------------------------
+# PRIMEIRO ELO QUEBRADO
+--------------------------------------------------------------------------------
+APP FLUTTER — serialização de captured_at sem timezone.
+
+  tracking_point.dart:110 → 'p_captured_at': createdAt.toIso8601String()
+  com createdAt = DateTime.now() (local, UTC-3) → string sem 'Z'/offset.
+
+Consequência: todo ponto do App é interpretado pelo Postgres como 3h no passado,
+fazendo a Torre (e qualquer consumidor baseado em captured_at) tratar posições vivas
+como não-operacionais (>= 60min) e descartá-las do mapa.
+
+--------------------------------------------------------------------------------
+# CAUSA-RAIZ
+--------------------------------------------------------------------------------
+TIMEZONE no payload do App (captured_at = hora local BRT sem sufixo de timezone),
+agravado pela combinação:
+1. DateTime.now() retorna hora local no Flutter.
+2. toIso8601String() de DateTime local omite o offset (não emite 'Z').
+3. Postgres/Supabase interpreta timestamp sem timezone como UTC (servidor UTC).
+4. → captured_at gravado -3h (BRT) em relação ao instante real.
+
+A posição NOVA EXISTE e chegou corretamente ao banco (APP/BACKEND funcionando),
+mas captured_at não é recente → Torre a descarta como "muito antiga".
+
+--------------------------------------------------------------------------------
+# CORREÇÃO EXATA NECESSÁRIA (APENAS DESCRIÇÃO — NÃO EXECUTAR)
+--------------------------------------------------------------------------------
+OBJETO: APP FLUTTER (C:\src\conexao_prestador) — fora do escopo desta missão
+(somente leitura; NÃO gerar APK nesta missão).
+
+Opções (em ordem de preferência técnica):
+
+OPÇÃO 1 — Enviar captured_at em UTC no payload:
+  tracking_point.dart:110 → 'p_captured_at': createdAt.toUtc().toIso8601String();
+  (garante sufixo 'Z' → Postgres interpreta corretamente como UTC).
+  Opcional: idem para 'captured_at' em toJson() (linha 94) se usado para fila offline.
+
+OPÇÃO 2 — Usar o timestamp UTC do próprio geolocator (Position.timestamp),
+  que já é UTC, em vez de DateTime.now():
+  tracking_session_service.dart:139 → usar position.timestamp (toUtc())
+  em vez de final now = DateTime.now().
+
+OPÇÃO 3 — Normalizar no cliente: DateTime.now().toUtc() onde captured_at é criado.
+
+Alternativa de robustez no servidor (NÃO recomendada sem validação do contrato):
+  - O RPC poderia interpretar strings sem timezone como hora local do Brasil
+    (TimeZone 'America/Sao_Paulo' por sessão), mas isso mudaria o contrato e
+    afetaria outros consumidores. Mantém o bug escondido. NÃO recomendado.
+
+Validação pós-correção (nova prova):
+  - Redmi em rota → movimentar → nova posição com captured_at ≈ now (UTC, com 'Z').
+  - Confirmar no banco: captured_at recente (≤15min) e created_at ≈ captured_at.
+  - Torre deve exibir marcador + "GPS Ativo" + "Motoristas Online" + contador
+    "X de Y OS" refletindo a alocação Grupo 2.
+  - Validar background (tela off) e fila offline (captured_at preservado em UTC).
+
+--------------------------------------------------------------------------------
+# SEGURANÇA
+--------------------------------------------------------------------------------
+  - Nenhuma alteração TMS ................. CONFIRMADO (somente leitura)
+  - Nenhuma alteração Flutter ............. CONFIRMADO (somente leitura)
+  - Nenhuma alteração RPC ................. CONFIRMADO
+  - Nenhuma migration ..................... CONFIRMADO
+  - Nenhuma tabela/coluna criada/removida . CONFIRMADO
+  - Nenhuma RLS/trigger alterada .......... CONFIRMADO
+  - Nenhum INSERT/UPDATE/DELETE manual .... CONFIRMADO
+  - Nenhuma posição artificial ........... CONFIRMADO (dados vieram do App real)
+  - APK não regenerado ................... CONFIRMADO (1.0.1+1313)
+
+--------------------------------------------------------------------------------
+# STATUS FINAL
+--------------------------------------------------------------------------------
+C) POSIÇÃO NOVA EXISTE MAS captured_at NÃO É RECENTE
+
+Causa: timezone do captured_at no payload do App (hora local BRT sem 'Z',
+interpretado como UTC pelo Postgres → -3h). A Torre descarta corretamente posições
+com captured_at > 60min. APP/BACKEND estão funcionando; o defeito é a serialização
+do timestamp no App.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-I
+================================================================================

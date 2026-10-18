@@ -1,0 +1,150 @@
+{
+  "ts": "2026-10-04T23:35:52.920Z",
+  "checks": [
+    {
+      "name": "elo_orcamento_os",
+      "ok": true,
+      "detail": "colunas de vinculo existem (orcamentos.os_vinculada_* e ordens_servico.orcamento_origem/orcamento_id); convertidos=0, OS de orcamento=0"
+    },
+    {
+      "name": "elo_os_alocacao",
+      "ok": true,
+      "detail": "118/204 alocacoes vinculadas a OS (ordem_servico_id)"
+    },
+    {
+      "name": "elo_alocacao_prestador",
+      "ok": false,
+      "detail": "145/204 alocacoes com prestador_id"
+    },
+    {
+      "name": "elo_app_auth",
+      "ok": true,
+      "detail": "5/39 prestadores com auth_user_id (login App)"
+    },
+    {
+      "name": "aloc_os_sem_orfao",
+      "ok": true,
+      "detail": "0 alocacoes com ordem_servico_id inexistente"
+    },
+    {
+      "name": "aloc_prestador_sem_orfao",
+      "ok": true,
+      "detail": "0 alocacoes com prestador_id inexistente"
+    },
+    {
+      "name": "auth_user_id_unico",
+      "ok": true,
+      "detail": "auth_user_id unico por prestador"
+    },
+    {
+      "name": "os_prestador_uuid_valido",
+      "ok": true,
+      "detail": "0 OS com prestador (uuid) inexistente"
+    },
+    {
+      "name": "os_cliente_uuid_valido",
+      "ok": true,
+      "detail": "0 OS com cliente (uuid) inexistente"
+    },
+    {
+      "name": "rota_paradas_aloc_valido",
+      "ok": true,
+      "detail": "0 paradas com alocacao_id inexistente"
+    },
+    {
+      "name": "app_retorna_operacoes",
+      "ok": true,
+      "detail": "2 prestadores App com operacoes visiveis"
+    },
+    {
+      "name": "rpc_resolve_prestador_auth",
+      "ok": true,
+      "detail": "RPC resolve prestador por auth_user_id = auth.uid()"
+    },
+    {
+      "name": "rpc_le_alocacoes",
+      "ok": true,
+      "detail": "RPC le alocacoes_escala"
+    },
+    {
+      "name": "rpc_join_os",
+      "ok": true,
+      "detail": "RPC junta OS (os_numero)"
+    },
+    {
+      "name": "rpc_join_paradas",
+      "ok": true,
+      "detail": "RPC junta rota_paradas por alocacao_id"
+    },
+    {
+      "name": "rpc_anti_auth_spoof",
+      "ok": true,
+      "detail": "RPC impede spoof de p_auth_user_id"
+    },
+    {
+      "name": "rpc_stable_definer",
+      "ok": true,
+      "detail": "RPC STABLE + SECURITY DEFINER"
+    }
+  ],
+  "chain": {
+    "orcamentos": {
+      "total": 10,
+      "convertido": 0,
+      "com_os": 0,
+      "aprovado": 1
+    },
+    "ordens_servico": {
+      "total": 167,
+      "de_orcamento": 0,
+      "com_prestador": 62
+    },
+    "alocacoes_escala": {
+      "total": 204,
+      "com_os": 118,
+      "com_prestador": 145,
+      "finalizadas": 59
+    },
+    "prestadores": {
+      "total": 39,
+      "com_auth": 5
+    }
+  },
+  "app_sim": [
+    {
+      "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "nome_completo": "PRESTADOR TESTE APP",
+      "auth_user_id": "399796b7-4e3b-432f-8744-4eb91f0ee31d",
+      "operacoes": 54,
+      "com_os": 21
+    },
+    {
+      "id": "f4d579e9-bc83-40a1-8ded-8d23c70b5872",
+      "nome_completo": "PRESTADOR HML AUTOMACAO",
+      "auth_user_id": "04358628-006e-453d-8c37-3ee04246aa21",
+      "operacoes": 1,
+      "com_os": 0
+    },
+    {
+      "id": "e9d43079-3d14-4083-b33e-f50174b6e663",
+      "nome_completo": "REC06 E2E Real Teste",
+      "auth_user_id": "40210d5e-acfd-4eea-81a7-c529bb50b788",
+      "operacoes": 0,
+      "com_os": 0
+    },
+    {
+      "id": "0b55f471-b8eb-419a-bda1-567ec3b37a39",
+      "nome_completo": "teste 2",
+      "auth_user_id": "47da030a-a536-4046-8f0f-e4878948b94e",
+      "operacoes": 0,
+      "com_os": 0
+    },
+    {
+      "id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "nome_completo": "TESTECOREAPP01k",
+      "auth_user_id": "f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8",
+      "operacoes": 0,
+      "com_os": 0
+    }
+  ]
+}

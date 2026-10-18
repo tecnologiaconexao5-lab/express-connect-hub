@@ -1,0 +1,91 @@
+ESCALA-FIN-03-SANEAR-OS-STALE-SEGURO
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA DE DADOS
+
+==================================================
+PRECHECK (revalidado em produção — 3/3 PASS)
+==================================================
+
+Para cada caso:
+  OS única (1 alocação por OS) = YES
+  valor_repasse > 0 = YES
+  custo_prestador 0/null = YES
+  financeiro_pagar aberto/pendente = YES
+  pagamentos_prestadores não pago/cancelado = YES
+  financeiro_baixas para os títulos = 0 (nenhuma baixa real)
+  sem mudança de estado desde a auditoria (ESCALA-FIN-02)
+PRECHECK_PASS=3/3 | BLOCKED_CHANGED_STATE=0
+
+Prova ESCALA-FIN-01 (títulos fechados): guardas de status já em produção
+(receber: pago/recebido/cancelada; pagar: pago/cancelado/cancelada;
+pagamentos: status_pagamento pago/cancelado) — nenhum título dos 3 casos é fechado.
+
+==================================================
+EXECUÇÃO (um caso por vez, pre/postcheck)
+==================================================
+
+[1] ALLOCATION_ID=fe4bc8a4-6d35-4ca9-b89b-f100fb4ea213 | OS_ID=2073a75d-62f7-453d-b4e3-eaf3e8ea212b
+  BEFORE_VALOR_REPASSE=800.00 | BEFORE_OS_CUSTO_PRESTADOR=0
+  BEFORE_PAGAR=800.00/aberto | BEFORE_PP=800.00/pendente
+  UPDATE_EXECUTED=YES | AFTER_OS_CUSTO_PRESTADOR=800.00
+  AFTER_PAGAR=800.00 | AFTER_PP=800.00
+  FINANCIAL_VALUE_CHANGED=NO | EXPECTED_MATCH=YES
+
+[2] ALLOCATION_ID=bc1c1901-71e4-4f02-8749-969a9936ae74 | OS_ID=38961ecf-4c62-4a87-a614-ec9092c988e4
+  BEFORE_VALOR_REPASSE=800.00 | BEFORE_OS_CUSTO_PRESTADOR=0
+  BEFORE_PAGAR=800.00/aberto | BEFORE_PP=800.00/pendente
+  UPDATE_EXECUTED=YES | AFTER_OS_CUSTO_PRESTADOR=800.00
+  AFTER_PAGAR=800.00 | AFTER_PP=800.00
+  FINANCIAL_VALUE_CHANGED=NO | EXPECTED_MATCH=YES
+
+[3] ALLOCATION_ID=2333f16e-6f4f-4169-8766-a02282ec8527 | OS_ID=2c24a4dc-3491-4f46-9d24-69ceb4d76d63
+  BEFORE_VALOR_REPASSE=250.00 | BEFORE_OS_CUSTO_PRESTADOR=0
+  BEFORE_PAGAR=250.00/pendente | BEFORE_PP=250.00/nao_vencido
+  UPDATE_EXECUTED=YES | AFTER_OS_CUSTO_PRESTADOR=250.00
+  AFTER_PAGAR=250.00 | AFTER_PP=250.00
+  FINANCIAL_VALUE_CHANGED=NO | EXPECTED_MATCH=YES
+  OBS: financeiro_receber recomputado pelo M80 → 500 (mesmo valor; era 500.00);
+       status_conferencia do pagamento normalizado 'pendente'→'em_aberto' (sem mudança de valor).
+
+Comando aplicado (por caso):
+  UPDATE ordens_servico SET custo_prestador = (SELECT valor_repasse FROM alocacoes_escala WHERE id = <aloc>), updated_at = NOW()
+  WHERE id = <os>;
+
+Dry-run prévio (BEGIN/ROLLBACK) comprovou: pagar/receber/pagamentos sem alteração de VALOR.
+
+==================================================
+RESULTADO
+==================================================
+
+PRECHECK_PASS=YES
+SAFE_CASES_EXPECTED=3
+SAFE_CASES_UPDATED=3
+BLOCKED_CHANGED_STATE=0
+FINANCIAL_VALUES_PRESERVED=YES
+AMBIGUOUS_CASES_UNTOUCHED=YES   (Classe E: 643c7ec7, 93014234 — OS compartilhada/prestador nulo)
+CLOSED_CASES_UNTOUCHED=YES      (Classe C: 8aca4262, bff76814 — pagar cancelado)
+TEST_CASES_UNTOUCHED=YES        (Classe D: 45857f5f, eaa0e5fd, 28640e7b — teste/cancelado)
+REMAINING_HISTORICAL_DIVERGENCES=9  (antes 12; os_zero=2 + divergent=7)
+
+Verificação de intocáveis: OS 643c7ec7=1000, 93014234=50, 8aca4262=1200,
+bff76814=1000, 45857f5f=null, eaa0e5fd=500, 28640e7b=null (inalteradas).
+
+ROLLBACK_PREPARED=YES
+  supabase/migrations/20260922000006_escala_fin_03_rollback.sql
+  (restaura custo_prestador=0 SOMENTE nas 3 OS alteradas; NÃO executado)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Alterado SOMENTE ordens_servico.custo_prestador das 3 OS autorizadas.
+- Não alterou diretamente financeiro_pagar/pagamentos_prestadores/financeiro_receber/
+  alocacoes_escala/composição/status.
+- Classes C/D/E intocadas. Sem migration de schema. Sem DELETE. Sem saneamento amplo.
+- Não tratou 134 alocações sem OS, 27 órfãs, redundância M66/M80, APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=supabase/migrations/20260922000006_escala_fin_03_rollback.sql (novo — rollback)
+DB_WRITES=3 (ordens_servico.custo_prestador nas 3 OS)
+MIGRATIONS=0

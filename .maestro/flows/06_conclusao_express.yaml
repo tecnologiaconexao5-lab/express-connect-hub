@@ -1,0 +1,300 @@
+# ============================================================================
+# ETAPA 6 (celular) - BATERIA-TESTES-E2E-LIVE / CENARIO C
+#
+# Conclui a jornada Express (OsExpressView) no app, do estado pos-aceite ate a
+# finalizacao, para o Playwright validar a OS na Fila de Liquidacao.
+#
+# Config da OS de teste (13 passos): carregamento + romaneio + descarga +
+# assinatura + POD. NAO ha etapa de KM.
+#  2 Cheguei ao local          (foto do local - captura)
+#  3 Estou carregando
+#  4 Coleta concluida
+#  5 Informar o romaneio       (dialog numero)
+#  6 Foto do comprovante/local (camera)
+#  7 Vou iniciar a entrega
+#  8 Cheguei ao destino
+#  9 Estou descarregando
+# 10 Terminei de descarregar
+# 11 Assinatura do recebedor   (dialog: nome/doc + foto + assinatura)
+# 12 Comprovar entrega         (POD: foto entrega + foto canhoto)
+# 13 (Encerrar entrega|Finalizar entrega)
+#
+# NOTA: a reconciliacao do app em cold-load pode "voltar" o passo exibido
+# (ex.: carregamento nao refletido) e, ao reexecutar, PULAR etapas ja persistidas.
+# Por isso cada transicao usa `extendedWaitUntil` para a UNIAO das etapas
+# POSTERIORES (nao apenas a imediata). Cada bloco so age se a sua etapa for a
+# atual (`runFlow.when.visible`), tornando o flow idempotente/robusto.
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+- waitForAnimationToEnd
+
+# ---- HOME -> aba Operacoes -> OS ----
+- tapOn:
+    text: ".*Operações.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Operações.*"
+    timeout: 30000
+- runFlow:
+    when:
+      true: ${OS_NUMERO != null}
+    commands:
+      - extendedWaitUntil:
+          visible: ".*${OS_NUMERO}.*"
+          timeout: 90000
+      - scrollUntilVisible:
+          element:
+            text: ".*${OS_NUMERO}.*"
+          direction: DOWN
+          timeout: 30000
+      - tapOn:
+          text: ".*${OS_NUMERO}.*"
+      - waitForAnimationToEnd
+
+# ---- Etapa 2: Cheguei ao local (captura da foto do local) ----
+- runFlow:
+    when:
+      visible: ".*Cheguei ao local.*"
+    commands:
+      - tapOn:
+          text: ".*Cheguei ao local.*"
+      - waitForAnimationToEnd
+      - tapOn:
+          text: "Abrir Câmera"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "50%, 86%"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "76%, 84%"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Estou carregando|Coleta concluída|Informar o romaneio|Foto do comprovante/local|Vou iniciar a entrega|Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 3: Estou carregando ----
+- runFlow:
+    when:
+      visible: ".*Estou carregando.*"
+    commands:
+      - tapOn:
+          text: ".*Estou carregando.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Coleta concluída|Informar o romaneio|Foto do comprovante/local|Vou iniciar a entrega|Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 4: Coleta concluida ----
+- runFlow:
+    when:
+      visible: ".*Coleta concluída.*"
+    commands:
+      - tapOn:
+          text: ".*Coleta concluída.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Informar o romaneio|Foto do comprovante/local|Vou iniciar a entrega|Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 5: Informar o romaneio ----
+- runFlow:
+    when:
+      visible: ".*Informar o romaneio.*"
+    commands:
+      - tapOn:
+          text: ".*Informar o romaneio.*"
+      - waitForAnimationToEnd
+      - inputText: "340612"
+      - tapOn:
+          text: "Confirmar"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Foto do comprovante/local|Vou iniciar a entrega|Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 6: Foto do comprovante/local (foto do romaneio) ----
+- runFlow:
+    when:
+      visible: ".*Foto do comprovante/local.*"
+    commands:
+      - tapOn:
+          text: ".*Foto do comprovante/local.*"
+      - waitForAnimationToEnd
+      - tapOn:
+          text: "Abrir Câmera"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "50%, 86%"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "76%, 84%"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Vou iniciar a entrega|Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 7: Vou iniciar a entrega ----
+- runFlow:
+    when:
+      visible: ".*Vou iniciar a entrega.*"
+    commands:
+      - tapOn:
+          text: ".*Vou iniciar a entrega.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Cheguei ao destino|Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 8: Cheguei ao destino ----
+- runFlow:
+    when:
+      visible: ".*Cheguei ao destino.*"
+    commands:
+      - tapOn:
+          text: ".*Cheguei ao destino.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Estou descarregando|Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 9: Estou descarregando ----
+- runFlow:
+    when:
+      visible: ".*Estou descarregando.*"
+    commands:
+      - tapOn:
+          text: ".*Estou descarregando.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Terminei de descarregar|Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 10: Terminei de descarregar ----
+- runFlow:
+    when:
+      visible: ".*Terminei de descarregar.*"
+    commands:
+      - tapOn:
+          text: ".*Terminei de descarregar.*"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Assinatura do recebedor|Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 11: Assinatura do recebedor ----
+- runFlow:
+    when:
+      visible: ".*Assinatura do recebedor.*"
+    commands:
+      - tapOn:
+          text: ".*Assinatura do recebedor.*"
+      - waitForAnimationToEnd
+      - tapOn:
+          text: ".*Nome do recebedor.*"
+      - inputText: "RECEBEDOR TESTE E2E"
+      - tapOn:
+          text: ".*Documento do recebedor.*"
+      - inputText: "12345678900"
+      # NAO usar hideKeyboard: no MIUI ele envia BACK e FECHA o dialogo modal
+      # (perdendo o preenchimento). O dialogo rola; a camera fecha o teclado.
+      - scrollUntilVisible:
+          element:
+            text: ".*Foto ou comprovante da entrega.*"
+          direction: DOWN
+          timeout: 20000
+      - tapOn:
+          text: ".*Foto ou comprovante da entrega.*"
+      - waitForAnimationToEnd
+      # Este botao abre a camera DIRETO (sem dialogo "Abrir Câmera").
+      - tapOn:
+          point: "50%, 86%"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "76%, 84%"
+      - waitForAnimationToEnd
+      - scrollUntilVisible:
+          element:
+            text: "Assinar"
+          direction: DOWN
+          timeout: 20000
+      - tapOn:
+          text: "Assinar"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "30%, 45%"
+          end: "72%, 55%"
+      - waitForAnimationToEnd
+      - tapOn:
+          text: "Confirmar assinatura"
+      - waitForAnimationToEnd
+      - scrollUntilVisible:
+          element:
+            text: ".*Confirmar entrega.*"
+          direction: DOWN
+          timeout: 20000
+      - tapOn:
+          text: "Confirmar entrega"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Comprovar entrega|(Encerrar entrega|Finalizar entrega)).*"
+          timeout: 90000
+
+# ---- Etapa 12: Comprovar entrega (POD: foto da entrega + canhoto) ----
+- runFlow:
+    when:
+      visible: ".*Comprovar entrega.*"
+    commands:
+      - tapOn:
+          text: ".*Comprovar entrega.*"
+      - waitForAnimationToEnd
+      # Captura 1 (Express: foto da entrega; nao-express: foto unica do POD).
+      - runFlow:
+          when:
+            visible: "Abrir Câmera"
+          commands:
+            - tapOn:
+                text: "Abrir Câmera"
+            - waitForAnimationToEnd
+            - tapOn:
+                point: "50%, 86%"
+            - waitForAnimationToEnd
+            - tapOn:
+                point: "76%, 84%"
+            - waitForAnimationToEnd
+      # Captura 2 (somente Express - foto do documento/canhoto), se aparecer.
+      - runFlow:
+          when:
+            visible: "Abrir Câmera"
+          commands:
+            - tapOn:
+                text: "Abrir Câmera"
+            - waitForAnimationToEnd
+            - tapOn:
+                point: "50%, 86%"
+            - waitForAnimationToEnd
+            - tapOn:
+                point: "76%, 84%"
+            - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible: ".*(Encerrar entrega|Finalizar entrega).*"
+          timeout: 90000
+
+# ---- Etapa 13: (Encerrar entrega|Finalizar entrega) ----
+- runFlow:
+    when:
+      visible: ".*(Encerrar entrega|Finalizar entrega).*"
+    commands:
+      - tapOn:
+          text: ".*(Encerrar entrega|Finalizar entrega).*"
+      - waitForAnimationToEnd
+      # Dialogo de confirmacao "Finalizar Operacao" -> botao "Confirmar".
+      - runFlow:
+          when:
+            visible: ".*Confirmar.*"
+          commands:
+            - tapOn:
+                text: ".*Confirmar.*"
+            - waitForAnimationToEnd
+
+- takeScreenshot: "06_fim_conclusao"

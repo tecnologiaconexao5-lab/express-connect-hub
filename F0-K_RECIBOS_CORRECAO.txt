@@ -1,0 +1,45 @@
+F0-K — RECIBOS (CORREÇÃO)
+=====================================================================
+1. ESTRUTURA ENCONTRADA/CRIADA
+   Nenhuma tabela/service de recibos existia. Criada tabela real `public.recibos`
+   (migration aditiva aplicada em PRODUÇÃO, ref confirmado uwrvzsjtpgaifkktpepn):
+   id, numero, data_emissao, favorecido_tipo/nome/documento, valor,
+   valor_extenso, referencia, forma_pagamento, conta_financeira, os_numero,
+   observacoes, status (emitido|cancelado), motivo_cancelamento,
+   data_cancelamento, usuario_criador/cancelou, created_at/updated_at.
+2. ARQUIVOS ALTERADOS
+   supabase/migrations/20260819_f0k_recibos.sql (NOVO) · scripts/f0k_aplicar_recibos.mjs
+   src/services/financeiro/reciboService.ts (NOVO)
+   src/components/financeiro/ReciboRapido.tsx (reescrito)
+   src/test/f0k_recibos.test.ts (NOVO — 9 validações)
+3. HISTÓRICO
+   Aba "Histórico" lista número, data, favorecido, documento, referência, valor
+   e status; ações: visualizar, PDF, imprimir, reemitir e cancelar. Filtros por
+   período, status e busca (nº/favorecido/referência).
+4. NUMERAÇÃO
+   REC-AAAAMM-SSSSS (sequência mensal) + índice único uq_recibos_numero no banco
+   + retry no service → dois recibos nunca com o mesmo número.
+5. PDF / IMPRESSÃO
+   jsPDF com logo oficial (carregarLogoBase64Utils/fallback), razão social, CNPJ,
+   endereço, cidade/UF, número, data, favorecido, CPF/CNPJ, valor + por extenso,
+   referência, forma de pagamento, OS/romaneio, conta, observações e assinatura.
+   Botões: PDF (download) e Imprimir (abre para impressão).
+6. LOGO/DADOS EMPRESARIAIS
+   Reutilizados `buscarDadosEmpresaParaFatura` (configuracoes_fiscais +
+   fallback empresaConfig) e `carregarLogoBase64Utils` — sem hardcode.
+7. CANCELAMENTO
+   Soft: status='cancelado', motivo, data e usuário preservados. Nenhum delete.
+   Não reverte pagamento/recebimento automaticamente.
+8. VÍNCULO FINANCEIRO
+   Recibo é EVIDÊNCIA: escreve somente em `recibos` (teste comprova que nenhuma
+   outra tabela é tocada) — não gera receita/despesa, não altera DRE/Fluxo.
+9. TESTES (f0k_recibos.test.ts — 9/9 PASS)
+   1 gerar recibo (INSERT só em recibos) · 2 histórico · 3 localizar · 4 número
+   único · 5 PDF usa dados persistidos · 6 cancelar preserva · 7 não altera
+   financeiro · 8 filtros período/status/favorecido · 9 valor por extenso.
+   npx tsc --noEmit = 0 erros.
+10. PENDÊNCIAS
+    Filtro "Buscar Cadastro" do formulário (autocompletar cliente/prestador) fica
+    para uma próxima iteração; impressão abre o PDF em nova aba (padrão do TMS).
+11. CONFIRMAÇÃO: BANCO ALTERADO (SIM) — migration aditiva mínima aplicada em
+    PRODUÇÃO (tabela recibos + índice único + RLS). Sem reset/drop/delete.

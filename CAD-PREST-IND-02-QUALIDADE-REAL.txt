@@ -1,0 +1,124 @@
+CAD-PREST-IND-02-QUALIDADE-REAL
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA (sem alteração de código de aplicação)
+
+==================================================
+AUDITORIA — FONTES E REGRAS
+==================================================
+
+SCORE_CURRENT_SOURCE=prestadores.score_interno (dbMappers.fromPrestadorRow → p.scoreInterno)
+SCORE_CURRENT_RULE=INEXISTENTE (nenhuma fórmula calcula score_interno)
+  - `src/services/scoreEngine.ts` existe, mas é o score de ONBOARDING/recrutamento
+    (documentacao/experiencia/regiao/veiculo → Bronze/Prata/Ouro/Diamante) — NÃO é o
+    score 0–5 exibido no Cadastro do Prestador. Não reutilizado.
+
+ACCEPTANCE_CURRENT_SOURCE=prestadores.indice_aceite (→ p.indiceAceite)
+ACCEPTANCE_CURRENT_RULE=INEXISTENTE (nenhum cálculo; coluna estática)
+
+PUNCTUALITY_CURRENT_SOURCE=prestadores.indice_entrega_prazo (→ p.indiceEntregaNoPrazo)
+PUNCTUALITY_CURRENT_RULE=INEXISTENTE (nenhum cálculo; coluna estática)
+
+PRESENCE_CURRENT_SOURCE=prestadores.indice_comparecimento (→ p.indiceComparecimento)
+PRESENCE_CURRENT_RULE=INEXISTENTE (nenhum cálculo; coluna estática)
+
+CLASSIFICAÇÃO:
+  SCORE        = SEM_DADOS / REGRA_AUSENTE
+  ACCEPTANCE   = REGRA_AUSENTE (insumos existem, denominador não canônico)
+  PUNCTUALITY  = REGRA_AUSENTE (timestamps parciais; sem regra/tolerância canônica)
+  PRESENCE     = SEM_DADOS / REGRA_AUSENTE (sem fonte de comparecimento)
+
+==================================================
+PROVA NO BANCO (READ-ONLY)
+==================================================
+
+PRESTADOR_TESTED_ID=be420cfc-878e-49b3-8a0d-1827b34762a5 ("FRANKLIN DA SILVA PEREIRA")
+
+Estado das colunas (todos os 39 prestadores):
+  score_interno: 25 null, 14 = 0   → SCORE_NONZERO=0
+  indice_aceite: 39 = 0.00
+  indice_entrega_prazo: 39 = 0.00
+  indice_comparecimento: 39 = 0.00
+  INDICES_NONZERO=0
+
+FRANKLIN (insumos para os indicadores):
+  alocações=32 | aceite_prestador=true: 0 | status=recusada: 0
+  | horario_inicio_real: 0 | horario_fim_real: 0 | horario_saida (prev): 1
+
+Agregado global de alocações (insumos potenciais, regra não definida):
+  total=193 | aceites(aceite_prestador)=65 | recusadas=2 | com horario_inicio_real=33
+
+SCORE:
+  DB_SCORE_INPUT=score_interno (0/null)
+  CALCULATED_SCORE=REGRA_AUSENTE (não calculado)
+  UI_SCORE=0.0 (reflete o valor armazenado)
+  SCORE_DB_UI_MATCH=YES (UI = valor do banco; sem métrica real computada)
+
+ACCEPTANCE:
+  DB_ACCEPTANCE_INPUT=aceite_prestador/status (65 aceites, 2 recusadas globais; FRANKLIN 0/0)
+  CALCULATED_ACCEPTANCE=REGRA_AUSENTE (denominador de "ofertas elegíveis" não canônico)
+  UI_ACCEPTANCE=0%
+  ACCEPTANCE_DB_UI_MATCH=YES (UI = valor do banco; sem métrica real computada)
+
+PUNCTUALITY:
+  DB_PUNCTUALITY_INPUT=horario_saida (time) × horario_inicio_real (timestamptz) + data_escala
+  CALCULATED_PUNCTUALITY=REGRA_AUSENTE (sem regra/tolerância; tipos mistos)
+  UI_PUNCTUALITY=0%
+  PUNCTUALITY_DB_UI_MATCH=YES (UI = valor do banco; sem métrica real computada)
+
+PRESENCE:
+  DB_PRESENCE_INPUT=NENHUM campo de comparecimento/falta identificado
+  CALCULATED_PRESENCE=REGRA_AUSENTE
+  UI_PRESENCE=0%
+  PRESENCE_DB_UI_MATCH=YES (UI = valor do banco; sem métrica real computada)
+
+RESULT=SEM_DADOS / REGRA_AUSENTE (para os quatro indicadores)
+
+==================================================
+CONCLUSÃO
+==================================================
+
+CODE_FIX_REQUIRED=NO
+  Não há regra/fonte canônica existente a corrigir. Implementar exigiria INVENTAR
+  fórmula/peso/denominador — expressamente proibido nesta missão. Os cards apenas
+  exibem o valor armazenado (0), coerente com o banco. Nenhum valor fabricado.
+  (Os indicadores reais de Entregas e Ocorrências foram corrigidos em CAD-PREST-IND-01.)
+
+Observações:
+  - `src/components/prestadores/mockPrestadores.ts` contém valores fictícios, mas NÃO
+    é importado em nenhum componente ativo (código morto).
+  - Leitura DB→UI está correta: PrestadoresLista usa fromPrestadorRow e mapeia
+    score_interno/indice_aceite/indice_entrega_prazo/indice_comparecimento.
+
+FILES_MODIFIED=src/test/cad_prest_ind_02_qualidade_real.test.ts (novo)
+  (nenhum arquivo de aplicação alterado)
+
+==================================================
+REGRESSÃO / VALIDAÇÃO
+==================================================
+
+CAD_PREST_IND_01_PRESERVED=PASS
+CAD_VEIC_03_PRESERVED=PASS
+
+Testes direcionados: 19/19 PASS
+  cad_prest_ind_02 (5), cad_prest_ind_01 (6), cad_veic_03 (8)
+Suíte completa: 1403 passed | 57 failed (100% pré-existentes) | 155 skipped
+TYPECHECK=0 erros novos
+BUILD=✓ built in 42.51s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum dado produtivo alterado; nenhuma operação artificial criada.
+- Nenhuma fórmula/peso/percentual inventado.
+- 27 alocações órfãs NÃO tratadas. Dados de teste NÃO limpos.
+- Não tocou Escala/Financeiro/Fatura/APP/POD/Recrutamento.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

@@ -1,0 +1,74 @@
+================================================================================
+MISSAO A31-J1 - LANCAR SERVICO MANUAL PREMIUM
+================================================================================
+
+ARQUIVOS ALTERADOS
+- src/components/financeiro/ConferenciaFinanceira.tsx (modal "Lançar Serviço Manualmente" premium)
+- src/services/financeiro/centralFinanceiroVisao.ts (funcao pura calcularResumoLancamento)
+- src/test/a31j1_resumo_lancamento_manual.test.ts (NOVO - 6 testes)
+
+ESTRUTURA VISUAL IMPLEMENTADA
+- Modal ampliado para sm:max-w-[1100px], h-[94vh], p-0 overflow-hidden (desktop profissional).
+- Cabeçalho fixo (titulo + descricao, com X de fechar preservado).
+- COLUNA ESQUERDA: indice de 8 etapas (Identificacao, Operacao, Prestador/Veiculo,
+  Financeiro Cliente, Financeiro Prestador, Itens Adicionais, Observacoes, Resumo Final)
+  com icone + subdescricao; clique rola (scrollIntoView) ate a secao correspondente.
+- AREA PRINCIPAL: cards brancos com cantos arredondados, titulos fortes numerados,
+  icones em badge de cor por contexto (laranja/verde/rosa/cinza), grid responsivo,
+  scroll vertical interno; rodape FIXO sempre visivel.
+- RODAPE FIXO: esquerda "Limpar campos"; direita "Cancelar" + "Validar e Lançar Serviço"
+  (laranja). Validacao mantida: Data * e Tipo de veiculo * (Romaneio NAO obrigatorio).
+
+CAMPOS REAPROVEITADOS (mesmo formLancamento/handleLancarServico — sem campo novo)
+- Identificacao: Data, Romaneio/OC, Cliente (SearchableSelect). OS Interna exibida como
+  info "Sem OS vinculada — sem numero ficticio" (nao gera OS paralela).
+- Operacao: Origem, Destino, KM realizados + bloco informativo Franquia/KM excedente/
+  Valor KM adicional/Total excedente (definidos pela Escala, sem segunda regra).
+- Prestador/Veiculo: dropdown real de prestadores (nome/placa/veiculo/telefone/whatsapp),
+  Tipo de veiculo, Placa + info "Veiculo (cadastro)".
+- Financeiro Cliente (verde): Valor frete/base, Outros adicionais, Desconto + leitura
+  de KM exc./Pedagio/Ajudante/Diarias cobrados (fonte unica) + TOTAL CLIENTE.
+- Financeiro Prestador (rosa): Valor repasse/base, Pedagogio, Combustivel, Reembolso
+  outros, Ajudante, Diarias adicionais, Valor diaria + TOTAL PRESTADOR.
+- Itens Adicionais: tabela leitura-unicamente (item | valor | Cliente | Prestador)
+  usando os mesmos campos — sem duplicacao de input.
+- Observacoes: campo oficial amplo.
+
+PREENCHIMENTOS AUTOMATICOS
+- Selecionar prestador autopreenche tipo_veiculo/placa do cadastro (se vazios) — mesmo
+  fluxo A31-E. Capacidade/ANTT nao exigidos (informacao auxiliar disponivel se existir).
+
+CALCULO TOTAL CLIENTE (mesma formula da Central - centralFinanceiroService)
+- = valor_frete + valor_ajudante + (diarias_adicionais x valor_diaria) + valor_adicional
+  - valor_desconto. Pedagogio/KM excedente = 0 no lancamento manual (sem regra cobrar_excedente).
+
+CALCULO TOTAL PRESTADOR (mesma formula da Central)
+- = valor_repasse + valor_pedagio + valor_combustivel + valor_ajudante
+  + (diarias_adicionais x valor_diaria) + valor_reembolso_outros + valor_adicional
+  - valor_desconto.
+
+CALCULO MARGEM
+- Margem estimada = Total Cliente - Total Prestador.
+- Margem % = margem / Total Cliente (0 quando Total Cliente = 0).
+- Implementado em calcularResumoLancamento (modulo puro) — usado na UI e testado.
+
+SEM ESTRUTURA PARALELA
+- Confirmado: grava em alocacoes_escala (mesma fonte da Escala) via lancarServicoManual;
+  sem tabela nova, sem servico paralelo, sem OS falsa, sem fluxo financeiro novo.
+
+TESTES (vitest)
+- a31j1_resumo_lancamento_manual.test.ts: 6/6 (Total Cliente, Total Prestador, Margem/Margem %,
+  zera sem valores, campos vazios=0, diarias alimentam as duas pernas)
+- Regressao: a31j0 (6), a31e (6), a31c (5), fase1_centralFinanceiro (6)
+- TOTAL: 29/29 PASS
+
+VALIDACAO
+- npx tsc --noEmit -> 0 erros
+- npm run build -> OK (1m34s)
+
+PENDENCIA REAL
+- Franquia / KM excedente / Valor KM adicional / Total excedente sao exibidos como
+  informativo "—" (sem input persistente): o lancamento manual homologado (A31-E) nao
+  recebe franquia; o excedente e definido pelo cadastro/tabela da Escala. Expor input
+  exigiria persistencia nova fora do escopo (evitado para nao criar segunda regra).
+================================================================================

@@ -1,0 +1,131 @@
+RELATORIO FIN-FORN-04.1 — PROVA REAL DO IMPACTO NO DRE
+======================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: FIN-FORN-04.1 — Provar BEFORE→AFTER real que despesa de fornecedor entra corretamente no DRE
+
+VEREDITO: [HOMOLOGADO — FORNECEDOR E2E INTEGRADO AO DRE]
+
+===============================================================================
+1. O QUE FOI FEITO
+===============================================================================
+
+NENHUMA alteração de código, migration, dashboard ou regra.
+Apenas script de prova real contra produção.
+
+===============================================================================
+2. PARÂMETROS DO TESTE
+===============================================================================
+
+  Período DRE: 2026-09-01 a 2026-09-30
+  Valor teste: R$ 3.456,78
+  Categoria: "Aluguel" → classificarDespesa() → "administrativa"
+  Plano de contas: "3.1.1 - Aluguel Imóvel"
+  Filtro DRE: is_teste = false, os_id IS NULL, status NOT IN ('cancelado','cancelada')
+
+===============================================================================
+3. PROVA REAL — 13/13 CHECKS
+===============================================================================
+
+CHECK 1 — DRE BEFORE: R$ 0.00 ✅
+  Período setembro/2026 sem títulos → limpo para teste
+
+CHECK 2 — Fornecedor criado: ✅
+  id = 98dbde08-e4e6-4732-9913-55b6fa9a0b34
+  razao_social = TESTE_FIN_FORN041 IMOVEIS LTDA
+
+CHECK 3 — Título criado com data_vencimento dentro do período: ✅
+  id = bb14aabe-b5d1-47b6-ad66-d74b02fe3dd9
+  fornecedor_cadastro_id = 98dbde08 (FK correta)
+  valor = 3456.78
+  data_vencimento = 2026-09-15 (dentro da janela DRE)
+  is_teste = false
+  categoria = Aluguel
+  plano_contas = 3.1.1 - Aluguel Imóvel
+
+CHECK 4 — DRE AFTER: R$ 3.456,78 ✅
+  Total de despesas no período = exatamente o valor do título teste
+
+CHECK 5 — AFTER - BEFORE = R$ 3.456,78 (EXATO) ✅
+  Diferença total = valor do título
+
+CHECK 6 — Entrou em "administrativa" ✅
+  classificarDespesa("Aluguel", "3.1.1 - Aluguel Imóvel") → "administrativa"
+  Regex: /aluguel/ match → classificação correta
+
+CHECK 7 — NÃO entrou em outras categorias ✅
+  Diferença outras: R$ 0,00
+  Diferença financeiras: R$ 0,00
+  Diferença comerciais: R$ 0,00
+  Diferença deduções: R$ 0,00
+
+CHECK 8 — Fornecedor NÃO classifica DRE ✅
+  "TESTE_FIN_FORN041 IMOVEIS LTDA" não match nenhuma regex de classificação
+
+CHECK 9 — Rastreabilidade completa ✅
+  fornecedores.id → financeiro_pagar.fornecedor_cadastro_id → grupo DRE "administrativa"
+
+CHECK 10 — Fornecedor_id legado intacto: 81 registros ✅
+
+CHECK 11 — PagamentoPrestadores intacto: 90 registros ✅
+
+CHECK 12 — RLS fornecedores ATIVO ✅
+
+CHECK 13 — Cleanup completo ✅
+  Títulos restantes: 0
+  Fornecedores restantes: 0
+  DRE pós-cleanup: R$ 0,00 (retornou ao BEFORE)
+  ZERO resíduos
+
+===============================================================================
+4. REGRA DO DRE — NOTA TÉCNICA
+===============================================================================
+
+  Query oficial (DREGerencial.tsx:107-111):
+    SELECT valor, categoria, plano_contas, data_vencimento, ...
+    FROM financeiro_pagar
+    WHERE is_teste = false
+      AND os_id IS NULL
+      AND status NOT IN ('cancelado','cancelada')
+      AND data_vencimento >= [inicio] AND data_vencimento <= [fim]
+
+  Filtro de repasses:
+    .filter(r => r.status !== "cancelado" && !r.descricao.startsWith("repasse"))
+
+  Classificação (dreService.ts:51-57):
+    classificarDespesa(categoria, plano_contas)
+    → regex contra "categoria + plano_contas" concatenados
+    → "Aluguel" + "3.1.1 - Aluguel Imóvel" match /aluguel/ → "administrativa"
+
+  Competência econômica:
+    DRE usa data_vencimento (não data de pagamento)
+    Título com vencimento no período = despesa do período
+    Baixa/estorno NÃO altera competência
+
+===============================================================================
+5. tsc --noEmit
+===============================================================================
+
+  Resultado: 0 erros (nenhum código alterado)
+
+===============================================================================
+6. ARQUIVOS
+===============================================================================
+
+  SCRIPTS (descartaveis):
+    scripts/_fin_forn041_dre.mjs — prova real DRE
+    scripts/_check_dre.mjs — verificação prévia
+    scripts/_check_isteste.mjs — verificação is_teste
+
+===============================================================================
+7. GAPS RESOLVIDOS
+===============================================================================
+
+  G1: FIN-FORN-04 não provou impacto DRE (vencimento futuro) → RESOLVIDO
+  G2: Sem prova de que fornecedor não classifica DRE → RESOLVIDO
+  G3: Sem prova BEFORE→AFTER com período limpo → RESOLVIDO
+
+===============================================================================
+FIM DO RELATORIO — FIN-FORN-04.1
+HOMOLOGADO — FORNECEDOR E2E INTEGRADO AO DRE
+===============================================================================

@@ -1,0 +1,217 @@
+================================================================================
+MISSÃO A23 — FASE C — POD / COMPROVANTES DENTRO DA OS / ROMANEIO
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Fonte de verdade: entregas_protocolo (M108C1)
+================================================================================
+
+STATUS FINAL: CONCLUÍDA
+-------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS CRIADOS
+--------------------------------------------------------------------------------
+  - src/components/comprovantes/EntregasComprovantes.tsx   (NOVO — seção profissional)
+  - src/test/a23C_podDentroOs.test.ts                       (NOVO — 10 testes unitários)
+  - tests/e2e/a23_fase_c_pod_dentro_os.spec.ts              (NOVO — 3 testes Playwright)
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS MODIFICADOS
+--------------------------------------------------------------------------------
+  - src/services/comprovantes/comprovantesService.ts
+      Novas funções:
+        * montarEntregaOS(raw)      — função pura (testável) que monta a entrega
+                                       de uma OS a partir de alocação + POD + parada
+        * buscarEntregasDaOS(osId)  — SELECT read-only: ordens_servico → alocações
+                                       → entregas_protocolo (+ rota_paradas opcional)
+  - src/components/operacao/OrdemServicoForm.tsx
+      Bloco antigo "Comprovantes e Evidências" (com placeholders "Aguardando
+      evidência do aplicativo do prestador" e "Nenhuma assinatura registrada")
+      foi REORGANIZADO em "Entregas e Comprovantes":
+        * seção real de entregas/POD via <EntregasComprovantes osId={data.id}>;
+        * bloco "Dados Planejados / Manual da OS" preservando os campos manuais
+          legítimos (recebedorNome, recebedorDocumento, recebedorFuncao,
+          dataEntrega, horaEntrega, observacaoEntrega).
+  - src/components/operacao/OrdensServicoLista.tsx
+      Nova ação rápida "Ver comprovantes" (ícone FileCheck) na coluna de ações,
+      que abre a OS em modo visualização (modo="ver") — sem poluir a tabela.
+
+--------------------------------------------------------------------------------
+3. FUNCIONAMENTO DA SEÇÃO "ENTREGAS E COMPROVANTES"
+--------------------------------------------------------------------------------
+  Dentro da aba "Histórico" do formulário da OS, a seção lista TODAS as
+  alocações/entregas vinculadas ao romaneio. Para cada entrega (quando existir):
+    - Numeração "Entrega 01, 02..." e, quando houver, badge "Parada #N";
+    - Destinatário + endereço;
+    - Prestador/motorista + veículo (placa e tipo);
+    - Status da operação (Planejada, Aceita, Em Rota, Concluída, etc.);
+    - Data/hora da entrega (quando POD registrado);
+    - Recebedor + documento;
+    - Situação do POD (Entregue / Entregue com ressalva / Não entregue) OU
+      badge âmbar "Comprovante pendente" quando NÃO houver POD;
+    - Indicadores de evidência: Foto / Canhoto / Assinatura (badges verdes);
+    - Volumes previstos x entregues SOMENTE quando existirem (rota_paradas);
+    - Observação/ressalva quando relevante (destaque âmbar);
+    - Botão "Ver comprovante" (apenas quando houver POD) → DossieEntregaSheet.
+
+--------------------------------------------------------------------------------
+4. FONTE DOS DADOS
+--------------------------------------------------------------------------------
+  Relação OS → alocação → POD:
+    ordens_servico (id = osId)
+        ↓ ordem_servico_id
+    alocacoes_escala (status, finalizada, placa, tipo_veiculo, prestador_id,
+                      cliente_id, origem, destino)
+        ↓ alocacao_id
+    entregas_protocolo (fonte OFICIAL de POD: nome_recebedor, documento,
+                        foto_entrega_url, foto_canhoto_url, assinatura_url,
+                        data_hora_entrega, status, observacao)
+    rota_paradas (OPCIONAL — destinatario, endereco, volumes, volumes_entregues,
+                  sequencia; usada apenas como enriquecimento quando existir)
+
+--------------------------------------------------------------------------------
+5. COMPORTAMENTO COM UMA ENTREGA
+--------------------------------------------------------------------------------
+  Mostra um único card "Entrega 01" com todos os dados disponíveis e a ação
+  "Ver comprovante" quando o POD existir.
+
+--------------------------------------------------------------------------------
+6. COMPORTAMENTO COM MÚLTIPLAS ENTREGAS
+--------------------------------------------------------------------------------
+  A interface percorre TODAS as alocações da OS (order by created_at), renderiza
+  um card por entrega, numerados (Entrega 01, Entrega 02...). NÃO assume uma
+  única entrega.
+
+--------------------------------------------------------------------------------
+7. COMPORTAMENTO SEM POD
+--------------------------------------------------------------------------------
+  - Cada entrega sem POD em entregas_protocolo mostra badge âmbar
+    "Comprovante pendente" + mensagem clara "evidência não enviada pelo App".
+  - A seção NÃO exibe os antigos placeholders ("Aguardando evidência...",
+    "Nenhuma assinatura registrada") como se fossem estado real.
+  - Resumo do topo: "X entrega(s)", "Com POD / Sem POD", "Y completa(s)",
+    "Z pendente(s)".
+
+--------------------------------------------------------------------------------
+8. FOTOS / ASSINATURA / CANHOTO
+--------------------------------------------------------------------------------
+  - Foto: tem_foto = foto_entrega_url OU foto_canhoto_url presente → badge "Foto".
+  - Canhoto: tem_canhoto = foto_canhoto_url presente → badge "Canhoto".
+  - Assinatura: tem_assinatura = assinatura_url presente → badge "Assinatura".
+  - A visualização ampliada é feita pelo DossieEntregaSheet (lightbox compartilhado).
+
+--------------------------------------------------------------------------------
+9. RECEBEDOR / HORÁRIOS / VOLUMES
+--------------------------------------------------------------------------------
+  - Recebedor: nome_recebedor + documento_recebedor do POD real.
+  - Horários: data_hora_entrega do POD (dd/mm/aa + HH:mm). Dados planejados
+    continuam nos campos manuais da OS (Data/Hora Entrega planejada).
+  - Volumes: previstos x entregues APENAS quando rota_paradas tiver valores reais.
+    NUNCA inventa volumes.
+
+--------------------------------------------------------------------------------
+10. rota_paradas
+--------------------------------------------------------------------------------
+  - NÃO é obrigatória. Se ausente, a seção funciona normalmente usando
+    alocacoes_escala (destino) como destinatário e sem volumes/endereço.
+  - Se existir, enriquece: destinatário, endereço, volumes, sequência.
+
+--------------------------------------------------------------------------------
+11. REUTILIZAÇÃO DO DossieEntregaSheet
+--------------------------------------------------------------------------------
+  A ação "Ver comprovante" da seção reutiliza EXATAMENTE o
+  src/components/comprovantes/DossieEntregaSheet.tsx (criado na A23-A).
+  O MESMO dossiê profissional serve para: Central /comprovantes e OS/Romaneio.
+  NÃO foi criado um terceiro visualizador.
+
+--------------------------------------------------------------------------------
+12. ALTERAÇÕES EM OrdensServicoLista
+--------------------------------------------------------------------------------
+  - Nova ação rápida "Ver comprovantes" (ícone FileCheck) na coluna de ações
+    de cada OS, ao lado de Visualizar/Editar/Excluir.
+  - Ao clicar, abre a OS em modo "ver" (OrdemServicoForm readOnly), onde a
+    seção "Entregas e Comprovantes" está disponível na aba Histórico.
+  - Não duplica a Central; é apenas um atalho de navegação.
+
+--------------------------------------------------------------------------------
+13. CAMPOS MANUAIS ANTIGOS PRESERVADOS/REMOVIDOS
+--------------------------------------------------------------------------------
+  PRESERVADOS (Dados Planejados / Manual da OS):
+    - Recebedor Nome (ordens_servico.recebedor_nome — via dbMappers);
+    - Recebedor Documento (receber_documento);
+    - Função/Vínculo (receber_funcao);
+    - Data Entrega planejada;
+    - Hora Entrega planejada;
+    - Observação da Entrega.
+  REMOVIDOS (substituídos por estado real):
+    - Bloco "Fotos da Entrega" com texto "Aguardando evidência do aplicativo
+      do prestador" (placeholder enganoso) → substituído pela seção real que
+      exibe fotos/canhoto/assinatura quando existirem, ou "Comprovante
+      pendente" quando não houver.
+    - Bloco "Assinatura Digital" com "Nenhuma assinatura registrada"
+      (placeholder) → substituído pela indicação real de assinatura via POD.
+  JUSTIFICATIVA: os placeholders eram apresentados como estado real mesmo
+  quando já havia POD em entregas_protocolo. A separação "dados planejados"
+  vs "comprovante real enviado pelo App" foi feita sem apagar informação.
+
+--------------------------------------------------------------------------------
+14. TESTES
+--------------------------------------------------------------------------------
+  Unitários (src/test/a23C_podDentroOs.test.ts — 10 testes):
+    1. OS sem POD → tem_pod false, situação pendente ✅
+    2. OS com POD → dados reais preenchidos ✅
+    3. POD com foto → tem_foto true ✅
+    4. POD com assinatura → tem_assinatura true ✅
+    5. POD com canhoto → tem_canhoto true ✅
+    6. Múltiplas entregas → todas preservadas no mapeamento ✅
+    7. "Ver comprovante" → pod_id disponível quando há POD ✅
+    8. Ausência de rota_paradas não quebra ✅
+    9. Volumes ausentes não são inventados ✅
+   10. Campos manuais da OS permanecem separados do POD ✅
+
+  Playwright (tests/e2e/a23_fase_c_pod_dentro_os.spec.ts — 3 testes, listados):
+    1. Lista de OS mostra ação "Ver comprovantes" ✅ (listado)
+    2. Ação abre a OS em modo visualização ✅ (listado)
+    3. Navegação para aba Histórico sem erros ✅ (listado)
+  (Execução E2E requer ambiente QA + credenciais reais — guard-rails de Produção.)
+
+--------------------------------------------------------------------------------
+15. RESULTADO DO TSC
+--------------------------------------------------------------------------------
+  npx tsc --noEmit  →  0 erros
+
+--------------------------------------------------------------------------------
+16. RESULTADO DO BUILD
+--------------------------------------------------------------------------------
+  npm run build  →  ✅ 35.39s — build ok
+
+--------------------------------------------------------------------------------
+17. RESULTADO DO VITEST
+--------------------------------------------------------------------------------
+  npx vitest run  →  ✅ 54/54 testes (6 arquivos; 10 novos A23-C)
+
+--------------------------------------------------------------------------------
+18. CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+  - Nenhuma migration executada ................... CONFIRMADO
+  - Nenhum dado de Produção alterado .............. CONFIRMADO
+  - Nenhum trigger/RLS/RPC/schema alterado ........ CONFIRMADO
+  - App Flutter (C:\src\conexao_prestador) ........ CONFIRMADO (não tocado)
+  - Financeiro / bloqueio faturamento ............. NÃO alterados
+  - KPI (A23-B) ................................... NÃO alterado
+  - A23-D não iniciada ............................ CONFIRMADO
+
+--------------------------------------------------------------------------------
+19. PENDÊNCIAS PARA A23-D
+--------------------------------------------------------------------------------
+  1. Financeiro: exibir POD real na ConferenciaFinanceira + vínculo fatura↔romaneio.
+  2. Avaliar exigência/bloqueio de faturamento quando POD estiver ausente
+     (regra de negócio + alerta) — sem migration nesta fase.
+  3. PagamentoPrestadores: passar a usar entregas_protocolo (fonte oficial)
+     em vez de derivar status apenas de alocacoes_escala.comprovante_url.
+  4. Avaliar vínculo direto fatura ↔ romaneio ↔ comprovante (schema futuro).
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A23 — FASE C
+STATUS FINAL: CONCLUÍDA ✅
+================================================================================

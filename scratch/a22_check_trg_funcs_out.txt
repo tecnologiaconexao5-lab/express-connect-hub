@@ -1,0 +1,169 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ multiple files { path: ['.env.local', '.env'] }
+
+===== registrar_historico_alocacao =====
+CREATE OR REPLACE FUNCTION public.registrar_historico_alocacao()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    -- Apenas registra se o status mudou
+    IF (TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status) THEN
+        INSERT INTO public.historico_alocacoes_escala (
+            alocacao_id,
+            evento,
+            status_anterior,
+            status_novo,
+            descricao,
+            payload,
+            created_by
+        ) VALUES (
+            NEW.id,
+            'mudanca_status',
+            OLD.status,
+            NEW.status,
+            'Status alterado de ' || OLD.status || ' para ' || NEW.status,
+            jsonb_build_object(
+                'status_anterior', OLD.status,
+                'status_novo', NEW.status,
+                'updated_by', NEW.updated_by
+            ),
+            NEW.updated_by
+        );
+    END IF;
+    
+    -- Registra aceite do prestador
+    IF (TG_OP = 'UPDATE' AND OLD.aceite_prestador = false AND NEW.aceite_prestador = true) THEN
+        INSERT INTO public.historico_alocacoes_escala (
+            alocacao_id,
+            evento,
+            descricao,
+            payload,
+            created_by
+        ) VALUES (
+            NEW.id,
+            'aceite_prestador',
+            'Prestador aceitou a aloca├º├úo',
+            jsonb_build_object(
+                'prestador_id', NEW.prestador_id,
+                'data_aceite', NEW.data_aceite
+            ),
+            NEW.updated_by
+        );
+    END IF;
+    
+    -- Registra finaliza├º├úo
+    IF (TG_OP = 'UPDATE' AND OLD.finalizada = false AND NEW.finalizada = true) THEN
+        INSERT INTO public.historico_alocacoes_escala (
+            alocacao_id,
+            evento,
+            descricao,
+            payload,
+            created_by
+        ) VALUES (
+            NEW.id,
+            'finalizacao',
+            'Aloca├º├úo finalizada',
+            jsonb_build_object(
+                'data_finalizacao', NEW.data_finalizacao,
+                'km_realizados', NEW.km_realizados,
+                'tempo_total_minutos', NEW.tempo_total_minutos
+            ),
+            NEW.updated_by
+        );
+    END IF;
+    
+    RETURN NEW;
+END;
+$function$
+
+
+===== trg_evento_alocacao_criada =====
+CREATE OR REPLACE FUNCTION public.trg_evento_alocacao_criada()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO public.eventos_oficiais (
+    event_type, entity_type, entity_id, entity_number,
+    status, source, created_by, visibility,
+    payload, metadata
+  ) VALUES (
+    'escala.alocacao.criada',
+    'alocacao',
+    NEW.id,
+    NULL,
+    'active',
+    'trigger',
+    NEW.created_by,
+    'internal',
+    jsonb_build_object(
+      'alocacao_id', NEW.id,
+      'os_id', NEW.ordem_servico_id,
+      'prestador_id', NEW.prestador_id,
+      'cliente_id', NEW.cliente_id,
+      'data_escala', NEW.data_escala,
+      'status', NEW.status,
+      'origem', NEW.origem,
+      'destino', NEW.destino
+    ),
+    jsonb_build_object(
+      'trigger_name', 'trg_evento_alocacao_criada',
+      'source_table', 'alocacoes_escala'
+    )
+  )
+  ON CONFLICT (event_type, entity_type, entity_id)
+  WHERE event_type NOT LIKE 'auth.%'
+  DO NOTHING;
+
+  RETURN NEW;
+END;
+$function$
+
+
+===== trg_evento_prestador_aceitou =====
+CREATE OR REPLACE FUNCTION public.trg_evento_prestador_aceitou()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+      DECLARE
+          v_prestador_nome TEXT;
+          v_os_numero TEXT;
+      BEGIN
+          SELECT COALESCE(nome_completo, 'Prestador') INTO v_prestador_nome
+          FROM public.prestadores WHERE id = NEW.prestador_id;
+          SELECT numero INTO v_os_numero
+          FROM public.ordens_servico WHERE id = NEW.ordem_servico_id;
+          INSERT INTO public.eventos_oficiais (
+              event_type, entity_type, entity_id, entity_number,
+              status, source, created_by, visibility,
+              payload, metadata
+          ) VALUES (
+              'escala.alocacao.aceita',
+              'alocacao',
+              NEW.id,
+              v_os_numero,
+              'active',
+              'trigger',
+              NEW.updated_by,
+              'internal',
+              jsonb_build_object(
+                  'alocacao_id', NEW.id,
+                  'os_id', NEW.ordem_servico_id,
+                  'os_numero', v_os_numero,
+                  'prestador_id', NEW.prestador_id,
+                  'prestador_nome', v_prestador_nome,
+                  'data_aceite', NEW.data_aceite,
+                  'status', NEW.status,
+                  'cliente_id', NEW.cliente_id,
+                  'origem', NEW.origem,
+                  'destino', NEW.destino
+              ),
+              jsonb_build_object(
+                  'trigger_name', 'trg_evento_prestador_aceitou',
+                  'source_table', 'alocacoes_escala'
+              )
+          );
+          RETURN NEW;
+      END;
+      $function$
+

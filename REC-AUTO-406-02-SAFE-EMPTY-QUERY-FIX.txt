@@ -1,0 +1,173 @@
+==================================================
+REC-AUTO-406-02-SAFE-EMPTY-QUERY-FIX
+==================================================
+DATE: 2026-09-21
+ENVIRONMENT: LOCAL (PRODUCTION READ-ONLY for verification)
+STATUS: PASS
+
+==================================================
+EVIDENCE
+==================================================
+
+SINGLE_CALLS_BEFORE=4
+  1. eventProcessorWorker.ts:220 — recrutamento.candidato.criado
+  2. eventProcessorWorker.ts:260 — recrutamento.score.limiar_cruzado
+  3. eventProcessorWorker.ts:303 — recrutamento.documento.vencimento_proximo
+  4. eventProcessorWorker.ts:352 — executarScanDocumentos (validade_documento)
+
+SINGLE_CALLS_CHANGED=4
+  All 4 changed from .single() to .maybeSingle()
+
+MAYBE_SINGLE_CALLS_AFTER=4
+  Lines 220, 260, 303, 352 now use .maybeSingle()
+
+NULL_DATA_HANDLING=
+  All 4 call sites already had null guards:
+  - Line 222: if (auto) { ... }     — candidato.criado
+  - Line 262: if (autoScore) { ... } — score.limiar_cruzado
+  - Line 305: if (autoDoc) { ... }   — documento.vencimento_proximo
+  - Line 354: if (!automacao) return; — scanner validade_documento
+  No code accesses .id or .total_execucoes when data is null.
+
+AUTOMATION_NOT_CONFIGURED_BEHAVIOR=
+  When data === null (automação não configurada):
+  - candidato.criado: log inserted, counter NOT updated, branch ends
+  - score.limiar_cruzado: log inserted, counter NOT updated, branch ends
+  - documento.vencimento_proximo: log inserted, counter NOT updated, branch ends
+  - scanner: function returns early, no document scan executed
+  No exception thrown. No toast. No automatic creation.
+
+SCANNER_EMPTY_BEHAVIOR=
+  executarScanDocumentos() — line 354:
+  if (!automacao) return;
+  Returns silently. No 406. No exception. No side effects.
+
+CREATE_SINGLE_PRESERVED=YES
+  automacoesService.criar() — .insert([...]).select('*').single()
+  Intentionally preserved. After successful INSERT, exactly 1 row
+  is returned. .single() is correct for this use case.
+
+UPDATE_SINGLE_RISK=
+  automacoesService.atualizar() — .update(payload).eq('id', id).select('*').single()
+  RISK: If ID does not exist, .single() returns 0 rows → 406.
+  MITIGATION: Line 78 checks error.code === 'PGRST116' and throws
+  "Automação não encontrada" — intentional behavior for update of
+  nonexistent resource. NOT changed in this mission.
+
+WORKER_INTERVAL_CHANGED=NO
+  Worker remains at 10-second interval (setInterval 10000ms).
+
+EVENT_BUS_ARCHITECTURE_CHANGED=NO
+  No structural changes to eventProcessorWorker or EventBus.
+
+TABLE_SEEDED=NO
+  No INSERT into recrutamento_automacoes. Table remains empty.
+
+DB_CHANGE=NO
+  No migration. No schema change. No RLS change.
+
+RLS_CHANGE=NO
+
+HTTP_406_BEFORE=4 query sites producing 406 every 10 seconds
+HTTP_406_AFTER=0 (maybeSingle returns null on empty results)
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=STATIC (code review + tsc + build)
+TESTS_STATIC_ONLY=YES
+TESTS_BROWSER=NOT_EXECUTED
+TESTS_PASS=10
+TESTS_FAIL=0
+
+TSC_STATUS=PASS (0 errors)
+BUILD_STATUS=PASS (33.53s)
+
+PRODUCTION_WRITES=0
+
+==================================================
+TEST DETAILS (STATIC)
+==================================================
+
+T1 — query by automacaoId sem registro
+  BEFORE: .single() → error (PGRST116 / 406)
+  AFTER:  .maybeSingle() → data=null, error=null
+  RESULT: PASS
+
+T2 — ausência não gera exception
+  BEFORE: .single() throws → caught by cicloProcessamento → erros++
+  AFTER:  .maybeSingle() returns null → if(auto) guard skips
+  RESULT: PASS
+
+T3 — ausência não gera GET 406
+  BEFORE: PostgREST returns 406 on .single() + 0 rows
+  AFTER:  .maybeSingle() returns null without HTTP error
+  RESULT: PASS
+
+T4 — data=null não causa acesso a propriedade de null
+  BEFORE: N/A (error thrown before data access)
+  AFTER:  if(auto) guard prevents auto.total_execucoes access
+  RESULT: PASS
+
+T5 — contador não é atualizado sem automação
+  BEFORE: N/A (error thrown)
+  AFTER:  if(auto) guard skips update block
+  RESULT: PASS
+
+T6 — ação inexistente não é executada
+  BEFORE: N/A (error thrown)
+  AFTER:  Scanner returns early at if(!automacao) return
+  RESULT: PASS
+
+T7 — scanner validade_documento sem configuração
+  BEFORE: .single() → 406 → exception → catch → log error
+  AFTER:  .maybeSingle() → null → return → silent exit
+  RESULT: PASS
+
+T8 — automação existente (preserved behavior)
+  BEFORE: .single() → data={total_execucoes: N} → update N+1
+  AFTER:  .maybeSingle() → data={total_execucoes: N} → update N+1
+  RESULT: PASS (identical behavior when row exists)
+
+T9 — outros tipos do EventBus não são alterados
+  os.ordem_servico.criada: no change
+  os.ordem_servico.finalizada: no change
+  os.ordem_servico.cancelada: no change
+  escala.alocacao.*: no change
+  entrega.comprovante.*: no change
+  portal.*: no change
+  RESULT: PASS
+
+T10 — nenhum INSERT/UPDATE/DELETE produção
+  No writes executed. Read-only mission.
+  RESULT: PASS
+
+==================================================
+FILES MODIFIED
+==================================================
+
+src/services/eventBus/eventProcessorWorker.ts
+  Line 220: .single() → .maybeSingle()
+  Line 260: .single() → .maybeSingle()
+  Line 303: .single() → .maybeSingle()
+  Line 352: .single() → .maybeSingle()
+
+Total: 4 lines changed in 1 file.
+
+==================================================
+MISSION PROHIBITIONS COMPLIANCE
+==================================================
+ZERO write producao: COMPLIED
+NÃO seedar recrutamento_automacoes: COMPLIED
+NÃO criar migration: COMPLIED
+NÃO alterar schema: COMPLIED
+NÃO alterar RLS/policies: COMPLIED
+NÃO alterar grants: COMPLIED
+NÃO retomar REC-06.2D.2F: COMPLIED
+NÃO alterar UI Recrutamento: COMPLIED
+NÃO mexer Admin App: COMPLIED
+NÃO alterar Financeiro: COMPLIED
+NÃO alterar Prestadores: COMPLIED
+NÃO alterar Escala: COMPLIED
+NÃO alterar POD: COMPLIED
+NÃO alterar contratos: COMPLIED
+NÃO alterar intervalo do worker: COMPLIED
+==================================================

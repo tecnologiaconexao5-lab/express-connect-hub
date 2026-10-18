@@ -1,0 +1,160 @@
+AUTH-TEST-01 — DESTRAVAR LOGIN SEGURO PARA VALID-REAL-P1-P2
+============================================================
+Data: 2026-09-13 16:58 BRT
+Operador: opencode (subagente)
+
+==================================================
+1. AUDITORIA AUTH (READ-ONLY)
+==================================================
+
+Banco: uwrvzsjtpgaifkktpepn (Supabase Producao)
+Acesso: DATABASE_URL via pg client (SELECT apenas)
+
+--- AUTH.USERS (24 contas) ---
+Contas com email confirmado + tenant vinculado:
+
+  email                              | user_id      | papel (TU)    | status | ultimo_login
+  -----------------------------------|--------------|---------------|--------|-------------
+  tamiris.castilho@conexaoexpress... | 8c12fc67     | super_admin   | ativo  | 2026-09-10
+  financeiro@conexaoexpress.com.br   | de1c77e0     | financeiro    | ativo  | 2026-09-10
+  comercial@conexaoexpress.com.br    | 0d3e308d     | comercial     | ativo  | 2026-09-10
+  operacional@conexaoexpress.com.br  | 730560d9     | operacional   | ativo  | 2026-09-10
+  contato@conexaoexpress.com.br      | e123a9ec     | atendimento   | ativo  | 2026-07-23
+  cliente.teste@conexaoexpress.com.br| 51b76792     | cliente       | ativo  | 2026-07-23
+  diegoconexao19@gmail.com           | 9a9e96f2     | super_admin   | ativo  | 2026-07-21
+  admconexao2@gmail.com              | 323878d3     | super_admin   | ativo  | 2026-09-13
+  diegobalbino1000@outlook.com       | (sem TU)     | —             | —      | 2026-09-09
+
+Contas de teste/sonda (sem tenant, email NAO confirmado):
+  test1780056957177@teste.com, test1780056985741@teste.com,
+  fiscal_test_1780182821934@teste.com, fiscal_1780182922693@teste.com,
+  calvo-op-1780872195879@conexaoexpress.com.br,
+  teste.e2e.20260612145927@gmail.com,
+  prestador.teste.app@gmail.com,
+  app_s6_probe_1787244491078@conexaoexpress.com.br,
+  ag07j18_4_teste_rpc@conexaoexpress.com.br
+
+--- TENANT_USUARIOS (9 registros) ---
+Todos no tenant 00000000-0000-0000-0000-000000000001 (Conexao Express)
+Todos com status=ativo
+
+--- PERMISSOES FRONTEND (permissoes.ts) ---
+PERMISSOES_FINANCEIRO:
+  financeiro ver=true / editar=true / excluir=true
+  relatorios ver=true / editar=true
+  dashboard ver=true
+  clientes ver=true
+  prestadores ver=true
+  ordens_servico ver=true
+
+--- RLS FINANCEIRO ---
+  financeiro_pagar: fp_select_tms (authenticated), fp_insert/update/delete (authenticated)
+  financeiro_receber: fr_select_tms (authenticated), fr_select_own (anon+authenticated)
+  pagamentos_prestadores: Allow all (public) — SEM restricao
+
+==================================================
+2. ANALISE DECISORIA
+==================================================
+
+CANDIDATO IDEAL: financeiro@conexaoexpress.com.br
+
+  user_id:     de1c77e0-1818-431c-8503-ebe08bd95e80
+  email:       financeiro@conexaoexpress.com.br
+  tenant:      00000000-0000-0000-0000-000000000001 (Conexao Express)
+  perfil:      financeiro
+  status:      ativo
+  confirmado:  sim (email_confirmed_at preenchido)
+  ultimo_login: 2026-09-10 (funcionava ha 3 dias)
+
+  Financeiro ver:     true
+  Financeiro editar:  true
+  Financeiro excluir: true
+
+  ULTIMO LOGIN: 2026-09-10 00:22:57 BRT (confirmado no auth.users)
+
+CONTA EXISTENTE E ADEQUADA. Nao e necessario criar conta nova.
+
+==================================================
+3. BLOQUEIO IDENTIFICADO
+==================================================
+
+PROBLEMA: Senha desconhecida.
+  - Tester anterior tentou "Di241328!" → rejeitada pelo Supabase Auth
+  - Supabase Auth nao permite testar senhas via API (rate limit + seguranca)
+  - Senha nunca foi documentada (correto — NUNCA armazenar senha)
+
+CONTA ESTA ESTRUTURALMENTE PRONTA:
+  [x] auth.users existe e confirmada
+  [x] tenant_usuarios vinculada (papel=financeiro, status=ativo)
+  [x] PERMISSOES_FINANCEIRO concede acesso total ao Financeiro
+  [x] RLS permite acesso autenticado
+  [x] Ultimo login funcionou (2026-09-10)
+
+UNICO BLOQUEIO: CREDENCIAL (senha)
+
+==================================================
+4. ACAO NECESSARIA (OPERADOR)
+==================================================
+
+OPCAO A — Reset de senha (RECOMENDADO):
+  1. Supabase Dashboard → Authentication → Users
+  2. Localizar: financeiro@conexaoexpress.com.br
+  3. Clicar: "Send recovery email" ou "Reset password"
+  4. Definir senha nova conhecida
+  5. Informar ao subagente a nova senha via variavel de ambiente:
+     set PLAYWRIGHT_FINANCEIRO_PASSWORD=nova_senha_aqui
+
+OPCAO B — Criar conta QA nova:
+  Se preferir conta dedicada de teste (qa.financeiro@...):
+  1. Supabase Dashboard → Authentication → Users → Invite user
+  2. Email: qa.financeiro@conexaoexpress.com.br (ou domínio permitido)
+  3. Definir senha
+  4. Criar tenant_usuarios com papel=financeiro
+  5. Informar credencial ao subagente
+
+RESTRICOES PARA O OPERADOR:
+  - NUNCA imprimir senha em terminal
+  - NUNCA colocar senha em arquivo .txt/.env versionado
+  - NUNCA informar senha por这个聊天 (use variavel de ambiente)
+  - A automacao le PLAYWRIGHT_FINANCEIRO_PASSWORD apenas em runtime
+
+==================================================
+5. RESULTADO
+==================================================
+
+CONTA QA PRONTA: NAO (estruturalmente pronta, credencial pendente)
+
+email:      financeiro@conexaoexpress.com.br
+user_id:    de1c77e0-1818-431c-8503-ebe08bd95e80
+tenant:     00000000-0000-0000-0000-000000000001
+perfil:     financeiro
+status:     ativo
+Financeiro ver:    true
+Financeiro editar: true
+
+STATUS: AGUARDANDO OPERADOR CONFIGURAR SENHA
+
+==================================================
+6. PROXIMOS PASSOS (APOS SENHA CONFIGURADA)
+==================================================
+
+1. Operador configura senha via Supabase Auth
+2. Operador informa: set PLAYWRIGHT_FINANCEIRO_PASSWORD=<senha>
+3. Subagente valida login via Playwright
+4. Subagente navega ate Financeiro → Pagamento de Prestadores
+5. Retomada da VALID-REAL-P1-P2
+
+==================================================
+7. REFERENCIAS
+==================================================
+
+- Missao 50 (auth real): 5 usuarios corporativos criados
+- Missao 136-A (RLS fix): auth_user_id → user_id corrigido
+- Missao 003 (bypass): localStorage removido
+- Missao 03R (AuthContext): race condition eliminada
+- permissoes.ts:48-58: PERMISSOES_FINANCEIRO definido
+- RLS: pg_policies confirmado (financeiro_pagar, financeiro_receber, pagamentos_prestadores)
+
+ARQUIVO: AUTH-TEST-01-LOGIN-QA.txt
+TAMANHO: ~4.5 KB
+DATA/HORA: 2026-09-13 16:58 BRT

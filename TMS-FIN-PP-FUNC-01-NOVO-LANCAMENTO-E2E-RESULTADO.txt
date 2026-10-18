@@ -1,0 +1,120 @@
+================================================================================
+TMS-FIN-PP-FUNC-01-NOVO-LANCAMENTO-E2E — RESULTADO
+Missão: Fazer o botão "Novo Lançamento" funcionar de verdade (ponta a ponta)
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS + Supabase PRODUÇÃO. APP/Redmi NÃO conectado.
+================================================================================
+
+1. O QUE FOI IMPLEMENTADO
+--------------------------------------------------------------------------------
+- Botão "Novo Lançamento" HABILITADO (antes desabilitado).
+- Modal funcional: cria OBRIGAÇÃO MANUAL de prestador (não é pagamento).
+- Fluxo: UI -> service -> RPC oficial -> PP (workflow) + FP (obrigação contábil),
+  atômico, autenticado, com validações e idempotência.
+- Após salvar: fecha modal, toast, refetch; aparece em "Pagamentos Manuais".
+- O lançamento entra no workflow homologado: Conferir/Aprovar -> Lote/Pagamento.
+- Zero DML direto do frontend no fluxo manual.
+
+2. RPC USADA/CRIADA
+--------------------------------------------------------------------------------
+- NÃO existia RPC oficial de criação manual. Criada UMA RPC mínima:
+  public.f_criar_lancamento_manual_prestador(
+    p_prestador_id uuid, p_tipo_lancamento text, p_data date, p_valor numeric,
+    p_descricao text, p_forma_pagamento text, p_conta_pagamento text,
+    p_idempotency_key text) -> (sucesso, mensagem, pp_id, fp_id, idempotente)
+  - SECURITY DEFINER, search_path=public, VOLATILE, auth.uid(), tenant+papel
+    (super_admin/admin_tenant/financeiro), validações, idempotência, atomicidade.
+  - REVOKE PUBLIC/anon; GRANT authenticated/service_role (verificado no banco).
+  - PP: os_id NULL (NUNCA duplica OS/Programação), origem 'manual',
+    status_conferencia 'em_aberto', status_pagamento 'pendente'.
+  - FP: os_id NULL, os_vinculada = pp.id (correlação), valor = valor, status 'aberto'.
+- Ajuste MÍNIMO e retrocompatível em 2 RPCs de workflow (para o manual fluir):
+  f_aprovar_pagamento_prestadores e f_gerar_lote_pagamentos passam a NÃO classificar
+  como SEM_TENANT registros com origem_lancamento='manual' (os_id NULL). Registros
+  de OS/Programação mantêm a checagem de tenant inalterada.
+- M66/M80 (propagação OS/Programação) NÃO alterados. f_confirmar/f_reprovar/
+  f_cancelar/f_estornar NÃO alteradas (já suportavam os_id NULL).
+- Migration aplicada em PRODUÇÃO (COMMIT OK):
+  supabase/migrations/20260926000001_fin_pp_func01_novo_lancamento.sql
+
+3. CAMPOS DO FORMULÁRIO (mínimos)
+--------------------------------------------------------------------------------
+- Prestador * (select de prestadores ativos)
+- Tipo do Lançamento * (Serviço Avulso | Ajuste | Reembolso | Adiantamento)
+- Data *
+- Valor * (deve ser > 0)
+- Descrição / Observação *
+- Forma de Pagamento e Conta de Pagamento (opcionais)
+- Natureza: fixa em "Crédito para o prestador (+)" (evita obrigação negativa no FP).
+- Removidos Cliente/OS do formulário manual (não aplicáveis — evita duplicidade).
+
+4. PROVA FP + PP (E2E controlado — evidência desta execução)
+--------------------------------------------------------------------------------
+Script: _fin_func01_e2e.cjs (transação + ROLLBACK; lixo persistido = 0).
+auth.uid() via request.jwt.claims (usuário financeiro ativo).
+- RPC criar -> sucesso LANCAMENTO_CRIADO
+    PP id 04652eac-3beb-45a0-8d02-4ba814dac4d4
+      (manual, os_id NULL, R$ 12,34, em_aberto/pendente, is_teste=false)
+    FP id 6c01a033-f2a2-4c44-a8a5-3cf63f15e291
+      (os_vinculada = PP, valor 12,34, fornecedor_id = prestador, status aberto)
+- Validações: valor 0 -> VALOR_INVALIDO; tipo inválido -> TIPO_INVALIDO;
+  data ausente -> DATA_OBRIGATORIA; descrição vazia -> DESCRICAO_OBRIGATORIA.
+- Cancelamento manual aceito pela RPC oficial (sem erro de schema).
+
+5. IDEMPOTÊNCIA / DUPLICIDADE
+--------------------------------------------------------------------------------
+- Retry da MESMA submissão (mesma p_idempotency_key): idempotente=true, mesmo id,
+  SEM nova PP e SEM nova FP (contagem 1/1). Chave gravada em observacao [IDEMP:...].
+- Anti duplo-clique: botão "Salvar Lançamento" com loading + guard no handler.
+- OS/Programação já provisionada: NÃO afetada (manual nunca grava os_id; a UNIQUE
+  de os_id em PP/FP não é acionada). Contagem OS/Programação lida = 83 (inalterada).
+
+6. WORKFLOW (homologado) — comprovado
+--------------------------------------------------------------------------------
+- Conferir/Aprovar: f_aprovar_pagamento_prestadores -> aprovados=1;
+  PP fica conferido / aprovado / elegivel_lote=true.
+- Gerar Lote: f_gerar_lote_pagamentos -> lote_id 54ddb4c6-c759-4e3a-8f1c-a0008db791db,
+  incluidos=1; PP marcado status_pagamento='em_lote'.
+- Pagamento real NÃO executado; nada marcado como pago artificialmente.
+- Reload comprovado: query de "Pagamentos Manuais" (origem manual, is_teste=false)
+  retorna o lançamento criado.
+
+7. TESTES / TYPECHECK / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (7 arquivos): 87/87 PASS
+    fin_pp_func01_novo_lancamento (9), fin_sec02_s2_ui_rpcs (10), pp_ux_02 (16),
+    pp_ux_03 (18), fin_ux_02a (11), fin_prog05d7b2 (15), fin_prog05d7b3 (8)
+- npx tsc --noEmit: SEM NOVOS ERROS nos arquivos da missão.
+  (3 erros remanescentes em PagamentoPrestadores são baseline pré-existente.)
+- npm run build -> OK (34.66s).
+- Observação: f0e_pagamento_prestadores tem 1 teste stale pré-existente
+  (atualizarStatusPagamento -> RPC), não relacionado a esta missão.
+
+8. SEGURANÇA VERIFICADA NO BANCO
+--------------------------------------------------------------------------------
+- 3 funções SECURITY DEFINER / VOLATILE.
+- authenticated EXECUTE = true; anon EXECUTE = false.
+- Lixo E2E persistido: 0 PP / 0 FP.
+
+9. PENDÊNCIAS / BACKLOG PRESERVADO
+--------------------------------------------------------------------------------
+- Dados de teste visíveis; registros R$0 sem prestador; saneamento.
+- Fechamento x Lote; pagamento parcial; PP pagos sem baixa; Calvo/CESAR;
+  FP x PP sem FK; paginação/busca/ordenação global; Conta Corrente completa;
+  Relatório/KPIs contra banco; grants/DML legado (criarPagamento legado);
+  P1 Financeiro; Comercial/PDF profissional; APP/E2E; Master 360.
+- Multi-tenant do manual: PP não tem tenant_id; a tenant-guard do manual usa o
+  tenant do usuário autenticado (ok em base single-tenant). Evolução futura.
+
+10. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- Servidor local mantido em execução (localhost:8800 — HTTP 200).
+- O usuário fará Ctrl+F5 e validará manualmente o fluxo completo.
+- NÃO declarar homologação visual. Status máximo:
+  IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

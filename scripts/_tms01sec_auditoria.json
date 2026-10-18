@@ -1,0 +1,678 @@
+{
+  "ts": "2026-10-04T23:25:59.556Z",
+  "tabelas": [
+    {
+      "tabela": "ordens_servico",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 7,
+      "policies": [
+        {
+          "policyname": "os_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))",
+          "with_check": null
+        },
+        {
+          "policyname": "os_insert_portal",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "((cliente_id)::uuid = f_obter_cliente_id_do_usuario())"
+        },
+        {
+          "policyname": "os_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))"
+        },
+        {
+          "policyname": "os_select_cliente",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "((cliente_id)::uuid = f_obter_cliente_id_do_usuario())",
+          "with_check": null
+        },
+        {
+          "policyname": "os_select_prestador",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM (alocacoes_escala ae\n     JOIN prestadores p ON ((p.id = ae.prestador_id)))\n  WHERE ((ae.ordem_servico_id = ordens_servico.id) AND (p.auth_user_id = auth.uid()))))",
+          "with_check": null
+        },
+        {
+          "policyname": "os_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = ordens_servico.tenant_id) AND (tu.status = 'ativo'::text))))",
+          "with_check": null
+        },
+        {
+          "policyname": "os_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))",
+          "with_check": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))"
+        }
+      ]
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 2,
+      "policies": [
+        {
+          "policyname": "pp_select_own",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = pagamentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+          "with_check": null
+        },
+        {
+          "policyname": "pp_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.status = 'ativo'::text) AND (tu.tenant_id = f_pp_tenant_id(pagamentos_prestadores.os_id)))))",
+          "with_check": null
+        }
+      ]
+    },
+    {
+      "tabela": "prestadores",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 7,
+      "policies": [
+        {
+          "policyname": "prestadores_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "prestadores_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+        },
+        {
+          "policyname": "prestadores_select_own",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(auth_user_id = auth.uid())",
+          "with_check": null
+        },
+        {
+          "policyname": "prestadores_select_portal",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(f_obter_cliente_id_do_usuario() IS NOT NULL)",
+          "with_check": null
+        },
+        {
+          "policyname": "prestadores_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "prestadores_update_own",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "((auth_user_id IS NOT NULL) AND ((auth_user_id)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) AND (auth_user_id = auth.uid()))",
+          "with_check": null
+        },
+        {
+          "policyname": "prestadores_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        }
+      ]
+    },
+    {
+      "tabela": "perfis_usuario",
+      "existe": false
+    },
+    {
+      "tabela": "tenant_usuarios",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 4,
+      "policies": [
+        {
+          "policyname": "tu_insert_auth",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "true"
+        },
+        {
+          "policyname": "tu_select_anon",
+          "cmd": "SELECT",
+          "roles": "{anon,authenticated}",
+          "qual": "true",
+          "with_check": null
+        },
+        {
+          "policyname": "tu_select_own",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(user_id = auth.uid())",
+          "with_check": null
+        },
+        {
+          "policyname": "tu_update_auth",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "true",
+          "with_check": null
+        }
+      ]
+    },
+    {
+      "tabela": "clientes",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 5,
+      "policies": [
+        {
+          "policyname": "clientes_delete_own",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "f_usuario_pode_acessar_cliente(id)",
+          "with_check": null
+        },
+        {
+          "policyname": "clientes_insert_own",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "f_usuario_pode_acessar_tenant(tenant_id)"
+        },
+        {
+          "policyname": "clientes_select_own",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(f_usuario_pode_acessar_cliente(id) OR (id = f_obter_cliente_id_do_usuario()))",
+          "with_check": null
+        },
+        {
+          "policyname": "clientes_select_own_tenant",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "((tenant_id IS NOT NULL) AND f_usuario_pode_acessar_tenant(tenant_id))",
+          "with_check": null
+        },
+        {
+          "policyname": "clientes_update_own",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "f_usuario_pode_acessar_cliente(id)",
+          "with_check": "f_usuario_pode_acessar_cliente(id)"
+        }
+      ]
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 8,
+      "policies": [
+        {
+          "policyname": "ae_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = alocacoes_escala.tenant_id) AND (tu.status = 'ativo'::text))))",
+          "with_check": null
+        },
+        {
+          "policyname": "ae_insert_prestador",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = alocacoes_escala.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))"
+        },
+        {
+          "policyname": "ae_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = alocacoes_escala.tenant_id) AND (tu.status = 'ativo'::text))))"
+        },
+        {
+          "policyname": "Prestador can view own alocacoes",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(prestador_id IN ( SELECT prestadores.id\n   FROM prestadores\n  WHERE (prestadores.auth_user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "ae_select_cliente",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(cliente_id = f_obter_cliente_id_do_usuario())",
+          "with_check": null
+        },
+        {
+          "policyname": "ae_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = alocacoes_escala.tenant_id) AND (tu.status = 'ativo'::text))))",
+          "with_check": null
+        },
+        {
+          "policyname": "Prestador can update own alocacoes",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(prestador_id IN ( SELECT prestadores.id\n   FROM prestadores\n  WHERE (prestadores.auth_user_id = auth.uid())))",
+          "with_check": "(prestador_id IN ( SELECT prestadores.id\n   FROM prestadores\n  WHERE (prestadores.auth_user_id = auth.uid())))"
+        },
+        {
+          "policyname": "ae_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = alocacoes_escala.tenant_id) AND (tu.status = 'ativo'::text))))",
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios tu\n  WHERE ((tu.user_id = auth.uid()) AND (tu.tenant_id = alocacoes_escala.tenant_id) AND (tu.status = 'ativo'::text))))"
+        }
+      ]
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 4,
+      "policies": [
+        {
+          "policyname": "fp_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "fp_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+        },
+        {
+          "policyname": "fp_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "fp_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        }
+      ]
+    },
+    {
+      "tabela": "financeiro_receber",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 6,
+      "policies": [
+        {
+          "policyname": "fr_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "fr_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+        },
+        {
+          "policyname": "fr_select_cliente",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(cliente_id = f_obter_cliente_id_do_usuario())",
+          "with_check": null
+        },
+        {
+          "policyname": "fr_select_own",
+          "cmd": "SELECT",
+          "roles": "{anon,authenticated}",
+          "qual": "((cliente_id = f_obter_cliente_id_do_usuario()) OR f_usuario_pode_acessar_cliente(cliente_id))",
+          "with_check": null
+        },
+        {
+          "policyname": "fr_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "fr_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        }
+      ]
+    },
+    {
+      "tabela": "documentos_prestadores",
+      "existe": true,
+      "rls": true,
+      "force": false,
+      "n_policies": 8,
+      "policies": [
+        {
+          "policyname": "dp_delete_prestador",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+          "with_check": null
+        },
+        {
+          "policyname": "dp_delete_tms",
+          "cmd": "DELETE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        },
+        {
+          "policyname": "dp_insert_prestador",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))"
+        },
+        {
+          "policyname": "dp_insert_tms",
+          "cmd": "INSERT",
+          "roles": "{authenticated}",
+          "qual": null,
+          "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+        },
+        {
+          "policyname": "dp_select_prestador",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+          "with_check": null
+        },
+        {
+          "policyname": "dp_select_tms",
+          "cmd": "SELECT",
+          "roles": "{authenticated}",
+          "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND ((prestador_id IS NULL) OR (EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE (prestadores.id = documentos_prestadores.prestador_id)))))",
+          "with_check": null
+        },
+        {
+          "policyname": "dp_update_prestador",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+          "with_check": null
+        },
+        {
+          "policyname": "dp_update_tms",
+          "cmd": "UPDATE",
+          "roles": "{authenticated}",
+          "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+          "with_check": null
+        }
+      ]
+    }
+  ],
+  "rpcs": [
+    {
+      "nome": "f_confirmar_pagamento_prestador",
+      "assinatura": "f_confirmar_pagamento_prestador(uuid,date,numeric)",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": true,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_gerar_lote_pagamentos",
+      "assinatura": "f_gerar_lote_pagamentos(uuid[])",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": true,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_aprovar_pagamento_prestadores",
+      "assinatura": "f_aprovar_pagamento_prestadores(uuid[])",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": true,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_emitir_fatura",
+      "assinatura": "f_emitir_fatura(uuid)",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": true,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_avancar_etapa_app_motorista",
+      "assinatura": "f_avancar_etapa_app_motorista(uuid,text,jsonb,text,uuid)",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": false,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_buscar_operacoes_motorista",
+      "assinatura": "f_buscar_operacoes_motorista(uuid)",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": true,
+      "tem_papel": false,
+      "tem_search_path": true,
+      "tem_raise": false
+    },
+    {
+      "nome": "f_atualizar_reversa_app",
+      "assinatura": "f_atualizar_reversa_app(uuid,text,integer,text,text,text,timestamp with time zone,text[],text,numeric,numeric,uuid)",
+      "security_definer": true,
+      "tem_auth_uid": true,
+      "tem_tenant": false,
+      "tem_papel": false,
+      "tem_search_path": true,
+      "tem_raise": false
+    }
+  ],
+  "grants": [
+    {
+      "table_name": "alocacoes_escala",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "alocacoes_escala",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "clientes",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "clientes",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "clientes",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "documentos_prestadores",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "documentos_prestadores",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "documentos_prestadores",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_pagar",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_pagar",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_pagar",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_receber",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_receber",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "financeiro_receber",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "ordens_servico",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "ordens_servico",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "ordens_servico",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "pagamentos_prestadores",
+      "grantee": "anon",
+      "privs": "REFERENCES,SELECT,TRIGGER,TRUNCATE"
+    },
+    {
+      "table_name": "pagamentos_prestadores",
+      "grantee": "authenticated",
+      "privs": "REFERENCES,SELECT,TRIGGER,TRUNCATE"
+    },
+    {
+      "table_name": "pagamentos_prestadores",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "prestadores",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "prestadores",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "prestadores",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "tenant_usuarios",
+      "grantee": "anon",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "tenant_usuarios",
+      "grantee": "authenticated",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    },
+    {
+      "table_name": "tenant_usuarios",
+      "grantee": "service_role",
+      "privs": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+    }
+  ],
+  "checks": [
+    {
+      "name": "rls_habilitada_tabelas_criticas",
+      "ok": true,
+      "detail": "RLS habilitada em todas as tabelas criticas existentes"
+    },
+    {
+      "name": "sem_grants_anon_criticos",
+      "ok": false,
+      "detail": "clientes,documentos_prestadores,financeiro_pagar,financeiro_receber,ordens_servico,pagamentos_prestadores,prestadores,tenant_usuarios"
+    },
+    {
+      "name": "rpcs_com_guarda_tenant",
+      "ok": false,
+      "detail": "6/7 RPCs referenciam tenant"
+    },
+    {
+      "name": "rpcs_com_auth_uid",
+      "ok": true,
+      "detail": "7/7 RPCs usam auth.uid()"
+    },
+    {
+      "name": "rpcs_security_definer",
+      "ok": true,
+      "detail": "7/7 RPCs sao SECURITY DEFINER"
+    }
+  ]
+}

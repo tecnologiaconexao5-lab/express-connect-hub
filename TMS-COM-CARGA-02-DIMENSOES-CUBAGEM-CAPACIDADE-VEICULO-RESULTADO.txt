@@ -1,0 +1,144 @@
+================================================================================
+TMS-COM-CARGA-02-DIMENSOES-CUBAGEM-CAPACIDADE-VEICULO — RESULTADO
+Missão: Dados da Carga (dimensões, cubagem, peso cubado, pallets, valor
+declarado, capacidade física e recomendação de veículo compatível).
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS + Supabase PRODUÇÃO. APP/Redmi NÃO conectado. ZERO migration/DDL.
+================================================================================
+
+1. ESTRUTURA REAPROVEITADA (sem duplicar)
+--------------------------------------------------------------------------------
+- COM-CARGA-01: src/components/comercial/cargaCalculo.ts (evoluído, não recriado).
+- Capacidades: @/constants/tiposVeiculo → VEICULO_PARAMETROS + sugerirVeiculo()
+  (catálogo real; recomenda o MENOR veículo que comporta).
+- Já existiam (NÃO duplicados): src/services/operacao/cargaService.ts
+  (calcularCubagem/sugerirVeiculosPorCarga) e
+  src/services/escala/eligibilidadeOperacionalService.ts
+  (capacidade_kg/capacidade_m3 de veículos reais). Nada foi paralelizado.
+- Persistência: orcamentos.carga / orcamentos.veiculo (JSONB) — sem migration.
+
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/comercial/cargaCalculo.ts (fator configurável + compatibilidade)
+- src/components/comercial/OrcamentoForm.tsx (UI: fator/peso cubado + aviso de incompatibilidade)
+- src/components/comercial/types.ts (fatorCubagem number|null + pesoCubadoDisponivel)
+- src/test/com_carga_01_cubagem.test.ts (ajuste ao novo contrato de fator)
+- src/test/com_carga_02_dimensoes_capacidade.test.ts (NOVO — 13 testes)
+- scripts/_com_carga_02_prova.ts (NOVO — prova controlada)
+
+3. CAMPOS FINAIS DA CARGA
+--------------------------------------------------------------------------------
+volume/descrição/peso real/valor declarado/pallets (já existentes) +
+dimensoes[]: { quantidade, comprimentoCm, larguraCm, alturaCm } (múltiplos grupos) +
+cubagem (calculada) · pesoCubado · fatorCubagem · pesoConsiderado · pesoCubadoDisponivel.
+Veículo: tipo/subcategoria/carroceria + recomendado/recomendacaoDisponivel/recomendacaoMotivos.
+
+4. FÓRMULA DA CUBAGEM
+--------------------------------------------------------------------------------
+Por grupo: (comprimento_cm/100) × (largura_cm/100) × (altura_cm/100) × quantidade.
+Cubagem total = SOMA dos grupos. Entrada em cm; normalização interna p/ metros.
+Determinístico; nunca NaN/Infinity/negativo (vira 0). Sem dimensões → usa cubagem
+já informada (legado). Ex.: 10 × 1,20 × 0,80 × 0,60 = 5,76 m³.
+
+5. PESO REAL × PESO CUBADO
+--------------------------------------------------------------------------------
+- Peso real = carga.peso. Peso cubado = cubagem × fator (kg/m³).
+- FATOR NÃO é hardcoded: resolvido por configuração (chave 'fator_cubagem_kg_m3'
+  em localStorage; fonte de banco prevista em configuracoes_sistema). Sem fator
+  configurado → peso cubado NÃO é calculado (0) e a UI mostra "— não configurado".
+- Peso considerado = MAX(peso real, peso cubado) (quando há fator; senão = peso real).
+- NÃO altera preço/frete.
+
+6. FONTE DAS CAPACIDADES DOS VEÍCULOS
+--------------------------------------------------------------------------------
+- Catálogo front REAL: VEICULO_PARAMETROS (pesoMax kg, cubagemMax m³, compMax/
+  largMax/altMax cm) para moto→bitrem. NÃO foram inventadas capacidades.
+- LACUNA registrada: o catálogo NÃO possui capacidade de PALLETS nem restrição
+  por CARROCERIA → usadas apenas como informação/nota, nunca como restrição.
+
+7. REGRA OBJETIVA DE RECOMENDAÇÃO
+--------------------------------------------------------------------------------
+- Percorre o catálogo em ordem crescente e seleciona o MENOR veículo que atende
+  peso considerado + cubagem + comprimento/largura/altura máximos (sugerirVeiculo).
+- Exibe "Veículo recomendado para a operação" + motivos objetivos (peso, cubagem,
+  pallets, "Compatível com a capacidade cadastrada"). Sem "IA".
+
+8. REGRA DE INCOMPATIBILIDADE
+--------------------------------------------------------------------------------
+- avaliarCompatibilidadeVeiculo(tipo, carga): compara peso/cubagem/dimensões da
+  carga com a capacidade cadastrada do veículo SELECIONADO.
+- Incompatível → aviso NÃO bloqueante: "A capacidade cadastrada deste veículo é
+  inferior aos dados da carga." + excedentes (peso/cubagem/dimensões).
+- Decisão operacional humana preservada; divergência recomendado × selecionado
+  também é sinalizada.
+
+9. PROVA FORMULÁRIO → BANCO → RELOAD
+--------------------------------------------------------------------------------
+scripts/_com_carga_02_prova.ts (transação + ROLLBACK; read-only fora dela):
+- Cálculo: cubagem 5,76 m³; sem fator → peso cubado não calculado (considerado 2.000);
+  com fator 250 → peso cubado 1.440 / considerado 2.000.
+- INSERT via toOrcamentoInsert; SELECT + toOrcamentoDomain: dimensões, cubagem 5,76,
+  pesoCubado 1.440, pesoConsiderado 2.000 e veículo recomendado 'vuc' preservados.
+- Alteração de dimensões (adicionar grupo) recalcula: 6,72 m³.
+
+10. PROVA DO PDF
+--------------------------------------------------------------------------------
+- PDF gerado pelo MESMO gerador homologado (orcamentoPdf.ts, logo clara preservada).
+- Exibe Cubagem 5,76 m³, Peso real 2.000 kg, descrição; sem undefined/NaN.
+- Arquivo: test-results/com-carga-02/ORC-202609-9502_Orcamento_Comercial.pdf
+- PDF/logo/cabeçalho/1-página/valor final: COM-ORC-04/05B preservados.
+
+11. TESTE CONTROLADO (caso obrigatório)
+--------------------------------------------------------------------------------
+10 volumes 1,20×0,80×0,60 m; peso real 2.000 kg; 5 pallets.
+A) cubagem 5,76 ✅ · B) persistência ✅ · C) reload preserva ✅
+D) veículo de 1.300 kg é INCOMPATÍVEL (não recomendado) ✅
+E) veículo compatível (VUC) recomendado ✅ · F) alterar dimensões recalcula (6,72) ✅
+G) PDF recebe os dados ✅ · H) nenhum orçamento de teste persistido (q=0) ✅
+
+12. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (4 arquivos): 61/61 PASS
+    com_carga_02 (13), com_carga_01 (19), com_orc_02 (15), com_orc_03 (14).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão.
+- npm run build -> OK (39.56s).
+
+13. DADOS CRIADOS E LIMPEZA
+--------------------------------------------------------------------------------
+- Caso controlado criado SOMENTE dentro de transação e removido por ROLLBACK.
+- Confirmação pós-rollback: 0 registros com o número de teste. Nenhum orçamento real
+  alterado; ORC-202609-8659 não tocado quando não referenciado.
+- localhost:8800 ATIVO (HTTP 200) para validação visual na tela.
+
+14. RISCOS / BLOQUEIOS REAIS
+--------------------------------------------------------------------------------
+- Fator de cubagem não configurado: peso cubado fica indisponível por design (sem
+  invenção). Próxima micro-missão: cadastrar/parametrizar 'fator_cubagem_kg_m3'
+  (por modalidade/operação) e mover para configuracoes_sistema com UI.
+- Capacidade de PALLETS e restrição de CARROCERIA não existem no catálogo →
+  micro-missão futura para enriquecer VEICULO_PARAMETROS/veículos.
+- Recomendação é por TIPO de veículo (não por frota/placa); capacidade real de
+  frota já existe em veiculos.capacidade_kg/m3 (reuso futuro).
+
+15. BACKLOG (nada esquecido)
+--------------------------------------------------------------------------------
+COMERCIAL: Tabela Esporádica/preço automático; custo×venda×margem; Fracionado/
+providers; saneamento legado/mojibake; regra de status "pronto para envio".
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento
+parcial; saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação global;
+Conta Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin APP/
+Cadastro/Recrutamento; CAD-PERSIST; E2E final; Master 360/Gate.
+
+ARQUIVO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-CARGA-02-DIMENSOES-CUBAGEM-CAPACIDADE-VEICULO-RESULTADO.txt
+Tamanho: 8.768 bytes · Linhas: 144 · Data/hora: 26/09/2026 18:56:21
+
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

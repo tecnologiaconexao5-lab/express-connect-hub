@@ -1,0 +1,44 @@
+================================================================================
+HOTFIX CLIENTES RLS — SELECT/RETURNING APLICADO
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+1. BACKUP TEXTUAL (pré-alteração)
+- scripts/backup_hotfix_clientes_rls_select_2026-08-17T14-24-40.sql
+- Contém a definição anterior de clientes_select_own.
+
+2. MIGRATION APLICADA
+- supabase/migrations/20260817_hotfix_clientes_rls_select.sql
+- clientes_select_own RESTAURADA à definição original EXATA
+  (roles anon, authenticated; critérios do Portal/cliente preservados:
+   f_usuario_pode_acessar_cliente(id) OR id = f_obter_cliente_id_do_usuario()).
+- Nova policy clientes_select_own_tenant (FOR SELECT TO authenticated):
+  USING (tenant_id IS NOT NULL AND f_usuario_pode_acessar_tenant(tenant_id))
+  → resolve o INSERT ... RETURNING (.insert().select()) para usuários TMS.
+- POR QUE policy separada: referenciar f_usuario_pode_acessar_tenant na policy
+  que inclui anon exigiria EXECUTE para anon (plano da policy). Policy
+  restrita a authenticated evita conceder EXECUTE a anon → roles/grants NÃO
+  ampliados. clientes com tenant NULL NÃO expostos por este ramo.
+- NÃO alterado: INSERT/UPDATE/DELETE, frontend, outras tabelas/functions.
+
+3. DEFINIÇÃO FINAL (SELECT)
+- cliente_select_own (authenticated)      — inalterada (portal).
+- clientes_select_own (anon, authenticated) — original, inalterada.
+- clientes_select_own_tenant (authenticated) — nova, acesso por tenant.
+
+4. VALIDAÇÃO COM O MESMO FLUXO REAL (.insert().select() → RETURNING)
+- financeiro  | próprio tenant | PASS ✔
+- comercial   | próprio tenant | PASS ✔
+- financeiro  | outro tenant   | BLOQUEADO ✔ (RLS)
+- comercial   | outro tenant   | BLOQUEADO ✔ (RLS)
+- super_admin | próprio tenant | PASS ✔ (comportamento preservado)
+- anon SELECT de clientes do tenant -> 0 (roles preservados; sem erro de função) ✔
+- Total de clientes pós-teste: 25 (inalterado — nenhum cliente persistido) ✔
+
+RESULTADO: HOTFIX APROVADO
+- O fluxo real (Novo Cliente no TMS, .insert().select()) agora passa para
+  financeiro/comercial no próprio tenant; tenant alheio continua bloqueado;
+  anon/portal inalterados.
+
+PENDÊNCIA: QA visual do "Novo Cliente" no navegador real (sessão financeiro).
+================================================================================

@@ -1,0 +1,31 @@
+# ============================================================================
+# ETAPA 3 (celular) - Chat da Torre de Controle: abrir a partir do card da
+# operacao ativa na home e validar a tela (somente leitura: nao envia mensagem,
+# para nao gravar dados novos em producao).
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+# O app e trazido ao primeiro plano por `adb shell monkey` antes do flow (MIUI/
+# XSpace nega launch via dev.mobile.maestro), entao NAO usamos launchApp aqui.
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      text: ".*Falar com a Torre.*"
+    direction: DOWN
+    timeout: 25000
+- tapOn:
+    text: ".*Falar com a Torre.*"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: ".*Mensagens da.*"
+    timeout: 40000
+- assertVisible: ".*Mensagens da.*"
+- assertVisible: ".*Digite sua mensagem.*"
+
+- takeScreenshot: "03_chat_torre"
+
+# Volta para a home (estado limpo para a etapa 4)
+- back
+- waitForAnimationToEnd

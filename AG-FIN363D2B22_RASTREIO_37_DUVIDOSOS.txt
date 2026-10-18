@@ -1,0 +1,100 @@
+FIN-363D.2B2.2 — RASTREIO DOS 37 DUVIDOSOS
+===========================================
+Data: 2026-09-07T17:24:54.102Z
+
+TOTAL ANALISADO: 37
+
+🟢 a4fae89d  "PRESTADOR TESTE APP"  R$250.00  → CONFIRMADO_REAL  [os_real=OS-202608-680216]
+🟢 2b3fb150  "PRESTADOR TESTE APP"  R$100.00  → CONFIRMADO_REAL  [fp_real=8a11b1e4]
+🟢 28f2492b  "PRESTADOR TESTE APP"  R$100.00  → CONFIRMADO_REAL  [fp_real=8a11b1e4]
+🟢 26f61bc9  "PRESTADOR TESTE APP"  R$100.00  → CONFIRMADO_REAL  [fp_real=8a11b1e4]
+🟡 cb866539  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 de8a1854  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 74eadd8d  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 fe7cc24f  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 6605e1e8  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 0cbf2763  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 77cb490b  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 da2f911b  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 3313adda  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 33557f90  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 fcb0394d  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 1cf29cba  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 9fcf1435  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 8a30b23a  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 54d4c635  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟡 524e1e1c  "PRESTADOR TESTE APP"  R$1050.00  → CONTINUA_DUVIDOSO  []
+🟢 f20f38c9  "PRESTADOR TESTE APP"  R$420.00  → CONFIRMADO_REAL  [fp_real=23992136]
+🟢 b6dac07c  "PRESTADOR TESTE APP"  R$350.00  → CONFIRMADO_REAL  [fp_real=d24b1678]
+🟢 4ed52905  "PRESTADOR TESTE APP"  R$580.00  → CONFIRMADO_REAL  [fp_real=08a2df38]
+🟢 4cc0ee4e  "PRESTADOR TESTE APP"  R$580.00  → CONFIRMADO_REAL  [fp_real=08a2df38]
+🟢 dd142135  "PRESTADOR TESTE APP"  R$1490.00  → CONFIRMADO_REAL  [os_real=OS-202607-938413]
+🟢 e2e0159d  "PRESTADOR TESTE APP"  R$850.00  → CONFIRMADO_REAL  [fp_real=05d87f10]
+🟡 ded4388d  "PRESTADOR TESTE APP"  R$298.50  → CONTINUA_DUVIDOSO  []
+🟢 e6e2bb83  "PRESTADOR TESTE APP"  R$103.50  → CONFIRMADO_REAL  [os_real=M66-MR6JVPDH]
+🟢 b6110500  "M43_2026-06-29_18-29-55 Moto"  R$1000.00  → CONFIRMADO_REAL  [os_real=OS-M43_2026-06-29_18-29-55]
+🟢 e968b1f2  "M43_2026-06-29_18-31-00 Moto"  R$1000.00  → CONFIRMADO_REAL  [os_real=OS-M43_2026-06-29_18-31-00]
+🟢 24d6454d  "PRESTADOR TESTE APP"  R$280.00  → CONFIRMADO_REAL  [fp_real=658f73d1]
+🟢 5d128941  "PRESTADOR TESTE APP"  R$850.00  → CONFIRMADO_REAL  [os_real=OS-202606-323721]
+🟡 32b3d662  "PRESTADOR TESTE APP"  R$895.00  → CONTINUA_DUVIDOSO  []
+🟢 bc12e3de  "PRESTADOR TESTE APP"  R$280.00  → CONFIRMADO_REAL  [fp_real=658f73d1]
+🟢 bc826113  "PRESTADOR TESTE APP"  R$280.00  → CONFIRMADO_REAL  [fp_real=658f73d1]
+🟢 8453492e  "PRESTADOR TESTE APP"  R$280.00  → CONFIRMADO_REAL  [os_real=OS-REDE2-M48_2026-06-29_21-47-50]
+🟢 abfa3755  "PRESTADOR TESTE APP"  R$240.00  → CONFIRMADO_REAL  [fp_real=b8c193e0]
+
+═══════════════════════════════════════════════════════════
+CORREÇÃO DE FLAGS
+═══════════════════════════════════════════════════════════
+Nenhuma flag a alterar para teste
+
+═══════════════════════════════════════════════════════════
+PROVA FINAL
+═══════════════════════════════════════════════════════════
+TOTAL REGISTROS: 90 (inalterado)
+SOMA TOTAL: R$ 66715.32 (inalterada)
+is_teste=true: 5 registros, R$ 464.00
+is_teste=false: 85 registros, R$ 66251.32
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+37 ANALISADOS: SIM
+CONFIRMADO_REAL: 19
+CONFIRMADO_TESTE: 0
+CONTINUA_DUVIDOSO: 18
+FLAGS ALTERADAS: 0
+VALORES ALTERADOS: NÃO
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+
+BLOQUEIO ARQUITETURAL: SIM
+18 registros sem evidência rastreável além do nome do prestador.
+boolean is_teste NÃO distingue REAL confirmado de DUVIDOSO.
+Solução: campo adicional (ex: classificacao_autoridade) ou revisão manual.
+
+IDs CONTINUA_DUVIDOSOS:
+  cb866539-5ee6-411c-8502-6ead39d853ac
+  de8a1854-b234-4875-9d38-99a951f94521
+  74eadd8d-ebf5-4b4a-8ec3-393d5a612c79
+  fe7cc24f-4eeb-4dba-a681-d93aeafbfc68
+  6605e1e8-e03a-4060-adc0-b5f0fc308a01
+  0cbf2763-fbdd-4006-8ee8-774b64638c37
+  77cb490b-5ca7-4ba3-a4bf-0f1ce76fae8e
+  da2f911b-4969-4433-8db1-9b6b66174dc5
+  3313adda-e2c6-4b08-9ae4-e69d9d8ae26c
+  33557f90-72ae-4891-9512-a1d9e85bc3b8
+  fcb0394d-7c0a-4b0c-b830-b644ca3f4af2
+  1cf29cba-0442-4eb1-952b-67b8fdc76ca4
+  9fcf1435-1827-4576-8879-3e73f5be6970
+  8a30b23a-fa90-4105-970e-6d9eec9c8ccc
+  54d4c635-9448-4d50-b727-28ee50ead2a0
+  524e1e1c-ce0f-4970-a53e-3b0f2d2ba6fc
+  ded4388d-70f6-4867-9809-dde557ae9ee2
+  32b3d662-9eff-4ccb-8093-558f90244e24
+
+FIN-363D.2B2.2: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

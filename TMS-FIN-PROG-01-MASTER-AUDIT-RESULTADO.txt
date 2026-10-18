@@ -1,0 +1,627 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-01-MASTER-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS (React/Vite/TS) + Supabase Postgres (PRODUCAO read-only)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: SOMENTE AUDITORIA. Nada implementado, nenhuma migration, nenhum dado
+      alterado, nenhuma RLS modificada, nenhum identificador renomeado.
+================================================================================
+
+AVISO DE METODO
+- Toda afirmacao abaixo tem evidencia. A origem de cada evidencia e marcada:
+    [CODIGO]  = leitura direta do repositorio (arquivo:linha)
+    [BANCO]   = consulta SELECT read-only no Supabase de producao
+    [UI]      = texto/estado que o usuario final ve na interface
+- Nao ha "PASS geral". Cada area recebe classificacao propria:
+    OK / PARCIAL / GAP / BLOQUEADOR
+- "Nao presumir": os numeros de banco foram extraidos por consulta real.
+
+LEGENDA DE CLASSIFICACAO
+  OK         = comportamento correto/coerente com o alvo
+  PARCIAL    = funciona, mas incompleto/deriva de fonte paralela
+  GAP        = ausente ou incorreto, sem risco imediato de corromper dado
+  BLOQUEADOR = incorreto com risco de dado financeiro incorreto/duplicado
+
+================================================================================
+0. VEREDITO EXECUTIVO
+================================================================================
+| Area                                              | Classe      |
+|---------------------------------------------------|-------------|
+| 1. Escala -> Programacao Operacional (mapa UI)     | OK levant.  |
+| 1b. Substituicao textual na UI (implementacao)     | GAP         |
+| 2. Conferencia Financeira (fluxo real)             | PARCIAL     |
+| 3. Botao "Criar Fatura" (Conferencia)              | PARCIAL     |
+| 4. Fatura Manual x Fatura da Conferencia           | PARCIAL     |
+| 5. Validacao/Emitida + idempotencia AR             | BLOQUEADOR  |
+| 6. Faturas 41 x 42                                 | BLOQUEADOR  |
+| 7. Contas a Receber (competencia/venc/receb.)      | GAP         |
+| 8. Contas a Pagar (nascimento da obrigacao)        | GAP         |
+| 9. Dashboard Financeiro "Nenhum dado disponivel"   | BLOQUEADOR  |
+| 10. Paginacao real das listas financeiras          | GAP         |
+
+Fato-chave de banco: existem 41 faturas. 17 sao manuais (metadata.origem=manual).
+15 estao com status=emitida, mas apenas 1 tem numero oficial e Conta a Receber
+(FAT-2026-000001). As outras 14 (incluindo as "41" e "42" citadas) foram marcadas
+"emitida" SEM numero e SEM Conta a Receber. [BANCO]
+
+================================================================================
+A. MAPA COMPLETO "ESCALA" -> "PROGRAMACAO OPERACIONAL"
+================================================================================
+
+A.1 Conceito
+"Escala" e o modulo operacional de alocacao de prestador/veiculo a um servico.
+No TMS NAO e rota propria: e uma ABA dentro de /operacao (query ?tab=escala).
+Fonte canonica de dados: tabela alocacoes_escala. [CODIGO]
+
+A.2 Ocorrencias UI/TEXTO (usuario ve "Escala" -> alvo "Programacao Operacional")
+[UI] [CODIGO]
+
+  MENU / NAVEGACAO
+  - src/lib/sidebarData.ts:107
+      { title: "Escala", path: "/operacao?tab=escala", modulo: "ordens_servico" }
+  - src/pages/PortalCliente.tsx:444
+      { id: "escala", icon: Calendar, label: "Escala" }   (sidebar do Portal Cliente)
+  - src/pages/Operacao.tsx:46
+      "Escala Operacional"   (titulo da TabsTrigger; value="escala" tecnico)
+  - src/pages/IntegracoesTMS.tsx:794  ("Escala Operacional" CardTitle)
+  - src/components/dashboard/DashboardTopbar.tsx:103
+      tooltip "Nova Alocacao (Ir para Escala)"
+
+  TITULOS / CARDS / INDICADORES
+  - src/components/operacao/EscalaLista.tsx:1519  "Escala de Operacao"
+  - src/components/operacao/EscalaLista.tsx:1522  botao "Gerar Escala"
+  - src/components/operacao/EscalaLista.tsx:3418  "Indicadores da Escala"
+  - src/components/operacao/EscalaLista.tsx:3526  "Graficos da Escala"
+  - src/components/dashboard/TabOperacional.tsx:177  "Escalas"
+  - src/components/portal-cliente/PortalEscalaOperacional.tsx:115  "Escala Operacional"
+  - src/components/financeiro/PagamentoPrestadores.tsx:1552  "Repasses da Escala"
+  - src/components/financeiro/PagamentoPrestadores.tsx:1958  "Repasses da Escala Operacional"
+  - src/components/financeiro/PagamentoPrestadores.tsx:2055  "Total em repasses da Escala:"
+  - src/components/financeiro/ContasReceberEnterprise.tsx:1193  "Faturamento Potencial da Escala"
+  - src/components/financeiro/ContasReceberEnterprise.tsx:1199  "Origem: Escala Operacional"
+  - src/components/torre-controle/DetalhesOperacaoSheet.tsx:470  label "Escala"
+  - src/components/torre-controle/DetalhesOperacaoSheet.tsx:528  "Status Escala"
+  - src/components/torre-controle/DetalhesOperacaoSheet.tsx:683  "Data Escala"
+
+  LABELS / FILTROS / COLUNAS / BADGES
+  - src/components/operacao/escala/PrestadorFilters.tsx:43  "Filtrar Escala por Prestador"
+  - src/components/operacao/escala/PrestadorFilters.tsx:53  "Prestador na escala..."
+  - src/components/operacao/escala/PrestadorFilters.tsx:60  "Filtrar Escala por Cliente"
+  - src/components/operacao/escala/PrestadorFilters.tsx:70  "Cliente na escala..."
+  - src/components/operacao/OrdemServicoForm.tsx:317  label "Escala" (checklist)
+  - src/components/operacao/OrdemServicoForm.tsx:1455 label "Escala" (MetaChip)
+  - src/components/operacao/OrdemServicoForm.tsx:1477 label "Escala"
+  - src/components/operacao/OrdemServicoForm.tsx:1500 PanelRow "Escala"
+  - src/components/operacao/OrdensServicoLista.tsx:139  "Sem Escala"
+  - src/components/operacao/OrdensServicoLista.tsx:613  "escala(s) vinculada(s)"
+  - src/components/operacao/KmEvidenciasPanel.tsx:108  "Data da escala"
+  - src/components/financeiro/PagamentoPrestadores.tsx:700  tipo_lancamento "Repasse Escala"
+  - src/components/financeiro/PagamentoPrestadores.tsx:1516 SelectItem "Escala"
+  - src/components/financeiro/PagamentoPrestadores.tsx:1673 badge "Escala"
+  - src/components/financeiro/PagamentoPrestadores.tsx:2672 origem 'escala' -> "Escala"
+  - src/components/financeiro/ContasReceberEnterprise.tsx:1115 badge "Escala"
+
+  MENSAGENS / TOASTS / ESTADOS VAZIOS (visiveis)
+  - EscalaLista.tsx:1244 "Escala gerada automaticamente com IA!"
+  - EscalaLista.tsx:2261 "Numero interno ... vinculado a alocacoes_escala.ordem_servico_id"
+  - EscalaLista.tsx:3724 "Registros da escala integrado ao patio."
+  - OrdemServicoForm.tsx:1141/1145/1149 toasts "Escala ..."
+  - PortalEscalaOperacional.tsx:130/234 "escala operacional" / "registro de escala"
+  - IntegracoesTMS.tsx:747/805 "Escala removida" / "Nenhuma escala cadastrada."
+  - ContasReceberEnterprise.tsx:1207/1216 avisos de faturamento descontinuado da Escala
+  - statusGlobal.ts:37/39 descricoes "...precificacao/escala" e "Prestador alocado na escala"
+  - src/modules/recrutamento/index.tsx:341 "prontos para alocacao na Escala/Torre"
+  - recrutamento/PrestadoresAptos.tsx:61,62,65,67,153,300,302,314
+      ("Enviado para Escala", "Remover da Escala", "Reservas Escala", ...)
+  - src/components/comprovantes/EntregasComprovantes.tsx:93
+  - src/components/operacao/AlocacaoCancelamentoModal.tsx:81
+  - ConferenciaFinanceira.tsx:387,523,637,1396,1459,2137,2235,2367,2488,2529
+      (textos explicativos referindo "a Escala")
+
+  PDFs / RELATORIOS
+  - src/utils/pdfRelatorioOperacional.ts:520  "...dados reais da escala operacional..."
+  - src/lib/pdf/consolidatedReports.ts:218    (mesma frase)
+  - src/lib/pdf/extratoPrestadorReport.ts:455  'escala' -> "Ordem de Carregamento"
+      (aqui o usuario JA ve outro texto; nao e regressao)
+
+  DOCUMENTACAO (nao muda comportamento)
+  - docs/master/ESCALA_OPERACIONAL_STATUS.md (~169 ocorrencias)
+  - docs/master/FINANCEIRO_PRESTADOR_STATUS.md, docs/auditoria/AUDITORIA_MASTER.md,
+    docs/CONTRATO_APP_OPERACAO.md, docs/modelagem-dados.md
+  - ~50 arquivos ESCALA-*.txt / MISSAO108L4_PORTAL_ESCALA_OPERACIONAL_REAL.md na raiz
+
+A.3 Ocorrencias CONTRATO APP<->TMS (NAO RENOMEAR)
+[CODIGO]
+  - src/services/escala/escalaAppPrestadorAdapter.ts:28-29,58
+      status interno 'planejada'/'aguardando_aceite' -> 'escalado' (string do Flutter)
+  - src/pages/AppPrestador.tsx:311  label do status 'escalado' = "Disponivel"
+  - metadata tipo_operacao: 'escala' (EscalaLista.tsx:1032,1156)
+  - Tabela consumida pelo app: alocacoes_escala (portalPrestadorService.ts, useEscala.ts)
+  - RPCs do app: f_buscar_operacoes_motorista, f_avancar_etapa_app_motorista,
+      f_atualizar_reversa_app (nao tem "escala" no nome, mas operam alocacao)
+
+A.4 Ocorrencias BANCO / RPC / MIGRATION (NAO RENOMEAR)
+[BANCO] [CODIGO]
+  Tabelas:
+    alocacoes_escala (canonica)  |  historico_alocacoes_escala
+    escala_operacional (LEGADA/DEPRECATED - ainda lida por IntegracoesTMS.tsx:720-746)
+  Colunas:
+    data_escala, tipo_escala (ordens_servico), escala_id (diversas tabelas/FKs)
+  Valores de dominio / contrato:
+    origem_lancamento = 'escala_direta' e 'escala_operacional'
+    status de alocacao: planejada, aguardando_aceite, aceita, em_rota, concluida,
+                        cancelada, recusada, finalizada
+  Triggers/funcoes (presentes no banco real):
+    trg_propagar_financeiro_alocacao -> f_trg_propagar_financeiro_alocacao (M66)
+    trg_propagar_financeiro_os      -> f_trg_propagar_financeiro_os      (M80)
+    trg_cancelar_financeiro_alocacao, trg_registrar_historico_alocacao,
+    trg_evento_alocacao_*, trg_evento_operacao_finalizada
+  Eventos de dominio:
+    escala.alocacao.criada|aceita|recusada|concluida|cancelada|motorista_trocado|veiculo_trocado
+    (src/types/events.ts:8-14; TorreControle; eventAdapter; PortalEventosFeed)
+  localStorage:
+    conexao_escala_operacional (EscalaLista.tsx:519,1243; escalaMapper.ts:3)
+  Query string:
+    ?tab=escala  (usada por sidebar, DashboardTopbar e dezenas de testes Playwright)
+  Migrations:
+    ~100 arquivos com "escala": 20260517000010 (escala_operacional),
+    20260522_alocacoes_escala (canonica), 20260626000003/4, M66 (20260704000001),
+    M80 (20260705000003/4), M103a, M104, M108f, P0 (20260731000001), A31J111,
+    FIN-SANE-02B (20260913000000), ESCALA-CORE/E2E/FIN/OS/VEIC (20260922*), etc.
+
+A.5 ROTAS
+[CODIGO]
+  Nao existe rota /escala. Existe /operacao (App.tsx:117) com regra de permissao
+  modulo "ordens_servico" (routePermissions.ts:13). A aba Escala e ?tab=escala.
+
+A.6 Falsos positivos (NAO trocar)
+  "Escalar/Escalada" = escalonamento para revisao humana na IA
+  (TrabalhoTab.tsx, DiretorVirtualTab.tsx). Nada a ver com o modulo Escala.
+
+================================================================================
+B. NOMES QUE PODEM MUDAR SOMENTE NA UI (TEXTO VISIVEL)
+================================================================================
+Podem ser trocados para "Programacao Operacional" (ou "Programacao") sem risco
+funcional, desde que NAO se altere o `value`/path/id tecnico associado:
+  - Textos de menu/titulo/label/placeholder/badge/toast/coluna/PDF listados em A.2
+  - Descricoes em statusGlobal.ts, mensagens de ConferenciaFinanceira, ContasReceber,
+    PagamentoPrestadores, recrutamento, Portal Escala.
+  - Frases de PDF (pdfRelatorioOperacional.ts:520; consolidatedReports.ts:218).
+
+REGRA PRATICA: trocar o TEXTO, manter as CHAVES. Ex.:
+  sidebarData.ts:107  title: "Escala"  ->  title: "Programacao Operacional"
+                      path:  "/operacao?tab=escala"  (MANTEM)
+
+================================================================================
+C. NOMES TECNICOS QUE DEVEM SER PRESERVADOS
+================================================================================
+NAO renomear (risco de regressao em banco, APP Flutter, triggers, testes):
+  1. Tabelas: alocacoes_escala, historico_alocacoes_escala, escala_operacional
+  2. Colunas: data_escala, tipo_escala, escala_id (e FKs)
+  3. RPCs/triggers/funcoes com prefixo escala_ / f_trg_propagar_financeiro_*
+  4. Valores: 'escalado' (contrato app), 'escala_direta', 'escala_operacional'
+     (origem_lancamento), tipo_operacao:'escala'
+  5. Eventos escala.alocacao.*
+  6. Chave localStorage conexao_escala_operacional
+  7. Query param ?tab=escala (se renomear, atualizar TODOS os testes e atalhos)
+  8. Tipos/funcoes TS internos (EscalaStatus, EscalaLista, useEscala, escalaService...)
+  9. Views dreamflow (vw_motorista_* expondo escala_id)
+ 10. Falsos positivos: "Escalar/Escalada" (IA) — permanecem.
+
+================================================================================
+D. FLUXO FINANCEIRO AS-IS REAL (codigo + banco)
+================================================================================
+
+D.1 Cadeia operacional -> financeiro (nasce por TRIGGER, nao por UI)
+[CODIGO] [BANCO]
+  (a) Alocacao (alocacoes_escala)
+      Trigger trg_propagar_financeiro_alocacao (AFTER INSERT/UPDATE OF status,
+      finalizada, valores, prestador_id) -> funcao f_trg_propagar_financeiro_alocacao
+      (baseline full_production_schema_20260920.sql:12332-12437).
+      Ao ser concluida+finalizada cria/atualiza:
+        - financeiro_receber  (os_id, valor=cliente, data_vencimento=CURRENT_DATE+30,
+                               status 'aberto')      baseline:12393-12399
+        - financeiro_pagar    (os_id, valor_liquido, data_vencimento=CURRENT_DATE+30,
+                               status 'aberto' se finalizada senao 'pendente')
+        - pagamentos_prestadores (linha-base, status_conferencia em_aberto,
+                               status_pagamento pendente, origem 'escala_direta')
+        - composicao_financeira_os (margem bruta/liquida)
+  (b) OS direta (ordens_servico)
+      Trigger trg_propagar_financeiro_os -> f_trg_propagar_financeiro_os (M80),
+      baseline:12439+ / trigger 15701. Mesmas 4 tabelas. Vencimento CURRENT_DATE+30.
+
+D.2 Conferencia (Financeiro > Faturamento > Conferencia)
+[CODIGO] [UI]
+  - Tela: src/components/financeiro/ConferenciaFinanceira.tsx (montada em
+    Financeiro.tsx:199-201, aba "conferencia").
+  - Fonte/FILTRO que faz um servico aparecer:
+      centralFinanceiroService.ts:176-190
+        .from("alocacoes_escala")
+        .eq("status","concluida").eq("finalizada",true)
+        + .limit(300)
+      (JOIN opcional a ordens_servico -> badge "Sem OS")
+  - Valores CLIENTE/PRESTADOR calculados EM MEMORIA
+      (centralFinanceiroService.ts:313-355), nao persistidos na conferencia.
+  - POD lido de entregas_protocolo por alocacao_id (:201-211); situacao derivada
+      (:357-372); semaforo (:140-149).
+  - Coluna "Receber" le financeiro_receber por os_id (:216-223).
+  - Coluna "Conta a Pagar" le financeiro_pagar por os_id (:228-235).
+  - Coluna "Pagamento do Prestador" le pagamentos_prestadores por os_id (:240-247).
+  - Estado "Faturado" DERIVADO por JOIN fatura_itens+faturas (:279-304):
+      faturas.status='emitida' -> 'faturado'; rascunho/aguardando/aprovada -> 'rascunho'.
+      NAO existe flag persistida na OS/alocacao.
+  - A Conferencia NAO cria financeiro_receber/financeiro_pagar;
+    ela so LE (o trigger ja criou). Acoes de escrita pontuais: salvarRomaneioOS,
+    salvarComplementoFinanceiroAlocacao, lancarServicoManual, NFs, FaturaPanel.
+  - NAO existe "fechamento" na Conferencia. fechamentoService e exclusivo da aba
+    Pagamento de Prestadores (PagamentoPrestadores.tsx).
+
+D.3 Fatura (oficial)
+[CODIGO] [BANCO]
+  Fonte oficial: faturas + fatura_itens (migration
+  20260816000001_fase2a_faturamento_profissional.sql; schema real no baseline
+  1751-1776 e 1727-1749).
+  Fluxo: rascunho -> itens -> emissao:
+    criarRascunhoFatura  (faturaService.ts:213-234)  -> faturas.status='rascunho'
+    adicionarItemFatura  (faturaService.ts:278-306)  -> fatura_itens (os_id, alocacao_id)
+      triggers: trg_fatura_itens_recalcular_totais e trg_fatura_itens_anti_duplicidade
+    emitirFatura         (faturaService.ts:355-365)  -> RPC f_emitir_fatura
+      RPC (migration:324-414): lock FOR UPDATE; guarda status='emitida'
+      -> f_gerar_numero_fatura (FAT-AAAA-NNNNNN)
+      -> INSERT financeiro_receber (os_id=NULL, os_vinculadas=NULL, fatura_id=id,
+             status='aberto', data_vencimento, valor=valor_total)
+      -> UPDATE faturas SET status='emitida', numero, conta_receber_id
+  IMPORTANTE: a AR da fatura e UMA por fatura (fatura_id), com os_id NULL.
+  Ela NAO se funde com a AR por os_id criada pelo M66 (chaves diferentes).
+
+D.4 Pagamento (baixa)
+[CODIGO]
+  - Prestador individual: pagamentoPrestadorService.confirmarPagamento ->
+    RPC f_confirmar_pagamento_prestador (baseline:10522) -> financeiro_baixas.
+  - Fechamento: fechamentoService.pagarFechamento -> RPC
+    f_confirmar_pagamento_fechamento (FIN-SANE-02B:451-545).
+  - Baixa avulsa: pagarService/receberService -> RPC f_registrar_baixa_financeira.
+  - data_baixa vive em financeiro_baixas (NAO em financeiro_receber/pagar).
+
+================================================================================
+E. FLUXO TO-BE (alvo)
+================================================================================
+  Operacao concluida
+    -> Programacao Operacional/OS finalizada
+    -> CONFERENCIA (workspace de validacao)
+         (valida POD, romaneio, valores cliente/prestador; sem criar titulos)
+    -> FATURA OFICIAL (modelo unico faturas+fatura_itens)
+         rascunho -> VALIDACAO ADMINISTRATIVA explicita -> emitida/validada
+    -> Na ACAO de VALIDAR/EMITIR:
+         cria/ativa EXATAMENTE 1 Conta a Receber (fatura_id obrigatorio,
+         idempotente, sem duplicar) — ponto unico de AR de faturamento
+    -> Contas a Receber (visao mensal por VENCIMENTO; recebimento por data_pagamento)
+    -> Contas a Pagar (obrigacao nasce/confirma na CONFERENCIA/VALIDACAO,
+       nao no mero INSERT da alocacao)
+    -> Fiscal/Boleto/Pagamento -> Dashboard/Tesouraria (dados reais)
+
+  Regra de ouro: criar fatura != criar recebivel definitivo. So apos VALIDAR/EMITIR
+  nasce/ativa a AR — 1 por fatura, idempotente.
+
+================================================================================
+F. PONTO EXATO DE CRIACAO DA CONTA A RECEBER (AR)
+================================================================================
+[CODIGO] [BANCO]
+  OFICIAL (fatura): RPC f_emitir_fatura
+    - Definicao: supabase/migrations/20260816000001_fase2a_faturamento_profissional.sql:372-393
+    - Presente no banco real: sim (pg_proc f_emitir_fatura existe). [BANCO]
+    - Idempotencia: por status+lock FOR UPDATE (migration:342,350-352), NAO por
+      constraint. Nao ha UNIQUE(fatura_id) em financeiro_receber (so FK + indice
+      nao-unico, baseline:6643/7604; UNIQUE existente e uq_fr_os_id sobre os_id). [BANCO]
+  PARALELA (por OS): trigger M66/M80 grava financeiro_receber com os_id.
+  BURACO: a Fatura MANUAL nao passa pela RPC (ver secao 5/H) -> nao cria AR.
+
+================================================================================
+G. PONTO EXATO DE CRIACAO DA CONTA A PAGAR (AP)
+================================================================================
+[CODIGO] [BANCO]
+  (1) Trigger M66 (alocacoes_escala): f_trg_propagar_financeiro_alocacao
+      INSERT INTO financeiro_pagar ... ON CONFLICT (os_id) DO UPDATE
+      - baseline:12400-12407 (INSERT/UPDATE), vencimento CURRENT_DATE+30
+      - status: 'pendente' quando NAO concluida; 'aberto' quando concluida+finalizada
+  (2) Trigger M80 (ordens_servico): f_trg_propagar_financeiro_os
+      - baseline:12553-12568 (INSERT), vencimento CURRENT_DATE+30
+      - condicao: v_valor_prestador>0 AND NEW.prestador_id IS NOT NULL
+  (3) Manual: ContasPagar.tsx:817-895 -> pagarService.ts:169-228
+  Idempotencia: uq_fp_os_id UNIQUE(os_id) no banco real. [BANCO]
+  Obrigacao NASCE CEDO (no INSERT/UPDATE da alocacao/OS com valor), ANTES da
+  conclusao e ANTES de qualquer conferencia/validacao.
+
+================================================================================
+H. DIAGNOSTICO FATURA 41 x 42
+================================================================================
+[BANCO] IDs reais (consulta read-only):
+
+  FATURA 41 (numeroManual="41")
+    id:                ebbc46d2-41ff-4412-aa4c-a5b5e81d1411
+    numero (coluna):   NULL
+    status:            emitida
+    conta_receber_id:  NULL
+    valor_total:       R$ 2.114,60
+    data_emissao:      22/09/2026
+    vencimento:        07/10/2026
+    origem:            manual  (metadata.origem="manual")
+    contaBancaria:     BTG PACTUAL (snapshot)
+    criado_em:         22/09/2026 14:26
+    item (fatura_itens): os_id=NULL, valor_total=2114.60, status=ativo
+    AR vinculada:      NENHUMA (fatura_id NULL)
+    Existe 1 receber orfao id bbbaa2dc com fatura (texto)="41", fatura_id=NULL,
+      os_id=NULL, valor=2114.60, status='pendente', venc=07/10/2026 — NAO esta
+      ligado a fatura (fatura_id NULL); nao conta como AR da fatura.
+
+  FATURA 42 (numeroManual="42")
+    id:                7220ed09-50d8-41a1-b3ce-a315e416bcde
+    numero (coluna):   NULL
+    status:            emitida
+    conta_receber_id:  NULL
+    valor_total:       R$ 2.091,40
+    data_emissao:      22/09/2026
+    vencimento:        07/10/2026
+    origem:            manual  (metadata.origem="manual")
+    contaBancaria:     BTG PACTUAL (snapshot)
+    criado_em:         22/09/2026 16:02
+    item (fatura_itens): os_id=NULL, valor_total=2091.40, status=ativo
+    AR vinculada:      NENHUMA (nem por fatura_id, nem registro com fatura="42")
+
+  MOTIVO DA DIFERENCA (causa-raiz):
+    Ambas foram criadas por FATURA MANUAL e "emitidas" pelo caminho manual
+    FaturaManualDialog.handleSalvarEGerarPDF (FaturaManualDialog.tsx:306-336),
+    que em :329-330 faz:
+        const { atualizarFatura } = ...
+        await atualizarFatura(res.fatura.id, { status: "emitida" });
+    Isso grava status='emitida' DIRETO na tabela faturas, SEM chamar a RPC
+    f_emitir_fatura. Consequencias:
+      - numero oficial permanece NULL (sem FAT-AAAA-NNNNNN);
+      - conta_receber_id permanece NULL -> UI detalhe mostra "Conta a Receber —";
+      - nenhum financeiro_receber e criado;
+      - NAO ha como "emitir depois" pela RPC: a guarda de status retorna
+        FATURA_JA_EMITIDA (migration:350-352). [CODIGO]
+    A lista mostra 42 como "Emitida" porque o texto vem do status; o detalhe
+    mostra "Conta a Receber —" porque conta_receber_id e NULL. Nao e contradicao
+    de dados: sao dois campos distintos, um preenchido e outro nao. [UI+CODIGO]
+
+  IMPACTO GLOBAL (nao e so 41/42):
+    [BANCO] faturas: 41 total | 17 manuais | 15 emitidas | 14 emitidas SEM numero |
+            14 emitidas SEM AR | 1 com numero/AR (FAT-2026-000001).
+    Ou seja, 93% das faturas "emitidas" nunca geraram recebivel oficial.
+
+================================================================================
+I. CAUSA DO DASHBOARD VAZIO ("Nenhum dado disponivel")
+================================================================================
+[CODIGO] [BANCO]
+  Componente: src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+  (montado em Financeiro.tsx:194-196, aba "dashboard").
+  Condicao do vazio: DashboardFinanceiroEnterprise.tsx:326
+      const semDados = dadosMesAtual.length === 0 && pagamentosGeral.length === 0;
+  Card: :352-359 ("Nenhum dado disponivel").
+
+  Duas queries decidem o vazio (fetchData, :92-121):
+   (a) dadosMesAtual = ordens_servico status in ('finalizada','concluida')
+       e data >= 'AAAA-MM-01' do mes corrente.
+       [BANCO] Em setembro/2026 ha 0 OS finalizada/concluida com data >= 01/09
+       (existem 45 finalizadas no total, porem de meses anteriores). Resultado
+       legitimo: [].  -> contribui para o vazio.
+   (b) pagamentosGeral = financeiro_pagar is_teste=false status in
+       ('aberto','a vencer','a_vencer','pendente','vencido').
+       A query (:107-110) faz SELECT de "prestador_id".
+       [BANCO] financeiro_pagar NAO possui a coluna prestador_id (colunas reais:
+       'prestador' text, 'fornecedor_id' uuid, 'fornecedor'...). O PostgREST
+       responde HTTP 400; o Supabase retorna {data:null,error} SEM rejeitar a
+       Promise; :126 "if (pgr) setPagamentosGeral(pgr)" nao seta -> fica [].
+       CAUSA PRINCIPAL DO VAZIO: erro de coluna inexistente.
+       Havia 136 titulos a pagar em aberto que NAO aparecem. [BANCO]
+
+  O Dashboard TAMBEM:
+   - NUNCA le a tabela faturas;
+   - usa financeiro_receber apenas para KPIs secundarios (nao entra em semDados);
+   - referencia r.data_baixa (:181/204/213) que nao existe em financeiro_receber;
+   - em rankings, testa o.status_faturamento, mas nao seleciona essa coluna (:94).
+  Portanto existem Faturas e Contas a Receber reais, e mesmo assim o card mostra
+  "Nenhum dado disponivel".
+
+  CORRECAO ALVO (nao implementar agora): trocar prestador_id por coluna real
+  (prestador/fornecedor_id), incluir faturas/financeiro_receber no criterio de
+  "possui dados", e nao depender de OS finalizada no mes corrente.
+
+================================================================================
+J. COMPETENCIA x VENCIMENTO x RECEBIMENTO
+================================================================================
+[BANCO] Colunas reais de financeiro_receber:
+  - vencimento (date) e data_vencimento (date)   -> DUAS colunas de vencimento
+  - data_emissao (date)
+  - data_pagamento (date)                        -> recebimento real (baixa)
+  - data_previsao_recebimento (date)
+  - NAO existem: competencia, data_recebimento, data_baixa
+  Colunas reais de financeiro_pagar: TEM competencia (text), vencimento,
+  data_vencimento, data_emissao, data_pagamento, data_efetiva_pgto,
+  data_previsao_pagamento.
+
+ESTADO ATUAL:
+  - Seletor mensal de Contas a Receber usa data_vencimento
+       [CODIGO] receberService.ts:183-184 (.gte/.lte data_vencimento) +
+                 ContasReceberEnterprise.tsx:206-214/150-159.  OK em conceito.
+  - Coluna "Competencia" da tela e FALSA: usa r.competencia (inexistente) e cai
+       em fallback data_emissao (ContasReceberEnterprise.tsx:260). [CODIGO]
+  - "Recebimento" usa r.data_recebimento (inexistente) -> cai em data_pagamento.
+       (ContasReceberEnterprise.tsx:240). [CODIGO]
+  - Card "Recebido" e filtrado por data_vencimento do mes (query), nao por
+       data_pagamento -> titulo vencido em mes anterior e pago neste mes NAO
+       aparece em "Recebido". [CODIGO]
+  - Cards e totais sao calculados sobre os 25 registros da PAGINA atual, nao
+       sobre o mes inteiro (ver secao L). [CODIGO]
+
+REGRA ALVO:
+  - COMPETENCIA  = periodo economico (persistir explicitamente quando necessario;
+                    hoje ausente em financeiro_receber).
+  - VENCIMENTO   = data que controla a visao mensal de a receber/vencido/a vencer.
+  - RECEBIMENTO  = data real da baixa (data_pagamento; e data_baixa na tabela
+                    financeiro_baixas). "Recebidos" devem ser filtrados por ele.
+
+================================================================================
+K. IDEMPOTENCIA / DUPLICIDADES / ORFANDADE
+================================================================================
+[BANCO]
+  Contagens reais:
+    financeiro_receber: 119 total | 118 sem fatura_id | 21 sem os_id |
+                        20 sem os_id E sem fatura_id | 0 duplicidade por fatura_id
+    financeiro_pagar:   148 reais + 30 teste
+    faturas:            41 total | 17 manuais | 15 emitidas |
+                        14 emitidas sem numero | 14 emitidas sem AR
+    pagamentos_prestadores: pendente 96 | nao_vencido 26 | pago 12 | cancelado 3
+  Status inconsistentes em financeiro_receber (mesma tabela):
+    'aberto' 32 | 'pendente' 60 | 'a vencer' 10 | 'a_vencer' 2 |
+    'pago' 11 | 'vencida' 1 | 'vencido' 1 | 'cancelada' 1 | NULL 1
+  Protecoes existentes:
+    - financeiro_receber: uq_fr_os_id UNIQUE(os_id)  -> protege AR por OS.
+    - financeiro_pagar:   uq_fp_os_id UNIQUE(os_id)  -> protege AP por OS.
+    - faturas.numero:     UNIQUE -> protege o numero oficial.
+  Brechas/riscos:
+    1. AR de fatura tem os_id NULL e NAO tem UNIQUE(fatura_id); idempotencia so
+       por status+lock na RPC. Se um dia a RPC for contornada, pode duplicar.
+    2. Fatura manual "emitida" por UPDATE direto cria um estado "emitida sem AR"
+       irreversivel pela RPC (FATURA_JA_EMITIDA).
+    3. Havia 1 receber orfao (fatura texto="41") sem fatura_id/os_id — AR
+       "fantasma" nao rastreada.
+    4. M66/M80 envolvem os INSERTs em EXCEPTION WHEN OTHERS THEN NULL -> falhas de
+       propagacao financeira silenciosas (a obrigacao/recebivel pode nunca nascer).
+    5. M80 exige NEW.prestador_id (text) mas le NEW.prestador (uuid) para o nome;
+       OS que preencha so 'prestador' pode nao gerar AP.
+
+================================================================================
+L. GAPS DE PAGINACAO
+================================================================================
+[CODIGO]
+  | Tela                        | Paginacao? | Tipo                | Numeros 1,2,3 | Busca/filtro antes? | Base de carga |
+  |-----------------------------|-----------|---------------------|---------------|---------------------|---------------|
+  | Faturas (FaturaLista)       | SIM       | client-side slice   | NAO (so pag.N)| SIM                 | limit(100)    |
+  | Contas a Receber (Enterprise)| PARCIAL  | server .range(25)   | NAO (nao renderiza PaginationBar) | Parcial | 25/pag |
+  | Contas a Receber (legado)   | NAO       | —                   | —             | —                   | tudo (codigo morto) |
+  | Contas a Pagar (ContasPagar)| NAO       | —                   | —             | SIM (client)        | mes inteiro   |
+  | Pagamento Prestadores       | NAO       | —                   | —             | Parcial             | tudo (sem limit) |
+  | Conferencia Financeira      | NAO       | —                   | —             | SIM (client)        | limit(300)    |
+  | Programacao Operacional/Escala | NAO    | —                   | —             | SIM (client)        | tudo          |
+  Evidencias:
+   - FaturaLista.tsx:46 POR_PAGINA=15; :58 pagina; :107-110 slice; :330-334 so
+     Anterior/Proxima e "Pag. N"; origem listarFaturas limit(100) (faturaService.ts:242).
+   - ContasReceberEnterprise.tsx:19 import PaginationBar NAO USADO; :133 page;
+     :134 totalCount; :135 PAGE_SIZE=25; :208-216 listarRecebiveis (range); os
+     cards :601-615 usam apenas a pagina atual.
+   - ContasPagar.tsx:661-670 (mes inteiro, sem page); render :1051.
+   - PagamentoPrestadores.tsx:741-773 (tudo, sem limit); maps 1652/1807/1884/2019.
+   - ConferenciaFinanceira.tsx:1931 itens.map; centralFinanceiroService.ts:190 limit(300).
+   - EscalaLista.tsx:1983-1990 render direto.
+  EXEMPLO CORRETO no projeto (reutilizar): src/components/ui/PaginationBar.tsx
+   (buildPageList com 1,2,3..., Anterior/Proxima), ja usado em
+   OrdensServicoLista.tsx:13, ClientesLista.tsx:494, FornecedoresLista.tsx:223,
+   Comprovantes.tsx:342.
+  REGRA ALVO: busca/filtro/ordenacao sobre o conjunto COMPLETO antes de paginar;
+  paginacao REAL visivel (1,2,3... Anterior/Proxima), preservando o layout.
+
+================================================================================
+M. SEQUENCIA MINIMA DE MICRO-MISSOES CORRETIVAS
+================================================================================
+Observacao: as missoes abaixo sao PROPOSTAS. Nada foi implementado nesta missao.
+
+M1  TMS-FIN-PROG-02 — Troca textual "Escala" -> "Programacao Operacional"
+    - Escopo: SOMENTE strings de UI listadas em A.2 + PDFs.
+    - Preservar: A.3, A.4, A.6 (chaves/valores/parametros/testes).
+    - Classe alvo: elimina o GAP 1b. Sem tocar banco.
+M2  TMS-FIN-PROG-03 — Dashboard Financeiro real
+    - Corrigir coluna inexistente (financeiro_pagar.prestador_id) na query
+      DashboardFinanceiroEnterprise.tsx:108.
+    - Incluir faturas/financeiro_receber no criterio "possui dados"; remover
+      dependencia exclusiva de OS finalizada no mes.
+    - Classe: fecha o BLOQUEADOR 9. Sem migration.
+M3  TMS-FIN-PROG-04 — Unificar fatura manual na RPC oficial
+    - FaturaManualDialog.handleSalvarEGerarPDF deve usar emitirFatura() (numero +
+      AR) ou NAO marcar "emitida" sem AR.
+    - Tratar/regularizar as 14 faturas "emitida sem numero/AR" e o receber orfao
+      com fatura="41" (sem duplicar, sem apagar evidencia).
+    - Classe: fecha BLOQUEADOR 5/6 (parte principal).
+M4  TMS-FIN-PROG-05 — Etapa real de VALIDACAO da fatura + idempotencia
+    - Ativar rascunho -> validacao/emissao (hoje aguardando_aprovacao/aprovada sao
+      estados mortos); criar/ativar 1 AR com fatura_id obrigatorio e idempotente.
+    - Requer migration (UNIQUE parcial/constraint fatura_id). NAO aplicar agora.
+    - Classe: fecha BLOQUEADOR 5.
+M5  TMS-FIN-PROG-06 — Contas a Receber: datas e filtros
+    - Mensal por vencimento (ja usa data_vencimento — manter); "Recebido" por
+      data_pagamento; competencia explicita; alinhar statusEfetivo (atrasado/
+      a_vencer/pago) com status persistido (hoje divergente); cards sobre o
+      conjunto completo, nao a pagina.
+    - Classe: fecha GAP 7.
+M6  TMS-FIN-PROG-07 — Renderizar paginacao de Contas a Receber
+    - Montar <PaginationBar> (server-side, totalCount) em ContasReceberEnterprise.
+    - Classe: fecha parte do GAP 10.
+M7  TMS-FIN-PROG-08 — Paginacao real (Conferencia, Contas a Pagar, Pagamento
+    Prestadores, Programacao Operacional) com PaginationBar + filtros antes.
+    - Classe: fecha GAP 10.
+M8  TMS-FIN-PROG-09 — Contas a Pagar: momento do nascimento
+    - Amarrar criacao/confirmacao da AP a conferencia/validacao (ou marcar
+      pendente sem entrar em totais); corrigir prestador_id x prestador; remover
+      EXCEPTION WHEN OTHERS THEN NULL silencioso.
+    - Requer migration. Classe: fecha GAP 8.
+M9  TMS-FIN-PROG-10 — Saneamento de orfaos e consistencia
+    - Classificar/reconciliar 118 sem fatura_id, 21 sem os_id, 20 sem ambos;
+      unificar status (aberto/a vencer/pendente/vencido).
+    - Classifica os demais GAPs remanescentes.
+
+PROPOSTA DE ORDEM (menor risco primeiro): M1 -> M2 -> M3 -> M6 -> M5 -> M7 -> M9
+-> M4 -> M8. M4/M8 exigem migration e autorizacao.
+
+================================================================================
+ANEXO 1 — CONSULTAS READ-ONLY USADAS (evidencia BANCO)
+================================================================================
+Todas as consultas abaixo foram SELECT (nenhuma escrita). Principais:
+  - faturas: id, numero, status, conta_receber_id, valor_total, data_emissao,
+    vencimento, metadata, criado_em (ORDER BY criado_em DESC LIMIT 60)
+  - faturas WHERE valor_total IN (2114.60, 2091.40) OR vencimento=D'2026-10-07'
+    OR metadata->>'numeroManual' IN ('41','42')
+  - fatura_itens JOIN faturas das faturas 41/42
+  - financeiro_receber: por status; por fatura_id; orfaos; por fatura texto 41/42
+  - financeiro_pagar: por status; is_teste
+  - pagamentos_prestadores: por status_pagamento / is_teste
+  - ordens_servico: por status; finalizadas no mes; colunas existentes
+  - alocacoes_escala: por status/finalizada
+  - information_schema.columns (faturas, financeiro_receber, financeiro_pagar,
+    ordens_servico, pagamentos_prestadores)
+  - pg_constraint (faturas), pg_indexes UNIQUE (financeiro_receber)
+  - information_schema.triggers (alocacoes_escala, ordens_servico, fatura_itens)
+  - pg_proc (f_emitir_fatura, f_cancelar_fatura, f_gerar_numero_fatura,
+    f_recalcular_totais_fatura, f_trg_propagar_financeiro_alocacao/os,
+    f_confirmar_pagamento_prestador/fechamento, f_registrar_baixa_financeira)
+Scripts temporarios usados (removidos apos a auditoria):
+  _audit_finprog01.mjs, _audit_finprog01b.mjs, _audit_finprog01c.mjs
+
+================================================================================
+ANEXO 2 — FATOS-CHAVE (resumo para consulta rapida)
+================================================================================
+  - "Escala" nao e rota; e aba ?tab=escala. Menu vem de sidebarData.ts:107.
+  - Nao renomear alocacoes_escala/data_escala/escala_id/?tab=escala/contrato app.
+  - Conferencia so LE; financeiro nasce por trigger M66/M80.
+  - Fatura oficial = faturas+fatura_itens; AR nasce na RPC f_emitir_fatura.
+  - Fatura manual NAO usa a RPC -> 14 de 15 "emitidas" sem numero e sem AR.
+  - Faturas 41 e 42: emitida/manual, numero NULL, conta_receber_id NULL.
+  - Dashboard vazio por coluna inexistente (financeiro_pagar.prestador_id).
+  - financeiro_receber nao tem competencia/data_recebimento; usa data_vencimento.
+  - Somente FaturaLista tem paginacao (client-side); PaginationBar existe e nao
+    e usada em Contas a Receber/Conferencia/Contas a Pagar/Pagamento/Escala.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- SOMENTE AUDITORIA. Nenhum arquivo do sistema foi alterado; nenhuma migration
+  criada/aplicada; nenhuma RLS modificada; nenhum dado gravado/alterado/apagado;
+  nenhum identificador renomeado; nenhum modulo homologado refatorado; APP e
+  harness Flutter intocados. REDMI nao conectado.
+- Nao ha declaracao de PASS geral. Cada area tem classe propria (secao 0).
+- As correcoes acima sao PROPOSTAS (secao M) e dependem de autorizacao.
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-01-MASTER-AUDIT
+================================================================================

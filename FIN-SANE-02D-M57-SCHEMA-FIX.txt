@@ -1,0 +1,168 @@
+============================================================
+FIN-SANE-02D-M57-SCHEMA-FIX
+Data: 2026-09-16
+Ambiente: TMS LOCAL / Supabase LOCAL
+Producao: ZERO WRITES
+============================================================
+
+1. SCHEMA HISTORICO DE clientes (antes de M57)
+============================================================
+Fonte: supabase/migrations/20260510000001_core_baseline.sql
+       CREATE TABLE public.clientes (linha 13)
+
+Colunas existentes (antes de M57):
+  id, razao_social, nome_fantasia, cnpj, ie, segmento, porte,
+  status, telefone, whatsapp, email, contato_principal, cidade, uf,
+  created_at, updated_at, site, responsavel_operacional,
+  responsavel_financeiro, responsavel_comercial, observacoes,
+  origem_comercial, aceita_api, aceita_portal, exige_agendamento,
+  exige_sla, exige_portal, logo, num_os_mes, tipo_cobranca,
+  vencimento_padrao, agrupamento_faturamento, cte_obrigatorio,
+  xml_obrigatorio, comprovante_obrigatorio, canhoto_obrigatorio,
+  assinatura_legivel, protocolo_obrigatorio, geolocalizacao,
+  tomador, cnae, cfop_padrao, retencoes, envio_xml,
+  observacoes_fiscais, municipio_padrao, regime_tributario,
+  aliquota_iss, incentivo_fiscal, tabela_valores_padrao_id, cep,
+  logradouro, numero, bairro, complemento, inscricao_municipal,
+  optante_simples, tipo_frete_preferencial, veiculo_preferencial,
+  horario_entrega_preferencial, notificar_email, notificar_whatsapp,
+  notificar_mudanca_status, notificar_comprovante, tenant_id
+
+COLUNAS NAO EXISTENTES em nenhum momento antes de M57:
+  - nome (NUNCA existiu)
+  - cnpj_cpf (NUNCA existiu — coluna real e cnpj)
+  - tipo_cliente (NUNCA existiu)
+
+Migrations que adicionaram colunas a clientes ATE 20260703:
+  NENHUMA (fix_assinatura_legivel e posterior a M57)
+
+2. COLUNAS DO INSERT M57
+============================================================
+Arquivo: 20260703000002_missao57_remover_mocks.sql
+
+Clientes INSERT (linhas 6-24):
+  id          → OK (uuid_generate_v4)
+  nome        → NAO EXISTE (deveria ser nome_fantasia)
+  razao_social → OK
+  cnpj_cpf    → NAO EXISTE (deveria ser cnpj)
+  telefone    → OK
+  email       → OK
+  tipo_cliente → NAO EXISTE (coluna inexistente)
+  status      → OK
+  created_at  → OK
+  updated_at  → OK
+
+  WHERE: nome LIKE 'Cliente Pag %' → NAO EXISTE (deveria ser nome_fantasia)
+
+Prestadores INSERT (linhas 27-45):
+  id            → OK
+  nome          → NAO EXISTE (deveria ser nome_completo)
+  razao_social  → NAO EXISTE (coluna inexistente em prestadores)
+  cpf_cnpj      → OK
+  telefone      → OK
+  email         → OK
+  tipo_prestador → NAO EXISTE (deveria ser tipo_parceiro)
+  status        → OK
+  created_at    → OK
+  updated_at    → OK
+
+  WHERE: nome LIKE 'Prestador Pag %' → NAO EXISTE (deveria ser nome_completo)
+
+3. COLUNAS INVALIDAS
+============================================================
+Total de colunas invalidas: 7
+
+  Tabela       | Coluna invalida   | Coluna correta
+  -------------|-------------------|------------------
+  clientes     | nome              | nome_fantasia
+  clientes     | cnpj_cpf          | cnpj
+  clientes     | tipo_cliente      | (remover — nao existe)
+  prestadores  | nome              | nome_completo
+  prestadores  | razao_social      | (remover — nao existe)
+  prestadores  | tipo_prestador    | tipo_parceiro
+  (WHERE)      | nome LIKE         | nome_fantasia LIKE
+
+4. CAUSA DO 42703
+============================================================
+A migration M57 foi escrita contra um schema INCORRETO/HIPOTETICO.
+Nenhuma das 7 colunas listadas acima existiu alguma vez na tabela
+antes de M57. O autor da migration confundiu nomes de colunas
+(nome vs nome_fantasia, cnpj vs cnpj_cpf, etc).
+
+5. CORRECAO COMPROVADA
+============================================================
+PATCH APLICADO TEMPORARIAMENTE (e revertido):
+
+  clientes:
+    nome → nome_fantasia
+    cnpj_cpf → cnpj
+    tipo_cliente → removido
+    WHERE nome → WHERE nome_fantasia
+
+  prestadores:
+    nome → nome_completo
+    razao_social → removido
+    tipo_prestador → tipo_parceiro
+    WHERE nome → WHERE nome_completo
+
+  recrutamento_candidatos (LPAD fix):
+    (expr)::text → CAST(expr AS text)
+
+  Resultado: M57 PASSOU COMPLETAMENTE.
+  Todos os 4 INSERTs (clientes, prestadores, candidatos, entregas)
+  foram executados com sucesso.
+
+  Alem disso, a correcao do 42501 (M03 linha 209: authenticated →
+  postgres) tambem PASSOU.
+
+6. SHA256 ORIGINAIS
+============================================================
+M03: 91533C83F4AC6FDB78010D4BA4870CC9A1A2407AB7D86EF6453F221208B171A8
+M57: C7CBC9368F6559CBB81E0CF5961F2FD23C49B35D241479B7C90D347E2A25A38D
+
+Backups: _temp_backup_20260702000003_v2.sql, _temp_backup_20260703000002.sql
+Restauracao: CONFIRMADA (SHA256 identicos)
+
+7. RESULTADOS
+============================================================
+M57:               PASS (correcao comprovada)
+42501:             ELIMINADO (correcao comprovada)
+M03:               PASS
+
+NEXT HISTORICAL BLOCKER:
+  20260705000001_m100_rls_event_bus_consumidores.sql
+  SQLSTATE: 42P01
+  Erro: relation "public.eventos_oficiais" does not exist
+  Causa: migration assume tabela que nao foi criada por migrations anteriores
+
+SUPABASE LOCAL:    BLOCKED (3o blocker historico)
+PRODUCAO:          ZERO WRITES
+
+8. GIT DIFF
+============================================================
+Nenhuma alteracao pendente. Ambos os arquivos restaurados.
+SHA256 verificados: identicos aos originais.
+
+9. PROXIMO PASSO
+============================================================
+Para completar o bootstrap local, serao necessarias correcoes
+em pelo menos 3 migrations historicas:
+
+  1. 20260702000003 — role fix (authenticated → postgres)
+  2. 20260703000002 — schema fix (7 colunas invalidas)
+  3. 20260705000001 — tabela ausente (eventos_oficiais)
+
+Cada correcao requer:
+  - SHA256 do original
+  - Backup temporario
+  - Patch minimo
+  - Restauracao apos bootstrap
+
+Recomendacao: criar script unificado que aplique as 3 correcoes
+temporariamente, execute supabase start, e restaure automaticamente.
+
+============================================================
+ARQUIVO: FIN-SANE-02D-M57-SCHEMA-FIX.txt
+RESTORE: CONFIRMADO (SHA256 identicos)
+PRODUCAO: INTACTA
+============================================================

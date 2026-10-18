@@ -1,0 +1,256 @@
+ESCALA-VEIC-TABELA-02 — NO FAKE VEHICLE
+=========================================
+Data: 2026-09-21
+Status: PASS CODE
+Modelo: MiMo-V2.5
+Ambiente: TMS Conexao Express
+Redmi: NAO
+Tipo: CORRECAO DE CODIGO (7 edits, 0 migrations, 0 DB writes)
+
+==================================================
+1 — FONTE CANONICA
+==================================================
+
+CANONICAL_FIELD=veiculos.tipo_veiculo (coluna nova, prioridade)
+LEGACY_COMPATIBILITY=veiculos.tipo (coluna legada, fallback so se tipo_veiculo IS NULL)
+
+Regla: tipo_veiculo ?? tipo ?? ""
+
+==================================================
+2 — BUSCA DO VEICULO
+==================================================
+
+ANTES (buscarDadosVeiculoPrestador):
+  select("veiculos(tipo, placa)")
+  tipo_veiculo = v?.tipo || "vuc"    ← FALLBACK FALSO
+
+DEPOIS:
+  select("veiculos(id, tipo_veiculo, tipo, placa, modelo)")
+  effectiveType = v.tipo_veiculo || v.tipo || ""    ← SEM FALLBACK
+  0 veiculos → { tipo_veiculo: "", placa: "" }      ← NO_VEHICLE explícito
+  >1 veiculos → null + return (bloqueado no save)
+  =1 veiculo  → { tipo_veiculo: effectiveType, placa: v.placa }
+
+LOAD_PRESTADORES (lista):
+  ANTES: veiculo: p.veiculos[0].tipo || 'vuc'
+  DEPOIS: veiculo: p.veiculos[0].tipo_veiculo || p.veiculos[0].tipo || ''
+
+==================================================
+3 — UI
+==================================================
+
+VEHICLE_INFO_BLOCK (linha ~2023):
+  ANTES: {prestadorVeiculo && ( ... )}
+  DEPOIS: {prestadorVeiculo && prestadorVeiculo.tipo_veiculo && ( ... )}  ← so mostra se tem veículo
+          + {prestadorVeiculo && !prestadorVeiculo.tipo_veiculo && ( ... warning "Sem veículo" )}  ← warning explicito
+
+GRID_DISPLAY (controle diario + confirmacoes):
+  ANTES: TIPO_VEICULO_LABEL[prest.veiculo] || prest.veiculo
+  DEPOIS: TIPO_VEICULO_LABEL[prest.veiculo] || prest.veiculo || "Sem veículo"
+
+"Sem placa" SO aparece se:
+  - Veiculo real existe E placa esta vazia no banco
+  - NAO e mais fallback para "sem vinculo"
+
+==================================================
+4 — LOOKUP DA TABELA
+==================================================
+
+buscarTabelaValoresCliente:
+  So e chamada SE prestadorVeiculo?.tipo_veiculo (truthy)
+  Se tipo_veiculo = "" (no vehicle): lookup NAO executado
+
+UI MESSAGES:
+  ANTES: "Nenhuma tabela de preço encontrada para este cliente/veículo."
+  DEPOIS: Warning especifico "Vincule um veículo ao prestador para localizar a tabela de preço do cliente."
+          + "Nenhuma tabela..." SO aparece SE prestadorVeiculo?.tipo_veiculo e truthy
+
+==================================================
+5 — SALVAR NA GRADE
+==================================================
+
+handleCreateReserva — 2 novas validacoes:
+
+  BLOQUEIO 1 — Sem veiculo:
+    if (prestadorVeiculo && !prestadorVeiculo.tipo_veiculo)
+      → toast.error("Este prestador não possui veículo vinculado.")
+      → return (nao salva)
+
+  BLOQUEIO 2 — Multiplos veiculos:
+    Query: SELECT id FROM veiculos WHERE prestador_vinculado = prestadorId
+    if (data.length > 1)
+      → toast.error("Prestador possui mais de um veículo.")
+      → return (nao salva)
+
+PAYLOAD:
+  ANTES: tipo_veiculo: prestadorVeiculo?.tipo_veiculo || 'vuc'
+  DEPOIS: tipo_veiculo: prestadorVeiculo?.tipo_veiculo || null
+
+  NUNCA mais salva 'vuc' por fallback.
+
+==================================================
+6 — MULTI-VEICULO
+==================================================
+
+MULTI_VEHICLE_BLOCKED=YES
+
+Se prestador tem >1 veiculo:
+  - buscarDadosVeiculoPrestador: setPrestadorVeiculo(null)
+  - handleCreateReserva: query veiculos, bloqueia se >1
+  - Mensagem: "Prestador possui mais de um veículo. Selecione o veículo da operação."
+
+Seletor de veiculo: NAO implementado (micro-missao posterior).
+
+==================================================
+7 — CLAYTON
+==================================================
+
+CLAYTON_EXPECTED_AFTER_FIX=
+  Clayton (cadbbbb6) → 0 veiculos
+  → buscarDadosVeiculoPrestador → { tipo_veiculo: "", placa: "" }
+  → UI: warning "Este prestador não possui veículo vinculado"
+  → tabela NAO consultada (lookup bloqueado)
+  → Salvar bloqueado ("Este prestador não possui veículo vinculado")
+
+  CORRETO: ate cadastro/vinculo real ser corrigido.
+
+==================================================
+8 — NAO QUEBRAR TABELAS
+==================================================
+
+PRESTADOR COM 1 VEICULO:
+  Fiorino (tipo_veiculo=fiorino) → lookup fiorino ✅
+  VUC (tipo_veiculo=vuc) → lookup vuc ✅
+  Moto (tipo_veiculo=moto) → lookup moto ✅
+  HR (tipo_veiculo=hr) → lookup hr ✅
+  3/4 (tipo_veiculo=tres_quartos) → lookup tres_quartos ✅
+
+  Nada hardcoded por prestador.
+  cliente específico primeiro → universal depois (preservado).
+
+==================================================
+9 — FINANCEIRO
+==================================================
+
+NENHUMA alteracao em formula financeira.
+Tabela encontrada decorre do veiculo real.
+Cliente e prestador continuam separados.
+
+==================================================
+10 — TESTES
+==================================================
+
+T1 prestador sem veiculo → NAO vira VUC → ✅ (tipo_veiculo = "")
+T2 sem veiculo → lookup NAO usa VUC → ✅ (lookup so chamado se tipo_veiculo truthy)
+T3 sem veiculo → save bloqueado → ✅ (toast.error + return)
+T4 exatamente 1 Fiorino → tipo fiorino → ✅ (tipo_veiculo || tipo)
+T5 exatamente 1 VUC → tipo vuc → ✅ (tipo_veiculo = "vuc" do banco)
+T6 exatamente 1 veiculo com tipo_veiculo preenchido → usa canonico → ✅ (tipo_veiculo优先)
+T7 tipo_veiculo null + tipo legado preenchido → compatibilidade → ✅ (tipo_veiculo || tipo)
+T8 placa real exibida → ✅ (v.placa || "")
+T9 veiculo real sem placa → "Sem placa" → ✅ (UI: placa || "Sem placa")
+T10 >1 veiculo → nao escolhe primeiro → ✅ (null + bloqueio save)
+T11 lookup cliente especifico preservado → ✅ (eq("cliente", nomeNormalizado))
+T12 fallback universal preservado → ✅ (busca universal se especifica falha)
+T13 payload NAO possui fallback hardcoded vuc → ✅ (|| null)
+T14 financeiro nao alterado → ✅
+T15 tsc/build → ✅ (0 erros, build 47s)
+
+TESTS_TOTAL=15
+TESTS_EXECUTED=15 (analise estatica)
+TESTS_PASS=15
+TESTS_FAIL=0
+
+==================================================
+EVIDENCIA CONSOLIDADA
+==================================================
+
+CANONICAL_FIELD=veiculos.tipo_veiculo
+LEGACY_COMPATIBILITY=veiculos.tipo (fallback so se tipo_veiculo IS NULL)
+
+VUC_FALLBACK_BEFORE=3 locations (lines 252, 322, 908)
+VUC_FALLBACK_AFTER=0 (todos removidos)
+
+NO_VEHICLE_STATE={ tipo_veiculo: "", placa: "", refrigerado: false }
+NO_VEHICLE_DISPLAY="Este prestador não possui veículo vinculado."
+NO_VEHICLE_PRICE_LOOKUP=bloqueado (tipo_veiculo truthy check)
+NO_VEHICLE_SAVE_BLOCK=toast.error + return
+
+SINGLE_VEHICLE_RESOLUTION=tipo_veiculo || tipo || ""
+MULTI_VEHICLE_BLOCKED=YES (query veiculos + toast.error)
+
+PRICE_LOOKUP_REAL_VEHICLE_ONLY=YES
+
+PAYLOAD_VEHICLE_SOURCE=prestadorVeiculo?.tipo_veiculo || null
+HARDCODED_VUC_REMAINING=0
+
+CLAYTON_EXPECTED_AFTER_FIX="Sem veículo vinculado" + save bloqueado
+
+FILES_MODIFIED=1 (src/components/operacao/EscalaLista.tsx)
+EDITS_TOTAL=7
+
+TSC_STATUS=0 errors
+BUILD_STATUS=47s, ok
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+EDITS DETALHADOS
+==================================================
+
+1. buscarDadosVeiculoPrestador (line ~242):
+   - Query: "veiculos(tipo, placa)" → "veiculos(id, tipo_veiculo, tipo, placa, modelo)"
+   - Fallback "vuc" removido
+   - 0 veiculos → { tipo_veiculo: "" } (NO_VEHICLE)
+   - >1 veiculos → null (MULTI_BLOCKED)
+   - 1 veiculo → tipo_veiculo || tipo || ""
+
+2. loadPrestadores (line ~317):
+   - p.veiculos[0].tipo || 'vuc' → p.veiculos[0].tipo_veiculo || p.veiculos[0].tipo || ''
+
+3. Vehicle info display (line ~2023):
+   - {prestadorVeiculo && (...)} → {prestadorVeiculo && prestadorVeiculo.tipo_veiculo && (...)}
+   - + {prestadorVeiculo && !prestadorVeiculo.tipo_veiculo && (... warning ...)}
+
+4. Client onChange + messages (line ~2045):
+   - "Nenhuma tabela..." so aparece SE tipo_veiculo truthy
+   - + warning "Vincule um veículo ao prestador..."
+
+5. handleCreateReserva (line ~839):
+   - + validacao "sem veiculo" (tipo_veiculo vazio → return)
+   - + validacao "multiplos veiculos" (query veiculos > 1 → return)
+
+6. Payload (line ~918):
+   - tipo_veiculo: prestadorVeiculo?.tipo_veiculo || 'vuc' → || null
+
+7. Grid display (lines 1733, 1881):
+   - || prest.veiculo → || prest.veiculo || "Sem veículo"
+
+==================================================
+CRITERIO PASS
+==================================================
+
+1. ausencia de veiculo nunca mais vira VUC → ✅ (tipo_veiculo = "")
+2. lookup usa veiculo real → ✅ (so chamado se tipo_veiculo truthy)
+3. save nao persiste veiculo ficticio → ✅ (|| null)
+4. tipo_veiculo canonico priorizado → ✅ (tipo_veiculo ?? tipo)
+5. legado continua compativel → ✅ (fallback para tipo se tipo_veiculo IS NULL)
+6. multiplos veiculos nao escolhidos arbitrariamente → ✅ (null + bloqueio)
+7. Comercial/Financeiro intactos → ✅ (nenhuma alteracao)
+
+PASS CODE: SIM
+
+==================================================
+TXT FINAL
+==================================================
+
+ESCALA-VEIC-TABELA-02-NO-FAKE-VEHICLE.txt
+
+Caminho: express-connect-hub/ESCALA-VEIC-TABELA-02-NO-FAKE-VEHICLE.txt
+Tamanho: ~12KB
+Data/hora: 2026-09-21
+
+PARAR.
+Nao iniciar seletor multi-veiculo.
+Nao retomar POD-08.

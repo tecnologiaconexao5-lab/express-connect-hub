@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2 } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import PaginationBar from "@/components/ui/PaginationBar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { OrdemServico, obterStatusGlobalOS } from "./osTypes";
@@ -17,9 +18,15 @@ import { STATUS_GLOBAL_INFO, obterClasseBadgeGlobal, STATUS_FILTRO_OPCOES } from
 import { obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import OrdemServicoForm from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
+import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
+import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
+import { notificarBaseAgregados, emRiscoSlaSemAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+
+const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
+type OSComDataCriacao = OrdemServico & { createdAt?: string };
 
 const OrdensServicoLista = () => {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
@@ -29,6 +36,8 @@ const OrdensServicoLista = () => {
   const [osSelecionada, setOsSelecionada] = useState<OrdemServico | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [osPreview, setOsPreview] = useState<OrdemServico | null>(null);
+  // Visão DEDICADA de comprovantes/POD (não abre o formulário da OS).
+  const [osComprovantes, setOsComprovantes] = useState<OrdemServico | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Filtros
@@ -48,9 +57,16 @@ const OrdensServicoLista = () => {
   
   // Exclusão
   const [osParaExcluir, setOsParaExcluir] = useState<OrdemServico | null>(null);
+  const [vinculosCount, setVinculosCount] = useState({ escalas: 0, financeiro: 0, pagamentos: 0 });
   const [senhaAdmin, setSenhaAdmin] = useState("");
   const [excluindo, setExcluindo] = useState(false);
   const [syncStatusMap, setSyncStatusMap] = useState<Record<string, { label: string; classe: string }>>({});
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  // REFINAMENTO-FLUXO-ALOCACAO-TMS: foco rápido em OSs órfãs (sem prestador).
+  const [somenteSemPrestador, setSomenteSemPrestador] = useState(false);
+  const [acaoOrfa, setAcaoOrfa] = useState<{ osId: string; tipo: "rede" | "base" } | null>(null);
+  const PAGE_SIZE = 25;
 
   useEffect(() => {
     fetchOrdens();
@@ -91,10 +107,13 @@ const OrdensServicoLista = () => {
   const fetchOrdens = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("ordens_servico")
-        .select("*, clientes(nome_fantasia, razao_social)")
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase.from("ordens_servico")
+        .select("*, clientes(nome_fantasia, razao_social)", { count: "exact" })
         .order("created_at", { ascending: false })
-        .limit(100);
+        .range(from, to);
+      if (count !== null) setTotalCount(count);
       if (error) {
         if (error.code === "42P01") {
           setOrdens([]);
@@ -125,7 +144,7 @@ const OrdensServicoLista = () => {
         data.forEach((item: any) => {
           if (!syncMap[item.id]) {
             syncMap[item.id] = {
-              label: "Sem Escala",
+              label: "Sem Programação",
               classe: obterClasseBadgeDivergencia("os_sem_escala"),
             };
           }
@@ -137,7 +156,8 @@ const OrdensServicoLista = () => {
           const os = fromOSRow(item);
           return {
             ...os,
-            cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado"
+            cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado",
+            createdAt: item.created_at as string | undefined,
           };
         });
         setOrdens(normalizados as OrdemServico[]);
@@ -157,6 +177,46 @@ const OrdensServicoLista = () => {
     setModoForm(null);
     setOsSelecionada(null);
     fetchOrdens();
+  };
+
+  /** OS órfã: sem prestador vinculado e ainda não encerrada. */
+  const osSemPrestador = (os: OrdemServico) =>
+    !(os.prestador || "").trim() && !STATUS_ENCERRADOS.includes(String(os.status));
+
+  const handlePublicarNaRede = async (os: OrdemServico) => {
+    if (!os.id) return;
+    if (!(os.custoPrestador > 0)) {
+      toast.error("Defina o valor de repasse (custo do prestador) antes de publicar na Rede.");
+      return;
+    }
+    setAcaoOrfa({ osId: os.id, tipo: "rede" });
+    try {
+      const res = await publicarOportunidade({ os_id: os.id, valor_prestador: os.custoPrestador });
+      if (res.sucesso) {
+        toast.success(`OS ${os.numero} publicada na Rede de Prestadores.`);
+      } else {
+        toast.error(res.erro || "Não foi possível publicar na Rede.");
+      }
+    } finally {
+      setAcaoOrfa(null);
+    }
+  };
+
+  const handleNotificarBase = async (os: OrdemServico) => {
+    if (!os.id) return;
+    setAcaoOrfa({ osId: os.id, tipo: "base" });
+    try {
+      const res = await notificarBaseAgregados(os.id);
+      if (!res.sucesso) {
+        toast.error(res.erro || "Não foi possível notificar a base.");
+      } else if (res.total === 0) {
+        toast.warning("Nenhum prestador compatível elegível encontrado para notificar.");
+      } else {
+        toast.success(`Base/agregados notificados (${res.total} prestador${res.total > 1 ? "es" : ""}).`);
+      }
+    } finally {
+      setAcaoOrfa(null);
+    }
   };
 
   const isAtrasada = (os: OrdemServico) => {
@@ -194,6 +254,7 @@ const OrdensServicoLista = () => {
     const matchTipo = filtroTipo === "todos" || os.tipoOperacao === filtroTipo;
     const matchTipoVeiculo = filtroTipoVeiculo === "todos" || (os.veiculoTipo || "").toLowerCase() === (filtroTipoVeiculo || "todos").toLowerCase();
     const matchTipoCarga = filtroTipoCarga === "todos" || (os.carga?.tipo || "") === filtroTipoCarga;
+    const matchSemPrestador = !somenteSemPrestador || osSemPrestador(os);
     
     // Filtro de período
     let matchPeriodo = true;
@@ -225,13 +286,37 @@ const OrdensServicoLista = () => {
       }
     }
 
-    return matchBusca && matchStatus && matchCliente && matchTipo && matchPeriodo && matchTipoVeiculo && matchTipoCarga;
+    return matchBusca && matchStatus && matchCliente && matchTipo && matchPeriodo && matchTipoVeiculo && matchTipoCarga && matchSemPrestador;
   });
+
+  const totalOrfas = ordens.filter(osSemPrestador).length;
+
+  useEffect(() => {
+    if (!osParaExcluir) return;
+    (async () => {
+      const osId = osParaExcluir.id;
+      const [escalas, financeiro, pagamentos] = await Promise.all([
+        supabase.from("alocacoes_escala").select("id", { count: "exact", head: true }).eq("ordem_servico_id", osId),
+        supabase.from("financeiro_receber").select("id", { count: "exact", head: true }).eq("os_id", osId),
+        supabase.from("pagamentos_prestadores").select("id", { count: "exact", head: true }).eq("os_id", osId),
+      ]);
+      setVinculosCount({
+        escalas: escalas.count ?? 0,
+        financeiro: financeiro.count ?? 0,
+        pagamentos: pagamentos.count ?? 0,
+      });
+    })();
+  }, [osParaExcluir]);
 
   const handleDelete = async () => {
     if (!osParaExcluir) return;
     
-    const senhaCorreta = import.meta.env.VITE_ADMIN_DELETE_PASSWORD || "admin123";
+    const senhaCorreta = import.meta.env.VITE_ADMIN_DELETE_PASSWORD;
+    if (!senhaCorreta) {
+      toast.error("Exclusão de OS desativada: configure VITE_ADMIN_DELETE_PASSWORD no .env");
+      setExcluindo(false);
+      return;
+    }
     
     if (senhaAdmin !== senhaCorreta) {
       toast.error("Senha administrativa incorreta.");
@@ -422,9 +507,27 @@ const OrdensServicoLista = () => {
 
       <Card>
         <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Buscar por número, cliente, prestador, placa..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9 h-10" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder="Buscar por número, cliente, prestador, placa..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9 h-10" />
+            </div>
+            {/* FILTRO RÁPIDO — OSs órfãs (sem prestador) */}
+            <Button
+              variant={somenteSemPrestador ? "default" : "outline"}
+              size="sm"
+              className={`h-10 whitespace-nowrap ${somenteSemPrestador ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-200 text-red-700 hover:bg-red-50"}`}
+              onClick={() => setSomenteSemPrestador((v) => !v)}
+              title="Mostrar apenas OSs sem prestador (risco de atraso)"
+            >
+              <ShieldAlert className="w-4 h-4 mr-2" />
+              Só sem prestador
+              {totalOrfas > 0 && (
+                <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${somenteSemPrestador ? "bg-white/20" : "bg-red-100 text-red-700"}`}>
+                  {totalOrfas}
+                </span>
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -467,12 +570,18 @@ const OrdensServicoLista = () => {
                 ) : filtradas.map(os => {
                   const atrasada = isAtrasada(os);
                   const comOcorrencia = os.status === "ocorrencia";
-                  
+                  const semPrestador = osSemPrestador(os);
+                  const riscoSla = emRiscoSlaSemAlocacao((os as OSComDataCriacao).createdAt, semPrestador);
+
                   return (
-                    <TableRow key={os.id} className="hover:bg-muted/30 transition-colors group">
+                    <TableRow
+                      key={os.id}
+                      className={`transition-colors group ${semPrestador ? "bg-red-50/50 border-l-4 border-l-red-500 hover:bg-red-50" : "hover:bg-muted/30"}`}
+                    >
                       <TableCell className="py-4">
                         <div className="flex items-center gap-1.5 font-bold text-sm">
                           {comOcorrencia && <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />}
+                          {semPrestador && <ShieldAlert className="w-3.5 h-3.5 text-red-600 animate-pulse" />}
                           {os.numero}
                         </div>
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -497,17 +606,26 @@ const OrdensServicoLista = () => {
                          <div className="text-[10px] text-muted-foreground truncate max-w-[100px]">{os.carga?.descricao || "—"}</div>
                        </TableCell>
                        <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-7 h-7 border border-muted shadow-sm">
-                            <AvatarFallback className="text-[9px] font-bold bg-primary/5 text-primary">
-                              {os.prestador ? os.prestador[0] : "?"}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">{os.prestador || "Pendente"}</span>
-                            <span className="text-[10px] font-bold text-orange-600">{os.veiculoPlaca || "—"}</span>
+                        {semPrestador ? (
+                          <div className="flex flex-col gap-1">
+                            <Badge className="bg-red-600 text-white text-[9px] uppercase font-bold py-0.5 px-2 w-fit gap-1">
+                              <ShieldAlert className="w-3 h-3" /> Sem prestador
+                            </Badge>
+                            <span className="text-[10px] text-red-600 font-medium">Nenhum motorista alocado</span>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="w-7 h-7 border border-muted shadow-sm">
+                              <AvatarFallback className="text-[9px] font-bold bg-primary/5 text-primary">
+                                {os.prestador ? os.prestador[0] : "?"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">{os.prestador || "Pendente"}</span>
+                              <span className="text-[10px] font-bold text-orange-600">{os.veiculoPlaca || "—"}</span>
+                            </div>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} text-[9px] uppercase font-bold py-0.5 px-2`}>
@@ -533,16 +651,49 @@ const OrdensServicoLista = () => {
                           {os.previsaoTermino ? safeFormatDate(os.previsaoTermino) : "Sem prazo"}
                         </div>
                         {atrasada && <span className="text-[9px] font-bold text-red-500 uppercase">Atrasada</span>}
+                        {riscoSla && (
+                          <div className="mt-0.5 flex items-center gap-0.5 text-[9px] font-bold text-red-600 uppercase">
+                            <ShieldAlert className="w-2.5 h-2.5" /> Risco de SLA
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className={`flex items-center justify-end gap-1 transition-opacity ${semPrestador ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                          {semPrestador && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hover:bg-violet-50 hover:text-violet-600"
+                                title="Publicar na Rede de Prestadores"
+                                disabled={acaoOrfa?.osId === os.id}
+                                onClick={(e) => { e.stopPropagation(); handlePublicarNaRede(os); }}
+                              >
+                                {acaoOrfa?.osId === os.id && acaoOrfa?.tipo === "rede" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Network className="w-4 h-4" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hover:bg-amber-50 hover:text-amber-600"
+                                title="Notificar base/agregados"
+                                disabled={acaoOrfa?.osId === os.id}
+                                onClick={(e) => { e.stopPropagation(); handleNotificarBase(os); }}
+                              >
+                                {acaoOrfa?.osId === os.id && acaoOrfa?.tipo === "base" ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}
+                              </Button>
+                              <div className="mx-1 h-6 w-px bg-border" />
+                            </>
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600" title="Rastreamento" onClick={(e) => { e.stopPropagation(); setOsRastreamento(os); setShowRastreamento(true); }}>
                             <LocateFixed className="w-4 h-4"/>
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" title="Visualizar" onClick={() => { setOsPreview(os); setShowPreview(true); }}>
                             <Eye className="w-4 h-4"/>
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-orange-50 hover:text-orange-600" title="Editar" onClick={() => { setOsSelecionada(os); setModoForm("editar"); }}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-600" title="Ver comprovantes" onClick={() => setOsComprovantes(os)}>
+                            <FileCheck className="w-4 h-4"/>
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-orange-50 hover:text-orange-600" title={os.status === "finalizada" || os.status === "cancelada" ? "OS finalizada/cancelada não pode ser editada" : "Editar"} disabled={os.status === "finalizada" || os.status === "cancelada"} onClick={() => { setOsSelecionada(os); setModoForm("editar"); }}>
                             <Edit className="w-4 h-4"/>
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" title="Excluir" onClick={() => setOsParaExcluir(os)}>
@@ -571,6 +722,15 @@ const OrdensServicoLista = () => {
             <p className="text-sm text-muted-foreground">
               Você está prestes a excluir a <strong>OS {osParaExcluir?.numero}</strong>. Esta ação é irreversível e removerá todos os históricos e vínculos financeiros.
             </p>
+            {(vinculosCount.escalas > 0 || vinculosCount.financeiro > 0 || vinculosCount.pagamentos > 0) && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                <p className="text-xs font-bold text-red-700 uppercase">Registros vinculados encontrados</p>
+                {vinculosCount.escalas > 0 && <p className="text-xs text-red-600">• {vinculosCount.escalas} programação(ões) vinculada(s)</p>}
+                {vinculosCount.financeiro > 0 && <p className="text-xs text-red-600">• {vinculosCount.financeiro} registro(s) financeiro(s) a receber</p>}
+                {vinculosCount.pagamentos > 0 && <p className="text-xs text-red-600">• {vinculosCount.pagamentos} pagamento(s) a prestador(es)</p>}
+                <p className="text-xs text-red-700 font-semibold mt-1">Todos serão removidos permanentemente.</p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase">Senha Administrativa</Label>
               <Input 
@@ -627,6 +787,28 @@ const OrdensServicoLista = () => {
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {osPreview && <OrdemServicoPreview os={osPreview} onVoltar={() => { setShowPreview(false); setOsPreview(null); }} />}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Comprovantes / POD — visão dedicada (NÃO é o formulário da OS) */}
+      <Dialog open={!!osComprovantes} onOpenChange={(open) => { if (!open) setOsComprovantes(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="border-b pb-3">
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="w-5 h-5 text-emerald-600" /> Comprovantes da Entrega
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              OS {osComprovantes?.numero || "—"} · {osComprovantes?.cliente || "—"}
+            </p>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-4">
+            {osComprovantes && (
+              <EntregasComprovantes osId={osComprovantes.id} numeroOs={osComprovantes.numero} />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOsComprovantes(null)}>Fechar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

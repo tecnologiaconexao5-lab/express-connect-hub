@@ -1,0 +1,156 @@
+ESCALA-E2E-07C-CUSTO-HML-PRECHECK
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: READ-ONLY / PREPARAÇÃO (nada alterado)
+
+==================================================
+PASSO 1 — CAMINHO REAL DO REPASSE
+==================================================
+
+Fluxo: EscalaLista.tsx:748 calcularTotalAlocacao()
+  → :753 calcularPrecoRapido(tabelaCliente, km)  [2 args — sem params.tabelaPrestador]
+  → :796 resolverRepassePrestadorBase({modo, valorDiaria, valorSaida, valorFixo, percentual, valorBaseCliente})
+  → :804 valorBasePrest = repasse.base
+  → :810 totals.prestador.valorBase = valorBasePrest
+  → :1001 payload alocacoes_escala.valor_repasse = totals.prestador.valorBase
+
+Fontes:
+  - valorDiaria/valorSaida vêm de prestadores (loadPrestadores :365/383-384 → financeiro_real).
+  - tabela do cliente (tabelas_valores) via buscarTabelaValoresCliente local (:180-269).
+  - resolverRepassePrestadorBase (src/helpers/repassePrestador.ts:43) modo 'cadastro':
+      base = valor_diaria (>0) ?? valor_saida (>0) ?? 0  (NÃO usa tabela_prestador).
+
+Respostas:
+DEFAULT_MODE=cadastro (financeiro.valorTipo default :325)
+READS_VALOR_DIARIA=YES
+READS_VALOR_SAIDA=YES (fallback)
+READS_TABELA_PRESTADOR=NO (no caminho padrão da Escala)
+TABELA_PRESTADOR_USED_WHEN=apenas no engine ASSÍNCRONO calcularPreco()/buscarTabelaPrestador
+  (precificacaoEngineService.ts:212) — NÃO é chamado pela Escala. Portanto NÃO participa do modo padrão.
+PERCENTUAL_CLIENT_TABLE_USED_WHEN=somente se o operador trocar valorTipo para 'percentual'
+  (base = valor cliente × percentual informado). Não é o default.
+
+==================================================
+PASSO 2 — COMPARAÇÃO A × B
+==================================================
+
+SNAPSHOT PRÉ (PRESTADOR TESTE APP e6646799):
+PRE_PROVIDER_VALOR_DIARIA=NULL
+PRE_PROVIDER_VALOR_SAIDA=NULL
+PRE_PROVIDER_UPDATED_AT=2026-08-06T15:42:12.718Z
+outros campos (valor_km, franquia_km, fixo_mensal, valor_ajudante/espera/reentrega/devolucao)=NULL
+Triggers em prestadores: apenas trg_bridge_prestador_para_recrutamento (AFTER INSERT).
+  → NÃO há trigger de updated_at em UPDATE ⇒ um UPDATE de valor_diaria não altera updated_at.
+  → Único campo a alterar: valor_diaria.
+
+OPÇÃO A — prestadores.valor_diaria = 250.00 (temporário)
+  OPTION_A_EFFECTIVE=YES (é exatamente a fonte lida pelo modo 'cadastro')
+  OPTION_A_FIELDS_CHANGED=valor_diaria (somente)
+  OPTION_A_ROLLBACK_SAFE=YES (restaurar para NULL; updated_at inalterado; sem efeito colateral)
+
+OPÇÃO B — criar linha em tabela_prestador (VUC homologação)
+  OPTION_B_EFFECTIVE=NO — a Escala NÃO consulta tabela_prestador no modo padrão
+    (calcularPrecoRapido é chamado sem params.tabelaPrestador; buscarTabelaPrestador só existe no
+     engine assíncrono, não usado aqui).
+  OPTION_B_NEEDED=NO → DESCARTADA.
+
+==================================================
+PASSO 3 — TABELA CLIENTE HML (proposta)
+==================================================
+HML_TABLE_PROPOSAL_VALID=YES
+
+Campos propostos (todos reais do schema):
+  nome='HML E2E VUC - HOMOLOGACAO APP'
+  tipo_veiculo='vuc'
+  valor_base=300.00
+  franquia_km=100
+  km_franquia=100
+  valor_km_excedente=1.20
+  universal=false
+  cliente='HOMOLOGAÇÃO APP'   ← valor EXATO (UTF-8, 15 chars: HOMOLOGAC + Ç(c387) + Ã(c383) + O APP)
+  ativo=true
+  tenant_id='00000000-0000-0000-0000-000000000001'
+  percentual_prestador=NULL
+  tipo_repasse_prestador=NULL
+  valor_fixo_prestador=NULL
+  classificacao_termica='seco'   ← explícito p/ match inequívoco
+  data_inicio=CURRENT_DATE, data_fim=CURRENT_DATE+7 (janela do E2E)
+
+CONDIÇÃO TÉRMICA:
+  Veículo HML-A27B tipo_carga='seca' → normalizarCondicaoTerica → 'seco'.
+  Tabela com classificacao_termica='seco' → condicaoTericaCompativel('seco','seco')=true.
+  Única tabela VUC existente ⇒ distintas=1 ⇒ SEM ambiguidade.
+THERMAL_MATCH_EXPECTED=YES
+
+CLIENTE — atenção: o match da Escala é por nome_fantasia EXATO (trim+UPPER, sem remover acentos):
+  clientes.nome_fantasia (3d2d079d) = "HOMOLOGAÇÃO APP" (hex 484f4d4f4c4f4741c387c3834f20415050).
+  A tabela DEVE gravar exatamente esse texto (mesmos bytes), senão não casa no NÍVEL específico.
+
+==================================================
+PASSO 4 — SIMULAÇÃO (sem INSERT/UPDATE)
+==================================================
+Prestador: valor_diaria temporário=250.00
+Cliente: HOMOLOGAÇÃO APP | Veículo: VUC/seco | Tabela HML: base=300, franquia=100, exc=1.20 | KM=150
+
+CLIENT_BASE=300.00
+EXCESS_KM=50
+EXCESS_VALUE=60.00
+CLIENT_FINAL=360.00   (300 + 50×1.20)
+PROVIDER_SOURCE=valor_diaria
+PROVIDER_FINAL=250.00
+CLIENT_PROVIDER_INDEPENDENT=YES (cliente=tabela; prestador=cadastro)
+
+Observações:
+  - Nenhuma outra tabela VUC existe ⇒ a HML vence sem concorrente.
+  - Nenhuma tabela real ganharia prioridade (não há outra VUC; as demais são de outros tipos).
+  - Nenhum prestador/cliente real é alterado.
+  - ATENÇÃO ao multiplicador DVL: com regraEspecialAtiva=true (tabela específica escolhida),
+    multDVL aplica 1.5/1.7/1.85 se hora de saída > 11:00. Para CLIENT_FINAL=360, manter
+    hora de saída vazia (default 8) ou ≤ 11:00.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+OPTION_A_EFFECTIVE=YES
+OPTION_A_FIELDS_CHANGED=valor_diaria
+OPTION_A_ROLLBACK_SAFE=YES
+
+OPTION_B_EFFECTIVE=NO
+OPTION_B_NEEDED=NO
+
+HML_TABLE_PROPOSAL_VALID=YES
+THERMAL_MATCH_EXPECTED=YES
+
+EXPECTED_CLIENT_VALUE=360.00
+EXPECTED_PROVIDER_VALUE=250.00
+CLIENT_PROVIDER_INDEPENDENT=YES
+
+MINIMAL_SOLUTION=A
+GO_FOR_07D=YES
+
+==================================================
+PASSO 5 — PLANO ATÔMICO DA PRÓXIMA MISSÃO (07D)
+==================================================
+1) SNAPSHOT: prestadores.valor_diaria/valor_saida/updated_at do e6646799 + contagem VUC.
+2) UPDATE apenas prestadores.valor_diaria=250.00 WHERE id='e6646799-...'.
+3) INSERT exatamente 1 tabela VUC HML (campos do PASSO 3; cliente="HOMOLOGAÇÃO APP" exato).
+4) PROVAR: seleção (nível específico cliente+veículo+térmica), valores cliente/prestador.
+5) PARAR (NÃO criar alocação/OS/financeiro nesta missão).
+
+ROLLBACK (preparar, não executar até o fim do E2E-08):
+  - DELETE FROM tabelas_valores WHERE id = '<HML_TABLE_ID>';
+  - UPDATE prestadores SET valor_diaria = NULL WHERE id='e6646799-...';
+  - Conferir snapshot pós-rollback (valor_diaria=NULL; 0 tabelas VUC).
+
+DB_WRITES esperado em 07D=2 (1 UPDATE prestador + 1 INSERT tabela). MIGRATIONS=0.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum INSERT/UPDATE/DELETE; nenhuma migration; prestador/tabela/alocacao/OS/financeiro não
+alterados; BRUNO não tocado; outras pendências não tratadas.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

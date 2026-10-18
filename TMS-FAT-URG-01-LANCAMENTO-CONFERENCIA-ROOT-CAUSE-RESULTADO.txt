@@ -1,0 +1,275 @@
+================================================================================
+MISSAO: TMS-FAT-URG-01-LANCAMENTO-CONFERENCIA-ROOT-CAUSE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (somente leitura) + repositorio local
+MODELO: DeepSeek V4.1 Flash
+TIPO: AUDITORIA/DIAGNOSTICO — NADA FOI CORRIGIDO
+================================================================================
+
+RESULTADO: PASS (auditoria concluida; causa-raiz determinada; zero escrita em PROD)
+  - Prova por codigo (file:line) + prova por banco (SELECT read-only).
+  - Nenhum INSERT/UPDATE/DELETE/DDL executado. Apenas SELECT e 1 transacao
+    BEGIN...ROLLBACK usada para simular RLS (nao grava nada).
+
+CONTAGEM MACRO: 3 FECHAMENTO TMS <- estamos aqui | 2 APP+E2E | 1 MASTER360/GATE | 0 HOMOLOGADO
+
+================================================================================
+1. CAUSA-RAIZ
+================================================================================
+NAO existe defeito de persistencia nem de visibilidade no lancamento manual.
+O servico lancado em Financeiro > Conferencia > "Lancar Servico":
+  - E gravado em alocacoes_escala com status='concluida' e finalizada=true;
+  - Recebe tenant_id valido pelo DEFAULT da coluna (current_tenant_id_safe());
+  - E ELEGIVEL e APARECE no topo da lista "Central — Servicos Finalizados".
+
+PROVA (PROD, read-only): o registro manual mais recente
+  id 61bc16b0-c6ff-4031-bbed-2204cc6a4aaf
+  e o PRIMEIRO item na ordenacao exata da Conferencia (data_finalizacao DESC):
+    top5_query_conferencia[0] = { id: 61bc16b0..., origem: "central_financeira_manual",
+                                  data_finalizacao: 2026-09-25T20:22:25Z }
+  e aparece tambem na simulacao de RLS como usuario autenticado TMS
+    (SET LOCAL ROLE authenticated + jwt.sub = user_id) => visivel.
+
+CAUSA-RAIZ SECUNDARIA (latente / fragilidade comprovada no codigo):
+  `lancarServicoManual` NAO envia tenant_id no INSERT (centralFinanceiroService.ts:714-763).
+  O registro so fica visivel porque a coluna alocacoes_escala.tenant_id possui
+  DEFAULT `current_tenant_id_safe()` no banco vivo (comprovado em
+  information_schema.columns.column_default).
+  RISCOS desta dependencia implicita:
+   - Se o DEFAULT for removido/alterado, ou se `current_tenant_id_safe()` retornar
+     NULL (contexto de sessao nao setado), o registro nasceria com tenant_id NULL e
+     entao:
+       * ae_select_tms (WITH USING: tu.tenant_id = alocacoes_escala.tenant_id) NAO
+         o exibiria ao TMS (NULL nunca casa) -> "salvo mas nao aparece";
+       * ae_insert_tms tambem rejeitaria o INSERT (WITH CHECK com NULL).
+   - Ou seja: a invisibilidade SO ocorre nesse cenario de sessao/default; em PROD
+     atual isso NAO se manifesta.
+  (Confirma a hipotese D da missao: campo obrigatorio (tenant) ausente no codigo,
+   mascarado hoje pelo DEFAULT do banco.)
+
+COMO O SINTOMA "salvo mas nao aparece" PODE OCORRER HOJE (causas observaveis, sem bug):
+  a) Lancamento SEM cliente: o registro APARECE, porem fica INELEGIVEL
+     (motivosBloqueio = "Sem cliente") e nao pode ser selecionado/faturado —
+     pode ser percebido como "nao esta na lista".
+  b) Cliente que exige Romaneio/OC e lancamento sem numeroOC: aparece, mas
+     INELEGIVEL ("Romaneio/OC obrigatorio para este cliente").
+  c) Filtro de Periodo (dataInicio/dataFim) ou busca ativos: o item pode ficar
+     fora do resultado. NAO ha filtro default (filtros iniciais = {}), logo e
+     situacao de uso, nao de codigo.
+  d) Apos FIN-UX-02A a lista e paginada (25/pagina). O item mais novo fica na
+     pagina 1 (ordem data_finalizacao desc), portanto nao e efeito de paginacao.
+
+Conclusao: a premissa "salvo e nao aparece" NAO se reproduz no estado atual de
+PROD para os 3 registros manuais existentes. O problema real de fluxo esta na
+FALTA DA ETAPA DE VALIDACAO e na propagacao financeira prematura (itens 6 e 7).
+
+================================================================================
+2. ONDE O LANCAMENTO E GRAVADO (comprovado codigo + banco)
+================================================================================
+Handler (UI): ConferenciaFinanceira.tsx:1346-1413 `handleLancarServico`
+  -> chama `lancarServicoManual(...)` (import dinamico) e, em sucesso, `carregar()`.
+
+Service: centralFinanceiroService.ts:683-775 `lancarServicoManual`
+  - Se houver cliente_id: cria OS Interna via `criarOrdemServico(...)`
+    (ordemServicoService.ts:270) ANTES da alocacao.
+  - INSERT em `alocacoes_escala` (centralFinanceiroService.ts:764-768):
+      data_escala            = input.data_escala        (NOT NULL)
+      ordem_servico_id       = osId | null
+      cliente_id             = input.cliente_id | null
+      prestador_id           = input.prestador_id | null
+      tipo_veiculo           = input.tipo_veiculo
+      placa / origem / destino
+      status                 = "concluida"
+      status_pagamento       = "pendente"
+      finalizada             = true
+      data_finalizacao       = new Date().toISOString()
+      valor_frete/valor_repasse/valor_pedagio/... (defaults 0)
+      metadata               = { numeroOC, origem:"central_financeira_manual",
+                                 faturamento/re passe (franquia/valor km) }
+      (NAO envia tenant_id — depende do DEFAULT da coluna)
+
+Tabela destino real: public.alocacoes_escala
+  - Colunas confirmadas no banco: status NOT NULL default 'planejada',
+    finalizada default false, tenant_id default current_tenant_id_safe(),
+    data_escala NOT NULL, data_finalizacao nullable.
+  - CHECK de status aceita 'concluida' (20260522_alocacoes_escala.sql:27-38).
+
+Id retornado: `lancarServicoManual` retorna { success, alocacaoId, osId, osNumero }.
+  OBS: alocacaoId NAO e usado pela UI apos o sucesso (apenas para comprovante de
+  pedagio), mas a linha e persistida.
+
+Registros manuais existentes (PROD, leitura):
+  - 61bc16b0... : status=concluida, finalizada=true, tenant=000...001,
+                  cliente=b4917245..., prestador=0673eca2..., OS=1a0f5994... (OS-202609-863875)
+                  valor_frete=300, valor_repasse=250, numeroOC=null, data_escala=2026-09-22
+  - d1f34e73... : valor_frete=600, valor_repasse=520, numeroOC=343646
+  - 58e5751e... : valor_frete=600, valor_repasse=520, numeroOC=343375
+  Total de manuais: 3 (todos concluida/finalizada).
+
+================================================================================
+3. AFIRMACAO DA UI — CONFIRMADA?
+================================================================================
+Texto da UI (ConferenciaFinanceira.tsx ~2528-2529):
+  "Grava em alocacoes_escala (mesma fonte da Programacao Operacional) e, quando ha
+   cliente, cria a OS Interna oficial (ordens_servico) vinculada via ordem_servico_id."
+
+VEREDITO: VERDADEIRO.
+  - O INSERT vai para alocacoes_escala (codigo + banco confirmam).
+  - Quando ha cliente, cria ordens_servico (confirmado: OS 1a0f5994 / OS-202609-863875,
+    status 'finalizada', cliente b4917245..., valor_cliente 300).
+  - Quando NAO ha cliente, grava alocacao sem OS (origem romaneio-only).
+
+================================================================================
+4. POR QUE NAO APARECE
+================================================================================
+Nao aparece por nenhuma causa de persistencia/query/RLS no estado atual.
+  - Persiste? SIM (3 registros manuais no banco).
+  - Fonte correta? SIM (alocacoes_escala).
+  - Status compativel? SIM ('concluida' + finalizada=true).
+  - Campo obrigatorio ausente? NAO para o filtro base; o tenant vem por DEFAULT.
+  - Join elimina? NAO (embeds sao LEFT JOIN; sem "!inner").
+  - Filtro faturado/recebivel default elimina? NAO (filtros iniciais vazios).
+  - Paginacao/filtro local? NAO (item mais novo = pagina 1).
+O item aparece no topo da lista. As unicas razoes comprovaveis para o usuario
+"nao ver" o item sao: inelegibilidade (sem cliente / romaneio exigido / valor<=0)
+— o item continua listado —, filtros manuais ativos, ou expectativa em outra tela.
+
+================================================================================
+5. QUERY REAL DA CONFERENCIA + REGRA ATUAL
+================================================================================
+Service: centralFinanceiroService.ts:174-503 `buscarCentralFinanceiro`.
+Fonte: `alocacoes_escala` (NAO ordens_servico). Query base (apos FIN-UX-02A):
+    .from("alocacoes_escala")
+    .select(`*, clientes:cliente_id(...), prestadores:prestador_id(...),
+             ordens_servico:ordem_servico_id(id,numero,romaneio)`)
+    .eq("status","concluida")
+    .eq("finalizada", true)
+    [.gte("data_escala", dataInicio)] [.lte("data_escala", dataFim)]   (apenas se filtro)
+    .order("data_finalizacao", { ascending:false })                    (global)
+    (sem LIMIT 300 — removido em FIN-UX-02A)
+Joins/enriquecimento em lote: entregas_protocolo (POD), financeiro_receber,
+  financeiro_pagar, pagamentos_prestadores, composicao_financeira_os,
+  fiscal_documentos_vinculados, fatura_itens+faturas (faturamento).
+Filtros (em memoria sobre o conjunto COMPLETO): busca, cliente, os, romaneio,
+  prestador, placa, statusOperacional, POD, faturado, recebimento, pagamentoPrestador.
+Pagina: 25/pagina (PaginationBar); busca/filtros/ordenacao antes da paginacao.
+Exclusoes: nenhuma por default. Nao ha filtro is_teste em alocacoes_escala.
+RLS aplicada: ae_select_tms (tu.user_id=auth.uid() AND tu.tenant_id=alocacoes_escala.tenant_id
+  AND tu.status='ativo') OR Prestador-can-view-own OR ae_select_cliente.
+Banco confirma: RLS ON em alocacoes_escala; sem policies public/anon; grants anon = 0.
+
+Elegibilidade para faturar (ConferenciaFinanceira.tsx:1416-1431 motivosBloqueio):
+  - faturamento.status !== 'nao_faturado'  -> "Ja faturado"/"Em rascunho de fatura"
+  - !clienteId                             -> "Sem cliente"
+  - valorClienteTotal <= 0                 -> "Sem valor faturavel"
+  - regra do cliente exige romaneio e !romaneioOC -> "Romaneio/OC obrigatorio"
+  (POD NAO bloqueia; vira aviso.)
+
+================================================================================
+6. ITEM 6 — CRIACAO PREMATURA NO LANCAMENTO MANUAL (comprovado no banco)
+================================================================================
+Para a OS manual 1a0f5994-c50e-48cd-8475-552ac855083c:
+  - fatura .................. NAO criada (fatura_itens = 0 para a OS).
+  - financeiro_receber ...... NAO criado (0 linhas)  <-- regra preservada OK.
+  - financeiro_pagar ........ SIM, 1 linha (R$ 250,00, status 'aberto').
+  - pagamentos_prestadores .. SIM, 1 linha (R$ 250,00, 'pendente', origem_lancamento
+                              'escala_direta').
+  - composicao_financeira_os  SIM, 1 linha (cliente 300 / prestador 250 / margem 50).
+Os 3 itens de prestador (pagar/pagamentos_prestadores/composicao) sao criados pelos
+triggers OFICIAIS M66 (trg_propagar_financeiro_alocacao) e M80
+(trg_propagar_financeiro_os) no INSERT/finalizacao — regra oficial ja existente
+(agora com AR do cliente removido por PROG-05B). Logo:
+  - AR do cliente / fatura: NAO nascem no lancamento (correto).
+  - Obrigacao do prestador: nasce no lancamento (M66/M80) — comportamento oficial,
+    porem DIVERGENTE do fluxo-alvo do prestador (Programacao -> Repasse -> Fechamento
+    -> Pagamento). Classificar como [LEGADO/OFFICIAL] com gap de desenho.
+
+================================================================================
+7. ESTADO ATUAL — Conferencia -> Fatura -> Validacao -> Contas a Receber
+================================================================================
+Fluxo hoje:
+  1) Conferencia: lista alocacoes concluidas/finalizadas; selecao por checkbox;
+     botao "Criar Fatura".
+  2) "Criar Fatura" -> abre FaturaPanel -> cria RASCUNHO em `faturas`
+     (status='rascunho') + itens em `fatura_itens`. NAO emite e NAO cria AR.
+     O item da Conferencia passa a "Rascunho de fatura" (inelegivel), mas CONTINUA
+     listado.
+  3) Faturas: botao "Validar e Emitir Fatura" (FaturaPanel.tsx:606-608) -> RPC
+     `f_emitir_fatura` (faturaService.ts:358) -> gera Nº Conexao/Nº Cliente,
+     cria 1 `financeiro_receber` (status 'aberto', fatura_id) e marca a fatura
+     'emitida'. Ou seja: VALIDAR e EMITIR sao a MESMA acao (fundidas).
+  4) Contas a Receber: titulo nasce na EMISSAO, nao antes; baixa via RPC
+     `f_registrar_baixa_financeira`.
+
+ETAPA DE VALIDACAO/AUTORIZACAO: existe APENAS fundida na emissao
+("Validar e Emitir"). NAO existe passo intermediario "fatura aguardando validacao".
+Os status 'aguardando_aprovacao' e 'aprovada' existem no CHECK de `faturas` e nos
+tipos, mas NAO tem escritor (mortos). Portanto o fluxo-alvo
+"Fatura -> VALIDAR -> Contas a Receber" NAO esta implementado como etapa separada.
+Diferenca de regra: o texto da UI diz "somente entao sai da Conferencia", mas o item
+permanece listado (apenas inelegivel) apos criar rascunho/emitir.
+
+================================================================================
+8. MENOR CORRECAO SEGURA RECOMENDADA (nao implementar agora)
+================================================================================
+Prioridade 1 (defensiva, 1 linha): enviar `tenant_id` explicitamente em
+  `lancarServicoManual` (centralFinanceiroService.ts:714-763), eliminando a
+  dependencia do DEFAULT `current_tenant_id_safe()`. Neutraliza a causa-raiz
+  latente de invisibilidade (tenant NULL) sem tocar banco/RLS.
+Prioridade 2 (regra funcional): implementar a etapa de VALIDACAO da fatura como
+  transicao de status (rascunho -> aguardando_aprovacao/aprovada -> emitida),
+  reutilizando os estados JA existentes no CHECK/tipos e a RPC `f_emitir_fatura`
+  (que ja aceita esses estados). Requer um writer/RPC de transicao (igual FIN-UX-01
+  recomendou) + botao "Validar" na UI. Decisao de negocio: AR deve nascer no
+  VALIDAR ou no EMITIR.
+Prioridade 3 (UX/elegibilidade): deixar explicito no checkbox/tooltip por que um
+  item esta inelegivel (sem cliente / romaneio / valor) para nao parecer "ausente".
+
+NAO recomendado: esconder registros com filtros; criar OS ficticia; criar base
+  paralela; alterar RLS/RPC/triggers nesta correcao.
+
+================================================================================
+9. ARQUIVOS QUE PRECISARAO SER ALTERADOS NA PROXIMA MISSAO
+================================================================================
+- src/services/financeiro/centralFinanceiroService.ts  (lancarServicoManual: setar tenant_id)
+- src/components/financeiro/FaturaPanel.tsx             (etapa/botao "Validar")
+- src/services/financeiro/faturaService.ts              (writer/RPC de transicao de status)
+- src/components/financeiro/FaturaLista.tsx             (exibir/acionar validacao)
+- possivel migration (proxima missao, autorizada) p/ RPC de validacao — NAO nesta.
+- src/components/financeiro/ConferenciaFinanceira.tsx   (tooltip de inelegibilidade) — opcional.
+
+================================================================================
+10. EVIDENCIA (arquivos + funcoes + banco)
+================================================================================
+Codigo:
+  - ConferenciaFinanceira.tsx:1346-1413  handleLancarServico (UI)
+  - centralFinanceiroService.ts:683-775  lancarServicoManual (INSERT alocacoes_escala)
+  - centralFinanceiroService.ts:174-503  buscarCentralFinanceiro (query da lista)
+  - ordemServicoService.ts:270           criarOrdemServico (OS Interna)
+  - ConferenciaFinanceira.tsx:1416-1431  motivosBloqueio/isElegivel
+  - FaturaPanel.tsx:606-608 / faturaService.ts:358  "Validar e Emitir" -> f_emitir_fatura
+Banco (SELECT read-only):
+  - information_schema.columns: alocacoes_escala.tenant_id default = current_tenant_id_safe()
+  - pg_class: alocacoes_escala RLS = true ; pg_policies: 8 policies (ae_*_tms, ae_insert_prestador,
+    Prestador can view/update own, ae_select_cliente); grants anon = 0
+  - status='concluida' AND finalizada=true => 52 linhas; manual (metadata origem) = 3
+  - RLS simulada (SET LOCAL ROLE authenticated, sub = user_id e123a9ec/323878d3) => 52 visiveis,
+    incluindo 61bc16b0 (manual)
+  - ordenacao da Conferencia (data_finalizacao desc): 61bc16b0 = 1o item
+  - OS manual 1a0f5994: financeiro_receber=0 ; financeiro_pagar=1 ; pagamentos_prestadores=1 ;
+    composicao=1 ; fatura_itens=0
+ZERO DML: nenhum INSERT/UPDATE/DELETE/DDL. Apenas SELECT + BEGIN...ROLLBACK (simulacao RLS).
+
+================================================================================
+11. CONFIRMACAO ZERO ALTERACAO PROD
+================================================================================
+[x] Nenhum INSERT/UPDATE/DELETE/DDL em PROD.
+[x] Nenhum registro criado/alterado/excluido.
+[x] Conexao de diagnostico 100% leitura; a unica transacao foi BEGIN...ROLLBACK com
+    SET LOCAL ROLE/claims (nao grava).
+[x] Nenhum arquivo de banco/migration/RLS/RPC/trigger alterado nesta missao.
+[x] Scripts temporarios de diagnostico removidos apos uso.
+
+================================================================================
+FIM DO RELATORIO — TMS-FAT-URG-01-LANCAMENTO-CONFERENCIA-ROOT-CAUSE
+================================================================================

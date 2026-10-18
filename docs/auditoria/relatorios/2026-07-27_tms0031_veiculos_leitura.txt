@@ -1,0 +1,38 @@
+MISSAO TMS-003.1 — HOMOLOGACAO REAL DE LEITURA DO MODULO VEICULOS
+===================================================================
+
+Data: 2026-07-27
+Status: VEICULOS HOMOLOGADO EM LEITURA — 4/4 Playwright
+Percentual: 47% (+1pp)
+Branch: auditoria-final-integracao
+
+=======================================================================
+RESULTADOS
+=======================================================================
+
+Autenticacao: tamiris.castilho@conexaoexpress.com.br (admin) OK
+
+Banco: 60 veiculos, 11 com prestador, 49 sem.
+
+Playwright 4/4:
+  Cenario 1 — Lista: 25 linhas, dados reais, sem undefined  ✅
+  Cenario 2 — Detalhe: 5 selects, campos carregados        ✅
+  Cenario 3 — Select Tipo: 14 opcoes (Moto..Bitrem)        ✅
+  Cenario 4 — Console/Network: zero erros                   ✅
+
+TypeScript: VeiculosLista.tsx 0 erros, VeiculoDetalhe.tsx 0 erros
+Build: 47.20s OK
+
+=======================================================================
+PERCENTUAL
+=======================================================================
+
+Veiculos leitura: 65% -> 85%
+Geral: 46% -> 47% (+1pp)
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+VEICULOS HOMOLOGADO EM LEITURA —
+CRUD AGUARDA TESTE CONTROLADO

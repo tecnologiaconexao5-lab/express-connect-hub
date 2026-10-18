@@ -1,0 +1,131 @@
+E2E-COMPLETO-03-ADMIN-PRECADASTRO-RECRUTAMENTO
+==================================================
+Ambiente: TMS + APP + Supabase | Data: 2026-09-22
+Modo: IMPLEMENTAÇÃO CONTROLADA + TESTES DIRECIONADOS
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. G02 — DOCUMENTOS (bridge canônico)
+==================================================
+CAUSA RAIZ: o código usava colunas inexistentes em documentos_prestadores
+(candidato_id, arquivo, validade, status, origem, dados, updated_at) e lia candidato_id
+de documentos_prestadores. Schema REAL (baseline + produção): (id, prestador_id, tipo, url,
+created_at). Os documentos do candidato vivem em candidato_documentos
+(id, candidato_id, tipo, arquivo_url, status, validade, ...).
+Efeito: inserts falhavam silenciosamente (warn) → documentos NÃO chegavam ao prestador
+(FALSE SUCCESS) e a leitura por candidato_id nunca retornava.
+
+CORREÇÃO (código, sem migration):
+  - documentosPrestadorService.verificarDocumentoDuplicado: removido filtro `.in("status",...)`.
+  - documentosPrestadorService.vincularDocumentoCandidatoAPrestador: passa a ler de
+    candidato_documentos (candidato_id → tipo/arquivo_url) e INSERT em documentos_prestadores
+    com {prestador_id, tipo, url}; retorna success=false em erro (sem falso sucesso).
+  - documentosPrestadorService.adicionarDocumentoPrestador: payload só com colunas reais
+    {prestador_id, tipo, url, created_at}.
+  - documentosPrestadorService.verificarDocumentosOrfaos: removido `origem` do select.
+  - recrutamentoIntegracao: 2 inserts inline corrigidos para {prestador_id, tipo, url}.
+
+G02_DOCUMENT_BRIDGE=PASS
+DOCUMENT_STORAGE_TO_DB=PASS (url persistida na coluna real)
+FALSE_SUCCESS_POSSIBLE=NO (no caminho canônico; sucesso só sem erros)
+ORPHAN_DOCUMENT_POSSIBLE=NO (inserção sempre com prestador_id)
+
+==================================================
+2. G21 — BLOQUEIO DO APP (motivo)
+==================================================
+CAUSA RAIZ: não existia persistência de motivo_bloqueio. Estrutura adequada existente:
+recrutamento_candidatos.historico (JSONB) já registra eventos de estágio (tipo 'bloqueado').
+CORREÇÃO (sem coluna nova, sem tabela paralela):
+  - enterpriseKanbanTypes.HistoricoEvento: + `motivo?: string`.
+  - enterpriseKanbanService.mover(id, novoStage, motivo?): bloqueio exige motivo
+    (erro MOTIVO_BLOQUEIO_OBRIGATORIO); motivo incluído no evento do historico.
+  - DetalhesCandidatoPipelineSheet.handleMover: prompt obrigatório ao mover para 'bloqueado'.
+  - data/hora já persistida no evento; autor segue a estrutura existente (não inventado).
+
+G21_BLOCK_REASON=PASS
+
+==================================================
+3. RECRUTAMENTO — REC-06.2D.2F
+==================================================
+CAUSA RAIZ: o mapa de estágios do score estava incompleto/desalinhado com os estágios
+canônicos do Kanban (novo_cadastro/em_validacao/em_analise/em_treinamento/homologacao/
+aprovado/prestador_apto/ativo/operacao_ativa) e o gate `minimoPorStage` rejeitava (null)
+candidatos em estágios iniciais/avançados; estágio vazio não era tratado.
+CORREÇÃO (sem fórmula nova — reutiliza os mesmos conjuntos de fatores):
+  - aplicaveis: cobrir todos os estágios canônicos (+ aliases contato_inicial/prospeccao).
+  - removido o gate minimoPorStage (conflitava com a spec REC-06.2D.2).
+  - estágio vazio → comporta-se como contato_inicial.
+
+RECRUITMENT_REC_06_2D_2F=PASS (teste REC-06.2D.2: 45/45)
+
+==================================================
+4. INTEGRAÇÃO (prova técnica — código)
+==================================================
+PRECADASTRO_TO_ADMIN=PASS (candidato_documentos → documentos_prestadores; Admin lê documentos_prestadores)
+ADMIN_TO_RECRUITMENT=PASS (Kanban/estágios canônicos; score alinhado)
+RECRUITMENT_TO_PROVIDER=PASS (recrutamentoIntegracao insere docs com colunas reais)
+LIBERADO_APP_GATE=PASS (AG-07F: status ativo/aprovado + liberado_app=true; fail-closed)
+
+==================================================
+5. REGRESSÃO DIRECIONADA
+==================================================
+DIRECTED_TESTS=rec06_2d2 45/45 PASS. Suíte global: 1495 passed / 31 failed / 155 skipped.
+  Baseline pré-existente: 31 falhas (9 arquivos: rec03, rec03_1, rec04, rec02, ag07f, ag07h,
+  ag07j3, f0k_recibos, a31j11) — NÃO introduzidas por esta missão; as 26 falhas do rec06_2d2
+  foram resolvidas (57→31).
+TYPECHECK=npx tsc --noEmit → 0 erros
+BUILD=npm run build → OK (built in 1m 18s)
+
+==================================================
+6. A01 / A03 (verificação apenas)
+==================================================
+M133_D4_READY=YES
+  - supabase/migrations/20260722000003_m133d4_fix_rpc_app_security.sql
+  - supabase/migrations/20260722000004_m133d4_rollback.sql
+  (A01: f_avancar_etapa_app_motorista STABLE→VOLATILE; A03: REVOKE PUBLIC em f_atualizar_reversa_app)
+M133_D4_REQUIRED_BEFORE_PHYSICAL_E2E=NO (anomalias não bloqueiam: A01 funciona na prática;
+  A03 é mitigada pelo auth.uid() interno). Recomendado aplicar como higiene, sem bloquear o E2E-06.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+G02_DOCUMENT_BRIDGE=PASS
+G21_BLOCK_REASON=PASS
+RECRUITMENT_REC_06_2D_2F=PASS
+
+PRECADASTRO_TO_ADMIN=PASS
+DOCUMENT_STORAGE_TO_DB=PASS
+ADMIN_TO_RECRUITMENT=PASS
+RECRUITMENT_TO_PROVIDER=PASS
+LIBERADO_APP_GATE=PASS
+
+FALSE_SUCCESS_POSSIBLE=NO
+ORPHAN_DOCUMENT_POSSIBLE=NO
+
+DIRECTED_TESTS=45/45 (rec06_2d2); global 1495/31 baseline
+TYPECHECK=0
+BUILD=OK
+
+M133_D4_READY=YES
+M133_D4_REQUIRED_BEFORE_PHYSICAL_E2E=NO
+
+RESULT=PASS
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-04-APP-POD-OFFLINE-PHOTOURL
+
+==================================================
+FILES_MODIFIED
+==================================================
+- src/services/recrutamento/recrutamentoScoreService.ts (REC-06.2D.2F)
+- src/services/documentosPrestadorService.ts (G02)
+- src/services/recrutamentoIntegracao.ts (G02)
+- src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanTypes.ts (G21)
+- src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts (G21)
+- src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx (G21)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem Redmi/E2E físico; nenhum candidato/prestador real criado; sem alteração de dados reais;
+Cadastro Prestador homologado não refeito; Recrutamento não reiniciado; nenhuma regra de score
+inventada; Master 360/Control Tower não executados; sem migration; DB_WRITES=0.

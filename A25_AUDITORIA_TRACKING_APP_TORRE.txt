@@ -1,0 +1,263 @@
+================================================================================
+MISSÃO A25 — AUDITORIA REAL DO TRACKING: APP PRESTADOR → GPS → TORRE DE CONTROLE
+Projeto: EXPRESS CONNECT HUB (TMS) + APP CONEXÃO PRESTADOR (Flutter)
+Data: 2026-08-14
+Modo: SOMENTE AUDITORIA READ-ONLY — NENHUM ARQUIVO ALTERADO, NENHUM DADO ALTERADO
+================================================================================
+
+STATUS: BLOQUEADO — CAUSA ENCONTRADA (schema drift no RPC vs tabela)
+
+================================================================================
+# APP (Flutter — C:\src\conexao_prestador)
+================================================================================
+
+ARQUIVOS:
+- lib/core/services/location_service.dart      — GPS (Geolocator 13.0.2)
+- lib/core/services/real_tracking_service.dart — envio de posição + fila offline
+- lib/core/services/tracking_session_service.dart — sessão de tracking
+- lib/core/services/foreground_tracking_service.dart — foreground service
+- lib/core/services/tracking_permission_handler.dart — permissões
+- lib/core/repositories/tracking_repository.dart      — persistência via RPC
+- lib/core/models/tracking_point.dart                 — modelo + toRpcParams()
+- lib/core/models/tracking_session.dart
+- lib/features/operations/operation_detail_screen.dart — dispara o tracking (linha ~1683-1696)
+
+SERVICES (fluxo real):
+1. TrackingSessionService.startSession(alocacaoId, driverId) → RealTrackingService.startTracking()
+2. startContinuousTracking() → LocationService.startListening() (geolocator getPositionStream,
+   accuracy high, distanceFilter 50m)
+3. _onPosition(position) → RealTrackingService.sendPosition(lat, lng, ...)
+4. sendPosition() valida (auth, alocação, 0,0, limites, máx 5min) → _persistPosition()
+5. _persistPosition() → Supabase RPC "registrar_posicao_motorista" com toRpcParams()
+
+FOREGROUND SERVICE:
+- flutter_background_service 5.0.5, modo foreground com AndroidForegroundType.location
+- Notificação "Rastreamento da operação em andamento" (canal tracking_service_channel, ID 888)
+- startForegroundService(alocacaoId, osNumber, osId) chamado junto ao startSession
+
+PERMISSÕES (AndroidManifest.xml):
+- ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACCESS_BACKGROUND_LOCATION
+- FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION, POST_NOTIFICATIONS
+- Service id.flutter.flutter_background_service.BackgroundService foregroundServiceType=location
+
+INÍCIO DO TRACKING (condição real no código):
+- operation_detail_screen.dart:1683-1696 — somente quando o motorista executa a etapa:
+    "Sair em rota" OU "Sair para entrega" OU "Finalizar carregamento"
+  E _tracking.isRunning == false.
+- NÃO inicia em aceite, "Cheguei na coleta", carregamento iniciado, nem KM inicial.
+
+FREQUÊNCIA (RealTrackingService):
+- Intervalo mínimo: 15s (foreground) / 30s (background) / 60s (bateria baixa <15%)
+- Distância mínima: 50m (foreground) / 100m (background)
+- Envia se passou o intervalo OU se percorreu a distância mínima.
+
+PAYLOAD (TrackingPoint.toRpcParams, tracking_point.dart:101-115):
+- p_alocacao_id, p_latitude, p_longitude, p_velocidade, p_precisao, p_direcao,
+  p_bateria, p_captured_at, p_altitude, p_status_operacional, p_origem
+
+TABELA/RPC:
+- RPC: registrar_posicao_motorista
+- Tabela destino: portal_tracking_realtime
+- Escrita: SOMENTE via RPC (sem INSERT direto no App)
+- Fila offline: SharedPreferences (máx 500 pontos), retry a cada 30s.
+
+VÍNCULO OPERACIONAL:
+- alocacao_id (obrigatório), driver_id (auth.uid → prestadores.auth_user_id),
+  operationId = alocacao_id, ordemServicoId opcional.
+
+BACKGROUND / TELA APAGADA:
+- ForegroundService mantém o serviço; geolocator em modo background (intervalo 30s, dist 100m).
+- A sessão persiste em SharedPreferences (tracking_active_session).
+
+BUILD ATUAL:
+- pubspec: version 1.0.1+1312
+- APKs em releases/: último = conexao_express_motorista_v1.0.1_build1306.apk (06/08/2026)
+- O tracking (RealTrackingService) NÃO é HML-gated: HmlLocal.enabled é uma
+  const em compile-time (--dart-define=APP_HML_LOCAL), NÃO usada no tracking real.
+  Portanto o build 1306 contém o tracking ativo para Produção.
+
+================================================================================
+# BACKEND (read-only)
+================================================================================
+
+TABELA: portal_tracking_realtime (colunas REAIS em Produção — SELECT information_schema)
+  id, cliente_id, os_id, prestador_id, veiculo_id, status (default 'offline'),
+  latitude, longitude, eta_min, velocidade, bateria, metadata, updated_at,
+  alocacao_id, captured_at, precisao, direcao, tenant_id, created_at, origem.
+
+  ATENÇÃO: NÃO existe coluna "ordem_servico_id", NEM "motorista_id", NEM
+  "altitude", NEM "status_operacional" nesta tabela em Produção.
+
+RPC REAL em Produção (pg_get_functiondef):
+  registrar_posicao_motorista(...) SECURITY DEFINER — com INSERT em:
+    alocacao_id, ordem_servico_id, prestador_id, motorista_id, tenant_id,
+    latitude, longitude, precisao, velocidade, direcao, altitude,
+    captured_at, origem, status_operacional
+  => O INSERT referencia "ordem_servico_id", "motorista_id", "altitude" e
+     "status_operacional" — colunas QUE NÃO EXISTEM na tabela em Produção.
+
+ÚLTIMAS POSIÇÕES EXISTENTES (SELECT — 3 linhas, NENHUMA nas últimas 24h):
+  1) 60d612bf… — alocacao ecaedf20… (HML-APP-001), os_id 1e1b59fa…, prestador
+     PRESTADOR TESTE APP, lat -23.5505 lng -46.6333, status 'pendente',
+     origem 'homologacao', captured_at 2026-07-29T02:49:28Z.
+  2) 1a3269f6… — origem 'teste_qa', 2026-07-10, sem alocação/os/prestador.
+  3) 15543f23… — origem 'teste_qa', 2026-07-10, sem vínculos.
+
+RELACIONAMENTO (read-only):
+- Prestador PRESTADOR TESTE APP existe: id e6646799…, cpf 12345678900,
+  status ativo, tem auth_user_id = true, telefone 11999999999.
+- Alocações do prestador (SELECT):
+  - ecaedf20… status 'aceita', ordem_servico_id 1e1b59fa…, OS HML-APP-001,
+    app_etapa 'viagem_aceita' → É a alocação vinculada à posição de homologação.
+  - Demais: b84f7312…/45374f42…/29f637bc… (concluídas), 01fc1dce… (concluída,
+    OS-202608-981024), e várias 'aguardando_aceite' (testes financeiros).
+- OS HML-APP-001 (1e1b59fa…): status 'pendente', localizacao_entrega_json = null,
+  enderecos = []. OU SEJA: a OS NÃO possui coordenadas próprias.
+
+================================================================================
+# TMS / TORRE
+================================================================================
+
+ARQUIVOS:
+- src/pages/TorreControle.tsx (linhas: markers :557-621, mapCounters :639-647,
+  filteredMarkers :623-637, realtime :180-195, mapa :865)
+- src/services/rastreamento/trackingService.ts (buscarUltimasPosicoes :217-235,
+  inscreverPosicaoEmTempoReal :127-148, registrarPosicao :180-215)
+- src/components/MapboxMap.tsx (locations :865, "Nenhuma localização" :218)
+- src/components/torre-controle/markerAdapter.ts (computeGpsState :106-117,
+  computeOperationalStatus :122-142)
+- src/lib/acoesPrioritarias.ts (extrairCoordenadasOS :47-67)
+
+SERVICE/HOOK:
+- buscarUltimasPosicoes() → SELECT * FROM portal_tracking_realtime ORDER BY
+  created_at DESC LIMIT 200, dedupe por alocacao_id/os_id/id.
+- NÃO há filtro de recência nem de status (traz linhas 'pendente'/'offline'/'homologacao').
+
+COMPONENTE DO MAPA:
+- MapboxMap, locations={filteredMarkers}.
+
+CRITÉRIO PARA UMA OS APARECER NO MAPA (TorreControle :557-621):
+1. extrairCoordenadasOS(os) NÃO pode retornar null — OU SEJA, a OS precisa ter
+   localizacao_entrega_json OU enderecos[] com lat/lng numérica. Se null → marcador
+   é descartado (:560-561, :619).
+2. A posição ao vivo (trackingPositions) só é aplicada SE o marcador já existe:
+   busca `Object.values(trackingPositions).find(p => p.os_id === os.id && p.alocacao_id)`
+   (:563-565). Se não há marcador (sem coords na OS), o GPS ao vivo NÃO cria marcador.
+3. gpsState: "atualizado" se minSince <= 15 (desde captured_at/created_at),
+   "antigo" 15-60min, "muito_antigo" >60min, "indisponivel" se sem tracking e em_rota.
+4. filteredMarkers filtra por mapFilter (todas/em_rota/atrasadas/ocorrencias/
+   concluidas/gps_ativo/gps_antigo/sem_gps/parados).
+
+ATUALIZAÇÃO:
+- Realtime: canal torre-realtime-tracking em portal_tracking_realtime (INSERT) — :180-195.
+- Sem polling dedicado; fetchData() a cada montagem e por outros canais.
+
+MARCADOR / DADOS EXIBIDOS (MapboxMap Popup):
+- numero/osNumero, status, sla, gpsState, speed, accuracy, lastLocationAt,
+  driverName, vehicleType, plate, cliente, currentStage, origin, destination.
+
+================================================================================
+# DIAGNÓSTICO ATUAL — POR QUE A TORRE MOSTRA "Nenhuma localização"
+================================================================================
+
+CAUSA RAIZ (bloqueador): SCHEMA DRIFT — o RPC de Produção
+registrar_posicao_motorista faz INSERT em colunas que NÃO existem na tabela:
+
+  RPC insere:  ordem_servico_id, motorista_id, altitude, status_operacional
+  Tabela real: (não tem nenhuma dessas colunas — tem os_id, prestador_id, etc.)
+
+CONSEQUÊNCIA:
+- Quando o App envia uma posição, o RPC lança erro SQL
+  `column "ordem_servico_id" does not exist` (não há handler EXCEPTION em volta do
+  INSERT principal, linhas 128-159 da migration 20260731_fix_registrar_posicao_motorista.sql).
+- O App cai no catch (_persistPosition) → posição vai para a fila OFFLINE →
+  NUNCA chega a portal_tracking_realtime.
+- Prova read-only: portal_tracking_realtime tem APENAS 3 linhas, NENHUMA nas
+  últimas 24h; a única do prestador é de 2026-07-29 com origem 'homologacao'.
+
+FATORES ADICIONAIS (contribuintes para o mapa vazio):
+1. A OS de homologação (HML-APP-001) NÃO tem coordenadas próprias
+   (localizacao_entrega_json=null, enderecos=[]) → extrairCoordenadasOS retorna null
+   → o marcador NÃO é criado nem com GPS ao vivo.
+2. buscarUltimasPosicoes não filtra recência/status → mesmo que o RPC funcionasse,
+   posições antigas 'pendente'/'homologacao' poderiam aparecer como "atualizadas".
+3. Match por os_id (TorreControle :564) depende de os_id preenchido; o RPC (se
+   funcionasse) gravaria ordem_servico_id, que o TS lê como os_id — incompatível.
+
+RESUMO:
+- O fluxo App→GPS→envio→RPC está CORRETO no código do App.
+- O fluxo Torre→mapa está CORRETO no código do TMS (para OS com coordenadas).
+- O ELO QUEBRADO é o backend: a migration 20260731_fix_registrar_posicao_motorista
+  recriou o RPC referenciando colunas que nunca foram criadas na tabela.
+
+================================================================================
+# ROTEIRO PARA O USUÁRIO (homologação física no Redmi)
+================================================================================
+PRÉ-REQUISITO OBRIGATÓRIO (não fazer a prova antes):
+- O defeito de schema descrito acima PRECISA ser corrigido no banco (RPC passar a
+  gravar nas colunas reais: os_id no lugar de ordem_servico_id, sem motorista_id/
+  altitude/status_operacional inexistentes — ou criar as colunas). Isto é ALTER de
+  Produção → FORA desta etapa (marcado como pendência; não executado).
+
+ATENÇÃO: como o backend está bloqueado, o roteiro abaixo só será conclusivo DEPOIS
+da correção do schema. Sem a correção, a posição será rejeitada pelo RPC.
+
+PASSO A PASSO (após a correção do backend):
+
+1. No Redmi, confirmar que está instalado o APK conexao_express_motorista_v1.0.1_
+   build1306 (ou mais novo). Se estiver mais antigo que build 1305, reinstalar.
+2. Abrir o App Conexão Express (Prestador) e logar com o usuário do
+   PRESTADOR TESTE APP (CPF 12345678900).
+3. Aceitar as permissões: Localização "Permitir o tempo todo" (always), GPS ligado,
+   notificações permitidas.
+4. Na Home, abrir a operação ativa (alocação ecaedf20… / OS HML-APP-001 ou uma
+   nova operação criada com status aceita para o prestador).
+5. Executar a etapa "Sair em rota" (ou "Sair para entrega" / "Finalizar
+   carregamento"). É ESTE O DISPARADOR DO TRACKING (confirmado no código).
+6. Manter o App em primeiro plano por 1–2 minutos (15s intervalo). O ícone de
+   rastreamento deve indicar "ativo".
+7. Confirmar o foreground service (notificação persistente "OS … operação em andamento").
+8. Ainda com o App aberto, abrir o TMS (Torre de Controle) em outro dispositivo.
+9. Verificar o KPI "Motoristas Online" (>0) e o badge "GPS Ativo" no mapa.
+10. Verificar o marcador do PRESTADOR TESTE APP no mapa (após a OS ter coordenadas
+    OU após o fluxo GPS; ver pendência abaixo).
+11. Caminhar alguns metros e confirmar que o marcador se move em tempo real (Realtime).
+12. Bloquear a tela (background) e confirmar que continua atualizando (30s).
+
+VALIDAÇÃO READ-ONLY PÓS-TESTE (somente SELECT):
+- SELECT * FROM portal_tracking_realtime WHERE alocacao_id = '<alocação>'
+  ORDER BY captured_at DESC LIMIT 5; → deve haver linhas com created_at recente.
+
+================================================================================
+# STATUS
+================================================================================
+
+BLOQUEADO — CAUSA ENCONTRADA
+
+- O tracking no APP e no TMS está codificado corretamente e o disparo é claro
+  (etapa "Sair em rota" / "Sair para entrega" / "Finalizar carregamento").
+- PORÉM o backend está QUEBRADO: o RPC registrar_posicao_motorista em Produção
+  referencia colunas que não existem em portal_tracking_realtime
+  (ordem_servico_id, motorista_id, altitude, status_operacional).
+- Como isso é ALTER de schema/Produção (criar colunas OU corrigir o INSERT do RPC),
+  NÃO foi executado nesta etapa por regra de segurança.
+- Prova read-only: nenhuma posição nas últimas 24h; única posição do prestador é
+  um seed 'homologacao' de 2026-07-29.
+
+NÃO É "PRONTO PARA HOMOLOGAÇÃO FÍSICA" ENQUANTO O SCHEMA NÃO FOR CORRIGIDO.
+
+PENDÊNCIAS PARA DESTRAVAR:
+1. Corrigir o RPC registrar_posicao_motorista para gravar nas colunas REAIS
+   (os_id, prestador_id, latitude, longitude, precisao, velocidade, direcao,
+   captured_at, origem) OU adicionar as colunas faltantes na tabela. (ALTER — requer
+   autorização/etapa específica.)
+2. Garantir que a OS usada na prova possua coordenadas próprias
+   (localizacao_entrega_json/enderecos com lat/lng) OU revisar o critério do
+   marcador para aceitar o GPS ao vivo sem coordenadas na OS.
+3. Revisar buscarUltimasPosicoes: adicionar filtro de recência (ex.: captured_at
+   nos últimos N minutos) e status para evitar posições antigas/seed.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25 (ETAPA 1 — AUDITORIA READ-ONLY)
+STATUS: BLOQUEADO — CAUSA ENCONTRADA
+================================================================================

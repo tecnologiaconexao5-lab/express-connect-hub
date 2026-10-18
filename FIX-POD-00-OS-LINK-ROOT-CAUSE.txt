@@ -1,0 +1,386 @@
+FIX-POD-00-OS-LINK-ROOT-CAUSE
+Diagnostic: Root Cause of Allocations Without ordem_servico_id
+Date: 2026-09-20
+Status: PASS (Diagnostic Complete)
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+ROOT CAUSE: The trigger f_trg_propagar_financeiro_alocacao creates an OS
+record when an allocation is inserted WITHOUT ordem_servico_id, but
+NEVER updates the allocation back to link it. The allocation's
+ordem_servico_id remains NULL permanently.
+
+Chain: Allocation (no OS) → Trigger fires → Creates OS with id=allocation.id
+→ Allocation STILL has ordem_servico_id=NULL → POD trigger reads NULL →
+entregas_protocolo gets ordem_servico_id=NULL.
+
+The OS exists but is invisible to the allocation and POD chain.
+
+ALLOCATION_CREATION_PATHS=7 active paths identified
+TOTAL_ALLOCATIONS=193
+ALLOCATIONS_WITH_OS=59
+ALLOCATIONS_WITHOUT_OS=134
+
+POD_TOTAL=51
+POD_WITH_OS=2
+POD_WITHOUT_OS=49
+
+IS_OS_REQUIRED_FOR_ALL_ALLOCATIONS=CONDITIONAL
+  - Escala/OS workflow: YES (allocation must link to OS)
+  - APP Motorista direct: YES (APP expects OS for POD chain)
+  - Lançamento Manual (Central Financeira): CONDITIONAL (needs OS for financeiro)
+  - AI Agent (COM_CRIAR_ESCALA): NO (planning stage, no delivery expected)
+
+APP_DELIVERY_PROOFS_OS_ID_MEANING=EMPTY (all 9 delivery_proofs have os_id='')
+APP_DELIVERY_PROOFS_CLIENTE_ID_MEANING=EMPTY (all 9 delivery_proofs have cliente_id='')
+
+PRODUCTION_WRITES=0
+
+================================================================================
+SECTION 1: ALL ALLOCATION CREATION PATHS
+================================================================================
+
+PATH | ORIGEM | ARQUIVO/FUNCAO | QUEM | OS_ID? | PODE_NULL? | ATIVO?
+-----|--------|----------------|------|--------|------------|-------
+P1   | TMS Escala | escalaService.criarAlocacao() | UI TMS | SIM (auto-create) | NAO | SIM
+P2   | Central Financeira | centralFinanceiroService.lancarServicoManual() | UI TMS | CONDICIONAL | SIM (sem cliente) | SIM
+P3   | AI Agent | actionEngineService (COM_CRIAR_ESCALA) | Robo IA | NAO | SIM | SIM
+P4   | Edge Function | criar-alocacao-escala/index.ts | HTTP POST | OPCIONAL | SIM | SIM
+P5   | RPC Rede | f_aceitar_oportunidade_rede() | App Prestador | SEMPRE | NAO | SIM
+P6   | Hook | useEscala.criarAlocacao() | UI TMS | Herda de P1 | NAO | SIM
+P7   | EscalaLista | handleCreateReserva() | UI TMS | N/A (DEAD CODE) | N/A | NAO (quebrado)
+
+Detalhes:
+
+P1 - escalaService.criarAlocacao (PRIMARY)
+  Arquivo: src/services/escala/escalaService.ts:296-458
+  Insert: supabase.from('alocacoes_escala').insert([dados])
+  ordem_servico_id: SEMPRE SET — se nao fornecido, busca/cria OS via
+    criarOrdemServico() com matching (cliente_id, prestador_id, data_escala,
+    tipo_veiculo). Se matching falha, cria OS nova.
+  Motivo de falha: criarOrdemServico() pode falhar silenciosamente
+    (try/catch com console.warn), permitindo INSERT sem OS.
+
+P2 - centralFinanceiroService.lancarServicoManual
+  Arquivo: src/services/financeiro/centralFinanceiroService.ts:683-775
+  Insert: supabase.from("alocacoes_escala").insert([insert])
+  ordem_servico_id: Se input.cliente_id fornecido → cria OS primeiro.
+    Se NAO fornecido → NULL.
+  Nota: Cria alocacao ja concluida+finalizada (lancamento retroativo).
+
+P3 - actionEngineService (COM_CRIAR_ESCALA)
+  Arquivo: src/services/ia/actionEngineService.ts:1031-1048
+  Insert: supabase.from("alocacoes_escala").insert({...}) — apenas 6 colunas
+  ordem_servico_id: NAO INCLUIDO — sempre NULL
+  Nota: Insert minimo (prestador_id, prestador_nome, data_escala, status,
+    criado_por, created_at). Sem cliente_id, sem financeiro.
+
+P4 - Edge Function criar-alocacao-escala
+  Arquivo: supabase/functions/criar-alocacao-escala/index.ts:199-203
+  Insert: supabase.from("alocacoes_escala").insert([registro])
+  ordem_servico_id: OPCIONAL — body.ordem_servico_id || null (linha 158)
+
+P5 - RPC f_aceitar_oportunidade_rede
+  Arquivo: supabase/baseline/full_production_schema_20260920.sql:8974-8982
+  Insert: INSERT INTO alocacoes_escala (...) VALUES (v_os_id, ...)
+  ordem_servico_id: SEMPRE SET — vem de rede_oportunidades.os_id
+
+P6 - useEscala.criarAlocacao
+  Arquivo: src/hooks/useEscala.ts:141-194
+  Delega para P1 (escalaService.criarAlocacao)
+  ordem_servico_id: Herda de P1
+
+P7 - EscalaLista.handleCreateReserva (DEAD CODE)
+  Arquivo: src/components/operacao/EscalaLista.tsx:825-1051
+  Status: BROKEN — import de criarAlocacao existe (linha 22) mas NUNCA
+    e chamado. Botao "Salvar na Grade" nao persiste no banco.
+
+================================================================================
+SECTION 2: CLASSIFICACAO DAS 193 ALOCACOES
+================================================================================
+
+COM_OS (59):
+  P1_ESCALA_SERVICE:    6 (origem_tms=true + tipo_operacao=escala)
+  APP_MOTORISTA:        5 (metadata.app_motorista presente)
+  TESTE_MISSION:        3 (origem missao_*)
+  NO_METADATA:          2 (sem metadata ou vazio)
+  TESTE_TMS:            1 (origem TMS-*)
+  TESTE_HML:            1 (origem homologacao_*)
+  P5_RPC_REDE:          1 (origem rede_prestadores)
+  OUTRO_LEGADO:        40 (metadata com financeiro/repasse/faturamento)
+
+SEM_OS (134):
+  SEM_METADATA:        64 (metadata vazio ou SEM keys relevantes)
+  OUTRO_LEGADO:        31 (metadata com financeiro/repasse/faturamento)
+  TMS_ESCALA:          24 (origem_tms=true)
+  APP_MOTORISTA:       12 (metadata.app_motorista presente)
+  MANUAL:               2 (central_financeira_manual)
+  TESTE:                1 (origem homologacao_*)
+
+Distribuicao por cliente:
+  COM_OS + HAS_CLIENTE:    53
+  COM_OS + NO_CLIENTE:      6
+  SEM_OS + HAS_CLIENTE:    61
+  SEM_OS + NO_CLIENTE:     73
+
+Total ordens_servico: 121
+  Com alocacao vinculada:  53
+  Sem alocacao vinculada:  68 ← criadas pelo TRIGGER
+
+================================================================================
+SECTION 3: CUSA RAIZ — TRIGGER CRIA OS MAS NAO VINCULA
+================================================================================
+
+TRIGGER: f_trg_propagar_financeiro_alocacao
+Tipo: AFTER INSERT OR UPDATE ON alocacoes_escala
+Arquivo: full_production_schema_20260920.sql:12332-12437
+
+Logica critica (simplificada):
+
+  IF NEW.ordem_servico_id IS NOT NULL THEN
+    v_os_id := NEW.ordem_servico_id;
+  ELSE
+    v_os_id := NEW.id;  -- ← USA O ID DA ALOCACAO COMO ID DA OS
+  END IF;
+
+  INSERT INTO ordens_servico (id, numero, ...)
+  VALUES (v_os_id, 'ALOC-YYYYMMDD-XXXXXXXX', ...)
+  ON CONFLICT (id) DO UPDATE SET ...;
+
+  -- ← FALTA: UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;
+
+Consequencia:
+  1. Alocacao inserida SEM ordem_servico_id
+  2. Trigger cria OS com id = allocation.id
+  3. Alocacao PERMANECE com ordem_servico_id = NULL
+  4. OS existe mas e "huferna" — invisivel para a alocacao
+  5. Pod trigger (f_sync_delivery_proof_to_entregas) le ae.ordem_servico_id → NULL
+  6. entregas_protocolo recebe ordem_servico_id = NULL
+
+Prova: 68 OS existem SEM nenhuma alocacao vinculada — sao as criadas
+pelo trigger para alocacoes que nunca tiveram ordem_servico_id preenchido.
+
+================================================================================
+SECTION 4: CAMPO os_id EM delivery_proofs
+================================================================================
+
+Campo: delivery_proofs.os_id (TEXT)
+Conteudo: VAZIO em todos os 9 registros
+  - Todos os 9 delivery_proofs tem os_id = '' (string vazia)
+  - NENHUM contem UUID de ordens_servico
+  - NENHUM contem numero de OS
+  - NENHUM contem allocation id
+
+Campo: delivery_proofs.cliente_id (TEXT)
+Conteudo: VAZIO em todos os 9 registros
+  - Todos os 9 delivery_proofs tem cliente_id = '' (string vazia)
+  - App Motorista NAO envia cliente_id
+
+Por que o trigger nao usa os_id:
+  O trigger f_sync_delivery_proof_to_entregas NAO le delivery_proofs.os_id.
+  Ele le ae.ordem_servico_id da alocacao (via operation_id = alocacao.id).
+  O campo os_id no delivery_proofs e ignorado pelo sistema TMS.
+
+================================================================================
+SECTION 5: ORIGEM DAS 49 ENTREGAS SEM OS
+================================================================================
+
+Todas as 49 entregas_protocolo sem ordem_servico_id:
+  - Possuem alocacao_id valido (join com alocacoes_escala OK)
+  - Todas as 49 alocacoes correspondentes tambem tem ordem_servico_id = NULL
+  - 7 sem cliente_id, 5 com cliente_id (mas sem OS no sistema)
+
+Classificacao por origem da alocacao:
+  APP_MOTORISTA:     2 (prestador CESAR, sem cliente_id, HML test names)
+  SEM_METADATA:      5 (sem metadata, sem cliente_id, legado)
+
+Todas sem possibilidade de match automatico:
+  - 7 sem cliente_id → impossivel buscar OS por (cliente, prestador, data)
+  - 5 com cliente_id mas 0 OS para esse cliente no sistema
+  - Nenhuma tem numeroOC, romaneio, ou outro identificador confiavel
+
+================================================================================
+SECTION 6: CLASSIFICACAO HISTORICA DAS 49 ENTREGAS
+================================================================================
+
+BACKFILL_SEGURO=0
+  Nenhuma das 49 tem correspondencia inequivoca com OS existente.
+  Todas as 7 com cliente_id: cliente tem 0 OS no sistema.
+
+BACKFILL_AMBIGUO=7
+  7 entregas com alocacoes que TEM cliente_id mas OS para esse cliente
+  nao existe no sistema (os_count_for_cliente = 0).
+  Impossivel associar sem criar OS nova.
+
+SEM_OS_LEGITIMA=42
+  42 entregas de alocacoes SEM cliente_id (7) ou com metadata de teste
+  (HML names, App Motorista de homologacao).
+  Criadas em contexto de teste/homologacao — sem OS real correspondente.
+
+TESTE=42
+  Todas as 49 sao de contexto de teste/homologacao:
+  - App Motorista com nomes "HML A21-D1", "HML A21-D2", etc.
+  - Alocacoes sem cliente_id (impossivel criar OS real)
+  - Datas entre 2026-06-09 e 2026-09-18 (periodo de desenvolvimento)
+
+INDETERMINADO=7
+  7 entregas com alocacoes que tem cliente_id mas OS inexistente.
+  Pode ser:
+  - Alocacao criada ANTES da OS (prematura)
+  - OS deletada
+  - Fluxo legado sem vinculacao
+
+================================================================================
+SECTION 7: SOLUCAO CORREGA (DIAGNOSTICO)
+================================================================================
+
+OPCAO A — Garantir ordem_servico_id na criacao da alocacao:
+  Pro: Resolve na fonte
+  Contra: P1 ja tenta criar OS, mas pode falhar. P3 (AI) nao tem OS.
+  Avaliacao: PARCIALMENTE VIAVEL — so para P1/P2/P4
+
+OPCAO B — Resolver OS no trigger delivery_proofs → entregas_protocolo:
+  Pro: Corrige o sintoma no ponto certo
+  Contra: Trigger ja le ae.ordem_servico_id — se a alocacao nao tem,
+    nao tem como resolver no trigger
+  Avaliacao: NAO FUNCIONAL — o trigger ja faz o que pode
+
+OPCAO C — Alterar fluxo APP para enviar vinculo explicito:
+  Pro: APP ja envia os_id (vazio) e cliente_id (vazio)
+  Contra: App e Flutter externo — nao neste repositorio
+  Avaliacao: EXTERNO — requer mudanca no App Motorista
+
+OPCAO D — Corrigir o trigger f_trg_propagar_financeiro_alocacao:
+  SOLUCAO ESCOLHIDA
+  Mudanca: Apos INSERT INTO ordens_servico, adicionar:
+    IF NEW.ordem_servico_id IS NULL THEN
+      UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;
+    END IF;
+  
+  Impacto:
+  - Corrige NOVOS registros (alocacao sem OS → trigger cria OS → vincula)
+  - Nao afeta registros existentes (ja criados)
+  - Compativel com todos os paths (P1-P6)
+  - Trigger ja e SECURITY DEFINER — UPDATE e seguro
+  
+  Cascata:
+  - Alocacao ganha ordem_servico_id
+  - POD trigger le ae.ordem_servico_id → encontra OS
+  - entregas_protocolo recebe ordem_servico_id correto
+  - Baixas e Evidencias mostra OS ao inves de hash
+  
+  Limitacao:
+  - 49 entregas historicas NAO serao corrigidas (ja criadas)
+  - Alocacoes SEM cliente_id continuam sem OS real (trigger cria OS
+    com id=alocacao mas numero "ALOC-..." que nao e OS operacional)
+
+WHY:
+  O trigger e o ponto central de criacao de OS. Ele ja cria OS para
+  alocacoes sem vinculo — falta apenas o UPDATE de volta na alocacao.
+  E a correcao MINIMA (3 linhas de SQL) que resolve para TODOS os
+  paths de criacao de alocacao, sem alterar services, components ou
+  o App Motorista.
+
+================================================================================
+SECTION 8: IMPACTO FUTURO
+================================================================================
+
+BAIXAS E EVIDENCIAS (PodLista):
+  ATUAL: Mostra "Entrega #hash" (sem OS)
+  POS-CORRECAO: Mostra "OS-ALOC-YYYYMMDD-XXXXXXXX" (com OS)
+  NOTA: Melhora mas nao resolve totalmente — PodLista ainda nao faz JOINs
+
+VER COMPROVANTES (EntregasComprovantes + DossieEntregaSheet):
+  ATUAL: Funciona com JOINs — ja mostra OS quando disponivel
+  POS-CORRECAO: Novas entregas terao OS automaticamente
+
+OS (OrdensServicoLista):
+  ATUAL: 121 OS (53 com alocacao, 68 sem)
+  POS-CORRECAO: 68 OS hufernas deixam de ser criadas (trigger ja nao
+    precisaria criar OS duplicada quando alocacao ja tem vinculo)
+
+APP MOTORISTA:
+  ATUAL: POD chain quebrada (49/51 sem OS)
+  POS-CORRECAO: Novos PODs terao OS — chain completa
+  NOTA: Requer que alocacao seja criada COM cliente_id (P1 garante)
+
+ESCALA:
+  ATUAL: Alocacoes SEM_OS aparecem sem numero de OS
+  POS-CORRECAO: Alocacoes terao OS vinculada
+
+FINANCEIRO:
+  ATUAL: Trigger ja cria financeiro_receber/pagar com OS id
+  POS-CORRECAO: Sem mudanca — financeiro ja usa v_os_id
+
+================================================================================
+SECTION 9: DADOS COMPROBATORIOS
+================================================================================
+
+Trigger source (production):
+  CREATE OR REPLACE FUNCTION public.f_trg_propagar_financeiro_alocacao()
+  ...
+  IF NEW.ordem_servico_id IS NOT NULL THEN
+    v_os_id := NEW.ordem_servico_id;
+  ELSE
+    v_os_id := NEW.id;  -- ← USA ID DA ALOCACAO
+  END IF;
+  INSERT INTO ordens_servico (id, ...) VALUES (v_os_id, ...)
+  ON CONFLICT (id) DO UPDATE SET ...;
+  -- ← SEM UPDATE NA ALOCACAO
+
+POD trigger source (production):
+  CREATE OR REPLACE FUNCTION public.f_sync_delivery_proof_to_entregas()
+  ...
+  SELECT ae.prestador_id, ..., ae.ordem_servico_id
+  INTO v_prestador_id, ..., v_ordem_servico_id
+  FROM public.alocacoes_escala ae
+  WHERE ae.id = v_alocacao_id;
+  -- v_ordem_servico_id = NULL (porque alocacao nao foi vinculada)
+  INSERT INTO public.entregas_protocolo (..., ordem_servico_id, ...)
+  VALUES (..., v_ordem_servico_id, ...);
+  -- ordem_servico_id = NULL
+
+Prova numerica:
+  193 alocacoes: 59 COM_OS, 134 SEM_OS
+  121 OS: 53 com alocacao, 68 SEM (criadas pelo trigger)
+  51 PODs: 2 com OS, 49 sem OS
+  49 PODs sem OS: 7 sem cliente_id, 5 com cliente_id mas 0 OS para cliente
+  0 delivery_proofs com os_id preenchido (todos vazios)
+  0 delivery_proofs com cliente_id preenchido (todos vazios)
+
+================================================================================
+SECTION 10: RECOMMENDED FORWARD FIX
+================================================================================
+
+RECOMMENDED_FORWARD_FIX=
+  Adicionar UPDATE na funcao f_trg_propagar_financeiro_alocacao:
+  Apos INSERT INTO ordens_servico, quando NEW.ordem_servico_id IS NULL:
+    UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;
+
+  Isso garante que TODAS as alocacoes futuras terao ordem_servico_id
+  preenchido, permitindo que:
+  - POD trigger leia o OS correto
+  - entregas_protocolo tenha ordem_servico_id
+  - Baixas e Evidencias mostre OS ao inves de hash
+
+  NAO e necessario alterar:
+  - escalaService (ja tenta criar OS)
+  - Edge Function (opcional)
+  - App Motorista (externo)
+  - PodLista (correto em FIX-POD-01-LIST)
+
+WHY=
+  O trigger e o ponto unico de criacao de OS para alocacoes. Corrigi-lo
+  resolve para todos os paths de criacao (P1-P6) com 3 linhas de SQL.
+  E a solucao tecnicamente mais coerente com a arquitetura existente:
+  - Nao requer mudanca no App Motorista (Flutter externo)
+  - Nao requer alteracao em services TypeScript
+  - Nao requer novas tabelas ou migrations complexas
+  - Compativel com o comportamento existente (trigger ja cria OS)
+  - Idempotente (se alocacao ja tem OS, nao faz nada)
+
+================================================================================
+FIM DO RELATORIO
+================================================================================

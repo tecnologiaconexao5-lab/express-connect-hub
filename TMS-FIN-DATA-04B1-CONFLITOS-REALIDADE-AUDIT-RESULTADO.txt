@@ -1,0 +1,208 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04B1-CONFLITOS-REALIDADE-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (zero INSERT/UPDATE/DELETE).
+RESULTADO: PASS (auditoria concluida). NADA ALTERADO.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+6 OS CONFLITO classificadas: C1=4 | C2=2 | C3=0 | C4=0.
+Os 10 financeiros residuais sao TODOS TESTE CONFIRMADO (is_teste=true), com valores de
+teste. FRANKLIN e uma entidade REAL (com operacao real em OUTRAS OS), mas nesta OS de
+teste houve apenas VISUALIZACAO + ACEITE, sem execucao. Cydak e cliente REAL referenciado
+por 1 OS de teste (sem execucao/fatura). Nenhuma operacao real foi encontrada nas 6 OS.
+
+--------------------------------------------------------------------------------
+1. MATRIZ DAS 6 OS CONFLITO
+--------------------------------------------------------------------------------
+OS / numero              | id       | st       | cliente_id | prestador | valor_cli | valor_prest
+------------------------------------------------------------------------------------------------
+M86-TEST-MR88UC58        | edf1fff7 | rascunho | M43(teste) | -         | 650,00    | 350,00
+M86-TEST-MR88UO6B        | 4996bf7b | rascunho | M43(teste) | -         | 650,00    | 350,00
+M90-TEST-MR8AHG3V        | b8fedeb1 | rascunho | M43(teste) | -         | 650,00    | 350,00
+M90-TEST-MR8AILKG        | 4767a7f1 | rascunho | M43(teste) | -         | 650,00    | 350,00
+M90-TEST-MR8AK450        | fb33a1bd | agendada | M43(teste) | FRANKLIN  | 650,00    | 350,00
+OS-TEST-1781310536075    | 45857f5f | pendente | Cydak REAL | -         | (null)    | (null)
+
+--------------------------------------------------------------------------------
+2. EVIDENCIA POR OS
+--------------------------------------------------------------------------------
+Todos: is_teste=true; service data/execucao inexistentes; sem POD, sem ocorrencia, sem
+fiscal (CT-e/NFS-e/MDF-e = 0), sem fatura_itens, sem KM, sem reembolso, sem tracking/POD.
+
+[1] M86-TEST-MR88UC58 (edf1fff7)
+  cliente M43_2026-06-29... Cliente Teste Ltda (CADASTRO DE TESTE; cnpj malformado
+  43.17827576.0001-99; criado 2026-06-29 por harness M43). prestador: nenhum.
+  financeiro: AR 89dc89e7 R$650,00 pendente is_teste=true. AP/PP: none.
+  composicao: none. alocacao: none. historico: 1. Rede: oportunidade 13c004d3
+  PUBLICADA em 2026-07-05T20:28:34Z; NENHUMA visualizacao; NENHUM aceite.
+  => C1 (teste; rede publicada sem interacao real).
+
+[2] M86-TEST-MR88UO6B (4996bf7b)
+  cliente M43 (teste). prestador: nenhum.
+  financeiro: AR b2b51282 R$650,00 pendente is_teste=true.
+  Rede: oportunidade 0f76484b PUBLICADA 2026-07-05T20:28:49Z; SEM visualizacao/aceite.
+  => C1.
+
+[3] M90-TEST-MR8AHG3V (b8fedeb1)
+  cliente M43 (teste). prestador: nenhum.
+  financeiro: AR 5a1ecd9e R$650,00 pendente is_teste=true.
+  Rede: oportunidade 85b98376 PUBLICADA 2026-07-05T21:14:32Z; VISUALIZADA por FRANKLIN
+  em 2026-07-05T21:14:33Z (rede_visualizacoes a1b9e681); SEM aceite.
+  => C1 (interacao real inocua: apenas visualizacao).
+
+[4] M90-TEST-MR8AILKG (4767a7f1)
+  cliente M43 (teste). prestador: nenhum.
+  financeiro: AR fda53bb5 R$650,00 pendente is_teste=true.
+  Rede: oportunidade 483cc6ed PUBLICADA 2026-07-05T21:15:25Z; VISUALIZADA por FRANKLIN
+  em 2026-07-05T21:15:26Z (rede_visualizacoes 8b6f6eb6); SEM aceite.
+  => C1 (interacao real inocua: apenas visualizacao).
+
+[5] M90-TEST-MR8AK450 (fb33a1bd)  *** unico com ACEITE ***
+  cliente M43 (teste). prestador_id = FRANKLIN DA SILVA PEREIRA (REAL).
+  financeiro: AR 218a9e47 R$650,00 (is_teste=true, pendente); AP 82a6cd6f R$350,00
+  (is_teste=true, fornecedor FRANKLIN); PP 2e6a4f4a R$350,00 (is_teste=true,
+  classificacao_dado='teste', FRANKLIN). composicao: none. alocacao: none.
+  Rede: oportunidade 377a53e0 PUBLICADA 2026-07-05T21:16:36Z; VISUALIZADA por FRANKLIN
+  2026-07-05T21:16:37Z; **ACEITA** por FRANKLIN em 2026-07-05T21:16:38Z
+  (prestador_aceite_id=be420cfc...). Sem recusa. Sem execucao (0 alocacoes dessa OS).
+  => C2 (teste com INTERACAO de entidade REAL a preservar: aceite + visualizacoes).
+
+[6] OS-TEST-1781310536075 (45857f5f)  *** cliente REAL ***
+  cliente_id = Cydak do Brasil LTDA (EMPRESA REAL; cnpj 04.785.340/0001-26; cadastro
+  2026-04-28; possui 1 OS real + esta). prestador_id: null.
+  valor_cliente/valor_prestador: null. status pendente. sem execucao/POD/fiscal.
+  financeiro: AR 59278800 R$500,00 (is_teste=true, pendente, cliente_nome Cydak);
+  AP dce48d6d R$325,00 (is_teste=true, "Prestador #6cc41f68..." = placeholder teste);
+  PP 097ebc7c R$325,00 (is_teste=true, classificacao_dado='teste', nao_vencido).
+  alocacao 4b53d326 (status planejada, prestador 6cc41f68, valor_frete 500 / repasse 300).
+  obs: OS criada via harness de teste ("OS-TEST-<timestamp>"), mas apontando cliente REAL.
+  => C2 (teste que referencia entidade REAL; preservar integridade do cadastro Cydak).
+
+--------------------------------------------------------------------------------
+3. ENTIDADES REAIS — CONCLUSAO
+--------------------------------------------------------------------------------
+FRANKLIN DA SILVA PEREIRA (prestador be420cfc):
+  - Cadastro REAL e ativo (criado 2026-05-12; cpf 13327215677). NAO ALTERAR.
+  - Como entrou na OS de teste: aceitou a oportunidade 377a53e0 (fb33a1bd) apos
+    visualiza-la. Nesta OS NAO ha alocacao/execucao/POD/financeiro REAL (AP/PP sao
+    is_teste=true).
+  - Operacao real dele ocorre em OUTRAS OS: 30 alocacoes (concluida/planejada),
+    ~28 pagamentos_prestadores is_teste=false e dezenas de financeiro_pagar
+    is_teste=false (todos PENDENTES, nao vinculados as 6 OS). NAO TOCAR.
+  - Interacao com teste = inócua (1 aceite + 3 visualizacoes); sem valor real recebido.
+
+CYDAK DO BRASIL LTDA (cliente 1baf3223):
+  - Cadastro REAL (04.785.340/0001-26; criado 2026-04-28). NAO ALTERAR.
+  - 1 OS real + a OS de teste 45857f5f. A OS de teste nao tem valor, execucao,
+    faturamento, fiscal ou POD. Conclusao: uso indevido de cliente real em OS de teste
+    (teste tecnico), sem operacao real associada.
+
+M43 Cliente Tespe (04280785) e Prestador #6cc41f68: entidades de TESTE (nome
+"Teste"/placeholder; cnpj malformado). Base das OS C1 e do AP/PP teste de 45857f5f.
+
+--------------------------------------------------------------------------------
+4. REDE DE OPORTUNIDADES (5 + 1 aceite)
+--------------------------------------------------------------------------------
+Op        | OS         | status    | publicada em            | views (FRANKLIN) | aceite
+-----------------------------------------------------------------------------------------
+13c004d3  | edf1fff7   | publicada | 2026-07-05T20:28:34Z    | 0                | -
+0f76484b  | 4996bf7b   | publicada | 2026-07-05T20:28:49Z    | 0                | -
+85b98376  | b8fedeb1   | publicada | 2026-07-05T21:14:32Z    | 1 (21:14:33Z)    | -
+483cc6ed  | 4767a7f1   | publicada | 2026-07-05T21:15:25Z    | 1 (21:15:26Z)    | -
+377a53e0  | fb33a1bd   | ACEITA    | 2026-07-05T21:16:36Z    | 1 (21:16:37Z)    | 2026-07-05T21:16:38Z (FRANKLIN)
+Nao ha recusas. rede_visualizacoes: 3 registros (todos FRANKLIN). Interacao real
+existe APENAS em fb33a1bd (aceite) e nas views de b8fedeb1/4767a7f1 — inócua.
+
+--------------------------------------------------------------------------------
+5. OS 10 FINANCEIROS RESIDUAIS — TESTE CONFIRMADO?
+--------------------------------------------------------------------------------
+TODOS is_teste=TRUE (teste confirmado). Nenhum tem valor/fato real:
+  AR (6): 59278800 R$500 (Cydak/45857f5f) | 89dc89e7, b2b51282, 5a1ecd9e, fda53bb5,
+          218a9e47 — R$650 cada (M43).
+  AP (2): 82a6cd6f R$350 (FRANKLIN/fb33a1bd) | dce48d6d R$325 (placeholder/45857f5f).
+  PP (2): 2e6a4f4a R$350 (FRANKLIN/fb33a1bd, class=teste) |
+          097ebc7c R$325 (placeholder/45857f5f, class=teste).
+Total residual: R$ 5.100,00. Nenhum possui fato real associado. Destino: neutralizavel
+em DATA-04B2, preservando registros de interacao (rede/views/aceite).
+
+--------------------------------------------------------------------------------
+6. CLASSIFICACAO FINAL POR OS
+--------------------------------------------------------------------------------
+C1 = TESTE CONFIRMADO COM INTERACAO REAL INOCUA (neutralizavel preservando interacao):
+   - M86-TEST-MR88UC58 (edf1fff7)
+   - M86-TEST-MR88UO6B (4996bf7b)
+   - M90-TEST-MR8AHG3V (b8fedeb1)   [1 view FRANKLIN]
+   - M90-TEST-MR8AILKG (4767a7f1)   [1 view FRANKLIN]
+C2 = TESTE COM EFEITO/ENTIDADE REAL A PRESERVAR (neutralizavel com cuidado especifico):
+   - M90-TEST-MR8AK450 (fb33a1bd)   [ACEITE FRANKLIN + AP/PP]
+   - OS-TEST-1781310536075 (45857f5f) [cliente REAL Cydak + alocacao/AP/PP]
+C3 = POSSIVEL OPERACAO REAL: 0
+C4 = INCONSISTENCIA DE DADOS: 0
+
+--------------------------------------------------------------------------------
+7. RESPONDENDO POR OS (neutralizavel x preservar x destino financeiro)
+--------------------------------------------------------------------------------
+edf1fff7 / 4996bf7b: NEUTRALIZAR OS (soft) + encerrar rede publicada sem interacao +
+  remover AR R$650. PRESERVAR: historico OS. Sem entidade real.
+b8fedeb1 / 4767a7f1: idem + PRESERVAR rede_visualizacoes (views do FRANKLIN) e encerrar
+  a oportunidade (sem apagar). Remover AR R$650.
+fb33a1bd: NEUTRALIZAR OS (soft) + PRESERVAR integralmente o ACEITE (rede_oportunidades
+  377a53e0) e as visualizacoes + NAO tocar cadastro FRANKLIN. Para NEUTRALIZAR a
+  obrigacao de teste: remover AR R$650, AP R$350 e PP R$350 (todos is_teste=true).
+  Encerrar a oportunidade apos registrar o aceite (nao apagar).
+45857f5f: NEUTRALIZAR OS (soft) + cancelar a alocacao planejada (soft) + remover AR
+  R$500, AP R$325, PP R$325 (todos is_teste=true). PRESERVAR cadastro CYDAK (nao
+  alterar). Registrar que cliente real foi usado em teste tecnico (sem operacao real).
+
+--------------------------------------------------------------------------------
+8. PLANO SEGURO PARA DATA-04B2 (nao implementado)
+--------------------------------------------------------------------------------
+ 1. Backup novo (9 tabelas + ordens_servico + rede_oportunidades + rede_visualizacoes).
+ 2. Encerrar rede_oportunidades das 6 (status 'encerrada'/equivalente), SEM apagar e
+    SEM remover rede_visualizacoes/aceite.
+ 3. Cancelar (soft) alocacao 4b53d326 (45857f5f).
+ 4. Cancelar (soft) as 6 OS (status='cancelada') -> neutraliza M66/M80.
+ 5. Remover financeiro TESTE: AR 6 + AP 2 + PP 2 (R$5.100,00).
+ 6. NAO deletar OS; NAO alterar cadastros FRANKLIN/Cydak; NAO tocar nas 28 PP reais do
+    FRANKLIN nem no financeiro real.
+ 7. Provar: 0 recriacao (touch test), 6 OS canceladas, 10 financeiros removidos,
+    FRANKLIN/Cydak intactos, rede preservada (views/aceite), P0=0, sem novo orfao.
+
+--------------------------------------------------------------------------------
+9. RISCOS / NAO TOCAR
+--------------------------------------------------------------------------------
+- FRANKLIN possui financeiro REAL pendente (is_teste=false) — nao confundir com os
+  AP/PP de teste (is_teste=true). Filtro obrigatorio: is_teste=true.
+- Cydak e cliente real; apenas a OS de teste o referencia indevidamente.
+- Encerrar rede sem apagar (auditoria do aceite).
+- Nao tratar (conforme instrucao): DUVIDOSOS gerais; fatura Calvo R$1.200; 2 AR pagos
+  sem baixa; 5 PP pagos; 34 AP os_id orfaos; conta_financeira_id; classificacao
+  contabil; dashboards.
+
+--------------------------------------------------------------------------------
+10. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (auditoria). Nenhuma alteracao executada. 6 OS classificadas (C1=4, C2=2, C3=0,
+C4=0). Os 10 financeiros residuais = 100% TESTE CONFIRMADO. Plano seguro definido para
+DATA-04B2 (requer autorizacao de escrita).
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04B2 — NEUTRALIZAR OS 6 CONFLITO: encerrar rede preservando aceite/views,
+cancelar soft OS/alocacao, remover os 10 financeiros de teste, preservar cadastros
+(FRANKLIN/Cydak) e provar ausencia de recriacao. Requer alinhamento com Comercial/Rede.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04B1-CONFLITOS-REALIDADE-AUDIT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04B1-CONFLITOS-REALIDADE-AUDIT-RESULTADO.txt
+Tamanho ..: 12967 bytes
+Data .....: 24/09/2026 20:44:23
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04B1
+================================================================================

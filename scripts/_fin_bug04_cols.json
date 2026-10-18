@@ -1,0 +1,486 @@
+{
+  "ts": "2026-10-07T10:49:09.062Z",
+  "rpc": [
+    {
+      "proname": "f_aprovar_pagamento_prestadores",
+      "args": "p_ids uuid[]"
+    },
+    {
+      "proname": "f_criar_lancamento_manual_prestador",
+      "args": "p_prestador_id uuid, p_tipo_lancamento text, p_data date, p_valor numeric, p_descricao text, p_forma_pagamento text, p_conta_pagamento text, p_idempotency_key text"
+    },
+    {
+      "proname": "f_gerar_lote_pagamentos",
+      "args": "p_ids uuid[]"
+    }
+  ],
+  "pp": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador_nome",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "periodo_inicio",
+      "data_type": "date",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "periodo_fim",
+      "data_type": "date",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "quantidade_os",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_servicos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_reembolsos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_bonus",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_descontos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_adiantamentos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_liquido",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "qtd_os",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "pedagio",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "reembolsos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "adicionais",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "descontos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "adiantamentos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "multas",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "ajustes",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_conferencia",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_aprovacao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "origem_lancamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "categoria_financeira",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "centro_custo",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "conta_contabil",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "competencia",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_prevista_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "elegivel_lote",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "lote_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impacto_dre",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impacto_fluxo_caixa",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observacao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_numero",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_lancamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "natureza",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_competencia",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "is_teste",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "classificacao_dado",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fechamento_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_conferencia",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_aprovacao",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    }
+  ],
+  "fp": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "cliente_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "descricao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "vencimento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_nome",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_vencimento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_emissao",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "categoria",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observacoes",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_vinculada",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_bruto",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_liquido",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "desconto",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "juros",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "multa",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impostos_retidos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_previsao_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "conta_pagadora",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "codigo_barras",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "chave_pix",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "recorrente",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "quantidade_parcelas",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "parcela_atual",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "competencia",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "plano_contas",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "centro_resultado",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "unidade_filial",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "despesa_fixa_base",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_efetiva_pgto",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "is_teste",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "fornecedor_cadastro_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    }
+  ]
+}

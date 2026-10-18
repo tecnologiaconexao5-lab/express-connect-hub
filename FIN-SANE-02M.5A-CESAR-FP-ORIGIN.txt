@@ -1,0 +1,399 @@
+=========================================================================
+FIN-SANE-02M.5A-CESAR-FP-ORIGIN
+Origem do FP 9f2be89f com R$520,00
+=========================================================================
+Data: 2026-09-19
+Modelo: MiMo-V2.5
+Ambiente: TMS LOCAL + Supabase PRODUCAO
+Modo: SOMENTE LEITURA (ZERO WRITES CONFIRMADO)
+
+
+=========================================================================
+1. EVIDENCIA DOCUMENTAL — Fórmula do trigger em TODAS as versoes
+=========================================================================
+
+FATO COMPROVADO: Todas as versoes do trigger
+f_trg_propagar_financeiro_alocacao usam v_valor_prestador
+(= valor_repasse = 520) para INSERT em financeiro_pagar.
+Todas usam v_valor_liquido (= 652.86) para INSERT em
+pagamentos_prestadores. Isso e por DESIGN do trigger.
+
+---
+M66 (2026-07-04) — migration mais antiga com trigger
+Arquivo: supabase/migrations/20260704000001_m66_fix_propagacao_financeira.sql
+Linhas 170-176 — FP INSERT:
+  INSERT INTO financeiro_pagar
+    (os_id, descricao, valor, ...)
+  VALUES
+    (v_os_id::TEXT, ..., NEW.valor_repasse, ...)
+  -- ^^^ direto da alocacao = 520
+Linhas 200-212 — PP INSERT:
+  INSERT INTO pagamentos_prestadores
+    (..., valor_liquido, valor_servicos, ...)
+  VALUES
+    (..., v_valor_liquido, COALESCE(NEW.valor_repasse, 0), ...)
+  -- ^^^ v_valor_liquido = repasse + pedagio + adicional = 652.86
+
+---
+M108F (2026-07-11) — adiciona reversa
+Arquivo: supabase/migrations/20260711000002_m108f_logistica_reversa_enterprise.sql
+Linhas 207-211 — FP INSERT:
+  INSERT INTO financeiro_pagar
+    (os_id, descricao, valor, ...)
+  VALUES
+    (v_os_id::TEXT, ..., v_valor_prestador, ...)
+Linhas 227-229 — PP INSERT:
+  INSERT INTO pagamentos_prestadores
+    (..., valor_liquido, valor_servicos, ...)
+  VALUES
+    (..., v_valor_liquido, v_valor_prestador, ...)
+
+---
+P0 CORRIGIDA (2026-07-31) — header confirma M108F como trigger ativa
+Arquivo: supabase/migrations/20260731000001_p0_propagacao_financeira_trigger.sql
+Linhas 1-15 (header):
+  "A trigger ATIVA em producao e a M108F (20260711_m108f_logistica_reversa)."
+  "Este arquivo foi CORRIGIDO para refletir o mesmo padrao M108F/M104A."
+Linhas 228-230 — FP INSERT:
+  VALUES (..., v_valor_prestador, ...)
+Linhas 264-265 — PP INSERT:
+  VALUES (..., v_valor_liquido, v_valor_prestador, ...)
+
+---
+A31-J111 (2026-08-19) — adiciona desconto_prestador
+Arquivo: supabase/migrations/20260819000000_a31j111_desconto_prestador.sql
+Comentario linha 2: "APLICADO 2026-08-19T14:21:28.943Z"
+Linhas 78-79 — FP INSERT:
+  INSERT INTO financeiro_pagar
+    (os_id, descricao, valor, ..., desconto)
+  VALUES
+    (v_os_id::TEXT, ..., v_valor_prestador, ..., v_desconto_valor)
+Linhas 87-88 — PP INSERT:
+  INSERT INTO pagamentos_prestadores
+    (..., valor_liquido, valor_servicos, ...)
+  VALUES
+    (..., v_valor_liquido, v_valor_prestador, ...)
+
+---
+Snapshot LIVE antes de A31-J111 (recuperado do banco remoto)
+Arquivo: scripts/_live_trg_before_a31j111.sql
+Linhas 70-71 — FP INSERT:
+  INSERT INTO financeiro_pagar
+    (os_id, descricao, valor, ..., fornecedor_nome)
+  VALUES
+    (v_os_id::TEXT, ..., v_valor_prestador, ..., v_prestador_nome)
+Linhas 78-79 — PP INSERT:
+  INSERT INTO pagamentos_prestadores
+    (..., valor_liquido, valor_servicos, ...)
+  VALUES
+    (..., v_valor_liquido, v_valor_prestador, ...)
+
+CONCLUSAO DOCUMENTAL:
+  FP INSERT = v_valor_prestador (520) em TODAS as 5 versoes.
+  PP INSERT = v_valor_liquido (652.86) em TODAS as 5 versoes.
+  Esta e a causa raiz documentada do FP = 520 vs PP = 652.86.
+
+
+=========================================================================
+2. EVIDENCIA DO BANCO — trigger vigente em 2026-08-17
+=========================================================================
+
+FATO COMPROVADO: Snapshot do trigger remoto recuperado ANTES da
+migration A31-J111 (2026-08-19) confirma o padrao v_valor_prestador.
+
+Arquivo: scripts/_live_trg_before_a31j111.sql
+  Linha 71: VALUES (..., v_valor_prestador, ...)
+  Linha 72: ON CONFLICT (os_id) DO UPDATE SET valor = v_valor_prestador
+  Linha 79: VALUES (..., v_valor_liquido, v_valor_prestador, ...)
+
+O header de P0 (2026-07-31) afirma:
+  "A trigger ATIVA em producao e a M108F (20260711_m108f_logistica_reversa)."
+M108F foi aplicada em 2026-07-11. A31-J111 foi aplicada em 2026-08-19.
+Portanto em 2026-08-17 a trigger ativa era M108F.
+M108F usa v_valor_prestador para FP e v_valor_liquido para PP.
+
+Linha do tempo:
+  2026-07-04  M66 aplicada — trigger criada com v_valor_prestador no FP
+  2026-07-11  M108F aplicada — trigger atualizada, mesmo padrao FP
+  2026-07-31  P0 registrada — header confirma M108F como ativa
+  2026-08-17  Alocacao 58e5751e criada — FP 9f2be89f = 520 criado
+  2026-08-19  A31-J111 aplicada — mesmo padrao FP
+
+Snapshot live antes de A31-J111 = evidencia direta do trigger
+que estava executando em 2026-08-17.
+
+COMPARACAO TRIGGER HISTORICO vs ATUAL:
+
+                       HISTORICO (M108F/Antes A31-J111)   ATUAL (A31-J111)
+  FP INSERT valor:     v_valor_prestador (520)            v_valor_prestador (520)
+  FP ON CONFLICT:      valor = v_valor_prestador          valor = v_valor_prestador
+  PP INSERT valor_liquid: v_valor_liquido (652.86)         v_valor_liquido (652.86)
+  PP ON CONFLICT:      valor_liquido = v_valor_liquido    valor_liquido = v_valor_liquido
+  Desconto col:        valor_desconto (M66/M108F)         valor_desconto_prestador (A31-J111)
+  Erro handler:        EXCEPTION WHEN OTHERS THEN NULL   EXCEPTION WHEN OTHERS THEN WARNING
+
+CONCLUSAO: O padrao FP=520 / PP=652.86 e IDENTICO em todas as versoes.
+Nao houve alteracao relevante entre M108F e A31-J111 para este caso.
+A unica diferenca e o nome da coluna de desconto e o handler de erro.
+
+
+=========================================================================
+3. ANALISE DO TIMESTAMP +3h
+=========================================================================
+
+DADOS DO BANCO (verificados via pg client):
+  Alocacao 58e5751e created_at:     2026-08-17T15:57:32.153Z
+  Alocacao 58e5751e updated_at:     2026-08-17T15:57:32.153Z
+  Alocacao 58e5751e data_finalizacao: 2026-08-17T15:57:31.372Z
+  PP 7461daf6 created_at:           2026-08-17T15:57:32.153Z
+  PP 7461daf6 updated_at:           2026-08-17T15:57:32.153Z
+  FP 9f2be89f created_at:           2026-08-17T18:57:32.153Z
+  FP 9f2be89f updated_at:           2026-08-17T18:57:32.153Z
+  DB timezone:                       UTC
+
+OBSERVACOES:
+  - Alocacao e PP tem timestamp IDENTICO: 15:57:32.153Z
+  - FP tem timestamp EXATAMENTE +3h: 18:57:32.153Z
+  - Milissegundos identicos (.153) em todos os 3 registros
+  - PP.updated_at = PP.created_at (nunca atualizado apos criacao)
+  - FP.updated_at = FP.created_at (nunca atualizado apos criacao)
+  - Alocacao.updated_at = created_at (sem UPDATE apos criacao)
+  - historico_alocacoes_escala: 0 registros
+  - ordens_servico: 0 registros (OS nunca foi criada)
+
+ANALISE:
+  Se o trigger fosse responsavel por AMBOS PP e FP na mesma
+  transacao, ambos teriam o mesmo timestamp. Mas PP=15:57 e
+  FP=18:57. Os tres cenarios possiveis:
+
+  CENARIO A: Timezone/conversao de horario
+    O timestamp UTC e identico em todos os campos do banco.
+    Nao ha evidencia de conversao de timezone entre PP e FP.
+    Ambos sao armazenados como timestamptz em UTC.
+    CLASSIFICACAO: DESCARTADO como causa unica.
+    Justificativa: se fosse timezone, PP e FP teriam offset
+    diferente, nao identico +3h exato.
+
+  CENARIO B: Duas execucoes reais do trigger separadas por 3h
+    O trigger dispara em INSERT e UPDATE de colunas especificas.
+    A alocacao foi criada com status=concluida+finalizada=true,
+    entao o trigger disparou no INSERT (criando PP e FR).
+    Um UPDATE 3h depois em colunas do trigger poderia ter
+    re-disparado, mas ON CONFLICT atualizaria registros existentes.
+    PROBLEMA: alocacao.updated_at = created_at (sem UPDATE registrado).
+    PROBLEMA: FP.updated_at = FP.created_at (sem update pos-criacao).
+    CLASSIFICACAO: INCONCLUSIVO.
+    Justificativa: nao ha registro de UPDATE na alocacao, mas o
+    trigger poderia ter sido chamado por outro caminho (ex: via OS).
+
+  CENARIO C: FP criado por mechanismo diferente (nao trigger)
+    O unico codigo TS que cria FP e o trigger (via INSERT em
+    alocacoes_escala). Nenhum service TS insere em financeiro_pagar
+    diretamente em producao (scripts de teste excluidos).
+    Porem a OS nunca foi criada (tabela vazia), entao
+    f_trg_propagar_financeiro_os NAO executou.
+    CLASSIFICACAO: INCONCLUSIVO.
+
+CONCLUSAO +3h:
+  A diferenca de +3h entre PP e FP e INCONCLUSIVA com as
+  evidencias disponiveis. O milissegundo identico (.153) e
+  suspeito — pode indicar que ambos foram gerados pelo mesmo
+  NOW() mas em contextos diferentes, OU pode ser coincidencia.
+  NAO e possivel determinar com certeza se houve uma ou duas
+  execucoes do trigger sem log de auditoria ou trigger de banco.
+
+  O que NAO muda a conclusao da missao:
+  independentemente de +3h, o trigger e o unico mecanismo
+  comprovado que cria FP, e ele usa v_valor_prestador = 520.
+
+
+=========================================================================
+4. METADADOS / AUDITORIA / CRIADOR DO FP
+=========================================================================
+
+Tabelas de auditoria verificadas (SOMENTE LEITURA):
+  historico_alocacoes_escala: 0 registros para 58e5751e
+  FP.created_at = FP.updated_at (nunca atualizado)
+  PP.created_at = PP.updated_at (nunca atualizado)
+  Nao ha coluna usuario_id ou created_by em financeiro_pagar.
+  Nao ha tabela de audit_logs associada a financeiro_pagar.
+  Nao ha trigger de auditoria AFTER INSERT em financeiro_pagar.
+
+RESULTADO: Nao e possivel identificar o criador do FP
+atraves de metadados disponiveis no banco.
+
+
+=========================================================================
+5. HISTORICO GIT
+=========================================================================
+
+git log --oneline --all -30: 30 commits mapeados
+git log --since=2026-08-15 --until=2026-08-19: SEM COMMITS
+
+Nenhum commit entre 2026-08-15 e 2026-08-19.
+O commit mais proximo antes e "fec252d Atualizacoes TMS 02-06".
+O commit mais proximo depois e "148b67f missao 133-D.2".
+
+CONCLUSAO: Nao ha evidencia de alteracao de codigo entre
+15/ago e 19/ago que tenha modificado o trigger. A migration
+A31-J111 (2026-08-19) foi a primeira alteracao apos o FP.
+
+
+=========================================================================
+6. CODIGO TS — OUTROS CAMINHOS DE CRIACAO DE FP
+=========================================================================
+
+Pesquisa: INSERT em financeiro_pagar via TypeScript
+
+Resultados:
+  scripts/auditoria-financeiro-final.ts:96 — script de auditoria
+  scripts/missao48_homologacao_operacional.ts:633 — teste
+  scripts/teste-finalizacao-os.ts:128 — teste
+
+Nenhum service TS de producao insere em financeiro_pagar.
+centralFinanceiroService.ts:764 — INSERT em alocacoes_escala
+  (o trigger e responsavel por criar FP/PP/FR/comp).
+ordemServicoService.ts — sincronizarFinanceiroOS = no-op (M80).
+
+CONCLUSAO: O trigger f_trg_propagar_financeiro_alocacao
+e o UNICO mecanismo comprovado de criacao de FP em producao.
+f_trg_propagar_financeiro_os NAO executou (OS nunca criada).
+
+
+=========================================================================
+7. FATOS / HIPOTESES / DESCARTADOS
+=========================================================================
+
+FATO COMPROVADO:
+  1. O trigger f_trg_propagar_financeiro_alocacao (todas versoes)
+     usa v_valor_prestador para FP INSERT. Fonte: 5 migrations
+     + 1 snapshot live. Arquivos citados na Secao 1.
+  2. v_valor_prestador = COALESCE(NEW.valor_repasse, 0) = 520.
+  3. v_valor_liquido = v_valor_prestador + pedagio + outros_custos
+     = 520 + 66.43 + 66.43 = 652.86. PP recebe este valor.
+  4. O trigger era o mecanismo ativo em 2026-08-17 (M108F).
+  5. f_trg_propagar_financeiro_os NAO executou (OS = vazio).
+  6. Nenhum service TS insere em financeiro_pagar em producao.
+  7. Git: nenhum commit entre 15/ago e 19/ago.
+  8. FP nunca foi atualizado (created = updated).
+
+HIPOTESE — NAO COMPROVADA:
+  O +3h entre PP e FP representa duas execucoes separadas.
+  Justificativa: alocacao.updated_at = created_at (sem UPDATE),
+  mas poderia existir mecanismo externo nao rastreado.
+  Status: INCONCLUSIVO.
+
+DESCARTADO:
+  1. Timezone como causa do +3h — ambos sao UTC, milissegundo
+     identico. Se fosse conversao, haveria offset diferente.
+  2. TS service como criador do FP — nenhum INSERT em FP via TS.
+  3. f_trg_propagar_financeiro_os como criador — OS nao existe.
+  4. Bug pontual — todas as versoes do trigger usam mesma formula.
+  5. Migration A31-J111 como causa — FP criado 2 dias ANTES.
+
+
+=========================================================================
+8. FP_ORIGIN
+=========================================================================
+
+FP_ORIGIN = f_trg_propagar_financeiro_alocacao (trigger)
+
+Mecanismo especifico:
+  INSERT INTO financeiro_pagar (..., valor, ...)
+  VALUES (..., v_valor_prestador, ...)
+  ON CONFLICT (os_id) DO UPDATE SET valor = v_valor_prestador
+
+Onde v_valor_prestador := COALESCE(NEW.valor_repasse, 0) = 520.
+
+Por que produziu R$520:
+  O trigger designa v_valor_prestador = valor_repasse (520)
+  como o valor do titulo a pagar. Pedagio (66.43) e adicional
+  (66.43) NAO sao incluidos no FP. Sao incluidos APENAS no PP
+  (via v_valor_liquido). Esta e a definicao intencional do
+  trigger desde a M66 (2026-07-04).
+
+Por que PP ficou em R$652,86:
+  PP usa v_valor_liquido = v_valor_prestador + pedagio +
+  v_outros_custos = 520 + 66.43 + 66.43 = 652.86.
+  PP e a tabela de conferencia/pagamento com valor completo.
+  FP e o titulo bancario com valor base do repasse.
+
+
+=========================================================================
+9. PASS ou BLOCKED
+=========================================================================
+
+PASS
+
+Justificativa:
+  Ha evidencia objetiva suficiente para afirmar que o FP foi
+  criado pelo trigger f_trg_propagar_financeiro_alocacao com
+  a formula v_valor_prestador (=valor_repasse=520).
+
+Evidencia:
+  - 5 migrations com o trecho exato do INSERT (Secao 1)
+  - Snapshot live do trigger antes de A31-J111 (Secao 1)
+  - Header de P0 confirma M108F como trigger ativa (Secao 1)
+  - Verificacao TS: nenhum outro caminho cria FP (Secao 6)
+  - OS vazia: f_trg_propagar_financeiro_os nao executou (Secao 6)
+  - Git: sem commits entre 15-19/ago (Secao 5)
+  - Banco: FP nunca atualizado, sem auditoria (Secao 4)
+
+ Lacuna restante:
+  O timestamp +3h entre PP e FP e INCONCLUSIVO.
+  Nao e possivel determinar se houve uma ou duas execucoes
+  do trigger. Nao afeta a identificacao do mecanismo.
+
+
+=========================================================================
+10. ARQUIVOS PESQUISADOS
+=========================================================================
+
+Migrations SQL:
+  supabase/migrations/20260704000001_m66_fix_propagacao_financeira.sql
+  supabase/migrations/20260711000002_m108f_logistica_reversa_enterprise.sql
+  supabase/migrations/20260731000001_p0_propagacao_financeira_trigger.sql
+  supabase/migrations/20260819000000_a31j111_desconto_prestador.sql
+  supabase/migrations/20260705000003_m80_remocao_duplicidade_financeira.sql
+  supabase/migrations/20260705000004_m80b_fix_trigger_columns.sql
+  supabase/migrations/20260706000001_m103a_fix_alocacao_trigger_columns.sql
+  supabase/migrations/20260707000001_m104a_correcao_propagacao_financeira_m66.sql
+  supabase/migrations/20260802000000_m07_rls_final_cleanup.sql
+  supabase/migrations/20260801000005_m06_rls_remaining_tables.sql
+  supabase/migrations/20260907000003_fin_master_363b1_bloqueio_pagar_pago_sem_baixa.sql
+  supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  supabase/migrations/20260913000001_fin_sane_02b_rollback.sql
+
+Triggers/Functions:
+  scripts/_fin_sane_02e_source_f_trg_propagar_financeiro_alocacao.sql
+  scripts/_fin_sane_02e_source_f_trg_propagar_financeiro_os.sql
+  scripts/_live_trg_before_a31j111.sql
+
+TypeScript (INSERT em financeiro_pagar):
+  scripts/auditoria-financeiro-final.ts:96 (script teste)
+  scripts/missao48_homologacao_operacional.ts:633 (script teste)
+  scripts/teste-finalizacao-os.ts:128 (script teste)
+  src/services/financeiro/centralFinanceiroService.ts:764 (insert alocacao, nao FP)
+
+Verificacao LIVE:
+  scripts/_temp_02m5a_verify.cjs — pp/FP/alocacao timestamps,
+    trigger source, unique constraints, historico, OS
+
+Git:
+  git log --oneline --all -30
+  git log --since=2026-08-15 --until=2026-08-19 (0 commits)
+
+
+=========================================================================
+PRODUCAO: ZERO WRITES
+=========================================================================
+Confirmado: nenhuma alteracao foi feita em Producao.
+Todos os dados acima sao SOMENTE LEITURA via pg client.
+
+=========================================================================
+ARQUIVO GERADO
+=========================================================================
+Caminho: FIN-SANE-02M.5A-CESAR-FP-ORIGIN.txt
+Modelo: MiMo-V2.5
+Status: PASS — FP_ORIGIN identificado
+Proibicao: NAO iniciar 02M.6 — PARAR IMEDIATAMENTE

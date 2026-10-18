@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "@/services/ia/proxyIaClient";
 
 export interface Candidato {
   id: string;
@@ -43,103 +44,49 @@ export interface SugestaoReserva {
 }
 
 const callClaudeAPI = async (system: string, userMessage: string): Promise<string> => {
-  const apiKey = localStorage.getItem("anthropic_api_key");
-  if (!apiKey) {
+  const prompt = `${system}\n\n${userMessage}`;
+  const resultado = await proxyIaClient.executar({
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    prompt,
+    max_tokens: 1024,
+  });
+
+  if (!resultado.sucesso) {
+    console.warn("proxy-ia indisponível:", resultado.erro);
     return `MOCK: ${userMessage.substring(0, 50)}...`;
   }
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
-        system,
-        messages: [{ role: "user", content: userMessage }]
-      })
-    });
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (err) {
-    console.error("Erro na API:", err);
-    throw err;
-  }
+  return resultado.resposta;
 };
 
-export async function calcularScorePerfil(candidato: Partial<Candidato>, demandaRegional?: any): Promise<number> {
-  let score = 0;
-  
-  if (candidato.tipo_veiculo && demandaRegional?.tiposNecessarios?.includes(candidato.tipo_veiculo)) {
-    score += 30;
-  } else if (candidato.tipo_veiculo) {
-    score += 15;
-  }
-  
-  if (candidato.regiao && demandaRegional?.regioesAtivas?.includes(candidato.regiao)) {
-    score += 25;
-  } else if (candidato.regiao) {
-    score += 10;
-  }
-  
-  if (candidato.experiencia_anos) {
-    if (candidato.experiencia_anos >= 5) score += 20;
-    else if (candidato.experiencia_anos >= 3) score += 15;
-    else if (candidato.experiencia_anos >= 1) score += 10;
-    else score += 5;
-  }
-  
-  score += Math.min((candidato.experiencia_anos || 0) * 2, 15);
-  
-  return Math.min(Math.round(score), 100);
+export async function calcularScorePerfil(candidato: Partial<Candidato>): Promise<number> {
+  return candidato.score_perfil || 50;
 }
 
 export async function analisarPerfilCandidato(
   candidato: Partial<Candidato>,
-  dadosDemanda?: any
 ): Promise<AnalisePerfilResult> {
   const verificacoes: Record<string, boolean> = {};
-  
+
   if (candidato.cpf) {
     verificacoes.cpf_valido = validarCPF(candidato.cpf);
   } else {
     verificacoes.cpf_valido = false;
   }
-  
+
   if (candidato.placa) {
     verificacoes.placa_valida = true;
   } else {
     verificacoes.placa_valida = false;
   }
-  
-  if (candidato.regiao && dadosDemanda?.regioesAtivas?.includes(candidato.regiao)) {
-    verificacoes.regiao_com_demanda = true;
-  } else {
-    verificacoes.regiao_com_demanda = false;
-  }
-  
-  if (candidato.tipo_veiculo && dadosDemanda?.tiposNecessarios?.includes(candidato.tipo_veiculo)) {
-    verificacoes.veiculo_necessario = true;
-  } else {
-    verificacoes.veiculo_necessario = false;
-  }
 
-  const score = await calcularScorePerfil(candidato, dadosDemanda);
-  
-  let recomendacao: "aprovar" | "revisar" | "rejeitar" = "revisar";
-  if (score >= 75 && verificacoes.cpf_valido && verificacoes.regiao_com_demanda) {
-    recomendacao = "aprovar";
-  } else if (score < 40 || !verificacoes.cpf_valido) {
-    recomendacao = "rejeitar";
-  }
+  const score = candidato.score_perfil || 50;
+
+  const recomendacao: "aprovar" | "revisar" | "rejeitar" = "revisar";
 
   const analise = `${candidato.nome_completo} possui ${candidato.tipo_veiculo || "veículo não informado"} na região ${candidato.regiao || "não informada"}. ` +
-    `Score: ${score}/100. Recomendação: ${recomendacao.toUpperCase()}.`;
+    `Análise automatizada concluída. Encaminhando para avaliação humana.`;
 
   return {
     success: true,
@@ -157,7 +104,7 @@ function validarCPF(cpf: string): boolean {
   const clean = cpf.replace(/\D/g, "");
   if (clean.length !== 11) return false;
   if (/^(\d)\1{10}$/.test(clean)) return false;
-  
+
   let sum = 0;
   for (let i = 0; i < 9; i++) {
     sum += parseInt(clean[i]) * (10 - i);
@@ -165,32 +112,24 @@ function validarCPF(cpf: string): boolean {
   let digit1 = 11 - (sum % 11);
   if (digit1 > 9) digit1 = 0;
   if (parseInt(clean[9]) !== digit1) return false;
-  
+
   sum = 0;
   for (let i = 0; i < 10; i++) {
     sum += parseInt(clean[i]) * (11 - i);
   }
   let digit2 = 11 - (sum % 11);
   if (digit2 > 9) digit2 = 0;
-  
+
   return parseInt(clean[10]) === digit2;
 }
 
 function gerarAcoesSugeridas(recomendacao: string, verificacoes: Record<string, boolean>): string[] {
   const acoes: string[] = [];
-  
-  if (recomendacao === "aprovar") {
-    acoes.push("Aprovar para documentação");
-    acoes.push("Enviar link do aplicativo");
-  } else if (recomendacao === "revisar") {
-    if (!verificacoes.cpf_valido) acoes.push("Solicitar CPF válido");
-    if (!verificacoes.placa_valida) acoes.push("Confirmar placa do veículo");
-    acoes.push("Verificar disponibilidade regional");
-  } else {
-    acoes.push("Reprovar candidato");
-    acoes.push("Enviar mensagem educada");
-  }
-  
+
+  if (!verificacoes.cpf_valido) acoes.push("Solicitar CPF válido");
+  if (!verificacoes.placa_valida) acoes.push("Confirmar placa do veículo");
+  acoes.push("Encaminhar para análise humana via Central IA");
+
   return acoes;
 }
 
@@ -201,36 +140,30 @@ export async function buscarReservasParaOperacao(
 ): Promise<SugestaoReserva[]> {
   try {
     const { data: candidatos, error } = await supabase
-      .from("candidatos")
-      .select("*")
-      .or(`status.eq.aprovado,status.eq.interessado,status.eq.inativo`)
-      .order("score_perfil", { ascending: false })
+      .from("recrutamento_candidatos")
+      .select("*, nome as nome_completo, veiculo as tipo_veiculo, stage as status, score as score_perfil")
+      .or(`stage.eq.aprovado,stage.eq.interesse_confirmado,stage.eq.bloqueado`)
+      .order("score", { ascending: false })
       .limit(20);
 
     if (error) throw error;
 
     const sugestoes: SugestaoReserva[] = [];
-    
+
+    const mapStageToStatus = (stage: string): "aprovado" | "interessado" | "inativo" => {
+      if (stage === "aprovado" || stage === "ativo") return "aprovado";
+      if (stage === "interesse_confirmado" || stage === "pre_triagem") return "interessado";
+      return "inativo";
+    };
+
     (candidatos || []).forEach(c => {
-      let score = 0;
-      
-      if (c.tipo_veiculo === tipoVeiculo) score += 50;
-      else if (c.tipo_veiculo) score += 20;
-      
-      if (c.regiao === regiao) score += 35;
-      else if (c.regiao) score += 15;
-      
-      if (c.status === "aprovado") score += 15;
-      else if (c.status === "interessado") score += 10;
-      
-      if (score >= 50) {
-        sugestoes.push({
-          candidato: c as Candidato,
-          score_adequacao: score,
-          motivo: `${c.tipo_veiculo === tipoVeiculo ? "Veículo compatível" : "Veículo similar"} na região ${c.regiao === regiao ? "exata" : "proxima"}`,
-          status: c.status as "aprovado" | "interessado" | "inativo"
-        });
-      }
+      const statusMapeado = mapStageToStatus(c.status || "");
+      sugestoes.push({
+        candidato: c as Candidato,
+        score_adequacao: c.score_perfil || 0,
+        motivo: `Candidato disponível para operação. Score base: ${c.score_perfil || 0}. Consultar Central IA para recomendação detalhada.`,
+        status: statusMapeado
+      });
     });
 
     return sugestoes
@@ -248,12 +181,15 @@ export async function identificarCandidatosEsquecidos(): Promise<{
   inativos_sem_operacao: Candidato[];
 }> {
   const hoje = new Date();
-  
+  const DIAS_INTERESSADO = 15;
+  const DIAS_APROVADO = 30;
+  const DIAS_INATIVO = 60;
+
   try {
     const { data: candidatos } = await supabase
-      .from("candidatos")
-      .select("*")
-      .or(`status.eq.interessado,status.eq.aprovado,status.eq.inativo`);
+      .from("recrutamento_candidatos")
+      .select("*, nome as nome_completo, veiculo as tipo_veiculo, stage as status, score as score_perfil")
+      .or(`stage.eq.interesse_confirmado,stage.eq.aprovado,stage.eq.bloqueado`);
 
     const interessados_sem_contato: Candidato[] = [];
     const aprovados_sem_ativar: Candidato[] = [];
@@ -263,11 +199,11 @@ export async function identificarCandidatosEsquecidos(): Promise<{
       const ultimaInteracao = c.ultima_interacao ? new Date(c.ultima_interacao) : new Date(c.created_at);
       const diasSemContato = Math.floor((hoje.getTime() - ultimaInteracao.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (c.status === "interessado" && diasSemContato > 15) {
+      if (c.status === "interesse_confirmado" && diasSemContato > DIAS_INTERESSADO) {
         interessados_sem_contato.push(c as Candidato);
-      } else if (c.status === "aprovado" && diasSemContato > 30) {
+      } else if (c.status === "aprovado" && diasSemContato > DIAS_APROVADO) {
         aprovados_sem_ativar.push(c as Candidato);
-      } else if (c.status === "inativo" && diasSemContato > 60) {
+      } else if (c.status === "bloqueado" && diasSemContato > DIAS_INATIVO) {
         inativos_sem_operacao.push(c as Candidato);
       }
     });
@@ -285,9 +221,9 @@ export async function gerarMensagemInteligente(
   dadosOperacao?: { tipoVeiculo?: string; regiao?: string; data?: string }
 ): Promise<string> {
   const systemPrompt = "Você é o assistente de recrutamento da Conexão Express. Seja amigável, profissional e direto.";
-  
+
   let userMessage = "";
-  
+
   switch (tipo) {
     case "interessado_sem_retorno":
       userMessage = `Gere uma mensagem para ${candidato.nome_completo}, candidato interessado há mais de 15 dias sem retorno. `
@@ -308,7 +244,7 @@ export async function gerarMensagemInteligente(
 
   try {
     const mensagem = await callClaudeAPI(systemPrompt, userMessage);
-    return mensagem.startsWith("MOCK") 
+    return mensagem.startsWith("MOCK")
       ? `Olá ${candidato.nome_completo.split(" ")[0]}! Ainda temos interesse no seu perfil. `
         + `Temos operações com ${candidato.tipo_veiculo || "seu veículo"} na região ${candidato.regiao || "sua região"}. `
         + "Complete seu cadastro para trabalharmos juntos!"
@@ -341,10 +277,10 @@ export async function atualizarStatusCandidato(
   observacoes?: string
 ) {
   const { error } = await supabase
-    .from("candidatos")
-    .update({ 
-      status, 
-      observacoes, 
+    .from("recrutamento_candidatos")
+    .update({
+      status,
+      observacoes,
       ultima_interacao: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
@@ -359,11 +295,12 @@ export async function moverCandidatoParaTriagem(candidatoId: string) {
 
 export async function aprovarParaDocumentacao(candidatoId: string) {
   await atualizarStatusCandidato(candidatoId, "documentacao", "Aprovado para envio de documentação");
-  
+
+  const { data: rcData } = await supabase.from("recrutamento_candidatos").select("tipo_veiculo, veiculo, regiao").eq("id", candidatoId).single();
   await supabase.from("reservas_banco").insert([{
     candidato_id: candidatoId,
-    tipo_veiculo: (await supabase.from("candidatos").select("tipo_veiculo").eq("id", candidatoId).single()).data?.tipo_veiculo,
-    regiao: (await supabase.from("candidatos").select("regiao").eq("id", candidatoId).single()).data?.regiao,
+    tipo_veiculo: rcData?.tipo_veiculo || rcData?.veiculo,
+    regiao: rcData?.regiao,
     status: "disponivel"
   }]);
 }
@@ -374,8 +311,8 @@ export async function reprovarCandidato(candidatoId: string, motivo: string) {
 
 export async function ativarPrestador(candidatoId: string): Promise<string> {
   const { data: candidato, error: fetchError } = await supabase
-    .from("candidatos")
-    .select("*")
+    .from("recrutamento_candidatos")
+    .select("*, nome as nome_completo, cpf, telefone, whatsapp, email, cidade, uf, regiao, tipo_veiculo, tipo_carroceria, placa, status, score as score_perfil, created_at")
     .eq("id", candidatoId)
     .single();
 
@@ -398,7 +335,7 @@ export async function ativarPrestador(candidatoId: string): Promise<string> {
 
   if (existente) {
     console.log(`[ativarPrestador] Candidato ${candidatoId} já existe como prestador ${existente.prestador.id}`);
-    await supabase.from("candidatos").update({
+    await supabase.from("recrutamento_candidatos").update({
       status: "ativo",
       prestador_id: existente.prestador.id,
       updated_at: new Date().toISOString()

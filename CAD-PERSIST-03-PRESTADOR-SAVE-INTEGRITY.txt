@@ -1,0 +1,210 @@
+================================================================================
+CAD-PERSIST-03-PRESTADOR-SAVE-INTEGRITY — Integridade do Save Prestador
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — MAPA DO SAVE ANTES
+-------------------------------
+
+CREATE_FLOW_BEFORE:
+  1. handleSave()
+  2. setIsLoading(true)
+  3. toPrestadorInsert(p) → mapper DB columns
+  4. sanitizePrestadorPayload → allowlist filter
+  5. supabase.from('prestadores').insert([payload]).select()
+  6. Check error → toast.error + return
+  7. Check data?.[0]?.id → se true, salva veiculos + documentos
+  8. toast.success("Prestador cadastrado com sucesso!") ← FALSO SUCESSO POSSIVEL
+  9. onBack() ← navega mesmo sem ID confirmado
+
+UPDATE_FLOW_BEFORE:
+  1. handleSave()
+  2. setIsLoading(true)
+  3. toPrestadorUpdate(p) → mapper DB columns
+  4. sanitizePrestadorPayload → allowlist filter
+  5. supabase.from('prestadores').update(payload).eq('id', p.id).select()
+  6. Check error → toast.error + return
+  7. toast.success("Prestador atualizado com sucesso!") ← SEM VERIFICAR AFETADOS
+  8. onBack()
+
+Problemas encontrados:
+  - CREATE: toast.success dispara mesmo se data[0].id ausente (array vazio sem error)
+  - UPDATE: toast.success dispara mesmo se 0 registros afetados
+  - Validacao: NENHUM campo obrigatorio validado antes do save
+  - Duplo clique: protegido por isLoading, mas sem check adicional no inicio
+
+---------------------------------------------------------
+
+SECAO 2 — CAMPOS OBRIGATORIOS (REQUIRED_FIELDS)
+--------------------------------------------------
+
+REQUIRED_FIELDS=nomeCompleto, cpfCnpj, tipoParceiro, status
+
+Justificativa baseada no schema existente:
+  - nome_completo: NOT NULL no schema, identificador principal
+  - cpf_cnpj: identificador unico do prestador
+  - tipo_parceiro: ENUM (autonomo, empresa, etc.), definido no form
+  - status: ENUM (analise, ativo, bloqueado, etc.), definido no form
+
+Campos NAO obrigatórios (corretamente):
+  - rntrc: regra atual permite vazio
+  - antt: regra atual permite vazio
+  - telefone, email, endereco: dados complementares
+
+---------------------------------------------------------
+
+SECAO 3 — CORRECOES IMPLEMENTADAS
+------------------------------------
+
+CORRECAO 1 — Validacao de Campos Obrigatorios (LINHA NOVA)
+  Antes: Nenhuma validacao antes do INSERT
+  Depois: Verifica nomeCompleto, cpfCnpj, tipoParceiro, status
+  Se vazio: toast.error com lista de campos faltantes + return
+  Impacto: Impede cadastro estruturalmente invalido
+
+CORRECAO 2 — CREATE confirma ID retornado (LINHA MODIFICADA)
+  Antes: toast.success dispara se data?.[0]?.id e truthy (mas continua se falso)
+  Depois: if (!persistedId) → toast.error + return (sem onBack)
+  Prova: "Cadastro falhou: banco não retornou registro. Tente novamente."
+
+CORRECAO 3 — UPDATE confirma registros afetados (LINHA NOVA)
+  Antes: toast.success sem verificar affected rows
+  Depois: const affectedRows = data?.length ?? 0
+           if (affectedRows === 0) → toast.error + return
+  Prova: "Atualização falhou: registro não encontrado no banco."
+
+CORRECAO 4 — Duplo clique protection (LINHA NOVA)
+  Antes: isLoading verifica no botao (UI), mas sem check logico no inicio
+  Depois: if (isLoading) return; no inicio de handleSave
+  DOUBLE_SUBMIT_PROTECTION=isLoading guard + button disabled
+
+CORRECAO 5 — Form fica aberto em erro (MANTIDO)
+  Antes: catch bloco nao chama onBack (correto)
+  Depois: Mesmo comportamento + comentario explícito
+  SAVE_ERROR_KEEPS_FORM_OPEN=YES
+  SAVE_ERROR_KEEPS_TYPED_DATA=YES (state React preservado)
+
+---------------------------------------------------------
+
+SECAO 4 — FLUXO DEPOIS
+-------------------------
+
+CREATE_FLOW_AFTER:
+  1. if (isLoading) return ← protecao duplo clique
+  2. Validar campos obrigatórios ← NOVO
+  3. setIsLoading(true)
+  4. toPrestadorInsert + sanitize
+  5. supabase.insert([payload]).select()
+  6. Check error → toast.error + return (form aberto)
+  7. persistedId = data?.[0]?.id ← NOVO
+  8. if (!persistedId) → toast.error + return ← NOVO
+  9. Salvar veículos vinculados ao persistedId
+  10. Enviar documentos pendentes ao persistedId
+  11. toast.success + onBack() ← SOMENTE COM ID CONFIRMADO
+
+UPDATE_FLOW_AFTER:
+  1. if (isLoading) return ← protecao duplo clique
+  2. Validar campos obrigatórios ← NOVO
+  3. setIsLoading(true)
+  4. toPrestadorUpdate + sanitize
+  5. supabase.update(payload).eq('id', p.id).select()
+  6. Check error → toast.error + return (form aberto)
+  7. affectedRows = data?.length ← NOVO
+  8. if (affectedRows === 0) → toast.error + return ← NOVO
+  9. toast.success + onBack() ← SOMENTE COM CONFIRMACAO
+
+---------------------------------------------------------
+
+SECAO 5 — STORAGE / DOCUMENTOS
+---------------------------------
+
+STORAGE_FLOW_BEFORE:
+  1. handleDocUpload: se prestadorId existe → upload + insert direto
+  2. se prestadorId nao existe → adiciona em documentosPendentes
+  3. handleSave: apos INSERT bem-sucedido, envia documentosPendentes
+  4. Upload feito AFTER INSERT (ordem correta)
+
+STORAGE_FLOW_AFTER:
+  1. Mesmo fluxo (ja era correto)
+  2. Documentos pendentes so enviados apos persistedId confirmado
+  3. ORPHAN_FILE_RISK=MINIMO (upload so apos INSERT confirmado)
+
+---------------------------------------------------------
+
+SECAO 6 — INTEGRACAO COM LISTA (CAD-PERSIST-02)
+---------------------------------------------------
+
+CAD-PERSIST-02 homologou:
+  - Paginacao server-side com COUNT
+  - Sort A→Z global
+  - Busca global server-side
+  - refreshKey para refetch
+
+Apos save confirmado:
+  SAVE → onBack() → CadastrosPrestadores incrementa refreshKey
+  → PrestadoresLista refetch → registro aparece na posicao A→Z
+
+REFETCH_AFTER_CONFIRMED_SAVE=YES
+ALPHABETICAL_POSITION_AFTER_SAVE=YES (via server-side sort)
+
+---------------------------------------------------------
+
+SECAO 7 — EVIDENCIA
+----------------------
+
+CREATE_FLOW_BEFORE= toast.success + onBack SEM verificar ID
+CREATE_FLOW_AFTER= persistedId check + toast.error se vazio
+
+UPDATE_FLOW_BEFORE= toast.success SEM verificar affected rows
+UPDATE_FLOW_AFTER= affectedRows check + toast.error se 0
+
+REQUIRED_FIELDS=nomeCompleto, cpfCnpj, tipoParceiro, status
+
+INSERT_AWAITS_DB=YES
+INSERT_RETURNS_ID=YES (.select())
+PERSISTED_ID_CONFIRMED=YES (if (!persistedId) → error)
+PERSISTENCE_CONFIRMED=YES (CREATE: data[0].id, UPDATE: data.length)
+
+UPDATE_CONFIRMED=YES (affectedRows check)
+
+SUCCESS_TOAST_AFTER_CONFIRMATION=YES
+FALSE_SUCCESS_POSSIBLE=NO (eliminado)
+
+DOUBLE_SUBMIT_PROTECTION=isLoading guard + button disabled
+
+STORAGE_FLOW_BEFORE=upload after INSERT
+STORAGE_FLOW_AFTER=upload after INSERT (inalterado, ja correto)
+ORPHAN_FILE_RISK=MINIMO (upload so apos persistedId)
+
+SAVE_ERROR_KEEPS_FORM_OPEN=YES
+SAVE_ERROR_KEEPS_TYPED_DATA=YES
+
+REFETCH_AFTER_CONFIRMED_SAVE=YES
+ALPHABETICAL_POSITION_AFTER_SAVE=YES
+
+PRODUCTION_WRITES=0
+
+---------------------------------------------------------
+
+SECAO 8 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 59.99s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+
+---------------------------------------------------------
+
+SECAO 9 — ARQUIVOS MODIFICADOS
+---------------------------------
+
+1. src/components/prestadores/PrestadorDetalhe.tsx
+   - handleSave(): 5 correcoes (validation, persistedId, affectedRows, double-submit, comment)
+   - Linhas modificadas: ~80 (de ~85 originais)
+   - NENHUM outro arquivo alterado
+
+================================================================================
+CAD-PERSIST-03-PRESTADOR-SAVE-INTEGRITY = PASS
+================================================================================

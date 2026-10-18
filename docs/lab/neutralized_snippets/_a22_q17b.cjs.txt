@@ -1,0 +1,15 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+﻿const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const aloc = 'ca5fe225-7114-42da-9997-c3d466e5df52';
+  const badge = await c.query("SELECT public.f_contar_mensagens_nao_lidas_torre($1::uuid) AS badge_torre", [aloc]);
+  console.log('BADGE TORRE:', JSON.stringify(badge.rows, null, 2));
+  const notif = await c.query("SELECT tipo, titulo, prestador_id, lida, origem_tipo, created_at FROM public.portal_notificacoes WHERE tipo = 'operacao_mensagem' AND prestador_id IS NOT NULL ORDER BY created_at DESC LIMIT 3");
+  console.log('NOTIFICACOES:', JSON.stringify(notif.rows, null, 2));
+  const rpc = await c.query("SELECT mensagem, status, lida, read_at, sender_type FROM public.operacao_mensagens WHERE alocacao_id = $1 AND sender_type='torre' ORDER BY created_at DESC LIMIT 1", [aloc]);
+  console.log('TORRE LATEST:', JSON.stringify(rpc.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

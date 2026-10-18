@@ -1,0 +1,28 @@
+# ============================================================================
+# MASSA-DE-DADOS-POG - Prova FISICA no app: a Programacao Operacional
+# PROG-HML-001 (status aguardando_aceite / TMS "pendente") cai na lista do
+# motorista em "Aguardando voce aceitar".
+#
+# Pre-condicao: app logado como PRESTADOR TESTE APP; am start ja executado
+# (a home do app esta em foreground).
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+- waitForAnimationToEnd
+
+# Pre-condicao: app na HOME (am start -S ja executado pelo orquestrador).
+# O app identifica a alocacao pelo id: ALOC-<yyyymmdd>-<8 primeiros do UUID>.
+- tapOn:
+    text: ".*Operações.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Operações.*"
+    timeout: 30000
+
+# A secao de pendentes e o primeiro grupo da tela
+- extendedWaitUntil:
+    visible: ".*ALOC-20261013-294AF4C6.*"
+    timeout: 60000
+- assertVisible: ".*Aguardando v.oc.* aceitar.*"
+- assertVisible: ".*ALOC-20261013-294AF4C6.*"
+- takeScreenshot: "pog_01_prog_hml_001_na_lista"

@@ -1,0 +1,47 @@
+F0-I — MARGEM POR OS (CORREÇÃO)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/services/financeiro/margemOsService.ts (NOVO — funções puras)
+   src/components/financeiro/MargemPorOS.tsx (reescrita da camada de dados;
+     fontes reais; novos KPIs/filtros/tabela)
+   src/test/f0i_margem_os.test.ts (NOVO — 6 validações)
+2. FONTE DE RECEITA (fonte ÚNICA por OS)
+   financeiro_receber vinculado por os_id OU os_vinculadas (contém o número) =
+   receita REAL (faturada). Sem vínculo de receber → ordens_servico.valor_cliente
+   = receita PREVISTA (identificada como tal). Nunca soma OS + Fatura + receber.
+   composicao_financeira_os NÃO é mais utilizada (relação com ordens_servico
+   quebrada e fonte inferior) — removida da tela.
+3. FONTE DE CUSTO
+   pagamentos_prestadores com impacto_dre = true, vinculado por os_id (UUID) OU
+   os_numero; valor usado = valor_liquido (já embute serviços, pedágio, reembolsos,
+   adicionais, descontos, adiantamentos, multas e ajustes).
+4. PEDÁGIO/REEMBOLSOS/ADICIONAIS
+   Já contidos no valor_liquido do pagamento do prestador — NUNCA somados de novo.
+   Outros custos só entram quando houver financeiro_pagar vinculado à OS por
+   os_id (excluindo repasses de prestador). Sem rateio de despesa administrativa.
+5. PREVENÇÃO DE DUPLICIDADE
+   Receita contada 1x por OS; custo prestador 1x (valor_liquido, não + componentes);
+   fatura/receber não duplicam; composicao_financeira_os abandonada como fonte.
+6. PREVISTA × REAL
+   Status da margem: 'real' (receita faturada/receber), 'prevista' (valor
+   operacional confirmado), 'pendente' (sem receita → margem % = 0, não inventada).
+7. FILTROS
+   Período (data da OS), Cliente, Prestador, Status da margem, Margem
+   (positiva/negativa), Status da OS, busca por OS/cliente/prestador. KPIs e
+   tabela usam o MESMO conjunto filtrado.
+8. FÓRMULAS
+   Margem R$ = Receita − Custo Prestador (valor_liquido) − Outros Custos
+   Margem %  = Margem / Receita × 100 (receita > 0)
+   Indicadores: Receita total, Custo total, Margem total, Margem média %,
+   OS com margem negativa, Quantidade de OS.
+9. RESULTADO DOS TESTES
+   npx vitest run f0i_margem_os.test.ts = 6/6 PASS
+   (600/450 → 150/25%; 1000/1100 → −100/−10%; custo sem dupla contagem;
+   fatura+receber não duplicam; prevista/pendente sem inventar margem real;
+   filtros alteram tabela e indicadores no mesmo dataset)
+   npx tsc --noEmit = 0 erros.
+10. PENDÊNCIAS
+    Vínculo por os_vinculadas é textual (receita) — validar em produção;
+    OS sem receber e sem valor_cliente ficam 'pendente'; composicao_financeira_os
+    permanece no banco (legada, sem FK), sem uso nesta tela.
+11. CONFIRMAÇÃO: BANCO NÃO ALTERADO (correção somente em código; sem migration/SQL).

@@ -1,0 +1,260 @@
+================================================================================
+EFI-INT-04A.1 — VIABILIDADE HML EFI SEM NOVO SUPABASE
+================================================================================
+MISSAO.......: EFI-INT-04A.1 — Auditoria de viabilidade do probe mTLS no Supabase atual
+AMBIENTE.....: TMS (express-connect-hub) + projeto Supabase ATUAL (producao)
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: SOMENTE LEITURA/AUDITORIA. Nenhum arquivo alterado, nenhum projeto
+              criado, nenhuma migration/banco/secret/deploy/certificado tocado.
+              Nenhuma RPC alterada. PRODUCAO NAO FOI MODIFICADA.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML [ATUAL: destravar transporte]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+CONCLUSAO OBRIGATORIA (DESTAQUE)
+================================================================================
+  SAFE_TO_DEPLOY_PROBE_ON_CURRENT_SUPABASE = YES  (CONDICIONAL / COM SALVAGUARDAS)
+
+  Justificativa curta: a funcao efi-mtls-probe e 100% externa — nao importa o
+  supabase-js, nao usa service_role, nao le/escreve tabelas, nao chama RPC, nao
+  usa Storage nem Auth de usuario. O deploy NAO altera banco, tabelas, Auth,
+  Storage nem Financeiro: cria apenas uma Edge Function isolada e protegida por
+  token, removivel depois. O condicional deve-se ao fato de o projeto atual ser
+  o de PRODUCAO (dados reais): exige autorizacao de deploy e as salvaguardas da
+  secao 6 antes de subir, e remocao apos a prova.
+
+================================================================================
+1. AUDITORIA DA FUNCAO efi-mtls-probe/index.ts
+================================================================================
+1.1 CONFIRMACAO POR INSPECAO (somente leitura)
+  - Imports: APENAS `import "jsr:@supabase/functions-js/edge-runtime.d.ts";`
+      => sem @supabase/supabase-js; sem createClient; sem driver de banco.
+  - Ambiente lido via Deno.env.get: EFI_PROBE_TOKEN, TMS_EDGE_INTERNAL_TOKEN,
+    EFI_ENVIRONMENT, EFI_API_BASE_URL_HML, EFI_CERTIFICATE_HML, EFI_PRIVATE_KEY_HML.
+  - APIs usadas: Deno.serve, Deno.version, Deno.createHttpClient, fetch,
+    atob, TextDecoder, AbortController (timeout 8s).
+  - NAO ha: db.query, supabase.from, .rpc, Storage, auth.getUser, service_role.
+
+1.2 RESPOSTA POR REQUISITO
+  - Executa SEM conexao com banco? ............ SIM
+  - Executa SEM service_role? ................. SIM (nao le nem usa a variavel)
+  - Executa SEM leitura/escrita em tabelas? ... SIM
+  - Executa SEM RPC? .......................... SIM
+  - Executa SEM Storage? ...................... SIM
+  - Executa SEM Auth de usuario? .............. SIM
+      (chamada esperada via `--no-verify-jwt` + token interno x-efi-probe-token;
+       nao depende de JWT de usuario nem de sessao)
+  - Executa SEM qualquer efeito financeiro? ... SIM (somente GET sem token)
+
+1.3 OBSERVACOES (nao bloqueiam; viram salvaguardas na secao 6)
+  - O probe NAO forca EFI_ENVIRONMENT === "homologacao" hoje (apenas reporta).
+  - O host e configuravel (EFI_API_BASE_URL_HML), com default HML correto
+    (https://pix-h.api.efipay.com.br); nao ha allowlist dura ainda.
+  - Ha um caminho de fallback GET `/<base>/v2/cob?inicio=&fim=` (listagem Pix,
+    READ-ONLY, sem token => esperado 401/403). Nenhuma escrita/transacao.
+
+================================================================================
+2. VIABILIDADE TECNICA: EDGE FUNCTION ISOLADA -> EFI HML
+================================================================================
+2.1 FLUXO SOLICITADO — VERIFICADO
+    [Supabase projeto ATUAL] -> Edge Function efi-mtls-probe
+        -> EFI_ENVIRONMENT=homologacao
+        -> https://pix-h.api.efipay.com.br (Efi HML)
+    SEM qualquer chamada ao Postgres do TMS.
+  - CONFIRMADO: viavel. A funcao nao possui dependencia de banco; o unico vinculo
+    com o Supabase e o proprio runtime de hospedagem da Edge Function.
+  - O mTLS e feito no servidor (Deno.createHttpClient com cert/key) e a resposta
+    e sanitizada (booleanos + status HTTP).
+
+2.2 HOSTS EfI (apenas referencia; sem credenciais)
+  - HOMOLOGACAO Pix:        https://pix-h.api.efipay.com.br
+  - HOMOLOGACAO Cobrancas:  https://cobrancas-h.api.efipay.com.br
+  - PRODUCAO (PROIBIDO agora): pix.api.efipay.com.br / cobrancas.api.efipay.com.br
+
+================================================================================
+3. MATRIZ DE SEGURANCA
+================================================================================
+A) ACOES 100% EXTERNAS AO BANCO DO TMS (permitidas no probe)
+   - Criar HttpClient mTLS (Deno.createHttpClient) com cert/key dos Secrets.
+   - fetch HTTPS para o host HML da Efi (handshake TLS; GET sem token).
+   - Ler variaveis de ambiente dos Secrets (sem persistir/imprimir valores).
+   - Retornar JSON sanitizado (runtime, booleanos, status HTTP, classe de erro).
+   - Registrar (se houver) apenas metadados nao sensiveis da invocacao.
+
+B) ACOES QUE PODERIAM ATINGIR O BANCO DO TMS (proibidas no probe)
+   - importar @supabase/supabase-js / createClient.
+   - Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ou SUPABASE_URL.
+   - supabase.from(...).select/insert/update/delete; .rpc(...).
+   - Acessar Storage, Auth, Realtime.
+   - Ler/escrever qualquer tabela financeira (financeiro_*, pagamentos_*, faturas).
+
+C) ACOES PROIBIDAS NESTA FASE
+   - Emitir boleto/cobranca; enviar Pix; pagar contas; registrar webhook.
+   - Autenticar OAuth com Client ID/Secret; coletar token da Efi.
+   - Aplicar migration/schema EFI; alterar RPC; alterar UI/frontend.
+   - Converter/manusear .p12; configurar secrets; criar outro Supabase.
+   - Tocar dados financeiros ou producao.
+
+  Observacao: a funcao ATUAL nao executa nada do item B. As salvaguardas da
+  secao 6 existem para impedir que uma edicao futura introduza B/C por engano.
+
+================================================================================
+4. HARD GUARDS — POSSIBILIDADE (NAO IMPLEMENTADO NESTA MISSAO)
+================================================================================
+4.1 GUARD DE AMBIENTE  (viavel e recomendado)
+   if ((Deno.env.get("EFI_ENVIRONMENT") || "") !== "homologacao") {
+       return 503 / abortar imediatamente;   // nunca prossegue fora de HML
+   }
+   - Viabilidade: TRIVIAL (verificacao de string no inicio do handler).
+
+4.2 ALLOWLIST DE HOSTNAME (viavel e recomendado)
+   const HOSTS_HML_OK = new Set([
+       "pix-h.api.efipay.com.br",
+       "cobrancas-h.api.efipay.com.br",
+   ]);
+   const host = new URL(Deno.env.get("EFI_API_BASE_URL_HML") || DEFAULT).hostname;
+   if (!HOSTS_HML_OK.has(host)) return 503 / abortar;
+   - Viabilidade: TRIVIAL. Impede chamada acidental a producao Efi mesmo com
+     variavel de ambiente mal configurada.
+
+4.3 OUTROS GUARDS RECOMENDADOS (viaveis)
+   - Proibir import de supabase-js (revisao de codigo / lint).
+   - Token interno obrigatorio (ja existe): sem token => 503; token errado => 401.
+   - Timeout curto (ja existe: 8s) + AbortController.
+   - Resposta sanitizada (ja existe): nunca retorna cert/key; erro por classe.
+   - Sem console.log de payload/segredos (manter).
+   - Method allowlist (GET/OPTIONS apenas) — opcional.
+
+  Status: NENHUM desses guards 4.1/4.2 foi implementado (missao proibe alterar
+  arquivos). Sao pre-requisitos OBRIGATORIOS antes de qualquer deploy futuro.
+
+================================================================================
+5. PROVA SEM CLIENT ID / SECRET
+================================================================================
+  - PERGUNTA: o probe roda sem Client ID/Secret apenas para provar
+    carregamento de cert/key + criacao de HTTP client + handshake TLS + resposta HTTP?
+  - RESPOSTA: SIM.
+      * O probe NAO usa EFI_CLIENT_ID_HML nem EFI_CLIENT_SECRET_HML.
+      * Com EFI_CERTIFICATE_HML + EFI_PRIVATE_KEY_HML presentes ele tenta o mTLS.
+      * Sem cert/key, retorna `cert_present:false`/`key_present:false` e
+        `tls_handshake:"NOT_RUN"` (falha informativa, sem erro).
+      * Uma resposta HTTP 401/403 da Efi e sucesso de TRANSPORTE:
+        TLS_HANDSHAKE = PASS e AUTH_API = NOT_TESTED (regra ja implementada).
+  - O OAuth (Client ID/Secret) fica para EFI-INT-04B, quando o transporte estiver
+    provado.
+
+================================================================================
+6. EFEITOS DE UM DEPLOY DA EDGE FUNCTION NO PROJETO SUPABASE ATUAL
+================================================================================
+  Respostas objetivas (o deploy em si, com o codigo atual):
+    - altera banco? ............. NAO
+    - altera tabelas? ........... NAO
+    - altera Auth? .............. NAO
+    - altera Storage? ........... NAO
+    - altera Financeiro? ........ NAO
+    - cria somente funcao isolada? SIM
+
+  Detalhamento:
+    - O deploy grava apenas o bundle/definicao da funcao no servico de Edge
+      Functions do projeto (metadados de deploy). NAO executa DDL/DML.
+    - Nao cria tabelas, nao registra migrations, nao altera supabase_migrations.
+    - Nao cria/gera segredo algum; usa os Secrets existentes apenas se invocada
+      e apenas os nomes que o codigo le (EFI_*).
+    - O runtime tem acesso ao ambiente do projeto (inclusive
+      SUPABASE_SERVICE_ROLE_KEY, se configurado), porem o codigo do probe NAO le
+      nem usa essa variavel. O risco residual e apenas de alteracao futura do codigo.
+    - Principal efeito colateral: passa a existir UM endpoint publico adicional
+      no projeto de producao (protegido por token interno). E um efeito de
+      superficie/exposicao, NAO de dados.
+
+  ALERTA DE GOVERNANCA: o projeto atual e de PRODUCAO. O deploy e data-safe,
+  porem adiciona uma funcao ao ambiente de producao. Exige AUTORIZACAO explicita
+  antes de subir e REMOCAO apos a prova.
+
+6.1 SALVAGUARDAS OBRIGATORIAS ANTES DO DEPLOY (checklist)
+   [ ] Autorizacao explicita para deploy no projeto de producao.
+   [ ] Implementar guard de ambiente (EFI_ENVIRONMENT === "homologacao").
+   [ ] Implementar allowlist de hostname HML (item 4.2).
+   [ ] Confirmar ausencia de supabase-js/service_role/DB no codigo (revisao).
+   [ ] EFI_PROBE_TOKEN configurado (token forte, HML) — a funcao recusa sem ele.
+   [ ] Deploy com `--no-verify-jwt` (acesso via token interno), ou manter JWT
+       se preferir dupla protecao; nunca expor sem token.
+   [ ] Timeout curto e resposta sanitizada (ja presentes) mantidos.
+   [ ] Registrar no relatorio de execucao o project-ref alvo = projeto ATUAL
+       (consciente de que e producao) e a data/hora da prova.
+   [ ] Plano de remocao imediata apos a prova (item 7).
+
+================================================================================
+7. REMOCAO COMPLETA APOS A PROVA
+================================================================================
+  - SIM, totalmente removivel: `supabase functions delete efi-mtls-probe
+    --project-ref <REF_ATUAL>`.
+  - O deploy nao deixa artefatos em banco/Auth/Storage; apos o delete, o endpoint
+    deixa de existir e nenhum vestigio funcional permanece.
+  - Ate que a prova ocorra, a funcao permanece no repo marcada como
+    TEMPORARIA/DIAGNOSTICO/HML e protegida por token (conforme EFI-INT-04A).
+
+================================================================================
+8. NAO SE CONSIDERA CRIAR OUTRO SUPABASE NESTA MISSAO
+================================================================================
+  - A conclusao acima demonstra que o teste de TRANSPORTE pode ser feito no
+    projeto ATUAL, sem novo Supabase (item 8 atendido).
+  - Alternativa (somente se a autorizacao de deploy em producao for NEGADA e
+    SEM criar outro Supabase): provar o mTLS fora do Supabase, executando um
+    script Deno/Node controlado na maquina do operador, com o cert/key nos
+    Secrets locais. Isso valida o transporte Efi HML (cert/key, handshake), mas
+    NAO valida o runtime HOSPEDADO do Supabase. Usar apenas como contorno.
+
+================================================================================
+9. RISCOS
+================================================================================
+  R1 [GOVERNANCA/ALTO] Deploy no projeto de PRODUCAO adiciona endpoint publico.
+     Mitigacao: autorizacao + token forte + guards 4.1/4.2 + remocao imediata.
+  R2 [MEDIO] Host configuravel poderia apontar para Efi PRODUCAO se mal
+     configurado. Mitigacao: allowlist de hostname (4.2).
+  R3 [MEDIO] Edicao futura do codigo poderia importar supabase-js/service_role.
+     Mitigacao: revisao obrigatoria + ausencia de import.
+  R4 [BAIXO] Fallback GET de listagem Pix. Mitigacao: e READ-ONLY e sem token;
+     pode ser substituido por caminho neutro/raiz.
+  R5 [CONTROLE] Nenhum secret/cert exposto; nenhuma alteracao de arquivo nesta
+     missao.
+
+================================================================================
+10. ARQUIVOS ALTERADOS / GIT STATUS
+================================================================================
+  - Arquivos alterados nesta missao: ZERO.
+  - Unico arquivo criado: EFI-INT-04A1-SAFE-PROBE-AUDIT.txt (este relatorio).
+  - git status --short -- EFI-INT-04A1-SAFE-PROBE-AUDIT.txt
+      ?? EFI-INT-04A1-SAFE-PROBE-AUDIT.txt
+  - (A funcao supabase/functions/efi-mtls-probe/ permanece exatamente como criada
+     na EFI-INT-04A; nao foi modificada.)
+
+================================================================================
+11. DECISAO / ENCAMINHAMENTO
+================================================================================
+  SAFE_TO_DEPLOY_PROBE_ON_CURRENT_SUPABASE = YES (CONDICIONAL).
+  Condicoes: (1) autorizacao de deploy no projeto atual (producao);
+             (2) implementar guards 4.1 e 4.2 antes do deploy;
+             (3) EFI_PROBE_TOKEN e cert/key HML nos Secrets;
+             (4) remocao imediata apos a prova.
+  Se qualquer condicao nao puder ser atendida => tratar como NO-GO para deploy em
+  producao e usar a alternativa da secao 8 (prova local, sem novo Supabase),
+  ciente de que ela nao valida o runtime hospedado.
+
+================================================================================
+12. DECLARACAO DE CONFORMIDADE
+================================================================================
+  [OK] Somente leitura/auditoria. [OK] Nenhum arquivo alterado.
+  [OK] Nenhum projeto criado. [OK] Producao nao modificada.
+  [OK] Nenhuma migration/banco/seed. [OK] Nenhum secret configurado/exibido.
+  [OK] Nenhum certificado convertido. [OK] Nenhum deploy. [OK] Nenhuma UI/RPC alterada.
+  [OK] Nenhum secret/certificado neste TXT.
+
+================================================================================
+FIM — EFI-INT-04A1-SAFE-PROBE-AUDIT.txt
+================================================================================

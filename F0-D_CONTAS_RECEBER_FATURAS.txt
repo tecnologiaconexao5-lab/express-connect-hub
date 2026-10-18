@@ -1,0 +1,152 @@
+═══════════════════════════════════════════════════════════════════════════════
+MISSÃO F0-D — Contas a Receber: somente fluxo financeiro oficial (Faturas)
+Data: 2026-08-18 | Projeto: TMS (Supabase Produção: uwrvzsjtpgaifkktpepn)
+Status: ✅ IMPLEMENTADO + VALIDADO (tsc 0 erros; 26/26 checks transacionais)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. OBJETIVO
+───────────────────────────────────────────────────────────────────────────────
+Corrigir a aba Contas a Receber para utilizar SOMENTE o fluxo financeiro oficial
+(Faturas FASE 2A) e eliminar os caminhos legados de geração de receita, sem quebrar
+Contas a Pagar (F0-C4) nem o contrato das RPCs.
+
+2. O QUE FOI FEITO — VISÃO GERAL
+───────────────────────────────────────────────────────────────────────────────
+  Partes 1, 2, 3, 4 e 5 concluídas:
+  (1) UI desativada/removida dos caminhos legados de receita;
+  (2) criarRecebivel/edições gravam somente colunas reais de financeiro_receber;
+  (3) f_registrar_baixa_financeira estendido p/ financeiro_receber;
+  (4) f_estornar_baixa_financeira estendido p/ financeiro_receber;
+  (5) cancelamento usa observacoes (sem coluna inexistente).
+
+3. ARQUIVOS ALTERADOS
+───────────────────────────────────────────────────────────────────────────────
+  - src/services/financeiro/receberService.ts  → Partes 2/3/5 (whitelist, RPC, observacoes)
+  - src/components/financeiro/ContasReceberEnterprise.tsx → Parte 1 (UI)
+  - supabase/migrations/20260818_f0d_receber_baixas_rpc.sql → NOVA (Partes 3/4, aplicada)
+  - scripts/_f0d_check_readonly.mjs → NOVO (verificação read-only de produção)
+  - scripts/_f0d_aplicar.mjs → NOVO (aplicador da migration)
+  - scripts/_f0d_validar.mjs → NOVO (validação transacional, ROLLBACK)
+
+4. FUNÇÕES DESATIVADAS NA UI (fluxo legado → Conferência Financeira)
+───────────────────────────────────────────────────────────────────────────────
+  - Botão "Gerar Fatura" (wizard de faturamento): removido. Agora é botão disabled
+    com orientação "Use Financeiro > Conferência Financeira para faturar serviços."
+  - Card da Escala (geração de recebíveis em lote a partir de alocação):
+    transformado em leitura com banner âmbar "Faturamento oficial em Conferência
+    Financeira. Este painel é apenas de consulta."
+  - Wizard Dialog (buscarItensFaturaveisWizard / criarFaturaConsolidadaCompleta):
+    removido por completo (estados + handlers).
+  - No service, as funções legadas foram blindadas com throw:
+      * criarRecebivelDeEscala
+      * criarRecebiveisEscalaEmLote
+      * criarFaturaConsolidadaCompleta
+      * criarFaturaConsolidada
+    ("Fluxo legado descontinuado (F0-D). Utilize Financeiro > Conferência Financeira...")
+  - listarItensFaturaveis (read-only, filtro origem='manual') permanece no service
+    como código histórico, SEM chamadores na UI.
+
+5. CONTRATO DA RECEITA MANUAL (Parte 2)
+───────────────────────────────────────────────────────────────────────────────
+  CAMPOS_REAIS_RECEBER (whitelist) — únicos gravados em financeiro_receber:
+    descricao, valor, cliente, cliente_id, cliente_nome, cliente_documento,
+    data_vencimento, data_emissao, data_pagamento, data_previsao_recebimento,
+    status, os_id, os_vinculadas, fatura_id, fatura, serie, numero,
+    contrato_vinculado, proposta_vinculada, categoria, centro_resultado,
+    plano_conta, conta_entrada, valor_bruto, valor_liquido, desconto, juros,
+    multa, abatimento, recorrente, recorrencia, quantidade_parcelas,
+    parcela_atual, observacoes.
+
+  NUNCA enviados ao banco (removidos/normalizados):
+    competencia, saldo, origem, origem_id, parcela, total_parcelas, tenant_id,
+    fatura_numero, quantidade_itens, valor_pago, forma_recebimento.
+    Mapeamentos: parcela→parcela_atual; total_parcelas→quantidade_parcelas;
+    observacao→observacoes.
+
+  Regras:
+    * valor SEMPRE preenchido (valor_liquido ?? valor_bruto ?? valor) — o RPC de
+      baixa calcula saldo a partir de valor;
+    * valida cliente_id OU cliente;
+    * data_vencimento obrigatória;
+    * status default "aberto" na criação via service;
+    * UI: status fallback "pendente" ao salvar/gerar parcelas (sem origem/competencia);
+    * STATUS_TRANSITIONS expandido p/ aceitar statuses da UI (pendente/vencido/
+      "a vencer") na edição — evitava throw "Status atual não reconhecido".
+
+6. MIGRATION APLICADA EM PRODUÇÃO (Partes 3/4)
+───────────────────────────────────────────────────────────────────────────────
+  Arquivo: supabase/migrations/20260818_f0d_receber_baixas_rpc.sql (ADITIVA)
+  Aplicada via scripts/_f0d_aplicar.mjs — CONFIRMADA (COMMIT OK).
+
+  f_registrar_baixa_financeira — branch por p_titulo_tabela:
+    * financeiro_pagar: comportamento idêntico ao F0-C4 (status, data_pagamento,
+      data_efetiva_pgto, conta_pagadora);
+    * financeiro_receber: status + data_pagamento + conta_entrada
+      (COALESCE(p_conta_financeira, conta_entrada)) + observacoes com histórico;
+      NÃO toca data_efetiva_pgto/conta_pagadora (não existem em receber);
+    * demais tabelas: erro "Tabela de título não suportada".
+
+  f_estornar_baixa_financeira — branch por titulo_tabela da baixa:
+    * NUNCA apaga (estornada=true, data_estorno, motivo_estorno);
+    * sem baixas válidas restantes → status='aberto' e, para receber,
+      data_pagamento=NULL;
+    * com saldo restante → 'parcial'; quitado → 'pago'.
+
+  Assinaturas dos RPCs INALTERADAS (contrato App/Supabase preservado).
+  Grants: somente authenticated + service_role + postgres (sem anon/public).
+
+7. BAIXA / ESTORNO NA UI (Parte 3/4)
+───────────────────────────────────────────────────────────────────────────────
+  baixarRecebivel(id, valor, data, extras) agora chama f_registrar_baixa_financeira
+  com titulo_tabela='financeiro_receber' e extras {forma, conta, referencia,
+  observacao, usuarioId, usuarioNome}.
+  handleBaixaParcial/handleBaixaTotal passam esses extras ao RPC.
+  Dialog de baixa ganhou campos "Referência Bancária" (dadosBaixa.referenciaBancaria)
+  e "Observações".
+  Estorno: RPC f_estornar_baixa_financeira (registro preservado, imutável).
+
+8. CANCELAMENTO / EXCLUSÃO (Parte 5)
+───────────────────────────────────────────────────────────────────────────────
+  cancelarRecebivel: grava status cancelado/cancelada e usa observacoes
+  (aceita observacao/observacoes) — sem coluna inexistente.
+  excluirRecebivel: sem valor_pago no payload; bloqueia exclusão quando:
+    * status pago/parcial;
+    * fatura_id preenchido (título veio de fatura oficial);
+    * existe baixa em financeiro_baixas NÃO estornada.
+
+9. NÃO-REGRESSÃO / NÃO-REPÚDIO
+───────────────────────────────────────────────────────────────────────────────
+  - Nenhum novo módulo de faturamento criado.
+  - Escala/Fluxo de Caixa/DRE/Pagamento de Prestadores/Plano de Contas/App/Torre
+    intocados.
+  - Contas a Pagar (F0-C4) mantém comportamento original (regressão validada).
+  - Fatura emitida não gera 2 títulos; baixa não cria título; estorno não cria receita.
+  - Nenhum dado de produção foi alterado durante a validação (tudo em BEGIN/ROLLBACK).
+
+10. VALIDAÇÃO
+───────────────────────────────────────────────────────────────────────────────
+  - npx tsc --noEmit → ✅ 0 erros
+  - scripts/_f0d_check_readonly.mjs → ✅ schema real conferido:
+      colunas de financeiro_receber idênticas à whitelist; SEM CHECK de status;
+      RPCs com assinatura exata; grants sem anon/public.
+  - scripts/_f0d_validar.mjs → ✅ 26 PASS / 0 FAIL (transação ROLLBACK):
+      baixa parcial/total/excedente bloqueada; estorno (parcial/aberto); estorno
+      duplo bloqueado; data_pagamento NULL após estorno total; conta_entrada
+      preenchida; observacoes com histórico; livro de baixas correto; regressão
+      financeiro_pagar; tabela inválida bloqueada.
+
+11. PENDÊNCIAS / RECOMENDAÇÕES
+───────────────────────────────────────────────────────────────────────────────
+  - (QA) Teste visual em Produção: criar receita manual, baixa parcial/total,
+    estorno, cancelar e excluir — com usuário real.
+  - ContasReceber.tsx (não-Enterprise) permanece como código morto (sem imports);
+    interfaces do service mantêm campos legados apenas por compat de tipos.
+  - Avaliar a remoção definitiva de listarItensFaturaveis (código histórico) em
+    missão futura de limpeza.
+
+12. CONFIRMAÇÃO DE BANCO
+───────────────────────────────────────────────────────────────────────────────
+  Migration F0-D aplicada com sucesso em produção (projeto uwrvzsjtpgaifkktpepn).
+  RPCs f_registrar_baixa_financeira e f_estornar_baixa_financeira agora atendem
+  financeiro_receber E financeiro_pagar. Nenhuma tabela nova criada nesta missão.
+═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,127 @@
+================================================================================
+TMS-COM-CARGA-04-FATOR-CUBAGEM-PARAMETRIZADO — RESULTADO
+Missão: Transformar o fator de cubagem em REGRA profissional, persistente e
+configurável (backend), removendo a dependência provisória de localStorage.
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS + Supabase. ZERO migration/DDL. ZERO banco persistido (prova em ROLLBACK).
+================================================================================
+
+1. FONTE ANTIGA ENCONTRADA
+--------------------------------------------------------------------------------
+localStorage['fator_cubagem_kg_m3'] (lerFatorCubagemConfigurado/resolverFatorCubagem)
+em src/components/comercial/cargaCalculo.ts — provisória, não oficial.
+
+2. FONTE OFICIAL NOVA
+--------------------------------------------------------------------------------
+configuracoes_sistema['fator_cubagem_regras'] (BACKEND/Supabase), via
+configuracoesService (carregarConfiguracaoSistema/salvarConfiguracaoSistema).
+LocalStorage é apenas cache do serviço — nunca fonte oficial. Sem migration.
+
+3. ESTRUTURA DAS REGRAS
+--------------------------------------------------------------------------------
+interface RegraFatorCubagem { contexto: string; fatorKgM3: number; ativo: boolean }
+contexto '__padrao__' = regra geral; demais = modalidade/operação real.
+
+4. PRECEDÊNCIA (determinística)
+--------------------------------------------------------------------------------
+regra específica da modalidade → regra padrão geral → SEM fator.
+Sem fator: pesoCubadoDisponivel=false e UI "Peso cubado: não configurado".
+Nenhum fallback numérico escondido.
+
+5. MODALIDADES REAIS ENCONTRADAS
+--------------------------------------------------------------------------------
+Orcamento.modalidade: "contrato" | "esporadico" (types.ts). A UI lista:
+Padrão geral, Contrato, Esporádico. Nenhuma modalidade inventada.
+
+6. FÓRMULA
+--------------------------------------------------------------------------------
+pesoCubado = cubagemTotal(m³) × fator(kg/m³) · pesoConsiderado = MAX(peso real, peso cubado).
+Exemplo (fixture controlada, NÃO padrão de produção): 4,168 m³ × 250 = 1.042 kg.
+
+7. UI
+--------------------------------------------------------------------------------
+Configurações → aba "Veículos" → card "FATOR DE CUBAGEM (Peso Taxável)":
+Regra/Modalidade | Fator (kg/m³) | Status (Ativa/Ativa sem valor/Inativa).
+Permite editar, ativar/desativar (clique no status) e salvar. Persistência backend.
+
+8. INTEGRAÇÃO COM ORÇAMENTO
+--------------------------------------------------------------------------------
+Resumo físico da carga exibe: Volumes totais, Peso real, Cubagem total, Peso cubado,
+Peso considerado e "Fator aplicado: X kg/m³" (com contexto). Sem fator → "— não configurado".
+
+9. INTEGRAÇÃO COM RECOMENDAÇÃO
+--------------------------------------------------------------------------------
+O motor usa pesoConsiderado (não peso real). Teste G comprova que a recomendação muda
+quando o peso cubado supera o real (500 kg real → 1.042 kg cubado → deixa de caber num
+veículo de 900 kg).
+
+10. SNAPSHOT HISTÓRICO
+--------------------------------------------------------------------------------
+Ao salvar, o orçamento grava em carga (JSONB): fatorCubagem, pesoCubado,
+pesoConsiderado, pesoCubadoDisponivel e fatorCubagemContexto.
+Orçamento EXISTENTE usa o fator SNAPSHOT (imutável); alteração posterior da config
+NÃO altera o significado histórico (comprovado no teste J e na prova real).
+
+11. PROVA CONTROLADA (scripts/_com_carga_04_prova.ts)
+--------------------------------------------------------------------------------
+- Produção NÃO possui fator inventado (fator_cubagem_regras ausente): q=0.
+- Config → leitura → cálculo: cubagem 4,168 m³; fator 250; peso cubado 1.042;
+  peso considerado 1.042 (cubado > real 500).
+- Recomendação: Van (1.300 kg / 8 m³) — usa peso considerado.
+- Save orçamento (transação) → reload: fator 250, cubagem 4,168, peso cubado/considerado
+  preservados; snapshot com contexto.
+- Config posterior 400 → snapshot permanece 250.
+- TODOS OS CHECKS PASSARAM.
+
+12. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (6 arquivos): 94/94 PASS
+    com_carga_04 (14: casos A–J), com_carga_03 (18), com_carga_02 (14),
+    com_carga_01 (19), com_orc_02 (15), com_orc_03 (14).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão.
+- npm run build -> OK (41.45s).
+
+13. ROLLBACK / LIMPEZA
+--------------------------------------------------------------------------------
+- Prova em transação + ROLLBACK; confirmação: 0 registros de teste persistidos.
+- Nenhuma regra de fator gravada em produção (config oficial ausente).
+- Nenhum dado real alterado; ORC-202609-8659 intocado.
+
+14. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- Nenhum fator configurado por padrão → peso cubado indisponível até o usuário
+  parametrizar (por design, sem invenção).
+- Modalidades provêm de Orcamento.modalidade; contexts de provider (Fracionado)
+  entram na fase de providers.
+- Recomendação é filtro por parâmetros, não bin packing 3D (documentado).
+
+15. PREPARAÇÃO FRACIONADO / PROVIDERS (preservada)
+--------------------------------------------------------------------------------
+O fator é regra por CONTEXTO — a carga original não é alterada. Um provider de
+Fracionado poderá trazer sua própria regra de cubagem/peso taxável sem sobrescrever
+a carga. Fluxo futuro: Carga normalizada → QuoteProvider → regra do provider →
+peso taxável → custo → preço → margem → proposta. Frenet = um adapter, não o motor.
+
+16. BACKLOG CUMULATIVO PRESERVADO
+--------------------------------------------------------------------------------
+COMERCIAL: Tabela Esporádica/preço automático; custo×venda×margem; Fracionado/providers;
+saneamento legado/mojibake; regra de status "pronto p/ envio"; capacidade de pallets/
+carroceria no catálogo (parametrizar quando aplicável).
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento parcial;
+saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação global; Conta
+Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin APP;
+CAD-PERSIST; E2E final; Master 360/Gate.
+
+ARQUIVO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-CARGA-04-FATOR-CUBAGEM-PARAMETRIZADO-RESULTADO.txt
+Tamanho: 7.130 bytes · Linhas: 127 · Data/hora: 26/09/2026 20:03:30
+
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

@@ -1,0 +1,139 @@
+CAD-VEIC-02-TIPO-VEICULO-CANONICAL-PERSIST
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO (código apenas; nenhuma alteração de dados)
+
+==================================================
+OBJETIVO
+==================================================
+
+Corrigir criação/edição de veículo no Cadastro do Prestador para persistir
+`tipo_veiculo` como campo CANÔNICO, sem alterar dados existentes e sem default
+artificial "fiorino".
+
+==================================================
+REGRA CANÔNICA
+==================================================
+
+CAMPO CANÔNICO: veiculos.tipo_veiculo
+CAMPO LEGADO:   veiculos.tipo
+Compatibilidade: `tipo_veiculo` gravado; `tipo` espelhado (legado) para leitores antigos.
+Leitura: canônico primeiro, fallback legado. Sem migration/backfill/remoção de coluna.
+
+==================================================
+IMPLEMENTAÇÃO
+==================================================
+
+1. src/helpers/veiculoPayload.ts (NOVO)
+   - sanitizeVeiculoPayload(data): allowlist de colunas de `veiculos` AGORA inclui `tipo_veiculo`.
+   - camposTipoVeiculo(tipoVeiculo): grava { tipo_veiculo, tipo } (canônico + espelho legado);
+     sem tipo → {} (não grava nada; sem default artificial).
+   - lerTipoVeiculo(row): tipo_veiculo || tipo || "" (canônico primeiro).
+   - VEICULO_PAYLOAD_ALLOWLIST exportado.
+
+2. src/components/prestadores/PrestadorDetalhe.tsx
+   - Importa o sanitizer/camposTipoVeiculo do helper (removeu sanitizer local duplicado).
+   - handleAddVeiculo: payload usa `...camposTipoVeiculo(veiculoData.tipoVeiculo)` (grava tipo_veiculo).
+     + validação: sem tipo → "Selecione o tipo de veículo." (bloqueia).
+   - handleUpdateVeiculo: idem (grava tipo_veiculo) + mesma validação.
+   - Default artificial removido: estado inicial `novoVeiculo` sem `tipoVeiculo: "fiorino"`;
+     botão "Adicionar Veículo" abre sem tipo; Select usa `value={novoVeiculo.tipoVeiculo || ""}`
+     com placeholder "Selecione o tipo de veículo".
+   - Botão salvar desabilitado também sem tipo (`!novoVeiculo.placa || !novoVeiculo.tipoVeiculo`).
+   - CREATE inicial do prestador já gravava `tipo_veiculo` (mantido).
+
+3. src/components/prestadores/PrestadoresLista.tsx
+   - Mapeamento de veículo: `tipoVeiculo: v.tipo_veiculo || v.tipo`
+     (edição carrega canônico primeiro; registros antigos usam fallback legado).
+
+4. src/test/cad_veic_02_tipo_veiculo_canonical.test.ts (NOVO) — T1..T16.
+
+FILES_MODIFIED=
+  src/helpers/veiculoPayload.ts (novo)
+  src/components/prestadores/PrestadorDetalhe.tsx
+  src/components/prestadores/PrestadoresLista.tsx
+  src/test/cad_veic_02_tipo_veiculo_canonical.test.ts (novo)
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+CANONICAL_VEHICLE_FIELD=tipo_veiculo
+LEGACY_VEHICLE_FIELD=tipo
+
+ADD_WRITES_CANONICAL=YES
+EDIT_WRITES_CANONICAL=YES
+SANITIZER_PRESERVES_CANONICAL=YES
+NEW_VEHICLE_DEFAULT_EMPTY=YES
+SAVE_WITHOUT_TYPE_BLOCKED=YES
+EDIT_CANONICAL_FIRST=YES
+LEGACY_READ_FALLBACK_PRESERVED=YES
+EXISTING_DATA_CHANGED=NO
+
+ESCALA05_PRESERVED=YES
+ESCALA06_PRESERVED=YES
+ESCALA07_PRESERVED=YES
+ESCALA_PRESTADOR_02_PRESERVED=YES
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+TESTES T1..T16 (19 asserts — 19/19 PASS)
+==================================================
+
+T1  novo veículo inicia sem Fiorino artificial            PASS
+T2  salvar sem tipo explícito é bloqueado                 PASS
+T3  selecionar Fiorino → payload tipo_veiculo=fiorino     PASS
+T4  selecionar VUC → payload tipo_veiculo=vuc             PASS
+T5  selecionar outro tipo → canonical correspondente      PASS
+T6  ADD preserva tipo_veiculo no sanitizer                PASS
+T7  EDIT grava tipo_veiculo                               PASS
+T8  EDIT carrega canonical primeiro                       PASS
+T9  registro legado sem canonical usa fallback tipo       PASS
+T10 canonical existente vence legacy divergente           PASS
+T11 reload mantém tipo canônico                           PASS
+T12 nenhuma alteração de dados existentes (sem mutação)   PASS
+T13 ESCALA-05 preservada                                  PASS
+T14 ESCALA-06 preservada                                  PASS
+T15 ESCALA-07 preservada                                  PASS
+T16 ESCALA-PRESTADOR-02 preservada                        PASS
+
+TESTS_TOTAL=16
+TESTS_EXECUTED=19
+TESTS_PASS=19
+TESTS_FAIL=0
+
+REGRESSÃO:
+  veiculoMapper.test.ts                          11/11 PASS
+  escala_veic_tabela_05/06/07 + prestador_02    PASS (via suíte)
+
+SUÍTE COMPLETA (npx vitest run):
+  Test Files: 10 failed | 82 passed | 1 skipped (93)
+  Tests:      57 failed | 1346 passed | 155 skipped (1558)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates).
+  Nenhuma em veiculoPayload/PrestadorDetalhe/PrestadoresLista.
+
+==================================================
+TSC / BUILD
+==================================================
+
+TSC_STATUS=0 erros novos nos arquivos desta missão
+  (veiculoPayload.ts, PrestadorDetalhe.tsx, PrestadoresLista.tsx, teste cad_veic_02).
+  Baseline pré-existente inalterado.
+BUILD_STATUS=npm run build → ✓ built in 37.95s
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Sem UPDATE/INSERT/DELETE manual no banco.
+- Sem migration/RLS. Sem backfill. Sem remoção da coluna `tipo`.
+- Não alterou Clayton / GEW-2H93 / tipo_carga=misto / duplicado.
+- Não decidiu Saveiro × Fiorino (mantido para confirmação humana — CAD-VEIC-01).
+- Não alterou Comercial, lógica de preço da Escala, APP/POD, Financeiro, loading.
+- Sem mega-refactor. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

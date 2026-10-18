@@ -103,22 +103,34 @@ Ordenação correta das integrações para o TMS, priorizando o fluxo operaciona
 
 ---
 
-## 5. Efí Bank - Boletos
-**Prioridade:** MÉDIA | **Complexidade:** MÉDIA | **Dependências:** Portal Cliente (futuro)
+## 5. Efí Bank - Boletos / Pix (HOMOLOGAÇÃO)
+**Prioridade:** MÉDIA | **Complexidade:** MÉDIA-ALTA (mTLS) | **Dependências:** Supabase Edge Functions
+
+> SEGURANÇA: credenciais e certificado Efí são SERVER-SIDE (Supabase Secrets).
+> NUNCA usar prefixo `VITE_` para Client Secret ou certificado — o prefixo `VITE_`
+> embute a variável no bundle do frontend. Nenhum valor real em código, docs, git ou logs.
+
+### Secrets (Supabase Secrets — backend, HML) — SOMENTE NOMES
+- EFI_ENVIRONMENT        → "homologacao"
+- EFI_CLIENT_ID_HML      → Client ID (HML)
+- EFI_CLIENT_SECRET_HML  → Client Secret (HML)
+- EFI_CERTIFICATE_HML    → certificado do cliente (PEM X.509, base64)
+- EFI_PRIVATE_KEY_HML    → chave privada do cliente (PEM PKCS#8, base64)
+  (Deno exige `cert` + `key` separados; PKCS#12/.p12 NÃO é aceito direto.
+   Converter o .p12 para PEM/PKCS#8 FORA do repositório. NÃO copiar o .p12.)
 
 ### Checklist
 - [ ] Criar conta Efí Bank (se não tiver)
-- [ ] Obter credentials de API
-- [ ] Configurar variáveis ambiente:
-  - [ ] VITE_EFI_CLIENT_ID
-  - [ ] VITE_EFI_CLIENT_SECRET
-  - [ ] VITE_EFI_CERTIFICADO (base64)
-- [ ] Criar Edge Function para:
-  - [ ] Criar cobranças/boletos
+- [ ] Obter credentials de API (HML) e certificado HML
+- [ ] Converter .p12 → cert PEM + key PEM (PKCS#8) e registrar SOMENTE nos Secrets
+- [ ] Criar Edge Function `efi-banking` para:
+  - [ ] Criar cobranças/boletos (API Cobranças)
   - [ ] Consultar status
   - [ ] Baixar PDF boleto
   - [ ] Cancelar boleto
-- [ ] Integrar com `financeiro_receber`
+  - [ ] Pagamento Pix a prestador (API Pix)
+- [ ] Integrar com `financeiro_receber` (anexar identificadores; baixar o MESMO recebível)
+- [ ] Integrar com `pagamentos_prestadores` (baixar o MESMO pagamento via RPC existente)
 - [ ] Adicionar botão "Gerar Boleto" no Portal Cliente
 
 ---

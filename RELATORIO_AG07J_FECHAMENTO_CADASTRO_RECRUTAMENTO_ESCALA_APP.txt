@@ -1,0 +1,437 @@
+================================================================================
+RELATORIO AG-07J — FECHAMENTO CADASTRO RECRUTAMENTO ESCALA APP
+Data: 2026-08-22
+Status: READ-ONLY (nenhum dado alterado)
+================================================================================
+
+SUMARIO EXECUTIVO
+-----------------
+Circuito ponta a ponta auditado em 4 subsystems:
+
+  APP MOTORISTA --> RECRUTAMENTO (TMS) --> RECRUTAMENTO (APP) --> RECUSA
+      |                                                        |
+      |            +-------------------------------------------+
+      |            |
+      v            v
+  RECUSA <-- RECUSA <-- CONTRATO <-- DISTRIBUICAO <-- ESCALA <--
+
+Prestadores criados pelo App NAO entram automaticamente no Kanban de Recrutamento.
+O App cria veiculos e prestadores diretamente no TMS (tabelas prestadores/veiculos).
+O status=em_analise + liberado_app=false impede alocacao ate aprovacao manual no TMS.
+
+--------------------------------------------------------------------------------
+1. CAMINHO APP: CRIACAO DE PRESTADOR
+--------------------------------------------------------------------------------
+
+Fonte: register_screen.dart (conexao_prestador)
+Arquivo: C:\src\conexao_prestador\lib\features\auth\register_screen.dart
+
+Fluxo _submit():
+  1. _cadastrar() cria usuario em auth.users via RPC app_s6_criar_prestador
+  2. RPC cria registro em prestadores com:
+     - status = 'em_analise' (NUNCA 'ativo')
+     - liberado_app = false (NUNCA true)
+     - cpf_cnpj = CPF real (ou 'DOC_' + telefone se sem CPF)
+     - origem_cadastro = 'app_motorista' (identifica origem)
+     - nome_completo = nome completo real
+  3. _vincularVeiculo() insere em veiculos com:
+     - principal = true
+     - status = 'ativo'
+     - prestador_vinculado = prestador.id
+     - antt = (se possui_antennt=true E texto nao vazio) null senao texto
+
+ campos_veiculo:
+   tipo (via _tipoVeiculoTms), placa, marca, modelo, ano,
+   capacidade_kg (null para moto), capacidade_m3 (null para moto),
+   comprimento_m, largura_m, altura_m, antt, principal, status,
+   prestador_vinculado
+
+ NOTA: App NAO envia tipo_carga, nor temperatura_min/max, nem ajundate.
+ App NAO envia documentos (CNH, antt, etc.) — somente veiculo e dados pessoais.
+
+resultado_app:
+  prestador.id (UUID)
+  prestador.status = 'em_analise'
+  prestador.liberado_app = false
+  veiculo.id (UUID)
+  veiculo.status = 'ativo'
+
+--------------------------------------------------------------------------------
+2. GATE DE ELEGIBILIDADE: O QUE IMPIDE ALOCACAO
+--------------------------------------------------------------------------------
+
+Fonte: eligibilidadeOperacionalService.ts (TMS)
+Arquivo: src/services/escala/eligibilidadeOperacionalService.ts
+
+7 gates implementados (todos bloqueiam criacao de alocacao):
+
+  GATE 1 - Status prestador:
+    status != 'ativo' E status != 'aprovado' --> bloqueado
+    (App sempre cria com status='em_analise' --> BLOQUEADO)
+
+  GATE 2 - liberado_app:
+    liberado_app != true --> bloqueado
+    (App sempre cria com liberado_app=false --> BLOQUEADO)
+
+  GATE 3 - Documentos (CNH validade):
+    cnh_validade < hoje --> bloqueado
+    cnh_validade null --> falha aberta (nao bloqueia)
+
+  GATE 4 - Tipo veiculo (AG-07I-B1.1):
+    Comparacao exata: tipo_veiculo_os == tipo_veiculo_veiculos
+    Sem equivalencias (van!=kombi, van!=utilitario, etc.)
+    outros != wildcard
+
+  GATE 5 - Capacidade (AG-07I-B2):
+    kg_solicitada > capacidade_kg do veiculo --> bloqueado
+    m3_solicitada > capacidade_m3 do veiculo --> bloqueado
+    capacidade null ou 0 --> falha aberta
+
+  GATE 6 - Refrigerado (AG-07I-B3):
+    OS carga_refrigerada=true E veiculo nao e refrigerado/termico --> bloqueado
+
+  GATE 7 - Ajudante (AG-07I-B5):
+    OS carga_ajudante=true E alocacao nao tem ajudantes --> bloqueado
+
+resultado: App prestador SEMPRE bloqueado em todos os 7 gates porque:
+  - Gate 1: status=em_analise (nao ativo/aprovado)
+  - Gate 2: liberado_app=false
+
+--------------------------------------------------------------------------------
+3. FLUXO RECRUTAMENTO ENTERPRISE (KANBAN)
+--------------------------------------------------------------------------------
+
+Fonte: enterpriseKanbanService.ts, conversaoCandidatoService.ts
+Arquivo: src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts
+Arquivo: src/modules/recrutamento/services/conversaoCandidatoService.ts
+
+Candidatos no Kanban vem de:
+  - Portal RH / Formulario de candidatura
+  - Importacao manual
+  - Integracao (vagas.com.br etc.)
+
+App prestadores NAO entram automaticamente no Kanban.
+enterpriseKanbanService consulta tabela recrutamento_candidatos.
+Tabela recrutamento_candidatos e SEPARADA de prestadores.
+Nao ha trigger/sync que crie candidato quando prestador.cadastro='app_motorista'.
+
+Deteccao App: Ha funcoes que buscam prestadores com origem_cadastro='app_motorista'
+para exibir como card especial, mas NAO sao candidatos do Kanban.
+
+Se gestor quiser incluir App prestador no Kanban:
+  - Inserir manualmente em recrutamento_candidatos com dados do prestador
+  - Ou criar bridge (nao existe hoje)
+
+--------------------------------------------------------------------------------
+4. CONVERSAO CANDIDATO -> PRESTADOR (CAMINHO ENTERPRISE)
+--------------------------------------------------------------------------------
+
+Fonte: conversaoCandidatoService.ts
+Arquivo: src/modules/recrutamento/services/conversaoCandidatoService.ts
+
+Fluxo de conversao:
+  1. candidato.stage == 'aprovado' ou 'ativo'
+  2. buscarPrestadorOperacionalExistente() busca por telefone/email
+     (AG-07G: reutiliza prestador existente do App se CPF/telefone conferem)
+  3. Se existente encontrado:
+     - UPDATE status=ativo, liberado_app=true, origem_cadastro='recrutamento:{id}'
+     - Preenche SOMENTE lacunas (nao sobrescreve dados do App)
+  4. Se NAO existe:
+     - INSERT com cpf_cnpj='REC_{telefone}' (CPF real desconhecido)
+     - status=statusOperacional, liberado_app=statusOperacional=='ativo'
+  5. sincronizarComOperacao():
+     - statusOperacional = 'ativo' se stage aprovado/ativo, senao 'analise'
+     - liberado_app = statusOperacional == 'ativo'
+     - origem_cadastro = 'recrutamento:{prestador_id}'
+
+resultado_conversao:
+  prestador.status = 'ativo' (se stage aprovado)
+  prestador.liberado_app = true (se stage aprovado)
+  prestador.origem_cadastro = 'recrutamento:{id}'
+  Se reutilizou App prestador: dados do App preservados (CNH, telefone, etc.)
+
+--------------------------------------------------------------------------------
+5. SINCRONIZACAO KANBAN -> OPERACAO (APROVACAO)
+--------------------------------------------------------------------------------
+
+Fonte: prestadoresService.ts
+Arquivo: src/modules/recrutamento/services/prestadoresService.ts
+
+Quando gestor aprova candidato no Kanban:
+  1. syncAtualizarOperacional() e chamada
+  2. Status operacional derivado:
+     - agregado/aprovado -> 'ativo'
+     - bloqueado -> 'inativo'
+     - outro -> 'analise'
+  3. UPDATE prestadores SET:
+     status = novoStatus
+     liberado_app = novoStatus == 'ativo'
+     nome_completo, telefone, whatsapp, tipo_parceiro
+     endereco = {cidade, estado}
+     veiculos = [{tipo, placa}]
+  4. origem_cadastro = 'recrutamento:{prestador_rec_id}'
+
+resultado_sincronizacao:
+  prestador.status = 'ativo' (se aprovado)
+  prestador.liberado_app = true (se aprovado)
+  PRESTADOR DO APP: dados preservados, status e liberado_app sobrescritos
+
+--------------------------------------------------------------------------------
+6. FLUXO ESCALA -> OS -> OPERACAO
+--------------------------------------------------------------------------------
+
+Fonte: escalaService.ts
+Arquivo: src/services/escala/escalaService.ts
+
+criarAlocacao():
+  1. Verifica 7 gates (secoes 2 acima)
+  2. INSERT em alocacoes_escala com:
+     - prestador_id, cliente_id, veiculo_id
+     - status = 'pendente'
+     - data_inicio, data_fim
+     - origem = 'escala'
+  3. Historico de alocacao e criado
+  4. syncOuCriarOS() pode criar ordem de servico vinculada
+
+Trocar motorista/veiculo:
+  - trocarMotorista() ~linha 649: busca novo prestador, verifica elegibilidade
+  - trocarVeiculo() ~linha 700: busca novo veiculo, verifica capacidade/tipo
+  - AMBOS usam verificarElegibilidadeCompleta()
+
+Operacao (EscalaLista):
+  - Exibe alocacoes em tempo real
+  - Permite finalizar com POD
+  - Permite cancelar (com validacao de vinculos)
+
+resultado_escala:
+  Alocacao criada apenas se todos os 7 gates passarem
+  Prestador do App bloqueado ate aprovacao manual
+
+--------------------------------------------------------------------------------
+7. MATRIZ PONTA A PONTA
+--------------------------------------------------------------------------------
+
+CAMPO                           | APP CRIA    | TMS USA     | GATE USA    | STATUS
+--------------------------------|-------------|-------------|-------------|--------
+prestador.status                | em_analise  | ativo       | Gate 1      | BLOQUEADO
+prestador.liberado_app          | false       | true        | Gate 2      | BLOQUEADO
+prestador.cpf_cnpj              | CPF real    | -           | -           | OK
+prestador.origem_cadastro       | app_motor   | recrutamento| -           | OK
+veiculo.tipo                    | via _tipoTms| -           | Gate 4      | OK
+veiculo.capacidade_kg           | null/valor  | -           | Gate 5      | OK
+veiculo.capacidade_m3           | null/valor  | -           | Gate 5      | OK
+veiculo.antt                    | texto       | -           | Gate N/A    | SEM GATE
+veiculo.status                  | ativo       | -           | -           | OK
+cnh_validade                    | NAO ENVIA   | -           | Gate 3      | FAIL-OPEN
+tipo_carga                      | NAO ENVIA   | -           | Gate 6      | FAIL-OPEN
+carga_ajudante                  | NAO ENVIA   | -           | Gate 7      | N/A
+documentos (cnh, antt, etc)     | NAO ENVIA   | -           | -           | PENDENTE
+
+--------------------------------------------------------------------------------
+8. GAPS IDENTIFICADOS
+--------------------------------------------------------------------------------
+
+GAP J-1: APP PRESTADORES NO KANBAN
+  Severidade: MEDIA
+  Descricao: App prestadores com status='em_analise' NAO aparecem no Kanban.
+  Impacto: Gestor nao ve candidatos que ja se cadastraram pelo App.
+  Solucao: Bridge entre prestadores (origem_cadastro='app_motorista') e
+           recrutamento_candidatos, OU exibicao especial no Kanban.
+
+GAP J-2: DOCUMENTOS PENDENTES
+  Severidade: ALTA
+  Descricao: App NAO envia documentos (CNH, antt). Somente veiculo e dados pessoais.
+  Impacto: Prestador do App fica permanentemente bloqueado no Gate 3
+           (cnh_validade null = fail-open, mas sem documentos reais).
+  Solucao: Upload de documentos pelo App apos cadastro inicial.
+
+GAP J-3: ANTT SEM GATE
+  Severidade: BAIXA (AG-07I-B4)
+  Descricao: campo antt populado pelo App mas sem validacao de estrutura/validade.
+  Impacto: Veiculos com antt invalido passam pela escala sem verificacao.
+  Solucao: Gate de ANTT (aplicabilidade + validade) - DEPENDENCIA ESTRUTURAL.
+
+GAP J-4: RPC f_buscar_operacoes_motorista NAO APLICADA EM PRODUCAO
+  Severidade: ALTA
+  Descricao: Migration AG-07F (20260822_ag07f_gate_elegibilidade_operacional.sql)
+           NAO foi aplicada em producao. RPC em producao usa versao antiga.
+  Impacto: Operacoes criadas ANTES da aprovacao podem aparecer no App
+           (versao antiga nao filtra por status/liberado_app).
+  Solucao: Aplicar migration em producao.
+
+GAP J-5: POSSUI_AJUDANTE = METADADOS
+  Severidade: BAIXA (AG-07I-B5)
+  Descricao: App preenche _possuiAjudante (booleano) mas NAO e campo estruturado
+           na tabela prestadores. E informacao de metadata apenas.
+  Impacto: Nenhuma validacao automatizada e possivel.
+  Solucao: Campo estruturado na tabela prestadores - DEPENDENCIA ESTRUTURAL.
+
+GAP J-6: DUAS TABELAS DE RECRUTAMENTO
+  Severidade: MEDIA
+  Descricao: Duas tabelas de recrutamento:
+           - recrutamento_candidatos (Kanban Enterprise)
+           - prestadores (Operacao + App)
+           Nao ha sincronizacao automatica entre elas.
+  Impacto: Dados duplicados, inconsistencias, gestor confuso.
+  Solucao: Consolidar em uma unica tabela ou criar sync.
+
+GAP J-7: RECRUTAMENTO LEGACY PATH
+  Severidade: BAIXA
+  Descricao: Ha path legado (recrutamentoIntegracao.ts) que usa
+           portal_pedidos + portal_preferencias. Sem synchronizacao
+           automatica com Kanban Enterprise.
+  Impacto: Dados legados podem ficar inconsistentes.
+  Solucao: Deprecar path legado.
+
+GAP J-8: SEM TRIGGER ATUALIZACAO APP -> RECRUTAMENTO
+  Severidade: MEDIA
+  Descricao: Quando App prestador muda status/doc, NAO ha trigger que
+           atualize recrutamento_candidatos (se existir).
+  Impacto: Kanban fica desatualizado.
+  Solucao: Trigger ou listener de mudancas em prestadores.
+
+--------------------------------------------------------------------------------
+9. ESTADO ATUAL DO GATE
+--------------------------------------------------------------------------------
+
+prestador_app_criado:
+  status = 'em_analise'
+  liberado_app = false
+
+gate_resultado:
+  Gate 1 (status): BLOQUEADO (em_analise nao e ativo/aprovado)
+  Gate 2 (liberado): BLOQUEADO (false nao e true)
+  Gate 3 (cnh): FAIL-OPEN (null nao bloqueia)
+  Gate 4 (tipo): OK (tipo informado pelo App)
+  Gate 5 (capacidade): FAIL-OPEN se null/0
+  Gate 6 (refrigerado): OK se nao e cargarefrigerada
+  Gate 7 (ajudante): OK se nao exige
+
+resultado_final: PRESTADOR BLOQUEADO nos Gates 1 e 2 ate aprovacao manual.
+
+--------------------------------------------------------------------------------
+10. FLUXO ESPERADO vs REAL
+--------------------------------------------------------------------------------
+
+ESPERADO (cenario ideal):
+  App cadastra --> Documents uploaded --> TMS aprova --> liberado_app=true
+  --> Alocacao permitida --> Escala criada --> OS criada --> Operacao
+
+REAL (cenario atual):
+  App cadastra (status=em_analise, liberado=false, sem documentos)
+  --> Prestador INVISIVEL no Kanban (GAP J-1)
+  --> Gestor precisa descobrir e aprovar manualmente
+  --> SEM upload de documentos (GAP J-2)
+  --> Alocacao BLOQUEADA ate aprovacao
+  --> Quando aprovado: liberado_app=true, alocacao liberada
+
+--------------------------------------------------------------------------------
+11. RECOMENDACOES POR PRIORIDADE
+--------------------------------------------------------------------------------
+
+P0 (Imediato):
+  - Aplicar migration AG-07F em producao (GAP J-4)
+  - Verificar se RPC em producao filtra corretamente
+
+P1 (Curto prazo):
+  - Bridge App -> Kanban (GAP J-1)
+  - Upload documentos pelo App (GAP J-2)
+  - Consolidar tabelas recrutamento (GAP J-6)
+
+P2 (Medio prazo):
+  - Gate ANTT (GAP J-3) - requer decisao de estrutura
+  - Campo estruturado ajudante (GAP J-5) - requer decisao de estrutura
+  - Deprecar path legado (GAP J-7)
+
+P3 (Baixo):
+  - Sync automatica App -> Recrutamento (GAP J-8)
+
+--------------------------------------------------------------------------------
+12. TESTES EXECUTADOS
+--------------------------------------------------------------------------------
+
+  - npx tsc --noEmit: 0 erros
+  - Testes AG-07F: 14/14 PASS
+  - Testes AG-07G: 12/12 PASS
+  - Testes AG-07H: 12/12 PASS
+  - Testes AG-07I-B1: 31/31 PASS
+  - Testes AG-07I-B2: 24/24 PASS
+  - Testes AG-07I-B3: 34/34 PASS
+  - Testes AG-07I-B4: (sem novos testes - audit apenas)
+  - Testes AG-07I-B5: 46/46 PASS
+  - Suite total: 709/709 PASS
+
+  NOTA: Nenhum teste E2E executado (requer producao QA).
+  Nenhum dado foi alterado (READ-ONLY).
+
+--------------------------------------------------------------------------------
+13. ARQUIVOS AUDITADOS
+--------------------------------------------------------------------------------
+
+APP (Flutter):
+  C:\src\conexao_prestador\lib\features\auth\register_screen.dart
+
+TMS Services:
+  src/services/escala/eligibilidadeOperacionalService.ts
+  src/services/escala/escalaService.ts
+  src/services/escala/escalaMapper.ts
+
+Recrutamento:
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanStore.ts
+  src/modules/recrutamento/services/conversaoCandidatoService.ts
+  src/modules/recrutamento/services/identidadePrestadorService.ts
+  src/modules/recrutamento/services/prestadoresService.ts
+  src/services/recrutamentoIntegracao.ts
+
+Documentos:
+  src/services/documentos/documentosPrestadorService.ts
+
+Operacao:
+  src/components/operacao/EscalaLista.tsx
+  src/components/operacao/OrdemServicoForm.tsx
+
+Financeiro:
+  src/services/financeiro/centralFinanceiroService.ts
+  src/services/financeiro/receberService.ts
+
+Migrations:
+  supabase/migrations/20260822_ag07f_gate_elegibilidade_operacional.sql
+  supabase/migrations/20260713_m111_app_integracao_tms.sql
+  supabase/migrations/20260510000001_core_baseline.sql
+  supabase/migrations/20260509000003_tabelas_faltantes.sql
+
+Testes:
+  src/test/ag07f_gate_elegibilidade.test.ts (14 testes)
+  src/test/ag07g_unificacao_app_recrutamento.test.ts (12 testes)
+  src/test/ag07h_documentos_bloqueios.test.ts (12 testes)
+  src/test/ag07ib1_tipo_veiculo.test.ts (31 testes)
+  src/test/ag07ib2_capacidade_kg_m3.test.ts (24 testes)
+  src/test/ag07ib3_refrigerado_termico.test.ts (34 testes)
+  src/test/ag07ib5_ajudante_requisitos.test.ts (46 testes)
+
+--------------------------------------------------------------------------------
+14. CONCLUSAO
+--------------------------------------------------------------------------------
+
+O circuito App --> Recrutamento --> Escala --> Operacao tem DUAS ROTAS:
+
+  ROTA A (App): App cadastra --> prestadores (em_analise, liberado=false)
+    --> SEM Kanban, SEM documentos --> BLOQUEADO ate aprovacao manual
+
+  ROTA B (Enterprise): Candidato --> recrutamento_candidatos --> Kanban
+    --> Aprovacao --> conversaoCandidatoService --> prestadores (ativo, liberado=true)
+    --> Alocacao PERMITIDA
+
+  AMBAS as rotas convergem em prestadores.status + liberado_app.
+
+  O GATE funciona: prestador do App NAO pode ser alocado sem aprovacao.
+  POREM: App prestador e INVISIVEL no Kanban (gap J-1).
+  E: App prestador NAO tem documentos (gap J-2).
+
+  FECHAMENTO: Circuito INCOMPLETO mas funcional para aprovacao manual.
+  Necessario: Bridge App-Kanban + upload documentos.
+
+================================================================================
+FIM RELATORIO AG-07J
+================================================================================

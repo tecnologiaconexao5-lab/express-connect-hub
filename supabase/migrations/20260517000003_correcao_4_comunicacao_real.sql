@@ -105,3 +105,5 @@ INSERT INTO crm_templates_mensagem (nome, canal, setor, assunto, mensagem) VALUE
 ('Apresentação Email', 'email', 'comercial', 'Conexão Express — Apresentação Comercial', 'Olá {{nome}}, somos a Conexão Express. Gostaríamos de apresentar nossas soluções logísticas...'),
 ('Proposta Email', 'email', 'comercial', 'Proposta Comercial - Conexão Express', 'Olá {{nome}}, segue em anexo a nossa proposta comercial...')
 ON CONFLICT DO NOTHING;
+
+

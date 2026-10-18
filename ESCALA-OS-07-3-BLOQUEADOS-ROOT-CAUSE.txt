@@ -1,0 +1,116 @@
+ESCALA-OS-07-3-BLOQUEADOS-ROOT-CAUSE
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+==================================================
+CADEIA COMPLETA DOS 3 CASOS
+==================================================
+
+[58e5751e-bd54-43c5-9bcf-55fe4e575e6b]
+  cliente_id=91b80fdb  prestador_id=fe7a75cc  status=concluida  finalizada=true  data=2026-08-17
+  valor_cliente=600  valor_repasse=520  pedagio=66.43  adicional=66.43  ajudante=0  desc_cli=0  desc_prest=0.00
+  ordem_servico_id=NULL  OS_id=alocação? NÃO (0)  outras candidatas=0
+  FIN_RECEBER: id=bb5c0efe valor=600.00 status=aberto
+  FIN_PAGAR:   id=9f2be89f valor=652.86 status=parcial   ← SENSÍVEL
+  PAGAMENTO:   id=7461daf6 valor_liquido=652.86 status_pagamento=pendente status_conferencia=em_aberto
+  BAIXAS(pagar)=1 | valor_baixado=520.00 | saldo=652.86−520.00=132.86
+  COMPOSICAO=1
+
+[d1f34e73-a562-47c7-b057-ed079dd9b03a]
+  cliente_id=91b80fdb  prestador_id=fe7a75cc  status=concluida  finalizada=true  data=2026-08-18
+  valor_cliente=600  valor_repasse=520  pedagio=0  adicional=0  ajudante=0  desc_cli=0  desc_prest=0.00
+  ordem_servico_id=NULL  OS_id=alocação? NÃO  outras candidatas=0
+  FIN_RECEBER: id=8d6a08e1 valor=600.00 status=aberto
+  FIN_PAGAR:   id=31fcab2b valor=520.00 status=pago
+  PAGAMENTO:   id=162778a0 valor_liquido=520.00 status_pagamento=pendente status_conferencia=em_aberto
+  BAIXAS(pagar)=1 | valor_baixado=520.00 | saldo=0
+  COMPOSICAO=1
+
+[ae30da69-1d16-4600-a27d-edfa073ef239]
+  cliente_id=a49d5aa3  prestador_id=fe7a75cc  status=aguardando_aceite  finalizada=false  data=2026-08-28
+  valor_cliente=600  valor_repasse=520  pedagio=0  adicional=0  ajudante=0  desc_cli=0  desc_prest=0.00
+  ordem_servico_id=NULL  OS_id=alocação? NÃO  outras candidatas=0
+  FIN_RECEBER: id=6a6cf665 valor=600.00 status=pendente
+  FIN_PAGAR:   id=6f871e9f valor=520.00 status=pago
+  PAGAMENTO:   id=7bf3107d valor_liquido=520.00 status_pagamento=pago status_conferencia=conferido
+  BAIXAS(pagar)=1 | valor_baixado=520.00 | saldo=0
+  COMPOSICAO=0
+
+O financeiro existente JÁ está ligado por os_id = alocação.id (REC/PAG os_id TEXT = id; PP os_id = id).
+
+==================================================
+SIMULAÇÃO M66 (BEGIN/ROLLBACK — disparo neutro valor_repasse=valor_repasse)
+==================================================
+
+[58e5751e] REC 600/aberto → 600/aberto | PAG 652.86/PARCIAL → 652.86/ABERTO | PP igual
+  OS 0→1 | BAIXAS 1/520.00 → 1/520.00 (preservadas)
+  M66_WOULD_CHANGE_FINANCIAL=YES  (PAG status 'parcial' → 'aberto')
+[ d1f34e73] REC igual | PAG 520/pago → 520/pago | PP igual | OS 0→1 | BAIXAS 1/520.00 → 1/520.00
+  M66_WOULD_CHANGE_FINANCIAL=NO
+[ae30da69] REC 600/pendente → 600/pendente | PAG 520/pago → 520/pago | PP pago/conferido → igual
+  OS 0→1 | BAIXAS 1/520.00 → 1/520.00
+  M66_WOULD_CHANGE_FINANCIAL=NO
+
+ROLLBACK executado em todos (nada persistido).
+
+Causa: a guarda FIN-01 de financeiro_pagar é `status NOT IN ('pago','cancelado','cancelada')`.
+'parcial' NÃO está incluída → o M66/M80 recomputa e troca 'parcial'→'aberto' (perde a
+indicação de pagamento parcial já baixado de R$ 520,00).
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. É possível criar apenas a OS + vínculo sem tocar financeiro? NÃO de forma trivial:
+   o INSERT da OS dispara M80 (quando valor_cliente/custo_prestador > 0), que reprocessa
+   financeiro — e para 58e5751e alteraria 'parcial'→'aberto'. Para d1f/ae3 não alteraria.
+2. Campos mínimos da OS: id (=alocação.id), numero (ALOC-...), cliente/cliente_id,
+   prestador/prestador_id, status ('finalizada' se concluída+finalizada), data, tipo_veiculo,
+   valor_cliente, custo_prestador(=valor_repasse), pedagio, adicionais, ajudante, descontos.
+3. O financeiro existente já está corretamente ligado por os_id = alocação.id? SIM (REC/PAG/PP).
+4. Criar a OS diretamente preservaria integralmente pagamentos/baixas? Para d1f/ae3 SIM
+   (títulos 'pago' protegidos por FIN-01; baixas intactas). Para 58e NÃO ('parcial' seria
+   alterado, pois nem M66 nem M80 protegem 'parcial').
+5. Existe trigger da OS (M80) que dispara no INSERT e alteraria financeiro? SIM (quando há
+   valores). Mesma limitação de guarda de 'parcial'.
+6. Como impedir M80/M66 de reprocessar histórico fechado/parcial? Estender a guarda FIN-01 de
+   financeiro_pagar para incluir 'parcial' (além de pago/cancelado/cancelada).
+7. Menor correção segura por caso:
+   - 58e5751e → C (precisa da correção de guarda antes);
+   - d1f34e73 → B (M66/M80 seguros; FIN-01 protege 'pago');
+   - ae30da69 → B (M66/M80 seguros; 'pago'/'conferido' protegidos).
+
+==================================================
+RESULTADO
+==================================================
+
+CASE_58E_SAFE_METHOD=C
+CASE_D1F_SAFE_METHOD=B
+CASE_AE3_SAFE_METHOD=B
+
+DIRECT_OS_INSERT_SAFE=PARCIAL (seguro para d1f/ae3; inseguro para 58e por 'parcial')
+M66_SAFE=PARCIAL (d1f/ae3 SIM; 58e NÃO)
+M80_SIDE_EFFECT_RISK=SIM (mesma limitação de 'parcial' no financeiro_pagar)
+HISTORICAL_FINANCE_PRESERVED=PARCIAL (d1f/ae3 SIM; 58e NÃO — status 'parcial'→'aberto')
+
+NEXT_MINIMAL_FIX=
+  FIN-01.1 (migration mínima, forward-only): incluir 'parcial' na guarda de financeiro_pagar
+  em M66 e M80:
+    financeiro_pagar.status NOT IN ('pago','parcial','cancelado','cancelada')
+  Com isso, os 3 casos tornam-se Method B e podem ser vinculados/criados como em ESCALA-OS-06,
+  sem alterar valores/status/baixas históricos. Rollback = restaurar as funções anteriores.
+  (Não tratar aqui: 67 Classe E, 16 Classe D, 9 FIN-02, 27 órfãs.)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE persistente (simulação em BEGIN/ROLLBACK).
+- Nenhuma migration. M66/M80 não alterados. Pagamentos/baixas não tocados.
+- Não tratou Classe E/D, FIN-02, órfãs, APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

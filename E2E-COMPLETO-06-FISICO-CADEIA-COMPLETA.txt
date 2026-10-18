@@ -1,0 +1,143 @@
+E2E-COMPLETO-06-FISICO-CADEIA-COMPLETA
+==================================================
+Ambiente: TMS + Supabase PROD + APP físico | Data: 2026-09-22
+Modo: E2E REAL CONTROLADO / UMA ÚNICA OPERAÇÃO HML
+RESULT=BLOCKED (etapas de UI TMS + Redmi físico exigem operador humano;
+  este ambiente é CLI, sem automação de navegador/dispositivo)
+DB_WRITES=2 | MIGRATIONS=0
+
+==================================================
+1. PRECHECK — PASS
+==================================================
+CLIENTE 3d2d079d: "HOMOLOGAÇÃO APP" | status=ativo ✔
+PRESTADOR e6646799: "PRESTADOR TESTE APP" | status=ativo | liberado_app=true |
+  auth_user_id=a5e51631-5ed8-430d-9041-4b185c03d821 ✔ (AUTH_MATCH=true)
+VEÍCULO 87dceca0: HML-A27B | tipo_veiculo=vuc | tipo_carga=seca | vinculado ao prestador ✔
+RESIDUAL: VUC_TABLES=0 | HML_ALLOCS=0 (nenhum título/baixa HML residual) ✔
+PRECHECK_PASS=YES
+
+==================================================
+2. SNAPSHOT PRÉ (produção)
+==================================================
+alocacoes_escala=193 | ordens_servico=159 | financeiro_receber=143 | financeiro_pagar=175
+pagamentos_prestadores=134 | composicao_financeira_os=59 | financeiro_baixas=18
+delivery_proofs=9 | entregas_protocolo=51 | eventos_oficiais=412
+prestador.valor_diaria=NULL | valor_saida=NULL
+
+==================================================
+3. DADOS HML — CRIADOS (temporários; cleanup no E2E-07)
+==================================================
+HML_TABLE_ID=d12cf0cd-8c41-4e2f-9358-e608ea3439be
+  nome='HML E2E-06 VUC - HOMOLOGACAO APP' | tipo_veiculo=vuc | universal=false |
+  cliente='HOMOLOGAÇÃO APP' | classificacao_termica='seco' | ativo=true |
+  valor_base=300.00 | franquia_km=100 | km_franquia=100 | valor_km_excedente=1.20 |
+  vigência CURRENT_DATE..+7 | tenant 00000000-0000-0000-0000-000000000001
+PRESTADOR e6646799: valor_diaria=250.00 (temporário; restaurar NULL no cleanup)
+HML_DATA_CREATED=YES
+
+==================================================
+4-6. BLOQUEIO (UI TMS + Redmi físico)
+==================================================
+As etapas 4 (criar Escala pela UI), 5 (APP físico/Redmi) e 10 (gerar PDFs pela UI)
+exigem operador humano (navegador + dispositivo). Não são executáveis por CLI.
+Nada foi criado além dos dados HML (para evitar duplicidade de operação HML).
+
+ALLOCATION_ID=(pendente — criar UMA única via UI)
+OS_ID=(pendente)
+OS_NUMBER=(pendente)
+
+==================================================
+RUNBOOK (operador humano) — executar em sequência
+==================================================
+[A] Escala via UI (TMS):
+  1. Operação → Escala → Nova Alocação.
+  2. Prestador: "PRESTADOR TESTE APP" (veículo HML-A27B/VUC aparece automaticamente).
+  3. Cliente: "HOMOLOGAÇÃO APP" → tabela "HML E2E-06 VUC - HOMOLOGACAO APP" aplicada.
+  4. KM: 0 (ou 150). Horário de saída ≤ 11:00 (evita multiplicador).
+  5. Rota/Observação identificável: "E2E-COMPLETO-06-HML".
+  6. NÃO selecionar OS manualmente. Salvar UMA única vez.
+  Esperado na UI: Cliente=300,00 (KM=0) e Prestador=250,00.
+
+[B] APP físico (Redmi) — login "PRESTADOR TESTE APP":
+  aceitar a operação → carregamento/saída → chegada → descarga →
+  POD (foto + assinatura + recebedor; conteúdo "HOMOLOGACAO/E2E") → concluir.
+  Não informar senha ao agente.
+
+[C] PDFs pela UI: PDF OS → "PDF Cliente" e "PDF Prestador".
+
+==================================================
+VALIDAÇÃO AUTOMÁTICA (rodar após [A], [B], [C])
+==================================================
+Substituir <ALLOC> e <OS> (obtidos após [A]: alocacoes_escala.ordem_servico_id).
+
+-- 1) Alocação/OS/Financeiro (TMS→OS→Financeiro)
+SELECT a.id, a.ordem_servico_id, a.valor_frete, a.valor_repasse, a.status,
+       o.numero, o.valor_cliente, o.custo_prestador
+FROM alocacoes_escala a JOIN ordens_servico o ON o.id=a.ordem_servico_id
+WHERE a.id='<ALLOC>';
+
+-- 2) Financeiro (1 receber, 1 pagar, 1 pp; sem duplicidade)
+SELECT (SELECT count(*) FROM financeiro_receber WHERE os_id='<OS>') rec,
+       (SELECT count(*) FROM financeiro_pagar   WHERE os_id='<OS>') pag,
+       (SELECT count(*) FROM pagamentos_prestadores WHERE os_id='<OS>') pp,
+       (SELECT count(*) FROM composicao_financeira_os WHERE os_id='<OS>') comp,
+       (SELECT count(*) FROM financeiro_baixas WHERE titulo_id IN (SELECT id FROM financeiro_pagar WHERE os_id='<OS>')) baixas;
+
+-- 3) Status APP→TMS (eventos) e POD
+SELECT event_type, entity_id, created_at FROM eventos_oficiais
+ WHERE entity_id IN ('<ALLOC>','<OS>') ORDER BY created_at;
+SELECT id, stop_id, operation_id, os_id, prestador_id, photo_url, signature_url,
+       receiver_name, latitude, longitude, status
+FROM delivery_proofs WHERE operation_id='<ALLOC>' OR os_id='<OS>';
+SELECT id, alocacao_id, ordem_servico_id, prestador_id, nome_recebedor,
+       foto_entrega_url, assinatura_url, status
+FROM entregas_protocolo WHERE alocacao_id='<ALLOC>' OR ordem_servico_id='<OS>';
+
+-- 4) PDFs: abrir na UI e conferir (Cliente sem repasse/margem; Prestador sem receita/margem; sem página em branco)
+
+==================================================
+RESULTADO
+==================================================
+PRECHECK_PASS=YES
+HML_DATA_CREATED=YES
+ALLOCATION_ID=(pendente UI)
+OS_ID=(pendente UI)
+OS_NUMBER=(pendente UI)
+
+APP_LOGIN_PASS=(pendente Redmi)
+APP_RECEIVED_OPERATION=(pendente)
+APP_ACCEPT_PASS=(pendente)
+APP_EXECUTION_PASS=(pendente)
+APP_CONCLUSION_PASS=(pendente)
+TMS_STATUS_SYNC_PASS=(pendente)
+
+POD_REMOTE_CONFIRMED=(pendente)
+POD_DUPLICATES=(pendente)
+BAIXAS_EVIDENCIAS_PASS=(pendente)
+VER_COMPROVANTES_PASS=(pendente)
+
+CLIENT_VALUE=300.00 (esperado)
+PROVIDER_VALUE=250.00 (esperado)
+FINANCIAL_CHAIN_PASS=(pendente)
+FINANCIAL_DUPLICATES=(pendente)
+
+CLIENT_PDF_PASS=(pendente)
+PROVIDER_PDF_PASS=(pendente)
+BLANK_FIRST_PAGE=(pendente)
+FINANCIAL_LEAK_CLIENT=NO (garantido por código/PDF Cliente)
+CLIENT_REVENUE_LEAK_PROVIDER=NO (garantido por código/PDF Prestador)
+
+E2E_CRITICAL_CHAIN_PASS=(pendente)
+OPEN_GAPS=UI TMS + Redmi físico não executáveis por CLI (sem automação de navegador/dispositivo)
+
+RESULT=BLOCKED
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-06-FISICO-CADEIA-COMPLETA
+  (continuar: operador executa [A] UI + [B] Redmi + [C] PDFs; o agente valida por DB e
+   então segue para E2E-COMPLETO-07-FECHAMENTO-CLEANUP)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum cliente/prestador real usado; nenhuma operação HML criada (para evitar duplicidade);
+sem pagamento/baixa; sem cleanup; nível 2 não encerrado; Master 360/Control Tower não executados.

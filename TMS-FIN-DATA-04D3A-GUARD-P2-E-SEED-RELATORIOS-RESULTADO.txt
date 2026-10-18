@@ -1,0 +1,164 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3A-GUARD-P2-E-SEED-RELATORIOS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS (escopo) — com RISCOS REMANESCENTES fora de escopo registrados.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+P2 do escopo classificados e protegidos: 2 harnesses MOVIDOS de src/lib/testes para
+scripts/lab (guard + sem hardcode), 3 produtores Node/tsx protegidos, 5 arquivos inertes
+(Playwright skeletons) classificados, e seed-relatorios neutralizado (stub) + port Node
+com guard em scripts/lab. Matriz A-E PASS; P1 sem regressao; selftest 13/13 PASS.
+Arquivos FORA do escopo com hardcode PROD/anon foram encontrados e REGISTRADOS (nao tratados).
+
+--------------------------------------------------------------------------------
+1. INVENTARIO REAL DO ESCOPO
+--------------------------------------------------------------------------------
+ #  Arquivo (antes)                                  | Tipo                 | Veredito
+ 1  src/lib/testes/testeMissaoOSCompleta.ts          | tsx harness (WRITE)  | MOVIDO -> scripts/lab/ + guard
+ 2  src/lib/testes/testeM66Corrigido.ts              | tsx harness (WRITE)  | MOVIDO -> scripts/lab/ + guard
+ 3  tmp/valid_real_ui.mjs                            | node/playwright WRITE| PROTEGIDO (guard)
+ 4  test_os_save.mjs                                 | node WRITE           | PROTEGIDO (guard)
+ 5  test_os_cep_horario.mjs                          | node WRITE           | PROTEGIDO (guard)
+ 6  test_minimal.ts                                  | Playwright skeleton  | INERTE (sem DML)
+ 7  test_min2.ts / test_min3.ts                      | Playwright skeleton  | INERTE
+ 8  test_snippet.ts / test_snippet2.ts               | Playwright skeleton  | INERTE
+ 9  scripts/seed-relatorios.js                       | console snippet      | NEUTRALIZADO (stub) + port lab
+
+--------------------------------------------------------------------------------
+2. ARQUIVO ANTES/DEPOIS
+--------------------------------------------------------------------------------
+ src/lib/testes/testeMissaoOSCompleta.ts  -> scripts/lab/testeMissaoOSCompleta.ts
+   antes: URL+anon PROD HARDCODED, createClient direto, sem guard.
+   depois: guardHarness(...) antes de createClient; VITE_* do env; sem hardcode.
+ src/lib/testes/testeM66Corrigido.ts      -> scripts/lab/testeM66Corrigido.ts  (idem)
+ tmp/valid_real_ui.mjs
+   antes: loadDotEnv() sobrescrevia process.env com .env (PROD) + URL PROD hardcoded.
+   depois: guardHarness(...) (carrega .env.qa preferencial); remove loadDotEnv; URL/key do env.
+ test_os_save.mjs
+   antes: dotenv default (.env=PROD) + createClient.
+   depois: guardHarness(...) ANTES de dotenv.config()/createClient.
+ test_os_cep_horario.mjs
+   depois: guardHarness(...) no topo (antes do import legado e do createClient).
+ scripts/seed-relatorios.js
+   antes: IIFE de console que reusava o cliente PROD da app e INSERIA dados.
+   depois: STUB somente-comentario (sem imports/DML) apontando para o substituto.
+ scripts/lab/seed-relatorios.cjs (NOVO)
+   port Node com guardHarness, createClient proprio a partir do env (QA), sem hardcode,
+   mesmo efeito funcional do seed original (cliente DVL, prestador, OS, financeiro_receber,
+   pagamentos_prestadores).
+
+--------------------------------------------------------------------------------
+3. POSICAO DO GUARD x CONEXAO/ESCRITA
+--------------------------------------------------------------------------------
+Todos: guardHarness(...) e a 1a instrucao de topo apos os imports, portanto executa ANTES
+de createClient/createClient-like/pg.Client/Pool/chromium.launch/1a escrita.
+
+--------------------------------------------------------------------------------
+4. MATRIZ A-E (guard central, env mockado)
+--------------------------------------------------------------------------------
+ A) PROD -> BLOQUEIA ....................................... PASS
+ B) PROD + ALLOW_TEST_WRITES=true -> BLOQUEIA .............. PASS
+ C) QA sem opt-in -> BLOQUEIA .............................. PASS
+ D) QA + opt-in -> PASSA pelo guard (sem executar DML) ..... PASS
+ E) env ausente -> BLOQUEIA ................................ PASS
+
+--------------------------------------------------------------------------------
+5. EXECUCAO CONTROLADA (prova de aborto, sem conexao/DML)
+--------------------------------------------------------------------------------
+ scripts/lab/testeMissaoOSCompleta.ts  -> "TEST WRITE BLOCKED" (abortou no guard)
+ scripts/lab/testeM66Corrigido.ts      -> idem
+ tmp/valid_real_ui.mjs                 -> idem
+ test_os_save.mjs                      -> idem
+ test_os_cep_horario.mjs               -> import legado quebrado PRE-EXISTENTE
+                                          ('./src/lib/dbMappers.js' nao existe; so .ts);
+                                          guard presente no topo (estatico PASS);
+                                          sem conexao/DML. Dynamic = N/A.
+ scripts/lab/seed-relatorios.cjs       -> "TEST WRITE BLOCKED" (abortou no guard)
+
+ PARTE B (src/lib/testes): confirmado ZERO import pela UI para os 2 arquivos do escopo
+ (grep em src: apenas auto-referencias). Apos o move, deixaram de existir em src (fora do
+ bundle). Nenhum outro arquivo recebeu import do guard dentro de src.
+
+--------------------------------------------------------------------------------
+6. seed-relatorios.js -> NAO EXECUTA MAIS DML
+--------------------------------------------------------------------------------
+ Verificacao: apos remover comentarios, o arquivo nao contem codigo (0 chars uteis) e
+ nenhum token proibido (createClient/supabase/.insert/.update/.delete/.rpc/INSERT/require/
+ await import). Stub = PASS.
+
+--------------------------------------------------------------------------------
+7. VARREDURA (Parte D) — ESCOPO
+--------------------------------------------------------------------------------
+ Diretorios varridos: src/lib/testes/, tmp/, raiz test_*, scripts/seed-relatorios*.
+ Resultado no ESCOPO:
+  - Os arquivos tratados: sem ref PROD, sem anon, com guard. OK.
+  - INERTES (Playwright skeletons soltos na raiz): sem createClient/pg/DML; nao executam
+    fora do runner (apenas registram testes). Classificados como legado/inertes.
+  - scripts/seed-relatorios.js: neutralizado.
+ FORA DO ESCOPO (APENAS REGISTRADO — NAO TRATADO nesta missao):
+  - src/lib/testes/testeTMSCompleto.ts, testeDocumentos.ts, executarTesteReal.js,
+    executarTesteReal.cjs, testarEdgeFunction.cjs: ainda com ref PROD + anon hardcoded e
+    DML. ATENCAO: src/pages/DevTesteTMS.tsx importa testeTMSCompleto/testeDocumentos e esta
+    roteado em /dev-teste (lazy) -> produtor alcancavel pela UI (risco alto).
+  - Muitos arquivos na RAIZ (test-*.ts, test_*.cjs, *_*.cjs, teste_*.cjs, verificar*.cjs,
+    validar_*.cjs, auditar_*.cjs) com PROD+anon hardcoded.
+  - tmp/ e scratch/ contendo DATABASE_URL com CREDENCIAL PROD em texto claro
+    (ex.: scratch/run_01b.mjs, check_rls.mjs, check_policies.mjs, ...).
+  - tests/e2e/*.spec.ts (diversos) com PROD+anon hardcoded (fora de escopo por instrucao).
+  => recomendacao: tratar em 04D3B/D3C (abaixo).
+
+--------------------------------------------------------------------------------
+8. REGRESSAO / SELFTEST
+--------------------------------------------------------------------------------
+ node scripts/_guard.selftest.cjs ........ TOTAL 13 | PASS 13 | FAIL 0
+ node scripts/_guard.verify_p1.cjs ....... 13/13 estaticos+dinamicos OK | A-E PASS
+ node scripts/_guard.verify_p2.cjs ....... 6/6 OK (1 dynamic N/A por import legado) | A-E PASS
+
+--------------------------------------------------------------------------------
+9. PROVAS
+--------------------------------------------------------------------------------
+ - Zero conexao Supabase/PG; zero DML; zero browser real contra PROD; zero segredo novo
+   (apenas REMOCAO de hardcodes nos arquivos tratados).
+ - Nenhum produtor de console capaz de usar PROD (seed-relatorios neutralizado; port lab
+   bloqueado por guard).
+
+--------------------------------------------------------------------------------
+10. RISCOS REMANESCENTES (registrar)
+--------------------------------------------------------------------------------
+ R1. src/pages/DevTesteTMS.tsx (/dev-teste) importa harnesses de src/lib/testes que ainda
+     contem PROD+anon e DML -> produtor ALCANCAVEL PELA UI. Requer acao (04D3B).
+ R2. ~dezenas de scripts na RAIZ com PROD+anon hardcoded e escrita (nao tratados).
+ R3. tmp/ e scratch/ com DATABASE_URL contendo CREDENCIAL PROD em texto claro -> rotacao
+     de credencial e limpeza (infra).
+ R4. tests/e2e/*.spec.ts com PROD+anon hardcoded (fora de escopo por instrucao).
+
+--------------------------------------------------------------------------------
+11. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (escopo). 9 arquivos do escopo classificados; produtores P2 de escrita protegidos;
+seed-relatorios nao escreve mais via console; P1 sem regressao; PROD inacessivel pelos
+produtores tratados; QA possivel com opt-in; zero DML real.
+
+--------------------------------------------------------------------------------
+12. PROXIMA MICRO-MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3B — UI TEST PAGE + src/lib/testes restantes: (a) neutralizar/realocar
+DevTesteTMS (src/pages + rota /dev-teste) e os harnesses testeTMSCompleto/testeDocumentos/
+executarTesteReal*/testarEdgeFunction (mover para scripts/lab + guard OU remover do bundle);
+(b) remover PROD/anon hardcoded nesses arquivos. Depois: 04D3C raiz (dezenas de test-*/
+criar_*/verificar_*) e 04D3D tests/e2e + rotacao de credencial/limpeza de scratch/tmp.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3A-GUARD-P2-E-SEED-RELATORIOS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3A-GUARD-P2-E-SEED-RELATORIOS-RESULTADO.txt
+Tamanho ..: 10513 bytes
+Data .....: 24/09/2026 21:05:05
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3A
+================================================================================

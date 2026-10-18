@@ -1,0 +1,193 @@
+ESCALA-E2E-02-PERSISTENCIA-FINANCEIRO-TRACE
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma escrita)
+
+==================================================
+HANDLERS
+==================================================
+
+ESCALA_SAVE_HANDLER=src/components/operacao/EscalaLista.tsx :: handleCreateReserva
+  (valida prestador/veículo/cliente/tabela; exige OS interna; monta payload; chama o service)
+ESCALA_INSERT_FUNCTION=src/services/escala/escalaService.ts :: criarAlocacao
+  (valida conflitos/elegibilidade; pode criar OS via criarOrdemServico; INSERT alocacoes_escala .select())
+ESCALA_UPDATE_FUNCTION=src/services/escala/escalaService.ts :: atualizarAlocacao
+  (valida transição de status; UPDATE alocacoes_escala)
+ESCALA_CANCEL_FUNCTION=src/services/escala/escalaService.ts :: cancelarAlocacao
+  (→ atualizarAlocacao({status:'cancelada', finalizada:true}); financeiro via trigger)
+
+==================================================
+TRIGGERS DA ALOCAÇÃO (alocacoes_escala)
+==================================================
+
+ALOCACAO_TRIGGERS=
+  trg_alocacoes_escala_updated_at           BEFORE UPDATE (updated_at)
+  trg_cancelar_financeiro_alocacao          BEFORE UPDATE OF status (WHEN new='cancelada' AND mudou)
+  trg_propagar_financeiro_alocacao          AFTER INSERT OR UPDATE OF (status, finalizada, valor_frete,
+                                            valor_repasse, valor_pedagio, valor_combustivel, valor_ajudante,
+                                            valor_adicional, valor_desconto, valor_desconto_prestador,
+                                            tipo_reversa, reversa_valor_cliente, reversa_valor_prestador,
+                                            prestador_id)
+  trg_registrar_historico_alocacao          AFTER INSERT OR UPDATE
+  trg_evento_alocacao_criada                AFTER INSERT
+  trg_evento_alocacao_cancelada             AFTER UPDATE OF status (WHEN new='cancelada')
+  trg_evento_alocacao_recusada              AFTER UPDATE OF status (WHEN new='recusada')
+  trg_evento_prestador_aceitou              AFTER UPDATE OF aceite_prestador
+  trg_evento_operacao_finalizada            AFTER UPDATE OF finalizada (WHEN true e status<>cancelada)
+  trg_evento_alocacao_motorista_trocado     AFTER UPDATE OF prestador_id
+
+TRIGGER_EXECUTION_ORDER (UPDATE status → 'cancelada'):
+  1) trg_alocacoes_escala_updated_at (BEFORE)
+  2) trg_cancelar_financeiro_alocacao (BEFORE)  → cancela financeiro
+  3) trg_propagar_financeiro_alocacao (AFTER)   → RETORNA cedo (status='cancelada')
+  4) trg_registrar_historico_alocacao (AFTER)
+  5) trg_evento_alocacao_cancelada (AFTER)
+
+TRIGGER_EXECUTION_ORDER (INSERT / UPDATE de valores):
+  1) trg_propagar_financeiro_alocacao (AFTER)   → OS + receber + pagar + pagamentos + composição
+  2) trg_registrar_historico_alocacao / trg_evento_* (AFTER)
+  A OS criada/atualizada dispara, por sua vez, os triggers de ordens_servico:
+     trg_propagar_financeiro_os (M80) → receber/pagar/pagamentos (idempotente)
+
+==================================================
+FUNÇÕES (detalhe)
+==================================================
+
+FUNCTION_NAME=f_trg_propagar_financeiro_alocacao  (trigger trg_propagar_financeiro_alocacao)
+  EVENT=AFTER INSERT OR UPDATE OF (status, finalizada, valores, prestador_id)
+  CONDITION=NEW.status <> 'cancelada' AND (valores > 0)
+  CREATES_OS=YES (INSERT ordens_servico ON CONFLICT (id) DO UPDATE; id = ordem_servico_id ?? alocacao.id)
+  UPDATES_ALLOCATION_OS_ID=YES (SET alocacoes_escala.ordem_servico_id = v_os_id quando NULL)
+  CREATES_FINANCEIRO_RECEBER=YES (ON CONFLICT (os_id) DO UPDATE) — se valor_frete+reversa > 0 e cliente_id
+  CREATES_PAGAMENTO_PRESTADOR=YES (financeiro_pagar ON CONFLICT (os_id) DO UPDATE;
+                                   pagamentos_prestadores ON CONFLICT (os_id) DO UPDATE)
+  CREATES_COMPOSICAO=YES (composicao_financeira_os ON CONFLICT (os_id) DO UPDATE) — SOMENTE se
+                       (status='concluida' AND finalizada=true) e valor_cliente>0
+  UPDATES_EXISTING_RECORDS=YES (recalcula valor/status das 4 tabelas por os_id)
+
+FUNCTION_NAME=f_trg_cancelar_financeiro_alocacao  (trigger trg_cancelar_financeiro_alocacao)
+  EVENT=BEFORE UPDATE OF status (WHEN new='cancelada' AND old<>'cancelada')
+  CONDITION=NEW.status='cancelada'
+  CREATES_OS=NO
+  UPDATES_ALLOCATION_OS_ID=NO
+  CREATES_FINANCEIRO_RECEBER=NO (UPDATE: status='cancelada' exceto pago/recebido)
+  CREATES_PAGAMENTO_PRESTADOR=NO (UPDATE financeiro_pagar status='cancelada'; pagamentos_prestadores
+                                  status_pagamento/status_conferencia='cancelado')
+  CREATES_COMPOSICAO=NO
+  UPDATES_EXISTING_RECORDS=YES (financeiro_receber/pagar/pagamentos_prestadores)
+
+FUNCTION_NAME=f_trg_propagar_financeiro_os  (trigger trg_propagar_financeiro_os — M80)
+  EVENT=AFTER INSERT OR UPDATE OF (valor_cliente, custo_prestador, pedagio, adicionais, ajudante,
+        descontos, status) ON ordens_servico, WHEN status<>'cancelada'
+  CONDITION=valores > 0
+  CREATES_OS=NO (já é a OS)
+  CREATES_FINANCEIRO_RECEBER=YES (PERFORM+IF NOT FOUND → INSERT senão UPDATE; idempotente por os_id=OS.id)
+  CREATES_PAGAMENTO_PRESTADOR=YES (financeiro_pagar idem)
+  CREATES_COMPOSICAO=NO (composição é da M66/OS)
+  UPDATES_EXISTING_RECORDS=YES
+
+==================================================
+IDEMPOTÊNCIA / UNIQUENESS (confirmado no banco)
+==================================================
+
+OS_IDEMPOTENCY_KEY=ordens_servico.id  (UNIQUE pkey)  [= alocacao.ordem_servico_id ou alocacao.id]
+RECEBER_IDEMPOTENCY_KEY=financeiro_receber.os_id     (UNIQUE uq_fr_os_id)
+PAGAR_IDEMPOTENCY_KEY=financeiro_pagar.os_id         (UNIQUE uq_fp_os_id)
+PAGAMENTOS_IDEMPOTENCY_KEY=pagamentos_prestadores.os_id (UNIQUE uq_pp_os_id)
+COMPOSICAO_IDEMPOTENCY_KEY=composicao_financeira_os.os_id (UNIQUE composicao_financeira_os_os_id_key)
+
+Duplicatas observadas: apenas registros com os_id NULL (legado/manual): receber=20, pagar=17,
+  pagamentos=12. Nenhuma duplicata com os_id preenchido (trigger é idempotente).
+
+==================================================
+PROVA DE RELAÇÕES (registro real, read-only)
+==================================================
+
+ALOCACAO=2333f16e-6f4f-4169-8766-a02282ec8527 (status=aceita, valor_frete=500, valor_repasse=250)
+  → ordem_servico_id=2c24a4dc-3491-4f46-9d24-69ceb4d76d63
+OS=2c24a4dc-3491-4f46-9d24-69ceb4d76d63 (numero OS-202608-680216, status=agendada,
+     valor_cliente=500, custo_prestador=0)
+  → financeiro_receber(os_id=2c24a4dc, valor=500.00)
+  → financeiro_pagar(os_id=2c24a4dc, valor=250.00)
+  → pagamentos_prestadores(os_id=2c24a4dc, valor_liquido=250.00, status_pagamento=nao_vencido)
+  → composicao_financeira_os=[] (não concluída → composição só na conclusão)
+LINK: 193 alocações, 59 com ordem_servico_id (134 sem — M66 preenche quando houver mudança monitorada)
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. INSERT pode gerar duplicidade financeira? NÃO — ON CONFLICT (os_id) DO UPDATE (idempotente).
+   Risco residual: se `ordem_servico_id` mudar entre execuções, cria-se registro sob outro os_id.
+2. UPDATE da mesma alocação recalcula ou duplica? RECALCULA (in-place por os_id); não duplica.
+3. Editar valor cliente atualiza financeiro existente? SIM (trigger dispara em valor_frete → UPDATE receber.valor).
+4. Editar valor prestador atualiza obrigação existente? SIM (financeiro_pagar + pagamentos_prestadores).
+5. Cancelar cancela/reverte OS e financeiro? FINANCEIRO=SIM (receber/pagar → 'cancelada' salvo pago;
+   pagamentos → 'cancelado'). OS=NÃO (ordens_servico não é revertida/cancelada).
+6. Reabrir/reprocessar gera segunda obrigação? NÃO (idempotente por os_id).
+7. Transação atômica? PARCIAL — tudo roda na transação do statement, MAS cada INSERT está em
+   BEGIN...EXCEPTION WHEN OTHERS THEN NULL → erros são SILENCIADOS → estados parciais possíveis.
+8. ordem_servico_id fica persistido na alocação? SIM (M66 SET quando NULL; service define na criação).
+9. Status que disparam: propagação quando status<>'cancelada' e valores>0; 'aberto' vs 'pendente' e
+   composição dependem de status='concluida' AND finalizada=true; cancelamento só em status='cancelada'.
+10. Riscos p/ E2E de escrita seguro: gravar alocação cria OS + financeiro real (receber/pagar/pagamentos,
+    +composição se concluída); requer OS; cancelar NÃO apaga (deixa linhas 'cancelada'). Um teste de
+    escrita poluiria Financeiro/dados reais → NÃO é seguro.
+
+==================================================
+RESULTADO
+==================================================
+
+SAVE_CHAIN_STATUS=MAPPED
+IDEMPOTENCY_STATUS=OK (UNIQUE os_id; ON CONFLICT/PERFORM+IF)
+UPDATE_COHERENCE_STATUS=OK (recalcula in-place)
+CANCELLATION_COHERENCE_STATUS=PARCIAL (financeiro cancelado; OS NÃO revertida)
+ATOMICITY_STATUS=PARCIAL/RISCO (erros engolidos → estados parciais)
+OS_LINK_STATUS=OK (ordem_servico_id persistido; 59/193 hoje)
+FINANCIAL_DUPLICATION_RISK=BAIXO
+SAFE_E2E_WRITE_POSSIBLE=NO
+
+==================================================
+ROOT_CAUSE / PRÓXIMA MISSÃO MÍNIMA
+==================================================
+
+ROOT_CAUSE=
+  1) f_trg_propagar_financeiro_alocacao (M66) e f_trg_propagar_financeiro_os (M80) usam
+     EXCEPTION WHEN OTHERS THEN NULL / PERFORM sem erro → falhas silenciosas; não há atomicidade
+     efetiva (pode criar OS e não criar receber/pagar, etc.).
+  2) Cancelamento (f_trg_cancelar_financeiro_alocacao) cancela o financeiro mas NÃO cancela/reverte a
+     ordens_servico vinculada → incoerência OS × financeiro.
+  3) Dupla propagação (M66 na alocação + M80 na OS criada) — idempotente, porém redundante.
+  4) Discrepância de fonte: OS fica com custo_prestador=0 (M80 usa custo_prestador) enquanto o
+     financeiro_pagar=250 (M66 usa valor_repasse) — ex.: OS 2c24a4dc.
+
+NEXT_MINIMAL_FIX (proposta — NÃO implementar nesta missão):
+  Missão mínima única: alinhar o CANCELAMENTO OS×financeiro — ao cancelar a alocação, cancelar também
+  a ordens_servico vinculada (UPDATE ordens_servico SET status='cancelada' WHERE id = ordem_servico_id),
+  mantendo a idempotência. Alternativa (separada): substituir a supressão de erro por RAISE/log
+  auditável para garantir atomicidade observável. Escolher UMA como próxima missão pequena.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhuma escrita no banco. Nenhuma alocação/OS criada. Sem pagar/cancelar/reabrir.
+- Sem migration/RLS. Triggers não alterados. Financeiro/APP/POD/Fatura/Recrutamento intactos.
+- Nenhuma correção implementada. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+FILES_MODIFIED=(nenhum — missão somente leitura)
+TESTS=85/85 PASS (regressão Escala direcionada; nenhum teste novo)
+  escala_e2e_01 (8), escala_veic_tabela_05 (24), 06 (16), 07 (19), escala_prestador_02 (18)
+TYPECHECK=0 erros novos (baseline pré-existente inalterado)
+BUILD=✓ built in 37.15s
+
+DB_WRITES=0
+MIGRATIONS=0

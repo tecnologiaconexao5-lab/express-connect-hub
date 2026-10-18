@@ -129,6 +129,10 @@ export interface AlocacaoEscala {
   tabela_valores_id?: string | null;
   tem_regra_especial?: boolean;
   
+  // Endereços operacionais (MISSÃO 132-A)
+  endereco_origem?: Record<string, any> | null;
+  endereco_destino?: Record<string, any> | null;
+
   // Metadados e flexibilidade
   metadata?: Record<string, any>;
   tags?: string[] | null;

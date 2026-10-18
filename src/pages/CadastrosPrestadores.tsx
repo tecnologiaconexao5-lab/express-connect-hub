@@ -7,13 +7,18 @@ import { Prestador } from "@/components/prestadores/types";
 const CadastrosPrestadores = () => {
   const [view, setView] = useState<"lista" | "detalhe" | "novo">("lista");
   const [selected, setSelected] = useState<Prestador | undefined>();
+  const [refreshKey, setRefreshKey] = useState(0);
 
   if (view === "detalhe" || view === "novo") {
     return (
       <div className="animate-fade-in">
         <PrestadorDetalhe
           prestador={view === "detalhe" ? selected : undefined}
-          onBack={() => { setView("lista"); setSelected(undefined); }}
+          onBack={() => {
+            setView("lista");
+            setSelected(undefined);
+            setRefreshKey((k) => k + 1);
+          }}
         />
       </div>
     );
@@ -33,6 +38,7 @@ const CadastrosPrestadores = () => {
       <PrestadoresLista
         onSelect={(p) => { setSelected(p); setView("detalhe"); }}
         onNew={() => setView("novo")}
+        refreshKey={refreshKey}
       />
     </div>
   );

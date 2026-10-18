@@ -1,0 +1,159 @@
+FIN-MOT-2K — ACABAMENTO PREMIUM FINAL DO PDF DO PRESTADOR
+Data: 21/08/2026
+Status: B — PDF PREMIUM GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+DADOS EMPRESARIAIS — FONTE REAL UTILIZADA
+============================================================
+
+Fonte: src/utils/empresaConfig.ts (mesma usada por foundation.ts,
+pdfFatura/faturaService.ts e OSPDF.tsx — padrão consolidado do TMS).
+
+- Razão social: Conexão Express Transportes LTDA
+- CNPJ: 31.227.975/0001-80  (NÃO é o placeholder 11.222.333/0001-81)
+- Cidade/UF: São Paulo/SP
+- Endereço: Av. Paulista, 1000 - Bela Vista (disponível na config)
+
+O DEFAULT_OPTIONS do gerador agora lê de empresaConfig; o CNPJ fictício
+"11.222.333/0001-81" foi removido.
+
+============================================================
+CLIENTE — COMO O NOME REAL FOI RESOLVIDO
+============================================================
+
+- NÃO há lookup dentro do PDF.
+- No componente PagamentoPrestadores.tsx foi adicionado o helper
+  `enriquecerExtratoComClientes(extrato)`, que usa a lista `clientes`
+  JÁ carregada na tela (id, nome_fantasia, razao_social) e substitui:
+    * UUID do cliente -> NOME REAL (nome_fantasia || razao_social);
+    * "Todos"         -> "Todos os clientes";
+    * ausente/UUID sem match -> permanece (PDF mostra "—").
+- Aplicado em:
+  1) handleGerarExtratoPeriodo (após construir o extrato por período);
+  2) handleGerarPDFExtrato (antes de chamar o gerador).
+- Nas linhas da tabela, `cliente_nome` também é resolvido para o nome real.
+
+============================================================
+NOMENCLATURA — APRESENTAÇÃO EXTERNA
+============================================================
+
+Mapeamento SOMENTE de label (tipoOrigem interno intocado):
+
+- escala          -> "Ordem de Carregamento"
+- ordem_servico   -> "Ordem de Serviço"
+- manual          -> descrição financeira real do lançamento
+- Todos           -> "Todos"
+
+Aplicado no filtro "Origem/Tipo" e na coluna "Ordem / Romaneio"
+(escala sem número exibe "Ordem de Carregamento"; OS exibe nº; romaneio/OC
+exibido quando existir).
+
+============================================================
+IDENTIFICAÇÃO — NÚMERO DO EXTRATO
+============================================================
+
+- Não existe sequência/numeração humana no extrato (sem tabela de
+  sequência). Mantida a identificação existente (ex.: EP-20260801-C0CA4D0E).
+- Exibição no cabeçalho: "Extrato nº <numero>".
+- Rodapé simplificado: "Conexão Express · Extrato nº <numero> · Gerado em
+  DD/MM/AAAA HH:mm" + "Página X de Y" (sem repetição de hash além do nº).
+- PENDÊNCIA DOCUMENTADA: criação de numeração humana (ex.: EP-2026-00123)
+  seria uma nova sequência/tabela — fora do escopo desta missão (não criar
+  migration).
+
+============================================================
+O QUE FOI ALTERADO
+============================================================
+
+src/lib/pdf/extratoPrestadorReport.ts
+- DEFAULT_OPTIONS agora usa empresaConfig real (razão/CNPJ/cidade-UF).
+- Cabeçalho premium: fundo branco, logo COLORIDO (getLogoWithFallback(false)),
+  dados da empresa à direita, linha navy fina + detalhe laranja, título
+  menor e elegante.
+- Helper mapearOrigemExterna() para nomenclatura externa.
+- Helper limparTrajetoTexto() para "Origem → Destino" sem textos operacionais
+  internos nem espaçamento artificial.
+- Helper formatarKMPDF() -> "159,6 km" (padrão pt-BR).
+- Colunas da tabela: Data | Ordem / Romaneio | Cliente | Trajeto / Serviço |
+  KM | Valor (valores à direita, datas centralizadas, crédito verde/débito
+  vermelho, cabeçalho repetido na quebra).
+- Rodapé/paginação real "Página X de Y" (total via getNumberOfPages).
+
+src/components/financeiro/PagamentoPrestadores.tsx
+- Helper enriquecerExtratoComClientes() resolve o nome real do cliente
+  ANTES do PDF (aplicado em handleGerarExtratoPeriodo e handleGerarPDFExtrato).
+
+NENHUM cálculo, OS/Escala, deduplicação, crédito/débito, filtro, banco,
+App ou Torre alterado.
+
+============================================================
+PROVA VISUAL
+============================================================
+
+PDF gerado pelo gerador REAL com CÉSAR AUGUSTO HOLANDA SILVA e cliente
+específico (Fábrica de Alimentos Calvo Ltda), 3 créditos + 1 débito manual,
+líquido R$ 11.750,50.
+
+- Arquivo: test-results/fin-mot-2k/extrato_cesar_calvo.pdf (24.353 bytes)
+- Gerado em Vitest/jsdom interceptando o output jsPDF — sem exceção.
+- ABERTO no visualizador padrão do Windows (Invoke-Item).
+
+CHECKLIST:
+[x] cabeçalho branco/premium (fundo branco + linha navy + laranja detalhe)
+[x] logo colorido visível e proporcional (getLogoWithFallback(false))
+[x] dados reais Conexão Express (empresaConfig)
+[x] CNPJ real vindo da configuração (31.227.975/0001-80)
+[x] cliente pelo nome (Fábrica de Alimentos Calvo Ltda)
+[x] nenhum UUID (enriquecimento antes do PDF + formatarClienteLabel)
+[x] nomenclatura "Ordem de Carregamento"/"Ordem de Serviço"
+[x] trajeto legível ("Guarulhos → Santo André")
+[x] descrição não cortada
+[x] valores em R$ (R$ 5.000,00...)
+[x] KM pt-BR (159,6 km)
+[x] identificação do extrato limpa ("Extrato nº ...")
+[x] rodapé sem hash técnico desnecessário
+[x] PDF cabe corretamente em uma página neste exemplo
+[ ] aparência adequada para envio ao motorista (confirmar no PDF aberto)
+
+============================================================
+VALIDAÇÃO
+============================================================
+
+[x] npx tsc --noEmit -> 0 erros
+[x] npm run build -> OK
+[x] npx vitest run src/test/extratoPrestadorService.test.ts -> 18/18
+[x] PDF premium gerado (24.353 bytes) e aberto
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Dados reais da empresa (empresaConfig) no cabeçalho; CNPJ fictício removido.
+- Nome real do cliente resolvido antes do PDF (sem UUID/placeholder).
+- Nomenclatura externa "Ordem de Carregamento"/"Ordem de Serviço".
+- Trajeto limpo, valores R$ e KM pt-BR, rodapé simplificado, paginação real.
+- PDF premium gerado e aberto.
+
+============================================================
+FALTA
+============================================================
+
+- Aprovação visual do usuário no PDF aberto (test-results/fin-mot-2k/
+  extrato_cesar_calvo.pdf) e geração no TMS real com dados de produção.
+- Numeração humana do extrato (ex.: EP-2026-00123) — pendência de negócio
+  (requer nova sequência, fora do escopo).
+
+============================================================
+STATUS
+============================================================
+
+B — PDF PREMIUM GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual final no TMS: Financeiro -> Pag. Prestadores -> Gerar Extrato
+com CÉSAR AUGUSTO HOLANDA SILVA + cliente específico, clicar Gerar PDF,
+abrir e confirmar o layout premium (cabeçalho branco, logo colorido, CNPJ
+real, cliente por nome, trajeto limpo, valores R$/KM pt-BR) antes de marcar A.

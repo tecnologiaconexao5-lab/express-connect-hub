@@ -1,0 +1,57 @@
+================================================================================
+FECHAMENTO APP PRESTADOR + TORRE — STATUS
+Data: 2026-08-17
+================================================================================
+
+CONCLUÍDO NESTA SESSÃO
+- Pendência #4 (refinamentos da Home) — PARCIALMENTE:
+  * Controle Disponível/Indisponível agora é um SWITCH REAL com aparência
+    clara de interruptor (verde ligado / cinza desligado).
+  * Quando DISPONÍVEL: switch ligado + rótulo "Disponível" (sem incentivo
+    a ficar indisponível).
+  * Quando INDISPONÍVEL: switch desligado + rótulo "Toque para ficar
+    disponível" (deixa claro que pode tocar para voltar a ficar disponível).
+  * Proporção logo/cabeçalho NÃO alterada (foi mantida a logo única ~30%
+    maior no expandido — sem duplicação, sem overflow).
+
+PENDENTE
+  - #1: prova física KM inicial + foto obrigatória do hodômetro (Redmi).
+  - #2: KM final + foto obrigatória do hodômetro (Redmi).
+  - #3: comprovar evidências KM chegando ao TMS/Torre (após #1/#2).
+  - #4 restante: proporção logo/cabeçalho — decidir se precisa de novo
+    ajuste após prova visual no Redmi.
+  - #5: acesso "Falar com a Torre" — já está no Acesso Rápido com badge de
+    não lidas (implementado em código); falta prova visual no Redmi (não
+    requer alteração de código — a Home já expõe o botão com destaque).
+  - #6: homologação integrada final App ↔ Torre (após APK novo no Redmi).
+
+ARQUIVOS ALTERADOS (APP — C:\src\conexao_prestador)
+- lib/core/presentation/driver_language.dart — nova string
+  "Toque para ficar disponível".
+- lib/features/home/widgets/operational_home_header.dart — pill substituído
+  por Switch real + rótulo dinâmico.
+
+NENHUM arquivo do TMS alterado. NENHUMA alteração em banco de produção.
+
+TESTE REALIZADO
+- flutter analyze (2 arquivos) → 0 issues.
+- flutter test (header + home + toggle + premium + glass + no-overflow)
+  → 62/62 PASS.
+
+PRÓXIMA AÇÃO FÍSICA
+1. CONECTAR O REDMI (item #1/#2):
+   - Instalar o APK novo (gerar APK é necessário antes — NÃO gerado nesta
+     sessão por regra de economia).
+2. Com o App aberto e logado como PRESTADOR TESTE APP:
+   - Tocar no switch do cabeçalho (desligar e ligar) e confirmar visualmente
+     o estado Disponível/Indisponível.
+   - Abrir o card "Falar com a Torre" e confirmar que o acesso é fácil.
+3. Sentido KM (fluxo de prova física KM):
+   - Iniciar uma operação real com OS vinculada;
+   - informar KM inicial + foto do hodômetro;
+   - ao final, informar KM final + foto do hodômetro;
+   - validar no TMS → painel de KM (KmEvidenciasPanel) exibindo as fotos.
+
+================================================================================
+FIM DO RELATÓRIO — FECHAMENTO APP + TORR
+================================================================================

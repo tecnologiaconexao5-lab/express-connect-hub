@@ -1,0 +1,247 @@
+================================================================================
+MISSAO: TMS-FIN-PP-UX-02C1A-CANCELAMENTO-ESTORNO-ROOT-CAUSE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: AUDITORIA FORENSE READ-ONLY. ZERO IMPLEMENTACAO. ZERO DML/DDL.
+================================================================================
+
+RESULTADO: PASS. Causa-raiz do estorno identificada e PROVADA.
+  Tres conceitos separados: REPROVAR (workflow), CANCELAR NAO PAGO (encerrar),
+  ESTORNAR PAGO (reverter baixa). Nenhum dos tres esta implementado de ponta a ponta
+  para o prestador. S1/S2 preservados. Nenhuma RPC/migration/estorno/baixa executados.
+
+================================================================================
+1. AUDITORIA DAS RPCs (PROD — definicoes, grants, seguranca)
+================================================================================
+FONTE: pg_get_functiondef + information_schema.routine_privileges (read-only).
+
+[1] f_registrar_baixa_financeira(p_titulo_tabela text, p_titulo_id uuid, p_valor_baixado numeric,
+     p_data_baixa date=CURRENT_DATE, p_forma_pagamento text, p_conta_financeira text,
+     p_conta_financeira_id uuid, p_referencia_bancaria text, p_observacao text,
+     p_usuario_id uuid, p_usuario_nome text) RETURNS (sucesso, mensagem, baixa_id, saldo_restante, status_titulo)
+  - SECURITY INVOKER (prosecdef=false) | VOLATILE | search_path: NAO definido (proconfig=null) <RISCO>
+  - Grants: EXECUTE -> authenticated, postgres, service_role.
+  - Auth/tenant/perfil: NENHUM (aceita p_usuario_id/nome como parametro, sem auth.uid()).
+  - Tabelas: financeiro_baixas (INSERT), financeiro_pagar|financeiro_receber (SELECT FOR UPDATE + UPDATE).
+  - Status: 'parcial' (saldo>0) ou 'pago' (saldo=0); grava data_pagamento/data_efetiva_pgto e conta_pagadora/entrada.
+  - Parcial: SIM (valida p_valor_baixado > 0, <= saldo; recalcula soma das baixas nao estornadas).
+  - Idempotencia: nao ha chave; protege por status ('pago'/'cancelado' bloqueiam) e saldo<=0 bloqueia.
+  - Auditoria: escreve linha em financeiro_pagar.observacoes ("Baixa R$ ... Saldo restante ..."). Sem tabela de auditoria dedicada.
+  - Repeticao: bloqueada se titulo ja quitado/cancelado.
+  - VALIDACAO PREVIA: REJEITA baixa em titulo 'cancelado'.
+
+[2] f_estornar_baixa_financeira(p_baixa_id uuid, p_motivo_estorno text) RETURNS (sucesso, mensagem, saldo_restante, status_titulo)
+  - SECURITY INVOKER (prosecdef=false) | VOLATILE | search_path: NAO definido (proconfig=null) <RISCO>
+  - Grants: EXECUTE -> authenticated, postgres, service_role.
+  - Auth/tenant/perfil: NENHUM. Motivo OPCIONAL. Registra data_estorno=now(); NAO registra usuario.
+  - NAO cria movimento inverso: faz UPDATE financeiro_baixas SET estornada=true, data_estorno, motivo_estorno
+    ("nunca apaga o registro").
+  - Recalcula total baixado (soma das NAO estornadas) e saldo; ATUALIZA financeiro_pagar|_receber.status:
+      * sem baixas restantes -> 'aberto' (+ limpa data_pagamento/data_efetiva_pgto);
+      * saldo>0 -> 'parcial'; * saldo<=0 -> 'pago'.
+  - NAO altera pagamentos_prestadores. NAO altera saldo de conta financeira (nao ha saldo materializado na RPC).
+  - Nao altera DRE/Fluxo de forma explicita (DRE/Fluxo leem baixas nao estornadas -> efeito derivado).
+  - Parcial/multiplas baixas: SIM (recalcula por soma). Estorno repetido: BLOQUEADO ('Baixa ja estornada').
+
+[3] f_confirmar_pagamento_prestador(p_pagamento_id uuid, p_data_pagamento date=CURRENT_DATE, p_valor_pago numeric=NULL)
+     RETURNS (sucesso, mensagem, pagamento_id, titulo_id, baixa_id, valor_pagamento, valor_liquidado,
+              saldo_restante, conta_financeira_id, conta_financeira, status_pagamento)
+  - SECURITY DEFINER (prosecdef=true) | VOLATILE | search_path='public'. Grants: authenticated, postgres, service_role.
+  - Auth/tenant/perfil: COMPLETO — exige auth.uid(); tenant via tenant_usuarios (status='ativo') e
+    papel IN ('super_admin','admin_tenant','financeiro'); isolamento por tenant via f_pp_tenant_id(os_id) (DEFINER).
+  - Tabelas: pagamentos_prestadores (SELECT FOR UPDATE + UPDATE), financeiro_pagar (SELECT FOR UPDATE + UPDATE),
+    financeiro_baixas (INSERT), contas_financeiras (SELECT conta ativa).
+  - Conta financeira: escolhe 1 conta ativa (principal DESC, nome ASC); NAO aceita conta por parametro.
+  - Parcial: SIM (p_valor_pago>0 -> v_eh_parcial). Se saldo restante>0 -> FP='parcial'; PP recebe apenas
+    status_conferencia='conferido' + data_pagamento (status_pagamento PERMANECE — nao existe 'parcial' em PP).
+  - Idempotencia: BLOQUEIA se PP ja 'pago'; BLOQUEIA se 'cancelado'; exige 1 titulo FP candidato (0 ou >1 -> erro de conciliacao).
+  - Auditoria: observacao na baixa ("Baixa atomica/parcial - pagamento prestador <id8>"); sem tabela dedicada.
+
+[4] f_confirmar_pagamento_fechamento(p_fechamento_id uuid, p_data_pagamento date=CURRENT_DATE)
+     RETURNS (sucesso, mensagem, fechamento_id, itens_processados, itens_ignorados, total_baixas)
+  - SECURITY DEFINER | VOLATILE | search_path='public'. Grants: authenticated, postgres, service_role.
+  - Auth/tenant/perfil: AUSENTE <RISCO — nao valida auth.uid()/tenant/perfil; depende de caller (front).
+  - Valida: PP tipo_pagamento='fechamento'; status_aprovacao='aprovado'; reconciliacao SUM(itens)=valor_liquido;
+    itens>0; item cancelado -> RAISE EXCEPTION (aborta tudo).
+  - Itera itens e chama f_confirmar_pagamento_prestador (mesma transacao); idempotente (ignora ja pagos);
+    ao final marca o fechamento (mae) como 'pago'.
+
+================================================================================
+2. GRANTS / RLS (evidencia — secao 8)
+================================================================================
+TABELA financeiro_baixas          | authenticated: DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+                                  | RLS ON; policies: fb_select_tms (SELECT), fb_insert_tms (INSERT), fb_update_tms (UPDATE) [authenticated]
+TABELA financeiro_pagar           | authenticated: DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE
+                                  | anon: DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE  <RESIDUAL>
+TABELA financeiro_receber         | authenticated: full DML ; anon: full DML  <RESIDUAL>
+TABELA pagamentos_prestadores     | authenticated: REFERENCES,SELECT,TRIGGER,TRUNCATE (SEM INSERT/UPDATE/DELETE)
+                                  | anon: REFERENCES,SELECT,TRIGGER,TRUNCATE
+                                  | RLS ON; policies: pp_select_own, pp_select_tms (SOMENTE SELECT)  => S2 CONFIRMADO
+rpc f_pp_tenant_id: SECURITY DEFINER (auxiliar de tenant).
+
+LEITURA CRITICA DE SEGURANCA (secao 8):
+ - f_registrar_baixa_financeira e f_estornar_baixa_financeira sao INVOKER de forma INTENCIONAL:
+   operam SOBRE financeiro_baixas/financeiro_pagar (onde authenticated TEM DML + RLS policies).
+   => NAO sao inutilizaveis: funcionam para authenticated, pois as tabelas-base concedem o DML.
+ - Isso NAO fere S1/S2: o bloqueio de DML e sobre pagamentos_prestadores (S2), e ele PERMANECE.
+ - PONTO CEGO (causa-raiz do estorno): como as RPCs de baixa/estorno NAO tocam pagamentos_prestadores,
+   o estorno da baixa REVERTE FP mas DEIXA PP.status_pagamento='pago' para sempre. Nao ha caminho
+   oficial para reabrir PP (S2 bloqueia DML direto). => DIVERGENCIA FP x PP apos estorno.
+ - RESIDUAL: anon com DML amplo em financeiro_pagar/financeiro_receber (RLS tende a bloquear, mas o
+   grant e ruido de privilegio). search_path ausente nas 2 RPCs INVOKER (risco de sequestro de schema).
+ - f_confirmar_pagamento_fechamento (DEFINER) sem checagem de auth/tenant/perfil = risco (qualquer
+   authenticated com EXECUTE poderia pagar fechamento de outro tenant, sujeito a RLS das tabelas-alvo).
+
+================================================================================
+3. PROVA PAGAMENTO NORMAL (SELECT — sem Calvo/CESAR como titular principal)
+================================================================================
+CASO A (prestador de teste M43) — PP -> FP -> baixa -> conta:
+  PP 4262fec6 (os c4338964) valor_liquido 1430.00, status_pagamento=pago, data 2026-09-18
+  FP d4ae8efe (os c4338964) status=pago, valor=1430.00, data_pagamento=2026-09-18
+  BAIXA fe01c1a8 titulo='financeiro_pagar' valor_original=1430.00, valor_baixado=1430.00,
+        saldo_restante=0.00, estornada=false, conta_financeira='Cora' (9741ad36), data 2026-09-18
+CASO B — PP 7bf3107d (os ae30da69) 520.00 pago 2026-09-06 -> FP 6f871e9f pago 520.00 ->
+  baixa c2a233cb 520.00 saldo 0.00 estornada=false conta Cora (9741ad36).
+CADEIA CONFIRMADA: PP (workflow) --os_id--> FP (obrigacao contabil) --> financeiro_baixas (evento, conta Cora).
+(Obs.: Caso B pertence a prestador CESAR — usado apenas como evidencia de leitura; nada foi tocado.)
+
+================================================================================
+4. CONTRATO DE ESTORNO (definido; NAO assumir que reabre PP)
+================================================================================
+PROVADO PELO CODIGO+DB: f_estornar_baixa_financeira:
+  - MARCA a baixa como estornada (nao cria movimento inverso, nao apaga);
+  - ALTERA FP (aberto|parcial|pago conforme saldo restando);
+  - NAO ALTERA PP (x) — pagamentos_prestadores fica 'pago';
+  - NAO ALTERA conta financeira/saldo (nao ha saldo materializado na RPC);
+  - DRE/Fluxo: efeito DERIVADO (leem baixas nao estornadas);
+  - suporta parcial e multiplas baixas; impede estorno repetido; motivo opcional; registra data (nao usuario);
+  - NAO respeita tenant (sem auth.uid()/tenant); executavel por authenticated (via grants de tabela) e service_role.
+CONCLUSAO: estornar baixa NAO reabre PP. Contrato correto exige RPC NOVA que:
+  1) valide auth/tenant/perfil; 2) chame f_estornar_baixa_financeira (reutilizar; nao inventar estorno);
+  3) reverta PP.status_pagamento/status para reaberto (via DEFINER, pois S2 bloqueia DML direto);
+  4) registre auditoria (usuario+data+motivo). NAO implementar agora.
+
+================================================================================
+5. CANCELAMENTO SEM PAGAMENTO (estados comprovados)
+================================================================================
+Estados REAIS em PP (PROD, is_teste=false):
+  status_conferencia: em_aberto(44), pendente(47), conferido(6), cancelado(1)
+  status_aprovacao ...: aguardando_aprovacao(89), aprovado(3)
+  status_pagamento ...: pendente(40), nao_vencido(8), pago(5), cancelado(3)
+  FP.status: pendente(53), aberto(29), cancelado(23), pago(5), 'a vencer'(1), parcial(1), 'cancelada'(1)
+  lotes: 0 (nenhum lote; lotes_pagamento_itens vazio)
+CONTRATO CANCELAR (somente SEM baixa): origem permitida status_pagamento IN (pendente, nao_vencido, em_lote)
+  -> destino 'cancelado'; FP.status -> 'cancelado'; se em_lote: remover item de lotes_pagamento_itens e
+  recalcular lotes_pagamento.quantidade_pagamentos/valor_total/status (hoje 0 lotes -> nada a migrar).
+  PRE-CONDICAO DURA: nao existir financeiro_baixas com estornada=false para o FP vinculado.
+  Se houver baixa -> NAO e cancelamento; e ESTORNO (secao 4).
+  NAO ha CHECK constraint de status em PP (so chk_classificacao_dado) -> valores sao texto livre; definir
+  valores permitidos no codigo/RPC antes de usar. Cancelar PP 'pago' e PROIBIDO.
+
+================================================================================
+6. PAGAMENTO PARCIAL (suporte real)
+================================================================================
+- FP suporta parcial: status='parcial' (1 registro real: valor 652.86, baixado 520.00, saldo 132.86);
+  f_registrar_baixa e f_confirmar_pagamento_prestador calculam saldo e status 'parcial'.
+- PP: NAO possui estado 'parcial'. No parcial, f_confirmar_pagamento_prestador apenas marca
+  status_conferencia='conferido' + data_pagamento e DEIXA status_pagamento inalterado (pendente/nao_vencido).
+  Nao existe PP.status_pagamento='parcial'. Logo o workflow do prestador NAO reflete parcialidade.
+- RISCO/BLOQUEIO REGISTRADO: o modelo suporta parcial no FP (contabil), mas NAO de forma coerente no PP
+  (workflow). Nao inventar 'parcial' em PP sem definir: reabertura do titulo, efeito no lote, e como o
+  prestador aparece "parcialmente pago". BLOQUEIO DE CONTRATO (necessita decisao de negocio).
+
+================================================================================
+7. PAGO SEM BAIXA (inventario — somente leitura; NAO corrigir)
+================================================================================
+TOTAL: 3 registros PP status_pagamento='pago' sem FP e/ou sem baixa:
+ 1) id 32fe474f | CESAR AUGUSTO HOLANDA SILVA | 2177.92 | tipo=PIX | origem=manual
+    is_teste=false | classificacao_dado='duvidoso' | obs "Liberacao manual: Vencimento do dia" -> DUVIDOSO/REAL
+ 2) id 3884e3c0 | MOTORISTA TESTE 02L | 1430.00 | tipo=fechamento | origem=fechamento
+    is_teste=false | classificacao=null | obs "TEST-02L-FECHAMENTO-HOMOLOGACAO" -> TESTE
+ 3) id 6266f2a1 | CESAR AUGUSTO HOLANDA SILVA | 658.20 | tipo=PIX | origem=manual
+    is_teste=false | classificacao='duvidoso' | obs "Romaneio 343717 + 38,20 pedagio + 100 km" -> DUVIDOSO/REAL
+CLASSIFICACAO: 1 TESTE (3884e3c0) ; 2 DUVIDOSO/REAL (32fe474f, 6266f2a1) — pendentes de decisao.
+REGISTRAR para DATA-05A / limpeza futura. Calvo/CESAR NAO foram tocados (apenas leitura).
+
+================================================================================
+8. SEGURANCA (avaliacao das RPCs de baixa/estorno — ver secao 2)
+================================================================================
+- f_registrar_baixa_financeira INVOKER  -> INTENCIONAL e OPERACIONAL (authenticated tem DML+RLS em
+  financeiro_baixas/financeiro_pagar). NAO torna inutilizavel. NAO abre caminho em PP (S2 mantido).
+- f_estornar_baixa_financeira INVOKER   -> idem; porem sem search_path e sem auth/tenant/perfil.
+- NAO dependem de DML direto revogado (o DML de PP e que esta revogado, e nao e usado por elas).
+- RISCOS: (a) search_path ausente nas duas; (b) anon com DML amplo em financeiro_pagar/receber; (c) estorno
+  nao reabre PP (divergencia); (d) f_confirmar_pagamento_fechamento DEFINER sem auth/tenant.
+- NADA alterado.
+
+================================================================================
+9. MATRIZ FINAL (as 4 acoes separadas)
+================================================================================
+ACAO | ESTADO INICIAL | PRE-CONDICAO | PP | FP | BAIXA | LOTE | CONTA | RESULTADO | RPC EXISTE? | RPC NOVA? | RISCO
+-----+----------------+--------------+----+----+-------+------+-------+-----------+-------------+-----------+------
+REPROVAR | PP.status_aprovacao='aguardando_aprovacao' | nao pago/nao aprovado | status_aprovacao='reprovado'; limpar elegivel_lote/lote_id | inalterado | nenhuma | sem efeito | sem efeito | workflow reprovado | NAO (nao ha RPC) | SIM (PP-only, DEFINER) | baixo (nao toca dinheiro)
+CANCELAR NAO PAGO | status_pagamento IN (pendente,nao_vencido,em_lote) | SEM baixa (nao estornada) | status_pagamento='cancelado' | FP.status='cancelado' | nao pode existir | remover item do lote + recalcular totais | sem efeito | obrigacao encerrada | PARCIAL (nao ha RPC p/ PP) | SIM (DEFINER) | medio (sincronizar lote+FP)
+ESTORNAR PAGO | PP.status_pagamento='pago' + baixa estornada=false | baixa existe | NAO revertido hoje (GAP) | reverte status (aberto/parcial/pago) | marca estornada=true | sem efeito | sem efeito (saldo nao materializado) | pagamento revertido | SIM (f_estornar_baixa) mas INCOMPLETA | SIM (wrapper DEFINER que reabre PP) | alto (divergencia FP x PP)
+ESTORNAR PARCIAL | FP.status='parcial' + 1+ baixas | baixa existe | NAO reflete parcial (GAP) | recalcula p/ 'parcial'/'aberto' | marca estornada | sem efeito | sem efeito | parcial reprocessado | SIM (f_estornar_baixa) | SIM (wrapper + regra PP parcial) | alto (PP sem estado parcial)
+
+CLASSIFICACAO GERAL:
+ - REPROVAR ......................... IMPLEMENTAR RPC (PP-only) — regra inequivoca.
+ - CANCELAR NAO PAGO ................ IMPLEMENTAR RPC (sincroniza FP+lote) — regra inequivoca.
+ - ESTORNAR PAGO .................... REUTILIZAR f_estornar_baixa_financeira + IMPLEMENTAR RPC wrapper (reabre PP) — regra inequivoca.
+ - ESTORNAR PARCIAL ................. NECESSITA DECISAO DE NEGOCIO (definir semantica de PP parcial) — BLOQUEADO.
+ - Gerar Repasse .................... REMOVER DA UI (duplicidade com M66/M80 — ver 02C0).
+
+================================================================================
+10. PROXIMA IMPLEMENTACAO (somente proposta — NAO implementar agora)
+================================================================================
+Contratos inequivocos: REPROVAR, CANCELAR NAO PAGO, ESTORNAR PAGO.
+Propor micro-missao PP-UX-02C1B (quando autorizado):
+  - 3 RPCs DEFINER + search_path=public, auth/tenant/perfil, grants authenticated+service_role,
+    auditoria (usuario+data+motivo);
+  - reprovar: PP-only (status_aprovacao aguardando->reprovado; limpar elegivel_lote/lote_id);
+  - cancelar_nao_pago: guarda "sem baixa"; PP->cancelado + FP->cancelado + lote;
+  - estornar_pago: wrapper que chama f_estornar_baixa_financeira e REABRE PP;
+  - idempotencia por estado; sem DML direto; sem migration em lote.
+ESTORNAR PARCIAL fica fora ate decisao de negocio. ZERO migration agora.
+
+================================================================================
+11. BACKLOG CUMULATIVO (PENDENTES — modulo NAO concluido)
+================================================================================
+- PP-UX-02A estrutura/hierarquia;
+- PP-UX-02B paginacao/busca/ordenacao;
+- PP-UX-02C2 fechamento x lote;
+- PP-UX-02C3 Novo Lancamento de Prestador (manual);
+- remocao/substituicao de "Gerar Repasse";
+- PP-UX-02D Conta Corrente/Relatorio/Dashboard;
+- PP-UX-03 visual/E2E;
+- KPIs x banco;
+- LIMIT 1000 (Aptos);
+- controles mortos;
+- anon grants residuais (financeiro_pagar/receber);
+- DML legado exportado;
+- FP x PP sem FK (vinculo por os_id, tipos diferentes);
+- PP pago sem baixa (3 registros: 1 TESTE, 2 DUVIDOSO/REAL);
+- tabelas orfas (pagamento_prestadores singular; fechamentos_prestador);
+- seguranca das RPCs de baixa/estorno (search_path; auth/tenant; estorno nao reabre PP; fechamento DEFINER sem auth).
+NAO marcar Pagamento de Prestadores como concluido.
+
+================================================================================
+12. CONFIRMACAO ZERO DML/DDL
+================================================================================
+[x] Somente SELECT / information_schema / pg_get_functiondef + leitura de codigo.
+[x] Nenhum estorno, baixa, cancelamento, INSERT/UPDATE/DELETE/DDL. Nenhuma migration/RPC criada.
+[x] Calvo/CESAR/Comercial/APP nao tocados. S1/S2 nao reabertos. Scripts temporarios removidos.
+
+================================================================================
+13. ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-PP-UX-02C1A-CANCELAMENTO-ESTORNO-ROOT-CAUSE-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-PP-UX-02C1A-CANCELAMENTO-ESTORNO-ROOT-CAUSE-RESULTADO.txt
+ TAMANHO ..: (informado apos gravacao)
+ DATA/HORA : (informado apos gravacao)
+
+================================================================================
+FIM — TMS-FIN-PP-UX-02C1A
+================================================================================

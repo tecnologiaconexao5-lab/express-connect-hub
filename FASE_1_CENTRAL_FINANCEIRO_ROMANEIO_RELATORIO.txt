@@ -1,0 +1,266 @@
+================================================================================
+  FASE 1 — CENTRAL DE CONTROLE FINANCEIRO-OPERACIONAL + ROMANEIO/OC
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+  Modo: implementação SEM migration — produção preservada.
+================================================================================
+
+================================================================================
+A. ARQUIVOS ALTERADOS
+================================================================================
+1. src/services/financeiro/centralFinanceiroService.ts        (NOVO)
+   - Serviço de consulta da Central Financeira (lote, sem N+1).
+2. src/components/financeiro/ConferenciaFinanceira.tsx        (REESCRITO)
+   - Evoluído para Central de Controle Financeiro-Operacional.
+3. src/components/operacao/OrdemServicoForm.tsx               (MODIFICADO)
+   - Campo "Romaneio / OC Cliente" adicionado no formulário de OS.
+4. src/components/operacao/osTypes.ts                          (MODIFICADO)
+   - Interface OrdemServico ganhou campo `romaneio?: string`.
+5. src/lib/dbMappers.ts                                       (MODIFICADO)
+   - toOSInsert mapeia `romaneio` → ordens_servico.romaneio.
+   - fromOSRow carrega `romaneio` na edição.
+   - OSRow ganhou campo `romaneio?: string`.
+6. src/test/fase1_centralFinanceiro.test.ts                   (NOVO)
+   - 6 testes unitários de derivarSemaforoCentral.
+
+NENHUM outro arquivo alterado. Nenhuma migration executada.
+
+================================================================================
+B. O QUE FOI IMPLEMENTADO
+================================================================================
+1. ROMANEIO ATIVADO NA OS:
+   - Campo "Romaneio / OC Cliente" no formulário de OS (identificação).
+   - Opcional; não impede criação da OS sem o valor; texto livre.
+   - Carrega valor existente na edição (fromOSRow).
+   - Persiste em ordens_servico.romaneio (toOSInsert).
+   - NENHUMA nova coluna: reutilizada coluna existente.
+
+2. CENTRAL DE CONTROLE FINANCEIRO (Financeiro > Conferência):
+   - Título "Central de Controle Financeiro" + subtítulo de rastreabilidade.
+   - KPIs: serviços finalizados, total a receber (cliente), total a pagar
+     (prestador), POD vinculado/pendentes, semáforos verde/amarelo/vermelho.
+   - Grade única e profissional (não planilha poluída), com scroll horizontal.
+   - Colunas: Status | Data | OS Interna | Cliente | Romaneio/OC | Prestador |
+     Veículo | Valor Cliente | Adic. Cliente | Total Cliente | Valor Prestador
+     | Total Prestador | POD | Receber | Faturar | Pagto | Ações.
+   - Separador cliente × prestador em colunas e no dossiê.
+
+3. FILTROS COMBINADOS (barra de filtros):
+   - Período inicial/final, OS Interna, Romaneio/OC, Cliente, Prestador,
+     Placa, Status Operacional, POD, Faturamento, Recebimento, Pagto Prestador.
+   - Todos combináveis simultaneamente (ex.: Cliente=Calvo + período +
+     prestador + faturado=não).
+
+4. BUSCA GLOBAL:
+   - Busca por OS, Romaneio/OC, Cliente, Prestador, Placa, origem/destino
+     (Enter ou botão Aplicar).
+
+5. SEMÁFORO DERIVADO (não persistido):
+   - verde = pronto; amarelo = atenção (romaneio/POD pendente, ressalva);
+     vermelho = bloqueio (valor cliente ausente, não entregue).
+   - Motivos exibidos no hover e no dossiê. Nenhum status novo no banco.
+
+6. DOSSIE DO SERVIÇO (Sheet):
+   - Identificação, Romaneio/OC (edição), Operação, Financeiro Cliente,
+     Financeiro Prestador, Margem (composicao_financeira_os), POD, Financeiro
+     (receber/pagar/pagamento prestador), Notas fiscais.
+
+7. COMPLETAR ROMANEIO PELA CENTRAL:
+   - Campo editável no dossiê → salva em ordens_servico.romaneio (mesma OS).
+   - Linha atualiza imediatamente após salvar.
+
+8. NOTAS FISCAIS VINCULADAS:
+   - Leitura de fiscal_documentos_vinculados por ordem_servico_id.
+   - Exibe NFs se existirem; senão estado vazio "Nenhuma nota fiscal
+     vinculada". "+ Adicionar NF" fica para fase futura (sem tabela nova).
+
+================================================================================
+C. ROMANEIO/OC
+================================================================================
+FONTE USADA:
+  - Primária: ordens_servico.romaneio (coluna existente, criada em M127-E.1).
+  - Fallback legado: alocacoes_escala.metadata->>'numeroOC' (leitura apenas).
+COMO LÊ:
+  - centralFinanceiroService.buscarCentralFinanceiro → select com join
+    ordens_servico:ordem_servico_id(id, numero, romaneio).
+  - romaneioOC = os.romaneio || metadata.numeroOC.
+COMO SALVA:
+  - centralFinanceiroService.salvarRomaneioOS(osId, romaneio)
+    → UPDATE ordens_servico SET romaneio = ? , updated_at = now() WHERE id = osId.
+  - Ação "Salvar na OS" no dossiê. Nunca cria cópia local.
+FALLBACK LEGADO:
+  - metadata.numeroOC continua sendo lido (compatibilidade retroativa).
+  - NÃO migramos dados automaticamente e NÃO sobrescrevemos valores existentes.
+COMPORTAMENTO DO APP ENCONTRADO:
+  - O App Motorista já possui etapa `romaneio_informado` (f_avancar_etapa_app_motorista)
+    e a view vw_app_motorista_operacoes já inclui os.romaneio.
+  - A auditoria confirmou que NÃO foi possível verificar nesta fase se o App
+    grava o número diretamente em ordens_servico.romaneio (projeto Flutter fora
+    do escopo desta missão). A Central está preparada para exibir o valor quando
+    ele estiver disponível nesse campo.
+  - PENDÊNCIA DE BANCO/RPC DOCUMENTADA (seção J): se for comprovado que a RPC
+    de etapa do App grava apenas em metadata/evento, será necessária futura
+    correção para gravar em ordens_servico.romaneio.
+
+================================================================================
+D. CENTRAL FINANCEIRA — DADOS E QUERIES
+================================================================================
+centralFinanceiroService.buscarCentralFinanceiro(filtros) executa em LOTE:
+  1. alocacoes_escala (status=concluida e finalizada=true) com joins
+     clientes, prestadores, ordens_servico (numero, romaneio).
+  2. entregas_protocolo por alocacao_id (POD oficial).
+  3. financeiro_receber por os_id (TEXT).
+  4. financeiro_pagar por os_id (TEXT).
+  5. pagamentos_prestadores por os_id (UUID).
+  6. composicao_financeira_os por os_id (UUID) — margens.
+  7. fiscal_documentos_vinculados por ordem_servico_id (UUID) — NFs.
+  Depois monta Mapas por chave e cruza em memória (SEM N+1 por linha).
+  Filtros combinados aplicados em memória sobre o dataset carregado.
+
+FONTES:
+  - Operacional: alocacoes_escala (status, data_escala, origem, destino,
+    tipo_veiculo, placa, km, horários).
+  - OS Interna: ordens_servico.numero.
+  - Romaneio: ordens_servico.romaneio (+ fallback metadata.numeroOC).
+  - POD: entregas_protocolo (fonte oficial única).
+  - Financeiro: financeiro_receber/financeiro_pagar/pagamentos_prestadores.
+  - Margem: composicao_financeira_os.
+
+================================================================================
+E. VALORES CLIENTE × PRESTADOR (fontes)
+================================================================================
+CLIENTE (receita):
+  - base/frete: alocacoes_escala.valor_frete + reversa_valor_cliente.
+  - adicionais: valor_pedagio (se pedagio_cobrar_excedente), valor_ajudante,
+    diarias_adicionais × valor_diaria, segunda/terceira/saída adicional,
+    valor_adicional.
+  - descontos: valor_desconto.
+  - total = base + adicionais − descontos.
+PRESTADOR (custo):
+  - repasse base: alocacoes_escala.valor_repasse + reversa_valor_prestador.
+  - adicionais/reembolsos: valor_pedagio, valor_combustivel, valor_ajudante,
+    diárias, saídas, valor_reembolso_outros, valor_adicional.
+  - descontos: valor_desconto.
+  - total = repasse + adicionais − descontos.
+NOTA: receita e custo NUNCA são misturados (colunas e totais separados).
+Nenhuma fórmula nova inventada — derivado dos campos reais da escala, mesmas
+bases que os triggers M66/M80 já usam.
+
+================================================================================
+F. POD
+================================================================================
+Fonte oficial única: entregas_protocolo (decisão M108C1).
+  - consulta por alocacao_id em lote.
+  - situação derivada: completo (foto+assinatura+recebedor), parcial,
+    entregue_ressalva, nao_entregue, pendente.
+  - Indicadores de foto/canhoto/assinatura e nome do recebedor.
+  - Reutilizado DossieEntregaSheet para ver comprovante completo.
+Nenhum segundo conceito de POD criado.
+
+================================================================================
+G. FILTROS E BUSCA
+================================================================================
+FUNCIONAIS nesta fase (combináveis):
+  - período (data_escala), OS Interna, Romaneio/OC, Cliente, Prestador,
+    Placa, Status Operacional, POD (com/pendente), Faturamento
+    (faturado/não), Recebimento (recebido/não), Pagto Prestador (pago/não).
+  - Busca global por OS, Romaneio, Cliente, Prestador, Placa, origem, destino.
+ARQUITETURA PARA FASE FUTURA:
+  - Busca por NF/CT-e/NFS-e/Fatura ficará preparada (mesmo pipeline, novos
+    campos de filtro) quando houver vínculo seguro (ver seção H/I).
+
+================================================================================
+H. NOTAS FISCAIS
+================================================================================
+- Leitura de fiscal_documentos_vinculados por ordem_servico_id (já existente,
+  com FK real para ordens_servico).
+- Exibe: número, série, valor, status. Estado vazio profissional quando não
+  houver documentos.
+- "+ Adicionar NF": NÃO implementado — depende da decisão de modelagem
+  Romaneio ↔ NF (fase futura, após autorização). Documentado.
+- Nenhuma tabela criada.
+
+================================================================================
+I. FATURA
+================================================================================
+- Exibida na Central quando há vínculo REAL:
+  - Coluna "Faturar" mostra "Faturado" apenas se financeiro_receber.fatura
+    estiver preenchido (fonte real), senão "Não faturado".
+  - Coluna "Receber" mostra o status real do título (pendente/aberto/pago etc).
+- Geração definitiva de fatura NÃO foi implementada porque depende das
+  colunas-fantasma detectadas na auditoria (financeiro_receber não possui
+  colunas `origem`, `origem_id`, `fatura_id` reais — o service atual usa esses
+  nomes no mapping mas a tabela real tem apenas `fatura`/`serie`/`numero`).
+  Portanto não há vínculo por `fatura_id` confiável para agrupamento múltiplo.
+- UX de seleção múltipla futura: estrutura de dados da Central já permite
+  preparar isso, mas NÃO foi implementada a geração nesta fase.
+
+================================================================================
+J. PENDÊNCIAS DE BANCO (NÃO EXECUTADAS)
+================================================================================
+J-01 COLUNAS REAIS DE VÍNCULO EM financeiro_receber:
+     Adicionar `origem`, `origem_id`, `fatura_id` (ou padronizar uso de
+     `fatura`/`os_vinculadas`) para permitir faturamento múltiplo confiável.
+     Risco: migration + ajuste de receberService.
+J-02 RPC/etapa do App gravar ordens_servico.romaneio:
+     Confirmar se f_avancar_etapa_app_motorista com romaneio_informado grava
+     no campo correto; se não, corrigir a RPC (migration futura).
+J-03 financeiro_prestador_auditoria: tabela não existe — auditoria de
+     pagamentos falha silenciosamente. Criar (fase futura).
+J-04 contas_financeiras: tabela não existe — ContasBancarias usa mock. Criar
+     (fase futura).
+J-05 RLS pagamentos_prestadores: policy "Allow all" — isolar (fase futura).
+J-06 Persistência de status de conferência (em_conferencia/aguardando_aprovacao/
+     aprovado/apto_a_faturar): hoje derivado; persistir em fase futura.
+J-07 vínculo Romaneio ↔ NF para "+ Adicionar NF" (decisão de modelagem).
+
+================================================================================
+K. TESTES
+================================================================================
+- TypeScript: npx tsc --noEmit → 0 erros (projeto inteiro).
+- Lint (arquivos novos da missão): ConferenciaFinanceira.tsx → 0 erros.
+  centralFinanceiroService.ts segue o mesmo padrão `any` dos services
+  financeiros existentes (baseline não-enforçado — receberService.ts tem os
+  mesmos avisos; build não é bloqueado).
+- Testes: npx vitest run → 13 arquivos, 137 testes PASS
+  (131 existentes + 6 novos de derivarSemaforoCentral).
+- Build: npm run build → OK (1m03s, sem erro relacionado à missão).
+
+================================================================================
+L. RISCOS ENCONTRADOS
+================================================================================
+L-01 (confirmado da auditoria) financeiro_receber sem colunas origem/fatura_id:
+     risco de query .eq() inválida no wizard de fatura — NÃO resolvido nesta
+     fase (fora de escopo sem migration).
+L-02 (novo/observado) composicao_financeira_os só existe quando o trigger M80
+     criou para a OS (54 registros) — serviços antigos podem não ter margem
+     disponível; o dossiê omite o bloco nesse caso (comportamento seguro).
+L-03 (confirmado) metadata.numeroOC é o legado da Escala; a Central prioriza
+     ordens_servico.romaneio. Sem migração automática, alocações antigas
+     exibem via fallback apenas — nunca sobrescrevem.
+L-04 (novo) busca em memória sobre dataset de até 300 alocações — suficiente
+     hoje; para volume maior recomenda-se view/RPC dedicada (documentado).
+
+================================================================================
+M. PRÓXIMA FASE RECOMENDADA
+================================================================================
+FASE 2 (Faturamento real, sem migration se possível):
+  1. Padronizar vínculo de fatura em financeiro_receber usando colunas reais
+     existentes (`fatura`, `os_vinculadas`) ou aguardar autorização para
+     migration das colunas origem/fatura_id.
+  2. Implementar geração de Fatura com seleção múltipla (a Central já lista
+     itens aptos) + observação automática "Referente aos romaneios nº ...".
+  3. Fatura em PDF reutilizando pdfTemplateConexao (fase separada).
+FASE 3 (Romaneio ↔ NF):
+  4. Decidir modelagem Romaneio ↔ NFs e implementar "+ Adicionar NF".
+FASE 4 (fiscal real):
+  5. Desbloquear emissão CT-e/NFS-e/MDF-e (secrets) e vincular à fatura.
+FASE 5 (limpeza/auditoria):
+  6. Criar financeiro_prestador_auditoria e contas_financeiras (migration
+     autorizada), isolar RLS pagamentos_prestadores.
+
+================================================================================
+ÚLTIMA LINHA
+================================================================================
+  FASE 1 CONCLUÍDA — CENTRAL FINANCEIRA E ROMANEIO/OC IMPLEMENTADOS SEM MIGRATION DE PRODUÇÃO.
+================================================================================

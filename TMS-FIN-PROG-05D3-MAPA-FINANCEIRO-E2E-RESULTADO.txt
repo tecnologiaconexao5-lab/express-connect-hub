@@ -1,0 +1,377 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.3-MAPA-FINANCEIRO-E2E
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: AUDITORIA SOMENTE LEITURA. Nada foi implementado, alterado ou emitido.
+METODO: leitura de codigo (file:line), RPC/trigger (pg_get_functiondef),
+        policies (pg_policies) e schemas (information_schema) no banco PROD.
+================================================================================
+
+RESULTADO: mapa real do Financeiro levantado. Fluxo oficial de faturamento do
+CLIENTE esta alinhado (rascunho -> emitir -> 1 AR). Fluxo do PRESTADOR esta
+desalinhado (obrigacao nasce cedo, sem lote/Ordem de Pagamento, RLS impede a
+visao). Cadastros (Plano de Contas/Categoria/Forma) nao existem. Ha legado
+poluindo a visao e faltam paginacoes reais em 4 telas.
+
+--------------------------------------------------------------------------------
+SNAPSHOT PROD (somente leitura)
+--------------------------------------------------------------------------------
+faturas 41 (16 emitida / 25 rascunho) | fatura_itens 44 | financeiro_receber 123
+financeiro_baixas 19 | financeiro_pagar 178 | pagamentos_prestadores 137
+contas_financeiras 1 | centros_custo 0
+AR por fatura_id = 7 | duplicatas de AR por fatura = 0
+faturas emitidas SEM AR = 9 (legado preservado; guarda so bloqueia novas)
+
+================================================================================
+TABELA PRINCIPAL — ETAPA | COMO FUNCIONA HOJE | FONTE/CODIGO | ALINHADO? | GAP | CORRECAO MINIMA
+================================================================================
+
+[ FLUXO CLIENTE ]
+
+E01 OS/PROGRAMACAO FINALIZADA
+  HOJE: Conferencia le apenas alocacoes_escala com status='concluida' AND finalizada=true (limite 300), com join em ordens_servico. OS sem alocacao nao aparece.
+  FONTE: centralFinanceiroService.ts:176-190; lançar manual idem :723-725
+  ALINHADO? SIM (parcial)
+  GAP: limite 300; filtro so na OS nao existe; OS direta sem alocacao fora da lista.
+  FIX MIN: paginacao server-side + filtro por origem.
+
+E02 CONFERENCIA / SELECT SERVICOS
+  HOJE: A tela lista tudo (sem paginacao). Selecao por checkbox com elegibilidade propria (motivosBloqueio). "Criar Fatura" exige 1 unico cliente.
+  FONTE: ConferenciaFinanceira.tsx:1407-1420 (bloqueios), :1444-1474 (criarFatura), :1931 (map sem paginacao)
+  ALINHADO? SIM (regra) / NAO (UX)
+  GAP: sem paginacao; filtros em memoria sobre <=300; elegibilidade != KPI "Prontos p/ Faturar".
+  FIX MIN: paginacao real + unificar criterio de elegibilidade/KPI.
+
+E03 CRITERIOS PRONTO / ATENCAO / BLOQUEIO
+  HOJE: Bloqueio (vermelho): valorCliente<=0 ou POD nao_entregue. Atencao (amarelo): sem romaneio, POD pendente/ausente, POD ressalva, valorPrestador<=0. Verde: sem bloqueio/aviso. "Sem OS" = sem numero de OS. KPI "Prontos p/ Faturar" = nao_faturado + cliente + valorCliente>0 + romaneioOC + POD != pendente. KPI "Com Pendencia" = amarelo+vermelho.
+  FONTE: centralFinanceiroService.ts:124-171; ConferenciaFinanceira.tsx:1311-1312, :1957-1967
+  ALINHADO? SIM
+  GAP: dois criterios de "pronto" (semaforo vs KPI vs elegibilidade checkbox) levemente divergentes.
+  FIX MIN: uma unica funcao de elegibilidade reutilizada nos 3 pontos.
+
+E04 GERAR FATURA (RASCUNHO)
+  HOJE: "Criar Fatura" NAO emite e NAO cria AR. Apenas abre o FaturaPanel, que cria o rascunho (INSERT faturas status='rascunho') e os itens (INSERT fatura_itens). Mesmo caminho da "Nova Fatura Manual".
+  FONTE: ConferenciaFinanceira.tsx:1473, :2557-2563; FaturaPanel.tsx:204-232; faturaService.ts:214-235, :279-307
+  ALINHADO? SIM (regra de ouro: rascunho nao cria AR)
+  GAP: nenhum funcional.
+  FIX MIN: —
+
+E05 SERVICO SAI DA FILA APOS FATURAR?
+  HOJE: NAO sai automaticamente. A alocacao continua na lista; muda o estado derivado do join fatura_itens/faturas para "Faturado" e o checkbox fica inelegivel. So some se aplicar o filtro Faturamento.
+  FONTE: centralFinanceiroService.ts:294-301; ConferenciaFinanceira.tsx:1409-1411, :2053-2064, filtro :480-486
+  ALINHADO? NAO
+  GAP: "apos faturado, servico nao permanece pronto para faturar" — permanece visivel como faturado.
+  FIX MIN: default do filtro Faturamento = "nao_faturado" (ou badge/filtro rapido), sem apagar historico.
+
+E06 FATURA RASCUNHO -> ABA FATURAS
+  HOJE: Sim. Faturas e a mesma tabela public.faturas. A aba Faturas usa listarFaturas (ordenado criado_em desc, cap padrao 100).
+  FONTE: Financeiro.tsx:203-206; FaturaLista.tsx:69; faturaService.ts:238-243
+  ALINHADO? SIM
+  GAP: cap de 100 no service (pag client-side de 15 opera sobre <=100).
+  FIX MIN: paginação server-side e/ou elevar limit com range.
+
+E07 VALIDAR E EMITIR (ACAO EXATA)
+  HOJE: Botao "Validar e Emitir Fatura" abre AlertDialog -> "Validar e Emitir" -> handleEmitir -> emitirFatura(id) -> RPC f_emitir_fatura. FaturaManualDialog("Salvar e Gerar PDF") usa o mesmo caminho.
+  FONTE: FaturaPanel.tsx:606-608, :641-708, :309-332, :313; faturaService.ts:358-368; FaturaManualDialog.tsx:329
+  ALINHADO? SIM
+  GAP: nenhum.
+  FIX MIN: —
+
+E08 SOMENTE EMISSAO GERA AR?
+  HOJE: SIM. f_emitir_fatura (PROD) cria exatamente 1 financeiro_receber por fatura_id (status 'aberto'), gera Nº Conexao + Nº Cliente, e marca 'emitida'. Guardas: FATURA_JA_EMITIDA, FATURA_SEM_ITENS, uq_receber_fatura_id (unique parcial) e trigger trg_faturas_bloqueio_emissao_sem_ar. M66/M80 NAO criam AR (removido no PROG-05B). Nenhum TS seta status='emitida'.
+  FONTE: _fn_f_emitir_fatura.sql:27-29,40-42,62-94; triggers no banco; faturaService.ts:323-325
+  ALINHADO? SIM
+  GAP: 9 faturas LEGADAS 'emitida' sem AR (historicas; a guarda so vale para novas).
+  FIX MIN: — (nao tocar; legado).
+
+E09 POR QUE A CONFERENCIA MOSTRA RECEBER ABERTO/A VENCER/CANCELADO
+  HOJE: A Conferencia apenas exibe o status BRUTO de financeiro_receber num Badge e um filtro binario pago/nao pago. Nao classifica por vencimento. Os rotulos "aberto/a vencer/cancelado" vem dos status persistidos (dados legados/seed).
+  FONTE: ConferenciaFinanceira.tsx:2046-2051, filtro :1793-1799; centralFinanceiroService.ts:487-493
+  ALINHADO? NAO
+  GAP: status poluidos e sem classificacao de vencimento na Conferencia.
+  FIX MIN: usar calcularStatusEfetivo (statusVencimento.ts) tambem na Conferencia (badge a_vencer/vencido/cancelado), sem reescrever dados.
+
+E10 LEGADO x COMPORTAMENTO NOVO
+  HOJE: NOVO = faturamento por f_emitir_fatura (1 AR por fatura). LEGADO = titulos "Nova Receita" manuais (sem fatura_id), faturas lexadas sem AR, e ARs de teste (M43/Empresa Teste/DVL/classe F). ContasReceber.tsx e orfao e tem taxonomia antiga.
+  FONTE: receberService.ts:258-281; ContasReceber.tsx (orfao); snapshot de status
+  ALINHADO? NAO (convivencia)
+  GAP: legado polui KPIs/baixas/visao.
+  FIX MIN: marcar is_teste/classificar (ja existe is_teste) e filtrar por padrao.
+
+E11 "GERAR FATURA" EM CONTAS A RECEBER = CAMINHO PARALELO?
+  HOJE: NAO. O botao existe porem esta DESABILITADO (stub que aponta para a Conferencia). O card "Faturamento Potencial" e somente leitura.
+  FONTE: ContasReceberEnterprise.tsx:731-738 (disabled), :1217-1289
+  ALINHADO? SIM
+  GAP: nenhum.
+  FIX MIN: — (manter assim).
+
+E12 "NOVA RECEITA"
+  HOJE: Cliente manual avulso. INSERT direto em financeiro_receber via criarRecebivel, SEM fatura_id. Categoria/Centro/Plano usam MOCKS; "Forma Recebimento" na UI nao e gravada. Conta financeira vai em conta_entrada (texto).
+  FONTE: ContasReceberEnterprise.tsx:739-747, :370-427, :381-409; receberService.ts:258-281
+  ALINHADO? PARCIAL
+  GAP: mocks e campo decorativo (forma) e sem vinculo de fatura (proposital para avulso).
+  FIX MIN: trocar mocks por cadastros reais; remover/gravar forma; manter avulso como avulso.
+
+E13 Nº CONEXAO x Nº CLIENTE (UI)
+  HOJE: Nº Conexao = faturas.numero (FAT-YYYY-NNNNNN, sequencia por ano). Nº Cliente = faturas.numero_cliente (sequencial por tenant+cliente, gerado por UPSERT atomico). Aparecem em FaturaLista (colunas), FaturaPanel (KPI + pos-emissao) e relatorio.
+  FONTE: _fn_f_emitir_fatura.sql:44-56; FaturaLista.tsx:254-282, :370-391; FaturaPanel.tsx:457-459, :432-437
+  ALINHADO? PARCIAL
+  GAP: a coluna "Nº Conexao" mostra metadata.numeroManual quando existir, podendo OCULTAR o numero oficial FAT-.
+  FIX MIN: coluna Nº Conexao sempre = f.numero; numeroManual em coluna "Controle do cliente".
+
+[ FLUXO PRESTADOR ]
+
+E14 QUANDO financeiro_pagar E CRIADO
+  HOJE: (a) trigger M66 em alocacoes_escala; (b) trigger M80 em ordens_servico; (c) UI manual (pagarService.criarPagavel). Caminho dominante = triggers.
+  FONTE: _fn_f_trg_propagar_financeiro_alocacao.sql:67-73; _fn_f_trg_propagar_financeiro_os.sql; pagarService.ts:169-228; ContasPagar.tsx:863
+  ALINHADO? NAO
+  GAP: criado no INSERT/UPDATE, nao na conferencia.
+  FIX MIN: criar como PROVISAO/pendente e so tornar obrigatorio apos conferencia aprovada.
+
+E15 QUANDO pagamentos_prestadores E CRIADO
+  HOJE: M66 (escala_direta), M80 (os_direta), servico manual (manual) e fechamentoService (fechamento).
+  FONTE: _fn_...alocacao.sql:75-80; pagamentoPrestadorService.ts:197-271, :360-413; fechamentoService.ts:101-189
+  ALINHADO? NAO
+  GAP: idem E14.
+  FIX MIN: idem E14.
+
+E16 FINALIZACAO JA CRIA OBRIGACAO CEDO DEMAIS?
+  HOJE: SIM. O trigger cria sempre que valor_prestador>0 e prestador_id!=NULL; v_is_concluida so muda o STATUS ('pendente'/'nao_vencido' antes; 'aberto'/'pendente' apos conclusao). Dispara em INSERT.
+  FONTE: _fn_...alocacao.sql:43-44,67-80; migration M104a comentario :393-396
+  ALINHADO? NAO
+  GAP: obrigacao de repasse antes da execucao/conferencia.
+  FIX MIN: manter como previsao (impacto_dre=false ou status provisao) ate conferencia.
+
+E17 GATE DE CONFERENCIA DO PRESTADOR
+  HOJE: Flag MANUAL status_conferencia ('em_aberto'/'pendente' -> 'conferido'), via fechamentoService (EM_CONFERENCIA->CONFERIDO->APROVADO->PAGO) ou botao por linha. NAO valida POD/execucao automaticamente. A aba Conferencia Financeira nao e gate de prestador.
+  FONTE: fechamentoService.ts:72-78, :279-320; statusFinanceiroPrestador.ts:66-87; PagamentoPrestadores.tsx:1724-1743
+  ALINHADO? NAO
+  GAP: sem gate unico baseado em POD/execucao.
+  FIX MIN: Conferencia passa a marcar status_conferencia com base em POD/valores; aprovar/reprovar.
+
+E18 SELECAO EM LOTE / ORDEM DE PAGAMENTO
+  HOJE: NAO existe "Ordem de Pagamento". Acoes sao LINHA A LINHA (Marcar Conferido/Aprovar/Liberar Lote). Os checkboxes de lote existem SO na Conferencia e servem para Fatura do cliente.
+  FONTE: PagamentoPrestadores.tsx:578-586, :1724-1743; ConferenciaFinanceira.tsx:1688-1719
+  ALINHADO? NAO
+  GAP: falta lote/Ordem de Pagamento do prestador.
+  FIX MIN: selecao em lote -> gera lote de pagamentos_prestadores (lote_id) -> aprovacao -> Tesouraria.
+
+E19 PAGAMENTO APROVADO -> TESOURARIA
+  HOJE: Só chega na BAIXA: confirmarPagamento -> RPC f_confirmar_pagamento_prestador -> grava financeiro_baixas. Nao ha fila/lote. A tela "CNAB" e preview desabilitado.
+  FONTE: pagamentoPrestadorService.ts:330-354; PagamentoCNAB.tsx:64-89
+  ALINHADO? NAO
+  GAP: sem entidade lote/remessa operacional.
+  FIX MIN: lote aprovado -> tesouraria -> baixa conciliada.
+
+E20 ORIGEM DA LISTA "PAGAMENTOS EM LOTE"
+  HOJE: pagamentos_prestadores WHERE impacto_dre=true ORDER BY data_prevista_pagamento LIMIT 50. Sem filtro de status/periodo.
+  FONTE: PagamentoCNAB.tsx:34-51
+  ALINHADO? PARCIAL
+  GAP: sem filtro de status; cap 50; rotulo "pendentes" enganoso (lista todas).
+  FIX MIN: filtrar status aprovado/liberado + paginacao.
+
+E21 POR QUE "NENHUM PAGAMENTO PENDENTE A PRESTADOR"
+  HOJE: Causa real = RLS. Em PROD a tabela pagamentos_prestadores possui SOMENTE as policies pp_select_own/pp_insert_own/pp_update_own, que exige prestadores.auth_user_id = auth.uid(). O usuario TMS financeiro NAO e o prestador, entao o SELECT retorna [] (sem erro) e a tela cai no vazio. (impacto_dre=true e verdadeiro em 137/137 linhas, entao nao e o filtro que esvazia.)
+  FONTE: pg_policies (pagamentos_prestadores) — apenas pp_select_own; snapshot impacto_dre
+  ALINHADO? NAO (bug de visao)
+  GAP: TMS nao consegue ler pagamentos_prestadores.
+  FIX MIN: adicionar policy TMS (authenticated + tenant) de SELECT em pagamentos_prestadores (a "pp_select_tenant" citada em migracao NAO esta aplicada em PROD).
+
+E22 ARQUITETURA BANCARIA: CNAB 240 OU PROVIDER/API?
+  HOJE: Presa a um placeholder CNAB 240 sem funcao (botoes "Gerar Remessa"/"Importar Retorno" desabilitados). Sem provider/PIX/iFi/Efi. Existem colunas ociosas: elegivel_lote, lote_id, cnab_lote_id, cnab_arquivo.
+  FONTE: PagamentoCNAB.tsx:10-15, :73-89; cols pagamentos_prestadores (pg)
+  ALINHADO? NAO
+  GAP: sem execucao bancaria real.
+  FIX MIN: criar adapter de execucao sobre a fila existente (ver E23).
+
+E23 ONDE INTEGRAR iFi PIX/API SEM SEGUNDO FINANCEIRO
+  HOJE: ponto natural = PagamentoCNAB.tsx consumindo pagamentos_prestadores aprovados; liquido confirmado pela RPC f_confirmar_pagamento_prestador (financeiro_baixas). Reusar lote_id/elegivel_lote.
+  FONTE: PagamentoCNAB.tsx:132-135; pagamentoPrestadorService.ts:330-354
+  ALINHADO? NO (a construir)
+  GAP: nenhum provider.
+  FIX MIN: provider iFi/Efi como adaptador (gerar PIX/remessa -> aplicar retorno -> RPC de baixa), sem criar financeiro paralelo.
+
+[ CONTAS A PAGAR / CADASTROS ]
+
+E24 CATEGORIA (PAGAR)
+  HOJE: Coluna TEXT financeiro_pagar.categoria. Select HARDCODED (7 opcoes) no front. Sem tabela.
+  FONTE: ContasPagar.tsx:1152-1164; pagarService.ts:206; information_schema financeiro_pagar.categoria
+  ALINHADO? PARCIAL
+  GAP: sem cadastro; opcoes fixas.
+  FIX MIN: criar tabela de categorias + service e trocar o select hardcoded.
+
+E25 PLANO DE CONTAS
+  HOJE: Coluna TEXT financeiro_pagar.plano_contas. Campo de TEXTO LIVRE. PlanoContas.tsx e 100% MOCK (nao persiste).
+  FONTE: ContasPagar.tsx:1169 (Input), :691 (leitura), :837 (grava); PlanoContas.tsx:44-66, :99, :137-141
+  ALINHADO? NAO
+  GAP: texto livre; tela de cadastro fictícia.
+  FIX MIN: ver E27.
+
+E26 PLANO DE CONTAS E TEXTO LIVRE? / EXISTE CADASTRO?
+  HOJE: SIM e texto livre. NAO existe tabela plano_contas/planos_contas/plano_de_contas. Existe apenas a COLUNA. (contas_financeiras.plano_contas tambem TEXT.)
+  FONTE: pg_tables (tabelas_cadastro = apenas centros_custo, contas_financeiras)
+  ALINHADO? NAO
+  GAP: ausencia de cadastro.
+  FIX MIN: criar tabela + service.
+
+E27 ALTERACAO MINIMA PARA PLANO DE CONTAS SER SELECT
+  HOJE: ponto exato = ContasPagar.tsx:1167-1170 (Label + Input na linha 1169). Pipeline de gravacao ja e string (pagarService.ts:208) e nao muda.
+  FONTE: ContasPagar.tsx:1169; pagarService.ts:208
+  ALINHADO? NO
+  GAP: falta fonte de dados.
+  FIX MIN: (1) criar tabela plano_contas + service; (2) trocar o <Input> por <Select> copiando o padrao da Categoria (ContasPagar.tsx:1152-1164); (3) ligar o PlanoContas.tsx ao cadastro real.
+
+E28 CENTRO DE RESULTADO
+  HOJE: Coluna TEXT (financeiro_pagar.centro_resultado / financeiro_receber.centro_resultado). Input LIVRE (default "Corporativo"). Tabela centros_custo EXISTE em PROD (vazia, 0 registros; colunas id/nome/descricao/status). centros_resultado NAO existe.
+  FONTE: ContasPagar.tsx:1180, :692, :838; pg_tables; centros_custo.cols
+  ALINHADO? NAO
+  GAP: sem lista; cadastro centros_custo vazio/incompleto (CONFIG usa codigo/unidade inexistentes).
+  FIX MIN: usar centros_custo (ou criar centros_resultado) e trocar Input por Select.
+
+E29 CONTA FINANCEIRA
+  HOJE: Tabela real contas_financeiras (1 registro ativo). Dropdown so no MODAL DE BAIXA; no cadastro da despesa grava texto padrao "Conta Corrente Principal". Service: buscarContasBancariasConfig.
+  FONTE: ContasPagar.tsx:457-467, :549-570, :174; configFinanceiraService.ts:179-208
+  ALINHADO? PARCIAL
+  GAP: cadastro da despesa nao escolhe conta real.
+  FIX MIN: expor o dropdown de contas_financeiras tambem no formulario de criacao.
+
+E30 FORMA DE PAGAMENTO
+  HOJE: Sem tabela. Coluna financeiro_baixas.forma_pagamento (nasce na BAIXA). Valores hardcoded.
+  FONTE: ContasPagar.tsx:536-543; types.ts:199-208
+  ALINHADO? PARCIAL
+  GAP: sem cadastro canonico.
+  FIX MIN: criar cadastro de formas de pagamento e consumir no modal de baixa.
+
+E31 COMPETENCIA x VENCIMENTO x PAGAMENTO
+  HOJE: financeiro_pagar.competencia TEXT (MM/AAAA); data_vencimento; data_emissao; data_previsao_pagamento; data_pagamento; data_efetiva_pgto (legado). NAO existe data_competencia. Leitura em ContasPagar.tsx:695-709; gravacao pagarService.ts:199-202.
+  FONTE: information_schema financeiro_pagar (pg)
+  ALINHADO? PARCIAL
+  GAP: competencia e texto; colunas duplicadas (vencimento x data_vencimento; data_pagamento x data_efetiva_pgto).
+  FIX MIN: padronizar competencia em data_competencia (sem remover legado de imediato).
+
+[ PAGINACAO ]
+
+PG1 CONFERENCIA ......... SEM paginacao | limite 300 no servidor; filtros em memoria
+    FONTE: ConferenciaFinanceira.tsx:1931; centralFinanceiroService.ts:190, :451-500
+PG2 FATURAS ............. PARCIAL (Anterior + "Pag. N" + Proxima; SEM numeros) | client-side sobre cap 100
+    FONTE: FaturaLista.tsx:46, :107-110, :333-339; faturaService.ts:243
+PG3 CONTAS A RECEBER .... REAL (Anterior + 1,2,3... + Proxima) | busca server-side; status client-side; cap 2000
+    FONTE: ContasReceberEnterprise.tsx:1207-1213; PaginationBar.tsx; receberService.ts:210-235
+PG4 CONTAS A PAGAR ...... SEM paginacao
+    FONTE: ContasPagar.tsx:1051 (map direto), :783-803
+PG5 PAGAMENTO PRESTADORES  SEM paginacao
+    FONTE: PagamentoPrestadores.tsx:741-769 (sem limit), :1807
+PG6 TESOURARIA/LOTES (CNAB)  SEM paginacao | cap 50 | tela desabilitada
+    FONTE: PagamentoCNAB.tsx:37-42, :112
+
+[ NOMENCLATURA "Financeiro Enterprise" (visivel) ]
+
+NM1 SIDEBAR ............. "Financeiro Enterprise" | src/lib/sidebarData.ts:132
+NM2 BREADCRUMB/TOPBAR ... "Financeiro Enterprise" | src/components/AppTopbar.tsx:31
+NM3 TITULO DA PAGINA .... JA esta "Financeiro e Rentabilidade" | src/pages/Financeiro.tsx:137
+GAP: 2 ocorrencias visiveis divergentes do alvo; NAO alterar identificadores tecnicos.
+FIX MIN: trocar as duas strings visiveis para "Financeiro e Rentabilidade".
+
+================================================================================
+A. JA ESTA CORRETO — NAO MEXER
+================================================================================
+A1. Fluxo oficial de faturamento do CLIENTE: rascunho -> Validar/Emitir -> exatamente 1 AR.
+    RPC f_emitir_fatura (SECURITY DEFINER) com guards FATURA_JA_EMITIDA / FATURA_SEM_ITENS / STATUS_INVALIDO_EMISSAO.
+A2. Anti-duplicidade: uq_receber_fatura_id (AR unico por fatura), uq_fr_os_id, uq_fp_os_id, uq_pp_os_id, faturas.numero UNIQUE, uq_faturas_numero_cliente.
+A3. Guarda de banco trg_faturas_bloqueio_emissao_sem_ar (impede nova transicao para 'emitida' sem conta_receber_id).
+A4. M66/M80 NAO criam AR (single source removido no PROG-05B) — correto.
+A5. "Gerar Fatura" em Contas a Receber DESABILITADO (sem caminho paralelo) — correto.
+A6. Contas a Receber: paginação REAL com busca server-side e filtros/ordenação sobre o conjunto completo — padrao alvo ja cumprido.
+A7. Baixa de receber (Enterprise) grava conta_financeira_id via RPC f_registrar_baixa_financeira.
+A8. Confirmação de que rascunho NAO cria AR e Conferencia NAO cria AR definitivo.
+
+================================================================================
+B. EXISTE MAS ESTA DESALINHADO
+================================================================================
+B1.  Conferencia sem paginação (limite 300 no servidor, filtros em memoria).           (E01/E02/PG1)
+B2.  Servico faturado nao sai da fila; permanece "Faturado" e so some via filtro.       (E05)
+B3.  Faturas: paginação parcial (sem numeros), cap 100, botao "Limpar" incompleto.       (E06/PG2)
+B4.  Coluna "Nº Conexao" oculta o numero oficial quando existe numeroManual.             (E13)
+B5.  financeiro_pagar/pagamentos_prestadores nascem no INSERT (obrigacao cedo demais).   (E14/E15/E16)
+B6.  Gate de conferencia do prestador e flag manual, sem validação de POD.               (E17)
+B7.  Sem selecao em lote / Ordem de Pagamento para prestador.                            (E18)
+B8.  Pagamento aprovado nao tem fila ate a Tesouraria (so baixa).                         (E19)
+B9.  Lista de Lotes: sem filtro de status e cap 50; rotulo "pendentes" enganoso.          (E20)
+B10. RLS de pagamentos_prestadores impede o TMS de ler (causa do vazio).                  (E21)
+B11. CNAB 240 preso a placeholder (sem provider/API/PIX).                                 (E22/E23)
+B12. Contas a Pagar sem paginação; Categoria hardcoded; Plano de Contas texto livre;
+     Centro de Resultado texto livre; Forma de Pagamento sem cadastro.                    (PG4/E24-E30)
+B13. Contas a Receber: origem/badge FATURA nao dispara (origem nao gravada pelo fluxo);
+     detalhe de fatura dessincronizado; colunas Fiscal/Boleto hardcoded.                  (E10/E12)
+B14. Nomenclatura "Financeiro Enterprise" visivel em 2 pontos.                            (NM1/NM2)
+B15. Competencia TEXT e colunas duplicadas (vencimento/data_vencimento, data_pagamento/data_efetiva_pgto). (E31)
+
+================================================================================
+C. ESTA FALTANDO
+================================================================================
+C1. Cadastro/tabela de PLANO DE CONTAS + service (hoje so coluna TEXT; PlanoContas.tsx e mock).
+C2. Cadastro de CATEGORIA financeira (hoje select hardcoded).
+C3. Cadastro de FORMA DE PAGAMENTO (hoje valores hardcoded na baixa).
+C4. Cadastro de CENTRO DE RESULTADO (centros_resultado inexistente; centros_custo vazio/incompleto).
+C5. ORDEM DE PAGAMENTO / lote de pagamento ao prestador + selecao em lote.
+C6. Provider bancario real (iFi PIX/API / remessa-retorno CNAB) com conciliacao.
+C7. Paginação real em: Conferencia, Contas a Pagar, Pagamento Prestadores, Tesouraria/Lotes.
+C8. Classificacao de vencimento (a_vencer/vencido) na Conferencia.
+C9. Filtro/coluna de competencia estruturada (data_competencia).
+
+================================================================================
+D. LEGADO QUE ESTA POLUINDO A VISAO
+================================================================================
+D1. Status mistos persistidos em financeiro_receber/pagar:
+    receber: aberto 34, pendente 60, a vencer 10, a_vencer 2, vencido 1, vencida 1,
+             cancelado 2, cancelada 1, pago 11, null 1.
+    pagar:   aberto 72, pendente 59, cancelado 28, cancelada 2, a vencer 5, parcial 1, pago 11.
+D2. 9 faturas 'emitida' SEM AR (legado preservado; a guarda so vale para novas).
+D3. Titulos manuais sem fatura_id ("Nova Receita") e ARs de teste (M43/Empresa Teste/DVL/classe F).
+D4. ContasReceber.tsx (ORFAO, nao importado, nao compila) e sua taxonomia antiga
+    (a_vencer/vencida/paga/parcial/negociada/cancelada) — nao usar/nao confundir.
+D5. Mocks no front: mockPlanoContas, mockCentrosResultado, CATEGORIAS_*.
+D6. Colunas Fiscal/Boleto hardcoded ("Sem nota"/"Sem boleto").
+D7. financeiro_pagar.os_id e TEXT (nao UUID) e colunas duplicadas.
+
+================================================================================
+E. ORDEM EXATA DAS MICRO-CORRECOES (nao implementar agora)
+================================================================================
+1. NOMENCLATURA (baixo risco): trocar as 2 strings visiveis
+   "Financeiro Enterprise" -> "Financeiro e Rentabilidade"
+   (src/lib/sidebarData.ts:132 e src/components/AppTopbar.tsx:31). Nao tocar em ids/rotas.
+2. RLS pagamentos_prestadores: adicionar policy de SELECT para o TMS (authenticated + tenant),
+   resolvendo o "Nenhum pagamento pendente a prestador" sem mudar dados.
+3. CONFERENCIA: paginação real (server-side) + mover filtros para a query + filtro default
+   Faturamento = nao_faturado (servico faturado deixa de poluir a fila).
+4. FATURAS: paginação numerica + elevar cap/range; corrigir coluna "Nº Conexao"
+   (numero oficial) e mover numeroManual para coluna "Controle do cliente"; "Limpar" completo.
+5. CADASTROS: criar plano_contas + categorias + formas_pagamento; ligar SELECTs
+   (ponto minimo do Plano de Contas: ContasPagar.tsx:1169, copiando o padrao da Categoria).
+6. CENTRO DE RESULTADO: usar centros_custo (ou criar centros_resultado) e trocar Input por Select;
+   tornar centros_custo um cadastro util.
+7. CONTA FINANCEIRA no cadastro da despesa (hoje so no modal de baixa).
+8. PRESTADOR: desenhar gate unico (Conferencia marca status_conferencia via POD/valores) ->
+   aprovacao -> Ordem de Pagamento em lote (reusar lote_id/elegivel_lote de pagamentos_prestadores).
+9. TESOURARIA: paginação + filtro de status na lista de lotes; plugar provider iFi/CNAB como
+   adaptador sobre pagamentos_prestadores aprovados, liquido pela RPC f_confirmar_pagamento_prestador
+   (financeiro_baixas) — sem criar segundo Financeiro.
+10. NORMALIZACAO de status/competencia e limpeza de mocks/legado — SOMENTE apos autorizacao
+    explicita e plano de migracao (fora do escopo desta auditoria).
+
+--------------------------------------------------------------------------------
+NAO TOCADO / PRESERVADO NESTA MISSAO
+--------------------------------------------------------------------------------
+M66/M80; f_emitir_fatura; anti-duplicidade; ARs; APs; faturas; baixas; Calvo;
+DVL; classe F; APP; Programacao Operacional; Dashboard; DRE; Fluxo.
+Nenhuma escrita no banco. Nenhuma migration. Nenhum arquivo alterado.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D3-MAPA-FINANCEIRO-E2E-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D3-MAPA-FINANCEIRO-E2E-RESULTADO.txt
+Tamanho ..: 25887 bytes
+Data .....: 24/09/2026 16:42:11
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.3-MAPA-FINANCEIRO-E2E
+================================================================================

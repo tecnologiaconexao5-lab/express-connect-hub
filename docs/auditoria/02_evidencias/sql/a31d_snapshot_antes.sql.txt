@@ -1,0 +1,369 @@
+SNAPSHOT A31D — ANTES DA APLICAÇÃO (produção uwrvzsjtpgaifkktpepn)
+Gerado: 2026-08-17T01:50:11.161Z
+
+=== f_avancar_etapa_app_motorista (definição) ===
+CREATE OR REPLACE FUNCTION public.f_avancar_etapa_app_motorista(p_alocacao_id uuid, p_etapa text, p_payload jsonb DEFAULT '{}'::jsonb, p_idempotency_key text DEFAULT NULL::text, p_auth_user_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_authenticated_uid UUID;
+  v_prestador_id UUID;
+  v_alocacao RECORD;
+  v_tenant_id UUID;
+  v_os_id UUID;
+  v_etapa_atual TEXT;
+  v_ultima_idempotency TEXT;
+  v_allowed BOOLEAN;
+  v_app_meta JSONB;
+  v_updated_meta JSONB;
+  v_status_update TEXT;
+  v_event_id UUID;
+  v_evento_tipo TEXT;
+BEGIN
+  -- 1. Autenticação
+  v_authenticated_uid := auth.uid();
+  IF v_authenticated_uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTENTICADO');
+  END IF;
+
+  -- 2. Validar p_auth_user_id se fornecido
+  IF p_auth_user_id IS NOT NULL AND p_auth_user_id <> v_authenticated_uid THEN
+    RETURN jsonb_build_object('success', false, 'error', 'AUTH_USER_ID_INVALIDO');
+  END IF;
+
+  -- 3. Vincular prestador via auth.uid()
+  SELECT id INTO v_prestador_id
+  FROM public.prestadores
+  WHERE auth_user_id = v_authenticated_uid;
+
+  IF v_prestador_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'PRESTADOR_NAO_ENCONTRADO');
+  END IF;
+
+  -- 4. Carregar alocação
+  SELECT ae.*,
+    ae.metadata->'app_motorista'->>'etapa_atual' AS etapa_atual,
+    ae.metadata->'app_motorista'->>'ultima_idempotency' AS ultima_idempotency
+  INTO v_alocacao
+  FROM public.alocacoes_escala ae
+  WHERE ae.id = p_alocacao_id;
+
+  IF v_alocacao.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_NAO_ENCONTRADA');
+  END IF;
+
+  -- Verificar pertencimento
+  IF v_alocacao.prestador_id IS DISTINCT FROM v_prestador_id THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_OUTRO_PRESTADOR');
+  END IF;
+
+  v_tenant_id := v_alocacao.tenant_id;
+  v_os_id := v_alocacao.ordem_servico_id;
+
+  -- 5. Validar estado
+  IF v_alocacao.status IN ('cancelada', 'recusada') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'OPERACAO_CANCELADA');
+  END IF;
+
+  IF v_alocacao.status = 'concluida' OR (v_alocacao.metadata->'app_motorista'->>'servico_finalizado')::BOOLEAN = true THEN
+    RETURN jsonb_build_object('success', false, 'error', 'OPERACAO_FINALIZADA');
+  END IF;
+
+  -- 6. Idempotência
+  v_etapa_atual := COALESCE(v_alocacao.etapa_atual, '');
+  v_ultima_idempotency := COALESCE(v_alocacao.ultima_idempotency, '');
+
+  IF p_idempotency_key IS NOT NULL AND p_idempotency_key <> '' AND p_idempotency_key = v_ultima_idempotency THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'message', 'Etapa já registrada (idempotente).',
+      'etapa', p_etapa,
+      'idempotent', true
+    );
+  END IF;
+
+  -- 7. Máquina de estados — transições permitidas
+  v_allowed := false;
+
+  IF v_etapa_atual = '' AND p_etapa = 'viagem_aceita' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'viagem_aceita' AND p_etapa = 'cheguei_coleta' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'cheguei_coleta' AND p_etapa = 'carregamento_iniciado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'carregamento_iniciado' AND p_etapa = 'carregamento_finalizado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'carregamento_finalizado' AND p_etapa IN ('romaneio_informado', 'foto_romaneio', 'km_inicial_informado', 'saiu_em_rota') THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'romaneio_informado' AND p_etapa IN ('foto_romaneio', 'km_inicial_informado') THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'foto_romaneio' AND p_etapa = 'km_inicial_informado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'km_inicial_informado' AND p_etapa = 'saiu_em_rota' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'saiu_em_rota' AND p_etapa = 'chegou_entrega' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'chegou_entrega' AND p_etapa = 'descarregamento_iniciado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'descarregamento_iniciado' AND p_etapa = 'descarga_finalizada' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'descarga_finalizada' AND p_etapa = 'km_final_informado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'km_final_informado' AND p_etapa = 'assinatura_capturada' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'assinatura_capturada' AND p_etapa = 'pod_registrado' THEN v_allowed := true; END IF;
+  IF v_etapa_atual = 'pod_registrado' AND p_etapa = 'servico_finalizado' THEN v_allowed := true; END IF;
+
+  IF NOT v_allowed THEN
+    RETURN jsonb_build_object(
+      'success', false, 'error', 'TRANSICAO_INVALIDA',
+      'message', format('Transição inválida: de "%s" para "%s"', v_etapa_atual, p_etapa),
+      'etapa_atual', v_etapa_atual,
+      'etapa_solicitada', p_etapa
+    );
+  END IF;
+
+  -- 8. Validações específicas
+  IF p_etapa = 'servico_finalizado' THEN
+    IF NOT (v_alocacao.metadata->'app_motorista'->>'pod_registrado')::BOOLEAN = true THEN
+      RETURN jsonb_build_object(
+        'success', false, 'error', 'FINALIZACAO_SEM_POD',
+        'message', 'Operação não pode ser finalizada sem POD registrado.'
+      );
+    END IF;
+  END IF;
+
+  -- 9. Montar metadata atualizada
+  v_app_meta := COALESCE(v_alocacao.metadata->'app_motorista', '{}'::JSONB);
+  v_app_meta := jsonb_set(v_app_meta, '{etapa_atual}', to_jsonb(p_etapa));
+  v_app_meta := jsonb_set(v_app_meta, '{ultima_acao}', to_jsonb(p_etapa));
+  v_app_meta := jsonb_set(v_app_meta, '{atualizado_por_app}', 'true'::JSONB);
+
+  IF p_idempotency_key IS NOT NULL AND p_idempotency_key <> '' THEN
+    v_app_meta := jsonb_set(v_app_meta, '{ultima_idempotency}', to_jsonb(p_idempotency_key));
+  END IF;
+
+  IF p_payload IS NOT NULL AND p_payload <> '{}'::JSONB THEN
+    v_app_meta := v_app_meta || p_payload;
+  END IF;
+
+  v_updated_meta := COALESCE(v_alocacao.metadata, '{}'::JSONB);
+  v_updated_meta := jsonb_set(v_updated_meta, '{app_motorista}', v_app_meta);
+
+  -- 10. Status update
+  v_status_update := NULL;
+  IF p_etapa = 'viagem_aceita' THEN v_status_update := 'aceita';
+  ELSIF p_etapa = 'cheguei_coleta' THEN v_status_update := 'em_rota';
+  ELSIF p_etapa = 'servico_finalizado' THEN v_status_update := 'concluida';
+  END IF;
+
+  -- 11. Executar UPDATE
+  UPDATE public.alocacoes_escala SET
+    metadata = v_updated_meta,
+    status = COALESCE(v_status_update, status),
+    aceite_prestador = CASE WHEN p_etapa = 'viagem_aceita' THEN true ELSE aceite_prestador END,
+    data_aceite = CASE WHEN p_etapa = 'viagem_aceita' THEN NOW() ELSE data_aceite END,
+    horario_inicio_real = CASE WHEN p_etapa = 'cheguei_coleta' THEN NOW() ELSE horario_inicio_real END,
+    horario_fim_real = CASE WHEN p_etapa = 'servico_finalizado' THEN NOW() ELSE horario_fim_real END,
+    finalizada = CASE WHEN p_etapa = 'servico_finalizado' THEN true ELSE finalizada END,
+    data_finalizacao = CASE WHEN p_etapa = 'servico_finalizado' THEN NOW() ELSE data_finalizacao END,
+    updated_at = NOW()
+  WHERE id = p_alocacao_id
+    AND prestador_id = v_prestador_id;
+
+  -- 12. Mapear evento_tipo
+  v_evento_tipo := CASE
+    WHEN p_etapa = 'viagem_aceita' THEN 'operation_accepted'
+    WHEN p_etapa = 'cheguei_coleta' THEN 'arrived_pickup'
+    WHEN p_etapa = 'carregamento_iniciado' THEN 'loading_started'
+    WHEN p_etapa = 'carregamento_finalizado' THEN 'loading_finished'
+    WHEN p_etapa = 'romaneio_informado' THEN 'romaneio_informado'
+    WHEN p_etapa = 'foto_romaneio' THEN 'romaneio_foto'
+    WHEN p_etapa = 'km_inicial_informado' THEN 'km_registered'
+    WHEN p_etapa = 'saiu_em_rota' THEN 'route_started'
+    WHEN p_etapa = 'chegou_entrega' THEN 'arrived_delivery'
+    WHEN p_etapa = 'descarregamento_iniciado' THEN 'unloading_started'
+    WHEN p_etapa = 'descarga_finalizada' THEN 'unloading_finished'
+    WHEN p_etapa = 'km_final_informado' THEN 'km_final'
+    WHEN p_etapa = 'assinatura_capturada' THEN 'signature_captured'
+    WHEN p_etapa = 'pod_registrado' THEN 'pod_sent'
+    WHEN p_etapa = 'servico_finalizado' THEN 'operation_finished'
+    ELSE p_etapa
+  END;
+
+  -- 13. Registrar evento em eventos_oficiais
+  v_event_id := gen_random_uuid();
+  INSERT INTO public.eventos_oficiais (
+    id, tenant_id, event_type, entity_type, entity_id, entity_number,
+    status, source, created_by, visibility, payload, metadata,
+    created_at, processed_at, version, retry_count
+  ) VALUES (
+    v_event_id,
+    v_tenant_id,
+    v_evento_tipo,
+    'alocacao',
+    p_alocacao_id,
+    v_os_id::TEXT,
+    COALESCE(v_status_update, 'em_andamento'),
+    'app_motorista',
+    v_prestador_id,
+    'internal',
+    jsonb_build_object(
+      'etapa', p_etapa,
+      'etapa_anterior', v_etapa_atual,
+      'payload', p_payload,
+      'idempotency_key', p_idempotency_key
+    ),
+    jsonb_build_object(
+      'app_motorista', v_app_meta,
+      'prestador_id', v_prestador_id
+    ),
+    NOW(),
+    NULL,
+    '1.0',
+    0
+  );
+
+  -- 14. Registrar em operation_timeline_events
+  INSERT INTO public.operation_timeline_events (
+    id, operation_id, driver_id, type, title, metadata, event_time, created_at
+  ) VALUES (
+    v_event_id,
+    p_alocacao_id::TEXT,
+    v_prestador_id::TEXT,
+    v_evento_tipo,
+    p_etapa,
+    jsonb_build_object('etapa', p_etapa, 'payload', p_payload),
+    NOW(),
+    NOW()
+  );
+
+  -- 15. Retorno
+  RETURN jsonb_build_object(
+    'success', true,
+    'message', 'Etapa avançada com sucesso.',
+    'etapa', p_etapa,
+    'etapa_anterior', v_etapa_atual,
+    'status', COALESCE(v_status_update, v_alocacao.status),
+    'event_id', v_event_id,
+    'idempotent', false
+  );
+END;
+$function$
+
+
+=== Grants RPC ===
+  authenticated: EXECUTE
+  postgres: EXECUTE
+  service_role: EXECUTE
+
+=== vw_app_motorista_operacoes (definição) ===
+ SELECT id,
+    empresa_id,
+    cliente_id,
+    prestador_id,
+    ordem_servico_id,
+    ordem_carregamento_id,
+    data_escala,
+    turno,
+    tipo_veiculo,
+    placa,
+    regiao,
+    rota,
+    origem,
+    destino,
+    status,
+    status_pagamento,
+    quantidade_entregas,
+    quantidade_coletas,
+    quantidade_paradas,
+    km_previstos,
+    km_realizados,
+    valor_frete,
+    valor_repasse,
+    valor_pedagio,
+    valor_combustivel,
+    valor_ajudante,
+    valor_adicional,
+    valor_desconto,
+    valor_total,
+    valor_tipo,
+    valor_percentual,
+    valor_fixo,
+    combustivel_valor,
+    km_rodados,
+    valor_km,
+    pedagio_franquia,
+    pedagio_excedente,
+    pedagio_cobrar_excedente,
+    diarias_adicionais,
+    valor_diaria,
+    segunda_saida,
+    valor_segunda_saida,
+    terceira_saida,
+    valor_terceira_saida,
+    saidas_adicionais,
+    valor_saida_adicional,
+    ajudantes,
+    valor_ajudante_unit,
+    reembolsos_outros,
+    valor_reembolso_outros,
+    horario_saida,
+    horario_retorno_previsto,
+    horario_inicio_real,
+    horario_fim_real,
+    tempo_total_minutos,
+    aceite_prestador,
+    data_aceite,
+    motivo_recusa,
+    finalizada,
+    data_finalizacao,
+    comprovante_url,
+    assinatura_url,
+    fotos_entrega,
+    ocorrencias_count,
+    ocorrencias_descricao,
+    observacoes,
+    instrucoes_operacionais,
+    observacoes_internas,
+    tabela_valores_id,
+    tem_regra_especial,
+    metadata,
+    tags,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    tenant_id,
+    tipo_reversa,
+    reversa_valor_cliente,
+    reversa_valor_prestador,
+    reversa_qtd_volumes,
+    reversa_status,
+    reversa_pod_url,
+    reversa_fotos,
+    reversa_observacoes,
+    reversa_realizada_em,
+    reversa_qtd_coletada,
+    reversa_endereco_coleta,
+    reversa_endereco_devolucao,
+    reversa_unidade_cobranca,
+    reversa_valor_unitario,
+    reversa_divergencia,
+    reversa_motivo_divergencia,
+    reversa_responsavel,
+    reversa_documento_responsavel,
+    reversa_telefone,
+    reversa_data_prevista,
+    reversa_data_realizada,
+    reversa_valor_adicional,
+    reversa_assinatura_url,
+    reversa_latitude,
+    reversa_longitude,
+    coleta_reversa,
+    operation_mode,
+    motivo_troca_motorista,
+    endereco_origem,
+    endereco_destino
+   FROM alocacoes_escala ae;
+
+=== Contagens ===
+{
+  "total_alloc": "183",
+  "alloc_app_meta": "24",
+  "alloc_app_romaneio": "6",
+  "alloc_romaneio_com_os": "0",
+  "alloc_romaneio_sem_os": "6",
+  "total_os": "121",
+  "os_com_romaneio": "0"
+}

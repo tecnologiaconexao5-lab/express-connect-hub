@@ -1,0 +1,119 @@
+E2E-COMPLETO-05-PDFS-OS-E-FORM-GUARDS
+==================================================
+Ambiente: TMS | Data: 2026-09-22
+Modo: IMPLEMENTAÇÃO CONTROLADA + TESTES DIRECIONADOS | Redmi: NÃO
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. PDF DA OS — AUDITORIA
+==================================================
+O gerador REAL usado pela OS é src/lib/pdfGenerator.ts, que delega para:
+  - generateClientReport  → src/lib/pdf/clientReport.ts  (PDF Cliente)
+  - generatePrestadorReport → src/lib/pdf/prestadorReport.ts (PDF Prestador)
+(OSPDF.tsx / gerarPDFOrdemServicoProfissional NÃO é usado pela UI.)
+OrdemServicoForm expõe "PDF OS → PDF Cliente / PDF Prestador" (generatePDFCliente/Prestador).
+
+CONCLUSÃO: os PDFs JÁ SÃO SEPARADOS por destinatário e SEM vazamento:
+  - Cliente: razão social, unidade, tipo de operação, veículo, itinerário, carga,
+    composição financeira = Valor da Operação + Pedágio + Adicionais − Descontos. NÃO contém
+    custo do prestador, repasse ou margem.
+  - Prestador: identificação, veículo, rota/KM, itinerário completo (com telefone), carga,
+    FECHAMENTO FINANCEIRO (Valor Base/Repasse + KM excedente + pedágio + adicionais − descontos).
+    NÃO contém receita/margem do cliente.
+Nenhuma alteração de layout necessária (reaproveitado o homologado).
+
+OS_CLIENT_PDF_SEPARATE=YES
+OS_PROVIDER_PDF_SEPARATE=YES
+CLIENT_PDF_FINANCIAL_LEAK=NO
+PROVIDER_PDF_CLIENT_REVENUE_LEAK=NO
+
+==================================================
+2. PRIMEIRA PÁGINA EM BRANCO
+==================================================
+Auditoria técnica: em clientReport/prestadorReport a CAPA é desenhada por drawCoverPage()
+ANTES do primeiro doc.addPage() → a capa ocupa a PÁGINA 1. drawCoverPage/drawContentHeader/
+drawContentFooter NÃO chamam addPage (foundation.ts sem addPage). Portanto NÃO há página
+inicial em branco nesse fluxo — não reproduzido.
+BLANK_FIRST_PAGE_FIXED=NOT_REPRODUCED
+(Regressão adicionada: teste garante que drawCoverPage ocorre antes do primeiro addPage.)
+
+==================================================
+3. FORM GUARDS / DRAFT
+==================================================
+Criado hook reutilizável: src/hooks/useFormExitGuard.ts
+  - dirty state (comparação serializada current × baseline);
+  - beforeunload (bloquear fechar/recarregar quando dirty);
+  - confirmExit() (window.confirm) para navegação interna (Voltar/Cancelar);
+  - markClean() após carregar/salvar com sucesso; enabled para ligar/desligar.
+Aplicado (sem duplicar o padrão já existente de OS/Prestador):
+  - ClienteDetalhe   (current=c, baseline=carregado; Voltar/Cancelar → handleExit) .... PASS
+  - OrcamentoForm    (current=data; onVoltar/onClose/onCancelar → handleExit) ........ PASS
+  - TabelaValoresForm(current=data; Voltar → handleExit; markClean após salvar) ...... PASS
+  - ContasReceber    (current=form; fechar() com confirmação; markClean após salvar) . PASS
+  - ContasPagar      (current=form; fechar() com confirmação; markClean após salvar) . PASS
+Nenhum sistema de autosave complexo criado (guard simples resolve).
+
+CLIENTE_GUARD=PASS
+ORCAMENTO_GUARD=PASS
+TABELA_VALORES_GUARD=PASS
+FINANCE_GUARDS=PASS
+
+==================================================
+4. FALSO SUCESSO (caminho de SAVE dos formulários tocados)
+==================================================
+- ClienteDetalhe: toast.success somente após INSERT/UPDATE sem erro; falha → toast.error + return.
+- TabelaValoresForm: markClean/refresh só após `await onSalvar(data)` (persistência confirmada).
+- OrcamentoForm/ContasReceber/ContasPagar: markClean após o fetch/salvar confirmado; erros bloqueiam.
+Nenhum toast de sucesso antes da persistência nos formulários tocados.
+FALSE_SUCCESS_FIXED_OR_ABSENT=YES
+
+==================================================
+5. TESTES
+==================================================
+NOVO: src/test/e2e_completo_05_pdf_guards.test.ts — 17/17 PASS
+  - PDFs separados (cliente/prestador) e roteamento;
+  - PDF Cliente sem custo/repasse/margem; PDF Prestador sem receita/margem do cliente;
+  - capa antes do primeiro addPage (sem página em branco);
+  - hook: clean/dirty, confirmExit, markClean, enabled;
+  - guards presentes em ClienteDetalhe/OrcamentoForm/TabelaValoresForm/ContasReceber/ContasPagar.
+DIRECTED_TESTS=17/17 (novo). Suíte global: 1512 passed / 31 failed / 155 skipped.
+  Baseline pré-existente: 31 falhas (9 arquivos) — NÃO introduzidas por esta missão.
+TYPECHECK=npx tsc --noEmit → 0 erros
+BUILD=npm run build → OK (built in 1m 7s)
+
+==================================================
+ENTREGÁVEIS
+==================================================
+OS_CLIENT_PDF_SEPARATE=YES
+OS_PROVIDER_PDF_SEPARATE=YES
+BLANK_FIRST_PAGE_FIXED=NOT_REPRODUCED
+CLIENT_PDF_FINANCIAL_LEAK=NO
+PROVIDER_PDF_CLIENT_REVENUE_LEAK=NO
+
+CLIENTE_GUARD=PASS
+ORCAMENTO_GUARD=PASS
+TABELA_VALORES_GUARD=PASS
+FINANCE_GUARDS=PASS
+FALSE_SUCCESS_FIXED_OR_ABSENT=YES
+
+DIRECTED_TESTS=17/17
+TYPECHECK=0
+BUILD=OK
+
+FILES_MODIFIED=
+  - src/hooks/useFormExitGuard.ts (NOVO)
+  - src/components/clientes/ClienteDetalhe.tsx
+  - src/components/comercial/OrcamentoForm.tsx
+  - src/components/comercial/TabelaValoresForm.tsx
+  - src/components/financeiro/ContasReceber.tsx
+  - src/components/financeiro/ContasPagar.tsx
+  - src/test/e2e_completo_05_pdf_guards.test.ts (NOVO)
+
+RESULT=PASS
+NEXT_EXACT_MISSION=E2E-COMPLETO-06-FISICO-CADEIA-COMPLETA
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem Redmi/E2E físico; APP Flutter não alterado; nenhum dado real criado; sem pagamento/baixa;
+nível 3 não reaberto; Master 360/Control Tower não executados; DB_WRITES=0; sem migration.

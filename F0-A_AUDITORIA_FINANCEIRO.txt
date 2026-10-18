@@ -1,0 +1,286 @@
+================================================================================
+ F0-A — AUDITORIA READ-ONLY DOS 4 FLUXOS FINANCEIROS (express-connect-hub)
+ Faturas / Contas a Receber / Contas a Pagar / Pagamento de Prestadores
+ Data: 2026-08-18 | Modo: SOMENTE LEITURA (nenhum arquivo de codigo/banco alterado)
+================================================================================
+
+--------------------------------------------------------------------------------
+A. OBJETIVO E ESCOPO
+--------------------------------------------------------------------------------
+- Auditar em modo READ-ONLY os 4 fluxos financeiros do TMS.
+- Provar a causa-raiz dos 3 erros observados em runtime (string exata):
+    E1  "Could not find the 'competencia' column of 'financeiro_receber' in
+         the schema cache"
+    E2  "Could not find the 'arquivo' column of 'pagamentos_prestadores' in
+         the schema cache"
+    E3  "Descrição é obrigatória"  (fluxo Contas a Pagar)
+- Mapear fluxos legados/paralelos e divergencias codigo x schema.
+- Nenhuma alteracao feita: sem migration, sem DDL, sem write, sem build/testes.
+
+--------------------------------------------------------------------------------
+B. RESUMO EXECUTIVO
+--------------------------------------------------------------------------------
+1. Os 3 erros tem CAUSA-RAIZ NO CODIGO (contratos de service/componente
+   incompativeis com o schema real de producao), NAO em lacuna estrutural.
+2. Faturas (aba FATURAS) usa o fluxo oficial FASE 2A (tabela `faturas` +
+   `fatura_itens` + RPC `f_emitir_fatura`) e E COMPATIVEL com producao.
+3. O erro E1 (`competencia`) vem de DUAS FUNCOES LEGADAS do receberService
+   (`criarRecebivelDeEscala`, `criarFaturaConsolidadaCompleta`) chamadas pela
+   aba CONTAS A RECEBER (ContasReceberEnterprise) — fluxo paralelo/antigo que
+   duplica o faturamento FASE 2A e grava colunas inexistentes em producao.
+4. O erro E2 (`arquivo`) vem de INSERT DIRETO do componente
+   PagamentoPrestadores (bypass do service), com coluna que nao existe em
+   producao. O service oficial `criarPagamento` NAO usa `arquivo` (caminho seguro).
+5. O erro E3 ("Descrição é obrigatória") e validação do service `criarPagavel`
+   (pagarService.ts:102): o formulario ContasPagar monta o payload SEM o campo
+   `descricao`. Alem disso, o payload interno do service usa colunas ausentes
+   no schema (saldo, prestador_id, prestador_nome, alocacao_id, parcela,
+   total_parcelas, tenant_id) — mesmo com descricao, o insert provavelmente
+   quebraria no proximo campo.
+6. Nenhuma coluna precisa ser criada para corrigir os 3 erros observados:
+   os fluxos devem apontar para os contratos/caminhos compativeis com o schema.
+
+--------------------------------------------------------------------------------
+C. INVENTARIO DE FLUXOS E ROTEAMENTO (Financeiro.tsx)
+--------------------------------------------------------------------------------
+Aba                        | Componente                  | Service/funcao usado
+---------------------------|-----------------------------|----------------------------------------
+faturas                    | FaturaLista/FaturaPanel     | faturaService + RPC f_emitir_fatura
+receber                    | ContasReceberEnterprise     | receberService (criarRecebivel,
+                           |                             |   criarRecebivelDeEscala,
+                           |                             |   criarFaturaConsolidadaCompleta, ...)
+pagar                      | ContasPagar                 | pagarService (criarPagavel,
+                           |                             |   atualizarPagavel, criarParcelasPagavel)
+pagamento-prestadores      | PagamentoPrestadores       | INSERT DIRETO (nao usa service)
+                           |                             |   + pagamentoPrestadorService p/ outras
+conferencia                | ConferenciaFinanceira      | centralFinanceiroService (FASE A31)
+
+Obs.: `ContasReceber.tsx` (componente legado) NAO esta roteado em Financeiro.tsx
+(importa criarRecebivel em ContasReceber.tsx:30, porem nao e usado na app).
+
+--------------------------------------------------------------------------------
+D. DIAGNOSTICO DETALHADO POR ERRO
+--------------------------------------------------------------------------------
+
+D1 — E1: "competencia" em financeiro_receber  | Severidade: ALTA
+  Erro: coluna `competencia` nao existe em financeiro_receber (producao).
+  Causa-raiz (confirmada, read-only):
+    - receberService.ts:387 `criarRecebivelDeEscala` — INSERT com `competencia`
+      na linha 416.
+    - receberService.ts:~610 `criarFaturaConsolidadaCompleta` — INSERTs com
+      `competencia` nas linhas 653, 680 e 699; tambem usa `fatura_numero`,
+      `quantidade_itens`, `origem`, `origem_id` (inexistentes no baseline).
+    - Chamados por ContasReceberEnterprise.tsx:329 (criarRecebivelDeEscala) e
+      :489 (criarFaturaConsolidadaCompleta).
+  Schema real de producao (financeiro_receber):
+    - Baseline 20260510000001_core_baseline.sql:350-389 — SEM `competencia`,
+      SEM `saldo`, SEM `origem/origem_id`, SEM `parcela/total_parcelas`, SEM
+      `tenant_id`, SEM `fatura_numero`, SEM `quantidade_itens`.
+    - M103A (20260706) adicionou: cliente_id, cliente_nome, fatura.
+    - FASE2A (20260816) adicionou: fatura_id.
+  Classificacao: A — CONTRATO ANTIGO/INCORRETO (funcoes legadas de faturacao
+    dentro da aba Receber que duplicam o fluxo FASE 2A).
+  Correcao recomendada (sem banco):
+    - Remover/descontinuar `criarRecebivelDeEscala` e
+      `criarFaturaConsolidadaCompleta` da UI (ContasReceberEnterprise).
+    - Redirecionar faturamento para o fluxo oficial FASE 2A (FaturaLista/
+      FaturaPanel/faturaService + RPC `f_emitir_fatura`, cujo INSERT em
+      financeiro_receber — migration 20260816_fase2a:372-393 — usa apenas
+      colunas existentes: cliente_id, descricao, valor, vencimento,
+      data_vencimento, data_emissao, status, cliente, cliente_nome, fatura,
+      numero, os_vinculadas, valor_bruto, valor_liquido, fatura_id).
+  Necessita de banco?: NAO (para o erro observado).
+
+D1b — RISCO nao observado (documentacao):
+  - `criarRecebivel` (manual, ContasReceberEnterprise.tsx:617 e :680) insere
+    `saldo` (receberService.ts:116), `origem`, `origem_id`, `parcela`,
+    `total_parcelas`, `tenant_id` — ausentes no baseline. Se testado em
+    producao, deve quebrar em `saldo`. Mesma situacao em `criarRecebiveisEmLote`
+    (receberService.ts:152).
+
+D2 — E2: "arquivo" em pagamentos_prestadores  | Severidade: ALTA
+  Erro: coluna `arquivo` nao existe em pagamentos_prestadores (producao).
+  Causa-raiz (confirmada, read-only):
+    - PagamentoPrestadores.tsx `handleSalvarNovoPagamento` faz INSERT DIRETO
+      (linhas 878-910) com `arquivo: novoPagamento.arquivo || null` na linha 909.
+    - O componente ignora o service oficial `pagamentoPrestadorService`.
+  Schema real de producao:
+    - O erro de schema cache aponta `arquivo` como primeiro campo ausente na
+      ordem do objeto; campos anteriores (`elegivel_lote`, `conta_pagamento`,
+      `quantidade_os`, `periodo_inicio/fim`, `valor_liquido`, etc.) existem em
+      producao (definidos em 20260510090000_baseline_external_tables.sql:117
+      e/ou sql/alter_pagamentos_prestadores_*.sql). A coluna `arquivo` NAO
+      existe em producao (migration 20260526_contas_financeiras.sql:44-58 so a
+      altera IF EXISTS; nao foi a origem da tabela).
+  Classificacao: C — CAMINHO DE ESCRITA ERRADO (insert direto no componente em
+    vez do service compativel com o schema).
+  Correcao recomendada (sem banco):
+    - Remover `arquivo` do INSERT direto (linha 909) e/ou substituir o insert
+      direto por `pagamentoPrestadorService.criarPagamento` (linhas 104-108),
+      cujo payload NAO usa `arquivo` nem `elegivel_lote`/`conta_contabil` com
+      contrato divergente.
+    - Se o anexo de comprovante for necessario, guardar a referencia em coluna
+      existente (ex.: `observacao`) ou criar fluxo de Storage separado (fora
+      do escopo read-only; exigiria decisao de banco).
+  Necessita de banco?: NAO (para o erro observado).
+
+D3 — E3: "Descrição é obrigatória" (Contas a Pagar) | Severidade: ALTA
+  Erro: excecao lancada pelo service ANTES de qualquer query.
+  Causa-raiz (confirmada, read-only):
+    - pagarService.ts:102 `criarPagavel` exige `input.descricao`.
+    - ContasPagar.tsx monta o payload SEM `descricao` (linhas 492-519) e chama
+      `criarPagavel(payload)` na linha 525 (e `atualizarPagavel` na 522).
+  Classificacao: B — MISMATCH CONTRATO FRONT x SERVICE.
+  Correcao recomendada (sem banco):
+    - Incluir `descricao` no payload do ContasPagar (derivar do form, ex.:
+      `documentoNF` + favorecido) OU relaxar a validacao no service.
+  D3b — RISCO nao observado (documentacao):
+    - Mesmo com `descricao`, o payload interno de `criarPagavel` (pagarService.ts:
+      114-131) inclui colunas ausentes no baseline financeiro_pagar
+      (20260510000001:394-437): `saldo`, `prestador_id`, `prestador_nome`,
+      `alocacao_id`, `parcela`, `total_parcelas`, `tenant_id`. Proximo erro
+      provavel: `saldo`.
+    - O payload do formulario (edit) usa `forma_pagamento` e `recorrencia`
+      (ContasPagar.tsx:512, 517) que NAO existem no baseline financeiro_pagar
+      (so `recorrente` + `quantidade_parcelas`/`parcela_atual`). O caminho de
+      edicao (`atualizarPagavel`) tambem e arriscado em producao.
+    - O campo `competencia` do formulario (ContasPagar.tsx:502) E valido para
+      financeiro_pagar (baseline linha 430), mas e IGNORADO pelo service.
+  Necessita de banco?: NAO (para o erro observado). Verificacao em runtime
+    recomendada para D3b.
+
+--------------------------------------------------------------------------------
+E. TABELA: COLUNAS QUE O CODIGO ESCREVE X SCHEMA REAL
+--------------------------------------------------------------------------------
+financeiro_receber (producao = baseline + M103A + FASE2A)
+  presente  : id, cliente_id, descricao, valor, vencimento, status, os_id,
+              cliente, cliente_nome, data_vencimento, data_emissao,
+              data_pagamento, categoria, observacoes, cliente_documento,
+              fatura, serie, numero, os_vinculadas, contrato_vinculado,
+              proposta_vinculada, valor_bruto, valor_liquido, desconto, juros,
+              multa, abatimento, data_previsao_recebimento, recorrente,
+              quantidade_parcelas, parcela_atual, centro_resultado, plano_conta,
+              conta_entrada, recorrencia, created_at, updated_at, fatura_id(FASE2A)
+  AUSENTE   : competencia, saldo, origem, origem_id, parcela, total_parcelas,
+              tenant_id, fatura_numero, quantidade_itens
+  Escrevem competencia: receberService.ts:416, 653, 680, 699 (funcoes legadas)
+  Escrevem saldo      : receberService.ts:116, 152 (criarRecebivel/lote)
+
+financeiro_pagar (producao = baseline)
+  presente  : id, cliente_id, descricao, valor, vencimento, status, os_id,
+              prestador, fornecedor_nome, data_vencimento, data_emissao,
+              data_pagamento, categoria, observacoes, fornecedor_id,
+              fornecedor_documento, fornecedor, documento, tipo_documento,
+              os_vinculada, valor_bruto, valor_liquido, desconto, juros, multa,
+              impostos_retidos, data_previsao_pagamento, conta_pagadora,
+              codigo_barras, chave_pix, recorrente, quantidade_parcelas,
+              parcela_atual, competencia, plano_contas, centro_resultado,
+              unidade_filial, despesa_fixa_base, data_efetiva_pgto
+  AUSENTE   (no baseline): saldo, prestador_id, prestador_nome, alocacao_id,
+              parcela, total_parcelas, tenant_id, forma_pagamento, recorrencia
+  Observacao: M103A adicionou fornecedor_id, fornecedor_nome, documento.
+              Precisao final do schema real de producao requer verificacao em
+              runtime (a coluna `competencia` EXISTE no baseline financeiro_pagar).
+
+pagamentos_prestadores (producao)
+  presente  : prestador_id, os_id, os_numero, tipo_lancamento, natureza, valor,
+              data_competencia, data_prevista_pagamento, forma_pagamento,
+              conta_pagamento, observacao, status_conferencia, status_pagamento,
+              elegivel_lote, origem_lancamento, categoria_financeira,
+              centro_custo, conta_contabil, quantidade_os, periodo_inicio,
+              periodo_fim, valor_liquido, valor_servicos, valor_descontos (+ M103A)
+  AUSENTE   : arquivo (erro E2 confirmado)
+  Caminho seguro: pagamentoPrestadorService.criarPagamento (sem arquivo)
+
+--------------------------------------------------------------------------------
+F. MAPA DE DUPLICIDADE / LEGADO
+--------------------------------------------------------------------------------
+1. Faturamento duplicado: aba FATURAS (FASE 2A, oficial e compativel) x aba
+   CONTAS A RECEBER (funcoes legadas `criarFaturaConsolidadaCompleta`/
+   `criarRecebivelDeEscala` — quebradas em producao). Recomenda-se unificar em
+   FASE 2A e remover as funcoes legadas do roteamento da UI.
+2. Pagamento de prestadores: insert direto no componente (quebrado) x service
+   oficial `pagamentoPrestadorService.criarPagamento` (compativel). Manter
+   apenas o service.
+3. Fonte de verdade da propagacao financeira (os/escala): trigger M66
+   (f_trg_propagar_financeiro_alocacao, versao M104A em
+   20260707_m104a_correcao_propagacao_financeira_m66.sql) + trigger M80 para OS
+   direta — NAO afetados pelos 3 erros.
+4. Componentes legados nao roteados: ContasReceber.tsx (importa criarRecebivel).
+
+--------------------------------------------------------------------------------
+G. DECISOES (A/B/C/D) POR COLUNA AUSENTE
+--------------------------------------------------------------------------------
+competencia em financeiro_receber ....... A (contrato antigo — fluxo legado)
+arquivo em pagamentos_prestadores ....... C (insert direto — caminho errado)
+descricao no ContasPagar ................ B (mismatch front x service)
+saldo/prestador_id/prestador_nome/... ... B (payload interno do service
+   alocacao_id/parcela/total_parcelas/      incompativel com schema — prever
+   tenant_id/forma_pagamento/recorrencia)   correcao junto do fluxo)
+Nenhuma coluna classificada como D (lacuna estrutural necessaria para os 3
+erros observados). Decisao de criar coluna (ex.: `arquivo`) so se o anexo de
+comprovante for requisito de negocio — fora do escopo read-only.
+
+--------------------------------------------------------------------------------
+H. RECOMENDACOES PRIORIZADAS
+--------------------------------------------------------------------------------
+P0 — Contas a Pagar: adicionar `descricao` ao payload do ContasPagar (ou
+     ajustar pagarService) e alinhar o payload do service ao schema real.
+P1 — Contas a Receber: remover funcoes legadas de faturamento da UI e apontar
+     para o fluxo FASE 2A.
+P1 — Pagamento de Prestadores: remover `arquivo` do insert direto e migrar o
+     insert para `pagamentoPrestadorService.criarPagamento`.
+P2 — Auditoria de runtime (leitura) para confirmar colunas reais de producao em
+     financeiro_receber/financeiro_pagar antes de qualquer ajuste de payload.
+P3 — Limpeza de codigo morto: `criarRecebivelDeEscala`,
+     `criarFaturaConsolidadaCompleta`, `criarFaturaConsolidada`,
+     `criarRecebiveisEscalaEmLote` se ficarem sem callers.
+
+--------------------------------------------------------------------------------
+I. RISCOS REMANESCENTES
+--------------------------------------------------------------------------------
+- D1b/D3b: caminhos alternativos (manual/lote/edicao) que compartilham payloads
+  com colunas ausentes no baseline — podem quebrar em runtime.
+- A tabela real de producao pode divergir dos baselines (caso `arquivo`). A
+  validacao definitiva exige query READ-ONLY no banco (fora do escopo desta
+  auditoria por restricao de acesso a credenciais).
+- Fluxo FASE 2A (Faturas) e o unico dos 4 compativel com producao no insert em
+  financeiro_receber — nenhuma acao necessaria para ele.
+
+--------------------------------------------------------------------------------
+J. ARQUIVOS-CHAVE AUDITADOS
+--------------------------------------------------------------------------------
+- src/services/financeiro/receberService.ts      (criarRecebivel:105, saldo:116;
+   criarRecebiveisEmLote:143; criarRecebivelDeEscala:387/416;
+   criarFaturaConsolidadaCompleta:~610/653/680/699)
+- src/services/financeiro/pagarService.ts         (criarPagavel:101-141, descricao:102)
+- src/services/financeiro/pagamentoPrestadorService.ts (criarPagamento:104-108)
+- src/services/financeiro/faturaService.ts        (fluxo FASE 2A — OK)
+- src/components/financeiro/ContasReceberEnterprise.tsx (329, 489, 617, 680)
+- src/components/financeiro/ContasPagar.tsx       (payload 492-519, criarPagavel 525)
+- src/components/financeiro/PagamentoPrestadores.tsx (insert direto 878-910, arquivo 909)
+- src/components/financeiro/FaturaLista.tsx / FaturaPanel.tsx (FASE 2A)
+- src/pages/Financeiro.tsx                        (abas 136/141/156/161/166)
+- supabase/migrations/20260510000001_core_baseline.sql (receber 350-389; pagar 394-437)
+- supabase/migrations/20260510090000_baseline_external_tables.sql (pagamentos 117+)
+- supabase/migrations/20260526_contas_financeiras.sql (arquivo IF EXISTS 44-58)
+- supabase/migrations/20260706_m103a_fix_alocacao_trigger_columns.sql (22-61)
+- supabase/migrations/20260816_fase2a_faturamento_profissional.sql (f_emitir_fatura 372-393)
+- supabase/migrations/20260707_m104a_correcao_propagacao_financeira_m66.sql
+
+--------------------------------------------------------------------------------
+K. CONCLUSAO
+--------------------------------------------------------------------------------
+- Fluxo FATURAS (FASE 2A): PRONTO (compativel com producao).
+- Fluxo CONTAS A RECEBER: QUEBRADO em 2 acoes (Escala/Consolidada) por funcoes
+  legadas com contrato incompativel (competencia). Correcao em codigo, sem banco.
+- Fluxo CONTAS A PAGAR: QUEBRADO no salvamento (falta descricao + payload do
+  service com colunas ausentes). Correcao em codigo, sem banco.
+- Fluxo PAGAMENTO DE PRESTADORES: QUEBRADO no salvamento manual (insert direto
+  com `arquivo` inexistente). Correcao em codigo, sem banco.
+- Nenhuma migration/DDL necessaria para os 3 erros observados. Auditoria de
+  runtime (leitura) recomendada para confirmar colunas de producao antes de
+  qualquer ajuste fino de payload.
+================================================================================
+ FIM DO RELATORIO F0-A
+================================================================================

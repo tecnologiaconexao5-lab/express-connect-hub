@@ -1,0 +1,166 @@
+# FIN-MOT-2 — GERAR EXTRATO POR PRESTADOR + PERÍODO + CLIENTE OPCIONAL
+**Data:** 21 de agosto de 2026
+**Modelo:** DeepSeek V3.2 (etapa não premium)
+**Status:** ✅ Implementado (tsc 0, vitest 470/470, build ok). Aguarda prova visual do usuário (status B).
+
+---
+
+## RESUMO
+
+Na tela real **Financeiro → Pagamentos → Pag. Prestadores → Fechamentos e Pagamentos**
+foi adicionado o botão **"Gerar Extrato do Período"**, que abre um painel com:
+
+- **Prestador** (obrigatório — cadastro real de `prestadores`);
+- **Data inicial** e **Data final** (padrão = mês atual);
+- **Cliente** (opcional — "Todos os clientes" ou um cliente específico por ID);
+
+e gera o extrato **em memória**, SEM criar fechamento nem registrar em
+`pagamentos_prestadores`. O extrato é exibido no **mesmo modal reutilizado** e o
+PDF é gerado pelo **mesmo gerador reutilizado** (`generateExtratoPrestadorPDF`),
+garantindo **TMS = PDF**.
+
+---
+
+## A. CHECKLIST CONCLUÍDO
+
+- [x] Botão Gerar Extrato do Período (na aba "Fechamentos e Pagamentos", junto aos filtros)
+- [x] Prestador selecionável (cadastro real de `prestadores`)
+- [x] Data inicial
+- [x] Data final (padrão mês atual)
+- [x] Cliente opcional (Todos / específico por ID)
+- [x] Todos os clientes (quando clienteId vazio)
+- [x] Produção real carregada (fonte: `ordens_servico` do prestador no período)
+- [x] OS Conexão (`ordens_servico.numero`)
+- [x] Romaneio/OC (`ordens_servico.romaneio`, quando existir)
+- [x] Cliente (referência real via `ordens_servico.cliente_id` / `cliente`)
+- [x] Valor base (custo prestador real: `custo_prestador`)
+- [x] KM/adicionais (`km_total` + `adicionais`)
+- [x] Reembolsos (0/ausência — não inventado; ver FALTA)
+- [x] Descontos (`ordens_servico.descontos` + outros débitos reais)
+- [x] Adiantamentos (movimentos débito reais de `pagamentos_prestadores`)
+- [x] Combustível quando disponível (movimentos débito de combustível reais; senão 0)
+- [x] Total créditos
+- [x] Total débitos
+- [x] Líquido (= créditos − débitos garantido)
+- [x] Deduplicação (por `ordens_servico.id`)
+- [x] Identificação de OS já fechada (badge "Já fechada · FP-…")
+- [x] Modal reutilizado (mesmo Dialog do extrato de fechamento)
+- [x] PDF reutilizado (`generateExtratoPrestadorPDF`)
+- [ ] Prova visual (pendente — requer subir o TMS no navegador; ver PROVA VISUAL)
+
+---
+
+## B. O QUE FOI ALTERADO
+
+### Arquivos alterados
+1. **`src/services/financeiro/extratoPrestadorService.ts`**
+   - **Função adicionada:** `construirExtratoPorPeriodo({ prestadorId, dataInicio, dataFim, clienteId? })`
+   - `OperacaoFinanceira` ganhou campos `jaFechada?` e `referenciaFechamento?`.
+   - Funções **reutilizadas** (não refeitas): `buscarDadosPrestador`, e o shape/PDF fica intacto.
+
+2. **`src/components/financeiro/PagamentoPrestadores.tsx`**
+   - Botão **"Gerar Extrato do Período"** junto aos filtros.
+   - Estado `showExtratoPeriodo` + `extratoPeriodo` (prestadorId/dataInicio/dataFim/clienteId).
+   - Handler **`handleGerarExtratoPeriodo`** → chama `construirExtratoPorPeriodo` e abre o **modal existente**.
+   - Modal de seleção (prestador/período/cliente).
+   - Badge "Já fechada · FP-…" na tabela de operações do modal existente.
+   - **Modal e PDF 100% reutilizados** (nenhum segundo modal/pdf criado).
+
+3. **`src/test/extratoPrestadorService.test.ts`**
+   - Adicionados testes FIN-MOT-2 (cenários A–E). Total: 11 testes.
+
+### Funcões reutilizadas (não refeitas)
+- `generateExtratoPrestadorPDF` (PDF)
+- modal existente de extrato (`Dialog showExtrato`)
+- `buscarDadosPrestador`
+- fontes reais `ordens_servico`, `prestadores`, `pagamentos_prestadores`, `pagamentos_prestadores_itens`
+
+### NENHUMA estrutura paralela criada
+- Não há nova tabela, migration, página isolada ou PDF novo.
+
+---
+
+## C. REGRA DE DEDUPLICAÇÃO
+
+**Chave utilizada: `ordens_servico.id`** (identificador único de cada OS/operação).
+
+- Cada OS do prestador no período é carregada uma única vez via
+  `supabase.from('ordens_servico').eq('prestador_id', …)`.
+- Não se busca escala/alocação, item de pagamento ou movimento financeiro como
+  fonte de crédito de produção — a produção vem exclusivamente das **OS**.
+- `pagamentos_prestadores_itens` é usado APENAS para marcar **"Já fechada"**
+  (leitura), nunca para listar uma segunda linha de crédito.
+- Resultado: a mesma OS aparece no máximo 1 vez, sem crédito duplicado mesmo
+  que exista fechamento, item ou movimento ligado a ela.
+
+---
+
+## D. FONTES DE DADOS
+
+| Necessidade | Fonte real | Como |
+|-------------|-----------|------|
+| Operações / produção | `ordens_servico` | `prestador_id` + status finalizada/concluida + período, filtro por `cliente_id` |
+| Cliente | `ordens_servico.cliente_id` / `cliente` | ref. real por ID (não texto) |
+| Valor base do prestador | `ordens_servico.custo_prestador` | valor REAL do prestador (não do cliente) |
+| KM / adicionais | `ordens_servico.km_total`, `ordens_servico.adicionais` | exibição + soma |
+| Pedágio | `ordens_servico.pedagio` | soma |
+| Descontos | `ordens_servico.descontos` + débitos de `pagamentos_prestadores` | soma |
+| Adiantamentos | `pagamentos_prestadores` (natureza débito, tipo adiantamento/vale) | no período |
+| Combustível | `pagamentos_prestadores` (débito, tipo combustível/abastec.) | quando existir; senão 0 |
+| Marcação "já fechada" | `pagamentos_prestadores_itens` ↔ `pagamentos_prestadores` | leitura p/ flag |
+| Prestador | `prestadores` | cadastro real (seletor + dados) |
+
+---
+
+## E. O QUE FALTA (pendências reais)
+
+1. **Combustível integrado ao extrato: NÃO (por padrão desta missão).** Há leitura
+   de movimentos débito de combustível em `pagamentos_prestadores`, mas ainda não
+   existe a integração completa de autorização de abastecimento/fornecedores (missão
+   futura). Se NÃO houver movimento real, o documento mostra **zero/ausência** — nada
+   é inventado. Registrar: **Combustível integrado ao extrato: NÃO (aguarda missão
+   futura de abastecimento)**.
+2. **Reembolsos e Bônus: 0 nesta versão consultiva.** Não há coluna direta de
+   reembolso/bônus por OS na fonte de produção usada; não foram inventados. Em
+   fechamentos existentes (FIN-MOT-1H2) eles vêm dos valores gravados do fechamento.
+3. **Nome do cliente por OS na listagem consultiva:** a OS guarda `cliente_id`/`cliente`
+   (UUID); resolver para o nome exigiria join adicional. O modal do período usa a coluna
+   direta; se a OS não expuser o nome, exibe "—". (Sem inventar.)
+4. **Prova visual** (exigida pelo enunciado): subir o TMS e navegar até o fluxo. Depende
+   do ambiente do usuário — não declarado como homologado visualmente.
+
+---
+
+## F. STATUS
+
+**B — IMPLEMENTADO, MAS AGUARDA HOMOLOGAÇÃO DO USUÁRIO**
+
+Justificativa: código validado via `tsc` (0 erros), `vitest` (470/470, incl. novos
+cenários FIN-MOT-2) e `build` (38.5s). Porém a **prova visual no navegador**
+(Prestador + Período + Cliente → Extrato → PDF) ainda não foi confirmada pelo
+usuário em ambiente real — o enunciado exige essa validação antes de declarar "A".
+
+---
+
+## G. PRÓXIMA MISSÃO ÚNICA (recomendação — NÃO executada)
+
+**Executar a prova visual do fluxo FIN-MOT-2 em produção/QA** (subir o TMS →
+Financeiro → Pagamentos → Pag. Prestadores → Fechamentos e Pagamentos →
+"Gerar Extrato do Período" → selecionar prestador + período + cliente → Visualizar →
+Gerar PDF e abrir), confirmando que os valores do TMS batem com o PDF, e anexar
+screenshots. (Não executada automaticamente.)
+
+---
+
+## ANEXO — Prova visual (fluxo esperado do usuário)
+
+1. **Financeiro**
+2. **Pagamentos**
+3. **Pag. Prestadores**
+4. Aba **Fechamentos e Pagamentos**
+5. Clicar **"Gerar Extrato do Período"** (junto aos filtros; período já no mês atual)
+6. **Prestador:** César Augusto Holanda Silva (exemplo)
+7. **Período:** 01/08/2026 a 21/08/2026
+8. **Cliente:** Todos (ou selecionar 1 cliente)
+9. Clicar **"Visualizar Extrato"** → abre o modal com a produção do período
+10. Clicar **"Gerar PDF Completo"** → baixa/abre o PDF (mesmos valores do modal)

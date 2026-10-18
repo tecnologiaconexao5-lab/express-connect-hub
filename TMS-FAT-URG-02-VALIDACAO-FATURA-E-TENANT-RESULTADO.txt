@@ -1,0 +1,220 @@
+================================================================================
+MISSAO: TMS-FAT-URG-02-VALIDACAO-FATURA-E-TENANT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / repositorio local + Supabase (RPC validada em transacao ROLLBACK)
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: implementacao (codigo + RPC) + testes locais. SEM E2E real.
+BASE: TMS-FAT-URG-01 (auditoria HOMOLOGADA).
+================================================================================
+
+RESULTADO: PASS (implementacao + testes). E2E NAO declarado homologado.
+  - Tenant explicito no lancamento manual: IMPLEMENTADO + testado.
+  - Etapa de validacao/aprovacao (rascunho -> aguardando_aprovacao -> aprovada -> emitida):
+    IMPLEMENTADA (RPC + service + UI) + testada.
+  - VALIDAR/APROVAR NAO CRIA AR: comprovado (RPC sem INSERT em financeiro_receber;
+    nenhum service de validacao toca financeiro_receber).
+  - Emissao continua pela RPC oficial f_emitir_fatura (contrato existente).
+  - Build OK. 18 testes novos PASS (+ regressao: 61 PASS em 5 arquivos).
+  - ATENCAO: a migration da RPC foi CRIADA e VALIDADA (BEGIN/ROLLBACK) mas NAO foi
+    APLICADA em producao. O E2E depende da aplicacao autorizada da migration.
+
+================================================================================
+1. ARQUIVOS ALTERADOS
+================================================================================
+1) src/services/financeiro/centralFinanceiroService.ts
+   - LancamentoManualServicoInput ganhou `tenant_id?: string | null` (linha 650).
+   - lancarServicoManual: resolve tenant explicito do contexto oficial e envia
+     no INSERT (linhas 720-745).
+2) src/components/financeiro/ConferenciaFinanceira.tsx
+   - handleLancarServico passa `tenant_id: tenant?.id || null` (linha 1363).
+3) src/services/financeiro/faturaService.ts
+   - Novas funcoes: moverStatusFatura / enviarFaturaParaValidacao / aprovarFatura /
+     devolverFaturaParaRascunho + tipos (linhas 384-437).
+4) src/components/financeiro/FaturaPanel.tsx
+   - Acoes separadas por estado (Enviar para Validacao / Aprovar / Emitir) +
+     handlers + estado processandoStatus (linhas 144, 361-388, 643-689).
+   - Dialogo de emissao renomeado para "Emitir Fatura" (linhas 725, 785).
+5) src/components/financeiro/FaturaLista.tsx
+   - Acoes por estado + confirmacoes via AlertDialog (sem confirm/alert/prompt)
+     (linhas 16-17, 72-73, 144-190, 338-367, 418-454).
+6) supabase/migrations/20260925000000_fin_fat_urg_02_validacao_fatura_rpc.sql  (NOVO)
+7) supabase/migrations/20260925000001_fin_fat_urg_02_validacao_fatura_rollback.sql (NOVO)
+8) src/test/fin_fat_urg_02_validacao_fatura.test.ts  (NOVO, 18 testes)
+
+NAO ALTERADO (fora do escopo): triggers M66/M80, pagamentos_prestadores,
+financeiro_receber (regra), RLS, f_emitir_fatura/f_cancelar_fatura, Comercial, APP,
+Contas a Receber/Conferencia (regra de faturamento), dados.
+
+================================================================================
+2. MIGRATION / RPC
+================================================================================
+Arquivo: supabase/migrations/20260925000000_fin_fat_urg_02_validacao_fatura_rpc.sql
+Funcao : public.f_mover_fatura_status(p_fatura_id uuid, p_novo_status text) RETURNS jsonb
+- SECURITY DEFINER, SET search_path TO 'public'.
+- Exige auth.uid(); perfil autorizado (tenant_usuarios.papel IN
+  ('super_admin','admin_tenant','financeiro') AND status='ativo').
+- Isolamento por tenant: registro deve pertencer ao tenant do usuario ativo.
+- Lock transacional (FOR UPDATE) + idempotencia (mesmo estado => success, idempotente=true).
+- Transicoes permitidas: rascunho->aguardando_aprovacao; aguardando_aprovacao->aprovada;
+  aguardando_aprovacao->rascunho. Nega emitida/cancelada (usar RPC especifica).
+- Erros: USUARIO_NAO_AUTENTICADO, SEM_PERMISSAO_PERFIL, SEM_PERMISSAO_TENANT,
+  FATURA_NAO_ENCONTRADA, FATURA_CANCELADA, FATURA_JA_EMITIDA, TRANSICAO_INVALIDA,
+  STATUS_SOLICITADO_INVALIDO.
+- NAO cria financeiro_receber. NAO altera conta_receber_id. NAO emite.
+- Grants: REVOKE ALL FROM PUBLIC, anon; GRANT EXECUTE TO authenticated, service_role.
+- Reversivel: rollback = DROP FUNCTION (arquivo 20260925000001).
+
+VALIDACAO SQL (sem aplicar): compilada em transacao com ROLLBACK no banco real.
+  before:{n:0} | created:[{proname:f_mover_fatura_status, prosecdef:true,
+  proconfig:[search_path=public]}] | grants:[authenticated, postgres, service_role]
+  | after_rollback:{n:0}.  => NAO PERSISTIDA. Status: MIGRATION PENDENTE DE APLICACAO.
+
+================================================================================
+3. CONTRATO ANTES x DEPOIS
+================================================================================
+ANTES
+  - Lancamento manual: INSERT em alocacoes_escala SEM tenant_id (dependia do DEFAULT
+    da coluna current_tenant_id_safe()).
+  - Fatura: "Validar e Emitir Fatura" em UMA unica acao -> RPC f_emitir_fatura
+    gerava Nº Conexao/Nº Cliente + criava 1 financeiro_receber + status emitida.
+  - aguardando_aprovacao/aprovada: existiam no CHECK/tipos, SEM writer (mortos).
+  - FaturaLista: usava confirm()/alert()/prompt() nativos.
+
+DEPOIS
+  - Lancamento manual: envia tenant_id EXPLICITO (contexto oficial; fallback
+    tenant_usuarios do usuario autenticado). Nunca hardcoded.
+  - Fatura (fluxo oficial da Central): rascunho -> [Enviar para Validacao] ->
+    aguardando_aprovacao -> [Aprovar] -> aprovada -> [Emitir] -> f_emitir_fatura
+    -> emitida + 1 AR (na emissao). Validar/aprovar NAO cria AR.
+  - FaturaLista: acoes por estado + AlertDialog (sem dialogo nativo).
+  - compatibilidade: f_emitir_fatura inalterado (aceita rascunho|aguardando_aprovacao|
+    aprovada) => o caminho legado "Nova Fatura Manual > Salvar e Gerar PDF" continua
+    funcionando (emissao direta de rascunho).
+
+================================================================================
+4. ESTADOS / TRANSICOES
+================================================================================
+faturas.status (CHECK existente, reutilizado sem status paralelo):
+  rascunho -> aguardando_aprovacao -> aprovada -> emitida
+  cancelada (via f_cancelar_fatura)
+Transicoes por f_mover_fatura_status: rascunho->aguardando_aprovacao;
+  aguardando_aprovacao->aprovada; aguardando_aprovacao->rascunho.
+Emissao: f_emitir_fatura (inalterada). Cancelamento: f_cancelar_fatura (inalterada).
+
+================================================================================
+5. EVIDENCIA — TENANT EXPLICITO
+================================================================================
+- centralFinanceiroService.ts:720-745 — resolve e envia tenant_id no INSERT
+  (`...(tenantId ? { tenant_id: tenantId } : {})`).
+- ConferenciaFinanceira.tsx:1363 — `tenant_id: tenant?.id || null`.
+- Teste A: mock captura o INSERT em alocacoes_escala e afirma
+  payload.tenant_id === "T-EXPLICIT" (PASS).
+- Teste A2: a Conferencia passa o tenant do contexto oficial (useTenant). PASS.
+
+================================================================================
+6. EVIDENCIA — VALIDAR NAO CRIA AR
+================================================================================
+- faturaService.enviarFaturaParaValidacao/aprovarFatura -> apenas RPC
+  f_mover_fatura_status (nao chamam financeiro_receber).
+- Testes C e D: apos enviar/aprovar, nenhum INSERT em financeiro_receber foi capturado.
+- SQL da RPC: sem "INSERT INTO public.financeiro_receber" e sem "conta_receber_id ="
+  (teste B/D PASS).
+- Emissao (teste F): f_emitir_fatura tem exatamente 1 INSERT em financeiro_receber
+  + UNIQUE uq_receber_fatura_id (1 AR por fatura).
+
+================================================================================
+7. EVIDENCIA — IDEMPOTENCIA / SEM DUPLICIDADE
+================================================================================
+- SQL: se v_fatura.status = p_novo_status => success idempotente=true (sem UPDATE).
+- Teste G: RPC idempotente propagada (idempotente=true, success).
+- Teste G2: TRANSICAO_INVALIDA propagada sem sucesso silencioso.
+- Teste G3: status invalido rejeitado no client sem chamar RPC.
+- Teste F: UNIQUE uq_receber_fatura_id garante no maximo 1 AR por fatura.
+- Teste H: trigger SERVIÇO_JA_FATURADO (fase 2A) impede mesmo serviço em 2 faturas.
+- Teste H2: Conferencia bloqueia item ja faturado/rascunho (motivosBloqueio).
+
+================================================================================
+8. TESTES (contagens)
+================================================================================
+Arquivo: src/test/fin_fat_urg_02_validacao_fatura.test.ts -> 18 testes, 18 PASS
+  A) lancamento manual envia tenant_id .............. PASS
+  A2) Conferencia passa tenant do contexto .......... PASS
+  C) enviar validacao chama RPC correto (sem AR) .... PASS
+  D) aprovar chama RPC correto (sem AR) ............. PASS
+  G) idempotencia (idempotente=true) ................ PASS
+  G2) transicao invalida propagada .................. PASS
+  G3) status invalido rejeitado no client ........... PASS
+  B/D) SQL nao cria AR / nao toca conta_receber_id .. PASS
+  I) guards de auth/perfil/tenant presentes ......... PASS
+  Seguranca (definer/search_path/grants sem anon) ... PASS
+  Idempotencia no SQL ............................... PASS
+  Transicoes pre-emissao no SQL ..................... PASS
+  B) criarRascunhoFatura nao insere AR .............. PASS
+  F) f_emitir_fatura = 1 insert AR + UNIQUE ......... PASS
+  E) FaturaPanel separa acoes por estado ............ PASS
+  H) anti-duplicidade no banco ...................... PASS
+  H2) Conferencia bloqueia ja faturado .............. PASS
+  UX) FaturaLista sem confirm/alert/prompt nativo ... PASS
+
+REGRESSAO (5 arquivos / 61 testes PASS):
+  fin_fat_urg_02_validacao_fatura ....... 18
+  fase2a_fatura ......................... 10
+  fin_prog04b_emissao ................... 3
+  tms_s04c_faturamento_individual ....... 14
+  f38_fatura_manual ..................... 16
+  (nenhuma regressao)
+
+TYPECHECK: nenhum erro novo nos arquivos alterados. FaturaLista.tsx mantem 1 erro
+  PRE-EXISTENTE (linha 306, expressao metadata.numeroManual inalterada); nenhum
+  erro nas linhas novas. faturaService.ts mantem os erros pre-existentes (mapa de
+  tipos unknown) ja registrados no FIN-GATE-01.
+
+BUILD: npm run build -> OK ("built in 37.79s").
+
+================================================================================
+9. RISCOS RESIDUAIS
+================================================================================
+R1. MIGRATION NAO APLICADA: enquanto f_mover_fatura_status nao existir em producao,
+    "Enviar para Validacao"/"Aprovar" retornarao erro da RPC (nao silencioso). A
+    Emissao (f_emitir_fatura) continua funcionando. Requer aplicacao autorizada
+    da migration (additiva e reversivel) antes do E2E.
+R2. O caminho legado "Nova Fatura Manual > Salvar e Gerar PDF" ainda emite direto
+    de rascunho (f_emitir_fatura aceita rascunho) — por compatibilidade. Se o
+    negocio exigir obrigatoriedade de aprovacao antes de emitir, sera necessario
+    restringir o guard de f_emitir_fatura (missao propria; nao feito aqui).
+R3. A RPC exige perfil financeiro/admin para enviar E aprovar. Se operacional/
+    comercial precisarem enviar para validacao, ampliar o conjunto de papeis em
+    missao dedicada.
+R4. E2E real (aplicar migration + ciclo completo) NAO executado nesta missao.
+
+================================================================================
+10. ZERO ALTERACAO FORA DO ESCOPO
+================================================================================
+[x] Nenhuma alteracao em M66/M80, pagamentos_prestadores, RLS, financeiro_receber
+    (regras), Comercial, APP, Contas a Receber/Conferencia (regra).
+[x] Nenhum dado de producao alterado. Nenhum DML/DDL persistido.
+[x] A unica conexao ao banco foi SELECT + BEGIN/ROLLBACK para validar a RPC
+    (after_rollback: funcao ausente => nada persistido).
+[x] Nenhuma migration APLICADA. Apenas 2 arquivos de migration CRIADOS.
+[x] Nenhum status paralelo criado (reutiliza CHECK existente).
+
+================================================================================
+11. PROXIMA MISSAO (recomendacao, NAO iniciar aqui)
+================================================================================
+1) Aplicar a migration f_mover_fatura_status (autorizado) em ambiente controlado.
+2) E2E real: rascunho -> enviar -> aprovar -> emitir (1 AR) -> baixa, sem
+   duplicidade ao repetir acoes.
+3) Confirmar tenant explicito no lancamento manual (evidencia de tenant_id preenchido).
+
+================================================================================
+12. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-02-VALIDACAO-FATURA-E-TENANT-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-02-VALIDACAO-FATURA-E-TENANT-RESULTADO.txt
+ TAMANHO ..: 13134 bytes
+ DATA/HORA : 25/09/2026 17:52:20
+
+================================================================================
+FIM DO RELATORIO — TMS-FAT-URG-02-VALIDACAO-FATURA-E-TENANT
+================================================================================

@@ -1,0 +1,842 @@
+==============================================================================
+MISSAO ADM-APP-01 — AUDITORIA ADMIN APP PRESTADOR + APP + RECRUTAMENTO
+==============================================================================
+Data: 2026-09-10
+Projeto: express-connect-hub (TMS)
+Status: AUDITORIA CONCLUIDA (somente leitura — nenhuma alteracao feita)
+==============================================================================
+
+
+==============================================================================
+1. ADMIN APP PRESTADOR ATUAL
+==============================================================================
+
+1.1 ROTAS E COMPONENTES MAPEADOS
+----------------------------------
+
+ROTA                          | COMPONENTE               | ARQUIVO
+------------------------------|--------------------------|---------------------------
+/app-prestador                | AppPrestador             | pages/AppPrestador.tsx
+/portal-prestador             | PortalPrestador          | pages/PortalPrestador.tsx
+/cadastro-prestador           | CadastroPrestador        | pages/CadastroPrestador.tsx
+/cadastros/prestadores        | CadastrosPrestadores     | pages/CadastrosPrestadores.tsx
+/cadastros/prestadores/novo   | CadastrosPrestadores     | pages/CadastrosPrestadores.tsx
+
+Sub-abas do PortalPrestador (mobile-first):
+  - DashboardTab.tsx     → Inicio (KPIs, operacoes, notificacoes)
+  - OperacoesTab.tsx     → Operacoes (aceitar/recusar/iniciar/concluir)
+  - DocumentosTab.tsx    → Documentos (status, upload, vencimento)
+  - TreinamentosTab.tsx  → Treinamentos (progresso, conclusao)
+  - PerfilTab.tsx        → Perfil (dados, score, disponibilidade)
+
+Sub-abas do CadastrosPrestadores (TMS Admin):
+  - PrestadoresLista.tsx → Lista paginada com filtros
+  - PrestadorDetalhe.tsx → Detalhe com 9 abas:
+    Gerais | Documentacao | Veiculos | Financeiro | Qualidade |
+    Torre | Ocorrencias | Permissoes | (aba IA)
+
+
+1.2 CLASSIFICACAO POR FUNCAO
+-------------------------------
+
+FUNCAO                         | STATUS    | FONTE ATUAL            | CLASSIFICACAO
+-------------------------------|-----------|------------------------|--------------
+Listar prestadores TMS         | REAL      | supabase.from('prestadores') | ✅ REAL
+Detalhe prestador TMS          | REAL      | supabase.from('prestadores') | ✅ REAL
+Documentos prestador TMS       | REAL      | documentos_prestadores  | ✅ REAL
+Upload documentos TMS          | REAL      | Storage documentos_prestadores | ✅ REAL
+Dashboard Portal Prestador     | REAL      | portalPrestadorService  | ✅ REAL
+Operacoes Portal Prestador     | REAL      | alocacoes_escala via supabase | ✅ REAL
+Documentos Portal Prestador    | REAL      | documentos_prestadores  | ✅ REAL
+Score/Pontuacao                | REAL      | scoreEngine.ts          | ✅ REAL
+Perfil Portal Prestador        | REAL      | prestadores (select)    | ✅ REAL
+Notificacoes Portal Prestador  | MOCK      | portalPrestadorStore    | ⚠️ PARCIAL
+  → Inicilizadas como [] vazio, sem real-time
+  → Store tem metodos marcarLida/marcarTodas mas sem backend real
+Treinamentos Portal Prestador  | MOCK      | portalPrestadorStore    | ❌ MOCK
+  → Dados hardcoded no store (sem tabela backend)
+  → Tipos definidos mas sem persistencia
+Transacoes Financeiras Portal  | MOCK      | portalPrestadorStore    | ❌ MOCK
+  → Array vazio, sem query backend
+Ganhos/Ranking Portal Prestador| MOCK     | portalPrestadorStore    | ❌ MOCK
+  → Valores default (0), sem query backend
+Disponibilidade toggle         | MOCK      | portalPrestadorStore    | ⚠️ PARCIAL
+  → Toggle muda state local, nao persiste no backend
+App Prestador (painel admin)   | REAL      | supabase + useEscala    | ✅ REAL
+  → Lista prestadores ativos reais
+  → Carrega alocacoes reais via escalaAppPrestadorAdapter
+
+
+1.3 DADOS REAIS X MOCK (RESUMO)
+---------------------------------
+
+REAL (8 funcoes):
+  - Listagem prestadores (TMS Admin)
+  - Detalhe prestador (TMS Admin)
+  - Documentos (upload + consulta)
+  - Dashboard Operacoes
+  - Score/Pontuacao
+  - Perfil
+  - Alocacoes/Escala
+  - App Prestador simulado
+
+MOCK/PARCIAL (5 funcoes):
+  - Notificacoes (parcial — sem real-time)
+  - Treinamentos (mock puro — sem backend)
+  - Transacoes financeiras (mock — sem backend)
+  - Ganhos/Ranking (mock — sem backend)
+  - Disponibilidade toggle (parcial — state local)
+
+
+==============================================================================
+2. GESTAO DE CADASTROS DO APP — O QUE EXISTE HOJE
+==============================================================================
+
+2.1 LISTAR CADASTROS ENVIADOS PELO APP
+-----------------------------------------
+✅ EXISTE — enterpriseKanbanService.ts
+  - buscarECadastrarAppPrestadores()
+  - Query: supabase.from('prestadores').select()
+    .eq('origem_cadastro', 'app_motorista')
+  - Filtra novos (que nao estao em recrutamento_candidatos)
+  - Insere automaticamente em recrutamento_candidatos
+
+✅ EXISTE — PaginaPrestadores.tsx (modulo recrutamento)
+  - Kanban de prestadores com etapas:
+    Novos → Em Analise → Aprovados → Recusados → Bloqueados
+  - Tabela: recrutamento_candidatos (NOT prestadores)
+  - Interface real com Supabase
+
+2.2 PESQUISA/FILTROS
+----------------------
+✅ EXISTE — PaginaPrestadores.tsx
+  - Filtros por etapa, busca por nome
+  - Kanban com colunas por status
+
+2.3 ABRIR CADASTRO
+--------------------
+✅ EXISTE — DetalhesCandidatoPipelineSheet.tsx
+  - Drawer lateral com dados do candidato
+  - Dados pessoais, documentos, historico
+
+2.4 STATUS "EM ANALISE"
+--------------------------
+✅ EXISTE — recrutamento_candidatos.stage = 'em_analise'
+  - Kanban coluna "Em Analise"
+  - Status documental controlado
+
+2.5 SOLICITAR COMPLEMENTACAO
+-------------------------------
+⚠️ PARCIAL — DetalhesCandidatoPipelineSheet.tsx
+  - Possivel atualizar dados do candidato
+  - NAO ha botao explicito "Solicitar Complementacao"
+  - Fluxo requer: dashboard IA → WhatsApp → preenchimento
+
+2.6 APROVAR PRE-CADASTRO
+--------------------------
+✅ EXISTE — conversaoCandidatoService.ts
+  - sincronizarComOperacao() converte candidato → prestador
+  - Gate documental: CNH, CRLV, Comprovante Residencia, Foto Veiculo
+  - Cria registro em recrutamento_prestadores
+  - Atualiza recrutamento_candidatos com prestador_id
+
+2.7 REJEITAR
+--------------
+✅ EXISTE — PaginaPrestadores.tsx
+  - Botao "Mover p/ Recusados" no Kanban
+  - Atualiza stage para 'rejeitado'
+
+2.8 BLOQUEAR ACESSO
+---------------------
+✅ EXISTE — PaginaPrestadores.tsx:376
+  - Botao "Bloquear/Desbloquear" no Kanban
+  - Atualiza status para 'bloqueado'
+  - liberado_app = false
+
+2.9 DESBLOQUEAR
+-----------------
+✅ EXISTE — mesmo botao toggle (Bloquear/Desbloquear)
+  - Restaura status anterior (geralmente 'aprovado')
+  - liberado_app = true (apos validacao)
+
+2.10 EDITAR DADOS
+-------------------
+✅ EXISTE — DetalhesCandidatoPipelineSheet.tsx
+  - Edicao inline de dados do candidato
+  - Atualiza recrutamento_candidatos
+
+2.11 REDEFINIR/ENVIAR NOVA SENHA
+-----------------------------------
+✅ EXISTE — Supabase Auth
+  - resetPasswordForEmail() no AuthContext.tsx
+  - Rota /reset-password funcional
+  - NAO ha tela admin para reset de senha do prestador
+    (prestador usa fluxo proprio ForgotPassword)
+
+2.12 HISTORICO/AUDITORIA
+--------------------------
+⚠️ PARCIAL — Log basico
+  - historico_alocacoes_escala (trigger automatico)
+  - automacoes_logs (IA/recrutamento)
+  - NAO ha historico especifico de mudancas de status do cadastro
+  - NAO ha trilha de auditoria de edicao de dados pessoais
+
+2.13 LIBERADO_APP
+------------------
+✅ EXISTE — campo boolean em prestadores
+  - Gate duplo: status='ativo' AND liberado_app=true
+  - Controle em: elegibilidadeOperacionalService.ts
+  - Atualizado em: conversaoCandidatoService.ts (apos aprovacao)
+  - Atualizado em: recrutamentoIntegracao.ts (ativação)
+  - Testado em: ag07f_gate_elegibilidade.test.ts (10+ cenarios)
+
+
+==============================================================================
+3. FLUXO APP → TMS (RASREAMENTO COMPLETO)
+==============================================================================
+
+3.1 FLUXO ATUAL (ETAPA POR ETAPA)
+------------------------------------
+
+ETAPA 1: Motorista acessa /cadastro-prestador
+  → CadastroPrestador.tsx (wizard 5 etapas)
+  → StepPersonal: nome, CPF, selfie, CNH
+  → StepVehicle: tipo, modelo, placa, ano, capacidade, fotos
+  → StepDocuments: CRLV, comprovante residencia, PIX, banco
+  → StepAvailability: regioes, tipo carga, tipo viagem
+  → StepSignature: LGPD, contrato, responsabilidade, assinatura
+
+ETAPA 2: Submit → criarCandidatoService.criar()
+  → INSERT em recrutamento_candidatos
+  → stage: 'interesse_confirmado'
+  → status: 'interessado'
+  → canal_captacao: 'onboarding_app'
+  → DADOS NAO VAO PARA prestadores (ainda)
+
+ETAPA 3: Processamento IA (processarCandidato)
+  → centralIaService → roboRecrutamentoService
+  → Analise de perfil, score, documentos
+  → Atualiza stage/status em recrutamento_candidatos
+
+ETAPA 4: Bridge Kanban (buscarECadastrarAppPrestadores)
+  → enterpriseKanbanService.ts
+  → Busca prestadores com origem_cadastro='app_motorista'
+  → Para cada prestador NOVO (sem对应 em recrutamento_candidatos):
+    → INSERT em recrutamento_candidatos
+    → stage: 'interesse_confirmado'
+  → PARA PRESTADORES JA EXISTENTES:
+    → NAO duplica
+
+ETAPA 5: Conversao (conversaoCandidatoService)
+  → sincronizarComOperacao(candidato)
+  → Gate documental: CNH + CRLV + Comprovante + Foto Veiculo
+  → Cria em recrutamento_prestadores (tabela oficial recrutamento)
+  → Atualiza recrutamento_candidatos: prestador_id, status='ativo'
+  → Chama recrutamentoIntegracao.ativarPrestador()
+
+ETAPA 6: Ativacao (recrutamentoIntegracao.ts)
+  → checarDuplicidade() por CPF, email, telefone
+  → SE duplicado: atualiza prestador existente
+  → SE novo: INSERT em prestadores
+    → status: 'ativo'
+    → liberado_app: false (fail-closed!)
+    → origem_cadastro: 'recrutamento'
+  → Migracao de documentos: vincularDocumentoCandidatoAPrestador()
+
+ETAPA 7: Liberacao App
+  → conversaoCandidatoService.sincronizarComOperacao()
+  → liberado_app = statusOperacional === 'ativo'
+  → statusOperacional depende de:
+    - status prestador = 'ativo'
+    - liberado_app = true (gate duplo)
+    - documentos_prestadores validos
+    - CNH validade nao vencida
+
+3.2 TABELAS ENVOLVIDAS
+-------------------------
+
+TABELA                    | ORIGEM    | DESTINO   | FK
+--------------------------|-----------|-----------|------------------
+recrutamento_candidatos   | APP       | TMS Recrutamento | id
+recrutamento_prestadores  | Conversao | TMS Recrutamento | candidato_id
+prestadores               | Ativacao  | TMS Core         | id
+documentos_prestadores    | APP       | TMS Core         | prestador_id | candidato_id
+veiculos                  | APP       | TMS Core         | prestador_vinculado
+
+3.3 POSSIBILIDADE DE DUPLICIDADE SEMANTICA
+---------------------------------------------
+
+HOJE: O fluxo JA PREVINE duplicidade:
+  - checarDuplicidadeCpf/Email/Telefone antes de INSERT
+  - enterpriseKanbanService filtra prestadores ja em recrutamento
+  - vincularDocumentoCandidatoAPrestador migra (nao duplica)
+
+RISCO: Baixo. Mas NAO ha UNIQUE constraint formal em prestadores.cpf_cnpj
+  → Race condition teorica possivel (2 inserts simultaneos)
+  → Protegido apenas por logica TS, nao por BD
+
+3.4 O QUE PRECISARIA MUDAR (NÃO ALTERAR AGORA)
+-------------------------------------------------
+
+Para suportar: pre-cadastro APP → validacao Admin → Recrutamento existente
+
+MUDANCAS NECESSARIAS (futuro):
+  1. Adicionar etapa "em_analise_admin" ao pipeline (Kanban)
+  2. Criar tela de validacao no Admin App Prestador
+  3. Botao "Aprovar para Recrutamento" (Move para proximo gate)
+  4. Preservar dados do APP como snapshot (metadata)
+  5. NAO criar tabela paralela — usar recrutamento_candidatos
+
+NAO CRIAR:
+  - Nova tabela de cadastros_app
+  - Novo modulo de recrutamento dentro do Admin App
+  - Novo servico de bridge duplicado
+
+
+==============================================================================
+4. DOCUMENTOS — MAPA COMPLETO
+==============================================================================
+
+4.1 DOCUMENTOS COLETADOS PELO APP
+------------------------------------
+
+DOCUMENTO               | STEP APP        | TABELA               | COLUNA
+------------------------|-----------------|----------------------|------------------
+CNH Frente              | StepDocuments   | documentos_prestadores | tipo='CNH Frente'
+CNH Verso               | StepDocuments   | documentos_prestadores | tipo='CNH Verso'
+CRLV                    | StepDocuments   | documentos_prestadores | tipo='CRLV'
+Comprovante Residencia  | StepDocuments   | documentos_prestadores | tipo='Comprovante de Residencia'
+Selfie                  | StepPersonal    | prestadores.foto (coluna) | foto
+Dados Bancarios         | StepDocuments   | prestadores | banco, agencia, conta, chave_pix
+Certidao Negativa       | NAO COLETADO    | —                    | — (AUSENTE no APP)
+
+4.2 STORAGE (SUPABASE)
+-------------------------
+
+BUCKET: documentos_prestadores
+  → Upload via PrestadorDetalhe.tsx (TMS Admin)
+  → Path: {prestador_id}/{tipo_documento}
+  → Public URL armazenada em documentos_prestadores.url
+
+BUCKET: comprovantes-entrega
+  → Upload de fotos de entrega (App Motorista)
+  → NAO relacionado ao cadastro
+
+4.3 COLUNAS documentos_prestadores
+--------------------------------------
+
+id               | uuid (PK)
+prestador_id     | uuid FK → prestadores.id (nullable)
+candidato_id     | uuid FK → recrutamento_candidatos.id (nullable)
+tipo             | text (ex: 'CNH Frente', 'CRLV')
+arquivo          | text (nome do arquivo)
+url              | text (URL publica Storage)
+dados            | jsonb (metadados extras)
+validade         | date
+status           | text ('valido', 'pendente', 'rejeitado', 'vencido')
+origem           | text ('onboarding_app', 'recrutamento_migrado', 'upload_admin')
+created_at       | timestamp
+updated_at       | timestamp
+
+4.4 FLUXO DOCUMENTO: APP → ADMIN
+------------------------------------
+
+1. Motorista faz upload no onboarding
+   → Documentos permanecem no state local (onboardingStore)
+   → NAO sao uploadados para Storage no onboarding!
+
+2. Apos criacao do candidato (recrutamento_candidatos)
+   → IA analisa documentos (se configurado)
+   → Documentos armazenados no JSONB 'documentos' do candidato
+
+3. Na conversao para prestador:
+   → vincularDocumentoCandidatoAPrestador()
+   → Migra de candidato_id → prestador_id em documentos_prestadores
+   → Status: 'valido', origem: 'recrutamento_migrado'
+
+4. No TMS Admin:
+   → PrestadorDetalhe.tsx carrega de documentos_prestadores
+   → Upload manual via Storage bucket 'documentos_prestadores'
+   → Upload admite: CNH Frente, CNH Verso, CRLV, Comprovante, Contrato, etc.
+
+4.5 GAP CRITICO: UPLOAD NO ONBOARDING NÃO PERSISTE
+------------------------------------------------------
+
+⚠️ PROBLEMA: O onboarding (CadastroPrestador.tsx) coleta:
+   - selfieUrl, cnhUrl, crlvUrl, comprovanteUrl
+   - Mas NAO faz upload para Storage durante o wizard
+   - Apenas salva URLs no onboardingStore (state local)
+   - URLs podem ser relativas ou blob URLs (não persistentes)
+
+   → Ao submeter, criarCandidatoService NAO envia URLs de arquivo
+   → Documentos NAO chegam a documentos_prestadores automaticamente
+   → Gap: motorista envia documentos mas Admin nao ve
+
+
+==============================================================================
+5. CADASTRO PRESTADOR — MATRIZ DADO APP × DESTINO OFICIAL
+==============================================================================
+
+DADO APP                | DESTINO OFICIAL          | SINCRONIZA? | GAP
+------------------------|--------------------------|-------------|-----
+Nome completo           | prestadores.nome_completo | ✅ SIM     | —
+CPF/CNPJ                | prestadores.cpf_cnpj     | ✅ SIM     | —
+Telefone                | prestadores.telefone     | ✅ SIM     | —
+WhatsApp                | prestadores.whatsapp     | ✅ SIM     | —
+Email                   | prestadores.email        | ✅ SIM     | —
+Tipo Veiculo            | prestadores.veiculos     | ⚠️ PARCIAL | JSONB na coluna veiculos
+Placa                   | prestadores.veiculos     | ⚠️ PARCIAL | Dentro do JSONB veiculos
+Modelo                  | —                        | ❌ NAO     | Gravado em mensagem_livre
+Ano                     | —                        | ❌ NAO     | Gravado em mensagem_livre
+Capacidade              | —                        | ❌ NAO     | Gravado em mensagem_livre
+Cidade/UF               | prestadores.cidade/uf    | ✅ SIM     | —
+Regiao                  | prestadores.regiao_principal | ✅ SIM | —
+Tipo Carroceria         | prestadores              | ⚠️ PARCIAL | Em mensagem_livre
+Chave PIX               | prestadores.chave_pix    | ✅ SIM     | —
+Banco                   | prestadores.banco        | ✅ SIM     | —
+Selfie                  | prestadores.foto         | ⚠️ PARCIAL | Depende upload manual
+CNH                     | documentos_prestadores   | ⚠️ PARCIAL | Depende bridge
+CRLV                    | documentos_prestadores   | ⚠️ PARCIAL | Depende bridge
+Comprovante Residencia  | documentos_prestadores   | ⚠️ PARCIAL | Depende bridge
+Certidao Negativa       | —                        | ❌ AUSENTE | Nao coletado no APP
+Fotos Veiculo           | —                        | ❌ AUSENTE | Nao persistidas
+
+RESUMO:
+  ✅ Sincroniza: 9 campos
+  ⚠️ Parcial: 7 campos
+  ❌ Nao sincroniza/Ausente: 6 campos
+  GAP TOTAL: 13 campos com problema
+
+
+==============================================================================
+6. VEICULO — MAPA COMPLETO
+==============================================================================
+
+6.1 DADOS ENVIADOS PELO APP
+------------------------------
+
+Campo           | Tipo       | Obrigatorio | Persistido?
+----------------|------------|-------------|------------
+tipo_veiculo    | select     | SIM         | ⚠️ JSONB veiculos[]
+placa           | text       | SIM         | ⚠️ JSONB veiculos[]
+modelo          | text       | SIM         | ❌ mensagem_livre
+ano             | number     | SIM         | ❌ mensagem_livre
+capacidade      | text       | SIM         | ❌ mensagem_livre
+fotos_veiculo   | image[]    | SIM (1min)  | ❌ Nao persistidas
+baú             | —          | NAO         | —
+proprietario    | —          | NAO         | —
+documentacao    | —          | NAO         | — (CRLV coletado separado)
+
+6.2 TABELA OFICIAL: veiculos
+-------------------------------
+
+Colunas relevantes:
+  id | uuid PK
+  prestador_vinculado | uuid FK → prestadores.id
+  tipo | text (fiorino, van, truck, etc)
+  placa | text
+  capacidade_kg | numeric
+  capacidade_m3 | numeric
+  tipo_carga | text
+  status | text
+
+6.3 VINCULO VEICULO → PRESTADOR
+----------------------------------
+
+  FK: veiculos.prestador_vinculado → prestadores.id
+
+  Apos aprovacao:
+  → NAO ha criacao automatica de registro em veiculos
+  → Dados do veiculo ficam no JSONB prestadores.veiculos[]
+  → Para criar em veiculos: requer acao manual ou trigger futuro
+
+  GAP: Veiculo do APP NAO preenche automaticamente a aba Veiculos
+  do Cadastro Prestador. Dados ficam no JSONB mas nao na tabela oficial.
+
+
+==============================================================================
+7. FINANCEIRO — DADOS CADASTRAIS DO MOTORISTA
+==============================================================================
+
+7.1 DADOS QUE O MOTORISTA DEVE FORNECER
+-------------------------------------------
+
+DADO                    | TABELA              | COLUNA
+------------------------|---------------------|------------------
+Chave PIX               | prestadores         | chave_pix
+Tipo Chave PIX          | prestadores         | tipo_chave_pix
+Banco                   | prestadores         | banco
+Agencia                 | prestadores         | agencia
+Conta                   | prestadores         | conta
+Digito                  | prestadores         | digito
+Tipo Conta              | prestadores         | tipo_conta
+Favorecido              | prestadores         | favorecido
+CPF/CNPJ Favorecido     | prestadores         | cpf_cnpj_favorecido
+Periodicidade Pagamento | prestadores         | periodicidade_pagamento
+Prazo Pagamento         | prestadores         | prazo_pagamento
+Forma Preferencial      | prestadores         | forma_preferencial_pagamento
+
+COLETADO NO APP:
+  → Chave PIX: ✅ StepDocuments
+  → Banco: ✅ StepDocuments
+  → Os demais: ❌ NAO coletados no APP
+
+7.2 DADOS QUE A EMPRESA DEVE DEFINIR
+-----------------------------------------
+
+DADO                    | TABELA              | COLUNA
+------------------------|---------------------|------------------
+Valor Diaria            | prestadores         | valor_diaria
+Valor KM                | prestadores         | valor_km
+Valor Saida             | prestadores         | valor_saida
+Fixo Mensal             | prestadores         | fixo_mensal
+Valor Ajudante          | prestadores         | valor_ajudante
+Valor Espera            | prestadores         | valor_espera
+Valor Reentrega         | prestadores         | valor_reentrega
+Valor Devolucao         | prestadores         | valor_devolucao
+Franquia KM             | prestadores         | franquia_km
+RNTRC                   | prestadores         | rntrc
+ANTT                    | prestadores         | antt
+Conferencia Manual      | prestadores         | conferencia_manual
+Observacoes Financeiras | prestadores         | observacoes_financeiras
+Conta Contabil          | prestadores         | conta_contabil
+Centro Custo            | prestadores         | centro_custo
+Retencoes               | prestadores         | retencoes
+
+REGRA CORRETA (confirmada):
+  Motorista fornece: dados bancarios (PIX, banco, agencia, conta)
+  Empresa define: diaria, km, franquia, adicionais, condicoes comerciais
+
+GAP: APP coleta apenas PIX e banco. Faltam: agencia, conta, digito,
+tipo_conta, favorecido, cpf_cnpj_favorecido — essenciais para pagamento.
+
+
+==============================================================================
+8. CONTROLE DE ACESSO — MAPA COMPLETO
+==============================================================================
+
+8.1 LIBERADO_APP
+------------------
+
+CAMPO: prestadores.liberado_app (boolean)
+
+GATE OPERACIONAL (elegibilidadeOperacionalService.ts):
+  → Operacao permitida APENAS se:
+    status IN ('ativo', 'aprovado') AND liberado_app = true
+  → Fail-closed: sem liberado_app = false → bloqueado
+
+ONDE E ATUALIZADO:
+  → recrutamentoIntegracao.ativarPrestador(): liberado_app = false
+  → conversaoCandidatoService.sincronizarComOperacao():
+    liberado_app = statusOperacional === 'ativo'
+  → PrestadorDetalhe.tsx: toggle manual (liberado_app)
+
+TESTES: ag07f_gate_elegibilidade.test.ts (10+ cenarios)
+         ag07j14_2_listagem_oportunidades.test.ts
+
+8.2 STATUS
+-----------
+
+CAMPO: prestadores.status
+
+VALORES POSSIVEIS:
+  analise | em_analise | pendente | aprovado | ativo |
+  inativo | reprovado | bloqueado
+
+MAPEAMENTO NO KANBAN (PaginaPrestadores.tsx):
+  novos → 'interessado' | 'analise'
+  em_analise → 'em_analise'
+  aprovados → 'aprovado'
+  recusados → 'reprovado'
+  bloqueados → 'bloqueado'
+
+8.3 BLOQUEIO / DESBLOQUEIO
+-----------------------------
+
+BLOQUEAR:
+  → PaginaPrestadores.tsx: Botao "Bloquear" (Kanban)
+  → Atualiza status para 'bloqueado'
+  → liberado_app = false automatico
+  → Efeito: motorista NAO recebe alocacoes
+
+DESBLOQUEAR:
+  → Mesmo botao "Desbloquear"
+  → Restaura status anterior
+  → Requer revalidacao de liberado_app
+
+8.4 AUTH (SUPABASE AUTH)
+---------------------------
+
+LOGIN PRESTADOR:
+  → Prestador acessa /portal-prestador
+  → obterPrestadorPorAuth() → RPC f_obter_prestador_por_auth()
+  → Busca auth.uid() em prestadores.auth_user_id
+  → Se nao encontrar: erro "Nenhum prestador vinculado"
+
+RESET DE SENHA:
+  → AuthContext.resetPassword(email)
+  → supabase.auth.resetPasswordForEmail()
+  → Rota /reset-password funcional
+  → Audita em auth_eventos_auditoria
+
+LOGOUT:
+  → AuthContext.logout()
+  → supabase.auth.signOut()
+  → Limpa state + sessionStorage
+
+SESSAO:
+  → onAuthStateChange() monitora
+  → INITIAL_SESSION + SIGNED_IN handler
+  → Safety timer 6s para fallback
+
+8.5 SESSAO APP
+----------------
+
+TABELA: motorista_app_sessoes (schema existe mas NAO USADO pelo TMS web)
+  → App Motorista (Flutter) controla propria sessao
+  → TMS le apenas resultados (alocacoes, entregas)
+
+8.6 BANIMENTO / SUSPENSAO
+----------------------------
+
+MECANISMO ATUAL:
+  → status = 'bloqueado' (suspensao administrativa)
+  → liberado_app = false
+  → NAO ha mecanismo de "banimento permanente"
+  → NAO ha campo "motivo_bloqueio" formal
+    (apenas observacoes_torre livre)
+
+
+==============================================================================
+9. RECRUTAMENTO — CONFIRMACAO DE SEPARACAO
+==============================================================================
+
+9.1 MODULO RECRUTAMENTO EXISTENTE
+-------------------------------------
+
+TABELAS:
+  - recrutamento_candidatos (pipeline principal)
+  - recrutamento_prestadores (tabela de apoio)
+  - candidato_documentos (documentos do candidato)
+  - reservas_banco (banco de talentos)
+
+SERVICES:
+  - enterpriseKanbanService.ts (Kanban + bridge)
+  - conversaoCandidatoService.ts (conversao candidato → prestador)
+  - prestadoresService.ts (CRUD recrutamento_prestadores)
+  - criarCandidatoService.ts (criacao via APP/onboarding)
+
+COMPONENTES:
+  - PaginaPrestadores.tsx (Kanban principal)
+  - DetalhesCandidatoPipelineSheet.tsx (detalhe)
+  - PrestadoresAptos.tsx (aptos para alocacao)
+  - PrestadorCard.tsx (card no Kanban)
+  - PortalPrestadorPreview.tsx (preview)
+
+9.2 O RECRUTAMENTO JA ESTA SEPARADO DO ADMIN APP
+----------------------------------------------------
+
+✅ CONFIRMADO:
+  - Admin App Prestador (/app-prestador) NAO tem modulo de recrutamento
+  - Portal Prestador (/portal-prestador) NAO tem modulo de recrutamento
+  - Cadastro Prestador (/cadastro-prestador) alimenta recrutamento_candidatos
+  - Kanban de recrutamento esta em /recrutamento (modulo separado)
+  - NAO duplicar: o Recrutamento existente continua fonte oficial
+
+9.3 BRIDGE APP → RECRUTAMENTO
+---------------------------------
+
+✅ IMPLEMENTADO (enterpriseKanbanService.ts):
+  - ORIGEM_APP = 'app_motorista'
+  - buscarECadastrarAppPrestadores():
+    1. Busca prestadores com origem_cadastro='app_motorista'
+    2. Para NOVOS: INSERT em recrutamento_candidatos
+    3. Para EXISTENTES: nao duplica
+  - Testado em: ag07j1_app_kanban.test.ts, ag07j14_2_listagem_oportunidades.test.ts
+
+
+==============================================================================
+10. IA DOCUMENTAL — PONTOS DE INTEGRACAO FUTURO
+==============================================================================
+
+10.1 PONTOS DE ENTRADA IDENTIFICADOS
+----------------------------------------
+
+PONTO 1: Onboarding (CadastroPrestador)
+  → AIDashboard.tsx (ja existe, mas e UI placeholder)
+  →-stepDocuments coleta arquivos mas NAO valida com IA
+  → FUTURO: apos upload, chamar IA para analise
+
+PONTO 2: PortalPrestador DocumentosTab
+  → Upload de documentos pelo motorista
+  → FUTURO: apos upload, chamar IA para validacao
+
+PONTO 3: PrestadorDetalhe (TMS Admin)
+  → DocumentoAnalyzer (ja importado de AnaliseDocumentoIA.tsx)
+  → FUTURO: analise automatica ao uploadar documento
+
+PONTO 4: recrutamentoIntegracao.ts
+  → vincularDocumentoCandidatoAPrestador()
+  → FUTURO: apos migracao, validar com IA
+
+10.2 RESULTADO ESTRUTURADO ESPERADO POR DOCUMENTO
+-----------------------------------------------------
+
+ESTADO possivel:
+  pendente | valido | suspeito | invalido | ilegivel |
+  divergencia_cadastral | expirado |requer_revisao_humana
+
+REGRAS:
+  → IA NAO deve aprovar/rejeitar automaticamente
+  → IA gera resultado estruturado + confianca
+  → Humano decide (fluxo existente no Kanban)
+  → Status final gravado em documentos_prestadores.status
+
+10.3 COMPATIBILIDADE FUTURA
+-------------------------------
+
+  → Central de Funcionarios/Agentes IA (ja existe)
+  → actionEngineService com ferramentas de documentos
+  → NAO acoplar arquitetonicamente agora
+  → Prever interface: arquivo → IA → resultado → decisao humana
+
+
+==============================================================================
+11. UX APP — REQUISITOS REGISTRADOS
+==============================================================================
+
+11.1 REQUISITOS JA DEFINIDOS (CONFIRMADOS NO CODIGO)
+-------------------------------------------------------
+
+1. Logo Conexão no cadastro/tela analise
+   → Captacao.tsx: exibe link publico para cadastro
+   → CadastroPrestador.tsx: usa logo importado (logo-conexao-express.png)
+
+2. Documentos em ordem logica
+   → STEP_CONFIG define ordem:
+     Dados Pessoais → Veiculo → Documentos → Disponibilidade → Assinatura
+
+3. Documento selecionado NAO ocultar anteriores
+   → Wizard por etapas (StepX) — cada etapa e independente
+   → Estado persiste via onboardingStore (Zustand + persist)
+
+4. Lista previsivel
+   → Barra de progresso visual
+   → Etapa atual destacada
+   → botoes Avancar/Voltar sempre visiveis
+
+5. Draft/formulario preservado
+   → onboardingStore com persist (localStorage)
+   → showsResume ao retornar com progresso salvo
+   → Reconexao/refresh mantem estado
+
+ORDEM SUGERIDA CONFIRMADA:
+  CNH Frente → CNH Verso → CRLV → Comprovante Residencia →
+  Selfie → Certidao Negativa → Dados Bancarios → Demais
+
+
+==============================================================================
+12. MATRIZ FINAL — GAPS PRIORIZADOS
+==============================================================================
+
+P0 — CRITICOS (bloqueiam operacao real)
+==============================================================================
+
+ID  | FUNCAO                          | EXISTE? | REAL/MOCK | GAP                      | ACAO
+----|---------------------------------|---------|-----------|--------------------------|-----
+G01 | Upload documentos APP → Storage | PARCIAL | PARCIAL   | Onboarding nao persiste  | Implementar upload real
+    |                                 |         |           | arquivos no Storage      | durante wizard
+G02 | Documentos_prestadores preenchido| PARCIAL | PARCIAL   | Bridge pendente apos     | Conectar upload →
+    |                                 |         |           | criacao do candidato     | documentos_prestadores
+G03 | liberado_app gate                | REAL    | REAL      | —                        | OK (preservar)
+G04 | Status preservado na conversao   | REAL    | REAL      | —                        | OK (preservar)
+
+P1 — ALTOS (funcionalidade incompleta)
+==============================================================================
+
+ID  | FUNCAO                          | EXISTE? | REAL/MOCK | GAP                      | ACAO
+----|---------------------------------|---------|-----------|--------------------------|-----
+G05 | Modelo/Ano/Capacidade veiculo   | NAO     | MOCK      | Gravado em mensagem_     | Criar colunas ou
+    |                                 |         |           | livre, sem campo proprio | JSONB dedicado
+G06 | Fotos veiculo APP → prestador   | NAO     | NAO       | Coletadas mas nao        | Upload Storage +
+    |                                 |         |           | persistidas              | referencia em veiculos
+G07 | Dados bancarios completos APP   | PARCIAL | PARCIAL   | Falta: agencia, conta,   | Expandir StepDocuments
+    |                                 |         |           | digito, tipo, favorecido | coleta completa
+G08 | Veiculo APP → tabela veiculos   | NAO     | NAO       | JSONB veiculos[] NAO     | Trigger ou service
+    |                                 |         |           | gera registro em veiculos| de sincronizacao
+G09 | Tela validacao Admin App        | NAO     | NAO       | Kanban so tem recrutamento| Criar tela dedicada
+    |                                 |         |           | NAO ha tela de validacao | no Admin App Prestador
+G10 | Historico/Auditoria cadastro    | PARCIAL | PARCIAL   | Sem trilha de mudancas   | Trigger audit_log
+    |                                 |         |           | de status/dados          | em prestadores
+
+P2 — MEDIOS (melhorias de experiencia)
+==============================================================================
+
+ID  | FUNCAO                          | EXISTE? | REAL/MOCK | GAP                      | ACAO
+----|---------------------------------|---------|-----------|--------------------------|-----
+G11 | Notificacoes real-time          | PARCIAL | PARCIAL   | Store sem backend real   | Realtime subscription
+G12 | Solicitar complementacao        | PARCIAL | PARCIAL   | Sem botao explicito      | Adicionar acao no Kanban
+G13 | Treinamentos                    | MOCK    | MOCK      | Sem tabela backend       | Criar tabela ou remover
+G14 | Transacoes financeiras Portal   | MOCK    | MOCK      | Sem query backend        | Conectar a financeiro
+G15 | Ganhos/Ranking Portal           | MOCK    | MOCK      | Sem query backend        | Calcular de alocacoes
+G16 | Disponibilidade persistente     | PARCIAL | PARCIAL   | State local apenas       | Persistir em prestadores
+
+P3 — BAIXOS (nice-to-have)
+==============================================================================
+
+ID  | FUNCAO                          | EXISTE? | REAL/MOCK | GAP                      | ACAO
+----|---------------------------------|---------|-----------|--------------------------|-----
+G17 | Certidao Negativa               | NAO     | NAO       | Nao coletado no APP      | Adicionar step opcional
+G18 | UNIQUE constraint cpf_cnpj      | NAO     | NAO       | Race condition teorica   | Migration UNIQUE
+G19 | IA documental                   | PARCIAL | UI only   | Placeholder sem backend  | Integrar quando pronto
+G20 | Reset senha admin               | NAO     | NAO       | Prestador usa fluxo      | Botao no Admin App
+    |                                 |         |           | proprio (ForgotPassword) | (opcional)
+G21 | Bloqueio com motivo             | PARCIAL | PARCIAL   | Sem campo motivo_bloqueio| Adicionar coluna
+G22 | Certidao Negativa na tela Admin | NAO     | NAO       | Nao exibido              | Adicionar ao checklist
+
+
+==============================================================================
+13. CRITERIOS DE HOMOLOGACAO FUTURA
+==============================================================================
+
+Para declarar o fluxo "pre-cadastro APP → Admin → Recrutamento → Cadastro"
+como FUNCIONAL, todos os P0 devem estar resolvidos:
+
+[x] G01: Upload real de documentos durante onboarding
+[x] G02: Documentos migrados para documentos_prestadores
+[ ] G03: liberado_app gate preservado (OK atualmente)
+[ ] G04: Status preservado na conversao (OK atualmente)
+
+Alem disso:
+  - Tela de validacao no Admin App Prestador (G09)
+  - Dados bancarios completos no APP (G07)
+  - Veiculos sincronizados (G08)
+
+
+==============================================================================
+14. VEREDITO
+==============================================================================
+
+O sistema EXISTE e FUNCIONA parcialmente:
+  ✅ Bridge APP → Recrutamento ja implementada
+  ✅ Kanban de recrutamento funcional
+  ✅ Conversao candidato → prestador funcional
+  ✅ Gate liberado_app funcional
+  ⚠️ Upload de documentos INCOMPLETO (nao persiste)
+  ⚠️ Dados veiculo INCOMPLETOS (grava em texto livre)
+  ⚠️ Dados bancarios INCOMPLETOS (faltam campos essenciais)
+  ❌ Tela de validacao Admin NAO EXISTE
+  ❌ Historico de auditoria INCOMPLETO
+
+PONTUACAO: 5/10 (infraestrutura base existe, camadas criticas faltam)
+
+PROXIMOS PASSOS RECOMENDADOS (SEM EXECUTAR):
+  1. P0-G01: Implementar upload real no onboarding
+  2. P0-G02: Conectar upload → documentos_prestadores
+  3. P1-G09: Criar tela validacao no Admin App
+  4. P1-G07: Expandir coleta dados bancarios
+  5. P1-G08: Sincronizar veiculos APP → tabela oficial
+
+==============================================================================
+FIM DA AUDITORIA
+==============================================================================

@@ -1,0 +1,217 @@
+================================================================================
+MISSÃO A23 — FASE B — INTEGRAÇÃO TORRE ↔ CENTRAL + CORREÇÃO DO KPI
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Fonte de verdade: entregas_protocolo (M108C1)
+================================================================================
+
+STATUS FINAL: CONCLUÍDA
+-------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS MODIFICADOS
+--------------------------------------------------------------------------------
+  - src/pages/TorreControle.tsx
+      KPI de pendência refeito para usar a métrica corrigida (PODs Pendentes),
+      rótulo/subtexto atualizados e card tornando-se clicável → /comprovantes.
+  - src/services/comprovantes/comprovantesService.ts
+      Novas funções puras e de consulta:
+        * operacaoExigePOD(aloc) — regra operacional
+        * filtrarPodsPendentes(alocacoes, alocacaoIdsComPod) — função pura/testável
+        * buscarPodsPendentes() — SELECT read-only em alocacoes_escala +
+          entregas_protocolo (fonte oficial), com enriquecimento de OS/cliente/prestador
+  - src/components/torre-controle/ExecutiveKpis.tsx
+      Suporte OPCIONAL a onClick por card, com acessibilidade preservada
+      (button nativo, foco por teclado, Enter/Space). Cards sem onClick
+      permanecem exatamente como antes (não clicáveis).
+  - src/components/torre-controle/CentralAlertas.tsx
+      Apenas rótulo do badge de resumo: "Pendências" → "PODs Pendentes".
+      Nenhuma alteração de comportamento.
+  - tests/e2e/a23_fase_b_torre_kpi.spec.ts        (NOVO — 4 testes Playwright)
+  - src/test/a23B_kpiComprovantes.test.ts         (NOVO — 13 testes unitários)
+  - scripts/_a23b_validar_metrica_readonly.mjs    (NOVO — validação read-only SELECT)
+
+  NÃO ALTERADOS (verificados):
+  - src/lib/acoesPrioritarias.ts   (SEM alteração estrutural — os dados de entrada
+     já vêm corrigidos do novo fluxo; ações comprovante/comprovante_orfao mantidas)
+  - src/components/torre-controle/DetalhesOperacaoSheet.tsx (preservado)
+
+--------------------------------------------------------------------------------
+2. REGRA ANTIGA DO KPI
+--------------------------------------------------------------------------------
+  Query original em TorreControle.tsx:
+    alocacoes_escala
+      .is("comprovante_url", null)
+      .in("status", ["aceita", "em_rota", "concluida", "ocorrencia"])
+  Problemas comprovados na auditoria:
+    - Usava alocacoes_escala.comprovante_url como fonte de verdade;
+    - Misturava operações em andamento (aceita/em_rota) com entregas concluídas;
+    - Contava ~18 falsos pendentes (já possuíam POD real em entregas_protocolo,
+      pois o trigger App→entregas_protocolo NÃO atualiza comprovante_url).
+
+--------------------------------------------------------------------------------
+3. REGRA NOVA
+--------------------------------------------------------------------------------
+  Uma operação é POD pendente quando o comprovante JÁ deveria existir
+  (finalizada = true OU status = 'concluida') E NÃO existe registro
+  correspondente na fonte oficial entregas_protocolo.
+
+  Implementada em comprovantesService:
+    operacaoExigePOD(aloc) = aloc.finalizada === true || aloc.status === "concluida"
+    filtrarPodsPendentes = alocacoes[exigePOD && !alocacaoIdsComPod.has(id)]
+
+  Fonte de verdade: entregas_protocolo (POD oficial).
+  NÃO usa comprovante_url da alocação como fonte de pendência.
+  NENHUM trigger, migration ou sincronização criada.
+
+--------------------------------------------------------------------------------
+4. TRATAMENTO DE aceita / em_rota
+--------------------------------------------------------------------------------
+  - aceita  → NÃO é comprovante atrasado (entrega ainda em andamento).
+  - em_rota → NÃO é comprovante atrasado (entrega ainda em andamento).
+  - planejada / aguardando_aceite / cancelada / recusada → não entram na contagem.
+  - Somente finalizada/concluida exigem POD nesta fase (regra mais segura).
+
+--------------------------------------------------------------------------------
+5. FONTE DE VERDADE UTILIZADA
+--------------------------------------------------------------------------------
+  - entregas_protocolo: existência real de POD (SELECT alocacao_id).
+  - alocacoes_escala: estado final (finalizada/status concluida) + vínculos.
+  - ordens_servico / prestadores / clientes: enriquecimento de exibição.
+
+--------------------------------------------------------------------------------
+6. NÚMERO ANTIGO × NÚMERO NOVO (SELECT read-only em Produção)
+--------------------------------------------------------------------------------
+  Resultado real de scripts/_a23b_validar_metrica_readonly.mjs:
+    total_concluidas            = 60
+    alocações com POD           = 48
+    PODS PENDENTES (nova)       = 42
+    KPI ANTIGO                  = 77
+    falsos pendentes eliminados = 18  (tinham POD em entregas_protocolo)
+    KPI antigo — aceita         = 6   (agora fora da métrica)
+    KPI antigo — em_rota        = 12  (agora fora da métrica)
+    KPI antigo — concluida      = 59
+
+  Explicação da diferença (77 → 42):
+    - 18 falsos pendentes (com POD real) deixaram de ser contados;
+    - 6 aceita + 12 em_rota (em andamento) deixaram de ser tratadas como
+      comprovante atrasado;
+    - restam 42 operações concluídas/finalizadas realmente sem POD.
+
+--------------------------------------------------------------------------------
+7. COMPORTAMENTO DO CLIQUE
+--------------------------------------------------------------------------------
+  O card KPI "PODs Pendentes" agora é um botão acessível.
+  Ao clicar → navega para /comprovantes (Central de Comprovantes da Fase A).
+  Arquitetura: usa useNavigate do React Router já existente no arquivo.
+
+--------------------------------------------------------------------------------
+8. DESTINO/FILTRO APLICADO NA CENTRAL
+--------------------------------------------------------------------------------
+  - Destino: /comprovantes (rota da Central, criada na Fase A).
+  - NÃO foi forçado um parâmetro de filtro específico: a Central da Fase A
+    lista comprovantes EXISTENTES (entregas_protocolo), enquanto o KPI mede
+    operações SEM comprovante. Forçar /comprovantes?situacao=... poderia
+    conflitar com o modelo atual da Central. A navegação limpa para a Central
+    foi escolhida conforme a instrução ("NÃO forçar esse formato se a Central
+    utiliza outro modelo"). A Central pode, em fase futura, ganhar uma visão
+    dedicada de pendentes que receba este contexto.
+
+--------------------------------------------------------------------------------
+9. ALTERAÇÕES EM ExecutiveKpis
+--------------------------------------------------------------------------------
+  - KpiItem ganhou campo opcional: onClick?: () => void.
+  - KpiCard renderiza <button> nativo quando onClick existe:
+      * cursor-pointer;
+      * foco por teclado (focus-visible ring);
+      * ativação por Enter/Space (button nativo);
+      * aria-label composto com label/valor/sub.
+  - Cards SEM onClick continuam renderizando <Card> exatamente como antes
+    (não clicáveis, sem falso botão).
+  - Nenhum outro card da Torre recebeu onClick (só "PODs Pendentes").
+
+--------------------------------------------------------------------------------
+10. ALTERAÇÕES NA CENTRALALERTAS / acoesPrioritarias
+--------------------------------------------------------------------------------
+  - acoesPrioritarias.ts: NENHUMA alteração estrutural. As ações
+    "comprovante" e "comprovante_orfao" continuam sendo geradas e continuam
+    abrindo o DetalhesOperacaoSheet (osId → onSelect).
+  - O que mudou é a ORIGEM DOS DADOS: a Torre agora alimenta
+    gerarAcoesPrioritarias com a métrica corrigida (buscarPodsPendentes),
+    eliminando os mesmos falsos pendentes da Central de Alertas — sem tocar
+    na lógica do gerador.
+  - CentralAlertas.tsx: apenas rótulo do badge "Pendências" → "PODs Pendentes".
+  - DetalhesOperacaoSheet: NÃO modificado. Aba Evidências continua funcional.
+
+--------------------------------------------------------------------------------
+11. TESTES CRIADOS
+--------------------------------------------------------------------------------
+  Unitários (src/test/a23B_kpiComprovantes.test.ts — 13 testes):
+    1. concluída SEM entregas_protocolo → pendente ✅
+    2. concluída COM entregas_protocolo → NÃO pendente ✅
+    3. aceita sem POD → NÃO atraso ✅
+    4. em_rota sem POD → NÃO atraso ✅
+    5. finalizada=true (status não-concluida) também exige POD ✅
+    6. cancelada/recusada/planejada/aguardando_aceite fora da contagem ✅
+    7. operacaoExigePOD cobre somente finalizada/concluida ✅
+    8. filtrarPodsPendentes preserva osId apenas quando existir ✅
+    9. Central de Alertas gera ação "comprovante" a partir de pendentes reais ✅
+   10. "comprovante_orfao" para pendentes sem vínculo de OS ✅
+   11. sem pendentes → nenhuma ação de comprovante ✅
+   12. KpiItem aceita onClick sem quebrar o contrato ✅
+   13. KpiItem sem onClick permanece válido (não clicável) ✅
+
+  Playwright (tests/e2e/a23_fase_b_torre_kpi.spec.ts — 4 testes, listados):
+    1. KPI "PODs Pendentes" visível na Torre ✅ (listado; execução requer QA)
+    2. KPI clicável navega para /comprovantes ✅ (listado)
+    3. KPI sem ação permanece card não clicável ✅ (listado)
+    4. Central de Alertas carrega sem regressão ✅ (listado)
+  (Execução E2E exige ambiente QA + credenciais reais — guard-rails de Produção;
+   o comando `npx playwright test --list` validou os 4 testes.)
+
+--------------------------------------------------------------------------------
+12. RESULTADO DO TSC
+--------------------------------------------------------------------------------
+  npx tsc --noEmit  →  0 erros
+
+--------------------------------------------------------------------------------
+13. RESULTADO DO BUILD
+--------------------------------------------------------------------------------
+  npm run build  →  ✅ 1m 6s — build ok
+
+--------------------------------------------------------------------------------
+14. RESULTADO DO VITEST
+--------------------------------------------------------------------------------
+  npx vitest run  →  ✅ 44/44 testes (5 arquivos; 13 novos A23-B)
+
+--------------------------------------------------------------------------------
+15. CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+  - Nenhuma migration executada .................... CONFIRMADO
+  - Nenhum ALTER/CREATE/DROP/trigger/RPC/RLS/seed .. CONFIRMADO
+  - Nenhum dado de Produção alterado ............... CONFIRMADO
+      (validação numérica feita SOMENTE com SELECT read-only —
+       scripts/_a23b_validar_metrica_readonly.mjs)
+  - App Flutter (C:\src\conexao_prestador) ......... CONFIRMADO (não tocado)
+  - DetalhesOperacaoSheet preservado ............... CONFIRMADO
+  - acoesPrioritarias / CentralAlertas ............. SEM regressão
+  - A23-C (POD dentro da OS) ....................... NÃO iniciada
+  - A23-D (Financeiro / bloqueio faturamento) ...... NÃO iniciada
+
+--------------------------------------------------------------------------------
+16. PENDÊNCIAS PARA A23-C
+--------------------------------------------------------------------------------
+  1. Seção "ENTREGAS" dentro da OS (OrdemServicoForm/OrdensServicoLista):
+     listar alocações da OS com Parada, Status, Destinatário, Horário,
+     Recebedor, Volumes x/x e ação [Ver comprovante] abrindo o dossiê.
+  2. Reaproveitar o DossieEntregaSheet/lightbox compartilhados (Fase A).
+  3. Avaliar visão dedicada de "pendentes" na Central de Comprovantes para
+     receber contexto do KPI (ex.: /comprovantes?visao=pendentes) de forma
+     limpa — sem forçar se o modelo atual não suportar.
+  4. Revisar OrdemServicoForm bloco manual "Comprovantes e Evidências"
+     (linhas ~3019-3068) para exibir POD real em vez de placeholders.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A23 — FASE B
+STATUS FINAL: CONCLUÍDA ✅
+================================================================================

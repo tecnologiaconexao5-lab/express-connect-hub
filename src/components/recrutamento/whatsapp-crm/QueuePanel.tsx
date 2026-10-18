@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Clock, AlertTriangle, User, CheckCircle2, ArrowRight, ChevronDown, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useWhatsAppCRMStore, type QueuePriority } from "@/stores/whatsappCRMStore";
 
 const PRIORITY_CONFIG: Record<QueuePriority, { label: string; color: string; icon: typeof Clock }> = {
@@ -95,7 +96,7 @@ function QueueItem({ item, contato, onAtender, onConversa }: { item: any; contat
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl overflow-hidden bg-muted shrink-0">
-            {contato && <img src={contato.avatar} alt="" className="w-full h-full object-cover" />}
+            {contato && <SafeImage src={contato.avatar} alt="" className="w-full h-full object-cover" />}
           </div>
           <div>
             <p className="text-sm font-semibold text-foreground">{contato?.nome || "Desconhecido"}</p>

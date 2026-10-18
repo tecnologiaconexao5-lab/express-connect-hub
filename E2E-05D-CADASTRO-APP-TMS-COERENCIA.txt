@@ -1,0 +1,161 @@
+E2E-05D-CADASTRO-APP-TMS-COERENCIA
+==================================================
+Ambiente: TMS + código APP + Supabase | Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA + TESTES | Redmi: NÃO
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. STATUS CANÔNICO
+==================================================
+Divergência: APP grava `em_analise`; TMS usa `analise`.
+Decisão: CANÔNICO = `analise` (TMS). NÃO migrar dados; consumidores passam a aceitar o alias
+`em_analise`≡`analise` e `aprovado`≡`ativo`.
+Correções (código):
+  - src/components/prestadores/types.ts: STATUS_LABEL/STATUS_COR com aliases `em_analise` e
+    `aprovado`; novos helpers `normalizarStatusPrestador()` e `statusAliases()`.
+  - PrestadoresLista: filtro de status via `.in("status", statusAliases(...))`; badge normalizado.
+CANONICAL_PENDING_STATUS=analise
+STATUS_PRODUCERS_ALIGNED=YES (RPC do APP segue gravando 'em_analise' — compatível)
+STATUS_CONSUMERS_ALIGNED=YES
+
+==================================================
+2. RECRUTAMENTO — CRASH onLoadMore (CORRIGIDO)
+==================================================
+CAUSA RAIZ: KanbanColumn.tsx usava `onClick={onLoadMore}` (linha 146), mas `onLoadMore` NÃO era
+desestruturado nas props (linhas 73-82) → ReferenceError: onLoadMore is not defined.
+CORREÇÃO: adicionado `onLoadMore` à desestruturação de KanbanColumn. Sem tocar no ErrorBoundary
+nem redesenhar o Recrutamento. EnterpriseKanbanBoard já passava `onLoadMore`.
+RECRUITMENT_PAGE_CRASH_FIXED=YES
+
+==================================================
+3. NOVO CADASTRO DO APP VISÍVEL
+==================================================
+Em Cadastro > Prestadores, registros com origem_cadastro='app_motorista' e status pendente agora
+exibem, além do badge "Em análise", o badge âmbar "Novo cadastro APP · Aguardando validação".
+Reaproveitada a listagem atual (ordenação A→Z, paginação e busca preservadas).
+APP_PENDING_VISIBLE_IN_PROVIDER_LIST=YES
+
+==================================================
+4. ALERTA DE NOVOS CADASTROS
+==================================================
+Alerta/contador discreto no cabeçalho do Cadastro > Prestadores:
+"N novo(s) cadastro(s) do APP aguardando validação" + botão "Ver em análise".
+Contagem REAL do banco (não hardcoded): prestadores WHERE origem_cadastro='app_motorista'
+AND status IN ('analise','em_analise').
+APP_PENDING_ALERT=YES
+APP_PENDING_COUNT_SOURCE=prestadores(origem_cadastro='app_motorista' AND status IN ('analise','em_analise'))
+
+==================================================
+5. APROVAÇÃO / LIBERAÇÃO
+==================================================
+Caminho existente (auditado, sem novo workflow):
+  - PrestadorDetalhe.handleSave: UPDATE do MESMO prestador (por id) — não cria duplicidade.
+  - prestadoresService.sincronizarComOperacao/atualizarStatus: `liberado_app = (status === 'ativo')`.
+Correção de coerência: PrestadorDetalhe agora COAGE `liberadoApp=false` quando o status não é
+ativo/aprovado (bloqueado/reprovado/em análise → liberado_app permanece false).
+APP_APPROVAL_PATH=PrestadorDetalhe (status + liberadoApp) + prestadoresService.sincronizarComOperacao
+LIBERADO_APP_AFTER_APPROVAL_ONLY=YES
+DUPLICATE_PROVIDER_CREATED=NO (bridge vincula por prestador_id; sem 2º prestador)
+
+==================================================
+6. LOGIN CPF / E-MAIL (contrato APP)
+==================================================
+Contrato (lib/core/auth/auth_identity.dart):
+  technicalAuthEmail(cpf) = prestador_<digits>@conexaoexpress.com.br (determinístico)
+  authIdentifierFor(email, cpf) = email real (se houver) senão técnico
+  authLoginIdentifier(v) = email as-is; CPF/CNPJ → técnico
+Cadastro criado pelo próprio APP → signUp com o MESMO identificador técnico → login por CPF
+determinístico FUNCIONA. Login por e-mail real também (preservado).
+Caso legado/HML (ex.: PRESTADOR TESTE APP, auth.users=teste@conexao.com, CPF 12345678900):
+o identificador técnico derivado do CPF ≠ e-mail real do auth.users → credenciais inválidas.
+Há vínculo objetivo (prestadores.auth_user_id = auth.users.id), porém a compatibilização exige
+ALTERAÇÃO NO APP → NÃO implementada nesta sessão (conforme instrução).
+
+LOGIN_IDENTIFIER_CONTRACT=prestador_<cpf_cnpj>@conexaoexpress.com.br (determinístico; e-mail real preservado)
+CPF_LOGIN_MAPPING_FIXED=YES (para cadastros criados pelo APP)
+EMAIL_LOGIN_PRESERVED=YES
+AUTH_PROVIDER_LINK_SAFE=YES (prestadores.auth_user_id ↔ auth.users.id)
+
+CORREÇÃO MÍNIMA APP (documentada, NÃO implementada):
+  Arquivo: C:\src\conexao_prestador\lib\core\auth\auth_identity.dart (+ auth_provider.signIn)
+  Objetivo: no login, se o identificador técnico derivado do CPF falhar, resolver de forma SEGURA
+  (RPC SECURITY DEFINER, sem expor credenciais) o e-mail real de auth do prestador cujo
+  cpf_cnpj casa e que tenha auth_user_id vinculado; então tentar signIn com esse e-mail.
+  Não procurar por senha; não expor credenciais.
+
+==================================================
+7. NÃO LIBERAR PENDENTE (gate AG-07J.7)
+==================================================
+Regra (auth_status_mapper.dart): acesso operacional SOMENTE se (status ativo/aprovado) AND
+liberado_app=true; senão /analysis (fail-closed).
+PENDING_ACCESS_DENIED=YES (em_analise/analise → negado)
+BLOCKED_ACCESS_DENIED=YES (bloqueado/inativo → negado)
+APPROVED_RELEASED_ACCESS_ALLOWED=YES (ativo/aprovado + liberado_app=true → permitido)
+(ativo/aprovado + liberado_app=false → negado — precedência correta)
+Sem Redmi.
+
+==================================================
+8. TESTES
+==================================================
+NOVO: src/test/e2e_05d_cadastro_app_coerencia.test.ts — 11/11 PASS
+  - status canônico/aliases/labels;
+  - filtro e badge de pendentes APP + contador do banco;
+  - KanbanColumn desestrutura onLoadMore (sem crash) + board passa a prop;
+  - PrestadorDetalhe coage liberado_app; prestadoresService mantém liberado_app=ativo;
+  - bridge não cria 2º prestador.
+DIRECTED_TESTS=11/11. Suíte global: 1533 passed / 31 failed / 155 skipped (31 baseline).
+TYPECHECK=npx tsc --noEmit → 0 erros
+BUILD=npm run build → OK (built in 1m 1s)
+HML preservado: HML_TABLE d12cf0cd (ativo) | valor_diaria=250.00
+
+==================================================
+ENTREGÁVEIS
+==================================================
+CANONICAL_PENDING_STATUS=analise
+STATUS_PRODUCERS_ALIGNED=YES
+STATUS_CONSUMERS_ALIGNED=YES
+
+RECRUITMENT_PAGE_CRASH_FIXED=YES
+
+APP_PENDING_VISIBLE_IN_PROVIDER_LIST=YES
+APP_PENDING_ALERT=YES
+APP_PENDING_COUNT_SOURCE=prestadores(origem_cadastro='app_motorista' AND status IN ('analise','em_analise'))
+
+APP_APPROVAL_PATH=PrestadorDetalhe + prestadoresService.sincronizarComOperacao
+LIBERADO_APP_AFTER_APPROVAL_ONLY=YES
+DUPLICATE_PROVIDER_CREATED=NO
+
+LOGIN_IDENTIFIER_CONTRACT=prestador_<cpf_cnpj>@conexaoexpress.com.br (e-mail real preservado)
+CPF_LOGIN_MAPPING_FIXED=YES
+EMAIL_LOGIN_PRESERVED=YES
+AUTH_PROVIDER_LINK_SAFE=YES
+
+PENDING_ACCESS_DENIED=YES
+BLOCKED_ACCESS_DENIED=YES
+APPROVED_RELEASED_ACCESS_ALLOWED=YES
+
+DIRECTED_TESTS=11/11
+TYPECHECK=0
+BUILD=OK
+DB_WRITES=0
+MIGRATIONS=0
+FILES_MODIFIED=
+  - src/components/prestadores/types.ts (status canônico/aliases)
+  - src/components/prestadores/PrestadoresLista.tsx (filtro, badge APP, contador)
+  - src/components/prestadores/PrestadorDetalhe.tsx (coerência liberado_app ↔ status)
+  - src/modules/recrutamento/components/enterprise-kanban/KanbanColumn.tsx (fix onLoadMore)
+  - src/test/e2e_05d_cadastro_app_coerencia.test.ts (NOVO)
+
+RESULT=PARTIAL
+  (TMS 100% corrigido; item 6 exige alteração no APP para login de usuário legado/HML — documentada.)
+
+NEXT_EXACT_MISSION=E2E-05E-APP-LOGIN-IDENTIDADE
+  (micro-fix no APP: compatibilidade segura de login CPF↔e-mail via vínculo auth_user_id;
+   não bloqueia o E2E-06 físico, que usa o PRESTADOR TESTE APP já ativo/liberado.)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem Redmi; E2E-06 não continuado; nenhum 2º prestador/usuário criado; senha não alterada;
+sem módulo Admin paralelo; Recrutamento não reescrito; HML preservado; sem cleanup;
+Master 360/Control Tower não executados; DB_WRITES=0; sem migration.

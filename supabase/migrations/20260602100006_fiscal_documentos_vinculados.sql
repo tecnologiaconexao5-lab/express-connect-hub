@@ -70,19 +70,27 @@ CREATE TRIGGER trg_fdv_updated_at
 ALTER TABLE public.fiscal_documentos_vinculados ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Enable select for authenticated" ON public.fiscal_documentos_vinculados;
-CREATE POLICY "Enable select for authenticated" ON public.fiscal_documentos_vinculados
+DROP POLICY IF EXISTS "Enable select for authenticated" ON public.fiscal_documentos_vinculados;
+DROP POLICY IF EXISTS "Enable select for authenticated" ON fiscal_documentos_vinculados;
+CREATE POLICY "Enable select for authenticated" ON fiscal_documentos_vinculados
   FOR SELECT USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.fiscal_documentos_vinculados;
-CREATE POLICY "Enable insert for authenticated" ON public.fiscal_documentos_vinculados
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.fiscal_documentos_vinculados;
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON fiscal_documentos_vinculados;
+CREATE POLICY "Enable insert for authenticated" ON fiscal_documentos_vinculados
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable update for authenticated" ON public.fiscal_documentos_vinculados;
-CREATE POLICY "Enable update for authenticated" ON public.fiscal_documentos_vinculados
+DROP POLICY IF EXISTS "Enable update for authenticated" ON public.fiscal_documentos_vinculados;
+DROP POLICY IF EXISTS "Enable update for authenticated" ON fiscal_documentos_vinculados;
+CREATE POLICY "Enable update for authenticated" ON fiscal_documentos_vinculados
   FOR UPDATE USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable delete for authenticated" ON public.fiscal_documentos_vinculados;
-CREATE POLICY "Enable delete for authenticated" ON public.fiscal_documentos_vinculados
+DROP POLICY IF EXISTS "Enable delete for authenticated" ON public.fiscal_documentos_vinculados;
+DROP POLICY IF EXISTS "Enable delete for authenticated" ON fiscal_documentos_vinculados;
+CREATE POLICY "Enable delete for authenticated" ON fiscal_documentos_vinculados
   FOR DELETE USING (auth.role() = 'authenticated');
 
 -- Bucket Storage privado
@@ -94,3 +102,5 @@ ON CONFLICT (id) DO NOTHING;
 COMMENT ON TABLE public.fiscal_documentos_vinculados IS 'XMLs de NF-e e outros documentos fiscais importados e vinculados a OS, CT-e ou MDF-e.';
 COMMENT ON COLUMN public.fiscal_documentos_vinculados.tipo_documento IS 'nfe, nfse, cte, mdfe, outro';
 COMMENT ON COLUMN public.fiscal_documentos_vinculados.status IS 'importado, aguardando_vinculo, vinculado, processado';
+
+

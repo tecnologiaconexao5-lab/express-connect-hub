@@ -1,0 +1,134 @@
+================================================================================
+MISSÃO F0-C — CORREÇÃO DO FLUXO CONTAS A PAGAR (CRIAÇÃO + EDIÇÃO)
+Contrato real de financeiro_pagar confirmado em produção (F0-B)
+Data: 2026-08-18
+================================================================================
+
+1. CAUSA-RAIZ CORRIGIDA
+--------------------------------------------------------------------------------
+A aba CONTAS A PAGAR não criava nem editava lançamentos corretamente porque o
+fluxo usava um contrato FICTÍCIO de financeiro_pagar:
+
+  (1) ContasPagar.tsx NÃO enviava "descricao" no payload de criação/edição,
+      e pagarService.criarPagavel EXIGE "descricao" -> erro "Descrição é
+      obrigatória" antes de qualquer insert.
+  (2) O payload do formulário continha colunas que NÃO EXISTEM em produção:
+      forma_pagamento e recorrencia.
+  (3) pagarService.criarPagavel ainda inseria colunas INEXISTENTES: saldo,
+      prestador_id, prestador_nome, alocacao_id, parcela, total_parcelas,
+      tenant_id, observacao (singular), centro_custo.
+  (4) pagarService.atualizarPagavel fazia update com o payload cru (mesmas
+      colunas inexistentes).
+  (5) pagarService.criarParcelasPagavel inseria saldo e pagavel_pai_id
+      (colunas inexistentes) -> parcelamento falhava.
+  (6) A UI nunca enviava "valor" (obrigatório em criarPagavel) -> após a
+      descricao, o insert quebraria em "Valor inválido".
+
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+  - src/services/financeiro/pagarService.ts
+  - src/components/financeiro/ContasPagar.tsx
+
+3. CAMPOS REMOVIDOS DOS PAYLOADS (não existem no contrato real)
+--------------------------------------------------------------------------------
+  Removidos de criarPagavel / atualizarPagavel / criarParcelasPagavel / form:
+    - saldo
+    - prestador_id            -> fornecedor_id
+    - prestador_nome          -> fornecedor_nome
+    - alocacao_id
+    - parcela                 -> parcela_atual
+    - total_parcelas          -> quantidade_parcelas
+    - tenant_id
+    - forma_pagamento         (preservado apenas na UI/baixa; fora do escopo)
+    - recorrencia             -> recorrente (booleano)
+    - observacao (singular)   -> observacoes
+    - centro_custo            (não existe; existe centro_resultado)
+
+4. CAMPOS AGORA UTILIZADOS (somente colunas EXISTENTES)
+--------------------------------------------------------------------------------
+  descricao, valor, valor_bruto, valor_liquido, desconto, juros, multa,
+  impostos_retidos, fornecedor, fornecedor_id, fornecedor_nome,
+  fornecedor_documento, documento, tipo_documento, data_vencimento,
+  data_emissao, data_previsao_pagamento, competencia, status, os_id,
+  os_vinculada, categoria, centro_resultado, plano_contas, unidade_filial,
+  despesa_fixa_base, conta_pagadora, codigo_barras, chave_pix, recorrente,
+  quantidade_parcelas, parcela_atual, observacoes, data_pagamento.
+
+5. MUDANÇAS NO SERVICE (pagarService.ts)
+--------------------------------------------------------------------------------
+  - PagavelInput / PagavelUpdate: interfaces realinhadas ao contrato real;
+    campos legados (prestador_id/prestador_nome/parcela/total_parcelas/
+    recorrencia/observacao) mantidos como entrada de compatibilidade e
+    mapeados para as colunas reais.
+  - criarPagavel: payload reescrito (somente colunas existentes); fornecedor
+    default "Não informado"; status default "aberto"; recorrente default
+    false; quantidade_parcelas default 1; parcela_atual default 1;
+    tipo_documento default "NF"; despesa_fixa_base default "Variável";
+    conta_pagadora default "Conta Corrente Principal".
+  - criarParcelasPagavel: remoção de saldo/pagavel_pai_id; cada parcela agora
+    grava valor_bruto/valor_liquido, parcela_atual (índice), quantidade_parcelas
+    (total) e recorrente=false. NÃO cria vínculo de filiação (coluna inexistente).
+  - atualizarPagavel: sanitização WHITELIST contra o contrato real — somente
+    colunas existentes são gravadas; legados mapeados (recorrencia ->
+    recorrente booleano; observacao -> observacoes). Validação de transição de
+    status agora ocorre SOMENTE quando o status muda de fato.
+  - STATUS_TRANSITIONS: ampliado com os status usados pelo módulo Contas a
+    Pagar ("a vencer"/a_vencer/vencida/provisao/paga/cancelada) para que a
+    edição (que envia status) não lance "Status atual não reconhecido".
+    Correção direta no caminho de EDIÇÃO.
+
+6. MUDANÇAS NO COMPONENTE (ContasPagar.tsx — handleSalvar)
+--------------------------------------------------------------------------------
+  - Adicionada "descricao" composta: [documentoNF, favorecidoNome].join(" - ")
+    com fallback "Despesa" (mesma regra visual usada na listagem).
+  - Adicionado "valor" (= valorLiquido) — obrigatório no service; alinhado ao
+    valor líquido exibido na UI e usado pela baixa.
+  - Removidos forma_pagamento e recorrencia do payload de banco.
+  - recorrencia (UI) agora é convertida em "recorrente" (booleano):
+    true apenas quando diferente de "nenhuma".
+  - competencia, data_emissao, data_vencimento, data_previsao_pagamento,
+    valores, código de barras, PIX, conta pagadora, status e observações
+    preservados integralmente.
+
+7. COMPORTAMENTO PRESERVADO
+--------------------------------------------------------------------------------
+  - Layout, filtros, listagem e status da aba.
+  - Aba de EDIÇÃO: os mesmos campos do formulário continuam editáveis.
+  - Parcelamento: o botão "Gerar Parcelas" continua criando N registros
+    filhos em financeiro_pagar (agora com colunas reais).
+  - Regras de validação financeira existentes (valor obrigatório >= 0,
+    data válida, fornecedor obrigatório, transição de status) mantidas.
+  - Demais abas (Contas a Receber, Pagamentos de Prestadores, Faturas)
+    NÃO foram alteradas.
+
+8. VALIDAÇÕES EXECUTADAS
+--------------------------------------------------------------------------------
+  (1) Criação sem colunas inexistentes      -> OK (payload reescrito + "valor"+"descricao")
+  (2) Edição sem colunas inexistentes       -> OK (whitelist em atualizarPagavel)
+  (3) descricao chega ao service            -> OK (composta no handleSalvar)
+  (4) competencia preservada                -> OK (mantida no payload)
+  (5) Banco NÃO ALTERADO                    -> CONFIRMADO (nenhuma migration/DDL)
+
+  npx tsc --noEmit  ->  0 erros (projeto inteiro)
+
+9. PENDÊNCIAS (FORA DO ESCOPO F0-C — criação/edição)
+--------------------------------------------------------------------------------
+  - baixarPagavel: lê e grava a coluna "valor_pago" (INEXISTENTE em
+    produção) -> fluxo de BAIXA continua quebrado. Requer missão própria.
+  - cancelarPagavel: grava "observacao" (singular, INEXISTENTE) -> fluxo de
+    CANCELAMENTO continua quebrado. Requer missão própria.
+  - listarPagaveis: filtra por "prestador_id" e busca em "prestador_nome"
+    (INEXISTENTES). Sem chamadores atualmente, mas inválido contra o
+    contrato real. Registrar para limpeza futura.
+  - Nenhum mapeamento de "forma_pagamento" para coluna real existe no
+    contrato financeiro_pagar — decisão de produto necessária.
+
+10. CONFIRMAÇÃO
+--------------------------------------------------------------------------------
+  BANCO NÃO ALTERADO.
+  Nenhuma migration, DDL, seed, RLS ou dado de produção foi tocado.
+  Correção 100% em código (service + componente).
+
+================================================================================
+FIM DO RELATÓRIO F0-C
+================================================================================

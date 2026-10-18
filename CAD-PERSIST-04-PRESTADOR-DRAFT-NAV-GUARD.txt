@@ -1,0 +1,239 @@
+================================================================================
+CAD-PERSIST-04-PRESTADOR-DRAFT-NAV-GUARD — Draft + Nav Guard Prestador
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — AUDITORIA DO COMPORTAMENTO ANTES
+--------------------------------------------
+
+FORM_STATE_STORAGE_BEFORE= useState (memoria React apenas)
+DIRTY_TRACKING_BEFORE= NENHUM
+SPA_NAV_GUARD_BEFORE= NENHUM
+BROWSER_EXIT_GUARD_BEFORE= NENHUM (apenas OrdemServicoForm)
+DRAFT_BEFORE= NENHUM
+
+---------------------------------------------------------
+
+SECAO 2 — DIRTY STATE
+-----------------------
+
+Implementacao:
+  - initialStateRef = JSON.stringify(initial || getDefaultPrestador())
+  - useEffect: comparar JSON.stringify(p) com initialStateRef
+  - Se diferente → isDirty=true
+
+DIRTY_TRACKING_AFTER= JSON.stringify diff, reactivo a cada change
+
+Apos save confirmado:
+  clearDraft() + onBack() → componente desmonta
+  isDirty nao precisa resetar explicitamente (unmount resolve)
+
+Nao considera dirty:
+  - Carregar registro existente (initial != null)
+  - Default values do form
+
+---------------------------------------------------------
+
+SECAO 3 — PROTECAO SAIDA SPA
+-------------------------------
+
+Implementacao:
+  useBlocker: bloqueia navegacao se isDirty && pathname diferente
+  Dialog: "Alterações não salvas" com opcoes:
+    - "Continuar editando" → cancela navegacao
+    - "Descartar alterações" → clearDraft + navega
+
+SPA_NAV_GUARD_AFTER= useBlocker (react-router-dom v6.30.1)
+
+Trigger:
+  - Click "Cancelar / Voltar" quando dirty
+  - Click sidebar/menu quando dirty
+  - Qualquer navigacao interna quando dirty
+
+---------------------------------------------------------
+
+SECAO 4 — BROWSER EXIT GUARD
+-------------------------------
+
+Implementacao:
+  useEffect com beforeunload quando isDirty=true
+  Adiciona/remove listener automaticamente
+
+BROWSER_EXIT_GUARD_AFTER= beforeunload event
+
+Trigger:
+  - Refresh pagina (F5 / Ctrl+R)
+  - Fechar aba/janela
+  - Digitar URL na barra de endereco
+
+---------------------------------------------------------
+
+SECAO 5 — DRAFT
+-----------------
+
+Implementacao:
+  DRAFT_KEY= conexao_prestador_draft
+  DRAFT_STORAGE= localStorage
+  DRAFT_KEY_STRATEGY= chave unica (somente 1 draft de prestador por vez)
+
+  saveDraft(): serializa campos textuais para localStorage
+  loadDraft(): lee e parseia JSON
+  clearDraft(): remove do localStorage
+
+  Campos salvos (DRAFT_FIELDS):
+    nomeCompleto, nomeFantasia, cpfCnpj, rgIe, dataNascimento,
+    telefone, whatsapp, email, rntrc, antt,
+    tipoParceiro, status, liberadoApp,
+    regiaoPrincipal, origemCadastro, indicacao, disponibilidade,
+    turnosPreferenciais, restricoesOperacionais,
+    banco, agencia, conta, digito, tipoConta, favorecido,
+    cpfCnpjFavorecido, chavePix, tipoChavePix,
+    valores financeiros, pagamento, endereco (JSONB)
+
+  NAO salvos:
+    documentos (File objects) — impossivel serializar
+    veiculos (complexos demais)
+    senha, tokens, credenciais — PROIBIDO
+
+CREATE_DRAFT_RECOVERY=
+  useEffect no mount: loadDraft() → merge com defaults
+  Se draft existe → restore no state
+
+DRAFT_CLEARED_AFTER_CONFIRMED_SAVE= clearDraft() antes de onBack()
+DRAFT_PRESERVED_AFTER_FAILED_SAVE= NAO limpa no catch
+
+BINARY_FILES_STORED_IN_DRAFT=NO
+PASSWORDS_STORED_IN_DRAFT=NO
+TOKENS_STORED_IN_DRAFT=NO
+AUTOMATIC_DATABASE_SAVE=NO
+
+---------------------------------------------------------
+
+SECAO 6 — EDICAO DE REGISTRO EXISTENTE
+-----------------------------------------
+
+Decisao: NAV GUARD para edicao (sem draft para edit)
+
+Justificativa:
+  - Edit envolve dados do banco que podem ser atualizados por outros
+  - Draft de edit poderia sobrescrever dados mais recentes
+  - Complexidade de isolar por prestador_id + timestamp
+  - Nav guard (useBlocker) ja protege contra perda acidental
+
+EDIT_UNSAVED_PROTECTION= useBlocker + beforeunload (mesmo mecanismo)
+
+---------------------------------------------------------
+
+SECAO 7 — SAVE + DRAFT INTEGRATION
+--------------------------------------
+
+CREATE save:
+  INSERT → reread → clearDraft() → toast.success → onBack()
+
+UPDATE save:
+  UPDATE → reread → toast.success → onBack()
+  (sem draft para edit)
+
+Save falha:
+  catch → toast.error → form aberto → draft preservado
+
+DRAFT_CLEARED_AFTER_CONFIRMED_SAVE=YES
+DRAFT_PRESERVED_AFTER_FAILED_SAVE=YES
+
+---------------------------------------------------------
+
+SECAO 8 — DESCARTAR ALTERACOES
+---------------------------------
+
+ Dialog "Alterações não salvas":
+  - "Continuar editando" → cancela navegacao, mantem form
+  - "Descartar alterações" → clearDraft() + navega
+
+Usuario pode:
+  - Confirmar descarte (draft removido, navegacao permitida)
+  - Cancelar e continuar editando
+
+NENHUM delete de registro existente do banco.
+
+---------------------------------------------------------
+
+SECAO 9 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 57.73s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+
+---------------------------------------------------------
+
+SECAO 10 — TESTES
+-------------------
+
+T1  novo cadastro → digitar → Voltar         = PASS (STATIC: useBlocker intercepta, dialog aparece)
+T2  novo cadastro → navegar sidebar           = PASS (STATIC: useBlocker com pathname comparison)
+T3  novo cadastro → refresh                   = PASS (STATIC: beforeunload handler instalado)
+T4  fechar/reabrir tela                       = PASS (STATIC: loadDraft() restaura do localStorage)
+T5  descartar conscientemente                 = PASS (STATIC: clearDraft + navigation proceed)
+T6  save confirmado                           = PASS (STATIC: clearDraft antes de onBack)
+T7  save falha                                = PASS (STATIC: catch nao chama clearDraft)
+T8  edição existente → alterar → sair         = PASS (STATIC: useBlocker funciona para edit tambem)
+T9  carregar cadastro sem editar              = PASS (STATIC: initialStateRef = JSON.stringify(initial), isDirty=false)
+T10 documentos/binários                       = PASS (STATIC: DRAFT_FIELDS nao inclui File objects)
+T11 nenhum INSERT automático Supabase         = PASS (STATIC: saveDraft so escreve localStorage)
+T12 nenhuma alteração financeira              = PASS (STATIC: campos financeiros sao somente leitura no draft)
+
+TESTS_TOTAL=12
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=12
+TESTS_BLOCKED=0
+TESTS_PASS=12
+TESTS_FAIL=0
+
+Nota: Todos os 12 testes sao validacao STATIC (inspecao de codigo).
+Testes E2E requerem browser real + Playwright com credenciais (bloqueado).
+Nenhum teste foi declarado executado se nao foi.
+
+---------------------------------------------------------
+
+SECAO 11 — EVIDENCIA OBRIGATORIA
+-----------------------------------
+
+FORM_STATE_STORAGE_BEFORE= useState (memoria React)
+DIRTY_TRACKING_BEFORE= NENHUM
+SPA_NAV_GUARD_BEFORE= NENHUM
+BROWSER_EXIT_GUARD_BEFORE= NENHUM
+DRAFT_BEFORE= NENHUM
+
+DIRTY_TRACKING_AFTER= JSON.stringify diff
+SPA_NAV_GUARD_AFTER= useBlocker (react-router-dom v6.30.1)
+BROWSER_EXIT_GUARD_AFTER= beforeunload event
+DRAFT_AFTER= localStorage (conexao_prestador_draft)
+
+DRAFT_STORAGE= localStorage
+DRAFT_KEY_STRATEGY= conexao_prestador_draft (chave unica)
+
+CREATE_DRAFT_RECOVERY= loadDraft() no mount
+EDIT_UNSAVED_PROTECTION= useBlocker + beforeunload
+
+DRAFT_CLEARED_AFTER_CONFIRMED_SAVE=YES
+DRAFT_PRESERVED_AFTER_FAILED_SAVE=YES
+
+BINARY_FILES_STORED_IN_DRAFT=NO
+PASSWORDS_STORED_IN_DRAFT=NO
+TOKENS_STORED_IN_DRAFT=NO
+
+AUTOMATIC_DATABASE_SAVE=NO
+PRODUCTION_WRITES=0
+
+TESTS_TOTAL=12
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=12
+TESTS_BLOCKED=0
+TESTS_PASS=12
+TESTS_FAIL=0
+
+================================================================================
+CAD-PERSIST-04-PRESTADOR-DRAFT-NAV-GUARD = PASS (STATIC)
+================================================================================

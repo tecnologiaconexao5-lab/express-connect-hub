@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { confirmAction } from '@/lib/confirmDialog'
 import { motion } from 'framer-motion'
 import { Search, Truck, MapPin, Phone, Star, Filter, Plus, ChevronRight, Users, Target, Shield, Award, Eye, Pen, Activity, Ban, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,6 +14,7 @@ import { ScoreMeter } from '../components/score/ScoreMeter'
 import { DetalhesPrestadorSheet } from '../components/DetalhesPrestadorSheet'
 import { usePrestadores } from '../hooks/usePrestadores'
 import { useRecrutamentoStore } from '../store/recrutamentoStore'
+import { mascararTelefone } from '@/lib/masking'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
 import { formatCurrency, formatDate, statusPrestadorColor, statusLabel, cn } from '../utils/cn'
 import type { StatusPrestador, OrigemCadastro, Prestador } from '../types/recrutamento'
@@ -130,7 +132,7 @@ export function PaginaPrestadores() {
                     {d.tipo === 'ausente' ? '— sem registro operacional' : `— status "${d.statusOperacional}" (esperado: "${d.statusRecrutamento === 'bloqueado' ? 'inativo' : 'ativo'}")`}
                   </span>
                 </div>
-                <span className="shrink-0 text-muted-foreground/40 whitespace-nowrap">{d.telefone}</span>
+                <span className="shrink-0 text-muted-foreground/40 whitespace-nowrap">{mascararTelefone(d.telefone)}</span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -221,7 +223,13 @@ export function PaginaPrestadores() {
               }}
               onRemove={async (id) => {
                 const prestador = prestadores.find(p => p.id === id)
-                if (!window.confirm(`Remover definitivamente ${prestador?.nome ?? 'prestador'}?`)) return
+                if (!(await confirmAction({
+                  title: 'Remover prestador',
+                  description: `Remover definitivamente ${prestador?.nome ?? 'prestador'}? Esta ação não pode ser desfeita.`,
+                  confirmText: 'Remover',
+                  cancelText: 'Cancelar',
+                  variant: 'destructive',
+                }))) return
                 try {
                   await remover(id)
                   toast.success('Prestador removido')

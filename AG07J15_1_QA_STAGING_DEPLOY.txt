@@ -1,0 +1,325 @@
+═══════════════════════════════════════════════════════════════════════════════
+       AG-07J.15.1 — RELATÓRIO: QA/STAGING DEPLOY
+═══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS
+
+REDMI:
+NÃO
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                    DESCOBERTA DE AMBIENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+STAGING ENCONTRADO:
+NÃO
+
+PROJECT REF STAGING:
+N/A
+
+DIFERENTE DE PRODUÇÃO:
+N/A
+
+Evidence:
+  • .env → VITE_SUPABASE_URL=https://uwrvzsjtpgaifkktpepn.supabase.co (produção)
+  • .env → DATABASE_URL=...uwrvzsjtpgaifkktpepn... (produção)
+  • .env → VITE_SUPABASE_PROJECT_ID= (vazio — sem projeto QA configurado)
+  • .env → SUPABASE_SERVICE_ROLE_KEY= (vazio)
+  • supabase/config.toml → project_id = "express-connect-hub" (produção)
+  • Nenhum .env.qa, .env.staging, .env.homolog existe
+  • Nenhuma referência a "tms-qa" em configurações de deploy
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PLANO QA EXISTENTE (NÃO EXECUTADO)
+═══════════════════════════════════════════════════════════════════════════════
+
+Um plano de ambiente QA foi criado anteriormente:
+
+  Arquivo: docs/qa/PLANO_AMBIENTE_QA.md
+  Status:  ⏳ Pendente de execução (nunca executado)
+  Nome proposto: tms-qa
+  Tier: Pro (USD 25/mês)
+  Região: sa-south-1 (São Paulo)
+
+O plano detalha 19 seções (banco, auth, storage, edge functions, RLS,
+migrations, secrets, usuários QA, tenant QA, bloqueios, seed, limpeza,
+backup, rollback) mas NENHUMA etapa foi executada.
+
+═══════════════════════════════════════════════════════════════════════════════
+                    STAGING NÃO EXISTE
+═══════════════════════════════════════════════════════════════════════════════
+
+NÃO é possível executar migrations neste momento.
+
+Requer criação manual/autorizada de projeto Supabase separado.
+
+═══════════════════════════════════════════════════════════════════════════════
+              PASSOS MÍNIMOS PARA CRIAR O AMBIENTE QA
+═══════════════════════════════════════════════════════════════════════════════
+
+ETAPA 1 — Criar projeto Supabase QA (requer acesso ao Dashboard)
+───────────────────────────────────────────────────────────────────
+
+  1. Acessar https://supabase.com/dashboard/new
+  2. Organization: selecionar existente ou criar "Conexão Express"
+  3. Project name: tms-qa
+  4. Database password: gerar senha forte (24+ caracteres)
+  5. Region: South America (São Paulo) — sa-south-1
+  6. Plan: Free (suficiente para QA) ou Pro (se Edge Functions necessárias)
+  7. Aguardar criação (~2 minutos)
+  8. Anotar:
+     • Project Ref: ________________ (diferente de uwrvzsjtpgaifkktpepn)
+     • Supabase URL: https://________________.supabase.co
+     • Anon Key: eyJ...
+     • Service Role Key: sb_secret_...
+     • Pooler URL: postgresql://postgres.________________:senha@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+
+ETAPA 2 — Criar .env.qa no repositório
+───────────────────────────────────────
+
+  Copiar .env e substituir:
+
+  VITE_SUPABASE_URL=https://________________.supabase.co
+  VITE_SUPABASE_ANON_KEY=<anon key do QA>
+  VITE_SUPABASE_PROJECT_ID=<project ref do QA>
+  SUPABASE_SERVICE_ROLE_KEY=<service role key do QA>
+  DATABASE_URL=postgresql://postgres.________________:senha@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+
+  Manter inalteradas:
+  VITE_MAPBOX_ACCESS_TOKEN (mesmo token)
+  VITE_TMS_EDGE_INTERNAL_TOKEN (mesmo token)
+  Flags de feature (false por padrão)
+
+ETAPA 3 — Linkar Supabase CLI ao projeto QA
+────────────────────────────────────────────
+
+  npx supabase link --project-ref <project-ref-qa>
+
+  Verificar:
+  npx supabase db remote status
+
+ETAPA 4 — Aplicar migrations na ordem correta
+──────────────────────────────────────────────
+
+  Ordem (sem conflitos, independentes):
+
+  1. Todas as migrations anteriores (base do schema)
+     → npx supabase db push (aplica todas as migrations pendentes do diretório migrations/)
+     OU
+     → Copiar schema completo de produção via pg_dump e aplicar no QA
+
+  2. AG-07F (gate elegibilidade operacional)
+     → npx supabase migration new ag07f_gate_elegibilidade_operacional
+     → Copiar conteúdo de 20260822_ag07f_gate_elegibilidade_operacional.sql
+     → npx supabase migration up
+
+  3. AG-07J.13 (correção bypass aceite rede)
+     → npx supabase migration new j13_fix_aceitar_rede_bypass
+     → Copiar conteúdo de 20260825_j13_fix_aceitar_rede_bypass.sql
+     → npx supabase migration up
+
+  NOTA: Se o QA for criado do zero, aplicar TODAS as migrations do diretório
+  na ordem cronológica antes de AG-07F/AG-07J.13.
+
+ETAPA 5 — Criar dados mínimos de QA
+────────────────────────────────────
+
+  Usar scripts de seed existentes:
+  • Seed de clientes (CNPJ 11.222.333/0001-81 da Missão 136-A)
+  • Seed de prestadores (com liberado_app=true)
+  • Seed de veículos (com capacidade_kg, capacidade_m3, tipo)
+  • Usuários QA (5 corporativos da Missão 50 — senhas reais)
+
+ETAPA 6 — Configurar Auth
+──────────────────────────
+
+  • Site URL: http://localhost:8800
+  • Redirect URLs: http://localhost:8800/**
+  • Email confirmation: false (para testes)
+  • CAPTCHA: desabilitado (para Playwright)
+
+ETAPA 7 — Validar
+──────────────────
+
+  • npx supabase db remote status (verificar migrations)
+  • Testar login com cada perfil
+  • Verificar RPCs (f_buscar_operacoes_motorista, f_aceitar_oportunidade_rede)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PLANO DE DEPLOY EM STAGING
+═══════════════════════════════════════════════════════════════════════════════
+
+ORDEM CONFIRMADA:
+
+  1. Schema base (todas as migrations anteriores a AG-07F)
+  2. AG-07F — 20260822_ag07f_gate_elegibilidade_operacional.sql
+  3. AG-07J.13 — 20260825_j13_fix_aceitar_rede_bypass.sql
+
+DEPENDÊNCIAS:
+  • AG-07F e AG-07J.13 são independentes (tocam RPCs diferentes)
+  • AMBAS precisam do schema base (tabela prestadores, alocacoes_escala, etc.)
+  • Nenhuma migration entre 20260822-20260825 conflita
+
+═══════════════════════════════════════════════════════════════════════════════
+                    DEPLOY
+═══════════════════════════════════════════════════════════════════════════════
+
+AG-07F APLICADA EM STAGING:
+NÃO (staging não existe)
+
+AG-07J.13 APLICADA EM STAGING:
+NÃO (staging não existe)
+
+OUTRAS MIGRATIONS EXECUTADAS:
+NENHUMA
+
+BANCO ALTERADO:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PROVA PÓS-DEPLOY
+═══════════════════════════════════════════════════════════════════════════════
+
+AG-07F:
+NÃO EXECUTÁVEL (staging não existe)
+
+AG-07J.13:
+NÃO EXECUTÁVEL (staging não existe)
+
+PROVA INTEGRADA:
+NÃO EXECUTÁVEL (staging não existe)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    RPC AG-07F (VALIDAÇÃO LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+CONTRATO JSONB:
+PASS (returns { success, operacoes, total })
+
+LIBERADO_FALSE BLOQUEIA NOVAS:
+PASS
+
+EM_ROTA PRESERVADA:
+PASS
+
+OCORRENCIA PRESERVADA:
+PASS
+
+CANCELADA/RECUSADA OCULTAS:
+PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+                    RPC AG-07J.13 (VALIDAÇÃO LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+STATUS:
+PASS (7 gates validados via testes)
+
+LIBERADO_APP:
+PASS
+
+TIPO:
+PASS
+
+CAPACIDADE KG:
+PASS
+
+CUBAGEM:
+PASS
+
+TÉRMICO:
+PASS
+
+AJUDANTE:
+PASS
+
+ATOMICIDADE:
+PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+                    REGRESSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+TESTES:
+891/891 PASS
+
+TYPESCRIPT:
+0 erros
+
+═══════════════════════════════════════════════════════════════════════════════
+                    CONTROLE
+═══════════════════════════════════════════════════════════════════════════════
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+DADOS REAIS DESTRUÍDOS:
+NÃO
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                    ROLLBACK NECESSÁRIO
+═══════════════════════════════════════════════════════════════════════════════
+
+NÃO (deploy não executado)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PRONTO PARA PEDIR AUTORIZAÇÃO DE PRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+NÃO
+
+Motivo: sem ambiente QA, não foi possível validar as migrations em
+separado da produção. O deploy em produção continua bloqueado pela
+STOP CONDITION original (AG-07J.15).
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PRÓXIMA MISSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+OPÇÃO A — Criar ambiente QA manualmente (seguir Etapas 1-7 acima)
+          e então retomar AG-07J.15.1 para deploy + prova integrada.
+
+OPÇÃO B — Solicitar autorização explícita para deploy em produção
+          (bypass da STOP CONDITION com aprovação humana documentada).
+
+OPÇÃO C — Executar migrations via Supabase Dashboard (SQL Editor)
+          com credenciais de service_role, sem criar projeto separado
+          (mantém single-environment, mas permite prova integrada).
+
+═══════════════════════════════════════════════════════════════════════════════
+                    DECISÃO FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+D — DEPLOY BLOQUEADO (SEM AMBIENTE QA)
+
+Justificativa:
+  • Nenhum ambiente QA/Staging identificado no repositório
+  • Plano QA existe (docs/qa/PLANO_AMBIENTE_QA.md) mas nunca foi executado
+  • Único projeto Supabase configurado é produção (uwrvzsjtpgaifkktpepn)
+  • Criar projeto Supabase requer ação manual (Dashboard, billing, credenciais)
+  • Agente não pode criar projetos Supabase remotamente
+  • Produção não pode ser usada como substituto silencioso
+
+Ações pendentes do usuário:
+  1. Criar projeto Supabase "tms-qa" via Dashboard (ou CLI com credenciais)
+  2. Preencher .env.qa com credenciais do novo projeto
+  3. Aplicar migrations (todas + AG-07F + AG-07J.13)
+  4. Criar dados mínimos de QA (seeds)
+  5. Retomar esta missão para deploy + prova integrada
+
+═══════════════════════════════════════════════════════════════════════════════
+                    FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

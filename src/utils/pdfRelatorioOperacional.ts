@@ -5,9 +5,13 @@
 // (foundation + consolidatedReports).
 //
 // Mantem compatibilidade total com todos os callers.
+//
+// Novas funcoes *Buffer para automacao (Etapa 6):
+// - Retornam Uint8Array em vez de fazer download no navegador
+// - Mesma estrutura, mesmo conteudo, apenas mudam o output
 // ============================================================
 
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   drawCoverPage,
@@ -34,16 +38,16 @@ interface PDFReportOptions {
   usuario?: string;
   colunas: string[];
   linhas: (string | number)[][];
-  totais?: { label: string; valor: string }[];
+  totais?: { label: string; valor: string; moeda?: boolean }[];
   rodape?: string;
   orientacao?: "portrait" | "landscape";
 }
 
 // ===================== GERAL: RELATORIO OPERACIONAL =====================
 
-export const gerarPDFRelatorioOperacional = async (options: PDFReportOptions): Promise<void> => {
-  console.info("[PDF_REAL] gerarPDFRelatorioOperacional -> usando NOVO sistema profissional (foundation)");
-
+async function _gerarPDFRelatorioOperacionalDoc(
+  options: PDFReportOptions
+): Promise<jsPDF> {
   const doc = new jsPDF(options.orientacao || "landscape", "mm", "a4");
   const page = getPageSetup(doc, 12);
 
@@ -85,28 +89,70 @@ export const gerarPDFRelatorioOperacional = async (options: PDFReportOptions): P
       drawContentPageHeader(doc, page, logo);
     }
 
-    const financeLines: FinancialLine[] = options.totais.map((t) => ({
-      label: t.label,
-      value: Number.parseFloat(t.valor.replace(/[^0-9,-]/g, "").replace(",", ".")) || 0,
-    }));
-    const lastItem = options.totais[options.totais.length - 1];
-    if (financeLines.length > 0) {
-      financeLines[financeLines.length - 1].highlight = true;
-    }
-
-    drawFinancialComposition(doc, page.margin, y, page.contentWidth, "RESUMO OPERACIONAL", financeLines.map((l, i) => ({
-      ...l,
-      value: (() => {
-        const v = options.totais![i]?.valor || "0";
-        const n = Number.parseFloat(v.replace(/[^0-9,-]/g, "").replace(",", "."));
-        return Number.isFinite(n) ? n : 0;
-      })(),
-      label: options.totais![i]?.label || l.label,
-    })));
+    // TMS-S04C — "moeda:false" preserva o valor como está (quantidade, sem R$).
+    // Quantidades NUNCA recebem formatação monetária (Total de Clientes/Operações).
+    drawResumoTotais(doc, page.margin, y, page.contentWidth, options.totais);
   }
 
   drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
+  return doc;
+}
 
+/** Renderiza o RESUMO de totais respeitando o tipo de cada linha (moeda ou quantidade). */
+function drawResumoTotais(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  totais: { label: string; valor: string; moeda?: boolean }[]
+) {
+  const padding = 5;
+  const lineH = 7;
+  const titleH = 9;
+  const totalH = titleH + totais.length * lineH + padding * 2;
+
+  doc.setFillColor(250, 251, 253);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.25);
+  doc.rect(x, y, w, totalH, "FD");
+
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 26, 46);
+  doc.text("RESUMO OPERACIONAL", x + padding, y + padding + 5);
+
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.15);
+  doc.line(x + padding, y + titleH + 2, x + w - padding, y + titleH + 2);
+
+  const valueX = x + w - padding;
+  let ly = y + titleH + padding;
+
+  totais.forEach((t, i) => {
+    const isLast = i === totais.length - 1;
+    const curY = ly + 4;
+
+    if (isLast) {
+      doc.setDrawColor(249, 115, 22);
+      doc.setLineWidth(0.5);
+      doc.line(x + padding, ly, valueX, ly);
+    }
+
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", isLast ? "bold" : "normal");
+    doc.setTextColor(isLast ? 15 : 71, isLast ? 26 : 85, isLast ? 46 : 105);
+    doc.text(t.label, x + padding, curY);
+
+    const valor = t.moeda === false ? t.valor : fmtBRL(parseFloat(t.valor.replace(/[^0-9,-]/g, "").replace(",", ".")) || 0);
+    doc.text(valor, valueX, curY, { align: "right" });
+
+    ly += lineH;
+  });
+}
+
+export const gerarPDFRelatorioOperacional = async (options: PDFReportOptions): Promise<void> => {
+  console.info("[PDF_REAL] gerarPDFRelatorioOperacional -> usando NOVO sistema profissional (foundation)");
+  const doc = await _gerarPDFRelatorioOperacionalDoc(options);
   const filename = options.titulo
     .replace(/[^a-z0-9]/gi, "_")
     .toLowerCase()
@@ -115,9 +161,14 @@ export const gerarPDFRelatorioOperacional = async (options: PDFReportOptions): P
   doc.save(`${filename}.pdf`);
 };
 
+export const gerarPDFRelatorioOperacionalBuffer = async (options: PDFReportOptions): Promise<Uint8Array> => {
+  const doc = await _gerarPDFRelatorioOperacionalDoc(options);
+  return new Uint8Array(doc.output("arraybuffer"));
+};
+
 // ===================== PRESTADOR: REPASSE =====================
 
-export const gerarPDFRepassePrestador = async (
+async function _gerarPDFRepassePrestadorDoc(
   data: any[],
   filtros: any,
   resumo: {
@@ -128,9 +179,7 @@ export const gerarPDFRepassePrestador = async (
     valorAprovado: number;
   },
   usuario?: string
-) => {
-  console.info("[PDF_REAL] gerarPDFRepassePrestador -> usando NOVO sistema profissional (foundation)");
-
+): Promise<jsPDF> {
   const doc = new jsPDF("landscape", "mm", "a4");
   const page = getPageSetup(doc, 12);
   const periodoStr = `${fmtDate(filtros.dataInicial)} a ${fmtDate(filtros.dataFinal)}`;
@@ -164,14 +213,11 @@ export const gerarPDFRepassePrestador = async (
   let sumAdiant = 0;
   let sumConvenio = 0;
 
-  // Totais serão calculados durante o .map das linhas para evitar duplicação
-
   const rows = data.map((item) => {
     const fn = item.financeiro || {};
     const metadata = item.metadata?.financeiroPrestador || {};
     const pTotals = item.metadata?.totals?.prestador || {};
 
-    // Ajuste de Data
     let dateStr = item.data_finalizacao || item.data_escala || item.data || item.created_at;
     let formattedDate = "-";
     if (dateStr) {
@@ -199,7 +245,7 @@ export const gerarPDFRepassePrestador = async (
     const calcLiquido = vBase + vKm + vEspera + vPedagio + vReemb - vDesc;
     const diff = vLiquido - calcLiquido;
     let vOutros = 0;
-    
+
     if (diff > 0.01) {
       const hasKmIndication = metadata.kmExcedente || metadata.km_excedente || metadata.valorKm || pTotals.detalhes?.km || item.metadata?.totals?.cliente?.detalhes?.km;
       if (hasKmIndication) {
@@ -235,8 +281,6 @@ export const gerarPDFRepassePrestador = async (
     ];
   });
 
-  const subtotalAprovado = sumBase + sumKm + sumEspera + sumPedagio + sumReemb;
-
   const metricValues = [
     { label: "Operações", value: String(resumo.qtdOperacoes) },
     { label: "Valor Base Operações", value: fmtBRL(sumBase) },
@@ -249,12 +293,8 @@ export const gerarPDFRepassePrestador = async (
   ];
   y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "RESUMO DO PRESTADOR", metricValues);
 
-  // Tabela
   y = drawSectionTitle(doc, page.margin, y, "DETALHAMENTO DAS OPERAÇÕES", page);
   y += 2;
-
-
-
 
   y = drawCorporateTable(doc, page, logo, {
     startY: y,
@@ -262,13 +302,12 @@ export const gerarPDFRepassePrestador = async (
     rows,
     fontSize: 6.5,
     headerFontSize: 7,
-    columnWidths: { 0: 20, 1: 30, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22 }, // No widths for 2 and 3, let them auto-fill
+    columnWidths: { 0: 20, 1: 30, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22 },
     columnAligns: { 0: "center", 1: "center", 4: "right", 5: "right", 6: "right", 7: "right", 8: "right", 9: "right", 10: "right" },
     onPageDraw: drawContentPageHeader,
   });
   y += 6;
 
-  // Composição financeira
   if (y > 145) {
     doc.addPage();
     y = 35;
@@ -283,7 +322,7 @@ export const gerarPDFRepassePrestador = async (
   const totalPedReemb = sumPedagio + sumReemb;
   if (totalPedReemb > 0) financeLines.push({ label: "Pedágios/Reembolsos", value: totalPedReemb });
   if (sumOutros > 0) financeLines.push({ label: "Outros Adicionais", value: sumOutros });
-  
+
   const totalDescontos = sumDesc + sumAdiant + sumConvenio;
   if (totalDescontos > 0) financeLines.push({ label: "Descontos", value: -totalDescontos });
 
@@ -297,19 +336,50 @@ export const gerarPDFRepassePrestador = async (
   );
 
   drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
+  return doc;
+}
+
+export const gerarPDFRepassePrestador = async (
+  data: any[],
+  filtros: any,
+  resumo: {
+    totalRepasses: number;
+    qtdOperacoes: number;
+    mediaOperacional: number;
+    pendencias: number;
+    valorAprovado: number;
+  },
+  usuario?: string
+) => {
+  console.info("[PDF_REAL] gerarPDFRepassePrestador -> usando NOVO sistema profissional (foundation)");
+  const doc = await _gerarPDFRepassePrestadorDoc(data, filtros, resumo, usuario);
   doc.save("demonstrativo_pagamento_prestadores.pdf");
+};
+
+export const gerarPDFRepassePrestadorBuffer = async (
+  data: any[],
+  filtros: any,
+  resumo: {
+    totalRepasses: number;
+    qtdOperacoes: number;
+    mediaOperacional: number;
+    pendencias: number;
+    valorAprovado: number;
+  },
+  usuario?: string
+): Promise<Uint8Array> => {
+  const doc = await _gerarPDFRepassePrestadorDoc(data, filtros, resumo, usuario);
+  return new Uint8Array(doc.output("arraybuffer"));
 };
 
 // ===================== FATURAMENTO DETALHADO =====================
 
-export const gerarPDFFaturamentoDetalhado = async (
+async function _gerarPDFFaturamentoDetalhadoDoc(
   cliente: { nome: string; cnpj: string },
   periodo: string,
   operacoes: any[],
   usuario?: string
-) => {
-  console.info("[PDF_REAL] gerarPDFFaturamentoDetalhado -> usando NOVO sistema profissional (foundation)");
-
+): Promise<jsPDF> {
   const doc = new jsPDF("landscape", "mm", "a4");
   const page = getPageSetup(doc, 12);
 
@@ -338,7 +408,6 @@ export const gerarPDFFaturamentoDetalhado = async (
   }, 0);
   const totalFaturado = subtotalFrete + totalPedagio + totalAdicionais - totalDescontos;
 
-  // CAPA
   const logo = await drawCoverPage(doc, {
     documentType: "RELATORIO DE FATURAMENTO",
     documentNumber: cliente.nome,
@@ -349,7 +418,6 @@ export const gerarPDFFaturamentoDetalhado = async (
     via: "Cliente",
   });
 
-  // PAGINA 1
   let y = 85;
 
   const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
@@ -359,7 +427,6 @@ export const gerarPDFFaturamentoDetalhado = async (
     });
   };
 
-  // Metricas corporativas
   const infoFields = [
     { label: "Total de Operações", value: String(totalOperacoes) },
     { label: "KM Rodados", value: `${totalKM} km` },
@@ -370,7 +437,6 @@ export const gerarPDFFaturamentoDetalhado = async (
   ];
   y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "RESUMO OPERACIONAL", infoFields);
 
-  // Tabela
   y = drawSectionTitle(doc, page.margin, y, "DETALHAMENTO DAS OPERACOES", page);
   y += 2;
 
@@ -426,7 +492,7 @@ export const gerarPDFFaturamentoDetalhado = async (
     rows,
     fontSize: 7.5,
     headerFontSize: 8,
-    columnWidths: { 0: 18, 1: 18, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22, 11: 22 }, // No widths for 2 and 3, let them auto-fill
+    columnWidths: { 0: 18, 1: 18, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22, 11: 22 },
     columnAligns: { 0: "center", 1: "center", 4: "center", 5: "center", 6: "center", 7: "right", 8: "right", 9: "right", 10: "right", 11: "right" },
     onPageDraw: (d, pg, l) => {
       drawContentPageHeader(d, pg, l);
@@ -434,7 +500,6 @@ export const gerarPDFFaturamentoDetalhado = async (
   });
   y += 6;
 
-  // Composicao
   if (y > 145) {
     doc.addPage();
     y = 35;
@@ -452,17 +517,37 @@ export const gerarPDFFaturamentoDetalhado = async (
   drawFinancialComposition(doc, page.margin, y, page.contentWidth, "COMPOSICAO FINANCEIRA", financeLines);
 
   drawObservations(doc, page.margin, y + 40, page.contentWidth,
-    "Este relatorio reflete os dados reais da escala operacional e adicionais do periodo. " +
+    "Este relatorio reflete os dados reais da programação operacional e adicionais do periodo. " +
     "Em caso de divergencias, manifestar-se em ate 48 horas uteis para ajustes no fechamento do faturamento."
   );
 
   drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
+  return doc;
+}
 
+export const gerarPDFFaturamentoDetalhado = async (
+  cliente: { nome: string; cnpj: string },
+  periodo: string,
+  operacoes: any[],
+  usuario?: string
+) => {
+  console.info("[PDF_REAL] gerarPDFFaturamentoDetalhado -> usando NOVO sistema profissional (foundation)");
+  const doc = await _gerarPDFFaturamentoDetalhadoDoc(cliente, periodo, operacoes, usuario);
   const filename = `relatorio_operacional_${cliente.nome.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.pdf`;
   doc.save(`${filename}.pdf`);
 };
 
-// Re-export headers/footers para compatibilidade com codigo legado
+export const gerarPDFFaturamentoDetalhadoBuffer = async (
+  cliente: { nome: string; cnpj: string },
+  periodo: string,
+  operacoes: any[],
+  usuario?: string
+): Promise<Uint8Array> => {
+  const doc = await _gerarPDFFaturamentoDetalhadoDoc(cliente, periodo, operacoes, usuario);
+  return new Uint8Array(doc.output("arraybuffer"));
+};
+
+// ===================== RE-EXPORTS LEGADO =====================
 
 export const drawHeaderNavy = (
   doc: any,

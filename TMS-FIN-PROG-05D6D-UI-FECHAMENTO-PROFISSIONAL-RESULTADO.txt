@@ -1,0 +1,153 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6D-UI-FECHAMENTO-PROFISSIONAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS local apontando para Supabase PROD
+MODELO: DeepSeek V4.1 Flash
+TIPO: ajuste de UI (filtros/paginacao/data individual). SEM migration. SOMENTE leitura.
+RESULTADO: PASS (codigo) — periodo pela data do servico, data individual no detalhe,
+           filtros no conjunto completo, paginacao real, cards nao page-only.
+           Nenhuma operacao financeira executada. Screenshots pendentes de login ADM.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/financeiro/PagamentoPrestadores.tsx  (unico arquivo de produto)
+- (apoio temp, nao versionado) _05d6d_shots.cjs — harness de screenshots headed
+NENHUMA migration. NENHUMA alteracao de banco.
+
+--------------------------------------------------------------------------------
+2. REGRA TEMPORAL USADA
+--------------------------------------------------------------------------------
+A filtragem de periodo usa a DATA DO SERVICO (canonica):
+  Visao do Periodo: pagamentos_prestadores.periodo_inicio/periodo_fim (sobreposicao),
+    que apos 05D.6C/6C.1 = data operacional real (data_escala / ordens_servico.data).
+  Relatorio Financeiro: data do servico por linha (l.periodoInicio, = periodo_inicio).
+NAO se usa created_at nem CURRENT_DATE para o periodo.
+
+--------------------------------------------------------------------------------
+3. FILTROS IMPLEMENTADOS (operam no conj. COMPLETO antes de paginar)
+--------------------------------------------------------------------------------
+Visao do Periodo (fetchOss) — ja existentes e preservados:
+  mes/periodo, data inicio, data fim, prestador, cliente(UI), origem/tipo, busca.
+Relatorio Financeiro — filtros reais aplicados em linhasRelatorioFiltradas:
+  data inicial/final (periodoInicio), prestador (nome resolvido do id),
+  origem/tipo, STATUS (novo select), busca (prestador).
+  cliente: select existe, mas as linhas do relatorio nao carregam cliente
+  (limitacao documentada em R2).
+CSV/Impressao passam a usar o conjunto FILTRADO.
+
+--------------------------------------------------------------------------------
+4. REGRA DOS CARDS (nao page-only)
+--------------------------------------------------------------------------------
+- Total titulos no periodo = ossFiltrados.length (conjunto completo filtrado)
+- Prestadores no periodo = Object.keys(ossAgrupadas).length (do conjunto filtrado)
+- Total a pagar = totalGeral (soma do conjunto filtrado)
+- Pagamentos confirmados = ossFiltrados.filter(status==='pago').length
+  (ANTES: pagamentos.filter(...) — conjunto diferente; agora alinhado ao da tabela)
+Card e tabela da Visao do Periodo partilham o MESMO conjunto (ossFiltrados).
+
+--------------------------------------------------------------------------------
+5. PAGINACAO (padrao PaginationBar do sistema)
+--------------------------------------------------------------------------------
+- Importado @/components/ui/PaginationBar (Anterior + 1 2 3 ... + Proxima).
+- Visao do Periodo: sobre prestadorRows (Object.entries(totaisPorPrestador)).
+- Relatorio Financeiro: sobre linhasRelatorioFiltradas.
+- pageSize = 25 (padrao do sistema). Busca/filtros/ordenacao ANTES do slice.
+- Reset de pagina ao mudar filtros (dataInicio/dataFim/prestador/origem/busca/status).
+
+--------------------------------------------------------------------------------
+6. MODAL "DETALHES DO FECHAMENTO"
+--------------------------------------------------------------------------------
+- Nova linha "PERIODO SELECIONADO: DD/MM/AAAA a DD/MM/AAAA" no topo.
+- Nova coluna "Data" (primeira) exibindo a data operacional de cada servico
+  (os.data = periodo_inicio). Ordem: Data | OS | Servico | Pedagio | Adicional.
+- Removido o corte .slice(0,10): todos os servicos do prestador no periodo sao listados.
+- Mantidos Reembolso/Bonus/Desconto/Valor liquido/Gerar Fechamento (inalterados).
+- Data ausente => rotulo "Data nao determinada" (nao inventa data).
+
+--------------------------------------------------------------------------------
+7. TRATAMENTO DOS INDETERMINADOS / TESTE / AGREGADOS
+--------------------------------------------------------------------------------
+- TESTE/HML: fetchOss mantem .eq("is_teste", false) — nao inflam indicadores reais.
+- AGREGADOS (fechamento): fetchOss passa a excluir .neq("tipo_pagamento","fechamento")
+  — evita duplicar os servicos individuais nos totais.
+- INDETERMINADOS (21, sem data canonica): NAO sao alterados. Quando a data do servico
+  nao existe, o detalhe mostra "Data nao determinada" (sinal visual minimo) em vez de
+  incluir silenciosamente uma data inventada. Pendencias de saneamento permanecem.
+
+--------------------------------------------------------------------------------
+8. PROVA VISAO x RELATORIO
+--------------------------------------------------------------------------------
+Ambas passam a usar a MESMA regra temporal (data do servico). Diferencas LEGITIMAS:
+  - Visao do Periodo: agrega por PRESTADOR (1 linha/prestador) via sobreposicao de
+    intervalo [periodo_inicio, periodo_fim].
+  - Relatorio Financeiro: lista SERVICO a servico (1 linha/registro) e inclui os
+    lancamentos manuais; agora re-filtrados pelo periodo (nao inflam mais fora do mes).
+  - Exclusoes iguais: is_teste=false, status<>cancelado; Visao tambem exclui agregados.
+Nao foram forcados numeros iguais (propositos diferentes). Ver limitacao R2 (cliente).
+
+--------------------------------------------------------------------------------
+9. SCREENSHOTS (PARTE 7)
+--------------------------------------------------------------------------------
+Navegador VISIVEL (Chromium headed, TMS local -> PROD) iniciado; aguardando LOGIN ADM
+MANUAL (sessao salva expirada; sem credenciais no ambiente — mesmo procedimento da 05D.2).
+Apos o login, o harness captura automaticamente em test-results/fin_prog05d6d/:
+  01-visao-periodo.png
+  02-detalhes-fechamento.png
+  03-relatorio-financeiro.png
+  04-filtro-prestador.png
+  05-paginacao.png
+Progresso: test-results/fin_prog05d6d/progress.log (atualmente: "Aguardando LOGIN ADM").
+Nenhum botao financeiro e clicado (Gerar Fechamento/Aprovar/Ordem/Lote/Pagar/CNAB/iFi).
+STATUS: captura PENDENTE DE LOGIN (execucao humana na tela).
+
+--------------------------------------------------------------------------------
+10. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+- vitest (subset financeiro + layout financeiro): 7 arquivos / 193 testes PASS.
+- npm run build: OK — "built in 59.05s".
+- tsc -p tsconfig.app.json --noEmit: EXIT 2 — 750 erros PRE-EXISTENTES (mesmo total do
+  baseline; NENHUM erro novo introduzido pelos arquivos alterados).
+- Regressao funcional (scripts): 05D.6C 15/15; 05D.6C.1 15/15; 05D.6B.1 17/17;
+  05D.6B 20/20; 05D.6A 15/15; 05D.4 13/13.
+- PagamentoPrestadores / Financeiro: build + vitest OK.
+
+--------------------------------------------------------------------------------
+11. BANCO ANTES = DEPOIS (nenhuma alteracao)
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | soma valor_liquido 90.229,96 | financeiro_pagar 178 |
+financeiro_baixas 19 | lote_id nao nulo 0.
+Classes: OK 92, DIVERGENTE 0, INDETERMINADO 21, TESTE 23, AGREGADO 1.
+Nenhuma operacao financeira executada nesta missao (somente leitura visual/codigo).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Screenshots pendentes de login ADM (sem credenciais no ambiente) — evidencia visual
+    a concluir na tela.
+R2) Relatorio Financeiro ainda nao filtra por CLIENTE (linhas nao carregam cliente);
+    select de cliente existe mas e inerte nesse relatorio. Melhoria futura: expor
+    cliente_id na linha (helper) para filtro real.
+R3) Filtro de status do relatorio usa status_pagamento textual (valores mistos legados);
+    pode exigir normalizacao futura.
+R4) INDETERMINADOS (21) continuam sem data confiavel — nao tratados alem do rotulo.
+R5) Diferenca de contagens Visao x Relatorio e esperada por proposito (agregado x
+    item) — documentada, nao e bug.
+
+--------------------------------------------------------------------------------
+13. PROXIMA MISSAO RECOMENDADA
+--------------------------------------------------------------------------------
+05D.6D.1 — Fechamento do filtro de cliente no Relatorio Financeiro (expor cliente na
+linha do helper) + captura das evidencias visuais com login real + (opcional)
+ordenacao configuravel por coluna. Depois: sanemanento assistido dos 21 INDETERMINADOS
+(analise caso a caso, com aprovacao).
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6D-UI-FECHAMENTO-PROFISSIONAL-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6D-UI-FECHAMENTO-PROFISSIONAL-RESULTADO.txt
+Tamanho ..: 9474 bytes
+Data .....: 24/09/2026 17:38:02
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6D
+================================================================================

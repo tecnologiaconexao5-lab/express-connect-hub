@@ -1,15 +1,13 @@
 import { useState, useEffect } from "react";
-import { FileText, Upload, CheckCircle, Clock, AlertCircle, Send, MessageCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FileText, CheckCircle, Clock, MessageCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
-} from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { CHECKLIST_RECRUTAMENTO, DOC_KEY_TO_TIPO, STAGE_DOCUMENTACAO } from "@/services/recrutamento/documentosConstants";
 
 interface CandidatoDoc {
   id: string;
@@ -28,14 +26,6 @@ interface Candidato {
   created_at: string;
 }
 
-const DOCS_REQUIRED = [
-  { key: "cnh", label: "CNH", icon: "📱" },
-  { key: "crlv", label: "CRLV", icon: "🚗" },
-  { key: "antt", label: "ANTT", icon: "📋" },
-  { key: "residencia", label: "Comprovante Residência", icon: "🏠" },
-  { key: "bancario", label: "Dados Bancários", icon: "💳" },
-];
-
 export function AcompanhamentoDocs() {
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [documentos, setDocumentos] = useState<Record<string, CandidatoDoc[]>>({});
@@ -48,15 +38,19 @@ export function AcompanhamentoDocs() {
   const loadCandidatosDocumentacao = async () => {
     try {
       const { data: candidatosData } = await supabase
-        .from("candidatos")
-        .select("id, nome_completo, tipo_veiculo, regiao, created_at")
-        .eq("status", "documentacao")
+        .from("recrutamento_candidatos")
+        .select("id, nome as nome_completo, tipo_veiculo, regiao, created_at")
+        .eq("stage", STAGE_DOCUMENTACAO)
         .order("created_at", { ascending: false });
 
-      const { data: docsData } = await supabase
-        .from("candidato_documentos")
-        .select("*")
-        .in("candidato_id", (candidatosData || []).map(c => c.id));
+      const candidatoIds = (candidatosData || []).map(c => c.id);
+
+      const { data: docsData } = candidatoIds.length > 0
+        ? await supabase
+            .from("candidato_documentos")
+            .select("*")
+            .in("candidato_id", candidatoIds)
+        : { data: null };
 
       const docsMap: Record<string, CandidatoDoc[]> = {};
       (docsData || []).forEach(d => {
@@ -76,12 +70,13 @@ export function AcompanhamentoDocs() {
   const getProgresso = (candidatoId: string) => {
     const docs = documentos[candidatoId] || [];
     const enviados = docs.filter(d => d.status === "aprovado").length;
-    return Math.round((enviados / DOCS_REQUIRED.length) * 100);
+    return Math.round((enviados / CHECKLIST_RECRUTAMENTO.length) * 100);
   };
 
   const getDocStatus = (candidatoId: string, docKey: string) => {
     const docs = documentos[candidatoId] || [];
-    const doc = docs.find(d => d.tipo === docKey);
+    const tipoEsperado = DOC_KEY_TO_TIPO[docKey] || docKey;
+    const doc = docs.find(d => d.tipo === tipoEsperado);
     return doc?.status || "pendente";
   };
 
@@ -163,7 +158,7 @@ export function AcompanhamentoDocs() {
                 <Progress value={progresso} className="mb-4" />
 
                 <div className="grid grid-cols-5 gap-2">
-                  {DOCS_REQUIRED.map(doc => {
+                  {CHECKLIST_RECRUTAMENTO.map(doc => {
                     const status = getDocStatus(candidato.id, doc.key);
                     return (
                       <div 

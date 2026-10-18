@@ -1,0 +1,133 @@
+═══════════════════════════════════════════════════════════════════════════════
+       AG-07J.15.1A — RELATÓRIO: VERIFICAÇÃO CLI PARA CRIAÇÃO DE QA
+═══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS — express-connect-hub
+
+REDMI:
+NÃO
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                    RESULTADO DA VERIFICAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+CLI AUTENTICADA:
+SIM
+
+  Versão: 2.101.0 (última: 2.116.0 — desatualizada, mas funcional)
+  Status: autenticada e operacional
+  Último login: válido (projects list retornou dados)
+
+ORGANIZAÇÃO IDENTIFICADA:
+SIM
+
+  ID: dkitbsslspqjsagbevck
+  Nome: tecnologiaconexao5@gmail.com's Org
+  Tipo: organização Supabase (contém 1 projeto)
+
+PROJETOS ACESSÍVEIS:
+1 projeto encontrado
+
+  ┌─────────────────────────────┬──────────────────────────┬─────────────────────┬─────────────────────────┐
+  │ LINKED                      │ ORG ID                   │ REFERENCE ID        │ NAME                    │
+  ├─────────────────────────────┼──────────────────────────┼─────────────────────┼─────────────────────────┤
+  │                             │ dkitbsslspqjsagbevck     │ uwrvzsjtpgaifkktpepn│ conexao-express-tms     │
+  └─────────────────────────────┴──────────────────────────┴─────────────────────┴─────────────────────────┘
+
+  Região: South America (São Paulo) — sa-east-1
+  Criado em: 2026-04-17
+
+PRODUÇÃO:
+uwrvzsjtpgaifkktpepn (conexao-express-tms)
+
+QA JÁ EXISTE:
+NÃO
+
+  Nenhum projeto além de uwrvzsjtpgaifkktpepn foi encontrado na organização.
+
+PROJECT REF DO QA, SE EXISTIR:
+N/A
+
+═══════════════════════════════════════════════════════════════════════════════
+                    VIABILIDADE DE CRIAÇÃO PELO TERMINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+PODE CRIAR QA PELO TERMINAL:
+SIM
+
+  Comando correto (NÃO EXECUTADO):
+
+  npx supabase projects create tms-qa `
+    --org-id dkitbsslspqjsagbevck `
+    --db-password <SENHA_24_CARACTERES> `
+    --region sa-east-1
+
+  Flags disponíveis:
+  --org-id       ✅ conhecido (dkitbsslspqjsagbevck)
+  --db-password  ⚠️  REQUER INPUT DO USUÁRIO (não há no .env nem em config)
+  --region       ✅ sa-east-1 (mesma região da produção)
+  --size         opcional (nano = Free tier, padrão)
+
+EXIGE AÇÃO MANUAL:
+SIM
+
+  Campo obrigatório faltante:
+  • --db-password: senha do banco de dados do novo projeto QA
+    (24+ caracteres, deve ser fornecida pelo usuário)
+    Não está em nenhum arquivo de configuração do repositório.
+
+  Não há outros campos obrigatórios faltantes.
+  A CLI possui todas as credenciais e permissões necessárias.
+
+EXIGE CUSTO/ALTERAÇÃO DE PLANO:
+INDETERMINADO
+
+  Projeto novo é criado no plano Free por padrão.
+  Free tier: 2 projetos gratuitos, 500 MB banco, 1 GB storage.
+  Se precisar de Pro (Edge Functions, mais storage): USD 25/mês.
+  Não é possível determinar pelo terminal se a organização já
+  atingiu o limite de 2 projetos gratuitos.
+
+  Supabase Free tier permite até 2 projetos.
+  Produção já ocupa 1 projeto → QA seria o 2º (dentro do limite Free).
+
+PRÓXIMO PASSO RECOMENDADO:
+
+  O usuário deve fornecer a senha do banco (24+ caracteres) para que
+  o agente execute o comando de criação.
+
+  Ou executar manualmente no Dashboard:
+  https://supabase.com/dashboard/new → projeto "tms-qa", região São Paulo.
+
+  Após criação:
+  1. Anotar project_ref, URL, anon_key, service_role_key
+  2. Criar .env.qa
+  3. Aplicar migrations (todas + AG-07F + AG-07J.13)
+  4. Criar dados de QA (seeds)
+  5. Retomar AG-07J.15.1 para deploy + prova integrada
+
+═══════════════════════════════════════════════════════════════════════════════
+                    RESUMO RÁPIDO
+═══════════════════════════════════════════════════════════════════════════════
+
+  ✅ CLI autenticada
+  ✅ Organização conhecida (dkitbsslspqjsagbevck)
+  ✅ 1 projeto acessível (produção apenas)
+  ✅ QA não existe
+  ✅ Pode criar pelo terminal
+  ⚠️  Precisa de senha do banco (input do usuário)
+  ⚠️  Custo indeterminado (provavelmente Free tier, 0 custo)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

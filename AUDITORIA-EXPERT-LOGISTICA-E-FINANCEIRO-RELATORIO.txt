@@ -1,0 +1,465 @@
+================================================================================
+ AUDITORIA-EXPERT-LOGISTICA-E-FINANCEIRO — RELATORIO DE DIAGNOSTICO
+ TMS Conexao Express | QA Senior — Pente Fino (somente LEITURA)
+================================================================================
+Data...............: 2026-10-13 (America/Sao_Paulo) | Banco em 2026-10-14 01:02 UTC
+Ambiente...........: PRODUCAO (projeto uwrvzsjtpgaifkktpepn / tms.conexaoexpress.com.br)
+Metodo.............: somente leitura — SELECT, pg_get_functiondef, aclexplode,
+                     has_function_privilege, pg_policies. NENHUMA escrita,
+                     NENHUMA migration aplicada, NENHUM arquivo de codigo alterado.
+Workspace..........: express-connect-hub
+Fonte oficial tests.: %TEMP%\opencode\vitest_clean.log (npx vitest run, 68.81s)
+
+--------------------------------------------------------------------------------
+ SUMARIO EXECUTIVO
+--------------------------------------------------------------------------------
+FOUR eixos auditados. 4 criticos, 10 avisos, 7 confirmacoes OK.
+
+CRITICOS (acao imediata):
+  C1  Contas a Pagar: 126/131 linhas (96%) NAO editaveis e 60/131 NAO
+      cancelaveis pela UI — vocabulario de status DB x UI desalinhado.
+  C2  Criar conta com status "Provisao" (unico status alternativo do modal)
+      viola sempre o CHECK ck_fp_status ('provisao' != 'provisorio') -> 23503.
+  C3  f_aceitar_oportunidade_rede exposta a ANON + PUBLIC sem auth.uid(),
+      sem vinculo chamador/prestador e sem gates de elegibilidade. Cadeia
+      de exploit COMPLETA e nao autenticada (policy SELECT anon em
+      rede_oportunidades + EXECUTE anon na RPC). 4 oportunidades 'publicada' vivas.
+  C3b f_registrar_notificacao_app: ANON + PUBLIC, SECURITY DEFINER, sem
+      auth.uid() e com INSERT -> notificacoes forjaveis por qualquer visitante.
+
+AVISOS (W1..W10): suíte mascarada (32/50 falhas por nome de migration errado),
+  tms032 nunca aplicada (REVOKEs ausentes em 5 RPCs), ordens_servico.status
+  sem CHECK com 11 valores divergentes em producao, fila de liquidacao exibindo
+  '#id' em 112/112 linhas, composicao_financeira_os 6/59 divergente, cotacao-frete
+  sem timeout/retry + 7 providers simulados hardcoded, verify_jwt nao verificavel,
+  cadastro 4/40 liberado_app, time-bombs de teste vencidas.
+
+OK CONFIRMADOS (evidencia de producao): formulas M66/M80 unificadas (sane02b
+  aplicado), ck_fp_status VALID, RLS anon bloqueado nas tabelas core, grants e
+  volatilidade corrigidos em f_avancar/f_buscar/RPCs financeiras, auth.uid()
+  presente em f_atualizar_status_parada e f_atualizar_reversa_app.
+
+================================================================================
+ 1. METODO E FONTES
+================================================================================
+1.1 Suite de testes
+    Fonte oficial: %TEMP%\opencode\vitest_clean.log
+      Test Files  17 failed | 142 passed | 1 skipped (160)
+      Tests       43 failed | 2036 passed | 155 skipped (2234)
+      Duration    68.81s
+    O relatorio do vitest contem 50 blocos de falha numerados [N/50]:
+      - "Failed Suites  7"  -> falhas de ARQUIVO (hook beforeAll/readFileSync)
+      - "Failed Tests  43"  -> falhas de teste (16 arquivos)
+    Os 7 "Failed Suites" NAO contam no "43" — total real de registros = 50.
+
+1.2 Producao (read-only)
+    Scripts executados (todos SELECT/DDL-leitura apenas), na raiz em scripts/:
+      _audit_readonly_e4.cjs .. _e4q.cjs  (saidas .out/.json/.sql ao lado)
+      _e4c_live_fn.sql                    (corpos das RPCs capturados)
+      _e4f_f_trg_propagar_financeiro_os.sql / _..._alocacao.sql
+    Consultas-chave: pg_proc/pg_get_functiondef, aclexplode(proacl),
+    has_function_privilege, pg_constraint (ck_fp_status), pg_policies,
+    contagens de financeiro_pagar/ordens_servico/alocacoes_escala/
+    pagamentos_prestadores/composicao_financeira_os/prestadores/veiculos/
+    rede_oportunidades.
+
+1.3 Nota de rastreabilidade
+    supabase_migrations.schema_migrations tem apenas 3 linhas (20260923160000,
+    20260923093000, 20260728) — tracking NAO confiavel. Estado real verificado
+    sempre via pg_get_functiondef / aclexplode / pg_constraint.
+
+================================================================================
+ 2. EIXO 1 — SUITE DE TESTES: 43 FALHAS MAPEADAS (+7 suites)
+================================================================================
+2.1 CLUSTER A — nome de migration errado (25 testes + 7 suites = 32 registros)
+    Causa-raiz unica: testes referenciam "supabase/migrations/YYYYMMDD_*.sql",
+    mas os arquivos reais usam padrao "YYYYMMDDHHMMSS_*.sql" (14 digitos).
+    ENOENT no readFileSync/readFileSync auxiliar -> a assercao cai com conteudo
+    vazio (helper read() captura e retorna '') ou erro de suite.
+
+    Arquivo errado nos testes                        Arquivo real no repo
+    ------------------------------------------------- ---------------------------------------
+    20260831_rec02_tenant_isolation.sql              20260831000001_rec02_tenant_isolation.sql
+    20260902_rec04_mapeamento_fk_candidato_docs.sql  20260902000000_rec04_mapeamento_fk_...sql
+    20260901_rec03_add_legacy_columns.sql            20260901000000_rec03_add_legacy_columns.sql
+    20260822_ag07f_gate_elegibilidade_operacional.sql 20260822000000_ag07f_gate_...sql
+    20260819_a31j111_desconto_prestador.sql          20260819000000_a31j111_desconto_prestador.sql
+
+    Pontos exatos:
+      rec02_consolidacao_entidades.test.ts      8 testes  (linhas 175,188,201,220,249,261,277,327)
+      rec04_documentos_elegibilidade.test.ts    7 testes  (helper read linhas 20-26 + linha 43)
+      rec03_1_fechamento_legacy_candidatos.ts   4 testes  (linha 60; REC-03.1-06 x3 + REC-03.1-14;
+                                                           assercoes "expected 0 / '' / 0 / length 0")
+      ag07j3_gate_rpc_operacoes.test.ts         4 testes + 6 SUITES (MIGRATION_PATH linha 15;
+                                                           loadMigration linha 19)
+      ag07f_gate_elegibilidade.test.ts          1 teste   (linha 168)
+      a31j11_desconto_prestador.test.ts         1 teste   (linha 194)
+      rec03_eliminacao_legacy_candidatos.ts     1 SUITE   (beforeAll linha 42; nao conta no 43)
+
+    Total Cluster A: 25 testes + 7 suites.
+
+2.2 CLUSTER B — time-bomb de dados (3)
+    fin_p0_03_kpis_reais.test.ts (2): snapshots/dados de "2026-09-*" confrontados
+      com hojeSP()='2026-10' (linhas 152-181) — virou time-bomb em 01/10/2026.
+    f0k_recibos.test.ts (1): recibo "REC-202608" vs competencia "REC-202610"
+      (reciboService.ts:105).
+
+2.3 CLUSTER C — drift UI/codigo (9)
+    fin_prog05d1_gate_fatura.test.tsx  4 — asserts desatualizados vs
+      FaturaPanel.tsx:791, 809, 906.
+    rec03_1_fechamento_legacy...ts     3 — REC-03.1-04/-15/-17: espera que
+      AcompanhamentoDocs.tsx ainda leia '.from("candidatos")'; componente ja
+      migrado para recrutamento_candidatos.
+    clientes_02_persistencia_e2e.ts    1 — guarda de ClientesLista.tsx:185.
+    f0l_navegacao_conciliacao_cnab.ts  1 — PagamentoCNAB.tsx:35-45 le
+      'lotes_pagamento' (esquema do teste mudou).
+
+2.4 CLUSTER D — servico mudou por decisao S1/S2 (2)
+    f0e_pagamento_prestadores.test.ts  1 — pagamentoPrestadorService.ts:345,358-380
+      delega ao RPC; '_motivo' ignorado (decisao registrada da missao).
+    fin_sane_02b.test.ts               1 — fechamentoService.ts:327-367 nao faz
+      UPDATE de 'observacao'.
+
+2.5 CLUSTER E — CRLF (1)
+    escala_e2e_05_atomicidade_m66.test.ts:35 — parsing quebra com \r\n no Windows.
+
+2.6 CLUSTER F — fixture mock incompleta (2) — GATES PASSAM
+    ag07f_gate_elegibilidade.test.ts 1 (linhas 147-153) e
+    ag07h_documentos_bloqueios.ts    1 (linhas 175-181): a falha e na
+    auto-criacao de OS do escalaService.ts:393-428 — mock do supabase sem
+    retorno de upsert. Nao e bug de produto.
+
+2.7 CLUSTER G — ambiente (1)
+    adm_app_02d2_sign_real.test.ts — requer bucket/credencial de assinatura.
+
+2.8 Quadro consolidado (43 testes)
+    Cluster                          Testes   Suites   Arquivos
+    A nome de migration errado         25       7        6
+    B time-bomb                         3       0        2
+    C drift UI/codigo                   9       0        4
+    D servico mudou S1/S2               2       0        2
+    E CRLF                              1       0        1
+    F fixture mock incompleta           2       0        2
+    G ambiente                          1       0        1
+    -----------------------------------------
+    TOTAL                             43       7       16 (+1 suite-only)
+
+================================================================================
+ 3. EIXO 2 — FINANCEIRO (composicao_financeira_os, financeiro_pagar,
+             pagamentos_prestadores)
+================================================================================
+
+### C1 [CRITICO] Contas a Pagar: 126/131 linhas nao editaveis, 60 nao cancelaveis
+
+Evidencia quantitativa (PRODUCAO, total 131 linhas em financeiro_pagar):
+    pendente = 60 | aberto = 34 | cancelado = 25 | pago = 7
+    cancelada = 3 | 'a vencer' = 1 | parcial = 1
+
+Mecanismo (round-trip completo, tudo verificado em codigo):
+  1) Leitura: statusDb = mapStatusPagar(r.status)              ContasPagar.tsx:123-133
+     - 'aberto' NAO tem chave no mapa  -> fallback 'a_vencer'
+     - 'pendente' -> 'a_vencer'; 'cancelado' -> 'cancelada'; 'pago' -> 'paga'
+  2) Edicao: abrirEditar copia l.status (ja mapeado) no form  ContasPagar.tsx:953-966
+  3) Salvar: payload SEMPRE envia status                       ContasPagar.tsx:880
+       status: form.status === "a_vencer" ? "a vencer" : form.status
+  4) Service valida se atual !== novo                          pagarService.ts:261-267
+       -> validarStatusAtualizacao -> validarTransicao         pagarService.ts:103-131
+          STATUS_TRANSITIONS nao tem chave 'pendente'          pagarService.ts:80-91
+
+Resultado por status (edicao da despesa):
+    DB 'pendente' (60) -> payload 'a vencer' -> THROWS
+       "Status atual pendente nao reconhecido"
+    DB 'aberto'   (34) -> payload 'a vencer' -> THROWS
+       "Transicao invalida: aberto -> a vencer"  (transicoes de 'aberto' sao
+       apenas aberto/pago/parcial/cancelado — nunca 'a vencer')
+    DB 'cancelado'(25) -> payload 'cancelada' -> THROWS (sai 'cancelado')
+    DB 'pago'     ( 7) -> payload 'paga'      -> THROWS em STATUS_PAGO_SEM_BAIXA
+       (pagarService.ts:94,104-107)
+    DB 'cancelada'( 3), 'a vencer'(1), 'parcial'(1) -> atual==novo -> OK
+    ------------------------------------------------------------------
+    EDITAVEIS: 5/131 (3,8%)   |   BLOQUEADAS: 126/131 (96,2%)
+
+Cancelamento (menu Cancelar, ContasPagar.tsx:941-951 -> cancelarPagavel
+pagarService.ts:443-471, validarTransicao na linha 454):
+    DB 'pendente' (60) -> THROWS "Status atual pendente nao reconhecido"
+    demais (71) OK ou bloqueio intencional de 'pago' (linha 451).
+    ------------------------------------------------------------------
+    NAO CANCELAVEIS pela UI: 60/131 (45,8%)
+
+Impacto de negocio: as 60 linhas 'pendente' sao EXATAMENTE as criadas pelos
+triggers M66/M80 (repasse de OS/alocacao, ver dump
+_e4f_f_trg_propagar_financeiro_*.sql: INSERT ... CASE WHEN concluida/finalizada
+THEN 'aberto' ELSE 'pendente'; verificacao: 60/60 linhas 'pendente' tem os_id).
+Ou seja: o fluxo automatico cria titulos que a UI nao consegue editar nem
+cancelar, e o formulario de edicao de TODAS as demais linhas ('aberto',
+'cancelado', 'pago') tambem quebra. Apenas 5 linhas funcionam.
+
+### C2 [CRITICO] Criacao "Provisao" viola ck_fp_status (unico status alternativo)
+  Modal de nova despesa oferece exatamente 2 opcoes (ContasPagar.tsx:1275-1280):
+      <SelectItem value="a_vencer">A Vencer</SelectItem>   (default, linha 179)
+      <SelectItem value="provisao">Provisao</SelectItem>
+  Payload: status 'a_vencer' -> convertido para 'a vencer' (OK no ck);
+           'provisao' segue AS-IS (ContasPagar.tsx:880).
+  criarPagavel envia status para o banco                          pagarService.ts:203
+  ck_fp_status em PRODUCAO (pg_get_constraintdef, convalidated=true):
+      aberto, pago, vencido, atrasado, cancelado, parcial, pendente,
+      'a vencer', cancelada, provisorio, recebido, renegociado
+      -> NAO existe 'provisao' (existe 'provisorio')
+  Resultado: criar conta como "Provisao" -> violacao de CHECK (SQLSTATE 23503).
+  50% das opcoes do modal de criacao estao quebradas. Observacao correlata:
+  STATUS_TRANSITIONS usa 'provisao' (pagarService.ts:89) e o Select de edicao
+  (linha 1359) tambem — vocabulario triple-divergente UI/service/banco.
+
+### [OK] Formulas de propagacao financeira M66/M80 — CONSISTENTES em producao
+  f_trg_propagar_financeiro_alocacao (M66): len=8378
+    - fin_sane_02b APLICADO: v_valor_liquido = v_valor_prestador +
+      v_pedagio_valor + v_outros_custos  (marcador sane02b = true)
+    - m104a_outros presente (outros_custos = adicional + ajudante - descontos)
+    - INSERT em financeiro_pagar usa valor = v_valor_liquido, ON CONFLICT (os_id)
+  f_trg_propagar_financeiro_os (M80): len=8795
+    - v_valor_liquido = v_valor_prestador + COALESCE(NEW.pedagio,0) + v_outros_custos
+    - outros_custos extraido de JSONB (adicionais/ajudante) - NEW.descontos
+    - check-then-INSERT/UPDATE com guarda status NOT IN pago/parcial/cancelado
+  Formulas convergem (repasse + pedagio + outros). ck_fp_status VALID.
+  Correcoes financeiras das missoes FIN-362/362.2/362.3 confirmadas no live.
+
+### W6 [AVISO] composicao_financeira_os: 6/59 linhas divergentes
+  outros_custos difere de (adicional_valor + ajudante_valor - desconto_valor)
+  em 6 linhas: 25 x5 e 120 x1, com TODAS as colunas componente = 0.
+  JSONB das OS correspondentes: uma tem adicionais=25/pedagio=18.5, outra
+  pedagio=60; as demais NULL. Indica escrita legada/manual (complementacao
+  A31-B) sem preencher as colunas — divergencia de DADO, nao de formula atual.
+
+### W5 [AVISO] pagamentos_prestadores: 112/112 linhas sem os_numero (100%)
+  SELECT count(*) -> os_numero NULL = 112 de 112 (nao apenas "OS da Rede" como
+  documentado na MISSAO LIMPEZA-E-MASSA): a Fila de Liquidacao exibe '#<id8>'
+  para TODAS as linhas. pendentes = 93. O fix do step 4 do E2E (resolver id via
+  join ordens_servico) e generico — mas o label '#' deveria ser resolvido
+  em fonte (preencher os_numero ou exibir numero via join).
+
+================================================================================
+ 4. EIXO 3 — EDGE FUNCTION cotacao-frete + providers
+================================================================================
+
+### W7 [AVISO] Chamada upstream sem timeout/retry/AbortSignal
+  supabase/functions/cotacao-frete/index.ts:89-97
+      const resp = await fetch(url, { headers })   // SEM AbortSignal
+  Sem timeout, sem retry, sem circuit-breaker: um Frenet pendurado trava a
+  funcao ate o timeout da plataforma (fetch do Deno nao expira sozinho).
+  Frontend tambem sem timeout: EdgeFreightProvider.ts:15-16 (supabase.functions.invoke
+  direto), FrenetProvider.ts:9; nenhum AbortController em src/services/freteExterno.
+  Recomendado: AbortSignal.timeout(8000) + 1 retry com backoff + cache de resposta.
+
+### W8 [AVISO] 7 providers "simulados" com preco fixo hardcoded
+  supabase/functions/cotacao-frete/index.ts:155-173 — retorno deterministico:
+      Azul Cargos 185,50 | Gollog 199,90 | Latam Cargo 212,75 |
+      Rodonaves 148,30 | Jamef 176,40 | Braspress 163,90 | Kangu 158,20
+  Rotulos "(Simulation)" presentes, porem:
+    - FreightProviderRegistry.ts:21-27 registra os 7 codigos como
+      EdgeFreightProvider (caminho de invocacao da funcao real) — confuso e
+      impossivel distinguir simulado de real do lado do chamador;
+    - preco fixo ignora CEP, peso, volumes e modalidade -> orcamento
+      enganoso se chegar a UI/faturamento.
+  Recomendado: retornar erro "provedor indisponivel" (ou flag `simulado:true`
+  propagado ate a UI) em vez de preco fixo.
+
+### W9 [AVISO] verify_jwt nao verificavel pelo repositorio
+  supabase/config.toml NAO tem secao [functions.cotacao-frete] -> nao da para
+  saber se a funcao foi publicada com verify_jwt on/off (depende do deploy).
+  Index nao valida identidade do chamador; protecao atual = apenas o anon key
+  + CORS * (linha 33). A confirmar no painel Supabase (secao Functions).
+  Nota: Deno std 0.177.0 (import_map/headers) — desatualizado, sem risco
+  imediato.
+
+### [OK] Tratamento de erro do Frenet
+  index.ts filtra ShippingPrice>0/Error===false e escolhe o menor frete;
+  HttpError mapeado para status 5xx/4xx coerentes; token ausente gera erro
+  explicito (deveria ser 503, hoje 500 — detalhe).
+
+================================================================================
+ 5. EIXO 4 — CADASTROS, TRANSICOES DE STATUS E SEGURANCA DAS RPCs
+================================================================================
+
+### C3 [CRITICO] f_aceitar_oportunidade_rede — anon pode aceitar Rede por qualquer prestador
+
+Corpo em producao (pg_get_functiondef, len=9154, SECURITY DEFINER,
+SET search_path TO public):
+    auth.uid() ......................... AUSENTE
+    SEM_PERMISSAO / PRESTADOR_INVALIDO . AUSENTE (marcadores false)
+    liberado_app / GATE 1-7 ............ AUSENTE (marcadores false)
+    v_call_prestador / ownership ....... 0 ocorrencias
+    p_auth_user_id uuid DEFAULT NULL ... apenas valida existencia SE informado
+    presente: etapa_atual (bloco da migration 20261010000010)
+
+Grants (aclexplode/proacl):
+    {=X/postgres, postgres=X, anon=X, authenticated=X, service_role=X}
+    has_function_privilege('anon', ..., 'EXECUTE') = true   <-- verificado
+
+RLS de rede_oportunidades (pg_policies):
+    rede_oportunidades_all_authenticated [ALL {authenticated}]
+    rede_oportunidades_select_anon     [SELECT {anon}]      <-- anon LE os ids
+
+CADEIA DE EXPLOIT NAO AUTENTICADA (4 passos, todos verificados read-only):
+    1. anon: SELECT id/status em rede_oportunidades  (policy SELECT anon)
+       -> 4 oportunidades 'publicada' vivas (6 aceitas, 6 canceladas)
+    2. anon: EXECUTE f_aceitar_oportunidade_rede(...) (grant anon + PUBLIC)
+    3. funcao roda como SECURITY DEFINER (bypassa RLS), sem auth.uid(), sem
+       checagem chamador x p_prestador_uuid e sem gates de elegibilidade
+       (veiculo/capacidade/ajudante/liberado_app)
+    4. efeito: cria alocacoes_escala + ordens_servico + rota multiparadas em
+       nome de QUALQUER prestador ativo; M66 dispara e propaga
+       financeiro_pagar / pagamentos_prestadores / composicao_financeira_os
+       -> integridade operacional E financeira violaveis por visitante.
+
+Cadeia de regressao rastreada no repositorio:
+    20260801000008 (tms032)  auth.uid + REVOKE anon/PUBLIC   -> NUNCA APLICADO
+                             (cabecalho: "NAO AUTORIZADA ... NAO APLICAR.
+                              AGUARDAR AUTORIZACAO EXPLICITA", linhas 2-4;
+                              REVOKE/GRANT nas linhas 202-208)
+    20260816000000 (a27b)    CREATE OR REPLACE sem auth.uid
+    20260825000000 (j13)     adiciona GATE 1-7 (liberado_app, veiculo,
+                             capacidade, termica, ajudante) — sem auth.uid
+    20261010000010 (aplicada) corpo atual: SEM auth.uid, SEM gates
+                             (o arquivo nao contem nem "GATE" nem "liberado_app"
+                              nem "auth.uid" — confirmado por busca no arquivo;
+                              o corpo live bate com ela: tem etapa_atual)
+  -> seja o j13 nunca tenha sido aplicado, seja aplicado e sobrescrito pela
+     migration de 10/10, o estado ATUAL em producao nao tem nenhum gate.
+
+### C3b [CRITICO] f_registrar_notificacao_app — INSERT aberto a anon
+  Grants: {=X, anon=X, authenticated=X, service_role=X}
+  Corpo: len=675, SECURITY DEFINER, auth.uid() AUSENTE, DML = INSERT INTO,
+         retorna uuid. Qualquer visitante forja notificacoes no app.
+  (Correspondia ao item S9 da tms032 tambem nao aplicado.)
+
+### W2 [AVISO] f_calcular_financeiro_operacao — anon + PUBLIC sem auth.uid
+  Grants: {=X, anon=X, authenticated=X, service_role=X}; corpo len=3140,
+  SECURITY DEFINER, auth.uid() AUSENTE, DML = nenhum (leitura/calculo, jsonb).
+  Risco: divulgacao de calculo financeiro por nao autenticado.
+
+### W3 [AVISO] Migration de hardening tms032 nunca aplicada
+  20260801000008_tms032_hardening_rpc_grants.sql ("NAO AUTORIZADA") — matriz
+  atual em producao (proacl):
+    RPC                            PUBLIC  anon  auth.uid?  DML
+    -----------------------------  ------  ----  ---------  ------
+    f_aceitar_oportunidade_rede      sim   sim     NAO      INSERT/UPDATE
+    f_registrar_notificacao_app      sim   sim     NAO      INSERT
+    f_calcular_financeiro_operacao   sim   sim     NAO      nenhum
+    f_atualizar_status_parada        sim   nao     SIM      UPDATE/INSERT
+    f_atualizar_reversa_app          sim   nao     SIM      UPDATE
+  Os dois ultimos tem auth.uid() no corpo (mitiga), mas mantem grant PUBLIC.
+  Decisao pendente de negocio: aplicar tms032 (pos autorizacao) ou replicar
+  apenas a parte de grants.
+
+### W4 [AVISO] ordens_servico.status — TEXT sem CHECK, 11 valores em producao
+  DDL: status e TEXT, nullable, DEFAULT 'pendente', SEM constraint CHECK.
+  Valores live (contagem):
+    pendente=74, finalizada=37, cancelada=35, rascunho=9, entregue=6,
+    em_andamento=5, agendada=5, em_analise=3, programacao=2, atrasada=1,
+    concluida=1
+  -> vocabulario fragmentado: 'finalizada' (37) vs 'concluida' (1) sao o mesmo
+     conceito; 'entregue'/'programacao'/'em_analise'/'atrasada' fora do
+     vocabulario usado pela UI.
+  Transicoes validadas APENAS no cliente:
+    OrdemServicoForm.tsx:1172-1235 e escalaService.ts:269-291.
+  No banco: trg_evento_os_status_changed() apenas LOGA eventos
+    (valida_transicao = false); nenhum trigger de maquina de estados.
+  -> escrita direta via PostgREST/qualquer client aceita qualquer transicao.
+  Contraste: alocacoes_escala TEM CHECK whitelist (8 valores — aguardando_aceite,
+    aceita, em_rota, concluida, cancelada, recusada, planejada, ...) embora
+    sem validacao de ORDEM (triggers BEFORE sao so updated_at e
+    cancelar_financeiro_alocacao).
+
+### W10 [AVISO] Cadastro e backlog (producao)
+  prestadores: 40 total | ativos 27 | ativo+liberado_app APENAS 4 |
+               7 sem cpf_cnpj
+  veiculos: 66 | sem placa 0  (integridade basica OK)
+  alocacoes_escala: aguardando_aceite 78 (backlog), concluida 61, planejada 32,
+               cancelada 16, em_rota 16, aceita 7, recusada 2
+  -> so 4 prestadores estao habilitados para o app (liberado_app);
+     78 alocacoes aguardando aceite indicam fila/aceite nao processados.
+
+### [OK] Seguranca — correcoes JA aplicadas em producao (evidencia)
+  RLS: NENHUMA policy anon/permissive em alocacoes_escala, ordens_servico,
+       clientes (fix 20260725_missao_rls_fix_core_operations aplicado).
+  Grants: f_avancar_etapa_app_motorista e f_buscar_operacoes_motorista apenas
+       postgres/authenticated/service_role (sem anon/PUBLIC) — m133d4 aplicado.
+  Volatilidade: f_avancar=v (A01 corrigido), f_buscar=s, f_registrar_baixa=v,
+       f_aprovar_pagamento_prestadores=v, f_atualizar_reversa=v.
+  RPCs financeiras (f_registrar_baixa_financeira, f_aprovar_pagamento_prestadores,
+       f_confirmar_pagamento_fechamento): sem anon/PUBLIC.
+  f_atualizar_status_parada e f_atualizar_reversa_app: auth.uid() no corpo.
+
+================================================================================
+ 6. PLANO DE ACAO PRIORIZADO
+================================================================================
+P0 — imediato (seguranca + funcao quebrada em producao)
+  1. C3  REVOKE EXECUTE em f_aceitar_oportunidade_rede de PUBLIC e anon
+         (has_function_privilege anon -> false) + exigir auth.uid() no corpo
+         (reaproveitar o bloco da tms032/j13 apos autorizacao explicita).
+  2. C3b REVOKE em f_registrar_notificacao_app (PUBLIC/anon) + auth.uid().
+  3. C2  Alinhar 'provisao'/'provisorio': migrar ck_fp_status OU converter no
+         payload (INSERT 'provisorio', exibicao 'provisao') + testes.
+  4. C1  Corrigir round-trip de status: adicionar 'pendente' (e normalizar
+         'aberto'/'cancelado'/'pago') em STATUS_TRANSITIONS, fazer
+         mapStatusPagar mapear 'aberto', e NAO enviar status no payload de
+         edicao quando o usuario nao o alterou; decisao: migrar as 60 linhas
+         'pendente' para 'aberto' quando a OS/alocacao concluir.
+
+P1 — curto prazo
+  5. W1  Corrigir os 5 nomes de migration nos testes (YYYYMMDD_ ->
+         YYYYMMDDHHMMSS_) — devolve ~32 registros da suite ao verde e volta a
+         detectar regressao real; converter time-bombs (B) em fixtures relativas
+         a hoje.
+  6. W3  Decidir/aplicar tms032 (grants) — depende de autorizacao explicita.
+  7. W4  Adicionar CHECK + trigger de transicao de status em ordens_servico e
+         unificar vocabulario ('finalizada' x 'concluida', remover/create
+         'entregue'/'atrasada' conforme regra de negocio).
+  8. W7  AbortSignal.timeout + retry/backoff + cache em cotacao-frete.
+  9. C3  (com o P0.1) reavaliar gates de elegibilidade do j13 — hoje ausentes.
+
+P2 — medio prazo
+ 10. W8  Providers simulados: retornar indisponivel ou propagar flag
+         'simulado' ate a UI; separar registro no FreightProviderRegistry.
+ 11. W5  Preencher pagamentos_prestadores.os_numero (backfill via join) ou
+         resolver o numero na Fila (join em tempo de exibicao).
+ 12. W6  Reconciliar as 6 linhas divergentes de composicao_financeira_os.
+ 13. W2  Anexar auth.uid()/grant restrito em f_calcular_financeiro_operacao.
+ 14. W9  Fixar [functions.cotacao-frete] verify_jwt=true no config.toml e
+         confirmar o modo de publicacao.
+ 15. W10 Cadastro: fluxo para liberar_app dos 27 ativos (hoje so 4) e tratar
+         backlog de 78 aguardando_aceite; completar cpf_cnpj dos 7.
+
+================================================================================
+ 7. ANEXOS — RASTREABILIDADE
+================================================================================
+Suite:
+  %TEMP%\opencode\vitest_clean.log  (fonte oficial das 43 + 7 suites)
+  Test Files 17 failed | Tests 43 failed | 2036 passed | 155 skipped | 68.81s
+
+Scripts read-only de producao (criados nesta auditoria, somente SELECT):
+  scripts/_audit_readonly_e4.cjs   .. _e4q.cjs  (+ saidas .out/.json/.sql)
+  scripts/_e4c_live_fn.sql         corpos capturados das RPCs do App/Rede
+  scripts/_e4f_f_trg_propagar_financeiro_os.sql / _..._alocacao.sql (dumps M80/M66)
+
+Arquivos de codigo referenciados (leitura, sem alteracao):
+  src/components/financeiro/ContasPagar.tsx   :123-133, 716, 880, 941-966, 1275-1280, 1359
+  src/services/financeiro/pagarService.ts     :80-91, 94, 96-131, 203, 261-267, 443-471
+  supabase/functions/cotacao-frete/index.ts   :33, 89-97, 155-173
+  src/services/freteExterno/EdgeFreightProvider.ts:15 ; FrenetProvider.ts:9 ;
+      FreightProviderRegistry.ts:21-27
+  supabase/migrations/20260801000008_tms032_hardening_rpc_grants.sql :2-4, 202-208
+  supabase/migrations/20260816000000_a27b_fix_aceitar_cliente_id.sql :20
+  supabase/migrations/20260825000000_j13_fix_aceitar_rede_bypass.sql  :8-15, 86-134
+  supabase/migrations/20261010000010_rede_seed_etapa_viagem_aceita.sql :30 (corpo live)
+  src/components/operacao/OrdemServicoForm.tsx :1172-1235 (transicoes so no cliente)
+  src/services/escala/escalaService.ts         :269-291, 393-428
+  supabase/migrations/20260911000000_fin_p0_02_check_status_constraints.sql :75-95
+  supabase/migrations/20260705000004_m80b_fix_trigger_columns.sql, 
+  supabase/migrations/20260725000000_missao_rls_fix_core_operations.sql,
+  supabase/migrations/20260722000003_m133d4_fix_rpc_app_security.sql
+
+================================================================================
+ FIM DO RELATORIO — nenhuma escrita em producao; nenhum codigo alterado;
+ nenhum teste executado contra credenciais de producao.
+================================================================================

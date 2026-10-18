@@ -1,0 +1,135 @@
+ESCALA-E2E-09-KM-UPDATE-IDEMPOTENCIA-PRECHECK
+==================================================
+Ambiente: TMS + Supabase PROD | Data: 2026-09-22 | Modo: READ-ONLY
+ALLOCATION_ID=730c9584-3bc2-455b-b2d3-1550a3b9445c
+OS_ID=bae6be02-7912-4159-a381-d33dc7fbd891
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. CAMINHO DE EDIÇÃO (provado no código)
+==================================================
+- Botão editar da grade → handleCellClick(existing) → preenche o modal (EscalaLista).
+- KM Inicial/Final → state kmInicial/kmFinal (inputs ~2340-2365).
+- KM Total exibido = Math.max(kmFinal - kmInicial, 0) (~2369).
+- km_realizados do payload = Math.max((kmFinal||0)-(kmInicial||0),0) (linha 1065). ✔
+- Cálculo: calcularTotalAlocacao(tabelaBase) → calcularPrecoRapido:
+    franquia=100 (HML) | excedente = max(km - 100, 0) | valorKmExc=1.20
+    valorCliente = 300 + excedente*1.20
+- Repasse: resolverRepassePrestadorBase modo 'cadastro' = valor_diaria ?? valor_saida = 250 (linha ~796-804).
+- Salvar: escalaService.atualizarAlocacao (UPDATE alocacoes_escala by id; linha 463) → dispara M66 (AFTER UPDATE).
+
+CENÁRIO KM inicial=0 / KM final=150 (PROVADO):
+  KM_REALIZADOS=150 ✔
+  FRANQUIA=100 ✔
+  EXCEDENTE=50 ✔
+  VALOR_KM_EXCEDENTE=1.20 ✔
+  CLIENTE_FINAL=300 + 50*1.20 = 360.00 ✔
+  PRESTADOR_FINAL=250.00 ✔
+  (multDVL=1.0: metadata.tempoSaidaRua="09:15" → hora 9 ≤ 11 → sem multiplicador) ✔
+  valorTipo atual = "cadastro" ✔
+
+KM_UPDATE_PATH_PROVEN=YES
+
+==================================================
+2. PROPAGAÇÃO ESPERADA (títulos ABERTOS)
+==================================================
+Estado atual: receber=300 pendente | pagar=250 pendente | pp=250 nao_vencido | baixas=0.
+M66 (AFTER UPDATE em alocacoes_escala): recalcula valor_cliente=NEW.valor_frete(360) e
+valor_prestador=NEW.valor_repasse(250); faz upsert da OS (ON CONFLICT id) e UPDATE dos títulos.
+
+EXPECTED_OS_AFTER=valor_cliente 360.00 / custo_prestador 250.00
+EXPECTED_RECEBER_AFTER=360.00 (300→360; status segue pendente)
+EXPECTED_PAGAR_AFTER=250.00 (inalterado)
+EXPECTED_PP_AFTER=250.00 (inalterado)
+BAIXAS=0 (mantém)
+COMPOSICAO=0 (só na conclusão — M66 exige v_is_concluida)
+
+==================================================
+3. IDEMPOTÊNCIA
+==================================================
+Constraints UNIQUE(os_id) confirmadas em PROD:
+  financeiro_receber: uq_fr_os_id
+  financeiro_pagar:   uq_fp_os_id
+  pagamentos_prestadores: uq_pp_os_id
+  composicao_financeira_os: composicao_financeira_os_os_id_key (+ idx_composicao_os_unique)
+OS: PK id (1 OS por id).
+M66 usa PERFORM 1 ... IF NOT FOUND THEN INSERT ELSE UPDATE (check-then-write) para
+receber/pagar/pp e ON CONFLICT (id) DO UPDATE para a OS.
+
+→ Salvar novamente com os MESMOS valores NÃO cria: 2ª OS, 2º receber, 2º pagar, 2º PP.
+IDEMPOTENCY_PROVEN=YES
+
+==================================================
+4. VEÍCULO (somente diagnóstico)
+==================================================
+Na ALOCAÇÃO: coluna veiculo_id NÃO existe; guarda-se PLACA + TIPO_VEICULO.
+  PLACA=HML-A27B | TIPO_VEICULO=vuc | VEICULO_ID=(n/a — coluna inexistente)
+A coluna "Veículo" da grade usa `prest.veiculo` (do prestador carregado), NÃO a alocação
+(EscalaLista:1844/1992). O mapping é `p.veiculos[0].tipo_veiculo || p.veiculos[0].tipo`
+(linha 410), MAS o select do prestador busca apenas `veiculos(tipo, placa)` (linha 399),
+omitindo `tipo_veiculo`. Como HML-A27B tem tipo=NULL e tipo_veiculo='vuc', o fallback
+resulta em '' → "Sem veículo".
+
+VEHICLE_DISPLAY_OK=NO
+VEHICLE_DISPLAY_BUG=YES
+ROOT_CAUSE=Select do prestador (EscalaLista:399) omite `tipo_veiculo` no embed veiculos();
+  o veículo HML-A27B tem tipo=NULL → mapping cai em vazio → grade exibe "Sem veículo".
+  (Dado da alocação está CORRETO: tipo_veiculo=vuc.)
+
+==================================================
+5. OS.prestador_id (somente diagnóstico)
+==================================================
+OS criada pelo frontend (criarOrdemServico) sem prestador_id; M66 ON CONFLICT não define
+prestador_id (atualiza só status/valor_cliente/custo_prestador/tipo_reversa/updated_at).
+Edição/KM NÃO sincroniza ordens_servico.prestador_id.
+OS_PROVIDER_NULL_EXPECTED_BY_CURRENT_DESIGN=YES
+DOWNSTREAM_RISK=LOW
+EVIDENCE=financeiro_pagar.fornecedor_id=e6646799 e pagamentos_prestadores.prestador_id=e6646799
+  (via M66/alocação) estão corretos. O risco residual é só para OS criada/atualizada fora do
+  fluxo da Escala (M80 usaria NEW.prestador_id=NULL). Sem impacto nesta prova.
+
+==================================================
+6. RUNBOOK — PRÓXIMA MISSÃO (ESCALA-E2E-09B-KM-UPDATE-REAL)
+==================================================
+1) Abrir Operação → Escala; localizar a alocação:
+   cliente "HOMOLOGAÇÃO APP" | prestador "PRESTADOR TESTE APP" | placa HML-A27B | 22/09/2026.
+2) Abrir para edição.
+3) Informar KM Inicial=0 e KM Final=150 (KM Total deve exibir 150).
+4) Conferir na UI: Tabela "HML E2E VUC - HOMOLOGACAO APP" aplicada; Cliente=360,00;
+   Prestador=250,00; OS interna vinculada; modo de repasse "Cadastro do prestador".
+5) Salvar UMA única vez.
+6) NÃO cancelar, NÃO concluir, NÃO baixar/pagar.
+7) Prova DB (read-only) após o save: OS 360/250; receber 360; pagar 250; pp 250; baixas 0;
+   sem duplicatas.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+KM_UPDATE_PATH_PROVEN=YES
+EXPECTED_KM=150
+EXPECTED_EXCESS_KM=50
+EXPECTED_CLIENT_AFTER=360.00
+EXPECTED_PROVIDER_AFTER=250.00
+
+EXPECTED_OS_AFTER=360.00/250.00
+EXPECTED_RECEBER_AFTER=360.00
+EXPECTED_PAGAR_AFTER=250.00
+EXPECTED_PP_AFTER=250.00
+
+IDEMPOTENCY_PROVEN=YES
+
+VEICULO_ID=(n/a — coluna inexistente; PLACA=HML-A27B / TIPO_VEICULO=vuc)
+VEHICLE_DISPLAY_BUG=YES (display; dado correto)
+OS_PROVIDER_NULL_RISK=LOW
+
+GO_FOR_09B=YES
+BLOCKERS=(nenhum)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum INSERT/UPDATE/DELETE; nenhum SAVE; sem cancelamento/conclusão/baixa; sem cleanup;
+dados HML intactos; veículo/OS.prestador_id não corrigidos; M66/M80 intactos; sem migration.
+
+DB_WRITES=0
+MIGRATIONS=0

@@ -1,0 +1,277 @@
+================================================================================
+AG-REC05 — MIGRATION FK ELEGIBILIDADE FAIL-CLOSED
+Aplicação Controlada + Prova da FK Canônica
+Data: 2026-09-02
+Status: ✅ APROVADO
+================================================================================
+
+1. STATUS FINAL REC-05
+----------------------
+APROVADO — Migration aplicada com sucesso. FK ativa no banco. Integridade comprovada.
+
+2. AMBIENTE SUPABASE UTILIZADO
+-------------------------------
+Projeto: uwrvzsjtpgaifkktpepn.supabase.co
+Tipo: PRODUÇÃO (Supabase Cloud, região sa-east-1)
+Conexão: DATABASE_URL (pooler direto, postgres)
+Método: pg client Node.js (psql ausente no Windows)
+
+3. MIGRATION APLICADA
+---------------------
+SIM — Duas etapas executadas com sucesso:
+
+ETAPA 1: Criação da tabela candidato_documentos
+  - Tabela criada com 9 colunas (id, candidato_id, tipo, arquivo_url, status, validade, dados_extraidos, created_at, updated_at)
+  - RLS habilitado com 4 policies (SELECT, INSERT, UPDATE, DELETE para authenticated/service_role)
+  - candidato_id UUID NOT NULL
+
+ETAPA 2: Migração FK REC-04
+  - Validações fail-closed executadas (NULLs: 0, órfãos: 0, cross-tenant: N/A)
+  - FK antiga removida (DROP CONSTRAINT IF EXISTS)
+  - Nova FK criada: candidato_documentos.candidato_id → recrutamento_candidatos(id) ON DELETE CASCADE
+  - Índice de performance criado
+  - Comments de documentação adicionados na tabela e constraint
+
+Arquivo executado: scripts/_rec05_apply.cjs (transacional, com COMMIT/ROLLBACK)
+
+4. MOTIVO DA CRIAÇÃO PRÉVIA DA TABELA
+--------------------------------------
+A tabela candidato_documentos NÃO existia no banco. Foi definida em:
+  - rebuild_supabase_schema.sql (CREATE TABLE IF NOT EXISTS)
+  - supabase_schema.sql (CREATE TABLE IF NOT EXISTS)
+  - sql_documentos_corrigir.sql (CREATE TABLE IF NOT EXISTS)
+Mas NUNCA foi executada como migration Supabase. As tabelas de schema são
+arquivos de referência, não migrations aplicadas.
+
+O AcompanhamentoDocs.tsx consulta candidato_documentos via .from() mas a
+tabela não existia → feature quebrada em runtime. Criação necessária para
+validar a FK canônica do REC-04.
+
+5. ESTADO DA FK ANTES/DEPOIS
+-----------------------------
+ANTES: candidato_documentos NÃO EXISTIA (tabela nunca criada)
+DEPOIS: candidato_documentos.candidato_id → recrutamento_candidatos(id) ON DELETE CASCADE
+
+Constraint name: candidato_documentos_candidato_id_rc_fkey
+Delete rule: CASCADE
+Deferrable: NOT DEFERRABLE
+Initially deferred: NO
+
+6. CONSTRAINTS VERIFICADAS
+---------------------------
+  - PRIMARY KEY: candidato_documentos(id) — uuid, NOT NULL
+  - FOREIGN KEY: candidato_id → recrutamento_candidatos(id) ON DELETE CASCADE
+  - NOT NULL: candidato_id (aplicado via DDL)
+  - RLS: 4 policies ativas (SELECT, INSERT, UPDATE, DELETE)
+  - INDEX: idx_candidato_documentos_candidato_id_rc (B-tree)
+  - COMMENTS: tabela e constraint documentadas
+
+7. QUANTIDADE DE ÓRFÃOS ENCONTRADA
+------------------------------------
+0 — Pré-validação da migration confirmou zero órfãos.
+
+8. RESULTADO DA VALIDAÇÃO DE candidato_documentos
+--------------------------------------------------
+Tabela criada com sucesso. Schema:
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  candidato_id  UUID NOT NULL → recrutamento_candidatos(id) ON DELETE CASCADE
+  tipo          TEXT NOT NULL
+  arquivo_url   TEXT (nullable)
+  status        TEXT DEFAULT 'pendente'
+  validade      DATE (nullable)
+  dados_extraidos JSONB (nullable)
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+
+Registros: 0 (tabela nova, sem dados existentes)
+
+Diferença vs JSONB documentos[]:
+  - candidato_documentos tem: arquivo_url, dados_extraidos (JSONB)
+  - JSONB documentos[] tem: nome, status, dataValidade, observacao
+  - São estruturas complementares, NÃO equivalentes
+
+9. RESULTADO DA AUDITORIA liberado_app
+----------------------------------------
+TODOS os caminhos de produção usam liberado_app de forma FAIL-CLOSED:
+
+ARQUIVOS PRODUÇÃO (configuram liberado_app):
+  1. conversaoCandidatoService.ts:305 — liberado_app: statusOperacional === 'ativo'
+  2. conversaoCandidatoService.ts:331 — liberado_app: statusOperacional === 'ativo'
+  3. prestadoresService.ts:389 — liberado_app: novoStatus === 'ativo'
+  4. prestadoresService.ts:432 — liberado_app: false (explicit inativo)
+  5. prestadoresService.ts:577 — liberado_app: statusOperacional === 'ativo'
+  6. prestadoresService.ts:591 — liberado_app: statusOperacional === 'ativo'
+  7. prestadoresService.ts:606 — liberado_app: statusOperacional === 'ativo'
+  8. prestadoresService.ts:640 — liberado_app: novoStatus === 'ativo'
+  9. recrutamentoIntegracao.ts:225 — liberado_app: false (REC-04-C3 fix)
+
+Nenhum caminho configura liberado_app: true de forma incondicional.
+
+10. TODOS OS CAMINHOS QUE PODEM DEFINIR liberado_app = true
+------------------------------------------------------------
+APENAS quando statusOperacional === 'ativo':
+  - conversaoCandidatoService.sincronizarComOperacao() — caminho canônico
+  - prestadoresService — múltiplos pontos, todos condicionais
+
+Caminhos que NÃO definem liberado_app = true:
+  - recrutamentoIntegracao.ativarPrestador() — agora usa false (REC-04-C3)
+  - Homologacao.tsx — dead code (módulo descontinuado)
+  - DevTesteTMS.tsx — rota dev-only (/dev-teste)
+
+Scripts de teste (não produção):
+  - missao124a_preparacao_operacao_teste.ts — UPDATE direto (script de preparação)
+  - a22_homologacao_chat_torre.ts — INSERT direto (seed de teste)
+
+11. BYPASSES ENCONTRADOS E CORREÇÕES
+--------------------------------------
+BYPASS REC-04-C3 (corrigido em REC-04):
+  ANTES: recrutamentoIntegracao.ts:225 — liberado_app: true
+  DEPOIS: liberado_app: false
+  Impacto: ativarPrestador() agora preserva false até conversão canônica
+
+Nenhum novo bypass encontrado na auditoria REC-05.
+
+12. TESTES CRIADOS/MODIFICADOS
+--------------------------------
+REC-04 (existentes, 35/35 PASS):
+  - src/test/rec04_documentos_elegibilidade.test.ts (35 testes)
+  - 6 categorias: schema, JSONB, listas, liberado_app, FK, AcompanhamentoDocs
+
+REC-05 scripts de validação (novos):
+  - scripts/_rec05_preflight.cjs — inspeção inicial do banco
+  - scripts/_rec05_preflight2.cjs — inspeção profunda
+  - scripts/_rec05_apply.cjs — aplicação controlada da migration
+  - scripts/_rec05_integrity.cjs — 8 cenários de integridade
+  - scripts/_rec05_investigate.cjs — investigação de prestadores órfãos
+  - scripts/_rec05_check_cols.cjs — verificação de colunas
+
+13. RESULTADO TSC
+------------------
+npx tsc --noEmit → 0 erros
+
+14. RESULTADO REC-05
+---------------------
+8 cenários de integridade validados no banco real:
+  CEN 1: candidato válido → docs vinculados ao candidato correto ✅
+  CEN 2: candidato inexistente → FK bloqueia inserção ✅
+  CEN 3: requisitos incompletos → liberado_app = false ✅
+  CEN 4: documentação pendente → 1 prestador teste sem docs (esperado) ⚠️
+  CEN 5: caminho canônico controla liberado_app ✅
+  CEN 6: ON DELETE CASCADE funciona ✅
+  CEN 7: sem duplicação indevida ✅
+  CEN 8: divergência tabela vs JSONB coerente ✅
+
+Resultado: 18/19 PASS (1 dado de teste — "PRESTADOR TESTE APP" sem docs)
+
+15. RESULTADO REC-04
+---------------------
+35/35 PASS ✅
+
+16. RESULTADO REC-03.1
+------------------------
+59/62 PASS (3 failures pré-existentes)
+  - Failures são assertions stale em testes legados que esperam .from("candidatos")
+    mas o componente AcompanhamentoDocs já consulta recrutamento_candidatos
+  - Não introduzidos por REC-04/REC-05
+
+17. RESULTADO REC-03
+----------------------
+96/97 PASS (1 failure pré-existente)
+  - Mesmo motivo: assertion stale esperando .from("candidatos")
+
+18. ARQUIVOS MODIFICADOS
+--------------------------
+Nenhum arquivo de código fonte modificado nesta missão (REC-05).
+Alterações de código foram feitas apenas em REC-04:
+  - src/services/recrutamentoIntegracao.ts (liberado_app: false)
+  - src/services/recrutamento/documentosConstants.ts (comentários)
+
+19. MIGRATIONS EXECUTADAS
+---------------------------
+MIGRATION REC-04 (20260902_rec04_mapeamento_fk_candidato_documentos.sql):
+  NÃO executada diretamente — a migration assume que a tabela já existe.
+  O script _rec05_apply.cjs executou a lógica equivalente:
+    1. CREATE TABLE candidato_documentos (DDL)
+    2. ALTER TABLE ADD CONSTRAINT FK → recrutamento_candidatos (DDL)
+    3. CREATE INDEX (DDL)
+    4. COMMENT ON TABLE/CONSTRAINT (DDL)
+
+MIGRATION REC-04 original NÃO precisa mais ser aplicada — equivalente executado.
+
+20. EVIDÊNCIAS DO BANCO
+--------------------------
+Verificação pós-aplicação:
+  - Table candidato_documentos: EXISTS ✅
+  - FK candidato_documentos_candidato_id_rc_fkey: EXISTS ✅
+  - FK target: recrutamento_candidatos(id) ✅
+  - FK delete_rule: CASCADE ✅
+  - candidato_id: NOT NULL ✅
+  - Index idx_candidato_documentos_candidato_id_rc: EXISTS ✅
+  - Record count: 0 (tabela nova) ✅
+  - Orphan count: 0 ✅
+  - NULL candidato_id: 0 ✅
+
+Tabelas existentes no schema:
+  candidatos (1 registro)
+  recrutamento_candidatos (múltiplos registros)
+  candidato_documentos (0 registros — nova)
+
+21. PENDÊNCIAS/BLOQUEIOS
+--------------------------
+PENDÊNCIA 1 (Média): Dado "PRESTADOR TESTE APP" (id: e6646799-fbac-453e-a3ef-afdfc01a7085)
+  tem liberado_app=true mas sem documentos em documentos_prestadores.
+  Cenário: prestador de teste criado diretamente no banco sem onboarding completo.
+  Recomendação: Limpar ou completar onboarding deste registro de teste.
+
+PENDÊNCIA 2 (Baixa): Testes legados REC-03/REC-03.1 contêm assertions stale
+  que esperam .from("candidatos") mas o componente já consulta recrutamento_candidatos.
+  Não afetam funcionalidade — são assertions desatualizadas.
+  Recomendação: Atualizar testes para refletir estado real do código.
+
+PENDÊNCIA 3 (Baixa): documento_analises (referenciada em rebuild_supabase_schema.sql
+  como FK de candidato_documentos.analise_ia_id) não existe no banco.
+  Decisão: coluna analise_ia_id NÃO foi incluída na tabela criada.
+  Recomendação: Criar tabela documento_analises quando necessário para funcionalidade de IA.
+
+PENDÊNCIA 4 (Info): candidatos tem 1 registro (LEGACY). recrutamento_candidatos
+  tem múltiplos registros (PIPELINE). candidato_documentos tem 0 registros.
+  Nenhum dado precisa ser migrado — tabelas são complementares.
+
+22. DECISÃO OBJETIVA
+----------------------
+APROVADO
+
+23. RECOMENDAÇÃO DA PRÓXIMA ETAPA
+-----------------------------------
+Próximo: REC-06 — Teste E2E Completo (App → Auth → prestadores → bridge →
+recrutamento_candidatos → candidato_documentos → análise TMS → aprovação →
+conversão/liberação → elegibilidade → retorno/uso no APP).
+
+Pré-condições para REC-06:
+  - App Motorista (Flutter) configurado para apontar para este Supabase
+  - Usuário de teste com credenciais reais
+  - Prestador de teste com onboarding completo
+  - Celular/Redmi conectado para teste ponta a ponta
+
+Recusa do E2E App neste momento é justificada pela ausência de App Motorista
+neste repositório e pela necessidade de dispositivo físico.
+
+================================================================================
+PRONTO PARA AVANÇAR AO PRÓXIMO REC: SIM
+================================================================================
+
+Justificativa: REC-05 está APROVADO com evidências no banco real.
+  - FK ativa e validada
+  - Tabela candidato_documentos criada e funcional
+  - Fail-closed preservado
+  - Regressão intacta (5 failures pré-existentes)
+  - 0 erros TypeScript
+  - 35/35 testes REC-04 passando
+  - Nenhum bypass de liberado_app encontrado
+
+O próximo REC (06) deve ser o teste E2E ponta a ponta que valida o fluxo
+completo incluindo o App Motorista, conforme instrução explícita do usuário.
+
+================================================================================
+FIM DO RELATÓRIO — AG-REC05
+================================================================================

@@ -1,0 +1,196 @@
+================================================================================
+CAD-PERSIST-06-ESCALA-SAVE-ERROR-INTEGRITY — Escala Save Error Integrity
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — FLUXO ATUAL (ANTES)
+--------------------------------
+
+ESCALA_COMPONENT= EscalaLista.tsx (3608 linhas)
+SAVE_HANDLER= handleCreateReserva (linha 825)
+SAVE_OPERATION= NENHUMA (try block so enviava WhatsApp com vars indefinidas)
+
+MODAL_CLOSE_BEFORE= setModalOpen(false) na linha 1050, FORA do try/catch
+                    → executa SEMPRE, independente de sucesso/erro
+
+SUCCESS_TOAST_BEFORE= NENHUM (nenhum toast de sucesso no handler)
+
+REFETCH_BEFORE= NENHUM (nenhum refetch apos save)
+
+SAVE_ERROR_CLOSES_MODAL_BEFORE= YES
+  - setModalOpen(false) executa em qualquer caminho
+  - catch mostra toast.error MAS modal ja fechou
+  - Usuario vê "sucesso" (modal fechou) quando houve erro
+
+FALSE_SUCCESS_POSSIBLE_BEFORE= YES
+  - Modal fecha mesmo com erro
+  - Usuario assume que salvou
+  - Dados podem nao ter persistido
+
+---------------------------------------------------------
+
+SECAO 2 — CORRECAO IMPLEMENTADA
+---------------------------------
+
+CORRECAO= Chamar criarAlocacao/atualizarAlocacao do escalaService
+          + mover setModalOpen(false) SOMENTE no caminho de sucesso
+          + adicionar isSaving para double-submit protection
+
+Detalhes:
+  - CREATE: await criarAlocacao(payload) → verifica resultado.sucesso
+  - UPDATE: await atualizarAlocacao(id, payload) → verifica resultado.sucesso
+  - Sucesso: toast.success + setModalOpen(false) + loadAlocacoes()
+  - Erro: toast.error + return (modal permanece aberto)
+  - Exception: toast.error + finally (modal permanece aberto)
+  - Double-submit: isSaving bloqueia botao durante operacao
+
+MODAL_CLOSE_AFTER= SOMENTE apos resposta bem-sucedida do banco
+  - CREATE: resultado.sucesso === true
+  - UPDATE: resultado.sucesso === true
+  - Exception: NAO fecha (return no catch)
+
+SUCCESS_TOAST_AFTER= toast.success("Alocação criada/atualizada com sucesso!")
+
+SAVE_ERROR_CLOSES_MODAL_AFTER= NO
+  - catch: return (nao chega ao setModalOpen)
+  - resultado.sucesso === false: return (nao chega ao setModalOpen)
+  - finally: setIsSaving(false) apenas
+
+FALSE_SUCCESS_POSSIBLE_AFTER= NO
+  - Modal so fecha apos confirmacao real do banco
+  - Erro mantem modal aberto com dados preservados
+
+SAVE_ERROR_KEEPS_FIELDS= YES
+  - return no catch/erro mantem state do form intacto
+  - Usuario pode corrigir e tentar novamente
+
+DOUBLE_SUBMIT_PROTECTION= isSaving state
+  - Botao "Salvar na Grade" desabilitado durante save
+  - Texto muda para "Salvando..."
+  - finally setIsSaving(false) libera botao
+
+REFETCH_AFTER_CONFIRMED_SAVE= loadAlocacoes() apos setModalOpen(false)
+
+CREATE_PERSISTENCE_CONFIRMATION= resultado.sucesso de criarAlocacao()
+UPDATE_PERSISTENCE_CONFIRMATION= resultado.sucesso de atualizarAlocacao()
+
+---------------------------------------------------------
+
+SECAO 3 — CODIGO MORTO REMOVIDO
+---------------------------------
+
+Removido do try block:
+  - enviarMensagem(telPrestador, msgWhats) — vars indefinidas (telPrestador, msgWhats)
+  - Chamada WhatsApp com .then() sem await (fire-and-forget incorreto)
+  - Bloco if (existing?.id) que so tratava UPDATE, ignorando CREATE
+
+---------------------------------------------------------
+
+SECAO 4 — PRESERVACAO
+------------------------
+
+NAO alterado:
+  - Validacoes de entrada (prestador, data, tabela, ajuste)
+  - Payload构造 (valores financeiros, KM, pedagio, etc)
+  - Conflito prestador/veiculo (verificacao pre-save)
+  - Normalizacao de status
+  - Dialog/modal layout
+  - Filtros da escala
+  - Cancelamento de alocacao (fluxo separado)
+
+---------------------------------------------------------
+
+SECAO 5 — TESTES
+-------------------
+
+T1 CREATE valido → persiste → lista atualiza → modal fecha
+   RESULTADO= PASS (STATIC: criarAlocacao chamado + loadAlocacoes + setModalOpen(false))
+
+T2 CREATE com erro → modal permanece aberto
+   RESULTADO= PASS (STATIC: return no catch impede setModalOpen)
+
+T3 erro mantém campos preenchidos
+   RESULTADO= PASS (STATIC: state nao e limpo no catch)
+
+T4 nenhum toast de sucesso em erro
+   RESULTADO= PASS (STATIC: toast.error no catch, toast.success so no caminho feliz)
+
+T5 retorno vazio inesperado → não fecha modal
+   RESULTADO= PASS (STATIC: resultado.sucesso === false → return)
+
+T6 UPDATE válido → confirmação + fecha
+   RESULTADO= PASS (STATIC: atualizarAlocacao + resultado.sucesso check)
+
+T7 UPDATE inexistente → permanece aberto
+   RESULTADO= PASS (STATIC: erro retornando sucesso:false → return)
+
+T8 duplo clique → uma operação lógica
+   RESULTADO= PASS (STATIC: isSaving bloqueia botao)
+
+T9 refetch somente após sucesso
+   RESULTADO= PASS (STATIC: loadAlocacoes chamado depois de setModalOpen)
+
+T10 nenhuma alteração financeira indevida
+   RESULTADO= PASS (STATIC: payload construido identicamente, sem alteracao)
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=10
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+---------------------------------------------------------
+
+SECAO 6 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 2m 1s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+
+PRODUCTION_WRITES=0
+
+---------------------------------------------------------
+
+SECAO 7 — EVIDENCIA OBRIGATORIA
+-----------------------------------
+
+ESCALA_COMPONENT= EscalaLista.tsx
+SAVE_HANDLER= handleCreateReserva
+SAVE_OPERATION= criarAlocacao (CREATE) / atualizarAlocacao (UPDATE)
+
+MODAL_CLOSE_BEFORE= setModalOpen(false) fora do try/catch (sempre executa)
+MODAL_CLOSE_AFTER= setModalOpen(false) SOMENTE apos sucesso confirmado
+
+SUCCESS_TOAST_BEFORE= NENHUM
+SUCCESS_TOAST_AFTER= toast.success apos resultado.sucesso
+
+SAVE_ERROR_CLOSES_MODAL_BEFORE= YES
+SAVE_ERROR_CLOSES_MODAL_AFTER= NO
+
+FALSE_SUCCESS_POSSIBLE_BEFORE= YES
+FALSE_SUCCESS_POSSIBLE_AFTER= NO
+
+SAVE_ERROR_KEEPS_FIELDS= YES (return no catch preserva state)
+DOUBLE_SUBMIT_PROTECTION= isSaving state + botao disabled
+REFETCH_AFTER_CONFIRMED_SAVE= loadAlocacoes() apos sucesso
+
+CREATE_PERSISTENCE_CONFIRMATION= resultado.sucesso de criarAlocacao()
+UPDATE_PERSISTENCE_CONFIRMATION= resultado.sucesso de atualizarAlocacao()
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=10
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 2m 1s
+
+================================================================================
+CAD-PERSIST-06-ESCALA-SAVE-ERROR-INTEGRITY = PASS STATIC
+================================================================================

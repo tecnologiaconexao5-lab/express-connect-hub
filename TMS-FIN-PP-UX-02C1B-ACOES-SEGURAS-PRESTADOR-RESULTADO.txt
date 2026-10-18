@@ -1,0 +1,210 @@
+================================================================================
+MISSAO: TMS-FIN-PP-UX-02C1B-ACOES-SEGURAS-PRESTADOR
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO CIRURGICA DE RPCs OFICIAIS.
+================================================================================
+
+RESULTADO: PASS. 3 RPCs novas + hardening aplicados em PROD. 25/25 testes PASS
+  (transacao/rollback/fixtures). ZERO alteracao historica persistida. S1/S2 mantidos.
+
+================================================================================
+1. PRE-FLIGHT (confirmado antes do DDL)
+================================================================================
+- Definicoes/hashes PROD batem com o relatorio 02C1A (nada divergiu):
+  * f_registrar_baixa_financeira  hash e884c7cc8ddf93239712cde373fd1253 | INVOKER
+  * f_estornar_baixa_financeira   hash ef11545cb6edb4d3a10d0fc903e6f267 | INVOKER
+  * f_confirmar_pagamento_prestador hash db5ab9b9af3b849e2e70f76f94dbe04a | DEFINER
+  * f_confirmar_pagamento_fechamento hash 0ebe7bd2b8c671329ee2f117e95c70c1 | DEFINER
+- Grants: as 4 com EXECUTE p/ authenticated, postgres, service_role.
+- S1/S2 ativos: authenticated em pagamentos_prestadores = apenas REFERENCES,SELECT,TRIGGER,TRUNCATE;
+  policies SOMENTE SELECT (pp_select_own, pp_select_tms).
+- Tenant unico em PROD (00000000-0000-0000-0000-000000000001); usuarios de teste:
+  super_admin 8c12fc67 / financeiro de1c77e0 / comercial 0d3e308d (perfil invalido).
+- Conta financeira ativa: Cora 9741ad36.
+=> Pre-flight OK; nenhuma divergencia com 02C1A.
+
+================================================================================
+2. RPCs CRIADAS / ALTERADAS
+================================================================================
+(owner postgres; SECURITY DEFINER; SET search_path TO 'public')
+1) NOVA public.f_reprovar_pagamento_prestador(p_pagamento_id uuid, p_motivo text DEFAULT NULL)
+     hash 517b0c905d51443d6c27a5c5307a772e
+2) NOVA public.f_cancelar_pagamento_prestador(p_pagamento_id uuid, p_motivo text DEFAULT NULL)
+     hash 256ee138d09b11596e0770e078454497
+3) NOVA public.f_estornar_pagamento_prestador(p_pagamento_id uuid, p_motivo text)  -- motivo OBRIGATORIO
+     hash 77c6cdb7c65142d498a052c0731dab73
+4) ALTERADA public.f_confirmar_pagamento_fechamento(p_fechamento_id uuid, p_data_pagamento date)
+     hash ANTES 0ebe7bd2b8c671329ee2f117e95c70c1 -> DEPOIS 99054d0edbf46ad5d79be37045360ede
+
+NAO alteradas (conforme missao): f_registrar_baixa_financeira, f_estornar_baixa_financeira.
+NAO houve alteracao de codigo/UI nesta missao.
+
+================================================================================
+3. CONTRATOS
+================================================================================
+REPROVAR: status_aprovacao 'aguardando_aprovacao' -> 'reprovado'; elegivel_lote=false; lote_id=NULL
+  (neutraliza item de lote se houver). NAO altera FP. NAO cria baixa. NAO cancela obrigacao contabil.
+CANCELAR (NAO pago): status_pagamento IN ('pendente','nao_vencido','em_lote') -> 'cancelado';
+  exige ZERO financeiro_baixas nao estornada para o FP; FP.status='cancelado'; remove item de lote e
+  recalcula totals; lote_id=NULL. Se houver baixa -> retorna 'NECESSARIO_ESTORNO'.
+ESTORNAR (INTEGRAL): exige PP 'pago', exatamente 1 baixa ativa e integral (valor_original=FP.valor,
+  saldo_restante=0); chama f_estornar_baixa_financeira (reuso, nao reimplementa); reabre PP para
+  'pendente' e limpa data_pagamento; FP volta a 'aberto'. Parcial/multiplas baixas -> 'BLOCKED_PAGAMENTO_PARCIAL'.
+
+================================================================================
+4. AUTH / TENANT / PERFIS (todas as RPCs novas)
+================================================================================
+- auth.uid() OBRIGATORIO -> senao 'USUARIO_NAO_AUTENTICADO'.
+- perfil permitido: super_admin | admin_tenant | financeiro (via tenant_usuarios status='ativo') -> senao 'NAO_AUTORIZADO'.
+- tenant resolvido por tenant_usuarios.user_id=auth.uid(); comparado a f_pp_tenant_id(os_id)
+  (DEFINER) -> divergencia 'NAO_AUTORIZADO_TENANT'.
+- motivo obrigatorio apenas no ESTORNO.
+- Nao dependem do frontend (hardening no banco).
+
+================================================================================
+5. SEMANTICA DE ESTADOS (reais em PROD)
+================================================================================
+- status_aprovacao: aguardando_aprovacao | aprovado (novo: reprovado).
+- status_pagamento: pendente | nao_vencido | em_lote | pago | cancelado.
+- Reprovado NAO e cancelado; cancelado NAO e estornado; estorno exige pago+baixa.
+- Nao foi inventado estado inexistente nem 'parcial' em PP.
+
+================================================================================
+6. SINCRONIZACAO PP / FP / BAIXA / LOTE
+================================================================================
+REPROVAR : PP.status_aprovacao=reprovado | FP inalterado | baixa inalterada | lote neutralizado (item removido).
+CANCELAR : PP.status_pagamento=cancelado | FP.status=cancelado | sem baixa (pre-condicao) | lote neutralizado+recalculado.
+ESTORNAR : PP.status_pagamento=pendente | FP.status=aberto (via f_estornar_baixa_financeira) | baixa.estornada=true | lote nao afetado.
+
+================================================================================
+7. PAGAMENTO PARCIAL — BLOQUEADO
+================================================================================
+Nao implementado nesta missao. O wrapper classifica como 'BLOCKED_PAGAMENTO_PARCIAL' quando:
+  - numero de baixas ativas <> 1; OU
+  - baixa nao integral (valor_original <> FP.valor ou saldo_restante <> 0).
+Permanece como divida (PP nao possui estado parcial) — ver backlog.
+
+================================================================================
+8. HARDENING f_confirmar_pagamento_fechamento
+================================================================================
+Adicionado: auth.uid() obrigatorio; perfil permitido; tenant resolvido; validacao de tenant do
+fechamento (os_id) e de TODOS os itens (bool_and via f_pp_tenant_id); search_path=public; grants
+restritos. REGRA DE CALCULO/PAGAMENTO PRESERVADA (reconciliacao soma itens=valor; itens>0; item
+cancelado aborta; idempotencia por item pago; chama f_confirmar_pagamento_prestador). Diff: apenas
+bloco de autorizacao + validacao de tenant. Nenhuma regra alterada.
+
+================================================================================
+9. MIGRATION (pequena e reversivel)
+================================================================================
+ARQUIVO FORWARD : supabase/migrations/20260925000010_fin_pp_02c1b_acoes_seguras_prestador.sql
+ARQUIVO ROLLBACK: supabase/migrations/20260925000011_fin_pp_02c1b_rollback.sql
+- Forward: CREATE OR REPLACE das 4 funcoes + REVOKE PUBLIC/anon + GRANT authenticated/service_role + COMMENT.
+- Aplicada em transacao (BEGIN/COMMIT) com verificacao pos-DDL -> FORWARD_APPLIED_OK.
+- Before/After hashes e definer registrados na secao 2.
+- Rollback: DROP das 3 novas + restaurar f_confirmar_pagamento_fechamento original (hash 0ebe7bd2...).
+- Sem DDL em tabelas. Sem mega-migration.
+
+================================================================================
+10. TESTES (transacao/rollback/fixtures controladas) — 25/25 PASS
+================================================================================
+REPROVAR
+  PASS  aguardando -> reprovado (REPROVADO + elegivel_lote=false/lote_id=null)
+  PASS  repeticao idempotente (JA_REPROVADO)
+  PASS  sem auth BLOCK (USUARIO_NAO_AUTENTICADO)
+  PASS  perfil invalido BLOCK (NAO_AUTORIZADO)
+  PASS  outro tenant BLOCK (NAO_AUTORIZADO_TENANT)
+  PASS  nao mexe FP (FP inalterado)
+CANCELAR
+  PASS  pendente sem baixa -> cancelado (PP+FP)
+  PASS  nao_vencido sem baixa -> cancelado
+  PASS  com baixa ativa BLOCK (NECESSARIO_ESTORNO)
+  PASS  pago BLOCK (PAGAMENTO_JA_PAGO)
+  PASS  outro tenant BLOCK (NAO_AUTORIZADO_TENANT)
+  PASS  repeticao idempotente (JA_CANCELADO)
+  PASS  lote consistente (item removido; lote zerado; lote_id=null)
+ESTORNAR INTEGRAL
+  PASS  baixa estornada + FP=aberto + PP=pendente + motivo registrado
+  PASS  repeticao BLOCK (PAGAMENTO_NAO_ESTA_PAGO)
+  PASS  sem motivo BLOCK (MOTIVO_OBRIGATORIO)
+  PASS  outro tenant BLOCK (NAO_AUTORIZADO_TENANT)
+  PASS  multiplas baixas BLOCK (BLOCKED_PAGAMENTO_PARCIAL)
+  PASS  baixa nao integral BLOCK (BLOCKED_PAGAMENTO_PARCIAL)
+FECHAMENTO
+  PASS  sem auth BLOCK (USUARIO_NAO_AUTENTICADO)
+  PASS  perfil invalido BLOCK (NAO_AUTORIZADO)
+  PASS  outro tenant BLOCK (NAO_AUTORIZADO_TENANT)
+  PASS  tenant correto (auth passa; guarda funcional ativa)
+  PASS  regressao funcional (fixture aprovada paga item; itens_processados=1)
+SEGURANCA
+  PASS  authenticated executa RPC via DEFINER mesmo sob S2 (PP bloqueado p/ DML)
+
+================================================================================
+11. PROVA DE NAO REGRESSAO
+================================================================================
+- S1/S2 ATIVOS: PP -> authenticated/anon somente REFERENCES,SELECT,TRIGGER,TRUNCATE; policies so SELECT.
+- authenticated continua SEM DML direto em PP.
+- RPCs existentes intactas: f_aprovar_pagamento_prestadores (DEFINER), f_confirmar_pagamento_prestador
+  (DEFINER), f_gerar_lote_pagamentos (DEFINER), f_registrar_baixa_financeira (INVOKER),
+  f_estornar_baixa_financeira (INVOKER).
+- Novas funcoes: grants somente authenticated + service_role (PUBLIC/anon revogados).
+- npx tsc --noEmit -> 0 erros. npm run build -> OK (42.86s).
+- Integridade pos-testes: PP total=98 (inalterado); fixtures persistidas=0; baixas estornadas=0;
+  lotes=0; PP pago=5 (inalterado).
+
+================================================================================
+12. ZERO ALTERACAO HISTORICA
+================================================================================
+- 3 PP pagos sem baixa intocados (32fe474f / 3884e3c0 / 6266f2a1) — permanecem DATA-05A.
+- CESAR, Calvo, TEST-02L e demais inconsistencias NAO tocados.
+- Todos os testes rodaram em BEGIN/ROLLBACK; nenhum fixture/dado persistido.
+
+================================================================================
+13. RISCOS RESIDUAIS
+================================================================================
+- Pagamento PARCIAL de prestador: BLOQUEADO por contrato (PP sem estado parcial).
+- f_estornar_baixa_financeira / f_registrar_baixa_financeira: INVOKER, sem search_path e sem auth
+  (hardening generico = divida; podem ter outros callers).
+- f_confirmar_pagamento_fechamento: agora valida auth/tenant, mas paga itens via
+  f_confirmar_pagamento_prestador (que exige 1 titulo FP casavel) — fechamentos com itens ambiguos
+  continuam dependentes dessa regra pre-existente.
+- UI ainda NAO chama as novas RPCs (botoes permanecem desabilitados) — wiring e missao futura.
+
+================================================================================
+14. BACKLOG CUMULATIVO (PENDENTE — modulo NAO concluido)
+================================================================================
+- pagamento parcial PP x FP — BLOQUEADO por contrato;
+- PP-UX-02A estrutura/hierarquia;
+- PP-UX-02B paginacao/busca/ordenacao;
+- PP-UX-02C2 fechamento x lote;
+- PP-UX-02C3 Novo Lancamento de Prestador;
+- remover/substituir "Gerar Repasse";
+- PP-UX-02D Conta Corrente/Relatorio/Dashboard;
+- PP-UX-03 visual/E2E;
+- KPIs x banco;
+- LIMIT 1000 (Aptos);
+- controles mortos;
+- anon grants residuais (financeiro_pagar/receber);
+- DML legado exportado;
+- FP x PP sem FK/tipos diferentes (os_id TEXT x UUID);
+- 3 PP pagos sem baixa;
+- tabelas orfas (pagamento_prestadores singular; fechamentos_prestador);
+- hardening generico das RPCs de baixa/estorno;
+- wiring da UI (PagamentoPrestadores) para as novas RPCs;
+- DATA-05A Calvo/CESAR/inconsistencias;
+- demais P1 financeiros ja registrados.
+NAO marcar Pagamento de Prestadores nem Financeiro como concluidos.
+
+================================================================================
+15. ENTREGA (valores REAIS)
+================================================================================
+ ARQUIVO ..... : TMS-FIN-PP-UX-02C1B-ACOES-SEGURAS-PRESTADOR-RESULTADO.txt
+ CAMINHO ..... : C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-FIN-PP-UX-02C1B-ACOES-SEGURAS-PRESTADOR-RESULTADO.txt
+ TAMANHO REAL  : 12671 bytes
+ DATA/HORA REAL: 25/09/2026 22:06:00
+
+================================================================================
+FIM — TMS-FIN-PP-UX-02C1B
+================================================================================

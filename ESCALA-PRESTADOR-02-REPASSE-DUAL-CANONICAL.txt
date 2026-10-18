@@ -1,0 +1,169 @@
+ESCALA-PRESTADOR-02-REPASSE-DUAL-CANONICAL
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+OBJETIVO
+==================================================
+
+Corrigir o repasse da Escala mantendo DUAS opções:
+  1. PADRÃO = Cadastro do Prestador (valor_diaria ?? valor_saida ?? 0)
+  2. ALTERNATIVA = "% sobre tabela" (percentual informado pelo operador)
+  (opção "Valor Fixo (R$)" preservada)
+
+O R$240 da tabela do cliente (percentual_prestador = 80%) NÃO pode
+mais ser fallback silencioso do repasse. Só ocorre por escolha explícita.
+
+==================================================
+REGRA DE NEGÓCIO APLICADA
+==================================================
+
+- Padrão = Cadastro do prestador.
+- Base = valor_diaria primeiro; fallback valor_saida; se ambos ausentes → 0 (não inventa).
+- NÃO somar diária + saída.
+- "% sobre tabela" somente por escolha explícita do operador.
+- tabelas_valores.percentual_prestador NUNCA é fallback oculto no modo cadastro.
+- Opção "fixo" preservada.
+- Alteração na Escala NÃO altera permanentemente o Cadastro do Prestador.
+- CLIENTE (tabela/precificação) × PRESTADOR (cadastro/regra) separados.
+
+==================================================
+EVIDÊNCIA OBRIGATÓRIA
+==================================================
+
+DEFAULT_REPASSE_MODE=cadastro
+PROVIDER_REGISTER_SOURCE=prestadores.valor_diaria ?? prestadores.valor_saida
+PERCENT_MODE=explicit (somente escolha do operador)
+AUTOMATIC_CLIENT_PERCENT_FALLBACK_REMOVED=YES
+CLAYTON_DEFAULT_RESULT=250
+CLAYTON_80_PERCENT_RESULT=240
+CLIENT_BASE_PRESERVED=300
+PROVIDER_BASE_PRESERVED=250
+SNAPSHOT_MODE_FIELD=metadata.repasse.origem
+SNAPSHOT_PROVIDER_VALUE=metadata.repasse.valor_base_prestador
+PROVIDER_REGISTER_NOT_MODIFIED=YES
+ESCALA05_MATCH_PRESERVED=YES
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+CASO CLAYTON (evidência de teste, sem hardcode de produção)
+==================================================
+
+Prestador ativo: 0673eca2-4594-4842-b78f-cd6cabe9177d
+  valor_diaria=250.00 | valor_saida=250.00 | valor_km=null | franquia_km=null
+Veículo: c487f012-208e-47ae-b5d8-e976382eaab0 (fiorino, GEW-2H93)
+Tabela cliente: 1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+  valor_base=300 | franquia_km=100 | km_franquia=0 | valor_km_excedente=1.2
+  percentual_prestador=80.00 | tipo_repasse_prestador=percentual
+
+DEFAULT_MODE=cadastro
+CADASTRO_BASE=250
+CLIENT_BASE=300
+Ao escolher "% sobre tabela" 80%: PROVIDER_RESULT=240
+Ao voltar para Cadastro: PROVIDER_RESULT=250
+
+==================================================
+CAUSA RAIZ (auditada, somente leitura)
+==================================================
+
+EscalaLista.calcularTotalAlocacao chamava calcularPrecoRapido(tabelaCliente, km)
+sem params → engine usava tabelas_valores.percentual_prestador (80%) × base cliente
+(300) = 240. O cadastro do prestador (250) nunca alimentava a base.
+
+==================================================
+IMPLEMENTAÇÃO
+==================================================
+
+1. src/helpers/repassePrestador.ts (NOVO)
+   resolverRepassePrestadorBase({ modo, valorDiaria, valorSaida, valorFixo,
+     percentual, valorBaseCliente }) → { base, origem, percentual? }
+   - cadastro:  base = valor_diaria > 0 ? valor_diaria : (valor_saida > 0 ? valor_saida : 0)
+   - percentual: base = valorBaseCliente × percentual/100 (0 é válido)
+   - fixo:      base = valorFixo
+   Sem uso de percentual_prestador da tabela cliente.
+
+2. src/components/operacao/EscalaLista.tsx
+   - AlocacaoFinanceiro.valorTipo: 'cadastro' | 'percentual' | 'fixo'
+   - Default 'cadastro' (init e reset).
+   - Selecionar prestador → seta modo 'cadastro' (não seleciona % silenciosamente).
+   - Reabrir alocação antiga gravada como percentual/0 → reabre em 'cadastro'.
+   - calcularTotalAlocacao usa resolverRepassePrestadorBase (remove default engine-%).
+   - UI "Valor do Prestador": opção "Cadastro do prestador" (primeira/padrão),
+     exibe regra do cadastro (R$ diária/saída) em modo cadastro; % e fixo preservados.
+   - Banner "FALLBACK: REGRA DA TABELA DO CLIENTE" só em modo percentual.
+   - Snapshot metadata.repasse: + origem, valor_base_prestador, valor_final,
+     percentual (só no modo percentual), valor_fixo (só no modo fixo).
+
+3. src/test/escala_prestador_02_repasse_dual.test.ts (NOVO) — T1..T15.
+
+FILES_MODIFIED=
+  src/helpers/repassePrestador.ts (novo)
+  src/components/operacao/EscalaLista.tsx
+  src/test/escala_prestador_02_repasse_dual.test.ts (novo)
+
+==================================================
+TESTES T1..T15 (18 asserts — 18/18 PASS)
+==================================================
+
+T1  selecionar Clayton → padrão Cadastro Prestador          PASS
+T2  Clayton → base R$250                                     PASS
+T3  não calcular 80% automaticamente (250, não 240)          PASS
+T4  tabela cliente continua R$300                             PASS
+T5  selecionar "% sobre tabela" (origem percentual)          PASS
+T6  informar 80% → repasse R$240                              PASS
+T7  informar 50% → repasse R$150                              PASS
+T8  percentual 0 tratado corretamente (0, sem fallback)      PASS
+T9  voltar para Cadastro → restaura R$250                     PASS
+T10 alteração não modifica cadastro do Clayton (helper puro) PASS
+T11 snapshot registra origem Cadastro                         PASS
+T12 snapshot registra origem Percentual quando escolhido      PASS
+T13 cliente/prestador permanecem separados                    PASS
+T14 ESCALA-05 não regride (normalização/match)                PASS
+T15 tsc/build PASS + fallback/ausência/não-soma               PASS
+
+TESTS_TOTAL=15
+TESTS_EXECUTED=18
+TESTS_PASS=18
+TESTS_FAIL=0
+
+REGRESSÃO ESCALA-05:
+  src/test/escala_veic_tabela_05_client_match.test.ts → 24/24 PASS
+
+SUÍTE COMPLETA (npx vitest run):
+  Test Files: 10 failed | 79 passed | 1 skipped (90)
+  Tests:      57 failed | 1292 passed | 155 skipped (1504)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates ausentes),
+  nenhuma em EscalaLista/repassePrestador/precificação.
+
+==================================================
+TSC / BUILD
+==================================================
+
+TSC_STATUS:
+  npm run typecheck → 0 erros novos nos arquivos desta missão.
+  (helper repassePrestador.ts e teste escala_prestador_02 sem erros)
+  Baseline pré-existente permanece (ex.: 3 erros antigos em EscalaLista.tsx
+  linhas 2991/3210/3518: REVERSA_TIPO_LABELS, Camera, alocacaoEmEdicao —
+  não relacionados a esta missão; outros em testes/utils).
+
+BUILD_STATUS:
+  npm run build → ✓ built in 35.98s
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Não alterou banco de produção.
+- Não criou migration/RLS.
+- Não alterou o cadastro do Clayton.
+- Não alterou a tabela Mineirão.
+- Sem hardcode (Clayton/250/300/80 apenas como evidência de teste).
+- Não tocou APP/POD.
+- Não tocou ESCALA-06 / ESCALA-07 / loading global.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

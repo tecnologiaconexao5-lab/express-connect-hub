@@ -1,0 +1,358 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02E — REAL SCHEMA GATE
+TMS + Supabase Produção (uwrvzsjtpgaifkktpepn)
+Data/hora: 2026-09-16
+Modo: SOMENTE LEITURA — ZERO WRITES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. VERSÃO CORRIGIDA IDENTIFICADA
+───────────────────────────────────────────────────────────────────────────────
+Arquivo:
+  supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+
+SHA256 02B CORRIGIDA:
+  B65D19B472D813ED17F82783CB7FDEEEEB745CC710C380FA491DED6CABF43633
+
+SHA256 baseline (lab):
+  436ADB9C70ACF652A56AF3BD14506748EB5C20B9D4FEDB55ABD182184AC1B42F
+
+SHA256 rollback:
+  4393F1B637EE992052B252C51A353BDFEE6E6BFAD5BFC5285E3E13738E5307E3
+
+Diferenças principais entre 02B corrigida e baseline/rollback:
+  • financeiro_pagar.valor passa a receber v_valor_liquido (não v_valor_prestador)
+    — tanto no trigger M66 (alocacoes_escala) quanto no M80 (ordens_servico).
+  • Cria RPC f_confirmar_pagamento_fechamento(uuid, date).
+  • Cria tabela fin_sane_02b_snapshot e faz snapshot + UPDATE seguro de títulos
+    históricos não pagos/cancelados/estornados.
+  • Remove a criação/atualização de ordens_servico dentro do trigger M66
+    (linha 101: "OS: desabilitado no lab isolado FIN-SANE-02B").
+    >>> ESTA REMOÇÃO É INCOMPATÍVEL COM O COMPORTAMENTO ATUAL DE PRODUÇÃO. <<<
+
+2. OBJETOS ANALISADOS (lista fechada)
+───────────────────────────────────────────────────────────────────────────────
+Tabelas lidas/criadas/alteradas pela 02B:
+  • public.fin_sane_02b_snapshot                (CREATE)
+  • public.financeiro_pagar                     (SELECT + UPDATE)
+  • public.pagamentos_prestadores               (SELECT)
+  • public.financeiro_baixas                    (usada indiretamente por RPC)
+  • public.alocacoes_escala                     (trigger M66)
+  • public.ordens_servico                       (trigger M80)
+  • public.clientes                             (lookup nome)
+  • public.prestadores                          (lookup nome/documento)
+  • public.contas_financeiras                   (usada por f_confirmar_pagamento_prestador)
+  • public.financeiro_receber                   (trigger M66/M80)
+  • public.composicao_financeira_os             (trigger M66/M80)
+
+Functions/RPCs:
+  • public.f_trg_propagar_financeiro_alocacao   (CREATE OR REPLACE)
+  • public.f_trg_propagar_financeiro_os         (CREATE OR REPLACE)
+  • public.f_confirmar_pagamento_fechamento     (CREATE OR REPLACE — nova)
+  • public.f_confirmar_pagamento_prestador      (chamada interna, não alterada)
+
+Triggers:
+  • public.trg_propagar_financeiro_alocacao     (DROP + CREATE)
+  • public.trg_propagar_financeiro_os           (DROP + CREATE)
+
+Constraints/índices necessários:
+  • financeiro_pagar.uq_fp_os_id                (UNIQUE os_id)
+  • pagamentos_prestadores.uq_pp_os_id          (UNIQUE os_id)
+  • financeiro_receber.uq_fr_os_id              (UNIQUE os_id)
+  • composicao_financeira_os.composicao_financeira_os_os_id_key (UNIQUE os_id)
+  • financeiro_baixas.conta_financeira_id       (FK para contas_financeiras)
+  • financeiro_baixas conta_financeira_id       (coluna adicionada em M80b)
+
+Objetos auxiliares:
+  • Sequência public.fin_sane_02b_snapshot_id_seq
+  • Grants SELECT/INSERT na snapshot + USAGE/SELECT na sequence
+
+3. SCHEMA REAL — VERIFICAÇÃO POR OBJETO
+───────────────────────────────────────────────────────────────────────────────
+
+3.1 TABELA public.fin_sane_02b_snapshot
+  EXISTE: NÃO  ← pré-condição OK
+
+3.2 TABELA public.financeiro_pagar
+  EXISTE: SIM
+  COLUNAS RELEVANTES:
+    id                  uuid        PK
+    os_id               text        UNIQUE uq_fp_os_id
+    valor               numeric     nullable
+    status              text        CHECK ck_fp_status
+    fornecedor_id       uuid        FK → prestadores(id)
+    fornecedor_nome     text
+    fornecedor_cadastro_id uuid     FK → fornecedores(id)  (extra, irrelevante)
+    desconto            numeric
+    is_teste            boolean     NOT NULL DEFAULT false  (extra, irrelevante)
+  CONSTRAINTS RELEVANTES:
+    PRIMARY KEY (id)
+    UNIQUE (os_id)  ✓
+    FOREIGN KEY (fornecedor_id) REFERENCES prestadores(id)
+  STATUS: COMPATÍVEL
+
+3.3 TABELA public.pagamentos_prestadores
+  EXISTE: SIM
+  COLUNAS RELEVANTES:
+    id                  uuid        PK
+    prestador_id        uuid        FK → prestadores(id)
+    prestador_nome      text
+    prestador_documento text
+    os_id               uuid        UNIQUE uq_pp_os_id
+    fechamento_id       uuid        FK → pagamentos_prestadores(id)
+    valor_liquido       numeric
+    valor_servicos      numeric
+    pedagio             numeric
+    adicionais          numeric
+    status              text
+    status_conferencia  text
+    status_pagamento    text
+    status_aprovacao    text
+    tipo_pagamento      text
+    periodo_inicio      date        NOT NULL
+    periodo_fim         date        NOT NULL
+    is_teste            boolean     NOT NULL DEFAULT false  (extra, irrelevante)
+    classificacao_dado  text        (extra, irrelevante)
+  CONSTRAINTS RELEVANTES:
+    PRIMARY KEY (id)
+    UNIQUE (os_id)  ✓
+    FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE CASCADE
+    FOREIGN KEY (fechamento_id) REFERENCES pagamentos_prestadores(id) ON DELETE SET NULL
+  STATUS: COMPATÍVEL
+
+3.4 TABELA public.financeiro_baixas
+  EXISTE: SIM
+  COLUNAS RELEVANTES:
+    id                  uuid        PK
+    titulo_tabela       text        NOT NULL CHECK ('financeiro_pagar'|'financeiro_receber')
+    titulo_id           uuid        NOT NULL
+    valor_original      numeric     NOT NULL
+    valor_baixado       numeric     NOT NULL CHECK > 0
+    saldo_restante      numeric     NOT NULL CHECK >= 0
+    data_baixa          date        NOT NULL DEFAULT CURRENT_DATE
+    conta_financeira    text
+    conta_financeira_id uuid        FK → contas_financeiras(id)
+    estornada           boolean     NOT NULL DEFAULT false
+  STATUS: COMPATÍVEL
+
+3.5 TABELA public.alocacoes_escala
+  EXISTE: SIM
+  COLUNAS RELEVANTES (todas presentes):
+    id, cliente_id, prestador_id, ordem_servico_id, data_escala,
+    status, finalizada, tipo_veiculo, origem, destino, observacoes,
+    valor_frete, valor_repasse, valor_pedagio, valor_combustivel,
+    valor_ajudante, valor_adicional, valor_desconto, valor_desconto_prestador,
+    tipo_reversa, reversa_qtd_volumes, reversa_valor_cliente, reversa_valor_prestador
+  STATUS: COMPATÍVEL
+
+3.6 TABELA public.ordens_servico
+  EXISTE: SIM
+  COLUNAS RELEVANTES (todas presentes):
+    id, numero, cliente, cliente_id(text), prestador, prestador_id(text),
+    status, valor_cliente, custo_prestador, pedagio, adicionais(jsonb),
+    ajudante(jsonb), descontos, tipo_reversa, reversa_qtd_volumes, observacoes_gerais
+  STATUS: COMPATÍVEL (obs: casts para UUID em cliente_id/prestador_id podem
+           falhar se contiverem textos não-UUID; comportamento pré-existente)
+
+3.7 TABELAS public.clientes, public.prestadores, public.contas_financeiras
+  EXISTEM: SIM
+  COLUNAS NECESSÁRIAS PRESENTES.
+  STATUS: COMPATÍVEL
+
+4. FUNÇÕES/RPCs REAIS
+───────────────────────────────────────────────────────────────────────────────
+
+4.1 f_confirmar_pagamento_prestador
+  EXISTE: SIM
+  ASSINATURA: (p_pagamento_id uuid, p_data_pagamento date DEFAULT CURRENT_DATE)
+  RETORNO: TABLE(sucesso boolean, mensagem text, pagamento_id uuid, ...)
+  VOLATIL: v   SECURITY DEFINER: false
+  auth.uid(): NÃO
+  usa valor_liquido: SIM
+  GRANTS: service_role, authenticated, postgres
+  CLASSIFICAÇÃO vs 02B: COMPATÍVEL (a 02B apenas a chama, não a altera)
+
+4.2 f_trg_propagar_financeiro_alocacao (produção ATUAL)
+  EXISTE: SIM
+  TIPO: trigger, VOLATILE, SECURITY DEFINER
+  CRIA ordens_servico: SIM
+  financeiro_pagar.valor = v_valor_prestador: SIM
+  financeiro_pagar.valor = v_valor_liquido: NÃO
+  GRANTS: PUBLIC, anon, authenticated, service_role, postgres
+  CLASSIFICAÇÃO vs 02B ESPERADO: INCOMPATÍVEL COMPORTAMENTAL — a 02B corrigida
+    remove o bloco INSERT/UPDATE de ordens_servico e altera financeiro_pagar.valor
+    para v_valor_liquido. Tecnicamente substituível, mas gera regressão funcional
+    (deixa de criar/atualizar OS a partir de alocações).
+
+4.3 f_trg_propagar_financeiro_os (produção ATUAL)
+  EXISTE: SIM
+  TIPO: trigger, VOLATILE, SECURITY DEFINER
+  financeiro_pagar.valor = v_valor_prestador: SIM
+  financeiro_pagar.valor = v_valor_liquido: NÃO
+  GRANTS: PUBLIC, anon, authenticated, service_role, postgres
+  CLASSIFICAÇÃO vs 02B ESPERADO: COMPATÍVEL PARA SUBSTITUIÇÃO (somente altera
+    financeiro_pagar.valor para v_valor_liquido; lógica de OS preservada)
+
+4.4 f_confirmar_pagamento_fechamento
+  EXISTE: NÃO
+  STATUS: A 02B a criará. COMPATÍVEL.
+
+5. TRIGGERS REAIS
+───────────────────────────────────────────────────────────────────────────────
+
+5.1 trg_propagar_financeiro_alocacao
+  TABELA: public.alocacoes_escala
+  EVENTO: INSERT | UPDATE
+  TIMING: AFTER
+  FOR EACH ROW
+  FUNÇÃO: public.f_trg_propagar_financeiro_alocacao
+  ENABLED: O (habilitado)
+  STATUS: EXISTE ✓
+
+5.2 trg_propagar_financeiro_os
+  TABELA: public.ordens_servico
+  EVENTO: INSERT | UPDATE
+  TIMING: AFTER
+  FOR EACH ROW
+  FUNÇÃO: public.f_trg_propagar_financeiro_os
+  ENABLED: O (habilitado)
+  STATUS: EXISTE ✓
+
+6. FINANCEIRO_PAGAR — CHECKLIST ESTRUTURAL
+───────────────────────────────────────────────────────────────────────────────
+  os_id           ✓ text     UNIQUE uq_fp_os_id
+  valor           ✓ numeric  nullable
+  status          ✓ text     CHECK ck_fp_status
+  fornecedor_id   ✓ uuid     FK → prestadores
+  fornecedor_nome ✓ text
+  desconto        ✓ numeric
+  UNIQUE(os_id)   ✓ presente
+  STATUS: PASS
+
+7. PAGAMENTOS_PRESTADORES — CHECKLIST ESTRUTURAL
+───────────────────────────────────────────────────────────────────────────────
+  os_id               ✓ uuid   UNIQUE uq_pp_os_id
+  fechamento_id       ✓ uuid   FK self-reference
+  valor_liquido       ✓ numeric
+  valor_servicos      ✓ numeric
+  pedagio             ✓ numeric
+  adicionais          ✓ numeric
+  status_pagamento    ✓ text
+  status_conferencia  ✓ text
+  status              ✓ text
+  tipo_pagamento      ✓ text
+  periodo_inicio      ✓ date   NOT NULL
+  periodo_fim         ✓ date   NOT NULL
+  STATUS: PASS
+
+8. FINANCEIRO_BAIXAS — CHECKLIST ESTRUTURAL
+───────────────────────────────────────────────────────────────────────────────
+  titulo_tabela      ✓ text  NOT NULL CHECK
+  titulo_id          ✓ uuid  NOT NULL
+  valor_original     ✓ numeric NOT NULL
+  valor_baixado      ✓ numeric NOT NULL CHECK > 0
+  data_baixa         ✓ date  NOT NULL DEFAULT CURRENT_DATE
+  conta_financeira_id ✓ uuid FK → contas_financeiras
+  estornada          ✓ boolean NOT NULL DEFAULT false
+  STATUS: PASS
+
+9. SNAPSHOT PRÉ-EXISTENTE
+───────────────────────────────────────────────────────────────────────────────
+  fin_sane_02b_snapshot EXISTE EM PRODUÇÃO? NÃO
+  STATUS: PASS (pode ser criado seguramente)
+
+10. DRY-RUN LÓGICO (SOMENTE SELECT)
+───────────────────────────────────────────────────────────────────────────────
+Cenário da Seção 4 da 02B (candidatos a snapshot + UPDATE):
+
+TOTAL:
+  Quantidade:         36 registros
+  Soma valor atual:   R$ 30.040,40
+  Soma valor proposto:R$ 36.377,12
+  Diferença:          +R$  6.336,72
+
+SEPARADO TESTE vs REAL:
+  TESTE: 23 registros
+         valor atual:   R$ 16.170,00
+         valor proposto:R$ 19.957,50
+  REAL:  13 registros
+         valor atual:   R$ 13.870,40
+         valor proposto:R$ 16.419,62
+
+CONTAGENS GERAIS:
+  financeiro_pagar:        107
+  pagamentos_prestadores:  102
+  financeiro_baixas:        16
+  alocacoes_escala:        192
+  ordens_servico:          121
+
+11. CASOS HISTÓRICOS ESPECIAIS — PAGOS SEM BAIXA
+───────────────────────────────────────────────────────────────────────────────
+Relatórios anteriores indicavam 8 → depois 1.
+AGORA EM PRODUÇÃO (SELECT real):
+  REAL: 9 pagamentos marcados como pago sem baixa correspondente em financeiro_baixas
+  TESTE: 0
+
+Observação: a 02B NÃO altera estes registros (status 'pago' é excluído do
+snapshot/UPDATE). Devem ser investigados em missão separada.
+
+12. SEGURANÇA DA MIGRATION vs SCHEMA REAL
+───────────────────────────────────────────────────────────────────────────────
+Pergunta                                                      Resposta
+─────────────────────────────────────────────────────────────────────────────
+Ela tentaria alterar objeto inexistente?                      NÃO
+Ela depende de coluna inexistente?                            NÃO
+Existe conflito de tipo?                                      NÃO
+Existe conflito de constraint?                                NÃO
+Existe risco conhecido de sobrescrever pagamento terminal?    NÃO (filtro status)
+Snapshot protege os valores alterados?                        SIM
+Rollback permanece aplicável ao schema real?                  SIM
+
+INCOMPATIBILIDADE ENCONTRADA:
+  A 02B corrigida REMOVE a criação/atualização de ordens_servico a partir de
+  alocacoes_escala (bloco "OS" presente no trigger M66 atual de produção).
+  O trigger real de produção CRIA ordens_servico. A versão 02B do lab não.
+
+  IMPACTO: se aplicada em produção, novas alocações não gerariam mais OS
+  automaticamente. Isso é uma regressão funcional conhecida.
+
+  CLASSIFICAÇÃO DA DIFERENÇA: INCOMPATÍVEL COMPORTAMENTAL (não estrutural)
+
+13. CLASSIFICAÇÃO DO GATE
+───────────────────────────────────────────────────────────────────────────────
+
+SCHEMA REAL:        PASS
+FUNÇÕES:            PASS (com ressalva comportamental no M66)
+TRIGGERS:           PASS
+FINANCEIRO_PAGAR:   PASS
+PAGAMENTOS_PRESTADORES: PASS
+FINANCEIRO_BAIXAS:  PASS
+SNAPSHOT PRÉ-EXISTENTE: PASS (NÃO existe)
+DRY-RUN:            PASS (36 candidatos identificados)
+
+INCOMPATIBILIDADES:
+  • Trigger M66 da 02B não cria/atualiza ordens_servico. O trigger atual de
+    produção faz isso. Ajuste necessário antes da aplicação.
+
+RISCO RESIDUAL:
+  Médio. A migration é estruturalmente aplicável e protege títulos pagos/
+  cancelados/estornados, mas causaria regressão operacional na criação de OS
+  a partir de alocações se aplicada sem correção do bloco "OS".
+
+CLASSIFICAÇÃO FINAL:
+  B — AJUSTE DEV NECESSÁRIO
+
+  A classificação "A" não é possível porque existe incompatibilidade
+  comportamental conhecida (perda da criação automática de OS via trigger M66).
+
+PRÓXIMA MISSÃO:
+  FIN-SANE-02F-DEV-FIX — Reintroduzir o bloco de criação/atualização de
+  ordens_servico no trigger M66 da 02B corrigida, mantendo a correção
+  financeiro_pagar.valor = v_valor_liquido. Validar novamente no lab isolado
+  (12 cenários SQL + rollback + reaplicação) antes de retornar ao gate 02E.
+
+PRODUÇÃO:
+  ZERO WRITES — este gate não alterou nenhum dado, objeto ou schema.
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

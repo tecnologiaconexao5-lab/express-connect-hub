@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { calcularSaldosConta } from "@/services/financeiro/contasCaixasService";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ interface Conta {
   numero_conta: string;
   digito: string;
   titular: string;
+  chave_pix?: string;
+  saldo_inicial_data?: string;
   saldo: number;
   saldo_inicial: number;
   ativa: boolean;
@@ -40,6 +43,11 @@ interface Conta {
   plano_contas: string;
   observacoes: string;
   cor: string;
+  // Computados (F0-H) — saldo real = saldo inicial + baixas; projetado = real + futuros.
+  saldoReal?: number;
+  saldoProjetado?: number;
+  entradasRealizadas?: number;
+  saidasRealizadas?: number;
 }
 
 interface Transferencia {
@@ -55,38 +63,7 @@ interface Transferencia {
   nomeDestino: string;
 }
 
-// ─── Initial data (seed fallback) ────────────────────────────────────────────
-
-const CONTAS_SEED: Omit<Conta, 'id'>[] = [
-  {
-    nome: "Conta Corrente Principal", tipo: "Conta Corrente",
-    banco: "Itaú Unibanco", agencia: "1234", numero_conta: "56789", digito: "0",
-    titular: "Express Connect Transportes LTDA", saldo: 145000.50, saldo_inicial: 100000,
-    ativa: true, principal: true, empresa: "Matriz (SP)",
-    plano_contas: "Disponibilidades", observacoes: "", cor: "#2563eb"
-  },
-  {
-    nome: "Conta Reserva / Impostos", tipo: "Conta Poupança",
-    banco: "Bradesco", agencia: "4321", numero_conta: "98765", digito: "4",
-    titular: "Express Connect Transportes LTDA", saldo: 85200.00, saldo_inicial: 80000,
-    ativa: true, principal: false, empresa: "Matriz (SP)",
-    plano_contas: "Reservas", observacoes: "Reserva para tributos", cor: "#7c3aed"
-  },
-  {
-    nome: "Cartão Corporativo Digital", tipo: "Conta Digital",
-    banco: "Nubank", agencia: "0001", numero_conta: "11223344", digito: "5",
-    titular: "Express Connect Hub", saldo: 12500.00, saldo_inicial: 10000,
-    ativa: true, principal: false, empresa: "Matriz (SP)",
-    plano_contas: "Disponibilidades", observacoes: "", cor: "#8b5cf6"
-  },
-  {
-    nome: "Caixa Interno — Pequenos Gastos", tipo: "Caixa Físico",
-    banco: "—", agencia: "—", numero_conta: "—", digito: "—",
-    titular: "Financeiro Interno", saldo: 1250.75, saldo_inicial: 2000,
-    ativa: true, principal: false, empresa: "Matriz (SP)",
-    plano_contas: "Caixa Geral", observacoes: "Reposição mensal: R$ 2.000", cor: "#0891b2"
-  },
-];
+// ─── Initial data (sem seed fictício — saldo inicial nunca é inventado) ──────
 
 const TIPO_CONTA_CORES: Record<string, string> = {
   "Conta Corrente": "bg-blue-100 text-blue-700 border-blue-200",
@@ -104,7 +81,7 @@ const fmtHora = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hou
 
 const NOVA_CONTA_BLANK = {
   nome: "", tipo: "", banco: "", agencia: "", numero_conta: "", digito: "",
-  titular: "", saldo_inicial: 0, ativa: true, principal: false,
+  titular: "", chave_pix: "", saldo_inicial: 0, saldo_inicial_data: "", ativa: true, principal: false,
   empresa: "Matriz (SP)", plano_contas: "Disponibilidades", observacoes: "", cor: "#2563eb"
 };
 
@@ -162,7 +139,60 @@ export default function ContasBancarias() {
         return;
       }
 
-      setContas(data as Conta[]);
+      // F0-H — saldo real (baixas não estornadas) e saldo projetado (títulos futuros)
+      const hojeStr = new Date().toISOString().split("T")[0];
+      const [baixasR, baixasP, futRec, futPag] = await Promise.all([
+        supabase.from("financeiro_baixas")
+          .select("id, titulo_tabela, valor_baixado, conta_financeira_id, conta_financeira, estornada")
+          .eq("estornada", false)
+          .eq("titulo_tabela", "financeiro_receber"),
+        supabase.from("financeiro_baixas")
+          .select("id, titulo_tabela, valor_baixado, conta_financeira_id, conta_financeira, estornada")
+          .eq("estornada", false)
+          .eq("titulo_tabela", "financeiro_pagar"),
+        supabase.from("financeiro_receber")
+          .select("id, valor, conta_entrada, data_vencimento, status")
+          .gte("data_vencimento", hojeStr),
+        supabase.from("financeiro_pagar")
+          .select("id, valor, conta_pagadora, data_vencimento, status")
+          .gte("data_vencimento", hojeStr),
+      ]);
+
+      const naoBaixado = (status?: string | null) => !["pago", "cancelado", "baixado"].includes((status || "").toLowerCase());
+      const baixasReceber = (baixasR.data || []).map((b: any) => ({
+        conta_financeira_id: b.conta_financeira_id || null,
+        conta_financeira: b.conta_financeira || null,
+        valor_baixado: Number(b.valor_baixado) || 0,
+        titulo_tabela: b.titulo_tabela as "financeiro_receber",
+        estornada: !!b.estornada,
+      }));
+      const baixasPagar = (baixasP.data || []).map((b: any) => ({
+        conta_financeira_id: b.conta_financeira_id || null,
+        conta_financeira: b.conta_financeira || null,
+        valor_baixado: Number(b.valor_baixado) || 0,
+        titulo_tabela: b.titulo_tabela as "financeiro_pagar",
+        estornada: !!b.estornada,
+      }));
+      const futurosReceber = (futRec.data || [])
+        .filter((r: any) => naoBaixado(r.status))
+        .map((r: any) => ({ conta: r.conta_entrada || null, valor: Number(r.valor) || 0 }));
+      const futurosPagar = (futPag.data || [])
+        .filter((p: any) => naoBaixado(p.status))
+        .map((p: any) => ({ conta: p.conta_pagadora || null, valor: Number(p.valor) || 0 }));
+
+      const contasComputadas: Conta[] = (data as Conta[]).map((c) => {
+        const s = calcularSaldosConta(c, baixasReceber, baixasPagar, futurosReceber, futurosPagar);
+        return {
+          ...c,
+          saldo: s.saldoReal, // fonte: saldo inicial + baixas (não inventado)
+          saldoReal: s.saldoReal,
+          saldoProjetado: s.saldoProjetado,
+          entradasRealizadas: s.entradasRealizadas,
+          saidasRealizadas: s.saidasRealizadas,
+        };
+      });
+
+      setContas(contasComputadas);
     } catch (e: any) {
       console.error("[ContasBancarias] Erro ao buscar contas:", e?.message || e);
       setFetchError("Erro ao carregar contas do banco de dados.");
@@ -172,8 +202,49 @@ export default function ContasBancarias() {
     }
   };
 
+  // FIN-MASTER-361 — histórico de transferências persistido no banco
+  const fetchTransferencias = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("financeiro_transferencias")
+        .select("id, created_at, data, conta_origem_id, conta_destino_id, valor, taxa, historico, usuario_nome")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) return; // tabela pode não existir ainda
+      if (!data || data.length === 0) return;
+
+      // Enriquecer com nomes das contas
+      const ids = [...new Set(data.flatMap(t => [t.conta_origem_id, t.conta_destino_id]))];
+      const { data: contasData } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome")
+        .in("id", ids);
+
+      const nomesMap = new Map((contasData || []).map((c: any) => [c.id, c.nome]));
+
+      const transferencias: Transferencia[] = data.map((t: any) => ({
+        id: t.id,
+        dataHora: t.created_at,
+        data: t.data || "",
+        contaOrigemId: t.conta_origem_id,
+        contaDestinoId: t.conta_destino_id,
+        valor: Number(t.valor) || 0,
+        taxa: Number(t.taxa) || 0,
+        historico: t.historico || "",
+        nomeOrigem: nomesMap.get(t.conta_origem_id) || "Conta Origem",
+        nomeDestino: nomesMap.get(t.conta_destino_id) || "Conta Destino",
+      }));
+
+      setHistorico(transferencias);
+    } catch {
+      // Silencioso — tabela pode não existir
+    }
+  };
+
   useEffect(() => {
     fetchContas();
+    fetchTransferencias();
   }, []);
 
   // ── Computed ──
@@ -242,6 +313,9 @@ export default function ContasBancarias() {
             numero_conta: novaConta.numero_conta || "—",
             digito: novaConta.digito || "—",
             titular: novaConta.titular.trim(),
+            chave_pix: novaConta.chave_pix || null,
+            saldo_inicial: novaConta.saldo_inicial,
+            saldo_inicial_data: novaConta.saldo_inicial_data || null,
             ativa: novaConta.ativa,
             principal: novaConta.principal,
             empresa: novaConta.empresa || "Matriz (SP)",
@@ -280,8 +354,10 @@ export default function ContasBancarias() {
             numero_conta: novaConta.numero_conta || "—",
             digito: novaConta.digito || "—",
             titular: novaConta.titular.trim(),
+            chave_pix: novaConta.chave_pix || null,
             saldo: novaConta.saldo_inicial,
             saldo_inicial: novaConta.saldo_inicial,
+            saldo_inicial_data: novaConta.saldo_inicial_data || null,
             ativa: novaConta.ativa,
             principal: novaConta.principal,
             empresa: novaConta.empresa || "Matriz (SP)",
@@ -307,7 +383,7 @@ export default function ContasBancarias() {
     }
   };
 
-  // ── Transferir entre contas ──
+  // ── Transferir entre contas (FIN-MASTER-361 — RPC atômica) ──
   const handleTransferir = async () => {
     if (!validarTransferencia()) return;
     try {
@@ -315,24 +391,29 @@ export default function ContasBancarias() {
 
       const origem = contas.find(c => c.id === transferencia.contaOrigemId)!;
       const destino = contas.find(c => c.id === transferencia.contaDestinoId)!;
-      const totalSair = transferencia.valor + (transferencia.taxa || 0);
 
-      const { error: errOrigem } = await supabase
-        .from("contas_financeiras")
-        .update({ saldo: origem.saldo - totalSair })
-        .eq("id", origem.id);
+      const { data: authUser } = await supabase.auth.getUser();
 
-      if (errOrigem) throw errOrigem;
+      const { data, error } = await supabase.rpc("f_transferir_entre_contas", {
+        p_conta_origem_id: origem.id,
+        p_conta_destino_id: destino.id,
+        p_valor: transferencia.valor,
+        p_data: transferencia.data || new Date().toISOString().split("T")[0],
+        p_taxa: transferencia.taxa || 0,
+        p_historico: transferencia.historico || "Transferência entre contas",
+        p_usuario_id: authUser?.user?.id || null,
+        p_usuario_nome: authUser?.user?.email || null,
+      });
 
-      const { error: errDestino } = await supabase
-        .from("contas_financeiras")
-        .update({ saldo: destino.saldo + transferencia.valor })
-        .eq("id", destino.id);
+      if (error) throw error;
 
-      if (errDestino) throw errDestino;
+      const resultado = Array.isArray(data) ? data[0] : data;
+      if (!resultado?.sucesso) throw new Error(resultado?.mensagem || "Falha na transferência");
 
+      // Persistir na tabela financeiro_transferencias já é feito pela RPC.
+      // Atualizar o state local do histórico (read-optimized).
       const novaTransf: Transferencia = {
-        id: crypto.randomUUID(),
+        id: resultado.transferencia_id || crypto.randomUUID(),
         dataHora: new Date().toISOString(),
         data: transferencia.data,
         contaOrigemId: origem.id,
@@ -364,7 +445,8 @@ export default function ContasBancarias() {
     setNovaConta({
       nome: conta.nome, tipo: conta.tipo, banco: conta.banco,
       agencia: conta.agencia, numero_conta: conta.numero_conta, digito: conta.digito,
-      titular: conta.titular, saldo_inicial: conta.saldo,
+      titular: conta.titular, chave_pix: conta.chave_pix || "",
+      saldo_inicial: conta.saldo_inicial, saldo_inicial_data: conta.saldo_inicial_data || "",
       ativa: conta.ativa, principal: conta.principal,
       empresa: conta.empresa, plano_contas: conta.plano_contas,
       observacoes: conta.observacoes, cor: conta.cor
@@ -477,7 +559,7 @@ export default function ContasBancarias() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg p-5 col-span-1">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <p className="text-xs font-semibold text-indigo-200 uppercase tracking-wider mb-2">Saldo Consolidado</p>
+          <p className="text-xs font-semibold text-indigo-200 uppercase tracking-wider mb-2">Saldo Real Consolidado</p>
           <p className="text-4xl font-black tracking-tight">{fmtBRL(saldoTotal)}</p>
           <p className="text-xs text-indigo-200 mt-2">{contasAtivas} conta{contasAtivas !== 1 ? "s" : ""} ativa{contasAtivas !== 1 ? "s" : ""}</p>
         </div>
@@ -562,7 +644,8 @@ export default function ContasBancarias() {
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Ag / Conta</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Titular</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Empresa</TableHead>
-                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-5">Saldo</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right">Saldo Real</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-5">Saldo Projetado</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-center">Status</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-4">Ações</TableHead>
                 </TableRow>
@@ -592,9 +675,19 @@ export default function ContasBancarias() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{conta.titular}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{conta.empresa}</TableCell>
+                    <TableCell className="text-right font-black text-sm">
+                      <span className={conta.saldoReal !== undefined && conta.saldoReal < 0 ? "text-red-600" : "text-foreground"}>
+                        {fmtBRL(conta.saldoReal ?? conta.saldo)}
+                      </span>
+                      {conta.entradasRealizadas !== undefined && (
+                        <span className="block text-[10px] font-normal text-muted-foreground">
+                          +{fmtBRL(conta.entradasRealizadas || 0)} / -{fmtBRL(conta.saidasRealizadas || 0)}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right pr-5 font-black text-sm">
-                      <span className={conta.saldo < 0 ? "text-red-600" : "text-foreground"}>
-                        {fmtBRL(conta.saldo)}
+                      <span className={conta.saldoProjetado !== undefined && conta.saldoProjetado < 0 ? "text-red-600" : "text-foreground"}>
+                        {fmtBRL(conta.saldoProjetado ?? conta.saldo)}
                       </span>
                     </TableCell>
                     <TableCell className="text-center">
@@ -720,10 +813,20 @@ export default function ContasBancarias() {
                     onChange={e => setNovaConta(p => ({ ...p, saldo_inicial: Number(e.target.value) }))}
                     placeholder="0,00"
                     className="h-10 font-mono text-indigo-700 dark:text-indigo-400 font-bold"
-                    disabled={!!contaEditando}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Data do Saldo Inicial
+                  </Label>
+                  <Input
+                    type="date"
+                    value={novaConta.saldo_inicial_data}
+                    onChange={e => setNovaConta(p => ({ ...p, saldo_inicial_data: e.target.value }))}
+                    className="h-10"
                   />
                   {contaEditando && (
-                    <p className="text-xs text-muted-foreground">Saldo atual: {fmtBRL(contaEditando.saldo)}</p>
+                    <p className="text-xs text-muted-foreground">Saldo real atual: {fmtBRL(contaEditando.saldoReal ?? contaEditando.saldo)}</p>
                   )}
                 </div>
               </div>
@@ -756,6 +859,18 @@ export default function ContasBancarias() {
 
             {/* Aba 2 — Dados Bancários */}
             <TabsContent value="bancarios" className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Chave PIX (identificador)
+                </Label>
+                <Input
+                  value={novaConta.chave_pix}
+                  onChange={e => setNovaConta(p => ({ ...p, chave_pix: e.target.value }))}
+                  placeholder="CPF/CNPJ, e-mail, telefone ou chave aleatória"
+                  className="h-10 font-mono"
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   Instituição Financeira / Banco <span className="text-red-500">*</span>

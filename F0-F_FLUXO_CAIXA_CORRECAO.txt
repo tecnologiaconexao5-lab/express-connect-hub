@@ -1,0 +1,49 @@
+F0-F — FLUXO DE CAIXA (CORREÇÃO PARA DADOS REAIS)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/components/financeiro/FluxoCaixaEnterprise.tsx (reescrita da camada de
+     dados + indicadores + filtro de conta + estado "saldo não configurado")
+   src/services/financeiro/fluxoCaixaService.ts (NOVO — funções puras previsto×realizado)
+   src/test/f0f_fluxo_caixa.test.ts (NOVO — 5 validações matemáticas)
+2. DEPENDÊNCIAS INEXISTENTES REMOVIDAS
+   lancamentos_financeiros  → query removida (tabela não existe em Produção)
+   saldos_financeiros       → query removida (tabela não existe em Produção)
+   Filtros mortos (Unidade/Centro Custo ligados à tabela inexistente) removidos.
+3. FONTES DE PREVISTO
+   Entradas: financeiro_receber (valor, data_vencimento, status, cliente, categoria).
+   Saídas:   financeiro_pagar   (valor, data_vencimento, status, fornecedor/prestador, categoria).
+4. FONTE DE REALIZADO
+   financeiro_baixas SOMENTE com estornada = false.
+   Entrada realizada: titulo_tabela = 'financeiro_receber'.
+   Saída realizada:   titulo_tabela = 'financeiro_pagar'.
+   Valor = valor_baixado · Data = data_baixa · Conta = conta_financeira · Forma = forma_pagamento.
+   NÃO infere realizado por status/vencimento do título.
+5. FÓRMULA DOS INDICADORES (fluxoCaixaService.calcularFluxo)
+   previstoEntrada = Σ títulos receber            previstoSaida = Σ títulos pagar
+   realizadoEntrada = Σ baixas receber (não estornadas)
+   realizadoSaida   = Σ baixas pagar (não estornadas)
+   fluxoRealizado = realizadoEntrada − realizadoSaida
+   saldoAtual = saldoInicial + previstoEntrada − previstoSaida (se saldo configurado)
+6. PREVENÇÃO DE DUPLICIDADE
+   Realizado vem exclusivamente das baixas; título pago NÃO entra duas vezes
+   (status nunca é usado como fonte de realizado). Previsto e realizado são
+   apresentados separados e nunca somados como fatos distintos.
+7. SALDOS / SALDO INICIAL
+   Sem fonte confiável → saldoInicialConfigurado = false → cards Saldo Inicial
+   mostram "Não configurado" e Saldo Final/Acumulado mostram "—" até F0-H
+   (Contas & Caixas). Nenhum valor inventado.
+8. FILTROS
+   Período (preset + datas custom), Previsto/Realizado (status), Entrada/Saída,
+   Categoria e Conta financeira (novo, derivado das baixas).
+9. VALIDAÇÕES MATEMÁTICAS (f0f_fluxo_caixa.test.ts — 5/5 PASS)
+   1) receber 1.000 sem baixa → previsto 1.000 / realizado 0
+   2) baixa parcial 300 → previsto rastreável 1.000 / realizado 300 (nunca 1.300)
+   3) pagar 500 + baixa 200 → previsto 500 / realizado 200
+   4) baixa estornada → fora do realizado
+   5) múltiplas baixas → realizado = soma exata das não estornadas
+10. TSC / TESTES
+    npx tsc --noEmit = 0 erros · npx vitest run f0f_fluxo_caixa.test.ts = 5/5 PASS
+11. PENDÊNCIAS PARA F0-H (Contas & Caixas)
+    Saldo inicial real por conta/caixa; vinculação de conta_financeira como FK;
+    conciliação CNAB; exportar CSV/PDF do fluxo (botão atual é decorativo).
+12. CONFIRMAÇÃO EXPLÍCITA: BANCO NÃO ALTERADO (sem migration, sem SQL).

@@ -69,8 +69,12 @@ export function calcularStatusFinanceiro(
   const valorLiquido = dados.valorLiquido ?? 0;
   if (valorLiquido <= 0) return "bloqueado";
 
-  const comprovanteStatus = dados.comprovanteStatus || "pendente";
-  if (comprovanteStatus === "pendente") return "pendente_comprovante";
+  // Comprovante check: only enforce when comprovanteStatus is explicitly provided.
+  // Manual payments and pagamentos_prestadores don't have comprovante — skip check.
+  if (dados.comprovanteStatus !== undefined) {
+    const comprovanteStatus = dados.comprovanteStatus || "pendente";
+    if (comprovanteStatus === "pendente") return "pendente_comprovante";
+  }
 
   const conferencia = dados.statusConferencia || "em_aberto";
   if (conferencia !== "conferido") return "pendente_conferencia";

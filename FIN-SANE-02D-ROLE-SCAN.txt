@@ -1,0 +1,154 @@
+============================================================
+FIN-SANE-02D-ROLE-SCAN
+Data: 2026-09-16
+Ambiente: TMS LOCAL / arquivos locais
+Producao: NAO acessada
+============================================================
+
+1. RESULTADO DA BUSCA
+============================================================
+
+SET/RESET ROLE EM MIGRATIONS: SIM
+QUANTIDADE: 2 ocorrencias (ambas na mesma migration)
+MIGRATIONS ENVOLVIDAS: 1
+
+Arquivo:
+  supabase/migrations/20260702000003_portal_rls_validacao.sql
+
+Ocorrencias:
+  Linha 199: PERFORM set_config('role', 'postgres', true);
+  Linha 209: PERFORM set_config('role', 'authenticated', true);
+
+Variantes com SET ROLE / SET SESSION AUTHORIZATION / SET LOCAL ROLE:
+  0 ocorrencias em migrations reais.
+
+SECURITY DEFINER / SECURITY INVOKER:
+  ~100 ocorrencias em ~30 migrations (funcoes standard PostgreSQL).
+  NENHUM impacto na role da sessao do CLI (apenas scope de funcao).
+
+============================================================
+2. ULTIMA MIGRATION ANTES DO 42501
+============================================================
+
+Debug output (supabase-start-debug.txt, linha 111):
+  "Applying migration 20260702000003_portal_rls_validacao.sql..."
+
+Logo apos (linhas 112-114):
+  Stopping containers...
+  Pruned containers: [...]
+  Pruned volumes: [...]
+
+Esta e a ULTIMA migration antes do INSERT de tracking que falha.
+
+============================================================
+3. ROLE CHOREOGRAPHY NA MIGRATION
+============================================================
+
+A migration 20260702000003_portal_rls_validacao.sql contem:
+
+  Linha 199: PERFORM set_config('role', 'postgres', true);
+    - Sobe a sessao para role postgres (superuser no init, apos
+      alteracao para NOSUPERUSER).
+    - is_local=true: escopo de transacao.
+
+  Linha 209: PERFORM set_config('role', 'authenticated', true);
+    - Desce a sessao para role authenticated.
+    - is_local=true: escopo de transacao.
+    - ESTE E O ULTIMO COMANDO DE ROLE NA MIGRATION.
+
+  Linhas 211-233: apenas RAISE NOTICE (saida de diagnostico).
+  Linhas 235-252: apenas comentarios SQL (--).
+
+NAO EXISTE reset para role apos a linha 209.
+A sessao permanece como "authenticated" apos a execucao do DO block.
+
+============================================================
+4. ANALISE DE COMPATIBILIDADE COM O BUG
+============================================================
+
+BUG DOCUMENTADO (supabase/cli PR #5895):
+  "The TS role step-down was lost mid-command... PgClient.make
+   leaves node-postgres' default 10s idle timeout — during the
+   minutes-long shadow diff the pool silently reaped and redialed
+   the stepped-down connection, so the final CREATE SCHEMA IF NOT
+   EXISTS supabase_migrations executed as the bare login role (42501)."
+
+NOSSO CASO:
+  - Ultima migration: 20260702000003_portal_rls_validacao.sql
+  - Contem: set_config('role', 'authenticated', true) na linha 209
+  - SEM reset de role apos o DO block
+  - Apos a migration: CLI executa INSERT INTO supabase_migrations
+    schema_migrations(version, name, statements) VALUES($1, $2, $3)
+  - Erro: permission denied for schema supabase_migrations (42501)
+
+COMPATIBILIDADE: SIM — mas com mecanismo LIGEIRAMENTE DIFERENTE.
+
+No PR #5895, o bug e: "SET ROLE postgres" e perdido por idle timeout
+do pool, e o INSERT roda como o "bare login role" (role de conexao).
+
+No nosso caso, o bug e mais direto: a ULTIMA MIGRATION ATIVAMENTE
+muda a role da sessao para "authenticated" via set_config('role',
+'authenticated', true). Se o CLI nao resetar a role apos a migration,
+o INSERT de tracking roda como "authenticated" — que NAO tem
+permissao USAGE no schema supabase_migrations.
+
+O resultado e identico (42501 no INSERT), mas o gatilho e diferente:
+  - PR #5895: idle timeout do pool perde o SET ROLE postgres
+  - Nosso caso: a migration MUDA a role para authenticated e o CLI
+    nao reseta
+
+============================================================
+5. EVIDENCIAS COMPACTAS
+============================================================
+
+A busca em TODAS as migrations (100+ arquivos) encontrou:
+  - 2 ocorrencias de set_config('role', ...) — AMBAS na mesma migration
+  - 0 ocorrencias de SET ROLE / RESET ROLE / SET SESSION AUTHORIZATION
+  - ~100 ocorrencias de SECURITY DEFINER (irrelevante para role da sessao)
+
+A migration 20260702000003 e a ULTIMA a ser aplicada antes do erro.
+
+A role "authenticated" NAO tem:
+  - USAGE no schema supabase_migrations
+  - INSERT na tabela schema_migrations
+  - NENHUMA permissao no schema
+
+A role "postgres" (owner do schema) TEM implicitamente ALL.
+
+Se o INSERT roda como "authenticated" → 42501. Consistente.
+
+============================================================
+6. RESPOSTA
+============================================================
+
+SET/RESET ROLE EM MIGRATIONS: SIM
+
+QUANTIDADE: 2 ocorrencias em 1 unica migration
+
+MIGRATIONS ENVOLVIDAS: 20260702000003_portal_rls_validacao.sql
+
+ULTIMA MIGRATION ANTES DO 42501: 20260702000003_portal_rls_validacao.sql
+
+ELA CONTÉM ROLE CHOREOGRAPHY: SIM
+  - set_config('role', 'postgres', true)  → sobe para postgres
+  - set_config('role', 'authenticated', true) → desce para authenticated
+  - SEM reset apos o DO block
+
+BUG DOCUMENTADO É COMPATÍVEL COM NOSSO CASO: SIM
+  O mecanismo e ativo (role mudada pela migration) ao inves de
+  passivo (idle timeout perde SET ROLE), mas o resultado e identico:
+  INSERT de tracking roda como role errado → 42501.
+
+PRÓXIMA AÇÃO MÍNIMA:
+  Remover ou comentar a linha 209 (set_config('role', 'authenticated', true))
+  da migration 20260702000003_portal_rls_validacao.sql, OU adicionar um
+  PERFORM set_config('role', 'postgres', true) apos o DO block (antes da
+  linha 233) para garantir que a role seja restaurada.
+
+  IMPORTANTE: esta migration e apenas diagnostico (validacao RLS).
+  O DO block apenas RAISE NOTICE — nao modifica dados. O role
+  "authenticated" no final e desnecessario e causador do 42501.
+
+============================================================
+ARQUIVO: FIN-SANE-02D-ROLE-SCAN.txt
+============================================================

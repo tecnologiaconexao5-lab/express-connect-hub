@@ -18,15 +18,23 @@ CREATE TABLE IF NOT EXISTS public.central_integracoes (
 ALTER TABLE public.central_integracoes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "central_integracoes_select" ON public.central_integracoes;
-CREATE POLICY "central_integracoes_select" ON public.central_integracoes
+DROP POLICY IF EXISTS "central_integracoes_select" ON public.central_integracoes;
+DROP POLICY IF EXISTS "central_integracoes_select" ON central_integracoes;
+CREATE POLICY "central_integracoes_select" ON central_integracoes
   FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "central_integracoes_insert" ON public.central_integracoes;
-CREATE POLICY "central_integracoes_insert" ON public.central_integracoes
+DROP POLICY IF EXISTS "central_integracoes_insert" ON public.central_integracoes;
+DROP POLICY IF EXISTS "central_integracoes_insert" ON central_integracoes;
+CREATE POLICY "central_integracoes_insert" ON central_integracoes
   FOR INSERT WITH CHECK (true);
 
 DROP POLICY IF EXISTS "central_integracoes_update" ON public.central_integracoes;
-CREATE POLICY "central_integracoes_update" ON public.central_integracoes
+DROP POLICY IF EXISTS "central_integracoes_update" ON public.central_integracoes;
+DROP POLICY IF EXISTS "central_integracoes_update" ON central_integracoes;
+CREATE POLICY "central_integracoes_update" ON central_integracoes
   FOR UPDATE WITH CHECK (true);
 
 ALTER TABLE public.central_integracoes REPLICA IDENTITY FULL;
+
+

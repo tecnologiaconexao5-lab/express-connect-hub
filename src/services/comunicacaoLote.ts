@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "@/services/ia/proxyIaClient";
 
 export interface ComunicacaoLote {
   id: string;
@@ -48,33 +49,20 @@ export interface Template {
 }
 
 const callClaudeAPI = async (system: string, userMessage: string): Promise<string> => {
-  const apiKey = localStorage.getItem("anthropic_api_key");
-  if (!apiKey) {
+  const prompt = `${system}\n\n${userMessage}`;
+  const resultado = await proxyIaClient.executar({
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    prompt,
+    max_tokens: 1024,
+  });
+
+  if (!resultado.sucesso) {
+    console.warn("proxy-ia indisponível:", resultado.erro);
     return `MOCK: ${userMessage.substring(0, 50)}...`;
   }
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
-        system,
-        messages: [{ role: "user", content: userMessage }]
-      })
-    });
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (err) {
-    console.error("Erro na API:", err);
-    throw err;
-  }
+  return resultado.resposta;
 };
 
 export function processarVariaveis(conteudo: string, dados: Record<string, any>): string {

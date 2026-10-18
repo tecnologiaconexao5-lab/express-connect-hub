@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit, Package, BarChart3 } from "lucide-react";
+import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit, Package, BarChart3, Trash2, Hash } from "lucide-react";
+import { AlocacaoCancelamentoModal } from "./escala/AlocacaoCancelamentoModal";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,20 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { calcularFinanceiroEscala } from "@/utils/engineFinanceira";
-import { normalizeClienteNome } from "@/utils/clienteHelper";
+import { cancelarAlocacao, criarAlocacao, atualizarAlocacao } from "@/services/escala/escalaService";
+import { dividirDescontosEscala, reconstruirDescontosEscala } from "@/services/escala/escalaFinanceiroDesconto";
+import { buscarTemposReaisAlocacao, formatarDuracaoMin, type TemposOperacionaisReais } from "@/services/escala/escalaTemposService";
+import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
+import { resolverRepassePrestadorBase } from "@/helpers/repassePrestador";
+import { resolverFranquiaEfetiva, resolverTarifaKmExcedente } from "@/helpers/franquiaKm";
+import { selecionarTabelaPorCondicaoTerica } from "@/helpers/condicaoTerica";
+// normalizeClienteNome removido — normalização inline com trim+toUpperCase
+import { obterLabelStatus, obterClasseBadgeStatus, normalizarStatusParaUI, normalizarStatusParaBanco, isStatusCancelado } from "./escalaStatus";
+import { enviarMensagem } from "@/services/integracoes/whatsappService";
+import PODDisplay from "./PODDisplay";
+import { ColetaReversaFields, emptyReversaFields, dbToReversaFields, hasReversaData, REVERSA_STATUS_LABELS, type ReversaFields } from "./ColetaReversaFields";
+import { ColetaReversaFinanceiro } from "./ColetaReversaFinanceiro";
+import { useEscalaRealtime } from "@/hooks/useEscalaRealtime";
 
 
 import jsPDF from "jspdf";
@@ -30,7 +43,7 @@ import {
 type Periodo = 'semanal' | 'quinzenal' | 'mensal';
 
 interface AlocacaoFinanceiro {
-  valorTipo: 'percentual' | 'fixo';
+  valorTipo: 'cadastro' | 'percentual' | 'fixo';
   valorPercentual: number;
   valorFixo: number;
   combustivel: number;
@@ -86,9 +99,15 @@ export default function EscalaLista() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [periodo, setPeriodo] = useState<Periodo>('semanal');
   const [modalOpen, setModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedCell, setSelectedCell] = useState<{prestadorId: string, data: Date} | null>(null);
+  const [dataAlocacaoModal, setDataAlocacaoModal] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [selectedCarregamentoDetail, setSelectedCarregamentoDetail] = useState<any>(null);
   const [showCarregamentoDetailModal, setShowCarregamentoDetailModal] = useState(false);
+  const [selectedPodAlocacao, setSelectedPodAlocacao] = useState<string | null>(null);
+  const [showPODModal, setShowPODModal] = useState(false);
   // Removed mock confirmacoesCarregamento
   
   // States reais para dados
@@ -99,6 +118,7 @@ export default function EscalaLista() {
   // Form Nova Reserva
   const [novoTurno, setNovoTurno] = useState("integral");
   const [novaOS, setNovaOS] = useState("");
+  const [novaOSId, setNovaOSId] = useState("");
   const [numeroOC, setNumeroOC] = useState("");
   const [novoPrestadorId, setNovoPrestadorId] = useState("");
   const [novoPrestadorNome, setNovoPrestadorNome] = useState("");
@@ -106,11 +126,15 @@ export default function EscalaLista() {
   const [showPrestadorDropdown, setShowPrestadorDropdown] = useState(false);
   const [novoClienteId, setNovoClienteId] = useState("");
   const [novoClienteNome, setNovoClienteNome] = useState("");
-  const [prestadorVeiculo, setPrestadorVeiculo] = useState<{tipo_veiculo: string, placa: string, refrigerado: boolean} | null>(null);
+  const [prestadorVeiculo, setPrestadorVeiculo] = useState<{tipo_veiculo: string, placa: string, refrigerado: boolean, condicao_termica?: string} | null>(null);
+  const [tabelaAmbiguidadeTermica, setTabelaAmbiguidadeTermica] = useState(false);
   const [instrucoesPrestador, setInstrucoesPrestador] = useState("");
   const [observacaoCliente, setObservacaoCliente] = useState("");
   const [tabelaValores, setTabelaValores] = useState<any>(null);
   const [tabelaRascunhoEncontrada, setTabelaRascunhoEncontrada] = useState<any>(null);
+  // ESCALA-E2E-08D — proteção contra race: respostas assíncronas antigas do lookup
+  // de tabela não podem sobrescrever o resultado mais recente.
+  const tabelaReqSeqRef = useRef(0);
   const [kmExcedentePrestador, setKmExcedentePrestador] = useState<number>(0);
   const [minutosEspera, setMinutosEspera] = useState<number>(0);
   const [ajusteClienteValor, setAjusteClienteValor] = useState<number>(0);
@@ -129,11 +153,20 @@ export default function EscalaLista() {
   const [tempoFimCarregamento, setTempoFimCarregamento] = useState("09:00");
   const [tempoSaidaRua, setTempoSaidaRua] = useState("09:15");
   const [tempoFinalizacaoEntregas, setTempoFinalizacaoEntregas] = useState("17:30");
+  // A31-H — tempos operacionais REAIS derivados dos eventos do App (eventos_oficiais)
+  const [temposReais, setTemposReais] = useState<TemposOperacionaisReais | null>(null);
+  const [novaOrigem, setNovaOrigem] = useState("");
+  const [novoDestino, setNovoDestino] = useState("");
+  // Coleta Reversa fields
+  const [reversaFields, setReversaFields] = useState<ReversaFields>(emptyReversaFields());
+  const [showReversa, setShowReversa] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("acao") === "alocar") {
       setTimeout(() => {
+        const hoje = format(new Date(), 'yyyy-MM-dd');
+        setDataAlocacaoModal(hoje);
         handleCellClick("", new Date());
         setModalOpen(true);
         window.history.replaceState({}, '', window.location.pathname + "?tab=escala");
@@ -142,90 +175,171 @@ export default function EscalaLista() {
   }, []);
 
   // Função para buscar tabela de valores do cliente
-  const buscarTabelaValoresCliente = useCallback(async (clienteId: string, clienteNome: string, tipoVeiculo: string, dataEscalaStr?: string) => {
-    if (!clienteId || !clienteNome || !tipoVeiculo) return null;
+  const buscarTabelaValoresCliente = useCallback(async (clienteId: string, clienteNome: string, tipoVeiculo: string, dataEscalaStr?: string, condicaoTerica?: string) => {
+    if (!clienteId || !tipoVeiculo) return null;
+    const reqId = ++tabelaReqSeqRef.current;
+    const isStale = () => reqId !== tabelaReqSeqRef.current;
     setLoadingTabelaValores(true);
     try {
       const dataEscala = dataEscalaStr ? new Date(dataEscalaStr) : new Date();
-      
-      const nomeNormalizado = normalizeClienteNome(clienteNome);
-      
-      const { data: specificData, error: specificError } = await supabase
+
+      // Resolver nome canônico do banco (igne whitespace/case do input)
+      let nomeCanonico: string | null = null;
+      const { data: cliRow } = await supabase
+        .from("clientes")
+        .select("nome_fantasia")
+        .eq("id", clienteId)
+        .maybeSingle();
+      if (cliRow?.nome_fantasia) {
+        nomeCanonico = cliRow.nome_fantasia;
+      }
+
+      const normalizar = (s: string) => (s || "").trim().toUpperCase();
+
+      // Buscar todas as tabelas ativas para o tipo de veículo e matchear por nome normalizado
+      const { data: candidateTables } = await supabase
         .from("tabelas_valores")
-        .select("id, nome, valor_base, valor_km, km_franquia, valor_km_excedente, tipo_veiculo, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais")
-        .eq("cliente", nomeNormalizado)
-        .eq("tipo_veiculo", tipoVeiculo);
-        
+        .select("id, nome, valor_base, valor_km, km_franquia, franquia_km, valor_km_excedente, tipo_veiculo, classificacao_termica, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais, cliente, universal")
+        .eq("tipo_veiculo", tipoVeiculo)
+        .eq("ativo", true);
+
       let escolhida = null;
       let rascunhoEncontrado = null;
-      
-      if (!specificError && specificData && specificData.length > 0) {
-         const ativas = specificData.filter(d => d.ativo || d.status === 'ativa');
-         const rascunhos = specificData.filter(d => !d.ativo || d.status === 'rascunho' || d.status === 'inativa');
-         
-         if (rascunhos.length > 0) rascunhoEncontrado = rascunhos[0];
-         
-         if (ativas.length > 0) {
-           const comVigencia = ativas.find(d => {
-             if (!d.data_inicio) return true;
-             return new Date(d.data_inicio) <= dataEscala && (!d.data_fim || new Date(d.data_fim) >= dataEscala);
-           });
-           escolhida = comVigencia || ativas[0];
-         }
+      let ambiguidade = false;
+
+      if (candidateTables && candidateTables.length > 0) {
+        const specificMatch = candidateTables.find(t => {
+          if (t.universal) return false;
+          const dbNome = normalizar(t.cliente || "");
+          const inputNome = normalizar(nomeCanonico || clienteNome || "");
+          return dbNome !== "" && inputNome !== "" && dbNome === inputNome;
+        });
+
+        if (specificMatch) {
+          const ativas = candidateTables.filter(t => !t.universal && (t.ativo || t.status === 'ativa'));
+          const rascunhos = candidateTables.filter(t => !t.universal && (!t.ativo || t.status === 'rascunho' || t.status === 'inativa'));
+          if (rascunhos.length > 0) rascunhoEncontrado = rascunhos[0];
+
+          const matchAtivas = ativas.filter(d => normalizar(d.cliente || "") === normalizar(nomeCanonico || clienteNome || ""));
+
+          // ESCALA-07 — condição térmica é dimensão INDEPENDENTE do tipo de veículo.
+          const sel = selecionarTabelaPorCondicaoTerica(matchAtivas, condicaoTerica);
+          if (sel.ambiguidade) {
+            ambiguidade = true;
+            escolhida = null;
+          } else if (sel.tabela) {
+            const comVigencia = sel.compativeis.find(d => {
+              if (!d.data_inicio) return true;
+              return new Date(d.data_inicio) <= dataEscala && (!d.data_fim || new Date(d.data_fim) >= dataEscala);
+            });
+            escolhida = comVigencia || sel.tabela;
+          } else {
+            // condição térmica conhecida sem tabela compatível → NÃO usar tabela incompatível
+            escolhida = null;
+          }
+        }
       }
-      
+
+      if (isStale()) return null;
+      setTabelaAmbiguidadeTermica(ambiguidade);
+
       if (escolhida) {
         setTabelaRascunhoEncontrada(rascunhoEncontrado);
-        setTabelaValores({ ...escolhida, km_franquia: escolhida.km_franquia || 200, valor_km_excedente: escolhida.valor_km_excedente || escolhida.valor_km || 2.50 });
+        setTabelaValores({ ...escolhida, franquia_km: resolverFranquiaEfetiva(escolhida.franquia_km, escolhida.km_franquia), km_franquia: resolverFranquiaEfetiva(escolhida.franquia_km, escolhida.km_franquia), valor_km_excedente: resolverTarifaKmExcedente(escolhida.valor_km_excedente, escolhida.valor_km) });
         setRegraEspecialAtiva(true);
         return escolhida;
       }
-      
-      const { data: universalData } = await supabase
+
+      // Fallback universal (mesma dimensão térmica; não escolher arbitrariamente)
+      if (isStale()) return null;
+      const { data: universalList } = await supabase
         .from("tabelas_valores")
-        .select("id, nome, valor_base, valor_km, km_franquia, valor_km_excedente, tipo_veiculo, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais")
+        .select("id, nome, valor_base, valor_km, km_franquia, franquia_km, valor_km_excedente, tipo_veiculo, classificacao_termica, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais")
         .eq("universal", true)
         .eq("tipo_veiculo", tipoVeiculo)
-        .eq("ativo", true)
-        .limit(1)
-        .single();
-      
+        .eq("ativo", true);
+
+      const selUniversal = selecionarTabelaPorCondicaoTerica(universalList || [], condicaoTerica);
+      if (selUniversal.ambiguidade) setTabelaAmbiguidadeTermica(true);
+      const universalData = selUniversal.tabela;
+
+      if (isStale()) return null;
       if (universalData) {
         setTabelaRascunhoEncontrada(rascunhoEncontrado);
-        setTabelaValores({ ...universalData, km_franquia: universalData.km_franquia || 200, valor_km_excedente: universalData.valor_km_excedente || universalData.valor_km || 2.50 });
+        setTabelaValores({ ...universalData, franquia_km: resolverFranquiaEfetiva(universalData.franquia_km, universalData.km_franquia), km_franquia: resolverFranquiaEfetiva(universalData.franquia_km, universalData.km_franquia), valor_km_excedente: resolverTarifaKmExcedente(universalData.valor_km_excedente, universalData.valor_km) });
         setRegraEspecialAtiva(false);
         return universalData;
       }
-      
+
+      if (isStale()) return null;
       setTabelaRascunhoEncontrada(rascunhoEncontrado);
       setTabelaValores(null);
       setRegraEspecialAtiva(false);
       return null;
     } catch (err) {
       console.error("Erro ao buscar tabela de valores:", err);
+      if (isStale()) return null;
       setTabelaValores(null);
       setTabelaRascunhoEncontrada(null);
       setRegraEspecialAtiva(false);
       return null;
     } finally {
-      setLoadingTabelaValores(false);
+      if (!isStale()) setLoadingTabelaValores(false);
     }
   }, []);
+
+  // ESCALA-E2E-08D — resolução reativa e INDEPENDENTE DE ORDEM.
+  // Sempre que houver cliente + veículo (tipo canônico) + data, a tabela é (re)calculada,
+  // seja o fluxo Prestador→Cliente ou Cliente→Prestador. Protegido contra race pelo seqRef.
+  useEffect(() => {
+    if (!modalOpen) return;
+    if (!novoClienteId) return;
+    if (!prestadorVeiculo?.tipo_veiculo) return;
+    buscarTabelaValoresCliente(
+      novoClienteId,
+      novoClienteNome,
+      prestadorVeiculo.tipo_veiculo,
+      dataAlocacaoModal,
+      prestadorVeiculo.condicao_termica
+    );
+  }, [
+    modalOpen,
+    novoClienteId,
+    novoClienteNome,
+    prestadorVeiculo?.tipo_veiculo,
+    prestadorVeiculo?.condicao_termica,
+    dataAlocacaoModal,
+    buscarTabelaValoresCliente,
+  ]);
 
   // Função para buscar dados do veículo do prestador
   const buscarDadosVeiculoPrestador = useCallback(async (prestadorId: string) => {
     const { data, error } = await supabase
       .from("prestadores")
-      .select("veiculos(tipo, placa)")
+      .select("veiculos(id, tipo_veiculo, tipo, placa, modelo, tipo_carga)")
       .eq("id", prestadorId)
       .single();
     
     if (!error && data) {
-      const v = data.veiculos && data.veiculos.length > 0 ? data.veiculos[0] : null;
+      const veiculos = data.veiculos || [];
+      if (veiculos.length === 0) {
+        // Prestador sem veículo vinculado — sem fallback
+        setPrestadorVeiculo({ tipo_veiculo: "", placa: "", refrigerado: false, condicao_termica: "" });
+        return data;
+      }
+      if (veiculos.length > 1) {
+        // Múltiplos veículos — bloquear (não escolher arbitrariamente)
+        setPrestadorVeiculo(null);
+        return data;
+      }
+      // Exatamente 1 veículo — usar tipo_veiculo canônico, fallback para tipo legado
+      const v = veiculos[0];
+      const effectiveType = v.tipo_veiculo || v.tipo || "";
       setPrestadorVeiculo({
-        tipo_veiculo: v?.tipo || "vuc",
-        placa: v?.placa || "",
-        refrigerado: false
+        tipo_veiculo: effectiveType,
+        placa: v.placa || "",
+        refrigerado: false,
+        condicao_termica: v.tipo_carga || ""
       });
       return data;
     }
@@ -242,7 +356,7 @@ export default function EscalaLista() {
   
   // Dados Financeiros
   const [financeiro, setFinanceiro] = useState<AlocacaoFinanceiro>({
-    valorTipo: 'percentual',
+    valorTipo: 'cadastro',
     valorPercentual: 0,
     valorFixo: 0,
     combustivel: 0,
@@ -271,13 +385,18 @@ export default function EscalaLista() {
   const [alocacoes, setAlocacoes] = useState<any[]>([]);
   const [listaClientes, setListaClientes] = useState<any[]>([]);
 
+  // D15: Realtime subscription para atualização automática da escala
+  useEscalaRealtime(() => {
+    loadAlocacoes();
+  });
+
   useEffect(() => {
     // Carregar prestadores reais
     async function loadPrestadores() {
       try {
         const { data, error } = await supabase
           .from("prestadores")
-          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status, regiao_principal, valor_diaria, valor_saida, fixo_mensal, franquia_km, valor_km")
+          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, tipo_veiculo, placa), status, regiao_principal, valor_diaria, valor_saida, fixo_mensal, franquia_km, valor_km")
           .eq("status", "ativo");
         
         if (error) throw error;
@@ -288,7 +407,7 @@ export default function EscalaLista() {
           nome: p.nome_completo,
           cpfCnpj: p.cpf_cnpj,
           telefone: p.telefone || p.whatsapp,
-          veiculo: p.veiculos && p.veiculos.length > 0 ? p.veiculos[0].tipo : 'vuc',
+          veiculo: p.veiculos && p.veiculos.length > 0 ? (p.veiculos[0].tipo_veiculo || p.veiculos[0].tipo || '') : '',
           placa: p.veiculos && p.veiculos.length > 0 ? p.veiculos[0].placa : '',
           regiao: p.regiao_principal || "Sem região",
           status: "disponivel",
@@ -325,9 +444,11 @@ export default function EscalaLista() {
 
     loadPrestadores();
     loadClientes();
+    loadAlocacoes();
+  }, []);
 
-    // Tentar carregar alocações do Supabase primeiro
-    async function loadAlocacoes() {
+  // Tentar carregar alocações do Supabase primeiro
+  const loadAlocacoes = useCallback(async () => {
       try {
         const hoje = new Date();
         const inicioMes = format(startOfMonth(hoje), 'yyyy-MM-dd');
@@ -337,48 +458,59 @@ export default function EscalaLista() {
           .select(`
             id, data_escala, status, status_pagamento, turno, tipo_veiculo, placa,
             valor_fixo, valor_frete, valor_pedagio, valor_combustivel, valor_ajudante,
-            valor_adicional, valor_desconto, valor_total, km_realizados, metadata, observacoes,
-            prestador_id, cliente_id,
-            prestadores!prestador_id(id, nome_completo),
-            clientes!cliente_id(id, nome_fantasia)
+            valor_adicional, valor_desconto, valor_desconto_prestador, valor_total, km_realizados, metadata, observacoes,
+            prestador_id, cliente_id, ordem_servico_id,
+            prestadores!prestador_id!left(id, nome_completo),
+            clientes!cliente_id!left(id, nome_fantasia),
+            ordens_servico!ordem_servico_id!left(id, numero)
           `)
           .gte('data_escala', inicioMes)
           .lte('data_escala', fimMes)
           .order('data_escala', { ascending: true });
 
-        if (!error && data && data.length > 0) {
-          const mapped = data.map((r: any) => {
-            const prestNome = r.prestadores?.nome_completo || r.metadata?.prestadorNome || '';
-            const cliNome = r.clientes?.nome_fantasia || r.metadata?.clienteNome || '';
-            const meta = r.metadata || {};
-            const valorBase = Number(r.valor_fixo ?? meta.totals?.valorBase ?? 0);
-            const adicionais = Number(r.valor_adicional ?? meta.totals?.totalAdicionais ?? 0);
-            const descontos = Number(r.valor_desconto ?? meta.totals?.totalDescontos ?? 0);
-            const total = Number(r.valor_total ?? (valorBase + adicionais - descontos));
-            return {
-              id: r.id,
-              prestadorId: r.prestador_id,
-              prestadorNome: prestNome,
-              clienteId: r.cliente_id,
-              clienteNome: cliNome,
-              data: (r.data_escala && r.data_escala.includes('T') ? r.data_escala.split('T')[0] : r.data_escala) + 'T12:00:00',
-              turno: r.turno,
-              status: r.status,
-              statusPagamento: r.status_pagamento,
-              os: meta.os || '',
-              horarioInicio: meta.horarioInicio || '',
-              horarioFim: meta.horarioFim || '',
-              kmInicial: meta.kmInicial || 0,
-              kmFinal: meta.kmFinal || 0,
-              prestadorVeiculo: { tipo_veiculo: r.tipo_veiculo, placa: r.placa },
-              financeiro: meta.financeiro || {},
-              totals: { valorBase, totalAdicionais: adicionais, totalDescontos: descontos, total },
-              metadata: meta,
-            };
-          });
-          console.log("[DEBUG] loadAlocacoes retornou:", mapped.length, "registros", mapped);
-          setAlocacoes(mapped);
-          return; // Não usa localStorage se Supabase respondeu
+        if (!error && data) {
+          if (data.length > 0) {
+            const mapped = data.map((r: any) => {
+              const prestNome = r.prestadores?.nome_completo || r.metadata?.prestadorNome || '';
+              const cliNome = r.clientes?.nome_fantasia || r.metadata?.clienteNome || '';
+              const meta = r.metadata || {};
+              const valorBase = Number(r.valor_fixo ?? meta.totals?.valorBase ?? 0);
+              const adicionais = Number(r.valor_adicional ?? meta.totals?.totalAdicionais ?? 0);
+              // A31-J1.12 — contrato oficial: valor_desconto = cliente; valor_desconto_prestador = prestador.
+              const descontoPrestador = Number(r.valor_desconto_prestador || r.valor_desconto || meta.totals?.totalDescontos || 0);
+              const descontoCliente = Number(r.valor_desconto || 0);
+              const total = Number(r.valor_total ?? (valorBase + adicionais - descontoPrestador));
+              return {
+                id: r.id,
+                prestadorId: r.prestador_id,
+                prestadorNome: prestNome,
+                clienteId: r.cliente_id,
+                clienteNome: cliNome,
+                data: (r.data_escala && r.data_escala.includes('T') ? r.data_escala.split('T')[0] : r.data_escala) + 'T12:00:00',
+                turno: r.turno,
+                status: r.status,
+                statusPagamento: r.status_pagamento,
+                os: meta.os || '',
+                osNumero: r.ordens_servico?.numero || meta.os || '',
+                osId: r.ordem_servico_id || meta.ordem_servico_id || '',
+                horarioInicio: meta.horarioInicio || '',
+                horarioFim: meta.horarioFim || '',
+                kmInicial: meta.kmInicial || 0,
+                kmFinal: meta.kmFinal || 0,
+                prestadorVeiculo: { tipo_veiculo: r.tipo_veiculo, placa: r.placa },
+                financeiro: meta.financeiro || {},
+                descontoPrestador,
+                descontoCliente,
+                totals: { valorBase, totalAdicionais: adicionais, totalDescontos: descontoPrestador, total },
+                metadata: meta,
+              };
+            });
+            console.log("[DEBUG] loadAlocacoes retornou:", mapped.length, "registros", mapped);
+            setAlocacoes(mapped);
+          } else {
+            setAlocacoes([]);
+          }
+          return; // Não usa localStorage se Supabase respondeu (mesmo que vazio)
         }
       } catch (e) {
         console.warn('Fallback para localStorage (Supabase indisponível):', e);
@@ -388,10 +520,7 @@ export default function EscalaLista() {
       if (saved) {
         try { setAlocacoes(JSON.parse(saved)); } catch (e) {}
       }
-    }
-
-    loadAlocacoes();
-  }, []);
+    }, []);
 
   const diasPeriodo = useMemo(() => {
     let start = currentDate;
@@ -450,10 +579,14 @@ export default function EscalaLista() {
 
   const alocacoesFiltradas = useMemo(() => {
     return alocacoes.filter(a => {
+      const uiStatus = normalizarStatusParaUI(a.status);
+      const isCancelada = uiStatus === 'cancelado';
+      if (filtroStatus !== 'cancelado' && isCancelada) return false;
+      if (filtroStatus === 'cancelado' && !isCancelada) return false;
       if (filtroCliente !== "todos" && a.clienteId !== filtroCliente) return false;
       return true;
     });
-  }, [alocacoes, filtroCliente]);
+  }, [alocacoes, filtroCliente, filtroStatus]);
 
   const prestadoresFiltrados = useMemo(() => {
     return prestadores.filter(p => {
@@ -468,7 +601,7 @@ export default function EscalaLista() {
 
       let matchStatus = true;
       if (filtroStatus !== "todos") {
-        matchStatus = alocacoesFiltradas.some(a => a.prestadorId === p.id && a.tipo === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d)));
+        matchStatus = alocacoesFiltradas.some(a => a.prestadorId === p.id && normalizarStatusParaUI(a.status) === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d)));
       }
 
       return matchNome && matchVeiculo && matchCliente && matchStatus;
@@ -497,23 +630,48 @@ export default function EscalaLista() {
 
   const handleCellClick = (prestadorId: string, data: Date) => {
     setSelectedCell({prestadorId, data});
+    setDataAlocacaoModal(format(data, 'yyyy-MM-dd'));
     
     // Encontrar se já existe alocação para preencher os campos
     const existing = alocacoes.find(a => a.prestadorId === prestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), data));
+    setTemposReais(null);
     if (existing) {
+      // A31-H — tempos REAIS derivados dos eventos do App (fonte única eventos_oficiais)
+      if (existing.id && typeof existing.id === 'string' && existing.id.includes('-')) {
+        buscarTemposReaisAlocacao(existing.id).then((t) => { if (t) setTemposReais(t); });
+      }
       setNovoPrestadorId(existing.prestadorId);
       setNovoPrestadorNome(existing.prestadorNome || "");
       setNovoClienteId(existing.clienteId || "");
       setNovoClienteNome(existing.clienteNome || "");
+      // ESCALA-E2E-08D — espelha o veículo no estado para que a resolução reativa da
+      // tabela também funcione na reabertura/edição (troca de cliente recalculando).
+      if (existing.prestadorVeiculo) setPrestadorVeiculo(existing.prestadorVeiculo as any);
       setNovoTurno(existing.turno || "integral");
       setNovoTipo(existing.tipo || "reserva");
-      setNovaOS(existing.os || "");
+      setNovaOS(existing.osNumero || existing.os || "");
+      setNovaOSId(existing.osId || existing.metadata?.ordem_servico_id || "");
       setNumeroOC(existing.metadata?.numeroOC || "");
       setHorarioInicio(existing.horarioInicio || "08:00");
       setHorarioFim(existing.horarioFim || "18:00");
-      if (existing.financeiro) {
-        setFinanceiro(existing.financeiro);
-      }
+      // A31-J1.12 — reabertura sob o contrato oficial: campo Cliente carrega
+      // valor_desconto (como ajuste negativo); campo Prestador carrega
+      // valor_desconto_prestador (fallback legado para valor_desconto).
+      const descReconstruido = reconstruirDescontosEscala(existing.descontoCliente ?? 0, existing.descontoPrestador ?? 0);
+      setFinanceiro((prev) => {
+        const base = {
+          ...(existing.financeiro || prev),
+          desconto: descReconstruido.descontoPrestador,
+        };
+        // ESCALA-PRESTADOR-02: alocações antigas gravadas como "percentual" com 0%
+        // nunca tiveram override real — reabrem no modo padrão "Cadastro do prestador".
+        if (!base.valorTipo || (base.valorTipo === 'percentual' && !(Number(base.valorPercentual) > 0))) {
+          base.valorTipo = 'cadastro';
+        }
+        return base;
+      });
+      setAjusteClienteValor(descReconstruido.ajusteCliente);
+      setAjusteClienteMotivo(existing.metadata?.faturamento?.motivo_ajuste || "");
       if (existing.kmInicial !== undefined) setKmInicial(existing.kmInicial);
       else setKmInicial(0);
       if (existing.kmFinal !== undefined) setKmFinal(existing.kmFinal);
@@ -532,11 +690,25 @@ export default function EscalaLista() {
       setObservacaoOperacional(existing.metadata?.observacaoOperacional || "");
       setInstrucoesPrestador(existing.metadata?.instrucoesPrestador || "");
       setObservacaoCliente(existing.metadata?.observacaoCliente || "");
+      setNovaOrigem(existing.origem || "");
+      setNovoDestino(existing.destino || "");
       
+      // Carregar dados de Coleta Reversa
+      if (hasReversaData(existing as any)) {
+        setShowReversa(true);
+        setReversaFields(dbToReversaFields(existing as any));
+      } else {
+        setShowReversa(false);
+        setReversaFields(emptyReversaFields());
+      }
+
       if (existing.clienteId && existing.prestadorVeiculo?.tipo_veiculo) {
-        buscarTabelaValoresCliente(existing.clienteId, existing.clienteNome || "", existing.prestadorVeiculo.tipo_veiculo, existing.data);
+        buscarTabelaValoresCliente(existing.clienteId, existing.clienteNome || "", existing.prestadorVeiculo.tipo_veiculo, existing.data, (existing.prestadorVeiculo as any)?.condicao_termica);
       }
     } else {
+      // Reset reversa
+      setShowReversa(false);
+      setReversaFields(emptyReversaFields());
       // Resetar para valores padrão
       setNovoPrestadorId(prestadorId);
       const prest = prestadores.find(p => p.id === prestadorId);
@@ -546,6 +718,7 @@ export default function EscalaLista() {
       setNovoTurno("integral");
       setNovoTipo("reserva");
       setNovaOS("");
+      setNovaOSId("");
       const dtStr = format(data, 'yyyyMMdd');
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
       setNumeroOC(`OC-${dtStr}-${randomSuffix}`);
@@ -597,37 +770,163 @@ export default function EscalaLista() {
       setObservacaoOperacional("");
       setInstrucoesPrestador("");
       setObservacaoCliente("");
+      setNovaOrigem("");
+      setNovoDestino("");
       
       buscarDadosVeiculoPrestador(prestadorId);
     }
     setModalOpen(true);
   };
 
-  const calcularTotalAlocacao = () => {
+  /**
+   * Calcula totais da alocação usando o engine de precificação para o core
+   * (preço cliente + prestador base) + adicionais operacionais da escala.
+   */
+  const calcularTotalAlocacao = (tabelaOverride?: any) => {
+    const tabelaBase = tabelaOverride ?? tabelaValores;
     const prestadorSelecionado = prestadores.find(p => p.id === novoPrestadorId);
+    const kmRodados = Math.max((kmFinal || 0) - (kmInicial || 0), 0);
 
-    return calcularFinanceiroEscala({
-      tabelaValores,
-      km: {
-        inicial: kmInicial,
-        final: kmFinal
+    // Usa o engine de precificação para calcular valores base
+    const engineResult = calcularPrecoRapido(
+      {
+        id: tabelaBase?.id || "",
+        nome: tabelaBase?.nome || "Tabela",
+        fonte: tabelaBase?.universal ? "universal" : (tabelaBase?.id ? "tabelas_valores" : "fallback_hardcoded"),
+        valor_base: Number(tabelaBase?.valor_base) || 0,
+        franquia_km: resolverFranquiaEfetiva(tabelaBase?.franquia_km, tabelaBase?.km_franquia),
+        valor_km_excedente: resolverTarifaKmExcedente(tabelaBase?.valor_km_excedente, tabelaBase?.valor_km),
+        percentual_prestador: Number(tabelaBase?.percentual_prestador ?? 80),
       },
-      espera: {
-        minutosTotais: minutosEspera,
-        tipoCobranca: 'proporcional'
-      },
-      regrasOperacionais: {
-        regraEspecialAtiva,
-        horaSaida: tempoSaidaRua ? parseInt(tempoSaidaRua.split(":")[0]) : 8,
-        clienteValido: !!novoClienteId
-      },
-      inputsManuais: {
-        ajusteClienteValor,
-        kmExcedentePrestadorValor: kmExcedentePrestador
-      },
-      financeiroPrestador: financeiro,
-      financeiroRealPrestador: prestadorSelecionado?.financeiro_real
+      kmRodados
+    );
+
+    // Regra especial DVL (hora de saída) — aplica multiplicador no valor base
+    const horaSaida = tempoSaidaRua ? parseInt(tempoSaidaRua.split(":")[0]) : 8;
+    let multDVL = 1.0;
+    if (regraEspecialAtiva && novoClienteId) {
+      if (horaSaida <= 11) multDVL = 1.0;
+      else if (horaSaida <= 14) multDVL = 1.50;
+      else if (horaSaida <= 16) multDVL = 1.70;
+      else multDVL = 1.85;
+    }
+    const valorBaseCliente = engineResult.valorCliente * multDVL;
+    const ajusteManual = Number(ajusteClienteValor) || 0;
+    const totalCliente = valorBaseCliente + ajusteManual;
+
+    // Adicionais do prestador
+    const adicCombustivel = Number(financeiro.combustivel) || 0;
+    const adicPedagio = Number(financeiro.pedagio) || 0;
+    const adicDiariasAdic = (Number(financeiro.diariasAdicionais) || 0) * (Number(financeiro.valorDiaria) || 0);
+    const adicSegundaSaida = financeiro.segundaSaida ? (Number(financeiro.valorSegundaSaida) || 0) : 0;
+    const adicTerceiraSaida = financeiro.terceiraSaida ? (Number(financeiro.valorTerceiraSaida) || 0) : 0;
+    const adicSaidasAdic = (Number(financeiro.saidasAdicionais) || 0) * (Number(financeiro.valorSaidaAdicional) || 0);
+    const adicAjudante = (Number(financeiro.ajudantes) || 0) * (Number(financeiro.valorAjudante) || 0);
+    const adicReembolso = Number(financeiro.valorReembolsoOutros) || 0;
+    const kmExcPrestValor = Number(kmExcedentePrestador) || 0;
+    const totalAdicionaisPrest = adicCombustivel + adicPedagio + adicDiariasAdic + adicSegundaSaida + adicTerceiraSaida + adicSaidasAdic + adicAjudante + adicReembolso + kmExcPrestValor;
+    const totalDescontosPrest = Number(financeiro.desconto) || 0;
+
+    // ESCALA-PRESTADOR-02 — repasse dual canônico.
+    // Padrão "cadastro": base = valor_diaria ?? valor_saida do prestador (sem usar % da tabela cliente).
+    // "percentual": base = valor da tabela cliente × percentual informado pelo operador.
+    // "fixo": base = valor fixo informado.
+    const repasse = resolverRepassePrestadorBase({
+      modo: financeiro.valorTipo,
+      valorDiaria: prestadorSelecionado?.financeiro_real?.valor_diaria,
+      valorSaida: prestadorSelecionado?.financeiro_real?.valor_saida,
+      valorFixo: financeiro.valorFixo,
+      percentual: financeiro.valorPercentual,
+      valorBaseCliente: totalCliente,
     });
+    let valorBasePrest = repasse.base;
+    const totalPrestador = valorBasePrest + totalAdicionaisPrest - totalDescontosPrest;
+    const margemValor = totalCliente - totalPrestador;
+    const margemPerc = totalCliente > 0 ? (margemValor / totalCliente) * 100 : 0;
+
+    return {
+      valorBase: valorBasePrest,
+      totalAdicionais: totalAdicionaisPrest,
+      totalDescontos: totalDescontosPrest,
+      total: totalPrestador,
+      cliente: {
+        valorBase: valorBaseCliente,
+        valorBaseOriginal: engineResult.valorCliente,
+        adicionais: ajusteManual,
+        total: totalCliente,
+        overbookingAtivo: false,
+        overbookingPercentualCliente: 0,
+        overbookingValorCliente: 0,
+        detalhes: {
+          km: { rodados: kmRodados, franquia: resolverFranquiaEfetiva(tabelaBase?.franquia_km, tabelaBase?.km_franquia), excedente: engineResult.kmExcedente, valorKm: resolverTarifaKmExcedente(tabelaBase?.valor_km_excedente, tabelaBase?.valor_km), totalExcedente: engineResult.kmExcedente * resolverTarifaKmExcedente(tabelaBase?.valor_km_excedente, tabelaBase?.valor_km) },
+          espera: { minutos: Number(minutosEspera) || 0, tolerancia: 60, excedente: Math.max(0, (Number(minutosEspera) || 0) - 60), valorHora: 0, totalExcedente: 0 },
+          ajusteManual,
+          pedagioCobrado: 0,
+          reentrega: 0,
+          agendamento: 0,
+          overbooking: 0,
+          overbookingDetalhe: { ativo: false, valorBaseOriginal: 0, percentual: 0, valor: 0 },
+          segundaSaida: adicSegundaSaida,
+          terceiraSaida: adicTerceiraSaida,
+        },
+      },
+      prestador: {
+        valorBase: valorBasePrest,
+        valorBaseOriginal: engineResult.valorPrestador,
+        adicionais: totalAdicionaisPrest,
+        descontos: totalDescontosPrest,
+        total: totalPrestador,
+        overbookingAtivo: false,
+        overbookingPercentualPrestador: 0,
+        overbookingValorPrestador: 0,
+        detalhes: {
+          km: { excedente: engineResult.kmExcedente, valorKm: kmExcPrestValor > 0 ? kmExcPrestValor : Number(tabelaBase?.valor_km || 0), totalExcedente: kmExcPrestValor },
+          espera: 0,
+          ajudante: adicAjudante,
+          pedagio: adicPedagio,
+          combustivel: adicCombustivel,
+          segundaSaida: adicSegundaSaida,
+          terceiraSaida: adicTerceiraSaida,
+          saidasAdicionais: adicSaidasAdic,
+          diariasAdicionais: adicDiariasAdic,
+          outrosReembolsos: adicReembolso,
+          overbooking: 0,
+          overbookingDetalhe: { ativo: false, valorBaseOriginal: 0, percentual: 0, valor: 0 },
+        },
+      },
+      margem: {
+        valor: margemValor,
+        percentual: margemPerc,
+      },
+    };
+  };
+
+  const handleCancelarAlocacao = async () => {
+    if (!cancelTarget) return;
+    setIsCanceling(true);
+    try {
+      const resultado = await cancelarAlocacao(cancelTarget.id, 'Cancelado via Programação Operacional');
+      
+      if (!resultado.sucesso) {
+        throw new Error(resultado.erro || 'Falha ao cancelar alocação');
+      }
+      
+      toast.success("Alocação cancelada com sucesso!");
+      
+      setAlocacoes(prev => prev.map(a => 
+        a.id === cancelTarget.id 
+          ? { ...a, status: 'cancelada', statusPagamento: 'cancelado' } 
+          : a
+      ));
+      
+      setCancelTarget(null);
+      loadAlocacoes();
+    } catch (error) {
+      console.error("Erro ao cancelar:", error);
+      toast.error(`Erro ao cancelar: ${(error as Error).message || 'Falha na comunicação'}`);
+    } finally {
+      setIsCanceling(false);
+    }
   };
 
   const handleCreateReserva = async () => {
@@ -635,7 +934,42 @@ export default function EscalaLista() {
       return toast.error("Selecione um prestador obrigatório.");
     }
     
-    if (novoClienteId && !tabelaValores && !ajusteClienteMotivo && ajusteClienteValor === 0) {
+    // Bloquear salvar se prestador não tem veículo vinculado
+    if (prestadorVeiculo && !prestadorVeiculo.tipo_veiculo) {
+      return toast.error("Este prestador não possui veículo vinculado. Vincule um veículo antes de salvar.");
+    }
+
+    // Bloquear salvar se prestador tem mais de um veículo (escolha ambígua)
+    if (novoPrestadorId) {
+      const { data } = await supabase
+        .from("veiculos")
+        .select("id")
+        .eq("prestador_vinculado", novoPrestadorId);
+      if (data && data.length > 1) {
+        return toast.error("Prestador possui mais de um veículo. Selecione o veículo da operação.");
+      }
+    }
+    
+    if (!dataAlocacaoModal) {
+      return toast.error("Informe a data da alocação.");
+    }
+    
+    // ESCALA-E2E-08D — FAIL-SAFE: se há cliente + veículo válido e a tabela está NULL no
+    // estado, reconsulta UMA vez antes de bloquear. Usa o resultado REAL (sem ajuste
+    // automático, sem tabela fake, sem fallback de valor zero).
+    let tabelaEfetiva = tabelaValores;
+    if (novoClienteId && prestadorVeiculo?.tipo_veiculo && !tabelaValores) {
+      const tabelaReconsultada = await buscarTabelaValoresCliente(
+        novoClienteId,
+        novoClienteNome,
+        prestadorVeiculo.tipo_veiculo,
+        dataAlocacaoModal,
+        prestadorVeiculo.condicao_termica
+      );
+      if (tabelaReconsultada) tabelaEfetiva = tabelaReconsultada;
+    }
+
+    if (novoClienteId && !tabelaEfetiva && !ajusteClienteMotivo && ajusteClienteValor === 0) {
       return toast.error("Sem tabela de preço. Informe o 'Ajuste Manual' e o 'Motivo' para faturar.");
     }
     
@@ -643,14 +977,29 @@ export default function EscalaLista() {
       return toast.error("Por favor, preencha o Motivo do Ajuste do Cliente.");
     }
 
-    const totals = calcularTotalAlocacao();
-    const existing = alocacoes.find(a => a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), selectedCell?.data ? selectedCell.data : new Date()));
+    const totals = calcularTotalAlocacao(tabelaEfetiva);
+    const dataObj = new Date(dataAlocacaoModal + 'T12:00:00');
+
+    // Verificar conflito de prestador e veículo antes de prosseguir
+    const reservaDiaExistente = alocacoes.find(a => {
+      const _s = (a.status || '').toLowerCase();
+      if (_s === 'cancelada' || _s === 'cancelado') return false;
+      if (a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), dataObj)) return true;
+      if (prestadorVeiculo?.placa && a.prestadorVeiculo?.placa === prestadorVeiculo.placa && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), dataObj)) return true;
+      return false;
+    });
+    const existing = reservaDiaExistente?.prestadorId === novoPrestadorId ? reservaDiaExistente : undefined;
     const prestadorSelecionado = prestadores.find(p => p.id === novoPrestadorId);
     
     let financeiroStatus = 'ok';
-    if (!tabelaValores) financeiroStatus = 'pendente';
+    if (!tabelaEfetiva) financeiroStatus = 'pendente';
     else if (!prestadorSelecionado?.financeiro_real || prestadorSelecionado.financeiro_real.valor_diaria === 0) financeiroStatus = 'fallback';
-    if (!tabelaValores && ajusteClienteValor > 0) financeiroStatus = 'manual';
+    if (!tabelaEfetiva && ajusteClienteValor > 0) financeiroStatus = 'manual';
+
+    console.log("[PROVA-DATA] input modal:", dataAlocacaoModal);
+    console.log("[PROVA-DATA] payload data_escala:", dataAlocacaoModal);
+    console.log("[ESCALA-SAVE-DATA] data escolhida:", dataAlocacaoModal);
+    console.log("[ESCALA-SAVE-DATA] data enviada ao Supabase:", dataAlocacaoModal);
 
     // --- Objeto para o estado local (camelCase) ---
     const novaAlocacao = {
@@ -659,7 +1008,7 @@ export default function EscalaLista() {
       prestadorNome: novoPrestadorNome,
       clienteId: novoClienteId,
       clienteNome: novoClienteNome,
-      data: (selectedCell?.data ? format(selectedCell.data, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')) + 'T12:00:00',
+      data: dataAlocacaoModal + 'T12:00:00',
       turno: novoTurno,
       tipo: novoTipo,
       os: novaOS,
@@ -670,38 +1019,92 @@ export default function EscalaLista() {
       valorCliente: 0, // Pode ser preenchido depois via financeiro
       prestadorVeiculo,
       statusPagamento: 'pendente',
-      status: 'planejada',
+      status: 'aguardando_aceite',
       kmInicial,
       kmFinal,
+      origem: novaOrigem,
+      destino: novoDestino,
       tempoChegadaPatio,
       tempoInicioCarregamento,
       tempoFimCarregamento,
       tempoSaidaRua,
       tempoFinalizacaoEntregas,
-      metadata: { kmInicial, kmFinal, numeroOC, financeiro_status: financeiroStatus, statusOperacional, observacaoOperacional, instrucoesPrestador, observacaoCliente, financeiro, totals, os: novaOS, turno: novoTurno, horarioInicio, horarioFim, tempoChegadaPatio, tempoInicioCarregamento, tempoFimCarregamento, tempoSaidaRua, tempoFinalizacaoEntregas }
+      metadata: { kmInicial, kmFinal, numeroOC, financeiro_status: financeiroStatus, statusOperacional, observacaoOperacional, instrucoesPrestador, observacaoCliente, financeiro, totals, os: novaOS, turno: novoTurno, horarioInicio, horarioFim, tempoChegadaPatio, tempoInicioCarregamento, tempoFimCarregamento, tempoSaidaRua, tempoFinalizacaoEntregas, origem_tms: true, precisa_aceite_app: true, tipo_operacao: 'escala' }
     };
 
     // --- Payload para o banco (snake_case conforme schema alocacoes_escala) ---
+    // ESCALA-OS-01: a OS interna NÃO é mais obrigatória na UI. Se nenhuma OS foi
+    // selecionada, criarAlocacao() gera/vincula automaticamente a OS interna (uma única
+    // OS por alocação). O Romaneio/OC do cliente é referência EXTERNA (metadata).
     const payload = {
+      ordem_servico_id: novaOSId || null,
       prestador_id: novoPrestadorId || null,
       cliente_id: novoClienteId || null,
-      data_escala: selectedCell?.data ? format(selectedCell.data, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+      data_escala: dataAlocacaoModal,
       turno: novoTurno,
-      tipo_veiculo: prestadorVeiculo?.tipo_veiculo || 'vuc',
+      tipo_veiculo: prestadorVeiculo?.tipo_veiculo || null,
       placa: prestadorVeiculo?.placa || null,
-      status: 'planejada',
+      status: 'aguardando_aceite',
       status_pagamento: 'pendente',
       observacoes: novaOS ? `OS: ${novaOS}` : null,
+      origem: novaOrigem || null,
+      destino: novoDestino || null,
       // Financeiro
       valor_fixo: totals.prestador.valorBase,
       valor_repasse: totals.prestador.valorBase,
-      valor_frete: totals.cliente.total, // Faturamento do Cliente
       valor_pedagio: financeiro.pedagio || 0,
       valor_combustivel: financeiro.combustivel || 0,
       valor_ajudante: (financeiro.ajudantes || 0) * (financeiro.valorAjudante || 0),
       valor_adicional: totals.prestador.adicionais,
-      valor_desconto: totals.prestador.descontos,
+      // A31-J1.12 — contrato oficial: desconto cliente em valor_desconto; desconto
+      // prestador em valor_desconto_prestador (ajuste cliente negativo = desconto cliente).
+      ...(() => {
+        const d = dividirDescontosEscala(ajusteClienteValor, totals.prestador.descontos, totals.cliente.valorBase);
+        return { valor_frete: d.valorFrete, valor_desconto: d.valorDescontoCliente, valor_desconto_prestador: d.valorDescontoPrestador };
+      })(),
       km_realizados: Math.max((kmFinal || 0) - (kmInicial || 0), 0),
+      // Coleta Reversa
+      ...(showReversa ? {
+        tipo_reversa: reversaFields.tipo_reversa,
+        reversa_qtd_volumes: reversaFields.reversa_qtd_volumes,
+        reversa_observacoes: reversaFields.reversa_observacoes,
+        reversa_valor_cliente: reversaFields.reversa_impacto_cliente || (() => {
+          if (reversaFields.reversa_modelo_cliente === "valor_fixo") return reversaFields.reversa_valor_fixo_cliente;
+          const q = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada : reversaFields.reversa_qtd_volumes;
+          return q * reversaFields.reversa_valor_unitario_cliente;
+        })(),
+        reversa_valor_prestador: reversaFields.reversa_impacto_prestador || (() => {
+          if (reversaFields.reversa_modelo_prestador === "valor_fixo") return reversaFields.reversa_valor_fixo_prestador;
+          const q = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada : reversaFields.reversa_qtd_volumes;
+          return q * reversaFields.reversa_valor_unitario_prestador;
+        })(),
+        reversa_status: reversaFields.reversa_status,
+        reversa_endereco_coleta: reversaFields.reversa_endereco_coleta,
+        reversa_endereco_devolucao: reversaFields.reversa_endereco_devolucao,
+        reversa_unidade_cobranca: reversaFields.reversa_unidade_cobranca,
+        reversa_valor_unitario: reversaFields.reversa_valor_unitario,
+        reversa_qtd_coletada: reversaFields.reversa_qtd_coletada,
+        reversa_divergencia: reversaFields.reversa_divergencia,
+        reversa_motivo_divergencia: reversaFields.reversa_motivo_divergencia,
+        reversa_responsavel: reversaFields.reversa_responsavel,
+        reversa_documento_responsavel: reversaFields.reversa_documento_responsavel,
+        reversa_telefone: reversaFields.reversa_telefone,
+        reversa_data_prevista: reversaFields.reversa_data_prevista,
+        reversa_data_realizada: reversaFields.reversa_data_realizada,
+        reversa_valor_adicional: reversaFields.reversa_valor_adicional,
+        // Modelos independentes
+        reversa_modelo_cliente: reversaFields.reversa_modelo_cliente,
+        reversa_valor_unitario_cliente: reversaFields.reversa_valor_unitario_cliente,
+        reversa_valor_fixo_cliente: reversaFields.reversa_valor_fixo_cliente,
+        reversa_modelo_prestador: reversaFields.reversa_modelo_prestador,
+        reversa_valor_unitario_prestador: reversaFields.reversa_valor_unitario_prestador,
+        reversa_valor_fixo_prestador: reversaFields.reversa_valor_fixo_prestador,
+        // Mídia da reversa
+        reversa_fotos: reversaFields.reversa_fotos.length > 0 ? reversaFields.reversa_fotos : null,
+        reversa_assinatura_url: reversaFields.reversa_assinatura_url || null,
+        reversa_latitude: reversaFields.reversa_latitude || null,
+        reversa_longitude: reversaFields.reversa_longitude || null,
+      } : {}),
       // Metadados extras
       metadata: {
         kmInicial,
@@ -724,18 +1127,21 @@ export default function EscalaLista() {
         tempoSaidaRua,
         tempoFinalizacaoEntregas,
         faturamento: {
-          tabela_id: tabelaValores?.id || null,
-          nome_tabela: tabelaValores?.nome || 'Sem Tabela',
-          franquia_km: tabelaValores?.km_franquia || 0,
-          valor_km_excedente: tabelaValores?.valor_km_excedente || 0,
+          tabela_id: tabelaEfetiva?.id || null,
+          nome_tabela: tabelaEfetiva?.nome || 'Sem Tabela',
+          franquia_km: resolverFranquiaEfetiva(tabelaEfetiva?.franquia_km, tabelaEfetiva?.km_franquia),
+          valor_km_excedente: resolverTarifaKmExcedente(tabelaEfetiva?.valor_km_excedente, tabelaEfetiva?.valor_km),
           ajuste_manual: ajusteClienteValor,
           motivo_ajuste: ajusteClienteMotivo
         },
         repasse: {
+          origem: financeiro.valorTipo,
+          tipo_repasse: financeiro.valorTipo,
+          percentual: financeiro.valorTipo === 'percentual' ? Number(financeiro.valorPercentual) : null,
+          valor_base_prestador: totals.prestador.valorBase,
+          valor_final: totals.prestador.total,
           valor_km_prestador: kmExcedentePrestador,
-          tipo_repasse: tabelaValores?.tipo_repasse_prestador || financeiro.valorTipo,
-          percentual: tabelaValores?.percentual_prestador || financeiro.valorPercentual,
-          valor_fixo: tabelaValores?.valor_fixo_prestador || financeiro.valorFixo
+          valor_fixo: financeiro.valorTipo === 'fixo' ? Number(financeiro.valorFixo) : null
         },
         km: {
           inicial: kmInicial,
@@ -744,7 +1150,11 @@ export default function EscalaLista() {
         },
         espera: {
           minutos_espera: minutosEspera
-        }
+        },
+        origem_tms: true,
+        precisa_aceite_app: true,
+        tipo_operacao: 'escala',
+        ordem_servico_id: novaOSId || null
       }
     };
 
@@ -761,45 +1171,42 @@ export default function EscalaLista() {
     });
 
     try {
-      if (existing?.id && typeof existing.id === 'string' && existing.id.includes('-')) {
-        // Atualizar registro existente no Supabase
-        const { error, data } = await supabase.from('alocacoes_escala').update(payload).eq('id', existing.id).select();
-        console.log("[DEBUG] Resposta Supabase UPDATE:", { error, data });
-        if (error && error.code !== '42P01') throw error;
-        if (!error) {
-          setAlocacoes(prev => prev.map(a => a.id === existing.id ? { ...novaAlocacao, id: existing.id } : a));
-          toast.success(`Alocação de ${novoPrestadorNome || 'prestador'} atualizada!`);
-          setModalOpen(false);
-          return;
-        }
-      } else {
-        // Inserir novo registro no Supabase
-        const { data: inserted, error } = await supabase.from('alocacoes_escala').insert([payload]).select('id').single();
-        console.log("[DEBUG] Resposta Supabase INSERT:", { error, inserted });
-        if (error && error.code === '42P01') {
-          // Tabela não existe → fallback localStorage
-          const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), novaAlocacao];
-          setAlocacoes(novas);
-          localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
-          toast.info('Salvo localmente (tabela não encontrada no banco)');
-        } else if (error) {
-          throw error;
-        } else {
-          const idReal = inserted?.id || novaAlocacao.id;
-          setAlocacoes(prev => [...prev.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), { ...novaAlocacao, id: idReal }]);
-          toast.success(`Alocação de ${novoPrestadorNome || 'prestador'} salva!`);
-        }
-      }
-    } catch (err: any) {
-      // Fallback genérico para localStorage
-      const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), novaAlocacao];
-      setAlocacoes(novas);
-      localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
-      toast.success('Alocação salva localmente!');
-      console.warn('Supabase insert fallback:', err?.message);
-    }
+      setIsSaving(true);
 
-    setModalOpen(false);
+      if (existing?.id && typeof existing.id === 'string' && existing.id.includes('-')) {
+        // UPDATE
+        const updatePayload = { ...payload };
+        if (updatePayload.status) {
+          updatePayload.status = normalizarStatusParaBanco(updatePayload.status);
+        }
+        const resultado = await atualizarAlocacao(existing.id, updatePayload as any);
+        if (!resultado.sucesso) {
+          toast.error(`Erro ao atualizar alocação: ${resultado.erro || 'Falha na comunicação'}`);
+          console.error('[Escala] Erro ao atualizar:', resultado.erro);
+          return; // NÃO fechar modal
+        }
+        toast.success("Alocação atualizada com sucesso!");
+      } else {
+        // CREATE
+        const resultado = await criarAlocacao(payload as any);
+        if (!resultado.sucesso) {
+          toast.error(`Erro ao criar alocação: ${resultado.erro || 'Falha na comunicação'}`);
+          console.error('[Escala] Erro ao criar:', resultado.erro);
+          return; // NÃO fechar modal
+        }
+        toast.success("Alocação criada com sucesso!");
+      }
+
+      // Sucesso confirmado — fechar modal e refetch
+      setModalOpen(false);
+      loadAlocacoes();
+    } catch (err: any) {
+      toast.error(`Erro ao salvar alocação: ${err?.message || 'Falha na comunicação'}`);
+      console.error('[Escala] Erro ao salvar:', err?.message);
+      // NÃO fechar modal — preservar dados digitados
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleGerarEscalaAutomatica = () => {
@@ -834,7 +1241,7 @@ export default function EscalaLista() {
 
      setAlocacoes(novas);
      localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
-     toast.success("Escala gerada automaticamente com IA!");
+     toast.success("Programação gerada automaticamente com IA!");
   };
 
   const handleGerarRelatorioPagamento = async (aloc: any) => {
@@ -1109,13 +1516,13 @@ export default function EscalaLista() {
        <div className="bg-white border-b border-slate-200 px-4 py-2 flex flex-col gap-2 shrink-0 z-10 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-               <CalendarIcon className="w-5 h-5 text-primary"/> Escala de Operação
+               <CalendarIcon className="w-5 h-5 text-primary"/> Programação Operacional
              </h3>
              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={handleGerarEscalaAutomatica}><Truck className="w-3.5 h-3.5"/> Gerar Escala</Button>
+                <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={handleGerarEscalaAutomatica}><Truck className="w-3.5 h-3.5"/> Gerar Programação</Button>
                 <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={handleExportPDF}><Download className="w-3.5 h-3.5"/> Exportar PDF</Button>
                 <Button size="sm" className="gap-1 text-xs h-8 bg-orange-500 hover:bg-orange-600 text-white" onClick={handleIncluirLote}><DollarSign className="w-3.5 h-3.5"/> Incluir Lote</Button>
-                <Button size="sm" className="gap-1 text-xs h-8" onClick={() => { handleCellClick("", new Date()); setModalOpen(true); }}><Plus className="w-3.5 h-3.5"/> Alocar</Button>
+                <Button size="sm" className="gap-1 text-xs h-8" onClick={() => { setDataAlocacaoModal(format(new Date(), 'yyyy-MM-dd')); handleCellClick("", new Date()); setModalOpen(true); }}><Plus className="w-3.5 h-3.5"/> Alocar</Button>
              </div>
           </div>
           <div className="flex items-center flex-wrap gap-3">
@@ -1241,7 +1648,7 @@ export default function EscalaLista() {
                            </span>
                            {isSelectedPeriod && dayAlocacoes.length > 0 && (
                              <Badge className="text-[9px] px-1.5 py-0 bg-blue-50 text-blue-600 font-bold border-blue-200">
-                               {dayAlocacoes.length} aloc.
+                               {dayAlocacoes.filter(a => !isStatusCancelado(a.status)).length} aloc.
                              </Badge>
                            )}
                          </div>
@@ -1434,7 +1841,7 @@ export default function EscalaLista() {
                                 }
                                 return listaControleDiario.map((a, i) => {
                                   const prest = prestadores.find(p => p.id === a.prestadorId);
-                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo) : (a.prestadorVeiculo?.tipo_veiculo || "—");
+                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo || "Sem veículo") : (a.prestadorVeiculo?.tipo_veiculo || "—");
                                   const placaLabel = prest?.placa || a.prestadorVeiculo?.placa || "—";
                                   const valorCliente = a.valor_frete ?? a.metadata?.totals?.cliente?.total ?? 0;
                                   const repasse = a.totals?.total ?? a.metadata?.totals?.prestador?.total ?? 0;
@@ -1442,13 +1849,15 @@ export default function EscalaLista() {
                                   const espera = a.metadata?.totals?.espera ?? 0;
                                   const financeiroStatus = a.metadata?.financeiro_status || 'ok';
 
-                                  const statusAtual = (a.statusPagamento === 'a pagar' ? a.status : a.statusPagamento) || a.status || "—";
-                                  let statusStyle = { color: "bg-slate-100 text-slate-600 border-slate-200", icon: null as React.ReactNode };
-                                  if (statusAtual.toLowerCase() === "confirmado" || statusAtual === "a pagar") statusStyle = { color: "bg-emerald-500 text-white border-emerald-600", icon: <CheckCircle className="w-2.5 h-2.5" /> };
-                                  else if (statusAtual.toLowerCase() === "operacao") statusStyle = { color: "bg-blue-600 text-white border-blue-700", icon: <Truck className="w-2.5 h-2.5" /> };
-                                  else if (statusAtual.toLowerCase() === "aguardando") statusStyle = { color: "bg-orange-500 text-white border-orange-600", icon: <Clock className="w-2.5 h-2.5" /> };
-                                  else if (["divergencia", "ocorrencia", "bloqueado"].includes(statusAtual.toLowerCase())) statusStyle = { color: "bg-rose-500 text-white border-rose-600", icon: <AlertTriangle className="w-2.5 h-2.5" /> };
-                                  else if (["concluido", "finalizado"].includes(statusAtual.toLowerCase())) statusStyle = { color: "bg-slate-700 text-white border-slate-800", icon: <Check className="w-2.5 h-2.5" /> };
+                                  const statusRaw = (a.status || "").toLowerCase();
+                                  const statusLabel = obterLabelStatus(a.status);
+                                  let statusStyle: { color: string; icon: React.ReactNode } = { color: obterClasseBadgeStatus(a.status), icon: null as React.ReactNode };
+                                  if (["recusada", "cancelada"].includes(statusRaw)) statusStyle.icon = <AlertTriangle className="w-2.5 h-2.5" />;
+                                  else if (statusRaw === "aguardando_aceite") statusStyle.icon = <Clock className="w-2.5 h-2.5" />;
+                                  else if (statusRaw === "aceita" || statusRaw === "confirmado") statusStyle.icon = <CheckCircle className="w-2.5 h-2.5" />;
+                                  else if (statusRaw === "em_rota" || statusRaw === "operacao") statusStyle.icon = <Truck className="w-2.5 h-2.5" />;
+                                  else if (statusRaw === "concluida" || statusRaw === "finalizado") statusStyle.icon = <Check className="w-2.5 h-2.5" />;
+                                  else if (statusRaw === "ocorrencia") statusStyle.icon = <AlertCircle className="w-2.5 h-2.5" />;
 
                                   let isAtrasado = false;
                                   let minutosAtraso = 0;
@@ -1474,11 +1883,18 @@ export default function EscalaLista() {
                                       <TableCell className="text-[10px] font-semibold text-slate-500">{a.clienteNome || "—"}</TableCell>
                                       <TableCell className="text-xs font-semibold text-slate-700">{veiculoLabel}</TableCell>
                                       <TableCell><span className="font-mono font-bold text-slate-800 bg-slate-100 border-t-2 border-t-blue-600 border-x border-b border-slate-300 px-1.5 py-0.5 rounded shadow-[0_1px_2px_rgba(0,0,0,0.1)] text-[10px] uppercase tracking-wider">{placaLabel}</span></TableCell>
-                                      <TableCell className="text-xs font-bold text-slate-700">{a.metadata?.numeroOC || a.numero_oc || a.os || "—"}</TableCell>
+                                       <TableCell>
+                                         <div className="flex flex-col items-start">
+                                           <span className="font-mono font-bold text-xs text-slate-700">{a.osNumero || a.os || "—"}</span>
+                                           {((a.metadata?.numeroOC || a.numero_oc) && (a.osNumero || a.os)) ? (
+                                             <span className="text-[9px] text-slate-400" title="Romaneio / OC do cliente">OC: {a.metadata?.numeroOC || a.numero_oc}</span>
+                                           ) : null}
+                                         </div>
+                                       </TableCell>
                                       <TableCell>
                                         <Badge className={`text-[9px] font-bold px-1.5 py-0.5 flex items-center w-max gap-1 border shadow-sm ${statusStyle.color}`}>
                                           {statusStyle.icon}
-                                          <span className="uppercase">{statusAtual}</span>
+                                          <span className="uppercase">{statusLabel}</span>
                                         </Badge>
                                       </TableCell>
                                       <TableCell className="text-center">
@@ -1506,7 +1922,7 @@ export default function EscalaLista() {
                                            {isAtrasado ? (
                                              <span className="text-[8px] font-bold bg-rose-100 text-rose-700 px-1 rounded-sm flex items-center gap-0.5"><AlertTriangle className="w-2 h-2"/> +{minutosAtraso}min</span>
                                            ) : (
-                                             a.horarioInicio && (statusAtual.toLowerCase() === "aguardando" || statusAtual.toLowerCase() === "confirmado") && (
+                                              a.horarioInicio && (["planejada", "aguardando_aceite", "aceita"].includes(statusRaw)) && (
                                                <span className="text-[8px] font-bold bg-emerald-100 text-emerald-700 px-1 rounded-sm">No Prazo</span>
                                              )
                                            )}
@@ -1522,6 +1938,14 @@ export default function EscalaLista() {
                                         <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-rose-600" onClick={(e) => { e.stopPropagation(); handleGerarRelatorioPagamento(a); }} title="PDF">
                                           <FileText className="w-3.5 h-3.5" />
                                         </Button>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-100 border border-red-300 rounded-md" onClick={(e) => { e.stopPropagation(); setCancelTarget(a); }} title="Cancelar Alocação" style={{minWidth: '24px'}}>
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                        {(statusRaw === "concluida" || statusRaw === "finalizado") && (
+                                          <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100" onClick={(e) => { e.stopPropagation(); setSelectedPodAlocacao(a.id); setShowPODModal(true); }} title="Ver Protocolo de Entrega">
+                                            <FileText className="w-3.5 h-3.5" />
+                                          </Button>
+                                        )}
                                       </TableCell>
                                     </TableRow>
                                   );
@@ -1565,7 +1989,7 @@ export default function EscalaLista() {
                               ) : (
                                 alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).map((c, i) => {
                                   const prest = prestadores.find(p => p.id === c.prestadorId);
-                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo) : (c.prestadorVeiculo?.tipo_veiculo || "—");
+                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo || "Sem veículo") : (c.prestadorVeiculo?.tipo_veiculo || "—");
                                   const placaLabel = prest?.placa || c.prestadorVeiculo?.placa || "—";
                                   const statusAtual = c.status || "—";
                                   let statusStyle = { label: statusAtual, color: "bg-slate-100 text-slate-600 border-slate-200", icon: null as React.ReactNode };
@@ -1603,8 +2027,11 @@ export default function EscalaLista() {
                                         </Badge>
                                       </TableCell>
                                       <TableCell>
-                                        <div className="font-bold text-slate-700 text-xs">{c.os || "—"}</div>
+                                        <div className="font-bold text-slate-700 text-xs">{c.osNumero || c.os || "—"}</div>
                                         <div className="text-[10px] font-semibold text-slate-400">{c.clienteNome || "—"}</div>
+                                        {((c.metadata?.numeroOC || c.numero_oc) && (c.osNumero || c.os)) ? (
+                                          <div className="text-[9px] text-slate-400" title="Romaneio / OC do cliente">OC: {c.metadata?.numeroOC || c.numero_oc}</div>
+                                        ) : null}
                                       </TableCell>
                                       <TableCell>
                                         <div className="font-semibold text-slate-700 text-xs">{veiculoLabel}</div>
@@ -1671,10 +2098,11 @@ export default function EscalaLista() {
                 <Input 
                   type="date" 
                   className="h-8 text-xs w-[130px] ml-1 bg-white" 
-                  value={selectedCell?.data ? format(selectedCell.data, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
+                  value={dataAlocacaoModal}
                   onChange={(e) => {
                      if(e.target.value) {
-                       setSelectedCell({ prestadorId: selectedCell?.prestadorId || "", data: new Date(e.target.value + "T12:00:00") });
+                       setDataAlocacaoModal(e.target.value);
+                       setSelectedCell(prev => prev ? { ...prev, data: new Date(e.target.value + "T12:00:00") } : { prestadorId: "", data: new Date(e.target.value + "T12:00:00") });
                      }
                   }}
                 />
@@ -1718,6 +2146,7 @@ export default function EscalaLista() {
                                 setNovoPrestadorNome(p.nome);
                                 setFiltroPrestadorModal(p.nome);
                                 setShowPrestadorDropdown(false);
+                                setFinanceiro(f => ({ ...f, valorTipo: 'cadastro' }));
                                 buscarDadosVeiculoPrestador(p.id);
                               }}>
                                 <div className="font-bold text-slate-800">{p.nome}</div>
@@ -1732,23 +2161,29 @@ export default function EscalaLista() {
                      )}
                    </div>
                  </div>
-                 {prestadorVeiculo && (
-                   <div className="p-3 bg-slate-100 rounded-xl border border-slate-200">
-                     <div className="flex items-center gap-4 text-xs">
-                       <div className="flex items-center gap-1.5">
-                         <Truck className="w-3.5 h-3.5 text-slate-500" />
-                         <span className="font-medium text-slate-700">{TIPO_VEICULO_LABEL[prestadorVeiculo.tipo_veiculo] || prestadorVeiculo.tipo_veiculo}</span>
-                       </div>
-                       <div className="flex items-center gap-1.5">
-                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                         <span className="font-medium text-slate-700">{prestadorVeiculo.placa || "Sem placa"}</span>
-                       </div>
-                       {prestadorVeiculo.refrigerado && (
-                         <Badge className="bg-cyan-100 text-cyan-700 text-[10px]">Refrigerado</Badge>
-                       )}
-                     </div>
-                   </div>
-                 )}
+                  {prestadorVeiculo && prestadorVeiculo.tipo_veiculo && (
+                    <div className="p-3 bg-slate-100 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-4 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <Truck className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="font-medium text-slate-700">{TIPO_VEICULO_LABEL[prestadorVeiculo.tipo_veiculo] || prestadorVeiculo.tipo_veiculo}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="font-medium text-slate-700">{prestadorVeiculo.placa || "Sem placa"}</span>
+                        </div>
+                        {prestadorVeiculo.refrigerado && (
+                          <Badge className="bg-cyan-100 text-cyan-700 text-[10px]">Refrigerado</Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {prestadorVeiculo && !prestadorVeiculo.tipo_veiculo && (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex gap-2 items-center">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span className="text-xs font-medium text-amber-800">Este prestador não possui veículo vinculado. Vincule um veículo para localizar a tabela de preço.</span>
+                    </div>
+                  )}
                  <div className="space-y-1">
                    <Label className="text-xs font-bold text-primary">Cliente Vinculado</Label>
                    <SearchableSelect 
@@ -1756,38 +2191,52 @@ export default function EscalaLista() {
                      labelField="nome_fantasia" 
                      searchFields={["nome_fantasia", "razao_social"]} 
                      value={novoClienteId} 
-                     onChange={(id, item) => {
-                       setNovoClienteId(id || "");
-                       if (item) {
-                         setNovoClienteNome(item.nome_fantasia);
-                         if (prestadorVeiculo?.tipo_veiculo) {
-                           buscarTabelaValoresCliente(id || "", item.nome_fantasia || item.razao_social || "", prestadorVeiculo.tipo_veiculo);
+                       onChange={(id, item) => {
+                         setNovoClienteId(id || "");
+                         if (item) {
+                           setNovoClienteNome(item.nome_fantasia);
                          }
-                       }
-                     }} 
-                     placeholder="Selecione o cliente para buscar tabela de preços..."
-                   />
-                 </div>
-                 {loadingTabelaValores && (
-                   <div className="text-xs text-muted-foreground flex items-center gap-2">
-                     <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                     Buscando tabela de valores...
-                   </div>
-                 )}
-                 {novoClienteId && !tabelaValores && !loadingTabelaValores && (
-                   <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 flex gap-2 items-center">
-                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                     <div className="flex flex-col">
-                       <span className="font-bold text-rose-800 text-xs">Nenhuma tabela de preço encontrada para este cliente/veículo.</span>
-                       <span className="text-[10px] text-rose-600">Alocação ficará com financeiro pendente ou zerado.</span>
+                         // ESCALA-E2E-08D — a busca da tabela é reativa (useEffect),
+                         // não mais disparada manualmente aqui (evita chamada duplicada).
+                       }} 
+                      placeholder="Selecione o cliente para buscar tabela de preços..."
+                    />
+                  </div>
+                  {prestadorVeiculo && !prestadorVeiculo.tipo_veiculo && novoClienteId && (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex gap-2 items-center">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span className="text-xs font-medium text-amber-800">Vincule um veículo ao prestador para localizar a tabela de preço do cliente.</span>
+                    </div>
+                  )}
+                  {loadingTabelaValores && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      Buscando tabela de valores...
+                    </div>
+                  )}
+                  {novoClienteId && prestadorVeiculo?.tipo_veiculo && !tabelaValores && !loadingTabelaValores && (
+                    <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 flex gap-2 items-center">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-bold text-rose-800 text-xs">Nenhuma tabela de preço encontrada para este cliente/veículo.</span>
+                        <span className="text-[10px] text-rose-600">Alocação ficará com financeiro pendente ou zerado.</span>
+                      </div>
+                    </div>
+                   )}
+                   {tabelaAmbiguidadeTermica && (
+                     <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex gap-2 items-center">
+                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                       <div className="flex flex-col">
+                         <span className="font-bold text-amber-800 text-xs">Múltiplas tabelas compatíveis por condição térmica.</span>
+                         <span className="text-[10px] text-amber-700">Defina a condição térmica do veículo (seco/térmico/refrigerado) ou ajuste a tabela para evitar seleção ambígua.</span>
+                       </div>
                      </div>
-                   </div>
-                 )}
-                 {tabelaValores && (
+                   )}
+                  {tabelaValores && (
                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
                      <div className="flex items-center justify-between text-xs">
                        <span className="font-medium text-emerald-800">Tabela aplicada: {regraEspecialAtiva ? "Cliente" : "Universal"}</span>
-                       <span className="text-emerald-700">Base: R$ {tabelaValores.valor_base?.toFixed(2) || "0"} | KM: R$ {tabelaValores.valor_km?.toFixed(2) || "0"}</span>
+                       <span className="text-emerald-700">Base: R$ {tabelaValores.valor_base?.toFixed(2) || "0"} | KM: R$ {tabelaValores.valor_km?.toFixed(2) || "0"} | Franquia: {resolverFranquiaEfetiva(tabelaValores.franquia_km, tabelaValores.km_franquia)} km</span>
                      </div>
                    </div>
                  )}
@@ -1800,31 +2249,67 @@ export default function EscalaLista() {
                      </div>
                    </div>
                  )}
-                 <div className="space-y-1 mt-3">
-                   <Label className="text-xs text-muted-foreground italic">OS vinculada (opcional)</Label>
-                   <SearchableSelect 
-                     table="ordens_servico" 
-                     labelField="numero" 
-                     searchFields={["numero"]} 
-                     value={novaOS} 
-                     onChange={v => setNovaOS(v||"")} 
-                     placeholder="Vincular OS existente, se houver..."
-                   />
+                  <div className="space-y-1 mt-3">
+                    <div className="flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5 text-slate-400" />
+                      <Label className="text-xs font-bold text-slate-800">Identificação Conexão (OS Interna)</Label>
+                    </div>
+                    {novaOS ? (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border bg-blue-50/60 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="font-mono font-extrabold text-sm text-blue-700">{novaOS}</p>
+                          <p className="text-[10px] text-slate-500">Número interno da Conexão Express (vinculado a alocacoes_escala.ordem_servico_id)</p>
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] text-slate-500" onClick={() => { setNovaOS(""); setNovaOSId(""); }}>
+                          Desvincular
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-slate-400">
+                        Sem OS interna vinculada. Use o campo abaixo para vincular uma OS existente (fluxo oficial — não é gerada numeração fictícia aqui).
+                      </div>
+                    )}
+                    <SearchableSelect
+                      table="ordens_servico"
+                      labelField="numero"
+                      searchFields={["numero"]}
+                      value={novaOS}
+                      onChange={(v, record) => { setNovaOS(v || ""); setNovaOSId(record?.id || ""); }}
+                      placeholder="Buscar e vincular OS interna existente..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-primary">Origem</Label>
+                    <Input
+                      value={novaOrigem}
+                      onChange={(e) => setNovaOrigem(e.target.value)}
+                      placeholder="Ex: CD Cajamar - Rod. Anhanguera, Km 38"
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-primary">Destino</Label>
+                    <Input
+                      value={novoDestino}
+                      onChange={(e) => setNovoDestino(e.target.value)}
+                      placeholder="Ex: CD Guarulhos - Av. Papa Joao XXIII, 2100"
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-primary">Turno Operacional</Label>
+                    <Select value={novoTurno} onValueChange={setNovoTurno}>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="madrugada">Madrugada</SelectItem>
+                        <SelectItem value="manha">Manhã</SelectItem>
+                        <SelectItem value="tarde">Tarde</SelectItem>
+                        <SelectItem value="noite">Noite</SelectItem>
+                        <SelectItem value="integral">Integral (24h)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                 <div className="space-y-1">
-                   <Label className="text-xs font-bold text-primary">Turno Operacional</Label>
-                   <Select value={novoTurno} onValueChange={setNovoTurno}>
-                     <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                     <SelectContent>
-                       <SelectItem value="madrugada">Madrugada</SelectItem>
-                       <SelectItem value="manha">Manhã</SelectItem>
-                       <SelectItem value="tarde">Tarde</SelectItem>
-                       <SelectItem value="noite">Noite</SelectItem>
-                       <SelectItem value="integral">Integral (24h)</SelectItem>
-                     </SelectContent>
-                   </Select>
-                 </div>
-               </div>
 
                {/* Coluna Direita: Abas operacionais e financeiras */}
                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col">
@@ -1842,12 +2327,16 @@ export default function EscalaLista() {
 <TabsContent value="dados" className="space-y-6">
 <div className="border-t pt-4 mt-4 space-y-3">
                    <div className="space-y-1 mb-4">
-                     <Label className="text-xs">Nº OC / Ordem de Carregamento</Label>
+                     <div className="flex items-center gap-1.5">
+                       <FileText className="w-3.5 h-3.5 text-slate-400" />
+                       <Label className="text-xs font-bold text-slate-800">Romaneio / OC do Cliente</Label>
+                     </div>
                      <Input 
                        value={numeroOC} 
                        onChange={(e) => setNumeroOC(e.target.value)} 
                        placeholder="Ex: OC-20260511-1234"
                      />
+                     <p className="text-[10px] text-slate-400">Referência fornecida pelo cliente (romaneio / OC / ordem de carregamento). Usada no Financeiro e faturamento. Não é o número interno da Conexão Express.</p>
                    </div>
                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Controle de KM e Franquia</h4>
                    <div className="grid grid-cols-2 gap-4">
@@ -1938,12 +2427,23 @@ export default function EscalaLista() {
                             <SelectItem value="afastamento">Afastamento</SelectItem>
                          </SelectContent>
                       </Select>
+                    </div>
+                 </div>
+                 <div className="border-t pt-3 mt-2">
+                   <div className="flex items-center justify-between mb-2">
+                     <Label className="text-xs font-bold text-amber-700 flex items-center gap-1">
+                       <Truck className="w-3 h-3" /> Coleta Reversa
+                     </Label>
+                     <Switch checked={showReversa} onCheckedChange={setShowReversa} />
                    </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                      <Label className="text-xs">Horário Início</Label>
-                      <Input type="time" value={horarioInicio} onChange={e => setHorarioInicio(e.target.value)} />
+                   {showReversa && (
+                     <ColetaReversaFields fields={reversaFields} onChange={setReversaFields} defaultOpen />
+                   )}
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                       <Label className="text-xs">Horário Início</Label>
+                       <Input type="time" value={horarioInicio} onChange={e => setHorarioInicio(e.target.value)} />
                    </div>
                    <div className="space-y-1">
                       <Label className="text-xs">Horário Fim</Label>
@@ -2040,7 +2540,7 @@ export default function EscalaLista() {
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                       <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1"><Truck className="w-3.5 h-3.5"/> Valor do Prestador</h4>
                       
-                      {tabelaValores && tabelaValores.tipo_repasse_prestador && (!prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real || prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real?.valor_diaria === 0) && (
+                      {financeiro.valorTipo === 'percentual' && tabelaValores && tabelaValores.tipo_repasse_prestador && (!prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real || prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real?.valor_diaria === 0) && (
                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-2 flex flex-col gap-1">
                             <span className="text-[10px] text-orange-800 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> FALLBACK: REGRA DA TABELA DO CLIENTE</span>
                             <span className="text-xs font-bold text-orange-900">
@@ -2057,18 +2557,37 @@ export default function EscalaLista() {
                             <Label className="text-xs">Tipo de Cálculo</Label>
                             <Select value={financeiro.valorTipo} onValueChange={v => setFinanceiro(f => ({ ...f, valorTipo: v as any }))}>
                                <SelectTrigger className="h-9"><SelectValue/></SelectTrigger>
-                               <SelectContent>
+                                <SelectContent>
+                                  <SelectItem value="cadastro">Cadastro do prestador</SelectItem>
                                   <SelectItem value="percentual">% sobre tabela</SelectItem>
                                   <SelectItem value="fixo">Valor Fixo (R$)</SelectItem>
                                </SelectContent>
                             </Select>
                          </div>
                          <div className="space-y-1">
-                            <Label className="text-xs">{financeiro.valorTipo === 'percentual' ? 'Percentual (%)' : 'Valor Fixo (R$)'}</Label>
-                            <Input type="number" value={financeiro.valorTipo === 'percentual' ? financeiro.valorPercentual : financeiro.valorFixo} onChange={e => {
-                              if (financeiro.valorTipo === 'percentual') setFinanceiro(f => ({...f, valorPercentual: Number(e.target.value)}));
-                              else setFinanceiro(f => ({...f, valorFixo: Number(e.target.value)}));
-                            }} className="h-9" />
+                            {financeiro.valorTipo === 'cadastro' ? (
+                              <>
+                                <Label className="text-xs">Regra do Cadastro</Label>
+                                <div className="h-9 flex items-center px-3 rounded-md border bg-slate-100 text-xs text-slate-700">
+                                  {(() => {
+                                    const p = prestadores.find(x => x.id === novoPrestadorId);
+                                    const diaria = Number(p?.financeiro_real?.valor_diaria) || 0;
+                                    const saida = Number(p?.financeiro_real?.valor_saida) || 0;
+                                    const base = diaria > 0 ? diaria : (saida > 0 ? saida : 0);
+                                    if (base <= 0) return 'Sem valor cadastrado';
+                                    return `R$ ${base.toFixed(2)} ${diaria > 0 ? '(diária)' : '(saída)'}`;
+                                  })()}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <Label className="text-xs">{financeiro.valorTipo === 'percentual' ? 'Percentual (%)' : 'Valor Fixo (R$)'}</Label>
+                                <Input type="number" value={financeiro.valorTipo === 'percentual' ? financeiro.valorPercentual : financeiro.valorFixo} onChange={e => {
+                                  if (financeiro.valorTipo === 'percentual') setFinanceiro(f => ({...f, valorPercentual: Number(e.target.value)}));
+                                  else setFinanceiro(f => ({...f, valorFixo: Number(e.target.value)}));
+                                }} className="h-9" />
+                              </>
+                            )}
                          </div>
                          <div className="space-y-1">
                             <Label className="text-xs">KM Excedente (R$)</Label>
@@ -2130,6 +2649,15 @@ export default function EscalaLista() {
                           </div>
                        </div>
                     </div>
+
+                    {/* Coleta Reversa - Valores Financeiros */}
+                    <div className="mt-4">
+                      <ColetaReversaFinanceiro
+                        fields={reversaFields}
+                        onChange={setReversaFields}
+                        qtdPrevista={reversaFields.reversa_qtd_volumes}
+                      />
+                    </div>
                   </div>
 
                   {/* Summary Sidebar Column */}
@@ -2153,6 +2681,14 @@ export default function EscalaLista() {
                                 <span className="text-slate-500">Adicionais (KM exced.):</span>
                                 <span className="font-semibold text-slate-800">R$ {res.cliente.adicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                               </div>
+                              {showReversa && reversaFields.tipo_reversa !== "sem_reversa" && (
+                                <div className="flex justify-between items-center py-0.5">
+                                  <span className="text-amber-700 font-medium">Coleta Reversa:</span>
+                                  <span className="font-semibold text-amber-700">
+                                    + R$ {(reversaFields.reversa_impacto_cliente || (reversaFields.reversa_qtd_volumes * reversaFields.reversa_valor_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between items-center py-1 mt-1 border-t">
                                 <span className="text-slate-600 font-bold">Total a Faturar:</span>
                                 <span className="font-bold text-blue-600 text-sm">R$ {res.cliente.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
@@ -2170,6 +2706,14 @@ export default function EscalaLista() {
                                 <span className="text-slate-500">Adicionais (+):</span>
                                 <span className="font-semibold text-green-600">+ R$ {res.prestador.adicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                               </div>
+                              {showReversa && reversaFields.tipo_reversa !== "sem_reversa" && (
+                                <div className="flex justify-between items-center py-0.5">
+                                  <span className="text-amber-700 font-medium">Repasse Reversa:</span>
+                                  <span className="font-semibold text-amber-700">
+                                    + R$ {(reversaFields.reversa_impacto_prestador || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between items-center py-0.5">
                                 <span className="text-slate-500">Descontos (-):</span>
                                 <span className="font-semibold text-red-500">- R$ {res.prestador.descontos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
@@ -2229,13 +2773,30 @@ export default function EscalaLista() {
                       return `${mins} min`;
                     };
 
-                    const diffAguardando = calcularDiferencaTempo(tempoChegadaPatio, tempoInicioCarregamento);
-                    const diffCarregamento = calcularDiferencaTempo(tempoInicioCarregamento, tempoFimCarregamento);
-                    const diffEmRota = calcularDiferencaTempo(tempoSaidaRua, tempoFinalizacaoEntregas);
-                    const diffTotal = calcularDiferencaTempo(tempoChegadaPatio, tempoFinalizacaoEntregas);
+                    // A31-H — tempos REAIS derivados dos eventos do App têm prioridade;
+                    // o cálculo manual (metadata) permanece apenas como fallback.
+                    const usaTemposReais = !!temposReais && (temposReais.tempoTotalMin !== null || temposReais.chegadaOrigem !== null);
+                    const diffAguardando = usaTemposReais
+                      ? formatarDuracaoMin(temposReais!.tempoAguardandoMin)
+                      : calcularDiferencaTempo(tempoChegadaPatio, tempoInicioCarregamento);
+                    const diffCarregamento = usaTemposReais
+                      ? formatarDuracaoMin(temposReais!.tempoCarregamentoMin)
+                      : calcularDiferencaTempo(tempoInicioCarregamento, tempoFimCarregamento);
+                    const diffEmRota = usaTemposReais
+                      ? formatarDuracaoMin(temposReais!.tempoEmRotaMin)
+                      : calcularDiferencaTempo(tempoSaidaRua, tempoFinalizacaoEntregas);
+                    const diffTotal = usaTemposReais
+                      ? formatarDuracaoMin(temposReais!.tempoTotalMin)
+                      : calcularDiferencaTempo(tempoChegadaPatio, tempoFinalizacaoEntregas);
 
                     return (
                       <div className="space-y-3">
+                        {usaTemposReais && (
+                          <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-[10px] text-blue-700 flex items-center gap-1.5">
+                            <Smartphone className="w-3 h-3 shrink-0" />
+                            Tempos calculados a partir dos eventos REAIS do App Motorista (eventos_oficiais). Campos manuais abaixo são apenas fallback.
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <Label className="text-xs text-slate-500 font-semibold">Horário Agendado</Label>
@@ -2469,7 +3030,7 @@ export default function EscalaLista() {
                                 prestadorVeiculo,
                                 os: novaOS,
                                 clienteNome: novoClienteNome,
-                                data: selectedCell?.data?.toISOString() || new Date().toISOString(),
+                                data: dataAlocacaoModal ? dataAlocacaoModal + 'T12:00:00' : new Date().toISOString(),
                                 horarioInicio,
                                 tempoChegadaPatio,
                                 tempoInicioCarregamento,
@@ -2490,7 +3051,93 @@ export default function EscalaLista() {
                       </div>
                     );
                   })()}
-                </div>
+                  </div>
+
+                {/* 3. COLETA REVERSA - RESUMO DO DIA */}
+                {showReversa && reversaFields.tipo_reversa !== "sem_reversa" && (
+                  <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-4">
+                    <div className="text-xs font-bold text-amber-800 uppercase tracking-wider border-b border-amber-200 pb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5"><Truck className="w-3.5 h-3.5" /> Coleta Reversa</span>
+                      <Badge className={`text-[10px] font-bold px-2 py-0.5 ${(() => {
+                        const dif = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada - reversaFields.reversa_qtd_volumes : 0;
+                        return dif === 0 ? 'bg-emerald-100 text-emerald-800' : dif < 0 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800';
+                      })()}`}>
+                        {REVERSA_STATUS_LABELS[reversaFields.reversa_status] || reversaFields.reversa_status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                      <div><span className="text-amber-700 font-medium">Tipo:</span><br /><span className="font-bold text-slate-800">{REVERSA_TIPO_LABELS[reversaFields.tipo_reversa] || reversaFields.tipo_reversa}</span></div>
+                      <div><span className="text-amber-700 font-medium">Status:</span><br /><span className="font-bold text-slate-800">{REVERSA_STATUS_LABELS[reversaFields.reversa_status] || reversaFields.reversa_status}</span></div>
+                      <div><span className="text-amber-700 font-medium">Qtd Prevista:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_qtd_volumes} {reversaFields.reversa_unidade_cobranca}</span></div>
+                      <div><span className="text-amber-700 font-medium">Qtd Coletada:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_qtd_coletada > 0 ? `${reversaFields.reversa_qtd_coletada} ${reversaFields.reversa_unidade_cobranca}` : '—'}</span></div>
+                      <div><span className="text-amber-700 font-medium">Unidade:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_unidade_cobranca}</span></div>
+                      <div><span className="text-amber-700 font-medium">Divergência:</span><br />
+                        {(() => {
+                          const dif = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada - reversaFields.reversa_qtd_volumes : 0;
+                          const cls = dif === 0 ? 'text-emerald-700 bg-emerald-100' : dif < 0 ? 'text-red-700 bg-red-100' : 'text-amber-700 bg-amber-100';
+                          const lbl = dif === 0 ? 'Sem divergência' : dif < 0 ? `${Math.abs(dif)} faltante(s)` : `${dif} excedente(s)`;
+                          return <span className={`font-bold inline-block px-2 py-0.5 rounded ${cls}`}>{lbl}</span>;
+                        })()}
+                      </div>
+                      <div><span className="text-amber-700 font-medium">Classificação:</span><br />
+                        {(() => {
+                          const dif = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada - reversaFields.reversa_qtd_volumes : 0;
+                          const cor = dif === 0 ? 'text-emerald-700' : dif < 0 ? 'text-red-700' : 'text-amber-700';
+                          return <span className={`font-bold ${cor}`}>{dif === 0 ? 'OK' : dif < 0 ? 'FALTANTE' : 'EXCEDENTE'}</span>;
+                        })()}
+                      </div>
+                      {reversaFields.reversa_motivo_divergencia && (
+                        <div className="col-span-2"><span className="text-amber-700 font-medium">Motivo:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_motivo_divergencia}</span></div>
+                      )}
+                      <div><span className="text-amber-700 font-medium">Responsável:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_responsavel || '—'}</span></div>
+                      <div><span className="text-amber-700 font-medium">Telefone:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_telefone || '—'}</span></div>
+                      <div><span className="text-amber-700 font-medium">Data Prevista:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_data_prevista || '—'}</span></div>
+                      <div><span className="text-amber-700 font-medium">Data Realizada:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_data_realizada || '—'}</span></div>
+                      <div className="col-span-2"><span className="text-amber-700 font-medium">Endereço Coleta:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_endereco_coleta || '—'}</span></div>
+                      <div className="col-span-2"><span className="text-amber-700 font-medium">Endereço Devolução:</span><br /><span className="font-bold text-slate-800">{reversaFields.reversa_endereco_devolucao || '—'}</span></div>
+                    </div>
+
+                    <div className="border-t border-amber-200 pt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <span className="text-amber-700 font-medium">Valor Reversa (Cliente):</span><br />
+                        <span className="font-bold text-emerald-700 text-sm">
+                          + R$ {(() => {
+                            const q = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada : reversaFields.reversa_qtd_volumes;
+                            if (reversaFields.reversa_modelo_cliente === 'valor_fixo') return (reversaFields.reversa_valor_fixo_cliente || 0).toFixed(2);
+                            return (q * (reversaFields.reversa_valor_unitario_cliente || 0)).toFixed(2);
+                          })()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-amber-700 font-medium">Repasse (Prestador):</span><br />
+                        <span className="font-bold text-blue-700 text-sm">
+                          + R$ {(() => {
+                            const q = reversaFields.reversa_qtd_coletada > 0 ? reversaFields.reversa_qtd_coletada : reversaFields.reversa_qtd_volumes;
+                            if (reversaFields.reversa_modelo_prestador === 'valor_fixo') return (reversaFields.reversa_valor_fixo_prestador || 0).toFixed(2);
+                            return (q * (reversaFields.reversa_valor_unitario_prestador || 0)).toFixed(2);
+                          })()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-amber-700 font-medium">Fotos:</span><br />
+                        <span className="font-bold text-slate-800">{reversaFields.reversa_fotos.length > 0 ? `${reversaFields.reversa_fotos.length} foto(s)` : 'Nenhuma'}</span>
+                      </div>
+                      <div>
+                        <span className="text-amber-700 font-medium">Assinatura:</span><br />
+                        <span className={`font-bold ${reversaFields.reversa_assinatura_url ? 'text-emerald-700' : 'text-slate-400'}`}>
+                          {reversaFields.reversa_assinatura_url ? 'Disponível' : 'Não registrada'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-amber-700 font-medium">GPS:</span><br />
+                        <span className={`font-bold ${reversaFields.reversa_latitude && reversaFields.reversa_longitude ? 'text-emerald-700' : 'text-slate-400'}`}>
+                          {reversaFields.reversa_latitude && reversaFields.reversa_longitude ? `${reversaFields.reversa_latitude.toFixed(6)}, ${reversaFields.reversa_longitude.toFixed(6)}` : 'Não informado'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="status" className="py-4 space-y-6 max-h-[60vh] overflow-y-auto pr-1">
@@ -2555,11 +3202,200 @@ export default function EscalaLista() {
                        value={observacaoOperacional}
                        onChange={e => setObservacaoOperacional(e.target.value)}
                      />
-                   </div>
-                 </div>
-                  </TabsContent>
+                    </div>
+                  </div>
 
-                  <TabsContent value="indicadores" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-white custom-scrollbar h-full">
+                  {/* COLETA REVERSA — FLUXO + TIMELINE + FOTOS + ASSINATURA + GPS */}
+                  {showReversa && reversaFields.tipo_reversa !== "sem_reversa" && (
+                    <div className="space-y-6 border-t border-amber-200 pt-4">
+                      <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Truck className="w-4 h-4" /> Fluxo da Coleta Reversa
+                      </h4>
+
+                      {/* FLUXO DE ETAPAS */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                        {[
+                          { id: 'aguardando_coleta', label: 'Aguardando Coleta', icon: Clock },
+                          { id: 'reversa_iniciada', label: 'Reversa Iniciada', icon: Play },
+                          { id: 'chegada_coleta', label: 'Chegada ao Local', icon: MapPin },
+                          { id: 'qtd_informada', label: 'Qtd Informada', icon: Package },
+                          { id: 'divergencia_registrada', label: 'Divergência', icon: AlertTriangle },
+                          { id: 'coleta_confirmada', label: 'Coleta Confirmada', icon: CheckCircle },
+                          { id: 'em_devolucao', label: 'Em Devolução', icon: Truck },
+                          { id: 'devolvida', label: 'Devolvida', icon: Check },
+                          { id: 'finalizada', label: 'Finalizada', icon: CheckCircle },
+                        ].map(step => {
+                          const isActive = reversaFields.reversa_status === step.id || 
+                            (step.id === 'coleta_confirmada' && ['coletada', 'em_devolucao', 'devolvida', 'finalizada'].includes(reversaFields.reversa_status)) ||
+                            (step.id === 'divergencia_registrada' && ['divergente'].includes(reversaFields.reversa_status)) ||
+                            (step.id === 'em_devolucao' && ['em_devolucao', 'devolvida', 'finalizada'].includes(reversaFields.reversa_status)) ||
+                            (step.id === 'devolvida' && ['devolvida', 'finalizada'].includes(reversaFields.reversa_status)) ||
+                            (step.id === 'finalizada' && ['finalizada'].includes(reversaFields.reversa_status));
+                          const Icon = step.icon;
+                          return (
+                            <div key={step.id} className={`border rounded-lg p-2 flex flex-col items-center gap-1 text-center transition-all ${isActive ? 'bg-amber-50 border-amber-400 shadow-sm' : 'bg-white border-slate-200 opacity-60'}`}>
+                              <Icon className={`w-4 h-4 ${isActive ? 'text-amber-600' : 'text-slate-400'}`} />
+                              <span className={`text-[9px] font-bold uppercase ${isActive ? 'text-amber-700' : 'text-slate-400'}`}>{step.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* TIMELINE REVERSA — eventos_oficiais */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                        <div className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b pb-2 flex items-center justify-between">
+                          <span>Timeline da Reversa</span>
+                          <Badge variant="outline" className="bg-white text-slate-600 font-semibold text-[10px]">
+                            eventos_oficiais
+                          </Badge>
+                        </div>
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                          {(() => {
+                            const reversaEvents = [
+                              { type: 'reversa_iniciada', label: 'Reversa Iniciada', ts: reversaFields.reversa_data_realizada || reversaFields.reversa_data_prevista },
+                              { type: 'reversa_qtd_informada', label: 'Quantidade Informada', ts: reversaFields.reversa_qtd_coletada > 0 ? (reversaFields.reversa_data_realizada || reversaFields.reversa_data_prevista) : '' },
+                              { type: 'reversa_coletada', label: 'Coletada', ts: ['coletada', 'em_devolucao', 'devolvida', 'finalizada'].includes(reversaFields.reversa_status) ? (reversaFields.reversa_data_realizada || reversaFields.reversa_data_prevista) : '' },
+                              { type: 'reversa_devolvida', label: 'Devolvida', ts: ['devolvida', 'finalizada'].includes(reversaFields.reversa_status) ? (reversaFields.reversa_data_realizada || reversaFields.reversa_data_prevista) : '' },
+                              { type: 'reversa_finalizada', label: 'Finalizada', ts: reversaFields.reversa_status === 'finalizada' ? (reversaFields.reversa_data_realizada || reversaFields.reversa_data_prevista) : '' },
+                            ].filter(ev => ev.ts);
+                            if (reversaEvents.length === 0) {
+                              return <p className="text-xs text-slate-400 italic py-2">Nenhum evento registrado. Os eventos serão produzidos pelo App Motorista durante a coleta.</p>;
+                            }
+                            return reversaEvents.map((ev, idx) => (
+                              <div key={idx} className="flex items-start gap-3">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
+                                <div className="flex-1 flex justify-between items-center">
+                                  <span className="text-xs font-semibold text-slate-700">{ev.label}</span>
+                                  <span className="text-[10px] font-mono text-slate-500">{ev.ts}</span>
+                                </div>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                        {reversaFields.reversa_observacoes && (
+                          <div className="p-2 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-800">
+                            <span className="font-semibold">Obs:</span> {reversaFields.reversa_observacoes}
+                          </div>
+                        )}
+                        <p className="text-[9px] text-slate-400 italic">
+                          * Eventos adicionais (chegada_coleta, divergente, etc.) são gerados pelo App Motorista em tempo real via RPC f_atualizar_reversa_app.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* FOTOS */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 md:col-span-2">
+                          <div className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b pb-2 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5"><Camera className="w-3.5 h-3.5 text-amber-600" /> Fotos</span>
+                            {reversaFields.reversa_fotos.length > 0 && (
+                              <Badge className="bg-amber-100 text-amber-800 font-bold text-[10px]">{reversaFields.reversa_fotos.length} foto(s)</Badge>
+                            )}
+                          </div>
+                          {reversaFields.reversa_fotos.length > 0 ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {reversaFields.reversa_fotos.map((foto, idx) => (
+                                <div key={idx} className="group relative border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                                  <img
+                                    src={foto.url}
+                                    alt={foto.legenda || `Foto ${idx + 1}`}
+                                    className="w-full h-24 object-cover cursor-pointer hover:scale-105 transition-transform duration-200"
+                                    loading="lazy"
+                                    onClick={() => window.open(foto.url, '_blank')}
+                                    onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).classList.add('hidden'); }}
+                                  />
+                                  {foto.categoria && (
+                                    <span className="absolute top-1 left-1 bg-black/60 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">{foto.categoria}</span>
+                                  )}
+                                  {foto.legenda && (
+                                    <div className="p-1 text-[9px] text-slate-500 truncate">{foto.legenda}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-4 text-center">Nenhuma foto registrada</p>
+                          )}
+                        </div>
+
+                        {/* ASSINATURA */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                          <div className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
+                            <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-amber-600" /> Assinatura</span>
+                          </div>
+                          {reversaFields.reversa_assinatura_url ? (
+                            <div className="space-y-2">
+                              <img
+                                src={reversaFields.reversa_assinatura_url}
+                                alt="Assinatura do responsável"
+                                className="w-full max-h-24 object-contain border border-slate-200 rounded-lg bg-white cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => window.open(reversaFields.reversa_assinatura_url, '_blank')}
+                                onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).classList.add('hidden'); }}
+                              />
+                              <div className="text-[10px] space-y-1 text-slate-600">
+                                {reversaFields.reversa_assinatura_nome && (
+                                  <p><span className="font-semibold">Responsável:</span> {reversaFields.reversa_assinatura_nome}</p>
+                                )}
+                                {reversaFields.reversa_assinatura_documento && (
+                                  <p><span className="font-semibold">Documento:</span> {reversaFields.reversa_assinatura_documento}</p>
+                                )}
+                                {reversaFields.reversa_assinatura_data && (
+                                  <p><span className="font-semibold">Data/Hora:</span> {reversaFields.reversa_assinatura_data}</p>
+                                )}
+                                {!reversaFields.reversa_assinatura_nome && !reversaFields.reversa_assinatura_documento && reversaFields.reversa_responsavel && (
+                                  <p><span className="font-semibold">Responsável:</span> {reversaFields.reversa_responsavel}</p>
+                                )}
+                                {reversaFields.reversa_telefone && (
+                                  <p><span className="font-semibold">Telefone:</span> {reversaFields.reversa_telefone}</p>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-4 text-center">Assinatura não registrada</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* GPS */}
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                        <div className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b pb-2">
+                          <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-amber-600" /> GPS da Coleta</span>
+                        </div>
+                        {reversaFields.reversa_latitude && reversaFields.reversa_longitude ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                            <div>
+                              <span className="text-slate-500 font-medium">Latitude:</span>
+                              <p className="font-bold text-slate-800 font-mono">{reversaFields.reversa_latitude.toFixed(6)}</p>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 font-medium">Longitude:</span>
+                              <p className="font-bold text-slate-800 font-mono">{reversaFields.reversa_longitude.toFixed(6)}</p>
+                            </div>
+                            {reversaFields.reversa_gps_data && (
+                              <div>
+                                <span className="text-slate-500 font-medium">Data/Hora:</span>
+                                <p className="font-bold text-slate-800">{reversaFields.reversa_gps_data}</p>
+                              </div>
+                            )}
+                            <div className="sm:col-span-3">
+                              <a
+                                href={`https://www.google.com/maps?q=${reversaFields.reversa_latitude},${reversaFields.reversa_longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold underline"
+                              >
+                                <MapPin className="w-3 h-3" /> Abrir no Google Maps
+                              </a>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic py-4 text-center">Localização não informada</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                   </TabsContent>
+
+                   <TabsContent value="indicadores" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-white custom-scrollbar h-full">
                     {(() => {
                       const dados = listaControleDiario;
                       const totalOps = dados.length;
@@ -2579,7 +3415,7 @@ export default function EscalaLista() {
                       return (
                         <div className="p-8 space-y-8 overflow-y-auto h-full">
                           <div>
-                            <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Activity className="w-5 h-5 text-primary" /> Indicadores da Escala</h3>
+                            <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Activity className="w-5 h-5 text-primary" /> Indicadores da Programação</h3>
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
                                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Operacoes</span>
@@ -2687,7 +3523,7 @@ export default function EscalaLista() {
 
                       return (
                         <div className="p-6 space-y-8 overflow-y-auto h-full">
-                          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-primary" /> Gráficos da Escala</h3>
+                          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-primary" /> Gráficos da Programação</h3>
 
                           <Card>
                             <CardHeader className="pb-2"><CardTitle className="text-sm font-bold">Evolucao Financeira por Dia</CardTitle></CardHeader>
@@ -2761,7 +3597,9 @@ export default function EscalaLista() {
               <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50 gap-2 font-bold text-xs" onClick={() => handleShareWhatsApp(alocacaoEmEdicao)}>
                 <MessageCircle className="w-4 h-4"/> Confirmar via WA
               </Button>
-              <Button onClick={handleCreateReserva}>Salvar na Grade</Button>
+              <Button onClick={handleCreateReserva} disabled={isSaving}>
+                {isSaving ? "Salvando..." : "Salvar na Grade"}
+              </Button>
             </DialogFooter></div>
           </DialogContent>
          </Dialog>
@@ -2883,7 +3721,7 @@ export default function EscalaLista() {
                   <History className="w-4 h-4 text-orange-500" />
                   Timeline de Pátio
                 </h4>
-                <p className="text-[10px] text-slate-400 font-semibold mt-1">Registros da escala integrado ao pátio.</p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1">Registros da programação integrado ao pátio.</p>
               </div>
 
               <div className="relative pl-5 border-l-2 border-slate-200 space-y-4">
@@ -2939,6 +3777,30 @@ export default function EscalaLista() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlocacaoCancelamentoModal
+        open={!!cancelTarget}
+        onOpenChange={(open) => { if (!open) setCancelTarget(null); }}
+        deleteTarget={cancelTarget ? {
+          prestadorNome: cancelTarget.prestadorNome,
+          data: cancelTarget.data,
+          clienteNome: cancelTarget.clienteNome,
+          totals: cancelTarget.totals,
+          status: cancelTarget.status,
+          temTracking: cancelTarget.status === 'em_rota' || cancelTarget.status === 'aceita',
+          temPOD: !!(cancelTarget.fotos_entrega?.length || cancelTarget.comprovanteUrl || cancelTarget.assinaturaUrl),
+          temFinanceiro: !!(cancelTarget.valorFrete || cancelTarget.valorRepasse || cancelTarget.metadata?.financeiro_status === 'ok'),
+          temOSVinculada: !!(cancelTarget.os || cancelTarget.ordemServicoId || cancelTarget.ordem_servico_id),
+        } : null}
+        onConfirmarCancelamento={handleCancelarAlocacao}
+        cancelando={isCanceling}
+      />
+
+      <PODDisplay
+        alocacaoId={selectedPodAlocacao || ""}
+        open={showPODModal}
+        onOpenChange={(open) => { if (!open) { setShowPODModal(false); setSelectedPodAlocacao(null); } }}
+      />
     </div>
   );
 }

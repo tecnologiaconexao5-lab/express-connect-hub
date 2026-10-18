@@ -1,0 +1,73 @@
+﻿================================================================================
+MANIFESTO DE BASELINE ESTRUTURAL — ENV-QA-02-BASELINE-PACKAGE
+================================================================================
+
+1. IDENTIFICAÇÃO GERAL
+   Data/Hora (ISO):         2026-09-20T20:14:44.879Z
+   Ambiente de Origem:      PRODUÇÃO (conexao-express-tms)
+   Project Ref Produção:    uwrvzsjtpgaifkktpepn
+   Host:                    aws-1-sa-east-1.pooler.supabase.com (Port 5432)
+   Database:                postgres
+   Usuário:                 postgres
+   Arquivo Gerado:          supabase/baseline/full_production_schema_20260920.sql
+   Tamanho do Arquivo:      812.613 bytes (~793,57 KB)
+   Total de Linhas:         17.373 linhas
+   SHA-256 Checksum:        4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+
+2. CONFIRMAÇÃO ZERO DATA & ZERO SECRETS
+   DATA_ROWS_EXPORTED:      0 (ZERO)
+   BUSINESS_INSERTS:        0 (ZERO)
+   COPY_DATA_BLOCKS:        0 (ZERO)
+   SENHAS / SECRETS / JWT:  0 (NENHUM secret incluído no baseline)
+   WRITES EM PRODUÇÃO:      0 (ZERO writes / estritamente SELECTs em pg catalog)
+
+3. OBJETOS ESTRUTURAIS EXTRAÍDOS E CONTAGENS
+   CREATE EXTENSION:        4 (pg_stat_statements, pgcrypto, supabase_vault, uuid-ossp)
+   CREATE SCHEMA:           1 (public)
+   CREATE TYPE (ENUM):      63 enums
+   CREATE SEQUENCE:         3 sequences
+   CREATE TABLE:            237 tabelas base
+   ADD CONSTRAINT:          631 constraints (PK, FK, UNIQUE, CHECK)
+   INDEXES:                 683 índices (não-PK/não-UQ duplicados)
+   CREATE FUNCTION / RPC:   135 funções e procedures
+   CREATE OR REPLACE VIEW:  24 views
+   CREATE TRIGGER:          120 triggers
+   ALTER TABLE ENABLE RLS:  237 tabelas com RLS habilitado
+   CREATE POLICY:           543 políticas RLS
+
+4. RPCS CRÍTICAS CONFIRMADAS NO BASELINE
+   - f_confirmar_pagamento_prestador (com suporte a pagamento parcial p_valor_pago numeric DEFAULT NULL): PRESENTE [02M.5F]
+   - f_confirmar_pagamento_fechamento: PRESENTE
+   - f_registrar_baixa_financeira: PRESENTE
+   - f_avancar_etapa_app_motorista: PRESENTE
+
+5. TRIGGERS CRÍTICOS CONFIRMADOS NO BASELINE
+   - M66: trg_propagar_financeiro_alocacao (ON alocacoes_escala -> f_trg_propagar_financeiro_alocacao): PRESENTE
+   - M80: trg_propagar_financeiro_os (ON ordens_servico -> f_trg_propagar_financeiro_os): PRESENTE
+
+6. REGRAS DE RLS CONFIRMADAS NO BASELINE
+   - 543 políticas cobrindo tabelas do sistema, incluindo:
+     * pagamentos_prestadores
+     * financeiro_pagar
+     * financeiro_baixas
+     * composicao_financeira_os
+     * alocacoes_escala
+     * ordens_servico
+     * clientes
+     * prestadores
+
+7. STATUS DA MISSÃO 02M.5F
+   - A assinatura com p_valor_pago numeric DEFAULT NULL está presente no baseline.
+   - O baseline reflete o estado LIVE atual de produção.
+
+8. AVISOS E DIRETRIZES PARA O NOVO QA
+   - NÃO rodar o script baseline em PRODUÇÃO (o baseline é destinado exclusivamente ao novo QA).
+   - NÃO executar as 234 migrations legadas após aplicar este baseline.
+   - NÃO reaplicar P0.
+   - NÃO reaplicar 02B rollback.
+   - NÃO popular dados de produção no QA.
+   - Utilizar scripts/qa/seed_rls_test_data.sql exclusivamente após criação e validação do novo QA.
+
+================================================================================
+BASELINE_PACKAGE = PASS
+================================================================================

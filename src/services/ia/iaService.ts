@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { proxyIaClient } from "./proxyIaClient";
 
 // ============================================================
-// SERVIÇO IA — Suporte a Groq, Gemini e Anthropic
-// Configuração via ENV (sem hardcode de chaves)
+// SERVICO IA — Suporte a Groq, Gemini e Anthropic
+// Chaves no backend seguro (proxy-ia Edge Function)
 // ============================================================
 
 export type IAProvider = "groq" | "gemini" | "anthropic" | "none";
@@ -34,10 +35,10 @@ const LOGS_KEY   = "tms_ia_logs";
 export const DEFAULT_CONFIG: IAConfig = {
   provider:          "none",
   modelo:            "",
-  promptOperacional: "Você é um assistente operacional de logística TMS. Responda de forma objetiva e profissional.",
+  promptOperacional: "Voce e um assistente operacional de logistica TMS. Responda de forma objetiva e profissional.",
   setor:             "operacional",
   tomLinguagem:      "formal",
-  fallback:          "Não foi possível processar a solicitação. Por favor, entre em contato com a equipe operacional.",
+  fallback:          "Nao foi possivel processar a solicitacao. Por favor, entre em contato com a equipe operacional.",
   ativo:             false,
 };
 
@@ -68,14 +69,14 @@ export function appendIALog(entry: Omit<IALogEntry, "id" | "timestamp">): void {
     id:        Date.now().toString(),
     timestamp: new Date().toISOString(),
   };
-  const updated = [newEntry, ...logs].slice(0, 100); // manter apenas últimos 100
+  const updated = [newEntry, ...logs].slice(0, 100);
   localStorage.setItem(LOGS_KEY, JSON.stringify(updated));
 }
 
 export function getModelosPorProvider(provider: IAProvider): string[] {
   const map: Record<IAProvider, string[]> = {
-    groq:      ["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"],
-    gemini:    ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"],
+    groq:      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"],
+    gemini:    ["gemini-2.0-flash", "gemini-2.0-flash-lite"],
     anthropic: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307", "claude-3-opus-20240229"],
     none:      [],
   };
@@ -92,75 +93,20 @@ export async function enviarMensagemIA(
   }
 
   try {
-    const apiKey = config.provider === "groq"
-      ? import.meta.env.VITE_GROQ_API_KEY
-      : config.provider === "gemini"
-      ? import.meta.env.VITE_GEMINI_API_KEY
-      : import.meta.env.VITE_ANTHROPIC_API_KEY;
+    const resultado = await proxyIaClient.executar({
+      provider: config.provider,
+      model: config.modelo || "llama-3.3-70b-versatile",
+      prompt: `${config.promptOperacional}\n\n${mensagem}`,
+      max_tokens: 1024,
+    });
 
-    if (!apiKey) {
-      appendIALog({ tipo: "CHAT", mensagem, status: "fallback", provider: config.provider });
-      return { resposta: config.fallback, ok: true };
+    if (resultado.sucesso && resultado.resposta) {
+      appendIALog({ tipo: "CHAT", mensagem, status: "ok", tokens: resultado.tokens_saida, provider: config.provider });
+      return { resposta: resultado.resposta, tokens: resultado.tokens_saida, ok: true };
     }
 
-    let resposta = "";
-    let tokens = 0;
-
-    if (config.provider === "groq") {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model:    config.modelo || "llama3-70b-8192",
-          messages: [
-            { role: "system",   content: config.promptOperacional },
-            { role: "user",     content: mensagem },
-          ],
-          max_tokens: 1024,
-        }),
-      });
-      const json = await res.json();
-      resposta = json.choices?.[0]?.message?.content || config.fallback;
-      tokens   = json.usage?.total_tokens;
-    }
-
-    if (config.provider === "gemini") {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.modelo || "gemini-1.5-flash"}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${config.promptOperacional}\n\n${mensagem}` }] }],
-          }),
-        }
-      );
-      const json = await res.json();
-      resposta = json.candidates?.[0]?.content?.parts?.[0]?.text || config.fallback;
-    }
-
-    if (config.provider === "anthropic") {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key":    apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model:      config.modelo || "claude-3-5-sonnet-20241022",
-          max_tokens: 1024,
-          system:     config.promptOperacional,
-          messages:   [{ role: "user", content: mensagem }],
-        }),
-      });
-      const json = await res.json();
-      resposta = json.content?.[0]?.text || config.fallback;
-      tokens   = json.usage?.input_tokens + json.usage?.output_tokens;
-    }
-
-    appendIALog({ tipo: "CHAT", mensagem, status: "ok", tokens, provider: config.provider });
-    return { resposta, tokens, ok: true };
+    appendIALog({ tipo: "CHAT", mensagem, status: "fallback", provider: config.provider });
+    return { resposta: config.fallback, ok: true };
   } catch (e: any) {
     appendIALog({ tipo: "CHAT", mensagem, status: "erro", provider: config.provider });
     return { resposta: config.fallback, ok: false, erro: e.message };

@@ -1,0 +1,478 @@
+RELATORIO FIN-FORN-01-PREP — CADASTRO DE FORNECEDORES INTEGRADO AO FINANCEIRO
+===============================================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: FIN-FORN-01-PREP (somente auditoria, sem implementacao)
+
+===============================================================================
+1. SITUACAO ATUAL
+===============================================================================
+
+O TMS NAO possui tabela, componente, rota ou cadastro de "Fornecedores" como
+entidade propria. O conceito de "fornecedor" esta EMPODERADO dentro da tabela
+`prestadores` (37 registros, tabela vazia em producao).
+
+Fluxo atual:
+  ContasPagar.tsx → FornecedorAutocomplete → busca em `prestadores`
+                   → INSERT em `financeiro_pagar` com:
+                      fornecedor_id  → UUID FK para prestadores.id
+                      fornecedor     → texto livre (nome)
+                      fornecedor_documento → texto livre (CPF/CNPJ)
+                      fornecedor_nome     → snapshot nome
+
+Resultado: fornecedor = prestador. Nao ha distincao entre quem presta
+servico de运输e quem vende material/servico sem vinculo operacional.
+
+===============================================================================
+2. ESTRUTURAS EXISTENTES (BANCO)
+===============================================================================
+
+TABELAS RELEVANTES:
+  prestadores                37 rows   (entidade que serve como "fornecedor")
+  financeiro_pagar           101 rows  (titulos a pagar — 40+ colunas)
+  financeiro_baixas          16 rows   (registros de pagamento/baixa)
+  financeiro_receber         108 rows  (titulos a receber)
+  contas_financeiras         1 row     (apenas "Cora")
+  centros_custo              0 rows    (tabela existe, vazia)
+  despesas_operacionais      0 rows    (tabela existe, vazia)
+  recibos                    0 rows    (tabela existe, vazia)
+  pagamentos_prestadores     90 rows   (lotes de pagamento a prestadores)
+  composicao_financeira_os   56 rows   (composicao financeira por OS)
+
+COLUNAS DE fornecedor EM financeiro_pagar:
+  fornecedor_id       uuid     FK → prestadores.id (nullable)
+  fornecedor          text     nome livre (nullable)
+  fornecedor_nome     text     snapshot nome (nullable)
+  fornecedor_documento text    CPF/CNPJ livre (nullable)
+  prestador           text     nome prestador legado (nullable)
+
+COLUNAS DE classificacao EM financeiro_pagar:
+  categoria           text     livre (Combustivel/Manutencao/Energia/etc)
+  plano_contas        text     livre (101/101 = NULL)
+  centro_resultado    text     livre (Corporativo/operacional/NULL)
+  despesa_fixa_base   text     "Fixa" ou "Variavel"
+  competencia         text     MM/AAAA
+
+TABELAS QUE NAO EXISTEM:
+  fornecedores              NAO EXISTE
+  favorecidos               NAO EXISTE
+  pessoas                   NAO EXISTE
+  entidades                 NAO EXISTE
+  categorias_financeiras    NAO EXISTE (e coluna livre)
+  plano_contas (tabela)     NAO EXISTE (e coluna livre)
+  centros_resultado         NAO EXISTE (e coluna livre)
+
+RLS de financeiro_pagar:
+  fp_select_tms  — SELECT: EXISTS (tenant_usuarios WHERE user_id = auth.uid())
+  fp_insert_tms  — INSERT: authenticated
+  fp_update_tms  — UPDATE: tenant_usuarios guard
+  fp_delete_tms  — DELETE: tenant_usuarios guard
+
+TRIGGERS:
+  trg_guardar_pagar_pago_sem_baixa — bloqueia status=pago sem baixa correspondente
+  f_registrar_baixa_financeira     — RPC de baixa (pagar + receber)
+
+FKs de financeiro_pagar:
+  fornecedor_id → prestadores.id
+  cliente_id    → clientes.id
+
+===============================================================================
+3. TELA CONTAS A PAGAR — MODAL LANCAR DESPESA
+===============================================================================
+
+Arquivo: src/components/financeiro/ContasPagar.tsx (906 linhas)
+Rota: /financeiro?tab=pagar
+
+CAMPOS DO MODAL "Lancar Despesa" (2 colunas):
+  Fornecedor/Favorecido   FornecedorAutocomplete (busca em prestadores)  [OBR]
+  Documento/NF            Input text                                     [ ]
+  Tipo de Doc             Select (NF/Fatura/Recibo/Boleto/Guia/Sem)      [ ]
+  Categoria               Select (7 opcoes hardcoded)                   [OBR]
+  Plano de Contas         Input text                                     [ ]
+  Competencia             Input text MM/AAAA                             [ ]
+  Centro de Resultado     Input text                                     [ ]
+  Valor Original R$       Input number                                   [OBR]
+  Valor Liquido           Display calculado                              [ ]
+  Desconto/Multa/Juros    Input number (3 campos)                        [ ]
+  Impostos Retidos        Input number                                   [ ]
+  Emissao                 Input date                                     [ ]
+  Vencimento              Input date                                     [OBR]
+  Linha Digitavel         Input text                                     [ ]
+  Chave PIX               Input text                                     [ ]
+  Parcelar + N Parcelas   Switch + Input number                          [ ]
+  Status                  Select (A Vencer/Provisao)                     [ ]
+
+O campo "Fornecedor" usa FornecedorAutocomplete:
+  - Busca: supabase.from("prestadores").select("id, nome_completo, cpf_cnpj, tipo_parceiro")
+  - Filtro: .or("nome_completo.ilike...cpf_cnpj.ilike...")
+  - Interface: FornecedorOption { id, nome, documento }
+  - Nao busca de tabela "fornecedores"
+
+Persistencia:
+  handleSalvar → criarPagavel() → supabase.from("financeiro_pagar").insert([payload])
+  payload inclui: fornecedor, fornecedor_id, fornecedor_nome, fornecedor_documento,
+                  categoria, plano_contas, centro_resultado, + 20 campos
+
+===============================================================================
+4. CADASTROS BASE — MENU E ROTAS
+===============================================================================
+
+Sidebar (src/lib/sidebarData.ts:83-96):
+  Cadastros Base
+    ├── Clientes              /cadastros/clientes              modulo: clientes
+    ├── Prestadores           /cadastros/prestadores           modulo: prestadores
+    ├── Analise de Documentos /cadastros/analise-documentos    modulo: prestadores
+    ├── Veiculos              /cadastros/veiculos              modulo: cadastros_auxiliares
+    ├── Regioes               /cadastros/auxiliares?tab=regioes
+    ├── Filiais               /cadastros/auxiliares?tab=filiais
+    ├── Unidades              /cadastros/auxiliares?tab=unidades
+    ├── Centros de Custo      /cadastros/auxiliares?tab=centros-custo
+    └── Tabelas Auxiliares    /cadastros/auxiliares?tab=tabelas
+
+  NAO ha item "Fornecedores".
+
+Routes (src/App.tsx:118-125):
+  /cadastros                    → Cadastros
+  /cadastros/prestadores        → CadastrosPrestadores
+  /cadastros/prestadores/novo   → CadastrosPrestadores
+  /cadastros/clientes           → CadastrosClientes
+  /cadastros/clientes/novo      → CadastrosClientes
+  /cadastros/veiculos           → CadastrosVeiculos
+  /cadastros/auxiliares         → CadastrosAuxiliares
+  /cadastros/analise-documentos → AnaliseDocumentos
+
+  NAO ha rota /cadastros/fornecedores.
+
+PADRAO DE CADASTRO (Clientes/Prestadores):
+  App.tsx              → Route
+  sidebarData.ts       → sidebar item com modulo
+  pages/CadastrosX.tsx → Page wrapper (useState lista/detalhe/novo)
+  components/X/XLista.tsx    → Lista com busca, tabela, paginacao, acoes
+  components/X/XDetalhe.tsx  → Formulario de criacao/edicao
+  components/X/types.ts      → Interface do tipo
+
+CadastrosAuxiliares.tsx usa GenericCrud (reutilizavel) para Regioes,
+Filiais, Unidades, Centros de Custo.
+
+===============================================================================
+5. CADASTRO MINIMO PROFISSIONAL — CAMPOS NECESSARIOS
+===============================================================================
+
+DECISAO: NAO criar tabela "fornecedores" separada. Em vez disso,
+ADICIONAR ao existente:
+  Opcao A: Usar tabela `prestadores` com campo `tipo_parceiro` para
+           distinguir "fornecedor" de "prestador de servico".
+  Opcao B: Criar tabela `fornecedores` dedicada com FK propria em
+           financeiro_pagar.
+
+RECOMENDACAO: Opcao A (reutilizar prestadores).
+Justificativa:
+  - financeiro_pagar.fornecedor_id ja aponta para prestadores.id
+  - FornecedorAutocomplete ja busca de prestadores
+  - Evita duplicidade de entidades
+  - Mantem integridade referencial existente
+
+CAMPOS MINIMOS NECESSARIOS (em prestadores ou em tabela dedicada):
+
+  NOME/RAZAO SOCIAL       text     [OBR] identificacao
+  NOME FANTASIA           text     [ ]  nome comercial
+  CPF/CNPJ                text     [OBR] documento fiscal
+  TIPO PESSOA             text     [ ]  PF/PJ
+  INSCRICAO ESTADUAL      text     [ ]  se arquitetura suportar
+  INSCRICAO MUNICIPAL     text     [ ]  se arquitetura suportar
+  TELEFONE                text     [ ]  contato
+  EMAIL                   text     [ ]  contato
+  ENDERECO                text     [ ]  (logradouro/numero/bairro/cidade/uf/cep)
+  STATUS                  text     [OBR] ativo/inativo
+  CHAVE PIX               text     [ ]  dados bancarios (ja existe em prestadores)
+  TIPO CHAVE PIX          text     [ ]  (ja existe em prestadores)
+  BANCO                   text     [ ]  (ja existe em prestadores)
+  AGENCIA                 text     [ ]  (ja existe em prestadores)
+  CONTA                   text     [ ]  (ja existe em prestadores)
+  OBSERVACOES             text     [ ]  notas gerais
+
+  Se Opcao A (prestadores): todos esses campos JA EXISTEM em prestadores.
+  Se Opcao B (tabela nova): criar com esses campos espelhados.
+
+===============================================================================
+6. INTEGRACAO FINANCEIRA — FLUXO COMPLETO
+===============================================================================
+
+FLUXO DESEJADO:
+  Fornecedor cadastrado (prestadores ou fornecedores)
+  → Lancamento de despesa (ContasPagar.tsx modal)
+  → Select fornecedor via autocomplete
+  → INSERT em financeiro_pagar (fornecedor_id, fornecedor_nome, fornecedor_documento)
+  → Status: a vencer / provisao
+  → Vencimento
+  → Pagamento/Baixa (RPC f_registrar_baixa_financeira)
+  → financeiro_baixas (conta_financeira_id, valor_baixado, forma_pagamento)
+  → categoria/plano_contas/centro_resultado (classificacao livre)
+  → DREGerencial lee financeiro_pagar WHERE os_id IS NULL
+  → Classificacao por regex em categoria/plano_contas
+
+FK QUE LIGA LANCAMENTO AO FORNECEDOR:
+  financeiro_pagar.fornecedor_id → prestadores.id (ou fornecedores.id)
+
+DADOS QUE DEVEM FICAR EM SNAPSHOT:
+  fornecedor_nome      (nome no momento do lancamento)
+  fornecedor_documento (CPF/CNPJ no momento do lancamento)
+  Justificativa: historico preserva dados mesmo se fornecedor for alterado
+
+COMPORTAMENTO SE FORNECEDOR FOR INATIVADO:
+  NAO deletar — apenas status = "inativo"
+  financeiro_pagar historico continua acessivel via snapshot
+  Autocomplete pode filtrar apenas status = "ativo"
+  Registros existentes mantem referencia (UUID nao muda)
+
+EVITAR DELETE DESTRUTIVO:
+  Soft delete (status = "inativo") em vez de DELETE fisico
+  Verificar vinculos antes de inativar (financeiro_pagar com status aberto)
+  Alertar: "Existem N titulos abertos para este fornecedor"
+
+BUSCA/AUTOCOMPLETE NO MODAL:
+  FornecedorAutocomplete (ContasPagar.tsx:163-237) ja funciona
+  Precisa apenas de ajuste se tabela mudar de prestadores para fornecedores
+
+CADASTRO SEM SAIR DO FLUXO:
+  Viavel: botao "+" ao lado do autocomplete que abre dialog de cadastro rapido
+  Campos minimos: nome, CPF/CNPJ, telefone
+  Apos cadastro, seleciona automaticamente no autocomplete
+
+===============================================================================
+7. DRE — RELACAO COM FORNECEDOR
+===============================================================================
+
+DRE lee de 3 tabelas:
+  1. financeiro_receber (receita)
+  2. financeiro_pagar WHERE os_id IS NULL (despesas operacionais)
+  3. pagamentos_prestadores WHERE impacto_dre=true (custos prestadores)
+
+CLASSIFICACAO DRE (dreService.ts:51-58):
+  Regex em categoria + plano_contas (texto livre):
+    "imposto"     → ISS/PIS/COFINS/ICMS/IRRF/INSS
+    "financeira"  → juros/tarifa/bancaria
+    "comercial"   → marketing/comissao/propaganda
+    "administrativa" → aluguel/salario/software/contabil/energia
+    "outras"      → fallback
+
+DRE NAO USA fornecedor para classificacao.
+DRE NAO CLASSIFICA por fornecedor.
+
+FORNECEDOR SERVE PARA:
+  Identificacao (quem recebeu o pagamento)
+  Historico (quais fornecedores tem mais despesas)
+  Agrupamento (despesas por fornecedor em relatorios)
+  Rastreabilidade (trilha de auditoria completa)
+
+DRE CONTINUA DERIVANDO DE:
+  categoria (texto livre)
+  plano_contas (texto livre)
+  regra financeira oficial (regex dreService.ts)
+
+NAO ALTERAR SEMANTICA HOMOLOGADA DO FINANCEIRO.
+
+===============================================================================
+8. DUPLICIDADE — CLIENTE/PRESTADOR/FAVORECIDO VS FORNECEDOR
+===============================================================================
+
+ANALISE:
+  Cliente:    tabela propria (78 colunas), FK em financeiro_receber
+  Prestador:  tabela propria (82+ colunas), FK em financeiro_pagar (via fornecedor_id)
+  Favorecido: NAO e tabela — e coluna em prestadores (favorecido, cpf_cnpj_favorecido)
+              + campo UI no ContasPagar.tsx (mapeado para fornecedor)
+
+CONCLUSAO:
+  O sistema ja trata "fornecedor" como "prestadores".
+  Nao ha entidade "favorecidos" separada — apenas colunas bancarias.
+  Nao ha duplicidade real.
+
+ESTRATEGIA RECOMENDADA:
+  NAO criar tabela fornecedores.
+  Adicionar campo tipo_fornecedor ao prestadores (ou usar tipo_parceiro existente).
+  O Prestador ja e o Favorito ja e o Fornecedor.
+  A unica distincao e o TIPO de relacao comercial:
+    - Prestador de servico (transporte, motorista)
+    - Fornecedor de materiais/servicos gerais
+    - Ambos podem coexistir na mesma tabela
+
+OPCOES DE IMPLEMENTACAO:
+  A) Renomear "Prestadores" para "Prestadores/Fornecedores" no sidebar
+     + adicionar filtro por tipo no autocomplete do financeiro
+     + campos de tabela valor prestador vs fornecedor nao se aplicam
+     CUSTO: BAIXO. RISCO: BAIXO.
+
+  B) Criar view "fornecedores" que filtra prestadores WHERE tipo_parceiro = "fornecedor"
+     CUSTO: BAIXO. RISCO: BAIXO.
+
+  C) Criar tabela fornecedores separada com FK propria
+     CUSTO: MEDIO. RISCO: MEDIO (migracao de dados, duplicidade potencial)
+
+  RECOMENDACAO: Opcao A (mais simples, zero migration).
+
+===============================================================================
+9. ARQUIVOS ENVOLVIDOS
+===============================================================================
+
+CADASTROS (se implementar):
+  src/components/prestadores/PrestadoresLista.tsx     — lista (562 linhas)
+  src/components/prestadores/PrestadorDetalhe.tsx     — formulario detalhe
+  src/components/prestadores/types.ts                 — interface
+  src/lib/sidebarData.ts                             — item sidebar
+  src/App.tsx                                        — rota
+
+FINANCEIRO (integracao):
+  src/components/financeiro/ContasPagar.tsx           — modal despesa (906 linhas)
+  src/services/financeiro/pagarService.ts             — CRUD financeiro_pagar (485 linhas)
+  src/services/financeiro/dreService.ts               — classificacao DRE (193 linhas)
+  src/components/financeiro/DREGerencial.tsx          — tela DRE (461 linhas)
+  src/components/financeiro/FluxoCaixaEnterprise.tsx  — fluxo de caixa
+
+BANCO:
+  supabase/migrations/20260510000001_core_baseline.sql — schema financeiro_pagar
+
+===============================================================================
+10. TABELAS ENVOLVIDAS
+===============================================================================
+
+ATUAL:
+  prestadores              — entidade que serve como fornecedor
+  financeiro_pagar         — titulos a pagar (campos fornecedor_*)
+  financeiro_baixas        — registros de pagamento
+  centros_custo            — existe mas vazia
+  despesas_operacionais    — existe mas vazia
+
+SE MIGRATION NECESSARIA:
+  Nenhuma migration obrigatoria para Opcao A.
+  Se Opcao B (tabela dedicada): migration para criar fornecedores + alterar FK.
+
+===============================================================================
+11. MIGRATION NECESSARIA OU NAO
+===============================================================================
+
+OPCAO A (recomendar): NAO.
+  Usar prestadores como fornecedor e tipo_parceiro para distincao.
+  Ajustar apenas UI (sidebar, autocomplete, labels).
+
+OPCAO B: SIM.
+  CREATE TABLE fornecedores (...)
+  ALTER TABLE financeiro_pagar DROP CONSTRAINT financeiro_pagar_fornecedor_id_fkey
+  ALTER TABLE financeiro_pagar ADD CONSTRAINT ... FOREIGN KEY (fornecedor_id) REFERENCES fornecedores(id)
+
+OPCAO C: NAO.
+  Usar view sobre prestadores.
+
+DECISAO: Depende da definicao do time. PREP nao define — apenas documenta.
+
+===============================================================================
+12. PLANO DE IMPLEMENTACAO (SE APROVADO)
+===============================================================================
+
+A) BANCO
+   1. Definir se tabela propria ou reutilizar prestadores
+   2. Se tabela propria: migration CREATE TABLE + FK update
+   3. Se view: CREATE VIEW fornecedores AS SELECT ... WHERE tipo_parceiro = 'fornecedor'
+   4. Dados: NENHUM dado a ser migrado (prestadores ja serve)
+
+B) CADASTRO UI
+   1. Adicionar "Fornecedores" ao sidebar (sidebarData.ts)
+   2. Adicionar rota /cadastros/fornecedores (App.tsx)
+   3. Criar FornecedoresLista.tsx (padrao PrestadoresLista)
+   4. Criar FornecedorDetalhe.tsx (campos minimos profissionais)
+   5. Se view: reusar componentes de prestadores com filtro
+
+C) INTEGRACAO CONTAS A PAGAR
+   1. Ajustar FornecedorAutocomplete (ContasPagar.tsx:163-237)
+   2. Se tabela nova: supabase.from("fornecedores")
+   3. Se view: manter supabase.from("prestadores") com filtro
+   4. Adicionar botao "+" para cadastro rapido sem sair do fluxo
+   5. Atualizar pagarService.listarPrestadoresFornecedores()
+
+D) DRE/RELATORIOS
+   0. NENHUMA alteracao necessaria no DRE
+   1. DRE nao usa fornecedor — classificacao por categoria/plano_contas
+   2. Relatorios futuros podem agrupar por fornecedor (opcional)
+   3. NAO alterar semantica homologada
+
+E) E2E REAL
+   1. Cadastrar fornecedor (ou filtrar prestador existente)
+   2. Criar despesa selecionando fornecedor no autocomplete
+   3. Verificar INSERT em financeiro_pagar com fornecedor_id preenchido
+   4. Baixar titulo
+   5. Verificar financeiro_baixas com dados corretos
+   6. Verificar DRE inclui despesa na classificacao correta
+
+F) REGRESSOES FINANCEIRO
+   1. OS automatica (M66/M80) continua escrevendo fornecedor_id de prestador
+   2. PagamentoPrestadores nao e afetado
+   3. FluxoCaixaEnterprise lee fornecedor_nome (snapshot preservado)
+   4. DashboardFinanceiro KPIs nao mudam
+   5. tsc --noEmit = 0 erros
+
+===============================================================================
+13. RISCOS P0/P1
+===============================================================================
+
+RISCOS P0 (blocadores):
+  NENHUM. Nao ha quebra de funcionalidade existente.
+
+RISCOS P1 (altos):
+  R1: Se criar tabela fornecedores separada, precisar migrar
+      fornecedor_id de TODOS os 101 registros de financeiro_pagar
+      e de todos os triggers M66/M80 que escrevem essa FK.
+      MITIGACAO: Opcao A (reutilizar prestadores) elimina este risco.
+
+  R2: Se PrestadoresLista ja esta vazia (0 registros em producao),
+      adicionar "Fornecedores" ao mesmo componente pode confundir.
+      MITIGACAO: Criar aba separada ou usar tipo_parceiro para filtrar.
+
+  R3: FornecedorAutocomplete busca de prestadores — se habilitar
+      filtros por tipo, prestadores reais podem sumir do autocomplete.
+      MITIGACAO: Mostrar todos no autocomplete, filtrar por tipo apenas
+      na lista de cadastro.
+
+RISCOS P2 (medios):
+  R4: centros_custo e despesas_operacionais estao vazios — podem
+      precisar de seeds antes de integrar ao fluxo.
+      MITIGACAO: Semear apos definicao do fluxo.
+
+  R5: categorias financeiras sao hardcoded no Select do ContasPagar —
+      considerar migrar para tabela auxiliar.
+      MITIGACAO: Fase futura, nao bloqueante.
+
+===============================================================================
+14. CONCLUSAO
+===============================================================================
+
+SITUACAO ATUAL:
+  Fornecedor = Prestador (mesma tabela, mesmos dados, mesma FK).
+  Nao ha cadastro dedicado, nem rota, nem componente.
+  financeiro_pagar ja suporta fornecedor_id (FK→prestadores).
+  DRE nao depende de fornecedor para classificacao.
+
+DECISAO PRINCIPAL:
+  Criar tabela fornecedores (OPCAO C) OU reutilizar prestadores (OPCAO A)?
+  Recomendacao: OPCAO A — custo zero, risco zero, migracao zero.
+
+GAPS:
+  1. Nenhum cadastro de fornecedor como entidade visual
+  2. Sidebar sem item "Fornecedores"
+  3. Nenhuma rota /cadastros/fornecedores
+  4. Nenhum componente FornecedorLista/FornecedorDetalhe
+  5. FornecedorAutocomplete e inline (nao reutilizavel)
+
+MIGRATION:
+  Nenhuma migration obrigatoria para Opcao A.
+  Se Opcao B: 1 migration (CREATE TABLE + FK update).
+
+PLANO:
+  A) Banco: definir estrutura (decisao pendente)
+  B) UI: sidebar + rota + componente
+  C) Integracao: autocomplete + cadastrar rapido
+  D) DRE: nada a fazer
+  E) E2E: fluxo completo
+  F) Regressao: tsc + testes
+
+===============================================================================
+FIM DO RELATORIO — FIN-FORN-01-PREP
+===============================================================================

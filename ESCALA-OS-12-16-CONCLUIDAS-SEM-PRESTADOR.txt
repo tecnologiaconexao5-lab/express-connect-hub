@@ -1,0 +1,134 @@
+ESCALA-OS-12-16-CONCLUIDAS-SEM-PRESTADOR
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+Escopo: 16 alocações Classe E concluídas, prestador_id NULL, SEM OS.
+Os 20 casos da ESCALA-OS-11 (homologação) NÃO foram reabertos.
+
+==================================================
+RESULTADO CENTRAL
+==================================================
+- PRESTADOR: nenhuma evidência objetiva em nenhuma fonte para as 16 (N4).
+- FINANCEIRO: zero títulos (pagar/receber/pp/composição/baixas) em TODAS as 16.
+- HISTÓRICO/POD: zero registros (historico_alocacoes_escala=0; entregas_protocolo=0; delivery_proofs=0).
+- Natureza: 10 teste/QA comprovado + 6 indeterminadas (sem qualquer marcador).
+- REAL=0.
+
+==================================================
+TABELA DAS 16
+==================================================
+
+ID_8     | FIN | DATA       | VEIC     | PLACA  | ROTA/REF                    | CLASSIF | PROVIDER
+c73e424e | true| 2026-06-18 | caminhao | -      | -                           | U       | N4
+5a803358 | true| 2026-06-18 | caminhao | -      | -                           | U       | N4
+305b7412 | true| 2026-06-18 | caminhao | -      | -                           | U       | N4
+d9b71924 | true| 2026-06-25 | VUC      | QA-58  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+6f38844e | true| 2026-06-25 | VUC      | QA-17  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+eab36fcd | true| 2026-06-25 | VUC      | QA-17  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+474c2cde | true| 2026-06-25 | VUC      | QA-28  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+90c770b2 | true| 2026-06-25 | VUC      | QA-43  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+c58eb0cb | true| 2026-06-25 | VUC      | QA-21  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+c0a7a578 | true| 2026-06-26 | VUC      | QA-47  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+3263e6fa | true| 2026-06-26 | VUC      | QA-08  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+a139893d | true| 2026-06-26 | VUC      | QA-39  | ROTA TESTE CRÍTICO / QA_CRIT | T       | N4
+bc508a83 | true| 2026-06-26 | VUC      | TRG20  | ROTA TRIGGER TEST / QA_TRG   | T       | N4
+154ff897 | true| 2026-07-11 | caminhao | -      | -                           | U       | N4
+98dd61d1 | true| 2026-07-11 | caminhao | -      | -                           | U       | N4
+5ab15e56 | true| 2026-07-22 | caminhao | -      | -                           | U       | N4
+
+Campos (resumo): CLIENTE_ID=NULL e PRESTADOR_ID=NULL em 16/16; VALOR_CLIENTE=0 e
+VALOR_REPASSE=0 em 16/16; OS_ID/ORDEM_SERVICO_ID=NULL; FIN_RECEBER=0, FIN_PAGAR=0,
+PAGAMENTO_PRESTADOR=0, COMPOSICAO=0, BAIXAS=0 em 16/16.
+
+METADATA:
+- 10 teste: {"origem_tms":true,"teste_critico":true} (9) e {"origem_tms":true,"teste_trigger":true} (1)
+- 6 indeterminadas: metadata = {} (vazio)
+
+EVIDÊNCIAS DE TESTE (10): rota "ROTA TESTE CRÍTICO"/"ROTA TRIGGER TEST"; origem/destino
+"QA_CRIT_*"/"QA_TRG_*"; placas fictícias QA-xx / TRG20; valores 1000/600 (padrão QA);
+metadata teste_critico/teste_trigger.
+
+EVIDÊNCIAS DE OPERAÇÃO REAL: NENHUMA (0/16). Sem cliente, sem prestador, sem financeiro,
+sem POD, sem histórico, sem veículo cadastrado, valores zero.
+
+CONFLICTING_CANDIDATES: nenhum (não há candidatos de prestador a conflitar).
+
+==================================================
+CRUZAMENTO — 27 CONCLUÍDAS SEM PRESTADOR
+==================================================
+16 → neste universo (sem OS)  | 11 → com OS.
+OTHER_11_WITH_OS_STILL_EXIST=11
+(Não auditadas detalhadamente nesta missão — reservadas para missão própria.)
+
+==================================================
+RESUMO
+==================================================
+
+TOTAL=16
+REAL=0
+TEST=10
+HYBRID=0
+UNDETERMINED=6
+
+PROVIDER_N1=0
+PROVIDER_N2=0
+PROVIDER_N3=0
+PROVIDER_N4=16
+
+SAFE_PROVIDER_RECOVERY=0
+HUMAN_CONFIRM_REQUIRED=0
+NO_RECOVERY_EVIDENCE=16
+
+REAL_WITH_FINANCE=0
+REAL_WITH_BAIXA=0
+TEST_WITH_FINANCE=0   (as 16 NÃO possuem nenhum título financeiro)
+
+==================================================
+RESPOSTAS OBJETIVAS
+==================================================
+
+1. Quantas das 16 são operações reais?
+   0 (zero). Nenhuma evidência de operação real.
+
+2. Para quantas existe prestador recuperável objetivamente?
+   0. Nenhuma FK/ID de prestador em qualquer fonte (N4 nas 16).
+
+3. Quantas são teste/homologação?
+   10 comprovadas (QA/teste_critico/teste_trigger). As 6 restantes são indeterminadas
+   (histórico vazio), provavelmente resíduos de teste sem marcador, mas não comprováveis.
+
+4. Alguma possui baixa/pagamento real?
+   NÃO. Nenhuma das 16 tem financeiro, baixa ou pagamento (0 títulos).
+
+5. Quais realmente justificam saneamento?
+   Nenhuma exige correção de dados. As 10 de QA justificam, no máximo, ROTULAGEM de teste
+   (fase futura, com autorização). As 6 indeterminadas: preservar como histórico; sem ação.
+   Não há obrigação financeira, OS ou cliente envolvidos.
+
+6. Após eventual recuperação do prestador, seria seguro criar OS?
+   NÃO — há bloqueadores adicionais: (a) prestador não é recuperável objetivamente;
+   (b) cliente_id também ausente; (c) valores zero (vCli/vRep=0); (d) nenhuma evidência de
+   operação real. Criar OS seria fictício. NÃO criar OS.
+
+==================================================
+NEXT_MINIMAL_MISSION
+==================================================
+
+ESCALA-OS-13-11-CONCLUIDAS-COM-OS (auditar as 11 concluídas com prestador NULL que JÁ têm
+OS, para fechar o cruzamento das 27) — read-only. Alternativamente, saneamento de rotulagem
+de teste (10 QA + 20 homologação da OS-11) em missão controlada com autorização explícita.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhuma OS criada/vinculada.
+- prestador_id não preenchido. Financeiro não alterado.
+- Não reabriu os 20 casos de homologação (ESCALA-OS-11). Não tratou 9 FIN-02.
+- APP/POD/Fatura/Recrutamento não tocados.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

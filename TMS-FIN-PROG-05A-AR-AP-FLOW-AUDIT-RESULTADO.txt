@@ -1,0 +1,326 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05A-AR-AP-FLOW-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO — READ-ONLY
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: AUDITORIA SOMENTE. Nenhuma escrita (apenas SELECT).
+================================================================================
+
+RESULTADO: AUDITORIA CONCLUIDA. Caminhos concorrentes PROVADOS com IDs reais.
+Baseline PROG-04B/04C confirmado INTACTO.
+
+--------------------------------------------------------------------------------
+1. DIAGRAMA TEXTUAL AS-IS
+--------------------------------------------------------------------------------
+(1) PROGRAMACAO OPERACIONAL / ALOCACAO (alocacoes_escala)
+    status='concluida' + finalizada=true  OU  INSERT/UPDATE de valores
+    └─ TRIGGER M66 trg_propagar_financeiro_alocacao (AFTER INSERT/UPDATE OF ...)
+         ├─ se alocacao sem OS: CRIA/upserta ORDEM DE SERVICO (id = id da alocacao)
+         │     └─ esse INSERT de OS dispara o M80 (AFTER INSERT ON ordens_servico)
+         ├─ INSERT/upsert financeiro_receber  (key = os_id)   <-- AR POR OS
+         ├─ INSERT/upsert financeiro_pagar    (key = os_id)
+         ├─ INSERT/upsert pagamentos_prestadores (key = os_id) origem 'escala_direta'
+         └─ se concluida: INSERT/upsert composicao_financeira_os (key = os_id)
+
+(2) OS DIRETA (ordens_servico) INSERT/UPDATE OF (valores,status) e status<>cancelada
+    └─ TRIGGER M80 trg_propagar_financeiro_os (AFTER ...)
+         ├─ financeiro_receber (key = os_id)   <-- AR POR OS
+         ├─ financeiro_pagar   (key = os_id)
+         ├─ pagamentos_prestadores (key = os_id) origem 'os_direta'
+         └─ se finalizada: composicao_financeira_os (key = os_id)
+
+(3) CONFERENCIA FINANCEIRA (UI / centralFinanceiroService)
+    └─ LE alocacoes_escala (status=concluida, finalizada=true)
+    └─ GRAVA apenas: romaneio da OS, campos financeiros da alocacao
+       (complemento) e lancamento manual (insert alocacoes_escala)
+    └─ NAO cria AR/AP. NAO define estado "conferido/aprovado".
+
+(4) FATURA (FaturaPanel -> faturaService)
+    └─ rascunho (faturas.status='rascunho') + itens (fatura_itens)
+    └─ EMITIR -> RPC f_emitir_fatura
+         ├─ Nº Conexao (f_gerar_numero_fatura) + Nº Cliente (contador)
+         ├─ INSERT financeiro_receber (key = fatura_id; os_id NULL) <-- AR POR FATURA
+         └─ UPDATE faturas (status=emitida, conta_receber_id)
+
+(5) PAGAMENTO PRESTADOR
+    └─ pagamentos_prestadores -> fechamento (fechamentoService: conferido/aprovado)
+       -> RPC f_confirmar_pagamento_* -> financeiro_baixas
+
+CONCLUSAO DO DIAGRAMA: existem DOIS caminhos de criacao de AR:
+  A) por os_id   (M66/M80, na conclusao/finalizacao) — "AR POR OS"
+  B) por fatura_id (f_emitir_fatura, na emissao)      — "AR POR FATURA"
+Nao existe gate de Conferencia entre eles.
+
+--------------------------------------------------------------------------------
+2. M66 COMPLETO — f_trg_propagar_financeiro_alocacao (sha256:cd7e84c87efbca5f)
+--------------------------------------------------------------------------------
+Trigger: AFTER INSERT OR UPDATE OF (status, finalizada, valor_frete,
+  valor_repasse, valor_pedagio, valor_combustivel, valor_ajudante,
+  valor_adicional, valor_desconto, valor_desconto_prestador, tipo_reversa,
+  reversa_valor_cliente, reversa_valor_prestador, prestador_id)
+  ON public.alocacoes_escala FOR EACH ROW.
+  enabled=O (normal).
+
+Fluxo:
+  - IF NEW.status='cancelada' -> RETURN (nao propaga).
+  - Valores: v_valor_cliente=valor_frete(+reversa); v_valor_prestador=
+    valor_repasse(+reversa); pedagio/adicional/ajudante/desconto.
+  - Se todos zero -> RETURN.
+  - v_is_concluida = (status='concluida' AND finalizada=true).
+  - v_status_financeiro = 'aberto' se concluida senao 'pendente'.
+  - Chave: se ordem_servico_id NOT NULL -> os_id = ordem_servico_id;
+    senao os_id = id da PROPRIA alocacao.
+  - v_outros_custos = adicional + ajudante - desconto_prestador.
+  - v_valor_liquido = valor_prestador + pedagio + outros_custos.
+
+EFEITOS COLATERAIS (por tabela):
+  1) ordens_servico (SIDE EFFECT): INSERT ... ON CONFLICT(id) DO UPDATE. Se a
+     alocacao nao tem OS, cria uma OS com o MESMO id da alocacao; depois
+     UPDATE alocacoes_escala.ordem_servico_id. Esse INSERT dispara o M80.
+  2) financeiro_receber: INSERT (os_id, 'Faturamento OS-ALOC-...', v_valor_cliente,
+     venc=CURRENT_DATE+30, status=v_status_financeiro, cliente/cliente_id)
+     ON CONFLICT (os_id) DO UPDATE ... WHERE status NOT IN ('pago','recebido','cancelada').
+     -> Idempotencia por UNIQUE(os_id). NAO usa fatura_id.
+  3) financeiro_pagar: INSERT (os_id, valor=v_valor_liquido, fornecedor_id=
+     prestador_id, desconto=v_desconto) ON CONFLICT (os_id) DO UPDATE ...
+     WHERE status NOT IN ('pago','parcial','cancelado','cancelada').
+  4) pagamentos_prestadores: INSERT (os_id, valor_liquido, valor_servicos,
+     pedagio, adicionais=outros, status_conferencia=em_aberto|pendente,
+     status_pagamento=pendente|nao_vencido, origem_lancamento='escala_direta').
+     ON CONFLICT (os_id) DO UPDATE ... WHERE status_pagamento NOT IN ('pago','cancelado').
+  5) composicao_financeira_os: SOMENTE se concluida e valor_cliente>0.
+     origem_calculo='escala_direta'.
+Tratamento de erro: EXCEPTION WHEN OTHERS THEN RAISE (re-propaga; NAO silencia).
+
+--------------------------------------------------------------------------------
+3. M80 COMPLETO — f_trg_propagar_financeiro_os (sha256:aa81948870a8b6b5)
+--------------------------------------------------------------------------------
+Trigger: AFTER INSERT OR UPDATE OF (valor_cliente, custo_prestador, pedagio,
+  adicionais, ajudante, descontos, status) ON public.ordens_servico
+  FOR EACH ROW WHEN (NEW.status IS DISTINCT FROM 'cancelada').
+  enabled=O (normal).
+
+Fluxo:
+  - IF status='cancelada' -> RETURN.
+  - v_valor_cliente=valor_cliente; v_valor_prestador=custo_prestador.
+    Se ambos zero -> RETURN.
+  - v_is_finalizada = (status='finalizada').
+  - v_outros_custos = adicionais(jsonb) + ajudante(jsonb) - descontos.
+  - v_valor_liquido = custo_prestador + pedagio + outros_custos.
+
+EFEITOS (por tabela):
+  1) financeiro_receber: PERFORM 1 by os_id; se nao existe INSERT
+     (os_id=NEW.id, valor=valor_cliente, venc=+30, status aberto|pendente,
+     cliente/cliente_id); senao UPDATE ... WHERE status NOT IN ('pago','recebido','cancelada').
+     -> Idempotencia por check-then-insert (nao ON CONFLICT) + UNIQUE(os_id).
+  2) financeiro_pagar: idem (se custo_prestador>0 e prestador_id not null).
+  3) pagamentos_prestadores: INSERT origem_lancamento='os_direta',
+     status_conferencia='em_aberto', status_pagamento='pendente'.
+  4) composicao_financeira_os: SOMENTE se finalizada e valor_cliente>0;
+     origem_calculo='os_direta'.
+Tratamento de erro: SEM EXCEPTION WHEN OTHERS (erro propaga naturalmente).
+
+CONVERGENCIA M66<->M80: quando o M66 cria a OS (alocacao sem OS), o M80 dispara
+nesse INSERT; ambos usam a MESMA chave (os_id = id da alocacao). O UNIQUE(os_id)
++ ON CONFLICT/check-then-insert convergem para UMA linha por tabela. Nao ha
+duplicacao por os_id, mas ha DOIS autores para a mesma linha.
+
+--------------------------------------------------------------------------------
+4. CONFERENCIA AS-IS
+--------------------------------------------------------------------------------
+Componente: src/components/financeiro/ConferenciaFinanceira.tsx
+Servico:    src/services/financeiro/centralFinanceiroService.ts
+LE:   alocacoes_escala (status='concluida' AND finalizada=true; limit 300),
+      entregas_protocolo (POD por alocacao_id), ordens_servico (badge "Sem OS"),
+      financeiro_receber/pagar/pagamentos_prestadores (colunas de status),
+      fatura_itens+faturas (estado "faturado" derivado por JOIN).
+GRAVA (via centralFinanceiroService):
+      - salvarRomaneioOS -> UPDATE ordens_servico.romaneio
+      - salvarComplementoFinanceiroAlocacao -> UPDATE alocacoes_escala (whitelist)
+      - lancarServicoManual -> INSERT alocacoes_escala (servico manual)
+      - FaturaPanel: criarRascunhoFatura/adicionarItemFatura -> fatura + itens
+NAO GRAVA: financeiro_receber, financeiro_pagar, pagamentos_prestadores,
+      composicao_financeira_os (esses nascem por TRIGGER M66/M80).
+NAO ALTERA status de titulos. NAO aprova. NAO cria AR/AP.
+ESTADO "conferido/aprovado": NAO existe na Conferencia.
+      Existe status_conferencia em pagamentos_prestadores, mas quem o altera e o
+      fechamentoService (aba Pagamento de Prestadores): em_aberto -> conferido ->
+      aprovado (por item de pagamento), NAO como gate da Conferencia.
+=> Declaracao explicita: NAO existe hoje um estado real de "conferido/aprovado"
+   na Conferencia que possa servir de gate financeiro.
+
+--------------------------------------------------------------------------------
+5. INVENTARIO QUANTITATIVO DO BANCO (read-only)
+--------------------------------------------------------------------------------
+financeiro_receber: 122 linhas | R$ 188.884,75
+  - por os_id ........ 98 | R$ 166.859,00   (M66/M80)
+  - por fatura_id ....  6 | R$ 12.674,02    (f_emitir_fatura; 5 saneadas + FAT-2026-000001)
+  - sem ambos ........ 18 | R$ 9.351,73     (legado/manual/teste)
+  - is_teste ......... 21
+  - status: pendente 60 | aberto 35 | pago 11 | a vencer 10 | a_vencer 2 |
+            vencida 1 | vencido 1 | cancelada 1 | null 1
+
+financeiro_pagar: 178 linhas | R$ 132.943,60
+  - por os_id ........ 161 | R$ 128.769,00
+  - sem os_id ........ 17 | R$ 4.174,60
+  - com fornecedor/prestador: 159
+  - is_teste ......... 30
+  - status: aberto 72 | pendente 59 | cancelado 28 | pago 11 | a vencer 5 |
+            cancelada 2 | parcial 1
+
+pagamentos_prestadores: 137 linhas | R$ 90.229,96
+  - por os_id ........ 125
+  - por origem: escala_direta 62 | os_direta 54 | manual 15 | fechamento 2 |
+                os_finalizada 1 | TESTE 3
+  - status_pagamento: pendente 96 | nao_vencido 26 | pago 12 | cancelado 3
+  - status_conferencia: pendente 62 | em_aberto 60 | conferido 14 | cancelado 1
+  - is_teste ......... 23
+
+composicao_financeira_os: 59 linhas | cobertura de 59 os_ids distintos
+  - origem_calculo: os_direta 37 | escala_direta 22
+
+Contexto operacional: 42 OS finalizadas/encerradas | 51 alocacoes concluidas+finalizadas.
+Separacao teste/HML: is_teste em receber=21, pagar=30, prestadores=23; origem
+'TESTE VALID-P1-P2' em pagamentos_prestadores=3.
+
+--------------------------------------------------------------------------------
+6. EXEMPLOS REAIS DE CAMINHOS CONCORRENTES
+--------------------------------------------------------------------------------
+EXEMPLO CONCRETO (duplicidade economica ja existente) — FAT-2026-000001:
+  fatura f517b9bd-5cd6-4ac8-a316-d1bee0e304bb (numero FAT-2026-000001)
+  item ce0b2c98-353f-4db8-83ce-c598657e1ae6 (valor 2.120, alocacao
+    c0a7ee88-e0f9-470b-8fe0-0bb141ff4501, os_id NULL)
+  AR por FATURA: 346687cf-f35d-4cde-8a26-47bdcff46de1 (R$ 2.120, aberto)
+  AR por OS    : 75e0e5f0-c512-49b6-9542-716362705c08 (R$ 2.000, aberto) —
+                 os_id = c0a7ee88 (a MESMA alocacao)
+  => A MESMA operacao aparece DUAS VEZES em financeiro_receber (R$ 2.120 + R$ 2.000).
+     DRE soma as duas (calcularDRE soma todas as linhas de financeiro_receber).
+     Contas a Receber lista as duas. Se ambas forem baixadas, Fluxo de Caixa soma
+     2x.
+
+RISCO ESCALAVEL (ainda nao duplicado, mas preparado):
+  - 23 faturas em RASCUNHO possuem itens com alocacao_id cuja alocacao JA tem
+    AR por os_id (2 alocacoes distintas). Ao emitir, f_emitir_fatura criara um
+    2o AR (por fatura_id) -> nova duplicidade. O anti-duplicidade de itens
+    (trg_fatura_itens_anti_duplicidade) NAO bloqueia porque ele checa os_id e
+    TODOS os 44 fatura_itens tem os_id NULL (0 com os_id; 25 com alocacao_id).
+  - Quantificacao: AR por os_id casando alocacao_id de fatura_itens = 24 linhas;
+    alocacoes concluidas com AR por os_id = 6.
+  - OS finalizadas sem AR por os_id = 8.
+
+Prova de que o alerta e estrutural: financeiro_receber tem DUAS chaves de
+idempotencia distintas — UNIQUE(os_id) e o novo UNIQUE parcial(fatura_id). Elas
+nao se comunicam: nada impede a coexistencia das duas linhas para a mesma
+operacao economica.
+
+--------------------------------------------------------------------------------
+7. DISTINCAO SNAPSHOT x OBRIGACAO x TITULO x PAGAMENTO
+--------------------------------------------------------------------------------
+A) CALCULO/SNAPSHOT PREVISTO .......... composicao_financeira_os
+   (margem bruta/liquida, valores cliente/prestador; NAO e titulo)
+B) OBRIGACAO FINANCEIRA DEFINITIVA .... financeiro_pagar (lado prestador)
+   + pagamentos_prestadores (fila/competencia do repasse)
+   — hoje NASCE NA CONCLUSAO/finalizacao (M66/M80), status aberto|pendente.
+C) TITULO AR/AP ...................... financeiro_receber (cliente, AR)
+   e a materializacao em Contas a Receber/Pagar
+D) PAGAMENTO/RECEBIMENTO REALIZADO .... financeiro_baixas (+ data_pagamento)
+   — Fluxo de Caixa consome apenas baixas; DRE consome competencia (sem baixa).
+
+Problema central: hoje o TITULO do cliente (C) nasce no momento (B)/conclusao
+via M66/M80 (AR por os_id), ANTES e INDEPENDENTE da fatura. A fatura gera um
+SEGUNDO titulo (AR por fatura_id). Ou seja, C tem DOIS pontos de nascimento.
+
+--------------------------------------------------------------------------------
+8. TABELA MANTER / ALTERAR / DESATIVAR / MIGRAR (proposta; NAO implementar)
+--------------------------------------------------------------------------------
+| Item                                              | Acao      | Impacto | Risco |
+|---------------------------------------------------|-----------|---------|-------|
+| f_emitir_fatura (unico fluxo normal de AR)        | MANTER    | nenhum  | baixo |
+| uq_receber_fatura_id / numero_cliente / Nº Conexao| MANTER    | nenhum  | baixo |
+| composicao_financeira_os (calculo/snapshot)       | MANTER    | nenhum  | baixo |
+| pagamentos_prestadores (registro do prestador)    | MANTER    | nenhum  | baixo |
+| M66/M80: bloco financeiro_receber (AR por os_id)  | ALTERAR   | para de criar AR-cliente definitivo na conclusao | medio |
+| M66/M80: financeiro_pagar (obrigacao prestador)   | ALTERAR   | passa a nascer como PENDENTE e só vira obrigatoria/aprovada apos Conferencia | medio |
+| M66: side-effect de criar ordens_servico          | MANTER    | necessario p/ vinculo; reavaliar em 05B | baixo |
+| Gate de Conferencia (novo estado conferido)       | ALTERAR   | Conferencia passa a aprovar -> libera AP | medio |
+| AR por os_id ja existentes (98 linhas)            | MIGRAR/SANEAR | reconciliar com faturas; tratar duplicata FAT-2026-000001 | alto |
+| 23 rascunhos prontos p/ duplicar                  | MIGRAR/SANEAR | ao emitir, nao criar 2o AR | alto |
+| fechamentoService (conferido/aprovado do prestador)| MANTER   | ja existe; pode virar o gate de AP | baixo |
+| M66/M80: EXCEPTION handling                       | ALTERAR   | M66 re-propaga; M80 nao tem handler — padronizar | baixo |
+
+--------------------------------------------------------------------------------
+9. DESENHO TO-BE MINIMO
+--------------------------------------------------------------------------------
+CLIENTE/RECEBER:
+  Programacao/OS concluida -> (M66/M80 apenas snapshot + obrigacao prestador)
+    -> Conferencia valida -> Fatura rascunho -> VALIDAR/EMITIR
+    -> f_emitir_fatura -> EXATAMENTE 1 financeiro_receber (por fatura_id).
+  => A conclusao operacional NAO cria AR definitivo.
+
+PRESTADOR/PAGAR:
+  Programacao/OS concluida -> M66/M80 registram a obrigacao como PENDENTE
+    -> Conferencia valida servico/POD/valores -> marca CONFERIDO
+    -> Contas a Pagar / Pagamento (fechamento) -> baixa.
+  => A obrigacao vira definitiva no ato da Conferencia (gate), nao cegamente na conclusao.
+
+MINIMO: (i) parar a criacao do AR-cliente em M66/M80; (ii) introduzir gate
+"conferido" na Conferencia que promove a obrigacao do prestador; (iii) sanear as
+duplicatas existentes. Sem novo modulo; reutilizando f_emitir_fatura,
+composicao_financeira_os, pagamentos_prestadores e fechamentoService.
+
+--------------------------------------------------------------------------------
+10. PLANO EXATO PROG-05B (proposta; NAO implementar)
+--------------------------------------------------------------------------------
+Etapa 1 (migration, autorizacao previa): ALTERAR f_trg_propagar_financeiro_alocacao
+  e f_trg_propagar_financeiro_os para REMOVEREM o bloco de INSERT em
+  financeiro_receber (cliente), mantendo composicao_financeira_os,
+  financeiro_pagar e pagamentos_prestadores. Idempotencia preservada nas demais.
+  Risco medio; exige feature-flag/rollback e validacao de que AR passa a nascer
+  somente por f_emitir_fatura.
+Etapa 2 (gate Conferencia): adicionar em centralFinanceiroService uma acao
+  explicita "Conferir/Aprovar" que grava status_conferencia='conferido' nos
+  pagamentos_prestadores (reusar fechamentoService). Conferencia passa a ter o
+  estado real de gate. UI minima (botao + badge), sem redesenho.
+Etapa 3 (saneamento das duplicatas): reconciliar as 98 AR por os_id com as
+  faturas; resolver a duplicata FAT-2026-000001 (AR os 75e0e5f0 x AR fatura
+  346687cf); impedir que os 23 rascunhos gerem 2o AR (bloqueio por alocacao_id
+  no anti-duplicidade, checando alocacao_id alem de os_id). Snapshot+rollback
+  obrigatorios (padrao PROG-04C.2).
+Etapa 4 (validacao): DRE/Fluxo/AR nao somam duplicado; 1 AR por operacao;
+  Conferencia promove obrigacao; f_emitir_fatura unico AR.
+Fora de escopo: reabrir PROG-04B/04C; M66/M80 side-effect da OS; APP.
+
+--------------------------------------------------------------------------------
+11. RISCOS
+--------------------------------------------------------------------------------
+R1  Remover o AR-cliente de M66/M80 muda o momento do AR para a emissao da
+    fatura; telas que hoje leem AR por os_id (Contas a Receber, DRE) passam a
+    depender da fatura. Exige saneamento das 98 linhas legadas.
+R2  Duplicata FAT-2026-000001 (R$2.120 + R$2.000) ja esta ativa e sendo somada
+    pelo DRE/Contas a Receber — impacto financeiro real ate o saneamento.
+R3  Os 23 rascunhos com alocacao ja faturada vao duplicar ao emitir se o
+    anti-duplicidade nao passar a checar alocacao_id.
+R4  Mudar o gate do prestador para "conferido" na Conferencia pode travar
+    repasses que hoje fluem direto na conclusao (dependencia operacional).
+R5  M66 cria ordens_servico como efeito colateral; qualquer alteracao precisa
+    preservar esse vinculo (Escala-OS).
+R6  M80 nao tem EXCEPTION handler; M66 re-propaga. Padronizar evita propagacao
+    silenciosa/parcial.
+
+--------------------------------------------------------------------------------
+12. CONFIRMACAO — ZERO ESCRITA
+--------------------------------------------------------------------------------
+- Esta missao executou SOMENTE SELECT/pg_get_functiondef (read-only).
+- Nenhum UPDATE/INSERT/DELETE; nenhuma migration; nenhuma RLS/trigger alterada.
+- Baseline PROG-04B/04C confirmado intacto:
+    f_emitir_fatura existe; uq_receber_fatura_id existe; faturas.numero_cliente
+    existe; f_trg_propagar_financeiro_alocacao/os existem;
+    38=FAT-2026-000010/NC1, 39=000011/NC2, 40.=000012/NC3, 41=000013/NC4,
+    42=000014/NC5 — todas emitidas com AR.
+- Nada de faturamento, M66/M80, Dashboard, Programacao, APP, RLS ou Financeiro
+  Pagar foi alterado. REDMI nao conectado.
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05A-AR-AP-FLOW-AUDIT
+================================================================================

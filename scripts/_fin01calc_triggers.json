@@ -1,0 +1,161 @@
+{
+  "ts": "2026-10-04T22:40:31.188Z",
+  "funcoes": [
+    {
+      "proname": "calcular_margens_financeiras_os",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_calcular_financeiro_operacao",
+      "args": "p_alocacao_id uuid, p_modo text DEFAULT 'completo'::text",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_estornar_baixa_financeira",
+      "args": "p_baixa_id uuid, p_motivo_estorno text DEFAULT NULL::text",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_recalcular_totais_fatura",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_registrar_baixa_financeira",
+      "args": "p_titulo_tabela text, p_titulo_id uuid, p_valor_baixado numeric, p_data_baixa date DEFAULT CURRENT_DATE, p_forma_pagamento text DEFAULT NULL::text, p_conta_financeira text DEFAULT NULL::text, p_conta_financeira_id uuid DEFAULT NULL::uuid, p_referencia_bancaria text DEFAULT NULL::text, p_observacao text DEFAULT NULL::text, p_usuario_id uuid DEFAULT NULL::uuid, p_usuario_nome text DEFAULT NULL::text",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_propagar_financeiro_alocacao",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_propagar_financeiro_os",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "trg_guardar_pagar_pago_sem_baixa",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "trg_guardar_receber_pago_sem_baixa",
+      "args": "",
+      "provolatile": "v",
+      "prosecdef": false
+    }
+  ],
+  "triggers": [
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_alocacoes_escala_updated_at",
+      "funcao": "update_alocacoes_escala_updated_at",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_cancelar_financeiro_alocacao",
+      "funcao": "f_trg_cancelar_financeiro_alocacao",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_alocacao_cancelada",
+      "funcao": "trg_evento_alocacao_cancelada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_alocacao_criada",
+      "funcao": "trg_evento_alocacao_criada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_alocacao_motorista_trocado",
+      "funcao": "trg_evento_alocacao_motorista_trocado",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_alocacao_recusada",
+      "funcao": "trg_evento_alocacao_recusada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_operacao_finalizada",
+      "funcao": "trg_evento_operacao_finalizada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_evento_prestador_aceitou",
+      "funcao": "trg_evento_prestador_aceitou",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_propagar_financeiro_alocacao",
+      "funcao": "f_trg_propagar_financeiro_alocacao",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "tgname": "trg_registrar_historico_alocacao",
+      "funcao": "registrar_historico_alocacao",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_evento_os_cancelada",
+      "funcao": "trg_evento_os_cancelada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_evento_os_criada",
+      "funcao": "trg_evento_os_criada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_evento_os_finalizada",
+      "funcao": "trg_evento_os_finalizada",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_evento_os_status_changed",
+      "funcao": "trg_evento_os_status_changed",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_notificar_os_para_app",
+      "funcao": "f_trg_notificar_os_para_app",
+      "tgenabled": "O"
+    },
+    {
+      "tabela": "ordens_servico",
+      "tgname": "trg_propagar_financeiro_os",
+      "funcao": "f_trg_propagar_financeiro_os",
+      "tgenabled": "O"
+    }
+  ],
+  "function_defs": {
+    "f_trg_propagar_financeiro_alocacao()": "CREATE OR REPLACE FUNCTION public.f_trg_propagar_financeiro_alocacao()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_cliente_nome TEXT; v_prestador_nome TEXT; v_prestador_doc TEXT;\n  v_os_id UUID; v_os_numero TEXT; v_data_venc_30 DATE;\n  v_valor_cliente NUMERIC; v_valor_prestador NUMERIC;\n  v_pedagio_valor NUMERIC; v_adicional_valor NUMERIC;\n  v_ajudante_valor NUMERIC; v_desconto_valor NUMERIC;\n  v_outros_custos NUMERIC; v_valor_liquido NUMERIC;\n  v_is_concluida BOOLEAN; v_error_msg TEXT;\n  v_fallback_cliente TEXT; v_fallback_prestador TEXT;\n  v_status_financeiro TEXT;\n  v_reversa_cliente NUMERIC; v_reversa_prestador NUMERIC;\n  v_execucao_id UUID;\nBEGIN\n  v_execucao_id := gen_random_uuid();\n  IF NEW.status = 'cancelada' THEN RETURN NEW; END IF;\n  BEGIN\n    v_valor_cliente := COALESCE(NEW.valor_frete, 0);\n    v_valor_prestador := COALESCE(NEW.valor_repasse, 0);\n    v_pedagio_valor := COALESCE(NEW.valor_pedagio, 0);\n    v_adicional_valor := COALESCE(NEW.valor_adicional, 0);\n    v_ajudante_valor := COALESCE(NEW.valor_ajudante, 0);\n    v_desconto_valor := COALESCE(NEW.valor_desconto_prestador, 0);\n    v_reversa_cliente := COALESCE(NEW.reversa_valor_cliente, 0);\n    v_reversa_prestador := COALESCE(NEW.reversa_valor_prestador, 0);\n    IF v_valor_cliente = 0 AND v_valor_prestador = 0 AND v_reversa_cliente = 0 AND v_reversa_prestador = 0 THEN RETURN NEW; END IF;\n    v_valor_cliente := v_valor_cliente + v_reversa_cliente;\n    v_valor_prestador := v_valor_prestador + v_reversa_prestador;\n    v_fallback_cliente := COALESCE(NEW.cliente_id::TEXT, 'cliente_nao_informado');\n    v_fallback_prestador := COALESCE(NEW.prestador_id::TEXT, 'prestador_nao_informado');\n    BEGIN\n      SELECT COALESCE(c.nome_fantasia, c.razao_social, 'Cliente #' || v_fallback_cliente) INTO STRICT v_cliente_nome FROM clientes c WHERE c.id = NEW.cliente_id;\n    EXCEPTION WHEN OTHERS THEN v_cliente_nome := 'Cliente #' || v_fallback_cliente; END;\n    BEGIN\n      SELECT COALESCE(p.nome_completo, 'Prestador #' || v_fallback_prestador), COALESCE(p.cpf_cnpj, '') INTO STRICT v_prestador_nome, v_prestador_doc FROM prestadores p WHERE p.id = NEW.prestador_id;\n    EXCEPTION WHEN OTHERS THEN v_prestador_nome := 'Prestador #' || v_fallback_prestador; v_prestador_doc := ''; END;\n    v_data_venc_30 := CURRENT_DATE + 30;\n    v_is_concluida := (NEW.status = 'concluida' AND NEW.finalizada = true);\n    v_status_financeiro := CASE WHEN v_is_concluida THEN 'aberto' ELSE 'pendente' END;\n    IF NEW.ordem_servico_id IS NOT NULL THEN\n      v_os_id := NEW.ordem_servico_id;\n      v_os_numero := 'OS-ALOC-' || TO_CHAR(COALESCE(NEW.data_escala, CURRENT_DATE), 'YYYYMMDD') || '-' || UPPER(SUBSTRING(NEW.id::TEXT, 1, 8));\n    ELSE\n      v_os_id := NEW.id;\n      v_os_numero := 'ALOC-' || TO_CHAR(COALESCE(NEW.data_escala, CURRENT_DATE), 'YYYYMMDD') || '-' || UPPER(SUBSTRING(NEW.id::TEXT, 1, 8));\n    END IF;\n    v_outros_custos := v_adicional_valor + v_ajudante_valor - v_desconto_valor;\n    v_valor_liquido := v_valor_prestador + v_pedagio_valor + v_outros_custos;\n    -- OS (preservado do comportamento pre-02B; casts corrigidos para schema real)\n    BEGIN\n      INSERT INTO ordens_servico (id, numero, cliente, cliente_id, prestador, prestador_id, status, data, tipo_veiculo, origem, destino, valor_cliente, custo_prestador, pedagio, adicionais, ajudante, descontos, tipo_reversa, reversa_qtd_volumes, observacoes_gerais, created_at, updated_at)\n      VALUES (v_os_id, v_os_numero, NEW.cliente_id, v_cliente_nome, NEW.prestador_id, v_prestador_nome, CASE WHEN v_is_concluida THEN 'finalizada' ELSE 'pendente' END, COALESCE(NEW.data_escala, CURRENT_DATE), NEW.tipo_veiculo, NEW.origem, NEW.destino, v_valor_cliente, v_valor_prestador, v_pedagio_valor, to_jsonb(v_adicional_valor), to_jsonb(v_ajudante_valor), v_desconto_valor, NEW.tipo_reversa, NEW.reversa_qtd_volumes, NEW.observacoes, NOW(), NOW())\n      ON CONFLICT (id) DO UPDATE SET status = CASE WHEN v_is_concluida THEN 'finalizada' ELSE 'pendente' END, valor_cliente = v_valor_cliente, custo_prestador = v_valor_prestador, tipo_reversa = COALESCE(NEW.tipo_reversa, ordens_servico.tipo_reversa), updated_at = NOW();\n    EXCEPTION WHEN OTHERS THEN RAISE; END;\n    -- FIX-POD-00D + ESCALA-OS-03: vincular a aloca??o AP?S garantir a OS (FK imediata)\n    IF NEW.ordem_servico_id IS NULL THEN\n      UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;\n    END IF;\n    -- TMS-FIN-PROG-05B: AR do cliente REMOVIDO (fonte unica = f_emitir_fatura).\n\n    -- Pagar (CORRECAO: valor = v_valor_liquido)\n    IF v_valor_prestador > 0 AND NEW.prestador_id IS NOT NULL THEN\n      BEGIN\n        INSERT INTO financeiro_pagar (os_id, descricao, valor, data_vencimento, status, prestador, fornecedor_id, fornecedor_nome, desconto)\n        VALUES (v_os_id::TEXT, 'Repasse ' || v_os_numero || CASE WHEN v_reversa_prestador > 0 THEN ' (c/ reversa)' ELSE '' END, v_valor_liquido, v_data_venc_30, v_status_financeiro, v_prestador_nome, NEW.prestador_id, v_prestador_nome, v_desconto_valor)\n        ON CONFLICT (os_id) DO UPDATE SET valor = v_valor_liquido, status = CASE WHEN v_is_concluida THEN 'aberto' WHEN financeiro_pagar.status = 'aberto' THEN 'aberto' ELSE 'pendente' END, data_vencimento = v_data_venc_30, fornecedor_id = NEW.prestador_id, fornecedor_nome = v_prestador_nome, desconto = v_desconto_valor, prestador = v_prestador_nome WHERE financeiro_pagar.status NOT IN ('pago','parcial','cancelado','cancelada');\n      EXCEPTION WHEN OTHERS THEN RAISE; END;\n    END IF;\n    -- Pagamentos prestadores\n    IF v_valor_prestador > 0 AND NEW.prestador_id IS NOT NULL THEN\n      BEGIN\n        INSERT INTO pagamentos_prestadores (prestador_id, prestador_nome, prestador_documento, os_id, valor_liquido, valor_servicos, pedagio, adicionais, status_conferencia, status_pagamento, origem_lancamento, quantidade_os, periodo_inicio, periodo_fim, categoria_financeira, data_prevista_pagamento, competencia, impacto_dre, impacto_fluxo_caixa)\n        VALUES (NEW.prestador_id, v_prestador_nome, v_prestador_doc, v_os_id, v_valor_liquido, v_valor_prestador, v_pedagio_valor, v_outros_custos, CASE WHEN v_is_concluida THEN 'em_aberto' ELSE 'pendente' END, CASE WHEN v_is_concluida THEN 'pendente' ELSE 'nao_vencido' END, 'escala_direta', 1, COALESCE(NEW.data_escala, CURRENT_DATE), COALESCE(NEW.data_escala, CURRENT_DATE), 'Custo Logistico', v_data_venc_30, COALESCE(NEW.data_escala, CURRENT_DATE), true, true)\n        ON CONFLICT (os_id) DO UPDATE SET valor_liquido = v_valor_liquido, valor_servicos = v_valor_prestador, status_conferencia = CASE WHEN v_is_concluida THEN 'em_aberto' ELSE 'pendente' END, prestador_id = NEW.prestador_id, prestador_nome = v_prestador_nome, prestador_documento = COALESCE(v_prestador_doc, '') WHERE pagamentos_prestadores.status_pagamento NOT IN ('pago','cancelado');\n      EXCEPTION WHEN OTHERS THEN RAISE; END;\n    END IF;\n    -- Composicao\n    IF v_is_concluida AND v_valor_cliente > 0 THEN\n      DECLARE v_imp NUMERIC; v_seg NUMERIC; v_mb NUMERIC; v_ml NUMERIC; BEGIN\n        v_imp := ROUND(v_valor_cliente * 4.5 / 100, 2);\n        v_seg := ROUND(v_valor_cliente * 0.01, 2);\n        v_mb := v_valor_cliente - v_valor_prestador - v_pedagio_valor - v_outros_custos;\n        v_ml := v_mb - v_imp - v_seg;\n        INSERT INTO composicao_financeira_os (os_id, cliente_id, prestador_id, valor_cliente, valor_prestador, imposto_percentual, imposto_valor, seguro_valor, pedagio_valor, outros_custos, combustivel_valor, ajudante_valor, adicional_valor, desconto_valor, margem_bruta, margem_liquida, percentual_margem_bruta, percentual_margem_liquida, origem_calculo)\n        VALUES (v_os_id, NEW.cliente_id, NEW.prestador_id, v_valor_cliente, v_valor_prestador, 4.5, v_imp, v_seg, v_pedagio_valor, v_outros_custos, 0, v_ajudante_valor, v_adicional_valor, v_desconto_valor, v_mb, v_ml, CASE WHEN v_valor_cliente > 0 THEN ROUND(v_mb / v_valor_cliente * 100, 2) ELSE 0 END, CASE WHEN v_valor_cliente > 0 THEN ROUND(v_ml / v_valor_cliente * 100, 2) ELSE 0 END, 'escala_direta')\n        ON CONFLICT (os_id) DO UPDATE SET valor_cliente = v_valor_cliente, valor_prestador = v_valor_prestador, margem_bruta = v_mb, margem_liquida = v_ml;\n      EXCEPTION WHEN OTHERS THEN RAISE; END;\n    END IF;\n    RETURN NEW;\n  EXCEPTION WHEN OTHERS THEN\n    RAISE;\n  END;\nEND;\n$function$\n",
+    "f_trg_propagar_financeiro_os()": "CREATE OR REPLACE FUNCTION public.f_trg_propagar_financeiro_os()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_cliente_nome       TEXT;\n  v_prestador_nome     TEXT;\n  v_prestador_doc      TEXT;\n  v_data_venc_30       DATE;\n  v_valor_cliente      NUMERIC;\n  v_valor_prestador    NUMERIC;\n  v_outros_custos      NUMERIC;\n  v_valor_liquido      NUMERIC;\n  v_margem_bruta       NUMERIC;\n  v_margem_liquida     NUMERIC;\n  v_imposto_valor      NUMERIC;\n  v_seguro_valor       NUMERIC;\n  v_is_finalizada      BOOLEAN;\n  v_data_servico       DATE;   -- 05D.6C: data canonica do servico\nBEGIN\n  IF NEW.status = 'cancelada' THEN\n    RETURN NEW;\n  END IF;\n\n  v_valor_cliente   := COALESCE(NEW.valor_cliente, 0);\n  v_valor_prestador := COALESCE(NEW.custo_prestador, 0);\n\n  IF v_valor_cliente = 0 AND v_valor_prestador = 0 THEN\n    RETURN NEW;\n  END IF;\n\n  BEGIN\n    SELECT COALESCE(c.nome_fantasia, c.razao_social, 'Cliente #' || NEW.cliente_id)\n      INTO STRICT v_cliente_nome\n      FROM clientes c WHERE c.id = NEW.cliente;\n  EXCEPTION\n    WHEN NO_DATA_FOUND THEN\n      v_cliente_nome := COALESCE(NEW.cliente::TEXT, 'Cliente #' || NEW.cliente_id);\n    WHEN OTHERS THEN\n      v_cliente_nome := COALESCE(NEW.cliente::TEXT, NEW.cliente_id, 'Cliente');\n  END;\n\n  BEGIN\n    SELECT COALESCE(p.nome_completo, 'Prestador #' || NEW.prestador_id),\n           COALESCE(p.cpf_cnpj, '')\n      INTO STRICT v_prestador_nome, v_prestador_doc\n      FROM prestadores p WHERE p.id = NEW.prestador;\n  EXCEPTION\n    WHEN NO_DATA_FOUND THEN\n      v_prestador_nome := COALESCE(NEW.prestador::TEXT, 'Prestador #' || NEW.prestador_id);\n      v_prestador_doc := '';\n    WHEN OTHERS THEN\n      v_prestador_nome := COALESCE(NEW.prestador::TEXT, NEW.prestador_id, 'Prestador');\n      v_prestador_doc := '';\n  END;\n\n  v_data_venc_30  := CURRENT_DATE + 30;\n  v_is_finalizada := (NEW.status = 'finalizada');\n  v_data_servico  := NEW.data;   -- 05D.6C: data canonica (operacional)\n\n  v_outros_custos := COALESCE(\n      (CASE\n        WHEN NEW.adicionais IS NULL THEN 0\n        WHEN jsonb_typeof(NEW.adicionais) = 'number' THEN (NEW.adicionais #>> '{}')::NUMERIC\n        ELSE COALESCE((NEW.adicionais->>'valor')::NUMERIC, 0)\n      END), 0\n    )\n    + COALESCE(\n      (CASE\n        WHEN NEW.ajudante IS NULL THEN 0\n        WHEN jsonb_typeof(NEW.ajudante) = 'number' THEN (NEW.ajudante #>> '{}')::NUMERIC\n        ELSE COALESCE((NEW.ajudante->>'valor')::NUMERIC, 0)\n      END), 0\n    )\n    - COALESCE(NEW.descontos, 0);\n\n  v_valor_liquido := v_valor_prestador\n                   + COALESCE(NEW.pedagio, 0)\n                   + v_outros_custos;\n\n  -- TMS-FIN-PROG-05B: AR do cliente REMOVIDO (fonte unica = f_emitir_fatura).\n\n  -- 2. financeiro_pagar (INALTERADO)\n  IF v_valor_prestador > 0 AND NEW.prestador_id IS NOT NULL THEN\n    PERFORM 1 FROM financeiro_pagar WHERE os_id = NEW.id::TEXT LIMIT 1;\n    IF NOT FOUND THEN\n      INSERT INTO financeiro_pagar (\n        os_id, descricao, valor, data_vencimento, status,\n        prestador, fornecedor_id, fornecedor_nome\n      ) VALUES (\n        NEW.id::TEXT,\n        'Repasse ' || COALESCE(NEW.numero, 'OS#' || SUBSTRING(NEW.id::TEXT, 1, 8)),\n        v_valor_liquido,\n        v_data_venc_30,\n        CASE WHEN v_is_finalizada THEN 'aberto' ELSE 'pendente' END,\n        v_prestador_nome,\n        NEW.prestador,\n        v_prestador_nome\n      );\n    ELSE\n      UPDATE financeiro_pagar SET\n        valor          = v_valor_liquido,\n        prestador      = v_prestador_nome,\n        fornecedor_id  = NEW.prestador,\n        fornecedor_nome = v_prestador_nome,\n        status         = CASE WHEN v_is_finalizada THEN 'aberto'\n                              WHEN financeiro_pagar.status = 'aberto' THEN 'aberto'\n                              ELSE 'pendente' END,\n        data_vencimento = v_data_venc_30,\n        updated_at     = NOW()\n      WHERE os_id = NEW.id::TEXT AND status NOT IN ('pago','parcial','cancelado','cancelada');\n    END IF;\n  END IF;\n\n  -- 3. pagamentos_prestadores (05D.6C: periodo/competencia = data canonica)\n  IF v_valor_prestador > 0 AND NEW.prestador_id IS NOT NULL THEN\n    IF v_data_servico IS NULL THEN\n      -- Pendencia explicita: NAO inventar data (nao usa CURRENT_DATE).\n      RAISE WARNING '[PAGAMENTO_PRESTADOR_SEM_DATA] OS % sem data operacional; provisao em pagamentos_prestadores NAO criada.', NEW.id;\n    ELSE\n      PERFORM 1 FROM pagamentos_prestadores WHERE os_id = NEW.id LIMIT 1;\n      IF NOT FOUND THEN\n        INSERT INTO pagamentos_prestadores (\n          prestador_id, prestador_nome, prestador_documento,\n          os_id, qtd_os,\n          valor_liquido, valor_servicos, pedagio, adicionais,\n          status_conferencia, status_pagamento,\n          origem_lancamento, quantidade_os,\n          categoria_financeira, data_prevista_pagamento,\n          competencia, impacto_dre, impacto_fluxo_caixa,\n          periodo_inicio, periodo_fim\n        ) VALUES (\n          NEW.prestador,\n          v_prestador_nome,\n          COALESCE(v_prestador_doc, ''),\n          NEW.id,\n          1,\n          v_valor_liquido,\n          v_valor_prestador,\n          COALESCE(NEW.pedagio, 0),\n          v_outros_custos,\n          'em_aberto',\n          'pendente',\n          'os_direta',\n          1,\n          'Custo Logístico',\n          v_data_venc_30,\n          v_data_servico,\n          true, true,\n          v_data_servico, v_data_servico\n        );\n      ELSE\n        UPDATE pagamentos_prestadores SET\n          prestador_id        = NEW.prestador,\n          prestador_nome      = v_prestador_nome,\n          prestador_documento = COALESCE(v_prestador_doc, ''),\n          valor_liquido       = v_valor_liquido,\n          valor_servicos      = v_valor_prestador,\n          pedagio             = COALESCE(NEW.pedagio, 0),\n          adicionais          = v_outros_custos,\n          status_conferencia  = 'em_aberto',\n          competencia         = v_data_servico,\n          periodo_inicio      = v_data_servico,\n          periodo_fim         = v_data_servico,\n          updated_at          = NOW()\n        WHERE os_id = NEW.id AND status_pagamento NOT IN ('pago','cancelado');\n      END IF;\n    END IF;\n  END IF;\n\n  -- 4. composicao_financeira_os (INALTERADO)\n  IF v_is_finalizada AND v_valor_cliente > 0 THEN\n    v_imposto_valor  := ROUND(v_valor_cliente * 4.5 / 100, 2);\n    v_seguro_valor   := ROUND(v_valor_cliente * 0.01, 2);\n    v_margem_bruta   := v_valor_cliente\n                      - v_valor_prestador\n                      - COALESCE(NEW.pedagio, 0)\n                      - v_outros_custos;\n    v_margem_liquida := v_margem_bruta - v_imposto_valor - v_seguro_valor;\n\n    PERFORM 1 FROM composicao_financeira_os WHERE os_id = NEW.id LIMIT 1;\n    IF NOT FOUND THEN\n      INSERT INTO composicao_financeira_os (\n        os_id, cliente_id, prestador_id,\n        valor_cliente, valor_prestador,\n        imposto_percentual, imposto_valor, seguro_valor,\n        pedagio_valor, outros_custos,\n        margem_bruta, margem_liquida,\n        percentual_margem_bruta, percentual_margem_liquida,\n        origem_calculo\n      ) VALUES (\n        NEW.id,\n        NEW.cliente,\n        NEW.prestador,\n        v_valor_cliente,\n        v_valor_prestador,\n        4.5,\n        v_imposto_valor,\n        v_seguro_valor,\n        COALESCE(NEW.pedagio, 0),\n        v_outros_custos,\n        v_margem_bruta,\n        v_margem_liquida,\n        CASE WHEN v_valor_cliente > 0\n             THEN ROUND(v_margem_bruta / v_valor_cliente * 100, 2)\n             ELSE 0 END,\n        CASE WHEN v_valor_cliente > 0\n             THEN ROUND(v_margem_liquida / v_valor_cliente * 100, 2)\n             ELSE 0 END,\n        'os_direta'\n      );\n    ELSE\n      UPDATE composicao_financeira_os SET\n        valor_cliente              = v_valor_cliente,\n        valor_prestador            = v_valor_prestador,\n        imposto_percentual         = 4.5,\n        imposto_valor              = v_imposto_valor,\n        seguro_valor               = v_seguro_valor,\n        pedagio_valor              = COALESCE(NEW.pedagio, 0),\n        outros_custos              = v_outros_custos,\n        margem_bruta               = v_margem_bruta,\n        margem_liquida             = v_margem_liquida,\n        percentual_margem_bruta    = CASE WHEN v_valor_cliente > 0\n                                          THEN ROUND(v_margem_bruta / v_valor_cliente * 100, 2)\n                                          ELSE 0 END,\n        percentual_margem_liquida  = CASE WHEN v_valor_cliente > 0\n                                          THEN ROUND(v_margem_liquida / v_valor_cliente * 100, 2)\n                                          ELSE 0 END,\n        origem_calculo             = 'os_direta'\n      WHERE os_id = NEW.id;\n    END IF;\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n"
+  }
+}

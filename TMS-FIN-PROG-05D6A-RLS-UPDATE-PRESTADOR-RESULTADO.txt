@@ -1,0 +1,166 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6A-RLS-UPDATE-PRESTADOR
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao controlada de RLS (UPDATE). Sem alteracao financeira.
+RESULTADO: PASS — prova positiva + negativas + banco financeiro inalterado.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. POLICIES ANTES x DEPOIS (public.pagamentos_prestadores)
+--------------------------------------------------------------------------------
+ANTES (4):
+  pp_insert_own | INSERT | authenticated | prestadores.auth_user_id = auth.uid()
+  pp_select_own | SELECT | authenticated | prestadores.auth_user_id = auth.uid()
+  pp_select_tms | SELECT | authenticated | tenant (05D.4)
+  pp_update_own | UPDATE | authenticated | prestadores.auth_user_id = auth.uid()
+
+DEPOIS (5):
+  pp_insert_own | INSERT | authenticated | (INALTERADA)
+  pp_select_own | SELECT | authenticated | (INALTERADA)
+  pp_select_tms | SELECT | authenticated | (INALTERADA — 05D.4)
+  pp_update_own | UPDATE | authenticated | (INALTERADA — prestador)
+  pp_update_tms | UPDATE | authenticated | NOVA -> tenant (USING + WITH CHECK)
+
+RLS habilitada (relrowsecurity=true; force=false). pp_update_own intacta.
+Nenhum SELECT/INSERT/DELETE alterado. Nenhum service_role. Nenhum UPDATE
+generico concedido (ver item 2).
+
+--------------------------------------------------------------------------------
+2. GRANTS ANTES x DEPOIS
+--------------------------------------------------------------------------------
+Tabela pagamentos_prestadores (antes = depois, INALTERADO):
+  authenticated: SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER, TRUNCATE
+  anon:          SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER, TRUNCATE
+  service_role:  idem
+=> O privilegio UPDATE de authenticated JA existia no baseline; NADA foi
+   concedido. Quem limita as LINHAS e a RLS (pp_update_own + pp_update_tms).
+   Nenhum GRANT novo emitido nesta missao (respeita "nao conceder UPDATE
+   generico"). Observacao: anon possui grants amplos herdados (Supabase default);
+   nao foram tocados (fora de escopo) — a RLS nega, pois nao ha policy anon.
+Helper f_pp_tenant_id (inalterado): SECURITY DEFINER, STABLE; EXECUTE para
+authenticated/service_role; REVOKE de PUBLIC/anon.
+
+--------------------------------------------------------------------------------
+3. MIGRATION CRIADA
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260924000006_fin_prog05d6a_rls_update_pagamentos_prestadores.sql
+Rollback: supabase/migrations/20260924000007_fin_prog05d6a_rls_update_pagamentos_prestadores_rollback.sql
+Idempotente: DROP POLICY IF EXISTS + CREATE POLICY. Aplicada em PROD.
+
+Policy criada:
+  CREATE POLICY pp_update_tms ON public.pagamentos_prestadores
+    FOR UPDATE TO authenticated
+    USING (
+      EXISTS (SELECT 1 FROM public.tenant_usuarios tu
+        WHERE tu.user_id = auth.uid() AND tu.status='ativo'
+          AND tu.tenant_id = public.f_pp_tenant_id(pagamentos_prestadores.os_id))
+    )
+    WITH CHECK (  -- MESMA validacao (avalia a linha NOVA)
+      EXISTS (SELECT 1 FROM public.tenant_usuarios tu
+        WHERE tu.user_id = auth.uid() AND tu.status='ativo'
+          AND tu.tenant_id = public.f_pp_tenant_id(pagamentos_prestadores.os_id))
+    );
+
+--------------------------------------------------------------------------------
+4. PROVA UPDATE TMS (POSITIVA) — dentro de transacao com ROLLBACK
+--------------------------------------------------------------------------------
+Registro alvo: id 33557f90… os_id 004a11d6… (tenant resolvido ...0001).
+  ANTES (pre-05D.6A): UPDATE pelo financeiro = 0 linhas (negado).
+  DEPOIS:
+    - financeiro (de1c77e0…, tenant ...0001): UPDATE = 1 linha (autorizado).
+    - super_admin (8c12fc67…, tenant ...0001): UPDATE = 1 linha.
+  Alteracao inócua (observacao = COALESCE(observacao,'')) desfeita por ROLLBACK.
+
+--------------------------------------------------------------------------------
+5. PROVA CROSS-TENANT (NEGATIVA)
+--------------------------------------------------------------------------------
+Financeiro com vinculo movido p/ tenant temporario '...00ff' (txn+ROLLBACK):
+  UPDATE do mesmo registro = 0 linhas (negado).
+
+--------------------------------------------------------------------------------
+6. PROVA SEM VINCULO (NEGATIVA)
+--------------------------------------------------------------------------------
+authenticated com sub NAO presente em tenant_usuarios:
+  UPDATE = 0 linhas (negado). anon nao possui policy => 0 linhas.
+
+--------------------------------------------------------------------------------
+7. PROVA REGISTRO SEM TENANT RESOLVIDO (NEGATIVA)
+--------------------------------------------------------------------------------
+Registro os_id NULL (id 3884e3c0…), f_pp_tenant_id = NULL:
+  UPDATE pelo financeiro = 0 linhas (negado).
+
+--------------------------------------------------------------------------------
+8. PROVA pp_update_own (PRESTADOR preservado)
+--------------------------------------------------------------------------------
+Prestador "PRESTADOR TESTE APP" (auth_user_id, NAO e usuario TMS):
+  - atualiza os SEUS registros: 45 = 45 (autorizado).
+  - NAO atualiza pagamento de outro prestador: 0 (negado).
+pp_update_own continua valendo somente para os proprios registros.
+
+--------------------------------------------------------------------------------
+9. PROVA WITH CHECK
+--------------------------------------------------------------------------------
+Contra a propria linha do tenant, o financeiro tentou:
+  - SET os_id = uuid inexistente => RLS_VIOLATION (recusado).
+  - SET os_id = NULL             => RLS_VIOLATION (recusado).
+=> WITH CHECK impede mover o registro para um vinculo de outro tenant / sem
+   tenant resolvivel. Observacao: os_id NAO e alterado pela UI (PagamentoPrestadores
+   atualiza apenas status_conferencia/status_aprovacao/status_pagamento/elegivel_lote/
+   lote_id/observacao); ainda assim o WITH CHECK protege a coluna.
+
+--------------------------------------------------------------------------------
+10. INTEGRIDADE (antes = depois)
+--------------------------------------------------------------------------------
+pagamentos_prestadores ................ 137 (137)
+financeiro_pagar ...................... 178 (178)
+financeiro_baixas ..................... 19 (19)
+pagamentos_prestadores lote_id nao nulo 0 (0)
+soma pagamentos_prestadores.valor_liquido ... 90.229,96 (inalterada)
+soma financeiro_pagar.valor ................. 132.943,60 (inalterada)
+Distribuicoes (inalteradas):
+  status_conferencia : pendente 62 | em_aberto 60 | conferido 14 | cancelado 1
+  status_aprovacao   : aguardando_aprovacao 127 | aprovado 10
+  status_pagamento   : pendente 96 | nao_vencido 26 | pago 12 | cancelado 3
+  elegivel_lote      : true 4 | false 133
+Nenhuma alteracao financeira permanente (todas as provas em ROLLBACK).
+
+--------------------------------------------------------------------------------
+11. REGRESSAO
+--------------------------------------------------------------------------------
+- RLS 05D.6A (positiva/negativas/prestador/WITH CHECK/integridade): 15/15 PASS.
+- RLS 05D.4 (SELECT) reexecutado: 13/13 PASS (isolamento de leitura intacto).
+- npx vitest run (subset financeiro): 6 arquivos / 179 testes PASS.
+- npx tsc -p tsconfig.app.json --noEmit: EXIT 2 — 750 erros PRE-EXISTENTES do
+  baseline (nenhum arquivo TS alterado nesta missao; mudanca e SQL).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1 anon possui grants amplos herdados (SELECT/INSERT/UPDATE/DELETE). Sem policy
+   anon, a RLS nega; nao tocado por escopo. Recomendacao futura de least-privilege
+   (REVOKE) quando autorizado.
+R2 Existe apenas 1 tenant real; o isolamento multi-tenant esta logicamente
+   imposto e provado por simulacao, mas nunca exercitado com 2o tenant real.
+R3 Linhas sem os_id resolvivel continuam invisiveis/inalteraveis ao TMS (por
+   design, sem tenant provado) — os 20 registros seguem como na 05D.5.
+R4 A policy autoriza UPDATE em QUALQUER coluna (privilegio UPDATE da tabela ja
+   existia); a restricao de negocio por coluna (ex.: bloquear cambio de valor
+   pago) deve vir das RPCs/servicos da implementacao do gate, nao da RLS.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+M66/M80; f_confirmar_pagamento_prestador; trigger de cancelamento;
+f_emitir_fatura; AR; faturas; AP; Conferencia; PagamentoPrestadores UI;
+Tesouraria; CESAR; 20 registros sem tenant; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6A-RLS-UPDATE-PRESTADOR-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6A-RLS-UPDATE-PRESTADOR-RESULTADO.txt
+Tamanho ..: 9421 bytes
+Data .....: 24/09/2026 17:01:15
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6A
+================================================================================

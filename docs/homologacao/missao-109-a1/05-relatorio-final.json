@@ -1,0 +1,16 @@
+{
+  "missao": "109-A1",
+  "data": "2026-07-12T20:04:53.984Z",
+  "ids": {
+    "osId": "bf466936-b5b5-4526-b9e4-fa77229eb4dd",
+    "osNumero": "OS-202607-426505",
+    "alocacaoId": null
+  },
+  "criterios": {
+    "os_criada_exclusivamente_pela_interface": true,
+    "escala_criada_pela_interface": "pendente",
+    "alocacao_criada_pela_interface": "pendente",
+    "nenhum_insert_manual": true,
+    "dados_persistidos_supabase": true
+  }
+}

@@ -1,0 +1,79 @@
+================================================================================
+FIN-01-CALC  VALIDACAO DO CALCULO DE FRETE / VALOR DO PRESTADOR (ENCERRAMENTO OS)
+Nivel 5 (Fechamento Financeiro)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T22:42:55.659Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  o motor de calculo esta CONSISTENTE.
+
+--------------------------------------------------------------------------------
+1. MOTOR DE CALCULO (onde a tarifa e frete sao apurados)
+--------------------------------------------------------------------------------
+NAO existe RPC 'f_calcular_frete'. A tarifa e apurada por:
+  * TS  precificacaoEngineService.calcularPreco() / calcularPrecoRapido()
+        (usa tabelas_valores do cliente + tabela_prestador)  no momento da OS.
+  * TS  calcularMargemUnificada()  formula de margem unica.
+  * SQL triggers de PROPAGACAO (nao recalculam tarifa, propagam valores):
+        f_trg_propagar_financeiro_alocacao()  (escala -> OS/financeiro)  [live v]
+        f_trg_propagar_financeiro_os()        (OS direta -> financeiro)  [live v]
+        calcular_margens_financeiras_os() / f_calcular_financeiro_operacao()
+        (existem em producao; conferidos por assinatura)
+
+FORMULA CANONICA (idencial nos 3 lugares  TS e os 2 triggers):
+  outros_custos  = adicional + ajudante - desconto
+  valor_liquido  = valor_prestador(repasse) + pedagio + outros_custos
+  margem_bruta   = valor_cliente - valor_prestador - pedagio - outros_custos
+  imposto        = valor_cliente * 4,5%   |  seguro = valor_cliente * 1%
+  margem_liquida = margem_bruta - imposto - seguro
+  pct_margem     = margem / valor_cliente * 100
+  financeiro_pagar = pagamentos_prestadores.valor_liquido = valor_liquido
+
+--------------------------------------------------------------------------------
+2. OS DE TESTE VALIDADA (finalizada mais recente com composicao)
+--------------------------------------------------------------------------------
+OS ...............: OS-202610-915214  (80235405-a4b6-4abb-a954-79ec03806baa)
+Status ...........: finalizada   | Data: Fri Oct 02   | Origem calc: os_direta
+valor_cliente ....: R$ 300.00
+custo_prestador ..: R$ 250.00
+pedagio ..........: R$ 0.00
+outros_custos ....: R$ 0.00  (adicional=0.00 + ajudante=0.00 - desconto=0.00)
+
+  CONFERENCIA (gravado x formula):
+    [OK] margem_bruta  : gravado=50.00  esperado=50.00
+    [OK] imposto 4,5%  : gravado=13.50  esperado=13.50
+    [OK] seguro 1%     : gravado=3.00  esperado=3.00
+    [OK] margem_liquida: gravado=33.50  esperado=33.50
+    [OK] pct_margem_br: gravado=16.67  esperado=16.67
+    [OK] pct_margem_li: gravado=11.17  esperado=11.17
+
+  CONTRAPARTIDAS FINANCEIRAS:
+    financeiro_pagar.valor = 250.00  [OK = valor_liquido]  status=aberto
+    pagamentos_prestadores.valor_servicos = 250.00  [OK = repasse]
+    pagamentos_prestadores.valor_liquido  = 250.00  [OK = repasse+pedagio+outros]
+
+--------------------------------------------------------------------------------
+3. AGREGADO DE TODAS AS COMPOSICOES FINANCEIRAS
+--------------------------------------------------------------------------------
+Total de composicoes ....: 57
+100% consistentes ......: 45  (formula canonica confere integralmente)
+Divergentes (legado) ...: 12  (registros antigos/teste M43/M48/GO-LIVE/AUDIT:
+                              campos imposto/seguro/pct gravados 0 por versao antiga da
+                              trigger, ou OS editada apos encerramento  drift de dados)
+
+--------------------------------------------------------------------------------
+4. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] Tarifa/frete e valor do prestador sao apurados corretamente no encerramento.
+  [OK] Formula canonica identica no TS e nos dois triggers de producao.
+  [OK] OS mais recente: valores financeiros conferem integralmente.
+  [OK] financeiro_pagar e pagamentos_prestadores.valor_liquido consistentes (= repasse+pedagio+outros).
+  [i]  Inconsistencias residuais existem apenas em registros LEGADOS/TESTE com drift.
+  [i]  Nao existe RPC f_calcular_frete (a tarifa e no engine TS, no momento da OS).
+  [i]  Melhoria leve: o trigger de escala no ON CONFLICT nao atualiza percentual_margem_bruta/liquida.
+
+EVIDENCIAS: scripts/_fin01calc_validate2.json | scripts/_fin01calc_triggers.json |
+            scripts/_fin01calc_defs.sql | scripts/_fin01calc_validacao.json
+================================================================================
+FIM  FIN-01-CALC
+================================================================================

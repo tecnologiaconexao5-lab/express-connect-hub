@@ -1,0 +1,41 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ suppress logs { quiet: true }
+ÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö¼ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö¼ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö¼ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö¼ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ
+Ôöé (index) Ôöé column_name                   Ôöé data_type                  Ôöé is_nullable Ôöé d                         Ôöé
+Ôö£ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö╝ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö╝ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö╝ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö╝ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöñ
+Ôöé 0       Ôöé 'instance_id'                 Ôöé 'uuid'                     Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 1       Ôöé 'id'                          Ôöé 'uuid'                     Ôöé 'NO'        Ôöé ''                        Ôöé
+Ôöé 2       Ôöé 'aud'                         Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 3       Ôöé 'role'                        Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 4       Ôöé 'email'                       Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 5       Ôöé 'encrypted_password'          Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 6       Ôöé 'email_confirmed_at'          Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 7       Ôöé 'invited_at'                  Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 8       Ôöé 'confirmation_token'          Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 9       Ôöé 'confirmation_sent_at'        Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 10      Ôöé 'recovery_token'              Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 11      Ôöé 'recovery_sent_at'            Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 12      Ôöé 'email_change_token_new'      Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 13      Ôöé 'email_change'                Ôöé 'character varying'        Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 14      Ôöé 'email_change_sent_at'        Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 15      Ôöé 'last_sign_in_at'             Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 16      Ôöé 'raw_app_meta_data'           Ôöé 'jsonb'                    Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 17      Ôöé 'raw_user_meta_data'          Ôöé 'jsonb'                    Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 18      Ôöé 'is_super_admin'              Ôöé 'boolean'                  Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 19      Ôöé 'created_at'                  Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 20      Ôöé 'updated_at'                  Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 21      Ôöé 'phone'                       Ôöé 'text'                     Ôöé 'YES'       Ôöé 'NULL::character varying' Ôöé
+Ôöé 22      Ôöé 'phone_confirmed_at'          Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 23      Ôöé 'phone_change'                Ôöé 'text'                     Ôöé 'YES'       Ôöé "''::character varying"   Ôöé
+Ôöé 24      Ôöé 'phone_change_token'          Ôöé 'character varying'        Ôöé 'YES'       Ôöé "''::character varying"   Ôöé
+Ôöé 25      Ôöé 'phone_change_sent_at'        Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 26      Ôöé 'confirmed_at'                Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 27      Ôöé 'email_change_token_current'  Ôöé 'character varying'        Ôöé 'YES'       Ôöé "''::character varying"   Ôöé
+Ôöé 28      Ôöé 'email_change_confirm_status' Ôöé 'smallint'                 Ôöé 'YES'       Ôöé '0'                       Ôöé
+Ôöé 29      Ôöé 'banned_until'                Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 30      Ôöé 'reauthentication_token'      Ôöé 'character varying'        Ôöé 'YES'       Ôöé "''::character varying"   Ôöé
+Ôöé 31      Ôöé 'reauthentication_sent_at'    Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 32      Ôöé 'is_sso_user'                 Ôöé 'boolean'                  Ôöé 'NO'        Ôöé 'false'                   Ôöé
+Ôöé 33      Ôöé 'deleted_at'                  Ôöé 'timestamp with time zone' Ôöé 'YES'       Ôöé ''                        Ôöé
+Ôöé 34      Ôöé 'is_anonymous'                Ôöé 'boolean'                  Ôöé 'NO'        Ôöé 'false'                   Ôöé
+ÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö┤ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö┤ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö┤ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö┤ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ
+TRIGGERS auth.users: nenhum

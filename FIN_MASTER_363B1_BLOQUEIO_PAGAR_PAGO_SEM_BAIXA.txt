@@ -1,0 +1,114 @@
+FIN-MASTER-363B.1 — BLOQUEIO PAGAR PAGO SEM BAIXA
+==================================================
+Data: 07/09/2026
+Modelo: Qwen3.7 Plus (variante high)
+
+STATUS FINAL: [HOMOLOGADO — P1 PAGAR CORRIGIDO]
+
+CAUSA RAIZ
+----------
+P1-A do FIN-MASTER-363B: financeiro_pagar aceitava status 'pago'/'paga'
+diretamente via criarPagavel/atualizarPagavel, sem exigir baixa financeira.
+UI ContasPagar expunha "Pago (Liquidado)" como opção. Zero triggers no banco.
+
+ALTERAÇÕES
+----------
+1. BANCO — supabase/migrations/20260907_fin_master_363b1_bloqueio_pagar_pago_sem_baixa.sql
+   - Função trg_guardar_pagar_pago_sem_baixa()
+   - Trigger BEFORE INSERT OR UPDATE OF status ON financeiro_pagar
+   - Bloqueia 'pago'/'paga'/'baixado' sem baixa ativa em financeiro_baixas
+   - Espelho exato do padrão 363A.3 (financeiro_receber)
+   - Aplicada em produção
+
+2. SERVICE — src/services/financeiro/pagarService.ts
+   - STATUS_PAGO_SEM_BAIXA = ["pago", "paga", "baixado"]
+   - validarStatusCriacao(): bloqueia criar com status pago
+   - validarStatusAtualizacao(): bloqueia update para pago/paga/baixado
+   - criarPagavel: payload.status = validarStatusCriacao(input.status)
+   - atualizarPagavel: validarStatusAtualizacao(atual.status, update.status)
+
+3. UI — src/components/financeiro/ContasPagar.tsx
+   - Removido <SelectItem value="paga">Pago (Liquidado)</SelectItem>
+   - Pagamento somente via "Registrar Pagamento" (baixarPagavel → RPC)
+
+PROVAS NEGATIVAS (6/6 PASS)
+----------------------------
+A) INSERT financeiro_pagar status='pago' → BLOQUEADO
+B) UPDATE aberto→'pago' → BLOQUEADO
+C) INSERT status='paga' → BLOQUEADO
+C) INSERT status='baixado' → BLOQUEADO
+D) UPDATE aberto→'paga' (bypass UI) → BLOQUEADO
+E) Trigger permite pago QUANDO baixa existe → OK (RPC funciona)
+
+Mensagem: "Não é permitido marcar conta a pagar como [status] sem baixa
+financeira correspondente. Use o fluxo oficial de baixa."
+
+PROVA POSITIVA E2E (8/8 PASS)
+------------------------------
+Título: f2638c51 | R$ 750,00 | status inicial: aberto
+Conta: Cora (9741ad36)
+Baixa: 44f323a3 | R$ 750,00 | saldo restante: R$ 0,00
+RPC: f_registrar_baixa_financeira → sucesso=true
+Status final: pago | data_pagamento: 2026-09-07
+Forma: PIX | estornada: false | observação: "Baixa E2E FIN-MASTER-363B.1"
+
+Validações:
+✓ Status título = pago
+✓ Data pagamento preenchida
+✓ Valor título = Valor baixado (R$ 750,00)
+✓ Saldo restante = 0
+✓ Conta financeira ID não NULL (9741ad36)
+✓ Conta financeira = Cora
+✓ Baixa não estornada
+✓ Sem duplicidade
+
+Dados de teste limpos (DELETE após prova).
+
+REGRESSÕES
+----------
+✓ Vitest financeiro: 74/74 PASS
+  - f0e_pagamento_prestadores: 12/12
+  - f0f_fluxo_caixa: 5/5
+  - f0g_dre_plano_contas: 12/12
+  - fin_master361_core_financeiro: 36/36
+  - f0m_homologacao_financeira_final: 9/9
+✓ npx tsc --noEmit: 0 erros
+✓ npm run build: 38.09s OK
+
+HISTÓRICOS INTACTOS (sem alterações):
+  pagar f83a3249: st=pago R$137,89 upd=03/09/2026
+  pagar 9e07494b: st=null R$999,00 upd=05/07/2026
+  pp 32fe474f: st=pago R$2.177,92 upd=20/08/2026
+  pp 6266f2a1: st=pago R$658,20 upd=04/09/2026
+  receber 2d625b18: st=pago R$3.600,00 upd=20/08/2026
+  receber 17e857d8: st=pago R$3.200,50 upd=01/07/2026
+  receber fb30838a: st=pago R$1.500,00 upd=01/07/2026
+  receber cf6eea7b: st=pago R$1.500,00 upd=29/06/2026
+
+ARQUIVOS
+--------
+Migration:
+  supabase/migrations/20260907_fin_master_363b1_bloqueio_pagar_pago_sem_baixa.sql
+
+Service:
+  src/services/financeiro/pagarService.ts
+
+UI:
+  src/components/financeiro/ContasPagar.tsx
+
+Scripts de prova:
+  scripts/fin_master_363b1_prova_negativa.cjs (6/6)
+  scripts/fin_master_363b1_prova_positiva.cjs (8/8)
+
+Scripts auxiliares (temporários):
+  scripts/_verify_363b1_trigger.cjs
+  scripts/_verify_363b1_historicos.cjs
+
+CONCLUSÃO
+---------
+P1-A do FIN-MASTER-363B eliminado. financeiro_pagar agora possui 3 camadas
+de defesa (service + trigger DB + UI), espelhando o padrão homologado de
+financeiro_receber (363A.3). O fluxo oficial de baixa (baixarPagavel → RPC)
+continua funcionando. Nenhum dado histórico alterado.
+
+FIM DO RELATÓRIO

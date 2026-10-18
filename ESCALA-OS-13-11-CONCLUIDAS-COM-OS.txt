@@ -1,0 +1,164 @@
+ESCALA-OS-13-11-CONCLUIDAS-COM-OS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+==================================================
+REVALIDAÇÃO
+==================================================
+CONCLUDED_NULL_PROVIDER_TOTAL=27
+WITHOUT_OS=16
+WITH_OS=11
+27 = 16 + 11  ✔
+
+==================================================
+TABELA DAS 11
+==================================================
+
+ID_8     | OS_NUMERO                      | OS_ST   | ALLOC cli/prov | OS cli/prov | vCli/vRep | OS vCli/custo
+06cf2846 | OS-MOTO-M48_2026-06-29_21-47-50| final.  | cd463c93 / -   | - / -       | 0/0       | 80/50
+341fe14a | ALOC-20260625-341FE14A         | em_and. | - / -          | - / -       | 0/0       | 3200/0
+c7cf3de0 | OS-MOTO-M48_2026-06-29_21-47-50| final.  | cd463c93 / -   | - / -       | 1000/600  | 80/50
+f12a56b4 | ALOC-20260625-F12A56B4         | progr.  | - / -          | - / -       | 0/0       | 4500/0
+dce846ff | ALOC-20260626-DCE846FF         | final.  | - / -          | - / -       | 1000/600  | 1000/600
+bb2cda88 | ALOC-20260626-BB2CDA88         | final.  | - / -          | - / -       | 1000/600  | 1000/600
+c6a4e65a | ALOC-20260626-C6A4E65A         | final.  | - / -          | - / -       | 1000/600  | 1000/600
+43855ba5 | OS-M43_2026-06-29_19-16-01     | final.  | 6168689d / -   | - / -       | 1500/1000 | 1500/1000
+ce93f159 | OS-202606-129396               | entregue| cd463c93 / -   | - / -       | 0/0       | 0/0
+9fc41d6f | ALOC-20260625-06CF2846         | entregue| cd463c93 / -   | - / -       | 0/0       | 0/0
+61cd4358 | ALOC-20260709-61CD4358         | final.  | - / -          | - / -       | 0/0       | 0/0
+
+Observação: OS.cliente e OS.prestador (texto) = NULL em 11/11. ALLOC.prestador_id = NULL em 11/11.
+
+FINANCEIRO / POD / BAIXAS:
+06cf2846 | PAG eec65c8f aberto (forn 8b0e6354 "M48 Motoboy") | REC 22c7b93a a vencer | PP 5648adde pendente (prest 8b0e6354) | COMP prest 8b0e6354 / cli a5d0801a | BAIXAS=0
+c7cf3de0 | (mesma OS 93014234 acima) | BAIXAS=0
+dce846ff | PAG 9875fac1 CANCELADO (QA_CRIT_PRESTADOR) | REC 9f2f970f aberto | COMP prest ef2284a1 / cli 49d30d96 | BAIXAS=0
+bb2cda88 | PAG 213864d5 CANCELADO (QA_CRIT_PRESTADOR) | REC 4c8845f8 aberto | COMP prest 3f67d830 / cli c2e6491e | BAIXAS=0
+c6a4e65a | PAG eb7478c7 CANCELADO (QA_CRIT_PRESTADOR) | REC 18fd8d1a aberto | COMP prest a36126eb / cli a08f7287 | BAIXAS=0
+43855ba5 | PAG 32558503 aberto (forn_id NULL, texto "Prestador #026a8a9c") | REC 4599cde0 aberto | PP e94fb9e2 pendente (prest_id NULL) | COMP prest 026a8a9c / cli 6168689d | EP prest 026a8a9c | BAIXAS=0
+341fe14a | sem financeiro | BAIXAS=0
+f12a56b4 | sem financeiro | BAIXAS=0
+ce93f159 | sem financeiro | BAIXAS=0
+9fc41d6f | sem financeiro | BAIXAS=0
+61cd4358 | sem financeiro | BAIXAS=0
+
+==================================================
+EVIDÊNCIA DE PRESTADOR
+==================================================
+- dce846ff: COMP prestador_id = ef2284a1 (N1, FK persistido — porém entidade sintética QA)
+- bb2cda88: COMP prestador_id = 3f67d830 (N1 — sintética QA)
+- c6a4e65a: COMP prestador_id = a36126eb (N1 — sintética QA)
+- 43855ba5: COMP prestador_id = 026a8a9c + entregas_protocolo.prestador_id = 026a8a9c (N2 convergente — entidade M43)
+- c7cf3de0 e 06cf2846: prestador 8b0e6354 aparece no financeiro da OS M48 (93014234), que é de OUTRA operação
+  → NÃO é vínculo desta alocação (link cruzado)
+- 341fe14a, f12a56b4, ce93f159, 9fc41d6f, 61cd4358: nenhuma evidência (N4)
+
+==================================================
+INTEGRIDADE
+==================================================
+- 06cf2846 e c7cf3de0 compartilham ordem_servico_id = 93014234 (OS M48) — vínculo cruzado com operação alheia.
+- 9fc41d6f.ordem_servico_id = 06cf2846-f5b8-... (aponta para o ID de OUTRA ALOCAÇÃO, não para uma OS).
+- 43855ba5: PP.prestador_id e PAG.fornecedor_id = NULL, porém COMP + EP trazem 026a8a9c (nome em texto "Prestador #026a8a9c").
+- Nenhuma OS tem cliente/prestador de texto preenchidos.
+- Nenhuma baixa em nenhum caso (BAIXAS=0, valor_baixado=0).
+- Nenhum POD real (entregas_protocolo só em 43855ba5, com prestador sintético M43; delivery_proofs=0).
+
+==================================================
+CLASSIFICAÇÃO DAS 11
+==================================================
+
+A = 0  (operação real + prestador N1/N2)
+B = 5  (teste/homologação: c7cf3de0, dce846ff, bb2cda88, c6a4e65a, 43855ba5)
+C = 4  (histórico sem evidência: 341fe14a, f12a56b4, ce93f159, 61cd4358)
+D = 2  (evidência/vínculo conflitante: 06cf2846, 9fc41d6f)
+E = 0  (nenhum financeiro/baixa real sensível)
+F = 0
+HÍBRIDO = 0 (06cf2846 tratado como D por vínculo cruzado)
+
+PROVIDER_CONFIDENCE: N1=4 (dce846ff, bb2cda88, c6a4e65a, + c7cf3de0 via OS M48) | N2=1 (43855ba5) | N3=0 | N4=6
+
+==================================================
+RESUMO
+==================================================
+
+TOTAL=11
+REAL=0
+TEST=5
+HYBRID=1
+UNDETERMINED=5
+
+PROVIDER_N1=5
+PROVIDER_N2=1
+PROVIDER_N3=0
+PROVIDER_N4=5
+
+REAL_PROVIDER_RECOVERABLE=0
+TEST_NO_ACTION=5
+HISTORICAL_NO_ACTION=5
+FINANCIAL_SENSITIVE=0
+CONFLICTING=1
+
+REAL_WITH_FINANCE=0
+REAL_WITH_BAIXA=0
+REAL_WITH_POD=0
+
+==================================================
+RESPOSTAS OBJETIVAS
+==================================================
+
+1. Quantas das 11 são operações reais?
+   0. Nenhuma. As com financeiro são QA/M43 (teste) ou vínculo cruzado.
+
+2. Quantas possuem prestador objetivamente recuperável?
+   0 de forma SEGURA. Há 5 N1 + 1 N2, mas todos apontam para entidades SINTÉTICAS de
+   teste (QA/M43) ou pertencem a outra OS (M48). Nenhum prestador real de operação real.
+
+3. Quantas são teste/homologação?
+   5 comprovadas (teste_critico/missao43) + 1 híbrida por vínculo cruzado com OS M48.
+
+4. Existe baixa/pagamento real?
+   NÃO. BAIXAS=0 em todas; títulos de teste cancelados/abertos, sem baixa bancária.
+
+5. Alguma exige correção para integridade operacional/financeira?
+   Não há obrigação real a corrigir. Existem 2 VÍNCULOS CRUZADOS (06cf2846, 9fc41d6f) e 1
+   compartilhamento indevido de OS (c7cf3de0) — porém em registros de teste; tratável em
+   saneamento de teste futuro, não como correção de dado real.
+
+6. Quais podem permanecer como legado sem ação?
+   Todas as 11 (5 teste + 1 híbrida + 5 históricas) — nenhuma obrigação financeira real.
+
+==================================================
+FECHAMENTO DAS 27
+==================================================
+
+TOTAL_27=27
+REAL_REQUIRING_FIX=0
+TEST_OR_HISTORICAL_NO_ACTION=27   (16 ESCALA-OS-12 + 11 ESCALA-OS-13)
+UNRESOLVED=0
+
+Conclusão: o bloco das 27 concluídas sem prestador está ENCERRADO. Nenhuma operação real
+recuperável; nenhuma obrigação financeira real; nada a corrigir em dados de produção.
+As 16 anteriores NÃO foram recontadas nem reabertas.
+
+==================================================
+NEXT_MINIMAL_MISSION
+==================================================
+
+Bloco das 27 encerrado sem correção necessária → RETORNAR AO E2E ESCALA.
+Opcional (futuro, com autorização): ESCALA-OS-14-ROTULAGEM-TESTE-CONTROLADA para marcar
+como teste os resíduos (10 QA + 20 homologação + 5 QA + 1 híbrida) e sinalizar os vínculos
+cruzados (06cf2846, 9fc41d6f, c7cf3de0) — sem delete, apenas classificação.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. prestador_id/OS/financeiro não alterados.
+- Não reabriu as 16 anteriores nem os 20 de homologação. Não tratou 9 FIN-02.
+- APP/POD/Fatura/Recrutamento não tocados.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

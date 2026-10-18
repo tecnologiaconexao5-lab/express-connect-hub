@@ -1,0 +1,256 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-01-INVENTARIO-REAL-TESTE-DUVIDOSO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (nenhum DELETE/UPDATE/INSERT executado).
+RESULTADO: PASS (inventario concluido). LIMPEZA NAO EXECUTADA.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+Dados financeiros de PROD inventariados e classificados em REAL / TESTE CONFIRMADO /
+DUVIDOSO, com matriz de dependencias e plano seguro de limpeza (nao executado).
+Regra de ouro respeitada: NAO classificar por aparencia (nome/valor/data/descricao);
+duvida => DUVIDOSO.
+
+--------------------------------------------------------------------------------
+1. CRITERIOS DE CLASSIFICACAO (objetivos, documentados)
+--------------------------------------------------------------------------------
+TESTE CONFIRMADO (T) — SOMENTE com evidencia objetiva:
+  C1. is_teste = true (coluna oficial).
+  C2. classificacao_dado = 'teste' (marcador curado em pagamentos_prestadores).
+  C3. Vinculo com OS cujo is_teste=true (via os_id/os_vinculada/os_numero).
+  C4. Identificador explicito de teste em CAMPO DE IDENTIFICADOR
+      (numero/fatura/os_id/os_vinculada/os_numero), ex.: "test-os-...", "FAT-TESTE...".
+  C5. Entidade vinculada de teste: cadastro de cliente cujo nome/razao/cnpj contem
+      marcador explicito de teste (ex.: "CLIENTE HML 136A", "M43_... Cliente Teste Ltda").
+  C6. Metadados/observacao com marcador explicito de teste (ex.: descricao "HOMOLOGACAO",
+      "FIN3623C ...", "Teste 001", "FIN013 TESTE REAL").
+REAL (R):
+  Sem nenhuma evidencia de teste (C1..C6) E com vinculo operacional real verificavel:
+  OS is_teste=false, ou fatura EMITIDA com AR vinculado, ou cliente com historico de OS real.
+DUVIDOSO (D):
+  Sem evidencia objetiva de teste E SEM como confirmar operacao real (sem vinculo
+  operacional, os_id/fatura_id ausentes ou nao resolvidos, cliente sem OS real,
+  marcador curado 'duvidoso', orfaos, valor zerado, etc.). Inclui sinais FRACOS
+  (nome livre com "TESTE/HOMOLOG") que ISOLADAMENTE nao confirmam teste.
+Marcador de token usado: TESTE|TEST|HML|HOMOLOG|SEED|SENTINEL(A)|FAKE|DUMMY|DEMO|
+  EXEMPLO|SANDBOX|__|LIXO|TEMP.
+
+--------------------------------------------------------------------------------
+2. MATRIZ POR ENTIDADE (TOTAL | REAL | TESTE | DUVIDOSO | VALOR REAL | VALOR TESTE | VALOR DUV)
+--------------------------------------------------------------------------------
+TABELA                    | TOTAL | REAL | TESTE | DUVID | VALOR REAL   | VALOR TESTE  | VALOR DUV
+------------------------------------------------------------------------------------------------
+financeiro_receber        |  124  |  29  |  78   |  17  | R$ 27.320,45 | R$153.191,35| R$ 9.939,38
+financeiro_pagar          |  178  |  74  |  66   |  38  | R$ 51.231,00 | R$ 53.150,29| R$28.562,31
+pagamentos_prestadores    |  137  |  64  |  42   |  31  | R$ 35.037,50 | R$ 22.682,50| R$32.509,96
+faturas                   |   42  |   7  |  34   |   1  | R$ 12.120,45 | R$ 74.563,67| R$ 1.200,00
+financeiro_baixas         |   19  |   4  |   7   |   8  | R$  5.110,54 | R$     96,53| R$ 1.702,15
+------------------------------------------------------------------------------------------------
+TOTAL (5 tabelas)         |  500  | 178  | 227   |  95  | R$130.819,94 | R$303.684,34| R$73.913,80
+
+Demais tabelas auditadas (referencia):
+  contas_financeiras ....... 1  (Cora, ativa) -> REAL
+  lotes_pagamento .......... 0  (vazio)
+  lotes_pagamento_itens .... 0  (vazio)
+  pagamentos_prestadores_itens 0 (vazio)
+  pagamento_prestadores(singular) 0 (vazio)
+  composicao_financeira_os . 59 (derivada de OS; vcli R$88.180,00 / vpre R$53.970,00;
+                               classificacao segue a OS de origem -> 33 OS is_teste=true)
+  financeiro_transferencias  1  (R$1,00; sem marcador -> DUVIDOSO)
+  fatura_contadores_cliente. referencia de numeracao (nao financeiro)
+  ordens_servico ........... 162 (33 is_teste=true) — origem das cadeias
+
+--------------------------------------------------------------------------------
+3. DISTRIBUICAO POR MARCADOR NATIVO
+--------------------------------------------------------------------------------
+financeiro_receber ....... is_teste=true: 77 | is_teste=false: 47
+financeiro_pagar ......... is_teste=true: 30 | is_teste=false: 148  (is_teste NAO existe em baixas/faturas)
+pagamentos_prestadores ... is_teste=true: 23 | is_teste=false: 114
+pagamentos_prestadores.classificacao_dado: teste 35 | duvidoso 34 | real 20 | null 48
+Obs.: T (227) > is_teste (130) pois inclui dependencia (OS/identificador/entidade de
+teste). REDMI/valores conferidos por SELECT somente-leitura.
+
+--------------------------------------------------------------------------------
+4. MATRIZ DE DEPENDENCIAS (pai -> filhos)
+--------------------------------------------------------------------------------
+4.1 Cadeia FATURA -> AR -> BAIXA
+    faturas (T) -> financeiro_receber.fatura_id -> financeiro_baixas.titulo_id
+    Exemplo TESTE: FAT-2026-000001 (cliente "M43_... Cliente Teste Ltda")
+      -> AR 346687cf (fatura_id) ; demais faturas M43 (21 rascunhos + 1 emitida) TESTE.
+    Exemplo REAL : FAT-2026-000010..000017 (Calvo) -> 1 AR cada -> baixas reais.
+4.2 Cadeia OS -> FINANCEIRO (trigger M66/M80)
+    ordens_servico (is_teste=true, 33) -> composicao_financeira_os
+      -> financeiro_receber.os_id / financeiro_pagar.os_id / pagamentos_prestadores.os_id
+    Exemplo TESTE: os_id "test-os-*" em financeiro_pagar (66 registros T por identificador).
+4.3 Cadeia PRESTADOR -> PAGAMENTO -> LOTE/BAIXA
+    prestadores (teste: "PRESTADOR TESTE APP", "MOTORISTA TESTE 02L", "M43_... Motorista Teste")
+      -> pagamentos_prestadores (classificacao_dado=teste/duvidoso) -> financeiro_baixas (nao ha)
+    Obs.: financeiro_baixas NAO possui registros com titulo_tabela='pagamentos_prestadores'.
+4.4 Cadeia AR -> BAIXA (HOMOLOGACAO APP)
+    AR cliente "HOMOLOGAÇÃO APP" (is_teste=false, valor 12,34) -> financeiro_baixas (6 baixas)
+      => cadeia TESTE por entidade, registrada como DUVIDOSO (marcador esta em nome livre;
+         ver item 6 - recomenda-se tratar como TESTE no saneamento apos confirmacao).
+
+--------------------------------------------------------------------------------
+5. ORFAOS E DUPLICIDADES
+--------------------------------------------------------------------------------
+ORFAOS:
+  financeiro_receber.os_id que NAO resolve em ordens_servico: 21 registros.
+  financeiro_receber.fatura_id que NAO resolve: 0.
+  financeiro_receber.cliente_id que NAO resolve: 0.
+DUPLICIDADES POTENCIAIS (mesma chave cliente|valor|vencimento|descricao):
+  - cliente 3d2d079d | 12,34 | 2026-10-04 | (vazio) x5
+  - cliente 3d2d079d | 12,34 | 2026-10-05 | (vazio) x2
+  - cliente 91b80fdb | 12,35 | 2026-10-05 | (vazio) x6
+  (todos vinculados a cadeia de homologacao/duvidosos; nenhum UNIQUE protege AR manual
+   por cliente+valor+vencimento — a idempotency_key A6 protege apenas reenvio do mesmo request.)
+
+--------------------------------------------------------------------------------
+6. OS DOIS CASOS P1 (levantados, NAO corrigidos)
+--------------------------------------------------------------------------------
+6.1 "9 FATURAS EMITIDAS SEM AR" — CONFIRMADO: exatamente 9 (todas status=emitida,
+    conta_receber_id=null e sem financeiro_receber.fatura_id). Valor total R$ 2.189,21.
+    Classificacao:
+      - 8309a22b (Calvo, numeroManual 40, R$1.200,00) ................ DUVIDOSO
+      - 27f7bb25 (CLIENTE HML 136A, "FIN013 TESTE REAL", R$123,45) .... TESTE CONFIRMADO (C5/C6)
+      - a641c456 (Calvo, "Teste 001", R$125,00) ..................... TESTE CONFIRMADO (C6)
+      - 6x 123.46 (CLIENTE HML 136A, "FIN3623C HOMOLOGACAO", R$740,76) TESTE CONFIRMADO (C5/C6)
+    => 8 TESTE + 1 DUVIDOSO. Tratar como parte do saneamento (nao sao "receita real a faturar").
+
+6.2 "PAGAMENTOS 'PAGO' SEM BAIXA" — reconciliacao objetiva por tabela:
+    - financeiro_receber  : 11 pago | 4 SEM baixa  -> 2 REAL?/2 TESTE (ver lista)
+        * 17e857d8 R$3.200,50 (sem cliente) ........ DUVIDOSO
+        * 2d625b18 R$3.600,00 (Calvo) .............. DUVIDOSO
+        * cf6eea7b R$1.500,00 (is_teste=false) ..... TESTE (dado de missao M43)
+        * fb30838a R$1.500,00 (is_teste=true) ...... TESTE CONFIRMADO
+    - financeiro_pagar    : 11 pago | 0 SEM baixa
+    - pagamentos_prestadores: 12 pago | 12 SEM baixa (financeiro_baixas nao cobre esta tabela)
+        2 teste (M43/MOTORISTA TESTE), 7 is_teste=true (BRUNO), 3 CESAR (duvidoso)
+    => O rotulo historico "10 pagos sem baixa" corresponde, no estado ATUAL, a:
+       AR=4, AP=0, Pagamentos Prestadores=12. A maior parte e de origem TESTE/DUVIDOSO.
+       Isso podera REDUZIR/ALTERAR o P1 apos saneamento (ver item 10).
+
+--------------------------------------------------------------------------------
+7. PLANO SEGURO DE LIMPEZA (NAO EXECUTADO)
+--------------------------------------------------------------------------------
+A) Quantidade REAL ......... 178 registros (R$ 130.819,94)
+B) Quantidade TESTE CONFIRM. 227 registros (R$ 303.684,34)
+C) Quantidade DUVIDOSO .....  95 registros (R$  73.913,80)
+   (+1 financeiro_transferencias D; +21 orfaos AR; + composicao_financeira_os de OS teste)
+D) Valores por grupo ....... ver item 2.
+E) Dependencias ............ ver item 4 (fatura->AR->baixa; OS->financeiro; prestador->pagamento).
+F) ORDEM SEGURA DE EXCLUSAO (folhas primeiro):
+   1. financeiro_baixas (titulos T/D) ...................... 7 T + 8 D
+   2. financeiro_receber (T/D; inclui fatura_id e orfaos) .. 78 T + 17 D
+   3. financeiro_pagar (T/D) ............................... 66 T + 38 D
+   4. pagamentos_prestadores (T/D) + itens (0) ............. 42 T + 31 D
+   5. faturas (T) e fatura_itens ........................... 34 T (fatura_itens 45)
+   6. composicao_financeira_os de OS is_teste=true ......... (derivada; 33 OS teste)
+   7. lotes_pagamento_itens / lotes_pagamento .............. 0 / 0
+   8. financeiro_transferencias (D) ........................ 1
+   As DUVIDOSAS (D) NAO devem ser excluidas automaticamente: exigem decisao humana
+   (recomendado quarentena/reclassificacao antes).
+G) Riscos .................. ver item 8.
+H) Backup .................. ver item 9.
+I) Rollback ................ ver item 9.
+J) Verificacao pos-limpeza . ver item 10.
+
+--------------------------------------------------------------------------------
+8. RISCOS
+--------------------------------------------------------------------------------
+R1. Triggers M66/M80 propagam OS -> financeiro; excluir financeiro sem tratar a OS
+    teste pode recriar registros (ou violar FKs). Ordem/folha e transacao sao criticas.
+R2. FKs reversas: fatura.conta_receber_id -> financeiro_receber; excluir AR pode
+    deixar fatura apontando para ID inexistente (integ. referencial).
+R3. financeiro_receber.os_id e TEXT e NAO possui FK formal: 21 orfaos indicam que
+    exclusoes anteriores ou seeds deixaram vinculos quebrados.
+R4. RLS/grants: operacao de limpeza deve rodar com papel de servico; nao alterar
+    policies nesta missao.
+R5. KPIs/dashboards usam is_teste=false como "real": dados DUVIDOSOS (ex.: HOMOLOGACAO
+    APP com is_teste=false) hoje contaminam totais exibidos.
+R6. Exclusao de faturas TESTE pode afetar fatura_contadores_cliente (numeracao).
+R7. Sem UNIQUE de idempotencia por cliente+valor+vencimento no AR manual -> duplicatas
+    (item 5) podem se repetir se limpeza parcial deixar bases inconsistentes.
+
+--------------------------------------------------------------------------------
+9. BACKUP E ESTRATEGIA DE ROLLBACK
+--------------------------------------------------------------------------------
+BACKUP OBRIGATORIO ANTES DE QUALQUER EXCLUSAO (schema+data):
+  pg_dump --data-only --table=public.financeiro_baixas ^
+          --table=public.financeiro_receber --table=public.financeiro_pagar ^
+          --table=public.pagamentos_prestadores --table=public.pagamentos_prestadores_itens ^
+          --table=public.faturas --table=public.fatura_itens ^
+          --table=public.composicao_financeira_os --table=public.financeiro_transferencias ^
+          -f backup_fin_data01_<timestamp>.sql
+ESTRATEGIA DE ROLLBACK:
+  - Transacao unica (BEGIN...COMMIT) por etapa, com contagem previa/posvia.
+  - Em caso de falha: ROLLBACK imediato (nada persiste).
+  - Apos COMMIT: restaurar via backup (psql -f backup...) ou reaplicar os dados salvos.
+  - NAO usar DELETE fisico em producao sem snapshot confirmado (tamanho + hash).
+
+--------------------------------------------------------------------------------
+10. CONSULTAS DE VERIFICACAO POS-LIMPEZA
+--------------------------------------------------------------------------------
+-- 1) Sobras de teste por tabela
+SELECT 'reber' t, count(*) FROM financeiro_receber WHERE is_teste
+UNION ALL SELECT 'pagar', count(*) FROM financeiro_pagar WHERE is_teste
+UNION ALL SELECT 'pp', count(*) FROM pagamentos_prestadores WHERE is_teste OR classificacao_dado='teste'
+UNION ALL SELECT 'pp_itens', count(*) FROM pagamentos_prestadores_itens;
+-- 2) Faturas de teste remanescentes (numero/metadata/cliente)
+SELECT count(*) FROM faturas WHERE numero ILIKE '%TESTE%'
+  OR metadata::text ILIKE '%HOMOLOG%' OR metadata::text ILIKE '%TESTE%';
+-- 3) AR/AP orfaos
+SELECT count(*) FROM financeiro_receber r WHERE r.os_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM ordens_servico o WHERE o.id::text=r.os_id);
+-- 4) Baixas apontando para titulos inexistentes
+SELECT count(*) FROM financeiro_baixas b
+ WHERE (b.titulo_tabela='financeiro_receber' AND NOT EXISTS(SELECT 1 FROM financeiro_receber r WHERE r.id=b.titulo_id))
+    OR (b.titulo_tabela='financeiro_pagar'   AND NOT EXISTS(SELECT 1 FROM financeiro_pagar p WHERE p.id=b.titulo_id));
+-- 5) Faturas emitidas sem AR apos limpeza
+SELECT count(*) FROM faturas f WHERE f.status='emitida'
+  AND NOT EXISTS (SELECT 1 FROM financeiro_receber r WHERE r.fatura_id=f.id);
+-- 6) Pago sem baixa apos limpeza
+SELECT count(*) FROM financeiro_receber r WHERE r.status='pago'
+  AND NOT EXISTS (SELECT 1 FROM financeiro_baixas b WHERE b.titulo_tabela='financeiro_receber' AND b.titulo_id=r.id AND NOT b.estornada);
+-- 7) Contagens de controle
+SELECT (SELECT count(*) FROM financeiro_receber) ar, (SELECT count(*) FROM financeiro_pagar) ap,
+       (SELECT count(*) FROM financeiro_baixas) bx, (SELECT count(*) FROM pagamentos_prestadores) pp,
+       (SELECT count(*) FROM faturas) fat;
+
+--------------------------------------------------------------------------------
+11. OBSERVACOES METODOLOGICAS
+--------------------------------------------------------------------------------
+- Toda a auditoria foi SELECT-only. Nenhum DELETE/UPDATE/INSERT/DDL executado.
+- Amostras e agregados conferidos no banco PROD nesta data.
+- Sinais FRACOS (nome livre com TESTE/HOMOLOG, valor redondo, data antiga) NAO foram
+  usados isoladamente para confirmar teste: quando unico indicio -> DUVIDOSO.
+- A cadeia "HOMOLOGAÇÃO APP" (AR is_teste=false, 12,34, com baixa) esta DUVIDOSA por
+  rigor; recomenda-se reclassificar para TESTE no saneamento apos confirmacao do time.
+- Nao tocados: migrations, RLS/grants, RPC A6, APP, Comercial, Efi, Programacao.
+
+--------------------------------------------------------------------------------
+12. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. Inventario completo (500 registros nas 5 tabelas-nucleo + tabelas relacionadas),
+classificado com criterios objetivos, com dependencias, orfaos, duplicidades, os dois
+casos P1 reconciliados e plano seguro de limpeza (A–J) pronto e NAO executado.
+
+--------------------------------------------------------------------------------
+13. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-02 — SANEAMENTO CONTROLADO (execucao): backup + quarentena/reclassificacao
+das DUVIDOSAS + exclusao transacional dos TESTE CONFIRMADO na ordem do item 7.F,
+seguida das verificacoes do item 10. Requer autorizacao explicita para escrita.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-01-INVENTARIO-REAL-TESTE-DUVIDOSO-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-01-INVENTARIO-REAL-TESTE-DUVIDOSO-RESULTADO.txt
+Tamanho ..: 16717 bytes
+Data .....: 24/09/2026 20:29:43
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-01
+================================================================================

@@ -1,0 +1,16 @@
+import pg from "pg";
+import fs from "node:fs";
+const cs = fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const p = new pg.Pool({ connectionString: cs, ssl: { rejectUnauthorized: false } });
+const q = async (s, pr = []) => (await p.query(s, pr)).rows;
+console.log("== alocacoes_escala NOT NULL sem default ==");
+console.log(JSON.stringify(await q(`select column_name, data_type, column_default from information_schema.columns where table_schema='public' and table_name='alocacoes_escala' and is_nullable='NO' and column_default is null order by ordinal_position`), null, 2));
+console.log("== ordens_servico NOT NULL sem default ==");
+console.log(JSON.stringify(await q(`select column_name, data_type, column_default from information_schema.columns where table_schema='public' and table_name='ordens_servico' and is_nullable='NO' and column_default is null order by ordinal_position`), null, 2));
+console.log("== 1 prestador ==");
+console.log(JSON.stringify(await q(`select id, nome_completo, cpf_cnpj from prestadores limit 1`)));
+console.log("== 1 cliente ==");
+console.log(JSON.stringify(await q(`select id, razao_social from clientes limit 1`)));
+console.log("== tenant ==");
+console.log(JSON.stringify(await q(`select distinct tenant_id from alocacoes_escala limit 2`)));
+await p.end();

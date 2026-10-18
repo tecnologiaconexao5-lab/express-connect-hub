@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { Check, FileSignature, AlertTriangle, Smartphone, Globe, Clock, Loader2 } from "lucide-react";
+import { Check, FileSignature, AlertTriangle, Smartphone, Globe, Clock, Loader2, ExternalLink, Pen } from "lucide-react";
 import { registrarAssinatura } from "@/services/contratosService";
 import { toast } from "sonner";
 
@@ -28,6 +28,7 @@ export function AssinarContratoModal({
   const [nomeConfirmado, setNomeConfirmado] = useState("");
   const [cpfConfirmado, setCpfConfirmado] = useState("");
   const [loading, setLoading] = useState(false);
+  const [usarAutentique, setUsarAutentique] = useState(true);
   const [navegador, setNavegador] = useState("");
   const [ip, setIp] = useState("");
   const [geo, setGeo] = useState("");
@@ -37,6 +38,7 @@ export function AssinarContratoModal({
       setAssinatura("");
       setNomeConfirmado("");
       setCpfConfirmado("");
+      setUsarAutentique(true);
       setNavegador(navigator.userAgent);
       fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
@@ -50,6 +52,13 @@ export function AssinarContratoModal({
       }
     }
   }, [open]);
+
+  const handleAbrirAutentique = () => {
+    const url = `https://app.autentique.com.br/contrato/${contratoId}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.success("Redirecionando para Autentique", { description: "Finalize a assinatura no ambiente seguro do Autentique." });
+    onOpenChange(false);
+  };
 
   const handleConfirmar = async () => {
     if (!assinatura.trim()) {
@@ -75,15 +84,15 @@ export function AssinarContratoModal({
       );
 
       if (sucesso) {
-        toast.success("Contrato assinado com sucesso!", { description: "Assinatura eletrônica registrada com todos os dados de auditoria." });
+        toast.success("Registro de ciência salvo!", { description: "Para validade jurídica completa, utilize o Autentique." });
         onSuccess?.();
         onOpenChange(false);
       } else {
-        toast.error("Erro ao assinar", { description: "Não foi possível registrar a assinatura. Tente novamente." });
+        toast.error("Erro ao registrar", { description: "Não foi possível registrar. Tente novamente." });
       }
     } catch (error) {
       console.error("[AssinarContrato] Erro:", error);
-      toast.error("Erro ao processar assinatura");
+      toast.error("Erro ao processar");
     } finally {
       setLoading(false);
     }
@@ -95,29 +104,55 @@ export function AssinarContratoModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSignature className="w-5 h-5 text-[#F97316]" />
-            Assinatura Eletrônica
+            Assinatura de Contrato
           </DialogTitle>
           <DialogDescription>
-            Confirme os dados abaixo para registrar sua assinatura eletrônica.
+            Este contrato deve ser assinado no Autentique, nossa plataforma oficial de assinatura digital.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div className="p-4 rounded-2xl border-2 border-primary/20 bg-primary/5">
+            <div className="flex items-start gap-3">
+              <ExternalLink className="w-5 h-5 text-primary mt-0.5" />
+              <div className="space-y-2">
+                <p className="font-bold text-sm">Assinar via Autentique (recomendado)</p>
+                <p className="text-xs text-muted-foreground">Assinatura digital com validade jurídica. Contrato TAC, aditivos e documentos oficiais.</p>
+                <Button size="sm" className="gap-2" onClick={handleAbrirAutentique}>
+                  <ExternalLink className="w-4 h-4" />
+                  Abrir Autentique
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">ou registro de ciência</span>
+            </div>
+          </div>
+
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
               <div className="text-xs text-amber-800">
-                <p className="font-bold">Aviso Legal</p>
-                <p>A assinatura eletrônica possui valor jurídico conforme MP 2.200-2/2001 e Lei 11.419/2006.</p>
+                <p className="font-bold">Atenção</p>
+                <p>O registro abaixo é apenas uma declaração de ciência. Para contratos TAC, aditivos e documentos jurídicos, use o Autentique acima.</p>
               </div>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label className="font-bold">Assinatura *</Label>
+            <Label className="font-bold flex items-center gap-1.5">
+              <Pen className="w-3.5 h-3.5 text-muted-foreground" />
+              Assinatura (ciência)
+            </Label>
             <Textarea
-              placeholder="Digite sua assinatura (nome completo) ou desenhe..."
-              className="min-h-[100px] font-signature"
+              placeholder="Digite seu nome completo"
+              className="min-h-[80px] font-signature"
               value={assinatura}
               onChange={(e) => setAssinatura(e.target.value)}
             />
@@ -171,12 +206,12 @@ export function AssinarContratoModal({
             {loading ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Assinando...
+                Registrando...
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <Check className="w-4 h-4" />
-                Confirmar Assinatura
+                Registrar Ciência
               </span>
             )}
           </Button>

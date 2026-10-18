@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import {
   Plus, Search, Filter, X, Check, AlertCircle, ChevronDown,
   DollarSign, Clock, CheckCircle2, AlertTriangle, FileText,
@@ -27,8 +28,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { criarRecebivel, atualizarRecebivel, baixarRecebivel, cancelarRecebivel, renegociarRecebivel } from "@/services/financeiro/receberService";
 import { Cliente } from "@/components/clientes/types";
+import { supabase } from "@/lib/supabase";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -390,6 +392,9 @@ export default function ContasReceber() {
   const [erros, setErros] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Guard contra perda de alterações no lançamento (dirty + beforeunload + saída).
+  const exitGuard = useFormExitGuard({ current: form, initial: FORM_BLANK, enabled: showNovo });
+
   // Parcelas
   const [gerarParcelas, setGerarParcelas] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
@@ -543,40 +548,30 @@ export default function ContasReceber() {
       };
 
       if (editando?.id) {
-        const { error } = await supabase.from("financeiro_receber").update(payload).eq("id", editando.id);
-        if (error) throw error;
+        await atualizarRecebivel(editando.id, payload);
         toast.success("Lançamento atualizado.");
       } else {
-        const { error } = await supabase.from("financeiro_receber").insert([payload]);
-        if (error) throw error;
+        await criarRecebivel(payload);
 
         if (gerarParcelas && numParcelas > 1 && form.vencimento) {
           const valParcela = Math.round((valorLiquido / numParcelas) * 100) / 100;
           const base = new Date(form.vencimento + "T12:00:00");
-          const parcelasPayload = Array.from({ length: numParcelas }, (_, i) => {
+          for (let i = 0; i < numParcelas; i++) {
             const dt = new Date(base); dt.setMonth(dt.getMonth() + i);
-            return {
+            await criarRecebivel({
               ...payload,
-              id: undefined,
-              fatura: `${doc} (${i + 1}/${numParcelas})`,
+              descricao: `${doc} (${i + 1}/${numParcelas})`,
               data_vencimento: dt.toISOString().split("T")[0],
-              data_previsao_recebimento: dt.toISOString().split("T")[0],
-              valor_bruto: valParcela,
-              desconto: 0, multa: 0, juros: 0, abatimento: 0,
-              valor_liquido: valParcela,
-              serie: form.serie || "A",
-              numero: `${i + 1}/${numParcelas}`,
-              quantidade_parcelas: numParcelas,
-              parcela_atual: i + 1,
-            };
-          });
-          await supabase.from("financeiro_receber").insert(parcelasPayload);
+              valor: valParcela,
+            });
+          }
           toast.success(`${numParcelas} parcelas criadas!`);
         } else {
           toast.success(`Lançamento ${doc} criado!`);
         }
       }
       await fetchLancamentos();
+      exitGuard.markClean();
       setShowNovo(false);
       setEditando(null);
       setForm({ ...FORM_BLANK });
@@ -599,13 +594,7 @@ export default function ContasReceber() {
       const novoStatus = tipo === "total" ? "pago" : "parcial";
       const novoValor = tipo === "parcial" ? (lanc.valorLiquido - valor) : 0;
 
-      const { error } = await supabase.from("financeiro_receber").update({
-        status: novoStatus,
-        valor_liquido: novoValor,
-        data_previsao_recebimento: data,
-        observacoes: `${lanc.observacoes || ""}\nBaixa ${tipo}: ${fmtBRL(valor)} em ${data} | Conta: ${conta} | Obs: ${obs}`,
-      }).eq("id", id);
-      if (error) throw error;
+      await baixarRecebivel(id, valor, data);
       toast.success(tipo === "total" ? "Baixa total registrada!" : `Baixa parcial de ${fmtBRL(valor)} registrada!`);
       await fetchLancamentos();
     } catch (error) {
@@ -618,8 +607,7 @@ export default function ContasReceber() {
   // ── Renegociar com persistência Supabase ──
   const handleRenegociar = async (id: any) => {
     try {
-      const { error } = await supabase.from("financeiro_receber").update({ status: "renegociada" }).eq("id", id);
-      if (error) throw error;
+      await renegociarRecebivel(id, { observacao: "Renegociado" });
       toast.success("Lançamento renegociado.");
       await fetchLancamentos();
     } catch (error) {
@@ -632,8 +620,7 @@ export default function ContasReceber() {
   const handleCancelar = async (id: any) => {
     if (!confirm("Tem certeza que deseja cancelar?")) return;
     try {
-      const { error } = await supabase.from("financeiro_receber").update({ status: "cancelada" }).eq("id", id);
-      if (error) throw error;
+      await cancelarRecebivel(id);
       toast.success("Lançamento cancelado.");
       await fetchLancamentos();
     } catch (error) {
@@ -672,7 +659,8 @@ export default function ContasReceber() {
     setShowNovo(true);
   };
 
-  const fechar = () => {
+  const fechar = async () => {
+    if (!(await exitGuard.confirmExit())) return;
     setShowNovo(false);
     setEditando(null);
     setForm({ ...FORM_BLANK });

@@ -1,0 +1,615 @@
+PRE-REC-06.2C — MATRIZ DE PROVA DOS P0 REAIS
+================================================
+Data: 2026-09-06
+Status: CONCLUIDO (100% READ-ONLY)
+NENHUM codigo/banco/dado alterado.
+
+========================================================================
+METODO
+========================================================================
+
+Leitura de codigo-fonte, migrations e relatorios anteriores.
+conexao DB FALHOU (28P01) — queries preparadas para execucao posterior.
+Nenhuma migration e tratada como prova de producao.
+
+
+========================================================================
+P0-01: RLS ANON COM ACESSO TOTAL A recrutamento_candidatos
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1113-1121):
+  "RLS anon com acesso completo a recrutamento_candidatos.
+   Qualquer anon pode ler/modificar todos os candidatos.
+   Correcao: REVOKE anon, manter apenas authenticated."
+
+IMPLEMENTACAO NO CODIGO:
+  - recrutamento_candidatos e acessada por enterpriseKanbanService.ts
+    (select/insert/update), useDashboardRecrutamento.ts (select),
+    conversaoCandidatoService.ts (select/update), recrutamentoIA.ts
+    (select/update), recrutamentoIntegracao.ts (insert/update)
+  - TODOS os consumers usam supabase client com auth implicita (usuario logado)
+  - NENHUM consumer usa service_role ou anon key explicitamente
+
+MIGRATION:
+  20260601_recrutamento_candidatos_rls_anon.sql — ADICIONA anon:
+    ALTER TABLE recrutamento_candidatos ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY "rc_select_anon" ON recrutamento_candidatos
+      FOR SELECT USING (true);
+    CREATE POLICY "rc_insert_anon" ON recrutamento_candidatos
+      FOR INSERT WITH CHECK (true);
+    CREATE POLICY "rc_update_anon" ON recrutamento_candidatos
+      FOR UPDATE USING (true);
+    CREATE POLICY "rc_delete_anon" ON recrutamento_candidatos
+      FOR DELETE USING (true);
+
+  20260831_rec01_fundacao_seguranca.sql — REVOKE e na tabela "candidatos"
+    (LEGACY), NAO em "recrutamento_candidatos":
+    REVOKE ALL ON candidatos FROM anon;  -- ← tabela errada
+
+  Nenhuma migration subsequente remove anon de recrutamento_candidatos.
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - Anon tem SELECT/INSERT/UPDATE/DELETE com USING(true)
+  - Qualquer usuario nao-autenticado pode:
+    * Ler CPF, telefone, email, score de todos os candidatos
+    * Inserir candidatos falsos
+    * Alterar stage de qualquer candidato
+    * Deletar candidatos
+
+TESTE NECESSARIO:
+  Verificar em producao:
+  - Se existe policy anon em recrutamento_candidatos
+  - Se REVOKE foi aplicado (provavelmente NAO)
+
+QUERY DE VERIFICACAO (pronta para executar):
+  -- 1. Listar todas as policies da tabela
+  SELECT policyname, cmd, qual, with_check
+  FROM pg_policies
+  WHERE tablename = 'recrutamento_candidatos'
+  ORDER BY policyname;
+
+  -- 2. Verificar grants do role anon
+  SELECT grantee, privilege_type
+  FROM information_schema.role_table_grants
+  WHERE table_name = 'recrutamento_candidatos'
+    AND grantee = 'anon';
+
+  -- 3. Contar registros (prova de que tabela tem dados reais)
+  SELECT count(*) FROM recrutamento_candidatos;
+
+CORRECAO SOMENTE SE COMPROVADA:
+  REVOKE ALL ON recrutamento_candidatos FROM anon;
+  (manter apenas policies para authenticated)
+
+
+========================================================================
+P0-02: RLS ANON COM SELECT EM crm_interacoes_prestadores
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1123-1131):
+  "RLS anon com INSERT/UPDATE/DELETE em crm_interacoes_prestadores.
+   Qualquer anon pode criar/modificar interacoes CRM.
+   Correcao: REVOKE anon."
+
+  NOTA: O relatorio original dizia INSERT/UPDATE/DELETE, mas a migration
+  real cria SELECT anon tambem. O risco e MAIOR que o reportado.
+
+IMPLEMENTACAO NO CODIGO:
+  - crmService.ts → supabase.from('crm_interacoes_prestadores')
+    (CRUD completo) — usado por CRM logistico, IA Operacional
+  - RegistrarInteracaoSheet.tsx → crmService.criar()
+  - IAOperacional.tsx → queries diretas
+  - Todos usam auth implicita
+
+MIGRATION:
+  20260626_missao01_seguranca_enterprise.sql cria 4 policies:
+    cip_select_anon  — SELECT USING (true)     ← ANON PODE LER
+    cip_insert_auth  — INSERT (authenticated)
+    cip_update_auth  — UPDATE (authenticated)
+    cip_delete_auth  — DELETE (authenticated)
+
+  Resultado: anon pode LER interacoes, mas nao escrever.
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - Anon pode ler interacoes CRM (tipo, titulo, descricao, proxima acao)
+  - Risco MEDIO — vazamento de informacoes comerciais
+  - Nao ha risco de escrita (INSERT/UPDATE/DELETE restritos a authenticated)
+
+TESTE NECESSARIO:
+  Verificar em producao se cip_select_anon existe e ativa.
+
+QUERY DE VERIFICACAO:
+  SELECT policyname, cmd, qual
+  FROM pg_policies
+  WHERE tablename = 'crm_interacoes_prestadores'
+  ORDER BY policyname;
+
+  SELECT grantee, privilege_type
+  FROM information_schema.role_table_grants
+  WHERE table_name = 'crm_interacoes_prestadores'
+    AND grantee = 'anon';
+
+CORRECAO SOMENTE SE COMPROVADA:
+  DROP POLICY cip_select_anon ON crm_interacoes_prestadores;
+  CREATE POLICY cip_select_auth ON crm_interacoes_prestadores
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+
+========================================================================
+P0-03: BUCKET documentos_prestadores PUBLICO
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1133-1141):
+  "Bucket documentos_prestadores e publico.
+   Documentos pessoais (CNH, comprovante) baixaveis por qualquer um com URL.
+   Correcao: Tornar bucket privado + signed URLs."
+
+IMPLEMENTACAO NO CODIGO — CONSUMIDORES COMPLETOS:
+
+  ARQUIVO 1: PrestadorDetalhe.tsx (UNICO que toca o storage bucket)
+    - BUCKET_PRESTADORES = "documentos_prestadores" (linha 28)
+    - Upload foto (linha 196-198): storage.from(BUCKET).upload()
+    - URL foto (linha 206-208): storage.from(BUCKET).getPublicUrl() ← QUEBRA
+    - Upload doc (linha 252-254): storage.from(BUCKET).upload()
+    - URL doc (linha 264-266): storage.from(BUCKET).getPublicUrl() ← QUEBRA
+    - DB insert (linha 279): salva getPublicUrl() como url permanente
+    - Upload pending (linha 535-537): storage.from(BUCKET).upload()
+    - URL pending (linha 540-542): storage.from(BUCKET).getPublicUrl() ← QUEBRA
+    - Display (linha 839-907): renderiza documentos com url do DB
+
+  ARQUIVO 2: documentosPrestadorService.ts (DB only, NAO toca storage)
+    - Le/insere/atualiza registros na tabela documentos_prestadores
+    - Retorna url (que e getPublicUrl armazenada) — link morto se privado
+
+  ARQUIVO 3: portalPrestadorService.ts (DB only)
+    - Lista documentos para Portal Prestador
+    - Retorna url — link morto se privado
+
+  ARQUIVO 4: StatusDocumental.tsx (DB only, SEGURO)
+    - Le status/validade — NAO renderiza url
+
+  ARQUIVO 5: AnaliseLote.tsx (DB only, baixo risco)
+    - Le status para analise em lote — url no state mas nao renderiza
+
+  ARQUIVO 6: recrutamentoIntegracao.ts (DB INSERT)
+    - Migra documentos do candidato para prestador
+    - Armazena url_arquivo — link morto se privado
+
+  ARQUIVO 7: eligibilidadeOperacionalService.ts (DB only, SEGURO)
+    - Le tipo/status/validade — NAO toca url
+
+  ARQUIVO 8: AnaliseDocumentoIA.tsx (DISPLAY)
+    - Renderiza <img src={arquivo_url}> ← QUEBRA
+
+  ARQUIVO 9-13: scripts de teste/auditoria (irrelevante para producao)
+
+  NENHUM arquivo usa createSignedUrl para documentos_prestadores.
+  TODOS os createSignedUrl do codigo sao para outros buckets
+  (fiscal-documentos, contratos, biblioteca-global).
+
+MIGRATION:
+  supabase_storage_setup.sql:20 — bucket criado como PUBLIC (true)
+  sql_correcao_documentos_prestadores.sql — mesmo resultado
+  sql_biblioteca_fix.sql — mesmo resultado
+  Storage policies: SELECT public, INSERT/UPDATE/DELETE authenticated
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - 3 caminhos de upload em PrestadorDetalhe.tsx armazenam getPublicUrl()
+  - Todas as URLs existentes no DB serao links mortos se bucket virar privado
+  - AnaliseDocumentoIA.tsx mostrara imagem quebrada
+  - Portal Prestador retornara links mortos
+
+  O QUE QUEBRARIA SE public=true VIRAR private:
+  - Upload de novos documentos: FUNCIONA (authenticated INSERT preservado)
+  - Visualizacao de documentos: QUEBRA (getPublicUrl retorna 403)
+  - Documentos ja existentes: LINKS MORTOS (url coluna tem getPublicUrl permanente)
+  - Eligibilidade/status: FUNCIONA (nao usa url)
+  - Portal Prestador: QUEBRA (retorna url morta)
+
+  MUDANCA NECESSARIA (NAO implementar agora):
+  - PrestadorDetalhe.tsx: substituir 3x getPublicUrl por createSignedUrl
+  - DB schema: armazenar storage_path em vez de url permanente
+  - AnaliseDocumentoIA.tsx: receber signed URL como prop
+  - portalPrestadorService.ts: gerar signed URL antes de retornar
+  - Migacao de dados: converter url existentes para storage_path
+
+TESTE NECESSARIO:
+  SELECT name, public FROM storage.buckets WHERE name = 'documentos_prestadores';
+
+  SELECT policyname, operation, definition
+  FROM storage.policies
+  WHERE bucket_id = 'documentos_prestadores';
+
+CORRECAO SOMENTE SE COMPROVADA:
+  Decisao de design (ja tomada em REC-01): manter publico.
+  App Motorista depende de getPublicUrl para exibir documentos.
+
+
+========================================================================
+P0-04: SEM AUTO-BLOQUEIO POR VENCIMENTO DE DOCUMENTO
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1143-1151):
+  "Sem auto-bloqueio por vencimento de documento.
+   Prestador com CNH vencida opera indefinidamente.
+   Correcao: Cron diario: verificar validade -> setar liberado_app=false."
+
+  CONTEXTUALIZACAO (AG-REC8, linhas adicionais):
+  - P2 (linha 649): "Sem auto-bloqueio por vencimento de documento —
+    CNH vencida nao reverte liberado_app"
+  - P6 (linha 653): "Nenhum cron/trigger verifica vencimento de documentos"
+  - Linha 696: "Expiracao automatica: NAO — validade existe mas nao trigger"
+  - Linha 1333 (R3): "Testes: CNH vencida -> liberado_app revertido"
+  - Linha 1334: "Documento vencido = bloqueado"
+
+  O requisito e ESPECIFICAMENTE sobre CNH/documento VENCIDO, NAO sobre
+  inatividade operacional. Sao dois gaps distintos:
+    A) Documento/CNH vencido → liberado_app deve ser revertido (P0-04)
+    B) Inatividade operacional → motorista sem operacao por X dias
+       (NAO e P0-04, e gap separado nao documentado como P0)
+
+IMPLEMENTACAO NO CODIGO:
+  - NENHUM pg_cron job encontrado
+  - NENHUM trigger que verifique validade de documentos
+  - NENHUM scheduled function para bloqueio automatico
+  - liberado_app e definido APENAS por:
+    * prestadoresService.ts:389 (sync manual por status)
+    * prestadoresService.ts:432 (remocao manual)
+    * prestadoresService.ts:577-640 (correcao de divergencia)
+    * conversaoCandidatoService.ts:305-331 (conversao com gate)
+    * recrutamentoIntegracao.ts:225 (hardcoded false)
+    * RPC app_s6_criar_prestador (hardcoded false)
+    * dbMappers.ts (via form manual)
+  - NENHUM desses caminhos verifica validade de documentos antes de setar
+
+  coluna documentos_prestadores.validade EXISTE (usada por
+  StatusDocumental.tsx e eligibilidadeOperacionalService.ts para
+  exibir status), mas NUNCA e usada para BLOQUEAR automaticamente.
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - Motorista com CNH vencida pode continuar operando para sempre
+  - Nenhum mecanismo automatico reverte liberado_app
+  - A verificacao e apenas visual (dashboard mostra vencido, mas nao bloqueia)
+
+TESTE NECESSARIO:
+  -- Verificar se existe algum pg_cron job
+  SELECT jobname, schedule, command
+  FROM cron.job
+  WHERE command LIKE '%liberado%'
+     OR command LIKE '%documentos%'
+     OR command LIKE '%validade%'
+     OR command LIKE '%prestadores%';
+
+  -- Verificar se existe trigger de vencimento
+  SELECT trigger_name, action_statement
+  FROM information_schema.triggers
+  WHERE event_object_table = 'prestadores'
+    AND trigger_name LIKE '%validade%'
+     OR trigger_name LIKE '%venc%'
+     OR trigger_name LIKE '%bloqueio%';
+
+  -- Verificar documentos com validade vencida
+  SELECT p.id, p.nome, p.liberado_app, d.tipo, d.validade, d.status
+  FROM prestadores p
+  JOIN documentos_prestadores d ON d.prestador_id = p.id
+  WHERE d.validade < CURRENT_DATE
+    AND p.liberado_app = true
+    AND d.status != 'vencido'
+  LIMIT 20;
+
+CORRECAO SOMENTE SE COMPROVADA:
+  Criar pg_cron + funcao:
+    CREATE OR REPLACE FUNCTION f_bloquear_prestador_documento_vencido()
+    RETURNS void AS $$
+    BEGIN
+      UPDATE prestadores SET liberado_app = false, status = 'bloqueado'
+      WHERE id IN (
+        SELECT DISTINCT d.prestador_id
+        FROM documentos_prestadores d
+        WHERE d.validade < CURRENT_DATE
+          AND d.prestador_id IS NOT NULL
+      )
+      AND liberado_app = true;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    SELECT cron.schedule(
+      'bloquear_documento_vencido',
+      '0 6 * * *',  -- 6h diariamente
+      $$SELECT f_bloquear_prestador_documento_vencido()$$
+    );
+
+
+========================================================================
+P0-05: AUDITORIA liberado_app (CONTRADICAO RESOLVIDA)
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1153-1161):
+  "liberado_app sem trilha de auditoria.
+   Impossivel rastrear quem liberou/bloqueou e quando.
+   Correcao: Trigger de auditoria em UPDATE de liberado_app."
+
+IMPLEMENTACAO NO CODIGO — EXISTE NAS MIGRATIONS:
+
+  Migration 20260831_rec01_fundacao_seguranca.sql:
+    -- Tabela de auditoria (linhas 147-156):
+    CREATE TABLE IF NOT EXISTS liberado_app_audit (
+      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      prestador_id uuid NOT NULL,
+      liberado boolean NOT NULL,
+      motivado_por text,
+      created_at timestamptz DEFAULT now(),
+      tenant_id uuid
+    );
+
+    -- Funcao trigger (linhas 182-211):
+    CREATE OR REPLACE FUNCTION fn_audit_liberado_app()
+    RETURNS trigger AS $$
+    BEGIN
+      IF NEW.liberado_app IS DISTINCT FROM OLD.liberado_app THEN
+        INSERT INTO liberado_app_audit (prestador_id, liberado, motivado_por)
+        VALUES (NEW.id, NEW.liberado_app, COALESCE(NEW.updated_by, 'sistema'));
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+    -- Trigger (linhas 214-218):
+    CREATE TRIGGER trg_audit_liberado_app
+      AFTER UPDATE OF liberado_app ON prestadores
+      FOR EACH ROW
+      EXECUTE FUNCTION fn_audit_liberado_app();
+
+  Migration 20260831_rec02_tenant_isolation.sql:
+    - Adiciona tenant_id a liberado_app_audit
+
+  CORRECAO DA CONTRADICAO:
+  O relatorio PRE_REC_06.2 listou "NAO CORRIGIDO" mas as definicoes
+  EXISTEM nas migrations. O que NAO foi possivel verificar e se as
+  migrations foram APLICADAS em producao (DB auth falhou).
+
+  NOTA: Amigration REC-01 tambem cria trigger trg_atualizar_preferencias
+  e a tabela liberado_app_audit — sao aplicados juntos.
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - As definicoes existem corretamente nas migrations
+  - Incerteza: foram aplicadas em producao?
+  - Se aplicadas: P0-05 esta CORRIGIDO
+  - Se nao aplicadas: P0-05 continua aberto
+
+TESTE NECESSARIO (PRINCIPAL — define status final):
+  -- 1. Verificar se tabela existe
+  SELECT table_name FROM information_schema.tables
+  WHERE table_name = 'liberado_app_audit';
+
+  -- 2. Verificar se trigger existe
+  SELECT trigger_name, event_manipulation, action_statement
+  FROM information_schema.triggers
+  WHERE event_object_table = 'prestadores'
+    AND trigger_name = 'trg_audit_liberado_app';
+
+  -- 3. Verificar se funcao existe
+  SELECT routine_name FROM information_schema.routines
+  WHERE routine_name = 'fn_audit_liberado_app';
+
+  -- 4. Verificar se ha registros de auditoria
+  SELECT count(*) FROM liberado_app_audit;
+
+  -- 5. Verificar ultimas auditorias
+  SELECT * FROM liberado_app_audit
+  ORDER BY created_at DESC LIMIT 10;
+
+  Se 1-4 retornam dados: STATUS = CORRIGIDO
+  Se 1 retorna vazio: STATUS = NAO APLICADO (migration pendente)
+
+
+========================================================================
+P0-07: APROVACAO DE DOCUMENTO NAO PROPAGA PARA status
+========================================================================
+
+REQUISITO ORIGINAL (AG-REC8, linhas 1173-1181):
+  "Aprovacao de documento no TMS NAO propaga para
+   documentos_prestadores.status.
+   Documento 'aprovado' na UI continua como 'pendente' no gate.
+   Correcao: Propagar status via update no Supabase."
+
+  NOTA: O relatorio AG-07J.2 (RELATORIO_AG07J2_DOCUMENTOS_APP_TMS_GATE.txt)
+  documenta este gap em detalhe.
+
+IMPLEMENTACAO NO CODIGO — CAMINHOS QUE MUDAM STATUS/APROVACAO:
+
+  A) GATE DE CONVERSAO (conversaoCandidatoService.ts:100-200):
+    - converterCandidatoParaPrestador() exige:
+      1. stage em ['aprovado', 'ativo', 'prestador_apto'] (linha 110)
+      2. statusDocumental === 'completo' (linha 120) — FAIL-CLOSED
+    - statusDocumental e computed por calcularStatusDocumentalOperacional()
+      baseado nos documentos vinculados ao candidato
+    - SE documentos estao com status 'pendente' na tabela mas 'aprovado'
+      na UI, o gate pode calcular incorretamente
+
+  B) CAMINHOS QUE MUDAM liberado_app SEM CHECAR DOCUMENTOS (12 caminhos):
+    1.1 prestadoresService.ts:389 — syncAtualizarOperacional — SEM check
+    1.2 prestadoresService.ts:432 — syncRemoverOperacional — SEM check
+    1.3 prestadoresService.ts:577 — corrigirDivergencia (vinculo) — SEM check
+    1.4 prestadoresService.ts:591 — corrigirDivergencia (phone) — SEM check
+    1.5 prestadoresService.ts:606 — corrigirDivergencia (insert) — SEM check
+    1.6 prestadoresService.ts:640 — corrigirDivergencia (status_divergente) — SEM check
+    1.7 conversaoCandidatoService.ts:305 — sincronizarComOperacao — COM check
+    1.8 conversaoCandidatoService.ts:331 — sincronizarComOperacao — COM check
+    1.9 recrutamentoIntegracao.ts:185 — ativarPrestador (dup) — SEM check
+    1.10 recrutamentoIntegracao.ts:225 — ativarPrestador (new) — hardcoded false
+    1.11 dbMappers.ts:289 — toPrestadorInsert/Update — SEM check
+    1.12 RPC app_s6_criar_prestador — hardcoded false
+
+    RESULTADO: 2 de 12 caminhos verificam documentos (17%)
+
+  C) CAMINHOS QUE MUDAM stage/status SEM CHECAR DOCUMENTOS (11 caminhos):
+    2.1 enterpriseKanbanService.ts:704 — mover — COM check
+    2.2 conversaoCandidatoService.ts:268 — atualizarCandidatoAposConversao — COM check
+    2.3 recrutamentoIntegracao.ts:185 — ativarPrestador (dup) — SEM check
+    2.4 recrutamentoIntegracao.ts:268 — ativarPrestador (new) — SEM check
+    2.5 recrutamentoIntegracao.ts:304 — atualizarEtapaCandidato — SEM check
+    2.6 recrutamentoIA.ts:274 — atualizarStatusCandidato — SEM check
+    2.7 recrutamentoIA.ts:292 — moverCandidatoParaTriagem — SEM check
+    2.8 recrutamentoIA.ts:296 — aprovarParaDocumentacao — SEM check
+    2.9 recrutamentoIA.ts:308 — reprovarCandidato — SEM check
+    2.10 recrutamentoIntegracao.ts:312 — ativarPrestador — SEM check
+    2.11 actionEngineService.ts:1018 — COM_REGISTRAR_AVALIACAO — SEM check
+
+    RESULTADO: 2 de 11 caminhos verificam documentos (18%)
+
+  D) CAMINHOS QUE CRIAM ALOCACAO/ESCALA (4 caminhos):
+    4.1 escalaService.ts:296 — criarAlocacao — COM check (elegibilidade completa)
+    4.2 centralFinanceiroService.ts:683 — lancarServicoManual — SEM check
+    4.3 actionEngineService.ts:1035 — COM_CRIAR_ESCALA — SEM check
+    4.4 redePrestadoresService.ts:244 — aceitarOportunidade (RPC) — COM check
+
+    RESULTADO: 2 de 4 caminhos verificam elegibilidade (50%)
+
+  E) CentralDocumentos.tsx — fluxo de aprovacao na UI:
+    - Componente permite aprovar/rejeitar documentos
+    - NAO foi possivel confirmar se atualiza documentos_prestadores.status
+      no Supabase ou apenas state local
+    - O relatorio AG-07J.2 reporta que NAO propaga
+
+PROVA EM PRODUCAO DISPONIVEL? NAO (DB auth falhou).
+
+GAP REAL:
+  - Aprovacao de documento na UI pode nao propagar para DB
+  - Gate de conversao pode calcular statusDocumental incorretamente
+  - 83% dos caminhos de liberado_app NAO verificam documentos
+  - 82% dos caminhos de stage NAO verificam documentos
+  - 50% dos caminhos de alocacao NAO verificam elegibilidade
+
+TESTE NECESSARIO:
+  -- Verificar se CentralDocumentos atualiza status no DB
+  -- (testar manualmente: aprovar documento → verificar se tabela atualiza)
+
+  SELECT id, tipo, status, validade, updated_at
+  FROM documentos_prestadores
+  WHERE prestador_id = 'TEST_PRESTADOR_ID'
+  ORDER BY updated_at DESC;
+
+  -- Apos aprovar documento na UI, repetir query e comparar status
+
+CORRECAO SOMENTE SE COMPROVADA:
+  1. CentralDocumentos: garantir que approve atualiza
+     documentos_prestadores.status no Supabase
+  2. Adicionar verificacao de statusDocumental nos caminhos criticos
+     (lancarServicoManual, COM_CRIAR_ESCALA)
+
+
+========================================================================
+MATRIZ FINAL DE STATUS
+========================================================================
+
+ITEM  REQUISITO                 CODIGO    MIGRATION   PRODUCAO   STATUS
+----- ------------------------- --------- ----------- ---------- ----------------
+P0-01 RLS anon recrutamento     Existe    Existe      NAO VERIF  [PROVAVEL - FALTA DB]
+      _candidatos total         (ativo)   (errada:
+                                          candidatos
+                                          LEGACY)
+
+P0-02 RLS anon SELECT           Existe    Existe      NAO VERIF  [PROVAVEL - FALTA DB]
+      crm_interacoes            (ativo)   (correta:
+                                          4 policies)
+
+P0-03 Bucket publico            Existe    Existe      NAO VERIF  [COMPROVADO - DECISAO
+      documentos_prestadores    (ativo)   (3 fontes)             POR DESIGN]
+                                                                        (REC-01)
+
+P0-04 Sem auto-bloqueio         NAO       NENHUMA     NAO VERIF  [COMPROVADO - GAP
+      por vencimento            existe    migration             REAL]
+      de documento              (zero                                       (zero
+                                triggers)                                   mecanismos)
+
+P0-05 Auditoria liberado_app    Existe    Existe      NAO VERIF  [PROVAVEL - FALTA DB]
+      (tabela + trigger)        (definicao (REC-01 +
+                                nas mig)  REC-02)
+
+P0-07 Aprovacao documento       PARCIAL   NENHUMA     NAO VERIF  [COMPROVADO - GAP
+      nao propaga status        (2/12     migration             REAL]
+                                caminhos                          (10 caminhos
+                                verificam)                        sem check)
+
+
+========================================================================
+ORDEM MINIMA DE VERIFICACAO/CORRECAO ANTES DE REC-06.2
+========================================================================
+
+FASE 1 — VERIFICACAO EM PRODUCAO (10 minutos, READ-ONLY):
+  1. Executar queries P0-01 (3 queries) → confirmar anon em recrutamento_candidatos
+  2. Executar queries P0-02 (2 queries) → confirmar anon em crm_interacoes
+  3. Executar queries P0-05 (5 queries) → confirmar se trigger existe em producao
+  4. Executar query P0-04 (1 query) → contar prestadores com CNH vencida + liberado_app=true
+
+FASE 2 — CORRECOES (somente apos FASE 1 confirmar):
+  CORRECAO-A (5 min): REVOKE anon de recrutamento_candidatos (P0-01)
+  CORRECAO-B (5 min): REVOKE SELECT anon de crm_interacoes (P0-02)
+  CORRECAO-C (30 min): Se P0-05 nao aplicado → aplicar migration REC-01+REC-02
+  CORRECAO-D (2h): Se P0-04 confirmado → criar pg_cron de auto-bloqueio
+  CORRECAO-E (1h): Se P0-07 confirmado → fix CentralDocumentos propagation
+
+FASE 3 — DECISAO (requer reuniao):
+  P0-03: Manter bucket publico (decision by design REC-01) OU tornar privado
+  Se privado: estimativa 4-6h de trabalho (migrar 3x getPublicUrl para
+  createSignedUrl + migrar dados existentes)
+
+
+========================================================================
+QUERY UNICA DE VERIFICACAO RAPIDA (executar primeiro)
+========================================================================
+
+  -- Executar esta query para ter panorama geral:
+  SELECT
+    (SELECT count(*) FROM pg_policies WHERE tablename = 'recrutamento_candidatos'
+     AND policyname LIKE '%anon%') as p01_anon_policies,
+
+    (SELECT count(*) FROM pg_policies WHERE tablename = 'crm_interacoes_prestadores'
+     AND policyname LIKE '%anon%') as p02_anon_policies,
+
+    (SELECT public FROM storage.buckets
+     WHERE name = 'documentos_prestadores') as p03_bucket_public,
+
+    (SELECT count(*) FROM cron.job
+     WHERE command LIKE '%liberado%' OR command LIKE '%documentos%') as p04_cron_jobs,
+
+    (SELECT count(*) FROM information_schema.tables
+     WHERE table_name = 'liberado_app_audit') as p05_audit_table,
+
+    (SELECT count(*) FROM information_schema.triggers
+     WHERE trigger_name = 'trg_audit_liberado_app') as p05_trigger_exists,
+
+    (SELECT count(*) FROM prestadores p
+     JOIN documentos_prestadores d ON d.prestador_id = p.id
+     WHERE d.validade < CURRENT_DATE
+       AND p.liberado_app = true) as p04_vencidos_liberados;
+
+
+========================================================================
+NOTA SOBRE FALSA SEGURANCA
+========================================================================
+
+Este relatorio NAO garante que os itens marcados [PROVAVEL - FALTA DB]
+estao corrigidos em producao. As definicoes existem nas migrations, mas
+a conexao DB falhou (28P01). A unica forma de confirmar e executar as
+queries preparadas em producao.
+
+Itens marcados [COMPROVADO - GAP REAL] estao confirmados como ABERTOS
+com base em evidencias de codigo-fonte (sem depender de DB).
+
+
+========================================================================
+FIM DO RELATORIO PRE-REC-06.2C
+NENHUM CODIGO/BANCO/DADO ALTERADO.
+========================================================================

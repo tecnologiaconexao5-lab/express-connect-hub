@@ -1,0 +1,320 @@
+RELATÓRIO TMS-S04 — FATURA + RELATÓRIO DE FATURAMENTO PREMIUM DO CLIENTE
+Data: 22/08/2026
+Status: IMPLEMENTADO + PDF DE PROVA GERADO (aprovação visual aguarda usuário)
+
+====================================================================
+1. GERADOR ATUAL LOCALIZADO
+====================================================================
+
+src/utils/pdfFatura.ts
+  → gerarPDFFatura(input) — documento externo ao CLIENTE.
+  → baixarPDFFatura(input) — download.
+  Modelos: "conexao_express" (padrão) e "calvo" (homologado em A31-D).
+
+NENHUM outro módulo Financeiro foi auditado (escopo localizado).
+
+====================================================================
+2. ARQUIVOS LIDOS
+====================================================================
+
+- src/utils/pdfFatura.ts                    (gerador da fatura)
+- src/components/financeiro/FaturaPanel.tsx (painel + PreviaModal + download)
+- src/components/financeiro/FaturaLista.tsx (lista + PDF)
+- src/components/financeiro/FaturaManualDialog.tsx
+- src/services/financeiro/faturaService.ts  (montagem do input do PDF)
+- src/services/financeiro/faturaTypes.ts    (Fatura/FaturaItem)
+- src/services/relatorios/relatorioService.ts
+- src/utils/pdfRelatorioOperacional.ts      (gerador do Relatório de Faturamento)
+- src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+- src/config/nomenclatura.ts
+- src/lib/pdf/foundation.ts                 (identidade institucional navy)
+
+====================================================================
+3. ORIGEM REAL DOS DADOS (FASE 1 — só o que existe)
+====================================================================
+
+- Itens:        tabela `fatura_itens` (snapshot imutável):
+                os_id (UUID), romaneio, descricao ("OS-XXXX — trajeto"),
+                data_servico, valor_base, valor_adicionais,
+                valor_descontos, valor_total, km_excedente,
+                pedagio_cliente, ajudante_cliente, diaria_cliente,
+                saidas_adicionais_cliente.
+- Cliente:      `clientes` via buscarClienteParaFatura → razaoSocial,
+                nomeFantasia, cnpj, ie, inscricaoMunicipal, endereco,
+                cidade, uf, enderecoCompleto, vencimentoPadraoDias,
+                tipoCobranca.
+- Conexão Exp.: `configuracoes_fiscais` (razao/fantasia/cnpj/ie/im/endereço/
+                cidade/uf/telefone/email) via buscarDadosEmpresaParaFatura.
+- Bancário:     `contas_financeiras_config` (banco/agência/conta/PIX) +
+                snapshot por fatura em metadata.contaBancaria (PDFs
+                históricos não mudam quando a conta muda).
+- Nº Fatura:    faturas.numero OU metadata.numeroManual.
+- Emissão:      faturas.data_emissao.
+- Período:      faturas.competencia_inicio / competencia_fim.
+- Vencimento:   faturas.vencimento.
+- OS interna:   NÃO há coluna os_numero em fatura_itens. O número é
+                recuperado do snapshot da descricao ("OS-XXXX — trajeto").
+- Romaneio/OC:  fatura_itens.romaneio.
+- Serviço/Tr.:  fatura_itens.descricao (trajeto extraído após o "—").
+- Valor/Adic./Desc./Total: valor_base/valor_adicionais/valor_descontos/
+                valor_total (+ descontos/acréscimos no cabeçalho).
+- NFS-e/CT-e:   NÃO armazenados na fatura — NÃO disponível no input do PDF.
+- Observações:  faturas.observacao (fatura manual: obs. interna NÃO sai no PDF).
+
+NADA foi inventado; dados ausentes estruturalmente foram documentados (nº OS
+como coluna e NFS-e/CT-e vinculados).
+
+====================================================================
+4. ESTRUTURA ANTERIOR DO PDF (modelo conexao_express)
+====================================================================
+
+1. Faixa navy com logo claro + "FATURA DE SERVIÇOS" + Nº/Emissão/Vencimento
+2. Emitente + Cliente (blocos de texto simples)
+3. Tabela: Data | OS Interna | Romaneio/OC | Descrição | Valor
+   → "OS Interna" exibia o UUID de os_id (fatura_itens.os_id)!
+4. Totais em linhas de texto (Subtotal/Acréscimos/Descontos/TOTAL)
+5. Observação + Dados para pagamento
+6. Rodapé simples sem paginação real completa
+
+====================================================================
+5. ESTRUTURA FINAL (PADRÃO DEFINITIVO DO DOCUMENTO DO CLIENTE)
+====================================================================
+
+1. CABEÇALHO INSTITUCIONAL navy + logo oficial (branco + X colorido) à
+   esquerda + empresa em branco à direita (razão, CNPJ/IE/IM, cidade/UF,
+   contato) + linha de acento laranja.
+2. Título "FATURA DE SERVIÇOS DE TRANSPORTE" + status comercial traduzido
+   (Rascunho/Cancelada — nunca draft/pending/issued).
+3. IDENTIFICAÇÃO (caixa leve): Fatura nº (destaque) | Emissão / Vencimento /
+   Período ("dd/mm/aaaa a dd/mm/aaaa").
+4. CLIENTE (caixa): Razão Social, Nome Fantasia, CNPJ/CPF, Inscrição
+   Estadual, Endereço, Cidade/UF — somente campos preenchidos, sem UUID.
+5. RESUMO DA FATURA: Quantidade de serviços, Subtotal, Adicionais (se >0),
+   Descontos (se >0), TOTAL DA FATURA.
+6. TABELA: Data | OS Conexão | Romaneio / OC | Serviço / Trajeto |
+   Valor Base | Adicionais | Total.
+7. DOCUMENTOS FISCAIS (somente quando houver informação real — estrutural).
+8. CONDIÇÕES DE PAGAMENTO: Vencimento, Prazo (vencimento_padrao do cliente),
+   Forma de pagamento, Banco/Agência/Conta/PIX reais.
+9. OBSERVAÇÕES (somente observações reais).
+10. FAIXA FINAL: TOTAL DA FATURA (laranja institucional).
+11. RODAPÉ em todas as páginas: "Conexão Express Transportes LTDA — Fatura
+    nº X", "Gerado em dd/mm/aaaa HH:mm", "Página X de Y".
+
+====================================================================
+6. ASSET DE LOGO UTILIZADO
+====================================================================
+
+public/logos/logo-conexao-oficial.png
+  → letras "CONEXÃO EXPRESS" em BRANCO + X colorido original, fundo
+    transparente, proporções oficiais preservadas.
+  Carregado pelo método seguro do projeto (foundation.loadLogo()).
+  (Análise de pixels confirmou que logo-conexao-branco.png é byte-idêntico
+   ao colorido — texto escuro — e NÃO é usado neste documento.)
+
+====================================================================
+7. DADOS DO CLIENTE APRESENTADOS
+====================================================================
+
+Razão Social · Nome Fantasia (se houver) · CNPJ/CPF · Inscrição Estadual ·
+Endereço (enderecoCompleto priorizado) · Cidade/UF. Sem linha vazia, sem
+UUID, sem "Cliente ID".
+
+====================================================================
+8. DADOS DA FATURA APRESENTADOS
+====================================================================
+
+Fatura nº (destaque, sem consumir numeração na prévia), Emissão, Vencimento,
+Período (competência), status comercial traduzido.
+
+====================================================================
+9. ESTRUTURA DA TABELA DE SERVIÇOS
+====================================================================
+
+| Data | OS Conexão | Romaneio / OC | Serviço / Trajeto | Valor Base | Adicionais | Total |
+
+- OS Conexão = número interno (recuperado do snapshot; NUNCA UUID).
+- Romaneio/OC = referência do cliente (fatura_itens.romaneio).
+- Serviço/Trajeto = texto natural extraído ("Guarulhos › Morumbi").
+- Larguras somam 515pt (sem estouro) + cabeçalho repetido a cada página.
+
+====================================================================
+10. OS CONEXÃO x ROMANEIRO/OC (não confundidos)
+====================================================================
+
+SIM — colunas distintas. OS Conexão = número interno (ex.: OS-2026-100).
+Romaneio/OC = referência comercial do cliente (ex.: 343550).
+Quando ausentes → "—". Nenhum UUID.
+
+====================================================================
+11. ADICIONAIS
+====================================================================
+
+Coluna "Adicionais" mostra o valor real do item (valor_adicionais) quando
+> 0, senão "—". O RESUMO traz o total de acréscimos da fatura.
+As colunas de composição (km_excedente, pedagio_cliente, ajudante_cliente,
+diaria_cliente, saidas_adicionais_cliente) existem na tabela e são
+transportadas no item; NÃO são somadas novamente para não duplicar
+(cálculo original preservado).
+
+====================================================================
+12. DOCUMENTOS FISCAIS
+====================================================================
+
+Seção estrutural CONDICIONAL: só renderiza quando o input informar
+NFS-e/CT-e/chave. Hoje a fatura NÃO armazena número de NFS-e/CT-e vinculado,
+portanto NÃO é preenchida (nada inventado) → "NÃO DISPONÍVEL" no input.
+
+====================================================================
+13. CONDIÇÕES DE PAGAMENTO
+====================================================================
+
+Vencimento (faturas.vencimento) · Prazo (vencimento_padrao do cliente) ·
+Forma de pagamento (tipo_cobranca) · Banco/Agência/Conta/PIX das
+configurações oficiais + snapshot da fatura. Sem hardcode.
+
+====================================================================
+14. DADOS BANCÁRIOS
+====================================================================
+
+Originados de contas_financeiras_config (fonte oficial da Config.
+Financeiras) com snapshot por fatura (metadata.contaBancaria). Exibidos
+somente quando preenchidos.
+
+====================================================================
+15. FORMATAÇÃO BRL
+====================================================================
+
+Todos os valores com padrão brasileiro e espaço normal:
+  R$ 520,00 · R$ 1.040,00 · R$ 3.550,54 · R$ 11.750,50.
+Nunca "520", "520.00", "R$ 520.0". (toLocaleString pt-BR/BRL + normalização
+do espaço não-separável.)
+
+====================================================================
+16. COMPORTAMENTO MULTIPÁGINA
+====================================================================
+
+Validado com 30 serviços (2 páginas):
+- cabeçalho da tabela repetido (autoTable);
+- identificação da fatura no topo das páginas seguintes
+  ("Conexão Express — Fatura X — Página N");
+- rodapé profissional em todas as páginas com paginação real "Página X de Y";
+- TOTAL DA FATURA somente no encerramento;
+- margens mantidas, sem corte de linha e sem conteúdo sobre o rodapé.
+Testado com 1, 2 e 30 itens.
+
+====================================================================
+17. RELATÓRIO DE FATURAMENTO ENCONTRADO: SIM
+====================================================================
+
+Existe: src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+(dashboard) + gerador PDF gerarPDFFaturamentoDetalhado em
+src/utils/pdfRelatorioOperacional.ts.
+
+====================================================================
+18. O QUE FOI PADRONIZADO NO RELATÓRIO
+====================================================================
+
+O PDF do Relatório de Faturamento JÁ segue a mesma identidade institucional
+via src/lib/pdf/foundation.ts: capa navy, logo oficial
+(/logos/logo-conexao-oficial.png — branco + X colorido), cabeçalho de
+conteúdo, resumo operacional, tabela corporativa navy, composição financeira
+com "TOTAL FATURADO" e rodapé executivo. Nenhuma alteração necessária para
+padronizar — apenas confirmada e documentada (asset do logo já correto).
+
+====================================================================
+19. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/utils/pdfFatura.ts
+    · Tipos estendidos (ItemPDFFatura/PdfFaturaInput) com enriquecimento
+      premium (numeroOS, servicoTrajeto, composição de adicionais, período,
+      status comercial, documentos fiscais, logoBase64).
+    · Novo helper carregarLogo (logo oficial branco + X colorido).
+    · Novo gerador premium gerarPdfConexaoExpress reescrito.
+    · Rodapé profissional com paginação real; comportamento multipágina.
+    · fmt com espaço normal (BRL); limparTexto (remove espaçamento de letras
+      e troca "→" por "›" render-safe).
+    · Modelo "calvo" preservado integralmente.
+- src/services/financeiro/faturaService.ts
+    · montarPreviaFatura: OS = número interno (nunca UUID), servicoTrajeto
+      extraído, composição de adicionais transportada, competência e status
+      comercial propagados.
+    · montarInputPdfFatura: propaga os novos campos ao input do PDF.
+- src/test/tms_s04_fatura_cliente_pdf.test.ts (NOVO — 6 testes)
+
+NENHUM outro arquivo alterado (nenhum service de regra, banco, RPC,
+migration ou status).
+
+====================================================================
+20. TESTES EXECUTADOS
+====================================================================
+
+- npx tsc --noEmit                              → ✅ 0 erros
+- npx vitest run                                → ✅ 493/493 (52 arquivos)
+    · tms_s04_fatura_cliente_pdf.test.ts        → ✅ 6/6 (NOVO)
+    · f38_fatura_manual.test.ts                 → ✅ 14/14 (regressão)
+    · a31i_fatura_pdf_visual.test.ts            → ✅ 8/8 (regressão)
+- npm run build                                 → ✅ 37,53s
+- npx eslint (pdfFatura, faturaService, teste)  → ✅ 0 erros
+
+Validação de conteúdo do PDF gerado (extração):
+  [x] cabeçalho navy + logo oficial + empresa branca
+  [x] título "FATURA DE SERVIÇOS DE TRANSPORTE"
+  [x] Fatura nº / Emissão / Vencimento / Período
+  [x] CLIENTE (Razão Social, CNPJ/CPF, IE, Endereço)
+  [x] RESUMO DA FATURA + TOTAL
+  [x] tabela OS Conexão | Romaneio/OC | Serviço/Trajeto | Valor Base | Adic. | Total
+  [x] OS Conexão = número (sem UUID)
+  [x] trajeto natural (sem espaçamento artificial)
+  [x] valores BRL
+  [x] CONDIÇÕES DE PAGAMENTO + banco/PIX reais
+  [x] TOTAL DA FATURA em faixa no encerramento
+  [x] rodapé com paginação real "Página X de Y"
+  [x] multipágina (30 itens → 2 páginas, identificação + rodapé corretos)
+
+====================================================================
+21. PDF DE PROVA GERADO
+====================================================================
+
+- test-results/tms-s04/fatura_cliente_premium.pdf        (2 serviços, 1 página)
+- test-results/tms-s04/fatura_cliente_premium_30itens.pdf (30 serviços, 2 páginas — multipágina)
+
+====================================================================
+22. PENDÊNCIAS ESTRUTURAIS REAIS
+====================================================================
+
+1. fatura_itens NÃO possui coluna os_numero — o número da OS é recuperado do
+   snapshot da descricao. Se a descrição for editada sem o prefixo, a coluna
+   OS Conexão mostra "—". Sugestão futura: gravar os_numero no item.
+2. A fatura NÃO armazena NFS-e/CT-e vinculado — a seção DOCUMENTOS FISCAIS é
+   estrutural e condicional, hoje não populada.
+3. Layout final sujeito a aprovação visual do usuário (HOMOLOGAÇÃO VISUAL).
+4. Modelo "calvo" permanece como homologado em A31-D (não foi alterado).
+
+====================================================================
+RESULTADO
+====================================================================
+
+Fatura do Cliente em padrão corporativo premium definitivo, reaproveitando
+toda a estrutura existente (faturas, fatura_itens, clientes, configurações
+fiscais/bancárias, gerador). Relatório de Faturamento confirmado como
+EXISTENTE e já padronizado pela mesma identidade (foundation). Nenhuma regra
+financeira ou dado de produção foi alterado.
+
+FATURA CLIENTE — ESTRUTURA: COMPLETA
+FATURA CLIENTE — VISUAL PREMIUM: SIM
+OS CONEXÃO: OK
+ROMANEIO/OC CLIENTE: OK
+VALORES BRL: OK
+DADOS CLIENTE: OK
+VENCIMENTO: OK
+DADOS BANCÁRIOS: OK
+DOCUMENTOS FISCAIS: NÃO DISPONÍVEL
+MULTIPÁGINA: OK
+RELATÓRIO DE FATURAMENTO: EXISTE E PADRONIZADO
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+PRODUÇÃO ALTERADA: NÃO
+HOMOLOGAÇÃO TÉCNICA: SIM
+HOMOLOGAÇÃO VISUAL: AGUARDA USUÁRIO
+TMS-S04: AGUARDA APROVAÇÃO VISUAL

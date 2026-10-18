@@ -1,0 +1,70 @@
+# ============================================================================
+# ETAPA 4 (celular) - Nova interface OsExpressView: abre a OS aceita (prefixo
+# OS-) pela aba Operacoes e valida que a TELA SIMPLIFICADA foi renderizada.
+#
+# Evidencias da bifurcacao (operation_detail_screen.dart:839-845 / 3657):
+#   - ALOC   -> tela original, AppBar SEM titulo, timeline detalhada de 12 passos
+#   - OS-    -> OsExpressView, AppBar "Ordem de Servico",
+#               secao "Acompanhamento da OS", timeline enxuta de 4 marcos
+#
+# Env (via orchestrator): OS_NUMERO.
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+# O app e trazido ao primeiro plano por `adb shell monkey` antes do flow (MIUI/
+# XSpace nega launch via dev.mobile.maestro), entao NAO usamos launchApp aqui.
+- waitForAnimationToEnd
+
+# Aba inferior "Operacoes" (o item tem "Operacoes\nTab 2 of 5" -> regex)
+- tapOn:
+    text: ".*Operações.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Operações.*"
+    timeout: 30000
+- takeScreenshot: "04a_lista_operacoes"
+
+# Abre a OS aceita na etapa 2
+- runFlow:
+    when:
+      true: ${OS_NUMERO != null}
+    commands:
+      - extendedWaitUntil:
+          visible: ".*${OS_NUMERO}.*"
+          timeout: 90000
+      - scrollUntilVisible:
+          element:
+            text: ".*${OS_NUMERO}.*"
+          direction: DOWN
+          timeout: 30000
+      - tapOn:
+          text: ".*${OS_NUMERO}.*"
+      - waitForAnimationToEnd
+
+# ---- PROVA: a nova interface OsExpressView abriu ----
+# O titulo da AppBar e proprio; a secao "Acompanhamento da OS" e sua timeline
+# vem num unico no de acessibilidade (varias linhas) -> casa por regex.
+- extendedWaitUntil:
+    visible: "Ordem de Serviço"
+    timeout: 60000
+- assertVisible: "Ordem de Serviço"
+- assertVisible: ".*Acompanhamento da OS.*"
+- assertVisible: ".*A caminho da coleta.*"
+- assertVisible: ".*Coleta confirmada.*"
+- assertVisible: ".*A caminho da entrega.*"
+- assertVisible: ".*Entrega concluída.*"
+- takeScreenshot: "04b_os_express_view"
+
+# PROVA (BATERIA-TESTES-E2E-LIVE): a OS chega a esta tela JA ACEITA — o aceite
+# ocorreu na Rede (flow 02). Logo o cartao "Proximo passo" NAO mostra mais
+# "Aceitar serviço"; ele mostra a etapa seguinte "Cheguei ao local", cujo
+# requisito OBRIGATORIO e "Foto do local" (operation_step_requirements.dart:38-40
+# -> label interno 'Cheguei no cliente/CD'/'Cheguei na coleta').
+# O toque/abertura da camera e provado no flow 05 (05_cheguei_foto.yaml).
+- extendedWaitUntil:
+    visible: ".*Cheguei ao local.*"
+    timeout: 30000
+- assertVisible: ".*Cheguei ao local.*"
+- assertVisible: ".*Foto do local.*"
+- takeScreenshot: "04c_proxima_acao"
+

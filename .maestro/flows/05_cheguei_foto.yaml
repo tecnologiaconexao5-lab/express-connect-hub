@@ -1,0 +1,78 @@
+# ============================================================================
+# ETAPA 5 (celular) - BATERIA-TESTES-E2E-LIVE / CENARIO B
+#
+# Prova que a jornada Express (OsExpressView) EXIGE a FOTO DO LOCAL na etapa
+# "Cheguei"/"Cheguei ao local" antes de avancar.
+#
+# Comprovado no app (conexao_prestador):
+#   - operation_step_requirements.dart:38-52 -> a etapa 'Cheguei no cliente/CD'
+#     / 'Cheguei na coleta' tem requisito OBRIGATORIO "Foto do local".
+#   - operation_detail_screen.dart:1017-1050 (_guardArrivalPhoto): dialog com
+#     titulo "Foto do local", subtitulo "...Obrigatorio para confirmar a
+#     chegada..." e botao "Abrir Câmera". NAO tem "Pular" (obrigatorio).
+#   - operation_state_machine.dart:117-129: apos aceite, o proximo passo e a
+#     chegada a coleta. Ao aceitar pela Rede (flow 02) a OS ja entra ACEITA,
+#     entao o cartao mostra "Cheguei ao local" (nao mais "Aceitar serviço").
+#
+# O flow PARA no dialogo da camera: a captura exige toque fisico no obturador
+# do aparelho — ponto de supervisao humana.
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+- waitForAnimationToEnd
+
+# IMPORTANTE: o orquestrador reinicia o app (am start -S) ANTES de cada flow,
+# portanto este flow comeca na HOME. Navega ate a OS aceita (como o flow 04).
+# Aba inferior "Operacoes" (o item tem "Operacoes\nTab 2 of 5" -> regex)
+- tapOn:
+    text: ".*Operações.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Operações.*"
+    timeout: 30000
+
+- runFlow:
+    when:
+      true: ${OS_NUMERO != null}
+    commands:
+      - extendedWaitUntil:
+          visible: ".*${OS_NUMERO}.*"
+          timeout: 90000
+      - scrollUntilVisible:
+          element:
+            text: ".*${OS_NUMERO}.*"
+          direction: DOWN
+          timeout: 30000
+      - tapOn:
+          text: ".*${OS_NUMERO}.*"
+      - waitForAnimationToEnd
+
+# A OS ja esta ACEITA (aceite feito na Rede -> flow 02). A tela abre na etapa
+# "Cheguei ao local", cujo requisito OBRIGATORIO e "Foto do local" (Pendente).
+- extendedWaitUntil:
+    visible: ".*Cheguei ao local.*"
+    timeout: 60000
+- assertVisible: ".*Cheguei ao local.*"
+- assertVisible: ".*Foto do local.*"
+- takeScreenshot: "05a_cheguei_foto_local_pendente"
+
+# O cartao agrega os textos num UNICO no (accessibilityText multi-linha, NAO
+# clicavel). O botao de acao e um no separado, clicavel, com accessibilityText
+# exatamente "Cheguei ao local". Como o regex `.` nao cruza a quebra de linha,
+# apenas o botao casa com ".*Cheguei ao local.*" -> sem necessidade de index.
+- tapOn:
+    text: ".*Cheguei ao local.*"
+- waitForAnimationToEnd
+- takeScreenshot: "05b_apos_tap_cheguei"
+
+# DIALOGO OBRIGATORIO DA CAMERA (prova de que a foto e exigida para avancar).
+# Textos unicos deste dialogo: botao "Abrir Câmera" e o subtitulo de
+# obrigatoriedade. Se o gate de proximidade (GPS) bloquear a chegada, o flow
+# para aqui -> ponto de interacao (ver reporte da bateria).
+- extendedWaitUntil:
+    visible: "Abrir Câmera"
+    timeout: 45000
+- assertVisible: "Abrir Câmera"
+- assertVisible: ".*Obrigat[oó]rio para confirmar a chegada.*"
+- assertNotVisible: "Pular"
+- takeScreenshot: "05c_dialogo_foto_local_obrigatoria"

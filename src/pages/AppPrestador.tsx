@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Truck, MapPin, CheckCircle2, Play, Star, DollarSign, FileText, Camera,
+  Truck, MapPin, CheckCircle2, Play, DollarSign, FileText, Camera,
   Clock, AlertTriangle, ShieldCheck, Search, Package, ChevronRight, X,
   ThumbsUp, ThumbsDown, Upload, Phone, Navigation, BarChart3, Calendar,
   Award, Loader2, Check, RefreshCw
@@ -15,7 +15,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import useEscala from "@/hooks/useEscala";
+import usePod from "@/hooks/usePod";
 import { escalaParaItemAppPrestador, isAlocacaoVisivelParaPrestador } from "@/services/escala/escalaAppPrestadorAdapter";
+import logoSrc from "@/assets/logo-conexao-express.png";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtData = (d: string) => new Date(d).toLocaleDateString("pt-BR");
@@ -37,9 +39,17 @@ export default function AppPrestador() {
   const [viagens, setViagens] = useState<Viagem[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusViagem, setStatusViagem] = useState<Record<string, string>>({});
-  const [comprovante, setComprovante] = useState<{ viagemId: string; obs: string } | null>(null);
+  const [comprovante, setComprovante] = useState<{
+    viagemId: string;
+    obs: string;
+    nomeRecebedor: string;
+    documentoRecebedor: string;
+  } | null>(null);
   const [fotoUpload, setFotoUpload] = useState<string | null>(null);
+  const [fotoEntregaUpload, setFotoEntregaUpload] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const fileEntregaRef = useRef<HTMLInputElement>(null);
+  const pod = usePod();
 
   const [checks, setChecks] = useState({ seguro: false, gerenciadora: false, rastreio: false });
   const [iniciouRota, setIniciouRota] = useState(false);
@@ -48,7 +58,10 @@ export default function AppPrestador() {
   const [prestadorSelecionadoId, setPrestadorSelecionadoId] = useState("");
   const [prestadoresList, setPrestadoresList] = useState<{ id: string; nome_completo: string }[]>([]);
 
-  const { alocacoes: alocacoesEscala, carregarAlocacoes, loading: loadingEscala, aceitarAlocacao: aceitarAlocacaoHook, recusarAlocacao: recusarAlocacaoHook, iniciarRota: iniciarRotaHook, finalizarAlocacao: finalizarAlocacaoHook } = useEscala();
+  const [kmInicial, setKmInicial] = useState<Record<string, string>>({});
+  const [kmFinal, setKmFinal] = useState<Record<string, string>>({});
+
+  const { alocacoes: alocacoesEscala, carregarAlocacoesAppPrestador, loading: loadingEscala, aceitarAlocacao: aceitarAlocacaoHook, recusarAlocacao: recusarAlocacaoHook, iniciarRota: iniciarRotaHook, finalizarAlocacao: finalizarAlocacaoHook } = useEscala();
 
   useEffect(() => {
     supabase
@@ -62,7 +75,9 @@ export default function AppPrestador() {
   }, []);
 
   useEffect(() => {
-    carregarAlocacoes(prestadorSelecionadoId || undefined);
+    if (prestadorSelecionadoId) {
+      carregarAlocacoesAppPrestador(prestadorSelecionadoId);
+    }
     loadViagens(prestadorSelecionadoId || undefined);
   }, [prestadorSelecionadoId]);
 
@@ -96,7 +111,7 @@ export default function AppPrestador() {
       try {
         let query = supabase
           .from("ordens_servico")
-          .select("id, numero, status, cliente, valor_cliente, custo_prestador, created_at")
+          .select("id, numero, status, cliente, origem, destino, valor_cliente, custo_prestador, created_at")
           .order("created_at", { ascending: false })
           .limit(20);
         if (prestadorId) {
@@ -108,9 +123,9 @@ export default function AppPrestador() {
             id: os.id,
             numero: os.numero || `OS-${os.id.slice(0, 8)}`,
             status: os.status || "rascunho",
-            cliente: os.cliente || "Cliente",
-            origem: "São Paulo/SP",
-            destino: os.cliente || "Destino",
+            cliente: typeof os.cliente === "string" && os.cliente.includes("/") ? os.cliente : "Cliente",
+            origem: os.origem || "Origem",
+            destino: os.destino || "Destino",
             valor: os.custo_prestador || 0,
             data: os.created_at,
           }));
@@ -119,86 +134,150 @@ export default function AppPrestador() {
             return [...prev.filter((v) => v.prestador), ...mapped.filter((v) => !escalaIds.has(v.id))];
           });
         }
-      } catch {
-        // Keep existing items on OS load error
+      } catch (err) {
+        console.warn("[AppPrestador] Erro ao carregar viagens OS:", err);
       }
       setLoading(false);
     }
 
-  const handleAceitarViagem = (id: string) => {
+  const handleAceitarViagem = async (id: string) => {
     const viagem = viagens.find((v) => v.id === id);
     const prestadorId = viagem?.prestador || prestadorSelecionadoId;
-    if (prestadorId) {
-      aceitarAlocacaoHook(id, prestadorId);
-    } else {
-      setStatusViagem((p) => ({ ...p, [id]: "aceita" }));
+    if (!prestadorId) {
+      toast.error("Selecione um prestador antes de aceitar.");
+      return;
     }
-    toast.success("Viagem aceita! Prepare-se para a coleta.");
-  };
-  const handleRecusarViagem = (id: string) => {
-    const viagem = viagens.find((v) => v.id === id);
-    const prestadorId = viagem?.prestador || prestadorSelecionadoId;
-    if (prestadorId) {
-      recusarAlocacaoHook(id, prestadorId);
-    } else {
-      setStatusViagem((p) => ({ ...p, [id]: "recusada" }));
-    }
-    toast.info("Viagem recusada.");
-  };
-  const handleIniciarViagem = async (id: string) => {
-    const viagem = viagens.find((v) => v.id === id);
-    const prestadorId = viagem?.prestador;
-    if (prestadorId) {
-      const resultado = await iniciarRotaHook(id, prestadorId);
-      if (resultado.sucesso) {
-        setStatusViagem(p => ({ ...p, [id]: "em_rota" }));
-        toast.success("Viagem iniciada! Boa rota.");
-      } else {
-        setStatusViagem(p => ({ ...p, [id]: "em_andamento" }));
-        toast.success("Viagem iniciada (offline)! Boa rota.");
+    const resultado = await aceitarAlocacaoHook(id, prestadorId);
+    if (resultado.sucesso) {
+      toast.success("Viagem aceita! Prepare-se para a coleta.");
+      if (prestadorSelecionadoId) {
+        await carregarAlocacoesAppPrestador(prestadorSelecionadoId);
       }
-    } else {
-      setStatusViagem(p => ({ ...p, [id]: "em_andamento" }));
-      toast.success("Viagem iniciada! Boa rota.");
+      return;
     }
+    toast.error(resultado.erro || "Erro ao aceitar viagem.");
   };
+
+  const handleRecusarViagem = async (id: string) => {
+    const viagem = viagens.find((v) => v.id === id);
+    const prestadorId = viagem?.prestador || prestadorSelecionadoId;
+    if (!prestadorId) {
+      toast.error("Selecione um prestador antes de recusar.");
+      return;
+    }
+    const resultado = await recusarAlocacaoHook(id, prestadorId);
+    if (resultado.sucesso && prestadorSelecionadoId) {
+      toast.info("Viagem recusada.");
+      await carregarAlocacoesAppPrestador(prestadorSelecionadoId);
+      return;
+    }
+    toast.error(resultado.erro || "Erro ao recusar viagem.");
+  };
+
+  const handleIniciarViagem = async (id: string) => {
+    const prestadorId = prestadorSelecionadoId;
+    const kmValor = parseInt(kmInicial[id] || "0", 10);
+    if (!kmValor || kmValor <= 0) {
+      toast.error("Informe o KM inicial antes de iniciar a viagem.");
+      return;
+    }
+    if (!prestadorId) {
+      toast.error("Selecione um prestador antes de iniciar.");
+      return;
+    }
+    const resultado = await iniciarRotaHook(id, prestadorId, kmValor);
+    if (resultado.sucesso) {
+      toast.success("Viagem iniciada! Boa rota.");
+      await carregarAlocacoesAppPrestador(prestadorId);
+      return;
+    }
+    toast.error(resultado.erro || "Erro ao iniciar viagem.");
+  };
+
   const handleFinalizarViagem = (id: string) => {
-    setComprovante({ viagemId: id, obs: "" });
+    setComprovante({ viagemId: id, obs: "", nomeRecebedor: "", documentoRecebedor: "" });
+    setFotoEntregaUpload(null);
+    setFotoUpload(null);
   };
 
   const handleEnviarComprovante = async () => {
     if (!comprovante) return;
-    const viagem = viagens.find((v) => v.id === comprovante.viagemId);
-    const prestadorId = viagem?.prestador;
-    if (prestadorId) {
-      const resultado = await finalizarAlocacaoHook(
-        comprovante.viagemId,
-        {
-          comprovante_url: fotoUpload || undefined,
-          observacoes: comprovante.obs || undefined,
-        },
-        prestadorId
-      );
-      if (resultado.sucesso) {
-        setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "concluido" }));
-        toast.success("Viagem finalizada com sucesso!");
-      } else {
-        setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
-        toast.success("Viagem finalizada (offline)!");
-      }
-    } else {
-      setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
-      toast.success("Comprovante enviado com sucesso!");
+    const prestadorId = prestadorSelecionadoId;
+    const kmValor = parseInt(kmFinal[comprovante.viagemId] || "0", 10);
+    if (!kmValor || kmValor <= 0) {
+      toast.error("Informe o KM final antes de finalizar.");
+      return;
     }
+    if (!comprovante.nomeRecebedor.trim()) {
+      toast.error("Informe o nome do recebedor.");
+      return;
+    }
+    if (!fotoUpload && !fotoEntregaUpload) {
+      toast.error("Adicione pelo menos uma foto (canhoto ou entrega).");
+      return;
+    }
+    if (prestadorId) {
+      toast.loading("Enviando comprovante...");
+      try {
+        const fileCanhotoInput = fileRef.current;
+        const fileEntregaInput = fileEntregaRef.current;
+        let fotoCanhotoUrl = fotoUpload || "";
+        let fotoEntregaUrl = fotoEntregaUpload || "";
+
+        if (fileCanhotoInput?.files?.[0] && fotoUpload?.startsWith("blob:")) {
+          const url = await pod.uploadFoto(fileCanhotoInput.files[0], `pod/${comprovante.viagemId}`);
+          if (url) fotoCanhotoUrl = url;
+        }
+        if (fileEntregaInput?.files?.[0] && fotoEntregaUpload?.startsWith("blob:")) {
+          const url = await pod.uploadFoto(fileEntregaInput.files[0], `pod/${comprovante.viagemId}`);
+          if (url) fotoEntregaUrl = url;
+        }
+
+        const podResult = await pod.finalizar(
+          comprovante.viagemId,
+          prestadorId,
+          {
+            nome_recebedor: comprovante.nomeRecebedor.trim(),
+            documento_recebedor: comprovante.documentoRecebedor.trim() || undefined,
+            observacao: comprovante.obs.trim() || undefined,
+            foto_entrega_url: fotoEntregaUrl || undefined,
+            foto_canhoto_url: fotoCanhotoUrl || undefined,
+            data_hora_entrega: new Date().toISOString(),
+            status: "entregue",
+          },
+          kmValor
+        );
+
+        toast.dismiss();
+        if (podResult.sucesso) {
+          toast.success("Entrega finalizada com sucesso!");
+          await carregarAlocacoesAppPrestador(prestadorId);
+          setComprovante(null);
+          setFotoUpload(null);
+          setFotoEntregaUpload(null);
+          return;
+        }
+      } catch (err) {
+        console.warn("[AppPrestador] Erro ao enviar comprovante:", err);
+        toast.dismiss();
+      }
+    }
+    setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
+    toast.success("Viagem finalizada!");
     setComprovante(null);
     setFotoUpload(null);
+    setFotoEntregaUpload(null);
   };
 
-  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>, tipo: "canhoto" | "entrega") => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      setFotoUpload(url);
+      if (tipo === "canhoto") {
+        setFotoUpload(url);
+      } else {
+        setFotoEntregaUpload(url);
+      }
       toast.success("Foto carregada!");
     }
   };
@@ -243,19 +322,17 @@ export default function AppPrestador() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center shadow">
-            <Truck className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">App Motorista / Prestador</h1>
-            <p className="text-sm text-muted-foreground">Central operacional do parceiro</p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <img src={logoSrc} alt="Conexão Express" className="h-10 w-auto" />
+          <div className="hidden sm:block">
+            <h1 className="text-xl lg:text-2xl font-bold">Admin App Prestador</h1>
+            <p className="text-xs text-muted-foreground">Painel administrativo do TMS — não é o app real do motorista</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={prestadorSelecionadoId} onValueChange={setPrestadorSelecionadoId}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[200px]">
               <SelectValue placeholder="Selecione seu perfil..." />
             </SelectTrigger>
             <SelectContent>
@@ -264,13 +341,23 @@ export default function AppPrestador() {
               ))}
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold whitespace-nowrap">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             Online
           </div>
-          <Button size="sm" variant="outline" onClick={() => { carregarAlocacoes(prestadorSelecionadoId || undefined); loadViagens(prestadorSelecionadoId || undefined); }}>
+          <Button size="sm" variant="outline" onClick={() => { if (prestadorSelecionadoId) carregarAlocacoesAppPrestador(prestadorSelecionadoId); loadViagens(prestadorSelecionadoId || undefined); }}>
             <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
           </Button>
+        </div>
+      </div>
+
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-r-lg">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Tela administrativa do TMS</p>
+            <p className="text-xs text-amber-700">Esta não é o app real do motorista/prestador. O app oficial é o PWA Flutter publicado em <strong>prestador.conexaoexpress.com.br</strong>.</p>
+          </div>
         </div>
       </div>
 
@@ -371,7 +458,7 @@ export default function AppPrestador() {
                     <div className="flex items-center gap-1.5 text-muted-foreground"><Navigation className="w-3.5 h-3.5"/>{v.destino}</div>
                     <div className="flex items-center gap-1.5 text-muted-foreground"><Clock className="w-3.5 h-3.5"/>{fmtData(v.data)}</div>
                   </div>
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 flex-wrap items-center">
                     {st === "rascunho" || st === "agendada" || st === "escalado" ? (
                       <>
                         <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1" onClick={() => handleAceitarViagem(v.id)}>
@@ -382,13 +469,29 @@ export default function AppPrestador() {
                         </Button>
                       </>
                     ) : st === "aceita" || st === "aceito" ? (
-                      <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1" onClick={() => handleIniciarViagem(v.id)}>
-                        <Play className="w-3.5 h-3.5 fill-current"/> Iniciar Viagem
-                      </Button>
+                      <>
+                        <Input
+                          type="number" placeholder="KM inicial"
+                          className="w-28 h-8 text-sm"
+                          value={kmInicial[v.id] || ""}
+                          onChange={e => setKmInicial(p => ({ ...p, [v.id]: e.target.value }))}
+                        />
+                        <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1" onClick={() => handleIniciarViagem(v.id)}>
+                          <Play className="w-3.5 h-3.5 fill-current"/> Iniciar Viagem
+                        </Button>
+                      </>
                     ) : st === "em_andamento" || st === "em_rota" ? (
-                      <Button size="sm" className="bg-orange-600 hover:bg-orange-700 gap-1" onClick={() => handleFinalizarViagem(v.id)}>
-                        <Check className="w-3.5 h-3.5"/> Finalizar + Comprovante
-                      </Button>
+                      <>
+                        <Input
+                          type="number" placeholder="KM final"
+                          className="w-28 h-8 text-sm"
+                          value={kmFinal[v.id] || ""}
+                          onChange={e => setKmFinal(p => ({ ...p, [v.id]: e.target.value }))}
+                        />
+                        <Button size="sm" className="bg-orange-600 hover:bg-orange-700 gap-1" onClick={() => handleFinalizarViagem(v.id)}>
+                          <Check className="w-3.5 h-3.5"/> Finalizar + Comprovante
+                        </Button>
+                      </>
                     ) : st === "finalizada" || st === "concluido" ? (
                       <span className="text-xs text-green-600 font-semibold flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/>Finalizada</span>
                     ) : null}
@@ -513,34 +616,77 @@ export default function AppPrestador() {
         </TabsContent>
       </Tabs>
 
-      {/* Modal comprovante */}
+      {/* Modal POD - Protocolo de Entrega */}
       {comprovante && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-background rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 border">
+          <div className="bg-background rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 border max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg flex items-center gap-2"><Camera className="w-5 h-5 text-orange-600"/>Comprovante de Entrega</h3>
+              <h3 className="font-bold text-lg flex items-center gap-2"><Camera className="w-5 h-5 text-orange-600"/>Protocolo de Entrega</h3>
               <Button variant="ghost" size="icon" onClick={() => setComprovante(null)}><X className="w-4 h-4"/></Button>
             </div>
-            <input ref={fileRef} type="file" className="hidden" accept="image/*" onChange={handleFotoChange} />
-            <div
-              className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:bg-muted/30"
-              onClick={() => fileRef.current?.click()}
-            >
-              {fotoUpload ? (
-                <img src={fotoUpload} alt="comprovante" className="w-full h-40 object-cover rounded-lg"/>
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                  <Camera className="w-10 h-10 opacity-40"/>
-                  <p className="text-sm">Clique para tirar/enviar foto</p>
-                </div>
-              )}
+
+            {/* Nome do recebedor */}
+            <div>
+              <label className="text-sm font-medium mb-1 block">Nome do recebedor *</label>
+              <Input placeholder="Nome completo do recebedor"
+                value={comprovante.nomeRecebedor}
+                onChange={e => setComprovante(p => p ? { ...p, nomeRecebedor: e.target.value } : null)} />
             </div>
-            <Textarea placeholder="Observações (receptor, local, etc)..." rows={3}
+
+            {/* Documento do recebedor */}
+            <div>
+              <label className="text-sm font-medium mb-1 block">Documento (CPF/CNPJ)</label>
+              <Input placeholder="CPF ou CNPJ do recebedor"
+                value={comprovante.documentoRecebedor}
+                onChange={e => setComprovante(p => p ? { ...p, documentoRecebedor: e.target.value } : null)} />
+            </div>
+
+            {/* Foto do canhoto */}
+            <div>
+              <label className="text-sm font-medium mb-1 block">Foto do canhoto/comprovante</label>
+              <input ref={fileRef} type="file" className="hidden" accept="image/*" onChange={e => handleFotoChange(e, "canhoto")} />
+              <div
+                className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer hover:bg-muted/30"
+                onClick={() => fileRef.current?.click()}
+              >
+                {fotoUpload ? (
+                  <img src={fotoUpload} alt="canhoto" className="w-full h-32 object-cover rounded-lg"/>
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <Camera className="w-8 h-8 opacity-40"/>
+                    <p className="text-xs">Clique para anexar foto</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Foto da entrega */}
+            <div>
+              <label className="text-sm font-medium mb-1 block">Foto da entrega</label>
+              <input ref={fileEntregaRef} type="file" className="hidden" accept="image/*" onChange={e => handleFotoChange(e, "entrega")} />
+              <div
+                className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer hover:bg-muted/30"
+                onClick={() => fileEntregaRef.current?.click()}
+              >
+                {fotoEntregaUpload ? (
+                  <img src={fotoEntregaUpload} alt="entrega" className="w-full h-32 object-cover rounded-lg"/>
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <Camera className="w-8 h-8 opacity-40"/>
+                    <p className="text-xs">Clique para anexar foto</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Observação */}
+            <Textarea placeholder="Observações da entrega..." rows={2}
               value={comprovante.obs} onChange={e => setComprovante(p => p ? { ...p, obs: e.target.value } : null)} />
-            <div className="flex gap-3">
+
+            <div className="flex gap-3 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => setComprovante(null)}>Cancelar</Button>
-              <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleEnviarComprovante}>
-                <Check className="w-4 h-4 mr-2"/>Confirmar Entrega
+              <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleEnviarComprovante} disabled={pod.loading}>
+                {pod.loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Enviando...</> : <><Check className="w-4 h-4 mr-2"/>Confirmar Entrega</>}
               </Button>
             </div>
           </div>

@@ -164,36 +164,24 @@ CREATE INDEX IF NOT EXISTS idx_os_pod_parada
 -- ============================================
 
 -- -------------------------------------------------------
--- 3.1: prestador_reembolsos - Pedidos de reembolso
+-- 3.1: reembolsos_prestador - Pedidos de reembolso (OFICIAL)
+-- -------------------------------------------------------
+-- Migration: 20260805_m129c_reembolsos_prestador_oficial.sql
+-- Tabela oficial criada via migration. Nao usar CREATE TABLE manualmente.
+-- NOME OFICIAL: reembolsos_prestador (contrato com App Motorista Flutter)
 -- -------------------------------------------------------
 -- Despesas e reembolsos do prestador
 -- tipo: pedagio, ajudante, estadia, diaria, outros
 -- status: pendente, aprovado, rejeitado, pago
-
-CREATE TABLE IF NOT EXISTS public.prestador_reembolsos (
-  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
-  prestador_id uuid REFERENCES public.prestadores(id) ON DELETE CASCADE,
-  os_id uuid REFERENCES public.ordens_servico(id),
-  tipo text NOT NULL,
-  descricao text,
-  valor numeric NOT NULL,
-  data_despesa date NOT NULL,
-  comprovante_url text,
-  status text DEFAULT 'pendente',
-  aprovado_por uuid REFERENCES public.usuarios(id),
-  data_aprovacao timestamptz,
-  obs_rejeicao text,
-  created_at timestamptz DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_prestador_reemb_prestador 
-  ON public.prestador_reembolsos(prestador_id);
-
-CREATE INDEX IF NOT EXISTS idx_prestador_reemb_status 
-  ON public.prestador_reembolsos(status);
-
-CREATE INDEX IF NOT EXISTS idx_prestador_reemb_os 
-  ON public.prestador_reembolsos(os_id);
+-- prestador: TEXT (nome) — padrao do projeto para tabelas do app
+-- tenant_id: UUID (multi-tenant via current_tenant_id_safe())
+-- RLS: rp_select_tenant, rp_insert_tenant, rp_update_tenant, rp_delete_tenant
+-- -------------------------------------------------------
+-- NOTA: Esta definicao e apenas documentacao.
+-- A tabela REAL esta no banco via migration.
+-- Para consultar o schema atual no Supabase:
+--   SELECT column_name, data_type FROM information_schema.columns
+--   WHERE table_schema = 'public' AND table_name = 'reembolsos_prestador';
 
 -- -------------------------------------------------------
 -- 3.2: REAPROVEITAMENTO DE ABASTECIMENTOS

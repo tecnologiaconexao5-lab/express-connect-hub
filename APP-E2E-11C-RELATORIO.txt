@@ -1,0 +1,433 @@
+========================================================================
+APP-E2E-11C — TMS + CONSISTÊNCIA FINAL + GAPS + ROLLBACK
+Projeto: TMS CONEXÃO EXPRESS
+Modelo: DeepSeek V4.1 Flash
+Data: 2026-09-27 (execução)  |  Redmi: NÃO conectado  |  Migrations: 0  |  Schema: 0
+Modo: AUDITORIA READ-ONLY -> ROLLBACK CONTROLADO
+========================================================================
+
+RESUMO EXECUTIVO
+----------------
+A jornada física APP->Supabase (11A/11B.1/11B.2/11B.3) foi auditada no lado
+TMS. A operação TESTE E2E-11 está PERSISTIDA corretamente no Supabase.
+A camada TMS (Programação Operacional + OS + Comprovantes) FOI PROVADA por
+query/código. Dois GAPs isolados foram diagnosticados (não corrigidos).
+O rollback foi executado: TODAS as linhas de banco da fixture removidas.
+Os 4 objetos de Storage da fixture ficaram BLOCKED (exigem Storage API +
+SERVICE_ROLE_KEY de produção — inexistente no ambiente).
+O auth user HML permanece. Nenhum dado real/órfão afetado.
+
+========================================================================
+OPERAÇÃO TESTE (fixture APP-E2E-11)
+========================================================================
+alocacao_id ........ 18d50f0b-704f-4361-8626-ed43c8000601
+os_numero .......... ALOC-20260928-18D50F0B
+prestador_id ....... b45890ff-454c-40a0-a89e-5333a88eb316
+tenant ............. 00000000-0000-0000-0000-000000000001
+auth_user (HML) .... a5e51631-5ed8-430d-9041-4b185c03d821  (teste@conexao.com)  [PRESERVADO]
+metadata.tipo ...... TESTE_E2E_11  | homologacao=true | nao_comercial=true
+observacoes ........ "ALOCACAO TESTE E2E-11A - NAO COMERCIAL - ROLLBACK: delete por id"
+
+========================================================================
+1. REFLEXO NA PROGRAMAÇÃO OPERACIONAL (TMS)
+========================================================================
+Tela (nomenclatura atual): Programação Operacional
+Rota: /operacao?tab=escala  (sidebar "Programação Operacional", linha 107 de sidebarData.ts)
+Componente: src/components/operacao/EscalaLista.tsx
+Fonte de dados: public.alocacoes_escala
+
+Query real do componente (EscalaLista.loadAlocacoes) — mês corrente:
+  data_escala >= startOfMonth(hoje) AND data_escala <= endOfMonth(hoje)
+  (2026-09-01 .. 2026-09-30) + joins prestadores / clientes / ordens_servico
+
+RESULTADO (execução da MESMA query da tela):
+  id ................ 18d50f0b-704f-4361-8626-ed43c8000601
+  data_escala ....... 2026-09-28T03:00:00Z
+  status ............ concluida
+  finalizada ........ true
+  aceite_prestador .. true
+  status_pagamento .. pendente
+  prestador ......... PRESTADOR TESTE E2E-11 (b45890ff...)
+  os_numero ......... ALOC-20260928-18D50F0B
+  => A operação EXISTE no dataset da Programação Operacional.
+
+RESSALVA DE FILTRO/DATA (importante, NÃO é GAP de sync):
+  O grid da Programação Operacional só renderiza alocações dentro da janela
+  `diasPeriodo` (filtro de período). O filtro default é "esta_semana", que com
+  a data atual (dom 2026-09-27) cobre 2026-09-21..2026-09-27.
+  Como data_escala = 2026-09-28 (segunda, "próxima semana"), a operação NÃO
+  aparece na visão default, mas APARECE em:
+      - filtro "Próxima semana" (2026-09-28..2026-10-04)
+      - filtro "Este mês"        (2026-09-01..2026-09-30)
+      - filtro "Personalizado"   incluindo 28/09
+  Isso é comportamento de filtro por data, não falha de sincronização.
+
+EVIDÊNCIA DE EXECUÇÃO: scripts/_app_e2e_11c_tms.mjs
+  periodos.esta_semana.contem_28_09 = false
+  periodos.proxima_semana.contem_28_09 = true
+  periodos.este_mes.contem_28_09 = true
+
+========================================================================
+2. PROVA APP -> TMS (comparação de camadas)
+========================================================================
+| Campo                | Supabase (banco)          | TMS (camada de exibição)        | Veredito |
+|----------------------|---------------------------|---------------------------------|----------|
+| status               | concluida                 | "Finalizado" (concluida->finalizado) | PASS |
+| finalizada           | true                      | badge/estado finalizado         | PASS     |
+| aceite_prestador     | true                      | aceite registrado (histórico)    | PASS     |
+| etapa_atual          | servico_finalizado        | timeline da operação             | PASS     |
+| OS (ordens_servico)  | status=finalizada         | listada na OS (OrdensServicoLista) | PASS   |
+| prestador            | PRESTADOR TESTE E2E-11    | mesmo prestador                  | PASS     |
+| POD                  | 1 registro                | Dossiê/Baixas resolvem mídia     | PASS     |
+
+Mapeamento de status confirmado por código:
+  escalaStatus.STATUS_BANCO_PARA_UI: concluida -> "finalizado"
+  osTypes.obterStatusGlobalOS: finalizada -> "finalizado"
+  statusGlobal.STATUS_GLOBAL_INFO.finalizado = { label: "Finalizado", etapa: 6 }
+
+CLASSIFICAÇÃO: PASS (sem GAP real de sincronização/UI na Programação Operacional).
+
+LIMITAÇÃO DE EVIDÊNCIA VISUAL:
+  Não houve login de navegador no TMS porque NÃO existe senha utilizável dos
+  usuários TMS corporativos nem SERVICE_ROLE_KEY de produção no ambiente
+  (a pendência "redefinir senha" é P0 conhecido — docs/auditoria/...133d8...).
+  A prova da camada TMS foi feita executando as MESMAS queries dos componentes
+  + mapeamento de status por leitura de código. Isto é declarado abertamente,
+  não oculto.
+
+========================================================================
+3. POD / COMPROVANTES NO TMS
+========================================================================
+Visualizações administrativas de POD/evidências no TMS:
+  A) Operação > aba "Baixas e Evidências"  -> PodLista.tsx
+  B) Dossiê de comprovante (DossieEntregaSheet) usado em:
+     - Página Comprovantes ("Ver comprovante")
+     - EntregasComprovantes
+     - ConferenciaFinanceira
+
+POD da fixture (delivery_proofs — 1 registro):
+  id ............... 4cfd7370-f8b5-5895-8522-93c9e5266016
+  operation_id ..... 18d50f0b-704f-4361-8626-ed43c8000601
+  driver_id ........ a5e51631-5ed8-430d-9041-4b185c03d821  (auth user HML)
+  receiver_name .... RECEBEDOR_TESTE_E2E11
+  receiver_doc ..... 00000000000
+  status ........... delivered
+  observation ...... TESTE_E2E11B2
+  delivered_at ..... 2026-09-27T07:56:00.080Z
+  foto_entrega_url . .../driver-evidence/<authuid>/pod/<aloc>/2026/09/27/20e2a4c4-....jpg
+  foto_canhoto_url . .../driver-evidence/<authuid>/pod/<aloc>/2026/09/27/c9d7717f-....jpg
+  signature_url .... .../driver-evidence/<authuid>/pod/<aloc>/2026/09/27/0105e880-....png
+  (todas as 3 evidências presentes: assinatura, foto, canhoto)
+
+Espelho oficial (entregas_protocolo — 1 registro, via trigger):
+  id ae1ed6d4-9989-486e-ad9f-2f1ea7bb5737 | status=entregue | receiver=RECEBEDOR_TESTE_E2E11
+  alocacao_id e ordem_servico_id = 18d50f0b... | tenant 00000000...
+
+A TELA consegue consumir evidências do bucket PRIVADO?
+  - "Baixas e Evidências" (PodLista) -> SIM. Importa resolverMidiasPods()
+    (podMediaService) e converte ref privada em SIGNED URL antes de renderizar.
+  - Dossiê (comprovantesService.buscarDossieComprovante) -> SIM. Aplica
+    resolverMidiasPod() na linha 455 antes de devolver ao DossieEntregaSheet.
+
+CLASSIFICAÇÃO: PASS nos caminhos administrativos de POD/evidência do TMS.
+  (Ressalvas de outros consumidores ver seção 4.)
+
+========================================================================
+4. GAP-POD-PRIVATE-URL (diagnóstico — NÃO corrigido)
+========================================================================
+Causa raiz confirmada:
+  - Bucket driver-evidence: public = FALSE (privado).  [storage.buckets]
+  - As referências persistidas (delivery_proofs e entregas_protocolo) são
+    URLs "publicUrl": /storage/v1/object/public/driver-evidence/...
+  - A publicUrl direta FALHA: HTTP 400
+      body: {"statusCode":"404","error":"Bucket not found","code":"NoSuchBucket"}
+    (evidência: scripts/_app_e2e_11c_storage.mjs)
+  - createSignedUrl resolve corretamente (capacidade já comprovada em missão
+    APP-E2E-07; aqui confirmado o parser e o caminho de código).
+
+Classificação por consumidor (A/B/C/D):
+  (A) TMS transforma publicUrl em signed URL antes de exibir:
+      - PodLista.tsx  -> resolverMidiasPods()  ................. A (OK)
+      - comprovantesService.buscarDossieComprovante -> resolverMidiasPod() ... A (OK)
+  (B) Tenta publicUrl direta (evidência quebra):
+      - DetalhesOperacaoSheet.tsx (Torre de Controle) -> renderiza <img src={pod.foto_*}> cru.
+      - Portal Cliente (portalClienteService.buscarComprovantesPortal /
+        buscarDetalhesEntregaCompleto) -> devolve URL crua; PortalComprovantesPremium,
+        PortalDrawerPOD, PortalEscalaOperacional, PortalComparacaoEntregas abrem cru.
+      - DossieEntregaSheet: recebe OK do service, mas há trechos com window.open(cru).
+  (C) Outra estratégia: não encontrado.
+  (D) Inconclusivo: não.
+
+VEREDITO: GAP-POD-PRIVATE-URL = MISTO (A nas telas administrativas de POD;
+  B na Torre de Controle e no Portal Cliente).
+  -> DEFEITO FUNCIONAL REAL (evidência quebrada em alguns consumidores).
+  -> Correção NÃO é trivialmente pequena (múltiplos componentes + Portal).
+  -> NÃO corrigido nesta missão, conforme preferência. Encaminhar micro-missão.
+
+========================================================================
+5. GAP-UI-STATUS-LABEL-01 (registro formal — NÃO corrigido)
+========================================================================
+Achado (APP Prestador / Redmi): durante toda a jornada o cabeçalho do detalhe
+mostrou "AGUARDANDO VOCÊ ACEITAR", apesar de a operação ter passado por
+aceita -> em_rota -> POD -> finalizada.
+
+Causa provável por leitura de código (candidatos):
+  (i) estado local não atualizado após o aceite;  e/ou
+  (ii) label derivada do status inicial capturado no momento da abertura; e/ou
+  (iii) ausência de refresh/realtime no cabeçalho do detalhe.
+  Observação de banco: o status persistido e os eventos evoluíram corretamente
+  (aguardando_aceite -> aceita -> em_rota -> concluida), logo NÃO é falha de
+  persistência do Supabase — é apresentação no APP.
+
+Identificador: GAP-APP-STATUS-LABEL-01
+Ação: preservado para micro-missão (não corrigido aqui).
+
+========================================================================
+6. CONSISTÊNCIA FINAL NO BANCO (snapshot read-only, ANTES do rollback)
+========================================================================
+alocacoes_escala (id 18d50f0b...):
+  status=concluida | finalizada=true | aceite_prestador=true
+  data_aceite=2026-09-27T10:48:43.430Z
+  horario_inicio_real=2026-09-27T10:52:14.369Z
+  horario_fim_real=2026-09-27T11:01:53.135Z
+  data_finalizacao=2026-09-27T11:01:53.135Z
+  metadata.app_motorista.etapa_atual = servico_finalizado
+  metadata.app_motorista.pod_registrado=true | finalizado_por_app=true
+  tenant_id=00000000-... | status_pagamento=pendente | km_realizados=0
+
+ordens_servico (id 18d50f0b..., numero ALOC-20260928-18D50F0B):
+  status=finalizada | valor_cliente=300.00 | custo_prestador=250.00
+  origem="CD TESTE E2E-11A - Cajamar/SP" | destino="LOJA TESTE E2E-11A - Paulista/SP"
+  prestador=b45890ff... | tenant_id=00000000-...
+
+delivery_proofs: exatamente 1 registro (ver seção 3); vínculo operation_id ok;
+  receiver TESTE; 3 referências de evidência.  Sem duplicidade.
+
+entregas_protocolo: 1 registro (espelho via trigger trg_sync_delivery_proof_to_entregas).
+
+tracking:
+  portal_tracking_realtime = 3 pontos reais (origem app_motorista):
+    10:53:25  (-23.6766615, -46.5987331) prec 14.51
+    10:56:02  (-23.6766067, -46.5988754) prec 19.48
+    10:57:40  (-23.6766123, -46.5988811) prec 21.17
+  operacao_localizacao = 3 espelhos (mesmos pontos).
+  Último ponto (10:57:40) é ANTERIOR à finalização (11:01:53) => nenhum ponto
+  posterior à conclusão.
+
+histórico/eventos:
+  historico_alocacoes_escala = 5 (aceite, aceita, em_rota, concluida, finalizacao)
+  operation_timeline_events  = 22 (por operation_id)
+  eventos_oficiais           = 0
+  os_historico               = 0
+  Duplicidade criada pela jornada: NENHUMA (contagens 1/1/3/3/5/22).
+
+========================================================================
+7. INDICADORES / EFEITOS COLATERAIS (obrigatório p/ rollback seguro)
+========================================================================
+Tabelas/registros GERADOS OU ALTERADOS pela conclusão (todos ligados à fixture):
+  1) alocacoes_escala ............... 1   (linha principal)
+  2) ordens_servico ................. 1   (ALOC-20260928-18D50F0B)
+  3) delivery_proofs ................ 1   (O APP deu INSERT)
+  4) entregas_protocolo ............. 1   (trigger de sync do POD)
+  5) portal_tracking_realtime ....... 3   (GPS real)
+  6) operacao_localizacao ........... 3   (trigger de sync do tracking)
+  7) historico_alocacoes_escala ..... 5   (trigger registrar_historico)
+  8) operation_timeline_events ...... 22  (eventos do APP)
+  9) financeiro_pagar ............... 1   (trigger trg_propagar_financeiro_os)
+        descricao="Repasse ALOC-20260928-18D50F0B" valor=250.00 status=aberto
+        is_teste=FALSE  <-- observação: fixture NÃO marcada como teste
+ 10) pagamentos_prestadores ......... 1   (origem_lancamento=os_direta)
+        valor_liquido=250.00 status=pendente is_teste=FALSE
+ 11) composicao_financeira_os ....... 1
+        valor_cliente=300, valor_prestador=250, margem_bruta=50,
+        imposto_valor=13.5 (4.5%), origem_calculo=os_direta
+ 12) portal_notificacoes ............ 1   ("Nova OS ALOC-20260928-18D50F0B atribuída a você.")
+ 13) storage.objects (driver-evidence) 4 objetos do POD da fixture
+
+  composicao_financeira (sem _os) ... 0 linhas (confirmação)
+  financeiro_receber ................ 0 (sem cliente -> não gera AR)
+  financeiro_baixas ................. 0
+  pagamentos_prestadores_itens ...... 0
+  os_pod / reembolsos_prestador / rotas / rota_paradas / ocorrencias /
+  fiscal_* / fatura_itens / communication_events / pending_uploads /
+  driver_incidents / operation_km / route_stops = 0 (sem impacto)
+
+INDICADORES DO PRESTADOR:
+  prestadores (b45890ff...): qtd_operacoes=0, indice_aceite=0, indices 0,
+  updated_at = created_at (2026-09-27T13:41:35Z) => NÃO houve incremento de
+  indicador durante a jornada. Nenhum dashboard/relatório derivado é
+  persistido (views são calculadas em tempo real; sem tabela de KPI tocada).
+  => NÃO foi necessário neutralizar indicadores.
+
+========================================================================
+8. ROLLBACK CONTROLADO (executado)
+========================================================================
+Inventário por: alocacao_id / prestador_id / operation_id / driver_id /
+metadata TESTE_E2E_11 (ver seções 6 e 7).
+
+Script: scripts/_app_e2e_11c_rollback.mjs  (transação única, child->parent)
+Ordem e contagem efetivamente DELETADAS (status COMMIT):
+  operation_timeline_events ........ 22
+  delivery_proofs .................. 1
+  entregas_protocolo ............... 1
+  portal_tracking_realtime ......... 3
+  operacao_localizacao ............. 3
+  historico_alocacoes_escala ....... 5
+  pagamentos_prestadores_itens ..... 0
+  composicao_financeira_os ......... 1
+  composicao_financeira ............. 0
+  financeiro_pagar ................. 1
+  pagamentos_prestadores ........... 1
+  portal_notificacoes .............. 1
+  alocacoes_escala ................. 1
+  ordens_servico ................... 1
+  prestadores ...................... 1   (guard: 22 tabelas verificadas = 0 deps residuais)
+  storage.objects (fixture) ........ BLOCKED (ver seção 9)
+
+Garantias:
+  - Transação única. Nenhum trigger de DELETE nas tabelas (só INSERT/UPDATE),
+    logo a exclusão não propagou/gerou linhas novas.
+  - FK confirmadas: entregas_protocolo/historico/operacao_mensagens = CASCADE;
+    demais = SET NULL. Ordem respeitada.
+  - auth user teste@conexao.com NÃO foi tocado.
+  - Nenhum dado real/de outras missões foi deletado.
+
+========================================================================
+9. STORAGE (resultado: BLOCKED)
+========================================================================
+Objetos da fixture (bucket driver-evidence, path contém o alocacao_id):
+  eb740edf...  0105e880-....png   2824 B   (assinatura)
+  ecff3bc5...  20e2a4c4-....jpg  1187021 B (foto entrega)
+  3d85b226...  2a17e701-....jpg  1056848 B (upload órfão, não referenciado)
+  ea43dad2...  c9d7717f-....jpg  1185263 B (canhoto)
+
+Tentativa de remoção via SQL direto: BLOQUEADA pelo Supabase:
+  "Direct deletion from storage tables is not allowed. Use the Storage API instead."
+
+Motivo do BLOCKED: a remoção via Storage API exige SERVICE_ROLE_KEY do projeto
+de PRODUÇÃO (uwrvzsjtpgaifkktpepn). O ambiente NÃO possui essa chave
+(.env e .env.production: SUPABASE_SERVICE_ROLE_KEY vazia; .env.qa aponta para
+outro projeto). Sem a chave, NÃO é possível apagar via API sem bypass inseguro.
+
+Decisão (conforme missão "NÃO forçar"): NÃO removidos. Registro preservado.
+  - Nenhum objeto real/externo foi afetado (total do auth user HML = 30
+    objetos; 26 de missões anteriores PRESERVADOS; 4 da fixture permanecem).
+
+AÇÃO PENDENTE (micro-passo): apagar os 4 objetos via Storage API
+  (supabase.storage.from('driver-evidence').remove([...])) com SERVICE_ROLE_KEY
+  de produção. Enquanto isso, os 4 blobs são órfãos inacessíveis (bucket privado).
+
+========================================================================
+10. PROVA PÓS-ROLLBACK
+========================================================================
+Todas as contagens da fixture = 0:
+  alocacoes_escala=0 | ordens_servico=0 | delivery_proofs=0 |
+  entregas_protocolo=0 | historico_alocacoes_escala=0 |
+  operation_timeline_events=0 | portal_tracking_realtime=0 |
+  operacao_localizacao=0 | financeiro_pagar=0 | pagamentos_prestadores=0 |
+  composicao_financeira_os=0 | portal_notificacoes=0 | prestador=0
+
+Auth user HML PRESERVADO:
+  a5e51631-5ed8-430d-9041-4b185c03d821 | teste@conexao.com | last_sign_in=2026-09-27T11:03:31Z
+
+Storage da fixture: 4 objetos PERMANECEM (BLOCKED). Total do auth user = 30
+(26 anteriores intactos) => nenhuma exclusão fora da fixture.
+
+Totais globais saudáveis (sem exclusão em massa):
+  alocacoes_escala=202 | ordens_servico=165 | prestadores=40 |
+  pagamentos_prestadores=98 | financeiro_pagar=115 | delivery_proofs=10 |
+  entregas_protocolo=49 | portal_tracking_realtime=525
+
+Órfãos da fixture: NENHUM no banco. Exclusões fora da fixture: NENHUMA.
+Exceção rastreada: Storage (seção 9) = BLOCKED e preservado.
+
+Evidência: scripts/_app_e2e_11c_post.mjs
+
+========================================================================
+11. REGRESSÃO
+========================================================================
+NENHUM código de produção foi alterado nesta missão (apenas scripts de
+auditoria/rollback com prefixo "_" em scripts/, padrão do repositório).
+  - Teste diretamente relacionado executado:
+      npx vitest run src/test/app_e2e07_pod_media_parser.test.ts  -> 7/7 PASS
+  - Suíte inteira NÃO executada (sem alteração de código; conforme diretriz).
+Sem impacto funcional.
+
+========================================================================
+12. RESULTADO DO NÍVEL 8
+========================================================================
+APP físico ................. PASS  (jornada 11A/11B.1-3 concluída no Redmi)
+Supabase persistência ...... PASS  (estado final íntegro, sem duplicidade)
+Tracking ................... PASS  (3 pontos reais; nenhum após conclusão)
+POD ......................... PASS  (delivery_proofs + espelho; 3 evidências)
+Finalização ................ PASS  (concluida/finalizada/etapa servico_finalizado)
+TMS Programação ............ PASS  (dataset + status finalizado; ressalva de filtro de data)
+TMS comprovantes ........... PASS  (Baixas/Evidências + Dossiê resolvem signed URL)
+Rollback ................... PASS  (banco 100% limpo) / Storage = BLOCKED
+
+GAPS rastreados (não escondidos):
+  - GAP-POD-PRIVATE-URL ....... funcional (Torre de Controle + Portal Cliente exibem
+                                publicUrl que retorna HTTP 400). Telas administrativas
+                                de POD do TMS estão OK.
+  - GAP-APP-STATUS-LABEL-01 ... cosmético de APP (cabeçalho não atualiza label).
+  - Storage purge ............. BLOCKED (needs SERVICE_ROLE_KEY de produção).
+
+RECOMENDAÇÃO: 8 -> 7 SIM, COM RESSALVAS.
+  Os componentes CRÍTICOS da integração (APP, Supabase, Tracking, POD,
+  Finalização, TMS Programação, TMS comprovantes) estão COMPROVADOS.
+  Condições para o 7:
+    1) Micro-missão GAP-POD-PRIVATE-URL (aplicar resolver nas telas B).
+    2) Micro-missão GAP-APP-STATUS-LABEL-01.
+    3) Purgar os 4 objetos de Storage da fixture (SERVICE_ROLE_KEY).
+  Nenhum desses esconde falha de evidência: o caminho oficial de POD do TMS
+  já funciona.
+
+========================================================================
+13. BACKLOG CUMULATIVO (preservado integralmente)
+========================================================================
+GAP-F2-01 .. GAP-F2-06
+GAP-F3-04 / GAP-F3-05
+GAP-F4-01 .. GAP-F4-05
+GAP-F5-03 / GAP-F5-04
+APP-DATA-01 — 141 alocações
+APP-SCHEMA-01
+tools/query_operation.dart / dotenv
+GAP-APP-STATUS-LABEL-01 (NOVO — APP, seção 5)
+GAP-POD-PRIVATE-URL (revalidado — TMS/Portal, seção 4)
+Programação Operacional
+OS esporádicos / motoboys
+romaneio
+KM / pedágio / adicionais / reembolsos
+financeiro do prestador
+Rede de Oportunidades
+proximidade / raio progressivo / distância
+Radar Operacional
+Admin APP
+Cadastro Prestador
+Recrutamento REC-06.2D.2F
+CAD-PERSIST
+indicadores reais do prestador
+[NOVO] Storage fixture E2E-11 pendente de purge (SERVICE_ROLE_KEY)
+[OBS]  Fixture gerou financeiro/pagamento com is_teste=false (ver seção 7)
+
+========================================================================
+14. PRÓXIMA MICRO-MISSÃO RECOMENDADA
+========================================================================
+APP-E2E-11D — GAP-POD-PRIVATE-URL (correção dirigida)
+  Objetivo: aplicar resolverMidiasPod() nas telas que ainda usam publicUrl cru:
+    - src/components/torre-controle/DetalhesOperacaoSheet.tsx
+    - portalClienteService.buscarComprovantesPortal / buscarDetalhesEntregaCompleto
+      (ou aplicar resolver nos componentes PortalComprovantesPremium,
+       PortalDrawerPOD, PortalEscalaOperacional, PortalComparacaoEntregas)
+  Entrega: evidência quebrada -> signed URL em Torre e Portal Cliente.
+  Escopo pequeno, isolado, sem schema. Testável com o parser existente
+  (src/test/app_e2e07_pod_media_parser.test.ts — 7/7 já passa).
+
+  Em paralelo (operação): purgar os 4 objetos Storage da fixture via API
+  (SERVICE_ROLE_KEY de produção).
+
+  Registrar também GAP-APP-STATUS-LABEL-01 para micro-missão do APP.
+
+========================================================================
+FIM — APP-E2E-11C
+========================================================================

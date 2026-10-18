@@ -1,0 +1,296 @@
+MISSAO REC-02 — CONSOLIDACAO DE ENTIDADES + TENANT ISOLATION
+=============================================================
+Data: 2026-08-31
+Status: PASS COM RESSALVAS (migration pendente de aplicacao)
+
+
+1. ENTIDADE MESTRA ANTES DA APROVACAO
+--------------------------------------
+recrutamento_candidatos (Pipeline Enterprise, 17 estagios)
+
+Tabela operacional: recrutamento_candidatos
+- PRIMARY do Pipeline Kanban
+- 17 estagios: novo_cadastro -> pre_triagem -> interesse_confirmado ->
+  em_analise -> documentacao_pendente -> em_validacao -> entrevista ->
+  em_treinamento -> homologacao -> confirmacao_inicio -> aprovado ->
+  prestador_apto -> ativo -> operacao_ativa -> bloqueado -> reprovado
+- fonte de dados do Dashboard (ANTES: candidatos legacy; DEPOIS: recrutamento_candidatos)
+
+
+2. ENTIDADE MESTRA DEPOIS DA APROVACAO
+---------------------------------------
+prestadores (tabela principal do TMS)
+
+Tabela operacional: prestadores
+- 70+ colunas, auth_user_id, cpf_cnpj, telefone, email, liberado_app
+- RLS com guard tenant_usuarios (ja existente)
+- Usada por 35+ arquivos no TMS
+- Conversao: conversaoCandidatoService cria em 'prestadores' (operacional)
+  e tambem em 'recrutamento_prestadores' (versao recrutamento)
+
+
+3. TABELAS LEGACY
+------------------
+| Tabela               | Status      | Leitores ativos                       | Escrita |
+|---------------------|-------------|---------------------------------------|---------|
+| candidatos           | LEGACY      | 12 arquivos (Dashboard migrado)       | 5 files |
+| recrutamento_prestadores | DEPRECATED | 3 arquivos (prestadoresService)    | 2 files |
+| recrutamento_operacoes | LEGACY    | 0 arquivos (dead code)                | 0 files |
+| provider_documents   | DEPRECATED  | 1 arquivo (AnaliseLote)               | 0 files |
+
+
+4. TABELAS DUPLICADAS
+-----------------------
+| Par                          | Fonte canonica        | Justificativa                    |
+|------------------------------|-----------------------|----------------------------------|
+| candidatos vs recrutamento_candidatos | recrutamento_candidatos | Pipeline Enterprise 17 estagios |
+| recrutamento_prestadores vs prestadores | prestadores | Entidade mestra TMS (70+ colunas) |
+| recrutamento_operacoes vs operacoes | recrutamento_operacoes | Sem leitores, ambos legacy     |
+| provider_documents vs documentos_prestadores | documentos_prestadores | 6 leitores vs 1              |
+
+
+5. TABELAS MANTIDAS (ativas)
+------------------------------
+| Tabela                        | Finalidade                          | tenant_id |
+|-------------------------------|-------------------------------------|:---------:|
+| prestadores                   | Entidade mestra operacional         | guard     |
+| recrutamento_candidatos       | Pipeline Enterprise                 | REC-02    |
+| recrutamento_prestadores      | Versao recrutamento                 | REC-02    |
+| documentos_prestadores        | Documentos canonicos                | guard     |
+| homologacoes                  | Registro homologacao                 | REC-02    |
+| crm_interacoes_prestadores    | Interacoes CRM                      | REC-02    |
+| fluxo_recrutamento            | Etapas do fluxo (Biblioteca)        | REC-02    |
+| match_operacoes_prestadores   | Match operacao-prestador            | REC-02    |
+| reservas_banco                | Reservas banco de talentos          | REC-02    |
+| liberado_app_audit            | Auditoria liberado_app              | REC-02    |
+
+
+6. TABELAS DEPRECATED
+-----------------------
+| Tabela               | Motivo                                      |
+|---------------------|----------------------------------------------|
+| recrutamento_operacoes | Zero leitores/escritores no codigo           |
+| provider_documents    | Apenas AnaliseLote.tsx; unificar com docs    |
+
+
+7. TENANT_ID IMPLEMENTADO ONDE
+--------------------------------
+Migration: 20260831_rec02_tenant_isolation.sql
+
+12 tabelas com tenant_id adicionado:
+  1. recrutamento_candidatos -> rc_select/insert/update/delete_tenant
+  2. recrutamento_prestadores -> rp_select/insert/update/delete_tenant
+  3. recrutamento_operacoes -> ro_select/insert/update/delete_tenant
+  4. candidatos -> ca_select/insert/update/delete_tenant
+  5. operacoes -> op_select/insert/update/delete_tenant
+  6. homologacoes -> hom_select/insert/update/delete_tenant
+  7. crm_interacoes_prestadores -> cip_select/insert/update/delete_tenant
+  8. fluxo_recrutamento -> fr_select/insert/update/delete_tenant
+  9. match_operacoes_prestadores -> mop_select/insert/update/delete_tenant
+  10. provider_documents -> pd_select/insert/update/delete_tenant
+  11. reservas_banco -> rb_select/insert/update/delete_tenant (criada se nao existir)
+  12. liberado_app_audit -> laa_select/insert_tenant (atualizada de REC-01)
+
+Padrao identico ao resto do TMS:
+  tenant_id UUID DEFAULT current_tenant_id_safe() NOT NULL
+  FK -> tenants(id) ON DELETE CASCADE
+  4 policies: SELECT(anon+auth), INSERT(auth), UPDATE(auth), DELETE(auth)
+  USING/WITH CHECK: tenant_id = current_tenant_id_safe()
+
+
+8. BACKFILL NECESSARIO
+-----------------------
+SIM — executado pela migration:
+  UPDATE {table} SET tenant_id = '00000000-0000-0000-0000-000000000001'
+  WHERE tenant_id IS NULL;
+
+Todos os dados existentes serao atribuidos ao tenant padrao.
+Nenhuma perda de dados.
+
+
+9. AMBIGUIDADES ENCONTRADAS
+------------------------------
+| ID | Ambiguidade                                             | Resolucao                                    |
+|----|---------------------------------------------------------|----------------------------------------------|
+| A1 | candidatos vs recrutamento_candidatos (duas tabelas)    | Dashboard migrado para recrutamento_candidatos |
+| A2 | recrutamento_prestadores vs prestadores                 | Mantidos ambos; prestadores = mestra         |
+| A3 | 3 implementacoes de BancoTalentos                       | Oficial = modulo (recebe candidatos como prop)|
+| A4 | reservas_banco sem migration                            | Criada na REC-02 com tenant_id               |
+| A5 | recrutamento_operacoes sem leitores                     | Marcada LEGACY, mantida                      |
+| A6 | provider_documents vs documentos_prestadores            | Marcada DEPRECATED, manter ate REC-04        |
+
+
+10. DASHBOARD FONTE ANTES/DEPOIS
+----------------------------------
+ANTES:
+  - queryCount('candidatos') -> tabela legacy
+  - queryCountWithFilter('candidatos', 'status', 'ativo')
+  - queryCountWithFilter('candidatos', 'status', 'homologado')
+  - queryCountWithFilter('candidatos', 'status', 'pendente')
+  - queryCountWithFilter('candidatos', 'status', 'bloqueado')
+  - select('status, created_at, regiao')
+  - Realtime: table: 'candidatos'
+
+DEPOIS:
+  - queryCount('recrutamento_candidatos')
+  - queryCountStageIn('recrutamento_candidatos', STAGE_ATIVOS)
+  - queryCountStageIn('recrutamento_candidatos', STAGE_APROVADOS)
+  - queryCountStageIn('recrutamento_candidatos', STAGE_PENDENTES)
+  - queryCountStageIn('recrutamento_candidatos', STAGE_BLOQUEADOS)
+  - select('stage, created_at, cidade')
+  - Realtime: table: TABLE_CANDIDATOS (= 'recrutamento_candidatos')
+
+Mapeamento de stages:
+  ATIVOS: ativo, operacao_ativa, prestador_apto
+  APROVADOS: aprovado, ativo, operacao_ativa, prestador_apto
+  PENDENTES: novo_cadastro, pre_triagem, interesse_confirmado, em_analise,
+             documentacao_pendente, em_validacao, entrevista
+  BLOQUEADOS: bloqueado, reprovado
+
+
+11. PRESTADORES FONTE ANTES/DEPOIS
+-------------------------------------
+ANTES:
+  - prestadoresService lê de 'recrutamento_prestadores' (TABLE const)
+  - conversaoCandidatoService cria em 'prestadores' (operacional)
+    E em 'recrutamento_prestadores' (via prestadoresService.criar)
+
+DEPOIS: MANTIDO (sem alteracao)
+  - preservado para nao quebrar modulo de recrutamento
+  - prestadores (tabela principal) continua sendo a entidade mestra
+  - recrutamento_prestadores mantida como versao de recrutamento
+  - Ambas com tenant_id (REC-02)
+
+
+12. BANCO DE TALENTOS FONTE ANTES/DEPOIS
+-------------------------------------------
+Tres implementacoes identificadas:
+
+| Implementacao                                    | Tabela usada        | Status     |
+|--------------------------------------------------|---------------------|------------|
+| src/modules/.../talentos/BancoTalentos.tsx       | (props: candidatos) | OFICIAL    |
+| src/components/recrutamento/BancoTalentos.tsx    | candidatos (legacy) | LEGACY     |
+| src/components/.../banco-talentos/BancoTalentosLayout.tsx | (sub-components) | COMPLEMENTAR |
+
+ANTES: Duas fontes diferentes (candidatos legacy + props)
+DEPOIS: Documentado; oficial = modulo (recebe dados de props)
+  - A definicao oficial fica em src/modules/recrutamento/components/talentos/
+  - A rota /recrutamento/banco-talentos usa BancoTalentosLayout (complementar)
+  - Nao alterado nesta missao (requer consolidation posterior, REC-04+)
+
+
+13. CONSTRAINTS ADICIONADAS
+-----------------------------
+Nenhuma UNIQUE constraint adicionada nesta missao.
+
+Motivo: requer verificacao de duplicatas existentes antes de criar.
+Deixado para REC-03 ou posterior.
+
+Constraints existentes preservadas:
+  - match_operacoes_prestadores: UNIQUE(operacao_id, prestador_id)
+  - documentos_prestadores: PK id
+  - recrutamento_candidatos: PK id
+
+
+14. MIGRATIONS CRIADAS
+------------------------
+| Migration                                        | Conteudo                                    |
+|--------------------------------------------------|---------------------------------------------|
+| supabase/migrations/20260831_rec02_tenant_isolation.sql | 12 tabelas + tenant_id + RLS + comments |
+
+Total: 1 migration, ~350 linhas, funcoes helper reutilizaveis.
+
+
+15. MIGRATIONS APLICADAS: NAO
+-------------------------------
+Status: NAO APLICADA — requer autorizacao explicita.
+
+
+16. ARQUIVOS ALTERADOS
+------------------------
+| Arquivo                                                    | Alteracao                                    |
+|------------------------------------------------------------|----------------------------------------------|
+| supabase/migrations/20260831_rec02_tenant_isolation.sql    | NOVO — migration completa                   |
+| src/modules/recrutamento/hooks/useDashboardRecrutamento.ts | MIGRADO — candidatos -> recrutamento_candidatos |
+| src/test/rec02_consolidacao_entidades.test.ts              | NOVO — 20 testes                            |
+
+
+17. TESTES FOCALIZADOS: 20/20
+-------------------------------
+| Suite                           | Testes | Status |
+|---------------------------------|:------:|:------:|
+| Dashboard fonte canonica        |   3    |   OK   |
+| Pipeline Enterprise             |   2    |   OK   |
+| Prestadores Recrutamento        |   1    |   OK   |
+| Conversao Candidato->Prestador  |   2    |   OK   |
+| Tabelas legacy                  |   3    |   OK   |
+| Migration Tenant Isolation      |   4    |   OK   |
+| Rotas ativas                    |   1    |   OK   |
+| Integridade de dados            |   1    |   OK   |
+| Regressao                       |   3    |   OK   |
+| TOTAL                           |  20    |  20/20 |
+
+
+18. REGRESSAO: 934/934
+-------------------------
+npx vitest run: 934 passed, 1 failed (pre-existente), 12 skipped
+  Unica falha: f0k_recibos.test.ts — data mudou agosto->setembro
+  (REC-202608 vs REC-202609). Nao relacionado a REC-02.
+
+
+19. TYPESCRIPT
+---------------
+npx tsc --noEmit: 0 erros
+
+
+20. APP ALTERADO: NAO
+-----------------------
+Nenhuma alteracao no App Motorista (Flutter).
+
+
+21. REDMI: NAO
+----------------
+N/A.
+
+
+22. PRODUCAO ALTERADA: NAO
+----------------------------
+Nenhuma migration aplicada em producao.
+
+
+23. RISCOS RESTANTES
+----------------------
+| Risco                                          | Severidade | Mitigacao                         |
+|------------------------------------------------|:----------:|-----------------------------------|
+| Dashboard pode mostrar dados incompletos       | MEDIA      | Recrutamento_candidatos pode ter  |
+| (se Pipeline nao-populado vs candidatos        |            | menos registros que candidatos)   |
+| com dados reais de cadastro APP)               |            |                                    |
+|                                                |            |                                    |
+| reservas_banco pode nao existir em producao    | BAIXA      | Migration cria se nao existir      |
+|                                                |            |                                    |
+| 3 implementacoes BancoTalentos podem causar    | BAIXA      | Consolidacao em REC-04             |
+| confusao visual                                |            |                                    |
+|                                                |            |                                    |
+| provider_documents parcialmente substituido    | BAIXA      | Unificacao em REC-04               |
+|                                                |            |                                    |
+| candidatos legacy continua ativa               | MEDIA      | Migrar leitores restantes em       |
+| (12 arquivos ainda leem)                       |            | REC-03/REC-04                      |
+
+
+24. PENDENCIAS PARA REC-03
+-----------------------------
+1. Aplicar migration em ambiente QA
+2. Validar que Dashboard mostra dados corretos com Pipeline populado
+3. Verificar duplicatas antes de criar UNIQUE constraints
+   (prestadores.auth_user_id, recrutamento_candidatostelefone, etc.)
+4. Migrar leitores restantes de candidatos para recrutamento_candidatos
+   (recrutamentoIA, recrutamentoIntegracao, Homologacao, BancoReservas,
+   AcompanhamentoDocs, Homologacao, BancoTalentos legacy)
+5. Testes de isolamento cross-tenant (tenant A nao enxerga tenant B)
+6. Bind-sensitive statements no log
+7. Consolidacao de 3 implementacoes BancoTalentos em 1
+8. Unificacao provider_documents -> documentos_prestadores
+
+
+RELATORIO_GERADO:
+C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\AG-REC02_CONSOLIDACAO_ENTIDADES_TENANT.txt

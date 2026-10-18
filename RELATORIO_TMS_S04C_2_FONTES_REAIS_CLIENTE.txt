@@ -1,0 +1,213 @@
+RELATÓRIO TMS-S04C.2 — RELATÓRIO DO CLIENTE: AJUSTE VISUAL FINAL + FONTES REAIS
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build + PDF de prova)
+
+====================================================================
+1. ARQUIVO DO PDF ALTERADO
+====================================================================
+
+src/utils/pdfFatura.ts
+  → gerarPDFRelatorioFaturamentoIndividual (logo maior)
+
+====================================================================
+2. TAMANHO ANTERIOR / FINAL DO LOGO
+====================================================================
+
+Asset: /logos/logo-conexao-oficial.png (letras brancas + X colorido,
+proporção oficial 1024×682).
+
+  Antes: maxWidth 62pt · maxHeight 40pt  → render ≈ 60 × 40 pt
+  Agora: maxWidth 84pt · maxHeight 54pt  → render ≈ 81 × 54 pt  (+35%)
+
+Faixa navy MANTIDA em 88pt (não aumentada). Logo centralizado
+verticalmente (17pt acima/abaixo), sem deformação/corte. Presença agora
+equivalente ao bloco de dados da empresa à direita (verificado no PDF:
+matriz "81.08 0 0 54 ... cm /I0 Do").
+
+====================================================================
+3. FONTES FINANCEIRAS ENCONTRADAS
+====================================================================
+
+- Ordens de Serviço:  ordens_servico (cliente = UUID oficial) — fonte primária.
+- Escala Operacional: alocacoes_escala — representada PELA OS quando a OS
+  foi originada pela escala (mesmo serviço = UMA linha).
+- Lançamentos manuais: faturas (metadata.origem='manual') + fatura_itens
+  do cliente — cobrança oficial manual que compõe o faturamento.
+
+====================================================================
+4. PAPEL DA ESCALA
+====================================================================
+
+⚪ JÁ É REPRESENTADA POR OUTRA FONTE — NÃO SOMAR NOVAMENTE.
+A operação da Escala que gera cobrança ao cliente alimenta/vira a OS, e a
+OS é a linha do faturamento. O relatório NÃO consulta alocacoes_escala à
+parte — evita duplicar Escala + OS do mesmo serviço.
+
+====================================================================
+5. PAPEL DA ORDEM DE SERVIÇO
+====================================================================
+
+✅ ENTRA NO RELATÓRIO (origem = "os").
+Cada OS não cancelada do cliente no período vira uma linha, com veículo,
+placa, romaneio/OC e valores reais.
+
+====================================================================
+6. PAPEL DOS LANÇAMENTOS MANUAIS
+====================================================================
+
+✅ ENTRA NO RELATÓRIO (origem = "manual") — NOVO nesta missão.
+Fonte oficial: faturas com metadata.origem='manual' + fatura_itens do
+cliente (excluindo canceladas). Sem veículo/placa/romaneio → "—"
+(nada inventado). Valor usa os campos oficiais da fatura_itens.
+
+====================================================================
+7. REGRA DE DEDUPLICAÇÃO
+====================================================================
+
+Item de lançamento manual com os_id que JÁ está nas OS do período → NÃO é
+adicionado (já representado pela OS). Item sem os_id (manual puro) → entra.
+Cenário 2 (escala → OS) validado: 1 OS + manual referenciando a mesma OS
+→ apenas 1 linha no relatório.
+
+====================================================================
+8. FONTE DA DATA
+====================================================================
+
+OS: data_servico || data || created_at (ordens_servico).
+Manual: fatura_itens.data_servico || faturas.data_emissao.
+
+====================================================================
+9. FONTE DO ROMANEIRO / OC
+====================================================================
+
+OS: ordens_servico.romaneio. Manual: fatura_itens.romaneio (usualmente —).
+Nunca UUID/OS interna nesta coluna.
+
+====================================================================
+10. FONTE VEÍCULO / PLACA
+====================================================================
+
+OS: ordens_servico.veiculo_tipo/tipo_veiculo + placa_alocada
+("Iveco Daily · FSP0I96"). Manual: "—" (não há veículo).
+
+====================================================================
+11. FONTE DO VALOR BASE
+====================================================================
+
+OS: derivado para exibição (total − adicionais − pedágio + descontos) —
+a OS não possui coluna de base separada (documentado).
+Manual: fatura_itens.valor_base (campo OFICIAL direto).
+NÃO criada coluna nova.
+
+====================================================================
+12. FONTE DO KM ADICIONAL
+====================================================================
+
+OS: adicionais.jsonb → km_excedente (quando o objeto do pricing está
+presente; senão 0/"—"). Manual: fatura_itens.km_excedente (campo oficial).
+Sem schema novo.
+
+====================================================================
+13. FONTE DO PEDÁGIO CLIENTE
+====================================================================
+
+OS: ordens_servico.pedagio — confirmado como o pedágio cobrado do CLIENTE
+(alimenta financeiro_receber do cliente via trigger M66/M80; não é o custo
+do prestador). Manual: fatura_itens.pedagio_cliente.
+
+====================================================================
+14. FONTE DO REEMBOLSO CLIENTE
+====================================================================
+
+Nenhuma estrutura oficial vinculada ao faturamento possui campo direto de
+reembolso do cliente (nem OS, nem fatura_itens, nem lançamento financeiro
+identificado). Mantido "—" (0) e registrado:
+REEMBOLSO CLIENTE — FONTE ESTRUTURAL PENDENTE.
+Nada inventado.
+
+====================================================================
+15. FONTE DOS DESCONTOS
+====================================================================
+
+OS: ordens_servico.descontos (fallback desconto).
+Manual: fatura_itens.valor_descontos (oficial).
+
+====================================================================
+16. FONTE DO VALOR TOTAL
+====================================================================
+
+OS: ordens_servico.valor_cliente (total oficial cobrado do cliente).
+Manual: fatura_itens.valor_total (oficial).
+NUNCA recalculado — sempre valor consolidado oficial.
+
+====================================================================
+17. PREVIEW E PDF COMPARTILHAM A MESMA FONTE
+====================================================================
+
+SIM. Tanto a pré-visualização da subtela quanto o PDF consomem
+dadosIndividual.operacoes (resultado ÚNICO de
+buscarDadosFaturamentoIndividual). Cenário 7 validado: PDF gerado a partir
+do mesmo array da prévia → totais idênticos (R$ 886,43 = OS 586,43 +
+manual 300,00).
+
+====================================================================
+18. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/utils/pdfFatura.ts — logo maior no PDF individual (Parte A).
+- src/services/relatorios/relatorioService.ts — lançamentos manuais
+  (faturas+fatura_itens) com dedup; campo interno origem; ordenação
+  cronológica.
+- src/test/tms_s04c2_fontes_reais.test.ts — NOVO (10 testes, cenários 1–8).
+
+Visão Consolidada: apenas compartilha o resolver de clientes (não
+modificada na lógica do relatório).
+
+====================================================================
+19. TESTES EXECUTADOS
+====================================================================
+
+- npx vitest run src/test/tms_s04c2_fontes_reais.test.ts → ✅ 10/10
+    C1 OS real aparece 1x · C2 escala/OS não duplica (dedup manual com os_id)
+    C3 lançamento manual aparece (veículo "—") · C4 pedágio cliente
+    C5 KM adicional (jsonb e fatura_itens) · C6 reembolso 0 (PDF "—")
+    C7 preview = PDF (totais idênticos) · C8 sem UUID (dados + PDF)
+- npx vitest run (geral)                         → ✅ 522/522 (55 arquivos)
+- npx tsc --noEmit                               → ✅ 0 erros
+- npm run build                                  → ✅ 43,94s
+- npx eslint (relatorioService, pdfFatura, teste) → apenas baseline pré-existente
+
+====================================================================
+20. PENDÊNCIAS ESTRUTURAIS REAIS
+====================================================================
+
+1. Reembolso cliente — nenhuma coluna/fonte oficial vinculada ao
+   faturamento; mantido "—". REEMBOLSO CLIENTE — FONTE ESTRUTURAL PENDENTE.
+2. KM adicional da OS depende do objeto do pricing em adicionais.jsonb;
+   para OS salvas como número simples, fica "—".
+3. Valor base da OS é derivado (a OS não guarda a base separada); faturas
+   manuais usam valor_base oficial.
+4. Aprovação visual final do usuário pendente.
+
+====================================================================
+RESULTADO
+====================================================================
+
+Logo maior e proporcional no PDF individual; fontes reais mapeadas e
+lançamentos manuais integrados com deduplicação; preview e PDF na mesma
+fonte; sem UUID; nenhuma regra financeira alterada.
+
+LOGO MAIOR: SIM
+DADOS DE OS REAIS: OK
+DADOS DE ESCALA: REPRESENTADOS PELA OS
+LANÇAMENTOS MANUAIS: OK
+DUPLICIDADE ESCALA/OS: PROTEGIDA
+KM ADICIONAL: PARCIAL
+PEDÁGIO CLIENTE: OK
+REEMBOLSO CLIENTE: PENDENTE ESTRUTURAL
+PREVIEW = PDF: SIM
+UUID VISÍVEL: NÃO
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+PRODUÇÃO ALTERADA: NÃO
+TMS-S04C.2: HOMOLOGAÇÃO TÉCNICA SIM
+HOMOLOGAÇÃO VISUAL: AGUARDA USUÁRIO

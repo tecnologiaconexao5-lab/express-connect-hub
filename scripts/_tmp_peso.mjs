@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const { rows } = await c.query(`SELECT numero, peso, veiculo_tipo, tipo_veiculo, veiculo, carga_descricao, distancia_km FROM ordens_servico WHERE numero IN ('OS-202610-634957','OS-202610-756051','OS-202610-112694') ORDER BY numero`);
+console.log(JSON.stringify(rows, null, 2));
+await c.end();

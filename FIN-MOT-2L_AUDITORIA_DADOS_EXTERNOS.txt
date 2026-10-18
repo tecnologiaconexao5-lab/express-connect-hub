@@ -1,0 +1,201 @@
+FIN-MOT-2L — AUDITORIA DOS DADOS EXTERNOS E NUMERAÇÃO DO EXTRATO
+Data: 21/08/2026
+Modo: READ-ONLY (nenhum código/banco alterado)
+Status: RELATÓRIO DE AUDITORIA — aguarda decisão
+
+============================================================
+1. DADOS EMPRESARIAIS
+============================================================
+
+Fonte auditada: src/utils/empresaConfig.ts
+(usada por foundation.ts, pdfFatura/faturaService, OSPDF e
+extratoPrestadorReport — este PDF herda dela via DEFAULT_OPTIONS)
+
+| Campo             | Valor                              | Classificação        |
+|-------------------|------------------------------------|----------------------|
+| Razão social      | Conexão Express Transportes LTDA   | B — hardcoded        |
+| Nome fantasia     | Conexão Express                    | B — hardcoded        |
+| CNPJ              | 31.227.975/0001-80                 | B — hardcoded        |
+| Inscrição estadual| 123.456.789.000                    | B — hardcoded (suspeito de placeholder) |
+| Endereço          | Av. Paulista, 1000 - Bela Vista    | B — hardcoded        |
+| Cidade            | São Paulo                          | B — hardcoded        |
+| UF                | SP                                 | B — hardcoded        |
+| CEP               | 01310-100                          | B — hardcoded        |
+| Telefone          | (11) 4225-1600                     | B — hardcoded        |
+| E-mail            | financeiro@conexaoexpress.com.br   | B — hardcoded        |
+| Site              | www.conexaoexpress.com.br          | B — hardcoded        |
+| PIX/dados fin.    | AUSENTE                            | D — ausente          |
+
+CONCLUSÃO: nenhum valor vem de cadastro/configuração persistida.
+TODO o bloco é hardcoded em empresaConfig.ts. Os valores parecem reais
+(CNPJ 31.227.975/0001-80 é diferente do placeholder 12.345.678/0001-90 de
+Configuracoes.tsx e do 11.222.333/0001-81 antigo do PDF), mas NÃO há
+comprovação de origem persistida. Não chamar de "real" — classificar como
+B (hardcoded).
+
+Existe a tabela configuracoes_sistema (configuracoesService.ts) com
+carregamento Supabase + localStorage, mas NENHUM arquivo que alimenta o
+PDF de extrato a consulta.
+
+============================================================
+2. CONFIRMAÇÃO DO ENDEREÇO
+============================================================
+
+"Av. Paulista, 1000 - Bela Vista"
+
+ORIGEM: valor literal embutido em src/utils/empresaConfig.ts linha 7
+(endereco) + linha 8 (cidade) + linha 9 (uf).
+
+NÃO há origem em banco, cadastro ou configuração. É hardcoded/placeholder
+de endereço. NÃO corrigido (missão read-only).
+
+Observação: "Av. Paulista, 1000" também aparece como default de endereço
+de coleta/orçamento (OrcamentoForm/mockOrcamentos) e no old DEFAULT_OPTIONS
+do PDF (São Paulo/SP), reforçando tratar como valor padrão de exemplo, não
+como endereço real comprovado.
+
+============================================================
+3. NUMERAÇÃO DO EXTRATO
+============================================================
+
+Identificador atual: EP-20260801-C0CA4D0E
+LOCAL: src/services/financeiro/extratoPrestadorService.ts:511
+(na função construirExtratoPorPeriodo)
+
+Decodificação:
+- "EP"          -> prefixo fixo de "Extrato Prestador" (hardcoded)
+- "20260801"    -> dataInicio sem separadores (AAAAMMDD), do filtro do usuário
+- "C0CA4D0E"    -> primeiros 8 caracteres (em maiúsculas) do prestadorId
+                   (UUID do prestador) — NÃO é uma sequência
+
+Este número NÃO é humano nem sequencial: muda com o prestador e com a data,
+é imprevisível para o motorista e repete o hash do prestador.
+
+Sequências HUMANAS existentes no sistema (auditadas):
+
+| Estrutura      | Formato                     | Onde                    |
+|----------------|-----------------------------|-------------------------|
+| Fatura         | FAT-AAAA-000001             | f_gerar_numero_fatura + seq_fatura_AAAA (migration 20260816_fase2a) |
+| Recibo         | REC-AAAAMM-SSSSS            | reciboService (count + unique uq_recibos_numero) |
+| Fechamento FP  | FP-AAAA-000001              | RPC gerar_numero_fechamento_prestador (migration 20260821_fin_mot_1) |
+
+EXISTE HOJE ALGUMA SEQUÊNCIA HUMANA REUTILIZÁVEL PARA O EXTRATO?
+→ SIM (com ressalva).
+
+A RPC `gerar_numero_fechamento_prestador()` (migration 20260821_fin_mot_1)
+gera FP-AAAA-000001 com MAX+1 sobre a tabela `fechamentos_prestador`.
+PORÉM:
+- Essa migration é da missão paralela/legada FIN-MOT-1 (estrutura paralela
+  `fechamentos_prestador` — NÃO é a fonte usada pelo extrato por período);
+- O `construirExtratoPorPeriodo` NÃO chama essa RPC (gerarNumeroExtrato
+  existe no service mas não é usado no fluxo consultivo);
+- Não há confirmação de que essa migration foi aplicada em produção.
+
+Portanto: existe padrão/sequência de referência (FP-/FAT-/REC-) e uma RPC
+pronta, mas o extrato atual não consome nenhuma delas. A decisão de
+reutilizar (ex.: EP-AAAA-000001 ou FP-...) exige confirmação de que a
+migration/estrutura está aplicada — NÃO criar nova sequência nesta missão.
+
+============================================================
+4. CLIENTE — FLUXO REAL
+============================================================
+
+Fluxo verificado (código):
+1. Filtro Cliente na barra (PagamentoPrestadores.tsx) guarda
+   `filtroClienteId` (UUID real do cadastro `clientes`, via SelectItem
+   `value={c.id}`).
+2. handleGerarExtratoPeriodo envia `clienteId` ao
+   `construirExtratoPorPeriodo` (UUID real; sentinel __todos_clientes__ -> undefined).
+3. Service: usa `clienteId` no `.eq('cliente', clienteId)` das OS (relação
+   UUID oficial `ordens_servico.cliente`) e `.eq('cliente_id', clienteId)`
+   das Escalas; define `clienteLabel: clienteId` (O UUID vai como label!).
+4. Caller `enriquecerExtratoComClientes()` resolve UUID -> NOME REAL
+   (nome_fantasia || razao_social) usando a lista `clientes` já carregada,
+   aplicado em handleGerarExtratoPeriodo e handleGerarPDFExtrato.
+5. PDF: formatarClienteLabel mostra o nome; UUID não resolvido -> "—".
+
+Caminhos onde o PDF AINDA pode mostrar "—"/UUID/placeholder mesmo com
+cliente cadastrado:
+- (a) clienteLabel das LINHAS: nas operações de OS, `cliente_nome` vem de
+  `os.cliente || os.cliente_id`. Se a OS tiver apenas `cliente_id` TEXT
+  legado com valor diferente do UUID de `clientes.id` (formato uuid no
+  clientes), o `nomePorId.get(t)` NÃO acha e o PDF mostra "—".
+- (b) Se a lista `clientes` da tela estiver vazia/incompleta no momento do
+  clique (fallback de fetchClientes em erro), o enriquecimento não resolve
+  e o PDF mostra UUID->"—".
+- (c) `construirExtratoDeFechamento` (extrato de fechamento existente):
+  cliente_nome vem do enriquecimento via OS; se não houver OS/par de nome,
+  idem "—".
+- (d) A observação do extrato usa "Cliente: específico/Todos" (sem UUID) —
+  ok.
+
+Resumo: no fluxo principal (cliente real selecionado + lista carregada) o
+nome REAL aparece. Os casos (a)–(c) podem degradar para "—", mas nunca para
+UUID impresso (formatarClienteLabel filtra). "Cliente selecionado" foi
+removido na FIN-MOT-2K (o helper atual retorna "—" para UUID não resolvido).
+
+============================================================
+5. TÍTULO DO DOCUMENTO — RECOMENDAÇÃO
+============================================================
+
+RECOMENDAÇÃO: A — EXTRATO DE FECHAMENTO DO PRESTADOR
+
+Justificativa (2-3 linhas):
+O documento já é apresentado no TMS como "Extrato de Fechamento do
+Prestador", com número próprio e envio ao motorista. Manter o mesmo título
+do fluxo interno evita divergência entre o que o operador vê e o que o
+motorista recebe, reforça o propósito (resumo do que o prestador tem a
+receber/pagar do período) e preserva o trabalho já validado nas
+missões 2J/2K. Alternativa "Demonstrativo de Serviços e Pagamento" é mais
+descritiva, porém divergiria da nomenclatura interna já estabelecida.
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] razão social classificada (B — hardcoded)
+[x] CNPJ classificado (B — hardcoded)
+[x] endereço classificado (B — hardcoded)
+[x] cidade/UF classificados (B — hardcoded)
+[x] telefone/e-mail classificados (B — hardcoded)
+[x] origem de Av. Paulista 1000 comprovada (empresaConfig.ts linha 7-9, hardcoded)
+[x] geração do EP-... localizada (extratoPrestadorService.ts:511)
+[x] sequência humana existente verificada (SIM, com ressalva: FP-/FAT-/REC-)
+[x] fluxo do nome do cliente comprovado (nome real no fluxo principal; riscos a-c)
+[x] título recomendado (A — EXTRATO DE FECHAMENTO DO PRESTADOR)
+
+============================================================
+CONCLUÍDO (achados comprovados)
+============================================================
+
+- Todos os dados empresariais do PDF vêm de empresaConfig.ts (hardcoded);
+  nenhum é persistido/consultado. CNPJ 31.227.975/0001-80 não é placeholder
+  óbvio, mas não há comprovação de cadastro.
+- "Av. Paulista, 1000 - Bela Vista" é hardcoded (sem origem em banco).
+- Número EP- = prefixo + data + hash do prestador (não sequencial).
+- Existe padrão/sequência humana (FAT-/REC-/FP-) e RPC de fechamento pronta,
+  mas o extrato consultivo não as usa.
+- Cliente: nome real no fluxo principal; "—" possível em casos de
+  cliente_id legado/lista vazia; UUID nunca é impresso.
+
+============================================================
+FALTA (pendências reais)
+============================================================
+
+- Confirmar se a migration 20260821_fin_mot_1 (fechamentos_prestador + RPC
+  gerar_numero_fechamento_prestador) está aplicada em produção; se sim,
+  reutilizar a sequência para o extrato (EP-/FP-) em vez do hash.
+- Origem persistida dos dados empresariais (configuracoes_sistema ou
+  cadastro) — hoje hardcoded.
+- Tratar caso (a): normalizar cliente_id TEXT legado para UUID real do
+  cadastro no enriquecimento.
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Decisão + correção pontual recomendada: aplicar numeração humana ao extrato
+(reutilizar a RPC/sequência de fechamento existente — FP-AAAA-000001 ou criar
+EP-AAAA-000001 sobre a mesma base) e/ou apontar os dados empresariais para
+fonte persistida. Confirmar primeiro aplicação da migration FIN-MOT-1 em
+produção.

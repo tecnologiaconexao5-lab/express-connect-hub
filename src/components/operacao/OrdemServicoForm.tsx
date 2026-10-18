@@ -1,13 +1,33 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Download, Check, Route, AlertTriangle, Clock, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2, Link as LinkIcon, Building2, User, Info, AlertCircle, TrendingUp, ListChecks, BarChart3, Gauge, Hash, Sparkles } from "lucide-react";
+import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
+import {
+  Field,
+  MetaChip,
+  StatCard,
+  PanelSection,
+  PanelRow,
+  ChecklistItem,
+  FormFooterBar,
+  EnterpriseFormWorkspace,
+  EnterpriseWorkspaceHeader,
+  EnterpriseFormBody,
+  EnterpriseContextSidebar,
+  EnterpriseMainContent,
+  EnterpriseStepStrip,
+  EnterpriseWorkspaceFooter,
+  PremiumDocumentDialog,
+  PremiumDialogHeader,
+  type Tone,
+} from "@/components/ui/enterprise";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,24 +36,49 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { sincronizarComEscala, sincronizarFinanceiroOS } from "@/services/ordemServicoService";
-import { diagnosticarOS, type DiagnosticoSincronizacao, obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
+import { sincronizarComEscala } from "@/services/ordemServicoService";
+import { useTenant } from "@/contexts/TenantContext";
+import { diagnosticarOS, type DiagnosticoSincronizacao, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
-import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus, obterStatusGlobalOS } from "./osTypes";
-import { STATUS_GLOBAL_ORDER, STATUS_GLOBAL_INFO, obterClasseDotGlobal, obterClasseBadgeGlobal, type StatusGlobal } from "./statusGlobal";
+import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus, obterStatusGlobalOS, type PortadorExterno } from "./osTypes";
+import { STATUS_GLOBAL_ORDER, STATUS_GLOBAL_INFO, obterClasseDotGlobal, obterClasseBadgeGlobal, obterInfoGlobal, type StatusGlobal } from "./statusGlobal";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
 import CompartilharRastreioModal from "./CompartilharRastreioModal";
+import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
+import { verificarInadimplenciaCliente } from "@/services/financeiro/inadimplenciaService";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
 import { calcularDistancia } from "@/services/maps";
-import type { DistanceResult } from "@/services/maps/types";
-import { calcularValorPorDistancia, ResultadoCalculo } from "@/services/financeiro/calculoService";
+import { calcularRotasAlternativas } from "@/services/maps/distanceService";
+import type { DistanceResult, TipoRota, RoutesResult } from "@/services/maps/types";
+import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularCubagem, sugerirVeiculosPorCarga, verificarAlertasCubagem, type ResultadoCubagem, type SugestaoVeiculo, type AlertaCubagem } from "@/services/operacao/cargaService";
+import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
+import { buscarTabelaValoresCliente } from "@/services/precificacao/buscarTabelasService";
 import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } from "@/lib/pdfGenerator";
-import { copiarWhatsApp } from "@/lib/pdfGenerator";
+import {
+  gerarMensagemOrientacaoExecucao,
+  gerarMensagemWhatsAppClienteRastreio,
+} from "@/lib/osWhatsAppMessage";
 import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
+import { gerarLinkRastreio } from "@/services/rastreamento/trackingService";
+import {
+  publicarOportunidade,
+  buscarPrestadoresCompativeis,
+  cancelarOportunidade,
+  obterOportunidadePorOS,
+  obterStatusRedeInfo,
+  type RedeOportunidade,
+  type PrestadorCompativel,
+} from "@/services/operacao/redePrestadoresService";
+import { Users, Network } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { podeVerReceitaEMargem } from "@/lib/permissoes";
+import type { PedagioInfo } from "@/services/maps/types";
+import { ColetaReversaFields, emptyReversaFields, type ReversaFields } from "./ColetaReversaFields";
 import { disparaEventoAutomacao } from "@/services/integracoes/automacaoCentralService";
 import { registrarLog } from "@/services/integracoes/integrationLogger";
 import { enviarWebhookWhatsAppOSCriada } from "@/services/integracoes/whatsAppOSService";
@@ -89,29 +134,11 @@ interface TabelaValorRow {
   cliente_id?: string;
 }
 
-const buscarTabelaValores = async (cliente: string, tipoVeiculo: string, km: number): Promise<TabelaValorRow | null> => {
-  try {
-    const tipoVeiculoNorm = tipoVeiculo?.toLowerCase().trim() || "";
-    let { data: clienteTabela, error } = await supabase
-      .from("tabelas_valores")
-      .select("*")
-      .ilike("tipo_veiculo", tipoVeiculoNorm)
-      .lte("km_inicial", km)
-      .gte("km_final", km)
-      .eq("ativo", true);
-
-    if (error) throw error;
-    if (clienteTabela && clienteTabela.length > 0) {
-      return clienteTabela[0] as TabelaValorRow;
-    }
-    return null;
-  } catch (e) {
-    console.error("Erro busca tabela:", e);
-    return null;
-  }
-};
-
-const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: number) => {
+/**
+ * @deprecated Missão 78 — substituído por buscarTabelaValoresCliente() + calcularPrecoRapido().
+ * Mantido apenas como referência.
+ */
+const _calcularValorAutomaticoLegado = (tabela: TabelaValorRow | null, distanciaKm: number) => {
   if (!tabela) return { valor: 0, valorPrestador: 0, tabelaNome: "", pendente: true, descricao: "" };
   const valorBase = Number(tabela.valor_base) || 0;
   const franquiaKm = Number(tabela.franquia_km) || 0;
@@ -217,13 +244,27 @@ interface Props {
   onSalvar: () => void;
 }
 
-const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", referencia: "", instrucoes: "", contato: "", telefone: "", janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "" });
+const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "", instrucoes: "", contato: "", telefone: "", email: "", enviarWhatsApp: false, janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "", observacaoPonto: "", latitude: undefined, longitude: undefined, enderecoFormatado: "", portaria: "", doca: "", procedimentoEntrada: "", procedimentoSaida: "", estacionamento: "", documentoNecessario: "", codigoAcesso: "", exigenciaEpi: false, exigeAjudante: false, restricaoVeiculo: "", restricaoAltura: "", outrasRestricoes: "", horarioLimite: "", dataPrevista: "", recebedorPrevisto: "", contatoNome: "", contatoTelefone: "" });
+
+const OPCOES_PIX_TIPO_FORM = ["CPF/CNPJ", "Celular", "E-mail", "Chave Aleatória"] as const;
+
+const emptyPortadorExterno = (): PortadorExterno => ({
+  ativo: false,
+  nome: "",
+  cpf: "",
+  placaMoto: "",
+  grupoOrigem: "",
+  telefoneWhatsapp: "",
+  pixTipo: "CPF/CNPJ",
+  pixChave: "",
+});
 
 const emptyCarga = (): OSCarga => ({
   tipo: "Seca", descricao: "", volumes: 0, peso: 0, cubagem: 0, pallets: 0, valorDeclarado: 0, qtdNotas: 0,
   refrigerada: false, ajudante: false, fragil: false, empilhavel: true, risco: false, perigosa: false, controlada: false,
   conferencia: false, equipamento: "", condicao: "", comprimento: 0, largura: 0, altura: 0, pesoPorVolume: 0, 
-  temperaturaMinima: 0, temperaturaMaxima: 0, observacoesCarga: ""
+  temperaturaMinima: 0, temperaturaMaxima: 0, observacoesCarga: "",
+  portadorExterno: emptyPortadorExterno()
 });
 
 const emptyOS = (): OrdemServico => {
@@ -232,27 +273,497 @@ const emptyOS = (): OrdemServico => {
   return {
     numero: `OS-${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
     data: dataHoje, cliente: "", unidade: "", centroCusto: "", orcamentoOrigem: "", prestador: "", veiculoAlocado: "", veiculoPlaca: "",
-    tipoOperacao: "Coleta e Entrega", modalidade: "esporadico", prioridade: "normal", status: "rascunho", responsavel: "", refCliente: "", pedidoInterno: "", slaOperacao: "", observacoesGerais: "",
+    tipoOperacao: "Coleta e Entrega", modalidade: "esporadico", prioridade: "normal", status: "em_analise", responsavel: "", refCliente: "", pedidoInterno: "", slaOperacao: "", observacoesGerais: "",
     comprovanteObrigatorio: true, cteObrigatorio: false, xmlObrigatorio: false, operacaoDedicada: false,
     carga: emptyCarga(),
     veiculoTipo: "", veiculoSubcategoria: "", veiculoCarroceria: "", veiculoTermica: "seco", isReserva: false, retornoObrigatorio: false,
-    dataProgramada: dataHoje, janelaOperacional: "", previsaoInicio: `${dataHoje}T${agora.getHours().toString().padStart(2,'0')}:${agora.getMinutes().toString().padStart(2,'0')}`, previsaoTermino: "", tipoEscala: "", instrucoesOperacionaisOS: "", observacaoTorre: "",
+    dataProgramada: "", janelaOperacional: "", previsaoInicio: "", previsaoTermino: "", tipoEscala: "", instrucoesOperacionaisOS: "", observacaoTorre: "",
     tabelaAplicada: "", valorCliente: 0, custoPrestador: 0, pedagio: 0, ajudante: 0, adicionais: 0, descontos: 0, reembolsoPrevisto: 0, contaContabil: "", centroCustoFin: "", statusFaturamento: "a faturar", statusPagamento: "a pagar",
     emailDestinatario: "", whatsappDestinatario: "", notificarDestinatario: true, eventosTracker: "principais",
-    enderecos: [emptyEnd()], historico: [{ data: new Date().toISOString(), acao: "OS Criada", status_novo: "rascunho", usuario: "Usuário" }]
+    enderecos: [emptyEnd()], historico: [{ data: new Date().toISOString(), acao: "OS Criada", status_novo: "em_analise", usuario: "Usuário" }]
   };
 };
 
-const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
-  <div className={className}>
-    <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
-    {children}
-  </div>
-);
+const obterPrioridadeLabel = (p?: string) => (p === "urgente" ? "Urgente / Crítica" : p === "baixa" ? "Baixa" : "Normal");
+
+// ============================================================
+// ETAPA-1: Cálculo bidirecional de peso
+// Volumes × Peso por Volume = Peso Total
+// Preenchendo 2 dos 3 campos, o terceiro é derivado automaticamente.
+// ============================================================
+const arredondar = (valor: number, casas: number) => {
+  const fator = Math.pow(10, casas);
+  return Math.round(valor * fator) / fator;
+};
+
+const aplicarCalculoPesoBidirecional = (carga: OSCarga, campoEditado: keyof OSCarga): OSCarga => {
+  if (campoEditado !== "volumes" && campoEditado !== "peso" && campoEditado !== "pesoPorVolume") {
+    return carga;
+  }
+
+  let volumes = Number(carga.volumes) || 0;
+  let peso = Number(carga.peso) || 0;
+  let pesoPorVolume = Number(carga.pesoPorVolume) || 0;
+
+  if (campoEditado === "volumes") {
+    if (volumes > 0 && pesoPorVolume > 0) peso = arredondar(volumes * pesoPorVolume, 2);
+    else if (volumes > 0 && peso > 0) pesoPorVolume = arredondar(peso / volumes, 3);
+  } else if (campoEditado === "peso") {
+    if (peso > 0 && volumes > 0) pesoPorVolume = arredondar(peso / volumes, 3);
+    else if (peso > 0 && pesoPorVolume > 0) volumes = arredondar(peso / pesoPorVolume, 2);
+  } else if (campoEditado === "pesoPorVolume") {
+    if (pesoPorVolume > 0 && volumes > 0) peso = arredondar(volumes * pesoPorVolume, 2);
+    else if (pesoPorVolume > 0 && peso > 0) volumes = arredondar(peso / pesoPorVolume, 2);
+  }
+
+  return { ...carga, volumes, peso, pesoPorVolume };
+};
+
+// ============================================================
+// ETAPA-1: Persistência de rascunho local (sessionStorage)
+// Evita perda de dados ao alternar abas/recarregar o painel.
+// ============================================================
+const OS_DRAFT_PREFIX = "tms_os_rascunho_v1";
+
+interface OSDraft {
+  data: OrdemServico;
+  reversaFields: ReversaFields;
+  abaAtiva: string;
+  savedAt: string;
+}
+
+const getDraftKey = (osId?: string | null, modo?: string | null) =>
+  `${OS_DRAFT_PREFIX}:${osId || "nova"}:${modo || "novo"}`;
+
+const lerRascunhoLocal = (key: string): OSDraft | null => {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as OSDraft;
+    if (!parsed || typeof parsed !== "object" || !parsed.data) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const gravarRascunhoLocal = (key: string, draft: OSDraft) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // sessionStorage indisponível ou cota excedida — ignora silenciosamente
+  }
+};
+
+const limparRascunhoLocal = (key: string) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignora
+  }
+};
+
+const obterToneGlobal = (status: string | null | undefined): Tone => {
+  const info = obterInfoGlobal(obterStatusGlobalOS(status));
+  const mapa: Record<string, Tone> = {
+    slate: "slate", amber: "amber", blue: "blue", orange: "orange",
+    indigo: "indigo", green: "green", emerald: "emerald", violet: "violet", purple: "purple",
+  };
+  return mapa[info.cor] || "slate";
+};
+
+// ============================================================
+// Painel lateral de resumo operacional (somente visual)
+// ============================================================
+const ResumoOperacionalPanel = ({
+  data,
+  clienteNome,
+  diagnosticoEscala,
+  ultimaOperacaoPrestador,
+  alertasCubagem,
+  pendenciasFiscais,
+  verReceitaMargem,
+}: {
+  data: OrdemServico;
+  clienteNome?: string;
+  diagnosticoEscala: DiagnosticoSincronizacao | null;
+  ultimaOperacaoPrestador: { data: string; valor?: number } | null;
+  alertasCubagem: AlertaCubagem[];
+  pendenciasFiscais: string[];
+  /** UPGRADE-REGRAS: false => Receita/Margem ocultas (exibem "---") para não-admin */
+  verReceitaMargem: boolean;
+}) => {
+  const margemValor = (data.valorCliente || 0) - (data.custoPrestador || 0);
+  const margemPct = (data.valorCliente || 0) > 0 ? ((margemValor / data.valorCliente) * 100) : 0;
+
+  const pendenciaItems: string[] = [];
+  if (!data.cliente?.trim()) pendenciaItems.push("Cliente não informado");
+  if (!data.tipoOperacao?.trim()) pendenciaItems.push("Tipo de operação não informado");
+  if (!data.veiculoTipo && !data.veiculoPlaca) pendenciaItems.push("Veículo não informado");
+  if ((data.enderecos || []).filter((e) => e?.endereco?.trim()).length < 2) pendenciaItems.push("Informe origem e destino");
+  if (!(data.valorCliente > 0)) pendenciaItems.push("Valor cliente zerado");
+  (alertasCubagem || []).forEach((a) => { if (a?.mensagem) pendenciaItems.push(a.mensagem); });
+  (pendenciasFiscais || []).forEach((p) => pendenciaItems.push(p));
+
+  const statusGlobalAtual = obterStatusGlobalOS(data.status);
+  const statusFinOk = data.statusFaturamento === "faturada" || data.statusFaturamento === "paga";
+  const escalaOk = diagnosticoEscala?.status === "sincronizada";
+  const escalaLabel = obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala");
+  const pontosEnderecados = (data.enderecos || []).filter((e) => e?.endereco?.trim()).length;
+
+  const checklist = [
+    { ok: Boolean(data.cliente?.trim()), label: "Cliente definido", detail: clienteNome || data.cliente || "—" },
+    { ok: Boolean(data.tipoOperacao?.trim()), label: "Tipo da operação", detail: data.tipoOperacao || "—" },
+    { ok: Boolean(data.veiculoTipo || data.veiculoPlaca), label: "Veículo", detail: data.veiculoTipo || data.veiculoPlaca || "pendente" },
+    { ok: pontosEnderecados >= 2, label: "Origem e destino", detail: `${pontosEnderecados} ponto(s) com endereço` },
+    { ok: (data.valorCliente || 0) > 0, label: "Financeiro OK", detail: verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : ((data.valorCliente || 0) > 0 ? "definido" : "pendente") },
+    { ok: escalaOk, label: "Programação", detail: escalaLabel },
+    { ok: (pendenciasFiscais || []).length === 0, label: "Fiscal OK", detail: (pendenciasFiscais || []).length > 0 ? `${pendenciasFiscais.length} pendência(s)` : "sem pendências" },
+  ];
+  const totalCheckOk = checklist.filter((c) => c.ok).length;
+  const totalPendencias = pendenciaItems.length;
+
+  return (
+    <div className="flex flex-col">
+      {/* FINANCEIRO — UPGRADE-REGRAS: Receita/Margem restritas a admin máximo */}
+      <PanelSection icon={TrendingUp} title="Financeiro" accent="emerald">
+        <PanelRow label="Receita (Cliente)" value={verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : "---"} />
+        <PanelRow label="Custo Prestador" value={`R$ ${(data.custoPrestador || 0).toFixed(2)}`} />
+        <PanelRow
+          label="Margem (R$)"
+          value={verReceitaMargem ? `R$ ${margemValor.toFixed(2)}` : "---"}
+          valueClass={verReceitaMargem ? (margemValor >= 0 ? "text-green-600" : "text-red-600") : "text-slate-400"}
+        />
+        <PanelRow
+          label="Margem (%)"
+          value={verReceitaMargem ? ((data.valorCliente || 0) > 0 ? `${margemPct.toFixed(1)}%` : "—") : "---"}
+          valueClass={verReceitaMargem ? ((data.valorCliente || 0) > 0 ? (margemPct >= 20 ? "text-green-600" : margemPct > 0 ? "text-amber-600" : "text-red-600") : undefined) : "text-slate-400"}
+        />
+        <div className="mt-1 flex items-center justify-between border-t border-slate-200/70 pt-2 text-xs">
+          <span className="font-medium text-slate-500">Tabela</span>
+          <span className="truncate font-bold text-slate-700">{data.tabelaAplicada || "Padrão"}</span>
+        </div>
+      </PanelSection>
+
+      {/* CHECKLIST (Painel Inteligente) */}
+      <PanelSection icon={ListChecks} title="Checklist" accent="violet" right={
+        <span className="text-[10px] font-bold text-slate-400">{totalCheckOk}/{checklist.length}</span>
+      }>
+        <div className="space-y-1.5">
+          {checklist.map((item, i) => (
+            <ChecklistItem key={i} ok={item.ok} label={item.label} detail={item.detail} />
+          ))}
+        </div>
+      </PanelSection>
+
+      {/* PENDÊNCIAS */}
+      <PanelSection icon={AlertCircle} title="Pendências" accent={totalPendencias > 0 ? "amber" : "emerald"} right={
+        <span className="text-[10px] font-bold text-slate-400">{totalPendencias}</span>
+      }>
+        {pendenciaItems.length > 0 ? (
+          <ul className="space-y-1">
+            {pendenciaItems.map((p, i) => (
+              <li key={i} className="flex items-start gap-1.5 rounded-md border border-amber-100 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                <span className="mt-0.5 text-amber-400">●</span>
+                <span className="flex-1">{p}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="flex items-center gap-1.5 text-[11px] text-emerald-600">
+            <CheckCircle className="h-3.5 w-3.5" /> Nenhuma pendência detectada
+          </p>
+        )}
+      </PanelSection>
+
+      {/* INDICADORES */}
+      <PanelSection icon={BarChart3} title="Indicadores" accent="orange">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">Distância</p>
+            <p className="text-sm font-black text-slate-800">{data.distanciaKm || 0} km</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">Tempo</p>
+            <p className="text-sm font-black text-slate-800">{data.tempoEstimado || "—"}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">Pontos</p>
+            <p className="text-sm font-black text-slate-800">{(data.enderecos || []).length}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">Eventos</p>
+            <p className="text-sm font-black text-slate-800">{(data.historico || []).length}</p>
+          </div>
+        </div>
+      </PanelSection>
+
+      {/* ÚLTIMA ATUALIZAÇÃO */}
+      <PanelSection icon={Clock} title="Última Atualização" accent="slate">
+        {ultimaOperacaoPrestador && (
+          <div className="mb-2 space-y-0.5 text-[11px] text-slate-500">
+            <div className="flex items-center gap-1.5"><User className="h-3 w-3 text-slate-400" /> Última operação do prestador</div>
+            <div className="pl-4 text-[10px]">
+              {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString("pt-BR") : "N/A"}
+              {verReceitaMargem && ultimaOperacaoPrestador.valor ? ` • R$ ${ultimaOperacaoPrestador.valor.toFixed(2)}` : ""}
+            </div>
+          </div>
+        )}
+        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+          <Building2 className="h-3 w-3 text-slate-400" />
+          Emitida em {data.data ? new Date(data.data).toLocaleDateString("pt-BR") : "—"}
+        </div>
+      </PanelSection>
+    </div>
+  );
+};
+
+// ============================================================
+// Etapas do formulário premium (somente visual)
+// ============================================================
+const obterDocStepsOS = (
+  data: OrdemServico,
+  alertasCubagem: AlertaCubagem[],
+  pendenciasFiscais: string[],
+): DocStep[] => {
+  const identOk = Boolean(data.cliente?.trim() && data.tipoOperacao?.trim());
+  const cargaOk = Boolean(data.carga?.tipo?.trim());
+  const veiculoOk = Boolean(data.veiculoTipo || data.veiculoPlaca);
+  const rotasOk = (data.enderecos || []).filter((e) => e?.endereco?.trim()).length >= 2;
+  const valoresOk = (data.valorCliente || 0) > 0;
+  return [
+    { value: "identificacao", label: "Identificação", icon: FileText, done: identOk, pending: !identOk },
+    { value: "carga", label: "Carga", icon: Package, done: cargaOk, pending: !cargaOk },
+    { value: "veiculo", label: "Veículo", icon: Truck, done: veiculoOk, pending: !veiculoOk },
+    { value: "enderecos", label: "Rotas e Paradas", icon: MapPin, done: rotasOk, pending: !rotasOk },
+    { value: "valores", label: "Torre & Financeiro", icon: CreditCard, done: valoresOk, pending: (alertasCubagem || []).length > 0 || (pendenciasFiscais || []).length > 0 },
+    { value: "historico", label: "Histórico", icon: Clock, done: (data.historico || []).length > 0 },
+  ];
+};
+
+// MISSÃO ENDERECOS-INTELIGENTES — separa exibição (nome) de persistência (UUID) de data.cliente
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ============================================================
+// UPGRADE-REGRAS-DE-NEGOCIO — MATCH INTELIGENTE DE PRESTADOR
+// Ranking de prestadores ativos por: compatibilidade de veículo com a exigência
+// da OS, capacidade x peso/cubagem, região da coleta, refrigeração e histórico.
+// ============================================================
+// ============================================================
+// UPGRADE — MATCH INTELIGENTE
+// Shapes mínimos das tabelas prestadores/veiculos usados no ranking
+// (linhas 80 prestadores + veículos vinculados via prestador_vinculado).
+// ============================================================
+interface VeiculoMatchRow {
+  id?: string;
+  prestador_vinculado?: string | null;
+  tipo_veiculo?: string | null;
+  tipo?: string | null;
+  placa?: string | null;
+  capacidade_kg?: number | null;
+  capacidade_m3?: number | null;
+  status?: string | null;
+}
+
+interface PrestadorMatchRow {
+  id?: string;
+  nome_completo?: string | null;
+  telefone?: string | null;
+  whatsapp?: string | null;
+  regiao_principal?: string | null;
+  regioes_secundarias?: string | null;
+  aceita_refrigerado?: boolean | null;
+  aceita_refrigerada?: boolean | null;
+  indice_aceite?: number | null;
+  avaliacao_operacional?: number | null;
+  qtd_operacoes?: number | null;
+  veiculos?: VeiculoMatchRow[];
+}
+
+export type SugestaoPrestadorMatch = {
+  prestadorId: string;
+  nome: string;
+  telefone?: string;
+  regiao?: string;
+  veiculo?: { placa?: string; tipo?: string; capacidadeKg?: number; capacidadeM3?: number };
+  score: number;
+  motivos: string[];
+};
+
+type CtxMatch = {
+  tipoVeiculo: string;
+  pesoKg: number;
+  m3: number;
+  refrigerado: boolean;
+  cidade: string;
+  uf: string;
+};
+
+const normTxt = (v?: string | null): string => (v == null ? "" : String(v).trim().toLowerCase());
+
+// Grafias de veículo variam entre OS ("Moto", "caminhão") e cadastro ("truck", "moto")
+const VEICULO_ALIAS: Array<[string, string]> = [
+  ["motocicleta", "moto"],
+  ["moto", "moto"],
+  ["fiorino", "fiorino"],
+  ["vuc", "vuc"],
+  ["hr", "hr"],
+  ["carreta", "truck"],
+  ["truck", "truck"],
+  ["caminhao", "truck"],
+  ["van", "van"],
+  ["utilitario", "fiorino"],
+];
+
+const chaveVeiculo = (t?: string | null): string => {
+  const v = normTxt(t);
+  if (!v) return "";
+  for (const [alias, chave] of VEICULO_ALIAS) if (v.includes(alias)) return chave;
+  return v;
+};
+
+const cobreRegiao = (p: PrestadorMatchRow, ctx: CtxMatch): boolean => {
+  const regiaoTxt = normTxt(`${p?.regiao_principal || ""} ${p?.regioes_secundarias || ""}`);
+  if (!regiaoTxt) return false;
+  if (/todas|brasil|nacional|pais/.test(regiaoTxt)) return true;
+  if (ctx.cidade && (regiaoTxt.includes(ctx.cidade) || ctx.cidade.includes(regiaoTxt.trim()))) return true;
+  if (ctx.uf && new RegExp(`(^|[^a-z])${ctx.uf}([^a-z]|$)`, "i").test(regiaoTxt)) return true;
+  return false;
+};
+
+const calcularMatchPrestador = (p: PrestadorMatchRow, ctx: CtxMatch): SugestaoPrestadorMatch | null => {
+  const motivos: string[] = [];
+  let score = 0;
+  const veiculos: VeiculoMatchRow[] = Array.isArray(p?.veiculos) ? p.veiculos : [];
+
+  // Exigência de carga refrigerada: prestador precisa aceitar (incompatível => descartado)
+  if (ctx.refrigerado && !(p?.aceita_refrigerado || p?.aceita_refrigerada)) return null;
+
+  const chaveAlvo = chaveVeiculo(ctx.tipoVeiculo);
+  const veic =
+    veiculos.find((v) => chaveVeiculo(v?.tipo_veiculo || v?.tipo) === chaveAlvo && chaveAlvo && normTxt(v?.status) !== "inativo") ||
+    veiculos.find((v) => normTxt(v?.status) !== "inativo") ||
+    veiculos[0] ||
+    null;
+
+  // Capacidade x exigência da OS: veículo incompatível é descartado
+  const capKg = Number(veic?.capacidade_kg || 0);
+  const capM3 = Number(veic?.capacidade_m3 || 0);
+  if (ctx.pesoKg > 0 && capKg > 0 && capKg < ctx.pesoKg) return null;
+  if (ctx.m3 > 0 && capM3 > 0 && capM3 < ctx.m3) return null;
+
+  // 1) Tipo de veículo compatível
+  const chaveVeic = chaveVeiculo(veic?.tipo_veiculo || veic?.tipo);
+  if (chaveAlvo && chaveVeic && chaveVeic === chaveAlvo) {
+    score += 40;
+    motivos.push(`Veículo compatível (${veic?.tipo_veiculo || veic?.tipo})`);
+  } else if (chaveAlvo && veic) {
+    score += 10;
+    motivos.push(`Veículo disponível (${veic?.tipo_veiculo || veic?.tipo})`);
+  } else if (!veic) {
+    motivos.push("Sem veículo cadastrado");
+  }
+
+  // 2) Capacidade x peso/cubagem da OS
+  if (ctx.pesoKg > 0) {
+    if (capKg >= ctx.pesoKg) { score += 25; motivos.push(`Capacidade ${capKg}kg >= ${ctx.pesoKg}kg`); }
+    else { score += 10; motivos.push("Capacidade não informada no cadastro"); }
+  }
+  if (ctx.m3 > 0) {
+    if (capM3 >= ctx.m3) { score += 10; motivos.push(`Cubagem ${capM3}m3 >= ${ctx.m3}m3`); }
+    else { score += 5; motivos.push("Cubagem não informada no cadastro"); }
+  }
+
+  // 3) Região da coleta
+  if (cobreRegiao(p, ctx)) {
+    score += 20;
+    motivos.push(`Atende região da coleta${p?.regiao_principal ? ` (${p.regiao_principal})` : ""}`);
+  } else if (!normTxt(p?.regiao_principal) && !normTxt(p?.regioes_secundarias)) {
+    score += 8;
+    motivos.push("Sem região declarada");
+  }
+
+  // 4) Refrigeração aceita (quando exigida pela OS)
+  if (ctx.refrigerado) { score += 10; motivos.push("Aceita carga refrigerada"); }
+
+  // 5) Disponibilidade do veículo
+  if (veic && ["ativo", "disponivel", "disponível", "operacional"].includes(normTxt(veic.status))) {
+    score += 5;
+    motivos.push("Veículo disponível");
+  }
+
+  // 6) Qualidade histórica (índice de aceite 0-100 + avaliação 0-5)
+  const qualidade = (Math.min(Number(p?.indice_aceite) || 0, 100) / 100) * 5 + (Math.min(Number(p?.avaliacao_operacional) || 0, 5) / 5) * 5;
+  if (qualidade > 0) score += qualidade;
+
+  return {
+    prestadorId: p.id,
+    nome: p.nome_completo || "Prestador sem nome",
+    telefone: p.telefone || p.whatsapp || undefined,
+    regiao: p.regiao_principal || undefined,
+    veiculo: veic
+      ? {
+          placa: veic.placa || undefined,
+          tipo: veic.tipo_veiculo || veic.tipo || undefined,
+          capacidadeKg: capKg || undefined,
+          capacidadeM3: capM3 || undefined,
+        }
+      : undefined,
+    score: Math.round(score),
+    motivos,
+  };
+};
 
 const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
-  const [data, setData] = useState<OrdemServico>(os ? JSON.parse(JSON.stringify(os)) : emptyOS());
+  // ETAPA-1: rascunho local por OS/modo (sessionStorage) — restaurado antes do estado inicial
+  const draftKey = getDraftKey(os?.id, modo);
+  // UPGRADE-REGRAS: permissão de visualização de Receita/Margem (somente admin máximo)
+  const { user } = useAuth();
+  const verReceitaMargem = podeVerReceitaEMargem(user?.role);
+  // CLEAN STATE — uma "Nova OS" SEMPRE abre zerada (nunca restaura rascunho
+  // de uma OS anterior → elimina dados fantasmas). Só restaura em edição.
+  const [rascunhoInicial] = useState<OSDraft | null>(() =>
+    modo === "ver" || modo === "novo" ? null : lerRascunhoLocal(draftKey),
+  );
+  const draftRef = useRef<OSDraft | null>(null);
+  const [data, setData] = useState<OrdemServico>(() => {
+    if (rascunhoInicial?.data) return rascunhoInicial.data;
+    return os ? JSON.parse(JSON.stringify(os)) : emptyOS();
+  });
+  // MISSÃO ENDERECOS-INTELIGENTES — nome do cliente para exibição (data.cliente pode conter UUID)
+  const [clienteNomeExibicao, setClienteNomeExibicao] = useState("");
+  useEffect(() => {
+    const valor = (data.cliente || "").trim();
+    if (!valor) {
+      setClienteNomeExibicao("");
+      return;
+    }
+    if (!UUID_REGEX.test(valor)) {
+      setClienteNomeExibicao(valor);
+      return;
+    }
+    const idCliente = data.clienteId && UUID_REGEX.test(data.clienteId) ? data.clienteId : valor;
+    let ativo = true;
+    supabase
+      .from("clientes")
+      .select("nome_fantasia, razao_social")
+      .eq("id", idCliente)
+      .maybeSingle()
+      .then(({ data: cli }) => {
+        if (!ativo || !cli) return;
+        const nome = (cli as any).nome_fantasia || (cli as any).razao_social || "";
+        if (nome) setClienteNomeExibicao(nome);
+      }, () => undefined);
+    return () => { ativo = false; };
+  }, [data.cliente, data.clienteId]);
+  const clienteIdEfetivo =
+    data.clienteId && UUID_REGEX.test(data.clienteId)
+      ? data.clienteId
+      : data.cliente && UUID_REGEX.test(data.cliente)
+        ? data.cliente
+        : "";
   const osInicialRef = useRef<OrdemServico>(data);
+  const statusOverrideRef = useRef<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
   const [sugestoesVeiculo, setSugestoesVeiculo] = useState<SugestaoVeiculo[]>([]);
@@ -262,92 +773,302 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [calculandoDistancia, setCalculandoDistancia] = useState(false);
   const [distanciaRota, setDistanciaRota] = useState<DistanceResult | null>(null);
   const [faixaCalculada, setFaixaCalculada] = useState("");
+  const [rotaSelecionada, setRotaSelecionada] = useState<TipoRota>("rapida");
+  const [distanciasAlternativas, setDistanciasAlternativas] = useState<RoutesResult | null>(null);
+  // UPGRADE — PEDÁGIO: estado da origem do valor (API de rota x inserção manual)
+  const [pedagioInfo, setPedagioInfo] = useState<PedagioInfo>({ fonte: "nao_identificado" });
+  // UPGRADE — MATCH INTELIGENTE: sugestões ordenadas de prestadores compatíveis
+  const [buscandoSugestao, setBuscandoSugestao] = useState(false);
+  const [sugestoesPrestador, setSugestoesPrestador] = useState<SugestaoPrestadorMatch[]>([]);
+  const [motivoAjusteManual, setMotivoAjusteManual] = useState("");
+  const [showMotivoDialog, setShowMotivoDialog] = useState(false);
   const [enviandoWhatsApp, setEnviandoWhatsApp] = useState(false);
   const [enviarWhatsAppAuto, setEnviarWhatsAppAuto] = useState(false);
-  const readOnly = modo === "ver";
+  const [formDirty, setFormDirty] = useState(false);
+  const initialDataRef = useRef<string>("");
+  const readOnly = modo === "ver" || (!!os && (os.status === "finalizada" || os.status === "cancelada"));
+
+  // NAVIGATION GUARD — modal "Descartar alterações?" ao tentar sair com dados
+  // não salvos (nova OS e edição). Baseline = estado inicial carregado.
+  const exitGuard = useFormExitGuard({
+    current: data,
+    initial: osInicialRef.current,
+    enabled: !readOnly,
+  });
+
+  const handleVoltar = async () => {
+    const pode = await exitGuard.confirmExit();
+    if (pode) onVoltar();
+  };
+
+  // CLEAN STATE — ao abrir uma "Nova OS", descarta qualquer rascunho local
+  // remanescente (evita dados fantasmas da OS anterior).
+  useEffect(() => {
+    if (modo === "novo") limparRascunhoLocal(draftKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [visualizacaoOS, setVisualizacaoOS] = useState<"cliente" | "prestador">("cliente");
   const [ultimaOperacaoPrestador, setUltimaOperacaoPrestador] = useState<{ data: string; valor?: number } | null>(null);
   const [escalaVinculada, setEscalaVinculada] = useState(false);
   const [diagnosticoEscala, setDiagnosticoEscala] = useState<DiagnosticoSincronizacao | null>(null);
-  const [financeiroSincronizado, setFinanceiroSincronizado] = useState(false);
+  // M80: Financeiro sincronizado via trigger SQL — não mais via TS
+  const [emRede, setEmRede] = useState(false);
+  const [redeOportunidade, setRedeOportunidade] = useState<RedeOportunidade | null>(null);
+  const [prestadoresCompativeis, setPrestadoresCompativeis] = useState<PrestadorCompativel[]>([]);
+  // Missão A27: detalhes do aceite na Rede (prestador/veículo/data/alocação)
+  const [aceiteRedeInfo, setAceiteRedeInfo] = useState<{
+    prestador: string;
+    placa?: string;
+    tipo_veiculo?: string;
+    aceite_em?: string;
+    alocacao_id?: string;
+  } | null>(null);
+  const [carregandoRede, setCarregandoRede] = useState(false);
   const [gerandoNFSe, setGerandoNFSe] = useState(false);
   const [gerandoCTe, setGerandoCTe] = useState(false);
   const [gerandoMDFe, setGerandoMDFe] = useState(false);
   const [docFiscalExistente, setDocFiscalExistente] = useState<{ nfse: boolean; nfseId?: string; cte: boolean; cteId?: string; mdfe: boolean; mdfeId?: string }>({ nfse: false, cte: false, mdfe: false });
   const [pendenciasFiscais, setPendenciasFiscais] = useState<string[]>([]);
+  const [abaAtiva, setAbaAtiva] = useState<string>(() => rascunhoInicial?.abaAtiva || "identificacao");
+  const [trackingToken, setTrackingToken] = useState<string | null>(null);
+  const [gerandoLink, setGerandoLink] = useState(false);
   const [showFiscalPreview, setShowFiscalPreview] = useState(false);
   const [simulandoFocus, setSimulandoFocus] = useState(false);
   const [ibgePreview, setIbgePreview] = useState<{ origem?: string; destino?: string }>({});
+  const [reversaFields, setReversaFields] = useState<ReversaFields>(() => {
+    if (rascunhoInicial?.reversaFields) return rascunhoInicial.reversaFields;
+    const saved = (data as any).tipo_reversa ? {
+      tipo_reversa: (data as any).tipo_reversa || "sem_reversa",
+      reversa_qtd_volumes: (data as any).reversa_qtd_volumes || 0,
+      reversa_observacoes: (data as any).reversa_observacoes || "",
+      reversa_endereco_coleta: (data as any).reversa_endereco_coleta || "",
+      reversa_endereco_devolucao: (data as any).reversa_endereco_devolucao || "",
+      reversa_unidade_cobranca: (data as any).reversa_unidade_cobranca || "unidade",
+      reversa_valor_unitario: (data as any).reversa_valor_unitario || 0,
+      reversa_qtd_coletada: (data as any).reversa_qtd_coletada || 0,
+      reversa_divergencia: (data as any).reversa_divergencia || "",
+      reversa_motivo_divergencia: (data as any).reversa_motivo_divergencia || "",
+      reversa_responsavel: (data as any).reversa_responsavel || "",
+      reversa_documento_responsavel: (data as any).reversa_documento_responsavel || "",
+      reversa_telefone: (data as any).reversa_telefone || "",
+      reversa_status: (data as any).reversa_status || "nao_iniciada",
+      reversa_data_prevista: (data as any).reversa_data_prevista || "",
+      reversa_data_realizada: (data as any).reversa_data_realizada || "",
+      reversa_valor_adicional: (data as any).reversa_valor_adicional || 0,
+      reversa_impacto_prestador: (data as any).reversa_impacto_prestador || 0,
+      reversa_impacto_cliente: (data as any).reversa_impacto_cliente || 0,
+    } : emptyReversaFields();
+    return saved;
+  });
   const navigate = useNavigate();
+  const { tenant } = useTenant();
 
-const calculaRotaEValor = async () => {
+  // ============================================================
+  // UPGRADE — ALOCAÇÃO DE PRESTADOR: seleção compartilhada entre o novo bloco
+  // de Identificação e o cartão "Alocação Torre" (etapa Torre & Financeiro).
+  // Observação: prestadores NÃO possui colunas veiculo_tipo/veiculo_placa —
+  // o veículo vem da tabela veiculos (prestador_vinculado).
+  // ============================================================
+  const handleSelecionarPrestador = async (v: string | null, record: { id?: string } | null) => {
+    if (emRede) { toast.warning("Desative a Rede antes de alocar diretamente"); return; }
+    update("prestador", v || "");
+    if (record?.id) setData((p) => ({ ...p, prestadorId: record.id }) as OrdemServico);
+    if (record?.id && v) {
+      try {
+        const { data: veiculoPrest } = await supabase
+          .from("veiculos")
+          .select("tipo_veiculo, placa, tipo_carga, principal, status")
+          .eq("prestador_vinculado", record.id)
+          .order("principal", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (veiculoPrest) {
+          const vp = veiculoPrest;
+          if (vp.tipo_veiculo) update("veiculoTipo", vp.tipo_veiculo);
+          if (vp.placa) update("veiculoPlaca", vp.placa);
+          if (vp.tipo_carga === "refrigerada" || vp.tipo_carga === "refrigerado") update("veiculoTermica", "refrigerado");
+        }
+        const { data: ultimaOS } = await supabase.from("ordens_servico").select("data, valor_cliente").eq("prestador", v).order("data", { ascending: false }).limit(1).maybeSingle();
+        if (ultimaOS) {
+          setUltimaOperacaoPrestador({ data: ultimaOS.data, valor: ultimaOS.valor_cliente });
+        }
+      } catch (e) { console.warn("Erro ao buscar dados do prestador:", e); }
+    }
+  };
+
+  // ============================================================
+  // UPGRADE — MATCH INTELIGENTE: busca prestadores ativos com veículos
+  // compatíveis com a exigência da OS e que operem na região da coleta,
+  // devolvendo lista ordenada por score de compatibilidade.
+  // ============================================================
+  const buscarSugestoesPrestador = async () => {
+    setBuscandoSugestao(true);
+    try {
+      const pontos = data.enderecos || [];
+      const origem = pontos.find((e) => e?.tipo === "coleta" && e?.endereco?.trim()) || pontos[0];
+      const ctx: CtxMatch = {
+        tipoVeiculo: data.veiculoTipo || "",
+        pesoKg: Number(data.carga?.peso || 0),
+        m3: Number(data.carga?.cubagem || 0),
+        refrigerado: normTxt(data.veiculoTermica) === "refrigerado",
+        cidade: normTxt(origem?.cidade),
+        uf: normTxt(origem?.estado),
+      };
+
+      const { data: lista, error } = await supabase
+        .from("prestadores")
+        .select("id, nome_completo, telefone, whatsapp, status, regiao_principal, regioes_secundarias, aceita_refrigerado, aceita_refrigerada, indice_aceite, avaliacao_operacional, qtd_operacoes")
+        .eq("status", "ativo")
+        .limit(80);
+      if (error) throw error;
+
+      const ids = (lista || []).map((p) => p.id);
+      const veics = ids.length
+        ? (await supabase
+            .from("veiculos")
+            .select("id, prestador_vinculado, tipo_veiculo, tipo, capacidade_kg, capacidade_m3, placa, status, principal")
+            .in("prestador_vinculado", ids)
+            .limit(300)).data || []
+        : [];
+      const veicsPorPrestador = new Map<string, VeiculoMatchRow[]>();
+      for (const v of veics as VeiculoMatchRow[]) {
+        const arr = veicsPorPrestador.get(v.prestador_vinculado) || [];
+        arr.push(v);
+        veicsPorPrestador.set(v.prestador_vinculado, arr);
+      }
+
+      const sugestoes = (lista || [])
+        .map((p) => calcularMatchPrestador({ ...p, veiculos: veicsPorPrestador.get(p.id) || [] }, ctx))
+        .filter((s): s is SugestaoPrestadorMatch => s !== null)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8);
+
+      setSugestoesPrestador(sugestoes);
+      if (sugestoes.length === 0) {
+        toast.info("Nenhum prestador compatível com a exigência desta OS.");
+      } else {
+        toast.success(`${sugestoes.length} sugest(ões) encontrada(s) — escolha abaixo.`);
+      }
+    } catch (e) {
+      console.warn("[MatchInteligente] Erro:", e instanceof Error ? e.message : e);
+      toast.error("Erro ao buscar sugestões de prestadores.");
+    } finally {
+      setBuscandoSugestao(false);
+    }
+  };
+
+  const recalcularValores = async (distanciaKm: number, veiculoTipo: string, cliente: string) => {
+    if (!veiculoTipo) return;
+    const enderecoOrigem = data.enderecos?.find((e: any) => e.tipo === "coleta" || e.tipo === "origem");
+    const enderecoDestino = data.enderecos?.find((e: any) => e.tipo === "entrega" || e.tipo === "destino" || e.tipo === "delivery");
+    try {
+      const { tabela } = await buscarTabelaValoresCliente({
+        tenant_id: tenant?.id || "",
+        cliente_id: data.clienteId || "",
+        tipo_veiculo: veiculoTipo || "",
+        tipo_operacao: "fracionado",
+        distancia_km: Math.ceil(distanciaKm),
+        quantidade_paradas: 1,
+        origem: { endereco: enderecoOrigem?.endereco || "", bairro: enderecoOrigem?.bairro || "", cidade: enderecoOrigem?.cidade || "", uf: enderecoOrigem?.uf || enderecoOrigem?.estado || "", cep: enderecoOrigem?.cep || "" },
+        destino: { endereco: enderecoDestino?.endereco || "", bairro: enderecoDestino?.bairro || "", cidade: enderecoDestino?.cidade || "", uf: enderecoDestino?.uf || enderecoDestino?.estado || "", cep: enderecoDestino?.cep || "" },
+        modo: "preview",
+      });
+      if (tabela && (tabela.fonte === "tabelas_valores" || tabela.fonte === "universal")) {
+        const calc = calcularPrecoRapido(tabela, distanciaKm);
+        setData(p => ({ ...p, valorCliente: calc.valorCliente, custoPrestador: calc.valorPrestador, tabelaAplicada: tabela.nome || "Tabela Padrão", faixaAplicada: calc.descricao }));
+        setFaixaCalculada(calc.descricao);
+      } else {
+        console.warn("[OrdemServicoForm] Nenhuma tabela ativa encontrada para", veiculoTipo, distanciaKm);
+        setFaixaCalculada("Tabela não encontrada");
+      }
+    } catch (e) {
+      console.error("[OrdemServicoForm] Erro recalcularValores:", e);
+      setFaixaCalculada("Erro ao consultar tabela");
+    }
+  };
+
+  // UPGRADE — PEDÁGIO: aplica o valor monetário vindo da API de rota (Maplink/
+  // Google Routes — DistanceResult.pedagio) quando disponível; caso contrário
+  // mantém o valor atual e sinaliza "não identificado" (inserção manual na UI).
+  const aplicarPedagioDaRota = (rota: { pedagio?: number; pedagioProvider?: string; distanciaKm?: number; duracaoMin?: number; distanciaTexto?: string; duracaoTexto?: string; provider?: string } | null | undefined) => {
+    if (typeof rota?.pedagio === "number" && rota.pedagio > 0) {
+      const valor = rota.pedagio;
+      setData(p => ({ ...p, pedagio: valor }));
+      setPedagioInfo({ fonte: "api", provider: rota.pedagioProvider || "routes", atualizadoEm: new Date().toISOString() });
+      toast.success(`Pedágio identificado pela API: R$ ${valor.toFixed(2)}`);
+    } else if (!(data.pedagio > 0)) {
+      setPedagioInfo({ fonte: "nao_identificado" });
+    }
+  };
+
+ const calculaRotaEValor = async () => {
     try {
       const enderecos = data.enderecos ?? [];
       const origem = (enderecos ?? []).find(e => e?.tipo === "coleta" && e?.endereco?.trim()) || (enderecos ?? []).find(e => e?.endereco?.trim());
       const destino = [...(enderecos ?? [])].reverse().find(e => e?.tipo === "entrega" && e?.endereco?.trim()) || (enderecos ?? [])[(enderecos?.length ?? 1) - 1];
       
       if (!origem || !destino || !origem.endereco || !destino.endereco) {
-        toast.warning("Adicione pelo menos dois endereços com coleta e entrega para calcular a rota.");
         return;
       }
       
       setCalculandoDistancia(true);
-      toast.info("Calculando rota e distância...");
-      const resultado = await calcularDistancia(origem.endereco, destino.endereco);
-      
-      if (!resultado) {
-        toast.error("Não foi possível calcular a rota. Verifique os endereços.");
-        return;
-      }
-      
-      setDistanciaRota(resultado);
-      setData(p => ({ 
-        ...p, 
-        distanciaKm: resultado.distanciaKm,
-        tempoEstimado: resultado.duracaoTexto
-      }));
-      
-      // Buscar tabela real primeiro
-      if (data.veiculoTipo) {
-        const tabela = await buscarTabelaValores(data.cliente, data.veiculoTipo, Math.ceil(resultado.distanciaKm));
-        
-        if (tabela) {
-          const calc = calcularValorAutomatico(tabela, resultado.distanciaKm);
-          setData(p => ({ 
-            ...p, 
-            valorCliente: calc.valor, 
-            custoPrestador: calc.valorPrestador,
-            tabelaAplicada: calc.tabelaNome,
-            faixaAplicada: calc.descricao
-          }));
-          setFaixaCalculada(calc.descricao);
-        } else {
-          // Fallback Tabela Teste
-          const resCalc = calcularValorPorDistancia({
-            distanciaKm: resultado.distanciaKm,
-            tipoVeiculo: data.veiculoTipo
-          });
-          
-          if (resCalc.valorCliente > 0) {
-            setData(p => ({ 
-              ...p, 
-              valorCliente: resCalc.valorCliente, 
-              custoPrestador: resCalc.valorPrestador,
-              tabelaAplicada: resCalc.tabelaAplicada,
-              faixaAplicada: resCalc.faixaAplicada
-            }));
-            setFaixaCalculada(resCalc.faixaAplicada);
-          } else {
-            toast.error("Não foi possível calcular valor. Verifique distância e veículo.");
-          }
+      toast.info("Calculando rotas disponiveis...");
+
+      const alternativas = await calcularRotasAlternativas(origem.endereco, destino.endereco);
+
+      if (alternativas) {
+        setDistanciasAlternativas(alternativas);
+
+        const rotaUsar = alternativas.operacional || alternativas.rapida || alternativas.curta;
+        if (!rotaUsar) {
+          toast.error("Nao foi possivel calcular as rotas.");
+          return;
         }
+
+        setDistanciaRota(rotaUsar);
+        setRotaSelecionada("operacional");
+        setData(p => ({ ...p, distanciaKm: rotaUsar.distanciaKm, tempoEstimado: rotaUsar.duracaoTexto, tipoRota: "operacional", distanciaAlternativas: { rapida: alternativas.rapida, curta: alternativas.curta, operacional: alternativas.operacional } }));
+        aplicarPedagioDaRota(rotaUsar);
+
+        recalcularValores(rotaUsar.distanciaKm, data.veiculoTipo, data.cliente);
+        toast.success(`Rotas calculadas: ${alternativas.rapida?.distanciaTexto || '—'} (rapida) | ${alternativas.curta?.distanciaTexto || '—'} (curta)`);
+      } else {
+        const resultado = await calcularDistancia(origem.endereco, destino.endereco);
+        if (!resultado) {
+          toast.error("Nao foi possivel calcular a rota.");
+          return;
+        }
+        setDistanciaRota(resultado);
+        setRotaSelecionada("rapida");
+        setData(p => ({ ...p, distanciaKm: resultado.distanciaKm, tempoEstimado: resultado.duracaoTexto, tipoRota: "rapida" }));
+        aplicarPedagioDaRota(resultado);
+        recalcularValores(resultado.distanciaKm, data.veiculoTipo, data.cliente);
+        toast.success(`Rota calculada: ${resultado.distanciaTexto}`);
       }
-      toast.success(`Rota calculada: ${resultado.distanciaTexto || resultado.distanciaKm + ' km'}`);
     } catch (e) {
-      console.error("Erro no cálculo automático:", e);
+      console.error("Erro no calculo automatico:", e);
       toast.error("Erro ao calcular rota: " + (e instanceof Error ? e.message : "Erro desconhecido"));
     } finally {
       setCalculandoDistancia(false);
+    }
+  };
+
+  const handleTrocarRota = (tipo: TipoRota) => {
+    setRotaSelecionada(tipo);
+    const alts = distanciasAlternativas;
+    let rota: { distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string } | null = null;
+    if (alts) {
+      if (tipo === "rapida") rota = alts.rapida;
+      else if (tipo === "curta") rota = alts.curta;
+      else rota = alts.operacional;
+    }
+    if (rota) {
+      setDistanciaRota(rota);
+      setData(p => ({ ...p, distanciaKm: rota!.distanciaKm, tempoEstimado: rota!.duracaoTexto, tipoRota: tipo }));
+      aplicarPedagioDaRota(rota);
+      if (!data.valorClienteEditado && !data.custoPrestadorEditado) {
+        recalcularValores(rota!.distanciaKm, data.veiculoTipo, data.cliente);
+      }
     }
   };
 
@@ -371,6 +1092,135 @@ const calculaRotaEValor = async () => {
       });
     }
   }, [data.id]);
+
+  // Verificar se OS está na Rede
+  useEffect(() => {
+    if (!data.id) return;
+    obterOportunidadePorOS(data.id).then((res) => {
+      if (res.sucesso && res.oportunidade) {
+        setRedeOportunidade(res.oportunidade);
+        setEmRede(res.oportunidade.status !== "cancelada" && res.oportunidade.status !== "expirada");
+        if (res.oportunidade.status === "publicada" || res.oportunidade.status === "visualizada") {
+          buscarPrestadoresCompativeis(res.oportunidade.id).then((r) => {
+            if (r.sucesso && r.prestadores) setPrestadoresCompativeis(r.prestadores);
+          });
+        }
+      }
+    });
+  }, [data.id]);
+
+  // Missão A27: detalhes do aceite na Rede (prestador/veículo/data/alocação)
+  useEffect(() => {
+    if (!data.id || !redeOportunidade || redeOportunidade.status !== "aceita") {
+      setAceiteRedeInfo(null);
+      return;
+    }
+    let ativo = true;
+    (async () => {
+      try {
+        const [alocRes, prestRes, veicRes] = await Promise.all([
+          supabase
+            .from("alocacoes_escala")
+            .select("id, placa, tipo_veiculo, data_aceite")
+            .eq("ordem_servico_id", data.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          redeOportunidade.prestador_aceite_id
+            ? supabase
+                .from("prestadores")
+                .select("nome_completo")
+                .eq("id", redeOportunidade.prestador_aceite_id)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+          redeOportunidade.prestador_aceite_id
+            ? supabase
+                .from("veiculos")
+                .select("placa, tipo_veiculo")
+                .eq("prestador_vinculado", redeOportunidade.prestador_aceite_id)
+                .order("placa", { ascending: true })
+                .limit(1)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+        if (!ativo) return;
+        setAceiteRedeInfo({
+          prestador: prestRes.data?.nome_completo || "—",
+          placa: alocRes.data?.placa || veicRes.data?.placa || undefined,
+          tipo_veiculo: alocRes.data?.tipo_veiculo || veicRes.data?.tipo_veiculo || undefined,
+          aceite_em: alocRes.data?.data_aceite || redeOportunidade.aceite_em || undefined,
+          alocacao_id: alocRes.data?.id || undefined,
+        });
+      } catch (e) {
+        console.warn("Erro ao buscar detalhes do aceite da Rede:", e);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [data.id, redeOportunidade]);
+
+  // MISSAO 04.1: Protecao contra perda de dados nao salvos
+  useEffect(() => {
+    if (!initialDataRef.current) {
+      initialDataRef.current = JSON.stringify(data);
+      return;
+    }
+    const changed = JSON.stringify(data) !== initialDataRef.current;
+    setFormDirty(changed);
+  }, [data]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (formDirty) {
+        if (draftRef.current) gravarRascunhoLocal(draftKey, draftRef.current);
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [formDirty, draftKey]);
+
+  // ETAPA-1: avisa quando um rascunho local é restaurado
+  useEffect(() => {
+    if (modo !== "ver" && rascunhoInicial?.data) {
+      toast.info("Rascunho local restaurado", {
+        description: "Os dados não salvos desta OS foram recuperados automaticamente.",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ETAPA-1: normaliza Peso/Volume no carregamento de OS vindas do banco
+  useEffect(() => {
+    if (readOnly) return;
+    const peso = Number(data.carga?.peso) || 0;
+    const volumes = Number(data.carga?.volumes) || 0;
+    const pesoPorVolume = Number(data.carga?.pesoPorVolume) || 0;
+    if (!pesoPorVolume && peso > 0 && volumes > 0) {
+      setData((p) => ({ ...p, carga: { ...p.carga, pesoPorVolume: arredondar(peso / volumes, 3) } }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ETAPA-1: persiste o rascunho local (sessionStorage) a cada alteração
+  useEffect(() => {
+    if (readOnly) return;
+    draftRef.current = { data, reversaFields, abaAtiva, savedAt: new Date().toISOString() };
+    const timer = setTimeout(() => {
+      if (draftRef.current) gravarRascunhoLocal(draftKey, draftRef.current);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [data, reversaFields, abaAtiva, readOnly, draftKey]);
+
+  // ETAPA-1: grava o rascunho também ao desmontar (trocar de OS/aba do painel)
+  useEffect(() => {
+    return () => {
+      if (draftRef.current) gravarRascunhoLocal(draftKey, draftRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
 
   useEffect(() => {
     if (!data.id) {
@@ -408,10 +1258,51 @@ const calculaRotaEValor = async () => {
     })();
   }, [data.id]);
 
+  // TEMPLATE 1 — RESUMO DA ROTA (privacidade: sem número da porta).
   const copiarWhatsApp = () => {
     const msg = gerarMensagemWhatsAppOS(data);
     navigator.clipboard.writeText(msg);
-    toast.success("Mensagem copiada!");
+    toast.success("Resumo da rota copiado!");
+  };
+
+  // TEMPLATE 2 — ORIENTAÇÃO DE EXECUÇÃO (OS completa).
+  const copiarOrientacaoExecucao = () => {
+    const msg = gerarMensagemOrientacaoExecucao(data);
+    navigator.clipboard.writeText(msg);
+    toast.success("Orientação de execução copiada!");
+  };
+
+  // WHATSAPP DO CLIENTE / DESTINATÁRIO — link de rastreio.
+  const mensagemClienteRastreio = () =>
+    gerarMensagemWhatsAppClienteRastreio({ numeroOS: data.numero, osId: data.id });
+
+  const copiarWhatsAppClienteRastreio = () => {
+    navigator.clipboard.writeText(mensagemClienteRastreio());
+    toast.success("Mensagem de rastreio do cliente copiada!");
+  };
+
+  const abrirWhatsAppClienteRastreio = () => {
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(mensagemClienteRastreio())}`,
+      "_blank",
+    );
+  };
+
+  const handleGerarLinkRastreio = async () => {
+    if (!data.id) { toast.error("Salve a OS antes de gerar o link"); return; }
+    setGerandoLink(true);
+    try {
+      const result = await gerarLinkRastreio(data.id);
+      if (result) {
+        setTrackingToken(result.token);
+        toast.success("Link de rastreio gerado com sucesso!");
+      } else {
+        toast.error("Erro ao gerar link de rastreio");
+      }
+    } catch {
+      toast.error("Erro ao gerar link de rastreio");
+    }
+    setGerandoLink(false);
   };
 
   const enviarWhatsAppPrestador = async () => {
@@ -486,9 +1377,71 @@ const calculaRotaEValor = async () => {
     }
   };
 
+  const handleEnviarParaRede = async () => {
+    if (!data.id) { toast.error("Salve a OS antes de enviar para Rede"); return; }
+    if (data.prestador) { toast.error("OS já possui prestador alocado"); return; }
+    if (data.custoPrestador <= 0) { toast.error("Calcule os valores antes de enviar para Rede"); return; }
+    setCarregandoRede(true);
+    try {
+      const res = await publicarOportunidade({
+        os_id: data.id,
+        valor_prestador: data.custoPrestador,
+        veiculo_necessario: {
+          tipo: data.veiculoTipo || "",
+          carroceria: data.veiculoCarroceria || "",
+          termica: data.veiculoTermica || "seco",
+          capacidade_kg: data.carga?.peso || 0,
+        },
+        regiao: data.enderecos?.find(e => e.tipo === "coleta")?.cidade || "",
+        prazo_expiracao: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      if (res.sucesso && res.oportunidade) {
+        setRedeOportunidade(res.oportunidade);
+        setEmRede(true);
+        toast.success("OS enviada para Rede de Prestadores!");
+        const compRes = await buscarPrestadoresCompativeis(res.oportunidade.id);
+        if (compRes.sucesso && compRes.prestadores) {
+          setPrestadoresCompativeis(compRes.prestadores);
+          toast.info(`${compRes.prestadores.length} prestadores compatíveis encontrados`);
+        }
+      } else {
+        toast.error(res.erro || "Erro ao publicar oportunidade");
+      }
+    } catch (e: any) {
+      toast.error("Erro: " + e.message);
+    } finally {
+      setCarregandoRede(false);
+    }
+  };
+
+  const handleCancelarRede = async () => {
+    if (!redeOportunidade) return;
+    const res = await cancelarOportunidade(redeOportunidade.id);
+    if (res.sucesso) {
+      setEmRede(false);
+      setRedeOportunidade(null);
+      setPrestadoresCompativeis([]);
+      toast.success("Oportunidade cancelada");
+    } else {
+      toast.error(res.erro || "Erro ao cancelar");
+    }
+  };
+
+  const handleAtualizarCompativeis = async () => {
+    if (!redeOportunidade) return;
+    setCarregandoRede(true);
+    const res = await buscarPrestadoresCompativeis(redeOportunidade.id);
+    if (res.sucesso && res.prestadores) {
+      setPrestadoresCompativeis(res.prestadores);
+      toast.success(`${res.prestadores.length} prestadores compatíveis`);
+    }
+    setCarregandoRede(false);
+  };
+
   const update = (field: keyof OrdemServico, value: any) => setData(p => ({ ...p, [field]: value ?? (typeof p[field] === 'number' ? 0 : '') }));
   const updateCarga = (field: keyof OSCarga, value: any) => {
-    const novaCarga = { ...data.carga, [field]: value ?? (typeof (data.carga as any)[field] === 'number' ? 0 : '') };
+    const cargaBase = { ...data.carga, [field]: value ?? (typeof (data.carga as any)[field] === 'number' ? 0 : '') };
+    const novaCarga = aplicarCalculoPesoBidirecional(cargaBase, field);
     setData(p => ({ ...p, carga: novaCarga }));
     
     const calcCubagem = calcularCubagem({
@@ -531,6 +1484,21 @@ const calculaRotaEValor = async () => {
     }
   };
 
+  // ETAPA-2: atualização do Portador Externo/Avulso (persistido em carga.portadorExterno)
+  const portadorExterno: PortadorExterno = data.carga?.portadorExterno || emptyPortadorExterno();
+  const updatePortador = (field: keyof PortadorExterno, value: any) => {
+    setData((p) => ({
+      ...p,
+      carga: {
+        ...p.carga,
+        portadorExterno: {
+          ...(p.carga?.portadorExterno || emptyPortadorExterno()),
+          [field]: value,
+        },
+      },
+    }));
+  };
+
   const sanitizeOrdemServicoPayload = (rawPayload: Record<string, any>): { payload: Record<string, any>; removed: string[] } => {
     const removed: string[] = [];
     const payloadSeguro: Record<string, any> = {};
@@ -551,12 +1519,132 @@ const calculaRotaEValor = async () => {
     return { payload: payloadSeguro, removed };
   };
 
+  const STATUS_TRANSICOES_VALIDAS: Record<string, string[]> = {
+    em_analise: ["rascunho", "pendente", "cancelada"],
+    rascunho: ["pendente", "cancelada"],
+    pendente: ["agendada", "cancelada"],
+    agendada: ["em_andamento", "em_rota", "cancelada"],
+    em_andamento: ["coletado", "em_rota", "ocorrencia", "cancelada"],
+    em_rota: ["coletado", "entregue", "ocorrencia", "cancelada"],
+    coletado: ["entregue", "em_rota", "ocorrencia", "cancelada"],
+    entregue: ["finalizada", "ocorrencia"],
+    finalizada: [],
+    cancelada: [],
+    ocorrencia: ["em_rota", "coletado", "entregue", "finalizada"],
+  };
+
   const handleSalvar = async () => {
     try {
       setIsSaving(true);
+
+      const statusFinal = statusOverrideRef.current || data.status;
+      statusOverrideRef.current = null;
+
+      if (!data.cliente && !data.clienteId) {
+        toast.error("Selecione um cliente para a OS");
+        setIsSaving(false);
+        return;
+      }
+      if (!data.tipoOperacao) {
+        toast.error("Selecione o tipo de operação");
+        setIsSaving(false);
+        return;
+      }
+      const enderecosValidos = data.enderecos?.filter(e => e.endereco?.trim());
+      if (!enderecosValidos?.length) {
+        toast.error("Adicione pelo menos um endereço de coleta/entrega");
+        setIsSaving(false);
+        return;
+      }
+      if (!enderecosValidos.some(e => e.tipo === "coleta")) {
+        toast.error("Adicione um endereço de coleta");
+        setIsSaving(false);
+        return;
+      }
+      if (!enderecosValidos.some(e => e.tipo === "entrega")) {
+        toast.error("Adicione um endereço de entrega");
+        setIsSaving(false);
+        return;
+      }
+
+      if (data.status === "finalizada" && !data.prestador) {
+        toast.error("Informe um prestador antes de finalizar a OS");
+        setIsSaving(false);
+        return;
+      }
+
+      if (data.id) {
+        const statusAnterior = osInicialRef.current.status;
+        const statusNovo = data.status;
+        if (statusAnterior && statusNovo !== statusAnterior) {
+          const permitidas = STATUS_TRANSICOES_VALIDAS[statusAnterior] || [];
+          if (!permitidas.includes(statusNovo)) {
+            toast.error(`Transição de status inválida: "${statusAnterior}" → "${statusNovo}" não é permitida`);
+            setIsSaving(false);
+            return;
+          }
+          if (statusNovo === "cancelada" && data.statusFaturamento && ["faturada", "paga"].includes(data.statusFaturamento)) {
+            toast.error("Não é possível cancelar uma OS com faturamento já faturado/pago");
+            setIsSaving(false);
+            return;
+          }
+        }
+      } else {
+        if (data.status !== "rascunho" && data.status !== "em_analise" && data.status !== "pendente") {
+          toast.error("OS nova deve iniciar como Em análise, Rascunho ou Pendente");
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      if (!data.id && data.numero) {
+        const { data: osExistente } = await supabase
+          .from("ordens_servico")
+          .select("id")
+          .eq("numero", data.numero)
+          .maybeSingle();
+        if (osExistente) {
+          toast.error(`Já existe uma OS com o número "${data.numero}". Recarregue para gerar um novo.`);
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      if (data.id && osInicialRef.current.aceiteMotorista) {
+        if (data.prestador !== osInicialRef.current.prestador) {
+          toast.warning("Prestador alterado em OS com aceite de motorista. Verifique se a reatribuição é necessária.");
+        }
+        if (data.veiculoPlaca !== osInicialRef.current.veiculoPlaca) {
+          toast.warning("Veículo alterado em OS com aceite de motorista. Notifique o motorista sobre a mudança.");
+        }
+      }
+
       const rawPayload = data.id ? toOSUpdate(data) : toOSInsert(data);
       
       const { payload: sanitizedPayload, removed } = sanitizeOrdemServicoPayload(rawPayload);
+
+      // Aplicar override de status (ex: "Salvar rascunho" força status="rascunho")
+      if (statusFinal !== data.status) {
+        sanitizedPayload.status = statusFinal;
+      }
+
+      // Adicionar campos de coleta reversa
+      if (reversaFields.tipo_reversa !== "sem_reversa" || data.tipoOperacao === "Coleta Reversa") {
+        sanitizedPayload.tipo_reversa = reversaFields.tipo_reversa;
+        sanitizedPayload.reversa_qtd_volumes = reversaFields.reversa_qtd_volumes;
+        sanitizedPayload.reversa_observacoes = reversaFields.reversa_observacoes;
+      }
+
+      // Bloquear criação se cliente estiver inadimplente
+      const clienteIdCheck = data.clienteId || sanitizedPayload?.cliente_id;
+      if (!data.id && clienteIdCheck) {
+        const inadimplencia = await verificarInadimplenciaCliente(clienteIdCheck);
+        if (inadimplencia.inadimplente) {
+          toast.error(`Cliente inadimplente: ${inadimplencia.mensagem}`);
+          setIsSaving(false);
+          return;
+        }
+      }
 
       const { data: dbResult, error } = data.id 
         ? await supabase.from("ordens_servico").update(sanitizedPayload).eq("id", data.id).select().single()
@@ -566,48 +1654,51 @@ const calculaRotaEValor = async () => {
       const savedOS = dbResult;
 
       // Sincronizar com Escala automaticamente
-      (async () => {
-        try {
-          let prestadorId = (data as any).prestadorId || null;
-          if (!prestadorId && data.prestador) {
-            const { data: prestData } = await supabase
-              .from("prestadores")
-              .select("id")
-              .eq("nome_completo", data.prestador)
-              .limit(1)
-              .maybeSingle();
-            if (prestData) prestadorId = prestData.id;
-          }
-
-          const dadosSync = {
-            ...data,
-            id: savedOS?.id || data.id,
-            prestador_id: prestadorId,
-          };
-
-          const [resultadoEscala] = await Promise.all([
-            sincronizarComEscala(dadosSync),
-            sincronizarFinanceiroOS(dadosSync).then((r) => {
-              if (r.sucesso) setFinanceiroSincronizado(true);
-            }),
-          ]);
-
-          if (resultadoEscala.sucesso) {
-            const acaoLabel = resultadoEscala.acao === "criada" ? "criada" : "atualizada";
-            setEscalaVinculada(true);
-            if (savedOS?.id) {
-              diagnosticarOS(savedOS.id).then(setDiagnosticoEscala);
-            }
-            if (resultadoEscala.acao !== "ignorada") {
-              toast.success(`Escala ${acaoLabel} para OS ${data.numero}`);
-            }
-          }
-        } catch (e: any) {
-          console.warn("[SincronizacaoEscala] Falha na sincronização automática:", e.message);
+      try {
+        let prestadorId = (data as any).prestadorId || null;
+        if (!prestadorId && data.prestador) {
+          const { data: prestData } = await supabase
+            .from("prestadores")
+            .select("id")
+            .eq("nome_completo", data.prestador)
+            .limit(1)
+            .maybeSingle();
+          if (prestData) prestadorId = prestData.id;
         }
-      })();
+
+        const dadosSync = {
+          ...data,
+          id: savedOS?.id || data.id,
+          prestador_id: prestadorId,
+        };
+
+        const resultadoEscala = await sincronizarComEscala(dadosSync);
+
+        if (resultadoEscala.sucesso) {
+          const acaoLabel = resultadoEscala.acao === "criada" ? "criada" : "atualizada";
+          setEscalaVinculada(true);
+          if (savedOS?.id) {
+            const diag = await diagnosticarOS(savedOS.id);
+            setDiagnosticoEscala(diag);
+          }
+          if (resultadoEscala.acao !== "ignorada") {
+            toast.success(`Programação ${acaoLabel} para OS ${data.numero}`);
+          }
+        } else {
+          console.warn("[SincronizacaoEscala] Falha na sincronização:", resultadoEscala.erro);
+          toast.warning(`Programação não atualizada: ${resultadoEscala.erro}`);
+        }
+      } catch (e: any) {
+        console.error("[SincronizacaoEscala] Falha na sincronização automática:", e.message);
+        toast.error(`Erro ao sincronizar programação: ${e.message}`);
+      }
 
       toast.success("Ordem de Serviço salva com sucesso!");
+      setFormDirty(false);
+      initialDataRef.current = JSON.stringify(data);
+      // ETAPA-1: descarta o rascunho local após salvar com sucesso
+      draftRef.current = null;
+      limparRascunhoLocal(draftKey);
 
       if (enviarWhatsAppAuto && data.prestador) {
         setEnviandoWhatsApp(true);
@@ -753,18 +1844,83 @@ const calculaRotaEValor = async () => {
     }
   };
 
+  const handleSalvarRascunho = () => {
+    statusOverrideRef.current = "rascunho";
+    handleSalvar();
+  };
+
+  const MOTIVOS_AJUSTE = [
+    "Cliente autorizou valor diferente",
+    "Veiculo substituido",
+    "Operacao especial",
+    "Ajuste comercial",
+    "Outro",
+  ];
+
+  const confirmarAjusteManual = () => {
+    if (!motivoAjusteManual.trim()) {
+      toast.error("Informe o motivo do ajuste manual");
+      return;
+    }
+    setData(p => ({
+      ...p,
+      motivoAjusteManual: motivoAjusteManual.trim(),
+      usuarioAjusteManual: "Operador",
+      dataAjusteManual: new Date().toISOString(),
+    }));
+    setShowMotivoDialog(false);
+    toast.success("Ajuste manual registrado");
+  };
+
+  const etapasDoc = obterDocStepsOS(data, alertasCubagem, pendenciasFiscais);
+  const idxAbaAtual = etapasDoc.findIndex((s) => s.value === abaAtiva);
+  const temProximaEtapa = idxAbaAtual >= 0 && idxAbaAtual < etapasDoc.length - 1;
+  const handleAvancarEtapa = () => {
+    const proxima = etapasDoc[idxAbaAtual + 1];
+    if (proxima) setAbaAtiva(proxima.value);
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
-      {/* Header Fixo */}
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between shadow-sm z-50 sticky top-0">
-        <div className="flex items-center gap-4 flex-1">
-          {/* Botão Salvar fixo à esquerda */}
-          {!readOnly && (
-            <Button onClick={handleSalvar} disabled={isSaving} className="bg-orange-500 hover:bg-orange-600 text-white min-w-[120px]">
-              <Save className="w-4 h-4 mr-2" /> {isSaving ? "Salvando..." : "Salvar OS"}
-            </Button>
+    <PremiumDocumentDialog>
+      {/* Cabeçalho fixo do formulário premium */}
+      <PremiumDialogHeader onClose={handleVoltar}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Button variant="outline" size="icon" onClick={handleVoltar} title="Voltar" className="shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-sm font-extrabold text-slate-800 truncate">
+                {modo === "novo" ? "Nova Ordem de Serviço" : "Ordem de Serviço"} <span className="text-primary">{data.numero || "—"}</span>
+              </h1>
+              <Badge className={`${obterClasseBadgeGlobal(obterStatusGlobalOS(data.status))} text-[10px] shrink-0`}>
+                {STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-slate-500 truncate">
+              {clienteNomeExibicao || data.cliente || "Cliente não definido"} • {data.unidade || "Unidade não definida"} • {data.tipoOperacao || "Tipo de operação não definida"}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {/* ETAPA-2: copiar mensagem padronizada durante a gestão (novo/editar) */}
+          {modo !== "ver" && (
+            <>
+              <Button variant="outline" className="border-green-200 text-green-600 hover:bg-green-50" onClick={copiarWhatsApp}>
+                <CopyIcon className="w-4 h-4 mr-2" /> Copiar WhatsApp
+              </Button>
+              <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={copiarOrientacaoExecucao}>
+                <ListChecks className="w-4 h-4 mr-2" /> Copiar Orientação (OS Completa)
+              </Button>
+              <Button variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50" onClick={copiarWhatsAppClienteRastreio}>
+                <MessageCircle className="w-4 h-4 mr-2" /> WhatsApp Cliente (Rastreio)
+              </Button>
+            </>
           )}
-          
           {/* Botões de visualização - só aparecem após salvar (data.id existe) */}
           {modo === "ver" && data.id && (
             <div className="flex gap-2 items-center">
@@ -802,6 +1958,22 @@ const calculaRotaEValor = async () => {
                     </Button>
                   </>
               )}
+
+              {data.id && (
+                trackingToken ? (
+                  <CompartilharRastreioModal token={trackingToken} />
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-200 text-blue-600 hover:bg-blue-50"
+                    onClick={handleGerarLinkRastreio}
+                    disabled={gerandoLink}
+                  >
+                    <LinkIcon className="w-4 h-4 mr-2" /> {gerandoLink ? "Gerando..." : "Link Rastreio"}
+                  </Button>
+                )
+              )}
               
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -828,106 +2000,109 @@ const calculaRotaEValor = async () => {
             </div>
           )}
         </div>
-        <div className="text-right">
-          <p className="text-xs text-muted-foreground">{data.cliente || "Cliente não definido"} • {data.unidade || "Unidade não definida"}</p>
-        </div>
-      </div>
+      </PremiumDialogHeader>
 
-      {/* Cards Operacionais */}
-      <div className="px-6 pt-4 bg-slate-50">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.valorCliente > 0 ? 'border-blue-200' : 'border-slate-200'}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Receita</p>
-              <p className={`text-lg font-black ${data.valorCliente > 0 ? 'text-blue-600' : 'text-slate-400'}`}>R$ {(data.valorCliente || 0).toFixed(2)}</p>
-            </div>
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.custoPrestador > 0 ? 'border-orange-200' : 'border-slate-200'}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Custo Prest.</p>
-              <p className={`text-lg font-black ${data.custoPrestador > 0 ? 'text-orange-600' : 'text-slate-400'}`}>R$ {(data.custoPrestador || 0).toFixed(2)}</p>
-            </div>
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${(data.valorCliente - data.custoPrestador) > 0 ? 'border-green-200' : 'border-red-200'}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Margem</p>
-              <p className={`text-lg font-black ${(data.valorCliente - data.custoPrestador) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                R$ {(data.valorCliente - data.custoPrestador).toFixed(2)}
-              </p>
-            </div>
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${(data.valorCliente - data.custoPrestador) > 0 ? 'border-green-200' : 'border-red-200'}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Margem %</p>
-              <p className={`text-lg font-black ${data.valorCliente > 0 ? ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) >= 20 ? 'text-green-600' : ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) > 0 ? 'text-amber-600' : 'text-red-600' : 'text-slate-400'}`}>
-                {data.valorCliente > 0 ? ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100).toFixed(1) + '%' : '—'}
-              </p>
-            </div>
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.statusFaturamento === 'faturada' || data.statusFaturamento === 'paga' ? 'border-green-200' : 'border-amber-200'}`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Status Fin.</p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className={`w-2 h-2 rounded-full ${data.statusFaturamento === 'faturada' || data.statusFaturamento === 'paga' ? 'bg-green-500' : data.statusFaturamento === 'a faturar' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-                <span className="text-xs font-bold text-slate-700 uppercase">{data.statusFaturamento || "N/I"}</span>
-              </div>
-              {financeiroSincronizado && (
-                <div className="mt-0.5">
-                  <Badge className="bg-violet-50 text-violet-700 border-violet-200 text-[8px] py-0 px-1">
-                    Auto
-                  </Badge>
-                </div>
-              )}
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Status Op.</p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className={`w-2 h-2 rounded-full ${obterClasseDotGlobal(obterStatusGlobalOS(data.status))}`} />
-                <span className="text-xs font-bold text-slate-700 uppercase">{STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label}</span>
-              </div>
-            </div>
-            <div className={`bg-white rounded-xl border p-3 shadow-sm ${
-              diagnosticoEscala?.status === "sincronizada" ? 'border-emerald-200 bg-emerald-50/30' :
-              diagnosticoEscala?.status?.startsWith("divergencia") ? 'border-red-200 bg-red-50/30' :
-              'border-amber-200 bg-amber-50/30'
-            }`}>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase">Escala</p>
-              <div className="flex flex-col gap-1 mt-0.5">
-                <Badge className={`${obterClasseBadgeDivergencia(diagnosticoEscala?.status || "os_sem_escala")} text-[9px] flex items-center gap-1`}>
-                  {diagnosticoEscala?.status === "sincronizada" ? <CheckCircle className="w-3 h-3" /> :
-                   diagnosticoEscala?.status?.startsWith("divergencia") ? <AlertTriangle className="w-3 h-3" /> :
-                   <AlertTriangle className="w-3 h-3" />}
-                  {obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")}
-                </Badge>
-                {diagnosticoEscala?.descricao && (
-                  <span className="text-[8px] text-slate-500 leading-tight">{diagnosticoEscala.descricao}</span>
-                )}
-              </div>
-            </div>
-          </div>
+      {/* Workspace Enterprise */}
+      <div className="flex-1 min-h-0 p-3 sm:p-4">
+        <EnterpriseFormWorkspace>
+          <EnterpriseWorkspaceHeader>
+
+      {/* Resumo horizontal do workspace — indicadores rápidos da etapa atual */}
+      <div className="px-4 pb-3 pt-3 sm:px-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <MetaChip icon={Gauge} label="Prioridade" value={obterPrioridadeLabel(data.prioridade)} tone={data.prioridade === "urgente" ? "red" : data.prioridade === "baixa" ? "slate" : "blue"} />
+          <MetaChip icon={CheckCircle} label="Status Op." value={STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label} tone={obterToneGlobal(data.status)} />
+          <MetaChip icon={CreditCard} label="Status Fin." value={(data.statusFaturamento || "N/I").toUpperCase()} tone={data.statusFaturamento === "faturada" || data.statusFaturamento === "paga" ? "green" : data.statusFaturamento === "a faturar" ? "amber" : "slate"} />
+          <MetaChip icon={Calendar} label="Programação" value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")} tone={diagnosticoEscala?.status === "sincronizada" ? "emerald" : diagnosticoEscala?.status?.startsWith("divergencia") ? "red" : "amber"} />
           {ultimaOperacaoPrestador && (
-            <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-4">
-              <span>Última operação do prestador: {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString('pt-BR') : 'N/A'}</span>
-              {ultimaOperacaoPrestador.valor && <span>Último valor: R$ {ultimaOperacaoPrestador.valor.toFixed(2)}</span>}
-            </div>
+            <span className="ml-auto text-[10px] text-slate-400">
+              Última operação do prestador: {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString('pt-BR') : 'N/A'}
+              {verReceitaMargem && ultimaOperacaoPrestador.valor ? <> • R$ {ultimaOperacaoPrestador.valor.toFixed(2)}</> : null}
+            </span>
           )}
         </div>
+        {/* UPGRADE-REGRAS: cards de Receita/Margem restritos a admin máximo (demais perfis veem "---") */}
+        <div className="mt-3 grid grid-cols-4 gap-3 md:grid-cols-7">
+          <StatCard icon={DollarSign} label="Receita" value={verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : "---"} tone={verReceitaMargem && data.valorCliente > 0 ? "blue" : "slate"} />
+          <StatCard icon={Truck} label="Custo Prest." value={`R$ ${(data.custoPrestador || 0).toFixed(2)}`} tone={data.custoPrestador > 0 ? "orange" : "slate"} />
+          <StatCard
+            icon={TrendingUp}
+            label="Margem"
+            value={verReceitaMargem ? `R$ ${((data.valorCliente || 0) - (data.custoPrestador || 0)).toFixed(2)}` : "---"}
+            tone={verReceitaMargem ? ((data.valorCliente || 0) - (data.custoPrestador || 0) > 0 ? "green" : "red") : "slate"}
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="Margem %"
+            value={verReceitaMargem ? (data.valorCliente > 0 ? (((data.valorCliente - data.custoPrestador) / data.valorCliente * 100)).toFixed(1) + '%' : '—') : "---"}
+            tone={verReceitaMargem ? (data.valorCliente > 0 ? (((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) >= 20 ? "green" : ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) > 0 ? "amber" : "red") : "slate") : "slate"}
+          />
+          <StatCard icon={CreditCard} label="Status Fin." value={(data.statusFaturamento || "N/I").toUpperCase()} tone={data.statusFaturamento === "faturada" || data.statusFaturamento === "paga" ? "green" : data.statusFaturamento === "a faturar" ? "amber" : "slate"} />
+          <StatCard icon={CheckCircle} label="Status Op." value={STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label} tone={obterToneGlobal(data.status)} />
+          <StatCard
+            icon={Calendar}
+            label="Programação"
+            value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")}
+            tone={diagnosticoEscala?.status === "sincronizada" ? "emerald" : diagnosticoEscala?.status?.startsWith("divergencia") ? "red" : "amber"}
+            sub={diagnosticoEscala?.descricao}
+          />
+        </div>
       </div>
+      </EnterpriseWorkspaceHeader>
 
-      <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
-        <div className="max-w-7xl mx-auto space-y-6 pb-24">
-          <Tabs defaultValue="identificacao" className="w-full">
-            <TabsList className="bg-white border p-1 rounded-xl mb-6 shadow-sm flex flex-wrap h-auto gap-1">
-              <TabsTrigger value="identificacao" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><FileText className="w-4 h-4 mr-2"/> 1. Identificação</TabsTrigger>
-              <TabsTrigger value="carga" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><Package className="w-4 h-4 mr-2"/> 2. Carga</TabsTrigger>
-              <TabsTrigger value="veiculo" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><Truck className="w-4 h-4 mr-2"/> 3. Veículo</TabsTrigger>
-              <TabsTrigger value="enderecos" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><MapPin className="w-4 h-4 mr-2"/> 4. Rotas e Paradas</TabsTrigger>
-              <TabsTrigger value="valores" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><CreditCard className="w-4 h-4 mr-2"/> 5. Torre & Financeiro</TabsTrigger>
-              <TabsTrigger value="historico" className="data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg px-4 py-2 text-xs font-semibold"><Clock className="w-4 h-4 mr-2"/> 6. Histórico</TabsTrigger>
-            </TabsList>
+      <EnterpriseFormBody>
+        {/* Painel lateral esquerdo — contexto operacional */}
+        <EnterpriseContextSidebar>
+          <PanelSection icon={Building2} title="Operação" accent="primary">
+            <PanelRow label="Cliente" value={clienteNomeExibicao || data.cliente || "—"} />
+            <PanelRow label="Unidade" value={data.unidade || "—"} />
+            <PanelRow label="Tipo de Operação" value={data.tipoOperacao || "—"} />
+            <PanelRow label="Prioridade" value={obterPrioridadeLabel(data.prioridade)} />
+            <PanelRow label="Veículo" value={data.veiculoTipo || data.veiculoPlaca || "—"} sub={data.veiculoPlaca ? `Placa: ${data.veiculoPlaca}` : undefined} />
+            <PanelRow label="Prestador" value={data.prestador || "—"} />
+          </PanelSection>
+          <PanelSection icon={Gauge} title="Status" accent="blue">
+            <PanelRow label="Operacional" value={<span className="flex items-center justify-end gap-1.5"><span className={`h-2 w-2 rounded-full ${obterClasseDotGlobal(obterStatusGlobalOS(data.status))}`} />{STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label}</span>} />
+            <PanelRow label="Financeiro" value={<span className="flex items-center justify-end gap-1.5"><span className={`h-2 w-2 rounded-full ${(data.statusFaturamento === "faturada" || data.statusFaturamento === "paga") ? "bg-green-500" : data.statusFaturamento === "a faturar" ? "bg-amber-500" : "bg-slate-400"}`} />{(data.statusFaturamento || "N/I").toUpperCase()}</span>} />
+            <PanelRow label="Programação" value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")} valueClass={diagnosticoEscala?.status === "sincronizada" ? "text-emerald-700" : "text-amber-700"} />
+            <PanelRow label="Emissão" value={data.data ? new Date(data.data).toLocaleDateString("pt-BR") : "—"} />
+          </PanelSection>
+          <ResumoOperacionalPanel
+            data={data}
+            clienteNome={clienteNomeExibicao}
+            diagnosticoEscala={diagnosticoEscala}
+            ultimaOperacaoPrestador={ultimaOperacaoPrestador}
+            alertasCubagem={alertasCubagem}
+            pendenciasFiscais={pendenciasFiscais}
+            verReceitaMargem={verReceitaMargem}
+          />
+        </EnterpriseContextSidebar>
 
-            <TabsContent value="identificacao" className="space-y-6">
-              <Card className="border-none shadow-md rounded-2xl overflow-hidden">
-                <CardHeader className="bg-slate-50/50 border-b pb-4">
-                  <CardTitle className="text-base font-bold flex items-center gap-2"><FileText className="w-5 h-5 text-primary"/> Dados Gerais</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <EnterpriseMainContent>
+
+      {/* Formulário por etapas */}
+      <Tabs value={abaAtiva} onValueChange={setAbaAtiva} className="w-full">
+        <EnterpriseStepStrip className="mb-5">
+          <DocStepNavigation steps={obterDocStepsOS(data, alertasCubagem, pendenciasFiscais)} value={abaAtiva} />
+        </EnterpriseStepStrip>
+
+        <TabsContent value="identificacao" className="space-y-4">
+              <FormSectionCard icon={FileText} title="Dados do Documento" description="Identificação básica da ordem de serviço.">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   <Field label="Nº OS"><Input value={data.numero} readOnly className="bg-slate-50 font-bold" /></Field>
+                  <Field label="Romaneio / OC Cliente">
+                    <Input
+                      value={data.romaneio || ""}
+                      readOnly={readOnly}
+                      onChange={(e) => update("romaneio", e.target.value)}
+                      placeholder="Referência externa do cliente (opcional)"
+                      className="bg-white"
+                    />
+                  </Field>
                   <Field label="Data de Emissão"><Input type="date" value={data.data} readOnly={readOnly} onChange={(e) => update("data", e.target.value)} /></Field>
-                  <Field label="Cliente">
-                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" value={data.cliente} onChange={async (v, record) => { 
+                  <Field label="Cliente" required>
+                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" secondaryField="cnpj" value={clienteNomeExibicao || data.cliente} onChange={async (v, record) => { 
+                      setClienteNomeExibicao(record ? ((record as any).nome_fantasia || (record as any).razao_social || "") : "");
                       update("cliente", v); 
                       update("clienteId", record?.id || null); 
                       if (record?.id) {
@@ -951,7 +2126,7 @@ const calculaRotaEValor = async () => {
                       }
                     }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} />
                   </Field>
-                  <Field label="Tipo de Operação">
+                  <Field label="Tipo de Operação" required>
                     <Select value={data.tipoOperacao} onValueChange={(v) => update("tipoOperacao", v)} disabled={readOnly}>
                       <SelectTrigger><SelectValue/></SelectTrigger>
                       <SelectContent>
@@ -967,31 +2142,160 @@ const calculaRotaEValor = async () => {
                         <SelectItem value="Dedicado">Dedicado</SelectItem>
                         <SelectItem value="Emergencial">Emergencial</SelectItem>
                         <SelectItem value="Agendado">Agendado</SelectItem>
+                        <SelectItem value="Coleta Reversa">Coleta Reversa</SelectItem>
+                        <SelectItem value="E-commerce Multiparadas">E-commerce Multiparadas</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field label="Unidade"><Input value={data.unidade} readOnly={readOnly} onChange={(e) => update("unidade", e.target.value)} /></Field>
+                </div>
+              </FormSectionCard>
+
+              {/* UPGRADE-REGRAS-DE-NEGOCIO — ALOCAÇÃO DE PRESTADOR em destaque no corpo principal
+                  (antes o campo ficava apenas na sidebar / etapa Torre & Financeiro) */}
+              <FormSectionCard
+                icon={User}
+                title="Alocação de Prestador"
+                description="Selecione manualmente ou use a Sugestão Inteligente (veículo compatível com a OS + região da coleta)."
+                contentClassName="space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2">
+                    <Field label="Prestador / Motorista">
+                      <SearchableSelect
+                        table="prestadores"
+                        labelField="nome_completo"
+                        valueField="nome_completo"
+                        searchFields={["nome_completo"]}
+                        filters={{ status: "ativo" }}
+                        value={emRede ? "" : data.prestador}
+                        onChange={handleSelecionarPrestador}
+                        disabled={readOnly || emRede}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Placa Alocada">
+                    <Input value={data.veiculoPlaca || ""} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value)} placeholder="ABC-1234" />
+                  </Field>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={buscarSugestoesPrestador}
+                    disabled={readOnly || buscandoSugestao}
+                    className="border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800"
+                  >
+                    {buscandoSugestao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    {buscandoSugestao ? "Buscando prestadores..." : "Sugestão Inteligente"}
+                  </Button>
+                  {data.prestador && (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      Alocado: {data.prestador}
+                    </span>
+                  )}
+                  {emRede && (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                      OS ativa na Rede de Prestadores
+                    </span>
+                  )}
+                </div>
+
+                {sugestoesPrestador.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Sugestões ordenadas por compatibilidade
+                    </p>
+                    {sugestoesPrestador.map((s, i) => (
+                      <div
+                        key={s.prestadorId}
+                        className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 ${
+                          i === 0 ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <span className="w-5 text-[11px] font-black text-slate-400">#{i + 1}</span>
+                        <div className="min-w-[180px] flex-1">
+                          <p className="text-sm font-bold text-slate-800">{s.nome}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {s.veiculo?.tipo
+                              ? `${s.veiculo.tipo}${s.veiculo.placa ? ` · ${s.veiculo.placa}` : ""}`
+                              : "Sem veículo cadastrado"}
+                            {s.veiculo?.capacidadeKg ? ` · até ${s.veiculo.capacidadeKg} kg` : ""}
+                            {s.regiao ? ` · ${s.regiao}` : ""}
+                            {s.telefone ? ` · ${s.telefone}` : ""}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {s.motivos.slice(0, 3).map((m, mi) => (
+                              <span key={mi} className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
+                          {Math.min(100, s.score)}% match
+                        </Badge>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleSelecionarPrestador(s.nome, { id: s.prestadorId })}
+                          disabled={readOnly || emRede}
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                        >
+                          Selecionar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </FormSectionCard>
+
+              <FormSectionCard icon={ListChecks} title="Instruções e Operação" description="Orientação operacional da coleta e entrega." contentClassName="space-y-4">
                   <div className="md:col-span-3 lg:col-span-4">
                     <Field label="Instruções Operacionais da OS">
                       <Textarea value={data.instrucoesOperacionaisOS} readOnly={readOnly} onChange={(e) => update("instrucoesOperacionaisOS", e.target.value)} rows={3} placeholder="Descreva aqui orientações importantes para a coleta, entrega e restrições do cliente..." />
                     </Field>
                   </div>
                   
-                  <div className="md:col-span-3 lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-6 bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+                  {(data.tipoOperacao === "Coleta Reversa" || data.tipoOperacao?.toLowerCase().includes("reversa")) && (
+                    <div className="md:col-span-3 lg:col-span-4">
+                      <ColetaReversaFields fields={reversaFields} onChange={setReversaFields} readOnly={readOnly} defaultOpen />
+                    </div>
+                  )}
+              </FormSectionCard>
+
+              <FormSectionCard icon={Calendar} title="Serviço Programado & Status" description="Agendamento e situação operacional da OS." contentClassName="p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <Label className="font-bold text-blue-900 flex items-center gap-2"><Calendar className="w-4 h-4"/> Serviço Programado?</Label>
                         <Switch checked={!!data.dataProgramada} onCheckedChange={(v) => {
                           if (v) {
-                            update("dataProgramada", new Date().toISOString().split("T")[0]);
+                            const agora = new Date();
+                            const dataHoje = agora.toISOString().split("T")[0];
+                            const horaAgora = `${agora.getHours().toString().padStart(2,'0')}:${agora.getMinutes().toString().padStart(2,'0')}`;
+                            setData(p => ({ 
+                              ...p, 
+                              dataProgramada: dataHoje, 
+                              previsaoInicio: p.previsaoInicio || horaAgora 
+                            }));
                           } else {
-                            update("dataProgramada", "");
+                            setData(p => ({ ...p, dataProgramada: "", previsaoInicio: "", previsaoTermino: "" }));
                           }
                         }} disabled={readOnly} />
                       </div>
                       {data.dataProgramada && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
                           <Field label="Data Programada"><Input type="date" value={data.dataProgramada} readOnly={readOnly} onChange={(e) => update("dataProgramada", e.target.value)} /></Field>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Field label="Horário Início *">
+                              <Input type="time" required={!!data.dataProgramada} value={data.previsaoInicio || ""} readOnly={readOnly} onChange={(e) => update("previsaoInicio", e.target.value)} />
+                            </Field>
+                            <Field label="Horário Fim (Janela)">
+                              <Input type="time" value={data.previsaoTermino || ""} readOnly={readOnly} onChange={(e) => update("previsaoTermino", e.target.value)} />
+                            </Field>
+                          </div>
                           <Field label="Observações"><Textarea value={data.observacaoTorre} readOnly={readOnly} onChange={(e) => update("observacaoTorre", e.target.value)} rows={2} /></Field>
                         </div>
                       )}
@@ -1025,8 +2329,7 @@ const calculaRotaEValor = async () => {
                       </Field>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </FormSectionCard>
 
               <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                 <CardHeader className="bg-slate-50/50 border-b pb-4">
@@ -1505,7 +2808,7 @@ const calculaRotaEValor = async () => {
                           <div className="grid grid-cols-2 gap-3">
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Cliente / Tomador</span>
-                              <p className="text-sm text-slate-700">{data.cliente || '—'}</p>
+                              <p className="text-sm text-slate-700">{clienteNomeExibicao || data.cliente || '—'}</p>
                             </div>
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Indicador IE</span>
@@ -1515,7 +2818,8 @@ const calculaRotaEValor = async () => {
                           <div className="grid grid-cols-2 gap-3">
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Valor</span>
-                              <p className="text-sm font-bold text-slate-700">R$ {(data.valorCliente || 0).toFixed(2)}</p>
+                              {/* UPGRADE-REGRAS: valor da receita no preview fiscal restrito a admin */}
+                              <p className="text-sm font-bold text-slate-700">{verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : "---"}</p>
                             </div>
                           </div>
 
@@ -1558,7 +2862,7 @@ const calculaRotaEValor = async () => {
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">ICMS (12%)</span>
                               <p className="text-sm text-slate-700">
-                                {data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—'}
+                                {verReceitaMargem ? (data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—') : '---'}
                               </p>
                             </div>
                           </div>
@@ -1566,7 +2870,7 @@ const calculaRotaEValor = async () => {
                           <div className="grid grid-cols-3 gap-3">
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Base ICMS</span>
-                              <p className="text-sm text-slate-700">{data.valorCliente > 0 ? `R$ ${data.valorCliente.toFixed(2)}` : '—'}</p>
+                              <p className="text-sm text-slate-700">{verReceitaMargem ? (data.valorCliente > 0 ? `R$ ${data.valorCliente.toFixed(2)}` : '—') : '---'}</p>
                             </div>
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Alíquota ICMS</span>
@@ -1574,7 +2878,7 @@ const calculaRotaEValor = async () => {
                             </div>
                             <div className="bg-slate-50 rounded-lg p-3 border">
                               <span className="text-xs text-slate-500 font-medium">Valor ICMS</span>
-                              <p className="text-sm font-bold text-slate-700">{data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—'}</p>
+                              <p className="text-sm font-bold text-slate-700">{verReceitaMargem ? (data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—') : '---'}</p>
                             </div>
                           </div>
 
@@ -1598,12 +2902,12 @@ const calculaRotaEValor = async () => {
               </Dialog>
             </TabsContent>
 
-            <TabsContent value="enderecos" className="space-y-6">
-              <div className="flex items-center justify-between sticky top-0 bg-slate-50 py-2 z-10">
-                <h3 className="text-lg font-bold flex items-center gap-2"><MapPin className="w-5 h-5 text-primary"/> Itinerário da OS</h3>
+            <TabsContent value="enderecos" className="space-y-4">
+              <div className="flex items-center justify-between gap-3 sticky top-0 z-10 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+                <h3 className="text-sm font-bold flex items-center gap-2"><MapPin className="w-4 h-4 text-primary"/> Itinerário da OS</h3>
                 {!readOnly && (
-                  <Button onClick={() => update("enderecos", [...(data.enderecos || []), emptyEnd()])} variant="outline" className="border-primary text-primary hover:bg-primary/5">
-                    <Plus className="w-4 h-4 mr-2"/> Adicionar Parada
+                  <Button onClick={() => update("enderecos", [...(data.enderecos || []), emptyEnd()])} variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8 text-xs">
+                    <Plus className="w-4 h-4 mr-1"/> Adicionar Parada
                   </Button>
                 )}
               </div>
@@ -1639,30 +2943,45 @@ const calculaRotaEValor = async () => {
                       </CardHeader>
                       <CardContent className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                          <div className="md:col-span-3">
-                           <EnderecoCompleto 
-                             label="Endereço"
-                             value={{
-                               cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "",
-                               bairro: end.bairro || "", cidade: end.cidade || "", estado: end.estado || "",
-                               referencia: end.instrucoes || "", latitude: end.latitude, longitude: end.longitude,
-                             } as any}
-                             onChange={(obj) => {
-                               const e = [...(data.enderecos || [])];
-                               const { logradouro: log, numero: num } = separarNumeroLogradouro(obj.logradouro || "");
-                               e[idx] = { 
-                                 ...e[idx], 
-                                 ...obj, 
-                                 logradouro: obj.logradouro || log,
-                                 numero: obj.numero || num,
-                                 bairro: obj.bairro || end.bairro || "",
-                                 cidade: obj.cidade || end.cidade || "",
-                                 estado: obj.estado || end.estado || "",
-                                 endereco: `${obj.logradouro || log}${obj.numero || num ? ', ' + (obj.numero || num) : ''} - ${obj.bairro || ''}, ${obj.cidade || ''}/${obj.estado || ''}`.replace(/^ - |\/$/g, "")
-                               };
-                               update("enderecos", e);
-                             }}
-                             readOnly={readOnly}
-                           />
+                            <EnderecoCompleto 
+                              label="Endereço"
+                              clienteId={clienteIdEfetivo}
+                              value={{
+                                cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "",
+                                complemento: end.complemento || "", bairro: end.bairro || "", cidade: end.cidade || "",
+                                estado: end.estado || "", referencia: end.instrucoes || "",
+                                latitude: end.latitude, longitude: end.longitude,
+                                portaria: end.portaria || "", doca: end.doca || "",
+                                procedimentoEntrada: end.procedimentoEntrada || "",
+                                procedimentoSaida: end.procedimentoSaida || "",
+                                estacionamento: end.estacionamento || "",
+                                documentoNecessario: end.documentoNecessario || "",
+                                codigoAcesso: end.codigoAcesso || "",
+                                exigenciaEpi: end.exigenciaEpi || false,
+                                exigeAjudante: end.exigeAjudante || false,
+                                restricaoVeiculo: end.restricaoVeiculo || "",
+                                restricaoAltura: end.restricaoAltura || "",
+                                outrasRestricoes: end.outrasRestricoes || "",
+                                contatoNome: end.contatoNome || "",
+                                contatoTelefone: end.contatoTelefone || "",
+                              } as any}
+                              onChange={(obj) => {
+                                const e = [...(data.enderecos || [])];
+                                const { logradouro: log, numero: num } = separarNumeroLogradouro(obj.logradouro || "");
+                                e[idx] = { 
+                                  ...e[idx], 
+                                  ...obj, 
+                                  logradouro: obj.logradouro || log,
+                                  numero: obj.numero || num,
+                                  bairro: obj.bairro || end.bairro || "",
+                                  cidade: obj.cidade || end.cidade || "",
+                                  estado: obj.estado || end.estado || "",
+                                  endereco: `${obj.logradouro || log}${obj.numero || num ? ', ' + (obj.numero || num) : ''} - ${obj.bairro || ''}, ${obj.cidade || ''}/${obj.estado || ''}`.replace(/^ - |\/$/g, "")
+                                };
+                                update("enderecos", e);
+                              }}
+                              readOnly={readOnly}
+                            />
                          </div>
                          <div className="space-y-4">
                             <Field label="Nome Local"><Input value={end.nomeLocal || ""} readOnly={readOnly} onChange={(e) => { const t = [...(data.enderecos || [])]; t[idx].nomeLocal = e.target.value; update("enderecos", t); }} placeholder="Ex: Hospital X, Fábrica Y..." /></Field>
@@ -1736,26 +3055,55 @@ const calculaRotaEValor = async () => {
                       </div>
                       <div className="text-center p-3 bg-white rounded-lg border border-green-100">
                         <p className="text-xs text-green-600 font-medium">Pedágio</p>
-                        <p className="text-xs font-bold text-green-800">{data.pedagio > 0 ? `R$ ${data.pedagio.toFixed(2)}` : "Não identificado"}</p>
-                        <p className="text-[9px] text-green-600">Informe manualmente se houver</p>
+                        {/* UPGRADE-REGRAS: input numérico manual reflete em data.pedagio → custo da OS
+                            (ordemServicoService grava valor_pedagio). Fonte: API de rota quando existir. */}
+                        <div className="relative mt-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={data.pedagio ?? 0}
+                            readOnly={readOnly}
+                            onChange={(e) => {
+                              update("pedagio", Number(e.target.value));
+                              setPedagioInfo({ fonte: "manual", atualizadoEm: new Date().toISOString() });
+                            }}
+                            className="h-8 text-sm font-bold text-green-800 text-center pr-6"
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-green-600">R$</span>
+                        </div>
+                        <p className="text-[9px] text-green-600 mt-1">
+                          {pedagioInfo.fonte === "api"
+                            ? `Via API de rota${pedagioInfo.provider ? ` (${pedagioInfo.provider})` : ""}`
+                            : pedagioInfo.fonte === "manual"
+                              ? "Informe manualmente se houver"
+                              : "Não identificado — informe manualmente"}
+                        </p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-4">
-                      <Select value="rapida" onValueChange={() => {}} disabled={readOnly}>
-                        <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Tipo de rota" /></SelectTrigger>
+                      <Select value={rotaSelecionada} onValueChange={(v) => handleTrocarRota(v as TipoRota)} disabled={readOnly || calculandoDistancia}>
+                        <SelectTrigger className="w-[220px] h-8 text-xs"><SelectValue placeholder="Tipo de rota" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="rapida">Rota mais rápida</SelectItem>
+                          <SelectItem value="rapida">Rota mais rapida</SelectItem>
                           <SelectItem value="curta">Rota mais curta</SelectItem>
+                          <SelectItem value="operacional">Rota operacional recomendada</SelectItem>
                         </SelectContent>
                       </Select>
-                      <span className="text-xs text-green-700">Use o cálculo atual com distância e tempo estimado calculado automaticamente</span>
+                      {distanciasAlternativas && (
+                        <span className="text-xs text-green-700">
+                          {rotaSelecionada === "rapida" && `Rapida: ${distanciasAlternativas.rapida?.distanciaTexto || "—"} (${distanciasAlternativas.rapida?.duracaoTexto || "—"})`}
+                          {rotaSelecionada === "curta" && `Curta: ${distanciasAlternativas.curta?.distanciaTexto || "—"} (${distanciasAlternativas.curta?.duracaoTexto || "—"})`}
+                          {rotaSelecionada === "operacional" && `Operacional: ${distanciasAlternativas.operacional?.distanciaTexto || "—"} (${distanciasAlternativas.operacional?.duracaoTexto || "—"})`}
+                        </span>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
 
-            <TabsContent value="carga" className="space-y-6">
+            <TabsContent value="carga" className="space-y-4">
               <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                 <CardHeader className="bg-slate-50/50 border-b pb-4">
                   <CardTitle className="text-base font-bold flex items-center gap-2"><Package className="w-5 h-5 text-primary"/> Detalhamento da Carga</CardTitle>
@@ -1790,7 +3138,14 @@ const calculaRotaEValor = async () => {
                       </div>
                     </Field>
                     <Field label="Peso por Volume (kg)">
-                      <Input type="number" value={resultadoCubagem?.pesoPorVolume?.toFixed(2) || data.carga.pesoPorVolume || 0} readOnly className="bg-slate-50" />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={data.carga.pesoPorVolume || resultadoCubagem?.pesoPorVolume?.toFixed(2) || ""}
+                        readOnly={readOnly}
+                        onChange={(e) => updateCarga("pesoPorVolume", Number(e.target.value))}
+                        className={readOnly ? "bg-slate-50" : ""}
+                      />
                     </Field>
                     {(data.carga.tipo === 'Refrigerada' || data.carga.tipo === 'Congelada' || data.carga.tipo === 'Mista') && (
                       <Field label="Temperatura (Mín/Máx)">
@@ -1800,6 +3155,13 @@ const calculaRotaEValor = async () => {
                         </div>
                       </Field>
                     )}
+                  </div>
+
+                  <div className="lg:col-span-6">
+                    <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-700">
+                      <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>Cálculo inteligente: preencha <strong>2 dos 3</strong> campos — <strong>Volumes</strong>, <strong>Peso (Kg)</strong> e <strong>Peso por Volume (kg)</strong> — e o terceiro é preenchido automaticamente.</span>
+                    </div>
                   </div>
 
                   <div className="lg:col-span-6">
@@ -1852,7 +3214,25 @@ const calculaRotaEValor = async () => {
               </Card>
             </TabsContent>
 
-            <TabsContent value="veiculo" className="space-y-6">
+            <TabsContent value="veiculo" className="space-y-4">
+              <Card className="border-none shadow-md rounded-2xl overflow-hidden">
+                <CardHeader className="bg-slate-50/50 border-b pb-4">
+                  <CardTitle className="text-base font-bold flex items-center gap-2"><Truck className="w-5 h-5 text-primary"/> Dados do Veiculo</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Placa do Veiculo" required><Input value={data.veiculoPlaca || ''} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value.toUpperCase())} placeholder="ABC-1234" className="font-mono" /></Field>
+                    <Field label="Tipo de Veiculo">
+                      <select value={data.veiculoTipo || ''} onChange={(e) => update("veiculoTipo", e.target.value)} disabled={readOnly} className="w-full h-10 rounded-lg border px-3 text-sm">
+                        <option value="">Selecionar...</option>
+                        {TIPOS_VEICULO.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </CardContent>
+              </Card>
               {sugestoesVeiculo.length > 0 && (
                 <Card className="border-none shadow-md rounded-2xl overflow-hidden bg-blue-50/50 border-blue-100">
                   <CardHeader className="bg-blue-50 pb-2">
@@ -1940,13 +3320,14 @@ const calculaRotaEValor = async () => {
               </Card>
             </TabsContent>
 
-<TabsContent value="valores" className="space-y-6">
+<TabsContent value="valores" className="space-y-4">
               <Card className="border-none shadow-md rounded-2xl overflow-hidden bg-blue-50/30 border-blue-100">
                 <CardContent className="p-4">
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
+                    {/* UPGRADE-REGRAS: Valor Cliente e Margem visíveis apenas para admin máximo */}
                     <div>
                       <p className="text-xs text-blue-600 font-medium">Valor Cliente</p>
-                      <p className="text-lg font-bold text-blue-700">R$ {data.valorCliente.toFixed(2)}</p>
+                      <p className="text-lg font-bold text-blue-700">{verReceitaMargem ? `R$ ${data.valorCliente.toFixed(2)}` : "---"}</p>
                     </div>
                     <div>
                       <p className="text-xs text-orange-600 font-medium">Prestador</p>
@@ -1958,7 +3339,7 @@ const calculaRotaEValor = async () => {
                     </div>
                     <div>
                       <p className="text-xs text-purple-600 font-medium">Margem</p>
-                      <p className="text-lg font-bold text-purple-700">{data.valorCliente > 0 ? (((data.valorCliente - data.custoPrestador) / data.valorCliente) * 100).toFixed(1) : 0}%</p>
+                      <p className="text-lg font-bold text-purple-700">{verReceitaMargem ? `${data.valorCliente > 0 ? (((data.valorCliente - data.custoPrestador) / data.valorCliente) * 100).toFixed(1) : 0}%` : "---"}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 font-medium">Distância</p>
@@ -2067,26 +3448,187 @@ const calculaRotaEValor = async () => {
                     <Field label="Data Programada"><Input type="date" value={data.dataProgramada} readOnly={readOnly} onChange={(e) => update("dataProgramada", e.target.value)} /></Field>
                     <Field label="Início Previsto"><Input type="datetime-local" value={data.previsaoInicio} readOnly={readOnly} onChange={(e) => update("previsaoInicio", e.target.value)} /></Field>
                     <Field label="Parceiro / Prestador">
-                      <SearchableSelect table="prestadores" labelField="nome_completo" valueField="nome_completo" searchFields={['nome_completo', 'nome_fantasia']} filters={{ status: 'ativo' }} value={data.prestador} onChange={async (v, record) => { 
-                        update("prestador", v);
-                        if (record?.id) update("prestadorId" as any, record.id);
-                        if (record?.id) {
-                          try {
-                            const { data: prestData } = await supabase.from("prestadores").select("veiculo_tipo, veiculo_placa, refrigerado, status").eq("id", record.id).single();
-                            if (prestData) {
-                              update("veiculoTipo", prestData.veiculo_tipo || data.veiculoTipo);
-                              update("veiculoPlaca", prestData.veiculo_placa || "");
-                              update("veiculoTermica", prestData.refrigerado ? "refrigerado" : data.veiculoTermica);
-                            }
-                            const { data: ultimaOS } = await supabase.from("ordens_servico").select("data, valor_cliente").eq("prestador", v).order("data", { ascending: false }).limit(1).maybeSingle();
-                            if (ultimaOS) {
-                              setUltimaOperacaoPrestador({ data: ultimaOS.data, valor: ultimaOS.valor_cliente });
-                            }
-                          } catch (e) { console.warn("Erro ao buscar dados do prestador:", e); }
-                        }
-                      }} disabled={readOnly} />
+                      {/* UPGRADE: handler compartilhado (mesmo usado no bloco "Alocação de Prestador") */}
+                      <SearchableSelect table="prestadores" labelField="nome_completo" valueField="nome_completo" searchFields={['nome_completo']} filters={{ status: 'ativo' }} value={emRede ? "" : data.prestador} onChange={handleSelecionarPrestador} disabled={readOnly || emRede} />
                     </Field>
                     <Field label="Placa Alocada"><Input value={data.veiculoPlaca} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value)} placeholder="ABC-1234" /></Field>
+
+                    {/* Separador OU */}
+                    {!readOnly && data.id && !data.prestador && !emRede && (
+                      <div className="flex items-center gap-3 py-2">
+                        <div className="flex-1 h-px bg-slate-200" />
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">ou</span>
+                        <div className="flex-1 h-px bg-slate-200" />
+                      </div>
+                    )}
+
+                    {/* Botão Enviar para Rede */}
+                    {!readOnly && data.id && !data.prestador && !emRede && (
+                      <Button
+                        onClick={handleEnviarParaRede}
+                        disabled={carregandoRede || data.custoPrestador <= 0}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        {carregandoRede ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Network className="w-4 h-4 mr-2" />
+                        )}
+                        {carregandoRede ? "Publicando..." : "Enviar para Rede de Prestadores"}
+                      </Button>
+                    )}
+
+                    {/* Painel da Rede ativa */}
+                    {emRede && redeOportunidade && (
+                      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                            <Network className="w-4 h-4" /> Rede de Prestadores
+                          </h4>
+                          <Badge className={obterStatusRedeInfo(redeOportunidade.status).twClass}>
+                            {obterStatusRedeInfo(redeOportunidade.status).label}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-indigo-600 font-medium">Valor Prestador</span>
+                            <p className="font-bold text-indigo-900">R$ {redeOportunidade.valor_prestador.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <span className="text-indigo-600 font-medium">Expira em</span>
+                            <p className="font-bold text-indigo-900">
+                              {redeOportunidade.prazo_expiracao
+                                ? new Date(redeOportunidade.prazo_expiracao).toLocaleString("pt-BR")
+                                : "Sem prazo"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Missão A27: aceite da Rede (prestador/veículo/data/alocação) */}
+                        {redeOportunidade.status === "aceita" && aceiteRedeInfo && (
+                          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+                            <h4 className="text-xs font-bold text-green-800 uppercase flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4" /> Aceita na Rede de Prestadores
+                            </h4>
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <span className="text-green-600 font-medium">Prestador</span>
+                                <p className="font-bold text-green-900">{aceiteRedeInfo.prestador}</p>
+                              </div>
+                              <div>
+                                <span className="text-green-600 font-medium">Veículo</span>
+                                <p className="font-bold text-green-900">
+                                  {aceiteRedeInfo.tipo_veiculo || "—"}
+                                  {aceiteRedeInfo.placa ? ` • ${aceiteRedeInfo.placa}` : ""}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-green-600 font-medium">Aceite em</span>
+                                <p className="font-bold text-green-900">
+                                  {aceiteRedeInfo.aceite_em
+                                    ? new Date(aceiteRedeInfo.aceite_em).toLocaleString("pt-BR")
+                                    : "—"}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-green-600 font-medium">Origem da alocação</span>
+                                <p className="font-bold text-green-900">Rede de Oportunidades</p>
+                              </div>
+                            </div>
+                            {aceiteRedeInfo.alocacao_id && (
+                              <p className="text-[10px] text-green-700 bg-green-100 rounded p-1.5">
+                                Alocação {aceiteRedeInfo.alocacao_id}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Prestadores compatíveis */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-indigo-700 uppercase">
+                              {prestadoresCompativeis.length} Prestador(es) Compatível(is)
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[10px] text-indigo-600"
+                              onClick={handleAtualizarCompativeis}
+                              disabled={carregandoRede}
+                            >
+                              <Loader2 className={`w-3 h-3 mr-1 ${carregandoRede ? "animate-spin" : ""}`} />
+                              Atualizar
+                            </Button>
+                          </div>
+                          {prestadoresCompativeis.length > 0 ? (
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {prestadoresCompativeis.map((p) => (
+                                <div key={p.prestador_id} className="bg-white rounded-lg p-2 border border-indigo-100 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Users className="w-3 h-3 text-indigo-400" />
+                                    <span className="text-xs font-medium text-slate-700">{p.nome_completo}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {p.tipo_veiculo && (
+                                      <Badge variant="outline" className="text-[9px] h-4">{p.tipo_veiculo}</Badge>
+                                    )}
+                                    <span className="text-[10px] font-bold text-indigo-600">{p.score_match}pts</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-indigo-500 italic">Nenhum prestador compatível encontrado no momento</p>
+                          )}
+                        </div>
+
+                        {/* Ações */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-indigo-200">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-200 hover:bg-red-50 text-xs h-8"
+                            onClick={handleCancelarRede}
+                          >
+                            Cancelar Oportunidade
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                   
+                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
+                      <h4 className="text-xs font-bold text-amber-800 uppercase flex items-center gap-2"><AlertTriangle className="w-3 h-3"/> Ajuste Manual de Veiculo/Tabela</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label={`Tipo de Veiculo (auto: ${data.veiculoTipo || '—'})`}>
+                          <Select value={data.veiculoTipo} onValueChange={(v) => {
+                            if (!data.veiculoTipoOriginal) setData(p => ({ ...p, veiculoTipoOriginal: data.veiculoTipo }));
+                            update("veiculoTipo", v);
+                            if (!data.motivoAjusteManual) setShowMotivoDialog(true);
+                            if (!data.valorClienteEditado) recalcularValores(data.distanciaKm || 0, v, data.cliente);
+                          }} disabled={readOnly}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue/></SelectTrigger>
+                            <SelectContent>
+                              {TIPOS_VEICULO.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Tabela Aplicada">
+                          <Input value={data.tabelaAplicada} readOnly={readOnly} onChange={(e) => {
+                            if (!data.tabelaOriginal) setData(p => ({ ...p, tabelaOriginal: data.tabelaAplicada }));
+                            update("tabelaAplicada", e.target.value);
+                            if (!data.motivoAjusteManual) setShowMotivoDialog(true);
+                          }} placeholder="Nome da tabela" className="text-xs" />
+                        </Field>
+                      </div>
+                      {data.motivoAjusteManual && (
+                        <div className="text-[10px] text-amber-700 bg-amber-100 p-2 rounded">
+                          Motivo: {data.motivoAjusteManual}
+                          {data.veiculoTipoOriginal && <span> | Veic. original: {data.veiculoTipoOriginal}</span>}
+                          {data.tabelaOriginal && <span> | Tabela original: {data.tabelaOriginal}</span>}
+                          <button className="ml-2 text-amber-500 underline" onClick={() => setShowMotivoDialog(true)}>alterar</button>
+                        </div>
+                      )}
+                    </div>
                    
                    <div className="flex items-center justify-between pt-4 border-t">
                      <div className="flex items-center gap-2">
@@ -2142,29 +3684,104 @@ const calculaRotaEValor = async () => {
                        <div className="flex justify-between text-xs"><span className="text-muted-foreground">Distância:</span><span className="font-bold">{distanciaRota?.distanciaTexto || "—"}</span></div>
                        <div className="flex justify-between text-xs"><span className="text-muted-foreground">Tabela:</span><span className="font-bold">{data.tabelaAplicada || "Padrão"}</span></div>
                        <div className="flex justify-between text-xs"><span className="text-muted-foreground">Faixa:</span><span className="font-bold">{faixaCalculada || "N/A"}</span></div>
-                       <div className="flex justify-between text-sm pt-2"><span className="text-muted-foreground">Lucro Est.:</span><span className="font-bold text-green-600">R$ {(data.valorCliente - data.custoPrestador).toFixed(2)}</span></div>
+                        {/* UPGRADE-REGRAS: lucro (margem) estimado restrito a admin */}
+                        <div className="flex justify-between text-sm pt-2"><span className="text-muted-foreground">Lucro Est.:</span><span className="font-bold text-green-600">{verReceitaMargem ? `R$ ${(data.valorCliente - data.custoPrestador).toFixed(2)}` : "---"}</span></div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {data.veiculoTipo === 'moto' && (
-                  <Card className="lg:col-span-3 border-none shadow-md rounded-2xl overflow-hidden bg-green-50 border-green-100">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-bold flex items-center gap-2 text-green-700"><MessageCircle className="w-5 h-5"/> Mensagem para Prestador — WhatsApp</CardTitle>
-                      <CardDescription className="text-green-600">Texto para copiar e enviar manualmente. Não envia WhatsApp automaticamente.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-4">
-                      <Textarea value={gerarMensagemWhatsAppOS(data)} readOnly className="bg-white font-mono text-sm h-48 border-green-200" />
-                      <Button onClick={copiarWhatsApp} className="w-full bg-green-600 hover:bg-green-700 text-white">
-                        <CopyIcon className="w-4 h-4 mr-2" /> Copiar Mensagem
+                {/* ETAPA-2: Portador Externo / Avulso */}
+                <Card className={`lg:col-span-3 border-none shadow-md rounded-2xl overflow-hidden ${portadorExterno.ativo ? "bg-orange-50/60 border border-orange-200" : ""}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base font-bold flex items-center gap-2 text-orange-700"><User className="w-5 h-5"/> Portador Externo / Avulso</CardTitle>
+                        <CardDescription className="text-orange-600">Parceiro fora da base cadastrada (motoboy/avulso). Informe nome, CPF, placa da moto, grupo de origem, telefone (WhatsApp) e dados de PIX para o repasse.</CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium">Ativo</Label>
+                        <Switch checked={portadorExterno.ativo} onCheckedChange={(v) => updatePortador("ativo", v)} disabled={readOnly} />
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    {portadorExterno.ativo ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <Field label="Nome do Portador" required>
+                          <Input value={portadorExterno.nome} readOnly={readOnly} onChange={(e) => updatePortador("nome", e.target.value)} placeholder="Nome completo" />
+                        </Field>
+                        <Field label="CPF">
+                          <Input value={portadorExterno.cpf} readOnly={readOnly} onChange={(e) => updatePortador("cpf", e.target.value)} placeholder="000.000.000-00" />
+                        </Field>
+                        <Field label="Placa da Moto">
+                          <Input value={portadorExterno.placaMoto} readOnly={readOnly} onChange={(e) => updatePortador("placaMoto", e.target.value.toUpperCase())} placeholder="ABC-1D23" className="font-mono" />
+                        </Field>
+                        <Field label="Grupo de Origem">
+                          <Input value={portadorExterno.grupoOrigem} readOnly={readOnly} onChange={(e) => updatePortador("grupoOrigem", e.target.value)} placeholder="Ex: Grupo Centro / Parceiro X" />
+                        </Field>
+                        <Field label="Telefone (WhatsApp)">
+                          <Input type="tel" value={portadorExterno.telefoneWhatsapp || ""} readOnly={readOnly} onChange={(e) => updatePortador("telefoneWhatsapp", e.target.value)} placeholder="(11) 99999-9999" />
+                        </Field>
+                        <Field label="Tipo de PIX">
+                          <Select value={portadorExterno.pixTipo || "CPF/CNPJ"} onValueChange={(v) => updatePortador("pixTipo", v)} disabled={readOnly}>
+                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                            <SelectContent>
+                              {OPCOES_PIX_TIPO_FORM.map((t) => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Chave PIX">
+                          <Input value={portadorExterno.pixChave || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixChave", e.target.value)} placeholder="Chave PIX do portador" />
+                        </Field>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">Ative para registrar um portador externo/avulso nesta OS.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="lg:col-span-3 border-none shadow-md rounded-2xl overflow-hidden bg-green-50 border-green-100">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-bold flex items-center gap-2 text-green-700"><MessageCircle className="w-5 h-5"/> Mensagens de WhatsApp</CardTitle>
+                    <CardDescription className="text-green-600">
+                      Template 1 — Resumo da Rota (privacidade: sem número da porta). Template 2 — Orientação de Execução (OS completa). E a mensagem de rastreio para o cliente/destinatário.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-green-700 mb-1">Template 1 — Resumo da Rota</p>
+                      <Textarea value={gerarMensagemWhatsAppOS(data)} readOnly className="bg-white font-mono text-sm h-56 border-green-200" />
+                      <Button onClick={copiarWhatsApp} className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white">
+                        <CopyIcon className="w-4 h-4 mr-2" /> Copiar WhatsApp
                       </Button>
-                    </CardContent>
-                  </Card>
-                )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 mb-1">Template 2 — Orientação de Execução</p>
+                      <Textarea value={gerarMensagemOrientacaoExecucao(data)} readOnly className="bg-white font-mono text-sm h-64 border-emerald-200" />
+                      <Button onClick={copiarOrientacaoExecucao} className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                        <ListChecks className="w-4 h-4 mr-2" /> Copiar Orientação (OS Completa)
+                      </Button>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700 mb-1">WhatsApp Cliente (Rastreio)</p>
+                      <Textarea value={mensagemClienteRastreio()} readOnly className="bg-white font-mono text-sm h-24 border-blue-200" />
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Button onClick={copiarWhatsAppClienteRastreio} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50">
+                          <CopyIcon className="w-4 h-4 mr-2" /> Copiar
+                        </Button>
+                        <Button onClick={abrirWhatsAppClienteRastreio} className="bg-blue-600 hover:bg-blue-700 text-white">
+                          <MessageCircle className="w-4 h-4 mr-2" /> Enviar no WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
-<TabsContent value="historico" className="space-y-6">
+<TabsContent value="historico" className="space-y-4">
                 {/* Etapas Operacionais */}
                 <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                   <CardHeader className="pb-3">
@@ -2238,7 +3855,8 @@ const calculaRotaEValor = async () => {
                       </div>
                       <div>
                         <p className="text-xs text-blue-600 font-medium">Valor Cliente</p>
-                        <p className="text-lg font-bold text-blue-700">R$ {(data.valorCliente || 0).toFixed(2)}</p>
+                        {/* UPGRADE-REGRAS: resumo da etapa Resumo/Envio — receita restrita a admin */}
+                        <p className="text-lg font-bold text-blue-700">{verReceitaMargem ? `R$ ${(data.valorCliente || 0).toFixed(2)}` : "---"}</p>
                       </div>
                       <div>
                         <p className="text-xs text-orange-600 font-medium">Valor Prestador</p>
@@ -2288,61 +3906,102 @@ const calculaRotaEValor = async () => {
 
                  <Card className="border-none shadow-md rounded-2xl overflow-hidden">
                    <CardHeader className="bg-slate-50/50 border-b pb-4">
-                     <CardTitle className="text-base font-bold flex items-center gap-2"><Shield className="w-5 h-5 text-primary"/> Comprovantes e Evidências</CardTitle>
+                     <CardTitle className="text-base font-bold flex items-center gap-2"><Shield className="w-5 h-5 text-primary"/> Entregas e Comprovantes</CardTitle>
+                     <CardDescription>Entregas reais da OS com comprovantes (POD) enviados pelo App Prestador</CardDescription>
                    </CardHeader>
                    <CardContent className="p-6 space-y-6">
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Field label="Recebedor Nome"><Input value={ (data as any).recebedorNome || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorNome: e.target.value }))} /></Field>
-                        <Field label="Recebedor Documento"><Input value={ (data as any).recebedorDocumento || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorDocumento: e.target.value }))} /></Field>
-                        <Field label="Função/Vínculo">
-                          <Select value={ (data as any).recebedorFuncao || "" } onValueChange={(v) => setData(p => ({ ...p, recebedorFuncao: v }))} disabled={readOnly}>
-                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Porteiro">Porteiro</SelectItem>
-                              <SelectItem value="Recepção">Recepção</SelectItem>
-                              <SelectItem value="Almoxarifado">Almoxarifado</SelectItem>
-                              <SelectItem value="Segurança">Segurança</SelectItem>
-                              <SelectItem value="Morador">Morador</SelectItem>
-                              <SelectItem value="Vizinho">Vizinho</SelectItem>
-                              <SelectItem value="Familiar">Familiar</SelectItem>
-                              <SelectItem value="Funcionário">Funcionário</SelectItem>
-                              <SelectItem value="Outro">Outro</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                     </div>
+                     {/* POD REAL — fonte oficial entregas_protocolo (A23-A/C) */}
+                     {data.id ? (
+                       <EntregasComprovantes osId={data.id} numeroOs={data.numero} />
+                     ) : (
+                       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-6 text-center">
+                         <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                         <p className="text-xs text-slate-500">Salve a OS para carregar as entregas e comprovantes reais.</p>
+                       </div>
+                     )}
 
-                     <div className="grid grid-cols-2 gap-4">
-                        <Field label="Data Entrega"><Input type="date" value={ (data as any).dataEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, dataEntrega: e.target.value }))} /></Field>
-                        <Field label="Hora Entrega"><Input type="time" value={ (data as any).dataEntrega ? new Date((data as any).dataEntrega).toTimeString().slice(0,5) : "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, horaEntrega: e.target.value }))} /></Field>
-                     </div>
+                     <div className="pt-4 border-t border-slate-100">
+                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
+                         <Hash className="w-3.5 h-3.5 text-primary" /> Dados Planejados / Manual da OS
+                       </p>
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <Field label="Recebedor Nome"><Input value={ (data as any).recebedorNome || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorNome: e.target.value }))} /></Field>
+                         <Field label="Recebedor Documento"><Input value={ (data as any).recebedorDocumento || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, recebedorDocumento: e.target.value }))} /></Field>
+                         <Field label="Função/Vínculo">
+                           <Select value={ (data as any).recebedorFuncao || "" } onValueChange={(v) => setData(p => ({ ...p, recebedorFuncao: v }))} disabled={readOnly}>
+                             <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="Porteiro">Porteiro</SelectItem>
+                               <SelectItem value="Recepção">Recepção</SelectItem>
+                               <SelectItem value="Almoxarifado">Almoxarifado</SelectItem>
+                               <SelectItem value="Segurança">Segurança</SelectItem>
+                               <SelectItem value="Morador">Morador</SelectItem>
+                               <SelectItem value="Vizinho">Vizinho</SelectItem>
+                               <SelectItem value="Familiar">Familiar</SelectItem>
+                               <SelectItem value="Funcionário">Funcionário</SelectItem>
+                               <SelectItem value="Outro">Outro</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </Field>
+                      </div>
 
-                     <Field label="Observação da Entrega"><Textarea value={ (data as any).observacaoEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, observacaoEntrega: e.target.value }))} rows={2} /></Field>
-                     
-                     <div className="space-y-4">
-                        <Label className="text-xs font-bold uppercase text-slate-500">Fotos da Entrega</Label>
-                        <div className="border border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center bg-slate-50">
-                           <Package className="w-8 h-8 text-slate-300 mb-2" />
-                           <p className="text-xs text-slate-400">Aguardando evidência do aplicativo do prestador.</p>
-                           <p className="text-[9px] text-slate-300 mt-1">Permite foto de entrega, foto de coleta, canhoto assinado e assinatura digital</p>
-                        </div>
-                     </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <Field label="Data Entrega (planejada)"><Input type="date" value={ (data as any).dataEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, dataEntrega: e.target.value }))} /></Field>
+                         <Field label="Hora Entrega (planejada)"><Input type="time" value={ (data as any).dataEntrega ? new Date((data as any).dataEntrega).toTimeString().slice(0,5) : "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, horaEntrega: e.target.value }))} /></Field>
+                      </div>
 
-                     <div className="space-y-4">
-                        <Label className="text-xs font-bold uppercase text-slate-500">Assinatura Digital</Label>
-                        <div className="h-24 border rounded-xl bg-slate-50 flex items-center justify-center">
-                           <span className="text-[10px] text-slate-400 italic">Nenhuma assinatura registrada</span>
-                        </div>
+                      <Field label="Observação da Entrega"><Textarea value={ (data as any).observacaoEntrega || "" } readOnly={readOnly} onChange={(e) => setData(p => ({ ...p, observacaoEntrega: e.target.value }))} rows={2} /></Field>
                      </div>
                    </CardContent>
                  </Card>
                 </div>
-             </TabsContent>
-          </Tabs>
-        </div>
+              </TabsContent>
+            </Tabs>
+        </EnterpriseMainContent>
+        </EnterpriseFormBody>
+
+        {/* Rodapé interno do workspace */}
+        <EnterpriseWorkspaceFooter>
+        <FormFooterBar
+          onCancelar={handleVoltar}
+          onSalvarRascunho={!readOnly ? handleSalvarRascunho : undefined}
+          canRascunho={!readOnly && (data.status !== "rascunho" || !data.id)}
+          onSalvar={!readOnly ? handleSalvar : undefined}
+          salvarLabel="Salvar OS"
+          isSaving={isSaving}
+          onAvancar={handleAvancarEtapa}
+          canAvancar={temProximaEtapa}
+          avancarLabel="Avançar"
+          readOnly={readOnly}
+        />
+        </EnterpriseWorkspaceFooter>
+        </EnterpriseFormWorkspace>
       </div>
-    </div>
-  );
-};
+
+       <Dialog open={showMotivoDialog} onOpenChange={setShowMotivoDialog}>
+         <DialogContent className="max-w-md">
+           <DialogHeader>
+             <DialogTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-500"/> Motivo do Ajuste Manual</DialogTitle>
+             <DialogDescription>Informe o motivo da alteracao manual de veiculo, tabela ou valores.</DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4 py-4">
+             <div className="space-y-2">
+               {MOTIVOS_AJUSTE.map((m) => (
+                 <Button key={m} variant={motivoAjusteManual === m ? "default" : "outline"} size="sm" className="w-full justify-start text-left h-auto py-2" onClick={() => setMotivoAjusteManual(m)}>
+                   {m}
+                 </Button>
+               ))}
+             </div>
+             <Textarea value={motivoAjusteManual} onChange={(e) => setMotivoAjusteManual(e.target.value)} placeholder="Ou digite um motivo personalizado..." rows={2} />
+           </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setShowMotivoDialog(false)}>Cancelar</Button>
+              <Button onClick={confirmarAjusteManual} className="bg-amber-500 hover:bg-amber-600">Confirmar Ajuste</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+    </PremiumDocumentDialog>
+   );
+  };
 
 export default OrdemServicoForm;

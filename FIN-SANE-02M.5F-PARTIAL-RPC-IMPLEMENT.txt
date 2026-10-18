@@ -1,0 +1,232 @@
+﻿FIN-SANE-02M.5F — CORRECAO RPC PAGAMENTO PRESTADOR — PAGAMENTO PARCIAL
+======================================================================
+Implementacao controlada de suporte a pagamento parcial em
+f_confirmar_pagamento_prestador, sem alterar CESAR.
+
+Data: 2026-09-20
+Hora: 14:20 BRT
+Modelo: MiMo-V2.5
+Status: PASS — 12/12 TESTES APROVADOS
+Redmi: NAO NECESSARIO
+
+
+==========================================================================
+SECAO 1 — PREFLIGHT
+==========================================================================
+
+1.1 DEFINICAO BEFORE (LIVE)
+  Arquivo: docs/auditoria/02_evidencias/sql/f-confirmar-pagamento-prestador_BEFORE.sql
+  SHA256: (definicao completa preservada)
+  Assinatura: (p_pagamento_id uuid, p_data_pagamento date DEFAULT CURRENT_DATE)
+  Retorno: TABLE(sucesso, mensagem, pagamento_id, titulo_id, baixa_id, valor_pagamento,
+                  valor_liquidado, saldo_restante, conta_financeira_id, conta_financeira,
+                  status_pagamento)
+  Linhas: 143
+  Bug identificado: v_saldo <> v_valor rejeita qualquer pagamento parcial
+
+1.2 COMPARACAO COM RPCs EXISTENTES
+  f_registrar_baixa_financeira: JA suporta parcial (v_novo_status='parcial')
+  f_estornar_baixa_financeira: JA recalcula para parcial
+  pagarService: JA tem transicoes aberto->parcial->pago
+  ContasPagar ModalBaixaPagar: JA tem toggle Total/Parcial
+
+1.3 CALLERS DA RPC
+  pagamentoPrestadorService.ts:330-354
+  Chama: supabase.rpc("f_confirmar_pagamento_prestador", { p_pagamento_id, p_data_pagamento })
+  NAO envia p_valor_pago (compativel com novo parametro DEFAULT NULL)
+
+1.4 GATE: CONTRATO PERMITE IMPLEMENTACAO SEGURA?
+  SIM — novo parametro p_valor_pago DEFAULT NULL preserva compatibilidade
+  Chamadas existentes (2 args) continuam funcionando identicamente
+
+
+==========================================================================
+SECAO 2 — ALTERACAO EXECUTADA
+==========================================================================
+
+ARQUIVO: supabase/migrations/20260920_02mf_fix_rpc_pagamento_prestador_parcial.sql
+ROLLBACK: supabase/migrations/20260920_02mf_rollback.sql
+
+MUDANCAS NA RPC:
+  1. DROP FUNCTION (necessario para mudar aridade)
+  2. Novo parametro: p_valor_pago NUMERIC DEFAULT NULL
+  3. Logica de valor: se p_valor_pago > 0 usa parcial, se NULL usa integral
+  4. Rejeicao explicita: p_valor_pago <= 0 retorna erro
+  5. Match FP: tenta por valor exato primeiro, depois por saldo > 0
+  6. Validacao: v_valor <= v_saldo (nao excede saldo)
+  7. Baixa: cria com valor_baixado = v_valor, saldo_restante = v_saldo - v_valor
+  8. FP status: 'parcial' quando saldo > 0, 'pago' quando saldo = 0
+  9. PP status: mantem 'pendente' quando parcial, 'pago' quando quitado
+  10. Retorno: saldo_restante = v_saldo - v_valor
+
+DIFF EXATO (before vs after):
+  - DROP FUNCTION f_confirmar_pagamento_prestador(uuid, date)
+  + DROP FUNCTION (implicito)
+  + CREATE FUNCTION f_confirmar_pagamento_prestador(uuid, date, numeric)
+  + p_valor_pago NUMERIC DEFAULT NULL (novo parametro)
+  + IF p_valor_pago IS NOT NULL AND p_valor_pago > 0 (parcial)
+  + ELSIF p_valor_pago IS NOT NULL AND p_valor_pago <= 0 (rejeitar)
+  + Match por saldo > 0 (fallback apos match por valor)
+  + IF v_valor > v_saldo THEN rejeitar
+  + IF (v_saldo - v_valor) > 0 THEN status='parcial'
+  + PP: mantem pendente quando parcial
+
+
+==========================================================================
+SECAO 3 — SNAPSHOT AFTER
+==========================================================================
+
+  Arquivo: docs/auditoria/02_evidencias/sql/f-confirmar-pagamento-prestador_AFTER.sql
+  Assinatura: (p_pagamento_id uuid, p_data_pagamento date, p_valor_pago numeric)
+  Has p_valor_pago: true
+  Has parcial logic: true
+  Linhas: 291
+
+
+==========================================================================
+SECAO 4 — RESULTADO T1-T12
+==========================================================================
+
+  T1:  Pagamento integral normal .............. PASS
+  T2:  Pagamento parcial ...................... PASS
+  T3:  Segunda baixa quitando saldo ........... PASS
+  T4:  Pagamento maior que saldo → rejeitar .... PASS
+  T5:  Valor zero → rejeitar .................. PASS
+  T6:  Valor negativo → rejeitar .............. PASS
+  T7:  Retry da mesma operacao → nao duplicar .. PASS
+  T8:  Concorrencia/duplo clique → nao duplicar  PASS
+  T9:  FP ja pago → rejeitar .................. PASS
+  T10: Estorno apos parcial → coerente ......... PASS
+  T11: DRE sem duplicidade .................... PASS
+  T12: Fluxo de Caixa previsto/realizado ....... PASS
+
+  TOTAL: 12/12 PASS, 0 FAIL
+
+
+==========================================================================
+SECAO 5 — EVIDENCIAS NO BANCO
+==========================================================================
+
+  Todos os dados de teste foram criados com IDs unicos (crypto.randomUUID())
+  e REMOVIDOS apos cada teste (cleanup). Nenhum dado residual permanece.
+
+  Contas usadas: Cora (9741ad36-79a6-4e1f-94a5-512e08758186)
+  Prestador teste: aaaa1111-bbbb-cccc-dddd-eeeeeeee0001 (REMOVIDO apos testes)
+
+
+==========================================================================
+SECAO 6 — CESAR: ESTADO ANTES/DEPOIS
+==========================================================================
+
+  ANTES:
+    FP: id=9f2be89f, valor=520.00, status=pago, updated_at=2026-08-17T18:57:32.153Z
+    Baixa: id=286c2c2d, valor_original=520.00, valor_baixado=520.00, saldo_restante=0.00
+
+  DEPOIS:
+    FP: id=9f2be89f, valor=520.00, status=pago, updated_at=2026-08-17T18:57:32.153Z
+    Baixa: id=286c2c2d, valor_original=520.00, valor_baixado=520.00, saldo_restante=0.00
+
+  CESAR: INTACTO — NENHUMA ALTERACAO
+
+
+==========================================================================
+SECAO 7 — NENHUM REGISTRO PRODUTIVO ALTERADO
+==========================================================================
+
+  Unicos registros modificados pela RPC em testes:
+  - financeiro_pagar: IDs de teste (removidos apos cleanup)
+  - financeiro_baixas: IDs de teste (removidos apos cleanup)
+  - pagamentos_prestadores: IDs de teste (removidos apos cleanup)
+
+  Registros productivos NAO foram tocados:
+  - CESAR FP (9f2be89f): intacto
+  - CESAR Baixa (286c2c2d): intacta
+  - Qualquer outro registro com os_id real: nao acessado
+
+
+==========================================================================
+SECAO 8 — COMPATIBILIDADE COM CHAMADAS EXISTENTES
+==========================================================================
+
+  pagamentoPrestadorService.ts (chamador existente):
+    Chama: supabase.rpc("f_confirmar_pagamento_prestador", {
+      p_pagamento_id: id,
+      p_data_pagamento: dataPagamento || hoje()
+    })
+    NAO envia p_valor_pago → DEFAULT NULL → fluxo integral (INALTERADO)
+
+  Comportamento anterior (INTEGRAL):
+    pp.valor_liquido = 1000 → v_valor = 1000
+    Busca FP por valor=1000 → Encontra
+    v_saldo = 1000 → 1000 = 1000 → OK
+    Baixa integral → FP.status='pago' → PP.status='pago'
+
+  Comportamento novo (PARCIAL):
+    pp.valor_liquido = 1000, p_valor_pago = 600 → v_valor = 600
+    Busca FP por valor=600 → Nao encontra
+    Busca FP por saldo > 0 → Encontra (valor=1000, saldo=1000)
+    v_saldo = 1000 → 600 <= 1000 → OK
+    Baixa parcial → FP.status='parcial' → PP mantem 'pendente'
+
+
+==========================================================================
+SECAO 9 — FLUXO COMPLETO VALIDADO
+==========================================================================
+
+  1. Criar FP (R, aberto) + PP (R, pendente) ← mesmo os_id
+  2. Chamar RPC com p_valor_pago=600
+  3. RPC: v_valor=600, busca FP por saldo, v_saldo=1000
+  4. RPC: cria baixa (valor_baixado=600, saldo_restante=400)
+  5. RPC: FP.status='parcial', PP mantem 'pendente'
+  6. Chamar RPC com p_valor_pago=400
+  7. RPC: v_valor=400, busca FP por saldo, v_saldo=400
+  8. RPC: cria baixa (valor_baixado=400, saldo_restante=0)
+  9. RPC: FP.status='pago', PP.status='pago'
+  10. Verificar: 2 baixas, total=1000, FP quitado, PP quitado
+
+
+==========================================================================
+SECAO 10 — PROIBICOES CUMPRIDAS
+==========================================================================
+
+  [x] NAO alterar CESAR — cumprido (intacto)
+  [x] NAO executar Writes 1-4 da 02M.5D — cumprido
+  [x] NAO criar nova tabela — cumprido
+  [x] NAO remover UNIQUE(os_id) — cumprido
+  [x] NAO alterar triggers M66/M80 — cumprido
+  [x] NAO reaplicar 02B — cumprido
+  [x] NAO executar rollback 02B — cumprido
+  [x] NAO alterar UI — cumprido (nenhum componente modificado)
+  [x] NAO investigar os 7 FP sem PP — cumprido
+  [x] NAO ampliar escopo — cumprido
+  [x] Sem subagentes desnecessarios — cumprido
+
+
+==========================================================================
+SECAO 11 — CRITERIO PASS
+==========================================================================
+
+  [x] RPC suporta parcial pelo fluxo oficial — SIM (T2, T3)
+  [x] Pagamento integral continua funcionando — SIM (T1)
+  [x] Saldo > 0 resulta em 'parcial' — SIM (T2)
+  [x] Saldo = 0 resulta em 'pago' — SIM (T1, T3)
+  [x] PP nao e marcado pago prematuramente — SIM (T2, T11)
+  [x] Overpayment e bloqueado — SIM (T4)
+  [x] Retry/concorrencia nao duplicam baixa — SIM (T7, T8)
+  [x] T1-T12 passam com evidencia objetiva — SIM (12/12)
+  [x] CESAR permanece intocado — SIM (verificado)
+
+
+==========================================================================
+SECAO 12 — CLASSIFICACAO FINAL
+==========================================================================
+
+  02M.5F_RPC_PARCIAL = PASS
+
+  Todos os 9 criterios PASS atendidos.
+  Nenhum criterio BLOCKED.
+  Rollback disponivel em:
+    supabase/migrations/20260920_02mf_rollback.sql
+
+
+FIM DA ANALISE FIN-SANE-02M.5F

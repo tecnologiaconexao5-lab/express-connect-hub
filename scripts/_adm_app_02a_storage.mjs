@@ -1,0 +1,13 @@
+import pg from "pg";
+import fs from "node:fs";
+const cs = fs.readFileSync(".env","utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const pool = new pg.Pool({ connectionString: cs, ssl:{rejectUnauthorized:false} });
+const q = async (s, p=[]) => (await pool.query(s,p)).rows;
+const o = {};
+o.policias_permitir = await q(`select policyname,cmd,coalesce(roles::text,'(none)') roles,coalesce(qual,'(null)') qual,coalesce(with_check,'(null)') with_check from pg_policies where schemaname='storage' and tablename='objects' and policyname like 'Permitir%'`);
+o.policias_driver = await q(`select policyname,cmd,coalesce(roles::text,'(none)') roles,coalesce(with_check,'(null)') with_check from pg_policies where schemaname='storage' and tablename='objects' and policyname like 'driver%'`);
+o.role_grants = await q(`select p.rolname, has_table_privilege(p.rolname,'storage.objects','SELECT') sel, has_table_privilege(p.rolname,'storage.objects','INSERT') ins, has_table_privilege(p.rolname,'storage.objects','DELETE') del from pg_roles p where p.rolname in ('anon','authenticated','service_role')`);
+o.rls_storage = await q(`select relrowsecurity, relname from pg_class where relname in ('objects','buckets') and relnamespace='storage'::regnamespace`);
+o.bucket_docprest = await q(`select name, public from storage.buckets where name in ('documentos_prestadores','driver-evidence','contratos')`);
+console.log(JSON.stringify(o,null,2));
+await pool.end();

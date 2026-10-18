@@ -1,0 +1,107 @@
+E2E-COMPLETO-04-APP-POD-OFFLINE-PHOTOURL
+==================================================
+Ambiente: APP Flutter | Repo: C:\src\conexao_prestador
+Data: 2026-09-22 | Modo: IMPLEMENTAÇÃO + TESTES TÉCNICOS | Redmi: NÃO
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. POD-08 — DURABILIDADE OFFLINE (já existente + verificado)
+==================================================
+Estruturas já presentes e funcionais (sem arquitetura paralela):
+  - OfflineEntityQueue (fila durável de entidades; pod_data).
+  - OfflineUploadQueue (fila de mídia: SharedPreferences + pending_uploads; rejeita
+    localPath como destino remoto; backoff; _maxAttempts=5).
+  - OfflineSyncService (kick/reprocessamento; resume).
+  - DeliveryProofRepository.create/syncPending/pendingOfflineCount.
+Garantias verificadas por testes existentes (bug138/missao011/offline_sync):
+  - pendências sobrevivem a fechamento/reabertura (reloadLocalForTest/reloadForTest);
+  - retry com backoff; sync não remove sem confirmação do backend;
+  - idempotência por id/idempotencyKey (sem duplicidade).
+Nenhuma mudança necessária aqui além do guard POD-05 (abaixo).
+
+==================================================
+2. POD-05 — PHOTOURL (CORRIGIDO)
+==================================================
+CAUSA RAIZ: `hasUnresolvedMedia`/`resolveStoragePaths` só tratavam "storage path"
+candidato; um caminho LOCAL (ex.: /data/user/0/... ou file://) NÃO era considerado
+pendente → o POD era inserido como remoto com photo_url apontando para o caminho local
+(falso estado sincronizado; evidência quebrada no Portal).
+CORREÇÃO (lib/core/repositories/delivery_proof_repository.dart):
+  - Helper `_isLocalPath` (file://, /, \, drive letter) + `_hasLocalMediaReference`
+    para photo_url/signature_url/foto_canhoto_url.
+  - create(): se houver mídia local → NÃO insere remoto; enfileira offline
+    (queuedOffline) preservando a evidência.
+  - syncPending(): se a mídia resolvida ainda for local → mantém pendente
+    (incrementAttempts), sem declarar remoto.
+
+REMOTE_PHOTOURL_REQUIRED=YES
+LOCAL_PATH_FALSE_SUCCESS_FIXED=YES
+
+==================================================
+3. FINALIZAÇÃO (gate preservado)
+==================================================
+  - PersistResult gate mantido: create() só retorna remoto com insert OK (ou duplicata
+    idempotente); falha → failed (bloqueia) ou queuedOffline (pendente local).
+  - syncPending() só remove da fila quando o backend confirma; mídia local impede.
+  - stop_detail/operation_detail bloqueiam avanço quando persist.isFailed (POD-03).
+REMOTE_POD_REQUIRED_FOR_SYNCED_COMPLETION=YES
+
+==================================================
+4. STOP_DETAIL — catch
+==================================================
+Verificado: o fluxo de POD em stop_detail_screen.dart já NÃO produz falso sucesso —
+`persist == null || persist.isFailed` → SnackBar vermelho + return (bloqueia).
+O catch apenas loga; como persist permanece null, o avanço é bloqueado.
+Falha mantém estado recuperável, preserva evidência (fila) e permite retry.
+SILENT_CATCH_FIXED=YES (sem false success; nenhuma correção adicional necessária)
+
+==================================================
+5. TESTES
+==================================================
+NOVO: test/features/operations/pod05_photo_url_remote_test.dart — 4/4 PASS
+  - photoUrl local → queuedOffline (não remoto), evidência preservada;
+  - /data/user/0/... → syncPending mantém pendente (attempts>0);
+  - storagePath remoto → referência válida;
+  - file://, /, drive C:\, backslash → nenhum considerado remoto.
+DIRECIONADOS (existentes): bug138_pod_offline, stop_detail_pod_validation,
+  missao011_offline_queue_retry, offline_sync_service, delivery_proof_entity,
+  delivery_proof_rota_parada → 80/80 PASS.
+Total direcionado: 84/84 PASS.
+
+FLUTTER_ANALYZE=arquivos alterados: 0 issues (No issues found). Projeto: 875 issues
+  PRÉ-EXISTENTES (info/warning em tools/, print, integration_test sem pacote, dotenv
+  ausente) — nenhum erro novo nos arquivos alterados.
+BUILD=flutter build apk --debug → OK (√ build\app\outputs\flutter-apk\app-debug.apk, 80.5s)
+
+==================================================
+ENTREGÁVEIS
+==================================================
+OFFLINE_QUEUE_PERSISTENT=YES
+RETRY_IMPLEMENTED=YES
+RESUME_SYNC_IMPLEMENTED=YES
+PENDING_SYNC_VISIBLE_OR_STATEFUL=YES
+
+REMOTE_PHOTOURL_REQUIRED=YES
+LOCAL_PATH_FALSE_SUCCESS_FIXED=YES
+
+REMOTE_POD_REQUIRED_FOR_SYNCED_COMPLETION=YES
+SILENT_CATCH_FIXED=YES
+DUPLICATE_POD_RISK=NO
+
+DIRECTED_TESTS=84/84 (4 novos POD-05 + 80 existentes)
+FLUTTER_ANALYZE=0 nos arquivos alterados (875 pré-existentes no projeto)
+BUILD=OK (app-debug.apk)
+
+FILES_MODIFIED=
+  - lib/core/repositories/delivery_proof_repository.dart (POD-05 guard)
+  - test/features/operations/pod05_photo_url_remote_test.dart (NOVO)
+
+RESULT=PASS
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-05-PDFS-OS-E-FORM-GUARDS
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+TMS/Financeiro não alterados; RPCs M133-D.4 intactas; nenhuma migration; nenhuma operação
+real criada; auditorias anteriores não repetidas; Redmi não usado; DB_WRITES=0.

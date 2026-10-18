@@ -1,0 +1,228 @@
+================================================================================
+RELATORIO ADM-APP-02D.2-R1-REDMI-CLOSE - FECHAMENTO HIBRIDO
+        (TMS LOCAL PC + SUPABASE/STORAGE PC + APP FISICO REDMI)
+================================================================================
+Projeto TMS .........: express-connect-hub (C:\Users\DIEGO BALBINO\Desktop\Pasta
+                       Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+                       express-connect-hub)
+App Prestador .......: C:\src\conexao_prestador (Flutter) - v1.0.2 build 1327
+Ambiente ............: PRODUCAO (leitura) + escrita de testes controlados
+Projeto Supabase ....: uwrvzsjtpgaifkktpepn
+Redmi ...............: serial a28e7167, 1080x2400, adb reverse tcp:8800 ativo
+Gerado em ...........: 2026-09-27 22:42:42
+Caminho absoluto ....: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\
+                       DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+                       express-connect-hub\ADM-APP-02D2-R1-REDMI-CLOSE-RELATORIO.txt
+BYTES_TOTAL .........: [0000015572] (preenchido apos gravacao, largura fixa)
+
+================================================================================
+STATUS FINAL - SEM MASCARAR O GAP
+================================================================================
+CLASSIFICACAO OFICIAL DA 02D.2:
+  "IMPLEMENTADO / SEGURANCA PASS + GAP FUNCIONAL APP PENDENTE"
+
+Subgates (registrados separadamente, como determinado):
+
+  [PASS] SEGURANCA DO BUCKET: public=false; anon negado em /object/, em sign
+         sem authorization e em /object/public/ (400); signed URL com token
+         legivel fora de credencial (200, 11755 b, image/png). Prova PC 10/10.
+  [PASS] READ TMS -> STORAGE -> APP (METADADOS): o doc TESTE enviado pelo TMS
+         aparece no Redmi, dentro do Perfil do Prestador A, nas DUAS secoes
+         ("Documentos e Certificados" e "Documentacao Cadastral").
+  [FAIL] ABERTURA DA IMAGEM PELO APP: toque na linha do documento nao reage
+         (nao existe visualizador de documento no app para prestador logado).
+  [GAP ] WRITE APP -> STORAGE: NAO IMPLEMENTADO. Unico caminho de upload de
+         documento existente no app = wizard de cadastro (register_screen) ->
+         driver_documents_repository.uploadAndLink. Nao ha upload apos
+         cadastro e nao ha tela/rota de upload para prestador autenticado.
+         -> REGISTRADO COMO GAP APP-DOC-UPLOAD-01 (NAO implementado aqui).
+
+NAO declarar 02D.2 = 100% PASS enquanto o GAP FUNCIONAL APP persistir.
+
+================================================================================
+1. O QUE FOI FEITO (ordem de execucao)
+================================================================================
+
+--- 1.1 Etapa 1 - Upload de 1 doc TESTE via TMS no PC (Playwright local) ---
+[OK] Spec NOVA: tests\e2e\_adm_app_02d2_r1_upload_tms.spec.ts (5744 b)
+     Fluxo: login fixture T -> /cadastros/prestadores -> "02D2 FIXTURE PREST A"
+     -> aba "Documentacao" -> #doc-upload-Outros .setInputFiles(
+     scripts\_adm_app_02d2r1_doc_teste.png, 11755 b) -> toast "Outros enviado!"
+     -> card "Outros / Vazio->Valido". Resultado: 1/1 PASS.
+     NENHUM usuario/prestador novo criado; NENHUM wizard de cadastro usado.
+     Evidencias:
+       test-results\02d2\d2r1_tms_upload_ante.png   66105 b  2026-09-27 22:26:00
+       test-results\02d2\d2r1_tms_upload_apos.png   68556 b  2026-09-27 22:26:05
+     Prova de ambiente: spec usa goto RELATIVO sobre baseURL http://localhost:8800
+     (servidor local PID 21372). NENHUMA URL Vercel envolvida.
+
+--- 1.2 Etapa 2 - Prova PC/Supabase + Storage (10/10) ---
+[OK] Script: scripts\_adm_app_02d2r1_db_proof.mjs -> _adm_app_02d2r1_db_proof.json
+     (2655 b, 2026-09-27 22:31:11). Checks:
+       1_row_prestador_A            row d5ad885d-475b-421e-bb9a-5bd349cf3168
+                                    prestador A ee4511bb-956e-4ff0-af82-9e61b0bf1870
+                                    tipo "Outros", created 2026-09-28T04:26:01.451Z
+       2_path_estavel               url = doc_ee4511bb-..._Outros_1790558760477.png
+       2b_url_persistida_nao_signed coluna url guarda APENAS o path (sem
+                                    /object/sign, sem token, sem http)
+       3_objeto_no_bucket           storage.objects existe (2026-09-28T01:26:01.311Z)
+       4_bucket_public_false        bucket documentos_prestadores public = false
+       5_anon_object_negado         anon GET /object/            -> 400
+       5b_anon_sign_negado          anon sign sem authorization  -> 400
+       5c_anon_public_negado        anon GET /object/public/     -> 400
+       6_signed_url_com_token       signed URL emitida (token OMITIDO aqui)
+       6b_signed_legivel_sem_credencial  GET 200 | 11755 b | image/png
+     Bytes do objeto baixado salvos em:
+       test-results\02d2\d2r1_db_signed_lido.png    11755 b  2026-09-27 22:31:11
+     (confere exatamente com o arquivo de origem enviado pelo TMS).
+
+--- 1.3 Etapa 3 - Prova FISICA no Redmi (app Android) ---
+[OK] Estado inicial + restart do app (force-stop + monkey) mantendo o login do
+     Prestador A ("02D2 FIXTURE"); aba Perfil aberta; shell do app NAO recarrega
+     documentos ao trocar de aba (StatefulShellRoute), por isso o restart.
+     Evidencias (test-results\02d2\):
+       d2r1_redmi_state0.png       346982 b  2026-09-27 22:32:26
+       d2r1_app_state0.png         172389 b  2026-09-27 22:32:50
+       d2r1_app_perfil_reload.png  172352 b  2026-09-27 22:33:20
+       d2r1_app_restart.png         32264 b  2026-09-27 22:33:54
+       d2r1_app_restart2.png       280402 b  2026-09-27 22:34:20
+       d2r1_app_perfil_top.png     279880 b  2026-09-27 22:34:44
+       d2r1_app_perfil_v1.png      205332 b  2026-09-27 22:35:24  <- doc visivel
+       d2r1_app_doc_tap.png        204989 b  2026-09-27 22:37:01  <- toque=sem acao
+       d2r1_app_perfil_scroll1.png 176354 b  2026-09-27 22:37:27
+       d2r1_app_perfil_scroll2.png 176354 b  2026-09-27 22:37:32
+[OK] DOC TESTE VISIVEL no app (metadados), nas 2 secoes do Perfil:
+       "Documentos e Certificados" -> Outros | Pendente | Pendente
+       "Documentacao Cadastral"    -> Outros | Pendente
+     Rodape do app confere versao: "Versao 1.0.2 / Build 1327".
+[FAIL] Toque na linha "Outros" (d2r1_app_doc_tap.png) -> NENHUMA mudanca de tela:
+     nao ha visualizador de documento para prestador autenticado. (Contratos e
+     Termos DO possuem botoes "Visualizar / Baixar PDF"; documentos nao.)
+
+================================================================================
+2. GAPS REGISTRADOS (nao mascarados, nao tratados aqui)
+================================================================================
+[G1] GAP APP-DOC-UPLOAD-01 - ESCRITA APP -> STORAGE APOS CADASTRO: NAO
+     IMPLEMENTADO no build 1.0.2/1327.
+       - Unico upload: register_screen.dart:740 _uploadDocumentosPendentes ->
+         driver_documents_repository.dart:201 uploadAndLink (so no cadastro).
+       - Perfil: profile_screen.dart:898 _buildDocumentsListCard = SOMENTE LEITURA.
+       - Nenhuma rota/tela de upload para prestador logado.
+     DECISAO: NAO implementado nesta missao. Vira MICRO-MISSAO NIVEL 7 propria,
+     junto com o fluxo documental/onboarding (regra oficial da diretriz R1).
+[G2] APP SEM VISUALIZADOR DE DOCUMENTO: nao existe abertura da imagem/pdf do
+     documento pelo app (toque nao reage). Leitura de METADADOS = ok;
+     leitura de CONTEUDO pelo app = indisponivel hoje.
+[G3] DIVERGENCIA DE STATUS EXIBIDO: mesmo doc aparece "Valido" no TMS e
+     "Pendente" no app (icone de relogio). Registrado para analise; nao alterado.
+[G4] D1 DO PLANO 02D.1 (Chrome do Redmi -> TMS local:8800 -> detalhe do
+     prestador com FOTO renderizando) NAO executado nesta R1 - estava fora da
+     diretriz desta sessao. Permanece pendente na fila do gate 02D.2 original.
+[G5] Evidencias antigas de test-results\02d2\ (d2_01..d2_06,
+     tms_prestador_detalhe.png, tms_analise_lote.png) foram APAGADAS pela
+     execucao do Playwright (limpeza automatica do diretorio). Os scripts/JSONs
+     fonte continuam integros em scripts\ (ex.: _adm_app_02d2_testes.out.json,
+     _adm_app_02d2_roundtrip.out.json, snapshots, migration, rollback).
+[G6] A sessao do app no Redmi segue logada como usuario fixture que JA FOI
+     REMOVIDO do auth (sem novo login) - sem acao tomada, por design.
+
+================================================================================
+3. LIMPEZA EXECUTADA (com prova)
+================================================================================
+--- 3.1 Remocao SOMENTE do doc TESTE (antes da limpeza das fixtures) ---
+[OK] scripts\_adm_app_02d2r1_cleanup_doc.mjs -> _adm_app_02d2r1_cleanup_doc.json
+     (746 b). ANTES: row=1, obj=1, bucket=79, docs prestador A=1, docs outros=29
+     DEPOIS: row=0, obj=0, bucket=78, docs prestador A=0, docs outros=29
+     delete object HTTP 200 | delete row 1 | 7/7 provas:
+       row_removida, obj_removido, bucket_-1, nenhum_row_fixture_restou,
+       rows_outros_intactas, prestadores_intactos, tenant_usuarios_intactos
+
+--- 3.2 Limpeza oficial das fixtures A/B/T ---
+[OK] scripts\_adm_app_02d2r1_fixture_down_prova.mjs -> executa
+     node scripts\_adm_app_02d2_fixture.mjs down e prova antes/depois. 12/12:
+       fixture_users 3->0 | fixture_prestadores 2->0 | tenant_usuarios 10->9
+       prestadores 41->39 | clientes 28=28 | ordens_servico 166=166
+       alocacoes_escala 203=203 | financeiro_receber 49=49
+       financeiro_pagar 116=116 | documentos_prestadores 32=32
+       bucket objetos 78=78 | storage.objects total 131=131
+     NENHUM dado real de producao alterado; NENHUM objeto do bucket removido
+     nesta etapa (objeto do doc TESTE ja tinha sido removido em 3.1).
+     Auth users removidos: adm02d2_prest_a / adm02d2_prest_b / adm02d2_tms
+     (exclusao HTTP 200 nos 3). Senhas NUNCA reproduzidas nesta evidencia.
+
+================================================================================
+4. REGRAS DE DECISAO APLICADAS (sem mascarar)
+================================================================================
+- Seguranca + signed URL + bucket privado .................. PASS (10/10 PC).
+- Leitura de metadados TMS -> Storage -> App (Redmi) ....... PASS (fisico).
+- Abertura de conteudo pelo app ............................ FAIL (sem viewer).
+- Escrita App -> Storage apos cadastro ..................... NAO IMPLEMENTADO
+  -> GAP APP-DOC-UPLOAD-01, virar micro-missao nivel 7.
+- Como o upload pos-cadastro pelo app E requisito do gate original,
+  classificacao final = IMPLEMENTADO/SEGURANCA PASS + GAP FUNCIONAL APP
+  PENDENTE. NAO foi usada nenhuma alternativa (novo prestador, novo usuario,
+  wizard de cadastro) para disfarcar a ausencia de upload no app.
+
+================================================================================
+5. BACKLOG CONHECIDO - PRESERVADO (nao tratado aqui)
+================================================================================
+A-1..A-7, A-11, A-13, A-14, APP-RPC-LEGACY-01, APP-RPC-CRIAR-01, GAP-02,
+GAP-03, GAP-F2/F3/F4/F5, APP-DATA-01, APP-SCHEMA-01, STORAGE-E2E11-PURGE,
+TEST-FIN-IS_TESTE-01, tools/query_operation.dart/dotenv, OS esporadicos/
+motoboys, romaneio, KM/pedagio/adicionais/reembolsos, financeiro prestador,
+Rede de Oportunidade, proximidade/raio/distancia, Radar, CAD-PERSIST,
+indicadores, divida TypeScript, PLAYWRIGHT pendencias.
++ NOVOS: GAP APP-DOC-UPLOAD-01 (G1), app sem visualizador (G2),
+  divergencia de status TMS x App (G3), D1 Chrome-Redmi (G4).
+Correcoes oficiais da 02D.2 preservadas: migration NAO revertida, bucket
+PRIVADO, policies NAO tocadas, testes N/P NAO reexecutados, rollback ja
+validado. Nenhuma migration nova foi aplicada nesta R1.
+
+================================================================================
+6. PROXIMA ACAO (ordem exata) - E ENTao PARAR
+================================================================================
+1. MICRO-MISSAO NIVEL 7: implementar APP-DOC-UPLOAD-01 (upload pos-cadastro no
+   app) e/ou visualizador de documento, junto ao fluxo documental/onboarding.
+   (NAO iniciada aqui, por determinacao.)
+2. Executar D1 (Chrome no Redmi -> TMS local:8800 -> detalhe com foto) para
+   fechar o restante do gate 02D.2 original.
+3. Analisar G3 (status "Pendente" no app x "Valido" no TMS).
+4. Nao iniciar 02B nesta sessao; nao reexecutar N/P, round-trip, P10, 21-21,
+   10-10, 17-17, Flutter 9-9, GAP-01, privatizacao, RLS.
+
+================================================================================
+ARQUIVOS DE EVIDENCIA (caminho absoluto na raiz do projeto; bytes; data-hora)
+================================================================================
+C:\...\express-connect-hub\tests\e2e\_adm_app_02d2_r1_upload_tms.spec.ts   5744 b  2026-09-27 (novo)
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_doc_teste.png         11755 b  2026-09-27 22:25:25
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_db_proof.mjs           4821 b  2026-09-27 22:30:58
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_db_proof.json          2655 b  2026-09-27 22:31:11
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_cleanup_doc.mjs        3347 b  2026-09-27 22:39:48
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_cleanup_doc.json        746 b  2026-09-27 22:39:31
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_fixture_down_prova.mjs 3107 b  2026-09-27 22:40:07
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_preserva_gap.mjs        867 b  2026-09-27 (apoio)
+C:\...\express-connect-hub\scripts\_adm_app_02d2r1_scan_storage.mjs        553 b  2026-09-27 (apoio)
+C:\...\express-connect-hub\test-results\02d2\d2r1_tms_upload_ante.png    66105 b  2026-09-27 22:26:00
+C:\...\express-connect-hub\test-results\02d2\d2r1_tms_upload_apos.png    68556 b  2026-09-27 22:26:05
+C:\...\express-connect-hub\test-results\02d2\d2r1_db_signed_lido.png     11755 b  2026-09-27 22:31:11
+C:\...\express-connect-hub\test-results\02d2\d2r1_redmi_state0.png      346982 b  2026-09-27 22:32:26
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_state0.png         172389 b  2026-09-27 22:32:50
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_perfil_reload.png  172352 b  2026-09-27 22:33:20
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_restart.png         32264 b  2026-09-27 22:33:54
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_restart2.png       280402 b  2026-09-27 22:34:20
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_perfil_top.png     279880 b  2026-09-27 22:34:44
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_perfil_v1.png      205332 b  2026-09-27 22:35:24
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_doc_tap.png        204989 b  2026-09-27 22:37:01
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_perfil_scroll1.png 176354 b  2026-09-27 22:37:27
+C:\...\express-connect-hub\test-results\02d2\d2r1_app_perfil_scroll2.png 176354 b  2026-09-27 22:37:32
+C:\...\express-connect-hub\ADM-APP-02D2-RELATORIO.txt                   16082 b  2026-09-27 19:21:56
+  (relatorio anterior - status "NAO PRONTO / BLOCKED-F-ENV", agora fechado)
+
+(Data-hora e conteudo do proprio relatorio ver cabecalho; bytes do relatorio
+ preenchidos no campo BYTES_TOTAL, largura fixa, sem alterar o tamanho final.)
+
+================================================================================
+FIM - MISSAO ADM-APP-02D.2-R1-REDMI-CLOSE ENCERRADA COMO
+       "IMPLEMENTADO / SEGURANCA PASS + GAP FUNCIONAL APP PENDENTE"
+       (GAP APP-DOC-UPLOAD-01 ABERTO; MICRO-MISSAO NIVEL 7 PENDENTE)
+================================================================================

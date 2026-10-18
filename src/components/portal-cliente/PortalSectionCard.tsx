@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LucideIcon } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ interface PortalSectionCardProps {
   className?: string;
 }
 
-export function PortalSectionCard({
+export const PortalSectionCard = memo(function PortalSectionCard({
   title,
   description,
   action,
@@ -45,4 +46,4 @@ export function PortalSectionCard({
       <CardContent>{children}</CardContent>
     </Card>
   );
-}
+});

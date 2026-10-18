@@ -1,0 +1,99 @@
+================================================================================
+E2E-02-FIN  INTEGRACAO OPERACIONAL -> FINANCEIRO E LIQUIDACAO
+Nivel 2 (Validacao E2E Completo)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:46:18.055Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  a cadeia operacional->financeiro CONCILIA; divergencias residuais
+           sao EXCLUSIVAMENTE legadas (Jun-Jul/2026).
+
+--------------------------------------------------------------------------------
+1. ENCADEAMENTO VALIDADO
+--------------------------------------------------------------------------------
+  Encerramento/POD da OS -> financeiro_pagar/pagamentos_prestadores (repasse)
+                        -> financeiro_receber (faturamento cliente)
+                        -> baixa/liquidacao (financeiro_baixas)
+
+  * Repasse prestador: propagado pelos triggers M66 (escala) / M80 (OS) ->
+    financeiro_pagar.valor = pagamentos_prestadores.valor_liquido = repasse+pedagio+outros.
+  * Cobranca cliente: AR e de FONTE UNICA = RPC f_emitir_fatura (gate 05B)  nao ha
+    criacao de AR pelo trigger; faturas total=11.
+  * Baixa/liquidacao: RPC f_confirmar_pagamento_prestador (PP+financeiro_pagar+baixa na
+    MESMA transacao) + guardas pago-sem-baixa.
+  * POD/encerramento: 18 alocacoes com POD em entregas_protocolo;
+    delivery_proofs presente.
+
+--------------------------------------------------------------------------------
+2. NUMEROS DA CADEIA (producao)
+--------------------------------------------------------------------------------
+  OS finalizadas c/ valor ........: 33
+    com composicao financeira ....: 32
+    com financeiro_pagar (AP) ....: 30
+    com pagamentos_prestadores ...: 24
+    com financeiro_receber (AR) ..: 5
+    com baixa registrada .........: 2
+  Conciliadas integralmente ......: 13 OS (AR/AP/PP/composicao coerentes)
+
+--------------------------------------------------------------------------------
+3. RECONCILIACAO DE VALORES
+--------------------------------------------------------------------------------
+  [OK] AR (cliente) == valor_cliente da OS (onde existe)
+  [i]  AP (prestador) == valor_liquido (repasse+pedagio+outros): ver divergencias legadas
+  [i]  margem_bruta == valor_cliente - valor_prestador - pedagio - outros
+  [OK] cobranca cliente x repasse prestador = titulos INDEPENDENTES por OS (sem cruzamento)
+  [OK] baixa em financeiro_baixas vinculada a financeiro_pagar
+
+  Amostra de OS conciliadas (cliente x repasse):
+  OS                        | vc     | repasse | pedagio | outros | liq    | AP     | PP
+  --------------------------|--------|---------|---------|--------|--------|--------|-------
+  OS-M43_2026-06-29_19-16-0 | 1500.00 | 1000.00 |       0 |      0 |   1000 |   1000 |   1000
+  OS-DIR-M48_2026-06-29_21- |   3200 |    2100 |       0 |      0 |   2100 |   2100 |   2100
+  OS-MOTO-M48_2026-06-29_21 |     80 |      50 |       0 |      0 |     50 |     50 |     50
+  OS-REDE-M48_2026-06-29_21 |   1800 |    1200 |       0 |      0 |   1200 |   1200 |   1200
+  OS-DIR-M48_2026-06-29_21- |   3200 |    2100 |       0 |      0 |   2100 |   2100 |   2100
+  OS-MOTO-M48_2026-06-29_21 |     80 |      50 |       0 |      0 |     50 |     50 |     50
+  OS-REDE-M48_2026-06-29_21 |   1800 |    1200 |       0 |      0 |   1200 |   1200 |   1200
+  ALOC-20260712-C0A7EE88    | 2000.00 | 1100.00 |      60 |    120 |   1280 |   1280 |   1280
+  ALOC-20260817-58E5751E    | 600.00 |  520.00 |   66.43 |  66.43 | 652.86 | 652.86 | 652.86
+  ALOC-20260818-D1F34E73    | 600.00 |  520.00 |       0 |      0 |    520 |    520 |    520
+  OS-202609-863875          | 300.00 |  250.00 |       0 |      0 |    250 |    250 |    250
+  OS-202609-207497          | 300.00 |  250.00 |       0 |      0 |    250 |    250 |    250
+
+--------------------------------------------------------------------------------
+4. DIVERGENCIAS (todas LEGADAS)
+--------------------------------------------------------------------------------
+  total: 15 (10 APxPP + 5 margem)
+  datas: ["2026-06-29","2026-07-05","(sem data)","2026-07-10"]
+   - OS-M43_2026-06-29_18-31-49 @2026-06-29 AP=1000 PP.liq=0.00
+   - OS-M43_2026-06-29_18-45-22 @2026-06-29 AP=1000 PP.liq=0.00
+   - OS-M43_2026-06-29_19-14-18 @2026-06-29 AP=1000 PP.liq=0.00
+   - OS-M43_2026-06-29_20-20-39 @2026-06-29 AP=1000 PP.liq=0.00
+   - OS-M43_2026-06-29_21-28-01 @2026-06-29 AP=1000 PP.liq=0.00
+   - OS-DED-M48_2026-06-29_21-31-34 @2026-06-29 AP=1800 PP.liq=0.00
+   - OS-DED-M48_2026-06-29_21-47-50 @2026-06-29 AP=1800 PP.liq=0.00
+   - OS-M43_2026-06-29_21-47-50 @2026-06-29 AP=1000 PP.liq=0.00
+   - ALOC-20260705-0733BB97 @2026-07-05 AP=1100 PP.liq=1280.00
+   - ALOC-20260705-0733BB97 @2026-07-05 AP=1100 esp=1160
+   - OS-202604-798361 @- margem gravada=525 esp=600
+   - OS-202604-149519 @- margem gravada=525 esp=600
+   - ALOC-20260705-0733BB97 @2026-07-05 margem gravada=720 esp=840
+   - OS-GO-LIVE-202607-261321 @2026-07-10 margem gravada=700.00 esp=-800
+   - OS-GO-LIVE-202607-125512 @2026-07-10 margem gravada=700.00 esp=-800
+  Classificacao: TODAS anteriores a 01/08/2026 -> registros de TESTE/legado (M43/M48/GO-LIVE/OS-202604).
+  Nenhuma OS ativa/recente apresenta divergencia.
+
+--------------------------------------------------------------------------------
+5. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] Cadeia operacional -> financeiro integra (AP/PP via M66/M80; AR via f_emitir_fatura).
+  [OK] Conciliacao de valores: AR == valor_cliente; AP == PP.valor_liquido == repasse+pedagio+outros.
+  [OK] Cobranca cliente e repasse prestador sao titulos independentes por OS (sem cruzamento).
+  [OK] Liquidacao via RPC atomica (baixa + status) com guardas pago-sem-baixa.
+  [i]  Divergencias residuais (15) sao LEGADAS Jun-Jul/2026  higiene de dados, nao regra atual.
+  [i]  AR de fonte unica (f_emitir_fatura): poucas OS faturadas ate agora (gate de faturamento).
+
+EVIDENCIA: scripts/_e2e02fin_validacao.json
+================================================================================
+FIM  E2E-02-FIN
+================================================================================

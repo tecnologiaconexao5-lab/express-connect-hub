@@ -1,0 +1,12 @@
+M108-F — LOGÍSTICA REVERSA ENTERPRISE
+Data: 2026-07-11
+Resultado: 25/25 ✅
+
+Resumo:
+- 12 colunas criadas (OS + alocacao)
+- Trigger M104A atualizado (reversa na margem)
+- Engine TS atualizado (PricingReversa)
+- Financeiro: receber=2300 (2000+300), pagar=1350 (1200+150)
+- Event Bus: eventos publicados
+- tsc --noEmit: 0 erros
+- npm run build: 33s

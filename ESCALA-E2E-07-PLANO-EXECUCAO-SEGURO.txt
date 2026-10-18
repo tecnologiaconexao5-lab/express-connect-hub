@@ -1,0 +1,189 @@
+ESCALA-E2E-07-PLANO-EXECUCAO-SEGURO
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA/PLANEJAMENTO READ-ONLY (E2E NÃO executado)
+
+==================================================
+1) AUDITORIA DOS DADOS DE HOMOLOGAÇÃO DISPONÍVEIS
+==================================================
+
+GATE DE ELEGIBILIDADE (duro — AG-07F/H, eligibilidadeOperacionalService):
+  prestador.status ∈ {ativo, aprovado} E prestador.liberado_app = true.
+  Na Escala, o veículo é derivado AUTOMATICAMENTE do veículo vinculado ao prestador
+  (EscalaLista.tsx buscarDadosVeiculoPrestador). Se o prestador tiver > 1 veículo → bloqueado.
+
+Prestadores ELEGÍVEIS (ativo + liberado_app=true): apenas 2
+  1) e6646799-fbac-453e-a3ef-afdfc01a7085 "PRESTADOR TESTE APP" — 1 veículo (VUC)  ✅ TESTE
+  2) 659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce "BRUNO DA SILVA SANTOS" — 4 veículos (REAL)
+     → bloqueado pela UI (múltiplos veículos → veículo ambíguo)
+
+SAFE_TEST_PROVIDER=e6646799-fbac-453e-a3ef-afdfc01a7085
+  nome="PRESTADOR TESTE APP" | status=ativo | liberado_app=true | tipo_parceiro=motorista
+  → único prestador de TESTE elegível.
+
+SAFE_TEST_VEHICLE=87dceca0-3d81-45a9-8878-047019fa3a58
+  placa="HML-A27B" | tipo_veiculo="vuc" | vinculado ao prestador | status=Ativo
+  → vinculado e único, porém o tipo é VUC.
+
+SAFE_TEST_CLIENT=3d2d079d-708b-4d4d-9c0b-1ed9b894e37e
+  nome_fantasia="HOMOLOGAÇÃO APP" | status=ativo | CNPJ 00.000.000/0000-00
+  (alternativa: 336c5b17-cefd-488c-a927-32ea0dc9a161 "CLIENTE HML 136A")
+
+SAFE_TEST_TABLE=(NENHUMA COMPATÍVEL) ⚠
+  Tabelas ativas (6): fiorino(2), hr(2), tres_quartos(1), moto(1 universal).
+  NÃO existe tabela tipo_veiculo = "vuc".
+  Hierarquia de seleção (buscarTabelasService): N1 cliente_id → N3/4 nome cliente+tipo →
+  N5/6 universal+tipo → N7 fallback (valor_base 0).
+  Veículo do único prestador de teste é VUC → cai em N7 (fallback, valores 0).
+
+==================================================
+2) BLOQUEADOR OBJETIVO
+==================================================
+
+O único prestador de TESTE elegível possui veículo VUC, e NÃO existe tabela de valores
+ativa para VUC. Consequências:
+  - Preço cliente e repasse prestador NÃO podem ser calculados por tabela (ficam 0);
+  - M66 (f_trg_propagar_financeiro_alocacao) faz EARLY-RETURN quando
+    valor_frete=0 E valor_repasse=0 E reversas=0 → NÃO cria financeiro_receber/pagar/pp/composição;
+  - Logo, o E2E não conseguiria provar a cadeia "tabela → preço → repasse → financeiro".
+O outro prestador elegível (BRUNO) é REAL e tem 4 veículos (bloqueado pela UI).
+
+==================================================
+3) EFEITOS DOS TRIGGERS (mapeados)
+==================================================
+
+alocacoes_escala (AFTER INSERT/UPDATE):
+  - trg_propagar_financeiro_alocacao (M66): cria OS (id = ordem_servico_id ?? NEW.id),
+    numero "ALOC-YYYYMMDD-xxxxxxxx" quando sem OS; grava financeiro_receber (se valor_cliente>0),
+    financeiro_pagar, pagamentos_prestadores, composicao_financeira_os; idempotente por os_id.
+    Guards: status='cancelada' → skip; valor 0/0 → skip.
+  - trg_cancelar_financeiro_alocacao (BEFORE UPDATE): ao cancelar, cancela títulos abertos
+    preservando estados protegidos (FIN-01/01.1: pago/parcial/cancelado/recebido).
+  - trg_registrar_historico_alocacao (AFTER INSERT/UPDATE): grava historico_alocacoes_escala.
+  - trg_evento_alocacao_criada / cancelada / motorista_trocado / recusada /
+    prestador_aceitou / operacao_finalizada (AFTER): eventos.
+ordens_servico (AFTER INSERT/UPDATE):
+  - trg_propagar_financeiro_os (M80): propaga por os_id (valor_cliente/custo_prestador);
+  - trg_notificar_os_para_app, trg_evento_os_criada/cancelada/finalizada/status_changed.
+
+Relação M66 × M80: ambos idempotentes por os_id (ON CONFLICT / PERFORM+IF) — sem duplicidade.
+
+==================================================
+4) MAPA DE CLEANUP (se o E2E fosse executado)
+==================================================
+
+TABLE=alocacoes_escala           EXPECTED_ROWS=1  FK_DEP=ordens_servico/hist/eventos  DELETE_ORDER=8 (último)
+TABLE=ordens_servico             EXPECTED_ROWS=1  FK_DEP=titulos/financeiro           DELETE_ORDER=7
+TABLE=composicao_financeira_os   EXPECTED_ROWS=1  FK_DEP=—                           DELETE_ORDER=6
+TABLE=pagamentos_prestadores     EXPECTED_ROWS=1  FK_DEP=—                           DELETE_ORDER=5
+TABLE=financeiro_pagar           EXPECTED_ROWS=1  FK_DEP=financeiro_baixas(nenhuma)  DELETE_ORDER=4
+TABLE=financeiro_receber         EXPECTED_ROWS=1  FK_DEP=—                           DELETE_ORDER=3
+TABLE=historico_alocacoes_escala EXPECTED_ROWS=≥1 FK_DEP=—                           DELETE_ORDER=2
+TABLE=eventos (trg_evento_*)     EXPECTED_ROWS=≥0 FK_DEP=—                           DELETE_ORDER=1
+
+SAFE_DELETE_ORDER: eventos → historico → financeiro_receber → financeiro_pagar →
+pagamentos_prestadores → composicao_financeira_os → ordens_servico → alocacoes_escala.
+DELETE_ALLOWED_WITHOUT_AFFECTING_REAL_DATA=YES (registro novo, identificável por id/metadata;
+sem baixa/pagamento). Requer snapshot pré/pós e filtro EXATO pelo id da alocação.
+
+==================================================
+5) MÉTODO DE EXECUÇÃO
+==================================================
+
+EXECUTION_METHOD=B (UI + cleanup controlado) — recomendado
+WHY=
+  - BEGIN/ROLLBACK (A) prova triggers/linhas/idempotência, MAS NÃO prova persistência e
+    reabertura pela UI (objetivo explícito).
+  - C (registros de homologação persistentes) exigiria um conjunto de dados de teste já
+    pronto e compatível — não existe (sem tabela VUC).
+  - D (não seguro) não se aplica se houver cleanup controlado.
+  - B permite: salvar pela UI (sem OS manual) → conferir OS automática + financeiro →
+    fechar/reabrir a tela → provar persistência → cleanup pelo id.
+  - PRÉ-VALIDAÇÃO recomendada: rodar o mesmo cenário em BEGIN/ROLLBACK (A) antes do B,
+    para validar triggers sem gravar.
+
+UI_REQUIRED=YES
+REDMI_REQUIRED_NEXT=NO
+
+==================================================
+6) EXPECTATIVAS (se houvesse tabela VUC compatível)
+==================================================
+
+EXPECTED_CREATED_ROWS= 1 alocação + 1 OS + 1 receber + 1 pagar + 1 pp + 1 composição +
+  ≥1 histórico + eventos.
+EXPECTED_CLIENT_VALUE= = valor_base + (km_excedente × valor_km_excedente) [da tabela]
+EXPECTED_PROVIDER_VALUE= valor_repasse (independente) = tabela_prestador ou cadastro
+  ("Moto São Paulo" existe para moto; NÃO há custo para VUC).
+→ NÃO COMPUTÁVEIS hoje (sem tabela VUC e sem custo VUC).
+
+==================================================
+7) PLANO DE PROVA (escopo completo)
+==================================================
+CREATE: salvar Escala sem OS → OS interna automática → ordem_servico_id persistido → 1 OS.
+VALORES: tipo canônico, térmica, tabela cliente, franquia, excedente, valor cliente,
+  valor prestador independente.
+FINANCEIRO: receber/pagar/pp/composição coerentes, os_id consistente, sem duplicidade.
+REOPEN: fechar/reabrir → valores e OS persistidos, sem falso sucesso.
+UPDATE: alteração permitida recalcula títulos abertos.
+IDEMPOTÊNCIA: salvar novamente não duplica OS/títulos.
+CANCEL: cancelar → OS cancelada, títulos abertos cancelados, FIN-01/01.1 preserva protegidos.
+CLEANUP: snapshot pré/pós + delete na ordem acima.
+(NÃO testar baixa/pagamento real nesta etapa.)
+
+==================================================
+ENTREGÁVEIS
+==================================================
+
+SAFE_TEST_PROVIDER=e6646799-fbac-453e-a3ef-afdfc01a7085 (PRESTADOR TESTE APP)
+SAFE_TEST_VEHICLE=87dceca0-3d81-45a9-8878-047019fa3a58 (HML-A27B / VUC)
+SAFE_TEST_CLIENT=3d2d079d-708b-4d4d-9c0b-1ed9b894e37e (HOMOLOGAÇÃO APP)
+SAFE_TEST_TABLE=(nenhuma compatível com VUC)
+
+EXPECTED_CLIENT_VALUE=(não computável — sem tabela VUC)
+EXPECTED_PROVIDER_VALUE=(não computável — sem tabela/custo VUC)
+
+EXECUTION_METHOD=B
+WHY=UI+cleanup controlado (BEGIN/ROLLBACK não prova persistência/reabertura)
+EXPECTED_CREATED_ROWS=1 alocação + 1 OS + 4 títulos + histórico/eventos
+CLEANUP_PLAN=ordem de delete acima, filtrada pelo id da alocação, com snapshot pré/pós
+CLEANUP_SAFE=YES
+
+UI_REQUIRED=YES
+REDMI_REQUIRED_NEXT=NO
+PRE_TEST_SNAPSHOT_REQUIRED=YES (contagem por tabela + ids)
+POST_TEST_SNAPSHOT_REQUIRED=YES
+
+GO_FOR_E2E_EXECUTION=NO
+BLOCKERS=Sem tabela de valores ativa compatível com o veículo (VUC) do único prestador de
+  TESTE elegível. Sem ela, preço/repasse = 0 e o M66 não cria financeiro (early-return),
+  impedindo provar a cadeia tabela→preço→repasse→financeiro. O outro prestador elegível
+  (BRUNO) é REAL e tem 4 veículos (UI bloqueia).
+
+==================================================
+RESOLUÇÃO MÍNIMA (para destravar o E2E)
+==================================================
+
+Criar 1 (uma) tabela de valores de HOMOLOGAÇÃO para VUC, universal, tenant
+00000000-0000-0000-0000-000000000001:
+  - universal=true, ativo=true, tipo_veiculo='vuc', cliente='' ,
+    data_inicio<=hoje, data_fim>=hoje, valor_base/franquia_km/valor_km_excedente/
+    percentual_prestador definidos (ex.: base 300 / franquia 100 / excedente 1,20 / 80%).
+  - Cleanup: DELETE da única linha ao final (ou manter rotulada como homologação).
+Alternativa sem criar dado: liberar (liberado_app) outro prestador de TESTE cujo veículo
+  case com tabela existente (ex.: fiorino/moto) — porém exige alterar cadastro.
+Recomendação: criar a tabela VUC de homologação (1 linha, reversível) e então executar
+  ESCALA-E2E-08-EXECUCAO-REAL-CONTROLADA (método B + snapshot + cleanup).
+
+==================================================
+NÃO TRATADO (conforme instrução)
+==================================================
+27 concluídas sem prestador (ENCERRADO); rotulagem de resíduos; 9 FIN-02; APP/POD; Fatura;
+Recrutamento; Admin App; Master 360.
+
+PROIBIÇÕES CUMPRIDAS: nenhum INSERT/UPDATE/DELETE; nenhuma migration; nenhum dado criado;
+nenhum cleanup executado; M66/M80 não alterados.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

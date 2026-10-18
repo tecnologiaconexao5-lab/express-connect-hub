@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
-import { getUser } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -32,34 +32,8 @@ interface HistoryAlert {
   status: "novo" | "visualizado" | "resolvido" | "ignorado";
 }
 
-const FALLBACK_CRITICOS: AlertItem[] = [
-  { id: "ac1", texto: "OS-4818 com ocorrência aberta há 4h", detalhe: "Endereço não localizado — Shopee", tipo: "os", link: "/operacao?tab=os&status=Com Ocorrência" },
-  { id: "ac2", texto: "Integração CT-e com erro desde 08:00", detalhe: "Timeout na SEFAZ-SP", tipo: "integracao", link: "/monitor-api" },
-  { id: "ac3", texto: "Prestador RápidoFrete bloqueado com 3 OS ativas", detalhe: "Documentação vencida", tipo: "documento", link: "/cadastros/prestadores" },
-];
-
-const FALLBACK_ATENCAO: AlertItem[] = [
-  { id: "aa1", texto: "2 orçamentos vencem hoje", detalhe: "Magazine Luiza (ORC-421), Renner (ORC-418)", tipo: "orcamento", link: "/comercial" },
-  { id: "aa2", texto: "5 documentos vencem em 7 dias", detalhe: "CNH de 3 parceiros, CRLV de 2 veículos", tipo: "documento", link: "/cadastros/prestadores" },
-  { id: "aa3", texto: "OS-4814 sem parceiro há mais de 2h", detalhe: "Renner — RS→SC", tipo: "os", link: "/operacao?tab=os&status=Aguardando Parceiro" },
-  { id: "aa4", texto: "Contrato Americanas vence em 28 dias", detalhe: "Contrato #CT-089", tipo: "contrato", link: "/contratos" },
-  { id: "aa5", texto: "Tabela de valores vencida para 2 clientes", detalhe: "Casas Bahia, Riachuelo", tipo: "outros", link: "/comercial" },
-  { id: "aa6", texto: "Veículo ABC-1234 com doc vencendo", detalhe: "CRLV vence em 5 dias", tipo: "documento", link: "/frota" },
-];
-
-const FALLBACK_INFO: AlertItem[] = [
-  { id: "ai1", texto: "12 OS sem comprovante de entrega", detalhe: "Últimas 48h", tipo: "os", link: "/operacao?tab=pod" },
-  { id: "ai2", texto: "Prestador Sul Express com pendência documental", detalhe: "Seguro RCTR-C vencido", tipo: "documento", link: "/cadastros/prestadores" },
-  { id: "ai3", texto: "3 clientes sem tabela de valores ativa", detalhe: "C&A, Riachuelo, Ponto", tipo: "orcamento", link: "/comercial" },
-];
-
-const FALLBACK_HISTORICO: HistoryAlert[] = [
-  { id: "h1", data: new Date(2026, 2, 26, 14, 32), tipo: "OS sem prestador", descricao: "OS-2026-0142 sem prestador há 3 horas", responsavel: "João Silva", observacao: "Acionado prestador alternativo", status: "resolvido" },
-  { id: "h2", data: new Date(2026, 2, 26, 10, 15), tipo: "Documento vencendo", descricao: "CNH do prestador João Pedro vence em 5 dias", responsavel: "Maria Santos", observacao: "Notificado o prestador", status: "visualizado" },
-  { id: "h3", data: new Date(2026, 2, 25, 16, 45), tipo: "Orçamento vencendo", descricao: "ORC-419 Magazine Luiga vence amanhã", responsavel: "Carlos Oliveira", observacao: "Cliente pediu prazo até sexta", status: "ignorado" },
-  { id: "h4", data: new Date(2026, 2, 25, 9, 20), tipo: "Integração com erro", descricao: "Falha na emissão de NF-e", responsavel: "Diego Balbino", observacao: "Reiniciei o serviço", status: "resolvido" },
-  { id: "h5", data: new Date(2026, 2, 24, 11, 0), tipo: "Contrato vencendo", descricao: "Contrato Shopee vence em 15 dias", responsavel: "João Silva", observacao: "Renegociação em andamento", status: "visualizado" },
-];
+// Sem fallback hardcoded — apenas dados reais do Supabase
+// Se a consulta falhar, exibe mensagem de erro com botão de retry
 
 const AlertBlock = ({ title, icon: Icon, items, borderColor, bgColor, iconColor, badgeColor, onAlertClick }: {
   title: string; icon: LucideIcon; items: AlertItem[];
@@ -127,7 +101,7 @@ const TabAlertas = () => {
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
   const [novoAlerta, setNovoAlerta] = useState({ descricao: "", observacao: "" });
-  const user = getUser();
+  const { user } = useAuth();
   const channelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
 
   const fetchAlertas = async () => {
@@ -151,11 +125,12 @@ const TabAlertas = () => {
         );
         setHistorico(historicoData.map(toHistoryAlert));
       }
-    } catch {
-      setAlertasCriticos(FALLBACK_CRITICOS);
-      setAlertasAtencao(FALLBACK_ATENCAO);
-      setAlertasInformativos(FALLBACK_INFO);
-      setHistorico(FALLBACK_HISTORICO);
+    } catch (err) {
+      console.warn("[TabAlertas] Erro ao carregar alertas:", err);
+      setAlertasCriticos([]);
+      setAlertasAtencao([]);
+      setAlertasInformativos([]);
+      setHistorico([]);
     }
   };
 

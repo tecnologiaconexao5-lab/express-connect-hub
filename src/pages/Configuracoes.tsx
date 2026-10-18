@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette, MessageCircle } from "lucide-react";
+import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette, MessageCircle, Truck } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLogo } from "@/hooks/useLogo";
 import { CentralIntegracoes } from "@/components/configuracoes/CentralIntegracoes";
+import VeiculoCapacidadesConfig from "@/components/comercial/VeiculoCapacidadesConfig";
+import FatorCubagemConfig from "@/components/comercial/FatorCubagemConfig";
 import { MonitoramentoCombustivelCard } from "@/components/financeiro/MonitoramentoCombustivel";
 import { carregarConfiguracoesSistemaComFonte, salvarConfiguracoesSistemaComFonte } from "@/services/configuracoesService";
 
@@ -361,10 +363,10 @@ export default function Configuracoes() {
            <TabsTrigger value="identidade" className="gap-2"><Palette className="w-4 h-4"/>Identidade Visual</TabsTrigger>
            <TabsTrigger value="usuarios" className="gap-2"><Users className="w-4 h-4"/>Usuários e Perfis</TabsTrigger>
            <TabsTrigger value="tabela" className="gap-2"><TableIcon className="w-4 h-4"/>Tab. de Valores</TabsTrigger>
+           <TabsTrigger value="veiculos" className="gap-2"><Truck className="w-4 h-4"/>Veículos</TabsTrigger>
            <TabsTrigger value="integracoes" className="gap-2"><LinkIcon className="w-4 h-4"/>Integrações Básicas</TabsTrigger>
            <TabsTrigger value="central-integracoes" className="gap-2"><AppWindow className="w-4 h-4"/>Central de Integrações</TabsTrigger>
            <TabsTrigger value="notificacoes" className="gap-2"><Bell className="w-4 h-4"/>Notificações</TabsTrigger>
-           <TabsTrigger value="whatsapp-ia" className="gap-2"><MessageCircle className="w-4 h-4"/>WhatsApp / IA</TabsTrigger>
         </TabsList>
 
         {/* --- EMPRESA --- */}
@@ -623,7 +625,7 @@ export default function Configuracoes() {
                         Admin - Acesso total
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => aplicarPerfil(usuarioEditando, "operador")}>
-                        Operador - Operação + OS + Escala
+                        Operador - Operação + OS + Programação Operacional
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => aplicarPerfil(usuarioEditando, "financeiro")}>
                         Financeiro - Financeiro + Relatórios
@@ -774,6 +776,12 @@ export default function Configuracoes() {
         {/* --- CENTRAL DE INTEGRAÇÕES --- */}
         <TabsContent value="central-integracoes" className="pt-4">
            <CentralIntegracoes />
+        </TabsContent>
+
+        {/* --- VEÍCULOS (capacidades + fator de cubagem — COM-CARGA-03/04) --- */}
+        <TabsContent value="veiculos" className="pt-4 space-y-6">
+           <VeiculoCapacidadesConfig />
+           <FatorCubagemConfig />
         </TabsContent>
 
         {/* --- NOTIFICAÇÕES --- */}

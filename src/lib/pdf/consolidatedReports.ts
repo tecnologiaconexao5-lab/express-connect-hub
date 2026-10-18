@@ -32,7 +32,7 @@ import {
   fmtDate,
 } from "./foundation";
 
-const CNPJ_EMPRESA = "42.796.040/0001-31";
+const CNPJ_EMPRESA = "31.227.975/0001-80";
 const KM_BASE_PADRAO = 200;
 
 interface PeriodoFiltro {
@@ -215,7 +215,7 @@ export async function generateExecutiveFaturamentoReport(
   }
 
   drawObservations(doc, page.margin, y, page.contentWidth,
-    "Este relatorio reflete os dados reais da escala operacional e adicionais do periodo. " +
+    "Este relatorio reflete os dados reais da programação operacional e adicionais do periodo. " +
     "Em caso de divergencias, manifestar-se em ate 48 horas uteis para ajustes no fechamento do faturamento."
   );
 

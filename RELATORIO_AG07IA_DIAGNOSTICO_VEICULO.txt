@@ -1,0 +1,580 @@
+RELATÓRIO AG-07I-A — DIAGNÓSTICO READ-ONLY DE VEÍCULO, CAPACIDADE, ANTT E REQUISITOS
+Data: 22/08/2026
+Status: DIAGNÓSTICO COMPLETO — evidências técnicas para futura implementação
+
+====================================================================
+1. CONTRATO REAL DE VEÍCULOS
+====================================================================
+
+TABELA veiculos (migration 20260522_alocacoes_escala + 20260510 baseline):
+
+CAMPO                  TIPO         ORIGEM APP    CONSUMidor    USADO NO GATE?
+─────────────────────  ───────────  ────────────  ────────────  ──────────────
+id                     uuid PK      auto          Todos         NÃO (chave)
+placa                  text         App envia     Escala, OS    SIM (status)
+tipo                   text         App mapeia    Escala, OS    NÃO
+tipo_veiculo           text         —             OS, financeiro NÃO
+marca                  text         App envia     OS            NÃO
+modelo                 text         App envia     OS            NÃO
+ano                    int4         App envia     OS            NÃO
+capacidade_kg          numeric      App envia     OS (peso)     NÃO ← LACUNA
+capacidade_m3          numeric      App envia     OS (cubagem)  NÃO ← LACUNA
+tara_kg                numeric      NÃO envia     —             NÃO
+comprimento_m          numeric      App envia     OS            NÃO
+largura_m              numeric      App envia     OS            NÃO
+altura_m               numeric      App envia     OS            NÃO
+tipo_carga             text         NÃO envia     —             NÃO
+temperatura_min        numeric      NÃO envia     —             NÃO ← LACUNA
+temperatura_max        numeric      NÃO envia     —             NÃO ← LACUNA
+antt                   text         App NÃO envia redePrestadores NÃO ← LACUNA
+rntrc                  text         NÃO envia     —             NÃO
+renavam                text         NÃO envia     —             NÃO
+status                 text         App=ativo     gate AG-07F    SIM ✅
+prestador_vinculado    uuid FK      App envia     gate AG-07F    SIM ✅
+principal              bool         App=true      —             NÃO
+rastreador             bool         NÃO envia     —             NÃO
+seguro                 bool         NÃO envia     —             NÃO
+uf_licenciamento       varchar(2)   NÃO envia     —             NÃO
+tipo_rodado            varchar(30)  NÃO envia     —             NÃO
+restricoes_regiao      text         NÃO envia     —             NÃO
+observacoes            text         NÃO envia     —             NÃO
+proprietario_nome      text         NÃO envia     —             NÃO
+proprietario_documento text         NÃO envia     —             NÃO
+
+EVIDÊNCIA: supabase/migrations/20260510000001_core_baseline.sql (CREATE TABLE veiculos)
+EVIDÊNCIA: C:\src\conexao_prestador\lib\features\auth\register_screen.dart:784-807
+
+====================================================================
+2. FLUXO APP → TMS
+====================================================================
+
+CADASTRO APP (_vincularVeiculo, register_screen.dart:769-815):
+
+CAMPO DO APP              →  TABELA veiculos         STATUS
+─────────────────────────────────────────────────────────────
+_tipoVeiculoTms(tipo)     →  veiculos.tipo           ✅ SIM (moto/fiorino/van/vuc/toco/truck/carreta/outro)
+placaCtrl                 →  veiculos.placa           ✅ SIM
+marcaCtrl                 →  veiculos.marca           ✅ SIM
+modeloCtrl                →  veiculos.modelo          ✅ SIM
+anoCtrl                   →  veiculos.ano             ✅ SIM
+_capacidadeCtrl (kg)      →  veiculos.capacidade_kg   ✅ SIM (null para moto)
+_cubagem (m³)             →  veiculos.capacidade_m3   ✅ SIM (null para moto)
+comprimentoCtrl           →  veiculos.comprimento_m   ✅ SIM (null para moto)
+larguraCtrl               →  veiculos.largura_m       ✅ SIM (null para moto)
+alturaCtrl                →  veiculos.altura_m        ✅ SIM (null para moto)
+—                         →  veiculos.principal       ✅ SIM (true)
+—                         →  veiculos.status          ✅ SIM (ativo)
+—                         →  veiculos.prestador_vinculado ✅ SIM
+_possuiAntt / _anttCtrl   →  NÃO insere em veiculos   ❌ NÃO (apenas metadata)
+tipo_carga                →  NÃO envia                ❌ NÃO
+temperatura_min/max       →  NÃO envia                ❌ NÃO
+rntrc                     →  NÃO envia                ❌ NÃO
+renavam                   →  NÃO envia                ❌ NÃO
+
+MAPPING APP → TMS (_tipoVeiculoTms, line 729):
+  Moto          → moto
+  Fiorino       → fiorino
+  Kangoo        → kangoo
+  Utilitário L. → utilitario_leve
+  Kombi/Van     → van
+  HR            → hr
+  VUC           → vuc
+  Caminhão Toco → toco
+  Caminhão Truck→ truck
+  Carreta       → carreta
+  Carro Passeio → outro (SEM EQUIVALENTE TMS)
+
+TIPO_VEICULO_LABEL (EscalaLista.tsx:69-85):
+  moto, passeio, fiorino, kangoo, kombi, van, vuc, hr, 3_4, toco, truck, carreta, bitrem, outro
+
+DIVERGÊNCIA: App tem 12 tipos; TMS tem 15. Kombi e Van são mesclados no App (van).
+Carro de Passeio vira "outro" (sem correspondência na Escala).
+
+METADADOS APP ( register_screen.dart:528-586 ):
+  tipo_veiculo: texto livre do App (não mapeado)
+  aceita_refrigerado: bool (prestador)
+  veiculo.possui_antt: bool
+  veiculo.antt: string
+  experiencia.possui_ajudante: bool
+  experiencia.refrigerado: bool
+
+EVIDÊNCIA: register_screen.dart:529, 543-557, 577, 582, 729-756, 784-807
+
+====================================================================
+3. CAPACIDADE
+====================================================================
+
+VEÍCULO (onde está):
+  veiculos.capacidade_kg  — NUMERIC, preenchida pelo App (null para moto)
+  veiculos.capacidade_m3  — NUMERIC, preenchida pelo App (null para moto)
+
+OPERAÇÃO (onde está):
+  ordens_servico.peso     — NUMERIC, campo "Peso" da OS
+  ordens_servico.cubagem  — NUMERIC, campo "Cubagem" da OS
+  ordens_servico.carga    — JSONB, objeto com detalhes da carga
+
+COMPARAÇÃO AUTOMÁTICA:
+  NÃO EXISTE. Nenhum código compara capacidade_kg do veículo com peso da OS.
+  Nenhum código compara capacidade_m3 do veículo com cubagem da OS.
+
+  Rede de Prestadores (redePrestadoresService.ts:90-96):
+    veiculo.capacidade_kg = os.peso (copiado da OS para busca)
+    Mas NÃO compara com veiculos.capacidade_kg do prestador.
+
+EVIDÊNCIA: baseline.sql (veiculos schema), baseline.sql (ordens_servico schema)
+EVIDÊNCIA: redePrestadoresService.ts:90-96
+
+CLASSIFICAÇÃO: PARCIAL (campos existem em ambas as pontas, mas NÃO há comparação)
+
+====================================================================
+4. TIPO DE VEÍCULO
+====================================================================
+
+VEÍCULO:
+  veiculos.tipo — text, preenchido pelo App via _tipoVeiculoTms()
+  Valores possíveis: moto, fiorino, kangoo, utilitario_leve, van, hr, vuc, toco, truck, carreta, outro
+
+OPERAÇÃO:
+  ordens_servico.veiculo_tipo — text, definido no OS Form
+  ordens_servico.tipo_veiculo — text (pode divergir)
+  OS Form: data.veiculoTipo (dropdown na UI)
+
+COMPARAÇÃO AUTOMÁTICA:
+  NÃO EXISTE no gate. A EscalaLista exibe o tipo como label (TIPO_VEICULO_LABEL)
+  mas não valida compatibilidade.
+
+  Rede de Prestadores (redePrestadoresService.ts:447-450):
+    if (veiculo.tipo && veiculo.tipo !== "") {
+      if (veiculosPrest.length === 0) return false;  // só verifica se tem veículo
+    }
+    NÃO compara tipo do veículo com tipo da OS.
+
+  syncDiagnostico.ts:122-126:
+    Compara tipo_veiculo da alocação com tipo_veiculo da OS para detectar divergência
+    (após alocação criada, não antes).
+
+EVIDÊNCIA: EscalaLista.tsx:69-85, redePrestadoresService.ts:447-450
+EVIDÊNCIA: syncDiagnostico.ts:122-126
+
+CLASSIFICAÇÃO: PARCIAL (campo existe, divergência detectada pós-criação, mas NÃO bloqueia antes)
+
+====================================================================
+5. STATUS DO VEÍCULO
+====================================================================
+
+veiculos.status — text, default 'disponivel'
+
+GATE ATUAL (eligibilidadeOperacionalService.ts:247-257):
+  verificarElegibilidadeVeiculo(placa):
+    SELECT status FROM veiculos WHERE placa = placa
+    SE status IN (manutencao, inativo, indisponivel) → INELEGÍVEL
+    SENÃO → ELEGÍVEL
+
+  criarAlocacao (escalaService.ts:359-364):
+    Chama verificarElegibilidadeVeiculo se placa informada
+    → BLOQUEIA veículo inativo/manutenção
+
+  trocarMotorista (escalaService.ts:653-654):
+    SELECT status FROM veiculos WHERE placa = novaPlaca
+    SE manutencao/inativo → BLOQUEIA
+
+EVIDÊNCIA: eligibilidadeOperacionalService.ts:247-257
+EVIDÊNCIA: escalaService.ts:359-364, 653-654
+
+CLASSIFICAÇÃO: COMPLETO
+
+====================================================================
+6. PLACA
+====================================================================
+
+VEÍCULO: veiculos.placa — text, preenchida pelo App
+ALOCAÇÃO: alocacoes_escala.placa — text, preenchida na criação da alocação
+OS: ordens_servico não tem placa direta (usa veiculo_alocado uuid FK)
+
+EscalaLista: preenche placa do veículo do prestador (prestadorVeiculo.placa)
+EscalaMapper: salva placa na alocação
+
+GATE: verificarElegibilidadeVeiculo usa placa como chave de busca → OK
+
+CLASSIFICAÇÃO: COMPLETO
+
+====================================================================
+7. VÍNCULO PRESTADOR/VEÍCULO
+====================================================================
+
+veiculos.prestador_vinculado — uuid, FK para prestadores.id
+App preenche no _vincularVeiculo (line 804)
+Busca por prestador_vinculado antes de inserir (idempotente, line 774-779)
+
+Gate AG-07F: não verifica diretamente o vínculo (usa placa separadamente)
+
+CLASSIFICAÇÃO: COMPLETO (vínculo existe, App cria corretamente)
+
+====================================================================
+8. CRLV
+====================================================================
+
+TIPOS_VEICULO_DOC = ["CRLV", "Documento do Veículo"] (gate AG-07H)
+
+Regra AG-07H: se prestador temVeiculo=true e participa do fluxo documental,
+exige CRLV/documento do veículo.
+
+Motoboy sem veículo: CRLV NÃO exigido (temVeiculo=false por padrão).
+
+CRLV é documento (documentos_prestadores), não coluna na tabela veiculos.
+
+EVIDÊNCIA: eligibilidadeOperacionalService.ts:48, 181-188
+
+CLASSIFICAÇÃO: COMPLETO (via documentos_prestadores)
+
+====================================================================
+9. ANTT / RNTRC
+====================================================================
+
+ONDE ESTÁ ARMAZENADA:
+  veiculos.antt  — TEXT (veículo)
+  veiculos.rntrc — TEXT (veículo)
+
+APP ENVIA:
+  App coleta: _possuiAntt (bool), _anttCtrl (string)
+  App envia para metadata: veiculo.antt, veiculo.possui_antt
+  App NÃO insere antt/rntrc na tabela veiculos (payload _vincularVeiculo não inclui)
+
+TMS RECEBE:
+  veiculos.antt = NULL (App não preenche via insert)
+  Dados ficam apenas no metadata do prestador (não consultados pelo gate)
+
+VALIDADE ANTT:
+  NÃO EXISTE campo de validade ANTT em veiculos nem em prestadores
+
+REGRA OBRIGATÓRIA:
+  NÃO EXISTE. Nenhuma regra determina quando ANTT é obrigatória.
+  redePrestadoresService: não verifica ANTT.
+  gate: não verifica ANTT.
+
+BLOQUEIO ATUAL:
+  NÃO BLOQUEIA nenhuma alocação.
+
+EVIDÊNCIA: baseline.sql (veiculos schema), register_screen.dart:555-556
+EVIDÊNCIA: _vincularVeiculo payload (line 784-807) — antt não incluído
+
+CLASSIFICAÇÃO: DEPENDÊNCIA ESTRUTURAL
+  (campo existe na tabela mas: App não preenche, sem validade, sem regra, sem gate)
+
+====================================================================
+10. TÉRMICO / REFRIGERADO / TEMPERATURA
+====================================================================
+
+VEÍCULO (campos existem):
+  veiculos.tipo_carga       — TEXT (pode indicar refrigerado)
+  veiculos.temperatura_min  — NUMERIC
+  veiculos.temperatura_max  — NUMERIC
+
+OPERAÇÃO (campos existem):
+  ordens_servico.carga_refrigerada — BOOLEAN
+  ordens_servico.carga_refrigerado — BOOLEAN (duplicata?)
+  ordens_servico.veiculo_termica   — TEXT ("seco" / "refrigerado")
+
+APP (envia para metadata, NÃO para veiculos):
+  aceita_refrigerado: bool (prestador)
+  experiencia.refrigerado: bool
+
+COMPARAÇÃO:
+  Rede de Prestadores (redePrestadoresService.ts:442-444):
+    if (veiculo.termica === "refrigerado" && !prestador.aceita_refrigerada) return false;
+    → FILTRO na UI da Rede, NÃO é gate no backend
+
+  Gate AG-07F/H: NÃO verifica refrigerado/temperatura
+
+  EscalaLista: busca tabela_valores por tipo_veiculo (não por refrigerado)
+
+REFRIGERADO: EXISTE (campos na tabela), mas NÃO comparado no gate
+TÉRMICO:     EXISTE (veiculo_termica na OS), mas NÃO comparado no gate
+TEMPERATURA: EXISTE (temperatura_min/max na veiculos), NÃO comparada
+
+EVIDÊNCIA: baseline.sql, redePrestadoresService.ts:442-444
+EVIDÊNCIA: register_screen.dart:532 (aceita_refrigerado)
+
+CLASSIFICAÇÃO: PARCIAL (campos existem em ambas as pontas; comparação só na Rede UI, não no gate)
+
+====================================================================
+11. AJUDANTE
+====================================================================
+
+OPERAÇÃO (exige):
+  ordens_servico.carga_ajudante — BOOLEAN
+  OS Form: Switch "Ajudante" (data.carga.ajudante)
+  Escala: financeiro.ajudantes (number) → valor_ajudante * ajudantes
+
+PRESTADOR (possui):
+  App metadata: experiencia.possui_ajudante — bool
+  NÃO há campo "ajudante" na tabela prestadores ou veiculos
+
+COMPARAÇÃO:
+  NÃO EXISTE. Nenhum código verifica se operação.exige_ajudante && prestador.possui_ajudante.
+  Escala grava valor_ajudante (custo), mas não valida requisito vs capacidade.
+
+EVIDÊNCIA: baseline.sql (ordens_servico.carga_ajudante)
+EVIDÊNCIA: register_screen.dart:582 (possui_ajudante)
+
+CLASSIFICAÇÃO: PARCIAL (campos existem; comparação NÃO existe)
+
+====================================================================
+12. REQUISITOS ESPECIAIS DA OPERAÇÃO
+====================================================================
+
+ordens_servico (campos de requisitos):
+  carga_fragil      — BOOLEAN
+  carga_empilhavel  — BOOLEAN
+  carga_risco       — BOOLEAN
+  carga_perigosa    — BOOLEAN
+  carga_controlada  — BOOLEAN
+
+ALOCAÇÃO (alocacoes_escala): NÃO armazena esses requisitos
+
+VEÍCULO (veiculos): NÃO armazena compatibilidade com esses requisitos
+
+GATE: NÃO verifica
+
+CLASSIFICAÇÃO: AUSENTE (campos na OS, mas sem comparação com veículo/prestador)
+
+====================================================================
+13. MOTOBOY
+====================================================================
+
+APP:
+  _ehMoto = _tipoVeiculo == 'Moto'
+  Quando Moto: capacidade_kg=null, capacidade_m3=null, dims=null
+  Insere veiculos.tipo = 'moto'
+
+TMS:
+  TIPO_VEICULO_LABEL: moto = "Moto"
+  Gate: não tem regra específica para moto
+
+BLOQUEIO INDEVIDO POR:
+  CRLV: NÃO (só quando temVeiculo=true — motoboy sem veículo não tem CRLV exigido)
+  ANTT: NÃO (ANTT não bloqueia)
+  Capacidade: NÃO (capacidade_kg=null para moto, gate não verifica)
+  Refrigerado: NÃO (gate não verifica)
+
+MOTOBOY PRESERVADO: SIM (nenhuma regra existente bloqueia indevidamente)
+
+EVIDÊNCIA: register_screen.dart:39, 783, 797-798, 803
+
+====================================================================
+14. GATE ATUAL — COBERTURA
+====================================================================
+
+REQUISITO              NO GATE AG-07F/H?   DETALHE
+─────────────────────  ──────────────────   ──────────────────────
+Prestador ativo        ✅ SIM               status em STATUS_AUTORIZADOS
+liberado_app           ✅ SIM               deve ser true
+Documentos (CNH/res.)  ✅ SIM               best-effort
+CNH válida             ✅ SIM               cnh_validade + documentos
+CRLV (quando tem veic) ✅ SIM               documentos_prestadores
+Veículo inativo        ✅ SIM               veiculos.status
+─────────────────────── ──────────────────── ──────────────────────
+Tipo veículo compat.   ❌ NÃO               LACUNA CRÍTICA
+Capacidade suficiente  ❌ NÃO               LACUNA CRÍTICA
+Refrigerado compat.    ❌ NÃO               LACUNA
+ANTT válida            ❌ NÃO               DEPENDÊNCIA ESTRUTURAL
+Ajudante compatível    ❌ NÃO               LACUNA
+Requisitos especiais   ❌ NÃO               AUSENTE
+
+GATE ATUAL COBRE VEÍCULO COMPLETAMENTE: NÃO (6 de 12 requisitos não verificados)
+
+====================================================================
+15. ESCALA — FILTRO vs BLOQUEIO
+====================================================================
+
+CRIAÇÃO (criarAlocacao):
+  ✅ tipo_veiculo obrigatório (validação de preenchimento)
+  ✅ conflito de prestador (mesma data)
+  ✅ conflito de placa (mesma data)
+  ✅ gate prestador (status + liberado_app + docs)
+  ✅ gate veículo (status)
+  ❌ tipo_veiculo compatível com OS — NÃO verificado
+  ❌ capacidade_kg suficiente — NÃO verificado
+  ❌ refrigerado — NÃO verificado
+
+TROCA (trocarMotorista):
+  ✅ gate veículo (status da nova placa)
+  ❌ tipo_veiculo compatível — NÃO verificado
+  ❌ capacidade — NÃO verificado
+
+SYNC DIAGNOSTICO (syncDiagnostico.ts):
+  ⚠️ Detecta divergência tipo_veiculo OS × Alocação (pós-criação)
+  → Alerta visual, NÃO bloqueia
+
+REDE DE PRESTADORES:
+  ⚠️ Filtro por aceita_refrigerada (UI apenas)
+  ⚠️ Filtro por ter veículo (UI apenas)
+  → NÃO é gate backend
+
+====================================================================
+16. OPERAÇÃO → APP
+====================================================================
+
+Após alocação válida:
+  TMS grava alocacoes_escala com tipo_veiculo e placa
+  App (escalaAppPrestadorAdapter) lê tipo_veiculo da alocação
+  App exibe: veículo, placa, motorista, status
+
+NÃO há mudança de contrato. App recebe dados já validados.
+Gate adicionado não muda o que o App recebe — apenas impede
+criação de alocação inválida.
+
+CLASSIFICAÇÃO: PRESERVADO (App não é afetado pelo gate)
+
+====================================================================
+17. DEPENDÊNCIAS ESTRUTURAIS
+====================================================================
+
+1. ANTT: campo existe, mas App não preenche, sem validade, sem regra
+   → DEPENDÊNCIA ESTRUTURAL: precisa resolver antes de bloquear
+
+2. Capacidade: campos existem (veiculos.capacidade_kg, ordens_servico.peso),
+   mas não há comparação automática
+   → DEPENDÊNCIA ESTRUTURAL: precisa criar lógica de comparação
+
+3. Refrigerado: campos existem (temperatura_min/max, carga_refrigerada),
+   mas comparação só existe na Rede (UI), não no gate
+   → DEPENDÊNCIA ESTRUTURAL: precisa migrar filtro para gate
+
+4. Ajudante: campos existem (carga_ajudante, possui_ajudante),
+   mas não há comparação
+   → DEPENDÊNCIA ESTRUTURAL: precisa criar comparação
+
+5. Tipo veículo: mapeamento App→TMS existe (_tipoVeiculoTms),
+   mas não há validação de compatibilidade OS×Veículo no gate
+   → DEPENDÊNCIA ESTRUTURAL: precisa criar validação
+
+6. Requisitos especiais: campos na OS (fragil, risco, perigosa, controlada),
+   mas veículo não tem correspondência
+   → NÃO IMPLEMENTADO: sem estrutura no veículo para comparar
+
+====================================================================
+18. CLASSIFICAÇÃO FINAL
+====================================================================
+
+REQUISITO              CLASSIFICAÇÃO       EVIDÊNCIA
+─────────────────────  ──────────────────   ──────────────────────
+VEÍCULO                COMPLETO             Tabela existe, App preenche
+PLACA                  COMPLETO             App envia, gate usa como chave
+TIPO                   PARCIAL              App mapeia, gate não valida compat.
+CAPACIDADE KG          PARCIAL              Campo existe, comparação ausente
+CAPACIDADE M3          PARCIAL              Campo existe, comparação ausente
+STATUS VEÍCULO         COMPLETO             Gate verifica (inativo/manutenção)
+CRLV                   COMPLETO             Via documentos_prestadores
+ANTT/RNTRC             DEPENDÊNCIA ESTRUTURAL App não preenche, sem validade, sem regra
+VALIDADE ANTT          DEPENDÊNCIA ESTRUTURAL Campo não existe
+REFRIGERADO            PARCIAL              Campos existem, gate não valida
+TÉRMICO                PARCIAL              Campo existe, gate não valida
+TEMPERATURA            PARCIAL              Campos existem, gate não valida
+AJUDANTE               PARCIAL              Campos existem, comparação ausente
+REQUISITOS ESPECIAIS   AUSENTE              Sem estrutura no veículo
+MOTOBOY                COMPLETO             Preservado (nenhuma regra bloqueia)
+
+====================================================================
+19. ARQUIVOS AUDITADOS
+====================================================================
+
+TMS:
+  src/services/escala/eligibilidadeOperacionalService.ts (gate atual)
+  src/services/escala/escalaService.ts (criarAlocacao + trocarMotorista)
+  src/services/escala/escalaMapper.ts (mapeamento tipo_veiculo/ajudante)
+  src/services/escala/syncDiagnostico.ts (divergência pós-criação)
+  src/services/operacao/redePrestadoresService.ts (filtro refrigerado/veículo)
+  src/components/operacao/EscalaLista.tsx (TIPO_VEICULO_LABEL, UI)
+  src/components/operacao/OrdemServicoForm.tsx (veiculo_necessario, ajudante)
+  supabase/migrations/20260510000001_core_baseline.sql (veiculos, ordens_servico)
+  supabase/migrations/20260522_alocacoes_escala.sql (alocacoes_escala)
+
+APP:
+  C:\src\conexao_prestador\lib\features\auth\register_screen.dart
+    _vincularVeiculo (line 769-815)
+    _tipoVeiculoTms (line 729-756)
+    _collectDados metadata (line 528-586)
+    _buildVehicleCards (line 2346-2360)
+
+NÃO LIDOS: Financeiro, POD, Chat, Tracking, Torre, Relatórios
+
+====================================================================
+20. TESTES EXECUTADOS
+====================================================================
+
+NENHUM teste executado (missão estritamente read-only).
+Testes específicos serão escritos na AG-07I-B.
+
+====================================================================
+21. MIGRACTIONS NECESSÁRIAS/PENDENTES
+====================================================================
+
+NENHUMA migration criada/executada (missão read-only).
+
+Migrations potenciais para AG-07I-B:
+  - Nenhuma migration de schema necessária (campos já existem)
+  - Possível migration: popular veiculos.antt via metadata do prestador
+
+====================================================================
+22. RISCOS RESTANTES
+====================================================================
+
+1. OPERAÇÃO COM CAPACIDADE INSUFICIENTE PODE SER ALOCADA (P0)
+   OS tem peso; veículo tem capacidade_kg; NÃO há comparação.
+   Exemplo: OS com 2500kg alocada em veículo de 1500kg.
+
+2. OPERAÇÃO REFRIGERADA PODE SER ALOCADA EM VEÍCULO SECO (P1)
+   OS tem carga_refrigerada=true; gate não verifica.
+
+3. TIPO VEÍCULO INCOMPATÍVEL PODE SER ALOCADO (P1)
+   OS exige "truck"; veículo é "fiorino"; gate não verifica.
+
+4. ANTT AUSENTE EM VEÍCULO PODE OPERAR (P2)
+   Operação que exige ANTT (rodoviário) não é bloqueada.
+
+5. AJUDANTE AUSENTE PODE SER ALOCADO (P2)
+   OS exige ajudante; prestador não possui; gate não verifica.
+
+6. APP NÃO PREENCHE ANTT NA TABELA VEICULOS (P2)
+   Dados ficam apenas no metadata, inacessíveis pelo gate.
+
+====================================================================
+FECHAMENTO OBRIGATÓRIO
+====================================================================
+
+CÓDIGO ALTERADO: NÃO
+APP ALTERADO: NÃO
+TMS ALTERADO: NÃO
+SUPABASE ALTERADO: NÃO
+PRODUÇÃO ALTERADA: NÃO
+MIGRATION CRIADA: NÃO
+MIGRATION EXECUTADA: NÃO
+REDMI UTILIZADO: NÃO
+
+VEÍCULO APP → TMS: SIM
+PLACA APP → TMS: SIM
+TIPO: PARCIAL (App mapeia; gate não valida compatibilidade)
+CAPACIDADE: PARCIAL (campos existem; comparação ausente)
+ANTT: DEPENDÊNCIA ESTRUTURAL (App não preenche, sem validade, sem regra)
+REFRIGERADO/TÉRMICO: PARCIAL (campos existem; gate não valida)
+TEMPERATURA: PARCIAL (campos existem; gate não valida)
+AJUDANTE: PARCIAL (campos existem; comparação ausente)
+MOTOBOY: COMPLETO (preservado)
+
+GATE ATUAL COBRE VEÍCULO COMPLETAMENTE: NÃO
+
+LACUNAS COMPROVADAS:
+  1. Tipo veículo incompatível não bloqueia (P1)
+  2. Capacidade insuficiente não bloqueia (P0)
+  3. Refrigerado exigido + veículo seco não bloqueia (P1)
+  4. ANTT obrigatória não bloqueia (P2)
+  5. Ajudante exigido não bloqueia (P2)
+  6. Requisitos especiais (fragil/risco) não verificados (P3)
+
+AG-07I-A READ-ONLY: CONCLUÍDA SIM
+
+PRÓXIMA ETAPA:
+AG-07I-B — IMPLEMENTAÇÃO CONTROLADA DAS LACUNAS COMPROVADAS
+(modelo técnico mais forte — capacidade, tipo, refrigerado como gate;
+ ANTT/ajudante como dependência estrutural documentada)

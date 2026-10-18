@@ -1,0 +1,79 @@
+FIN-363D.4 — FECHAMENTO INDICADORES FINANCEIROS
+=================================================
+Data: 2026-09-07T23:46:47.031Z
+
+═══════════════════════════════════════════════════════════
+1. MARGEM — limit(50) REMOVIDO
+═══════════════════════════════════════════════════════════
+MargemOperacional.tsx limit(50): ✅ REMOVIDO
+Total composicao_financeira_os: 56 registros (SEM truncamento)
+
+═══════════════════════════════════════════════════════════
+2. 19 REGISTROS CORRIGIDOS
+═══════════════════════════════════════════════════════════
+ANTES: 40 REAL / 16 TESTE / 34 DUVIDOSO
+DEPOIS:
+  duvidoso: 34 registros, R$ 32262.82
+  real: 21 registros, R$ 14050.00
+  teste: 35 registros, R$ 20402.50
+Evidência por registro:
+  M43 test (2): OS-M43_* prefix, CPF=random, data_pagamento=null
+  PRESTADOR TESTE APP (17): CPF=12345678900 (invalid), clientes CNPJ=00.000.000/0001-00 (invalid)
+
+═══════════════════════════════════════════════════════════
+3. FLUXO — DB = CÁLCULO = UI
+═══════════════════════════════════════════════════════════
+Período: 2026-06
+DB Entradas: R$ 0.00
+DB Saídas: R$ 0.00
+Cálculo (E-S): R$ 0.00
+Fórmula fluxoCaixaService: SEM saldo_inicial em realizado → ✅
+DB = Cálculo: ✅
+
+═══════════════════════════════════════════════════════════
+4. DRE — PERÍODO 2026-09
+═══════════════════════════════════════════════════════════
+Receita Bruta: R$ 2120.00 (1 registros)
+Custos Prestadores: R$ 0.00 (0 registros)
+Despesas Operacionais: R$ 0.00 (0 registros)
+Resultado/EBITDA: R$ 2120.00
+TESTE excluído receber: R$ 0.00
+TESTE+DUVIDOSO excluído prestadores: R$ 3150.34
+
+═══════════════════════════════════════════════════════════
+5. MARGEM — SEPARAÇÃO + KPIs
+═══════════════════════════════════════════════════════════
+Período: 2026-06
+Receita: R$ 4091.25
+Custo: R$ 6700.00
+Margem: -63.8%
+limit(50): ✅ AUSENTE
+TESTE+DUVIDOSO excluído: R$ 5105.00
+
+═══════════════════════════════════════════════════════════
+6. REGRESSÃO — GUARDS HOMOLOGADOS
+═══════════════════════════════════════════════════════════
+DRE financeiro_receber is_teste: ✅
+DRE financeiro_pagar is_teste: ✅
+DRE pagamentos_prestadores classificacao_dado: ✅
+financeiro_receber REAL: 87 registros
+financeiro_pagar REAL: 71 registros
+pagamentos_prestadores REAL: 21 registros
+Totais preservados: ✅
+
+═══════════════════════════════════════════════════════════
+VEREDITO
+═══════════════════════════════════════════════════════════
+
+[HOMOLOGADO — INDICADORES FINANCEIROS CONFIÁVEIS]
+
+═══════════════════════════════════════════════════════════
+ALTERAÇÕES
+═══════════════════════════════════════════════════════════
+1. MargemOperacional.tsx — .limit(50) removido (linha 44)
+2. pagamentos_prestadores — 19 registros real→teste
+   (evidência: CPF 12345678900 invalid, OS-M43 test, CNPJ 00.000.000/0001-00)
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

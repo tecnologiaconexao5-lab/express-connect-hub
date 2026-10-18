@@ -1,0 +1,274 @@
+FIN-MOT-2P — DECISÃO ARQUITETURAL: FECHAMENTO 1:N
+Data: 21/08/2026
+Modo: READ-ONLY / DECISÃO (nenhuma escrita, nenhuma migration)
+Status: DECISÃO ARQUITETURAL DEFINIDA
+
+============================================================
+1. ESTRUTURA ATUAL COMPROVADA
+============================================================
+
+- public.pagamentos_prestadores (85 registros) = ITENS (1 linha por
+  OS/escala/movimento manual). UNIQUE em os_id. Não é cabeçalho.
+- lote_id: coluna uuid solta, NÃO populada, sem FK, sem tabela de lote.
+- fechamentos_prestador: NÃO existe em produção.
+- Migration FIN-MOT-2O: criada local, NÃO aplicada; UNIQUE(numero_fechamento)
+  individual comprovado incompatível com cardinalidade N×1.
+
+============================================================
+2. pagamentos_prestadores_itens (AUDITADA READ-ONLY)
+============================================================
+
+Estrutura (12 colunas):
+  id uuid PK NOT NULL
+  pagamento_id uuid (FK → pagamentos_prestadores)  ← pai
+  os_id uuid (FK → ordens_servico)                  ← OS
+  os_numero text
+  valor_servico numeric
+  pedagio numeric
+  adicional numeric
+  valor_reembolso numeric
+  valor_bonus numeric
+  valor_desconto numeric
+  status text
+  created_at timestamptz
+
+FKs:
+  pagamentos_prestadores_itens_pagamento_id_fkey → pagamentos_prestadores
+  pagamentos_prestadores_itens_os_id_fkey         → ordens_servico
+
+Quantidade de registros em Produção: 0 (vazia).
+Distinct pagamento_id: 0 · distinct os_id: 0.
+
+RESPOSTA (item 1):
+  A tabela representa "B) vínculo OS ↔ pagamento" na definição
+  (estrutura clássica itens de um cabeçalho de pagamento),
+  PORÉM está VAZIA em produção — NÃO é utilizada no fluxo atual.
+
+  Importante: foi criada para vincular OS a um pagamento (pagamento_id
+  aponta para pagamentos_prestadores). NÃO possui período, prestador,
+  totais agregados, numero nem status financeiro próprio — portanto não é
+  um cabeçalho de fechamento, é uma tabela de itens (filha).
+
+============================================================
+3. MODELO A — NÚMERO REPETIDO NOS ITENS
+============================================================
+
+pagamentos_prestadores.numero_fechamento repetido em N linhas.
+
+Avaliação:
+- Integridade: fraca — duplicação do número em N linhas; consistência
+  depende da aplicação gravar idêntico em todas.
+- Edição: difícil — editar cabeçalho exigiria UPDATE em N linhas.
+- Cancelamento/status/pagamento: status é por linha hoje; não há status
+  único do fechamento.
+- Histórico: frágil — mudança de número/status em uma linha cria drift.
+- Risco de inconsistência: ALTO (linhas com números diferentes).
+- App/PDF: exigiria agrupar por numero_fechamento e agregar — funcional,
+  porém sem status/totais canônicos.
+
+Veredito: VIÁVEL como vínculo, INSUFICIENTE como cabeçalho.
+
+============================================================
+4. MODELO B — REAPROVEITAR ESTRUTURA EXISTENTE COMO CABEÇALHO
+============================================================
+
+Procurou-se por estrutura existente que já represente 1 fechamento × N itens:
+- pagamentos_prestadores_itens: tabela de itens vazia (filha), NÃO cabeçalho.
+- pagamento_prestadores (singular): irmã de itens, 0 registros, sem período/
+  numero/status financeiro — não é cabeçalho.
+- lote_id: sem estrutura.
+- fechamentos_prestador: não existe.
+
+CONCLUSÃO: NENHUMA tabela existente funciona como cabeçalho de fechamento
+com período + prestador + numero + status + totais + pagamento.
+
+Veredito: MODELO B REJEITADO — não há estrutura reaproveitável como
+cabeçalho; reaproveitar itens apenas como vínculo.
+
+============================================================
+5. MODELO C — CABEÇALHO MÍNIMO 1:N
+============================================================
+
+Uma entidade de fechamento:
+  id
+  numero (EP-AAAA-000001)
+  prestador_id
+  periodo_inicio
+  periodo_fim
+  status
+  totais (créditos/débitos/líquido)
+  datas (criado, pagamento previsto, pago)
+  pagamento (forma, data)
+
+N itens vinculados.
+
+Avaliação:
+- Integridade: alta — estado e número vivem em 1 linha.
+- Edição: controlada — antes do pagamento, reabertura toca 1 cabeçalho.
+- Cancelamento/status/pagamento: canônico no cabeçalho.
+- Histórico: imutável após pago (snapshot) sem duplicar linhas.
+- App/PDF: leitura simples — 1 fechamento + N itens.
+- Risco de inconsistência: BAIXO.
+
+Veredito: ÚNICO modelo que atende aos requisitos (item 3) sem duplicar
+verdade financeira.
+
+============================================================
+6. MODELO ESCOLHIDO: C
+============================================================
+
+C — CABEÇALHO MÍNIMO 1:N, com itens vinculados à tabela de itens já
+existente (pagamentos_prestadores_itens) OU a pagamentos_prestadores
+como itens, conforme decisão de vínculo abaixo.
+
+============================================================
+7. JUSTIFICATIVA
+============================================================
+
+- A cardinalidade real (85 itens, até 16 por prestador/competência) exige
+  um cabeçalho para estado/número/status/totais.
+- Modelo A duplica o número e não tem estado canônico (risco alto).
+- Modelo B não encontra estrutura existente com os campos necessários.
+- Modelo C é o MENOR desenho correto: 1 tabela de cabeçalho + vínculo de
+  itens já existente (pagamentos_prestadores_itens).
+- pagamentos_prestadores continua sendo a FONTE dos movimentos reais
+  (itens); o cabeçalho NÃO duplica valores linha a linha como segunda
+  verdade financeira — guarda SNAPSHOT controlado no fechamento.
+
+TOTAIS: derivados vs snapshot:
+  → SNAPSHOT controlado é mais seguro: congela créditos/débitos/líquido no
+    momento do fechamento (auditável, imutável após pago), sem reescrever
+    a fonte. Derivados mudariam se a fonte for alterada depois — quebraria
+    histórico. Regra: cabeçalho = snapshot; itens = fonte verdadeira.
+
+============================================================
+8. ESQUEMA MÍNIMO (proposto — NÃO implementado)
+============================================================
+
+Tabela nova (única): public.fechamento_prestador
+
+  id            uuid PK
+  numero        text NOT NULL          -- EP-AAAA-000001
+  prestador_id  uuid FK → prestadores
+  periodo_inicio date
+  periodo_fim   date
+  status        text  -- em_conferencia|conferido|programado|pago|cancelado|estornado
+  status_pagamento text
+  valor_total_creditos numeric
+  valor_total_debitos numeric
+  valor_liquido numeric
+  data_criacao timestamptz
+  data_pagamento date
+  data_prevista_pagamento date
+  forma_pagamento text
+  referencia_comprovante text
+  observacao text
+  created_at/updated_at
+
+Vínculo 1:N (reaproveitando estrutura existente):
+  pagamentos_prestadores_itens.pagamento_id → fechamento_prestador.id
+  (a FK atual aponta para pagamentos_prestadores; para reaproveitar como
+  itens do fechamento, o campo pagamento_id deveria apontar para o
+  fechamento OU criar fechamento_id)
+
+  Alternativa SEM nova FK em itens: manter itens em pagamentos_prestadores
+  (fonte real) e vincular por grupo (prestador_id + competencia +
+  numero_fechamento), com o cabeçalho gravando o snapshot.
+
+  RECOMENDAÇÃO MÍNIMA: 1 tabela nova (fechamento_prestador) + manter
+  pagamentos_prestadores como itens/fonte, vinculando por
+  fechamento_id aditivo nas linhas (sem nova tabela de itens).
+
+Número EP:
+  mora NO CABEÇALHO (fechamento_prestador.numero), UNIQUE, gerado por
+  SEQUENCE + nextval (não por MAX+1).
+
+============================================================
+9. NUMERAÇÃO EP
+============================================================
+
+- EP-AAAA-000001 pertence ao FECHAMENTO FORMAL (cabeçalho), não ao item.
+- SEQUENCE anual seq_extrato_prestador_<ano> + nextval (atômico).
+- UNIQUE no cabeçalho (numero).
+- Sem MAX+1.
+- A RPC f_gerar_numero_extrato_prestador() já criada na FIN-MOT-2O serve
+  para o cabeçalho (retornar EP e gravar em fechamento_prestador.numero).
+
+============================================================
+10. IMPACTO DA MIGRATION FIN-MOT-2O
+============================================================
+
+Classificação: REVISAR (reaproveitar parcialmente).
+
+Reaproveitável:
+  ✓ SEQUENCE (seq_extrato_prestador_<ano>) — mantém.
+  ✓ RPC f_gerar_numero_extrato_prestador() — mantém (gera EP, nextval).
+  ✓ Formato EP-AAAA-000001 — mantém.
+
+DESCARTAR/NÃO aplicar como está:
+  ✗ Coluna numero_fechamento em pagamentos_prestadores — número deve morar
+    no cabeçalho, não no item (evitar repetição N×1).
+  ✗ UNIQUE(numero_fechamento) individual — incompatível (2O2).
+
+Ação recomendada: ajustar a migration para (a) criar a tabela cabeçalho
+fechamento_prestador OU (b) manter coluna aditiva nas linhas apenas como
+referência, e gravar o número definitivo no cabeçalho.
+
+============================================================
+11. RISCOS
+============================================================
+
+- Adotar Modelo A/B → risco de inconsistência e sem estado canônico.
+- Criar cabeçalho sem vínculo real com os itens → fechamento "órfão".
+- Snapshot divergente da fonte se itens forem alterados após fechamento:
+  mitigar com imutabilidade após pago + reabertura controlada.
+- Duplicar valores linha a linha no cabeçalho → segunda verdade
+  financeira (PROIBIDO; cabeçalho = snapshot dos TOTAIS, itens = fonte).
+- Lote_id não deve ser usado como cabeçalho (sem estrutura).
+
+============================================================
+12. CHECKLIST
+============================================================
+
+[x] pagamentos_prestadores_itens auditada (estrutura + FKs + vazia)
+[x] 3 modelos comparados
+[x] somente 1 modelo escolhido (C)
+[x] nenhuma escrita realizada
+[x] nenhuma migration aplicada
+[x] número EP definido no nível correto (cabeçalho)
+[x] vínculo 1:N definido (fechamento_prestador → itens)
+[x] extrato consultivo separado de fechamento formal (item 5)
+[x] futuro App considerado (leitura 1 cabeçalho + N itens)
+[x] migração FIN-MOT-2O classificada (REVISAR)
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- pagamentos_prestadores_itens: estrutura correta de itens (pagamento_id +
+  os_id), porém VAZIA (não usada).
+- Modelo escolhido: C (cabeçalho mínimo 1:N).
+- Número EP mora no cabeçalho; itens permanecem em pagamentos_prestadores
+  (fonte). Cabeçalho guarda snapshot dos totais, sem duplicar verdade
+  financeira.
+- FIN-MOT-2O: REVISAR — reaproveitar SEQUENCE/RPC/formato; não aplicar
+  coluna/UNIQUE no item.
+
+============================================================
+FALTA (dependerá da implementação)
+============================================================
+
+- Criação (futura) da tabela cabeçalho fechamento_prestador + vínculo
+  fechamento_id nas linhas.
+- Ajuste da migration FIN-MOT-2O para o modelo C.
+- Fluxo de emissão formal (chamar RPC, congelar itens, snapshot totais).
+- Leitura no App (1 fechamento + N itens + status/pagamento).
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Ajustar a migration (modelo C): criar cabeçalho fechamento_prestador
+(id, numero EP, prestador_id, período, status, totais snapshot, datas,
+pagamento) + vínculo aditivo fechamento_id nas linhas de
+pagamentos_prestadores, reutilizando SEQUENCE + RPC da FIN-MOT-2O.

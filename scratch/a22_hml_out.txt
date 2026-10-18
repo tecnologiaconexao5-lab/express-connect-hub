@@ -1,0 +1,24 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîü auth for agents [www.vestauth.com]
+node.exe : C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS 
+EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\node_modules\@supabase\supabase-js\src\SupabaseClient.ts:285
+No linha:1 caractere:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\DIEGO ...seClient.ts:285:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    if (!supabaseKey) throw new Error('supabaseKey is required.')
+                            ^
+
+Error: supabaseKey is required.
+    at new SupabaseClient (C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS 
+EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\node_modules\@supabase\supabase-js\src\SupabaseClient.ts:285:29)
+    at createClient (C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS 
+EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\node_modules\@supabase\supabase-js\src\index.ts:65:10)
+    at <anonymous> (C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS 
+EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\scratch\a22_homologacao_hml.ts:30:15)
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.1

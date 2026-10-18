@@ -1,0 +1,159 @@
+FAT-PDF-CABECALHO-03-DADOS-EMPRESA
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+Prioridade: CRÍTICA
+
+==================================================
+RESULTADO OBRIGATÓRIO
+==================================================
+
+COMPANY_NAME_SOURCE=config_financeira_empresa (configuracoes_sistema)
+CNPJ_SOURCE=config_financeira_empresa
+IE_SOURCE=config_financeira_empresa
+ADDRESS_SOURCE=configuracoes_fiscais (FALLBACK — não há endereço canônico cadastrado)
+
+BEFORE_COMPANY_NAME="" (vazio)
+AFTER_COMPANY_NAME=CONEXAO TRANSPORTES LTDA
+BEFORE_CNPJ=31.227.975/0001-80 (já corrigido em FAT-PDF-CNPJ-02)
+AFTER_CNPJ=31.227.975/0001-80
+BEFORE_IE="" (vazio)
+AFTER_IE=119.836.105.110
+
+ADDRESS_DATA_MISSING=YES
+AFTER_ADDRESS="" (config_financeira_empresa.endereco permanece vazio — NÃO inventado)
+
+PDF_COMPANY_NAME=CONEXAO TRANSPORTES LTDA
+PDF_CNPJ=31.227.975/0001-80
+PDF_IE=119.836.105.110
+PDF_ADDRESS=Rua Antônio Macedo, 45, Parque São Jorge - São Paulo/SP
+PDF_ADDRESS_SOURCE=configuracoes_fiscais (fallback fiscal)
+PDF_ADDRESS_MATCHES_CANONICAL_CONFIG=NO
+
+OLD_COMPANY_NAME_PRESENT=NO
+OLD_IE_PRESENT=NO
+
+CLIENT_DATA_CHANGED=NO
+FISCAL_CONFIG_CHANGED=NO
+BANK_CONFIG_CHANGED=NO
+
+PDF_GENERATION_TEST=PASS (fluxo real, 4/4)
+DB_WRITES=1
+MIGRATIONS=0
+
+==================================================
+PASSO 1 — PREFLIGHT (READ-ONLY)
+==================================================
+
+CANONICAL_COMPANY_CONFIG=configuracoes_sistema[chave=config_financeira_empresa]
+  id=4c43dbfc-51ca-4574-951d-394cca1558a2
+CURRENT_RAZAO_SOCIAL="" (vazio)
+CURRENT_CNPJ=31.227.975/0001-80
+CURRENT_IE="" (vazio)
+CURRENT_ADDRESS="" (vazio; cidade/uf/cep vazios)
+ADDRESS_SOURCE=NENHUMA fonte canônica de endereço encontrada
+  - configuracoes_sistema possui apenas 2 chaves: config_financeira_empresa, senha_admin
+  - tabela `tenants` (Conexao Express): sem endereço (documento/telefone nulos)
+  - nenhuma tabela do banco possui o CNPJ correto 31.227.975/0001-80 com endereço
+  - única fonte de endereço existente é `configuracoes_fiscais` (emitente FISCAL,
+    entidade distinta: "CONEXAO SERVICOES EXPRESS LTDA" / 42.796.040/0001-31)
+    → NÃO copiada (decisão da missão).
+ADDRESS_DATA_MISSING=YES
+
+Outras chaves de config_financeira_empresa preservadas (nomeFantasia, emailFinanceiro,
+logoColorido, logoClaro, tipoConta, banco/agencia/conta/pix vazios, etc.).
+
+==================================================
+PASSO 2 — UPDATE CIRÚRGICO (jsonb_set)
+==================================================
+
+UPDATE configuracoes_sistema
+SET valor = jsonb_set(jsonb_set(jsonb_set(valor,
+      '{razaoSocial}', to_jsonb('CONEXAO TRANSPORTES LTDA'::text), true),
+      '{ie}',          to_jsonb('119.836.105.110'::text), true),
+      '{cnpj}',        to_jsonb('31.227.975/0001-80'::text), true)
+WHERE id='4c43dbfc-51ca-4574-951d-394cca1558a2'
+  AND chave='config_financeira_empresa';
+
+ROWS_UPDATED=1
+OTHER_CONFIG_FIELDS_PRESERVED=YES (DIFF_KEYS=[] | ADDED=[] | REMOVED=[])
+ENDEREÇO NÃO alterado (mantido vazio; sem fonte canônica comprovada).
+
+==================================================
+PASSO 3/4 — FLUXO REAL + PROVA NO PDF
+==================================================
+
+buscarDadosEmpresaParaFatura() (fonte real):
+  razaoSocial=CONEXAO TRANSPORTES LTDA
+  cnpj=31.227.975/0001-80
+  ie=119.836.105.110
+  endereco=Rua Antônio Macedo, 45, Parque São Jorge (fallback fiscal)
+  cidade/uf=São Paulo/SP (fallback fiscal)
+
+PDF gerado pelo fluxo real:
+  test-results/fat-pdf-cabecalho-03/fatura_cabecalho_emitente.pdf
+  Texto contém: "CONEXAO TRANSPORTES LTDA", "CNPJ: 31.227.975/0001-80",
+  "IE: 119.836.105.110". NÃO contém "CONEXAO SERVICOES EXPRESS LTDA" nem "138381146110".
+
+Teste: src/test/fat_pdf_cabecalho_03.test.ts → 4/4 PASS (integração real, read-only)
+
+REGRESSÃO:
+  CLIENT_NAME_PRESERVED=YES
+  CLIENT_CNPJ_PRESERVED=YES (11.222.333/0001-81)
+  CLIENT_IE_PRESERVED=YES
+  BANK_SOURCE_PRESERVED=YES (contas_financeiras inalteradas; snapshot preservado)
+  VALUES_PRESERVED=YES (R$ 300,00)
+  DUE_DATE_PRESERVED=YES (31/08/2026)
+  PDF_LAYOUT_PRESERVED=YES
+  Fluxo de faturamento: NÃO alterado (nenhuma mudança de código nesta missão).
+
+  Testes de regressão PDF: fat_pdf_cnpj_01 (12/12), fat_pdf_cnpj_02_flow (2/2),
+  tms_s04_fatura_cliente_pdf (6/6), fin_config_pdf_01a (22/22), f38_fatura_manual (PASS).
+  Suíte completa: 1364 passed | 57 failed (100% pré-existentes) | 155 skipped.
+  TYPECHECK=0 erros novos. BUILD=✓ built in 41.45s.
+
+==================================================
+ROLLBACK (preparado, NÃO executado)
+==================================================
+
+UPDATE configuracoes_sistema
+SET valor = jsonb_set(jsonb_set(valor,
+      '{razaoSocial}', to_jsonb(''::text), true),
+      '{ie}',          to_jsonb(''::text), true)
+WHERE id='4c43dbfc-51ca-4574-951d-394cca1558a2'
+  AND chave='config_financeira_empresa';
+  -- restaura BEFORE razaoSocial="" e ie="" (mantém cnpj de FAT-02)
+
+ROLLBACK_PREPARED=YES
+ROLLBACK_EXECUTED=NO
+
+==================================================
+DECISÃO PENDENTE — ENDEREÇO DA EMPRESA
+==================================================
+
+O cabeçalho da Fatura agora exibe razão social/CNPJ/IE corretos. O ENDEREÇO exibido
+ainda é o do emitente FISCAL (fallback), pois NÃO existe endereço empresarial canônico
+cadastrado. Conforme a missão, NÃO inventei nem copiei o endereço fiscal.
+
+AÇÃO NECESSÁRIA (humana): informar o endereço oficial da CONEXAO TRANSPORTES LTDA
+(logradouro, número, complemento, bairro, cidade, UF, CEP). Depois, popular
+config_financeira_empresa.valor.{endereco,cidade,uf,cep} por jsonb_set cirúrgico
+(nova missão). Enquanto isso, o endereço do PDF permanece o fallback fiscal.
+
+Obs.: `src/utils/empresaConfig.ts` (fallback local hardcoded) ainda contém
+razaoSocial="Conexão Express Transportes LTDA" e endereço de exemplo — não é usado
+para o cabeçalho enquanto a config canônica fornece os campos.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Endereço NÃO inventado / NÃO hardcoded / fiscal NÃO copiado.
+- configuracoes_fiscais NÃO alterada.
+- Cliente / conta bancária NÃO alterados. Faturas existentes NÃO alteradas.
+- Sem migration/RLS. Sem alteração de fluxo de faturamento.
+- Não tocou CAD-VEIC / Escala / APP/POD / Cadastro Clientes. Não iniciou outra missão.
+
+DB_WRITES=1
+MIGRATIONS=0

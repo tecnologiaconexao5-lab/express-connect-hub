@@ -1,0 +1,14 @@
+A31-J1.8 — E2E (mocked) OS Interna da Central — HML-A31J18-E2E
+=================================================================
+1. Lançamento manual com cliente cria EXATAMENTE 1 OS (osInsertMock 1x) ........ OK
+2. OS possui numero (OS-202608-424242, regex ^OS-\d{6}-\d{6}$) .................. OK
+3. Cria EXATAMENTE 1 alocação (insertMock 1x) ................................. OK
+4. alocacao.ordem_servico_id = OS criada ...................................... OK
+5. Romaneio/OC separado em metadata.numeroOC (não vira nº da OS) ............... OK
+6. Recarregamento da Central resolve osNumero (join ordens_servico) ........... OK
+7. Cliente e prestador permanecem vinculados .................................. OK
+8. Valores cliente/prestador permanecem corretos (1200/900) .................... OK
+9. Consultar/recarregar NÃO cria segunda OS (0 inserts adicionais) ............ OK
+10. Nenhuma alocação órfã no cenário (todas apontam para a OS) ................ OK
+Validacão: novo teste a31j18_os_interna_e2e.test.ts (3) + regressão
+a31j17 (7) + a31c (5) + a31e (7) = 22/22 pass. npx tsc --noEmit = 0 erros.

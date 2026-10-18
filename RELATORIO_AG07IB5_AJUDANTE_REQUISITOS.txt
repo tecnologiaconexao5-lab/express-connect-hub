@@ -1,0 +1,295 @@
+RELATÓRIO AG-07I-B5 — AJUDANTE E REQUISITOS ESPECIAIS DA OPERAÇÃO
+Data: 22/08/2026
+Status: GATE AJUDANTE IMPLEMENTADO — 46 testes novos, 709/709 suite, tsc 0 erros
+
+====================================================================
+1. CAMPOS DA OS (ordens_servico)
+====================================================================
+
+CAMPO                           | TIPO      | LINHA BASELINE | USO
+--------------------------------|-----------|----------------|-----
+carga_ajudante                  | bool      | 245            | SIM — operação exige ajudante
+ajudante                        | jsonb/num | 230/20260515   | FINANCEIRO — valor do custo
+carga_fragil                    | bool      | 247            | SIM —标注 frágil (sem gate)
+carga_perigosa                  | bool      | 263            |标注 perigosa (sem gate)
+carga_controlada                | bool      | 264            |标注 controlada (sem gate)
+equipamento_obrigatorio         | text      | 1097           |标注 texto livre (sem gate)
+condicao_transporte             | text      | 1098           |标注 texto livre (sem gate)
+restricao_veiculo               | text      | 125            |标注 por parada, não por OS
+restricao_altura                | text      | 126            |标注 por parada, não por OS
+
+FONTES:
+  OS carga_ajudante (bool) — DECISÃO OPERACIONAL: "esta operação exige ajudante"
+  OS ajudante (jsonb/num) — FINANCEIRO: valor do custo do ajudante
+
+====================================================================
+2. CAMPOS DO PRESTADOR (prestadores)
+====================================================================
+
+CAMPO                           | TIPO      | FONT               | ESTRUTURADO?
+--------------------------------|-----------|--------------------|-------------
+valor_ajudante                  | numeric   | migration 20260511 | SIM (financeiro)
+possui_ajudante                 | metadata  | App register_screen| NÃO (metadata)
+
+NOTA: App grava "possui_ajudante" em metadata.experiencia.possui_ajudante.
+NÃO existe coluna estruturada "possui_ajudante" em prestadores.
+NÃO é possível bloquear por "prestador não possui ajudante".
+
+====================================================================
+3. CAMPOS DO VEÍCULO (veiculos)
+====================================================================
+
+NENHUM campo relacionado a ajudante no veículo.
+Não há "aceita_ajudante", "capacidade_ajudantes", etc.
+
+====================================================================
+4. ESTRUTURA DE AJUDANTES
+====================================================================
+
+ALOCACAO (alocacoes_escala):
+  ajudantes (integer, default 0) — quantidade de ajudantes alocados
+  valor_ajudante (numeric) — custo unitário
+  valor_ajudante_unit (numeric) — custo unitário
+
+OS:
+  carga_ajudante (bool) — "operação exige ajudante"
+  ajudante (jsonb/num) — valor financeiro total
+
+ROTA_PARADAS (paradas da rota):
+  exige_ajudante (boolean, default false) — "esta parada exige ajudante para descarga"
+  Fonte: migration 20260721_m132a
+
+NOTA: rota_paradas.exige_ajudante é POR PARADA, não por OS.
+Não é usado no gate de elegibilidade (usado em comprovantes/roteirização).
+
+====================================================================
+5. QUEM FORNECE AJUDANTE
+====================================================================
+
+NÃO IDENTIFICADO no contrato estruturural.
+
+O campo "possui_ajudante" está no metadata do App, não em coluna estrutural.
+Não é possível saber automaticamente se o prestador pode fornecer ajudante.
+
+O campo "ajudantes" na alocação é preenchido MANUALMENTE pelo operador
+(EscalaLista.tsx, linha 2466 — input number, default 0).
+
+O operador decide quantos ajudantes alocar. O sistema NÃO auto-preenche
+baseado em carga_ajudante.
+
+====================================================================
+6. REGRA DE BLOQUEIO IMPLEMENTADA
+====================================================================
+
+CONTRATO COMPROVADO:
+  OS: carga_ajudante (bool) — campo estrutural, confiável
+  Alocação: ajudantes (integer) — campo estrutural, confiável
+
+REGRA:
+  carga_ajudante = true + ajudantes = 0 → BLOQUEADO
+  carga_ajudante = true + ajudantes > 0 → PERMITIDO
+  carga_ajudante = false/null → não aplica (fail-open)
+
+MOTIVO: ajudante_obrigatorio_ausente
+MENSAGEM: "Esta operação exige ajudante — nenhum ajudante alocado"
+
+GATE COLocado em:
+  criarAlocacao (escalaService.ts, linha 384-390)
+
+NÃO colocado em:
+  trocarMotorista — ajudantes já alocados não mudam com troca de motorista
+  trocarVeiculo — ajudantes já alocados não mudam com troca de veículo
+
+JUSTIFICATIVA: a troca de motorista/veículo não invalida o requisito de
+ajudante. O campo "ajudantes" permanece inalterado na alocação.
+
+====================================================================
+7. CRIAR ALOCAÇÃO
+====================================================================
+
+GATE SEQUÊNCIA (escalaService.ts, criarAlocacao):
+  1. prestador/status/liberado_app     [AG-07F]
+  2. veículo elegível                   [AG-07F]
+  3. documentos obrigatórios            [AG-07H]
+  4. compatibilidade tipo veículo       [AG-07I-B1]
+  5. capacidade kg/m³                   [AG-07I-B2]
+  6. refrigerado/térmico                [AG-07I-B3]
+  7. ANTT                               [AG-07I-B4 — sem gate, dependência estrutural]
+  8. ajudante obrigatório               [AG-07I-B5] ← NOVO
+
+Gate 8: se OS tem carga_ajudante=true E dados.ajudantes=0 → BLOQUEADO.
+
+====================================================================
+8. TROCAR MOTORISTA
+====================================================================
+
+NÃO PROTEGIDO — justificativa:
+  - alocação já tem campo "ajudantes" preenchido
+  - trocar motorista não altera "ajudantes"
+  - se operação exige ajudante E ajudantes > 0, troca é segura
+  - se operação exige ajudante E ajudantes = 0, alocação já foi bloqueada
+    na criação (gate 7)
+
+====================================================================
+9. TROCAR VEÍCULO
+====================================================================
+
+NÃO PROTEGIDO — justificativa idêntica à troca de motorista.
+
+====================================================================
+10. REQUISITOS ESPECIAIS ENCONTRADOS
+====================================================================
+
+REQUISITO                | CAMPO OS | CONTRAPARTE VEÍCULO/PRESTADOR | GATE?
+-------------------------|----------|-------------------------------|------
+Carga frágil             | SIM      | NÃO                           | NÃO
+Carga perigosa           | SIM      | NÃO                           | NÃO
+Carga controlada         | SIM      | NÃO                           | NÃO
+Equipamento obrigatório  | SIM (text)| NÃO                          | NÃO
+Condição de transporte   | SIM (text)| NÃO                          | NÃO
+Restrição de veículo     | SIM (text por parada)| NÃO              | NÃO
+Restrição de altura      | SIM (text por parada)| NÃO              | NÃO
+Exigência EPI            | SIM (bool por parada)| NÃO              | NÃO
+Ajudante obrigatório     | SIM      | SIM (ajudantes na alocação)   | SIM ✓
+
+Para TODOS os requisitos exceto ajudante:
+  - OPERAÇÃO TEM CAMPO: SIM
+  - PRESTADOR/VEÍCULO TEM CONTRAPARTE: NÃO
+  - PODE VIRAR GATE: NÃO (dependência estrutural)
+
+====================================================================
+11. TEXTO LIVRE NÃO É GATE
+====================================================================
+
+equipamento_obrigatorio e condicao_transporte são TEXT na OS.
+Não há contraparte estrutural no veículo/prestador.
+NÃO podem virar bloqueio automático.
+
+restricao_veiculo e restricao_altura são TEXT por parada (rota_paradas).
+Não há campo correspondente em veiculos.
+NÃO podem virar bloqueio automático.
+
+====================================================================
+12. APP
+====================================================================
+
+CAMPO                          | LOCAL                  | ESTRUTURADO?
+-------------------------------|------------------------|-------------
+possui_ajudante                | metadata.experiencia   | NÃO
+_cargaAjudante (UI switch)     | OrdemServicoForm       | SIM (OS)
+
+App NÃO foi alterado nesta missão.
+O campo "possui_ajudante" continua em metadata — não afeta o gate.
+
+====================================================================
+13. NÃO ALTERADO
+====================================================================
+
+  - B1 tipo veículo preservado
+  - B2 capacidade preservada
+  - B3 refrigerado preservado
+  - B4 ANTT preservado (sem gate)
+  - Documentos
+  - Financeiro
+  - Tracking
+  - Chat
+  - POD
+  - Produção
+  - Migrations
+
+====================================================================
+14. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts
+    + operacaoExigeAjudante (pura)
+    + ajudanteCompativel (pura, testável)
+    + verificarAjudante (async, banco)
+    + motivo "ajudante_obrigatorio_ausente" em MotivoInelegibilidade
+
+- src/services/escala/escalaService.ts
+    + import verificarAjudante
+    + gate B5 em criarAlocacao (linha 384-390)
+
+- src/test/ag07ib5_ajudante_requisitos.test.ts — NOVO (46 testes)
+
+====================================================================
+15. TESTES EXECUTADOS
+====================================================================
+
+AG-07I-B5 — 46 testes NOVOS:
+  operacaoExigeAjudante: 4 testes
+  ajudanteCompativel (pura): 8 testes
+  verificarAjudante (banco): 7 testes
+  Regressão B1 tipo veículo: 4 testes
+  Regressão B2 capacidade: 4 testes
+  Regressão B3 refrigerado: 5 testes
+  regressão operacaoRequerRefrigerado: 4 testes
+  regressão veiculoPossuiCapacidadeTermica: 6 testes
+  veículo elegível: 1 teste
+  motoboy preservado: 2 testes
+  Total: 46 testes
+
+SUÍTE COMPLETA: 709/709 ✅
+TSC: 0 erros ✅
+BUILD: pendente (não solicitado)
+
+====================================================================
+16. DEPENDÊNCIAS ESTRUTURAIS
+====================================================================
+
+1. OPERAÇÃO QUE EXIGE AJUDANTE: RESOLVIDO
+   ordens_servico.carga_ajudante (bool) — campo estrutural existente.
+
+2. AJUDANTES ALOCADOS: RESOLVIDO
+   alocacoes_escala.ajudantes (integer) — campo estrutural existente.
+
+3. PRESTADOR POSSUI AJUDANTE: DEPENDÊNCIA ESTRUTURAL
+   Campo "possui_ajudante" existe APENAS em metadata do App.
+   Não é coluna estrutural em prestadores.
+   Não é possível bloquear por "prestador não possui ajudante".
+
+4. RESPONSABILIDADE PELO AJUDANTE: DEPENDÊNCIA ESTRUTURAL
+   NÃO existe campo que determine "quem fornece o ajudante"
+   (empresa/motorista/cliente). Texto livre não é gate.
+
+5. AUTO-PREENCHIMENTO DE AJUDANTES: DEPENDÊNCIA ESTRUTURAL
+   O sistema NÃO auto-preenche "ajudantes" baseado em "carga_ajudante".
+   O operador manually inputa a quantidade.
+
+6. REQUISITOS ESPECIAIS: DEPENDÊNCIA ESTRUTURAL
+   Fragil, perigosa, controlada, equipamento, condição = campos na OS
+   SEM contraparte no veículo/prestador. Não são gate.
+
+====================================================================
+17. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07J — FECHAMENTO CADASTRO ↔ RECRUTAMENTO ↔ PRESTADOR ↔ ESCALA ↔ APP
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+REQUISITO AJUDANTE NA OS: SIM (carga_ajudante, bool)
+AJUDANTE POSSUI ESTRUTURA REAL: PARCIAL (ajudantes na alocação SIM, prestador.metadata NÃO)
+RESPONSABILIDADE PELO AJUDANTE IDENTIFICADA: NÃO (dependência estrutural)
+AJUDANTE OBRIGATÓRIO PODE SER VALIDADO: SIM (carga_ajudante=true + ajudantes=0)
+GATE AJUDANTE IMPLEMENTADO: SIM
+CRIAR ALOCAÇÃO PROTEGIDO: SIM
+TROCAR MOTORISTA PROTEGIDO: NÃO (justificado — ajudantes não muda com troca)
+TROCAR VEÍCULO PROTEGIDO: NÃO (justificado — ajudantes não muda com troca)
+REQUISITOS ESPECIAIS MAPEADOS: SIM (9 requisitos documentados)
+GATES ESPECIAIS IMPLEMENTADOS: ajudante_obrigatorio_ausente (único com contraparte)
+TIPO B1 PRESERVADO: SIM
+CAPACIDADE B2 PRESERVADA: SIM
+REFRIGERADO B3 PRESERVADO: SIM
+ANTT B4 PRESERVADA: SIM (sem gate, dependência estrutural)
+APP ALTERADO: NÃO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07I-B5: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO ÚNICA:
+AG-07J — FECHAMENTO CADASTRO ↔ RECRUTAMENTO ↔ PRESTADOR ↔ ESCALA ↔ APP

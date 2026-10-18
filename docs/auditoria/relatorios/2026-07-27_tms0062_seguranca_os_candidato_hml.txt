@@ -1,0 +1,126 @@
+TMS-006.2 — SEGURANCA DE ORDENS DE SERVICO E SELECAO DO
+               CANDIDATO HML
+
+Data: 2026-07-27
+Status: GO — CANDIDATO HML E PLANO DE ALOCACAO PRONTOS;
+        RLS DE OS AGUARDA CORRECAO SEPARADA
+
+=======================================================================
+FASE 1+2 — ANON SELECT E RLS
+=======================================================================
+
+Anon SELECT: HTTP 200, 0 rows — RLS bloqueia efetivamente.
+INSERT: Bloqueado.
+Policies: 2 (os_select_own + os_insert_portal), ambas TO authenticated.
+Sem policy TO public ou TO anon.
+Classificacao: P2 (sem vazamento, mas HTTP200 enganoso)
+
+=======================================================================
+FASE 3 — CONSUMIDORES ANONIMOS
+=======================================================================
+
+Paginas publicas que consultam ordens_servico DIRETAMENTE:
+  Tracking.tsx:45         (/rastrear)    — PROVAVELMENTE QUEBRADO
+  RastreamentoPublico.tsx (/rastreamento) — PROVAVELMENTE QUEBRADO
+  PortalCliente.tsx       (/portal-cliente) — funciona com auth
+
+Solucao: criar RPC f_obter_dados_rastreio_publico(token)
+         SECURITY DEFINER, EXECUTE TO public/anon.
+
+=======================================================================
+FASE 4 — PROPOSTA DE CORRECAO RLS
+=======================================================================
+
+Nao ha vazamento ativo. Prioridade:
+  P1: Criar RPC segura para tracking publico
+  P1: Modificar Tracking.tsx e communicationHubService
+  P3: REVOKE grants anon (opcional)
+
+Migration proposta no relatorio completo (nao aplicada).
+
+=======================================================================
+FASE 5 — SETE VINCULOS QUEBRADOS
+=======================================================================
+
+TMS-006.1 disse: 4. Realidade: 7.
+
+Ghost OS IDs: 215eaf04, dda7be25, 19eedf62, 2073a75d, 38961ecf
+              (5x prestador 6cc41f68 — ghost, sem nome)
+Ghost OS IDs: 88f80b32, 9f9130ba
+              (2x PRESTADOR TESTE APP)
+
+Nao existe FK constraint real. Vinculos sao logicos.
+
+=======================================================================
+FASE 6 — QUALIDADE 15 OS HML
+=======================================================================
+
+MELHOR CANDIDATA: TESTE-001 (28640e7b)
+  Status: pendente
+  Cliente: null (seguro)
+  Alocacao: 0
+  Financeiro: 0
+  Veiculo tipo: moto
+
+Segundas opcoes: OS-TESTE-1776989922267 (em_andamento, sem cliente),
+                 OS-TESTE-1776989832949 (em_andamento, sem cliente)
+
+Nota: Cliente 3525e99f nao existe em clientes — UUID fantasma.
+
+=======================================================================
+FASE 7 — REGRA DE OS ELEGIVEL
+=======================================================================
+
+Elegiveis: pendente, agendada, em_andamento, programacao
+           E sem alocacao ativa (NOT IN cancelada/recusada)
+Nao elegiveis: concluida, finalizada, entregue, cancelada
+
+=======================================================================
+FASE 8 — PROPOSTA DROPDOWN
+=======================================================================
+
+Estado atual: input livre em EscalaLista.tsx:114
+              valor salvo em metadata.os (texto)
+              mapper tenta converter para UUID
+
+Proposta: substituir <Input> por <Select> com opcoes carregadas
+          de ordens_servico (status elegiveis, sem alocacao ativa)
+          value = UUID da OS
+          label = "{numero} — {cliente} ({status})"
+
+Diff proposto no relatorio completo.
+
+=======================================================================
+FASE 9 — PLANO ALOCACAO CONTROLADA
+=======================================================================
+
+OS:      TESTE-001 (28640e7b-fbe5-4141-a59a-c5bead26d25a)
+Pres:    M43_2026-06-29_18-24-20 (5377592a-50e8-41d7-b8c5-b5c4509a3d56)
+Veiculo: PRECISA CRIAR (placa HML-TMS, tipo moto)
+Status:  planejada
+Valores: zero
+
+Trigger effects: propagation cria financeiro valor zero (seguro)
+Rollback: DELETE por alocacao_id + financeiro_id
+
+DECISAO: GO — plano pronto, falta criar veiculo HML.
+
+=======================================================================
+FASE 10 — TYPESCRIPT
+=======================================================================
+
+typecheck:node:  0 erros ✅
+typecheck:app:   ~150 erros (pre-existentes)
+build:           OK (31.95s) ✅
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+GO — CANDIDATO HML E PLANO DE ALOCACAO PRONTOS;
+RLS DE OS AGUARDA CORRECAO SEPARADA
+
+Causa real do "anon SELECT": HTTP 200 com 0 rows — RLS filtra.
+7 broken FKs (nao 4) — ghost data de migracoes antigas.
+TESTE-001 e candidata ideal para alocacao controlada.
+Unico pre-requisito: criar veiculo placa HML-TMS.

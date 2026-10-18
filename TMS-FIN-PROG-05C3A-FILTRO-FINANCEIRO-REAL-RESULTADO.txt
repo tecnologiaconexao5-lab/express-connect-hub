@@ -1,0 +1,180 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05C.3A-FILTRO-FINANCEIRO-REAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-05C2-SANEAMENTO-COMPROVADO-RESULTADO.txt
+TIPO: Correcao de QUERY/SERVICO (sem migration). Nenhum dado alterado.
+================================================================================
+
+RESULTADO FINAL: PASS
+(Indicadores REAIS passam a excluir is_teste=true e cancelados; historico
+ preservado; banco inalterado; PROG-05B/05C.2 intactos.)
+
+--------------------------------------------------------------------------------
+1. AS-IS POR VISAO (auditoria antes de alterar)
+--------------------------------------------------------------------------------
+Dashboard Financeiro PROG-03 (DashboardFinanceiroEnterprise.tsx):
+  fonte financeiro_receber/pagar/pagamentos_prestadores/ordens_servico.
+  Ja filtrava .eq("is_teste", false); cancelados eram excluidos apenas
+  indiretamente pelo statusEfetivo (nao havia filtro explicito de status).
+Contas a Receber (ContasReceberEnterprise.tsx + receberService.ts):
+  fonte financeiro_receber. listarRecebiveis ja filtra .eq("is_teste", false).
+  Cards (pendentes/vencidos/pagos/total) usam statusEfetivo; cancelado mapeia
+  para "cancelado" e NAO entra nos totais ativos -> JA COMPLIANT.
+  PENDENCIA: cards calculam sobre a pagina carregada (range 25) — nao refatorado.
+DRE (DREGerencial.tsx + dreService.ts):
+  fonte financeiro_receber/pagar/pagamentos_prestadores. Ja filtra
+  .eq("is_teste", false) e .filter(status !== "cancelado"); prestadores usam
+  classificacao_dado='real' -> JA COMPLIANT.
+Fluxo de Caixa/Tesouraria (FluxoCaixaEnterprise.tsx + fluxoCaixaService.ts):
+  previsto = financeiro_receber/pagar; realizado = financeiro_baixas.
+  GAP: previsto NAO filtrava is_teste nem cancelado; realizado somava baixas de
+  titulos de teste. -> CORRIGIDO nesta missao.
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/financeiro/FluxoCaixaEnterprise.tsx
+    * previsto receber: + .eq("is_teste", false)
+    * previsto pagar:   + .eq("is_teste", false)
+    * previsto: ignora status cancelado/cancelada (receber e pagar)
+    * realizado: busca IDs de titulos is_teste=true (receber+pagar) e ignora
+      baixas cujo titulo_id pertence a um titulo de teste
+    * baixas: select passou a incluir titulo_id
+- src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+    * financeiro_receber: + .not("status","in","(cancelado,cancelada)")
+      (explicitacao da regra; ja havia .eq("is_teste", false))
+- src/test/fin_prog03_dashboard_real.test.tsx
+    * mock do supabase: adicionado metodo de cadeia .not (reflexo da mudanca)
+Sem migration. Sem alteracao de valores/status.
+NAO alterados (ja compliant): receberService.ts (Contas a Receber),
+DREGerencial.tsx/dreService.ts (DRE).
+
+--------------------------------------------------------------------------------
+3. REGRA APLICADA
+--------------------------------------------------------------------------------
+TESTE/HML: financeiro_receber.is_teste = true (e financeiro_pagar.is_teste) ->
+  fora de TODO indicador financeiro REAL (recebivel ativo, receita prevista,
+  DRE, fluxo previsto) e fora do resultado REALIZADO do Fluxo (baixas de titulos
+  de teste). As LINHAS de baixa permanecem no banco (historico).
+CANCELADO: status in (cancelado,cancelada) -> fora de saldo ativo, receita
+  prevista e recebivel aberto/previsto.
+Histórico: a listagem de Contas a Receber preserva os cancelados (filtro
+  statusEfetivo); is_teste segue fora da listagem (comportamento pre-existente).
+Fluxo realizado permanece baseado em baixa real (estornada=false); apenas baixas
+  de titulos classificados TESTE sao desconsideradas do resultado real.
+
+--------------------------------------------------------------------------------
+4. TOTAIS ANTES x DEPOIS POR VISAO (dados reais)
+--------------------------------------------------------------------------------
+Base banco: financeiro_receber = 122 linhas | R$ 188.884,75 (INALTERADO).
+Exclusoes globais:
+  - TESTE/HML (is_teste=true): 77 linhas | R$ 153.179,00
+  - CANCELADO (cancelado/cancelada): 2 linhas | R$ 2.600,00 (045258fb 600 + 75e0e5f0 2000)
+REAL EXIBIVEL = 122-77-2 = 44 linhas | R$ 35.105,75
+
+| Visao                         | ANTES (bruto)  | TESTE excl.   | CANCEL excl. | REAL exibivel |
+|-------------------------------|----------------|---------------|--------------|---------------|
+| Contas a Receber (cards)      | R$ 188.884,75  | -153.179,00   | -2.600,00    | R$ 35.105,75  |
+| Dashboard PROG-03             | R$ 188.884,75* | -153.179,00   | -2.600,00    | R$ 35.105,75  |
+| DRE (receita competencia)     | R$ 188.884,75  | -153.179,00   | -2.600,00    | R$ 35.105,75  |
+| Fluxo PREVISTO entrada        | R$ 188.884,75  | -153.179,00   | -2.600,00    | R$ 35.105,75  |
+| Fluxo REALIZADO entrada       | R$ 3.624,60    | -0,00         | (n/a)        | R$ 3.624,60   |
+* O Dashboard ja tinha is_teste=false; o valor "antes" aqui mostra o efeito pleno
+  da regra para comparacao com o bruto.
+Fluxo REALIZADO: 7 baixas ativas / R$ 3.624,60; baixas de titulos de teste hoje
+  = 0 (nenhuma das 7 baixas atuais e de titulo is_teste=true). Os 2 AR de teste
+  pagos NAO possuem baixa em financeiro_baixas (data_pagamento direto), logo nao
+  compunham o realizado; passam a nao compor nada real via is_teste.
+
+--------------------------------------------------------------------------------
+5. PROVA — 77 is_teste=true EXCLUIDOS
+--------------------------------------------------------------------------------
+select count/sum where is_teste=true -> 77 linhas | R$ 153.179,00.
+Esses 77 nao entram em: Contas a Receber (service filtra is_teste=false),
+Dashboard (is_teste=false), DRE (is_teste=false), Fluxo previsto (novo filtro).
+Amostra: M43/M48, Empresa Teste/Demo, HML, GO-LIVE — todos is_teste=true apos 05C.2.
+
+--------------------------------------------------------------------------------
+6. PROVA — CANCELADOS EXCLUIDOS
+--------------------------------------------------------------------------------
+Cancelados: 2 linhas | R$ 2.600,00
+  - 045258fb-4fc1-4ac9-afb7-55274554aa63 | R$ 600,00 | status cancelada (cliente CALVO)
+  - 75e0e5f0-c512-49b6-9542-716362705c08 | R$ 2.000,00 | status cancelado (duplicata FAT-2026-000001)
+Prova 75e0e5f0 fora do real:
+  select count where id=75e0e5f0 and is_teste=false and status not cancelado -> 0.
+Nenhum dos dois compoe recebivel ativo/receita prevista; 75e0e5f0 tambem e
+is_teste=true (M43), reforcando a exclusao.
+
+--------------------------------------------------------------------------------
+7. TRATAMENTO DOS TESTES PAGOS (historico preservado)
+--------------------------------------------------------------------------------
+  - cf6eea7b-4c9d-4200-b306-4d209764112f | R$ 1.500 | status pago | dp 01/07/2026 | is_teste true
+  - fb30838a-fc5f-430f-9aa3-9b7892e564d4 | R$ 1.500 | status pago | is_teste true
+Ambos permanecem PAGOS (historico intacto) e NAO entram no resultado REAL
+(prova: count real para esses ids = 0). Nenhuma baixa criada/removida.
+
+--------------------------------------------------------------------------------
+8. CONFIRMACAO — HISTORICO PRESERVADO
+--------------------------------------------------------------------------------
+- As linhas de financeiro_receber (122) e financeiro_baixas (19) permanecem no
+  banco; a mudanca e apenas de FILTRO de indicadores reais.
+- Cancelados continuam listaveis em Contas a Receber (filtro statusEfetivo).
+- Baixas de teste (se houver no futuro) seguem registradas; apenas nao compoem o
+  resultado real do Fluxo.
+
+--------------------------------------------------------------------------------
+9. BANCO INALTERADO
+--------------------------------------------------------------------------------
+Snapshot pos: financeiro_receber 122 | financeiro_baixas 19 | faturas 41.
+Nenhum UPDATE/INSERT/DELETE nesta missao. Somente alteracao de codigo (TS/TSX).
+Nenhuma migration criada.
+
+--------------------------------------------------------------------------------
+10. REGRESSAO
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0.
+- npm run build -> OK (34,80s).
+- Testes (7 arquivos / 65 testes) PASS: f0f_fluxo_caixa, f0g_dre_plano_contas,
+  fin_prog03_dashboard_real, fin_prog04b_emissao, f0e_pagamento_prestadores,
+  f0j_relatorios_financeiros, fin_p0_03_kpis_reais.
+- PROG-05B confirmado: M66/M80 sem criar AR. PROG-05C.2 confirmado: anti-duplicidade
+  e saneamentos intactos (nenhua alteracao nestas areas).
+
+--------------------------------------------------------------------------------
+11. RISCOS / PENDENCIAS
+--------------------------------------------------------------------------------
+P1  Contas a Receber: os cards somam apenas a PAGINA carregada (range 25),
+    subestimando totais. Registrado como pendencia de paginacao/totalizacao;
+    NAO refatorado nesta missao (conforme orientacao).
+P2  Outros relatorios (relatoriosFinanceirosService, inadimplenciaService,
+    ResumoExecutivoFinanceiro) nao foram alterados; se exibirem teste/cancelado
+    em indicadores reais, tratar em missao propria.
+P3  Dashboard PROG-03 continua com a regra de datas homologada; apenas o filtro
+    de fonte foi explicitado. Sem reabertura do escopo PROG-03.
+P4  Fluxo: quando existirem baixas de titulos de teste, elas serao excluidas do
+    resultado real automaticamente (logica ja implementada).
+
+--------------------------------------------------------------------------------
+12. PROXIMA MENOR MISSAO (PROG-05C.3B)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-05C.3B — TOTALIZACAO E RECONCILIACAO DAS VISOES REAIS:
+  - corrigir totalizacao de Contas a Receber (cards sobre o conjunto filtrado
+    completo, nao apenas a pagina) com paginacao real via PaginationBar;
+  - reconciliar rascunho real Calvo (e5318b9d) x AR legado 58e5751e;
+  - decisao humana DVL (15) e classe F (4);
+  - validar totais reais apos filtros (bruto/teste/cancelado/oficial).
+Fora de escopo: M66/M80; AP/gate de Conferencia; APP; Programacao Operacional.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Correcao minima em query/servico; sem migration; sem alteracao de dados.
+- Indicadores reais excluem is_teste e cancelados; historico preservado.
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05C.3A-FILTRO-FINANCEIRO-REAL
+================================================================================
+`;

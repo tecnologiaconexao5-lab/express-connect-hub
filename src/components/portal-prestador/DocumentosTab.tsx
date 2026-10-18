@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { FileText, Upload, CheckCircle2, XCircle, Clock, AlertTriangle, FileWarning, Plus } from "lucide-react";
+import { FileText, Upload, CheckCircle2, XCircle, Clock, AlertTriangle, FileWarning, Plus, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { usePortalPrestadorStore, type DocumentoPrestador } from "@/stores/portalPrestadorStore";
+import { usePortalPrestadorStore } from "@/stores/portalPrestadorStore";
+import type { DocumentoPrestador } from "@/stores/portalPrestadorStore";
 
 const STATUS_DOC = {
   aprovado: { icon: CheckCircle2, color: "text-green-600", bg: "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800", label: "Aprovado" },
@@ -11,10 +12,21 @@ const STATUS_DOC = {
 };
 
 export default function DocumentosTab() {
-  const { documentos, adicionarDocumento } = usePortalPrestadorStore();
+  const { documentos, loading } = usePortalPrestadorStore();
 
   const aprovados = documentos.filter((d) => d.status === "aprovado").length;
   const pendentes = documentos.filter((d) => d.status === "pendente" || d.status === "rejeitado" || d.status === "expirado").length;
+
+  if (loading && documentos.length === 0) {
+    return (
+      <div className="space-y-4 pb-4">
+        <h1 className="text-xl font-bold text-foreground">Documentos</h1>
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pb-4">
@@ -36,11 +48,18 @@ export default function DocumentosTab() {
         ))}
       </div>
 
-      <div className="space-y-2">
-        {documentos.map((doc, i) => (
-          <DocumentoCard key={doc.id} doc={doc} index={i} />
-        ))}
-      </div>
+      {documentos.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">Nenhum documento encontrado</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {documentos.map((doc, i) => (
+            <DocumentoCard key={doc.id} doc={doc} index={i} />
+          ))}
+        </div>
+      )}
 
       <motion.button whileTap={{ scale: 0.97 }} className="w-full p-4 rounded-2xl border-2 border-dashed border-border flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">
         <Plus className="w-5 h-5" />
@@ -77,7 +96,7 @@ function DocumentoCard({ doc, index }: { doc: DocumentoPrestador; index: number 
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">{doc.nome}</p>
           <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-            <span>Envio: {new Date(doc.dataEnvio).toLocaleDateString("pt-BR")}</span>
+            <span>Envio: {doc.dataEnvio ? new Date(doc.dataEnvio).toLocaleDateString("pt-BR") : "-"}</span>
             {doc.dataVencimento && (
               <span className={cn(diasRestantes !== null && diasRestantes < 30 ? "text-red-600" : "")}>
                 Vence: {new Date(doc.dataVencimento).toLocaleDateString("pt-BR")}

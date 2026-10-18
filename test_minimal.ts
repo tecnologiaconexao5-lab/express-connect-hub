@@ -1,0 +1,43 @@
+import { test } from '@playwright/test';
+test.describe('test', () => {
+  test.beforeEach(async ({ page }) => {
+    page.setViewportSize({ width: 1440, height: 900 });
+    page.goto('/');
+    page.waitForLoadState('domcontentloaded');
+    page.waitForTimeout(1000);
+    const loginBtn = page.locator('button');
+    const hasLoginForm = loginBtn.isVisible().catch(() => false);
+    if (hasLoginForm) {
+      page.waitForTimeout(500);
+      const emailInput = page.locator('input').first();
+      emailInput.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+      if (emailInput.isVisible().catch(() => false)) {
+        emailInput.click();
+        emailInput.fill('a');
+        const passwordInput = page.locator('input[type="password"]').first();
+        if (passwordInput.isVisible().catch(() => false)) {
+          passwordInput.click();
+          passwordInput.fill('a');
+        }
+        loginBtn.click();
+        page.waitForTimeout(3000);
+        page.waitForLoadState('domcontentloaded');
+      }
+    }
+  });
+  test('ETAPA 1', async ({ page }) => {
+    page.goto('/');
+    console.log('ETAPA 1 done');
+  });
+  test('ETAPA 2', async ({ page }) => {
+    page.goto('/');
+    for (let i = 0; i < 5; i++) {
+      console.log(`${i}`);
+    }
+    console.log('ETAPA 2 done');
+  });
+  test('ETAPA 6+7', async ({ page }) => {
+    page.goto('/');
+    console.log('ETAPA 6+7 done');
+  });
+});

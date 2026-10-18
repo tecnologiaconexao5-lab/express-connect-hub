@@ -1,0 +1,295 @@
+===============================================================================
+  MISSÃO A28 — CHAT PROFISSIONAL APP PRESTADOR ⇄ TORRE DE CONTROLE
+  Relatório final — auditoria + correções + homologação física
+  Data: 2026-08-16
+===============================================================================
+
+RESULTADO: A28 HOMOLOGADA 100%
+
+===============================================================================
+1) ARQUITETURA ENCONTRADA (reaproveitada de A22/A24/A24-B — NADA reconstruído)
+===============================================================================
+  Fluxo real existente e preservado:
+    App Prestador (Flutter)  ⇄  TMS Torre de Controle
+    via tabela operacao_mensagens + RPCs SECURITY DEFINER + Realtime.
+
+  App (C:\src\conexao_prestador):
+    - CoreChatTorreRepository (chat_torre_repository.dart) — leitura via RLS,
+      escrita SOMENTE via RPC f_enviar_mensagem_torre, nunca INSERT direto.
+    - ChatTorreService (chat_torre_service.dart) — cache por operação, badge,
+      Realtime por operação com dedupe por id e ref-count.
+    - OperacaoMensagem (operacao_mensagem.dart) — modelo que espelha a tabela.
+    - ChatTorreScreen (chat_torre_screen.dart) — tela "Falar com a Torre".
+    - Offline: OfflineEntityQueue type 'chat_message' (fila durável).
+    - Ações: "Falar com a Torre" no ActiveOperationCard + OperationDetail.
+
+  TMS:
+    - operacaoChatService.ts — listarMensagens / enviarMensagemAppParaTorre /
+      responderMensagem / marcarComoLidaTorre / marcarComoLidaApp /
+      contarNaoLidasTorre / inscreverMensagensOperacao / inscreverMensagensTorre
+      / listarConversasTorre / montarConversasTorre.
+    - ChatOperacaoPanel.tsx — thread da conversa (dentro da operação).
+    - ChatTorrePanel.tsx — painel global de conversas (prestador, OS, status,
+      veículo, Abrir operação, não lidas, ordenação, busca).
+    - AppTopbar.tsx + TorreControle.tsx — badge global real (sem mock).
+    - DetalhesOperacaoSheet.tsx — aba Mensagens via ChatOperacaoPanel.
+
+===============================================================================
+2) TABELA operacao_mensagens (campos REAIS auditados read-only)
+===============================================================================
+  id            uuid PK (gen_random_uuid)
+  alocacao_id   uuid NOT NULL           → operação (alocação)
+  os_id         uuid NULL               → OS/Romaneio vinculada
+  prestador_id  uuid NULL               → prestador destinatário/remetente
+  sender_type   text NOT NULL ('prestador'|'torre')
+  sender_user_id uuid NULL              → auth.uid() do remetente
+  mensagem      text NOT NULL
+  status        text NOT NULL DEFAULT 'enviada'  ('enviada'|'lida')
+  read_at       timestamptz NULL        → data de visualização (read receipt)
+  idempotency_key text NULL (UNIQUE)    → anti-duplicidade
+  metadata      jsonb NOT NULL DEFAULT '{}'
+  created_at    timestamptz NOT NULL DEFAULT now()
+
+  Índices: pkey, idx_alocacao(alocacao_id, created_at),
+           idx_prestador(prestador_id, created_at),
+           idx_nao_lidas(sender_type, status) WHERE status='enviada',
+           uq_idempotency UNIQUE(idempotency_key).
+  RLS: operacao_mensagens_select_prestador (via prestadores.auth_user_id)
+       + operacao_mensagens_select_torre (via tenant_usuarios).
+  Grants: anon/PUBLIC têm grant de tabela, porém RLS exige role authenticated
+       e políticas scoped — anon efetivamente bloqueado (nota de segurança).
+  Triggers: NENHUM na tabela (toda escrita passa pelas RPCs).
+
+===============================================================================
+3) RPCs EXISTENTES (auditadas read-only — reutilizadas, NENHUMA alterada)
+===============================================================================
+  f_enviar_mensagem_torre(p_alocacao_id, p_mensagem, p_idempotency_key)
+      → App→Torre; valida prestador autenticado + alocação pertence ao
+        prestador + status ativa + mensagem; idempotente.  VOLATILE SECDEF.
+  f_responder_mensagem_torre(...) → Torre→App; valida tenant_usuarios;
+      idempotente; cria notificação f_registrar_notificacao_app. VOLATILE SECDEF.
+  f_marcar_mensagens_lidas_torre(p_alocacao_id) → Torre leu mensagens do
+      prestador: status='lida', read_at=now(). VOLATILE SECDEF.
+  f_marcar_mensagens_lidas_app(p_alocacao_id) → App leu mensagens da Torre:
+      status='lida', read_at=now(). VOLATILE SECDEF.
+  f_contar_mensagens_nao_lidas_torre() → contagem real (badge global).
+      STABLE SECDEF.
+
+===============================================================================
+4) REALTIME (preservado do hotfix A24 — NÃO regrediu)
+===============================================================================
+  - topic ÚNICO por inscrição (topicCanalUnico) — AppTopbar/TorreControle/
+    ChatTorrePanel podem coexistir sem "cannot add 'postgres_changes' callbacks
+    after subscribe()".
+  - .on(...) ANTES de .subscribe().
+  - cleanup com removeChannel (sem vazamento).
+  - Montagem/desmontagem (Torre → outra tela → Torre) coberta por teste.
+  - A28 adicionou UPDATE: o App agora assina INSERT+UPDATE por operação, e o
+    TMS inscreverMensagensOperacao assina INSERT+UPDATE → read receipt aparece
+    ao vivo nos dois lados, sem F5.
+
+===============================================================================
+5) CAUSA REAL DO +3h NO APP + CORREÇÃO
+===============================================================================
+  CAUSA: Supabase devolve created_at/read_at como timestamptz UTC (ISO com Z).
+  O App usava DateTime.tryParse() SEM normalização: o DateTime permanecia UTC e
+  a UI exibia time.hour (hora UTC). No Brasil (BRT = UTC-3) isso mostrava
+  3 HORAS À FRENTE. A Torre (JavaScript) usa new Date(iso).toLocaleString()
+  que converte para o timezone local — por isso estava correta.
+
+  CORREÇÃO APLICADA (somente no App, local seguro):
+  - OperacaoMensagem.fromJson → _parseDate() agora aplica .toLocal() de forma
+    centralizada, tanto para created_at quanto para read_at.
+  - chat_torre_service.dart usa OperacaoMensagem.parseDate() na resposta da
+    RPC (created_at do servidor) — mesma normalização.
+  - NENHUM add/subtract de horas fixo. Banco continua 100% UTC.
+  - Ordenação/agrupamento por dia/comparações usam o instante local de forma
+    consistente.
+
+  EVIDÊNCIA FÍSICA: mensagem App→Torre criada 14:22:52 UTC exibida 11:22 BRT;
+  mensagem Torre→App criada 14:28:03 UTC exibida 11:28 BRT. Sem +3h.
+
+===============================================================================
+6) READ RECEIPTS — ESTADOS SUPORTADOS
+===============================================================================
+  Arquitetura real NÃO possui mecanismo de confirmação de entrega (sem ACK de
+  rede entre cliente e servidor; Realtime é evento fire-and-forget; push não
+  tem entrega comprovada). Portanto, conforme a regra da missão:
+
+    ENVIADA      = mensagem persistida no servidor (status='enviada').
+    ENTREGUE     = NÃO PROVÁVEL — NÃO IMPLEMENTADO (documentado).
+    VISUALIZADA  = destinatário abriu a conversa e o backend registrou
+                   (status='lida' + read_at preenchido).
+
+  Mapeamento visual:
+    App  (bolha do motorista): "Enviada" (✓ done) → "Visualizada" (✓✓ done_all).
+    TMS  (bolha da Torre): Clock + "Enviada" → CheckCircle2 + "Visualizada".
+
+  READ RECEIPT BIDIRECIONAL (já suportado pela infra, agora com Realtime ao vivo):
+    App→Torre: Torre abre → f_marcar_mensagens_lidas_torre → prestador vê
+               Visualizada ao vivo (UPDATE realtime App).
+    Torre→App: App abre → f_marcar_mensagens_lidas_app → Torre vê Visualizada
+               ao vivo (UPDATE realtime TMS).
+
+===============================================================================
+7) ALERTA FORTE NA TORRE (já existente — confirmado)
+===============================================================================
+  - Badge GLOBAL real no AppTopbar (contarNaoLidasTorre) + botão Inbox → navega
+    para Torre.
+  - Badge global na TorreControle (aba Mensagens) + header do ChatTorrePanel.
+  - Badge POR CONVERSA (não lidas) + destaque (bg laranja + borda) + font black.
+  - Ordenação: não lidas primeiro, depois mais recente (montarConversasTorre).
+  - Realtime atualiza sem refresh manual (event "*").
+  - Sem polling pesado (interval 30s apenas como fallback; Realtime resolve).
+  - SEM spam/duplicidade (dedupe por id, callback único).
+  - Central de Alertas (TMS-030) é arquitetura DISTINTA (ações priorizadas de
+    OS via acoesPrioritarias) — NÃO foi integrada ao chat para evitar duplicação
+    de mecanismos. Decisão documentada.
+
+===============================================================================
+8) CHAT CONTEXTUAL (Torre) — confirmado
+===============================================================================
+  ChatTorrePanel mostra por conversa: Prestador, OS/Romaneio, Status da
+  operação, Veículo/placa, origem/destino, última mensagem/horário e botão
+  "Abrir operação" (usa osId → DetalhesOperacaoSheet). O motorista NÃO vê
+  UUIDs nem informações internas no App.
+
+===============================================================================
+9) CHAT NO APP — confirmado
+===============================================================================
+  Ação "Falar com a Torre" presente no ActiveOperationCard (Home) e no
+  OperationDetail ("Ações da entrega"). Conversa vinculada à operação ativa;
+  WhatsApp permanece como contingência dentro da tela do chat.
+  LINGUAGEM SIMPLES: "Falar com a Torre", "Digite sua mensagem", "Enviada",
+  "Visualizada" — sem termos internos.
+
+===============================================================================
+10) NÃO LIDAS BIDIRECIONAL + BADGES
+===============================================================================
+  Torre→App: ChatTorreService conta mensagens da Torre com status 'enviada'
+    por operação (badge na Home) e global (totalNaoLidas). Ao abrir a conversa,
+    marcarLidas() chama f_marcar_mensagens_lidas_app e zera o badge.
+  App→Torre: contarNaoLidasTorre() (RPC) conta mensagens do prestador 'enviada';
+    abrir conversa na Torre chama f_marcar_mensagens_lidas_torre → badge global
+    e por conversa atualizam via Realtime.
+
+===============================================================================
+11) OFFLINE — confirmado (sem falso "Enviada")
+===============================================================================
+  Falha transitória de rede → OfflineEntityQueue enfileira com
+  type 'chat_message' + idempotency_key estável. UI mostra "Mensagem aguardando
+  envio" (cloud_off) e NUNCA "Enviada". Ao reconectar, OfflineSyncService drena
+  a fila com a mesma chave (idempotência) e a mensagem real entra no histórico.
+  Se o servidor nunca confirmou, o estado permanece "aguardando envio".
+
+===============================================================================
+12) ARQUIVOS ALTERADOS (todos LOCAIS e SEGUROS)
+===============================================================================
+  App (C:\src\conexao_prestador):
+    - lib/core/models/operacao_mensagem.dart  — _parseDate() .toLocal() + parseDate()
+    - lib/core/services/chat_torre_service.dart — UPDATE realtime, receberAtualizacaoMensagem,
+      createdAt normalizado, label Visualizada ao vivo
+    - lib/core/presentation/driver_language.dart — statusEnviada/statusVisualizada
+    - lib/features/operations/screens/chat_torre_screen.dart — label Enviada/Visualizada na bolha
+    - test/core/services/chat_torre_service_test.dart — +5 testes A28 (horário, UPDATE)
+    - test/features/operations/chat_torre_screen_test.dart — +1 teste A28 (labels)
+
+  TMS (express-connect-hub):
+    - src/services/operacaoChatService.ts — inscreverMensagensOperacao agora
+      também assina UPDATE (read receipt ao vivo), callback opcional onAtualizada
+    - src/components/torre-controle/ChatOperacaoPanel.tsx — usa onAtualizada
+      (merge por id) + label "Visualizada"/"Enviada" na bolha da Torre
+    - src/test/a24HotfixRealtime.test.ts — +1 teste (INSERT+UPDATE antes do subscribe)
+
+  NENHUMA alteração no banco de produção.
+
+===============================================================================
+13) TESTES
+===============================================================================
+  TMS: npx tsc --noEmit → 0 erros.
+       npx vitest run → 12 arquivos, 131 testes PASS (inclui A24 6/6, A24-B 14,
+       A24 chat 12, A28 realtime INSERT+UPDATE).
+       npm run build → OK (35,6s).
+  App: flutter analyze → 0 issues (4 arquivos A28).
+       flutter test chat (service+repository+screen+route) → 37 testes PASS
+       (inclui 5 novos A28: horário UTC→local, sem offset fixo, read_at local,
+       UPDATE lida→Visualizada, UPDATE inexistente ignorado; 1 novo de labels).
+       flutter build apk --release → OK (57,6 MB) — instalado no Redmi.
+
+  Cobertura dos 20 itens obrigatórios (testes + prova física):
+    1 App→Torre ✅ física | 2 Torre→App ✅ física | 3 horário App ✅ física
+    4 UTC preservado ✅ física | 5 sem offset 3h ✅ teste+física | 6 não lida Torre ✅
+    7 abrir conversa marca leitura ✅ | 8 visualização refletida no App ✅ física
+    9 Torre envia ✅ física | 10 motorista abre ✅ física | 11 visualização na Torre ✅ física
+    12 badge global ✅ | 13 badge por conversa ✅ | 14 ordenação ✅
+    15 busca por OS ✅ | 16 Abrir operação ✅ | 17 Realtime remontagem ✅ (teste A24)
+    18 sem erro postgres_changes ✅ (teste A24) | 19 offline sem falso Enviada ✅
+    20 vínculo à operação ✅ física (os_id/alocacao_id corretos)
+
+===============================================================================
+14) HOMOLOGAÇÃO FÍSICA (Redmi a28e7167 + Torre real)
+===============================================================================
+  Operação HML reutilizada: 2333f16e-6f4f-4169-8766-a02282ec8527
+  (OS-202608-680216, PRESTADOR TESTE APP, status aceita, veículo HML-A27B).
+
+  PROVA A) APP → TORRE
+    Mensagem: "Teste A28 App para torre" — enviada pelo Redmi.
+    Banco: 168de0a7-520c-4839-a146-98359c7527fc
+      alocacao_id 2333f16e | os_id 2c24a4dc | sender_type prestador
+      sender_user_id a5e51631 | created_at 11:22:52 BRT (14:22:52 UTC)
+      status lida | read_at 11:23:56 BRT  ← Torre visualizou
+      idempotency_key presente | 1 mensagem (sem duplicata)
+    App exibiu 11:22 "Enviada"; Torre exibiu 11:22 na conversa do PRESTADOR
+    TESTE APP vinculada à OS-202608-680216.
+
+  PROVA B) TORRE → APP
+    Mensagem: "Teste A28 Torre para App" — enviada manualmente pela Torre.
+    Banco: 4d24575a-8e6c-4311-b61b-6047eb2d04e9
+      alocacao_id 2333f16e | os_id 2c24a4dc | sender_type torre
+      sender_user_id de1c77e0 | created_at 11:28:03 BRT (14:28:03 UTC)
+      ANTES da leitura: status enviada | read_at null   ← estado verificado
+      DEPOIS de abrir no Redmi: status lida | read_at 11:36:14 BRT
+      1 mensagem (sem duplicata)
+
+  READ RECEIPT BIDIRECIONAL COMPROVADO:
+    App→Torre: lida às 11:23:56 | Torre→App: lida às 11:36:14
+  Contagem de não-lidas na Torre após leitura: 0.
+  Horário BRT correto nos dois sentidos — problema de +3h NÃO voltou.
+
+===============================================================================
+15) NECESSIDADE DE ALTERAÇÃO EM PRODUÇÃO
+===============================================================================
+  NENHUMA. Nenhuma coluna/RPC/trigger/policy/migration alterada ou necessária:
+  a infraestrutura A22 já suportava ENVIADA + VISUALIZADA (status + read_at).
+  Apenas "ENTREGUE" não é suportado e foi documentado como não provável.
+
+===============================================================================
+16) PENDÊNCIAS
+===============================================================================
+  [PENDÊNCIA DE UX — REGISTRADA, NÃO DESVIA DA A28]
+   - O acesso "Falar com a Torre" está escondido dentro de "Ações da entrega"
+     e aparece truncado como "Falar com a T...". Após a conclusão da missão
+     atual, tratar para deixar o chat muito mais evidente para o motorista
+     leigo: manter a MESMA conversa/operação, com destaque e badge para
+     mensagens não lidas (Realtime já dá suporte).
+
+  [NÃO BLOQUEANTE]
+   - Grants anon na tabela operacao_mensagens permanecem (RLS bloqueia na
+     prática); recomendação futura: REVOKE em anon (fora do escopo A28).
+
+===============================================================================
+CLASSIFICAÇÃO FINAL: A28 HOMOLOGADA 100%
+  Chat operacional profissional App Prestador ⇄ Torre de Controle:
+  - horário local correto no App (+3h corrigido sem offset fixo);
+  - estados Enviada / Visualizada comprovados (Entregue documentado como
+    não provável);
+  - read receipts bidirecionais com evidência real no banco;
+  - alerta forte, badges e não-lidas operacionais na Torre;
+  - Realtime preservado (hotfix A24) + read receipt ao vivo (UPDATE);
+  - offline sem falso "Enviada";
+  - prova física App→Torre e Torre→App realizadas no Redmi real;
+  - nenhuma alteração estrutural em produção.
+
+===============================================================================
+  FIM DO RELATÓRIO — MISSÃO A28 (HOMOLOGADA 100%)
+===============================================================================

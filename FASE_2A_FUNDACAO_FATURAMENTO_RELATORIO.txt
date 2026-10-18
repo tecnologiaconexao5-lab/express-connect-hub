@@ -1,0 +1,301 @@
+================================================================================
+  FASE 2A — FUNDAÇÃO PROFISSIONAL DO FATURAMENTO
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+================================================================================
+
+================================================================================
+A. AUDITORIA ESPECÍFICA ENCONTRADA
+================================================================================
+1. financeiro_receber NÃO possui colunas `origem`, `origem_id`, `fatura_id`,
+   `fatura_numero`, `competencia`, `quantidade_itens`, `tenant_id`.
+   Porém o receberService.ts e ContasReceberEnterprise.tsx usam essas colunas
+   em SELECT/INSERT/UPDATE → queries falham silenciosamente (PGRST204/42P01).
+2. `portal_faturas` EXISTE no banco (FK fk_pf_cliente, CHECK ck_pf_status,
+   RLS) mas é 100% MORTA no código TS (0 referências). O Portal Cliente usa
+   `vw_portal_financeiro_cliente` (sobre financeiro_receber), não portal_faturas.
+3. O Wizard de Fatura Consolidada (receberService.criarFaturaConsolidadaCompleta)
+   cria "cabeça" em financeiro_receber com `fatura_numero=FAT-${Date.now()}`
+   e grava colunas inexistentes (fatura_id, fatura_numero, origem, origem_id,
+   quantidade_itens, competencia) → não funciona de forma confiável.
+4. Numeração atual: FAT-${Date.now()} (sem sequência) e portal_faturas com
+   seeds manuais FAT-0045/FAT-0044. Nenhum CREATE SEQUENCE em migrations.
+5. Padrão RLS atual: `_tms` com guard `EXISTS (SELECT 1 FROM tenant_usuarios
+   WHERE user_id = auth.uid())` (ver 20260801_m06_rls_remaining_tables.sql).
+6. financeiro_prestador_auditoria NÃO existe em migrations (só sql/ nunca
+   aplicado); contas_financeiras tem migration mas ausente no banco remoto
+   (PGRST205 em relatórios de auditoria).
+
+CONCLUSÃO: NÃO existe entidade de Fatura adequada e funcional. Foi implementada
+estrutura dedicada, reutilizando padrões e colunas existentes.
+
+================================================================================
+B. DECISÃO DE ARQUITETURA
+================================================================================
+Fatura é entidade própria:
+  faturas (cabeçalho) + fatura_itens (itens/snapshot) + vínculo FK
+  financeiro_receber.fatura_id (Conta a Receber).
+
+Fluxo:
+  Serviço conferido (Central) → item de fatura (snapshot do cliente) →
+  Fatura (rascunho → emitida) → Conta a Receber (financeiro_receber.fatura_id).
+
+NÃO foi criado módulo paralelo: financeiro_receber/pagar, pagamentos_prestadores,
+Central Financeira, OS, Escala, pricing, POD e fiscal continuam intactos.
+Fatura entra ENTRE serviço conferido e Conta a Receber.
+
+Numeração: RPC f_gerar_numero_fatura (SECURITY DEFINER) com sequência por ano
+(seq_fatura_YYYY). nextval é atômico → impede dois usuários receberem o mesmo
+número simultaneamente. Formato: FAT-ANO-000001.
+
+================================================================================
+C. ESTRUTURA FATURA (tabela public.faturas)
+================================================================================
+id uuid PK default gen_random_uuid()
+tenant_id uuid NOT NULL default current_tenant_id_safe()
+numero text UNIQUE (preenchido na emissão — FAT-ANO-000001)
+cliente_id uuid FK clientes(id) ON DELETE SET NULL
+data_emissao date NOT NULL default CURRENT_DATE
+competencia_inicio date
+competencia_fim date
+vencimento date
+valor_bruto numeric(14,2) default 0
+descontos numeric(14,2) default 0
+acrescimos numeric(14,2) default 0
+valor_total numeric(14,2) default 0
+status text CHECK (rascunho, aguardando_aprovacao, aprovada, emitida, cancelada)
+observacao text
+observacao_fiscal text
+conta_receber_id uuid FK financeiro_receber(id) ON DELETE SET NULL
+criado_por uuid / criado_em timestamptz default now()
+atualizado_por uuid / atualizado_em timestamptz default now()
+cancelado_em timestamptz / cancelado_por uuid / motivo_cancelamento text
+metadata jsonb default '{}'
+Índices: idx_faturas_cliente_status, idx_faturas_vencimento, idx_faturas_tenant_status
+
+================================================================================
+D. ESTRUTURA ITENS (tabela public.fatura_itens)
+================================================================================
+id uuid PK
+fatura_id uuid NOT NULL FK faturas(id) ON DELETE CASCADE
+os_id uuid FK ordens_servico(id) ON DELETE SET NULL
+alocacao_id uuid FK alocacoes_escala(id) ON DELETE SET NULL
+cliente_id uuid FK clientes(id) ON DELETE SET NULL
+romaneio text (Romaneio/OC capturado no faturamento)
+descricao text
+data_servico date
+-- Snapshot financeiro do CLIENTE (nunca custo do prestador):
+valor_base numeric(14,2) default 0
+valor_adicionais numeric(14,2) default 0
+valor_descontos numeric(14,2) default 0
+valor_total numeric(14,2) default 0
+km_excedente numeric(14,2) default 0
+pedagio_cliente numeric(14,2) default 0
+ajudante_cliente numeric(14,2) default 0
+diaria_cliente numeric(14,2) default 0
+saidas_adicionais_cliente numeric(14,2) default 0
+status text CHECK (ativo, cancelado)
+criado_por uuid / criado_em / atualizado_em
+Índices: idx_fatura_itens_fatura, idx_fatura_itens_os
+
+================================================================================
+E. NUMERAÇÃO
+================================================================================
+- CREATE SEQUENCE seq_fatura_2026 (base); RPC cria sequências por ano on-demand.
+- f_gerar_numero_fatura(p_fatura_id uuid): SECURITY DEFINER, usa nextval
+  (atômico), retorna FAT-ANO-000001..N. Concorrência segura.
+- Número é atribuído NA EMISSÃO (rascunho fica sem número).
+- Evidência: function validada no schema; nextval NÃO foi consumido em
+  produção (sequência intacta em 0).
+
+================================================================================
+F. ANTI-DUPLICIDADE (proteção FORTE no banco)
+================================================================================
+- Trigger trg_fatura_itens_anti_duplicidade (BEFORE INSERT/UPDATE):
+  impede inserir/atualizar item com os_id já presente em OUTRA fatura
+  não-cancelada (status='ativo' e fatura status <> cancelada).
+  → SERVIÇO_JA_FATURADO.
+- Regra de cancelamento: f_cancelar_fatura marca itens como status='cancelado'
+  e fatura como cancelada → o anti-duplicidade passa a ignorar (porque filtra
+  fatura <> cancelada e item = ativo). Serviço volta a ficar disponível.
+- Não depende apenas do frontend (o banco bloqueia de forma definitiva).
+
+================================================================================
+G. SNAPSHOT FINANCEIRO (imutável após emissão)
+================================================================================
+- O item grava valor_base, valor_adicionais, valor_descontos, valor_total,
+  km_excedente, pedagio_cliente, ajudante_cliente, diaria_cliente,
+  saidas_adicionais_cliente e romaneio — valores EFETIVAMENTE faturados.
+- Uma alteração futura na tabela comercial NÃO recalcula a fatura.
+- Trigger trg_fatura_itens_bloqueio_emissao (BEFORE INSERT/UPDATE/DELETE):
+  bloqueia alteração de itens quando a fatura está 'emitida' ou 'cancelada'.
+  → FATURA_BLOQUEADA. Rascunho permite adicionar/remover/alterar.
+
+================================================================================
+H. ROMANEIO/OC
+================================================================================
+- O item da fatura registra `romaneio` (referência externa do cliente).
+- Na Central, a fonte primária é ordens_servico.romaneio com fallback legado
+  metadata.numeroOC (exibição).
+- Romaneio NÃO é identificador interno; a OS Interna permanece em
+  ordens_servico.numero / alocacoes_escala.
+- Observação automática: montarObservacaoRomaneios() gera
+  "Referente aos romaneios nº 343198, 343216 e 343241." (ignora vazios, não
+  repete, ordem dos itens). Editável manualmente; não sobrescreve sem ação.
+
+================================================================================
+I. CONTA A RECEBER
+================================================================================
+- Ao emitir, f_emitir_fatura cria UM título em financeiro_receber com FK
+  fatura_id → faturas(id) (coluna adicionada na migration).
+- Título: descricao='Fatura FAT-...', valor=valor_total, vencimento sugerido
+  (vencimento da fatura ou emissão+30), status='aberto', cliente/cliente_nome,
+  fatura=numero, numero=numero.
+- NÃO remove campos legados (fatura, serie, numero, os_vinculadas) — compatível.
+- Elimina a dependência de string em `fatura` para vínculo real.
+
+================================================================================
+J. MIGRATION CRIADA
+================================================================================
+Arquivo: supabase/migrations/20260816_fase2a_faturamento_profissional.sql
+
+Alterações (100% aditivas):
+ 1. CREATE SEQUENCE seq_fatura_2026
+ 2. CREATE TABLE public.faturas (CK ck_faturas_status; FKs cliente, conta_receber)
+ 3. CREATE TABLE public.fatura_itens (CK ck_fatura_itens_status; FKs fatura
+    CASCADE, os, alocacao, cliente)
+ 4. ALTER TABLE financeiro_receber ADD COLUMN fatura_id uuid FK faturas(id)
+ 5. f_gerar_numero_fatura() — numeração sequencial transacional
+ 6. f_recalcular_totais_fatura() + trigger trg_fatura_itens_recalcular_totais
+    (atualiza valor_bruto/descontos/valor_total da fatura a cada mudança de item)
+ 7. f_trg_fatura_itens_anti_duplicidade + trigger (bloqueia OS em 2 faturas)
+ 8. f_trg_fatura_itens_bloqueio_emissao + trigger (imutabilidade pós-emissão)
+ 9. RLS: 8 policies `_tms` (faturas + fatura_itens) com guard tenant_usuarios
+10. f_emitir_fatura(uuid) — transacional: numera + cria Conta a Receber + marca
+    emitida (RETURNS jsonb)
+11. f_cancelar_fatura(uuid, text) — cancela fatura + itens + título receber
+
+SEM DROP destrutivo (apenas DROP TRIGGER IF EXISTS nos triggers recém-criados
+para idempotência). SEM TRUNCATE/RESET/DELETE/recriação.
+
+================================================================================
+K. MIGRATION EXECUTADA?
+================================================================================
+SIM — aplicada via transação única (COMMIT) em Produção, após validação em
+BEGIN/ROLLBACK (sintaxe e compatibilidade). Puramente aditiva; nenhum dado
+existente alterado. Confirmado:
+  - tabelas faturas(0) / fatura_itens(0) criadas
+  - financeiro_receber.fatura_id presente; 0 títulos existentes com fatura_id
+    (os 87 títulos legados permanecem intocados)
+  - sequência seq_fatura_2026 criada (nunca consumida)
+  - 3 RPCs + 3 triggers + 8 policies presentes
+  - validação read-only: scripts/_fase2a_validar_aplicada.mjs
+
+================================================================================
+L. COMPATIBILIDADE COM DADOS EXISTENTES
+================================================================================
+- 87 títulos em financeiro_receber seguem com fatura_id NULL (vínculo novo
+  opcional) — nenhum quebrado.
+- Campos legados (fatura, serie, numero, os_vinculadas) preservados.
+- Portal Cliente (vw_portal_financeiro_cliente) não foi alterado — continua
+  lendo financeiro_receber.
+- Trigger M66/M80 de propagação financeira NÃO foram alterados.
+
+================================================================================
+M. PORTAL_FATURAS
+================================================================================
+Diagnóstico: tabela morta no front (0 referências TS). Finalidade histórica de
+exibição de faturas ao Portal Cliente, mas o Portal usa vw_portal_financeiro_
+cliente (financeiro_receber). NÃO foi deletada.
+
+DESTINO RECOMENDADO:
+  A) Alimentação futura pela entidade oficial `faturas` (opção preferida):
+     quando a nova Fatura for emitida, popular portal_faturas via sincronização
+     (trigger/service) para manter o Portal Cliente coerente — SEM duplicar a
+     entidade financeira.
+  NÃO recomendado: substituir por portal_faturas (financeiro_receber +
+  faturas são a fonte financeira oficial). NÃO manter como está sem decisão.
+
+================================================================================
+N. WIZARD ATUAL
+================================================================================
+- ContasReceberEnterprise.tsx + receberService (criarFaturaConsolidadaCompleta
+  e buscarDetalheFatura) foram PRESERVADOS (não apagados).
+- NÃO foram alterados nesta fase. As colunas inexistentes (fatura_id, origem,
+  fatura_numero, competencia) usadas por eles seguem sendo um problema do fluxo
+  antigo — documentado como risco.
+- A Fase 2B substituirá o wizard pela emissão via Central usando o novo
+  faturaService + f_emitir_fatura.
+
+================================================================================
+O. CENTRAL FINANCEIRA
+================================================================================
+- centralFinanceiroService.ts agora consulta fatura_itens→faturas em lote por
+  os_id e expõe `faturamento: { status: nao_faturado|rascunho|faturado,
+  numero, faturaId }`.
+- ConferenciaFinanceira.tsx: coluna "Faturar" mostra:
+  * "Não faturado" (nenhum item);
+  * "Rascunho" (fatura em rascunho/aguardando/aprovada);
+  * número da fatura (emitida).
+- Filtro "Faturamento" agora usa a fonte oficial (faturamento.status) em vez do
+  campo legado receber.fatura.
+- Dossiê mostra o número da Fatura quando emitida.
+
+================================================================================
+P. TESTES
+================================================================================
+- src/test/fase2a_fatura.test.ts (NOVO) — 10 testes:
+  1. total item = base+adicionais−descontos (cliente)
+  2. total nunca negativo
+  3. sem adicionais → total = base
+  4. observação múltiplos romaneios ("...nº X, Y e Z.")
+  5. observação romaneio único
+  6. ignora romaneios vazios
+  7. não repete números
+  8. nenhum romaneio → vazio
+  9. valores do prestador NÃO entram na fatura (domínio)
+ 10. snapshot imutável (valores gravados no item)
+- Validação de banco: BEGIN/ROLLBACK (sintaxe) + schema/metadata/SELECT
+  (scripts/_fase2a_validar_migration.mjs e _fase2a_validar_aplicada.mjs).
+- Nenhum dado real criado em Produção.
+
+================================================================================
+Q. BUILD
+================================================================================
+- npx tsc --noEmit → 0 erros
+- npx eslint (faturaService.ts) → 0 erros
+- npx vitest run → 14 arquivos, 147 testes PASS (137 + 10 novos)
+- npm run build → OK (33,21s)
+
+================================================================================
+R. RISCOS RESTANTES
+================================================================================
+R-01 (confirmado) Wizard antigo (criarFaturaConsolidadaCompleta) ainda grava
+     colunas inexistentes em financeiro_receber → continua falhando
+     silenciosamente até ser substituído na Fase 2B.
+R-02 (novo) `contas_financeiras` e `financeiro_prestador_auditoria` seguem
+     inexistentes no banco remoto (não são escopo desta fase).
+R-03 (novo) portal_faturas permanece morta até decisão de sincronização.
+R-04 (novo) faturas sem tenant_id na RPC f_emitir_fatura (não seta tenant_id
+     explicitamente — herda default current_tenant_id_safe no INSERT). OK.
+R-05 (novo) Vencimento sugerido = vencimento da fatura ou emissão+30 — regra
+     financeira por cliente ainda não implementada (fase própria).
+
+================================================================================
+S. PRÓXIMA FASE
+================================================================================
+FASE 2B — EMISSÃO DE FATURA PELA CENTRAL + PRÉVIA + PDF PROFISSIONAL
+  1. Fluxo visual de seleção múltipla de serviços na Central → criar rascunho
+     de fatura → adicionar itens (snapshot do cliente) → observar romaneios.
+  2. Tela de fatura (listagem, detalhe, edição de vencimento/observação,
+     aprovação, emissão via f_emitir_fatura).
+  3. PDF profissional da fatura (reutilizar pdfTemplateConexao) com dados da
+     empresa (configuracoes_fiscais), romaneios, valores cliente, vencimento.
+  4. Substituir o wizard legado pelo novo fluxo (faturaService).
+  5. Decidir sincronização portal_faturas e regra de vencimento por cliente.
+
+================================================================================
+ÚLTIMA LINHA
+================================================================================
+  FASE 2A CONCLUÍDA — FUNDAÇÃO PROFISSIONAL DE FATURAMENTO IMPLEMENTADA COM RASTREABILIDADE E PROTEÇÃO CONTRA DUPLICIDADE.
+================================================================================

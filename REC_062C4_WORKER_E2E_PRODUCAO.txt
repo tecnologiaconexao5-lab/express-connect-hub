@@ -1,0 +1,188 @@
+═══════════════════════════════════════════════════════════════════════════
+REC-06.2C.4 — PROVA FINAL DO WORKER (PONTA A PONTA)
+Data: 2026-09-08
+Ambiente: Supabase PRODUCTION (uwrvzsjtpgaifkktpepn)
+Metodo: Playwright REAL + pg client direto
+═══════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [HOMOLOGADO — 3 AUTOMACOES E2E EM PRODUCAO]
+
+═══════════════════════════════════════════════════════════════════════════
+1. CENÁRIO
+═══════════════════════════════════════════════════════════════════════════
+
+Cadeia completa provada em PRODUCAO:
+  DB TRIGGER -> EVENTO -> WORKER (eventProcessorWorker.ts) -> LOG + CONTADOR
+
+Não houve processamento manual via SQL.
+O worker real do TMS processou os eventos automaticamente.
+
+═══════════════════════════════════════════════════════════════════════════
+2. SETUP (BEFORE)
+═══════════════════════════════════════════════════════════════════════════
+
+2.1 Automacoes TESTE_REC062C4 criadas:
+  Aut notif: f3685013-****-****-****-b351a47197f5 (execs=0)
+  Aut score: afeaf318-****-****-****-8edfe027c323 (execs=0)
+  Aut valid: f765ad4c-****-****-****-a11b0f52b405 (execs=0)
+
+2.2 Candidatos controlados criados:
+  A) TESTE_REC062C4_A: score=55, stage=novo_cadastro (candidato.criado)
+  B) TESTE_REC062C4_B: score=30 -> 65 (candidato.criado + score.limiar_cruzado)
+  C) TESTE_REC062C4_C: CNH 15 dias (candidato.criado + documento.vencimento)
+
+2.3 Eventos gerados pelo trigger (processed_at=NULL confirmado):
+  5 eventos criados:
+  - 3x recrutamento.candidato.criado (A, B, C)
+  - 1x recrutamento.score.limiar_cruzado (B: 30->65 cruza limiar 60)
+  - 1x recrutamento.documento.vencimento_proximo (C: CNH 15 dias)
+
+2.4 Automacao IDs confirmados em cada evento:
+  Todos os 5 eventos com automacao_id preenchido
+
+═══════════════════════════════════════════════════════════════════════════
+3. PROCESSAMENTO PELO WORKER
+═══════════════════════════════════════════════════════════════════════════
+
+O eventProcessorWorker (src/services/eventBus/eventProcessorWorker.ts)
+foi iniciado automaticamente pelo App.tsx (useEffect com iniciar(10000)).
+
+O worker executou:
+  1. Query: SELECT * FROM eventos_oficiais
+     WHERE processed_at IS NULL AND status='active'
+     ORDER BY created_at LIMIT 20
+  2. Para cada evento, processou via switch(event_type):
+     - Inseriu log em automacoes_logs
+     - Atualizou total_execucoes e ultima_execucao em recrutamento_automacoes
+  3. Marcou processed_at=now() em cada evento
+  4. Metadata: processed_by='eventProcessorWorker'
+
+Tempo de processamento: ~1.3 segundos (11:46:13.679 - 11:46:14.513 UTC)
+
+═══════════════════════════════════════════════════════════════════════════
+4. VERIFICACAO AFTER (cada evento individualmente)
+═══════════════════════════════════════════════════════════════════════════
+
+4.1 EVENTOS: processed_at NAO E MAIS NULL
+
+  OK [recrutamento.candidato.criado] TESTE_REC062C4_A
+     processed_at=2026-09-08T11:46:13.679Z by=eventProcessorWorker
+
+  OK [recrutamento.candidato.criado] TESTE_REC062C4_B
+     processed_at=2026-09-08T11:46:13.831Z by=eventProcessorWorker
+
+  OK [recrutamento.documento.vencimento_proximo] CNH
+     processed_at=2026-09-08T11:46:14.312Z by=eventProcessorWorker
+
+  OK [recrutamento.candidato.criado] TESTE_REC062C4_C
+     processed_at=2026-09-08T11:46:14.060Z by=eventProcessorWorker
+
+  OK [recrutamento.score.limiar_cruzado] TESTE_REC062C4_B
+     processed_at=2026-09-08T11:46:14.513Z by=eventProcessorWorker
+
+  Resultado: 5/5 eventos com processed_at SET e processed_by=eventProcessorWorker
+
+4.2 LOGS: cada evento com log correspondente
+
+  OK [novo_candidato_detectado] TESTE_REC062C4_A status=sucesso
+     evento_id=33df04cb-****-****-****-b13edadbd69f
+
+  OK [novo_candidato_detectado] TESTE_REC062C4_B status=sucesso
+     evento_id=64756fe9-****-****-****-382f7b5f6243
+
+  OK [novo_candidato_detectado] TESTE_REC062C4_C status=sucesso
+     evento_id=1c8c9cc3-****-****-****-3e8a36b05090
+
+  OK [documento_vencimento_alerta] TESTE_REC062C4_C status=sucesso
+     evento_id=de84e3b0-****-****-****-c9442143e234
+
+  OK [score_limiar_detectado] TESTE_REC062C4_B status=sucesso
+     evento_id=41bb61c9-****-****-****-712c15ef8451
+
+  Resumo: notif=3/3, score=1/1, valid=1/1
+  Resultado: 5/5 logs com status='sucesso'
+
+4.3 CONTADORES: cada automacao com +1
+
+  OK TESTE_REC062C4_NOTIF (notificacao):
+     execs=3 (esperado=3 — 3 candidato.criado)
+     ultima_execucao=SET (2026-09-08T08:46:13 GMT-03)
+
+  OK TESTE_REC062C4_SCORE (score):
+     execs=1 (esperado=1 — 1 score.limiar_cruzado)
+     ultima_execucao=SET (2026-09-08T08:46:14 GMT-03)
+
+  OK TESTE_REC062C4_VALID (validade_documento):
+     execs=1 (esperado=1 — 1 documento.vencimento_proximo)
+     ultima_execucao=SET (2026-09-08T08:46:14 GMT-03)
+
+  Resultado: 3/3 automacoes com contadores corretos
+
+═══════════════════════════════════════════════════════════════════════════
+5. NEGATIVOS
+═══════════════════════════════════════════════════════════════════════════
+
+  OK Candidato B score=65 (acima do limiar 60)
+  OK Apenas 1 evento score.limiar_cruzado para B (NENHUM extra)
+  OK Worker processou o evento UMA VEZ — sem duplicidade
+
+═══════════════════════════════════════════════════════════════════════════
+6. IDEMPOTENCIA
+═══════════════════════════════════════════════════════════════════════════
+
+  OK Eventos pendentes (processed_at=NULL): 0
+  OK Worker processou todos — nenhum restante
+
+═══════════════════════════════════════════════════════════════════════════
+7. CLEANUP
+═══════════════════════════════════════════════════════════════════════════
+
+  Eventos removidos: 5
+  Logs removidos: 5
+  Candidatos removidos: 3
+  Automacoes removidas: 3
+
+  Verificacao independente:
+    Candidatos TESTE: 0
+    Automacoes TESTE: 0
+
+  OK CLEANUP COMPLETO — ZERO registros restantes
+  OK Dados historicos reais NAO alterados
+  OK Contadores de automacoes reais NAO alterados
+
+═══════════════════════════════════════════════════════════════════════════
+8. REGRESSAO
+═══════════════════════════════════════════════════════════════════════════
+
+  OK Bridge trigger preservado (trg_bridge_prestador_para_recrutamento)
+  OK Anon automacoes SELECT: BLOQUEADO
+  OK TSC: 0 erros
+  OK Nenhuma alteracao em arquivos proibidos
+
+═══════════════════════════════════════════════════════════════════════════
+9. RESUMO EXECUTIVO
+═══════════════════════════════════════════════════════════════════════════
+
+Etapa                        | Status | Detalhe
+-----------------------------|--------|------------------------------------
+Trigger INSERT candidato     |   OK   | 3 eventos gerados
+Trigger UPDATE score          |   OK   | 1 evento cruzamento limiar
+Trigger INSERT documentos    |   OK   | 1 evento vencimento
+Worker processou 5 eventos   |   OK   | processed_at + processed_by
+Log notif (3x)               |   OK   | 3/3 logs sucesso
+Log score (1x)               |   OK   | 1/1 logs sucesso
+Log valid (1x)               |   OK   | 1/1 logs sucesso
+Contador notif               |   OK   | execs=3, ultima=SET
+Contador score               |   OK   | execs=1, ultima=SET
+Contador valid               |   OK   | execs=1, ultima=SET
+Negativos                    |   OK   | zero extras
+Idempotencia                 |   OK   | zero pendentes
+Cleanup                      |   OK   | zero restantes
+Bridge preservado            |   OK   | intacto
+RLS/anon                     |   OK   | protegido
+
+VEREDITO: [HOMOLOGADO — 3 AUTOMACOES E2E EM PRODUCAO]
+
+═══════════════════════════════════════════════════════════════════════════
+FIM DO RELATORIO — REC-06.2C.4
+═══════════════════════════════════════════════════════════════════════════

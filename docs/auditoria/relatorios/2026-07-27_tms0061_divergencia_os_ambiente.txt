@@ -1,0 +1,141 @@
+TMS-006.1 — DIVERGENCIA CRITICA DE ORDENS DE SERVICO E
+               VALIDACAO DO AMBIENTE
+
+Data: 2026-07-27
+Status: DIVERGENCIA DE OS RESOLVIDA — AMBIENTE, TENANT E QUERY
+        CONFIRMADOS
+
+Causa raiz: npx tsx -e com falha silenciosa de encoding no Windows
+(Nao RLS, nao tenant, nao tabela vazia)
+
+=======================================================================
+FASE 1 — AMBIENTE
+=======================================================================
+
+Project ref:          uwrvzsjtpgaifkktpepn ✅
+Auth user:            tamiris.castilho@conexaoexpress.com.br
+Auth UID:             8c12fc67-4dac-4f1e-b4fd-23cf0d168284
+Role:                 super_admin
+Tenant:               00000000-0000-0000-0000-000000000000 (sentinel)
+
+=======================================================================
+FASE 2 — CONTAGEM OS (4 CAMINHOS)
+=======================================================================
+
+Caminho A (admin count):                98 ✅
+Caminho B (admin limit 5):               5 ✅
+Caminho C (filtro not null):             3 ✅
+Caminho D (anon):                        1 ✅
+
+TOTAL REAL: 98 ordens_servico
+TMS-006 reportou: 0 — FALSO NEGATIVO
+
+Causa: npx tsx -e com string corrompida pelo PowerShell.
+        Comando silenciosamente falhou ("(no output)").
+        node -e com require() funciona corretamente.
+
+=======================================================================
+FASE 3 — QUERY DA ESCALA
+=======================================================================
+
+| Pergunta                           | Resposta              |
+|-------------------------------------|-----------------------|
+| Escala consulta ordens_servico?     | Sim (JOIN em listagem)|
+| Campo OS e dropdown?                | NAO — input livre     |
+| Query de OS elegiveis?              | NAO                   |
+| Filtro reduzindo a zero?            | NAO (era falso -)     |
+| OS textual vs UUID?                 | Divergente: metadata  |
+| Consulta falhando silenciosamente?  | NAO                   |
+
+=======================================================================
+FASE 4 — RLS ORDENS_SERVICO
+=======================================================================
+
+RLS ON:            Sim
+Anon SELECT:       ✅ Acessa
+Auth SELECT:       ✅ Acessa
+Filtro tenant:     N/A (todos sentinel)
+
+Conclusao: RLS nao bloqueia. Erro era de execucao do script.
+
+=======================================================================
+FASE 5 — TENANT
+=======================================================================
+
+OS (98 registros):       00000000-0000...
+Alocacoes (176):         00000000-0000...
+Usuario:                 00000000-0000...
+Compativel:              SIM
+
+=======================================================================
+FASE 6 — INTEGRIDADE OS x ALOCACOES
+=======================================================================
+
+Metrica                   Antes (TMS-006)     Agora (TMS-006.1)
+Total OS                  0 (*)               98
+OS HML                    N/A                 15
+Alocacoes com OS          55                  55
+Alocacoes sem OS          121                 121
+FKs validas               N/A                 15
+FKs quebradas             N/A                 4
+
+(*) Falso negativo — npx tsx -e falhou silenciosamente
+
+Status amostra (50 OS): pendente 17, rascunho 8, finalizada 8,
+agendada 5, em_andamento 3, entregue 3, cancelada 2, programacao 2,
+concluida 1, atrasada 1
+
+=======================================================================
+FASE 7 — ERRATA TMS-006
+=======================================================================
+
+Afirmacao falsa          Correcao
+-----------------------------------------------  --------------------
+0 ordens_servico         98 OS — erro de execucao do script
+3 RPCs funcionais        RPCs cadastradas (nao invocadas)
+npx tsc --noEmit 0 erros Verifica 0 arquivos (files:[]
+                         no tsconfig). typecheck:app ~150 erros
+
+=======================================================================
+FASE 8 — TYPESCRIPT REAL
+=======================================================================
+
+Comando                     Resultado     Obs
+npx tsc --noEmit            0 erros       Verifica 0 arquivos ❌
+npm run typecheck:app       ~150 erros    Pre-existentes
+npm run typecheck:node      0 erros       ✅
+npm run build               OK (31.95s)  ✅
+
+Nenhum erro novo introduzido.
+
+=======================================================================
+FASE 9 — DECISAO CRIACAO CONTROLADA
+=======================================================================
+
+A. Existem OS HML?          SIM — 15 OS (TESTE-001, OS-TESTE-10*)
+B. OS segura para usar?     SIM — OS-TESTE-1003 (agendada, sem
+                            cliente)
+C. Necessario criar nova?   NAO — 15 OS HML disponiveis
+D. Fluxo correto de OS:     Atualmente input livre. Deveria ser
+                            dropdown com SELECT em ordens_servico
+                            elegiveis (pendente+agendada+em_andamento,
+                            sem alocacao ativa).
+E. Criar OS dispara?        Sim, trigger financeiro em INSERT.
+                            OS HML sem cliente sao seguras.
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+DIVERGENCIA DE OS RESOLVIDA — AMBIENTE, TENANT E QUERY CONFIRMADOS
+
+Causa raiz: npx tsx -e com falha silenciosa de encoding no Windows
+(não RLS, não tenant, não tabela vazia).
+
+Correcoes:
+  - ordens_servico = 98 (nao 0)
+  - 15 OS HML existem — criacao nao necessaria
+  - npx tsc --noEmit verifica 0 arquivos — usar typecheck:app
+  - Dropdown OS e input livre — precisa de implementacao
+
+Bloqueante removido: criacao controlada pode prosseguir com OS HML.

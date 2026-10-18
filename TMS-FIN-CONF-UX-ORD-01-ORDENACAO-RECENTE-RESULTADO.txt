@@ -1,0 +1,157 @@
+================================================================================
+MISSAO: TMS-FIN-CONF-UX-ORD-01-ORDENACAO-RECENTE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: CORRECAO CIRURGICA DE ORDENACAO/PAGINACAO (sem tocar regras de faturamento).
+================================================================================
+
+RESULTADO: PASS.
+  - Conferencia (Gestao Financeira) passa a abrir MAIS RECENTE -> MAIS ANTIGO.
+  - Causa-raiz da ordem antiga comprovada (NULLS FIRST implicito em data_finalizacao DESC).
+  - Ordenacao global aplicada ANTES da paginacao (conjunto completo).
+  - 13 testes novos PASS; regressao 97/97; build OK.
+
+================================================================================
+1. CAUSA DA ORDENACAO ANTIGA (comprovada)
+================================================================================
+A tela usa `buscarCentralFinanceiro` (centralFinanceiroService.ts). A query base era:
+    .order("data_finalizacao", { ascending: false })   <- SEM nullsFirst
+Em PostgreSQL/PostgREST, `ORDER BY ... DESC` usa NULLS FIRST por default. Na base,
+8 das 54 alocacoes concluidas/finalizadas tem `data_finalizacao = NULL` (todas de
+junho/julho, com data_escala preenchida). Resultado: esses registros SEM finalizacao
+subiam para O TOPO e empurravam os recentes (25/09) para baixo — exatamente o sintoma
+relatado (HML-FAT-FINAL-01 abaixo de junho/julho).
+
+PROVA (PROD read-only):
+  ORDEM ATUAL (data_finalizacao DESC, NULLS FIRST):
+    c0a7ee88 (null, 2026-07-12) ; 9fc41d6f (null, 2026-07-01) ; 0733bb97 (null, ...) ; ...
+    -> jun/jul no topo.
+  ORDEM NOVA (coalesce(data_finalizacao,data_escala) DESC, id DESC):
+    785834d1 HML-FAT-FINAL-01 (2026-09-25T22:17)  <- TOPO
+    5bab62b3 HML-FAT-01.        (2026-09-25T21:19)
+    61bc16b0 (2026-09-25T20:22) ; c4338964 (2026-09-18) ; ... ; jun/jul no fim.
+
+================================================================================
+2. CAMPO ESCOLHIDO E JUSTIFICATIVA
+================================================================================
+Campo: COALESCE(data_finalizacao, data_escala), DESC. Desempate: id DESC.
+- data_finalizacao = data OPERACIONAL de conclusao (quando o servico foi finalizado).
+- data_escala = data da operacao (fallback quando data_finalizacao e NULL — casos antigos/App),
+  evitando o efeito "NULLS FIRST" e mantendo semantica operacional.
+- POR QUE NAO created_at: created_at e a data de INSERCAO do registro; para lancamentos
+  retroativos/importados pode divergir da data real do servico. A regra pedida e ordem
+  OPERACIONAL (mais recente no topo), representada por data_finalizacao/data_escala.
+- created_at continua disponivel (nao usado nesta ordenacao).
+
+================================================================================
+3. QUERY BEFORE / AFTER
+================================================================================
+BEFORE (centralFinanceiroService.ts:194):
+    const { data, error } = await query.order("data_finalizacao", { ascending: false });
+
+AFTER:
+    const { data, error } = await query
+      .order("data_finalizacao", { ascending: false, nullsFirst: false })
+      .order("data_escala", { ascending: false })
+      .order("id", { ascending: false });
+    ...
+    return ordenarCentralFinanceiro(resultado);   // ordenacao autoritativa (COALESCE desc, id desc)
+
+Novo helper puro (centralFinanceiroService.ts):
+    export function compararCentralFinanceiro(a, b) {
+      const da = a.dataFinalizacao || a.data || "";
+      const db = b.dataFinalizacao || b.data || "";
+      const porData = db.localeCompare(da);            // DESC
+      return porData !== 0 ? porData : String(b.id).localeCompare(String(a.id)); // id DESC
+    }
+    export function ordenarCentralFinanceiro(lista) { return [...lista].sort(compararCentralFinanceiro); }
+
+================================================================================
+4. ORDENACAO ANTES DA PAGINACAO (prova)
+================================================================================
+Fluxo: query do conjunto completo (sem LIMIT) -> filtros em memoria -> ORDER BY DESC
+(helper) -> retorno ordenado -> a TELA pagina (slice) sobre esse conjunto.
+- Service: `return ordenarCentralFinanceiro(resultado)` (apos todos os filtros).
+- Tela: `const itensPagina = itens.slice((pagina-1)*PAGE_SIZE, ...)` (ConferenciaFinanceira).
+- A ordenacao NAO ocorre apenas na pagina: e aplicada ao conjunto COMPLETO antes do slice.
+
+================================================================================
+5. BUSCA / FILTROS PRESERVADOS
+================================================================================
+Mantidos iguais: Faturamento (Nao faturado / Em processo / Faturado / Todos), cliente,
+prestador, OS, romaneio, placa, status operacional, POD, recebimento, pagamento, busca.
+Todos passam pelo mesmo pipeline: filtra -> ordena (mais recente primeiro) -> pagina.
+Busca/filtros NAO alteram a ordenacao (testes E/F).
+
+================================================================================
+6. PAGINACAO
+================================================================================
+- Paginacao visivel numerada (PaginationBar: Anterior | 1 2 3 ... | Proxima) mantida.
+- Pagina 1 = mais recentes; pagina 2 = sequencia; sem duplicar/omitir (testes C/D/G).
+- Mudanca de filtro/busca retorna a pagina 1 (efeito ja existente em carregar()).
+- LIMITACAO (registrada): a tela AINDA carrega o conjunto completo e pagina no CLIENTE
+  (nao e paginacao server-side por .range). A ordenacao passou a ser global (ORDER BY no
+  servidor + re-sort em memoria sobre o conjunto completo), mas a paginacao em si segue
+  client-side. Nao mascarei como server-side. Evolucao para range/count server-side sem
+  refatoracao ampla nao e trivial (filtros derivados por join) -> divida para o Gate.
+
+================================================================================
+7. TESTES (novo arquivo)
+================================================================================
+src/test/fin_conf_ux_ord_01_ordenacao_recente.test.ts -> 13/13 PASS
+  A) 25/09,22/09,18/09 => 25,22,18; fallback p/ data_escala; HML-FINAL-01 antes de HML-01;
+     desempate id DESC.
+  B) service ordena o conjunto completo antes de retornar; componente pagina depois (slice).
+  C/D) pagina 1 = mais recentes; pagina 2 continua; sem duplicar/omitir.
+  E) busca preserva ordem; F) filtro preserva ordem; G) sem duplicidade.
+  H/I/J) default 'nao_faturado' ordenado e sem faturado; 'todos' (historico) ordenado.
+  K) contratos FAT-URG-04 (FATURA_NAO_APROVADA) e FAT-URG-05B (FATURA_STATUS_SOMENTE_VIA_RPC) intactos.
+
+REGRESSAO (9 arquivos): 97/97 PASS
+  fin_conf_ux_ord_01 (13) + fin_fat_urg_02 (18) + fin_fat_urg_04 (10) +
+  fin_fat_urg_05b (8) + fin_ar_ux_01 (14) + fase2a_fatura (10) + fin_prog04b_emissao (3) +
+  f38_fatura_manual (16) + fin_prog05c3b_receber_paginacao (5).
+BUILD: npm run build -> OK ("built in 34.91s").
+TYPECHECK: 0 erros no arquivo alterado (centralFinanceiroService.ts).
+
+================================================================================
+8. ARQUIVOS ALTERADOS
+================================================================================
+- src/services/financeiro/centralFinanceiroService.ts
+    * helper puro compararCentralFinanceiro/ordenarCentralFinanceiro (COALESCE desc, id desc)
+    * query base: data_finalizacao desc NULLS LAST + data_escala desc + id desc
+    * retorno: return ordenarCentralFinanceiro(resultado)
+- src/test/fin_conf_ux_ord_01_ordenacao_recente.test.ts (NOVO — 13 testes)
+NAO alterado: regras de faturamento, faturas, AR, RPCs (f_emitir/f_mover/f_cancelar/
+f_regularizar), M66/M80, Comercial, APP, casos HML (somente leitura), nenhuma migration.
+
+================================================================================
+9. ZERO DML FINANCEIRO
+================================================================================
+[x] Nenhum INSERT/UPDATE/DELETE/DDL em banco. Apenas SELECT (read-only) para a prova.
+[x] HML-FAT-FINAL-01 e HML-FAT-01 NAO alterados (usados so como referencia de ordenacao).
+[x] Nenhuma migration aplicada/criada. Nenhum registro criado/cancelado/baixado.
+[x] Scripts temporarios de diagnostico removidos apos uso.
+
+================================================================================
+10. RISCOS RESIDUAIS
+================================================================================
+R1. Paginacao client-side (ver item 6) — divida para o Gate (avaliar range/count server-side).
+R2. Ordem autoritativa e em memoria; se a base crescer muito, o custo de ordenar o conjunto
+    completo aumenta (hoje 54 linhas concluidas). Nao bloqueante.
+R3. Empates de data sao resolvidos por id DESC (estavel). Se houver necessidade de outro
+    criterio secundario, tratar em missao de UX.
+
+================================================================================
+11. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-CONF-UX-ORD-01-ORDENACAO-RECENTE-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-CONF-UX-ORD-01-ORDENACAO-RECENTE-RESULTADO.txt
+ TAMANHO ..: 9513 bytes
+ DATA/HORA : 25/09/2026 19:40:19
+
+================================================================================
+FIM — TMS-FIN-CONF-UX-ORD-01-ORDENACAO-RECENTE
+================================================================================

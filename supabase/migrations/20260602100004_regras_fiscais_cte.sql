@@ -52,19 +52,25 @@ CREATE TRIGGER trg_rfc_updated_at
 ALTER TABLE public.regras_fiscais_cte ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Enable select for authenticated" ON public.regras_fiscais_cte;
-CREATE POLICY "Enable select for authenticated" ON public.regras_fiscais_cte
+DROP POLICY IF EXISTS "Enable select for authenticated" ON public.regras_fiscais_cte;
+DROP POLICY IF EXISTS "Enable select for authenticated" ON regras_fiscais_cte;
+CREATE POLICY "Enable select for authenticated" ON regras_fiscais_cte
   FOR SELECT USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.regras_fiscais_cte;
-CREATE POLICY "Enable insert for authenticated" ON public.regras_fiscais_cte
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.regras_fiscais_cte;
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON regras_fiscais_cte;
+CREATE POLICY "Enable insert for authenticated" ON regras_fiscais_cte
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable update for authenticated" ON public.regras_fiscais_cte;
-CREATE POLICY "Enable update for authenticated" ON public.regras_fiscais_cte
+DROP POLICY IF EXISTS "Enable update for authenticated" ON public.regras_fiscais_cte;
+DROP POLICY IF EXISTS "Enable update for authenticated" ON regras_fiscais_cte;
+CREATE POLICY "Enable update for authenticated" ON regras_fiscais_cte
   FOR UPDATE USING (auth.role() = 'authenticated');
 
 -- Seed: regra padrao SP -> SP, CFOP 5353, ICMS 12%
-INSERT INTO public.regras_fiscais_cte (nome, descricao, uf_origem, uf_destino, tipo_operacao, cfop, natureza_operacao, aliquota_icms, cst_icms, ativo, padrao, observacao)
+INSERT INTO public.regras_fiscais_cte (nome, descricao, uf_origem, uf_destino, tipo_operacao, cfop, natureza_operacao, aliquota_icms, cst_icms, ativo, padrao, observacoes)
 SELECT
   'Padrão SP-SP',
   'Regra fiscal padrão para operações dentro de São Paulo — prestação de serviço de transporte intermunicipal',
@@ -80,3 +86,5 @@ WHERE NOT EXISTS (
 COMMENT ON TABLE public.regras_fiscais_cte IS 'Regras fiscais de CT-e: CFOP, aliquota ICMS, CST por cliente/UF/operacao.';
 COMMENT ON COLUMN public.regras_fiscais_cte.cst_icms IS 'Codigo de Situacao Tributaria do ICMS (00=Tributado integralmente)';
 COMMENT ON COLUMN public.regras_fiscais_cte.reducao_base IS 'Percentual de reducao da base de calculo do ICMS (0=sem reducao)';
+
+

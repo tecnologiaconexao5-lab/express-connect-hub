@@ -1,0 +1,142 @@
+================================================================================
+CONTRATO-EMAIL-01-OPERACIONAL — Alteracao de E-mail no Contrato
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — LOCALIZACAO DA ORIGEM
+---------------------------------
+
+EMAIL_SOURCE_FILE=src/services/contratosPdfService.ts
+EMAIL_SOURCE_TYPE=hardcoded (string literal no gerador PDF jsPDF)
+
+O e-mail vendas@conexaoexpress.com.br aparece em UMA unica ocorrencia
+em todo o repositorio:
+
+  Arquivo: src/services/contratosPdfService.ts
+  Linha:   92
+  Contexto: cabecalho do contrato PDF (dados empresa, alinhamento direita)
+  Trecho:  doc.text('vendas@conexaoexpress.com.br', pageWidth - margin, 27, { align: 'right' });
+
+Nao ha ocorrencias em:
+  - templates HTML
+  - configuracoes da empresa
+  - banco de dados
+  - outros services
+  - componentes React
+
+---------------------------------------------------------
+
+SECAO 2 — CLASSIFICACAO POR CONTEXTO
+--------------------------------------
+
+O e-mail vendas@conexaoexpress.com.br so aparece em:
+  ✅ Contrato de Prestador/Motorista (contratosPdfService.ts:92)
+
+Nao aparece em:
+  ❌ Comercial/Vendas
+  ❌ Cliente
+  ❌ Orcamento
+  ❌ Proposta
+  ❌ Outros documentos
+
+Total de ocorrencias: 1
+Ocorrencias alteradas: 1 (contrato prestador)
+Ocorrencias preservadas: 0 (nao havia outras)
+
+---------------------------------------------------------
+
+SECAO 3 — ALTERACAO REALIZADA
+-------------------------------
+
+DE (linha 92):
+  doc.text('vendas@conexaoexpress.com.br', pageWidth - margin, 27, { align: 'right' });
+
+PARA (linha 92):
+  doc.text('operacional@conexaoexpress.com.br', pageWidth - margin, 27, { align: 'right' });
+
+Impacto visual: ZERO — o endereco de e-mail e o unico campo alterado.
+Nenhuma outra linha do arquivo foi modificada.
+
+---------------------------------------------------------
+
+SECAO 4 — PRESERVACAO DO CONTRATO
+-----------------------------------
+
+Layout preservado (10/10):
+  LOGO_UNCHANGED=YES
+  HEADER_UNCHANGED=YES
+  LAYOUT_UNCHANGED=YES
+  FONTS_UNCHANGED=YES
+  COLORS_UNCHANGED=YES
+  MARGINS_UNCHANGED=YES
+  PAGE_BREAKS_UNCHANGED=YES
+  FOOTER_UNCHANGED=YES
+  VALIDATION_CODE_UNCHANGED=YES
+  CONTRACT_TEXT_UNCHANGED=YES
+
+Nenhuma alteracao em:
+  - cores (AZUL, LARANJA, CINZA_CLARO, BRANCO, PRETO)
+  - margens (20mm)
+  - posicoes (y=27 para o e-mail)
+  - clausulas contratuais
+  - texto juridico
+  - MP 2.200-2/2001
+  - codigo de validacao
+  - numero do contrato
+
+---------------------------------------------------------
+
+SECAO 5 — EVIDENCIA
+---------------------
+
+EMAIL_BEFORE=vendas@conexaoexpress.com.br
+EMAIL_AFTER=operacional@conexaoexpress.com.br
+
+TOTAL_EMAIL_OCCURRENCES=1
+CONTRACT_OCCURRENCES_CHANGED=1
+COMMERCIAL_OCCURRENCES_PRESERVED=0
+
+DATABASE_WRITES=0
+
+---------------------------------------------------------
+
+SECAO 6 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 4s
+
+Nenhum teste unitario especifico para contratosPdfService foi encontrado
+no repositorio. A alteracao e uma string literal — sem logica alterada.
+
+---------------------------------------------------------
+
+SECAO 7 — REGRESSAO
+---------------------
+
+Pesquisa por @conexaoexpress.com.br em src/services/:
+  ✅ contratosPdfService.ts: operacional (ALTERADO)
+  ✅ zohoEmailService.ts: fiscal@ (preservado)
+  ✅ configFinanceiraService.ts: financeiro@ (preservado)
+  ✅ faturaService.ts: financeiro@ (preservado)
+  ✅ ZohoMailProvider.ts: contato@ (preservado)
+
+Pesquisa por vendas@conexaoexpress.com.br no repositorio inteiro:
+  ✅ ZERO ocorrencias restantes (1 unica existia, foi alterada)
+
+Nenhum documento comercial foi alterado acidentalmente.
+
+---------------------------------------------------------
+
+SECAO 8 — ARQUIVOS MODIFICADOS
+--------------------------------
+
+1. src/services/contratosPdfService.ts — linha 92 (1 linha alterada)
+
+NENHUM outro arquivo foi modificado.
+
+================================================================================
+CONTRATO-EMAIL-01-OPERACIONAL = PASS
+================================================================================

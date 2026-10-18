@@ -1,0 +1,639 @@
+============================================================
+FIN-SANE-02A — DECISÃO ARQUITETURAL FINANCEIRA
+============================================================
+Data: 2026-09-13
+Status: PASS — Análise concluída, decisão arquitetural tomada
+Ambiente: TMS LOCAL + Supabase Produção (somente leitura)
+
+============================================================
+1. RESULTADO RESUMIDO
+============================================================
+
+DECISÃO: Arquitetura A — Unificar financeiro_pagar.valor com
+pagamentos_prestadores.valor_liquido (obrigação total).
+
+FONTE CANÔNICA DO VALOR DEVIDO AO PRESTADOR:
+  pagamentos_prestadores.valor_liquido
+  = valor_servicos + pedagio + adicionais + ajudante - descontos
+    (+ reembolsos + bonus - adiantamentos - combustivel, quando aplicável)
+
+FINANCEIRO_PAGAR DEVERÁ REPRESENTAR:
+  O valor TOTAL a pagar ao prestador (= valor_liquido).
+  Não apenas o repasse base.
+
+PAGAMENTOS_PRESTADORES DEVERÁ REPRESENTAR:
+  O detalhamento da obrigação com todos os componentes.
+
+BAIXA DEVERÁ SER:
+  valor_baixado = financeiro_pagar.valor = pagamentos_prestadores.valor_liquido.
+  Baixa integral, atômica, via RPC.
+
+TRIGGER M66/M80 DEVERÁ:
+  Criar financeiro_pagar.valor = v_valor_liquido (obrigação total).
+
+RPC f_confirmar_pagamento_prestador DEVERÁ:
+  Permanecer inalterado. Com a correção do trigger, a igualdade
+  exigida pelo RPC passará a ser verdadeira.
+
+FECHAMENTO DEVERÁ:
+  Para cada item vinculado, chamar confirmarPagamento(item.id)
+  (que chama o RPC), gerando exatamente 1 baixa por título.
+
+============================================================
+2. REGRA DE NEGÓCIO ENCONTRADA
+============================================================
+
+A regra oficial do valor do prestador está em
+src/services/financeiro/extratoPrestadorService.ts:164-170:
+
+  valor_total_creditos =
+      valor_servicos
+    + valor_pedagio
+    + valor_adicionais
+    + valor_reembolsos
+    + valor_bonus
+
+  valor_total_debitos =
+      valor_descontos
+    + valor_adiantamentos
+    + valor_combustivel
+
+  valor_liquido = valor_total_creditos - valor_total_debitos
+
+Classificação dos componentes:
+
+A) EFETIVAMENTE PAGOS AO PRESTADOR (créditos):
+   - valor_servicos / valor_repasse / custo_prestador  (base do frete)
+   - pedagio                                            (reembolso de pedágio)
+   - adicionais                                         (extras acordados)
+   - ajudante                                           (mão de obra extra)
+   - valor_reembolsos                                   (reembolsos diversos)
+   - valor_bonus                                        (bonificações)
+
+B) DESCONTOS DO PRESTADOR (débitos):
+   - descontos / valor_desconto_prestador               (redução no pagamento)
+   - valor_adiantamentos                                (adiantamentos já recebidos)
+   - valor_combustivel                                  (combustível descontado)
+
+C) APENAS INFORMATIVOS / MARGEM:
+   - valor_cliente (receita) — usado para calcular margem
+   - imposto_percentual, seguro_percentual — estimativas de custo
+
+Fonte dos valores:
+  Escala: alocacoes_escala.valor_repasse, valor_pedagio, valor_adicional,
+          valor_ajudante, valor_desconto_prestador, valor_reembolso_outros
+  OS:     ordens_servico.custo_prestador, pedagio, adicionais (JSONB),
+          ajudante (JSONB), descontos
+
+============================================================
+3. SEMÂNTICA ATUAL DE financeiro_pagar
+============================================================
+
+Hoje financeiro_pagar representa APENAS o repasse base:
+
+  Trigger M66 (20260819_a31j111_desconto_prestador.sql:78-80):
+    INSERT INTO financeiro_pagar (..., valor, ...)
+    VALUES (..., v_valor_prestador, ...)  -- = alocacoes_escala.valor_repasse
+
+  Trigger M80 (20260705_m80b_fix_trigger_columns.sql:152-182):
+    INSERT INTO financeiro_pagar (..., valor, ...)
+    VALUES (..., v_valor_prestador, ...)  -- = ordens_servico.custo_prestador
+
+Isso contradiz a semântica de "Contas a Pagar", que deveria
+representar a OBRIGAÇÃO TOTAL de caixa.
+
+Evidências de uso:
+
+3.1 ContasPagar.tsx (UI):
+  - É uma tela genérica de contas a pagar.
+  - Campos: valorOriginal, desconto, multa, juros, impostosRetidos, valorLiquido.
+  - A semântica esperada é: valorLiquido = valor a pagar efetivamente.
+
+3.2 pagarService.ts:
+  - baixarPagavel() usa f_registrar_baixa_financeira (genérico).
+  - Aceita pagamento parcial.
+  - Valor pago pode ser qualquer até o saldo.
+
+3.3 relatoriosFinanceirosService.ts:
+  - previstoPagar = soma de financeiro_pagar.valor
+  - pagoRealizado = soma de financeiro_baixas (financeiro_pagar)
+  - custoPrestador = soma de pagamentos_prestadores.valor_liquido
+  - margemIndicativa = faturado - custoPrestador - (previstoPagar - custoPrestador)
+                    = faturado - previstoPagar
+
+  Com a divergência atual, previstoPagar < custoPrestador quando
+  há pedágio/adicional, então a margem fica superestimada.
+
+3.4 fluxoCaixaService.ts:
+  - realizadoSaida = soma de financeiro_baixas (financeiro_pagar, não estornada)
+  - Previsto = títulos; Realizado = baixas.
+
+3.5 extratoPrestadorService.ts:
+  - O extrato do prestador usa pagamentos_prestadores como fonte canônica.
+  - O valor_liquido do extrato é a obrigação real.
+
+CONCLUSÃO: financeiro_pagar deveria ser o título de pagamento total,
+mas hoje está gravando apenas a parcela base.
+
+============================================================
+4. EVIDÊNCIA DE PRODUÇÃO (SOMENTE LEITURA)
+============================================================
+
+Totais:
+  financeiro_pagar:        107 registros
+  pagamentos_prestadores:  102 registros
+  baixas (financeiro_pagar): 10
+  pp com status_pagamento='pago': 10
+  pp tipo_pagamento='fechamento': 1
+  pp is_teste=true: 23
+  fp is_teste=true: 30
+
+Divergências pp.valor_liquido <> fp.valor:
+  Total:                    57 registros
+  Soma das diferenças:      R$ 20.693,08
+  is_teste=true:            14 registros (R$ 2.529,00)
+  Operacional real:         43 registros (R$ 18.164,08)
+  fp.status='pago':         1 registro divergente
+  fp.status aberto:         36 registros divergentes
+
+Pagamentos marcados 'pago' sem financeiro_baixas:
+  Total: 8
+  is_teste=true: 6 (R$ 1.140,00) — inclui fechamento dc26a5f1
+  Real: 2 (R$ 2.836,12)
+
+Perfil dos componentes que causam divergência:
+  pedagio+adicional: 28 registros (R$ 5.489,86)
+  pedagio:           10 registros (R$ 1.472,72)
+  sem componente:    19 registros (R$ 13.730,50)*
+
+* "sem componente" = fp.valor NULL ou outra inconsistência de dados,
+  não necessariamente sem componente na origem.
+
+Fechamento dc26a5f1-720f-4631-bc4c-3106a305d96c:
+  Prestador: BRUNO DA SILVA SANTOS
+  is_teste: true
+  Itens: 6
+  valor_servicos (soma):  R$ 1.050,00
+  pedagio (soma):         R$ 105,00
+  adicionais (soma):      R$ 0,00
+  descontos (soma):       R$ 0,00
+  valor_liquido:          R$ 1.140,00
+  Status: pago
+  Baixas: 0
+
+============================================================
+5. CENÁRIOS REAIS (is_teste=true)
+============================================================
+
+Cenário 1 — Repasse sem adicionais:
+  OS: eaa0e5fd-...
+  Base=500,00 | Pedagio=0 | Adicional=0 | Desconto=0
+  Liquido=500,00 | FP.valor=500,00 | Diferença=0,00
+  ✅ Compatível com RPC atual.
+
+Cenário 2 — Repasse + pedágio:
+  OS: eaa0e5fd-...
+  Base=500,00 | Pedagio=30,00 | Adicional=0 | Desconto=0
+  Liquido=530,00 | FP.valor=500,00 | Diferença=30,00
+  ❌ RPC rejeita (saldo 500 ≠ pagamento 530).
+
+Cenário 3 — Repasse + adicional:
+  OS: 5c9a87aa-...
+  Base=800,00 | Pedagio=0 | Adicional=150,00 | Desconto=0
+  Liquido=950,00 | FP.valor=800,00 | Diferença=150,00
+  ❌ RPC rejeita.
+
+Cenário 4 — Repasse + pedágio + adicional:
+  OS: 5c9a87aa-...
+  Base=800,00 | Pedagio=50,00 | Adicional=150,00 | Desconto=0
+  Liquido=1.000,00 | FP.valor=800,00 | Diferença=200,00
+  ❌ RPC rejeita.
+
+Cenário 5 — Repasse - desconto:
+  (não encontrado em is_teste=true com desconto explícito,
+   mas a regra é: Liquido = base - desconto < base)
+  ❌ RPC rejeitaria se FP.valor = base e pagamento = base-desconto.
+
+Cenário 6 — Repasse + adicionais - desconto:
+  Base=1.000,00 | Pedagio=50,00 | Adicional=150,00 | Desconto=30,00
+  Liquido=1.170,00 | FP.valor=1.000,00 | Diferença=170,00
+  ❌ RPC rejeita.
+
+Cenário 7 — Sem financeiro_pagar correspondente:
+  Vários registros is_teste=true têm fp.valor=NULL.
+  ❌ RPC rejeita (não encontra título).
+
+============================================================
+6. ANÁLISE M66 vs M80
+============================================================
+
+Ambos apresentam a MESMA divergência.
+
+M66 (alocacoes_escala):
+  v_valor_prestador = NEW.valor_repasse
+  v_pedagio_valor   = NEW.valor_pedagio
+  v_adicional_valor = NEW.valor_adicional
+  v_ajudante_valor  = NEW.valor_ajudante
+  v_desconto_valor  = NEW.valor_desconto_prestador
+  v_outros_custos   = v_adicional_valor + v_ajudante_valor - v_desconto_valor
+  v_valor_liquido   = v_valor_prestador + v_pedagio_valor + v_outros_custos
+
+  financeiro_pagar.valor        = v_valor_prestador   (base apenas)
+  pagamentos_prestadores.valor_liquido = v_valor_liquido      (total)
+
+M80 (ordens_servico):
+  v_valor_prestador = NEW.custo_prestador
+  v_outros_custos   = adicionais + ajudante - descontos
+  v_valor_liquido   = v_valor_prestador + pedagio + v_outros_custos
+
+  financeiro_pagar.valor        = v_valor_prestador   (base apenas)
+  pagamentos_prestadores.valor_liquido = v_valor_liquido      (total)
+
+ORIGEM CANÔNICA:
+  - Escala: alocacoes_escala (valor_repasse, pedagio, adicional, ajudante, desconto)
+  - OS:     ordens_servico (custo_prestador, pedagio, adicionais, ajudante, descontos)
+
+Corrigir apenas M66 deixaria M80 divergente. As DUAS triggers
+precisam ser corrigidas simultaneamente.
+
+============================================================
+7. ANÁLISE DO RPC f_confirmar_pagamento_prestador
+============================================================
+
+O RPC está CONCEITUALMENTE CORRETO: exigir que o pagamento
+coincida integralmente com o saldo do título é a regra contábil
+correta para baixa atômica.
+
+O problema NÃO é o RPC. O problema é que o TÍTULO (financeiro_pagar)
+não representa a obrigação total, forçando o pagamento a ser maior
+que o saldo quando há complementos.
+
+Linha crítica do RPC (20260906_fin_362_3e_consistencia_pagamento_prestador.sql:168):
+  IF v_saldo <> v_valor THEN
+      RETURN false, 'Saldo do titulo nao reconcilia...';
+
+Onde:
+  v_saldo = financeiro_pagar.valor - total_baixado
+  v_valor = pagamentos_prestadores.valor_liquido
+
+Com a correção do trigger:
+  financeiro_pagar.valor = pagamentos_prestadores.valor_liquido
+  ⇒ v_saldo = v_valor ⇒ RPC aprova.
+
+DECISÃO: NÃO alterar o RPC. Corrigir a origem (trigger).
+
+============================================================
+8. AVALIAÇÃO DAS ARQUITETURAS POSSÍVEIS
+============================================================
+
+OPÇÃO A — financeiro_pagar.valor = valor_liquido total
+
+Integridade contábil: ✅ Alta. Título = obrigação real.
+Fechamento:           ✅ Funciona com RPC existente.
+Pagamento individual: ✅ Funciona com RPC existente.
+Baixas:               ✅ 1 baixa = 1 título = valor_liquido.
+Fluxo de Caixa:       ✅ Saída real reflete pagamento total.
+DRE:                  ✅ Margem correta (faturado - custo total).
+Idempotência:         ✅ Preservada pelo RPC.
+Histórico:            ⚠️ Requer migração de títulos não pagos.
+Impacto produção:     ⚠️ Médio — altera saldos de títulos abertos.
+Migration:            ✅ Simples — ajustar 2 linhas nos triggers.
+Retrocompatibilidade: ⚠️ Histórico divergente precisa de tratamento.
+Risco duplicidade:    ✅ Baixo — mantém UNIQUE(os_id).
+
+OPÇÃO B — financeiro_pagar mantém base + títulos separados
+
+Integridade contábil: ✅ Alta por categoria.
+Fechamento:           ❌ Complexo — múltiplos títulos por OS.
+Pagamento individual: ❌ Complexo — conciliar vários títulos.
+Baixas:               ❌ Múltiplas baixas por OS.
+Fluxo de Caixa:       ⚠️ Somatório correto, mas fragmentado.
+DRE:                  ⚠️ Requer agrupamento.
+Idempotência:         ⚠️ Difícil garantir com múltiplos títulos.
+Histórico:            ❌ Grande refactor.
+Impacto produção:     ❌ Alto.
+Migration:            ❌ Complexa — novo modelo de dados.
+Retrocompatibilidade: ❌ Quebra contratos existentes.
+Risco duplicidade:    ❌ Alto — múltiplos títulos por OS.
+
+OPÇÃO C — financeiro_pagar mantém base + complementos em outra estrutura
+
+Integridade contábil: ⚠️ Depende da estrutura paralela.
+Fechamento:           ❌ Não resolve diretamente — precisa pagar 2 estruturas.
+Pagamento individual: ❌ Mesmo problema.
+Baixas:               ❌ Duas fontes de baixa.
+Fluxo de Caixa:       ❌ Risco de dupla contagem.
+DRE:                  ❌ Risco de dupla contagem.
+Idempotência:         ❌ Difícil.
+Histórico:            ❌ Cria complexidade nova.
+Impacto produção:     ❌ Alto.
+Migration:            ❌ Nova tabela + lógica.
+Retrocompatibilidade: ❌ Não compatível.
+Risco duplicidade:    ❌ Alto.
+
+OPÇÃO D — Manter como está + ignorar complementos em financeiro_pagar
+
+Integridade contábil: ❌ Falha — título não representa obrigação.
+Fechamento:           ❌ Bug C1 persiste.
+Pagamento individual: ❌ Falha quando há complementos.
+Baixas:               ❌ Baixa maior que título (não permitido pelo RPC).
+Fluxo de Caixa:       ❌ Saída real subestimada.
+DRE:                  ❌ Margem superestimada.
+Idempotência:         ✅ Apenas porque não funciona.
+Histórico:            ✅ Nenhuma mudança.
+Impacto produção:     ✅ Nenhum.
+Migration:            ✅ Nenhuma.
+Retrocompatibilidade: ✅ Total.
+Risco duplicidade:    ✅ Nenhum.
+  → Mas continua com passivos fictícios e DRE errado.
+
+============================================================
+9. ARQUITETURA ESCOLHIDA: OPÇÃO A
+============================================================
+
+JUSTIFICATIVA:
+
+1. financeiro_pagar é semanticamente "Contas a Pagar" — deve
+   representar a obrigação total de caixa.
+
+2. O prestador é efetivamente pago em valor_liquido, não em
+   valor_repasse base.
+
+3. A regra do extrato do prestador (extratoPrestadorService.ts)
+   confirma que valor_liquido é a obrigação real.
+
+4. O RPC f_confirmar_pagamento_prestador está correto ao exigir
+   conciliação integral. O defeito está no título, não no RPC.
+
+5. A correção é mínima: alterar 2 linhas nos triggers M66 e M80.
+
+6. Não quebra a unicidade por OS (UNIQUE(os_id) em financeiro_pagar).
+
+7. DRE e Fluxo de Caixa passam a refletir corretamente as
+   obrigações e pagamentos reais.
+
+8. É consistente com a tela genérica Contas a Pagar, onde o
+   valor do título representa o valor a pagar.
+
+============================================================
+10. DECISÃO OBRIGATÓRIA — RESUMO
+============================================================
+
+FONTE CANÔNICA:
+  pagamentos_prestadores.valor_liquido
+  (detalhado em valor_servicos, pedagio, adicionais, descontos, etc.)
+
+FINANCEIRO_PAGAR DEVE REPRESENTAR:
+  O valor total a pagar ao prestador (= pagamentos_prestadores.valor_liquido).
+
+PAGAMENTOS_PRESTADORES DEVE REPRESENTAR:
+  O detalhamento da obrigação e seu status de conferência/aprovação/pagamento.
+
+BAIXA DEVE SER:
+  valor_baixado = financeiro_pagar.valor = pagamentos_prestadores.valor_liquido,
+  em transação atômica via RPC.
+
+TRIGGER DEVE:
+  Propagar financeiro_pagar.valor = v_valor_liquido (não v_valor_prestador).
+
+RPC DEVE:
+  Permanecer inalterado — a igualdade passará a ser verdadeira.
+
+FECHAMENTO DEVE:
+  Chamar confirmarPagamento(id) para CADA item do fechamento,
+  nunca atualizar status sem baixa.
+
+============================================================
+11. PLANO DE MIGRAÇÃO
+============================================================
+
+11.1 CÓDIGO / MIGRATION
+
+Passo 1 — Corrigir trigger M66:
+  Arquivo: supabase/migrations/20260819_a31j111_desconto_prestador.sql
+  Alterar linha 79:
+    DE: VALUES (..., v_valor_prestador, ...)
+    PARA: VALUES (..., v_valor_liquido, ...)
+  Alterar linha 80 (ON CONFLICT DO UPDATE):
+    DE: valor = v_valor_prestador
+    PARA: valor = v_valor_liquido
+
+Passo 2 — Corrigir trigger M80:
+  Arquivo: supabase/migrations/20260705_m80b_fix_trigger_columns.sql
+  Alterar linhas 156-162 (INSERT):
+    DE: VALUES (..., v_valor_prestador, ...)
+    PARA: VALUES (..., v_valor_liquido, ...)
+  Alterar linha 171 (UPDATE):
+    DE: valor = v_valor_prestador
+    PARA: valor = v_valor_liquido
+
+Passo 3 — Criar migration aplicadora:
+  20260913_fin_sane_02a_unifica_valor_pagar.sql
+  - Recria as duas funções com valores corrigidos.
+  - Atualiza financeiro_pagar.valor dos registros NÃO pagos
+    para igualar pagamentos_prestadores.valor_liquido.
+
+11.2 TRATAMENTO DOS REGISTROS ANTIGOS
+
+NOVOS REGISTROS:
+  Após a migration, todo novo INSERT/UPDATE via triggers M66/M80
+  criará financeiro_pagar.valor = valor_liquido.
+
+REGISTROS HISTÓRICOS:
+  Categoria 1 — Não pagos (status NOT IN ('pago','paga','cancelado','estornado')):
+    Atualizar financeiro_pagar.valor = pagamentos_prestadores.valor_liquido
+    apenas quando houver OS correspondente e diferença.
+    Quantidade estimada: ~36 registros (dados da seção 4).
+
+  Categoria 2 — Já pagos com baixa integral no valor antigo:
+    MANTER inalterado. A baixa já foi feita; alterar o valor do
+    título criaria inconsistência histórica.
+    Quantidade estimada: ~1 registro divergente pago.
+
+  Categoria 3 — Marcados 'pago' em pagamentos_prestadores mas
+  SEM financeiro_baixas (bug C1):
+    NÃO corrigir via migration automática. Requer ação manual
+    ou reprocessamento controlado após a correção do fechamento.
+    Quantidade estimada: 8 registros (6 teste + 2 real).
+
+  Categoria 4 — Registros sem pagamentos_prestadores correspondente
+  (ex.: despesas genéricas de fornecedores):
+    NÃO alterar. São títulos legítimos de outra natureza.
+
+11.3 COMPATIBILIDADE
+
+- O RPC f_confirmar_pagamento_prestador NÃO muda de assinatura.
+- A tabela financeiro_pagar NÃO ganha nem perde colunas.
+- O UNIQUE(os_id) é preservado.
+- ContasPagar.tsx continua funcionando para títulos genéricos.
+- PagamentoPrestadores.tsx continua mostrando pagamentos_prestadores.
+
+11.4 TESTES NECESSÁRIOS
+
+1. Cenário base (sem complementos):
+   - Criar OS/escala com custo_prestador=500, sem pedágio/adicional.
+   - Verificar: fp.valor=500, pp.valor_liquido=500.
+   - Pagar: 1 baixa de 500, status=pago.
+
+2. Cenário com pedágio:
+   - custo_prestador=500, pedagio=30.
+   - Verificar: fp.valor=530, pp.valor_liquido=530.
+   - Pagar: 1 baixa de 530.
+
+3. Cenário com adicional:
+   - custo_prestador=800, adicional=150.
+   - Verificar: fp.valor=950, pp.valor_liquido=950.
+
+4. Cenário com pedágio + adicional:
+   - custo_prestador=800, pedagio=50, adicional=150.
+   - Verificar: fp.valor=1.000, pp.valor_liquido=1.000.
+
+5. Cenário com desconto:
+   - custo_prestador=1.000, desconto=30.
+   - Verificar: fp.valor=970, pp.valor_liquido=970.
+
+6. Cenário fechamento com 1 item:
+   - Criar fechamento, aprovar, pagar.
+   - Verificar: pp item=pago, fp=pago, 1 baixa.
+
+7. Cenário fechamento com vários itens:
+   - Criar fechamento com 3 itens.
+   - Pagar.
+   - Verificar: 3 baixas (1 por item), todos os fp=pago.
+
+8. Idempotência:
+   - Executar pagarFechamento() uma segunda vez.
+   - Verificar: nenhuma baixa extra criada.
+
+9. Item já pago:
+   - Tentar pagar item já pago.
+   - Verificar: erro "Pagamento já foi confirmado".
+
+10. Título inexistente:
+    - Pagar item sem OS ou sem fp correspondente.
+    - Verificar: erro "Nao existe titulo financeiro".
+
+11. Falha parcial:
+    - Fechamento com 3 itens, 1 sem título correspondente.
+    - Verificar: transação falha, nenhum item marcado pago.
+
+12. Testes financeiros existentes:
+    - npx vitest run (testes financeiros)
+    - Playwright FIN-362.3E / fin-master-3623d
+
+11.5 ROLLBACK
+
+Migration de rollback:
+  20260913_fin_sane_02a_rollback.sql
+  - Restaura financeiro_pagar.valor = v_valor_prestador nos triggers.
+  - Opcionalmente reverte valores dos títulos não pagos alterados
+    (se tiver snapshot prévio).
+
+11.6 HOMOLOGAÇÃO
+
+- Aplicar em ambiente QA/HML.
+- Usar SOMENTE dados is_teste=true.
+- Validar todos os 12 cenários acima.
+- Verificar DRE e Fluxo de Caixa.
+
+11.7 VALIDAÇÃO PRODUÇÃO
+
+- Aplicar migration em janela de baixo movimento.
+- Verificar contagem de divergências antes/depois.
+- Verificar se nenhum título pago foi alterado.
+- Validar fechamento dc26a5f1 (is_teste=true) como prova.
+
+============================================================
+12. RISCOS
+============================================================
+
+R1 — DRE/relatórios históricos:
+  Alterar valores de títulos abertos pode mudar KPIs atuais.
+  Mitigação: comunicar mudança; valores corrigidos refletem
+  realidade, não distorcem.
+
+R2 — Títulos pagos com valor antigo:
+  Não serão alterados, mas relatórios históricos continuarão
+  mostrando pagamento parcial em relação ao novo valor.
+  Mitigação: documentar; aceitar como histórico.
+
+R3 — Registros sem OS correspondente:
+  Alguns pagamentos_prestadores não têm fp correspondente.
+  A correção do trigger não os afeta; eles continuarão sem baixa.
+  Mitigação: tratar como dados órfãos em missão futura.
+
+R4 — Baixas parciais futuras:
+  Se financeiro_pagar.valor for total, baixas parciais ainda
+  são suportadas por f_registrar_baixa_financeira.
+  O RPC de prestador exige integral, o que está correto.
+
+R5 — Outros serviços que esperam fp.valor = base:
+  Nenhum código encontrado que dependa dessa igualdade.
+  Todos os relatórios somam fp.valor como previsto/pago.
+
+R6 — Migration irreversível em produção:
+  Mitigação: snapshot dos valores atuais antes de aplicar;
+  rollback script pronto.
+
+============================================================
+13. PRÓXIMA MISSÃO EXATA
+============================================================
+
+FIN-SANE-02B (ou nome equivalente):
+
+Objetivo: Implementar a correção escolhida.
+
+Entregáveis:
+1. Migration 20260913_fin_sane_02a_unifica_valor_pagar.sql
+2. Rollback 20260913_fin_sane_02a_rollback.sql
+3. Correção de pagarFechamento() em fechamentoService.ts
+4. Testes unitários/E2E para os 12 cenários
+5. Relatório FIN-SANE-02B.txt com evidências
+
+Escopo:
+- Alterar triggers M66/M80.
+- Migrar títulos não pagos.
+- Implementar chamada RPC no fechamento.
+- NÃO alterar RLS, timezone, mocks, APP, Recrutamento, Escala.
+
+============================================================
+14. ARQUIVOS ANALISADOS
+============================================================
+
+Código:
+- src/services/financeiro/fechamentoService.ts
+- src/services/financeiro/pagamentoPrestadorService.ts
+- src/services/financeiro/pagarService.ts
+- src/services/financeiro/fluxoCaixaService.ts
+- src/services/financeiro/relatoriosFinanceirosService.ts
+- src/services/financeiro/extratoPrestadorService.ts
+- src/components/financeiro/ContasPagar.tsx (primeiras 250 linhas)
+
+SQL:
+- supabase/migrations/20260906_fin_362_3e_consistencia_pagamento_prestador.sql
+- supabase/migrations/20260819_a31j111_desconto_prestador.sql
+- supabase/migrations/20260705_m80b_fix_trigger_columns.sql
+- supabase/migrations/20260903_fin_master361_core_financeiro.sql
+
+Relatório:
+- FIN-SANE-01.txt
+
+Dados:
+- Consulta somente leitura via _fin_sane_02a_query.mjs
+
+============================================================
+15. FINALIZAÇÃO
+============================================================
+
+Arquivo: FIN-SANE-02A.txt
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\
+         DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+         express-connect-hub\FIN-SANE-02A.txt
+
+Análise: PASS
+Decisão: Arquitetura A (unificar valor do título com valor líquido)
+Próxima missão: FIN-SANE-02B — implementação
+
+============================================================
+FIM
+============================================================

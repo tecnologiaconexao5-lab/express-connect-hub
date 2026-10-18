@@ -1,0 +1,24 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C3D (A3) — historico sanitizado, NAO EXECUTAVEL
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = 'https://REDACTED_PROD_REF.supabase.co';
+const supabaseKey = 'REDACTED_ANON_KEY';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+async function querySQL() {
+  console.log('=== EXECUTANDO SQL VIA RPC ===\n');
+  
+  try {
+    const { data, error } = await supabase.rpc('pg_catalog', { 
+      statement: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'" 
+    });
+    
+    console.log('DATA:', data);
+    console.log('ERRO:', error?.message);
+  } catch(e) {
+    console.log('ERRO:', e.message);
+  }
+}
+
+querySQL();

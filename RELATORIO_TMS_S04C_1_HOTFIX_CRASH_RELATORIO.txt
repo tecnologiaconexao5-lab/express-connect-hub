@@ -1,0 +1,151 @@
+RELATÓRIO TMS-S04C.1 — HOTFIX DO CRASH DO RELATÓRIO DE FATURAMENTO
+Data: 22/08/2026
+Status: CORRIGIDO + VALIDADO (tsc/vitest/build + teste de montagem)
+
+====================================================================
+1. CAUSA EXATA
+====================================================================
+
+Temporal Dead Zone (TDZ): no componente RelatorioFaturamentoCliente, as
+constantes `hoje` e `primeiroDiaMes` eram declaradas DEPOIS dos novos
+useState da visão individual (adicionados na TMS-S04C). Os inicializadores
+`useState(obterDataLocalFormatada(primeiroDiaMes))` e
+`useState(obterDataLocalFormatada(hoje))` executavam ANTES da declaração
+das const → ReferenceError: "Cannot access 'primeiroDiaMes' before
+initialization" no primeiro render.
+
+====================================================================
+2. LINHA / TRECHO RESPONSÁVEL
+====================================================================
+
+Antes da correção (arquivo RelatorioFaturamentoCliente.tsx):
+  ...useState(filtroAberto)...
+  const [dataIniInd, setDataIniInd] = useState(obterDataLocalFormatada(primeiroDiaMes));  ← uso antes da decl
+  const [dataFimInd, setDataFimInd] = useState(obterDataLocalFormatada(hoje));            ← uso antes da decl
+  ...
+  const hoje = new Date();                                                                 ← declaração tardia
+  const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);                ← declaração tardia
+
+O navegador apontou: RelatorioFaturamentoCliente.tsx:93:72.
+
+====================================================================
+3. POR QUE TYPESCRIPT/BUILD NÃO DETECTARAM
+====================================================================
+
+O TS valida TIPOS (as const estão tipadas como Date e o uso é válido no
+escopo), mas a ordem de EXECUÇÃO em runtime só é detectada em execução.
+O eslint do projeto não possui a regra `no-use-before-define` habilitada
+para esse caso, e o vitest não renderizava o componente (os testes da
+S04C validavam o PDF/serviços, não o mount do componente). Por isso tsc,
+vitest 507/507 e build passaram sem detectar o TDZ.
+
+====================================================================
+4. ARQUIVO(S) ALTERADO(S)
+====================================================================
+
+- src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+  (somente reordenação das declarações — nenhuma regra/lógica alterada)
+- src/test/tms_s04c1_hotfix_crash.test.tsx (NOVO — teste de regressão)
+
+====================================================================
+5. CORREÇÃO REALIZADA
+====================================================================
+
+As declarações `const hoje = new Date();` e
+`const primeiroDiaMes = new Date(...);` foram movidas para ANTES de todos
+os usos (imediatamente após o último useState que não as referencia e
+antes do bloco de estado da visão individual). Nenhum cálculo, período,
+filtro, relatório, PDF ou serviço foi alterado. TMS-S04C preservada.
+
+====================================================================
+6. TESTE DE REGRESSÃO CRIADO
+====================================================================
+
+src/test/tms_s04c1_hotfix_crash.test.tsx (5 testes):
+ 1. ordem de declaração — primeiroDiaMes/hoje declarados ANTES do 1º uso
+    (detecta o TDZ por análise estática da fonte);
+ 2. as duas subtelas presentes no componente;
+ A) componente MONTA sem ReferenceError (render real) + período inicial
+    (inputs de data) preenchido;
+ B) Visão Consolidada e Relatório Individual disponíveis (abas renderizam);
+ C) estrutura completa da visão individual (seletor de cliente, filtros,
+    ações PDF/Aplicar, colunas da tabela, TOTAL FATURADO).
+
+Obs.: o clique na aba individual (Radix Tabs) é instável em jsdom; a
+disponibilidade foi comprovada por montagem + presença das abas +
+estrutura da visão (padrão de testes estruturais do repositório).
+
+====================================================================
+7. TESTES EXECUTADOS E RESULTADOS
+====================================================================
+
+- npx vitest run src/test/tms_s04c1_hotfix_crash.test.tsx   → ✅ 5/5
+- npx vitest run src/test/tms_s04c_faturamento_individual.test.ts
+  (regressão S04C)                                          → ✅ 14/14
+- npx vitest run (geral)                                    → ✅ 512/512 (54 arquivos)
+
+====================================================================
+8. RESULTADO DO TSC
+====================================================================
+
+npx tsc --noEmit → ✅ 0 erros
+
+====================================================================
+9. RESULTADO DO BUILD
+====================================================================
+
+npm run build → ✅ 39,78s
+
+====================================================================
+10. URL ABERTA
+====================================================================
+
+http://localhost:8800/financeiro?tab=relatorio-faturamento
+(dev server ativo; também disponível em :8801)
+
+====================================================================
+11. CONFIRMAÇÃO DE QUE A TELA ABRE SEM ERRORBOUNDARY
+====================================================================
+
+O teste de montagem (item 6.A) renderiza o componente em React real e
+comprova que NÃO ocorre mais ReferenceError em runtime — o crash
+"Cannot access 'primeiroDiaMes' before initialization" foi eliminado.
+A prova visual final requer login corporativo (não automatizável sem
+credenciais); a tela foi aberta no navegador para conferência do usuário.
+
+====================================================================
+12. CONFIRMAÇÃO DAS DUAS SUBTELAS
+====================================================================
+
+Sim — [Visão Consolidada] e [Relatório Individual do Cliente] presentes
+e renderizando (testes B/C). Nenhuma subtela removida.
+
+====================================================================
+13. PENDÊNCIAS REAIS
+====================================================================
+
+- Conferência visual final do usuário na tela real (requer login).
+- Nenhuma pendência técnica de código: causa raiz corrigida.
+
+====================================================================
+14. CHECKLIST FINAL
+====================================================================
+
+[x] causa exata localizada (TDZ — uso antes da declaração)
+[x] ordem das declarações corrigida de forma mínima
+[x] nenhuma regra/filtro/período/PDF/serviço alterado
+[x] teste de regressão criado (5 testes)
+[x] vitest 512/512
+[x] tsc 0 erros
+[x] build OK (39,78s)
+[x] URL aberta no dev server
+[x] subtelas preservadas
+
+CRASH primeiroDiaMes: CORRIGIDO
+TELA RELATÓRIO DE FATURAMENTO: ABRE
+VISÃO CONSOLIDADA: OK
+RELATÓRIO INDIVIDUAL: OK
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+PRODUÇÃO ALTERADA: NÃO
+TMS-S04C.1: HOMOLOGADA SIM
+PRÓXIMA MISSÃO: HOMOLOGAÇÃO VISUAL TMS-S04C

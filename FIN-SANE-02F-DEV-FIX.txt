@@ -1,0 +1,148 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02F — DEV FIX: Correção do Bloco OS e Triggers M66/M80/rollback
+Data: 2026-09-16
+Projeto: TMS (Supabase Produção: uwrvzsjtpgaifkktpepn)
+═══════════════════════════════════════════════════════════════════════════════
+
+STATUS: ✅ GATE FINAL PASS (lab local)
+
+═══════════════════════════════════════════════════════════════════════════════
+1. RESUMO
+═══════════════════════════════════════════════════════════════════════════════
+
+Missão FIN-SANE-02F corrigiu a migration FIN-SANE-02B no ambiente de laboratório
+para que:
+
+  a) O trigger M66 (alocacoes_escala) volte a criar/atualizar ordens_servico
+     corretamente (comportamento pré-02B, que estava quebrado silenciosamente
+     em produção).
+
+  b) O trigger M80 (ordens_servico) não falhe quando uma OS é criada pelo M66,
+     permitindo que a OS persista e os registros financeiros derivados sejam
+     gerados.
+
+  c) A correção financeira seja preservada: financeiro_pagar.valor representa
+     a OBRIGAÇÃO TOTAL do prestador (= v_valor_liquido).
+
+  d) O rollback restaure o valor base em financeiro_pagar sem perder a criação
+     de OS e sem quebrar os triggers.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. CAUSA RAIZ DOS FALHAS ENCONTRADAS
+═══════════════════════════════════════════════════════════════════════════════
+
+2.1 Tipo de composicao_financeira_os.os_id
+    A coluna composicao_financeira_os.os_id é TEXT (não UUID). Tanto M66
+    quanto M80 passavam UUID diretamente para WHERE os_id = NEW.id / v_os_id,
+    gerando:
+
+        operator does not exist: text = uuid
+
+    Como ambas as funções envolviam o INSERT de OS dentro de blocos
+    EXCEPTION WHEN OTHERS THEN NULL, o erro era engolido e a OS nunca era
+    criada.
+
+2.2 Campos jsonb de ordens_servico
+    A migration forward já usava to_jsonb(...) para adicionais/ajudante, mas
+    o rollback ainda passava NUMERIC direto, causando:
+
+        column "adicionais" is of type jsonb but expression is of type numeric
+
+2.3 Uso de NEW.cliente_id/prestador_id como UUID no rollback M80
+    O rollback M66 preenchia ordens_servico.cliente_id e prestador_id com os
+    NOMES do cliente/prestador (TEXT). O rollback M80 tentava
+    NEW.cliente_id::UUID / NEW.prestador_id::UUID, falhando com:
+
+        invalid input syntax for type uuid: "Cliente Rollback"
+
+    Correção: usar NEW.cliente / NEW.prestador (UUIDs reais) no M80.
+
+═══════════════════════════════════════════════════════════════════════════════
+3. ARQUIVOS ALTERADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+• supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  - M66 composicao: v_os_id → v_os_id::TEXT
+  - M80 composicao: NEW.id → NEW.id::TEXT em SELECT, INSERT e UPDATE
+
+• supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+  - M66 OS: adicionais/ajudante com to_jsonb(...)
+  - M66 composicao: v_os_id → v_os_id::TEXT
+  - M80 financeiro_receber/pagar/pp/composicao:
+    NEW.cliente_id::UUID → NEW.cliente
+    NEW.prestador_id::UUID → NEW.prestador
+  - M80 composicao: NEW.id → NEW.id::TEXT
+
+• scripts/_fin_sane_02f_lab_runner.cjs
+  - Orquestrador de lab (banco local recriado, baseline, forward, 12 cenários,
+    M66→OS, UPDATE, rollback, reaplicação, 12 cenários novamente).
+
+═══════════════════════════════════════════════════════════════════════════════
+4. VALIDAÇÃO (LABORATÓRIO LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+Banco: PostgreSQL 17 local, container tms_postgres
+Comando: node scripts/_fin_sane_02f_lab_runner.cjs
+
+RESULTADO:
+
+  PASS: Criar banco lab
+  PASS: Aplicar baseline
+  PASS: Aplicar forward 02B corrigida
+  PASS: 12 cenários SQL
+  PASS: Teste M66 -> OS          (fp.valor = 760 = 700 + 50 + 80 + 30 - 100)
+  PASS: Teste UPDATE alocacao    (fp.valor = 850 após adicional + 100)
+  PASS: Aplicar rollback
+  PASS: Verificacao rollback     (OS preservada, fp.valor = 700 base)
+  PASS: Reaplicar forward 02B
+  PASS: Verificacao reaplicacao  (OS criada, fp.valor = 760, RPC existe)
+  PASS: 12 cenários apos reaplicacao
+
+  GATE FINAL: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+5. EVIDÊNCIAS DE CORREÇÃO FINANCEIRA
+═══════════════════════════════════════════════════════════════════════════════
+
+• M66→OS cria 5 registros: ordens_servico, financeiro_receber,
+  financeiro_pagar, pagamentos_prestadores, composicao_financeira_os.
+
+• financeiro_pagar.valor = v_valor_liquido (base + pedágio + adicionais +
+  ajudante - desconto).
+
+• UPDATE de alocacao atualiza a MESMA OS (sem duplicar) e recalcula
+  financeiro_pagar.valor.
+
+• Rollback restaura financeiro_pagar.valor = base (v_valor_prestador),
+  preservando OS e demais registros.
+
+• Reaplicação volta financeiro_pagar.valor para v_valor_liquido.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. PRÓXIMOS PASSOS
+═══════════════════════════════════════════════════════════════════════════════
+
+P0 — Aplicar migration forward em produção (após autorização explícita):
+      supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+
+P1 — Executar RPC f_confirmar_pagamento_fechamento com dados reais de
+      pagamento de fechamento e validar atomicidade.
+
+P2 — Verificar snapshot fin_sane_02b_snapshot e títulos afetados.
+
+P3 — Manter rollback pronto:
+      supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+
+P4 — Remover scripts temporários de diagnóstico (opcional):
+      scripts/_fin_sane_02f_* diagnostic scripts
+
+═══════════════════════════════════════════════════════════════════════════════
+7. REGRA DE OURO
+═══════════════════════════════════════════════════════════════════════════════
+
+Nenhum dado de produção foi alterado. Toda a correção foi validada em banco
+local de laboratório. A migration forward é aditiva e segura: não remove dados,
+não altera títulos pagos/cancelados/estornados e preserva o snapshot para
+auditoria.
+
+═══════════════════════════════════════════════════════════════════════════════

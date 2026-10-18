@@ -1,0 +1,129 @@
+ESCALA-OS-05-38-OS-AUSENTES-PRECHECK
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma criação de OS)
+
+==================================================
+UNIVERSO (38 alocações Classe B — sem ordem_servico_id e sem OS id=alocação.id)
+==================================================
+
+Todos: OS_EXISTS_WITH_ALLOCATION_ID=0; OTHER_OS_CANDIDATE_COUNT=0 (nenhuma OS por
+prestador+data+tipo). cliente_id, prestador_id, data_escala e tipo_veiculo preenchidos.
+
+Distribuição por cliente/prestador:
+  - 26 alocações: cliente c4ee38d6 (M48 Delivery Rápido) + prestador be420cfc (FRANKLIN)
+  - 4 alocações: cliente a49d5aa3 (CALVO) + prestador fe7a75cc (CESAR)
+  - 1 alocação: cliente 04280785 + prestador 6cc41f68 (nome NULL → M66 usa 'Prestador #...')
+  - demais: cliente a49d5aa3 (CALVO) + prestador fe7a75cc (CESAR)
+
+==================================================
+CLASSIFICAÇÃO (38)
+==================================================
+
+A = criação segura; SEM financeiro pré-existente → 30
+B = criação segura; financeiro pré-existente COERENTE e ABERTO → 5
+    bfaec60f (rec 600/pend, pag 520/pend, pp 520/nao_venc)
+    fd1e89c2 (rec 600/pend, pag 520/pend, pp 520/nao_venc)
+    57801474 (rec 669/pend, pag 599.94/pend, pp 599.94/nao_venc)
+    b7cdb83f (rec 669/pend, pag 664.68/pend, pp 664.68/nao_venc)
+    c0a7ee88 (rec 2000/aberto, pag 1280/aberto, pp 1280/nao_venc)
+C = financeiro pré-existente com status FECHADO/PARCIAL → revisar → 3
+    58e5751e (pag=parcial)         — re-propagação mudaria status 'parcial'→'aberto'
+    d1f34e73 (pag=pago)            — título pago (FIN-01 protege valor; pp=pendente seria tocado)
+    ae30da69 (pag=pago, pp=pago)   — títulos pagos
+D = dados obrigatórios insuficientes para OS → 0
+E = estado mudou / OS já surgiu / vínculo → 0
+F = outro bloqueador objetivo → 0
+
+TOTAL=38 (A30+B5+C3)
+
+EXPECTED vs CURRENT (casos com financeiro — TODOS coerentes em VALOR):
+  bfaec60f: EXP_REC=600 EXP_PAG=520.00 | CUR rec=600 pag=520 pp=520.00
+  fd1e89c2: EXP_REC=600 EXP_PAG=520.00 | CUR rec=600 pag=520 pp=520.00
+  57801474: EXP_REC=669 EXP_PAG=599.94 | CUR rec=669 pag=599.94 pp=599.94
+  b7cdb83f: EXP_REC=669 EXP_PAG=664.68 | CUR rec=669 pag=664.68 pp=664.68
+  c0a7ee88: EXP_REC=2000 EXP_PAG=1280.00 | CUR rec=2000 pag=1280 pp=1280
+  58e5751e: EXP_REC=600 EXP_PAG=652.86 | CUR rec=600 pag=652.86 pp=652.86 (status parcial)
+  d1f34e73: EXP_REC=600 EXP_PAG=520.00 | CUR rec=600 pag=520 pp=520 (pag pago)
+  ae30da69: EXP_REC=600 EXP_PAG=520.00 | CUR rec=600 pag=520 pp=520 (pago/pago)
+
+==================================================
+GERAÇÃO DE NÚMERO PELA M66
+==================================================
+
+Quando v_os_id = alocação.id (ordem_servico_id NULL), a M66 gera:
+  v_os_numero = 'ALOC-' || TO_CHAR(data_escala,'YYYYMMDD') || '-' || UPPER(SUBSTRING(id,1,8))
+OS_NUMBER_GENERATION=ALOC-{YYYYMMDD}-{8 primeiros do id} (determinístico, interno)
+NUMBER_COLLISION_RISK=BAIXO (data + 8 hex do UUID; id da OS = id da alocação, único; ON CONFLICT (id))
+INTERNAL_OS_SEPARATED_FROM_CLIENT_REFERENCE=YES (prefixo ALOC-; romaneio/OC do cliente = metadata externo)
+
+Prova de que a criação NÃO depende de:
+  - número fictício: usa padrão determinístico ALOC-... (sem criar numeração aleatória)
+  - cliente/prestador inventado: usa cliente_id/prestador_id reais da alocação (nome do prestador
+    com COALESCE 'Prestador #<id>' apenas como rótulo textual)
+  - tipo de veículo fake: usa tipo_veiculo real da alocação
+  - referência aproximada: vínculo por id exato (OS.id = alocação.id)
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. Podem ser criadas com segurança: 35 (30 A + 5 B).
+2. Possuem financeiro pré-existente: 8 (5 B + 3 C).
+3. O financeiro existente está coerente? SIM em VALOR (expected == current nos 8). Porém 3 (C)
+   têm status fechado/parcial.
+4. Criar a OS pelo M66 alteraria valores existentes? Para A: cria financeiro novo (esperado).
+   Para B: recomputa valores idênticos → NÃO altera. Para C: poderia alterar STATUS
+   (ex.: 'parcial'→'aberto') → NÃO executar.
+5. Algum status fechado seria afetado? SIM nos casos C (58e5751e parcial; d1f34e73 e ae30da69 pagos).
+   'pago' é protegido por FIN-01; 'parcial' NÃO é protegido → seria alterado. → C bloqueado.
+6. Numeração interna: 'ALOC-{YYYYMMDD}-{alloc8}' (M66, ordem_servico_id NULL).
+7. Risco de colisão/duplicidade: BAIXO (id = alocação.id; ON CONFLICT; data+uuid8 no número).
+8. Seguro executar em lotes pequenos? SIM para A+B (35), em lotes de ~10, com precheck + dry-run
+   por lote. C excluído (revisão humana).
+
+==================================================
+RESUMO
+==================================================
+
+EXPECTED_CLASS_B=38
+STILL_ELIGIBLE=38
+SAFE_NO_FINANCE=30
+SAFE_WITH_FINANCE=5
+FINANCE_DIVERGENT=3
+INSUFFICIENT_DATA=0
+CHANGED_STATE=0
+OTHER_BLOCKED=0
+
+SAFE_CREATE_COUNT=35
+BLOCKED_CREATE_COUNT=3
+
+==================================================
+NEXT_SAFE_EXECUTION (proposta — NÃO executar)
+==================================================
+
+Mecanismo: acionar a M66 (criar/upsert da OS com id = alocação.id + link) SEM usar
+criarOrdemServico do frontend (que geraria id diferente). Para alocações existentes,
+disparar a M66 via UPDATE de coluna monitorada (ex.: valor_repasse = valor_repasse),
+que cria a OS (id=alocação.id, número ALOC-...) e vincula — preservando o financeiro
+quando os_id=alocação.id.
+
+Lotes: 4 lotes de ~10 (A primeiro; B em lote separado). Por lote:
+  1) precheck (os_id_eq=0; other_cand=0; sem status fechado/parcial);
+  2) BEGIN/ROLLBACK dry-run → conferir OS criada (id=alocação.id), 1 OS, financeiro coerente;
+  3) executar; 4) postcheck (OS id=alocação.id; financeiro esperado; sem duplicata).
+Excluir C (58e5751e, d1f34e73, ae30da69) — decisão humana.
+Rollback por lote: remover a OS criada e reverter o link (somente se necessário).
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhuma OS criada/vinculada.
+- M66/M80 não alterados. Não tocou 67 Classe E, 16 Classe D, 9 FIN-02, 27 órfãs,
+  APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { confirmAction } from '@/lib/confirmDialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Filter, Plus, Briefcase, MapPin, Truck, Target, Calendar, DollarSign, TrendingUp, Users, MoreHorizontal, PlayCircle, PauseCircle, Archive, Copy, Edit, Trash2, CheckCircle, XCircle, Route, Clock, Bot, MessageSquare, Eye } from 'lucide-react'
 import { PageHeader } from '../components/design-system/PageHeader'
@@ -46,7 +47,14 @@ export function PaginaOperacoes() {
   }
 
   const handleRemover = async (id: string) => {
-    if (window.confirm('Excluir esta operação permanentemente?')) {
+    const confirmado = await confirmAction({
+      title: 'Excluir operação',
+      description: 'Excluir esta operação permanentemente?',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      variant: 'destructive',
+    })
+    if (confirmado) {
       await remover(id)
       toast.success('Operação excluída!')
     }

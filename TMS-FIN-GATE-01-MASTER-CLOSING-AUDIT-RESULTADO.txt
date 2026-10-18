@@ -1,0 +1,306 @@
+================================================================================
+MISSAO: TMS-FIN-GATE-01-MASTER-CLOSING-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO — AUDITORIA SOMENTE LEITURA (NDA tocado)
+MODELO: DeepSeek V4.1 Flash
+DATA: 2026-09-24
+BASE: consolidacao das missoes FIN/PROG 01..7C.2, CONTA-01, MARGEM-01.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. FLUXO CLIENTE (E2E estrutural)
+--------------------------------------------------------------------------------
+Programacao/OS -> Conferencia -> Fatura draft -> Validar/Emitir -> Nº Conexao ->
+Nº Cliente -> 1 financeiro_receber -> vencimento -> NF/NFS-e -> boleto/PIX ->
+recebimento -> baixa -> conciliacao -> indicadores.
+- Conferencia lista alocacoes concluidas+finalizadas; selecao -> FaturaPanel (rascunho). PASS
+- Validar/Emitir -> f_emitir_fatura (SECURITY DEFINER, search_path; guarda
+  FATURA_JA_EMITIDA/SEM_ITENS; gera Nº Conexao + Nº Cliente; 1 AR). PASS
+- 1 AR por fatura: uq_receber_fatura_id; ar_fatura_dup=0. PASS
+- Vencimento: faturas.vencimento / financeiro_receber.data_vencimento. PASS
+- NF/NFS-e: FASE FUTURA (fiscal Focus/CT-e/NFS-e parciais; sem NF atrelada a fatura).
+- Boleto/PIX: BLOQUEADO EXTERNO (Efi nao implementada).
+- Recebimento/baixa: f_registrar_baixa_financeira (grava financeiro_baixas). PASS
+- Conciliacao: FASE FUTURA (referencia_bancaria existe; sem conciliacao automatica).
+- Indicadores: PARCIAL (regra temporal da Margem = created_at; ver item 6).
+- LEGADO: 9 faturas 'emitida' SEM AR (conta_receber_id NULL) — dívida historica.
+
+--------------------------------------------------------------------------------
+2. FLUXO PRESTADOR (E2E estrutural)
+--------------------------------------------------------------------------------
+Programacao/OS -> provisao -> Conferencia -> aprovacao -> elegibilidade -> Aptos
+para Lote -> lote -> snapshot -> execucao bancaria -> retorno -> baixa ->
+conciliacao -> indicadores.
+- Provisao: M66/M80 criam financeiro_pagar + pagamentos_prestadores cedo
+  (status pendente/em_aberto; destino validado na formacao do lote). PASS
+- Conferencia/aprovacao: f_aprovar_pagamento_prestadores (definer, papel+tenant).
+  RESSALVA: a UI (PagamentoPrestadores) tambem altera status via UPDATE direto
+  (atualizarStatusPagamento) — caminho paralelo fora da RPC (ver item 10/P0).
+- Elegibilidade: elegivel_lote (4). PASS
+- Aptos para Lote: fila unificada (todas as origens) — 05D.7B.3. PASS
+- Lote: f_gerar_lote_pagamentos -> lotes_pagamento + itens (snapshot) + FK. PASS
+- Snapshot: lotes_pagamento_itens (imutavel; destino congelado). PASS
+- Execucao bancaria: BLOQUEADO EXTERNO (Efi).
+- Retorno/webhook: BLOQUEADO EXTERNO (sem provider/webhook).
+- Baixa: f_confirmar_pagamento_prestador (idempotente). PASS — porem 10 pp pago
+  sem baixa (dívida historica; ver item 11).
+- Conciliacao: FASE FUTURA.
+- Indicadores: PARCIAL.
+
+--------------------------------------------------------------------------------
+3. CONTAS A RECEBER
+--------------------------------------------------------------------------------
+- fatura emitida sem AR: 9 (legado; guarda trg so vale para novas). P1.
+- AR fatura_id duplicado: 0. PASS
+- AR orfao (fatura inexistente): 0. PASS
+- AR teste misturado: existe filtro is_teste=false nas consultas; residual a validar. P2
+- vencimento/pagamento/recebido por DATA REAL do pagamento: PASS (statusVencimento).
+- cards do mes / competencia / paginacao real / busca-filtros: PASS (05C.3B / 6D.1).
+- "Nova Receita": cria titulo manual (sem fatura_id) — by design; usa mocks de
+  categoria/plano (P2). PASS funcional.
+- botao "Gerar Fatura" dentro de AR: DESABILITADO (sem caminho paralelo). PASS
+- direct INSERT residual em actionEngineService: SIM (IA COM_REGISTRAR_PAGAMENTO
+  insere em financeiro_receber) — escrita fora do gate. P0 (ver item 10).
+- exclusao/cleanup residual de AR em OrdensServicoLista: SIM (remove titulos ao
+  excluir OS) — caminho de DELETE financeiro. P1 (ver item 10).
+
+--------------------------------------------------------------------------------
+4. CONTAS A PAGAR (estrutura REAL)
+--------------------------------------------------------------------------------
+- Categoria: TEXTO (select hardcoded) — sem entidade. P2
+- Plano de Contas: TEXTO livre; PlanoContas.tsx e mock; sem tabela. P2
+- Centro de Resultado: TEXTO livre (centros_custo existe mas vazio/incompleto). P2
+- Competencia: TEXTO (MM/AAAA); sem data_competencia. P2
+- Vencimento / Pagamento: data_vencimento / data_pagamento. PASS
+- Conta Financeira: so no modal de BAIXA; criacao usa texto default. P2
+- Forma de Pagamento: sem cadastro (valores hardcoded na baixa). P2
+- Prestador/Fornecedor: FK/fornecedor_id. PASS
+- Origem: os_id/origem. PASS
+- Previsto x Realizado: status + baixas. PASS
+- Recorrencia/parcelamento: campos existem (recorrente/quantidade_parcelas);
+  edicao desta/proximas e cancelamento de recorrencia NAO implementados. P2
+
+--------------------------------------------------------------------------------
+5. DRE / FLUXO DE CAIXA / TESOURARIA
+--------------------------------------------------------------------------------
+- COMPETENCIA -> DRE (DREGerencial usa competencia/plano de contas). PASS
+- MOVIMENTO/BAIXA -> Fluxo/Tesouraria (financeiro_baixas). PASS
+- Risco de dupla contagem: provisao (financeiro_pagar/receber) vs baixa
+  (financeiro_baixas) coexistindo em indicadores que somam ambos. P2 (a validar).
+- recebimentos/pagamentos/provisoes/lotes: Tesouraria hoje mostra lotes formados.
+- testes/cancelados: excluídos por filtros (is_teste / status<>cancelado). PASS
+
+--------------------------------------------------------------------------------
+6. MARGEM OPERACIONAL
+--------------------------------------------------------------------------------
+- 400 corrigido (sem embed PostgREST; consulta em etapas). PASS
+- 20 composicoes orfas (os_id sem OS). P2
+- regra temporal ATUAL: composicao_financeira_os.created_at (data da composicao),
+  sem filtro de periodo. P1 para producao (deveria ser data operacional/competencia).
+- demais custos existem (imposto/seguro/combustivel/ajudante/etc.) mas a tela exibe
+  repasse+pedagio como custo. P2
+- Regra CORRETA necessaria (com base no restante do sistema): usar a data
+  operacional/competencia real (data do servico), nao created_at.
+
+--------------------------------------------------------------------------------
+7. CONTAS FINANCEIRAS
+--------------------------------------------------------------------------------
+- persistencia UUID corrigida (sem 'c-...'; INSERT sem id). PASS
+- conta principal: indice unico parcial uq_contas_financeiras_principal. PASS
+- ativa/inativa: lista consulta ativa=true (inativa nao reaparece). P2
+- PDF/fatura: dados bancarios vem de contas_financeiras (snapshot/principal). PASS
+- conta de origem para pagamento: usada na baixa (conta_financeira_id). PASS
+- tenant_id INEXISTENTE: contas_financeiras sem tenant_id; policies TO authenticated
+  USING(true). Para o TMS atual (unico tenant real) funciona, porem e RISCO DE
+  ARQUITETURA MULTI-TENANT (nao bloqueia o dinheiro hoje). P1 (arquitetura).
+- RLS/grants: authenticated ALL (select/insert/update/delete) com USING(true). P1
+- multiempresa: campo 'empresa' texto; sem isolamento. P2
+
+--------------------------------------------------------------------------------
+8. PAGAMENTOS PRESTADORES (inventario real)
+--------------------------------------------------------------------------------
+total 137 | teste 23 | pago 12 | cancelado 3 | conferido 14 | aprovado 10 |
+elegivel 4 | aprovado+nao_elegivel 9 | sem_tenant 20 | sem_os 12 |
+agregados (fechamento) 2 | sem_prestador 1 | com_lote 0 | baixas 19 | lotes 0.
+- Impedem producao: caminho de escrita direta (P0) e integridade (pago sem baixa).
+- Divida historica controlada: 23 teste, 20 sem tenant, 12 sem OS, 2 agregados,
+  1 sem prestador, CESAR (manual), 9 aprovado+nao_elegivel, 9 faturas sem AR.
+NAO saneado.
+
+--------------------------------------------------------------------------------
+9. LOTE / TESOURARIA
+--------------------------------------------------------------------------------
+- fila unificada: PASS | RPC f_gerar_lote_pagamentos: PASS | guards: PASS |
+  header (lotes_pagamento): PASS | snapshot (itens): PASS | FK fk_pp_lote: PASS |
+  RLS: PASS (tenant+papel) | idempotencia: PASS | concorrencia (lock): PASS.
+- Efi: BLOQUEADO EXTERNO. Cancelamento operacional de lote: AUSENTE (fase futura).
+  provider/webhook/retry: AUSENTES (fase futura).
+- HOMOLOGAVEL INTERNAMENTE (mesmo sem banco): SIM — fila -> lote -> snapshot ->
+  em_lote funciona ponta a ponta internamente; a execucao bancaria e externa.
+
+--------------------------------------------------------------------------------
+10. SEGURANCA (caminhos que alteram estado financeiro fora das RPCs = P0)
+--------------------------------------------------------------------------------
+- pp_update_tms (policy UPDATE TO authenticated, tenant) + GRANT UPDATE/INSERT/
+  DELETE de authenticated em pagamentos_prestadores: permite ALTERAR/CRIAR/APAGAR
+  estado financeiro sem RPC. [P0]
+- UI PagamentoPrestadores usa atualizarStatusPagamento (UPDATE direto) para
+  Conferir/Aprovar/Cancelar — bypass de f_aprovar_pagamento_prestadores. [P0/P1]
+- actionEngineService (IA) faz INSERT direto em financeiro_receber (COM_REGISTRAR_
+  PAGAMENTO). [P0]
+- OrdensServicoLista: DELETE de titulos AR em cleanup. [P1]
+- anon possui GRANTs amplos (SELECT/INSERT/UPDATE/DELETE) nas tabelas financeiras;
+  RLS sem policy para anon bloqueia, mas e privilegio residual. [P1]
+- f_regularizar_fatura_legada: SECURITY DEFINER, admin (sem caller) — caminho de
+  regularizacao legado. [P2]
+- os_select_cliente (ordens_servico): cast cliente_id TEXT->uuid em linhas com
+  valor nao-UUID -> erro runtime/DoS de policy quando tenant nao satisfaz. [P1]
+- SECURITY DEFINER com search_path fixo: OK em f_emitir_fatura, f_aprovar,
+  f_gerar_lote, f_regularizar. f_confirmar_pagamento_prestador e
+  f_registrar_baixa_financeira sao INVOKER (dependem de RLS). PASS/observacao.
+- contas_financeiras/lotes/snapshots RLS: lotes OK (tenant+papel); contas_financeiras
+  sem tenant (USING true). [P1]
+
+--------------------------------------------------------------------------------
+11. INTEGRIDADE (somente leitura)
+--------------------------------------------------------------------------------
+faturas 42 (emit 17 / rasc 25) | AR 124 | AP 178 | baixas 19 | pp 137 |
+lotes 0 | itens 0 | composicao 59 | contas 1.
+- fatura emitida sem AR: 9 (P1, legado).
+- AR fatura dup: 0 | AR orfao: 0 | baixa sem titulo: 0. PASS
+- pp PAGO sem baixa vinculada: 10 (P1 — reconciliar).
+- composicao orfas: 20 (P2).
+- lote inconsistente/snapshot: 0 lotes -> n/a. PASS
+- valores divergentes: nao detectado em AR/AP (somas conferidas nas missoes).
+
+--------------------------------------------------------------------------------
+12. UX / PAGINACAO
+--------------------------------------------------------------------------------
+- Contas a Receber: paginacao REAL numerica; busca server + filtros antes do slice. PASS
+- Faturas: paginacao PARCIAL (Anterior/Pag/Proxima; sem numeros). P2
+- Conferencia, Contas a Pagar, Pagamento Prestadores, Tesouraria/Lotes: SEM paginacao
+  (aceitavel hoje pelo volume; P2 quando crescer).
+- Margem Operacional: paginacao REAL numerica (MARGEM-01). PASS
+- Cards full-set: Receber/Faturas/6D.1/Margem OK; telas sem paginacao trivially full.
+- "Financeiro Enterprise" visivel (sidebar/AppTopbar) — alvo "Financeiro e Rentabilidade". P3
+- window.confirm/alert em ContasReceber/FaturaLista (FIN-01). P2
+- modal profissional: Fatura (rascunho/emissao) e Lote (Ordem/Lote) OK. PASS
+- exclusao com reauth ADM: parcial (usa config; sem reauth forte). P2
+
+--------------------------------------------------------------------------------
+13. TYPESCRIPT / BUILD
+--------------------------------------------------------------------------------
+- tsc -p tsconfig.app.json --noEmit: 750 erros.
+- FINANCEIRO (estrito): 66 (38 em src/services/financeiro + 28 em
+  src/components/financeiro). Destaque: faturaService.ts 35; ContasReceber.tsx 8.
+- src/lib/dbMappers.ts 195 (tipos gerados/mappers — transversal).
+- src/test: 58 ; services/ia: 36 ; fiscal: 43 ; comercial/Ordem: 36.
+- npm run build (vite/esbuild): OK — nao bloqueia runtime por tipos.
+- Classificacao: Financeiro 66 = P2 (divida de tipos; nao bloqueia dinheiro).
+  Nao se aceita "preexistente": 66 atingem Financeiro diretamente.
+
+--------------------------------------------------------------------------------
+14. MIGRATIONS / DRIFT
+--------------------------------------------------------------------------------
+- f_emitir_fatura, f_aprovar_pagamento_prestadores, f_gerar_lote_pagamentos,
+  f_regularizar_fatura_legada: SECURITY DEFINER + search_path=public (conferem).
+- f_confirmar_pagamento_prestador / f_registrar_baixa_financeira: INVOKER (2 args
+  default / 11 args) — conferem com relatorios.
+- Risco R4 (EFI-INT-03): possivel coexistencia de assinatura antiga de
+  f_registrar_baixa_financeira (10 vs 11 params) por CREATE OR REPLACE. P2 (verificar).
+- Migrations financeiras aplicadas por script/pg em varias missoes; nenhum objeto
+  divergente detectado agora (amostragem). Rollbacks perigosos: os de faturamento
+  existem (drop) — manter sob controle. P2.
+
+--------------------------------------------------------------------------------
+15. TESTES / HML
+--------------------------------------------------------------------------------
+- pagamentos_prestadores.is_teste: filtros excluem em consultas/lote/margem. PASS
+- faturas/AR: is_teste filtrado em receber; residuais a validar. P2
+- EXCECOES: 23 teste em pp; 2 agregados; 20 sem tenant; 9 aprovado+nao_elegivel.
+  Nao inflam cards/lote/DRE/margem (filtros), mas exigem saneamento planejado. P2
+
+--------------------------------------------------------------------------------
+16. TABELA MESTRA
+--------------------------------------------------------------------------------
+ID  | AREA            | ACHADO                                                        | SEV | CLASSIFICACAO                  | EVIDENCIA                          | ACAO
+----+-----------------+---------------------------------------------------------------+-----+--------------------------------+------------------------------------+--------------------------------------
+C1  | Cliente         | Conferencia->rascunho->f_emitir->1 AR com guardas            | -   | PASS                           | f_emitir_fatura/uq_receber         | manter
+C2  | Cliente         | 9 faturas emitidas SEM AR (legado)                            | P1  | DIVIDA HISTORICA CONTROLADA    | fatura_emit_sem_ar=9               | reconciliar (plano)
+C3  | Cliente         | NF/NFS-e / conciliacao automatica ausentes                    | P3  | FASE FUTURA                    | fiscal parcial                     | roadmap
+C4  | Cliente         | Boleto/PIX (Efi)                                              | -   | BLOQUEADO EXTERNO              | 7C.2 BLOCKED-CONTRATO              | obter contrato/Efi
+P1  | Prestador       | Provisao->aprovacao->elegivel->Aptos->lote->snapshot          | -   | PASS                           | 7B.1/7B.2/7B.3/7C.1                | manter
+P2  | Prestador       | Execucao bancaria/retorno/webhook                             | -   | BLOQUEADO EXTERNO              | efi-mtls-probe (diagnostico)       | implementar pos-Efi
+P3  | Prestador       | Cancelamento operacional de lote ausente                      | P2  | FASE FUTURA                    | sem fluxo cancelamento             | implementar
+A1  | AR              | fatura emitida sem AR (idem C2)                               | P1  | DIVIDA HISTORICA CONTROLADA    | 9                                  | reconciliar
+A2  | AR              | AR dup/orfao; baixa sem titulo                                | -   | PASS                           | 0/0/0                              | manter
+A3  | AR              | "Gerar Fatura" em AR desabilitado                             | -   | PASS                           | botao disabled                     | manter
+A4  | AR              | direct INSERT financeiro_receber em actionEngineService (IA)  | P0  | CORRIGIR AGORA                 | COM_REGISTRAR_PAGAMENTO            | rotear via RPC/gate
+A5  | AR              | DELETE de titulos AR em OrdensServicoLista (cleanup)          | P1  | CORRIGIR AGORA                 | exclusao de OS                    | remover/bloquear
+AP1 | AP              | Categoria/Plano de Contas/Centro: texto/hardcoded             | P2  | MELHORIA NECESSARIA            | ContasPagar/PlanoContas mock       | criar cadastros
+AP2 | AP              | Forma de Pagamento / Conta Financeira no cadastro             | P2  | MELHORIA NECESSARIA            | so na baixa                        | expor selects
+AP3 | AP              | Recorrencia/parcelamento edicao/cancelamento                  | P2  | FASE FUTURA                    | campos existem                     | implementar
+D1  | DRE/Fluxo/Tes   | Risco dupla contagem provisao x baixa                         | P2  | MELHORIA NECESSARIA            | financeiro_pagar/receber+baixas    | auditar somatorios
+M1  | Margem          | 400 corrigido (sem embed)                                     | -   | PASS                           | MARGEM-01                          | manter
+M2  | Margem          | regra temporal = created_at (nao data operacional)            | P1  | CORRIGIR AGORA                 | query order created_at             | usar data do servico
+M3  | Margem          | 20 composicoes orfas                                          | P2  | DIVIDA HISTORICA CONTROLADA    | comp_orfas=20                      | sanear
+CF1 | Contas Fin.     | Persistencia UUID; principal unica; PDF                       | -   | PASS                           | CONTA-01                           | manter
+CF2 | Contas Fin.     | tenant_id ausente + policies USING(true)                      | P1  | CORRIGIR AGORA                 | sem coluna tenant_id               | tenant/RLS
+S1  | Seguranca       | pp_update_tms + GRANT UPDATE/INSERT/DELETE authenticated      | P0  | CORRIGIR AGORA                 | policies/grants pp                 | restringir escrita as RPCs
+S2  | Seguranca       | UI altera status pp via UPDATE direto (bypass RPC aprovacao)  | P0  | CORRIGIR AGORA                 | atualizarStatusPagamento           | usar f_aprovar/baixa
+S3  | Seguranca       | anon com GRANTs amplos (RLS bloqueia)                         | P1  | CORRIGIR AGORA                 | grants anon                        | REVOKE anon
+S4  | Seguranca       | os_select_cliente cast TEXT->uuid                             | P1  | CORRIGIR AGORA                 | policy ordens_servico              | corrigir cast
+S5  | Seguranca       | f_regularizar_fatura_legada (definer sem caller)              | P2  | FASE FUTURA                    | funcao existe                      | restringir
+I1  | Integridade     | 10 pagamentos_pagar 'pago' SEM baixa                          | P1  | CORRIGIR AGORA                 | pp_pago_sem_baixa=10              | reconciliar
+I2  | Integridade     | 9 faturas emitidas sem AR                                     | P1  | DIVIDA HISTORICA CONTROLADA    | 9                                  | reconciliar
+TS1 | TS/Build        | 66 erros TS no Financeiro (750 total)                         | P2  | MELHORIA NECESSARIA            | tsc por pasta                      | reduzir tipos
+MG1 | Migrations      | Possivel overload f_registrar_baixa (10 vs 11 params)         | P2  | MELHORIA NECESSARIA            | EFI-INT-03 R4                      | verificar/consolidar
+X1  | Testes/HML      | teste/agregados/sem-tenant na base                            | P2  | DIVIDA HISTORICA CONTROLADA    | 23/2/20                            | saneamento planejado
+U1  | UX              | "Financeiro Enterprise" visivel                               | P3  | FASE FUTURA                    | sidebar/topbar                     | renomear
+U2  | UX              | window.confirm/alert; paginacao parcial em Faturas            | P2  | MELHORIA NECESSARIA            | ContasReceber/FaturaLista          | padronizar
+
+--------------------------------------------------------------------------------
+17. TOP FINAL (order by logic block)
+--------------------------------------------------------------------------------
+P0 restantes: 3
+P1 restantes: 9
+P2 restantes: 14
+P3 restantes: 2
+
+P0 (bloqueia dinheiro/integridade/seguranca) — em ordem logica de dependencia:
+  [S1] Restringir escrita em pagamentos_prestadores: remover pp_update_tms/GRANTs
+       de escrita (authenticated) e deixar as RPCs oficiais como unico caminho.
+  [S2] Redirectar a UI (PagamentoPrestadores) para as RPCs (f_aprovar_pagamento_
+       prestadores / f_confirmar_pagamento_prestador), eliminando UPDATE direto.
+  [A4] Remover/rotear o INSERT direto em financeiro_receber vindo do
+       actionEngineService (IA) para o gate oficial (f_emitir_fatura/baixa).
+
+P1 (bloqueia homologacao profissional) — ordem logica:
+  [I1] Reconciliar 10 pagamentos 'pago' sem baixa.
+  [C2/A1/I2] Tratar 9 faturas emitidas sem AR (legado) — plano de reconciliacao.
+  [M2] Corrigir a data canonica da Margem (data operacional/competencia).
+  [CF2] Adicionar tenant_id + RLS por tenant em contas_financeiras.
+  [S3] REVOKE dos GRANTs amplos de anon nas tabelas financeiras.
+  [S4] Corrigir o cast TEXT->uuid em os_select_cliente.
+  [A5] Remover DELETE financeiro (cleanup de AR) em OrdensServicoLista.
+  [S6] Restringir DELETE financeiro/genérico (grants/policies).
+
+PERGUNTAS FINAIS
+FINANCEIRO INTERNAMENTE HOMOLOGAVEL SEM EFI?  SIM — com a ressalva de fechar os
+  3 P0 e os P1 de integridade/vazamento antes da homologacao formal; o nucleo
+  (faturar->emitir->1 AR->baixa) e (provisao->aprovar->lote->snapshot) opera
+  internamente sem banco.
+FINANCEIRO PRONTO PARA PRODUCAO COM DINHEIRO REAL?  NAO — existem caminhos de
+  escrita direta fora dos gates (P0) e inconsistencias (P1), alem da dependencia
+  externa da Efi.
+
+--------------------------------------------------------------------------------
+NADA FOI ALTERADO. Auditoria 100% leitura. Nenhum secret exibido.
+================================================================================
+Arquivo ..: TMS-FIN-GATE-01-MASTER-CLOSING-AUDIT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-GATE-01-MASTER-CLOSING-AUDIT-RESULTADO.txt
+Tamanho ..: 22827 bytes
+Data .....: 24/09/2026 19:21:13
+================================================================================
+FIM DO RELATORIO — TMS-FIN-GATE-01
+================================================================================

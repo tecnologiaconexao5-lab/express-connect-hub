@@ -1,0 +1,150 @@
+================================================================================
+MISSÃO F0-C3 — AUDITORIA READ-ONLY DE ESTRUTURAS DE BAIXA DE TÍTULOS A PAGAR
+Projeto: TMS / express-connect-hub
+Data: 2026-08-18
+Modo: 100% READ-ONLY (information_schema, pg_catalog, COUNT) — NADA escrito
+================================================================================
+
+OBJETIVO
+--------------------------------------------------------------------------------
+Verificar se existe estrutura pronta para registrar baixas/movimentações de
+títulos a pagar (parciais e totais), permitindo controle financeiro
+profissional. NADA foi implementado.
+
+================================================================================
+RESPOSTAS (evidência de PRODUÇÃO)
+================================================================================
+
+1. EXISTE ESTRUTURA ADEQUADA JÁ CRIADA?
+   -> EM PRODUÇÃO: NÃO.
+   -> EM CÓDIGO (migration): SIM, pronta e NUNCA aplicada.
+
+2. QUAL TABELA / VIEW / RPC?
+   - financeiro_baixas: DESENHADA em
+       supabase/migrations/20260626_missao021_fechamento_financeiro.sql
+     mas NÃO EXISTE em produção (pg_tables não a lista; COUNT falha).
+   - lancamentos_financeiros / saldos_financeiros: NÃO EXISTEM em produção
+     (Fluxo de Caixa e DRE tentam lê-las e ficam vazios/silenciosos).
+   - Views existentes em produção: portal_cliente_financeiro_view e
+     vw_motorista_financeiro — destinadas a Portal Cliente / App Motorista,
+     NÃO representam baixas de título.
+   - Funções de baixa/estorno/conciliação: NENHUMA existe em produção
+     (incluindo fn_estornar_baixa, desenhada na mesma migration).
+
+3. QUAL CHAVE VINCULA A BAIXA AO financeiro_pagar.id?
+   - No desenho (financeiro_baixas): titulo_tabela='financeiro_pagar'
+     + titulo_id = financeiro_pagar.id.
+   - Em produção: NENHUMA FK referencia financeiro_pagar.id
+     (información_schema: 0 foreign keys apontando para financeiro_pagar).
+
+4. SUPORTA MÚLTIPLAS BAIXAS?
+   - No desenho: SIM (1:N — um registro por baixa, com saldo_restante
+     calculado após cada uma).
+   - Em produção: NÃO há tabela para isso.
+
+5. PERMITE CALCULAR SALDO MATEMATICAMENTE?
+   - No desenho: SIM — coluna saldo_restante persistida + derivável por
+     valor_original - SUM(valor_baixado) por titulo_id (estornadas excluídas).
+   - Em produção: NÃO há tabela; saldo restante hoje é só texto em
+     observacoes (F0-C2).
+
+6. PERMITE REGISTRAR CONTA/CAIXA E FORMA DE PAGAMENTO?
+   - No desenho (financeiro_baixas): forma_pagamento SIM, referencia_bancaria
+     SIM, mas NÃO há coluna de conta/caixa na BAIXA (conta_pagadora existe
+     apenas no título financeiro_pagar).
+   - Em produção: nada de baixa; forma de pagamento não é persistida.
+
+7. É USADA HOJE POR FLUXO DE CAIXA OU CONCILIAÇÃO?
+   - NÃO.
+   - FluxoCaixaEnterprise.tsx lê lancamentos_financeiros e saldos_financeiros
+     (tabelas INEXISTENTES em produção) + financeiro_receber/financeiro_pagar
+     direto — cada título vira um único movimento por status/vencimento;
+     nenhum conceito de "baixa 1, baixa 2, quitado".
+   - ConciliacaoAvancada.tsx e PagamentoCNAB.tsx: 100% MOCK (dados hardcoded
+     + setTimeout; zero chamadas supabase.from).
+
+8. ESTÁ FUNCIONAL OU É LEGADO/QUEBRADO?
+   - financeiro_baixas: schema VÁLIDO e coerente, porém NUNCA aplicado
+     (legado não-atuado). Migration 20260626 também referencia despesas_operacionais
+     que, esta sim, EXISTE em produção (0 registros) — prova de que a migration
+     NÃO foi aplicada em bloco; financeiro_baixas ficou de fora.
+   - Fluxo de Caixa: parcialmente QUEBRADO (depende de tabelas inexistentes).
+   - Conciliação: funcional apenas como mock/visual.
+
+================================================================================
+ESTADO FÁTICO DE PRODUÇÃO (comprovado por SELECTs read-only)
+================================================================================
+  financeiro_baixas        -> NÃO EXISTE
+  lancamentos_financeiros  -> NÃO EXISTE
+  saldos_financeiros       -> NÃO EXISTE
+  despesas_operacionais    -> EXISTE (0 registros; outra finalidade: frota)
+  financeiro_pagar         -> EXISTE (84 títulos; pago=0, parcial=0, cancelado=0)
+  FKs -> financeiro_pagar  -> NENHUMA
+  funções baixa/estorno    -> NENHUMA
+  views de baixa           -> NENHUMA
+  Conciliação/CNAB         -> mock (setTimeout, sem banco)
+
+================================================================================
+CONCLUSÃO: C — NÃO EXISTE ESTRUTURA ADEQUADA EM PRODUÇÃO
+================================================================================
+Justificativa técnica:
+- A única estrutura desenhada para o papel (financeiro_baixas) está APENAS em
+  arquivo de migration e nunca foi aplicada: tabela ausente, função de estorno
+  ausente, zero FKs apontando para financeiro_pagar.
+- As demais candidatas (lancamentos_financeiros/saldos_financeiros) também não
+  existem em produção.
+- Fluxo de Caixa e Conciliação não consomem nem geram baixas — são mock ou
+  leem tabelas inexistentes.
+
+MODELO MÍNIMO PROPOSTO (SEM IMPLEMENTAR — REAPROVEITANDO O DESENHO EXISTENTE)
+--------------------------------------------------------------------------------
+Recomenda-se APLICAR/REVIVER o schema já desenhado (financeiro_baixas) em vez
+de criar um novo. Itens mínimos:
+
+  1) Aplicar a tabela financeiro_baixas com o desenho original:
+       id, created_at, titulo_tabela ('financeiro_pagar'),
+       titulo_id, valor_original, valor_baixado, saldo_restante,
+       data_baixa, forma_pagamento, referencia_bancaria, observacao,
+       usuario_id, usuario_nome, estornada, data_estorno, motivo_estorno.
+  2) Adicionar coluna de CONTA/CAIXA na baixa (ex.: conta_pagadora ou
+     conta_id/caixa_id) — o desenho original cobre forma de pagamento e
+     referência bancária, mas não a conta movimentada (hoje só no título).
+  3) Criar FK real titulo_id -> financeiro_pagar(id) e índices
+     (titulo_tabela, titulo_id) já previstos.
+  4) RLS scoped (o desenho original usa "TO anon" — substituir por
+     policies autenticadas/tenant, padrão M003/RLS FIX).
+  5) Reativar fn_estornar_baixa (estorno com restauro de saldo no título).
+  6) Alterar baixarPagavel (F0-C2) para INSERIR registro em financeiro_baixas
+     (permite múltiplas parciais) e só então atualizar status do título —
+     removendo o bloqueio de segunda parcial de F0-C2.
+  7) Fluxo de Caixa deve passar a consumir financeiro_baixas para movimentos
+     realizados (hoje depende de tabelas inexistentes).
+
+O que NÃO precisa ser feito:
+- Não há necessidade de desenhar uma tabela nova "do zero" — o desenho
+  financeiro_baixas atende 6/7 requisitos e precisa apenas de 1 coluna de
+  conta/caixa + FK + RLS.
+
+================================================================================
+PENDÊNCIAS REGISTRADAS (fora do escopo de hoje)
+================================================================================
+  - lancamentos_financeiros / saldos_financeiros inexistentes quebram
+    FluxoCaixaEnterprise e DREGerencial (leitura de tabela ausente).
+  - ConciliacaoAvancada e PagamentoCNAB são mock — não há estrutura de
+    conciliação real.
+  - financeiro_pagar: 84 títulos, nenhum pago/parcial/cancelado (nunca houve
+    baixa bem-sucedida — coerente com F0-C/F0-C2).
+  - RLS do desenho financeiro_baixas ("TO anon") deve ser substituída.
+
+================================================================================
+CONFIRMAÇÃO
+================================================================================
+  BANCO NÃO ALTERADO.
+  Nenhuma migration/DDL/seed/RLS/dado tocado. Consultas 100% read-only.
+  Scripts de evidência (read-only):
+    - scripts/_f0c3_auditoria_baixas_readonly.mjs
+    - scripts/_f0c3b_auditoria_baixas_readonly.mjs
+
+================================================================================
+FIM DO RELATÓRIO F0-C3
+================================================================================

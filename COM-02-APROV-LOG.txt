@@ -1,0 +1,79 @@
+================================================================================
+COM-02-APROV  APROVACAO DE ORCAMENTO E CONVERSAO EM OS
+Nivel 4 (Comercial / Orcamento)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:21:51.572Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  o fluxo de aprovacao e conversao em OS esta IMPLEMENTADO e CORRETO.
+
+--------------------------------------------------------------------------------
+1. MECANISMO (aprovacao + conversao)
+--------------------------------------------------------------------------------
+NAO existe RPC/trigger SQL de conversao. O fluxo e 100% TS em
+src/services/comercial/orcamentoToOSService.ts:
+  * aprovarOrcamento(orc)      -> UPDATE orcamentos SET status='aprovado' + historico.
+  * gerarOSDoOrcamento(orc)    -> valida duplicidade, gera numero OS-AAAAMM-NNNNNN,
+       mapeia enderecos/carga, checa INADIMPLENCIA, INSERT em ordens_servico
+       (orcamento_origem=orc.numero, orcamento_id=orc.id, valor_cliente=valorFinal,
+        custo_prestador=custoEstimado, status='em_analise').
+  * _finalizarConversao(...)   -> UPDATE orcamentos SET status='convertido',
+       os_vinculada_id/os_vinculada_numero + historico.
+
+CICLO DE ESTADOS:
+  rascunho / enviado / em_analise
+        --(aprovarOrcamento)-->  aprovado
+        --(gerarOSDoOrcamento)--> convertido  +  OS criada em ordens_servico
+
+GUARDAS:
+  - Anti-duplicidade: recusa se status convertido; verificarOSJaGerada() checa
+    orcamento_id na OS e os_vinculada_id no orcamento (seguranca dupla).
+  - Inadimplencia: verificarInadimplenciaEName(cliente) bloqueia a conversao.
+  - Compatibilidade de schema: se orcamento_id/os_vinculada_id nao existirem,
+    refaz o INSERT/UPDATE sem essas colunas (fallback).
+
+--------------------------------------------------------------------------------
+2. VALIDACAO
+--------------------------------------------------------------------------------
+  [OK] orc_vinculo_colunas  orcamentos possui os_vinculada_id/numero
+  [OK] os_orcamento_origem_col  ordens_servico possui orcamento_origem
+  [OK] os_convertida_ref_valida  0 OS referenciam orcamento_origem inexistente
+  [OK] sem_os_duplicada_por_orcamento  0 orcamentos com >1 OS
+  [OK] convertido_tem_os  0 orcamentos 'convertido' sem OS correspondente
+  [OK] svc_aprovar  aprovarOrcamento define status='aprovado'
+  [OK] svc_converter  gerarOSDoOrcamento define status='convertido'
+  [OK] svc_idempotencia  guarda anti-duplicidade por orcamento_id/os_vinculada_id
+  [OK] svc_inadimplencia  bloqueia conversao se cliente inadimplente
+  [OK] svc_vinculo_os  grava os_vinculada_id/numero no orcamento e orcamento_origem na OS
+
+--------------------------------------------------------------------------------
+3. ESTADO ATUAL DOS ORCAMENTOS (producao)
+--------------------------------------------------------------------------------
+  distribuicao por status:
+    rascunho     : 6
+    em_analise   : 2
+    aprovado     : 1
+    enviado      : 1
+  Orcamentos no inicio do fluxo (prontos p/ aprovar/converter):
+    - ORC-202609-7150 [em_analise] valor=1920 os_vinculada=-
+    - ORC-202609-8659 [em_analise] valor=- os_vinculada=-
+    - ORC-202605-8494 [enviado] valor=- os_vinculada=-
+    - ORC-202605-9367 [aprovado] valor=- os_vinculada=-
+  OS geradas a partir de orcamento_origem: 0
+  Colunas de vinculo presentes: orcamentos.os_vinculada_id/numero=status,os_vinculada_id,os_vinculada_numero | ordens_servico.orcamento_id/orcamento_origem=orcamento_id,orcamento_origem
+
+--------------------------------------------------------------------------------
+4. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] Fluxo aprovacao -> conversao implementado (orcamentoToOSService).
+  [OK] Ciclo de estados: rascunho/enviado/em_analise -> aprovado -> convertido (+OS).
+  [OK] Conversao cria OS com vinculo orcamento_origem/orcamento_id e valores herdados.
+  [OK] Guardas: idempotencia (anti-duplicidade) e bloqueio por inadimplencia.
+  [OK] Consistencia de dados: 0 OS com orcamento inexistente; 0 OS duplicada por orcamento.
+  [i]  Nenhuma conversao materializada ainda em producao (0 OS com orcamento_origem);
+       ha 1 orcamento 'aprovado' pronto para converter. Mecanismo validado por codigo+estrutura.
+
+EVIDENCIA: scripts/_com02aprov_validacao.json | src/services/comercial/orcamentoToOSService.ts
+================================================================================
+FIM  COM-02-APROV
+================================================================================

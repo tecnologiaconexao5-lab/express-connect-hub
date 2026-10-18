@@ -1,9 +1,10 @@
-import { LucideIcon, Bell, Mail, MessageSquare, Smartphone, Check, CheckCheck, Filter, Search, AlertTriangle, Package, DollarSign, Clock, CheckCircle, X, Trash2, FileCheck } from "lucide-react";
+import { LucideIcon, Bell, Mail, MessageSquare, Smartphone, Check, CheckCheck, Filter, Search, AlertTriangle, Package, DollarSign, Clock, CheckCircle, X, Trash2, FileCheck, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface Notificacao {
   id: string;
@@ -19,6 +20,8 @@ interface Notificacao {
 
 interface PortalNotificacoesProps {
   onAction?: (notificacaoId: string, acao: string) => void;
+  notificacoes?: Notificacao[];
+  loading?: boolean;
 }
 
 const tipoConfig = {
@@ -91,6 +94,27 @@ export function PortalNotificacoes({ onAction }: PortalNotificacoesProps) {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>(defaultNotificacoes);
   const [filtro, setFiltro] = useState<"todas" | "nao_lidas">("todas");
   const [busca, setBusca] = useState("");
+
+  useEffect(() => {
+    const carregar = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("portal_notificacoes")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (!error && data && data.length > 0) {
+          setNotificacoes(data.map((n: any) => ({
+            id: n.id, titulo: n.titulo || '', mensagem: n.mensagem || '',
+            tipo: n.tipo || 'mensagem', canal: n.canal || 'portal',
+            prioridade: n.prioridade || 'media', lida: n.lida || false,
+            created_at: n.created_at,
+          })));
+        }
+      } catch { /* fallback */ }
+    };
+    carregar();
+  }, []);
 
   const filtradas = notificacoes.filter(n => {
     if (filtro === "nao_lidas" && n.lida) return false;

@@ -1,0 +1,217 @@
+============================================================
+MISSAO: FIN-SANE-02L.4A-TIMEZONE-ROOT-CAUSE
+DATA: 2026-09-18
+AMBIENTE: TMS LOCAL
+MODELO: MiMo-V2.5
+============================================================
+
+CAUSA COMPROVADA: SIM
+
+CLASSIFICACAO: ROOT CAUSE CONFIRMADA
+
+PRODUCAO: ZERO WRITES
+
+============================================================
+ARQUIVO PRINCIPAL
+============================================================
+
+ARQUIVO:
+  src/components/financeiro/PagamentoPrestadores.tsx
+
+LINHAS PROBLEMATICAS (tabela "Fechamentos Anteriores"):
+
+  1827: f.data_conferencia
+    ? new Date(f.data_conferencia).toLocaleDateString("pt-BR")
+    : "—"
+
+  1828: f.data_aprovacao
+    ? new Date(f.data_aprovacao).toLocaleDateString("pt-BR")
+    : "—"
+
+  1829: f.data_pagamento
+    ? new Date(f.data_pagamento).toLocaleDateString("pt-BR")
+    : "—"
+
+LINHAS PROBLEMATICAS (painel detalhe):
+  1892: new Date(f.data_conferencia).toLocaleDateString("pt-BR")
+  1893: new Date(f.data_aprovacao).toLocaleDateString("pt-BR")
+  1894: new Date(f.data_pagamento).toLocaleDateString("pt-BR")
+
+LINHAS PROBLEMATICAS (modal fechamento selecionado):
+  2778: new Date(fechamentoSelecionado.data_conferencia).toLocaleDateString("pt-BR")
+  2806: new Date(fechamentoSelecionado.data_aprovacao).toLocaleDateString("pt-BR")
+
+HELPER PROBLEMATICO:
+  1212: const formatarDataH2 = (d?: string) =>
+         d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+
+TABELA "Pagamentos Manuais":
+  1641: new Date(p.data_competencia || p.created_at || '').toLocaleDateString('pt-BR')
+
+============================================================
+VALOR RECEBIDO
+============================================================
+
+Banco:   data_pagamento = "2026-09-18" (string DATE, 10 chars)
+Tipo:    coluna DATE do PostgreSQL
+Formato: YYYY-MM-DD (ex: "2026-09-18")
+
+============================================================
+CONVERSAO ATUAL
+============================================================
+
+  new Date("2026-09-18").toLocaleDateString("pt-BR")
+
+Passo 1 — new Date("2026-09-18"):
+  JavaScript interpreta string DATE (sem hora) como UTC MIDNIGHT.
+  Resultado: Date object = 2026-09-18T00:00:00.000Z (UTC)
+
+Passo 2 — toLocaleDateString("pt-BR"):
+  Browser formata usando timezone local do usuario.
+  No Brasil: UTC-3 (Brasilia, BRT).
+  2026-09-18T00:00:00.000Z em BRT = 2026-09-17T21:00:00.000-03:00
+  Extrai apenas a parte da DATA: 17/09/2026
+
+Resultado: "17/09/2026" (UM DIA ANTERIOR)
+
+============================================================
+CAUSA
+============================================================
+
+new Date("YYYY-MM-DD") sempre interpreta como UTC midnight.
+toLocaleDateString() converte para timezone LOCAL antes de
+extrair dia/mes/ano.
+
+No Brasil (UTC-3), UTC midnight = 21h do dia ANTERIOR.
+Entao "2026-09-18" vira "17/09/2026" na formatacao.
+
+E um bug classico de timezone em JavaScript.
+
+============================================================
+POR QUE VIRA 17/09
+============================================================
+
+  "2026-09-18" -> new Date() -> 2026-09-18T00:00:00Z (UTC)
+                                         |
+                          converte p/ BRT (UTC-3)
+                                         |
+                                         v
+                              2026-09-17T21:00:00-03:00
+                                         |
+                              toLocaleDateString("pt-BR")
+                                         |
+                                         v
+                                    "17/09/2026"
+
+  Idem para "2026-09-13" -> "12/09/2026" (caso anterior)
+
+============================================================
+PADRAO CORRETO JA EXISTENTE NO PROJETO
+============================================================
+
+O projeto JA possui o correto em 15+ arquivos financeiros:
+
+  new Date(d + "T12:00:00").toLocaleDateString("pt-BR")
+
+Append "T12:00:00" = UTC noon. Em BRT = 09:00 da MESMA data.
+Extracao de data = dia correto.
+
+Exemplos CORRETOS ja em producao:
+
+  ContasPagar.tsx:113
+    try { return new Date(s + "T12:00:00").toLocaleDateString("pt-BR"); }
+    catch { return s; }
+
+  ContasReceber.tsx:111
+    try { return new Date(s + "T12:00:00").toLocaleDateString("pt-BR"); }
+    catch { return s; }
+
+  ConferenciaFinanceira.tsx:515
+    new Date(item.data + "T12:00:00").toLocaleDateString("pt-BR")
+
+  FaturaLista.tsx:34
+    const d = new Date(iso.length === 10 ? iso + "T12:00:00" : iso);
+
+  MargemPorOS.tsx:35
+    const fmtData = (d?: string | null) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  ReciboRapido.tsx:36
+    const fmtData = (iso: string) =>
+      new Date(iso + "T12:00:00").toLocaleDateString("pt-BR");
+
+  PagamentoCNAB.tsx:18
+    const fmtData = (d?: string | null) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  OSPDF.tsx:54
+    d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  RelatorioPagamentoPrestador.tsx:30
+    const fmtData = (d: string) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  ResumoExecutivoFinanceiro.tsx:31
+    const fmtData = (d?: string | null) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  FaturaManualDialog.tsx:565
+    new Date(vencimento + "T12:00:00").toLocaleDateString("pt-BR")
+
+  ContasReceberEnterprise.tsx:1131
+    new Date(r.dataVencimento + "T12:00:00").toLocaleDateString()
+
+  ContasReceberEnterprise.tsx:1281,1282,1404,1481
+    new Date(... + "T12:00:00").toLocaleDateString()
+
+  RelatorioFaturamentoCliente.tsx:37
+    const fmtData = (d: string) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+  RelatorioClienteAgregadoRefrigerado.tsx:19
+    const fmtData = (d: string) =>
+      d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+
+============================================================
+OUTROS PONTOS AFETADOS NO MESMO MODULO
+============================================================
+
+Arquivos com o MESMO bug (new Date(s) sem T12:00:00):
+
+1. PagamentoPrestadores.tsx
+   - 1827, 1828, 1829  (tabela Fechamentos Anteriores)
+   - 1892, 1893, 1894  (painel detalhe)
+   - 2778, 2806         (modal fechamento selecionado)
+   - 1212               (formatarDataH2 helper)
+   - 1641               (Pagamentos Manuais)
+   - 2011               (extrato operacoes)
+   - 2172               (eventos)
+
+2. ContasBancarias.tsx:77
+   const fmtData = (iso: string) => new Date(iso).toLocaleDateString("pt-BR")
+
+3. FluxoCaixaEnterprise.tsx:560
+   new Date(l.data).toLocaleDateString("pt-BR")
+
+4. ContasReceberEnterprise.tsx:1241
+   new Date(item.data).toLocaleDateString("pt-BR")
+
+NOTA: ContasReceberEnterprise usa T12:00:00 em 5 pontos
+(linhas 1131, 1281, 1282, 1404, 1481) mas NAO na linha 1241.
+Mesmo arquivo com padrao misto.
+
+============================================================
+CORRECAO RECOMENDADA (somente descricao)
+============================================================
+
+Substituir TODOS os new Date(x).toLocaleDateString("pt-BR")
+por new Date(x + "T12:00:00").toLocaleDateString("pt-BR")
+
+Ou criar helper unificado:
+  const fmtDateBR = (d?: string) =>
+    d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
+
+Usado em 15+ arquivos ja existentes no projeto.
+Nenhuma mudanca de schema ou banco necessaria.
+
+============================================================

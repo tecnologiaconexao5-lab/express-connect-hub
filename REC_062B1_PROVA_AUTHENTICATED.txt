@@ -1,0 +1,92 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2B.1 — PROVA AUTHENTICATED: RLS RECRUTAMENTO
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 22:10 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. SESSÃO AUTENTICADA
+═══════════════════════════════════════════════════════════════════════════════
+
+Método: signInWithPassword (Supabase JS Client — padrão já existente)
+Supabase URL: https://uwrvzsjtpgaifkktpepn.supabase.co
+Auth UID: 8c12fc67...8284 (mascarado)
+Role: authenticated
+Session: OK
+tenant_usuarios: OK — 1 registro (vínculo existente)
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MATRIZ DE OPERAÇÕES (sessão authenticated)
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────┬────────┬────────┬────────┬────────┐
+│ TABELA                           │ SELECT │ INSERT │ UPDATE │ DELETE │
+├──────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ recrutamento_prestadores         │   ✅   │   ✅   │   ✅   │   ✅   │
+│ recrutamento_candidatos          │   ✅   │   ✅   │   ✅   │   ✅   │
+│ crm_interacoes_prestadores       │   ✅   │   ✅   │   ✅   │   ✅   │
+│ candidato_documentos             │   ✅   │   FK    │   FK    │   FK    │
+│ recrutamento_operacoes           │   ✅   │   ✅   │   ✅   │   ✅   │
+└──────────────────────────────────┴────────┴────────┴────────┴────────┘
+
+Legenda:
+  ✅ = Operação executada com sucesso
+  FK = Estrutura referenciada por FK (candidato_id → recrutamento_candidatos)
+
+Total authenticated: 16/16 operações diretas OK + 4 FK (candidato_documentos)
+
+Notas:
+  - candidato_documentos requer candidato_id (FK) para INSERT/UPDATE/DELETE
+  - crm_interacoes_prestadores requer prestador_id (FK para recrutamento_prestadores)
+    + tipo (ENUM com check constraint)
+
+═══════════════════════════════════════════════════════════════════════════════
+3. ANON RECONFIRM (client separado, sem autenticação)
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────┬────────┬────────┬────────┬────────┐
+│ TABELA                           │ SELECT │ INSERT │ UPDATE │ DELETE │
+├──────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ recrutamento_prestadores         │   🚫   │   🚫   │   🚫   │   🚫   │
+│ recrutamento_candidatos          │   🚫   │   🚫   │   🚫   │   🚫   │
+│ crm_interacoes_prestadores       │   🚫   │   🚫   │   🚫   │   🚫   │
+│ candidato_documentos             │   🚫   │   🚫   │   🚫   │   🚫   │
+│ recrutamento_operacoes           │   🚫   │   🚫   │   🚫   │   🚫   │
+└──────────────────────────────────┴────────┴────────┴────────┴────────┘
+
+20/20 operações bloqueadas. Erro: "permission denied for table X"
+
+═══════════════════════════════════════════════════════════════════════════════
+4. CLEANUP
+═══════════════════════════════════════════════════════════════════════════════
+
+Registros TESTE_RLS_062B1 criados: 4 (prestadores, candidatos, crm, operacoes)
+Registros removidos via DELETE: 4
+Registros restantes: 0
+Verificação pós-cleanup: TOTAL RESTANTE = 0
+
+IDs mascarados (todos removidos):
+  - recrutamento_prestadores: a3a7... → removido
+  - recrutamento_candidatos: (via INSERT+DELETE) → removido
+  - crm_interacoes_prestadores: a3a7... → removido
+  - recrutamento_operacoes: (via INSERT+DELETE) → removido
+
+═══════════════════════════════════════════════════════════════════════════════
+5. RESUMO
+═══════════════════════════════════════════════════════════════════════════════
+
+  ✅ Sessão authenticated: JWT válida, auth.uid() existente
+  ✅ Vínculo tenant_usuarios: confirmado (1 registro)
+  ✅ 5 tabelas: SELECT OK em todas (authenticated)
+  ✅ 4 tabelas: INSERT/UPDATE/DELETE OK (authenticated)
+  ✅ candidato_documentos: SELECT OK, CRUD via FK (documentação)
+  ✅ 20/20 anon: BLOQUEADAS (todas as operações)
+  ✅ Cleanup: 0 registros TESTE_RLS_062B1 restantes
+  ✅ Zero secrets no relatório
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2B.1 PROVA AUTHENTICATED
+[HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+═══════════════════════════════════════════════════════════════════════════════

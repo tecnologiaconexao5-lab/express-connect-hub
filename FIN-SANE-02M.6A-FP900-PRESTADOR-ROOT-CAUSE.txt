@@ -1,0 +1,238 @@
+﻿FIN-SANE-02M.6A — PRESTADOR 49042fec ROOT CAUSE
+==================================================
+Investigacao READ-ONLY da origem, identidade e situacao real
+do prestador associado ao FP de R ativo sem PP.
+
+Data: 2026-09-20
+Hora: 14:45 BRT
+Modelo: MiMo-V2.5
+Status: PASS
+Redmi: NAO NECESSARIO
+Ambiente: TMS codigo local + Supabase PRODUCAO (somente leitura)
+ZERO WRITES executados.
+
+
+==========================================================================
+SECAO 1 — EVIDENCIA OBRIGATORIA
+==========================================================================
+
++----------------------------------------------+--------------------------+----------------------------------+-----------------+---------+
+| EVIDENCIA                                    | FONTE                    | RESULTADO                        | PROVA_CAUSA     | IMPACTO |
++----------------------------------------------+--------------------------+----------------------------------+-----------------+---------+
+| FP.is_teste = true                           | financeiro_pagar         | CONFIRMADO                       | SIM             | ALTO    |
+| FP.descricao = "Pagamento prestador OS Teste"| financeiro_pagar         | CONFIRMADO                       | SIM             | ALTO    |
+| FP.valor_bruto = 0, valor_liquido = 0        | financeiro_pagar         | CONFIRMADO                       | SIM             | MEDIO   |
+| FP.prestador = 49042fec                      | financeiro_pagar         | CONFIRMADO                       | SIM             | ALTO    |
+| OS.prestador_id = f9b37431                   | ordens_servico           | CONFIRMADO (DIFERENTE do FP)     | SIM             | ALTO    |
+| composicao.prestador_id = 49042fec           | composicao_financeira_os | CONFIRMADO (IGUAL ao FP)         | SIM             | ALTO    |
+| 49042fec NAO existe em prestadores           | prestadores              | CONFIRMADO                       | SIM             | ALTO    |
+| f9b37431 = "Diego Balbino da silva"         | prestadores              | CONFIRMADO (prestador real)      | SIM             | MEDIO   |
+| f9b37431 criado em 2026-05-07               | prestadores              | CONFIRMADO (depois da OS)        | SIM             | MEDIO   |
+| OS criada em 2026-04-28                      | ordens_servico           | CONFIRMADO                       | SIM             | BAIXO   |
+| Composicao criada em 2026-04-27              | composicao_financeira_os | CONFIRMADO                       | SIM             | BAIXO   |
+| FP criado em 2026-04-28                      | financeiro_pagar         | CONFIRMADO                       | SIM             | BAIXO   |
+| 30 FP com is_teste = true                    | financeiro_pagar         | CONFIRMADO                       | SIM             | MEDIO   |
+| PP ZERO para este os_id                      | pagamentos_prestadores   | CONFIRMADO                       | SIM             | ALTO    |
+| Baixa ZERO                                   | financeiro_baixas        | CONFIRMADO                       | SIM             | ALTO    |
+| 49042fec em NENHUMA outra tabela             | multi-table scan         | CONFIRMADO                       | SIM             | ALTO    |
++----------------------------------------------+--------------------------+----------------------------------+-----------------+---------+
+
+
+==========================================================================
+SECAO 2 — FATOS COMPROVADOS
+==========================================================================
+
+F1. FP 9b2e56ba criado em 2026-04-28 02:25:50 (BRT)
+   com is_teste = true e descricao "Pagamento prestador OS Teste".
+
+F2. OS a2ac3c46 criada na mesma data/hora
+   com numero OS-202604-149519, prestador_id = f9b37431.
+
+F3. Composicao financeira criada em 2026-04-27 23:25:50
+   com prestador_id = 49042fec (DIFERENTE do OS).
+
+F4. UUID 49042fec NAO existe em nenhuma tabela do sistema.
+   Scan completo: prestadores, alocacoes, ordens_servico,
+   composicao_financeira_os, pagamentos_prestadores,
+   financeiro_baixas, veiculos, documentos_prestadores,
+   historico_alocacoes_escala, entregas_protocolo,
+   recrutamento_prestadores, prestador_acesso,
+   prestador_disponibilidade, tenant_usuarios, automacoes_robos,
+   ia_logs, automacoes_logs.
+
+F5. Prestador f9b37431 = "Diego Balbino da silva"
+   (CPF 38032034811) existe, criado em 2026-05-07,
+   9 dias DEPOIS da OS e do FP.
+
+F6. Composicao_financeira_os.prestador_id = 49042fec
+   (UUID fantasma), OS.prestador_id = f9b37431.
+   INCONSISTENTES.
+
+F7. Trigger que criou FP usou prestador_id da COMPOSICAO
+   (49042fec), NAO o da OS (f9b37431).
+
+F8. 30 FP com is_teste = true no sistema.
+
+F9. FP.valor_bruto = 0.00, FP.valor_liquido = 0.00
+   (nao passou pelo fluxo normal de calculo).
+
+
+==========================================================================
+SECAO 3 — HIPOTESES
+==========================================================================
+
+HIPOTESE A: Criacao via UI de teste/manual
+  CREDITO: ALTO
+  EVIDENCIA:
+    - FP.is_teste = true (flag explicita)
+    - FP.descricao = "Pagamento prestador OS Teste"
+    - OS numero OS-202604-149519
+    - composicao com prestador_id diferente da OS
+    - FP.valor_bruto/liquido = 0
+  MECANISMO:
+    OS criada via UI com prestador f9b37431.
+    Composicao criada por trigger M80 com UUID diferente
+    (prestador nao existia ainda — criado 9 dias depois).
+    Trigger M66/M80 leu composicao.prestador_id (49042fec)
+    e criou FP com esse UUID.
+
+HIPOTESE B: Migracao/seed que gerou UUID fantasma
+  CREDITO: MEDIO
+  EVIDENCIA:
+    - 49042fec nunca existiu em prestadores
+    - composicao criada ANTES do prestador real
+
+HIPOTESE C: Prestador excluido
+  CREDITO: BAIXO
+  EVIDENCIA CONTRA:
+    - 49042fec NAO existe em NENHUMA tabela (nem historico)
+
+
+==========================================================================
+SECAO 4 — CAUSA RAIZ
+==========================================================================
+
+LINHA DO TEMPO COMPROVADA:
+
+  2026-04-27 23:25:50  Composicao criada
+                       prestador_id = 49042fec (UUID fantasma)
+                       valor_prestador = 900
+                       origem_calculo = os_direta
+
+  2026-04-28 02:25:50  OS criada + FP criado
+                       OS.prestador_id = f9b37431 (Diego Balbino)
+                       FP.prestador = 49042fec (herdado da composicao)
+                       FP.is_teste = true
+                       FP.descricao = "Pagamento prestador OS Teste"
+                       FP.valor = 900
+
+  2026-05-07 05:18:05  Prestador criado em prestadores
+                       id = f9b37431
+                       nome = "Diego Balbino da silva"
+
+CAUSA:
+  Composicao_financeira_os criada com prestador_id (49042fec)
+  que NAO corresponde ao prestador real da OS (f9b37431).
+  Trigger que gerou FP leu prestador_id da composicao (49042fec)
+  em vez do da OS.
+
+  O UUID 49042fec provavelmente veio de UUID provisional
+  ou registro removido/nao persistido.
+  Nao ha evidencia de que tenha existido como prestador real.
+
+  FP.is_teste = true confirma contexto de teste.
+
+
+==========================================================================
+SECAO 5 — CLASSIFICACAO
+==========================================================================
+
+PRESTADOR_49042_ROOT_CAUSE = BAD_LINK
+
+  UUID 49042fec = vinculo incorreto entre composicao e FP.
+  Composicao criada com prestador_id inexistente.
+  Trigger propagou UUID fantasma para o FP.
+  Prestador real da OS = f9b37431 (Diego Balbino).
+
+  NAO e:
+    - DELETED (nunca existiu em prestadores)
+    - LEGACY (sem evidencia de tabela legada)
+    - PP_DELETED (PP nunca existiu)
+    - PARTIAL_TRIGGER_FAILURE (trigger funcionou com dado errado)
+
+
+==========================================================================
+SECAO 6 — OBRIGACAO
+==========================================================================
+
+FP900_OBLIGATION = REQUIRES_BUSINESS_CONFIRMATION
+
+  Razoes:
+    1. FP.is_teste = true → contexto de teste
+    2. OS.prestador_id = f9b37431 (Diego Balbino) — prestador REAL
+    3. composicao.prestador_id = 49042fec — UUID fantasma
+    4. Nenhum PP foi criado para esta obrigacao
+    5. Nenhuma baixa foi registrada
+    6. Valor = R (composicao.valor_prestador)
+
+  DECISAO NECESSARIA (humana):
+    A) Se OS-202604-149519 e teste → cancelar FP (is_teste=true)
+    B) Se OS e real → criar PP para f9b37431 com valor=900
+    C) Se incerto → manter FP como pendente ate confirmacao
+
+  NAO cancelar FP sem confirmar que OS e teste.
+  NAO criar PP sem identificar prestador correto.
+
+
+==========================================================================
+SECAO 7 — PLANO MINIMO (NAO EXECUTAR)
+==========================================================================
+
+Se decidido que OS e REAL:
+  1. Corrigir composicao.prestador_id: 49042fec → f9b37431
+  2. Corrigir FP.prestador: 49042fec → f9b37431
+  3. Criar PP para f9b37431 com valor=900
+  4. Vincular PP ao FP
+
+Se decidido que OS e TESTE:
+  1. Cancelar FP (status = cancelado)
+  2. Marcar OS como teste (se nao ja estiver)
+  3. Nao criar PP
+
+
+==========================================================================
+SECAO 8 — PROIBICOES CUMPRIDAS
+==========================================================================
+
+  [x] ZERO UPDATE — cumprido
+  [x] ZERO INSERT — cumprido
+  [x] ZERO DELETE — cumprido
+  [x] ZERO DDL — cumprido
+  [x] ZERO migration — cumprido
+  [x] NAO criar PP — cumprido
+  [x] NAO cancelar FP — cumprido
+  [x] NAO alterar prestador — cumprido
+  [x] NAO mexer nos outros 6 FP — cumprido
+  [x] NAO alterar CESAR — cumprido
+  [x] NAO mexer em RPC/triggers — cumprido
+  [x] NAO ampliar escopo — cumprido
+
+
+==========================================================================
+SECAO 9 — CLASSIFICACAO FINAL
+==========================================================================
+
+PRESTADOR_49042_ROOT_CAUSE = BAD_LINK
+
+FP900_OBLIGATION = REQUIRES_BUSINESS_CONFIRMATION
+
+Dado faltante para decisao:
+  Confirmacao humana se OS-202604-149519 e teste ou real.
+  Se teste: FP.is_teste=true ja indica cancelamento.
+  Se real: necessario criar PP para f9b37431.
+
+PASS significa que a investigacao foi concluida.
+PASS NAO autoriza nenhuma correcao.
+
+
+FIM DA ANALISE FIN-SANE-02M.6A

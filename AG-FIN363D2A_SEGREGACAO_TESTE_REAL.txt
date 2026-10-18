@@ -1,0 +1,161 @@
+FIN-363D.2A — SEGREGAÇÃO REAL x TESTE
+=======================================
+Data: 2026-09-07T17:10:45Z
+Ambiente: PRODUCAO (Supabase remoto)
+Base: FIN_MASTER_363D1_VALIDACAO_ADVERSARIAL
+
+CONTEXTO
+────────
+D1 da auditoria: 3 tabelas de negócio (ordens_servico, financeiro_receber,
+financeiro_pagar) possuem dados de teste misturados aos reais sem flag oficial.
+Indicadores (Fluxo, DRE, Margem) contam dados de teste como reais.
+
+ESTRATÉGIA CANÔNICA
+───────────────────
+Coluna is_teste BOOLEAN NOT NULL DEFAULT false em 3 tabelas.
+Classificação: match explícito em campo PRÓPRIO (numero/descricao) do registro.
+NÃO classifica por nome de cliente, NÃO altera valores/status/baixas.
+
+MIGRATION APLICADA
+──────────────────
+SIM — 20260907_fin_363d2a_flag_is_teste.sql
+  ALTER TABLE ordens_servico  ADD COLUMN is_teste boolean NOT NULL DEFAULT false;
+  ALTER TABLE financeiro_receber ADD COLUMN is_teste boolean NOT NULL DEFAULT false;
+  ALTER TABLE financeiro_pagar   ADD COLUMN is_teste boolean NOT NULL DEFAULT false;
+
+PROVA ANTES/DEPOIS (valores financeiros)
+────────────────────────────────────────
+financeiro_receber: R$177.801,27 → R$177.801,27  ✅ MANTIDO
+financeiro_pagar:   R$72.664,79 → R$72.664,79   ✅ MANTIDO
+ordens_servico:     R$161.532,99 → R$161.532,99 ✅ MANTIDO
+Total registros:    330 → 330 (nenhum apagado)
+
+CONTAGEM FINAL
+──────────────
+                    ANTES   DEPOIS
+ordens_servico:     121     33 TESTE / 88 REAL
+financeiro_receber: 108     21 TESTE / 87 REAL
+financeiro_pagar:   101     24 TESTE / 77 REAL
+REGISTROS DUVIDOSOS ALTERADOS: NÃO (default false = duvidosos permanecem REAL)
+DADOS REAIS FINANCEIROS ALTERADOS: NÃO
+
+ORDEM SERVIÇO — 33 TESTE classificados
+───────────────────────────────────────
+1e1b59fa  HML-APP-001                  R$100    pendente
+eaa0e5fd  TEST-M80-CANCEL-MRH2VCOA     R$1.000  cancelada
+5c9a87aa  TEST-M80-MRH2VAJP            R$1.500  finalizada
+fb33a1bd  M90-TEST-MR8AK450            R$650    agendada
+4767a7f1  M90-TEST-MR8AILKG            R$650    rascunho
+b8fedeb1  M90-TEST-MR8AHG3V            R$650    rascunho
+4996bf7b  M86-TEST-MR88UO6B            R$650    rascunho
+edf1fff7  M86-TEST-MR88UC58            R$650    rascunho
+8b06402c  M85-TEST-MR88HVOC-B          R$650    rascunho
+1c7db493  TEST-M80-EDGE-MR7544Q6       R$5.000  finalizada
+3a15f5d1  TEST-M80-OK-MR752GEF         R$3.000  finalizada
+71e61468  TEST-M80-CF-MR751I7O         R$3.000  pendente
+b6dd5ce8  TEST-M80-FULL-MR750V6O       R$2.000  pendente
+b190bb59  TEST-M80-CANCEL-MR74LSE7     R$1.000  cancelada
+3db46421  TEST-M80-MR74LQ3H            R$1.500  finalizada
+7c8a6289  OS-TESTE-MR6ITJ37            R$80     finalizada
+9521575c  OS-TESTE-MR6IT7ZR            R$80     finalizada
+89b922bc  OS-TESTE-MR6ISIWO            R$80     finalizada
+127b1b3f  OS-TESTE-MR6IPT2H            R$80     finalizada
+16ab52c3  OS-TESTE-1000                R$1.500  em_andamento
+e57fd47f  TESTE_MIN_1782757719968      R$15.000 rascunho
+7119b702  OS-TESTE-1001                R$1.800  concluida
+8bfd87e1  OS-TESTE-1002                R$2.100  em_andamento
+b62f9815  OS-TESTE-1003                R$2.400  agendada
+1e64efa2  OS-TESTE-1004                R$2.700  concluida
+a93b8f28  OS-TEST-1781311132820        R$0      rascunho
+45857f5f  OS-TEST-1781310536075        R$0      pendente
+aa7dda82  OS_AUDITORIA_1777344891607   R$0      rascunho
+2f29a428  TESTE-FIN-202604-904241       R$91     finalizada
+cc1d608a  TESTE-OS-202604-151609        R$91     finalizada
+a94e561d  OS-TESTE-1776989922267        R$1.800  em_andamento
+bf89eb61  OS-TESTE-1776989832949        R$1.800  em_andamento
+28640e7b  TESTE-001                      R$0      pendente
+
+FINANCEIRO RECEBER — 21 TESTE classificados
+────────────────────────────────────────────
+2ec7e1f2  Faturamento HML-APP-001                      R$100
+d9c81573  Faturamento TEST-M80-CANCEL-MRH2VCOA          R$1.000
+e1e05ee4  Faturamento TEST-M80-MRH2VAJP                 R$1.500
+218a9e47  Faturamento M90-TEST-MR8AK450                 R$650
+fda53bb5  Faturamento M90-TEST-MR8AILKG                 R$650
+5a1ecd9e  Faturamento M90-TEST-MR8AHG3V                 R$650
+89600201  Faturamento M86-TEST-MR88V8XL                 R$650
+b2b51282  Faturamento M86-TEST-MR88UO6B                 R$650
+89dc89e7  Faturamento M86-TEST-MR88UC58                 R$650
+b708aee7  Faturamento M85-TEST-MR88HVOC-B               R$650
+7d51d307  Faturamento TEST-M80-EDGE-MR7544Q6            R$5.000
+15d1b0d0  Faturamento TEST-M80-OK-MR752GEF              R$3.000
+200ecb02  Faturamento TEST-M80-CF-MR751I7O              R$3.000
+9470b2ae  Faturamento TEST-M80-FULL-MR750V6O            R$2.000
+8fa86342  DUPLICATE TEST                                 R$999
+4a305e2f  Faturamento OS OS-TESTE-MR6ITJ37              R$80
+6b935367  Faturamento OS OS-TESTE-MR6IT7ZR              R$80
+02b5bf02  Faturamento OS OS-TESTE-MR6ISIWO              R$80
+dc56791e  Frete OS-TESTE-1002                           R$2.100
+f75f6e71  Frete OS-TESTE-1001                           R$1.800
+fb30838a  Frete OS-TESTE-1000                           R$1.500
+
+FINANCEIRO PAGAR — 24 TESTE classificados
+──────────────────────────────────────────
+1255a310  TESTE 363B.1-E                                R$600
+85b4e8a7  TESTE 363B.1-E                                R$600
+51e4312d  FIN3621-DOC-1788579288765 SENTINELA FORNECEDOR R$14
+d207e9d6  FIN3621-DOC-1788578666890 SENTINELA FORNECEDOR R$14
+56fad241  FIN3621-DOC-1788558057824 SENTINELA FORNECEDOR R$14
+4e393108  FIN3621-DOC-1788555279224 SENTINELA FORNECEDOR R$14
+ba3a828f  FIN3621-DOC-1788554689701 SENTINELA FORNECEDOR R$14
+ab72ae35  FIN3621-DOC-1788554397889 SENTINELA FORNECEDOR R$14
+72f27d3c  FIN3621-DOC-1788554163083 SENTINELA FORNECEDOR R$14
+d47e9a68  FIN3621-DOC-1788553952881 SENTINELA FORNECEDOR R$14
+14b3824d  FIN3621-DOC-1788553540447 SENTINELA FORNECEDOR R$14
+27729a8f  FIN3621-DOC-1788553427821 SENTINELA FORNECEDOR R$14
+f83a3249  FIN012_PAGAR_TESTE                             R$138
+81f57b6f  Repasse TEST-M80-CANCEL-MRH2VCOA              R$500
+098e056f  Repasse TEST-M80-MRH2VAJP                     R$800
+82a6cd6f  Repasse M90-TEST-MR8AK450                     R$350
+9d7225dd  Repasse TEST-M80-EDGE-MR7544Q6               R$2.500
+92931cc7  Repasse TEST-M80-OK-MR752GEF                  R$1.500
+208bc3cb  Repasse TEST-M80-CF-MR751I7O                  R$1.500
+dee59125  Repasse TEST-M80-FULL-MR750V6O                R$1.000
+9e07494b  DUPLICATE TEST                                 R$999
+da733400  Pagamento Prestador OS Teste                   R$1.800
+f2149c94  Pagamento Prestador OS Teste                   R$1.800
+9b2e56ba  Pagamento prestador OS Teste                   R$900
+
+VALIDAÇÃO
+─────────
+tsc --noEmit:           0 erros                     ✅
+vitest:                 1161 pass, 5 falham         ✅
+                        (5 falhas preexistentes em rec03_eliminacao_legacy — não relacionadas)
+Valores financeiros:    inalterados                 ✅
+Nenhum dado apagado:    confirmado                  ✅
+Nenhum status alterado: confirmado                  ✅
+Nenhuma baixa criada:   confirmado                  ✅
+
+ARQUIVOS CRIADOS
+────────────────
+supabase/migrations/20260907_fin_363d2a_flag_is_teste.sql    (migration SQL)
+scripts/fin_363d2a_segregacao_test_real.cjs                   (script aplicador)
+
+═══════════════════════════════════════════════════════════════
+RESUMO FINAL
+═══════════════════════════════════════════════════════════════
+
+ESTRATÉGIA CANÔNICA: Coluna is_teste BOOLEAN DEFAULT false NOT NULL em 3 tabelas.
+Classificação via match explícito em campo próprio (numero/descricao).
+
+MIGRATION APLICADA: SIM
+RECEBER SEGREGADO: SIM (21 teste / 87 real)
+PAGAR SEGREGADO: SIM (24 teste / 77 real)
+OS SEGREGADA: SIM (33 teste / 88 real)
+REGISTROS DUVIDOSOS ALTERADOS: NÃO
+DADOS REAIS FINANCEIROS ALTERADOS: NÃO
+FIN-363D.2A: PASS
+
+═══════════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════════

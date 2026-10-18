@@ -1,0 +1,10 @@
+# ============================================================================
+# E2E-SINCRONIZADO-PLAYWRIGHT-E-MAESTRO — configuração do workspace Maestro
+# App do prestador instalado no Redmi (a28e7167): com.example.conexao_prestador
+# (Flutter C:\src\conexao_prestador, v1.0.2 / build 1327).
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+# Variáveis disponíveis para os flows
+env:
+  MAESTRO_APP_ID: com.example.conexao_prestador

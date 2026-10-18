@@ -1,0 +1,204 @@
+================================================================================
+E2E AO VIVO — OS MOTO → REDE DE OPORTUNIDADES → APP → JORNADA EXPRESS → FINANCEIRO
+RELATÓRIO FINAL — 2026-10-10
+Ambiente: PRODUÇÃO (uwrvzsjtpgaifkktpepn) — autorizado com --allow-prod
+Dispositivo: Redmi a28e7167 (MIUI/HyperOS, Android 15) • App com.example.conexao_prestador v1.0.2/1327
+================================================================================
+
+RESUMO EXECUTIVO
+--------------------------------------------------------------------------------
+O ciclo ponta a ponta foi executado ao vivo (Playwright headed + Maestro) e
+COMPROVADO até a jornada express do app. Todos os bloqueios de infraestrutura
+foram resolvidos e uma CAUSA-RAIZ real de produto foi encontrada e CORRIGIDA
+(migration aplicada em produção, com rollback).
+
+O que ficou 100% comprovado neste ciclo:
+  1. Criação da OS "MOTO" (peso/capacidade, tipo_veiculo=moto, valores 120/90)
+     via UI do TMS, com publicação real na Rede de Oportunidades.
+  2. App: login já autenticado, Home "Disponível", Rede de Oportunidades.
+  3. App: ACEITE da oportunidade exata criada (OS-202610-112694) na Rede.
+  4. App: Chat da Torre ("Mensagens da operação" + "Digite sua mensagem").
+  5. App: abertura da NOVA INTERFACE OsExpressView (AppBar "Ordem de Serviço",
+     seção "Acompanhamento da OS" com a timeline enxuta de 4 marcos) — objetivo
+     central da missão — CONFIRMADA em tela.
+  6. Torre de Controle (TMS) validada após as ações do app.
+  7. JORNADA EXPRESS: após o fix, avançou de verdade Passo 1 → Passo 7/15
+     (Aceitar serviço → Cheguei ao local → Estou carregando → Terminei de
+     carregar → Informar o romaneio → Adicionar foto do romaneio [foto real
+     capturada pela câmera] → Informar KM inicial).
+
+O que NÃO foi concluído (decisão do usuário: encerrar com relatório):
+  - Finalizar a OS no app (faltam ~8 passos: foto do hodômetro, assinatura,
+    POD e "Finalizar entrega/operação") e, com isso, clicar "Liberar Pagamento"
+    na Fila de Liquidação. Os passos restantes exigem UI de câmera/galeria de
+    terceiros; a automação por coordenadas é arriscada no aparelho pessoal
+    (um toque por coordenada abriu o WhatsApp) — automação interrompida por
+    segurança.
+
+================================================================================
+1. BLOQUEIOS DE INFRAESTRUTURA RESOLVIDOS (o que realmente impedia o E2E)
+================================================================================
+
+1.1 MAESTRO — instalação do driver recusada pelo MIUI
+    Sintoma: "Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]"
+    em TODA invocação (hierarchy/test), mesmo com o driver já instalado e
+    byte-idêntico (md5). O Maestro REINSTALAVA o driver a cada chamada.
+    Causa: MIUI impõe cota/bloqueio a instalações adb em sequência; o Maestro
+    reinstala 2 APKs por invocação e o MIUI recusa.
+    FIX: flag oficial `--no-reinstall-driver` em `test` e `hierarchy`,
+    pré-instalação via `adb install` SOMENTE quando ausente
+    (`pm list packages`), preservando `.maestro/apks/`.
+
+1.2 MAESTRO — launch do app negado pelo MIUI (XSpace)
+    Sintoma: app não vinha para primeiro plano; tela ficava no launcher.
+    Log: "MIUILOG- Permission Denied Activity" / checkXSpaceControl,
+    from:dev.mobile.maestro, to:com.example.conexao_prestador.
+    FIX: remover `launchApp` dos flows e relançar via `adb shell am start -S
+    -n com.example.conexao_prestador/.MainActivity` (uid shell) antes de cada flow.
+
+1.3 Flutter — textos combinados exigem regex
+    Os nós de acessibilidade do Flutter juntam título+subtítulo (ex.:
+    "Rede de Oportunidades\nVeja oportunidades..."). Matchers exatos falhavam.
+    FIX: matchers regex `.*texto.*` nos flows.
+
+1.4 Maestro não enxerga env do SO
+    `${OS_NUMERO}` não era resolvido (só `-e`/config entram no contexto JS).
+    FIX: passar `-e KEY=VALUE` (OS_NUMERO, MAESTRO_APP_ID).
+
+1.5 Windows — execFileSync EINVAL em .bat
+    `execFileSync(maestro.bat, ...)` falha no Windows.
+    FIX: `spawnSync` com `shell:true` + citação de caminhos com espaços.
+
+1.6 REDE vazia para o prestador de teste
+    App: "Nenhuma oportunidade disponível". A RPC
+    `f_buscar_oportunidades_para_prestador` filtra por compatibilidade de
+    veículo (tipo + capacidade). O prestador PRESTADOR TESTE APP
+    (f61e4161-6be7-46d8-be90-984b86222d08) não tinha veículo vinculado.
+    FIX (autorizado): vincular o veículo moto HML001
+    (e674550f-c577-4d14-956c-b83df5e903b0) ao prestador com capacidade_kg=20
+    (ANTES: prestador_vinculado=NULL, capacidade_kg=NULL).
+
+================================================================================
+2. CAUSA-RAIZ DE PRODUTO (encontrada e CORRIGIDA)
+================================================================================
+
+2.1 Sintoma
+    OS aceita pela Rede abria na OsExpressView já como "ACEITA", porém a
+    jornada travava em "Passo 1 de 15 · Aceitar serviço · Pendente · 0%".
+    Tocar em "Aceitar serviço" não fazia nada (sem diálogo/snackbar/avanço),
+    mesmo via toque por coordenada no botão. A OS nunca finalizava e não
+    entrava na Fila de Liquidação.
+
+2.2 Causa-raiz (comprovada)
+    `f_aceitar_oportunidade_rede` criava/atualizava a linha de
+    `alocacoes_escala` gravando metadata com
+    {aceite_tipo, operation_mode, os_numero, origem} — mas SEM
+    `metadata.app_motorista.etapa_atual`.
+    O app reconstrói as etapas concluídas SOMENTE a partir desse campo
+    (operation_detail_screen.dart: _reconcileStagesFromBackend, ~:723).
+    Sem o campo: nenhuma etapa concluída → próximo passo = índice 0
+    ("Aceitar serviço"); e o handler de ação (:988) detecta
+    aceite_prestador=true e retorna cedo (:1023-1026) → etapa nunca conclui.
+    (Contraste: alocação HML com metadata.app_motorista.etapa_atual='saiu_em_rota'
+    reconciliou corretamente — prova de que o app funciona quando o campo existe.)
+
+2.3 Correção aplicada (produção)
+    Migration: supabase/migrations/20261010000010_rede_seed_etapa_viagem_aceita.sql
+      - CREATE OR REPLACE de f_aceitar_oportunidade_rede gravando
+        metadata.app_motorista.etapa_atual='viagem_aceita' (+ ultima_acao,
+        aceite_em) nos caminhos UPDATE e INSERT (merge preservando chaves).
+      - BACKFILL: alocações aceitas via Rede sem etapa_atual → 'viagem_aceita'
+        (4 registros corrigidos; passou de 4 → 0 pendentes).
+    Rollback: supabase/migrations/20261010000010_rede_seed_etapa_viagem_aceita_rollback.sql
+    Aplicação: via pg (transação; COMMIT OK). Grants preservados (CREATE OR REPLACE).
+
+2.4 Prova do fix (ao vivo)
+    Após o backfill, a MESMA OS-202610-112694 reabriu em
+    "Passo 2 de 15 · Cheguei ao local · 7%" e evoluiu até o Passo 7/15
+    (incluindo captura real de foto do romaneio pela câmera MIUI).
+
+================================================================================
+3. EVIDÊNCIAS (produção)
+================================================================================
+
+3.1 OS de teste criadas neste ciclo (OS-202610-*)
+    OS-202610-562467 | em_analise | custo=20  | valor=25  | (run 1 — payload incompleto)
+    OS-202610-634957 | pendente   | custo=90  | valor=120 | (run 1 — corrigida/publicada)
+    OS-202610-756051 | pendente   | custo=90  | valor=120 | (run 2)
+    OS-202610-112694 | pendente   | custo=90  | valor=120 | (run 3 — jornada até Passo 7)
+    todas com tipo_veiculo='moto' e valor_cliente=120 / custo_prestador=90.
+
+3.2 rede_oportunidades
+    OS-202610-634957 | aceita | aceite=prestador de teste
+    OS-202610-756051 | aceita | aceite=prestador de teste
+    OS-202610-112694 | aceita | aceite=prestador de teste
+
+3.3 alocacoes_escala
+    OS-202610-112694 | em_rota  | finalizada=false | etapa=foto_romaneio
+    OS-202610-634957 | aceita   | finalizada=false | etapa=viagem_aceita
+    OS-202610-756051 | aceita   | finalizada=false | etapa=viagem_aceita
+
+3.4 Artefatos do runner
+    test-results/live-sync/00_os_rede_publicada.png, 01_os_criada.png,
+    03_torre_inicial.png, 03b_torre_concluida.png, 04_fila_liquidacao.png
+    Screenshots Maestro em C:\Users\<user>\.maestro\tests\<timestamp>\...
+
+3.5 Fila de Liquidação (TMS)
+    Tela carrega corretamente e mostra "7 serviços aguardando liberação".
+    A OS de teste não aparece porque NÃO foi finalizada (requisito da fila:
+    "OSs e Programações Operacionais finalizadas no aplicativo").
+
+================================================================================
+4. ARQUIVOS ALTERADOS / CRIADOS
+================================================================================
+ - supabase/migrations/20261010000010_rede_seed_etapa_viagem_aceita.sql   (NOVO, aplicado)
+ - supabase/migrations/20261010000010_rede_seed_etapa_viagem_aceita_rollback.sql (NOVO)
+ - scripts/run_e2e_live_sync.ts            (checkDevice: --no-reinstall-driver +
+                                            pré-install só quando ausente + driver map)
+ - tests/e2e/live/live-os-moto-torre-fila.spec.ts
+       (prepararDevice com `am start -S`; runMaestro com spawnSync/shell,
+        `--no-reinstall-driver` e `-e` para MAESTRO_APP_ID/OS_NUMERO; MAESTRO_APP_ID)
+ - .maestro/flows/01_app_disponivel.yaml   (regex + sem launchApp)
+ - .maestro/flows/02_rede_aceite.yaml      (regex + sem launchApp + -e OS_NUMERO)
+ - .maestro/flows/03_chat_torre.yaml       (regex + sem launchApp)
+ - .maestro/flows/04_etapas_conclusao.yaml (regex + sem launchApp)
+ - scripts/_tmp_*.mjs                      (auxiliares de diagnóstico — descartáveis)
+
+Validação: `npx tsc --noEmit` → 0 erros (após todas as alterações).
+
+================================================================================
+5. PENDÊNCIAS / LIMPEZA RECOMENDADA
+================================================================================
+ 1. FINALIZAR/limpar as OS de teste em produção (562467, 634957, 756051, 112694)
+    e as respectivas rede_oportunidades/alocacoes — a critério da operação.
+ 2. Reverter o vínculo do veículo HML001 se não for desejado
+    (prestador_vinculado=NULL, capacidade_kg=NULL) — foi autorizado para o teste.
+ 3. Fecho do passo "Liberar Pagamento": concluir a OS no app (passos restantes
+    com câmera/galeria/assinatura) OU automatizar a jornada completa com
+    supervisão (a automação por coordenadas foi interrompida por segurança).
+ 4. BUG TMS OBSERVADO (não corrigido): o campo "Peso (Kg)" não persistiu em
+    ordens_servico.peso nas 3 OS novas (peso=NULL; tipo_veiculo='moto' OK).
+    Verificar o mapeamento do campo Peso no formulário de OS.
+ 5. Configurações do Redmi alteradas durante o diagnóstico (tela sempre acesa,
+    verifier/adb-install), appops REQUEST_INSTALL_PACKAGES para os instaladores,
+    e imagem de teste em /sdcard/Pictures/e2e_romaneio.png — restaurar/remover
+    se necessário.
+
+================================================================================
+6. COMO REPETIR
+================================================================================
+ 1) TMS rodando em :8800 (Playwright base URL).
+ 2) Redmi conectado (adb; driver Maestro já instalado em .maestro/apks).
+ 3) `npx tsx scripts/run_e2e_live_sync.ts --check`      → deve dar READY
+ 4) `npx tsx scripts/run_e2e_live_sync.ts --allow-prod` → executa o ciclo
+    (cria OS real, publica na Rede, roda flows 01–04, valida Torre e Fila).
+
+================================================================================
+CONCLUSÃO
+--------------------------------------------------------------------------------
+ - Infra E2E (Maestro/MIUI/Windows/env/regex): RESOLVIDA e comprovada.
+ - Novo UI do app (OsExpressView): CONFIRMADA ao vivo.
+ - Causa-raiz da jornada travada: IDENTIFICADA e CORRIGIDA em produção (com rollback).
+ - Integração Rede→App→Torre: comprovada; jornada avança 1→7/15.
+ - Finalização no app + "Liberar Pagamento": PENDENTE (decisão de encerrar aqui).
+================================================================================

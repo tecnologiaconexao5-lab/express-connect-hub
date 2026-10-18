@@ -1,0 +1,158 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — MISSÃO F38-MANUAL-2
+CORREÇÃO DO PDF DA FATURA MANUAL (CLIENTE, CONTA E LAYOUT)
+Projeto: TMS / Torre Conexão Express — express-connect-hub
+Data: 2026-08-21
+═══════════════════════════════════════════════════════════════════════════════
+
+OBJETIVO
+Corrigir a geração/preview do PDF da FATURA MANUAL para reproduzir corretamente
+o modelo homologado Conexão Express / CALVO (referência Fatura 37), sem mexer
+no fluxo automático, sem migration e sem novo gerador de PDF.
+
+───────────────────────────────────────────────────────────────────────────────
+1. CAUSA DO "Cobrança para: —"
+───────────────────────────────────────────────────────────────────────────────
+O diálogo manual (FaturaManualDialog.tsx) descartava o registro do cliente já
+carregado pelo SearchableSelect (`void rec`) e dependia EXCLUSIVAMENTE de uma
+segunda consulta `buscarClienteParaFatura(value)` para popular o estado
+`dadosCliente`. Se essa consulta falhar, atrasar ou retornar null, `dadosCliente`
+permanecia null e:
+  • montarPreviaFatura → cliente = "" (razaoSocial vazia);
+  • gerarPdfCalvo → "Cobrança para: —".
+Também havia o campo `clienteIe: null` fixo em montarInputPdfFatura, fazendo a IE
+NUNCA aparecer no PDF manual.
+
+───────────────────────────────────────────────────────────────────────────────
+2. CAUSA DA AUSÊNCIA DO BLOCO BANCÁRIO
+───────────────────────────────────────────────────────────────────────────────
+O bloco "Dados para Transferência Bancária" do modelo CALVO só é renderizado se
+`empresa.banco/agencia/conta/pix` estiverem preenchidos. No fluxo manual a conta
+vinha de `metadata.contaBancaria` (snapshot) aplicada em montarInputPdfFatura —
+mas dependia do estado `dadosCliente`/snapshot estarem corretos e de a conta da
+configuração ter dados. Ajuste: além de garantir o snapshot, o PDF agora re-busca
+o cliente e mantém o fallback para a conta principal da configuração quando não
+há snapshot (ordem pedida: 1. metadata.contaBancaria → 2. conta principal da
+config → 3. fallback existente). Nenhum banco hardcoded.
+
+───────────────────────────────────────────────────────────────────────────────
+3. ARQUIVOS ALTERADOS
+───────────────────────────────────────────────────────────────────────────────
+  • src/utils/pdfFatura.ts                    — layout da tabela CALVO + parcela
+  • src/services/financeiro/faturaService.ts  — clienteIe + parcela no PDF input
+  • src/components/financeiro/FaturaManualDialog.tsx — cliente robusto (record do
+                                                      seletor + fallback oficial)
+  • src/components/financeiro/FaturaPanel.tsx — prévia CALVO alinhada ao PDF
+  • src/test/f38_fatura_manual.test.ts        — +4 testes (16 no total)
+
+───────────────────────────────────────────────────────────────────────────────
+4. COMO O CLIENTE PASSOU A CHEGAR AO PDF
+───────────────────────────────────────────────────────────────────────────────
+  • handleSelecionarCliente agora recebe o `record` completo do SearchableSelect
+    (select "*" da tabela clientes) e monta `DadosClienteFatura` diretamente
+    (fonte primária), confirmando depois via `buscarClienteParaFatura` (oficial).
+  • Em `baixarPdfDaFatura`, se `dadosCliente` estiver null, re-busca a partir de
+    `fatura.cliente_id` no momento da geração.
+  • `montarInputPdfFatura` agora preenche `clienteIe` (antes `null` fixo) e usa
+    `dadosCliente` completo → no CALVO aparecem:
+      Cobrança para: CALVO COML IMPO E EXP. LTDA
+      CNPJ: ...
+      IE: ...
+      ENDEREÇO: ...
+  • Nenhuma alteração no cadastro mestre (somente leitura/rendering).
+
+───────────────────────────────────────────────────────────────────────────────
+5. COMO A CONTA BANCÁRIA PASSOU A CHEGAR AO PDF
+───────────────────────────────────────────────────────────────────────────────
+  • Conta escolhida no formulário → `montarSnapshotConta(contaSelecionada)` →
+    `metadata.contaBancaria` (fonte oficial da fatura).
+  • `montarInputPdfFatura` aplica o snapshot sobre os dados da empresa:
+    banco/agencia/conta/pix da conta selecionada.
+  • Sem snapshot → mantém a conta principal da configuração (buscarDadosEmpresa
+    ParaFatura já prioriza a conta principal/ativa) → fallback existente.
+  • No CALVO o bloco sai no padrão homologado:
+      Dados para Transferência Bancária
+      Banco Cora SCFI        (exemplo — vem da config, NÃO hardcoded)
+      AG: 0001
+      C/C: 1390923-1
+      CHAVE PIX: financeiro@conexaoexpress.com.br
+
+───────────────────────────────────────────────────────────────────────────────
+6. AJUSTES DE CENTRALIZAÇÃO (modelo CALVO — pdfFatura.ts)
+───────────────────────────────────────────────────────────────────────────────
+  • headStyles: halign center + valign middle + cellPadding 6.
+  • bodyStyles: valign middle + cellPadding 5 (fonte 9.5 preservada).
+  • columnStyles:
+      FATURA      → center / middle
+      DESCRIÇÃO   → left / middle (wrap de texto + padding confortável)
+      PARCELA     → center / middle (dinâmica: parcela da fatura, ex.: 1/1)
+      VENCIMENTO  → center / middle
+      VALOR       → center / middle / negrito (fontStyle bold) / BRL correto
+  • Prévia (PreviaModal em FaturaPanel.tsx) espelha o mesmo layout (FATURA e
+    VALOR centralizados, parcela dinâmica, descrição à esquerda com wrap).
+
+───────────────────────────────────────────────────────────────────────────────
+7. TESTES EXECUTADOS
+───────────────────────────────────────────────────────────────────────────────
+  • npx tsc --noEmit                  → 0 erros
+  • npx vitest run                    → 459/459 (49 arquivos)
+  • npx vitest run (faturas + PDF)    → 86/86 (f38 16, a31i 6, a30 14, etc.)
+  • npx eslint (arquivos alterados)   → 0 erros, 0 warnings
+  • npm run build                     → OK (39.77s)
+  • Cenário Fatura 38 (fixture, SEM persistir em Produção) → PDF gerado e
+    validado em teste automatizado.
+
+───────────────────────────────────────────────────────────────────────────────
+8. RESULTADO DO CENÁRIO FATURA 38 (fixture, sem salvar em Produção)
+───────────────────────────────────────────────────────────────────────────────
+  Fatura 38 · Cliente CALVO COML IMPO E EXP. LTDA · modelo CALVO
+  Descrição: "Receita de CT-e referente aos romaneios nº 343550, 343375, 343421,
+              341721, 341770 e 343488, incluindo serviço de devolução."
+  Vencimento: 05/09/2026 · Valor: R$ 3.550,54 · Parcela 1
+  O PDF gerado contém (validado por teste):
+    [X] "Cobrança para: CALVO COML IMPO E EXP. LTDA" (sem "—")
+    [X] CNPJ: 98.765.432/0001-10
+    [X] IE: 987654321
+    [X] Endereço do cliente
+    [X] "Dados para Transferência Bancária" + Banco/AG/C-C/PIX (conta Cora do snapshot)
+    [X] Fatura "38"
+    [X] Descrição presente (com wrap de linha na coluna DESCRIÇÃO)
+    [X] "05/09/2026"
+    [X] "R$ 3.550,54"
+
+───────────────────────────────────────────────────────────────────────────────
+9. LIMITAÇÕES RESTANTES
+───────────────────────────────────────────────────────────────────────────────
+  1. A validação automática confirma os textos/dados no PDF; a conferência
+     visual FINAL (proporção de fonte, bordas e espaçamento) depende de um
+     screenshot/render em ambiente QA/Produção com as credenciais reais
+     (guard-rails do repositório bloqueiam E2E em Produção).
+  2. Dados cadastrais do cliente continuam vindos do cadastro mestre (sem
+     snapshot por fatura) — comportamento alinhado ao fluxo oficial. Um
+     snapshot/override por fatura exigiria coluna nova (não feita — sem
+     migration).
+  3. "Salvar e Gerar PDF" mantém a decisão da F38-MANUAL: fatura manual marcada
+     como emitida sem criar Conta a Receber e sem disparar NFS-e/CT-e.
+  4. A descrição longa quebra linha na coluna DESCRIÇÃO (esperado e alinhado ao
+     template); o número de linhas depende do comprimento do texto.
+
+───────────────────────────────────────────────────────────────────────────────
+10. CHECKLIST
+───────────────────────────────────────────────────────────────────────────────
+  [X] Cliente preenchido (Cobrança para: CALVO COML IMPO E EXP. LTDA)
+  [X] CNPJ
+  [X] IE
+  [X] Endereço
+  [X] Conta bancária (conta selecionada/snapshot)
+  [X] PIX
+  [X] Fatura centralizada (horizontal + vertical)
+  [X] Parcela centralizada (dinâmica)
+  [X] Vencimento centralizado
+  [X] Valor centralizado + negrito + BRL
+  [X] Descrição alinhada à esquerda, com wrap e padding
+  [X] PDF igual ao padrão homologado (template CALVO reutilizado 1:1)
+  [X] Fluxo automático preservado (459/459 testes, build OK)
+
+───────────────────────────────────────────────────────────────────────────────
+FIM DO RELATÓRIO F38-MANUAL-2
+═══════════════════════════════════════════════════════════════════════════════

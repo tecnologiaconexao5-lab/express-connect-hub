@@ -1,0 +1,1412 @@
+================================================================================
+        AG-REC.8 — AUDITORIA MESTRA DO MÓDULO RECRUTAMENTO V2
+                  Conexão Express — TMS express-connect-hub
+================================================================================
+
+Data: 2026-08-31
+Ambiente: TMS express-connect-hub
+Escopo: Audit-only. Nenhuma migration, INSERT, UPDATE ou DELETE executado.
+
+
+================================================================================
+1 — MAPA COMPLETO DAS TELAS DO RECRUTAMENTO
+================================================================================
+
+1.1 ROTAS E COMPONENTES
+
+Rota /recrutamento
+  Componente: RecrutamentoModule (14 seções via tabs)
+  Fonte Dados: Híbrido (Supabase + localStorage + mock)
+  Status: PARCIAL
+
+Rota /recrutamento/whatsapp-crm
+  Componente: WhatsAppCRMLayout (9 sub-componentes)
+  Fonte Dados: 100% localStorage (whatsappCRMStore)
+  Status: MOCK
+
+Rota /recrutamento/banco-talentos
+  Componente: BancoTalentosLayout (8 sub-componentes)
+  Fonte Dados: 100% Zustand in-memory (talentBankStore)
+  Status: MOCK
+
+Rota /robo-recrutamento-monitor
+  Componente: RoboRecrutamentoMonitor
+  Fonte Dados: Supabase (automacoes_logs + ia_logs)
+  Status: REAL
+
+
+1.2 SEÇÕES DO MÓDULO PRINCIPAL
+
+Secao: Dashboard
+  Componente: DashboardRecrutamento
+  Fonte: Supabase (count queries em candidatos, prestadores, veiculos)
+  Real/Mock: REAL parcial — 3 de 6 KPIs mockados
+
+Secao: Pipeline
+  Componente: EnterpriseKanbanBoard
+  Fonte: Supabase recrutamento_candidatos
+  Real/Mock: REAL
+
+Secao: Operacoes
+  Componente: PaginaOperacoes
+  Fonte: Supabase recrutamento_operacoes
+  Real/Mock: REAL
+
+Secao: Prestadores
+  Componente: PaginaPrestadores
+  Fonte: Supabase recrutamento_prestadores + localStorage fallback
+  Real/Mock: PARCIAL
+
+Secao: Banco de Talentos
+  Componente: BancoTalentos (versão module)
+  Fonte: Supabase recrutamento_candidatos
+  Real/Mock: REAL
+
+Secao: Operacionais
+  Componente: PrestadoresAptos
+  Fonte: Supabase recrutamento_candidatos (stage=ativo)
+  Real/Mock: REAL
+
+Secao: CRM
+  Componente: CrmLogistico
+  Fonte: Supabase crm_interacoes_prestadores
+  Real/Mock: REAL
+
+Secao: Documentos
+  Componente: CentralDocumentos
+  Fonte: localStorage (documentosService)
+  Real/Mock: MOCK
+
+Secao: IA Operacional
+  Componente: IAOperacional
+  Fonte: Supabase queries + proxy-ia Edge Function
+  Real/Mock: PARCIAL
+
+Secao: Automacoes
+  Componente: AutomacoesList
+  Fonte: localStorage (automacoesService)
+  Real/Mock: MOCK
+
+Secao: Portal do Prestador
+  Componente: PortalPrestadorPreview
+  Fonte: Hardcoded preview
+  Real/Mock: DEMO
+
+Secao: Score
+  Componente: ScoreMeter grid
+  Fonte: localStorage (prestadores[].score.geral)
+  Real/Mock: MOCK
+
+Secao: Onboarding
+  Componente: OnboardingWizard
+  Fonte: localStorage (Zustand store)
+  Real/Mock: DEMO
+
+
+1.3 COMPONENTES LEGADOS NAO ROTEADOS
+
+WhatsAppIAPrestadores — 852 linhas, superseded por /whatsapp-crm
+TriagemIA — Candidato hardcoded "Rafael Almeida", setTimeout mock
+Homologacao — Queries candidatos + homologacoes via Supabase
+Captacao — Static link + form, sem DB
+BancoMotoristas — Nao importado por nenhuma rota
+BancoReservas — Nao importado por nenhuma rota
+DisparosWhatsApp — Nao importado
+AcompanhamentoDocs — Nao importado
+IndicadoresRI — Dados hardcoded
+RecrutamentoAnalytics — Math.random() para metricas
+
+
+1.4 SERVICES LAYER
+
+operacoesService — Supabase recrutamento_operacoes — REAL
+prestadoresService — Supabase + localStorage fallback — PARCIAL
+documentosService — localStorage only — MOCK
+automacoesService — localStorage only — MOCK
+crmService — Supabase crm_interacoes_prestadores — REAL
+iaService — Mock (random scores) — MOCK
+scoreService — Computed, no DB — PARCIAL
+conversaoCandidatoService — Supabase recrutamento_candidatos + prestadores — REAL
+enterpriseKanbanService — Supabase recrutamento_candidatos — REAL
+recrutamentoScoreService — Hardcoded (retorna 50) — STUB
+roboRecrutamentoService — Supabase automacoes_robos + automacoes_logs — REAL
+
+
+1.5 HOOKS
+
+useDashboardRecrutamento — Supabase (count queries) — REAL
+useMetricasRecrutamento — Supabase via enterpriseKanbanService — REAL
+useOperacoes — Supabase via operacoesService — REAL
+usePrestadores — Supabase + localStorage — PARCIAL
+useKanbanRealtime — Supabase Realtime recrutamento_candidatos — REAL
+useRecrutamentoRealtime — Supabase Realtime recrutamento_prestadores — REAL
+usePrestadoresAptosRecrutamento — Supabase via enterpriseKanbanService — REAL
+
+
+1.6 RESUMO REAL vs MOCK
+
+Secoes modulo principal: 14 componentes — 7 Real (50%) — 4 Mock (29%) — 3 Hibrido (21%)
+WhatsApp CRM (rota): 9 componentes — 0 Real — 9 Mock
+Banco Talentos (rota): 8 componentes — 0 Real — 8 Mock
+Enterprise Kanban: 14 componentes — 6 Real — 0 Mock
+Legacy nao roteados: 10 componentes — 1 Real — 2 Mock
+TOTAL: ~55 componentes — ~14 Real (25%) — ~23 Mock (42%) — ~3 Hibrido (5%)
+
+
+================================================================================
+2 — MAPA DE ENTIDADES
+================================================================================
+
+2.1 TABELAS DO MODULO RECRUTAMENTO
+
+prestadores — FONTES MESTRA — prestadores aprovados/ativos
+recrutamento_candidatos — Pipeline Enterprise (16 estagios)
+recrutamento_prestadores — Dados de recrutamento (scoring, onboarding)
+recrutamento_operacoes — Vagas/operacoes de recrutamento
+candidatos — LEGACY — cadastro via link direto
+documentos_prestadores — Documentos vinculados
+provider_documents — DUPLICATA de documentos_prestadores
+crm_interacoes_prestadores — Interacoes CRM por prestador
+crm_leads — Pipeline comercial (clientes)
+crm_historico — Historico CRM
+crm_followups — Follow-ups CRM
+crm_conversas / crm_mensagens — Mensagens CRM
+homologacoes — Registros de homologacao
+operacoes — DUPLICATA de recrutamento_operacoes
+fluxo_recrutamento — Etapas do fluxo (Biblioteca)
+reservas_banco — Reservas do banco de talentos (SEM MIGRATION)
+rede_oportunidades — Oportunidades da rede enterprise
+rede_visualizacoes — Visualizacoes de oportunidades
+
+
+2.2 DIAGRAMA DE RELACIONAMENTO
+
+FLUXO APP MOTORISTA:
+  App Flutter --> signUp() --> auth.users
+  |
+  +-- app_s6_cpf_cnpj_ja_cadastrado() --> prestadores (dedup)
+  |
+  +-- app_s6_criar_prestador() --> INSERT prestadores
+       (status=em_analise, liberado_app=false)
+
+BRIDGE (TMS-side):
+  enterpriseKanbanService.buscarECadastrarAppPrestadores()
+  |
+  +-- Busca prestadores WHERE origem='app_motorista'
+  |   E NAO existem em recrutamento_candidatos
+  |
+  +-- INSERT recrutamento_candidatos (stage=novo_cadastro)
+       (tags=['app_motorista'], score=65, DADOS MOCKADOS)
+
+PIPELINE ENTERPRISE (16 ESTAGIOS):
+  novo_cadastro -> pre_triagem -> interesse_confirmado -> em_analise
+  -> documentacao_pendente -> em_validacao -> entrevista
+  -> em_treinamento -> homologacao -> confirmacao_inicio
+  -> aprovado -> prestador_apto -> ativo -> operacao_ativa
+  Terminais: bloqueado, reprovado
+
+CONVERSAO (quando stage=aprovado/ativo):
+  conversaoCandidatoService.converterCandidatoParaPrestador()
+  |
+  +-- Gate documental: statusDocumental === 'completo'
+  +-- Dedup: busca por telefone/email
+  +-- INSERT/UPDATE prestadores (status=ativo)
+  +-- UPDATE liberado_app = true
+  +-- UPDATE recrutamento_candidatos (stage=ativo, prestador_id)
+
+TABELAS PARALELAS (REDUNDANCIA):
+  candidatos (LEGACY) <--NAO SINCRONIZA--> recrutamento_candidatos
+  recrutamento_operacoes <--DUPLICATA--> operacoes
+  documentos_prestadores <--DUPLICATA--> provider_documents
+
+
+2.3 RESPOSTAS AS PERGUNTAS-CHAVE
+
+P: Qual entidade representa o candidato?
+R: recrutamento_candidatos (Enterprise) + candidatos (Legacy) — duas fontes sem sincronizacao
+
+P: Qual representa o prestador?
+R: prestadores (tabela operacional canonica) + recrutamento_prestadores (dados de workflow)
+
+P: Quando deixa de ser candidato?
+R: Quando stage atinge aprovado/ativo e conversaoCandidatoService executa
+
+P: Quando passa a ser prestador?
+R: Ao converter: INSERT em prestadores com status=ativo
+
+P: O APP cria prestador antes da aprovacao?
+R: SIM — app_s6_criar_prestador() cria com status=em_analise, liberado_app=false
+
+P: Como evitar duplicacao?
+R: conversaoCandidatoService.buscarDuplicata() busca por telefone/email. Sem UNIQUE constraint
+
+P: Existe representacao dupla?
+R: SIM — prestadores + recrutamento_prestadores + recrutamento_candidatos = 3 tabelas para mesma pessoa
+
+P: Fonte mestre antes da aprovacao?
+R: recrutamento_candidatos
+
+P: Fonte mestre depois da aprovacao?
+R: prestadores
+
+P: Existem constraints de duplicidade?
+R: NENHUMA — sem UNIQUE em auth_user_id, cpf_cnpj, email ou telefone
+
+
+================================================================================
+3 — AUDITORIA DO CADASTRO DO APP
+================================================================================
+
+3.1 FLUXO REAL EM PRODUCAO
+
+App Flutter (PWA)
+  |
+  +-- 1. supabase.auth.signUp() --> auth.users (email + password)
+  |
+  +-- 2. app_s6_cpf_cnpj_ja_cadastrado(p_cpf_cnpj) --> BOOLEAN
+  |     Normaliza (so digitos), busca em prestadores
+  |
+  +-- 3. app_s6_criar_prestador(p_nome, p_cpf, p_tel, p_email, ...)
+  |     |
+  |     +-- SECURITY DEFINER, auth.uid() obrigatorio
+  |     +-- Idempotente: retorna prestador existente se auth_user_id ja vinculado
+  |     +-- Hardcoded: status='em_analise', liberado_app=false
+  |     +-- Ignora p_liberado_app (parametro aceito mas descartado)
+  |     +-- Returns: { prestador_id: UUID }
+  |
+  +-- 4. Prestador criado em prestadores
+  |     (origem_cadastro='app_motorista', auth_user_id=auth.uid())
+  |
+  +-- 5. Documentos uploadados separadamente (App --> Storage --> documentos_prestadores)
+
+Bridge (TMS-side):
+  |
+  +-- enterpriseKanbanService.buscarECadastrarAppPrestadores()
+  |     |
+  |     +-- Executa ao ABRIR a tela Pipeline (polling, nao event-driven)
+  |     +-- Busca: prestadores WHERE origem='app_motorista'
+  |     +-- Filtra: NAO existem em recrutamento_candidatos
+  |     +-- Para cada um: INSERT recrutamento_candidatos
+  |     |   (stage=novo_cadastro, tags=['app_motorista'], score=65)
+  |     +-- Dados: NOME MOCKADO, CIDADE ALETORIA, VEICULO ALETORIO
+  |
+  +-- Candidato aparece no Kanban com dados mockados (nao reais do App)
+
+
+3.2 CONTRATO REAL DA RPC app_s6_criar_prestador
+
+Fonte: 20260829_ag07j18_4_rpc_cadastro_app.sql
+  CREATE OR REPLACE FUNCTION app_s6_criar_prestador(
+    p_nome_completo TEXT, p_cpf_cnpj TEXT, p_data_nascimento TEXT,
+    p_telefone TEXT, p_email TEXT, p_auth_email TEXT, p_senha TEXT,
+    p_status TEXT, p_origem TEXT, p_liberado_app BOOLEAN, p_metadata JSONB
+  )
+  RETURNS JSONB
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+
+  Comportamento:
+    - auth.uid() obrigatorio
+    - Normaliza CPF/CNPJ (so digitos)
+    - Verifica se auth_user_id ja vinculado --> retorna existente
+    - INSERT: status='em_analise', liberado_app=FALSE (hardcoded)
+    - origem_cadastro='app_motorista' (hardcoded)
+    - p_liberado_app e ACEITO mas IGNORADO
+
+  Grants: REVOKE PUBLIC, REVOKE anon, GRANT authenticated
+
+
+3.3 IDEMPOTENCIA E SEGURANCA
+
+Idempotencia: OK — Retorna prestador existente se auth_user ja vinculado
+Anti-spoof liberado_app: OK — Hardcoded false, ignora parametro
+auth.uid() obrigatorio: OK — SECURITY DEFINER + check
+Dedup por CPF/CNPJ: OK — Normaliza e verifica antes de INSERT
+Retry/fallback: FALHA — Sem retry em caso de falha
+Usuario orfao: ALERTA — Se signUp OK mas RPC falha, auth.user existe sem prestador
+Dados reais no Bridge: FALHA — Bridge gera NOME/CIDADE/VEICULO mockados
+
+
+3.4 PROBLEMAS DO FLUXO
+
+P1: Bridge usa polling (so roda ao abrir Pipeline), nao event-driven — GRAVIDADE ALTA
+P2: Bridge gera dados MOCKADOS (nome, cidade, veiculo) em vez de ler do prestador real — GRAVIDADE ALTA
+P3: Sem trigger automatico no INSERT de prestadores para criar candidato no pipeline — GRAVIDADE ALTA
+P4: Usuario orfao possivel (auth.user sem prestador) — GRAVIDADE MEDIA
+P5: RPC nao cria veiculo nem documentos — GRAVIDADE MEDIA
+P6: Sem Edge Function de sincronizacao — GRAVIDADE MEDIA
+
+
+================================================================================
+4 — AUDITORIA DO BRIDGE APP -> RECRUTAMENTO
+================================================================================
+
+4.1 enterpriseKanbanService.buscarECadastrarAppPrestadores()
+
+Arquivo: src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts
+
+P: O bridge ainda e necessario?
+R: SIM — e o unico caminho que conecta App ao Pipeline
+
+P: Por que nao existe criacao atomica?
+R: Porque o App cria em prestadores e o Pipeline le de recrutamento_candidatos — tabelas diferentes sem FK
+
+P: Quem chama o bridge?
+R: useEnterpriseKanban hook, executado ao montar EnterpriseKanbanBoard
+
+P: Quando roda?
+R: Ao abrir a aba Pipeline (polling por abertura de tela)
+
+P: Depende de abrir Pipeline?
+R: SIM — se ninguem abrir a tela, candidatos do App ficam orfaos
+
+P: Existe catch silencioso?
+R: SIM — catch {} vazio em varias partes
+
+P: Risco de perder cadastro?
+R: BAIXO — dados ficam em prestadores, mas sem pipeline
+
+P: Risco de duplicar candidato?
+R: MEDIO — verificacao por origem='app_motorista' mas sem UNIQUE
+
+P: Existe trigger?
+R: NAO
+
+P: Existe realtime?
+R: NAO (para este fluxo especifico)
+
+P: Existe cron/scheduler?
+R: NAO
+
+P: Existe Edge Function?
+R: NAO
+
+P: Como tornar idempotente e confiavel?
+R: Criar trigger em prestadores que cria automaticamente o candidato com dados reais
+
+Classificacao: FRAGIL
+
+
+================================================================================
+5 — PIPELINE PROFISSIONAL (16 ESTAGIOS)
+================================================================================
+
+5.1 DEFINICAO DOS 16 ESTAGIOS
+
+Estagio 1: novo_cadastro (Novo Lead)
+  Significado: Cadastro recem-chegado (App/manual/link)
+  Condicao saida: Movido manualmente ou por automacao
+  Gate documental: Nao
+  Pode voltar: SIM — pre_triagem, em_analise
+
+Estagio 2: pre_triagem (Pre-Triagem)
+  Significado: Verificacao inicial de perfil
+  Condicao saida: Contato inicial realizado
+  Gate documental: Nao
+  Pode voltar: SIM — interesse_confirmado, em_analise
+
+Estagio 3: interesse_confirmado (Interesse Confirmado)
+  Significado: Candidato confirmou interesse na vaga
+  Condicao saida: Encaminhado para documentacao
+  Gate documental: Nao
+  Pode voltar: SIM — documentacao_pendente, em_analise
+
+Estagio 4: em_analise (Em Analise)
+  Significado: Analise detalhada do perfil
+  Condicao saida: Decisao tomada
+  Gate documental: Nao
+  Pode voltar: SIM — documentacao_pendente, pre_triagem, entrevista
+
+Estagio 5: documentacao_pendente (Documentacao)
+  Significado: Aguardando envio/validacao de docs
+  Condicao saida: Docs completos
+  Gate documental: SIM — CNH, CRLV, Comprovante
+  Pode voltar: SIM — em_validacao, em_treinamento
+
+Estagio 6: em_validacao (Em Validacao)
+  Significado: Verificacao documental e operacional
+  Condicao saida: Validacao aprovada
+  Gate documental: SIM
+  Pode voltar: SIM — entrevista, aprovado
+
+Estagio 7: entrevista (Entrevista)
+  Significado: Entrevista presencial/telefonica
+  Condicao saida: Entrevista concluida
+  Gate documental: Nao
+  Pode voltar: SIM — em_treinamento, aprovado
+
+Estagio 8: em_treinamento (Treinamento)
+  Significado: Capacitacao operacional (MOPP, etc.)
+  Condicao saida: Treinamento concluido
+  Gate documental: Nao
+  Pode voltar: SIM — homologacao, aprovado
+
+Estagio 9: homologacao (Homologacao)
+  Significado: Validacao final de elegibilidade
+  Condicao saida: Homologacao aprovada
+  Gate documental: SIM
+  Pode voltar: SIM — confirmacao_inicio
+
+Estagio 10: confirmacao_inicio (Conf. de Inicio)
+  Significado: Confirmacao de data e condicoes
+  Condicao saida: Candidato confirma
+  Gate documental: Nao
+  Pode voltar: SIM — prestador_apto
+
+Estagio 11: aprovado (Aprovado)
+  Significado: Aprovado para operacao
+  Condicao saida: Conversao para prestador
+  Gate documental: SIM
+  Pode voltar: SIM — prestador_apto, ativo
+
+Estagio 12: prestador_apto (Prestador Apto)
+  Significado: Pronto para receber operacoes
+  Condicao saida: Primeira alocacao
+  Gate documental: Nao
+  Pode voltar: SIM — operacao_ativa
+
+Estagio 13: ativo (Ativo)
+  Significado: Operando normalmente
+  Condicao saida: Operacao em andamento
+  Gate documental: Nao
+  Pode voltar: SIM — operacao_ativa
+
+Estagio 14: operacao_ativa (Operacao Ativa)
+  Significado: Em operacao com OS vinculada
+  Condicao saida: Continuidade
+  Gate documental: Nao
+  Pode voltar: NAO
+
+Estagio 15: bloqueado (Bloqueado)
+  Significado: Temporariamente indisponivel
+  Condicao saida: Desbloqueio manual
+  Gate documental: Nao
+  Pode voltar: SIM — em_analise, pre_triagem
+
+Estagio 16: reprovado (Reprovado)
+  Significado: Nao aprovado definitivamente
+  Condicao saida: Nenhum
+  Gate documental: NAO
+  Pode voltar: NAO (terminal)
+
+
+5.2 TRANSICOES PERMITIDAS
+
+novo_cadastro --> pre_triagem, em_analise, bloqueado, reprovado
+pre_triagem --> interesse_confirmado, em_analise, bloqueado, reprovado
+interesse_confirmado --> documentacao_pendente, em_analise, bloqueado, reprovado
+em_analise --> documentacao_pendente, pre_triagem, entrevista, bloqueado, reprovado
+documentacao_pendente --> em_validacao, em_treinamento, bloqueado, reprovado
+em_validacao --> entrevista, aprovado, reprovado
+entrevista --> em_treinamento, aprovado, reprovado
+em_treinamento --> homologacao, aprovado, reprovado
+homologacao --> confirmacao_inicio, bloqueado
+confirmacao_inicio --> prestador_apto, bloqueado
+aprovado --> prestador_apto, ativo, bloqueado
+prestador_apto --> operacao_ativa, bloqueado
+ativo --> operacao_ativa, bloqueado, reprovado
+operacao_ativa --> bloqueado, reprovado
+bloqueado --> em_analise, pre_triagem, reprovado
+reprovado --> (vazio — terminal)
+
+
+5.3 PROBLEMAS DO PIPELINE
+
+P1: 16 estagios e excessivo — em_validacao vs documentacao_pendente vs homologacao vs confirmacao_inicio sao etapas sobrepostas — GRAVIDADE ALTA
+P2: Sem gates automaticos — movimento entre estagios e 100% manual (drag-and-drop) — GRAVIDADE ALTA
+P3: Sem dados obrigatorios por estagio — nao exige telefone, CPF, veiculo para avancar — GRAVIDADE ALTA
+P4: aprovado vs ativo vs prestador_apto — 3 estagios para "pessoa pronta" e confuso — GRAVIDADE MEDIA
+P5: operacao_ativa depende de OS vinculada, mas nao ha trigger automatico — GRAVIDADE MEDIA
+P6: Sem motivo obrigatorio ao reprovar/bloquear — GRAVIDADE MEDIA
+P7: Score computado mas nao exibido no Kanban de forma proeminente — GRAVIDADE BAIXA
+
+
+================================================================================
+6 — PENTE FINO / COMPROMETIMENTO
+================================================================================
+
+6.1 CAMPOS DE DISPONIBILIDADE/COMPROMETIMENTO
+
+disponibilidadeTipo: imediata|parcial|indisponivel — DEFINIDO
+regioesAtuacao: string[] — DEFINIDO
+horariosDisponiveis: string — DEFINIDO
+diasDisponiveis: string[] — DEFINIDO
+scoreComprometimento: number — STUB (retorna 50 sempre)
+classificacaoComprometimento: string — STUB (retorna "Regular")
+riscoDesistencia: string — IMPLEMENTADO
+tempoMedioRespostaHoras: number|null — DEFINIDO
+quantidadeCobrancas: number — DEFINIDO
+confirmouInteresse: boolean — DEFINIDO
+confirmouPreInicio: boolean — DEFINIDO
+compareceuPrimeiroDia: boolean — DEFINIDO
+completou30Dias: boolean — DEFINIDO
+quantidadeReclamacoes: number — DEFINIDO
+historicoDesistencias: number — DEFINIDO
+possuiOutraOperacaoFixa: boolean — DEFINIDO
+questionarioRespostas: Record|null — DEFINIDO
+
+
+6.2 O QUE FALTA (NAO MAPEADO NO SCHEMA)
+
+frequenciaPretendida — AUSENTE — Fixo vs esporadico vs recorrente
+valorMinimoAceitavel — AUSENTE — Piso salarial do prestador
+historicoNoShow — AUSENTE — Quantas vezes faltou sem aviso
+historicoCancelamentos — AUSENTE — Cancelamentos pos-aceite
+pontualidade — AUSENTE — Score de pontualidade
+ocorrencias — AUSENTE — Ocorrencias operacionais
+respostaContatos — AUSENTE — Taxa de resposta a ligacoes/WhatsApp
+tipoOperacaoPreferida — AUSENTE — urbano/rodoviario/misto
+raioAtuacao — AUSENTE — Distancia maxima em km
+
+
+6.3 SCORE DE COMPROMETIMENTO — ESTADO ATUAL
+
+O recrutamentoScoreService.ts e um STUB:
+
+  calcularScoreComprometimento() SEMPRE retorna 50
+  classificarComprometimento() SEMPRE retorna "Regular"
+
+O score NAO e calculado. Todos os candidatos recebem 50/Regular.
+
+
+6.4 PROPOSTA DE SCORE DE COMPROMETIMENTO (Eventos Objetivos)
+
+Eventos que AUMENTAM score:
+  Confirmou interesse na vaga .............. +10
+  Confirmou pre-inicio ..................... +10
+  Compareceu ao primeiro dia ............... +15
+  Completou 30 dias ....................... +20
+  Documentacao completa ................... +10
+  Tempo resposta <= 24h ................... +5
+  Disponibilidade integral ................ +5
+
+Eventos que DIMINuem score:
+  Historico de desistencias > 0 ........... -15
+  Reclamacoes > 0 ......................... -10
+  Tempo resposta > 72h .................... -10
+  Nao confirmou interesse ................ -20
+  Possui outra operacao fixa .............. -5
+
+Classificacao:
+  80-100: Excelente
+  60-79: Bom
+  40-59: Regular
+  20-39: Baixo
+  0-19: Critico
+
+Criterios EXCLUIDOS (discriminatorios): idade, genero, raca, religiao, estado civil, aparencia.
+
+
+================================================================================
+7 — LIBERACAO DO APP (liberado_app)
+================================================================================
+
+7.1 MAPEAMENTO COMPLETO
+
+Tabela: prestadores.liberado_app (BOOL, default false)
+
+
+7.2 ONDE E LIDO (Hard Gates)
+
+Elegibilidade operacional (eligibilidadeOperacionalService.ts:107):
+  if (p.liberado_app !== true) --> bloqueia alocacao
+  Impacto: BLOQUEIA ESCALA
+
+Registro GPS (20260731_fix_registrar_posicao_motorista.sql:52):
+  AND liberado_app = true
+  Impacto: BLOQUEIA RASTREAMENTO
+
+Chat operacional (20260812_a22_chat_operacional.sql:134):
+  AND liberado_app = true
+  Impacto: BLOQUEIA CHAT
+
+Gate elegibilidade RPC (20260822_ag07f_gate_elegibilidade_operacional.sql:40):
+  liberado_app = true
+  Impacto: BLOQUEIA ALOCACAO
+
+Aceitar rede (20260825_j13_fix_aceitar_rede_bypass.sql:88):
+  liberado_app = true
+  Impacto: BLOQUEIA REDE
+
+
+7.3 ONDE E ALTERADO (Writers)
+
+W1: prestadoresService.ts:389 — Sync operacional — Valor: derivado de status
+W2: prestadoresService.ts:432 — Remocao kanban — Valor: false
+W3: prestadoresService.ts:577-640 — Correcao divergencia — Valor: derivado de status
+W4: conversaoCandidatoService.ts:305 — Conversao (update) — Valor: statusOperacional === 'ativo'
+W5: conversaoCandidatoService.ts:331 — Conversao (insert) — Valor: statusOperacional === 'ativo'
+W6: recrutamentoIntegracao.ts:221 — Conversao inteligente — Valor: true hardcoded
+W7: PrestadorDetalhe.tsx:729-734 — Toggle manual admin — Valor: Manual (Switch)
+W8: dbMappers.ts:289-457 — Form save — Valor: via form data
+W9: RPC app_s6_criar_prestador — Cadastro App — Valor: false hardcoded
+
+
+7.4 PROBLEMAS CRITICOS
+
+P1: Sem trilha de auditoria — mudanca de liberado_app nao e logada — GRAVIDADE P0
+P2: Sem auto-bloqueio por vencimento de documento — CNH vencida nao reverte liberado_app — GRAVIDADE P0
+P3: "agregado" mapeia para "ativo" → liberado_app=true sem ser aprovado — GRAVIDADE P1
+P4: W6 hardcodes true — bypass do pipeline de aprovacao — GRAVIDADE P1
+P5: Gate e fail-open — se schema indisponivel, permite operar — GRAVIDADE P1
+P6: Nenhum cron/trigger verifica vencimento de documentos — GRAVIDADE P0
+
+
+7.5 PROPOSTA: BLOCO "ACESSO AO APLICATIVO"
+
+Estados possiveis:
+  BLOQUEADO (default) → EM ANALISE → DOCUMENTACAO PENDENTE
+  → VALIDACAO OPERACIONAL → APTO PARA LIBERACAO
+  → LIBERADO → SUSPENSO
+
+Trilha obrigatoria:
+  - quem liberou (user_id)
+  - quando (timestamp)
+  - motivo (text)
+  - estado anterior → estado novo
+
+Gates automaticos:
+  - Documento vencido → SUSPENSO
+  - Bloqueio manual → BLOQUEADO
+  - Reativacao → EM ANALISE (nao automatico)
+
+
+================================================================================
+8 — DOCUMENTOS
+================================================================================
+
+8.1 FONTE DOCUMENTAL CANONICA
+
+documentos_prestadores — CANONICA para checks de elegibilidade (4 colunas DDL)
+provider_documents — DUPLICATA — usada por AnaliseLote.tsx (7 colunas DDL)
+recrutamento_prestadores.documentos — JSONB no registro de workflow
+prestadores.cnh_validade — Legado — checado como fallback
+documentosService (recrutamento module) — localStorage only — MOCK
+
+
+8.2 STORAGE
+
+Bucket: documentos_prestadores
+Publico: SIM — public: true
+Tamanho maximo: 10 MB
+MIME types: image/jpeg, image/png, image/gif, image/webp, application/pdf
+Signed URLs: NAO — URLs publicas via getPublicUrl()
+Versionamento: NAO — upload cria nova linha, nao nova versao
+Expiracao automatica: NAO — validade existe mas nao trigger
+
+
+8.3 POLITICAS STORAGE
+
+Public select — SELECT — Qualquer um (bucket publico)
+Authenticated insert — INSERT — Usuarios autenticados
+Authenticated update — UPDATE — Usuarios autenticados
+Authenticated delete — DELETE — Usuarios autenticados
+
+
+8.4 DOCUMENTOS MINIMOS OBRIGATORIOS
+
+Fonte: eligibilidadeOperacionalService.ts:42
+  DOCS_OBRIGATORIOS = ["CNH", "Comprovante de Endereco", "Comprovante de Residencia"]
+
+Adicionais (quando aplicavel):
+  CRLV (se tem veiculo)
+  ANTT/RNTRC
+
+
+8.5 PROBLEMAS CRITICOS
+
+P1: Bucket publico — qualquer pessoa com URL baixa documentos pessoais — GRAVIDADE P0
+P2: Aprovacao no TMS NAO propaga para documentos_prestadores.status — GRAVIDADE P0
+P3: Gate e fail-open — 0 documentos = elegivel — GRAVIDADE P1
+P4: Sem versionamento — re-upload cria duplicata — GRAVIDADE P2
+P5: "Adicionar documento manual" e apenas texto (sem upload real) — GRAVIDADE P1
+P6: 4 sistemas de documentos nao sincronizados — GRAVIDADE P1
+P7: Sem auto-bloqueio por vencimento — GRAVIDADE P0
+
+
+================================================================================
+9 — LGPD / SEGURANCA
+================================================================================
+
+9.1 AUDITORIA TECNICA
+
+RLS em recrutamento_candidatos: INSEGURO — anon tem SELECT/INSERT/UPDATE/DELETE completos
+RLS em recrutamento_prestadores: INSEGURO — anon tem SELECT
+RLS em crm_interacoes_prestadores: INSEGURO — anon tem INSERT/UPDATE/DELETE
+RLS em recrutamento_operacoes: INSEGURO — anon tem SELECT
+Isolamento multi-tenant: AUSENTE — nenhuma tabela recrutamento tem tenant_id
+CPF exposto: Exibido em plaintext em 8+ componentes
+Telefone exposto: Exibido em lists sem mascaramento
+Storage publico: Documentos pessoais baixaveis por qualquer um
+RBAC: AUSENTE — sem verificacao de papel por secao
+Console.log com PII: console.error com dados de candidatos
+Auditoria de acesso: AUSENTE — sem log de quem acessou dados
+Retencao de dados: AUSENTE — sem politica de exclusao
+Exportacao: AUSENTE — sem controle do que pode ser exportado
+
+
+9.2 OBRIGACAO TECNICA RECOMENDADA
+
+1. REVOKE anon de todas as tabelas recrutamento_* — PRIORIDADE P0
+2. Adicionar tenant_id + RLS tenant-scoped — PRIORIDADE P0
+3. Tornar bucket documentos_prestadores privado — PRIORIDADE P0
+4. Implementar signed URLs para documentos — PRIORIDADE P1
+5. Mascarar CPF em componentes UI — PRIORIDADE P1
+6. Adicionar RBAC por secao do recrutamento — PRIORIDADE P1
+7. Remover console.log com PII — PRIORIDADE P1
+8. Criar tabela de auditoria de acesso — PRIORIDADE P2
+9. Implementar retencao de dados — PRIORIDADE P2
+10. Controle de exportacao — PRIORIDADE P2
+
+
+9.3 PENDENCIA JURIDICA/PROCESSUAL
+
+Consentimento para coleta de dados — Revisao humana necessaria — termos de uso do App
+Direito ao esquecimento — Verificar se exclusao em cascata funciona
+Prazo de retencao — Definir com advogado — dados de motoristas podem ter exigencia legal
+Compartilhamento com clientes — Portal Cliente exige dados do prestador? Verificar necessidade
+
+
+================================================================================
+10 — CADASTRO MANUAL
+================================================================================
+
+10.1 "+ ADICIONAR CANDIDATO" (Pipeline Enterprise)
+
+Componente: CadastrarInteressadoModal.tsx
+Tabela escrita: recrutamento_candidatos
+Cria auth.users? NAO
+Handle documents? NAO
+Respeita status/origem? SIM — stage selecionavel, tags incluem origem
+Score default: 65
+Campos: Nome*, Telefone*, Cidade/UF*, Veiculo, Placa, Origem, Etapa, Observacoes
+
+
+10.2 "+ NOVO PRESTADOR" (PaginaPrestadores)
+
+Acao: Navega para Pipeline (nao cria nada diretamente)
+Antes navegava para nova-operacao (bug corrigido em P5)
+
+
+10.3 PRESTADORDETALHE (Cadastro Direto)
+
+Componente: PrestadorDetalhe.tsx (quando isNew=true)
+Tabela escrita: prestadores (INSERT direto)
+Tambem escreve: veiculos, documentos_prestadores, Storage
+Cria auth.users? NAO
+Handle documents? SIM — upload real via Supabase Storage
+Respeita origem? NAO — nao seta origem_cadastro
+
+
+10.4 FLUXO OFICIAL PARA CADASTRO MANUAL (Projetado)
+
+1. Admin clica "+ Novo Prestador"
+2. Modal com: Nome, CPF/CNPJ, Telefone, Email, Veiculo, Placa, Regiao
+3. Validacao de duplicidade (CPF/CNPJ + telefone)
+4. INSERT em recrutamento_candidatos (stage=novo_cadastro, origem=manual)
+5. Opcional: criar auth.user para acesso ao App
+6. Pipeline padrao: pre-triagem → documentacao → validacao → aprovacao
+
+
+================================================================================
+11 — BANCO DE TALENTOS
+================================================================================
+
+11.1 DUAS IMPLEMENTACOES
+
+Versao Module: /recrutamento?section=talentos
+  Fonte: Supabase recrutamento_candidatos
+  Status: REAL
+
+Versao Route: /recrutamento/banco-talentos
+  Fonte: Zustand in-memory (8 componentes)
+  Status: MOCK
+
+
+11.2 DUPLICIDADES VISUAIS
+
+O Banco de Talentos route usa Zustand store com dados mockados.
+Multiplos cards identicos sao gerados porque o store inicia vazio
+e o componente renderiza placeholders.
+
+
+11.3 PAPEL REAL DO BANCO DE TALENTOS
+
+Definicao: "NAO aprovado agora" nao significa "descartado".
+O Banco de Talentos deveria ser:
+  - Repositorio de candidatos que nao avancaram no pipeline mas sao potencialmente uteis
+  - Fonte para reativacao quando surgir vaga compativel
+  - Historico de contato e disponibilidade
+
+Estado atual: O modulo real (Supabase) lista recrutamento_candidatos
+com qualquer stage != reprovado. O modulo mock nao tem dados reais.
+
+
+================================================================================
+12 — CRM
+================================================================================
+
+12.1 TABELA REAL: crm_interacoes_prestadores
+
+Tabela: crm_interacoes_prestadores
+Service: crmService.ts (CRUD completo via Supabase)
+UI: CrmLogistico component
+Campos: prestador_id, tipo (ligacao/whatsapp/email/reuniao/visita/observacao/proposta/retorno),
+        titulo, descricao, data, usuario, proxima_acao, data_proximo_contato, status, anexos
+Funcional? SIM — CRUD real funciona
+
+
+12.2 O QUE FALTA PARA CRM PROFISSIONAL
+
+Registrar ligacao: SIM
+Registrar WhatsApp: SIM
+Registrar mensagem: SIM
+Registrar entrevista: SIM
+Registrar observacao: SIM
+Registrar proposta: SIM
+Agendar retorno: SIM
+Proximo contato: SIM
+Responsavel: SIM
+Vincular ao pipeline: NAO — CRM e isolado do Kanban
+Historico visual: NAO — sem timeline
+Metricas de engajamento: NAO — sem taxa de resposta
+Automacao de follow-up: NAO — sem triggers
+
+
+================================================================================
+13 — IA OPERACIONAL
+================================================================================
+
+13.1 MOTOR INTERNO DE RECOMENDACAO
+
+Componente: IAOperacional
+Fonte dados: Supabase (prestadores, recrutamento_candidatos, recrutamento_operacoes)
+AI real: SIM — via proxy-ia Edge Function (Groq/LLaMA)
+Matching engine: Deterministico (keywords x filtros)
+Score: MOCK — recrutamentoScoreService retorna 50 sempre
+
+
+13.2 SEPARACAO
+
+MOTOR INTERNO REAL: Matching por regiao, veiculo, disponibilidade, documentos
+MOCK/HARDCODE: Score de comprometimento (50/Regular), parecer IA
+IA EXTERNA NAO IMPLEMENTADA: proxy-ia e chamado mas resposta nao integra ao score
+
+
+13.3 REGRA
+
+IA deve RECOMENDAR, nunca liberar prestador automaticamente.
+A decisao final e sempre humana.
+
+
+================================================================================
+14 — AUTOMACOES
+================================================================================
+
+14.1 INVENTARIO
+
+Automacao: Disparo de novas vagas
+  Implementada? NAO
+  Backend: —
+  Trigger: —
+  Canal: —
+  Config salva: localStorage
+
+Automacao: Coleta de documentos
+  Implementada? NAO
+  Backend: —
+  Trigger: —
+  Canal: —
+  Config salva: localStorage
+
+Automacao: Reativacao de inativos
+  Implementada? NAO
+  Backend: —
+  Trigger: —
+  Canal: —
+  Config salva: localStorage
+
+Automacao: Alerta de CNH vencendo
+  Implementada? NAO
+  Backend: Calculado mas nao disparado
+  Trigger: —
+  Canal: —
+  Config salva: localStorage
+
+
+14.2 CONCLUSAO
+
+Todas as automacoes sao UI-ONLY.
+O automacoesService usa 100% localStorage.
+Nenhuma automacao tem:
+  - Backend real (Supabase/Edge Function)
+  - Trigger (database)
+  - Canal de disparo (email/WhatsApp)
+  - Configuracao persistida em banco
+
+"Pronto para integrar" = NAO FUNCIONA.
+
+
+================================================================================
+15 — OPERACIONAIS (PRESTADORES APTOS)
+================================================================================
+
+15.1 GATE DE ELEGIBILIDADE
+
+Componente: PrestadoresAptos
+Service: enterpriseKanbanService.listarPrestadoresAptos()
+
+Criterios para aparecer como "Apto":
+
+stage = 'ativo' em recrutamento_candidatos — OBRIGATORIO
+liberado_app = true em prestadores — OBRIGATORIO (via sync)
+Documentacao completa (statusDocumental === 'completo') — OBRIGATORIO
+Veiculo valido em veiculos — RECOMENDADO
+CNH valida (validade_cnh != 'vencida') — OBRIGATORIO
+Sem bloqueio ativo (stage != 'bloqueado') — OBRIGATORIO
+
+
+15.2 CONSISTENCIA
+
+TMS (alocacao): Gate identico — eligibilidadeOperacionalService.ts
+App Motorista: Parcial — Depende de liberado_app (pode estar desatualizado)
+Escala: Gate identico — Usa mesma eligibility service
+Rede: Gate identico — RPC f_aceitar_oportunidade_rede verifica
+
+
+================================================================================
+16 — DASHBOARD E METRICAS
+================================================================================
+
+16.1 AUDITORIA DE METRICAS
+
+Metrica: Total candidatos
+  Fonte: candidatos (LEGACY)
+  Real/Mock: TABELA LEGACY
+  Consistente: NAO
+
+Metrica: Candidatos ativos
+  Fonte: candidatos WHERE status='ativo'
+  Real/Mock: TABELA LEGACY
+  Consistente: NAO
+
+Metrica: Aprovados
+  Fonte: candidatos WHERE status='homologado'
+  Real/Mock: TABELA LEGACY
+  Consistente: NAO
+
+Metrica: Pendentes
+  Fonte: candidatos WHERE status='pendente'
+  Real/Mock: TABELA LEGACY
+  Consistente: NAO
+
+Metrica: Total prestadores
+  Fonte: prestadores
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Prestadores ativos
+  Fonte: prestadores WHERE status='ativo'
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Total veiculos
+  Fonte: veiculos
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Score medio
+  Fonte: prestadores.score_interno
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Retencao
+  Fonte: ativos / total * 100
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Tempo medio aprovacao
+  Fonte: homologacoes
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Regioes criticas
+  Fonte: operacoes - prestadores por regiao
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Operacoes sem cobertura
+  Fonte: operacoes WHERE status='Ativo' sem prestador
+  Real/Mock: REAL
+  Consistente: SIM
+
+Metrica: Evolucao recrutamento
+  Fonte: candidatos (LEGACY)
+  Real/Mock: TABELA LEGACY
+  Consistente: NAO
+
+Metrica: Aprovacoes
+  Fonte: homologacoes
+  Real/Mock: REAL
+  Consistente: SIM
+
+
+16.2 METRICAS CONTRADITORIAS
+
+"Candidatos ativos":
+  Tela A (Dashboard): Le candidatos (LEGACY)
+  Tela B (Pipeline): Le recrutamento_candidatos
+  Divergencia: Tabelas diferentes, contagens diferentes
+
+"Aprovados":
+  Tela A: candidatos WHERE status='homologado'
+  Tela B: stage='aprovado' em recrutamento_candidatos
+  Divergencia: Valores divergentes
+
+Score:
+  Tela A: prestadores.score_interno
+  Tela B: prestadores[].score.geral (localStorage)
+  Divergencia: Fontes diferentes
+
+Documentos pendentes:
+  Tela A: documento_analises
+  Tela B: documentosService (localStorage)
+  Divergencia: Tabela vs localStorage
+
+
+================================================================================
+17 — HISTORICO / AUDITORIA
+================================================================================
+
+17.1 O QUE EXISTE
+
+Criacao de candidato: RASTREADO — recrutamento_candidatos.created_at — Timestamp automatico
+Mudanca de stage: RASTREADO — enterpriseKanbanService.registrarEvento() — JSONB historico
+Aprovacao: RASTREADO — Evento tipo 'aprovado' — No JSONB historico
+Reprovacao: PARCIAL — Evento tipo 'bloqueado' — Sem motivo obrigatorio
+Conversao: RASTREADO — Evento tipo 'convertido' — Com ID do prestador criado
+Observacao: RASTREADO — Evento tipo 'observacao_adicionada' — Texto livre
+Mudanca liberado_app: NAO RASTREADO — Nenhum — SEM TRILHA
+Mudanca de score: NAO RASTREADO — Nenhum — SEM TRILHA
+Upload de documento: NAO RASTREADO — Nenhum — SEM TRILHA
+Contato CRM: RASTREADO — crm_interacoes_prestadores — Tabela dedicada
+Acesso a dados: NAO RASTREADO — Nenhum — SEM AUDITORIA
+
+
+17.2 O QUE FALTA PARA RASTREABILIDADE COMPLETA
+
+Mudanca de liberado_app — Audit log — PRIORIDADE P0
+Upload/aprovacao/rejeicao de documento — Audit log — PRIORIDADE P0
+Acesso a dados pessoais (CPF, docs) — Audit log — PRIORIDADE P1
+Exclusao de candidato — Audit log — PRIORIDADE P1
+Exportacao de dados — Audit log — PRIORIDADE P2
+Login/logout no contexto recrutamento — Audit log — PRIORIDADE P2
+
+
+================================================================================
+18 — RELATORIO P0 / P1 / P2
+================================================================================
+
+----- P0 — BLOQUEIA FLUXO, SEGURANCA OU INTEGRIDADE -----
+
+ID: P0-01
+Severidade: CRITICO
+Problema: RLS anon com acesso completo a recrutamento_candidatos
+Evidencia: M601 migracao adiciona anon
+Arquivo: 20260601_recrutamento_candidatos_rls_anon.sql
+Tabela: recrutamento_candidatos
+Risco: Qualquer anon pode ler/modificar todos os candidatos
+Correcao: REVOKE anon, manter apenas authenticated
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM
+
+ID: P0-02
+Severidade: CRITICO
+Problema: RLS anon com INSERT/UPDATE/DELETE em crm_interacoes_prestadores
+Evidencia: Migracao original
+Arquivo: 202605200002_crm_interacoes_prestadores.sql
+Tabela: crm_interacoes_prestadores
+Risco: Qualquer anon pode criar/modificar interacoes CRM
+Correcao: REVOKE anon
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM
+
+ID: P0-03
+Severidade: CRITICO
+Problema: Bucket documentos_prestadores e publico
+Evidencia: sql_correcao_documentos_prestadores.sql
+Arquivo: Storage
+Tabela: documentos_prestadores
+Risco: Documentos pessoais (CNH, comprovante) baixaveis por qualquer um com URL
+Correcao: Tornar bucket privado + signed URLs
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM (bucket policy)
+
+ID: P0-04
+Severidade: CRITICO
+Problema: Sem auto-bloqueio por vencimento de documento
+Evidencia: Nenhum cron/trigger encontrado
+Arquivo: —
+Tabela: prestadores, documentos_prestadores
+Risco: Prestador com CNH vencida opera indefinidamente
+Correcao: Cron diario: verificar validade → setar liberado_app=false
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM (trigger ou pg_cron)
+
+ID: P0-05
+Severidade: CRITICO
+Problema: liberado_app sem trilha de auditoria
+Evidencia: Nenhum log de mudanca
+Arquivo: prestadoresService.ts, conversaoCandidatoService.ts
+Tabela: prestadores
+Risco: Impossivel rastrear quem liberou/bloqueou e quando
+Correcao: Trigger de auditoria em UPDATE de liberado_app
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM
+
+ID: P0-06
+Severidade: ALTO
+Problema: Bridge gera dados MOCKADOS (nome, cidade, veiculo)
+Evidencia: enterpriseKanbanService.ts:25-68
+Arquivo: enterpriseKanbanService.ts
+Tabela: recrutamento_candidatos
+Risco: Candidatos do App aparecem com nomes ficticios no Pipeline
+Correcao: Ler dados reais do prestador em vez de gerar mock
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P0-07
+Severidade: ALTO
+Problema: Aprovacao de documento no TMS NAO propaga para documentos_prestadores.status
+Evidencia: RELATORIO_AG07J2_DOCUMENTOS_APP_TMS_GATE.txt
+Arquivo: CentralDocumentos.tsx
+Tabela: documentos_prestadores
+Risco: Documento "aprovado" na UI continua como "pendente" no gate
+Correcao: Propagar status via update no Supabase
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+
+----- P1 — NECESSARIO PARA MODULO PROFISSIONAL/HOMOLOGACAO -----
+
+ID: P1-01
+Severidade: ALTO
+Problema: Score de comprometimento e stub (retorna 50)
+Correcao: Implementar calcularScoreComprometimento() com eventos objetivos
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-02
+Severidade: ALTO
+Problema: Automacoes 100% localStorage (nenhuma funcional)
+Correcao: Migrar para Supabase + Edge Functions
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM
+
+ID: P1-03
+Severidade: ALTO
+Problema: WhatsApp CRM 100% Zustand in-memory
+Correcao: Migrar para crm_conversas/crm_mensagens reais
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-04
+Severidade: ALTO
+Problema: Banco de Talentos route 100% mock
+Correcao: Conectar a recrutamento_candidatos real
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-05
+Severidade: ALTO
+Problema: Dashboard usa tabela LEGACY candidatos
+Correcao: Migrar queries para recrutamento_candidatos
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-06
+Severidade: ALTO
+Problema: Sem gates automaticos entre estagios do Pipeline
+Correcao: Criar validacoes por estagio (docs obrigatorios, etc.)
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-07
+Severidade: MEDIO
+Problema: Gate documental e fail-open (0 docs = elegivel)
+Correcao: Mudar para fail-closed com excecao para legacy
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-08
+Severidade: MEDIO
+Problema: "agregado" mapeia para liberado_app=true sem aprovacao
+Correcao: Corrigir mapeamento em prestadoresService
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-09
+Severidade: MEDIO
+Problema: 4 sistemas de documentos nao sincronizados
+Correcao: Consolidar em documentos_prestadores
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-10
+Severidade: MEDIO
+Problema: Sem tenant_id em tabelas recrutamento
+Correcao: Adicionar tenant_id + RLS tenant-scoped
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: SIM
+
+ID: P1-11
+Severidade: MEDIO
+Problema: CPF/telefone expostos em plaintext
+Correcao: Mascarar em componentes UI
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-12
+Severidade: MEDIO
+Problema: Sem motivo obrigatorio ao reprovar/bloquear
+Correcao: Adicionar campo obrigatorio no modal
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-13
+Severidade: MEDIO
+Problema: 16 estagios excessivos — sobreposicoes
+Correcao: Consolidar para 10-12 estagios claros
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-14
+Severidade: MEDIO
+Problema: "+ Adicionar Candidato" nao aceita documentos
+Correcao: Adicionar upload de docs no modal
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+ID: P1-15
+Severidade: BAIXO
+Problema: IAOperacional: parecer IA nao integra ao score
+Correcao: Conectar proxy-ia ao score de comprometimento
+Exige TMS: SIM — Exige APP: NAO — Exige Migration: NAO
+
+
+----- P2 — MELHORIA POSTERIOR -----
+
+ID: P2-01 — Sem versionamento de documentos — Adicionar coluna versao + logica de historico
+ID: P2-02 — "Adicionar documento manual" e apenas texto — Implementar upload real
+ID: P2-03 — Score exibido mas nao computado — Implementar calculo real
+ID: P2-04 — Sem metricas de engajamento CRM — Adicionar taxa de resposta, tempo medio
+ID: P2-05 — Sem retencao de dados — Definir politica com advogado
+ID: P2-06 — Sem controle de exportacao — Adicionar log de exports
+ID: P2-07 — IndicadoresRI/RecrutamentoAnalytics com Math.random() — Remover ou conectar a dados reais
+ID: P2-08 — ~10 componentes legados nao roteados — Remover ou reabilitar
+
+
+================================================================================
+19 — ROADMAP FECHADO (7 MISSOES)
+================================================================================
+
+MISSAO REC-01 — Fundacao de Seguranca e Integridade
+  Objetivo: Eliminar vulnerabilidades de seguranca e garantir integridade referencial.
+  Banco: REVOKE anon das tabelas recrutamento; adicionar tenant_id + RLS; trigger audit para liberado_app; UNIQUE em prestadores.cpf_cnpj
+  TMS: Mascarar CPF em UI; RBAC por secao; remover console.log com PII
+  Testes: Verificar RLS com anon; testar RBAC por papel
+  Criterio: Anon nao acessa nenhuma tabela recrutamento; CPF mascarado em todas as telas
+  Risco: Baixo
+  Dependencias: Nenhuma
+
+MISSAO REC-02 — Consolidacao de Entidades
+  Objetivo: Eliminar duplicidades e estabelecer fonte mestra unica.
+  Banco: Migrar dados de candidatos (LEGACY) para recrutamento_candidatos; DROP candidatos; DROP operacoes (duplicata); consolidar documentos
+  TMS: Atualizar useDashboardRecrutamento para ler de recrutamento_candidatos; remover imports de candidatos
+  Testes: Verificar que dashboard muestra dados corretos pos-migracao
+  Criterio: Una unica tabela por entidade; zero referencias a candidatos LEGACY
+  Risco: Medio
+  Dependencias: REC-01
+
+MISSAO REC-03 — Bridge Confiavel e Cadastro Automatico
+  Objetivo: Tornar a integracao App → Pipeline idempotente e event-driven.
+  Banco: Trigger f_trg_sync_prestador_para_pipeline() em prestadores; ler dados REAIS do prestador
+  TMS: Remover buscarECadastrarAppPrestadores() (polling); adicionar real-time listener
+  Testes: Inserir prestador com origem='app_motorista' → verificar candidato criado com dados reais
+  Criterio: Todo cadastro App aparece no Pipeline em <5 segundos com dados reais
+  Risco: Medio
+  Dependencias: REC-02
+
+MISSAO REC-04 — Pipeline Profissional
+  Objetivo: Tornar o pipeline 100% funcional com gates, validacoes e conversao automatica.
+  Banco: Validacoes por estagio; trigger de conversao quando stage=aprovado; trigger de liberacao
+  TMS: Consolidar 16→12 estagios; modal de reprovação com motivo obrigatorio; gates visuais; fix conversaoCandidatoService
+  Testes: Mover candidato pelo pipeline completo; verificar conversao; verificar que reprovacao exige motivo
+  Criterio: Pipeline funciona ponta a ponta: cadastro → aprovacao → prestador com liberado_app=true
+  Risco: Alto
+  Dependencias: REC-03
+
+MISSAO REC-05 — Documentos e Elegibilidade
+  Objetivo: Sistema documental profissional com upload real, versionamento e auto-bloqueio.
+  Banco: Bucket privado; signed URLs; trigger auto-bloqueio; coluna versao; consolidar schema
+  TMS: Conectar CentralDocumentos a Supabase; upload real; propagar aprovacao; gate fail-closed
+  Testes: Upload CNH → documento aparece; CNH vencida → liberado_app revertido; 0 docs → elegivel=false
+  Criterio: Documento uploadado, aprovado e valido = prestador elegivel; documento vencido = bloqueado
+  Risco: Alto
+  Dependencias: REC-04
+
+MISSAO REC-06 — Automacoes, CRM e IA
+  Objetivo: Automacoes reais, CRM funcional, IA de recomendacao conectada.
+  Banco: Migrar automacoes para Supabase; Edge Functions para disparo; tabela recrutamento_score_historico
+  TMS: 3 automacoes (CNH vencendo, docs pendentes, reativacao); CRM visivel no Kanban; score real; IA conectada
+  Testes: CNH vencendo em 30 dias → email; follow-up agendado → notificacao; score baseado em eventos reais
+  Criterio: 3 automacoes funcionando; CRM visivel no pipeline; score real calculado
+  Risco: Medio
+  Dependencias: REC-05
+
+MISSAO REC-07 — Dashboard, Metricas e Homologacao
+  Objetivo: Dashboard 100% real, metricas consistentes, modulo pronto para homologacao.
+  Banco: Views materializadas para metricas (se necessario)
+  TMS: Dashboard lendo de recrutamento_candidatos; metricas consistentes; remover mocks; remover legados; retencao; auditoria
+  Testes: Playwright completo; verificar consistencia; testar RBAC
+  Criterio: 0 mocks restantes; metricas consistentes; modulo auditavel
+  Risco: Baixo
+  Dependencias: REC-06
+
+
+================================================================================
+20 — VEREDITO
+================================================================================
+
+ARQUITETURA ATUAL: PRECISA REESTRUTURAR
+  3 tabelas paralelas para mesma entidade; 4 sistemas de documentos; bridge fragil
+
+CADASTRO APP INTEGRADO: PARCIAL
+  RPC funciona mas bridge gera dados mock; sem trigger automatico
+
+PIPELINE CONFIAVEL: NAO
+  16 estagios sem gates; dados mockados; sem motivo obrigatorio
+
+DOCUMENTOS PROFISSIONAIS: NAO
+  4 sistemas nao sincronizados; bucket publico; aprovacao nao propaga
+
+LIBERACAO APP GOVERNADA: NAO
+  Sem trilha; sem auto-bloqueio; gate fail-open
+
+BANCO DE TALENTOS CONFIAVEL: NAO
+  Rota principal e 100% mock
+
+CRM FUNCIONAL: PARCIAL
+  CRUD funciona mas isolado do pipeline
+
+AUTOMACOES REAIS: NAO
+  100% localStorage; nenhuma funcional
+
+LGPD TECNICA SUFICIENTE: NAO
+  RLS quebrado; bucket publico; sem RBAC; sem auditoria
+
+PRONTO PARA HOMOLOGACAO: NAO
+  ~40% funcional; gaps criticos de seguranca
+
+
+CONTAGEM REGRESSIVA:
+
+  8 — Fundacao de Seguranca (RLS, audit, tenant)
+  7 — Consolidacao de Entidades (merge tabelas duplicadas)
+  6 — Bridge Confiavel (trigger automatico, dados reais)
+  5 — Pipeline Profissional (gates, validacoes, conversao)
+  4 — Documentos e Elegibilidade (upload, signed URLs, auto-bloqueio)
+  3 — Automacoes, CRM e IA (3 automacoes reais, CRM integrado)
+  2 — Dashboard, Metricas e Homologacao (0 mocks, metricas reais)
+  1 — QA/Playwright completo do modulo
+  0 — RECRUTAMENTO 100%
+
+Estimativa: 5-7 semanas (1 dev full-time) para chegar a 0.
+
+
+================================================================================
+        FIM DA AUDITORIA — AG-REC.8
+  Nenhuma implementacao foi realizada.
+  Nenhuma migration foi executada.
+  Nenhum dado foi modificado.
+================================================================================

@@ -1,0 +1,165 @@
+RELATÓRIO AG-07I-B1.1 — NORMALIZAÇÃO CONSERVADORA DE TIPO DE VEÍCULO
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build) — homologação técnica
+
+====================================================================
+1. CAUSA
+====================================================================
+
+AG-07I-B1 criou equivalências globais baseadas em opinião:
+  passeio ↔ outro
+  van ↔ kombi
+
+Nenhuma tinha evidência contratual no código existente.
+
+====================================================================
+2. RISCO DE PASSEIO ↔ OUTRO
+====================================================================
+
+"outro" é uma categoria genérica que o App produz para qualquer
+veículo sem mapeamento (Carro de Passeio, veículos novos, etc.).
+
+Se a OS exigir "passeio" e o prestador tiver "outro" (que pode ser
+um utilitário, uma van velha, etc.), o gate anterior aceitava.
+Isso é inseguro.
+
+====================================================================
+3. MAPPING FINAL CARRO DE PASSEIO
+====================================================================
+
+App _tipoVeiculoTms (register_screen.dart:729):
+  ANTES: default → 'outro'
+  DEPOIS: case 'Carro de Passeio' → 'passeio'
+
+Correção segura porque:
+  - TMS possui "passeio" como tipo oficial (TIPO_VEICULO_LABEL)
+  - Nenhum consumidor depende de "Carro de Passeio" → "outro"
+  - Dados legados como "outro" permanecem "outro" (não convertidos)
+
+====================================================================
+4. REGRA FINAL DE "OUTRO"
+====================================================================
+
+outro × outro → ✅ COMPATÍVEL
+outro × passeio → ❌ INCOMPATÍVEL
+outro × truck/fiorino/van/etc. → ❌ INCOMPATÍVEL
+
+"outro" NÃO é wildcard. Só é compatível consigo mesmo.
+
+====================================================================
+5. EVIDÊNCIA VAN/KOMBI
+====================================================================
+
+TMS trata van e kombi como tipos DISTINTOS:
+
+tiposVeiculo.ts:
+  kombi: { pesoMax: 1100, cubagemMax: 4.0 }
+  van: specs diferentes (definidos separadamente)
+
+cargaService.ts:
+  kombi: { pesoMin: 121, pesoMax: 1000, cubagemMax: 5 }
+
+validarAlocacaoEscala.ts:
+  Lista van e kombi como tipos separados.
+
+App _tipoVeiculoTms:
+  Kombi e Van são mesclados para 'van' — mas isso é escolha do App,
+  não uma equivalência contratual do TMS.
+
+Conclusão: NÃO existe evidência de que van e kombi são equivalentes.
+O App os mescla por conveniência, mas o TMS os trata separadamente.
+
+Decisão: REMOVER equivalência van ↔ kombi.
+
+====================================================================
+6. EQUIVALÊNCIAS FINAIS PERMITIDAS
+====================================================================
+
+NENHUMA.
+
+Todos os tipos são match exato:
+  moto × moto → OK
+  passeio × passeio → OK
+  fiorino × fiorino → OK
+  kangoo × kangoo → OK
+  van × van → OK
+  kombi × kombi → OK
+  hr × hr → OK
+  vuc × vuc → OK
+  toco × toco → OK
+  truck × truck → OK
+  carreta × carreta → OK
+  outro × outro → OK
+
+Qualquer combinação de tipos DIFERENTES → INCOMPATÍVEL.
+
+====================================================================
+7. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts
+    EQUIVALENCIAS_TIPO = {} (vazio — sem equivalências)
+
+- C:\src\conexao_prestador\lib\features\auth\register_screen.dart
+    case 'Carro de Passeio': return 'passeio' (antes era default→outro)
+
+- src/test/ag07ib1_tipo_veiculo.test.ts
+    Atualizado: van×kombi=INCOMPATÍVEL, passeio×outro=INCOMPATÍVEL
+    Adicionados: K-6 (outro×outro), K-7 (outro×truck), K-8 (outro×fiorino),
+    G-2 (passeio×passeio), van+kombi async test
+
+====================================================================
+8. TESTES EXECUTADOS
+====================================================================
+
+AG-07I-B1.1 (31 testes no arquivo ag07ib1_tipo_veiculo.test.ts):
+  A–G: regra pura (14 testes, incluindo G-2 passeio×passeio)
+  H: regressão veículo inativo (2 testes)
+  I: criarAlocacao com gate (4 testes)
+  J: trocarMotorista/trocarVeiculo com gate (2 testes)
+  E-2/F-2: motoboy preservado (2 testes)
+  K: normalização conservadora (8 testes, incluindo K-6/K-7/K-8)
+  Async: verificarCompatibilidadeTipoVeiculo (4 testes, incluindo van+kombi)
+
+npx vitest run src/test/ag07ib1_tipo_veiculo.test.ts → ✅ 31/31
+npx vitest run (geral)                           → ✅ 605/605 (60 arquivos)
+npx tsc --noEmit                                 → ✅ 0 erros
+
+====================================================================
+9. PENDÊNCIAS LEGADAS
+====================================================================
+
+1. App: Kombi e Van ainda são mesclados para 'van' no App.
+   Se o TMS trata kombi como tipo separado com specs próprias,
+   o App deveria mapear Kombi → 'kombi' (não 'van').
+   Pendência P2 — não afeta esta missão (gate é conservador).
+
+2. Dados legados "outro" no banco não foram convertidos.
+   Permanecem "outro" até reconciliação explícita futura.
+
+====================================================================
+10. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I-B2 — BLOQUEIO POR CAPACIDADE KG/M³
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+CARRO PASSEIO APP → PASSEIO: SIM
+PASSEIO ↔ OUTRO REMOVIDO: SIM
+OUTRO É WILDCARD: NÃO
+OUTRO SÓ COMPATÍVEL COM OUTRO: SIM
+VAN ↔ KOMBI: REMOVIDA (sem evidência contratual)
+TIPOS ESPECÍFICOS PRESERVADOS: SIM
+GATE B1 PRESERVADO: SIM
+CAPACIDADE ALTERADA: NÃO
+ANTT ALTERADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+MIGRATION EXECUTADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07I-B1.1: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07I-B2 — BLOQUEIO POR CAPACIDADE KG/M³

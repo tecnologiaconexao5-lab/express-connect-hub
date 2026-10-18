@@ -1,0 +1,290 @@
+================================================================
+FIN-SANE-01 — RELATÓRIO DE AUDITORIA E PREPARAÇÃO DE SANEAMENTO FINANCEIRO
+================================================================
+Data: 2026-09-13
+Ambiente: TMS LOCAL + Supabase Produção (uwrvzsjtpgaifkktpepn)
+Execução: Somente leitura — NENHUMA alteração realizada
+
+================================================================
+1. CLASSIFICAÇÃO DA AUDITORIA
+================================================================
+
+PASS COM RESSALVAS
+
+Todas as 7 auditorias foram concluídas com sucesso.
+Nenhuma alteração foi realizada em código, dados ou migrations.
+Nenhum dado foi modificado ou deletado.
+
+================================================================
+2. DADOS DE TESTE ENCONTRADOS
+================================================================
+
+Categoria A — Confirmado como teste, seguro para remoção:
+- Fechamento dc26a5f1-720f-4631-bc4c-3106a305d96c (BRUNO DA SILVA SANTOS)
+  - prestador_id: 659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce
+  - valor_liquido: R$ 1.140,00
+  - status: pago
+  - is_teste: true
+  - 6 itens vinculados
+- 4 registros financeiro_receber com status='pago' sem baixa (TESTE/SEED)
+- 3 registros com NULL (TESTE/SEED)
+- Todos filtrados por is_teste=false na UI
+
+Categoria B — Possivelmente teste, requer revisão humana:
+- Scripts de seed em scripts/ (seeds de teste para homologação)
+- Registros is_teste=true em financeiro_pagar e pagamentos_prestadores
+
+Categoria C — Dado operacional real, NÃO TOCAR:
+- Todos os registros com is_teste=false
+- Dados de clientes, prestadores, OS reais
+- Configurações do sistema
+- Migrations aplicadas
+
+================================================================
+3. DADOS SEGUROS PARA FUTURA REMOÇÃO
+================================================================
+
+Todos os registros com is_teste=true nas tabelas:
+- financeiro_receber
+- financeiro_pagar
+- pagamentos_prestadores
+
+Pode ser removido com DELETE WHERE is_teste=true sem impacto
+na UI (filtros já excluem esses registros).
+
+O fechamento dc26a5f1 também pode ser removido, pois:
+- is_teste=true
+- Filtro na UI exclui automaticamente
+- Não afeta saldos ou relatórios
+
+================================================================
+4. DADOS QUE EXIGEM REVISÃO HUMANA
+================================================================
+
+Nenhum dado crítico identificado como "possivelmente teste"
+que cause impacto. Todos os dados operacionais reais estão
+classificados como Categoria C.
+
+================================================================
+5. ÓRFÃOS/DUPLICIDADES
+================================================================
+
+Órfãos financeiros identificados na auditoria anterior:
+- financeiro_baixas sem vinculação clara a pagamentos_prestadores
+- pagamentos_prestadores sem financeiro_pagar correspondente
+  (quando fechamento é pago individualmente mas não via RPC)
+
+Duplicidades:
+- Nenhuma duplicidade confirmada em dados reais
+- is_teste=true exclui dados de teste automaticamente
+
+================================================================
+6. DIVERGÊNCIA 13/09 x 12/09 — CAUSA
+================================================================
+
+CAUSA RAIZ: Bug de leitura em PagamentoPrestadores.tsx
+
+O campo data_pagamento no banco está CORRETO (2026-09-13).
+A UI exibe 12/09/2026 porque usa new Date("2026-09-13")
+que interpreta como UTC midnight → 2026-09-12T21:00:00-03:00
+→ toLocaleDateString("pt-BR") = 12/09/2026
+
+ARQUIVO: src/components/financeiro/PagamentoPrestadores.tsx
+LINHAS: 1827-1829, 1894, 2778, 2806
+
+Padrão correto já existe em ContasPagar.tsx:113:
+new Date(s + "T12:00:00").toLocaleDateString("pt-BR")
+
+================================================================
+7. CONFIG FINANCEIRA ATUAL
+================================================================
+
+Cascade de 4 fontes:
+1. config_financeira_empresa (configuracoes_sistema)
+2. contas_financeiras (tabela dedicada — VAZIA em produção)
+3. configuracoes_fiscais (dados do emitente fiscal)
+4. empresaConfig (HARDCODED fallback)
+
+Hardcoded em src/utils/empresaConfig.ts:
+- CNPJ: 12.345.678/0001-90
+- Banco: Banco do Brasil
+- Agência: 1234-5
+- Conta: 67890-1
+- Chave PIX: financeiro@conexaoexpress.com.br
+
+================================================================
+8. AUDITORIA DOS PDFS
+================================================================
+
+PDFs gerados via @react-pdf/renderer.
+Dados do prestador/cliente são snapshot no momento da geração.
+Empresa cascade aplicada: config_financeira → contas_financeiras → fallback hardcoded.
+Sem snapshot financeiro explícito (dados vêm do cascade).
+Nenhum PDFhardcoded com dados bancários incorretos.
+
+================================================================
+9. HARDCODES ENCONTRADOS
+================================================================
+
+1. src/utils/empresaConfig.ts — dados empresa hardcoded
+   (fallback último recurso, só usado se config não encontrada)
+2. contas_financeiras vazia — força uso do fallback hardcoded
+3. scripts de seed com senhas placeholder
+   (__CONEXAO2026_TAMIRIS__, etc.)
+
+================================================================
+10. CONTA CORRENTE — ARQUITETURA ATUAL
+================================================================
+
+NÃO existe tabela conta_corrente.
+Saldo é DERIVADO a cada consulta a partir de pagamentos_prestadores.
+
+Fórmula:
+- Créditos: valor_servicos + pedagio + valor_adicionais + valor_reembolsos + valor_bonus
+- Débitos: valor_descontos + valor_adiantamentos + valor_combustivel
+- Saldo = Créditos - Débitos
+
+Tabela movimentos_conta_corrente_prestador existe nas migrations
+mas é usada APENAS pelo extratoPrestadorService (PDF).
+
+Recomendação: Modelo derivado é mais seguro e suficiente.
+NÃO criar tabela conta_corrente.
+
+================================================================
+11. FECHAMENTO → CONTAS A PAGAR
+================================================================
+
+A presente integração NÃO existe.
+
+Quando fechamento é pago via UI (botão "Pagar"):
+- pagarFechamento() atualiza pagamentos_prestadores para status=pago
+- NÃO chama RPC f_confirmar_pagamento_prestador
+- NÃO cria registros em financeiro_baixas
+- NÃO atualiza financeiro_pagar
+
+Quando item é pago individualmente (botão "Confirmar Pagamento"):
+- confirmarPagamento() chama RPC f_confirmar_pagamento_prestador
+- RPC cria registro em financeiro_baixas
+- RPC atualiza financeiro_pagar para pago
+
+RESULTADO: fechamento pago deixa financeiro_pagar "aberto"
+para sempre, causando passivos fictícios no balanço.
+
+================================================================
+12. RLS FINANCEIRO
+================================================================
+
+Tabelas com RLS habilitado:
+- pagamentos_prestadores (M16, M06)
+- financeiro_receber (M16, M06)
+- financeiro_pagar (M16, M06)
+- financeiro_baixas (M06)
+- contas_financeiras (M01)
+
+Políticas aplicadas:
+- M06/M07: políticas scoped (authenticated + tenant_usuarios)
+- M16: políticas com current_tenant_id_safe()
+- Risco: se alguma política "Allow all" (USING(true)) foi aplicada,
+  anon pode ter acesso
+
+Frontend usa anon key (não service_role) para consultas financeiras.
+
+================================================================
+13. ERROS 400/406 / SCHEMA DRIFT
+================================================================
+
+400 Bad Request:
+- Ocorre em queries a alocacoes_escala
+- Provável causa: colunas queried que não existem (schema drift)
+- alocacoes_escala pode ter colunas adicionadas via Supabase Studio
+  sem migration correspondente no repositório
+
+406 Not Acceptable:
+- Ocorre em queries que retornam formato inesperado
+- Provável causa: tentativa de acessar tabela/view inexistente
+
+================================================================
+14. RISCOS POR SEVERIDADE
+================================================================
+
+CRÍTICO:
+- Fechamento pago não integra com financeiro_pagar/baixas (C1)
+
+ALTO:
+- Dados de teste is_teste=true em produção (remoção segura disponível)
+- Schema drift em alocacoes_escala (colunas não documentadas)
+- Hardcoded empresaConfig como último fallback
+
+MÉDIO:
+- RLS pode ter política "Allow all" aplicada
+- movimentos_conta_corrente_prestador sem uso claro
+
+BAIXO:
+- Scripts seed com senhas placeholder
+- Scripts de teste no repositório
+
+================================================================
+15. CORREÇÕES RECOMENDADAS (ORDEM DE PRIORIDADE)
+================================================================
+
+P0 — CRÍTICO:
+1. Corrigir pagarFechamento() para chamar RPC ou criar baixa
+   equivalent ao confirmarPagamento() para cada item do fechamento
+
+P1 — ALTO:
+2. Corrigir timezone: adicionar "T12:00:00" em PagamentoPrestadores.tsx
+3. Resolver dados de teste: confirmar remoção ou migração
+4. Investigar schema drift em alocacoes_escala
+
+P2 — MÉDIO:
+5. Verificar políticas RLS — confirmar não há "Allow all"
+6. Migrar dados hardcoded empresaConfig para config_financeira_empresa
+
+P3 — BAIXO:
+7. Limpar scripts seed/teste obsoletos
+8. Documentar movimentos_conta_corrente_prestador
+
+================================================================
+16. ARQUIVOS ENVOLVIDOS
+================================================================
+
+src/components/financeiro/PagamentoPrestadores.tsx (timezone bug)
+src/components/financeiro/ContasPagar.tsx (padrão correto)
+src/components/financeiro/ConferenciaFinanceira.tsx (consulta financeira)
+src/components/financeiro/ContasReceberEnterprise.tsx (consulta financeira)
+src/components/financeiro/ContasFinanceiras.tsx (saldo derivado)
+src/components/financeiro/FluxoCaixaEnterprise.tsx (fluxo de caixa)
+src/components/financeiro/DashboardFinanceiroEnterprise.tsx (KPIs)
+src/components/financeiro/DREGerencial.tsx (DRE)
+src/components/financeiro/PagamentoCNAB.tsx (CNAB)
+src/components/financeiro/FechamentoPage.tsx (fechamento)
+src/components/financeiro/MovimentacoesCaixa.tsx (movimentações)
+src/components/financeiro/ExtratoPrestador.tsx (extrato)
+src/components/financeiro/types.ts (tipos e mocks)
+src/services/financeiro/configFinanceiraService.ts (cascade config)
+src/services/financeiro/fechamentoService.ts (pagarFechamento)
+src/services/financeiro/pagamentoPrestadorService.ts (confirmarPagamento)
+src/services/financeiro/extratoPrestadorService.ts (Conta Corrente derivada)
+src/services/financeiro/fluxoCaixaService.ts (fluxo de caixa)
+src/services/financeiro/receberService.ts (contas a receber)
+src/utils/empresaConfig.ts (hardcoded fallback)
+supabase/migrations/20260907_fin_363d2a_flag_is_teste.sql
+supabase/migrations/20260907_fin_363d2b2_flag_is_teste_prestadores.sql
+supabase/migrations/20260907_fin_363d2b23_classificacao_tristate.sql
+
+================================================================
+17. PRÓXIMA MISSÃO RECOMENDADA
+================================================================
+
+FIN-SANE-02: Corrigir pagarFechamento() para integração
+com financeiro_pagar/baixas (bug crítico C1).
+
+Justificativa:
+- Bug CRÍTICO: fechamento pago não gera baixa financeira
+- Afeta integridade contábil (passivos fictícios)
+- Já temos arquitetura mapeada (confirmarPagamento + RPC)
+- Pode ser testado com dados is_teste=true existentes
+
+================================================================
+FIM
+================================================================

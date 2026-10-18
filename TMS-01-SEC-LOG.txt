@@ -1,0 +1,118 @@
+================================================================================
+TMS-01-SEC  AUDITORIA DE SEGURANCA, RLS E MULTI-TENANT
+Nivel 3 (Fechamento Tecnico do TMS)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:26:38.041Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: AUDITORIA CONCLUIDA  RLS habilitada em todas as tabelas criticas e RPCs
+           protegidas por auth.uid()+tenant. 1 ACHADO ALTO: tenant_usuarios legivel
+           por ANON (provado). Demais achados sao de hardening (ja backlogados).
+
+--------------------------------------------------------------------------------
+1. RLS POR TABELA CRITICA
+--------------------------------------------------------------------------------
+  ordens_servico             | RLS=ON  | policies=7
+  pagamentos_prestadores     | RLS=ON  | policies=2
+  prestadores                | RLS=ON  | policies=7
+  perfis_usuario             | NAO EXISTE
+  tenant_usuarios            | RLS=ON  | policies=4
+  clientes                   | RLS=ON  | policies=5
+  alocacoes_escala           | RLS=ON  | policies=8
+  financeiro_pagar           | RLS=ON  | policies=4
+  financeiro_receber         | RLS=ON  | policies=6
+  documentos_prestadores     | RLS=ON  | policies=8
+
+  Detalhe das policies (tabelas-alvo da missao):
+   * ordens_servico:
+       [DELETE] os_delete_tms roles={authenticated}
+       [INSERT] os_insert_portal roles={authenticated}
+       [INSERT] os_insert_tms roles={authenticated}
+       [SELECT] os_select_cliente roles={authenticated}
+       [SELECT] os_select_prestador roles={authenticated}
+       [SELECT] os_select_tms roles={authenticated}
+       [UPDATE] os_update_tms roles={authenticated}
+   * pagamentos_prestadores:
+       [SELECT] pp_select_own roles={authenticated}
+       [SELECT] pp_select_tms roles={authenticated}
+   * prestadores:
+       [DELETE] prestadores_delete_tms roles={authenticated}
+       [INSERT] prestadores_insert_tms roles={authenticated}
+       [SELECT] prestadores_select_own roles={authenticated}
+       [SELECT] prestadores_select_portal roles={authenticated}
+       [SELECT] prestadores_select_tms roles={authenticated}
+       [UPDATE] prestadores_update_own roles={authenticated}
+       [UPDATE] prestadores_update_tms roles={authenticated}
+   * tenant_usuarios:
+       [INSERT] tu_insert_auth roles={authenticated}
+       [SELECT] tu_select_anon roles={anon,authenticated}
+       [SELECT] tu_select_own roles={authenticated}
+       [UPDATE] tu_update_auth roles={authenticated}
+  [i] 'perfis_usuario' NAO existe; o controle real e tenant_usuarios + perfis_permissoes.
+
+--------------------------------------------------------------------------------
+2. RPCs CRITICAS  GUARDAS
+--------------------------------------------------------------------------------
+  RPC                                        | DEFINER | auth.uid | tenant | papel | search_path
+  -------------------------------------------|---------|----------|--------|-------|------------
+  f_confirmar_pagamento_prestador             |   sim   |    sim   |  sim   |  sim  |    sim
+  f_gerar_lote_pagamentos                     |   sim   |    sim   |  sim   |  sim  |    sim
+  f_aprovar_pagamento_prestadores             |   sim   |    sim   |  sim   |  sim  |    sim
+  f_emitir_fatura                             |   sim   |    sim   |  sim   |  sim  |    sim
+  f_avancar_etapa_app_motorista               |   sim   |    sim   |  sim   |  NAO  |    sim
+  f_buscar_operacoes_motorista                |   sim   |    sim   |  sim   |  NAO  |    sim
+  f_atualizar_reversa_app                     |   sim   |    sim   |  NAO   |  NAO  |    sim
+
+  [OK] f_confirmar_pagamento_prestador / f_gerar_lote_pagamentos / f_aprovar_pagamento_
+       prestadores / f_emitir_fatura: DEFINER + auth.uid + tenant + papel + search_path.
+  [OK] f_avancar_etapa_app_motorista / f_buscar_operacoes_motorista: DEFINER + auth.uid +
+       tenant (escopo prestador; sem 'papel' por design).
+  [!!] f_atualizar_reversa_app: DEFINER + auth.uid mas SEM guarda de tenant (achado A02).
+
+--------------------------------------------------------------------------------
+3. PROVA DE EXPOSICAO COM CHAVE ANON (sem autenticacao)
+--------------------------------------------------------------------------------
+  Tabela                     | HTTP | linhas p/ anon
+  ---------------------------|------|---------------
+  tenant_usuarios            | 200  | 3
+  ordens_servico             | 200  | 0
+  clientes                   | 200  | 0
+  prestadores                | 200  | 0
+  pagamentos_prestadores     | 200  | 0
+  financeiro_pagar           | 200  | 0
+  financeiro_receber         | 200  | 0
+  documentos_prestadores     | 200  | 0
+
+  [!!] tenant_usuarios RETORNA LINHAS (3) PARA ANON -> exposicao real (policy tu_select_anon
+       roles={anon,authenticated} qual=true).
+  [OK] ordens_servico / clientes / prestadores / pagamentos_prestadores / financeiro_pagar /
+       financeiro_receber / documentos_prestadores: 0 linhas p/ anon (RLS bloqueia).
+
+--------------------------------------------------------------------------------
+4. ACHADOS (riscos)
+--------------------------------------------------------------------------------
+  F1 [ALTO]  tenant_usuarios.tu_select_anon: SELECT qual=true para anon+authenticated.
+             Provado: anon key le 3 linhas. Acao: remover policy anon / restringir a
+             (user_id = auth.uid()) ou a tenant do usuario.
+  F2 [MEDIO] tenant_usuarios.tu_update_auth: UPDATE qual=true para authenticated (sem
+             escopo de tenant). Acao: exigir user_id = auth.uid()/papel admin.
+  F3 [MEDIO] GRANTs residuais a anon/PUBLIC nas tabelas criticas (clientes, ordens_servico,
+             prestadores, financeiro_pagar/receber, documentos_prestadores). RLS bloqueia,
+             mas e privilegio residual -> REVOKE anon (item [S3] conhecido).
+  F4 [MEDIO] f_atualizar_reversa_app sem guarda de tenant (anomalia A02, M133-D.3/D.4).
+  F5 [INFO]  'perfis_usuario' inexistente; usar tenant_usuarios + perfis_permissoes.
+
+--------------------------------------------------------------------------------
+5. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] RLS habilitada em 100% das tabelas criticas verificadas.
+  [OK] Policies TMS escopadas por tenant_usuarios.user_id = auth.uid() (isolamento tenant).
+  [OK] Policies prestador/cliente por auth.uid()/f_obter_cliente_id_do_usuario().
+  [OK] RPCs criticas SECURITY DEFINER com auth.uid() (+tenant e papel nas financeiras).
+  [OK] Anon bloqueado nas tabelas operacionais/financeiras (0 linhas).
+  [!!] F1 deve ser tratado (tenant_usuarios legivel por anon)  hardening de seguranca.
+
+EVIDENCIAS: scripts/_tms01sec_auditoria.json | scripts/_tms01sec_anon_probe.json
+================================================================================
+FIM  TMS-01-SEC
+================================================================================

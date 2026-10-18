@@ -1,0 +1,316 @@
+d================================================================================
+EFI-INT-03 — DESENHO TECNICO EFI HML
+================================================================================
+MISSAO.......: EFI-INT-03 — Desenho tecnico da integracao Efi (ANTES de aplicar)
+AMBIENTE.....: TMS (express-connect-hub) — HOMOLOGACAO
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: Somente desenho/documentacao. Nenhuma migration aplicada, nenhuma
+              Edge Function criada, nenhuma credencial usada/inserida, nenhum .p12
+              copiado, producao intocada.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML  [ATUAL: desenho tecnico]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+
+PARTE A — CERTIFICADO / mTLS
+================================================================================
+A.1 RUNTIME REAL DO PROJETO
+  - supabase/config.toml -> [edge_runtime] enabled = true, deno_version = 2.
+  - Edge Functions do projeto sao Deno (Supabase Edge Runtime), hospedadas.
+  - Nao ha versao de edge-runtime fixada no repo; a versao e a do hosted.
+
+A.2 COMPROVACAO TECNICA (API/runtime)
+  - `fetch()` do Deno NAO aceita .p12/.pfx/PKCS#12 nem DER. Somente PEM.
+    (Deno Network API: TlsCertifiedKeyPem exige PEM; "DER is not compatible".)
+  - `Deno.createHttpClient({ cert, key, caCerts })` e o primitivo para mTLS de
+    SAIDA. Foi EXPOSTO no edge-runtime pelo PR #515 "expose Deno.createHttpClient"
+    (merge 18/03/2025, marco Deno 2.1 / issue #208 "query a TLS certificate-
+    protected server"). Logo, em Deno 2 o primitivo existe.
+  - Nomes corretos das opcoes: `cert` e `key`.
+    Nomes do ecossistema Node (`certChain`/`privateKey`) sao IGNORADOS
+    silenciosamente (cliente conecta SEM certificado) — NAO usar.
+  - `keyFormat`/chave: Deno 2 (rustls 0.23+) exige chave PKCS#8
+    (`-----BEGIN PRIVATE KEY-----`). Chave PKCS#1 (`BEGIN RSA PRIVATE KEY`)
+    pode DERRUBAR o isolate (regressao reportada no edge-runtime 1.76.0 /
+    Deno 2.1.4, set/2026 — ver evidencias abaixo).
+  - `Deno.connectTls({ cert, key })` tambem suporta mTLS, mas foi citado como
+    travando (>20s) no relato de regressao; preferir `createHttpClient`.
+
+A.3 NECESSARIO (decisao)
+  - [SIM] Converter .p12 -> PEM cert + PEM key (PKCS#8). (.p12 base64 nao basta.)
+  - [NAO] Senha do .p12 em runtime: a senha so e usada na conversao, FORA do
+    runtime. O secret entregue ao Deno ja e PEM sem senha.
+  - [SIM] `Deno.createHttpClient` (cert/key) — mecanismo suportado.
+  - [NAO] `.p12` direto no Secret como fonte de runtime.
+  - [NAO] fetch simples: fetch padrao nao apresenta certificado de cliente.
+
+A.4 FORMA MAIS SEGURA DE ARMAZENAR (sem valores)
+  - Client ID / Client Secret / cert / key: SOMENTE em Supabase Secrets (backend).
+  - Certificado em PEM (X.509) e chave em PEM PKCS#8, codificados em base64.
+  - Converter o .p12 FORA do repositorio, em maquina controlada.
+  - NAO copiar .p12 para o projeto. .gitignore ja cobre *.p12/*.pfx/*.pem/*.key.
+  - Limites de secret (docs Supabase): 100 secrets/projeto, 48 KiB por secret —
+    cert+key (poucos KB) cabem com folga.
+
+A.5 EVIDENCIAS CONSULTADAS (URLs)
+  - Deno Docs — Deno.createHttpClient / TlsCertifiedKeyPem:
+    https://docs.deno.com/api/deno/fetch/ e https://docs.deno.com/api/deno/network/
+  - Supabase Edge Functions (runtime Deno / secrets):
+    https://supabase.com/docs/guides/functions
+  - Supabase Edge Functions — Limits (secrets 48KiB, 100/projeto):
+    https://supabase.com/docs/guides/functions/limits
+  - supabase/edge-runtime PR #515 (expõe Deno.createHttpClient, Deno 2.1):
+    https://github.com/supabase/edge-runtime/pull/515
+  - supabase/edge-runtime issue #208 (fetch com servidor protegido por TLS):
+    https://github.com/supabase/edge-runtime/issues/208
+  - Discussao Supabase #50534 (regressao mTLS 1.76.0 / PKCS#8):
+    https://github.com/orgs/supabase/discussions/50534
+  - Discussao Supabase #48894 (Efi/Pix mTLS, egress IP, inbound mTLS):
+    https://github.com/orgs/supabase/discussions/48894
+
+PARTE B — SCHEMA ADITIVO (PROPOSTO — NAO APLICAR)
+================================================================================
+Convencoes: tenant_id DEFAULT current_tenant_id_safe(); RLS com guard
+EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid());
+grants apenas authenticated/service_role (sem anon/PUBLIC).
+
+-- ============================================================================
+-- efi_cobrancas (A) — vinculo OBRIGATORIO fatura_id + receber_id + ambiente
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.efi_cobrancas (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         uuid NOT NULL DEFAULT current_tenant_id_safe(),
+    ambiente          text NOT NULL DEFAULT 'homologacao',
+    fatura_id         uuid NOT NULL REFERENCES public.faturas(id) ON DELETE RESTRICT,
+    receber_id        uuid NOT NULL REFERENCES public.financeiro_receber(id) ON DELETE RESTRICT,
+    charge_id         text,
+    txid              text,
+    nosso_numero      text,
+    status            text NOT NULL DEFAULT 'criada',
+    valor             numeric(18,2) NOT NULL,
+    vencimento        date,
+    linha_digitavel   text,
+    codigo_barras     text,
+    pdf_url           text,
+    barcode_url       text,
+    pix_copia_cola    text,
+    pix_qrcode_url    text,
+    bolix             jsonb,
+    metadata          jsonb NOT NULL DEFAULT '{}'::jsonb,   -- sanitizado
+    criado_em         timestamptz NOT NULL DEFAULT now(),
+    atualizado_em     timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_efi_cobrancas_ambiente CHECK (ambiente IN ('homologacao','producao')),
+    CONSTRAINT ck_efi_cobrancas_status CHECK (status IN (
+      'criada','registrada','paga','cancelada','expirada','falhou','baixada'))
+);
+-- Anti-duplicidade (1 cobranca ATIVA por recebivel / por fatura):
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_cobrancas_receber_ativa
+  ON public.efi_cobrancas (receber_id)
+  WHERE status NOT IN ('cancelada','expirada','baixada');
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_cobrancas_charge
+  ON public.efi_cobrancas (ambiente, charge_id) WHERE charge_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_cobrancas_txid
+  ON public.efi_cobrancas (ambiente, txid) WHERE txid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_efi_cobrancas_fatura ON public.efi_cobrancas (fatura_id);
+CREATE INDEX IF NOT EXISTS idx_efi_cobrancas_receber ON public.efi_cobrancas (receber_id);
+CREATE INDEX IF NOT EXISTS idx_efi_cobrancas_status ON public.efi_cobrancas (status);
+
+-- ============================================================================
+-- efi_pix_pagamentos (B) — vinculo OBRIGATORIO pagamento_prestador_id + ambiente
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.efi_pix_pagamentos (
+    id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id              uuid NOT NULL DEFAULT current_tenant_id_safe(),
+    ambiente               text NOT NULL DEFAULT 'homologacao',
+    pagamento_prestador_id uuid NOT NULL REFERENCES public.pagamentos_prestadores(id) ON DELETE RESTRICT,
+    idempotency_key        text NOT NULL,
+    end_to_end_id          text,
+    status                 text NOT NULL DEFAULT 'preparado',
+    valor                  numeric(18,2) NOT NULL,
+    chave_pix_destino      text,
+    referencia             text,
+    comprovante_url        text,
+    baixa_id               uuid REFERENCES public.financeiro_baixas(id) ON DELETE SET NULL,
+    erro                   text,
+    metadata               jsonb NOT NULL DEFAULT '{}'::jsonb,
+    criado_em              timestamptz NOT NULL DEFAULT now(),
+    atualizado_em          timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_efi_pix_ambiente CHECK (ambiente IN ('homologacao','producao')),
+    CONSTRAINT ck_efi_pix_status CHECK (status IN (
+      'preparado','enviado','liquidado','falhou','cancelado','devolvido'))
+);
+-- Anti-duplicidade:
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_pix_idempotency
+  ON public.efi_pix_pagamentos (idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_pix_e2e
+  ON public.efi_pix_pagamentos (ambiente, end_to_end_id) WHERE end_to_end_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_pix_pagamento_ativo
+  ON public.efi_pix_pagamentos (pagamento_prestador_id)
+  WHERE status NOT IN ('falhou','cancelado','devolvido');
+CREATE INDEX IF NOT EXISTS idx_efi_pix_pagamento ON public.efi_pix_pagamentos (pagamento_prestador_id);
+CREATE INDEX IF NOT EXISTS idx_efi_pix_status ON public.efi_pix_pagamentos (status);
+
+-- ============================================================================
+-- efi_eventos — webhooks (idempotencia de ingestao)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.efi_eventos (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       uuid,
+    ambiente        text NOT NULL DEFAULT 'homologacao',
+    tipo            text NOT NULL,
+    efi_id          text,
+    idempotency_key text NOT NULL,
+    payload         jsonb NOT NULL DEFAULT '{}'::jsonb,   -- sanitizado
+    processado      boolean NOT NULL DEFAULT false,
+    erro            text,
+    recebido_em     timestamptz NOT NULL DEFAULT now(),
+    processado_em   timestamptz,
+    CONSTRAINT ck_efi_eventos_ambiente CHECK (ambiente IN ('homologacao','producao'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_eventos_idempotency
+  ON public.efi_eventos (idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_efi_eventos_externo
+  ON public.efi_eventos (ambiente, tipo, efi_id) WHERE efi_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_efi_eventos_processado ON public.efi_eventos (processado);
+
+-- ============================================================================
+-- efi_config — AVALIADA: NAO CRIAR AGORA.
+--   Credenciais/certificado NUNCA em tabela -> Supabase Secrets.
+--   Mapeamento conta_financeira <-> conta Efi: adiar (evita tabela "por
+--   conveniencia"). Reavaliar quando houver multi-conta.
+-- ============================================================================
+
+RLS PROPOSTA (para as 3 tabelas):
+  ALTER TABLE public.<t> ENABLE ROW LEVEL SECURITY;
+  POLICY <t>_select_tms FOR SELECT TO authenticated
+    USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+  POLICY <t>_insert_tms FOR INSERT TO authenticated
+    WITH CHECK (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+  POLICY <t>_update_tms FOR UPDATE TO authenticated
+    USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()))
+    WITH CHECK (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+  -- Sem DELETE (auditavel; cancelamento/estorno = UPDATE de status)
+  REVOKE ALL ... FROM anon; REVOKE ALL ... FROM PUBLIC;
+  GRANT SELECT, INSERT, UPDATE TO authenticated;
+  GRANT SELECT, INSERT, UPDATE, DELETE TO service_role;
+  (efi_eventos: ingestao via Edge Function/service_role; usuario TMS apenas le.)
+
+PARTE C — INTEGRIDADE FINANCEIRA (CONTRATOS VIGENTES)
+================================================================================
+C.1 f_registrar_baixa_financeira — VERSAO FINAL VIGENTE
+    Migration final: 20260903000000_fin_master361_core_financeiro.sql
+    (evolucao: F0-C4 20260818000001 -> F0-D 20260818000002 -> fin_master361)
+    Assinatura vigente (11 parametros):
+      p_titulo_tabela text, p_titulo_id uuid, p_valor_baixado numeric,
+      p_data_baixa date default current_date,
+      p_forma_pagamento text default null, p_conta_financeira text default null,
+      p_conta_financeira_id uuid default null,
+      p_referencia_bancaria text default null, p_observacao text default null,
+      p_usuario_id uuid default null, p_usuario_nome text default null
+    Retorno:
+      TABLE(sucesso boolean, mensagem text, baixa_id uuid,
+            saldo_restante numeric, status_titulo text)
+    Aceita titulo_tabela = 'financeiro_receber'?  ==> SIM
+      (branch introduzida em F0-D 20260818000002 e mantida em fin_master361)
+    Efeitos em financeiro_receber: status, data_pagamento, conta_entrada, observacoes.
+    Status resultante: 'parcial' (saldo>0) ou 'pago'.
+    Grava financeiro_baixas (inclui conta_financeira_id e referencia_bancaria).
+    Grants: authenticated + service_role (sem anon/PUBLIC).
+    OBSERVACAO/RISCO: a mudanca de aridade feita com CREATE OR REPLACE pode ter
+    deixado COEXISTINDO a assinatura antiga de 10 parametros (F0-D). Verificar/
+    consolidar em EFI-INT-04. NAO modificar agora.
+
+C.2 f_confirmar_pagamento_prestador — CONTRATO ATUAL
+    Migration final: 20260920_02mf_fix_rpc_pagamento_prestador_parcial.sql
+    Assinatura atual (3 parametros com default):
+      p_pagamento_id uuid,
+      p_data_pagamento date default current_date,
+      p_valor_pago numeric default null
+    Retorno:
+      TABLE(sucesso boolean, mensagem text, pagamento_id uuid, titulo_id uuid,
+            baixa_id uuid, valor_pagamento numeric, valor_liquidado numeric,
+            saldo_restante numeric, conta_financeira_id uuid,
+            conta_financeira text, status_pagamento text)
+    Suporta pagamento PARCIAL (p_valor_pago); NULL = integral.
+    Idempotente: rejeita se ja 'pago'/'cancelado'.
+    Atomica: grava baixa + status do pagamento na mesma transacao.
+    Localiza titulo financeiro_pagar por OS+valor+prestador (ou prestador+valor).
+    A RPC de fechamento (f_confirmar_pagamento_fechamento, 20260913000000)
+    reutiliza esta por item.
+    NENHUMA RPC foi modificada nesta missao.
+
+FLUXO DE BAIXA (desenho, sem criar fato economico):
+  A) Boleto pago   -> webhook -> efi_eventos -> efi_cobrancas.receber_id
+                    -> f_registrar_baixa_financeira('financeiro_receber', ...)
+  B) Pix liquidado -> webhook -> efi_eventos -> efi_pix_pagamentos.pagamento_prestador_id
+                    -> f_confirmar_pagamento_prestador(pagamento_id, data, valor)
+
+PARTE D — DOCUMENTACAO INSEGURA (ALTERADA SOMENTE ESTA)
+================================================================================
+Arquivo: docs/proximas-integracoes.md (secao "5. Efi Bank - Boletos")
+ANTES (inseguro, prefixo VITE_ = exposto no bundle do frontend):
+  - VITE_EFI_CLIENT_ID
+  - VITE_EFI_CLIENT_SECRET
+  - VITE_EFI_CERTIFICADO (base64)
+DEPOIS (server-side, sem VITE_):
+  - EFI_ENVIRONMENT
+  - EFI_CLIENT_ID_HML
+  - EFI_CLIENT_SECRET_HML
+  - EFI_CERTIFICATE_HML      (PEM X.509, base64)
+  - EFI_PRIVATE_KEY_HML      (PEM PKCS#8, base64)  [necessario: Deno exige cert+key]
+Proibido: qualquer VITE_EFI_CLIENT_SECRET ou certificado VITE_*. Confirmado: 0 ocorrencias.
+
+NOMES FINAIS DAS SECRETS (SOMENTE NOMES — SEM VALORES)
+  EFI_ENVIRONMENT            -> "homologacao"
+  EFI_CLIENT_ID_HML
+  EFI_CLIENT_SECRET_HML
+  EFI_CERTIFICATE_HML        -> cert PEM (X.509) base64
+  EFI_PRIVATE_KEY_HML        -> key PEM PKCS#8 base64  (adicional, necessario)
+  (condicional) EFI_WEBHOOK_SECRET_HML -> somente se a Efi oferecer token/HMAC.
+Nenhum valor registrado. Nenhum `supabase secrets set` executado.
+
+RISCOS / BLOQUEIOS
+--------------------------------------------------------------------------------
+R1 [ALTO] mTLS no edge-runtime 1.76.0 (Deno 2.1.4): chave PKCS#1 derruba o isolate;
+          nomes certChain/privateKey sao ignorados. Mitigar com cert+key PKCS#8.
+          Validar EMPIRICAMENTE em HML na EFI-INT-04.
+R2 [ALTO] mTLS de ENTRADA (webhook): se a Efi exigir rejeicao TLS de probe sem
+          certificado, a URL gerenciada nao atende -> shim (container/VM com
+          reverse proxy) necessario.
+R3 [MEDIO] Egress IP nao estatico: se a Efi exigir allowlist de IP, avaliar shim.
+R4 [MEDIO] Possivel overload da RPC de baixa (10 vs 11 params) — verificar/consolidar.
+R5 [BAIXO] Doc legada src/docs/FINANCEIRO_INTEGRACOES.md cita ConfiguracaoEfi genérica
+          (sem valores); alinhar quando conveniente.
+R6 [CONTROLE] Somente HML; nenhum dado/tabela/credencial de producao tocado.
+
+ARQUIVOS ALTERADOS/CRIADOS NESTA MISSAO
+--------------------------------------------------------------------------------
+  M  docs/proximas-integracoes.md         (secao Efi: VITE_* -> server-side)
+  A  docs/EFI_INTEGRACAO_DESIGN.md        (desenho completo)
+  A  EFI-INT-03-DESIGN.txt                (este relatorio)
+
+DECISAO GO/NO-GO PARA EFI-INT-04
+--------------------------------------------------------------------------------
+  GO CONDICIONAL.
+  - Desenho aprovado e sem dependencia de credenciais reais no repo.
+  - EFI-INT-04 deve COMECAR por uma PROVA DE HANDSHAKE mTLS em HML (cert+key
+    PKCS#8 via Secrets). Se o handshake falhar por regressao do runtime (R1)
+    ou por exigencia de mTLS de entrada no webhook (R2), o plano PIVOTA para
+    o modelo com "shim" (infra controlada) ANTES de prosseguir para A/B.
+  - Nenhuma migration deve ser aplicada antes de EFI-INT-04 validar o transporte.
+
+DECLARACAO DE CONFORMIDADE
+--------------------------------------------------------------------------------
+  [OK] Nenhuma migration aplicada.  [OK] Nenhuma Edge Function criada.
+  [OK] Nenhuma credencial usada/inserida.  [OK] .p12 nao copiado/solicitado.
+  [OK] Nenhum `supabase secrets set`.  [OK] Nenhuma UI alterada.  [OK] Producao intocada.
+  [OK] Somente documentacao alterada/criada.  [OK] Nenhum secret neste TXT/design.
+
+================================================================================
+FIM — EFI-INT-03-DESIGN.txt
+================================================================================

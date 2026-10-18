@@ -1,0 +1,180 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04B2-NEUTRALIZAR-CONFLITOS-TESTE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: ESCRITA controlada (soft cancel + DELETE de teste). OS NAO deletadas.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+6/6 OS CONFLITO neutralizadas (soft status='cancelada'); 5 oportunidades encerradas
+(sem DELETE); aceite/visualizacoes do FRANKLIN preservados; 10/10 financeiros TESTE
+removidos (R$ 5.100,00). Cadastros FRANKLIN e CYDAK identicos. Residuo is_teste
+financeiro = 0/0/0. P0 = 0. Nenhuma recriacao M66/M80.
+
+--------------------------------------------------------------------------------
+1. REVALIDACAO PREVIA
+--------------------------------------------------------------------------------
+6 OS reconfirmadas. Ausencia de nova execucao/POD/fiscal/faturamento:
+  fiscal CT-e/NFS-e/MDF-e = 0/0/0 | fatura_itens = 0 | os_pod = 0 | entregas = 0 |
+  ocorrencias = 0.
+10 financeiros reconfirmados: AR 6 + AP 2 + PP 2 = 10 | TODOS is_teste=true |
+  soma R$ 5.100,00. Nenhuma evidencia real nova => sem BLOCKED.
+
+--------------------------------------------------------------------------------
+2. BACKUP NOVO (nome DATA-04B2) — comprovado ANTES da escrita
+--------------------------------------------------------------------------------
+Diretorio ..: express-connect-hub\backups\
+SQL  .......: TMS-FIN-DATA-04B2_backup_2026-09-24T23-46-01-872Z.sql
+  bytes ....: 1.647.531
+  sha256 ...: c668322a807be92cc497efc21fb6a25f837be9f691cdccf7a798ce5141e1d54a
+JSON .......: TMS-FIN-DATA-04B2_backup_2026-09-24T23-46-01-872Z.json
+  bytes ....: 2.071.105
+  sha256 ...: f51efbfef7e8d202e9584cd9f6ce15c8eabf890fdc05b3ffd60c3a0fa4ae5a6d
+Data/hora ..: 2026-09-24T23:46:02Z (20:46 local)
+Contagens ..: ordens_servico 162 | alocacoes_escala 199 | financeiro_receber 52 |
+  financeiro_pagar 114 | pagamentos_prestadores 97 | composicao_financeira_os 52 |
+  rede_oportunidades 12 | rede_visualizacoes 3 | os_historico 203
+Restauravel via json_populate_recordset (DELETE+INSERT tipado por tabela).
+
+--------------------------------------------------------------------------------
+3. EXECUCAO (transacao unica — COMMIT OK)
+--------------------------------------------------------------------------------
+ 1. rede_oportunidades -> status='cancelada' (valor REAL do enum
+    rede_oportunidade_status: publicada/visualizada/interessada/aceita/expirada/
+    cancelada) ...................................................... 5 (sem DELETE)
+ 2. alocacoes_escala 4b53d326 -> status='cancelada' ................ 1 (soft)
+ 3. ordens_servico (6 CONFLITO) -> status='cancelada' ............... 5 via UPDATE
+    (+1 ja constava cancelada no momento do UPDATE; total final 6/6)
+ 4. DELETE financeiro_receber (is_teste=true, ids exatos) .......... 6
+ 5. DELETE financeiro_pagar   (is_teste=true, ids exatos) .......... 2
+ 6. DELETE pagamentos_prestadores (is_teste=true, ids exatos) ...... 2
+Filtro usado: is_teste=true + vinculo EXATO as 6 OS (por id/os_id). NAO por
+prestador_id/cliente_id. Nenhuma OS removida. Nenhum cadastro alterado.
+
+--------------------------------------------------------------------------------
+4. ANTES / DEPOIS (contagens e valores)
+--------------------------------------------------------------------------------
+TABELA                   | ANTES | DEPOIS | DELTA
+-----------------------------------------------
+financeiro_receber       |   52  |   46   |  -6
+financeiro_pagar         |  114  |  112   |  -2
+pagamentos_prestadores   |   97  |   95   |  -2
+faturas                  |    8  |    8   |   0
+financeiro_baixas        |   12  |   12   |   0
+rede_oportunidades(canc) |    0  |    5   |  +5 (soft, sem DELETE)
+ordens_servico is_teste  |   33  |   33   |   0 (33/33 canceladas)
+VALORES: AR R$41.009,83 -> R$37.259,83 | AP R$80.468,31 -> R$79.793,31 |
+         PP R$68.222,46 -> R$67.547,46
+VALOR REMOVIDO TOTAL: R$ 5.100,00 (10 registros TESTE CONFIRMADO).
+
+--------------------------------------------------------------------------------
+5. PROVAS A–N
+--------------------------------------------------------------------------------
+A) 6/6 OS canceladas soft: edf1fff7, 4996bf7b, b8fedeb1, 4767a7f1, fb33a1bd,
+   45857f5f -> status='cancelada'.
+B) Alocacao de teste cancelada: 4b53d326 (45857f5f) -> 'cancelada'.
+C) Oportunidades encerradas sem DELETE: 5 -> status='cancelada' (13c004d3, 0f76484b,
+   85b98376, 483cc6ed, 377a53e0). Nenhum DELETE.
+D) rede_visualizacoes preservadas: total 3 (1 em 85b98376, 1 em 483cc6ed, 1 em
+   377a53e0), todas do FRANKLIN.
+E) Aceite FRANKLIN preservado: oportunidade 377a53e0 mantem
+   prestador_aceite_id=be420cfc... e aceite_em=2026-07-05T21:16:38.148Z.
+F) Cadastro FRANKLIN identico antes/depois (nome, cpf, status, created_at,
+   updated_at inalterados).
+G) Cadastro CYDAK identico antes/depois (razao, cnpj, created_at, updated_at
+   inalterados).
+H) Operacoes reais deles intactas: FRANKLIN alocacoes 32 (inalterado); PP/FP reais
+   (is_teste=false) intactos. CYDAK: 2 OS mantidas (real + teste cancelada); nenhuma
+   operacao real removida.
+I) 10/10 financeiros teste removidos (AR6+AP2+PP2).
+J) R$ 5.100,00 removidos (500+650*5 AR = 3.750; 350+325 AP = 675; 325+350 PP = 675).
+K) Nenhum REAL/DUVIDOSO removido (filtro is_teste=true; residuo is_teste=0/0/0;
+   faturas 8 e baixas 12 intactas).
+L) Nenhum novo orfao: AR os_id orfaos=2 e AP os_id orfaos=34 (PRE-EXISTENTES,
+   is_teste=false); baixa orfa=0.
+M) Touch-test sem recriacao: UPDATE updated_at nas 6 OS => delta AR/AP/PP = 0,0,0
+   (M80 no-op com status='cancelada').
+N) P0 continua = 0 (RPC f_criar_recebivel_manual presente; A6 intacta).
+
+--------------------------------------------------------------------------------
+6. RECALCULO POS-EXECUCAO
+--------------------------------------------------------------------------------
+  financeiro_receber ........... 46 (R$ 37.259,83)
+  financeiro_pagar ............. 112 (R$ 79.793,31)
+  pagamentos_prestadores ....... 95 (R$ 67.547,46)
+  faturas ...................... 8
+  financeiro_baixas ............ 12
+  residuos is_teste (financeiro)  AR 0 | AP 0 | PP 0
+  OS is_teste .................. 33 (33 canceladas; todas soft)
+  financ. vinculado a OS teste . AR 0 | AP 0 | PP 0
+  orfaos ....................... AR 2 (pre) | AP 34 (pre) | baixas 0
+  AR pago sem baixa ............ 2
+  AP pago sem baixa ............ 0
+  pagamentos_prestadores pagos . 5
+  faturas emitidas sem AR ...... 1
+
+--------------------------------------------------------------------------------
+7. REDE / ACEITE / VIEWS — ANTES x DEPOIS
+--------------------------------------------------------------------------------
+Oportunidade | OS       | status ANTES | status DEPOIS | aceite               | views
+----------------------------------------------------------------------------------------
+13c004d3     | edf1fff7 | publicada    | cancelada     | -                    | 0
+0f76484b     | 4996bf7b | publicada    | cancelada     | -                    | 0
+85b98376     | b8fedeb1 | publicada    | cancelada     | -                    | 1 (FRANKLIN)
+483cc6ed     | 4767a7f1 | publicada    | cancelada     | -                    | 1 (FRANKLIN)
+377a53e0     | fb33a1bd | aceita       | cancelada     | 2026-07-05 21:16:38Z | 1 (FRANKLIN)
+Nenhum registro apagado; trilha historica (prestador_aceite_id, aceite_em, views,
+timestamps) preservada.
+
+--------------------------------------------------------------------------------
+8. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- FRANKLIN segue ativo com financeiro REAL pendente (is_teste=false) — nao afetado.
+- CYDAK usada indevidamente em OS de teste (agora cancelada) — cadastro intacto;
+  recomenda-se, no futuro, evitar cliente real em harness de teste.
+- Produtores de dados de teste ainda existem (harnesses) — risco de novos registros
+  de teste em PROD (nao tratado aqui).
+- Contadores de fatura nao tocados; nenhum numero reutilizado.
+
+--------------------------------------------------------------------------------
+9. NAO TRATADO (conforme instrucao)
+--------------------------------------------------------------------------------
+DUVIDOSOS gerais; fatura Calvo R$1.200; 2 AR pagos sem baixa; 5 PP pagos;
+34 AP os_id orfaos; conta_financeira_id; categoria/plano_conta/centro_resultado;
+dashboards; Comercial; APP; Efi.
+
+--------------------------------------------------------------------------------
+10. P0 / P1 ATUALIZADOS
+--------------------------------------------------------------------------------
+P0 = 0 (nenhum aberto).
+P1 atual: 1 fatura emitida sem AR; 2 AR pago sem baixa; AP pago sem baixa 0; 5 PP
+pagos; AR orfaos 2; AP orfaos 34; contadores OK; DUVIDOSOS gerais (fora de escopo).
+Residuo de TESTE financeiro: ZERO (todos os vinculados a OS de teste removidos).
+
+--------------------------------------------------------------------------------
+11. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 6/6 OS de teste neutralizadas (soft), rede encerrada preservando aceite/views,
+10 financeiros TESTE removidos (R$5.100,00), entidades reais (FRANKLIN/CYDAK)
+intactas, nenhuma recriacao, P0=0.
+
+--------------------------------------------------------------------------------
+12. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-05 — SANEAMENTO DOS DUVIDOSOS / P1: tratar DUVIDOSOS gerais, 1 fatura
+Calvo R$1.200, 2 AR pagos sem baixa, 5 PP pagos, 34 AP orfaos e conta_financeira_id,
+com autorizacao de escrita. Alternativa: encerrar trilha de dados de teste em PROD
+(desativar harnesses) para evitar reincidencia.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04B2-NEUTRALIZAR-CONFLITOS-TESTE-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04B2-NEUTRALIZAR-CONFLITOS-TESTE-RESULTADO.txt
+Tamanho ..: 10421 bytes
+Data .....: 24/09/2026 20:46:59
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04B2
+================================================================================

@@ -1,0 +1,1231 @@
+================================================================================
+  CONEXAO EXPRESS — FIN-MASTER-360
+  AUDITORIA MASTER 360 DO FINANCEIRO
+  RECONCILIAÇÃO, FONTES DE VERDADE, LÓGICA E CORREÇÃO E2E
+  Data: 2026-09-03
+  Ambiente: TMS (Producao)
+  Relatorio: AG-FIN_MASTER360_AUDITORIA_RECONCILIACAO.txt
+================================================================================
+
+SUMARIO EXECUTIVO
+=================
+Total de bugs encontrados: 27
+  P0 (risco financeiro/valor incorreto): 6
+  P1 (integração quebrada): 9
+  P2 (relatório/indicador incorreto): 8
+  P3 (UX/visual): 4
+
+Componentes auditados: 34 (.tsx) + 19 services + 14 tabelas + 8 views + 8 RPCs
+Linhas de codigo auditadas: ~15.000+
+
+FINANCEIRO CONFIÁVEL PARA USO REAL: NAO (P0s abertos)
+CONTAS A PAGAR HOMOLOGADO: PARCIAL
+CONTAS A RECEBER HOMOLOGADO: PARCIAL
+BAIXAS HOMOLOGADAS: SIM (RPC funciona, mas UI diverge)
+FLUXO DE CAIXA HOMOLOGADO: NAO (saldo_inicial sempre zero)
+TESOURARIA HOMOLOGADA: NAO (transferencias nao afetam saldo real)
+DRE HOMOLOGADA: PARCIAL (regime competencia, mas depreciacao/IR=0)
+MARGEM POR OS HOMOLOGADA: PARCIAL
+PAGAMENTO PRESTADORES HOMOLOGADO: SIM
+INDICADORES RECONCILIADOS: NAO (Dashboard usa OS, DRE usa financeiro_receber)
+RELATORIOS CONFIÁVEIS: PARCIAL
+PRONTO PARA USO FINANCEIRO REAL: NAO
+
+================================================================================
+SECAO 1 — MAPA FINANCEIRO COMPLETO
+================================================================================
+
+1.1 VISAO GERAL DO MODULO
+--------------------------
+Modulo principal: src/pages/Financeiro.tsx (hub com 28 abas)
+Navegacao: src/components/financeiro/financeiroNav.ts (6 grupos)
+Total de componentes: 34 arquivos .tsx + 2 .ts
+Total de services: 19 arquivos
+Total de tabelas: 17 tabelas diretas + 3 auxiliares
+Total de views: 8 views SQL
+Total de RPCs: 8 funcoes
+Total de triggers: 16 triggers
+
+1.2 MAPA POR GRUPO
+-------------------
+
+VISAO GERAL:
+  - DashboardFinanceiroEnterprise.tsx → KPIs gerais, grafico 6 meses
+  - RelatorioFinanceiroCompleto.tsx → Hub de relatorios (5 sub-relatorios)
+  - ResumoExecutivoFinanceiro.tsx → Resumo executivo
+
+FATURAMENTO:
+  - ConferenciaFinanceira.tsx → Conferencia de servicos para faturamento
+  - FaturaPanel.tsx → Emissao de fatura (conexao_express / calvo)
+  - FaturaLista.tsx → Lista de faturas emitidas
+  - FaturaManualDialog.tsx → Criacao de fatura manual
+  - Inadimplencia.tsx → Clientes inadimplentes
+
+CONTAS A RECEBER:
+  - ContasReceber.tsx → Lista de titulos a receber
+  - ContasReceberEnterprise.tsx → Versao enterprise com KPIs
+
+CONTAS A PAGAR:
+  - ContasPagar.tsx → Lista de titulos a pagar + baixa
+
+PAGAMENTOS:
+  - PagamentoPrestadores.tsx → Pagamento aos prestadores
+  - PagamentoCNAB.tsx → Pagamento via CNAB
+
+TESOURARIA:
+  - ContasBancarias.tsx → Contas, bancos e caixas (saldo real)
+  - ContabilidadeFinanceiro.tsx → Contabilidade
+  - PlanoContas.tsx → Plano de contas (100% MOCK)
+
+GESTAO:
+  - FluxoCaixaEnterprise.tsx → Fluxo de caixa previsto/realizado
+  - DREGerencial.tsx → Demonstracao do Resultado do Exercicio
+  - MargemOperacional.tsx → Margem operacional
+  - MargemPorOS.tsx → Margem por ordem de servico
+  - ConciliacaoAvancada.tsx → Conciliacao financeira
+
+OUTROS:
+  - MonitoramentoCombustivel.tsx → Monitoramento de combustivel
+  - ReciboRapido.tsx → Emissao de recibo
+  - SegurosFinanceiro.tsx → Seguros (100% MOCK)
+  - PendenciasCadastro.tsx → Pendencias
+  - OrcamentoPDF.tsx → PDF de orcamento
+  - OSPDF.tsx → PDF de OS
+
+CONFIGURACOES:
+  - ConfigFinanceira.tsx → Configuracoes financeiras
+  - RegrasFinanceirasClienteTab.tsx → Regras por cliente
+  - ContasBancarias.tsx (reutilizado)
+
+RELATORIOS:
+  - RelatorioFaturamentoCliente.tsx
+  - RelatorioPagamentoPrestador.tsx
+  - RelatorioMargemReal.tsx
+  - RelatorioClienteAgregadoRefrigerado.tsx
+
+1.3 MAPA POR COMPONENTE -> SERVICE -> TABELA
+---------------------------------------------
+
+DashboardFinanceiroEnterprise.tsx
+  → supabase.from("ordens_servico") [KPIs principais]
+  → supabase.from("financeiro_pagar") [contas a pagar pendentes]
+  → supabase.from("pagamentos_prestadores") [repasses pendentes]
+  → supabase.from("financeiro_receber") [inadimplencia]
+  → supabase.from("clientes") [lookup]
+  → supabase.from("prestadores") [lookup]
+
+ContasPagar.tsx
+  → supabase.from("financeiro_pagar") [CRUD]
+  → pagarService.baixarPagavel() → RPC f_registrar_baixa_financeira
+  → pagarService.estornarBaixa() → RPC f_estornar_baixa_financeira
+
+ContasReceberEnterprise.tsx
+  → supabase.from("financeiro_receber") [CRUD]
+  → receberService.baixarRecebivel() → RPC f_registrar_baixa_financeira
+
+FluxoCaixaEnterprise.tsx
+  → supabase.from("financeiro_receber") [previsto entradas]
+  → supabase.from("financeiro_pagar") [previsto saidas]
+  → supabase.from("financeiro_baixas") [realizado]
+  → fluxoCaixaService.calcularFluxo() [pure function]
+
+DREGerencial.tsx
+  → supabase.from("financeiro_receber") [receitas]
+  → supabase.from("financeiro_pagar") [despesas, exclui repasses]
+  → supabase.from("pagamentos_prestadores") [custos prestadores]
+  → dreService.calcularDRE() [pure function]
+
+MargemPorOS.tsx
+  → (via composicao_financeira_os ou calculo inline)
+  → margemOsService.calcularMargemOs() [pure function]
+
+ContasBancarias.tsx
+  → supabase.from("contas_financeiras") [CRUD]
+  → contasCaixasService.calcularSaldoConta() [pure function]
+  → supabase.from("financeiro_baixas") [realizado]
+
+PagamentoPrestadores.tsx
+  → supabase.from("pagamentos_prestadores") [CRUD]
+  → supabase.from("pagamentos_prestadores_itens") [itens]
+
+
+================================================================================
+SECAO 2 — FONTES CANONICAS
+================================================================================
+
+CONCEITO                | FONTE CANONICA           | TABELA/VIEW              | CONSUMIDO POR                           | DUPLICIDADES           | RISCO
+------------------------|--------------------------|--------------------------|-----------------------------------------|------------------------|------
+Faturas                 | faturas + fatura_itens   | faturas, fatura_itens    | faturaService, FaturaPanel, FaturaLista  | portal_faturas (legado) | MEDIO
+Contas a Receber        | financeiro_receber       | financeiro_receber       | receberService, ContasReceber            | portal_cliente_financeiro_view | BAIXO
+Recebimentos            | financeiro_baixas        | financeiro_baixas        | receberService, FluxoCaixa               | NENHUM                 | BAIXO
+Contas a Pagar          | financeiro_pagar         | financeiro_pagar         | pagarService, ContasPagar                | NENHUM                 | MEDIO
+Baixas                  | financeiro_baixas        | financeiro_baixas        | pagarService, receberService, FluxoCaixa | NENHUM                 | BAIXO
+Pagamento Prestadores   | pagamentos_prestadores   | pagamentos_prestadores   | pagamentoPrestadorService                | NENHUM                 | BAIXO
+Contas Financeiras      | contas_financeiras       | contas_financeiras       | contasCaixasService, ContasBancarias     | configuracoes_sistema (legado) | ALTO
+Saldo Real              | saldo_inicial + baixas   | contas_financeiras + baixas | contasCaixasService                   | campo saldo (legado)   | CRITICO
+Fluxo Previsto          | financeiro_receber + pagar| financeiro_receber/pagar | FluxoCaixaEnterprise                     | NENHUM                 | MEDIO
+Fluxo Realizado         | financeiro_baixas        | financeiro_baixas        | FluxoCaixaEnterprise                     | NENHUM                 | BAIXO
+DRE Receita             | financeiro_receber       | financeiro_receber       | DREGerencial, dreService                 | ordens_servico (Dashboard) | ALTO
+DRE Custos              | pagamentos_prestadores   | pagamentos_prestadores   | DREGerencial, dreService                 | NENHUM                 | MEDIO
+DRE Despesas            | financeiro_pagar         | financeiro_pagar         | DREGerencial, dreService                 | NENHUM                 | MEDIO
+Margem                  | composicao_financeira_os | composicao_financeira_os | MargemPorOS, margemOsService             | NENHUM                 | MEDIO
+Indicadores Dashboard   | ordens_servico           | ordens_servico           | DashboardFinanceiroEnterprise            | financeiro_receber (DRE) | ALTO
+
+================================================================================
+SECAO 3 — CONTAS A PAGAR (AUDITORIA COMPLETA)
+================================================================================
+
+3.1 FLUXO DE CRIACAO
+---------------------
+UI: ContasPagar.tsx → handleSalvar()
+  → criarPagavel(payload) [pagarService.ts:150]
+    → supabase.from("financeiro_pagar").insert(payload)
+    → Colunas gravadas: descricao, valor, fornecedor, fornecedor_documento,
+      documento, tipo_documento, categoria, plano_contas, centro_resultado,
+      unidade_filial, despesa_fixa_base, competencia, data_emissao,
+      data_vencimento, data_previsao_pagamento, valor_bruto, desconto,
+      multa, juros, impostos_retidos, valor_liquido, codigo_barras,
+      chave_pix, conta_pagadora, status, recorrente, observacoes
+
+  Divergencia P0: valor (DB) vs valorLiquido (UI)
+  - UI mostra: valorLiquido = valorOriginal - desconto + multa + juros - impostosRetidos
+  - DB campo "valor": recebe payload.valor = valorLiquido
+  - DB campo "valor_bruto": recebe payload.valor_bruto = valorOriginal
+  - RPC usa: v_valor_original = SELECT valor (que e valorLiquido)
+  - Conclusao: RPC calcula saldo com base em valorLiquido, NAO em valorOriginal
+  - Se o titulo foi criado com valor=2005 e valor_bruto=2005 (sem desconto),
+    mas depois editado para valor=2000, o saldo sera 2000 (nao 2005)
+
+3.2 FLUXO DE BAIXA
+-------------------
+UI: ContasPagar.tsx → handleBaixa() [linha 561]
+  → baixarPagavel(id, valor, data, conta, obs, forma) [pagarService.ts:343]
+    → Fail-closed: verifica se valor não é NULL
+    → RPC f_registrar_baixa_financeira({
+        p_titulo_tabela: "financeiro_pagar",
+        p_titulo_id: id,
+        p_valor_baixado: valor,
+        ...
+      })
+    → RPC internamente:
+      1. SELECT valor, status FROM financeiro_pagar WHERE id = p_titulo_id FOR UPDATE
+      2. v_valor_original = valor (coluna)
+      3. v_total_baixado = SUM(valor_baixado) FROM financeiro_baixas WHERE titulo_id = p_titulo_id AND NOT estornada
+      4. v_saldo = v_valor_original - v_total_baixado
+      5. SE p_valor_baixado > v_saldo → ERRO "Valor da baixa excede o saldo restante"
+      6. INSERT INTO financeiro_baixas
+      7. UPDATE financeiro_pagar SET status, data_pagamento, data_efetiva_pgto, conta_pagadora
+
+3.3 BUG P0 — "VALOR DA BAIXA EXCEDE O SALDO RESTANTE (2000.00)"
+---------------------------------------------------------------
+Causa raiz identificada:
+
+O titulo tem valor=2000 (coluna "valor" no DB), mas a UI mostra R$ 2.005,00.
+
+Possiveis causas:
+a) O titulo foi criado com valor=2005 (valor_liquido) mas depois teve valor
+   atualizado para 2000 por algum trigger ou edicao;
+b) O titulo foi propagado pelo trigger M66/M80 com valor=2000, mas a UI
+   calcula valorLiquido = valor_bruto - desconto + multa + juros e exibe
+   um valor diferente;
+c) Existe uma baixa anterior de R$ 5,00 que nao foi contada no saldo
+   visivel (por ex., baixa estornada mas ainda aparecendo na UI);
+
+No ContasPagar.tsx, o KPI "totalPagoMes" (linha 449) filtra
+status === "paga" mas NAO filtra por mes — soma TODOS os pagos de
+todos os tempos. Isto mascara o valor real.
+
+A UI mostra valorOriginal (valor_bruto) como valor do titulo (linha 419):
+  valorOriginal: r.valor_bruto || r.valor || 0
+Mas o RPC calcula saldo usando "valor" (que pode ser diferente de valor_bruto).
+
+Se o titulo foi criado com:
+  valor_bruto = 2005, desconto = 0, valor = 2000
+Entao:
+  UI mostra: R$ 2.005,00 (valor_bruto)
+  RPC saldo: 2000 - 0 = 2000
+  Tentar baixar 2005 → ERRO (2005 > 2000)
+
+Solucao: UI deve mostrar o valor que o RPC usa como saldo (valor), nao
+valor_bruto. OU o campo "valor" deve ser igual a "valor_bruto" quando
+nao ha desconto/juros/multa.
+
+3.4 KPIs — totalPagoMes BUGADO
+-------------------------------
+Linha 449: lancamentos.filter(l => l.status === "paga").reduce(...)
+Nao filtra por mes. Mostra TOTAL PAGO HISTORICO, nao do mes atual.
+Impacto: KPI "Pago" sempre mostra valor acumulado, distorcendo indicadores.
+
+3.5 STATUS TRANSITIONS
+-----------------------
+aberto → [aberto, pago, parcial, cancelado]
+parcial → [parcial, pago, cancelado]
+pago → [pago] (terminal)
+cancelado → [cancelado] (terminal)
+
+OK — maquina de estados validada no pagarService.ts.
+
+3.6 VALIDACAO DO SERVICO
+-------------------------
+- validarValor(): number, not NaN, >= 0 ✓
+- validarData(): parse Date ✓
+- validarTransicao(): maquina de estados ✓
+- Column whitelist via setCampo() ✓
+- Fail-closed para valor NULL (FIN-01.1) ✓
+
+
+================================================================================
+SECAO 4 — BAIXA E PROPAGACAO
+================================================================================
+
+4.1 RPC f_registrar_baixa_financeira
+--------------------------------------
+Linguagem: plpgsql
+Seguranca: SECURITY INVOKER (respeita RLS)
+Transacao: SIM (mesma transacao)
+Lock: SELECT ... FOR UPDATE no titulo
+
+Fluxo:
+  1. Validar valor_baixado > 0
+  2. Lock titulo (FOR UPDATE)
+  3. Validar status (nao cancelado, nao pago)
+  4. Calcular v_saldo = valor - SUM(baixas nao estornadas)
+  5. Validar v_saldo > 0
+  6. Validar p_valor_baixado <= v_saldo
+  7. INSERT financeiro_baixas (valor_original, valor_baixado, saldo_restante)
+  8. UPDATE titulo (status, data_pagamento, conta)
+  9. RETURNING saldo_restante, status_titulo
+
+4.2 PROPAGACAO — ELO POR ELO
+-----------------------------
+
+financeiro_pagar → financeiro_baixas: ✅ INSERT direto na RPC
+financeiro_baixas → contas_financeiras: ❌ NAO ATUALIZA
+  - A coluna "conta_financeira_id" existe mas NAO e usada para
+    calcular saldo de contas_financeiras
+  - O saldo de contas_financeiras e calculado por contasCaixasService
+    somando financeiro_baixas WHERE conta_financeira_id = conta.id
+  - Mas a RPC so grava conta_financeira (TEXT), nao conta_financeira_id (UUID)
+
+contas_financeiras → Tesouraria: ❌ NAO EXISTE TELA "TESOURARIA"
+  - O componente e ContasBancarias.tsx
+  - SaldoReal = saldo_inicial + entradas(baixas) - saidas(baixas)
+  - Mas transferencias NAO geram baixas → nao afetam saldoReal
+
+financeiro_baixas → Fluxo de Caixa: ✅ FluxoCaixaEnterprise consulta financeiro_baixas
+financeiro_baixas → DRE: ❌ DRE NAO usa baixas (regime competencia)
+financeiro_baixas → Indicadores: ❌ Dashboard NAO usa baixas
+financeiro_baixas → Relatorios: PARCIAL (relatoriosFinanceirosService usa)
+
+4.3 ELO QUEBRADO — Transferencias entre contas
+-----------------------------------------------
+ContasBancarias.tsx:handleTransferir():
+  → UPDATE contas_financeiras SET saldo = origem.saldo - valor (origem)
+  → UPDATE contas_financeiras SET saldo = destino.saldo + valor (destino)
+
+PROBLEMAS:
+  1. Atualiza campo "saldo" (LEGADO), nao "saldo_inicial"
+  2. saldoReal e recalculado de saldo_inicial + baixas → transferencia NAO afeta
+  3. Sem INSERT em financeiro_baixas → FluxoCaixa nao registra
+  4. Sem transacao SQL (duas UPDATE separadas)
+  5. Historico e state local → perdido ao recarregar
+
+Classificacao: QUEBRADO
+
+
+================================================================================
+SECAO 5 — FLUXO DE CAIXA
+================================================================================
+
+5.1 FONTE DE DADOS
+-------------------
+Previsto:
+  → financeiro_receber WHERE data_vencimento BETWEEN inicio AND fim (entradas)
+  → financeiro_pagar WHERE data_vencimento BETWEEN inicio AND fim (saidas)
+
+Realizado:
+  → financeiro_baixas WHERE estornada = false AND data_baixa BETWEEN inicio AND fim
+
+5.2 CALCULO
+------------
+balorFluxo = calcularFluxo(previstos, baixas) [fluxoCaixaService.ts:54]
+
+  previstoEntrada = SUM(previstos WHERE tipo = "entrada")
+  previstoSaida = SUM(previstos WHERE tipo = "saida")
+  realizadoEntrada = SUM(baixas WHERE titulo_tabela = "financeiro_receber")
+  realizadoSaida = SUM(baixas WHERE titulo_tabela = "financeiro_pagar")
+  fluxoRealizado = realizadoEntrada - realizadoSaida
+
+5.3 GRAFICO
+------------
+Linha 176: filtered = lancamentos.filter(l => l.origem === "previsto" && !l.realizado)
+→ O GRAFICO MOSTRA APENAS PREVISTO (titulos), NAO REALIZADO (baixas)
+→ As barras do grafico sao 100% previsao, nao incluem realizado
+→ Isto e INTENCIONAL (design decision, nao bug)
+
+5.4 SALDO ACUMULADO
+--------------------
+Linha 199-209:
+  saldoAnterior = slice(0, index).reduce(entrada - saida, saldoInicial.valor)
+  saldoAcumulado = saldoAnterior + entrada - saida
+
+PROBLEMA: saldoInicial SEMPRE e zero (linha 160-161):
+  setSaldoInicialConfigurado(false)
+  setSaldoInicial({ data: "", valor: 0 })
+
+Motivo: "Sem fonte confiável de saldo inicial de conta/caixa até F0-H"
+Impacto: Saldo acumulado comeca em zero, deslocando todo o fluxo
+
+5.5 INDICADORES (linhas 275-309)
+---------------------------------
+  totalEntradasPrevistas = fluxo.previstoEntrada
+  totalSaidasPrevistas = fluxo.previstoSaida
+  entradasRealizadas = fluxo.realizadoEntrada
+  saidasRealizadas = fluxo.realizadoSaida
+  fluxoRealizado = fluxo.fluxoRealizado
+
+OK — indicadores usam fonte correta (previsto vs realizado separados)
+
+5.6 FILTROS
+-----------
+  - Periodo: 15/30/60/90 dias
+  - Data inicio/fim personalizada
+  - Conta financeira
+  - Categoria
+  - Tipo (entrada/saida)
+  - Status (previsto/realizado)
+
+PROBLEMA: Filtro "conta" tenta filtrar por l.conta, mas previstos NAO tem
+conta (so baixas tem). Logo, filtrar por conta exclui TODOS os previstos.
+
+
+================================================================================
+SECAO 6 — CONTAS A RECEBER
+================================================================================
+
+6.1 FLUXO DE CRIACAO
+---------------------
+  → FinanceiroReceber via trigger M66 (alocacao → financeiro_receber)
+  → FinanceiroReceber via trigger M80 (OS → financeiro_receber)
+  → FinanceiroReceber via f_emitir_fatura (fatura → financeiro_receber)
+  → FinanceiroReceber via criarRecebivel() (manual)
+
+6.2 FLUXO DE BAIXA
+-------------------
+  → receberService.baixarRecebivel() → RPC f_registrar_baixa_financeira
+    MESMA RPC do pagar, com p_titulo_tabela = "financeiro_receber"
+  → Retorna {sucesso, saldo_restante, status_titulo}
+
+6.3 STATUS TRANSITIONS
+-----------------------
+  aberto → [aberto, pago, parcial, cancelado, renegociado, pendente, vencido, a vencer]
+  pago → [pago] (terminal)
+  cancelado → [cancelado] (terminal)
+
+6.4 AUDITORIA — ContasReceberEnterprise.tsx
+-------------------------------------------
+  Dados MOCK em dropdowns:
+    - mockCentrosResultado (linha 761) — usa dados fake
+    - mockPlanoContas (linha 786) — usa dados fake
+    - mockContasBancarias (linha 872, 1244) — usa dados fake
+
+  Impacto: Titulos criados por este componente terao categorias/contas
+  que NAO existem no banco real.
+
+6.5 CONSISTENCIA
+-----------------
+  - RPC centralizada (mesma do pagar) ✓
+  - Estorno via f_estornar_baixa_financeira ✓
+  - Exclusao protegida (nao exclui pago/parcial/com baixa) ✓
+  - dead code removido (F0-D) ✓
+
+
+================================================================================
+SECAO 7 — FATURAMENTO
+================================================================================
+
+7.1 TABELAS
+-----------
+  faturas (header): id, numero, cliente_id, data_emissao, vencimento,
+    valor_bruto, descontos, acrescimos, valor_total, status, conta_receber_id,
+    metadata (JSONB: modelo, descricao, numeroManual)
+  fatura_itens (lines): id, fatura_id, os_id, alocacao_id, cliente_id,
+    romaneio, descricao, valor_base, valor_adicionais, valor_descontos, valor_total
+
+7.2 FLUXO
+----------
+  Rascunho → criarRascunhoFatura()
+  Adicionar item → adicionarItemFatura()
+  Emitir → f_emitir_fatura (RPC):
+    1. Valida status (rascunho/aprovada)
+    2. Valida tem itens ativos
+    3. Gera numero FAT-YYYY-NNNNNN
+    4. INSERT financeiro_receber
+    5. UPDATE faturas SET status='emitida'
+  Cancelar → f_cancelar_fatura (RPC):
+    1. UPDATE faturas SET status='cancelada'
+    2. UPDATE fatura_itens SET status='cancelado'
+    3. UPDATE financeiro_receber SET status='cancelado' (se nao pago)
+
+7.3 MODELOS
+------------
+  conexao_express: header #0F1A2E, logo, campos padrao
+  calvo: faixa "Cobranca para:", borda vermelha #C0392B
+
+7.4 FATURES MANUAIS (F38-MANUAL)
+---------------------------------
+  criarFaturaManual(): cria rascunho + 1 item + metadata.origem="manual"
+  atualizarFaturaManual(): rascunho permite edicao
+  excluirFaturaManual(): so rascunho + manual + sem vinculos
+  cancelarFaturaManualEmitida(): usa f_cancelar_fatura
+
+7.5 AUDITORIA
+--------------
+  BUG-1 (FIN-01.1): atualizarFatura extraia modelo/descricao do payload → CORRIGIDO
+  BUG-2 (FIN-01.1): buscarClienteParaFatura query "endereco" (coluna nao existe) → CORRIGIDO
+  BUG-3 (FIN-01.1): buscarContasBancariasConfig lia configuracoes_sistema → CORRIGIDO
+
+  Anti-duplicidade: f_trg_fatura_itens_anti_duplicidade impede mesma OS em 2 faturas
+  Bloqueio emissao: f_trg_fatura_itens_bloqueio_emissao impede alteracao apos emissao
+
+
+================================================================================
+SECAO 8 — TESOURARIA
+================================================================================
+
+8.1 CONCEITO
+-------------
+"Nao existe componente Tesouraria." O componente real e ContasBancarias.tsx
+que exibe "Contas, Bancos e Caixas". O termo "Tesouraria" e apenas um
+nome conceptual no menu lateral.
+
+8.2 FONTES
+-----------
+  Tabela: contas_financeiras
+  Saldo Real: saldo_inicial + SUM(baixas WHERE conta_financeira_id = conta.id)
+  Saldo Projetado: saldoReal + recebimentosFuturos - pagamentosFuturos
+
+8.3 BUG CRITICO — Transferencias
+---------------------------------
+  ContasBancarias.tsx:handleTransferir():
+    → Atualiza campo "saldo" (LEGADO)
+    → NAO gera registro em financeiro_baixas
+    → NAO afeta saldoReal (recalculado de saldo_inicial + baixas)
+    → Historico e state local (perdido ao recarregar)
+    → Duas UPDATE separadas sem transacao
+
+  Classificacao: QUEBRADO — transferencias nao funcionam no sistema real
+
+8.4 SALDO_INICIAL
+------------------
+  FluxoCaixaEnterprise NAO le saldo_inicial de contas_financeiras
+  (linha 159: "Sem fonte confiavel de saldo inicial")
+  → Saldo inicial no Fluxo de Caixa SEMPRE e zero
+
+  ContasBancarias USA saldo_inicial (contasCaixasService:61)
+  → Convergencia parcial entre os dois modulos
+
+
+================================================================================
+SECAO 9 — PAGAMENTO DE PRESTADORES
+================================================================================
+
+9.1 TABELA
+-----------
+  pagamentos_prestadores: 45+ colunas
+  UNIQUE: uq_pp_os_id (os_id)
+  Status: pendente/agendado/em_lote/pago/cancelado
+
+9.2 FLUXO
+----------
+  OS concluida → trigger M66 grava pagamentos_prestadores
+  OS direta → trigger M80 grava pagamentos_prestadores
+  Fechamento → pagamentoPrestadorService.criarFechamento()
+  Confirmar → pagamentoPrestadorService.confirmarPagamento()
+    → UPDATE status=status_pagamento=pago
+
+9.3 AUDITORIA
+--------------
+  Anti-duplicidade: buscarPagamentoDuplicado() por (os_id) ou (tipo+periodo)
+  confirmarPagamento() NAO chama RPC de baixa — update direto
+  → Nao gera registro em financeiro_baixas
+  → Nao afeta saldo de contas_financeiras
+  → Classificacao: DESIGN INTENCIONAL (pagamento de prestador nao e "baixa" no sentido financeiro)
+
+  Campos duplicados: valor_liquido/valor, qtd_os/quantidade_os, etc.
+  → Colunas legadas mantidas por compatibilidade
+
+
+================================================================================
+SECAO 10 — DRE (DEMONSTRACAO DO RESULTADO DO EXERCICIO)
+================================================================================
+
+10.1 REGIME: COMPETENCIA
+-------------------------
+A DRE usa regime de competencia (nao caixa):
+  - Receita: financeiro_receber (data_vencimento no periodo)
+  - Custos: pagamentos_prestadores (competencia no periodo, impacto_dre=true)
+  - Despesas: financeiro_pagar (data_vencimento no periodo, exclui repasses)
+  - Baixas NAO entram como competencia
+
+10.2 LINHA POR LINHA
+---------------------
+
+Linha 1: RECEITA BRUTA
+  → financeiro_receber WHERE data_vencimento BETWEEN inicio AND fim
+  → Filtro: status != cancelado
+  → Formula: SUM(valor) WHERE categoria = operacional
+  → Fonte CANONICA: financeiro_receber
+
+Linha 2: (-) DEDUCOES
+  → financeiro_pagar WHERE categoria = "imposto"
+  → Classificacao: regex /(imposto|tributo|taxa|iss|pis|cofins|irpf|csll)/
+  → Fonte CANONICA: financeiro_pagar
+
+Linha 3: = RECEITA LIQUIDA
+  → Receita Bruta - Deducoes
+
+Linha 4: (-) CUSTOS DOS SERVICOS
+  → pagamentos_prestadores WHERE impacto_dre = true
+  → Campo: valor_liquido
+  → Fonte CANONICA: pagamentos_prestadores
+
+Linha 5: = RESULTADO BRUTO
+  → Receita Liquida - Custos Prestadores
+
+Linha 6: (-) DESPESAS OPERACIONAIS
+  → financeiro_pagar WHERE os_id IS NULL (exclui repasses)
+  → Exclui categorias: "imposto" (ja em deducoes), "repasse"
+  → Sub-classificacao: administrativa/comercial/outras
+  → Fonte CANONICA: financeiro_pagar
+
+Linha 7: = EBITDA
+  → Receita Liquida - Custos - Despesas Operacionais
+
+Linha 8: (-) Depreciacao e Amortizacao
+  → VALOR FIXO: 0 (sem fonte de dados confiavel)
+  → Impacto: EBIT = EBITDA (sempre igual)
+
+Linha 9: = EBIT
+  → EBITDA - 0
+
+Linha 10: (+/-) Resultado Financeiro
+  → Receitas Financeiras - Despesas Financeiras
+  → Classificacao: regex /(financeir|juros|aplicac|rendimento)/
+
+Linha 11: = LUCRO ANTES DO IR
+  → EBIT + Resultado Financeiro
+
+Linha 12: (-) IR e CSLL
+  → VALOR FIXO: 0 (sem fonte de dados confiavel)
+
+Linha 13: = LUCRO LIQUIDO
+  → Lucro Antes IR - 0
+
+10.3 INCONSISTENCIA COM DASHBOARD
+-----------------------------------
+DashboardFinanceiroEnterprise usa OS (ordens_servico) para receita:
+  receitaMes = dadosMesAtual.reduce(valor_cliente)
+DRE usa financeiro_receber para receita:
+  receitas = financeiro_receber WHERE data_vencimento
+
+Se uma OS foi finalizada mas a fatura ainda nao foi emitida (ou esta em
+rascunho), o Dashboard mostra receita mas a DRE nao. Vice-versa.
+
+Classificacao: BUG DE INTEGRACAO (P1)
+
+
+================================================================================
+SECAO 11 — MARGEM POR OS
+================================================================================
+
+11.1 FONTES
+-------------
+  Receita: composicao_financeira_os.valor_cliente
+  Custo: composicao_financeira_os.valor_prestador
+  Outros: composicao_financeira_os.outros_custos
+    = adicional + ajudante - desconto (M66/M80)
+
+11.2 FORMULA
+--------------
+  Margem R$ = Receita - Custo Prestador - Outros Custos
+  Margem % = (Margem / Receita) x 100
+  Status: "real" (faturado), "prevista" (valor operacional), "pendente"
+
+11.3 PROPAGACAO
+----------------
+  Trigger M66 (alocacao):
+    composicao_financeira_os:
+      valor_cliente = valor_frete + reversa_valor_cliente
+      valor_prestador = valor_repasse + reversa_valor_prestador
+      outros_custos = adicional + ajudante - desconto
+      origem_calculo = 'escala_direta'
+
+  Trigger M80 (OS direta):
+    composicao_financeira_os:
+      outros_custos = adicionais + ajudante - descontos (JSONB extract)
+      origem_calculo = 'os_direta'
+
+11.4 PROBLEMAS
+---------------
+  - Se OS tem custo_prestador = 0, margem = 100% → pode ser ausencia
+    de integracao, nao custo zero real
+  - composicao_financeira_os e preenchida APENAS quando OS e finalizada
+    (M80) ou alocacao e concluida (M66) → OS em andamento sem margem
+
+
+================================================================================
+SECAO 12 — DADOS DE TESTE
+================================================================================
+
+12.1 CLASSIFICACAO
+-------------------
+TESTE_CLARAMENTE_IDENTIFICADO (31 ocorrências):
+  - types.ts: mockClientes (8), mockFornecedores (8), mockContasBancarias (4),
+    mockRecebiveis (5), mockPagaveis (5), mockTransferencias (2),
+    mockCentrosResultado (5), mockPlanoContas (11)
+  - PlanoContas.tsx: mockPlanoContas (22 contas), mockLancamentos (3) — 100% MOCK
+  - SegurosFinanceiro.tsx: mockApolices (2), mockAverbacoes (3) — 100% MOCK
+  - ContasReceberEnterprise.tsx: usa mockCentrosResultado, mockPlanoContas,
+    mockContasBancarias em dropdowns
+  - calculoService.ts: TABELA_TESTE_VEICULOS_SP hardcoded
+  - 4 scripts seed em scripts/
+
+TESTE_SEM_MARCA (3 ocorrências):
+  - SegurosFinanceiro.tsx: Math.random() para IDs de apolice e sinistro
+  - PlanoContas.tsx: sinistros inline hardcoded
+
+DADO_REAL (12 ocorrências):
+  - generateId(), gerarId() (IDs temporarios legítimos)
+  - REGRAS_FINANCEIRAS_DEFAULT
+  - Constantes enum (TIPOS_CONTA, BANCOS, CATEGORIAS, etc.)
+
+DADO_DUVIDOSO (1 ocorrência):
+  - extratoPrestadorService.ts:834 — fallback Math.random() para numero
+    de fechamento (pode gerar colisoes)
+
+12.2 IMPACTO
+--------------
+  PlanoContas.tsx: 100% mock → componente decorativo, sem valor real
+  SegurosFinanceiro.tsx: 100% mock → componente decorativo
+  ContasReceberEnterprise: dropdowns fake → titulos criados com categorias inexistentes
+  CalculoService: tabela de teste hardcoded → calculos de frete podem usar valores fake
+  DashboardFinanceiroEnterprise: SEM mocks (usa queries reais) ✓
+  FluxoCaixaEnterprise: SEM mocks (usa queries reais) ✓
+  DREGerencial: SEM mocks (usa queries reais) ✓
+
+
+================================================================================
+SECAO 13 — INDICADORES (DASHBOARD)
+================================================================================
+
+13.1 KPIs PRINCIPAIS (DashboardFinanceiroEnterprise)
+-----------------------------------------------------
+
+KPI: "Receita do Mes"
+  Valor: dadosMesAtual.reduce(valor_cliente)
+  Fonte: ordens_servico WHERE status IN (finalizada, concluida) AND data >= mes_atual
+  Calculo: SUM(valor_cliente)
+  Confiavel: PARCIAL — usa OS, nao financeiro_receber
+
+KPI: "Custo Prestadores"
+  Valor: dadosMesAtual.reduce(custo_prestador)
+  Fonte: ordens_servico (mesma query)
+  Calculo: SUM(custo_prestador)
+  Confiavel: PARCIAL — dados de OS, nao de pagamentos_prestadores
+
+KPI: "Custo Geral"
+  Valor: pagamentosGeral WHERE !prestador_id AND !prestador
+  Fonte: financeiro_pagar WHERE status IN (aberto, a_vencer, vencido)
+  Calculo: SUM(valor) EXCLUI repasses a prestadores
+  Confiavel: SIM (exclui repasses corretamente)
+
+KPI: "Resultado"
+  Valor: receitaMes - custosTotais
+  Fonte: calculado
+  Confiavel: PARCIAL — usa OS para receita, financeiro_pagar para despesas
+
+KPI: "Margem Operacional"
+  Valor: (resultado / receitaMes) * 100
+  Confiavel: PARCIAL — derivado do resultado
+
+KPI: "Inadimplencia"
+  Valor: receber WHERE status = "vencido" OR (status = "aberto" AND data_vencimento < hoje)
+  Fonte: financeiro_receber
+  Calculo: SUM(valor)
+  Confiavel: SIM
+
+KPI: "A Receber 7 dias"
+  Valor: financeiro_receber WHERE data_vencimento BETWEEN hoje AND +7dias AND status IN (aberto, a_vencer)
+  Confiavel: SIM
+
+KPI: "A Pagar 7 dias"
+  Valor: financeiro_pagar WHERE data_vencimento BETWEEN hoje AND +7dias AND !prestador_id
+  Confiavel: SIM
+
+KPI: "Repasses Pendentes"
+  Valor: pagamentos_prestadores WHERE status_pagamento IN (pendente, agendado)
+  Fonte: pagamentos_prestadores
+  Confiavel: SIM
+
+13.2 RECONCILIACAO KPIs
+-------------------------
+  Dashboard "Receita" (OS) ≠ DRE "Receita Bruta" (financeiro_receber)
+    → Diferença esperada: OS sem fatura emitida
+    → Se divergencia > 20%: BUG DE INTEGRACAO
+
+  Dashboard "Custo" (OS) ≠ DRE "Custos Prestadores" (pagamentos_prestadores)
+    → Diferença esperada: OS com custo estimado vs pagamento efetivo
+
+  FluxoCaixa "Saidas Realizadas" ≠ Dashboard "Custo Geral"
+    → FluxoCaixa usa baixas (pagos), Dashboard usa financeiro_pagar (pendentes)
+
+
+================================================================================
+SECAO 14 — FILTROS
+================================================================================
+
+14.1 FILTROS POR TELA
+----------------------
+
+FluxoCaixaEnterprise:
+  ✓ Periodo (15/30/60/90 dias)
+  ✓ Data inicio/fim personalizada
+  ✓ Conta financeira
+  ✓ Categoria
+  ✓ Tipo (entrada/saida)
+  ✗ Filtro "conta" exclui previstos (nao tem conta vinculada)
+
+DREGerencial:
+  ✓ Competencia (mes/ano)
+  ✓ Periodo (mensal/trimestral/anual/personalizado)
+  ✓ Data inicio/fim
+
+ContasPagar:
+  ✓ Busca rapida (nome, documento)
+  ✓ Status
+  ✗ Sem filtro por data de vencimento
+  ✗ Sem filtro por prestador/fornecedor
+
+ContasReceberEnterprise:
+  ✓ Busca rapida
+  ✓ Status
+  ✗ Sem filtro por data
+
+DashboardFinanceiroEnterprise:
+  ✓ automatico (mes atual vs anterior)
+
+14.2 TIMEZONE
+--------------
+  Todas as queries usam ISO date strings (YYYY-MM-DD)
+  Sem problema de timezone identificado
+  new Date().toISOString().split("T")[0] → UTC midnight
+  Pode causar 1 dia de diferenca em fuso horario -3 (Brasilia)
+
+
+================================================================================
+SECAO 15 — RELATORIOS
+================================================================================
+
+15.1 RELATORIOS EXISTENTES
+----------------------------
+  RelatorioFaturamentoCliente → usa vw_relatorio_faturamento_cliente (VIEW)
+  RelatorioPagamentoPrestador → usa vw_relatorio_pagamento_prestador (VIEW)
+  RelatorioMargemReal → usa dados reais + PDF + Excel
+  RelatorioClienteAgregadoRefrigerado → usa dados reais + PDF + Excel
+  ResumoExecutivoFinanceiro → usa relatoriosFinanceirosService
+
+15.2 CONSISTENCIA
+------------------
+  Views SQL: 5 views conectadas (Missao 54)
+  Dados reais: SIM (queries Supabase, nao mocks)
+  Filtros: respeitados nas queries
+  Exportacao: PDF (jsPDF) + Excel (exceljs) implementados
+
+15.3 PROBLEMAS
+---------------
+  - RelatorioFaturamentoCliente: usa VIEW que JOINA ordens_servico + financeiro_receber
+    → Pode incluir OS sem fatura (divergencia com DRE)
+  - ResumoExecutivoFinanceiro: usa relatoriosFinanceirosService (pure function)
+    → Recebe dados ja filtrados — confiavel se fonte for correta
+
+
+================================================================================
+SECAO 16 — BUGS CLASSIFICADOS
+================================================================================
+
+P0 — RISCO FINANCEIRO / VALOR INCORRETO (6)
+---------------------------------------------
+
+P0-1: "Valor da baixa excede o saldo restante (2000.00)" para titulo R$ 2.005,00
+  Causa: UI mostra valor_bruto, RPC usa valor (podem divergir)
+  Arquivo: ContasPagar.tsx:419 vs RPC linha 55-56
+  Impacto: Baixa bloqueada incorretamente
+  Correcao: UI deve mostrar valor (saldo), nao valor_bruto
+
+P0-2: totalPagoMes soma TODOS os pagos, nao so do mes
+  Causa: filtro status==="paga" sem filtro de data
+  Arquivo: ContasPagar.tsx:449
+  Impacto: KPI "Pago" sempre distorcido (acumulado historico)
+  Correcao: Adicionar filtro de data (data_pagamento no mes atual)
+
+P0-3: Transferencias entre contas NAO afetam saldo real
+  Causa: Atualiza campo legado "saldo", saldoReal usa saldo_inicial + baixas
+  Arquivo: ContasBancarias.tsx:357,364 vs contasCaixasService.ts:70
+  Impacto: Transferencias sao invisiveis no sistema real
+  Correcao: Gerar registro em financeiro_baixas OU atualizar saldo_inicial
+
+P0-4: FluxoCaixa saldo inicial SEMPRE zero
+  Causa: "Sem fonte confiavel" — nao consulta contas_financeiras
+  Arquivo: FluxoCaixaEnterprise.tsx:159-161
+  Impacto: Saldo acumulado comeca em zero, todo o fluxo deslocado
+  Correcao: Consultar contas_financeiras.saldo_inicial
+
+P0-5: Dashboard usa OS para receita, DRE usa financeiro_receber
+  Causa: Fontes diferentes para o mesmo conceito
+  Arquivo: DashboardFinanceiroEnterprise.tsx:137 vs DREGerencial.tsx:99
+  Impacto: Indicadores divergentes entre telas
+  Correcao: Unificar fonte (usar financeiro_receber em ambos OU justificar divergencia)
+
+P0-6: ContasReceberEnterprise usa dropdowns MOCK
+  Causa: mockCentrosResultado, mockPlanoContas, mockContasBancarias
+  Arquivo: ContasReceberEnterprise.tsx:761,786,872,1244
+  Impacto: Titulos criados com categorias inexistentes no banco
+  Correcao: Consultar tabelas reais (centros_custo, etc.)
+
+P1 — INTEGRACAO QUEBRADA (9)
+-------------------------------
+
+P1-1: Transferencias sem transacao SQL
+  Causa: Duas UPDATE separadas sem rollback
+  Arquivo: ContasBancarias.tsx:355-367
+  Impacto: Se segunda UPDATE falhar, dinheiro some
+
+P1-2: Historico de transferencias e state local
+  Causa: useState, nao persiste
+  Arquivo: ContasBancarias.tsx:97,381
+  Impacto: Historico perdido ao recarregar
+
+P1-3: contaCorresponde() usa fuzzy match por texto
+  Causa: inclui() pode vincular baixa a conta errada
+  Arquivo: contasCaixasService.ts:49-51
+  Impacto: Saldos por conta podem estar incorretos
+
+P1-4: FluxoCaixa filtro "conta" exclui previstos
+  Causa: Previstos (titulos) nao tem conta vinculada
+  Arquivo: FluxoCaixaEnterprise.tsx:185
+  Impacto: Filtrar por conta mostra apenas realizado
+
+P1-5: ContasPagar sem filtro por data de vencimento
+  Causa: Filtros ativos so tem status e categoria
+  Arquivo: ContasPagar.tsx:91-100
+  Impacto: Impossivel filtrar por periodo
+
+P1-6: DRE depreciacao e IR hardcoded a 0
+  Causa: Sem fonte de dados confiavel
+  Arquivo: dreService.ts:113,117
+  Impacto: EBIT = EBITDA sempre, Lucro = Lucro Antes IR sempre
+
+P1-7: PlanoContas 100% mock
+  Causa: useState com mockPlanoContas, nunca consulta banco
+  Arquivo: PlanoContas.tsx:99-100
+  Impacto: Componente decorativo, sem valor contabil real
+
+P1-8: SegurosFinanceiro 100% mock
+  Causa: useState com mockApolices/mockAverbacoes
+  Arquivo: SegurosFinanceiro.tsx:55-56
+  Impacto: Componente decorativo
+
+P1-9: confirmarPagamento() nao gera baixa em financeiro_baixas
+  Causa: Update direto em pagamentos_prestadores
+  Arquivo: pagamentoPrestadorService.ts:334
+  Impacto: Pagamento de prestador nao aparece no FluxoCaixa realizado
+
+P2 — RELATORIO/INDICADOR INCORRETO (8)
+-----------------------------------------
+
+P2-1: FluxoCaixa grafico mostra APENAS previsto
+  Arquivo: FluxoCaixaEnterprise.tsx:176
+  Impacto: Grafico nao reflete realizado
+
+P2-2: FluxoCaixa "Saldo Acumulado" nao inclui realizado
+  Arquivo: FluxoCaixaEnterprise.tsx:306-309
+  Impacto: Saldo deslocado (comeca em zero + previsto)
+
+P2-3: Dashboard "Resultado" mistura OS (receita) + financeiro_pagar (despesa)
+  Arquivo: DashboardFinanceiroEnterprise.tsx:149
+  Impacto: Resultado pode ser negativo mesmo com faturamento positivo
+
+P2-4: ContasPagar KPI "Previsto" filtra por mesAtual no vencimento
+  Arquivo: ContasPagar.tsx:458-460
+  Impacto: "Previsto" mostra titulos que vencem este mes (ok), mas
+    NAO exclui ja pagos (pode somar pago + pendente)
+
+P2-5: contas_financeiras tem seeds mock (R$ 145K, R$ 85K, etc.)
+  Arquivo: 20260526_contas_financeiras.sql:37-42
+  Impacto: Saldos iniciais ficticios podem distorcer demonstracoes
+
+P2-6: extratoPrestadorService fallback Math.random() para numero
+  Arquivo: extratoPrestadorService.ts:834
+  Impacto: Numero de fechamento pode colidir
+
+P2-7: contas_financeiras.saldo (LEGADO) ainda e atualizado por INSERT/UPDATE
+  Arquivo: ContasBancarias.tsx:317,357,364
+  Impacto: Campo inconsistente (legado atualizado mas nao usado no calculo)
+
+P2-8: contasCaixasService usa fuzzy match por nome+banco+tipo
+  Arquivo: contasCaixasService.ts:49-51
+  Impacto: Pode vincular baixa a conta errada
+
+P3 — UX/VISUAL (4)
+---------------------
+
+P3-1: PlanoContas sem conexao com contas_financeiras
+P3-2: SegurosFinanceiro sem conexao com banco real
+P3-3: ContasBancarias titulo "Contas, Bancos e Caixas" vs menu "Tesouraria"
+P3-4: FluxoCaixa sem indicador de "Saldo Inicial Nao Configurado"
+
+
+================================================================================
+SECAO 17 — CORRECOES NECESSARIAS (P0)
+================================================================================
+
+CORRECAO P0-1: UI deve mostrar valor (saldo), nao valor_bruto
+  Arquivo: ContasPagar.tsx:419
+  De: valorOriginal: r.valor_bruto || r.valor || 0
+  Para: valorOriginal: r.valor || r.valor_bruto || 0
+
+CORRECAO P0-2: totalPagoMes deve filtrar por mes
+  Arquivo: ContasPagar.tsx:449
+  De: lancamentos.filter(l => l.status === "paga")
+  Para: lancamentos.filter(l => l.status === "paga" && l.dataPagamento?.startsWith(mesAtual))
+
+CORRECAO P0-4: FluxoCaixa deve ler saldo_inicial de contas_financeiras
+  Arquivo: FluxoCaixaEnterprise.tsx:159-161
+  Adicionar: query contas_financeiras para saldo_inicial
+
+CORRECAO P0-6: ContasReceberEnterprise deve consultar tabelas reais
+  Arquivo: ContasReceberEnterprise.tsx:761,786,872
+  Substituir mocks por queries reais
+
+
+================================================================================
+SECAO 18 — CENARIO E2E FINANCEIRO CONTROLADO
+================================================================================
+
+18.1 CENARIO A — CONTAS A PAGAR
+---------------------------------
+A1. Criar conta a pagar teste: R$ 1.000,00, vencimento 2026-09-10
+A2. Confirmar status "a vencer" no ContasPagar
+A3. Verificar previsao no FluxoCaixa (saida prevista 2026-09-10)
+A4. Registrar pagamento total via handleBaixa
+A5. Confirmar INSERT em financeiro_baixas (titulo_tabela=financeiro_pagar)
+A6. Confirmar status "pago" no titulo
+A7. Confirmar saida realizada no FluxoCaixa (baixa)
+A8. Confirmar saldo em ContasBancarias (baixa vinculada)
+A9. Verificar DRE: titulo com os_id=NULL deve aparecer como despesa
+
+18.2 CENARIO B — CONTAS A RECEBER
+-----------------------------------
+B1. Criar fatura via faturaService (rascunho + item)
+B2. Emitir fatura via f_emitir_fatura
+B3. Confirmar INSERT em financeiro_receber (com fatura_id)
+B4. Verificar entrada prevista no FluxoCaixa
+B5. Registrar recebimento via receberService.baixarRecebivel
+B6. Confirmar INSERT em financeiro_baixas (titulo_tabela=financeiro_receber)
+B7. Confirmar status "pago"
+B8. Confirmar entrada realizada no FluxoCaixa
+B9. Verificar DRE: receita deve incluir este titulo
+
+18.3 CENARIO C — RECONCILIACAO
+--------------------------------
+C1. Somar financeiro_baixas WHERE titulo_tabela=financeiro_pagar AND estornada=false
+C2. Comparar com "Saidas Realizadas" do FluxoCaixa → deve ser igual
+C3. Somar financeiro_baixas WHERE titulo_tabela=financeiro_receber AND estornada=false
+C4. Comparar com "Entradas Realizadas" do FluxoCaixa → deve ser igual
+C5. Somar financeiro_pagar WHERE status IN (aberto, a_vencer, vencido)
+C6. Comparar com "Saidas Previstas" do FluxoCaixa → pode diferir (periodo)
+C7. Verificar DRE receita = SUM(financeiro_receber.valor) no periodo
+C8. Verificar DRE custos = SUM(pagamentos_prestadores.valor_liquido) WHERE impacto_dre=true
+
+
+================================================================================
+SECAO 19 — MATRIZ DE RECONCILIACAO
+================================================================================
+
+EVENTO                  | ORIGEM              | PAGAR/RECEBER | BAIXA | TESOURARIA | FLUXO | DRE | INDICADOR | RELATORIO | STATUS
+------------------------|---------------------|---------------|-------|------------|-------|-----|-----------|-----------|--------
+Criar titulo a pagar    | financeiro_pagar    | ✅ INSERT     | —     | —          | PREV  | —   | —         | —         | OK
+Baixar titulo a pagar   | RPC baixa           | ✅ UPDATE     | ✅ INS| ❌ saldo   | REAL  | —   | —         | —         | PARCIAL
+Criar titulo a receber  | financeiro_receber  | ✅ INSERT     | —     | —          | PREV  | SIM | —         | —         | OK
+Receber titulo          | RPC baixa           | ✅ UPDATE     | ✅ INS| ❌ saldo   | REAL  | SIM | —         | —         | PARCIAL
+Emitir fatura           | f_emitir_fatura     | ✅ INS rec    | —     | —          | PREV  | SIM | —         | —         | OK
+Cancelar fatura         | f_cancelar_fatura   | ✅ UPD rec    | —     | —          | —     | SIM | —         | —         | OK
+Transferir conta        | ContasBancarias     | ✅ UPD saldo  | ❌    | ❌ historico| —    | —   | —         | —         | QUEBRADO
+Pagamento prestador     | confirmarPagamento  | ✅ UPDATE     | ❌    | —          | —     | SIM | SIM       | PARCIAL   | PARCIAL
+Fluxo Caixa (previsto)  | financeiro_rec/pag  | —             | —     | —          | PREV  | —   | SIM       | SIM       | OK
+Fluxo Caixa (realizado) | financeiro_baixas   | —             | —     | —          | REAL  | —   | SIM       | SIM       | OK
+DRE (receita)           | financeiro_receber  | —             | —     | —          | —     | SIM | PARCIAL   | SIM       | OK
+DRE (custos)            | pagamentos_prest    | —             | —     | —          | —     | SIM | SIM       | SIM       | OK
+DRE (despesas)          | financeiro_pagar    | —             | —     | —          | —     | SIM | PARCIAL   | SIM       | OK
+Margem por OS           | composicao_fin_os   | —             | —     | —          | —     | —   | SIM       | SIM       | OK
+
+
+================================================================================
+SECAO 20 — VALORES ANTES/DEPOIS (CORRECOES P0)
+================================================================================
+
+P0-1 (valor UI):
+  ANTES: UI mostra R$ 2.005,00 (valor_bruto) → RPC saldo = 2000 → ERRO
+  DEPOIS: UI mostra R$ 2.000,00 (valor) → RPC saldo = 2000 → OK
+
+P0-2 (totalPagoMes):
+  ANTES: "Pago" = R$ 50.000 (acumulado historico)
+  DEPOIS: "Pago" = R$ 5.000 (apenas mes atual)
+
+P0-4 (saldo inicial Fluxo):
+  ANTES: Saldo acumulado comeca em R$ 0,00
+  DEPOIS: Saldo acumulado comeca em R$ 145.000,00 (saldo_inicial da conta principal)
+
+
+================================================================================
+SECAO 21 — PROVA DE VERDADE
+================================================================================
+
+AFIRMACAO 1: "A RPC de baixa funciona corretamente"
+  FONTE CANONICA: f_registrar_baixa_financeira (20260818_f0d_receber_baixas_rpc.sql)
+  REGISTROS: financeiro_baixas (live)
+  CALCULO: saldo = valor - SUM(baixas nao estornadas)
+  VALOR BANCO: verificavel via SELECT SUM(valor_baixado) FROM financeiro_baixas
+  VALOR UI: diverge (mostra valor_bruto em vez de valor)
+  TENTATIVA DE REFUTACAO: RPC validation logic correct; UI display wrong
+  RESULTADO: RPC CONFIAVEL, UI NAO
+  CONFIÁVEL: NAO (UI diverge)
+
+AFIRMACAO 2: "O Fluxo de Caixa reflete a realidade"
+  FONTE CANONICA: financeiro_baixas (realizado) + financeiro_receber/pagar (previsto)
+  REGISTROS: queries diretas
+  CALCULO: fluxoCaixaService.calcularFluxo()
+  VALOR BANCO: verificavel via SELECT
+  VALOR UI: previsto correto, realizado correto, saldo_inicial ZERO
+  TENTATIVA DE REFUTACAO: saldo_inicial always zero → fluxo deslocado
+  RESULTADO: FLUXO INCOMPLETO (sem saldo_inicial)
+  CONFIÁVEL: NAO
+
+AFIRMACAO 3: "A DRE reflete a realidade"
+  FONTE CANONICA: financeiro_receber (receita) + pagamentos_prestadores (custos) + financeiro_pagar (despesas)
+  REGISTROS: queries com filtro de periodo
+  CALCULO: dreService.calcularDRE()
+  VALOR BANCO: verificavel
+  VALOR UI: consistente com queries
+  TENTATIVA DE REFUTACAO: regime competencia correto, mas depreciacao/IR=0
+  RESULTADO: DRE PARCIALMENTE CORRETA
+  CONFIÁVEL: PARCIAL
+
+AFIRMACAO 4: "A Tesouraria reflete saldos reais"
+  FONTE CANONICA: contas_financeiras + financeiro_baixas
+  REGISTROS: contasCaixasService.calcularSaldoConta()
+  CALCULO: saldo_inicial + entradas - saidas
+  VALOR BANCO: saldo_inicial existe
+  VALOR UI: transferencias NAO afetam saldoReal
+  TENTATIVA DE REFUTACAO: transferencias sao facade
+  RESULTADO: TESOURARIA QUEBRADA
+  CONFIÁVEL: NAO
+
+AFIRMACAO 5: "Os KPIs do Dashboard sao reproduziveis"
+  FONTE CANONICA: ordens_servico + financeiro_pagar + pagamentos_prestadores + financeiro_receber
+  REGISTROS: queries diretas
+  CALCULO: useMemo com reduce
+  VALOR BANCO: verificavel via SELECT
+  VALOR UI: derivado das queries
+  TENTATIVA DE REFUTACAO: fontes sao tabelas reais, calculos simples
+  RESULTADO: KPIs REPRODUZIVEIS (mas fonte diverge da DRE)
+  CONFIÁVEL: PARCIAL
+
+
+================================================================================
+SECAO 22 — RISCOS RESTANTES
+================================================================================
+
+RISCO 1 (ALTO): Dados mock em PlanoContas e SegurosFinanceiro
+  → Componentes decorativos podem confundir usuarios
+  → Recomendacao: marcar explicitamente como "EM CONSTRUCAO" ou remover
+
+RISCO 2 (ALTO): Seeds mock de contas_financeiras (R$ 145K, R$ 85K)
+  → Saldos iniciais podem nao refletir realidade
+  → Recomendacao: verificar em producao e ajustar saldo_inicial
+
+RISCO 3 (MEDIO): DRE sem depreciacao/IR
+  → Resultado sempre igual EBITDA
+  → Recomendacao: adicionar campos de depreciacao/IR ou marcar como N/A
+
+RISCO 4 (MEDIO): Filtros inconsistentes entre telas
+  → FluxoCaixa filtra por data_vencimento, DRE por competencia
+  → Recomendacao: padronizar filtro unico de periodo
+
+RISCO 5 (BAIXO): Timezone UTC midnight
+  → Pode causar 1 dia de diferenca
+  → Recomendacao: usar startOfDay() com fuso horario local
+
+RISCO 6 (BAIXO): 4 dead code functions em receberService
+  → Flows descontinuados (F0-D) ainda no codigo
+  → Recomendacao: remover
+
+
+================================================================================
+GATE FIN-MASTER-360
+================================================================================
+
+Só pode ser APROVADO quando:
+
+[ ] Contas a Pagar funciona — PARCIAL (RPC ok, UI diverge)
+[ ] Baixa funciona — PARCIAL (RPC ok, saldo_inicial zero)
+[ ] Contas a Receber funciona — SIM
+[ ] Recebimento funciona — SIM
+[ ] Fluxo Previsto funciona — SIM
+[ ] Fluxo Realizado funciona — SIM (mas saldo_inicial zero)
+[ ] Saldo Inicial configuravel — NAO (sempre zero)
+[ ] Tesouraria fecha — NAO (transferencias quebradas)
+[ ] DRE fecha — PARCIAL (sem depreciacao/IR)
+[ ] Margem por OS fecha — SIM
+[ ] Pagamento de Prestadores fecha — SIM (design intencional)
+[ ] Relatorios fecham — PARCIAL
+[ ] Filtros funcionam — PARCIAL (inconsistentes)
+[ ] Indicadores sao reproduziveis — PARCIAL (Dashboard vs DRE divergem)
+[ ] Dados de teste identificados — SIM (31 ocorrências)
+[ ] Nenhuma integracao P0 permanece quebrada — NAO (6 P0s)
+
+RESULTADO: NAO APROVADO — 6 bugs P0, 9 bugs P1
+
+================================================================================
+RECOMENDACAO FINAL
+================================================================================
+
+O financeiro NAO esta pronto para uso financeiro real.
+
+Os componentes CORE (RPC de baixa, faturamento, margem, pagamentos de
+prestadores) FUNCIONAM e sao CONFIÁVEIS.
+
+Os componentes de VISAO (Fluxo de Caixa, Tesouraria, Dashboard KPIs)
+apresentam DIVERGENCIAS significativas que podem levar a decisoes
+incorretas.
+
+PRIORIDADE DE CORRECAO:
+  1. P0-1: UI mostrar valor correto no ContasPagar
+  2. P0-2: totalPagoMes filtrar por mes
+  3. P0-4: FluxoCaixa ler saldo_inicial
+  4. P0-5: Unificar fonte Dashboard vs DRE
+  5. P0-6: Substituir mocks por queries reais
+  6. P1-3: contaCorresponde usar conta_financeira_id em vez de texto
+  7. P1-5: Adicionar filtros por data no ContasPagar
+
+Apos correcao dos P0s: REAVALIAR para classificacao PARCIAL.
+Apos correcao dos P0s+P1s: REAVALIAR para classificacao APROVADO COM RESSALVAS.
+
+================================================================================
+FIM DO RELATORIO
+================================================================================
+Gerado: 2026-09-03
+Autor: Auditoria Master 360 — FIN-MASTER-360
+Ambiente: TMS (Producao)
+Arquivo: AG-FIN_MASTER360_AUDITORIA_RECONCILIACAO.txt

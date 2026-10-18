@@ -1,0 +1,227 @@
+TMS — MICRO-MISSAO ORC-PDF-01 — CORRECAO CIRURGICA DO PDF DE ORCAMENTO COMERCIAL
+====================================================================================
+DATA/HORA: 2026-09-29 09:25:00 (America/Sao_Paulo)
+PROJETO:   TMS — express-connect-hub (aparato web / PC)
+CAMINHO:   C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+ARQUIVO:   ORC-PDF-01-RELATORIO.txt (raiz do TMS)
+BYTES:     00014812
+ORCAMENTO-ALVO: ORC-202609-8659 (id d577539b-1865-477c-b079-af94152fc3e9, status em_analise)
+CONTAGEM REGRESSIVA: nivel 4 — COMERCIAL / ORCAMENTO (nao avancada nesta missao; 0 inalterado).
+
+NOTA DE CICLO: correcao original aplicada e validada em 2026-09-27 23:36 (relatorio
+anterior). Este ciclo (2026-09-29) RE-EXECUTOU a inspecao do fluxo + todos os testes +
+a prova real do ORC-202609-8659. NENHUMA alteracao de codigo nova foi necessaria: as
+correcoes exigidas ja estao presentes e integrais nos fontes. Nenhum dado de producao
+foi tocado.
+
+--------------------------------------------------------------------------------
+1. ESCOPO ATENDIDO E RESTRICOES CUMPRIDAS
+--------------------------------------------------------------------------------
+  [x] "Duracao estimada" NAO aparece no PDF — e permanece NA TELA;
+  [x] "Valor do Transporte" substituido por nomenclatura profissional
+      ("Valor Base do Frete" na 1a linha do resumo + "VALOR FINAL DA PROPOSTA" na faixa);
+  [x] VALOR FINAL nao fica R$ 0,00: reflete o calculo canonico real (2200 para o alvo);
+  [x] Calculo canônico unico (resolverValorFinal -> calcularValorFinal), SEM segunda regra
+      de calculo e SEM valor fixo no codigo;
+  [x] Leitura/normalizacao corrigida NA FONTE (toOrcamentoDomain) para tela/listagem/
+      previa/PDF exibirem o mesmo valor;
+  [x] Demais blocos do PDF preservados (cliente, carga, operacao/veiculo, coleta/entrega,
+      condicoes comerciais, validade, layout);
+  [x] Sem migration, sem escrita em banco, sem mexer em Financeiro, APP, Programacao
+      Operacional, outros PDFs ou nomenclaturas de outras telas.
+
+--------------------------------------------------------------------------------
+2. INSPECAO DO FLUXO ATUAL (Etapa A)
+--------------------------------------------------------------------------------
+  formulario/tela ....... src/components/comercial/OrcamentoForm.tsx
+                            - duracao persistida em data.distancia_rota (linhas 281/283 e
+                              430/432: duracao_min / duracao_texto);
+                            - card de rota exibe duracao (linha 898):
+                              {distanciaRota.distanciaTexto} . {distanciaRota.duracaoTexto}
+                            - NAO alterado nesta missao.
+  listagem .............. src/components/comercial/OrcamentosLista.tsx
+                            - linha 77: lista = data.map(toOrcamentoDomain) -> consome a
+                              leitura normalizada; linha 353 imprime orc.valores.valorFinal.
+  modelo/dominio ........ src/components/comercial/types.ts (ValoresOrcamento)
+  calculo canonico ...... src/components/comercial/orcamentoCalculo.ts
+                            - calcularValorFinal(): base + adicionais + pedagio + kmExcedente
+                              + ajudante + adValorem + gris + devolucao + reentrega - descontos
+                              (componentes JA existentes; nenhuma tarifa nova);
+                            - resolverValorFinal(): persistido > 0 respeitado (inclui
+                              overrideManual); persistido 0/ausente -> calcularValorFinal().
+  leitura/mapeamento .... src/lib/dbMappers.ts :: toOrcamentoDomain() (linhas 1669-1691)
+  impressao/preforia .... src/components/comercial/orcamentoPdf.ts
+  testes E2E/unit ....... src/test/com_orc_pdf_01_correcao.test.ts (17),
+                            src/test/com_orc_02_persistencia.test.ts (15),
+                            src/test/com_orc_03_pdf_profissional.test.ts (14),
+                            src/test/com_preco_01_tabela_esporadica.test.ts (14),
+                            src/test/com_carga_01..04 (65),
+                            tests/e2e/_orc_pdf_01_qa_tela.spec.ts (Playwright, bloqueado por
+                            guard de PRODUCAO — ver Pendencias).
+
+--------------------------------------------------------------------------------
+3. ARQUIVOS ENVOLVIDOS NA CORRECAO (Estado atual do fonte)
+--------------------------------------------------------------------------------
+ALTERADOS (correcao)
+  src/lib/dbMappers.ts
+      toOrcamentoDomain() normaliza o contrato de LEITURA (somente-read):
+      - espelha a coluna dedicada valor_base quando o JSONB nao tem base;
+      - valorFinal = resolverValorFinal(...) — mesma regra canonica do save;
+      - aliases valorBase/valorFinal expostos no dominio -> listagem coerente.
+      O registro NO BANCO nao e tocado.
+  src/components/comercial/orcamentoPdf.ts
+      a) linha ["Duracao estimada", ...] REMOVIDA da tabela de veiculo/distancia
+         ("Distancia estimada" permanece); unica referencia a duracao_texto removida;
+      b) 1a linha do resumo: "Valor do Transporte" -> "Valor Base do Frete";
+      c) faixa de destaque: "VALOR FINAL" -> "VALOR FINAL DA PROPOSTA";
+      d) total impresso = fmt(resolverValorFinal(valores)) em vez do valor cru.
+  src/test/com_orc_02_persistencia.test.ts
+      CASO 9 (assertion de forma, herdada da ORC-02) atualizado para
+      /fmt\(resolverValorFinal\(valores\)\)/ — intencao preservada (PDF usa o total efetivo).
+
+CRIADOS (correcao)
+  src/components/comercial/orcamentoCalculo.ts   — resolverValorFinal() (regra unica)
+  src/test/com_orc_pdf_01_correcao.test.ts       — 17 testes da correcao
+  scripts/_orc_pdf_01_prova.ts                   — prova read-only do PDF (SELECT + ROLLBACK)
+
+ALTERADOS NESTE CICLO (2026-09-29): NENHUM — apenas re-execucao de inspecao e validacao.
+
+EVIDENCIAS
+  ORC-PDF-01-EVIDENCIAS\ORC-202609-8659_Orcamento_Comercial.pdf (982284 bytes)
+  ORC-PDF-01-EVIDENCIAS\ORC-PDF-01_PROVA.txt (regenerada neste ciclo)
+
+--------------------------------------------------------------------------------
+4. CAUSA RAIZ
+--------------------------------------------------------------------------------
+Registro legado real de producao ORC-202609-8659 (SELECT em transacao + ROLLBACK):
+  orcamentos.valor_base  = NULL
+  orcamentos.valor_final = NULL
+  orcamentos.valores     = {"valorBase": 2200, "valorFinal": 0, ...}
+Cadeia do bug:
+  1) Criado antes da correcao de state stale da missao TMS-COM-ORC-02: o payload de save
+     gravava valorFinal = 0 apesar de valorBase = 2200;
+  2) O PDF imprimia fmt(Number(valores.valorFinal) || 0) -> "R$ 0,00" na faixa final;
+  3) A leitura (toOrcamentoDomain) espelhava o dado cru (0) -> tela/listagem tambem
+     exibiam 0 ate um novo recalculo;
+  4) A ORC-02 corrigiu o FLUXO DE SAVE mas nao alterou o dado legado (regra: dado de
+     producao intacto) nem normalizou a leitura/PDF -> o impresso continuava com 0.
+  5) "Valor do Transporte" era rotulo nao padrao do resumo financeiro impresso;
+     "Duracao estimada" era dado de operacao (tela) indevidamente impresso no PDF.
+
+--------------------------------------------------------------------------------
+5. CORRECAO APLICADA (sem mascarar e sem regra paralela)
+--------------------------------------------------------------------------------
+  Unico contrato de "valor final efetivo", ja existente na regra canonica:
+    resolverValorFinal(v) {
+      persistido > 0               -> respeitado (inclusive override manual);
+      persistido 0/ausente         -> calcularValorFinal(v)  [regra canonica ja existente];
+    }
+  - toOrcamentoDomain (leitura) usa resolverValorFinal -> listagem/tela coerentes;
+  - orcamentoPdf (impressao) usa resolverValorFinal    -> PDF coerente;
+  - valor NUNCA fixo no codigo: sem componentes, imprime 0 (testado);
+  - banco: NENHUM UPDATE/INSERT/DELETE (somente SELECT com ROLLBACK);
+  - auto-cura opcional: o proximo save do orcamento legado grava valor_final=2200 pelo
+    fluxo normal da ORC-02 (ate la o dado permanece intacto por decisao da missao).
+
+--------------------------------------------------------------------------------
+6. TESTES EXECUTADOS E RESULTADO (ciclo 2026-09-29)
+--------------------------------------------------------------------------------
+  npx tsc --noEmit                                            -> 0 erros (EXIT=0)   [OK]
+  npx vitest run com_orc_pdf_01_correcao                      -> 17/17              [OK]
+  npx vitest run com_orc_02_persistencia                      -> 15/15              [OK]
+  npx vitest run com_orc_03_pdf_profissional                  -> 14/14              [OK]
+  npx vitest run com_preco_01_tabela_esporadica               -> 14/14              [OK]
+    subtotal orcamento/PDF/preco                             -> 60/60              [OK]
+  npx vitest run com_carga_01/02/03/04                        -> 19+14+18+14 = 65/65 [OK]
+  TOTAL DA VALIDACAO DIRETA                                   -> 125/125 testes     [OK]
+  npx tsx scripts\_orc_pdf_01_prova.ts (real, read-only)      -> 23 PASS / 0 FAIL   [OK]
+      "RESULTADO: TODOS OS CHECKS PASSARAM"
+  Checagem estatica de fonte (PowerShell)                     -> 7/7 True           [OK]
+      pdf_sem_duracao_estimada=True | pdf_sem_valor_transporte=True
+      pdf_nome_base=True | pdf_nome_final=True | pdf_total_canonico=True
+      tela_tem_duracao_texto=True | tela_linha_card_rota=True
+
+  PLAYWRIGHT: NAO EXECUTADO nesta estacao — tests/e2e/global-setup.ts (linha 5) chama
+  verificarAmbiente() que BLOQUEIA execucao em PRODUCAO, e .env aponta
+  VITE_SUPABASE_URL=https://uwrvzsjtpgaifkktpepn.supabase.co (ref de producao).
+  Conforme instrucao da missao (nao aguardar indefinidamente), usou-se validacao
+  objetiva/local: suites vitest do dominio/PDF + prova real do PDF gerado.
+  Nenhum PASS foi inventado: todos os itens acima tem saida de comando registrada.
+
+--------------------------------------------------------------------------------
+7. EVIDENCIA ESPECIFICA — ORC-202609-8659
+--------------------------------------------------------------------------------
+Leitura do banco (SELECT em transacao, encerrada com ROLLBACK — zero escrita):
+  id          = d577539b-1865-477c-b079-af94152fc3e9
+  valor_base  = NULL | valor_final = NULL | status = em_analise
+  valores     = {"valorBase": 2200, "valorFinal": 0, ...}   (dado intacto, nao mascarado)
+  updated_at  = 2026-09-24T22:52:38.862Z
+
+Saida da prova (scripts\_orc_pdf_01_prova.ts):
+  PASS — banco: registro legado encontrado (SELECT read-only)
+  PASS — dominio: valorBase = 2200
+  PASS — dominio: valorFinal normalizado = 2200 (nao 0)
+  PASS — dominio: valores.valorFinal = 2200
+  PASS — regra: resolverValorFinal = 2200
+  PASS — banco intacto: valores.valorFinal original = 0 (nao mascarado no dado)
+  PASS — pdf: 1 pagina | 982284 bytes (arquivo nao vazio)
+  PASS — pdf: NAO contem "Duracao estimada"
+  PASS — pdf: contem "Distancia estimada" (mantida)
+  PASS — pdf: contem "Valor Base do Frete"
+  PASS — pdf: NAO contem "Valor do Transporte"
+  PASS — pdf: contem "VALOR FINAL DA PROPOSTA"
+  PASS — pdf: faixa antiga "VALOR FINAL" generica ausente
+  PASS — pdf: total impresso = R$ 2.200,00 (nao R$ 0,00)
+  PASS — pdf: nenhum "R$ 0,00" impresso
+  PASS — pdf: sem undefined / NaN / [object Object] / mojibake
+  PASS — pdf: "ORCAMENTO COMERCIAL" acentuacao correta (C cedilha)
+  PASS — pdf: numero ORC-202609-8659 e cliente presentes
+  PASS — ROLLBACK executado — nenhum orcamento persistido
+  RESULTADO: TODOS OS CHECKS PASSARAM (23/0)
+
+Confirmacoes obrigatorias:
+  1. duracao NAO aparece no PDF .................. CONFIRMADO (PASS pdf + teste fonte)
+  2. duracao CONTINUA na tela .................... CONFIRMADO (OrcamentoForm.tsx:898 +
+                                                   teste "tela (form) mantem a duracao");
+  3. "Valor do Transporte" fora do resumo do PDF . CONFIRMADO (PASS pdf: NAO contem);
+  4. VALOR FINAL != R$ 0,00 com composicao real .. CONFIRMADO (R$ 2.200,00 impresso);
+  5. demais informacoes preservadas .............. CONFIRMADO (suite com_orc_03 14/14 +
+                                                   bloco D da suite nova: 2200+100+50-20=2330)
+
+PATH DO PDF: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\ORC-PDF-01-EVIDENCIAS\ORC-202609-8659_Orcamento_Comercial.pdf
+BYTES DO PDF: 982284
+PATH DA PROVA: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\ORC-PDF-01-EVIDENCIAS\ORC-PDF-01_PROVA.txt
+
+--------------------------------------------------------------------------------
+8. CONFIRMACAO: NENHUMA OUTRA AREA ALTERADA
+--------------------------------------------------------------------------------
+  - Nenhuma alteracao de codigo neste ciclo (2026-09-29): apenas leitura, testes e prova;
+  - Correcao original limitada a 3 arquivos-fonte + 2 arquivos novos (dominio/PDF/testes);
+  - Financeiro / pdfFatura.ts ................... intacto;
+  - Programacao Operacional / OS / Escala ....... intacto;
+  - APP Prestador / Redmi / conexao_prestador ... NAO tocado (fora do escopo);
+  - Outros PDFs (fatura, relatorios, extrato) ... intactos;
+  - Banco: 0 migrations novas, 0 INSERT/UPDATE/DELETE (somente SELECT + ROLLBACK);
+  - Nomenclaturas de outras telas ............... inalteradas;
+  - Contagem regressiva global .................. NIVEL 4 NAO AVANCADO (0 inalterado).
+
+--------------------------------------------------------------------------------
+9. PENDENCIAS
+--------------------------------------------------------------------------------
+  1. (QA) Validacao visual em navegador de que o card de rota exibe "distancia . duracao"
+     ao abrir orcamento salvo (fonte: OrcamentoForm.tsx:898 + auto-calculo :295);
+  2. (QA) Executar tests/e2e/_orc_pdf_01_qa_tela.spec.ts em ambiente NAO-producao
+     (guard de PRODUCAO bloqueia nesta estacao);
+  3. (Opcional, prod) Regravar ORC-202609-8659 pelo fluxo de edicao para materializar
+     valor_final = 2200 nas colunas dedicadas (auto-cura ORC-02) — ate la o dado
+     permanece intacto por decisao desta missao;
+  4. Nivel 4 da contagem regressiva nao e alterado por esta missao.
+
+--------------------------------------------------------------------------------
+10. IDENTIFICACAO DESTE RELATORIO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\ORC-PDF-01-RELATORIO.txt
+Bytes:   00014812
+Data:    2026-09-29 09:25:00 (America/Sao_Paulo)
+
+FIM — ORC-PDF-01 (re-validacao 2026-09-29 09:25:00) — MISSAO ENCERRADA APOS O RELATORIO.

@@ -1,0 +1,548 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-04A-FATURA-FLOW-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS (React/Vite/TS) + Supabase Postgres (PRODUCAO, leitura read-only)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: AUDITORIA SOMENTE. Nada implementado. Nenhum UPDATE/INSERT/DELETE de
+      negocio, nenhum recebivel criado, nenhuma fatura alterada, nenhuma
+      migration/RLS/trigger, nenhum codigo de producao corrigido, APP intocado.
+FONTE COMPLEMENTAR: TMS-FIN-PROG-01 (auditoria), TMS-FIN-PROG-03 (dashboard).
+================================================================================
+
+CLASSIFICACAO: AUDITORIA CONCLUIDA (com pontos PENDENTES explicitos na secao 14).
+
+--------------------------------------------------------------------------------
+1. FLUXO REAL ATUAL PONTA A PONTA
+--------------------------------------------------------------------------------
+1.1 CAMINHO OFICIAL (Programacao/OS -> Conferencia -> Criar Fatura -> Emitir -> AR)
+
+1) Programacao Operacional / OS finalizada
+   - Fonte: alocacoes_escala (status='concluida' AND finalizada=true) com join
+     opcional a ordens_servico. Nao ha "fatura" nesta etapa.
+   - trigger M66 (trg_propagar_financeiro_alocacao) cria financeiro_receber
+     (por os_id), financeiro_pagar e pagamentos_prestadores. O AR por OS (os_id)
+     e SEPARADO do AR de fatura (fatura_id). [CODIGO][BANCO]
+
+2) Conferencia Financeira
+   UI: src/components/financeiro/ConferenciaFinanceira.tsx (aba "conferencia" do
+       Financeiro). Servico: centralFinanceiroService.ts (filtro
+       alocacoes_escala status=concluida, finalizada=true, limit 300).
+
+3) Selecao de servicos
+   - Checkboxes por linha -> state `selecionados` (Set) + `itensSelecionados`.
+   - Bloqueios: selecionados.size>0; 1 cliente por fatura (A30); exige cliente
+     identificado; alerta se Romaneio/OC ou POD pendente. [CODIGO]
+
+4) Botao "Criar Fatura" (ConferenciaFinanceira.tsx:1710-1717)
+   Handler: `criarFatura` (ConferenciaFinanceira.tsx:1444-1474)
+   -> valida e faz `setPainelFatura(true)` (NAO grava nada ainda). [CODIGO]
+
+5) Registro criado em faturas (rascunho)
+   UI: FaturaPanel (ConferenciaFinanceira.tsx:2557) com itens=itensParaFatura.
+   Ao abrir sem faturaIdInicial (FaturaPanel.tsx:184-252):
+     criarRascunhoFatura() -> INSERT faturas {status:'rascunho', cliente_id,
+        data_emissao, metadata:{modelo,descricao}}
+     adicionarItemFatura() (1x por servico) -> INSERT fatura_itens (snapshot)
+     atualizarFatura() -> vencimento/descricao/observacao
+   Tabela: faturas / fatura_itens. [CODIGO]
+
+6) fatura_itens
+   - 1 linha por servico (os_id, alocacao_id, cliente_id, romaneio, descricao,
+     data_servico, valor_base, valor_adicionais, valor_descontos, valor_total,
+     km_excedente, pedagio_cliente, ajudante_cliente, diaria_cliente,
+     saidas_adicionais_cliente, status='ativo'). [CODIGO][BANCO]
+
+7) Status inicial
+   - 'rascunho' (DEFAULT da coluna faturas.status e explicito no insert). [CODIGO][BANCO]
+
+8) Modal de fatura
+   - FaturaPanel (visualiza/edita). Botoes: Salvar rascunho, Remover item,
+     Emitir (abre AlertDialog), Cancelar (com motivo). [CODIGO]
+
+9) Acoes disponiveis no rascunho
+   - Editar vencimento/observacao/emissao/descricao/modelo (atualizarFatura)
+   - Adicionar/remover itens (adicionarItemFatura/removerItemFatura; trigger
+     anti-duplicidade + recalculo de totais)
+   - Emitir (handleEmitir -> RPC f_emitir_fatura)
+   - Cancelar (f_cancelar_fatura) [CODIGO]
+
+10) Mudanca para emitida (PONTO OFICIAL)
+   - FaturaPanel.handleEmitir (FaturaPanel.tsx:291-306) -> emitirFatura()
+     (faturaService.ts:355-365) -> supabase.rpc("f_emitir_fatura",{p_fatura_id})
+   - Na RPC: UPDATE public.faturas SET status='emitida', numero=..., 
+     conta_receber_id=... [CODIGO]
+   - TRIGGER: nenhum trigger em faturas faz rascunho->emitida. A transicao e
+     feita exclusivamente pela RPC. Nao existe trigger em faturas. [BANCO]
+
+11) Criacao do AR
+   - SOMENTE dentro de f_emitir_fatura: INSERT INTO financeiro_receber (...)
+     RETURNING id. Cria EXATAMENTE 1 titulo com os_id=NULL e fatura_id=fatura.id.
+     [CODIGO][BANCO]
+
+12) Vinculo fatura_id
+   - financeiro_receber.fatura_id (uuid FK -> faturas.id, ON DELETE SET NULL).
+     Indice NAO-unico idx_financeiro_receber_fatura_id. [BANCO]
+
+13) Status/vencimento/competencia
+   - AR criado: status='aberto'; data_vencimento = COALESCE(fatura.vencimento,
+     fatura.data_emissao+30); data_emissao=CURRENT_DATE; valor=fatura.valor_total;
+     valor_bruto=fatura.valor_bruto; valor_liquido=fatura.valor_total.
+   - faturas: data_emissao, vencimento, competencia_inicio/competencia_fim
+     (competencia e opcional; o Dashboard/AR usam VENCIMENTO). [CODIGO][BANCO]
+
+14) Reflexo em Contas a Receber
+   - financeiro_receber passa a ter 1 titulo com fatura_id. A tela
+     ContasReceberEnterprise (receberService.listarRecebiveis) exibe "Origem".
+     O vinculo inequivoco e fatura_id. [CODIGO]
+
+1.2 CAMINHO MANUAL (divergente — NAO cria AR)
+
+   UI: FaturaManualDialog.handleSalvarEGerarPDF (FaturaManualDialog.tsx:306-336)
+     criarFaturaManual() -> rascunho + item (sem os_id)
+     DEPOIS: atualizarFatura(res.fatura.id, { status: "emitida" })  [LINHA 330]
+   Isto grava status='emitida' DIRETO via PostgREST UPDATE faturas, SEM chamar
+   f_emitir_fatura. Consequencia: numero=NULL, conta_receber_id=NULL,
+   NENHUM financeiro_receber. [CODIGO][BANCO]
+
+1.3 CADEIA RESUMIDA (oficial)
+   ConferenciaFinanceira.criarFatura (UI)
+     -> FaturaPanel.criarRascunho (UI)
+        -> faturaService.criarRascunhoFatura -> INSERT faturas (rascunho)
+        -> faturaService.adicionarItemFatura -> INSERT fatura_itens
+           (trigger trg_fatura_itens_recalcular_totais recalcula faturas)
+           (trigger trg_fatura_itens_anti_duplicidade bloqueia OS ja faturada)
+           (trigger trg_fatura_itens_bloqueio_emissao protege emitida/cancelada)
+     -> FaturaPanel.handleEmitir (UI)
+        -> faturaService.emitirFatura -> RPC f_emitir_fatura (transacional)
+           -> f_gerar_numero_fatura (seq_fatura_ANO -> FAT-YYYY-NNNNNN)
+           -> INSERT financeiro_receber (fatura_id) [AR nasce AQUI]
+           -> UPDATE faturas (status=emitida, numero, conta_receber_id)
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS / FUNCOES / RPCs / TRIGGERS ENVOLVIDOS
+--------------------------------------------------------------------------------
+[CODIGO] UI:
+  src/components/financeiro/ConferenciaFinanceira.tsx
+    - criarFatura (1444), aposEmitirFatura (1476), itensParaFatura (1483)
+    - botao "Criar Fatura" (1710-1717); render <FaturaPanel> (2557)
+  src/components/financeiro/FaturaPanel.tsx
+    - criarRascunho effect (184-252), handleSalvarRascunho (261),
+      handleRemoverItem (280), handleEmitir (291-306), handleCancelar (308)
+  src/components/financeiro/FaturaLista.tsx
+    - abrirEdicao, handleExcluirFatura (133), handleCancelarFatura (145),
+      render <FaturaPanel>/<FaturaManualDialog> (351-364)
+  src/components/financeiro/FaturaManualDialog.tsx
+    - handleSalvar (rascunho), handleSalvarEGerarPDF (306) -> LINHA 330 bypass
+[CODIGO] Service:
+  src/services/financeiro/faturaService.ts
+    - criarRascunhoFatura (213), listarFaturas (237), buscarFaturaComItens (251),
+      listarItensFatura (263), adicionarItemFatura (278), removerItemFatura (309),
+      atualizarFatura (320), emitirFatura (355), cancelarFatura (368),
+      verificarNumeroFaturaManualDisponivel (929), criarFaturaManual (959),
+      atualizarFaturaManual (1019), verificarVinculosFatura (1087),
+      excluirFaturaManual (1139), cancelarFaturaManualEmitida (1161),
+      montarInputPdfFatura (1178)
+  src/services/financeiro/receberService.ts (leitura de AR; nao cria AR de fatura)
+[BANCO] RPCs (public, SECURITY DEFINER, VOLATILE):
+  - f_gerar_numero_fatura(p_fatura_id uuid DEFAULT NULL) sha256:b97a97762fcc6e40
+  - f_emitir_fatura(p_fatura_id uuid)                    sha256:2753dffbdd2274c4
+  - f_cancelar_fatura(p_fatura_id uuid, p_motivo text)   sha256:255f2828e9f07f84
+  - f_recalcular_totais_fatura() [trigger]
+[BANCO] Triggers:
+  fatura_itens:
+    - trg_fatura_itens_recalcular_totais   AFTER INS/UPD/DEL -> f_recalcular_totais_fatura
+    - trg_fatura_itens_anti_duplicidade    BEFORE INS/UPD     -> f_trg_fatura_itens_anti_duplicidade
+    - trg_fatura_itens_bloqueio_emissao    BEFORE INS/UPD/DEL -> f_trg_fatura_itens_bloqueio_emissao
+  financeiro_receber:
+    - trg_evento_financeiro_receber_criado (AFTER INSERT)
+    - trg_evento_financeiro_receber_pago   (AFTER UPDATE)
+    - trg_guardar_receber_pago_sem_baixa   (BEFORE INS/UPD)
+  faturas: NENHUM trigger (a transicao de status nao e validada por trigger).
+
+--------------------------------------------------------------------------------
+3. SCHEMA ATUAL (REAL, information_schema)
+--------------------------------------------------------------------------------
+faturas (24 colunas):
+  id uuid PK; tenant_id uuid NOT NULL DEFAULT current_tenant_id_safe();
+  numero text UNIQUE (nullable); cliente_id uuid FK->clientes(id) ON DELETE SET NULL;
+  data_emissao date NOT NULL DEFAULT CURRENT_DATE; competencia_inicio date;
+  competencia_fim date; vencimento date; valor_bruto/descontos/acrescimos/valor_total
+  numeric(14,2) NOT NULL DEFAULT 0; status text NOT NULL DEFAULT 'rascunho'
+  CHECK IN (rascunho,aguardando_aprovacao,aprovada,emitida,cancelada);
+  observacao text; observacao_fiscal text;
+  conta_receber_id uuid FK->financeiro_receber(id) ON DELETE SET NULL;
+  criado_por/atualizado_por uuid; criado_em/atualizado_em timestamptz;
+  cancelado_em timestamptz; cancelado_por uuid; motivo_cancelamento text;
+  metadata jsonb NOT NULL DEFAULT '{}'.
+  Observacao: NAO existe numero_interno_conexao nem numero_cliente.
+
+fatura_itens (21 colunas):
+  id uuid PK; fatura_id uuid NOT NULL FK->faturas ON DELETE CASCADE;
+  os_id uuid FK->ordens_servico ON DELETE SET NULL; alocacao_id uuid FK->alocacoes_escala;
+  cliente_id uuid FK->clientes; romaneio text; descricao text; data_servico date;
+  valor_base/valor_adicionais/valor_descontos/valor_total numeric(14,2);
+  km_excedente/pedagio_cliente/ajudante_cliente/diaria_cliente/saidas_adicionais_cliente;
+  status text CHECK IN (ativo,cancelado); criado_por/criado_em/atualizado_em.
+
+financeiro_receber (39 colunas; relevantes):
+  id uuid PK; cliente_id uuid FK; descricao; valor/valor_bruto/valor_liquido numeric;
+  vencimento date; data_vencimento date; data_emissao date; data_pagamento date;
+  status text CHECK(...); os_id text (UNIQUE uq_fr_os_id);
+  cliente/cliente_nome text; fatura text; numero text; os_vinculadas text;
+  fatura_id uuid FK->faturas(id) ON DELETE SET NULL; is_teste boolean.
+  Observacao: NAO existe tenant_id; NAO existe UNIQUE(fatura_id).
+
+CONSTRAINTS/UNIQUE (BANCO):
+  faturas: faturas_numero_key UNIQUE(numero); faturas_pkey(id).
+  fatura_itens: fatura_itens_pkey(id); FKs; ck status. SEM UNIQUE(fatura_id, os_id).
+  financeiro_receber: financeiro_receber_pkey(id); uq_fr_os_id UNIQUE(os_id);
+     FKs; ck_fr_status. SEM UNIQUE(fatura_id) — apenas indice NAO-unico
+     idx_financeiro_receber_fatura_id.
+
+SEQUENCES (BANCO): apenas seq_fatura_2026 (start 1, last_value 1). Ou seja, foi
+  gerado exatamente 1 numero oficial na historia (FAT-2026-000001).
+  Demais numeros sao legado/texto (REC-*, FAT-TESTE-*, ESC-*, etc.).
+
+cliente_id neste fluxo: UUID com FK para clientes(id) em faturas, fatura_itens
+  e financeiro_receber.
+
+--------------------------------------------------------------------------------
+4. PONTO EXATO: RASCUNHO -> EMITIDA
+--------------------------------------------------------------------------------
+OFICIAL (correto):
+  supabase/migrations/20260816000001_fase2a_faturamento_profissional.sql
+    f_emitir_fatura, bloco final (linhas 395-403):
+      UPDATE public.faturas SET status='emitida', numero=v_numero,
+        conta_receber_id=v_receber_id, ... WHERE id=p_fatura_id;
+  Frontend: FaturaPanel.tsx:291-306 -> faturaService.emitirFatura (355) ->
+    supabase.rpc("f_emitir_fatura").
+
+BYPASS (incorreto — causa do problema):
+  FaturaManualDialog.tsx:330
+    await atualizarFatura(res.fatura.id, { status: "emitida" });
+  -> faturaService.atualizarFatura (320) -> PostgREST UPDATE faturas.
+  NAO passa pela RPC; NAO cria AR; NAO gera numero.
+
+ESTADOS MORTOS: 'aguardando_aprovacao' e 'aprovada' existem no CHECK e nos
+  labels/listagens, mas NENHUM codigo os grava. Nao ha etapa real de validacao
+  intermediaria. A "validacao" e feita pelos guards internos da RPC f_emitir_fatura
+  (FATURA_SEM_ITENS, FATURA_JA_EMITIDA, etc.). [CODIGO][BANCO]
+
+--------------------------------------------------------------------------------
+5. PONTO EXATO ONDE O AR NASCE HOJE
+--------------------------------------------------------------------------------
+UNICO ponto: f_emitir_fatura (migration linhas 372-393):
+  INSERT INTO public.financeiro_receber (cliente_id, descricao, valor, vencimento,
+    data_vencimento, data_emissao, status, cliente, cliente_nome, fatura, numero,
+    os_vinculadas, valor_bruto, valor_liquido, fatura_id)
+  VALUES (..., status='aberto', ..., fatura_id=p_fatura_id) RETURNING id;
+Nao ha trigger que crie AR ao emitir. Nao ha caminho alternativo de fatura que
+crie AR. Confirmado em producao: 1 AR com fatura_id (FAT-2026-000001).
+
+--------------------------------------------------------------------------------
+6. DIAGNOSTICO FATURA 41 E 42 (read-only)
+--------------------------------------------------------------------------------
+Ambas: cliente_id=91b80fdb-6b87-4982-a550-f863f7f15866; status=emitida;
+numero=NULL; conta_receber_id=NULL; origem=manual; 1 item (os_id=NULL);
+modelo=calvo; descricao em metadata; contaBancaria=BTG PACTUAL (snapshot).
+
+FATURA 41 (metadata.numeroManual="41")
+  id:                ebbc46d2-41ff-4412-aa4c-a5b5e81d1411
+  numero (coluna):   NULL
+  status:            emitida
+  emissao:           2026-09-22   vencimento: 2026-10-07
+  valor_total:       R$ 2.114,60
+  itens:             1 (os_id=NULL, valor_base=valor_total=2.114,60, ativo)
+  financeiro_receber: NAO por fatura_id; EXISTE 1 AR ORFAO id bbbaa2dc
+                     (fatura texto="41", fatura_id=NULL, os_id=NULL,
+                     valor=2.114,60, status='pendente', venc=2026-10-07).
+                     Esse AR NAO esta ligado a fatura (nao e AR oficial).
+  numero interno:    inexistente (nao ha coluna)
+  numero por cliente: inexistente (nao ha coluna)
+  causa:             FaturaManualDialog.handleSalvarEGerarPDF -> atualizarFatura
+                     {status:'emitida'} (FaturaManualDialog.tsx:330), sem RPC.
+  Observacao: o AR orfao bbbaa2dc foi criado FORA do fluxo oficial (provavel
+  criacao manual avulsa). Nao confundir com AR da fatura.
+
+FATURA 42 (metadata.numeroManual="42")
+  id:                7220ed09-50d8-41a1-b3ce-a315e416bcde
+  numero (coluna):   NULL
+  status:            emitida
+  emissao:           2026-09-22   vencimento: 2026-10-07
+  valor_total:       R$ 2.091,40
+  itens:             1 (os_id=NULL, valor_base=valor_total=2.091,40, ativo)
+  financeiro_receber: NENHUM (nem fatura_id, nem fatura texto="42").
+  numero interno:    inexistente
+  numero por cliente: inexistente
+  causa:             mesmo bypass (FaturaManualDialog.tsx:330).
+
+NAO corrigidas (conforme missao).
+
+--------------------------------------------------------------------------------
+7. DIAGNOSTICO DAS 14 EMITIDAS SEM AR (read-only)
+--------------------------------------------------------------------------------
+[BANCO] faturas: 41 total | emitida 15 (1 com numero+AR, 14 sem numero/AR) |
+        rascunho 26. Das 15 emitidas: origem='manual'=14 (TODAS sem AR);
+        origem=NULL=1 (a unica oficial, FAT-2026-000001, COM AR).
+
+As 14 (id / numeroManual / cliente / valor / emissao / venc / itens / AR):
+  1) a22334a3  "38"   cli 91b80fdb  3.550,54  21/08  05/09  1 item  AR: nao
+  2) 3cff86c2  "39"   cli 91b80fdb  1.597,48  25/08  09/09  1 item  AR: nao
+  3) 8309a22b  "40"   cli a49d5aa3  1.200,00  02/09  17/09  1 item  AR: nao
+  4) 27f7bb25  "FIN013-001" cli 336c5b17  123,45  03/09  30/09 1 item AR: nao
+  5) a641c456  "001"  cli 91b80fdb    125,00  03/09  10/10  1 item  AR: nao
+  6) ed616465  "40."  cli 91b80fdb  1.200,00  03/09  18/09  1 item  AR: nao
+  7) dae9198f  "FIN3623C-1788612938405" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+  8) 6f1afe5c  "FIN3623C-1788612977197" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+  9) dfd02445  "FIN3623C-1788613035815" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+ 10) 1154348c  "FIN3623C-1788613125775" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+ 11) b48458bf  "FIN3623C-1788613277955" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+ 12) fec71115  "FIN3623C-1788613689598" cli 336c5b17 123,46 05/09 05/10 1 AR: nao
+ 13) ebbc46d2  "41"   cli 91b80fdb  2.114,60  22/09  07/10  1 item  AR: nao (orfaoo)
+ 14) 7220ed09  "42"   cli 91b80fdb  2.091,40  22/09  07/10  1 item  AR: nao
+  Soma: R$ 12.743,23.
+
+CLASSIFICACAO DA CAUSA (una e comprovada):
+  - CAUSA: BYPASS da RPC — FaturaManualDialog.handleSalvarEGerarPDF marca
+    status='emitida' via atualizarFatura (linha 330) em vez de emitirFatura().
+    Por isso: numero oficial nao gerado, conta_receber_id nao preenchido,
+    financeiro_receber nao criado.
+  - Nao e falha parcial, nao e trigger/RPC inexistente (a RPC existe e funciona —
+    prova: FAT-2026-000001 tem numero+AR), nao e perda de vinculo posterior:
+    todas as 14 tem n_ar_fatura_id=0 e n_ar_numero=0 desde a origem.
+  - Caminho: MANUAL (14/14 origem='manual'); todos os itens com os_id=NULL.
+  - 23 linhas de financeiro_receber tem `fatura` texto (REC-*, FAT-TESTE-*,
+    Fat 00038, fat 0037, FAT-001/2026, ESC-*) com fatura_id=NULL — legado/teste,
+    nao sao AR oficiais de fatura.
+
+--------------------------------------------------------------------------------
+8. ESTADO ATUAL DA NUMERACAO
+--------------------------------------------------------------------------------
+- Campo `faturas.numero`: TEXT UNIQUE (global). Preenchido APENAS na emissao
+  oficial; formato FAT-YYYY-NNNNNN.
+- Geracao: f_gerar_numero_fatura usa sequence POR ANO `seq_fatura_<ANO>`
+  (atual: seq_fatura_2026), criada on-demand, `nextval` atomico. Isso protege
+  contra numero interno duplicado e concorrencia na geracao.
+- NAO existe numero por cliente. O unico "numero do cliente" hoje e
+  `metadata.numeroManual` (texto livre) usado no fluxo manual.
+- Validacao de duplicidade do numero manual: APENAS no app
+  (verificarNumeroFaturaManualDisponivel) — checa igualdade exata em
+  `faturas.numero` e `metadata.numeroManual`, com fallback "disponivel=true" se
+  a consulta falhar. NAO ha UNIQUE no banco para metadata.numeroManual.
+- Riscos observados nos dados: "40" e "40." e "001" no mesmo cliente; numeros
+  legados "FAT-001/2026"/"FAT-002/2026"/"FAT-003/2026"; nada sequencial por cliente.
+- Cliente no fluxo: UUID/FK (faturas.cliente_id).
+- Impacto atual: PDF/modal/listagem/filtros leem `numero` OU
+  `metadata.numeroManual`; AR guarda `fatura` e `numero` = numero oficial (ou
+  fica NULL no manual). Nao ha distincao "interno Conexao" vs "do cliente".
+
+--------------------------------------------------------------------------------
+9. PROPOSTA MINIMA DE NUMERACAO
+--------------------------------------------------------------------------------
+Conceito 1 — NUMERO INTERNO CONEXAO (global, unico, independente do cliente)
+  Opcao A (recomendada, menor risco): REUTILIZAR `faturas.numero` como numero
+    interno Conexao. Ele JA e unico global, ja e gerado por sequence atomica
+    (FAT-YYYY-NNNNNN) e ja e o numero que vai para o PDF/AR. Nada a migrar de
+    dado; apenas padronizar a nomenclatura na UI ("Nº Conexao").
+  Opcao B: nova coluna `numero_interno_conexao text UNIQUE` + sequence
+    dedicada `seq_fatura_interno_conexao` com prefixo CE-YYYY-NNNNNN. Mantem
+    `numero` como esta (compatibilidade). Mais colunas e backfill (14+).
+  RECOMENDACAO: Opcao B somente se o negocio exigir prefixo "CE-" separado do
+  "FAT-". Caso contrario, Opcao A.
+
+Conceito 2 — NUMERO DA FATURA DO CLIENTE (sequencial por cliente)
+  Proposta:
+    - Nova coluna `faturas.numero_cliente integer` (nullable), + `faturas.
+      numero_cliente_ano integer` (opcional, se o sequencial reiniciar por ano).
+    - Tabela de contador: `public.fatura_contadores_cliente (
+        tenant_id uuid, cliente_id uuid, ano integer, ultimo_numero integer,
+        PRIMARY KEY (tenant_id, cliente_id, ano))`.
+    - Geracao (dentro da MESMA transacao da emissao):
+        INSERT INTO fatura_contadores_cliente(tenant_id,cliente_id,ano,ultimo_numero)
+        VALUES (v_tenant, v_cliente, v_ano, 1)
+        ON CONFLICT (tenant_id,cliente_id,ano)
+        DO UPDATE SET ultimo_numero = fatura_contadores_cliente.ultimo_numero + 1
+        RETURNING ultimo_numero;   -> numero_cliente
+      O ON CONFLICT com DO UPDATE serializa por linha (lock de linha) =>
+      impossibilita dois numeros iguais para o mesmo cliente sob concorrencia.
+    - Unicidade: UNIQUE (tenant_id, cliente_id, ano, numero_cliente).
+    - Escopo: somente faturas EMITIDAS recebem numero_cliente (rascunho fica
+      NULL), garantindo que o sequencial do cliente represente apenas documentos
+      validos.
+  NAO criar agora (auditoria).
+
+--------------------------------------------------------------------------------
+10. ESTRATEGIA DE CONCORRENCIA / IDEMPOTENCIA (para a proxima missao)
+--------------------------------------------------------------------------------
+Problema atual e correcao proposta:
+
+a) Duas emissoes da mesma fatura / dois AR para uma fatura
+   - Hoje: mitigado por `SELECT ... FOR UPDATE` na fatura + guarda status
+     'emitida' (a 2a chamada recebe FATURA_JA_EMITIDA). NAO ha constraint.
+   - Proposta: manter a RPC como unico ponto + adicionar constraint:
+       CREATE UNIQUE INDEX uq_receber_fatura_id
+         ON public.financeiro_receber (fatura_id) WHERE fatura_id IS NOT NULL;
+     Garante 1 AR por fatura mesmo se a RPC for contornada.
+
+b) Emissao parcial (fatura emitida sem AR)
+   - Proposta: f_emitir_fatura ja e transacional (INSERT AR + UPDATE fatura na
+     mesma transacao). Adicionar guarda de integridade:
+       BEFORE UPDATE ON faturas: se NEW.status='emitida' e NEW.conta_receber_id
+       IS NULL -> RAISE EXCEPTION. (trigger, nao constraint, para nao quebrar as
+       14 linhas legadas; a constraint CHECK ficaria NOT VALID inicialmente.)
+     Isto teria bloqueado 41/42 e as 14.
+
+c) AR criado mas fatura continua rascunho
+   - Proposta: dentro da RPC, a ordem e INSERT AR -> UPDATE fatura na MESMA
+     transacao; qualquer falha faz rollback total. Reforcar com o indice unico
+     (a) para impedir AR duplicado e com o trigger (b) para impedir o estado
+     inverso.
+
+d) Numero interno duplicado
+   - Proposta: sequence (global) por ano — ja atomica (nextval). Se Opcao B,
+     nova sequence dedicada. UNIQUE(numero) ja existe.
+
+e) Numero do cliente duplicado
+   - Proposta: tabela de contador com ON CONFLICT DO UPDATE (lock de linha) +
+     UNIQUE(tenant_id, cliente_id, ano, numero_cliente).
+
+f) Bloqueio de alteracao apos emissao
+   - Ja existe por trigger (trg_fatura_itens_bloqueio_emissao). Manter.
+
+g) Anti-duplicidade de servico
+   - Hoje: trigger aplicacional (SELECT antes do INSERT). Sob concorrencia
+     extrema dois inserts da mesma OS poderiam passar antes do commit.
+   - Proposta: manter trigger + serializar com pg_advisory_xact_lock(hashtext
+     (os_id::text)) no caminho de insercao de item (ou refletir status da fatura
+     em coluna denormalizada para permitir UNIQUE parcial). Avaliar na PROG-04B.
+
+h) Numero manual (metadata.numeroManual)
+   - Proposta: manter apenas como referencia legada; a numeracao oficial passa a
+     ser numero_interno_conexao + numero_cliente. Nao criar UNIQUE em metadata.
+
+Observacao de seguranca: f_emitir_fatura/f_cancelar_fatura/f_gerar_numero_fatura
+tem GRANT EXECUTE para `anon` (alem de authenticated/service_role). A RPC bloqueia
+por `auth.uid() IS NULL`, mas o ideal (proxima missao) e REVOKE de anon. Isso e
+uma recomendacao, NAO aplicada.
+
+--------------------------------------------------------------------------------
+11. IMPACTO MINIMO UI / PDF / AR
+--------------------------------------------------------------------------------
+LISTAGEM DE FATURAS (FaturaLista.tsx):
+  - Hoje: mostra `numero` ou `metadata.numeroManual`.
+  - Alvo: 2 colunas — "Nº Conexao" (numero interno) e "Nº Cliente"
+    (numero_cliente). Layout preservado (apenas colunas/rotulos).
+MODAL (FaturaPanel.tsx / FaturaManualDialog.tsx):
+  - Exibir "Nº interno Conexao" e "Nº da fatura do cliente"; rascunho mostra
+    "sera gerado na emissao" (ja existe padrao no FaturaPanel).
+PDF (faturaService.montarInputPdfFatura + src/utils/pdfFatura.ts):
+  - Identificacao da Fatura Conexao (numero interno) e referencia clara do
+    numero do cliente. Sem redesenho; apenas campos.
+CONTAS A RECEBER (ContasReceberEnterprise.tsx / receberService.ts):
+  - Manter vinculo inequivoco por `fatura_id`; opcionalmente exibir o numero do
+    cliente no detalhe. Sem redesenho.
+COMPATIBILIDADE:
+  - Manter `faturas.numero` (opcao A) evita quebrar AR (`fatura`/`numero`) e
+    PDFs historicos. `numero_cliente` e aditivo (nullable).
+
+--------------------------------------------------------------------------------
+12. MIGRATIONS QUE SERIAM NECESSARIAS (NAO CRIADAS)
+--------------------------------------------------------------------------------
+M1  ALTER TABLE faturas ADD COLUMN numero_cliente integer;
+    ALTER TABLE faturas ADD COLUMN numero_cliente_ano integer;   (opcional)
+M2  CREATE TABLE public.fatura_contadores_cliente (
+      tenant_id uuid NOT NULL, cliente_id uuid NOT NULL, ano integer NOT NULL,
+      ultimo_numero integer NOT NULL DEFAULT 0,
+      PRIMARY KEY (tenant_id, cliente_id, ano));
+    -- RLS padrao _tms + GRANTs.
+M3  CREATE UNIQUE INDEX uq_receber_fatura_id
+      ON public.financeiro_receber (fatura_id) WHERE fatura_id IS NOT NULL;
+M4  CREATE UNIQUE INDEX (se Opcao B) uq_faturas_numero_interno_conexao
+      + sequence seq_fatura_interno_conexao.
+M5  CREATE OR REPLACE FUNCTION public.f_emitir_fatura(...) — gerar numero_cliente
+      (contador) + (opcional) numero_interno_conexao; manter idempotencia.
+    + Trigger BEFORE UPDATE ON faturas: bloquear status='emitida' sem
+      conta_receber_id (protecao de novos dados; legados tratados depois).
+    + REVOKE EXECUTE ... FROM anon (endurecimento).
+M6  (Saneamento, missao separada) backfill de numero_cliente para faturas
+      emitidas existentes e regularizacao das 14 + AR orfao de 41 — FORA desta
+      serie de correcao funcional.
+
+Nada foi criado/aplicado nesta auditoria.
+
+--------------------------------------------------------------------------------
+13. ARQUIVOS QUE SERIAM ALTERADOS NA IMPLEMENTACAO
+--------------------------------------------------------------------------------
+- supabase/migrations/<nova>.sql  (M1..M5)
+- src/services/financeiro/faturaService.ts
+    (emitirFatura retorna numero_interno/numero_cliente; bloquear status via
+     atualizarFatura; criarFaturaManual alinhado)
+- src/components/financeiro/FaturaManualDialog.tsx
+    (linha 330: usar emitirFatura RPC em vez de atualizarFatura {status:emitida})
+- src/components/financeiro/FaturaPanel.tsx (exibir os dois numeros; confirmacao)
+- src/components/financeiro/FaturaLista.tsx (colunas Nº Conexao/Nº Cliente)
+- src/services/financeiro/faturaService.ts montarInputPdfFatura / src/utils/pdfFatura.ts
+- src/services/financeiro/receberService.ts / ContasReceberEnterprise.tsx (referencia)
+- Testes: src/test/f38_fatura_manual.test.ts, tms_s04*.test.ts + novo teste de
+  idempotencia/numero por cliente.
+
+--------------------------------------------------------------------------------
+14. RISCOS / REGRESSOES / PENDENCIAS
+--------------------------------------------------------------------------------
+R1  A fatura manual foi DESENHADA para nao criar AR nem numero. Ao direciona-la
+    para a RPC, muda o comportamento do documento manual (passa a gerar
+    recebivel). Exige decisao de negocio + ajuste de rotulos/semantica.
+R2  Constraint/trigger de "emitida sem AR" pode falhar nas 14 linhas legadas se
+    aplicada como CHECK validado. Usar trigger (novos writes) e/ou NOT VALID.
+R3  Backfill de numero_cliente pode gerar buracos/duplicidades se rodar em
+    paralelo; deve ser feito com lock por cliente e ordem por criado_em.
+R4  PDF/layout: adicionar campos sem redesenhar; risco baixo se apenas novos
+    campos opcionais.
+R5  Indice UNIQUE(fatura_id) em financeiro_receber pode falhar se houver AR
+    legado duplicado por fatura (hoje ha apenas 1 AR com fatura_id — risco baixo).
+R6  Trigger anti-duplicidade de OS permanece aplicacional; corrida extrema nao
+    coberta (ver 10.g).
+R7  Grants EXECUTE para anon nas RPCs de fatura (endurecer).
+PENDENTE (nao comprovado nesta auditoria):
+  P1  Nao foi possivel abrir o Dashboard/telas com sessao autenticada real
+      (REDMI nao conectado / sem credenciais Playwright). O mapeamento UI foi
+      feito por leitura de codigo; a execucao E2E deve ocorrer na PROG-04B.
+  P2  Origem do AR orfao bbbaa2dc (fatura texto "41") nao tem rastro no codigo
+      do fluxo de fatura (provavel lancamento manual avulso). Marcado como
+      PENDENTE, sem presumir.
+
+--------------------------------------------------------------------------------
+15. PLANO DA PROXIMA MICRO-MISSAO (PROG-04B)
+--------------------------------------------------------------------------------
+Objetivo: implementar validacao/emissao oficial unica + numeracao dupla +
+idempotencia do AR, SEM tocar no historico (41/42/14 tratados a parte).
+
+Etapa 1 (DB, autorizacao previa): M1+M2+M3 (+ M4 se Opcao B) e M5
+  (f_emitir_fatura gera numero_cliente; trigger emitida-sem-AR; REVOKE anon).
+Etapa 2 (Service): faturaService.emitirFatura retorna ambos numeros; impedir
+  transicao para 'emitida' fora da RPC (remover status do Pick de atualizarFatura
+  ou bloquear).
+Etapa 3 (UI): FaturaManualDialog usa emitirFatura (fim do bypass linha 330);
+  FaturaPanel/FaturaLista exibem Nº Conexao + Nº Cliente; PDF referencia ambos.
+Etapa 4 (Validacao): BANCO=SERVICE=UI via read-only + teste de idempotencia
+  (emitir 2x -> 1 AR) e teste de numero por cliente (2 clientes -> sequencias
+  independentes).
+Etapa 5 (Regressao): Faturas/Conferencia/Contas a Receber/Dashboard (PROG-03) e
+  build/typecheck/testes.
+Fora de escopo: saneamento de 41/42/14 e do AR orfao (missao propria de
+  dados historicos), M66/M80, APP, RLS geral, Dashboard.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- SOMENTE AUDITORIA. Nenhum arquivo de producao alterado; nenhuma migration
+  criada/aplicada; nenhuma RLS/trigger alterada; nenhum dado gravado/alterado/
+  apagado (apenas SELECT); nenhum recebivel criado; faturas 41/42 e as 14
+  mantidas intactas; APP/Flutter intocados. REDMI nao conectado.
+- Toda afirmacao tem evidencia [CODIGO]/[BANCO]. Itens nao comprovados foram
+  marcados PENDENTE na secao 14. Nao ha PASS geral presumido: a auditoria esta
+  CONCLUIDA com as pendencias explicitadas.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-04A-FATURA-FLOW-AUDIT
+================================================================================

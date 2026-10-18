@@ -1,0 +1,151 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D1-GUARD-FAIL-CLOSED-CORE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (nenhuma escrita em PROD; nenhum banco tocado)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL do guard central.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+Guard central fail-closed criado e testado: 13/13 cenarios PASS (T1–T11 + lancamento
++ pureza), compatibilidade CJS/ESM/TS comprovada, ZERO conexao/escrita em PROD, nenhum
+segredo exposto. Nenhum script P1 migrado (como solicitado). .env intacto.
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS CRIADOS (nenhum arquivo existente alterado)
+--------------------------------------------------------------------------------
+ scripts/_guard.cjs ............. nucleo central (CJS, puro, sem rede/banco)
+ scripts/_guard.mjs ............ wrapper ESM (re-export)
+ scripts/_guard.d.ts ........... tipos para TS/tsx
+ scripts/_guard.selftest.cjs ... testes T1–T11 + prova de pureza (node, sem conexao)
+ scripts/_guard.smoke.mjs ...... prova de import ESM (sem conexao)
+ scripts/_guard.smoke.ts ....... prova de import TS/tsx (sem conexao)
+NAO alterados: .env, package.json, RLS, migrations, RPC A6, hardcodes, test:e2e, APP.
+
+--------------------------------------------------------------------------------
+2. CONTRATO DO GUARD
+--------------------------------------------------------------------------------
+Modulo: scripts/_guard.cjs (equivalente ESM em _guard.mjs; tipos em _guard.d.ts).
+Funcoes:
+  refFromUrl(url)              -> project ref de https://<ref>.supabase.co|in
+  refFromDatabaseUrl(db)       -> project ref de DATABASE_URL (pooler/direto); nunca a senha
+  tipoFromRef(ref)             -> 'prod' | 'qa' | 'unknown' | 'absent'
+  detectAmbiente(env?)         -> { urlRef, dbRef, declared, ref } (sem segredos)
+  avaliarTestWrite(acao, env?) -> { bloqueado, motivo[], tipo, ref, optIn, declared, acao }
+  guardTestWrite(acao, env?)   -> lanca Error('TEST WRITE BLOCKED ...', code=GUARD_BLOCKED)
+  canTestWrite(acao, env?)     -> boolean (sem lancar)
+Constantes: PROD_REF=uwrvzsjtpgaifkktpepn | QA_REF=aqpfayildtcnrkfeeyjg |
+  ALLOW_TEST_WRITES_FLAG='ALLOW_TEST_WRITES'.
+
+REGRA (fail closed):
+  PERMITE escrita de teste SOMENTE se TODAS:
+    - destino (URL e/ou DATABASE_URL) = projeto QA (QA_REF);
+    - ENVIRONMENT/VITE_MODE ausente OU em {qa,hml,homolog,homologacao};
+    - ALLOW_TEST_WRITES=true.
+  BLOQUEIA se: ref ausente; ref desconhecido; URL e DATABASE_URL divergentes;
+    destino PROD; ENVIRONMENT=prod; ENVIRONMENT=prod com URL QA; ENVIRONMENT=qa com
+    URL prod; ENVIRONMENT nao reconhecido; opt-in ausente; destino != QA.
+  PROD NUNCA e liberado por ALLOW_TEST_WRITES (sem bypass simples). Excecao futura
+    exigiria mecanismo separado, explicito e auditavel (nao implementado).
+  Mensagens usam apenas project ref/flag; nunca service_role/anon/senha.
+
+--------------------------------------------------------------------------------
+3. MATRIZ DE TESTES (execucao real: node scripts/_guard.selftest.cjs)
+--------------------------------------------------------------------------------
+ID   | CENARIO                                  | ESPERADO | OBTIDO   | RES
+-----+------------------------------------------+----------+----------+-----
+T1   | QA + ALLOW_TEST_WRITES=true              | PERMITE  | PERMITE  | PASS
+T2   | QA sem ALLOW_TEST_WRITES                 | BLOQUEIA | BLOQUEIA | PASS
+T3   | PROD sem opt-in                          | BLOQUEIA | BLOQUEIA | PASS
+T4   | PROD + ALLOW_TEST_WRITES=true            | BLOQUEIA | BLOQUEIA | PASS
+T5   | ENVIRONMENT=qa + URL PROD                | BLOQUEIA | BLOQUEIA | PASS
+T6   | ENVIRONMENT=prod + URL QA                | BLOQUEIA | BLOQUEIA | PASS
+T7   | URL desconhecida                         | BLOQUEIA | BLOQUEIA | PASS
+T8a  | env vazio                                | BLOQUEIA | BLOQUEIA | PASS
+T8b  | sem URL (apenas flags)                   | BLOQUEIA | BLOQUEIA | PASS
+T10  | URL QA + DATABASE_URL PROD (contradicao) | BLOQUEIA | BLOQUEIA | PASS
+T11  | QA via DATABASE_URL + opt-in             | PERMITE  | PERMITE  | PASS
+T-L  | guardTestWrite lanca GUARD_BLOCKED (PROD)| lanca    | lancou   | PASS
+T-P  | guard sem rede/banco/insert/spawn        | 0 viol.  | 0 viol.  | PASS
+-----+------------------------------------------+----------+----------+-----
+TOTAL 13 | PASS 13 | FAIL 0  => RESULTADO: PASS (exit 0)
+
+T9 (nao expor segredo): incluido em cada caso — mensagens verificadas contra presenca de
+  SENHA_FAKE_*, anon fake, service_role fake e a string "service_role". Nenhum vazamento.
+
+Obs.: bug inicial encontrado e corrigido em refFromDatabaseUrl (o host "pooler" era
+interpretado como ref). Padrao correto: usuario `postgres.<ref>` (pooler/direto) ou
+host `<ref>.supabase.*` com ref de 15+ chars.
+
+--------------------------------------------------------------------------------
+4. PROVA DE ZERO CONEXAO/ESCRITA EM PROD
+--------------------------------------------------------------------------------
+- O guard NAO possui: createClient, require('pg'), fetch(), http.request, .insert(,
+  INSERT INTO, child_process (varredura estatica T-PURO: 0 violacoes).
+- Os testes usam apenas objetos env mockados (nao leem/recebem credenciais reais),
+  nao conectam e nao executam DML.
+- Execucao realizada localmente (node/node --check/npx tsx). Nenhuma chamada de rede
+  ao Supabase. Nenhum secret impresso.
+
+--------------------------------------------------------------------------------
+5. COMPATIBILIDADE DE IMPORTACAO (smoke executado)
+--------------------------------------------------------------------------------
+ CJS  : require('./_guard.cjs') ................ OK (usado no selftest)
+ ESM  : import guard,{...} from './_guard.mjs' . OK (node _guard.smoke.mjs -> PASS)
+ TS   : import guard,{...} from './_guard.mjs' . OK (npx tsx _guard.smoke.ts -> PASS)
+        tipos via _guard.d.ts (AvaliacaoTestWrite, EnvLike).
+Resultados: ESM prodBloqueado=true, qaPermite=true, ausenteBloqueia=true; idem TS.
+
+--------------------------------------------------------------------------------
+6. INVENTARIO DE IMPORTACAO (para a proxima missao — NAO feito agora)
+--------------------------------------------------------------------------------
+ Tipo de script                 | Import sugerido (1 linha no topo)
+ -------------------------------+------------------------------------------------
+ CJS  scripts/*.cjs|*.js        | const { guardTestWrite } = require('./_guard.cjs');
+ ESM  scripts/*.mjs             | import { guardTestWrite } from './_guard.mjs';
+ TS   scripts/*.ts              | import { guardTestWrite } from './_guard.mjs';
+ (subpastas usam caminho relativo: '../_guard.cjs' / '../_guard.mjs')
+ Uso: chamar guardTestWrite('<nome do harness>') ANTES da 1a escrita.
+ Frontend src/lib/testes/*.ts   | import de '../../scripts/_guard.mjs' (fora do bundle;
+                                executado via tsx manualmente).
+ E2E tests/e2e/*                | reutilizar guard no global-setup e/ou
+                                `node scripts/check-ambiente.cjs qa` no test:e2e.
+ Edge Functions (Deno)          | NAO sao produtores de teste; sem import agora.
+Mapeamento por produtor (16 P1): adicionar a linha correspondente no topo de cada um
+  (missao DATA-04D2), mantendo o comportamento atual quando em QA.
+
+--------------------------------------------------------------------------------
+7. PROXIMA MICRO-MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D2 — APLICAR GUARD NOS P1 (sem tocar banco/.env/RPC):
+  1) inserir 1 linha de guard nos 16 P1 e nos 5 P2 de teste;
+  2) redirecionar default dos harnesses para .env.qa (dotenv path) mantendo PROD bloqueado;
+  3) remover URL/anon key hardcoded de scripts/missao43_teste_ponta_a_ponta.ts e
+     tests/e2e/helpers/supabase.ts (ler de env com guard);
+  4) adicionar `node scripts/check-ambiente.cjs qa` ao npm test:e2e;
+  5) rotacionar a anon key exposta (acao de infra, separada de codigo).
+  Nenhuma regra de banco nesta etapa.
+
+--------------------------------------------------------------------------------
+8. RESTRICOES RESPEITADAS
+--------------------------------------------------------------------------------
+NAO executado: migrar 16 P1; alterar .env; remover hardcodes; mudar test:e2e; rotacionar
+chave; executar E2E; tocar banco/RLS/migrations/RPC A6; tocar APP; iniciar DATA-05.
+
+--------------------------------------------------------------------------------
+9. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. Guard central fail-closed implementado e comprovado (13/13), compat CJS/ESM/TS,
+zero conexao/escrita PROD, zero segredo exposto.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D1-GUARD-FAIL-CLOSED-CORE-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D1-GUARD-FAIL-CLOSED-CORE-RESULTADO.txt
+Tamanho ..: 9497 bytes
+Data .....: 24/09/2026 20:53:52
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D1
+================================================================================

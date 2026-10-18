@@ -1,0 +1,81 @@
+================================================================================
+ A31-I.2 — FIDELIDADE FINAL + DADOS AUTOMÁTICOS DA FATURA
+ Relatório — Missão A31-I.2 (modo econômico)
+ Data: 2026-08-17   |   Escopo: PDF/Prévia do modelo de faturamento do cliente
+================================================================================
+
+SEÇÃO 1 — CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+- Cliente preenchido automaticamente: SIM
+  · A fatura usa o cliente vinculado aos serviços (itens[0].clienteId após a
+    Central já garantir cliente único). "Cobrança para: [RAZÃO SOCIAL]" +
+    CNPJ/IE/ENDEREÇO vêm do cadastro oficial do cliente (buscarClienteParaFatura).
+  · Sem cliente: bloqueio de emissão + pendência (Central linha 1241-1245).
+- Número automático: SIM
+  · Rascunho/Prévia: "Rascunho" (não consome numeração — montarPreviaFatura
+    usa fatura.numero || "Rascunho").
+  · Emissão: número oficial gerado pela RPC f_emitir_fatura (sequência já
+    existente — faturaService.emitirFatura linha 350).
+  · Após emissão: número usado na coluna FATURA e no rodapé
+    "Fatura [nº] - Conexão Express" (handleEmitir recarrega a fatura).
+- Romaneios consolidados automaticamente: SIM
+  · montarDescricaoCalvo consolida os Romaneios/OCs dos serviços selecionados
+    sem duplicidade e sem inventar número para serviço sem Romaneio.
+- Cliente misto bloqueado: SIM
+  · Central linha 1234-1239: "Não é possível faturar serviços de clientes
+    diferentes..." (UMA FATURA = UM CLIENTE).
+
+SEÇÃO 2 — AJUSTES VISUAIS (PDF/Prévia)
+--------------------------------------------------------------------------------
+- Logo: aumentado (maxWidth 340, maxHeight 130, y=24) e centralizado; mais
+  espaço branco superior e entre logo e faixa da empresa (y = 24+130+42).
+- Faixa salmão: FINA (altura 20pt) contendo somente
+  "CONEXÃO SERVIÇOS EXPRESS LTDA" (fonte 12.5).
+- Abaixo da faixa: CNPJ / INSCRIÇÃO ESTADUAL / Endereço / E-MAIL em fundo
+  branco, centralizados (fonte 9, espaçamento 13pt).
+- Faixa cinza fina (altura 20pt): "Cobrança para: [RAZÃO SOCIAL]".
+- Abaixo da faixa: CNPJ / IE / ENDEREÇO em fundo branco, alinhados à esquerda.
+- Tabela: FATURA | DESCRIÇÃO | PARCELA | VENCIMENTO | VALOR — cabeçalho cinza
+  claro, bordas finas, VALOR em azul escuro; proporções preservadas.
+- "TOTAL DA FATURA": NÃO existe (valor apenas na coluna VALOR).
+- Dados bancários: à esquerda, sem card (Banco / AG / C/C / CHAVE PIX).
+- Rodapé: discreto, canto inferior direito "Fatura [nº] - Conexão Express".
+- Bastante espaço em branco no restante da página (nada empurrado).
+
+SEÇÃO 3 — OBSERVAÇÃO SEPARADA
+--------------------------------------------------------------------------------
+- No modelo do cliente, os Romaneios já estão consolidados na Descrição; a
+  Observação automática de romaneios é OMITIDA (FaturaPanel criarRascunho:
+  modelo calvo → obs = ""). Observação permanece como campo opcional/separado.
+- Modelo padrão (conexao_express) mantém a Observação automática de romaneios.
+
+SEÇÃO 4 — VALORES / VENCIMENTO (preservados)
+--------------------------------------------------------------------------------
+- Valor automático pelos serviços selecionados (fatura_itens.valor_total).
+- Vencimento automático pela regra do cliente (sugerirVencimentoParaCliente).
+- Ambos editáveis antes da emissão (campos já existentes, intactos).
+
+SEÇÃO 5 — ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+1. src/utils/pdfFatura.ts — gerarPdfCalvo: logo maior/centralizado, mais espaço
+   branco, faixas mais finas, espaçamentos verticais da referência.
+2. src/components/financeiro/FaturaPanel.tsx — criarRascunho: no modelo do
+   cliente, Observação automática de romaneios omitida (evita duplicidade).
+3. src/test/a31i2_fatura_automacao.test.ts — NOVO (9 testes).
+
+SEÇÃO 6 — TESTES / VALIDAÇÃO
+--------------------------------------------------------------------------------
+- a31i2_fatura_automacao.test.ts ... ✅ 9/9 (cliente único/misto, número
+  rascunho/emissão, romaneios consolidados, observação separada)
+- a31i_fatura_pdf_visual.test.ts ..... ✅ 2/2 (PDF local regenerado)
+- a30_modelos_fatura.test.ts ......... ✅ 14/14
+- npx tsc --noEmit ................... ✅ 0 erros (escopo)
+- npx eslint (arquivos alterados) .... ✅ 0 erros
+- npm run build ...................... ✅ 37.82s
+
+SEÇÃO 7 — PENDÊNCIAS
+--------------------------------------------------------------------------------
+- (QA) Comparação visual fina do PDF regenerado com a referência (rasterizer não
+  disponível no ambiente Windows atual).
+- Nenhuma migration; nenhum dado real de produção alterado; nenhuma fatura
+  emitida; numeração de produção intacta.

@@ -1,0 +1,544 @@
+================================================================================
+FIN-OPERACIONAL-00 — MASTER AUDITORIA DO MÓDULO FINANCEIRO
+================================================================================
+Data: 2026-09-11
+Operador: Opencode (auditoria read-only)
+Projeto: express-connect-hub (TMS + Supabase)
+Banco: uwrvzsjtpgaifkktpepn.supabase.co (PRODUÇÃO)
+Status: ✅ AUDITORIA COMPLETA — SEM ALTERAÇÕES APLICADAS
+
+================================================================================
+SEÇÃO 1 — CASO FRETEBRAS (CAUSA RAIZ DO BUG "A VENCER" PÓS-VENCIMENTO)
+================================================================================
+
+REGISTRO NO BANCO:
+  ID:           717c5280-6b26-4129-bf74-aa06a0a3989f
+  Fornecedor:   FRETEBRAS TRANSPORTES LTDA
+  Descrição:    FRETEBRAS TRANSPORTES LTDA
+  Data Vencimento: 2026-09-05 (6 dias atrasada)
+  Valor:        R$ 198.09
+  Status (DB):  "a vencer"  ← STALE — deveria ser "vencido" ou "atrasado"
+  is_teste:     false (DADO REAL)
+  OS ID:        NULL
+  created_at:   2026-09-04 18:31:36
+
+CAUSA RAIZ IDENTIFICADA:
+  Não existe trigger, cron job, pg_cron, ou qualquer mecanismo automático
+  que atualize o campo `status` com base na data_vencimento vs data atual.
+
+  O componente ContasPagar.tsx (linha 638) lê o status direto do banco:
+    status: mapStatusPagar(r.status)
+  
+  E o mapStatusPagar (linha 113-123) apenas normaliza o texto:
+    "a vencer" → "a_vencer"
+    "a_vencer" → "a_vencer"
+    "pendente" → "a_vencer"
+    ...etc
+
+  NENHUMA comparação runtime (hoje vs data_vencimento) é feita.
+  O status "a vencer" permanece "a vencer" PARA SEMPRE até que alguém
+  atualize manualmente no banco.
+
+CÓDIGO DO BUG (ContasPagar.tsx:638):
+  status: mapStatusPagar(r.status),  // ← lê DB, não calcula
+
+CONFIRMAÇÃO VIA SQL (68 registros atrasados no pagar):
+  SELECT status, COUNT(*) FROM financeiro_pagar
+  WHERE status IN ('a vencer', 'pendente', 'aberto')
+    AND data_vencimento < '2026-09-11'
+  GROUP BY status;
+  → 68 registros atrasados SEM status atualizado
+
+  Apenas 11 registros têm status "pago" (os que foram baixados via RPC).
+  Os outros 68 estão STALE.
+
+================================================================================
+SEÇÃO 2 — DADOS DO BANCO: VISÃO GERAL
+================================================================================
+
+TABELA                  TOTAL    REAL    TESTE    VALOR REAL (R$)
+────────────────────── ─────── ─────── ──────── ──────────────────
+financeiro_pagar         107      77      30      60,221.12
+financeiro_receber       112      91      21     155,350.27
+pagamentos_prestadores    95      79      16          N/A*
+financeiro_baixas         16      16       0       1,730.59
+contas_financeiras         1       1       0           N/A
+────────────────────── ─────── ─────── ──────── ──────────────────
+TOTAL                   331     264      67
+
+* pagamentos_prestadores não tem coluna `valor` única — valores em colunas separadas
+
+DADOS DE TESTE vs REAIS:
+  - 67 registros são de teste (~20% do total)
+  - 264 registros são reais
+  - A coluna is_teste existe em financeiro_pagar e financeiro_receber
+  - NÃO existe em pagamentos_prestadores
+
+================================================================================
+SEÇÃO 3 — STATUS: DIVERGÊNCIAS ENTRE SCHEMA, CÓDIGO E DADOS REAIS
+================================================================================
+
+FINANCEIRO_PAGAR:
+  DB CHECK (enterprise_hardening.sql): pendente, pago, vencido, atrasado, cancelado
+  Dados reais encontrados:             a vencer, pendente, aberto, pago, cancelado, cancelada, NULL
+  Componente ContasPagar mapeia para:   a_vencer, vencida, paga, parcial, provisao, cancelada
+
+  STATUS USADOS NO CÓDIGO MAS NÃO NO CHECK:
+    "a vencer" (47+26+13 registros) — NÃO é "pendente" nem "vencido"
+    "aberto"   (47 registros)       — NÃO existe no CHECK
+    "cancelada" (2 registros)       — NÃO existe no CHECK
+    "parcial"   (componente)        — NÃO existe no CHECK
+    "provisao"  (componente)        — NÃO existe no CHECK
+
+  STATUS NO CHECK MAS NÃO NOS DADOS:
+    "atrasado" — CHECK existe, mas nenhum registro tem esse status
+
+  CONCLUSÃO: O CHECK provavelmente não é aplicado (Supabase ignora CHECKs
+  em ALTER TABLE para tabelas existentes). Dados entram com qualquer valor.
+
+FINANCEIRO_RECEBER:
+  DB CHECK:                       aberto, pago, vencido, atrasado, cancelado
+  Dados reais:                    pendente, aberto, a vencer, a_vencer, pago, vencida, vencido, cancelada, NULL
+  Componente mapeia para:         pendente, vencido, pago, parcial, cancelado
+
+  STATUS USADOS MAS NÃO NO CHECK:
+    "pendente" (51 registros)  — NÃO existe no CHECK
+    "a vencer" (11 registros)  — NÃO existe no CHECK
+    "a_vencer" (2 registros)   — NÃO existe no CHECK
+    "parcial"  (componente)    — NÃO existe no CHECK
+
+  STATUS INCONSISTENTES:
+    "a vencer" vs "a_vencer" — 2 formas diferentes para o mesmo significado
+    "cancelado" vs "cancelada" — gênero inconsistente
+    "vencido" vs "vencida" — gênero inconsistente
+
+================================================================================
+SEÇÃO 4 — TRIGGERS E CÁLCULOS DE STATUS
+================================================================================
+
+TRIGGERS EXISTENTES NAS TABELAS FINANCEIRAS:
+
+  financeiro_pagar:
+    trg_guardar_pagar_pago_sem_baixa (INSERT+UPDATE)
+    → NÃO atualiza status baseado em data
+    → Apenas bloqueia status "pago" sem baixa correspondente
+
+  financeiro_receber:
+    trg_guardar_receber_pago_sem_baixa (INSERT+UPDATE)
+    → NÃO atualiza status baseado em data
+    → Apenas bloqueia status "pago" sem baixa correspondente
+
+  alocacoes_escala (12 triggers):
+    trg_propagar_financeiro_alocacao → cria financeiro_receber + financeiro_pagar
+    → Status inicial: "pendente" para receber, "pendente" para pagar
+    → NÃO atualiza status baseado em data
+
+  ordens_servico (8 triggers):
+    trg_propagar_financeiro_os → cria financeiro_pares + financeiro_pagar
+    → NÃO atualiza status baseado em data
+
+FUNÇÕES QUE USAM data_vencimento:
+  f_emitir_fatura — usa para calcular vencimento da fatura
+  f_trg_propagar_financeiro_alocacao — calcula v_data_venc_30 (30 dias)
+  f_trg_propagar_financeiro_os — calcula v_data_venc_30
+  f_trg_validade_documento_evento — verifica validade de documentos
+  trg_evento_financeiro_receber_criado — loga eventos
+
+  NENHUMA dessas funções atualiza `status` com base em data_vencimento.
+
+CONCLUSÃO: Não existe cron job, pg_cron, trigger ou função que:
+  1. Compare data_vencimento com a data atual
+  2. Atualize status de "pendente"/"a vencer" para "vencido"/"atrasado"
+  
+  Isso é uma OMISSÃO CRÍTICA. Os dados ficam obsoletos.
+
+================================================================================
+SEÇÃO 5 — COMPONENTES FRONTEND: MATRIZ COMPLETA
+================================================================================
+
+COMPONENTE                          LINHAS  TABELAS   FILTROS  STATUS COMPARE  MOCK
+────────────────────────────────── ─────── ──────── ──────── ──────────────── ────
+ContasPagar.tsx                     1123     2         S/date  NENHUM         N
+ContasReceberEnterprise.tsx         1451     3         S/7dias NENHUM         N
+DashboardFinanceiroEnterprise.tsx    771     6         NENHUM  SIM*           N
+FluxoCaixaEnterprise.tsx            644     4         PARCIAL NENHUM         N
+DREGerencial.tsx                    461     3         SIM     NENHUM         N
+ContasBancarias.tsx                1253     5         SIM     NENHUM         N
+PagamentoPrestadores.tsx           ~2200   7         SIM     NENHUM         N
+ResumoExecutivoFinanceiro.tsx       N/A     N/A       N/A     N/A             N/A (ARQUIVO NÃO EXISTE)
+
+* DashboardFinanceiroEnterprise compara data_vencimento < hoje APENAS para o KPI de inadimplência
+  (linha 188), mas NÃO atualiza o status no banco.
+
+DEAD CODE DETECTADO:
+  - FluxoCaixaEnterprise.tsx: botão "Exportar" sem onClick (linha 374-377)
+  - ContasReceberEnterprise.tsx: "Gerar Fatura" disabled (linha 631)
+  - ContasReceberEnterprise.tsx: "Gerar Boleto" disabled (linha 1334)
+  - ContasReceberEnterprise.tsx: "Emitir NFS-e" disabled (linha 1380)
+  - ContasReceberEnterprise.tsx: Coluna Fiscal = "Sem nota" hardcoded (linha 1060)
+  - ContasReceberEnterprise.tsx: Coluna Boleto = "Sem boleto" hardcoded (linha 1063)
+
+================================================================================
+SEÇÃO 6 — FRETEBRAS: ANÁLISE DETALHADA DO FLUXO
+================================================================================
+
+FLUXO COMPLETO (onde o status deveria ser atualizado mas não é):
+
+1. CRIAÇÃO:
+   ContasPagar.handleSalvar() → criarPagavel() → INSERT em financeiro_pagar
+   → status: "a vencer" (FORM_BLANK, linha 156)
+   → data_vencimento: preenchida pelo usuário
+   → is_teste: false
+
+2. LEITURA (após refresh):
+   ContasPagar.fetchLancamentos() → SELECT * FROM financeiro_pagar
+   → mapStatusPagar(r.status) → "a vencer" → "a_vencer"
+   → Componente renderiza badge "A Vencer" (azul)
+
+3. PASSAGEM DO TEMPO:
+   → 5 de setembro passa
+   → 6, 7, 8, 9, 10 de setembro passam
+   → 11 de setembro (hoje): status continua "a vencer"
+   → NENHUM mecanismo atualiza o status
+
+4. EXIBIÇÃO NA TELA:
+   StatusBadge("a_vencer") → STATUS_CONFIG["a_vencer"]
+   → label: "A Vencer", cls: bg-blue-100 (azul)
+   → Usuário vê badge AZUL "A Vencer" para título 6 dias atrasado
+
+O QUE DEVERIA ACONTECER:
+  - Componente deveria comparar data_vencimento com hoje
+  - Se data_vencimento < hoje E status não é "pago"/"cancelado":
+    → Mostrar badge VERMELHO "Atrasado" (status "vencida")
+  - OU: Trigger/pg_cron deveria atualizar status no banco
+  - OU: Na leitura, o service deveria calcular status derivado
+
+================================================================================
+SEÇÃO 7 — KPIs: LÓGICA POR COMPONENTE
+================================================================================
+
+CONTASPAGAR:
+  totalAPagar    = filtro(a_vencer || parcial) → soma(valorLiquido)
+  totalAtrasado  = filtro(vencida) → soma(valorLiquido)
+  totalPagoMes   = soma(financeiro_baixas.mes_atual)
+  totalProvisao  = filtro(provisao) → soma(valorLiquido)
+  totalVence7    = filtro(a_vencer||parcial) AND (vencimento >= hoje && <= em7dias) → soma
+  totalPrevisto  = filtro(vencimento.mesAtual && !cancelada) → soma
+
+  PROBLEMA: totalAtrasado = filtro(vencida) — mas nenhum registro TEM status "vencida"!
+  → KPI "Atrasado" SEMPRE mostra R$ 0,00
+
+CONTASRECEBER:
+  totalReceber   = pendentes + vencidos + parciais
+  vencido        = filtro(vencido) → soma(valorLiquido)
+  pendente       = filtro(pendente) → soma(valorLiquido)
+  pago           = filtro(pago) → soma(valorLiquido)
+  parcial        = filtro(parcial) → soma(valorLiquido)
+  vence7         = (pendente||parcial) AND (dataVencimento >= hoje && <= em7dias) → soma
+  inadimplencia  = vencidos / (total + pagos) * 100
+
+  PROBLEMA: totalReceber inclui "pendente" — mas 51 registros têm status "pendente"
+  sem ter vencido. Inadimplência pode estar subestimada se "pendente" inclui
+  títulos já vencidos.
+
+DASHBOARDFINANCEIROENTERPRISE:
+  aReceber7d = filtro(data_vencimento >= hoje && <= em7dias && status IN aberto/a_vencer) → soma
+  aPagar7d   = filtro(data_vencimento >= hoje && <= em7dias) → soma
+  inadimplencia = filtro(status === "vencido" || (status === "aberto" && data_vencimento < hoje))
+
+  Este é o ÚNICO componente que compara data_vencimento com hoje em runtime.
+  Mas NÃO atualiza o status — apenas calcula o KPI para exibição.
+
+================================================================================
+SEÇÃO 8 — FILTROS: FUNCIONAIS vs MORTOS
+================================================================================
+
+CONTASPAGAR:
+  buscaRapida      ✅ Funcional (busca por favorecidoNome e documentoNF)
+  filtros.status   ✅ Funcional (filtra por status interno)
+  filtros.categoria ✅ Funcional
+  filtros.dataInicio  ❌ MORTO — UI não renderiza o campo
+  filtros.dataFim     ❌ MORTO — UI não renderiza o campo
+  filtros.vencimentoInicio ❌ MORTO — UI não renderiza o campo
+  filtros.vencimentoFim    ❌ MORTO — UI não renderiza o campo
+  filtros.contaPagadora   ❌ MORTO — UI não renderiza o campo
+  filtros.centroResultado  ❌ MORTO — UI não renderiza o campo
+
+  TOTAL: 3 de 9 filtros funcionais (33%)
+
+CONTASRECEBER:
+  busca          ✅ Funcional
+  status         ✅ Funcional (busca no Supabase + filtro cliente)
+  cliente        ✅ Funcional
+  categoria      ✅ Funcional
+  centroResultado ✅ Funcional
+  dataInicio     ✅ Funcional (client-side)
+  dataFim        ✅ Funcional (client-side)
+
+  TOTAL: 7 de 7 filtros funcionais (100%)
+
+FLUXOCAIXAENTERPRISE:
+  periodo (15/30/60/90) ✅ Funcional
+  categoria             ✅ Funcional
+  tipo (entrada/saída)  ✅ Funcional
+  conta                 ✅ Funcional
+  status (realizado/previsto) ✅ Funcional (apenas tabela)
+  dataInicio/dataFim    ✅ Funcional
+  Exportar              ❌ MORTO (sem onClick)
+
+DREGERENCIAL:
+  periodo (mes atual/anterior/2 meses) ✅ Funcional
+  competencia                         ✅ Funcional
+  personalizado (dataInicio/dataFim)   ✅ Funcional
+
+PAGAMENTOPRESTADORES:
+  filtroPrestadorId    ✅ Funcional
+  filtroClienteId      ✅ Funcional
+  filtroOrigem         ✅ Funcional
+  dataInicio/dataFim   ✅ Funcional
+  filtroComprovante    ✅ Funcional
+
+================================================================================
+SEÇÃO 9 — CONTAS FINANCEIRAS (BANCÁRIAS)
+================================================================================
+
+DADOS NO BANCO:
+  1 conta financeira:
+    Nome:   Cora
+    Banco:  BTG PACTUAL
+    Agência: 0050
+    Conta:  572559-5
+    Tipo:   Poupança
+    Ativa:  true
+    Principal: false
+    Titular: 71.257.395/0001-05
+
+  Nenhuma outra conta existe.
+
+CONFIGURAÇÕES SISTEMA:
+  Chave: config_financeira_empresa
+  Dados:
+    nomeFantasia: "Conexão Express"
+    emailFinanceiro: financeiro@conexaoexpress.com.br
+    logos: /logos/logo-conexao-branco.png, /logos/logo-conexao-colorido.png
+    Razão Social, CNPJ, Endereço: VAZIOS
+    updated_at: 2026-09-10T13:28:23Z
+
+  PROBLEMA: Razão Social e CNPJ estão vazios. PDFs gerados ficam sem dados.
+
+================================================================================
+SEÇÃO 10 — DRE E FLUXO DE CAIXA
+================================================================================
+
+DRE GERENCIAL:
+  - Receita: financeiro_receber (soma valor_liquido por período)
+  - Despesas: financeiro_pagar (exclui repasses com os_id NOT NULL)
+  - Custos: pagamentos_prestadores (impacto_dre = true, classificacao_dado = "real")
+  - Cálculo: delega para calcularDRE() em dreService.ts
+  - Depreciação e IR/CSLL não estimados (sem fonte confiável)
+  - FILTROS FUNCIONAIS: período, competência, personalizado
+
+FLUXO DE CAIXA:
+  - Saldo Inicial: contas_financeiras (sem fonte confiável → exibe "não configurado")
+  - Previsto: financeiro_receber + financeiro_pagar (por data_vencimento)
+  - Realizado: financeiro_baixas (não estornadas)
+  - Projeção: cálculo diário de 30/60/90 dias
+  - FILTROS: período, categoria, tipo, conta, status, datas personalizadas
+  - Botão Exportar: MORTO (sem onClick)
+
+================================================================================
+SEÇÃO 11 — PAGAMENTO A PRESTADORES
+================================================================================
+
+DADOS NO BANCO (95 registros):
+  Status                          Qtd    Observação
+  ───────────────────────────── ───── ────────────────
+  pendente/pendente/em_aberto     50    Aguardando pagamento
+  pendente/nao_vencido/pendente   19    Ainda não venceu
+  pendente/pendente/pendente      11    Pendente conferência
+  pendente/nao_vencido/em_aberto   7    Não venceu, sem conferir
+  pago/pago/conferido              3    Pagamento processado
+  pendente/cancelado/em_aberto     2    Cancelado
+  pendente/pendente/conferido      2    Conferido, aguardando pagamento
+  pendente/cancelado/cancelado     1    Cancelado duplo
+
+  APENAS 3 DE 95 REGISTROS FORAM PAGOS (3.2%)
+  2 registros com status "cancelado" (sem is_teste)
+
+  CAMPO VALOR: NÃO existe coluna `valor` única — valores estão em:
+    valor_servicos, valor_liquido, pedagio, adicionais, descontos, outros_custos
+
+================================================================================
+SEÇÃO 12 — PONTOS CRÍTICOS (RANKING POR SEVERIDADE)
+================================================================================
+
+P0 — CRÍTICO (afeta dados exibidos ao usuário):
+  1. FRETEBRAS/68 registros: status "a vencer" NUNCA vira "vencido"
+     → KPI "Atrasado" mostra R$ 0,00 incorretamente
+     → Usuário vê badge azul "A Vencer" para títulos 6+ dias atrasados
+     → Causa: nenhum mecanismo de atualização de status existe
+
+  2. CHECK constraints ignorados: dados entram com "a vencer", "aberto",
+     "cancelada", "parcial", "provisao" — valores fora do schema
+     → Querys que filtram por "vencido" perdem esses registros
+
+  3. Inadimplência subestimada: 51 registros "pendente" + 34 "aberto"
+     no receber, mas componente só conta "vencido" para inadimplência
+     → Muitos títulos atrasados são分类 como "pendente" (não "vencido")
+
+P1 — ALTO:
+  4. 67 registros de teste (~20%) misturados com dados reais
+     → KPIs incluem valores fictícios se is_teste não for filtrado
+     → is_teste NÃO existe em pagamentos_prestadores
+
+  5. DashboardFinanceiroEnterprise: sem filtros de período
+     → Sempre mostra mês atual vs anterior, sem opção de período
+
+  6. 7 filtros mortos em ContasPagar (dataInicio, dataFim, etc.)
+     → Interface renderiza mas não filtra
+
+  7. ContasBancarias: razão social e CNPJ vazios na config
+     → PDFs de fatura ficam sem dados da empresa
+
+P2 — MÉDIO:
+  8. Dead code: botões "Gerar Fatura", "Gerar Boleto", "Emitir NFS-e"
+     → Usuário clica mas nada acontece (tooltips explicativos)
+
+  9. FluxoCaixa: botão "Exportar" sem onClick
+     → Usuário espera funcionalidade que não existe
+
+  10. Inconsistência de gênero: "cancelado" vs "cancelada",
+      "vencido" vs "vencida", "a vencer" vs "a_vencer"
+
+  11. Coluna Fiscal e Boleto hardcoded "Sem nota"/"Sem boleto"
+     → Sempre vazio, sem integração
+
+P3 — BAIXO:
+  12. ResumoExecutivoFinanceiro.tsx não existe (arquivo não encontrado)
+  13. Nenhum componente (exceto DashboardFinanceiro) usa filtros de período
+  14. DashboardFinanceiro não tem filtros de período
+  15. duplo filtro de data em ContasReceber (server + client)
+
+================================================================================
+SEÇÃO 13 — ESTATÍSTICAS DO BANCO (QUERY DIRETA)
+================================================================================
+
+FINANCEIRO_PAGAR POR STATUS:
+  aberto:      47 registros (R$ 35,400.00)
+  pendente:    26 registros (R$ 16,880.40)
+  a vencer:    13 registros (R$ 11,042.09)
+  pago:        11 registros (R$  1,794.42)
+  cancelado:    7 registros (R$  7,500.00)
+  cancelada:    2 registros (R$  2,320.00)
+  NULL:         1 registro  (R$    999.00)
+  TOTAL:      107 registros (R$ 75,935.91)
+
+FINANCEIRO_RECEBER POR STATUS:
+  pendente:    51 registros (R$ 97,424.96)
+  aberto:      34 registros (R$ 51,290.00)
+  a vencer:    11 registros (R$ 15,660.00)
+  pago:        10 registros (R$  9,874.56)
+  a_vencer:     2 registros (R$  3,300.00)
+  vencida:      1 registro  (R$    890.75)
+  vencido:      1 registro  (R$  2,100.00)
+  cancelada:    1 registro  (R$    600.00)
+  NULL:         1 registro  (R$    999.00)
+  TOTAL:      112 registros (R$ 182,139.27)
+
+FINANCEIRO_BAIXAS POR TABELA:
+  financeiro_pagar:    10 baixas (R$ 1,656.53)
+  financeiro_receber:   6 baixas (R$    74.06)
+  TOTAL:               16 baixas (R$ 1,730.59)
+
+  OBSERVAÇÃO: 16 baixas contra 219 títulos = 7.3% de baixas registradas
+  → Maioria dos pagamentos não foi registrada no sistema
+
+PAGAMENTOS_PRESTADORES:
+  pendente+em_aberto:    50 (pagamento não processado)
+  pendente+nao_vencido:  26 (ainda não venceu)
+  pendente+pendente:     11 (processo pendente)
+  pago+pago+conferido:    3 (pago e conferido)
+  cancelado:              3 (cancelado)
+  TOTAL:                 95
+
+CONTAS_FINANCEIRAS:
+  1 conta: Cora (BTG PACTUAL, ag 0050, conta 572559-5, Poupança, ativa)
+
+================================================================================
+SEÇÃO 14 — RECOMENDAÇÕES (NÃO APLICADAS — APENAS PLANEJAMENTO)
+================================================================================
+
+P0 — CORREÇÃO IMEDIATA (estimativa: 2-3 dias):
+  1. Criar trigger/pg_cron que atualize status:
+     WHEN data_vencimento < CURRENT_DATE AND status IN ('pendente', 'aberto', 'a vencer')
+     THEN SET status = 'vencido'
+     → Afeta 68+68 = 136 registros
+
+  2. Normalizar valores de status:
+     UPDATE financeiro_pagar SET status = 'pendente' WHERE status = 'aberto';
+     UPDATE financeiro_pagar SET status = 'cancelado' WHERE status = 'cancelada';
+     UPDATE financeiro_receber SET status = 'a vencer' WHERE status = 'a_vencer';
+     UPDATE financeiro_receber SET status = 'cancelado' WHERE status = 'cancelada';
+     → Unifica 4 valores inconsistentes
+
+  3. Adicionar runtime date comparison no componente:
+     const statusCalculado = new Date(l.vencimento) < new Date(hoje)
+       ? (l.status !== 'pago' && l.status !== 'cancelado' ? 'vencida' : l.status)
+       : l.status;
+     → ContasPagar e ContasReceber calculam status derivado
+
+P1 — CORREÇÃO ALTA (estimativa: 3-5 dias):
+  4. Filtrar dados de teste em KPIs:
+     .eq("is_teste", false) em todas as queries de KPI
+     → KPIs mostram apenas dados reais
+
+  5. Implementar filtros mortos em ContasPagar:
+     dataInicio, dataFim, vencimentoInicio, vencimentoFim, contaPagadora, centroResultado
+     → 6 filtros prometidos na interface mas não implementados
+
+  6. Adicionar filtros de período ao DashboardFinanceiro
+     → Atualmente sempre mostra mês atual vs anterior
+
+P2 — MÉDIO (estimativa: 5-7 dias):
+  7. Implementar botões mortos:
+     "Exportar" no FluxoCaixa (adicionar onClick + lógica)
+     "Gerar Fatura" (ou remover se descontinuado)
+     "Gerar Boleto" (ou remover)
+     "Emitir NFS-e" (ou remover)
+
+  8. Preencher config_financeira_empresa:
+     Razão Social, CNPJ, Endereço (para PDFs de fatura)
+
+  9. Corrigir inconsistência de gênero nos status
+     → Padronizar para masculino: "cancelado", "vencido", "pago"
+
+================================================================================
+SEÇÃO 15 — CONCLUSÃO
+================================================================================
+
+O módulo financeiro do TMS apresenta 3 problemas fundamentais:
+
+1. SEM AUTO-ATUALIZAÇÃO DE STATUS: Não existe mecanismo (trigger, cron,
+   ou código frontend) que atualize o status de um título quando sua
+   data de vencimento é ultrapassada. O caso FRETEBRAS (R$ 198,09,
+   vencido em 05/09/2026, ainda mostrando "A Vencer" em 11/09/2026)
+   é consequência direta dessa omissão. Afeta 136 registros (68 pagar
+   + 68 receber).
+
+2. SCHEMA FLEXÍVEL DEMAIS: CHECK constraints não são aplicados. Valores
+   como "a vencer", "aberto", "cancelada", "parcial", "provisao"
+   entram no banco sem validação. Isso causa inconsistências nos KPIs
+   e filtros que dependem de valores específicos.
+
+3. DADOS DE TESTE MISTURADOS: 67 registros de teste (~20%) estão
+   misturados com dados reais. KPIs incluem esses valores se não
+   forem filtrados por is_teste.
+
+O score de prontidão do módulo financeiro é 6/10 — funcional para
+leitura e escrita básica, mas com dados potencialmente incorretos
+para títulos vencidos e KPIs que podem subestimar a inadimplência.
+
+NENHUMA ALTERAÇÃO FOI APLICADA — esta é uma auditoria 100% read-only.
+================================================================================
+FIM DO RELATÓRIO — FIN-OPERACIONAL-00
+================================================================================

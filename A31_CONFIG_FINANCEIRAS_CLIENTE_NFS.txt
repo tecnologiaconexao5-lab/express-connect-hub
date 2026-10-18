@@ -1,0 +1,299 @@
+================================================================================
+  MISSÃO A31 — CONFIGURAÇÕES FINANCEIRAS + REGRAS POR CLIENTE + ROMANEIO/OC ↔ MÚLTIPLAS NFs
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+  Supabase: uwrvzsjtpgaifkktpepn (Produção — preservado)
+================================================================================
+
+================================================================================
+1. RESUMO
+================================================================================
+A31 eliminou configurações provisórias do faturamento, tornando o comportamento
+configurável por empresa e por cliente, SEM migration e SEM criar arquitetura
+paralela. Reutilizou `configuracoes_sistema` (chave/valor JSON) para regras por
+cliente e dados financeiros, e `fiscal_documentos_vinculados` (estrutura 1:N já
+existente) para múltiplas NFs por OS. Produção preservada integralmente.
+
+================================================================================
+2. ARQUIVOS ANALISADOS
+================================================================================
+- src/services/financeiro/faturaService.ts + faturaTypes.ts
+- src/services/configuracoesService.ts (configuracoes_sistema)
+- src/components/financeiro/ConferenciaFinanceira.tsx (Central + Detalhes)
+- src/components/financeiro/FaturaPanel.tsx + FaturaLista.tsx
+- src/pages/Financeiro.tsx
+- Schema read-only: clientes, configuracoes_fiscais, configuracoes_sistema,
+  fiscal_documentos_vinculados, faturas
+- Migration existente: 20260526_contas_financeiras.sql (não aplicada no remoto)
+
+================================================================================
+3. ARQUIVOS ALTERADOS (NOVOS + MODIFICADOS)
+================================================================================
+NOVOS:
+- src/services/financeiro/configFinanceiraService.ts (regras por cliente + dados empresa + contas)
+- src/components/financeiro/ConfigFinanceira.tsx (tela Config. Financeiras)
+- src/components/financeiro/RegrasFinanceirasClienteTab.tsx (tela Regras por Cliente)
+- A31_PROPOSTA_MIGRATION_FINANCEIRO.sql (proposta aditiva — NÃO aplicada)
+- src/test/a31_config_financeiras_nfs.test.ts (14 testes)
+MODIFICADOS:
+- src/services/financeiro/faturaService.ts (sugerirModeloFaturaParaCliente,
+  sugerirVencimentoParaCliente, verificarRomaneioObrigatorioBloqueio,
+  listarNFsDaOS, adicionarNFaOS, removerNFdaOS)
+- src/components/financeiro/ConferenciaFinanceira.tsx (bloco NFs + Adicionar NF +
+  bloqueio romaneio obrigatório + pesquisa NF)
+- src/services/financeiro/centralFinanceiroService.ts (campo nfs + pesquisa por NF)
+- src/components/financeiro/FaturaPanel.tsx (regras reais do cliente)
+- src/pages/Financeiro.tsx (2 abas novas: Config. Financeiras + Regras por Cliente)
+
+================================================================================
+4. CONFIGURAÇÕES FINANCEIRAS DA EMPRESA
+================================================================================
+Fonte oficial encontrada:
+- configuracoes_fiscais (3 emitentes) — razão social, nome fantasia, CNPJ, IE,
+  IM, endereço, telefone, email. Usada nos PDFs (A30).
+- configuracoes_sistema (chave/valor) — NOVA chave "config_financeira_empresa"
+  com: razão social, nome fantasia, CNPJ, IE, IM, endereço, telefone, email,
+  email financeiro, logos (claro/colorido), banco, código banco, agência, conta,
+  dígito, tipo conta, PIX, beneficiário.
+- NÃO continuam espalhadas em constantes: buscarConfigFinanceiraEmpresa() é a
+  fonte única (com fallback empresaConfig apenas para dados ausentes).
+
+================================================================================
+5. DADOS BANCÁRIOS
+================================================================================
+- contas_financeiras NÃO existe no banco remoto (confirmado read-only).
+- Migration 20260526 existe (estrutura compatível) mas NÃO foi aplicada.
+- Solução A31 sem migration: contas configuradas em configuracoes_sistema
+  (chave "contas_financeiras_config") com banco, código banco, agência, conta,
+  dígito, PIX, titular, titular CNPJ, tipo, ativa, principal.
+- Tela ConfigFinanceira permite cadastrar. PDF de fatura usa a conta principal.
+- Proposta de migration registra a estrutura final (ver §20).
+- Preparado para futura integração Efí (sem API/credencial).
+
+================================================================================
+6. REGRAS FINANCEIRAS POR CLIENTE
+================================================================================
+- Nova chave configuracoes_sistema "regras_financeiras_cliente:{clienteId}".
+- Campos suportados: modeloFaturaPadrao, exigeRomaneioOC, prazoPagamentoDias,
+  diaFixo, periodoFechamento, exigeAprovacao, emailFinanceiro, observacaoPadrao,
+  tipoDocumentoFiscalEsperado, instrucoesEspeciais.
+- Tela RegrasFinanceirasClienteTab permite configurar por cliente.
+- NÃO colocado na Tabela de Preços (regra financeira/cadastral, não precificação).
+
+================================================================================
+7. MODELO PADRÃO DE FATURA POR CLIENTE
+================================================================================
+- A31: sugerirModeloFaturaParaCliente(clienteId) lê a REGRA do cliente
+  (modeloFaturaPadrao) — NÃO depende mais do nome "Calvo".
+- Fallback: "conexao_express" se não configurado.
+- Na criação da Fatura: busca preferência → seleciona automaticamente → permite
+  alteração manual antes da emissão.
+
+================================================================================
+8. REGRA DE VENCIMENTO
+================================================================================
+- A30 usava clientes.vencimento_padrao (dias) + fallback 30.
+- A31: sugerirVencimentoParaCliente(clienteId) usa a regra do cliente:
+  - prazoPagamentoDias (dias corridos) OU diaFixo (vence dia X do mês seguinte);
+  - fallback: vencimento_padrao → 30 dias.
+- Dias úteis / fechamento semanal/quinzenal: implementados parcialmente
+  (periodoFechamento registrado); motor complexo documentado para fase posterior.
+- Sempre editável manualmente antes da emissão.
+
+================================================================================
+9. ROMANEIO/OC OBRIGATÓRIO
+================================================================================
+- Regra por cliente: exigeRomaneioOC (SIM/NÃO).
+- Quando SIM: serviço sem Romaneio/OC → NÃO pode ser emitido em Fatura.
+  Motivo claro: "Bloqueado para faturamento — Romaneio/OC obrigatório para este
+  cliente." (verificarRomaneioObrigatorioBloqueio + motivosBloqueio na Central).
+- Quando NÃO: não bloqueia por ausência.
+- Não é regra global — específica por cliente.
+
+================================================================================
+10. E-MAIL FINANCEIRO
+================================================================================
+- clientes tem: email, contato_principal, responsavel_financeiro.
+- NÃO tem campo email_financeiro dedicado. A31 reutiliza
+  regras_financeiras_cliente.{emailFinanceiro} (por cliente) — sem duplicar
+  cadastro.
+- Proposta de migration: clientes.email_financeiro (coluna dedicada futura).
+
+================================================================================
+11. ESTRUTURA ENCONTRADA PARA MÚLTIPLAS NFs
+================================================================================
+- Reutilizada fiscal_documentos_vinculados (1:N por ordem_servico_id):
+  numero, serie, chave_acesso, emitente, valor_total, peso_bruto, volumes,
+  status, ordem_servico_id, cte_id, mdfe_id, xml_storage_path, xml_nome_arquivo.
+- NÃO foi criada tabela nova "romaneio_notas".
+- Funções: listarNFsDaOS, adicionarNFaOS, removerNFdaOS.
+
+================================================================================
+12. "+ ADICIONAR NF"
+================================================================================
+- Botão "+ Adicionar NF" no bloco "Notas fiscais transportadas" do Detalhes do
+  Serviço.
+- Form: número, série, chave de acesso, valor, emitente.
+- Mínimo obrigatório: número OU chave (o número é o essencial).
+- Quantidade ilimitada (1:N). Após salvar, a NF aparece na lista e o usuário
+  pode adicionar novamente.
+
+================================================================================
+13. PESQUISA POR NF
+================================================================================
+- centralFinanceiroService agora expõe `nfs` (números por OS) em cada item.
+- Busca global da Central inclui NF: digitar "12347" localiza o serviço
+  (OS Interna, Cliente, Romaneio/OC, Prestador, etc.).
+- Reutilizado o pipeline de busca existente (sem mecanismo paralelo).
+
+================================================================================
+14. DIFERENÇA NF TRANSPORTADA × CT-e × NFS-e
+================================================================================
+- NF transportada (NFE): nota da mercadoria/carga → bloco "Notas fiscais
+  transportadas" (fiscal_documentos_vinculados tipo NFE).
+- CT-e / NFS-e: documentos da Conexão (fiscal_ctes / fiscal_nfse) → bloco
+  "Documentos Fiscais da Conexão" (futuro; já separado no Detalhes).
+- Nomenclatura clara na interface; não são tratados como o mesmo documento.
+
+================================================================================
+15. INTEGRAÇÃO COM DETALHES DO SERVIÇO
+================================================================================
+- Bloco "Notas fiscais transportadas" preservado + "+ Adicionar NF".
+- Bloco "Faturamento / Fiscal" mostra Fatura + NFS-e/CT-e (contagem).
+- Bloco "Recebimento / Pagamento" mantido.
+- Bloco "Documentos Fiscais da Conexão" (CT-e/NFS-e/MDF-e) documentado como
+  futuro, sem misturar com NFs transportadas.
+
+================================================================================
+16. INTEGRAÇÃO COM CENTRAL FINANCEIRA
+================================================================================
+- Busca por NF funciona.
+- Bloqueio de seleção quando Romaneio/OC obrigatório pendente (regra do cliente).
+- Motivos do semáforo podem incluir "Romaneio/OC obrigatório para este cliente".
+- Sem N+1: NFs carregadas em lote (fiscaisMap por os_id) junto com o resto.
+
+================================================================================
+17. INTEGRAÇÃO COM FATURAS
+================================================================================
+- Criação de Fatura consome: cliente real, regra do cliente (modelo/vencimento),
+  Romaneio/OC conforme regra, Total Cliente.
+- Fatura NÃO lista NFs no PDF padrão (a menos que modelo/regra exija — Calvo
+  usa descrição de romaneios).
+- Modelo Calvo preservado (descrição via romaneios; vencimento da regra; valor
+  Total Cliente).
+
+================================================================================
+18. MODELO CALVO
+================================================================================
+- Preservado (A30). Agora modelo padrão vem da configuração do cliente.
+- Descrição usa Romaneio/OC; vencimento da regra financeira; valor Total Cliente.
+- NÃO decide mais pelo nome do cliente.
+
+================================================================================
+19. MODELO CONEXÃO EXPRESS
+================================================================================
+- Preservado e refinado (A30).
+- Dados oficiais vêm das Configurações Financeiras (fonte configurável).
+- Fallback hardcoded apenas quando dados oficiais ausentes (não quebra geração).
+
+================================================================================
+20. MIGRATION NECESSÁRIA?
+================================================================================
+SIM (proposta) — para evolução estrutural opcional. NÃO aplicada.
+
+Arquivo: A31_PROPOSTA_MIGRATION_FINANCEIRO.sql (na raiz do projeto)
+Tabelas/colunas:
+  1. clientes +modelo_fatura_padrao (text)
+  2. clientes +exige_romaneio_oc (boolean)
+  3. clientes +email_financeiro (text)
+  4. clientes +exige_aprovacao_fatura (boolean)
+  5. clientes +regras_financeiras (jsonb)
+  6. CREATE TABLE contas_financeiras (banco, codigo_banco, agencia, conta,
+     digito, pix, titular, titular_cnpj, ativa, principal, tenant_id)
+  7. faturas +modelo (text), +descricao (text)
+Justificativa: eliminar dependência de configuracoes_sistema (JSON) para
+relatórios/consultas SQL e preparar integração Efí. Aditiva, SEM drop.
+Risco: baixo (aditivo, nullable, defaults). Rollback: DROP das colunas/tabela
+(em ambiente controlado, após decisão).
+Motivo de não reaproveitar: configuracoes_sistema não permite queries
+estruturadas por cliente (JSON), e contas_financeiras não existe no remoto.
+
+NOTA: a implementação A31 funciona 100% SEM esta migration (via configuracoes_sistema).
+
+================================================================================
+21. PRODUÇÃO ALTERADA?
+================================================================================
+NÃO. Nenhuma migration executada, nenhum dado criado/alterado/apagado.
+Supabase uwrvzsjtpgaifkktpepn preservado integralmente.
+
+================================================================================
+22. TESTES
+================================================================================
+src/test/a31_config_financeiras_nfs.test.ts (14 novos):
+  1. modelo Calvo por regra (não depende do nome);
+  2. outro cliente sem regra → conexao_express;
+  3. regra explícita independente do nome;
+  4. prazo 15 dias → vencimento correto;
+  5. dia fixo 15 → vence dia 15 do mês seguinte;
+  6. sem prazo → fallback 30 dias;
+  7. cliente exige romaneio sem possuir → bloqueia;
+  8. cliente não exige → não bloqueia;
+  9. uma OS aceita várias NFs (1:N, sem nf1/nf2);
+ 10. NFs vinculadas à OS original;
+ 11. pesquisa por número de NF localiza serviço;
+ 12. NF transportada ≠ NFS-e ≠ CT-e;
+ 13. valor do prestador não interfere na Fatura;
+ 14. descrição Calvo usa Romaneio/OC (sem dados operacionais).
+Validação: npx tsc --noEmit → 0 erros; npx vitest run → 17 arquivos, 186 testes
+PASS (172 + 14); npx eslint (arquivos novos) → 0 erros; npm run build → OK (38s).
+
+================================================================================
+23. TYPESCRIPT
+================================================================================
+npx tsc --noEmit → 0 erros em todo o projeto.
+
+================================================================================
+24. BUILD
+================================================================================
+npm run build → OK (38,13s). Nenhum erro relacionado ao escopo.
+
+================================================================================
+25. PENDÊNCIAS
+================================================================================
+P-01 Aplicar (ou não) a proposta de migration após aprovação do usuário.
+P-02 Motor de vencimento avançado (dias úteis, fechamento semanal/quinzenal
+     completo) — fase posterior.
+P-03 Integração Efí (boleto) — fase futura; botão desabilitado.
+P-04 Emissão real NFS-e/CT-e e vínculo com fatura — fase A32/fiscal.
+P-05 Relatórios completos (Cliente + Repasse Prestador) — A32.
+P-06 XML/PDF de NFs transportadas: fiscal_documentos_vinculados já tem
+     xml_storage_path; visualização/upload avançado em fase própria.
+P-07 Edição/exclusão de NF: removerNFdaOS faz delete controlado; histórico/
+     status "desvinculada" documentado como melhoria futura.
+
+================================================================================
+26. PRÓXIMA FASE
+================================================================================
+A32 — RELATÓRIO PROFISSIONAL DO CLIENTE + RELATÓRIO DE REPASSE DO PRESTADOR
+  - Relatório profissional do Cliente (serviços, romaneios, NFs, valores, fatura).
+  - Relatório de Repasse do Prestador (serviços, custos, reembolsos, pagamento).
+  - Separados de Fatura e Boleto.
+  - Preparação fiscal (NFS-e/CT-e vinculados à fatura) quando autorizado.
+
+================================================================================
+CRITÉRIO FINAL A31 ATENDIDO
+================================================================================
+- dados financeiros da empresa possuem fonte oficial configurável;
+- regras financeiras são específicas por cliente;
+- modelo de Fatura não depende do nome do cliente;
+- vencimento usa regra do cliente;
+- Romaneio/OC pode ser obrigatório conforme cliente;
+- uma OS/Romaneio suporta múltiplas NFs;
+- a Central pesquisa por NF;
+- NF transportada, CT-e e NFS-e não são confundidos;
+- nenhuma arquitetura paralela foi criada;
+- Produção foi preservada.
+
+================================================================================
+  FIM DO RELATÓRIO — MISSÃO A31
+================================================================================

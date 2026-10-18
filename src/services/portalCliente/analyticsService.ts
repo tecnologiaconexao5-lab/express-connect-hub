@@ -39,7 +39,7 @@ export interface ExecutiveInsight {
 }
 
 export async function buscarAnalyticsDashboard(clienteId?: string): Promise<AnalyticsDashboard> {
-  if (!clienteId) return getDefaultAnalytics();
+  if (!clienteId) return getEmptyAnalytics();
 
   try {
     const { data: entregasData } = await supabase
@@ -50,37 +50,31 @@ export async function buscarAnalyticsDashboard(clienteId?: string): Promise<Anal
       .limit(100);
 
     if (!entregasData || entregasData.length === 0) {
-      return getDefaultAnalytics();
+      return getEmptyAnalytics();
     }
 
     const slaMedio = Math.round(entregasData.reduce((acc, e) => acc + (e.sla || 0), 0) / entregasData.length);
     const custoMedio = entregasData.reduce((acc, e) => acc + (e.valor_frete || 0), 0) / entregasData.length;
+    const concluidas = entregasData.filter(e => e.status === "finalizada" || e.status === "entregue").length;
+    const produtividade = entregasData.length > 0 ? Math.round((concluidas / entregasData.length) * 100) : 0;
 
     return {
-      slaGeral: slaMedio || 96,
-      produtividade: Math.min(100, slaMedio + Math.floor(Math.random() * 5)),
-      custoPorEntrega: Number(custoMedio.toFixed(2)) || 45.80,
-      tendencia7dias: Math.floor(Math.random() * 10) - 2,
-      tendencia30dias: Math.floor(Math.random() * 20) + 5,
-      comparativoMensal: [
-        { mes: "Jan", atual: 1250, anterior: 1100 },
-        { mes: "Fev", atual: 1380, anterior: 1150 },
-        { mes: "Mar", atual: 1450, anterior: 1200 },
-      ],
-      rankingUnidades: [
-        { unidade: "Matriz SP", posicao: 1, score: 98, tendencia: "+5%" },
-        { unidade: "CD Interlagos", posicao: 2, score: 94, tendencia: "+2%" },
-        { unidade: "Filial Mooca", posicao: 3, score: 91, tendencia: "-1%" },
-      ],
+      slaGeral: slaMedio || 0,
+      produtividade: produtividade || 0,
+      custoPorEntrega: Number(custoMedio.toFixed(2)) || 0,
+      tendencia7dias: 0,
+      tendencia30dias: 0,
+      comparativoMensal: [],
+      rankingUnidades: [],
     };
   } catch (error) {
     console.warn("[AnalyticsService] Erro ao buscar dashboard:", error);
-    return getDefaultAnalytics();
+    return getEmptyAnalytics();
   }
 }
 
 export async function buscarEconomia(clienteId?: string): Promise<EconomiaData> {
-  if (!clienteId) return getDefaultEconomia();
+  if (!clienteId) return getEmptyEconomia();
 
   try {
     const { data: entregasData } = await supabase
@@ -89,42 +83,37 @@ export async function buscarEconomia(clienteId?: string): Promise<EconomiaData> 
       .eq("cliente_id", clienteId)
       .limit(100);
 
-    const count = entregasData?.length || 1;
-    const custoMedio = (entregasData?.reduce((acc, e) => acc + (e.valor_frete || 0), 0) || 0) / count;
+    if (!entregasData || entregasData.length === 0) return getEmptyEconomia();
+
+    const count = entregasData.length;
+    const custoMedio = entregasData.reduce((acc, e) => acc + (e.valor_frete || 0), 0) / count;
 
     return {
       economiaVsFrotaPropria: Math.round(custoMedio * count * 0.4),
-      reducaoCusto: 12.5,
-      kmOtimizados: Math.floor(count * 1.2),
-      ocupacaoMedia: Math.floor(Math.random() * 20) + 75,
+      reducaoCusto: 0,
+      kmOtimizados: 0,
+      ocupacaoMedia: 0,
       economiaCombustivel: Math.round(custoMedio * count * 0.08),
-      entregasConsolidadas: Math.floor(Math.random() * 15) + 80,
+      entregasConsolidadas: count,
     };
   } catch (error) {
     console.warn("[AnalyticsService] Erro ao buscar economia:", error);
-    return getDefaultEconomia();
+    return getEmptyEconomia();
   }
 }
 
 export async function buscarNotificacoes(clienteId?: string): Promise<NotificacaoData[]> {
-  if (!clienteId) return getDefaultNotificacoes();
+  if (!clienteId) return [];
 
   try {
     const { data, error } = await supabase
-      .from("notificacoes")
+      .from("portal_notificacoes")
       .select("*")
       .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error) {
-      console.warn("[AnalyticsService] Erro ao buscar notificações:", error.message);
-      return getDefaultNotificacoes();
-    }
-
-    if (!data || data.length === 0) {
-      return getDefaultNotificacoes();
-    }
+    if (error || !data || data.length === 0) return [];
 
     return data.map(n => ({
       id: n.id,
@@ -138,118 +127,51 @@ export async function buscarNotificacoes(clienteId?: string): Promise<Notificaca
     }));
   } catch (error) {
     console.warn("[AnalyticsService] Exceção ao buscar notificações:", error);
-    return getDefaultNotificacoes();
+    return [];
   }
 }
 
 export async function buscarExecutiveInsights(clienteId?: string): Promise<ExecutiveInsight[]> {
-  if (!clienteId) return getDefaultInsights();
+  if (!clienteId) return [];
 
   try {
     const [entregasData, ocorrenciasData] = await Promise.all([
       supabase.from("ordens_servico").select("status, sla").eq("cliente_id", clienteId).limit(50),
-      supabase.from("ocorrencias").select("id").eq("cliente_id", clienteId).limit(20),
+      supabase.from("portal_ocorrencias").select("id").eq("cliente_id", clienteId).limit(20),
     ]);
 
     const entregas = entregasData.data || [];
     const ocorrencias = ocorrenciasData.data || [];
-    const slaMedio = entregas.length > 0 ? Math.round(entregas.reduce((acc, e) => acc + (e.sla || 0), 0) / entregas.length) : 95;
-    const atrasadas = entregas.filter(e => e.status === "atrasada").length;
+    if (entregas.length === 0) return [];
 
+    const slaMedio = Math.round(entregas.reduce((acc, e) => acc + (e.sla || 0), 0) / entregas.length);
+    const atrasadas = entregas.filter(e => e.status === "atrasada").length;
     const insights: ExecutiveInsight[] = [];
 
     if (slaMedio >= 95) {
-      insights.push({
-        id: "1",
-        tipo: "mensagem",
-        titulo: "SLA excepcional",
-        descricao: `Sua operação atingiu ${slaMedio}% SLA esta semana. Parabéns pela excelência!`,
-        prioridade: "baixa",
-      });
+      insights.push({ id: "1", tipo: "mensagem", titulo: "SLA excepcional",
+        descricao: `Sua operação atingiu ${slaMedio}% SLA.`, prioridade: "baixa" });
     }
-
     if (atrasadas > 0) {
-      insights.push({
-        id: "2",
-        tipo: "alerta",
-        titulo: "Atenção: Atrasos",
-        descricao: `${atrasadas} entrega(s) estão com atraso. Revise o status no painel.`,
-        prioridade: "alta",
-      });
+      insights.push({ id: "2", tipo: "alerta", titulo: "Atenção: Atrasos",
+        descricao: `${atrasadas} entrega(s) com atraso.`, prioridade: "alta" });
     }
-
-    insights.push({
-      id: "3",
-      tipo: "insight",
-      titulo: "Economia operacional",
-      descricao: "Economia estimada de R$ 18.400 este mês vs operação com frota própria.",
-      prioridade: "media",
-    });
-
-    if (ocorrencias.length > 3) {
-      insights.push({
-        id: "4",
-        tipo: "alerta",
-        titulo: "Ocorrências em análise",
-        descricao: `${ocorrencias.length} ocorrências registradas. Verifique os detalhes.`,
-        prioridade: "media",
-      });
+    if (ocorrencias.length > 0) {
+      insights.push({ id: "4", tipo: "alerta", titulo: "Ocorrências",
+        descricao: `${ocorrencias.length} ocorrências registradas.`, prioridade: "media" });
     }
-
-    insights.push({
-      id: "5",
-      tipo: "mensagem",
-      titulo: "Bom trabalho",
-      descricao: "Sua equipe está mantendo 94% de produtividade. Continue assim!",
-      prioridade: "baixa",
-    });
 
     return insights;
   } catch (error) {
     console.warn("[AnalyticsService] Exceção ao buscar insights:", error);
-    return getDefaultInsights();
+    return [];
   }
 }
 
-function getDefaultAnalytics(): AnalyticsDashboard {
-  return {
-    slaGeral: 96,
-    produtividade: 94,
-    custoPorEntrega: 45.80,
-    tendencia7dias: 5,
-    tendencia30dias: 12,
-    comparativoMensal: [
-      { mes: "Jan", atual: 1250, anterior: 1100 },
-      { mes: "Fev", atual: 1380, anterior: 1150 },
-      { mes: "Mar", atual: 1450, anterior: 1200 },
-    ],
-    rankingUnidades: [
-      { unidade: "Matriz SP", posicao: 1, score: 98, tendencia: "+5%" },
-      { unidade: "CD Interlagos", posicao: 2, score: 94, tendencia: "+2%" },
-    ],
-  };
+function getEmptyAnalytics(): AnalyticsDashboard {
+  return { slaGeral: 0, produtividade: 0, custoPorEntrega: 0, tendencia7dias: 0, tendencia30dias: 0, comparativoMensal: [], rankingUnidades: [] };
 }
 
-function getDefaultEconomia(): EconomiaData {
-  return {
-    economiaVsFrotaPropria: 18400,
-    reducaoCusto: 12.5,
-    kmOtimizados: 1250,
-    ocupacaoMedia: 82,
-    economiaCombustivel: 4200,
-    entregasConsolidadas: 89,
-  };
-}
-
-function getDefaultNotificacoes(): NotificacaoData[] {
-  return [
-    { id: "1", titulo: "Entrega Concluída", mensagem: "OS entregue com sucesso", tipo: "entrega_concluida", canal: "whatsapp", prioridade: "baixa", lida: false, created_at: new Date().toISOString() },
-    { id: "2", titulo: "Ocorrência Registrada", mensagem: "Atraso por trânsito", tipo: "ocorrencia", canal: "portal", prioridade: "alta", lida: false, created_at: new Date().toISOString() },
-  ];
-}
-
-function getDefaultInsights(): ExecutiveInsight[] {
-  return [
-    { id: "1", tipo: "mensagem", titulo: "Bem-vindo", descricao: "Insights operacionais aparecerão aqui conforme sua operação evolui.", prioridade: "baixa" },
-  ];
+function getEmptyEconomia(): EconomiaData {
+  return { economiaVsFrotaPropria: 0, reducaoCusto: 0, kmOtimizados: 0, ocupacaoMedia: 0, economiaCombustivel: 0, entregasConsolidadas: 0 };
 }

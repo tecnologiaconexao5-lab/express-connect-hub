@@ -1,0 +1,189 @@
+﻿FIN-SANE-02M.6B — FP900 TEST CLEANUP
+======================================
+Cancelamento do FP de R (teste confirmado pelo responsavel).
+OS-202604-149519 = registro de teste. Nao existe obrigacao real.
+
+Data: 2026-09-20
+Hora: 17:43 BRT
+Modelo: MiMo-V2.5
+Status: PASS — 11/11 CHECKS APROVADOS
+Redmi: NAO NECESSARIO
+
+
+==========================================================================
+SECAO 1 — PREFLIGHT
+==========================================================================
+
+1.1 LEITURA LIVE (antes do cancelamento)
+  FP: 9b2e56ba-0457-42a7-b731-2daba9d6ea26
+  OS: a2ac3c46-b36f-4352-a1e7-dfecc1200387
+
+  id:          9b2e56ba-0457-42a7-b731-2daba9d6ea26
+  os_id:       a2ac3c46-b36f-4352-a1e7-dfecc1200387
+  prestador:   49042fec-2376-41d4-8ece-f1efe3d48dfc
+  valor:       900
+  status:      a vencer
+  is_teste:    true
+  descricao:   Pagamento prestador OS Teste
+
+1.2 VERIFICACOES
+  [x] PP = 0 para este os_id
+  [x] Baixa = 0 para este FP
+  [x] Valor = 900.00
+  [x] Status = a vencer
+  [x] is_teste = true
+  [x] Descricao contem "teste"
+
+1.3 CHECK CONSTRAINT
+  Status validos: aberto, pago, vencido, atrasado, cancelado,
+  parcial, pendente, a vencer, cancelada, provisorio, recebido,
+  renegociado
+
+  Status escolhido: cancelado
+
+1.4 GATE: 8/8 PASS — PROSSEGUIR
+
+
+==========================================================================
+SECAO 2 — SNAPSHOT BEFORE
+==========================================================================
+
+  FP ANTES:
+    status: a vencer
+    valor: 900
+    is_teste: true
+    updated_at: 2026-04-28T05:25:50.186Z
+
+  ROLLBACK EXATO:
+    UPDATE financeiro_pagar
+       SET status = 'a vencer',
+           updated_at = '2026-04-28T05:25:50.186Z'
+     WHERE id = '9b2e56ba-0457-42a7-b731-2daba9d6ea26';
+
+
+==========================================================================
+SECAO 3 — COMANDO EXECUTADO
+==========================================================================
+
+  UPDATE financeiro_pagar
+     SET status = 'cancelado',
+         updated_at = NOW()
+   WHERE id = '9b2e56ba-0457-42a7-b731-2daba9d6ea26';
+
+  Resultado: 1 row updated
+  Commit: OK
+
+
+==========================================================================
+SECAO 4 — SNAPSHOT AFTER
+==========================================================================
+
+  FP DEPOIS:
+    id:          9b2e56ba-0457-42a7-b731-2daba9d6ea26
+    os_id:       a2ac3c46-b36f-4352-a1e7-dfecc1200387
+    valor:       900
+    status:      cancelado
+    is_teste:    true
+    updated_at: 2026-09-20T20:42:53.957Z
+
+
+==========================================================================
+SECAO 5 — DIFF EXATO
+==========================================================================
+
+  financeiro_pagar:
+    status:     a vencer -> cancelado
+    updated_at: 2026-04-28 -> 2026-09-20
+
+  Total de alteracoes: 2 campos em 1 registro
+
+
+==========================================================================
+SECAO 6 — ROLLBACK PREPARADO
+==========================================================================
+
+  UPDATE financeiro_pagar
+     SET status = 'a vencer',
+         updated_at = '2026-04-28T05:25:50.186Z'
+   WHERE id = '9b2e56ba-0457-42a7-b731-2daba9d6ea26';
+
+
+==========================================================================
+SECAO 7 — VALIDACAO: 11 CHECKS
+==========================================================================
+
+  1.  FP continua existindo .............. PASS
+  2.  FP.valor = 900.00 .................. PASS
+  3.  FP.is_teste = true .................. PASS
+  4.  FP.status = cancelado ............... PASS
+  5.  PP = 0 .............................. PASS
+  6.  Baixa = 0 ........................... PASS
+  7.  R nao e obrigacao ativa ......... PASS
+  8.  Nenhum pagamento criado ............. PASS
+  9.  Nenhum outro FP alterado ............ PASS
+  10. CESAR intocado ...................... PASS
+  11. FP_ATIVO_SEM_PP = 0 ................. PASS
+
+  TOTAL: 11/11 PASS, 0 FAIL
+
+
+==========================================================================
+SECAO 8 — CONSULTA FINAL: FP SEM PP
+==========================================================================
+
+  Total FP sem PP: 7
+  Ativos (obrigacao real): 0
+  Cancelados/teste: 7
+
+  FP900 (9b2e56ba): cancelado, teste ✓
+  FP1800a (f2149c94): cancelado ✓
+  FP1800b (da733400): cancelada ✓
+  FP600a (9875fac1): cancelado, QA_CRIT ✓
+  FP600b (213864d5): cancelado, QA_CRIT ✓
+  FP600c (eb7478c7): cancelado, QA_CRIT ✓
+  FP999 (9e07494b): cancelado ✓
+
+  FP_ATIVO_SEM_PP_COM_OBRIGACAO_REAL = 0
+
+
+==========================================================================
+SECAO 9 — CESAR
+==========================================================================
+
+  FP: valor=652.86, status=parcial (INALTERADO)
+  Baixa: valor_baixado=520.00, saldo=132.86 (INALTERADO)
+  PP: pendente (INALTERADO)
+
+
+==========================================================================
+SECAO 10 — PROIBICOES CUMPRIDAS
+==========================================================================
+
+  [x] NAO criar PP — cumprido
+  [x] NAO criar baixa — cumprido
+  [x] NAO excluir FP — cumprido (mantido para rastreabilidade)
+  [x] NAO excluir OS — cumprido
+  [x] NAO alterar prestador — cumprido
+  [x] NAO mexer nos outros 6 FP — cumprido
+  [x] NAO alterar CESAR — cumprido
+  [x] NAO alterar RPC — cumprido
+  [x] NAO alterar triggers — cumprido
+  [x] NAO criar migration — cumprido
+  [x] NAO ampliar escopo — cumprido
+
+
+==========================================================================
+SECAO 11 — CLASSIFICACAO FINAL
+==========================================================================
+
+  FP900_TEST_CLEANUP = PASS
+
+  FP de R cancelado corretamente.
+  Mantido como teste (is_teste=true) para rastreabilidade.
+  Nenhuma obrigacao real criada.
+  Nenhum PP/baixa criado.
+  Nenhum registro alheio alterado.
+  Consulta final: ZERO obrigacao ativa sem PP.
+
+
+FIM DA ANALISE FIN-SANE-02M.6B

@@ -1,0 +1,106 @@
+RELATÓRIO TMS-S04B — LOCALIZAR E EXPOR O RELATÓRIO DE FATURAMENTO
+Data: 22/08/2026
+Status: LOCALIZADO + ACESSO CONFIRMADO + EXPOSIÇÃO NA ÁREA FATURAMENTO
+
+====================================================================
+1. ONDE O COMPONENTE ESTAVA
+====================================================================
+
+src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+  (componente existente — NÃO foi alterado o conteúdo/PDF do relatório)
+
+====================================================================
+2. ONDE ERA IMPORTADO
+====================================================================
+
+- src/components/financeiro/RelatorioFinanceiroCompleto.tsx (linha 6):
+  importado e renderizado quando activeReport === 'faturamento'
+  (linha 96) — card "Faturamento por Cliente" do painel de Relatórios.
+
+====================================================================
+3. CAMINHO ANTERIOR NA INTERFACE
+====================================================================
+
+Financeiro → Gestão → Relatórios → card "Faturamento por Cliente"
+
+(Explicando: na página Financeiro, o relatório ficava atrás da categoria
+"Gestão" → aba "Relatórios" → RelatorioFinanceiroCompleto → card
+"Faturamento por Cliente" → RelatorioFaturamentoCliente.)
+
+====================================================================
+4. ESTAVA REALMENTE ACESSÍVEL?
+====================================================================
+
+SIM — tecnicamente acessível, porém em local distante e com nome pouco
+claro ("Faturamento por Cliente", dentro de Gestão/Relatórios), longe da
+área natural do faturamento. Por isso foi criada uma entrada de navegação
+CLARA reutilizando o mesmo componente.
+
+====================================================================
+5. ALTERAÇÃO REALIZADA (exposição na área Faturamento)
+====================================================================
+
+Adicionada UMA entrada de navegação reutilizando o componente existente
+(sem duplicar componente/relatório, sem rota financeira paralela):
+
+- financeiroNav.ts: novo item "Relatório de Faturamento"
+  (valor "relatorio-faturamento") no grupo "Faturamento", após
+  "Inadimplência" — mantém Conferência, Faturas, Contas a Receber e
+  Inadimplência; item incluído em MODULOS_CRITICOS.
+- Financeiro.tsx: import do componente, ícone na navegação e
+  <TabsContent value="relatorio-faturamento"> renderizando
+  <RelatorioFaturamentoCliente /> (mesmo componente da tela atual).
+- sidebarData.ts: subitem "Relatório de Faturamento"
+  (/financeiro?tab=relatorio-faturamento) no menu Financeiro Enterprise.
+- Testes de navegação atualizados para o novo total (24 funções; grupo
+  Faturamento com 5 subtelas): tms_layout_02_financeiro_dois_niveis.test.tsx
+  e sidebarData.test.ts (expectativa de subitem da sidebar).
+
+O acesso antigo (Gestão → Relatórios → card) permanece intacto.
+
+====================================================================
+6. CAMINHO FINAL EXATO PARA O USUÁRIO
+====================================================================
+
+Financeiro → Faturamento → Relatório de Faturamento
+
+  (URL: /financeiro?tab=relatorio-faturamento)
+
+====================================================================
+7. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/components/financeiro/financeiroNav.ts        (item + módulo crítico)
+- src/pages/Financeiro.tsx                          (import + ícone + TabsContent)
+- src/lib/sidebarData.ts                            (subitem da sidebar)
+- src/test/tms_layout_02_financeiro_dois_niveis.test.tsx (contagens 23→24 / 4→5)
+- src/test/sidebarData.test.ts                      (subitem da sidebar) — na verdade
+  apenas o sidebarData.ts foi ajustado; o teste passou sem edição.
+
+NENHUM dado, cálculo, PDF, fatura_itens, contas a receber, banco, Supabase,
+migration ou RPC foi alterado.
+
+====================================================================
+8. VALIDAÇÃO
+====================================================================
+
+- npx tsc --noEmit                         → ✅ 0 erros
+- npx vitest run                           → ✅ 493/493 (52 arquivos)
+    · sidebarData.test.ts                  → ✅ 21/21
+    · tms_layout_02_financeiro_dois_niveis → ✅ 12/12
+    · f0l_navegacao_conciliacao_cnab       → ✅ 7/7
+- npm run build                            → ✅ 33,21s
+- npx eslint (sidebarData, financeiroNav, testes) → ✅ 0 erros
+  (Financeiro.tsx: apenas 3 erros baseline pré-existentes, fora da alteração)
+- Página local aberta em
+  http://localhost:8801/financeiro?tab=relatorio-faturamento
+  (login necessário para conferência visual)
+
+====================================================================
+RESULTADO
+====================================================================
+
+RELATÓRIO EXISTIA: SIM
+ESTAVA ACESSÍVEL NA INTERFACE: SIM
+CAMINHO FINAL: Financeiro → Faturamento → Relatório de Faturamento
+TMS-S04B: HOMOLOGADA SIM

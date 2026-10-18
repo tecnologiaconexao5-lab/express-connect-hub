@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const pol = await c.query(`SELECT policyname, cmd, roles::text AS roles, qual, with_check FROM pg_policies WHERE tablename='portal_notificacoes'`);
+console.log(JSON.stringify(pol.rows, null, 2).slice(0, 2000));
+await c.end();

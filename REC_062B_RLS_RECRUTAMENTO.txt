@@ -1,0 +1,169 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2B — RLS RECRUTAMENTO: CORREÇÃO E HOMOLOGAÇÃO
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 22:45 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. DIAGNÓSTICO (pós REC-06.2A)
+═══════════════════════════════════════════════════════════════════════════════
+
+Revalidação com pg_get_expr revelou cenário real:
+
+┌──────────────────────────────────────┬──────────────────────────────────────┬──────────┐
+│ TABELA                               │ POLICIES ANTES                       │ STATUS   │
+├──────────────────────────────────────┼──────────────────────────────────────┼──────────┤
+│ recrutamento_prestadores             │ USING auth.role()='authenticated'    │ ✅ SEGURO│
+│ recrutamento_candidatos              │ USING auth.role()='authenticated'    │ ✅ SEGURO│
+│ candidato_documentos                 │ USING auth.role()='authenticated'    │ ✅ SEGURO│
+│ crm_interacoes_prestadores           │ roles={authenticated} + tenant check │ ✅ SEGURO│
+│                                      │ MAS: sem policy DELETE               │ ⚠️ GAP   │
+│ recrutamento_operacoes               │ roles={authenticated,anon}+USING=true│ ❌ VULN  │
+└──────────────────────────────────────┴──────────────────────────────────────┴──────────┘
+
+GRANTS anon (antes): todas as 5 tabelas tinham grants completos para anon
+(DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE)
+
+VULNERABILIDADE REAL: apenas recrutamento_operacoes (policies com anon + USING=true)
+As outras 3 tabelas já bloqueavam anon via policy, mas grants permaneciam.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MIGRATION APLICADA
+═══════════════════════════════════════════════════════════════════════════════
+
+Arquivo: supabase/migrations/20260907_rec_062b_fix_rls_recrutamento.sql
+
+Ações:
+  1. recrutamento_operacoes: DROP 4 policies antigas → CREATE 4 novas (TO authenticated)
+  2. crm_interacoes_prestadores: CREATE cip_delete_tms (TO authenticated, tenant_usuarios check)
+  3. REVOKE ALL ON 5 tabelas FROM anon (defense-in-depth)
+
+Validação: BEGIN/ROLLBACK → ✅ SQL syntax OK → COMMIT → ✅ aplicado
+
+═══════════════════════════════════════════════════════════════════════════════
+3. POLICIES DEPOIS
+═══════════════════════════════════════════════════════════════════════════════
+
+recrutamento_prestadores:
+  select  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  insert  → roles=null ✅ WCHECK=(auth.role()='authenticated' OR 'service_role')
+  update  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  delete  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+
+recrutamento_candidatos:
+  select  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  insert  → roles=null ✅ WCHECK=(auth.role()='authenticated' OR 'service_role')
+  update  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  delete  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+
+crm_interacoes_prestadores:
+  select  → roles={authenticated} ✅ USING=EXISTS(tenant_usuarios WHERE user_id=auth.uid())
+  insert  → roles={authenticated} ✅ WCHECK=EXISTS(tenant_usuarios WHERE user_id=auth.uid())
+  update  → roles={authenticated} ✅ USING=EXISTS(tenant_usuarios WHERE user_id=auth.uid())
+  delete  → roles={authenticated} ✅ USING=EXISTS(tenant_usuarios WHERE user_id=auth.uid()) [NOVO]
+
+candidato_documentos:
+  select  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  insert  → roles=null ✅ WCHECK=(auth.role()='authenticated' OR 'service_role')
+  update  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+  delete  → roles=null ✅ USING=(auth.role()='authenticated' OR 'service_role')
+
+recrutamento_operacoes:
+  select  → roles={authenticated} ✅ USING=(auth.role()='authenticated') [FIX]
+  insert  → roles={authenticated} ✅ WCHECK=(auth.role()='authenticated') [FIX]
+  update  → roles={authenticated} ✅ USING+WCHECK=(auth.role()='authenticated') [FIX]
+  delete  → roles={authenticated} ✅ USING=(auth.role()='authenticated') [FIX]
+
+GRANTS anon (depois): TODAS as 5 tabelas → anon has [NONE] ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+4. TESTE NEGATIVO (anon bloqueado)
+═══════════════════════════════════════════════════════════════════════════════
+
+Via Supabase JS Client com anon key:
+
+┌──────────────────────────────────────┬────────┬────────┬────────┬────────┐
+│ TABELA                               │ SELECT │ INSERT │ UPDATE │ DELETE │
+├──────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ recrutamento_prestadores             │ ✅ BLK │ ✅ BLK │ ✅ BLK │ ✅ BLK │
+│ recrutamento_candidatos              │ ✅ BLK │ ✅ BLK │ ✅ BLK │ ✅ BLK │
+│ crm_interacoes_prestadores           │ ✅ BLK │ ✅ BLK │ ✅ BLK │ ✅ BLK │
+│ candidato_documentos                 │ ✅ BLK │ ✅ BLK │ ✅ BLK │ ✅ BLK │
+│ recrutamento_operacoes               │ ✅ BLK │ ✅ BLK │ ✅ BLK │ ✅ BLK │
+└──────────────────────────────────────┴────────┴────────┴────────┴────────┘
+
+20/20 operações bloqueadas. Erro: "permission denied for table X"
+
+═══════════════════════════════════════════════════════════════════════════════
+5. TESTE POSITIVO (tabelas funcionais)
+═══════════════════════════════════════════════════════════════════════════════
+
+Via postgres superuser (bypass RLS):
+
+  recrutamento_prestadores:     SELECT ✅ (5 rows) | INSERT+DELETE ✅
+  recrutamento_candidatos:      SELECT ✅ (16 rows) | UPDATE ✅
+  crm_interacoes_prestadores:   SELECT ✅ (0 rows) | UPDATE ✅
+  candidato_documentos:         SELECT ✅ (0 rows) | UPDATE ✅
+  recrutamento_operacoes:       SELECT ✅ (5 rows) | INSERT+DELETE ✅
+
+Todas as tabelas operacionais. Dados intactos.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. IMPACTO NO BRIDGE APP
+═══════════════════════════════════════════════════════════════════════════════
+
+  Trigger trg_bridge_prestador_para_recrutamento: ✅ PRESENTE
+  Event: INSERT em prestadores
+  Function: f_bridge_prestador_para_recrutamento() (122 linhas, VOLATILE)
+
+  Bridge escreve via SECURITY DEFINER (postgres) → bypass RLS → NÃO AFETADO
+
+  Candidatos via bridge: 4 de 16 totais (tags 'bridge_automatico')
+  Dados intactos após migration.
+
+═══════════════════════════════════════════════════════════════════════════════
+7. REGRESSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  npx tsc --noEmit → ✅ 0 erros
+  npx vitest run   → ✅ 1161/1166 pass (5 failures pré-existentes: rec03 legacy + f0k recibos)
+  Nenhuma falha relacionada à migration.
+
+═══════════════════════════════════════════════════════════════════════════════
+8. PENDÊNCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. recrutamento_whatsapp_config/conversas/mensagens: RLS ON mas 0 policies
+     → Não alterado nesta missão (fora do escopo)
+     → Pendente: adicionar policies se frontend precisa acessar
+
+  2. recrutamento_ia_config: RLS ON mas 0 policies
+     → Não alterado nesta missão (fora do escopo)
+     → Pendente: adicionar policies se frontend precisa acessar
+
+  3. recrutamento_automacoes: tabela NÃO EXISTE
+     → Pendente: criar migration + RLS (REC-06.2C)
+
+  4. recrutamento_score_historico: tabela NÃO EXISTE
+     → Pendente: criar migration + RLS (REC-06.2C)
+
+═══════════════════════════════════════════════════════════════════════════════
+9. ARQUIVOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Migration aplicada:
+    supabase/migrations/20260907_rec_062b_fix_rls_recrutamento.sql
+
+  Scripts de prova (read-only):
+    scripts/rec062b_revalidate.cjs     — revalidação pg_get_expr
+    scripts/rec062b_dryrun.cjs         — BEGIN/ROLLBACK validation
+    scripts/rec062b_apply.cjs          — aplicação + verificação
+    scripts/rec062b_prova_negativo.cjs — teste anon via Supabase client
+    scripts/rec062b_prova_positivo3.cjs — teste postgres + bridge + policies
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2B RLS RECRUTAMENTO
+[HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+═══════════════════════════════════════════════════════════════════════════════

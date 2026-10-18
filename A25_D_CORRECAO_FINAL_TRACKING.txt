@@ -1,0 +1,221 @@
+================================================================================
+MISSÃO A25-D — CORREÇÃO FINAL DO TRACKING (RPC + ALOCAÇÕES NO MAPA DA TORRE)
+Projeto: EXPRESS CONNECT HUB (TMS)
+Supabase Produção: uwrvzsjtpgaifkktpepn
+App Flutter consultado (NÃO alterado): C:\src\conexao_prestador
+Data: 2026-08-14
+================================================================================
+
+STATUS: PRONTO PARA NOVA PROVA FÍSICA NO REDMI
+(TRACKING ponta a ponta NÃO homologado ainda — depende do envio real do celular)
+================================================================================
+
+================================================================================
+# CAUSA A25-C (recapitulação comprovada)
+================================================================================
+- RPC registrar_posicao_motorista usava `SELECT id, tenant_id FROM prestadores`
+  — coluna tenant_id NÃO existe em prestadores → o RPC quebrava ANTES do INSERT.
+- A operação física (OS-HML-MULTI-001) existe apenas como alocação ca5fe225
+  (ordem_servico_id NULL, metadata.app_motorista.numero_os). Não há OS em
+  ordens_servico → Torre "0 de 0 OS".
+
+================================================================================
+# RPC ANTES
+================================================================================
+- ASSINATURA (idêntica; compatível com APK build 1306):
+  registrar_posicao_motorista(p_latitude, p_longitude, p_alocacao_id,
+  p_ordem_servico_id DEFAULT NULL, p_captured_at DEFAULT NOW(), p_precisao,
+  p_velocidade, p_direcao, p_bateria, p_altitude, p_status_operacional, p_origem)
+- SECURITY DEFINER = true; search_path = public.
+- Validações: auth, prestador, alocação, dono, status ativo, 0,0, limites, dedup 10s.
+- DEFEITO: VALIDAÇÃO 2 referenciava prestadores.tenant_id (inexistente).
+- BACKUP: scripts/_a25d_backup_rpc_registrar_posicao.sql (definição integral
+  obtida via pg_get_functiondef; 9721 chars). Rollback disponível.
+
+================================================================================
+# RPC DEPOIS (única alteração autorizada de Produção — aplicada e validada)
+================================================================================
+ALTERAÇÃO EXATA:
+  - VALIDAÇÃO 2 passou a resolver SOMENTE o prestador:
+      SELECT id INTO v_prestador_id FROM public.prestadores
+      WHERE auth_user_id = auth.uid() AND status='ativo' AND liberado_app=true;
+  - TENANT derivado da alocação autenticada:
+      alocacoes_escala.tenant_id (coluna real), com fallback
+      COALESCE(..., public.current_tenant_id_safe()).
+  - Resto mantido: INSERT apenas em colunas existentes; p_altitude e
+    p_status_operacional preservados em metadata (JSONB); dedup; SECURITY DEFINER;
+    search_path public; assinatura idêntica (sem novo APK).
+
+ORIGEM DO TENANT: alocacoes_escala.tenant_id (fonte real existente).
+SEGURANÇA: auth.uid() ✓ | vínculo prestador ✓ | liberado_app ✓ | validação da
+alocação (existe/dono/ativo) ✓ | SECURITY DEFINER ✓ | search_path=public ✓ |
+dedup 10s ✓.
+COMPATIBILIDADE APK: assinatura preservada → build 1306 continua funcionando.
+os_id: usa alocacao.ordem_servico_id quando existir; pode permanecer NULL quando
+não houver OS (não impede o registro; tracking vinculado por alocacao_id +
+prestador_id).
+
+VALIDAÇÃO PÓS-APLICAÇÃO (pg_get_functiondef, Produção):
+  - Referencia prestadores.tenant_id?  NÃO ✓
+  - Tenant derivado de alocacoes_escala.tenant_id?  SIM ✓
+  - INSERT colunas: 16 (todas existentes) — NENHUMA inválida ✓
+  - Assinatura preservada (p_altitude/p_status_operacional presentes)? SIM ✓
+  - SECURITY DEFINER = true; search_path = public ✓
+
+ARQUIVO: scripts/_a25d_fix_rpc_registrar_posicao.sql
+APLICADO: scripts/_a25d_apply.mjs (COMMIT em Produção)
+
+================================================================================
+# TORRE DE CONTROLE
+================================================================================
+COLEÇÃO ANTIGA:
+  - markers vindos SOMENTE de osAtivas (ordens_servico). Alocação sem OS ficava fora.
+
+COLEÇÃO NOVA (A25-D):
+  - GRUPO 1: OS reais ativas (lógica A25-B preservada — GPS tem prioridade,
+    coordenada da OS como fallback).
+  - GRUPO 2: alocações ativas (aceita/em_rota/ocorrencia) SEM ordem_servico_id
+    COM tracking recente → marcador operacional.
+  - DEDUPLICAÇÃO: se a alocação já é representada por uma OS real (mesma alocação/
+    osId), NÃO duplica.
+
+ALOCAÇÕES SEM OS:
+  - Novo serviço buscarAlocacoesSemOS() (trackingService.ts) — SELECT em
+    alocacoes_escala (status ativo, ordem_servico_id IS NULL) + prestador/veículo/
+    metadata.
+  - montarMarcadorAlocacaoSemOS(aloc, posicao) (markerAdapter.ts) — usa GPS real;
+    sem GPS → null (não mostra marcador).
+
+DEDUPLICAÇÃO:
+  - osIdsPresentes (OS já no mapa) + alocacoesComOS (alocações já cobertas por OS)
+    → Grupo 2 só entra para alocações realmente sem representação de OS.
+
+MATCH DO TRACKING:
+  - resolverPosicaoMarcador: (1) alocacao_id direto; (2) os_id; (3) mapa OS→aloc.
+  - Não depende apenas de os_id.
+
+RECÊNCIA:
+  - Preservada (A25-B): posicaoRecente ≤60min; captured_at prioritário,
+    created_at fallback. Seed antigo não conta.
+
+KPIs / MOTORISTAS ONLINE:
+  - mapCounters.gpsAtivo conta marcadores com gpsState "atualizado" (≤15min),
+    incluindo alocação sem OS com GPS recente. Sem duplicidade (dedup).
+
+FILTROS:
+  - Preservados: Todas, Em rota, GPS ativo, Parados, GPS antigo, Sem GPS,
+    Atrasadas, Ocorrências, Concluídas. Alocação sem OS participa normalmente.
+
+DETALHES DO MARCADOR (alocação sem OS):
+  - prestador/motorista, numero_os (quando disponível), romaneio (quando
+    disponível), veículo/placa, status, última atualização GPS, currentStage.
+  - Dados ausentes → estado neutro (sem inventar).
+
+AÇÃO ABRIR OPERAÇÃO:
+  - Para alocação sem OS, o marcador tem id "aloc-{alocacao_id}". Não há OS real
+    para abrir o DetalhesOperacaoSheet com ID inexistente. Comportamento seguro:
+    o clique segue o fluxo existente da Torre (seleção de OS/operação); quando não
+    há OS real, NÃO abre o sheet com ID inválido. LIMITAÇÃO registrada: o detalhe
+    contextual completo para alocação sem OS não possui componente dedicado —
+    fica como pendência (sem arquitetura paralela nesta missão).
+
+REALTIME:
+  - INSERT em portal_tracking_realtime → atualiza trackingPositions + recarrega
+    alocações sem OS → marcador surge/atualiza sem recarregar a página.
+
+ARQUIVOS ALTERADOS (TMS):
+  - src/components/torre-controle/markerAdapter.ts (montarMarcadorAlocacaoSemOS,
+    AlocacaoSemOS, resolverPosicaoMarcador com match por alocacao_id direto)
+  - src/services/rastreamento/trackingService.ts (buscarAlocacoesSemOS)
+  - src/pages/TorreControle.tsx (estado alocacoesSemOS, carga no mount/realtime,
+    markers com GRUPO 1 + GRUPO 2 + dedup)
+
+================================================================================
+# PRODUÇÃO — ÚNICO OBJETO ALTERADO
+================================================================================
+  - CREATE OR REPLACE FUNCTION public.registrar_posicao_motorista (autorizado).
+  - Nenhum outro objeto de banco alterado.
+
+================================================================================
+# TESTES
+================================================================================
+  npx tsc --noEmit      →  0 erros ✅
+  npm run build         →  ✅ 1m 2s — build ok
+  npx vitest run        →  ✅ 126/126 testes (12 arquivos)
+
+  Testes A25-D (src/test/a25DAlocacaoSemOS.test.ts — 18 cenários):
+    1. alocação sem OS + GPS recente → marcador ✅
+    2. alocação sem OS + sem GPS → não cria marcador ✅
+    3. alocação com OS + GPS → não duplica (representação própria) ✅
+    4. match prioritário por alocacao_id ✅
+    5. os_id NULL não quebra ✅
+    6. metadata.numero_os aparece quando disponível ✅
+    7. romaneio aparece quando disponível ✅
+    8. motorista/prestador aparece ✅
+    9. veículo aparece quando disponível ✅
+   10. GPS recente conta Motoristas Online ✅
+   11. GPS antigo não conta Motoristas Online ✅
+   12. Realtime consegue introduzir marcador ✅
+   13. filtros continuam funcionando ✅
+   14. OS real existente continua funcionando ✅
+   15. KPI PODs Pendentes permanece funcionando ✅
+   16. Chat/Mensagens permanece funcionando ✅
+   17. Torre abre sem erro ✅
+   18. remontagem Torre continua funcionando ✅
+
+  Validação da aplicação em execução (Playwright, dev 8800, somente leitura):
+    Torre abre, 0 console errors, 0 pageerrors, re-mount OK, KPI PODs Pendentes OK,
+    Central de Alertas OK, Mensagens OK. Screenshots em test-results/e2e/a25-d/.
+    (Mapa pode continuar vazio até novo envio físico — esperado, sem fabricar posição.)
+
+================================================================================
+# SEGURANÇA
+================================================================================
+  - Nenhuma tabela criada ........................... CONFIRMADO
+  - Nenhuma coluna criada/removida .................. CONFIRMADO
+  - Nenhuma RLS alterada ............................ CONFIRMADO
+  - Nenhum trigger alterado ......................... CONFIRMADO
+  - Nenhuma outra RPC alterada ...................... CONFIRMADO
+  - Nenhum INSERT artificial / UPDATE / DELETE ....... CONFIRMADO
+  - App Flutter não alterado / sem novo APK ......... CONFIRMADO
+
+================================================================================
+# ROTEIRO FÍSICO PARA NOVA PROVA NO REDMI
+================================================================================
+A operação OS-HML-MULTI-001 já está EM ROTA e o App já avançou o fluxo. NÃO é
+necessário refazer aceite/carregamento. Objetivo: disparar/reiniciar o tracking
+de GPS sem repetir o fluxo operacional.
+
+1. No Redmi, abrir o App Conexão Express (Prestador). NÃO reinstalar/refazer login
+   se a sessão estiver ativa (PRESTADOR TESTE APP).
+2. Ir para a operação OS-HML-MULTI-001 (lista de operações em rota).
+3. Como o tracking é iniciado quando a etapa "Sair em rota" é executada e o App já
+   passou dela: fechar o App totalmente (swipe da lista de recentes) e REABRIR.
+   Ao reabrir a operação em rota, o foreground service/sessão de tracking deve
+   ser retomado (sessão persistida em SharedPreferences — tracking_active_session).
+   Se o App não retomar sozinho, tocar novamente na operação para reabrir o
+   detalhe (a Home revalida a sessão ativa).
+4. Confirmar permissões de localização seguem concedidas (GPS ligado).
+5. Manter o App em primeiro plano 1–2 min (intervalo 15s de envio).
+6. Verificar a notificação persistente "OS … operação em andamento" (foreground).
+7. Abrir a Torre de Controle no TMS (outro dispositivo).
+8. Verificar KPI "Motoristas Online" (>0) e badge "GPS Ativo" no mapa.
+9. Confirmar o marcador do PRESTADOR TESTE APP (representado pela alocação sem OS
+   — regra A25-D Grupo 2 — ou pela OS, caso a operação ganhe OS).
+10. Caminhar alguns metros e confirmar movimento em tempo real (Realtime).
+11. Bloquear a tela e confirmar atualização em background (30s).
+
+VALIDAÇÃO READ-ONLY PÓS-TESTE:
+  SELECT * FROM portal_tracking_realtime
+  WHERE alocacao_id = 'ca5fe225-7114-42da-9997-c3d466e5df52'
+  ORDER BY captured_at DESC LIMIT 5;
+  → deve retornar linhas com created_at recente e status='online'.
+
+NOTA: O tracking ponta a ponta SÓ será considerado homologado quando a posição
+real do celular aparecer na Torre. O status máximo desta missão é PRONTO PARA
+NOVA PROVA FÍSICA NO REDMI.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-D
+STATUS: PRONTO PARA NOVA PROVA FÍSICA NO REDMI ✅
+================================================================================

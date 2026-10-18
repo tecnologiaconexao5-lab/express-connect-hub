@@ -1,0 +1,109 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ override existing { override: true }
+
+===== FUNCAO_f_registrar_notificacao_app =====
+CREATE OR REPLACE FUNCTION public.f_registrar_notificacao_app(p_prestador_id uuid, p_titulo text, p_mensagem text, p_tipo text DEFAULT 'operacao'::text, p_origem_id uuid DEFAULT NULL::uuid, p_origem_tipo text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_notificacao_id UUID;
+BEGIN
+  INSERT INTO public.portal_notificacoes (
+    prestador_id, titulo, mensagem, tipo, origem_id, origem_tipo, lida, created_at
+  ) VALUES (
+    p_prestador_id, p_titulo, p_mensagem, p_tipo, p_origem_id, p_origem_tipo, false, NOW()
+  ) RETURNING id INTO v_notificacao_id;
+
+  RETURN v_notificacao_id;
+END;
+$function$
+
+
+===== FUNCAO_reportar_ocorrencia_motorista =====
+CREATE OR REPLACE FUNCTION public.reportar_ocorrencia_motorista(token_acesso text, escala_id uuid, tipo text, descricao text, latitude numeric, longitude numeric)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+    motorista_id UUID;
+BEGIN
+    SELECT motorista_id INTO motorista_id FROM motorista_app_sessoes WHERE token = token_acesso AND ativo = TRUE;
+    IF motorista_id IS NULL THEN
+        RAISE EXCEPTION 'Token inv├ílido ou sess├úo expirada';
+    END IF;
+    -- Insert a record in escalonamentos_humanos for human handling
+    INSERT INTO escalonamentos_humanos (
+        origem,
+        modulo,
+        referencia_id,
+        tipo,
+        prioridade,
+        status,
+        titulo,
+        descricao,
+        mensagem_original,
+        intencao,
+        confianca,
+        payload
+    ) VALUES (
+        'driver_app',
+        'ocorrencia',
+        escala_id,
+        tipo,
+        'alta',
+        'aberto',
+        concat('Ocorr├¬ncia ', tipo, ' - ', descricao),
+        descricao,
+        concat('Motorista ', motorista_id, ': ', descricao),
+        tipo,
+        100,
+        jsonb_build_object(
+            'latitude', latitude,
+            'longitude', longitude,
+            'escala_id', escala_id
+        )
+    );
+    -- Optionally update the operation status
+    UPDATE escala_operacional SET status = 'ocorrencia', atualizado_em = now() WHERE id = escala_id;
+END;
+$function$
+
+
+===== FUNCAO_f_obter_prestador_por_auth =====
+CREATE OR REPLACE FUNCTION public.f_obter_prestador_por_auth()
+ RETURNS TABLE(nome_completo text, prestador_id uuid)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+    SELECT p.nome_completo, p.id
+    FROM public.prestadores p
+    WHERE p.auth_user_id = auth.uid()
+    LIMIT 1;
+$function$
+
+
+===== GRANTS_f_registrar_notificacao_app =====
+PUBLIC
+EXECUTE
+anon
+EXECUTE
+authenticated
+EXECUTE
+postgres
+EXECUTE
+service_role
+EXECUTE
+
+===== TRIGGER_os_para_app =====
+trg_notificar_os_para_app
+ordens_servico
+CREATE TRIGGER trg_notificar_os_para_app AFTER INSERT OR UPDATE OF prestador_id ON public.ordens_servico FOR EACH ROW EXECUTE FUNCTION f_trg_notificar_os_para_app()
+
+===== PROCS_NOTIFICACAO =====
+ERRO: column reference "oid" is ambiguous
+
+FIM3

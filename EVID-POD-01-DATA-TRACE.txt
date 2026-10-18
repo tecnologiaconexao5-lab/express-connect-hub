@@ -1,0 +1,360 @@
+# EVID-POD-01-DATA-TRACE: Rastreamento Completo do Fluxo POD
+
+**Status:** EVID_POD_DATA_TRACE = PARTIAL (quebra identificada)
+**Date:** 2026-09-20
+**Model:** MiMo-V2.5
+
+---
+
+## 1. Fluxo de Conclusão da Entrega no APP
+
+### APP_COMPLETION_ENTRYPOINT
+App Motorista (Flutter PWA em `prestador.conexaoexpress.com.br`) — projeto externo, não neste repositório.
+
+O App finaliza a entrega via **2 chamadas**:
+1. **INSERT em `delivery_proofs`** (REST API Supabase) — dados do POD (foto, recebedor, GPS, etc.)
+2. **RPC `f_avancar_etapa_app_motorista`** — advance journey state machine (etapa `servico_finalizado`)
+
+### BACKEND_CALL
+- **Tabela primária**: `delivery_proofs` (INSERT direto via REST)
+- **Trigger**: `trg_sync_delivery_proof_to_entregas` (AFTER INSERT) → copia para `entregas_protocolo`
+- **RPC complementar**: `f_avancar_etapa_app_motorista` → atualiza `alocacoes_escala.status/metadata` + `eventos_oficiais`
+
+---
+
+## 2. Tabelas Envolvidas
+
+### WRITE PATH (App → Backend)
+
+| Tabela | Operação | Quem escreve | Dados |
+|--------|----------|-------------|-------|
+| `delivery_proofs` | INSERT | Flutter App (REST) | POD bruto: foto, recebedor, GPS, status |
+| `entregas_protocolo` | INSERT | Trigger `f_sync_delivery_proof_to_entregas` | POD oficial (copia enriquecida de delivery_proofs) |
+| `alocacoes_escala` | UPDATE | RPC `f_avancar_etapa_app_motorista` | Status, metadata.app_motorista, timestamps |
+| `eventos_oficiais` | INSERT | RPC `f_avancar_etapa_app_motorista` | Timeline de eventos |
+| `comprovantes-entrega` (bucket) | INSERT | App Motorista ou podService (TMS) | Fotos/assinatura ( Storage) |
+
+### READ PATH (TMS → Dados)
+
+| Tabela | Usada por | Dados lidos |
+|--------|-----------|-------------|
+| `entregas_protocolo` | Todas as 5 rotas de leitura | POD oficial |
+| `alocacoes_escala` | Enriquecimento, PODDisplay | Status, timestamps, vehicle, origin/destination |
+| `ordens_servico` | Enriquecimento dossiê | OS number, client, cargo |
+| `prestadores` | Enriquecimento | Driver name, phone |
+| `veiculos` | Enriquecimento | Vehicle type, plate |
+| `rota_paradas` | Enriquecimento | Destinatário, endereço, volumes |
+| `eventos_oficiais` | Dossiê timeline | Event history |
+| `ocorrencias` | Dossiê ocorrências | Incidents |
+
+---
+
+## 3. Mapeamento Campo por Campo
+
+### delivery_proofs → entregas_protocolo (Trigger Mapping)
+
+| CAMPO_APP (delivery_proofs) | CAMPO_BANCO (entregas_protocolo) | TIPO | FK/VINCULO | OBRIGATORIO? | EXISTE_DADO_REAL? | USADO_PELO_TMS? |
+|---|---|---|---|---|---|---|
+| `operation_id` (TEXT) | `alocacao_id` (UUID) | uuid | → alocacoes_escala.id | Sim (cast) | Sim (9 rows) | Sim |
+| `receiver_name` | `nome_recebedor` | text | — | Sim (COALESCE 'Motorista') | Sim (51/51) | Sim |
+| `receiver_document` | `documento_recebedor` | text | — | Não | Sim (parcial) | Sim |
+| `receiver_relationship` | `receiver_relationship` | text | — | Não | Sim | Não exibido |
+| `observation` | `observacao` | text | — | Não | Sim | Sim |
+| `photo_url` | `foto_entrega_url` | text | — | Não | Sim (12/51) | Sim |
+| `foto_canhoto_url` | `foto_canhoto_url` | text | — | Não | Sim (4/51) | Sim |
+| `signature_url` | `assinatura_url` | text | — | Não | Sim (5/51) | Sim |
+| `delivered_at` | `data_hora_entrega` | timestamptz | — | Sim (COALESCE NOW()) | Sim | Sim |
+| `latitude` | `latitude` | numeric | — | Não | Sim (13/51) | Sim |
+| `longitude` | `longitude` | numeric | — | Não | Sim (13/51) | Sim |
+| `gps_accuracy` | `gps_accuracy` | numeric | — | Não | Sim | Sim (dossiê) |
+| `status` | `status` | text | — | Sim (mapped) | Sim | Sim |
+| `tenant_id` | `tenant_id` | uuid | → tenant | Sim (fallback) | Sim | Sim (RLS) |
+| — | `prestador_id` | uuid | → prestadores.id | Sim (de aloc) | Sim | Sim |
+| — | `ordem_servico_id` | uuid | → ordens_servico.id | Não (nullable) | **2/51 (3.9%)** | **PROBLEMA** |
+| — | `parada_id` | uuid | → rota_paradas.id | Não | Sim | Não |
+| `driver_id` | — | — | — | — | — | NÃO copiado |
+| `stop_id` | — | — | — | — | — | NÃO copiado |
+| `rota_id` | — | — | — | — | — | NÃO copiado |
+| `os_id` (TEXT) | — | — | — | — | — | NÃO copiado |
+| `cliente_id` (TEXT) | — | — | — | — | — | NÃO copiado |
+| `idempotency_key` | — | — | — | — | — | NÃO copiado |
+
+### Dados do Storage
+
+| CAMPO_APP | BUCKET | PATH | OBRIGATORIO? | EXISTE_DADO_REAL? | URL PÚBLICA? |
+|---|---|---|---|---|---|
+| `photo_url` | `comprovantes-entrega` | `pod/{alocacao_id}/{id}.{ext}` | Não | Sim (8 objetos) | Sim |
+| `signature_url` | `comprovantes-entrega` | `pod/{alocacao_id}/{id}.{ext}` | Não | Sim | Sim |
+| `foto_canhoto_url` | `comprovantes-entrega` | `pod/{alocacao_id}/{id}.{ext}` | Não | Sim | Sim |
+
+**Storage config**: bucket público, 20MB limit, MIME: jpeg/png/gif/webp (sem PDF).
+
+---
+
+## 4. Buckets/Storage
+
+### STORAGE_BUCKETS
+`comprovantes-entrega` — bucket público, 8 objetos, 20MB limit
+
+**Path convention**: `pod/{alocacao_id}/{gen_random_uuid()}.{ext}`
+
+**RLS**: anon SELECT, authenticated INSERT
+
+**URL access**: pública via `supabase.storage.from('comprovantes-entrega').getPublicUrl(path)`
+
+---
+
+## 5. Relacionamentos
+
+### OS_LINK
+`entregas_protocolo.ordem_servico_id` → `ordens_servico.id`
+
+**PROBLEMA CRÍTICO**: Apenas **2 de 51** entregas (3.9%) têm `ordem_servico_id` preenchido. 49 entregas são órfãs de OS.
+
+**Causa**: O trigger `f_sync_delivery_proof_to_entregas` copia `ordem_servico_id` de `alocacoes_escala`, mas 134 de 193 alocações (69.4%) NÃO têm `ordem_servico_id` — vieram do App Motorista sem vínculo a OS.
+
+### ALLOCATION_LINK
+`entregas_protocolo.alocacao_id` → `alocacoes_escala.id`
+
+**Status**: 51/51 (100%) — sempre preenchido (é a chave de lookup do trigger).
+
+### PROVIDER_LINK
+`entregas_protocolo.prestador_id` → `prestadores.id`
+
+**Status**: 51/51 (100%) — copiado do `alocacoes_escala` pelo trigger.
+
+---
+
+## 6. Status e Timestamps
+
+### STATUS_FIELD
+`entregas_protocolo.status` — mapeado do APP:
+- `delivered` → `entregue`
+- `delivered_with_note` → `entregue_ressalva`
+- `not_delivered` → `nao_entregue`
+- Default: `entregue`
+
+### COMPLETION_TIMESTAMP
+`entregas_protocolo.data_hora_entrega` — de `delivery_proofs.delivered_at` ou `NOW()`
+
+---
+
+## 7. Dados Reais Confirmados (READ-ONLY Produção)
+
+### RECEIVER_NAME
+51/51 entregas têm `nome_recebedor` preenchido. Exemplos reais: "Diego Balbino", "RECEBEDOR RETESTE HML", "RECEBEDOR D2 HML".
+
+### RECEIVER_DOCUMENT
+Parcialmente preenchido. Exemplos: "087766777", "38032034811".
+
+### PHOTOS
+12/51 entregas têm `foto_entrega_url`. 4/51 têm `foto_canhoto_url`. 8 objetos no storage.
+
+### SIGNATURE
+5/51 entregas têm `assinatura_url`.
+
+### GEOLOCATION
+13/51 entregas têm `latitude`/`longitude`.
+
+### OCCURRENCES
+4 registros na tabela `ocorrencias`. 342 eventos em `eventos_oficiais`.
+
+---
+
+## 8. Classificação
+
+| Informação | Status | Detalhe |
+|------------|--------|---------|
+| Foto da entrega | **DISPONIVEL** | `foto_entrega_url` em entregas_protocolo, 12/51 com dado real |
+| Foto canhoto | **DISPONIVEL** | `foto_canhoto_url` em entregas_protocolo, 4/51 com dado real |
+| Assinatura digital | **DISPONIVEL** | `assinatura_url` em entregas_protocolo, 5/51 com dado real |
+| Nome recebedor | **DISPONIVEL** | `nome_recebedor` em entregas_protocolo, 51/51 |
+| Documento recebedor | **DISPONIVEL** | `documento_recebedor`, parcial |
+| Relação recebedor | **DISPONIVEL_MAS_NAO_EXIBIDA** | `receiver_relationship` existe, nunca exibido |
+| GPS/coordenadas | **DISPONIVEL** | `latitude`/`longitude`, 13/51 |
+| Precisão GPS | **DISPONIVEL** | `gps_accuracy`, exibido apenas no Portal Drawer POD |
+| Data/hora entrega | **DISPONIVEL** | `data_hora_entrega`, 51/51 |
+| Observação | **DISPONIVEL** | `observacao`, parcial |
+| OS number | **NAO_GRAVADA_PELO_APP** | App não envia OS number; depende de `alocacoes_escala.ordem_servico_id` que 96% das vezes é NULL |
+| Cliente name | **SEM_RELACIONAMENTO** | Dados do cliente em `clientes`, mas PodLista não faz JOIN |
+| Motorista name | **SEM_RELACIONAMENTO** | Dados em `prestadores`, mas PodLista não faz JOIN |
+| Romaneio | **NAO_GRAVADA_PELO_APP** | App envia `romaneio` via RPC, mas não em `delivery_proofs` |
+| Volumes | **DISPONIVEL** | `rota_paradas.volumes/volumes_entregues`, 6 registros |
+| Timeline | **DISPONIVEL** | `eventos_oficiais`, 342 registros |
+| Ocorrências | **DISPONIVEL** | `ocorrencias`, 4 registros |
+
+---
+
+## 9. Fluxo Real (Desenho Textual)
+
+```
+APP FINALIZA ENTREGA
+  │
+  ├── 1. App Motorista (Flutter) insere em delivery_proofs
+  │      Dados: receiver_name, receiver_document, photo_url, signature_url,
+  │             foto_canhoto_url, latitude, longitude, gps_accuracy,
+  │             observation, delivered_at, status, operation_id (=alocacao_id),
+  │             tenant_id, parada_id, os_id(TEXT), cliente_id(TEXT)
+  │
+  ├── 2. TRIGGER trg_sync_delivery_proof_to_entregas (AFTER INSERT)
+  │      │
+  │      ├── Cast operation_id (TEXT) → UUID → v_alocacao_id
+  │      ├── Lookup alocacoes_escala → prestador_id, tenant_id, ordem_servico_id
+  │      ├── Idempotency check: skip se alocacao_id já existe em entregas_protocolo
+  │      └── INSERT entregas_protocolo (16 colunas mapeadas)
+  │
+  ├── 3. App Motorista chama RPC f_avancar_etapa_app_motorista
+  │      │
+  │      ├── p_etapa = 'servico_finalizado' (requer pod_registrado=true)
+  │      ├── UPDATE alocacoes_escala → status=concluida, finalizada=true
+  │      ├── UPDATE alocacoes_escala → metadata.app_motorista (timestamps, etc)
+  │      └── INSERT eventos_oficiais (timeline event)
+  │
+  └── 4. Storage: fotos já em comprovantes-entrega (upload pelo App anteriormente)
+
+EVIDÊNCIA PERSISTIDA
+  │
+  ├── entregas_protocolo (fonte oficial — 51 registros)
+  │     ├── foto_entrega_url → comprovantes-entrega (12 com foto)
+  │     ├── foto_canhoto_url → comprovantes-entrega (4 com canhoto)
+  │     ├── assinatura_url → comprovantes-entrega (5 com assinatura)
+  │     ├── nome_recebedor (51/51)
+  │     ├── latitude/longitude (13/51)
+  │     └── alocacao_id → alocacoes_escala → ordens_servico (APENAS 2/51!)
+  │
+  └── alocacoes_escala.status = 'concluida' (via RPC)
+
+TMS BAIXAS E EVIDÊNCIAS (PodLista.tsx)
+  │
+  ├── Query: SELECT * FROM entregas_protocolo ORDER BY data_hora_entrega DESC LIMIT 20
+  │          (SEM JOINs — tabela isolada)
+  │
+  ├── Exibe: Entrega #{id.slice(0,8)} ← UUID fragmento!
+  │          Recebedor, Documento, Data, Observação, Foto (se existe)
+  │          Status badge
+  │
+  ├── NÃO exibe: OS number, Cliente, Motorista, Veículo, Romaneio
+  │              (dados existem em tabelas relacionadas mas sem JOIN)
+  │
+  └── Por que mostra "Entrega #hash":
+        Não há coluna "número" em entregas_protocolo.
+        Sem JOIN com alocacoes_escala → ordens_servico, não resolve OS number.
+        Usa UUID fragmento como identificador.
+
+OS > VER COMPROVANTES
+  │
+  ├── OrdensServicoLista.tsx → setModoForm("ver") → OrdemServicoForm (read-only)
+  │
+  ├── OrdemServicoForm → Card "Entregas e Comprovantes"
+  │     └── <EntregasComprovantes osId={os.id} />
+  │
+  ├── EntregasComprovantes → buscarEntregasDaOS(osId)
+  │     Query 1: SELECT FROM alocacoes_escala WHERE ordem_servico_id = osId
+  │     Query 2: SELECT FROM entregas_protocolo WHERE alocacao_id IN (...)
+  │     Query 3: SELECT FROM prestadores WHERE id IN (...)
+  │     Query 4: SELECT FROM rota_paradas WHERE alocacao_id IN (...)
+  │
+  ├── Exibe por entrega: destinatário, prestador, veículo, data, recebedor,
+  │                      documento, volumes, observação, badges (foto/canhoto/assinatura)
+  │
+  └── "Ver comprovante" → DossieEntregaSheet
+        └── buscarDossieComprovante(podId) → 8 queries → painel completo
+            (identificação, entrega, evidências, assinatura, GPS, timeline, ocorrências)
+```
+
+---
+
+## 10. Problemas Identificados
+
+### PROBLEMA 1: PodLista não faz JOINs (Raiz do "Entrega #hash")
+- **Arquivo**: `src/components/operacao/PodLista.tsx:37-41`
+- **Query**: `SELECT * FROM entregas_protocolo ORDER BY data_hora_entrega DESC LIMIT 20`
+- **Impacto**: Mostra UUID fragmento em vez de OS number, sem nome de cliente/motorista
+- **Correção necessária**: Usar `comprovantesService.listarComprovantes()` (já existe, faz 5 JOINs)
+
+### PROBLEMA 2: 96% das entregas sem ordem_servico_id
+- **Dado**: 49/51 entregas com `ordem_servico_id = NULL`
+- **Causa**: 134/193 alocações (69%) não têm OS vinculada (App cria alocação direta)
+- **Impacto**: Mesmo com JOIN, 96% das entregas não resolvem OS number
+- **Correção necessária**: Garantir que `alocacoes_escala.ordem_servico_id` seja preenchido na criação
+
+### PROBLEMA 3: PodLista não usa service layer
+- **Arquivo**: `src/components/operacao/PodLista.tsx:37-41`
+- **Padrão do código**: queries devem ir via services (ex: `comprovantesService.ts`)
+- **Impacto**: Código duplicado, sem enriquecimento, sem paginação
+
+### PROBLEMA 4: receiver_relationship nunca exibido
+- **Campo**: `entregas_protocolo.receiver_relationship` (preenchido pelo APP)
+- **Dado**: Existe na tabela mas nenhum componente mostra
+- **Impacto**: Informação perdida (relação do recebedor com o cliente)
+
+### PROBLEMA 5: Botões "Detalhes" e "Exportar" sem handler
+- **Arquivo**: `src/components/operacao/PodLista.tsx:159-163`
+- **Impacto**: UI non-functional
+
+---
+
+## 11. Evidence Summary
+
+| Field | Value |
+|-------|-------|
+| APP_COMPLETION_ENTRYPOINT | Flutter App (prestador.conexaoexpress.com.br) — INSERT delivery_proofs + RPC f_avancar_etapa_app_motorista |
+| BACKEND_CALL | Trigger f_sync_delivery_proof_to_entregas → INSERT entregas_protocolo |
+| TABLES | delivery_proofs, entregas_protocolo, alocacoes_escala, eventos_oficiais, comprovantes-entrega (bucket) |
+| STORAGE_BUCKETS | comprovantes-entrega (público, 8 objetos, 20MB) |
+| OS_LINK | entregas_protocolo.ordem_servico_id → ordens_servico.id (APENAS 2/51 = 3.9%) |
+| ALLOCATION_LINK | entregas_protocolo.alocacao_id → alocacoes_escala.id (51/51 = 100%) |
+| PROVIDER_LINK | entregas_protocolo.prestador_id → prestadores.id (51/51 = 100%) |
+| STATUS_FIELD | entregas_protocolo.status (entregue/entregue_ressalva/nao_entregue) |
+| COMPLETION_TIMESTAMP | entregas_protocolo.data_hora_entrega (51/51) |
+| RECEIVER_NAME | entregas_protocolo.nome_recebedor (51/51) |
+| RECEIVER_DOCUMENT | entregas_protocolo.documento_recebedor (parcial) |
+| PHOTOS | entregas_protocolo.foto_entrega_url (12/51), foto_canhoto_url (4/51) |
+| SIGNATURE | entregas_protocolo.assinatura_url (5/51) |
+| GEOLOCATION | entregas_protocolo.latitude/longitude (13/51) |
+| NOTES | entregas_protocolo.observacao (parcial) |
+| OCCURRENCES | ocorrencias (4 rows) + eventos_oficiais (342 rows) |
+| BAIXAS_EVIDENCIAS_COMPONENT | src/components/operacao/PodLista.tsx |
+| BAIXAS_EVIDENCIAS_QUERY | SELECT * FROM entregas_protocolo ORDER BY data_hora_entrega DESC LIMIT 20 (SEM JOINs) |
+| VER_COMPROVANTES_COMPONENT | src/components/comprovantes/EntregasComprovantes.tsx → DossieEntregaSheet.tsx |
+| VER_COMPROVANTES_QUERY | comprovantesService.buscarEntregasDaOS() → 4 queries com JOINs completos |
+| REAL_PRODUCTION_RELATIONSHIP_CONFIRMED | YES (51 entregas, 9 delivery_proofs, 8 storage objects, trigger confirmed) |
+| PRODUCTION_WRITES | 0 |
+
+---
+
+## 12. EVID_POD_DATA_TRACE = PARTIAL
+
+### Critérios PASS:
+- [x] Consegue explicar o caminho APP → banco → TMS
+- [x] Tabelas reais identificadas com dados confirmados
+- [x] Trigger confirmado e funcional
+- [x] Storage confirmado com objetos reais
+- [x] Todas as 5 rotas de leitura mapeadas
+
+### Critérios não atingidos:
+- [ ] Caminho completo APP → OS → TMS: **QUEBRADO** — 96% das entregas sem `ordem_servico_id`
+- [ ] PodLista mostra dados úteis: **NÃO** — mostra UUID fragmento em vez de OS number
+
+### Classificação: **PARTIAL**
+O fluxo de dados existe e funciona (APP → delivery_proofs → trigger → entregas_protocolo → TMS display). Porém, o vínculo entregas → OS é quase inexistente (3.9%), e o componente PodLista não faz JOINs para resolver os dados.
+
+---
+
+## 13. Próxima Micro-Missão (PROPOSTA — NÃO IMPLEMENTAR)
+
+**MISSÃO: FIX-POD-01-LIST** — Corrigir PodLista para usar comprovantesService
+
+**Escopo mínimo**:
+1. Substituir query direta em `PodLista.tsx:37-41` por chamada a `comprovantesService.listarComprovantes()`
+2. Renderizar OS number, cliente, motorista, veículo em vez de UUID fragmento
+3. Adicionar paginação (infinite scroll ou "carregar mais")
+4. Integrar `DossieEntregaSheet` no botão "Detalhes"
+
+**NÃO incluir**:
+- Correção do `ordem_servico_id` (requer migration/triggers separados)
+- Alteração de schema
+- Alteração de RLS
+- Alteração de financeiro
+
+**Arquivos**: `src/components/operacao/PodLista.tsx`, `src/services/comprovantes/comprovantesService.ts`

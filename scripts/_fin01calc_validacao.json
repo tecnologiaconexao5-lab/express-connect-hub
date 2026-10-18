@@ -1,0 +1,2690 @@
+{
+  "ts": "2026-10-04T22:39:55.698Z",
+  "checks": [
+    {
+      "name": "0_os_com_valor_encontradas",
+      "ok": true,
+      "detail": "25 OS com valores (limit 25)"
+    },
+    {
+      "name": "os_com_composicao_validadas",
+      "ok": true,
+      "detail": "25 OS encerradas validadas"
+    }
+  ],
+  "os": [
+    {
+      "id": "80235405-a4b6-4abb-a954-79ec03806baa",
+      "numero": "OS-202610-915214",
+      "status": "finalizada",
+      "valor_cliente": 300,
+      "custo_prestador": 250,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=300.00 os=300"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=250.00 os=250"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=13.5000000000000000 esp=13.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=3.00 esp=3"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=50.00 esp=50"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=33.5000000000000000 esp=33.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=16.67 esp=16.67"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=11.16666666666666666700 esp=11.17"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=250.00 esp=250"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 13.5,
+        "seguro": 3,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5
+      },
+      "composicao": {
+        "valor_cliente": 300,
+        "valor_prestador": 250,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 13.5,
+        "seguro_valor": 3,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5,
+        "pct_bruta": 16.67,
+        "pct_liquida": 11.166666666666666,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 250,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "250.00",
+          "valor_liquido": "250.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "50beacdb-aed6-41fe-a58e-16715c9f501a",
+      "numero": "OS-202609-207497",
+      "status": "finalizada",
+      "valor_cliente": 300,
+      "custo_prestador": 250,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=300.00 os=300"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=250.00 os=250"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=13.5000000000000000 esp=13.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=3.00 esp=3"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=50.00 esp=50"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=33.5000000000000000 esp=33.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=16.67 esp=16.67"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=11.16666666666666666700 esp=11.17"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=250.00 esp=250"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 13.5,
+        "seguro": 3,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5
+      },
+      "composicao": {
+        "valor_cliente": 300,
+        "valor_prestador": 250,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 13.5,
+        "seguro_valor": 3,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5,
+        "pct_bruta": 16.67,
+        "pct_liquida": 11.166666666666666,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 250,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "250.00",
+          "valor_liquido": "250.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "ddfeb834-637b-4c0d-b527-19fcfa6f63e8",
+      "numero": "OS-202609-347861",
+      "status": "cancelada",
+      "valor_cliente": 300,
+      "custo_prestador": 250,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=300.00 os=300"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=250.00 os=250"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=13.5000000000000000 esp=13.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=3.00 esp=3"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=50.00 esp=50"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=33.5000000000000000 esp=33.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=16.67 esp=16.67"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=11.16666666666666666700 esp=11.17"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=250.00 esp=250"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 13.5,
+        "seguro": 3,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5
+      },
+      "composicao": {
+        "valor_cliente": 300,
+        "valor_prestador": 250,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 13.5,
+        "seguro_valor": 3,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5,
+        "pct_bruta": 16.67,
+        "pct_liquida": 11.166666666666666,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 250,
+          "status": "cancelada"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "250.00",
+          "valor_liquido": "250.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "16d52718-195f-4bce-b63b-cf2c16a97c96",
+      "numero": "OS-202609-175861",
+      "status": "cancelada",
+      "valor_cliente": 300,
+      "custo_prestador": 250,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=300.00 os=300"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=250.00 os=250"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=13.5000000000000000 esp=13.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=3.00 esp=3"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=50.00 esp=50"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=33.5000000000000000 esp=33.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=16.67 esp=16.67"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=11.16666666666666666700 esp=11.17"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=250.00 esp=250"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 13.5,
+        "seguro": 3,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5
+      },
+      "composicao": {
+        "valor_cliente": 300,
+        "valor_prestador": 250,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 13.5,
+        "seguro_valor": 3,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5,
+        "pct_bruta": 16.67,
+        "pct_liquida": 11.166666666666666,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 250,
+          "status": "cancelada"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "250.00",
+          "valor_liquido": "250.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "1a0f5994-c50e-48cd-8475-552ac855083c",
+      "numero": "OS-202609-863875",
+      "status": "finalizada",
+      "valor_cliente": 300,
+      "custo_prestador": 250,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=300.00 os=300"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=250.00 os=250"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=13.5000000000000000 esp=13.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=3.00 esp=3"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=50.00 esp=50"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=33.5000000000000000 esp=33.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=16.67 esp=16.67"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=11.16666666666666666700 esp=11.17"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=250.00 os=250"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=250.00 esp=250"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 13.5,
+        "seguro": 3,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5
+      },
+      "composicao": {
+        "valor_cliente": 300,
+        "valor_prestador": 250,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 13.5,
+        "seguro_valor": 3,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 50,
+        "margem_liquida": 33.5,
+        "pct_bruta": 16.67,
+        "pct_liquida": 11.166666666666666,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 250,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "250.00",
+          "valor_liquido": "250.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "d1f34e73-a562-47c7-b057-ed079dd9b03a",
+      "numero": "ALOC-20260818-D1F34E73",
+      "status": "finalizada",
+      "valor_cliente": 600,
+      "custo_prestador": 520,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=600.00 os=600"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=520.00 os=520"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0.00 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=27.0000000000000000 esp=27 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=6.00 esp=6"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=80.00 esp=80"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=47.0000000000000000 esp=47"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=13.33 esp=13.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=7.83333333333333333300 esp=7.83"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=520.00 os=520"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=520.00 os=520"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=520.00 esp=520"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 27,
+        "seguro": 6,
+        "margem_bruta": 80,
+        "margem_liquida": 47
+      },
+      "composicao": {
+        "valor_cliente": 600,
+        "valor_prestador": 520,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 27,
+        "seguro_valor": 6,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 80,
+        "margem_liquida": 47,
+        "pct_bruta": 13.33,
+        "pct_liquida": 7.833333333333333,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 520,
+          "status": "pago"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "520.00",
+          "valor_liquido": "520.00",
+          "pedagio": "0",
+          "adicionais": "0.00"
+        }
+      }
+    },
+    {
+      "id": "58e5751e-bd54-43c5-9bcf-55fe4e575e6b",
+      "numero": "ALOC-20260817-58E5751E",
+      "status": "finalizada",
+      "valor_cliente": 600,
+      "custo_prestador": 520,
+      "pedagio": 66.43,
+      "adicionais": 66.43,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=600.00 os=600"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=520.00 os=520"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=66.43 esp=66.43"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=27.0000000000000000 esp=27 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=6.00 esp=6"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=-52.86 esp=-52.86"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=-85.8600000000000000 esp=-85.86"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=-8.81 esp=-8.81"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=-14.31000000000000000000 esp=-14.31"
+        },
+        {
+          "name": "receber_valor",
+          "ok": true,
+          "detail": "AR=600.00 os=600"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": false,
+          "detail": "AP=652.86 os=520"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=520.00 os=520"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=652.86 esp=652.86"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 66.43,
+        "imposto": 27,
+        "seguro": 6,
+        "margem_bruta": -52.86,
+        "margem_liquida": -85.86
+      },
+      "composicao": {
+        "valor_cliente": 600,
+        "valor_prestador": 520,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 27,
+        "seguro_valor": 6,
+        "pedagio_valor": 66.43,
+        "outros_custos": 66.43,
+        "margem_bruta": -52.86,
+        "margem_liquida": -85.86,
+        "pct_bruta": -8.81,
+        "pct_liquida": -14.31,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": {
+          "valor": 600,
+          "status": "cancelado"
+        },
+        "pagar": {
+          "valor": 652.86,
+          "status": "parcial"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "520.00",
+          "valor_liquido": "652.86",
+          "pedagio": "66.43",
+          "adicionais": "66.43"
+        }
+      }
+    },
+    {
+      "id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+      "numero": "ALOC-20260712-C0A7EE88",
+      "status": "finalizada",
+      "valor_cliente": 2000,
+      "custo_prestador": 1100,
+      "pedagio": 60,
+      "adicionais": 120,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=2000.00 os=2000"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1100.00 os=1100"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=120.00 esp=120"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=90.0000000000000000 esp=90 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=20.00 esp=20"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=720.00 esp=720"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=610.0000000000000000 esp=610"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=36.00 esp=36"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=30.50000000000000000000 esp=30.5"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": false,
+          "detail": "AP=1280.00 os=1100"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1100.00 os=1100"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=1280.00 esp=1280"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 120,
+        "imposto": 90,
+        "seguro": 20,
+        "margem_bruta": 720,
+        "margem_liquida": 610
+      },
+      "composicao": {
+        "valor_cliente": 2000,
+        "valor_prestador": 1100,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 90,
+        "seguro_valor": 20,
+        "pedagio_valor": 60,
+        "outros_custos": 120,
+        "margem_bruta": 720,
+        "margem_liquida": 610,
+        "pct_bruta": 36,
+        "pct_liquida": 30.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1280,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1100.00",
+          "valor_liquido": "1280.00",
+          "pedagio": "60",
+          "adicionais": "120.00"
+        }
+      }
+    },
+    {
+      "id": "38961ecf-4c62-4a87-a614-ec9092c988e4",
+      "numero": "OS-GO-LIVE-202607-125512",
+      "status": "finalizada",
+      "valor_cliente": 0,
+      "custo_prestador": 800,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "escala_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": false,
+          "detail": "comp=1500.00 os=0"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=800.00 os=800"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": false,
+          "detail": "comp=67.5000000000000000 esp=0 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": false,
+          "detail": "comp=15.00 esp=0"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": false,
+          "detail": "comp=700.00 esp=-800"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=617.5000000000000000 esp=-800"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=46.67 esp=0"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=41.16666666666666666700 esp=0"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=800.00 os=800"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=800.00 os=800"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=800.00 esp=800"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 0,
+        "seguro": 0,
+        "margem_bruta": -800,
+        "margem_liquida": -800
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 800,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 67.5,
+        "seguro_valor": 15,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 700,
+        "margem_liquida": 617.5,
+        "pct_bruta": 46.67,
+        "pct_liquida": 41.166666666666664,
+        "origem_calculo": "escala_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 800,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "800.00",
+          "valor_liquido": "800.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "2073a75d-62f7-453d-b4e3-eaf3e8ea212b",
+      "numero": "OS-GO-LIVE-202607-261321",
+      "status": "finalizada",
+      "valor_cliente": 0,
+      "custo_prestador": 800,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "escala_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": false,
+          "detail": "comp=1500.00 os=0"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=800.00 os=800"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": false,
+          "detail": "comp=67.5000000000000000 esp=0 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": false,
+          "detail": "comp=15.00 esp=0"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": false,
+          "detail": "comp=700.00 esp=-800"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=617.5000000000000000 esp=-800"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=46.67 esp=0"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=41.16666666666666666700 esp=0"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=800.00 os=800"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=800.00 os=800"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=800.00 esp=800"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 0,
+        "seguro": 0,
+        "margem_bruta": -800,
+        "margem_liquida": -800
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 800,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 67.5,
+        "seguro_valor": 15,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 700,
+        "margem_liquida": 617.5,
+        "pct_bruta": 46.67,
+        "pct_liquida": 41.166666666666664,
+        "origem_calculo": "escala_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 800,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "800.00",
+          "valor_liquido": "800.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "0733bb97-8356-434c-bbdf-35d70bc0ff08",
+      "numero": "ALOC-20260705-0733BB97",
+      "status": "finalizada",
+      "valor_cliente": 2000,
+      "custo_prestador": 1100,
+      "pedagio": 60,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=2000 os=2000"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1100 os=1100"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": false,
+          "detail": "comp=120 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=90.0000000000000000 esp=90 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=20.00 esp=20"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": false,
+          "detail": "comp=720 esp=840"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=610.0000000000000000 esp=730"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=36.00 esp=42"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=30.50000000000000000000 esp=36.5"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1100 os=1100"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1100.00 os=1100"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": false,
+          "detail": "liq=1280.00 esp=1160"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 90,
+        "seguro": 20,
+        "margem_bruta": 840,
+        "margem_liquida": 730
+      },
+      "composicao": {
+        "valor_cliente": 2000,
+        "valor_prestador": 1100,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 90,
+        "seguro_valor": 20,
+        "pedagio_valor": 60,
+        "outros_custos": 120,
+        "margem_bruta": 720,
+        "margem_liquida": 610,
+        "pct_bruta": 36,
+        "pct_liquida": 30.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1100,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1100.00",
+          "valor_liquido": "1280.00",
+          "pedagio": "60",
+          "adicionais": "120"
+        }
+      }
+    },
+    {
+      "id": "88f80b32-fe2b-4e4b-beaa-5a537a4b7e7d",
+      "numero": "M66-MR6JVPDH",
+      "status": "finalizada",
+      "valor_cliente": 150,
+      "custo_prestador": 60,
+      "pedagio": 18.5,
+      "adicionais": 25,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=150 os=150"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=60 os=60"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=25 esp=25"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=6.7500000000000000 esp=6.75 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=1.50 esp=1.5"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=46.5 esp=46.5"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=38.2500000000000000 esp=38.25"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=31.00 esp=31"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=25.50000000000000000000 esp=25.5"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": false,
+          "detail": "AP=103.50 os=60"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 25,
+        "imposto": 6.75,
+        "seguro": 1.5,
+        "margem_bruta": 46.5,
+        "margem_liquida": 38.25
+      },
+      "composicao": {
+        "valor_cliente": 150,
+        "valor_prestador": 60,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 6.75,
+        "seguro_valor": 1.5,
+        "pedagio_valor": 18.5,
+        "outros_custos": 25,
+        "margem_bruta": 46.5,
+        "margem_liquida": 38.25,
+        "pct_bruta": 31,
+        "pct_liquida": 25.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 103.5,
+          "status": "aberto"
+        },
+        "pagamento_prestador": null
+      }
+    },
+    {
+      "id": "9f9130ba-eefb-420f-8071-be0d7dd8af30",
+      "numero": "OS-202606-323721",
+      "status": "finalizada",
+      "valor_cliente": 1500,
+      "custo_prestador": 850,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=1500 os=1500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=850 os=850"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=67.5000000000000000 esp=67.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=15.00 esp=15"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=650 esp=650"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=567.5000000000000000 esp=567.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": true,
+          "detail": "comp=43.33 esp=43.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=37.83333333333333333300 esp=37.83"
+        },
+        {
+          "name": "receber_valor",
+          "ok": true,
+          "detail": "AR=1500 os=1500"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=850.00 os=850"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 67.5,
+        "seguro": 15,
+        "margem_bruta": 650,
+        "margem_liquida": 567.5
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 850,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 67.5,
+        "seguro_valor": 15,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 650,
+        "margem_liquida": 567.5,
+        "pct_bruta": 43.33,
+        "pct_liquida": 37.833333333333336,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": {
+          "valor": 1500,
+          "status": "aberto"
+        },
+        "pagar": {
+          "valor": 850,
+          "status": "aberto"
+        },
+        "pagamento_prestador": null
+      }
+    },
+    {
+      "id": "ca9f55b2-47eb-437f-8ea1-55263597e862",
+      "numero": "OS_AUDIT_1777345821602",
+      "status": "entregue",
+      "valor_cliente": 2500,
+      "custo_prestador": 1800,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=2500 os=2500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1800 os=1800"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": false,
+          "detail": "comp=25 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=112.5000000000000000 esp=112.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=25 esp=25"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": false,
+          "detail": "comp=625 esp=700"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=487.5000000000000000 esp=562.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=28"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=19.50000000000000000000 esp=22.5"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 112.5,
+        "seguro": 25,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5
+      },
+      "composicao": {
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 112.5,
+        "seguro_valor": 25,
+        "pedagio_valor": 50,
+        "outros_custos": 25,
+        "margem_bruta": 625,
+        "margem_liquida": 487.5,
+        "pct_bruta": 0,
+        "pct_liquida": 19.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": null,
+        "pagamento_prestador": null
+      }
+    },
+    {
+      "id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+      "numero": "OS-M43_2026-06-29_18-31-00",
+      "status": "em_andamento",
+      "valor_cliente": 2900,
+      "custo_prestador": 1000,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": false,
+          "detail": "comp=1500 os=2900"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1000 os=1000"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": false,
+          "detail": "comp=67.5000000000000000 esp=130.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": false,
+          "detail": "comp=15.00 esp=29"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": false,
+          "detail": "comp=500 esp=1900"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=417.5000000000000000 esp=1740.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=65.52"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=27.83333333333333333300 esp=60.02"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1000 os=1000"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 130.5,
+        "seguro": 29,
+        "margem_bruta": 1900,
+        "margem_liquida": 1740.5
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 67.5,
+        "seguro_valor": 15,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 500,
+        "margem_liquida": 417.5,
+        "pct_bruta": 0,
+        "pct_liquida": 27.833333333333332,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1000,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": null
+      }
+    },
+    {
+      "id": "8aca4262-b27e-467a-bf95-fd85d952bde2",
+      "numero": "OS-REDE-M48_2026-06-29_21-47-50",
+      "status": "finalizada",
+      "valor_cliente": 1800,
+      "custo_prestador": 1200,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=1800 os=1800"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1200 os=1200"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=81.0000000000000000 esp=81 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=18.00 esp=18"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=600 esp=600"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=501.0000000000000000 esp=501"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=33.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=27.83333333333333333300 esp=27.83"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1200 os=1200"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1200.00 os=1200"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=1200.00 esp=1200"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 81,
+        "seguro": 18,
+        "margem_bruta": 600,
+        "margem_liquida": 501
+      },
+      "composicao": {
+        "valor_cliente": 1800,
+        "valor_prestador": 1200,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 81,
+        "seguro_valor": 18,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 600,
+        "margem_liquida": 501,
+        "pct_bruta": 0,
+        "pct_liquida": 27.833333333333332,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1200,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1200.00",
+          "valor_liquido": "1200.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "bff76814-3149-408c-b5f8-467f1ff178a4",
+      "numero": "OS-M43_2026-06-29_21-47-50",
+      "status": "finalizada",
+      "valor_cliente": 1500,
+      "custo_prestador": 1000,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=1500 os=1500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1000 os=1000"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": false,
+          "detail": "comp=0.00000000000000000000 esp=67.5 pct=0"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": false,
+          "detail": "comp=0 esp=15"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=500 esp=500"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=33.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1000 os=1000"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1000.00 os=1000"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": false,
+          "detail": "liq=0.00 esp=1000"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 67.5,
+        "seguro": 15,
+        "margem_bruta": 500,
+        "margem_liquida": 417.5
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "imposto_percentual": 0,
+        "imposto_valor": 0,
+        "seguro_valor": 0,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "pct_bruta": 0,
+        "pct_liquida": 33.333333333333336,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1000,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1000.00",
+          "valor_liquido": "0.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "93014234-8dc8-408c-b724-f0ef79ce284b",
+      "numero": "OS-MOTO-M48_2026-06-29_21-47-50",
+      "status": "finalizada",
+      "valor_cliente": 80,
+      "custo_prestador": 50,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=80 os=80"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=50 os=50"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=3.6000000000000000 esp=3.6 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=0.80 esp=0.8"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=30 esp=30"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=25.6000000000000000 esp=25.6"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=37.5"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=32.00000000000000000000 esp=32"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=50 os=50"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=50.00 os=50"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=50.00 esp=50"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 3.6,
+        "seguro": 0.8,
+        "margem_bruta": 30,
+        "margem_liquida": 25.6
+      },
+      "composicao": {
+        "valor_cliente": 80,
+        "valor_prestador": 50,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 3.6,
+        "seguro_valor": 0.8,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 30,
+        "margem_liquida": 25.6,
+        "pct_bruta": 0,
+        "pct_liquida": 32,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 50,
+          "status": "aberto"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "50.00",
+          "valor_liquido": "50.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+      "numero": "OS-DIR-M48_2026-06-29_21-47-50",
+      "status": "finalizada",
+      "valor_cliente": 3200,
+      "custo_prestador": 2100,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=3200 os=3200"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=2100 os=2100"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=144.0000000000000000 esp=144 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=32.00 esp=32"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=1100 esp=1100"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=924.0000000000000000 esp=924"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=34.38"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=28.87500000000000000000 esp=28.88"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=2100 os=2100"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=2100.00 os=2100"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=2100.00 esp=2100"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 144,
+        "seguro": 32,
+        "margem_bruta": 1100,
+        "margem_liquida": 924
+      },
+      "composicao": {
+        "valor_cliente": 3200,
+        "valor_prestador": 2100,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 144,
+        "seguro_valor": 32,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 1100,
+        "margem_liquida": 924,
+        "pct_bruta": 0,
+        "pct_liquida": 28.875,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 2100,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "2100.00",
+          "valor_liquido": "2100.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "fdd3e5ce-6736-4b6a-aa41-f837d4f5f219",
+      "numero": "OS-DED-M48_2026-06-29_21-47-50",
+      "status": "finalizada",
+      "valor_cliente": 2500,
+      "custo_prestador": 1800,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=2500 os=2500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1800 os=1800"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=112.5000000000000000 esp=112.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=25.00 esp=25"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=700 esp=700"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=562.5000000000000000 esp=562.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=28"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=22.50000000000000000000 esp=22.5"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1800 os=1800"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1800.00 os=1800"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": false,
+          "detail": "liq=0.00 esp=1800"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 112.5,
+        "seguro": 25,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5
+      },
+      "composicao": {
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 112.5,
+        "seguro_valor": 25,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5,
+        "pct_bruta": 0,
+        "pct_liquida": 22.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1800,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1800.00",
+          "valor_liquido": "0.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "63129749-7e22-4088-97f3-52e0bd13d385",
+      "numero": "OS-REDE-M48_2026-06-29_21-31-34",
+      "status": "finalizada",
+      "valor_cliente": 1800,
+      "custo_prestador": 1200,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=1800 os=1800"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1200 os=1200"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=81.0000000000000000 esp=81 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=18.00 esp=18"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=600 esp=600"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=501.0000000000000000 esp=501"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=33.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=27.83333333333333333300 esp=27.83"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1200 os=1200"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1200.00 os=1200"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=1200.00 esp=1200"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 81,
+        "seguro": 18,
+        "margem_bruta": 600,
+        "margem_liquida": 501
+      },
+      "composicao": {
+        "valor_cliente": 1800,
+        "valor_prestador": 1200,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 81,
+        "seguro_valor": 18,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 600,
+        "margem_liquida": 501,
+        "pct_bruta": 0,
+        "pct_liquida": 27.833333333333332,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1200,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1200.00",
+          "valor_liquido": "1200.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+      "numero": "OS-MOTO-M48_2026-06-29_21-31-34",
+      "status": "finalizada",
+      "valor_cliente": 80,
+      "custo_prestador": 50,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=80 os=80"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=50 os=50"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=3.6000000000000000 esp=3.6 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=0.80 esp=0.8"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=30 esp=30"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=25.6000000000000000 esp=25.6"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=37.5"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=32.00000000000000000000 esp=32"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=50 os=50"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=50.00 os=50"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=50.00 esp=50"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 3.6,
+        "seguro": 0.8,
+        "margem_bruta": 30,
+        "margem_liquida": 25.6
+      },
+      "composicao": {
+        "valor_cliente": 80,
+        "valor_prestador": 50,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 3.6,
+        "seguro_valor": 0.8,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 30,
+        "margem_liquida": 25.6,
+        "pct_bruta": 0,
+        "pct_liquida": 32,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 50,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "50.00",
+          "valor_liquido": "50.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+      "numero": "OS-DIR-M48_2026-06-29_21-31-34",
+      "status": "finalizada",
+      "valor_cliente": 3200,
+      "custo_prestador": 2100,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=3200 os=3200"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=2100 os=2100"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=144.0000000000000000 esp=144 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=32.00 esp=32"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=1100 esp=1100"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=924.0000000000000000 esp=924"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=34.38"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=28.87500000000000000000 esp=28.88"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=2100 os=2100"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=2100.00 os=2100"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": true,
+          "detail": "liq=2100.00 esp=2100"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 144,
+        "seguro": 32,
+        "margem_bruta": 1100,
+        "margem_liquida": 924
+      },
+      "composicao": {
+        "valor_cliente": 3200,
+        "valor_prestador": 2100,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 144,
+        "seguro_valor": 32,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 1100,
+        "margem_liquida": 924,
+        "pct_bruta": 0,
+        "pct_liquida": 28.875,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 2100,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "2100.00",
+          "valor_liquido": "2100.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+      "numero": "OS-DED-M48_2026-06-29_21-31-34",
+      "status": "finalizada",
+      "valor_cliente": 2500,
+      "custo_prestador": 1800,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=2500 os=2500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1800 os=1800"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": true,
+          "detail": "comp=112.5000000000000000 esp=112.5 pct=4.5"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": true,
+          "detail": "comp=25.00 esp=25"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=700 esp=700"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": true,
+          "detail": "comp=562.5000000000000000 esp=562.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=28"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": true,
+          "detail": "comp=22.50000000000000000000 esp=22.5"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1800 os=1800"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1800.00 os=1800"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": false,
+          "detail": "liq=0.00 esp=1800"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 112.5,
+        "seguro": 25,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5
+      },
+      "composicao": {
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "imposto_percentual": 4.5,
+        "imposto_valor": 112.5,
+        "seguro_valor": 25,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5,
+        "pct_bruta": 0,
+        "pct_liquida": 22.5,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1800,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1800.00",
+          "valor_liquido": "0.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    },
+    {
+      "id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+      "numero": "OS-M43_2026-06-29_21-28-01",
+      "status": "finalizada",
+      "valor_cliente": 1500,
+      "custo_prestador": 1000,
+      "pedagio": 0,
+      "adicionais": 0,
+      "ajudante": 0,
+      "descontos": 0,
+      "origem_calculo": "os_direta",
+      "checks": [
+        {
+          "name": "comp_valor_cliente",
+          "ok": true,
+          "detail": "comp=1500 os=1500"
+        },
+        {
+          "name": "comp_valor_prestador",
+          "ok": true,
+          "detail": "comp=1000 os=1000"
+        },
+        {
+          "name": "comp_outros_custos",
+          "ok": true,
+          "detail": "comp=0 esp=0"
+        },
+        {
+          "name": "comp_imposto_4_5",
+          "ok": false,
+          "detail": "comp=0.00000000000000000000 esp=67.5 pct=0"
+        },
+        {
+          "name": "comp_seguro_1",
+          "ok": false,
+          "detail": "comp=0 esp=15"
+        },
+        {
+          "name": "comp_margem_bruta",
+          "ok": true,
+          "detail": "comp=500 esp=500"
+        },
+        {
+          "name": "comp_margem_liquida",
+          "ok": false,
+          "detail": "comp=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "comp_pct_bruta",
+          "ok": false,
+          "detail": "comp=0 esp=33.33"
+        },
+        {
+          "name": "comp_pct_liquida",
+          "ok": false,
+          "detail": "comp=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "pagar_valor",
+          "ok": true,
+          "detail": "AP=1000 os=1000"
+        },
+        {
+          "name": "pagamento_prestador_servicos",
+          "ok": true,
+          "detail": "serv=1000.00 os=1000"
+        },
+        {
+          "name": "pagamento_prestador_liquido",
+          "ok": false,
+          "detail": "liq=0.00 esp=1000"
+        }
+      ],
+      "esperado": {
+        "outros_custos": 0,
+        "imposto": 67.5,
+        "seguro": 15,
+        "margem_bruta": 500,
+        "margem_liquida": 417.5
+      },
+      "composicao": {
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "imposto_percentual": 0,
+        "imposto_valor": 0,
+        "seguro_valor": 0,
+        "pedagio_valor": 0,
+        "outros_custos": 0,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "pct_bruta": 0,
+        "pct_liquida": 33.333333333333336,
+        "origem_calculo": "os_direta"
+      },
+      "financeiro": {
+        "receber": null,
+        "pagar": {
+          "valor": 1000,
+          "status": "cancelado"
+        },
+        "pagamento_prestador": {
+          "valor_servicos": "1000.00",
+          "valor_liquido": "0.00",
+          "pedagio": "0",
+          "adicionais": "0"
+        }
+      }
+    }
+  ],
+  "resumo": {
+    "os": {
+      "n": 167,
+      "finalizadas": 35,
+      "com_valor_cliente": 135,
+      "com_custo_prestador": 118
+    },
+    "composicoes": 57,
+    "tabelas_valores": 7,
+    "tabela_prestador": 1,
+    "margens_liquidas_negativas": 1,
+    "checks_gerais": 2,
+    "checks_os": 293,
+    "falhas_os": 57
+  },
+  "colunas_ordens_servico": [
+    "adicionais",
+    "ajudante",
+    "custo_prestador",
+    "descontos",
+    "pedagio",
+    "status",
+    "valor_cliente"
+  ],
+  "tem_os_valores": null
+}

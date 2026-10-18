@@ -1,0 +1,181 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04A-NEUTRALIZAR-TESTES-SEM-CONFLITO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: ESCRITA controlada (UPDATE soft + DELETE de teste). OS NAO deletadas.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+27 OS A/B neutralizadas (soft, status='cancelada'); 36 dos 46 TESTE-BLOCKED removidos.
+10 permanecem vinculados as 6 OS CONFLITO (intocadas). Nenhuma recriacao M66/M80.
+P0 = 0. Nenhum cadastro real alterado.
+
+--------------------------------------------------------------------------------
+1. REVALIDACAO PREVIA (antes de escrever)
+--------------------------------------------------------------------------------
+Escopo: SOMENTE classes A (12) + B (15) = 27 OS. As 6 OS CONFLITO (C) foram excluidas.
+Revalidacao (27 OS A/B):
+  fiscal_ctes/nfse/mdfes/documentos_vinculados .... 0 / 0 / 0 / 0
+  fatura_itens .................................... 0
+  rede_oportunidades .............................. 0
+  => nenhuma ganhou dependencia real nova. Nenhuma retirada/BLOCKED por esse critério.
+
+--------------------------------------------------------------------------------
+2. BACKUP NOVO (independente do DATA-02) — comprovado ANTES da escrita
+--------------------------------------------------------------------------------
+Diretorio ..: express-connect-hub\backups\
+SQL  .......: TMS-FIN-DATA-02_backup_2026-09-24T23-39-04-194Z.sql
+  bytes ....: 449.757
+  sha256 ...: d1663e2f4e409564c71806e43fffcea26609e26894b93fd3a5fb70dff2dc1842
+JSON .......: TMS-FIN-DATA-02_backup_2026-09-24T23-39-04-194Z.json
+  bytes ....: 548.521
+  sha256 ...: 1fbb0700a02619c49d93a28e948f66aec91fca1400a359d033ccdab511c63528
+Data/hora ..: 2026-09-24T23:39:04Z (20:39 local)
+Formato ....: snapshot FULL das 9 tabelas; restauravel via json_populate_recordset.
+Registros por tabela no backup:
+  financeiro_baixas 12 | financeiro_receber 65 | financeiro_pagar 126
+  pagamentos_prestadores 108 | pagamentos_prestadores_itens 0 | faturas 8
+  fatura_itens 45 | composicao_financeira_os 59 | financeiro_transferencias 1
+
+--------------------------------------------------------------------------------
+3. ESTRATEGIA (schema real — SEM coluna nova inventada)
+--------------------------------------------------------------------------------
+Neutralizacao SOFT via ordens_servico.status='cancelada'. Comprovado no codigo real das
+funcoes:
+  - f_trg_propagar_financeiro_os(): RETURN NEW (no-op) quando NEW.status='cancelada'
+    (ou valor_cliente=0 E custo_prestador=0).
+  - f_trg_propagar_financeiro_alocacao(): RETURN NEW quando status='cancelada'.
+=> Nenhuma coluna nova criada; nenhum DDL. Historico/auditoria preservados.
+
+--------------------------------------------------------------------------------
+4. EXECUCAO (transacao unica — COMMIT OK)
+--------------------------------------------------------------------------------
+ 1. alocacoes_escala -> status='cancelada' ................ 7 (1 ja estava)
+ 2. ordens_servico   -> status='cancelada' ................ 19 (8 ja estavam) = 27/27
+ 3. financeiro_receber  DELETE (ids A/B) .................. 13
+ 4. financeiro_pagar    DELETE (ids A/B) .................. 12
+ 5. pagamentos_prestadores DELETE (ids A/B) ............... 11
+ 6. composicao_financeira_os DELETE (OS A/B) .............. 7
+ 7. entregas_protocolo  DELETE (POD teste) ................ 3
+ 8. patio_checkins      DELETE ............................ 1
+ 9. operacao_localizacao DELETE ........................... 1
+10. portal_tracking_realtime DELETE ....................... 1
+Ordem: cancelar OS/alocacoes (triggers no-op) ANTES de deletar financeiro.
+Nenhuma OS foi removida fisicamente. Nenhum cadastro alterado.
+
+--------------------------------------------------------------------------------
+5. ANTES / DEPOIS (contagens e valores)
+--------------------------------------------------------------------------------
+TABELA                   | ANTES | DEPOIS | DELTA | VALOR ANTES   | VALOR DEPOIS
+----------------------------------------------------------------------------------------
+financeiro_receber       |   65  |   52   |  -13  | R$ 58.578,83  | R$ 41.009,83
+financeiro_pagar         |  126  |  114   |  -12  | R$ 90.967,81  | R$ 80.468,31
+pagamentos_prestadores   |  108  |   97   |  -11  | R$ 77.766,46  | R$ 68.222,46
+composicao_financeira_os |   59  |   52   |   -7  |      -        |      -
+entregas_protocolo       |   52  |   49   |   -3  |      -        |      -
+faturas                  |    8  |    8   |    0  | R$ 13.320,45  | R$ 13.320,45
+financeiro_baixas        |   12  |   12   |    0  |      -        |      -
+ordens_servico is_teste  |   33  |   33   |    0 (soft: 27 canceladas + 6 C ativas)
+
+VALORES REMOVIDOS (TESTE CONFIRMADO A/B):
+  financeiro_receber ......... R$ 17.569,00
+  financeiro_pagar ........... R$ 10.499,50
+  pagamentos_prestadores ..... R$  9.544,00
+  -------------------------------------------------
+  TOTAL REMOVIDO ............. R$ 37.612,50 (36 registros)
+
+--------------------------------------------------------------------------------
+6. PROVAS A–L
+--------------------------------------------------------------------------------
+A) Quantas das 27 foram neutralizadas: 27/27 (todas status='cancelada').
+B) Quantas ficaram BLOCKED: 0 nesta missao (todas A/B neutralizadas).
+   Residuo de "blocked" = 10 financeiros presos as 6 OS CONFLITO (fora do escopo).
+C) AR/AP/PP teste removidos: AR 13 + AP 12 + PP 11 = 36.
+D) Composicao removida: 7 (59->52). Nenhuma composicao de OS CONFLITO tocada.
+E) Rede de teste encerrada: 0 (as 27 A/B NAO possuem rede_oportunidades).
+   Rede existente (5) pertence as OS C — intocada.
+F) Historico preservado: os_historico das 33 OS teste = 49 (inalterado). OS mantidas.
+G) Nenhum cadastro real alterado: clientes 28, prestadores 40 (inalterados).
+H) Nenhuma das 6 C alterada: status originais (rascunho/agendada/pendente) e
+   financeiro vinculado intacto (AR 6 / AP 2 / PP 2).
+I) Nenhum REAL/DUVIDOSO excluido: residuos is_teste = AR6/AP2/PP2 (apenas C);
+   faturas 8 e baixas 12 intactas; AP orfaos 34 (is_teste=false) intactos.
+J) Nenhuma recriacao financeira: teste de "touch" (UPDATE updated_at nas 27 OS) dentro
+   da transacao => delta AR/AP/PP = 0,0,0. Triggers M66/M80 no-op confirmado.
+K) Nenhum NOVO orfao: AR os_id orfaos=2 e AP os_id orfaos=34, TODOS pre-existentes
+   (is_teste=false, referencias textuais antigas); baixa orfa=0.
+L) P0 = 0: RPC f_criar_recebivel_manual presente (A6 intacta); nenhum P0 aberto.
+
+--------------------------------------------------------------------------------
+7. TESTE-BLOCKED — LIBERADOS x PRESOS
+--------------------------------------------------------------------------------
+Total anterior (DATA-02) ......................... 46
+  removidos nesta DATA-04A (A/B) ................. 36
+  continuam vinculados as 6 OS CONFLITO .......... 10
+    - financeiro_receber .. 6
+    - financeiro_pagar .... 2
+    - pagamentos_prestadores 2
+Os 10 restantes NAO podem ser removidos enquanto as 6 OS C nao forem tratadas
+(rede publicada/aceita + entidades reais: Cydak do Brasil, FRANKLIN).
+
+--------------------------------------------------------------------------------
+8. RECALCULO POS-EXECUCAO
+--------------------------------------------------------------------------------
+  financeiro_receber ........... 52 (R$ 41.009,83)
+  financeiro_pagar ............. 114 (R$ 80.468,31)
+  pagamentos_prestadores ....... 97 (R$ 68.222,46)
+  faturas ...................... 8
+  financeiro_baixas ............ 12
+  OS is_teste .................. 33 (27 canceladas [soft] + 6 C ativas)
+  orfaos ....................... AR 2 (pre) | AP 34 (pre) | baixas 0
+  AR pago sem baixa ............ 2
+  AP pago sem baixa ............ 0
+  pagamentos_prestadores pagos . 5
+  faturas emitidas sem AR ...... 1
+
+--------------------------------------------------------------------------------
+9. RESIDUOS / P1 ATUALIZADOS
+--------------------------------------------------------------------------------
+- is_teste residual: AR 6 / AP 2 / PP 2 — todos ligados as 6 OS CONFLITO (BLOCKED).
+- Duplicidades DUVIDOSAS remanescentes: inalteradas (fora do escopo).
+- 1 fatura Calvo R$1.200 sem AR; 2 AR pagos sem baixa; 5 PP pagos: NAO tratados
+  (conforme instrucao).
+- composicao_financeira_os das OS C permanece (nao tocada).
+
+--------------------------------------------------------------------------------
+10. INTEGRIDADE / ROLLBACK
+--------------------------------------------------------------------------------
+- Backup novo gravado e hasheado ANTES da escrita (item 2).
+- Transacao unica; COMMIT confirmado; sem erro; sem cascade indesejado.
+- Trigger M80 nao recriou registros (prova J).
+- Rollback: restaurar via
+    psql -f backups\TMS-FIN-DATA-02_backup_2026-09-24T23-39-04-194Z.sql
+  (repopula as 9 tabelas) + reverter status das 27 OS para os valores originais.
+
+--------------------------------------------------------------------------------
+11. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 27/27 OS A/B neutralizadas (soft) e 36 TESTE-BLOCKED removidos com prova de
+nao recriacao. 6 OS CONFLITO e 10 financeiros vinculados permanecem intocados.
+P0 = 0. Nenhum cadastro REAL tocado.
+
+--------------------------------------------------------------------------------
+12. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04B — TRATAMENTO DAS 6 OS CONFLITO: encerrar rede_oportunidades
+(5 publicadas/1 aceita), validar entidades reais (Cydak do Brasil, FRANKLIN),
+neutralizar as 6 OS de teste e liberar os 10 financeiros restantes — com autorizacao
+de escrita e novo backup. Requer alinhamento com Comercial/Rede.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04A-NEUTRALIZAR-TESTES-SEM-CONFLITO-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04A-NEUTRALIZAR-TESTES-SEM-CONFLITO-RESULTADO.txt
+Tamanho ..: 10478 bytes
+Data .....: 24/09/2026 20:40:13
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04A
+================================================================================

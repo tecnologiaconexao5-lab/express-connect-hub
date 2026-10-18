@@ -1,0 +1,125 @@
+FIN-MOT-2O — PREPARAR NUMERAÇÃO HUMANA EP NA ESTRUTURA REAL
+Data: 21/08/2026
+Status: MIGRATION CRIADA E VALIDADA LOCALMENTE (NÃO APLICADA)
+
+============================================================
+MIGRATION CRIADA
+============================================================
+
+Arquivo:
+supabase/migrations/20260821_fin_mot_2o_numeracao_extrato_prestador.sql
+
+Conteúdo (aditivo, mínimo, sobre public.pagamentos_prestadores):
+
+A) Coluna aditiva:
+   ALTER TABLE public.pagamentos_prestadores
+     ADD COLUMN IF NOT EXISTS numero_fechamento TEXT;
+   (NULL — registros históricos permanecem NULL, sem backfill)
+
+B) UNIQUE parcial:
+   CREATE UNIQUE INDEX uq_pagamentos_prestadores_numero_fechamento
+     ON public.pagamentos_prestadores (numero_fechamento)
+     WHERE numero_fechamento IS NOT NULL;
+   (impede duplicidade quando preenchido; não afeta históricos NULL)
+
+C) SEQUENCE anual:
+   CREATE SEQUENCE IF NOT EXISTS public.seq_extrato_prestador_2026 START 1;
+   (RPC cria sequências de anos futuros on-demand — mesmo padrão fatura)
+
+D) RPC:
+   f_gerar_numero_extrato_prestador()
+   Formato: EP-AAAA-000001
+   Usa nextval (atômico) — SEM MAX+1.
+   Espelha f_gerar_numero_fatura: ano + seq on-demand + LPAD 6 dígitos.
+
+E) Segurança:
+   REVOKE ALL ... FROM PUBLIC;
+   GRANT EXECUTE ... TO authenticated;
+   Requer auth.uid() (retorna NULL sem sessão autenticada).
+   Não altera RLS de pagamentos_prestadores. Nada aberto a anon.
+
+============================================================
+VALIDAÇÃO LOCAL (transação descartada — produção preservada)
+============================================================
+
+Executado BEGIN → migration → ROLLBACK contra o banco de produção
+(SOMENTE para validar sintaxe/DDL; nada persistiu):
+
+- SQL_VALIDO: migration aplicável sem erros.
+- COLUNA: numero_fechamento text nullable=YES ✓
+- INDICE: UNIQUE parcial (WHERE numero_fechamento IS NOT NULL) ✓
+- RPC: criada (definição idêntica ao padrão fatura) ✓
+- NUMERO_EMITIDO_DENTRO_DE_TX: null → comportamento CORRETO (RPC exige
+  auth.uid(); conexão de validação sem sessão retorna NULL, como a fatura)
+- ROLLBACK_OK: nenhuma alteração persistida.
+- APÓS ROLLBACK: seq=null, rpc=0, coluna=0 → produção intacta.
+
+Comparação com f_gerar_numero_fatura (padrão do projeto):
+  sequence anual   ✓  (seq_extrato_prestador_<ANO> on-demand)
+  nextval          ✓  (atômico, serializa concorrência)
+  padding 6 dígitos ✓ (LPAD(v_numero, 6, '0'))
+  sem MAX+1        ✓
+  auth.uid() guard ✓
+  GRANT auth only  ✓
+
+============================================================
+CONCORRÊNCIA
+============================================================
+
+Duas emissões simultâneas: cada chamada à RPC executa nextval na mesma
+sequence — o Postgres serializa e garante valores distintos (mesmo
+mecanismo da fatura). UNIQUE parcial protege em nível de tabela.
+
+============================================================
+EMISSÃO / VISUALIZAÇÃO
+============================================================
+
+- Nenhuma alteração em tela/PDF nesta missão.
+- O número SÓ será consumido quando houver futura emissão/fechamento formal
+  (chamada explícita à RPC no momento da emissão).
+- Visualizar/abrir extrato consultivo NÃO chama a RPC → não consome números.
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] numero_fechamento aditivo (TEXT NULL)
+[x] histórico preservado (NULL, sem backfill)
+[x] UNIQUE previsto (parcial, WHERE numero_fechamento IS NOT NULL)
+[x] sequence anual (seq_extrato_prestador_<ANO>)
+[x] nextval (atômico)
+[x] sem MAX+1
+[x] formato EP-AAAA-000001 (LPAD 6)
+[x] RPC preparada (f_gerar_numero_extrato_prestador)
+[x] nenhuma escrita em Produção (ROLLBACK comprovado)
+[x] migration NÃO aplicada (arquivo local apenas)
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Migration local criada e validada sintaticamente (BEGIN/ROLLBACK).
+- Produção intacta (após rollback: seq/rpc/coluna = 0).
+- Padrão idêntico ao da fatura (SEQUENCE anual + nextval + LPAD 6 + guard
+  auth + grant authenticated).
+
+============================================================
+FALTA (depende da aplicação em Produção)
+============================================================
+
+1. Aplicar a migration em Produção (ação de deploy, NÃO feita aqui).
+2. Após aplicada, emitir o número no momento do fechamento formal
+   (chamada à RPC + gravar numero_fechamento) — código de aplicação futura.
+3. Backfill histórico apenas se houver regra de negócio específica
+   (atualmente NÃO previsto).
+4. Validação em produção com usuário autenticado (auth.uid() preenchido)
+   para confirmar emissão de EP-2026-000001.
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Aplicar a migration 20260821_fin_mot_2o_numeracao_extrato_prestador.sql
+em Produção (deploy controlado) e, em seguida, na emissão formal do
+fechamento, chamar f_gerar_numero_extrato_prestador() e gravar o valor em
+pagamentos_prestadores.numero_fechamento.

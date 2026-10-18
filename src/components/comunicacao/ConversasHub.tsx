@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { mascararTelefone, mascararEmail } from "@/lib/masking";
 import { HubConversa, HubMensagem, buscarConversas, buscarMensagens, enviarMensagem, criarConversa } from "@/services/hubComunicacaoService";
 import { FOLLOWUP_TEMPLATES } from "@/services/zohoEmailService";
 
@@ -184,7 +185,7 @@ export function ConversasHub() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center mb-0.5">
-                    <span className="font-semibold text-sm truncate">{c.nome_contato || c.telefone || c.email}</span>
+                    <span className="font-semibold text-sm truncate">{c.nome_contato || mascararTelefone(c.telefone) || mascararEmail(c.email)}</span>
                     <span className="text-[10px] text-muted-foreground">{formatHora(c.ultimo_evento_em).split(" ")[1]}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -208,8 +209,8 @@ export function ConversasHub() {
                 {selecionada.canal === "whatsapp" ? <Phone className="w-5 h-5 text-green-600" /> : <Mail className="w-5 h-5 text-blue-600" />}
               </div>
               <div>
-                <h3 className="font-bold text-slate-800">{selecionada.nome_contato || selecionada.telefone || selecionada.email}</h3>
-                <p className="text-xs text-muted-foreground">{selecionada.canal === "whatsapp" ? selecionada.telefone : selecionada.email}</p>
+                <h3 className="font-bold text-slate-800">{selecionada.nome_contato || mascararTelefone(selecionada.telefone) || mascararEmail(selecionada.email)}</h3>
+                <p className="text-xs text-muted-foreground">{selecionada.canal === "whatsapp" ? mascararTelefone(selecionada.telefone) : mascararEmail(selecionada.email)}</p>
               </div>
             </div>
             <div className="flex gap-2">

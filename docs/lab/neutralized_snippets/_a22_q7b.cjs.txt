@@ -1,0 +1,17 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  // Visão da Torre (RLS lê todas): mensagens da operação ca5fe225
+  const r = await c.query("SELECT sender_type, sender_user_id, mensagem, status, idempotency_key, created_at FROM public.operacao_mensagens WHERE alocacao_id = 'ca5fe225-7114-42da-9997-c3d466e5df52' ORDER BY created_at ASC");
+  console.log('TORRE - mensagens da operacao:', JSON.stringify(r.rows, null, 2));
+  // Badge Torre: sender_type='prestador' AND status='enviada'
+  const badge = await c.query("SELECT count(*)::int AS badge_torre FROM public.operacao_mensagens WHERE sender_type = 'prestador' AND status = 'enviada'");
+  console.log('BADGE TORRE (total nao lidas do prestador):', JSON.stringify(badge.rows));
+  // Publicação Realtime da tabela
+  const rt = await c.query("SELECT pubname, pubinsert, pubupdate, pubdelete FROM pg_publication_tables t JOIN pg_publication p ON p.oid = t.pubname::regclass::oid WHERE t.tablename = 'operacao_mensagens'");
+  console.log('REALTIME PUBLICATION:', JSON.stringify(rt.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

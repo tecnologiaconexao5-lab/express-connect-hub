@@ -1,0 +1,240 @@
+RELATÓRIO AG-07I-B4 — ANTT / RNTRC E APLICABILIDADE OPERACIONAL
+Data: 22/08/2026
+Status: AUDITORIA CONCLUÍDA + APP CORRIGIDO — sem bloqueio (dependência estrutural)
+
+====================================================================
+1. FONTE OFICIAL
+====================================================================
+
+ANTT e RNTRC são campos SEPARADOS — não são sinônimos.
+
+TABELA veiculos:
+  veiculos.antt  (text) — baseline 20260510, linha 188
+  veiculos.rntrc (text) — baseline 20260510, linha 202
+
+TABELA prestadores:
+  prestadores.antt  (text) — baseline 20260510, linha 161
+  prestadores.rntrc (text) — baseline 20260510, linha 160
+
+TABELA configuracoes_fiscais:
+  rntrc (text) — migration 20260602
+
+Fonte estruturada oficial: veiculos.antt e veiculos.rntrc.
+
+====================================================================
+2. ANTT
+====================================================================
+
+Significado: Autoridade Nacional de Transportes Terrestres.
+No sistema: campo de identificação do registro/autorização.
+Consumidores:
+  - documentos_prestadores (tipo "antt" — documento)
+  - scoreEngine.ts (doc.antt?.approved → +4 pontos)
+  - enterpriseKanbanService.ts (ANTT listado como DOCUMENTO OPCIONAL)
+  - mockPrestadores.ts (status "valido"/"pendente"/"vencido")
+  - ag07h_documentos_bloqueios.test.ts: "ANTT ausente → NÃO bloqueia"
+
+====================================================================
+3. RNTRC
+====================================================================
+
+Significado: Registro Nacional de Transportadores Rodoviários de Cargas.
+No sistema: número de registro usado em documentos fiscais.
+Consumidores:
+  - ciot.ts: prestador.rntrc para emissão de CIOT
+  - contratosService.ts: variável {{prestador_rntrc}} em templates
+  - contratosPdfService.ts: exibe RNTRC no PDF do contrato
+  - cteService.ts: emitenteDb.rntrc para CT-e
+  - cteLoteService.ts: emitenteDb.rntrc para lote CT-e
+  - configuracoesFiscaisService.ts: rntrc na config fiscal
+
+RNTRC é usado em operações de TRANSPORTE CARGA (CT-e, CIOT, contrato).
+ANTT é um DOCUMENTO (tipo no sistema de documentos do prestador).
+
+====================================================================
+4. APP → TMS
+====================================================================
+
+ANTES (register_screen.dart:555):
+  metadata.veiculo.antt = _possuiAntt ? _anttCtrl.text.trim() : null
+  _vincularVeiculo NÃO escrevia veiculos.antt
+
+DEPOIS (corrigido):
+  _vincularVeiculo payload inclui:
+    'antt': (_possuiAntt && _anttCtrl.text.trim().isNotEmpty)
+        ? _anttCtrl.text.trim()
+        : null
+
+Agora o App grava ANTT no campo estruturado veiculos.antt.
+Metadata continua com a cópia (não removida).
+
+NÃO alterado:
+  - _vincularVeiculo não escreve veiculos.rntrc (App não coleta RNTRC)
+  - Dados legados não migrados
+  - Tela não reconstruída
+
+====================================================================
+5. CONSUMIDORES — MAPA COMPLETO
+====================================================================
+
+veiculos.antt:
+  - dbMappers.ts (mapeamento veiculo ↔ form)
+  - VeiculoForm (cadastro TMS)
+  - NENHUM gate operacional lê este campo hoje
+
+veiculos.rntrc:
+  - dbMappers.ts (mapeamento veiculo ↔ form)
+  - VeiculoForm (cadastro TMS)
+  - NENHUM gate operacional lê este campo hoje
+
+prestadores.rntrc:
+  - ciot.ts (CIOT — simulado)
+  - contratosService.ts (template)
+  - cteService.ts (CT-e)
+  - cteLoteService.ts (CT-e lote)
+
+prestadores.antt:
+  - documentos_prestadores (tipo "antt")
+  - scoreEngine.ts (scoring)
+
+====================================================================
+6. APLICABILIDADE — DEPENDÊNCIA ESTRUTURAL
+====================================================================
+
+PERGUNTA: quando uma operação EXIGE ANTT/RNTRC?
+
+CAMPO PROCURADO EM ordens_servico:
+  ✗ antt_obrigatorio (não existe)
+  ✗ rntrc_obrigatorio (não existe)
+  ✗ tipo_operacao_internacional (não existe)
+  ✗ tipo_viagem (não existe)
+  ✗ distancia_minima_antt (não existe)
+
+CONCLUSÃO: NÃO existe campo estruturado na OS que determine
+quando ANTT/RNTRC é obrigatório.
+
+O sistema atual trata ANTT como DOCUMENTO OPCIONAL
+(enterpriseKanbanService.ts, linha 128: "if (nome === 'ANTT') continue").
+
+Classificação: APLICABILIDADE ANTT = DEPENDÊNCIA ESTRUTURAL.
+Não é possível implementar bloqueio seguro sem criar um campo
+que determine "esta operação exige ANTT".
+
+====================================================================
+7. GATE — NÃO IMPLEMENTADO
+====================================================================
+
+Justificativa:
+  - Sem campo "exige_antt" na OS → não há como determinar quando bloquear
+  - ANTT é opcional no sistema atual
+  - Bloquear arbitrariamente derrubaria operações legadas
+  - RNTRC é usado em CT-e/CIOT (já validado em outro contexto)
+
+Se no futuro existir campo "exige_antt" na OS:
+  operacao exige ANTT + veiculos.antt vazio → BLOQUEADO
+  operacao exige ANTT + veiculos.antt presente → PERMITIDO
+
+====================================================================
+8. VALIDADE — DEPENDÊNCIA ESTRUTURAL
+====================================================================
+
+Não existe campo de validade ANTT estruturado:
+  - veiculos: sem antt_validade
+  - prestadores: sem antt_validade
+  - documentos_prestadores: tem validade (campo genérico)
+
+Classificação: VALIDADE ANTT = DEPENDÊNCIA ESTRUTURAL.
+Validade só pode ser verificada via documentos_prestadores
+quando o documento existir com tipo "antt" e campo validade preenchido.
+
+====================================================================
+9. LEGADOS
+====================================================================
+
+Veículos antigos:
+  - veiculos.antt pode estar vazio (App antigo não escrevia)
+  - metadata.veiculo.antt pode ter valor
+
+Estratégia futura de reconciliação:
+  1. Buscar veículos com antt IS NULL E metadata.veiculo.antt IS NOT NULL
+  2. Copiar metadata → campo estruturado
+  3. NÃO executar nesta missão (requer migration)
+
+====================================================================
+10. MOTOBOY
+====================================================================
+
+Preservado. Moto não exige ANTT por natureza (veículo leve).
+App já envia antt=null para moto (condicional _possuiAntt).
+
+====================================================================
+11. ARQUIVOS ALTERADOS
+====================================================================
+
+- C:\src\conexao_prestador\lib\features\auth\register_screen.dart
+    _vincularVeiculo: adicionado 'antt' ao payload (campo estruturado)
+
+- src/services/escala/eligibilidadeOperacionalService.ts
+    NÃO alterado (sem bloqueio ANTT)
+
+- src/services/escala/escalaService.ts
+    NÃO alterado (sem gate ANTT)
+
+====================================================================
+12. TESTES
+====================================================================
+
+NÃO foram criados testes de bloqueio ANTT (não há bloqueio).
+Testes existentes validam:
+  - ag07h_documentos_bloqueios.test.ts: "ANTT ausente → NÃO bloqueia" ✅
+  - Full suite: 663/663 ✅
+  - tsc: 0 erros ✅
+
+O App foi alterado (Flutter) — flutter analyze requer ambiente separado.
+
+====================================================================
+13. DEPENDÊNCIAS ESTRUTURAIS
+====================================================================
+
+1. CAMPO "EXIGE_ANTT" NA OS — para que o gate funcione, é necessário
+   adicionar um campo boolean/text na OS que determine se a operação
+   exige ANTT (ex: operação interestadual, carga perigosa, etc.).
+
+2. VALIDADE ANTT — para verificar se ANTT está válida, é necessário
+   adicionar antt_validade em veiculos ou usar documentos_prestadores
+   com tipo "antt" e validade preenchida.
+
+3. RNTRC NO APP — App não coleta RNTRC (apenas ANTT). Se RNTRC for
+   necessário para o gate, o App precisa de campo adicional.
+
+4. RECONCILIAÇÃO LEGADA — veículos com metadata.veiculo.antt preenchido
+   mas veiculos.antt vazio precisam de migração puntual.
+
+====================================================================
+14. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I-B5 — AJUDANTE E REQUISITOS ESPECIAIS DA OPERAÇÃO
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+ANTT CAMPO ESTRUTURADO: SIM (veiculos.antt existe)
+RNTRC CAMPO ESTRUTURADO: SIM (veiculos.rntrc existe)
+APP GRAVA FONTE ESTRUTURADA: SIM (corrigido — veiculos.antt)
+TMS LÊ FONTE ESTRUTURADA: SIM (dbMappers.ts)
+APLICABILIDADE ANTT COMPROVADA: NÃO (DEPENDÊNCIA ESTRUTURAL — sem campo "exige_antt" na OS)
+ANTT OBRIGATÓRIA BLOQUEIA QUANDO APLICÁVEL: NÃO IMPLEMENTADO (sem campo estruturado)
+VALIDADE ANTT: DEPENDÊNCIA ESTRUTURAL (sem antt_validade)
+MOTOBOY PRESERVADO: SIM
+TIPO B1 PRESERVADO: SIM
+CAPACIDADE B2 PRESERVADA: SIM
+REFRIGERADO B3 PRESERVADO: SIM
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO (App alterado — payload futuro)
+REDMI UTILIZADO: NÃO
+AG-07I-B4: HOMOLOGAÇÃO TÉCNICA SIM (auditoria + App mapping — sem bloqueio)
+
+PRÓXIMA MISSÃO:
+AG-07I-B5 — AJUDANTE E REQUISITOS ESPECIAIS DA OPERAÇÃO

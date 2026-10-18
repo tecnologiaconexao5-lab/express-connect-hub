@@ -18,3 +18,5 @@ ADD COLUMN IF NOT EXISTS valor_fixo_prestador numeric DEFAULT 0;
 COMMENT ON COLUMN public.tabelas_valores.valor_cliente IS 'Valor cobrado do cliente (faturamento)';
 COMMENT ON COLUMN public.tabelas_valores.tipo_repasse_prestador IS 'Tipo de cálculo do repasse do prestador: percentual ou fixo';
 COMMENT ON COLUMN public.tabelas_valores.valor_fixo_prestador IS 'Valor fixo do repasse do prestador (quando tipo_repasse_prestador = fixo)';
+
+

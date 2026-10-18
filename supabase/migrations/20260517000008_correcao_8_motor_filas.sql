@@ -47,6 +47,17 @@ $$;
 
 -- 3. Habilitar Realtime
 -- Para que o frontend React consiga ouvir alterações sem refresh
-alter publication supabase_realtime add table public.automacoes_fila;
-alter publication supabase_realtime add table public.automacoes_regras;
-alter publication supabase_realtime add table public.ia_logs;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'automacoes_fila') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.automacoes_fila;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'automacoes_regras') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.automacoes_regras;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'ia_logs') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.ia_logs;
+  END IF;
+END $$;
+
+

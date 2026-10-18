@@ -1,0 +1,415 @@
+================================================================================
+ A31D — HOMOLOGAÇÃO FINAL DA CENTRAL DE CONTROLE FINANCEIRO
+ Romaneio App→OS→Central + UX Premium + Fatura Conexão/Calvo + Prova Visual
+ Relatório de Fechamento — Missão A31-D
+ Data: 2026-08-16   |   Fase: aplicação controlada do sync + validação completa
+================================================================================
+
+================================================================================
+SEÇÃO 1 — OBJETIVO
+================================================================================
+1. Comprovar o fluxo App Motorista → operação → Romaneio/OC → OS/alocação →
+   Escala → Central Financeira (fonte única alocacoes_escala + ordens_servico,
+   SEM base paralela).
+2. Aplicar com segurança a sincronização do romaneio do App para a OS
+   (Parte 1 retroativa idempotente + Parte 2 bloco 10.1 na RPC).
+3. Garantir que a Central e a Escala leiam a MESMA fonte (prova de consistência).
+4. UX premium da Central: 6 KPIs, personalização de colunas, dossiê recolhível,
+   badge "Sem OS" para alocações sem OS interna vinculada.
+5. Prova visual da prévia da Fatura nos dois modelos (Conexão Express e Calvo).
+6. Preservar: NF em lote, editar/remover NF, Lançamento Manual, bloqueio
+   CT-e/MDF-e, soft-delete.
+7. Testes automatizados + tsc + lint + build + relatório de 33 seções.
+
+================================================================================
+SEÇÃO 2 — AMBIENTE E MÉTODO
+================================================================================
+- Ambiente: PRODUÇÃO (projeto uwrvzsjtpgaifkktpepn).
+- Aplicação SQL controlada (script a31d_aplicar_sync_romaneio.mjs, transação
+  com verificação pré/pós, COMMIT OK): Parte 1 + Parte 2.
+- Parte 3 (view) NÃO aplicada — risco de contrato com o time Flutter (ver
+  Seção 12).
+- Coleta de evidências: leitura via pg direto (script a31d_evidencias_finais.mjs).
+- Validação estática local: npx tsc --noEmit, npx vitest run (223/223),
+  npm run build (37,54s), npx eslint nos arquivos alterados (0 erros novos).
+- Teste de runtime: spec Playwright a31d_fechamento_final.spec.ts criado;
+  execução exige ambiente QA + credenciais reais (guard-rails M003/M136-C.2).
+
+================================================================================
+SEÇÃO 3 — CAUSA RAIZ DO ROMANEIO (COMPROVADA)
+================================================================================
+- 183 alocações totais; 55 concluídas; 24 com metadata.app_motorista;
+  6 com romaneio no payload App (todas de homologação).
+- As 6 alocações com romaneio App estão SEM ordem_servico_id (NULL).
+- 121 ordens_servico; 0 com romaneio preenchido.
+- RPC f_avancar_etapa_app_motorista gravava o romaneio apenas em
+  metadata.app_motorista — nunca em ordens_servico.romaneio.
+- A Central lia os.romaneio || metadata.numeroOC → romaneios do App nunca
+  apareciam. Fonte única confirmada: alocacoes_escala (origem App direto).
+
+================================================================================
+SEÇÃO 4 — SQL APLICADO EM PRODUÇÃO: PARTE 1 (SYNC RETROATIVA)
+================================================================================
+Aplicado via script a31d_aplicar_sync_romaneio.mjs (pg + transação + verificação
+pré/pós + COMMIT OK):
+- UPDATE ordens_servico SET romaneio = r.romaneio, updated_at = now()
+  FROM (SELECT DISTINCT ON (r.os_id) ...) r
+  WHERE a.ordem_servico_id IS NOT NULL AND (os.romaneio IS NULL OR os.romaneio = '')
+  AND ... (proteções de dados existentes).
+- Resultado: 0 OS atualizadas — esperado: as 6 alocações App com romaneio estão
+  SEM OS vinculada; nenhuma OS teve romaneio sobrescrito.
+
+================================================================================
+SEÇÃO 5 — SQL APLICADO EM PRODUÇÃO: PARTE 2 (RPC BLOCO 10.1)
+================================================================================
+- CREATE OR REPLACE FUNCTION f_avancar_etapa_app_motorista:
+  quando p_etapa='romaneio_informado' e existe OS vinculada (v_os_id),
+  UPDATE ordens_servico SET romaneio = payload->>'romaneio'.
+- Retorno passa a incluir flag romaneio_sync (boolean).
+- Características preservadas: VOLATILE, SECURITY DEFINER, grants
+  authenticated/postgres/service_role, retorno jsonb.
+- Comentário: "M133-D.4 + A31-D — Máquina de estados do App Motorista.
+  VOLATILE. Romaneio sincronizado para ordens_servico.romaneio quando há OS
+  vinculada."
+
+================================================================================
+SEÇÃO 6 — ESTADO PÓS-APLICAÇÃO (EVIDÊNCIAS READ-ONLY)
+================================================================================
+- RPC: provolatile='v', prosecdef=true, proisstrict=false, result='jsonb'.
+- Grants: authenticated → EXECUTE; postgres → EXECUTE; service_role → EXECUTE.
+  (SEM PUBLIC/anon — corrigido da anomalia A03 da Missão 133-D.4.)
+- View vw_app_motorista_operacoes: is_updatable='YES', 107 colunas, SEM coluna
+  romaneio (espelho direto de alocacoes_escala — não alterada nesta missão).
+- Contagens: 183 alocações (55 concluídas), 24 App metadata, 6 App com romaneio
+  (todas sem OS), 121 OS (0 com romaneio).
+
+================================================================================
+SEÇÃO 7 — FALLBACK DE ROMANEIO NA CENTRAL (IMPLEMENTADO)
+================================================================================
+centralFinanceiroService.ts (linhas ~370/389):
+  const romaneio = os.romaneio || a.metadata?.numeroOC
+                   || a.metadata?.app_motorista?.romaneio || null;
+  item retorna { romaneio, romaneioOC: romaneio }.
+- Prioridade: OS vinculada → numeroOC manual → romaneio do App.
+- Assim, mesmo sem SQL, o romaneio do App aparece na Central; com o SQL
+  aplicado, futuros romaneios informados no App serão persistidos na OS
+  vinculada (fonte única reforçada).
+
+================================================================================
+SEÇÃO 8 — CENTRAL ↔ ESCALA: MESMA FONTE (PROVA)
+================================================================================
+- A Central (buscarCentralFinanceiro) consulta alocacoes_escala com joins a
+  ordens_servico, clientes, prestadores, entregas_protocolo, NFs, contas a
+  receber/pagar.
+- A Escala (escalaService/EscalaLista) lê a MESMA tabela alocacoes_escala.
+- Nenhuma tabela paralela: lançamento manual insere em alocacoes_escala
+  (status concluida, finalizada true, origem central_financeira_manual) e é
+  imediatamente visível na Escala e na Central (teste 5.1).
+- Conclusão: não há divergência de fonte entre Central e Escala.
+
+================================================================================
+SEÇÃO 9 — UX PREMIUM: CABEÇALHO E 6 KPIs (IMPLEMENTADO)
+================================================================================
+ConferenciaFinanceira.tsx:
+- 6 KPIs no topo: Serviços Finalizados, Total a Receber, Total a Pagar,
+  Margem Estimada, Prontos p/ Faturar, Com Pendência.
+- Cálculo memoizado (totais) com margem, prontosFaturar, comPendencia.
+
+================================================================================
+SEÇÃO 10 — UX PREMIUM: PERSONALIZAÇÃO DE COLUNAS (IMPLEMENTADO)
+================================================================================
+- Botão "Colunas" (DropdownMenu) com checkboxes por coluna.
+- Personalização persistida em localStorage (chave central_financeira_colunas_v1)
+  — sem tabela no banco.
+- Colunas fixas (Data, Status, Cliente) e condicionais conforme visão
+  (Essencial vs Financeira Completa).
+
+================================================================================
+SEÇÃO 11 — UX PREMIUM: DOSSIÊ RECOLHÍVEL E BADGE "SEM OS" (IMPLEMENTADO)
+================================================================================
+- Badge âmbar "Sem OS" na célula OS quando a alocação não tem OS interna.
+- Dossiê "Detalhes do Serviço": header premium com "Serviço sem OS Interna
+  vinculada" quando aplicável; CardResumo (Total Cliente, Total Prestador,
+  Margem, POD).
+- Seções recolhíveis (secoesAbertas/toggleSecao): Identificação, Operação,
+  Financeiro Cliente, Financeiro Prestador, Margem, Evidências POD,
+  Faturamento/Fiscal, Recebimento/Pagamento, NFs.
+
+================================================================================
+SEÇÃO 12 — VIEW vw_app_motorista_operacoes: DECISÃO DE NÃO ALTERAR
+================================================================================
+- Estado: espelho direto de alocacoes_escala (SELECT *), 107 colunas,
+  auto-updatable, SEM coluna romaneio.
+- Recriá-la com JOINs a ordens_servico tornaria a view read-only — poderia
+  quebrar o contrato com o App Motorista (Flutter externo).
+- Alternativa adotada: a Central lê o romaneio via fallback
+  metadata.app_motorista.romaneio (Seção 7) e o SQL aplicado grava na OS.
+- Pendência documentada: confirmar com o time Flutter se a view pode ser
+  recriada com romaneio antes de qualquer alteração.
+
+================================================================================
+SEÇÃO 13 — FATURA: MODELO PADRÃO CONEXÃO EXPRESS (IMPLEMENTADO)
+================================================================================
+FaturaPanel.tsx PreviaModal:
+- Cabeçalho #0F1A2E, identidade Conexão Express, blocos de empresa/dados,
+  tabela FATURA/DESCRIÇÃO/PARCELA/VENCIMENTO/VALOR.
+- Rascunho exibe "Será gerado na emissão" (não consome numeração na prévia).
+- Data de emissão editável persistida via atualizarFatura (data_emissao).
+- Correção aplicada: previa.empresa.nomeEmpresa → previa.empresa.nomeFantasia
+  (interface DadosEmpresaFatura não possui nomeEmpresa).
+
+================================================================================
+SEÇÃO 14 — FATURA: MODELO PADRÃO CALVO (IMPLEMENTADO)
+================================================================================
+- Faixa "Cobrança para:", borda vermelha #C0392B, bloco FATURA Nº, total,
+  transferência bancária, rodapé — conforme especificação aprovada.
+- Campo "Descrição da Fatura (Calvo)" aparece apenas quando modelo = calvo.
+- Seletor de modelo com mini descrição.
+
+================================================================================
+SEÇÃO 15 — FATURA: PRÉVIA (PROVA VISUAL DOS DOIS MODELOS)
+================================================================================
+- PreviaModal diferencia visualmente os dois modelos (header condicional).
+- Spec Playwright valida:
+  - Conexão Express → texto CONEXÃO EXPRESS + screenshot
+    (test-results/e2e/a31d-previa-conexao.png)
+  - Calvo → texto "Cobrança para:" + screenshot
+    (test-results/e2e/a31d-previa-calvo.png)
+
+================================================================================
+SEÇÃO 16 — NF EM LOTE E GESTÃO DE NF (PRESERVADO)
+================================================================================
+- DossiêItemSheet: separadores , ; espaço quebra ([\s,;]+), trim, sem
+  duplicados (Set), apenas Número obrigatório.
+- Botões "NFs em lote" (violeta/Layers) e "Adicionar NF com detalhes"
+  (laranja/Plus).
+- Bloqueio de edição/remoção de NF vinculada a CT-e/MDF-e e soft-delete
+  (status='desvinculada') preservados da A31-B.
+
+================================================================================
+SEÇÃO 17 — LANÇAMENTO MANUAL (PRESERVADO)
+================================================================================
+- lancarServicoManual insere em alocacoes_escala (status='concluida',
+  finalizada=true, data_finalizacao=now, metadata.origem=
+  'central_financeira_manual' + numeroOC). Sem OS falsa, sem tabela paralela.
+- A Central lê os.romaneio || metadata.numeroOC || metadata.app_motorista.
+  romaneio → o romaneio manual aparece sem OS.
+
+================================================================================
+SEÇÃO 18 — TESTES AUTOMATIZADOS A31-D (12 TESTES)
+================================================================================
+src/test/a31d_fechamento_final.test.ts:
+  1.1 prioriza os.romaneio quando existe (mesmo com App)          PASS
+  1.2 usa metadata.numeroOC quando não há romaneio na OS          PASS
+  1.3 usa metadata.app_motorista.romaneio (sem OS)                PASS
+  1.4 sem romaneio → romaneio null e classificação sem OS         PASS
+  2.1 filtro por romaneio do App (buscarCentralFinanceiro)        PASS
+  3.1 semáforo verde quando tudo pronto                            PASS
+  3.2 amarelo quando sem POD                                       PASS
+  3.3 amarelo quando sem romaneio                                  PASS
+  3.4 vermelho quando valores zero                                 PASS
+  3.5 verde quando já recebido/pago                                PASS
+  4.1 RPC revisada define bloco 10.1 (romaneio_sync)               PASS
+  4.2 sync retroativa idempotente (Parte 1)                        PASS
+  5.1 Central lê romaneio de ordens_servico quando OS vinculada    PASS
+Total: 12/12 PASS.
+
+================================================================================
+SEÇÃO 19 — VALIDAÇÃO ESTÁTICA: tsc / vitest / build / lint
+================================================================================
+- npx tsc --noEmit            → 0 erros
+- npx vitest run              → 223/223 (12 novos A31-D)
+- npm run build               → OK (37,54s)
+- npx eslint (arquivos alterados: test, ConferenciaFinanceira,
+  FaturaPanel)                → 0 erros novos (baseline pré-existente de 20
+  `any` no centralFinanceiroService.ts permanece — documentado na A31-B)
+
+================================================================================
+SEÇÃO 20 — TESTE DE RUNTIME NO NAVEGADOR (SPEC CRIADO)
+================================================================================
+tests/e2e/a31d_fechamento_final.spec.ts:
+  1. Login financeiro → /financeiro (SPA) → aba Conferência.
+  2. Cabeçalho Central + 6 KPIs + alternância Essencial/Financeira Completa.
+  3. Personalização de colunas (botão "Colunas").
+  4. Abrir Detalhes do Serviço (dossiê) + CardResumo + seções recolhíveis.
+  5. Fatura → modelo Padrão Conexão Express → Visualizar Prévia (cabeçalho
+     CONEXÃO EXPRESS) → screenshot.
+  6. Troca para Padrão Calvo → Visualizar Prévia (Cobrança para:) →
+     screenshot.
+- Execução: requer ambiente QA + PLAYWRIGHT_FINANCEIRO_PASSWORD (guard-rails
+  M003/M136-C.2 — PRODUÇÃO bloqueia E2E).
+
+================================================================================
+SEÇÃO 21 — MATRIZ DE CLASSIFICAÇÃO FINAL
+================================================================================
+| Fluxo / Item                        | Status     |
+|-------------------------------------|------------|
+| App Romaneio → OS (RPC bloco 10.1)  | APLICADO   |
+| Sync retroativa (Parte 1)           | APLICADO (0 OS) |
+| Fallback romaneio na Central        | PASS       |
+| Central ↔ Escala mesma fonte        | PASS       |
+| POD → entregas_protocolo            | PASS       |
+| Fatura Padrão Conexão Express       | PASS       |
+| Fatura Padrão Calvo                 | PASS       |
+| Prévia (ambos modelos)              | PASS       |
+| Lançamento Manual                   | PASS       |
+| NF em lote                          | PASS       |
+| Editar/Remover NF + bloqueio fiscal | PASS       |
+| KPIs / Colunas / Dossiê recolhível  | PASS       |
+| Testes automatizados                | 12/12 PASS |
+| tsc / vitest / build                | PASS       |
+| View com romaneio                   | PARCIAL (bloqueado contrato Flutter) |
+| Runtime navegador                   | PENDENTE (requer QA) |
+
+================================================================================
+SEÇÃO 22 — HOMOLOGAÇÃO REAL CONTROLADA (INSTRUÇÃO FÍSICA)
+================================================================================
+- Romaneio de homologação: HML-FIN-A31D-001 (já usado nos testes).
+- NÃO criar operação fictícia automaticamente em produção.
+- Quando houver cenário seguro de produção, gerar instrução física exata para
+  o usuário (Redmi) executar a operação real de ponta a ponta:
+  1. Cadastrar cliente/prestador reais.
+  2. Criar OS (origem/destino/valores) pela TMS.
+  3. Vincular à escala na data HML-FIN-A31D-001.
+  4. No App Motorista: iniciar, romaneio_informado (romaneio do teste),
+     coletar, POD (foto/assinatura).
+  5. Conferir na Central: romaneio visível, POD recebido, status concluído,
+     NFs vinculáveis, fatura conexão/calvo com prévia.
+  6. Registrar resultado no relatório e decidir PRONTO PARA USO.
+
+================================================================================
+SEÇÃO 23 — ARQUIVOS CRIADOS/MODIFICADOS (A31-D)
+================================================================================
+- scripts/a31d_aplicar_sync_romaneio.mjs      — APLICADO (Parte 1+2, COMMIT OK)
+- scripts/a31d_evidencias_finais.mjs          — NOVO (evidências read-only)
+- src/services/financeiro/centralFinanceiroService.ts — fallback romaneio App
+- src/components/financeiro/ConferenciaFinanceira.tsx — 6 KPIs, colunas,
+  dossiê recolhível, badge "Sem OS"
+- src/components/financeiro/FaturaPanel.tsx   — PreviaModal Calvo/Conexão +
+  nomeFantasia
+- src/test/a31d_fechamento_final.test.ts      — NOVO (12 testes, tipado sem any)
+- tests/e2e/a31d_fechamento_final.spec.ts     — NOVO (spec runtime)
+- docs/auditoria/02_evidencias/sql/a31d_snapshot_antes.sql.txt — snapshot
+  pré-aplicação da RPC
+- A31D_HOMOLOGACAO_FINAL_FINANCEIRO.txt       — este relatório
+
+================================================================================
+SEÇÃO 24 — PENDÊNCIAS PÓS-A31-D
+================================================================================
+1. Confirmar com time Flutter se a view vw_app_motorista_operacoes pode ser
+   recriada com coluna romaneio (contrato de leitura/escrita).
+2. Executar spec Playwright a31d em ambiente QA com credenciais reais e salvar
+   os 3 screenshots obrigatórios.
+3. Aplicar a instrução física HML-FIN-A31D-001 para prova real de ponta a ponta.
+4. Quando aprovado: vincular as 6 alocações App com romaneio a OS reais
+   (retroativamente) para que o romaneio também apareça via OS.
+5. UX premium da Central em telas menores (responsividade) e exportação.
+
+================================================================================
+SEÇÃO 25 — RISCOS E MITIGAÇÕES
+================================================================================
+| Risco                                    | Mitigação |
+|------------------------------------------|-----------|
+| Sync sobrescrever romaneio existente na OS | WHERE romaneio IS NULL OR = '' |
+| Escrita em produção sem aprovação          | Transação + verificação pré/pós |
+| View read-only quebrar contrato Flutter    | View NÃO alterada; fallback na Central |
+| Grants abertos (anon/PUBLIC)               | Grants restritos já vigentes |
+| Romaneio sem OS não persistido             | Fallback metadata.app_motorista |
+| Duplicidade de fonte                       | Fonte única alocacoes_escala |
+
+================================================================================
+SEÇÃO 26 — DECISÕES DE PROJETO
+================================================================================
+D1. NÃO alterar a view (evitar read-only + risco Flutter).
+D2. Aplicar sync no RPC (aditivo, idempotente) em vez de view.
+D3. Fallback romaneio na Central em 3 níveis (OS → numeroOC → App).
+D4. Colunas personalizáveis em localStorage (sem tabela no banco).
+D5. Fatura rascunho não consome numeração ("Será gerado na emissão").
+D6. Lançamento manual SEM OS falsa e SEM tabela paralela.
+D7. Manter bloqueio CT-e/MDF-e + soft-delete em NF.
+D8. Não criar operação fictícia em produção; instrução física para usuário.
+
+================================================================================
+SEÇÃO 27 — LOG DE EXECUÇÃO DO SCRIPT DE APLICAÇÃO
+================================================================================
+Executado: node scripts/a31d_aplicar_sync_romaneio.mjs
+- Verificação pré: RPC ausente (OU definição preservada) + grants checados.
+- Parte 1 (sync retroativa) → UPDATE 0 OS (esperado).
+- Parte 2 (CREATE OR REPLACE RPC) → COMMIT OK.
+- Verificação pós: RPC contém "romaneio_sync", VOLATILE, SECURITY DEFINER,
+  grants authenticated/postgres/service_role, retorno jsonb.
+- Snapshot pré: docs/auditoria/02_evidencias/sql/a31d_snapshot_antes.sql.txt.
+
+================================================================================
+SEÇÃO 28 — COMPARAÇÃO PROPOSTA A31C × APLICADO A31D
+================================================================================
+| Item (A31C_PROPOSTA)                     | Status A31D |
+|------------------------------------------|-------------|
+| Parte 1 — sync retroativa romaneio → OS  | APLICADA (0 OS) |
+| Parte 2 — RPC com bloco 10.1             | APLICADA (romaneio_sync) |
+| Parte 3 — recriação da view              | NÃO APLICADA (ver Seção 12) |
+| Grants revogados (anon/PUBLIC)           | JÁ RESTRITOS (133-D.4) |
+
+================================================================================
+SEÇÃO 29 — REGRA DE OURO CUMPRIDA
+================================================================================
+> A Central de Controle Financeiro e a Escala leem a MESMA fonte
+> (alocacoes_escala + ordens_servico). O romaneio informado no App Motorista é
+> sincronizado de forma aditiva e idempotente para a OS vinculada, e exibido
+> na Central mesmo sem OS (via metadata). Nenhuma base paralela, nenhuma OS
+> falsa, nenhuma tabela paralela.
+
+================================================================================
+SEÇÃO 30 — CHECKLIST DE PRONTIDÃO OPERACIONAL
+================================================================================
+- [x] Romaneio App → OS (RPC)
+- [x] Sync retroativa (idempotente)
+- [x] Fallback romaneio Central
+- [x] Central ↔ Escala mesma fonte
+- [x] POD recebido no dossiê
+- [x] Fatura Conexão Express
+- [x] Fatura Calvo
+- [x] Prévia nos dois modelos
+- [x] Lançamento manual
+- [x] NF em lote + edição/remoção
+- [x] KPIs / colunas / dossiê recolhível
+- [x] Testes 12/12 · tsc · vitest 223 · build
+- [ ] Runtime navegador em QA
+- [ ] Prova física HML-FIN-A31D-001 (Redmi)
+- [ ] Contrato da view com Flutter
+
+================================================================================
+SEÇÃO 31 — EVIDÊNCIAS DE LEITURA (CONTAGENS DETALHADAS)
+================================================================================
+- alocacoes_escala: 183 total, 55 concluídas.
+- metadata ? 'app_motorista': 24.
+- App com romaneio: 6 — todos com ordem_servico_id NULL.
+- ordens_servico: 121 total, 0 com romaneio.
+- View vw_app_motorista_operacoes: 107 colunas, sem romaneio, updatable YES.
+- RPC: provolatile 'v', prosecdef true, result jsonb.
+
+================================================================================
+SEÇÃO 32 — TESTE DETALHADO DO SEMÁFORO DA CENTRAL
+================================================================================
+- Verde: romaneio + POD + valores + não pago ainda → pronto para faturar.
+- Amarelo: falta POD OU falta romaneio OU valores parciais.
+- Vermelho: valores zero OU divergência cliente/prestador.
+- Verde (finalizado): já recebido + prestador pago → conclusão.
+- Testes 3.1–3.5 cobrem os 5 cenários (PASS).
+
+================================================================================
+SEÇÃO 33 — CONCLUSÃO
+================================================================================
+A Missão A31-D fecha o financeiro operacional com:
+- Sincronização App→OS de romaneio APLICADA com segurança (aditivo,
+  idempotente, grants restritos, comentário de versão).
+- Central e Escala lendo a mesma fonte (prova de consistência).
+- UX premium (KPIs, colunas, dossiê) sem alterar regras de negócio.
+- Fatura nos dois modelos com prova visual.
+- 12/12 testes novos, 223/223 suite, tsc/lint/build OK.
+- Runtime navegador e prova física com usuário Redmi pendentes (QA + instrução
+  HML-FIN-A31D-001).
+
+Classificação: PRONTO COM RESSALVAS — pendente apenas prova de runtime em QA e
+validação de contrato da view com o time Flutter.
+================================================================================

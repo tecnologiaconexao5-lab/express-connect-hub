@@ -1,0 +1,290 @@
+================================================================================
+MISSÃO A23 — FASE A — CENTRAL PROFISSIONAL DE COMPROVANTES DE ENTREGA / POD
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Fonte de verdade: entregas_protocolo (M108C1 — fluxo App → trigger → TMS)
+================================================================================
+
+STATUS FINAL: CONCLUÍDA
+-------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS CRIADOS
+--------------------------------------------------------------------------------
+  - src/services/comprovantes/comprovantesService.ts        (NOVO — serviço central)
+  - src/pages/Comprovantes.tsx                              (NOVO — página /comprovantes)
+  - src/components/comprovantes/DossieEntregaSheet.tsx      (NOVO — dossiê da entrega)
+  - src/components/ui/lightbox.tsx                          (NOVO — lightbox reutilizável)
+  - tests/e2e/a23_fase_a_comprovantes.spec.ts               (NOVO — 5 testes Playwright)
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS MODIFICADOS
+--------------------------------------------------------------------------------
+  - src/App.tsx                        (rota /comprovantes + lazy import)
+  - src/lib/sidebarData.ts             (menu "Comprovantes de Entrega" em Apoio Operacional)
+  - src/lib/routePermissions.ts        (permissão /comprovantes → módulo ordens_servico)
+  - src/components/portal-cliente/PortalDrawerPOD.tsx
+      (lightbox inline removido e substituído pelo componente compartilhado
+       src/components/ui/lightbox.tsx — comportamento do Portal preservado)
+
+--------------------------------------------------------------------------------
+3. COMPONENTES REAPROVEITADOS
+--------------------------------------------------------------------------------
+  - portalClienteService.buscarDetalhesEntregaCompleto()   (lógica rica de dossiê do Portal)
+  - eventAdapter.normalizarEvento / eventTypeToLabel / eventTypeToCategory
+      (timeline a partir de eventos_oficiais — Event Bus, M104/M99)
+  - Lightbox (src/components/ui/lightbox.tsx) — extraído do PortalDrawerPOD e
+      agora usado tanto no Portal Cliente quanto na Central do TMS (mesmo componente)
+  - gerarPDFProfissional (src/utils/pdfGenerator.ts) — exportação PDF do dossiê
+  - Componentes shadcn existentes: Card, Table, Badge, Button, Input, Select,
+      DateRangePicker, PaginationBar, Sheet
+
+--------------------------------------------------------------------------------
+4. ARQUITETURA UTILIZADA
+--------------------------------------------------------------------------------
+  Página Comprovantes.tsx (/comprovantes)
+        │
+        ▼
+  comprovantesService.listarComprovantes({busca, periodo, clienteId, os,
+                                          prestadorId, destinatario, situacao, pagina})
+        │  SELECT entregas_protocolo (fonte oficial)
+        │  + cruzamento batch com alocacoes_escala / ordens_servico /
+        │    prestadores / clientes / rota_paradas (quando existirem)
+        ▼
+  Listagem profissional (Tabela) + filtros + paginação
+        │
+        ▼  [Ver comprovante]
+  DossieEntregaSheet (Sheet lateral)
+        │  comprovantesService.buscarDossieComprovante(podId)
+        │    → reusa buscarDetalhesEntregaCompleto (Portal)
+        │    → enriquece com timeline (eventos_oficiais via eventAdapter)
+        │    → enriquece com ocorrências vinculadas + volumes
+        ▼
+  Lightbox compartilhado (foto/canhoto/assinatura ampliados, zoom 0.5–5x,
+  rotação 90°, reset 1:1, download, navegação anterior/próximo)
+
+  NENHUMA nova tabela de POD. NENHUMA migration. Fonte única entregas_protocolo.
+
+--------------------------------------------------------------------------------
+5. FONTE DOS DADOS
+--------------------------------------------------------------------------------
+  - entregas_protocolo   → POD oficial (id, alocacao_id, prestador_id, ordem_servico_id,
+      nome_recebedor, documento_recebedor, receiver_relationship, observacao,
+      foto_entrega_url, foto_canhoto_url, assinatura_url, data_hora_entrega,
+      latitude, longitude, gps_accuracy, status, created_at)
+  - alocacoes_escala     → status da operação, veículo (placa/tipo), origem/destino,
+      cliente_id, ordem_servico_id
+  - ordens_servico       → numero (OS/Romaneio), cliente, volumes
+  - prestadores          → nome_completo
+  - clientes             → nome_fantasia / razao_social
+  - rota_paradas         → destinatário/endereço/volumes/volumes_entregues
+      (OPCIONAL — poucos registros reais em produção; usado apenas quando existir)
+  - eventos_oficiais     → timeline (Event Bus — M104), fonte PRIMÁRIA de timeline
+      (NÃO usa operation_timeline_events)
+  - ocorrencias          → ocorrências vinculadas (alocacao_id / os_id)
+
+--------------------------------------------------------------------------------
+6. FILTROS IMPLEMENTADOS
+--------------------------------------------------------------------------------
+  - Busca geral: OS/Romaneio, cliente, prestador, destinatário, recebedor, documento
+  - Período: DateRangePicker (hoje, ontem, semana, mês, 30/90 dias, custom)
+  - Cliente (select populado)
+  - OS / Romaneio (texto)
+  - Prestador / Motorista (select populado)
+  - Destinatário (texto)
+  - Situação: Entregue / Entregue com ressalva / Não entregue / Completo / Incompleto
+  - Paginação (15 por página) + contagem total
+
+--------------------------------------------------------------------------------
+7. FUNCIONAMENTO DA LISTAGEM
+--------------------------------------------------------------------------------
+  Tabela profissional com colunas:
+  - OS/Romaneio | Cliente | Prestador | Veículo (placa + tipo) | Destinatário |
+    Data/Hora | Recebedor (+ documento) | Situação (badge colorido) | Foto |
+    Canhoto | Assinatura | Status do comprovante (Completo/Incompleto) | Ação
+  - Botão "Ver comprovante" abre o dossiê.
+  - Evita UUID técnico como informação principal: exibe numero_os quando existente;
+    fallback seguro para 8 caracteres do id somente quando não há OS vinculada.
+  - Resumo de KPIs (Entregues / Com ressalva / Não entregues) calculado dos itens.
+
+--------------------------------------------------------------------------------
+8. FUNCIONAMENTO DO DOSSIÊ
+--------------------------------------------------------------------------------
+  Sheet lateral profissional (gradiente laranja, seguindo padrão visual TMS):
+  - IDENTIFICAÇÃO: OS/Romaneio, Cliente, Prestador, Veículo, Destinatário, Endereço
+  - ENTREGA: Situação, Recebedor, Documento, Relação/Função, Data, Hora,
+    Observação/Ressalva (destaque âmbar)
+  - VOLUMES: previstos x entregues EXIBIDOS SOMENTE quando os dados realmente existirem
+    (rota_paradas/ordens_servico.volumes)
+  - EVIDÊNCIAS: foto da entrega, foto do canhoto, assinatura e outras
+    (fotos_entrega da alocação + comprovante adicional) com lightbox ampliado
+  - ASSINATURA DIGITAL: bloco dedicado com imagem + download
+  - LOCALIZAÇÃO: coordenadas lat/lng + link "Abrir no Google Maps"
+      (NÃO usa Google Static Maps key placeholder identificada na auditoria)
+  - TIMELINE: eventos_oficiais (Event Bus) normalizados via eventAdapter,
+      ordenados cronologicamente, com label, hora e origem
+  - OCORRÊNCIAS: vinculadas por alocacao_id / os_id (quando houver)
+  - Ações: PDF, Copiar link, Compartilhar
+
+--------------------------------------------------------------------------------
+9. FOTOS / CANHOTO / ASSINATURA
+--------------------------------------------------------------------------------
+  - Fotos: foto_entrega_url (thumbnail + lightbox)
+  - Canhoto: foto_canhoto_url (thumbnail + lightbox)
+  - Assinatura: assinatura_url (bloco dedicado + lightbox + download)
+  - Lightbox compartilhado (extraído do PortalDrawerPOD) com zoom, rotação,
+    reset 1:1 e download — usado tanto no Portal Cliente quanto na Central do TMS.
+
+--------------------------------------------------------------------------------
+10. RECEBEDOR / DATA/HORA
+--------------------------------------------------------------------------------
+  - Recebedor: nome_recebedor exibido na listagem e no dossiê (IDENTIFICAÇÃO/ENTREGA)
+  - Documento: documento_recebedor exibido na listagem (sub-linha) e no dossiê
+  - Data/Hora: data_hora_entrega formatada pt-BR (dd/mm/aa + HH:mm) na listagem e
+    no dossiê
+
+--------------------------------------------------------------------------------
+11. GPS
+--------------------------------------------------------------------------------
+  - Lat/lng exibidos quando existirem (com 6 casas decimais)
+  - Link direto para Google Maps (coordenadas)
+  - Precisão (gps_accuracy) exibida quando existir
+  - Pendência registrada: mapa embutido não implementado nesta fase (exigiria
+    configuração externa/chave real; coordenadas + link cumprem a missão sem
+    risco, conforme instrução)
+
+--------------------------------------------------------------------------------
+12. TIMELINE
+--------------------------------------------------------------------------------
+  - Fonte: eventos_oficiais (Event Bus) — MESMA fonte da Torre de Controle (M104)
+  - NÃO depende de operation_timeline_events
+  - Normalização via eventAdapter (APP_EVENT_LABELS + eventTypeToLabel)
+  - Ordenação cronológica com badge de origem (app_motorista / sistema / trigger)
+
+--------------------------------------------------------------------------------
+13. OCORRÊNCIAS
+--------------------------------------------------------------------------------
+  - Vinculação segura: ocorrencias.alocacao_id OU ocorrencias.os_id
+  - Exibidas no dossiê com tipo, descrição, status, severidade e data/hora
+
+--------------------------------------------------------------------------------
+14. VOLUMES
+--------------------------------------------------------------------------------
+  - Previstos: ordens_servico.volumes OU rota_paradas.volumes
+  - Entregues: rota_paradas.volumes_entregues
+  - Exibidos SOMENTE quando os dados realmente existirem (rota_paradas quase
+    vazia em produção — não há dado fictício)
+
+--------------------------------------------------------------------------------
+15. MENU / ROTA / PERMISSÕES
+--------------------------------------------------------------------------------
+  - Menu: Apoio Operacional → "Comprovantes de Entrega" (novo item,
+    src/lib/sidebarData.ts) com ícone FileCheck, caminho /comprovantes
+  - Rota: src/App.tsx — lazy import + <Route path="/comprovantes">
+  - Permissão: src/lib/routePermissions.ts — "/comprovantes": { modulo: "ordens_servico" }
+    (usa o sistema de permissões atual — NENHUM sistema paralelo de autorização)
+
+--------------------------------------------------------------------------------
+16. PORTAL CLIENTE — PRESERVAÇÃO (ETAPA 7)
+--------------------------------------------------------------------------------
+  - PortalDrawerPOD.tsx refatorado: o lightbox inline (zoom/rotação/navegação/
+    download) foi substituído pelo componente compartilhado src/components/ui/lightbox.tsx
+  - Comportamento do Portal preservado: mesma abertura por URL, mesmo download,
+    mesma navegação entre mídias (medias.map para o formato LightboxMedia)
+  - PortalComprovantesPremium.tsx NÃO foi alterado
+  - Build validado — Portal Cliente continua compilando
+
+--------------------------------------------------------------------------------
+17. RESULTADO DO TSC
+--------------------------------------------------------------------------------
+  npx tsc --noEmit  →  0 erros
+
+--------------------------------------------------------------------------------
+18. RESULTADO DO BUILD
+--------------------------------------------------------------------------------
+  npm run build  →  ✅ 42.57s — build ok
+  Chunks gerados: Comprovantes-*.js (36.32 kB), lightbox-*.js (44.46 kB)
+
+--------------------------------------------------------------------------------
+19. TESTES EXECUTADOS
+--------------------------------------------------------------------------------
+  - npx vitest run → 31/31 testes unitários passaram (4 arquivos)
+  - npx tsc --noEmit → 0 erros
+  - npm run build → OK
+  - tests/e2e/a23_fase_a_comprovantes.spec.ts criado e listado pelo Playwright
+    (5 testes: rota, filtros, busca, listagem/network entregas_protocolo, dossiê).
+    EXECUÇÃO E2E requer ambiente QA + credenciais reais (guard-rails do repositório:
+    PRODUÇÃO bloqueia testes — M003/M136-C.2). Fica pronto para rodar em QA.
+
+--------------------------------------------------------------------------------
+20. PROBLEMAS ENCONTRADOS
+--------------------------------------------------------------------------------
+  - Nenhum erro de compilação ou build introduzido.
+  - rota_paradas possui pouquíssimos registros reais em produção (auditoria: 6),
+    portanto destinatário/endereço/volumes vêm primariamente de alocacoes_escala/
+    ordens_servico; paradas são usadas apenas como fonte complementar quando existem.
+  - gps_accuracy em entregas_protocolo nem sempre é preenchido pelo fluxo atual;
+    exibido apenas quando presente.
+
+--------------------------------------------------------------------------------
+21. PENDÊNCIAS REAIS
+--------------------------------------------------------------------------------
+  - Mapa embutido da entrega no dossiê (requer chave/Mapbox — registrado como pendência)
+  - Executar Playwright a23_fase_a_comprovantes.spec.ts em ambiente QA com credenciais
+  - gps_accuracy completo no App (futuro)
+  - Volumes entregues por parada dependem da operação real popular rota_paradas
+
+--------------------------------------------------------------------------------
+22. CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+  - Nenhuma migration foi executada ................... CONFIRMADO
+  - Nenhum dado de Produção foi alterado .............. CONFIRMADO (somente leitura/
+      criação de arquivos frontend TS/TSX; nenhum SELECT→INSERT/UPDATE/DELETE)
+  - Nenhum script de seed executado ................... CONFIRMADO
+  - Nenhum ALTER/CREATE/DROP/trigger/RPC/RLS .......... CONFIRMADO
+  - Nenhuma alteração no App Flutter
+      (C:\src\conexao_prestador) ...................... CONFIRMADO (não tocado)
+  - Supabase único de Produção (uwrvzsjtpgaifkktpepn)  CONFIRMADO (nenhuma operação)
+  - Correção do KPI dos 77 comprovantes da Torre ...... NÃO feita nesta fase (próxima)
+  - Bloqueio de faturamento ........................... NÃO feita nesta fase
+  - Financeiro / App Prestador / banco ................ NÃO alterados
+  - Portal Cliente continua compilando ................ CONFIRMADO
+
+--------------------------------------------------------------------------------
+23. EVIDÊNCIAS-CHAVE (arquivo:linha)
+--------------------------------------------------------------------------------
+  - Rota:            src/App.tsx (lazy Comprovantes + <Route path="/comprovantes">)
+  - Menu:            src/lib/sidebarData.ts (item "Comprovantes de Entrega")
+  - Permissão:       src/lib/routePermissions.ts ("/comprovantes": ordens_servico)
+  - Serviço:         src/services/comprovantes/comprovantesService.ts
+      (listarComprovantes, buscarDossieComprovante, rotularSituacao, isComprovanteCompleto)
+  - Página:          src/pages/Comprovantes.tsx (filtros + tabela + paginação)
+  - Dossiê:          src/components/comprovantes/DossieEntregaSheet.tsx
+  - Lightbox:        src/components/ui/lightbox.tsx
+  - Reuso:           portalClienteService.buscarDetalhesEntregaCompleto (linha 644)
+                     eventAdapter.normalizarEvento (linha 198)
+  - Testes:          tests/e2e/a23_fase_a_comprovantes.spec.ts
+  - Auditoria base:  logs/a23/A23_AUDITORIA_COMPROVANTES_TMS.txt
+
+--------------------------------------------------------------------------------
+PRÓXIMA FASE RECOMENDADA
+--------------------------------------------------------------------------------
+  A23 — FASE B — INTEGRAÇÃO COM A TORRE + CORREÇÃO DO KPI DE PENDÊNCIAS
+
+  1. Tornar o KPI "Pendências/comprovantes" da Torre (TorreControle.tsx:690,
+     ExecutiveKpis.tsx) clicável → navegar para /comprovantes.
+  2. Corrigir a query do KPI (TorreControle.tsx:296-300): hoje conta
+     alocacoes_escala.comprovante_url IS NULL (77) — mistura operações em
+     andamento com concluídas e gera ~18 FALSOS pendentes (POD já existe em
+     entregas_protocolo). Nova métrica deve cruzar entregas_protocolo (ex.:
+     alocações concluídas/finalizadas SEM POD real em entregas_protocolo),
+     usando a mesma fonte oficial da Central.
+  3. (Opcional, avaliar) vincular a Central à CentralAlertas para ações de
+     "comprovante" levarem ao dossiê correto.
+
+  NÃO executada nesta fase — apenas orientação objetiva para a Fase B.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A23 — FASE A
+STATUS FINAL: CONCLUÍDA ✅
+================================================================================

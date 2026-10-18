@@ -1,0 +1,100 @@
+FECHAMENTO-TMS-PENDENCIAS-FINAIS-01
+==================================================
+Ambiente: TMS | Data: 2026-09-22 | Modo: AUDITORIA READ-ONLY
+Fonte: código + migrations + 431 relatórios/TXTs existentes (sem reauditar homologados)
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+BLOCKERS_NIVEL_3_COUNT=0
+==================================================
+
+BLOCKERS_NIVEL_3=
+Nenhum bloqueador A (que impeça sair do nível 3) foi identificado. Os itens remanescentes
+são, por natureza, de nível 2 (E2E), Master 360 ou pós-homologação — conforme detalhado abaixo.
+Não foram promovidos a A (seguindo a instrução de não puxar itens de E2E/Master360 para o nível 3).
+
+Evidência do fechamento do core TMS (todos PASS/homologados):
+  - Escala → OS → Financeiro (M66/M80) provado end-to-end (ESCALA-E2E-08J) e validado por
+    transação (09B), com cleanup do HML (10B) — produção restaurada.
+  - Persistência de cadastros e save-integrity: CAD-PERSIST-02 (lista/paginação/mock),
+    03/03B (save), 04/04B (draft/nav guard prestador), 05 (indicadores), 06 (escala),
+    07 (tabela valores) = PASS.
+  - PDFs/fatura: FAT-PDF-CNPJ-01/02, FAT-PDF-CABECALHO-03 = PASS.
+  - RLS/tenant: ENV-QA-09-PRODUCTION_RLS_DEPLOY = PASS.
+  - POD trigger: FIX-POD-00E PRODUCTION_DEPLOY = PASS.
+  - Schema drift: FIN-SANE-02M.7 = PASS; numero_pedido drift corrigido (ESCALA-E2E-08H).
+  - Loading global: UI-LOADING-GLOBAL-02 = PASS.
+  - Contratos/e-mail: CONTRATO-EMAIL-01 = PASS.
+  - Órfãs/testes residuais (27/16/20/67) encerrados (ESCALA-OS-09..13).
+
+==================================================
+NIVEL_2_BACKLOG (E2E COMPLETO)
+==================================================
+B1. E2E-COMPLETO-01 — plano/execução ponta a ponta (Escala UI real, cadastros, financeiro,
+    portal, PDFs), com política de "obrigação financeira E2E" (isolamento + cleanup).
+B2. APP Motorista (externo): CORE-E2E-OS-APP-POD-03 = PASS CODE / funcional PENDENTE (Redmi);
+    stop_detail_screen.dart mantém catch silencioso (nota do próprio relatório);
+    photoUrl com fallback de path local → evidência visual quebrada.
+B3. Admin App / pré-cadastro: ADM_APP_01 P0 — G02 (bridge upload→documentos_prestadores PARCIAL),
+    G21 (bloqueio sem campo motivo_bloqueio).
+B4. Recrutamento: REC-06.2D.2F (patch score/classificação) pendente (REC_062D2V); testes
+    rec06_2d2/rec02/rec03/rec04 falham (baseline).
+B5. Guards/draft em formulários: ClienteDetalhe, OrcamentoForm, TabelaValoresForm e forms
+    financeiros sem useBlocker/beforeunload (CAD-PERSIST-01; só OS e Prestador têm guard).
+B6. OSPDF: hoje 1 documento único (cliente+prestador juntos) — revisar variante Cliente ×
+    Prestador e possível página em branco (não há defeito documentado aberto; validar no E2E).
+B7. TMS↔APP: validar RPCs (f_avancar_etapa_app_motorista / f_atualizar_reversa_app) e grants
+    no fluxo real (M133-D.4 preparado).
+
+==================================================
+MASTER_360_BACKLOG
+==================================================
+M1. 57 falhas de teste BASELINE (10 arquivos: a31j11, ag07f, ag07h, ag07j3, f0k_recibos,
+    rec02, rec03_1, rec03, rec04, rec06_2d2) — reconciliar ou formalizar como esperadas.
+M2. Indicadores do prestador (score/aceite/pontualidade/presença): regra/fonte ausente
+    (CAD-PREST-IND-02) — definir regra ou ocultar; não inventar fórmula.
+M3. RLS/tenant isolation: varredura completa além do gate ENV-QA-09.
+M4. Schema drift contínuo (monitorar; FIN-SANE-02M.7 PASS).
+M5. Clayton: reclassificação de tipo de veículo (misto→seco/térmico) exige decisão humana
+    (CAD-VEIC-01 / ESCALA-VEIC-TABELA-03).
+M6. (Fora do nível 3, por instrução) carga, performance massiva, observabilidade final,
+    backup/restore, regressão global, checklist go-live, Control Tower.
+
+==================================================
+POST_HOMOLOGACAO_BACKLOG
+==================================================
+P1. e-signature de contratos; P2. CNAB; P3. NFS-e/SEFAZ; P4. IA/automações completas;
+P5. Marketing; P6. Control Tower; P7. CNAB/Recibo Rápido PDF.
+
+==================================================
+DUPLICATES_MERGED
+==================================================
+- numero_pedido (08G diagnóstico + 08H fix) — 1 causa, resolvida.
+- Coluna Veículo "Sem veículo" (UI-VEICULO-01) — resolvida.
+- Tabela sumindo no SAVE (08C/08D) — resolvida.
+- Falso sucesso Escala/TabelaValores (CAD-PERSIST-06/07) — resolvidos.
+- Loading global parado (UI-LOADING-GLOBAL-02) — resolvido.
+- Órfãs 27/16/20/67 e dados de teste HML (ESCALA-OS-09..13, ESCALA-E2E-10B) — encerrados.
+- Divergências financeiras históricas (ESCALA-FIN-02/03) — classificadas/tratadas.
+
+==================================================
+ALREADY_CLOSED_NOT_REOPENED
+==================================================
+CAD-PERSIST-01..07; CAD-PREST-IND-01/02; CAD-VEIC-01/02/03; CLIENTES-01/02;
+ESCALA-OS-01..13; ESCALA-FIN-01/01.1/02/03; ESCALA-E2E-01..10B; ESCALA-VEIC-TABELA-05/06/07;
+FAT-PDF-CNPJ-01/02; FAT-PDF-CABECALHO-03; UI-LOADING-GLOBAL-02; ENV-QA-06..09;
+FIX-POD-00..00E; CONTRATO-EMAIL-01; FIN-SANE-02M.7; numero_pedido fix (08H).
+
+==================================================
+CAN_EXIT_LEVEL_3_NOW=YES
+==================================================
+NEXT_EXACT_MISSION=E2E-COMPLETO-01-PLANO
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma alteração de código/banco; nenhuma migration; nenhum dado criado; nenhum E2E/Master360
+executado; nenhum módulo homologado reauditado; nenhuma correção implementada.
+
+DB_WRITES=0
+MIGRATIONS=0

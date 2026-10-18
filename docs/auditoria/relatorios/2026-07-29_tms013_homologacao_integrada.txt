@@ -1,0 +1,72 @@
+MISSAO TMS-013 — Homologacao Integrada com Dados Descartaveis
+
+Data: 2026-07-29
+Marcador: HML-APP-20260729
+Usuario referencia: teste@conexao.com
+Tenant: 00000000-0000-0000-0000-000000000001 (Conexao Express)
+Ambiente: PRODUCAO (uwrvzsjtpgaifkktpepn.supabase.co) — sem ambiente QA
+Status: SITUACAO A — SEED NAO EXECUTADO. 0 registros em 16 tabelas.
+
+================================================================================
+CENARIOS PLANEJADOS
+================================================================================
+
+  #  | Cenario                      | OS         | Alocacoes | Veiculo  | Prestador             | Cliente
+-----+------------------------------+------------+-----------+----------+-----------------------+-----------------
+  1  | OS direta com coleta/entrega | HML-OS-001 | 1         | HML1A23  | teste@conexao.com     | HML C1
+  2  | Motoboy urbano               | HML-OS-002 | 1         | HML2B34  | MOTOBOY HML C2        | HML C2 FOOD
+  3  | Rota e-commerce (5 paradas)  | HML-OS-003 | 1         | HML3C45  | ENTREGADOR HML C3     | HML C3 E-COMM
+  4  | Coleta reversa               | HML-OS-004 | 1         | HML4D56  | LOG REVERSA HML C4    | HML C4 REVERSA
+  5  | Ocorrencia + reentrega       | HML-OS-005 | 2         | HML5E67  | ENTREGADOR HML C5     | HML C5 OCORR
+  6  | Repasse + reembolso          | HML-OS-006 | 1         | HML6F78  | TRANSP HML C6         | HML C6 FIN
+
+================================================================================
+AUDITORIA — CONSULTA AO BANCO (2026-07-29)
+================================================================================
+
+Todas as 16 tabelas consultadas via supabase-js com VITE_SUPABASE_ANON_KEY real:
+
+Tabela                          | Registros
+--------------------------------+----------
+clientes                        |        0
+prestadores                     |        0
+veiculos                        |        0
+ordens_servico                  |        0
+alocacoes_escala                |        0
+financeiro_receber              |        0
+financeiro_pagar                |        0
+pagamentos_prestadores          |        0
+entregas_protocolo              |        0
+portal_tracking_realtime        |        0
+ocorrencias                     |        0
+reembolsos_prestador            |        0
+abastecimentos                  | Tabela inexistente
+historico_alocacoes_escala      |        0
+operation_timeline_events       |        0
+os_enderecos                    |        0
+--------------------------------+----------
+TOTAL                           |        0
+
+CLASSIFICACAO: SITUACAO A — SEED NAO EXECUTADO.
+O script scripts/tms013_seed_hml.mjs NUNCA foi executado contra o banco.
+Manifesto contem apenas placeholders "UUID-GERADO-PELO-SCRIPT".
+
+================================================================================
+ARTEFATOS
+================================================================================
+
+- scripts/tms013_seed_hml.mjs        — Seed script (sem idempotencia)
+- supabase/scripts/cleanup_hml_app_20260729.sql — Cleanup (16 passos, PASSO 0 ativo)
+- docs/.../2026-07-29_tms013_manifesto_dados_homologacao.json — Placeholder UUIDs
+- docs/.../2026-07-29_tms013_homologacao_integrada.md         — Relatorio (corrigido)
+- docs/.../2026-07-29_tms013_homologacao_integrada.txt        — Este arquivo
+
+================================================================================
+PENDENCIAS POS-AUDITORIA
+================================================================================
+
+1. [P0] Adicionar ON CONFLICT / idempotencia ao seed (protecao contra dupla execucao)
+2. [P1] Obter autorizacao para executar seed em producao
+3. [P2] Verificar existencia de os_enderecos e abastecimentos no schema remoto
+4. [P3] Executar seed e validar visualmente os 6 cenarios
+5. [P3] Executar cleanup apos validacao

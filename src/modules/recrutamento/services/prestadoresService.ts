@@ -373,6 +373,7 @@ export const prestadoresService = {
         agregado: 'ativo', aprovado: 'ativo', bloqueado: 'inativo',
         em_analise: 'analise', novo: 'analise', reserva: 'analise',
       }
+      const novoStatus = statusMap[prestador.status] ?? 'analise'
 
       await supabase
         .from('prestadores')
@@ -382,7 +383,10 @@ export const prestadoresService = {
           telefone: telefone,
           whatsapp: telefone,
           tipo_parceiro: prestador.tipoVeiculo || 'carreteiro',
-          status: statusMap[prestador.status] ?? 'analise',
+          status: novoStatus,
+          // AG-07F — coerência status x liberado_app: aprovação operacional
+          // (ativo) libera o App; bloqueio/inativação/análise revoga.
+          liberado_app: novoStatus === 'ativo',
           endereco: {
             cidade: prestador.endereco?.cidade || '',
             estado: prestador.endereco?.uf || '',
@@ -425,7 +429,7 @@ export const prestadoresService = {
 
       await supabase
         .from('prestadores')
-        .update({ status: 'inativo' })
+        .update({ status: 'inativo', liberado_app: false })
         .eq('id', idOperacional)
       } catch (err) {
           console.error('[Sync Remover Operacional] Erro:', err)
@@ -570,7 +574,7 @@ export const prestadoresService = {
         if (existente.data && existente.data.length > 0) {
           await supabase
             .from('prestadores')
-            .update({ status: statusOperacional, origem_cadastro: origemVinculo })
+            .update({ status: statusOperacional, liberado_app: statusOperacional === 'ativo', origem_cadastro: origemVinculo })
             .eq('id', existente.data[0].id)
           return { success: true, message: `Registro existente encontrado por vínculo. Status atualizado para "${statusOperacional}".` }
         }
@@ -584,7 +588,7 @@ export const prestadoresService = {
         if (!existente.error && existente.data && existente.data.length > 0) {
           await supabase
             .from('prestadores')
-            .update({ status: statusOperacional, origem_cadastro: origemVinculo })
+            .update({ status: statusOperacional, liberado_app: statusOperacional === 'ativo', origem_cadastro: origemVinculo })
             .eq('id', existente.data[0].id)
           return { success: true, message: `Registro existente encontrado por telefone. Status atualizado para "${statusOperacional}" e vínculo registrado.` }
         }
@@ -599,6 +603,7 @@ export const prestadoresService = {
             cpf_cnpj: cpfUnico,
             tipo_parceiro: prestador.tipoVeiculo || 'carreteiro',
             status: statusOperacional,
+            liberado_app: statusOperacional === 'ativo',
             telefone: divergencia.telefone,
             whatsapp: divergencia.telefone,
             email,
@@ -632,7 +637,7 @@ export const prestadoresService = {
 
       const { error: updateError } = await supabase
         .from('prestadores')
-        .update({ status: novoStatus })
+        .update({ status: novoStatus, liberado_app: novoStatus === 'ativo' })
         .eq('id', divergencia.operacionalId)
 
       if (updateError) {

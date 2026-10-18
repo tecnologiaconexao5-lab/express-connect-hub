@@ -1,0 +1,112 @@
+FIN-363D.2B2 — SEGREGAR TESTE EM PAGAMENTOS_PRESTADORES
+=======================================================
+Data: 2026-09-07T17:20:35.325Z
+
+FASE 1 — AUDITORIA DE SCHEMA
+─────────────────────────────
+Coluna is_teste existe: NÃO
+Total registros: 90
+
+FASE 2 — SNAPSHOT ANTES
+────────────────────────
+TOTAL = 90
+SOMA TOTAL = R$ 66715.32
+  pago: 3
+  pendente: 87
+
+FASE 3 — CANDIDATOS A TESTE
+─────────────────────────────
+Candidatos encontrados: 42
+Com OS vinculada: 42 (5 já is_teste=true)
+
+  a4fae89d  "PRESTADOR TESTE APP"  R$250.00  pendente  evid=[prestador_nome]
+  2b3fb150  "PRESTADOR TESTE APP"  R$100.00  pendente  evid=[prestador_nome]
+  26f61bc9  "PRESTADOR TESTE APP"  R$100.00  pendente  evid=[prestador_nome]
+  28f2492b  "PRESTADOR TESTE APP"  R$100.00  pendente  evid=[prestador_nome]
+  f4e4cca6  "PRESTADOR TESTE APP"  R$50.00  pendente  evid=[prestador_nome,os_id_vinculada_is_teste]
+  524e1e1c  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  9fcf1435  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  8a30b23a  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  54d4c635  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  6605e1e8  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  0cbf2763  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  77cb490b  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  cb866539  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  de8a1854  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  74eadd8d  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  da2f911b  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  3313adda  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  33557f90  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  fe7cc24f  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  fcb0394d  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  1cf29cba  "PRESTADOR TESTE APP"  R$1050.00  pendente  evid=[prestador_nome]
+  4cc0ee4e  "PRESTADOR TESTE APP"  R$580.00  pendente  evid=[prestador_nome]
+  b6dac07c  "PRESTADOR TESTE APP"  R$350.00  pendente  evid=[prestador_nome]
+  f20f38c9  "PRESTADOR TESTE APP"  R$420.00  pendente  evid=[prestador_nome]
+  4ed52905  "PRESTADOR TESTE APP"  R$580.00  pendente  evid=[prestador_nome]
+  dd142135  "PRESTADOR TESTE APP"  R$1490.00  pendente  evid=[prestador_nome]
+  e2e0159d  "PRESTADOR TESTE APP"  R$850.00  pendente  evid=[prestador_nome]
+  ded4388d  "PRESTADOR TESTE APP"  R$298.50  pendente  evid=[prestador_nome]
+  50429c41  "PRESTADOR TESTE APP"  R$103.50  pendente  evid=[prestador_nome,os_id_vinculada_is_teste]
+  f9f844c2  "PRESTADOR TESTE APP"  R$103.50  pendente  evid=[prestador_nome,os_id_vinculada_is_teste]
+  e6e2bb83  "PRESTADOR TESTE APP"  R$103.50  pendente  evid=[prestador_nome]
+  952861d6  "PRESTADOR TESTE APP"  R$103.50  pendente  evid=[prestador_nome,os_id_vinculada_is_teste]
+  ce5b9c81  "PRESTADOR TESTE APP"  R$103.50  pendente  evid=[prestador_nome,os_id_vinculada_is_teste]
+  e968b1f2  "M43_2026-06-29_18-31-00 Motori"  R$1000.00  pendente  evid=[prestador_nome]
+  b6110500  "M43_2026-06-29_18-29-55 Motori"  R$1000.00  pendente  evid=[prestador_nome]
+  5d128941  "PRESTADOR TESTE APP"  R$850.00  pendente  evid=[prestador_nome]
+  32b3d662  "PRESTADOR TESTE APP"  R$895.00  pendente  evid=[prestador_nome]
+  bc12e3de  "PRESTADOR TESTE APP"  R$280.00  pendente  evid=[prestador_nome]
+  24d6454d  "PRESTADOR TESTE APP"  R$280.00  pendente  evid=[prestador_nome]
+  bc826113  "PRESTADOR TESTE APP"  R$280.00  pendente  evid=[prestador_nome]
+  8453492e  "PRESTADOR TESTE APP"  R$280.00  pendente  evid=[prestador_nome]
+  abfa3755  "PRESTADOR TESTE APP"  R$240.00  pendente  evid=[prestador_nome]
+
+FASE 4 — MIGRATION
+───────────────────
+✅ Migration aplicada: is_teste BOOLEAN DEFAULT false
+
+FASE 5 — CLASSIFICAÇÃO
+───────────────────────
+Registros marcados is_teste=true: 42
+Evidência: prestador_nome="PRESTADOR TESTE APP" ou "Motorista Teste" + observacao com marcador
+
+FASE 6 — VERIFICAÇÃO
+─────────────────────
+PROVA DE NÃO MODIFICAÇÃO:
+  Registros: antes=90 depois=90 → ✅ MANTIDO
+  Soma:      antes=R$66715.32 depois=R$66715.32 → ✅ MANTIDO
+
+Status inalterados: ✅ SIM
+
+═══════════════════════════════════════════════════════════
+RESULTADO ANTES/DEPOIS
+═══════════════════════════════════════════════════════════
+
+TOTAL    = 90
+TESTE    = 42
+REAL     = 48
+DUVIDOSO = 0 (nenhum — todos os candidatos tinham evidência inequívoca)
+
+SOMA TOTAL ANTES = R$ 66715.32
+SOMA TOTAL DEPOIS = R$ 66715.32
+SOMA TESTE = R$ 27591.00
+SOMA REAL  = R$ 39124.32
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+MIGRATION APLICADA: SIM
+TOTAL: 90
+TESTE: 42
+REAL: 48
+DUVIDOSO: 0
+VALORES ALTERADOS: NÃO (is_teste é flag boolean, valores financeiros intactos)
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+FIN-363D.2B2: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

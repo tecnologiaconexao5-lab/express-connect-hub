@@ -73,3 +73,5 @@ SELECT
   c.escala_id
 FROM motorista_checkins c
 WHERE c.prestador_id = auth.uid();
+
+

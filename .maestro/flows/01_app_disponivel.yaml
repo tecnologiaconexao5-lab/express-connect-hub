@@ -1,0 +1,34 @@
+# ============================================================================
+# ETAPA 1 (celular) - Abrir o app Conexao Express e validar o estado Disponivel.
+# Pre-requisito: prestador MOTO logado; Perfil com veiculo "Moto".
+# Valida: home carrega autenticada + indicador de disponibilidade visivel.
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+# O app e trazido ao primeiro plano por `adb shell monkey` antes do flow: o
+# MIUI/XSpace NEGA o launch feito pelo pacote dev.mobile.maestro ("MIUILOG-
+# Permission Denied Activity"), entao NAO usamos launchApp aqui.
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Disponível"
+    timeout: 40000
+- assertVisible: "Disponível"
+
+# A home tambem precisa mostrar o card de Rede de Oportunidades (fonte do feed).
+# O card tem titulo + subtitulo num unico no de acessibilidade, entao casa por regex.
+- scrollUntilVisible:
+    element:
+      text: ".*Rede de Oportunidades.*"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: ".*Rede de Oportunidades.*"
+
+# Volta ao topo para deixar a home em estado limpo para as proximas etapas
+- scrollUntilVisible:
+    element:
+      text: "Disponível"
+    direction: UP
+    timeout: 20000
+
+- takeScreenshot: "01_app_disponivel"

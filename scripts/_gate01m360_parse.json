@@ -1,0 +1,180 @@
+{
+  "ts": "2026-10-04T23:49:37.774Z",
+  "regua": [
+    {
+      "nivel": "NIVEL 9",
+      "nome": "Seguranca / RLS multi-tenant",
+      "antes": "🔶 PARCIAL",
+      "depois": "🔶 PARCIAL"
+    },
+    {
+      "nivel": "NIVEL 8",
+      "nome": "App Flutter / Integracao",
+      "antes": ".",
+      "depois": "🟢 HOMOLOGADO*  🟢 HOMOLOGADO*"
+    },
+    {
+      "nivel": "NIVEL 6",
+      "nome": "Persistencia e Operacional",
+      "antes": ".",
+      "depois": "🟢 HOMOLOGADO*  🟢 CONSOLIDADO"
+    },
+    {
+      "nivel": "NIVEL 5",
+      "nome": "Financeiro",
+      "antes": "🔶 RESSALVAS",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 4",
+      "nome": "Comercial / Orcamentos",
+      "antes": "🟢 HOMOLOGADO",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 3",
+      "nome": "TMS Core / OS / Escala",
+      "antes": "🟢 HOMOLOGADO",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 2",
+      "nome": "Fiscal / SEFAZ",
+      "antes": "⬜ PENDENTE",
+      "depois": "⬜ PENDENTE"
+    },
+    {
+      "nivel": "NIVEL 1",
+      "nome": "Integracoes externas",
+      "antes": "⬜ PENDENTE",
+      "depois": "⬜ PENDENTE"
+    },
+    {
+      "nivel": "NIVEL 0",
+      "nome": "Producao real com dinheiro",
+      "antes": "🔴 BLOQUEADO",
+      "depois": "🔴 BLOQUEADO"
+    },
+    {
+      "nivel": "E2E",
+      "nome": "Integracao ponta a ponta",
+      "antes": "⬜ PENDENTE",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 9",
+      "nome": "— SEGURANCA ENTERPRISE / RLS MULTI-TENANT",
+      "antes": ".",
+      "depois": "🔶 PARCIAL"
+    },
+    {
+      "nivel": "NIVEL 8",
+      "nome": "— APP FLUTTER / INTEGRACAO",
+      "antes": ".",
+      "depois": "🟢 HOMOLOGADO*"
+    },
+    {
+      "nivel": "NIVEL 7",
+      "nome": "— CADASTROS / ADMIN / RECRUTAMENTO",
+      "antes": ".",
+      "depois": "🟢 HOMOLOGADO*"
+    },
+    {
+      "nivel": "NIVEL 6",
+      "nome": "— PERSISTENCIA E OPERACIONAL",
+      "antes": ".",
+      "depois": "🟢 CONSOLIDADO"
+    },
+    {
+      "nivel": "NIVEL 5",
+      "nome": "— FINANCEIRO",
+      "antes": ".",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 4",
+      "nome": "— COMERCIAL / ORCAMENTOS",
+      "antes": ".",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 3",
+      "nome": "— TMS CORE / OS / ESCALA / PROGRAMACAO",
+      "antes": ".",
+      "depois": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "nivel": "NIVEL 2",
+      "nome": "— FISCAL / SEFAZ",
+      "antes": ".",
+      "depois": "⬜ PENDENTE"
+    },
+    {
+      "nivel": "NIVEL 1",
+      "nome": "— INTEGRACOES EXTERNAS",
+      "antes": ".",
+      "depois": "⬜ PENDENTE"
+    },
+    {
+      "nivel": "NIVEL 0",
+      "nome": "— PRODUCAO REAL COM DINHEIRO",
+      "antes": ".",
+      "depois": "🔴 NAO RECOMENDADO"
+    }
+  ],
+  "niveis": [
+    {
+      "titulo": "NIVEL 9 — SEGURANCA ENTERPRISE / RLS MULTI-TENANT",
+      "status": "🔶 PARCIAL"
+    },
+    {
+      "titulo": "NIVEL 8 — APP FLUTTER / INTEGRACAO",
+      "status": "🟢 HOMOLOGADO*"
+    },
+    {
+      "titulo": "NIVEL 7 — CADASTROS / ADMIN / RECRUTAMENTO",
+      "status": "🟢 HOMOLOGADO*"
+    },
+    {
+      "titulo": "NIVEL 6 — PERSISTENCIA E OPERACIONAL",
+      "status": "🟢 CONSOLIDADO"
+    },
+    {
+      "titulo": "NIVEL 5 — FINANCEIRO",
+      "status": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "titulo": "NIVEL 4 — COMERCIAL / ORCAMENTOS",
+      "status": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "titulo": "NIVEL 3 — TMS CORE / OS / ESCALA / PROGRAMACAO",
+      "status": "🟢 100% HOMOLOGADO"
+    },
+    {
+      "titulo": "NIVEL 2 — FISCAL / SEFAZ",
+      "status": "⬜ PENDENTE"
+    },
+    {
+      "titulo": "NIVEL 1 — INTEGRACOES EXTERNAS",
+      "status": "⬜ PENDENTE"
+    },
+    {
+      "titulo": "NIVEL 0 — PRODUCAO REAL COM DINHEIRO",
+      "status": "🔴 NAO RECOMENDADO"
+    }
+  ],
+  "gaps": [
+    "[!] F1 [ALTO] tenant_usuarios legivel por ANON (policy tu_select_anon qual=true)",
+    "[!] F4 [MEDIO] f_atualizar_reversa_app sem guarda de tenant (anomalia A02) ... 🔴 GAP",
+    "[!] G3: divergencia TMS \"Valido\" x app \"Pendente\" ............... 🔴 GAP",
+    "[!] Execucao bancaria / Boleto / PIX (Efi — BLOQUEADO EXTERNO) ... 🔴 BLOQUEADO",
+    "[!] Comunicacao SEFAZ em producao ............................... 🔴 FASE FUTURA",
+    "[!] Efi (boleto/PIX/lote bancario) ............................... 🔴 BLOQUEADO EXTERNO",
+    "[!] Webhook retorno bancario ..................................... 🔴 FASE FUTURA",
+    "[!] CNAB: UI existe, sem provider ................................ 🔴 BLOQUEADO",
+    "[!] 3 P0 abertos (escrita direta fora de gate) ................... 🔴 BLOQUEADO"
+  ],
+  "concluidos": 70,
+  "pendentes": 21
+}

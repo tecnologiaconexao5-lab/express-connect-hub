@@ -1,0 +1,282 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ enable debugging { debug: true }
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+##### f_enviar_mensagem_torre | volatile=v securdef=true
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+CREATE OR REPLACE FUNCTION public.f_enviar_mensagem_torre(p_alocacao_id uuid, p_mensagem text, p_idempotency_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_authenticated_uid uuid;
+  v_prestador_id uuid;
+  v_alocacao record;
+  v_mensagem_id uuid;
+  v_existente uuid;
+BEGIN
+  v_authenticated_uid := auth.uid();
+  IF v_authenticated_uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTENTICADO');
+  END IF;
+
+  -- Idempot├¬ncia: mesma chave retorna a mensagem j├í criada
+  IF p_idempotency_key IS NOT NULL AND btrim(p_idempotency_key) <> '' THEN
+    SELECT id INTO v_existente FROM public.operacao_mensagens
+    WHERE idempotency_key = p_idempotency_key AND sender_type = 'prestador'
+    LIMIT 1;
+    IF v_existente IS NOT NULL THEN
+      RETURN jsonb_build_object('success', true, 'duplicada', true, 'mensagem_id', v_existente);
+    END IF;
+  END IF;
+
+  -- Resolver prestador autenticado
+  SELECT id INTO v_prestador_id
+  FROM public.prestadores
+  WHERE auth_user_id = v_authenticated_uid
+    AND status = 'ativo'
+    AND liberado_app = true;
+  IF v_prestador_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'PRESTADOR_NAO_VINCULADO');
+  END IF;
+
+  -- Validar aloca├º├úo pertence ao prestador
+  SELECT id, ordem_servico_id, prestador_id, status
+    INTO v_alocacao
+  FROM public.alocacoes_escala
+  WHERE id = p_alocacao_id;
+  IF v_alocacao.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_NAO_ENCONTRADA');
+  END IF;
+  IF v_alocacao.prestador_id IS DISTINCT FROM v_prestador_id THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_OUTRO_PRESTADOR');
+  END IF;
+  IF v_alocacao.status IN ('cancelada', 'recusada') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_INATIVA');
+  END IF;
+
+  -- Validar mensagem
+  IF p_mensagem IS NULL OR btrim(p_mensagem) = '' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'MENSAGEM_VAZIA');
+  END IF;
+  IF length(p_mensagem) > 2000 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'MENSAGEM_MUITO_LONGA');
+  END IF;
+
+  INSERT INTO public.operacao_mensagens (
+    alocacao_id, os_id, prestador_id, sender_type, sender_user_id,
+    mensagem, status, idempotency_key
+  ) VALUES (
+    p_alocacao_id,
+    v_alocacao.ordem_servico_id,
+    v_prestador_id,
+    'prestador',
+    v_authenticated_uid,
+    btrim(p_mensagem),
+    'enviada',
+    NULLIF(p_idempotency_key, '')
+  )
+  RETURNING id INTO v_mensagem_id;
+
+  RETURN jsonb_build_object('success', true, 'mensagem_id', v_mensagem_id, 'created_at', now());
+END;
+$function$
+
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+##### f_responder_mensagem_torre | volatile=v securdef=true
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+CREATE OR REPLACE FUNCTION public.f_responder_mensagem_torre(p_alocacao_id uuid, p_mensagem text, p_idempotency_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_authenticated_uid uuid;
+  v_alocacao record;
+  v_mensagem_id uuid;
+  v_existente uuid;
+  v_notificacao_id uuid;
+BEGIN
+  v_authenticated_uid := auth.uid();
+  IF v_authenticated_uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTENTICADO');
+  END IF;
+
+  -- Somente usu├írio TMS pode responder
+  IF NOT EXISTS (SELECT 1 FROM public.tenant_usuarios WHERE user_id = v_authenticated_uid) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTORIZADO_TORRE');
+  END IF;
+
+  -- Idempot├¬ncia (resposta da torre)
+  IF p_idempotency_key IS NOT NULL AND btrim(p_idempotency_key) <> '' THEN
+    SELECT id INTO v_existente FROM public.operacao_mensagens
+    WHERE idempotency_key = p_idempotency_key AND sender_type = 'torre'
+    LIMIT 1;
+    IF v_existente IS NOT NULL THEN
+      RETURN jsonb_build_object('success', true, 'duplicada', true, 'mensagem_id', v_existente);
+    END IF;
+  END IF;
+
+  -- Validar aloca├º├úo (para identificar o prestador e o os_id)
+  SELECT id, ordem_servico_id, prestador_id, status INTO v_alocacao
+  FROM public.alocacoes_escala WHERE id = p_alocacao_id;
+  IF v_alocacao.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_NAO_ENCONTRADA');
+  END IF;
+  IF v_alocacao.prestador_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_SEM_PRESTADOR');
+  END IF;
+
+  -- Validar mensagem
+  IF p_mensagem IS NULL OR btrim(p_mensagem) = '' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'MENSAGEM_VAZIA');
+  END IF;
+  IF length(p_mensagem) > 2000 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'MENSAGEM_MUITO_LONGA');
+  END IF;
+
+  INSERT INTO public.operacao_mensagens (
+    alocacao_id, os_id, prestador_id, sender_type, sender_user_id,
+    mensagem, status, idempotency_key
+  ) VALUES (
+    p_alocacao_id,
+    v_alocacao.ordem_servico_id,
+    v_alocacao.prestador_id,
+    'torre',
+    v_authenticated_uid,
+    btrim(p_mensagem),
+    'enviada',
+    NULLIF(p_idempotency_key, '')
+  )
+  RETURNING id INTO v_mensagem_id;
+
+  -- Notificar o App (infra real existente)
+  BEGIN
+    v_notificacao_id := public.f_registrar_notificacao_app(
+      v_alocacao.prestador_id,
+      'Nova mensagem da Torre',
+      left(btrim(p_mensagem), 120),
+      'operacao_mensagem',
+      p_alocacao_id,
+      'alocacao'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_notificacao_id := NULL;
+  END;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'mensagem_id', v_mensagem_id,
+    'notificacao_id', v_notificacao_id,
+    'created_at', now()
+  );
+END;
+$function$
+
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+##### f_marcar_mensagens_lidas_torre | volatile=v securdef=true
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+CREATE OR REPLACE FUNCTION public.f_marcar_mensagens_lidas_torre(p_alocacao_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_authenticated_uid uuid;
+  v_count integer;
+BEGIN
+  v_authenticated_uid := auth.uid();
+  IF v_authenticated_uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTENTICADO');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.tenant_usuarios WHERE user_id = v_authenticated_uid) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTORIZADO_TORRE');
+  END IF;
+
+  UPDATE public.operacao_mensagens
+  SET status = 'lida', read_at = now()
+  WHERE alocacao_id = p_alocacao_id
+    AND sender_type = 'prestador'
+    AND status = 'enviada';
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN jsonb_build_object('success', true, 'atualizadas', v_count);
+END;
+$function$
+
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+##### f_marcar_mensagens_lidas_app | volatile=v securdef=true
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+CREATE OR REPLACE FUNCTION public.f_marcar_mensagens_lidas_app(p_alocacao_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_authenticated_uid uuid;
+  v_prestador_id uuid;
+  v_count integer;
+BEGIN
+  v_authenticated_uid := auth.uid();
+  IF v_authenticated_uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'USUARIO_NAO_AUTENTICADO');
+  END IF;
+
+  SELECT id INTO v_prestador_id FROM public.prestadores
+  WHERE auth_user_id = v_authenticated_uid;
+  IF v_prestador_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'PRESTADOR_NAO_VINCULADO');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.alocacoes_escala
+    WHERE id = p_alocacao_id AND prestador_id = v_prestador_id
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALOCACAO_OUTRO_PRESTADOR');
+  END IF;
+
+  UPDATE public.operacao_mensagens
+  SET status = 'lida', read_at = now()
+  WHERE alocacao_id = p_alocacao_id
+    AND sender_type = 'torre'
+    AND status = 'enviada';
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN jsonb_build_object('success', true, 'atualizadas', v_count);
+END;
+$function$
+
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+##### f_contar_mensagens_nao_lidas_torre | volatile=s securdef=true
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+CREATE OR REPLACE FUNCTION public.f_contar_mensagens_nao_lidas_torre()
+ RETURNS integer
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_total integer;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.tenant_usuarios WHERE user_id = auth.uid()) THEN
+    RETURN 0;
+  END IF;
+  SELECT count(*)::integer INTO v_total
+  FROM public.operacao_mensagens
+  WHERE sender_type = 'prestador' AND status = 'enviada';
+  RETURN v_total;
+END;
+$function$
+

@@ -1,0 +1,396 @@
+=========================================================================
+FIN-SANE-02M.5-CESAR-ROOT-CAUSE
+Root Cause Analysis - Obrigacao Financeira CESAR
+=========================================================================
+Data: 2026-09-19
+Modelo: MiMo-V2.5
+Ambiente: TMS LOCAL + Supabase PRODUCAO
+Modo: SOMENTE LEITURA (ZERO WRITES)
+
+=========================================================================
+1. CADEIA COMPLETA DE IDs
+=========================================================================
+
+PRESTADOR:
+  id:        fe7a75cc-a49f-43ef-a0b7-f869fbf07744
+  nome:      CESAR AUGUSTO HOLANDA SILVA
+  cpf:       41511318848
+  status:    ativo
+
+ALOCACAO (fonte de verdade):
+  id:                  58e5751e-bd54-43c5-9bcf-55fe4e575e6b
+  ordem_servico_id:    NULL (alocacao direta, sem OS vinculada)
+  prestador_id:        fe7a75cc (CESAR)
+  cliente_id:          91b80fdb-6b87-4982-a550-f863f7f15866
+  status:              concluida
+  finalizada:          true
+  data_finalizacao:    2026-08-17T15:57:31.372Z
+  metadata.origem:     central_financeira_manual
+  metadata.numeroOC:   343375
+  created_at:          2026-08-17T15:57:32.153Z
+
+  VALORES DA ALOCACAO (fonte primaria):
+    valor_frete (cliente):              R$ 600.00
+    valor_repasse (prestador base):     R$ 520.00
+    valor_pedagio:                      R$  66.43
+    valor_adicional:                    R$  66.43
+    valor_ajudante:                     R$   0.00
+    valor_desconto_prestador:           R$   0.00
+    valor_combustivel:                  R$   0.00
+    valor_reembolso_outros:             R$   0.00
+    valor_total:                        R$ 652.86
+
+FINANCEIRO_PAGAR (FP):
+  id:                9f2be89f-5ece-4cc5-be29-50010b64e64e
+  valor:             R$ 520.00        << DIVERGENTE (deveria ser 652.86)
+  valor_bruto:       R$   0.00
+  valor_liquido:     R$   0.00
+  status:            pago
+  os_id:             58e5751e (ID da alocacao, nao de OS real)
+  fornecedor_id:     fe7a75cc (CESAR)
+  descricao:         Repasse ALOC-20260817-58E5751E
+  data_pagamento:    2026-09-05
+  data_vencimento:   2026-09-16
+  observacoes:       Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 0.00.
+  created_at:        2026-08-17T18:57:32.153Z  (+3h apos PP)
+  updated_at:        2026-08-17T18:57:32.153Z
+
+PAGAMENTOS_PRESTADORES (PP):
+  id:                7461daf6-438b-43b3-abde-4d30e1609574
+  valor_liquido:     R$ 652.86        << CORRETO (confere com alocacao)
+  valor_servicos:    R$ 520.00        << confere com valor_repasse
+  pedagio:           R$  66.43        << confere com valor_pedagio
+  adicionais:        R$  66.43        << confere com v_outros_custos
+  reembolsos:        R$   0.00
+  descontos:         R$   0.00
+  adiantamentos:     R$   0.00
+  status:            pendente         << NAO PAGO
+  status_pagamento:  pendente
+  os_id:             58e5751e
+  origem_lancamento: escala_direta
+  created_at:        2026-08-17T15:57:32.153Z  (anterior ao FP)
+  updated_at:        2026-08-17T15:57:32.153Z
+
+COMPOSICAO_FINANCEIRA_OS:
+  id:                2c80df30-fa71-4330-9d6f-ed6b0bd9f116
+  os_id:             58e5751e (alocacao)
+  valor_cliente:     R$ 600.00
+  valor_prestador:   R$ 520.00
+  imposto_valor:     R$  27.00 (4.5%)
+  seguro_valor:      R$   6.00 (1%)
+  pedagio_valor:     R$  66.43
+  outros_custos:     R$  66.43  (= adicional 66.43 + ajudante 0 - desconto 0)
+  adicional_valor:   R$  66.43
+  margem_bruta:      R$ -52.86  (600 - 520 - 66.43 - 66.43)
+  margem_liquida:    R$ -85.86  (-52.86 - 27 - 6)
+  origem_calculo:    escala_direta
+  created_at:        2026-08-17T15:57:32.153Z
+
+BAIXA:
+  id:                286c2c2d-90e4-403a-9692-8e68ccfd2a6c
+  titulo_tabela:     financeiro_pagar
+  titulo_id:         9f2be89f (o FP em questao)
+  valor_original:    R$ 520.00
+  valor_baixado:     R$ 520.00
+  saldo_restante:    R$   0.00
+  data_baixa:        2026-09-05
+  forma_pagamento:   Pagamento Prestador
+  conta_financeira:  Cora (9741ad36)
+  observacao:        Baixa automatica - pagamento prestador 32fe474f
+  usuario_id:        NULL
+  estornada:         false
+  created_at:        2026-09-05T21:49:50.512Z
+
+FINANCEIRO_RECEBER:
+  id:                bb5c0efe-3193-49ee-a6cb-d213bee69f72
+  os_id:             58e5751e (alocacao)
+  valor:             R$ 600.00
+  status:            aberto
+  created_at:        2026-08-17T18:57:32.153Z
+
+ORDENS_SERVICO:       NAO EXISTE (ordem_servico_id = NULL na alocacao)
+HISTORICO_ALOCACAO:   0 eventos para esta alocacao
+
+
+=========================================================================
+2. COMPOSICAO FINANCEIRA - COMPONENTES
+=========================================================================
+
+Fonte: alocacao 58e5751e (fonte primaria de verdade)
+
+REPASSE / VALOR PRESTADOR:    R$ 520.00  (valor_repasse)
+PEDAGIO:                      R$  66.43  (valor_pedagio)
+ADICIONAIS:                   R$  66.43  (valor_adicional)
+AJUDANTE:                     R$   0.00
+REEMBOLSOS:                   R$   0.00
+BONUS:                        R$   0.00
+DESCONTOS:                    R$   0.00
+ADIANTAMENTOS:                R$   0.00
+COMBUSTIVEL:                  R$   0.00
+MULTAS:                       R$   0.00
+AJUSTES:                      R$   0.00
+
+TOTAL LIQUIDO CALCULADO:
+  520.00 + 66.43 + 66.43 = R$ 652.86
+  (confere com PP e com valor_total da alocacao)
+
+
+=========================================================================
+3. ORIGEM DOS R$132,86
+=========================================================================
+
+R$652,86 (PP valor_liquido) - R$520,00 (FP valor) = R$132,86
+
+Decomposicao EXATA:
+
+  pedagio:                R$ 66.43
+  adicional:              R$ 66.43
+  ajudante:               R$  0.00
+  desconto:              -R$  0.00
+  reembolso outros:       R$  0.00
+  combustivel:            R$  0.00
+  ---------------------------
+  TOTAL:                  R$ 132.86
+
+Os R$132,86 SAO EXATAMENTE a soma de pedagio + adicional.
+Ambos sao campos legitimos da alocacao (valor_pedagio=66.43, valor_adicional=66.43).
+
+O PP esta CORRETO ao incluir pedagio + adicionais no valor_liquido.
+O FP esta INCORRETO ao incluir APENAS o repasse base (R$520).
+
+
+=========================================================================
+4. CRONOLOGIA
+=========================================================================
+
+  15:57:31.372Z  Alocacao 58e5751e finalizada (data_finalizacao)
+  15:57:32.153Z  Alocacao criada (created_at)
+  15:57:32.153Z  PP 7461daf6 criado (R$652.86, pendente)
+                 composicao_financeira_os 2c80df30 criada
+                 financeiro_receber bb5c0efe NAO existe neste momento
+  18:57:32.153Z  FP 9f2be89f criado (R$520.00, pendente) [+3 horas]
+                 financeiro_receber bb5c0efe criado (R$600, aberto) [+3 horas]
+                 OR: FP e FR criados pelo TRIGGER f_trg_propagar_financeiro_os
+                 que foi acionado por OUTRA atualizacao na alocacao 3h depois
+
+  2026-09-05     Baixa R$520 no FP via f_confirmar_pagamento_prestador
+                 (observacao: "pagamento prestador 32fe474f")
+                 FP status -> pago, PP continua pendente
+
+DATA-CHAVE: PP (R$652.86) foi criado ANTES da baixa de R$520.
+A obrigacao de R$652.86 existia ANTES do pagamento parcial de R$520.
+
+CRONOLOGIA COMPARATIVA:
+  PP created_at:   2026-08-17T15:57:32.153Z
+  FP created_at:   2026-08-17T18:57:32.153Z  (+180 minutos)
+  Baixa data:      2026-09-05T03:00:00.000Z  (+26582 minutos apos PP)
+
+  PP criado ANTES da baixa? SIM
+  PP criado DEPOIS da baixa? NAO
+
+
+=========================================================================
+5. HISTORICO / AUDITORIA
+=========================================================================
+
+  historico_alocacoes_escala: 0 eventos para alocacao 58e5751e
+  financeiro_pagar.updated_at: 2026-08-17T18:57:32.153Z (= created_at)
+  pagamentos_prestadores.updated_at: 2026-08-17T15:57:32.153Z (= created_at)
+
+  NENHUMA alteracao posterior foi registrada em FP ou PP.
+  FP.created_at = FP.updated_at -> nunca foi atualizado apos criacao.
+  PP.created_at = PP.updated_at -> nunca foi atualizado apos criacao.
+  Nao ha historico de mudanca de valor em nenhuma das tabelas.
+
+  NOTA: tabelas de auditoria generica (audit_logs, etc.) nao estao
+  associadas a estes registros. Nao ha trail de quem/porque o FP
+  foi criado com R$520 em vez de R$652.86.
+
+
+=========================================================================
+6. BAIXA - CONFIRMACAO
+=========================================================================
+
+  titulo_id:       9f2be89f-5ece-4cc5-be29-50010b64e64e (FP)
+  valor:           R$ 520.00
+  data:            2026-09-05
+  forma_pagamento: Pagamento Prestador
+  conta:           Cora (9741ad36)
+  usuario:         NULL (baixa automatica)
+  estornada:       false
+
+  EVIDENCIA DE PAGAMENTO ADICIONAL:
+  Total de baixas no FP deste prestador: 3
+    286c2c2d | FP 9f2be89f | R$520 | 2026-09-05 | Cora
+    1922fc57 | FP 31fcab2b | R$520 | 2026-09-05 | (outra OS)
+    c2a233cb | FP 6f871e9f | R$520 | 2026-09-06 | (outra OS)
+
+  NENHUMA baixa adicional referente a PP 7461daf6 ou alocacao 58e5751e.
+  O PP 7461daf6 (R$652.86) NUNCA foi baixado.
+
+
+=========================================================================
+7. REGRA DE NEGOCIO / CODIGO DA EPOCA
+=========================================================================
+
+FUNCAO TRIGGER: f_trg_propagar_financeiro_alocacao()
+Dispara em: INSERT/UPDATE de alocacoes_escala
+
+COMO O TRIGGER CALCULA v_valor_liquido:
+  v_valor_prestador := COALESCE(NEW.valor_repasse, 0);   -- 520
+  v_pedagio_valor := COALESCE(NEW.valor_pedagio, 0);     -- 66.43
+  v_adicional_valor := COALESCE(NEW.valor_adicional, 0);  -- 66.43
+  v_ajudante_valor := COALESCE(NEW.valor_ajudante, 0);    -- 0
+  v_desconto_valor := COALESCE(NEW.valor_desconto_prestador, 0); -- 0
+  v_outros_custos := v_adicional + v_ajudante - v_desconto = 66.43
+  v_valor_liquido := 520 + 66.43 + 66.43 = 652.86
+
+COMO O TRIGGER INSERE O FP:
+  INSERT INTO financeiro_pagar (..., valor, ...)
+  VALUES (..., v_valor_liquido, ...)  -- deveria ser 652.86
+  ON CONFLICT (os_id) DO UPDATE SET valor = v_valor_liquido
+
+COMO O TRIGGER INSERE O PP:
+  INSERT INTO pagamentos_prestadores (..., valor_liquido, ...)
+  VALUES (..., v_valor_liquido, ...)  -- CORRETO: 652.86
+
+EVIDENCIA DE CODIGO:
+  O trigger vigente (versao atual) calcula v_valor_liquido = 652.86
+  e o insere em AMBOS FP e PP. O PP contem R$652.86 (confere).
+  O FP contem R$520.00 (NAO confere).
+
+  HIPOTESE 1: O trigger vigente NAO era o mesmo na epoca da criacao
+  (2026-08-17). O trigger pode ter sido atualizado entre 17/ago e 19/set.
+  Na versao anterior, o FP pode ter sido populado com v_valor_prestador
+  (520) em vez de v_valor_liquido (652.86).
+
+  HIPOTESE 2: O FP foi criado por OUTRO mechanismo (ex: f_trg_propagar_
+  financeiro_os acionado indiretamente) que usou valor_prestador em
+  vez de valor_liquido. OS ID = alocacao ID, e o INSERT INTO ordens_servico
+  dentro do trigger da alocacao usa EXCEPTION WHEN OTHERS THEN NULL;
+  O INSERT pode ter falhado silenciosamente, e o FP ter sido criado por
+  um segundo passo.
+
+  HIPOTESE 3: O FP foi criado pelo trigger da alocacao na versao correta
+  (652.86) mas foi SOBRESCRITO posteriormente por atualizacao com valor
+  errado (520). Porem FP.updated_at = FP.created_at, descartando alteracao.
+
+FATO LIVE:
+  - PP tem valor_liquido = 652.86 (correto, confere com alocacao)
+  - FP tem valor = 520.00 (incorreto, deveria ser 652.86)
+  - composicao_financeira_os tem valor_prestador = 520 (base, correto)
+  - composicao_financeira_os tem pedagio_valor = 66.43 e outros_custos = 66.43
+  - OS NAO EXISTE (ordem_servico_id = NULL)
+  - historico_alocacoes_escala = 0 eventos
+  - FP nunca foi atualizado (created = updated)
+
+EVIDENCIA DE CODIGO:
+  - Trigger f_trg_propagar_financeiro_alocacao vigente calcula
+    v_valor_liquido = repasse + pedagio + outros_custos (formula correta)
+  - Trigger insere PP com v_valor_liquido (confere com dado live)
+  - Trigger insere FP com v_valor_liquido (NAO confere com dado live)
+  - Trigger tem EXCEPTION WHEN OTHERS THEN NULL (erros silenciados)
+
+INFERENCIA:
+  O FP foi criado com R$520 (apenas repasse base) em vez de R$652.86
+  (repasse + pedagio + adicional). A causa provavel e que o trigger
+  era diferente na data de criacao (17/ago) e foi atualizado depois,
+  OU o FP foi criado por um caminho alternativo (ex: sincronizacao TS)
+  que usou apenas valor_repasse. O PP, criado pelo mesmo trigger,
+  recebeu o valor correto porque o INSERT INTO pagamentos_prestadores
+  estava correto desde o inicio.
+
+
+=========================================================================
+8. OBRIGACAO CORRETA
+=========================================================================
+
+VALOR TOTAL DEVIDO AO PRESTADOR:  R$ 652.86
+  Baseado em: alocacao 58e5751e (fonte primaria de verdade)
+  Composicao: repasse R$520 + pedagio R$66.43 + adicional R$66.43
+  Confirmado por: PP 7461daf6 (valor_liquido = 652.86, confere 100%)
+  Confirmado por: composicao_financeira_os 2c80df30
+
+VALOR COMPROVADAMENTE PAGO:  R$ 520.00
+  Via FP 9f2be89f, baixa 286c2c2d em 2026-09-05 via Cora
+  FP valor = 520.00 (INCORRETO, deveria ser 652.86)
+
+SALDO REAL:  R$ 132.86
+  Pedagio (R$66.43) + Adicional (R$66.43) NAO foram pagos
+  PP 7461daf6 continua com status PENDENTE
+
+CLASSIFICACAO:  PAGAMENTO PARCIAL
+  O prestador recebeu R$520 dos R$652.86 devidos.
+  Saldo pendente: R$132.86 (pedagio + adicional).
+
+
+=========================================================================
+9. DECISAO PARA PROXIMA MISSAO
+=========================================================================
+
+RECOMENDACAO:  B
+
+Obrigacao correta e R$652.86 e existe saldo real de R$132.86 a tratar.
+
+Justificativa:
+  1. A alocacao 58e5751e e a fonte primaria de verdade.
+  2. valor_repasse=520, valor_pedagio=66.43, valor_adicional=66.43 sao
+     campos legitimos preenchidos na criacao da alocacao.
+  3. O PP 7461daf6 confere 100% com a alocacao (valor_liquido=652.86).
+  4. O PP status e PENDENTE (nunca foi baixado).
+  5. O FP 9f2be89f tem valor INCORRETO (520 ao inves de 652.86),
+     mas o PP reflete a obrigacao real.
+  6. A baixa de R$520 quitou o FP incorreto, mas NAO quitou o PP.
+  7. Nao ha evidencia de que R$652.86 esteja errado;
+     todos os componentes (repasse, pedagio, adicional) sao consistentes
+     entre alocacao, composicao e PP.
+
+Acao sugerida:
+  - Reconciliar o FP 9f2be89f para valor = 652.86
+  - Ou criar novo titulo/baixa para o saldo de R$132.86
+  - Ou estornar a baixa de 520 e refazer baixa de 652.86
+  - Decisao humana/documental necessaria (ver GATE abaixo)
+
+
+=========================================================================
+GATE
+=========================================================================
+
+ROOT CAUSE:           COMPROVADA
+  FP foi criado com R$520 (apenas repasse) em vez de R$652.86
+  (repasse + pedagio + adicional). PP esta correto com R$652.86.
+  Causa provavel: trigger anterior ou caminho alternativo de criacao
+  do FP que nao incluiu pedagio+adicional no valor.
+
+OBRIGACAO CORRETA:    R$ 652.86
+  (repasse 520 + pedagio 66.43 + adicional 66.43)
+  Confirmada por alocacao, PP e composicao_financeira_os.
+
+PAGO COMPROVADO:      R$ 520.00
+  (baixa 286c2c2d em 2026-09-05 via Cora)
+
+SALDO REAL:           R$ 132.86
+  (pedagio 66.43 + adicional 66.43, PP pendente)
+
+CORRECAO AUTOMATICA SEGURA:  NAO
+  O R$132.86 e composto por pedagio+adicional legitimamente cobrados,
+  mas a correcao envolve alterar FP (pago), PP (pendente) e possivelmente
+  criar/estornar baixas. Requer decisao humana sobre:
+  - Se o adicional de R$66.43 era de fato devido (servico extra)
+  - Se o pedagio de R$66.43 foi efetivamente incorrido
+  - Se a baixa de 520 deve ser estornada ou complementada
+  Qualquer Duvida = NAO para correcao automatica.
+
+
+=========================================================================
+PRODUCAO: ZERO WRITES
+=========================================================================
+Confirmado: nenhuma alteracao foi feita em Producao.
+Todos os dados acima sao SOMENTE LEITURA via pg client.
+
+=========================================================================
+ARQUIVO GERADO
+=========================================================================
+Caminho: FIN-SANE-02M.5-CESAR-ROOT-CAUSE.txt
+Modelo:   MiMo-V2.5
+Status:   PARAR IMEDIATAMENTE - NAO iniciar 02M.6

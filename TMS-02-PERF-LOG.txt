@@ -1,0 +1,115 @@
+================================================================================
+TMS-02-PERF  INTEGRIDADE DE TRIGGERS, INDICES E PERFORMANCE
+Nivel 3 (Fechamento Tecnico do TMS)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:29:35.444Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  INTEGRIDADE OK (triggers sem recursividade, todos habilitados;
+           busca indexada). Recomendacoes de PERFORMANCE (indices/volatilidade).
+
+--------------------------------------------------------------------------------
+1. TRIGGERS ATIVOS (integridade)
+--------------------------------------------------------------------------------
+  total: 23 | habilitados: 23 | recursivos: 0
+  Tabela               | Trigger                                   | Timing | Eventos      | Recursao
+  ---------------------|-------------------------------------------|--------|--------------|---------
+  alocacoes_escala     | trg_alocacoes_escala_updated_at           | BEFORE | UPDATE       | nao
+  alocacoes_escala     | trg_cancelar_financeiro_alocacao          | BEFORE | UPDATE       | nao
+  alocacoes_escala     | trg_evento_alocacao_cancelada             | AFTER  | UPDATE       | nao
+  alocacoes_escala     | trg_evento_alocacao_criada                | AFTER  | INSERT       | nao
+  alocacoes_escala     | trg_evento_alocacao_motorista_trocado     | AFTER  | UPDATE       | nao
+  alocacoes_escala     | trg_evento_alocacao_recusada              | AFTER  | UPDATE       | nao
+  alocacoes_escala     | trg_evento_operacao_finalizada            | AFTER  | UPDATE       | nao
+  alocacoes_escala     | trg_evento_prestador_aceitou              | AFTER  | UPDATE       | nao
+  alocacoes_escala     | trg_propagar_financeiro_alocacao          | AFTER  | INSERT/UPDATE | nao
+  alocacoes_escala     | trg_registrar_historico_alocacao          | AFTER  | INSERT/UPDATE | nao
+  financeiro_pagar     | trg_guardar_pagar_pago_sem_baixa          | BEFORE | INSERT/UPDATE | nao
+  financeiro_receber   | trg_evento_financeiro_receber_criado      | AFTER  | INSERT       | nao
+  financeiro_receber   | trg_evento_financeiro_receber_pago        | AFTER  | UPDATE       | nao
+  financeiro_receber   | trg_guardar_receber_pago_sem_baixa        | BEFORE | INSERT/UPDATE | nao
+  ordens_servico       | trg_evento_os_cancelada                   | AFTER  | UPDATE       | nao
+  ordens_servico       | trg_evento_os_criada                      | AFTER  | INSERT       | nao
+  ordens_servico       | trg_evento_os_finalizada                  | AFTER  | UPDATE       | nao
+  ordens_servico       | trg_evento_os_status_changed              | AFTER  | UPDATE       | nao
+  ordens_servico       | trg_notificar_os_para_app                 | AFTER  | INSERT/UPDATE | nao
+  ordens_servico       | trg_propagar_financeiro_os                | AFTER  | INSERT/UPDATE | nao
+  prestadores          | trg_audit_liberado_app                    | AFTER  | UPDATE       | nao
+  prestadores          | trg_bridge_prestador_para_recrutamento    | AFTER  | INSERT       | nao
+  prestadores          | trg_guardar_privilegio_prestador          | BEFORE | UPDATE       | nao
+
+  [OK] nenhuma recursao direta.
+  [OK] self-write controlado (M66 em alocacoes_escala grava ordem_servico_id, coluna FORA do UPDATE OF -> nao re-dispara).
+  [OK] Propagacao financeira: M66 (escala) + M80 (OS) idempotentes; guardas pago-sem-baixa (pagar/receber).
+
+--------------------------------------------------------------------------------
+2. INDICES
+--------------------------------------------------------------------------------
+  Tabela                 | # indices
+  -----------------------|----------
+  alocacoes_escala        | 13
+  clientes                | 1
+  documentos_prestadores  | 2
+  financeiro_pagar        | 8
+  financeiro_receber      | 10
+  ordens_servico          | 12
+  pagamentos_prestadores  | 10
+  prestadores             | 4
+
+  [ !! ] FKs indexadas: FKs sem indice: clientes.clientes_tabela_valores_padrao_id_fkey(tabela_valores_padrao_id) | financeiro_pagar.financeiro_pagar_cliente_id_fkey(cliente_id) | financeiro_pagar.financeiro_pagar_fornecedor_id_fkey(fornecedor_id) | ordens_servico.ordens_servico_cliente_fkey(cliente) | ordens_servico.ordens_servico_prestador_fkey(prestador) | ordens_servico.ordens_servico_veiculo_alocado_fkey(veiculo_alocado) | pagamentos_prestadores.fk_pp_lote(lote_id)
+  [ !! ] tenant_id indexado: sem indice tenant_id: ordens_servico, alocacoes_escala, clientes
+  [ !! ] Colunas de busca: sem indice: financeiro_pagar.cliente_id
+
+--------------------------------------------------------------------------------
+3. RPCs  VOLATILIDADE / SEGURANCA
+--------------------------------------------------------------------------------
+  f_buscar_operacoes_motorista               STABLE (DEFINER)
+  f_buscar_oportunidades_para_prestador      STABLE (DEFINER)
+  f_buscar_prestadores_compativeis           STABLE
+  f_obter_cliente_id_do_usuario              VOLATILE (DEFINER)
+  f_obter_prestador_por_auth                 STABLE (DEFINER)
+  f_pp_tenant_id                             STABLE (DEFINER)
+  [ !! ] VOLATILE: f_obter_cliente_id_do_usuario
+
+--------------------------------------------------------------------------------
+4. ESTATISTICAS (pg_stat_user_tables)
+--------------------------------------------------------------------------------
+  Tabela                 | live | dead | seq_scan | idx_scan
+  -----------------------|------|------|----------|---------
+  alocacoes_escala        |  204 |   32 |     5212 |    92287
+  ordens_servico          |  167 |   40 |    97787 |   132775
+  financeiro_pagar        |  119 |   64 |     3629 |     5414
+  pagamentos_prestadores  |  100 |   48 |     3290 |     6586
+  financeiro_receber      |   49 |   30 |    92063 |    28403
+  prestadores             |   39 |   32 |    19934 |    38453
+  documentos_prestadores  |   32 |    4 |      228 |       63
+  clientes                |   28 |   30 |   823416 |    26659
+  [ OK ] nenhuma tabela com seq_scan alto e zero idx_scan
+  [ OK ] sem acumulo relevante de dead tuples
+
+--------------------------------------------------------------------------------
+5. ACHADOS / RECOMENDACOES DE PERFORMANCE
+--------------------------------------------------------------------------------
+  H1 [MEDIO] f_obter_cliente_id_do_usuario marcada VOLATILE, mas e usada dentro de
+             policies RLS -> reavaliada por linha. Marcar STABLE melhora performance.
+  H2 [MEDIO] FKs sem indice na 1a coluna: ordens_servico(cliente,prestador,veiculo_alocado),
+             financeiro_pagar(cliente_id,fornecedor_id), pagamentos_prestadores(lote_id),
+             clientes(tabela_valores_padrao_id). Criar indice melhora joins/filtros.
+  H3 [BAIXO] tenant_id sem indice em ordens_servico, alocacoes_escala e clientes
+             (filtro multi-tenant).
+  H4 [INFO]  clientes com seq_scan alto (823k)  tabela pequena (28 linhas); aceitavel,
+             mas indexar tenant_id/status ajuda.
+
+--------------------------------------------------------------------------------
+6. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] 23 triggers ativos, todos habilitados, sem recursividade direta.
+  [OK] Self-write do M66 controlado pelo UPDATE OF (nao re-dispara).
+  [OK] Colunas de busca (prestador/cliente/os/aloc/pagamento/fechamento) indexadas.
+  [OK] RPCs de leitura em STABLE; sem acumulo relevante de dead tuples.
+  [i]  Integridade OK. Pendem apenas recomendacoes de performance (H1-H4), nao bloqueantes.
+
+EVIDENCIA: scripts/_tms02perf_auditoria.json
+================================================================================
+FIM  TMS-02-PERF
+================================================================================

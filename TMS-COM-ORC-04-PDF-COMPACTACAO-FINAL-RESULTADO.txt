@@ -1,0 +1,82 @@
+================================================================================
+TMS-COM-ORC-04-PDF-COMPACTACAO-FINAL — RESULTADO
+Missão: Finalizar a diagramação profissional do PDF de orçamento (compactar)
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS. APP/Redmi NÃO conectado. SEM alteração de banco/cálculo.
+================================================================================
+
+1. MUDANÇAS (somente diagramação/apresentação)
+--------------------------------------------------------------------------------
+Arquivo: src/components/comercial/orcamentoPdf.ts (NÃO alterou cálculo,
+persistência, banco, Supabase nem o formulário além do rótulo de veículo).
+- Cabeçalho reduzido para 32 mm (logo 42×14 mm, ainda legível/aprovado).
+- Título mais próximo do topo; espaçamentos e paddings compactados.
+- 1. Cliente: tabela enxuta (4 linhas, 2 pares por linha).
+- 3. Veículo: layout em 2 colunas (rótulo/valor) — economiza ~10 mm.
+- 5. Resumo Financeiro: linhas compactas + faixa "VALOR FINAL" (10 mm).
+- 6. Condições/Observações compactadas; assinaturas logo após o conteúdo
+  (sem forçar rodapé de página, sem grande vazio).
+- Rodapé azul-marinho/laranja em TODAS as páginas com "Página X de Y".
+- Normalização VISUAL: normal→Normal, pesado→Pesado, sider→Sider,
+  esporadico→Esporádico. Preservado "Veículo recomendado para a operação".
+  (enums/banco intactos; SOMENTE exibição)
+- Paginação automática preservada para orçamentos maiores (sem corte/sobreposição).
+
+2. CASO COMPACTO ORC-202609-9303
+--------------------------------------------------------------------------------
+- Páginas: 1 (A4) — antes eram 2 com 2ª página quase vazia.
+- Valor Transporte: R$ 2.200,00 | VALOR FINAL: R$ 2.200,00 (destaque laranja).
+- Emissão: 26/09/2026 | Validade: 26/10/2026.
+- Hierarquia completa na MESMA página: Cliente, Carga, Operação/Veículo,
+  Pontos, Resumo Financeiro, Condições.
+- Sem undefined, null, [object Object] ou mojibake (ORÇAMENTO/INFORMAÇÕES/
+  VEÍCULO/CONDIÇÕES com acentos Latin-1 corretos).
+- Rodapé: "Página 1 de 1".
+- Arquivo: test-results/com-orc-04/ORC-202609-9303_Orcamento_Comercial.pdf
+  983.196 bytes | 26/09/2026 18:13:51
+
+3. RESULTADO DO CASO GRANDE (sintético, somente em memória)
+--------------------------------------------------------------------------------
+- 14 pontos + descrição longa + adicionais/pedágio/km/ajudante/descontos.
+- Resultado: 2 páginas (paginação automática correta).
+- 1º e ÚLTIMO ponto presentes (sem corte); rodapé consistente ("Página 1 de 2"
+  / "Página 2 de 2"); sem undefined/NaN. NÃO foi aberto ao usuário.
+
+4. FLUXO COMPROVADO SEM PERSISTIR
+--------------------------------------------------------------------------------
+Script: scripts/_com_orc_04_prova.ts (npx tsx). TODOS OS CHECKS PASSARAM.
+- Cálculo: base 2200 => final 2200.
+- Banco/reload em transação: valorFinal=2200; ROLLBACK — 0 orçamento criado.
+- PDF gerado a partir do registro RELOAD (mesmos dados da listagem).
+
+5. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (2 arquivos): 27/27 PASS
+    com_orc_03_pdf_profissional (12) — 1 página no caso compacto, rodapé
+    "Página 1 de 1", normalização, caso grande >=2 páginas sem corte, encoding.
+    com_orc_02_persistencia (15) — cálculo/persistência/reload/filename/encoding.
+- npx tsc --noEmit: SEM NOVOS ERROS nos arquivos da missão.
+- npm run build -> OK (38.62s).
+
+6. PRESERVADO / BACKLOG
+--------------------------------------------------------------------------------
+- Preservado: cálculo canônico (COM-ORC-02), valorFinal, datas, carga/pontos,
+  logo/cabeçalho Conexão Express, encoding, filename.
+- Não alterado: status (não há mudança automática de workflow).
+- BACKLOG: definir em qual estado o PDF é oficialmente "pronto para envio ao
+  cliente" (hoje Rascunho aparece como Rascunho).
+- BACKLOG mantido: Financeiro/Prestadores, Comercial (dimensões/cubagem/
+  recomendação por capacidade/Tabela Esporádica/Fracionado/mojibake restante),
+  APP-STAB, E2E, CAD-PERSIST, Master 360.
+
+7. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- PDF compacto aberto no visualizador padrão para o usuário avaliar.
+- NÃO declarar homologação visual. Status máximo:
+  IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

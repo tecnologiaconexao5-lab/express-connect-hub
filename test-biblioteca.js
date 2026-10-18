@@ -18,7 +18,7 @@ import { chromium } from 'playwright';
   
   try {
     console.log('1. Acessando página de login...');
-    await page.goto('http://localhost:8800/login', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto('http://localhost:8800/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1000);
     
     // Fill login form with valid credentials
@@ -38,7 +38,7 @@ import { chromium } from 'playwright';
     
     // Try accessing biblioteca
     console.log('4. Acessando /biblioteca...');
-    await page.goto('http://localhost:8800/biblioteca', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto('http://localhost:8800/biblioteca', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
     
     // Get current URL

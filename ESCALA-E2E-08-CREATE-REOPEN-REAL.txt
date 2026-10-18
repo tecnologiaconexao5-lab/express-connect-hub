@@ -1,0 +1,122 @@
+ESCALA-E2E-08-CREATE-REOPEN-REAL
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: E2E REAL CONTROLADO — UI TMS OBRIGATÓRIA
+
+RESULT=BLOCKED
+MOTIVO=UI_NOT_EXECUTABLE_IN_THIS_ENVIRONMENT
+  Esta missão exige interação real na UI (abrir Escala, preencher, salvar, fechar/reabrir).
+  O ambiente de execução atual é CLI (sem automação de navegador) e não há credenciais de UI
+  (PLAYWRIGHT_TAMIRIS_PASSWORD / URL do app) configuradas no .env. Além disso, os guard-rails
+  do repositório bloqueiam E2E automatizado em PRODUÇÃO.
+  Conforme a missão ("Somente os writes naturais gerados pelo único SAVE da UI"), NÃO foi
+  executado nenhum write via SQL para simular o save. Nada foi criado.
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PASSO 1 — SNAPSHOT (READ-ONLY) — EXECUTADO
+==================================================
+prestador.valor_diaria=250.00 | valor_saida=NULL | updated_at=2026-08-06T15:42:12.718Z
+HML_TABLE=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+  nome="HML E2E VUC - HOMOLOGACAO APP" | tipo=vuc | ativo=true | universal=false
+  cliente="HOMOLOGAÇÃO APP" | classificacao_termica=seco
+  valor_base=300.00 | franquia_km=100 | valor_km_excedente=1.20
+  data_inicio=2026-09-22 | data_fim=2026-09-29 (vigente)
+VUC_TABLES=1 (apenas a HML)
+EXISTING_IDENT (rota/observação 'ESCALA-E2E-08-HML-20260922')=[] (nenhuma alocação prévia)
+
+CONTAGENS PRÉ (referência, NÃO prova única):
+PRE_E2E_ALLOCATION_COUNT=193
+PRE_E2E_OS_COUNT=159
+PRE_E2E_RECEBER_COUNT=143
+PRE_E2E_PAGAR_COUNT=175
+PRE_E2E_PP_COUNT=134
+PRE_E2E_COMPOSICAO_COUNT=59
+
+SNAPSHOT_PASS=YES (dados HML prontos; nada divergente)
+
+==================================================
+RUNBOOK UI (para execução humana) — ESCALA-E2E-08
+==================================================
+1) Login no TMS (perfil com acesso à Operação/Escala).
+2) Abrir Operação → Escala → "Nova Alocação" (botão de criar escala).
+3) Prestador: pesquisar "PRESTADOR TESTE APP" e selecionar.
+   → A UI deve exibir veículo HML-A27B / VUC automaticamente.
+4) Cliente: selecionar "HOMOLOGAÇÃO APP".
+   → A UI deve carregar a tabela "HML E2E VUC - HOMOLOGACAO APP" (Base 300 / KM 1.20 / Franquia 100).
+5) KM: 150 (km inicial/final ou km rodados conforme campo da UI).
+6) Horário de saída: ≤ 11:00 (ou vazio) — NÃO usar > 11:00 (evita multiplicador DVL).
+7) Rota/Observação identificável: "ESCALA-E2E-08-HML-20260922".
+8) NÃO selecionar OS manualmente.
+9) NÃO alterar o modo de repasse (deve permanecer Cadastro do prestador).
+
+ANTES DE SALVAR — conferir na tela:
+UI_VEHICLE=HML-A27B / VUC
+UI_TABLE=HML E2E VUC - HOMOLOGACAO APP
+UI_CLIENT_VALUE=360.00
+UI_PROVIDER_VALUE=250.00
+UI_OS_SELECTED=(nenhuma/manual não selecionada)
+→ Se divergir: NÃO salvar (RESULT=BLOCKED_UI_CALCULATION).
+
+10) Salvar UMA única vez. Capturar ALLOCATION_ID (URL/modal/console).
+11) Fechar o modal, recarregar a listagem, reabrir "ESCALA-E2E-08-HML-20260922" e conferir
+    os mesmos valores (persistência).
+
+==================================================
+VERIFICAÇÃO DB PÓS-UI (executar após o save humano)
+==================================================
+Substituir <ALLOCATION_ID> e rodar (read-only):
+
+-- Alocação
+SELECT id, cliente_id, prestador_id, tipo_veiculo, placa, km_realizados,
+       valor_frete, valor_repasse, ordem_servico_id, status
+FROM alocacoes_escala WHERE id='<ALLOCATION_ID>';
+
+-- OS automática (deve ser 1)
+SELECT count(*) FROM ordens_servico WHERE id = (SELECT ordem_servico_id FROM alocacoes_escala WHERE id='<ALLOCATION_ID>');
+SELECT id, numero, cliente_id, prestador_id, valor_cliente, custo_prestador, status
+FROM ordens_servico WHERE id = (SELECT ordem_servico_id FROM alocacoes_escala WHERE id='<ALLOCATION_ID>');
+
+-- Financeiro (por os_id)
+SELECT count(*), id, valor, status FROM financeiro_receber WHERE os_id='<OS_ID>' GROUP BY id,valor,status;
+SELECT count(*), id, valor, status FROM financeiro_pagar   WHERE os_id='<OS_ID>' GROUP BY id,valor,status;
+SELECT count(*), id, prestador_id, valor_liquido, status_pagamento FROM pagamentos_prestadores WHERE os_id='<OS_ID>' GROUP BY id,prestador_id,valor_liquido,status_pagamento;
+SELECT count(*), id, cliente_id, prestador_id, valor_cliente, valor_prestador FROM composicao_financeira_os WHERE os_id='<OS_ID>' GROUP BY id,cliente_id,prestador_id,valor_cliente,valor_prestador;
+SELECT count(*) FROM financeiro_baixas WHERE titulo_id IN (SELECT id FROM financeiro_pagar WHERE os_id='<OS_ID>');
+
+Esperado: RECEBER=1/360.00 | PAGAR=1/250.00 | PP=1/250.00 (prestador e6646799) |
+COMPOSICAO=1 (cliente 360 / prestador 250) | BAIXAS=0 | OS_COUNT=1 | sem duplicatas.
+
+==================================================
+RESULTADO
+==================================================
+UI_CALCULATION_PASS=(não executado)
+SAVE_PASS=(não executado)
+DB_PERSISTENCE_PASS=(não executado)
+AUTO_OS_PASS=(não executado)
+FINANCE_PASS=(não executado)
+REOPEN_PASS=(não executado)
+NO_DUPLICATES_PASS=(não executado)
+RESULT=BLOCKED
+
+NEXT_MINIMAL_MISSION=
+  Reexecutar ESCALA-E2E-08 com operador humano na UI (runbook acima) OU com credenciais/URL
+  do app para automação Playwright. Após o save, rodar as consultas DB de verificação acima e
+  prosseguir para ESCALA-E2E-09-UPDATE-IDEMPOTENCIA-CANCEL.
+  Os dados HML permanecem prontos (nada foi alterado nesta missão).
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma alocação criada. Nenhuma OS manual. Prestador/cliente/veículo/tabela não alterados.
+Sem migration, pagamento, baixa, cancelamento ou cleanup. APP/Redmi não usados.
+Nenhum write SQL executado (DB_WRITES=0).
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0
+ALLOCATION_ID=(não criada)
+OS_ID=(não criada)

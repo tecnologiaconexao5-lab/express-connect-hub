@@ -1,0 +1,130 @@
+================================================================================
+TMS-COM-CARGA-01-CUBAGEM-CAPACIDADE-VEICULO — RESULTADO
+Missão: Evoluir Dados da Carga (dimensões, cubagem, peso cubado, capacidade,
+recomendação profissional de veículo) no Comercial.
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS. APP/Redmi NÃO conectado. SEM migration/DDL. SEM alterar preço/frete.
+================================================================================
+
+1. ESTRUTURA REUTILIZADA (nada de tabela paralela)
+--------------------------------------------------------------------------------
+- `orcamentos.carga` e `orcamentos.veiculo` são JSONB e já aceitam os novos
+  campos (dimensoes/pesoCubado/fatorCubagem/pesoConsiderado; veiculo.recomendado/
+  recomendacaoDisponivel/recomendacaoMotivos). NENHUMA migration foi necessária.
+- Catálogo de veículos existente: `VEICULO_PARAMETROS` (@/constants/tiposVeiculo)
+  com pesoMax (kg), compMax/largMax/altMax (cm) e cubagemMax (m³) + `sugerirVeiculo()`.
+- Cálculo canônico (COM-ORC-02) e PDF (COM-ORC-03/04) preservados.
+
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/comercial/cargaCalculo.ts          (NOVO — cálculo puro/único)
+- src/components/comercial/types.ts                 (DimensaoCarga + campos opcionais)
+- src/components/comercial/OrcamentoForm.tsx        (UI Dados da Carga + recomendação)
+- src/components/comercial/orcamentoPdf.ts          (usa veículo recomendado; sem redesenho)
+- src/test/com_carga_01_cubagem.test.ts             (NOVO — 17 testes)
+- src/test/com_orc_02_persistencia.test.ts          (ajuste: payload enriquecido)
+- scripts/_com_carga_01_prova.ts                    (NOVO — prova save/reload)
+
+3. FÓRMULA DE CUBAGEM (determinística, testável)
+--------------------------------------------------------------------------------
+- Por grupo: (comprimento_cm/100) × (largura_cm/100) × (altura_cm/100) × quantidade
+- Cubagem total = SOMA de todos os grupos.
+- Entrada em cm; normalização interna para metros (sem mistura silenciosa).
+- Nunca retorna NaN/Infinity/negativo (vira 0).
+- Sem dimensões informadas => usa a cubagem já existente no orçamento (legado).
+
+4. FATOR DE PESO CUBADO (origem e transparência)
+--------------------------------------------------------------------------------
+- Constante: FATOR_CUBAGEM_RODOVIARIO_KG_M3 = 300 (kg/m³) em cargaCalculo.ts.
+- Definido como PARÂMETRO OPERACIONAL/COMERCIAL CONFIGURÁVEL — NÃO é um fator
+  regulatório universal; convenção comum no rodoviário e pode variar por
+  modalidade/provider. Ajustável em um único ponto, sem alterar a regra.
+- peso_cubado = cubagem_m3 × fator.
+- peso_considerado = MAX(peso real, peso cubado). (Não altera preço/frete.)
+
+5. CAPACIDADES REALMENTE ENCONTRADAS NO SISTEMA (catálogo existente)
+--------------------------------------------------------------------------------
+pesoMax (kg) / cubagemMax (m³) / comp×larg×alt (cm):
+moto 40/0,2/60×60×60 · carro_passeio 200/0,75/120×80×80 · fiorino 600/2,8/180×130×120 ·
+kangoo 900/3,0/170×120×115 · kombi 1100/4,0/220×140×130 · van 1300/8,0/300×160×170 ·
+hr 1800/10/330×180×180 · vuc 2500/16/420×200×200 · 3/4 4000/24/500×220×220 ·
+toco 7500/40/700×240×250 · truck 12000/60/900×260×280 · bitruck 14000/65/950×260×280 ·
+carreta 30000/90/1400×260×280 · bitrem 45000/120/1900×260×280.
+
+6. REGRA DE RECOMENDAÇÃO (explicável, sem inventar capacidade)
+--------------------------------------------------------------------------------
+- Seleciona o MENOR veículo do catálogo que atende peso considerado + cubagem +
+  comprimento/largura/altura máximos dos grupos.
+- Exibe "Veículo recomendado para a operação" + motivos (peso considerado,
+  cubagem, pallets, "Compatível com a capacidade cadastrada"). SEM "IA".
+- Se nada comportar (ou faltarem métricas) => "Recomendação indisponível —
+  capacidade não cadastrada", listando exatamente o que faltou. Não fabrica capacidade.
+- Pallets: o catálogo não possui capacidade de pallets; por isso pallets entra
+  apenas como informação no motivo (não como restrição), evitando inventar limite.
+
+7. CASO F — ESCOLHA HUMANA PRESERVADA
+--------------------------------------------------------------------------------
+- Distinção explícita: "Veículo recomendado para a operação" x "Veículo
+  selecionado para a operação".
+- Divergência => aviso informativo NÃO bloqueante ("A escolha humana é mantida").
+- A recomendação só é aplicada por ação explícita do usuário ("Usar recomendação").
+
+8. PROVA SAVE → RELOAD (sem persistir) — scripts/_com_carga_01_prova.ts
+--------------------------------------------------------------------------------
+- Caso controlado ORC-202609-9401: 2 grupos (10×(0,5×0,4×0,3) + 2×(1,0×0,8×0,6)).
+- Cubagem 1,56 m³ · peso real 1.000 kg · peso cubado 468 kg · peso considerado 1.000 kg.
+- Recomendação: Kombi (menor que comporta 1.000 kg/1,56 m³).
+- Gravado via toOrcamentoInsert e recuperado via toOrcamentoDomain dentro de
+  transação + ROLLBACK: dimensões, pesoCubado, fator, pesoConsiderado,
+  veículo.recomendado e a seleção humana (vuc) permaneceram iguais.
+- Nenhum orçamento persistido; dados reais intactos. TODOS OS CHECKS PASSARAM.
+
+9. CASOS DE TESTE (com_orc_03 + com_carga_01)
+--------------------------------------------------------------------------------
+A) 10× 50×40×30 cm => 0,60 m³ ✅
+B) 2 grupos (0,60 + 0,96) => 1,56 m³ ✅
+C) peso real > cubado => considerado = real ✅
+D) peso cubado > real => considerado = cubado ✅
+E) sem métricas / acima do catálogo => indisponível (sem inventar) ✅
+F) seleção humana != recomendado => mantida + aviso (fonte) ✅
+G) save → reload preserva tudo ✅
+
+10. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (3 arquivos): 44/44 PASS
+    com_carga_01_cubagem (17), com_orc_02_persistencia (15), com_orc_03_pdf (12).
+- npx tsc --noEmit: SEM NOVOS ERROS nos arquivos da missão (erros remanescentes
+  em OrcamentoForm são baseline pré-existente: adValorem/clienteId/endereço).
+- npm run build -> OK (41.28s).
+
+11. RISCOS / OBSERVAÇÕES
+--------------------------------------------------------------------------------
+- Fator de cubagem 300 kg/m³ é parâmetro comercial; validar com a operação.
+- Capacidade de pallets não existe no catálogo — não usada como restrição.
+- Registros antigos sem dimensões mantêm a cubagem informada (compatibilidade).
+- Recomendação é por tipo de veículo (não frota real/placa).
+
+12. BACKLOG (preservado)
+--------------------------------------------------------------------------------
+COMERCIAL: Tabela Esporádica/preço automático; custo×venda×margem; Fracionado/
+providers; saneamento legado/mojibake; regra de status "pronto para envio";
+capacidade de pallets por veículo.
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento
+parcial; saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação
+global; Conta Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin
+APP/Cadastro/Recrutamento; CAD-PERSIST; E2E final; Master 360/Gate.
+
+13. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- PDF do caso controlado aberto para conferência: test-results/com-carga-01/
+  ORC-202609-9401_Orcamento_Comercial.pdf — 983.160 bytes | 26/09/2026 18:29:21.
+- localhost:8800 ATIVO (HTTP 200) — abra NOVO/EDITAR ORÇAMENTO > aba Carga/Veículo.
+- NÃO declarar homologação visual. Status máximo:
+  IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

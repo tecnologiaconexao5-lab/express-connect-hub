@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LucideIcon, LucideProps, Clock, Package, Truck, CheckCircle, AlertTriangle, AlertCircle, Navigation } from "lucide-react";
 
 type BadgeStatus =
@@ -91,21 +92,21 @@ const statusConfig: Record<BadgeStatus, { bg: string; text: string; border: stri
     bg: "bg-indigo-50 dark:bg-indigo-500/10",
     text: "text-indigo-700 dark:text-indigo-400",
     border: "border-indigo-200 dark:border-indigo-800/50",
-    label: "Saiu para Rota",
+    label: "Distribuicao Iniciada",
     icon: Truck,
   },
   em_rota: {
     bg: "bg-orange-50 dark:bg-orange-500/10",
     text: "text-orange-700 dark:text-orange-400",
     border: "border-orange-200 dark:border-orange-800/50",
-    label: "Em Rota",
+    label: "Em Distribuicao",
     icon: Navigation,
   },
   entregue: {
     bg: "bg-emerald-50 dark:bg-emerald-500/10",
     text: "text-emerald-700 dark:text-emerald-400",
     border: "border-emerald-200 dark:border-emerald-800/50",
-    label: "Entregue",
+    label: "Entrega Concluida",
     icon: CheckCircle,
   },
   problema: {
@@ -117,7 +118,7 @@ const statusConfig: Record<BadgeStatus, { bg: string; text: string; border: stri
   },
 };
 
-export function PortalStatusBadge({
+export const PortalStatusBadge = memo(function PortalStatusBadge({
   status,
   label,
   showIcon = true,
@@ -139,4 +140,4 @@ export function PortalStatusBadge({
       <span className="uppercase tracking-wider">{displayLabel}</span>
     </span>
   );
-}
+});

@@ -1,0 +1,17 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const os = await c.query(`SELECT numero, status, custo_prestador, valor_cliente, peso, created_at FROM ordens_servico WHERE numero LIKE 'OS-202610-%' ORDER BY created_at`);
+console.log("OS de teste criadas hoje:");
+for (const r of os.rows) console.log(`  ${r.numero} | status=${r.status} | custo=${r.custo_prestador} | valor=${r.valor_cliente} | peso=${r.peso} | ${r.created_at.toISOString()}`);
+const ro = await c.query(`SELECT ro.status, os.numero, ro.prestador_aceite_id FROM rede_oportunidades ro JOIN ordens_servico os ON os.id=ro.os_id WHERE os.numero LIKE 'OS-202610-%' ORDER BY ro.created_at`);
+console.log("\nrede_oportunidades:");
+for (const r of ro.rows) console.log(`  ${r.numero} | ${r.status} | aceite=${r.prestador_aceite_id ? "sim" : "nao"}`);
+const ae = await c.query(`SELECT os.numero, ae.status, ae.finalizada, ae.metadata->'app_motorista'->>'etapa_atual' AS etapa FROM alocacoes_escala ae JOIN ordens_servico os ON os.id=ae.ordem_servico_id WHERE os.numero LIKE 'OS-202610-%' ORDER BY os.numero`);
+console.log("\nalocacoes_escala:");
+for (const r of ae.rows) console.log(`  ${r.numero} | ${r.status} | finalizada=${r.finalizada} | etapa=${r.etapa}`);
+await c.end();

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS regras_fiscais_nfse (
 
 ALTER TABLE regras_fiscais_nfse ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all operations" ON regras_fiscais_nfse;
+DROP POLICY IF EXISTS "Allow all operations" ON regras_fiscais_nfse;
 CREATE POLICY "Allow all operations" ON regras_fiscais_nfse FOR ALL USING (true) WITH CHECK (true);
 
 CREATE OR REPLACE FUNCTION update_regras_fiscais_nfse_updated_at()
@@ -41,3 +42,5 @@ CREATE TRIGGER update_regras_fiscais_nfse_modtime
 
 CREATE INDEX IF NOT EXISTS idx_regras_fiscais_nfse_ativo ON regras_fiscais_nfse(ativo);
 CREATE INDEX IF NOT EXISTS idx_regras_fiscais_nfse_municipio ON regras_fiscais_nfse(municipio_prestacao);
+
+

@@ -1,0 +1,155 @@
+FIN-MOT-2N — NUMERAÇÃO HUMANA SOBRE PAGAMENTOS_PRESTADORES
+Data: 21/08/2026
+Modo: READ-ONLY em PRODUÇÃO (nenhuma escrita, nenhuma migration)
+Status: COMPROVADO EM PRODUÇÃO
+
+============================================================
+RESPOSTAS OBJETIVAS
+============================================================
+
+A. Já existe número humano reutilizável?
+   NÃO
+
+B. Campo:
+   inexistente (não há coluna numero/codigo/referencia em
+   pagamentos_prestadores)
+
+C. Formato atual:
+   N/A — inexistente (não há número humano; o identificador é o UUID `id`)
+
+D. Possui UNIQUE?
+   SIM, apenas no UUID `id` (PK) e em `os_id` (uq_pp_os_id) — nenhum
+   campo de número humano.
+
+E. Pode servir para o extrato?
+   NÃO — não há campo de número humano na estrutura atual.
+
+F. Menor solução recomendada:
+   Adicionar FUTURAMENTE um campo `numero_fechamento` (TEXT) em
+   public.pagamentos_prestadores com formato EP-AAAA-000001, gerado por
+   SEQUENCE + nextval (padrão da fatura), SEM MAX+1. Nada implementado
+   nesta missão.
+
+============================================================
+1. CAMPOS INSPECIONADOS (pagamentos_prestadores, somente relevantes)
+============================================================
+
+id                    uuid          (PK)
+periodo_inicio        date
+periodo_fim           date
+competencia           date
+data_competencia      date
+data_prevista_pagamento date
+data_pagamento        date
+status                text
+status_conferencia    text
+status_aprovacao      text
+status_pagamento      text
+tipo_pagamento        text
+elegivel_lote         boolean
+lote_id               uuid
+os_numero             text
+created_at / updated_at timestamptz
+
+NÃO existem colunas: numero, codigo, referencia, numero_fechamento,
+numero_pagamento.
+
+============================================================
+2. UNIQUE / ÍNDICES ÚNICOS
+============================================================
+
+- pagamentos_prestadores_pkey (UNIQUE btree on id)      -> PK
+- uq_pp_os_id           (UNIQUE btree on os_id)         -> evita duplicar OS
+
+Nenhum índice/constraint UNIQUE sobre campo de número humano (inexistente).
+
+============================================================
+3. AMOSTRA READ-ONLY (sem expor dados sensíveis)
+============================================================
+
+10 registros mais recentes (id resumido, competência, status):
+
+- 32fe474f...  2026-08-20  status=pago           pagamento=pendente  manual
+- 162778a0...  2026-08-18  status=pendente       pagamento=pendente  escala_direta
+- 7461daf6...  2026-08-17  status=pendente       pagamento=pendente  escala_direta
+- a4fae89d...  2026-08-16  status=pendente       pagamento=nao_vencido escala_direta
+- 2b3fb150...  2026-08-12  status=pendente       pagamento=nao_vencido escala_direta
+- 26f61bc9...  2026-08-11  status=pendente       pagamento=nao_vencido escala_direta
+- 28f2492b...  2026-08-11  status=pendente       pagamento=nao_vencido escala_direta
+- f4e4cca6...  2026-07-29  status=pendente       pagamento=nao_vencido escala_direta
+- 524e1e1c...  2026-07-23  status=pendente       pagamento=pendente  escala_direta
+- 1cf29cba...  2026-07-23  status=pendente       pagamento=pendente  escala_direta
+
+Observação: os_numero veio vazio nesses lançamentos (origens manual/
+escala_direta). Não há número de fechamento em nenhum registro.
+
+============================================================
+4. RPCs RELACIONADAS
+============================================================
+
+Nenhuma RPC de geração de número de pagamento/lote/fechamento em produção.
+
+RPCs de numeração que EXISTEM em produção (padrão de referência):
+- f_gerar_numero_fatura          (SEQUENCE por ano + nextval -> FAT-AAAA-000001)
+- gerar_numero_contrato
+- gerar_numero_contrato_operacao
+- gerar_numero_pedido
+
+============================================================
+5. DESENHO RECOMENDADO (NÃO implementado nesta missão)
+============================================================
+
+Caso se decida adicionar número humano ao fechamento/extrato, seguir o
+padrão já homologado pela fatura (SEQUENCE + nextval, atômico):
+
+- Coluna: public.pagamentos_prestadores.numero_fechamento TEXT
+  (aditiva; opcional no INSERT — preenchida na "emissão" do fechamento).
+- Numeração: EP-AAAA-000001
+  - SEQUENCE public.seq_extrato_fechamento_<ano> START 1 (on-demand);
+  - RPC f_gerar_numero_fechamento() com nextval (serializa concorrência);
+  - UNIQUE em numero_fechamento para impedir duplicidade.
+- Sem MAX+1.
+
+PORÉM: nada foi criado/alterado. Isto é apenas recomendação de desenho.
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] pagamentos_prestadores inspecionada
+[x] campos candidatos identificados (nenhum número humano)
+[x] registros reais conferidos (10 amostra, sem expor dados sensíveis)
+[x] UNIQUE verificado (id + os_id apenas)
+[x] RPC/função existente verificada (nenhuma p/ pagamento; fatura/contrato/pedido sim)
+[x] possibilidade de reutilização respondida (NÃO)
+[x] nenhuma escrita realizada
+[x] nenhuma migration executada
+
+============================================================
+CONCLUÍDO (fatos comprovados em Produção)
+============================================================
+
+- pagamentos_prestadores NÃO possui número humano (sem coluna numero/
+  codigo/referencia/numero_fechamento).
+- Identificador único disponível é o UUID `id` (técnico).
+- Não há RPC de numeração de pagamento/fechamento/lote.
+- Padrão de numeração humana seguro do sistema é o da fatura
+  (SEQUENCE + nextval).
+
+============================================================
+FALTA (pendências reais)
+============================================================
+
+- Decisão de negócio sobre adicionar numero_fechamento em
+  pagamentos_prestadores (coluna + SEQUENCE + RPC + UNIQUE) quando houver
+  necessidade real de envio externo/fechamento financeiro do prestador.
+- Enquanto isso, o extrato continua com número técnico
+  EP-AAAAMMDD-XXXXXXXX.
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Decidir se será adicionado `numero_fechamento` (EP-AAAA-000001) em
+pagamentos_prestadores seguindo o padrão de fatura (SEQUENCE + nextval,
+SEM MAX+1). Somente após aprovação criar a migration correspondente.

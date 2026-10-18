@@ -1,0 +1,180 @@
+RELATORIO REC-06.2D.2 — SCORE DE COMPROMETIMENTO REAL
+======================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: REC-06.2D.2 — Substituir stub do score de comprometimento por calculo real
+
+VEREDITO: [HOMOLOGADO — SCORE COMPROMETIMENTO REAL]
+
+===============================================================================
+1. O QUE FOI FEITO
+===============================================================================
+
+Substituido o stub de calcularScoreComprometimento (que retornava SEMPRE 50)
+por calculo real baseado em 8 fatores aprovados, com normalizacao por etapa.
+
+===============================================================================
+2. MAPA FATOR → COLUNA/FONTE REAL
+===============================================================================
+
+| # | Fator | Pontos | Coluna DB | Fonte |
+|---|-------|:------:|-----------|-------|
+| 1 | Documentacao | 25 | status_documental, quantidade_cobrancas | recrutamento_candidatos |
+| 2 | Confirmacao de interesse | 15 | confirmou_interesse | recrutamento_candidatos |
+| 3 | Disponibilidade | 15 | disponibilidade_recrutamento | recrutamento_candidatos |
+| 4 | Tempo/responsividade | 15 | tempo_medio_resposta_horas | recrutamento_candidatos |
+| 5 | Comparecimento 1o dia | 10 | compareceu_primeiro_dia | recrutamento_candidatos |
+| 6 | Permanencia/30 dias | 10 | completou_30_dias | recrutamento_candidatos |
+| 7 | Historico desistencias | 5 | historico_desistencias | recrutamento_candidatos |
+| 8 | Reclamacoes/ocorrencias | 5 | quantidade_reclamacoes | recrutamento_candidatos |
+
+TODOS os dados vem de colunas REAIS da tabela recrutamento_candidatos.
+NENHUM dado e inventado, NENHUM Math.random, NENHUM mock.
+
+===============================================================================
+3. NORMALIZACAO POR ETAPA (REGRA FUNDAMENTAL)
+===============================================================================
+
+Criterio ainda NAO APLICAVEL ao estagio atual NAO penaliza candidato.
+Formula: score = (pontos_obtidos / pontos_aplicaveis) * 100
+
+| Etapa | Fatores aplicaveis | Max pontos |
+|-------|:------------------:|:----------:|
+| contato_inicial | desistencia + reclamacao | 10 |
+| prospeccao | desistencia + reclamacao | 10 |
+| entrevista | desistencia + reclamacao | 10 |
+| analise_documental | doc + tempo + desistencia + reclamacao | 50 |
+| em_treinamento | doc + conf + disp + tempo + comp + desistencia + reclamacao | 80 |
+| homologacao | doc + conf + disp + tempo + comp + desistencia + reclamacao | 80 |
+| aprovado | doc + conf + disp + tempo + comp + perm + desistencia + reclamacao | 90 |
+| prestador_apto | doc + conf + disp + tempo + comp + perm + desistencia + reclamacao | 90 |
+| ativo | doc + conf + disp + tempo + comp + perm + desistencia + reclamacao | 90 |
+| operacao_ativa | TODOS os 8 | 100 |
+
+Fatores SEMPRE aplicaveis (qualquer etapa): desistencia (5) + reclamacao (5) = 10 pts.
+
+===============================================================================
+4. FAIXAS DE CLASSIFICACAO
+===============================================================================
+
+| Score | Label | Cor CSS |
+|:-----:|:-----:|:-------:|
+| 80-100 | Excelente | emerald-400 |
+| 65-79 | Bom | blue-400 |
+| 50-64 | Regular | amber-400 |
+| 30-49 | Baixo | orange-400 |
+| 0-29 | Critico | rose-400 |
+
+===============================================================================
+5. IMPLEMENTACAO
+===============================================================================
+
+Arquivo: src/services/recrutamento/recrutamentoScoreService.ts
+
+| Funcao | Antes | Depois |
+|--------|-------|--------|
+| calcularScoreComprometimento() | return 50 (stub) | Calculo real 8 fatores + normalizacao |
+| classificarComprometimento() | return "Regular" (stub) | 5 faixas por score |
+| getCorClassificacao() | return cor cinza (stub) | 5 cores por label |
+| calcularRiscoDesistencia() | funcional (preservado) | Inalterado |
+| gerarEtiquetasAutomaticas() | funcional (preservado) | Inalterado |
+| gerarParecerOperacional() | funcional (preservado) | Inalterado |
+
+Nenhuma alteracao em:
+- scoreEngine.ts (onboarding)
+- BancoTalentos.tsx (talentos)
+- matchService.ts (matching)
+- scoreService.ts (prestador pipeline)
+- enterpriseKanbanService.ts (kanban CRUD)
+- DetalhesCandidatoPipelineSheet.tsx (UI - botao manual preservado)
+
+===============================================================================
+6. RECALCULO
+===============================================================================
+
+Botao manual "Recalcular Comprometimento" preservado (DetalhesCandidatoPipelineSheet.tsx:466).
+Chama calcularScoreComprometimento() + classificarComprometimento() + persiste via atualizar().
+
+SEM recalculo automatico (conforme instrucao: "Nao criar loop de trigger/evento").
+
+===============================================================================
+7. AUTOMACOES
+===============================================================================
+
+NENHUMA automacao alterada ou criada.
+Score e apoio a decisao humana (conforme instrucao: "Nao criar aprovacao/reprovacao automatica").
+Se score cruzar limiar ja observado pelas automacoes existentes, o evento ja ocorre uma unica vez
+(por design: o botao "Recalcular" e o unico ponto de persistencia).
+
+===============================================================================
+8. PROVA E2E REAL
+===============================================================================
+
+Candidato TESTE_REC_D2 criado, testado e removido.
+
+| Passo | Verificacao | Resultado |
+|-------|-------------|:---------:|
+| 1 | Criar candidato com dados reais | INSERT OK |
+| 2 | Ler score do banco = 89 (Excelente) | ✅ |
+| 3 | Alterar statusDocumental completo→pendente | score 89→67 (Bom) ✅ |
+| 4 | Restaurar pendente→completo | score volta 89 ✅ |
+| 5 | Campos UI preenchidos | ✅ |
+| 6 | Regressoes (19 candidatos reais intactos) | ✅ |
+| 7 | Cleanup completo | 0 restantes ✅ |
+
+===============================================================================
+9. TESTES UNITARIOS
+===============================================================================
+
+Arquivo: src/test/rec06_2d2_score_comprometimento.test.ts (45 testes)
+
+| Categoria | Testes | Status |
+|-----------|:------:|:------:|
+| Score minimo/maximo | 2 | ✅ |
+| Normalizacao por etapa (5 etapas) | 5 | ✅ |
+| Cada fator individual (14 fatores) | 14 | ✅ |
+| Dados ausentes | 2 | ✅ |
+| Variacao com fato reais | 3 | ✅ |
+| Faixas de classificacao | 5 | ✅ |
+| Cores | 6 | ✅ |
+| Risco desistencia | 3 | ✅ |
+| Etiquetas automaticas | 2 | ✅ |
+| Parecer operacional | 2 | ✅ |
+| **TOTAL** | **45** | **✅ 45/45** |
+
+===============================================================================
+10. REGRESSOES
+===============================================================================
+
+| Verificacao | Resultado |
+|-------------|:---------:|
+| npx tsc --noEmit | 0 erros ✅ |
+| vitest (total) | 1206/1211 (5 falhas preexistentes) ✅ |
+| vitest (rec06_2d2 novos) | 45/45 ✅ |
+| Falhas preexistentes | rec03 legacy (4), f0k recibos (1) — nao relacionadas |
+
+===============================================================================
+11. ARQUIVOS MODIFICADOS
+===============================================================================
+
+| Arquivo | Mudanca |
+|---------|---------|
+| src/services/recrutamento/recrutamentoScoreService.ts | stub → calculo real (3 funcoes) |
+| src/test/rec06_2d2_score_comprometimento.test.ts | NOVO — 45 testes unitarios |
+| scripts/_rec06_2d2_e2e.mjs | NOVO — prova E2E real |
+
+===============================================================================
+12. NAO MEXIDO (CONFORME INSTRUCAO)
+===============================================================================
+
+- BancoMotoristas.tsx (dead code — confirmado)
+- iaService.ts (mock — nao alterado nesta missão)
+- scoreEngine.ts (onboarding — preservado)
+- BancoTalentos.tsx (talentos — preservado)
+- matchService.ts (matching — preservado)
+- enterpriseKanbanService.ts (CRUD — preservado)
+- DetalhesCandidatoPipelineSheet.tsx (UI — preservado)
+
+===============================================================================
+FIM DO RELATORIO — REC-06.2D.2
+HOMOLOGADO — SCORE COMPROMETIMENTO REAL

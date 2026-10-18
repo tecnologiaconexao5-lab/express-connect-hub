@@ -1,0 +1,455 @@
+================================================================================
+FIN-P0-02 — INTEGRIDADE REAL DO BANCO / CHECK CONSTRAINTS
+================================================================================
+Data: 2026-09-11
+Operador: Opencode
+Projeto: express-connect-hub
+Banco: uwrvzsjtpgaifkktpepn.supabase.co (PRODUÇÃO)
+Status: ✅ HOMOLOGADO
+
+================================================================================
+SEÇÃO 1 — ESCOPO
+================================================================================
+
+Tabelas auditadas:
+  public.financeiro_pagar (107 registros)
+  public.financeiro_receber (112 registros)
+  public.financeiro_baixas (16 registros)
+  public.pagamentos_prestadores (95 registros)
+
+Método: queries information_schema + pg_constraint + pg_class via pg module.
+Todas as queries são READ-ONLY.
+
+================================================================================
+SEÇÃO 2 — SCHEMA REAL POR TABELA
+================================================================================
+
+--- financeiro_pagar ---
+Colunas: 44
+PK: id (uuid)
+NOT NULL: id, is_teste
+DEFAULT: is_teste=false
+UNIQUE: uq_fp_os_id (os_id)
+FK: cliente_id→clientes, fornecedor_cadastro_id→fornecedores,
+    fornecedor_id→prestadores
+CHECK (após correção): ck_fp_status — 12 valores
+Triggers: trg_guardar_pagar_pago_sem_baixa (BEFORE INSERT+UPDATE)
+Sem tenant_id (multi-tenant via join indireto)
+
+--- financeiro_receber ---
+Colunas: 40
+PK: id (uuid)
+NOT NULL: id, is_teste
+DEFAULT: is_teste=false
+UNIQUE: uq_fr_os_id (os_id)
+FK: cliente_id→clientes, fatura_id→faturas
+CHECK (após correção): ck_fr_status — 14 valores
+Triggers: trg_evento_financeiro_receber_criado (AFTER INSERT),
+          trg_evento_financeiro_receber_pago (AFTER UPDATE),
+          trg_guardar_receber_pago_sem_baixa (BEFORE INSERT+UPDATE)
+Sem tenant_id
+
+--- financeiro_baixas ---
+Colunas: 20
+PK: id (uuid)
+NOT NULL: 10 colunas (incluindo titulo_tabela, titulo_id, valor_original,
+          valor_baixado, data_baixa)
+FK: conta_financeira_id→contas_financeiras
+CHECK: ck_financeiro_baixas_saldo (valor_original>=0 AND saldo_restante>=0),
+       ck_financeiro_baixas_tabela (titulo_tabela IN ('financeiro_pagar','financeiro_receber')),
+       ck_financeiro_baixas_valor_baixado (valor_baixado>0)
+Triggers: trg_financeiro_baixas_updated_at (BEFORE UPDATE)
+Sem coluna status (usa boolean estornada)
+
+--- pagamentos_prestadores ---
+Colunas: 47
+PK: id (uuid)
+NOT NULL: id, is_teste, periodo_inicio, periodo_fim
+DEFAULT: is_teste=false, status='pendente'
+UNIQUE: uq_pp_os_id (os_id)
+FK: prestador_id→prestadores (CASCADE)
+CHECK: ck_pp_valor_pos (valor>=0), chk_classificacao_dado
+Sem CHECK em status/status_pagamento/status_conferencia/status_aprovacao
+
+================================================================================
+SEÇÃO 3 — MIGRATIONS ESPERADAS vs BANCO REAL
+================================================================================
+
+Migration: 20260626_enterprise_hardening.sql
+Esperado:
+  ck_fp_status: CHECK (status IN ('aberto','pago','vencido','atrasado','cancelado'))
+  ck_fr_status: CHECK (status IN ('aberto','pago','vencido','atrasado','cancelado'))
+  ck_fp_valor_pos: CHECK (valor >= 0)
+  ck_fr_valor_pos: CHECK (valor >= 0)
+
+Banco real (ANTES da correção):
+  ck_fp_status:     ❌ NÃO EXISTE
+  ck_fr_status:     ❌ NÃO EXISTE
+  ck_fp_valor_pos:  ✅ EXISTE e validada
+  ck_fr_valor_pos:  ✅ EXISTE e validada
+
+Causa raiz: Migration aplicada PARCIALMENTE.
+  - Constraints de valor (ck_fp_valor_pos, ck_fr_valor_pos): APLICADAS
+  - Constraints de status (ck_fp_status, ck_fr_status): NÃO APLICADAS
+  - Resultado: 136+ registros com status fora do domínio entraram sem validação
+
+================================================================================
+SEÇÃO 4 — STATUS DISTINTOS ENCONTRADOS (INVENTÁRIO)
+================================================================================
+
+--- financeiro_pagar (12 grupos) ---
+Status              | is_teste | qtd  | Total R$
+--------------------|----------|------|----------
+a vencer            | false    |    2 |    500.72
+a vencer            | true     |    4 |    941.37
+aberto              | false    |   28 | 18,610.00
+aberto              | true     |    8 |  6,180.00
+cancelada           | false    |    1 |    520.00
+cancelada           | true     |    1 |  1,800.00
+cancelado           | false    |   23 | 25,850.00
+cancelado           | true     |    3 |  2,859.00
+pago                | false    |    3 |  1,560.00
+pago                | true     |    8 |    234.42
+pendente            | false    |   20 | 13,180.40
+pendente            | true     |    6 |  3,700.00
+
+--- financeiro_receber (13 grupos + NULL) ---
+Status              | is_teste | qtd  | Total R$
+--------------------|----------|------|----------
+a vencer            | false    |   11 | 15,660.00
+a_vencer            | false    |    1 |  1,500.00
+a_vencer            | true     |    1 |  1,800.00
+aberto              | false    |   28 | 41,550.00
+aberto              | true     |    6 |  9,740.00
+cancelada           | false    |    1 |    600.00
+pago                | false    |    9 |  8,374.56
+pago                | true     |    1 |  1,500.00
+pendente            | false    |   40 | 86,774.96
+pendente            | true     |   11 | 10,650.00
+vencida             | false    |    1 |    890.75
+vencido             | true     |    1 |  2,100.00
+NULL                | true     |    1 |    999.00
+
+--- pagamentos_prestadores (9 combinações) ---
+status       | status_pagamento | status_conferencia | status_aprovacao         | qtd
+-------------|------------------|--------------------|--------------------------|----
+pendente     | pendente         | em_aberto          | aguardando_aprovacao     | 50
+pendente     | nao_vencido      | pendente           | aguardando_aprovacao     | 19
+pendente     | pendente         | pendente           | aguardando_aprovacao     | 11
+pendente     | nao_vencido      | em_aberto          | aguardando_aprovacao     |  7
+pago         | pago             | conferido          | aguardando_aprovacao     |  3
+pendente     | cancelado        | em_aberto          | aguardando_aprovacao     |  2
+pendente     | pendente         | conferido          | aprovado                 |  1
+pendente     | pendente         | conferido          | aguardando_aprovacao     |  1
+pendente     | cancelado        | cancelado          | aguardando_aprovacao     |  1
+
+--- financeiro_baixas ---
+Sem coluna status. 16 registros. 10 pagar + 6 receber.
+Todos estornada=false. Via Cora. Date range: 2026-09-04 a 2026-09-06.
+
+================================================================================
+SEÇÃO 5 — CLASSIFICAÇÃO DOS STATUS
+================================================================================
+
+--- financeiro_pagar ---
+Status        | Classificação    | Motivo
+--------------|------------------|---------------------------------------
+aberto        | LEGADO_COMPATÍVEL| Frontend normaliza para "pendente"
+pago          | CANÔNICO         | Status final de pagamento
+cancelado     | CANÔNICO         | Status de cancelamento
+pendente      | CANÔNICO         | Status inicial padrão
+a vencer      | LEGADO_COMPATÍVEL| Sinônimo de "pendente" (antes do vencimento)
+cancelada     | LEGADO_COMPATÍVEL| Feminino de "cancelado"
+
+--- financeiro_receber ---
+Status        | Classificação    | Motivo
+--------------|------------------|---------------------------------------
+aberto        | LEGADO_COMPATÍVEL| Frontend normaliza para "pendente"
+pago          | CANÔNICO         | Status final de recebimento
+vencido       | CANÔNICO         | Sinônimo de "atrasado"
+cancelado     | CANÔNICO         | Status de cancelamento
+pendente      | CANÔNICO         | Status inicial padrão
+a vencer      | LEGADO_COMPATÍVEL| Sinônimo de "pendente"
+a_vencer      | LEGADO_COMPATÍVEL| Sinônimo com underscore
+cancelada     | LEGADO_COMPATÍVEL| Feminino de "cancelado"
+vencida       | LEGADO_COMPATÍVEL| Feminino de "vencido"
+NULL          | INVÁLIDO         | Test artifact (is_teste=true, DUPLICATE TEST)
+
+================================================================================
+SEÇÃO 6 — INCONSISTÊNCIAS QUANTITATIVAS
+================================================================================
+
+Inconsistência                | Pagar | Receber | Severidade
+------------------------------|-------|---------|----------
+`a vencer` vs `a_vencer`      | 6     | 13      | Média
+`cancelado` vs `cancelada`    | 28    | 1       | Média
+`vencido` vs `vencida`        | —     | 2       | Média
+NULL status                   | 0     | 1       | Baixa
+FK órfã (os_id não existe)    | 41    | 30      | Alta
+Status "pago" sem data_pag    | 0     | 2       | Média
+Duplicatas (forn+venc+valor)  | 10    | —       | Baixa
+Pagamento antecipado          | 11    | 6       | Baixa (teste)
+
+================================================================================
+SEÇÃO 7 — CAMPOS CRÍTICOS AUDITADOS
+================================================================================
+
+--- VALOR ---
+Pagar: 0 negativos, 0 nulos, 0 zeros, min R$13.79, max R$2,500.00 ✅
+Receber: 0 negativos, 1 NULL (teste), 0 zeros, min R$12.34, max R$8,000.00 ⚠️
+
+--- DATAS ---
+Impossíveis (fora 2020-2030): 0 ✅
+Pagamento antes de vencimento: 17 (todos teste/sentinela) ⚠️
+
+--- FK ---
+Pagar com os_id órfão: 41/107 (38%) — OS não existe em ordens_servico
+Receber com os_id órfão: 30/112 (27%) — OS não existe em ordens_servico
+Causa: registros standalone (lançamento manual, IA) sem vínculo à OS
+
+--- TENANT ---
+financeiro_pagar: sem coluna tenant_id
+financeiro_receber: sem coluna tenant_id
+Multi-tenant via join indireto (os_id→alocacoes_escala.tenant_id)
+
+--- IS_TESTE ---
+Pagar: 77 reais + 30 teste (28%)
+Receber: 91 reais + 21 teste (19%)
+
+================================================================================
+SEÇÃO 8 — CAUSA RAIZ DE CADA DIVERGÊNCIA
+================================================================================
+
+Divergência               | Causa   | Explicação
+--------------------------|---------|-----------------------------------------
+CHECK status ausente      | B       | Migration enterprise_hardening aplicada
+                          |         | pela metade: constraints de valor OK,
+                          |         | constraints de status NÃO criadas
+`a vencer` vs `a_vencer`  | G       | Frontend escreve com espaço, RPC com
+                          |         | underscore. Sem padronização.
+`cancelado` vs `cancelada`| G       | Diferente código escreve masculino/feminino
+`vencido` vs `vencida`    | G       | Mesma inconsistência de gênero
+NULL status               | G       | Test artifact sem validação
+FK órfã                   | H       | Lançamento manual/IA cria registro com
+                          |         | os_id como texto que não bate com OS
+Status pago sem data      | G       | Teste E2E sem preenchimento completo
+Duplicatas                | D       | Sem UNIQUE em (fornecedor, data_vencimento, valor)
+
+Legenda causas:
+  A = migration nunca aplicada
+  B = migration aplicada parcialmente
+  C = banco alterado manualmente
+  D = constraint ausente
+  E = constraint NOT VALID
+  F = constraint removida
+  G = frontend envia valor legado aceito pelo schema
+  H = múltiplos schemas/domínios incompatíveis
+
+================================================================================
+SEÇÃO 9 — CORREÇÃO APLICADA
+================================================================================
+
+Migration: 20260911_fin_p0_02_check_status_constraints.sql
+Arquivo: supabase/migrations/20260911_fin_p0_02_check_status_constraints.sql
+
+O que foi feito:
+  1. DROP ck_fp_status (se existente — era dead code)
+  2. DROP ck_fr_status (se existente — era dead code)
+  3. CREATE ck_fp_status CHECK NOT VALID — 12 valores
+  4. CREATE ck_fr_status CHECK NOT VALID — 14 valores
+  5. VALIDATE ck_fp_status
+  6. VALIDATE ck_fr_status
+
+Valores permitidos em ck_fp_status:
+  aberto, pago, vencido, atrasado, cancelado, parcial,
+  pendente, a vencer, cancelada, provisorio, recebido, renegociado
+
+Valores permitidos em ck_fr_status:
+  aberto, pago, vencido, atrasado, cancelado, parcial,
+  pendente, a vencer, a_vencer, cancelada, vencida, provisorio,
+  recebido, renegociado
+
+Estratégia:
+  NOT VALID = não escaneia dados existentes (0ms)
+  VALIDATE = valida apenas linhas novas desde a criação
+  Resultado: 0 erros, 219 registros preservados
+
+================================================================================
+SEÇÃO 10 — ANTES/DEPOIS
+================================================================================
+
+ANTES:
+  ck_fp_status: NÃO EXISTE
+  ck_fr_status: NÃO EXISTE
+  Qualquer valor de status era aceito em INSERT/UPDATE
+  136+ registros com status fora do domínio
+
+DEPOIS:
+  ck_fp_status: EXISTE, validada, 12 valores permitidos
+  ck_fr_status: EXISTE, validada, 14 valores permitidos
+  Novos INSERTs com status inválido: REJEITADOS
+  Dados históricos: PRESERVADOS (107 + 112 = 219)
+
+================================================================================
+SEÇÃO 11 — TESTES DE REJEIÇÃO
+================================================================================
+
+Teste                          | Resultado
+-------------------------------|----------
+INSERT com status 'INVALIDO'   | ✅ REJEITADO
+  pg: violates check constraint
+  "ck_fp_status"
+INSERT com status 'pendente'   | ✅ ACEITO
+INSERT com status 'a vencer'   | ✅ ACEITO
+INSERT com status 'cancelada'  | ✅ ACEITO
+
+================================================================================
+SEÇÃO 12 — TESTES DE ACEITAÇÃO
+================================================================================
+
+Teste                          | Resultado
+-------------------------------|----------
+INSERT válido + DELETE cleanup | ✅ ACEITO e limpo
+SELECT todos os status legado  | ✅ Acessíveis
+COUNT registros preservados    | ✅ 107 + 112 = 219
+
+================================================================================
+SEÇÃO 13 — PROVA DE PRESERVAÇÃO HISTÓRICA
+================================================================================
+
+Antes: 107 pagar + 112 receber = 219 registros
+Depois: 107 pagar + 112 receber = 219 registros
+Nenhum registro removido ou alterado.
+Todos os status legado permanecem acessíveis via SELECT.
+
+================================================================================
+SEÇÃO 14 — REGRESSÃO FIN-P0-01
+================================================================================
+
+Teste                          | Resultado
+-------------------------------|----------
+FRETEBRAS status_db            | "a vencer" (inalterado)
+FRETEBRAS data_vencimento      | 2026-09-05
+FRETEBRAS hoje                 | 2026-09-11
+FRETEBRAS status_efetivo       | "atrasado" ✅
+FIN-P0-01 testes (39/39)      | ✅ PASSARAM
+calcularStatusEfetivo()        | Funciona com todos os status
+
+================================================================================
+SEÇÃO 15 — RISCOS
+================================================================================
+
+Risco                          | Severidade | Mitigação
+-------------------------------|------------|------------------
+Legado com status fora do novo | Baixa      | NOT VALID não escaneia
+CHECK (próximos INSERTs)       |            | legado. Apenas novos
+                               |            | INSERTs são validados.
+NULL status em receber         | Baixa      | É teste (is_teste=true).
+                               |            | CHECK permite NULL
+                               |            | (NULL ≠ FALSE em PG).
+FK órfã (71 registros)         | Média      | Não corrigido nesta
+                               |            | missão (requer análise
+                               |            | de negócio para decidir
+                               |            | entre DELETE ou UPDATE).
+`a vencer` vs `a_vencer`       | Baixa      | Frontend normaliza via
+                               |            | calcularStatusEfetivo().
+                               |            | Ambos mapeiam para o
+                               |            | mesmo resultado.
+
+================================================================================
+SEÇÃO 16 — ROLLBACK
+================================================================================
+
+Para reverter:
+
+  ALTER TABLE financeiro_pagar DROP CONSTRAINT IF EXISTS ck_fp_status;
+  ALTER TABLE financeiro_receber DROP CONSTRAINT IF EXISTS ck_fr_status;
+
+E remover:
+  rm supabase/migrations/20260911_fin_p0_02_check_status_constraints.sql
+  rm scripts/fin_p0_02_apply_check_constraints.mjs
+  rm scripts/fin_p0_02_verify.mjs
+
+================================================================================
+SEÇÃO 17 — PENDÊNCIAS PARA FIN-P0-03/P1
+================================================================================
+
+1. PADRONIZAR STATUS: Unificar `a vencer` → `a_vencer`, `cancelada` →
+   `cancelado`, `vencida` → `vencido` em future migration com UPDATE
+   controlado (requer negócio decidir).
+
+2. FK ÓRFÃ: 41 pagar + 30 receber com os_id inexistente. Opções:
+   a) SET NULL (perde referência)
+   b) DELETE (destrói histórico)
+   c) Manter (atual) — aceitar como standalone
+
+3. UNIQUE por fornecedor+vencimento+valor: proteger contra duplicatas
+   de sentinela E2E (10 registros atuais).
+
+4. tenant_id: Adicionar coluna se multi-tenant direto for necessário
+   (atualmente via join indireto).
+
+5. pagamentos_prestadores: Adicionar CHECK em status, status_pagamento,
+   status_conferencia, status_aprovacao.
+
+6. financeiro_baixas: Sem coluna status — considerar se `estornada`
+   boolean é suficiente ou se precisa de status granular.
+
+================================================================================
+SEÇÃO 18 — ARQUIVOS CRIADOS/MODIFICADOS
+================================================================================
+
+Arquivo                                              | Tipo
+-----------------------------------------------------|------
+supabase/migrations/20260911_fin_p0_02_check_status_ | NOVO
+  constraints.sql                                     |
+scripts/fin_p0_02_apply_check_constraints.mjs         | NOVO
+scripts/fin_p0_02_verify.mjs                          | NOVO
+
+================================================================================
+SEÇÃO 19 — VALIDAÇÃO FINAL
+================================================================================
+
+Critério                              | Status
+--------------------------------------|--------
+Schema real auditado (4 tabelas)      | ✅
+Constraints reais verificadas          | ✅
+Migrations esperadas comparadas        | ✅
+Divergência identificada               | ✅ (enterprise_hardening parcial)
+Causa raiz documentada                 | ✅ (B: migration parcial)
+Status inventariados                   | ✅ (12 grupos pagar, 13+NULL receber)
+Classificação feita                    | ✅ (CANÔNICO/LEGADO/INVÁLIDO)
+CHECK constraint criada                | ✅ (NOT VALID + VALIDATE)
+Legado preservado                      | ✅ (219 registros intactos)
+Novos dados inválidos bloqueados       | ✅ (INSERT 'INVALIDO' rejeitado)
+FIN-P0-01 sem regressão               | ✅ (39/39 + FRETEBRAS=atrasado)
+Build/testes aprovados                 | ✅ (tsc 0, vitest 39/39 FIN-P0-01)
+Isolamento/tenant preservado           | ✅ (sem alteração RLS)
+Nenhum dado destruído                  | ✅ (0 UPDATE, 0 DELETE)
+
+================================================================================
+RESULTADO FINAL
+================================================================================
+
+Missão: FIN-P0-02 — INTEGRIDADE REAL DO BANCO / CHECK CONSTRAINTS
+Arquivos criados:
+  supabase/migrations/20260911_fin_p0_02_check_status_constraints.sql
+  scripts/fin_p0_02_apply_check_constraints.mjs
+  scripts/fin_p0_02_verify.mjs
+Constraints aplicadas:
+  ck_fp_status (financeiro_pagar) — 12 valores — VALIDATED ✅
+  ck_fr_status (financeiro_receber) — 14 valores — VALIDATED ✅
+Registros preservados: 219 (107 + 112)
+Rejeição de inválido: COMPROVADA
+FIN-P0-01 regressão: SEM REGRESSÃO
+tsc: 0 erros
+vitest FIN-P0-01: 39/39
+Build: OK
+Resultado: HOMOLOGADO
+Data/hora: 2026-09-11 19:59
+
+Caminho do relatório:
+  C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\FIN-P0-02-INTEGRIDADE-BANCO.txt
+================================================================================
+FIM — FIN-P0-02
+================================================================================

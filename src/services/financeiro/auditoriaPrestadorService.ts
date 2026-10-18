@@ -6,6 +6,7 @@ export type AcaoAuditoria =
   | "reprovar_pagamento"
   | "marcar_em_lote"
   | "cancelar_pagamento"
+  | "estornar_pagamento"
   | "marcar_pago"
   | "criar_pagamento"
   | "gerar_fechamento"
@@ -21,6 +22,19 @@ export interface AuditoriaInput {
   valor_anterior?: number;
   valor_novo?: number;
   detalhes?: Record<string, unknown>;
+}
+
+function obterUsuarioAtual(): string {
+  try {
+    const raw = sessionStorage.getItem("tms_user");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed?.email || parsed?.nome || "sistema";
+    }
+  } catch {
+    // ignore
+  }
+  return "sistema";
 }
 
 export async function registrarAuditoria(input: AuditoriaInput): Promise<void> {
@@ -46,17 +60,4 @@ export async function registrarAuditoria(input: AuditoriaInput): Promise<void> {
   } catch (e) {
     console.warn("[Auditoria] Falha ao registrar auditoria (não crítico):", e);
   }
-}
-
-function obterUsuarioAtual(): string {
-  try {
-    const stored = localStorage.getItem("demo_user");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return parsed?.nome || parsed?.email || "operador";
-    }
-  } catch {
-    // ignore
-  }
-  return "sistema";
 }

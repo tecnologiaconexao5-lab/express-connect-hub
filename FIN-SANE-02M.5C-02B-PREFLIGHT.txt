@@ -1,0 +1,452 @@
+FIN-SANE-02M.5C — PREFLIGHT MIGRATION 02B
+==========================================
+Relatório de Auditoria: Inventário, Impacto e Reversibilidade da Migration FIN-SANE-02B
+
+Data: 2026-09-20
+Hora: 18:00 BRT
+Solicitante: 02M Investigation Chain (02M.5 → 02M.5A → 02M.5B → 02M.5C)
+Status: CONCLUIDO
+
+==========================================================================
+SEÇÃO 1 — RESUMO EXECUTIVO
+==========================================================================
+
+A migration FIN-SANE-02B (2026-09-13) corrige o bug sistêmico em que
+financeiro_pagar.fp.valor era gravado como valor_repasse (R$520) em vez
+de valor_liquido (R$652,86) — causando subdeclaration de obrigação ao
+prestador em R$132,86 por OS com pedagio/adicional/ajudante/outros_custos.
+
+CLASSIFICACAO: 02B_JA_APLICADA_PARCIALMENTE
+
+A migration ja foi executada em producao em 2026-09-18:
+  - Trigger M66 substituido por versao com v_valor_liquido ✅
+  - Trigger M80 substituido por versao com v_valor_liquido ✅
+  - Snapshot de 36 registros criada e valores atualizados ✅
+  - RPC f_confirmar_pagamento_fechamento criada ✅
+
+Porem, o caso CESAR (nosso alvo de investigacao) foi EXCLUIDO do snapshot
+por ter status fp='pago' — permanecendo com divergencia fp=520 vs pp=652,86.
+
+A migracao NAO afeta o caso CESAR diretamente. CESAR requer correcao
+MANUAL/ESPECIFICA alem da migration.
+
+
+==========================================================================
+SEÇÃO 2 — INVENTÁRIO COMPLETO DA MIGRATION 02B
+==========================================================================
+
+Arquivo: supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+Tamanho: 631 linhas
+Estrutura: 6 seções + 1 prefácio
+
+| SEÇÃO | TIPO | LINHAS | DESCRIÇÃO |
+|-------|------|--------|-----------|
+| Prefácio | DDL | 1-40 | Criação tabela fin_sane_02b_snapshot |
+| SEÇÃO 1 | DML | 41-115 | INSERT snapshot de FP divergentes |
+| SEÇÃO 2 | DML | 116-125 | UPDATE FP.valores a partir do snapshot |
+| SEÇÃO 3 | DDL | 126-350 | CREATE OR REPLACE f_trg_propagar_financeiro_alocacao (M66) |
+| SEÇÃO 4 | DDL | 351-450 | CREATE OR REPLACE f_trg_propagar_financeiro_os (M80) |
+| SEÇÃO 5 | DDL | 451-580 | CREATE OR REPLACE f_confirmar_pagamento_fechamento (RPC) |
+| SEÇÃO 6 | DML | 581-631 | Backfill FP via PP para os_id sem match |
+
+Total: 3 operações estruturais (DDL) + 3 operações de dados (DML)
+
+
+==========================================================================
+SEÇÃO 3 — INVENTÁRIO POR OPERAÇÃO
+==========================================================================
+
+--- 3.1 TABELA fin_sane_02b_snapshot (Prefácio) ---
+Tipo: CREATE TABLE IF NOT EXISTS
+Colunas: id (serial), financeiro_pagar_id (uuid), os_id (text),
+         pagamento_prestador_id (uuid), prestador_id (uuid),
+         valor_anterior (numeric), valor_novo (numeric),
+         status_anterior (text), motivo (text),
+         processado_em (timestamptz), execucao_id (uuid)
+Risco: BAIXO — tabela nova, não afeta estrutura existente
+Reversibilidade: DROP TABLE (irreversível — dados snapshot perdidos)
+
+--- 3.2 SNAPSHOT INSERT (SEÇÃO 1) ---
+Tipo: INSERT INTO fin_sane_02b_snapshot
+Critério: FP com status NAO IN ('pago','paga','cancelado','cancelada','estornado')
+           E os_id NOT NULL E fornecedor_id NOT NULL
+           E PP.status_pagamento NAO IN ('pago','paga','cancelado','cancelada')
+           E pp.tipo_pagamento IS DISTINCT FROM 'fechamento'
+           E fp.valor <> pp.valor_liquido
+Ação: Grava fp.valor_anterior, calcula fp.valor_novo = pp.valor_liquido
+Evidência LIVE: 36 registros, processado_em = 2026-09-18T10:07:13.455Z
+Reversibilidade: DELETE FROM fin_sane_02b_snapshot (reversível)
+
+--- 3.3 UPDATE financeiro_pagar (SEÇÃO 2) ---
+Tipo: UPDATE financeiro_pagar SET valor = snapshot.valor_novo
+Critério: JOIN fin_sane_02b_snapshot WHERE fp.id = snapshot.financeiro_pagar_id
+Ação: Corrige fp.valor para pp.valor_liquido
+Evidência LIVE: 36 registros atualizados, ajuste total = R$6.336,72
+Reversibilidade: UPDATE fp SET valor = snapshot.valor_anterior (via rollback)
+
+--- 3.4 TRIGGER M66 (SEÇÃO 3) ---
+Tipo: CREATE OR REPLACE FUNCTION + DROP/CREATE TRIGGER
+Mudança: v_valor_prestador → v_valor_liquido na linha INSERT de financeiro_pagar
+Evidência LIVE: Trigger atual usa v_valor_liquido (LINHA CONFIRMADA NO PROSRC)
+Reversibilidade: Restaurar versão anterior com v_valor_prestador (via rollback)
+
+--- 3.5 TRIGGER M80 (SEÇÃO 4) ---
+Tipo: CREATE OR REPLACE FUNCTION + DROP/CREATE TRIGGER
+Mudança: v_valor_prestador → v_valor_liquido na linha INSERT de financeiro_pagar
+Evidência LIVE: Trigger atual usa v_valor_liquido (COMENTÁRIO "CORREÇÃO" CONFIRMADO)
+Reversibilidade: Restaurar versão anterior com v_valor_prestador (via rollback)
+
+--- 3.6 RPC f_confirmar_pagamento_fechamento (SEÇÃO 5) ---
+Tipo: CREATE OR REPLACE FUNCTION
+Assinatura: (p_fechamento_id uuid, p_conta_pagamento text) → jsonb
+Lógica: Valida FP.valor = PP.valor_liquido, cria PP se necessário, baixa FP
+Evidência LIVE: EXISTS = true
+Grants: service_role, authenticated, postgres
+Reversibilidade: DROP FUNCTION (irreversível se houver chamadas ativas)
+
+--- 3.7 BACKFILL FP via PP (SEÇÃO 6) ---
+Tipo: INSERT INTO financeiro_pagar ON CONFLICT DO UPDATE
+Critério: PP com os_id NOT NULL + tipo_pagamento != 'fechamento'
+           SEM FP correspondente
+Ação: Cria FP com valor = pp.valor_liquido
+Reversibilidade: DELETE os FP criados (reversível, mas pode quebrar baixas)
+
+
+==========================================================================
+SEÇÃO 4 — MATRIZ DE IMPACTO (ANTES × DEPOIS)
+==========================================================================
+
+| Componente | ANTES (M66 bug) | DEPOIS (02B) | Status |
+|------------|-----------------|--------------|--------|
+| Trigger M66 FP.valor | v_valor_prestador | v_valor_liquido | ✅ APLICADO |
+| Trigger M80 FP.valor | v_valor_prestador | v_valor_liquido | ✅ APLICADO |
+| Snapshot 02B | inexistente | 36 registros | ✅ APLICADO |
+| 36 FP divergentes | valor errado | valor corrigido | ✅ APLICADO |
+| RPC fechamento | inexistente | criada | ✅ APLICADA |
+| Novos FP (pós-02B) | v_valor_prestador | v_valor_liquido | ✅ CORRETO |
+| CESAR FP | R$520 (pago) | R$520 (pago) | ⚠️ NÃO CORRIGIDO |
+| CESAR PP | status pendente | status pendente | ⚠️ NÃO CORRIGIDO |
+
+
+==========================================================================
+SEÇÃO 5 — ESTADO ATUAL DO CASO CESAR (LIVE 2026-09-20)
+==========================================================================
+
+--- 5.1 financeiro_pagar ---
+id:                9f2be89f-5ece-4cc5-be29-50010b64e64e
+os_id:             58e5751e-bd54-43c5-9bcf-55fe4e575e6b
+valor:             R$520,00  ← ERRADO (deveria ser R$652,86)
+status:            pago
+fornecedor_id:     fe7a75cc-a49f-43ef-a0b7-f869fbf07744 (CESAR)
+fornecedor_nome:   CESAR AUGUSTO HOLANDA SILVA
+created_at:        2026-08-17T18:57:32.153Z
+updated_at:        2026-08-17T18:57:32.153Z  ← NUNCA ATUALIZADO
+data_pagamento:    2026-09-05
+data_efetiva_pgto: 2026-09-05
+conta_pagadora:    Cora
+observacoes:       "Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 0.00."
+
+--- 5.2 pagamentos_prestadores ---
+id:                7461daf6-438b-43b3-abde-4d30e1609574
+prestador_id:      fe7a75cc-a49f-43ef-a0b7-f869fbf07744 (CESAR)
+prestador_nome:    CESAR AUGUSTO HOLANDA SILVA
+os_id:             58e5751e-bd54-43c5-9bcf-55fe4e575e6b
+valor_liquido:     R$652,86  ← CORRETO
+valor_servicos:    R$520,00
+pedagio:           R$66,43
+adicionais:        R$66,43
+status_pagamento:  pendente  ← NUNCA ATUALIZADO PARA 'pago'
+status:            pendente  ← NUNCA ATUALIZADO
+status_conferencia: em_aberto
+data_pagamento:    null  ← NUNCA PREENCHIDO
+tipo_pagamento:    null
+origem_lancamento: escala_direta
+created_at:        2026-08-17T15:57:32.153Z
+updated_at:        2026-08-17T15:57:32.153Z  ← MESMO QUE CREATED — ZERO UPDATES
+
+--- 5.3 financeiro_baixas ---
+id:                286c2c2d-90e4-403a-9692-8e68ccfd2a6c
+titulo_tabela:     financeiro_pagar
+titulo_id:         9f2be89f (CESAR FP)
+valor_original:    R$520,00
+valor_baixado:     R$520,00
+saldo_restante:    R$0,00
+data_baixa:        2026-09-05
+forma_pagamento:   Pagamento Prestador
+conta_financeira:  Cora
+observacao:        "Baixa automática — pagamento prestador 32fe474f"
+estornada:         false
+created_at:        2026-09-05T21:49:50.512Z
+
+--- 5.4 composicao_financeira_os ---
+id:                2c80df30-fa71-4330-9d6f-ed6b0bd9f116
+valor_cliente:     R$600,00
+valor_prestador:   R$520,00
+pedagio_valor:     R$66,43
+outros_custos:     R$66,43
+margem_bruta:      R$13,57
+
+--- 5.5 financeiro_receber ---
+id:                bb5c0efe-3193-49ee-a6cb-d213bee69f72
+valor:             R$600,00
+status:            aberto
+
+--- 5.6 historico_alocacoes_escala ---
+REGISTROS: 0 (nenhum evento registrado para esta alocação)
+
+--- 5.7 ordens_servico ---
+REGISTRO: NÃO EXISTE (os_id = NULL na alocação)
+
+
+==========================================================================
+SEÇÃO 6 — DIAGNÓSTICO: POR QUE CESAR FOI EXCLUÍDO DO SNAPSHOT 02B
+==========================================================================
+
+A migration 02B tem o seguinte critério de seleção:
+
+  WHERE fp.status NOT IN ('pago','paga','cancelado','cancelada','estornado')
+
+CESAR tem fp.status = 'pago'. Portanto, foi EXCLUÍDO do snapshot.
+
+A lógica é correta do ponto de vista da migration:
+  - FP já pago NÃO deve ser alterado retroativamente (causaria
+    inconsistência com baixa já realizada)
+  - A correção 02B protege apenas FP pendentes/abertos
+
+PROBLEMA: CESAR é um caso especial onde:
+  1. FP foi criado com valor ERRADO (520 em vez de 652,86)
+  2. FP foi baixado pelo valor ERRADO (520)
+  3. PP NUNCA foi atualizado para status 'pago'
+  4. A baixa referencia PP 32fe474f (status=pago, R$2.177,92)
+     mas o FP baixado é de CESAR (R$520)
+  5. Resultado: prestador recebeu R$520 mas deveria receber R$652,86
+     → prejuízo de R$132,86 para CESAR
+
+A migration 02B NÃO resolve o caso CESAR porque ele já estava pago
+quando a migration foi executada.
+
+
+==========================================================================
+SEÇÃO 7 — MATRIZ DE REVERSIBILIDADE DO ROLLBACK
+==========================================================================
+
+| Operação 02B | Rollback cobre? | Reversível? | Risco |
+|--------------|-----------------|-------------|-------|
+| Tabela snapshot | NÃO faz DROP | Mantém tabela | NULO |
+| 36 FP atualizados | SIM — restore do snapshot | ✅ Reversível | BAIXO |
+| Trigger M66 (v_valor_liquido) | SIM — restaura v_valor_prestador | ✅ Reversível | ALTO* |
+| Trigger M80 (v_valor_liquido) | SIM — restaura v_valor_prestador | ✅ Reversível | ALTO* |
+| RPC fechamento | SIM — DROP FUNCTION | ⚠️ Irreversível | MÉDIO |
+| Backfill FP via PP | NÃO | ❌ Não coberto | MÉDIO |
+| Novos FP pós-02B | NÃO | ❌ Ficam com valor correto | BAIXO |
+
+* ALTO: Reverter triggers para v_valor_prestador REINTRODUZ o bug sistêmico
+  para todas as futuras OS com pedagio/adicional/ajudante/outros_custos.
+
+
+==========================================================================
+SEÇÃO 8 — RISCOS ESPECÍFICOS DO ROLLBACK
+==========================================================================
+
+--- 8.1 RISCO CRÍTICO: Reintrodução do Bug ---
+Se os triggers M66/M80 forem revertidos para v_valor_prestador:
+  - Todas as novas OS com extras (pedagio/adicional) terão FP.subdeclared
+  - O RPC f_confirmar_pagamento_prestador REJEITARÁ a baixa
+    (porque fp.valor ≠ pp.valor_liquido)
+  - Efeito: bloqueio total de pagamentos a prestadores com extras
+
+--- 8.2 RISCO MÉDIO: RPC sem caller ---
+A RPC f_confirmar_pagamento_fechamento foi criada pela 02B.
+O rollback a DROP. Se houver código que a chama (app mobile, n8n, etc.),
+quebrará silenciosamente.
+
+--- 8.3 RISCO BAIXO: Snapshot órfã ---
+A tabela fin_sane_02b_snapshot permanece mesmo após rollback.
+Pode causar confusão futura se alguém tentar re-executar a migration.
+
+--- 8.4 RISCO ZERO: CESAR ---
+Rollback NÃO afeta CESAR (FP já pago, excluído do snapshot).
+CESAR permanece com divergência fp=520 vs pp=652,86 independentemente
+de qualquer ação sobre a migration 02B.
+
+
+==========================================================================
+SEÇÃO 9 — ESTADO DA MIGRATION EM PRODUÇÃO
+==========================================================================
+
+Data da snapshot: 2026-09-18T10:07:13.455Z
+Execução ID: 91f02e5a-f58e-4970-aa84-3192cbd77002
+Registros processados: 36
+Ajuste total: R$6.336,72
+
+Trigger M66: ✅ v_valor_liquido (LINHA CONFIRMADA NO PROSRC)
+Trigger M80: ✅ v_valor_liquido (COMENTÁRIO "CORREÇÃO" CONFIRMADO)
+RPC fechamento: ✅ EXISTS = true
+Grants: service_role + authenticated + postgres
+
+Query de verificação:
+  SELECT COUNT(*) FROM fin_sane_02b_snapshot;
+  → 36 (confirmado)
+
+  SELECT COUNT(*) FROM financeiro_pagar fp
+  INNER JOIN pagamentos_prestadores pp ON pp.os_id::TEXT = fp.os_id
+  WHERE fp.valor <> pp.valor_liquido
+    AND fp.status NOT IN ('pago','paga','cancelado','cancelada','estornado');
+  → 0 (zero candidatos restantes — snapshot esgotou todos)
+
+CLASSIFICACAO: MIGRATION_02B_COMPLETA_EM_PRODUCAO
+
+
+==========================================================================
+SEÇÃO 10 — INVENTÁRIO COMPLETO DE OBJETOS AFETADOS
+==========================================================================
+
+| Objeto | Tipo | Ação 02B | Status | Reversível? |
+|--------|------|----------|--------|-------------|
+| fin_sane_02b_snapshot | TABLE | CREATE | ✅ Existe | DROP (perde dados) |
+| 36 FP divergentes | ROWS | UPDATE valor | ✅ Atualizados | Restaurar do snapshot |
+| f_trg_propagar_financeiro_alocacao | FUNCTION | REPLACE | ✅ v_valor_liquido | Restaurar v_valor_prestador |
+| trg_propagar_financeiro_alocacao | TRIGGER | DROP+CREATE | ✅ Ativo | Restaurar versão anterior |
+| f_trg_propagar_financeiro_os | FUNCTION | REPLACE | ✅ v_valor_liquido | Restaurar v_valor_prestador |
+| trg_propagar_financeiro_os | TRIGGER | DROP+CREATE | ✅ Ativo | Restaurar versão anterior |
+| f_confirmar_pagamento_fechamento | FUNCTION | CREATE | ✅ Existe | DROP FUNCTION |
+| Grants RPC fechamento | GRANTS | GRANT | ✅ Concedidos | REVOKE |
+
+
+==========================================================================
+SEÇÃO 11 — CASOS NÃO COBERTOS PELA 02B
+==========================================================================
+
+CESAR é o único caso identificado na investigação 02M que:
+  1. Tem divergência fp ≠ pp (R$520 vs R$652,86)
+  2. Tem fp.status = 'pago' (excluído do snapshot)
+  3. Tem pp.status_pagamento = 'pendente' (nunca reconciliado)
+  4. Tem baixa criada por referência cruzada (observação menciona outro PP)
+
+A 02B NÃO cobre:
+  - FP já pagos com valor divergente (excluídos por design)
+  - PP que nunca foi atualizado para 'pago' após baixa do FP
+  - Baixas criadas via caminho alternativo (bypass do RPC)
+
+Recomendação: CESAR requer correção MANUAL/ESPECÍFICA:
+  1. Atualizar FP.valor: R$520 → R$652,86
+  2. Criar nova baixa de R$132,86 (saldo restante)
+  3. Atualizar PP.status_pagamento → 'pago'
+  4. Registrar evento em historico_alocacoes_escala
+
+
+==========================================================================
+SEÇÃO 12 — MATRIZ DE DECISÃO
+==========================================================================
+
+CENÁRIO A: Manter 02B como está (RECOMENDADO)
+  ✅ Triggers corretos para novas OS
+  ✅ 36 FP pendentes corrigidos
+  ✅ RPC disponível
+  ⚠️ CESAR permanece com divergência (requer correção separada)
+  ⚠️ Rollback disponível mas NÃO recomendado (reintroduz bug)
+
+CENÁRIO B: Reverter 02B via rollback
+  ❌ Reintroduz bug em triggers (v_valor_prestador)
+  ❌ Bloqueia RPC f_confirmar_pagamento_prestador
+  ❌ 36 FP voltam ao valor errado
+  ✅ CESAR não é afetado (excluído em ambos os cenários)
+  ❌ RISCO: futuras OS com extras terão FP subdeclared
+
+CENÁRIO C: Reverter parcialmente (manter triggers, reverter snapshot)
+  ✅ Triggers permanecem corretos
+  ❌ 36 FP voltam ao valor errado (inconsistente com triggers)
+  ❌ Criação de dupla contabilidade (triggers dizem um valor, dados dizem outro)
+  ❌ NÃO RECOMENDADO
+
+DECISAO: CENÁRIO A — Manter 02B. Corrigir CESAR separadamente.
+
+
+==========================================================================
+SEÇÃO 13 — RECOMENDAÇÕES PARA CORREÇÃO DO CASO CESAR
+==========================================================================
+
+A correção do caso CESAR deve ser feita FORA da migration 02B, pois:
+  - A migration já foi aplicada e está funcional
+  - CESAR foi excluído por design (fp.status='pago')
+  - A correção é pontual e não afeta outros registros
+
+Plano de correção CESAR (a ser executado na missão 02M.6):
+  1. Atualizar fp.valor: R$520 → R$652,86
+  2. Criar nova baixa parcial de R$132,86 (saldo)
+  3. Atualizar pp.status_pagamento → 'pago'
+  4. Atualizar pp.data_pagamento → data atual
+  5. Atualizar pp.status → 'pago'
+  6. Registrar evento em historico_alocacoes_escala
+  7. Validar DRE e Fluxo de Caixa pós-correção
+
+
+==========================================================================
+SEÇÃO 14 — EVIDÊNCIAS SQL COLETADAS
+==========================================================================
+
+Evidência 1: Snapshot table schema
+  → 11 colunas, serial PK, processado_em timestamptz
+
+Evidência 2: Snapshot execution history
+  → 1 execução: 2026-09-18T10:07:13.455Z, 36 registros, R$6.336,72
+
+Evidência 3: CESAR PP status
+  → status_pagamento='pendente', updated_at = created_at (ZERO updates)
+
+Evidência 4: CESAR FP status
+  → status='pago', valor=520, updated_at = created_at (ZERO updates)
+
+Evidência 5: CESAR baixa
+  → observacao: "Baixa automática — pagamento prestador 32fe474f"
+  → PP 32fe474f: status='pago', R$2.177,92
+
+Evidência 6: CESAR historico
+  → EMPTY (nenhum registro)
+
+Evidência 7: Trigger M66 atual
+  → v_valor_liquido na linha INSERT de financeiro_pagar
+
+Evidência 8: Trigger M80 atual
+  → v_valor_liquido + comentário "CORREÇÃO"
+
+Evidência 9: RPC fechamento
+  → EXISTS = true
+
+Evidência 10: FP a vencer
+  → 6 registros: 1 teste (R$900), 5 fornecedores/testes (R$13-302)
+
+Evidência 11: Would-be snapshot today
+  → 0 candidatos (todos corrigidos pela 02B ou excluídos)
+
+
+==========================================================================
+SEÇÃO 15 — VALIDAÇÃO FINAL
+==========================================================================
+
+| Item | Status |
+|------|--------|
+| Migration 02B inventariada | ✅ 631 linhas, 6 seções |
+| Cada operação catalogada | ✅ DDL+DML mapeados |
+| Impacto de estrutura vs dados | ✅ Separados |
+| Registros afetados simulados | ✅ 36 FP, R$6.336,72 |
+| Rollback avaliado | ✅ Reversível para 36 FP, mas reintroduz bug |
+| Schema/dependências verificados | ✅ 1 tabela, 2 functions, 1 RPC, grants |
+| CESAR diagnosticado | ✅ Excluído por fp.status='pago' |
+| Estado atual congelado | ✅ 11 evidências SQL |
+| Classificação final | ✅ 02B_JA_APLICADA_PARCIALMENTE |
+
+02B_PREFLIGHT = PASS — migration aplicada, rollback disponível mas NÃO recomendado.
+
+
+==========================================================================
+SEÇÃO 16 — PRÓXIMOS PASSOS
+==========================================================================
+
+1. PARAR IMEDIATAMENTE — missão 02M.5C concluída
+2. Aguardar instruções para 02M.6 (correção CESAR)
+3. NÃO reverter 02B — triggers estão corretos
+4. NÃO alterar snapshot — dados de auditoria
+5. Correção CESAR deve ser manual e pontual
+
+FIM DO RELATÓRIO FIN-SANE-02M.5C

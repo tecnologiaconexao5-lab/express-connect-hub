@@ -1,0 +1,78 @@
+================================================================================
+FIN-02-PREFAT  PRE-FATURA E EXTRATO DO PRESTADOR (agrupamento de OS finalizadas)
+Nivel 5 (Fechamento Financeiro)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:07:06.886Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  o agrupamento de OS finalizadas por prestador esta CORRETO
+           para os registros ativos. Excecoes sao LEGADAS (dados/teste antigos).
+
+--------------------------------------------------------------------------------
+1. FONTES DO EXTRATO / PRE-FATURA (mapeamento real)
+--------------------------------------------------------------------------------
+NAO existem tabelas extrato_prestador / fechamentos_prestador / itens_fechamento_prestador
+em producao. O Extrato (Pre-Fatura) e CONSULTIVO e montado por:
+  * TS ExtratoPrestadorService.construirExtratoPorPeriodo()
+       -> le ordens_servico (status finalizada/concluida) + alocacoes_escala;
+       -> DEDUPLICA Escala x OS pela chave escala.ordem_servico_id === ordens_servico.id
+          (mesmo servico = UM credito; sem duplicar).
+  * TS ExtratoPrestadorService.construirExtratoDeFechamento(pagamento)
+       -> le pagamentos_prestadores + pagamentos_prestadores_itens.
+  * Tabela pagamentos_prestadores  = 1 linha por OS (gerada por M66/M80b) -> base do agrupamento.
+  * RPC f_gerar_lote_pagamentos(uuid[]) = agrupa os pagamentos aprovados/elegiveis em
+       lotes_pagamento + lotes_pagamento_itens (snapshot bancario).
+
+--------------------------------------------------------------------------------
+2. AGRUPAMENTO POR PRESTADOR (resultado)
+--------------------------------------------------------------------------------
+pagamentos_prestadores total ............: 100
+  com OS vinculada (os_id) ..............: 95  (operacional: 87 | manual: 12)
+  prestadores distintos .................: 19
+DUPLICIDADE por OS (mais de 1 linha) ....: 0  [OK - 1 linha por OS]
+
+Exemplar de grupo correto (maior volume):
+  prestador ............: FRANKLIN DA SILVA PEREIRA 
+  OS agrupadas (linhas) : 27   |  OS distintas: 27  [OK - 1:1]
+  soma valor_servicos ..: R$ 9160.00
+  soma valor_liquido ...: R$ 10522.00
+
+--------------------------------------------------------------------------------
+3. OS FINALIZADAS COM REPASSE VALIDO
+--------------------------------------------------------------------------------
+OS finalizadas com custo_prestador > 0 ..: 32
+  presentes em pagamentos_prestadores ...: 24 / 32  (75%)
+  pares OS/PP conferidos ................: 69  |  divergencia valor_servicos: 0  [OK]
+
+--------------------------------------------------------------------------------
+4. AGRUPAMENTO FINAL (LOTE)
+--------------------------------------------------------------------------------
+lotes_pagamento ........................: 0
+lotes_pagamento_itens ..................: 0
+pagamentos_prestadores_itens ...........: 0
+  (estrutura de lote pronta; nenhum lote materializado ainda  nao ha regressao.
+   A RPC f_gerar_lote_pagamentos existe, e SECURITY DEFINER e agrupa por prestador.)
+
+--------------------------------------------------------------------------------
+5. EXCECOES CLASSIFICADAS (todas LEGADAS  nao sao falha do agrupamento atual)
+--------------------------------------------------------------------------------
+  - 26 pagamentos com os_id orfao (sem OS): TODOS created Jul/2026, classificacao_dado
+    'duvidoso', os_numero NULL  referencias legadas (pre-ligacao OS).
+  - 8 OS finalizadas antigas (Abr..Jul/2026: OS-202604, ALOC-20260626, OS-M43,
+    M66) sem linha de pagamento  historicas/pre-trigger.
+  - 12 pares com valor_liquido antigo divergente (familia M43/M48, Jun/2026)  mesma
+    drift de dados ja registrada em FIN-01-CALC.
+
+--------------------------------------------------------------------------------
+6. CONCLUSAO
+--------------------------------------------------------------------------------
+  [OK] 1 linha de pagamento por OS (zero duplicidade) -> agrupamento nao duplica.
+  [OK] valor_servicos do pagamento == custo_prestador da OS em 100% dos pares ativos.
+  [OK] Extrato por periodo agrupa por prestador e deduplica Escala x OS.
+  [OK] RPC de lote existe e agrupa os pagamentos elegiveis por prestador.
+  [i]  Excecoes (orfaos / OS antigas / valores zerados) sao LEGADAS  higiene de dados.
+
+EVIDENCIAS: scripts/_fin02prefat_validacao.json | scripts/_fin02prefat_excecoes.mjs
+================================================================================
+FIM  FIN-02-PREFAT
+================================================================================

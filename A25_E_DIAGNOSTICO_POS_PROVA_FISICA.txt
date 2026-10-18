@@ -1,0 +1,181 @@
+================================================================================
+MISSÃO A25-E — VERIFICAÇÃO IMEDIATA PÓS-PROVA FÍSICA DO REDMI
+Projeto: EXPRESS CONNECT HUB (TMS) + App Flutter (C:\src\conexao_prestador)
+Supabase Produção: uwrvzsjtpgaifkktpepn
+Data: 2026-08-15
+Modo: SOMENTE LEITURA/DIAGNÓSTICO — ZERO ALTERAÇÕES
+================================================================================
+
+# HORÁRIO DA CONSULTA
+2026-08-15T01:31:37Z (UTC)
+
+================================================================================
+# ÚLTIMAS POSIÇÕES DO BANCO (portal_tracking_realtime — Produção)
+================================================================================
+Total de registros: 3 (NENHUMA nas últimas 48h/24h/1h)
+
+1) 60d612bf-9360-4950-ab13-711f476250ca
+   alocacao_id: ecaedf20-9112-4195-b163-86b17e21a7d5
+   os_id:       1e1b59fa-4ab6-46df-8648-a6a1f0facab2
+   prestador_id: e6646799-fbac-453e-a3ef-afdfc01a7085 (PRESTADOR TESTE APP)
+   latitude: -23.5505 | longitude: -46.6333 | precisao: null | velocidade: null
+   status: pendente | origem: homologacao
+   captured_at: 2026-07-29T02:49:28Z | created_at: 2026-07-29T02:49:28Z
+   → SEED ANTIGO (16 dias atrás), NÃO é da nova prova.
+
+2) 1a3269f6-6ebe-42ce-a5f6-bd99f7c2879e  (origem teste_qa, 2026-07-10, sem vínculos)
+3) 15543f23-6fae-4628-9bb4-77562a33ad8a  (origem teste_qa, 2026-07-10, sem vínculos)
+
+Alocação da prova ca5fe225-7114-42da-9997-c3d466e5df52:
+  → POSIÇÕES: 0 (nenhuma em qualquer período)
+
+Prestador PRESTADOR TESTE APP (e6646799...):
+  → POSIÇÕES: 1 (apenas o seed 'homologacao' de 2026-07-29)
+
+================================================================================
+# POSIÇÃO NOVA APÓS A25-D
+================================================================================
+NÃO
+
+Nenhuma posição foi gravada após a A25-D. Não há registro novo do Redmi
+(created_at/captured_at mais recentes = 2026-07-29; 0 nas últimas 48h).
+
+================================================================================
+# RPC (estado comprovado — read-only)
+================================================================================
+- registrar_posicao_motorista (Produção, após A25-D):
+  SECURITY DEFINER = true | search_path = public | VOLATILE
+  VALIDAÇÃO 2 (comprovado): SELECT id INTO v_prestador_id
+    FROM public.prestadores WHERE auth_user_id=auth.uid()
+      AND status='ativo' AND liberado_app=true;
+  → NÃO referencia prestadores.tenant_id (coluna inexistente removida).
+  → tenant_id derivado de alocacoes_escala.tenant_id (coluna real).
+  → Assinatura preservada (p_altitude, p_status_operacional presentes) → APK compatível.
+  → INSERT apenas em colunas existentes.
+  → Grants: authenticated EXECUTE ✓ | service_role ✓ | postgres ✓.
+- CONCLUSÃO: O RPC está CORRETO e APTO a aceitar posição válida do App.
+  Como NÃO há posição nova, o RPC não está sendo chamado com dados novos (ou o App
+  não está enviando).
+
+================================================================================
+# APP (lifecycle REAL do tracking — leitura de código)
+================================================================================
+- Disparo do tracking: SOMENTE em operation_detail_screen.dart:1686-1695, dentro do
+  handler de execução de etapa, quando o motorista toca em:
+    "Sair em rota" OU "Sair para entrega" OU "Finalizar carregamento"
+  Nesse instante chama: startSession() → startContinuousTracking() → startForegroundService().
+- startSession() (tracking_session_service.dart:21) → RealTrackingService.startTracking()
+  (real_tracking_service.dart:96): define _currentAlocacaoId, carrega fila offline e
+  faz flush.
+- startContinuousTracking() (tracking_session_service.dart:81) inicia o stream do
+  geolocator (distanceFilter 50m) → _onPosition → sendPosition().
+- sendPosition() (real_tracking_service.dart:146) valida e chama RPC registrar_posicao_motorista.
+- IMPORTANTE: o foreground service (backgroundTrackingServiceHandler,
+  foreground_tracking_service.dart:9-27) NÃO faz GPS — só notificação (stopService/
+  updateNotification). O GPS real vive no Dart via geolocator.
+- OperationDetailScreen.initState (linhas 220-256): SÓ configura listeners de status/
+  erro + carrega dados/paradas. NÃO reinicia tracking.
+- home_screen.didChangeAppLifecycleState (home_screen.dart:101-105): ao resume, apenas
+  _loadInitialData() — NÃO reinicia tracking.
+
+================================================================================
+# RETOMADA APÓS REINICIAR APP
+================================================================================
+NÃO EXISTE RETOMADA AUTOMÁTICA.
+
+Evidência no código:
+- startSession/startContinuousTracking/startForegroundService são chamados APENAS em
+  operation_detail_screen.dart:1688-1695 (bloco do gatilho "Sair em rota" etc.).
+- NÃO há chamada de startSession no initState, no didChangeAppLifecycleState, nem na
+  Home.
+- RealTrackingService.startTracking() só é invocado por startSession().
+- A operação já estava EM ROTA (saiu_em_rota) ANTES da A25-D. Ao reiniciar o App, o
+  gatilho NÃO é re-executado → _currentAlocacaoId permanece null → sendPosition()
+  retorna false (isSessionActive false / alocação null) → NENHUM GPS é enviado.
+
+CAUSA-RAIZ PRINCIPAL:
+  O tracking é START-ONLY no gatilho de etapa. Não existe lógica de "resume" que
+  detecte operação ativa + status em_rota no boot/retorno e reinicie o serviço de
+  GPS. Após reiniciar o Redmi com OS-HML-MULTI-001 EM ROTA, o tracking nunca é
+  (re)iniciado, então nenhuma posição é enviada.
+
+================================================================================
+# FILA OFFLINE (funcionamento encontrado)
+================================================================================
+- Posições rejeitadas ficam em SharedPreferences (RealTrackingService._offlineQueue,
+  chave 'tracking_offline_queue', máx 500).
+- O flush (_tryFlushOfflineQueue) só roda DENTRO de uma sessão ativa
+  (startTracking / sendPosition success / retry timer 30s).
+- _loadOfflineQueue() também só roda dentro de startTracking().
+- CONCLUSÃO: se startTracking() nunca for chamado após o restart, a fila não é
+  carregada nem enviada. A fila pode conter posições antigas da primeira tentativa
+  (A25-C) mas não é esvaziada porque o serviço de tracking não foi reiniciado.
+
+================================================================================
+# TORRE
+================================================================================
+- Não é o ponto de falha nesta etapa: não há posição nova no banco para consumir.
+- As correções A25-B/A25-D (GPS priority, match por alocacao_id, Grupo 2 alocações
+  sem OS, recência) permanecem válidas e serão exercitadas assim que uma posição real
+  chegar.
+
+================================================================================
+# CAUSA-RAIZ
+================================================================================
+ESTADO B — POSIÇÃO NÃO CHEGOU — TRACKING DO APP NÃO FOI RETOMADO/EXECUTADO
+
+- RPC: corrigido e apto (A25-D). NÃO é o problema.
+- Banco: sem posição nova — não há nada para a Torre mostrar.
+- App: o tracking só é iniciado pelo gatilho de etapa ("Sair em rota"). Não existe
+  retomada automática de tracking para operação já em rota após reiniciar o App.
+- EVIDÊNCIA:
+  1. 0 posições nas últimas 48h (SELECT produção).
+  2. startSession/startContinuousTracking chamados somente em operation_detail_screen
+     :1688-1695 (gatilho de etapa).
+  3. Sem resume no initState / didChangeAppLifecycleState / Home.
+  4. RealTrackingService.startTracking é o único caminho para setar _currentAlocacaoId
+     e habilitar sendPosition.
+
+================================================================================
+# PRÓXIMA CORREÇÃO EXATA (NÃO EXECUTADA — apenas proposta)
+================================================================================
+OBJETO: APP FLUTTER (C:\src\conexao_prestador) — requer alteração de código do App
+(e nova prova física; NÃO gera APK automaticamente nesta missão).
+
+1. Criar lógica de RETOMADA AUTOMÁTICA do tracking:
+   - Ao abrir a Home / ao voltar para foreground, verificar se existe operação ativa
+     (status aceita/em_rota) sem sessão de tracking rodando (_tracking.isRunning false).
+   - Se houver, chamar TrackingSessionService.startSession(alocacaoId, driverId) +
+     startContinuousTracking() + startForegroundService(...) para a alocação ativa.
+   - Local sugerido: home_screen (no _loadInitialData / didChangeAppLifecycleState) ou
+     um service de bootstrap chamado no boot, reutilizando TrackingSessionService/
+     RealTrackingService (sem nova arquitetura).
+
+2. (Opcional/reforço) No OperationDetailScreen.initState, se a operação já estiver
+   além do gatilho e _tracking.isRunning false, retomar a sessão automaticamente.
+
+3. Revalidar: reiniciar o App com OS-HML-MULTI-001 em rota → confirmar que o tracking
+   é retomado (status ativo) e que portal_tracking_realtime recebe posições novas.
+
+NOTA: como esta alteração exige código do App Flutter, está FORA do escopo de
+correção no TMS. Registrada como pendência exata para a próxima etapa.
+
+================================================================================
+# SEGURANÇA
+================================================================================
+  - Nenhuma migration executada ................... CONFIRMADO
+  - Nenhuma tabela/coluna criada/removida ......... CONFIRMADO
+  - Nenhuma RLS/trigger/RPC alterada .............. CONFIRMADO (somente leitura)
+  - Nenhum dado manualmente alterado .............. CONFIRMADO
+  - Nenhum INSERT artificial de posição ........... CONFIRMADO
+  - Nenhum arquivo do App alterado ................ CONFIRMADO
+  - Nenhum arquivo do TMS alterado ................ CONFIRMADO
+
+================================================================================
+RESULTADO OBRIGATÓRIO
+================================================================================
+B) POSIÇÃO NÃO CHEGOU — TRACKING DO APP NÃO FOI RETOMADO/EXECUTADO
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-E
+================================================================================

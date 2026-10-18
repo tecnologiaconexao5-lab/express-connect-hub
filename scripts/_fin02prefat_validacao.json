@@ -1,0 +1,609 @@
+{
+  "ts": "2026-10-04T23:06:58.253Z",
+  "checks": [
+    {
+      "name": "pp_sem_duplicidade_por_os",
+      "ok": true,
+      "detail": "0 OS com mais de uma linha de pagamento"
+    },
+    {
+      "name": "pp_sem_orfaos",
+      "ok": false,
+      "detail": "26 pagamentos com os_id inexistente"
+    },
+    {
+      "name": "grupos_por_prestador_existem",
+      "ok": true,
+      "detail": "19 prestadores com pagamentos"
+    },
+    {
+      "name": "os_finalizadas_agrupadas",
+      "ok": false,
+      "detail": "24/32 OS finalizadas c/ repasse presentes em pagamentos_prestadores"
+    },
+    {
+      "name": "valor_servicos_confere",
+      "ok": true,
+      "detail": "69 pares OS/PP, 0 divergem no valor_servicos"
+    },
+    {
+      "name": "valor_liquido_confere",
+      "ok": false,
+      "detail": "12 divergem no valor_liquido"
+    },
+    {
+      "name": "lotes_estrutura_ok",
+      "ok": true,
+      "detail": "tabelas existem (lotes=0, itens=0)"
+    },
+    {
+      "name": "rpc_lote_agrupa",
+      "ok": true,
+      "detail": "f_gerar_lote_pagamentos referencia agrupamento/lote=true"
+    }
+  ],
+  "grupos": [
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "Prestador #be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "n_pagamentos": 29,
+      "n_os_distintas": 29,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 1,
+      "sum_servicos": "9860.00",
+      "sum_liquido": "11222.00"
+    },
+    {
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "prestador_nome": "PRESTADOR TESTE APP",
+      "n_pagamentos": 23,
+      "n_os_distintas": 23,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "16900.00",
+      "sum_liquido": "20623.50"
+    },
+    {
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "n_pagamentos": 16,
+      "n_os_distintas": 12,
+      "n_sem_os": 4,
+      "n_pagos": 3,
+      "n_em_lote": 0,
+      "n_cancel": 1,
+      "sum_servicos": "13296.86",
+      "sum_liquido": "13711.96"
+    },
+    {
+      "prestador_id": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "prestador_nome": "Prestador #659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "n_pagamentos": 7,
+      "n_os_distintas": 7,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "6650.00",
+      "sum_liquido": "7520.00"
+    },
+    {
+      "prestador_id": "0673eca2-4594-4842-b78f-cd6cabe9177d",
+      "prestador_nome": "Clayton Alves Pimentel",
+      "n_pagamentos": 4,
+      "n_os_distintas": 4,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 1,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "1000.00"
+    },
+    {
+      "prestador_id": "6cc41f68-1467-455d-b8d5-c61bfe72cb7c",
+      "prestador_nome": "Prestador #Prestador #6cc41f68-1467-455d-b8d5-c61bfe72cb7c",
+      "n_pagamentos": 4,
+      "n_os_distintas": 4,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "3800.00",
+      "sum_liquido": "4160.00"
+    },
+    {
+      "prestador_id": "5377592a-50e8-41d7-b8c5-b5c4509a3d56",
+      "prestador_nome": "MOTORISTA TESTE 02L",
+      "n_pagamentos": 2,
+      "n_os_distintas": 1,
+      "n_sem_os": 1,
+      "n_pagos": 2,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "2530.00",
+      "sum_liquido": "2860.00"
+    },
+    {
+      "prestador_id": "764abe2b-b271-4b48-8788-38b73729a390",
+      "prestador_nome": "M48_2026-06-29_21-31-34 Motorista Caminhão",
+      "n_pagamentos": 2,
+      "n_os_distintas": 2,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "3900.00",
+      "sum_liquido": "2100.00"
+    },
+    {
+      "prestador_id": "b06c0711-55cf-42c1-9665-33f8b0069119",
+      "prestador_nome": "M48_2026-06-29_21-47-50 Motorista Caminhão",
+      "n_pagamentos": 2,
+      "n_os_distintas": 2,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "3900.00",
+      "sum_liquido": "2100.00"
+    },
+    {
+      "prestador_id": "1cb381ba-c0bb-4957-8ea6-2553a040ac67",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    },
+    {
+      "prestador_id": "8b0e6354-ae85-410e-9f16-d44201fa0ffa",
+      "prestador_nome": "M48_2026-06-29_21-47-50 Motoboy",
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "50.00",
+      "sum_liquido": "50.00"
+    },
+    {
+      "prestador_id": "abacc4f5-da43-45a5-b29f-afbd6be60cf6",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    },
+    {
+      "prestador_id": "41f9ebaf-096e-41df-bb13-771d5fcffa5f",
+      "prestador_nome": "M48_2026-06-29_21-31-34 Motorista Rede",
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1200.00",
+      "sum_liquido": "1200.00"
+    },
+    {
+      "prestador_id": "b1090cb0-71fb-4b54-a565-1912021e1aca",
+      "prestador_nome": "M48_2026-06-29_21-47-50 Motorista Rede",
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1200.00",
+      "sum_liquido": "1200.00"
+    },
+    {
+      "prestador_id": "b9ac3bce-592a-4250-8a10-ecde4101a7e9",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 1,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    },
+    {
+      "prestador_id": "2263b175-5a76-4b7b-a0bf-bd88672d613f",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 1,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    },
+    {
+      "prestador_id": "db914237-e103-458b-95b1-d64bfdbec7f8",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    },
+    {
+      "prestador_id": "074dbd35-3a2d-4bc7-a661-e6903a52c2e1",
+      "prestador_nome": "M48_2026-06-29_21-31-34 Motoboy",
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "50.00",
+      "sum_liquido": "50.00"
+    },
+    {
+      "prestador_id": "6cdcd51c-254a-49df-87b7-951cda4faff1",
+      "prestador_nome": null,
+      "n_pagamentos": 1,
+      "n_os_distintas": 1,
+      "n_sem_os": 0,
+      "n_pagos": 0,
+      "n_em_lote": 0,
+      "n_cancel": 0,
+      "sum_servicos": "1000.00",
+      "sum_liquido": "0.00"
+    }
+  ],
+  "problemas": [],
+  "duplicidade": [],
+  "os_finalizadas_repasse": 32,
+  "os_finalizadas_com_pp": 24,
+  "os_x_pp": {
+    "n": 69,
+    "n_div_serv": 0,
+    "n_div_liq": 12
+  },
+  "lotes": 0,
+  "lotes_itens": 0,
+  "itens_fechamento": 0,
+  "rpc_lote_def": "CREATE OR REPLACE FUNCTION public.f_gerar_lote_pagamentos(p_ids uuid[])\n RETURNS TABLE(lote_id uuid, solicitados integer, incluidos integer, ja_em_lote integer, bloqueados integer, detalhes jsonb)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_tenant uuid;\n  v_papel text;\n  v_ids uuid[];\n  v_total int;\n  v_aprovaveis int;\n  v_ja int;\n  v_lotes int;\n  v_lote_existente uuid;\n  v_bloqueados int;\n  v_novo uuid;\n  v_total_valor numeric;\n  v_detalhes jsonb;\n  v_papeis_autorizados text[] := ARRAY['super_admin','admin_tenant','financeiro'];\nBEGIN\n  v_ids := ARRAY(SELECT DISTINCT x FROM unnest(COALESCE(p_ids, ARRAY[]::uuid[])) AS x WHERE x IS NOT NULL);\n  v_total := COALESCE(cardinality(v_ids), 0);\n\n  IF v_uid IS NULL THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, 0, v_total,\n      jsonb_build_array(jsonb_build_object('resultado','BLOQUEADO','motivo','USUARIO_NAO_AUTENTICADO'));\n    RETURN;\n  END IF;\n\n  SELECT tu.tenant_id, tu.papel INTO v_tenant, v_papel\n    FROM public.tenant_usuarios tu WHERE tu.user_id = v_uid AND tu.status = 'ativo' LIMIT 1;\n  IF v_tenant IS NULL THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, 0, v_total,\n      jsonb_build_array(jsonb_build_object('resultado','BLOQUEADO','motivo','USUARIO_SEM_TENANT_ATIVO'));\n    RETURN;\n  END IF;\n  IF NOT (COALESCE(v_papel,'') = ANY(v_papeis_autorizados)) THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, 0, v_total,\n      jsonb_build_array(jsonb_build_object('resultado','BLOQUEADO','motivo','PAPEL_NAO_AUTORIZADO','papel',COALESCE(v_papel,'')));\n    RETURN;\n  END IF;\n  IF v_total = 0 THEN\n    RETURN QUERY SELECT NULL::uuid, 0, 0, 0, 0, '[]'::jsonb;\n    RETURN;\n  END IF;\n\n  PERFORM 1 FROM public.pagamentos_prestadores WHERE id = ANY(v_ids) FOR UPDATE;\n\n  DROP TABLE IF EXISTS tmp_lote_class;\n  DROP TABLE IF EXISTS tmp_lote_missing;\n  CREATE TEMP TABLE tmp_lote_class ON COMMIT DROP AS\n  WITH base AS (\n    SELECT p.id, p.lote_id AS lote_atual, p.prestador_id,\n           p.origem_lancamento,\n           COALESCE(p.valor_liquido,0) AS valor_liquido,\n           p.status, p.status_pagamento, p.status_conferencia, p.status_aprovacao, p.elegivel_lote,\n           p.is_teste, p.tipo_pagamento,\n           public.f_pp_tenant_id(p.os_id) AS row_tenant,\n           (SELECT o.status FROM public.ordens_servico o WHERE o.id=p.os_id) AS os_status,\n           (SELECT a.status FROM public.alocacoes_escala a WHERE a.id=p.os_id) AS aloc_status,\n           (COALESCE(btrim(pr.chave_pix),'')<>'' OR\n            (COALESCE(btrim(pr.banco),'')<>'' AND COALESCE(btrim(pr.agencia),'')<>'' AND COALESCE(btrim(pr.conta),'')<>'')) AS destino_ok\n      FROM public.pagamentos_prestadores p\n      LEFT JOIN public.prestadores pr ON pr.id = p.prestador_id\n     WHERE p.id = ANY(v_ids)\n  )\n  SELECT b.id, b.lote_atual, b.prestador_id, b.valor_liquido,\n    CASE\n      WHEN b.row_tenant IS NULL AND COALESCE(b.origem_lancamento,'') <> 'manual' THEN 'SEM_TENANT'\n      WHEN b.row_tenant IS NOT NULL AND b.row_tenant <> v_tenant THEN 'CROSS_TENANT'\n      WHEN COALESCE(b.os_status,'')='cancelada' OR COALESCE(b.aloc_status,'')='cancelada' THEN 'OPERACAO_CANCELADA'\n      WHEN COALESCE(b.status_pagamento,'')='pago' OR COALESCE(b.status,'')='pago' THEN 'PAGO'\n      WHEN COALESCE(b.status_pagamento,'')='cancelado' OR COALESCE(b.status_conferencia,'')='cancelado' OR COALESCE(b.status,'')='cancelado' THEN 'CANCELADO'\n      WHEN b.is_teste IS TRUE THEN 'TESTE'\n      WHEN b.prestador_id IS NULL THEN 'SEM_PRESTADOR'\n      WHEN NOT b.destino_ok THEN 'DESTINO_INVALIDO'\n      WHEN b.valor_liquido <= 0 THEN 'VALOR_INVALIDO'\n      WHEN COALESCE(b.tipo_pagamento,'')='fechamento' THEN 'AGREGADO'\n      WHEN b.lote_atual IS NOT NULL THEN 'JA_EM_LOTE'\n      WHEN NOT (COALESCE(b.status_conferencia,'')='conferido' AND COALESCE(b.status_aprovacao,'')='aprovado' AND b.elegivel_lote IS TRUE) THEN 'NAO_ELEGIVEL'\n      ELSE 'APROVAVEL'\n    END AS resultado\n  FROM base b;\n\n  CREATE TEMP TABLE tmp_lote_missing ON COMMIT DROP AS\n  SELECT x AS id, NULL::uuid AS lote_atual, 'NAO_ENCONTRADO'::text AS resultado\n    FROM unnest(v_ids) x WHERE NOT EXISTS (SELECT 1 FROM tmp_lote_class c WHERE c.id = x);\n\n  SELECT count(*)::int INTO v_aprovaveis FROM tmp_lote_class WHERE resultado='APROVAVEL';\n  SELECT count(*)::int INTO v_ja FROM tmp_lote_class WHERE resultado='JA_EM_LOTE';\n  SELECT count(DISTINCT lote_atual)::int INTO v_lotes FROM tmp_lote_class WHERE resultado='JA_EM_LOTE';\n  SELECT lote_atual INTO v_lote_existente FROM tmp_lote_class WHERE resultado='JA_EM_LOTE' LIMIT 1;\n  SELECT count(*)::int INTO v_bloqueados\n    FROM (SELECT resultado FROM tmp_lote_class WHERE resultado NOT IN ('APROVAVEL','JA_EM_LOTE')\n          UNION ALL SELECT resultado FROM tmp_lote_missing) z;\n\n  v_detalhes := COALESCE((\n    SELECT jsonb_agg(jsonb_build_object('id', id, 'resultado', resultado, 'motivo',\n      CASE resultado\n        WHEN 'SEM_TENANT' THEN 'Tenant do vinculo (os_id) nao resolvivel'\n        WHEN 'CROSS_TENANT' THEN 'Registro pertence a outro tenant'\n        WHEN 'OPERACAO_CANCELADA' THEN 'Operacao/OS vinculada cancelada'\n        WHEN 'PAGO' THEN 'Pagamento ja efetuado'\n        WHEN 'CANCELADO' THEN 'Pagamento cancelado'\n        WHEN 'TESTE' THEN 'Registro de teste/HML'\n        WHEN 'SEM_PRESTADOR' THEN 'Sem prestador vinculado'\n        WHEN 'DESTINO_INVALIDO' THEN 'Prestador sem destino bancario valido (PIX ou conta)'\n        WHEN 'VALOR_INVALIDO' THEN 'Valor liquido <= 0'\n        WHEN 'AGREGADO' THEN 'Registro agregado (fechamento)'\n        WHEN 'JA_EM_LOTE' THEN 'Ja pertence a um lote'\n        WHEN 'NAO_ELEGIVEL' THEN 'Nao conferido/aprovado/elegivel'\n        WHEN 'NAO_ENCONTRADO' THEN 'Registro nao encontrado'\n        ELSE 'Erro desconhecido' END))\n    FROM (SELECT id, resultado FROM tmp_lote_class UNION ALL SELECT id, resultado FROM tmp_lote_missing) d\n  ), '[]'::jsonb);\n\n  IF v_bloqueados > 0 THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, v_ja, v_bloqueados, v_detalhes;\n    RETURN;\n  END IF;\n  IF v_ja > 0 AND v_aprovaveis > 0 THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, v_ja, v_total,\n      jsonb_build_array(jsonb_build_object('resultado','BLOQUEADO','motivo','MISTURA_JA_EM_LOTE_E_SEM_LOTE'));\n    RETURN;\n  END IF;\n  IF v_lotes > 1 THEN\n    RETURN QUERY SELECT NULL::uuid, v_total, 0, v_ja, v_total,\n      jsonb_build_array(jsonb_build_object('resultado','BLOQUEADO','motivo','LOTES_DIFERENTES'));\n    RETURN;\n  END IF;\n  IF v_ja > 0 AND v_aprovaveis = 0 THEN\n    RETURN QUERY SELECT v_lote_existente, v_total, 0, v_ja, 0, v_detalhes;\n    RETURN;\n  END IF;\n\n  -- Cabecalho\n  v_novo := gen_random_uuid();\n  SELECT COALESCE(SUM(valor_liquido),0) INTO v_total_valor FROM tmp_lote_class WHERE resultado='APROVAVEL';\n\n  INSERT INTO public.lotes_pagamento (id, tenant_id, status, quantidade_pagamentos, valor_total, criado_por)\n  VALUES (v_novo, v_tenant, 'preparado', v_aprovaveis, v_total_valor, v_uid);\n\n  -- Snapshots (dados do prestador congelados no momento da formacao)\n  INSERT INTO public.lotes_pagamento_itens (\n    lote_id, pagamento_prestador_id, prestador_id, valor, forma_destino,\n    banco, agencia, conta, digito, tipo_conta, favorecido, documento_favorecido, chave_pix, tipo_chave_pix\n  )\n  SELECT v_novo, t.id, t.prestador_id, t.valor_liquido,\n         CASE WHEN COALESCE(btrim(pr.chave_pix),'')<>'' THEN 'pix' ELSE 'conta' END,\n         pr.banco, pr.agencia, pr.conta, pr.digito, pr.tipo_conta, pr.favorecido, pr.cpf_cnpj_favorecido, pr.chave_pix, pr.tipo_chave_pix\n    FROM tmp_lote_class t\n    JOIN public.prestadores pr ON pr.id = t.prestador_id\n   WHERE t.resultado='APROVAVEL';\n\n  -- Marca pagamentos\n  UPDATE public.pagamentos_prestadores p\n     SET lote_id = v_novo, status_pagamento = 'em_lote'\n    FROM tmp_lote_class t\n   WHERE p.id = t.id AND t.resultado='APROVAVEL'\n     AND p.lote_id IS NULL\n     AND COALESCE(p.status_pagamento,'') NOT IN ('pago','cancelado')\n     AND COALESCE(p.status_conferencia,'') = 'conferido'\n     AND COALESCE(p.status_aprovacao,'') = 'aprovado'\n     AND p.elegivel_lote IS TRUE;\n\n  RETURN QUERY SELECT v_novo, v_total, v_aprovaveis, 0, 0, v_detalhes;\nEND;\n$function$\n",
+  "amostra_grupo": [
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "Prestador #be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "os_id": "937eee91-ddaa-4978-9e2d-d11c8328d669",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "Prestador #be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "os_id": "8325d7a1-fb2f-42dc-872e-637e44ee1855",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "4992693a-8e6a-4c9c-8599-9b43aedd692e",
+      "os_numero": null,
+      "valor_servicos": "160.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "160.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "7ea4c873-9bbd-4877-827f-1b8888cb08e7",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "899692a7-cc25-4d1c-854f-803f78aa8671",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "b60142b4-6705-458e-91d0-65643a5e1d95",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "a9f7f8ba-2e51-49ae-a140-16ca3fce3814",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "57624cae-3ce0-4c8f-b638-4e7e4edf3d00",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "982a7def-9a20-4b32-ab0e-2eb6078c851f",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "aceef5f8-6e8f-46e7-8e9c-0a1411a09388",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "9a00da38-d7dc-4c2b-85cf-3ffde3eedf88",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "7a8904c8-3ca9-40c9-8ed4-ded6b5660389",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "b2035950-a820-4cb3-86a9-d85b7d470ade",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "7aee1381-59d8-474d-93b9-74b425eb1de0",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "ecbdc239-e5da-4665-ba0d-ebadc4866194",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "255.50",
+      "valor_liquido": "605.50",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "bc57e3f1-5235-4f21-bdf9-c3433cfe234f",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "2b65575d-8ecc-49cf-83bb-bbf188960518",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "206.50",
+      "valor_liquido": "556.50",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "1fc92d46-6046-4624-980b-111af5bc447f",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "200.00",
+      "valor_liquido": "550.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "b2f22402-e504-4cf0-bede-8dd1e3c6b04c",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "f1a52e77-570a-4ae8-9d32-e5282429710e",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "175.00",
+      "valor_liquido": "525.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "25f69fa8-d1c5-4ed6-b1f0-9050b94bfb2d",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "175.00",
+      "valor_liquido": "525.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "b90348b8-3448-4988-b7f7-740d3ff8c84e",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "175.00",
+      "valor_liquido": "525.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "d19763f1-a8d1-4bf8-9d4d-150dfba3b132",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "dd977f3a-ba9e-4587-98c1-fdbe5ada323d",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "858c0cb2-e569-4669-954f-92a7ca460e3a",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "ed4eb599-3b8a-494b-bd00-00030a3f749e",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "6a6ff51a-3228-4e9d-9420-47568edfae64",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "350.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "0a56ef54-eb6b-46be-b62d-dda2b0860b23",
+      "os_numero": null,
+      "valor_servicos": "350.00",
+      "pedagio": "0",
+      "adicionais": "175.00",
+      "valor_liquido": "525.00",
+      "status_pagamento": "pendente"
+    },
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "prestador_nome": "FRANKLIN DA SILVA PEREIRA ",
+      "os_id": "16d52718-195f-4bce-b63b-cf2c16a97c96",
+      "os_numero": null,
+      "valor_servicos": "250.00",
+      "pedagio": "0",
+      "adicionais": "0.00",
+      "valor_liquido": "250.00",
+      "status_pagamento": "cancelado"
+    }
+  ]
+}

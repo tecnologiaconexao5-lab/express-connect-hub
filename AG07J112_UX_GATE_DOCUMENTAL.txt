@@ -1,0 +1,74 @@
+AG-07J.11.2 — UX GATE DOCUMENTAL — DETALHES DO CANDIDATO
+========================================================
+Status: CONCLUIDA
+Data: 2026-08-25
+
+RESUMO
+------
+Adicionado feedback preventivo ao botao "Converter em Prestador" no painel
+de detalhes do candidato (DetalhesCandidatoPipelineSheet.tsx). O botao
+agora fica desabilitado quando statusDocumental !== 'completo', com
+tooltip + texto de orientacao ao operador.
+
+ARQUIVOS ALTERADOS
+------------------
+src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx
+
+MUDANCAS IMPLEMENTADAS
+----------------------
+1. Import Tooltip adicionado (TooltipProvider, TooltipTrigger, TooltipContent)
+
+2. Estado derivado `documentacaoApta`:
+   - `candidate?.statusDocumental === 'completo'` (boolean)
+
+3. Mensagens por status (`MOTIVO_BLOQUEIO_DOCUMENTAL`):
+   - parcial: "Complete os documentos obrigatorios antes da conversao."
+   - pendente: "Documentacao obrigatoria pendente."
+   - vencido: "Existe documentacao vencida. Regularize antes da conversao."
+   - bloqueado: "Documentacao com bloqueio. Regularize antes da conversao."
+   - default: "Documentacao nao validada. Conversao indisponivel."
+
+4. Variavel `feedbackDocumentacao`:
+   - null quando documentacaoApta (completo)
+   - string com motivo quando nao apta
+
+5. Botao topo (acima das abas):
+   - `disabled={convertendo || !documentacaoApta}`
+   - Tooltip com `feedbackDocumentacao` quando desabilitado
+   - Texto amber abaixo do botao com icone AlertTriangle
+
+6. Botao rodape (Acoes Rapidas):
+   - `disabled={convertendo || !documentacaoApta}`
+   - Tooltip com `feedbackDocumentacao` quando desabilitado
+
+ESTRUTURA DO FEEDBACK
+---------------------
+[Nao apto]:
+  +------------------------------------------+
+  | [Converter em Prestador] (disabled, gray)|
+  +------------------------------------------+
+  | ⚠ Complete os documentos obrigatorios... |
+  +------------------------------------------+
+
+[Apto]:
+  +------------------------------------------+
+  | [Converter em Prestador] (enabled)       |
+  +------------------------------------------+
+  (sem texto de feedback)
+
+PRINCIPIO DE ARQUITETURA MANTIDO
+---------------------------------
+O gate de servico (converterCandidatoParaPrestador.ts) NAO foi alterado.
+A UX e uma camada preventiva adicional — o operador recebe feedback
+ANTES de clicar, mas o servico continua validando FAIL-CLOSED.
+
+  UX Layer (prevencao)  →  Service Layer (seguranca)
+  [botao disabled]         [fail-closed validation]
+  [tooltip feedback]       [converterCandidatoParaPrestador()]
+
+REGRESSAO
+---------
+  tsc --noEmit:           0 erros
+  vitest:                 67/67 files, 799/799 tests PASS
+  ag07j11_gate:           14/14 PASS
+  ag07j10_1_bypass:       10/10 PASS

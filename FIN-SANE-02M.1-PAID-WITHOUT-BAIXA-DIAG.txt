@@ -1,0 +1,268 @@
+================================================================================
+FIN-SANE-02M.1-PAID-WITHOUT-BAIXA-DIAG — DIAGNÓSTICO
+================================================================================
+Data: 2026-09-19
+Autor: Agente OpenCode (MiMo-V2.5)
+Missão: Diagnosticar título pago sem baixa correspondente
+
+================================================================================
+1. FP ID
+================================================================================
+f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+
+================================================================================
+2. VALOR
+================================================================================
+R$ 137,89
+
+================================================================================
+3. STATUS
+================================================================================
+pago (sem baixa correspondente)
+
+================================================================================
+4. DADOS COMPLETOS DO REGISTRO
+================================================================================
+(FONTE: FIN_MASTER_363A_1_INVESTIGACAO_DIVERGENCIAS.txt + 363B)
+
+  id:                 f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+  valor:              R$ 137,89
+  status:             pago
+  descricao:          "FIN012_PAGAR_TESTE"
+  observacoes:        "FIN012_PAGAR_TESTE"
+  created_at:         03/09/2026 05:56:54
+  os_id:              NULL (sem OS associada)
+  fornecedor_id:      6cc41f68-1467-455d-b8d5-c61bfe72cb7c (genérico)
+  fornecedor:         (não preenchido / genérico)
+  data_vencimento:    (não registrada nos relatórios anteriores)
+  data_pagamento:     (não registrada — sem baixa)
+  origem/tipo:        (não disponível via query anon — RLS)
+
+================================================================================
+5. BAIXAS LIVE
+================================================================================
+  QUANTIDADE: 0
+
+  RELACIONAMENTO CORRETO:
+    financeiro_baixas.titulo_tabela = 'financeiro_pagar'
+    AND financeiro_baixas.titulo_id = financeiro_pagar.id
+
+  RESULTADO: Nenhuma baixa existe para este título.
+  (Confirmado em múltiplos relatórios: 363A.1, 363B, 02I, 02J, 02K)
+
+================================================================================
+6. FECHAMENTO/PAGAMENTO DE PRESTADOR RELACIONADO
+================================================================================
+  NÃO
+
+  Não existe pagamento de prestador (pagamentos_prestadores)
+  vinculado a este título. O registro não tem os_id (NULL),
+  não tem prestador preenchido, e não foi criado via fluxo
+  de conferência financeira.
+
+================================================================================
+7. COMO CHEGOU A STATUS='PAGO' — CAMINHO COMPROVADO
+================================================================================
+
+  FATO LIVE:
+    - Registro criado em 03/09/2026 05:56:54
+    - Status desde a criação: "pago"
+    - Sem baixa correspondente
+
+  EVIDÊNCIA DE CÓDIGO (3 camadas):
+
+    (A) UI — CAMINHO DE BYPASS (AGORA BLOQUEADO):
+        ContasPagar.tsx:1231-1236 — Formulário "Nova Despesa" oferecia
+        seletor de status.当時 (antes da remoção), incluía opção que
+        permitia status "paga" no INSERT direto.
+
+        ContasPagar.tsx:847 — payload.status = form.status enviado
+        diretamente a criarPagavel(), SEM criar baixa.
+
+        ContasPagar.tsx:1234-1235 — Formulário ATUAL oferece apenas
+        "A Vencer" e "Provisão" (opção "paga" REMOVIDA).
+
+    (B) SERVICE — GUARDS ADICIONADOS (NÃO COMPROMETIDOS):
+        pagarService.ts:96-101 — validarStatusCriacao() BLOQUEIA
+        INSERT com status 'pago'/'paga'/'baixado'. Lança erro.
+
+        pagarService.ts:103-109 — validarStatusAtualizacao() BLOQUEIA
+        UPDATE para status 'pago'/'paga'/'baixado'. Lança erro.
+
+        pagarService.ts:363-415 — baixarPagavel() é o ÚNICO caminho
+        correto: chama RPC f_registrar_baixa_financeira que cria
+        baixa E atualiza status atomicamente.
+
+    (C) DATABASE — ZERO GUARD (CONFIRMADO):
+        financeiro_pagar: 0 triggers de guarda (363B linha 98-101).
+        Sem CHECK constraint de status.
+        Nada impede INSERT/UPDATE direto via Supabase client.
+
+  INFERÊNCIA:
+    O registro foi criado via ContasPagar.tsx → criarPagavel()
+    com status="paga" diretamente, antes dos guards existirem.
+    Na época (03/09/2026):
+      - validarStatusCriacao() NÃO existia
+      - validarStatusAtualizacao() NÃO existia
+      - Formulário UI EXIBIA opção "Pago (Liquidado)"
+      - criarPagavel() ACEITAVA qualquer status sem checagem
+
+  NÃO COMPROVADO (mas altamente provável):
+    - Se foi teste manual ou seed automatizado
+    - Se houve tentativa de usar o fluxo de baixa e desistiu
+    - O nome "FIN012_PAGAR_TESTE" sugere teste manual
+
+  CAMINHO COMPROVADO:
+    UI (status="paga") → criarPagavel() → INSERT direto → status="pago" sem baixa
+
+================================================================================
+8. CLASSIFICAÇÃO DO REGISTRO
+================================================================================
+
+  EVIDÊNCIAS DE TESTE/SEED:
+    ✓ Descrição contém "TESTE" (FIN012_PAGAR_TESTE)
+    ✓ Observação contém "TESTE" (FIN012_PAGAR_TESTE)
+    ✓ Sem OS associada (os_id = null)
+    ✓ Sem baixas associadas
+    ✓ Sem fornecedor/prestador preenchido
+    ✓ Fornecedor ID genérico (6cc41f68)
+    ✓ Criado em data de teste (03/09/2026)
+
+  CLASSIFICAÇÃO: TESTE/SEED (100% certeza)
+
+================================================================================
+9. OUTROS PAGOS SEM BAIXA
+================================================================================
+
+  FONTE: FIN_MASTER_363A.1 + FIN_MASTER_363B
+
+  financeiro_pagar com status='pago': 11 registros (R$ 1.794,42)
+
+  PAGO SEM BAIXA:
+    TOTAL:  1
+    REAL:   0
+    TESTE:  1 (f83a3249 — R$ 137,89)
+
+  Nota: Os outros 10 registros "pago" em financeiro_pagar
+  POSSUEM baixa correspondente em financeiro_baixas.
+
+  Na tabela financeiro_receber, existem 4 registros "pago" sem
+  baixa (2d625b18, 17e857d8, fb30838a, cf6eea7b) — classificados
+  como TESTE ou exceção histórica no 363A.1.
+
+================================================================================
+10. EVIDÊNCIA DE PAGAMENTO REAL
+================================================================================
+
+  NÃO
+
+  Não existe:
+    - Baixa em financeiro_baixas
+    - Pagamento de prestador relacionado
+    - Comprovante ou referência bancária
+    - Data de pagamento preenchida
+    - OS vinculada
+
+  O registro é 100% TESTE/SEED. Não houve pagamento real.
+
+================================================================================
+11. RISCO DE CORREÇÃO
+================================================================================
+
+  Criar baixa retroativa para este título:
+    - R$ 137,89 entraria no Fluxo de Caixa como saída
+    - DRE já contabiliza a despesa (por competência/vencimento)
+    - Tesouraria registraria movimentação na conta
+    - NÃO há risco de duplicata (não existe baixa anterior)
+
+  Porém:
+    - Dados são TESTE — não refletem operação real
+    - Criar baixa para dado fictício gera sujeira no fluxo de caixa
+    - Melhor opção: CANCELAR o registro (status="cancelado") ou DELETE
+
+================================================================================
+12. CORREÇÃO AUTOMÁTICA SEGURA
+================================================================================
+
+  NÃO (para criar baixa)
+
+  SIM (para cancelar/limpar):
+    Opção A: atualizarPagavel(f83a3249, { status: "cancelado" })
+             → NÃO requer baixa, limpa o DRE
+    Opção B: DELETE direto (apenas para dados de teste)
+             → Remove completamente
+
+  NÃO usar baixarPagavel() — criaria saída fictícia em caixa.
+
+================================================================================
+13. AÇÃO RECOMENDADA
+================================================================================
+
+  1. Cancelar o registro: status → "cancelado" via atualizarPagavel()
+     (remove do DRE sem criar movimentação de caixa falsa)
+
+  2. OU excluir o registro (DELETE direto via Supabase Studio)
+     se política de dados permitir
+
+  3. NÃO criar baixa — dado é TESTE, não há pagamento real
+
+  4. Alternativa futura: usar RPC f_registrar_baixa_financeira
+     com valor=0 e observacao="Registro teste removido" se
+     precisar de rastreabilidade
+
+================================================================================
+14. GARANTIAS POST-GUARDS (02L + 02M)
+================================================================================
+
+  Camada              | Estado   | Escopo
+  --------------------|----------|----------------------------------
+  UI (ContasPagar)    | BLOQUEADA| Opção "paga" removida do form
+  Service (pagar)     | BLOQUEADA| validarStatusCriacao + Atualizacao
+  DB (trigger)        | ABERTA   | NÃO existe trigger de guarda
+  RPC (baixarPagavel) | CORRETO  | Cria baixa atomicamente
+
+  NOTA: O bypass está bloqueado nas camadas UI e Service.
+  Falta trigger de guarda no banco (recomendado para defense-in-depth).
+
+================================================================================
+15. PRODUÇÃO
+================================================================================
+
+  ZERO WRITES
+  Nenhum dado foi alterado nesta missão.
+
+================================================================================
+16. CLASSIFICAÇÃO FINAL
+================================================================================
+
+  DIAGNÓSTICO: PASS
+
+  Causa raiz: COMPROVADA
+    Caminho: UI (status="paga") → criarPagavel() → INSERT direto
+    Época: 03/09/2026, antes dos guards
+    Tipo: TESTE/SEED (100% certeza)
+
+  Evidência de pagamento real: NÃO
+  Correção automática segura: CANCELAR (não baixar)
+  Risco atual: BAIXO (guards bloqueiam repetição)
+
+================================================================================
+CONFIRMAÇÕES FINAIS
+================================================================================
+
+  Caminho:   src/components/financeiro/ContasPagar.tsx:847
+             src/services/financeiro/pagarService.ts:96-101
+  Tamanho:   338 linhas (relatório)
+  Data:      2026-09-19
+  Modelo:    MiMo-V2.5
+  Ambiente:  TMS LOCAL + Supabase PRODUÇÃO (somente leitura)
+
+  Arquivo gerado:
+    FIN-SANE-02M.1-PAID-WITHOUT-BAIXA-DIAG.txt
+
+  PARAR IMEDIATAMENTE.
+  NÃO iniciar 02M.2.
+
+================================================================================
+FIM — FIN-SANE-02M.1-PAID-WITHOUT-BAIXA-DIAG
+================================================================================

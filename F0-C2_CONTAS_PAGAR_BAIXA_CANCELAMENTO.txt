@@ -1,0 +1,110 @@
+================================================================================
+MISSÃO F0-C2 — BAIXA E CANCELAMENTO DE CONTAS A PAGAR
+Contrato real de financeiro_pagar confirmado em produção (F0-B)
+Data: 2026-08-18
+================================================================================
+
+1. OBJETIVO
+--------------------------------------------------------------------------------
+Corrigir os fluxos de BAIXA e CANCELAMENTO de Contas a Pagar para usar somente
+colunas reais de `financeiro_pagar`, preservando a correção F0-C (criação/edição).
+
+2. PROBLEMAS COMPROVADOS E CORRIGIDOS
+--------------------------------------------------------------------------------
+  1) baixarPagavel lia e gravava "valor_pago"   -> coluna INEXISTENTE em
+     produção. Qualquer baixa falhava (erro PostgREST: column does not exist).
+  2) cancelarPagavel gravava "observacao"       -> coluna INEXISTENTE.
+     Qualquer cancelamento falhava.
+
+3. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+  - src/services/financeiro/pagarService.ts
+  - src/components/financeiro/ContasPagar.tsx   (caller direto handleBaixa)
+
+4. COMPORTAMENTO ANTES / DEPOIS
+--------------------------------------------------------------------------------
+  BAIXA (baixarPagavel)
+  ANTES:
+    - SELECT "id, valor, status, valor_pago"   (falha: valor_pago inexistente)
+    - UPDATE { valor_pago, status, data_pagamento } (falha no insert/update)
+    - Acumulava valor_pago em coluna inexistente; não registrava data efetiva
+      nem conta pagadora; não deixava histórico legível.
+  DEPOIS:
+    - SELECT "id, valor, valor_liquido, status, conta_pagadora, observacoes"
+      (somente colunas reais)
+    - UPDATE { status, data_pagamento, data_efetiva_pgto, conta_pagadora,
+      observacoes }  (somente colunas reais)
+    - status "pago" quando valorPago >= valor do título; senão "parcial"
+    - data_pagamento e data_efetiva_pgto = data da baixa (hoje se omitida)
+    - conta_pagadora preservada: usa a informada na baixa; senão a já gravada;
+      default "Conta Corrente Principal"
+    - histórico registrado em observacoes (sem apagar o que já existia):
+        * total:   "Baixado (total) em <data> - R$ X,XX."
+        * parcial: "Baixa parcial de R$ X,XX em <data>. Restante: R$ Y,YY."
+        * obs.:    "Obs. baixa: <texto do modal>"
+    - NÃO cria outro lançamento, NÃO duplica despesa, NÃO altera valor/valor_liquido
+    - Bloqueio: título já pago não é baixado; título cancelado não é baixado;
+      segunda baixa parcial em título parcial é bloqueada
+      ("Use baixa total para concluir") — evita duplicidade sem coluna acumuladora.
+
+  CANCELAMENTO (cancelarPagavel)
+  ANTES:
+    - UPDATE { status, observacao }  (falha: observacao inexistente)
+  DEPOIS:
+    - UPDATE { status, observacoes } (somente colunas reais)
+    - motivo preservado em observacoes SEM apagar histórico existente:
+        "Cancelado: <motivo>" (default "Cancelado manualmente")
+    - Bloqueio: título já pago/paga não pode ser cancelado (cancelar != pagamento)
+    - Mantém validação de transição de status (STATUS_TRANSITIONS do F0-C)
+
+5. CAMPOS UTILIZADOS NESTES DOIS FLUXOS (colunas reais confirmadas)
+--------------------------------------------------------------------------------
+  status, valor, valor_liquido, data_pagamento, data_efetiva_pgto,
+  observacoes, conta_pagadora.
+
+6. CAMPOS NÃO UTILIZADOS (não existem em produção)
+--------------------------------------------------------------------------------
+  valor_pago (removido), observacao (singular, removido).
+
+7. VALIDAÇÕES EXECUTADAS
+--------------------------------------------------------------------------------
+  1) Baixa não usa "valor_pago"            -> OK (grep: 0 ocorrências em pagarService)
+  2) Cancelamento não usa "observacao"     -> OK (usa observacoes)
+  3) status/data de pagamento em colunas reais -> OK
+     (status, data_pagamento, data_efetiva_pgto)
+  4) Motivo do cancelamento em observacoes -> OK
+  5) Nenhum payload desses fluxos contém coluna inexistente -> OK
+     (baixa: status, data_pagamento, data_efetiva_pgto, conta_pagadora,
+      observacoes; cancelamento: status, observacoes)
+  6) Banco NÃO alterado                    -> CONFIRMADO
+
+  npx tsc --noEmit -> 0 erros (projeto inteiro)
+
+8. PRESERVAÇÃO F0-C
+--------------------------------------------------------------------------------
+  Criação e edição mantêm o alinhamento ao contrato real (whitelist em
+  atualizarPagavel, payloads de criarPagavel/criarParcelasPagavel somente com
+  colunas existentes). Nenhuma alteração feita nesses fluxos.
+
+9. PENDÊNCIAS (fora do escopo — apenas registro)
+--------------------------------------------------------------------------------
+  - receberService.ts (Contas a Receber) ainda usa "valor_pago" e "observacao"
+    (colunas inexistentes) em baixarReceber/cancelarReceber. Fora do escopo
+    (proibido mexer em Contas a Receber). Requer missão própria.
+  - listarPagaveis (pagarService) ainda filtra "prestador_id" e busca em
+    "prestador_nome" (colunas inexistentes). Sem chamadores. Já registrado no F0-C.
+  - "forma_pagamento" (ModalBaixaPagar) não tem coluna real em financeiro_pagar:
+    continua preservada apenas na UI, sem persistência.
+  - Sem coluna acumuladora (valor_pago não existe), baixas parciais múltiplas não
+    são acumuláveis no banco: segunda parcial é bloqueada; baixa total em título
+    parcial o conclui (status "pago").
+
+10. CONFIRMAÇÃO
+--------------------------------------------------------------------------------
+  BANCO NÃO ALTERADO.
+  Nenhuma migration, DDL, seed, RLS ou dado de produção foi tocado.
+  Correção 100% em código (service + caller direto).
+
+================================================================================
+FIM DO RELATÓRIO F0-C2
+================================================================================

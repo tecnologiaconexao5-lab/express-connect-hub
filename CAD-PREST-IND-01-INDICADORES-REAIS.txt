@@ -1,0 +1,172 @@
+CAD-PREST-IND-01-INDICADORES-REAIS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA + BUILD
+
+==================================================
+FASE 1 — AUDITORIA
+==================================================
+
+PRESTADOR_DETAIL_COMPONENT=src/components/prestadores/PrestadorDetalhe.tsx
+DELIVERY_CARD_COMPONENT=PrestadorDetalhe (card "Total Entregas" + "Indicadores de Qualidade")
+OCCURRENCE_CARD_COMPONENT=PrestadorDetalhe (card "Ocorrências" + aba "Ocorrências")
+
+DELIVERY_CURRENT_SOURCE=supabase.from("alocacoes_escala").select(count exact, head).eq("prestador_id",p.id).eq("status","concluida")
+DELIVERY_CURRENT_RULE=contagem de alocações com status='concluida'
+DELIVERY_PROVIDER_LINK=alocacoes_escala.prestador_id (FK real)
+
+OCCURRENCE_CURRENT_SOURCE=supabase.from("prestadores_ocorrencias").eq("prestador_id",p.id)  ← ERRADO (tabela legada/vazia)
+OCCURRENCE_CURRENT_RULE=contagem de linhas da tabela legada
+OCCURRENCE_PROVIDER_LINK=prestador_id
+
+Classificação dos cards (antes):
+  DELIVERY   = REAL (correto)
+  OCCURRENCE = INCORRETO (fonte legada vazia → subcontava ocorrências reais)
+
+==================================================
+STATUS CONCLUÍDO
+==================================================
+
+COMPLETED_STATUS_SOURCE=alocacoes_escala.status
+COMPLETED_STATUSES=["concluida"]
+  (valores observados: aguardando_aceite, planejada, aceita, em_rota, concluida,
+   cancelada, recusada → apenas "concluida" representa conclusão)
+  Sem divergência APP/TMS detectada nos status de alocação.
+
+==================================================
+PROVA BANCO → SERVIÇO → TELA (prestador real)
+==================================================
+
+PRESTADOR_TESTED_ID=be420cfc-878e-49b3-8a0d-1827b34762a5 ("FRANKLIN DA SILVA PEREIRA")
+
+ENTREGAS:
+  DB_REAL_COMPLETED_OPERATIONS=5
+  COMPLETED_IDS=["57624cae-3ce0-4c8f-b638-4e7e4edf3d00","7ea4c873-9bbd-4877-827f-1b8888cb08e7",
+                 "982a7def-9a20-4b32-ab0e-2eb6078c851f","a9f7f8ba-2e51-49ae-a140-16ca3fce3814",
+                 "d40fca51-049a-4fc5-bed4-7a22654c6b96"]
+  SERVICE_COMPLETED_OPERATIONS=5 (mesma query por prestador_id + status=concluida)
+  UI_TOTAL_ENTREGAS=5
+  DELIVERY_DB_SERVICE_MATCH=YES
+  DELIVERY_SERVICE_UI_MATCH=YES
+
+OCORRÊNCIAS (prestador com ocorrência real):
+  PRESTADOR_TESTED_ID=abacc4f5-da43-45a5-b29f-afbd6be60cf6
+  DB_REAL_OCCURRENCES=1 (ocorrencias.id=ae7d2a5b-22a0-4af4-a5a0-8237c76535c6)
+  SERVICE_OCCURRENCES=1 (fonte canônica `ocorrencias`, por prestador_id)
+  UI_OCORRENCIAS=1
+  OCCURRENCE_DB_SERVICE_MATCH=YES
+  OCCURRENCE_SERVICE_UI_MATCH=YES
+  ANTES (bug): a tabela legada `prestadores_ocorrencias` tem 0 linhas →
+  o card exibia 0 ocorrências mesmo havendo 1 real. CORRIGIDO.
+
+==================================================
+CORREÇÃO APLICADA
+==================================================
+
+CODE_FIX_REQUIRED=YES (implementado)
+
+src/components/prestadores/PrestadorDetalhe.tsx:
+  - Indicador/aba de Ocorrências: lê `ocorrencias` (fonte canônica, por prestador_id).
+  - "Nova Ocorrência": grava em `ocorrencias` (tipo, descricao, severidade,
+    status='pendente', prestador, prestador_id, metadata.data/registrado_por).
+  - Lista: usa created_at/severidade/metadata.registrado_por (fallback legado).
+  - Confirmação real do INSERT (sem falso sucesso).
+  - Total de Entregas: mantido (já correto: alocacoes_escala.status='concluida').
+
+FILES_MODIFIED=
+  src/components/prestadores/PrestadorDetalhe.tsx
+  src/test/cad_prest_ind_01_indicadores_reais.test.ts (novo)
+
+==================================================
+OCORRÊNCIAS — FONTES
+==================================================
+
+OCCURRENCE_SOURCE_TABLES=ocorrencias (CANÔNICA, 4 linhas, prestador_id),
+  prestadores_ocorrencias (legada/vazia), os_ocorrencias (vazia),
+  portal_ocorrencias (por cliente, não prestador)
+OCCURRENCE_LINK_RULE=ocorrencias.prestador_id = prestador.id (vínculo real; sem associação por nome)
+OCCURRENCE_DEDUP_RULE=contagem por linha (sem joins) → 1 ocorrência = 1
+
+==================================================
+CLASSIFICAÇÃO / DADOS
+==================================================
+
+CANCELLED_OPERATIONS=6 (alocacoes_escala.status='cancelada' — excluídas da contagem)
+DUPLICATES_REMOVED=0 (contagem sem joins → sem duplicidade)
+TEST_OPERATIONS=3 ocorrências reais vinculadas a prestadores "M43_...Motorista Teste"
+  (não há marcador is_teste em ocorrencias → classificação não confiável)
+ORPHANS=27 alocações concluídas com prestador_id NULL (não atribuíveis)
+TEST_DATA_CLASSIFICATION_LIMITATION=YES
+
+==================================================
+REGRESSÃO
+==================================================
+
+CAD_VEIC_03_PRESERVED=PASS
+CLIENTES_01_PRESERVED=PASS
+CLIENTES_02_PRESERVED=PASS
+
+Testes direcionados: 34/34 PASS
+  cad_prest_ind_01 (6), cad_veic_03 (8), clientes_01 (13), clientes_02 (7)
+Suíte completa: 1398 passed | 57 failed (100% pré-existentes) | 155 skipped
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 59.80s
+
+==================================================
+RESULTADO OBRIGATÓRIO
+==================================================
+
+PRESTADOR_TESTED_ID=be420cfc-878e-49b3-8a0d-1827b34762a5 (entregas)
+                     abacc4f5-da43-45a5-b29f-afbd6be60cf6 (ocorrências)
+
+DELIVERY_CURRENT_SOURCE=alocacoes_escala (prestador_id + status='concluida')
+DELIVERY_PROVIDER_LINK=alocacoes_escala.prestador_id
+COMPLETED_STATUS_SOURCE=alocacoes_escala.status
+COMPLETED_STATUSES=["concluida"]
+
+DB_REAL_COMPLETED_OPERATIONS=5
+SERVICE_COMPLETED_OPERATIONS=5
+UI_TOTAL_ENTREGAS=5
+DELIVERY_DB_SERVICE_MATCH=YES
+DELIVERY_SERVICE_UI_MATCH=YES
+
+OCCURRENCE_CURRENT_SOURCE=ocorrencias (prestador_id) — CORRIGIDO
+OCCURRENCE_PROVIDER_LINK=ocorrencias.prestador_id
+OCCURRENCE_SOURCE_TABLES=ocorrencias (canônica), prestadores_ocorrencias (legada/vazia),
+  os_ocorrencias (vazia), portal_ocorrencias (cliente)
+OCCURRENCE_LINK_RULE=prestador_id
+OCCURRENCE_DEDUP_RULE=1 por linha (sem joins)
+
+DB_REAL_OCCURRENCES=1 (abacc4f5) / 0 (FRANKLIN)
+SERVICE_OCCURRENCES=1 (abacc4f5)
+UI_OCORRENCIAS=1 (abacc4f5)
+OCCURRENCE_DB_SERVICE_MATCH=YES
+OCCURRENCE_SERVICE_UI_MATCH=YES
+
+TEST_OPERATIONS=3 (ocorrências de prestadores de teste — classificação limitada)
+CANCELLED_OPERATIONS=6
+DUPLICATES_REMOVED=0
+TEST_DATA_CLASSIFICATION_LIMITATION=YES
+
+CODE_FIX_REQUIRED=YES (implementado)
+FILES_MODIFIED=src/components/prestadores/PrestadorDetalhe.tsx,
+  src/test/cad_prest_ind_01_indicadores_reais.test.ts
+TESTS=6/6 PASS
+TYPECHECK=0 erros novos
+BUILD=✓ 59.80s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Clayton/GEW-2H93 intactos. Saveiro/Fiorino NÃO decidido. Térmica NÃO alterada.
+- Nenhum dado excluído. Nenhuma operação artificial criada.
+- Sem migration/RLS. Não tocou Escala/Financeiro/Fatura/APP/POD/Recrutamento.
+- Não implementou score/aceitação/pontualidade/presença. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

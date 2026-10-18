@@ -1,0 +1,241 @@
+﻿{
+  "constraints_prestadores": [
+    {
+      "conname": "prestadores_auth_user_id_fkey",
+      "def": "FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+    },
+    {
+      "conname": "prestadores_pkey",
+      "def": "PRIMARY KEY (id)"
+    }
+  ],
+  "tabelas_extras": [
+    {
+      "table_name": "fluxo_recrutamento"
+    },
+    {
+      "table_name": "homologacoes"
+    },
+    {
+      "table_name": "prestadores_app"
+    },
+    {
+      "table_name": "provider_documents"
+    }
+  ],
+  "src_tenant_safe": [
+    {
+      "prosecdef": false,
+      "provolatile": "s",
+      "src": "\nBEGIN\n    RETURN COALESCE(\n        current_setting('app.current_tenant_id', true)::uuid,\n        '00000000-0000-0000-0000-000000000001'::uuid\n    );\nEXCEPTION\n    WHEN OTHERS THEN\n        RETURN '00000000-0000-0000-0000-000000000001'::uuid;\nEND;\n"
+    }
+  ],
+  "src_resolver": [
+    {
+      "prosrc": "\nDECLARE\n  v_digits  TEXT;\n  v_auth_id UUID;\n  v_email   TEXT;\n  v_hash    TEXT;\nBEGIN\n  -- Entradas obrigat├│rias (fail-closed, sem detalhe).\n  IF p_cpf_cnpj IS NULL OR p_senha IS NULL\n     OR btrim(p_cpf_cnpj) = '' OR p_senha = '' THEN\n    RETURN NULL;\n  END IF;\n\n  -- Normaliza CPF/CNPJ (apenas d├¡gitos).\n  v_digits := regexp_replace(btrim(p_cpf_cnpj), '[^0-9]', '', 'g');\n  IF length(v_digits) < 11 THEN\n    RETURN NULL;\n  END IF;\n\n  -- Identidade vinculada (no m├íximo uma).\n  SELECT p.auth_user_id\n    INTO v_auth_id\n  FROM public.prestadores p\n  WHERE p.auth_user_id IS NOT NULL\n    AND regexp_replace(coalesce(p.cpf_cnpj, ''), '[^0-9]', '', 'g') = v_digits\n  LIMIT 1;\n\n  IF v_auth_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  -- auth.users SOMENTE pelo v├¡nculo objetivo auth_user_id.\n  SELECT u.email, u.encrypted_password\n    INTO v_email, v_hash\n  FROM auth.users u\n  WHERE u.id = v_auth_id\n  LIMIT 1;\n\n  IF v_email IS NULL OR v_hash IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  -- Verifica a senha (bcrypt) SEM persistir/logar. Diverg├¬ncia ÔåÆ NULL.\n  IF extensions.crypt(p_senha, v_hash) <> v_hash THEN\n    RETURN NULL;\n  END IF;\n\n  RETURN v_email;\nEXCEPTION\n  WHEN OTHERS THEN\n    -- Nunca vaza detalhe/exce├º├úo (indistingu├¡vel).\n    RETURN NULL;\nEND;\n"
+    }
+  ],
+  "src_criar": [
+    {
+      "prosrc": "\nDECLARE\n  v_auth_uid UUID;\n  v_existing_id UUID;\n  v_new_id UUID;\n  v_nome TEXT;\n  v_cpf TEXT;\n  vTelefone TEXT;\n  vEmail TEXT;\n  vMeta JSONB;\nBEGIN\n  -- ========================================================================\n  -- SEGURAN├çA: auth.uid() obrigat├│rio (fail-closed)\n  -- ========================================================================\n  v_auth_uid := auth.uid();\n  IF v_auth_uid IS NULL THEN\n    RAISE EXCEPTION 'Acesso negado: usu├írio n├úo autenticado'\n      USING ERRCODE = 'P0001';\n  END IF;\n\n  -- ========================================================================\n  -- IDEMPOTENCIA: se j├í existe prestador para este auth_user, retorna\n  -- ========================================================================\n  SELECT id INTO v_existing_id\n  FROM prestadores\n  WHERE auth_user_id = v_auth_uid\n  LIMIT 1;\n\n  IF v_existing_id IS NOT NULL THEN\n    RETURN jsonb_build_object('prestador_id', v_existing_id);\n  END IF;\n\n  -- ========================================================================\n  -- SEGURAN├çA:Overrides de seguran├ºa ÔÇö ignora valores enviados pelo cliente\n  -- ========================================================================\n  v_nome  := trim(coalesce(p_nome_completo, ''));\n  v_cpf   := CASE WHEN trim(coalesce(p_cpf_cnpj, '')) = '' THEN NULL\n                  ELSE trim(p_cpf_cnpj) END;\n  vTelefone := CASE WHEN trim(coalesce(p_telefone, '')) = '' THEN NULL\n                    ELSE trim(p_telefone) END;\n  vEmail    := CASE WHEN trim(coalesce(p_email, '')) = '' THEN NULL\n                    ELSE trim(p_email) END;\n  vMeta     := coalesce(p_metadata, '{}'::jsonb);\n\n  -- Valida├º├úo: nome ├® obrigat├│rio\n  IF v_nome = '' THEN\n    RAISE EXCEPTION 'Nome completo ├® obrigat├│rio'\n      USING ERRCODE = 'P0002';\n  END IF;\n\n  -- ========================================================================\n  -- INSERT em prestadores\n  -- ========================================================================\n  INSERT INTO prestadores (\n    nome_completo,\n    cpf_cnpj,\n    data_nascimento,\n    telefone,\n    email,\n    auth_user_id,\n    status,\n    liberado_app,\n    origem,\n    origem_cadastro,\n    metadata,\n    created_at,\n    updated_at\n  ) VALUES (\n    v_nome,\n    v_cpf,\n    CASE WHEN p_data_nascimento IS NOT NULL AND trim(p_data_nascimento) != ''\n         THEN p_data_nascimento::date\n         ELSE NULL END,\n    vTelefone,\n    vEmail,\n    v_auth_uid,           -- anti-spoof: sempre auth.uid()\n    'em_analise',         -- fixo: nunca liberado\n    false,                -- fixo: nunca liberado\n    coalesce(p_origem, 'app_prestador'),\n    'app_motorista',      -- detectado pelo bridge enterpriseKanbanService\n    vMeta,\n    now(),\n    now()\n  )\n  RETURNING id INTO v_new_id;\n\n  -- ========================================================================\n  -- RETORNO: formato { prestador_id: UUID }\n  -- ========================================================================\n  RETURN jsonb_build_object('prestador_id', v_new_id);\nEND;\n"
+    }
+  ],
+  "prestadores_auth": [
+    {
+      "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "nome_completo": "PRESTADOR TESTE APP",
+      "status": "ativo",
+      "liberado_app": true,
+      "auth_user_id": "399796b7-4e3b-432f-8744-4eb91f0ee31d",
+      "origem_cadastro": null,
+      "data_aprovacao": null
+    },
+    {
+      "id": "0b55f471-b8eb-419a-bda1-567ec3b37a39",
+      "nome_completo": "teste 2",
+      "status": "em_analise",
+      "liberado_app": false,
+      "auth_user_id": "47da030a-a536-4046-8f0f-e4878948b94e",
+      "origem_cadastro": "app_motorista",
+      "data_aprovacao": null
+    },
+    {
+      "id": "e9d43079-3d14-4083-b33e-f50174b6e663",
+      "nome_completo": "REC06 E2E Real Teste",
+      "status": "em_analise",
+      "liberado_app": false,
+      "auth_user_id": "40210d5e-acfd-4eea-81a7-c529bb50b788",
+      "origem_cadastro": "app_motorista",
+      "data_aprovacao": null
+    },
+    {
+      "id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "nome_completo": "TESTECOREAPP01k",
+      "status": "em_analise",
+      "liberado_app": false,
+      "auth_user_id": "f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8",
+      "origem_cadastro": "app_motorista",
+      "data_aprovacao": null
+    },
+    {
+      "id": "f4d579e9-bc83-40a1-8ded-8d23c70b5872",
+      "nome_completo": "PRESTADOR HML AUTOMACAO",
+      "status": "ativo",
+      "liberado_app": true,
+      "auth_user_id": "04358628-006e-453d-8c37-3ee04246aa21",
+      "origem_cadastro": null,
+      "data_aprovacao": null
+    }
+  ],
+  "cols_is_teste": [],
+  "col_privs_prestadores": [],
+  "candidatos_anon": [
+    {
+      "sel": true,
+      "ins": true
+    }
+  ],
+  "ultima_alteracao": [
+    {
+      "max_updated_at": "2026-09-24T22:44:45.850Z",
+      "liberados": "3",
+      "ativos": "26",
+      "nao_ativos": "13"
+    }
+  ],
+  "coerencia": [
+    {
+      "liberado_sem_auth": "1",
+      "auth_sem_liberacao": "3",
+      "ativo_nao_liberado": "23"
+    }
+  ],
+  "status_distintos": [
+    {
+      "status": "ativo",
+      "n": 26
+    },
+    {
+      "status": "analise",
+      "n": 7
+    },
+    {
+      "status": "em_analise",
+      "n": 3
+    },
+    {
+      "status": "inativo",
+      "n": 2
+    },
+    {
+      "status": "aprovado",
+      "n": 1
+    }
+  ],
+  "policies_anon_todas": [
+    {
+      "tablename": "agentes_ia_internos",
+      "n": 1
+    },
+    {
+      "tablename": "auth_eventos_auditoria",
+      "n": 1
+    },
+    {
+      "tablename": "communication_events",
+      "n": 2
+    },
+    {
+      "tablename": "communication_preferences",
+      "n": 2
+    },
+    {
+      "tablename": "communication_templates",
+      "n": 2
+    },
+    {
+      "tablename": "eventos_oficiais",
+      "n": 2
+    },
+    {
+      "tablename": "financeiro_receber",
+      "n": 1
+    },
+    {
+      "tablename": "ocorrencias",
+      "n": 2
+    },
+    {
+      "tablename": "perfis_permissoes",
+      "n": 1
+    },
+    {
+      "tablename": "portal_avaliacoes",
+      "n": 1
+    },
+    {
+      "tablename": "portal_faturas",
+      "n": 1
+    },
+    {
+      "tablename": "portal_ocorrencias",
+      "n": 1
+    },
+    {
+      "tablename": "portal_pedidos",
+      "n": 1
+    },
+    {
+      "tablename": "portal_protocolos",
+      "n": 1
+    },
+    {
+      "tablename": "portal_rotas",
+      "n": 1
+    },
+    {
+      "tablename": "rascunhos_prestador",
+      "n": 4
+    },
+    {
+      "tablename": "rede_oportunidades",
+      "n": 1
+    },
+    {
+      "tablename": "rede_visualizacoes",
+      "n": 1
+    },
+    {
+      "tablename": "reembolsos_prestador",
+      "n": 1
+    },
+    {
+      "tablename": "rota_paradas",
+      "n": 2
+    },
+    {
+      "tablename": "rotas",
+      "n": 2
+    },
+    {
+      "tablename": "tabela_prestador",
+      "n": 1
+    },
+    {
+      "tablename": "tabelas_valores",
+      "n": 1
+    },
+    {
+      "tablename": "tenant_usuarios",
+      "n": 1
+    },
+    {
+      "tablename": "tenants",
+      "n": 1
+    },
+    {
+      "tablename": "tracking_public_links",
+      "n": 2
+    }
+  ]
+}

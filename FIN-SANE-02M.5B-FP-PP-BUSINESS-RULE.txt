@@ -1,0 +1,450 @@
+================================================================================
+FIN-SANE-02M.5B — REGRA DE NEGÓCIO: financeiro_pagar × pagamentos_prestadores
+Missão: Determinar a regra correta FP × PP sem alterar nada
+Data: 2026-09-20
+Projeto: TMS (Supabase Produção: uwrvzsjtpgaifkktpepn)
+Status: PASS — Regra determinada inequivocamente
+================================================================================
+
+SUMÁRIO EXECUTIVO
+─────────────────
+REGRA_ATUAL (BUG): FP.valor = v_valor_prestador (repasse-base R$520)
+REGRA_CORRETA:      FP.valor = v_valor_liquido  (obrigação total R$652,86)
+Mecanismo de correção: Migration FIN-SANE-02B (2026-09-13) — PRONTA, NÃO APLICADA
+Impacto CESAR: R$132,86 sem título FP correspondente; baixa de R$520 ≠ obrigação de R$652,86
+RISCO_SISTEMICO: SIM — afeta TODAS as alocações com pedágio/adicional/ajudante/outros_custos
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 1 — SEMÂNTICA DAS TRÊS TABELAS
+══════════════════════════════════════════════════════════════════════════════════
+
+1.1 financeiro_pagar (FP)
+─────────────────────────
+  Função: TÍTULO a pagar — representação contábil da obrigação financeira
+  Escopo: 1 FP por OS (UNIQUE os_id)
+  Campo valor: deve representar o TOTAL que o prestador tem direito a receber
+  Status lifecycle: pendente → aberto → pago
+  Baixa via: financeiro_baixas (título_tabela = 'financeiro_pagar')
+  Uso no DRE: NÃO — DRE usa pagamentos_prestadores
+  Uso no Fluxo de Caixa: SIM — "Previsto Saída" = soma FP.valor (títulos abertos)
+  Uso no Fluxo de Caixa Realizado: SIM — "Realizado Saída" = soma financeiro_baixas.valor_baixado
+  Fonte de criação: trigger f_trg_propagar_financeiro_alocacao (M66) ou f_trg_propagar_financeiro_os (M80)
+
+1.2 pagamentos_prestadores (PP)
+───────────────────────────────
+  Função: CONFERÊNCIA + TÍTULO DE PAGAMENTO — registro que o prestador deve ser pago
+  Escopo: 1 PP por OS (UNIQUE os_id)
+  Campo valor_liquido: obrigação total do prestador (repasse + pedagio + adicional + outros_custos)
+  Campo valor_servicos: repasse-base (serviços puros)
+  Campo pedagio: pedagio separately tracked
+  Campo adicionais: adicionais separately tracked
+  Status lifecycle: pendente → em_lote/programado → pago
+  Uso no DRE: SIM — "Custo Prestador" = PP.valor_liquido WHERE impacto_dre=true AND status='pago'
+  Uso no Fluxo de Caixa: NÃO — Fluxo usa FP e baixas, não PP diretamente
+  Fonte de criação: trigger f_trg_propagar_financeiro_alocacao (M66) ou f_trg_propagar_financeiro_os (M80)
+
+1.3 composicao_financeira_os (CF)
+──────────────────────────────────
+  Função: MARGEM/ANÁLISE — decomposição da compose financeira da OS
+  Escopo: 1 CF por OS (UNIQUE os_id)
+  Campo valor_cliente: receita do cliente
+  Campo valor_prestador: repasse-base (NÃO inclui pedagio/adicional)
+  Campo pedagio_valor: pedagio separately
+  Campo outros_custos: adicionais + ajudante - descontos
+  Campo margem_bruta: valor_cliente - valor_prestador - pedagio - outros_custos
+  Uso: Relatórios de margem, não afeta DRE nem Fluxo de Caixa
+  Fonte de criação: trigger (mesmo INSERT que FP/PP)
+
+1.4 financeiro_baixas (FB)
+──────────────────────────
+  Função: REGISTRO DE PAGAMENTO EFETIVO — evidência de que o dinheiro saiu
+  Relação: 1:N com FP (vários pagamentos parciais possíveis)
+  Campo valor_baixado: quanto foi efetivamente pago nesta baixa
+  Campo valor_original: valor do título no momento da baixa
+  Campo saldo_restante: 0 (baixa integral) ou > 0 (parcial)
+  Uso no Fluxo de Caixa: SIM — "Realizado Saída" = soma FB.valor_baixado
+  Criação: RPC f_confirmar_pagamento_prestador (automática) ou INSERT direto (manual)
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 2 — REGRA ATUAL (BUG COMPROVADO)
+══════════════════════════════════════════════════════════════════════════════════
+
+2.1 Trigger M66 (ativo em produção em 2026-08-17)
+──────────────────────────────────────────────────
+  Fonte: supabase/migrations/20260704000001_m66_fix_propagacao_financeira.sql
+  Trecho FP (linhas 176-178):
+    INSERT INTO financeiro_pagar (..., valor, ...)
+    VALUES (..., v_valor_prestador, ...)
+    -- v_valor_prestador = COALESCE(NEW.valor_repasse, 0) = R$520
+
+  Trecho PP (linhas 190-192):
+    INSERT INTO pagamentos_prestadores (..., valor_liquido, ...)
+    VALUES (..., v_valor_liquido, ...)
+    -- v_valor_liquido = v_valor_prestador + pedagio + outros_custos = R$652,86
+
+  Resultado: FP=520, PP=652,86 — DIVERGÊNCIA DE R$132,86
+
+2.2 Trigger M108F (ativo em 2026-08-17, confirmado por P0 header)
+──────────────────────────────────────────────────────────────────
+  Fonte: supabase/migrations/20260711000002_m108f_logistica_reversa_enterprise.sql
+  Mesma fórmula: FP=v_valor_prestador, PP=v_valor_liquido
+  Header P0: "A trigger ATIVA em produção era a M108F"
+
+2.3 Sem todas as versões (5 de 5)
+──────────────────────────────────
+  M66 (04/07): FP=v_valor_prestador          — CONFIRMADO
+  M108F (11/07): FP=v_valor_prestador        — CONFIRMADO
+  P0 (31/07): FP=v_valor_prestador            — CONFIRMADO
+  A31-J111 (19/08): FP=v_valor_prestador      — CONFIRMADO
+  Snapshot live: FP=v_valor_prestador          — CONFIRMADO
+
+  CONCLUSÃO: O bug está presente em TODAS as versões da trigger desde o início.
+
+2.4 Definição REGRA_ATUAL
+─────────────────────────
+  FP.valor = v_valor_prestador (repasse-base)
+  PP.valor_liquido = v_valor_liquido (obrigação total)
+  Diferença = pedagio + outros_custos (adicionais, ajudante, etc.)
+  CESAR: FP=520, PP=652,86, diff=132,86
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 3 — REGRA CORRETA (COMPROVADA POR CÓDIGO E MIGRATION)
+══════════════════════════════════════════════════════════════════════════════════
+
+3.1 Evidência da RPC f_confirmar_pagamento_prestador
+─────────────────────────────────────────────────────
+  Fonte: scripts/_fin_sane_02e_source_f_confirmar_pagamento_prestador.sql
+
+  Linha 31: v_valor := ROUND(COALESCE(v_pagamento.valor_liquido, 0), 2)
+  → A RPC usa PP.valor_liquido como valor de referência
+
+  Linhas 70-92 (com OS vinculada):
+    WHERE fp.os_id = v_pagamento.os_id::TEXT
+      AND ROUND(COALESCE(fp.valor, 0), 2) = v_valor  ← FP.valor DEVE ser igual a PP.valor_liquido
+      AND fp.status NOT IN ('pago','cancelado','estornado')
+
+  Linhas 106-139 (sem OS):
+    WHERE ROUND(COALESCE(fp.valor, 0), 2) = v_valor  ← mesma regra
+      AND fp.prestador = v_pagamento.prestador
+
+  Linha 151-157:
+    IF v_saldo <> v_valor THEN
+      RETURN 'Saldo do titulo nao reconcilia integralmente com o pagamento;
+              pagamento parcial nao e permitido neste fluxo.'
+
+  Linhas 159-178: INSERT baixa + UPDATE FP status='pago'
+
+  REGRA DA RPC: FP.valor DEVE ser exatamente igual a PP.valor_liquido.
+  Se FP=520 e PP=652,86 → RPC REJEITA o pagamento.
+
+3.2 Evidência da Migration FIN-SANE-02B (não aplicada)
+──────────────────────────────────────────────────────
+  Fonte: supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+
+  Linha 2: "FIN-SANE-02B — Unificação de financeiro_pagar.valor com valor_liquido"
+  Linha 7-8: "Corrigir triggers M66 e M80 para que financeiro_pagar.valor
+              represente a OBRIGAÇÃO TOTAL do prestador (= v_valor_liquido)"
+
+  Linha 115 (M66): "-- Pagar (CORREÇÃO: valor = v_valor_liquido)"
+  Linha 119: VALUES (..., v_valor_liquido, ...)  ← CORRIGIDO de v_valor_prestador
+  Linha 120: ON CONFLICT ... SET valor = v_valor_liquido
+  Linha 161: "financeiro_pagar.valor = valor_liquido total do prestador."
+
+  Linha 166 (M80): "-- Alteração: financeiro_pagar.valor = v_valor_liquido (obrigação total)"
+
+  A migration FOI CRIADA para corrigir EXATAMENTE este bug.
+  Status: CRIADA EM 2026-09-13, NÃO APLICADA EM PRODUÇÃO.
+
+3.3 Definição REGRA_CORRETA
+────────────────────────────
+  FP.valor = v_valor_liquido (obrigação total = repasse + pedagio + outros_custos)
+  PP.valor_liquido = v_valor_liquido (obrigação total — idêntico ao FP)
+  FP e PP devem ter EXATAMENTE o mesmo valor.
+  A RPC f_confirmar_pagamento_prestador VALIDA esta igualdade.
+
+  Para CESAR: FP deve ser R$652,86 (não R$520)
+              PP já é R$652,86 (correto)
+              Diferença ZERO entre FP e PP.
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 4 — FLUXO DE PAGAMENTO/BAIXA
+══════════════════════════════════════════════════════════════════════════════════
+
+4.1 Fluxo correto (pós-02B)
+────────────────────────────
+  1. OS/escala criada → trigger M66/M80 → INSERT FP (valor=v_liquido) + INSERT PP (valor_liquido=v_liquido)
+  2. Usuário clica "Marcar Pago" na UI → chamada confirmarPagamento(pp_id)
+  3. confirmarPagamento() → RPC f_confirmar_pagamento_prestador(p_pagamento_id)
+  4. RPC busca PP → extrai v_valor = PP.valor_liquido
+  5. RPC busca FP com mesmo os_id E mesmo valor → se não encontrar 1, REJEITA
+  6. RPC calcula saldo = FP.valor - baixas anteriores
+  7. Se saldo ≠ v_valor → REJEITA ("pagamento parcial não permitido")
+  8. Se saldo = v_valor → INSERT financeiro_baixas + UPDATE FP status='pago' + UPDATE PP status='pago'
+
+4.2 Fluxo atual (com bug M66)
+──────────────────────────────
+  1. OS/escala criada → trigger → INSERT FP (valor=520) + INSERT PP (valor_liquido=652,86)
+  2. Usuário clica "Marcar Pago"
+  3. RPC busca PP → v_valor = 652,86
+  4. RPC busca FP com mesmo os_id E valor=652,86 → NÃO ENCONTRA (FP tem 520)
+  5. RPC REJEITA: "Nao existe titulo financeiro aberto, da mesma OS e com o mesmo valor do pagamento."
+  6. → Pagamento NÃO PODE ser confirmado via fluxo正规
+
+4.3 Como CESAR foi pago (evidência 02M.5A)
+──────────────────────────────────────────
+  FP (520) foi baixado com R$520 via INSERT direto em financeiro_baixas
+  (valor_baixado=520, valor_original=520, saldo_restante=0)
+  PP foi atualizado para status='pago'
+  Mas: PP.valor_liquido=652,86 ≠ FP.baixado=520
+  → Pagamento parcial sem tratamento adequado
+
+4.4 Fluxo de componentes (pedágio/adicional/etc.)
+──────────────────────────────────────────────────
+  No trigger:
+    v_valor_prestador = NEW.valor_repasse          (base)
+    v_pedagio_valor = NEW.valor_pedagio            (pedágio)
+    v_adicional_valor = NEW.valor_adicional        (adicional)
+    v_ajudante_valor = NEW.valor_ajudante          (ajudante)
+    v_desconto_valor = NEW.valor_desconto          (desconto)
+    v_outros_custos = v_pedagio + v_adicional + v_ajudante - v_desconto
+    v_valor_liquido = v_valor_prestador + v_outros_custos
+
+  No INSERT de FP (M66 atual/bug):
+    valor = v_valor_prestador  ← SOMENTE repasse-base
+    (pedágio/adicional/etc. NÃO entram no FP)
+
+  No INSERT de PP (M66 atual):
+    valor_liquido = v_valor_liquido  ← TOTAL (repasse + pedágio + adicional + ...)
+    valor_servicos = v_valor_prestador  ← repasse-base
+    pedagio = v_pedagio_valor  ← pedágio
+    adicionais = v_outros_custos  ← outros_custos
+
+  REGRA CORRETA (02B):
+    FP.valor = v_valor_liquido  ← TOTAL (igual ao PP)
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 5 — ANÁLISE DE RISCO SISTÊMICO
+══════════════════════════════════════════════════════════════════════════════════
+
+5.1 PP pendente após FP pago
+─────────────────────────────
+  CENÁRIO ATUAL (bug):
+    FP=520 pago, PP=652,86 pago → PP e FP conciliados artificialmente
+    Mas: PP.valor_liquido (652,86) ≠ FP.baixado (520) → sistema "esquece" R$132,86
+
+  RISCO: SIM — se o fluxo正规 fosse usado, RPC rejeitaria.
+  Evidência: RPC linhas 151-157 rejeitam saldo parcial.
+  Impacto: Pagamentos com pedágio/adicional NÃO podem ser confirmados via UI正规.
+
+5.2 Saldo devido sem título financeiro
+───────────────────────────────────────
+  CESAR: R$132,86 (pedagio 66,43 + adicional 66,43) sem FP correspondente
+  O sistema não tem registro de que R$132,86 ainda é devido ao prestador
+  Não há título aberto em financeiro_pagar para este valor
+
+  RISCO: SIM — título ausente = obrigação invisível
+  Evidência: FP original tem valor=520, baixa=520, saldo=0 → "quitado" no sistema
+  Mas PP.valor_liquido=652,86 → prestador tem direito a R$652,86
+
+5.3 Pagamento parcial tratado como quitação
+───────────────────────────────────────────
+  CESAR: FP.status='pago', FP.saldo=0 (via baixa integral de 520)
+  Mas: obligation real = 652,86
+  → Sistema considers CESAR "fully paid" when only 79.7% was paid
+
+  RISCO: SIM — tratamento incorreto de quitação
+  Evidência: financeiro_baixas com saldo_restante=0 para FP de R$520
+
+5.4 Duplicidade se PP e FP forem pagos separadamente
+─────────────────────────────────────────────────────
+  Com o bug: FP=520 e PP=652,86 — valores diferentes
+  Se alguém tenta "pagar" PP (652,86) e FP (520) separadamente:
+    → PP gera baixa de 652,86
+    → FP gera baixa de 520
+    → Total: 1.172,86 (2× o devido)
+
+  RISCO: SIM — se o fluxo正规 for restaurado sem corrigir FP, duplicidade
+  Mitigation: RPC valida 1:1 entre FP e PP por os_id+valor
+
+5.5 DRE/Fluxo de Caixa/Indicadores
+───────────────────────────────────
+  DRE (Custo Prestador):
+    Fonte: pagamentos_prestadores.valor_liquido WHERE impacto_dre=true AND status='pago'
+    → USA PP, NÃO FP
+    → CESAR: DRE registra R$652,86 (CORRETO)
+    → Risco DRE: NENHUM com o bug atual
+
+  Fluxo de Caixa:
+    Previsto: financeiro_pagar.valor (títulos abertos) → FP=520 (INCORRETO, deveria ser 652,86)
+    Realizado: financeiro_baixas.valor_baixado WHERE titulo_tabela='financeiro_pagar' → 520
+    → CESAR: Previsto subestimado em R$132,86; Realizado subestimado em R$132,86
+
+    RISCO: SIM — Fluxo de Caixa:
+      - Previsto Saída: -R$132,86 (menos despesa registrada)
+      - Realizado Saída: -R$132,86 (menos pagamento registrado)
+      - Efeito líquido: ZERO no fluxo (previsto e realizado ambos subestimados)
+      Mas: Indicadores derivados (saldo, previsão) estão incorretos
+
+  Indicadores:
+    Custo médio por prestador: incorreto (usa PP, ok)
+    Ticket médio: pode usar FP (incorreto)
+    Inadimplência: pode usar FP (incorreto)
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 6 — CASO CESAR COMO VALIDAÇÃO DA REGRA
+══════════════════════════════════════════════════════════════════════════════════
+
+6.1 Dados reais
+────────────────
+  PP: id=7461daf6, valor_liquido=652,86, valor_servicos=520, pedagio=66,43,
+      adicionais=66,43, status=pago, os_id=NULL
+  FP: id=9f2be89f, valor=520, status=pago, os_id=NULL
+  FB: id=286c2c2d, valor_baixado=520, valor_original=520, saldo_restante=0
+  Alocação: id=58e5751e, valor_total=652,86, valor_repasse=520, pedagio=66,43,
+            adicional=66,43
+
+6.2 Decomposição R$132,86
+──────────────────────────
+  R$132,86 = pedagio (66,43) + adicional (66,43)
+  Estes valores estão corretamente registrados em:
+    PP.valor_liquido = 520 + 66,43 + 66,43 = 652,86 ✓
+    Alocação.valor_total = 652,86 ✓
+    Composição.outros_custos = 66,43 ✓
+  Mas NÃO estão em:
+    FP.valor = 520 (deveria ser 652,86) ✗
+
+6.3 Interpretação correta
+──────────────────────────
+  O que CESAR tem direito a receber: R$652,86
+  O que foi pago a CESAR: R$520,00
+  O que CESAR ainda tem a receber: R$132,86
+  O que o sistema registra como "pendente": R$0 (FP quitado)
+  → CONTRADIÇÃO: sistema diz "quitado", prestador diz "devedor"
+
+6.4 Impacto específico
+──────────────────────
+  DRE: CORRETO (usa PP=652,86)
+  Fluxo de Caixa Previsto: INCORRETO (FP=520, deveria ser 652,86)
+  Fluxo de Caixa Realizado: INCORRETO (FB=520, deveria ser 652,86 se pagamento integral)
+  Extrato do Prestador: INCORRETO (mostra "pago" quando ainda deve 132,86)
+  Composição: CORRETO (outros_custos=66,43 registrado)
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 7 — MATRIZ DE DECISÃO
+══════════════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────┬──────────────────┬──────────────────┬───────────────┐
+  │ Conceito             │ Tabela           │ Campo            │ Representa    │
+  ├──────────────────────┼──────────────────┼──────────────────┼───────────────┤
+  │ Obrigação total      │ PP               │ valor_liquido    │ SIM ✓         │
+  │ Título a pagar       │ FP               │ valor            │ DEVERIA ser ✓ │
+  │ Conferência          │ PP               │ status_confer    │ SIM ✓         │
+  │ Pagamento efetivo    │ FB               │ valor_baixado    │ SIM ✓         │
+  │ Margem/Análise       │ CF               │ margem_bruta     │ SIM ✓         │
+  │ DRE Custo            │ PP               │ valor_liquido    │ SIM ✓         │
+  │ Fluxo Previsto       │ FP               │ valor            │ DEVERIA ser ✓ │
+  │ Fluxo Realizado      │ FB               │ valor_baixado    │ SIM ✓         │
+  └──────────────────────┴──────────────────┴──────────────────┴───────────────┘
+
+  REGRA: FP.valor DEVE ser idêntico a PP.valor_liquido
+  Razão: A RPC f_confirmar_pagamento_prestador exige esta igualdade
+  Evidence: Migration 02B corrige exatamente isto
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 8 — ESTRATÉGIA SEGURA DA PRÓXIMA CORREÇÃO
+══════════════════════════════════════════════════════════════════════════════════
+
+8.1 O que já existe
+────────────────────
+  Migration FIN-SANE-02B (2026-09-13): PRONTA, NÃO APLICADA
+  - Corrige triggers M66 e M80: FP.valor = v_valor_liquido
+  - Snapshot de segurança: fin_sane_02b_snapshot
+  - RPC f_confirmar_pagamento_fechamento: pagamento atômico
+  - Rollback: 20260913000001_fin_sane_02b_rollback.sql
+
+8.2 O que falta
+────────────────
+  1. Aplicar migration 02B em produção
+  2. Ajustar títulos históricos NÃO pagos (FP.valor < PP.valor_liquido)
+  3. Tratar casos como CESAR (FP pago com valor errado)
+  4. Validar que RPC f_confirmar_pagamento_prestador agora aceita
+
+8.3 Ordem segura
+─────────────────
+  FASE A: Aplicar 02B (triggers corrigidas + snapshot)
+  FASE B: Ajustar FP históricos não pagos (UPDATE FP SET valor = PP.valor_liquido)
+  FASE C: Corrigir CESAR e casos análogos (FP pago com valor inferior)
+  FASE D: Validar com testes
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 9 — EVIDÊNCIA DOCUMENTAL
+══════════════════════════════════════════════════════════════════════════════════
+
+  [E1] RPC f_confirmar_pagamento_prestador
+       Fonte: scripts/_fin_sane_02e_source_f_confirmar_pagamento_prestador.sql
+       Linha 31: v_valor = PP.valor_liquido
+       Linhas 70-92: WHERE fp.valor = v_valor (exige igualdade)
+       Linhas 151-157: REJEITA se saldo ≠ v_valor
+
+  [E2] Migration FIN-SANE-02B
+       Fonte: supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+       Linha 7-8: "FP.valor = OBRIGAÇÃO TOTAL = v_valor_liquido"
+       Linha 119: VALUES (..., v_valor_liquido, ...)
+       Linha 161: "financeiro_pagar.valor = valor_liquido total do prestador"
+
+  [E3] Trigger M66 (bug)
+       Fonte: supabase/migrations/20260704000001_m66_fix_propagacao_financeira.sql
+       Linha 176: INSERT FP com v_valor_prestador (=520)
+       Linha 190: INSERT PP com v_valor_liquido (=652,86)
+
+  [E4] Fluxo de Caixa
+       Fonte: src/services/financeiro/fluxoCaixaService.ts
+       Linha 1: "separação PREVISTO (títulos) × REALIZADO (baixas)"
+       Linha 44: realizadoSaida = FB.valor_baixado WHERE titulo_tabela='financeiro_pagar'
+
+  [E5] DRE
+       Fonte: tests/e2e/fin-master-362.spec.ts
+       Linha 442-443: DRE Custo = PP.valor_liquido WHERE impacto_dre=true AND status='pago'
+
+  [E6] Dados CESAR
+       PP: id=7461daf6, valor_liquido=652,86, status=pago
+       FP: id=9f2be89f, valor=520, status=pago
+       FB: id=286c2c2d, valor_baixado=520, saldo_restante=0
+       Alocação: id=58e5751e, valor_repasse=520, pedagio=66,43, adicional=66,43
+
+══════════════════════════════════════════════════════════════════════════════════
+SEÇÃO 10 — CONCLUSÃO
+══════════════════════════════════════════════════════════════════════════════════
+
+  REGRA_ATUAL:
+    FP.valor = v_valor_prestador (repasse-base)
+    Bug: trigger usa NEW.valor_repasse em vez de v_valor_liquido para FP
+    Efeito: FP < PP quando há pedágio/adicional/ajudante/outros_custos
+
+  REGRA_CORRETA:
+    FP.valor = v_valor_liquido (obrigação total do prestador)
+    FP e PP devem ter EXATAMENTE o mesmo valor
+    RPC f_confirmar_pagamento_prestador VALIDA esta igualdade
+    Migration FIN-SANE-02B corrige exatamente isto
+
+  IMPACTO_CESAR:
+    FP deve ser R$652,86 (atualmente R$520)
+    Diferença R$132,86 = pedagio + adicional
+    Pagamento de R$520 = 79,7% da obrigação real
+    R$132,86 = saldo devido sem título correspondente
+
+  RISCO_SISTEMICO: SIM
+    - Afeta TODAS as alocações com pedágio/adicional/ajudante/outros_custos
+    - RPC f_confirmar_pagamento_prestador REJEITA pagamentos com FP errado
+    - Fluxo de Caixa subestima previsto e realizado em R$132,86 por OS afetada
+    - Extrato do prestador mostra "pago" quando há saldo devido
+    - 0 FP sem PP (separados) = risco de duplicidade se corrigido incorretamente
+
+  CLASSIFICAÇÃO: PASS
+    Regra FP × PP determinada inequivocamente
+    Migração de correção já existe (02B)
+    Próxima missão pode prosseguir com segurança
+
+══════════════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO
+══════════════════════════════════════════════════════════════════════════════════

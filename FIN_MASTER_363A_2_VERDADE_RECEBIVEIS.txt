@@ -1,0 +1,169 @@
+FIN-MASTER-363A.2 - VERDADE DOS 3 RECEBIVEIS HISTORICOS
+========================================================
+Data: 06/09/2026 15:55
+Executor: Qwen3.8 Flash
+Tipo: 100% READ-ONLY (NENHUM codigo/dado alterado)
+
+PERGUNTA CRITICA: Hoje ainda e possivel marcar financeiro_receber como PAGO
+sem persistir uma baixa financeira valida?
+RESPOSTA: SIM (comprovado tecnicamente, ver secao 6).
+
+--------------------------------------------------------------
+METODOLOGIA / LIMIAR DE PROVA
+--------------------------------------------------------------
+Evidencia real de recebimento considerada: financeiro_baixas (nao estornada),
+referencia bancaria, conta_financeira_id, comprovante persistido, evento com
+movimento. status='pago', cliente, CNPJ, fatura/NF (texto) NAO sao prova.
+
+Universo verificado: existem apenas 6 baixas de receber no banco e TODAS sao
+sentinela/teste (R$ 12,34/12,35). Nenhuma corresponde aos 3 alvo.
+
+--------------------------------------------------------------
+1) RECEBIVEL 2d625b18 (R$ 3.600,00) - Calvo / "fat 0037"
+--------------------------------------------------------------
+Origem: cliente REAL cadastrado "Calvo Comercio e Importacao LTDA"
+        (id 91b80fdb, CNPJ 61.116.828/0001-02, status Ativo, categoria frete).
+Vinculos: os_id NULL; fatura_id NULL; texto fatura "fat 0037" NAO casa com
+          nenhuma linha da tabela faturas (busca por numero e por
+          conta_receber_id = 0 resultados).
+Estado:   status=pago; data_pagamento=NULL; conta_entrada="1"
+          (nao e UUID real - placeholder).
+Baixas:   financeiro_baixas por titulo_id = 0; por texto obs = 0.
+created_at = updated_at (2026-08-20 19:49:32) -> nunca foi atualizado; ja
+          nasceu com status='pago' e SEM data_pagamento.
+Evidencia de recebimento: NENHUMA independente.
+
+CLASSIFICACAO: [C] STATUS PAGO SEM EVIDENCIA DE RECEBIMENTO.
+Nota: data_pagamento NULL + nula baixa + OS inexistente tornam o "pago"
+      infundado; mas ausencia de evidencia NAO prova nao-recebimento -> [C].
+
+--------------------------------------------------------------
+2) RECEBIVEL 17e857d8 (R$ 3.200,50) - "FAT-001/2026" / "NF 1234"
+--------------------------------------------------------------
+Origem: TESTE/SEED. Cliente resolvido = "M43_2026-06-29_18-24-20 Cliente
+        Teste Ltda" (id 34ed2cd5, CNPJ falso 43.17827574.0001-99) - seed da
+        Missao 43. Descricao "Frete - Nota Fiscal 1234" (NF generica).
+Vinculos: os_id NULL; fatura_id NULL; "FAT-001/2026" sem match em faturas.
+Estado:   status=pago; data_pagamento=NULL.
+Baixas:   0 (titulo_id e texto).
+created_at = updated_at (2026-07-01 16:45:53) -> nasceu pago, nunca alterado.
+Evidencia de recebimento: NENHUMA.
+
+CLASSIFICACAO: [C] STATUS PAGO SEM EVIDENCIA (origem = DADO DE TESTE/SEED).
+Por ser registro fabricado, nao ha "recebimento verdadeiro" a confirmar nem a
+negar; mantem-se [C], com origem testificada como TESTE.
+
+--------------------------------------------------------------
+3) RECEBIVEL cf6eea7b (R$ 1.500,00) - Missao 43
+--------------------------------------------------------------
+Origem: DEV DEMO/TESTE. Cliente = "Empresa Demo Ltda [DEV DEMO]" (id cd463c93,
+        CNPJ falso). Descricao "Faturamento Missao 43 - M43_2026-06-29_18-31-00".
+Vinculos: os_id = 65c6a0e7 -> OS "OS-M43_2026-06-29_18-31-00", status
+          em_andamento e faturamento_status "A Faturar" (ou seja, a operacao
+          NEM sequer foi concluida/faturada, mas o recebivel esta pago).
+          fatura_id NULL.
+Estado:   status=pago; data_pagamento=2026-07-01 (maior que created_at, porem
+          created_at=updated_at, logo data_pagamento foi gravado ja no INSERT).
+Baixas:   0.
+Evidencia de recebimento: NENHUMA.
+
+CLASSIFICACAO: [C] STATUS PAGO SEM EVIDENCIA (origem = DEV DEMO / Missao 43).
+Inconsistencia adicional: OS associada continua "A Faturar"/em_andamento.
+
+--------------------------------------------------------------
+4) RESUMO DOS 3
+--------------------------------------------------------------
+Nenhum dos 3 possui financeira_baixas, referencia bancaria, conta real ou
+comprovante. Todos tem created_at = updated_at, ou seja: foram INSERIDOS ja
+com status='pago' (nao foram baixados depois). Os dois do tipo M43/DEMO e o
+"fat 0037" real foram gravados direto como pago, sem fluxo de baixa.
+Classificacao final: 3x [C]. Nenhum [A]. Nenhum [B] comprovado. Nenhum [D].
+
+--------------------------------------------------------------
+5) CAUSA TECNICA COMPROVAVEL (caminho que gera PAGO sem baixa)
+--------------------------------------------------------------
+Nao ha CONSTRAINT nem trigger de guarda que exige baixa para status='pago'.
+- pg_constraint financeiro_receber: apenas PK + 2 FK + UNIQUE(os_id).
+- Triggers em financeiro_receber:
+  * trg_evento_financeiro_receber_criado
+  * trg_evento_financeiro_receber_pago
+  O trg_evento_financeiro_receber_pago, ao detectar status IN
+  ('pago','recebido','baixado'), SOMENTE insere um evento em eventos_oficiais
+  (financeiro.receber.pago). NAO cria financeiro_baixas e NAO bloqueia a
+  operacao. Portanto um UPDATE de status para 'pago' "funciona" sem baixar.
+
+Caminhos no codigo que permitem PAGO sem baixa (todos diretos, sem RPC):
+- receberService.criarRecebivel(): payload.status = input.status || 'aberto'
+  -> aceita criar ja com status='pago' sem qualquer baixa.
+- receberService.atualizarRecebivel(): aceita campo 'status' e faz
+  .update() simples; validarTransicao permite ... -> 'pago'. Nao chama a RPC.
+- ContasReceberEnterprise.tsx (dataToSave.status = novaReceita.status) e
+  ContasReceber.tsx (atualizarRecebivel no salvar do formulario de edicao):
+  a UI envia 'status' livre, inclusive 'pago', sem exigir baixa.
+
+Fonte oficial de baixa existe e esta correta: receberService.baixarRecebivel()
+-> RPC f_registrar_baixa_financeira (unica que cria financeiro_baixas). O
+problema e que o fluxo de baixa NAO e obrigatorio quando o usuario cria/edita
+setando status='pago'.
+
+Conclusao de causa: os 3 registros foram criados ja 'pago' por insercao direta
+(seed M43/DEMO) e/ou pelo caminho criarRecebivel/atualizarRecebivel com status,
+que NAO exigem baixa. Isso explica 100% o padrao observado (pago + created_at=
+updated_at + zero baixas). Autor exato de cada linha (qual script/tela) nao e
+determinavel pelos dados persistidos; o CAMINHO TECNICO e comprovado.
+
+--------------------------------------------------------------
+6) AINDA EXISTE HOJE? (PAGO sem baixa)
+--------------------------------------------------------------
+SIM. O caminho continuar existente e nao protegido:
+ criarRecebivel com status='pago' OU atualizarRecebivel/setar status='pago' na
+ UI de edicao, ambos sem chamar f_registrar_baixa_financeira, e sem trigger/
+ constraint que forcem a baixa. (Resposta tecnica, sem teste destrutivo em
+ producao.)
+
+--------------------------------------------------------------
+7) IMPACTO REAL CONHECIDO
+--------------------------------------------------------------
+- Fluxo de Caixa REALIZADO (fluxoCaixaService) usa SOMENTE financeiro_baixas;
+  como os 3 nao tem baixa, NAO inflaram o "recebido realizado" do fluxo.
+- DRE competencia usa financeiro_receber por vencimento; status pago/aberto
+  nao altera a linha de receita bruta -> sem dupla contagem de receita.
+- Risco real: relatorios de aging/collectability e KPIs que tratam por STATUS
+  contam esses 3 como "ja coletados". Se 2d625b18 (Calvo, R$ 3.600) na
+  verdade NAO foi recebido, ha R$ 3.600 de conta a receber real mascarada de
+  pago (subestimando a carteira a receber). Os outros 2 (M43/DEMO) nao afetam
+  numerario real por serem dados de teste.
+- Nao identifiquei receita/despesa CONTADA DUAS VEZES (sem baixas duplicadas).
+
+--------------------------------------------------------------
+8) O QUE AINDA NAO PODE SER DETERMINADO
+--------------------------------------------------------------
+- Se 2d625b18 (Calvo R$ 3.600) teve efetivamente recebimento em banco fisico
+  fora do sistema (nao ha extrato/OCR/conciliacao persistida). Por isso fica
+  em [C], nao em [A] nem [B].
+- Autor/origem exata de cada linha (qual script ou clique criou 'pago'):
+  inexistente em trilha de auditoria persistida.
+- Se houve recebimento parcial.
+
+--------------------------------------------------------------
+9) RECOMENDACAO (SEM EXECUTAR NADA)
+--------------------------------------------------------------
+- Tratar os 3 como NAO COMPROVADOS de recebimento ([C]) ate evidencia externa
+  (extrato bancario/CNAB/comprovante) ser anexada.
+- 17e857d8 e cf6eea7b: classificar como dados de TESTE/SEED (M43/DEMO) na
+  triagem de homologacao; candidatos a limpeza em missao propria, apos
+  confirmacao - NAO limpar agora.
+- 2d625b18 (Calvo real): validar com o financeiro se houve recebimento real;
+  se nao, considerar reabrir (nao e decisao desta missao read-only).
+- Corrigir o P0 estrutural em missao dedicada: (a) ao setar status='pago' via
+  criarRecebivel/atualizarRecebivel, exigir/rotear para f_registrar_baixa_
+  financeira ou bloquear; e/ou (b) trigger/CHECK que impeca status pago sem
+  baixa integral. Modelo recomendado para a correcao: Qwen3.7 Plus
+  (implementacao media ja definida). Nao requer Luna.
+
+--------------------------------------------------------------
+CONFIRMACAO FINAL
+--------------------------------------------------------------
+NENHUM codigo alterado. NENHUM dado alterado. Nenhuma baixa criada, nenhum
+recebivel cancelado, nenhum estorno. Somente SELECTs read-only.
+Scripts auxiliares de investigacao foram removidos apos uso.

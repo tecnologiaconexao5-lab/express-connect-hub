@@ -1,0 +1,108 @@
+================================================================
+FIN-UI-BUG-01 — CORRECAO CRASH periodoEfetivo
+================================================================
+Data/Hora: 2026-09-13
+Arquivo: FIN-UI-BUG-01-PERIODO-EFETIVO.txt
+
+================================================================
+1. CAUSA RAIZ
+================================================================
+
+Em ContasPagar.tsx, um useEffect (antiga linha 630-633) referencia
+periodoEfetivo.inicio e periodoEfetivo.fim no array de dependencias:
+
+  useEffect(() => {
+    fetchLancamentos();
+    fetchPagoMes();
+  }, [periodoEfetivo.inicio, periodoEfetivo.fim]);  // <-- ANTES da declaracao
+
+Porem, a declaracao de periodoEfetivo (useMemo) occurs AFTER:
+
+  const periodoEfetivo = useMemo(() => {             // <-- LINHA 647
+    if (filtros.dataInicio && filtros.dataFim) {
+      return { inicio: filtros.dataInicio, fim: filtros.dataFim };
+    }
+    return periodoMes;
+  }, [filtros.dataInicio, filtros.dataFim, periodoMes]);
+
+Em JavaScript/TypeScript, declaracoes com `const` NAO sao hoisted.
+Durante o render, o React avalia o array de dependencias ANTES de
+executar o useEffect. Nesse momento, periodoEfetivo ainda esta no
+"temporal dead zone" → ReferenceError:
+
+  Cannot access 'periodoEfetivo' before initialization
+
+================================================================
+2. ARQUIVO ALTERADO
+================================================================
+
+  src/components/financeiro/ContasPagar.tsx
+
+================================================================
+3. CORRECAO APLICADA
+================================================================
+
+ANTES (ordem incorreta):
+  Linha 626-628: const [pagoMesValor, setPagoMesValor] = useState(0);
+  Linha 630-633: useEffect(() => { ... }, [periodoEfetivo...]);  // ERRO
+  Linha 636-645: const periodoMes = useMemo(...)
+  Linha 647-652: const periodoEfetivo = useMemo(...)
+
+DEPOIS (ordem correta):
+  Linha 626-628: const [pagoMesValor, setPagoMesValor] = useState(0);
+  Linha 629-639: const periodoMes = useMemo(...)
+  Linha 641-646: const periodoEfetivo = useMemo(...)
+  Linha 648-652: useEffect(() => { ... }, [periodoEfetivo...]);  // CORRETO
+
+Mudanca: o useEffect foi movido de ANTES para DEPOIS da declaracao
+de periodoEfetivo. Nenhuma logica, filtro, KPI ou regra foi alterada.
+
+================================================================
+4. VERIFICACAO ContasReceber
+================================================================
+
+ContasReceber.tsx:
+  - NAO usa periodoEfetivo
+  - useEffect em linha 443 usa dependencias [] (vazio)
+  - SEMReferenceError → NAO ALTERADO
+
+ContasReceberEnterprise.tsx:
+  - NAO usa periodoEfetivo
+  - useEffects usam state variables (filtros.*, page, mesOffset)
+  - SEMReferenceError → NAO ALTERADO
+
+================================================================
+5. VALIDACAO
+================================================================
+
+  npx tsc --noEmit          → 0 erros
+  npm run build             → 49.53s, build OK
+
+================================================================
+6. RISCOS RESTANTES
+================================================================
+
+  NENHUM. A correcao e puramente de ordem de declaracao.
+  Toda a logica preservada:
+  - Navegacao Mes (mesOffset)
+  - Periodo personalizado (filtros.dataInicio/dataFim)
+  - Filtros avancados (status, categoria, fornecedor, ordenacao)
+  - KPIs (totalAPagar, totalAtrasado, totalPagoMes, totalProvisao, totalVence7)
+  - Calculo de status efetivo (calcularStatusEfetivo)
+  - Dados reais (Supabase financeiro_pagar + financeiro_baixas)
+
+================================================================
+7. PROVA FINAL (PENDENTE OPERADOR)
+================================================================
+
+O operador deve:
+1. Abrir localhost:8800/financeiro?tab=pagar
+2. Verificar que a pagina carrega SEM ReferenceError
+3. Navegar entre meses (seta esquerda/direita)
+4. Aplicar periodo personalizado
+5. Verificar KPIs atualizados
+6. Confirmar dados reais visiveis na tabela
+
+================================================================
+FIM
+================================================================

@@ -1,0 +1,84 @@
+{
+  "ts": "2026-10-04T23:21:34.599Z",
+  "checks": [
+    {
+      "name": "orc_vinculo_colunas",
+      "ok": true,
+      "detail": "orcamentos possui os_vinculada_id/numero"
+    },
+    {
+      "name": "os_orcamento_origem_col",
+      "ok": true,
+      "detail": "ordens_servico possui orcamento_origem"
+    },
+    {
+      "name": "os_convertida_ref_valida",
+      "ok": true,
+      "detail": "0 OS referenciam orcamento_origem inexistente"
+    },
+    {
+      "name": "sem_os_duplicada_por_orcamento",
+      "ok": true,
+      "detail": "0 orcamentos com >1 OS"
+    },
+    {
+      "name": "convertido_tem_os",
+      "ok": true,
+      "detail": "0 orcamentos 'convertido' sem OS correspondente"
+    },
+    {
+      "name": "svc_aprovar",
+      "ok": true,
+      "detail": "aprovarOrcamento define status='aprovado'"
+    },
+    {
+      "name": "svc_converter",
+      "ok": true,
+      "detail": "gerarOSDoOrcamento define status='convertido'"
+    },
+    {
+      "name": "svc_idempotencia",
+      "ok": true,
+      "detail": "guarda anti-duplicidade por orcamento_id/os_vinculada_id"
+    },
+    {
+      "name": "svc_inadimplencia",
+      "ok": true,
+      "detail": "bloqueia conversao se cliente inadimplente"
+    },
+    {
+      "name": "svc_vinculo_os",
+      "ok": true,
+      "detail": "grava os_vinculada_id/numero no orcamento e orcamento_origem na OS"
+    }
+  ],
+  "orc_status": [
+    {
+      "s": "rascunho",
+      "n": 6
+    },
+    {
+      "s": "em_analise",
+      "n": 2
+    },
+    {
+      "s": "aprovado",
+      "n": 1
+    },
+    {
+      "s": "enviado",
+      "n": 1
+    }
+  ],
+  "conversoes": [],
+  "cols_orcamentos": [
+    "status",
+    "os_vinculada_id",
+    "os_vinculada_numero"
+  ],
+  "cols_ordens_servico": [
+    "orcamento_id",
+    "orcamento_origem"
+  ],
+  "os_de_orcamento": []
+}

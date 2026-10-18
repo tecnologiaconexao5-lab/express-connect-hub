@@ -1,6 +1,7 @@
 import { isStatusCancelado } from "@/components/operacao/escalaStatus";
 import { normalizarNumeroFinanceiro } from "./escalaMapper";
 import { detectarStatusComprovante, type StatusComprovante } from "@/helpers/statusComprovante";
+import { derivarStatusComprovanteFinanceiro } from "@/services/comprovantes/comprovantesService";
 
 // --- Tipos de saída do adapter ---
 
@@ -74,7 +75,7 @@ export function escalaParaItemFaturamento(aloc: Record<string, any>): ItemFatura
   const nf = normalizarNumeroFinanceiro;
   return {
     alocacaoId: aloc.id || "",
-    os: aloc.os || "",
+    os: aloc.osNumero || aloc.os || "",
     clienteId: aloc.clienteId || "",
     clienteNome: aloc.clienteNome || "",
     data: aloc.data ? String(aloc.data).split("T")[0] : "",
@@ -84,11 +85,14 @@ export function escalaParaItemFaturamento(aloc: Record<string, any>): ItemFatura
   };
 }
 
-export function escalaParaItemRepasse(aloc: Record<string, any>): ItemRepasseEscala {
+export function escalaParaItemRepasse(
+  aloc: Record<string, any>,
+  podOverride?: unknown
+): ItemRepasseEscala {
   const nf = normalizarNumeroFinanceiro;
   return {
     alocacaoId: aloc.id || "",
-    os: aloc.os || "",
+    os: aloc.osNumero || aloc.os || "",
     prestadorId: aloc.prestadorId || "",
     prestadorNome: aloc.prestadorNome || "",
     data: aloc.data ? String(aloc.data).split("T")[0] : "",
@@ -99,7 +103,14 @@ export function escalaParaItemRepasse(aloc: Record<string, any>): ItemRepasseEsc
     quantidadeEntregas: nf(aloc.quantidadeEntregas),
     status: aloc.status || "",
     statusPagamento: aloc.statusPagamento || "pendente",
-    comprovanteStatus: detectarStatusComprovante(aloc),
+    // MISSÃO A23-D: comprovanteStatus usa fonte oficial (entregas_protocolo)
+    // via podOverride (linha do POD). Quando ausente, mantém o fallback
+    // histórico (detectarStatusComprovante sobre a alocação) para não
+    // quebrar outros callers.
+    comprovanteStatus:
+      podOverride !== undefined
+        ? derivarStatusComprovanteFinanceiro(podOverride)
+        : detectarStatusComprovante(aloc),
   };
 }
 
@@ -109,7 +120,7 @@ export function extrairDadosRelatorioPagamento(aloc: Record<string, any>): Dados
     prestadorNome: aloc.prestadorNome || "Não informado",
     veiculo: aloc.prestadorVeiculo?.tipo_veiculo || "Não informado",
     placa: aloc.prestadorVeiculo?.placa || "Não informado",
-    os: aloc.os || "Nenhuma",
+    os: aloc.osNumero || aloc.os || "Nenhuma",
     clienteNome: aloc.clienteNome || "Nenhum",
     data: aloc.data ? String(aloc.data).split("T")[0] : "",
     horarioInicio: aloc.horarioInicio || "",

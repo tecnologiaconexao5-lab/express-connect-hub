@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, Line, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "@/lib/supabase";
+import { calcularStatusEfetivo } from "@/helpers/statusVencimento";
 
 const fmtFin = (v: number) => v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "—";
 const fmtPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
@@ -90,7 +91,7 @@ export default function DashboardFinanceiroEnterprise() {
         { data: pre },
       ] = await Promise.all([
         supabase.from("ordens_servico")
-          .select("id, numero, cliente_id, prestador_id, valor_cliente, custo_prestador, pedagio, adicionais, descontos, distancia_km, tipo_operacao, status, data, created_at, margem_liquida, margem_bruta, volumes, peso")
+          .select("id, numero, cliente_id, prestador_id, valor_cliente, custo_prestador, pedagio, adicionais, descontos, distancia_km, tipo_operacao, status, data, created_at, margem_liquida, margem_bruta, volumes, peso, status_faturamento")
           .in("status", ["finalizada", "concluida"])
           .gte("data", `${mesAtual}-01`),
         supabase.from("ordens_servico")
@@ -104,13 +105,18 @@ export default function DashboardFinanceiroEnterprise() {
           .gte("data", `${new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1).toISOString().split("T")[0]}`)
           .order("data", { ascending: true }),
         supabase.from("financeiro_pagar")
-          .select("id, descricao, valor, status, prestador_id, prestador, data_vencimento, categoria")
-          .in("status", ["aberto", "a_vencer", "vencido"]),
+          .select("id, descricao, valor, status, fornecedor_id, prestador, data_vencimento, categoria")
+          .eq("is_teste", false)
+          .in("status", ["aberto", "a vencer", "a_vencer", "pendente", "vencido"]),
         supabase.from("pagamentos_prestadores")
-          .select("id, prestador_id, prestador_nome, valor_liquido, valor, status_pagamento, data_competencia, origem_lancamento")
+          .select("id, prestador_id, prestador_nome, valor_liquido, status_pagamento, data_competencia, origem_lancamento")
+          .eq("is_teste", false)
           .in("status_pagamento", ["pendente", "agendado", "em_lote"]),
         supabase.from("financeiro_receber")
           .select("id, cliente_id, cliente, valor, status, data_vencimento, data_pagamento, os_id")
+          .eq("is_teste", false)
+          // TMS-FIN-PROG-05C.3A — cancelados não inflam recebível/receita ativa
+          .not("status", "in", "(cancelado,cancelada)")
           .order("data_vencimento", { ascending: true }),
         supabase.from("clientes").select("id, nome_fantasia, razao_social, cnpj"),
         supabase.from("prestadores").select("id, nome_completo, cpf_cnpj"),
@@ -140,7 +146,7 @@ export default function DashboardFinanceiroEnterprise() {
     const custoPrestadoresMes = dadosMesAtual.reduce((a: number, o: any) => a + (o.custo_prestador || 0), 0);
     const custoPrestadoresAnt = dadosMesAnterior.reduce((a: number, o: any) => a + (o.custo_prestador || 0), 0);
 
-    const custoGeralMes = pagamentosGeral.filter((r: any) => !r.prestador_id && !r.prestador)
+    const custoGeralMes = pagamentosGeral.filter((r: any) => !r.fornecedor_id && !r.prestador)
       .reduce((a: number, r: any) => a + (r.valor || 0), 0);
 
     const custosTotais = custoPrestadoresMes + custoGeralMes;
@@ -169,28 +175,47 @@ export default function DashboardFinanceiroEnterprise() {
     const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
     const hojeStr = hoje.toISOString().split("T")[0];
 
-    const aReceber7d = receber.filter((r: any) =>
-      (r.data_vencimento || r.vencimento) >= hojeStr &&
-      (r.data_vencimento || r.vencimento) <= em7dias &&
-      (r.status === "aberto" || r.status === "a_vencer")
-    ).reduce((a: number, r: any) => a + (r.valor || 0), 0);
+    const aReceber7d = receber.filter((r: any) => {
+      const venc = (r.data_vencimento || r.vencimento);
+      const se = calcularStatusEfetivo({
+        statusPersistido: r.status,
+        dataVencimento: venc,
+        dataPagamento: r.data_pagamento || r.data_baixa,
+      });
+      return venc >= hojeStr && venc <= em7dias && (se === "a_vencer" || se === "vence_hoje");
+    }).reduce((a: number, r: any) => a + (r.valor || 0), 0);
 
-    const pagarGeral = pagamentosGeral.filter((r: any) => !r.prestador_id && !r.prestador);
-    const aPagar7d = pagarGeral.filter((r: any) =>
-      (r.data_vencimento) >= hojeStr &&
-      (r.data_vencimento) <= em7dias
-    ).reduce((a: number, r: any) => a + (r.valor || 0), 0);
+    const pagarGeral = pagamentosGeral.filter((r: any) => !r.fornecedor_id && !r.prestador);
+    const aPagar7d = pagarGeral.filter((r: any) => {
+      const venc = r.data_vencimento;
+      const se = calcularStatusEfetivo({
+        statusPersistido: r.status,
+        dataVencimento: venc,
+      });
+      return venc >= hojeStr && venc <= em7dias && (se === "a_vencer" || se === "vence_hoje" || se === "atrasado");
+    }).reduce((a: number, r: any) => a + (r.valor || 0), 0);
 
     const repassesPendentes = pagamentosPrestador
       .filter((r: any) => r.status_pagamento === "pendente" || r.status_pagamento === "agendado")
-      .reduce((a: number, r: any) => a + (r.valor_liquido || r.valor || 0), 0);
+      .reduce((a: number, r: any) => a + (r.valor_liquido || 0), 0);
 
-    const inadimplencia = receber.filter((r: any) => r.status === "vencido" || r.status === "aberto" && (r.data_vencimento || r.vencimento) < hojeStr)
-      .reduce((a: number, r: any) => a + (r.valor || 0), 0);
+    const inadimplencia = receber.filter((r: any) => {
+      const se = calcularStatusEfetivo({
+        statusPersistido: r.status,
+        dataVencimento: r.data_vencimento || r.vencimento,
+        dataPagamento: r.data_pagamento || r.data_baixa,
+      });
+      return se === "atrasado";
+    }).reduce((a: number, r: any) => a + (r.valor || 0), 0);
 
-    const clientesInadimplentes = [...new Set(receber.filter((r: any) =>
-      r.status === "vencido" || (r.status === "aberto" && (r.data_vencimento || r.vencimento) < hojeStr)
-    ).map((r: any) => r.cliente_id || r.cliente))].length;
+    const clientesInadimplentes = [...new Set(receber.filter((r: any) => {
+      const se = calcularStatusEfetivo({
+        statusPersistido: r.status,
+        dataVencimento: r.data_vencimento || r.vencimento,
+        dataPagamento: r.data_pagamento || r.data_baixa,
+      });
+      return se === "atrasado";
+    }).map((r: any) => r.cliente_id || r.cliente).filter(Boolean))].length;
 
     return { aReceber7d, aPagar7d, repassesPendentes, totalCompromissado: aPagar7d + repassesPendentes, inadimplencia, clientesInadimplentes };
   }, [receber, pagamentosGeral, pagamentosPrestador]);
@@ -268,7 +293,7 @@ export default function DashboardFinanceiroEnterprise() {
       r.status === "aberto" && (r.data_vencimento || r.vencimento) === new Date().toISOString().split("T")[0]
     ).slice(0, 5);
 
-    const pagamentosProgramados = pagamentosGeral.filter((r: any) => !r.prestador_id && !r.prestador)
+    const pagamentosProgramados = pagamentosGeral.filter((r: any) => !r.fornecedor_id && !r.prestador)
       .filter((r: any) => r.status === "aberto" || r.status === "a_vencer")
       .slice(0, 5);
 
@@ -300,7 +325,7 @@ export default function DashboardFinanceiroEnterprise() {
     );
   }
 
-  const semDados = dadosMesAtual.length === 0 && pagamentosGeral.length === 0;
+  const semDados = dadosMesAtual.length === 0 && pagamentosGeral.length === 0 && receber.length === 0;
 
   return (
     <div className="space-y-6">

@@ -33,20 +33,7 @@ const mockXmls: any[] = [];
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// Simulação de configuração Focus NFe
-const FOCUS_CONFIG = {
-  token: import.meta.env.VITE_FOCUS_TOKEN || "",
-  ambiente: import.meta.env.VITE_FOCUS_AMBIENTE || "homologacao",
-  configured: false // Alterar para true quando configurar
-};
-
-const isFocusConfigured = () => {
-  if (!FOCUS_CONFIG.token) {
-    toast.warning("Integração Focus NFe pendente de configuração. Defina VITE_FOCUS_TOKEN nas variáveis de ambiente.");
-    return false;
-  }
-  return true;
-};
+const MSG_FOCUS_SECRETS = "O token Focus deve ser configurado nos Supabase Secrets da Edge Function focus-emissao, nunca no frontend. Consulte o guia de configuração Focus NFe.";
 
 export default function Fiscal() {
   useEffect(() => {
@@ -119,25 +106,15 @@ export default function Fiscal() {
   };
 
   const handleEmitirDocumento = (tipo: "cte" | "mdfe" | "nfse" | "boleto") => {
-    if (!isFocusConfigured()) return;
-    setTipoEmitir(tipo);
-    setShowEmitirModal(true);
-    console.log(`[FISCAL] Emitir ${tipo} - Fluxo: selecionar OS → emitir via Focus NFe → gerar documento`);
+    toast.info(MSG_FOCUS_SECRETS);
   };
 
   const handleConfirmarEmissao = () => {
-    if (!isFocusConfigured()) return;
-    toast.info(`Emitindo ${tipoEmitir.toUpperCase()} via Focus NFe... simulated`);
-    toast.success(`${tipoEmitir.toUpperCase()} emitido com sucesso! (Simulação)`);
-    setShowEmitirModal(false);
-    console.log(`[FISCAL] ${tipoEmitir.toUpperCase()} emitido para OS: ${osSelecionada}`);
+    toast.info(MSG_FOCUS_SECRETS);
   };
 
   const handleGerarBoleto = () => {
-    if (!isFocusConfigured()) return;
-    toast.info("Gerando Boleto via Efí... (simulação)");
-    toast.success("Boleto gerado! Para enviar, use Comunicação.");
-    console.log(`[FISCAL] Boleto gerado para OS: ${osSelecionada}`);
+    toast.info(MSG_FOCUS_SECRETS);
   };
 
   
@@ -174,9 +151,9 @@ export default function Fiscal() {
           <Button variant="outline" size="sm" onClick={() => setShowConfigModal(true)} className="gap-1">
             <Settings className="w-4 h-4" /> Configurar
           </Button>
-          <Badge variant="secondary" className={FOCUS_CONFIG.configured ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>
+          <Badge variant="secondary" className="bg-amber-100 text-amber-700">
             <AlertCircle className="w-3 h-3 mr-1" />
-            {FOCUS_CONFIG.configured ? "Focus OK" : "Pendente"}
+            Focus: Pendente
           </Badge>
         </div>
       </div>
@@ -284,12 +261,10 @@ export default function Fiscal() {
           <div className="space-y-4 py-4">
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-sm font-medium text-amber-800">Focus NFe / Efí</p>
-              <p className="text-xs text-amber-600 mt-1">Configure as credenciais no arquivo .env para ativar a emissão:</p>
+              <p className="text-xs text-amber-600 mt-1">O token Focus e gerenciado exclusivamente nos Supabase Secrets da Edge Function:</p>
               <ul className="text-xs text-amber-600 mt-2 space-y-1">
-                <li>• VITE_FOCUS_TOKEN=seu_token</li>
-                <li>• VITE_FOCUS_AMBIENTE=homologacao ou producao</li>
-                <li>• VITE_EFI_CLIENT_ID=seu_client_id</li>
-                <li>• VITE_EFI_CLIENT_SECRET=seu_secret</li>
+                <li>• O token Focus e configurado nos Supabase Secrets da Edge Function focus-emissao</li>
+                <li>• Nunca insira token no frontend ou em arquivos .env com prefixo VITE_</li>
               </ul>
             </div>
             <div className="grid grid-cols-2 gap-4">

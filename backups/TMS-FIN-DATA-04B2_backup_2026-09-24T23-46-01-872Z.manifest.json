@@ -1,0 +1,24 @@
+{
+ "data_hora": "2026-09-24T23:46:02.134Z",
+ "sql": {
+  "caminho": "C:\\Users\\DIEGO BALBINO\\Desktop\\Pasta Compartilhada\\DOCUMENTOS EMPRESA\\08_TECNOLOGIA_SISTEMAS\\express-connect-hub\\backups\\TMS-FIN-DATA-04B2_backup_2026-09-24T23-46-01-872Z.sql",
+  "bytes": 1647531,
+  "sha256": "c668322a807be92cc497efc21fb6a25f837be9f691cdccf7a798ce5141e1d54a"
+ },
+ "json": {
+  "caminho": "C:\\Users\\DIEGO BALBINO\\Desktop\\Pasta Compartilhada\\DOCUMENTOS EMPRESA\\08_TECNOLOGIA_SISTEMAS\\express-connect-hub\\backups\\TMS-FIN-DATA-04B2_backup_2026-09-24T23-46-01-872Z.json",
+  "bytes": 2071105,
+  "sha256": "f51efbfef7e8d202e9584cd9f6ce15c8eabf890fdc05b3ffd60c3a0fa4ae5a6d"
+ },
+ "counts": {
+  "ordens_servico": 162,
+  "alocacoes_escala": 199,
+  "financeiro_receber": 52,
+  "financeiro_pagar": 114,
+  "pagamentos_prestadores": 97,
+  "composicao_financeira_os": 52,
+  "rede_oportunidades": 12,
+  "rede_visualizacoes": 3,
+  "os_historico": 203
+ }
+}

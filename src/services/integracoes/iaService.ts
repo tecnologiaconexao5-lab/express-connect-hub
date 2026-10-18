@@ -1,4 +1,5 @@
 import { aiProviderManager } from "../ia/aiProviderManager";
+import { proxyIaClient } from "../ia/proxyIaClient";
 
 export interface IAResult {
   ok: boolean;
@@ -26,29 +27,45 @@ export async function gerarRespostaIA({
   }
 }
 
-export async function testarGroq(apiKey: string): Promise<IAResult> {
+export async function testarGroq(): Promise<IAResult> {
   const t0 = Date.now();
   try {
-    const res = await aiProviderManager.testGroq(apiKey, "llama3-8b-8192");
-    return { ok: true, latencyMs: Date.now() - t0, data: res };
+    const resultado = await proxyIaClient.executar({
+      provider: "groq",
+      model: "llama-3.1-8b-instant",
+      prompt: "Ping",
+      max_tokens: 10,
+    });
+    if (resultado.sucesso) {
+      return { ok: true, latencyMs: Date.now() - t0, data: resultado.resposta };
+    }
+    return { ok: false, error: resultado.erro || "Falha", latencyMs: Date.now() - t0 };
   } catch (e: any) {
     return { ok: false, error: e.message, latencyMs: Date.now() - t0 };
   }
 }
 
-export async function testarGemini(apiKey: string): Promise<IAResult> {
+export async function testarGemini(): Promise<IAResult> {
   const t0 = Date.now();
   try {
-    const res = await aiProviderManager.testGemini(apiKey, "gemini-1.5-pro");
-    return { ok: true, latencyMs: Date.now() - t0, data: res };
+    const resultado = await proxyIaClient.executar({
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      prompt: "Ping",
+      max_tokens: 10,
+    });
+    if (resultado.sucesso) {
+      return { ok: true, latencyMs: Date.now() - t0, data: resultado.resposta };
+    }
+    return { ok: false, error: resultado.erro || "Falha", latencyMs: Date.now() - t0 };
   } catch (e: any) {
     return { ok: false, error: e.message, latencyMs: Date.now() - t0 };
   }
 }
 
 export async function sugerirValorFrete(distanciaKm: number, pesoKg: number): Promise<number> {
-  const prompt = `Sugira um valor de frete BRL para ${distanciaKm}km e ${pesoKg}kg. Retorne apenas o número (ex: 150.50).`;
-  const res = await gerarRespostaIA({ prompt, contexto: "Logística" });
+  const prompt = `Sugira um valor de frete BRL para ${distanciaKm}km e ${pesoKg}kg. Retorne apenas o numero (ex: 150.50).`;
+  const res = await gerarRespostaIA({ prompt, contexto: "Logistica" });
   if (res.ok && res.data) {
     const v = parseFloat(res.data.replace(/[^0-9.]/g, ''));
     if (!isNaN(v)) return v;
@@ -63,7 +80,7 @@ export async function gerarMensagemComercial(cliente: string, valor: number): Pr
 }
 
 export async function gerarResumoOperacional(osData: any): Promise<string> {
-  const prompt = `Faça um resumo operacional em 1 frase para esta OS: ${JSON.stringify(osData)}`;
+  const prompt = `Fac,a um resumo operacional em 1 frase para esta OS: ${JSON.stringify(osData)}`;
   const res = await gerarRespostaIA({ prompt, contexto: "Operacional TMS" });
   return res.data || "";
 }

@@ -1,0 +1,187 @@
+ESCALA-VEIC-TABELA-07-CONDICAO-TERMICA
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+OBJETIVO
+==================================================
+
+Auditar e corrigir a modelagem/seleção da condição térmica na Escala e na
+tabela do cliente, mantendo-a INDEPENDENTE do tipo de veículo.
+Proibido criar tipos artificiais (fiorino_refrigerada, vuc_refrigerado, ...).
+
+==================================================
+FASE 1 — AUDITORIA (evidência real)
+==================================================
+
+VEHICLE_DIMENSION=tabelas_valores.tipo_veiculo (fiorino, vuc, van, hr, tres_quartos, moto, ...)
+THERMAL_DIMENSION=tabelas_valores.classificacao_termica (seco | termico | refrigerado)
+
+VEHICLE_FIELD_CANONICAL=tabelas_valores.tipo_veiculo
+THERMAL_FIELD_CURRENT=tabelas_valores.classificacao_termica (text, SEM CHECK constraint)
+THERMAL_VALUES_CURRENT=seco (3), refrigerado (3) — nenhum "termico" cadastrado ainda
+THERMAL_VALUE_TERMICO_SUPPORTED=YES (coluna text livre; helper normaliza; UI Comercial agora oferece)
+CLIENT_TABLE_THERMAL_FIELD=tabelas_valores.classificacao_termica
+ESCALA_THERMAL_FIELD=ANTES inexistente (seleção só por cliente+tipo_veiculo);
+  DEPOIS condicaoTerica derivado de veiculos.tipo_carga (atributo explícito do veículo)
+DATABASE_CHANGE_REQUIRED=NO
+
+Outros campos auditados:
+  tabelas_valores.exigencia_termica (text) → 100% null (não utilizado)
+  veiculos.tipo_carga (text, sem CHECK): null(61), seco(2), refrigerado(1), misto(1), seca(1)
+  veiculos.temperatura_min/max (numeric) → não usados na seleção de tabela
+  alocacoes_escala → apenas tipo_veiculo (sem coluna térmica)
+  eligibilidadeOperacionalService → já modela seco/termico/refrigerado/congelado (elegibilidade OS)
+
+Tabelas atuais (tabelas_valores):
+  Moto (universal) seco | CALVO hr seco | Calvo hr seco | DVL fiorino refrigerado
+  DVL tres_quartos refrigerado | Mineirão fiorino refrigerado
+  → nenhum cliente com 2 tabelas do MESMO veículo e térmicas diferentes hoje.
+
+==================================================
+DECISÃO DE SCHEMA
+==================================================
+
+MIGRATION_REQUIRED=NO
+PROPOSED_SCHEMA_CHANGE=N/A (nenhuma migration necessária)
+DATA_BACKFILL_REQUIRED=NO
+COMPATIBILITY_RISK=BAIXO (condição desconhecida = curinga; nenhum dado convertido)
+MIGRATIONS=0
+
+A coluna `classificacao_termica` é TEXT sem CHECK → armazena "termico" com segurança.
+Nenhum dado foi convertido silenciosamente.
+
+==================================================
+FASE 2/4 — REGRA CANÔNICA E ESCALA
+==================================================
+
+A seleção considera, separadamente:
+  CLIENTE + TIPO DE VEÍCULO + CONDIÇÃO TÉRMICA + vigência/status.
+
+Regras implementadas:
+  - condição desconhecida (null/""/misto) = curinga (preserva registros existentes);
+  - condição conhecida exige igualdade canônica (seco ≠ termico ≠ refrigerado);
+  - tabela incompatível NÃO é selecionada;
+  - múltiplas tabelas compatíveis com térmicas distintas e sem desambiguação
+    → NÃO escolher arbitrariamente; aviso na UI e nenhuma seleção;
+  - específica antes da universal (preservado);
+  - veículo real continua obrigatório; não infere térmica pelo nome do veículo.
+
+==================================================
+IMPLEMENTAÇÃO
+==================================================
+
+1. src/helpers/condicaoTerica.ts (NOVO)
+   - normalizarCondicaoTerica(v): seco|termico|refrigerado|null (acentos/case/seca/misto)
+   - condicaoTericaCompativel(tabela, veiculo): curinga quando desconhecido; igualdade quando ambos conhecidos
+   - selecionarTabelaPorCondicaoTerica(candidatas, veiculoTermica):
+       { tabela, ambiguidade, compativeis }
+
+2. src/components/operacao/EscalaLista.tsx
+   - SELECT tabelas_valores: + classificacao_termica (específica e universal).
+   - buscarTabelaValoresCliente(clienteId, nome, tipoVeiculo, data, condicaoTerica?):
+       aplica selecionarTabelaPorCondicaoTerica nas candidatas do cliente;
+       universal via lista + mesma seleção; não escolhe incompatível/ambíguo.
+   - buscarDadosVeiculoPrestador: + veiculos.tipo_carga → prestadorVeiculo.condicao_termica.
+   - Call sites passam condicaoTerica (reabertura e troca de cliente).
+   - Aviso discreto na UI quando há ambiguidade térmica.
+
+3. src/components/comercial/TabelaValoresForm.tsx
+   - Select "Exigência Térmica": + opção "Térmico" (entre Seco e Refrigerado).
+   - Layout preservado (1 opção adicionada; sem redesenho).
+
+4. src/test/escala_veic_tabela_07_condicao_termica.test.ts (NOVO) — T1..T15.
+
+FILES_MODIFIED=
+  src/helpers/condicaoTerica.ts (novo)
+  src/components/operacao/EscalaLista.tsx
+  src/components/comercial/TabelaValoresForm.tsx
+  src/test/escala_veic_tabela_07_condicao_termica.test.ts (novo)
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+VEHICLE_DIMENSION=tipo_veiculo
+THERMAL_DIMENSION=classificacao_termica (seco|termico|refrigerado)
+THERMAL_FIELD_CURRENT=classificacao_termica
+THERMAL_VALUES_CURRENT=seco, refrigerado
+THERMAL_VALUE_TERMICO_SUPPORTED=YES
+CLIENT_TABLE_MATCH_USES_THERMAL=YES
+VEHICLE_THERMAL_INDEPENDENT=YES
+ARTIFICIAL_VEHICLE_TYPES_CREATED=NO
+ESCALA05_PRESERVED=YES
+ESCALA06_PRESERVED=YES
+ESCALA_PRESTADOR_02_PRESERVED=YES
+MIGRATION_REQUIRED=NO
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+TESTES T1..T15 (19 asserts — 19/19 PASS)
+==================================================
+
+T1  Fiorino + Seco permanece Fiorino                          PASS
+T2  Fiorino + Térmico permanece Fiorino                       PASS
+T3  Fiorino + Refrigerado permanece Fiorino                   PASS
+T4  Seco ≠ Térmico                                            PASS
+T5  Térmico ≠ Refrigerado                                     PASS
+T6  veículo e térmico são dimensões independentes             PASS
+T7  tabela específica correta é priorizada                    PASS
+T8  tabela térmica incompatível não é selecionada             PASS
+T9  nenhuma composição artificial de tipo_veiculo             PASS
+T10 ESCALA-05 preservada                                      PASS
+T11 ESCALA-06 preservada                                      PASS
+T12 ESCALA-PRESTADOR-02 preservada                            PASS
+T13 explicit 0 da franquia continua válido                    PASS
+T14 nenhuma mistura cliente/prestador                         PASS
+T15 typecheck/build (integridade)                             PASS
+
+TESTS_TOTAL=15
+TESTS_EXECUTED=19
+TESTS_PASS=19
+TESTS_FAIL=0
+
+REGRESSÃO:
+  escala_veic_tabela_05_client_match.test.ts        24/24 PASS
+  escala_veic_tabela_06_franquia_canonical.test.ts  16/16 PASS
+  escala_prestador_02_repasse_dual.test.ts          18/18 PASS
+  ag07ib3_refrigerado_termico.test.ts               34/34 PASS
+
+SUÍTE COMPLETA (npx vitest run):
+  Test Files: 10 failed | 81 passed | 1 skipped (92)
+  Tests:      57 failed | 1327 passed | 155 skipped (1539)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates).
+  Nenhuma em condicaoTerica/EscalaLista/TabelaValoresForm.
+
+==================================================
+TSC / BUILD
+==================================================
+
+TSC_STATUS:
+  npm run typecheck → 0 erros novos nos arquivos desta missão.
+  condicaoTerica.ts / teste 07 → sem erros.
+  Baseline pré-existente inalterado (ex.: 3 erros antigos em EscalaLista.tsx
+  linhas 3018/3237/3545 — REVERSA_TIPO_LABELS/Camera/alocacaoEmEdicao;
+  TabelaValoresForm.tsx:325 pre-existente; demais módulos/testes).
+
+BUILD_STATUS:
+  npm run build → ✓ built in 34.34s
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Sem migration automática (MIGRATION_REQUIRED=NO).
+- Sem alteração de produção (DB_WRITES=0).
+- Sem hardcode Mineirão/Fiorino.
+- Comercial: layout preservado (somente 1 opção adicionada).
+- Não tocou APP/POD/Financeiro/loading global.
+- Sem saneamento Clayton nesta missão.
+- Sem mega-refactor. Não iniciou outra missão.
+- ESCALA-05/06/PRESTADOR-02 preservadas.
+
+DB_WRITES=0
+MIGRATIONS=0

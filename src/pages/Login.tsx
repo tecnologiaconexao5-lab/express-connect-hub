@@ -1,29 +1,69 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { login, getRedirectPath } from "@/lib/auth";
-import { Truck, LogIn, Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { getRedirectPath } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { Truck, LogIn, Eye, EyeOff, Mail, Lock, AlertTriangle } from "lucide-react";
 
 const Login = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { login, error: authError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [sessaoExpirada, setSessaoExpirada] = useState(false);
+  const loadingRef = useRef(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const expirada = sessionStorage.getItem("session_expired");
+    if (expirada === "true") {
+      setSessaoExpirada(true);
+      sessionStorage.removeItem("session_expired");
+    }
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setTimeout(() => {
-      const user = login(email, password);
-      if (user) {
-        navigate(getRedirectPath(user.role));
-      } else {
-        setError("Email ou senha inválidos");
+    loadingRef.current = true;
+
+    // Safety net: garante que loading para apos 30s mesmo que algo trave
+    const safetyTimer = setTimeout(() => {
+      if (loadingRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+        setError("O servidor esta demorando para responder. Tente novamente.");
       }
+    }, 30000);
+
+    try {
+      const user = await login(email, password);
+      loadingRef.current = false;
+      clearTimeout(safetyTimer);
+      if (user) {
+        const redirect = searchParams.get("redirect");
+        if (redirect && (redirect.startsWith("/") || redirect.startsWith("http"))) {
+          try {
+            const url = new URL(redirect, window.location.origin);
+            if (url.origin === window.location.origin) {
+              navigate(url.pathname + url.search);
+              return;
+            }
+          } catch { /* fallback para getRedirectPath */ }
+        }
+        navigate(getRedirectPath(user.role));
+      }
+      // Se login retornou null, o erro ja foi definido pelo AuthContext
+    } catch (e: any) {
+      setError(e?.message || "Erro inesperado ao fazer login");
+    } finally {
+      loadingRef.current = false;
+      clearTimeout(safetyTimer);
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (
@@ -120,8 +160,18 @@ const Login = () => {
               </div>
             </div>
 
-            {error && (
-              <p className="text-destructive text-sm text-center">{error}</p>
+            {sessaoExpirada && (
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Sessão expirada</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">Sua sessão expirou. Faça login novamente para continuar.</p>
+                </div>
+              </div>
+            )}
+
+            {(error || authError) && (
+              <p className="text-destructive text-sm text-center">{error || authError}</p>
             )}
 
             <button
@@ -140,13 +190,13 @@ const Login = () => {
             </button>
 
             <div className="text-center">
-              <a href="#" className="text-sm text-orange-500 hover:text-orange-600 font-medium">
+              <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600 font-medium">
                 Esqueci minha senha
-              </a>
+              </Link>
             </div>
           </form>
 
-          <p className="text-xs text-muted-foreground text-center mt-8">
+            <p className="text-xs text-muted-foreground text-center mt-8">
             Use suas credenciais corporativas
           </p>
         </div>
@@ -156,3 +206,4 @@ const Login = () => {
 };
 
 export default Login;
+

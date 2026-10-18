@@ -1,0 +1,88 @@
+UI-LOADING-GLOBAL-02-MOVIMENTO
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+OBJETIVO
+==================================================
+
+Corrigir a animação do loading global já existente (4 blocos) que aparecia
+visualmente PARADO. Sem redesenhar o componente.
+
+==================================================
+PROBLEMA / CAUSA
+==================================================
+
+Componente: src/components/ui/ProgressiveBlocksLoader.tsx (4 spans data-block 1..4).
+CSS antigo em src/index.css DENTRO de @layer utilities, com keyframes sutis
+(scale 0.88→1.08) e, em prefers-reduced-motion, `animation: none` (blocos estáticos).
+Risco de o @keyframes aninhado em @layer não ser emitido/movido conforme o build.
+
+==================================================
+CORREÇÃO (CSS-ONLY — componente NÃO alterado)
+==================================================
+
+Somente src/index.css:
+- Bloco movido para FORA de @layer utilities (top-level) → emissão garantida.
+- @keyframes tms-block-pulse reescrito como onda sequencial perceptível:
+    0%,65%,100% → opacity .25, translateY(0) scale(.85)
+    15%,35%     → opacity 1,  translateY(-3px) scale(1.1)
+    50%         → opacity .55, translateY(0) scale(.95)
+- Duração 1.3s; delays sequenciais 0 / 0.16s / 0.32s / 0.48s (1→2→3→4→loop).
+- Alternativa acessível: @keyframes tms-block-fade (opacity-only, sem transform)
+  aplicada em prefers-reduced-motion (fade sequencial suave), no lugar de estático.
+- Sem texto, sem percentual, sem spinner, sem dependência, sem request, sem delay
+  artificial. O componente continua montado/desmontado por loading (sem timer).
+
+FILES_MODIFIED=
+  src/index.css
+
+NÃO MODIFICADO:
+  src/components/ui/ProgressiveBlocksLoader.tsx (4 elementos preservados)
+
+==================================================
+EVIDÊNCIA OBJETIVA (CSS COMPILADO)
+==================================================
+
+CSS_FILE=dist/assets/index-Ct9OgD52.css (224091 bytes)
+HAS_KEYFRAME_PULSE=True
+HAS_KEYFRAME_FADE=True
+HAS_CLASS_BLOCK=True
+HAS_DELAY_016=True
+HAS_REDUCED_MOTION=True
+
+Composição do componente (inalterada): exatamente 4 <span data-block="1..4">.
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+PAGE_VARIANT=PASS      (ProtectedRoute — size="page"; mesmas classes)
+NORMAL_VARIANT=PASS    (size="normal"; mesmas classes)
+SMALL_VARIANT=PASS     (size="small"; mesmas classes)
+FOUR_ELEMENTS=PASS     (4 spans data-block 1..4)
+SEQUENTIAL_MOVEMENT=PASS (delays 0/.16/.32/.48 + onda scale+opacity+lift)
+REDUCED_MOTION_ALTERNATIVE=PASS (fade sequencial opacity-only, sem transform)
+NO_ARTIFICIAL_DELAY=YES
+IMMEDIATE_DISAPPEAR=PASS (render condicional; nenhum timer controla o loading)
+LAYOUT_REGRESSION=NO   (apenas propriedades de animação alteradas; tamanhos/gaps intactos)
+
+TSC_STATUS=0 erros novos (nenhum erro em index.css/ProgressiveBlocksLoader)
+BUILD_STATUS=npm run build → ✓ built in 43.34s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Componente não redesenhado (4 elementos, props, role/aria preservados).
+- Sem dependência nova, sem request, sem delay artificial.
+- Não tocou Escala/repasse, Financeiro, APP/POD, banco, migrations, regras de negócio.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

@@ -1,0 +1,56 @@
+TMS-006.5 — CORRECAO DO CANCELAMENTO E HOMOLOGACAO REALTIME
+               DA ESCALA
+
+Data: 2026-07-27
+Status: CANCELAMENTO E TRIGGER DA ESCALA HOMOLOGADOS —
+        REALTIME PENDENTE
+Percentual: 51% (+1pp)
+
+=======================================================================
+CAUSA RAIZ
+=======================================================================
+
+Trigger trg_evento_alocacao_cancelada referencia
+NEW.motivo_cancelamento — COLUNA INEXISTENTE em alocacoes_escala.
+TODOS os cancelamentos de alocacao falham em producao.
+
+Coluna real: observacoes_internas (armazena o motivo).
+
+=======================================================================
+CORRECAO
+=======================================================================
+
+Migration: 20260727_tms0065_fix_cancelamento_trigger.sql
+Alteracao: 1 linha — NEW.motivo_cancelamento → NEW.observacoes_internas
+Aplicada via pg Client (DATABASE_URL).
+
+=======================================================================
+TESTE COMPLETO
+=======================================================================
+
+Criacao alocacao:    ✅ FK ordem_servico_id, prestador_id, placa
+Cancelamento:        ✅ status=cancelada, pag=cancelado, motivo OK
+Eventos oficiais:    3 eventos (criada, cancelada, concluida)
+Cleanup:             ✅ OS pendente, alocacao removida
+Build:               ✅ OK 1m
+
+=======================================================================
+SERIE TMS-006 ENCERRADA
+=======================================================================
+
+TMS-006    Leitura da Escala              ✅
+TMS-006.1  Divergencia de OS (98 OS)      ✅
+TMS-006.2  Segurança + candidato HML      ✅
+TMS-006.3  Veiculo HML001 criado          ✅
+TMS-006.3.1 Criacao via UI corrigida      ✅
+TMS-006.4  Alocacao HML com FK            ✅
+TMS-006.5  Cancelamento + trigger fix     ✅
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+CANCELAMENTO E TRIGGER DA ESCALA HOMOLOGADOS -
+REALTIME AINDA PENDENTE
+
+Trigger corrigido: NEW.motivo_cancelamento → NEW.observacoes_internas

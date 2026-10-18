@@ -1,0 +1,248 @@
+RELATÓRIO TMS-S04C — RELATÓRIO INDIVIDUAL DE FATURAMENTO DO CLIENTE
+Data: 22/08/2026
+Status: IMPLEMENTADO + PDF DE PROVA GERADO (aprovação visual aguarda usuário)
+
+====================================================================
+1. ARQUIVOS LIDOS
+====================================================================
+
+- src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+- src/utils/pdfRelatorioOperacional.ts          (relatório agregado + PDF)
+- src/services/relatorios/relatorioService.ts   (fonte de dados)
+- src/utils/pdfFatura.ts                        (identidade premium da fatura)
+- src/services/financeiro/faturaService.ts      (dados da empresa p/ o PDF)
+- supabase/migrations/* (schema ordens_servico — campos reais)
+
+Nenhuma auditoria geral do Financeiro.
+
+====================================================================
+2. CAUSA DO UUID NO RELATÓRIO ATUAL
+====================================================================
+
+Em buscarDadosFaturamento/buscarDadosFaturamentoDetalhado, ordens_servico.cliente
+é o UUID oficial (FK). O código montava o filtro de clientes como
+"nome_fantasia.ilike.%<uuid>%,razao_social.ilike.%<uuid>%" — tentava achar o
+cliente PELO NOME usando o UUID como texto → nenhum cliente casa → o próprio
+UUID caía na coluna "Cliente".
+
+====================================================================
+3. CORREÇÃO REALIZADA
+====================================================================
+
+Novo resolver resolverClientesPorReferencias():
+  - referências que são UUID → clientes.id.in(uuids);
+  - referências que são nome (legado) → .or(nome_fantasia/razao_social ilike);
+  - mapa chaveado por id E pelos nomes → o.cliente (UUID ou nome) resolve sempre.
+Aplicado em buscarDadosFaturamento e buscarDadosFaturamentoDetalhado.
+Nenhuma substituição por texto hardcoded.
+
+====================================================================
+4. FONTE REAL DO CLIENTE
+====================================================================
+
+clientes.id / nome_fantasia / razao_social / cnpj (via resolver, a partir do
+UUID oficial ordens_servico.cliente). Nunca UUID na tela nem no PDF.
+
+====================================================================
+5. FONTE DO ROMANEIRO / OC / ORDEM DE CARGA
+====================================================================
+
+ordens_servico.romaneio (coluna existente — Missão 127-E.1).
+Quando vazio → "—". Nunca UUID/OS interna nesta coluna.
+
+====================================================================
+6. FONTE DO VEÍCULO / PLACA
+====================================================================
+
+ordens_servico.veiculo_tipo / tipo_veiculo + ordens_servico.placa_alocada
+→ "Iveco Daily · FSP0I96". Quando ausente → "—". Nunca inventado.
+
+====================================================================
+7. FONTE DO VALOR BASE
+====================================================================
+
+Derivado para exibição (documentado): Valor Base = valorTotal − adicionais −
+pedágio + descontos. O TOTAL (oficial) NUNCA é recalculado — usa
+ordens_servico.valor_cliente.
+
+====================================================================
+8. FONTE DO KM ADICIONAL
+====================================================================
+
+adicionais.jsonb → campo km_excedente quando o objeto de adicionais do pricing
+estiver presente (extrairValorJsonb). Quando não disponível → 0 (coluna "—").
+PENDÊNCIA estrutural: ordens_servico NÃO possui coluna própria de km adicional
+do cliente (está no metadata da alocação/pricing).
+
+====================================================================
+9. FONTE DO PEDÁGIO
+====================================================================
+
+ordens_servico.pedagio (valor cobrado do cliente). Quando zero → "—".
+
+====================================================================
+10. FONTE DO REEMBOLSO
+====================================================================
+
+NÃO existe campo de reembolso em ordens_servico → sempre 0 (coluna "—").
+PENDÊNCIA estrutural documentada (nada inventado).
+
+====================================================================
+11. FONTE DOS DESCONTOS
+====================================================================
+
+ordens_servico.descontos (ou desconto, fallback). Exibido como "-R$ X,XX".
+Quando zero → "—".
+
+====================================================================
+12. FONTE DO VALOR TOTAL
+====================================================================
+
+ordens_servico.valor_cliente (total oficial cobrado do cliente — mesma fonte
+do "Valor Faturado" do relatório agregado). NÃO recalculado.
+
+====================================================================
+13. ESTRUTURA DA TELA INDIVIDUAL
+====================================================================
+
+Dentro de RelatorioFaturamentoCliente, duas visões (Tabs do design system):
+  [Visão Consolidada]  → relatório agregado atual (preservado)
+  [Relatório Individual do Cliente] → nova visão
+
+Modo individual:
+  - Cliente (Select obrigatório com clientes ativos — nome/razão, nunca UUID);
+  - Data inicial / Data final;
+  - Botão "Aplicar filtros";
+  - Botões PDF / Imprimir (após carregar);
+  - Pré-visualização: nome do cliente + CNPJ no topo, Período, quantidade de
+    serviços, total faturado, tabela das operações e RESUMO FINANCEIRO —
+    coerente com o PDF gerado.
+  - O relatório só é gerado com UM cliente selecionado (nunca mistura).
+
+====================================================================
+14. ESTRUTURA FINAL DO PDF INDIVIDUAL (landscape)
+====================================================================
+
+1. CABEÇALHO navy + logo oficial (branco + X colorido) + empresa à direita
+   (razão, CNPJ/IE, cidade/UF, contato) + linha laranja.
+2. Título "RELATÓRIO DE FATURAMENTO" + subtítulo "Detalhamento dos serviços
+   realizados" (NÃO "Relatório Operacional de Faturamento").
+3. Identificação do CLIENTE no topo (nome em destaque + CNPJ abaixo) + Período
+   + Data de geração (não repetido nas linhas).
+4. Tabela (cabeçalho repetido a cada página):
+   Data | Romaneio / OC | Veículo / Placa | Valor Base | KM Adic. | Pedágio |
+   Reembolso | Descontos | Valor Total
+   (trajeto em segunda linha discreta na coluna Romaneio/OC).
+5. RESUMO FINANCEIRO + TOTAL FATURADO em destaque (somente após a última linha).
+6. Rodapé em todas as páginas: "Conexão Express Transportes LTDA",
+   "Gerado em dd/mm/aaaa HH:mm", "Página X de Y".
+
+====================================================================
+15. RESUMO FINANCEIRO
+====================================================================
+
+Quantidade de serviços (número, sem R$)
+Valor Base / KM Adicional / Pedágios / Reembolsos / Descontos (BRL)
+TOTAL FATURADO (destaque).
+
+====================================================================
+16. CORREÇÕES DE QUANTIDADE x MOEDA
+====================================================================
+
+- Relatório agregado PDF: totais agora aceitam moeda:false → "Total de
+  Clientes" e "Total de Operações" são renderizados como NÚMEROS (nunca
+  "R$ 2,00" / "R$ 5,00"). Novo drawResumoTotais respeita o tipo da linha.
+- UI agregada já usava fmtNum para quantidades (mantido).
+
+====================================================================
+17. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/relatorios/relatorioService.ts
+    · resolverClientesPorReferencias + fix UUID em buscarDadosFaturamento e
+      buscarDadosFaturamentoDetalhado;
+    · novo buscarDadosFaturamentoIndividual + extrairValorJsonb +
+      montarTrajetoIndividual.
+- src/utils/pdfRelatorioOperacional.ts
+    · totais com moeda?:boolean + drawResumoTotais (quantidade ≠ moeda).
+- src/utils/pdfFatura.ts
+    · novo gerador gerarPDFRelatorioFaturamentoIndividual (identidade premium
+      reaproveitada) + baixarPDFRelatorioFaturamentoIndividual.
+- src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx
+    · duas visões (Consolidada | Individual) + seletor de cliente + filtros +
+      ações + pré-visualização + PDF/Imprimir.
+- src/test/tms_s04c_faturamento_individual.test.ts (NOVO — 14 testes).
+
+NENHUM cálculo de faturamento, fatura, contas a receber, pagamento, status,
+NFS-e, CT-e, banco, migration, RPC ou registro de Produção alterado.
+
+====================================================================
+18. TESTES EXECUTADOS
+====================================================================
+
+- npx tsc --noEmit                              → ✅ 0 erros
+- npx vitest run                                → ✅ 507/507 (53 arquivos)
+    · tms_s04c_faturamento_individual.test.ts   → ✅ 14/14 (NOVO)
+    · f38_fatura_manual + a31i (regressão PDF)  → ✅
+- npm run build                                 → ✅ 40,70s
+- npx eslint (relatorioService, pdfRelatorioOperacional, pdfFatura,
+  RelatorioFaturamentoCliente, teste)           → apenas baseline pré-existente
+  (nenhum erro novo introduzido).
+
+Cenários validados:
+  A) 1 cliente + 2 operações           ✅
+  B) 1 cliente + adicionais            ✅ (KM adicional + pedágio com valor)
+  C) 1 cliente + desconto              ✅ ("-R$ 50,00")
+  D) cliente sem adicional/reembolso   ✅ (nenhum valor inventado)
+  E) 30 operações → multipágina        ✅ ("Página 2 de", total no final)
+  F) nenhum UUID no PDF                ✅ (regex UUID / cliente_id / os_id)
+  G) quantidades sem formato monetário ✅ (nunca "R$ 5,00")
+
+====================================================================
+19. CAMINHO DO PDF DE PROVA
+====================================================================
+
+- test-results/tms-s04c/relatorio_individual_cliente.pdf
+  (Calvo Comércio e Importação Ltda · 01/08/2026 a 22/08/2026 ·
+   2 operações · com adicionais e desconto)
+- test-results/tms-s04c/relatorio_individual_cliente_30.pdf (multipágina)
+
+====================================================================
+20. PENDÊNCIAS ESTRUTURAIS REAIS
+====================================================================
+
+1. ordens_servico NÃO possui coluna de reembolso do cliente → coluna "—"
+   (estrutura futura: incluir reembolso na OS ou ler do faturamento).
+2. KM adicional não tem coluna própria na OS — é lido de adicionais.jsonb
+   (km_excedente) quando o objeto do pricing está presente; senão "—".
+3. Valor Base é derivado para exibição (total − adicionais − pedágio +
+   descontos), pois a OS não guarda a base separada.
+4. Aprovação visual final do usuário pendente (HOMOLOGAÇÃO VISUAL).
+
+====================================================================
+RESULTADO
+====================================================================
+
+Relatório Individual de Faturamento do Cliente criado (reutilizando a mesma
+identidade premium) com seletor de cliente, filtros, pré-visualização e PDF
+profissional. UUID corrigido no relatório agregado e detalhado. Quantidades
+deixaram de ser exibidas como moeda.
+
+RELATÓRIO AGREGADO PRESERVADO: SIM
+RELATÓRIO INDIVIDUAL CRIADO/REUTILIZADO: SIM
+SELEÇÃO POR CLIENTE: OK
+NOME DO CLIENTE NO TOPO: OK
+ROMANEIO/ORDEM DE CARGA: OK
+VEÍCULO/PLACA: OK
+VALOR BASE: OK
+KM ADICIONAL: PENDENTE (lido de adicionais.jsonb; sem coluna própria)
+PEDÁGIO: OK
+REEMBOLSO: PENDENTE (sem campo em ordens_servico)
+DESCONTOS: OK
+VALOR TOTAL: OK
+RESUMO FINANCEIRO: OK
+UUID VISÍVEL: NÃO
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+PRODUÇÃO ALTERADA: NÃO
+TMS-S04C: HOMOLOGAÇÃO TÉCNICA SIM
+HOMOLOGAÇÃO VISUAL: AGUARDA USUÁRIO

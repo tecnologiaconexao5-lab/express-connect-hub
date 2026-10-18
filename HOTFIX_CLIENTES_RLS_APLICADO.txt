@@ -1,0 +1,43 @@
+================================================================================
+HOTFIX CLIENTES RLS — APLICADO (CORREÇÃO MÍNIMA)
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+1. BACKUP TEXTUAL (pré-alteração)
+- scripts/backup_hotfix_clientes_rls_2026-08-17T14-05-27.sql
+- Contém o estado anterior: f_usuario_pode_acessar_cliente (def) + policy
+  clientes_insert_own (WITH CHECK f_usuario_pode_acessar_cliente(id)).
+
+2. MIGRATION APLICADA
+- supabase/migrations/20260817_hotfix_clientes_rls_insert.sql
+- Criada f_usuario_pode_acessar_tenant(uuid):
+    SECURITY DEFINER | SET search_path = '' (seguro, referências public.*)
+    tenant via public.tenant_usuarios (user_id = auth.uid())
+    super_admin/admin liberados; demais somente no próprio tenant
+    (COALESCE(p_tenant_id, v_tenant_id) = v_tenant_id)
+    REVOKE PUBLIC/anon; GRANT authenticated + service_role
+- Policy INSERT trocada (somente ela):
+    DROP clientes_insert_own → CREATE clientes_insert_own FOR INSERT
+    TO authenticated WITH CHECK (f_usuario_pode_acessar_tenant(tenant_id))
+- SELECT/UPDATE/DELETE, frontend e demais tabelas NÃO alterados.
+
+3. VALIDAÇÃO DA DEFINIÇÃO FINAL
+- Função: prosecdef=true, config search_path="" ✔
+- Policy INSERT: with_check = f_usuario_pode_acessar_tenant(tenant_id) ✔
+- Grants: anon=false, public=false, authenticated=true, service_role=true ✔
+
+4. TESTE CONTROLADO (BEGIN/ROLLBACK — nenhum cliente persistido)
+- super_admin  | próprio tenant | OK ✔
+- super_admin  | tenant alheio   | OK (liberado por design — admin não é restrito) ✔
+- financeiro   | próprio tenant | OK ✔
+- financeiro   | tenant alheio   | BLOQUEADO ✔ (RLS)
+- comercial    | próprio tenant | OK ✔
+- comercial    | tenant alheio   | BLOQUEADO ✔ (RLS)
+- Total de clientes pós-teste: 25 (inalterado) ✔
+
+RESULTADO: HOTFIX APROVADO
+- Os 3 perfis autorizados inserem no próprio tenant; financeiro/comercial
+  continuam bloqueados em outro tenant; super_admin liberado conforme regra.
+
+PENDÊNCIA: nenhuma estrutural. Recomenda-se QA visual do "Novo Cliente" no TMS.
+================================================================================

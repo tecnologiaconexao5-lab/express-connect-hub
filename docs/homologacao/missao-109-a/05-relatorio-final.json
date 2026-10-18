@@ -1,0 +1,35 @@
+{
+  "missao": "109-A",
+  "data": "2026-07-12T19:28:17.439Z",
+  "ambiente": {
+    "url": "http://localhost:8800",
+    "supabase": "uwrvzsjtpgaifkktpepn.supabase.co",
+    "branch": "main",
+    "ultimoCommit": "fec252d"
+  },
+  "login": {
+    "email": "tamiris.castilho@conexaoexpress.com.br",
+    "funciona": true
+  },
+  "operacao": {
+    "osId": "addcbb9d-6e4c-4e2a-a4fc-56c0d0edada7",
+    "osNumero": "HOMOLOG-ACEITE-109A-2026-07-12T19-24-50",
+    "alocacaoId": "ed09a11d-fab1-400d-89c6-2b04eba26377",
+    "prestadorId": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+    "prestadorNome": "PRESTADOR TESTE APP"
+  },
+  "resultados": {
+    "login_funciona": true,
+    "sidebar_navegacao": "OK (exceto lazy-load com page.goto)",
+    "criar_os_ui": "TESTAR - ver screenshots",
+    "criar_alocacao_api": "OK",
+    "aceite_pendente": true,
+    "pronto_para_app": true
+  },
+  "bloqueios": [
+    "Bug conhecido: 'Carregando sessao...' ao navegar via page.goto() para rotas lazy-loaded",
+    "Fluxo de criacao de OS e alocacao via UI precisa ser verificado manualmente - automacao complexa devido a formulario extenso",
+    "Prestador TESTE APP sem veiculo vinculado diretamente - veiculo definido na alocacao"
+  ],
+  "proximaEtapa": "MISSAO 109-B: Abrir operacao no App Motorista Flutter, aceitar e comprovar persistencia do aceite"
+}

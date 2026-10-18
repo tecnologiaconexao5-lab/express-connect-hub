@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { User, MapPin, Truck, Tag, Shield, Brain, FileText, Star, Clock, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useWhatsAppCRMStore } from "@/stores/whatsappCRMStore";
 import ScoreGauge from "@/components/onboarding/ScoreGauge";
 import { calculateScore } from "@/services/scoreEngine";
@@ -27,7 +28,7 @@ export default function ContactDetails() {
     <div className="divide-y divide-border">
       <div className="p-4 text-center">
         <div className="w-14 h-14 rounded-2xl overflow-hidden mx-auto mb-2 ring-2 ring-primary/20">
-          <img src={contato.avatar} alt="" className="w-full h-full object-cover" />
+          <SafeImage src={contato.avatar} alt="" className="w-full h-full object-cover" />
         </div>
         <p className="text-sm font-bold text-foreground">{contato.nome}</p>
         <p className="text-[10px] text-muted-foreground">{contato.telefone.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, "+$1 ($2) $3-$4")}</p>

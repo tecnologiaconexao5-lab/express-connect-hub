@@ -1,0 +1,203 @@
+﻿Listing tests:
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:19:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.1 ├óÔé¼ÔÇØ /central-ia abre com 5 abas
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:33:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.2 ├óÔé¼ÔÇØ Rob├â┬┤s aparecem na tela
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:43:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.3 ├óÔé¼ÔÇØ Tabelas essenciais existem no Supabase
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:52:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.4 ├óÔé¼ÔÇØ 8 rob├â┬┤s seed existem no Supabase
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:63:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.5 ├óÔé¼ÔÇØ Simular mensagem cria tarefa, aprova├â┬º├â┬úo, log e comunicacao
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:92:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.6 ├óÔé¼ÔÇØ Aprovar sugest├â┬úo atualiza status
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:106:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.7 ├óÔé¼ÔÇØ Rejeitar sugest├â┬úo atualiza status e cancela tarefa
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:122:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.8 ├óÔé¼ÔÇØ Editar sugest├â┬úo salva como editado
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:138:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.9 ├óÔé¼ÔÇØ Logs de automa├â┬º├â┬úo existem
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:145:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.10 ├óÔé¼ÔÇØ Mensagens est├â┬úo como simulado/rascunho, n├â┬úo enviadas
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:157:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.11 ├óÔé¼ÔÇØ Nenhum provider_message_id real foi gerado
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:167:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.12 ├óÔé¼ÔÇØ Fallback obrigat├â┬│rio est├â┬í presente nos rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:174:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.13 ├óÔé¼ÔÇØ Mensagens n├â┬úo cont├â┬¬m termos proibidos (exceto bloqueadas intencionalmente)
+  [chromium] ÔÇ║ central-ia-f22-modo-seguro.spec.ts:186:1 ÔÇ║ F22 ├óÔé¼ÔÇØ Central IA Modo Seguro ÔÇ║ F22.14 ├óÔé¼ÔÇØ central_ia_dashboard_view retorna dados
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:28:66 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.1 ├óÔé¼ÔÇØ Criar dados de homologa├â┬º├â┬úo
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:35:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.2 ├óÔé¼ÔÇØ Executar auditoria operacional via Supabase API
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:46:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.3 ├óÔé¼ÔÇØ Tarefas operacionais foram criadas
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:50:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.4 ├óÔé¼ÔÇØ Aprova├â┬º├â┬Áes foram criadas para mensagens
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:54:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.5 ├óÔé¼ÔÇØ Logs de automa├â┬º├â┬úo foram criados
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:58:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.6 ├óÔé¼ÔÇØ Mensagens simuladas criadas com modo_seguro=true
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:64:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.7 ├óÔé¼ÔÇØ Duplicidade evitada (mesma detec├â┬º├â┬úo n├â┬úo recria)
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:74:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.8 ├óÔé¼ÔÇØ Nenhuma mensagem cont├â┬®m termos proibidos (exceto bloqueadas)
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:84:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.9 ├óÔé¼ÔÇØ Fallback obrigat├â┬│rio presente
+  [chromium] ÔÇ║ central-ia-f23-robo-operacional.spec.ts:87:1 ÔÇ║ F23 ├óÔé¼ÔÇØ Rob├â┬┤ Operacional Homologa├â┬º├â┬úo ÔÇ║ F23.10 ├óÔé¼ÔÇØ Nenhum disparo real (provider_message_id vazio)
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:20:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.1 ├óÔé¼ÔÇØ /central-ia abre com abas
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:32:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.2 ├óÔé¼ÔÇØ Criar mensagem WhatsApp simulada com aprova├º├úo
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:55:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.3 ├óÔé¼ÔÇØ Editar conte├║do da aprova├º├úo
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:69:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.4 ├óÔé¼ÔÇØ Aprovar mensagem WhatsApp
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:83:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.5 ├óÔé¼ÔÇØ Homologa├º├úo desligada bloqueia envio
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:101:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.6 ├óÔé¼ÔÇØ Telefone fora allowlist bloqueia envio
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:115:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.7 ├óÔé¼ÔÇØ Mensagem com termo proibido ├® bloqueada
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:124:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.8 ├óÔé¼ÔÇØ Mensagens bloqueadas tem provider_message_id nulo
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:131:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.9 ├óÔé¼ÔÇØ Logs de bloqueio de WhatsApp existem
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:138:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.10 ├óÔé¼ÔÇØ Nenhum log cont├®m API key
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:147:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.11 ├óÔé¼ÔÇØ Nenhuma mensagem foi enviada como 'enviado' (status real)
+  [chromium] ÔÇ║ central-ia-f24-whatsapp-homolog.spec.ts:157:1 ÔÇ║ F24 ├óÔé¼ÔÇØ WhatsApp Homologa├º├úo Controlada ÔÇ║ F24.12 ├óÔé¼ÔÇØ Colunas F24 existem no banco
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:6:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.1 - Exibe bot├â┬úo Produ├â┬º├â┬úo Assistida na Tab Rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:13:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.2 - Bot├â┬úo Produ├â┬º├â┬úo Assistida est├â┬í habilitado inicialmente
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:17:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.3 - Bot├â┬úo Produ├â┬º├â┬úo Assistida fica desabilitado durante execu├â┬º├â┬úo
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:22:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.4 - Execu├â┬º├â┬úo produ├â┬º├â┬úo assistida retorna resumo com enviados/bloqueados
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:29:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.5 - Card da Produ├â┬º├â┬úo Assistida tem borda ├â┬ómbar
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:39:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.6 - Execu├â┬º├â┬úo produ├â┬º├â┬úo assistida cria tarefas e aprova├â┬º├â┬Áes
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:46:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.7 - Execu├â┬º├â┬úo produ├â┬º├â┬úo assistida mostra total de encontrados
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:53:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.8 - Bot├â┬úo Produ├â┬º├â┬úo Assistida fica vis├â┬¡vel mesmo sem rob├â┬┤s configurados
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:57:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.9 - Dry-Run e Produ├â┬º├â┬úo Assistida funcionam independentemente
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:64:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.10 - Execu├â┬º├â┬úo produ├â┬º├â┬úo assistida n├â┬úo trava UI
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:70:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.11 - Card da produ├â┬º├â┬úo assistida exibe PRODU├âÔÇí├âãÆO ASSISTIDA no t├â┬¡tulo
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:75:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.12 - Resumo cont├â┬®m PRODU├âÔÇí├âãÆO ASSISTIDA no in├â┬¡cio
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:85:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.13 - N├â┬úo cria duplicatas em execu├â┬º├â┬Áes consecutivas
+  [chromium] ÔÇ║ central-ia-f25-producao-assistida.spec.ts:95:1 ÔÇ║ F25 - Produ├â┬º├â┬úo Assistida (Rob├â┬┤ Operacional) ÔÇ║ F25.14 - Bot├â┬úo usa variante default/├â┬ómbar para diferenciar do Dry-Run
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:2:62 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 01 - whatsappService.enviarMensagem n├â┬úo envia direto
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:8:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 02 - whatsappService.notificarOSCriada bloqueada
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:12:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 03 - MensagensWhatsApp n├â┬úo chama Evolution direto
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:19:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 04 - Tentativa de envio antigo cria rascunho/aprova├â┬º├â┬úo/log
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:30:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 05 - provider_message_id permanece null em tentativas bloqueadas
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:36:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 06 - status fica bloqueado
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:41:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 07 - N├â┬úo aparece API key no DOM
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:49:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 08 - Nenhum envio real acontece (todas as chamadas bloqueadas)
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:59:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 09 - Central IA mostra solicita├â┬º├â┬úo de aprova├â┬º├â┬úo de envio bloqueado
+  [chromium] ÔÇ║ central-ia-f25b-bloqueio-envios-diretos.spec.ts:67:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Bloqueio de envios diretos ÔÇ║ 10 - Regress├â┬úo F24 continua passando (whatsappHomologService n├â┬úo foi alterado)
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:2:61 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 01 - /central-ia abre
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:5:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 02 - 8 rob├â┬┤s aparecem
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:12:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 03 - Configura├â┬º├â┬úo de rob├â┬┤ abre
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:22:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 04 - Edita modo atual
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:35:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 05 - Edita n├â┬¡vel de autonomia
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:44:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 06 - Edita canal principal
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:53:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 07 - Edita tom de conversa
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:62:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 08 - Edita instru├â┬º├â┬Áes resumidas
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:71:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 09 - Salva no Supabase
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:83:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 10 - Recarrega tela e mant├â┬®m dados
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:93:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 11 - Todos os rob├â┬┤s continuam com envio externo bloqueado por padr├â┬úo
+  [chromium] ÔÇ║ central-ia-f25b-config-robos.spec.ts:97:1 ÔÇ║ F25B ├óÔé¼ÔÇØ Configura├â┬º├â┬úo dos Rob├â┬┤s ÔÇ║ 12 - fallback obrigat├â┬│rio existe
+  [chromium] ÔÇ║ central-ia-f25c-audit.spec.ts:20:1 ÔÇ║ F25C.2 ├óÔé¼ÔÇØ AUDITORIA REAL DE ACESSO ÔÇ║ ETAPA 1 ├óÔé¼ÔÇØ Validar rota /central-ia
+  [chromium] ÔÇ║ central-ia-f25c-audit.spec.ts:51:1 ÔÇ║ F25C.2 ├óÔé¼ÔÇØ AUDITORIA REAL DE ACESSO ÔÇ║ ETAPA 2 ├óÔé¼ÔÇØ Auditar menu lateral
+  [chromium] ÔÇ║ central-ia-f25c-audit.spec.ts:86:1 ÔÇ║ F25C.2 ├óÔé¼ÔÇØ AUDITORIA REAL DE ACESSO ÔÇ║ ETAPA 6+7 ├óÔé¼ÔÇØ Valida├â┬º├â┬úo completa da Central de Rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog.spec.ts:15:68 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo de Configura├â┬º├â┬úo ÔÇ║ 07 - Clicar bot├â┬úo Configurar no primeiro rob├â┬┤
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog.spec.ts:64:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo de Configura├â┬º├â┬úo ÔÇ║ 08 - Clicar 'Novo Rob├â┬┤' e ver se di├â┬ílogo tem abas de instru├â┬º├â┬Áes
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog.spec.ts:103:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo de Configura├â┬º├â┬úo ÔÇ║ 09 - Verificar se di├â┬ílogo de rob├â┬┤ existente tem Instru├â┬º├â┬Áes e Conhecimento
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog.spec.ts:144:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo de Configura├â┬º├â┬úo ÔÇ║ 10 - Verificar se Configura├â┬º├â┬úo tab aparece para rob├â┬┤ existente
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog2.spec.ts:15:63 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo Config Rob├â┬┤ ÔÇ║ 07 - Clicar Configurar no primeiro rob├â┬┤ e ver di├â┬ílogo
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog2.spec.ts:52:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo Config Rob├â┬┤ ÔÇ║ 08 - Clicar Instru├â┬º├â┬Áes e ver conte├â┬║do
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog2.spec.ts:88:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo Config Rob├â┬┤ ÔÇ║ 09 - Clicar Base de Conhecimento e ver conte├â┬║do
+  [chromium] ÔÇ║ central-ia-f25c-check-dialog2.spec.ts:111:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Di├â┬ílogo Config Rob├â┬┤ ÔÇ║ 10 - Verificar se Novo Rob├â┬┤ tem abas Instru├â┬º├â┬Áes/Conhecimento
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:18:73 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 01 - Abrir /central-ia e capturar tela cheia
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:31:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 02 - Capturar abas vis├â┬¡veis no topo
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:65:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 03 - Encontrar bot├â┬Áes de configura├â┬º├â┬úo nos rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:95:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 04 - Listar todo o conte├â┬║do textual da p├â┬ígina
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:109:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 05 - Verificar se sidebar tem Central IA
+  [chromium] ÔÇ║ central-ia-f25c-check.spec.ts:128:1 ÔÇ║ F25C-CHECK ├óÔé¼ÔÇØ Localiza├â┬º├â┬úo Visual Central IA ÔÇ║ 06 - Registrar estrutura DOM da p├â┬ígina
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:2:93 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 01 - /central-ia abre
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:5:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 02 - Rob├â┬┤ abre configura├â┬º├â┬úo com abas
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:14:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 03 - Aba Instru├â┬º├â┬Áes aparece com bot├â┬úo Nova Instru├â┬º├â┬úo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:21:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 04 - Criar instru├â┬º├â┬úo rascunho
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:42:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 05 - Enviar para revis├â┬úo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:51:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 06 - Apenas uma vers├â┬úo ativa ├óÔé¼ÔÇØ warning exibido
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:60:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 07 - Bloquear publica├â┬º├â┬úo com termo proibido ├óÔé¼ÔÇØ valida├â┬º├â┬úo de seguran├â┬ºa
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:65:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 08 - Bloquear 'sou IA' em instru├â┬º├â┬úo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:69:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 09 - Exigir fallback ├óÔé¼ÔÇØ publicacao bloqueada sem quando_chamar_humano
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:77:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 10 - Criar item de conhecimento via servi├â┬ºo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:82:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 11 - buscarConhecimentoValido retorna sem erro
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:85:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 12 - montarPromptOperacionalRobo retorna estrutura esperada
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:95:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 13 - Logs de auditoria s├â┬úo criados nas a├â┬º├â┬Áes de instru├â┬º├â┬úo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:104:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 14 - Duplicar instru├â┬º├â┬úo cria nova vers├â┬úo
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:109:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 15 - Nenhum WhatsApp/e-mail real enviado ├óÔé¼ÔÇØ valida├â┬º├â┬úo de bloqueio
+  [chromium] ÔÇ║ central-ia-f25c-instrucoes-conhecimento.spec.ts:114:1 ÔÇ║ F25C ├óÔé¼ÔÇØ Instru├â┬º├â┬Áes Versionadas e Base de Conhecimento por Rob├â┬┤ ÔÇ║ 16 - Aba Base de Conhecimento exibe filtros
+  [chromium] ÔÇ║ central-ia-f25c-ui-final.spec.ts:31:1 ÔÇ║ F25C-UI-FINAL ├óÔé¼ÔÇØ Central de Rob├â┬┤s ÔÇ║ 01 - Menu com Central de Rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f25c-ui-final.spec.ts:57:1 ÔÇ║ F25C-UI-FINAL ├óÔé¼ÔÇØ Central de Rob├â┬┤s ÔÇ║ 02 - P├â┬ígina /central-ia abre com abas Rob├â┬┤s
+  [chromium] ÔÇ║ central-ia-f25c-ui-final.spec.ts:72:1 ÔÇ║ F25C-UI-FINAL ├óÔé¼ÔÇØ Central de Rob├â┬┤s ÔÇ║ 03 - Di├â┬ílogo Configurar com 3 abas
+  [chromium] ÔÇ║ central-ia-f25c-ui-final.spec.ts:100:1 ÔÇ║ F25C-UI-FINAL ├óÔé¼ÔÇØ Central de Rob├â┬┤s ÔÇ║ 04 - Instru├â┬º├â┬Áes: Nova Instru├â┬º├â┬úo aparece e tem campos
+  [chromium] ÔÇ║ central-ia-f25c-ui-final.spec.ts:183:1 ÔÇ║ F25C-UI-FINAL ├óÔé¼ÔÇØ Central de Rob├â┬┤s ÔÇ║ 05 - Base de Conhecimento: criar e editar item
+  [chromium] ÔÇ║ central-ia-f25d-regras-operacionais.spec.ts:24:1 ÔÇ║ F25D ├óÔé¼ÔÇØ Regras Operacionais ÔÇ║ 01 - Aba Regras Operacionais existe no di├â┬ílogo
+  [chromium] ÔÇ║ central-ia-f25d-regras-operacionais.spec.ts:63:1 ÔÇ║ F25D ├óÔé¼ÔÇØ Regras Operacionais ÔÇ║ 02 - Bot├â┬úo Nova Regra e estrutura da aba
+  [chromium] ÔÇ║ central-ia-f25d-regras-operacionais.spec.ts:90:1 ÔÇ║ F25D ├óÔé¼ÔÇØ Regras Operacionais ÔÇ║ 03 - P├â┬ígina carrega sem erros de console
+  [chromium] ÔÇ║ central-ia-f25e-gatilhos.spec.ts:24:1 ÔÇ║ F25E ├óÔé¼ÔÇØ Gatilhos e Alertas ÔÇ║ 01 - Aba Gatilhos e Alertas existe no di├â┬ílogo
+  [chromium] ÔÇ║ central-ia-f25e-gatilhos.spec.ts:50:1 ÔÇ║ F25E ├óÔé¼ÔÇØ Gatilhos e Alertas ÔÇ║ 02 - Filtros e estrutura da aba
+  [chromium] ÔÇ║ central-ia-f25e-gatilhos.spec.ts:66:1 ÔÇ║ F25E ├óÔé¼ÔÇØ Gatilhos e Alertas ÔÇ║ 03 - P├â┬ígina carrega sem erros de console
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:18:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 01 - Login e navega├â┬º├â┬úo at├â┬® /robo-recrutamento-monitor
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:48:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 02 - Dashboard cards exibidos com valores v├â┬ílidos
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:94:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 03 - Tabela de hist├â┬│rico renderizada
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:144:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 04 - Filtros funcionam sem errors de Select
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:210:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 05 - Navega├â┬º├â┬úo pela sidebar at├â┬® o monitor
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:258:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 06 - Detalhes da execu├â┬º├â┬úo (modal/dialog)
+  [chromium] ÔÇ║ central-ia-f25f5-monitor-recrutamento.spec.ts:312:1 ÔÇ║ F25F5-A ├óÔé¼ÔÇØ Monitor do Rob├â┬┤ de Recrutamento ÔÇ║ 07 - Verificar console limpo (sem erros JavaScript)
+  [chromium] ÔÇ║ central-ia-f25f7a-homologacao-completa.spec.ts:19:1 ÔÇ║ F25F.7A ├óÔé¼ÔÇØ Homologa├â┬º├â┬úo Real do Fluxo Completo ÔÇ║ 01 - CadastroPrestador carrega sem erro
+  [chromium] ÔÇ║ central-ia-f25f7a-homologacao-completa.spec.ts:54:1 ÔÇ║ F25F.7A ├óÔé¼ÔÇØ Homologa├â┬º├â┬úo Real do Fluxo Completo ÔÇ║ 02 - Monitor exibe candidato real com dados corretos
+  [chromium] ÔÇ║ central-ia-f25f7a-homologacao-completa.spec.ts:92:1 ÔÇ║ F25F.7A ├óÔé¼ÔÇØ Homologa├â┬º├â┬úo Real do Fluxo Completo ÔÇ║ 03 - Detalhes da execu├â┬º├â┬úo mostram contexto e seguran├â┬ºa
+  [chromium] ÔÇ║ central-ia-f25f7a-homologacao-completa.spec.ts:131:1 ÔÇ║ F25F.7A ├óÔé¼ÔÇØ Homologa├â┬º├â┬úo Real do Fluxo Completo ÔÇ║ 04 - Timeline completa com 8+ eventos de log
+  [chromium] ÔÇ║ central-ia-f25f7a-homologacao-completa.spec.ts:162:1 ÔÇ║ F25F.7A ├óÔé¼ÔÇØ Homologa├â┬º├â┬úo Real do Fluxo Completo ÔÇ║ 05 - Console limpo sem erros JavaScript na navegacao completa
+  [chromium] ÔÇ║ f18-explore-tms.spec.ts:6:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Explore TMS OS form ÔÇ║ F18.0 ├óÔé¼ÔÇØ Explore and capture TMS navigation
+  [chromium] ÔÇ║ f18-os-tms-app-prestador.spec.ts:27:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Prova Real: OS do TMS aparece no App Prestador ÔÇ║ F18.1 ├óÔé¼ÔÇØ Criar OS real pela interface do TMS
+  [chromium] ÔÇ║ f18-os-tms-app-prestador.spec.ts:123:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Prova Real: OS do TMS aparece no App Prestador ÔÇ║ F18.2 ├óÔé¼ÔÇØ Validar OS + completar sync para alocacoes_escala
+  [chromium] ÔÇ║ f18-os-tms-app-prestador.spec.ts:172:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Prova Real: OS do TMS aparece no App Prestador ÔÇ║ F18.3 ├óÔé¼ÔÇØ Validar App Prestador publico
+  [chromium] ÔÇ║ f18-os-tms-app-prestador.spec.ts:206:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Prova Real: OS do TMS aparece no App Prestador ÔÇ║ F18.4 ├óÔé¼ÔÇØ Aceitar OS (API Supabase)
+  [chromium] ÔÇ║ f18-os-tms-app-prestador.spec.ts:216:1 ÔÇ║ F18 ├óÔé¼ÔÇØ Prova Real: OS do TMS aparece no App Prestador ÔÇ║ F18.5 ├óÔé¼ÔÇØ Validar TMS apos aceite
+  [chromium] ÔÇ║ f25fa1-auditoria-central-treinamento.spec.ts:16:1 ÔÇ║ F25FA.1 ├óÔé¼ÔÇØ Auditoria Central de Treinamento ÔÇ║ 01 - Central IA: abas principais carregam
+  [chromium] ÔÇ║ f25fa1-auditoria-central-treinamento.spec.ts:58:1 ÔÇ║ F25FA.1 ├óÔé¼ÔÇØ Auditoria Central de Treinamento ÔÇ║ 02 - Dialog do rob├â┬┤: abas de instru├â┬º├â┬Áes, conhecimento, regras, gatilhos
+  [chromium] ÔÇ║ f25fa1-auditoria-central-treinamento.spec.ts:107:1 ÔÇ║ F25FA.1 ├óÔé¼ÔÇØ Auditoria Central de Treinamento ÔÇ║ 03 - Base de Conhecimento: verificar upload, hist├â┬│rico, busca
+  [chromium] ÔÇ║ f25fa1-auditoria-central-treinamento.spec.ts:167:1 ÔÇ║ F25FA.1 ├óÔé¼ÔÇØ Auditoria Central de Treinamento ÔÇ║ 04 - Instru├â┬º├â┬Áes: verificar versionamento e aprova├â┬º├â┬úo
+  [chromium] ÔÇ║ f25fa1-auditoria-central-treinamento.spec.ts:196:1 ÔÇ║ F25FA.1 ├óÔé¼ÔÇØ Auditoria Central de Treinamento ÔÇ║ 05 - Console limpo e requisicoes
+  [chromium] ÔÇ║ f25fa2-base-conhecimento-real.spec.ts:22:1 ÔÇ║ F25FA.2 ├óÔé¼ÔÇØ Corre├â┬º├â┬úo Real da Base de Conhecimento ÔÇ║ Fluxo completo: criar, editar, ativar/desativar, consultar rob├â┬┤ + console limpo
+  [chromium] ÔÇ║ f25fa3-biblioteca-arquivos.spec.ts:21:1 ÔÇ║ F25FA.3 ├óÔé¼ÔÇØ Biblioteca de Arquivos para Treinamento ÔÇ║ Upload PDF, imagem, alterar status, filtrar + console limpo
+  [chromium] ÔÇ║ f26-rotinas-ia.spec.ts:23:1 ÔÇ║ F26.3 ├óÔé¼ÔÇØ Motor de Rotinas IA (Consolida├â┬º├â┬úo) ÔÇ║ Cen├â┬írio 1: Criar rotina e validar execu├â┬º├â┬úo autom├â┬ítica sem clique humano
+  [chromium] ÔÇ║ f26-rotinas-ia.spec.ts:149:1 ÔÇ║ F26.3 ├óÔé¼ÔÇØ Motor de Rotinas IA (Consolida├â┬º├â┬úo) ÔÇ║ Cen├â┬írio 2: Validar contadores e heartbeat do motor
+  [chromium] ÔÇ║ f27-1-diretor-virtual-live.spec.ts:57:1 ÔÇ║ F27.1 ├óÔé¼ÔÇØ Diretor Virtual Live Engine ÔÇ║ Live Engine: ciclo cont├â┬¡nuo, decis├â┬Áes e persist├â┬¬ncia
+  [chromium] ÔÇ║ f27-diretor-virtual-ia.spec.ts:24:1 ÔÇ║ F27 ├óÔé¼ÔÇØ Diretor Virtual IA ÔÇ║ Fluxo completo: criar rotinas, for├â┬ºar an├â┬ílise, validar decis├â┬Áes e persist├â┬¬ncia
+  [chromium] ÔÇ║ f28-comunicacao-robos.spec.ts:39:1 ÔÇ║ F28 ├óÔé¼ÔÇØ Comunica├â┬º├â┬úo entre Rob├â┬┤s ÔÇ║ Fluxo completo: solicita├â┬º├â┬úo ├óÔÇáÔÇÖ resposta ├óÔÇáÔÇÖ escalonamento ├óÔÇáÔÇÖ valida├â┬º├â┬úo no banco
+  [chromium] ÔÇ║ f29-biblioteca-corporativa.spec.ts:37:1 ÔÇ║ F29 ├óÔé¼ÔÇØ Biblioteca Corporativa ÔÇ║ Cen├â┬írio completo: criar ├óÔÇáÔÇÖ versionar ├óÔÇáÔÇÖ vincular rob├â┬┤s ├óÔÇáÔÇÖ validar no banco ├óÔÇáÔÇÖ UI
+  [chromium] ÔÇ║ financeiro-app-prestador-f19.spec.ts:33:1 ÔÇ║ F19 ├óÔé¼ÔÇØ Financeiro/Confer├â┬¬ncia com App Prestador ÔÇ║ F19.1 ├óÔé¼ÔÇØ Preparar e validar dados da aloca├â┬º├â┬úo
+  [chromium] ÔÇ║ financeiro-app-prestador-f19.spec.ts:51:1 ÔÇ║ F19 ├óÔé¼ÔÇØ Financeiro/Confer├â┬¬ncia com App Prestador ÔÇ║ F19.2 ├óÔé¼ÔÇØ Confer├â┬¬ncia Financeira mostra opera├â┬º├â┬úo finalizada
+  [chromium] ÔÇ║ financeiro-app-prestador-f19.spec.ts:91:1 ÔÇ║ F19 ├óÔé¼ÔÇØ Financeiro/Confer├â┬¬ncia com App Prestador ÔÇ║ F19.3 ├óÔé¼ÔÇØ Financeiro Cliente e Pagamento Prestador
+  [chromium] ÔÇ║ financeiro-app-prestador-f19.spec.ts:125:1 ÔÇ║ F19 ├óÔé¼ÔÇØ Financeiro/Confer├â┬¬ncia com App Prestador ÔÇ║ F19.4 ├óÔé¼ÔÇØ Evid├â┬¬ncia final
+  [chromium] ÔÇ║ financeiro-e2e.spec.ts:51:1 ÔÇ║ F8 ├óÔé¼ÔÇØ Operacao finalizada aparece no Financeiro ÔÇ║ F8.1 - Validar dados no Supabase
+  [chromium] ÔÇ║ financeiro-e2e.spec.ts:65:1 ÔÇ║ F8 ├óÔé¼ÔÇØ Operacao finalizada aparece no Financeiro ÔÇ║ F8.2 - Financeiro TMS mostra operacao finalizada
+  [chromium] ÔÇ║ flutter-prestador-os.spec.ts:25:1 ÔÇ║ F17 ├óÔé¼ÔÇØ App Prestador com Ordem de Servico ÔÇ║ F17.1 ├óÔé¼ÔÇØ Criar OS no Supabase para prestador
+  [chromium] ÔÇ║ flutter-prestador-os.spec.ts:73:1 ÔÇ║ F17 ├óÔé¼ÔÇØ App Prestador com Ordem de Servico ÔÇ║ F17.2 ├óÔé¼ÔÇØ Abrir App Cloudflare e verificar OS aparece
+  [chromium] ÔÇ║ flutter-prestador-os.spec.ts:186:1 ÔÇ║ F17 ├óÔé¼ÔÇØ App Prestador com Ordem de Servico ÔÇ║ F17.3 ├óÔé¼ÔÇØ Evidencias F17
+  [chromium] ÔÇ║ flutter-prestador-real.spec.ts:31:1 ÔÇ║ F10C ├óÔé¼ÔÇØ App Prestador Cloudflare recebe opera├â┬º├â┬úo real ÔÇ║ F10C.1 ├óÔé¼ÔÇØ TMS cria alocacao real
+  [chromium] ÔÇ║ flutter-prestador-real.spec.ts:80:1 ÔÇ║ F10C ├óÔé¼ÔÇØ App Prestador Cloudflare recebe opera├â┬º├â┬úo real ÔÇ║ F10C.2 ├óÔé¼ÔÇØ Abrir App Cloudflare, login e aceitar rota
+  [chromium] ÔÇ║ flutter-prestador-real.spec.ts:397:1 ÔÇ║ F10C ├óÔé¼ÔÇØ App Prestador Cloudflare recebe opera├â┬º├â┬úo real ÔÇ║ F10C.3 ├óÔé¼ÔÇØ Validar TMS reflete status apos Cloudflare
+  [chromium] ÔÇ║ flutter-prestador-real.spec.ts:409:1 ÔÇ║ F10C ├óÔé¼ÔÇØ App Prestador Cloudflare recebe opera├â┬º├â┬úo real ÔÇ║ F10C.4 ├óÔé¼ÔÇØ Evidencias obrigatorias F10C
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:22:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.1 ├óÔé¼ÔÇØ Validar que portal_pedidos existe no Supabase
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:30:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.2 ├óÔé¼ÔÇØ Validar que pedido salva no Supabase (via API)
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:50:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.3 ├óÔé¼ÔÇØ Validar vincular OS e status programado
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:83:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.4 ├óÔé¼ÔÇØ Validar que dados sens├â┬¡veis N├âãÆO est├â┬úo expostos
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:102:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.5 ├óÔé¼ÔÇØ Validar alocacoes_escala link e status do App Prestador
+  [chromium] ÔÇ║ portal-cliente-f20a.spec.ts:122:1 ÔÇ║ F20A ├óÔé¼ÔÇØ Painel do Cliente Premium ÔÇ║ F20A.6 ├óÔé¼ÔÇØ Validar que status t├â┬®cnico cru n├â┬úo aparece no DOM
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:8:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.1 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar que entregas_protocolo existe e cont├â┬â├é┬®m POD
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:22:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.2 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar que bucket comprovantes-entrega existe via list
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:47:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.3 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar que portal_comprovantes NAO ├â┬â├é┬® mais usado como fonte obrigat├â┬â├é┬│ria
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:58:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.4 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar dados sens├â┬â├é┬¡veis N├â┬â├å┬ÆO est├â┬â├é┬úo expostos
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:77:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.5 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar timeline premium via gerarTimelinePremium
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:107:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.6 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar mensagem premium quando n├â┬â├é┬úo h├â┬â├é┬í comprovante
+  [chromium] ÔÇ║ portal-cliente-f20b-pod.spec.ts:117:1 ÔÇ║ F20B ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Painel do Cliente: POD + Timeline ÔÇ║ F20B.7 ├â┬ó├ó┬é┬¼├ó┬Ç┬Ø Validar v├â┬â├é┬¡nculo OS ├â┬ó├ó┬Ç┬á├ó┬Ç┬Ö aloc ├â┬ó├ó┬Ç┬á├ó┬Ç┬Ö POD existe no schema
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:18:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.1 - Dashboard carrega com saudacao premium
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:29:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.2 - Sidebar com tabs essenciais
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:47:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.3 - Formulario solicitacao com linguagem amigavel
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:62:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.4 - Nenhum termo tecnico aparece no DOM
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:71:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.5 - Nenhum mock visivel no DOM
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:85:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.6 - Timeline premium sem status tecnico cru
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:107:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.7 - N/A e UUID nao aparecem para cliente
+  [chromium] ÔÇ║ portal-cliente-f20c-premium.spec.ts:122:1 ÔÇ║ F20C - Painel do Cliente: Experiencia Premium ÔÇ║ F20C.8 - Painel nao quebra em viewport mobile
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:18:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.1 ├óÔé¼ÔÇØ usuarios_cliente existe no Supabase
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:30:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.2 ├óÔé¼ÔÇØ Login do cliente n├â┬úo exp├â┬Áe cliente_id via fuzzy match
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:48:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.3 ├óÔé¼ÔÇØ Dados sens├â┬¡veis N├âãÆO aparecem no portal
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:65:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.4 ├óÔé¼ÔÇØ Manipular localStorage n├â┬úo exp├â┬Áe dados de outro cliente
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:89:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.5 ├óÔé¼ÔÇØ Portal n├â┬úo usa fuzzy match como fonte prim├â┬íria
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:101:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.6 ├óÔé¼ÔÇØ Provedores de dados do portal filtram por cliente_id
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:113:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.7 ├óÔé¼ÔÇØ Views seguras existem no Supabase
+  [chromium] ÔÇ║ portal-cliente-f20d-seguranca.spec.ts:129:1 ÔÇ║ F20D ├óÔé¼ÔÇØ Painel do Cliente: Seguran├â┬ºa e Isolamento ÔÇ║ F20D.8 ├óÔé¼ÔÇØ Logout limpa sess├â┬úo e dados do cliente
+  [chromium] ÔÇ║ recrutamento-e2e.spec.ts:16:1 ÔÇ║ F11 ├óÔé¼ÔÇØ Recrutamento cadastra candidato com P14 score comprometimento ÔÇ║ F11.1 ├óÔé¼ÔÇØ Abrir pipeline kanban e cadastrar candidato
+  [chromium] ÔÇ║ recrutamento-e2e.spec.ts:54:1 ÔÇ║ F11 ├óÔé¼ÔÇØ Recrutamento cadastra candidato com P14 score comprometimento ÔÇ║ F11.2 ├óÔé¼ÔÇØ Validar candidato no Supabase com colunas P14 + evidencias
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:15:1 ÔÇ║ Fluxo completo: TMS cria alocacao -> Modulo Admin App Prestador TMS aceita -> TMS reflete ÔÇ║ TAREFA 3 - TMS cria alocacao real
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:83:1 ÔÇ║ Fluxo completo: TMS cria alocacao -> Modulo Admin App Prestador TMS aceita -> TMS reflete ÔÇ║ TAREFA 4 - Admin App Prestador TMS aceita alocacao
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:137:1 ÔÇ║ Fluxo completo: TMS cria alocacao -> Modulo Admin App Prestador TMS aceita -> TMS reflete ÔÇ║ TAREFA 5 - TMS mostra Aceito
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:156:1 ÔÇ║ Fluxo completo: TMS cria alocacao -> Modulo Admin App Prestador TMS aceita -> TMS reflete ÔÇ║ TAREFA 6 - Evidencias obrigatorias
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:174:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F1 - TMS cria alocacao real com test_run_id
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:223:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F3 - Admin App Prestador TMS aceita e finaliza (modulo interno, nao Flutter real)
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:387:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F5 - TMS mostra Concluido na grade
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:410:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F6 - Evidencias obrigatorias
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:430:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F7 - TMS mostra Protocolo de Entrega (POD)
+  [chromium] ÔÇ║ tms-app-prestador.spec.ts:463:1 ÔÇ║ Fluxo completo: alocar, aceitar e finalizar operacao pelo Admin App Prestador TMS (modulo interno) ÔÇ║ F9 - Fluxo integrado Operacao + POD + Financeiro
+Total: 201 tests in 36 files

@@ -1,0 +1,238 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7A-ORDEM-LOTE-MAPA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: auditoria tecnica READ-ONLY. Nada implementado. Banco inalterado.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. TABELAS/ENTIDADES ENCONTRADAS (lote/ordem/remessa/CNAB/tesouraria/baixa)
+--------------------------------------------------------------------------------
+Existem SOMENTE (relacionadas ao tema):
+  * pagamentos_prestadores  (tabela central da fila de pagamento)
+  * pagamentos_prestadores_itens  (itens de um pagamento/ordem — 0 registros)
+  * pagamento_prestadores   (tabela SINGULAR legada — 0 registros, esquema minimo)
+  * financeiro_baixas       (liquido/baixas e conciliacao)
+NAO existem: tabela de LOTE, ORDEM DE PAGAMENTO, REMESSA, CNAB, TESOURARIA,
+  retorno bancario ou PIX. NAO ha tabela de cabecalho de lote.
+
+pagamentos_prestadores (campos relevantes):
+  id (PK), prestador_id (FK prestadores ON DELETE CASCADE),
+  fechamento_id (FK -> pagamentos_prestadores.id, self; agrega itens a um fechamento),
+  os_id (UNIQUE), lote_id (uuid, SEM FK), elegivel_lote (bool),
+  status, status_conferencia, status_aprovacao, status_pagamento,
+  data_conferencia, data_aprovacao, data_pagamento, data_competencia,
+  valor_servicos, pedagio, adicionais (campo), valor_reembolsos, valor_bonus,
+  valor_descontos, valor_adiantamentos, valor_liquido, impacto_dre,
+  origem_lancamento, tipo_pagamento, classificacao_dado, is_teste.
+  (*) NAO ha colunas de banco/conta/PIX na linha de pagamento (sem snapshot).
+
+pagamentos_prestadores_itens (0 registros): id, pagamento_id, os_id, os_numero,
+  valor_servico, pedagio, adicional, valor_reembolso, valor_bonus, valor_desconto,
+  status, created_at  -> estrutura de ITENS de um pagamento/lote (nao usada hoje).
+
+financeiro_baixas: titulo_tabela, titulo_id, valor_original, valor_baixado,
+  saldo_restante, data_baixa, forma_pagamento, conta_financeira,
+  conta_financeira_id, referencia_bancaria, estornada, data_estorno, motivo_estorno.
+
+--------------------------------------------------------------------------------
+2. CODIGO / ACOES EXISTENTES
+--------------------------------------------------------------------------------
+PagamentoPrestadores.tsx (fluxo por linha, aba "Pagamentos Manuais"):
+  Marcar Conferido (status_conferencia='conferido' + elegivel_lote)      (:1810)
+  Aprovar Pagamento (status_aprovacao='aprovado')                        (:1816)
+  Rejeitar Pagamento (status_aprovacao='rejeitado')                      (:1819)
+  Liberar Lote (status_pagamento='em_lote')  [NAO grava lote_id]         (:1825)
+  Marcar Pago (confirmarPagamento -> RPC f_confirmar_pagamento_prestador)(:1830)
+  Cancelar (status_pagamento='cancelado')                                (:1838)
+Fechamentos Anteriores (fechamentoService):
+  Conferir / Aprovar / Pagar / Cancelar  (:1931/:1936/:1941/:1949)
+Conferencia Financeira "Gerar Fechamento" (via modal Detalhes) -> fechamento agregado.
+PagamentoCNAB.tsx (Tesouraria/lotes): "Gerar Remessa" e "Importar Retorno"
+  DESABILITADOS (placeholder). Leitura de pagamentos_prestadores.
+NENHUMA acao existe para: "Gerar Ordem de Pagamento" nem "Gerar Lote" (criar lote_id).
+
+--------------------------------------------------------------------------------
+3. FLUXO REAL ATUAL
+--------------------------------------------------------------------------------
+pagamentos_prestadores (provisao; M66/M80 cria com status pendente/em_aberto)
+   |
+   | (UI linha a linha) Marcar Conferido -> status_conferencia=conferido
+   |                    Aprovar         -> status_aprovacao=aprovado
+   |                    [f_aprovar_pagamento_prestadores faz o mesmo em lote]
+   v
+elegivel_lote = true  (4 registros em PROD; lote_id continua NULL)
+   |
+   | "Liberar Lote" -> status_pagamento='em_lote'  (NAO cria lote_id!)
+   v
+lote_id  ====== SEMPRE NULL (0/137) — NINGUEM ATRIBUI
+   |
+   X   <-- QUEBRA: nao existe lote/ordem; Tesouraria (PagamentoCNAB) filtra
+   |        apenas impacto_dre=true (nao por aprovado/elegivel) e nao ha remessa.
+   v
+Tesouraria (PagamentoCNAB): leitura/preview; botoes de banco DESABILITADOS.
+   |
+   X   <-- QUEBRA: sem provider/banco; nada e enviado nem retorna.
+   v
+"Marcar Pago" (manual) -> f_confirmar_pagamento_prestador
+   -> financeiro_baixas + financeiro_pagar='pago' + pagamentos_prestadores='pago'
+PONTO EXATO DE QUEBRA: entre "elegivel/aprovado" e "Tesouraria/Banco". Nao existe
+formacao de LOTE/ORDEM (lote_id nunca preenchido, sem cabecalho, sem status de
+lote) e a Tesouraria nao consome por aprovacao. A baixa so ocorre manualmente.
+
+--------------------------------------------------------------------------------
+4. ORDEM DE PAGAMENTO
+--------------------------------------------------------------------------------
+- Existe entidade propria? NAO.
+- E apenas estado de pagamentos_prestadores? SIM (status_aprovacao/elegivel_lote).
+- Existe fechamento agregado? SIM, como LINHA-MAE em pagamentos_prestadores
+  (tipo_pagamento='fechamento') com itens via self-FK fechamento_id
+  (2 fechamentos; 7 itens vinculados). NAO ha numero/ID proprio de ordem.
+- Existe numero/ID de ordem? NAO.
+- Relacao 1:N ordem/lote -> pagamentos? Existe via fechamento_id (self) para
+  fechamento; para lote nao ha relacao (lote_id sem FK).
+- Precisa nova tabela? NAO para o GATE atual (formar ordem/lote + Tesouraria):
+  lote_id (existente) + status_pagamento='em_lote' + elegivel_lote/status_aprovacao
+  representam o lote de forma suficiente para o escopo.
+
+--------------------------------------------------------------------------------
+5. LOTE
+--------------------------------------------------------------------------------
+- Tabela de lote? NAO existe.
+- lote_id referencia o que? Nada (uuid sem FK); agrupamento logico apenas.
+- Como um lote e criado hoje? NAO e criado. "Liberar Lote" so muda status.
+- Quais registros podem entrar? (nao definido) — hoje 0 com lote_id.
+- Trava contra duplicidade? NENHUMA no nivel de lote.
+- Idempotencia? NENHUMA para lote.
+- Status do lote? NAO existe (apenas status_pagamento por linha: 'em_lote').
+- Total do lote? NAO persiste (somente SUM ad-hoc possivel).
+- Prestador/conta por item? O prestador esta na linha; conta bancaria NAO
+  (viria de prestadores no momento do envio).
+
+--------------------------------------------------------------------------------
+6. DADOS BANCARIOS DO PRESTADOR (somente schema)
+--------------------------------------------------------------------------------
+Local: tabela prestadores — banco, agencia, conta, digito, tipo_conta,
+  favorecido, cpf_cnpj_favorecido, chave_pix, tipo_chave_pix (TEXT).
+Vinculo: pagamentos_prestadores.prestador_id -> prestadores.id.
+Snapshot: NAO existe snapshot bancario em pagamentos_prestadores nem em lote
+  (nao ha colunas de conta/pix na linha nem cabecalho de lote).
+Risco: alteracao cadastral do prestador APOS gerar a ordem/lote poderia desviar
+  o pagamento (nao ha copia congelada dos dados bancarios no momento da geracao).
+  Valores reais NAO foram exibidos (somente schema/campos).
+
+--------------------------------------------------------------------------------
+7. TESOURARIA
+--------------------------------------------------------------------------------
+Query atual (PagamentoCNAB.tsx): pagamentos_prestadores
+  SELECT ... WHERE impacto_dre = true ORDER BY data_prevista_pagamento LIMIT 50.
+Antes da 05D.4 retornava vazio porque a RLS de pagamentos_prestadores possuia
+SOMENTE policies *_own (prestador). O usuario financeiro do TMS nao era o
+prestador => SELECT retornava [] (sem erro).
+Apos a 05D.4 (policy pp_select_tms por tenant via f_pp_tenant_id) o TMS passou a
+enxergar 117 registros (do tenant). A Tesouraria passou a exibir a lista real.
+ATENCAO: o filtro e apenas impacto_dre=true — NAO filtra por aprovacao/elegivel,
+portanto mostra registros nao aprovados tambem (a regra de negocio da Tesouraria
+ainda nao existe; e apenas preview).
+
+--------------------------------------------------------------------------------
+8. CNAB / IFI
+--------------------------------------------------------------------------------
+- CNAB: PLACEHOLDER/NAO implementado. Header explicito no codigo ("Integracao
+  bancaria CNAB ainda nao configurada"); botoes "Gerar Remessa"/"Importar Retorno"
+  desabilitados; sem geracao/retorno real.
+- Provider/adapter bancario: NAO existe.
+- Estrutura para API PIX: NAO existe.
+- Onde encaixar iFi sem acoplar o dominio: como ADAPTADOR de execucao a jusante
+  do LOTE, consumindo a fila de pagamentos aprovados/em_lote e confirmando a
+  liquidacao via f_confirmar_pagamento_prestador (ja grava financeiro_baixas).
+  O domain nao deve conhecer o banco: um provider (interface) -> iFi/PIX ou CNAB.
+- REGRA: NAO transformar PIX/API em CNAB artificialmente; sao adaptadores distintos
+  sob a MESMA interface (ex.: executarLote()/consultarRetorno()).
+
+--------------------------------------------------------------------------------
+9. BAIXA / FONTE DA VERDADE
+--------------------------------------------------------------------------------
+f_confirmar_pagamento_prestador(p_pagamento_id, p_data_pagamento, p_valor_pago):
+  FOR UPDATE no pp; rejeita se pago/cancelado; localiza o titulo em
+  financeiro_pagar (por os_id+prestador+valor, ou por valor/fornecedor), insere
+  financeiro_baixas, marca financeiro_pagar 'parcial'/'pago' e pp
+  status_pagamento='pago'/status='pago', com data_pagamento.
+Fontes: pagamentos_prestadores (fila/estado) + financeiro_pagar (titulo) +
+  financeiro_baixas (liquido). Fonte da verdade da LIQUIDACAO = financeiro_baixas
+  (com estornada=true/false) + status_pagamento.
+Riscos de dupla baixa: mitigados por FOR UPDATE + check de status='pago' + check
+  de saldo; porem pagamentos_prestadores NAO tem FK para financeiro_baixas, e um
+  "Marcar Pago" concorrente poderia gerar 2 tentativas (a 2a e rejeitada pela RPC).
+  Risco residual: pp pago sem baixa correspondente (estado inconsistente historico).
+
+--------------------------------------------------------------------------------
+10. AMOSTRA REAL (somente leitura; PII mascarada)
+--------------------------------------------------------------------------------
+Contagens (independentes):
+  pagamentos_prestadores = 137 | elegivel_lote=true = 4
+  aprovado & elegivel<>true = 9 | lote_id NOT NULL = 0 | status_pagamento='em_lote' = 0
+  pago = 12 | cancelado = 3 | financeiro_baixas = 19
+Exemplos por categoria (IDs omitidos/mascarados; sem PII):
+  ELEGIVEL_LOTE ...... 4 (aptos ao gate/lote)
+  APROVADO_NAO_ELEG .. 9 (aprovados sem elegivel_lote=true — estado a normalizar)
+  PAGO ............... 12
+  CANCELADO .......... 3
+  TESTE/HML .......... 23 (is_teste=true ou origem 'TESTE...')
+  SEM TENANT ......... 8 (os_id sem OS/alocacao)
+  AGREGADO ........... 2 (tipo_pagamento='fechamento'; 7 itens via fechamento_id)
+Nenhum registro alterado.
+
+--------------------------------------------------------------------------------
+11. DECISAO ARQUITETURAL
+--------------------------------------------------------------------------------
+ESCOLHA: (A) REUTILIZAR A ESTRUTURA EXISTENTE.
+Justificativa (evidencias):
+  - A fila ja tem estado suficiente: status_conferencia, status_aprovacao,
+    elegivel_lote, lote_id, status_pagamento ('em_lote').
+  - O "fechamento agregado" ja existe (linha-mae + fechamento_id self-FK), sem
+    precisar de nova entidade para agrupar.
+  - O escopo desta fase NAO inclui banco/iFi/CNAB/baixa automatica; portanto
+    metadados de remessa/retorno (que exigiriam cabecalho de lote) NAO sao
+    necessarios agora.
+  - Criar "segundo financeiro" (C) seria over-engineering.
+RESERVA: quando a integracao bancaria (iFi/CNAB) for autorizada, uma pequena
+  extensao (B) — cabecalho minimo `lotes_pagamento` (id, tenant, status, total,
+  provider, arquivo_retorno, timestamps) referenciado por lote_id — sera o passo
+  natural, sem duplicar financeiro_pagar/pagamentos_prestadores/financeiro_baixas.
+  (Nao criar agora.)
+
+--------------------------------------------------------------------------------
+12. PROXIMA MICRO-MISSAO (implementacao minima; SEM banco/iFi/CNAB/baixa)
+--------------------------------------------------------------------------------
+05D.7B — FORMAR ORDEM/LOTE A PARTIR DE APROVADOS E EXIBIR NA TESOURARIA:
+  1) Servico/RPC `f_gerar_lote_pagamentos(p_ids uuid[])` reutilizando colunas
+     EXISTENTES (SEM schema novo): atribui um `lote_id` (gen_random_uuid()) as
+     linhas com status_aprovacao='aprovado' AND elegivel_lote=true AND
+     status_pagamento NOT IN ('pago','cancelado') AND lote_id IS NULL, e marca
+     status_pagamento='em_lote'. Idempotente (reexecucao = no-op nas ja em lote).
+     Tenant-safe (mesmo padrao 05D.6B: auth.uid + papel admin/financeiro + tenant).
+  2) UI (Conferencia ou PagamentoPrestadores): acao "Gerar Ordem/Lote" sobre
+     selecao de aprovados; feedback de lote_id e quantidade.
+  3) Tesouraria (PagamentoCNAB): filtrar por
+     status_aprovacao='aprovado' AND elegivel_lote=true AND status_pagamento
+     NOT IN ('pago','cancelado') (mostra 'em_lote' como aguardando banco).
+  4) Regressao: idempotencia (gerar 2x), isolamento tenant, e nenhuma alteracao
+     em valores/status financeiros alem de lote_id/status_pagamento.
+NAO inclui: enviar banco; iFi; CNAB real; baixar; pagar; snapshot bancario.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+Banco de dados (nenhuma escrita); UI (nenhuma alteracao); M66/M80; RPC aprovacao;
+datas; AR/faturas; Conferencia; 21 indeterminados; CESAR; APP; Programacao.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7A-ORDEM-LOTE-MAPA-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7A-ORDEM-LOTE-MAPA-RESULTADO.txt
+Tamanho ..: 14299 bytes
+Data .....: 24/09/2026 17:48:53
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7A
+================================================================================

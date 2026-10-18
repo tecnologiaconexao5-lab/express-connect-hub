@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const cols = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='alocacoes_escala' AND (column_name ILIKE '%etapa%' OR column_name ILIKE '%aceite%' OR column_name ILIKE '%os%' OR column_name ILIKE '%numero%') ORDER BY column_name`);
+console.log("cols:", cols.rows.map(r=>r.column_name).join(", "));
+const al = await c.query(`SELECT id, prestador_id, status, aceite_prestador, metadata, ordem_servico_id FROM alocacoes_escala WHERE prestador_id='f61e4161-6be7-46d8-be90-984b86222d08' ORDER BY created_at DESC LIMIT 5`);
+console.log(JSON.stringify(al.rows, null, 2).slice(0, 2500));
+await c.end();

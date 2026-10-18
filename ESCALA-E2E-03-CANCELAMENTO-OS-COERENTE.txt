@@ -1,0 +1,110 @@
+ESCALA-E2E-03-CANCELAMENTO-OS-COERENTE
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA + CORREÇÃO CONTROLADA
+
+==================================================
+AUDITORIA (antes)
+==================================================
+
+f_trg_cancelar_financeiro_alocacao (BEFORE UPDATE OF status, WHEN new='cancelada'):
+  cancelava financeiro_receber / financeiro_pagar / pagamentos_prestadores,
+  mas NÃO cancelava a ordens_servico vinculada (alocacoes_escala.ordem_servico_id).
+
+Triggers de ordens_servico ao cancelar:
+  trg_evento_os_cancelada   (AFTER UPDATE OF status WHEN new='cancelada') → apenas evento
+  trg_evento_os_status_changed → apenas evento
+  trg_propagar_financeiro_os (M80) → WHEN status <> 'cancelada' → NÃO dispara em cancelamento
+  trg_notificar_os_para_app → só em mudança de prestador → NÃO dispara
+  ⇒ cancelar a OS NÃO gera financeiro e NÃO recursiona para alocacoes_escala.
+
+Efeitos de UPDATE ordens_servico.status='cancelada': seguro (só eventos).
+Tratamento de títulos pagos/recebidos: função mantém NOT IN ('pago','recebido','cancelada').
+
+==================================================
+CORREÇÃO (mínima, idempotente, sem recursão, sem DELETE)
+==================================================
+
+Ao cancelar a alocação, se NEW.ordem_servico_id IS NOT NULL, cancela a MESMA OS:
+  UPDATE public.ordens_servico SET status='cancelada', updated_at=NOW()
+  WHERE id = NEW.ordem_servico_id AND status IS DISTINCT FROM 'cancelada';
+
+- Não cria nova OS.
+- Não duplica financeiro (UNIQUE os_id preservado).
+- Idempotente: OLD.status='cancelada' → return; e AND status<>'cancelada'.
+- Não altera M66 (f_trg_propagar_financeiro_alocacao) nem M80 (f_trg_propagar_financeiro_os).
+
+Migration: supabase/migrations/20260922000000_escala_e2e_03_cancelamento_os_coerente.sql
+Rollback:  supabase/migrations/20260922000001_escala_e2e_03_rollback.sql
+
+==================================================
+VALIDAÇÃO (SQL transacional BEGIN/ROLLBACK — nenhuma operação real cancelada)
+==================================================
+
+ALLOCATION_CANCEL_STATUS=cancelada
+LINKED_OS_CANCEL_STATUS=cancelada  (antes: pendente)
+RECEBER_CANCEL_BEHAVIOR=cancelada
+PAGAR_CANCEL_BEHAVIOR=cancelada
+PAGAMENTOS_CANCEL_BEHAVIOR=cancelado
+PAID_RECEIVED_PROTECTION=YES  (NOT IN ('pago','recebido','cancelada'); + guarda DB TMS-0067
+                               impede 'pago' sem baixa)
+RECURSION_RISK=NONE  (cancelar OS só dispara eventos; M66/M80 ignoram 'cancelada')
+DUPLICATION_RISK=NONE  (NO_EXTRA_OS_CREATED=YES; RECEBER_ROWS=1)
+IDEMPOTENCY_PRESERVED=YES  (repetir cancelamento: mesma contagem de OS, 1 receber)
+
+Comprovações:
+  - OS vinculada é a MESMA ordem_servico_id (144f4616... / 10f6e8cf...).
+  - Nenhuma OS adicional criada.
+  - UNIQUE os_id continua protegendo o financeiro.
+  - Repetir a lógica não cria registros.
+  - Registros financeiros permanecem (status alterado), sem DELETE.
+
+Pós-deploy (função em produção, ROLLBACK): POSTDEPLOY_LINKED_OS_CANCEL_STATUS=cancelada,
+  POSTDEPLOY_RECEBER=cancelada, RESIDUAL_TEST_OS=0.
+
+==================================================
+RESULTADO
+==================================================
+
+ROOT_CAUSE_CONFIRMED=YES
+FIX_IMPLEMENTED=YES
+OS_CANCEL_COHERENCE=YES
+FINANCIAL_CANCEL_COHERENCE=YES
+PAID_RECEIVED_PROTECTION=YES
+IDEMPOTENCY_PRESERVED=YES
+PRODUCTION_DEPLOYED=YES
+ROLLBACK_PREPARED=YES
+
+FILES_MODIFIED=
+  supabase/migrations/20260922000000_escala_e2e_03_cancelamento_os_coerente.sql (novo)
+  supabase/migrations/20260922000001_escala_e2e_03_rollback.sql (novo)
+  src/test/escala_e2e_03_cancelamento_os_coerente.test.ts (novo)
+
+TESTS=90/90 PASS (5 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 36.08s
+
+DB_WRITES=0 (nenhuma linha de dados; somente DDL CREATE OR REPLACE FUNCTION)
+MIGRATIONS=1 (aplicada em produção)
+
+==================================================
+FORA DO ESCOPO (não tratado nesta missão)
+==================================================
+
+- EXCEPTION WHEN OTHERS THEN NULL / atomicidade M66/M80;
+- custo_prestador=0 × valor_repasse;
+- dupla propagação M66/M80;
+- 134 links históricos sem OS;
+- 27 alocações órfãs.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhuma alocação produtiva real cancelada (validação em BEGIN/ROLLBACK).
+- Sem DELETE. Sem recursão. M66/M80 não alterados.
+- Não tocou APP/POD/Fatura/Recrutamento. Não iniciou outra missão.
+
+MIGRATIONS=1
+DB_WRITES=0

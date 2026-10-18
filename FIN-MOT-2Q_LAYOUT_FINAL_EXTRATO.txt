@@ -1,0 +1,138 @@
+FIN-MOT-2Q — AJUSTE FINAL DO LAYOUT DO EXTRATO DO PRESTADOR
+Data: 21/08/2026
+Status: B — PDF GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+O QUE FOI ALTERADO
+============================================================
+
+Arquivo: src/lib/pdf/extratoPrestadorReport.ts (somente layout).
+
+Nenhum cálculo, service, banco, migration, App ou Torre alterado.
+
+1. CABEÇALHO
+   - Logo colorido à esquerda (proporcional, fundo branco).
+   - Empresa discreta à direita: Conexão Express Transportes LTDA, CNPJ,
+     cidade/UF (dados de empresaConfig — SEM "Av. Paulista, 1000", que não
+     está comprovado como real).
+   - Linha navy fina + detalhe laranja (institucional discreto).
+   - Título central: EXTRATO DE FECHAMENTO DO PRESTADOR.
+   - Subtítulo pequeno: "Fechamento de serviços e reembolsos".
+   - HASH EP REMOVIDO do subtítulo central (sem destaque técnico).
+
+2. PRESTADOR + CLIENTE (esquerda)
+   - PRESTADOR: Nome, CPF/CNPJ (mascarado), Veículo, Placa.
+   - CLIENTE: bloco próprio logo abaixo do prestador, com nome real
+     (Calvo Comércio e Importação Ltda). NUNCA UUID/"Cliente selecionado".
+     Cliente NÃO está mais dentro de PERÍODO.
+
+3. PAGAMENTO (direita)
+   - Bloco PAGAMENTO: 
+       * se pago → "Pago em: DD/MM/AAAA" + "Status: Pago"
+       * senão → "Previsão para: DD/MM/AAAA" (se houver) + "Status: ..."
+   - Sem data prevista → não inventa; exibe só Status.
+
+4. PERÍODO (direita, simples)
+   - PERÍODO: De / Até (sem cliente misturado).
+   - Origem/Tipo discreto abaixo.
+
+5. RESUMO FINANCEIRO
+   - Mantido: Créditos | Valor | Débitos | Valor (cálculos preservados).
+   - VALOR LÍQUIDO com destaque laranja.
+
+6. OPERAÇÕES DO PERÍODO
+   - Tabela simplificada para o motorista:
+     Data | Ordem / Romaneio | Serviço / Trajeto | Valor
+   - Nomenclatura externa: "Ordem de Carregamento" / "Ordem de Serviço"
+     (nunca "Escala").
+   - Valores sempre em R$ (R$ 520,00), alinhados à direita.
+
+7. PREVISÃO NO FINAL
+   - "Pagamento previsto para DD/MM/AAAA." em laranja discreto abaixo da
+     tabela, quando houver data prevista.
+
+8. RODAPÉ
+   - "Conexão Express · Ref. interna: EP-... · Gerado em DD/MM/AAAA HH:mm"
+   - "Página X de Y" (total real). Hash EP apenas como referência interna.
+
+============================================================
+DADOS DA TRANSPORTADORA (usados)
+============================================================
+
+- Razão social: Conexão Express Transportes LTDA (empresaConfig)
+- CNPJ: 31.227.975/0001-80 (empresaConfig)
+- Cidade/UF: São Paulo/SP (empresaConfig)
+- Endereço: NÃO exibido (Av. Paulista, 1000 não comprovado como real).
+- Telefone/e-mail: NÃO exibidos no PDF (não comprovados neste contexto).
+
+============================================================
+PROVA VISUAL
+============================================================
+
+PDF gerado pelo gerador REAL com:
+- Prestador: CÉSAR AUGUSTO HOLANDA SILVA
+- Cliente: Calvo Comércio e Importação Ltda
+- Status: conferido · Pagamento: programado · Previsão: 05/09/2026
+- 3 créditos + 1 débito manual · Líquido R$ 11.750,50
+
+Arquivo: test-results/fin-mot-2q/extrato_cesar_calvo.pdf (21.782 bytes)
+ABERTO no visualizador padrão (Invoke-Item).
+
+CHECKLIST:
+[x] dados da transportadora presentes (razão/CNPJ/cidade-UF)
+[x] sem endereço fictício (Av. Paulista removida do PDF)
+[x] logo proporcional
+[x] cliente em local correto (bloco CLIENTE sob o prestador)
+[x] previsão de pagamento visível (Previsão para: 05/09/2026)
+[x] status de pagamento visível (Programado / Pago)
+[x] hash EP não está em destaque (só "Ref. interna" no rodapé)
+[x] resumo financeiro limpo
+[x] valor líquido destacado (faixa laranja)
+[x] operações legíveis (4 colunas)
+[x] valores em R$
+[x] uma página quando couber (exemplo 1 página)
+[x] documento adequado para envio ao motorista (confirmar no PDF aberto)
+
+============================================================
+VALIDAÇÃO
+============================================================
+
+[x] npx tsc --noEmit -> 0 erros
+[x] npm run build -> OK (53.34s)
+[x] npx vitest run src/test/extratoPrestadorService.test.ts -> 18/18
+[x] PDF gerado (21.782 bytes) e aberto
+[x] testes temporários removidos
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Layout ajustado ao modelo de referência: transportadora discreta, cliente
+  no lugar lógico, bloco de pagamento, período simples, hash EP fora de
+  destaque, tabela simplificada (4 colunas), previsão no final.
+- Cálculos e dados preservados. Sem migration/banco/App/Torre.
+
+============================================================
+FALTA (pendências reais)
+============================================================
+
+- Aprovação visual do usuário no PDF aberto
+  (test-results/fin-mot-2q/extrato_cesar_calvo.pdf).
+- Confirmação em produção dos dados empresariais (razão/CNPJ/endereço) e
+  de telefone/e-mail antes de eventualmente exibi-los.
+- Numeração humana EP-AAAA-000001 (depende da decisão arquitetural
+  FIN-MOT-2P/Migration futura).
+
+============================================================
+STATUS
+============================================================
+
+B — PDF GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Aprovação visual final do PDF FIN-MOT-2Q no TMS real (Financeiro ->
+Pag. Prestadores -> Gerar Extrato) com CÉSAR AUGUSTO HOLANDA SILVA +
+Calvo, conferindo o layout frente ao modelo de referência antes de marcar A.

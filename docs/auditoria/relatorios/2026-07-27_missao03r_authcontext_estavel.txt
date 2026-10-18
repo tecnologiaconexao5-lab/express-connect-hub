@@ -1,0 +1,45 @@
+RELATORIO: Missao 03R - AuthContext Estavel
+============================================
+Data: 2026-07-27
+Status: CONCLUIDA - 6/6 Playwright passando
+
+PROBLEMA
+--------
+AuthContext tinha dois useEffects conflitantes (init() + onAuthStateChange)
+que causavam race condition na inicializacao. Em refresh direto, getSession()
+retornava null e o usuario era redirecionado para /login antes do SIGNED_IN
+disparar. Timeout de 5s na query tenant_usuarios causava role=operador
+permanente.
+
+CAUSA RAIZ
+----------
+1. Dois caminhos de inicializacao concorrentes sem coordenacao
+2. Timeout 5000ms na query tenant_usuarios -> fallback role=operador
+3. getSession() vs INITIAL_SESSION assincrono - race no setIsLoading(false)
+
+CORRECAO APLICADA
+-----------------
+1. Usuario setado IMEDIATAMENTE com role=operador, setIsLoading(false) na hora
+2. Resolucao da role via tenant_usuarios roda em background (Promise.then)
+3. Safety timer reduzido: 12000ms -> 6000ms
+4. Ambos os caminhos (getSession + INITIAL_SESSION) seguem mesmo padrao
+
+ARQUIVOS MODIFICADOS
+--------------------
+src/contexts/AuthContext.tsx
+tests/e2e/missao03r_authcontext.spec.ts
+
+RESULTADOS
+----------
+Build: 47.40s (OK)
+Playwright: 6/6 (1.5min)
+- T01: Login financeiro role=financeiro: PASS (12.1s)
+- T02: Refresh direto Biblioteca: PASS (17.0s)
+- T03: Refresh direto Financeiro: PASS (12.9s)
+- T04: Logout limpa usuario: PASS (14.3s)
+- T05: Troca perfil sem heranca: PASS (25.5s)
+- T06: Acesso sem auth redireciona: PASS (7.7s)
+
+PENDENCIAS
+----------
+Nenhuma. D05 (AUDITORIA_MASTER.md) agora corrigido.

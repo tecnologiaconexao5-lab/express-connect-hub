@@ -9,3 +9,5 @@ ALTER TABLE public.veiculos
 COMMENT ON COLUMN public.veiculos.tara_kg IS 'Tara do veiculo em kg (peso do veiculo vazio). Obrigatorio SEFAZ para CT-e e MDF-e.';
 COMMENT ON COLUMN public.veiculos.uf_licenciamento IS 'UF onde o veiculo esta licenciado (ex: SP). Obrigatorio SEFAZ para MDF-e.';
 COMMENT ON COLUMN public.veiculos.tipo_rodado IS 'Tipo de rodado do veiculo (ex: Truck, Toco, Carreta 2 eixos). Obrigatorio SEFAZ para MDF-e.';
+
+

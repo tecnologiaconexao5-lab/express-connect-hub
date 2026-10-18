@@ -1,0 +1,151 @@
+================================================================================
+MISSAO: TMS-FAT-URG-03B2-HOMOLOGACAO-VISUAL-ASSISTIDA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS REAL + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: HOMOLOGACAO VISUAL ASSISTIDA (o USUARIO faz login manual e clica)
+================================================================================
+
+RESULTADO: BLOCKED / PENDENTE DE EXECUCAO VISUAL ASSISTIDA.
+  - OpenCode NAO automatiza login, NAO descobre/usa senha/token/sessao.
+  - Este TXT e o ROTEIRO + PLANILHA DE EVIDENCIAS + QUERIES DE VERIFICACAO.
+  - As etapas de TELA ficam como PENDENTE ate o usuario executar os cliques e
+    retornar os IDs; entao a verificacao de banco (read-only) e anexada.
+  - Nenhum codigo foi alterado. Nenhum dado de negocio foi criado por esta sessao.
+
+COMO PROCEDER (assistido):
+  1. O usuario faz login manualmente no TMS real e executa os passos 1..31 abaixo.
+  2. Ao criar o caso controlado, anotar e informar: alocacao_id, fatura_id,
+     fatura_item_id, AR_id e numero da fatura.
+  3. OpenCode roda as QUERIES DE VERIFICACAO (read-only) por ID e preenche a
+     coluna "ID BANCO / VALOR-STATUS / RESULTADO" desta planilha.
+  4. Nenhuma correcao sera feita nesta sessao; falha = registrar e parar.
+
+================================================================================
+BASELINE (BEFORE) — capturado read-only em 2026-09-25T21:06:14Z
+================================================================================
+Contagens:
+  alocacoes_escala .......... 200
+  faturas ................... 9   (todas 'emitida')
+  fatura_itens .............. 46
+  financeiro_receber ........ 47
+  financeiro_pagar .......... 113
+  pagamentos_prestadores .... 96
+Observacao: no baseline NAO existe fatura em 'rascunho'/'aguardando_aprovacao'.
+Ultimas faturas: FAT-2026-000018 (1800,00) ... FAT-2026-000013.
+Ultima alocacao relevante: 61bc16b0... (origem central_financeira_manual).
+
+================================================================================
+PLANILHA DE EVIDENCIAS (preencher conforme execucao)
+================================================================================
+ETAPA | AÇÃO VISUAL                          | ID BANCO | VALOR/STATUS        | RELOAD | RESULTADO
+------+--------------------------------------+----------+---------------------+--------+-----------
+1     | Financeiro > Conferência             | -        | tela abre           | -      | PENDENTE
+2     | Lançar Serviço                       | -        | modal abre          | -      | PENDENTE
+3     | Criar caso HML identificável         | (a)      | valores informados  | -      | PENDENTE
+4     | Mensagem de sucesso                  | -        | sucesso na tela     | -      | PENDENTE
+5     | Recarregar Conferência               | -        | -                   | SIM    | PENDENTE
+6     | Serviço permanece na Conferência     | (a)      | aparece/visível     | -      | PENDENTE
+7     | Confirmar no banco alocacao+tenant   | (a)+(t)  | status concluída    | -      | PENDENTE
+8     | Selecionar exatamente o serviço      | (a)      | checkbox ON         | -      | PENDENTE
+9     | Conferir total selecionado           | (a)      | total = valor caso  | -      | PENDENTE
+10    | Clicar Criar Fatura                  | (f)      | fatura rascunho     | -      | PENDENTE
+11    | Recarregar Conferência               | -        | -                   | SIM    | PENDENTE
+12    | Item não refaturável (histórico/off) | (a)      | inelegível/bloq.    | -      | PENDENTE
+13    | Abrir Faturas                        | (f)      | lista abre          | -      | PENDENTE
+14    | Localizar a MESMA fatura             | (f)      | encontrada          | -      | PENDENTE
+15    | Confirmar status inicial             | (f)      | rascunho            | -      | PENDENTE
+16    | Enviar para Validação                | (f)      | ação executada      | -      | PENDENTE
+17    | Visual+banco: aguardando_aprovacao   | (f)      | aguardando_aprov.   | -      | PENDENTE
+18    | Aprovar                              | (f)      | ação executada      | -      | PENDENTE
+19    | Visual+banco: aprovada               | (f)      | aprovada            | -      | PENDENTE
+20    | financeiro_receber da fatura = ZERO  | (f)      | AR count = 0        | -      | PENDENTE
+21    | Emitir                               | (f)      | ação executada      | -      | PENDENTE
+22    | Visual+banco: emitida/1 AR/campos    | (f)+(r)  | emitida + 1 AR      | -      | PENDENTE
+23    | Recarregar Faturas                   | -        | -                   | SIM    | PENDENTE
+24    | Confirmar persistência               | (f)      | mantém emitida      | -      | PENDENTE
+25    | Abrir Contas a Receber               | (r)      | lista abre          | -      | PENDENTE
+26    | Localizar o MESMO AR                 | (r)      | encontrado          | -      | PENDENTE
+27    | Confirmar cliente/nº/valor/vencto    | (r)      | confere             | -      | PENDENTE
+28    | Recarregar Contas a Receber          | -        | -                   | SIM    | PENDENTE
+29    | Confirmar persistência do AR         | (r)      | mantém aberto       | -      | PENDENTE
+30    | Abrir/gerar PDF da fatura            | (f)      | PDF abre            | -      | PENDENTE
+31    | Conferir PDF (cliente/nº/valor/etc.) | (f)      | corresponde         | -      | PENDENTE
+
+Legenda: (a)=alocacao_id  (t)=tenant_id  (f)=fatura_id  (r)=AR_id.
+Preencher RESULTADO = PASS / FAIL / N.A. por etapa. NAO dar baixa no AR.
+
+================================================================================
+QUERIES DE VERIFICACAO (read-only; rodar por ID apos cada etapa)
+================================================================================
+-- 7/8/12) Alocação (Conferência)
+SELECT id, tenant_id, status, finalizada, data_finalizacao,
+       cliente_id, prestador_id, valor_frete, valor_repasse,
+       (metadata->>'numeroOC') AS numero_oc, (metadata->>'origem') AS origem
+  FROM public.alocacoes_escala WHERE id = :alocacao_id;
+
+-- 12) Se o item já está em fatura ativa (inelegível a novo faturamento)
+SELECT fi.id, fi.status AS item_status, f.status AS fatura_status, f.numero
+  FROM public.fatura_itens fi JOIN public.faturas f ON f.id = fi.fatura_id
+ WHERE fi.alocacao_id = :alocacao_id AND fi.status = 'ativo';
+
+-- 15/17/19/22) Fatura (status/valores/AR)
+SELECT id, status, numero, numero_cliente, conta_receber_id,
+       valor_total, vencimento, data_emissao, tenant_id
+  FROM public.faturas WHERE id = :fatura_id;
+
+-- 20/22) Conta a Receber da fatura (deve ser 0 na validacao/aprovacao; 1 na emissao)
+SELECT count(*)::int AS n FROM public.financeiro_receber WHERE fatura_id = :fatura_id;
+SELECT id, status, valor, valor_liquido, cliente_id, data_vencimento, fatura_id, numero
+  FROM public.financeiro_receber WHERE fatura_id = :fatura_id;
+
+-- 12/22) Garantia de não-duplicidade (máx. 1 AR por fatura e 1 fatura ativa por OS)
+SELECT fatura_id, count(*)::int AS n FROM public.financeiro_receber
+ WHERE fatura_id IS NOT NULL GROUP BY fatura_id HAVING count(*) > 1;
+
+-- Obrigações de PRESTADOR criadas automaticamente pelo caso (mapear, NÃO alterar)
+SELECT 'financeiro_pagar' AS tabela, id::text, status, valor FROM public.financeiro_pagar WHERE os_id = :os_id
+UNION ALL
+SELECT 'pagamentos_prestadores', id::text, status_pagamento, valor_liquido FROM public.pagamentos_prestadores WHERE os_id = :os_id
+UNION ALL
+SELECT 'composicao_financeira_os', os_id::text, NULL, valor_prestador FROM public.composicao_financeira_os WHERE os_id = :os_id;
+
+================================================================================
+MAPA DE LIMPEZA CONTROLADA (sem DELETE avulso)
+================================================================================
+Se o caso for exclusivamente de homologação, MAPEAR antes de qualquer saneamento:
+  - alocacao_id ............ alocacoes_escala
+  - ordem_servico_id ....... ordens_servico (se o lançamento criou OS)
+  - fatura_id .............. faturas
+  - fatura_item_id ......... fatura_itens
+  - AR_id .................. financeiro_receber (fatura_id)
+  - financeiro_pagar ....... (os_id)
+  - pagamentos_prestadores . (os_id)
+  - composicao_financeira_os (os_id)
+  - historico_alocacoes_escala / eventos (se houver)
+Mecanismos oficiais existentes (NÃO executar nesta sessão):
+  - f_cancelar_fatura(fatura_id, motivo)  -> cancela fatura + itens + AR (quando não pago).
+  - cancelamento de alocação via fluxo oficial da Escala (trigger trg_cancelar_financeiro_alocacao).
+Não há, nesta sessão, mecanismo seguro comprovado para remover a alocação de
+homologação sem afetar financeiro; portanto NÃO deletar.
+
+================================================================================
+RISCOS / DIVERGENCIAS
+================================================================================
+R1. Sem execução visual, PASS E2E não pode ser declarado (exige telas+reload+PDF).
+R2. Este roteiro depende da execução manual do usuário; nada foi automatizado.
+R3. Se o caso criar OS/obrigações de prestador (M66/M80), esses registros devem
+    ser MAPEADOS (não removidos) antes de qualquer saneamento.
+
+================================================================================
+CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-03B2-HOMOLOGACAO-VISUAL-ASSISTIDA-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-03B2-HOMOLOGACAO-VISUAL-ASSISTIDA-RESULTADO.txt
+ TAMANHO ..: 9964 bytes
+ DATA/HORA : 25/09/2026 18:08:46
+
+================================================================================
+FIM — TMS-FAT-URG-03B2-HOMOLOGACAO-VISUAL-ASSISTIDA (aguardando execução manual)
+================================================================================

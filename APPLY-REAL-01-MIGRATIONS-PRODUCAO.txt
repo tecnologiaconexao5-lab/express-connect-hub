@@ -1,0 +1,235 @@
+============================================================================
+APPLY-REAL-01 — SINCRONIZAR MIGRATIONS FINANCEIRAS COM O BANCO REAL
+============================================================================
+Data: 2026-09-13
+Operador: Opencode (GPT-OSS 120B Medium)
+Projeto: express-connect-hub
+Ambiente: TMS + REPOSITORIO LOCAL + SUPABASE PRODUCAO
+
+============================================================================
+1. SNAPSHOT ANTES
+============================================================================
+
+git status: 277 arquivos com alteracoes (staged/unstaged/untracked)
+git diff --stat: 28004 insercoes, 16101 remocoes (baseline grande pre-existente)
+NENHUM reset ou checkout destrutivo executado.
+Arquivos tmp/ criados apenas para scripts de verificacao.
+
+============================================================================
+2. CONEXAO COM O BANCO
+============================================================================
+
+Metodo: Node.js + pg (npm)
+Host: aws-1-sa-east-1.pooler.supabase.com
+Database: postgres
+Projeto: uwrvzsjtpgaifkktpepn (PRODUCAO)
+SSL: rejectUnauthorized = false (Supabase pooler)
+NENHUM secret/token exposto no relatorio.
+
+============================================================================
+3. FIN-P0-02 — CHECK CONSTRAINTS DE STATUS
+============================================================================
+
+3.1 ESTADO ANTES:
+  ck_fp_status: JA EXISTE no banco real
+  ck_fr_status: JA EXISTE no banco real
+  Ambas validadas (convalidated = true)
+
+3.2 VERIFICACAO NO BANCO:
+  financeiro_pagar  | ck_fp_status | validated=true
+  financeiro_receber | ck_fr_status | validated=true
+
+3.3 DEFINICOES EXATAS:
+  ck_fp_status: CHECK (status IN ('aberto','pago','vencido','atrasado',
+    'cancelado','parcial','pendente','a vencer','cancelada','provisorio',
+    'recebido','renegociado'))
+  ck_fr_status: CHECK (status IN ('aberto','pago','vencido','atrasado',
+    'cancelado','parcial','pendente','a vencer','a_vencer','cancelada',
+    'vencida','provisorio','recebido','renegociado'))
+
+3.4 DADOS EXISTENTES COMPATIVEIS:
+  financeiro_pagar: 107 registros
+  financeiro_receber: 112 registros
+  Todos preservados sem alteracao.
+
+3.5 CONCLUSAO FIN-P0-02:
+  ============================================================================
+  CLASSIFICACAO: JA ESTAVA APLICADA
+  Apenas verificada — NAO foi necessario reaplicar.
+  ============================================================================
+
+============================================================================
+4. FIN-P1-03 — FECHAMENTO DO PRESTADOR
+============================================================================
+
+4.1 ESTADO ANTES:
+  fechamento_id:     NAO EXISTE
+  data_conferencia:  NAO EXISTE
+  data_aprovacao:    NAO EXISTE
+  FK fk_fechamento_pai: NAO EXISTE
+  Index idx_pp_fechamento_id: NAO EXISTE
+  Index idx_pp_fechamento_tipo: NAO EXISTE
+
+4.2 MIGRATION APLICADA:
+  Arquivo: supabase/migrations/20260911_fin_p1_03_fechamento_prestador.sql
+  Metodo: BEGIN/COMMIT direto via pg client
+  Resultado: SUCESSO
+
+4.3 ESTADO DEPOIS (PROVA):
+  Colunas criadas:
+    fechamento_id     | uuid          | nullable=YES
+    data_conferencia  | timestamptz   | nullable=YES
+    data_aprovacao    | timestamptz   | nullable=YES
+
+  FK constraint:
+    fk_fechamento_pai | FOREIGN KEY (fechamento_id)
+                       REFERENCES pagamentos_prestadores(id)
+                       ON DELETE SET NULL
+
+  Indices:
+    idx_pp_fechamento_id   | btree (fechamento_id) WHERE fechamento_id IS NOT NULL
+    idx_pp_fechamento_tipo | btree (tipo_pagamento, prestador_id, periodo_inicio)
+                           WHERE tipo_pagamento = 'fechamento'
+
+  Comentarios de coluna:
+    fechamento_id:    "FIN-P1-03: FK para pagamentos_prestadores.id do fechamento..."
+    data_conferencia: "FIN-P1-03: Timestamp de conferencia (snapshot)..."
+    data_aprovacao:   "FIN-P1-03: Timestamp de aprovacao (snapshot)..."
+
+  Dados preservados:
+    pagamentos_prestadores: 95 registros (inalterados)
+
+  Todas as constraints de pagamentos_prestadores:
+    [CHECK]  chk_classificacao_dado
+    [FK]     fk_fechamento_pai (NOVA)
+    [FK]     pagamentos_prestadores_prestador_id_fkey
+    [PK]     pagamentos_prestadores_pkey
+    [UNIQUE] uq_pp_os_id
+
+4.4 CONCLUSAO FIN-P1-03:
+  ============================================================================
+  CLASSIFICACAO: APLICADA COM SUCESSO
+  Migration executada, commit confirmado, provas verificadas.
+  ============================================================================
+
+============================================================================
+5. TESTE DE RUNTIME
+============================================================================
+
+5.1 METODO:
+  Transacao BEGIN/ROLLBACK (nenhum dado real alterado)
+  Prestador existente: 6cc41f68-1467-455d-b8d5-c61bfe72cb7c
+  is_teste = true
+
+5.2 PASSOS EXECUTADOS:
+  1. INSERT com fechamento_id=NULL, data_conferencia=NOW()     OK
+  2. INSERT "pai" tipo_pagamento='fechamento'                   OK
+  3. UPDATE SET fechamento_id=pai.id (FK validada)              OK
+  4. SELECT com leitura de fechamento_id                        OK
+  5. UPDATE SET data_conferencia=NOW(), status_conferencia='conferido'  OK
+  6. UPDATE SET data_aprovacao=NOW(), status_aprovacao='aprovado'      OK
+  7. SELECT por fechamento_id (usa idx_pp_fechamento_id)        OK
+  8. SELECT por tipo_pagamento='fechamento' (usa idx_pp_fechamento_tipo) OK
+  9. DELETE do "pai" → fechamento_id filho = NULL (ON DELETE SET NULL)   OK
+  10. ROLLBACK → 0 registros teste restantes                    OK
+
+5.3 CONCLUSAO RUNTIME:
+  ============================================================================
+  FUNCIONAL — fechamentoService nao tera mais erro de coluna inexistente.
+  Todas as operacoes CRUD nas 3 colunas validadas com sucesso.
+  ============================================================================
+
+============================================================================
+6. REGRESSAO
+============================================================================
+
+6.1 TypeScript:
+  npx tsc --noEmit → 0 erros
+
+6.2 Build:
+  npm run build → OK (34.90s)
+  Output: dist/assets/ (bundles gerados corretamente)
+  Warnings: chunk size (pre-existente, nao relacionado)
+
+6.3 Conclusao regressao:
+  ============================================================================
+  SEM REGRESSAO — tsc 0 erros, build OK.
+  ============================================================================
+
+============================================================================
+7. GIT
+============================================================================
+
+7.1 Arquivos modificados por esta missao:
+  tmp/check_db_state.mjs     (novo, temporario, descartavel)
+  tmp/apply_fin_p1_03.mjs    (novo, temporario, descartavel)
+  tmp/verify_after.mjs       (novo, temporario, descartavel)
+  tmp/runtime_test.mjs       (novo, temporario, descartavel)
+
+7.2 Arquivos NAO modificados:
+  NENHUM arquivo fonte (.ts, .tsx) foi alterado
+  NENHUMA migration (.sql) foi alterada
+  O repo continua com as mesmas 277 alteracoes pre-existentes
+
+7.3 Nenhum push foi feito.
+7.4 Nenhum commit foi feito.
+7.5 Nao existe risco de perder alteracoes locais.
+
+7.6 ATENCAO: Arquivos tmp/ sao descartaveis e NAO devem ser commitados.
+
+============================================================================
+8. RESULTADO FINAL
+============================================================================
+
+| Item             | Classificacao         |
+|------------------|-----------------------|
+| FIN-P0-02        | JA ESTAVA APLICADA    |
+| FIN-P1-03        | APLICADA COM SUCESSO  |
+| P1-P2 runtime    | FUNCIONAL             |
+| tsc --noEmit     | 0 erros               |
+| npm run build    | OK (34.90s)           |
+| Regressao        | SEM REGRESSAO         |
+
+============================================================================
+9. RISCOS
+============================================================================
+
+1. FIN-P0-02 ja estava aplicada mas NAO consta no historico de migrations
+   (supabase_migrations.schema_migrations). Possivel causa: aplicacao
+   direta via SQL Editor, nao via supabase db push.
+
+2. FIN-P1-03 tambem foi aplicada diretamente (via script Node.js).
+   Recomenda-se registrar no historico de migrations para tracabilidade.
+
+3. A migration usa ADD COLUMN IF NOT EXISTS, portanto e idempotente.
+
+4. A FK usa ON DELETE SET NULL (não CASCADE), preservando itens se o
+   fechamento pai for deletado.
+
+5. NENHUM dado real foi alterado. Todas as operacoes foram ROLLBACK
+   ou concernem apenas DDL (schema).
+
+============================================================================
+10. ROLLBACK
+============================================================================
+
+Se necessario reverter FIN-P1-03:
+
+  ALTER TABLE pagamentos_prestadores DROP CONSTRAINT IF EXISTS fk_fechamento_pai;
+  DROP INDEX IF EXISTS idx_pp_fechamento_id;
+  DROP INDEX IF EXISTS idx_pp_fechamento_tipo;
+  ALTER TABLE pagamentos_prestadores DROP COLUMN IF EXISTS fechamento_id;
+  ALTER TABLE pagamentos_prestadores DROP COLUMN IF EXISTS data_conferencia;
+  ALTER TABLE pagamentos_prestadores DROP COLUMN IF EXISTS data_aprovacao;
+
+NOTA: Rollback destruiria a funcionalidade de fechamento do prestador.
+So executar se houver problema critico de compatibilidade.
+
+============================================================================
+RELATORIO
+============================================================================
+Caminho: APPLY-REAL-01-MIGRATIONS-PRODUCAO.txt
+Tamanho: ~8.5 KB
+Data/Hora: 2026-09-13 08:57 (BRT)
+Operador: Opencode
+Status: CONCLUIDO

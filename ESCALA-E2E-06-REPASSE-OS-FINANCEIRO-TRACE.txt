@@ -1,0 +1,138 @@
+ESCALA-E2E-06-REPASSE-OS-FINANCEIRO-TRACE
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção; nenhuma migration)
+
+==================================================
+MAPEAMENTO
+==================================================
+
+ALLOCATION_PROVIDER_VALUE_SOURCE=alocacoes_escala.valor_repasse
+OS_PROVIDER_VALUE_SOURCE=ordens_servico.custo_prestador
+M66_OS_COST_MAPPING=custo_prestador = COALESCE(NEW.valor_repasse, 0)
+  (INSERT ... ON CONFLICT (id) DO UPDATE SET custo_prestador = v_valor_prestador)
+M66_PAYABLE_MAPPING=financeiro_pagar.valor = v_valor_liquido
+  onde v_valor_liquido = valor_repasse + pedagio + outros_custos
+  (outros_custos = adicional + ajudante - desconto_prestador)
+M80_PAYABLE_MAPPING=financeiro_pagar.valor = v_valor_liquido
+  onde v_valor_prestador = COALESCE(ordens_servico.custo_prestador, 0)
+  e v_valor_liquido = custo_prestador + pedagio + outros_custos
+PAYMENT_PROVIDER_MAPPING=pagamentos_prestadores.valor_liquido = v_valor_liquido
+  (M66 usa valor_repasse; M80 usa custo_prestador)
+
+Campos concorrentes em ordens_servico:
+  custo_prestador (numeric) — ESCRITO pelo M66; usado pelo M80
+  valor_prestador (numeric) — 0 em toda a amostra (não usado por M66/M80)
+  valor_prestador_calculado (numeric) — 0 em toda a amostra
+  prestador_id (text) / prestador (uuid) / repasse_status (text)
+
+==================================================
+PROVA EMPÍRICA (READ-ONLY)
+==================================================
+
+Teste controlado (BEGIN/ROLLBACK): OS com custo_prestador=0 + alocação valor_repasse=250
+  → M66 atualizou custo_prestador=250.00 (ON CONFLICT DO UPDATE) e financeiro_pagar=250.00.
+  → CONFIRMA que o M66 ATUAL mapeia corretamente valor_repasse → custo_prestador.
+  → valor_prestador / valor_prestador_calculado permanecem 0 (M66 não os toca).
+
+==================================================
+AMOSTRA REAL (59 alocações vinculadas a OS)
+==================================================
+
+ALLOCATION_ID=2333f16e... | OS_ID=2c24a4dc... | PROVIDER_ID=e6646799...
+  ALLOCATION_VALOR_REPASSE=250 | OS_CUSTO_PRESTADOR=0 | FINANCEIRO_PAGAR_VALOR=250 | PAGAMENTO_PRESTADOR_VALOR=250
+  CLASSIFICAÇÃO=OS_ZERO
+
+ALLOCATION_ID=ecaedf20... | OS_ID=1e1b59fa... | PROVIDER_ID=e6646799...
+  rep=50 | custo_prestador=50 | pagar=50 | pgto=50 → MATCH
+
+ALLOCATION_ID=24708e2f... | OS_ID=3e3aba1e... | PROVIDER_ID=659f95ec...
+  rep=1200 | custo_prestador=1200 | pagar=1490 | pgto=1490 → MATCH
+  (pagar=1490 = 1200 + pedagio + outros_custos)
+
+ALLOCATION_ID=ddd91a92... | OS_ID=eaa0e5fd... | PROVIDER_ID=e6646799...
+  rep=0 | custo_prestador=500 | pagar=530 | pgto=530 → DIVERGENT
+
+Agregado: MATCH=47 | OS_ZERO=5 | DIVERGENT=7 (total 59 vinculadas)
+  (+ registros SEM_DADO com valor_repasse=0 e sem financeiro)
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. Fonte canônica do repasse na Escala = `alocacoes_escala.valor_repasse`.
+2. M66 grava `ordens_servico.custo_prestador = COALESCE(valor_repasse, 0)` (verificado).
+3. Por que custo_prestador=0 no caso conhecido? HISTÓRICO — a OS vinculada foi criada/
+   ligada por outro fluxo (ou o link definido após o INSERT) sem re-sincronização; o M66 só
+   atualiza custo_prestador quando a alocação é (re)escrita com coluna monitorada. Não é
+   defeito do M66 atual.
+4. M80 pode sobrescrever financeiro correto usando custo_prestador incorreto? SIM. M80 usa
+   custo_prestador; com custo_prestador=0 (stale), M80 recomputa financeiro_pagar = 0 + pedagio
+   + outros (menor) e faz UPDATE. No fluxo de Escala o M66 roda depois e sobrescreve com o
+   valor correto; o risco materializa quando a OS é editada SEM a alocação.
+5. Risco de financeiro_pagar 250 virar 0 em UPDATE posterior da OS? SIM (código). M80 (e o
+   bloco do M66) fazem UPDATE de valor SEM guarda de status; uma edição da OS
+   (valor_cliente/custo_prestador/pedagio/adicionais/ajudante/descontos/status) com
+   custo_prestador=0 sobrescreveria o valor. Hoje PAGAR_PAID_LINKED=0 (nenhum título pago
+   vinculado), mas títulos em aberto estão expostos.
+6. Editar valor_repasse atualiza OS.custo_prestador? SIM (M66 dispara em UPDATE OF valor_repasse).
+7. Divergência histórica: 12 de 59 vinculadas (5 OS_ZERO + 7 DIVERGENT).
+8. Fluxo canônico: valor_repasse → ordens_servico.custo_prestador → financeiro_pagar /
+   pagamentos_prestadores (com +pedágio +outros custos).
+9. Risco de alterar títulos já pagos/baixados? SIM no código (UPDATE de valor sem guarda de
+   status). PAGAR status: aberto 73, pendente 26, pago 11, a vencer 5, parcial 1, cancelado 29.
+   pagamentos_prestadores: pago 12. Nenhum título pago está vinculado a alocação hoje
+   (PAGAR_PAID_LINKED=0).
+10. Menor correção forward-only: (A) nos UPDATEs de financeiro_pagar/pagamentos_prestadores
+    (M66 e M80), NÃO sobrescrever valor de títulos já pagos/baixados — adicionar guarda
+    `AND status NOT IN ('pago','recebido','cancelada')` (pagar) / `AND status_pagamento NOT IN
+    ('pago','cancelado')` (pagamentos). (B) saneamento histórico das 12 divergências: SEPARADO,
+    fora desta missão.
+
+==================================================
+RESULTADO
+==================================================
+
+CANONICAL_PROVIDER_VALUE=alocacoes_escala.valor_repasse
+OS_MAPPING_STATUS=M66 CORRETO (valor_repasse → custo_prestador); divergências são HISTÓRICAS
+M66_M80_VALUE_COHERENCE=PARCIAL (M66 usa valor_repasse; M80 usa custo_prestador — fontes diferentes)
+HISTORICAL_DIVERGENCES=12 (5 OS_ZERO + 7 DIVERGENT) de 59 vinculadas
+PAID_RECORDS_AT_RISK=SIM (código) / 0 títulos pagos vinculados hoje
+
+ROOT_CAUSE=
+  Duas bases para o mesmo valor do prestador: M66 calcula o financeiro a partir de
+  alocacoes_escala.valor_repasse, enquanto M80 calcula a partir de ordens_servico.custo_prestador.
+  Quando a OS tem custo_prestador=0/stale (histórico sem re-sync), M80 pode gravar/substituir
+  financeiro_pagar com base incorreta; e os UPDATEs de valor não protegem títulos já pagos.
+
+NEXT_MINIMAL_FIX (PROPOSTA — NÃO aplicar nesta missão):
+  Migration forward-only pequena: adicionar guarda de status nos UPDATEs de valor de
+  financeiro_pagar e pagamentos_prestadores (M66 e M80) para nunca sobrescrever títulos
+  pagos/recebidos/cancelados. Não trata redundância M66/M80 nem saneia histórico.
+  Rollback correspondente: restaurar as funções anteriores.
+  (Saneamento das 12 divergências históricas = missão separada, forward-only, sem tocar pagos.)
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+FILES_MODIFIED=(nenhum — missão somente leitura)
+TESTS=97/97 PASS (regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 55.50s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration aplicada.
+- M66/M80 não alterados. Títulos pagos não tocados. Sem saneamento histórico.
+- Não tratou redundância M66/M80, 134 links, 27 órfãs. APP/POD/Fatura/Recrutamento intactos.
+- Não iniciou correção.
+
+DB_WRITES=0
+MIGRATIONS=0

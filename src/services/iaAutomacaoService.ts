@@ -21,7 +21,7 @@ export interface IaConhecimento {
   setor_id: string;
   titulo: string;
   conteudo: string;
-  url_arquivo?: string;
+  arquivo_url?: string;
   ativo: boolean;
   criado_em: string;
 }

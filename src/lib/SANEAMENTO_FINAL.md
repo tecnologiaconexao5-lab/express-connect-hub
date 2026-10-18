@@ -89,7 +89,7 @@
 ### TABELAS QUE USAM `prestador` (TEXT)
 - `ordens_servico.prestador` → TEXT (nome)
 - `ocorrencias.prestador` → TEXT (nome)
-- `prestador_reembolsos.prestador` → TEXT (nome)
+- `reembolsos_prestador.prestador` → TEXT (nome) — (oficial, migration M129C)
 - `prestador_disponibilidade.prestador` → TEXT (nome)
 - `prestador_notificacoes.prestador` → TEXT (nome)
 - `prestador_engajamento.prestador` → TEXT (nome)

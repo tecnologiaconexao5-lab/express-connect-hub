@@ -1,0 +1,219 @@
+================================================================================
+MISSAO: TMS-FIN-UX-02A-PAGINACAO-CONFERENCIA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / repositorio local (sem banco; REDMI nao conectado)
+MODELO: MiMo-V2.5
+TIPO: implementacao cirurgica + testes locais
+BASE: FIN-UX-01 homologado PASS (pagina de origem: TMS-FIN-UX-01-FLUXO-REAL-MAPA).
+================================================================================
+
+CONTAGEM REGRESSIVA
+  3 FECHAMENTO TMS  <- FIN-UX-02A (ESTA MISSAO)
+  2 APP + E2E COMPLETO
+  1 MASTER 360 / GATE DE PRODUCAO
+  0 HOMOLOGADO
+
+RESULTADO: PASS.
+Paginao real, numerada e visivel na Conferencia Financeira; o LIMIT 300 silencioso
+foi removido; busca/filtros/ordenacao atuam sobre o conjunto completo; nenhuma
+alteracao de banco/RLS/RPC/trigger; fluxo de faturamento preservado; build OK.
+
+================================================================================
+1. ANTES x DEPOIS
+================================================================================
+
+ANTES (o que existia)
+  - centralFinanceiroService.ts:190
+      query.order("data_finalizacao", { ascending: false }).limit(300)
+      -> cap silencioso de 300; universo pesquisavel truncado.
+  - ConferenciaFinanceira.tsx
+      tabela renderizava o array inteiro: {itens.map((a) => ( ... ))}
+      sem pagina, sem total de paginas, sem PaginationBar.
+      checkbox de cabecalho "selecionar todos" operava sobre itens.filter(isElegivel)
+      (conjunto global) sem semantica explicita de pagina.
+
+DEPOIS (o que passa a existir)
+  - centralFinanceiroService.ts:194
+      query.order("data_finalizacao", { ascending: false })
+      -> SEM .limit(300). O service devolve o conjunto COMPLETO filtrado
+         (status=concluida + finalizada=true + periodo) enriquecido.
+  - ConferenciaFinanceira.tsx
+      PAGE_SIZE_CONFERENCIA = 25 (linha 61)
+      estado da pagina: const [pagina, setPagina] = useState(1) (linha 986)
+      totalPaginas (1437-1440), clamp de faixa (1441-1443)
+      itensPagina = itens.slice(...) ANTES do render (1444-1447)
+      elegiveisPagina (1451) -> select-all POR PAGINA
+      tabela renderiza itensPagina.map (1962)
+      <PaginationBar .../> (2143-2148) -> "Anterior | 1 | 2 | 3 | ... | Proxima"
+      reset para pagina 1 em carregar() (1297)
+      subtitulo do card: "{N} servico(s) - pagina X de Y" (1888)
+
+================================================================================
+2. ARQUIVOS E LINHAS ALTERADOS
+================================================================================
+src/services/financeiro/centralFinanceiroService.ts
+  - 189-194: removido .limit(300) + comentario FIN-UX-02A (substitui a linha 190).
+  (nenhuma outra alteracao no service; assinatura e retorno preservados)
+
+src/components/financeiro/ConferenciaFinanceira.tsx
+  - 31      : + import PaginationBar from "@/components/ui/PaginationBar"
+  - 59-61   : + const PAGE_SIZE_CONFERENCIA = 25 (page size profissional)
+  - 984-986 : + const [pagina, setPagina] = useState(1)
+  - 1297    : + setPagina(1) dentro de carregar() (filtros/busca -> pagina 1)
+  - 1433-1451: + bloco de paginacao (totalPaginas, clamp, itensPagina, elegiveisPagina)
+  - 1888    : ~ CardDescription agora mostra "pagina X de Y"
+  - 1907    : ~ checkbox de cabecalho: checked = elegiveisPagina todos selecionados
+  - 1908-1911: ~ title/aria "Selecionar elegiveis desta pagina" + elegiveis = elegiveisPagina
+  - 1962    : ~ {itens.map(...)} -> {itensPagina.map(...)}
+  - 2141-2148: + <PaginationBar> ao final do Card (padrao do sistema)
+
+NOVO
+  src/test/fin_ux_02a_conferencia_paginacao.test.ts  (11 testes)
+
+NAO ALTERADO (conforme escopo)
+  faturaService.ts, FaturaPanel.tsx, FaturaLista.tsx, f_emitir_fatura, RLS/RPC,
+  triggers, migrations, banco, Contas a Receber, Contas a Pagar, Pagamento de
+  Prestadores, Calvo/CESAR, Comercial, APP, dados financeiros.
+
+================================================================================
+3. ESTRATEGIA DE PAGINACAO
+================================================================================
+- Filtro base + ordenacao: SERVER-SIDE (SQL):
+    .eq("status","concluida") + .eq("finalizada",true) + periodo (data_escala)
+    .order("data_finalizacao", { ascending:false })
+- Filtros derivados (cliente/prestador/os/romaneio/placa/statusOperacional/POD/
+  faturamento/recebimento/pagamento) e busca: aplicados no service sobre o
+  conjunto COMPLETO retornado (nao apenas a pagina) — comportamento preservado
+  do fluxo atual e identico ao padrao ja aceito em Contas a Receber.
+- Paginacao: JANELA de 25 registros (itens.slice) calculada ANTES da renderizacao,
+  sobre o conjunto COMPLETO e ja filtrado. Nao e "slice de 300": o cap de 300 foi
+  removido, portanto o universo nao e mais truncado.
+- Ordenacao global: SQL ordena o conjunto inteiro; a pagina e apenas uma janela.
+
+Observacao de escopo: NAO foi implementado .range()/count server-side porque os
+filtros derivados dependem de joins por os_id/alocacao_id (fatura_itens, POD,
+receber, pagamentos) que exigiriam RPC/view (proibido nesta missao). A abordagem
+adotada elimina o defeito reportado (cap 300 silencioso) e entrega paginacao real
+e visivel. Ver secao 9 (Riscos residuais).
+
+================================================================================
+4. PAGE SIZE
+================================================================================
+PAGE_SIZE_CONFERENCIA = 25
+Justificativa: consistente com o sistema (Contas a Receber e Margem por OS = 25),
+denso o suficiente para uma tabela analitica, leve o suficiente para leitura.
+
+================================================================================
+5. TRATAMENTO DE FILTROS / BUSCA / ORDENACAO
+================================================================================
+- Mudanca de filtros/busca/periodo: carregar() faz setPagina(1) (linha 1297).
+  Acionado por "Aplicar", "Atualizar", Enter na busca, "Limpar" e lancamento manual.
+- Busca/filtros: aplicados no service sobre o conjunto completo (linhas 453-500 do
+  centralFinanceiroService.ts) — inalterado; nao atuam apenas sobre a pagina.
+- Ordenacao: SQL global (data_finalizacao desc). Consistente entre paginas.
+- Protecao de faixa: useEffect (1441-1443) traz a pagina para totalPaginas se o
+  conjunto encolher (ex.: filtro aplicado na ultima pagina).
+- Indicadores: CardDescription mostra "pagina X de Y"; PaginationBar mostra
+  "Exibindo A-B de N" + botoes numerados + Anterior/Proxima.
+
+================================================================================
+6. SEMANTICA DA SELECAO (selecao multipla)
+================================================================================
+- Selecao individual: mantida; Set<string> por id (persiste entre paginas).
+- "Selecionar todos": AGORA POR PAGINA. O checkbox de cabecalho alterna SOMENTE
+  os elegiveis visiveis na pagina atual (elegiveisPagina), com
+  title/aria-label "Selecionar elegiveis desta pagina".
+  -> Nao "finge" selecionar registros de outras paginas.
+- A barra de acao mostra o total de selecionados pelo usuario (correto, pois a
+  selecao e intencional e persistida por id).
+- Criar Fatura: continua usando itensSelecionados (filtra o conjunto completo por
+  ids selecionados) — funciona mesmo com itens selecionados em paginas diferentes,
+  sem alteracao de regra/validade (ainda exige um unico cliente etc.).
+
+================================================================================
+7. TESTES
+================================================================================
+Arquivo novo: src/test/fin_ux_02a_conferencia_paginacao.test.ts (11 testes)
+  1. Service retorna 350 linhas (>300) com mock que RESPEITA .limit(n)
+     -> prova comportamental de que o cap de 300 foi removido.
+  2. Fonte do service nao contem .limit(300).
+  3. Filtro base server-side preservado (status=concluida + finalizada=true).
+  4. Componente usa itensPagina + <PaginationBar> + PAGE_SIZE=25 + totalCount.
+  5. Componente nao renderiza o conjunto inteiro (sem itens.map direto).
+  6. setPagina(1) apos setItens(lista) (filtros/busca -> pagina 1).
+  7. select-all por pagina (elegiveisPagina), sem a expressao global antiga.
+  8. clamp de pagina (pagina > totalPaginas -> totalPaginas).
+  9. janela 25/pagina: primeira/ultima/parcial + total de paginas.
+ 10. selecao por id nao marca indevidamente linhas de outra pagina.
+ 11. buildPageList: primeira/ultima pagina + reticencias.
+
+EXECUCAO (vitest) — 5 arquivos / 40 testes, TODOS PASS:
+  src/test/fin_ux_02a_conferencia_paginacao.test.ts .... 11 passed
+  src/test/a31d_fechamento_final.test.ts ............... 12 passed
+  src/test/fase1_centralFinanceiro.test.ts ............. 6 passed
+  src/test/a31j0_visoes_central_financeira.test.ts ..... 6 passed
+  src/test/fin_prog05c3b_receber_paginacao.test.tsx .... 5 passed
+  Duration: ~5.5s
+
+TYPECHECK
+  npx tsc --noEmit -p tsconfig.app.json filtrado por
+  ConferenciaFinanceira|centralFinanceiroService -> 0 erros.
+
+BUILD
+  npm run build -> OK ("built in 58.73s").
+
+================================================================================
+8. EVIDENCIAS
+================================================================================
+- Ausencia do cap (prova executavel): teste com mock que emula .limit()
+  retorna 350 registros; se .limit(300) voltasse, o teste falharia com 300.
+- Linhas-chave (Select-String):
+    centralFinanceiroService.ts
+       190  // FIN-UX-02A - removido o LIMIT 300 silencioso...
+       194  const { data, error } = await query.order("data_finalizacao", { ascending: false });
+    ConferenciaFinanceira.tsx
+        31  import PaginationBar from "@/components/ui/PaginationBar";
+        61  const PAGE_SIZE_CONFERENCIA = 25;
+       986  const [pagina, setPagina] = useState(1);
+      1297  setPagina(1);
+      1437  const totalPaginas = useMemo(
+      1444  const itensPagina = useMemo(() => {
+      1451  const elegiveisPagina = itensPagina.filter(isElegivel);
+      1888  {itens.length} servico(s) - pagina {pagina} de {totalPaginas} ...
+      1907  checked={elegiveisPagina.length > 0 && elegiveisPagina.every((i) => selecionados.has(i.id))}
+      1911  const elegiveis = elegiveisPagina;
+      1962  {itensPagina.map((a) => (
+      2143  <PaginationBar
+- Zero alteracao em banco/migrations/RLS/RPC/trigger (git status nao mostra
+  arquivos desses tipos alterados por esta missao).
+
+================================================================================
+9. RISCOS RESIDUAIS
+================================================================================
+R1. Nao e paginacao server-side por .range()/count. O conjunto completo e
+    materializado e enriquecido. Volume atual (alocacoes finalizadas) e pequeno;
+    se crescer muito, evoluir para RPC/view com range+count (missao futura).
+R2. O enriquecimento usa .in() com todos os ids do conjunto; crescimento extremo
+    pode exigir chunking das consultas .in() (missao futura).
+R3. Ordenacao unica (data_finalizacao desc) sem desempate explicito; empates seguem
+    a ordem natural do banco. Ordenacao e global e consistente entre paginas.
+R4. UI de ordenacao configuravel nao existe na Conferencia (nao era escopo).
+R5. E2E Playwright nao executado nesta missao (ambiente PRODUCAO sem credenciais,
+    conforme guard-rails M003/M136-C.2). Fluxo Criar Fatura preservado por code
+    review: criarFatura/itensParaFatura/FaturaPanel nao foram tocados.
+
+================================================================================
+10. PASS / BLOCKED / FAIL
+================================================================================
+PASS.
+  - paginacao real (janela de 25) e visivel: SIM.
+  - paginas numeradas (Anterior | 1 | 2 | 3 | ... | Proxima): SIM.
+  - busca/filtros/ordenacao globais (conjunto completo): SIM.
+  - LIMIT 300 silencioso eliminado: SIM (prova executavel 350 > 300).
+  - nenhuma regressao no faturamento: SIM (regra/fluxo intocados).
+  - zero alteracao de banco: SIM.
+  - build OK: SIM (58.73s) | tsc 0 erros nos arquivos | 40/40 testes.
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-UX-02A-PAGINACAO-CONFERENCIA
+================================================================================

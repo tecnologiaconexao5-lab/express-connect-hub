@@ -1,0 +1,899 @@
+{
+  "tabela": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES"
+    }
+  ],
+  "rls_tabela": [
+    {
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    }
+  ],
+  "policies_tabela": [
+    {
+      "policyname": "dp_delete_prestador",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+      "with_check": null
+    },
+    {
+      "policyname": "dp_delete_tms",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "dp_insert_prestador",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))"
+    },
+    {
+      "policyname": "dp_insert_tms",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+    },
+    {
+      "policyname": "dp_select_prestador",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+      "with_check": null
+    },
+    {
+      "policyname": "dp_select_tms",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND ((prestador_id IS NULL) OR (EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE (prestadores.id = documentos_prestadores.prestador_id)))))",
+      "with_check": null
+    },
+    {
+      "policyname": "dp_update_prestador",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM prestadores\n  WHERE ((prestadores.id = documentos_prestadores.prestador_id) AND (prestadores.auth_user_id = auth.uid()))))",
+      "with_check": null
+    },
+    {
+      "policyname": "dp_update_tms",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    }
+  ],
+  "bucket": [
+    {
+      "id": "documentos_prestadores",
+      "name": "documentos_prestadores",
+      "public": true,
+      "created_at": "2026-04-24T00:57:04.129Z"
+    }
+  ],
+  "policies_storage": [
+    {
+      "policyname": "Anon insert on comprovantes-entrega",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'comprovantes-entrega'::text)"
+    },
+    {
+      "policyname": "Authenticated delete on documentos",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((bucket_id = 'documentos'::text) AND (auth.role() = 'authenticated'::text))",
+      "with_check": null
+    },
+    {
+      "policyname": "Authenticated insert on documentos",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "((bucket_id = 'documentos'::text) AND (auth.role() = 'authenticated'::text))"
+    },
+    {
+      "policyname": "Authenticated update on documentos",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((bucket_id = 'documentos'::text) AND (auth.role() = 'authenticated'::text))",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir leitura",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir upload",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'documentos_prestadores'::text)"
+    },
+    {
+      "policyname": "Public select on comprovantes-entrega",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'comprovantes-entrega'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Public select on documentos",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Public update on comprovantes-entrega",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'comprovantes-entrega'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "biblioteca_global_delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'biblioteca-global'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "biblioteca_global_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'biblioteca-global'::text)"
+    },
+    {
+      "policyname": "biblioteca_global_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'biblioteca-global'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "biblioteca_global_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'biblioteca-global'::text)",
+      "with_check": "(bucket_id = 'biblioteca-global'::text)"
+    },
+    {
+      "policyname": "biblioteca_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'biblioteca-global'::text)"
+    },
+    {
+      "policyname": "biblioteca_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'biblioteca-global'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "comprovantes_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'comprovantes-entrega'::text)"
+    },
+    {
+      "policyname": "comprovantes_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'comprovantes-entrega'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "contratos_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'contratos'::text)"
+    },
+    {
+      "policyname": "contratos_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'contratos'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "docprestadores_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'documentos_prestadores'::text)"
+    },
+    {
+      "policyname": "docprestadores_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "documentos_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'documentos'::text)"
+    },
+    {
+      "policyname": "documentos_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "driver_evidence_delete_own",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((bucket_id = 'driver-evidence'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))",
+      "with_check": null
+    },
+    {
+      "policyname": "driver_evidence_insert_own",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "((bucket_id = 'driver-evidence'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))"
+    },
+    {
+      "policyname": "driver_evidence_select_own",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((bucket_id = 'driver-evidence'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))",
+      "with_check": null
+    },
+    {
+      "policyname": "driver_evidence_select_tms",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((bucket_id = 'driver-evidence'::text) AND ((storage.foldername(name))[2] = 'pod'::text) AND (EXISTS ( SELECT 1\n   FROM ((alocacoes_escala ae\n     JOIN prestadores p ON ((p.id = ae.prestador_id)))\n     JOIN tenant_usuarios tu ON ((tu.user_id = auth.uid())))\n  WHERE (((p.auth_user_id)::text = (storage.foldername(objects.name))[1]) AND ((ae.id)::text = (storage.foldername(objects.name))[3]) AND ((tu.papel = 'super_admin'::text) OR (tu.tenant_id = ae.tenant_id))))))",
+      "with_check": null
+    },
+    {
+      "policyname": "driver_evidence_update_own",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((bucket_id = 'driver-evidence'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'prestadores'::text)"
+    },
+    {
+      "policyname": "prestadores_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "veiculos_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'veiculos'::text)"
+    },
+    {
+      "policyname": "veiculos_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'veiculos'::text)",
+      "with_check": null
+    }
+  ],
+  "storage_objects": 78,
+  "storage_by_prefix": [
+    {
+      "prefix": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Documento_Pessoal_1788137820863.jpg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_temp_1789953705238_1789953705238.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534742517.pdf",
+      "n": 1
+    },
+    {
+      "prefix": "foto_be420cfc-878e-49b3-8a0d-1827b34762a5_1778534202098.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_1780317588359.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_temp_1777668334725_1777668334725.png",
+      "n": 1
+    },
+    {
+      "prefix": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534245940.pdf",
+      "n": 1
+    },
+    {
+      "prefix": "foto_temp_1778093842228_1778093842228.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "teste-1776993173208.txt",
+      "n": 1
+    },
+    {
+      "prefix": "teste-real-1776992493517.txt",
+      "n": 1
+    },
+    {
+      "prefix": "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_CNH_Frente_1778120286698.pdf",
+      "n": 1
+    },
+    {
+      "prefix": "teste-real-1776992439457.txt",
+      "n": 1
+    },
+    {
+      "prefix": "foto_temp_1778092359644_1778092359644.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_temp_1789983263200_1789983263200.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_d440e189-a749-4e1e-8d57-9c120af35115_1778082102637.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "foto_0673eca2-4594-4842-b78f-cd6cabe9177d_1789987916601.jpeg",
+      "n": 1
+    },
+    {
+      "prefix": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534237251.pdf",
+      "n": 1
+    },
+    {
+      "prefix": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952094658.jpg",
+      "n": 1
+    },
+    {
+      "prefix": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952093887.jpg",
+      "n": 1
+    },
+    {
+      "prefix": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Outros_1788137821462.jpg",
+      "n": 1
+    }
+  ],
+  "classificacao": {
+    "total": 32,
+    "public_url_bucket": 31,
+    "public_url_outro_bucket": 0,
+    "sign_url": 0,
+    "authenticated_url": 0,
+    "path_puro": 0,
+    "bucket_path": 0,
+    "externa_http": 0,
+    "nula_vazia": 1,
+    "local_file": 0,
+    "desconhecido": 0
+  },
+  "buckets_nas_refs": {
+    "documentos_prestadores": 31
+  },
+  "exemplos": {
+    "nula_vazia": {
+      "id": "4afee8d8-5a2e-4000-8cd2-8b7e2debd624",
+      "tipo": "cnh",
+      "url": ""
+    },
+    "public_url_bucket": {
+      "id": "bbfd407f-0f36-4300-9f3c-5802f6558237",
+      "tipo": "cnh",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/teste-1776993196251.txt"
+    }
+  },
+  "objetos": {
+    "com_path": 31,
+    "existentes": 29,
+    "faltando": 2,
+    "sem_path": 1
+  },
+  "orfaos": 3,
+  "por_prestador": [
+    {
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "n": 9
+    },
+    {
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "n": 6
+    },
+    {
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "n": 5
+    },
+    {
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "n": 4
+    },
+    {
+      "prestador_id": null,
+      "n": 3
+    },
+    {
+      "prestador_id": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "n": 3
+    },
+    {
+      "prestador_id": "f9b37431-0b9b-4ff6-a5e1-d1b581a926c0",
+      "n": 2
+    }
+  ],
+  "por_tipo": [
+    {
+      "tipo": "CNH Frente",
+      "n": 7
+    },
+    {
+      "tipo": "ANTT",
+      "n": 6
+    },
+    {
+      "tipo": "CRLV",
+      "n": 6
+    },
+    {
+      "tipo": "Documento Pessoal",
+      "n": 5
+    },
+    {
+      "tipo": "CNH Verso",
+      "n": 3
+    },
+    {
+      "tipo": "Outros",
+      "n": 2
+    },
+    {
+      "tipo": "cnh",
+      "n": 2
+    },
+    {
+      "tipo": "CNH Atualizado",
+      "n": 1
+    }
+  ],
+  "legacy_urls_que_precisam_normalizacao": 31,
+  "detalhe": [
+    {
+      "id": "4afee8d8-5a2e-4000-8cd2-8b7e2debd624",
+      "prestador_id": null,
+      "tipo": "cnh",
+      "formato": "nula_vazia",
+      "bucket": null,
+      "path": null,
+      "url": ""
+    },
+    {
+      "id": "bbfd407f-0f36-4300-9f3c-5802f6558237",
+      "prestador_id": null,
+      "tipo": "cnh",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "teste-1776993196251.txt",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/teste-1776993196251.txt"
+    },
+    {
+      "id": "0221e624-7f48-4011-adb5-703fc3892b90",
+      "prestador_id": null,
+      "tipo": "CNH Atualizado",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "teste-1776993548886.txt",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/teste-1776993548886.txt"
+    },
+    {
+      "id": "84b87036-4cad-4c02-b4db-43591bd21eec",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Frente_1777578716075.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Frente_1777578716075.pdf"
+    },
+    {
+      "id": "20e69553-e424-4cbc-a6a6-754beaee3ac2",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "Documento Pessoal",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Documento_Pessoal_1777578724384.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Documento_Pessoal_1777578724384.pdf"
+    },
+    {
+      "id": "7772cf7f-78c8-4490-a27e-5db9fb933de5",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CRLV_1777578730644.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CRLV_1777578730644.pdf"
+    },
+    {
+      "id": "7efb0e03-847e-4460-9a41-e0f995cb9e52",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_ANTT_1777578741120.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_ANTT_1777578741120.pdf"
+    },
+    {
+      "id": "77adb306-4447-4e0d-a631-03b8547c3944",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "Outros",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Outros_1777578745689.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Outros_1777578745689.pdf"
+    },
+    {
+      "id": "b037c96f-d676-4282-a242-b3ed000610e3",
+      "prestador_id": "dd97812e-2a02-4264-a960-8d1e3fdb1a18",
+      "tipo": "CNH Verso",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Verso_1777578757225.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Verso_1777578757225.pdf"
+    },
+    {
+      "id": "422f8708-7b38-4ff1-a3b4-6615c6f6293d",
+      "prestador_id": "f9b37431-0b9b-4ff6-a5e1-d1b581a926c0",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_CNH_Frente_1778120286698.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_CNH_Frente_1778120286698.pdf"
+    },
+    {
+      "id": "c74cf07f-af3e-4da7-9fa3-f2a076d5f994",
+      "prestador_id": "f9b37431-0b9b-4ff6-a5e1-d1b581a926c0",
+      "tipo": "Documento Pessoal",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_Documento_Pessoal_1778183021093.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_Documento_Pessoal_1778183021093.pdf"
+    },
+    {
+      "id": "ca4fe71a-ab55-4972-b119-99f9774e32fb",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534192413.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534192413.jpg"
+    },
+    {
+      "id": "f2bfda65-b0b2-46d8-b568-c38fe5e1b951",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "Documento Pessoal",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534210972.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534210972.jpg"
+    },
+    {
+      "id": "0fb43679-e01e-4bb4-a453-ffe7bed3a0f3",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534237251.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534237251.pdf"
+    },
+    {
+      "id": "c0a6abe9-50b9-4146-8c87-e02797f0f0df",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534245940.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534245940.pdf"
+    },
+    {
+      "id": "50c131d1-53ec-4ddb-966e-d939e734c982",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534726609.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534726609.jpg"
+    },
+    {
+      "id": "60382a37-e3ea-40e4-b00b-0baa0143bd3d",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "Documento Pessoal",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534734742.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534734742.jpg"
+    },
+    {
+      "id": "6e35b16f-d8a4-4d74-9789-8135aa9f2857",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534742517.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534742517.pdf"
+    },
+    {
+      "id": "77d7d0b4-c407-4b0b-9b20-8e2f8b8f8db2",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534758256.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534758256.pdf"
+    },
+    {
+      "id": "77d70d8b-80f7-49ed-bdf1-6b3afbab3452",
+      "prestador_id": "be420cfc-878e-49b3-8a0d-1827b34762a5",
+      "tipo": "CNH Verso",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Verso_1778534769474.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Verso_1778534769474.jpg"
+    },
+    {
+      "id": "59fc8eaa-c533-4461-a697-7a9c81734168",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CNH_Frente_1779994182298.jpeg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CNH_Frente_1779994182298.jpeg"
+    },
+    {
+      "id": "e67362e8-7973-4e86-b2ef-e6d383eb1707",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "tipo": "Documento Pessoal",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_Documento_Pessoal_1779994182651.jpeg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_Documento_Pessoal_1779994182651.jpeg"
+    },
+    {
+      "id": "164a8b2a-1f25-43c0-a06f-c76e3f4d0086",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CRLV_1779994182929.jpeg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CRLV_1779994182929.jpeg"
+    },
+    {
+      "id": "b185691e-f7f0-4042-9c3b-2077ad2fb7e3",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_ANTT_1779994183223.jpeg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_ANTT_1779994183223.jpeg"
+    },
+    {
+      "id": "11303e04-c1c6-4a7c-b20a-f9b84367da41",
+      "prestador_id": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CNH_Frente_1780317545757.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CNH_Frente_1780317545757.pdf"
+    },
+    {
+      "id": "c839d050-0431-479a-9382-2f55c82637c2",
+      "prestador_id": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CRLV_1780317546304.jpeg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CRLV_1780317546304.jpeg"
+    },
+    {
+      "id": "5fe3c546-0b9c-4c14-bc24-e3faf939e7a6",
+      "prestador_id": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_ANTT_1780317546674.pdf",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_ANTT_1780317546674.pdf"
+    },
+    {
+      "id": "9c0d7340-6f4a-42cf-9ea1-54afbc8d9ebc",
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "tipo": "ANTT",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_ANTT_1788952096100.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_ANTT_1788952096100.jpg"
+    },
+    {
+      "id": "0e24d34b-00b5-433e-98f1-5e65a6ce51e7",
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "tipo": "Outros",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952097302.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952097302.jpg"
+    },
+    {
+      "id": "0f966143-fb06-418d-ae09-433cafd0df0a",
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "tipo": "CNH Frente",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Frente_1788952097999.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Frente_1788952097999.jpg"
+    },
+    {
+      "id": "9c5586c6-169b-4f9c-8dbc-2d700c47a439",
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "tipo": "CNH Verso",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Verso_1788952098978.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Verso_1788952098978.jpg"
+    },
+    {
+      "id": "df6ad2e7-3a26-4383-ac9e-c5711a8ad1f4",
+      "prestador_id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+      "tipo": "CRLV",
+      "formato": "public_url_bucket",
+      "bucket": "documentos_prestadores",
+      "path": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CRLV_1788952099800.jpg",
+      "url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/documentos_prestadores/doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CRLV_1788952099800.jpg"
+    }
+  ],
+  "ts": "2026-09-27T13:47:21.302Z"
+}

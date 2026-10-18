@@ -1,0 +1,185 @@
+================================================================================
+MISSÃO A25-K — PREPARAR OPERAÇÃO REAL DE HOMOLOGAÇÃO PARA PROVA FINAL DO TRACKING
+Projeto: EXPRESS CONNECT HUB — TMS CONEXÃO EXPRESS
+Supabase Produção: uwrvzsjtpgaifkktpepn
+APK Redmi: 1.0.1+1314 (NÃO alterado)
+Modo: SOMENTE LEITURA/AUDITORIA — NENHUM DADO CRIADO/ALTERADO
+Data: 2026-08-15 (~11:41Z)
+================================================================================
+
+# OPERAÇÕES ATIVAS ENCONTRADAS
+--------------------------------------------------------------------------------
+PRESTADOR TESTE APP (e6646799-fbac-453e-a3ef-afdfc01a7085)
+  nome_completo: PRESTADOR TESTE APP
+  status: ativo | liberado_app: true | status_operacional: ativo
+  auth_user_id: a5e51631-5ed8-430d-9041-4b185c03d821
+
+Total de alocações do prestador: 52.
+Status ativos (aceita/em_rota) do prestador:
+
+1) ca5fe225-7114-42da-9997-c3d466e5df52   ★ REUTILIZADA (ver abaixo)
+   status: em_rota | finalizada: false | data_finalizacao: null
+   tracking_status: online | etapa_atual: saiu_em_rota
+   placa: ABC1T23 | tipo: Fiorino
+   origem: Rua Jamil Joao Zarif, 684 - Jardim Santa Vicencia - Guarulhos/SP
+   destino: Rota multipla: Guarulhos - Sao Paulo - Osasco
+   data_escala: 2026-07-22 | updated_at: 2026-08-15T11:21:29Z
+
+2) ecaedf20-9112-4195-b163-86b17e21a7d5
+   status: aceita | finalizada: false
+   os_id: 1e1b59fa (OS HML-APP-001, pendente)
+   placa: null | tipo: teste
+   origem: São Paulo/SP -> destino: São Paulo/SP
+   updated_at: 2026-08-09T07:43Z (parada desde 08-09)
+   NOTA: aceita porém sem tracking ativo; sem placa; aceite em 08-09 sem avanço.
+
+Demais 50 alocações: concluida (majoria) ou aguardando_aceite (sem aceite).
+Nenhuma operação comercial real ativa para este prestador.
+
+Histórico de status de ca5fe225 (completo):
+  2026-08-11T16:28:55Z  aguardando_aceite -> aceita
+  2026-08-11T16:28:55Z  aceite_prestador (null -> null)
+  2026-08-11T17:19:43Z  aceita -> em_rota
+  NENHUM evento de concluida/cancelada/recusada jamais registrado.
+
+--------------------------------------------------------------------------------
+# CENÁRIO REUTILIZADO OU CRIADO
+--------------------------------------------------------------------------------
+REUTILIZADO — NENHUM DADO CRIADO.
+
+DIVERGÊNCIA IMPORTANTE vs CONTEXTO DA MISSÃO:
+  O contexto dizia que ca5fe225 estava "concluida" e que o RPC retornava
+  ALOCACAO_INATIVA encerrando o tracking. A LEITURA AO VIVO DO BANCO refuta:
+    - status = em_rota (NÃO concluida)
+    - finalizada = false, data_finalizacao = NULL
+    - tracking_status = online
+    - POSIÇÕES AO VIVO: 7 posições hoje, última às 2026-08-15T11:21:29Z
+      (idade ~20min na consulta), origem app_motorista.
+    - TIMEZONE CORRIGIDO PROVADO: última posição captured_at=11:21:28.637Z
+      ≈ created_at=11:21:29.119Z (sem o -3h do bug A25-I).
+  Ou seja, a operação NUNCA foi encerrada; o App 1314 ESTÁ ENVIANDO posições
+  em tempo real para ca5fe225 AGORA. A premissa do contexto (concluida) está
+  desatualizada em relação ao estado real do banco.
+
+POR QUE REUTILIZAR ca5fe225:
+  - Regra da missão: "Se existir operação HML segura já criada: PREFERIR
+    REUTILIZAR. NÃO criar outra desnecessariamente."
+  - É inequivocamente HOMOLOGAÇÃO: OS-HML-MULTI-001 / HML-MULTI-001 /
+    ROTA-HML-MULTI-001 (metadata app_motorista).
+  - PRESTADOR TESTE APP — sem impacto em operação comercial real.
+  - Veículo de homologação: placa ABC1T23, Fiorino.
+  - Status em_rota aceito pelo RPC (só rejeita cancelada/concluida/recusada).
+  - Já está com tracking AO VIVO — perfeito para a prova final A25-L.
+
+--------------------------------------------------------------------------------
+# OS/ROMANEIO
+--------------------------------------------------------------------------------
+  numero_os : OS-HML-MULTI-001
+  romaneio : HML-MULTI-001
+  rota     : ROTA-HML-MULTI-001
+  (identificação 100% HOMOLOGAÇÃO — sem cliente/romaneio comercial real)
+
+--------------------------------------------------------------------------------
+# ALOCACAO_ID
+--------------------------------------------------------------------------------
+  ca5fe225-7114-42da-9997-c3d466e5df52
+
+--------------------------------------------------------------------------------
+# PRESTADOR
+--------------------------------------------------------------------------------
+  PRESTADOR TESTE APP
+  id: e6646799-fbac-453e-a3ef-afdfc01a7085
+  liberado_app: true | status: ativo | auth_user_id: a5e51631-5ed8-430d-9041-4b185c03d821
+
+--------------------------------------------------------------------------------
+# VEÍCULO
+--------------------------------------------------------------------------------
+  placa: ABC1T23 | tipo: Fiorino (homologação)
+
+--------------------------------------------------------------------------------
+# STATUS
+--------------------------------------------------------------------------------
+  em_rota
+  finalizada: false
+  data_finalizacao: null
+  status_pagamento: pendente
+  tracking_status: online
+  etapa_atual: saiu_em_rota
+  NOTA: "saiu_em_rota" já foi alcançado na prova anterior — o motorista JÁ
+        saiu em rota. A prova A25-L NÃO precisa tocar "Sair em rota" novamente
+        (e a missão proíbe). Basta tracking ativo.
+
+--------------------------------------------------------------------------------
+# APARECE NO APP
+--------------------------------------------------------------------------------
+SIM.
+
+RPC do App (f_buscar_operacoes_motorista):
+  Retorna TODAS as alocações do prestador EXCETO status 'cancelada' e 'recusada'.
+  ca5fe225 (em_rota) NÃO está excluída -> é retornada ao App.
+  EVIDÊNCIA FÍSICA: o App 1314 está enviando posições para ca5fe225 agora
+  (7 posições hoje, origem app_motorista) — o App está VISUALIZANDO e
+  TRACKING esta operação neste exato momento.
+
+RPC de tracking (registrar_posicao_motorista):
+  Rejeita somente cancelada/concluida/recusada (ALOCACAO_INATIVA).
+  em_rota é ACEITA. Confirmado pela chegada das posições de hoje.
+
+--------------------------------------------------------------------------------
+# SEGURANÇA
+--------------------------------------------------------------------------------
+  NENHUM dado foi criado, alterado ou removido nesta missão. SOMENTE LEITURA.
+  - migration/ALTER/CREATE/DROP/RLS/trigger/RPC ......... NÃO executado
+  - INSERT/UPDATE/DELETE em alocacoes_escala ............ NÃO executado
+  - INSERT/UPDATE/DELETE em ordens_servico .............. NÃO executado
+  - Dados comerciais reais .............................. NÃO tocados
+  - App Flutter / APK ................................... NÃO alterados
+  - Operação HML reutilizada conforme regra da missão.
+  - Scripts de auditoria: scripts/_a25k_*.mjs (descartáveis)
+
+--------------------------------------------------------------------------------
+# PASSO A PASSO NO REDMI
+--------------------------------------------------------------------------------
+A operação JÁ está ativa e o tracking JÁ está rodando. O motorista NÃO precisa
+tocar em "Sair em rota". O objetivo da prova A25-L é apenas CONFIRMAR que o
+tracking contínuo + GPS real + UTC + Torre continuam funcionando.
+
+No Redmi (App 1.0.1+1314), já com a operação ativa:
+
+1. ABRIR o App Conexão Express (se ainda não estiver aberto).
+2. Confirmar que está logado como PRESTADOR TESTE APP.
+   (Não é necessário re-login se a sessão já estiver ativa.)
+3. NA TELA INICIAL / OPERAÇÕES: a operação "OS-HML-MULTI-001 / HML-MULTI-001"
+   deve aparecer como ATIVA (Em rota / saiu_em_rota). Se aparecer em
+   "Operações" na lista ativa, está correta.
+4. ABRIR a operação (tap na operação) para garantir que a tela da operação
+   fique em primeiro plano e o tracking contínuo esteja ativo.
+5. NÃO tocar em "Sair em rota" (já saiu), NÃO finalizar, NÃO cancelar.
+6. MANTER o App aberto (primeiro plano) OU com o foreground service ativo
+   (tela off ainda envia — comportamento A25-J). Para maior clareza da prova,
+   manter primeiro plano por alguns minutos.
+7. MOVER O REDMI (a pé ou em veículo) por mais de ~50 metros para gerar
+   eventos GPS reais (distanceFilter/geolocator dispara a cada deslocamento).
+   Em seguida aguardar 30-60s.
+8. Acompanhar no TMS (Torre de Controle, navegação SPA):
+   - marcador do veículo ABC1T23 deve aparecer no mapa;
+   - painel deve mostrar "GPS Ativo"/"Motoristas Online";
+   - contador "X de Y OS" deve refletir a operação Grupo 2 (em_rota sem OS);
+   - última posição com captured_at ≈ created_at (UTC, timezone OK).
+9. FIM: operação permanece ativa (em_rota). NÃO finalizar nesta prova.
+
+Observação: se por qualquer motivo o tracking parar de chegar, reabrir a
+operação no App (tela de detalhes) e repetir o deslocamento. Nenhuma ação
+adicional é necessária no TMS — a operação já está em_rota e ativa.
+
+--------------------------------------------------------------------------------
+# STATUS FINAL
+--------------------------------------------------------------------------------
+PRONTO PARA PROVA FINAL A25-L NO REDMI
+
+Operação HML reutilizada e ativa (ca5fe225, em_rota, tracking AO VIVO com
+timezone UTC corrigido). Nenhum dado criado. Nenhuma alteração TMS/App/RPC.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-K
+================================================================================

@@ -1,23 +1,7 @@
-const { createClient } = require('@supabase/supabase-js');
-
-const supabaseUrl = 'https://uwrvzsjtpgaifkktpepn.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnZ6c2p0cGdhaWZra3RwZXBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0Njk4NDMsImV4cCI6MjA5MjA0NTg0M30.0G0b-0FUs-5DxOziWD3clXbXXz0Fq2mx9-d0-V08TGs';
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-async function querySQL() {
-  console.log('=== EXECUTANDO SQL VIA RPC ===\n');
-  
-  try {
-    const { data, error } = await supabase.rpc('pg_catalog', { 
-      statement: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'" 
-    });
-    
-    console.log('DATA:', data);
-    console.log('ERRO:', error?.message);
-  } catch(e) {
-    console.log('ERRO:', e.message);
-  }
-}
-
-querySQL();
+// =============================================================================
+// [NEUTRALIZADO] query_sql.cjs — TMS-FIN-DATA-04D3C3D (A3)
+// -----------------------------------------------------------------------------
+// SQL AD-HOC nao e mecanismo administrativo oficial do TMS. Ferramenta admin futura exige contrato proprio.
+// Historico original (sanitizado): docs/lab/neutralized_admin/query_sql.cjs.txt
+// Este stub NAO contem createClient/RPC/SQL/DDL/segredos e NAO deve ser executado.
+// =============================================================================

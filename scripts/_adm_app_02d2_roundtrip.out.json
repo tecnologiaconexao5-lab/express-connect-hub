@@ -1,0 +1,89 @@
+{
+  "ts": "2026-09-27T19:35:45.638Z",
+  "antes": {
+    "tag": "antes",
+    "public": false,
+    "n_policies": 4,
+    "nomes": [
+      "docprestadores_delete_privado[DELETE]",
+      "docprestadores_insert_privado[INSERT]",
+      "docprestadores_select_privado[SELECT]",
+      "docprestadores_update_privado[UPDATE]"
+    ],
+    "hash": "b308c19d88f1ea0c5540568d1cd80711bcddb93b16f6ffa76d3da29e9074dc44",
+    "dp": 8,
+    "hashDp": "477d12130df5c169947f2f09f921c1f828b368b1631a388e10f12ee89613db96",
+    "objetos": 78,
+    "linhas": 32
+  },
+  "final": {
+    "tag": "final",
+    "public": false,
+    "n_policies": 4,
+    "nomes": [
+      "docprestadores_delete_privado[DELETE]",
+      "docprestadores_insert_privado[INSERT]",
+      "docprestadores_select_privado[SELECT]",
+      "docprestadores_update_privado[UPDATE]"
+    ],
+    "hash": "b308c19d88f1ea0c5540568d1cd80711bcddb93b16f6ffa76d3da29e9074dc44",
+    "dp": 8,
+    "hashDp": "477d12130df5c169947f2f09f921c1f828b368b1631a388e10f12ee89613db96",
+    "objetos": 78,
+    "linhas": 32
+  },
+  "total": 10,
+  "passou": 10,
+  "resultados": [
+    {
+      "id": "RT-00 estado inicial = 02D.2 aplicado",
+      "passou": true,
+      "detalhe": "public=false policies=4 hash=b308c19d88f1…"
+    },
+    {
+      "id": "RT-01 rollback devolve bucket público (public=true)",
+      "passou": true,
+      "detalhe": "public=true"
+    },
+    {
+      "id": "RT-02 rollback restaura as 6 policies originais",
+      "passou": true,
+      "detalhe": "policies=6 hash=97f18480895b…"
+    },
+    {
+      "id": "RT-03 rollback não toca na tabela (8 dp_*, hash intacto)",
+      "passou": true,
+      "detalhe": "dp=8"
+    },
+    {
+      "id": "RT-04 rollback preserva objetos e linhas (78 / 32)",
+      "passou": true,
+      "detalhe": "objetos=78 linhas=32"
+    },
+    {
+      "id": "RT-05 forward privatiza o bucket (public=false)",
+      "passou": true,
+      "detalhe": "public=false"
+    },
+    {
+      "id": "RT-06 forward cria exatamente 4 policies _privado",
+      "passou": true,
+      "detalhe": "policies=4 docprestadores_delete_privado[DELETE], docprestadores_insert_privado[INSERT], docprestadores_select_privado[SELECT], docprestadores_update_privado[UPDATE]"
+    },
+    {
+      "id": "RT-07 hash de policies 02D.2 reproduzido",
+      "passou": true,
+      "detalhe": "hash=b308c19d88f1…"
+    },
+    {
+      "id": "RT-08 forward não toca na tabela nem nos dados",
+      "passou": true,
+      "detalhe": "dp=8 objetos=78 linhas=32"
+    },
+    {
+      "id": "RT-09 produção inalterada após round-trip (02D.2 intacto)",
+      "passou": true,
+      "detalhe": "public=false policies=4 objetos=78 linhas=32"
+    }
+  ]
+}

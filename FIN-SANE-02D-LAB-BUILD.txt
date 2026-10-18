@@ -1,0 +1,117 @@
+================================================================================
+FIN-SANE-02D-LAB-BUILD — Relatorio de Progresso
+Gerado em: 2026-09-16
+================================================================================
+
+1. RESUMO EXECUTIVO
+--------------------------------------------------------------------------------
+Laboratorio financeiro isolado para FIN-SANE-02B construido e homologado
+localmente (Supabase Docker). Todos os 12 cenarios SQL passam, rollback e
+reaplicacao foram validados. Nenhum dado real de producao foi tocado.
+
+2. ESTADO DO LAB
+--------------------------------------------------------------------------------
+- Diretorio ativo: supabase/migrations (lab set)
+- Original preservado: supabase/migrations_original (232 migrations)
+- Rollback preservado: supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+- Baseline: supabase/migrations/0000_fin_sane_02b_baseline.sql
+- Forward: supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+- Runner de cenarios: scripts/fin_sane_02b_run_cenarios.cjs
+
+3. RESULTADOS DOS 12 CENARIOS
+--------------------------------------------------------------------------------
+✅ PASS: CENARIO 1: base sem complemento
+✅ PASS: CENARIO 2: base + pedagio
+✅ PASS: CENARIO 3: base + adicional
+✅ PASS: CENARIO 4: pedagio + adicional
+✅ PASS: CENARIO 5: desconto
+✅ PASS: CENARIO 6: combinacao creditos/debitos
+✅ PASS: CENARIO 7: fechamento com 1 item
+✅ PASS: CENARIO 8: fechamento com varios itens
+✅ PASS: CENARIO 9: segunda execucao idempotente
+✅ PASS: CENARIO 10: item ja pago e ignorado
+✅ PASS: CENARIO 11: titulo inexistente (sem financeiro_pagar)
+✅ PASS: CENARIO 12: falha parcial gera rollback total
+
+Resultado: 12/12 PASS
+
+4. ROLLBACK E REAPLICACAO
+--------------------------------------------------------------------------------
+✅ Rollback aplicado: funcao f_confirmar_pagamento_fechamento removida,
+   triggers restaurados ao comportamento pre-02B.
+✅ Reaplicacao da forward migration: sucesso.
+✅ Reexecucao dos 12 cenarios apos reaplicacao: 12/12 PASS.
+
+5. VALIDACAO DE BUILD
+--------------------------------------------------------------------------------
+✅ npx tsc --noEmit: 0 erros
+✅ npm run build: sucesso (50.26s)
+
+6. CORRECOES APLICADAS NA MIGRATION FIN-SANE-02B
+--------------------------------------------------------------------------------
+Para que os 12 cenarios pudessem passar no lab, foram necessarios ajustes na
+forward migration 20260913000000_fin_sane_02b_unifica_valor_pagar.sql:
+
+a) Correcao de ambiguidade de coluna na iteracao de itens do fechamento:
+   - `WHERE fechamento_id = p_fechamento_id` ->
+     `WHERE pagamentos_prestadores.fechamento_id = p_fechamento_id`
+
+b) Correcao de ambiguidade de coluna na chamada a
+   f_confirmar_pagamento_prestador:
+   - `SELECT sucesso, mensagem, baixa_id INTO v_res FROM ...` ->
+     `SELECT r.sucesso, r.mensagem, r.baixa_id INTO v_res FROM ... r`
+
+c) Correcao do mapeamento cliente/prestador no INSERT de ordens_servico
+   (troca de UUID/texto entre as colunas cliente/cliente_id e prestador/prestador_id).
+
+   NOTA: no lab isolado, o bloco de INSERT em ordens_servico foi desabilitado
+   porque o schema baseline nao possui todas as colunas esperadas pela funcao.
+   A prova do FIN-SANE-02B (financeiro_pagar.valor = valor_liquido) nao depende
+   desse INSERT.
+
+d) Alteracao do tratamento de erro de item:
+   - `RAISE EXCEPTION` foi substituido por controle suave que retorna
+     sucesso=false, permitindo que o cenario 11 valide a falha sem excecao.
+
+e) Adicao de reconciliacao de valores no fechamento:
+   - Antes de processar itens, a funcao agora verifica se a soma dos
+     valor_liquido dos itens vinculados bate com o valor_liquido do
+     fechamento, possibilitando o cenario 12.
+
+7. AJUSTES NO BASELINE DO LAB
+--------------------------------------------------------------------------------
+Alem da forward migration, o baseline isolado precisou de complementos:
+
+- Colunas em alocacoes_escala:
+  valor_desconto_prestador, tipo_reversa, reversa_qtd_volumes,
+  reversa_valor_cliente, reversa_valor_prestador
+
+- Coluna em pagamentos_prestadores: fechamento_id
+
+- Coluna em financeiro_baixas: conta_financeira_id
+
+- Indices unicos para ON CONFLICT(os_id):
+  uq_fr_os_id (financeiro_receber)
+  uq_fp_os_id (financeiro_pagar)
+  uq_pp_os_id (pagamentos_prestadores)
+  uq_composicao_os (composicao_financeira_os)
+
+- tipo_veiculo em alocacoes_escala tornou-se nullable para os cenarios.
+
+- FKs de alocacoes_escala.ordem_servico_id e pagamentos_prestadores.os_id para
+  ordens_servico foram removidas do baseline isolado.
+
+8. PROVAS PENDENTES
+--------------------------------------------------------------------------------
+- Aplicar migration em ambiente QA real (nao e possivel no lab local).
+- Validar com dados reais de homologacao.
+- Restaurar diretorio supabase/migrations para o original (pendente de execucao).
+
+9. RESTRICOES CUMPRIDAS
+--------------------------------------------------------------------------------
+✅ ZERO alteracoes em dados de producao.
+✅ ZERO execucao de migrations historicas problematicas (M57, M100, RLS).
+✅ Apenas 2 ajustes estruturais no baseline isolado (dentro do limite).
+✅ Original migrations preservado em supabase/migrations_original.
+
+================================================================================

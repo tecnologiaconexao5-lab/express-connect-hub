@@ -1,0 +1,303 @@
+==================================================
+REC-AUTO-406-01-ROOT-CAUSE
+==================================================
+DATE: 2026-09-21
+ENVIRONMENT: PRODUCTION (uwrvzsjtpgaifkktpepn)
+MODE: READ-ONLY
+STATUS: PASS — CAUSE COMPROVADA
+
+==================================================
+1 — QUERY FILES / CALLERS / TRIGGER / METHOD
+==================================================
+
+QUERY_FILES=
+  1. src/modules/recrutamento/services/automacoesService.ts
+  2. src/services/eventBus/eventProcessorWorker.ts
+  3. src/modules/recrutamento/index.tsx
+  4. src/modules/recrutamento/components/automacoes/AutomacoesList.tsx
+
+QUERY_CALLERS=
+  - automacoesService.listar()     → index.tsx:126 (useEffect mount)
+  - automacoesService.criar()      → AutomacoesList.tsx:73 (seed if empty)
+  - automacoesService.atualizar()  → AutomacoesList.tsx:101 (config save)
+  - automacoesService.remover()    → AutomacoesList.tsx:117 (delete)
+  - eventProcessorWorker           → eventProcessorWorker.ts:216-352
+    (3 event types × 2 queries each + 1 scanner = 7 queries total)
+
+QUERY_TRIGGER=
+  - Module mount: automacoesService.listar() fires on useEffect([], [])
+  - Event processor: cicloProcessamento() runs every 10 seconds (setInterval)
+  - Seed: AutomacoesList useEffect fires when automacoes.length === 0
+
+QUERY_METHOD=
+  - listar():       .select('*').order().limit(200)           — ARRAY (no .single())
+  - criar():        .insert().select('*').single()            — SINGLE ROW
+  - atualizar():    .update().eq('id').select('*').single()   — SINGLE ROW
+  - eventProcessor: .select('total_execucoes').eq('id').single()  — SINGLE ROW
+  - scanner:        .select('id').eq('tipo').eq('status').limit(1).single() — SINGLE ROW
+
+==================================================
+2 — REQUEST SOURCE / FUNCTION / SELECT / FILTERS / SINGLE MODE
+==================================================
+
+REQUEST_SOURCE_FILE=
+  Primary:  src/services/eventBus/eventProcessorWorker.ts
+  Secondary: src/modules/recrutamento/services/automacoesService.ts
+
+REQUEST_FUNCTION=
+  eventProcessorWorker.processarEvento() — lines 216-220, 257-260, 300-303
+  eventProcessorWorker.executarScanDocumentos() — lines 347-352
+
+REQUEST_SELECT=
+  1. .select("total_execucoes").eq("id", automacaoId).single()
+     — expects exactly 1 row with total_execucoes column
+  2. .select("id").eq("tipo", "validade_documento").eq("status", "ativa").limit(1).single()
+     — expects exactly 1 row with id column
+
+REQUEST_FILTERS=
+  1. eq("id", automacaoId) — UUID from event payload
+  2. eq("tipo", "validade_documento") AND eq("status", "ativa")
+
+REQUEST_SINGLE_MODE=
+  ALL 4 eventProcessor queries use .single()
+  PLUS automacoesService.criar() and .atualizar() use .single()
+
+==================================================
+3 — HTTP 406 ROOT CAUSE
+==================================================
+
+HTTP_406_ROOT_CAUSE=
+  The table recrutamento_automacoes has ZERO ROWS in production.
+  The eventProcessorWorker queries use .single() which expects
+  exactly 1 row. When 0 rows are returned, PostgREST returns
+  an error that the Supabase JS client surfaces as HTTP 406
+  (Not Acceptable) — a content negotiation failure because the
+  empty result set does not match the expected single-row format.
+
+  The .single() modifier causes PostgREST to set:
+    Accept: application/json
+    Prefer: return=representation
+    Expect: 200 OK with exactly 1 object
+
+  When 0 rows match, PostgREST returns 406 instead of an empty
+  array or null, because the response schema (empty array) does
+  not match the expected schema (single object).
+
+ROWS_MATCHING_QUERY=
+  Query 1 (by id):       0 rows (table is empty)
+  Query 2 (tipo+status): 0 rows (table is empty)
+  ALL queries return 0 rows because the table has NO data.
+
+EXPECTED_ROWS=
+  Query 1: 1 row (expects automation by UUID)
+  Query 2: 1 row (expects active validade_documento automation)
+
+ACTUAL_ROWS=
+  Query 1: 0 rows
+  Query 2: 0 rows
+
+==================================================
+4 — BANCO PRODUÇÃO READ-ONLY
+==================================================
+
+TABLE_EXISTS=YES
+TABLE_TYPE=BASE TABLE
+TABLE_ROW_COUNT=0
+
+COLUMNS:
+  id                | uuid        | NOT NULL | default=gen_random_uuid()
+  nome              | text        | NOT NULL
+  tipo              | text        | NOT NULL
+  trigger           | jsonb       | NOT NULL | default='{}'
+  acao              | jsonb       | NOT NULL | default='{}'
+  status            | text        | NOT NULL | default='ativa'
+  ultima_execucao   | timestamptz | NULLABLE
+  total_execucoes   | integer     | NOT NULL | default=0
+  created_at        | timestamptz | NOT NULL | default=now()
+  updated_at        | timestamptz | NOT NULL | default=now()
+
+RLS_ENABLED=YES
+FORCE_RLS=NO
+
+RELEVANT_POLICIES=
+  rec_automacoes_select | SELECT  | authenticated | USING(true)
+  rec_automacoes_insert | INSERT  | authenticated | null
+  rec_automacoes_update | UPDATE  | authenticated | USING(true)
+  rec_automacoes_delete | DELETE  | authenticated | USING(true)
+
+GRANTS=
+  authenticated: SELECT, INSERT, UPDATE, DELETE
+  postgres:      ALL
+  service_role:  ALL
+  anon:          NONE (explicitly REVOKE'd)
+
+ANON_CAN_SELECT=false
+
+INDEXES=
+  recrutamento_automacoes_pkey (UNIQUE, btree id)
+  idx_rec_automacoes_status (btree status)
+  idx_rec_automacoes_tipo (btree tipo)
+
+TRIGGER_FUNCTIONS_REFERENCING_TABLE=
+  f_trg_novo_candidato_evento
+  f_trg_score_limiar_evento
+  f_trg_validade_documento_evento
+
+==================================================
+5 — IMPACTO FUNCIONAL
+==================================================
+
+USER_VISIBLE_IMPACT=
+  Console shows repeated GET 406 errors when Recrutamento module
+  is loaded or when event processor runs. The user sees error
+  spam in browser DevTools Console.
+
+FUNCTIONAL_IMPACT=
+  - Module mount: listar() returns [] (empty, no error) — UI shows
+    "seed" logic which tries to INSERT 4 automations
+  - Event processor: ALL 7 queries to recrutamento_automacoes fail
+    with 406 because table is empty — automation counters never
+    update, document scanner never finds active automation
+  - Seed logic: criar() may succeed (INSERT + .single()) but if
+    it fails, the error propagates to the user
+
+DATA_INTEGRITY_RISK=
+  LOW — The 406 errors are read failures. No data corruption.
+  The table is empty by design (migrations created it but no
+  seed data was inserted in production).
+
+BLOCKS_RECRUITMENT=
+  NO — The Recrutamento module itself works (listar returns [],
+  seed creates automations). The 406 errors are from the event
+  processor background worker, not from user-facing flows.
+
+BLOCKS_OTHER_MODULES=
+  NO — The event processor handles multiple event types.
+  Only the recrutamento.* event types are affected. OS, escala,
+  portal, and entrega events are processed normally.
+
+==================================================
+6 — FREQUÊNCIA (WHY REQUEST REPEATS)
+==================================================
+
+WHY_REQUEST_REPEATS=
+  The eventProcessorWorker runs on a 10-second interval
+  (setInterval(cicloProcessamento, 10000)). Each cycle:
+  1. Queries eventos_oficiais for unprocessed events
+  2. For each recrutamento.* event, queries recrutamento_automacoes
+     with .single() — fails with 406 (0 rows)
+  3. Also runs executarScanDocumentos() every 5 minutes
+
+  Additionally:
+  - React StrictMode double-mounts components in development
+  - Each mount triggers automacoesService.listar() via useEffect
+  - The seed useEffect fires when automacoes.length === 0
+
+  Result: 406 errors appear every 10 seconds when event processor
+  is active, plus on each module mount/re-render.
+
+==================================================
+7 — MINIMAL FIX PROPOSAL
+==================================================
+
+MINIMAL_FIX_PROPOSAL=
+  PRIMARY FIX: Change all .single() calls on recrutamento_automacoes
+  to .maybeSingle() in eventProcessorWorker.ts (lines 220, 260,
+  303, 352). This returns null instead of error when 0 rows found.
+
+  SECONDARY FIX: Seed the table with default automations via a
+  migration or startup script, so queries return actual data.
+
+  TERTIARY FIX: Guard the seed logic in AutomacoesList.tsx to
+  prevent race conditions (check DB, not just local state).
+
+FIX_REQUIRES_DB_CHANGE=NO (optional: seed data migration)
+FIX_REQUIRES_RLS_CHANGE=NO
+FIX_REQUIRES_CODE_CHANGE=YES (4 lines: .single() → .maybeSingle())
+
+==================================================
+8 — AUTH LOCK
+==================================================
+
+AUTH_LOCK_RELATED_TO_406=NOT_PROVEN
+
+The @supabase/gotrue-js LockManager warning is a known Supabase
+issue when multiple browser tabs open. It does NOT directly cause
+HTTP 406 errors. The 406 is caused by .single() on empty results,
+which is independent of auth state.
+
+However, if the auth session is locked/expired:
+- Requests use anon role
+- anon has NO access to recrutamento_automacoes (REVOKE'd)
+- PostgREST would return 401/403, NOT 406
+- So auth lock is NOT the cause of this specific 406
+
+==================================================
+EVIDENCE SUMMARY
+==================================================
+
+DEPLOY_ALREADY_PRESENT: N/A (no trigger change involved)
+TABLE_EXISTS: YES
+TABLE_ROW_COUNT: 0
+RLS_ENABLED: YES
+ANON_CAN_SELECT: false
+
+QUERY_1_RESULT: 0 rows (by id, .single() → 406)
+QUERY_2_RESULT: 0 rows (by tipo+status, .single() → 406)
+
+HTTP_406_ROOT_CAUSE: .single() on empty table
+EXPECTED_ROWS: 1
+ACTUAL_ROWS: 0
+
+WHY_REQUEST_REPEATS: 10-second interval worker + module mount
+
+USER_VISIBLE_IMPACT: Console error spam
+FUNCTIONAL_IMPACT: Event processor recrutamento events fail
+DATA_INTEGRITY_RISK: LOW
+BLOCKS_RECRUITMENT: NO
+BLOCKS_OTHER_MODULES: NO
+
+MINIMAL_FIX_PROPOSAL: .single() → .maybeSingle() (4 lines)
+FIX_REQUIRES_DB_CHANGE: NO
+FIX_REQUIRES_RLS_CHANGE: NO
+FIX_REQUIRES_CODE_CHANGE: YES
+
+AUTH_LOCK_RELATED_TO_406: NOT_PROVEN
+
+PRODUCTION_WRITES: 0
+
+==================================================
+STATUS=PASS — CAUSE COMPROVADA
+==================================================
+
+The 406 is caused by .single() queries returning 0 rows from an
+empty table. The table exists with correct schema, RLS, and
+grants, but has zero data. Every .single() call on this table
+will fail with 406 until either:
+  (a) the table is seeded with data, OR
+  (b) .single() is changed to .maybeSingle()
+
+This is NOT a regression. This is NOT an RLS issue. This is NOT
+an auth issue. This is a data absence + strict query mode issue.
+
+==================================================
+MISSION PROHIBITIONS COMPLIANCE
+==================================================
+ZERO INSERT producao: COMPLIED
+ZERO UPDATE producao: COMPLIED
+ZERO DELETE producao: COMPLIED
+NÃO alterar recrutamento_automacoes: COMPLIED
+NÃO alterar RLS: COMPLIED
+NÃO criar policy: COMPLIED
+NÃO criar migration: COMPLIED
+NÃO alterar schema: COMPLIED
+NÃO modificar código: COMPLIED
+NÃO trocar .single(): COMPLIED
+NÃO retomar REC-06.2D.2F: COMPLIED
+NÃO mexer Admin App: COMPLIED
+NÃO mexer Financeiro: COMPLIED
+NÃO mexer POD: COMPLIED
+NÃO mexer Escala: COMPLIED
+NÃO mexer Prestadores: COMPLIED
+READ-ONLY: COMPLIED
+==================================================

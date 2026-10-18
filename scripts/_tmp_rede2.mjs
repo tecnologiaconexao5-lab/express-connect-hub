@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const cols = await c.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rede_oportunidades' ORDER BY ordinal_position`);
+console.log("colunas rede_oportunidades:", cols.rows.map(r=>`${r.column_name}`).join(", "));
+const r = await c.query(`SELECT * FROM rede_oportunidades ORDER BY criado_em DESC NULLS LAST LIMIT 5`).catch(async (e) => { console.log("erro select *:", e.message); return { rows: [] }; });
+console.log(JSON.stringify(r.rows, null, 2));
+await c.end();

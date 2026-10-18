@@ -109,3 +109,5 @@ VALUES
 ('Atualização Cliente Entrega', 'Envia notificação ao cliente quando pedido sai para entrega', 'operacional', 'pedido_saiu_entrega', 'whatsapp', true),
 ('IA Atendimento Cliente', 'Classificação de intenção e sugestão de resposta para clientes', 'comunicacao', 'mensagem_recebida', 'ia', true)
 ON CONFLICT DO NOTHING;
+
+

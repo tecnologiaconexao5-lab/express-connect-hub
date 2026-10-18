@@ -1,0 +1,162 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6C.1-REPROCESSAR-DATAS-COMPROVADAS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: correcao controlada das datas de 34 pagamentos historicos comprovados.
+RESULTADO: PASS — 34/34 corrigidos; nenhuma alteracao financeira alem das 3 datas.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. CANDIDATOS ANTES
+--------------------------------------------------------------------------------
+34 registros DIVERGENTES reais (todos origem 'os_direta'):
+  periodo_inicio = periodo_fim = 2026-09-22 (data de criacao, bug do M80 antigo)
+  ordens_servico.data (canonica) = 2026-05-11 .. 2026-06-05
+  data_competencia = NULL
+  status_pagamento = 'pendente' (0 pagos), lote_id NULL, is_teste=false.
+
+--------------------------------------------------------------------------------
+2. CRITERIOS DE ELEGIBILIDADE (todos exigidos; 34/34 satisfeitos)
+--------------------------------------------------------------------------------
+  [x] origem_lancamento = 'os_direta'
+  [x] is_teste IS NOT TRUE
+  [x] os_id resolve exatamente 1 ordens_servico (os_resolve = 1)
+  [x] ordens_servico.data IS NOT NULL
+  [x] periodo_inicio/fim DIVERGENTE da data da OS
+  [x] status_pagamento <> 'pago' (e status <> 'pago')
+  [x] sem financeiro_baixas vinculada (nao estornada)
+  [x] lote_id IS NULL
+  [x] nao e fechamento/manual/agregado
+  [x] tenant resolvivel (f_pp_tenant_id(os_id) IS NOT NULL)
+  [x] valor/prestador preservados (nao incluidos no SET)
+Elegiveis = 34 (== esperado) -> prosseguiu.
+
+--------------------------------------------------------------------------------
+3. SNAPSHOT PRE (salvo)
+--------------------------------------------------------------------------------
+Arquivo temp: _05d6c1_snapshot_pre.json (34 linhas, todos os campos).
+Campos: id, prestador_id/nome, os_id/numero, periodo_inicio, periodo_fim,
+data_competencia, ordens_servico.data, valor_servicos, pedagio, adicionais,
+valor_liquido, status_conferencia, status_aprovacao, status_pagamento,
+elegivel_lote, lote_id, is_teste.
+
+--------------------------------------------------------------------------------
+4. CORRECAO APLICADA (31 campos de data em 34 linhas)
+--------------------------------------------------------------------------------
+UPDATE transacional idempotente SOMENTE:
+  periodo_inicio    = ordens_servico.data
+  periodo_fim       = ordens_servico.data
+  data_competencia  = ordens_servico.data
+Linhas afetadas: 34. NAO alterado: valor_servicos, pedagio, adicionais,
+reembolsos, ajustes, valor_liquido, prestador, os_id, status, aprovacao,
+elegibilidade, lote_id, baixa, financeiro_pagar, composicao, faturas/AR.
+(Observacao: a coluna 'competencia' NAO foi tocada — fora das 3 datas autorizadas.)
+
+--------------------------------------------------------------------------------
+5. IDs CORRIGIDOS (34)
+--------------------------------------------------------------------------------
+c366b0f5-2dcf-40cb-8190-b50c431165f0   58b30645-937d-4bad-a161-f773ece921b1
+b3d6aef2-4a0d-4d93-9a60-e281ff929d38   005013a7-4ef9-4305-9098-613f00e0328b
+2bd4f325-7e59-4325-a044-c85fe9f117f8   018bc94d-5aee-4dab-8aaf-362b65980856
+24aa23d7-8dff-4f53-8cd7-a6496aac6cb9   0209e1f1-8efa-4d20-9d05-f374b28b154e
+c6db533e-7939-494f-adff-3e1be755fbd4   d8c6d917-1c2c-436d-8a85-3e5750aa702f
+e657d1ce-2e36-4d12-a172-a817965da98e   477a5914-b3e7-4e8a-b46a-7abdf8b861b8
+e66451ca-6ec0-4dbd-a9fb-535205e2a803   16e11bb7-e550-4553-bbb2-51dd2e8454d7
+e23c9a55-804e-46f9-843d-1681d628b939   47b03d4f-4068-4750-b102-b2d90449085d
+39bd874f-5c07-4381-be63-ae67daceff89   d036f7fe-b06b-49cf-aa4f-d0c7d55e1f30
+9bb3e311-e35f-49d8-a007-02521f204564   52e07d26-0f12-411d-ab2d-91b1fbaae18b
+0aa22119-deb9-45a7-a948-d32beb0ba6ad   c3b3b0b0-75a6-4393-a253-47fdeb5f762a
+e3332a5b-7270-41be-ab25-c874212f752b   f09a9ea8-e344-4d02-a4b9-24063542022c
+42dbe763-73ed-45b9-b07d-81889ae37c59   fcbadbde-9dce-4505-8020-c57667e8a240
+02d76e55-7701-4ab2-a621-001c2c3a0c67   3f976351-1070-4667-9c47-fd39b769b73b
+63a2fb20-5127-44c4-8461-b741a9fd8447   5c862ef2-169f-4d91-a2c0-10532d0decf6
+e94fb9e2-43ca-487b-9a32-00e217d8e905   e28c6a6c-c7e5-48c6-acd6-8b51257c0701
+a10f78f6-1bb3-424f-ab87-c9af037eccba   98a8c028-2cf2-43e0-9b8f-a725be4d75f7
+
+--------------------------------------------------------------------------------
+6. 5 EXEMPLOS ANTES / DEPOIS
+--------------------------------------------------------------------------------
+os_id                                    | data_OS    | periodo ANTES -> DEPOIS | data_competencia
+1fc92d46-6046-4624-980b-111af5bc447f     | 2026-05-19 | 2026-09-22 -> 2026-05-19 | 2026-05-19
+b90348b8-3448-4988-b7f7-740d3ff8c84e     | 2026-05-19 | 2026-09-22 -> 2026-05-19 | 2026-05-19
+2b65575d-8ecc-49cf-83bb-bbf188960518     | 2026-05-12 | 2026-09-22 -> 2026-05-12 | 2026-05-12
+ecbdc239-e5da-4665-ba0d-ebadc4866194     | 2026-05-14 | 2026-09-22 -> 2026-05-14 | 2026-05-14
+bc57e3f1-5235-4f21-bdf9-c3433cfe234f     | 2026-05-11 | 2026-09-22 -> 2026-05-11 | 2026-05-11
+
+--------------------------------------------------------------------------------
+7. CONTAGENS ANTES x DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores ........ 137 -> 137
+soma valor_liquido ............ 90.229,96 -> 90.229,96
+financeiro_pagar .............. 178 -> 178
+financeiro_baixas ............. 19 -> 19
+lote_id nao nulo .............. 0 -> 0
+Classes do inventario:
+  OK ............ 58 -> 92   (+34 corrigidos)
+  DIVERGENTE .... 34 -> 0
+  INDETERMINADO . 21 -> 21   (INTACTO)
+  TESTE ......... 23 -> 23   (INTACTO)
+  AGREGADO ......  1 -> 1    (INTACTO)
+  TOTAL ......... 137 -> 137
+
+--------------------------------------------------------------------------------
+8. PROVA DE VALORES / STATUS / BAIXAS / LOTES INTACTOS
+--------------------------------------------------------------------------------
+- Comparacao campo-a-campo (PRE x POS) nos 34 ids: campos NAO-data alterados = 0
+  (prestador_id/nome, os_id, valor_servicos, pedagio, adicionais, valor_liquido,
+   status_conferencia, status_aprovacao, status_pagamento, elegivel_lote,
+   lote_id, is_teste).
+- 34/34 com as 3 datas exatamente = ordens_servico.data.
+- Registros com baixa financeira entre os 34 = 0.
+- divergentes elegiveis restantes = 0.
+- 15/15 verificacoes efetivas PASS (apos remocao de 2 bugs de query do 1o script,
+  que nao afetaram o dado).
+
+--------------------------------------------------------------------------------
+9. ROLLBACK
+--------------------------------------------------------------------------------
+Artefato: TMS-FIN-PROG-05D6C1-ROLLBACK.sql (58.2 KB)
+Conteudo: 34 comandos UPDATE (um por id) restaurando EXATAMENTE as 3 datas PRE
+(periodo_inicio, periodo_fim, data_competencia), sem recalcular valores.
+Envolvido por BEGIN/COMMIT. Snapshot PRE tambem em _05d6c1_snapshot_pre.json.
+
+--------------------------------------------------------------------------------
+10. REGRESSAO
+--------------------------------------------------------------------------------
+- 05D.6C (novos registros M66/M80 + data nula + idempotencia): 15/15 PASS
+- 05D.6B.1 (guard papel + inconsistente): 17/17 PASS
+- 05D.6B (RPC aprovar): 20/20 PASS
+- 05D.6A (RLS UPDATE): 15/15 PASS
+- 05D.4 (RLS SELECT): 13/13 PASS
+- vitest subset financeiro: 6 arquivos / 179 testes PASS
+- tsc: EXIT 2 — 750 erros PRE-EXISTENTES (nenhum TS alterado)
+
+--------------------------------------------------------------------------------
+11. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) 21 INDETERMINADOS permanecem SEM data canonica (os_id sem OS/alocacao) —
+    nao corrigidos por decisao (sem prova). Requerem analise futura.
+R2) Coluna 'competencia' NAO foi tocada (fora das 3 datas autorizadas); para os
+    34, competencia ainda pode conter 2026-09-22. Documentado.
+R3) 0 divergentes pagos; nenhum pago foi tocado. Se surgirem pagos divergentes
+    no futuro, exigem processo separado (estorno/reabertura).
+R4) A correcao altera data_competencia de NULL para os.data — consumidores de
+    fechamento/relatorio passam a ver competencia preenchida (sem efeito
+    financeiro: valores/status inalterados).
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+valores; aprovacoes; lote_id; financeiro_baixas; CESAR; 20 sem tenant;
+f_aprovar_pagamento_prestadores; Conferencia/PagamentoPrestadores/Relatorio UI;
+Tesouraria; iFi/CNAB; AR/faturas; APP; M66; M80 (regra nova mantida).
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6C1-REPROCESSAR-DATAS-COMPROVADAS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6C1-REPROCESSAR-DATAS-COMPROVADAS-RESULTADO.txt
+Tamanho ..: 9267 bytes
+Data .....: 24/09/2026 17:25:21
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6C.1
+================================================================================

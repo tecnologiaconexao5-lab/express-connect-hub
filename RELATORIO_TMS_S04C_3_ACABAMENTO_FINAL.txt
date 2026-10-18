@@ -1,0 +1,165 @@
+RELATÓRIO TMS-S04C.3 — CLIENTES REAIS + CABEÇALHO FINAL + ACABAMENTO DO RELATÓRIO
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build + PDF de prova)
+
+====================================================================
+1. FONTE USADA PELO SELETOR DE CLIENTES
+====================================================================
+
+buscarClientesAtivos() (src/services/relatorios/relatorioService.ts) —
+mesma função já usada pelo relatório agregado. Popula o Select da visão
+individual via clientesAtivos.
+
+====================================================================
+2. TABELA DE CLIENTES
+====================================================================
+
+clientes (cadastro oficial do TMS).
+
+====================================================================
+3. FILTRO APLICADO
+====================================================================
+
+status = 'ativo' (somente clientes ativos do cadastro).
+
+====================================================================
+4. MOTIVO DE CLIENTES HML/TESTE APARECEREM
+====================================================================
+
+"HOMOLOGAÇÃO APP" e "CLIENTE HML 136A" são linhas ATIVAS da tabela
+clientes (seed criado para homologação — M136A). Como estão com
+status='ativo' e NÃO existe campo oficial (ex.: ambiente/is_teste) na
+tabela clientes para diferenciá-los, eles aparecem no seletor.
+NÃO foi criada regra por palavra ("HML") — seria arriscado (poderia
+alcançar cliente real). Registrado como pendência de decisão.
+
+====================================================================
+5. COMO O SELETOR FICOU
+====================================================================
+
+Label: Nome Fantasia (fallback Razão Social) + " — CNPJ" para
+desambiguar. Ordenado alfabeticamente. Nunca UUID / cliente_id / código
+técnico. O ID real continua usado internamente (filtros/preview/PDF).
+
+====================================================================
+6. TAMANHO ANTERIOR / FINAL DO LOGO
+====================================================================
+
+Asset: /logos/logo-conexao-oficial.png (branco + X colorido).
+
+  Original (S04C):     60 × 40 pt
+  S04C.2:              81 × 54 pt
+  FINAL (S04C.3):      93 × 62 pt  (+~55% vs original)
+
+Faixa navy MANTIDA em 88pt. Centralizado verticalmente (13pt acima/abaixo),
+sem deformação/corte. Verificado no PDF: matriz "93.09 0 0 62 ... cm /I0 Do".
+
+====================================================================
+7. AJUSTES DE ALINHAMENTO DO CABEÇALHO
+====================================================================
+
+Bloco da empresa à direita recalculado para o centro visual do logo:
+  Conexão Express Transportes LTDA   (bold 14, topY 25)
+  CNPJ: ...   IE: ...                 (9, topY 43)
+  São Paulo/SP                        (9, topY 57)
+  Telefone · e-mail                    (7.5, topY 70)
+- Margem direita de segurança (rightEmpresaX = largura − margem − 14pt);
+- Bloco compacto, sem encostar na borda inferior (88pt) nem na margem direita;
+- Alinhado ao centro visual do logo (93×62).
+
+====================================================================
+8. ORIGEM DOS DADOS DA EMPRESA
+====================================================================
+
+O PDF usa input.empresa = buscarDadosEmpresaParaFatura()
+(configuracoes_fiscais + contas_financeiras_config; fallback empresaConfig).
+Nenhum hardcode. A prova de teste usa os valores oficiais de
+empresaConfig ("Conexão Express Transportes LTDA", CNPJ 31.227.975/0001-80,
+São Paulo/SP). Se o ambiente local estiver com dados de homologação, o PDF
+refletirá a fonte oficial — não foi alterado cadastro/configuração.
+
+====================================================================
+9. CORREÇÃO ROMANEIRO/OC + TRAJETO
+====================================================================
+
+A célula agora é uma STRING de duas linhas (\n) — autoTable renderiza como
+duas linhas limpas (antes: array era unido com vírgula → "—,Guarulhos").
+
+  Romaneio + trajeto:  "343198\nGuarulhos › Morumbi"
+  Sem romaneio + traj: "—\nGuarulhos › São Paulo"
+  Só romaneio:         "343198"
+  Nada:                "—"
+
+Verificado no PDF: "(343550) Tj / T* (Guarulhos › Morumbi) Tj" e
+"(—) Tj / T* (Taxa operacional) Tj" — sem vírgula, sem "—,trajeto".
+A pré-visualização da tela já usava duas linhas limpas.
+
+====================================================================
+10. AJUSTES DE ALINHAMENTO DA TABELA
+====================================================================
+
+Removido halign global "center" do cabeçalho; agora o alinhamento por coluna
+(columnStyles) vale para cabeçalho E conteúdo: Data centralizada, Romaneio/OC
+e Veículo/Placa à esquerda, colunas financeiras (Valor Base, KM, Pedágio,
+Reembolso, Descontos, Valor Total) à direita. Sem redesenho da tabela.
+
+====================================================================
+11. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/utils/pdfFatura.ts — logo maior (93×62), cabeçalho alinhado, célula
+  Romaneio/OC+trajeto em duas linhas, alinhamento de colunas.
+- src/components/financeiro/relatorios/RelatorioFaturamentoCliente.tsx —
+  label do seletor (Nome Fantasia + CNPJ, ordenado).
+- src/test/tms_s04c3_acabamento.test.ts — NOVO (8 testes, cenários A–G).
+- src/test/tms_s04c2_fontes_reais.test.ts — mock tipado (sem any novo).
+
+====================================================================
+12. TESTES EXECUTADOS
+====================================================================
+
+- npx vitest run src/test/tms_s04c3_acabamento.test.ts → ✅ 8/8
+    A clientes do cadastro oficial · B nome nunca UUID · C razão social sem
+    fantasia · D romaneio+trajeto (sem vírgula) · E romaneio vazio+trajeto
+    (nunca "—,trajeto") · F sem romaneio/trajeto · G valores/totais S04C.2
+- npx vitest run src/test/tms_s04c2_fontes_reais.test.ts → ✅ 10/10 (regressão)
+- npx vitest run (geral)                            → ✅ 530/530 (56 arquivos)
+- npx tsc --noEmit                                  → ✅ 0 erros
+- npm run build                                     → ✅ 42,06s
+- npx eslint (arquivos alterados)                   → apenas baseline pré-existente
+
+====================================================================
+13. CAMINHO DO NOVO PDF
+====================================================================
+
+test-results/tms-s04c3/relatorio_individual_acabamento.pdf
+  (logo 93×62 · cabeçalho alinhado · cliente Calvo · OS + manual ·
+   romaneio/trajeto em duas linhas · totais R$ 586,43 + R$ 300,00 = R$ 886,43)
+
+====================================================================
+14. PENDÊNCIAS REAIS
+====================================================================
+
+1. Clientes HML/teste: não há campo oficial na tabela clientes para
+   diferenciá-los do cadastro real — decisão necessária (futuro: flag
+   ambiente/is_teste ou política de cadastro). Nada foi removido/excluído.
+2. Aprovação visual final do usuário (HOMOLOGAÇÃO VISUAL).
+
+====================================================================
+RESULTADO
+====================================================================
+
+Seletor usa o cadastro oficial com labels legíveis; logo maior e
+institucional (93×62) com cabeçalho alinhado; Romaneio/OC + trajeto limpos;
+tabela alinhada; valores e totais idênticos à S04C.2.
+
+CLIENTES DO CADASTRO OFICIAL: OK
+UUID NO SELETOR: NÃO
+LOGO TAMANHO FINAL: OK
+CABEÇALHO ALINHADO: OK
+ROMANEIO/TRAJETO: OK
+TABELA ALINHADA: OK
+VALORES FINANCEIROS ALTERADOS: NÃO
+PRODUÇÃO ALTERADA: NÃO
+TMS-S04C.3: HOMOLOGAÇÃO TÉCNICA SIM
+HOMOLOGAÇÃO VISUAL: AGUARDA USUÁRIO

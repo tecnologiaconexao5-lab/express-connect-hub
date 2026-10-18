@@ -1,0 +1,247 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-04C.1-LEGADO-PLAN
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (leitura READ-ONLY)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-04B-EMISSAO-OFICIAL-RESULTADO.txt
+TIPO: AUDITORIA READ-ONLY + PLANO. Nada corrigido.
+      Nenhum UPDATE/INSERT/DELETE. Nenhum Nº Conexao/Nº Cliente gerado.
+      Nenhum AR criado. Nenhum contador/sequence alterado.
+================================================================================
+
+RESULTADO: AUDITORIA CONCLUIDA. Plano determinista pronto para PROG-04C.2.
+Comprovacao de ZERO alteracao: snapshot ANTES == DEPOIS (INALTERADO = true).
+
+--------------------------------------------------------------------------------
+1. SNAPSHOT ANTES (read-only)
+--------------------------------------------------------------------------------
+faturas_total ................. 41
+emitidas ...................... 15
+emitidas sem AR ............... 14
+rascunhos ..................... 26
+AR com fatura_id .............. 1   (FAT-2026-000001)
+AR orfaos (fatura texto) ...... 23
+financeiro_receber total ...... 119
+financeiro_baixas total ....... 19
+fatura_contadores_cliente ..... 0
+seq_fatura_2026 last_value .... 9
+(E todos iguais no snapshot DEPOIS — secao 9.)
+
+--------------------------------------------------------------------------------
+2. TABELA DAS 14 EMITIDAS SEM AR
+--------------------------------------------------------------------------------
+Legenda classificacao:
+  A = candidata a regularizacao oficial (real, sem AR, sem pagamento)
+  B = ja possui possivel AR legado -> reconciliar (vincular)
+  C = registro de teste/homologacao
+  D = evidencia insuficiente -> decisao humana
+
+| # | Fatura (numManual) | Cliente | Valor | Venc | AR oficial | AR legado possivel | Pagamento | Class | Acao proposta | Risco |
+|---|--------------------|---------|-------|------|-----------|--------------------|-----------|-------|---------------|-------|
+| 1 | 38  | Calvo Com. e Imp. (91b80fdb) | R$ 3.550,54 | 05/09 | inexistente | Fat 00038 = 0eab9f84 (R$3.550,54, pago 11/09, baixa 3.550,54) | SIM | B | VINCULAR AR existente | Baixo |
+| 2 | 39  | Calvo Com. e Imp. (91b80fdb) | R$ 1.597,48 | 09/09 | inexistente | nenhum real (o item FIN3623B-...3977 R$12,35 casa so por texto) | NAO | A | REGULARIZAR oficial | Baixo |
+| 3 | 40  | CALVO (a49d5aa3) | R$ 1.200,00 | 17/09 | inexistente | nenhum | NAO | D | DECISAO HUMANA | Medio |
+| 4 | FIN013-001 | CLIENTE HML 136A (336c5b17) | R$ 123,45 | 30/09 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+| 5 | 001 | Calvo Com. e Imp. (91b80fdb) | R$ 125,00 | 10/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+| 6 | 40. | Calvo Com. e Imp. (91b80fdb) | R$ 1.200,00 | 18/09 | inexistente | nenhum | NAO | A | REGULARIZAR oficial | Baixo |
+| 7 | FIN3623C-1788612938405 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+| 8 | FIN3623C-1788612977197 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+| 9 | FIN3623C-1788613035815 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+|10 | FIN3623C-1788613125775 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+|11 | FIN3623C-1788613277955 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+|12 | FIN3623C-1788613689598 | CLIENTE HML 136A | R$ 123,46 | 05/10 | inexistente | nenhum | NAO | C | TRATAR COMO TESTE | Baixo |
+|13 | 41  | Calvo Com. e Imp. (91b80fdb) | R$ 2.114,60 | 07/10 | inexistente | AR orfao bbbaa2dc (fatura="41", R$2.114,60, pendente, sem pagamento) | NAO | B | VINCULAR AR existente | Baixo |
+|14 | 42  | Calvo Com. e Imp. (91b80fdb) | R$ 2.091,40 | 07/10 | inexistente | nenhum (match apenas por vencimento; o AR e da 41) | NAO | A | REGULARIZAR oficial | Baixo |
+
+Totais por classificacao: A=3 (39, 40., 42) | B=2 (38, 41) | C=8 | D=1.
+Nenhuma das 14 possui item com os_id (todas manuais, os_id NULL, 1 item cada).
+Todas as 14 tem numero=NULL e numero_cliente=NULL (nunca foram emitidas oficialmente).
+Soma dos valores das 14 = R$ 12.743,23.
+
+Falsos positivos de "AR legado possivel" descartados:
+  - Fatura 39 casou texto por conter "39" em FIN3623B-1788608603977 (R$12,35) -> NAO e AR da 39.
+  - Fatura 42 casou por vencimento 07/10 com o AR orfao da 41 -> NAO e AR da 42.
+  Confirmado: 39 e 42 NAO possuem AR correspondente.
+
+--------------------------------------------------------------------------------
+3. INVESTIGACAO ESPECIAL — FATURA 41
+--------------------------------------------------------------------------------
+Fatura 41: id ebbc46d2-41ff-4412-aa4c-a5b5e81d1411 | cliente 91b80fdb (Calvo)
+  status emitida | numero NULL | numero_cliente NULL | conta_receber_id NULL
+  data_emissao 22/09/2026 | vencimento 07/10/2026 | valor_total R$ 2.114,60
+  descricao/romaneios: "344070, 344131 e 344188" (BTG PACTUAL snapshot)
+  item: os_id NULL, valor 2.114,60, ativo.
+
+AR orfao candidato: bbbaa2dc-a210-49df-abb6-d45b06e92288
+  fatura (texto) "41" | numero NULL | fatura_id NULL | cliente 91b80fdb
+  valor R$ 2.114,60 | status 'pendente' | data_vencimento 07/10/2026
+  data_pagamento NULL | SEM baixa em financeiro_baixas | sem documento fiscal vinculado.
+
+Comparacao rigorosa:
+  cliente_id .......... IGUAL (91b80fdb)
+  valor ............... IGUAL exato (2114.60)
+  vencimento .......... IGUAL exato (2026-10-07)
+  referencia textual .. fatura="41" = metadata.numeroManual da fatura 41
+  pagamento/baixa ..... NENHUM (AR pendente; fatura sem baixa)
+  fatura_id ........... NULL (nao vinculado a nenhuma fatura)
+
+CONCLUSAO: evidencia SUFICIENTE para afirmar que o AR bbbaa2dc pertence a
+fatura 41. PROPOSTA: no saneamento 04C.2, VINCULAR esse AR existente (preencher
+financeiro_receber.fatura_id = fatura 41 e faturas.conta_receber_id = bbbaa2dc)
+EM VEZ DE CRIAR OUTRO recebivel. Nada vinculado nesta missao.
+
+--------------------------------------------------------------------------------
+4. INVESTIGACAO — FATURA 42
+--------------------------------------------------------------------------------
+Fatura 42: id 7220ed09-50d8-41a1-b3ce-a315e416bcde | cliente 91b80fdb (Calvo)
+  status emitida | numero NULL | numero_cliente NULL | conta_receber_id NULL
+  valor_total R$ 2.091,40 | vencimento 07/10/2026
+  descricao: "romaneios 344326, 344384, 344424 e 344504 + devolucao NFD 171901".
+CONFIRMADO: a fatura 42 NAO possui NENHUM AR correspondente
+  (por fatura_id: nenhum; por texto "42"/"FAT-...42": nenhum; por valor 2.091,40:
+   nenhum). O unico vizinho (bbbaa2dc) tem valor 2.114,60 e pertence a 41.
+  -> 42 = candidata a REGULARIZACAO OFICIAL (sem AR a vincular).
+
+--------------------------------------------------------------------------------
+5. REGISTROS DE TESTE / HOMOLOGACAO (nao converter automaticamente em real)
+--------------------------------------------------------------------------------
+Evidencia textual nos itens/metadata:
+  - FIN013-001            -> "FIN013 TESTE REAL — HOMOLOGACAO DO FATURAMENTO"
+  - FIN3623C-* (6)        -> "FIN3623C HOMOLOGACAO PDF CONEXAO EXPRESS"
+  - 001                   -> "Teste 001"
+  Cliente dessas 7: CLIENTE HML 136A (336c5b17). A 8a (001) e cliente Calvo 91b80fdb.
+Rascunhos tambem claramente de teste (nao entram nas 14, mas relevantes ao contexto):
+  - 336c5b17: FIN3623C-1788614228622 (rascunho)
+  - a49d5aa3: FIN362F (12345), FIN3623F-1788608313271 (12346) (rascunhos de teste)
+  - 04280785 ("M43_..._Cliente"): dezenas de rascunhos de teste de 2.120
+Observacao: o unico AR oficial (FAT-2026-000001) pertence ao cliente 04280785
+  ("M43_2026-06-29_18-27-54 Cliente"), aparencia de cliente de teste de missao 43.
+Recomendacao: tratar os 8 (C) como HISTORICO DE TESTE — NAO receber Nº Cliente,
+  NAO gerar AR; opcionalmente marcar metadata.testes/is_teste ou cancelar (decisao
+  humana, secao 10).
+
+--------------------------------------------------------------------------------
+6. CLASSIFICACAO INDIVIDUAL (resumo)
+--------------------------------------------------------------------------------
+A) Regularizacao oficial (real, sem AR, sem pagamento): 39, 40., 42
+B) Reconciliar/vincular AR legado existente: 38 (AR pago), 41 (AR orfao pendente)
+C) Teste/homologacao: FIN013-001, FIN3623C-* (6), 001  (total 8)
+D) Decisao humana (evidencia insuficiente): 40 (cliente CALVO a49d5aa3; item
+   "Fatura manual" sem descricao/romaneio; pode ser real ou teste)
+
+--------------------------------------------------------------------------------
+7. PLANO DE EXECUCAO 04C.2 (NENHUMA ACAO EXECUTADA AQUI)
+--------------------------------------------------------------------------------
+Pre-requisitos: autorizacao explicita (mexe em dados historicos) + migration
+dedicada para procedimentos de regularizacao (ver riscos).
+
+Grupo C — TESTE/HOMOLOGACAO (8): FIN013-001, 6x FIN3623C-*, 001
+  Acao: DEIXAR INTACTO como evidencia historica e EXCLUIR da numeracao oficial
+        (nao gera Nº Cliente). Opcao (decisao humana): marcar is_teste/metadata
+        ou cancelar via f_cancelar_fatura. NAO criar AR.
+  Risco: baixo.
+
+Grupo B — VINCULAR AR EXISTENTE (2): 38, 41
+  - 38: AR 0eab9f84 (pago). Acao: UPDATE financeiro_receber SET fatura_id=38.id
+    WHERE id=0eab9f84; UPDATE faturas SET conta_receber_id=0eab9f84 WHERE id=38.id.
+    NAO alterar valor/status/data_pagamento/baixa (AR ja pago).
+  - 41: AR bbbaa2dc (pendente). Mesma vinculacao.
+  Apos vincular, gerar Nº Conexao + Nº Cliente por procedimento controlado
+  (idempotente), SEM criar novo AR. Requer funcao dedicada (f_regularizar_
+  fatura_legada) — nao usar f_emitir_fatura (que criaria 2o AR).
+  Risco: baixo (1 AR por fatura garantido por uq_receber_fatura_id).
+
+Grupo A — REGULARIZAR OFICIALMENTE (3): 39, 40., 42
+  Acao: reverter status para 'rascunho' (procedimento controlado) e emitir via
+  f_emitir_fatura (gera Nº Conexao + Nº Cliente + 1 AR). Idempotente.
+  Risco: baixo (sem AR/pagamento anterior).
+
+Grupo D — DECISAO HUMANA (1): 40 (a49d5aa3)
+  Acao: aguardar decisao (real x teste). Se real -> grupo A; se teste -> grupo C.
+  Risco: medio (ambiguidade; evita criar AR indevido).
+
+Regra geral: nenhuma acao destrutiva; nenhuma alteracao de AR pago; preservar
+historico; tudo idempotente; executar somente apos aprovacao.
+
+--------------------------------------------------------------------------------
+8. ESTRATEGIA Nº CLIENTE / BACKFILL (NAO EXECUTAR)
+--------------------------------------------------------------------------------
+Separacao de conceitos:
+  - REFERENCIA LEGADA: metadata.numeroManual ("38","39","40","40.","41","42",
+    "001","FIN013-001","FIN3623C-*") = numero informado/legado. NAO e o Nº Cliente.
+  - Nº CLIENTE OFICIAL: faturas.numero_cliente, sequencial historico por cliente.
+
+Regra determinista proposta (por tenant_id + cliente_id):
+  1) Considerar SOMENTE as faturas consideradas REAIS (grupos A e B ja
+     regularizados; excluir grupo C/teste; resolver D antes).
+  2) Ordenar por (data_emissao ASC, criado_em ASC, id ASC).
+  3) Atribuir numero_cliente = 1..N nessa ordem, SEM reiniciar por ano.
+     (O numeroManual NAO influencia a ordem.)
+  Projecao (se aprovada):
+    - Calvo 91b80fdb: 38=1, 39=2, 40.=3, 41=4, 42=5.   (001 e teste -> fora)
+    - CALVO a49d5aa3: 40=1 (se real) ou fora (se teste).
+    - CLIENTE HML 136A: nenhum (todos teste).
+    - Cliente 04280785 (M43): FAT-2026-000001=1 (se considerado real) ou fora.
+
+Inicializacao do contador (sem reiniciar sequencia indevidamente):
+  - NAO inserir contadores em massa.
+  - Apos atribuir numero_cliente, inicializar/atualizar por cliente com UPSERT
+    idempotente que NUNCA reduz o valor atual:
+      INSERT INTO fatura_contadores_cliente (tenant_id, cliente_id, ultimo_numero)
+      VALUES (t, c, MAX(numero_cliente do cliente))
+      ON CONFLICT (tenant_id, cliente_id)
+      DO UPDATE SET ultimo_numero = GREATEST(
+        fatura_contadores_cliente.ultimo_numero, EXCLUDED.ultimo_numero);
+  - Assim a proxima emissao continua em N+1, sem reinicio e sem duplicidade.
+  - Clientes apenas com teste ficam com contador 0/ausente.
+
+--------------------------------------------------------------------------------
+9. SNAPSHOT DEPOIS (prova de ZERO alteracao)
+--------------------------------------------------------------------------------
+faturas_total 41 | emitidas 15 | emitidas_sem_ar 14 | rascunhos 26 |
+ar_com_fatura_id 1 | ar_orfaos_fatura_texto 23 | receber_total 119 |
+baixas_total 19 | contadores 0 | seq_fatura_2026 9.
+Comparacao ANTES x DEPOIS: IDENTICA (INALTERADO = true).
+Nenhum UPDATE/INSERT/DELETE; nenhum Nº gerado; nenhum AR criado; sequence intacta.
+
+--------------------------------------------------------------------------------
+10. RISCOS / DECISOES HUMANAS RESTANTES
+--------------------------------------------------------------------------------
+- D1: Fatura 40 (CALVO a49d5aa3, R$1.200, "Fatura manual") — real ou teste?
+- D2: Grupo C (8): manter como historico, marcar is_teste ou cancelar?
+- D3: Cliente 04280785 (M43) e real? O AR oficial FAT-2026-000001 deve receber
+      numero_cliente=1 ou ser tratado como teste?
+- D4: Para o grupo B, aprovar procedimento dedicado de "regularizacao por
+      vinculacao de AR existente" (nao usar f_emitir_fatura).
+- R1: O AR da 38 ja esta PAGO e baixado — vincular NAO pode alterar valor,
+      status, data_pagamento nem a baixa.
+- R2: uq_receber_fatura_id (1 AR por fatura) protege contra duplicidade; a
+      vinculacao deve respeitar o indice parcial.
+- R3: O Nº Cliente e historico (sem ano); backfill deve refletir a ordem real,
+      nao o numeroManual.
+- R4: Metadados de teste sem marcador explicito (is_teste) exigem classificacao
+      por texto (ja feita); registrar a decisao para auditoria.
+- R5: Histórico financeiro: nenhuma baixa/AR pago sera alterado.
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-04C.2 — EXECUCAO DO SANEAMENTO (com autorizacao):
+  - Migration/procedimento: f_regularizar_fatura_legada (vincular AR existente,
+    gerar Nº Conexao + Nº Cliente sem criar 2o AR) e reemissao controlada das A.
+  - Aplicar decisoes humanas D1..D4.
+  - Backfill de fatura_contadores_cliente conforme secao 8.
+  - Validacao final: 0 emitidas sem AR (fora decisoes explicitas), 1 AR por
+    fatura, contadores coerentes, Nº Cliente historico reconstruido.
+  - Proibido tocar M66/M80/Dashboard/Programacao/APP/RLS geral/UI/PDF/Financeiro
+    Pagar, salvo ajuste estritamente necessario e autorizado.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- SOMENTE AUDITORIA READ-ONLY. Nenhuma escrita; snapshot ANTES == DEPOIS;
+  41/42/14, AR orfao, contadores e sequence intactos. REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-04C.1-LEGADO-PLAN
+================================================================================

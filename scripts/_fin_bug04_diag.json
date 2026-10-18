@@ -1,0 +1,768 @@
+{
+  "ts": "2026-10-07T10:49:23.878Z",
+  "rpc": [
+    {
+      "proname": "f_criar_lancamento_manual_prestador",
+      "args": "p_prestador_id uuid, p_tipo_lancamento text, p_data date, p_valor numeric, p_descricao text, p_forma_pagamento text, p_conta_pagamento text, p_idempotency_key text"
+    }
+  ],
+  "pp_manual": [
+    {
+      "id": "cc3965c7-9999-4357-9013-8eebf2978492",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "prestador_documento": "41511318848",
+      "os_id": null,
+      "os_numero": null,
+      "valor_liquido": "3220.10",
+      "valor_servicos": "3220.10",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Avulso",
+      "tipo_pagamento": "PIX",
+      "data_competencia": "2026-10-07T03:00:00.000Z",
+      "observacao": "31/08 – Romaneio 344070 – R$ 699,40\n01/09 – Romaneio 344131 – R$ 587,85\n02/09 – Romaneio 344188 – R$ 587,35\n \n09/09 – Romaneio 344384 – R$ 523,70\n09/09 – Romaneio 344424 – R$ 520,00\n11/09 – Romaneio 344504 – Retirada de cesta – R$ 1,80 [Conta: Cora] [IDEMP:39dd31f9-5bd8-4215-9493-4e5af19e10e2]",
+      "is_teste": false,
+      "created_at": "2026-10-07T10:37:08.453Z"
+    },
+    {
+      "id": "e08d1137-ec0e-4d4e-a0b0-f37f5653af8d",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "prestador_documento": "41511318848",
+      "os_id": null,
+      "os_numero": null,
+      "valor_liquido": "1040.00",
+      "valor_servicos": "1040.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço OS",
+      "tipo_pagamento": "PIX",
+      "data_competencia": "2026-08-31T03:00:00.000Z",
+      "observacao": "[Conta de pagamento: Cora]",
+      "is_teste": false,
+      "created_at": "2026-09-10T13:15:57.930Z"
+    },
+    {
+      "id": "6266f2a1-8f42-4898-9e44-a1fbd23add7b",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "prestador_documento": "41511318848",
+      "os_id": null,
+      "os_numero": null,
+      "valor_liquido": "658.20",
+      "valor_servicos": "658.20",
+      "status": "pago",
+      "status_conferencia": "conferido",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pago",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço OS",
+      "tipo_pagamento": "PIX",
+      "data_competencia": "2026-08-19T03:00:00.000Z",
+      "observacao": "Romaneio 343717 + 38,20 pedagio + 100 km",
+      "is_teste": false,
+      "created_at": "2026-09-04T20:05:40.411Z"
+    },
+    {
+      "id": "a2b2e3c7-4abe-495c-80ff-d4d10cb85e5a",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "prestador_documento": "41511318848",
+      "os_id": null,
+      "os_numero": null,
+      "valor_liquido": "3150.34",
+      "valor_servicos": "3150.34",
+      "status": "pendente",
+      "status_conferencia": "conferido",
+      "status_aprovacao": "aprovado",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço OS",
+      "tipo_pagamento": "PIX",
+      "data_competencia": "2026-09-02T03:00:00.000Z",
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-09-02T11:43:58.648Z"
+    },
+    {
+      "id": "32fe474f-41c7-432b-a21e-7d0b2831c1bb",
+      "prestador_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "prestador_documento": "41511318848",
+      "os_id": null,
+      "os_numero": null,
+      "valor_liquido": "2177.92",
+      "valor_servicos": "2177.92",
+      "status": "pago",
+      "status_conferencia": "conferido",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pago",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço OS",
+      "tipo_pagamento": "PIX",
+      "data_competencia": "2026-08-20T03:00:00.000Z",
+      "observacao": "Liberação manual: Vencimento do dia",
+      "is_teste": false,
+      "created_at": "2026-08-20T16:45:52.800Z"
+    },
+    {
+      "id": "e3c7baed-2b30-43e6-af5c-68916bd2b481",
+      "prestador_id": "b06c0711-55cf-42c1-9665-33f8b0069119",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "fdd3e5ce-6736-4b6a-aa41-f837d4f5f219",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1800.00",
+      "status": "pendente",
+      "status_conferencia": "conferido",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T21:47:53.496Z"
+    },
+    {
+      "id": "52325ff7-3365-4636-a62e-46bb176dc089",
+      "prestador_id": "db914237-e103-458b-95b1-d64bfdbec7f8",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "bff76814-3149-408c-b5f8-467f1ff178a4",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T21:47:53.005Z"
+    },
+    {
+      "id": "a4a29b24-4059-4507-8635-ce3f4cfd7c3c",
+      "prestador_id": "764abe2b-b271-4b48-8788-38b73729a390",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1800.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T21:31:37.513Z"
+    },
+    {
+      "id": "977b530c-bbb9-4d08-950d-20d6cabff27f",
+      "prestador_id": "1cb381ba-c0bb-4957-8ea6-2553a040ac67",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T21:28:05.003Z"
+    },
+    {
+      "id": "dbe96d77-3ebb-4982-a112-fc5b2a4895a0",
+      "prestador_id": "abacc4f5-da43-45a5-b29f-afbd6be60cf6",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T20:20:42.185Z"
+    },
+    {
+      "id": "8cb22e29-4671-4472-b619-ba1755d59af8",
+      "prestador_id": "6cdcd51c-254a-49df-87b7-951cda4faff1",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "pendente",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T19:14:20.346Z"
+    },
+    {
+      "id": "fcb9286f-5632-4d0f-ab20-e906446f0dda",
+      "prestador_id": "b9ac3bce-592a-4250-8a10-ecde4101a7e9",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "cancelado",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T18:45:25.273Z"
+    },
+    {
+      "id": "4f0f8ba3-85a7-4e6c-b6f9-4e0d7968c6d0",
+      "prestador_id": "2263b175-5a76-4b7b-a0bf-bd88672d613f",
+      "prestador_nome": null,
+      "prestador_documento": null,
+      "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+      "os_numero": null,
+      "valor_liquido": "0.00",
+      "valor_servicos": "1000.00",
+      "status": "pendente",
+      "status_conferencia": "em_aberto",
+      "status_aprovacao": "aguardando_aprovacao",
+      "status_pagamento": "cancelado",
+      "origem_lancamento": "manual",
+      "tipo_lancamento": "Serviço Escala",
+      "tipo_pagamento": null,
+      "data_competencia": null,
+      "observacao": null,
+      "is_teste": false,
+      "created_at": "2026-06-29T18:31:51.345Z"
+    }
+  ],
+  "colunas_pp": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador_nome",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "periodo_inicio",
+      "data_type": "date",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "periodo_fim",
+      "data_type": "date",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "quantidade_os",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_servicos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_reembolsos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_bonus",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_descontos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_adiantamentos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_liquido",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "qtd_os",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "pedagio",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "reembolsos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "adicionais",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "descontos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "adiantamentos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "multas",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "ajustes",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_conferencia",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_aprovacao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "origem_lancamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "categoria_financeira",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "centro_custo",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "conta_contabil",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "competencia",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_prevista_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "elegivel_lote",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "lote_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impacto_dre",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impacto_fluxo_caixa",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observacao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_numero",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_lancamento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "natureza",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_competencia",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "is_teste",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "classificacao_dado",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fechamento_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_conferencia",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_aprovacao",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    }
+  ],
+  "fp_manual": [
+    {
+      "id": "4ca62048-8f4d-473f-bef6-0d906f9b95ad",
+      "os_id": null,
+      "os_vinculada": "cc3965c7-9999-4357-9013-8eebf2978492",
+      "descricao": "31/08 – Romaneio 344070 – R$ 699,40\n01/09 – Romaneio 344131 – R$ 587,85\n02/09 – Romaneio 344188 – R$ 587,35\n \n09/09 – Romaneio 344384 – R$ 523,70\n09/09 – Romaneio 344424 – R$ 520,00\n11/09 – Romaneio 344504 – Retirada de cesta – R$ 1,80",
+      "valor": "3220.10",
+      "status": "aberto",
+      "prestador": "CESAR AUGUSTO HOLANDA SILVA ",
+      "fornecedor_id": "fe7a75cc-a49f-43ef-a0b7-f869fbf07744",
+      "fornecedor_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+      "categoria": "Custo Logístico",
+      "created_at": "2026-10-07T13:37:08.453Z"
+    }
+  ],
+  "colunas_fp": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "cliente_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "descricao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "vencimento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_nome",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_vencimento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_emissao",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "categoria",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observacoes",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fornecedor",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tipo_documento",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_vinculada",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_bruto",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "valor_liquido",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "desconto",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "juros",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "multa",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "impostos_retidos",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_previsao_pagamento",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "conta_pagadora",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "codigo_barras",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "chave_pix",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "recorrente",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "quantidade_parcelas",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "parcela_atual",
+      "data_type": "integer",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "competencia",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "plano_contas",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "centro_resultado",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "unidade_filial",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "despesa_fixa_base",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_efetiva_pgto",
+      "data_type": "date",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "is_teste",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "fornecedor_cadastro_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    }
+  ]
+}

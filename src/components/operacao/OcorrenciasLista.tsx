@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { AlertTriangle, Plus, Search, Eye, Camera, PenTool, CheckCircle, Clock, MapPin, Package, DollarSign, RotateCcw, ArrowRightLeft, FileText, Upload, X, Filter } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { AlertTriangle, Plus, Search, Eye, Clock, RotateCcw, ArrowRightLeft, Upload, X } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,33 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-
-interface Ocorrencia {
-  id: string;
-  os: string;
-  tipo: string;
-  data: Date;
-  descricao: string;
-  responsavel: string;
-  impactoFinanceiro: number;
-  foto?: string;
-  geraReentrega: boolean;
-  geraDevolucao: boolean;
-  status: "aberta" | "tratativa" | "resolvida" | "encerrada";
-  historico: HistoricoItem[];
-}
-
-interface HistoricoItem {
-  id: string;
-  data: Date;
-  tipo: string;
-  descricao: string;
-  responsavel: string;
-}
+import { listarOcorrencias, criarOcorrencia, atualizarStatusOcorrencia, type OcorrenciaTMS } from "@/services/ocorrenciaService";
 
 const tiposOcorrencia = [
   { value: "ausencia_cliente", label: "Ausência do cliente" },
@@ -50,92 +25,51 @@ const tiposOcorrencia = [
   { value: "outro", label: "Outro" },
 ];
 
-const mockOcorrencias: Ocorrencia[] = [
-  { 
-    id: "1", 
-    os: "OS-202610-8802", 
-    tipo: "avaria", 
-    data: new Date(2026, 2, 27, 14, 32), 
-    descricao: "Avaria parcial na carga - caixas amassadas",
-    responsavel: "prestador",
-    impactoFinanceiro: 2500,
-    geraReentrega: true,
-    geraDevolucao: false,
-    status: "aberta",
-      historico: [
-        { id: "h1", data: new Date(2026, 2, 27, 14, 32), tipo: "criacao", descricao: "Ocorrência registrada", responsavel: "João Silva" },
-        { id: "h2", data: new Date(2026, 2, 27, 15, 0), tipo: "atualizacao", descricao: "Fotos anexadas", responsavel: "João Silva" },
-      ]
-    },
-    { 
-      id: "3", 
-      os: "OS-10450-3200", 
-      tipo: "atraso", 
-      data: new Date(2026, 2, 20, 11, 10), 
-      descricao: "Atraso de 4h por problema de trânsito",
-      responsavel: "transportadora",
-      impactoFinanceiro: 800,
-      geraReentrega: false,
-      geraDevolucao: false,
-      status: "resolvida",
-      historico: [
-        { id: "h1", data: new Date(2026, 2, 20, 11, 10), tipo: "criacao", descricao: "Ocorrência registrada", responsavel: "Maria Santos" },
-        { id: "h2", data: new Date(2026, 2, 20, 16, 0), tipo: "resolucao", descricao: "Entrega realizada com atraso", responsavel: "Maria Santos" },
-      ]
-    },
-  { 
-    id: "2", 
-    os: "OS-10450-4411", 
-    tipo: "ausencia_cliente", 
-    data: new Date(2026, 2, 26, 9, 15), 
-    descricao: "Cliente não estava no local para receber",
-    responsavel: "cliente",
-    impactoFinanceiro: 0,
-    geraReentrega: true,
-    geraDevolucao: false,
-    status: "tratativa",
-    historico: []
-  },
-  { 
-    id: "3", 
-    os: "OS-10450-3200", 
-    tipo: "atraso", 
-    data: new Date(2026, 2, 20, 11, 10), 
-    descricao: "Atraso de 4h por problema de trânsito",
-    responsavel: "transportadora",
-    impactoFinanceiro: 800,
-    geraReentrega: false,
-    geraDevolucao: false,
-    status: "resolvida",
-    historico: [
-      { id: "h1", data: new Date(2026, 2, 20, 11, 10), tipo: "criacao", descricao: "Ocorrência registrada", responsavel: "Maria Santos" },
-      { id: "h2", data: new Date(2026, 2, 20, 16, 0), tipo: "resolucao", descricao: "Entrega realizada com atraso", responsavel: "Maria Santos" },
-    ]
-  },
-];
-
 const OcorrenciasLista = () => {
-  const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>(mockOcorrencias);
+  const [ocorrencias, setOcorrencias] = useState<OcorrenciaTMS[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [showModal, setShowModal] = useState(false);
   const [showDetalhe, setShowDetalhe] = useState(false);
-  const [ocorrenciaSelecionada, setOcorrenciaSelecionada] = useState<Ocorrencia | null>(null);
-  const [novaOcorrencia, setNovaOcorrencia] = useState<Partial<Ocorrencia>>({
+  const [ocorrenciaSelecionada, setOcorrenciaSelecionada] = useState<OcorrenciaTMS | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [atualizando, setAtualizando] = useState<string | null>(null);
+  const [novaOcorrencia, setNovaOcorrencia] = useState({
+    os_id: "",
     tipo: "",
     descricao: "",
-    responsavel: "",
-    impactoFinanceiro: 0,
-    geraReentrega: false,
-    geraDevolucao: false,
+    prioridade: "media",
   });
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    setErro("");
+    try {
+      const dados = await listarOcorrencias({
+        busca: busca || undefined,
+        tipo: filtroTipo !== "todos" ? filtroTipo : undefined,
+        status: filtroStatus !== "todos" ? filtroStatus : undefined,
+      });
+      setOcorrencias(dados);
+    } catch (err: any) {
+      setErro(err.message || "Erro ao carregar ocorrências");
+    } finally {
+      setLoading(false);
+    }
+  }, [busca, filtroTipo, filtroStatus]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
 
   const getStatusBadge = (s: string) => {
     switch (s) {
-      case "aberta": return <Badge className="bg-red-100 text-red-800 border border-red-200">Aberta</Badge>;
-      case "tratativa": return <Badge className="bg-orange-100 text-orange-800 border border-orange-200">Em Tratativa</Badge>;
-      case "resolvida": return <Badge className="bg-green-100 text-green-800 border border-green-200">Resolvida</Badge>;
+      case "aberta": case "pendente": return <Badge className="bg-red-100 text-red-800 border border-red-200">Aberta</Badge>;
+      case "em_analise": case "analise": case "tratativa": return <Badge className="bg-orange-100 text-orange-800 border border-orange-200">Em Análise</Badge>;
+      case "resolvida": case "fechada": return <Badge className="bg-green-100 text-green-800 border border-green-200">Resolvida</Badge>;
       case "encerrada": return <Badge variant="outline" className="text-slate-500 border-slate-300 bg-slate-50">Encerrada</Badge>;
       default: return <Badge variant="outline">{s}</Badge>;
     }
@@ -147,50 +81,75 @@ const OcorrenciasLista = () => {
   };
 
   const filteredOcorrencias = ocorrencias.filter(o => {
-    if (busca && !o.os.toLowerCase().includes(busca.toLowerCase())) return false;
-    if (filtroTipo !== "todos" && o.tipo !== filtroTipo) return false;
-    if (filtroStatus !== "todos" && o.status !== filtroStatus) return false;
+    if (busca) {
+      const termo = busca.toLowerCase();
+      const matchOS = (o.os_numero || "").toLowerCase().includes(termo);
+      const matchDesc = (o.descricao || "").toLowerCase().includes(termo);
+      const matchCliente = (o.cliente_nome || "").toLowerCase().includes(termo);
+      if (!matchOS && !matchDesc && !matchCliente) return false;
+    }
     return true;
   });
 
-  const abrirDetalhe = (oc: Ocorrencia) => {
+  const abrirDetalhe = (oc: OcorrenciaTMS) => {
     setOcorrenciaSelecionada(oc);
     setShowDetalhe(true);
   };
 
-  const salvarOcorrencia = () => {
-    if (!novaOcorrencia.os || !novaOcorrencia.tipo || !novaOcorrencia.descricao) {
-      toast.error("Preencha OS, tipo e descrição");
+  const handleSalvar = async () => {
+    if (!novaOcorrencia.tipo || !novaOcorrencia.descricao) {
+      toast.error("Preencha tipo e descrição");
       return;
     }
-
-    const nova: Ocorrencia = {
-      id: `o${Date.now()}`,
-      os: novaOcorrencia.os || "",
-      tipo: novaOcorrencia.tipo || "",
-      data: new Date(),
-      descricao: novaOcorrencia.descricao || "",
-      responsavel: novaOcorrencia.responsavel || "",
-      impactoFinanceiro: novaOcorrencia.impactoFinanceiro || 0,
-      geraReentrega: novaOcorrencia.geraReentrega || false,
-      geraDevolucao: novaOcorrencia.geraDevolucao || false,
-      status: "aberta",
-      historico: [{
-        id: `h${Date.now()}`,
-        data: new Date(),
-        tipo: "criacao",
-        descricao: "Ocorrência registrada",
-        responsavel: "Usuário atual"
-      }]
-    };
-
-    setOcorrencias([nova, ...ocorrencias]);
-    setShowModal(false);
-    setNovaOcorrencia({});
-    toast.success("Ocorrência registrada com sucesso!");
+    setSalvando(true);
+    try {
+      const result = await criarOcorrencia({
+        tipo: novaOcorrencia.tipo,
+        descricao: novaOcorrencia.descricao,
+        prioridade: novaOcorrencia.prioridade,
+        os_id: novaOcorrencia.os_id || undefined,
+      });
+      if (result.sucesso) {
+        toast.success("Ocorrência registrada com sucesso!");
+        setShowModal(false);
+        setNovaOcorrencia({ os_id: "", tipo: "", descricao: "", prioridade: "media" });
+        await carregar();
+      } else {
+        toast.error(result.erro || "Erro ao salvar ocorrência");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao salvar");
+    } finally {
+      setSalvando(false);
+    }
   };
 
-  const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const handleAtualizarStatus = async (id: string, novoStatus: string) => {
+    setAtualizando(id);
+    try {
+      const result = await atualizarStatusOcorrencia(id, novoStatus);
+      if (result.sucesso) {
+        toast.success(`Ocorrência ${novoStatus === "resolvida" ? "resolvida" : novoStatus === "em_analise" ? "em análise" : "atualizada"} com sucesso`);
+        if (showDetalhe) {
+          const atualizada = ocorrencias.find(o => o.id === id);
+          if (atualizada) {
+            setOcorrenciaSelecionada({ ...atualizada, status: novoStatus });
+          }
+        }
+        await carregar();
+      } else {
+        toast.error(result.erro || "Erro ao atualizar status");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao atualizar");
+    } finally {
+      setAtualizando(null);
+    }
+  };
+
+  const fmtData = (data: string) => {
+    try { return new Date(data).toLocaleString("pt-BR"); } catch { return data; }
+  };
 
   return (
     <div className="space-y-4">
@@ -198,11 +157,11 @@ const OcorrenciasLista = () => {
         <div className="flex gap-2">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Buscar por OS..." 
+            <Input
+              placeholder="Buscar por OS, cliente ou descrição..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="pl-9 h-10 w-full bg-card" 
+              className="pl-9 h-10 w-full bg-card"
             />
           </div>
           <Select value={filtroTipo} onValueChange={setFiltroTipo}>
@@ -223,7 +182,7 @@ const OcorrenciasLista = () => {
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
               <SelectItem value="aberta">Aberta</SelectItem>
-              <SelectItem value="tratativa">Em Tratativa</SelectItem>
+              <SelectItem value="em_analise">Em Análise</SelectItem>
               <SelectItem value="resolvida">Resolvida</SelectItem>
               <SelectItem value="encerrada">Encerrada</SelectItem>
             </SelectContent>
@@ -234,95 +193,73 @@ const OcorrenciasLista = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="lista" className="w-full">
-        <TabsList>
-          <TabsTrigger value="lista">Lista de Ocorrências</TabsTrigger>
-          <TabsTrigger value="rastreio">Rastreio</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="lista">
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>OS</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Data / Hora</TableHead>
-                    <TableHead>Responsável</TableHead>
-                    <TableHead className="text-right">Impacto</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredOcorrencias.map((oc) => (
-                    <TableRow key={oc.id} className="hover:bg-red-50/20 transition">
-                      <TableCell className="font-bold text-slate-800">{oc.os}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
-                          {getTipoLabel(oc.tipo)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {oc.data.toLocaleString("pt-BR")}
-                      </TableCell>
-                      <TableCell className="text-sm capitalize">{oc.responsavel}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {oc.impactoFinanceiro > 0 ? fmtFin(oc.impactoFinanceiro) : "—"}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(oc.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirDetalhe(oc)}>
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <div className="animate-spin w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full mx-auto mb-2" />
+              <p className="text-sm">Carregando ocorrências...</p>
+            </div>
+          ) : erro ? (
+            <div className="text-center py-12">
+              <p className="text-red-500 text-sm mb-2">{erro}</p>
+              <Button variant="outline" size="sm" onClick={carregar}>Tentar novamente</Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>OS</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Data / Hora</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredOcorrencias.map((oc) => (
+                  <TableRow key={oc.id} className="hover:bg-red-50/20 transition">
+                    <TableCell className="font-bold text-slate-800">{oc.os_numero || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">{oc.cliente_nome || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                        {getTipoLabel(oc.tipo)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtData(oc.created_at)}</TableCell>
+                    <TableCell>{getStatusBadge(oc.status)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirDetalhe(oc)} title="Detalhes">
                           <Eye className="w-4 h-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredOcorrencias.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhuma ocorrência encontrada
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="rastreio">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Timeline de Ocorrências por OS</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {ocorrencias.filter(o => o.historico.length > 0).map(oc => (
-                  <div key={oc.id} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-bold">{oc.os}</span>
-                      {getStatusBadge(oc.status)}
-                    </div>
-                    <div className="space-y-2">
-                      {oc.historico.map(h => (
-                        <div key={h.id} className="flex gap-3 text-sm">
-                          <div className="w-20 text-xs text-muted-foreground">{h.data.toLocaleString("pt-BR")}</div>
-                          <div>
-                            <span className="font-medium">{h.descricao}</span>
-                            <span className="text-muted-foreground"> - {h.responsavel}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                        {oc.status === "aberta" || oc.status === "pendente" ? (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500" onClick={() => handleAtualizarStatus(oc.id, "em_analise")} disabled={atualizando === oc.id} title="Iniciar análise">
+                            <Clock className="w-4 h-4" />
+                          </Button>
+                        ) : null}
+                        {oc.status === "em_analise" || oc.status === "analise" || oc.status === "tratativa" ? (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-green-500" onClick={() => handleAtualizarStatus(oc.id, "resolvida")} disabled={atualizando === oc.id} title="Resolver">
+                            <RotateCcw className="w-4 h-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                {filteredOcorrencias.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                      Nenhuma ocorrência encontrada
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Modal Nova Ocorrência */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
@@ -335,17 +272,18 @@ const OcorrenciasLista = () => {
           </DialogHeader>
           <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto">
             <div>
-              <Label>OS Vinculada</Label>
-              <Input 
-                placeholder="OS-0000" 
-                value={novaOcorrencia.os || ""}
-                onChange={(e) => setNovaOcorrencia({...novaOcorrencia, os: e.target.value})}
+              <Label>OS Vinculada (opcional)</Label>
+              <Input
+                placeholder="ID da OS"
+                value={novaOcorrencia.os_id}
+                onChange={(e) => setNovaOcorrencia({ ...novaOcorrencia, os_id: e.target.value })}
                 className="mt-1"
               />
+              <p className="text-[10px] text-muted-foreground mt-1">Insira o UUID da OS, ou deixe em branco</p>
             </div>
             <div>
               <Label>Tipo de Ocorrência</Label>
-              <Select value={novaOcorrencia.tipo} onValueChange={(v) => setNovaOcorrencia({...novaOcorrencia, tipo: v})}>
+              <Select value={novaOcorrencia.tipo} onValueChange={(v) => setNovaOcorrencia({ ...novaOcorrencia, tipo: v })}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Selecione o tipo" />
                 </SelectTrigger>
@@ -358,62 +296,33 @@ const OcorrenciasLista = () => {
             </div>
             <div>
               <Label>Descrição</Label>
-              <Textarea 
-                placeholder="Descreva o que aconteceu..." 
-                value={novaOcorrencia.descricao || ""}
-                onChange={(e) => setNovaOcorrencia({...novaOcorrencia, descricao: e.target.value})}
+              <Textarea
+                placeholder="Descreva o que aconteceu..."
+                value={novaOcorrencia.descricao}
+                onChange={(e) => setNovaOcorrencia({ ...novaOcorrencia, descricao: e.target.value })}
                 className="mt-1"
               />
             </div>
             <div>
-              <Label>Responsável</Label>
-              <Select value={novaOcorrencia.responsavel} onValueChange={(v) => setNovaOcorrencia({...novaOcorrencia, responsavel: v})}>
+              <Label>Prioridade</Label>
+              <Select value={novaOcorrencia.prioridade} onValueChange={(v) => setNovaOcorrencia({ ...novaOcorrencia, prioridade: v })}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="prestador">Prestador/Transportadora</SelectItem>
-                  <SelectItem value="cliente">Cliente/Destinatário</SelectItem>
-                  <SelectItem value="transportadora">Nossa Transportadora</SelectItem>
-                  <SelectItem value="operador">Operador/Torre</SelectItem>
+                  <SelectItem value="baixa">Baixa</SelectItem>
+                  <SelectItem value="media">Média</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="critica">Crítica</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Impacto Financeiro (R$)</Label>
-              <Input 
-                type="number" 
-                placeholder="0,00" 
-                value={novaOcorrencia.impactoFinanceiro || ""}
-                onChange={(e) => setNovaOcorrencia({...novaOcorrencia, impactoFinanceiro: parseFloat(e.target.value) || 0})}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label>Gerar Reentrega?</Label>
-              <Switch 
-                checked={novaOcorrencia.geraReentrega || false}
-                onCheckedChange={(v) => setNovaOcorrencia({...novaOcorrencia, geraReentrega: v})}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label>Gerar Devolução?</Label>
-              <Switch 
-                checked={novaOcorrencia.geraDevolucao || false}
-                onCheckedChange={(v) => setNovaOcorrencia({...novaOcorrencia, geraDevolucao: v})}
-              />
-            </div>
-            <div>
-              <Label>Upload de Evidência (foto)</Label>
-              <div className="border-2 border-dashed rounded-lg p-4 text-center mt-1 cursor-pointer hover:bg-muted/50 transition">
-                <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
-                <p className="text-xs text-muted-foreground mt-1">Clique ou arraste arquivo</p>
-              </div>
-            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button className="bg-red-600 hover:bg-red-700" onClick={salvarOcorrencia}>Salvar Ocorrência</Button>
+            <Button variant="outline" onClick={() => setShowModal(false)} disabled={salvando}>Cancelar</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleSalvar} disabled={salvando}>
+              {salvando ? "Salvando..." : "Salvar Ocorrência"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -424,49 +333,60 @@ const OcorrenciasLista = () => {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-500" />
-              Detalhes da Ocorrência - {ocorrenciaSelecionada?.os}
+              Detalhes da Ocorrência
             </SheetTitle>
             <SheetDescription>
-              {ocorrenciaSelecionada && getTipoLabel(ocorrenciaSelecionada.tipo)}
+              {ocorrenciaSelecionada && (
+                <span>{getTipoLabel(ocorrenciaSelecionada.tipo)} — {ocorrenciaSelecionada.os_numero || "OS não vinculada"}</span>
+              )}
             </SheetDescription>
           </SheetHeader>
-          
+
           {ocorrenciaSelecionada && (
             <div className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-3">
                 <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Status</p>{getStatusBadge(ocorrenciaSelecionada.status)}</CardContent></Card>
-                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Data</p><p className="font-medium text-sm">{ocorrenciaSelecionada.data.toLocaleString("pt-BR")}</p></CardContent></Card>
-                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Responsável</p><p className="font-medium text-sm capitalize">{ocorrenciaSelecionada.responsavel}</p></CardContent></Card>
-                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Impacto</p><p className="font-medium text-sm">{ocorrenciaSelecionada.impactoFinanceiro > 0 ? fmtFin(ocorrenciaSelecionada.impactoFinanceiro) : "—"}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Data</p><p className="font-medium text-sm">{fmtData(ocorrenciaSelecionada.created_at)}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Cliente</p><p className="font-medium text-sm">{ocorrenciaSelecionada.cliente_nome || "—"}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-[10px] text-muted-foreground">Prioridade</p><p className="font-medium text-sm capitalize">{ocorrenciaSelecionada.prioridade}</p></CardContent></Card>
               </div>
 
               <div>
                 <Label>Descrição</Label>
-                <p className="text-sm mt-1 p-2 bg-muted rounded">{ocorrenciaSelecionada.descricao}</p>
+                <p className="text-sm mt-1 p-2 bg-muted rounded whitespace-pre-wrap">{ocorrenciaSelecionada.descricao}</p>
               </div>
 
-              <div className="flex gap-4">
-                {ocorrenciaSelecionada.geraReentrega && (
-                  <Badge variant="outline" className="bg-blue-50"><RotateCcw className="w-3 h-3 mr-1" /> Gera Reentrega</Badge>
-                )}
-                {ocorrenciaSelecionada.geraDevolucao && (
-                  <Badge variant="outline" className="bg-orange-50"><ArrowRightLeft className="w-3 h-3 mr-1" /> Gera Devolução</Badge>
-                )}
-              </div>
-
-              <div>
-                <Label>Histórico</Label>
-                <div className="space-y-2 mt-1">
-                  {ocorrenciaSelecionada.historico.map(h => (
-                    <div key={h.id} className="flex gap-2 text-sm p-2 bg-muted rounded">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p>{h.descricao}</p>
-                        <p className="text-xs text-muted-foreground">{h.data.toLocaleString("pt-BR")} - {h.responsavel}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex gap-2 pt-2">
+                {ocorrenciaSelecionada.status === "aberta" || ocorrenciaSelecionada.status === "pendente" ? (
+                  <Button
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => handleAtualizarStatus(ocorrenciaSelecionada.id, "em_analise")}
+                    disabled={atualizando === ocorrenciaSelecionada.id}
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    {atualizando === ocorrenciaSelecionada.id ? "Atualizando..." : "Iniciar Análise"}
+                  </Button>
+                ) : null}
+                {ocorrenciaSelecionada.status === "em_analise" || ocorrenciaSelecionada.status === "analise" || ocorrenciaSelecionada.status === "tratativa" ? (
+                  <Button
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => handleAtualizarStatus(ocorrenciaSelecionada.id, "resolvida")}
+                    disabled={atualizando === ocorrenciaSelecionada.id}
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    {atualizando === ocorrenciaSelecionada.id ? "Atualizando..." : "Resolver Ocorrência"}
+                  </Button>
+                ) : null}
+                {ocorrenciaSelecionada.status === "resolvida" ? (
+                  <Button
+                    className="flex-1 bg-slate-500 hover:bg-slate-600 text-white"
+                    onClick={() => handleAtualizarStatus(ocorrenciaSelecionada.id, "encerrada")}
+                    disabled={atualizando === ocorrenciaSelecionada.id}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    {atualizando === ocorrenciaSelecionada.id ? "Atualizando..." : "Encerrar"}
+                  </Button>
+                ) : null}
               </div>
             </div>
           )}

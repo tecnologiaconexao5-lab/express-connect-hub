@@ -1,0 +1,167 @@
+E2E-COMPLETO-02-HML-IDENTITY-E-TMS-APP-INTEGRATION
+==================================================
+Ambiente: TMS + APP + Supabase PROD | Data: 2026-09-22
+Modo: AUDITORIA + TESTE CONTROLADO BEGIN/ROLLBACK
+DB_WRITES_LIQUIDOS=0 | MIGRATIONS=0
+
+==================================================
+1. IDENTIDADE HML
+==================================================
+CLIENTE 3d2d079d: "HOMOLOGAÇÃO APP" | status=ativo ✔
+PRESTADOR e6646799: "PRESTADOR TESTE APP" | status=ativo | liberado_app=true |
+  tipo_parceiro=motorista | auth_user_id=a5e51631-5ed8-430d-9041-4b185c03d821 ✔
+VEÍCULO HML-A27B: 87dceca0 | tipo_veiculo=vuc (canônico) | tipo_carga=seca | status=Ativo |
+  vinculado ao prestador e6646799 ✔
+Dados mínimos para o APP: prestador_id + auth_user_id (login APP) + veículo + cliente — OK.
+
+HML_CLIENT_READY=YES
+HML_PROVIDER_READY=YES
+HML_VEHICLE_READY=YES
+HML_MISSING_TEMP_DATA=tabela de preço VUC HML (removida no cleanup 10B) e valor_diaria
+  temporário do prestador (NULL) — recriar no E2E-06 (físico). Nada a criar agora.
+
+==================================================
+2. MAPEAMENTO TMS → APP (provado)
+==================================================
+Objetos que o APP consome:
+  - RPC f_buscar_operacoes_motorista(p_auth_user_id) [SECURITY DEFINER, STABLE]
+  - Views vw_app_motorista_operacoes, vw_app_motorista_paradas, vw_app_notificacoes_pendentes
+Chaves usadas: prestador_id (filtro principal), alocacao_id, ordem_servico_id, cliente_id, status,
+  placa/tipo_veiculo, origem/destino, datas, metadata.app_motorista.
+Prova: f_buscar_operacoes_motorista resolve o prestador por auth_user_id=auth.uid() e retorna as
+  alocações WHERE ae.prestador_id = v_prestador_id → uma operação HML criada pelo TMS para o
+  prestador HML é localizável pelo APP.
+TMS_TO_APP_PATH_PROVEN=YES
+
+==================================================
+3. MAPEAMENTO APP → TMS (RPCs auditadas)
+==================================================
+f_avancar_etapa_app_motorista(p_alocacao_id uuid, p_etapa text, p_payload jsonb={},
+  p_idempotency_key text=NULL, p_auth_user_id uuid=NULL)
+  - Auth: exige auth.uid() != NULL; opcional p_auth_user_id deve == auth.uid(); prestador
+    resolvido por auth_user_id. SECURITY DEFINER. Grants: authenticated, service_role, postgres.
+  - Tabelas: UPDATE ordens_servico (romaneio quando romaneio_informado), UPDATE alocacoes_escala
+    (status + metadata.app_motorista), INSERT eventos_oficiais, INSERT operation_timeline_events.
+  - Erros: USUARIO_NAO_AUTENTICADO, AUTH_USER_ID_INVALIDO, PRESTADOR_NAO_ENCONTRADO,
+    ALOCACAO_NAO_ENCONTRADA, ALOCACAO_OUTRO_PRESTADOR, OPERACAO_CANCELADA, OPERACAO_FINALIZADA,
+    TRANSICAO_INVALIDA, FINALIZACAO_SEM_POD.
+  - Idempotência: p_idempotency_key grava metadata.app_motorista.ultima_idempotency; retorno
+    inclui idempotent/event_id.
+  - Anomalia A01 (documentada): declarada STABLE mas executa UPDATE/INSERT (M133-D.4 tem correção
+    preparada, não aplicada). Não quebra o fluxo.
+
+f_atualizar_reversa_app(p_alocacao_id, p_reversa_*, p_auth_user_id)
+  - Auth: auth.uid() + ownership (prestador da alocação). SECURITY DEFINER. Grants:
+    authenticated, service_role, postgres, PUBLIC (anomalia A03 — interna bloqueia anon).
+  - Tabelas: UPDATE alocacoes_escala (campos reversa_*).
+  - Erros: USUARIO_NAO_AUTENTICADO, AUTH_USER_ID_INVALIDO, PRESTADOR_NAO_ENCONTRADO,
+    ALOCACAO_NAO_ENCONTRADA, ALOCACAO_OUTRO_PRESTADOR, QUANTIDADE_INVALIDA,
+    DIVERGENCIA_SEM_JUSTIFICATIVA.
+
+RPC_AVANCAR_AUTH_OK=YES
+RPC_REVERSA_AUTH_OK=YES
+
+==================================================
+4. TESTE CONTROLADO (BEGIN/ROLLBACK) — PASS
+==================================================
+Alvo seguro: alocação 67de5ce4 (prestador HML, aguardando_aceite) — usada SOMENTE dentro da
+transação (rollback). Auth simulada: set_config('request.jwt.claims', {"sub":<auth_user_id>}) →
+auth.uid() = a5e51631... → prestador e6646799 resolvido.
+  R1 viagem_aceita ........ success=true | status: aguardando_aceite → aceita
+  R2 cheguei_coleta ....... success=true | status: aceita → em_rota
+  R3 servico_finalizado ... TRANSICAO_INVALIDA (correto: exige sequência)
+  R4 auth divergente ...... AUTH_USER_ID_INVALIDO
+  R5 alocação de outro prestador . ALOCACAO_OUTRO_PRESTADOR
+  R6 alocação inexistente . ALOCACAO_NAO_ENCONTRADA
+  R7 reversa (qtd=1, sem motivo) . DIVERGENCIA_SEM_JUSTIFICATIVA (validação OK)
+  Efeitos derivados: eventos_oficiais +3 (4 no total na txn), timeline/romaneio conforme contrato.
+  ROLLBACK: status → aguardando_aceite; eventos → 1 (original); reversa → null.
+TRANSACTION_TEST=PASS
+ROLLBACK_PASS=YES
+
+==================================================
+5. STATUS CANÔNICO (APP → RPC/AÇÃO → TMS)
+==================================================
+APP_STATUS (etapa)        | RPC/AÇÃO                          | TMS_STATUS (alocacoes_escala)
+viagem_aceita             | f_avancar_etapa_app_motorista     | aceita
+cheguei_coleta            | f_avancar_etapa_app_motorista     | em_rota
+carregamento_iniciado     | f_avancar_etapa_app_motorista     | (sem mudança de status)
+carregamento_finalizado   | f_avancar_etapa_app_motorista     | (sem mudança)
+romaneio_informado        | ... + sincroniza ordens_servico.romaneio | (sem mudança)
+foto_romaneio             | f_avancar_etapa_app_motorista     | (sem mudança)
+km_inicial_informado      | f_avancar_etapa_app_motorista     | (sem mudança)
+saiu_em_rota              | f_avancar_etapa_app_motorista     | (sem mudança)
+chegou_entrega            | f_avancar_etapa_app_motorista     | (sem mudança)
+descarregamento_iniciado  | f_avancar_etapa_app_motorista     | (sem mudança)
+descarga_finalizada       | f_avancar_etapa_app_motorista     | (sem mudança)
+km_final_informado        | f_avancar_etapa_app_motorista     | (sem mudança)
+assinatura_capturada      | f_avancar_etapa_app_motorista     | (sem mudança)
+pod_registrado            | f_avancar_etapa_app_motorista     | (sem mudança)
+servico_finalizado        | f_avancar_etapa_app_motorista     | concluida (exige pod_registrado=true)
+cancelamento/recusa       | (fora do APP; via TMS/cancelamento) | cancelada / recusada
+
+STATUS_MAPPING_PASS=YES
+STATUS_DIVERGENCES=
+  - Serviço finalizado exige POD registrado (FIN... NAO — FINALIZACAO_SEM_POD). Ordem obrigatória.
+  - Nomenclatura APP (etapas) ≠ status TMS (aceita/em_rota/concluida) — esperado (mapa acima).
+  - Anomalias documentadas (não bloqueiam): A01 (STABLE com escrita) e A03 (grant PUBLIC na reversa).
+
+==================================================
+6. ISOLAMENTO FINANCEIRO DO E2E FINAL (E2E-06) — plano
+==================================================
+Criar temporariamente (identidade HML), com snapshot pré e cleanup por IDs exatos:
+  1) tabelas_valores HML (VUC, cliente 'HOMOLOGAÇÃO APP', universal=false, seco, vigência curta)
+  2) prestadores.valor_diaria temporário (>0) — restaurar a NULL
+  3) alocacoes_escala (1)
+  4) ordens_servico (1, via M66/frontend)
+  5) financeiro_receber (1) | financeiro_pagar (1) | pagamentos_prestadores (1)
+  6) composicao_financeira_os (1, só na conclusão) | financeiro_baixas (0)
+  7) POD/evidências: delivery_proofs → entregas_protocolo (fluxo físico) + eventos_oficiais
+Ordem de cleanup (validada em 10B): eventos → receber/pagar/pp → alocação → OS → composição →
+  POD/entregas → tabela HML → restaurar prestador (valor_diaria=NULL). Filtro por ID exato.
+Snapshot pré: contagens globais + valores do prestador + IDs criados (rastrear por ID).
+FINANCIAL_ISOLATION_PLAN_READY=YES
+CLEANUP_PLAN_READY=YES
+
+==================================================
+7. DECISÃO
+==================================================
+HML_CLIENT_READY=YES
+HML_PROVIDER_READY=YES
+HML_VEHICLE_READY=YES
+HML_MISSING_TEMP_DATA=tabela VUC HML + valor_diaria temporário (criar no E2E-06)
+
+TMS_TO_APP_PATH_PROVEN=YES
+APP_TO_TMS_PATH_PROVEN=YES
+RPC_AVANCAR_AUTH_OK=YES
+RPC_REVERSA_AUTH_OK=YES
+
+TRANSACTION_TEST=PASS
+ROLLBACK_PASS=YES
+STATUS_MAPPING_PASS=YES
+STATUS_DIVERGENCES=(ver seção 5 — nenhuma bloqueante)
+FINANCIAL_ISOLATION_PLAN_READY=YES
+CLEANUP_PLAN_READY=YES
+
+BLOCKERS_FOR_E2E_PHYSICAL=(nenhum blocker técnico de integração; o E2E físico depende do build/
+  dispositivo do APP e da criação dos dados HML temporários em E2E-06)
+
+RESULT=PASS
+
+Anomalias registradas (NÃO corrigir nesta missão):
+  - A01: f_avancar_etapa_app_motorista STABLE com UPDATE/INSERT → menor correção: declarar
+    VOLATILE (correção já preparada em M133-D.4).
+  - A03: f_atualizar_reversa_app com grant PUBLIC → menor correção: REVOKE PUBLIC, manter
+    authenticated/service_role (M133-D.4).
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-03-ADMIN-PRECADASTRO-RECRUTAMENTO
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma operação persistente criada; nenhuma tabela HML criada; valor do prestador não alterado;
+código/banco não alterados permanentemente; sem migration; sem Redmi/POD físico; sem pagamento/
+baixa; nível 3 não reaberto. Transação revertida (DB_WRITES_LIQUIDOS=0).
+
+DB_WRITES_LIQUIDOS=0
+MIGRATIONS=0

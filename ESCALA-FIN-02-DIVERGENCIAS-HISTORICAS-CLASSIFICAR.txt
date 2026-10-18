@@ -1,0 +1,153 @@
+ESCALA-FIN-02-DIVERGENCIAS-HISTORICAS-CLASSIFICAR
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+EXPECTED_PROVIDER_TOTAL = valor_repasse + pedagio + adicional + ajudante − desconto_prestador
+
+==================================================
+AS 12 DIVERGÊNCIAS (detalhe)
+==================================================
+
+[1] ALOC=d6db222c OS=643c7ec7 PROV=be420cfc
+  status=planejada finalizada=false created=2026-05-27
+  rep=0 os_cp=1000 pagar=280(pendente) pp=280(nao_vencido) EXPECTED=0
+  ped=0 adic=0 ajud=0 desc=0 | os_status=pendente is_teste=false
+  OBS: OS 643c7ec7 é COMPARTILHADA por 3 alocações (d6db222c, cbc4df40, 13dfde2e).
+  CLASS=E (ambíguo: OS compartilhada; rep=0)
+
+[2] ALOC=5f7bb1bc OS=8aca4262 PROV=be420cfc
+  status=planejada finalizada=false created=2026-05-30
+  rep=350 os_cp=1200 pagar=1200(CANCELADO) pp=1200(pendente) EXPECTED=381.5 (adic=31.5)
+  ped=0 adic=31.5 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: OS 8aca4262 compartilhada (82fbba71, 5f7bb1bc). financeiro_pagar CANCELADO.
+  CLASS=C (fechado/cancelado — NÃO ALTERAR)
+
+[3] ALOC=d40fca51 OS=bff76814 PROV=be420cfc
+  status=concluida finalizada=false created=2026-06-02
+  rep=350 os_cp=1000 pagar=1000(CANCELADO) pp=0(pendente) EXPECTED=350
+  ped=0 adic=0 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: OS bff76814 compartilhada (d40fca51, 72672ceb). pagar CANCELADO.
+  CLASS=C (fechado/cancelado — NÃO ALTERAR)
+
+[4] ALOC=13dfde2e OS=643c7ec7 PROV=e6646799
+  status=aguardando_aceite finalizada=false created=2026-06-14
+  rep=280 os_cp=1000 pagar=280(pendente) pp=280(nao_vencido) EXPECTED=280
+  ped=0 adic=0 ajud=0 desc=0 | os_status=pendente is_teste=false
+  OBS: rep==pagar (280); OS.custo_prestador stale; MAS OS COMPARTILHADA (643c7ec7).
+  CLASS=E (rep confiável, porém OS compartilhada exige decisão humana)
+
+[5] ALOC=06cf2846 OS=93014234 PROV=NULL
+  status=concluida finalizada=true created=2026-06-25
+  rep=0 os_cp=50 pagar=50(aberto) pp=50(pendente) EXPECTED=0
+  ped=0 adic=0 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: prestador_id NULL; OS 93014234 compartilhada por 3 (c7cf3de0, e9db5846, 06cf2846).
+  CLASS=E (ambíguo: sem prestador; OS compartilhada)
+
+[6] ALOC=c7cf3de0 OS=93014234 PROV=NULL
+  status=concluida finalizada=true created=2026-06-25
+  rep=600 os_cp=50 pagar=50(aberto) pp=50(pendente) EXPECTED=600
+  ped=0 adic=0 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: prestador_id NULL; OS compartilhada (idem [5]).
+  CLASS=E (ambíguo: sem prestador; OS compartilhada)
+
+[7] ALOC=4b53d326 OS=45857f5f PROV=6cc41f68
+  status=planejada finalizada=false created=2026-07-07
+  rep=300 os_cp=0 pagar=325(pendente) pp=325(nao_vencido) EXPECTED=375 (ped=25 ajud=50)
+  ped=25 adic=0 ajud=50 desc=0 | os_status=pendente is_teste=TRUE
+  CLASS=D (teste — sem obrigação real)
+
+[8] ALOC=fe4bc8a4 OS=2073a75d PROV=6cc41f68
+  status=concluida finalizada=true created=2026-07-10
+  rep=800 os_cp=0 pagar=800(aberto) pp=800(pendente) EXPECTED=800
+  ped=0 adic=0 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: rep==pagar (800); OS única; OS.custo_prestador stale.
+  CLASS=A (rep confiável; OS stale)
+
+[9] ALOC=bc1c1901 OS=38961ecf PROV=6cc41f68
+  status=concluida finalizada=true created=2026-07-10
+  rep=800 os_cp=0 pagar=800(aberto) pp=800(pendente) EXPECTED=800
+  ped=0 adic=0 ajud=0 desc=0 | os_status=finalizada is_teste=false
+  OBS: rep==pagar (800); OS única; OS.custo_prestador stale.
+  CLASS=A
+
+[10] ALOC=ddd91a92 OS=eaa0e5fd PROV=e6646799
+  status=aguardando_aceite finalizada=false created=2026-07-12
+  rep=0 os_cp=500 pagar=530(pendente) pp=530(pendente) EXPECTED=0
+  ped=0 adic=0 ajud=0 desc=0 | os_status=CANCELADA is_teste=TRUE
+  CLASS=D (OS cancelada + teste)
+
+[11] ALOC=654888b4 OS=28640e7b PROV=5377592a
+  status=CANCELADA finalizada=true created=2026-07-28
+  rep=60 os_cp=0 pagar=null pp=null EXPECTED=75 (adic=10 ajud=5)
+  ped=0 adic=10 ajud=5 desc_prest=0 desc_cli=5 | os_status=pendente is_teste=TRUE
+  CLASS=D (alocação cancelada + teste; sem financeiro)
+
+[12] ALOC=2333f16e OS=2c24a4dc PROV=e6646799
+  status=aceita finalizada=false created=2026-08-16
+  rep=250 os_cp=0 pagar=250(pendente) pp=250(nao_vencido) EXPECTED=250
+  ped=0 adic=0 ajud=0 desc=0 | os_status=agendada is_teste=false
+  OBS: rep==pagar (250); OS única; OS.custo_prestador stale.
+  CLASS=A
+
+==================================================
+RESUMO
+==================================================
+
+TOTAL_DIVERGENCES=12
+CLASS_A=3  ([8] fe4bc8a4, [9] bc1c1901, [12] 2333f16e) — rep confiável, OS stale, OS ÚNICA, pagar aberto
+CLASS_B=0
+CLASS_C=2  ([2] 5f7bb1bc, [3] d40fca51) — financeiro_pagar CANCELADO
+CLASS_D=3  ([7] 4b53d326, [10] ddd91a92, [11] 654888b4) — teste/cancelado sem obrigação real
+CLASS_E=4  ([1] d6db222c, [4] 13dfde2e, [5] 06cf2846, [6] c7cf3de0) — OS compartilhada / sem prestador / rep=0
+CLASS_F=0
+
+SAFE_AUTO_FIX_COUNT=3   (A — OS única, pagar aberto, pagar==rep)
+HUMAN_REVIEW_COUNT=4    (E — OS compartilhada / prestador nulo / rep=0)
+PAID_OR_SETTLED_COUNT=2 (C — pagar cancelado; NÃO ALTERAR)
+TEST_OR_CANCELED_COUNT=3 (D — teste/cancelado; deixar como está)
+
+==================================================
+EVIDÊNCIAS / LIMITAÇÕES
+==================================================
+
+- OS compartilhadas: 643c7ec7 (3 alocações), 8aca4262 (2), 93014234 (3), bff76814 (2)
+  → quando a OS é compartilhada, sync de custo_prestador é ambíguo (E).
+- Nenhum financeiro_pagar dos casos A está pago/recebido (todos pendente/aberto) → fix seguro possível.
+- is_teste=true nos casos D (7,10,11) → dados de teste.
+- Não há baixa/pagamento real nos casos A/B/E (pagamentos_prestadores pendente/nao_vencido).
+- Ausência de tabela de auditoria dedicada à alocação; histórico via historico_alocacoes_escala
+  não foi necessário para a classificação (evidência suficiente em valores/status).
+- Não se infere custo zero a partir de rep=0.
+
+==================================================
+NEXT_SAFE_SANITIZATION (PROPOSTA — NÃO EXECUTAR)
+==================================================
+
+1) FORWARD-ONLY, objetivamente corrigível (3 casos A: OS 2073a75d, 38961ecf, 2c24a4dc):
+   UPDATE ordens_servico SET custo_prestador = <valor_repasse da alocação>
+   WHERE id IN ('2073a75d-...','38961ecf-...','2c24a4dc-...')
+     AND (custo_prestador IS NULL OR custo_prestador = 0);
+   Requisitos: somente OS única, pagar aberto, pagar==rep; sem tocar títulos fechados;
+   rollback = restaurar custo_prestador=0 nesses 3 ids. Missão própria.
+
+2) DECISÃO HUMANA (4 casos E): revisar OS compartilhadas / prestador nulo / rep=0
+   (d6db222c, 13dfde2e, 06cf2846, c7cf3de0) antes de qualquer alteração.
+
+3) INTOCÁVEIS: casos C (pagar cancelado) e D (teste/cancelado) — não sanear.
+
+Não tratar nesta missão: 134 alocações sem OS, 27 órfãs, redundância M66/M80.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhum saneamento.
+- M66/M80 não alterados. Títulos pagos/baixados não tocados.
+- APP/POD/Fatura/Recrutamento intactos. Não iniciou correção.
+
+FILES_MODIFIED=(nenhum)
+TESTS=(nenhum — auditoria read-only; sem código alterado)
+DB_WRITES=0
+MIGRATIONS=0

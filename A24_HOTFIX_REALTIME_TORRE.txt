@@ -1,0 +1,143 @@
+================================================================================
+A24 — HOTFIX CRÍTICO — TORRE DE CONTROLE NÃO ABRE (ERRO REALTIME CHAT/MENSAGENS)
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Supabase Produção: uwrvzsjtpgaifkktpepn (somente leitura)
+================================================================================
+
+STATUS: CONCLUÍDO (validado na aplicação em execução)
+-------------------------------------------------------------------------------
+
+================================================================================
+# ERRO
+================================================================================
+
+ERRO EXATO NA TELA REAL DO TMS:
+  cannot add 'postgres_changes' callbacks for realtime:operacao-mensagens-topbar
+  after 'subscribe()'.
+
+ARQUIVO/COMPONENTE CAUSADOR:
+  src/services/operacaoChatService.ts — função inscreverMensagensTorre()
+  (usada por AppTopbar.tsx, TorreControle.tsx e ChatTorrePanel.tsx).
+
+LINHA/BLOCO RESPONSÁVEL:
+  Antes do hotfix, a função usava o topic FIXO "operacao-mensagens-topbar":
+    supabase.channel("operacao-mensagens-topbar").on(...).subscribe()
+  (linha ~164 do service).
+
+LIFECYCLE ANTIGO DO CANAL:
+  1. AppTopbar.tsx (sempre montado) chama inscreverMensagensTorre() → cria o
+     canal com topic "operacao-mensagens-topbar" e subscreve.
+  2. TorreControle.tsx (navegação para a Torre) chama inscreverMensagensTorre()
+     de novo → supabase.channel("operacao-mensagens-topbar") RETORNA O MESMO
+     canal já subscrito.
+  3. O código então chama .on("postgres_changes", ...) num canal já
+     subscrito → o realtime-js LANÇA o erro.
+
+MOTIVO EXATO DO ERRO (confirmado no fonte do @supabase/realtime-js v2.104.1):
+  - RealtimeClient.channel(topic): "If a channel with the same topic already
+    exists it will be returned instead of creating a duplicate connection."
+    (node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js:308-318)
+  - RealtimeChannel.on(): lança:
+    "cannot add `postgres_changes` callbacks for ${this.topic} after `subscribe()`"
+    quando o canal já está joining/joined.
+    (node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js:387-393)
+
+  Portanto a causa NÃO era ordem .on()/subscribe() dentro de uma única chamada
+  (a ordem já estava correta), e sim a REUTILIZAÇÃO do canal com o MESMO topic
+  por múltiplos componentes simultâneos — introduzida na A24 ao adicionar as
+  inscrições na Torre (TorreControle + ChatTorrePanel) sobre a inscrição que
+  já existia no AppTopbar.
+
+================================================================================
+# CORREÇÃO
+================================================================================
+
+LIFECYCLE NOVO (src/services/operacaoChatService.ts):
+  - Gerador de topic ÚNICO por inscrição: topicCanalUnico(base)
+      let canalContador = 0;
+      function topicCanalUnico(base) { canalContador += 1; return `${base}-${canalContador}-${Date.now().toString(36)}`; }
+  - inscreverMensagensTorre(onChange): usa topicCanalUnico("operacao-mensagens-topbar")
+  - inscreverMensagensOperacao(alocacaoId, onNova): usa topicCanalUnico(`operacao-mensagens-${alocacaoId}`)
+
+ORDEM .on() / .subscribe():
+  - Mantida e garantida: .on("postgres_changes", config, callback).subscribe()
+    (handlers SEMPRE registrados ANTES do subscribe).
+
+CLEANUP:
+  - Mantido: retorna () => supabase.removeChannel(channel) — remove apenas o
+    canal criado pela inscrição, sem vazar subscriptions.
+
+PROTEÇÃO CONTRA SUBSCRIBE DUPLICADO:
+  - Com topic único por chamada, cada componente (AppTopbar, TorreControle,
+    ChatTorrePanel) cria o SEU próprio canal — nunca recebe um canal já
+    subscrito e nunca adiciona callback após subscribe.
+
+OUTROS PONTOS SEMELHANTES ENCONTRADOS:
+  - IntegracoesTMS.tsx (canais realtime_regras/fila/escala/torre): usam topic
+    fixo MAS são canais únicos por página (uma única inscrição por canal) e já
+    usam .on().subscribe() na ordem correta — NÃO apresentam o antipadrão.
+    Não foram alterados (fora do escopo A22/A24 e sem bug).
+  - Nenhum outro canal do escopo A22/A24 usava topic fixo compartilhado.
+
+================================================================================
+# PROVA FUNCIONAL (aplicação EM EXECUÇÃO)
+================================================================================
+Validado via Playwright contra a aplicação real rodando (dev server
+http://localhost:8800 — login real, somente leitura, sem escrita em Produção):
+
+  Torre abriu? ............................ SIM (URL /torre-controle, body renderizado)
+  Error Boundary desapareceu? ............. SIM (body não contém "Error Boundary"/"Algo deu errado")
+  erro "cannot add postgres_changes..."? .. SIM — 0 ocorrências no console
+  Mensagens aparecem? ..................... SIM (botão "Mensagens" visível)
+  Painel Mensagens abre? .................. SIM ("Mensagens / Chat com Prestadores")
+  badge/não lidas funciona? ............... SIM (badge laranja renderizado; contagem real)
+  sair e voltar para Torre funciona? ...... SIM (Torre → Dashboard → Torre, 0 erros realtime)
+  KPI POD funciona? ....................... SIM ("PODs Pendentes" visível antes e após re-montagem)
+  Central Alertas funciona? ............... SIM ("Central de Alertas" visível)
+
+  Resultado do teste real: 1 passed (34.8s)
+  Screenshots: test-results/e2e/a24-hotfix/ (01-dashboard, 02-torre, 03-painel-mensagens, 04-torre-remontada)
+
+  (Execução E2E com ENVIRONMENT=development — ambiente development permitido pelo
+   guard-rail existente; NENHUMA escrita em Produção.)
+
+================================================================================
+# TESTES
+================================================================================
+  npx tsc --noEmit            →  0 erros ✅
+  npm run build               →  ✅ 35.39s — build ok
+  npx vitest run              →  ✅ 84/84 testes (9 arquivos)
+  Teste de regressão criado   →  src/test/a24HotfixRealtime.test.ts (6 testes):
+
+    1. handlers registrados ANTES do subscribe (ordem on → subscribe) ✅
+    2. cada inscrição da Torre usa topic ÚNICO (sem reutilizar canal subscrito) ✅
+    3. inscrição por operação também usa topic único ✅
+    4. cleanup remove o canal criado (sem vazamento) ✅
+    5. montagem e re-montagem (cleanup entre elas) não reutiliza canal subscrito ✅
+    6. nunca adiciona callback em canal já subscrito ✅
+
+  Playwright de prova real     →  tests/e2e/a24_hotfix_realtime.spec.ts (1 teste PASSADO
+                                  contra a app em execução)
+
+================================================================================
+# SEGURANÇA
+================================================================================
+  - Nenhuma migration executada ................... CONFIRMADO
+  - Nenhum dado de Produção alterado .............. CONFIRMADO (somente leitura)
+  - Nenhum schema/RLS/RPC/trigger alterado ........ CONFIRMADO
+  - Nenhum alteração no App Flutter ............... CONFIRMADO (não tocado)
+  - Chat/Mensagens/badge de não lidas PRESERVADOS . CONFIRMADO (funcionalidade mantida)
+  - Aba "Mensagens" do DetalhesOperacaoSheet ........ CONFIRMADO (preservada)
+
+================================================================================
+REGRA DE CONCLUSÃO
+================================================================================
+  HOTFIX MARCADO COMO CONCLUÍDO porque a TORRE REALMENTE ABRIU na aplicação em
+  execução, sem Error Boundary e sem o erro realtime, com Mensagens, KPI PODs
+  Pendentes e Central de Alertas funcionando, incluindo re-montagem.
+
+================================================================================
+FIM DO RELATÓRIO — A24 HOTFIX REALTIME
+STATUS: CONCLUÍDO ✅ (validado na aplicação em execução)
+================================================================================

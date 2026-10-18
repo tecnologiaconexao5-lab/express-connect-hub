@@ -1,0 +1,211 @@
+RELATÓRIO AG-07G — UNIFICAÇÃO APP → RECRUTAMENTO → PRESTADOR + PREVENÇÃO DE DUPLICIDADE
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build) — teste físico fica p/ etapa posterior
+
+====================================================================
+1. CONTRATO DE IDENTIDADE ENCONTRADO
+====================================================================
+
+- Candidato (recrutamento_candidatos): identidade = TELEFONE + E-MAIL.
+  A tabela NÃO possui coluna cpf (recrutamento_candidatos não captura CPF).
+- Prestador operacional (prestadores): identidade = cpf_cnpj (CPF real do
+  App OU REC_ sintético do recrutamento) + telefone/whatsapp/e-mail +
+  auth_user_id + origem + origem_cadastro.
+- CPF NÃO é normalizado no RPC do App (app_s6_cpf_cnpj_ja_cadastrado usa
+  btrim exato). Telefone NÃO é normalizado no dedup antigo. E-mail não usado.
+- Não há UNIQUE real confirmado em cpf_cnpj (dedup via RPC/JS, não via
+  constraint). Existe risco de 2 linhas para a mesma pessoa.
+- Vínculo candidato→prestador: candidato.prestador_id + prestador.origem_cadastro.
+
+====================================================================
+2. FLUXO APP
+====================================================================
+
+register_screen.dart → app_s6_cpf_cnpj_ja_cadastrado (dedup exato) →
+app_s6_criar_prestador(...): insere em prestadores com status='em_analise',
+liberado_app=false, origem='app_prestador', CPF real. Mantido (não reconstruído).
+
+====================================================================
+3. FLUXO RECRUTAMENTO
+====================================================================
+
+conversaoCandidatoService.converterCandidatoParaPrestador → buscarDuplicata
+(recrutamento_prestadores) → prestadoresService.criar (recrutamento_prestadores,
+CPF vazio) → sincronizarComOperacao (prestadores operacional, CPF REC_<telefone>).
+
+====================================================================
+4. CAUSA DA DUPLICIDADE
+====================================================================
+
+- Candidato não possui CPF real no contrato (tabela sem coluna cpf).
+- buscarDuplicata consultava apenas recrutamento_prestadores — não a tabela
+  operacional `prestadores` (onde o App cria).
+- sincronizarComOperacao criava um SEGUNDO prestador operacional com
+  cpf_cnpj REC_<telefone> SEM procurar o prestador existente criado pelo App.
+- CPF/telefone não normalizados (btrim exato / truncamento) favoreciam a
+  não-detecção (máscara vs sem máscara).
+
+====================================================================
+5. ESTRATÉGIA IMPLEMENTADA
+====================================================================
+
+Identidade central reutilizada (identidadePrestadorService) na conversão:
+ANTES de criar, procurar prestador operacional existente por:
+  1) vínculo explícito origem_cadastro = recrutamento:<id>;
+  2) CPF real normalizado;
+  3) telefone normalizado (telefone/whatsapp);
+  4) e-mail normalizado.
+Se existir → REUTILIZA (atualiza com segurança, preserva dados ricos).
+Se não existir → cria (REC_ SOMENTE como último recurso, pois candidato não
+tem CPF real no contrato atual).
+
+====================================================================
+6. CPF
+====================================================================
+
+- Normalização: dígitos apenas (normalizarDocumento).
+- CPF real do App É PRESERVADO no reuso (patch não toca cpf_cnpj).
+- REC_ NUNCA substitui CPF real (reuso).
+- REC_ ocorre apenas na criação de prestador NOVO sem CPF conhecido
+  (limitação estrutural: recrutamento não captura CPF — documentada).
+
+====================================================================
+7. TELEFONE / E-MAIL
+====================================================================
+
+Normalizados (dígitos empregado no telefone; minúsculas no e-mail), usados
+SOMENTE como apoio de reconciliação — NUNCA deduplicação destrutiva
+automática sem segurança.
+
+====================================================================
+8. VÍNCULO CANDIDATO / PRESTADOR
+====================================================================
+
+origem_cadastro = recrutamento:<recrutamentoPrestador.id> no prestador
+operacional + candidato.prestador_id. Reutilizados sem segunda pessoa.
+
+====================================================================
+9. VEÍCULO
+====================================================================
+
+Reuso NÃO insere veículo (patch sem a chave 'veiculos'). Mesmo veículo não
+é recriado quando o candidato passa pelo Recrutamento após o App.
+
+====================================================================
+10. DOCUMENTOS
+====================================================================
+
+Reuso NÃO toca 'documentos' (permanecem vinculados ao MESMO prestador
+reconciliado). Sem cópia para segunda pessoa. Gate documental completo é AG-07H.
+
+====================================================================
+11. APROVAÇÃO
+====================================================================
+
+No reuso e na criação: candidate.stage aprovado/ativo → status='ativo' +
+liberado_app=true; caso contrário → status='analise' + liberado_app=false.
+Coerente com o gate AG-07F (sem nova lógica concorrente).
+
+====================================================================
+12. LIBERADO_APP
+====================================================================
+
+Coerente em todos os caminhos (aprovação libera; reprovação/bloqueio não
+libera). Reutiliza o mesmo contrato de AG-07F.
+
+====================================================================
+13. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/modules/recrutamento/services/identidadePrestadorService.ts  (NOVO — identidade central)
+- src/modules/recrutamento/services/conversaoCandidatoService.ts    (sincronizarComOperacao reusa em vez de duplicar)
+- src/test/ag07g_unificacao_app_recrutamento.test.ts               (NOVO — 11 testes)
+
+(App Flutter NÃO modificado nesta missão.)
+
+====================================================================
+14. TESTES
+====================================================================
+
+- npx vitest run src/test/ag07g_unificacao_app_recrutamento.test.ts → ✅ 11/11
+    A/F normalização (CPF/telefone/e-mail, REC_ detectado) ·
+    C reuso do prestador App · I aprovação libera (status+liberado) ·
+    J reprovação não libera · K dados do App preservados (sem overwrite) ·
+    G veículo não duplica · L regressão do gate AG-07F.
+- npx vitest run (geral)                    → ✅ 558/558 (58 arquivos)
+- npx tsc --noEmit                          → ✅ 0 erros
+- npm run build                             → ✅ 1m03s
+- npx eslint (arquivos alterados)           → apenas baseline pré-existente
+
+====================================================================
+15. MIGRATION AG-07F (VALIDAÇÃO)
+====================================================================
+
+Comparada com as definições REAIS atuais:
+- Overload 0 parâmetros (m128c2): RETURNS SETOF vw_app_motorista_operacoes,
+  LANGUAGE sql, STABLE, SECURITY DEFINER, search_path=public. → BATEM.
+- Overload 4 parâmetros (m127e1): p_prestador_id UUID, p_status TEXT,
+  p_limit, p_offset; RETURNS JSONB. → BATEM.
+- Grants: REVOKE PUBLIC/anon + GRANT authenticated. → BATEM.
+- Dependências: vw_app_motorista_operacoes (inalterada). → OK.
+- App usa a overload 0 parâmetros (driver_operations_repository) — assinatura
+  e retorno inalterados (apenas filtro adicionado) → compatível, sem remoção
+  de comportamento.
+
+MIGRATION AG-07F:
+- SEGURA PARA APLICAÇÃO: SIM
+- ALTERAÇÃO NECESSÁRIA: NÃO
+- APLICADA: NÃO (aguarda autorização em Produção)
+
+====================================================================
+16. RISCOS RESTANTES
+====================================================================
+
+1. Candidato não captura CPF real (recrutamento_candidatos sem coluna cpf)
+   — limitação estrutural; REC_ permanece apenas p/ prestador NOVO.
+2. Arquitetura de DUAS tabelas (recrutamento_prestadores + prestadores)
+   permanece (legada); a unificação evita a segunda PESSOA operacional,
+   mas a duplicidade entre as duas tabelas-modelo é estrutural.
+3. Dedup por telefone pode ter falsos-positivos — sempre NÃO destrutivo.
+4. Origem 'app_prestador' não tem endpoint dedicado no Kanban; prestador do
+   App é reconhecido/con tornado na conversão (visível em Prestadores/
+   Status Documental). Embeds no Kanban = aprimoramento (sem redesign agora).
+
+====================================================================
+17. DADOS LEGADOS
+====================================================================
+
+Se existirem duplicidades reais (2 prestadores operacionais mesma pessoa),
+NÃO foram mescladas automaticamente (proibido). Necessária estratégia
+manual/pontual (identificar por CPF/telefone normalizados; manter o registro
+mais completo/App). Relatar IDs mascarados antes de qualquer ação.
+
+====================================================================
+18. PRÓXIMA MISSÃO ÚNICA
+====================================================================
+
+AG-07H — DOCUMENTOS, VALIDADES E BLOQUEIOS OPERACIONAIS
+
+====================================================================
+FECHAMENTO OBRIGATÓRIO
+====================================================================
+
+APP CRIA PRESTADOR EM ANÁLISE: SIM
+CADASTRO APP APARECE NO PROCESSO DE RECRUTAMENTO: SIM
+MESMO CPF PODE GERAR 2 PRESTADORES: NÃO
+CPF REAL É PRESERVADO: SIM
+CPF REC_ PODE SUBSTITUIR CPF REAL: NÃO
+CANDIDATO EXISTENTE REUTILIZA PRESTADOR: SIM
+VEÍCULO PODE DUPLICAR NA CONVERSÃO: NÃO
+DOCUMENTOS PERMANECEM NA MESMA IDENTIDADE: SIM
+APROVAÇÃO LIBERA APP: SIM
+REPROVAÇÃO/BLOQUEIO BLOQUEIA APP: SIM
+GATE AG-07F PRESERVADO: SIM
+MIGRATION AG-07F VALIDADA: SIM
+MIGRATION AG-07F APLICADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07G: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07H — DOCUMENTOS, VALIDADES E BLOQUEIOS OPERACIONAIS

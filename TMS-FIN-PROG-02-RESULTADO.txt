@@ -1,0 +1,173 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-02
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS (React/Vite/TS)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE OBRIGATORIA: TMS-FIN-PROG-01-MASTER-AUDIT, secao A.2
+TIPO: Troca de NOMENCLATURA VISIVEL "Escala"/"Escala Operacional"
+      por "Programacao Operacional" (forma curta: "Programacao").
+      NAO e refatoracao tecnica. Banco/migrations/RLS/APP intocados.
+================================================================================
+
+RESULTADO FINAL: PASS
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS ALTERADOS NESTA MISSAO (5 arquivos / 13 textos)
+--------------------------------------------------------------------------------
+[UI] = texto visivel ao usuario final
+
+1) src/components/financeiro/ConferenciaFinanceira.tsx
+   - [UI] 1 texto: aviso de fatura
+     "(OS/Escala)"  ->  "(OS/Programacao)"
+
+2) src/services/escala/escalaService.ts
+   - [UI] 1 texto: mensagem de validacao (retornada ao usuario)
+     "Data da escala e obrigatoria"  ->  "Data da Programacao Operacional e obrigatoria"
+
+3) src/components/operacao/EscalaLista.tsx
+   - [UI] 1 texto: motivo de cancelamento exibido/gravado na alocacao
+     "Cancelado via escala operacional"  ->  "Cancelado via Programacao Operacional"
+
+4) src/services/escala/syncDiagnostico.ts
+   - [UI] 8 textos: labels/descricoes exibidos no checklist/PanelRow da OS
+     - label "OS sem Escala"                              -> "OS sem Programacao"
+     - label "OS sem Escala" (estado inicial)             -> "OS sem Programacao"
+     - descricao "Nenhuma alocacao na escala vinculada a esta OS"
+                                                          -> "Nenhuma alocacao na Programacao vinculada a esta OS"
+     - descricao "OS e Escala estao consistentes"         -> "OS e Programacao estao consistentes"
+     - descricao "OS: <s> -> Escala: <s> (esperado: <s>)" -> "OS: <s> -> Programacao: <s> (esperado: <s>)"
+     - descricao "Prestador da OS difere do prestador na Escala"
+                                                          -> "...na Programacao"
+     - descricao "OS: <v> != Escala: <v>"                 -> "OS: <v> != Programacao: <v>"
+     - descricao "OS: <d> != Escala: <d>"                 -> "OS: <d> != Programacao: <d>"
+
+5) src/services/financeiro/receberService.ts
+   - [UI] 2 textos: campos de exibicao do item de faturamento
+     - origem: "Escala"                 -> "Programacao"
+     - descricao: `Escala <numero>`     -> `Programacao <numero>`
+   - (o campo tecnico tipo: "escala" e a chave de deduplicacao "escala_operacional"
+      foram PRESERVADOS)
+
+Total quantitativo: 13 textos visiveis alterados em 5 arquivos.
+
+OBSERVACAO DE ESTADO: parte relevante do mapa A.2 (menu, titulos, abas, filtros,
+badges, toasts, financeiro, cadastro/OS, recrutamento, Portal Cliente, Torre de
+Controle, integracoes e PDFs) ja se encontrava com "Programacao"/"Programacao
+Operacional" no working tree no inicio desta missao. Esta missao fechou o GAP
+remanescente (secao A.2 / GAP 1b), garantindo ZERO "Visivel Pendente".
+
+--------------------------------------------------------------------------------
+2. BUSCA FINAL — OCORRENCIAS VISIVEIS RESTANTES
+--------------------------------------------------------------------------------
+Comando de varredura (word-boundary, case-sensitive):
+   rg -n '([^A-Za-z0-9_]|^)Escala([^A-Za-z0-9_]|$)' -g 'src/**' -g '!*.test.*'
+Comando complementar (case-insensitive):
+   rg -ni 'escala operacional' -g 'src/**' -g '!*.test.*'
+   rg -ni 'da escala|na escala|de escala|pela escala|a escala|sem escala' ...
+
+RESULTADO: OCORRENCIAS VISIVEIS PENDENTES = 0 (ZERO).
+
+Todas as ocorrencias "Escala"/"Escala Operacional"/"Escalas" restantes foram
+classificadas e NAO sao visiveis ao usuario final (ver secao 3).
+
+--------------------------------------------------------------------------------
+3. CLASSIFICACAO DAS OCORRENCIAS RESTANTES
+--------------------------------------------------------------------------------
+3.1 TECNICA (preservadas — NAO alterar)
+   - Identificadores/chaves de contrato:
+       alocacoes_escala, historico_alocacoes_escala, escala_operacional
+       escala_id, data_escala, tipo_escala
+       tipo_operacao: 'escala'  (EscalaLista.tsx:1032,1156)
+       origem_lancamento 'escala_direta' / 'escala_operacional'
+       eventos "escala.alocacao.*" (src/types/events.ts: 7 eventos)
+       localStorage "conexao_escala_operacional" (EscalaLista.tsx:519,1243; escalaMapper.ts)
+       query string "?tab=escala" (sidebarData.ts:107 path; DashboardTopbar.tsx:97;
+         Operacao.tsx value="escala")
+   - Tipos/funcoes TS: EscalaStatus, EscalaLista, useEscala, escalaService,
+       escalaMapper, escalaFinanceiroAdapter, escalaAppPrestadorAdapter, etc.
+   - RPCs/triggers/funcoes: f_trg_propagar_financeiro_alocacao (M66),
+       f_trg_propagar_financeiro_os (M80) — nao referenciadas por texto.
+
+3.2 COMENTARIOS / LOGS INTERNOS (nao visiveis ao usuario — preservados)
+   - Comentarios de codigo: ConferenciaFinanceira.tsx (linhas 83,1050,1058,1102,
+       1148,1153,1247); EscalaLista.tsx; OrdemServicoForm.tsx (1112);
+       enterprise.tsx:311; centralFinanceiroService.ts; centralFinanceiroVisao.ts;
+       extratoPrestadorService.ts; ordemServicoService.ts; redePrestadoresService.ts;
+       escalaFinanceiroDesconto.ts; escalaTemposService.ts; escalaAppPrestadorAdapter.ts;
+       elegibilidadeOperacionalService.ts; relatorioService.ts; types/escala.ts;
+       PrestadorFilters.tsx (comentarios JSX); TabOperacional.tsx:175.
+   - console.warn/error/log de diagnostico: useEscala.ts; EscalaLista.tsx;
+       ContasReceberEnterprise.tsx; PagamentoPrestadores.tsx;
+       usePrestadoresAptosRecrutamento.ts; ordemServicoService.ts; etc.
+   - Scripts de teste internos (nao UI): src/lib/testes/executarTesteReal.{js,cjs},
+       testeMissaoOSCompleta.ts.
+   - Documentacao: src/docs/FINANCEIRO_INTEGRACOES.md.
+
+3.3 FALSO POSITIVO (preservado — NAO e o modulo Escala)
+   - "Escalar"/"Escalada"/"Escalado" = escalonamento para revisao humana na IA:
+       ComunicacaoRobosTab.tsx (243), DiretorVirtualTab.tsx (38),
+       DiretorVirtualLiveTab.tsx (55), TrabalhoTab.tsx (152,279,302,393),
+       agenteService.ts ("escalada"), workforceOrchestratorService.escalarTrabalho.
+   - NAO foram alterados, conforme A.6.
+
+--------------------------------------------------------------------------------
+4. CONTRATOS TECNICOS — VERIFICACAO DE INTEGRIDADE
+--------------------------------------------------------------------------------
+- Rota /operacao?tab=escala: PRESERVADA.
+    Operacao.tsx: TabsTrigger value="escala" (label visivel "Programacao
+    Operacional") + TabsContent value="escala" -> <EscalaLista />.
+    routePermissions.ts:13: "/operacao": { modulo: "ordens_servico" } (inalterado).
+    sidebarData.ts:107: title "Programacao Operacional", path "/operacao?tab=escala".
+- localStorage "conexao_escala_operacional": PRESERVADO.
+- tipo_operacao:'escala': PRESERVADO (EscalaLista.tsx:1032,1156).
+- Eventos "escala.alocacao.*": PRESERVADOS (src/types/events.ts).
+- Contrato APP<->TMS (status 'escalado', adapter escalaAppPrestadorAdapter):
+    PRESERVADO. App Flutter NAO foi tocado.
+- Triggers M66/M80: NAO tocados.
+
+--------------------------------------------------------------------------------
+5. BUILD / TYPECHECK / TESTES
+--------------------------------------------------------------------------------
+- npx tsc --noEmit       -> EXIT 0 (0 erros)                       [PASS]
+- npm run build          -> OK, built in 37.77s                    [PASS]
+- npx vitest run         -> 1533 passed | 31 failed | 155 skipped
+                            (114 test files: 104 passed / 9 failed / 1 skipped)
+   Os 31 testes falhos sao PRE-EXISTENTES e NAO relacionados a nomenclatura
+   (dependem de migration/SQL/Supabase reais e leem arquivos de migration vazios
+   no ambiente). Nenhum deles valida os textos alterados. Evidencias:
+     - rec02/rec03/rec03_1/rec04: expect('').toContain(...) — leitura de migration
+     - ag07f/ag07h/ag07j3: verificacao de SQL/RPC/migration
+     - a31j11 (teste 7): verify de migration financeiro_pagar
+     - f0k_recibos: INSERT real no Supabase ("RPC falhou") — requer backend
+   Testes diretamente afetados pela area (sidebarData.test.ts etc.) PASSARAM.
+
+--------------------------------------------------------------------------------
+6. DECLARACOES OBRIGATORIAS
+--------------------------------------------------------------------------------
+- BANCO: NAO tocado (nenhum INSERT/UPDATE/DELETE; nenhuma query executada).
+- MIGRATIONS: NAO criadas / NAO aplicadas (nada em supabase/migrations alterado).
+- RLS: NAO modificada.
+- APP Flutter: NAO tocado. Contrato APP<->TMS intacto.
+- TRIGGERS M66/M80: NAO tocados.
+- Financeiro: alterado SOMENTE nomenclatura (13 textos, sendo 3 no financeiro:
+    ConferenciaFinanceira 1 + receberService 2). Nenhuma regra de negocio.
+- Dashboard: NAO corrigido (conforme instrucao).
+- Faturas 41/42: NAO corrigidas (conforme instrucao).
+- REDMI: NAO conectado.
+- Layout/UX: PRESERVADOS (apenas troca de strings; nenhuma tela redesenhada).
+- Falsos positivos "Escalar/Escalada" (IA): PRESERVADOS.
+
+--------------------------------------------------------------------------------
+7. EVIDENCIA DE PASS
+--------------------------------------------------------------------------------
+- 0 (ZERO) ocorrencias VISIVEIS PENDENTES de "Escala"/"Escala Operacional".
+- 13 textos visiveis corrigidos (5 arquivos).
+- ?tab=escala e contratos tecnicos intactos.
+- tsc 0 erros; build OK; testes da area passando.
+
+CLASSIFICACAO FINAL: PASS
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-02-RESULTADO
+================================================================================

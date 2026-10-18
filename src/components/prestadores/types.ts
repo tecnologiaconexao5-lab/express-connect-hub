@@ -105,6 +105,7 @@ export interface Prestador {
   email: string;
   tipoParceiro: TipoParceiro;
   status: StatusPrestador;
+  liberadoApp?: boolean;
   endereco: {
     cep: string;
     rua: string;
@@ -186,6 +187,7 @@ export interface Prestador {
     elogios: number;
     observacoes: string;
   };
+  metadata?: Record<string, unknown>;
 }
 
 export const TIPO_PARCEIRO_LABEL: Record<TipoParceiro, string> = {
@@ -206,19 +208,43 @@ export const TIPO_PARCEIRO_COR: Record<TipoParceiro, string> = {
   clt: "bg-teal-500 text-white",
 };
 
-export const STATUS_LABEL: Record<StatusPrestador, string> = {
+// E2E-05D — status canônico. O APP grava 'em_analise'; o TMS usa 'analise'.
+// Aceitamos ambos (aliases) para não migrar dados: 'em_analise'≡'analise', 'aprovado'≡'ativo'.
+export const STATUS_LABEL: Record<string, string> = {
   ativo: "Ativo",
+  aprovado: "Aprovado",
   analise: "Em análise",
+  em_analise: "Em análise",
   inativo: "Inativo",
   bloqueado: "Bloqueado",
 };
 
-export const STATUS_COR: Record<StatusPrestador, string> = {
+export const STATUS_COR: Record<string, string> = {
   ativo: "bg-green-500 text-white",
+  aprovado: "bg-green-500 text-white",
   analise: "bg-yellow-500 text-black",
+  em_analise: "bg-yellow-500 text-black",
   inativo: "bg-gray-400 text-white",
   bloqueado: "bg-red-500 text-white",
 };
+
+/** Normaliza o status para o valor canônico do TMS (sem alterar dados). */
+export function normalizarStatusPrestador(status?: string | null): StatusPrestador {
+  const s = String(status || "").toLowerCase().trim();
+  if (s === "em_analise") return "analise";
+  if (s === "aprovado") return "ativo";
+  if (s === "ativo" || s === "analise" || s === "inativo" || s === "bloqueado") {
+    return s;
+  }
+  return "analise";
+}
+
+/** Aliases de status que representam o MESMO estado canônico (para filtros `.in`). */
+export function statusAliases(filter: string): string[] {
+  if (filter === "analise") return ["analise", "em_analise"];
+  if (filter === "ativo") return ["ativo", "aprovado"];
+  return [filter];
+}
 
 export const TIPO_VEICULO_LABEL: Record<TipoVeiculo, string> = {
   moto: "Moto", utilitario_leve: "Utilitário Leve", fiorino: "Fiorino", kangoo: "Kangoo",

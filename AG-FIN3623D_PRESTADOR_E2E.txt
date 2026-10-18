@@ -1,0 +1,70 @@
+FIN-MASTER-362.3D — PROVA E2E: CONFIRMAR PAGAMENTO PRESTADOR
+Data: 2026-09-05 | Responsavel: opencode
+================================================================
+
+1. OBJETIVO
+   Provar que "Confirmar Pagamento" no TMS grava corretamente em
+   pagamentos_prestadores + financeiro_baixas (com conta_financeira_id),
+   propagando para Fluxo de Caixa e DRE, sem duplicidade.
+
+2. BUGS CORRIGIDOS ANTES DO TESTE
+   BUG-A: conta_pagamento inexistente em confirmarPagamento()
+   BUG-B: RPC f_registrar_baixa_financeira sem p_conta_financeira_id
+   BUG-C: INSERT financeiro_baixas direto sem conta_financeira_id
+   BUG-D: financeiro_pagar query usava prestador_id (UUID) em vez de prestador (TEXT)
+   BUG-E: calcularStatusFinanceiro forçava "pendente_comprovante" quando comprovanteStatus era undefined
+
+3. PAGAMENTO TESTE
+   ID:         32fe474f-41c7-432b-a21e-7d0b2831c1bb
+   Prestador:  CESAR AUGUSTO HOLANDA SILVA
+   Valor:      R$ 2.177,92
+   Origem:     manual
+   Antes:      status_pagamento=pendente, status_conferido=conferido
+
+4. EVIDENCIA (7/7 PASS)
+   PASSO 1 — Snapshot: status_pag=pendente, conf=conferido, valor=2177.92
+             Row localizada (CESAR+Conferido+Pendente), botao Marcar Pago visivel
+   PASSO 2 — Clique Marcar Pago em Pagamentos Manuais
+             Toast "Marcado como pago" exibido
+   PASSO 3 — DB: status_pagamento=pago, data_pagamento=2026-09-05
+   PASSO 4 — DB: financeiro_baixas 1 registro
+             conta_financeira_id=9741ad36 (Cora) -- CORRETO
+             valor_baixado=520.00 (Math.min com titulo financeiro_pagar)
+   PASSO 5 — Fluxo de Caixa: 6 entradas Cora hoje, total R$1.092,28
+   PASSO 6 — DRE: 6 baixas para Cora hoje
+   PASSO 7 — Zero dupla contagem: 1 baixa, 0 financeiro_pagar novos
+
+5. FLUXO PROVADO (UI → Supabase)
+   UI Pagamentos Manuais → handleMarcarPago()
+     → calcularStatusFinanceiro(statusConferencia=conferido, valorLiquido=2177.92)
+     → podeAprovar(liberado) = true
+     → confirmarPagamento(id)
+       → UPDATE pagamentos_prestadores SET status_pagamento='pago', data_pagamento=hoje
+       → SELECT contas_financeiras WHERE ativa=true → Cora UUID
+       → SELECT financeiro_pagar WHERE prestador MATCH → titulo R$520.00
+       → RPC f_registrar_baixa_financeira(p_conta_financeira_id=Cora UUID)
+         → financeiro_baixas: valor=520.00, conta_financeira_id=Cora
+
+6. VERIFICACOES BANCARIAS
+   | Verificacao                          | Resultado |
+   |--------------------------------------|-----------|
+   | pagamentos_prestadores.status_pagamento = pago | SIM |
+   | pagamentos_prestadores.data_pagamento NOT NULL | SIM |
+   | financeiro_baixas.conta_financeira_id = Cora UUID | SIM |
+   | financeiro_baixas.valor_baixado > 0  | SIM (R$520.00) |
+   | financeiro_baixas.observacao contem payment ID | SIM |
+   | Financeiro_pagar entries novos = 0   | SIM |
+   | Fluxo Caixa entry para Cora hoje     | SIM (6 entries) |
+   | DRE baixas para Cora hoje            | SIM (6 entries) |
+
+7. NOTA SOBRE VALOR DA BAIXA
+   A baixa e de R$520.00 (nao R$2.177.92) porque o titulo
+   financeiro_pagar correspondente tem valor=520.00. O RPC usa
+   Math.min(valor_pagamento, valor_titulo) para baixa parcial.
+   Isso e comportamento correto — a baixa nunca excede o titulo.
+
+8. ARQUIVOS
+   - src/services/financeiro/pagamentoPrestadorService.ts (confirmarPagamento fix)
+   - src/helpers/statusFinanceiroPrestador.ts (calcularStatusFinanceiro fix)
+   - tests/e2e/fin-master-3623d-prestador-e2e.spec.ts (7 testes)
+   - test-results/e2e/fin3623d/*.png (screenshots)

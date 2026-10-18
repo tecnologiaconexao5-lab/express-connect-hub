@@ -32,15 +32,21 @@ CREATE TRIGGER trg_cert_updated_at
 ALTER TABLE public.certificados_fiscais ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Enable select for authenticated" ON public.certificados_fiscais;
-CREATE POLICY "Enable select for authenticated" ON public.certificados_fiscais
+DROP POLICY IF EXISTS "Enable select for authenticated" ON public.certificados_fiscais;
+DROP POLICY IF EXISTS "Enable select for authenticated" ON certificados_fiscais;
+CREATE POLICY "Enable select for authenticated" ON certificados_fiscais
   FOR SELECT USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.certificados_fiscais;
-CREATE POLICY "Enable insert for authenticated" ON public.certificados_fiscais
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON public.certificados_fiscais;
+DROP POLICY IF EXISTS "Enable insert for authenticated" ON certificados_fiscais;
+CREATE POLICY "Enable insert for authenticated" ON certificados_fiscais
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Enable update for authenticated" ON public.certificados_fiscais;
-CREATE POLICY "Enable update for authenticated" ON public.certificados_fiscais
+DROP POLICY IF EXISTS "Enable update for authenticated" ON public.certificados_fiscais;
+DROP POLICY IF EXISTS "Enable update for authenticated" ON certificados_fiscais;
+CREATE POLICY "Enable update for authenticated" ON certificados_fiscais
   FOR UPDATE USING (auth.role() = 'authenticated');
 
 -- Bucket Storage privado para certificados (se storage schema acessivel)
@@ -52,3 +58,5 @@ ON CONFLICT (id) DO NOTHING;
 COMMENT ON TABLE public.certificados_fiscais IS 'Certificados digitais A1 por emitente fiscal. A senha do certificado nunca e armazenada nesta tabela.';
 COMMENT ON COLUMN public.certificados_fiscais.tipo IS 'A1 (arquivo) ou A3 (token USB/cartao)';
 COMMENT ON COLUMN public.certificados_fiscais.status IS 'pendente / enviado / ativo / expirado / revogado';
+
+

@@ -1,0 +1,171 @@
+================================================================================
+MISSAO: TMS-FIN-PP-ENTREGA-01-TELA-OPERACIONAL
+OBJETIVO: ENTREGA VISIVEL das acoes oficiais na tela Pagamento de Prestadores
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: repositorio local (TMS). Supabase/RPCs NAO tocados nesta recuperacao.
+MODELO: DeepSeek V4.1 Flash
+DATA/HORA DO RELATORIO: 25/09/2026 22:36:02
+TIPO: RECUPERACAO DE SESSAO (build travado) + FINALIZACAO SEM NOVA AUDITORIA.
+================================================================================
+
+LEGENDA GERAL: NAO houve prova visual. NAO declarar homologacao visual.
+Causa: nesta recuperacao NAO foi executado browser/Playwright E2E; apenas
+teste unitario + build. Nao existe spec E2E que referencie as acoes novas.
+
+================================================================================
+1. VERIFICACAO DE ESTADO (sem git stash/reset/clean/checkout/revert)
+================================================================================
+- git status --short : 2.666 linhas
+    * 282 arquivos modificados (tracked, " M"/"M ")
+    * 2328 arquivos nao rastreados ("??")
+- git stash list (INALTERADO):
+    stash@{0}: filter-branch: rewrite
+    stash@{1}: WIP on main: 905946e feat: Enterprise Operations Core - IA, realtime,
+                                       filas, torre e escala operacional
+- O stash pop restaurou os arquivos: toda a arvore de trabalho passou a ter
+  LastWriteTime 25/09/2026 22:16:37 (evidencia do restore). Arquivos da missao
+  em 22:16:23-22:16:35. Nao houve NOVO stash/pop/reset/clean/checkout/revert.
+- Processos node detectados:
+    PID 10468  "npm run dev"   (iniciado 16:04:59)  -> servidor de DESENVOLVIMENTO
+    PID 24800  "vite.js"       (iniciado 16:05:00)  -> servidor de DESENVOLVIMENTO
+    NAO existe processo npm/node/tsc/vite de BUILD ("vite build") orfao.
+    => Nenhum processo de build orfao encontrado. NADA foi encerrado.
+
+================================================================================
+2. O QUE REALMENTE FOI ALTERADO NA UI (ENTREGA VISIVEL)
+================================================================================
+Tela alvo: Pagamento de Prestadores (rodape de acoes por linha "Acoes").
+
+2.1 PagamentoPrestadores.tsx  (tracked, status " M") -- ARQUIVO DA ENTREGA
+    - Importa reprovarPagamento / cancelarPagamento / estornarPagamento do
+      service e podeReprovarPagamento / podeCancelarPagamento /
+      podeEstornarPagamento do helper (linhas 34 e 44).
+    - Estado dos 3 dialogos (showReprovarPagamento / showCancelarPagamento /
+      showEstornarPagamento) + acaoPagamento / motivoAcaoPagamento / aviso.
+    - Rodape de cada linha passou a renderizar condicionalmente os botoes:
+        * podeReprovarPagamento(p)  -> botao "Reprovar Pagamento"   (linha ~2213)
+        * podeCancelarPagamento(p)  -> botao "Cancelar pagamento"   (linha ~2236)
+        * podeEstornarPagamento(p)  -> botao "Estornar pagamento"   (linha ~2241)
+    - Handlers abrirReprovarPagamento / abrirCancelarPagamento /
+      abrirEstornarPagamento + handleReprovarPagamento /
+      handleCancelarPagamento / handleEstornarPagamento.
+    - Handlers chamam SOMENTE as RPCs oficiais via service (sem DML direto):
+        f_reprovar_pagamento_prestador, f_cancelar_pagamento_prestador,
+        f_estornar_pagamento_prestador.
+    - 3 Dialogos de confirmacao (linhas 3443-3531): Reprovar (FileX vermelho),
+      Cancelar (X vermelho), Estornar (RotateCcw ambar, botao exige motivo).
+    - Cancelar trata retorno NECESSARIO_ESTORNO exibindo aviso e desabilitando
+      a confirmacao ("utilize Estornar pagamento").
+    - Auditoria registrada via registrarLog com acao "reprovar_pagamento",
+      "cancelar_pagamento" e "estornar_pagamento".
+
+2.2 src/services/financeiro/pagamentoPrestadorService.ts  (untracked "??")
+    - Wrappers oficiais (linhas ~552-585): reprovarPagamento,
+      cancelarPagamento, estornarPagamento -> supabase.rpc(...) das 3 RPCs,
+      repassando p_pagamento_id e p_motivo e devolvendo o payload da RPC.
+
+2.3 src/helpers/acoesPagamentoPrestador.ts  (untracked "??") -- FONTE UNICA
+    - Regras de visibilidade (sem estado/IO):
+        podeReprovarPagamento  : conferido + aguardando_aprovacao + nao terminal
+        podeCancelarPagamento  : pendente | nao_vencido | em_lote
+        podeEstornarPagamento  : pago
+
+2.4 src/test/pp_02c1c_acoes_pagamento.test.ts  (untracked "??") -- TESTE DA MISSAO
+    - 11 testes: service chama EXATAMENTE a RPC oficial, repassa parametros,
+      nao faz DML direto, propaga NECESSARIO_ESTORNO / BLOCKED_PAGAMENTO_PARCIAL,
+      e valida as 3 regras de visibilidade dos botoes.
+
+NAO alterados nesta recuperacao: Supabase, RPCs, migrations, Comercial, APP,
+Calvo, CESAR. Nenhum arquivo de teste foi apagado.
+
+================================================================================
+3. TESTES EXECUTADOS
+================================================================================
+Comando : npx vitest run src/test/pp_02c1c_acoes_pagamento.test.ts
+Resultado: 1 arquivo de teste / 11 testes -> 11 PASS / 0 FAIL (duracao 2.10s)
+Observacao: NAO foi rodada a suite completa (por instrucao "NAO REPITA TUDO").
+NAO existe spec E2E das acoes novas -> nenhum teste de browser foi executado.
+
+================================================================================
+4. RESULTADO DO TSC
+================================================================================
+4.1 npx tsc --noEmit (comando literal solicitado)
+    RESULTADO: EXIT 0 (0 erros) -- POREM E NO-OP.
+    Motivo: tsconfig.json raiz tem "files": [] (apenas "references"). Sem "-p",
+    o tsc nao compila nenhum arquivo. Reportado por transparencia.
+
+4.2 npm run typecheck:app  (tsc -p tsconfig.app.json --noEmit) -- typecheck REAL
+    RESULTADO: EXIT 2 (COM ERROS).
+    - Baseline PRE-EXISTENTE grande (centenas de erros) em modulos fora da
+      missao: fiscal, ia/*, portalCliente, relatorios, recrutamentoIA, utils,
+      e varios src/test/*. NENHUM nos arquivos de servico/helper da missao.
+    - 4 erros em PagamentoPrestadores.tsx (arquivo da missao):
+        (a) 532:83  os_numero nao existe no tipo do item              [nao relacionado]
+        (b) 1082:65 descontos nao existe no tipo 'OS'                 [nao relacionado]
+        (c) 1543:9  '"estornar_pagamento"' nao e atribuivel a
+                    AcaoAuditoria                                     [LIGADO A ESTA MISSAO]
+        (d) 2172:35 tipo_pagamento nao existe em PagamentoManual      [nao relacionado]
+    - (c) e a lacuna real desta missao: o union AcaoAuditoria
+      (src/services/financeiro/auditoriaPrestadorService.ts:3) possui
+      "reprovar_pagamento" e "cancelar_pagamento" mas NAO possui
+      "estornar_pagamento", que a UI passou a gravar na auditoria.
+    - NAO corrigido: por instrucao expressa de nao recomecar a missao nem
+      corrigir itens fora do escopo de recuperacao. Fica registrado para decisao.
+
+================================================================================
+5. RESULTADO DO BUILD
+================================================================================
+Comando : npm run build   (vite build, SEM tsc acoplado)
+Resultado: SUCESSO. EXIT 0. "built in 38.21s". dist/ regenerado.
+    - 4825 modulos transformados.
+    - Bateria completa de assets emitida (Financeiro-JFZqHblS.js 797.62 kB etc.).
+    - Avisos apenas informativos (dynamic+static import e chunks > 500 kB).
+    - NAO travou. Nenhum BLOCKED-BUILD. Nao houve loop.
+
+================================================================================
+6. PROVA VISUAL
+================================================================================
+NAO HOUVE PROVA VISUAL.
+- Nao foi aberto navegador, nao foi executado Playwright e nao ha screenshot.
+- Nao existe spec E2E referenciando as acoes novas.
+- Portanto: NAO declarar homologacao visual da tela Pagamento de Prestadores.
+- Evidencia obtida nesta recuperacao: teste unitario (11/11) + build OK (38.21s).
+  A verificacao visual/operacional da tela continua PENDENTE.
+
+================================================================================
+7. GIT STATUS FINAL / STASH RESTANTE
+================================================================================
+git status --short: 2.666 linhas -> 282 modificados (tracked) + 2328 untracked.
+Arquivos da missao no git status:
+    " M" src/components/financeiro/PagamentoPrestadores.tsx   (tracked, modificado)
+    "??" src/services/financeiro/pagamentoPrestadorService.ts (untracked)
+    "??" src/helpers/acoesPagamentoPrestador.ts               (untracked)
+    "??" src/test/pp_02c1c_acoes_pagamento.test.ts            (untracked)
+
+git stash list (NAO alterado):
+    stash@{0}: filter-branch: rewrite
+    stash@{1}: WIP on main: 905946e ...
+
+================================================================================
+8. ARQUIVOS-CHAVE (caminho / tamanho / data REAIS)
+================================================================================
+PagamentoPrestadores.tsx ..... 192.599 bytes  25/09/2026 22:16:23
+pagamentoPrestadorService.ts .  28.065 bytes  25/09/2026 22:16:35
+acoesPagamentoPrestador.ts ...   1.765 bytes  25/09/2026 22:16:34
+pp_02c1c_acoes_pagamento.test.ts 6.992 bytes  25/09/2026 22:16:35
+dist/index.html ..............   3.019 bytes  25/09/2026 22:35:28 (build OK)
+
+================================================================================
+9. PENDENCIAS / RISCOS
+================================================================================
+- [P1] Erro de tipo (c): adicionar "estornar_pagamento" ao union AcaoAuditoria
+       (auditoriaPrestadorService.ts) OU trocar a acao gravada. NAO aplicado.
+- [P1] Prova visual/operacional da tela NAO realizada (sem E2E/screenshot).
+- [P2] Baseline de typecheck:app com muitos erros pre-existentes fora da missao.
+- [P2] Dev server "npm run dev" (PID 10468/24800) segue ativo; nao e build.
+- STATUS DA MISSAO: ENTREGA implementada em codigo + teste unitario PASS +
+  build OK; HOMOLOGACAO VISUAL NAO REALIZADA.
+
+================================================================================
+FIM — TMS-FIN-PP-ENTREGA-01-TELA-OPERACIONAL
+================================================================================

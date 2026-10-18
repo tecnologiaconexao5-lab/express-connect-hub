@@ -1,0 +1,309 @@
+{
+  "ts": "2026-10-04T23:45:48.431Z",
+  "checks": [
+    {
+      "name": "propagacao_AP_PP",
+      "ok": true,
+      "detail": "30 OS com financeiro_pagar e 24 com pagamentos_prestadores"
+    },
+    {
+      "name": "baixa_presente",
+      "ok": true,
+      "detail": "2 OS com baixa registrada em financeiro_baixas"
+    },
+    {
+      "name": "reconciliacao_APxPP",
+      "ok": false,
+      "detail": "10 divergencias APxPP/esperado"
+    },
+    {
+      "name": "reconciliacao_margem",
+      "ok": false,
+      "detail": "5 divergencias de margem"
+    },
+    {
+      "name": "reconciliacao_AR_OS",
+      "ok": true,
+      "detail": "AR == valor_cliente da OS (onde existe)"
+    },
+    {
+      "name": "cobranca_cliente_isolada",
+      "ok": true,
+      "detail": "AR (cliente) e AP (prestador) sao titulos independentes por OS (5 AR x 30 AP) — sem cruzamento de valores"
+    },
+    {
+      "name": "pod_vinculado_alocacao",
+      "ok": true,
+      "detail": "18 alocacoes com POD em entregas_protocolo"
+    },
+    {
+      "name": "faturamento_cliente_gate",
+      "ok": true,
+      "detail": "fonte AR = f_emitir_fatura (gate); faturas total=11"
+    }
+  ],
+  "stats": {
+    "existe_entregas_protocolo": true,
+    "existe_delivery_proofs": true,
+    "existe_financeiro_receber": true,
+    "existe_financeiro_pagar": true,
+    "existe_pagamentos_prestadores": true,
+    "existe_financeiro_baixas": true,
+    "existe_faturas": true,
+    "existe_composicao_financeira_os": true,
+    "os_finalizadas_com_valor": 33,
+    "os_com_AR": 5,
+    "os_com_AP": 30,
+    "os_com_PP": 24,
+    "os_com_composicao": 32,
+    "os_com_baixa": 2,
+    "alocacoes_com_pod": 18,
+    "faturas": {
+      "total": 11,
+      "emitidas": 9
+    }
+  },
+  "divergencias": {
+    "AR": [],
+    "APxPP": [
+      {
+        "os": "OS-M43_2026-06-29_18-31-49",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-M43_2026-06-29_18-45-22",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-M43_2026-06-29_19-14-18",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-M43_2026-06-29_20-20-39",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-M43_2026-06-29_21-28-01",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-DED-M48_2026-06-29_21-31-34",
+        "data": "2026-06-29",
+        "ap": "1800",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-DED-M48_2026-06-29_21-47-50",
+        "data": "2026-06-29",
+        "ap": "1800",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "OS-M43_2026-06-29_21-47-50",
+        "data": "2026-06-29",
+        "ap": "1000",
+        "pp_liq": "0.00"
+      },
+      {
+        "os": "ALOC-20260705-0733BB97",
+        "data": "2026-07-05",
+        "ap": "1100",
+        "pp_liq": "1280.00"
+      },
+      {
+        "os": "ALOC-20260705-0733BB97",
+        "data": "2026-07-05",
+        "ap": "1100",
+        "esperado": 1160,
+        "tipo": "AP!=liq"
+      }
+    ],
+    "margem": [
+      {
+        "os": "OS-202604-798361",
+        "data": "",
+        "mb": "525",
+        "esp": 600
+      },
+      {
+        "os": "OS-202604-149519",
+        "data": "",
+        "mb": "525",
+        "esp": 600
+      },
+      {
+        "os": "ALOC-20260705-0733BB97",
+        "data": "2026-07-05",
+        "mb": "720",
+        "esp": 840
+      },
+      {
+        "os": "OS-GO-LIVE-202607-261321",
+        "data": "2026-07-10",
+        "mb": "700.00",
+        "esp": -800
+      },
+      {
+        "os": "OS-GO-LIVE-202607-125512",
+        "data": "2026-07-10",
+        "mb": "700.00",
+        "esp": -800
+      }
+    ]
+  },
+  "reconciliadas": [
+    {
+      "os": "OS-M43_2026-06-29_19-16-01",
+      "vc": "1500.00",
+      "repasse": "1000.00",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 1000,
+      "ap": 1000,
+      "pp": 1000,
+      "composed": true
+    },
+    {
+      "os": "OS-DIR-M48_2026-06-29_21-31-34",
+      "vc": "3200",
+      "repasse": "2100",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 2100,
+      "ap": 2100,
+      "pp": 2100,
+      "composed": true
+    },
+    {
+      "os": "OS-MOTO-M48_2026-06-29_21-31-34",
+      "vc": "80",
+      "repasse": "50",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 50,
+      "ap": 50,
+      "pp": 50,
+      "composed": true
+    },
+    {
+      "os": "OS-REDE-M48_2026-06-29_21-31-34",
+      "vc": "1800",
+      "repasse": "1200",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 1200,
+      "ap": 1200,
+      "pp": 1200,
+      "composed": true
+    },
+    {
+      "os": "OS-DIR-M48_2026-06-29_21-47-50",
+      "vc": "3200",
+      "repasse": "2100",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 2100,
+      "ap": 2100,
+      "pp": 2100,
+      "composed": true
+    },
+    {
+      "os": "OS-MOTO-M48_2026-06-29_21-47-50",
+      "vc": "80",
+      "repasse": "50",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 50,
+      "ap": 50,
+      "pp": 50,
+      "composed": true
+    },
+    {
+      "os": "OS-REDE-M48_2026-06-29_21-47-50",
+      "vc": "1800",
+      "repasse": "1200",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 1200,
+      "ap": 1200,
+      "pp": 1200,
+      "composed": true
+    },
+    {
+      "os": "ALOC-20260712-C0A7EE88",
+      "vc": "2000.00",
+      "repasse": "1100.00",
+      "pedagio": "60",
+      "outros": 120,
+      "liq": 1280,
+      "ap": 1280,
+      "pp": 1280,
+      "composed": true
+    },
+    {
+      "os": "ALOC-20260817-58E5751E",
+      "vc": "600.00",
+      "repasse": "520.00",
+      "pedagio": "66.43",
+      "outros": 66.43,
+      "liq": 652.86,
+      "ap": 652.86,
+      "pp": 652.86,
+      "composed": true
+    },
+    {
+      "os": "ALOC-20260818-D1F34E73",
+      "vc": "600.00",
+      "repasse": "520.00",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 520,
+      "ap": 520,
+      "pp": 520,
+      "composed": true
+    },
+    {
+      "os": "OS-202609-863875",
+      "vc": "300.00",
+      "repasse": "250.00",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 250,
+      "ap": 250,
+      "pp": 250,
+      "composed": true
+    },
+    {
+      "os": "OS-202609-207497",
+      "vc": "300.00",
+      "repasse": "250.00",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 250,
+      "ap": 250,
+      "pp": 250,
+      "composed": true
+    },
+    {
+      "os": "OS-202610-915214",
+      "vc": "300.00",
+      "repasse": "250.00",
+      "pedagio": "0",
+      "outros": 0,
+      "liq": 250,
+      "ap": 250,
+      "pp": 250,
+      "composed": true
+    }
+  ]
+}

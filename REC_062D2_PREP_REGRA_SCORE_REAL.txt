@@ -1,0 +1,340 @@
+RELATORIO REC-06.2D.2-PREP — REGRA REAL DO SCORE
+==================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: REC-06.2D.2-PREP — Descobrir a REGRA DE NEGOCIO REAL pretendida para Score/Comprometimento do Recrutamento
+
+VEREDITO: [STUB COMPLETO — NENHUM COMPONENTE DO SCORE DE COMPROMETIMENTO TEM REGRA DE NEGOCIO REAL]
+
+===============================================================================
+1. INVENTARIO COMPLETO DE SISTEMAS DE SCORING
+===============================================================================
+
+Existem 7 sistemas de scoring distintos no modulo de recrutamento.
+Apenas 2 deles contem logica real de calculo. Os demais sao stubs ou mocks.
+
+| # | Arquivo | Contexto | Status | Math.random? |
+|---|---------|----------|:------:|:------------:|
+| 1 | recrutamentoScoreService.ts | Score COMPROMETIMENTO do Kanban Enterprise | STUB | NAO |
+| 2 | scoreService.ts (modules/recrutamento) | Score do PRESTADOR no pipeline | PARCIAL (3 constantes) | NAO |
+| 3 | scoreEngine.ts | Score do ONBOARDING do prestador | REAL (100 pontos) | NAO |
+| 4 | BancoMotoristas.tsx | Score de MOTORISTAS no UI | MOCK (localStorage) | NAO |
+| 5 | BancoTalentos.tsx | Score de ADERENCIA no Pipeline Talentos | REAL | NAO |
+| 6 | iaService.ts (modules/recrutamento) | Score de ANALISE IA mock | MOCK | SIM (4x) |
+| 7 | matchService.ts | Score de COMPATIBILIDADE Op x Prestador | REAL | NAO |
+
+===============================================================================
+2. AUDITORIA DETALHADA POR COMPONENTE
+===============================================================================
+
+=== COMPONENTE 1: recrutamentoScoreService.ts (CANONICO para comprometimento) ===
+
+Arquivo: src/services/recrutamento/recrutamentoScoreService.ts (100 linhas)
+
+Este e o SERVICO QUE O KANBAN ENTERPRISE CHAMA para calcular score_comprometimento.
+
+| Funcao | Linha | Status | Retorno |
+|--------|:-----:|:------:|---------|
+| calcularScoreComprometimento() | 32-34 | STUB | SEMPRE 50 |
+| classificarComprometimento() | 36-38 | STUB | SEMPRE "Regular" |
+| getCorClassificacao() | 40-42 | STUB | Cor cinza sempre |
+| calcularRiscoDesistencia() | 44-50 | PARCIAL | "Baixo" ou "Moderado" |
+| gerarEtiquetasAutomaticas() | 52-63 | PARCIAL | Ate 2 tags |
+| gerarParecerOperacional() | 65-91 | IMPLEMENTADO | Texto dinamico |
+
+Interface CandidatoScoreInput (campos que ALIMENTARIAM o score):
+- tempoMedioRespostaHoras (number | null)
+- statusDocumental (string)
+- quantidadeCobrancas (number)
+- stage (string)
+- compareceuPrimeiroDia (boolean)
+- completou30Dias (boolean)
+- quantidadeReclamacoes (number)
+- historicoDesistencias (number)
+- possuiOutraOperacaoFixa (boolean)
+- disponibilidadeRecrutamento (string)
+- confirmouInteresse (boolean)
+- confirmouPreInicio (boolean)
+- questionarioRespostas (Record<string, string> | null)
+
+EVIDENCIA: calcularScoreComprometimento retorna 50 IGNORANDO TODOS OS INPUTS.
+EVIDENCIA: classificarComprometimento retorna "Regular" IGNORANDO O SCORE.
+EVIDENCIA: getCorClassificacao retorna cor cinza IGNORANDO A CLASSIFICACAO.
+Math.random: NENHUM
+
+>>> SEM REGRA DE NEGOCIO HOMOLOGAVEL para calcularScoreComprometimento <<<
+>>> SEM REGRA DE NEGOCIO HOMOLOGAVEL para classificarComprometimento <<<
+>>> SEM REGRA DE NEGOCIO HOMOLOGAVEL para getCorClassificacao <<<
+
+As funcoes PARCIAIS (calcularRiscoDesistencia, gerarEtiquetasAutomaticas, gerarParecerOperacional)
+TEM logica real mas NAO geram score numerico.
+
+=== COMPONENTE 2: scoreService.ts (modules/recrutamento) (PRESTADOR pipeline) ===
+
+Arquivo: src/modules/recrutamento/services/scoreService.ts (58 linhas)
+
+| Funcao | Linha | Status | Retorno |
+|--------|:-----:|:------:|---------|
+| calcularScore() | 4-48 | PARCIAL (3 constantes) | Score 0-100 |
+| obterNivel() | 51-57 | IMPLEMENTADO | Label + cor |
+
+Formula:
+  scoreGeral = documentacao * 0.25 + experiencia * 0.25 + perfil * 0.15
+             + reputacao * 0.15 + regularidade * 0.10 + tendencia * 0.10
+
+| Componente | Calculo | Constante? |
+|-----------|---------|:----------:|
+| documentacao | % docs aprovados * 100 | NAO |
+| experiencia | Baseada em status (agregado=90, aprovado=70, reserva=50, em_analise=40, novo=20) | NAO (simplista) |
+| perfil | Contatos > 0? min(100, 60 + contatos*20) : 30 | NAO |
+| reputacao | 70 (FIXO) | **SIM** |
+| regularidade | 65 (FIXO) | **SIM** |
+| tendencia | 75 (FIXO) | **SIM** |
+
+Thresholds: >=90 Excelente, >=75 Bom, >=60 Regular, >=40 Baixo, <40 Critico
+Math.random: NENHUM
+EVIDENCIA: 3 componentes de 6 sao constantes fixas (70, 65, 75).
+EVIDENCIA: NUNCA chamado pelo Kanban Enterprise (apenas por scoreService consumers inexistentes).
+
+>>> SEM REGRA DE NEGOCIO HOMOLOGAVEL para reputacao/regularidade/tendencia <<<
+>>> NAO e a implementacao canonica do Kanban Enterprise <<<
+
+=== COMPONENTE 3: scoreEngine.ts (ONBOARDING) ===
+
+Arquivo: src/services/scoreEngine.ts
+
+Implementacao COMPLETA e REAL com 7 categorias:
+  documentacao (25) + experiencia (15) + regiao (15) + disponibilidade (15)
+  + veiculo (15) + historico (10) + perfilOperacional (5) = 100
+
+Thresholds: >=86 Diamante, >=66 Ouro, >=41 Prata, <41 Bronze
+Math.random: NENHUM
+EVIDENCIA: Implementacao mais completa do sistema.
+POREM: Usado para onboarding/pre-cadastro, NAO para o Kanban de recrutamento.
+
+>>> REGRA DE NEGOCIO REAL EXISTENTE mas em contexto diferente (onboarding) <<<
+
+=== COMPONENTE 4: BancoMotoristas.tsx (MOCK localStorage) ===
+
+Arquivo: src/components/recrutamento/BancoMotoristas.tsx
+
+Status: 100% MOCK com dados hardcoded em localStorage.
+5 motoristas de exemplo: Carlos 92, Roberto 78, Marcos 65, Jose 95, Paulo 55.
+Formula: score = 50 + bonuses/penalidades hardcoded.
+Math.random: NENHUM
+Importado por: NENHUM componente (dead code confirmado).
+
+>>> DEAD CODE — NAO USA BANCO, NAO E IMPORTADO <<<
+
+=== COMPONENTE 5: BancoTalentos.tsx (ADERENCIA pipeline talentos) ===
+
+Arquivo: src/modules/recrutamento/components/talentos/BancoTalentos.tsx
+
+Formula calcularScoreAderencia:
+  +25 tipoVeiculo, +20 regiao, +20 docs>=3, +20 disponibilidade, +15 status
+Thresholds: >=80 Excelente, >=60 Bom, >=40 Regular, <40 Baixo
+Math.random: NENHUM
+EVIDENCIA: Implementacao real, mas para pipeline de TALENTOS, nao para candidatos do Kanban.
+
+>>> REGRA DE NEGOCIO REAL EXISTENTE mas em contexto diferente (talentos) <<<
+
+=== COMPONENTE 6: iaService.ts (modules/recrutamento) (MOCK IA) ===
+
+Arquivo: src/modules/recrutamento/services/iaService.ts
+
+ScorePerfil = 50 + Math.random() * 45 (50-95)
+ScoreDocumentacao = docs existentes ? real : 30 + Math.random() * 40 (30-70)
+ScoreComportamental = 60 + Math.random() * 35 (60-95)
+ScoreGeral = perfil*0.3 + doc*0.4 + comportamental*0.3
+Confianca = 75 + Math.random() * 20 (75-95%)
+
+Math.random: SIM (4 usos — todos mock)
+EVIDENCIA: 100% simulado. Nao e regra de negocio.
+
+>>> SEM REGRA DE NEGOCIO HOMOLOGAVEL — e mock de IA <<<
+
+=== COMPONENTE 7: matchService.ts (COMPATIBILIDADE Op x Prestador) ===
+
+Arquivo: src/modules/recrutamento/services/matchService.ts
+
+Formula:
+  veiculo*0.35 + regiao*0.30 + prestador.score.geral*0.20 + status*0.15
+Math.random: NENHUM (apenas ID generation)
+EVIDENCIA: Implementacao real, mas para matching operacao x prestador.
+
+>>> REGRA DE NEGOCIO REAL EXISTENTE mas em contexto diferente (matching) <<<
+
+===============================================================================
+3. MATRIZ DE THRESHOLDS INCONSISTENTES
+===============================================================================
+
+| Sistema | Excelente | Bom | Regular | Baixo | Critico |
+|---------|:---------:|:---:|:-------:|:-----:|:-------:|
+| recrutamentoScoreService (KANBAN) | (stub) | (stub) | (stub=50) | (stub) | (stub) |
+| scoreService (prestador) | >=90 | >=75 | >=60 | >=40 | <40 |
+| scoreEngine (onboarding) | >=86 Diamante | >=66 Ouro | >=41 Prata | <41 Bronze | — |
+| BancoMotoristas (MOCK) | >=90 | >=70 | >=50 | <50 | — |
+| BancoTalentos (talentos) | >=80 | >=60 | >=40 | <40 | — |
+
+NENHUM padrão unificado. Cada contexto usa thresholds diferentes.
+
+===============================================================================
+4. MAPA COMPLETO: QUEM CALCULA, QUEM PERSISTE, QUEM CONSOME
+===============================================================================
+
+| Campo no DB | Quem calcula | Quem persiste | Quem consome |
+|-------------|-------------|---------------|-------------|
+| score (INTEGER) | NINGUEM (default 50) | enterpriseKanbanService.criar() | KanbanCard, PrestadoresAptos, filtros, ranking |
+| score_comprometimento | recrutamentoScoreService (stub=50) | DetalhesCandidatoPipelineSheet (botao "Recalcular") | DetalhesCandidatoPipelineSheet (aba Compromet.) |
+| classificacao_comprometimento | recrutamentoScoreService (stub="Regular") | DetalhesCandidatoPipelineSheet (botao "Recalcular") | DetalhesCandidatoPipelineSheet (aba Compromet.) |
+| score_perfil | NINGUEM (default 0) | recrutamentoIA.ts (stub) | NINGUUM no Kanban |
+| risco_desistencia | recrutamentoScoreService (funcional) | DetalhesCandidatoPipelineSheet | DetalhesCandidatoPipelineSheet |
+
+===============================================================================
+5. QUANDO RECALCULA
+===============================================================================
+
+O score e recalculado APENAS quando o usuario clica "Recalcular Comprometimento"
+na aba "Compromet." do DetalhesCandidatoPipelineSheet.tsx (linha 466).
+
+NAO existe recalculo automatico por:
+- Mudanca de stage
+- Novo documento
+- Nova interacao
+- Passagem de tempo
+- Trigger no banco
+
+O campo score (INTEGER) nunca e recalculado — persiste o default 50.
+
+===============================================================================
+6. AUTOMACAO DE CRUZAMENTO DO LIMIAR
+===============================================================================
+
+A migration 20260907_rec_062c1_triggers_automacoes.sql referencia
+classificacao_comprometimento no trigger (linha 126), mas o trigger
+apenas loga o valor — NAO toma decisao baseada nele.
+
+NENHUMA automacao cruza o limiar de score para:
+- Aprovar/reprovar candidato
+- Mover entre stages
+- Gerar alertas
+- Notificar usuarios
+
+===============================================================================
+7. COLUNAS REAIS DE recrutamento_candidatos
+===============================================================================
+
+| Coluna | Tipo | Default | Usada por |
+|--------|------|---------|-----------|
+| score | INTEGER | 50 | enterpriseKanbanService (rankings, filtros) |
+| score_perfil | NUMERIC | 0 | recrutamentoIA (legado, NAO usado no Kanban) |
+| score_comprometimento | NUMERIC | 0 | recrutamentoScoreService (STUB=50) |
+| classificacao_comprometimento | TEXT | '' | recrutamentoScoreService (STUB="Regular") |
+| risco_desistencia | TEXT | '' | recrutamentoScoreService (funcional) |
+| etiquetas_automaticas | JSONB | [] | recrutamentoScoreService (parcial) |
+| parecer_ia | TEXT | '' | recrutamentoScoreService (funcional) |
+| principais_riscos | JSONB | [] | recrutamentoScoreService (funcional) |
+| principais_pontos_positivos | JSONB | [] | recrutamentoScoreService (funcional) |
+| proxima_acao_sugerida | TEXT | '' | recrutamentoScoreService (funcional) |
+
+===============================================================================
+8. IMPLEMENTACAO CANONICA RECOMENDADA
+===============================================================================
+
+NAO EXISTE implementacao canonica unica para score de comprometimento.
+
+Existem 3 implementacoes parciais em contextos diferentes:
+
+1. scoreEngine.ts (onboarding) — COMPLETA mas para pre-cadastro
+2. scoreService.ts (prestador) — PARCIAL com 3 constantes
+3. recrutamentoScoreService.ts (kanban) — STUB puro
+
+A funcao mais proxima de uma regra de comprometimento real e
+gerarParecerOperacional() (recrutamentoScoreService.ts:65-91) que
+analisa tempo de resposta, status documental, desistencias e confirmacao.
+Porem NAO gera score numerico.
+
+>>> SEM IMPLEMENTACAO CANONICA PARA score_comprometimento <<<
+
+===============================================================================
+9. GAPS SEM REGRA DE NEGOCIO
+===============================================================================
+
+| # | Gap | Gravidade | Descrição |
+|---|-----|:---------:|-----------|
+| G1 | calcularScoreComprometimento | CRITICA | Retorna 50 sempre. Interface CandidatoScoreInput existe mas e ignorada. |
+| G2 | classificarComprometimento | CRITICA | Retorna "Regular" sempre. Ignora o score. |
+| G3 | getCorClassificacao | ALTA | Retorna cor cinza sempre. Sem diferenciacao visual. |
+| G4 | score (INTEGER default 50) | ALTA | NUNCA e recalculado. Persiste default ate alteracao manual. |
+| G5 | score_perfil (legado) | MEDIA | Campo existe mas nenhum componente do Kanban le ou escreve. |
+| G6 | 3 constantes no scoreService.ts | MEDIA | reputacao=70, regularidade=65, tendencia=75. Sem fonte de dados real. |
+| G7 | Sem recalculo automatico | ALTA | Score nao reage a mudancas de stage, documentos ou interacoes. |
+| G8 | Sem automacao de limiar | MEDIA | Nenhuma acao e disparada por faixa de score. |
+| G9 | Thresholds inconsistentes | MEDIA | 5 sistemas com 5 escalas diferentes. |
+| G10 | BancoMotoristas dead code | BAIXA | Componente 100% mock, nunca importado. |
+
+===============================================================================
+10. O QUE NAO PODE SER DECIDIDO TECNICAMENTE
+===============================================================================
+
+| # | Decisao necessaria | Quem decide | Impacto |
+|---|-------------------|-------------|---------|
+| D1 | Quais fatores compoem o score de comprometimento? | Gestor/RRHH | Define a formula |
+| D2 | Quais pesos cada fator deve ter? | Gestor/RRHH | Define o resultado |
+| D3 | Quais faixas de classificacao (Excelente/Bom/Regular/Baixo)? | Gestor/RRHH | Define a escala |
+| D4 | O score deve recalculao automaticamente ou sob demanda? | Gestor/RRHH | Define comportamento |
+| D5 | Quais acoes automatizadas por faixa de score? | Gestor/RRHH | Define automacao |
+| D6 | score e score_comprometimento devem ser o mesmo campo? | Gestor/Tecnico | Define arquitetura |
+| D7 | As 3 constantes (reputacao/regularidade/tendencia) devem ser substituidas? | Gestor | Define complexidade |
+| D8 | O scoreEngine (onboarding) deve ser reaproveitado para comprometimento? | Gestor/Tecnico | Define reuso |
+| D9 | BancoMotoristas deve ser removido ou integrado? | Gestor | Define limpeza |
+| D10 | iaService mock deve ser substituido por IA real? | Gestor/TI | Define investimento |
+
+===============================================================================
+11. PATCH MINIMO SEGURO
+===============================================================================
+
+NAO HÁ patch seguro para implementar sem regra de negócio definida.
+
+O unico patch seguro e DOCUMENTAR o stub:
+- Adicionar comentario JSDoc em calcularScoreComprometimento explicando que e stub
+- Adicionar comentario JSDoc em classificarComprometimento explicando que e stub
+- NAO alterar behavior (manter retorno 50/"Regular")
+- NAO inventar pesos ou formulas
+
+Qualquer implementacao real REQUER decisao do Gestor/RRHH sobre D1-D10.
+
+===============================================================================
+12. TESTES NECESSARIOS
+===============================================================================
+
+Para futura implementacao (apos decisao de negocio):
+
+| # | Teste | Tipo | Descrição |
+|---|-------|------|-----------|
+| T1 | calcularScoreComprometimento com dados validos | Unit | Verificar se score varia conforme input |
+| T2 | calcularScoreComprometimento com dados vazios | Unit | Verificar comportamento com dados incompletos |
+| T3 | classificarComprometimento por faixa | Unit | Verificar se labels conferem com thresholds |
+| T4 | getCorClassificacao por label | Unit | Verificar se cores conferem |
+| T5 | Recalculo automatico (se aplicavel) | Integration | Verificar se mudanca de stage dispara recalculo |
+| T6 | Persistencia apos recalculo | Integration | Verificar se DB e atualizado corretamente |
+| T7 | Filtros por score no Kanban | E2E | Verificar se filtros funcionam com scores reais |
+| T8 | Ranking por score | E2E | Verificar se ordenacao e correta |
+| T9 | Regressao: fluxo existente nao quebra | Regression | Manter comportamento atual ate decisao |
+
+===============================================================================
+13. BANCOMOTORISTAS — CONFIRMACAO DEAD CODE
+===============================================================================
+
+- Arquivo: src/components/recrutamento/BancoMotoristas.tsx
+- Exportado por: propia linha 119
+- Importado por: NENHUM componente
+- Banco: localStorage (banco_motoristas_tms)
+- Dados: 5 motoristas mock hardcoded
+- Score: formula local com bonuses/penalidades
+
+>>> CONFIRMADO: DEAD CODE. NAO e importado por nenhum componente. <<<
+
+===============================================================================
+FIM DO RELATORIO — REC-06.2D.2-PREP
+STUB COMPLETO — NENHUM COMPONENTE DO SCORE DE COMPROMETIMENTO TEM REGRA DE NEGOCIO REAL

@@ -1,0 +1,158 @@
+================================================================================
+ A31F — NOTAS FISCAIS TRANSPORTADAS NA CENTRAL FINANCEIRA
+ Correção do lançamento (digitação contínua + lote + edição/remoção segura)
+ Relatório de Fechamento — Missão A31-F
+ Data: 2026-08-17   |   Escopo: bloco "Notas Fiscais Transportadas" do dossiê
+================================================================================
+
+================================================================================
+SEÇÃO 1 — OBJETIVO
+================================================================================
+1. Corrigir DEFINITIVAMENTE a experiência de lançamento das NFs transportadas
+   no dossiê fiscal da Central Financeira.
+2. Causa-raiz do input "Número da NF" (perda de foco / um caractere por vez).
+3. Somente o Número da NF obrigatório no lançamento simples (série, chave de
+   acesso, valor, emitente, peso e volumes opcionais).
+4. Lançamento em lote: vírgula, ponto-e-vírgula, espaço ou quebra de linha;
+   trim; ignorar vazios; sem duplicidade dentro do lote e com NFs já vinculadas
+   ao MESMO serviço; preservar NFs de outros serviços.
+5. Listagem limpa após salvar (sem refresh manual) com ações Editar e Remover.
+6. Remoção com confirmação (AlertDialog) + proteção fiscal (bloqueio quando
+   vinculada a CT-e/MDF-e emitido).
+7. Reutilizar a estrutura existente (fiscal_documentos_vinculados) — SEM
+   migration, SEM tabela paralela, SEM mudança de modelo.
+8. Testes + tsc + vitest + build + lint + relatório.
+
+================================================================================
+SEÇÃO 2 — CAUSA-RAIZ DO BUG DE DIGITAÇÃO (CORRIGIDA)
+================================================================================
+- O campo "Número da NF" ficava dentro da seção <Grupo titulo="Notas fiscais
+  transportadas">. Os componentes Grupo, CardResumo e Linha eram definidos DENTRO
+  do corpo da função DossieFinanceiroSheet.
+- Em React, definir um componente dentro do corpo de outro componente cria uma
+  NOVA identidade de tipo a cada render. Ao digitar, setNovaNF disparava um
+  re-render; o React tratava <Grupo> como um tipo NOVO → desmontava e remontava
+  o subtree inteiro → o <input> perdia o foco após cada tecla (por isso só um
+  caractere era aceito e exigia novo clique).
+- CORREÇÃO (causa-raiz, sem workaround de timeout/refocus): Grupo, CardResumo e
+  Linha foram ELEVADOS para o escopo do módulo (identidade de tipo estável).
+  Grupo recebe agora secoesAbertas e toggleSecao via props. O input mantém foco
+  durante digitação contínua, aceita colar, Backspace, setas e edição no meio.
+- Foram removidos os stubs de sombra que impediriam a correção (Garantido que o
+  componente usa os do módulo).
+
+================================================================================
+SEÇÃO 3 — ARQUIVOS ALTERADOS
+================================================================================
+1. src/components/financeiro/ConferenciaFinanceira.tsx — elevação de
+   Grupo/CardResumo/Linha ao módulo (causa-raiz do foco); botão "Vincular NF"
+   exige apenas número; lote impede duplicidade com NFs já vinculadas ao mesmo
+   serviço (listarNumerosNFsDaOS) + mensagem "X vinculadas, Y já existentes";
+   remoção com confirmação via AlertDialog; botão "Salvar" da edição exige
+   número; import do AlertDialog.
+2. src/services/financeiro/faturaService.ts — adicionarNFaOS passa a exigir
+   somente o Número (trim); novo helper listarNumerosNFsDaOS(osId) para
+   duplicidade por vínculo (isolamento por serviço).
+3. src/test/a31f_notas_fiscais_transportadas.test.ts — NOVO (20 testes).
+
+================================================================================
+SEÇÃO 4 — REGRA DE OBRIGATORIEDADE (LANÇAMENTO SIMPLES)
+================================================================================
+- OBRIGATÓRIO: Número da NF.
+- OPCIONAIS: Série, Chave de acesso, Valor (R$), Emitente, Peso, Volumes.
+- Service adicionarNFaOS: valida trim(numero); se vazio → erro "Informe o número
+  da NF (obrigatório)". Chave de acesso sozinha NÃO basta mais.
+- Botão "Vincular NF" habilita somente com novaNF.numero.trim() preenchido.
+- Botão "Salvar" do sheet de edição também exige número preenchido.
+
+================================================================================
+SEÇÃO 5 — LANÇAMENTO EM LOTE
+================================================================================
+- Aceita: "55, 56, 57, 58" | "55\n56\n57\n58" | "55;56;57;58" | espaços e
+  combinações.
+- Processamento: split(/[\s,;]+/) → trim → remove vazios → Set (dedup no lote).
+- Duplicidade contra NFs JÁ vinculadas: consulta listarNumerosNFsDaOS(osId)
+  (mesmo serviço) e pula as já existentes, SEM falhar o lote inteiro.
+- Mensagem final: "3 NFs vinculadas com sucesso · 1 já existente neste serviço."
+- Isolamento: a consulta filtra por ordem_servico_id da OS atual — NFs de
+  outros serviços não interferem e não são alteradas/removidas.
+
+================================================================================
+SEÇÃO 6 — LISTAGEM APÓS VINCULAR
+================================================================================
+- recarregarNFs() é chamado após lançamento simples, lote e edição/remoção →
+  a lista atualiza imediatamente, sem refresh manual da página.
+- Cada NF exibe Número (obrigatório) + Série + Valor quando existirem; badge
+  "(desvinculada)" para soft-deletadas.
+
+================================================================================
+SEÇÃO 7 — EDIÇÃO DE NF
+================================================================================
+- Ação "Editar NF" abre Sheet com número/série/chave/valor/emitente.
+- atualizarNFdaOS atualiza a MESMA linha (UPDATE por id) — NÃO cria NF nova.
+- Número pode ser editado (seguro com a estrutura atual); demais opcionais.
+- Bloqueada se a NF estiver vinculada a CT-e/MDF-e emitido (motivo exibido).
+
+================================================================================
+SEÇÃO 8 — REMOÇÃO / DESVINCULAÇÃO (COM CONFIRMAÇÃO)
+================================================================================
+- Ação "Remover NF" abre AlertDialog: "Remover NF 12345 deste serviço?".
+- Ao confirmar → removerNFdaOS(id): bloqueia se vinculada a CT-e/MDF-e emitido
+  (mostra o motivo); caso contrário faz soft-delete (status='desvinculada'),
+  preservando o histórico — NUNCA delete indiscriminado de documento fiscal.
+- NÃO exclui documento fiscal de outra OS/serviço: a operação é sempre por id
+  da NF exibida na lista daquele serviço (lista filtrada por ordem_servico_id).
+
+================================================================================
+SEÇÃO 9 — ESTRUTURA/TABELA REUTILIZADA (SEM MIGRATION)
+================================================================================
+- fiscal_documentos_vinculados (1:N por ordem_servico_id) — estrutura oficial
+  já usada desde A31. Nenhuma migration executada, nenhuma tabela paralela.
+- Colunas usadas: ordem_servico_id, tipo_documento, numero, serie,
+  chave_acesso, emitente_nome, emitente_cnpj, valor_total, peso_bruto,
+  volumes, status, xml_storage_path, cte_id, mdfe_id.
+
+================================================================================
+SEÇÃO 10 — TESTES (a31f_notas_fiscais_transportadas.test.ts — 20 testes)
+================================================================================
+1. rejeita sem número (chave sozinha não basta) ........... PASS
+2. aceita somente número (demais opcionais) ............... PASS
+3. aceita número com campos opcionais ..................... PASS
+4. listarNFsDaOS filtra pela OS ........................... PASS
+5. listarNumerosNFsDaOS retorna conjunto da OS ........... PASS
+6. bloqueia edição quando vinculada a CT-e/MDF-e .......... PASS
+7. edita campos (não cria NF nova) ....................... PASS
+8. bloqueia remoção quando NF usada fiscalmente ........... PASS
+9. desvincula (soft-delete) quando livre .................. PASS
+10. lote com vírgula ..................................... PASS
+11. lote com quebra de linha .............................. PASS
+12. lote com ponto e vírgula .............................. PASS
+13. trim e remove espaços/linhas vazias ................... PASS
+14. duplicada dentro do lote é removida ................... PASS
+15. impede duplicação com NF já vinculada (mesmo serviço). PASS
+16. não falha o lote inteiro por uma duplicada ............ PASS
+17. isolamento entre serviços ............................. PASS
+18. mensagem de sucesso com duplicadas .................... PASS
+19. digitação contínua 123456 (um state) .................. PASS
+20. digitação não perde foco (componentes elevados) ....... PASS
+
+Regressão: a31b_edicao_nf (5) + a31c_nf_lote (7) + demais A31 → intactos.
+Suíte completa: 249/249 PASS (24 arquivos).
+
+================================================================================
+SEÇÃO 11 — VALIDAÇÃO
+================================================================================
+- npx tsc --noEmit .................. ✅ 0 erros
+- npx vitest run ................... ✅ 249/249
+- npm run build .................... ✅ 44,37s
+- npx eslint (ConferenciaFinanceira,
+  faturaService, teste A31F) ........ ✅ 0 erros
+
+================================================================================
+SEÇÃO 12 — PENDÊNCIAS / OBSERVAÇÕES
+================================================================================
+- (QA) Teste visual em produção: digitação contínua, colar, lote, edição,
+  confirmação de remoção e bloqueio CT-e/MDF-e com dados reais.
+- Nenhuma migration aplicada; nenhum dado de produção alterado.
+- Escopo respeitado: NÃO houve alteração em Fatura, PDF, App, Escala,
+  lançamento manual, arquitetura geral ou banco/migration.

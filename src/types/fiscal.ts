@@ -183,6 +183,17 @@ export interface FocusCteFiscal {
   regime_tributario?: string | null;
 }
 
+export interface EnderecoRealEntrega {
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  municipio?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+  codigo_ibge?: string | null;
+}
+
 export interface FocusCtePayloadDraft {
   emitente: FocusCteEmitente;
   tomador: FocusCteTomador;
@@ -198,6 +209,7 @@ export interface FocusCtePayloadDraft {
   fiscal: FocusCteFiscal;
   modal: string;
   tipo_servico: number;
+  observacao?: string | null;
 }
 
 export interface CteMetadata {
@@ -209,6 +221,10 @@ export interface CteMetadata {
   veiculo_tipo?: string | null;
   distancia?: number | null;
   emitente_id?: string | null;
+  endereco_real_entrega_usado?: EnderecoRealEntrega | null;
+  observacao_cte?: string | null;
+  fonte_endereco_entrega?: "manual" | "xml" | "romaneio" | null;
+  pendente_conferencia_endereco?: boolean;
 }
 
 export interface FiscalDocumentoVinculado {
@@ -253,4 +269,7 @@ export interface NfeXmlParsed {
   uf_origem: string | null;
   municipio_destino: string | null;
   uf_destino: string | null;
+  endereco_fiscal_xml?: EnderecoRealEntrega | null;
+  infCpl?: string | null;
+  endereco_infCpl?: EnderecoRealEntrega | null;
 }

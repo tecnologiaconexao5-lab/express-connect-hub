@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const { rows } = await c.query(`SELECT ae.id, ae.status, ae.finalizada, ae.metadata->'app_motorista'->>'etapa_atual' AS etapa, os.numero, os.status AS os_status FROM alocacoes_escala ae JOIN ordens_servico os ON os.id=ae.ordem_servico_id WHERE os.numero='OS-202610-112694'`);
+console.log(JSON.stringify(rows, null, 2));
+await c.end();

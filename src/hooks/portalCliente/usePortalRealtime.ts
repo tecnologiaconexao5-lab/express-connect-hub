@@ -65,45 +65,8 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
 
         subscriptions.push(ordensChannel);
 
-        const notificacoesChannel = supabase
-          .channel("portal-notificacoes-realtime")
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "notificacoes",
-              filter: `cliente_id=eq.${clienteId}`,
-            },
-            (payload) => {
-              const notificacao = payload.new as NotificacaoUpdate;
-              onNotificacao?.(notificacao);
-              setLastUpdate(new Date());
-            }
-          )
-          .subscribe();
-
-        subscriptions.push(notificacoesChannel);
-
-        const ocurrenciasChannel = supabase
-          .channel("portal-ocorrencias-realtime")
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "ocorrencias",
-              filter: `cliente_id=eq.${clienteId}`,
-            },
-            (payload) => {
-              const ocorrencia = payload.new as OcorrenciaUpdate;
-              onOcorrencia?.(ocorrencia);
-              setLastUpdate(new Date());
-            }
-          )
-          .subscribe();
-
-        subscriptions.push(ocurrenciasChannel);
+        // Notificações e ocorrências via realtime serão implementadas
+        // quando as tabelas forem criadas (portal_notificacoes, portal_ocorrencias)
       } catch {
         setIsConnected(false);
       }
@@ -167,38 +130,10 @@ export function useEntregaRealtime(
 }
 
 export function useNotificacoesRealtime(
-  onNew?: (notificacao: NotificacaoUpdate) => void,
-  clienteId?: string
+  _onNew?: (notificacao: NotificacaoUpdate) => void,
+  _clienteId?: string
 ) {
   const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    if (!clienteId) return;
-
-    const channel = supabase
-      .channel("portal-notificacoes-live")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notificacoes",
-          filter: `cliente_id=eq.${clienteId}`,
-        },
-        (payload) => {
-          const nova = payload.new as NotificacaoUpdate;
-          setCount((prev) => prev + 1);
-          onNew?.(nova);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [clienteId, onNew]);
-
   const clearCount = useCallback(() => setCount(0), []);
-
   return { count, clearCount };
 }

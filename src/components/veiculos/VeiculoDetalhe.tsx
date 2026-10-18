@@ -10,13 +10,14 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Veiculo } from "./types";
 import { toVeiculoInsert, toVeiculoUpdate, fromVeiculoRow, VeiculoRow } from "@/lib/dbMappers";
+import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
 
 interface Props {
   veiculoId?: string;
   onBack: () => void;
 }
 
-const TIPOS_VEICULO = ["moto", "utilitario leve", "Fiorino", "Kangoo", "HR", "van", "VUC", "3/4", "toco", "truck", "carreta", "carreta LS", "bitrem", "rodotrem", "cavalo mecânico", "baú urbano", "veículo dedicado", "veículo refrigerado leve", "outro"];
+// TIPOS_VEICULO imported from @/constants/tiposVeiculo (array of {value, label})
 const SUBCATEGORIAS = ["urbano", "leve", "médio", "pesado", "dedicado", "refrigerado", "distribuição", "transferência", "outro"];
 const TIPOS_CARROCERIA = ["baú", "baú refrigerado", "baú isotérmico", "sider", "grade baixa", "graneleira", "prancha", "plataforma", "carroceria aberta", "cegonha", "tanque", "container", "furgão", "refrigerada", "lonada", "outro"];
 const CLASSIFICACAO_TERMICA = ["seco", "refrigerado", "isotérmico"];
@@ -137,7 +138,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
                 <Label>Tipo de Veículo*</Label>
                 <Select value={v.tipoVeiculo || ""} onValueChange={val => handleChange("tipoVeiculo", val)}>
                   <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>{TIPOS_VEICULO.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  <SelectContent>{TIPOS_VEICULO.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
@@ -156,7 +157,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
               </div>
               <div>
                 <Label>Classificação Térmica</Label>
-                <Select value={v.classificacao_termica || ""} onValueChange={val => handleChange("classificacaoTermica", val)}>
+                <Select value={v.classificacaoTermica || ""} onValueChange={val => handleChange("classificacaoTermica", val)}>
                   <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>{CLASSIFICACAO_TERMICA.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
@@ -169,18 +170,18 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
             <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <div><Label>Marca</Label><Input value={v.marca || ""} onChange={e => handleChange("marca", e.target.value)} /></div>
               <div><Label>Modelo</Label><Input value={v.modelo || ""} onChange={e => handleChange("modelo", e.target.value)} /></div>
-              <div><Label>Ano Fab.</Label><Input type="number" value={v.ano_fabricacao || ""} onChange={e => handleChange("anoFabricacao", parseInt(e.target.value) || 0)} /></div>
-              <div><Label>Ano Mod.</Label><Input type="number" value={v.ano_modelo || ""} onChange={e => handleChange("anoModelo", parseInt(e.target.value) || 0)} /></div>
+              <div><Label>Ano Fab.</Label><Input type="number" value={v.anoFabricacao || ""} onChange={e => handleChange("anoFabricacao", parseInt(e.target.value) || 0)} /></div>
+              <div><Label>Ano Mod.</Label><Input type="number" value={v.anoModelo || ""} onChange={e => handleChange("anoModelo", parseInt(e.target.value) || 0)} /></div>
               <div><Label>Cor</Label><Input value={v.cor || ""} onChange={e => handleChange("cor", e.target.value)} /></div>
               <div><Label>RENAVAM</Label><Input value={v.renavam || ""} onChange={e => handleChange("renavam", e.target.value)} /></div>
               <div className="col-span-2"><Label>Chassi</Label><Input value={v.chassi || ""} onChange={e => handleChange("chassi", e.target.value)} /></div>
               
-              <div><Label>Capac. (kg)</Label><Input type="number" value={v.capacidade_kg || ""} onChange={e => handleChange("capacidadeKg", parseFloat(e.target.value) || 0)} /></div>
-              <div><Label>Capac. (m³)</Label><Input type="number" value={v.capacidade_m3 || ""} onChange={e => handleChange("capacidadeM3", parseFloat(e.target.value) || 0)} /></div>
+              <div><Label>Capac. (kg)</Label><Input type="number" value={v.capacidadeKg || ""} onChange={e => handleChange("capacidadeKg", parseFloat(e.target.value) || 0)} /></div>
+              <div><Label>Capac. (m³)</Label><Input type="number" value={v.capacidadeM3 || ""} onChange={e => handleChange("capacidadeM3", parseFloat(e.target.value) || 0)} /></div>
               <div><Label>Comprim. (m)</Label><Input type="number" value={v.comprimento || ""} onChange={e => handleChange("comprimento", parseFloat(e.target.value) || 0)} /></div>
               <div><Label>Largura (m)</Label><Input type="number" value={v.largura || ""} onChange={e => handleChange("largura", e.target.value)} /></div>
               <div><Label>Altura (m)</Label><Input type="number" value={v.altura || ""} onChange={e => handleChange("altura", e.target.value)} /></div>
-              <div><Label>Qtd Pallets</Label><Input type="number" value={v.qtd_pallets || ""} onChange={e => handleChange("qtd_pallets", e.target.value)} /></div>
+              <div><Label>Qtd Pallets</Label><Input type="number" value={v.qtdPallets || ""} onChange={e => handleChange("qtdPallets", e.target.value)} /></div>
             </CardContent>
           </Card>
         </div>
@@ -196,11 +197,11 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
                   <SelectContent><SelectItem value="Ativo">Ativo</SelectItem><SelectItem value="Manutenção">Em Manutenção</SelectItem><SelectItem value="Inativo">Inativo</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div><Label>Prestador Vinculado</Label><Input value={v.prestador_vinculado || ""} onChange={e => handleChange("prestador_vinculado", e.target.value)} placeholder="Nome do parceiro" /></div>
+              <div><Label>Prestador Vinculado (ID)</Label><Input value={v.prestadorVinculado || ""} onChange={e => handleChange("prestadorVinculado", e.target.value)} placeholder="UUID do prestador" /></div>
               <div><Label>Unidade de Atuação</Label><Input value={v.unidade || ""} onChange={e => handleChange("unidade", e.target.value)} /></div>
               <div className="grid grid-cols-2 gap-2">
-                <div><Label>Custo / Km (R$)</Label><Input type="number" step="0.01" value={v.custo_km || ""} onChange={e => handleChange("custo_km", e.target.value)} /></div>
-                <div><Label>Custo Diária (R$)</Label><Input type="number" step="0.01" value={v.custo_diaria || ""} onChange={e => handleChange("custo_diaria", e.target.value)} /></div>
+                <div><Label>Custo / Km (R$)</Label><Input type="number" step="0.01" value={v.custoKm || ""} onChange={e => handleChange("custoKm", parseFloat(e.target.value) || 0)} /></div>
+                <div><Label>Custo Diária (R$)</Label><Input type="number" step="0.01" value={v.custoDiaria || ""} onChange={e => handleChange("custoDiaria", parseFloat(e.target.value) || 0)} /></div>
               </div>
             </CardContent>
           </Card>
@@ -208,9 +209,9 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
           <Card>
             <CardHeader><CardTitle className="text-base text-primary">Documentação e Segurança</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div><Label>Validade Documental</Label><Input type="date" value={v.validade_documental || ""} onChange={e => handleChange("validade_documental", e.target.value)} /></div>
+              <div><Label>Validade Documental</Label><Input type="date" value={v.validadeDocumental || ""} onChange={e => handleChange("validadeDocumental", e.target.value)} /></div>
               <div><Label>Rastreador (Tecnologia/Empresa)</Label><Input value={v.rastreador || ""} onChange={e => handleChange("rastreador", e.target.value)} /></div>
-              <div><Label>Apólice de Seguro</Label><Input value={v.seguro_apolice || ""} onChange={e => handleChange("seguro_apolice", e.target.value)} /></div>
+              <div><Label>Apólice de Seguro</Label><Input value={v.seguroApolice || ""} onChange={e => handleChange("seguroApolice", e.target.value)} /></div>
               <div><Label>Observações Gerais</Label><Textarea rows={3} value={v.observacoes || ""} onChange={e => handleChange("observacoes", e.target.value)} /></div>
             </CardContent>
           </Card>

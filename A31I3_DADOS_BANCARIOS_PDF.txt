@@ -1,0 +1,45 @@
+================================================================================
+ A31-I.3 — DADOS BANCÁRIOS DINÂMICOS + FIDELIDADE FINAL DO PDF
+ Relatório — Missão A31-I.3 (ultraeconômico)
+ Data: 2026-08-17
+================================================================================
+1. FONTE OFICIAL DOS DADOS BANCÁRIOS
+   - configFinanceiraService.buscarContasBancariasConfig() — "Config. Financeiras"
+     (configuracoes_sistema → chave "contas_financeiras_config").
+   - Agora buscada primeiro no PDF; contas_financeiras (tabela) como fallback de
+     compatibilidade. Sem hardcode de Banco Cora/agência/conta/PIX.
+2. HAVIA HARDCODE?
+   - NÃO. Banco/agência/conta/pix já vinham de fonte configurável; porém a fonte
+     usada no PDF (contas_financeiras) NÃO era a mesma da "Config. Financeiras"
+     (configuracoes_sistema). Corrigido o fluxo para
+     Config. Financeiras → Fatura → Prévia → PDF.
+   - Dado não configurado → campo vazio (não inventa, sem fallback fictício).
+3. CONFIGURAÇÃO REUTILIZADA
+   - Nenhuma segunda configuração criada. Reutilizada a chave oficial
+     "contas_financeiras_config" e o service existente configFinanceiraService.
+4. CLIENTE AUTOMÁTICO — CONFIRMADO
+   - Serviços selecionados → cliente vinculado (cadastro oficial) →
+     "Cobrança para: [RAZÃO SOCIAL]" + CNPJ + IE + endereço. Cliente misto
+     bloqueado; "Calvo" apenas como identificador técnico interno.
+5. AJUSTES VISUAIS
+   - Logo maior (maxWidth 420, maxHeight 150) centralizado; margem 44→36
+     (mais largura útil); tabela maior (head 10, body 9.5; colunas ampliadas);
+     fontes empresa 10 / cliente 9.5 / faixa salmão 13; faixa cinza 11;
+     dados bancários 9.5. Prévia espelha o PDF (logo h-32, fontes 11).
+   - Mantidos: faixa salmão fina (somente razão social), faixa cinza fina,
+     dados do cliente em branco, tabela FATURA|DESCRIÇÃO|PARCELA|VENCIMENTO|
+     VALOR com VALOR azul escuro, SEM "TOTAL DA FATURA", banco à esquerda sem
+     card, rodapé discreto.
+6. ARQUIVOS ALTERADOS
+   - src/utils/pdfFatura.ts (escala/fontes)
+   - src/components/financeiro/FaturaPanel.tsx (prévia = PDF, escala)
+   - src/services/financeiro/faturaService.ts (buscarDadosEmpresaParaFatura →
+     fonte oficial da Config. Financeiras)
+7. TESTES / TSC / BUILD
+   - a31i_fatura_pdf_visual (2/2) + a31i2_fatura_automacao (9/9) = 11/11 PASS
+   - npx tsc --noEmit → 0 erros
+   - npm run build → 55.91s
+8. PENDÊNCIA REAL
+   - (QA) Comparação visual fina do PDF regenerado com a referência
+     (rasterizer indisponível no ambiente Windows atual).
+================================================================================

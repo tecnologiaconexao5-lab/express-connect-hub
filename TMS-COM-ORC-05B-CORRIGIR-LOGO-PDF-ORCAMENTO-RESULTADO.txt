@@ -1,0 +1,88 @@
+================================================================================
+TMS-COM-ORC-05B-CORRIGIR-LOGO-PDF-ORCAMENTO — RESULTADO
+Missão: Correção cirúrgica da logo do PDF do Orçamento Comercial + prova visual
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS. APP/Redmi NÃO conectado. ZERO banco/DML/DDL.
+================================================================================
+
+1. ALTERAÇÃO (1 linha de origem, isolada ao Orçamento Comercial)
+--------------------------------------------------------------------------------
+Arquivo: src/components/comercial/orcamentoPdf.ts
+ANTES (origem principal do fetch):
+   let logoStr: string | null = LOGO_BASE64 || null;
+   ... fetch("/logo-oficial-conexao.png")        // variante ESCURA
+DEPOIS:
+   let logoStr: string | null = LOGO_BASE64 || null;
+   ... fetch("/logos/logo-conexao-oficial.png")  // variante CLARA (já adotada por outros PDFs)
+- Fallback LOGO_BASE64 mantido (usado se o fetch falhar).
+- Dimensões/posição da logo inalteradas (mesma proporção; addImage preserva aspect).
+- Nenhuma outra regra/estrutura do PDF tocada.
+
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/comercial/orcamentoPdf.ts          (origem da logo no orçamento)
+- src/test/com_orc_03_pdf_profissional.test.ts      (+2 testes: logo clara + fallback)
+- scripts/_com_orc_05b_prova.ts                     (NOVO — prova do PDF real)
+
+3. OUTROS PDFs NÃO FORAM ALTERADOS (confirmado por grep)
+--------------------------------------------------------------------------------
+Continuam usando o que já usavam:
+- foundation.loadLogo() .......................... /logos/logo-conexao-oficial.png (clara) [inalterado]
+- clientReport / consolidatedReports ............. foundation (clara) [inalterado]
+- extratoPrestadorReport / pdfLogoSupport ........ /logos/logo-conexao-branco.png [inalterado]
+- utils/pdfGenerator.ts, useLogo.getLogo, FaturaPanel → /logo-oficial-conexao.png [inalterados]
+Somente o gerador do Orçamento passou a apontar para a variante clara.
+
+4. PROVA REAL (ORC-202609-8659)
+--------------------------------------------------------------------------------
+Script: scripts/_com_orc_05b_prova.ts (npx tsx). TODOS OS CHECKS PASSARAM.
+- Registro REAL lido do banco em modo READ-ONLY (sem UPDATE/INSERT/DELETE).
+- Cliente: "Cydak do Brasil LTDA"; nº ORC-202609-8659; status em_analise.
+- Gerado pelo MESMO gerador da tela (construirPdfOrcamento, chamado por
+  gerarPdfOrcamento → botão "Gerar PDF" da listagem/form).
+- Loader registrou o fetch EXATO: /logos/logo-conexao-oficial.png (e NÃO o antigo).
+- Asset carregado: sha256 162e7a020d4973ef… (variante CLARA: 0% pixels escuros,
+  34,8% claros — conforme diagnóstico 05A). Antigo era bc413884… (39,4% escuros).
+- PDF: 1 página; cliente real, "ORÇAMENTO COMERCIAL", Valor do Transporte
+  R$ 2.200,00 preservado; sem undefined/NaN/mojibake.
+- Arquivo: test-results/com-orc-05b/ORC-202609-8659_Orcamento_Comercial.pdf
+  2.816.714 bytes | 26/09/2026 18:44:40 (aberto para o usuário).
+  (Tamanho grande é o RGBA da variante clara embutido pelo jsPDF — não é a escura.)
+
+5. DADOS DO REGISTRO LEGADO — INTOCADOS (por decisão da missão)
+--------------------------------------------------------------------------------
+- valor_final do legado permanece 0 (histórico) — NÃO corrigido aqui.
+- datas históricas (emissão 30/10/2026, validade 30/09/2026) — NÃO alteradas.
+- Nenhum UPDATE/INSERT/DELETE/DDL/migration executado.
+
+6. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (3 arquivos): 46/46 PASS
+    com_orc_03_pdf_profissional (14, +2 novos de logo), com_orc_02_persistencia (15),
+    com_carga_01_cubagem (17).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão.
+- npm run build -> OK (42.40s).
+
+7. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- A prova foi gerada pelo gerador real a partir do registro real (read-only), com
+  shim de fetch no harness Node; recomenda-se confirmar clicando "Gerar PDF" na tela.
+- Outras cópias da logo permanecem escuras (/logo-oficial-conexao.png,
+  /logos/logo-conexao-branco.png, /logos/logo-conexao-colorido.png) — fora do escopo.
+- Não houve alteração de identidade visual global.
+
+8. ARQUIVO
+--------------------------------------------------------------------------------
+Gerado: TMS-COM-ORC-05B-CORRIGIR-LOGO-PDF-ORCAMENTO-RESULTADO.txt
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-ORC-05B-CORRIGIR-LOGO-PDF-ORCAMENTO-RESULTADO.txt
+(aberto no Notepad)
+
+VALIDAR visualmente o PDF aberto: logo clara/nítida, "CONEXÃO EXPRESS" legível no
+azul-marinho, símbolo colorido, sem fundo branco, proporção correta, resto idêntico.
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

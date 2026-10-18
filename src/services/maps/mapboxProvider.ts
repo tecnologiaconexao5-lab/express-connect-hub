@@ -1,5 +1,5 @@
 // Mapbox Provider - Provider para Mapbox API
-import type { MapsProvider, DistanceResult, GeocodingResult, Coordinates } from "./types";
+import type { MapsProvider, DistanceResult, RoutesResult, GeocodingResult, Coordinates } from "./types";
 
 const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
@@ -46,7 +46,34 @@ async function geocodificarEndereco(endereco: string, token: string): Promise<Ge
   }
 }
 
-async function buscarRota(
+function formatarDistanceResult(route: any, pedagio?: { valor: number; provider: string }): DistanceResult {
+    const distance = route.distance;
+    const duration = route.duration;
+    const distanciaKm = distance / 1000;
+    const duracaoMin = Math.round(duration / 60);
+    const distanciaTexto = distanciaKm.toFixed(1).replace(".", ",") + " km";
+    let duracaoTexto: string;
+    if (duracaoMin < 60) {
+      duracaoTexto = `${duracaoMin} min`;
+    } else {
+      const horas = Math.floor(duracaoMin / 60);
+      const minutos = duracaoMin % 60;
+      duracaoTexto = minutos === 0 ? `${horas}h` : `${horas}h ${minutos}min`;
+    }
+    return {
+      distanciaKm,
+      duracaoMin,
+      distanciaTexto,
+      duracaoTexto,
+      provider: "mapbox" as const,
+      // UPGRADE — PEDÁGIO: presente apenas quando a API de pedágios informar o valor.
+      ...(typeof pedagio?.valor === "number" && pedagio.valor > 0
+        ? { pedagio: pedagio.valor, pedagioProvider: pedagio.provider }
+        : {}),
+    };
+  }
+
+  async function buscarRota(
   origemCoords: Coordinates,
   destinoCoords: Coordinates,
   token: string
@@ -72,34 +99,14 @@ async function buscarRota(
     }
 
     const route = data.routes[0];
-    const distance = route.distance;
-    const duration = route.duration;
 
-    const distanciaKm = distance / 1000;
-    const duracaoMin = Math.round(duration / 60);
-
-    const distanciaTexto = distanciaKm.toFixed(1).replace(".", ",") + " km";
-    
-    let duracaoTexto: string;
-    if (duracaoMin < 60) {
-      duracaoTexto = `${duracaoMin} min`;
-    } else {
-      const horas = Math.floor(duracaoMin / 60);
-      const minutos = duracaoMin % 60;
-      if (minutos === 0) {
-        duracaoTexto = `${horas}h`;
-      } else {
-        duracaoTexto = `${horas}h ${minutos}min`;
-      }
-    }
-
-    return {
-      distanciaKm,
-      duracaoMin,
-      distanciaTexto,
-      duracaoTexto,
-      provider: "mapbox",
-    };
+    // UPGRADE — INTEGRAÇÃO DE PEDÁGIO: ponto de plug da API de pedágios.
+    // Quando Maplink/Google Routes API for habilitado, faça a consulta aqui e repasse:
+    //   const pedagio = await consultarPedagioAPI(origemCoords, destinoCoords); // { valor, provider }
+    //   return formatarDistanceResult(route, pedagio);
+    // Enquanto isso DistanceResult.pedagio fica undefined e a UI exibe o fallback
+    // "Não identificado" com campo de inserção manual rápida.
+    return formatarDistanceResult(route);
   } catch (error) {
     console.error(`[Mapbox] Erro ao buscar rota:`, error);
     return null;
@@ -156,6 +163,47 @@ export const mapboxProvider: MapsProvider = {
     }
 
     return rota;
+  },
+
+  async calcularRotasAlternativas(origemCoords: Coordinates, destinoCoords: Coordinates): Promise<RoutesResult> {
+    const token = getMapboxToken();
+    if (!token) {
+      console.error("[Mapbox] Token não configurado para rotas alternativas");
+      return { rapida: null, curta: null, operacional: null };
+    }
+    const { lat: latOrigem, lng: lngOrigem } = origemCoords;
+    const { lat: latDestino, lng: lngDestino } = destinoCoords;
+    const url = `${MAPBOX_DIRECTIONS_URL}/${lngOrigem},${latOrigem};${lngDestino},${latDestino}.json?access_token=${token}&alternatives=true&language=pt-BR`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error(`[Mapbox] Erro na rota alternativa: status ${response.status}`);
+        return { rapida: null, curta: null, operacional: null };
+      }
+      const data = await response.json();
+      if (!data.routes || data.routes.length === 0) {
+        console.error("[Mapbox] Nenhuma rota encontrada");
+        return { rapida: null, curta: null, operacional: null };
+      }
+
+      const todas = data.routes.map((r: any) => formatarDistanceResult(r));
+
+      const ordenadasPorTempo = [...todas].sort((a, b) => a.duracaoMin - b.duracaoMin);
+      const ordenadasPorDist = [...todas].sort((a, b) => a.distanciaKm - b.distanciaKm);
+
+      const rapida = ordenadasPorTempo[0] || null;
+      const curta = ordenadasPorDist[0] || null;
+
+      const mesmaRota = rapida && curta && Math.abs(rapida.distanciaKm - curta.distanciaKm) < 0.5;
+      const economiaSignificativa = rapida && curta && (rapida.distanciaKm - curta.distanciaKm) > 2 && (curta.duracaoMin - rapida.duracaoMin) < 10;
+      const operacional = mesmaRota ? rapida : (economiaSignificativa ? curta : rapida);
+
+      return { rapida, curta, operacional };
+    } catch (error) {
+      console.error("[Mapbox] Erro ao buscar rotas alternativas:", error);
+      return { rapida: null, curta: null, operacional: null };
+    }
   },
 };
 

@@ -5,7 +5,11 @@
 // NUNCA enviar form bruto diretamente para insert/update
 // ============================================================
 
-// ---------------- UTILITÃRIOS ----------------
+// TMS-ORC-PDF-01 — total efetivo do orçamento (regra canônica, fonte única).
+import { resolverValorFinal } from "../components/comercial/orcamentoCalculo";
+import { hojeISO } from "./formatDates";
+
+// ---------------- UTILITÁRIOS ----------------
 const safeString = (value: unknown, defaultValue = ""): string => {
   if (value === undefined || value === null) return defaultValue;
   return String(value);
@@ -41,6 +45,12 @@ const safeJsonParse = <T>(value: unknown, fallback: T): T => {
   return fallback as T;
 };
 
+const safeDate = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  const str = String(value).trim();
+  return str || null;
+};
+
 // ---------------- PRESTADORES ----------------
 
 export interface PrestadorForm {
@@ -56,6 +66,7 @@ export interface PrestadorForm {
   email?: string;
   tipoParceiro?: string;
   status?: string;
+  liberadoApp?: boolean;
   endereco?: {
     cep?: string;
     rua?: string;
@@ -148,6 +159,7 @@ export interface PrestadorRow {
   email?: string;
   tipo_parceiro?: string;
   status?: string;
+  liberado_app?: boolean;
   endereco?: string;
   regiao_principal?: string;
   regioes_secundarias?: string[];
@@ -212,7 +224,7 @@ const PRESTADOR_ALLOWLIST: string[] = [
   // Contato
   'telefone', 'whatsapp', 'email',
   // Dados operacionais
-  'tipo_parceiro', 'status', 'regiao_principal', 'regioes_secundarias',
+  'tipo_parceiro', 'status', 'liberado_app', 'regiao_principal', 'regioes_secundarias',
   // Endereço
   'endereco', 'origem_cadastro', 'indicacao', 'disponibilidade',
   'turnos_preferenciais', 'restricoes_operacionais',
@@ -260,7 +272,6 @@ export const sanitizePrestadorPayload = (payload: Record<string, unknown>): Reco
       console.warn('[PRESTADOR REMOVIDO DO PAYLOAD] campo inexistente: ' + key);
     }
   }
-  console.log('[PRESTADOR SANITIZED PAYLOAD]', sanitized);
   return sanitized;
 };
 
@@ -279,6 +290,7 @@ export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, 
   
   if (has(form.tipoParceiro)) raw.tipo_parceiro = String(form.tipoParceiro);
   if (has(form.status)) raw.status = String(form.status);
+  if (form.liberadoApp !== undefined) raw.liberado_app = Boolean(form.liberadoApp);
   if (has(form.scoreInterno)) raw.score_interno = Number(form.scoreInterno);
   
   if (has(form.regiaoPrincipal)) raw.regiao_principal = String(form.regiaoPrincipal);
@@ -339,7 +351,6 @@ export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, 
   raw.updated_at = new Date().toISOString();
   
   const d = sanitizePrestadorPayload(raw);
-  console.log('[DEBUG toPrestadorInsert] Payload gerado:', JSON.stringify(d, null, 2));
   return d;
 };
 
@@ -358,6 +369,7 @@ export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, 
   
   if (has(form.tipoParceiro)) raw.tipo_parceiro = String(form.tipoParceiro);
   if (has(form.status)) raw.status = String(form.status);
+  if (form.liberadoApp !== undefined) raw.liberado_app = Boolean(form.liberadoApp);
   if (has(form.scoreInterno)) raw.score_interno = Number(form.scoreInterno);
   
   if (has(form.regiaoPrincipal)) raw.regiao_principal = String(form.regiaoPrincipal);
@@ -415,7 +427,6 @@ export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, 
   raw.updated_at = new Date().toISOString();
   
   const d = sanitizePrestadorPayload(raw);
-  console.log('[DEBUG toPrestadorUpdate] Payload gerado:', JSON.stringify(d, null, 2));
   return d;
 };
 
@@ -447,6 +458,7 @@ export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => {
     email: item.email || "",
     tipoParceiro: item.tipo_parceiro || "autonomo",
     status: item.status || "analise",
+    liberadoApp: item.liberado_app ?? false,
     endereco: enderecoParsed,
     regiaoPrincipal: item.regiao_principal || "",
     regioesSecundarias: item.regioes_secundarias || [],
@@ -525,10 +537,12 @@ export interface ClienteForm {
   responsavelComercial?: string;
   observacoes?: string;
   origemComercial?: string;
+  dataCadastro?: string | null;
   exigeAgendamento?: boolean;
   exigeSla?: boolean;
   exigePortal?: boolean;
   aceitaApi?: boolean;
+  tenantId?: string;
 
   // Comercial
   tipoCobranca?: string;
@@ -579,6 +593,7 @@ export interface ClienteRow {
   responsavel_comercial?: string;
   observacoes?: string;
   origem_comercial?: string;
+  data_cadastro?: string | null;
   exige_agendamento?: boolean;
   exige_sla?: boolean;
   exige_portal?: boolean;
@@ -672,6 +687,11 @@ export const toClienteInsert = (form: Partial<ClienteForm>): Record<string, unkn
   if (form.aliquotaIss !== undefined) d.aliquota_iss = form.aliquotaIss;
   if (form.incentivoFiscal !== undefined) d.incentivo_fiscal = form.incentivoFiscal;
 
+  // Data de cadastro: informada pelo usuário ou data de hoje (cliente novo)
+  d.data_cadastro = has(form.dataCadastro) ? form.dataCadastro : hojeISO();
+
+  if (form.tenantId) d.tenant_id = form.tenantId;
+
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
 
@@ -737,6 +757,9 @@ export const toClienteUpdate = (form: Partial<ClienteForm>): Record<string, unkn
   if (form.aliquotaIss !== undefined) d.aliquota_iss = form.aliquotaIss;
   if (form.incentivoFiscal !== undefined) d.incentivo_fiscal = form.incentivoFiscal;
 
+  // Data de cadastro: persiste o valor editado (limpar o campo grava NULL)
+  if (form.dataCadastro !== undefined) d.data_cadastro = form.dataCadastro || null;
+
   d.updated_at = new Date().toISOString();
 
   return d;
@@ -772,6 +795,7 @@ export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
   responsavelComercial: item.responsavel_comercial || item.responsavelComercial,
   observacoes: item.observacoes,
   origemComercial: item.origem_comercial || item.origemComercial,
+  dataCadastro: item.data_cadastro,
   exigeAgendamento: item.exige_agendamento ?? item.exigeAgendamento ?? false,
   exigeSla: item.exige_sla ?? item.exigeSla ?? false,
   exigePortal: item.exige_portal ?? item.exigePortal ?? false,
@@ -803,7 +827,7 @@ export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
   incentivoFiscal: item.incentivo_fiscal ?? false,
 });
 
-// ---------------- VEÃCULOS ----------------
+// ---------------- VEÍCULOS ----------------
 
 export interface VeiculoForm {
   id?: string;
@@ -844,7 +868,9 @@ export interface VeiculoRow {
   id?: string;
   placa?: string;
   tipo_veiculo?: string;
-  subcategoria?: string;
+  // subcategoria não existe na tabela veiculos
+  // tipo_carroceria não existe na tabela veiculos
+  // classificacao_termica não existe na tabela veiculos
   marca?: string;
   modelo?: string;
   ano_fabricacao?: number;
@@ -858,8 +884,7 @@ export interface VeiculoRow {
   largura?: number;
   altura?: number;
   qtd_pallets?: number;
-  tipo_carroceria?: string;
-  classificacao_termica?: string;
+  // tipo_carroceria, classificacao_termica removidos — não existem na tabela veiculos
   rastreador?: string;
   seguro_apolice?: string;
   possui_seguro?: boolean;
@@ -888,7 +913,6 @@ export const toVeiculoInsert = (form: Partial<VeiculoForm>): Record<string, unkn
 
   if (has(form.placa)) d.placa = form.placa?.toUpperCase();
   if (has(form.tipoVeiculo)) d.tipo_veiculo = form.tipoVeiculo;
-  if (has(form.subcategoria)) d.subcategoria = form.subcategoria;
   if (has(form.marca)) d.marca = form.marca;
   if (has(form.modelo)) d.modelo = form.modelo;
   if (has(form.anoFabricacao)) d.ano_fabricacao = form.anoFabricacao;
@@ -902,8 +926,6 @@ export const toVeiculoInsert = (form: Partial<VeiculoForm>): Record<string, unkn
   if (has(form.largura)) d.largura = form.largura;
   if (has(form.altura)) d.altura = form.altura;
   if (has(form.qtdPallets)) d.qtd_pallets = form.qtdPallets;
-  if (has(form.tipoCarroceria)) d.tipo_carroceria = form.tipoCarroceria;
-  if (has(form.classificacaoTermica)) d.classificacao_termica = form.classificacaoTermica;
   if (has(form.rastreador)) d.rastreador = form.rastreador;
   if (has(form.seguroApolice)) d.seguro_apolice = form.seguroApolice;
   if (form.possuiSeguro !== undefined) d.possui_seguro = form.possuiSeguro;
@@ -941,7 +963,6 @@ export const fromVeiculoRow = (item: VeiculoRow): VeiculoForm => ({
   id: item.id,
   placa: item.placa || "",
   tipoVeiculo: item.tipo_veiculo || item.tipoVeiculo || "",
-  subcategoria: item.subcategoria || item.subcategoria,
   marca: item.marca,
   modelo: item.modelo,
   anoFabricacao: item.ano_fabricacao ?? item.anoFabricacao,
@@ -955,8 +976,6 @@ export const fromVeiculoRow = (item: VeiculoRow): VeiculoForm => ({
   largura: item.largura,
   altura: item.altura,
   qtdPallets: item.qtd_pallets ?? item.qtdPallets,
-  tipoCarroceria: item.tipo_carroceria || item.tipoCarroceria,
-  classificacaoTermica: item.classificacao_termica || item.classificacaoTermica,
   rastreador: item.rastreador,
   seguroApolice: item.seguro_apolice || item.seguroApolice,
   possuiSeguro: !!item.possui_seguro,
@@ -977,13 +996,15 @@ export const fromVeiculoRow = (item: VeiculoRow): VeiculoForm => ({
   fotos: safeJsonParse(item.fotos || item.fotos, []),
 });
 
-// ---------------- ORDENS DE SERVIÃ‡O ----------------
+// ---------------- ORDENS DE SERVIÇO ----------------
 
 export interface OSForm {
   id?: string;
   numero?: string;
   data?: string;
   cliente?: string;
+  /** MISSÃO ENDERECOS-INTELIGENTES — UUID do cliente (cliente pode ser nome exibido) */
+  clienteId?: string;
   unidade?: string;
   centroCusto?: string;
   orcamentoOrigem?: string;
@@ -1060,6 +1081,7 @@ export interface OSRow {
   numero?: string;
   data?: string;
   cliente?: string;
+  cliente_id?: string;
   unidade?: string;
   centro_custo?: string;
   orcamento_origem?: string;
@@ -1078,6 +1100,7 @@ export interface OSRow {
   cte_obrigatorio?: boolean;
   xml_obrigatorio?: boolean;
   operacao_dedicada?: boolean;
+  romaneio?: string;
   carga_tipo?: string;
   carga_descricao?: string;
   volumes?: number;
@@ -1138,29 +1161,29 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
   const d: Record<string, any> = {};
   const has = (v: unknown) => v !== undefined && v !== null;
 
-  // Fallbacks obrigatÃ³rios
+  // Fallbacks obrigatórios
   const s = (v: any) => v || "";
   const n = (v: any) => Number(v) || 0;
   const b = (v: any) => !!v;
 
     if (has(form.numero)) d.numero = s(form.numero);
-    if (has(form.data)) d.data = s(form.data);
-    if (has(form.clienteId)) d.cliente_id = s(form.clienteId);
-    if (has(form.cliente)) d.cliente = s(form.cliente);
+    if (has(form.data)) d.data = safeDate(form.data);
+    if (form.clienteId) d.cliente_id = form.clienteId;
+    if (form.cliente && /^[0-9a-f-]{36}$/.test(form.cliente)) d.cliente = form.cliente;
     if (has(form.unidade)) d.unidade = s(form.unidade);
     if (has(form.centroCusto)) d.centro_custo = s(form.centroCusto);
-    if (has(form.orcamentoOrigem)) d.orcamento_origem = s(form.orcamentoOrigem);
-    if (has(form.prestador)) d.prestador = s(form.prestador);
-    if (has((form as any).prestadorId)) d.prestador_id = s((form as any).prestadorId);
-    if (has(form.veiculoAlocado)) d.veiculo_alocado = s(form.veiculoAlocado);
+    if (form.orcamentoOrigem) d.orcamento_origem = form.orcamentoOrigem;
+    if (form.prestador && /^[0-9a-f-]{36}$/.test(form.prestador)) d.prestador = form.prestador;
+    if ((form as any).prestadorId) d.prestador_id = (form as any).prestadorId;
+    if (form.veiculoAlocado) d.veiculo_alocado = form.veiculoAlocado;
     if (has(form.tipoOperacao)) d.tipo_operacao = s(form.tipoOperacao);
     if (has(form.modalidade)) d.modalidade = s(form.modalidade);
     if (has(form.prioridade)) d.prioridade = s(form.prioridade);
     if (has(form.status)) d.status = s(form.status);
-    if (has(form.responsavel)) d.responsavel = s(form.responsavel);
-    if (has(form.refCliente)) d.ref_cliente = s(form.refCliente);
-    if (has(form.pedidoInterno)) d.pedido_interno = s(form.pedidoInterno);
-    if (has(form.slaOperacao)) d.sla_operacao = s(form.slaOperacao);
+    // if (has(form.responsavel)) d.responsavel = s(form.responsavel); // TODO: Add column
+    // if (has(form.refCliente)) d.ref_cliente = s(form.refCliente); // TODO: Add column
+    // if (has(form.pedidoInterno)) d.pedido_interno = s(form.pedidoInterno); // TODO: Add column
+    // if (has(form.slaOperacao)) d.sla_operacao = s(form.slaOperacao); // TODO: Add column
     if (has(form.observacoesGerais)) d.observacoes_gerais = s(form.observacoesGerais);
     if (has(form.comprovanteObrigatorio)) d.comprovante_obrigatorio = b(form.comprovanteObrigatorio);
     if (has(form.cteObrigatorio)) d.cte_obrigatorio = b(form.cteObrigatorio);
@@ -1196,31 +1219,34 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
       pesoPorVolume: c.pesoPorVolume || 0,
       temperaturaMinima: c.temperaturaMinima || 0,
       temperaturaMaxima: c.temperaturaMaxima || 0,
-      observacoesCarga: c.observacoesCarga || ""
+      observacoesCarga: c.observacoesCarga || "",
+      // ETAPA-2: Portador Externo/Avulso persistido no mesmo JSONB de carga
+      portadorExterno: c.portadorExterno || null,
     };
   }
 
-    if (has(form.veiculoTipo)) d.tipo_veiculo = s(form.veiculoTipo);
+    if (form.veiculoTipo) d.tipo_veiculo = form.veiculoTipo;
     if (has(form.veiculoSubcategoria)) d.veiculo_subcategoria = s(form.veiculoSubcategoria);
     if (has(form.veiculoCarroceria)) d.veiculo_carroceria = s(form.veiculoCarroceria);
     if (has(form.veiculoTermica)) d.veiculo_termica = s(form.veiculoTermica);
-    if (has(form.veiculoPlaca)) d.veiculo_placa = s(form.veiculoPlaca);
+    if (form.veiculoPlaca) d.placa_alocada = form.veiculoPlaca;
     if (has(form.isReserva)) d.is_reserva = b(form.isReserva);
     if (has(form.retornoObrigatorio)) d.retorno_obrigatorio = b(form.retornoObrigatorio);
   
   // Campos de agendamento - usar apenas campos que existem no banco
-    if (has(form.dataAgendada)) d.data_agendada = s(form.dataAgendada);
+    if (has(form.dataAgendada)) d.data_agendada = safeDate(form.dataAgendada);
     if (has(form.observacaoAgendamento)) d.observacao_agendamento = s(form.observacaoAgendamento);
 
-    if (has(form.dataProgramada)) d.data_programada = s(form.dataProgramada);
+    if (has(form.dataProgramada)) d.data_programada = safeDate(form.dataProgramada);
     if (has(form.janelaOperacional)) d.janela_operacional = s(form.janelaOperacional);
-    if (has(form.previsaoInicio)) d.previsao_inicio = s(form.previsaoInicio);
-    if (has(form.previsaoTermino)) d.previsao_termino = s(form.previsaoTermino);
+    if (has(form.previsaoInicio)) d.previsao_inicio = safeDate(form.previsaoInicio);
+    if (has(form.previsaoTermino)) d.previsao_termino = safeDate(form.previsaoTermino);
     if (has(form.tipoEscala)) d.tipo_escala = s(form.tipoEscala);
     if (has(form.instrucoesOperacionais)) d.instrucoes_operacionais = s(form.instrucoesOperacionais);
     if (has(form.observacaoTorre)) d.observacao_torre = s(form.observacaoTorre);
 
     if (has(form.tabelaAplicada)) d.tabela_aplicada = s(form.tabelaAplicada);
+    if (has(form.romaneio)) d.romaneio = s(form.romaneio);
     if (has(form.valorCliente)) d.valor_cliente = n(form.valorCliente);
     if (has(form.custoPrestador)) d.custo_prestador = n(form.custoPrestador);
     if (has(form.pedagio)) d.pedagio = n(form.pedagio);
@@ -1248,8 +1274,37 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
     if (has(form.recebedorDocumento)) d.recebedor_documento = s(form.recebedorDocumento);
   if (has(form.localizacaoEntregaJson)) d.localizacao_entrega_json = form.localizacaoEntregaJson;
 
-  // Campos nÃ£o mapeados no OSForm mas presentes no OrdemServico
-  if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
+  // Campos não mapeados no OSForm mas presentes no OrdemServico
+  if ((form as any).enderecos) {
+    (d as any).enderecos = ((form as any).enderecos).map((e: any) => ({
+      tipo: e.tipo || "coleta",
+      cep: e.cep || "",
+      logradouro: e.logradouro || "",
+      numero: e.numero || "",
+      complemento: e.complemento || "",
+      bairro: e.bairro || "",
+      cidade: e.cidade || "",
+      estado: e.estado || "",
+      uf: e.estado || "",
+      referencia: e.referencia || e.instrucoes || "",
+      nomeLocal: e.nomeLocal || "",
+      nome_local: e.nomeLocal || "",
+      responsavel: e.responsavel || "",
+      telefone: e.telefone || "",
+      email: e.email || "",
+      enviarWhatsApp: e.enviarWhatsApp || false,
+      canal: e.enviarWhatsApp ? "whatsapp" : "email",
+      janelaInicio: e.janelaInicio || "",
+      janela_inicio: e.janelaInicio || "",
+      janelaFim: e.janelaFim || "",
+      janela_fim: e.janelaFim || "",
+      observacaoPonto: e.observacaoPonto || "",
+      observacao: e.observacaoPonto || "",
+      latitude: e.latitude || null,
+      longitude: e.longitude || null,
+      endereco: e.endereco || ""
+    }));
+  }
   if ((form as any).historico) (d as any).historico = (form as any).historico;
   if ((form as any).distanciaRota) {
     (d as any).distancia_rota = {
@@ -1257,6 +1312,20 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
       duracao_min: (form as any).distanciaRota?.duracaoMin,
       distancia_texto: (form as any).distanciaRota?.distanciaTexto,
       duracao_texto: (form as any).distanciaRota?.duracaoTexto,
+      tipo_rota: (form as any).tipoRota || undefined,
+      alternativas: (form as any).distanciaAlternativas || undefined,
+    };
+  }
+  if ((form as any).motivoAjusteManual) {
+    if (!(d as any).distancia_rota) (d as any).distancia_rota = {};
+    (d as any).distancia_rota.ajuste_manual = {
+      motivo: (form as any).motivoAjusteManual,
+      tabela_original: (form as any).tabelaOriginal || null,
+      veiculo_original: (form as any).veiculoTipoOriginal || null,
+      valor_cliente_original: (form as any).valorClienteOriginal ?? null,
+      custo_prestador_original: (form as any).custoPrestadorOriginal ?? null,
+      usuario: (form as any).usuarioAjusteManual || "Operador",
+      data: (form as any).dataAjusteManual || new Date().toISOString(),
     };
   }
 
@@ -1277,8 +1346,9 @@ export const toOSUpdate = (form: Partial<OSForm>): Record<string, any> => {
 export const fromOSRow = (item: OSRow): OSForm => ({
   id: item.id,
   numero: item.numero || "",
-  data: item.data || "",
+  data: item.data || new Date().toISOString().split("T")[0],
   cliente: item.cliente || "",
+  clienteId: item.cliente_id || undefined,
   unidade: item.unidade || "",
   centroCusto: item.centro_custo || item.centroCusto || "",
   orcamentoOrigem: item.orcamento_origem || item.orcamentoOrigem,
@@ -1287,7 +1357,7 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   tipoOperacao: item.tipo_operacao || item.tipoOperacao,
   modalidade: item.modalidade || "",
   prioridade: item.prioridade || "normal",
-  status: item.status || "rascunho",
+  status: item.status || "em_analise",
   responsavel: item.responsavel || "",
   refCliente: item.ref_cliente || item.refCliente,
   pedidoInterno: item.pedido_interno || item.pedidoInterno,
@@ -1327,7 +1397,7 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   veiculoSubcategoria: item.veiculo_subcategoria || item.veiculoSubcategoria,
   veiculoCarroceria: item.veiculo_carroceria || item.veiculoCarroceria,
   veiculoTermica: item.veiculo_termica || item.veiculoTermica,
-  veiculoPlaca: item.veiculo_placa || item.veiculoPlaca,
+  veiculoPlaca: item.placa_alocada || item.veiculo_placa || item.veiculoPlaca,
   isReserva: item.is_reserva ?? item.isReserva ?? false,
   retornoObrigatorio: item.retorno_obrigatorio ?? item.retornoObrigatorio ?? false,
   // agendado removido - usar dataProgramada/dataAgendada para controle
@@ -1341,6 +1411,7 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   instrucoesOperacionais: item.instrucoes_operacionais || item.instrucoesOperacionais,
   observacaoTorre: item.observacao_torre || item.observacaoTorre,
   tabelaAplicada: item.tabela_aplicada || item.tabelaAplicada,
+  romaneio: item.romaneio || (item as any).romaneio,
   valorCliente: item.valor_cliente ?? item.valorCliente ?? 0,
   custoPrestador: item.custo_prestador ?? item.custoPrestador ?? 0,
   pedagio: item.pedagio ?? item.pedagio ?? 0,
@@ -1364,11 +1435,21 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   margemLucro: item.margem_lucro || item.margemLucro,
   veiculoSugerido: item.veiculo_sugerido || item.veiculoSugerido,
   instrucoesOperacionaisOS: item.instrucoes_operacionais_os || item.instrucoesOperacionaisOS,
-  // ComposiÃ§Ã£o Financeira (pode vir via join ou separado)
+  // P3 - Roteirizacao e ajuste manual (salvos dentro de distancia_rota JSONB existente)
+  tipoRota: ((item as any).distancia_rota?.tipo_rota) || (item as any).tipo_rota_selecionada || (item as any).tipoRota || undefined,
+  distanciaAlternativas: ((item as any).distancia_rota?.alternativas) || (item as any).distancia_alternativas || (item as any).distanciaAlternativas || undefined,
+  veiculoTipoOriginal: ((item as any).distancia_rota?.ajuste_manual?.veiculo_original) || (item as any).ajuste_manual?.veiculo_original || undefined,
+  tabelaOriginal: ((item as any).distancia_rota?.ajuste_manual?.tabela_original) || (item as any).ajuste_manual?.tabela_original || undefined,
+  valorClienteOriginal: ((item as any).distancia_rota?.ajuste_manual?.valor_cliente_original) ?? (item as any).ajuste_manual?.valor_cliente_original ?? undefined,
+  custoPrestadorOriginal: ((item as any).distancia_rota?.ajuste_manual?.custo_prestador_original) ?? (item as any).ajuste_manual?.custo_prestador_original ?? undefined,
+  motivoAjusteManual: ((item as any).distancia_rota?.ajuste_manual?.motivo) || (item as any).ajuste_manual?.motivo || undefined,
+  usuarioAjusteManual: ((item as any).distancia_rota?.ajuste_manual?.usuario) || (item as any).ajuste_manual?.usuario || undefined,
+  dataAjusteManual: ((item as any).distancia_rota?.ajuste_manual?.data) || (item as any).ajuste_manual?.data || undefined,
+  // Composição Financeira (pode vir via join ou separado)
   composicaoFinanceira: item.composicao_financeira || (item as any).composicaoFinanceira || undefined,
 });
 
-// ---------------- ORÃ‡AMENTOS/PROPOSTAS ----------------
+// ---------------- ORÇAMENTOS/PROPOSTAS ----------------
 
 export interface OrcamentoForm {
   id?: string;
@@ -1461,7 +1542,7 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
   if (has(form.tipoOperacao)) d.tipo_operacao = form.tipoOperacao;
   if (has(form.modalidade)) d.modalidade = form.modalidade;
   if (has(form.prioridade)) d.prioridade = form.prioridade;
-  if (has(form.pedidoInterno)) d.pedido_interno = form.pedidoInterno;
+  // if (has(form.pedidoInterno)) d.pedido_interno = form.pedidoInterno; // TODO: Add column
   if (has(form.observacoesGerais)) d.observacoes_gerais = form.observacoesGerais;
   if (has(form.status)) d.status = form.status;
 
@@ -1488,12 +1569,49 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
 
   if (form.historico) d.historico = form.historico;
 
-  // Campos nÃ£o mapeados no OrcamentoForm mas presentes no Orcamento
+  // Campos não mapeados no OrcamentoForm mas presentes no Orcamento
   // enderecos, carga, veiculo, valores, distancia_rota, frete_sugerido, motivoReprovacao
-  if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
+  if ((form as any).enderecos) {
+    (d as any).enderecos = ((form as any).enderecos).map((e: any) => ({
+      tipo: e.tipo || "coleta",
+      cep: e.cep || "",
+      logradouro: e.logradouro || "",
+      numero: e.numero || "",
+      complemento: e.complemento || "",
+      bairro: e.bairro || "",
+      cidade: e.cidade || "",
+      estado: e.estado || "",
+      uf: e.estado || "",
+      referencia: e.referencia || e.instrucoes || "",
+      nomeLocal: e.nomeLocal || "",
+      nome_local: e.nomeLocal || "",
+      responsavel: e.responsavel || "",
+      telefone: e.telefone || "",
+      email: e.email || "",
+      enviarWhatsApp: e.enviarWhatsApp || false,
+      canal: e.enviarWhatsApp ? "whatsapp" : "email",
+      janelaInicio: e.janelaInicio || "",
+      janela_inicio: e.janelaInicio || "",
+      janelaFim: e.janelaFim || "",
+      janela_fim: e.janelaFim || "",
+      observacaoPonto: e.observacaoPonto || "",
+      observacao: e.observacaoPonto || "",
+      latitude: e.latitude || null,
+      longitude: e.longitude || null,
+      endereco: e.endereco || ""
+    }));
+  }
   if ((form as any).carga) (d as any).carga = (form as any).carga;
   if ((form as any).veiculo) (d as any).veiculo = (form as any).veiculo;
-  if ((form as any).valores) (d as any).valores = (form as any).valores;
+  if ((form as any).valores) {
+    // TMS-COM-ORC-02 — o JSONB `valores` é a fonte canônica; as colunas
+    // dedicadas valor_base/valor_final ESPELHAM os valores canônicos
+    // (sem segunda regra de cálculo).
+    const v = (form as any).valores as Record<string, unknown>;
+    (d as any).valores = v;
+    if (v.valorBase !== undefined && v.valorBase !== null) (d as any).valor_base = v.valorBase;
+    if (v.valorFinal !== undefined && v.valorFinal !== null) (d as any).valor_final = v.valorFinal;
+  }
   if ((form as any).distancia_rota) (d as any).distancia_rota = (form as any).distancia_rota;
   if ((form as any).frete_sugerido) (d as any).frete_sugerido = (form as any).frete_sugerido;
   if ((form as any).motivoReprovacao) (d as any).motivo_reprovacao = (form as any).motivoReprovacao;
@@ -1557,6 +1675,36 @@ export const fromOrcamentoRow = (item: OrcamentoRow): OrcamentoForm => ({
   osVinculadaId: (item as any).os_vinculada_id || undefined,
   osVinculadaNumero: (item as any).os_vinculada_numero || undefined,
 });
+
+/**
+ * TMS-COM-ORC-02 — DB → DOMÍNIO (Orcamento) para a listagem/PDF.
+ * Preserva o formato do domínio (valores/enderecos/carga/veiculo) e adiciona os
+ * aliases camelCase que a UI/PDF consomem (dataEmissao, clienteCnpj, valorBase,
+ * valorFinal, osVinculadaId, osVinculadaNumero) — contrato único de reload.
+ */
+export const toOrcamentoDomain = (row: Record<string, any>): any => {
+  // TMS-ORC-PDF-01 — valores coerentes na leitura (linha legada pode ter
+  // valorFinal=0 com valorBase>0; recalcula pela regra canônica, sem alterar o banco).
+  const valoresCrus = row.valores && typeof row.valores === "object" ? { ...row.valores } : {};
+  if (!(Number(valoresCrus.valorBase) > 0) && Number(row.valor_base) > 0) {
+    valoresCrus.valorBase = Number(row.valor_base);
+  }
+  const persistido = Number(valoresCrus.valorFinal ?? row.valor_final ?? 0);
+  const valores = {
+    ...valoresCrus,
+    valorFinal: resolverValorFinal({ ...valoresCrus, valorFinal: Number.isFinite(persistido) ? persistido : 0 }),
+  };
+  return {
+    ...row,
+    valores,
+    dataEmissao: row.data_emissao ?? row.dataEmissao ?? "",
+    clienteCnpj: row.cliente_cnpj ?? row.clienteCnpj ?? "",
+    valorBase: valores.valorBase ?? 0,
+    valorFinal: valores.valorFinal ?? 0,
+    osVinculadaId: row.os_vinculada_id ?? row.osVinculadaId,
+    osVinculadaNumero: row.os_vinculada_numero ?? row.osVinculadaNumero,
+  };
+};
 
 // ---------------- FINANCEIRO (RECEBER) ----------------
 
@@ -1985,7 +2133,7 @@ export const fromTabelaPrestadorRow = (item: TabelaPrestadorRow): TabelaPrestado
   prestadorId: item.prestador_id || item.prestadorId,
 });
 
-// ---------------- COMPOSIÃ‡ÃƒO FINANCEIRA ----------------
+// ---------------- COMPOSIÇÃO FINANCEIRA ----------------
 
 export interface ComposicaoFinanceiraForm {
   id?: string;

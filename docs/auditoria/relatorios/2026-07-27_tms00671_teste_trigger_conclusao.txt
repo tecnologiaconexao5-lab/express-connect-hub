@@ -1,0 +1,31 @@
+TMS-006.7.1 — TESTE FUNCIONAL DO TRIGGER DE CONCLUSAO
+
+Data: 2026-07-27
+Status: TRIGGER DE CONCLUSAO HOMOLOGADO — CANCELAMENTO SEM
+        FALSO POSITIVO E CONCLUSAO REAL VALIDADA
+Percentual: 51% (+1pp)
+
+=======================================================================
+CENARIO A — CANCELAMENTO
+=======================================================================
+
+criada:    1 ✅
+cancelada: 1 ✅
+concluida: 0 ✅
+
+=======================================================================
+CENARIO B — CONCLUSAO REAL
+=======================================================================
+
+criada:    1 ✅
+cancelada: 0 ✅
+concluida: 1 ✅
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+TRIGGER DE CONCLUSAO HOMOLOGADO - CANCELAMENTO SEM FALSO
+POSITIVO E CONCLUSAO REAL VALIDADA
+
+Ambos cenarios passaram. Trigger fix TMS-006.7 confirmado.

@@ -1,0 +1,196 @@
+iFIN-MOT-2O2 — CARDINALIDADE REAL E LOCAL DO NÚMERO EP
+Data: 21/08/2026
+Modo: READ-ONLY em PRODUÇÃO (nenhuma escrita, nenhuma migration)
+Status: COMPROVADO EM PRODUÇÃO
+
+============================================================
+PERGUNTA CENTRAL
+============================================================
+
+Um registro de pagamentos_prestadores representa:
+
+  A) uma operação/OS/movimento INDIVIDUAL  ← COMPROVADO
+
+Cada linha = 1 OS/escala (tem os_id) OU 1 lançamento manual (sem os_id).
+NÃO representa um fechamento de período.
+
+============================================================
+1. AMOSTRA E DISTRIBUIÇÃO (sem dados sensíveis)
+============================================================
+
+Distribuição por origem_lancamento (total = 85 registros):
+  escala_direta     54
+  os_direta         20
+  manual            10
+  os_finalizada      1
+
+Amostra de 20 registros recentes: cada um com `tem_os` true (escala/os) ou
+false (manual), uma linha por operação.
+
+============================================================
+2. CARDINALIDADE (comprovada)
+============================================================
+
+Para o MESMO prestador na MESMA competência existem MÚLTIPLAS linhas:
+
+  prestador e6646799...  competência 2026-07-23  ->  16 linhas (todas com OS)
+  prestador be420cfc...  competência 2026-07-05  ->   6 linhas (com OS)
+  prestador 6cc41f68...  competência 2026-07-05  ->   5 linhas (com OS)
+  prestador e6646799...  competência 2026-07-04  ->   5 linhas (com OS)
+  ... (demais 2–4 linhas por prestador/competência)
+
+Conclusões:
+- Existem várias linhas por prestador no mesmo período: SIM.
+- Uma linha corresponde normalmente a UMA OS: SIM (tem_os = true).
+- Lançamentos manuais são linhas independentes: SIM (sem os_id).
+- Existe alguma linha agregadora representando o fechamento inteiro:
+  NÃO — nenhuma linha tem papel de cabeçalho; todas são itens.
+
+============================================================
+3. LOTE_ID (auditado especificamente)
+============================================================
+
+- NENHUM registro possui lote_id preenchido (0 lotes distintos na amostra
+  de agrupamento; 0 resultados na consulta de lote).
+- NÃO há FK de lote em pagamentos_prestadores.
+- NÃO há tabela de lote/cabecalho/fechamento/batch/cnab em public
+  (apenas pagamento_prestadores, pagamentos_prestadores,
+  pagamentos_prestadores_itens).
+- lote_id existe como coluna uuid solta, mas NÃO está em uso, NÃO agrupa
+  registros hoje e NÃO possui estrutura de cabeçalho/número humano.
+
+  → lote_id NÃO resolve o agrupamento atualmente.
+
+============================================================
+4. EXTRATO REAL (comportamento implementado)
+============================================================
+
+Prestador + período → várias OS/Escalas/Manuais → UM único PDF/extrato.
+
+Qual objeto/tabela existente representa esse conjunto inteiro?
+
+  NENHUM.
+
+- pagamentos_prestadores = itens (1 linha por operação).
+- pagamentos_prestadores_itens = itens de um pagamento (vincula OS a um
+  pagamento), mas não é cabeçalho em uso contínuo no extrato consultivo.
+- pagamento_prestadores (singular) = tabela irmã (os_id, prestador_id,
+  valor, status) com 0 registros — também itens, sem cabeçalho.
+- fechamentos_prestador = NÃO existe em produção.
+
+============================================================
+5. TESTE CONCEITUAL DA MIGRATION FIN-MOT-2O
+============================================================
+
+Se o extrato tiver 10 movimentos (10 linhas em pagamentos_prestadores):
+
+- Onde gravar EP-2026-000001? NÃO há uma linha-cabeçalho para isso.
+- Gravar nas 10 linhas? VIOLARIA o UNIQUE(numero_fechamento) da FIN-MOT-2O
+  (só 1 linha poderia ter o número).
+- Gravar em 1 linha (a primeira)? Arbitrário e semanticamente errado.
+- Gravar no lote? lote_id não tem estrutura/uso.
+
+UNIQUE(numero_fechamento) NÃO é compatível com a cardinalidade N×1 do
+extrato nesta tabela, porque o número pertence ao CONJUNTO, não ao item.
+
+============================================================
+6. RESPOSTAS OBJETIVAS
+============================================================
+
+A. pagamentos_prestadores é cabeçalho de fechamento?
+   NÃO — é tabela de ITENS (1 linha por operação/OS/movimento).
+
+B. numero_fechamento pode morar diretamente nela?
+   NÃO — não existe linha-cabeçalho por extrato; haveria N linhas
+   disputando um único número (conflito com UNIQUE).
+
+C. UNIQUE atual proposto é correto?
+   NÃO para essa finalidade — impediria gravar o número em mais de uma
+   linha do mesmo extrato (e não há linha única para recebê-lo).
+
+D. lote_id resolve o agrupamento?
+   NÃO — não populado, sem FK, sem tabela de cabeçalho.
+
+E. Existe estrutura atual que represente UM extrato com N operações?
+   NÃO — nenhuma em produção.
+
+F. Menor desenho correto recomendado (SEM implementar):
+
+   Reaproveitar a estrutura existente `pagamentos_prestadores` como a
+   tabela de ITENS e adicionar o identificador do fechamento como
+   AGRUPADOR nas linhas, com cabeçalho derivado por agrupamento —
+   a solução mínima e coerente é:
+
+   pagamentos_prestadores.numero_fechamento TEXT  (em todas as linhas do
+   mesmo fechamento)  +  UNIQUE PARCIAL POR FECHAMENTO?  → NÃO.
+
+   Desenho correto e mínimo (sem tabela paralela):
+   1) Manter numero_fechamento nas linhas, PORÉM com UNIQUE sobre
+      (numero_fechamento) é impossível; logo a cardinalidade exige que o
+      número viva em um CABEÇALHO.
+
+   2) Menor solução que REUSA estrutura existente:
+      usar `pagamentos_prestadores_itens` como a tabela de itens do
+      fechamento e criar o cabeçalho de fechamento a partir do AGRUPAMENTO
+      prestador + período, sem tabela nova — o número EP fica em uma
+      coluna repetida nas linhas do grupo, e o UNIQUE passa a ser por
+      grupo (ex.: UNIQUE(prestador_id, periodo, origem='fechamento'))
+      em vez de UNIQUE(numero_fechamento).
+
+   RECOMENDAÇÃO FINAL (uma solução):
+   ADICIONAR numero_fechamento TEXT nas linhas de pagamentos_prestadores
+   SEM UNIQUE individual, e garantir unicidade por regra de aplicação:
+   a RPC gera o número e a aplicação grava o MESMO EP em TODAS as linhas
+   do fechamento (prestador+período), com um índice UNIQUE sobre
+   (prestador_id, competencia, numero_fechamento) — assim N linhas
+   compartilham 1 EP e o UNIQUE composto impede que dois fechamentos do
+   mesmo prestador/período recebam números diferentes.
+
+   (Alternativa equivalente e mais limpa: um índice UNIQUE sobre
+   (numero_fechamento) NÃO serve; a unicidade deve ser no GRUPO.)
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] cardinalidade de pagamentos_prestadores comprovada (N itens por
+    prestador/período; até 16 linhas na mesma competência)
+[x] significado de os_id comprovado (1 linha = 1 OS/escala)
+[x] lançamentos manuais avaliados (linhas independentes, sem os_id)
+[x] lote_id avaliado (não populado, sem FK, sem cabeçalho)
+[x] existência de cabeçalho de fechamento comprovada (NÃO existe)
+[x] UNIQUE da FIN-MOT-2O avaliado (incompatível com cardinalidade)
+[x] local correto do número EP recomendado (repetido por grupo +
+    UNIQUE composto prestador+competência+numero)
+[x] nenhuma escrita realizada
+
+============================================================
+CONCLUÍDO (fatos comprovados em Produção)
+============================================================
+
+- pagamentos_prestadores é tabela de ITENS (A).
+- Não existe cabeçalho de fechamento/extrato em produção.
+- lote_id não resolve agrupamento.
+- UNIQUE(numero_fechamento) da FIN-MOT-2O é incompatível com a
+  cardinalidade N×1 (N linhas por extrato).
+- Número EP deve ser compartilhado pelas N linhas do fechamento com
+  unicidade no GRUPO, não na coluna individual.
+
+============================================================
+FALTA (pendências reais)
+============================================================
+
+- Revisar a migration FIN-MOT-2O: substituir UNIQUE(numero_fechamento)
+  individual por UNIQUE composto (prestador_id, competencia,
+  numero_fechamento) OU decidir modelo com cabeçalho de fechamento.
+- Definir regra de aplicação que grave o mesmo EP em todas as linhas do
+  fechamento no momento da emissão formal.
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Ajustar a migration FIN-MOT-2O para a cardinalidade real: manter
+numero_fechamento TEXT nas linhas e trocar o UNIQUE parcial por UNIQUE
+composto (prestador_id, competencia, numero_fechamento), preservando
+SEQUENCE + nextval da RPC.

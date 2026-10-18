@@ -1,0 +1,198 @@
+E2E-05C-AUDIT-CICLO-CADASTRO-APP-TMS
+==================================================
+Ambiente: TMS + código APP + Supabase | Data: 2026-09-22 | Modo: AUDITORIA READ-ONLY
+DB_WRITES=0 | CODE_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. APP — "AINDA NÃO SOU PARCEIRO"
+==================================================
+Entry: tela de LOGIN (login_screen.dart) → botão "Ainda não sou parceiro" → rota /register
+       → RegisterScreen (lib/features/auth/register_screen.dart), wizard de 5 blocos.
+Campos: nome, CPF/CNPJ, data nasc., telefone, e-mail (opcional), senha; endereço; veículo
+(placa/marca/modelo/ano/tipo); baú/capacidade; operacional/regiões; experiência; PIX/dados
+bancários; referências; documentos (upload).
+Persistência:
+  - auth.users: supabase.auth.signUp(email técnico determinístico do CPF quando sem e-mail real).
+  - prestadores: RPC app_s6_criar_prestador (SECURITY DEFINER; auth.uid() obrigatório).
+  - veiculos: insert vinculado (prestador_vinculado) — idempotente.
+  - documentos_prestadores: upload + vínculo (DriverDocumentsRepository.uploadAndLink).
+  - dedup: RPC app_s6_cpf_cnpj_ja_cadastrado.
+RPC (migration 20260829000000_ag07j18_4): status FIXO 'em_analise'; liberado_app FIXO false;
+  origem_cadastro FIXO 'app_motorista'; auth_user_id = auth.uid(); idempotente por auth_user.
+Sucesso: toast "Cadastro enviado para análise" → /analysis (em_analise).
+
+APP_SIGNUP_ENTRY=RegisterScreen ("Ainda não sou parceiro" → /register)
+APP_SIGNUP_TABLE=prestadores (RPC app_s6_criar_prestador) + auth.users + veiculos + documentos_prestadores
+APP_SIGNUP_INITIAL_STATUS=em_analise
+AUTH_CREATED_AT_SIGNUP=YES
+APP_SIGNUP_CAN_LOGIN_IMMEDIATELY=NO (liberado_app=false + status em_analise → gate → /analysis)
+
+==================================================
+2. DESTINO REAL NO TMS
+==================================================
+O registro criado (prestadores, origem_cadastro='app_motorista', status 'em_analise') aparece em
+MAIS DE UMA tela (D):
+  - Cadastro > Prestadores (PrestadoresLista) — lê `prestadores`; filtro de status inclui "analise";
+    porém o APP grava 'em_analise' → STATUS_LABEL['em_analise']=undefined ("—") e o filtro
+    value="analise" NÃO casa (GAP de nomenclatura).
+  - Recrutamento (Kanban) — via bridge (abaixo).
+  - Admin App Prestador (/app-prestador) NÃO lista pré-cadastros (ver seção 3).
+Prova DB: prestadores com status 'em_analise'=3 e 'analise'=7; origem_cadastro 'app_motorista'=3;
+recrutamento_candidatos=23.
+
+CURRENT_TMS_DESTINATION=D (Cadastro > Prestadores + Recrutamento)
+
+==================================================
+3. ADMIN APP PRESTADOR (/app-prestador)
+==================================================
+Implementação real: src/pages/AppPrestador.tsx (657 linhas) — painel do TMS que simula o APP do
+prestador: lista VIAGENS (useEscala/escalaAppPrestadorAdapter) e POD (usePod). NÃO é fila de
+pré-cadastro; NÃO aprova/reprova; NÃO altera liberado_app; NÃO bloqueia/desbloqueia; NÃO tem
+contador de novos cadastros.
+
+ADMIN_APP_REAL_PRECADASTRO_QUEUE=NO
+ADMIN_APP_CAN_APPROVE=NO
+ADMIN_APP_CAN_RELEASE_APP=NO
+ADMIN_APP_NEW_REGISTRATION_ALERT=NO
+
+==================================================
+4. RECRUTAMENTO (integração, não reabertura de REC-06)
+==================================================
+Bridge: enterpriseKanbanService.buscarECadastrarAppPrestadores() lê `prestadores`
+WHERE origem_cadastro='app_motorista' e insere em recrutamento_candidatos (com prestador_id,
+sem duplicar prestador). Estágio inicial = STATUS_APP_TO_STAGE[status] ?? 'novo_cadastro';
+STATUS_APP_TO_STAGE mapeia 'em_analise'→'em_analise'.
+Conversão: conversaoCandidatoService + prestadoresService.sincronizarComOperacao —
+liberado_app = (statusOperacional==='ativo'); candidato já tem prestador_id → sem 2º prestador.
+
+APP_TO_RECRUITMENT=YES
+RECRUITMENT_INITIAL_STAGE=em_analise
+RECRUITMENT_TO_PROVIDER=YES
+
+==================================================
+5. CADASTRO PRESTADOR
+==================================================
+O cadastro do APP entra diretamente em `prestadores` com status 'em_analise' (aparece na lista,
+mas com status não mapeado na UI) e como candidato no Recrutamento (bridge). Pode existir
+simultaneamente como prestador e candidato — vinculados por prestador_id (sem 2º prestador).
+Riscos: ver seção 6.
+
+==================================================
+6. LOGIN E LIBERAÇÃO (gate AG-07J.7)
+==================================================
+Fluxo: login → auth.users → prestadores.auth_user_id → status → liberado_app → gate.
+Regra (auth_status_mapper.dart): acesso operacional SOMENTE se
+  (status=='ativo' OR 'Aprovado') AND liberado_app==true; senão → /analysis. Fail-closed se
+  prestador inexistente/consulta falha.
+
+LOGIN_REQUIRES_PROVIDER=YES
+LOGIN_REQUIRES_ACTIVE_STATUS=YES
+LOGIN_REQUIRES_LIBERADO_APP=YES
+BLOCKED_PROVIDER_CAN_ENTER=NO
+PENDING_PROVIDER_CAN_ENTER=NO
+
+POR QUE O LOGIN DO TESTE NÃO ENTRA: o PRESTADOR TESTE APP tem status=ativo e liberado_app=true
+(passaria o gate), MAS o login do APP converte o identificador para um e-mail técnico
+determinístico a partir do CPF (auth_identity.dart). O auth.users existente do teste é
+`teste@conexao.com` (não derivado do CPF 12345678900) → "Invalid login credentials".
+(Senha não solicitada nem registrada.)
+
+==================================================
+7. NOTIFICAÇÃO / FILA OPERACIONAL
+==================================================
+Não existe alerta/badge/contador de "novo cadastro do APP aguardando validação" em dashboard,
+sidebar, Admin App ou Recrutamento.
+NEW_REGISTRATION_ALERT_EXISTS=NO  → GAP.
+
+==================================================
+8. COMPARAÇÃO DAS 3 OPÇÕES (somente o que já existe)
+==================================================
+OPÇÃO A (fila no Admin App Prestador): estrutura NÃO existe (AppPrestador é painel de viagens).
+  Criaria tela/módulo novo → duplicação alta; baixa aderência.
+OPÇÃO B (Cadastro Prestadores com status "Aguardando validação"): estrutura JÁ existe
+  (PrestadoresLista + status 'analise'); menor esforço; fonte única = prestadores; alto reuso.
+  Ajuste necessário: alinhar nomenclatura 'em_analise' ↔ 'analise'.
+OPÇÃO C (Recrutamento como novo candidato): JÁ acontece automaticamente (bridge); é trilha de
+  candidato/recrutamento, não a "aprovação de acesso"; bom como processo paralelo.
+
+RECOMMENDED_CANONICAL_FLOW=B
+  Aprovação de acesso = Cadastro > Prestadores (fonte única): cadastro APP entra como
+  status "Em análise"; a liberação operacional é status→ativo + liberado_app=true. O
+  Recrutamento (bridge) permanece como trilha de candidato (C), vinculado por prestador_id.
+
+==================================================
+9. FLUXO CANÔNICO PROPOSTO (textual)
+==================================================
+[CADASTRO/ACESSO DO APP]
+APP "Ainda não sou parceiro" → signUp (auth) → app_s6_criar_prestador
+  → prestadores(status='em_analise'|padronizar 'analise', liberado_app=false, origem_cadastro='app_motorista')
+  → aparece em Cadastro > Prestadores (Em análise)  ← aprovação/liberação aqui
+  → status='ativo' + liberado_app=true  → APP login autorizado (gate)
+        │
+        └─(bridge) [RECRUTAMENTO] recrutamento_candidatos(stage 'em_analise', prestador_id) → conversão
+[Cadastro OPERACIONAL do Prestador] = o próprio registro em prestadores (veículos/docs/banco),
+  editado em PrestadorDetalhe; NÃO é um segundo cadastro.
+
+==================================================
+10. ENTREGÁVEIS
+==================================================
+APP_SIGNUP_ENTRY=RegisterScreen
+APP_SIGNUP_TABLE=prestadores (RPC app_s6_criar_prestador) + auth.users + veiculos + documentos_prestadores
+APP_SIGNUP_INITIAL_STATUS=em_analise
+AUTH_CREATED_AT_SIGNUP=YES
+APP_SIGNUP_CAN_LOGIN_IMMEDIATELY=NO
+CURRENT_TMS_DESTINATION=D (Cadastro Prestadores + Recrutamento)
+
+ADMIN_APP_REAL_PRECADASTRO_QUEUE=NO
+ADMIN_APP_CAN_APPROVE=NO
+ADMIN_APP_CAN_RELEASE_APP=NO
+ADMIN_APP_NEW_REGISTRATION_ALERT=NO
+
+APP_TO_RECRUITMENT=YES
+RECRUITMENT_INITIAL_STAGE=em_analise
+RECRUITMENT_TO_PROVIDER=YES
+
+LOGIN_REQUIRES_PROVIDER=YES
+LOGIN_REQUIRES_ACTIVE_STATUS=YES
+LOGIN_REQUIRES_LIBERADO_APP=YES
+BLOCKED_PROVIDER_CAN_ENTER=NO
+PENDING_PROVIDER_CAN_ENTER=NO
+
+DUPLICATION_RISK=MEDIUM (bridge evita 2º prestador por prestador_id; risco de inconsistência de status)
+FALSE_APPROVAL_RISK=LOW (liberado_app fixo false no RPC; gate exige ativo+liberado)
+ORPHAN_AUTH_RISK=MEDIUM (signUp antes do RPC; há recovery/retry, risco residual)
+
+NEW_REGISTRATION_ALERT_EXISTS=NO
+
+OPTION_A_ADMIN_APP=BAIXO (estrutura inexistente; duplicaria)
+OPTION_B_PROVIDER_PENDING=ALTO (estrutura existente; fonte única; ajuste de nomenclatura)
+OPTION_C_RECRUITMENT=JÁ EXISTE (bridge automático; trilha de candidato)
+
+RECOMMENDED_CANONICAL_FLOW=B (+ bridge C como trilha)
+
+CURRENT_IMPLEMENTATION_GAPS=
+  G1. Nomenclatura divergente de status: APP grava 'em_analise'; TMS usa 'analise'
+      (filtro/label) → cadastros APP aparecem como "—" e não filtram como "Em análise".
+  G2. Sem alerta/contador de "novo cadastro aguardando validação".
+  G3. "Admin App Prestador" não administra pré-cadastro/acesso (é painel de viagens/POD).
+  G4. Risco de auth sem prestador (signUp antes do RPC) — recovery parcial existe.
+  G5. Login APP por CPF usa identificador técnico ≠ e-mail real do provider de teste.
+
+MINIMUM_FIXES_REQUIRED=
+  F1 (P0): alinhar status — aceitar/padronizar 'analise' no TMS (label + filtro + bridge) OU
+      normalizar 'em_analise'→'analise' no ponto de leitura. Código apenas.
+  F2 (P1): contador/badge "N cadastros aguardando validação" em Cadastro > Prestadores (e/ou sidebar).
+  F3 (P2): documentar/endurecer tratamento de auth órfão (já há recovery).
+
+RESULT=PASS_AUDIT
+
+NEXT_EXACT_MISSION=E2E-05D-ALINHAR-STATUS-CADASTRO-APP
+  (menor correção: F1 — alinhar a nomenclatura de status do cadastro APP no TMS; não bloqueia o
+   E2E-06 físico, que usa o PRESTADOR TESTE APP já ativo/liberado.)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma alteração de código/banco; sem migration; nenhum usuário/prestador/candidato criado;
+sem Redmi; E2E-06 não continuado; dados HML preservados (HML_TABLE d12cf0cd, valor_diaria 250.00);
+sem cleanup; sem Master 360/Control Tower.

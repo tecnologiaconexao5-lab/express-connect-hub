@@ -1,0 +1,2339 @@
+﻿{
+  "tabela_liberado_app_audit": [],
+  "funcoes_rec01": [],
+  "funcoes_rec01_src": [],
+  "idx_laa": [],
+  "rls_prestadores": [
+    {
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    }
+  ],
+  "policies_prestadores": [
+    {
+      "policyname": "prestadores_delete_tms",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_insert_tms",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+    },
+    {
+      "policyname": "prestadores_select_own",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((auth_user_id IS NULL) OR ((auth_user_id)::text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) OR (auth_user_id = auth.uid()))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_select_portal",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(f_obter_cliente_id_do_usuario() IS NOT NULL)",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_select_tms",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_update_own",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((auth_user_id IS NOT NULL) AND ((auth_user_id)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) AND (auth_user_id = auth.uid()))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_update_tms",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    }
+  ],
+  "cols_prestadores": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "column_name": "nome_completo",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "cpf_cnpj",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "telefone",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "whatsapp",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "tipo_parceiro",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": "'ativo'::text"
+    },
+    {
+      "column_name": "regiao_principal",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "endereco",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "data_nascimento",
+      "data_type": "date",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "rg",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "aceite_acordo",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "score_interno",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "status_operacional",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "observacoes",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "aceiteDoacordo",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_dedicada",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_urbana",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_refrigerada",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_esporadica",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "conferend_manual",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_refrigerado",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_urbano",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "aceita_dedicado",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "conferencia_manual",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "indice_comparecimento",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "indice_entrega_prazo",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "ultima_atualizacao",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "data_cadastro",
+      "data_type": "date",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "data_aprovacao",
+      "data_type": "date",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "ultimo_usuario",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "observacoes_torre",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "avaliacao_operacional",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "indice_aceite",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "qtd_operacoes",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "foto",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "regioes_secundarias",
+      "data_type": "ARRAY",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "origem_cadastro",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "indicacao",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "disponibilidade_padrao",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "turnos_preferenciais",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "restricoes_operacionais",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "aceita_viagem",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "banco",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "agencia",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "conta",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "digito",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "tipo_conta",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "favorecido",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "cpf_cnpj_favorecido",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "chave_pix",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "tipo_chave_pix",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_diaria",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_km",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_saida",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "fixo_mensal",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_ajudante",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_espera",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_reentrega",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "valor_devolucao",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "periodicidade_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "prazo_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "forma_preferencial",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "conta_contabil",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "centro_custo",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "retencoes_descontos",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "observacoes_financeiras",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "rg_ie",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "franquia_km",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "forma_preferencial_pagamento",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "retencoes",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "rntrc",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "antt",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "auth_user_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "origem",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": "'manual'::text"
+    },
+    {
+      "column_name": "metadata",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "column_name": "liberado_app",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "nome_fantasia",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    }
+  ],
+  "triggers_prestadores": [
+    {
+      "tgname": "trg_bridge_prestador_para_recrutamento",
+      "tgtype": 5,
+      "def": "CREATE TRIGGER trg_bridge_prestador_para_recrutamento AFTER INSERT ON public.prestadores FOR EACH ROW EXECUTE FUNCTION f_bridge_prestador_para_recrutamento()",
+      "fn": "f_bridge_prestador_para_recrutamento"
+    }
+  ],
+  "triggers_all_alvo": [
+    {
+      "tabela": "prestadores",
+      "tgname": "trg_bridge_prestador_para_recrutamento",
+      "def": "CREATE TRIGGER trg_bridge_prestador_para_recrutamento AFTER INSERT ON public.prestadores FOR EACH ROW EXECUTE FUNCTION f_bridge_prestador_para_recrutamento()"
+    },
+    {
+      "tabela": "prestadores_app",
+      "tgname": "set_prestadores_app_updated_at",
+      "def": "CREATE TRIGGER set_prestadores_app_updated_at BEFORE UPDATE ON public.prestadores_app FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()"
+    }
+  ],
+  "prestadores_policies_full": [
+    {
+      "policyname": "prestadores_delete_tms",
+      "tablename": "prestadores",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_insert_tms",
+      "tablename": "prestadores",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+    },
+    {
+      "policyname": "prestadores_select_own",
+      "tablename": "prestadores",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((auth_user_id IS NULL) OR ((auth_user_id)::text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) OR (auth_user_id = auth.uid()))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_select_portal",
+      "tablename": "prestadores",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(f_obter_cliente_id_do_usuario() IS NOT NULL)",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_select_tms",
+      "tablename": "prestadores",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_update_own",
+      "tablename": "prestadores",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "((auth_user_id IS NOT NULL) AND ((auth_user_id)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) AND (auth_user_id = auth.uid()))",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_update_tms",
+      "tablename": "prestadores",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "policyname": "Users can insert own record",
+      "tablename": "prestadores_app",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "(auth.uid() = id)"
+    },
+    {
+      "policyname": "Users can update own record",
+      "tablename": "prestadores_app",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(auth.uid() = id)",
+      "with_check": "(auth.uid() = id)"
+    },
+    {
+      "policyname": "Users can view own record",
+      "tablename": "prestadores_app",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(auth.uid() = id)",
+      "with_check": null
+    },
+    {
+      "policyname": "prestadores_app_own",
+      "tablename": "prestadores_app",
+      "cmd": "ALL",
+      "roles": [
+        "public"
+      ],
+      "qual": "(auth.uid() = id)",
+      "with_check": "(auth.uid() = id)"
+    }
+  ],
+  "rls_recrut": [
+    {
+      "relname": "candidato_documentos",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "candidatos",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "crm_interacoes_prestadores",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "recrutamento_candidatos",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "recrutamento_operacoes",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    },
+    {
+      "relname": "recrutamento_prestadores",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false
+    }
+  ],
+  "policies_recrut": [
+    {
+      "tablename": "candidato_documentos",
+      "policyname": "candidato_documentos_delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "candidato_documentos",
+      "policyname": "candidato_documentos_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))"
+    },
+    {
+      "tablename": "candidato_documentos",
+      "policyname": "candidato_documentos_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "candidato_documentos",
+      "policyname": "candidato_documentos_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "candidatos",
+      "policyname": "candidatos_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.role() = 'service_role'::text))"
+    },
+    {
+      "tablename": "candidatos",
+      "policyname": "candidatos_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'anon'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "candidatos",
+      "policyname": "candidatos_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_delete_tms",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_insert_tms",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))"
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_select_tms",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_update_tms",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid())))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_candidatos",
+      "policyname": "recrutamento_candidatos_delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_candidatos",
+      "policyname": "recrutamento_candidatos_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))"
+    },
+    {
+      "tablename": "recrutamento_candidatos",
+      "policyname": "recrutamento_candidatos_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_candidatos",
+      "policyname": "recrutamento_candidatos_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_operacoes",
+      "policyname": "recrutamento_operacoes_delete",
+      "cmd": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(auth.role() = 'authenticated'::text)",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_operacoes",
+      "policyname": "recrutamento_operacoes_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(auth.role() = 'authenticated'::text)"
+    },
+    {
+      "tablename": "recrutamento_operacoes",
+      "policyname": "recrutamento_operacoes_select",
+      "cmd": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(auth.role() = 'authenticated'::text)",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_operacoes",
+      "policyname": "recrutamento_operacoes_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": "(auth.role() = 'authenticated'::text)",
+      "with_check": "(auth.role() = 'authenticated'::text)"
+    },
+    {
+      "tablename": "recrutamento_prestadores",
+      "policyname": "recrutamento_prestadores_delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_prestadores",
+      "policyname": "recrutamento_prestadores_insert",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))"
+    },
+    {
+      "tablename": "recrutamento_prestadores",
+      "policyname": "recrutamento_prestadores_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    },
+    {
+      "tablename": "recrutamento_prestadores",
+      "policyname": "recrutamento_prestadores_update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "((auth.role() = 'authenticated'::text) OR (auth.role() = 'service_role'::text))",
+      "with_check": null
+    }
+  ],
+  "cols_recrut": [
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "candidato_id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "tipo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "arquivo_url",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "validade",
+      "data_type": "date"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "dados_extraidos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "candidato_documentos",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "nome_completo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "cpf",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "telefone",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "whatsapp",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "email",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "cidade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "uf",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "regiao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "tipo_veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "tipo_carroceria",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "placa",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "experiencia_anos",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "como_conheceu",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "mensagem_livre",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "canal_captacao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "score_perfil",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "prioridade",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "ultima_interacao",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "prestador_id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "observacoes",
+      "data_type": "text"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "candidatos",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "prestador_id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "prestador_nome",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "tipo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "titulo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "descricao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "data",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "usuario",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "proxima_acao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "data_proximo_contato",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "anexos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "nome",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "foto",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "score",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "cidade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "uf",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "placa",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "status_documental",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "prioridade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "validade_cnh",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "data_validade_cnh",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "tags",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "observacoes_ia",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "telefone",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "email",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "stage",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "data_entrada",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "data_atualizacao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "documentos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "prestador_id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "historico",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "reserva_contexto",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "score_comprometimento",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "classificacao_comprometimento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "risco_desistencia",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "tempo_medio_resposta_horas",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "quantidade_cobrancas",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "confirmou_interesse",
+      "data_type": "boolean"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "data_confirmacao_interesse",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "confirmou_pre_inicio",
+      "data_type": "boolean"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "data_confirmacao_pre_inicio",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "compareceu_primeiro_dia",
+      "data_type": "boolean"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "completou_30_dias",
+      "data_type": "boolean"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "quantidade_reclamacoes",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "possui_outra_operacao_fixa",
+      "data_type": "boolean"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "disponibilidade_recrutamento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "historico_desistencias",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "etiquetas_automaticas",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "parecer_ia",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "principais_riscos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "principais_pontos_positivos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "proxima_acao_sugerida",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "questionario_respostas",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "pipeline_validacoes",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "nome",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "cliente",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "regiao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "rota_origem",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "rota_destino",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "tipo_veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "tipo_carga",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "metodo_carga",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "temperatura",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "peso_carga",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "dimensoes",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "local_carregamento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "local_descarregamento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "horario_carregamento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "horario_descarregamento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "data_inicio",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "data_fim",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "recurrencia",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "frequencia",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "prioridade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "observacoes",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "financeiro",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "meta",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "historico",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_operacoes",
+      "column_name": "created_by",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "nome",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "razao_social",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "cpf_cnpj",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "rg",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "data_nascimento",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "contatos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "endereco",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "tipo_veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "placa_veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "eixos",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "capacidade_kg",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "capacidade_m3",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "tipo_carga_veiculo",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "disponibilidade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "regioes_atuacao",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "origem_cadastro",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "score",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "documentos",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "onboarding",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "canal_captacao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "indicado_por",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "historico",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "data_cadastro",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "data_ativacao",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "ultima_atividade",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "observacoes",
+      "data_type": "text"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "tags",
+      "data_type": "jsonb"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "table_name": "recrutamento_prestadores",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    }
+  ],
+  "grants_anon": [
+    {
+      "relname": "candidato_documentos",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "candidatos",
+      "relacl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "crm_interacoes_prestadores",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "recrutamento_candidatos",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "recrutamento_operacoes",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    },
+    {
+      "relname": "recrutamento_prestadores",
+      "relacl": "{postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+    }
+  ],
+  "counts_recrut": [
+    {
+      "t": "recrutamento_candidatos",
+      "n": "25"
+    },
+    {
+      "t": "recrutamento_prestadores",
+      "n": "10"
+    },
+    {
+      "t": "candidato_documentos",
+      "n": "0"
+    },
+    {
+      "t": "candidatos",
+      "n": "1"
+    },
+    {
+      "t": "prestadores",
+      "n": "39"
+    }
+  ],
+  "tenant_cols": [
+    {
+      "table_name": "candidatos",
+      "column_name": "prestador_id"
+    },
+    {
+      "table_name": "crm_interacoes_prestadores",
+      "column_name": "prestador_id"
+    },
+    {
+      "table_name": "recrutamento_candidatos",
+      "column_name": "prestador_id"
+    }
+  ],
+  "vinculo_candidatos": [
+    {
+      "total": 25,
+      "com_prestador_id": 10,
+      "prestadores_distintos": 10
+    }
+  ],
+  "rec02_tenant_status": [
+    {
+      "tabela": "candidatos",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "crm_interacoes_prestadores",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "fluxo_recrutamento",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "homologacoes",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "liberado_app_audit",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "match_operacoes_prestadores",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "operacoes",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "provider_documents",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "recrutamento_candidatos",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "recrutamento_operacoes",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "recrutamento_prestadores",
+      "tem_tenant_id": false
+    },
+    {
+      "tabela": "reservas_banco",
+      "tem_tenant_id": false
+    }
+  ],
+  "rec02_policies_existentes": [
+    {
+      "tablename": "clientes",
+      "policyname": "clientes_select_own_tenant"
+    },
+    {
+      "tablename": "communication_events",
+      "policyname": "ce_events_insert_tenant"
+    },
+    {
+      "tablename": "communication_events",
+      "policyname": "ce_events_select_tenant"
+    },
+    {
+      "tablename": "communication_preferences",
+      "policyname": "cp_prefs_insert_tenant"
+    },
+    {
+      "tablename": "communication_preferences",
+      "policyname": "cp_prefs_select_tenant"
+    },
+    {
+      "tablename": "communication_templates",
+      "policyname": "ct_templates_insert_tenant"
+    },
+    {
+      "tablename": "communication_templates",
+      "policyname": "ct_templates_select_tenant"
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_delete_tms"
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_insert_tms"
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_select_tms"
+    },
+    {
+      "tablename": "crm_interacoes_prestadores",
+      "policyname": "cip_update_tms"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_delete_tms"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_insert_tms"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_select_cliente"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_select_own"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_select_tms"
+    },
+    {
+      "tablename": "financeiro_receber",
+      "policyname": "fr_update_tms"
+    },
+    {
+      "tablename": "financeiro_transferencias",
+      "policyname": "transferencias_insert_tenant"
+    },
+    {
+      "tablename": "financeiro_transferencias",
+      "policyname": "transferencias_select_tenant"
+    },
+    {
+      "tablename": "fluxo_recrutamento",
+      "policyname": "fr_delete"
+    },
+    {
+      "tablename": "fluxo_recrutamento",
+      "policyname": "fr_insert"
+    },
+    {
+      "tablename": "fluxo_recrutamento",
+      "policyname": "fr_select"
+    },
+    {
+      "tablename": "fluxo_recrutamento",
+      "policyname": "fr_update"
+    },
+    {
+      "tablename": "homologacoes",
+      "policyname": "hom_delete"
+    },
+    {
+      "tablename": "homologacoes",
+      "policyname": "hom_insert"
+    },
+    {
+      "tablename": "homologacoes",
+      "policyname": "hom_select"
+    },
+    {
+      "tablename": "homologacoes",
+      "policyname": "hom_update"
+    },
+    {
+      "tablename": "ocorrencias",
+      "policyname": "ocorrencias_delete_tenant"
+    },
+    {
+      "tablename": "ocorrencias",
+      "policyname": "ocorrencias_insert_tenant"
+    },
+    {
+      "tablename": "ocorrencias",
+      "policyname": "ocorrencias_select_tenant"
+    },
+    {
+      "tablename": "ocorrencias",
+      "policyname": "ocorrencias_update_tenant"
+    },
+    {
+      "tablename": "portal_tracking_realtime",
+      "policyname": "tracking_select_tenant"
+    },
+    {
+      "tablename": "provider_documents",
+      "policyname": "pd_delete"
+    },
+    {
+      "tablename": "provider_documents",
+      "policyname": "pd_insert"
+    },
+    {
+      "tablename": "provider_documents",
+      "policyname": "pd_select"
+    },
+    {
+      "tablename": "provider_documents",
+      "policyname": "pd_update"
+    },
+    {
+      "tablename": "reembolsos_prestador",
+      "policyname": "rp_delete_tenant"
+    },
+    {
+      "tablename": "reembolsos_prestador",
+      "policyname": "rp_insert_tenant"
+    },
+    {
+      "tablename": "reembolsos_prestador",
+      "policyname": "rp_select_tenant"
+    },
+    {
+      "tablename": "reembolsos_prestador",
+      "policyname": "rp_update_tenant"
+    },
+    {
+      "tablename": "rota_paradas",
+      "policyname": "rota_paradas_insert_authenticated"
+    },
+    {
+      "tablename": "rota_paradas",
+      "policyname": "rota_paradas_select_anon"
+    },
+    {
+      "tablename": "rota_paradas",
+      "policyname": "rota_paradas_select_authenticated"
+    },
+    {
+      "tablename": "rota_paradas",
+      "policyname": "rota_paradas_update_authenticated"
+    },
+    {
+      "tablename": "rota_paradas",
+      "policyname": "rp_select_portal"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_insert_authenticated"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_insert_tms"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_select_anon_suas"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_select_authenticated"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_select_portal"
+    },
+    {
+      "tablename": "rotas",
+      "policyname": "rotas_update_authenticated"
+    },
+    {
+      "tablename": "rotinas_execucoes_ia",
+      "policyname": "rotinas_execucoes_delete_policy"
+    },
+    {
+      "tablename": "rotinas_execucoes_ia",
+      "policyname": "rotinas_execucoes_insert_policy"
+    },
+    {
+      "tablename": "rotinas_execucoes_ia",
+      "policyname": "rotinas_execucoes_select_policy"
+    },
+    {
+      "tablename": "rotinas_execucoes_ia",
+      "policyname": "rotinas_execucoes_update_policy"
+    },
+    {
+      "tablename": "rotinas_ia",
+      "policyname": "rotinas_ia_delete_policy"
+    },
+    {
+      "tablename": "rotinas_ia",
+      "policyname": "rotinas_ia_insert_policy"
+    },
+    {
+      "tablename": "rotinas_ia",
+      "policyname": "rotinas_ia_select_policy"
+    },
+    {
+      "tablename": "rotinas_ia",
+      "policyname": "rotinas_ia_update_policy"
+    },
+    {
+      "tablename": "route_stops",
+      "policyname": "route_stops_own"
+    },
+    {
+      "tablename": "tabela_prestador",
+      "policyname": "tp_delete_tenant"
+    },
+    {
+      "tablename": "tabela_prestador",
+      "policyname": "tp_insert_tenant"
+    },
+    {
+      "tablename": "tabela_prestador",
+      "policyname": "tp_select_tenant"
+    },
+    {
+      "tablename": "tabela_prestador",
+      "policyname": "tp_update_tenant"
+    },
+    {
+      "tablename": "tabelas_valores",
+      "policyname": "tv_delete_tenant"
+    },
+    {
+      "tablename": "tabelas_valores",
+      "policyname": "tv_insert_tenant"
+    },
+    {
+      "tablename": "tabelas_valores",
+      "policyname": "tv_select_tenant"
+    },
+    {
+      "tablename": "tabelas_valores",
+      "policyname": "tv_update_tenant"
+    },
+    {
+      "tablename": "tracking_public_links",
+      "policyname": "tpl_links_insert_tenant"
+    }
+  ],
+  "grants_app_s6": [
+    {
+      "proname": "app_s6_cpf_cnpj_ja_cadastrado",
+      "prosecdef": true,
+      "provolatile": "v",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "args": "p_cpf_cnpj text"
+    },
+    {
+      "proname": "app_s6_criar_prestador",
+      "prosecdef": true,
+      "provolatile": "v",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "args": "p_nome_completo text, p_cpf_cnpj text DEFAULT NULL::text, p_data_nascimento text DEFAULT NULL::text, p_telefone text DEFAULT NULL::text, p_email text DEFAULT NULL::text, p_auth_email text DEFAULT NULL::text, p_senha text DEFAULT NULL::text, p_status text DEFAULT 'em_analise'::text, p_origem text DEFAULT 'app_prestador'::text, p_liberado_app boolean DEFAULT false, p_metadata jsonb DEFAULT NULL::jsonb"
+    },
+    {
+      "proname": "app_s6_resolver_identidade_legada",
+      "prosecdef": true,
+      "provolatile": "v",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "args": "p_cpf_cnpj text, p_senha text"
+    }
+  ],
+  "src_app_s6": [
+    {
+      "proname": "app_s6_cpf_cnpj_ja_cadastrado",
+      "src": "\nDECLARE\n  v_normalized TEXT;\n  v_exists BOOLEAN := FALSE;\nBEGIN\n  IF p_cpf_cnpj IS NULL OR trim(p_cpf_cnpj) = '' THEN\n    RETURN FALSE;\n  END IF;\n\n  -- Normaliza: remove pontua├º├úo, mant├®m apenas d├¡gitos\n  v_normalized := regexp_replace(trim(p_cpf_cnpj), '[^0-9]', '', 'g');\n\n  IF length(v_normalized) < 11 THEN\n    RETURN FALSE;\n  END IF;\n\n  SELECT EXISTS(\n    SELECT 1 FROM prestadores\n    WHERE regexp_replace(coalesce(cpf_cnpj, ''), '[^0-9]', '', 'g') = v_normalized\n    LIMIT 1\n  ) INTO v_exists;\n\n  RETURN v_exists;\nEND;\n"
+    },
+    {
+      "proname": "app_s6_criar_prestador",
+      "src": "\nDECLARE\n  v_auth_uid UUID;\n  v_existing_id UUID;\n  v_new_id UUID;\n  v_nome TEXT;\n  v_cpf TEXT;\n  vTelefone TEXT;\n  vEmail TEXT;\n  vMeta JSONB;\nBEGIN\n  -- ========================================================================\n  -- SEGURAN├çA: auth.uid() obrigat├│rio (fail-closed)\n  -- ========================================================================\n  v_auth_uid := auth.uid();\n  IF v_auth_uid IS NULL THEN\n    RAISE EXCEPTION 'Acesso negado: usu├írio n├úo autenticado'\n      USING ERRCODE = 'P0001';\n  END IF;\n\n  -- ========================================================================\n  -- IDEMPOTENCIA: se j├í existe prestador para este auth_user, retorna\n  -- ========================================================================\n  SELECT id INTO v_existing_id\n  FROM prestadores\n  WHERE auth_user_id = v_auth_uid\n  LIMIT 1;\n\n  IF v_existing_id IS NOT NULL THEN\n    RETURN jsonb_build"
+    },
+    {
+      "proname": "app_s6_resolver_identidade_legada",
+      "src": "\nDECLARE\n  v_digits  TEXT;\n  v_auth_id UUID;\n  v_email   TEXT;\n  v_hash    TEXT;\nBEGIN\n  -- Entradas obrigat├│rias (fail-closed, sem detalhe).\n  IF p_cpf_cnpj IS NULL OR p_senha IS NULL\n     OR btrim(p_cpf_cnpj) = '' OR p_senha = '' THEN\n    RETURN NULL;\n  END IF;\n\n  -- Normaliza CPF/CNPJ (apenas d├¡gitos).\n  v_digits := regexp_replace(btrim(p_cpf_cnpj), '[^0-9]', '', 'g');\n  IF length(v_digits) < 11 THEN\n    RETURN NULL;\n  END IF;\n\n  -- Identidade vinculada (no m├íximo uma).\n  SELECT p.auth_user_id\n    INTO v_auth_id\n  FROM public.prestadores p\n  WHERE p.auth_user_id IS NOT NULL\n    AND regexp_replace(coalesce(p.cpf_cnpj, ''), '[^0-9]', '', 'g') = v_digits\n  LIMIT 1;\n\n  IF v_auth_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  -- auth.users SOMENTE pelo v├¡nculo objetivo auth_user_id.\n  SELECT u.email, u.encrypted_password\n    INTO v_email, v_hash\n  FROM auth.users u\n  WHERE u.id = v_auth_id\n"
+    }
+  ],
+  "grants_tabelas": [
+    {
+      "relname": "candidato_documentos",
+      "anon_sel": false,
+      "anon_ins": false,
+      "anon_upd": false,
+      "anon_del": false,
+      "auth_sel": true,
+      "auth_ins": true
+    },
+    {
+      "relname": "crm_interacoes_prestadores",
+      "anon_sel": false,
+      "anon_ins": false,
+      "anon_upd": false,
+      "anon_del": false,
+      "auth_sel": true,
+      "auth_ins": true
+    },
+    {
+      "relname": "prestadores",
+      "anon_sel": true,
+      "anon_ins": true,
+      "anon_upd": true,
+      "anon_del": true,
+      "auth_sel": true,
+      "auth_ins": true
+    },
+    {
+      "relname": "recrutamento_candidatos",
+      "anon_sel": false,
+      "anon_ins": false,
+      "anon_upd": false,
+      "anon_del": false,
+      "auth_sel": true,
+      "auth_ins": true
+    },
+    {
+      "relname": "recrutamento_operacoes",
+      "anon_sel": false,
+      "anon_ins": false,
+      "anon_upd": false,
+      "anon_del": false,
+      "auth_sel": true,
+      "auth_ins": true
+    },
+    {
+      "relname": "recrutamento_prestadores",
+      "anon_sel": false,
+      "anon_ins": false,
+      "anon_upd": false,
+      "anon_del": false,
+      "auth_sel": true,
+      "auth_ins": true
+    }
+  ],
+  "buckets": [
+    {
+      "id": "biblioteca-global",
+      "name": "biblioteca-global",
+      "public": true
+    },
+    {
+      "id": "certificados-fiscais",
+      "name": "certificados-fiscais",
+      "public": false
+    },
+    {
+      "id": "comprovantes-entrega",
+      "name": "comprovantes-entrega",
+      "public": true
+    },
+    {
+      "id": "contratos",
+      "name": "contratos",
+      "public": true
+    },
+    {
+      "id": "documentos",
+      "name": "documentos",
+      "public": true
+    },
+    {
+      "id": "documentos_prestadores",
+      "name": "documentos_prestadores",
+      "public": true
+    },
+    {
+      "id": "driver-evidence",
+      "name": "driver-evidence",
+      "public": false
+    },
+    {
+      "id": "fiscal-documentos",
+      "name": "fiscal-documentos",
+      "public": false
+    },
+    {
+      "id": "prestadores",
+      "name": "prestadores",
+      "public": true
+    },
+    {
+      "id": "veiculos",
+      "name": "veiculos",
+      "public": true
+    }
+  ],
+  "storage_policies_doc": [
+    {
+      "policyname": "Permitir delete",
+      "cmd": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir leitura",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir update",
+      "cmd": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    },
+    {
+      "policyname": "Permitir upload",
+      "cmd": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'documentos_prestadores'::text)"
+    },
+    {
+      "policyname": "docprestadores_insert_auth",
+      "cmd": "INSERT",
+      "roles": [
+        "authenticated"
+      ],
+      "qual": null,
+      "with_check": "(bucket_id = 'documentos_prestadores'::text)"
+    },
+    {
+      "policyname": "docprestadores_select_public",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "qual": "(bucket_id = 'documentos_prestadores'::text)",
+      "with_check": null
+    }
+  ],
+  "tenant_helpers": [
+    {
+      "proname": "current_tenant_id_safe",
+      "provolatile": "s",
+      "prosecdef": false
+    }
+  ],
+  "policies_with_anon": []
+}

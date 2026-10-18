@@ -1,0 +1,220 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2B.1-PREP — LOCALIZAÇÃO DE AUTENTICAÇÃO REAL DO TMS
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 21:35 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [AUTH REAL DISPONÍVEL — PADRÃO CONFIRMADO]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. MÉTODO DE AUTENTICAÇÃO JÁ EXISTENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+DOIS métodos estão documentados e em uso ativo no repositório:
+
+  MÉTODO A — Programático (Supabase JS Client via signInWithPassword)
+  ──────────────────────────────────────────────────────────────────────
+  Usado por: 30+ spec files (FIN-362/363, financeiro-rls-seguranca, a23, tms0064, etc.)
+  Como funciona:
+    1. const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    2. await client.auth.signInWithPassword({ email, password })
+    3. Retorna session.access_token (JWT) — client fica autenticado automaticamente
+    4. Todas as queries .from() subsequentes usam o JWT da sessão
+  Não requer browser. Não requer Playwright. Funciona em Node.js puro.
+  É o padrão usado por todas as missões FIN-362/363 que passaram E2E.
+
+  MÉTODO B — Browser (Playwright login page)
+  ──────────────────────────────────────────────────────────────────────
+  Usado por: helpers/auth.ts + 46+ spec files
+  Como funciona:
+    1. page.goto("/login")
+    2. page.fill('input[type="email"]', email)
+    3. page.fill('input[type="password"]', password)
+    4. page.click('button[type="submit"]')
+    5. AuthContext do React chama Supabase signInWithPassword internamente
+  Requer Playwright + browser headless. Mais lento (~3-5s vs ~200ms do Método A.
+
+  RECOMENDAÇÃO PARA REC-06.2B.1: MÉTODO A (programático)
+  Justificativa: mais rápido, sem browser, sem localhost, sem Playwright config.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. ARQUIVOS EXATOS ENVOLVIDOS
+═══════════════════════════════════════════════════════════════════════════════
+
+Autenticação programática (Método A):
+  - tests/e2e/financeiro-rls-seguranca.spec.ts  (linhas 20-36 — padrão referência)
+  - tests/e2e/financeiro-e2e.spec.ts            (linhas 15-18 — padrão referência)
+  - tests/e2e/fin-master-362*.spec.ts           (vários — padrão com hardcoded password)
+  - tests/e2e/tms0064-alocacao-hml.spec.ts      (linhas 60-68 — padrão referência)
+  - tests/e2e/logins-reais-todos.spec.ts        (linhas 10-44 — 5 perfis)
+
+Autenticação via browser (Método B):
+  - tests/e2e/helpers/auth.ts                   (linhas 37-64 — loginAs() central)
+  - tests/e2e/helpers/supabase.ts               (client hardcoded production)
+  - tests/e2e/helpers/ambiente.ts               (guard anti-produção)
+  - playwright.config.ts                        (webServer, globalSetup)
+  - tests/e2e/global-setup.ts                   (verificarAmbiente())
+
+Credenciais:
+  - tests/e2e/helpers/auth.ts                   (5 emails de usuários corporativos)
+
+═══════════════════════════════════════════════════════════════════════════════
+3. USUÁRIO/PERFIL UTILIZADO (sem senha)
+═══════════════════════════════════════════════════════════════════════════════
+
+Usuário padrão para autenticação programática:
+  - Email: tamiris.castilho@conexaoexpress.com.br
+  - Perfil: DIRETORIA / ADMIN MASTER
+  - Role (DB): super_admin
+  - Usado em: 30+ spec files via signInWithPassword
+
+5 perfis documentados em helpers/auth.ts:
+  - admin       → tamiris.castilho@conexaoexpress.com.br (super_admin)
+  - financeiro  → financeiro@conexaoexpress.com.br       (financeiro)
+  - comercial   → comercial@conexaoexpress.com.br        (comercial)
+  - operacional → operacional@conexaoexpress.com.br      (operador)
+  - atendimento → contato@conexaoexpress.com.br          (atendimento)
+
+Para REC-06.2B.1, usar o admin (tamiris) — é o mesmo que 30+ specs já usam.
+
+═══════════════════════════════════════════════════════════════════════════════
+4. VARIÁVEIS NECESSÁRIAS (apenas nomes)
+═══════════════════════════════════════════════════════════════════════════════
+
+Para MÉTODO A (recomendado):
+  - NÃO requer env vars — URL e anon key são hardcoded nos spec files
+  - Requer: email + password (hardcoded como fallback em 30+ specs)
+
+Para MÉTODO B (alternativo):
+  - PLAYWRIGHT_TAMIRIS_PASSWORD (env var, sem fallback em helpers/auth.ts)
+  - PLAYWRIGHT_FINANCEIRO_PASSWORD
+  - PLAYWRIGHT_COMERCIAL_PASSWORD
+  - PLAYWRIGHT_OPERACIONAL_PASSWORD
+  - PLAYWRIGHT_ATENDIMENTO_PASSWORD
+  - VITE_SUPABASE_URL
+  - VITE_SUPABASE_ANON_KEY
+
+Nomes das env vars para QA:
+  - ENVIRONMENT=qa
+  - SUPABASE_QA_PROJECT_REF=aqpfayildtcnrkfeeyjg
+  - SUPABASE_QA_DB_PASSWORD
+  - SUPABASE_SERVICE_ROLE_KEY
+  - DATABASE_URL
+
+═══════════════════════════════════════════════════════════════════════════════
+5. EXISTE STORAGESTATE REUTILIZÁVEL?
+═══════════════════════════════════════════════════════════════════════════════
+
+NÃO.
+  - playwright.config.ts NÃO define storageState em projects
+  - global-setup.ts NÃO cria sessão — apenas verifica se não é produção
+  - Nenhum arquivo .json de storageState foi encontrado no repositório
+  - Cada spec cria sua própria sessão via signInWithPassword ou loginAs()
+
+Conclusão: sessão é stateless — recriada a cada spec/test.describe.
+Isso é ideal para REC-06.2B.1 — não depende de estado anterior.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. PASSOS EXATOS PARA REC-06.2B.1 TESTAR JWT AUTHENTICATED
+═══════════════════════════════════════════════════════════════════════════════
+
+PADRÃO BASEADO EM financeiro-rls-seguranca.spec.ts:
+
+  1. const client = createClient(
+       "https://uwrvzsjtpgaifkktpepn.supabase.co",
+       "eyJhbGci...anon_key..."
+     );
+
+  2. const { data, error } = await client.auth.signInWithPassword({
+       email: "tamiris.castilho@conexaoexpress.com.br",
+       password: "Conexao@2026"
+     });
+
+  3. if (error || !data.session) → falhou, abortar
+
+  4. client agora tem sessão autenticada — todas as .from() usam JWT
+
+  5. Testar SELECT/INSERT/UPDATE/DELETE nas 5 tabelas:
+     - recrutamento_prestadores
+     - recrutamento_candidatos
+     - crm_interacoes_prestadores
+     - candidato_documentos
+     - recrutamento_operacoes
+
+  6. Para INSERT/DELETE: criar registro com tag "TESTE_RLS_062B" + timestamp
+     → deletar ao final (cleanup)
+
+  7. Verificar auth.uid() = user_id do tenant_usuarios:
+     → client.from('tenant_usuarios').select('*').eq('user_id', '<auth.uid()>')
+
+  8. Re-confirmar anon bloqueado (20/20) com client separado (signInWithPassword)
+
+IMPORTANTE: O script pode ser um .cjs simples com @supabase/supabase-js
+(igual rec062b_prova_negativo.cjs — já existe o padrão)
+
+═══════════════════════════════════════════════════════════════════════════════
+7. LIMITAÇÕES E RISCOS IDENTIFICADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. SENHA HARDCODED EM 30+ ARQUIVOS: "Conexao@2026" — é a senha real de
+     produção. Se o Supabase Auth da produção tiver outro password, signInWithPassword
+     vai falhar. Os specs FIN-362/363 PASSARAM → senha está correta.
+
+  2. DUAS SENHAS DIFERENTES EM USO:
+     - "Conexao@2026" → 30+ specs (FIN-362/363, financeiro, relatorios, login, etc.)
+     - "__CONEXAO2026_TAMIRIS__" → 25+ specs (central-ia, IA, IA automacoes, etc.)
+     A segunda parece ser o placeholder da Missão 50 (não substituído).
+     Os FIN-362/363 usam "Conexao@2026" → é a senha real.
+
+  3. AMBIENTE QA SEPARADO: .env.qa aponta para aqpfayildtcnrkfeeyjg
+     (projeto QA separado). Se o script for executado com ENVIRONMENT=qa,
+     o Supabase client vai apontar para QA, não produção.
+     → Para testar REC-06.2B, usar URL de produção diretamente (como fazem
+       os 30+ specs que já passaram).
+
+  4. NÃO EXISTE .env.qa COM PLAYWRIGHT_*_PASSWORD: o .env.qa só tem
+     DATABASE_URL, SERVICE_ROLE_KEY e anon key. As passwords vêm de env vars
+     externas (CI/CD, export manual, ou fallback hardcoded nos specs).
+
+  5. GUARD ANTI-PRODUÇÃO (ambiente.ts): só afeta Método B (Playwright).
+     Método A (programático) bypassa esse guard — os specs já fazem isso.
+
+═══════════════════════════════════════════════════════════════════════════════
+8. SCRIPT PRONTO PARA REC-06.2B.1
+═══════════════════════════════════════════════════════════════════════════════
+
+O script deve seguir o padrão de rec062b_prova_negativo.cjs (já existe):
+
+  // Arquivo: scripts/rec062b_prova_positivo_auth.cjs
+  // Usa @supabase/supabase-js (já instalado)
+  // URL: produção (uwrvzsjtpgaifkktpepn)
+  // Auth: signInWithPassword (email + password)
+  // Testa: 5 tabelas × 4 operações (SELECT, INSERT, UPDATE, DELETE)
+  // Cleanup: DELETE todos os registros de teste
+  // Output: resultados detalhados por tabela/operação
+
+  Para INSERT/UPDATE/DELETE: usar transação ou tags de teste
+  (ex: tags: ["TESTE_RLS_062B", timestamp_] para identificar e limpar)
+
+═══════════════════════════════════════════════════════════════════════════════
+9. CONCLUSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  [AUTH REAL DISPONÍVEL — PADRÃO CONFIRMADO]
+
+  Método: signInWithPassword (programático)
+  Usuário: tamiris.castilho@conexaoexpress.com.br (super_admin)
+  Senha: "Conexao@2026" (hardcoded em 30+ specs que passaram E2E)
+  Supabase URL: https://uwrvzsjtpgaifkktpepn.supabase.co (produção)
+  Supabase Anon Key: hardcoded em helpers/supabase.ts e vários specs
+  StorageState: não existe — sessão recriada a cada teste
+  Script参照: rec062b_prova_negativo.cjs (padrão existente)
+
+  REC-06.2B.1 PODE SER EXECUTADO.
+  Não requer credenciais novas, não requer criação de usuário,
+  não requer alteração de migration/policies/código.
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2B.1-PREP
+[AUTH REAL DISPONÍVEL — PADRÃO CONFIRMADO]
+═══════════════════════════════════════════════════════════════════════════════

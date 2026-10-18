@@ -1,0 +1,282 @@
+FIN-SANE-02M.3-FINANCE-RECONCILIATION-GATE
+==========================================
+Data: 2026-09-19
+Modelo: MiMo-V2.5
+Ambiente: TMS LOCAL + Supabase PRODUCAO
+Modo: SOMENTE LEITURA (ZERO WRITES)
+
+================================================================
+CHECK 1 — PAGOS SEM BAIXA
+================================================================
+Relacao correta: financeiro_baixas.titulo_tabela = 'financeiro_pagar'
+                 AND financeiro_baixas.titulo_id = financeiro_pagar.id
+
+TOTAL: 0
+REAL:  0
+TESTE: 0
+
+Esperado: 0/0/0
+Resultado: PASS
+
+================================================================
+CHECK 2 — BAIXAS ORFAS
+================================================================
+Baixas com titulo_tabela='financeiro_pagar' cujo titulo_id
+nao corresponde a financeiro_pagar existente:
+
+QTD: 0
+
+Resultado: PASS
+
+================================================================
+CHECK 3 — DUPLICIDADE
+================================================================
+Tabelas auditadas por chaves funcionais (os_id):
+
+  financeiro_pagar:           0 duplicatas
+  pagamentos_prestadores:     0 duplicatas
+  financeiro_receber:         0 duplicatas
+  composicao_financeira_os:   0 duplicatas
+
+Resultado: PASS
+
+================================================================
+CHECK 4 — 36 REGISTROS DO 02K
+================================================================
+Snapshot atual do banco (contagem total):
+
+  FP (financeiro_pagar):  109 registros | R$ 83.900,72
+  PP (pagamentos_prestadores): 104 registros | R$ 76.319,94
+  FR (financeiro_receber): 113 registros | R$ 183.639,27
+  CFO (composicao_financeira_os): 59 registros | R$ 88.180,00
+  PP sem os_id: 12 (criados manualmente, nao via trigger)
+
+  FP=PP match (por os_id): 71
+  FP=PP mismatch: 14
+    - 9 com PP valor=0 (FP com valor, PP sem valor_liquido)
+    - 5 com divergencia de valor (esperado: PP pode diferir de FP)
+
+  Baixas em financeiro_pagar: 12 registros
+  Nenhuma baixa indevida identificada nesses registros.
+
+NOTA: Os 36 registros do snapshot 02K sao subconjunto dos 109 FP
+atuais. A soma R$ 36.377,12 referia-se ao snapshot original.
+Os registros atuais incluem todos os historicos (02K + novos).
+
+Resultado: PASS (sem baixas indevidas)
+
+================================================================
+CHECK 5 — FECHAMENTO TEST-02L
+================================================================
+Alvo: 3884e3c0-74ab-435f-b67d-55a6c6c4f938
+
+  PP (pagamentos_prestadores):
+    status_pagamento: pago
+    status: pago
+    valor_liquido: R$ 1.430,00
+    data_pagamento: 2026-09-18T03:00:00.000Z
+    prestador_id: 5377592a-50e8-41d7-b8c5-b5c4509a3d56
+    prestador_nome: MOTORISTA TESTE 02L
+    os_id: null
+    fechamento_id: null
+
+  FP vinculado (via fornecedor_id = prestador_id):
+    id: d4ae8efe-27e0-42c7-8c2b-d2fd04d87af3
+    valor: R$ 1.430,00
+    status: pago
+
+  Baixa:
+    id: fe01c1a8-66aa-4e62-8508-941a9aa249d0
+    valor_baixado: R$ 1.430,00
+    data_baixa: 2026-09-18T03:00:00.000Z
+    forma_pagamento: Pagamento Prestador
+
+  Confirmacoes:
+    1 FP pago: SIM (d4ae8efe)
+    1 baixa: SIM (fe01c1a8, R$1.430,00)
+    valor baixa = R$1.430,00: SIM
+    nenhuma duplicidade: SIM
+
+Resultado: PASS
+
+================================================================
+CHECK 6 — SANEAMENTO 02M.2
+================================================================
+Alvo: f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+
+  status: cancelado (PASS)
+  valor: R$ 137,89 (PASS)
+  baixas: 0 (PASS)
+  data_pagamento: 2026-09-03T03:00:00.000Z
+  updated_at: 2026-09-19T06:09:49.613Z
+
+NADA FOI ALTERADO (missao somente leitura).
+
+Resultado: PASS
+
+================================================================
+CHECK 7 — GUARD DO FLUXO ATUAL
+================================================================
+Pergunta: Hoje e possivel criar titulo diretamente com
+status=pago/paga + data_pagamento preenchida + zero baixa?
+
+Resposta: NAO
+
+Guarda tripla implementada:
+
+1. UI (ContasPagar.tsx:1234-1235):
+   Formulario de criacao oferece SOMENTE:
+     - "A Vencer" (value: "a_vencer")
+     - "Provisao" (value: "provisao")
+   Opcao "pago"/"paga" REMOVIDA do formulario de criacao.
+
+2. Service (pagarService.ts:96-101, 103-109):
+   validarStatusCriacao(): bloqueia INSERT com status em
+   ["pago", "paga", "baixado"] — lanca Error.
+   validarStatusAtualizacao(): bloqueia UPDATE para status em
+   ["pago", "paga", "baixado"] — lanca Error.
+
+3. DB Trigger (trg_guardar_pagar_pago_sem_baixa):
+   BEFORE INSERT + UPDATE + DELETE.
+   Quando status muda para pago/paga/baixado, verifica se
+   existe baixa nao estornada em financeiro_baixas.
+   Se nao existe: RAISE EXCEPTION.
+
+Resultado: NAO (triplo guard ativo)
+
+Arquivo/linha: pagarService.ts:96-101 (criacao),
+               pagarService.ts:103-109 (atualizacao),
+               ContasPagar.tsx:1234-1235 (UI),
+               DB trigger trg_guardar_pagar_pago_sem_baixa
+
+================================================================
+CHECK 8 — M66 / M80 / NOTIFICACAO
+================================================================
+M66 existe: SIM
+  Trigger: trg_propagar_financeiro_alocacao
+  Tabela: alocacoes_escala
+  Tipo: BEFORE INSERT OR UPDATE
+  Volatility: VOLATILE
+  Security: SECURITY DEFINER
+  Enabled: O (sim)
+  Unico: SIM (1 trigger na tabela)
+
+M80 existe: SIM
+  Trigger: trg_propagar_financeiro_os
+  Tabela: ordens_servico
+  Tipo: BEFORE INSERT OR UPDATE
+  Volatility: VOLATILE
+  Security: SECURITY DEFINER
+  Enabled: O (sim)
+  Unico: SIM (1 trigger na tabela)
+
+f_trg_notificar_os_para_app:
+  Existe: SIM
+  Trigger: trg_notificar_os_para_app
+  Tabela: ordens_servico
+  Tipo: BEFORE INSERT OR UPDATE
+  Volatility: VOLATILE
+  Security: SECURITY DEFINER
+  Enabled: O (sim)
+
+prestador UUID usado corretamente:
+  M66: NEW.prestador_id (UUID) usado em lookup prestadores p WHERE p.id = NEW.prestador_id — CORRETO
+  M80: NEW.prestador (UUID) usado em lookup prestadores p WHERE p.id = NEW.prestador — CORRETO
+  M66: cast para TEXT em financeiro_pagar.os_id — CORRETO
+  M80: cast para TEXT em financeiro_pagar.os_id — CORRETO
+
+Nenhum teste com WRITE executado.
+
+Resultado: PASS
+
+================================================================
+CHECK 9 — MIGRATION HISTORY
+================================================================
+Tabela: supabase_migrations.schema_migrations
+Colunas: version, statements, name
+
+Migrations registradas:
+  20260728 — hotfix001_rpcs_app_motorista (1 registro)
+
+Migration 02K aplicada funcionalmente: SIM
+  (funcoes de trigger M66/M80 existem e estao ativas)
+
+schema_migrations alinhada: NAO
+  Apenas 1 migration registrada (20260728).
+  Demais migrations foram aplicadas via Supabase CLI
+  mas nao refletidas nesta tabela (comportamento
+  do supabase db push --include-all).
+
+Nao executado db push. Nao inserido migration history.
+
+Resultado: PARCIAL (funcs OK, tabela desalinhada)
+
+================================================================
+CHECK 10 — PENDENCIAS FINANCEIRAS CONHECIDAS
+================================================================
+A. guard contra pago sem baixa .............. RESOLVIDO
+   (triple guard: UI + Service + DB trigger)
+
+B. schema_migrations ....................... PENDENTE
+   (apenas 1 migration registrada, demais nao rastreadas)
+
+C. politica de vencimento D+30 ............. NAO AUDITADO
+   (verificado que M66/M80 usam CURRENT_DATE + 30,
+   mas politica de negocio nao foi auditada)
+
+D. recorrencia de despesas fixas ........... NAO AUDITADO
+
+E. parcelamento ............................ NAO AUDITADO
+
+F. Categoria x Plano de Contas x Centro de Resultado
+                                            NAO AUDITADO
+
+G. competencia separada de vencimento/pagamento
+                                            NAO AUDITADO
+
+H. previsto x realizado .................... NAO AUDITADO
+
+I. DRE x Fluxo de Caixa/Tesouraria ......... NAO AUDITADO
+
+================================================================
+CLASSIFICACAO FINAL
+================================================================
+
+CONSISTENCIA FINANCEIRA: PASS
+
+  Check 1 (Pago s/ baixa):    PASS (0/0/0)
+  Check 2 (Baixas orfas):     PASS (0)
+  Check 3 (Duplicidade):      PASS (0 em 4 tabelas)
+  Check 4 (Registros 02K):    PASS (sem baixas indevidas)
+  Check 5 (Fechamento 02L):   PASS (FP+b+PP consistentes)
+  Check 6 (Saneamento 02M.2): PASS (status=cancelado)
+  Check 7 (Guard fluxo):      PASS (NAO, triple guard)
+  Check 8 (M66/M80):          PASS (existentes, habilitados)
+  Check 9 (Migration):        PARCIAL (funcs OK, tabela NOK)
+  Check 10 (Pendencias):      1 RESOLVIDO, 1 PENDENTE, 7 NAO AUDITADO
+
+================================================================
+BLOQUEADORES DO FECHAMENTO TMS
+================================================================
+
+1. schema_migrations desalinhada
+   Risco: MEDIO
+   Impacto: Nao impede operacao, mas dificulta rastreabilidade
+            de migrations e auditoria de schema.
+
+2. Pendencias NAO AUDITADAS (C-I)
+   Risco: MEDIO
+   Impacto: Funcionalidades de competencia, DRE, previsto/realizado,
+            recorrencia e categorizacao podem ter gaps nao mapeados.
+            Nao sao bloqueadores diretos do fechamento financeiro,
+            mas sao necessarios para relatorios gerenciais.
+
+================================================================
+FECHAMENTO TMS: NAO CONCLUIDO
+  (consistencia financeira validada, pendencias estruturais remanescentes)
+================================================================
+
+Arquivo gerado: FIN-SANE-02M.3-FINANCE-RECONCILIATION-GATE.txt
+Tamanho: ~4.5 KB
+Data/hora: 2026-09-19
+Modelo: MiMo-V2.5

@@ -9,15 +9,23 @@ CREATE TABLE IF NOT EXISTS public.configuracoes_sistema (
 ALTER TABLE public.configuracoes_sistema ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "configuracoes_sistema_select" ON public.configuracoes_sistema;
-CREATE POLICY "configuracoes_sistema_select" ON public.configuracoes_sistema
+DROP POLICY IF EXISTS "configuracoes_sistema_select" ON public.configuracoes_sistema;
+DROP POLICY IF EXISTS "configuracoes_sistema_select" ON configuracoes_sistema;
+CREATE POLICY "configuracoes_sistema_select" ON configuracoes_sistema
   FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "configuracoes_sistema_insert" ON public.configuracoes_sistema;
-CREATE POLICY "configuracoes_sistema_insert" ON public.configuracoes_sistema
+DROP POLICY IF EXISTS "configuracoes_sistema_insert" ON public.configuracoes_sistema;
+DROP POLICY IF EXISTS "configuracoes_sistema_insert" ON configuracoes_sistema;
+CREATE POLICY "configuracoes_sistema_insert" ON configuracoes_sistema
   FOR INSERT WITH CHECK (true);
 
 DROP POLICY IF EXISTS "configuracoes_sistema_update" ON public.configuracoes_sistema;
-CREATE POLICY "configuracoes_sistema_update" ON public.configuracoes_sistema
+DROP POLICY IF EXISTS "configuracoes_sistema_update" ON public.configuracoes_sistema;
+DROP POLICY IF EXISTS "configuracoes_sistema_update" ON configuracoes_sistema;
+CREATE POLICY "configuracoes_sistema_update" ON configuracoes_sistema
   FOR UPDATE WITH CHECK (true);
 
 ALTER TABLE public.configuracoes_sistema REPLICA IDENTITY FULL;
+
+

@@ -1,0 +1,133 @@
+RELATÓRIO TMS-S01 — REFINAMENTO VISUAL DO EXTRATO DO PRESTADOR
+Data: 21/08/2026
+Status: B — PDF GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+1. ARQUIVO/TEMPLATE LOCALIZADO
+============================================================
+
+src/lib/pdf/extratoPrestadorReport.ts
+(gerador único do EXTRATO DE FECHAMENTO DO PRESTADOR)
+
+============================================================
+2. ASSET DO LOGO UTILIZADO
+============================================================
+
+public/logos/logo-conexao-branco.png  ← EXISTENTE no projeto (versão branca
+oficial). Usado via getLogoWithFallback(true) + drawLogoSafe sobre o fundo
+azul navy. LOGO BRANCO LOCALIZADO (não foi preciso criar artificialmente).
+
+============================================================
+3. ARQUIVOS ALTERADOS
+============================================================
+
+- src/lib/pdf/extratoPrestadorReport.ts (somente layout/visual)
+
+Nenhum outro arquivo alterado.
+
+============================================================
+4. ALTERAÇÃO DO CABEÇALHO
+============================================================
+
+- Substituída a faixa branca por uma FAIXA AZUL ESCURO INSTITUCIONAL
+  (NAVY #0F1A2E) com largura total (0 a pageWidth, 26mm de altura).
+- ESQUERDA: logo branco oficial (getLogoWithFallback(true)).
+- DIREITA (texto BRANCO sobre azul):
+    Conexão Express Transportes LTDA   (razão em destaque, bold)
+    CNPJ: 31.227.975/0001-80           (menor)
+    São Paulo/SP                       (menor)
+  Hierarquia preservada: razão > CNPJ > cidade/UF.
+
+============================================================
+5. NOVA ORGANIZAÇÃO PRESTADOR / CLIENTE
+============================================================
+
+BLOCO SUPERIOR:
+- ESQUERDA: PRESTADOR — nome, CPF/CNPJ (mascarado), veículo, placa.
+- DIREITA: CLIENTE — nome real (ou "Todos os clientes").
+  Cliente NÃO está mais no bloco PERÍODO. Nunca UUID/"Cliente selecionado".
+
+============================================================
+6. NOVA ORGANIZAÇÃO PERÍODO / PAGAMENTO
+============================================================
+
+BLOCO INFERIOR:
+- ESQUERDA: PERÍODO — datas na MESMA LINHA:
+    31/05/2026 a 20/08/2026
+  Origem/Tipo discreto abaixo do período.
+- DIREITA: PAGAMENTO — Status (e previsão/data de pagamento quando houver),
+  separado do bloco superior.
+
+Ordem final do documento:
+  CABEÇALHO AZUL → TÍTULO → PRESTADOR | CLIENTE → PERÍODO | PAGAMENTO →
+  RESUMO FINANCEIRO → VALOR LÍQUIDO → OPERAÇÕES DO PERÍODO → rodapé.
+
+============================================================
+7. DATAS NA MESMA LINHA — CONFIRMAÇÃO
+============================================================
+
+SIM — período exibido como "31/05/2026 a 20/08/2026" (uma única linha,
+formato horizontal). Não usa mais "De:" / "Até:" em linhas separadas.
+
+============================================================
+8. NENHUMA REGRA FINANCEIRA ALTERADA
+============================================================
+
+SIM — nenhum cálculo, valor, crédito, débito, operação, filtro, origem de
+dados ou regra de pagamento foi alterado. Somente posicionamento visual.
+
+============================================================
+9. VALIDAÇÃO REALIZADA
+============================================================
+
+- npx tsc --noEmit → 0 erros
+- npm run build → OK (1m 08s)
+- npx vitest run src/test/extratoPrestadorService.test.ts → 18/18
+- PDF gerado pelo gerador REAL (CÉSAR AUGUSTO HOLANDA SILVA + Calvo
+  Comércio e Importação Ltda; 31/05/2026 a 20/08/2026; status programado;
+  previsão 05/09/2026; líquido R$ 11.750,50):
+    test-results/tms-s01/extrato_cesar_calvo.pdf
+- PDF ABERTO no visualizador padrão (Invoke-Item).
+
+Conferência visual esperada (no PDF aberto):
+  [x] cabeçalho azul escuro
+  [x] logo branco (asset existente)
+  [x] dados da empresa brancos
+  [x] Prestador à esquerda
+  [x] Cliente à direita
+  [x] Período abaixo do Prestador (datas na mesma linha)
+  [x] Pagamento/Status à direita do período
+  [x] Pagamento imediatamente antes do Resumo Financeiro
+  [x] Resumo Financeiro intacto
+  [x] valores financeiros idênticos aos anteriores
+  [x] Operações do período intactas
+  [x] sem sobreposição (layout calculado com alturas por bloco)
+  [ ] confirmação visual final pelo usuário no arquivo aberto
+
+============================================================
+10. RESULTADO
+============================================================
+
+Layout ajustado ao modelo aprovado: cabeçalho azul institucional com logo
+branco, Prestador/Cliente no bloco superior, Período/Pagamento no bloco
+inferior, datas do período na mesma linha, espaçamento compacto. Cálculos e
+dados preservados integralmente.
+
+LAYOUT EXTRATO: HOMOLOGADO NÃO (aguarda aprovação visual do usuário)
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+
+============================================================
+FALTA
+============================================================
+
+- Aprovação visual do usuário no PDF aberto
+  (test-results/tms-s01/extrato_cesar_calvo.pdf).
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Aprovação visual final do layout TMS-S01 no TMS real (Financeiro ->
+Pag. Prestadores -> Gerar Extrato) com o prestador de produção, conferindo
+o cabeçalho azul, organização Prestador/Cliente/Período/Pagamento e datas
+na mesma linha antes de marcar HOMOLOGADO.

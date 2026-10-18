@@ -1,0 +1,147 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6D.1-RELATORIO-FILTROS-REAIS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS local (Supabase PROD, somente leitura)
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao funcional de UI/consulta. SEM migration. Banco inalterado.
+RESULTADO: PASS — todos os filtros visiveis do Relatorio Financeiro sao funcionais
+           e combinaveis; CSV/Impressao usam o conjunto filtrado completo.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ORIGEM REAL DO CLIENTE (sem inferencia por texto, sem nova coluna)
+--------------------------------------------------------------------------------
+Cada linha do relatorio passa a carregar cliente por VINCULO OPERACIONAL:
+  pagamentos_prestadores.os_id
+    -> ordens_servico.id.cliente_id  (preferencial)
+    -> alocacoes_escala.id.cliente_id (fallback)
+    -> clientes.id  => nome_fantasia || razao_social
+Implementado em fetchPagamentos() (2 consultas em lote: ordens_servico +
+alocacoes_escala; 1 consulta clientes para nomes). Mapeado por pagamento
+(state ppClientes) e injetado no modelo via resolver.
+NAO foi criada coluna/tabela. NAO ha inferencia por nome/texto.
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/helpers/relatorioPrestadorHelper.ts
+    * LinhaRelatorioPrestador += clienteId, clienteNome, osNumero
+    * gerarLinhasRelatorio(..., resolverCliente?) — mapeia cliente real
+    * NOVO filtrarLinhasRelatorio(linhas, filtros) — periodo/prestador/cliente/
+      origem/status/busca(PreencheOS)
+    * NOVO paginarLinhas(linhas, page, pageSize) — slice apos filtro
+    * NOVO montarLinhasCSV(linhas) — Data Servico, Cliente, OS, Origem, ...
+    * exportarCSV passa a usar montarLinhasCSV
+- src/components/financeiro/PagamentoPrestadores.tsx
+    * state ppClientes (mapa pagamento->cliente real) e imprimindoRelatorio
+    * fetchPagamentos enriquece cliente por os_id
+    * linhasRelatorio com resolver; linhasRelatorioFiltradas via helper;
+      linhasRelatorioPagina via paginarLinhas
+    * filtro CLIENTE agora compara clienteId real
+    * BUSCA passa a casar Prestador OU numero da OS
+    * botao Imprimir renderiza o conjunto FILTRADO COMPLETO e imprime
+- src/test/fin_prog05d6d1_relatorio_filtros.test.ts (NOVO — 12 testes)
+NENHUMA migration. NENHUMA escrita em banco.
+
+--------------------------------------------------------------------------------
+3. FILTROS ANTES x DEPOIS
+--------------------------------------------------------------------------------
+CLIENTE ....... ANTES: select visivel mas INERTE (linhas sem cliente_id)
+                DEPOIS: funcional por ID real (clienteId)
+PRESTADOR ..... ANTES/DEPOIS: funcional (nome resolvido do id)
+ORIGEM/TIPO ... funcional (mapa ordem_servico/escala/manual)
+STATUS ........ funcional (select da 05D.6D)
+PERIODO ....... funcional pela DATA DO SERVICO (periodoInicio)
+BUSCA ......... ANTES: somente Prestador
+                DEPOIS: Prestador OR numero da OS (exigencia 05D.6D)
+Todos operam sobre o conjunto COMPLETO antes da paginacao.
+
+--------------------------------------------------------------------------------
+4. PROVAS AUTOMATICAS (12/12 PASS — sem banco)
+--------------------------------------------------------------------------------
+A) cliente A ...................... 15/30, todos cliA ....................... PASS
+B) prestador P2 ................... 15/30, todos P2 ......................... PASS
+C) busca OS "OS-A-3" .............. 1 linha, OS correta ..................... PASS
+   C2) busca "P2" ................. 15 linhas ............................... PASS
+D) status "pago" .................. 15 linhas, todas pago ................... PASS
+E) combinada (periodo+cliente+prestador+status) 15 linhas, todos os criterios PASS
+   E2) periodo sozinho ............ 15 linhas (data do servico) ............. PASS
+F) paginacao ...................... conj=30; p1=25; p2=5; sem overlap; total=30 PASS
+   F2) filtro reduz conjunto ...... 15; pagina 1 correta ................... PASS
+G) CSV ............................ rows = conjunto filtrado (15) ........... PASS
+H) impressao ...................... conjunto filtrado (15) .................. PASS
+Vinculo do cliente ................ linha[0].clienteId=cliA / nome=CLIA ..... PASS
+
+--------------------------------------------------------------------------------
+5. PAGINACAO
+--------------------------------------------------------------------------------
+- Filtros/busca/status ANTES do slice (filtrarLinhasRelatorio -> paginarLinhas).
+- Mudar filtro reseta pagina para 1 (useEffects de reset ja existentes + status).
+- totalCount do PaginationBar = conjunto filtrado completo (nao a pagina).
+- Pagina 2 nao altera os totais (totais/cards calculados do conjunto filtrado).
+- Anterior / 1 2 3 ... / Proxima (componente PaginationBar do sistema).
+- pageSize=25 mantido.
+
+--------------------------------------------------------------------------------
+6. CSV E IMPRESSAO
+--------------------------------------------------------------------------------
+CSV (montarLinhasCSV) inclui: Data Servico, Prestador, Cliente, OS, Origem,
+  Servico, Pedagio, Adicional, Descontos, Reembolsos, Bonus, Adiantamentos,
+  Liquido, Status Pagamento/Conferencia/Aprovacao.
+Quantidade = conjunto FILTRADO COMPLETO (teste G).
+IMPRESSAO: botao aciona modo que renderiza linhasRelatorioFiltradas (todas) antes
+  de window.print (teste H). Layout de impressao NAO redesenha.
+
+--------------------------------------------------------------------------------
+7. TESTE/HML / CANCELADOS / INDETERMINADOS / AGREGADO (preservado)
+--------------------------------------------------------------------------------
+- TESTE/HML: fetchOss/fetchPagamentos mantem is_teste=false (nao infla indicadores).
+- Cancelados: status<>'cancelado' nao entram como ativos.
+- INDETERMINADOS: nenhuma data inventada; rotulo "Data nao determinada" no detalhe.
+- AGREGADO: fetchOss exclui tipo_pagamento='fechamento' (sem duplicar individual).
+- Banco NAO foi alterado.
+
+--------------------------------------------------------------------------------
+8. BANCO ANTES = DEPOIS (nenhuma alteracao)
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | soma valor_liquido 90.229,96 | financeiro_pagar 178 |
+financeiro_baixas 19 | lote_id nao nulo 0.
+Somente leitura (UI/consulta). Nenhuma RPC/UPDATE executado nesta missao.
+
+--------------------------------------------------------------------------------
+9. REGRESSAO
+--------------------------------------------------------------------------------
+- Novos testes de filtros (A-H): 12/12 PASS.
+- vitest (subset financeiro + layout financeiro + novos): 8 arquivos / 205 PASS.
+- npm run build: OK — "built in 52.49s".
+- tsc -p tsconfig.app.json --noEmit: EXIT 2 — 750 erros PRE-EXISTENTES (mesmo
+  baseline; nenhum erro novo nos arquivos alterados).
+- Scripts: 05D.6C 15/15 | 05D.6C.1 15/15 | 05D.6B.1 17/17 | 05D.6B 20/20 |
+  05D.6A 15/15 | 05D.4 13/13.
+
+--------------------------------------------------------------------------------
+10. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Linhas sem os_id (ex.: manuais sem OS) resolvem cliente vazio; se o filtro de
+    CLIENTE estiver ativo, elas sao excluidas (comportamento esperado/documentado).
+R2) Enriquecimento do cliente faz 2 consultas extras por carga (ordens_servico +
+    alocacoes_escala) + 1 de nomes; volume atual baixo. Pode migrar para uma view
+    no futuro (sem migration agora).
+R3) Status usa campo textual (valores legados mistos) — normalizacao e melhoria futura.
+R4) 21 INDETERMINADOS seguem sem data confiavel (nao inventada).
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO RECOMENDADA
+--------------------------------------------------------------------------------
+05D.6D.2 — (a) validacao visual (screenshots) do Relatorio Financeiro com filtros
+reais (cliente/OS/combinados) apos login ADM; (b) opcional: view de enriquecimento
+cliente/os para reduzir consultas; (c) ordenacao configuravel por coluna.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6D1-RELATORIO-FILTROS-REAIS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6D1-RELATORIO-FILTROS-REAIS-RESULTADO.txt
+Tamanho ..: 8892 bytes
+Data .....: 24/09/2026 17:46:44
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6D.1
+================================================================================

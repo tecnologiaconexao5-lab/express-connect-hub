@@ -1,0 +1,78 @@
+================================================================================
+ A31-I.1 — AJUSTE VISUAL FINAL DA FATURA (MODELO DO CLIENTE)
+ Relatório curto — Missão A31-I.1
+ Data: 2026-08-17   |   Escopo: PDF/Prévia do modelo de faturamento do cliente
+================================================================================
+
+SEÇÃO 1 — ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+1. src/utils/pdfFatura.ts — gerarPdfCalvo (PDF do modelo do cliente)
+2. src/components/financeiro/FaturaPanel.tsx — Prévia (prévia = PDF)
+   (src/test/a31i_fatura_pdf_visual.test.ts regenerado — sem mudança de código)
+
+SEÇÃO 2 — AJUSTES VISUAIS REALIZADOS
+--------------------------------------------------------------------------------
+1. LOGO
+   - Antes: pequeno (maxWidth 180, y=20) e deslocado à esquerda.
+   - Agora: GRANDE (maxWidth 300, maxHeight 110) e CENTRALIZADO no topo, com
+     bastante espaço branco superior (y=28) e inferior antes da faixa.
+2. CABEÇALHO DA CONEXÃO
+   - A faixa salmão ficou FINA (altura 22pt) e contém SOMENTE
+     "CONEXÃO SERVIÇOS EXPRESS LTDA" centralizada.
+   - Abaixo da faixa, em FUNDO BRANCO e centralizados: CNPJ, INSCRIÇÃO
+     ESTADUAL, Endereço, E-MAIL (fonte 9, hierarquia da referência).
+3. COBRANÇA PARA
+   - Faixa cinza FINA (altura 20pt): "Cobrança para: [RAZÃO SOCIAL]".
+   - Logo abaixo, em FUNDO BRANCO e alinhados à esquerda: CNPJ, IE, ENDEREÇO
+     (sem card) — dados do cliente vinculado.
+4. TABELA
+   - Exatamente FATURA | DESCRIÇÃO | PARCELA | VENCIMENTO | VALOR.
+   - Proporções: DESCRIÇÃO auto (larga), FATURA 85pt (estreita), PARCELA 55pt
+     (estreita), VENCIMENTO 85pt (médio), VALOR 90pt (médio).
+   - Cabeçalho cinza claro, bordas finas escuras.
+   - VALOR em AZUL ESCURO (#003399) — destacado na coluna.
+5. TOTAL DA FATURA — REMOVIDO
+   - A linha/bloco "TOTAL DA FATURA" NÃO existe mais no PDF nem na prévia do
+     modelo do cliente (confirmado por inspeção do PDF gerado: false).
+   - O valor aparece somente na coluna VALOR da tabela.
+6. DADOS BANCÁRIOS
+   - Após a tabela, à esquerda, SEM card (sem fundo/borda):
+     "Dados para Transferência Bancária" (azul escuro) e abaixo:
+     Banco [nome] / AG: [agência] / C/C: [conta] / CHAVE PIX: [pix].
+   - Usa a configuração financeira oficial (input.empresa) — sem hardcode.
+7. RODAPÉ
+   - Pequeno, discreto, cinza, canto inferior direito:
+     "Fatura [número] - Conexão Express".
+8. PRÉVIA = PDF
+   - Mesmos ajustes aplicados na prévia do TMS: logo grande centralizado,
+     faixa salmão fina só com razão social, dados da empresa em branco
+     centralizados, faixa cinza fina "Cobrança para", dados do cliente em
+     branco à esquerda, tabela com valor azul, banco sem card, rodapé discreto.
+
+SEÇÃO 3 — CONFIRMAÇÕES
+--------------------------------------------------------------------------------
+- TOTAL DA FATURA removido: SIM (PDF inspecionado: false; prévia removida).
+- Dados do cliente aparecem abaixo da faixa cinza em fundo branco: SIM.
+- montarDescricaoCalvo / regras homologadas: NÃO alterados.
+- "Calvo" como nome genérico na interface: NÃO exposto (mantido só como
+  código técnico interno "calvo").
+- Nenhum dado real de produção / migration alterado. Nenhuma fatura emitida;
+  numeração de produção não consumida.
+
+SEÇÃO 4 — TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx tsc --noEmit ........................ ✅ 0 erros (escopo)
+- a31i_fatura_pdf_visual.test.ts ......... ✅ 2/2 (PDF local mocked gerado em
+  test-results/a31i/fatura_modelo_cliente_visual.pdf ≈7,5 KB)
+- a30_modelos_fatura ..................... ✅ 14/14
+- fase2a_fatura .......................... ✅ 10/10
+- fase2b_fatura_pdf ...................... ✅ 11/11
+  Total: 37/37 PASS
+- npx eslint (pdfFatura, FaturaPanel, teste) ✅ 0 erros
+- npm run build .......................... ✅ 36.35s
+
+SEÇÃO 5 — PENDÊNCIAS
+--------------------------------------------------------------------------------
+- (QA) Comparação visual fina do PDF gerado com a referência (espaçamentos/
+  fontes) em ambiente com visualizador de PDF — rasterizer não disponível no
+  ambiente Windows atual.

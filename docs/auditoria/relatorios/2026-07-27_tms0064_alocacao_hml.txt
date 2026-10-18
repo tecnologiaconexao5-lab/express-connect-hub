@@ -1,0 +1,58 @@
+TMS-006.4 — CRIACAO CONTROLADA DE ALOCACAO HML NA ESCALA
+
+Data: 2026-07-27
+Status: ALOCACAO HML CRIADA, VALIDADA E LIMPA —
+        INTEGRACAO APP AINDA PENDENTE
+Percentual: 49% (neutro)
+
+=======================================================================
+RESUMO
+=======================================================================
+
+Criacao via Edge Function (criar-alocacao-escala):
+  ID:      6e66afad-7354-4571-a8ad-8c8124d3327d
+  Payload: ordem_servico_id + prestador_id + placa HML001
+  Valores: 0 (frete, repasse)
+  Cliente: null
+
+VALIDACAO 9/9: APROVADA ✅
+  FK ordem_servico_id = 28640e7b  ✅
+  FK prestador_id     = 5377592a  ✅
+  placa HML001 | tipo moto        ✅
+  cliente null | valores 0        ✅
+  metadata.os = TESTE-001         ✅
+  metadata.ordem_servico_id persistido ✅
+
+CLEANUP: OK
+  financeiro: 0 registros
+  alocacao removida
+  OS ainda pendente
+  HML001 sem alocacoes
+
+=======================================================================
+CORRECOES NO COMPONENTE
+=======================================================================
+
+src/components/operacao/EscalaLista.tsx:
+  1. Novo state novaOSId
+  2. SearchableSelect onChange captura record.id
+  3. Payload inclui ordem_servico_id
+  4. Metadata preserva ordem_servico_id
+
+=======================================================================
+LIMITACOES
+=======================================================================
+
+- Cancelamento via UPDATE falhou (motivo_cancelamento)
+- Realtime nao comprovado
+- UI test Playwright muito complexo (custom dropdowns)
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+ALOCACAO HML CRIADA, VALIDADA E LIMPA -
+INTEGRACAO APP AINDA PENDENTE
+
+9/9 validacoes aprovadas.
+Estado final: todos os registros HML intactos.

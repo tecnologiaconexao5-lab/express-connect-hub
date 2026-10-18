@@ -1,0 +1,161 @@
+FIN-MOT-2M — PROVA DA ESTRUTURA REAL DE FECHAMENTO FP EM PRODUÇÃO
+Data: 21/08/2026
+Modo: READ-ONLY em PRODUÇÃO (nenhuma escrita, nenhuma migration, nenhum registro)
+Status: COMPROVADO EM PRODUÇÃO
+
+============================================================
+RESPOSTAS OBJETIVAS
+============================================================
+
+ESTRUTURA FP EM PRODUÇÃO:
+  NÃO
+
+RPC EM PRODUÇÃO:
+  NÃO
+
+NUMERAÇÃO:
+  inexistente (não há FP-AAAA-000001 em produção)
+
+SEGURA PARA REUTILIZAR NO EXTRATO:
+  NÃO — a estrutura fechamentos_prestador e a RPC
+  gerar_numero_fechamento_prestador NÃO existem no Supabase de produção.
+  Não há base para gerar/validar FP-AAAA-000001 sem antes aplicar a
+  migration (fora do escopo desta missão).
+
+============================================================
+1. VERIFICAÇÃO EM PRODUÇÃO (READ-ONLY)
+============================================================
+
+Consulta: to_regclass('public.fechamentos_prestador')  -> null  (tabela NÃO existe)
+Consulta: to_regproc('gerar_numero_fechamento_prestador') -> null (RPC NÃO existe)
+
+- select de colunas de fechamentos_prestador -> 0 linhas (tabela inexistente)
+- count(*) em fechamentos_prestador -> ERRO "relation ... does not exist"
+- pg_tables filtrando '%fechamento%' ou '%extrato%' -> 0 linhas
+  (NENHUMA tabela de fechamento/extrato em public)
+- pg_proc filtrando '%fechamento%prestador%' -> 0 linhas (RPC ausente)
+
+============================================================
+2. SE A TABELA EXISTISSE (estrutura da migration local)
+============================================================
+
+A migration 20260821_fin_mot_1 (NÃO aplicada em produção) previa:
+
+- fechamentos_prestador:
+    id UUID PK
+    numero TEXT NOT NULL
+    prestador_id UUID NOT NULL REFERENCES prestadores(id)
+    periodo_inicio DATE NOT NULL
+    periodo_fim DATE NOT NULL
+    data_geracao TIMESTAMPTZ
+    status/status_conferencia/status_aprovacao/status_pagamento
+    forma_pagamento/chave_pix/banco/agencia/conta/tipo_conta
+    valor_servicos, valor_pedagio, valor_ajudante, ... (totais)
+- itens_fechamento_prestador
+- movimentos_conta_corrente_prestador
+
+Registros: N/A em produção (tabela inexistente).
+
+============================================================
+3. CONSTRAINT/UNIQUE DO NÚMERO
+============================================================
+
+Em produção: N/A (tabela inexistente).
+
+Na migration local, o campo numero é TEXT NOT NULL SEM UNIQUE explícito
+visível na definição lida — a RPC usa MAX(SUBSTRING(numero ...)) + 1, o que
+NÃO garante unicidade sob concorrência (diferente do padrão de fatura, que
+usa SEQUENCE + nextval atômico).
+
+============================================================
+4. COMO A RPC GERARIA O PRÓXIMO NÚMERO (definição inspecionada, NÃO executada)
+============================================================
+
+Definição da migration (não existe em produção):
+
+  ano = EXTRACT(YEAR FROM CURRENT_DATE)
+  sequencia = COALESCE(MAX(SUBSTRING(numero FROM 'FP-(\d+)-(\d+)')::INTEGER), 0) + 1
+              sobre fechamentos_prestador WHERE numero LIKE 'FP-' || ano || '-%'
+  numero_formatado = 'FP-' || ano || '-' || LPAD(sequencia, 6, '0')
+
+Observações técnicas:
+- Abordagem MAX+1 (não atômica sob concorrência);
+- Filtra ano, portanto reinicia contagem por ano;
+- NÃO foi executada (inspeção somente).
+
+PADRÃO DE REFERÊNCIA EM PRODUÇÃO (fatura):
+- f_gerar_numero_fatura existe em produção (pg_get_functiondef OK).
+- Usa SEQUENCE por ano (seq_fatura_AAAA) criada on-demand + nextval
+  (atômico/serializado) -> formato FAT-AAAA-000001.
+- Padrão confiável e JÁ PRODUZIDO para numeração humana no sistema.
+
+============================================================
+5. NÚMERO DO EXTRATO ATUAL (contexto)
+============================================================
+
+O extrato consultivo gera (extratoPrestadorService.ts:511):
+
+  EP-AAAAMMDD-XXXXXXXX
+
+  EP        -> prefixo fixo
+  AAAAMMDD  -> dataInicio sem separadores
+  XXXXXXXX  -> 8 primeiros caracteres do UUID do prestador (em maiúsculas)
+
+Isso NÃO é numeração humana nem sequencial.
+
+============================================================
+6. PERTINÊNCIA DO FP AO FECHAMENTO FINANCEIRO
+============================================================
+
+A migration FIN-MOT-1 prevê que fechamentos_prestador + numeração FP
+pertencem ao fechamento financeiro do prestador (usado para pagamento).
+Porém, como a estrutura NÃO existe em produção:
+- NÃO há como afirmar hoje que FP será o identificador do fechamento
+  financeiro real que pagará o motorista;
+- A decisão EP x FP depende de confirmar onde o fechamento financeiro será
+  persistido (fechamentos_prestador novo x pagamentos_prestadores existente).
+
+NÃO criar sequência paralela até essa definição.
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] tabela verificada em Produção (NÃO existe)
+[x] RPC verificada em Produção (NÃO existe)
+[x] definição da RPC inspecionada (somente migration local; não executada)
+[x] unique/constraint verificada (N/A em produção; sem UNIQUE na migration)
+[x] quantidade de fechamentos verificada (tabela inexistente -> 0)
+[x] nenhuma escrita realizada (somente SELECT/pg_catalog/regclass/regproc)
+[x] nenhuma migration executada
+
+============================================================
+CONCLUÍDO (fatos comprovados em Produção)
+============================================================
+
+- fechamentos_prestador: AUSENTE em produção.
+- gerar_numero_fechamento_prestador: AUSENTE em produção.
+- Nenhuma tabela %fechamento%/%extrato% em public.
+- Nenhuma RPC %fechamento%prestador% em public.
+- Numeração FP-AAAA-000001: INEXISTENTE em produção.
+- f_gerar_numero_fatura: EXISTE (padrão sequencial por ano, nextval atômico).
+
+============================================================
+FALTA (pendências reais)
+============================================================
+
+- Definir onde o fechamento financeiro do prestador será persistido em
+  produção (fechamentos_prestador a criar x pagamentos_prestadores atual).
+- Se adotar fechamentos_prestador: aplicar a migration 20260821_fin_mot_1
+  (com revisão de UNIQUE e preferência por SEQUENCE + nextval no lugar de
+  MAX+1) — decisão de negócio, fora desta missão.
+
+============================================================
+PRÓXIMA MISSÃO ÚNICA (não executar automaticamente)
+============================================================
+
+Decidir a base de numeração humana do extrato com base em onde o fechamento
+financeiro real será persistido (fechamentos_prestador OU pagamentos_
+prestadores). Enquanto fechamentos_prestador não existir em produção, a
+numeração do extrato deve continuar técnica (EP-AAAAMMDD-XXXXXXXX) ou usar
+padrão SEQUENCE próprio — NÃO reutilizar FP inexistente.

@@ -1,0 +1,84 @@
+================================================================================
+COM-01-ORC  COTACAO E PRECIFICACAO COMERCIAL (frete cliente)
+Nivel 4 (Comercial / Orcamento)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:19:36.528Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  a cotacao/orcamento calcula corretamente o valor do cliente.
+
+--------------------------------------------------------------------------------
+1. MECANISMO DE COTACAO (onde o valor e apurado)
+--------------------------------------------------------------------------------
+NAO existe RPC f_calcular_precificacao nem tabelas cotacoes/simulacoes_frete.
+A cotacao comercial e apurada por servicos TS:
+  * precificacaoEngineService.calcularPreco()/calcularPrecoRapido()
+       -> buscarTabelasService.buscarTabelaValoresCliente() (tabelas_valores)
+  * orcamentoCalculo.calcularValorFinal()/calcularValores()/resolverValorFinal()
+       -> formula canonica do orcamento (fonte unica, usada por tela e PDF).
+Persistencia: tabela orcamentos (coluna jsonb 'valores' + valor_base/valor_final).
+
+FORMULA DO ORCAMENTO (orcamentoCalculo.ts):
+  valorFinal = valorBase + adicionais + pedagio + kmExcedente + ajudante
+               + adValorem + gris + devolucao + reentrega - descontos
+  adValorem  = valorDeclarado * 0,30%   (0 p/ Amazon Logistica / Industrias ABC)
+  gris       = valorDeclarado * 0,15%   (idem)
+  lucroEstimado  = valorFinal - custoEstimado
+  margemEstimada = lucroEstimado / valorFinal * 100
+
+REGRA DO CLIENTE (buscarTabelaValoresCliente + engine):
+  valorCliente = valor_base + max(0, distancia_km - franquia_km) * valor_km_excedente
+  Hierarquia de selecao (7 niveis):
+    1 cliente_id | 2 contrato | 3 cliente+veiculo+vigencia | 4 cliente+veiculo
+    5 universal+veiculo+vigencia | 6 universal+veiculo | 7 fallback
+  Parametros usados: distancia (Mapbox), peso/cubagem (recomendacao de veiculo),
+  tipo de veiculo, valor declarado (adValorem/gris), prazo (faixas).
+
+--------------------------------------------------------------------------------
+2. VALIDACAO (funcoes CANONICAS reais executadas sobre dados de producao)
+--------------------------------------------------------------------------------
+  [OK] orc_formula_canonica  2/2 orcamentos com valor>0 batem com calcularValorFinal()
+  [OK] orc_exibicao_resolverValorFinal  resolverValorFinal devolve o valor efetivo em todos
+  [OK] tabela_cliente_regra  7 tabelas ativas: valor = base + km_excedente*valor_km (regra do engine)
+  [OK] tabela_tem_regra_minima  7 tabelas de cliente ativas
+  [OK] orc_real_base  ORC-202609-7150 valorBase=1920 valorFinal=1920
+
+--------------------------------------------------------------------------------
+3. TABELAS DE CLIENTE ATIVAS (regra base + km excedente)
+--------------------------------------------------------------------------------
+  distancia de referencia (orcamento real): 129.257734 km
+  Tabela                                  | Cliente        | Base  | Franq | kmExcR$ | Valor cliente
+  ----------------------------------------|----------------|-------|-------|---------|--------------
+  HML E2E-06 VUC - HOMOLOGACAO APP       | HOMOLOGAÇÃO AP |   300 |   100 |     1.2 |       335.11
+  Fiorino térmica mineiro congelados     | Mineirao Abc   |   300 |   100 |     1.2 |       335.11
+  VAN 1800 kg Calvo                      | Calvo Comercio |   600 |   140 |       1 |          600
+  3/4 3.500 refrigerada                  | DVL - DISTRIBU |   900 |   100 |    2.49 |       972.85
+  HR/VAN 1800 GUARULHOS                  | CALVO          |   600 |   140 |       1 |          600
+  FIORINO DVL                            | DVL - DISTRIBU |   400 |   100 |     2.1 |       461.44
+  Moto atualizada                        | -              |    25 |     6 |    2.25 |       302.33
+
+--------------------------------------------------------------------------------
+4. ORCAMENTOS PERSISTIDOS
+--------------------------------------------------------------------------------
+  total=10 | com valor>0=2
+   - ORC-202609-7150 [em_analise] Cydak do Brasil LTDA veic=vuc base=1920 final=1920 canonico=1920 efetivo=1920 margem=100%
+   - ORC-202609-8659 [em_analise] Cydak do Brasil LTDA veic=vuc base=2200 final=0 canonico=2200 efetivo=2200 margem=100%
+  [OK] Formula canonica confere com o valor persistido (2/2 com valor>0).
+  [OK] resolverValorFinal devolve o valor efetivo (inclusive linhas legadas com valorFinal=0
+       e componentes preenchidos  caso do ORC-202609-8659, base 2200).
+
+--------------------------------------------------------------------------------
+5. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] Formula canonica do orcamento identica entre tela, save e PDF (fonte unica).
+  [OK] Regra do cliente (base + km excedente) correta em 100% das 7 tabelas ativas.
+  [OK] Hierarquia de 7 niveis de selecao de tabela implementada (cliente/contrato/universal).
+  [OK] adValorem/gris, pedagio, ajudante, devolucao/reentrega e descontos compoem o total.
+  [OK] margem/lucro estimados calculados (valorFinal - custoEstimado).
+  [i]  Orcamento real ORC-202609-7150 (VUC, 129,3km): valor base 1920 (negociado/manual);
+       sem tabela Cydak cadastrada, o valor nao veio do engine (entrada manual).
+
+EVIDENCIA: scripts/_com01orc_validacao.json | scripts/_com01orc_validacao.ts
+================================================================================
+FIM  COM-01-ORC
+================================================================================

@@ -1,0 +1,439 @@
+CORE-E2E-OS-APP-POD-03 — APP ATOMIC PROOF GATE
+=================================================
+Data: 2026-09-21
+Status: PASS CODE (analise estatica) — PASS FUNCIONAL pendente Redmi
+Ambiente: conexao_prestador (App Motorista Flutter/PWA)
+Modelo: MiMo-V2.5
+
+==================================================
+1 — INSPECAO DO CODIGO ATUAL
+==================================================
+
+APP_FILE=
+  C:\src\conexao_prestador\lib\features\operations\operation_detail_screen.dart
+  (4609 linhas originais → 4657 apos fix)
+
+PROOF_STEP=
+  Step 12: "Assinatura do recebedor" (lines 1702-1867)
+  Unico local onde o App cria delivery_proofs no fluxo principal.
+
+PROOF_CREATE_CALL=
+  DeliveryProofRepository().create(DeliveryProofEntity(...))
+  Linha original: 1814 (agora 1813)
+
+CURRENT_CATCH (ANTES do fix):
+  try {
+    await deliveryRepo.create(...);  // RETORNO IGNORADO
+  } catch (e) {
+    debugPrint('...save POD delivery_proofs error: $e');  // MORTO
+  }
+  // SEMPRE continua para Step 13/14
+
+PROBLEMA CONFIRMADO:
+  DeliveryProofRepository.create() retorna PersistResult — NUNCA throw.
+  O try-catch era dead code. O return value era ignorado.
+  Fluxo sempre avancava independentemente do resultado.
+
+REGISTER_POD_STEP=
+  Step 13: "Enviar POD" (line 1869+)
+  Chama repo.registerPodSent() → RPC f_atualizar_etapa_app(p_etapa='pod_registrado')
+
+FINISH_OPERATION_STEP=
+  Step 14: "Finalizar operacao" (line 1940+)
+  Chama repo.finishOperation() → RPC f_atualizar_etapa_app(p_etapa='servico_finalizado')
+
+==================================================
+2 — CORRECAO DO CATCH
+==================================================
+
+ANTES (lines 1811-1845 originais):
+  final loc = await _locationService.getCurrentPositionSafe();
+  try {
+    final deliveryRepo = DeliveryProofRepository();
+    await deliveryRepo.create(
+      DeliveryProofEntity(
+        id: const Uuid().v5(Uuid.NAMESPACE_DNS, 'pod_$opId'),
+        stopId: opId,
+        operationId: opId,
+        idempotencyKey: 'pod_$opId',
+        driverId: driverId,
+        receiverName: result['receiverName'] ?? '',
+        receiverDocument: result['receiverDocument'],
+        status: 'delivered',
+        signatureUrl: signatureUrl,
+        photoUrl: photoUrl,
+        latitude: loc?.latitude,
+        longitude: loc?.longitude,
+        gpsAccuracy: loc?.accuracy,
+        observation: result['observation'],
+        deliveredAt: DateTime.now(),
+      ),
+    );
+  } catch (e) {
+    debugPrint('[OperationDetailScreen] save POD delivery_proofs error: $e');
+  }
+  // SEMPRE continua — toast de sucesso — Step 13/14
+
+DEPOIS (corrigido):
+  final loc = await _locationService.getCurrentPositionSafe();
+  final deliveryRepo = DeliveryProofRepository();
+  final proofResult = await deliveryRepo.create(
+    DeliveryProofEntity(
+      id: const Uuid().v5(Uuid.NAMESPACE_DNS, 'pod_$opId'),
+      stopId: opId,
+      operationId: opId,
+      idempotencyKey: 'pod_$opId',
+      driverId: driverId,
+      receiverName: result['receiverName'] ?? '',
+      receiverDocument: result['receiverDocument'],
+      status: 'delivered',
+      signatureUrl: signatureUrl,
+      photoUrl: photoUrl,
+      latitude: loc?.latitude,
+      longitude: loc?.longitude,
+      gpsAccuracy: loc?.accuracy,
+      observation: result['observation'],
+      deliveredAt: DateTime.now(),
+    ),
+  );
+
+  if (proofResult.isFailed) {
+    // BLOCK: mostrar erro, marcar etapa como erro, RETURN
+    debugPrint('[OperationDetailScreen] delivery_proof FAILED: ...');
+    ScaffoldMessenger → SnackBar RED "Falha ao salvar comprovante"
+    setState → StageStatus.error
+    return;  // NAO avanca para Step 13/14
+  }
+
+  if (proofResult.isQueuedOffline) {
+    // PROCEED com aviso: proof salvo localmente, sync pendente
+    _podMediaQueuedOffline = true;
+  }
+
+  // SUCCESS: continua normalmente
+
+Tambem corrigido _persistEvidenciasExpress (Step 13 Express):
+  ANTES: Future<void> — return value ignorado, catch morto
+  DEPOIS: Future<bool> — retorna result.success, catch retorna false
+  Step 13 agora verifica: if (!proofPersisted) → BLOCK + RETURN
+
+==================================================
+3 — CONFIRMACAO REAL DO INSERT
+==================================================
+
+CREATE_RETURN_TYPE=
+  Future<PersistResult>
+  PersistResult contem: outcome (PersistOutcome), error, wasAlreadyPresent
+
+INSERT_ERROR_HANDLING=
+  DeliveryProofRepository.create() tratAMENTO INTERNO completo:
+  - Column error → retry sem campos opcionais
+  - FK error → PersistResult.failed (nao enfileira)
+  - Auth error → queue offline ou failed
+  - Duplicate → PersistResult.remote(wasAlreadyPresent: true)
+  - Network/other → queue offline (PersistResult.queuedOffline)
+  - Queue fail → PersistResult.failed
+
+INSERT_SUCCESS_CONFIRMATION=
+  PersistResult.remote() quando INSERT OK
+  PersistResult.remote(wasAlreadyPresent: true) quando duplicata/idempotente
+  PersistResult.queuedOffline() quando enfileirado offline
+
+NOTA: create() NUNCA throw. Todas as excecoes sao tratadas internamente.
+O try-catch anterior era 100% dead code.
+
+==================================================
+4 — ORDEM DO FLUXO
+==================================================
+
+FLOW_BEFORE (ANTES do fix):
+  upload evidencia → INSERT delivery_proofs (IGNORADO) → Step 13 → pod_registrado → Step 14 → servico_finalizado
+  (falha no proof NAO impedia avanco)
+
+FLOW_AFTER (DEPOIS do fix):
+  upload evidencia
+  → INSERT delivery_proofs CONFIRMADO (PersistResult.success = true)
+    → se isFailed: BLOCK + erro + return (nao avanca)
+    → se isQueuedOffline: proceed com warning
+    → se remote: proceed normalmente
+  → somente entao Step 13 → pod_registrado
+  → somente depois Step 14 → servico_finalizado
+
+==================================================
+5 — FALHA DE UPLOAD
+==================================================
+
+UPLOAD_OBSERVADO:
+  Step 12: StorageUploadService().uploadImage() para assinatura (lines 1731-1762)
+  - TEM catch properly: mostra erro, marca etapa error, return
+  - CORRETO — nao permite prosseguir sem assinatura
+
+  Step 12: StorageUploadService().uploadImage() para foto (lines 1769-1783)
+  - TEM catch: absorve erro, fallback para rawPhotoPath
+  - RISCO: photoUrl pode conter path local invalido em vez de URL remota
+  - NAO redesenhado (proibido pela missao)
+  - NOTA: foto com path local invalido sera salva em delivery_proofs.photo_url
+    mas o trigger copia para entregas_protocolo.foto_entrega_url — ambos terao
+    URL quebrada. Portal Cliente exibira imagem quebrada.
+
+VERIFICACAO:
+  Se upload obrigatorio falhar:
+  - Assinatura: BLOQUEADO (catch proprio, lines 1742-1761)
+  - Foto: NAO bloqueado (catch absorve, fallback path local)
+  - Delivery proof: BLOQUEADO pelo fix (PersistResult.isFailed)
+
+==================================================
+6 — RETRY
+==================================================
+
+APOS ERRO:
+  Motorista pode tentar novamente porque:
+  - Etapa marcada como StageStatus.error com errorMessage
+  - Loading liberado (_isStageLoading = false)
+  - Dados preservados (result do dialog permanece em memoria)
+  - Usuario pode clicar na etapa novamente para re-executar
+
+DUPLICATE_PROOF_RETRY_RISK=
+  BAIXO — protegido por idempotencia:
+
+  1. ID estavel: const Uuid().v5(Uuid.NAMESPACE_DNS, 'pod_$opId')
+     Mesmo ID gerado para mesma operacao
+
+  2. Idempotency key: 'pod_$opId'
+     DeliveryProofRepository._isAlreadyCached() verifica:
+     - cache local: p.id == proof.id || p.idempotencyKey == proof.idempotencyKey
+     - se ja no cache: retorna PersistResult.remote(wasAlreadyPresent: true)
+
+  3. Duplicate error handling (delivery_proof_repository.dart:78-85):
+     Se INSERT falha com duplicate/unique constraint:
+     - Retorna PersistResult.remote(wasAlreadyPresent: true)
+     - Tratado como sucesso
+
+  4. Risco residual:
+     - Se app reinicia entre INSERT OK e resposta ao App:
+       proxima tentativa gera mesmo ID → banco trata como duplicate → OK
+     - Se queue offline reenvia apos INSERT ja ter sido feito:
+       duplicate error → treated as success → OK
+
+  CONCLUSAO: Nao ha risco real de duplicidade. Idempotencia funciona.
+
+==================================================
+7 — NAO ALTERAR RPC
+==================================================
+
+RPC_CHANGED=NO
+Nao modificado:
+  - f_atualizar_etapa_app
+  - f_avancar_etapa_app_motorista
+
+TMS_CHANGED=NO
+Nao modificado:
+  - podService.ts
+  - escalaService.ts
+  - Nenhum arquivo TMS
+
+==================================================
+8 — TESTES LOCAIS (ANALISE ESTATICA)
+==================================================
+
+T1 proof success → pode avancar:
+  SE proofResult.isRemote = true
+  ENTAO: sem block, continua para Step 13/14
+  STATUS: OK (logica correta no codigo)
+
+T2 proof failure → nao registerPodSent:
+  SE proofResult.isFailed = true
+  ENTAO: return antes de Step 13
+  STATUS: OK (return explicito apos setState error)
+
+T3 proof failure → nao finishOperation:
+  SE proofResult.isFailed = true
+  ENTAO: return antes de Step 14 (Step 14 so atinge se Step 13 completou)
+  STATUS: OK (cadeia de blocks)
+
+T4 proof failure → mensagem visivel:
+  SE proofResult.isFailed = true
+  ENTAO: SnackBar RED "Falha ao salvar comprovante. Tente novamente."
+  STATUS: OK
+
+T5 proof failure → loading liberado:
+  SE proofResult.isFailed = true
+  ENTAO: _isStageLoading = false
+  STATUS: OK
+
+T6 proof failure → usuario pode tentar novamente:
+  SE proofResult.isFailed = true
+  ENTAO: etapa marcada StageStatus.error, loading false, dados preservados
+  STATUS: OK (usuario clica na etapa para re-executar)
+
+T7 sucesso continua fluxo normal:
+  SE proofResult.isRemote = true
+  ENTAO: toast verde "Assinatura registrada com sucesso!" → continua
+  STATUS: OK
+
+T8 nenhuma alteracao TMS/RPC:
+  Nenhum arquivo TMS ou RPC modificado
+  STATUS: OK
+
+==================================================
+9 — TESTE REDMI (PENDENTE)
+==================================================
+
+REDMI_CONNECTED=PENDENTE
+PHYSICAL_APP_TEST=PENDENTE
+
+TESTE A — SUCESSO (pendente Redmi):
+  Operacao QA/controlada → motorista assina → proof persiste → etapa avanca
+  Confirmar no banco:
+  ALLOCATION_ID=PENDENTE
+  DELIVERY_PROOF_ID=PENDENTE
+  PROOF_PERSISTED=PENDENTE
+
+TESTE B — FALHA CONTROLADA (pendente Redmi):
+  Forma segura de provocar falha:
+  - Opcao 1: Desconectar rede antes do INSERT (airplane mode)
+  - Opcao 2: Usar operacao com dados invalidos que cause FK error
+  - Opcao 3: Simular timeout (dificil sem alterar producao)
+  NOTA: Nao e possivel provocar falha de INSERT sem alterar
+  RLS/Storage/conexao. O DeliveryProofRepository trata todos os erros
+  internamente e converte para PersistResult.
+  Se falha controlada nao puder ser produzida:
+  FAILURE_TEST=BLOCKED_SAFE_SIMULATION
+  (catch absorve erros internos — unico caminho para isFailed e
+  queue offline tambem falhar, o que e raro em ambiente controlado)
+
+  Confirmar (se falha produzida):
+  ERROR_VISIBLE=PENDENTE
+  POD_STEP_ADVANCED=PENDENTE
+  SERVICE_FINALIZED=PENDENTE
+  FORM_DATA_PRESERVED=PENDENTE
+  RETRY_AVAILABLE=PENDENTE
+
+==================================================
+10 — PROVA PONTA A PONTA DO SUCESSO
+==================================================
+
+Cenario de sucesso:
+  delivery_proofs → trigger trg_sync_delivery_proof_to_entregas → entregas_protocolo
+
+  DELIVERY_PROOF_ID=PENDENTE (Redmi)
+  PROTOCOL_ID=PENDENTE (Redmi)
+  PROOF_TO_PROTOCOL_SYNC=YES (trigger validado em POD-01: 9/9 OK)
+
+  Se a alocacao usada for pos FIX-POD-00E:
+  ALLOCATION_OS_ID=PENDENTE
+  OS_EXISTS=PENDENTE
+  OS_LINK_VALID=PENDENTE
+
+==================================================
+EVIDENCIA OBRIGATORIA
+==================================================
+
+APP_FILE=
+  C:\src\conexao_prestador\lib\features\operations\operation_detail_screen.dart
+
+PROOF_CREATE_CALL=
+  DeliveryProofRepository().create(DeliveryProofEntity(...))
+  Linha 1813 (apos fix)
+
+CURRENT_CATCH=
+  REMOVIDO — substituido por PersistResult.isFailed check
+  Linhas 1833-1858 (apos fix)
+
+CREATE_RETURN_TYPE=
+  Future<PersistResult>
+  PersistResult { outcome, error, wasAlreadyPresent }
+
+INSERT_ERROR_HANDLING=
+  Interno ao DeliveryProofRepository — todos os erros tratados
+  Column → retry, FK → failed, Auth → queue, Duplicate → success,
+  Network → queue offline
+
+INSERT_SUCCESS_CONFIRMATION=
+  PersistResult.remote() ou PersistResult.remote(wasAlreadyPresent: true)
+
+FLOW_BEFORE=
+  upload → INSERT (IGNORADO) → Step 13 → Step 14
+
+FLOW_AFTER=
+  upload → INSERT CONFIRMADO → se Failed BLOCK → Step 13 → Step 14
+
+FAILURE_BLOCKS_REGISTER_POD=YES (return antes de Step 13)
+FAILURE_BLOCKS_FINISH_OPERATION=YES (Step 14 inatingivel sem Step 13)
+ERROR_VISIBLE=YES (SnackBar RED + StageStatus.error)
+RETRY_AVAILABLE=YES (loading false, dados preservados, etapa clicavel)
+
+DUPLICATE_PROOF_RETRY_RISK=BAIXO (id v5 UUID + idempotency key 'pod_$opId')
+
+REDMI_CONNECTED=PENDENTE
+PHYSICAL_APP_TEST=PENDENTE
+
+SUCCESS_TEST=PENDENTE
+FAILURE_TEST=BLOCKED_SAFE_SIMULATION (catch interno previne isFailed facil)
+
+ALLOCATION_ID=PENDENTE
+DELIVERY_PROOF_ID=PENDENTE
+PROOF_PERSISTED=PENDENTE
+PROTOCOL_ID=PENDENTE
+PROOF_TO_PROTOCOL_SYNC=YES (trigger validado)
+
+RPC_CHANGED=NO
+TMS_CHANGED=NO
+
+TSC/ANALYZE_STATUS=0 errors, 4 info (pre-existing: deprecated NAMESPACE_DNS, use_build_context_synchronously)
+APP_BUILD_STATUS=PENDENTE (flutter build nao executado — requer dispositivo/emulador)
+
+==================================================
+NOTAS ADICIONAIS
+==================================================
+
+1. STOP_DETAIL_SCREEN.DART (line 482-488):
+   Outro local onde DeliveryProofRepository.create() e chamado.
+   Problema similar: catch absorve erro, fluxo continua para RPC.
+   FORA DO ESCOPO desta missao (foco: operation_detail_screen.dart).
+   Registrado para missao futura.
+
+2. PHOTO UPLOAD FALLBACK (line 1780-1783):
+   Se upload da foto falhar, fallback para rawPhotoPath (path local).
+   Delivery proof sera criado com URL quebrada.
+   FORA DO ESCOPO (proibido redesenhar Storage).
+   Registrado: foto com path local invalido = entrega sem evidencia visual.
+
+3. OFFLINE QUEUE:
+   DeliveryProofRepository._queueOffline() salva em SharedPreferences.
+   OfflineSyncService.syncPending() reenvia quando ha conexao.
+   Se queue tambem falhar → PersistResult.failed → BLOQUEIO.
+
+4. HMLLOCAL:
+   Se HmlLocal.enabled = true (homologacao local):
+   create() retorna PersistResult.remote() sem INSERT real.
+   Apenas adiciona ao _localCache. Tratado como sucesso.
+
+==================================================
+CRITERIO
+==================================================
+
+PASS CODE:
+  catch silencioso eliminado ✅
+  fluxo bloqueado corretamente ✅
+  PersistResult.isFailed impede Step 13/14 ✅
+  queuedOffline permite prosseguir (proof persistido localmente) ✅
+  retry disponivel apos falha ✅
+  duplicidade protegida por idempotencia ✅
+
+PASS FUNCIONAL:
+  Requer teste fisico no Redmi (pendente)
+  Limitacao: falha controlada dificil de produzir sem alterar
+  RLS/Storage/conexao — DeliveryProofRepository trata todos os erros
+  internamente. Cenario mais provavel: rede instavel → queue offline.
+
+==================================================
+ARQUIVOS MODIFICADOS
+==================================================
+
+1. C:\src\conexao_prestador\lib\features\operations\operation_detail_screen.dart
+   - Step 12 (Assinatura): try-catch morto → PersistResult gate (lines 1811-1858)
+   - _persistEvidenciasExpress: Future<void> → Future<bool> com PersistResult check
+   - Step 13 (Enviar POD): added proofPersisted check antes de registerPodSent
+
+==================================================

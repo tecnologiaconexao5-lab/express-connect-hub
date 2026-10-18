@@ -1,0 +1,197 @@
+================================================================================
+MISSÃO A25-H2 — CORREÇÃO DEFINITIVA DO RPC DE TRACKING + NOVA PROVA REAL
+Projeto: EXPRESS CONNECT HUB — TMS CONEXÃO EXPRESS
+Supabase Produção: uwrvzsjtpgaifkktpepn
+APK Instalado: 1.0.1+1313 (NÃO regenerado)
+Data: 2026-08-15
+================================================================================
+
+--------------------------------------------------------------------------------
+## RPC ANTES
+--------------------------------------------------------------------------------
+ERRO REAL REPETIDO (A25-H1):
+  PostgrestException | code: 22P02
+  invalid input syntax for type json — Token "<uuid>" is invalid
+
+VARIÁVEL PROBLEMÁTICA:
+  v_result JSONB;
+  INSERT INTO public.portal_tracking_realtime (...)
+  RETURNING id INTO v_result;         <-- id é UUID, v_result é JSONB
+  → cast implícito UUID → JSONB inválido → aborta transação → ROLLBACK.
+
+RETORNO ANTIGO:
+  RETURN jsonb_build_object(
+    'success', true, 'ok', true,
+    'id', v_result,                    <-- carregava o JSONB falho
+    ...
+  );
+
+CONSEQUÊNCIA:
+  - INSERT sofre rollback; nada chega a portal_tracking_realtime;
+  - fila offline cresce; Torre sem localização.
+
+--------------------------------------------------------------------------------
+## BACKUP
+--------------------------------------------------------------------------------
+Arquivo salvo (não sobrescreveu backups anteriores):
+  scripts/_a25h2_backup_rpc_registrar_posicao.sql
+
+Conteúdo registrado (via pg_get_functiondef + information_schema):
+  - Assinatura: p_latitude numeric, p_longitude numeric, p_alocacao_id uuid,
+    p_ordem_servico_id uuid DEFAULT NULL, p_captured_at timestamptz DEFAULT now(),
+    p_precisao numeric DEFAULT 0, p_velocidade numeric DEFAULT 0,
+    p_direcao numeric DEFAULT 0, p_bateria numeric DEFAULT NULL,
+    p_altitude numeric DEFAULT NULL, p_status_operacional text DEFAULT 'em_deslocamento',
+    p_origem text DEFAULT 'app_motorista'
+  - RETURNS jsonb
+  - SECURITY DEFINER = true
+  - search_path = public
+  - VOLATILE
+  - Grants: authenticated EXECUTE, postgres EXECUTE, service_role EXECUTE
+
+--------------------------------------------------------------------------------
+## RPC DEPOIS (CORREÇÃO APLICADA)
+--------------------------------------------------------------------------------
+Arquivo aplicado: scripts/_a25h2_fix_rpc_registrar_posicao.sql
+Método: CREATE OR REPLACE FUNCTION registrar_posicao_motorista (única alteração)
+
+VARIÁVEL UUID DEDICADA:
+  v_tracking_id UUID;                  <-- nova (substitui uso errado de v_result)
+
+CONSTRUÇÃO JSON EXPLÍCITA:
+  INSERT ... RETURNING id INTO v_tracking_id;
+  ...
+  RETURN jsonb_build_object(
+    'success', true, 'ok', true,
+    'id', v_tracking_id,               <-- UUID serializado corretamente por jsonb_build_object
+    'alocacao_id', ..., 'os_id', ..., 'prestador_id', ..., 'veiculo_id', ...,
+    'tenant_id', ..., 'primeiro_ponto', ..., 'message', ...
+  );
+
+CAMPOS GRAVADOS (todas as colunas existem — validado contra information_schema):
+  alocacao_id, os_id, prestador_id, veiculo_id, cliente_id, tenant_id, status,
+  latitude, longitude, precisao, velocidade, direcao, bateria, captured_at,
+  origem, metadata
+  → 16/16 colunas confirmadas EXISTENTES na tabela real.
+  → status_operacional/altitude NÃO são colunas → preservados em metadata (JSONB).
+  → NENHUMA coluna inexistente no INSERT.
+
+ASSINATURA: preservada integralmente (compatível com APK 1313).
+
+SEGURANÇA (A25-D preservada):
+  - prestador resolvido por auth.uid() (SELECT id INTO ... WHERE auth_user_id = auth.uid());
+  - NÃO consulta prestadores.tenant_id (coluna inexistente removida);
+  - tenant derivado da alocação (v_alocacao_tenant_id) + fallback current_tenant_id_safe();
+  - vínculo da alocação com o prestador (VALIDAÇÃO 4);
+  - validação de status da alocação (VALIDAÇÃO 5);
+  - coordenadas válidas (VALIDAÇÕES 6 e 7);
+  - dedup (mesma coordenada nos últimos 10s);
+  - SECURITY DEFINER preservado; search_path public preservado;
+  - grants preservados (authenticated/service_role/postgres);
+  - os_id NULL permitido (alocação sem OS).
+
+--------------------------------------------------------------------------------
+## PROVA REDMI (APK 1313 — FÍSICO)
+--------------------------------------------------------------------------------
+- Retomada automática: SIM (funcionou — fila offline fez flush após o fix).
+- Operação: OS-HML-MULTI-001 (alocação ca5fe225-7114-42da-9997-c3d466e5df52, em_rota).
+- GPS real: posições reais de São Paulo (lat -23.6766, lng -46.5988; precisão 21-28m;
+  uma com altitude 770m; velocidade 0).
+- RPC chamado: SIM, e AGORA COM SUCESSO (3 posições aceitas).
+- A fila offline que estava presa (rejeitada por 22P02) foi reenviada e ACEITA.
+
+--------------------------------------------------------------------------------
+## PROVA BANCO
+--------------------------------------------------------------------------------
+POSIÇÃO NOVA: SIM ✅
+  - Horário do flush: 2026-08-15T10:39:22Z (imediatamente após aplicar o fix).
+  - 3 posições reais gravadas na alocação ca5fe225:
+      id 467ae32b | captured_at 2026-08-11T14:37:39Z | lat -23.676656 lng -46.5987825 | precisao 21.6 | altitude 770m | metadata {"altitude":770,"status_operacional":"em_deslocamento"}
+      id f5b883c7 | captured_at 2026-08-11T14:47:24Z | lat -23.6766125 lng -46.5988569 | precisao 24.4
+      id 14f4aae1 | captured_at 2026-08-11T14:47:57Z | lat -23.6766679 lng -46.5987854 | precisao 28.2
+  - prestador_id: e6646799-fbac-453e-a3ef-afdfc01a7085 (PRESTADOR TESTE APP)
+  - alocacao_id: ca5fe225-7114-42da-9997-c3d466e5df52
+  - status: online | origem: app_motorista | tenant_id: 00000000-...-0001
+
+REDMI → RPC → BANCO = OK ✅
+  (created_at = momento do flush pós-fix; captured_at = momento real do GPS;
+   os_id NULL — operação sem OS, permitido pela correção.)
+
+--------------------------------------------------------------------------------
+## FILA OFFLINE
+--------------------------------------------------------------------------------
+- Flush ocorreu: SIM (no primeiro retry após o fix, às 10:39:22Z).
+- Diminuiu: SIM (3 pontos da fila foram enviados e aceitos — removidos da fila).
+- Erro: NÃO (as 3 tentativas anteriores que davam 22P02 agora passaram).
+
+--------------------------------------------------------------------------------
+## PROVA TORRE
+--------------------------------------------------------------------------------
+MARCADOR: PENDENTE DE POSIÇÃO NOVA
+  - A Torre (src/pages/TorreControle.tsx) está corretamente conectada:
+      * assina INSERT em portal_tracking_realtime (canal torre-realtime-tracking);
+      * carrega buscarUltimasPosicoes() (filtra posições ≤60min);
+      * GRUPO 2 (A25-D): alocações ativas sem OS com tracking recente;
+      * computeGpsState: "atualizado" se ≤15min → conta GPS Ativo/Motoristas Online.
+  - As 3 posições gravadas têm captured_at de 2026-08-11 (4 dias atrás) porque eram
+    pontos OFFLINE acumulados durante as falhas. A Torre corretamente NÃO os conta
+    como "GPS Ativo" (gpsState muito_antigo / filtro de 60min) — comportamento
+    correto para não exibir dados velhos como online.
+  - Para exibir marcador + "GPS Ativo" + "Motoristas Online", o Redmi precisa
+    enviar uma posição NOVA (captured_at ≤15min). Isso exige movimento físico
+    ≥50m (distanceFilter 50m no App) — o Redmi está parado (velocidade 0).
+
+MOTORISTAS ONLINE: 0 (aguardando posição nova)
+GPS ATIVO: 0 (aguardando posição nova)
+OPERAÇÃO EXIBIDA: pendente de posição nova (linha já no banco, pronta para consumo)
+
+--------------------------------------------------------------------------------
+## REALTIME
+--------------------------------------------------------------------------------
+- Assinatura confirmada: Torre escuta INSERT em portal_tracking_realtime
+  (postgres_changes, canal torre-realtime-tracking) e atualiza trackingPositions.
+- Recebimento de NOVA posição: NÃO TESTADO nesta janela (sem posição nova gerada
+  pelo Redmi parado). Mecanismo comprovado no código; teste real aguarda movimento.
+
+--------------------------------------------------------------------------------
+## BACKGROUND
+--------------------------------------------------------------------------------
+PENDENTE — exige primeiro uma posição FOREGROUND nova confirmada na Torre.
+O Redmi está parado; sem movimento não há evento GPS para validar foreground nem
+background. Registrada como pendência específica após a prova de movimento.
+
+--------------------------------------------------------------------------------
+## SEGURANÇA
+--------------------------------------------------------------------------------
+- Somente RPC autorizado alterado (CREATE OR REPLACE registrar_posicao_motorista): SIM ✅
+- Nenhuma tabela criada: SIM ✅
+- Nenhuma coluna criada/removida: SIM ✅
+- Nenhuma RLS alterada: SIM ✅
+- Nenhum trigger alterado: SIM ✅
+- Nenhuma outra RPC alterada: SIM ✅
+- Nenhum INSERT/UPDATE/DELETE manual: SIM ✅ (posições vieram do App real)
+- Nenhum dado artificial / posição falsa: SIM ✅
+- Flutter NÃO alterado: SIM ✅
+- APK NÃO regenerado: SIM ✅ (instalado permanece 1.0.1+1313)
+- Migration estrutural: NÃO executada ✅
+
+--------------------------------------------------------------------------------
+## STATUS FINAL
+--------------------------------------------------------------------------------
+APP/BACKEND HOMOLOGADOS — TORRE PENDENTE
+
+Justificativa:
+- BACKEND (RPC) corrigido e PROVADO: o erro 22P02 foi eliminado; a fila offline
+  do Redmi fez flush e as 3 posições reais foram aceitas → REDMI → RPC → BANCO = OK.
+- BANCO recebendo posição real: SIM (created_at 2026-08-15T10:39:22Z).
+- TORRE: código validado e conectado, porém exige posição NOVA (captured_at ≤15min)
+  para exibir marcador/GPS Ativo. O Redmi está parado; sem movimento físico ≥50m
+  não há evento GPS novo. NÃO é um defeito — é aguardando prova física de movimento.
+
+PRÓXIMO PASSO (prova física): mover o Redmi ≥50m (andar/veículo) com a OS em rota;
+observar nova posição em portal_tracking_realtime (captured_at recente) e o marcador
+na Torre (GPS Ativo / Motoristas Online). Em seguida, validar BACKGROUND (tela off).
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-H2
+================================================================================

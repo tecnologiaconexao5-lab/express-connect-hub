@@ -1,3 +1,9 @@
+/**
+ * @deprecated MISSÃO 78 — Use precificacaoEngineService.calcularPreco() em vez deste serviço.
+ * Este serviço usava TABELA_TESTE_VEICULOS_SP (hardcoded) como fallback.
+ * O engine de precificação oficial busca tabelas reais do banco.
+ * Mantido apenas para fallback emergencial durante migração.
+ */
 import {
   TABELA_TESTE_VEICULOS_SP,
   type TabelaVeiculo,

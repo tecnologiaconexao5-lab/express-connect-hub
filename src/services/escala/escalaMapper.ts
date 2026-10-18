@@ -368,6 +368,7 @@ export function mapearBancoParaLocal(banco: Record<string, any>): Record<string,
   }
 
   if (local.status !== undefined) {
+    local.statusOriginal = local.status;
     local.status = normalizarStatusParaUI(local.status);
   }
 

@@ -39,11 +39,11 @@ export function DisparosWhatsApp() {
           sucessos++;
         } else {
           erros++;
-          console.warn(`[WhatsApp] Erro ao enviar para ${telefoneLimpo}:`, result.error);
+          console.warn(`[WhatsApp] Erro ao enviar mensagem:`, result.error);
         }
       } catch (e: any) {
         erros++;
-        console.warn(`[WhatsApp] Exception para ${telefoneLimpo}:`, e);
+        console.warn(`[WhatsApp] Exception no envio:`, e);
       }
     }
 

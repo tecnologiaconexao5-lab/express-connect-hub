@@ -1,0 +1,38 @@
+-- TMS-FIN-PROG-05D.6C.1 — ROLLBACK (restaura SOMENTE as 3 datas PRE dos 34 IDs)
+-- Nao recalcula valores. Executar em transacao.
+BEGIN;
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='c366b0f5-2dcf-40cb-8190-b50c431165f0';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='58b30645-937d-4bad-a161-f773ece921b1';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='b3d6aef2-4a0d-4d93-9a60-e281ff929d38';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='005013a7-4ef9-4305-9098-613f00e0328b';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='2bd4f325-7e59-4325-a044-c85fe9f117f8';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='018bc94d-5aee-4dab-8aaf-362b65980856';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='24aa23d7-8dff-4f53-8cd7-a6496aac6cb9';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='0209e1f1-8efa-4d20-9d05-f374b28b154e';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='c6db533e-7939-494f-adff-3e1be755fbd4';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='d8c6d917-1c2c-436d-8a85-3e5750aa702f';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='e657d1ce-2e36-4d12-a172-a817965da98e';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='477a5914-b3e7-4e8a-b46a-7abdf8b861b8';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='e66451ca-6ec0-4dbd-a9fb-535205e2a803';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='16e11bb7-e550-4553-bbb2-51dd2e8454d7';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='e23c9a55-804e-46f9-843d-1681d628b939';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='47b03d4f-4068-4750-b102-b2d90449085d';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='39bd874f-5c07-4381-be63-ae67daceff89';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='d036f7fe-b06b-49cf-aa4f-d0c7d55e1f30';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='9bb3e311-e35f-49d8-a007-02521f204564';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='52e07d26-0f12-411d-ab2d-91b1fbaae18b';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='0aa22119-deb9-45a7-a948-d32beb0ba6ad';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='c3b3b0b0-75a6-4393-a253-47fdeb5f762a';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='e3332a5b-7270-41be-ab25-c874212f752b';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='f09a9ea8-e344-4d02-a4b9-24063542022c';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='42dbe763-73ed-45b9-b07d-81889ae37c59';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='fcbadbde-9dce-4505-8020-c57667e8a240';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='02d76e55-7701-4ab2-a621-001c2c3a0c67';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='3f976351-1070-4667-9c47-fd39b769b73b';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='63a2fb20-5127-44c4-8461-b741a9fd8447';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='5c862ef2-169f-4d91-a2c0-10532d0decf6';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-22', periodo_fim='2026-09-22', data_competencia=NULL WHERE id='e94fb9e2-43ca-487b-9a32-00e217d8e905';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-23', periodo_fim='2026-09-23', data_competencia=NULL WHERE id='e28c6a6c-c7e5-48c6-acd6-8b51257c0701';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-23', periodo_fim='2026-09-23', data_competencia=NULL WHERE id='a10f78f6-1bb3-424f-ab87-c9af037eccba';
+UPDATE public.pagamentos_prestadores SET periodo_inicio='2026-09-23', periodo_fim='2026-09-23', data_competencia=NULL WHERE id='98a8c028-2cf2-43e0-9b8f-a725be4d75f7';
+COMMIT;

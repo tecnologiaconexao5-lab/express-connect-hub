@@ -1,0 +1,76 @@
+ESCALA-E2E-08H-FIX-NUMERO-PEDIDO
+==================================================
+Ambiente: TMS | Data: 2026-09-22 | Modo: CORREÇÃO MÍNIMA + TESTES
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+IMPLEMENTAÇÃO (src/services/ordemServicoService.ts)
+==================================================
+1) Removido `numero_pedido?: string;` da interface CriarOSInput.
+2) Removido `numero_pedido: input.numero_pedido || null,` do payload de INSERT em ordens_servico.
+3) Referências TypeScript dependentes: NENHUMA (nenhum caller fornecia o valor).
+   - escalaService.criarAlocacao → criarOrdemServico (Escala): ok
+   - contratoOperacaoService:120: ok
+   - centralFinanceiroService:696: ok
+NÃO foi mapeado numero_pedido → romaneio (conforme instrução).
+Preservados: ordens_servico.numero (interno), romaneio (referência externa), pedido_portal_id.
+
+==================================================
+TESTES
+==================================================
+NOVO: src/test/escala_e2e_08h_fix_numero_pedido.test.ts — 7/7 PASS
+  A) criarOrdemServico não contém numero_pedido ................................... PASS
+  B) payload sem numero_pedido + apenas colunas válidas do contrato ............... PASS
+  C) numeração interna preservada (numero = OS-{ano}{mes}-{seq}) ................... PASS
+  D) ausência de OS manual permitida (escalaService cria quando sem ordem_servico_id) PASS
+  E) callers Contratos/Central sem numero_pedido (compilam) ....................... PASS
+  F) fluxo romaneio/OC preservado (metadata.numeroOC intacto; OS sem romaneio) .... PASS
+
+DIRECIONADOS (ordemServicoService/Escala/OS/Central/Financeiro) — 51/51 PASS:
+  escala_e2e_08h (7), escala_e2e_08d (10), escala_os_01 (5), escala_os_03 (6),
+  escala_e2e_01 (8), a31j18_os_interna_e2e (3), fase1_centralFinanceiro (6),
+  a31j0_visoes_central_financeira (6).
+
+SUÍTE GLOBAL: 57 falhas BASELINE pré-existentes (rec06_2d2 etc.) — NÃO se alega suíte
+global verde; nenhuma falha nova introduzida por esta missão.
+
+TYPECHECK: npx tsc --noEmit → 0 erros (exit 0)
+BUILD: npm run build → OK (built in 46.81s)
+
+==================================================
+AUDITORIA FINAL — `numero_pedido` no runtime (src)
+==================================================
+USOS LEGÍTIMOS (portal_pedidos / solicitações / roteirização) — MANTIDOS:
+  - src/services/portalCliente/pedidosService.ts (numero_pedido, RPC gerar_numero_pedido)
+  - src/pages/PortalCliente.tsx:5384 (createdOrderDetails.numero_pedido)
+  - src/components/operacao/SolicitacoesClienteLista.tsx (solicitações do cliente)
+  - src/components/operacao/RoteirizadorWeb.tsx:209 (row.numero_pedido)
+  - src/services/roteirizacaoService.ts:480 e src/types/roteirizacao.ts:129/153
+USOS INDEVIDOS RELACIONADOS A ordens_servico: 0 (removidos)
+ORDENS_SERVICO_RUNTIME_NUMERO_PEDIDO=0
+
+==================================================
+RESULTADO
+==================================================
+LEGACY_FIELD_REMOVED=YES
+ORDENS_SERVICO_RUNTIME_NUMERO_PEDIDO=0
+INTERNAL_OS_NUMBERING_PRESERVED=YES
+CLIENT_REFERENCE_FLOW_PRESERVED=YES
+TESTS=7/7 (08H) + 51/51 (direcionados)
+TYPECHECK=0 erros
+BUILD=OK (46.81s)
+
+FILES_MODIFIED=
+  - src/services/ordemServicoService.ts (removido numero_pedido)
+  - src/test/escala_e2e_08h_fix_numero_pedido.test.ts (NOVO)
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum toque no banco; nenhuma migration; M66/M80 intactos; dados HML preservados;
+nenhum SAVE automático; outras pendências não tratadas.
+
+NEXT=ESCALA-E2E-08I-RETEST-SAVE-UI

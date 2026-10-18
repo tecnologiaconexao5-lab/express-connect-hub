@@ -1,0 +1,170 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6C-DATA-CANONICA-PRESTADOR
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao estrutural controlada da competencia temporal (trigger M80).
+RESULTADO: PASS — novos registros nascem com a data operacional real; nenhum
+           historico alterado; 137 pagamentos preservados.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. PROVA DA SEMANTICA DE ordens_servico.data
+--------------------------------------------------------------------------------
+- Tipo: date, NULLABLE (ordens_servico: 162 linhas, 120 com data, 42 sem data).
+- M66 grava ordens_servico.data = COALESCE(alocacoes_escala.data_escala, CURRENT_DATE)
+  e o numero = 'ALOC-' || TO_CHAR(data_escala,'YYYYMMDD')
+  (_fn_f_trg_propagar_financeiro_alocacao.sql:47,57).
+- Amostras reais: numero ALOC-20260618-... tem data 2026-06-18; ALOC-20260828-...
+  tem data 2026-08-28; ALOC-20260712-... tem data 2026-07-12.
+=> CONFIRMADO: ordens_servico.data e a DATA OPERACIONAL do servico. Nao BLOCKED.
+- alocacoes_escala.data_escala: date NOT NULL (199/199 preenchidas) — fonte da
+  Programacao.
+
+--------------------------------------------------------------------------------
+2. REGRA FINAL POR ORIGEM
+--------------------------------------------------------------------------------
+  Programacao Operacional (M66 / origem 'escala_direta'):
+     data_servico = alocacoes_escala.data_escala     (JA CORRETO — nao alterado)
+  OS direta (M80 / origem 'os_direta'):
+     data_servico = ordens_servico.data              (CORRIGIDO nesta missao)
+  manual:
+     periodo/data informados pelo usuario preservados (service; nao alterado)
+  Data nula:
+     NAO usar CURRENT_DATE silenciosamente. Nao cria a provisao
+     pagamentos_prestadores + WARNING explicito '[PAGAMENTO_PRESTADOR_SEM_DATA]'.
+
+--------------------------------------------------------------------------------
+3. M66 ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES = DEPOIS (INALTERADO). M66 ja grava periodo_inicio = periodo_fim =
+  COALESCE(data_escala, CURRENT_DATE); competencia = COALESCE(data_escala, CURRENT_DATE).
+  data_escala e NOT NULL, logo nunca cai no CURRENT_DATE. Mantido.
+
+--------------------------------------------------------------------------------
+4. M80 ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES (f_trg_propagar_financeiro_os):
+  periodo_inicio = periodo_fim = CURRENT_DATE
+  competencia = CURRENT_DATE            (INSERT e UPDATE)
+  Trigger: AFTER INSERT OR UPDATE OF valor_cliente, custo_prestador, pedagio,
+           adicionais, ajudante, descontos, status
+DEPOIS:
+  periodo_inicio = periodo_fim = NEW.data  (data operacional)
+  competencia = NEW.data
+  UPDATE OF ... acrescido de "data" (permite resolver a pendencia quando a data
+           for preenchida depois)
+  financeiro_pagar, composicao_financeira_os e calculos de valores INALTERADOS.
+
+--------------------------------------------------------------------------------
+5. TRATAMENTO DE DATA NULA
+--------------------------------------------------------------------------------
+- Nao inventa data: NAO usa CURRENT_DATE.
+- Se NEW.data IS NULL e ha prestador/valor: NAO insere/atualiza a linha em
+  pagamentos_prestadores e emite RAISE WARNING '[PAGAMENTO_PRESTADOR_SEM_DATA]'.
+  (provisao do prestador fica como PENDENCIA explicita)
+- financeiro_pagar (AP) permanece como antes (nao usa periodo) — documentado.
+- Quando a data for preenchida, o trigger (UPDATE OF ... data) cria a provisao
+  com a data correta.
+
+--------------------------------------------------------------------------------
+6. PROVAS DE NOVOS REGISTROS (fixtures em transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+P1 OS direta, os.data='2026-01-15' (≠ CURRENT_DATE):
+   pp.periodo_inicio = 2026-01-15 .......... PASS
+   pp.periodo_fim    = 2026-01-15 .......... PASS
+   pp.competencia    = 2026-01-15 .......... PASS
+P2 Programacao, data_escala='2026-02-20':
+   pp.periodo_inicio/fim = 2026-02-20 (M66) PASS
+P3 os.data = NULL:
+   pp NAO criado (count=0) ................ PASS
+   WARNING PAGAMENTO_PRESTADOR_SEM_DATA ... PASS
+P4 reprocessamento (UPDATE da OS): nao duplica pp (count=1) PASS
+P5 manual: preservado por definicao (service grava periodo; trigger nao atua).
+RESUMO: 15/15 PASS.
+
+--------------------------------------------------------------------------------
+7. INVENTARIO DOS 137 EXISTENTES (somente leitura; NADA alterado)
+--------------------------------------------------------------------------------
+Classe        | Qtd | Pagos  | Definicao
+OK            |  58 |   6    | periodo_inicio atual == data canonica
+DIVERGENTE    |  34 |   0    | periodo_inicio != data canonica (todas os_direta)
+INDETERMINADO |  21 |   0    | fonte sem data canonica resolvivel (os/alocacao ausente)
+TESTE         |  23 |   7    | is_teste=true e/ou origem 'TESTE...'
+AGREGADO      |   1 |   1    | fechamento (periodo agregado, nao servico individual)
+TOTAL         | 137 |   14   |
+
+Por origem:
+  escala_direta: OK 42 | INDETERMINADO 15 | TESTE 5
+  os_direta:     DIVERGENTE 34 | INDETERMINADO 6 | OK 4 | TESTE 10
+  manual:        OK 12 | TESTE 3
+  fechamento:    AGREGADO 1 | TESTE 1
+  os_finalizada: TESTE 1
+  TESTE VALID-P1-P2: TESTE 3
+DIVERGENTES REAIS: 34, todas origem os_direta, periodo = 2026-09-22 (data de
+  criacao) vs canonica 2026-05..06 (os.data) — sintoma exato do M80 antigo.
+  Diferencas de 109 a 134 dias. Nenhuma paga.
+DIVERGENTES PAGOS: 0.
+NAO corrigir historico nesta missao (conforme instrucao).
+
+--------------------------------------------------------------------------------
+8. NENHUMA ALTERACAO HISTORICA
+--------------------------------------------------------------------------------
+Integridade antes = depois:
+  pagamentos_prestadores 137 | financeiro_pagar 178 | financeiro_baixas 19 |
+  lote_id nao nulo 0 | soma valor_liquido 90.229,96 | soma financeiro_pagar
+  132.943,60 | ordens_servico 162.
+Todas as provas em transacao + ROLLBACK.
+
+--------------------------------------------------------------------------------
+9. REGRESSAO
+--------------------------------------------------------------------------------
+- 05D.6B.1 (guard papel + inconsistente): 17/17 PASS
+- 05D.6B (RPC aprovar): 20/20 PASS
+- 05D.6A (RLS UPDATE): 15/15 PASS
+- 05D.4 (RLS SELECT): 13/13 PASS
+- M66 (fixture escala) e M80 (fixture OS): PASS (itens 6)
+- vitest subset financeiro: 6 arquivos / 179 testes PASS
+- tsc: EXIT 2 — 750 erros PRE-EXISTENTES (nenhum TS alterado)
+
+--------------------------------------------------------------------------------
+10. MIGRATION
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260924000012_fin_prog05d6c_data_canonica_prestador.sql
+Rollback: supabase/migrations/20260924000013_fin_prog05d6c_data_canonica_rollback.sql
+Aplicada em PROD (CREATE OR REPLACE FUNCTION + DROP/CREATE TRIGGER).
+
+--------------------------------------------------------------------------------
+11. RISCOS
+--------------------------------------------------------------------------------
+R1) financeiro_pagar (AP) ainda e criado mesmo com os.data NULL (sem periodo);
+    a provisao do prestador (pagamentos_prestadores) fica pendente ate a data
+    ser preenchida. Documentado; avaliar alinhamento do AP em micro-missao.
+R2) 34 DIVERGENTES + 21 INDETERMINADOS permanecem com periodo antigo; nenhuma
+    tela usa ainda a data canonica per-servico (UI nao alterada). Divergencia
+    visivel ate decisao de correcao controlada.
+R3) 'data' agora dispara o trigger em UPDATE (mais eventos); operacoes idempotentes
+    ja provadas (ON CONFLICT/PERFORM), porem gera carga extra em edicoes de data.
+R4) INDETERMINADOS: os_id sem OS/alocacao correspondente (dados legados/teste);
+    sem data confiavel — sao os "20 sem tenant" ja mapeados + outros.
+
+--------------------------------------------------------------------------------
+12. PROXIMA MICRO-MISSAO RECOMENDADA
+--------------------------------------------------------------------------------
+05D.6C.1 — INVENTARIO PUBLICAVEL + DECISAO DE REPROCESSAMENTO:
+  (a) gerar CSV/report dos 34 DIVERGENTES e 21 INDETERMINADOS (ja levantados);
+  (b) decidir correcao controlada dos DIVERGENTES nao pagos (periodo = os.data)
+      SOB autorizacao, com rollback e prova antes/depois;
+  (c) unificar a regra de periodo das telas (05D.6B.1 D2) e exibir a data
+      individual do servico no modal/extrato (D3);
+  (d) tratar manuais duplicados (D4).
+NAO executar sem autorizacao explicita (historico real).
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6C-DATA-CANONICA-PRESTADOR-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6C-DATA-CANONICA-PRESTADOR-RESULTADO.txt
+Tamanho ..: 9355 bytes
+Data .....: 24/09/2026 17:21:26
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6C
+================================================================================

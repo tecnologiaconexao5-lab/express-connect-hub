@@ -1,0 +1,73 @@
+================================================================================
+TMS-018 — Auditoria Pre-Producao do Seed de Homologacao
+Data: 2026-07-29
+Seed: scripts/tms013_seed_hml.mjs — v2 (TMS013-SEED-v2)
+Marcador: HML-APP-20260729
+Hash: 6B45AE882362B9B579858F4C247FF07D7FAFB19CEC043965F2A3E6CDE825E398
+================================================================================
+
+1. CLASSIFICACAO FINAL
+-----------------------
+C — Aprovada para preparacao controlada
+
+Nao autorizado para execucao sem:
+1. Criacao manual da tabela _hml_seed_checkpoint
+2. Validacao read-only do schema real
+3. Plano de rollback
+4. Autorizacao humana separada
+
+2. ARQUIVOS AUDITADOS
+----------------------
+scripts/tms013_seed_hml.mjs                    891 linhas  SHA256: 6B45AE88...
+supabase/scripts/create_hml_seed_checkpoint.sql  94 linhas  SHA256: 55F7CCC1...
+supabase/scripts/cleanup_hml_app_20260729.sql   281 linhas  SHA256: 585B1587...
+scripts/tms017_test_logico_local.mjs           205 linhas  SHA256: 37A2EA9D...
+scripts/tms017_test_ordem_startup.mjs          325 linhas  (novo TMS-018)
+
+3. VALIDACOES
+--------------
+node --check seed              -> PASS
+node --check tests             -> PASS
+npx tsc --noEmit               -> 0 erros
+80/80 testes                   -> PASS
+
+4. ADERENCIA A TMS-016
+-----------------------
+SEED_VERSION              -> COMPROVADO
+TOTAL_CENARIOS            -> COMPROVADO
+CHECKPOINT_TABLE          -> COMPROVADO
+Transacao por cenario     -> COMPROVADO
+pg_try_advisory_lock      -> COMPROVADO
+Tabela checkpoint         -> COMPROVADO
+SAVEPOINT (2)             -> COMPROVADO
+ON CONFLICT (7)           -> COMPROVADO
+Manifesto incremental     -> COMPROVADO
+Flush atomico             -> COMPROVADO (testado)
+Retomada automatica       -> COMPROVADO
+SQL parametrizado         -> COMPROVADO
+Cleanup com guard         -> COMPROVADO
+
+5. FALHAS ENCONTRADAS
+----------------------
+1. Testes originais 100% estruturais (sem logica)
+   Mitigado: 43 novos testes comportamentais criados
+
+2. Checkpoint 'concluido' apos COMMIT
+   Risco baixo, recuperavel via retomada
+
+3. Cleanup deleta auth user real (tamiris.castilho)
+   Protecao: FK tenant_usuarios bloqueia se vinculo existir
+
+4. ON CONFLICT (os_id) = NULL nunca conflita
+   Protecao real: COUNT(*) previo
+
+6. RISCOS PRINCIPAIS
+---------------------
+- Tabela checkpoint pode nao existir (seed aborta)
+- Grants insuficientes na tabela checkpoint
+- Schema das tabelas alvo pode divergir
+- Triggers podem propagar dados HML
+
+7. PROXIMA MISSAO
+------------------
+TMS-019 — Preparacao e Execucao Controlada do Seed

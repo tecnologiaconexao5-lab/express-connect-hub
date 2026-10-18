@@ -1,0 +1,621 @@
+================================================================================
+EFI-INT-01 — AUDITORIA DA INTEGRACAO BANCARIA (EFI BANK)
+================================================================================
+MISSAO.......: EFI-INT-01 — Auditoria SOMENTE LEITURA da arquitetura atual
+AMBIENTE.....: TMS (express-connect-hub)
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: Auditoria read-only. NADA foi implementado/alterado.
+              Nenhuma migration criada. Nenhuma UI alterada. CNAB preservado.
+              Nenhuma credencial real usada. Nenhum secret/certificado neste TXT.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+
+LEGENDA DE CONFIANCA
+  [CONFIRMADO]  verificado diretamente no codigo/schema desta auditoria
+  [INFERIDO]    deduzido por padrao do projeto, nao executado em runtime
+  [GAP]         inexistente hoje / precisa ser criado
+
+================================================================================
+1. STACK / BACKEND ATUAL  [CONFIRMADO]
+================================================================================
+- Frontend: React 18 + Vite 5 + TypeScript + TailwindCSS + shadcn/radix
+  - Estado: Zustand, @tanstack/react-query
+  - PDF: jspdf / jspdf-autotable ; Excel: xlsx
+  - Mapas: mapbox-gl / react-map-gl
+- Backend de negocio: SUPABASE (Postgres + Auth + RLS + Realtime + Storage)
+  - Nao existe backend Node/Express proprio para logica de negocio.
+  - Regra de negocio roda em:
+      (a) "services" TypeScript no frontend que chamam o Supabase diretamente
+          (via @supabase/supabase-js) e RPCs Postgres;
+      (b) Edge Functions (Deno) do Supabase para segredos e webhooks.
+- Hosting/Deploy encontrado:
+  - Dockerfile, docker-compose.yml, docker-compose.production.yml
+  - nginx.conf, vercel.json, ecosystem.config.cjs (pm2 - zoho-connect)
+  - Deploy alvo: Oracle Cloud / container estatico (padrao do repo)
+- Banco: Postgres (Supabase). Scripts utilitarios usam o pacote `pg` (ex.: seed
+  e aplicacao de migration via `scripts/*.mjs`).
+- Versao de Deno nas Edge Functions: 2 (config.toml [edge_runtime]).
+- Projeto Supabase de PRODUCAO: uwrvzsjtpgaifkktpepn (NAO usar nesta fase).
+
+Conclusao: integracao Efi deve ser implementada como EDGE FUNCTION (Deno) +
+tabela(s) de integracao no Postgres + service TypeScript fino no frontend.
+Nunca chamar a Efi direto do React.
+
+================================================================================
+2. ONDE ESTA O MODAL "GERAR BOLETO BANCARIO"  [CONFIRMADO]
+================================================================================
+A) src/components/financeiro/ContasReceberEnterprise.tsx
+   - Botao na linha da tabela (titulo "Gerar Boleto"):
+       linha 1162  -> onClick={() => { setRecebivelSelecionado(r); setShowBoleto(true); }}
+   - State:   linha 125  const [showBoleto, setShowBoleto] = useState(false);
+   - MODAL "Gerar Boleto Bancario": linhas 1387-1420
+       * DialogContent max-w-lg
+       * Titulo "Gerar Boleto Bancario" + icone Landmark (linha 1391)
+       * Bloco "Preparacao para emissao de boleto" (linha 1396-1399)
+       * Texto: "Integracao bancaria pendente de configuracao" (linha 1398)
+       * Botao final DESABILITADO: "Integracao bancaria pendente" (linhas 1413-1415)
+       * Texto de ajuda: "configure uma conta bancaria com integracao de cobranca
+         (CNAB400, API de cobranca PIX/Boleto) nas configuracoes financeiras"
+         (linha 1408)
+   => O modal NAO gera boleto. E um placeholder honesto (sem mock).
+
+B) src/components/financeiro/FaturaPanel.tsx  (fatura emitida)
+   - linhas 566-568: botao "Gerar Boleto" (icone Barcode)
+     disabled, title="Integracao com a Efi sera habilitada em fase futura"
+   => Menção explicita a Efí ja existe no codigo, porem desabilitado.
+
+C) src/pages/Fiscal.tsx  (aba fiscal)
+   - linha 56: tipoEmitir inclui "boleto"
+   - handleEmitirDocumento (l.108) e handleGerarBoleto (l.116) fazem
+     toast.info(MSG_FOCUS_SECRETS) -> placeholder, sem efeito real.
+   - KPI "Boletos Gerados = 0" (l.183).
+
+Nao existe nenhum componente/service que efetivamente gere boleto.
+
+================================================================================
+3. SERVICES / HOOKS / ACTIONS USADOS POR CONTAS A RECEBER  [CONFIRMADO]
+================================================================================
+Arquivo central: src/services/financeiro/receberService.ts
+  Funcoes exportadas (relevantes):
+    - listarRecebiveis (l.165)
+    - criarRecebivel (l.219) / criarRecebiveisEmLote (l.244)
+    - atualizarRecebivel (l.269)
+    - baixarRecebivel (l.320)  -> chama RPC f_registrar_baixa_financeira
+    - cancelarRecebivel (l.351) / excluirRecebivel (l.372) / renegociarRecebivel (l.405)
+    - buscarClientesLista (l.438)
+    - verificarDuplicataEscala (l.447) / buscarEscalaFaturamento (l.463)
+    - listarItensFaturaveis (l.481) / criarRecebivelDeEscala (l.513)
+    - buscarItensFaturaveisWizard (l.570)
+    - criarFaturaConsolidadaCompleta (l.690) / buscarDetalheFatura (l.713)
+    - criarFaturaConsolidada (l.731)
+    - verificarPODParaFaturamento (l.767) / podExisteParaFaturamento (l.752)
+
+Faturamento profissional (tabela faturas / fatura_itens):
+  src/services/financeiro/faturaService.ts
+    - criarRascunhoFatura / criarFaturaManual / atualizarFatura
+    - gerarNumeroFatura (RPC f_gerar_numero_fatura)
+    - PDF: montarInputPdfFatura + src/utils/pdfFatura.ts (dados empresa/banco/PIX)
+    - Snapshot da conta bancaria da fatura: metadata.contaBancaria (jsonb)
+      (faturaService.ts l.996-1004)
+
+Config bancaria consumida por Contas a Receber:
+  src/services/financeiro/configFinanceiraService.ts
+    - buscarContasBancariasConfig()  (l.179) -> tabela contas_financeiras
+    - salvarContasBancariasConfig()  (l.210)
+    - buscarConfigFinanceiraEmpresa()/salvar... (configuracoes_sistema)
+    - buscarRegrasFinanceirasCliente()/salvar... (configuracoes_sistema)
+
+Componente:
+  src/components/financeiro/ContasReceberEnterprise.tsx
+    (1530 linhas; usa todos os services acima + configFinanceiraService)
+
+Outros services financeiros relevantes:
+  src/services/financeiro/pagarService.ts      (Contas a Pagar)
+  src/services/financeiro/pagamentoPrestadorService.ts (Prestadores)
+  src/services/financeiro/fechamentoService.ts
+  src/services/financeiro/centralFinanceiroService.ts
+  src/services/financeiro/fluxoCaixaService.ts, contasCaixasService.ts, dreService.ts
+
+Hooks: nao ha hook dedicado a boleto/CNAB/Pix. Baixas usam RPCs.
+
+================================================================================
+4. ESTRUTURA / TABELAS ATUAIS DE FATURAS E RECEBIVEIS  [CONFIRMADO]
+================================================================================
+TABELA public.faturas  (migration 20260816000001_fase2a_faturamento_profissional.sql, l.27)
+  id, tenant_id, numero (UNIQUE), cliente_id, data_emissao, competencia_inicio/fim,
+  vencimento, valor_bruto, descontos, acrescimos, valor_total, status
+  ('rascunho','aguardando_aprovacao','aprovada','emitida','cancelada'),
+  observacao, observacao_fiscal,
+  conta_receber_id (FK financeiro_receber),
+  criado_por/em, atualizado_por/em, cancelado_em/por, motivo_cancelamento,
+  metadata jsonb  <-- AQUI entram modelo, descricao, numeroManual, contaBancaria
+  => NAO existe coluna de boleto (linha digitavel, codigo de barras, nosso numero, PDF).
+
+TABELA public.fatura_itens  (mesma migration, l.64)
+  id, fatura_id, os_id, alocacao_id, cliente_id, romaneio, descricao, data_servico,
+  valor_base, valor_adicionais, valor_descontos, valor_total,
+  km_excedente, pedagio_cliente, ajudante_cliente, diaria_cliente,
+  saidas_adicionais_cliente, status, criado_por/em, atualizado_em
+
+TABELA public.financeiro_receber  (core_baseline.sql l.350)
+  id, cliente_id, descricao, valor, vencimento, status, created_at, updated_at,
+  os_id (text), cliente, cliente_nome, data_vencimento, data_emissao,
+  data_pagamento, categoria, observacoes, cliente_documento, fatura, serie, numero,
+  os_vinculadas, contrato_vinculado, proposta_vinculada,
+  valor_bruto, valor_liquido, desconto, juros, multa, abatimento,
+  data_previsao_recebimento, recorrente, quantidade_parcelas, parcela_atual,
+  centro_resultado, plano_conta, conta_entrada, recorrencia
+  + fatura_id uuid FK faturas (fase2a, l.105)
+  + is_teste boolean (fin_363d2a_flag_is_teste.sql l.8)
+  => NAO existe: codigo_barras, linha_digitavel, nosso_numero, pix_txid,
+     boleto_id, boleto_status, boleto_pdf_url, wallet_id, metadata/jsonb.
+
+TABELA public.financeiro_baixas  (f0c4_livro_baixas_financeiras.sql l.24)
+  id, created_at, titulo_tabela ('financeiro_pagar'|'financeiro_receber'), titulo_id,
+  valor_original, valor_baixado, saldo_restante, data_baixa,
+  forma_pagamento ('pix','boleto','ted','dinheiro','cartao','compensacao',...),
+  conta_financeira (text), referencia_bancaria (text), observacao,
+  usuario_id, usuario_nome, estornada, data_estorno, motivo_estorno, updated_at
+  => `referencia_bancaria` e o ponto natural para guardar o ID/txid da transacao Efi.
+
+================================================================================
+5. ESTRUTURA ATUAL DE BOLETO (EXISTE?)  [CONFIRMADO]
+================================================================================
+- NAO existe entidade/tabela de boleto, nem coluna de identificador de boleto.
+- O que existe sao apenas CAMPOS DE PREFERENCIA:
+    * financeiro_receber: (nenhum campo de boleto)
+    * financeiro_pagar.codigo_barras text (core_baseline l.425) - uso manual
+    * financeiro_pagar.chave_pix text (l.426)
+    * recebivel.formaRecebimento = "boleto" (apenas rotulo, types.ts / UI)
+    * prestadores.chave_pix / tipo_chave_pix (20260511_prestadores_financeiro_contrato.sql)
+    * contas_financeiras.chave_pix (20260819000001_f0h_contas_caixas.sql)
+- Services de e-mail ja possuem template "boleto" (emailTemplates.ts l.55,
+  emailAutomationService.ts evento "boleto_disponivel") -> canal pronto para 2a via,
+  hoje SEM link real de boleto.
+Conclusao: [GAP] integrar boleto Efi exige nova estrutura de identificadores.
+
+================================================================================
+6. TELA TESOURARIA / CNAB E SERVICES RELACIONADOS  [CONFIRMADO]
+================================================================================
+- src/components/financeiro/PagamentoCNAB.tsx  (139 linhas)
+    * Cabecalho: "Pagamentos em Lote (CNAB 240)"
+    * Card "Integracao bancaria CNAB ainda nao configurada"
+    * Botoes DESABILITADOS: "Gerar Remessa — indisponivel" (l.86)
+                            "Importar Retorno — indisponivel" (l.87)
+    * Pre-visualizacao REAL (somente leitura) de pagamentos_prestadores
+      WHERE impacto_dre = true  (l.37-42)
+    * Texto (l.134): "Quando a integracao bancaria existir, a geracao CNAB
+      consumira exatamente estes pagamentos reais (Contas a Pagar / Pagamento
+      de Prestadores), sem criar novo fato economico."
+- Navegacao:
+    * src/components/financeiro/financeiroNav.ts l.45  { valor: "lotes", label: "CNAB" }
+    * src/lib/sidebarData.ts l.149  path "/financeiro?tab=lotes"
+    * src/pages/Financeiro.tsx l.22/274  <PagamentoCNAB />
+- Teste F0-L: src/test/f0l_navegacao_conciliacao_cnab.test.ts
+    * garante que NAO ha CNAB ficticio (bloqueia fakeData, CNAB240_ITAU, etc.)
+- Conciliacao bancaria:
+    src/components/financeiro/ConciliacaoAvancada.tsx (le contas_financeiras)
+    -> sem importacao de extrato OFX/CNAB real (manual).
+Conclusao: CNAB e honesto/preservado. A Efi NAO substitui CNAB nesta missao;
+CNAB permanece intacto (nao remover).
+
+================================================================================
+7. PAGAMENTOS_PRESTADORES E CONTAS A PAGAR  [CONFIRMADO]
+================================================================================
+TABELA public.pagamentos_prestadores  (baseline_external_tables.sql l.117)
+  - prestador_id, prestador_nome, prestador_documento, cliente_id, cliente_nome,
+    os_id, os_numero, periodo_inicio/fim, data_competencia/competencia,
+    data_prevista_pagamento, data_programada_pagamento, data_pagamento,
+    valores (valor_servicos, valor_reembolsos, valor_bonus, valor_descontos,
+    valor_adiantamentos, valor_liquido, valor, valor_pedagio, valor_combustivel...),
+    qtd_os/quantidade_os,
+    DADOS BANCARIOS: banco, agencia, conta, conta_tipo, chave_pix,
+    classificacao: tipo_lancamento, natureza, tipo_pagamento, origem_lancamento,
+    status, status_conferencia, status_pagamento, status_aprovacao,
+    forma_pagamento, conta_pagamento,
+    ARQUIVOS/CNAB: arquivo, cnab_lote_id, cnab_arquivo, elegivel_lote, lote_id,
+    impacto_dre, impacto_fluxo_caixa, created_at, updated_at
+TABELA public.pagamentos_prestadores_itens (l.228) - itens por OS.
+
+Services:
+  src/services/financeiro/pagamentoPrestadorService.ts
+    - listarPagamentos (l.160), criarPagamento (l.197)
+    - atualizarStatusPagamento (l.277)
+    - confirmarPagamento (l.330)
+        -> chama RPC f_confirmar_pagamento_prestador
+        -> concilia titulo + grava baixa + atualiza status NA MESMA TRANSACAO
+    - criarFechamento (l.360) / atualizarFechamento (l.418) / vincularItensFechamento (l.459)
+  src/services/financeiro/pagarService.ts  (Contas a Pagar generico)
+    - criarPagavel (l.169), criarParcelasPagavel (l.230), baixarPagavel (l.363),
+      estornarBaixa (l.430), cancelarPagavel (l.443), listarPrestadoresFornecedores (l.473)
+  RPCs de conciliacao (idempotentes, atomicas):
+    - f_confirmar_pagamento_prestador(uuid, date)
+        (20260906000000_fin_362_3e; reforcada em 20260920_02mf ...parcial.sql)
+        Retorna baixa_id, valor_liquidado, saldo_restante, conta_financeira_id.
+        Valida status (nao pago/cancelado), valor>0, conta ativa, e exige
+        EXATAMENTE 1 titulo financeiro_pagar correspondente (OS+valor+prestador).
+    - f_confirmar_pagamento_fechamento(uuid, date)
+        (20260913000000_fin_sane_02b) - reusa a RPC acima por item.
+TABELA public.financeiro_pagar (core_baseline l.394)
+  - os_id(text), prestador/fornecedor/fornecedor_id, valor, status, vencimento,
+    codigo_barras, chave_pix, conta_pagadora, ... UNIQUE(os_id) (M80).
+
+=> ESTE e o unico caminho legitimo para "baixar o MESMO pagamento" (secao B).
+   A Efi deve chamar f_confirmar_pagamento_prestador apos o Pix liquidar.
+
+================================================================================
+8. ONDE FICAM AS CONFIGURACOES BANCARIAS ATUAIS  [CONFIRMADO]
+================================================================================
+FONTE CANONICA DE CONTAS: tabela public.contas_financeiras
+  (migration 20260526_contas_financeiras.sql + 20260819000001_f0h_contas_caixas.sql)
+  Colunas: id, nome, tipo, banco, agencia, numero_conta, digito, titular,
+           saldo, saldo_inicial, ativa, principal, empresa, plano_contas,
+           observacoes, cor, chave_pix, created_at, updated_at
+  => NAO existem campos de credenciais (client_id/secret), certificado, ambiente,
+     carteira/convenio/cedente Efi. [GAP]
+
+UI: src/components/financeiro/ContasBancarias.tsx (CRUD de contas_financeiras;
+    campos: nome, tipo, banco, agencia, numero_conta, digito, titular, chave_pix,
+    saldo_inicial, ativa, principal). Sem campo de integracao bancaria.
+
+Config empresa/regras: tabela configuracoes_sistema (chave/valor jsonb)
+  - chave "config_financeira_empresa" (dados bancarios do PDF, nao integracao)
+  - chave "regras_financeiras_cliente:{clienteId}"
+  UI: src/components/financeiro/ConfigFinanceira.tsx
+
+Snapshot por fatura: faturas.metadata.contaBancaria (jsonb) — copia da conta no
+momento da emissao (imutavel para o PDF).
+
+Conclusao: a config bancaria Efi NAO deve ir para contas_financeiras expostas ao
+frontend. Credenciais/certificado -> Supabase Secrets (backend) + tabela de
+integracao com apenas referencias (sem segredo).
+
+================================================================================
+9. INFRA ATUAL PARA EDGE FUNCTIONS / BACKEND  [CONFIRMADO]
+================================================================================
+Pasta: supabase/functions/  (Deno 2, config.toml [edge_runtime])
+  - criar-alocacao-escala
+  - fiscal-documento-url
+  - fiscal-email-documentos
+  - focus-consulta / focus-documentos / focus-emissao
+  - proxy-ia            <-- PADRAO DE REFERENCIA (segredos no backend)
+  - whatsapp-recrutamento-webhook  <-- PADRAO DE WEBHOOK PUBLICO
+
+Padrao proxy-ia (supabase/functions/proxy-ia/index.ts):
+  - Deno.env.get("...") para chaves (NUNCA no bundle do frontend)
+  - valida JWT do Supabase, nao loga secrets nem prompts completos
+  - timeout configuravel
+  => MODELO IDEAL para as chamadas Efi (mTLS + client_secret no backend).
+
+Padrao webhook (whatsapp-recrutamento-webhook/index.ts):
+  - serve() Deno, CORS "*", usa SUPABASE_SERVICE_ROLE_KEY (admin client)
+  - recebe JSON e grava no banco
+  => Serve de base para o webhook Efi, MAS precisa de mecanismo de validacao.
+
+NOTA IMPORTANTE (Efi): a API Cobrancas/Pix da Efi exige autenticacao mTLS com
+certificado .p12 + client_id/client_secret. Edge Functions (Deno) suportam
+fetch com client certificate customizado, porem o manuseio do .p12 deve ocorrer
+100% no backend (secret), NUNCA no repo nem no frontend. [CONFIRMADO que hoje
+nao existe nenhum tratamento mTLS no repo -> [GAP]]
+
+================================================================================
+10. INFRA ATUAL DE SECRETS / ENV VARS  [CONFIRMADO]
+================================================================================
+- .env / .env.example / .env.production(.example) / .env.qa(.example)
+  * VITE_*  -> embutidos no BUNDLE do frontend (publicos por definicao).
+  * SUPABASE_SERVICE_ROLE_KEY -> server-side (scripts), nao VITE_.
+- Edge Functions: segredos via `supabase secrets set NOME=valor`
+  (documentado em .env.example l.57-62 para chaves de IA).
+- Risco identificado (legado): VITE_ZOHO_CLIENT_SECRET e VITE_ZOHO_REFRESH_TOKEN
+  estao em .env.example como VITE_* (seriam publicos no bundle). Nao usar Efi
+  nesse padrao.
+- .gitignore (l.25-31): ignora `.env`, `.env.*`, exceto `.env.example`.
+- .gitignore NAO ignora *.p12 / *.pfx / certificados. [GAP DE SEGURANCA]
+  => obrigatorio adicionar `*.p12`, `*.pfx`, `*.key`, `*.pem`, `certs/` antes
+     de qualquer arquivo de certificado entrar no projeto.
+- Nao existe NENHUMA variavel Efi/banco hoje. [GAP]
+
+REGRA DE OURO PARA ESTA INTEGRACAO:
+  * client_id / client_secret / .p12  -> SOMENTE Supabase Secrets (backend)
+  * frontend nunca recebe credencial; chama apenas a Edge Function
+  * .p12 NUNCA no Git; NUNCA neste TXT; NUNCA em logs.
+
+================================================================================
+11. INFRA EXISTENTE DE WEBHOOKS  [CONFIRMADO]
+================================================================================
+- Edge Function publica: whatsapp-recrutamento-webhook (sem autenticacao propria,
+  CORS "*", service_role internamente).
+- Tabela public.webhooks_recebidos (20260517000005 + 20260517000007):
+    armazena payload recebido e flag `processado`.
+    ATENCAO: policy "Permitir tudo em webhooks_recebidos" USING(true) -> RLS
+    permissiva (legado). Nao usar este padrao para o webhook Efi (exige validacao).
+- Outros canais externos via n8n: VITE_N8N_WEBHOOK_URL / VITE_N8N_WEBHOOK_OS...
+  (webhooks de saida, nao de banco).
+- Nao existe endpoint de webhook bancario, nem validacao de assinatura/token de
+  origem, nem tabela de eventos de pagamento/cobranca. [GAP]
+  => o webhook Efi (pix recebido / boleto pago) deve:
+      (a) validar origem (token/assinatura definidos pela Efi / allowlist),
+      (b) gravar evento bruto numa tabela de integracao,
+      (c) processar de forma IDEMPOTENTE (nao duplicar baixa).
+
+================================================================================
+12. JA EXISTE PROVIDER / ADAPTER BANCARIO REUTILIZAVEL?  [CONFIRMADO]
+================================================================================
+NAO existe nenhum provider/adapter bancario (boleto/pix/cnab). O que existe:
+  - src/services/ia/providers/  (padrao adapter REUTILIZAVEL, mas de IA):
+      ProviderInterface.ts  (interface IProvider: execute/testConnection)
+      ProviderRegistry.ts   (mapa tipo:provedor -> driver)
+      ZohoMailProvider / WhatsAppProvider / VagasProvider /
+      SocialMediaProvider / GoogleAdsProvider
+  - drivers de integracao legados: src/services/integracoes/* (n8n, zoho, evolution)
+  - src/services/ia/conectoresService.ts (catalogo de conectores + modos de
+    seguranca HOMOLOGACAO / PRODUCAO_ASSISTIDA / PRODUCAO_AUTONOMA)
+
+=> O PADRAO (interface + registry) e reutilizavel conceitualmente, mas o driver
+   Efi NAO pode viver no frontend (mTLS/segredos). Deve viver na Edge Function.
+   No frontend, expor apenas um "bankingService" fino que chama a Edge Function.
+   [GAP] provider Efi real.
+
+================================================================================
+13. MIGRATIONS / TABELAS RELACIONADAS A BANCO / BOLETO / CNAB / PIX  [CONFIRMADO]
+================================================================================
+Migrations relevantes (supabase/migrations):
+  - 20260510000001_core_baseline.sql
+      financeiro_receber (l.350), financeiro_pagar (l.394, codigo_barras/chave_pix)
+  - 20260510090000_baseline_external_tables.sql
+      pagamentos_prestadores (l.117, inclui cnab_lote_id/cnab_arquivo/elegivel_lote)
+  - 20260511_prestadores_financeiro_contrato.sql (chave_pix/tipo_chave_pix)
+  - 20260526_contas_financeiras.sql (contas_financeiras)
+  - 20260816000001_fase2a_faturamento_profissional.sql (faturas/fatura_itens, fatura_id)
+  - 20260818000001_f0c4_livro_baixas_financeiras.sql (financeiro_baixas + RPC baixa/estorno)
+  - 20260818000002_f0d_receber_baixas_rpc.sql (RPC baixa p/ receber)
+  - 20260819000001_f0h_contas_caixas.sql (evolucao de contas_financeiras: chave_pix/tipo)
+  - 20260903000000_fin_master361_core_financeiro.sql (RPC baixa consolidada)
+  - 20260906000000_fin_362_3e_consistencia_pagamento_prestador.sql
+      (f_confirmar_pagamento_prestador - conciliacao atomica)
+  - 20260907000000_fin_363d2a_flag_is_teste.sql (financeiro_receber.is_teste)
+  - 20260908000000_fin_forn02_tabela_fornecedores.sql (fornecedores + chave_pix)
+  - 20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+      (f_confirmar_pagamento_fechamento) + 20260913000001 (rollback)
+  - 20260920_02mf_fix_rpc_pagamento_prestador_parcial.sql (RPC suporta parcial)
+  - 20260704000001_m66 / 20260705000003_m80 / 20260707000001_m104a / 20260731000001_p0
+      (triggers de propagacao financeira + anti-duplicidade)
+  - 20260821000000_fin_mot_1_extrato_fechamento_prestador.sql (conta corrente prestador)
+NAO existe migration de boleto/PIX/cobranca/banco-integracao. [GAP]
+
+================================================================================
+14. RISCO DE DUPLICIDADE FINANCEIRA  [CONFIRMADO]  *** CRITICO ***
+================================================================================
+Cadeia de propagacao HOJE (fonte de verdade):
+  alocacoes_escala / ordens_servico
+    --trigger M66/M80--> financeiro_receber + financeiro_pagar +
+                         pagamentos_prestadores + composicao_financeira_os
+  Anti-duplicidade: ON CONFLICT(os_id) / check-then-insert / UNIQUE(os_id).
+
+Riscos que a integracao Efi DEVE respeitar:
+  R1  NUNCA criar registro em financeiro_receber/pagamentos_prestadores para
+      "gerar boleto"/"pagar prestador". A Efi deve apenas ANEXAR identificadores
+      ao registro JACENTE (fatura/recebivel/pagamento) e, na liquidacao,
+      chamar as RPCs de baixa existentes.
+  R2  Boleto (A): o webhook "boleto pago" / consulta de status NAO pode inserir
+      receita. Deve: (i) localizar o financeiro_receber/fatura ja existente,
+      (ii) chamar f_registrar_baixa_financeira(titulo_tabela='financeiro_receber').
+      Hoje a RPC f_registrar_baixa_financeira original restringe a
+      'financeiro_pagar' (f0c4 l.137); versoes posteriores (f0d / fin_master361)
+      habilitam receber -> VALIDAR qual versao esta em producao antes de usar.
+  R3  Pix prestador (B): apos liquidar, NAO marcar pago por UPDATE direto.
+      Chamar SEMPRE f_confirmar_pagamento_prestador(p_pagamento_id, data).
+      Ela e idempotente (bloqueia se ja pago) e atomica (baixa + status).
+      Nao usar confirmarPagamento() duas vezes por retry de webhook.
+  R4  Webhook duplicado (retry/at-least-once): o evento Efi deve ter chave de
+      idempotencia (endToEndId/txid -> guardar em financeiro_baixas.referencia_bancaria
+      ou em tabela de integracao com UNIQUE). Sem isso, risco de baixa dupla.
+  R5  Conciliacao ambigua: f_confirmar_pagamento_prestador exige EXATAMENTE 1
+      titulo candidato (OS+valor+prestador). Pagamentos sem os_id exigem match
+      por prestador+valor. Lote Pix deve validar isso ANTES de enviar; senao o
+      pagamento fica sem titulo e nao baixa.
+  R6  Nao alterar triggers M66/M80. Qualquer fluxo Efi que escreva em
+      ordens_servico/alocacoes_escala pode redisparar propagacao e duplicar.
+  R7  A representacao bancaria de "pagamento de contas Efi" (secao C) pode virar
+      despesa. So mapear para financeiro_pagar existente, nunca criar despesa nova.
+  R8  Testes: existe flag financeiro_receber.is_teste e relatorios financeiros com
+      separacao TESTE x REAL (FIN-363D2A). Eventos Efi de HML nao podem poluir
+      os numeros reais (marcar origem/ambiente no registro de integracao).
+
+================================================================================
+15. COMO IMPLEMENTAR EFI COM A MENOR ALTERACAO POSSIVEL  [PROPOSTA]
+================================================================================
+Principios:
+  - Efi 100% atras de uma Edge Function (mTLS + secrets). Frontend nao conhece Efi.
+  - Zero duplicidade: so ANEXA identificadores + chama RPCs de baixa existentes.
+  - Nenhuma remocao de CNAB.
+  - Nenhuma tabela existente recriada; apenas novas tabelas aditivas de integracao.
+
+Camadas:
+  Frontend (React)                      Backend (Supabase / Edge Function)
+  ------------------                    ------------------------------------
+  bankingService.ts  --- HTTPS/JWT --->  efi-banking (Deno)
+    (sem segredos)                         /boleto (criar/consultar/cancelar/PDF)
+                                           /pix    (pagar prestador/consultar)
+                                           /webhook (receber eventos)
+                                                      |
+                                                      v
+                                            Efi API Cobrancas / Pix (mTLS .p12)
+
+Tabelas novas propostas (ADITIVAS, sem tocar nas existentes):
+  - efi_cobrancas (boleto):
+      id, tenant_id, fatura_id FK faturas, receber_id FK financeiro_receber,
+      ambiente ('homologacao'|'producao'), txid/charge_id (UNIQUE),
+      status, valor, vencimento, linha_digitavel, codigo_barras, nosso_numero,
+      pdf_url, barcode_url, qrcode_pix, criado_em, atualizado_em, raw jsonb
+  - efi_pix_pagamentos:
+      id, tenant_id, pagamento_prestador_id FK pagamentos_prestadores,
+      ambiente, end_to_end_id (UNIQUE), txid/idempotency_key (UNIQUE),
+      status, valor, chave_pix_destino, comprovante_url, baixa_id FK
+      financeiro_baixas, criado_em, atualizado_em, raw jsonb
+  - efi_pagamento_contas (SECAO C — NAO implementar nesta missao; apenas reservar)
+  - efi_eventos (webhook bruto + idempotencia):
+      id, ambiente, tipo, efi_id (UNIQUE), payload jsonb, processado,
+      recebido_em, processado_em
+  - (opcional) efi_config: referencia a conta_financeira_id + identificador do
+      certificado/segredo no Vault — SEM guardar o .p12 em si.
+
+Regras de negocio:
+  A) Boleto:
+     1. UI (ContasReceberEnterprise / FaturaPanel) chama bankingService.criarBoleto
+        passando fatura_id/receber_id JA existentes.
+     2. Edge Function cria cobranca na Efi e persiste em efi_cobrancas
+        (identificadores + status + linha digitavel + codigo de barras + PDF).
+     3. Mudanca de status/pagamento chega por webhook -> efi_eventos ->
+        localiza receber_id -> chama f_registrar_baixa_financeira('financeiro_receber').
+     4. NUNCA criar receita nova.
+  B) Pix prestador:
+     1. UI (PagamentoPrestadores / PagamentoCNAB-lote) seleciona pagamentos
+        pendentes de pagamentos_prestadores.
+     2. Edge Function envia Pix individual (chave_pix do prestador) com
+        idempotency_key; persiste em efi_pix_pagamentos.
+     3. Confirmacao -> chama f_confirmar_pagamento_prestador(pagamento_id, data).
+     4. Retorno/status tambem por webhook -> sem duplicar baixa.
+     5. NUNCA criar novo fato economico.
+  C) API Pagamento de Contas: mapear depois para financeiro_pagar (boletos/codigo
+     de barras). NAO implementar agora.
+
+Seguranca (obrigatoria):
+  - client_id / client_secret / certificado .p12 -> Supabase Secrets.
+  - Adicionar ao .gitignore: *.p12 *.pfx *.key *.pem certs/ (HOJE AUSENTE).
+  - Edge Function: validar JWT para chamadas do app; validar origem/assinatura
+    no webhook; nunca logar payload com dados sensiveis.
+  - Homologacao somente (ambiente flag), sem producao nesta fase.
+  - Nenhum secret/certificado em TXT, logs, commits ou frontend.
+
+================================================================================
+ENTREGAVEIS DA AUDITORIA
+================================================================================
+
+(A) INVENTARIO DE ARQUIVOS ENVOLVIDOS
+  Contas a Receber / Boleto:
+    src/components/financeiro/ContasReceberEnterprise.tsx   (modal Gerar Boleto 1387-1420)
+    src/components/financeiro/FaturaPanel.tsx                (botao Efi disabled 566-568)
+    src/components/financeiro/FaturaLista.tsx
+    src/components/financeiro/FaturaManualDialog.tsx
+    src/services/financeiro/receberService.ts
+    src/services/financeiro/faturaService.ts
+    src/services/financeiro/faturaTypes.ts
+    src/utils/pdfFatura.ts
+  Pagamentos / CNAB / Tesouraria:
+    src/components/financeiro/PagamentoCNAB.tsx
+    src/components/financeiro/PagamentoPrestadores.tsx
+    src/components/financeiro/ContasPagar.tsx
+    src/components/financeiro/ContasBancarias.tsx
+    src/components/financeiro/ConfigFinanceira.tsx
+    src/components/financeiro/ConciliacaoAvancada.tsx
+    src/components/financeiro/financeiroNav.ts
+    src/pages/Financeiro.tsx
+    src/services/financeiro/pagamentoPrestadorService.ts
+    src/services/financeiro/pagarService.ts
+    src/services/financeiro/fechamentoService.ts
+    src/services/financeiro/centralFinanceiroService.ts
+    src/services/financeiro/configFinanceiraService.ts
+  Fiscal:
+    src/pages/Fiscal.tsx (boleto placeholder)
+  Backend / Infra:
+    supabase/functions/proxy-ia/index.ts
+    supabase/functions/whatsapp-recrutamento-webhook/index.ts
+    supabase/functions/ (demais)
+    supabase/config.toml
+    Dockerfile / docker-compose*.yml / nginx.conf / vercel.json / ecosystem.config.cjs
+  Config/seguranca:
+    .env.example / .env.production.example / .env.qa.example / .gitignore
+  Docs existentes:
+    src/docs/FINANCEIRO_INTEGRACOES.md (secao "Boleto - Efi" l.103-116, ja preve
+      ConfiguracaoEfi: clientId/clientSecret/callbackUrl e funcoes gerarBoleto/
+      consultarBoleto/baixarBoleto)  <-- referencia de intencao, nao implementado.
+    docs/proximas-integracoes.md (l.260 cita Efi Bank)
+  Padrao adapter reutilizavel:
+    src/services/ia/providers/ProviderInterface.ts
+    src/services/ia/providers/ProviderRegistry.ts
+    src/services/ia/providers/ZohoMailProvider.ts (modelo de driver)
+
+(B) TABELAS/COLUNAS EXISTENTES (ver secoes 4,7,8,13)
+    faturas, fatura_itens, financeiro_receber(+fatura_id,is_teste),
+    financeiro_pagar(codigo_barras,chave_pix), financeiro_baixas(referencia_bancaria),
+    pagamentos_prestadores(+cnab_*,chave_pix), pagamentos_prestadores_itens,
+    contas_financeiras, configuracoes_sistema, webhooks_recebidos.
+
+(C) FLUXO ATUAL DE "GERAR BOLETO"
+    Botao -> abre Dialog -> informacoes do recebivel -> botao DESABILITADO
+    "Integracao bancaria pendente" -> FECHA. Nada e gerado/persistido.
+    (FaturaPanel: botao disabled "Efi sera habilitada em fase futura".)
+
+(D) FLUXO ATUAL DE PAGAMENTOS_PRESTADORES / CNAB
+    pagamentos_prestadores (pendente) -> UI marca pago -> confirmarPagamento()
+      -> RPC f_confirmar_pagamento_prestador (atomico: baixa + status + conta).
+    CNAB: tela informativa; "Gerar Remessa"/"Importar Retorno" DESABILITADOS.
+      Nenhum arquivo CNAB real e gerado. Nenhuma baixa ficticia.
+
+(E) INFRAESTRUTURA BACKEND DISPONIVEL
+    Supabase Edge Functions (Deno 2) com secrets; RPCs Postgres transacionais
+    (baixa/estorno/confirmar-pagamento); Realtime; Storage; padrao proxy-ia de
+    backend seguro. Sem servidor Node de negocio. Docker/nginx para o estatico.
+
+(F) GAPS PARA A EFI
+    G1  Sem provider/edge function Efi (Cobrancas/Pix/Pagamento de Contas).
+    G2  Sem suporte a mTLS/certificado .p12 no backend.
+    G3  Sem tabela de identificadores de boleto (linha digitavel/codigo de barras/PDF).
+    G4  Sem tabela de Pix enviado (end_to_end_id/idempotencia/comprovante).
+    G5  Sem webhook Efi validado + tabela de eventos + idempotencia.
+    G6  Sem campos/entidade de credenciais por conta (client_id/ambiente/certificado-ref).
+    G7  .gitignore NAO protege *.p12/*.pfx/*.pem/*.key.
+    G8  Sem UI de acao Efi real (botoes hoje desabilitados).
+    G9  Sem separacao TESTE x REAL para eventos Efi (existe so is_teste em receber).
+    G10 Sem mapeamento de "Pagamento de Contas" (secao C) — apenas reservar.
+
+(G) PROPOSTA MINIMA DE ARQUITETURA
+    Frontend (Financeiro) -> bankingService.ts (fino, sem segredo)
+        -> [JWT] Edge Function efi-banking (Deno, mTLS + secrets)
+            -> Efi API Cobrancas / Pix
+        -> Postgres: efi_cobrancas / efi_pix_pagamentos / efi_eventos (+ efi_config)
+        -> Baixa via RPCs existentes (f_registrar_baixa_financeira /
+           f_confirmar_pagamento_prestador) — SEM criar novo fato economico.
+    Webhook Efi -> Edge Function (valida origem) -> efi_eventos -> processa
+    idempotente -> baixa o MESMO recebivel/pagamento.
+
+(H) MICRO-MISSOES SEGUINTES SUGERIDAS
+    EFI-INT-02  Hardening de seguranca: .gitignore (*.p12/*.pfx/*.pem/*.key),
+                confirmar gestao de secrets no Supabase, definir ambiente HML.
+    EFI-INT-03  Desenho aprovado do schema aditivo (efi_cobrancas, efi_pix_pagamentos,
+                efi_eventos, efi_config) — SQL de proposta (nao aplicar).
+    EFI-INT-04  Edge Function efi-banking: autenticacao mTLS + token, endpoint de
+                saude/consulta (somente leitura) em HML.
+    EFI-INT-05  API Cobrancas (A): criar/consultar/cancelar boleto + persistir
+                identificadores/linha digitavel/codigo de barras/PDF; UI habilitada.
+    EFI-INT-06  Webhook de cobranca: ingestao idempotente + baixa do MESMO
+                financeiro_receber (validar versao da RPC que aceita 'receber').
+    EFI-INT-07  API Pix (B): pagamento individual por prestador com idempotencia +
+                chamada a f_confirmar_pagamento_prestador (sem duplicar pagamento).
+    EFI-INT-08  E2E financeiro/bancario em HML (boleto pago + pix liquidado) +
+                prova de zero duplicidade (receber/pagar/baixas).
+    EFI-INT-09  (Bloqueado/planejado) API Pagamento de Contas (C): mapear para
+                financeiro_pagar — somente apos A/B homologados.
+    Gate final   Master 360 / Gate Producao (contagem regressiva 1 -> 0).
+
+================================================================================
+DECLARACAO DE CONFORMIDADE DA AUDITORIA
+================================================================================
+- [OK] Somente leitura. Nenhum arquivo de codigo/banco/UI/migration foi alterado.
+- [OK] CNAB preservado (nenhuma remocao).
+- [OK] Nenhuma credencial real utilizada.
+- [OK] Nenhum secret/certificado registrado neste TXT.
+- [OK] Producao nao utilizada.
+- Saida desta missao: ESTE relatorio. Implementacao NAO realizada (conforme pedido).
+
+================================================================================
+FIM — EFI-INT-01-AUDIT.txt
+================================================================================

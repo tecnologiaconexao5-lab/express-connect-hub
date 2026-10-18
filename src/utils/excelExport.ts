@@ -1,3 +1,13 @@
+// ============================================================
+// Exportacao de dados para Excel (XLSX)
+//
+// Funes originais mantidas para download no navegador (UI).
+//
+// Novas funcoes *Buffer para automacao (Etapa 6):
+// - Retornam Buffer em vez de fazer download
+// - Mesma estrutura, mesmo conteudo, apenas mudam o output
+// ============================================================
+
 import * as XLSX from "xlsx";
 
 interface ExcelColumn {
@@ -7,12 +17,12 @@ interface ExcelColumn {
   format?: string;
 }
 
-export const exportToExcel = (
+function _buildWorkbook(
   data: any[],
   columns: ExcelColumn[],
   filename: string,
   title?: string
-) => {
+): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
   const headerRow = columns.map((c) => c.header);
@@ -20,7 +30,7 @@ export const exportToExcel = (
     columns.map((col) => item[col.key] ?? "")
   );
 
-  const wsData = [];
+  const wsData: (string | number)[][] = [];
   if (title) {
     wsData.push([title]);
     wsData.push([]);
@@ -39,14 +49,35 @@ export const exportToExcel = (
     ];
   }
 
-  const wbName = `${filename.replace(/[^a-z0-9]/gi, "_")}.xlsx`;
-  XLSX.writeFile(wb, wbName);
+  XLSX.utils.book_append_sheet(wb, ws, filename.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 31));
+  return wb;
+}
+
+export const exportToExcel = (
+  data: any[],
+  columns: ExcelColumn[],
+  filename: string,
+  title?: string
+): void => {
+  const wb = _buildWorkbook(data, columns, filename, title);
+  XLSX.writeFile(wb, `${filename.replace(/[^a-z0-9]/gi, "_")}.xlsx`);
+};
+
+export const exportToExcelBuffer = (
+  data: any[],
+  columns: ExcelColumn[],
+  filename: string,
+  title?: string
+): Buffer => {
+  const wb = _buildWorkbook(data, columns, filename, title);
+  const arr = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return Buffer.from(arr);
 };
 
 export const exportFaturamentoToExcel = (
   data: any[],
   periodoLabel: string
-) => {
+): void => {
   const columns: ExcelColumn[] = [
     { header: "Cliente", key: "cliente_nome", width: 30 },
     { header: "CNPJ", key: "cliente_cnpj", width: 20 },
@@ -67,10 +98,34 @@ export const exportFaturamentoToExcel = (
   );
 };
 
+export const exportFaturamentoToExcelBuffer = (
+  data: any[],
+  periodoLabel: string
+): Buffer => {
+  const columns: ExcelColumn[] = [
+    { header: "Cliente", key: "cliente_nome", width: 30 },
+    { header: "CNPJ", key: "cliente_cnpj", width: 20 },
+    { header: "Qtd OS", key: "quantidade_os", width: 10 },
+    { header: "Valor Faturado", key: "valor_faturado", width: 18 },
+    { header: "Valor Pago", key: "valor_pago", width: 18 },
+    { header: "Pendência", key: "valor_pendente", width: 18 },
+    { header: "Ticket Médio", key: "ticket_medio", width: 18 },
+    { header: "Última Operação", key: "ultima_operacao", width: 15 },
+    { header: "Margem Total", key: "margem_total", width: 18 },
+  ];
+
+  return exportToExcelBuffer(
+    data,
+    columns,
+    `faturamento_clientes_${periodoLabel}`,
+    `Relatório de Faturamento por Cliente - ${periodoLabel}`
+  );
+};
+
 export const exportPagamentoToExcel = (
   data: any[],
   periodoLabel: string
-) => {
+): void => {
   const columns: ExcelColumn[] = [
     { header: "Data", key: "data_formatada", width: 12 },
     { header: "OS", key: "numero", width: 14 },
@@ -106,7 +161,46 @@ export const exportPagamentoToExcel = (
   );
 };
 
-export const exportPrestadoresToExcel = (data: any[], periodoLabel: string) => {
+export const exportPagamentoToExcelBuffer = (
+  data: any[],
+  periodoLabel: string
+): Buffer => {
+  const columns: ExcelColumn[] = [
+    { header: "Data", key: "data_formatada", width: 12 },
+    { header: "OS", key: "numero", width: 14 },
+    { header: "Cliente", key: "cliente_nome", width: 25 },
+    { header: "Prestador", key: "prestador_nome", width: 25 },
+    { header: "Tipo Serviço", key: "veiculo_tipo", width: 15 },
+    { header: "Origem", key: "origem", width: 15 },
+    { header: "Destino", key: "destino", width: 15 },
+    { header: "Valor Operação", key: "custo_prestador", width: 16 },
+    { header: "Adicional", key: "adicionais", width: 14 },
+    { header: "Desconto", key: "descontos", width: 14 },
+    { header: "Valor Final Repasse", key: "valor_final_repasse", width: 18 },
+    { header: "Status", key: "status_pagamento", width: 12 },
+  ];
+
+  const enrichedData = data.map((item) => ({
+    ...item,
+    data_formatada: item.data_finalizacao
+      ? new Date(item.data_finalizacao + "T12:00:00").toLocaleDateString("pt-BR")
+      : "-",
+    origem: item.enderecos?.[0]?.cidade || item.origem || "-",
+    destino:
+      item.enderecos?.[item.enderecos.length - 1]?.cidade ||
+      item.destino ||
+      "-",
+  }));
+
+  return exportToExcelBuffer(
+    enrichedData,
+    columns,
+    `pagamento_prestadores_${periodoLabel}`,
+    `Relatório de Repasses a Prestadores - ${periodoLabel}`
+  );
+};
+
+export const exportPrestadoresToExcel = (data: any[], periodoLabel: string): void => {
   const columns: ExcelColumn[] = [
     { header: "Prestador", key: "nome", width: 30 },
     { header: "CPF/CNPJ", key: "cpf_cnpj", width: 20 },
@@ -129,12 +223,35 @@ export const exportPrestadoresToExcel = (data: any[], periodoLabel: string) => {
   );
 };
 
+export const exportPrestadoresToExcelBuffer = (data: any[], periodoLabel: string): Buffer => {
+  const columns: ExcelColumn[] = [
+    { header: "Prestador", key: "nome", width: 30 },
+    { header: "CPF/CNPJ", key: "cpf_cnpj", width: 20 },
+    { header: "Tipo", key: "tipo_parceiro", width: 15 },
+    { header: "Cidade", key: "cidade", width: 15 },
+    { header: "UF", key: "uf", width: 5 },
+    { header: "Veículo", key: "veiculo_principal", width: 15 },
+    { header: "Operações", key: "operacoes_finalizadas", width: 12 },
+    { header: "Valor Recebido", key: "valor_recebido", width: 18 },
+    { header: "Score", key: "score_interno", width: 8 },
+    { header: "Status", key: "status", width: 12 },
+    { header: "Última Operação", key: "ultima_operacao", width: 15 },
+  ];
+
+  return exportToExcelBuffer(
+    data,
+    columns,
+    `prestadores_${periodoLabel}`,
+    `Relatório de Prestadores - ${periodoLabel}`
+  );
+};
+
 export const exportClienteAgregadoRefrigeradoToExcel = (
   data: any[],
   clienteNome: string,
   prestadorNome: string,
   periodoLabel: string
-) => {
+): void => {
   const columns: ExcelColumn[] = [
     { header: "DATA VIAGEM", key: "data_viagem", width: 12 },
     { header: "MOTORISTA", key: "motorista", width: 25 },
@@ -160,6 +277,44 @@ export const exportClienteAgregadoRefrigeradoToExcel = (
   }));
 
   exportToExcel(
+    enrichedData,
+    columns,
+    `relatorio_cliente_agregado_${periodoLabel}`,
+    `Relatório Cliente — Agregado Refrigerado | Cliente: ${clienteNome} | Prestador: ${prestadorNome}`
+  );
+};
+
+export const exportClienteAgregadoRefrigeradoToExcelBuffer = (
+  data: any[],
+  clienteNome: string,
+  prestadorNome: string,
+  periodoLabel: string
+): Buffer => {
+  const columns: ExcelColumn[] = [
+    { header: "DATA VIAGEM", key: "data_viagem", width: 12 },
+    { header: "MOTORISTA", key: "motorista", width: 25 },
+    { header: "PLACA", key: "placa", width: 12 },
+    { header: "TIPO DE VEÍCULO", key: "tipo_veiculo", width: 18 },
+    { header: "Observação", key: "observacao", width: 20 },
+    { header: "HORÁRIO CHEGADA", key: "horario_chegada", width: 16 },
+    { header: "HORÁRIO SAÍDA", key: "horario_saida", width: 16 },
+    { header: "DIÁRIA", key: "diaria", width: 14 },
+    { header: "KM TOTAL", key: "km_total", width: 10 },
+    { header: "KM EXCEDENTE", key: "km_excedente", width: 12 },
+    { header: "VLR.KM", key: "vlr_km", width: 12 },
+    { header: "VLR.TOTAL", key: "vlr_total", width: 14 },
+    { header: "Nº OC", key: "numero_oc", width: 14 },
+    { header: "OBS", key: "obs", width: 30 },
+  ];
+
+  const enrichedData = data.map((item) => ({
+    ...item,
+    diaria: item.diaria_formatada || "-",
+    vlr_km: item.vlr_km_formatado || "-",
+    vlr_total: item.vlr_total_formatado || "-",
+  }));
+
+  return exportToExcelBuffer(
     enrichedData,
     columns,
     `relatorio_cliente_agregado_${periodoLabel}`,

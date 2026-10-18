@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
-import { History, CheckCircle2, AlertCircle, Clock, XCircle } from "lucide-react";
+import { History, CheckCircle2, AlertCircle, Clock, XCircle, FileText } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { Badge } from "@/components/ui/badge";
 
 interface CteTimelineProps {
   cteId: string;
+  cteMetadata?: Record<string, any> | null;
 }
 
-export default function CteTimeline({ cteId }: CteTimelineProps) {
+const fmtFin = (v: number) => v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "R$ 0,00";
+
+export default function CteTimeline({ cteId, cteMetadata }: CteTimelineProps) {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,11 +58,46 @@ export default function CteTimeline({ cteId }: CteTimelineProps) {
   }
 
   if (events.length === 0) {
+    const meta = cteMetadata || {};
+    const romaneioNumero = meta.romaneio_numero || null;
+    const origemCte = meta.origem_cte || null;
+    const nfeNumero = meta.nfe_numero || null;
+    const valorRateado = meta.rateio?.valor_rateado || null;
+
     return (
-      <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+      <div className="flex flex-col items-center justify-center p-4 text-center text-muted-foreground">
         <History className="w-10 h-10 mb-2 opacity-20" />
         <p className="text-sm">Nenhum evento fiscal registrado para este CT-e.</p>
-        <p className="text-xs mt-1">Os eventos aparecerão aqui assim que o documento for processado.</p>
+        <p className="text-xs mt-1">Os eventos aparecerao aqui assim que o documento for processado.</p>
+
+        {(origemCte === "romaneio_faturamento" || romaneioNumero) && (
+          <div className="mt-4 w-full">
+            <div className="relative border-l border-blue-200 ml-3 space-y-4">
+              <div className="relative pl-6">
+                <span className="absolute -left-3 bg-blue-50 p-1 rounded-full border border-blue-200">
+                  <FileText className="w-4 h-4 text-blue-500" />
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-blue-700">Rascunho local criado por romaneio/faturamento</span>
+                  <span className="text-xs text-muted-foreground">
+                    {meta.rateio?.data_criacao || new Date().toLocaleString("pt-BR")}
+                  </span>
+                  {romaneioNumero && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] font-mono">Lote {romaneioNumero}</Badge>
+                      {nfeNumero && (
+                        <Badge variant="outline" className="text-[10px] font-mono">NF-e {nfeNumero}</Badge>
+                      )}
+                    </div>
+                  )}
+                  {valorRateado != null && (
+                    <span className="text-xs text-muted-foreground mt-1">Valor rateado: {fmtFin(valorRateado)}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -1,0 +1,66 @@
+TMS-006.3 — CRIACAO CONTROLADA DO VEICULO HML PARA TESTE DE
+               ESCALA
+
+Data: 2026-07-27
+Status: VEICULO HML CRIADO E VALIDADO — PRONTO PARA TESTE
+        CONTROLADO DE ESCALA
+Percentual: 49% (neutro)
+
+=======================================================================
+VEICULO CRIADO
+=======================================================================
+
+ID:       e674550f-c577-4d14-956c-b83df5e903b0
+Placa:    HML001
+Tipo:     moto
+Status:   Ativo
+Criado:   2026-07-27
+Payload:  {placa:HML001, tipo_veiculo:moto, status:Ativo,
+           observacoes:TMS-0063-HML — ...}
+
+=======================================================================
+VALIDACOES
+=======================================================================
+
+DB record confirmado (SELECT por ID):               ✅
+Playwright lista (HML001 visivel):                  1/1 ✅
+Alocacoes com HML001:                               0 ✅
+OS com HML001:                                      0 ✅
+Financeiro com HML001:                              0 ✅
+Prestador vinculado:                                NULL ✅
+typecheck:node:                                     0 erros ✅
+build:                                              37.90s ✅
+
+=======================================================================
+BUG DETECTADO
+=======================================================================
+
+Mapper toVeiculoInsert() envia colunas subcategoria,
+tipo_carroceria, classificacao_termica que NAO EXISTEM
+no schema de veiculos. Erro PGRST204 ao criar via UI.
+Criacao feita por API direta com colunas corretas.
+
+=======================================================================
+REGISTRO HML TEMPORARIO
+=======================================================================
+
+REGISTRO HML TEMPORARIO — NAO UTILIZAR EM OPERACAO COMERCIAL
+
+ID:          e674550f-c577-4d14-956c-b83df5e903b0
+Placa:       HML001
+Tipo:        moto
+Status:      Ativo
+Criado em:   2026-07-27
+Missao:      TMS-006.3
+Finalidade:  Homologacao de alocacao de escala
+Exclusao:    DELETE por ID apos testes
+Marcador:    TMS-0063-HML
+
+=======================================================================
+PROXIMO PASSO (TMS-006.4)
+=======================================================================
+
+Criar alocacao controlada com:
+  OS:        TESTE-001 (28640e7b)
+  Prestador: M43_2026-06-29_18-24-20 (5377592a)
+  Veiculo:   HML001 (e674550f) ✅ CRIADO

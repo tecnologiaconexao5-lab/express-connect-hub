@@ -1,0 +1,166 @@
+════════════════════════════════════════════════════════════════════════════════
+F0-C4 — LIVRO DE BAIXAS FINANCEIRAS (financeiro_baixas)
+Implantação em PRODUÇÃO — Supabase uwrvzsjtpgaifkktpepn
+Data: 2026-08-18
+════════════════════════════════════════════════════════════════════════════════
+
+1) STATUS
+   ✅ Migration criada E APLICADA em produção (ref confirmada antes de aplicar:
+      DATABASE_URL user = postgres.uwrvzsjtpgaifkktpepn, db postgres;
+      VITE_SUPABASE_URL = https://uwrvzsjtpgaifkktpepn.supabase.co).
+   ✅ RLS habilitado, sem policy anon/public, sem policy DELETE.
+   ✅ baixarPagavel agora registra baixas REAIS via RPC transacional e suporta
+      múltiplos pagamentos parciais (F0-C2 bloqueava a segunda parcial).
+   ✅ Estorno via RPC (marca estornada, NUNCA deleta, recalcula saldo/status).
+   ✅ npx tsc --noEmit → 0 erros. eslint → 0 erros NOVOS (9 `any` = baseline
+      pré-existente do arquivo).
+   ✅ Validação matemática executada em transação BEGIN/ROLLBACK (zero registros
+      fictícios persistidos — "Não criar lançamentos fictícios em Produção").
+
+2) MIGRATION CRIADA/APLICADA
+   Arquivo: supabase/migrations/20260818_f0c4_livro_baixas_financeiras.sql
+   Aplicador: scripts/_f0c4_aplicar.mjs (pg direto, SSL).
+   NÃO foi aplicada a migration antiga 20260626_missao021_fechamento_financeiro.sql
+   (usada apenas como referência de contrato).
+
+3) SQL/OBJETOS CRIADOS (todos ADITIVOS; nenhuma tabela removida/reestruturada)
+   Tabela public.financeiro_baixas:
+     id                UUID PK DEFAULT gen_random_uuid()
+     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+     titulo_tabela     TEXT NOT NULL   -- 'financeiro_pagar' | 'financeiro_receber'
+     titulo_id         UUID NOT NULL
+     valor_original    NUMERIC(18,2) NOT NULL   -- base do título no momento da baixa
+     valor_baixado     NUMERIC(18,2) NOT NULL   -- valor pago nesta baixa
+     saldo_restante    NUMERIC(18,2) NOT NULL   -- saldo APÓS esta baixa (>= 0)
+     data_baixa        DATE NOT NULL DEFAULT CURRENT_DATE
+     forma_pagamento   TEXT
+     conta_financeira  TEXT                     -- conta/caixa textual (frente Contas & Caixas futura)
+     referencia_bancaria TEXT
+     observacao        TEXT
+     usuario_id        UUID
+     usuario_nome      TEXT
+     estornada         BOOLEAN NOT NULL DEFAULT false
+     data_estorno      TIMESTAMPTZ
+     motivo_estorno    TEXT
+     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+   Check constraints:
+     ck_financeiro_baixas_tabela        (titulo_tabela IN pagar/receber)
+     ck_financeiro_baixas_valor_baixado (valor_baixado > 0)
+     ck_financeiro_baixas_saldo         (valor_original >= 0 AND saldo_restante >= 0)
+   Índices:
+     idx_fb_titulo     (titulo_tabela, titulo_id)   ← chave lógica polimórfica
+     idx_fb_titulo_id  (titulo_id)
+     idx_fb_data       (data_baixa)
+     idx_fb_estorno    (estornada) WHERE estornada = true
+   Trigger:
+     trg_financeiro_baixas_updated_at (BEFORE UPDATE) reusa a função compartilhada
+     public.update_updated_at_column() (já existente em produção).
+   Sem FK fixa → vínculo polimórfico titulo_tabela + titulo_id (futuro Receber ok).
+   Solução existente do projeto reutilizada (mesmo contrato da migration 20260626).
+
+4) RLS
+   ALTER TABLE public.financeiro_baixas ENABLE ROW LEVEL SECURITY;
+   Policies (somente authenticated, guard tenant_usuarios — mesmo padrão das
+   policies fp_* de financeiro_pagar em 20260801_m06):
+     fb_select_tms (SELECT)  TO authenticated USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()))
+     fb_insert_tms (INSERT)  TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()))
+     fb_update_tms (UPDATE)  TO authenticated USING + WITH CHECK (idem)
+   NENHUMA policy anon/public. NENHUMA policy DELETE (imutabilidade via estorno).
+   Grants: REVOKE de anon/PUBLIC na tabela e nas RPCs; GRANT authenticated +
+   service_role. RPCs SECURITY INVOKER → respeitam as policies RLS do chamador.
+
+5) RPCs CRIADAS
+   a) f_registrar_baixa_financeira(titulo_tabela, titulo_id, valor_baixado,
+        data_baixa DEFAULT CURRENT_DATE, forma_pagamento, conta_financeira,
+        referencia_bancaria, observacao, usuario_id, usuario_nome)
+      RETURNS (sucesso, mensagem, baixa_id, saldo_restante, status_titulo)
+      TRANSACIONAL: trava o título (SELECT ... FOR UPDATE) → soma baixas não
+      estornadas → valida → INSERT baixa → recalcula saldo → UPDATE status/data
+      do título (tudo na MESMA transação; elimina "baixa gravada sem título
+      atualizado" e corrida entre baixas concorrentes). Somente financeiro_pagar
+      habilitado nesta missão.
+   b) f_estornar_baixa_financeira(baixa_id, motivo_estorno DEFAULT NULL)
+      RETURNS (sucesso, mensagem, saldo_restante, status_titulo)
+      Marca estornada=true + data_estorno + motivo_estorno; NUNCA deleta;
+      recalcula total baixado e saldo; devolve o título para aberto (sem baixas
+      válidas, limpando data_pagamento/data_efetiva_pgto), parcial ou pago.
+
+6) FÓRMULA UTILIZADA PARA SALDO
+   total_baixado = SUM(valor_baixado) das baixas do título com estornada = false
+   saldo         = financeiro_pagar.valor (valor_original) - total_baixado
+   saldo_restante gravado na baixa = saldo após esta baixa (nunca negativo).
+   O valor_original de cada baixa é o `valor` do título no momento da baixa
+   (snapshot informativo; o cálculo usa sempre o valor vigente do título).
+
+7) REGRAS DE BAIXA PARCIAL/TOTAL (múltiplas baixas agora suportadas)
+   Exemplo validado: título R$ 1.000 →
+     baixa R$ 300 → saldo R$ 700, status parcial
+     baixa R$ 200 → saldo R$ 500, status parcial
+     baixa R$ 500 → saldo R$ 0,   status pago
+   Regras (NUNCA permitir):
+     - baixa <= 0              → rejeitada ("Valor da baixa deve ser maior que zero");
+     - baixa > saldo           → rejeitada ("Valor da baixa excede o saldo restante");
+     - baixa em título cancelado → rejeitada;
+     - baixa nova em título já quitado → rejeitada;
+     - saldo negativo          → impossível (guarda no RPC + check constraint);
+     - duplicação do valor original → não ocorre (valor nunca é alterado; só status).
+   Cada baixa é um registro individual auditável em financeiro_baixas.
+
+8) REGRA DE ESTORNO
+   - marca estornada=true, data_estorno=now(), motivo_estorno informado;
+   - nunca apaga o registro (sem DELETE; sem policy DELETE);
+   - recalcula total_baixado (excluindo estornadas) e saldo;
+   - status do título: sem baixas válidas → 'aberto' (e limpa datas de pagamento);
+     saldo > 0 → 'parcial'; saldo = 0 → 'pago';
+   - trilha de auditoria preservada (registro permanece com estornada=true).
+
+9) CÓDIGO ALTERADO (somente o necessário)
+   - src/services/financeiro/pagarService.ts
+     * baixarPagavel(id, valor, data?, conta?, obs?, formaPagamento?, refBancaria?)
+       → chama a RPC f_registrar_baixa_financeira (validações e atomicidade no
+         banco); retorna ResultadoBaixa tipado; múltiplas parciais habilitadas;
+         forma/conta/referência persistidas na baixa; usuário (id/email) do JWT
+         gravado na baixa.
+     * NOVO listarBaixasPagavel(pagavelId) → registros de financeiro_baixas.
+     * NOVO estornarBaixa(baixaId, motivo?) → RPC f_estornar_baixa_financeira.
+     * Interfaces ResultadoBaixa e BaixaFinanceira; helper hojeISO().
+   - src/components/financeiro/ContasPagar.tsx
+     * handleBaixa agora repassa `forma` de pagamento do modal para
+       baixarPagavel(id, valor, data, conta, obs, forma).
+   Preservados: criação/edição (F0-C), cancelamento (F0-C2), integração
+   Escala → Financeiro, demais módulos financeiros.
+
+10) VALIDAÇÕES (scripts/_f0c4_validar.mjs, read-only + BEGIN/ROLLBACK)
+    1. tabela financeiro_baixas criada                                     ✅
+    2. RLS habilitado (rowsecurity = true)                                 ✅
+    3. nenhuma policy anon/public (roles = {authenticated})                ✅
+    4. múltiplas baixas suportadas matematicamente (300+200+500=1.000)     ✅
+    5. saldo nunca negativo (guard + check constraint)                     ✅
+    6. título quitado recebe status pago / volta a aberto no estorno total ✅
+    7. estorno preserva histórico (3 registros, todos estornada=true,
+       nenhum DELETE)                                                      ✅
+    8. nenhuma tabela existente removida/reestruturada (additiva; 0 FKs
+       novas envolvendo financeiro_pagar)                                  ✅
+    9. tsc --noEmit → 0 erros; eslint sem erros novos                      ✅
+    Sem lançamentos fictícios persistidos: teste transacional em
+    BEGIN/ROLLBACK; pós-teste financeiro_pagar = 85 (inalterado), 0
+    registros com marcador F0-C4, financeiro_baixas = 0.
+
+11) PRESERVAÇÃO DOS DADOS EXISTENTES
+    - 85 títulos em financeiro_pagar preservados (contagem igual antes/depois).
+    - Nenhum UPDATE/DELETE em dados de produção (testes apenas em ROLLBACK).
+    - Nenhuma política de outra tabela modificada.
+    - Nenhum índice/constraint/trigger de outras tabelas alterado.
+
+12) NOTAS
+    - Grants de função: o Supabase concede EXECUTE a anon na criação; por isso o
+      REVOKE explícito FROM anon + FROM PUBLIC foi adicionado e aplicado
+      (scripts/_f0c4_fix_grants.mjs) — confirmado por pg_proc.proacl.
+    - financeiro_receber, Pagamento de Prestadores, lancamentos_financeiros,
+      saldos_financeiros, DRE, Fluxo de Caixa e Conciliação/CNAB NÃO foram
+      tocados (escopo futuro).
+    - Evidências: scripts/_f0c4_aplicar.mjs, _f0c4_validar.mjs,
+      _f0c4_fix_grants.mjs, _f0c4_check_readonly.mjs.
+
+FIM DO RELATÓRIO F0-C4
+════════════════════════════════════════════════════════════════════════════════

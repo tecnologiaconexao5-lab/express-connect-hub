@@ -1,0 +1,124 @@
+================================================================================
+TMS-COM-ORC-05A-RASTREAR-LOGO-REAL-PDF — RESULTADO
+Missão: SOMENTE DIAGNÓSTICO — descobrir de onde vem a imagem da logo no PDF real
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: DIAGNÓSTICO CONCLUÍDO. ZERO alterações de código/banco/PDF/assets.
+================================================================================
+
+1. CADEIA UI → PDF → LOGO (ação real da tela)
+--------------------------------------------------------------------------------
+- Tela: Comercial → Orçamentos. Botão "Gerar PDF" (ícone FileDown)
+  → src/components/comercial/OrcamentosLista.tsx:393
+  → await gerarPdfOrcamento(orc)
+  (mesma função usada por OrcamentoForm: topo e aba Documentos "Gerar PDF (Proposta).")
+- Gerador: src/components/comercial/orcamentoPdf.ts → gerarPdfOrcamento() /
+  construirPdfOrcamento().
+- Carregamento da logo nesse gerador (ordem real do código):
+    1) let logoStr = LOGO_BASE64 (fallback embutido de ./logoBase64.ts)
+    2) try { fetch("/logo-oficial-conexao.png") } → se OK, SUBSTITUI o fallback.
+- FONTE FINAL USADA: arquivo estático public/logo-oficial-conexao.png
+  (o fetch funciona no app; por isso o fallback base64 NÃO é usado).
+
+2. FONTE REAL (evidência objetiva)
+--------------------------------------------------------------------------------
+Arquivo: public/logo-oficial-conexao.png
+  2.177.373 bytes · 1536×1024 · RGBA 8-bit · sha256: bc413884b186a202…
+Caminho no código: orcamentoPdf.ts, fetch("/logo-oficial-conexao.png").
+Não há leitura de banco, storage ou configuração para essa logo.
+
+3. INVENTÁRIO DAS LOGOS (ORIGEM | CAMINHO/CAMPO | FORMATO | QUEM USA | É A DO PDF?)
+--------------------------------------------------------------------------------
+ESTÁTICO | public/logo-oficial-conexao.png | PNG 1536×1024 2,17MB | Orçamento PDF
+         (orcamentoPdf) e fallback do useLogo.getLogo | SIM (esta é a do PDF real).
+ESTÁTICO | public/logos/logo-conexao-branco.png | PNG 1536×1024 2,17MB | pdfLogoSupport
+         getLogoWithFallback(true) (Extrato Prestador) | MESMO ARQUIVO da anterior (sha igual).
+ESTÁTICO | public/logos/logo-conexao-colorido.png | PNG 1536×1024 2,17MB | empresaConfig
+         logoPath; fundação/faturas | MESMO ARQUIVO da anterior (sha igual).
+ESTÁTICO | src/assets/logo-conexao-express.png | PNG 1536×1024 2,17MB | não referenciado
+         diretamente nos geradores | MESMO ARQUIVO (sha igual).
+ESTÁTICO | public/logos/logo-conexao-oficial.png | PNG 1024×682 241KB | foundation.loadLogo()
+         (clientReport / generateProfessionalPDF / consolidatedReports) | NÃO — é a variante CLARA.
+ESTÁTICO | src/assets/logo-conexao-light.webp | WEBP 304KB | pdfLogoSupport fallback Vite |
+         NÃO — variante light distinta.
+BASE64   | src/components/comercial/logoBase64.ts (LOGO_BASE64) | PNG 600×400 61KB |
+         orcamentoPdf fallback | NÃO usado (fetch não falha).
+SISTEMA  | Configurações → identidade visual (useLogo) | localStorage
+         empresa_identidade_visual + tabela configuracoes_sistema/identidade_visual |
+         NÃO existe (ver item 5) | NÃO.
+DB       | clientes.logo | vazio em todos (0/28) | NÃO.
+
+Prova de duplicidade: public/logo-oficial-conexao.png, public/logos/logo-conexao-branco.png,
+public/logos/logo-conexao-colorido.png e src/assets/logo-conexao-express.png têm o MESMO
+sha256 (bc413884…) e tamanho (2.177.373 bytes) → é o MESMO arquivo copiado em vários nomes.
+
+4. CONTRASTE (medição real dos pixels, sem editar imagens)
+--------------------------------------------------------------------------------
+public/logo-oficial-conexao.png (a do PDF): pixels opacos 11,4% · luminância média 97 ·
+   39,4% pixels ESCUROS (<80) · 0,0% pixels CLAROS (>200)  → arte ESCURA.
+public/logos/logo-conexao-oficial.png (variante clara): opacos 11,6% · lum. média 178 ·
+   0,0% escuros · 34,8% claros → arte CLARA (adequada a fundo navy).
+LOGO_BASE64 (fallback): lum. média 173 · 3,7% escuros · 34,6% claros → CLARA.
+Conclusão de contraste: a imagem usada é a versão escura; sobre a barra azul-marinho
+da capa/header ela praticamente desaparece (apagada).
+
+5. LOGO DO SISTEMA / CONFIGURAÇÕES (verificação)
+--------------------------------------------------------------------------------
+- Tabela configuracoes_sistema: apenas chaves 'config_financeira_empresa' e 'senha_admin'.
+  NÃO existe chave 'identidade_visual' nem qualquer chave de logo/branding.
+- clientes.logo: 0 registros preenchidos (de 28).
+- Logo do TMS (login/sidebar/Configurações) é opcional via useLogo (localStorage +
+  configuracoes_sistema) — hoje SEM imagem carregada; cai no arquivo estático.
+Portanto: a logo do PDF NÃO vem das Configurações do sistema.
+
+6. COMPARAÇÃO ENTRE LOGOS
+--------------------------------------------------------------------------------
+- Logo do Orçamento Comercial: /logo-oficial-conexao.png → ESCURA (problema).
+- Logo usada por outros PDFs (clientReport/generateProfessionalPDF, consolidated):
+  /logos/logo-conexao-oficial.png → CLARA (correta).
+- Extrato do Prestador (pdfLogoSupport 'branco'): /logos/logo-conexao-branco.png →
+  arquivo ESCURO (mesmo sha) → também sujeita ao mesmo problema.
+- Faturas/empresaConfig: /logos/logo-conexao-colorido.png → arquivo ESCURO (mesmo sha).
+
+7. CONCLUSÃO OBRIGATÓRIA
+--------------------------------------------------------------------------------
+"A logo que aparece no PDF ORC-202609-8659 vem de public/logo-oficial-conexao.png
+ (arquivo estático do projeto; 1536×1024; sha256 bc413884…), carregado por
+ fetch('/logo-oficial-conexao.png') em src/components/comercial/orcamentoPdf.ts."
+
+"A causa de ela ficar apagada é ser a variante ESCURA da marca (39,4% de pixels
+ escuros e 0,0% de pixels claros) desenhada sobre o cabeçalho azul-marinho; o
+ fetch tem sucesso, então o fallback CLARO (LOGO_BASE64) nem chega a ser usado."
+
+"A correção mínima recomendada é fazer o gerador do orçamento usar a variante CLARA
+ já existente em /logos/logo-conexao-oficial.png (0% escuros, 34,8% claros) — mantendo
+ o fallback LOGO_BASE64 (também claro) para quando o fetch falhar. Alternativa:
+ substituir o asset public/logo-oficial-conexao.png pela arte clara."
+
+8. IMPACTO DE EVENTUAL TROCA (para decisão, sem executar)
+--------------------------------------------------------------------------------
+- Apontar SÓ o orcamentoPdf para /logos/logo-conexao-oficial.png: afeta APENAS o PDF
+  do Orçamento Comercial. NÃO afeta outros PDFs/telas.
+- Substituir o arquivo public/logo-oficial-conexao.png (ou os arquivos de mesmo sha:
+  logos/logo-conexao-branco.png, logos/logo-conexao-colorido.png, assets/logo-conexao-express.png):
+  afeta também Extrato do Prestador, faturas/empresaConfig e o fallback do useLogo.
+- NÃO alterar Configurações do sistema: não há logo configurada; mexer nela não resolve
+  este PDF e poderia introduzir divergência de identidade em outros pontos.
+
+9. CONFIRMAÇÃO DE ZERO ALTERAÇÕES
+--------------------------------------------------------------------------------
+- Nenhum arquivo de código alterado; nenhum banco/migration/DML; nenhum PDF/asset mudado.
+- Os artefatos temporários de diagnóstico criados durante a análise foram REMOVIDOS
+  (nada permanece no repositório).
+- Não houve alteração em COM-ORC-02/03/04.
+
+10. ARQUIVO
+--------------------------------------------------------------------------------
+Gerado: TMS-COM-ORC-05A-RASTREAR-LOGO-REAL-PDF-RESULTADO.txt
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-ORC-05A-RASTREAR-LOGO-REAL-PDF-RESULTADO.txt
+Tamanho: 7.827 bytes | Linhas: 123 | Data: 26/09/2026 18:40:39
+Abrir no Notepad.
+
+================================================================================
+FIM
+================================================================================

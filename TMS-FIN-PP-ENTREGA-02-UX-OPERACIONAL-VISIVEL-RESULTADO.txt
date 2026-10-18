@@ -1,0 +1,102 @@
+================================================================================
+TMS-FIN-PP-ENTREGA-02-UX-OPERACIONAL-VISIVEL — RESULTADO
+Missão: Entrega visual/operacional de "Pagamento de Prestadores"
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente alvo: TMS local (npm run dev — porta 8800). APP/Redmi NÃO conectado.
+================================================================================
+
+1. ESCOPO RESPEITADO
+--------------------------------------------------------------------------------
+- NÃO houve nova auditoria geral.
+- NÃO houve alteração de arquitetura financeira.
+- NÃO houve alteração de RPCs homologadas.
+- NÃO foram tocados: Supabase/RPC, migrations, Comercial, APP, Calvo/CESAR,
+  pagamento parcial, arquitetura FP x PP, fechamento x lote, dashboards/KPIs,
+  dados reais, Git/stash.
+- Alterações 100% de apresentação/labels/tooltips + remoção de ação morta.
+
+2. ARQUIVOS ALTERADOS (5)
+--------------------------------------------------------------------------------
+A) src/components/ui/PaginationBar.tsx
+   - Correção do bug "Exibindo null-null de 0".
+   - Novo helper puro exportado formatRangeLabel(page, pageSize, totalCount).
+   - totalCount=0  -> "Exibindo 0 de 0"
+   - totalCount>0  -> "Exibindo X–Y de N"
+   - totalCount=null -> "Página N"
+
+B) src/pages/Financeiro.tsx
+   - Título visível do módulo: "Financeiro e Rentabilidade" -> "Gestão Financeira".
+   - Rota/abas/IDs técnicos preservados (ex.: value="pagamento-prestadores").
+
+C) src/components/financeiro/PagamentoPrestadores.tsx
+   - Helper de nomenclatura de origem (labelOrigem) e de status (labelStatusGenerico).
+   - Botão verde: "Novo Pagamento" -> "Novo Lançamento"
+     tooltip: "Disponível após conclusão do fluxo de lançamento manual."
+     (continua desabilitado — não parece funcional sem backend).
+   - Dialog: "Novo Pagamento Manual" -> "Novo Lançamento de Prestador".
+   - Coluna Ações dos Pagamentos Manuais: tooltips profissionais em todas as ações
+     (Conferir, Aprovar, Reprovar, Marcar como pago, Cancelar, Estornar pagamento).
+   - Removida a ação morta "Ver Detalhes" (ícone Eye sem onClick).
+     Mantido "Ver detalhes" REAL na Visão do Período (abre dossiê).
+   - Origens profissionais em: Aptos para Lote, Pagamentos Manuais,
+     Relatório Financeiro, itens de Fechamento e Extrato.
+   - Aba "Repasses da Programação": removida a ação "Gerar Repasse"
+     (duplicadora de obrigação já provisionada automaticamente) e a coluna Ações.
+     Aba mantida apenas para CONSULTA. Título interno "Programação Operacional".
+   - Conta Corrente: origem legível, status legível, moeda BRL, saldo e
+     empty state profissional.
+
+D) src/test/pp_ux_02_entrega_operacional.test.ts (NOVO — 21 testes)
+E) TMS-FIN-PP-ENTREGA-02-UX-OPERACIONAL-VISIVEL-RESULTADO.txt (este arquivo)
+
+3. DIFERENÇAS VISÍVEIS
+--------------------------------------------------------------------------------
+- Paginação zero: nunca mais "Exibindo null-null de 0" -> "Exibindo 0 de 0".
+- Cabeçalho do Financeiro: "Gestão Financeira".
+- Botão verde: "Novo Lançamento" (desabilitado, tooltip explicativo).
+- Ações do pagamento: ícones com tooltips claros; ação morta "Ver Detalhes" fora.
+- Origens: "OS Direta", "Programação Operacional", "Manual", "Fechamento".
+- Repasses: sem botão "Gerar Repasse"; tabela apenas consultiva.
+- Conta Corrente: extrato legível e empty state profissional.
+
+4. TESTES
+--------------------------------------------------------------------------------
+- npx vitest run (5 arquivos financeiros/paginação):
+    src/test/pp_ux_02_entrega_operacional.test.ts .............. 21 passed
+    src/test/fin_ux_02a_conferencia_paginacao.test.ts .......... passed
+    src/test/fin_prog05d6d1_relatorio_filtros.test.ts .......... passed
+    src/test/fin_prog05d7b3_fila_aptos_lote.test.ts ............ passed
+    src/test/fin_ux_02b_contas_pagar_paginacao.test.tsx ........ passed
+  Total: 57/57 passed.
+- npx tsc --noEmit (typecheck:app): SEM NOVOS ERROS nos arquivos da missão.
+  Erros remanescentes em PagamentoPrestadores.tsx (linhas 564, 1034, 2119) são
+  baseline pré-existentes (não introduzidos nesta missão).
+
+5. BUILD
+--------------------------------------------------------------------------------
+- npm run build -> ✓ built in 39.23s (0 erros).
+
+6. PENDÊNCIAS DE SANEAMENTO (NÃO executado nesta missão)
+--------------------------------------------------------------------------------
+- DADOS DE TESTE AINDA VISÍVEIS: "PRESTADOR TESTE APP", "M43... Motorista Teste"
+  e afins — saneamento financeiro pendente.
+- 2 registros manuais R$ 0,00 SEM prestador — mantidos e registrados como
+  pendência de saneamento (não apagados).
+- BACKLOG preservado: pagamento parcial; Fechamento x Lote; contrato funcional
+  do Novo Lançamento; PP-UX-02B (paginação/busca/ordenação global);
+  PP-UX-02D (Conta Corrente/Relatório/KPIs); KPIs contra banco; LIMIT 1000;
+  FP x PP sem FK; 3 PP pagos sem baixa; DATA-05A Calvo/CESAR; grants/DML legado;
+  demais P1 Financeiro; Comercial/PDF; APP/E2E; Master 360.
+
+7. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- Servidor local mantido em execução (npm run dev — porta 8800).
+- O usuário fará Ctrl+F5 e verificará manualmente.
+- NÃO declarar homologação visual automaticamente.
+- Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

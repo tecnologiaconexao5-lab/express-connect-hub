@@ -1,0 +1,76 @@
+================================================================================
+TMS-017 — Implementacao da Idempotencia C no Seed de Homologacao
+Data: 2026-07-29
+Versao Seed: TMS013-SEED-v2
+Marcador: HML-APP-20260729
+Classificacao Final: C — Idempotencia Completa com Retomada Automatica
+================================================================================
+
+1. RESUMO EXECUTIVO
+-------------------
+O seed de homologacao (scripts/tms013_seed_hml.mjs) foi elevado de
+classificacao B (Idempotencia Parcial) para C (Idempotencia Completa)
+conforme arquitetura aprovada no TMS-016.
+
+O que mudou:
+- Versionamento: nenhum -> TMS013-SEED-v2 + hash SHA256
+- Controle de concorrencia: nenhum -> pg_try_advisory_lock
+- Checkpoint por cenario: gate unico -> tabela _hml_seed_checkpoint
+- Transacao por cenario: 1 transacao geral -> 1 transacao por cenario
+- Retomada automatica: nao -> sim (skip concluidos, retry falhos)
+- SAVEPOINT para opcionais: nao -> sim (2 cenarios)
+- ON CONFLICT: 3 tabelas financeiras (mantido) -> idem
+- Manifesto: nao -> JSON atomico com rename
+- Cleanup: script separado -> atualizado para checkpoint
+
+2. ARQUITETURA IMPLEMENTADA
+----------------------------
+main()
+  -> 1. Verificar tabela _hml_seed_checkpoint (aborta se nao existir)
+  -> 2. Adquirir pg_try_advisory_lock(20260729, 0) (aborta se ocupado)
+  -> 3. Ler checkpoint atual -> Map<cenario, status>
+  -> Para cada cenario 1..6:
+      -> Se concluido -> pular
+      -> Se falhou/pendente/novo -> executar
+          -> BEGIN; Adquirir lock; Executar; COMMIT ou ROLLBACK
+          -> Escrever checkpoint; Coletar manifesto
+      -> Se falhou -> abortar seed
+  -> 4. Construir manifesto JSON
+  -> 5. Flush atomico (.tmp -> .json)
+  -> 6. Liberar lock (finally)
+
+3. CENARIOS
+------------
+1 - super_admin + tenant_usuarios + perfis_permissoes
+2 - 5 Agentes IA Internos
+3 - Financeiro (receber + pagar + pagamentos_prestadores) com ON CONFLICT
+4 - Alocacoes de Escala
+5 - Entregas Protocolo (POD) com SAVEPOINT
+6 - CRM (Leads + Follow-ups) com SAVEPOINT
+
+4. ARQUIVOS CRIADOS/MODIFICADOS
+--------------------------------
+scripts/tms013_seed_hml.mjs              - MODIFICADO (Seed v2)
+supabase/scripts/create_hml_seed_checkpoint.sql - CRIADO (SQL checkpoint)
+supabase/scripts/cleanup_hml_app_20260729.sql   - MODIFICADO (cleanup v2)
+scripts/tms017_test_logico_local.mjs      - CRIADO (37 testes locais)
+
+5. VALIDACAO
+-------------
+node --check scripts/tms013_seed_hml.mjs  -> SYNTAX OK
+npx tsc --noEmit                          -> 0 erros
+37/37 testes locais                       -> PASSARAM
+
+6. INSTRUCOES DE USO
+---------------------
+1. Criar checkpoint table (1 vez):
+   Supabase Dashboard > SQL Editor > cole supabase/scripts/create_hml_seed_checkpoint.sql
+
+2. Executar seed:
+   DATABASE_URL=postgresql://... npx node scripts/tms013_seed_hml.mjs
+
+3. Reexecutar (retomada automatica):
+   DATABASE_URL=postgresql://... npx node scripts/tms013_seed_hml.mjs
+
+4. Cleanup:
+   psql -f supabase/scripts/cleanup_hml_app_20260729.sql

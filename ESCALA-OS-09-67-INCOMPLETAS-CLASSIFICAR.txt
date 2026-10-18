@@ -1,0 +1,132 @@
+ESCALA-OS-09-67-INCOMPLETAS-CLASSIFICAR
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+==================================================
+UNIVERSO (revalidado)
+==================================================
+
+TOTAL_ALLOCATIONS=193
+WITH_OS_ID=110
+WITHOUT_OS_ID=83
+(esperado 193/110/83 — CONFIRMADO)
+
+Das 83 sem OS: Class E = 67 (esta missão) | Class D = 16 (históricas/teste, não reauditadas).
+CLASS_D_16_STILL_UNCHANGED=YES (classificação anterior mantida; 16 inalteradas)
+
+==================================================
+CLASS E — 67 (sem OS por prestador_id e/ou cliente_id ausente)
+==================================================
+
+MISSING_PROVIDER_ONLY=6
+MISSING_CLIENT_ONLY=27
+MISSING_BOTH=34
+
+STATUS_CONCLUIDA=16
+STATUS_PLANEJADA=6
+STATUS_AGUARDANDO=34
+STATUS_EM_ROTA=10
+STATUS_CANCELADA=1
+OTHER_STATUS=0
+
+HAS_REAL_FINANCE_TOTAL=20 (registros com financeiro_pagar/pagamentos_prestadores)
+  (18 não-teste + 2 teste)
+
+Referências disponíveis: metadata com cliente_nome / app_motorista / os_numero / numeroOC
+(21 registros com metadata não vazio). Não há FK confiável de cliente/prestador (ambos os
+campos de ID estão NULL nos casos faltantes).
+
+==================================================
+CLASSIFICAÇÃO DAS 67
+==================================================
+
+A = 0  — não há referência inequívoca (FK/histórico confiável) para cliente/prestador.
+         (Os IDs estão NULL; nomes em metadata NÃO são FK — não inferir por nome.)
+B = 2  — provável referência (prestador presente + metadata de cliente/rota), exige confirmação:
+         c67b91ec-d6a2-4f1d-ae85-a0cf5fac9889
+         fd2b074b-9c03-42fe-acad-112e617a62eb
+C = 29 — histórico sem referência suficiente (vCli/vRep=0, sem metadata/financeiro)
+D = 12 — teste/dummy comprovado (metadata homologacao/criado_para_homologacao/teste_critico/
+         missao OU numeroOC contendo "TESTE")
+E = 18 — FINANCEIRO REAL sensível (tem financeiro_pagar/pagamentos_prestadores):
+         47cfd745, 76af8e4a, 4c669b9e, a5426e83, 4473d537, 29f637bc, 4c5761c2, 45374f42,
+         fd73f36c, 71a7847c, 13465bc4, b84f7312, 766813eb, 813ea24f, 14bc23f6, fd964370,
+         c616675e, c02e0610
+F = 6  — cliente presente, prestador ausente (planejada, valores 0) — sem referência de prestador
+
+TOTAL=67 (A0+B2+C29+D12+E18+F6)
+
+Subflag: HAS_REAL_FINANCE=YES nos 18 casos E (e 2 casos D com financeiro de teste).
+
+==================================================
+CRUZAMENTO COM AS 27 CONCLUÍDAS SEM PRESTADOR (órfãs)
+==================================================
+
+CONCLUDED_NULL_PROVIDER_TOTAL=27
+OVERLAP_WITH_CLASS_E=16   (concluídas + prestador NULL dentro da Class E)
+OUTSIDE_CLASS_E=11        (concluídas + prestador NULL já com OS/vínculo — fora da E)
+
+→ 27_ORPHANS_OVERLAP_RESOLVED=YES: as 27 se dividem em 16 (dentro da Class E) + 11
+  (já vinculadas/fora da E). Não contar o mesmo problema duas vezes no roadmap.
+
+==================================================
+RESUMO
+==================================================
+
+CLASS_E_TOTAL=67
+MISSING_PROVIDER_ONLY=6
+MISSING_CLIENT_ONLY=27
+MISSING_BOTH=34
+
+STATUS_CONCLUIDA=16
+STATUS_PLANEJADA=6
+STATUS_AGUARDANDO=34
+STATUS_EM_ROTA=10
+STATUS_CANCELADA=1
+OTHER_STATUS=0
+
+CLASS_A_RECOVERABLE=0
+CLASS_B_HUMAN_CONFIRM=2
+CLASS_C_HISTORICAL_INSUFFICIENT=29
+CLASS_D_TEST=12
+CLASS_E_FINANCIAL_SENSITIVE=18
+CLASS_F_OTHER=6
+
+HAS_REAL_FINANCE_TOTAL=20
+
+SAFE_AUTOMATIC_FIX_COUNT=0
+HUMAN_DECISION_COUNT=2      (B)
+HISTORICAL_NO_ACTION_COUNT=29 (C)
+TEST_NO_ACTION_COUNT=12     (D)
+FINANCIAL_SENSITIVE_COUNT=18 (E)
+
+==================================================
+RESULTADO FINAL
+==================================================
+
+67_CLASSIFIED=YES
+27_ORPHANS_OVERLAP_RESOLVED=YES
+SAFE_FIX_COUNT=0
+HUMAN_COUNT=2 (B) + 18 (E financeiro sensível) = 20 casos que exigem decisão humana
+NO_ACTION_COUNT=47 (C 29 + D 12 + F 6)
+
+NEXT_MINIMAL_MISSION=
+  Revisão HUMANA das referências (cliente/prestador) para os 20 casos B+E — NÃO criar OS
+  enquanto a referência necessária não for confiável. Sugestão: missão "ESCALA-OS-10-REVISAO-
+  HUMANA-REFERENCIAS" que produza uma tabela de decisão (alocação → cliente/prestador propostos
+  a partir de evidência operacional do App/OS), para o responsável confirmar caso a caso antes de
+  qualquer vínculo. Casos C/D/F permanecem históricos (sem ação). Não inventar IDs por nome.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhuma OS criada/vinculada.
+- Nenhum cliente/prestador inventado. Financeiro não alterado. M66/M80 não alterados.
+- Não tratou 9 FIN-02, APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

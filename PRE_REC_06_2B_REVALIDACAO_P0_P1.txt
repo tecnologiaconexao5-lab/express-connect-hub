@@ -1,0 +1,404 @@
+PRE-REC-06.2B — REVALIDACAO DE ITENS P0/P1 DO MODULO RECRUTAMENTO
+===================================================================
+Data: 2026-09-06
+Autor: Agente de Auditoria
+Status: CONCLUIDO (READ-ONLY)
+Metodo: Analise de codigo-fonte + verificacao de migrations + queries de database
+
+OBJETIVO
+--------
+Revalidar cada item P0 e P1 do relatorio AG-REC8 (auditoria mestra do recrutamento)
+contra o estado REAL do codigo e do banco de producao, resolvendo contradicoes
+(e.g., liberado_app_audit existe mas foi listado como "NAO CORRIGIDO").
+
+METODO DE VERIFICACAO
+---------------------
+- Codigo-fonte: grep + leitura direta dos arquivos
+- Migrations: leitura dos arquivos SQL em supabase/migrations/
+- Database: conexao direta via pg client (FALHOU - auth error 28P01)
+  → fallback para evidencias de codigo e migrations
+- Componentes UI: tracagem de imports e consumo real (ignorar arquivos mortos)
+
+========================================================================
+P0 — ITENS CRITICOS (SEGURANCA / DADOS)
+========================================================================
+
+P0-01: RLS anon com ACESSO TOTAL a recrutamento_candidatos
+-----------------------------------------------------------
+GRAVIDADE: CRITICA
+STATUS: CONFIRMADO (sem correcao)
+
+EVIDENCIA:
+- Migration 20260601_recrutamento_candidatos_rls_anon.sql adiciona anon com
+  SELECT/INSERT/UPDATE/DELETE usando USING(true) — acesso irrestrito
+- Migration 20260831_rec01_fundacao_seguranca.sql REVOKE esta em "candidatos"
+  (tabela LEGACY), NAO em "recrutamento_candidatos"
+- Nenhuma migration subsequente removeu o anon de recrutamento_candidatos
+
+IMPACTO: Qualquer usuario anonimo pode:
+  - Ler todos os candidatos (CPF, telefone, email, score, endereco)
+  - Inserir candidatos falsos
+  - Modificar stage/status de qualquer candidato
+  - Deletar candidatos
+
+CORRECAO NECESSARIA:
+  REVOKE ALL ON recrutamento_candidatos FROM anon;
+  (apenas authenticated deve acessar)
+
+
+P0-02: RLS anon com SELECT em crm_interacoes_prestadores
+---------------------------------------------------------
+GRAVIDADE: CRITICA
+STATUS: CONFIRMADO (parcialmente mitigado)
+
+EVIDENCIA:
+- Migration 20260626_missao01_seguranca_enterprise.sql cria 4 policies:
+  cip_select_anon (USING true) — anon PODE ler
+  cip_insert_auth — apenas authenticated INSERE
+  cip_update_auth — apenas authenticated ATUALIZA
+  cip_delete_auth — apenas authenticated DELETA
+
+IMPACTO: Anon pode LER interacoes CRM (tipo, titulo, descricao, proxima acao)
+  mas nao pode escrever. Risco medio — vazamento de informacoes comerciais.
+
+CORRECAO NECESSARIA:
+  DROP POLICY cip_select_anon ON crm_interacoes_prestadores;
+  CREATE POLICY cip_select_auth ON crm_interacoes_prestadores
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+
+P0-03: Bucket documentos_prestadores PUBLICO
+---------------------------------------------
+GRAVIDADE: CRITICA
+STATUS: CONFIRMADO (sem correcao)
+
+EVIDENCIA:
+- Migration 20260630000002_m44b_storage_buckets.sql: public=true
+- Migration 20260718_m44f_storage_rebuild.sql: public=true (3 fontes)
+- Frontend usa getPublicUrl() — qualquer um com a URL acessa o arquivo
+- REC-01 migration explicitamente decidiu NAO tornar privado (quebraria App)
+
+IMPACTO: Documentos pessoais (RG, CNH, comprovantes) acessiveis publicamente
+  via URL direta. Qualquer pessoa com o link baixa o arquivo.
+
+CORRECAO NECESSARIA:
+  Opcao A: Tornar bucket privado + atualizar frontend para usar createSignedUrl
+  Opcao B: Manter publico (decision by design - REC-01)
+
+
+P0-04: Auto-bloqueio NAO EXISTE
+---------------------------------
+GRAVIDADE: CRITICA
+STATUS: CONFIRMADO (sem correcao)
+
+EVIDENCIA:
+- NENHUM pg_cron job relacionado a recrutamento/bloqueio encontrado
+- NENHUM trigger que calcule ScoreRR automaticamente
+- NENHUM scheduled function para verificar inatividade
+- liberado_app e liberado_app_audit existem apenas para liberacao manual
+- ScoreRR e score_rr nao existem como colunas em nenhuma tabela
+
+IMPACTO: Motorista pode ficar "apto" para sempre sem nunca ter operado.
+  Sem mecanismo automatico de bloqueio por inatividade.
+
+CORRECAO NECESSARIA:
+  Criar pg_cron + funcao que verifica ultima_operacao vs liberado_app
+  e bloqueia automaticamente apos X dias sem operacao.
+
+
+P0-05: liberado_app_audit — TABELA EXISTE (CONTRADICAO RESOLVIDA)
+------------------------------------------------------------------
+GRAVIDADE: CRITICA (mas resolvida)
+STATUS: CORRIGIDO (tabela + trigger existem em migrations)
+
+EVIDENCIA (CORRECAO DA CONTRADICAO):
+- O relatorio PRE_REC_06.2 listou "liberado_app_audit: NAO CORRIGIDO"
+  mas isso esta INCORRETO. A tabela E o trigger FORAM criados:
+
+  Migration 20260831_rec01_fundacao_seguranca.sql:
+    - Tabela liberado_app_audit (linhas 147-156): id, prestador_id, liberado,
+      motivado_por, created_at, tenant_id (adicionado por REC-02)
+    - Funcao fn_audit_liberado_app (linhas 182-211): INSERT na audit quando
+      liberado_app muda de valor
+    - Trigger trg_audit_liberado_app ON prestadores (linhas 214-218):
+      AFTER UPDATE OF liberado_app
+
+  Migration 20260831_rec02_tenant_isolation.sql:
+    - Adiciona tenant_id a liberado_app_audit
+
+NOTA: Nao foi possivel verificar se as migrations foram APLICADAS em producao
+  (conexao DB falhou com auth error 28P01). A verificacao de codigo mostra que
+  as definicoes existem corretamente nas migrations.
+
+CORRECAO NECESSARIA:
+  Nenhuma (ja corrigido nas migrations). Verificacao em producao pendente.
+
+
+P0-06: (NAO APlicavel — removido do escopo desta revalidacao)
+
+
+P0-07: Aprovacao de documentos — MISTO (parcialmente implementado)
+-------------------------------------------------------------------
+GRAVIDADE: CRITICA
+STATUS: PARCIALMENTE CORRIGIDO
+
+EVIDENCIA:
+- conversaoCandidatoService.ts:120-131 — GATE DOCUMENTAL FAIL-CLOSED:
+  if (candidate.statusDocumental !== 'completo') → BLOQUEIA conversao
+  Apenas status 'completo' permite avançar
+- CentralDocumentos.tsx — fluxo de aprovacao existe na UI
+-.Status documental e computed por calcularStatusDocumentalOperacional()
+  baseado nos documentos vinculados ao candidato
+
+PROBLEMA REMANESCENTE:
+  O gate bloqueia a CONVERSAO (candidato → prestador), mas nao ha
+  VERIFICACAO em outros pontos do fluxo:
+  - App Motorista pode cadastrar sem documentos completos (via bridge)
+  - Operacao pode liberar motorista sem todos os docs verificados
+
+CORRECAO NECESSARIA:
+  Adicionar verificacao de statusDocumental em:
+  1. App Motorista ao solicitar liberacao
+  2. Operacao ao confirmar inicio de operacao
+
+
+========================================================================
+P1 — ITENS ALTOS (DADOS FALSOS / FUNCIONALIDADES INUTEIS)
+========================================================================
+
+P1-01: Score de Comprometimento = STUB (return 50)
+----------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CONFIRMADO (stub puro)
+
+EVIDENCIA:
+- recrutamentoScoreService.ts:32-34:
+  calcularScoreComprometimento(_candidato) → return 50
+  (parametro com underscore = unused)
+- classificarComprometimento(_score) → return "Regular"
+- getCorClassificacao(_score) → return fixed CSS class
+
+- scoreService.ts (legado): parcialmente real (3/6 inputs hardcoded)
+  scoreReputacao = 70, scoreRegularidade = 65, scoreTendencia = 75
+
+- enterpriseKanbanService.ts:311 — fallback row.score ?? 50
+  line 239 — mock: Math.floor(35 + Math.random() * 60)
+
+IMPACTO: Scores exibidos no Kanban sao 100% ficticios (random ou 50 fixo).
+  Gestores tomam decisoes baseadas em numeros sem significado real.
+
+CORRECAO NECESSARIA:
+  - ou remover scores da UI (esconder ate implementar)
+  - ou implementar algoritmo real baseado em dados do prestador
+
+
+P1-02: Automacoes = 100% localStorage
+---------------------------------------
+GRAVIDADE: ALTA
+STATUS: CONFIRMADO (localStorage puro)
+
+EVIDENCIA:
+- automacoesService.ts:3 — const STORAGE_KEY = 'recrutamento_automacoes_v2'
+- listar() → localStorage.getItem(STORAGE_KEY)
+- criar() → localStorage.setItem(STORAGE_KEY, ...)
+- remover() → localStorage.removeItem / filter
+- generateId() → Date.now() + Math.random() (pseudo-IDs)
+- ZERO imports de supabase no arquivo
+
+IMPACTO: Regras de automacao sao por-browser, por-device.
+  Limpar cache perde todas as regras. Nao ha compartilhamento entre usuarios.
+
+CORRECAO NECESSARIA:
+  Migrar para tabela supabase (e.g., recrutamento_automacoes)
+
+
+P1-03: WhatsApp CRM — NAO e Zustand (CORRECAO do relatorio original)
+----------------------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CORRIGIDO (o relatorio original estava errado)
+
+EVIDENCIA:
+- crmService.ts → supabase.from('crm_interacoes_prestadores') — Supabase REAL
+- RegistrarInteracaoSheet.tsx → crmService.criar() → Supabase
+- IAOperacional.tsx → queries diretas em crm_interacoes_prestadores
+
+- recrutamentoStore.ts (Zustand) → apenas UI state (currentSection, sidebar)
+- enterpriseKanbanStore.ts (Zustand) → apenas kanban display state
+- NENHUM store de WhatsApp/CRM em Zustand
+
+O que e Zustand: apenas navegacao e estado visual do Kanban.
+O que e Supabase: todas as interacoes CRM (incluindo tipo "whatsapp").
+
+CORRECAO: Nenhuma (relatorio original estava incorreto)
+
+
+P1-04: Banco Talentos — NAO e mock (CORRECAO do relatorio original)
+---------------------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CORRIGIDO (o relatorio original estava errado)
+
+EVIDENCIA:
+- BancoTalentos.tsx (legado, 172 linhas) → supabase.from("recrutamento_candidatos")
+  Queries reais: id, nome, veiculo, regiao, status, telefone, email, created_at, score
+- BancoTalentos.tsx (enterprise, 266 linhas) → recebe via props (dados do parent)
+  Parent consulta Supabase via useDashboardRecrutamento.ts
+
+NENHUM bancaoTalentosService.ts existe no codigo.
+
+CORRECAO: Nenhuma (relatorio original estava incorreto)
+
+
+P1-05: Dashboard usa recrutamento_candidatos (NAO legacy)
+----------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CORRIGIDO (o relatorio original estava errado)
+
+EVIDENCIA:
+- useDashboardRecrutamento.ts:65:
+  const TABLE_CANDIDATOS = 'recrutamento_candidatos'
+- Todas as queries usam TABLE_CANDIDATOS (contagem, charts, realtime)
+- NENHUMA referencia a tabela legacy "candidatos" no dashboard
+
+CORRECAO: Nenhuma (relatorio original estava incorreto)
+
+
+P1-06: Transicoes de Stage = MANUAIS (sem auto-advance)
+-------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CONFIRMADO (comportamento por design)
+
+EVIDENCIA:
+- enterpriseKanbanService.ts:684-723 — mover() e unico method que altera stage
+- STAGE_TRANSITIONS (enterpriseKanbanTypes.ts:183-199) define transicoes permitidas
+- verificarBloqueioPipeline() (linhas 437-459) apenas BLOQUEIA, nunca auto-avanca
+- NENHUM timer, watcher, trigger ou setInterval que chame mover() automaticamente
+- App Motorista bridge (AG-07J.1) seta stage inicial no INSERT, nunca atualiza
+
+IMPACTO: Funcionarios devem manualmente arrastar candidatos entre colunas.
+  Nao ha automacao quando documento e aprovado, quando treinamento e concluido, etc.
+
+CORRECAO: Implementar triggers/eventos que avancem stage automaticamente
+  quando condicoes sao atingidas (docs completos, treinamento OK, etc.)
+
+
+P1-07: Gate Documental = FAIL-CLOSED (CORRECAO do relatorio original)
+----------------------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CORRIGIDO (o relatorio original estava errado)
+
+EVIDENCIA:
+- conversaoCandidatoService.ts:120-131:
+  if (candidate.statusDocumental !== 'completo') → return { success: false }
+  Comentario explícito: "AG-07J.11 — GATE DOCUMENTAL TMS (fail-closed)"
+- Apenas status 'completo' permite conversao
+- Todos os outros estados (incompleto, pendente, invalido, undefined, null)
+  causam BLOQUEIO
+
+O relatorio original dizia "fail-open (0 docs = elegivel)" — ISSO ESTAVA ERRADO.
+O gate e estritamente fail-closed.
+
+CORRECAO: Nenhuma (gate ja implementado corretamente)
+
+
+P1-08: Sem bypass "agregado" (CORRECAO do relatorio original)
+--------------------------------------------------------------
+GRAVIDADE: ALTA
+STATUS: CORRIGIDO (o relatorio original estava errado)
+
+EVIDENCIA:
+- Termos "prestador_pronta" e "prestador_agregado" NAO EXISTEM no codigo
+  (0 ocorrencias em src/)
+- EnterpriseCandidate interface NAO tem campo "type"
+- conversaoCandidatoService.ts:110-131 — gates sao universais e incondicionais
+  Nenhum branching por tipo de candidato
+- liberado_app e derivado apenas do stage (aprovado/ativo → true, resto → false)
+
+O relatorio original dizia que "agregado pulava gate" — ISSO ESTAVA ERRADO.
+Nao ha caminho alternativo. Todos os candidatos passam pelos mesmos gates.
+
+CORRECAO: Nenhuma (relatorio original estava incorreto)
+
+
+========================================================================
+RESUMO DE CONTRADICOES RESOLVIDAS
+========================================================================
+
+| Item  | Relatorio Original | Estado Real | Resolucao |
+|-------|-------------------|-------------|-----------|
+| P0-05 | "NAO CORRIGIDO"   | CORRIGIDO (tabela+trigger existem) | Relatorio desatualizado; migrations criam tabela+trigger |
+| P1-03 | "Zustand-only"    | Supabase REAL | Relatorio incorreto; crmService usa Supabase |
+| P1-04 | "Mock-only"       | Supabase REAL | Relatorio incorreto; componentes usam Supabase |
+| P1-05 | "Legacy table"    | recrutamento_candidatos | Relatorio incorreto; dashboard usa tabela nova |
+| P1-07 | "fail-open"       | fail-closed | Relatorio incorreto; gate e estrito |
+| P1-08 | "agregado bypass" | Sem bypass | Relatorio incorreto; nao ha tipo "agregado" |
+
+
+========================================================================
+TABELA DE PRIORIDADE DE CORRECAO (POS-REVALIDACAO)
+========================================================================
+
+| Prioridade | Item | Correcao | Esforco |
+|-----------|------|----------|---------|
+| P0-A | P0-01 | REVOKE anon de recrutamento_candidatos | 1 SQL |
+| P0-B | P0-02 | REVOKE SELECT anon de crm_interacoes | 1 SQL |
+| P0-C | P0-04 | Criar pg_cron de auto-bloqueio | 1 funcao + 1 pg_cron |
+| P0-D | P0-07 | Verificar docs em App + Operacao | 2-3 patches |
+| P0-E | P0-03 | Decidir: privado ou publico (decision by design) | Reuniao |
+| P1-A | P1-01 | Remover scores OU implementar algoritmo real | 1-2 dias |
+| P1-B | P1-02 | Migrar automacoes para Supabase | 1 migration + 1 service |
+| P1-C | P1-06 | Implementar auto-advance de stages | 1 trigger + 1 service |
+| P1-D | P0-05 | Verificar aplicacao em producao (DB query) | 10 min |
+
+
+========================================================================
+NOTA SOBRE VERIFICACAO EM PRODUCAO
+========================================================================
+
+A conexao direta ao banco falhou (auth error 28P01 - password authentication).
+Nao foi possivel verificar:
+- Se trg_audit_liberado_app esta ativo em pg_trigger
+- Se liberado_app_audit tem registros
+- Se as migrations REC-01/REC-02 foram aplicadas
+
+RECOMENDACAO: Executar query de verificacao quando DB estiver acessivel:
+  SELECT trigger_name FROM pg_trigger WHERE tgname = 'trg_audit_liberado_app';
+  SELECT count(*) FROM liberado_app_audit;
+
+
+========================================================================
+ARQUIVOS VERIFICADOS
+========================================================================
+
+Migrations:
+- 20260601_recrutamento_candidatos_rls_anon.sql (P0-01)
+- 20260626_missao01_seguranca_enterprise.sql (P0-02)
+- 20260630000002_m44b_storage_buckets.sql (P0-03)
+- 20260831_rec01_fundacao_seguranca.sql (P0-04, P0-05)
+- 20260831_rec02_tenant_isolation.sql (P0-05)
+
+Services:
+- src/modules/recrutamento/services/recrutamentoScoreService.ts (P1-01)
+- src/modules/recrutamento/services/scoreService.ts (P1-01)
+- src/modules/recrutamento/services/automacoesService.ts (P1-02)
+- src/modules/recrutamento/services/crmService.ts (P1-03)
+- src/modules/recrutamento/services/conversaoCandidatoService.ts (P0-07, P1-07, P1-08)
+- src/modules/recrutamento/services/prestadoresService.ts (P0-05)
+- src/modules/recrutamento/services/bancoTalentosService.ts (P1-04 - NAO EXISTE)
+
+Components:
+- src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts (P1-01, P1-06)
+- src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanTypes.ts (P1-06)
+- src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanStore.ts (P1-03)
+- src/modules/recrutamento/components/talentos/BancoTalentos.tsx (P1-04)
+- src/components/recrutamento/BancoTalentos.tsx (P1-04)
+- src/modules/recrutamento/components/documentos/CentralDocumentos.tsx (P0-07)
+
+Hooks:
+- src/modules/recrutamento/hooks/useDashboardRecrutamento.ts (P1-05)
+
+Stores:
+- src/modules/recrutamento/store/recrutamentoStore.ts (P1-03)
+
+========================================================================
+FIM DO RELATORIO PRE-REC-06.2B
+========================================================================

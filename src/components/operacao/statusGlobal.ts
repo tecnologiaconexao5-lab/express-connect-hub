@@ -1,5 +1,6 @@
 export type StatusGlobal =
   | "rascunho"
+  | "em_analise"
   | "pendente"
   | "alocado"
   | "carregando"
@@ -12,6 +13,7 @@ export type StatusGlobal =
 
 export const STATUS_GLOBAL_ORDER: StatusGlobal[] = [
   "rascunho",
+  "em_analise",
   "pendente",
   "alocado",
   "carregando",
@@ -32,8 +34,9 @@ export interface StatusGlobalInfo {
 
 export const STATUS_GLOBAL_INFO: Record<StatusGlobal, StatusGlobalInfo> = {
   rascunho:      { label: "Rascunho",      cor: "slate",   etapa: 0, descricao: "OS criada, aguardando preenchimento" },
-  pendente:      { label: "Pendente",       cor: "amber",   etapa: 1, descricao: "Aguardando alocação de prestador" },
-  alocado:       { label: "Alocado",        cor: "blue",    etapa: 2, descricao: "Prestador alocado na escala" },
+  em_analise:    { label: "Em análise",    cor: "orange",  etapa: 1, descricao: "OS criada, em análise de precificação/programação" },
+  pendente:      { label: "Pendente",       cor: "amber",   etapa: 2, descricao: "Aguardando alocação de prestador" },
+  alocado:       { label: "Alocado",        cor: "blue",    etapa: 2, descricao: "Prestador alocado na programação" },
   carregando:    { label: "Carregando",     cor: "orange",  etapa: 3, descricao: "Em carregamento / coleta" },
   em_rota:       { label: "Em Rota",        cor: "indigo",  etapa: 4, descricao: "Saiu para entrega" },
   entregue:      { label: "Entregue",       cor: "green",   etapa: 5, descricao: "Mercadoria entregue" },

@@ -1,0 +1,145 @@
+FIN-362.3E - CONSISTENCIA DO PAGAMENTO DE PRESTADOR
+===================================================
+Ambiente: TMS / Supabase real
+Data E2E: 06/09/2026
+
+STATUS FINAL
+------------
+[HOMOLOGADO]
+
+CAUSA DOS R$ 2.177,92 x R$ 520,00
+--------------------------------
+O pagamento historico 32fe474f tinha valor_liquido de R$ 2.177,92,
+mas nao tinha os_id nem vinculo explicito a um titulo financeiro.
+Havia varios financeiro_pagar do mesmo prestador, todos de operacoes
+distintas e varios de R$ 520,00. O codigo antigo escolhia apenas o
+ultimo titulo aberto pelo nome/ID do prestador e aplicava Math.min().
+Assim, escolheu o titulo 9f2be89f (OS 58e5751e), baixou R$ 520,00 e
+marcou o pagamento de R$ 2.177,92 como pago.
+
+O registro historico permaneceu intacto. Nao foi criada baixa artificial,
+nao foi aumentado titulo e nao foi feita correcao de dados para fechar
+valores retroativamente.
+
+FONTE DE VERDADE E REGRA APLICADA
+---------------------------------
+- Obrigacao do prestador: pagamentos_prestadores.valor_liquido.
+- Liquidacao bancaria: financeiro_pagar + financeiro_baixas.
+- Pagamento integral somente quando existe um titulo aberto identificavel:
+  mesma OS e mesmo valor; ou, sem OS, exatamente um titulo do mesmo
+  prestador e mesmo valor.
+- O valor liquidado deve ser exatamente igual ao valor_liquido.
+- Pagamento parcial nao e permitido neste fluxo sem uma representacao
+  explicita de parcial.
+- Conta financeira deve existir e estar ativa.
+- Sem titulo coerente, a operacao falha e o status nao muda para pago.
+
+CORRECAO REALIZADA
+------------------
+1. Criada e aplicada em producao a RPC atomica:
+   f_confirmar_pagamento_prestador(uuid, date).
+2. A RPC trava pagamento e titulo, valida origem/OS/valor/conta, grava
+   financeiro_baixas, atualiza financeiro_pagar e atualiza
+   pagamentos_prestadores dentro da mesma transacao.
+3. Removido o fallback de baixa avulsa sem titulo.
+4. Removido o comportamento que ignorava erro financeiro depois de marcar
+   o pagamento como pago.
+5. atualizarStatusPagamento() agora direciona qualquer tentativa de status
+   pago para a conciliacao financeira, sem bypass por justificativa.
+6. A UI passou a exibir valor_liquido real dos pagamentos manuais e a
+   carregar contas_financeiras ativas.
+
+COMPORTAMENTO ANTES / DEPOIS
+---------------------------
+ANTES:
+  UPDATE pagamentos_prestadores = pago;
+  escolhia um titulo arbitrario por prestador;
+  baixava Math.min(valor_pagamento, valor_titulo);
+  erro financeiro era apenas logado;
+  pagamento podia ficar pago sem liquidacao coerente.
+
+DEPOIS:
+  uma RPC valida e executa a conciliacao atomicamente;
+  titulo sem origem explicita ou valor divergente e rejeitado;
+  baixa deve quitar integralmente o titulo selecionado;
+  erro/resultado negativo da RPC interrompe a confirmacao;
+  pagamento permanece pendente quando a baixa nao pode ser criada.
+
+CASO E2E POSITIVO
+-----------------
+Pagamento: 7bf3107d-d14c-47a6-a45c-3eeb52412c59
+Prestador ID: fe7a75cc-a49f-43ef-a0b7-f869fbf07744
+OS: ae30da69-1d16-4600-a27d-edfa073ef239
+Titulo: 6f871e9f-764b-4df7-a8f9-349d6f960fed
+Valor pagamento: R$ 520,00
+Valor titulo: R$ 520,00
+Valor baixa: R$ 520,00
+Saldo apos baixa: R$ 0,00
+Baixa: c2a233cb-e429-46b3-a693-26268e7dba36
+Conta: Cora
+Conta ID: 9741ad36-79a6-4e1f-94a5-512e08758186
+Status final pagamento: pago
+Status final titulo: pago
+Status baixa: estornada=false
+
+Fluxo comprovado pela UI:
+  Fechamentos Anteriores -> Confirmar -> justificativa -> RPC atomica
+  -> titulo/baixa/pagamento persistidos -> toast "Status atualizado".
+
+CASO E2E DE FALHA
+-----------------
+Pagamento: a2b2e3c7-4abe-495c-80ff-d4d10cb85e5a
+Prestador: CESAR AUGUSTO HOLANDA SILVA
+Valor pagamento: R$ 3.150,34
+Origem: manual sem OS
+Condicao controlada: nao existe titulo financeiro aberto de mesmo
+prestador/origem e mesmo valor.
+
+Fluxo comprovado pela UI:
+  Pagamentos Manuais -> Marcar Conferido -> Marcar Pago
+  -> erro "Nao existe titulo financeiro aberto de mesma origem e mesmo valor".
+
+Estado depois da falha:
+  status=pendente
+  status_pagamento=pendente
+  data_pagamento=NULL
+  financeiro_baixas deste pagamento=0
+
+EVIDENCIA E2E
+-------------
+Playwright: 2/2 PASS em 31,9s.
+- Caso positivo: UI, RPC, titulo, baixa, conta e status final.
+- Caso negativo: falha financeira controlada sem confirmacao de pagamento.
+
+Screenshots:
+- test-results/e2e/fin3623e/positive-before.png
+- test-results/e2e/fin3623e/positive-after.png
+- test-results/e2e/fin3623e/failure-no-title.png
+
+Validacoes adicionais:
+- npx tsc --noEmit: PASS
+- Vitest f0e_pagamento_prestadores: 12/12 PASS
+- RPC aplicada e presente no banco real.
+
+ARQUIVOS ALTERADOS
+------------------
+- supabase/migrations/20260906_fin_362_3e_consistencia_pagamento_prestador.sql
+- src/services/financeiro/pagamentoPrestadorService.ts
+- src/components/financeiro/PagamentoPrestadores.tsx
+- src/test/f0e_pagamento_prestadores.test.ts
+- tests/e2e/fin-3623e-consistencia-pagamento.spec.ts
+- playwright-3623e.config.ts
+
+PENDENCIAS
+----------
+- O caso historico 32fe474f continua registrado como excecao anterior;
+  nenhuma baixa foi alterada artificialmente.
+- Validacao APP/Redmi permanece pendente.
+- FIN-MASTER-363 nao foi iniciado.
+
+CONCLUSAO
+---------
+Um pagamento de prestador agora so pode ficar integralmente pago quando
+um titulo financeiro coerente e uma baixa integral sao persistidos na
+mesma transacao. A falha controlada nao confirmou o pagamento e nao criou
+baixa. A consistencia e a atomicidade do caso testado foram homologadas.

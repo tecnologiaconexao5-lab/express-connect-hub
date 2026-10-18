@@ -1,0 +1,22 @@
+M108-G — TABELA DE VALORES ENTERPRISE
+Data: 2026-07-11
+Resultado: 18/18 ✅
+
+Migration aplicada:
+- versao, motivo_alteracao, prioridade em tabelas_valores
+- data_inicio, data_fim, versao, motivo_alteracao, prioridade em tabela_prestador
+- Trigger de versionamento automático
+- View vw_hierarquia_tabelas (7 níveis)
+
+Engine TS atualizado:
+- buscarTabelasService: 7 níveis de hierarquia (valor_negociado → contrato → específica → padrão → universal → fallback)
+- HierarquiaInfo exportado (nivel, descricao, versao, prioridade)
+- buscarTabelaPrestador: vigência + prioridade
+
+Validações:
+- Versionamento automático: ✅ versão incrementada
+- INSERT com prioridade: ✅
+- View hierarquia: ✅
+- Tabela prestador com vigência: ✅
+- tsc --noEmit: 0 erros
+- npm run build: 31s

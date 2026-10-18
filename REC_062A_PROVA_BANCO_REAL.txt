@@ -1,0 +1,318 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2A — PROVA DO BANCO REAL
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 22:30 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+ZERO alterações feitas. Somente SELECTs de auditoria.
+Scripts: scripts/rec062a_prova_banco_remoto.cjs, rec062a_prova_banco_remoto2.cjs, rec062a_prova_banco_remoto3.cjs
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 1 — MAPA COMPLETO DE TABELAS RECRUTAMENTO
+═══════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────┬─────────┬──────┬──────────┬───────────┐
+│ TABELA                               │ EXISTE  │ ROWS │ RLS      │ POLICIES  │
+├──────────────────────────────────────┼─────────┼──────┼──────────┼───────────┤
+│ recrutamento_prestadores             │ ✅      │ 5    │ ✅ ON    │ 4 (CRUD)  │
+│ recrutamento_candidatos              │ ✅      │ 16   │ ✅ ON    │ 4 (CRUD)  │
+│ crm_interacoes_prestadores           │ ✅      │ 0    │ ✅ ON    │ 3 (S/I/U) │
+│ candidato_documentos                 │ ✅      │ 0    │ ✅ ON    │ 4 (CRUD)  │
+│ recrutamento_operacoes               │ ✅      │ 5    │ ✅ ON    │ 4 (CRUD)  │
+│ recrutamento_whatsapp_config         │ ✅      │ 1    │ ✅ ON    │ 0 ⚠️      │
+│ recrutamento_whatsapp_conversas      │ ✅      │ 2    │ ✅ ON    │ 0 ⚠️      │
+│ recrutamento_whatsapp_mensagens      │ ✅      │ 6    │ ✅ ON    │ 0 ⚠️      │
+│ recrutamento_ia_config               │ ✅      │ 1    │ ✅ ON    │ 0 ⚠️      │
+│ recrutamento_automacoes              │ ❌      │ —    │ —        │ —         │
+│ recrutamento_documentos              │ ❌      │ —    │ —        │ —         │
+│ recrutamento_score_historico         │ ❌      │ —    │ —        │ —         │
+│ recrutamento_metricas                │ ❌      │ —    │ —        │ —         │
+└──────────────────────────────────────┴─────────┴──────┴──────────┴───────────┘
+
+RESUMO: 9 tabelas existem · 4 tabelas NÃO EXISTEM · 4 tabelas sem policies (⚠️)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 2 — CLASSIFICAÇÃO POR ITEM
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────┬───────────────────────────────┬────────────────────────┬────────────────────────────────────────────────────────────────────┐
+│ ID  │ ITEM                          │ CLASSIFICAÇÃO          │ EVIDÊNCIA                                                          │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 1   │ CRUD Automações               │ NÃO EXISTE             │ recrutamento_automacoes ausente. Service usa localStorage.         │
+│     │                               │                        │ Precisa: migration + RLS + migrate service → Supabase.             │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 2   │ IA Score Real                 │ EXISTE MAS PARCIAL     │ scoreService.ts: determinístico funcional.                         │
+│     │                               │                        │ iaService.ts: stub Math.random() (sem LLM real).                   │
+│     │                               │                        │ Tabela score_historico: NÃO EXISTE.                                │
+│     │                               │                        │ Precisa: criar tabela + integrar proxy-ia OU manter determinístico. │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 3   │ CRM                           │ EXISTE E PROVADO       │ crm_interacoes_prestadores: 0 rows, RLS ON, 3 policies,           │
+│     │                               │                        │ FK→prestadores, CHECK tipo+status. CRUD funcional.                 │
+│     │                               │                        │ ⚠️ SEM policy DELETE — anon pode inserir/atualizar mas não deletar. │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 4   │ Kanban Pipeline               │ EXISTE E PROVADO       │ recrutamento_candidatos: 16 rows, FK→recrutamento_prestadores.     │
+│     │                               │ (dados reais)          │ conversaoCandidatoService: gate documental funcional.              │
+│     │                               │                        │ enterpriseKanbanService: display usa Math.random() mock.           │
+│     │                               │                        │ candidato_documentos: tabela existe, 0 rows, FK→candidatos.        │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 5   │ Documentos                    │ EXISTE PARCIAL         │ candidato_documentos: EXISTE (tabela, 0 rows, RLS ON, 4 policies).│
+│     │                               │                        │ Precisa: popular com dados reais (hoje 0 rows).                    │
+│     │                               │                        │ Storage bucket: "documentos" (public) + "documentos_prestadores"   │
+│     │                               │                        │ (public). Nenhum bucket específico para recrutamento.              │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 6   │ RLS Policies                  │ EXISTE MAS INSEGURO    │ Todas as 9 tabelas: RLS ON + policies PERMISSIVE sem USING.        │
+│     │                               │                        │ anon tem acesso TOTAL a recrutamento_prestadores/candidatos/crm.  │
+│     │                               │                        │ 4 tabelas whatsapp/ia: RLS ON mas 0 policies = sem acesso anon.    │
+│     │                               │                        │ Precisa: reescrever policies com USING auth.uid() NOT NULL.        │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 7   │ APP Bridge                    │ EXISTE E PROVADO       │ Trigger trg_bridge_prestador_para_recrutamento em prestadores.      │
+│     │                               │                        │ Function f_bridge_prestador_para_recrutamento: 122 linhas,         │
+│     │                               │                        │ VOLATILE, INSERT em recrutamento_prestadores + candidatos.         │
+│     │                               │                        │ Idempotente: 3 guards (origem, cpf, vinculo existente).           │
+│     │                               │                        │ Solo: bridge_automatico, app_motorista, bridge_automatico.         │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 8   │ Score KPI Dashboard           │ NÃO COMPROVADO         │ KPIs usam enterpriseKanbanService (mock Math.random).              │
+│     │                               │                        │ Nenhum KPI consome dados reais do Supabase.                        │
+│     │                               │                        │ Precisa: reescrever useDashboardRecrutamento + useMetricas.         │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 9   │ Notificações/Push             │ NÃO EXISTE             │ Nenhum serviço de push. Nenhum bucket/edge function para push.    │
+│     │                               │                        │ Tabelas whatsapp existem (config/conversas/mensagens) mas sem      │
+│     │                               │                        │ integração push. Precisa: definir eventos + implementar in-app.    │
+├─────┼───────────────────────────────┼────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ 10  │ Testes E2E                    │ NÃO COMPROVADO         │ Nenhum spec Playwright para recrutamento encontrado.               │
+│     │                               │                        │ Precisa: criar specs para CRUD, conversão, CRM, bridge.            │
+└─────┴───────────────────────────────┴────────────────────────┴────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 3 — SCHEMA DETALHADO POR TABELA EXISTENTE
+═══════════════════════════════════════════════════════════════════════════════
+
+3.1 recrutamento_prestadores [EXISTE E PROVADO]
+  COLUNAS: id(uuid PK), nome(text NOT NULL), razao_social, cpf_cnpj, rg,
+           data_nascimento, contatos(jsonb), endereco(jsonb), tipo_veiculo,
+           placa_veiculo, eixos(int), capacidade_kg(int), capacidade_m3(int),
+           tipo_carga_veiculo, disponibilidade, regioes_atuacao(jsonb),
+           origem_cadastro, status, score(jsonb), documentos(jsonb),
+           onboarding, canal_captacao, indicado_por, historico(jsonb),
+           data_cadastro, data_ativacao, ultima_atividade, observacoes,
+           tags(jsonb), created_at(timestamptz), updated_at(timestamptz)
+  RLS: ✅ ON
+  POLICIES: 4 (recrutamento_prestadores_select/insert/update/delete)
+  GRANTS: anon/authenticated/postgres/service_role (full CRUD)
+  FKs: NENHUMA
+  INDEXES: 8 (pkey, cpf_cnpj, nome, data_cadastro, onboarding, score, status, tags GIN)
+  TENANT_ID: ❌ NÃO
+  SAMPLE: Diego Balbino (fretebras), Minimal Prestador (app_motorista), Null Metadata (app_motorista)
+
+3.2 recrutamento_candidatos [EXISTE E PROVADO]
+  COLUNAS: id(uuid PK), nome(text NOT NULL), foto, score(int DEFAULT 50),
+           cidade, uf, veiculo, placa, status_documental, prioridade,
+           validade_cnh, data_validade_cnh, tags(jsonb), observacoes_ia,
+           telefone, email, stage, data_entrada, data_atualizacao,
+           documentos(jsonb), created_at, updated_at,
+           prestador_id(uuid FK→recrutamento_prestadores.id ON DELETE SET NULL),
+           historico(jsonb), reserva_contexto(jsonb), score_comprometimento(int),
+           classificacao_comprometimento, risco_desistencia,
+           tempo_medio_resposta_horas(numeric), quantidade_cobrancas(int),
+           confirmou_interesse(bool), data_confirmacao_interesse,
+           confirmou_pre_inicio(bool), data_confirmacao_pre_inicio,
+           compareceu_primeiro_dia(bool), completou_30_dias(bool),
+           quantidade_reclamacoes(int), possui_outra_operacao_fixa(bool),
+           disponibilidade_recrutamento, historico_desistencias(int),
+           etiquetas_automaticas(jsonb), parecer_ia,
+           principais_riscos(jsonb), principais_pontos_positivos(jsonb),
+           proxima_acao_sugerida, questionario_respostas(jsonb),
+           pipeline_validacoes(jsonb)
+  RLS: ✅ ON
+  POLICIES: 4 (recrutamento_candidatos_select/insert/update/delete)
+  FKs: prestador_id → recrutamento_prestadores(id) ON DELETE SET NULL
+  INDEXES: 14 (pkey, classificacao, data_atualizacao, nome, prestador_id,
+           prioridade, risco, score, score_comp, stage, status_documental, tags GIN)
+  TENANT_ID: ❌ NÃO
+  SAMPLE: 5 candidatos (2 com vinculo, 3 sem)
+
+3.3 crm_interacoes_prestadores [EXISTE E PROVADO]
+  COLUNAS: id(uuid PK), prestador_id(uuid FK→prestadores.id ON DELETE CASCADE),
+           prestador_nome(text NOT NULL), tipo(text NOT NULL CHECK),
+           titulo, descricao, data(timestamptz), usuario,
+           proxima_acao, data_proximo_contato(timestamptz),
+           status(text CHECK: agendado/realizado/cancelado/pendente),
+           anexos(jsonb), created_at, updated_at
+  RLS: ✅ ON
+  POLICIES: 3 (cip_select_tms, cip_insert_tms, cip_update_tms) ⚠️ SEM DELETE
+  FKs: prestador_id → prestadores(id) ON DELETE CASCADE
+  CHECK: tipo IN ('ligacao','whatsapp','email','reuniao','visita','observacao','proposta_enviada','retorno_prestador')
+  CHECK: status IN ('agendado','realizado','cancelado','pendente')
+  INDEXES: 3 (pkey, idx_data DESC, idx_prestador_id)
+  TENANT_ID: ❌ NÃO
+  ROWS: 0
+
+3.4 candidato_documentos [EXISTE E PROVADO]
+  COLUNAS: id(uuid PK), candidato_id(uuid FK→recrutamento_candidatos.id ON DELETE CASCADE),
+           tipo(text NOT NULL), arquivo_url, status('pendente' default),
+           validade(date), dados_extraidos(jsonb), created_at, updated_at
+  RLS: ✅ ON
+  POLICIES: 4 (candidato_documentos_select/insert/update/delete)
+  FKs: candidato_id → recrutamento_candidatos(id) ON DELETE CASCADE
+  TENANT_ID: ❌ NÃO
+  ROWS: 0
+
+3.5 recrutamento_operacoes [EXISTE E PROVADO]
+  COLUNAS: id(uuid PK), nome, cliente, regiao, rota_origem, rota_destino,
+           tipo_veiculo, tipo_carga, metodo_carga, temperatura, peso_carga,
+           dimensoes, local_carregamento, local_descarregamento,
+           horario_carregamento, horario_descarregamento, data_inicio, data_fim,
+           recurrencia, frequencia, status, prioridade, observacoes,
+           financeiro(jsonb), meta(jsonb), historico(jsonb),
+           created_at, updated_at, created_by
+  RLS: ✅ ON
+  POLICIES: 4 (recrutamento_operacoes_select/insert/update/delete)
+  TENANT_ID: ❌ NÃO
+  ROWS: 5
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 4 — SEGURANÇA RLS (VULNERABILIDADES)
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ PROBLEMA SISTÊMICO: Policies PERMISSIVE sem cláusula USING
+
+Todas as 4 policies de cada tabela recrutamento_* são PERMISSIVE e SEM USING:
+  → Políticas PERMISSIVE sem USING = permitem acesso a TODOS os roles (incl. anon)
+  → Anon (não autenticado) pode ler, escrever, atualizar e deletar dados de recrutamento
+  → Isso é equivalente a RLS desligado para anon
+
+TABELAS AFETADAS (anon bypass):
+  1. recrutamento_prestadores   — anon pode CRUD completo
+  2. recrutamento_candidatos    — anon pode CRUD completo
+  3. crm_interacoes_prestadores — anon pode INSERT/UPDATE/SELECT (sem DELETE)
+  4. candidato_documentos       — anon pode CRUD completo
+  5. recrutamento_operacoes     — anon pode CRUD completo
+
+TABELAS SEM POLICIES (RLS ON mas 0 policies = sem acesso):
+  6. recrutamento_whatsapp_config      — só postgres/service_role
+  7. recrutamento_whatsapp_conversas   — só postgres/service_role
+  8. recrutamento_whatsapp_mensagens   — só postgres/service_role
+  9. recrutamento_ia_config            — só postgres/service_role
+
+FIX NECESSÁRIO (para 1-5):
+  Para cada tabela, substituir policies por:
+    USING (auth.uid() IS NOT NULL)
+  Ou, se multi-tenant for necessário:
+    USING (auth.uid() IS NOT NULL AND tenant_id = current_setting('app.current_tenant_id')::uuid)
+
+FIX NECESSÁRIO (para 6-9):
+  Adicionar policies para authenticated se o frontend precisa acessar.
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 5 — APP BRIDGE (TRIGGER/FUNCTION)
+═══════════════════════════════════════════════════════════════════════════════
+
+TRIGGER: trg_bridge_prestador_para_recrutamento
+  EVENT: INSERT em prestadores
+  FUNCTION: f_bridge_prestador_para_recrutamento()
+  VOLATILE: sim
+  BODY: 122 linhas
+
+FLUXO:
+  1. INSERT em prestadores → trigger fire
+  2. Guard 1: só processa se origem = 'app_prestador' OU origem_cadastro = 'app_motorista'
+  3. Extrai dados: nome, telefone, email, cidade, uf, cpf, veículo (de metadata)
+  4. Guard 2: idempotência — busca recrutamento_prestadores por cpf_cnpj
+  5. STEP 1: INSERT em recrutamento_prestadores (se não existe)
+  6. Guard 3: idempotência — busca candidato vinculado a recrutamento_prestadores
+  7. STEP 2: INSERT em recrutamento_candidatos (se não existe)
+  8. Retorna NEW (trigger BEFORE INSERT)
+
+TABELAS ESCRITAS:
+  - recrutamento_prestadores (INSERT ou reutiliza existente)
+  - recrutamento_candidatos (INSERT com tags: app_motorista, bridge_automatico)
+
+IDEMPOTÊNCIA: 3 guards (origem, cpf, vinculo)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 6 — STORAGE/BUCKETS
+═══════════════════════════════════════════════════════════════════════════════
+
+BUCKETS RELACIONADOS A DOCUMENTOS:
+  ✅ documentos        — PUBLIC, 10MB limit, image/jpeg/png/gif/webp + application/pdf
+  ✅ documentos_prestadores — PUBLIC, sem limite
+  ⚠️ Nenhum bucket específico para recrutamento/candidatos
+
+candidato_documentos.arquivo_url → armazena URLs que apontam para bucket "documentos" ou "documentos_prestadores"
+
+NENHUMA policy de storage para bucket "documentos" encontrada via pg_policies.
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 7 — LIBERADO_APP
+═══════════════════════════════════════════════════════════════════════════════
+
+COLUNA: prestadores.liberado_app (boolean, default false)
+TRIGGERS em prestadores: trg_bridge_prestador_para_recrutamento (INSERT only)
+  → NÃO modifica liberado_app
+TABELA DE AUDITORIA: NÃO EXISTE (prestadores_audit ausente)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 8 — DELTA: O QUE PRECISA SER CRIADO/CORRIGIDO
+═══════════════════════════════════════════════════════════════════════════════
+
+O QUE NÃO PRECISA CRIAR (já existe e funciona):
+  ✅ recrutamento_prestadores — tabela OK, dados OK
+  ✅ recrutamento_candidatos — tabela OK, dados OK, FK OK
+  ✅ crm_interacoes_prestadores — tabela OK, CRUD OK (precisa policy DELETE)
+  ✅ candidato_documentos — tabela OK (precisa popular 0 rows)
+  ✅ recrutamento_operacoes — tabela OK
+  ✅ Bridge trigger/function — funcional e idempotente
+  ✅ scoreService.ts — determinístico funcional
+  ✅ conversaoCandidatoService.ts — gate documental funcional
+  ✅ identidadePrestadorService.ts — deduplicação funcional
+
+O QUE PRECISA CRIAR:
+  🔨 recrutamento_automacoes — migration + RLS + migrate automacoesService.ts
+  🔨 recrutamento_score_historico — migration + RLS (opcional, para histórico)
+
+O QUE PRECISA CORRIGIR (URGENTE):
+  🔧 RLS de TODAS as 5 tabelas recrutamento_* — policies PERMISSIVE → authenticated only
+  🔧 crm_interacoes_prestadores — adicionar policy DELETE
+  🔧 recrutamento_whatsapp_* e recrutamento_ia_config — adicionar policies se frontend precisa
+  🔧 automacoesService.ts — migrar localStorage → Supabase
+  🔧 enterpriseKanbanService.ts — migrar Math.random() → dados reais
+  🔧 useDashboardRecrutamento.ts — migrar KPIs mock → dados reais
+
+O QUE NÃO PRECISA CRIAR (não existe demanda):
+  ❌ recrutamento_documentos — candidato_documentos já cumpre a função
+  ❌ recrutamento_metricas — KPIs devem ser computed de dados reais, não tabela separada
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 9 — SCRIPTS DE REPRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+Para reproduzir esta auditoria:
+  node scripts/rec062a_prova_banco_remoto.cjs    → schema + grants + policies
+  node scripts/rec062a_prova_banco_remoto2.cjs   → bridge + extra tables + anon bypass
+  node scripts/rec062a_prova_banco_remoto3.cjs   → candidato_documentos + buckets
+
+Todos os scripts são READ-ONLY (apenas SELECT).
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 10 — RESUMO EXECUTIVO
+═══════════════════════════════════════════════════════════════════════════════
+
+P0 (BLOQUEADOR):
+  1. RLS bypass por anon em 5 tabelas — dados de prestadores/candidatos expostos
+  2. crm_interacoes_prestadores sem policy DELETE
+
+P1 (IMPORTANTE):
+  3. recrutamento_automacoes não existe — CRUD automações impossível
+  4. enterpriseKanbanService usa Math.random() — dados exibidos são fake
+  5. useDashboardRecrutamento não consome dados reais
+
+P2 (MELHORIA):
+  6. candidato_documentos com 0 rows — documentos não são persistidos
+  7. recrutamento_score_historico não existe — sem histórico de score
+  8. Nenhum spec Playwright para recrutamento
+  9. 4 tabelas whatsapp/ia sem policies
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2A PROVA DO BANCO REAL
+ZERO alterações. Somente leitura.
+═══════════════════════════════════════════════════════════════════════════════

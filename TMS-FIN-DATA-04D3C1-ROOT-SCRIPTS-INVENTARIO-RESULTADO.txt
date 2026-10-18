@@ -1,0 +1,175 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C1-ROOT-SCRIPTS-INVENTARIO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (analise estatica/grep; NADA executado/alterado).
+RESULTADO: PASS (inventario concluido; nenhuma correcao aplicada).
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+203 arquivos fora de tests/e2e, tmp/, scratch/, node_modules, dist, backups foram
+examinados. Classificacao (apos correcao de falso-positivo em dry-runs READ-ONLY):
+A=31 | B=2 | C=51 | D=27 | E=89 | F=4 (aprox.; 1 arquivo borderline). Nada foi alterado.
+Ha credenciais hardcoded em ~51 arquivos (7 deles com credencial de BANCO hardcoded).
+
+--------------------------------------------------------------------------------
+1. METODOLOGIA (sem executar scripts)
+--------------------------------------------------------------------------------
+- Enumeracao: raiz do projeto (nao recursivo) por padroes de nome + src/testes/**.
+- Analise estatica apenas (leitura de arquivo/grep/regex). NENHUM node/tsx/playwright rodado
+  sobre os arquivos suspeitos; nenhuma chamada Supabase/pg/fetch; nenhum DML.
+- Flags por arquivo: writes, createClient, pg, browser, api, rpc mutavel, URL/ref PROD hardcoded,
+  anon hardcoded, service_role hardcoded, credencial de banco, dotenv default, guard, snippet console,
+  referencia em package.json, importacao por src/UI.
+- Correcao de falso-positivo: _audit_001..008.mjs, _fin_sane_02b/02c_dryrun.mjs e
+  _tms030_readonly.mjs sao READ-ONLY (somente SELECT) -> reclassificados de A para C.
+- Deteccao de UI: nomes curtos (fix/listar/refresh/valida/verificar) geraram match textual falso
+  em src; NENHUM arquivo da raiz e resolvivel/importavel por src (fora do src). Ver item 7.
+
+--------------------------------------------------------------------------------
+2. CONTAGEM POR CLASSE
+--------------------------------------------------------------------------------
+ A = WRITE + pode atingir PROD hoje ......... 31  (lista completa no item 3)
+ B = WRITE mas ja protegido por guard ........  2
+ C = READ-ONLY com acesso PROD ............... 51
+ D = snippet console perigoso ................ 27  (_a22_*; lista completa no item 4)
+ E = legado/inativo/config ................... 89
+ F = desconhecido — investigar ...............  4
+ TOTAL EXAMINADO ............................. 203
+
+--------------------------------------------------------------------------------
+3. CLASSE A — WRITE + pode atingir PROD hoje (31)
+--------------------------------------------------------------------------------
+Writers com URL/ref PROD + anon HARDCODED (createClient):
+  criar_schema.cjs, criar_tabelas.cjs, criar_tabela_valores.cjs, criar_todas.cjs,
+  forcar_create.cjs, query_sql.cjs, refresh.cjs,
+  test-cliente.ts, test-end2.ts, test-endereco.ts, test-financeiro.ts, test-os.ts,
+  test-os2.ts, test-pagar.ts, test-pf-final.ts, test-prestador.ts, test-vinculo.ts,
+  test-upload-final.cjs,
+  teste_completo.cjs, teste_fluxo_mapbox.cjs, teste_os.cjs, teste_pgto_completo.cjs,
+  test_doc.cjs, test_mapbox_valor.cjs, test_pagamento.cjs, validar_pagamento.cjs
+Writers via dotenv default (.env=PROD), sem hardcode explicito:
+  check_types.mjs, test_os_p2.mjs, test_os_p3.mjs, valida.ts, valida_crud.ts, valida_status.ts
+Borderline:
+  criar_tabela.cjs (anon hardcoded; DDL/RPC; confirmar escrita real)
+
+--------------------------------------------------------------------------------
+4. CLASSE D — snippet console perigoso (27)
+--------------------------------------------------------------------------------
+  _a22_q1.cjs, _a22_q1.js, _a22_q2.cjs, _a22_q3.cjs, _a22_q4.cjs, _a22_q5.cjs, _a22_q6.cjs,
+  _a22_q7.cjs, _a22_q7b.cjs, _a22_q8.cjs, _a22_q9.cjs, _a22_q10.cjs, _a22_q11.cjs, _a22_q12.cjs,
+  _a22_q13.cjs, _a22_q14.cjs, _a22_q15.cjs, _a22_q15b.cjs, _a22_q15c.cjs, _a22_q16.cjs,
+  _a22_q16b.cjs, _a22_q16c.cjs, _a22_q17.cjs, _a22_q17b.cjs, _a22_q17c.cjs,
+  _a22_replay_torre.cjs, _a22_send_torre.cjs
+  (snippets IIFE de operacao/mensagens da Torre; _a22_replay_torre/_a22_send_torre contem
+   URL PROD + anon hardcoded -> reutilizam cliente PROD.)
+
+--------------------------------------------------------------------------------
+5. CLASSE B — WRITE protegido por guard (2)
+--------------------------------------------------------------------------------
+  test_os_save.mjs, test_os_cep_horario.mjs   (04D2)
+
+--------------------------------------------------------------------------------
+6. CLASSE C — READ-ONLY com acesso PROD (51) — resumo por grupo
+--------------------------------------------------------------------------------
+- Dry-runs/read-only com credencial de BANCO hardcoded (postgres://...:...@) [8]:
+  _audit_001.mjs .. _audit_008.mjs (somente SELECT; 007 tambem tem anon).
+- Dry-runs/read-only via process.env.DATABASE_URL [3]:
+  _fin_sane_02b_dryrun.mjs, _fin_sane_02c_preflight_dryrun.mjs, _tms030_readonly.mjs
+- Consultas/inspecao com URL PROD + anon hardcoded (somente leitura):
+  auditar_mapbox.cjs, audit_dre_global.mjs, audit_dre_setembro.mjs, audit_fields.mjs,
+  audit_schema.mjs, buscar_todas.cjs, check_fiscal.js, check_json_cols.mjs,
+  check_missing_cols.mjs, listar.cjs, list_todas.cjs, query_prestadores.mjs, refresh.cjs,
+  test_direct.cjs, test-veiculos.ts, test_doc.cjs, test_search.ts,
+  test_prestadores_query.mjs, test_query.cjs, test_query2..13.mjs, temp_check_bucket.cjs,
+  validacao_final_conexao.mjs, verificar.cjs, verificar_estruturas.cjs,
+  verificar_existe.cjs, verificar_os.cjs, criar_tabela.cjs
+- Read-only via app client (sem hardcode) — orfao:
+  src/testes/validacaoTMS.ts (usava supabase "@/" e rodava via console/DevTesteTMS; hoje sem UI)
+
+--------------------------------------------------------------------------------
+7. CLASSE E — legado/inativo/config (89) — grupos
+--------------------------------------------------------------------------------
+- Configs REAIS do projeto (NAO sao produtores de teste; NAO receber guard):
+  vite.config.ts, vitest.config.ts, tailwind.config.ts, postcss.config.js,
+  eslint.config.js, ecosystem.config.cjs, playwright*.config.ts (8), playwright-fixture.ts
+- Codemods/one-off (legado): fix*, force_fix*, inject_*, add_status_tab, layout, move_*,
+  remove_tipo_pagamento, restore*, undo-overfix, update_* (doc/roteirizador/status)
+- Snippets/temp: screenshot_centralia.cjs, take-screenshot.js, temp_pagamento.tsx,
+  temp_test_report_storage.ts, test-biblioteca.js, test-cte.ts, test-validation.js,
+  test_analyze*.js, test_audit.ts, original_escala.tsx, tmp-read-db.mjs, trace_*.js
+- Testes Playwright soltos na raiz: test_minimal.ts, test_min2.ts, test_min3.ts,
+  test_snippet.ts, test_snippet2.ts (inertes fora do runner; ja vistos no 04D3A)
+
+--------------------------------------------------------------------------------
+8. CLASSE F — desconhecido, precisa investigacao (4)
+--------------------------------------------------------------------------------
+  update_financeiro.js, update_financeiro3.cjs, update_prestador.cjs, update_sinistro.cjs
+
+--------------------------------------------------------------------------------
+9. SECRETS (PRESENTE/AUSENTE — SEM VALORES)
+--------------------------------------------------------------------------------
+- URL/ref PROD hardcoded ........ PRESENTE (aprox. 43 arquivos: classe A + C + D)
+- anon key hardcoded ............ PRESENTE (aprox. 47 arquivos)
+- service_role hardcoded ........ AUSENTE nos arquivos examinados (0)
+- credencial de BANCO hardcoded . PRESENTE em 8 arquivos (_audit_001..008.mjs, postgres://...:...@)
+- dotenv default (.env=PROD) .... PRESENTE em classe A (check_types, test_os_p2/p3, valida*)
+- Nenhum valor de segredo impresso neste relatorio.
+
+--------------------------------------------------------------------------------
+10. package.json / UI reachability
+--------------------------------------------------------------------------------
+- package.json: nenhum script suspeito (A/D) e invocado por npm. Unica referencia encontrada:
+  ecosystem.config.cjs (pm2 zoho) — config real, nao produtor de teste.
+- UI: NENHUM arquivo da raiz e importado por src (nao resolvivel fora de src). O unico em src
+  com risco (src/testes/validacaoTMS.ts) esta ORFAO apos a remocao do /dev-teste (04D3B).
+
+--------------------------------------------------------------------------------
+11. REVALIDACAO FINAL
+--------------------------------------------------------------------------------
+- /dev-teste no App.tsx ................ AUSENTE (OK)
+- src/pages/DevTesteTMS.tsx ............ AUSENTE (OK)
+- src/lib/testes ...................... AUSENTE (OK)
+- guard central (_guard.cjs/.mjs/.d.ts/.selftest) ... PRESENTE (OK)
+- verifiers P1/P2 (invocaveis) ........ PRESENTE (OK)
+- harnesses em scripts/lab com guard .. 7 (OK)
+- P1/P2 protegidos .................... NAO modificados nesta missao (OK)
+
+--------------------------------------------------------------------------------
+12. RECOMENDACOES / MENOR SEQUENCIA DE MICRO-MISSOES (sem mega-missao)
+--------------------------------------------------------------------------------
+ 04D3C2 — SNIPPETS CONSOLE (D) + validacaoTMS: neutralizar/retirar os 27 _a22_* (stub) e
+  src/testes/validacaoTMS.ts (stub/remover); sem tocar em configs.
+ 04D3C3 — WRITERS RAIZ hardcoded (A, grupo URL_PROD+ANON): mover para scripts/lab com
+  guardHarness + remover hardcodes (createClient via env). Preservar os que forem utilitarios
+  reais somente com READ-only e sem guard de teste.
+ 04D3C4 — DRY-RUNS/READ-ONLY com credencial (C): remover credencial hardcoded (_audit_001..008)
+  e padronizar leitura via env; opcional converter para scripts/lab.
+ 04D3C5 — LEGADO/CODEMODS (E) e F: revisar update_* (F) e mover/arquivar codemods; NAO aplicar
+  guard em configs reais (vite/tailwind/postcss/vitest/playwright/ecosystem/eslint).
+ Ordem sugerida: C2 -> C3 -> C4 -> C5 (menor risco primeiro; sempre sem DML).
+
+--------------------------------------------------------------------------------
+13. ITENS QUE **NAO** DEVEM RECEBER GUARD DE TESTE (utilitarios reais)
+--------------------------------------------------------------------------------
+ vite.config.ts, vitest.config.ts, tailwind.config.ts, postcss.config.js, eslint.config.js,
+ ecosystem.config.cjs, playwright*.config.ts/fixture (configs de build/test infra).
+ (Guard de teste e para HARNESSES de escrita, nao para config do projeto.)
+
+--------------------------------------------------------------------------------
+14. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (auditoria). Inventario completo, classificacao A-F, segredos PRESENTE/AUSENTE sem valores,
+reachability confirmada, revalidacoes OK. Nenhuma correcao aplicada.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C1-ROOT-SCRIPTS-INVENTARIO-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C1-ROOT-SCRIPTS-INVENTARIO-RESULTADO.txt
+Tamanho ..: 11445 bytes
+Data .....: 24/09/2026 21:19:47
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C1
+================================================================================

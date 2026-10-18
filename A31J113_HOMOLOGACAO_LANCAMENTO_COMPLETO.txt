@@ -1,0 +1,41 @@
+A31-J1.13 — HOMOLOGAÇÃO COMPLETA DO LANÇAMENTO MANUAL
+=====================================================================
+Cenário: base 600/520 · franquia 140 (R$1/km) · km 159,6 → 19,6 exc./perna
+pedágio 66,43 (cobrado do cliente) · outros cliente 30 · reembolso prestador 25
+desconto cliente 20 · desconto prestador 15 → Cliente 696,03 | Prestador 616,03
+
+MATRIZ (PRÉVIA | ALOCAÇÃO | CENTRAL | DETALHES | FINANCEIRO | STATUS)
+1  OS Interna         | —        | OS-202608-474747 | idem | idem | —        | PASS
+2  Romaneio/OC        | separado | metadata.numeroOC=HML-A31J13-E2E | idem | — | PASS
+3  Cliente            | id       | id               | nome real       | idem | — | PASS
+4  Prestador          | id       | id               | nome real       | idem | — | PASS
+5  Base Cliente       | 600      | valor_frete 600  | 600             | 600  | receber 600 | PASS
+6  Base Prestador     | 520      | valor_repasse 520| 520             | 520  | pagar 520   | PASS
+7  Franquia Cliente   | 140      | metadata.faturamento | 140        | idem | —        | PASS
+8  Franquia Prestador | 140      | metadata.repasse | 140             | idem | —        | PASS
+9  KM exc Cliente     | 19,60    | (reconstrói)     | 19,60           | idem | —        | PASS
+10 KM exc Prestador   | 19,60    | (reconstrói)     | 19,60           | idem | —        | PASS
+11 Pedágio Cliente    | 66,43    | valor_pedagio+flag| 66,43          | idem | —        | PASS
+12 Pedágio Prestador  | 66,43    | valor_pedagio     | 66,43 (1x)     | idem | add 91,43 | PASS
+13 Outros adic. Cliente| 30      | valor_adicional   | 30              | idem | —        | PASS
+14 Reembolsos Prestador| 25      | valor_reembolso_outros | 25        | idem | —        | PASS
+15 Desconto Cliente   | 20       | valor_desconto    | 20              | idem | —        | PASS
+16 Desconto Prestador | 15       | valor_desconto_prestador | 15      | idem | pagar.desconto 15 | PASS
+17 Total Cliente      | 696,03   | (reconstrói)     | 696,03          | idem | receber 600 | PASS*
+18 Total Prestador    | 616,03   | (reconstrói)     | 616,03          | idem | pagar 520   | PASS*
+19 financeiro_receber | —        | —                | —               | —    | 600=base cli | PASS
+20 financeiro_pagar   | —        | —                | —               | —    | 520+desc 15  | PASS
+21 recarregar não altera | —     | —                | valores iguais (2ª leitura) | — | PASS
+22 nenhuma duplicata  | —        | 1 OS + 1 alocação| 1 item Central  | —    | —        | PASS
+
+*RESSALVA (não é falha do lançamento): trigger M66/P0 propaga para receber/pagar
+SOMENTE a base (valor_frete/valor_repasse); km excedente, pedágio, adicionais e
+descontos ficam na composição (composicao_financeira_os / pagamentos_prestadores),
+não no título. Total Cliente (696,03) ≠ receber (600) é a estrutura do trigger.
+
+RESULTADO: 22/22 checks PASS (com a ressalva estrutural acima).
+TESTES: novo a31j13 (2) + regressão J1.7–J1.12 = 69/69 PASS.
+TSC: npx tsc --noEmit = 0 erros. BUILD: não executado (não necessário).
+BLOQUEADORES REAIS: nenhum. (QA visual em produção segue pendente.)
+CLASSIFICAÇÃO FINAL DO LANÇAMENTO MANUAL: PRONTO COM RESSALVAS
+  (ressalva: financeiro derivado carrega apenas a base — decisão de produto/trigger).

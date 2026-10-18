@@ -1,0 +1,140 @@
+{
+  "ts": "2026-10-07T02:11:35.781Z",
+  "itens": [
+    {
+      "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "ativo",
+      "qtd": 1,
+      "total": "810.40"
+    },
+    {
+      "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "ativo",
+      "qtd": 1,
+      "total": "810.40"
+    }
+  ],
+  "faturas": [
+    {
+      "id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "aprovada",
+      "numero": null,
+      "numero_cliente": null,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "conta_receber_id": null,
+      "valor_total": "810.40",
+      "metadata": {
+        "modelo": "calvo",
+        "origem": "manual",
+        "parcela": "1",
+        "descricao": "Receita de CT-e referente ao romaneio nº 344542.",
+        "contaBancaria": {
+          "pix": " atendimento@conexaoexpress.com.br",
+          "banco": "BTG PACTUAL",
+          "conta": "572559 ",
+          "agencia": " 0050"
+        }
+      },
+      "criado_em": "2026-10-07T01:45:07.249Z",
+      "atualizado_em": "2026-10-07T01:49:08.933Z"
+    },
+    {
+      "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "aguardando_aprovacao",
+      "numero": null,
+      "numero_cliente": null,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "conta_receber_id": null,
+      "valor_total": "810.40",
+      "metadata": {
+        "modelo": "calvo",
+        "origem": "manual",
+        "parcela": "1",
+        "descricao": "Receita de CT-e referente ao romaneio nº 344542.",
+        "contaBancaria": {
+          "pix": " atendimento@conexaoexpress.com.br",
+          "banco": "BTG PACTUAL",
+          "conta": "572559 ",
+          "agencia": " 0050"
+        }
+      },
+      "criado_em": "2026-10-07T01:43:29.603Z",
+      "atualizado_em": "2026-10-07T01:43:30.274Z"
+    }
+  ],
+  "triggers": [
+    {
+      "proname": "f_trg_faturas_bloqueio_emissao_sem_ar",
+      "prosrc": "\nBEGIN\n  IF NEW.status = 'emitida' AND NEW.conta_receber_id IS NULL THEN\n    IF TG_OP = 'INSERT' THEN\n      RAISE EXCEPTION 'FATURA_EMITIDA_SEM_AR: emissão deve ocorrer via f_emitir_fatura (Nº + Conta a Receber).';\n    ELSIF OLD.status IS DISTINCT FROM 'emitida' THEN\n      RAISE EXCEPTION 'FATURA_EMITIDA_SEM_AR: transição para emitida exige Conta a Receber (use f_emitir_fatura).';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND;\n"
+    },
+    {
+      "proname": "f_trg_faturas_protege_status",
+      "prosrc": "\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    -- Fatura nova deve NASCER como 'rascunho' (cliente). INSERT com 'aprovada'/\n    -- 'emitida' por authenticated seria bypass da validação -> bloqueia.\n    IF NEW.status IS DISTINCT FROM 'rascunho'\n       AND current_user NOT IN ('postgres', 'service_role') THEN\n      RAISE EXCEPTION 'FATURA_STATUS_INSERT_INVALIDO: fatura nova deve nascer como rascunho (use o fluxo Conferência/Criar Fatura).';\n    END IF;\n  ELSIF NEW.status IS DISTINCT FROM OLD.status\n        AND current_user NOT IN ('postgres', 'service_role') THEN\n    -- Só bloqueia MUDANÇA de status. Edições de outros campos (vencimento,\n    -- observação, metadata, etc.) NÃO passam por aqui.\n    RAISE EXCEPTION 'FATURA_STATUS_SOMENTE_VIA_RPC: alteracao direta de status nao permitida. Use f_mover_fatura_status / f_emitir_fatura / f_cancelar_fatura.';\n  END IF;\n  RETURN NEW;\nEND;\n"
+    }
+  ],
+  "itens_manuais": [
+    {
+      "id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "aprovada",
+      "numero": null,
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "aguardando_aprovacao",
+      "numero": null,
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "43ba8624-c644-413f-a9bf-1702e5b58535",
+      "status": "emitida",
+      "numero": "FAT-2026-000017",
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "7220ed09-50d8-41a1-b3ce-a315e416bcde",
+      "status": "emitida",
+      "numero": "FAT-2026-000014",
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "ebbc46d2-41ff-4412-aa4c-a5b5e81d1411",
+      "status": "emitida",
+      "numero": "FAT-2026-000013",
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "ed616465-4479-41e2-948f-969f0cadd3f7",
+      "status": "emitida",
+      "numero": "FAT-2026-000012",
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "8309a22b-9f13-4610-bdb7-ab4008d6fd81",
+      "status": "emitida",
+      "numero": null,
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "3cff86c2-1985-4492-90bf-8027d1cf20d7",
+      "status": "emitida",
+      "numero": "FAT-2026-000011",
+      "origem": "manual",
+      "itens_ativos": 1
+    },
+    {
+      "id": "a22334a3-fdee-4fd2-8eb5-71321e981162",
+      "status": "emitida",
+      "numero": "FAT-2026-000010",
+      "origem": "manual",
+      "itens_ativos": 1
+    }
+  ]
+}

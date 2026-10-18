@@ -1,0 +1,56 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîü auth for agents [www.vestauth.com]
+0) Cleanup HML idempotente...
+1a) Criando auth users HML...
+  [PASS] auth user prestador A criado
+  [PASS] auth user torre T criado
+1) Criando entidades HML...
+  [PASS] prestador A
+  [PASS] prestador B
+  [PASS] tenant_usuarios torre
+  [PASS] aloca├â┬º├â┬úo A
+  [PASS] aloca├â┬º├â┬úo B
+
+T1 ├óÔé¼ÔÇØ App ├óÔÇáÔÇÖ Torre
+  [PASS] T1 envio success ├óÔé¼ÔÇØ {"success":true,"created_at":"2026-08-13T00:50:11.856536+00:00","mensagem_id":"514fc1de-e1fc-4c74-96ca-d91366568f28"}
+  [PASS] T1 exatamente 1 registro ├óÔé¼ÔÇØ count=1
+
+T6 ├óÔé¼ÔÇØ Idempot├â┬¬ncia
+  [PASS] T6 duplicada retorna success+duplicada ├óÔé¼ÔÇØ {"success":true,"duplicada":true,"mensagem_id":"514fc1de-e1fc-4c74-96ca-d91366568f28"}
+  [PASS] T6 continua 1 registro ├óÔé¼ÔÇØ count=1
+
+T2 ├óÔé¼ÔÇØ Torre recebe
+  [PASS] T2 badge >= 1 ├óÔé¼ÔÇØ badge=1
+  [PASS] T2 torre l├â┬¬ mensagens ├óÔé¼ÔÇØ n=1
+  [PASS] T2 motorista/opera├â┬º├â┬úo corretos
+
+T3 ├óÔé¼ÔÇØ Torre ├óÔÇáÔÇÖ App
+  [PASS] T3 resposta success ├óÔé¼ÔÇØ {"success":true,"created_at":"2026-08-13T00:50:12.051414+00:00","mensagem_id":"fbd1bfa7-20e7-470f-899f-177e42ec46c6","notificacao_id":"bb996301-19ed-4d0a-a9ec-1749983019a1"}
+  [PASS] T3 exatamente 1 resposta ├óÔé¼ÔÇØ count=1
+  [PASS] T3 notifica├â┬º├â┬úo App gerada ├óÔé¼ÔÇØ n=1
+
+T4 ├óÔé¼ÔÇØ N├â┬úo lida / lida (App)
+  [PASS] T4 marcar lida (app) success ├óÔé¼ÔÇØ {"success":true,"atualizadas":1}
+  [PASS] T4 contador n├â┬úo lidas da Torre baixou a zero ├óÔé¼ÔÇØ antes=1 depois=0
+
+T5 ├óÔé¼ÔÇØ Persist├â┬¬ncia
+  [PASS] T5 hist├â┬│rico preservado (app) ├óÔé¼ÔÇØ n=2
+
+RLS ├óÔé¼ÔÇØ Isolamento entre prestadores
+  [PASS] RLS prestador A N├âãÆO v├â┬¬ msg do prestador B ├óÔé¼ÔÇØ rows=0
+  [PASS] RLS Torre v├â┬¬ todas (incl. B) ├óÔé¼ÔÇØ rows=1
+
+NEGATIVOS
+  [PASS] Neg prestador A N├âãÆO envia p/ opera├â┬º├â┬úo do B ├óÔé¼ÔÇØ {"error":"ALOCACAO_OUTRO_PRESTADOR","success":false}
+  [PASS] Neg prestador N├âãÆO responde como Torre ├óÔé¼ÔÇØ {"error":"USUARIO_NAO_AUTORIZADO_TORRE","success":false}
+  [PASS] Dados criados pela homologa├â┬º├â┬úo presentes (contexto postgres superuser) ├óÔé¼ÔÇØ total=3
+  [PASS] RLS anon n├â┬úo l├â┬¬ mensagens ├óÔé¼ÔÇØ count=0
+
+├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É├óÔÇó┬É
+RESULTADO HOMOLOGA├âÔÇí├âãÆO A22: PASS=26 FAIL=0
+IDs HML:
+  prestador A: a5b4e91e-b56a-453a-90ed-aff576161459
+  aloca├â┬º├â┬úo A : 3ff1425e-702a-4215-9b19-23ea62ef4a2b
+  prestador B: c79d303c-1add-4fdb-9606-85cd671f24bf
+  aloca├â┬º├â┬úo B : 3c9c065f-0cde-4042-ba92-260e56239e53
+  auth sim A : a22a0000-0000-4000-8000-00000000000a (simulado via JWT claims)
+  auth sim T : a22c0000-0000-4000-8000-00000000000c (simulado via JWT claims)

@@ -1,0 +1,45 @@
+================================================================================
+A31-J1.5 — AUDITORIA PERSISTÊNCIA DESCONTO/AJUSTE DO PRESTADOR (READ-ONLY)
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+A) EXISTE CAMPO OFICIAL REUTILIZÁVEL? NÃO (por serviço/alocação, específico do
+prestador, separado do cliente).
+
+B) Candidatos encontrados e por que NÃO servem:
+- alocacoes_escala: só `valor_desconto` numeric (único, compartilhado). Nenhuma
+  coluna tipo desconto/ajuste/retenção do prestador.
+- alocacoes_escala.metadata (jsonb): contêiner oficial (chaves `repasse`,
+  `faturamento`, `financeiro`, `totals`...). Estrutura reutilizável SEM
+  migration, mas a Central NÃO lê desconto de metadata no Total Prestador
+  (descontosPrestador = valor_desconto) → persistir lá ficaria invisível na
+  Central até estender a leitura.
+- pagamentos_prestadores.descontos / valor_descontos / ajustes (+ itens.
+  valor_desconto): nível de FECHAMENTO/PAGAMENTO (agregado), não por serviço.
+- financeiro_pagar.desconto: conta a pagar por OS — é SAÍDA derivada (via M66),
+  não fonte de entrada.
+- composicao_financeira_os.desconto_valor: único, fórmula unificada M80
+  (adicionais+ajudante-descontos); não é específico do prestador.
+- prestadores.retencoes / retencoes_descontos: cadastro recorrente, não por OS.
+
+C) PROVA objetiva de que NÃO há persistência separada compatível:
+- Busca por colunas %descon%/ajust%/reten%/acresc%: em alocacoes_escala só
+  existe `valor_desconto`; nenhuma tabela por alocação tem campo de desconto
+  exclusivo do prestador.
+- A prévia A31-J1.4 (Desconto/Ajuste Prestador) não tem onde persistir de forma
+  oficial hoje.
+
+D) valor_desconto É aplicado às DUAS pernas em fluxos legados (inconsistência):
+- Trigger M66 (alocação→financeiro): valor líquido prestador = repasse + pedágio
+  + adicional − valor_desconto (financeiro_pagar).
+- Central (centralFinanceiroService): descontosCliente E descontosPrestador =
+  valor_desconto.
+- Logo, persistir "Desconto Cliente" em valor_desconto faria a Central/triggers
+  reduzirem TAMBÉM o prestador, divergindo da prévia do modal (que reduz só o
+  cliente). Risco real confirmado.
+
+CONCLUSÃO
+- Sem coluna própria → NÃO criar migration; a persistência separada exigiria
+  coluna futura (ex.: alocacoes_escala.valor_desconto_prestador) OU leitura de
+  metadata.repasse na Central — decisão de produto, fora desta auditoria.
+================================================================================

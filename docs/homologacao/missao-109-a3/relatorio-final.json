@@ -1,0 +1,22 @@
+{
+  "missao": "109-A3",
+  "data": "2026-07-12T20:17:57.614Z",
+  "resultado": "FALHOU",
+  "oss": [
+    {
+      "id": "bf466936-b5b5-4526-b9e4-fa77229eb4dd",
+      "numero": "OS-202607-426505",
+      "alocacaoId": null
+    },
+    {
+      "id": "313b4bac-31ed-4a38-ae27-0a97ade7a06f",
+      "numero": "OS-202607-912256",
+      "alocacaoId": null
+    }
+  ],
+  "prestador": {
+    "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+    "nome": "PRESTADOR TESTE APP"
+  },
+  "aceite_pendente": true
+}

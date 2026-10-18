@@ -1,0 +1,245 @@
+══════════════════════════════════════════════════════════════════════════════
+AG-07J.11.1 — QA FUNCIONAL GATE DOCUMENTAL
+══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+CELULAR/REDMI NECESSÁRIO:
+NÃO
+
+========================
+CENÁRIOS
+========================
+
+COMPLETO:
+RESULTADO: CONVERTE ✓
+- Botão "Converter em Prestador" visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: SIM
+- Prestador criado: SIM
+- Status ativo gerado: SIM
+- liberado_app=true: SIM
+- Mensagem: "Prestador criado: {nome}"
+- Candidato movido para 'ativo' via store.moveCandidate
+- Operador redirecionado para seção "prestadores"
+
+PARCIAL:
+RESULTADO: BLOQUEADO ✓
+- Botão visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: NÃO
+- Prestador criado: NÃO
+- Status ativo gerado: NÃO
+- liberado_app=true: NÃO
+- Mensagem: "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+- Nenhum efeito colateral
+
+PENDENTE:
+RESULTADO: BLOQUEADO ✓
+- Botão visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: NÃO
+- Prestador criado: NÃO
+- Mensagem: "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+- Nenhum efeito colateral
+
+VENCIDO:
+RESULTADO: BLOQUEADO ✓
+- Botão visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: NÃO
+- Prestador criado: NÃO
+- Mensagem: "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+- Nenhum efeito colateral
+
+BLOQUEADO:
+RESULTADO: BLOQUEADO ✓
+- Botão visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: NÃO
+- Prestador criado: NÃO
+- Mensagem: "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+- Nenhum efeito colateral
+
+SEM DOCUMENTOS:
+RESULTADO: BLOQUEADO ✓
+- Botão visível: SIM
+- Botão habilitado: SIM
+- Service chamado: SIM
+- Conversão ocorre: NÃO
+- Prestador criado: NÃO
+- Mensagem: "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+- Nenhum efeito colateral
+
+========================
+SEGURANÇA
+========================
+
+CENÁRIO BLOQUEADO CRIA PRESTADOR:
+NÃO — converterCandidatoParaPrestador() retorna success=false antes de
+chamar prestadoresService.criar() ou sincronizarComOperacao().
+
+CENÁRIO BLOQUEADO ALTERA STATUS:
+NÃO — store.moveCandidate() só é chamado quando resultado.success=true
+(linha 120 de DetalhesCandidatoPipelineSheet.tsx).
+
+CENÁRIO BLOQUEADO ALTERA LIBERADO_APP:
+NÃO — liberado_app é definido apenas em sincronizarComOperacao() que
+não é alcançado quando o gate retorna erro.
+
+CENÁRIO BLOQUEADO MOVE CANDIDATO PARA ATIVO:
+NÃO — store.moveCandidate(candidate.id, 'ativo') só é chamado no
+bloco if (resultado.success) (linha 120).
+
+COMPLETO CONVERTE CORRETAMENTE:
+SIM — todos os mocks dos testes AG-07J.11 provam que statusDocumental=
+'completo' resulta em success=true.
+
+PRESTADOR_ID PRESERVADO:
+SIM — quando candidato já possui prestadorId vinculado, a conversão
+retorna tipo='ja_existente' e reutiliza o vínculo existente.
+
+AUTH_USER_ID PRESERVADO:
+SIM — o gate não altera auth_user_id. sincronizarComOperacao() usa
+buscarPrestadorOperacionalExistente() que preserva dados existentes.
+
+DUPLICIDADE:
+NÃO — buscarDuplicata() é chamada ANTES de criar prestador, verifica
+telefone e email, e retorna ja_existente se encontrar.
+
+========================
+UX
+========================
+
+BOTÃO CONVERTER FICA VISÍVEL EM DOCUMENTAÇÃO BLOQUEADA:
+SIM — o botão aparece sempre, independentemente do statusDocumental.
+
+BOTÃO FICA HABILITADO:
+SIM — o botão fica habilitado mesmo quando statusDocumental ≠ 'completo'.
+O único estado que desabilita é convertendo=true (durante a chamada).
+
+OPERADOR SÓ DESCOBRE APÓS CLICAR:
+SIM — o operador clica no botão, o service é chamado, e só então
+aparece a mensagem de erro via toast.error().
+
+MENSAGEM É CLARA:
+PARCIAL — a mensagem diz "Documentação obrigatória incompleta ou inválida"
+mas não especifica QUAL documento está pendente/vencido.
+
+MENSAGEM MOSTRA MOTIVO:
+NÃO — a mensagem é genérica. Não diz se é CNH vencida, CRLV ausente,
+ou Comprovante de Residência pendente.
+
+MENSAGEM MOSTRA DOCUMENTO PROBLEMÁTICO:
+NÃO — a mensagem não lista os documentos com problema.
+
+GAP DE UX:
+SIM
+
+DESCRIÇÃO:
+O botão "Converter em Prestador" fica sempre habilitado mesmo quando
+o candidato tem statusDocumental ≠ 'completo'. O operador só descobre
+o bloqueio após clicar e receber a mensagem de toast.
+
+A UI JÁ EXIBE o statusDocumental na aba "Documentos" (status geral,
+CNH, checklist obrigatório), mas NÃO usa essa informação para
+desabilitar o botão preventivamente.
+
+Recomendação para próxima missão:
+- Desabilitar o botão quando statusDocumental ≠ 'completo'
+- Adicionar tooltip explicando o motivo do bloqueio
+- Ou exibir badge de alerta ao lado do botão
+
+========================
+MENSAGENS DE ERRO
+========================
+
+MENSAGEM GENÉRICA:
+SIM — "Documentação obrigatória incompleta ou inválida — conversão bloqueada"
+
+MENSAGEM ESPECÍFICA:
+NÃO — não diferencia parcial/pendente/vencido/bloqueado/sem documentos.
+
+MOSTRA QUAL DOCUMENTO ESTÁ PENDENTE:
+NÃO — mas a aba "Documentos" na UI mostra exatamente quais documentos
+estão OK/Pendentes/Vencidos com cores (verde/âmbar/vermelho).
+
+MOSTRA QUAL DOCUMENTO ESTÁ VENCIDO:
+NÃO — mas a aba "Documentos" mostra data de validade de cada documento.
+
+EXPLICA AÇÃO NECESSÁRIA:
+NÃO diretamente na mensagem, mas a UI mostra visualmente o que falta.
+
+========================
+ALTERAÇÕES
+========================
+
+CORREÇÃO REALIZADA:
+NÃO — esta é missão de QA, não de implementação.
+
+ARQUIVOS ALTERADOS:
+NENHUM
+
+TESTES:
+14/14 PASS (AG-07J.11 — testes focalizados do gate)
+
+REGRESSÃO:
+67/67 arquivos, 799/799 testes (suite completa vitest)
+10/10 PASS (AG-07J.10.1 — bypass de stage)
+
+TYPESCRIPT:
+npx tsc --noEmit → 0 erros
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+========================
+DECISÃO
+========================
+
+PRÓXIMO BLOQUEIO REAL:
+Nenhum bug funcional. O gate funciona corretamente no service.
+Gap de UX documentado: botão habilitado quando deveria estar desabilitado.
+
+PRÓXIMA MISSÃO:
+AG-07J.11.2 — UX do botãoConverter (desabilitar preventivamente +
+tooltip/badge de alerta quando statusDocumental ≠ 'completo').
+
+DECISÃO FINAL:
+B — GATE FUNCIONA, MAS UX PRECISA CORREÇÃO
+
+Justificativa:
+- Gate documental funciona perfeitamente no service (fail-closed)
+- Nenhum efeito colateral em cenários bloqueados
+- Mensagem de erro é exibida corretamente via toast
+- PORÉM: botão fica habilitado quando deveria estar desabilitado
+- Operador só descobre o bloqueio após clicar
+- UI já tem toda a informação necessária (statusDocumental, checklist)
+- Falta apenas conectar a informação ao estado do botão

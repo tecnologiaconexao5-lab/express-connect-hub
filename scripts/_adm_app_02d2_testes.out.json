@@ -1,0 +1,161 @@
+{
+  "ts": "2026-09-27T19:30:03.883Z",
+  "total": 21,
+  "passou": 21,
+  "falhou": 0,
+  "resultados": [
+    {
+      "id": "N01",
+      "desc": "anon NÃO lista objetos do bucket",
+      "passou": true,
+      "detalhe": "0 linhas"
+    },
+    {
+      "id": "N02",
+      "desc": "anon NÃO lê objeto (download + public URL)",
+      "passou": true,
+      "download": "Object not found",
+      "public_url_status": 400
+    },
+    {
+      "id": "N03",
+      "desc": "anon NÃO faz upload",
+      "passou": true,
+      "detalhe": "new row violates row-level security policy"
+    },
+    {
+      "id": "N04",
+      "desc": "anon NÃO atualiza objeto",
+      "passou": true,
+      "detalhe": "new row violates row-level security policy"
+    },
+    {
+      "id": "N05",
+      "desc": "anon NÃO exclui objeto",
+      "passou": true,
+      "detalhe": "negado",
+      "objeto_preservado": true
+    },
+    {
+      "id": "N06",
+      "desc": "prestador A NÃO lê documento do prestador B",
+      "passou": true,
+      "objeto_b": "Object not found",
+      "objeto_real_terceiro": "Object not found"
+    },
+    {
+      "id": "N07",
+      "desc": "prestador A NÃO assina path de B",
+      "passou": true,
+      "path_b": "Object not found",
+      "real": "Object not found"
+    },
+    {
+      "id": "N08",
+      "desc": "prestador A NÃO faz upload usando ID de B",
+      "passou": true,
+      "detalhe": "new row violates row-level security policy",
+      "sem_objeto_criado": true
+    },
+    {
+      "id": "N09",
+      "desc": "prestador A NÃO altera objeto de B",
+      "passou": true,
+      "detalhe": "new row violates row-level security policy",
+      "conteudo_b_preservado": true
+    },
+    {
+      "id": "N10",
+      "desc": "prestador A NÃO exclui objeto de B",
+      "passou": true,
+      "detalhe": "negado",
+      "objeto_preservado": true
+    },
+    {
+      "id": "N11",
+      "desc": "path malformado / fora da convenção é negado",
+      "passou": true,
+      "negados": 4,
+      "detalhe": [
+        "doc_00000000-0000-0000-0000-000000000000_TESTE02D2_1790537391413.txt",
+        "foto_63ef3c0d-d03b-4b86-be63-2132d769b88a_INVADIR_1790537391413.txt",
+        "../documentos_prestadores_escapada.txt",
+        "temp/escapada_1790537391413.txt"
+      ]
+    },
+    {
+      "id": "N12",
+      "desc": "bucket/path externo não concede acesso",
+      "passou": true,
+      "bucket_externo": "mime type text/plain is not supported",
+      "alvo_via_externo": "Object not found",
+      "anon_sign": "Object not found"
+    },
+    {
+      "id": "P01",
+      "desc": "próprio prestador faz upload",
+      "passou": true,
+      "path": "doc_ee4511bb-956e-4ff0-af82-9e61b0bf1870_TESTE02D2_1790537391413.txt",
+      "data": "doc_ee4511bb-956e-4ff0-af82-9e61b0bf1870_TESTE02D2_1790537391413.txt"
+    },
+    {
+      "id": "P02",
+      "desc": "próprio prestador cria signed URL com TTL 600",
+      "passou": true,
+      "ttl_segundos": 600,
+      "scope": "download"
+    },
+    {
+      "id": "P03",
+      "desc": "signed URL retorna o conteúdo",
+      "passou": true,
+      "status": 200,
+      "bytes": 24,
+      "sem_token": true
+    },
+    {
+      "id": "P04",
+      "desc": "próprio atualiza e exclui SOMENTE o objeto TESTE próprio",
+      "passou": true,
+      "atualizado": true,
+      "conteudo_final": "conteudo-A 1790537391413-v2",
+      "excluido": true
+    },
+    {
+      "id": "P05",
+      "desc": "TMS (tenant_usuarios) lista e lê",
+      "passou": true,
+      "objetos_listados": 79,
+      "legado": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_ANTT_1788952096100.jpg",
+      "bytes": 1004499
+    },
+    {
+      "id": "P06",
+      "desc": "TMS cria signed URL",
+      "passou": true,
+      "status": 200
+    },
+    {
+      "id": "P07",
+      "desc": "TMS faz upload e delete de objeto TESTE",
+      "passou": true,
+      "upload": true,
+      "delete": true
+    },
+    {
+      "id": "P08",
+      "desc": "tabela documentos_prestadores continua funcional",
+      "passou": true,
+      "linhas": 32,
+      "rls": true,
+      "linhas_visiveis_prestador_A": 0
+    },
+    {
+      "id": "P09",
+      "desc": "as 8 policies dp_* permanecem intactas",
+      "passou": true,
+      "count": 8,
+      "hash": "477d12130df5c169947f2f09f921c1f828b368b1631a388e10f12ee89613db96"
+    }
+  ]
+}

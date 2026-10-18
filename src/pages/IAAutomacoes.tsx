@@ -37,9 +37,9 @@ export default function IAAutomacoes() {
 
   const envVarMap: Record<string, string> = {
     none:      "",
-    groq:      "VITE_GROQ_API_KEY",
-    gemini:    "VITE_GEMINI_API_KEY",
-    anthropic: "VITE_ANTHROPIC_API_KEY",
+    groq:      "Edge Function Secrets",
+    gemini:    "Edge Function Secrets",
+    anthropic: "Edge Function Secrets",
   };
 
   const logStatusColor = (s: string) => s === "ok" ? "bg-green-50 text-green-700" : s === "erro" ? "bg-red-50 text-red-700" : "bg-yellow-50 text-yellow-700";
@@ -386,17 +386,17 @@ export default function IAAutomacoes() {
               <CardHeader className="text-center pb-2"><Key className="w-12 h-12 text-slate-300 mx-auto mb-4"/><CardTitle>Chaves de Integração</CardTitle><CardDescription>Configure as variáveis de ambiente no arquivo .env para ativar cada provider.</CardDescription></CardHeader>
               <CardContent className="space-y-4 pt-6">
                  <div className="space-y-3">
-                   {[
-                     { label: "Groq API Key",     env: "VITE_GROQ_API_KEY",     desc: "llama3, mixtral — rápido e gratuito" },
-                     { label: "Gemini API Key",   env: "VITE_GEMINI_API_KEY",   desc: "Google Gemini 1.5/2.0" },
-                     { label: "Anthropic API Key",env: "VITE_ANTHROPIC_API_KEY",desc: "Claude Sonnet / Haiku" },
-                   ].map(item => (
-                     <div key={item.env} className="p-3 border rounded-lg bg-slate-50">
-                       <p className="text-sm font-bold">{item.label}</p>
-                       <p className="text-xs font-mono text-slate-500">{item.env}=sua_chave_aqui</p>
-                       <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
-                     </div>
-                   ))}
+                    {[
+                      { label: "Groq (Edge Function)", env: "proxy-ia", desc: "Chave no Supabase Secrets (backend seguro)" },
+                      { label: "Gemini (Edge Function)", env: "proxy-ia", desc: "Chave no Supabase Secrets (backend seguro)" },
+                      { label: "Anthropic (Edge Function)", env: "proxy-ia", desc: "Chave no Supabase Secrets (backend seguro)" },
+                    ].map(item => (
+                      <div key={item.label} className="p-3 border rounded-lg bg-green-50">
+                        <p className="text-sm font-bold">{item.label}</p>
+                        <p className="text-xs font-mono text-green-600">{item.env} ✅</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    ))}
                  </div>
                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                    <p className="text-xs font-semibold text-blue-800">💡 Como configurar</p>

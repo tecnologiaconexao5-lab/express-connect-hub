@@ -1,0 +1,470 @@
+﻿FIN-SANE-02M.5D — PLANO DE RECONCILIACAO CESAR
+===============================================
+Plano Minimo e Seguro para Reconciliacao do Caso Historico CESAR
+
+Data: 2026-09-20
+Hora: 18:30 BRT
+Modelo: MiMo-V2.5
+Status: PLANO DEFINIDO — ZERO WRITES EXECUTADOS
+Redmi: NAO NECESSARIO
+
+==========================================================================
+SECAO 1 — PREMISSAS HOMOLOGADAS (NAO REAUDITAR)
+==========================================================================
+
+1. FIN-SANE-02B ja esta aplicada em Producao desde 2026-09-18.
+2. NAO reaplicar 02B.
+3. NAO executar rollback.
+4. Trigger futuro ja usa v_valor_liquido (M66/M80).
+5. Snapshot 02B tratou 36 FP historicos elegiveis.
+6. CESAR foi excluido corretamente porque FP.status='pago'.
+7. Obrigacao CESAR = R,86 (PP.valor_liquido).
+8. FP = R,00 (criado com valor errado pelo trigger bug).
+9. Baixa real comprovada = R,00.
+10. Diferenca = R,86.
+11. FP pago nao deve ser sobrescrito retroativamente (design 02B).
+12. +3h permanece inconclusivo e fora do escopo.
+13. 02M.5/5A/5B/5C/5D encerradas.
+
+VERDADE HISTORICA A PRESERVAR:
+  OBRIGACAO  = R,86
+  PAGO REAL  = R,00
+  SALDO      = R,86
+
+
+==========================================================================
+SECAO 2 — CONSTRAINTS E ESTRUTURA DO MODELO
+==========================================================================
+
+--- 2.1 financeiro_pagar ---
+UNIQUE: uq_fp_os_id = UNIQUE(os_id)
+  -> BLOQUEIA criacao de segundo FP para mesma alocacao
+FKs: cliente_id -> clientes, fornecedor_id -> prestadores,
+     fornecedor_cadastro_id -> fornecedores
+Colunas relevantes: valor (NUMERIC), status (TEXT), observacoes (TEXT),
+                    categoria (TEXT), descricao (TEXT), os_id (TEXT)
+SEM colunas: saldo, valor_pago, valor_original
+
+--- 2.2 financeiro_baixas ---
+UNIQUE: NENHUMA
+  -> PERMITE multiplas baixas para mesmo titulo
+FK: conta_financeira_id -> contas_financeiras
+Colunas relevantes: valor_original (NUMERIC), valor_baixado (NUMERIC),
+                    saldo_restante (NUMERIC), estornada (BOOLEAN),
+                    data_estorno (TIMESTAMPTZ), motivo_estorno (TEXT)
+Mecanismo de estorno: existe (colunas data_estorno, motivo_estorno)
+  -> mas NENHUM estorno registrado no sistema (0 ocorrencias)
+
+--- 2.3 pagamentos_prestadores ---
+UNIQUE: uq_pp_os_id = UNIQUE(os_id)
+  -> BLOQUEIA criacao de segundo PP para mesma alocacao
+
+--- 2.4 Triggers em financeiro_pagar ---
+trg_guardar_pagar_pago_sem_baixa:
+  -> BLOQUEIA mudanca de status PARA 'pago' sem baixa correspondente
+  -> So dispara quando status MUDA para 'pago' (INSERT ou UPDATE de status)
+  -> NAO dispara se status ja e 'pago' e apenas valor e atualizado
+
+--- 2.5 Mecanismo de complemento/ajuste ---
+TABELAS NAO EXISTEM: nenhuma tabela de ajuste, complemento, residual ou
+diferenca foi encontrada no schema.
+MECANISMO NAO EXISTE: o sistema nao possui fluxo para titulo complementar
+ou ajuste parcial.
+
+
+==========================================================================
+SECAO 3 — ANALISE DAS ALTERNATIVAS
+==========================================================================
+
+--- ALTERNATIVA A: Manter FP R + Criar titulo complementar R,86 ---
+
+VIABILIDADE: BLOQUEADA
+
+Motivo: UNIQUE(os_id) em financeiro_pagar impede criar segundo FP
+para a mesma alocacao (os_id = '58e5751e-bd54-43c5-9bcf-55fe4e575e6b').
+
+Opcao A1: DROP UNIQUE -> RISCO INACEITAVEL
+  - Quebra protecao contra duplicatas em todo o sistema
+  - Afeta todas as 109 FP existentes
+  - Requer migration + rollback complexo
+
+Opcao A2: Criar FP com os_id diferente -> INCORRETO
+  - Viola integridade: FP deve referenciar a alocacao correta
+  - Quebra trigger M66 (ON CONFLICT os_id)
+  - Cria rastreabilidade quebrada
+
+CLASSIFICACAO: BLOQUEADA POR CONSTRAINT
+
+
+--- ALTERNATIVA B: Reabrir/ajustar FP original (UPDATE direto) ---
+
+VIABILIDADE: VIAVEL COM RESSALVAS
+
+Operacao: UPDATE financeiro_pagar SET valor = 652.86 WHERE id = '9f2be89f'
+
+Efeitos:
+  financeiro_pagar:
+    - valor: R,00 -> R,86
+    - status: permanece 'pago' (nao muda)
+    - created_at/updated_at: preservados
+    - Rastreabilidade: updated_at registra momento do ajuste
+
+  financeiro_baixas (requer UPDATE companion):
+    - valor_original: R,00 -> R,86
+    - saldo_restante: R,00 -> R,86
+    - valor_baixado: permanece R,00 (historico preservado)
+
+  Trigger trg_guardar_pagar_pago_sem_baixa:
+    - NAO dispara (status ja e 'pago', nao esta MUDANDO para 'pago')
+    - Seguro para UPDATE de valor
+
+  DRE:
+    - USA pp.valor_liquido (R,86) — SEM EFEITO (ja correto)
+
+  Fluxo de Caixa Previsto:
+    - USA fp.valor — MUDA de R para R,86
+    - Efeito: obrigacao registrada aumenta R,86
+    - CORRETO: reflete obrigacao real
+
+  Fluxo de Caixa Realizado:
+    - USA baixas.valor_baixado — SEM EFEITO (R preservado)
+    - Efeito: pagamento real inalterado
+
+  Extrato do Prestador:
+    - Mostra R,86 como saldo pendente
+    - CORRETO: reflete realidade
+
+  Status de Pagamento (PP):
+    - PP.status_pagamento = 'pendente' (correto — ainda deve R,86)
+    - PP.valor_liquido = R,86 (correto — obrigacao total)
+
+  Auditoria/Rastreabilidade:
+    - FP: updated_at registra o ajuste
+    - Baixa: updated_at registra o ajuste
+    - Observacoes: podem documentar o motivo
+
+Ressalvas:
+  1. RPC f_confirmar_pagamento_prestador validaria:
+     v_saldo = FP.valor - total_baixado = R,86 - R = R,86
+     v_valor = PP.valor_liquido = R,86
+     v_saldo (R,86) <> v_valor (R,86) -> REJEITA
+     -> Pagamento parcial nao e permitido neste fluxo
+     -> O saldo R,86 NAO pode ser pago via RPC padrao
+
+  2. Trigger M66 (se allocation for atualizada futuramente):
+     Sobrescreve FP.valor com v_valor_liquido
+     -> FP voltaria ao valor correto automaticamente
+
+  3. Nenhum outro FP no sistema tem saldo_restante > 0
+     -> CESAR seria o PRIMEIRO caso de pagamento parcial
+     -> Pode expor bugs em relatorios que assumem saldo = 0
+
+RISCO: MEDIO — viavel mas expoe limitacoes do fluxo de pagamento parcial
+
+
+--- ALTERNATIVA C: Criar ajuste financeiro especifico ---
+
+VIABILIDADE: BLOQUEADA
+
+Motivo: NENHUM mecanismo de ajuste existe no sistema.
+  - Sem tabela de ajustes
+  - Sem tipo 'ajuste' em financeiro_pagar
+  - Sem campo 'tipo' que distinga ajuste de pagamento
+  - Criar mecanismo novo = nova migration/modelagem
+
+CLASSIFICACAO: BLOQUEADA — requer nova modelagem
+
+
+--- ALTERNATIVA D: Outra solucao ja prevista na arquitetura ---
+
+VIABILIDADE: NAO EXISTE
+
+Investigacao:
+  - Sem tabela de complemento/residual/diferenca
+  - Sem tipo 'complemento' em FP
+  - Sem mecanismo de segundo pagamento para mesma OS
+  - Baixa parcial: campo saldo_restante existe, mas nenhum FP o usa
+  - Estorno: mecanismo existe (colunas) mas nenhum registro usa
+
+CLASSIFICACAO: NENHUMA SOLUCAO PREVISTA
+
+
+==========================================================================
+SECAO 4 — MATRIZ COMPARATIVA
+==========================================================================
+
+| CRITERIO              | ALT A (complemento) | ALT B (ajuste) | ALT C (novo) | ALT D (outro) |
+|-----------------------|:-------------------:|:--------------:|:------------:|:-------------:|
+| VIABILIDADE           | BLOQUEADA           | VIAVEL          | BLOQUEADA    | NAO EXISTE    |
+| RASTREABILIDADE       | --                  | PRESERVA        | --           | --            |
+| DRE                   | --                  | SEM EFEITO      | --           | --            |
+| FLUXO_PREVISTO        | --                  | AUMENTA         | --           | --            |
+| FLUXO_REALIZADO       | --                  | SEM EFEITO      | --           | --            |
+| RISCO_DUPLICIDADE     | --                  | ZERO            | --           | --            |
+| CONSTRAINTS           | UNIQUE os_id        | COMPATIVEL      | --           | --            |
+| ROLLBACK              | --                  | DEFINIDO        | --           | --            |
+| PAGAMENTO_FUTURO      | --                  | BLOQUEADO*      | --           | --            |
+| SEGURA_SIM_NAO        | NAO                 | SIM COM RESS.   | NAO          | NAO           |
+
+*Bloqueado via RPC padrao — requer mecanismo alternativo para saldo R,86
+
+
+==========================================================================
+SECAO 5 — INVESTIGACAO: OBSERVACAO DA BAIXA
+==========================================================================
+
+Baixa: "Baixa automatica — pagamento prestador 32fe474f"
+
+PP 32fe474f:
+  - id: 32fe474f-41c7-432b-a21e-7d0b2831c1bb
+  - os_id: NULL (sem vinculacao a OS)
+  - valor_liquido: R.177,92
+  - status_pagamento: pago
+  - data_pagamento: 2026-09-05
+  - tipo_pagamento: NULL (manual, sem fechamento)
+
+Diagnostico:
+  PP 32fe474f e um pagamento MANUAL sem vinculacao a OS.
+  O fluxo de pagamento (confirmarPagamento no TS) buscou FP
+  do mesmo prestador sem vinculacao a OS e criou baixa.
+
+  O valor R foi baixado de FP 9f2be89f (CESAR) como parte
+  deste pagamento maior de R.177,92.
+
+  Isso NAO interfere na estrategia de reconciliacao:
+  - A baixa e real (R efetivamente pago)
+  - A referencia ao PP 32fe474f e apenas documental
+  - A reconciliacao ajusta FP e baixa, nao o PP de origem
+
+
+==========================================================================
+SECAO 6 — EFEITOS CONTABEIS/FINANCEIROS DA ALTERNATIVA B
+==========================================================================
+
+--- 6.1 Antes da Reconciliacao ---
+  FP:    R,00 (pago)     -> Obrigacao subdeclarada
+  Baixa: R,00 (saldo 0)  -> Pagamento integral (incorreto)
+  PP:    R,86 (pendente) -> Obrigacao correta, status pendente
+  DRE:   R,86 (correto)  -> Usa PP.valor_liquido
+  FC Pr: R,00            -> Obrigacao subdeclarada
+  FC Re: R,00            -> Pagamento real
+
+--- 6.2 Depois da Reconciliacao ---
+  FP:    R,86 (pago)     -> Obrigacao correta
+  Baixa: R,00 (saldo R,86) -> Pagamento parcial real
+  PP:    R,86 (pendente) -> Inalterado
+  DRE:   R,86 (correto)  -> Inalterado
+  FC Pr: R,86            -> Obrigacao correta (+R,86)
+  FC Re: R,00            -> Inalterado
+
+--- 6.3 Impacto Liquido ---
+  DRE:          SEM EFEITO (usa PP)
+  FC Previsto:  +R,86 (correcao de subdeclaracao)
+  FC Realizado: SEM EFEITO (baixa preservada)
+  Saldo:        R,86 pendente (realidade)
+
+
+==========================================================================
+SECAO 7 — PLANO EXATO DE WRITES FUTUROS
+==========================================================================
+
+ATENCAO: PLANO DEFINIDO — NAO EXECUTAR NESTA MISSAO
+
+WRITE 1: Ajuste do valor do titulo
+  Tabela:     financeiro_pagar
+  Registro:   id = '9f2be89f-5ece-4cc5-be29-50010b64e64e'
+  Campo:      valor
+  Valor Ant.: 520.00
+  Valor Novo: 652.86
+  Justificativa: Corrigir erro do trigger M66 que gravou v_valor_prestador
+                 em vez de v_valor_liquido. PP.valor_liquido = R,86.
+  Efeito:     FP passa a refletir obrigacao real
+  Rollback:   UPDATE fp SET valor = 520.00 WHERE id = '9f2be89f...'
+  Validacao:  SELECT valor FROM financeiro_pagar WHERE id = '9f2be89f' -> 652.86
+
+WRITE 2: Ajuste do valor original da baixa
+  Tabela:     financeiro_baixas
+  Registro:   id = '286c2c2d-90e4-403a-9692-8e68ccfd2a6c'
+  Campo:      valor_original
+  Valor Ant.: 520.00
+  Valor Novo: 652.86
+  Justificativa: Alinhar valor_original da baixa com FP.valor corrigido.
+                 A baixa registrava R porque FP era R.
+  Efeito:     Baixa indica obrigacao total correta
+  Rollback:   UPDATE fb SET valor_original = 520.00 WHERE id = '286c2c2d...'
+  Validacao:  SELECT valor_original FROM financeiro_baixas WHERE id = '286c2c2d' -> 652.86
+
+WRITE 3: Calculo do saldo restante
+  Tabela:     financeiro_baixas
+  Registro:   id = '286c2c2d-90e4-403a-9692-8e68ccfd2a6c'
+  Campo:      saldo_restante
+  Valor Ant.: 0.00
+  Valor Novo: 132.86
+  Justificativa: Saldo = valor_original (652,86) - valor_baixado (520,00) = 132,86.
+                 Documenta que R,86 ainda e devido.
+  Efeito:     Exibe saldo pendente no extrato
+  Rollback:   UPDATE fb SET saldo_restante = 0.00 WHERE id = '286c2c2d...'
+  Validacao:  SELECT saldo_restante FROM financeiro_baixas WHERE id = '286c2c2d' -> 132.86
+
+WRITE 4 (OPCIONAL): Documentacao
+  Tabela:     financeiro_pagar
+  Registro:   id = '9f2be89f-5ece-4cc5-be29-50010b64e64e'
+  Campo:      observacoes
+  Valor Ant.: "Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 0.00."
+  Valor Novo: "Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 132,86. [02M.5D] Ajuste retroativo: valor corrigido de R para R,86 (bug trigger M66)."
+  Justificativa: Rastreabilidade do ajuste
+  Efeito:     Nenhum efeito funcional
+  Rollback:   Restaurar observacoes original
+  Validacao:  SELECT observacoes FROM financeiro_pagar WHERE id = '9f2be89f' -> texto atualizado
+
+
+==========================================================================
+SECAO 8 — ROLLBACK COMPLETO
+==========================================================================
+
+Se a reconciliacao precisar ser desfeita:
+
+  -- 1. Reverter FP
+  UPDATE financeiro_pagar
+  SET valor = 520.00
+  WHERE id = '9f2be89f-5ece-4cc5-be29-50010b64e64e';
+
+  -- 2. Reverter baixa
+  UPDATE financeiro_baixas
+  SET valor_original = 520.00, saldo_restante = 0.00
+  WHERE id = '286c2c2d-90e4-403a-9692-8e68ccfd2a6c';
+
+  -- 3. (Opcional) Reverter observacao
+  UPDATE financeiro_pagar
+  SET observacoes = 'Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 0.00.'
+  WHERE id = '9f2be89f-5ece-4cc5-be29-50010b64e64e';
+
+Rollback e SEGURO porque:
+  - Restaura estado anterior exato
+  - Nao afeta outros registros
+  - Nao altera triggers nem constraints
+  - Pode ser executado a qualquer momento
+
+
+==========================================================================
+SECAO 9 — VALIDACAO POS-WRITE
+==========================================================================
+
+CHECK 1: FP corrigido
+  SELECT valor, status, observacoes
+  FROM financeiro_pagar
+  WHERE id = '9f2be89f-5ece-4cc5-be29-50010b64e64e';
+  Esperado: valor=652.86, status=pago
+
+CHECK 2: Baixa corrigida
+  SELECT valor_original, valor_baixado, saldo_restante
+  FROM financeiro_baixas
+  WHERE id = '286c2c2d-90e4-403a-9692-8e68ccfd2a6c';
+  Esperado: valor_original=652.86, valor_baixado=520.00, saldo_restante=132.86
+
+CHECK 3: PP inalterado
+  SELECT valor_liquido, status_pagamento, data_pagamento
+  FROM pagamentos_prestadores
+  WHERE id = '7461daf6-438b-43b3-abde-4d30e1609574';
+  Esperado: valor_liquido=652.86, status_pagamento=pendente, data_pagamento=null
+
+CHECK 4: DRE sem alteracao
+  SELECT valor_liquido FROM pagamentos_prestadores
+  WHERE id = '7461daf6' -> 652.86 (inalterado)
+
+CHECK 5: Nenhum outro FP afetado
+  Contar FP com status='pago' antes e depois — deve ser identico
+
+CHECK 6: Constraint UNIQUE preservada
+  SELECT os_id, COUNT(*) FROM financeiro_pagar
+  WHERE os_id = '58e5751e-bd54-43c5-9bcf-55fe4e575e6b'
+  GROUP BY os_id;
+  Esperado: 1 registro (unico)
+
+CHECK 7: Trigger M66 nao afetado
+  SELECT proname, prosrc FROM pg_proc
+  WHERE proname = 'f_trg_propagar_financeiro_alocacao';
+  Esperado: v_valor_liquido na linha INSERT de financeiro_pagar
+
+
+==========================================================================
+SECAO 10 — LIMITACOES E RISCOS CONHECIDOS
+==========================================================================
+
+LIMITE 1: Pagamento parcial via RPC
+  A RPC f_confirmar_pagamento_prestador REJEITA pagamento parcial.
+  Se alguem tentar pagar os R,86 restantes via fluxo padrao,
+  recebera: "Saldo do titulo nao reconcilia integralmente com o pagamento".
+
+  SOLUCAO: O saldo R,86 deve ser pago via mecanismo alternativo:
+  - Pagamento manual com baixa direta
+  - Ou espera por futura migration que suporte pagamento parcial
+
+LIMITE 2: Primeiro caso de saldo parcial
+  Nenhum outro FP no sistema tem saldo_restante > 0.
+  Relatorios que assumem "pago = saldo zero" podem ter comportamento
+  inesperado para CESAR.
+
+  SOLUCAO: Verificar relatorios relevantes (DRE, Fluxo de Caixa, Extrato)
+  apos a reconciliacao.
+
+LIMITE 3: Trigger M66 futura atualizacao
+  Se a alocacao 58e5751e for atualizada no futuro, o trigger M66
+  sobrescrevera FP.valor com v_valor_liquido.
+  Se o trigger estiver correto (v_valor_liquido), FP permanecera R,86.
+
+  SOLUCAO: Nenhuma — comportamento esperado e desejavel.
+
+
+==========================================================================
+SECAO 11 — EVIDENCIAS COLETADAS
+==========================================================================
+
+Evidencia 1: UNIQUE(os_id) em financeiro_pagar — BLOQUEIA Alternativa A
+Evidencia 2: NENHUMA UNIQUE em financeiro_baixas — PERMITE multiplas baixas
+Evidencia 3: NENHUMA tabela de ajuste/complemento — BLOQUEIA Alternativa C
+Evidencia 4: NENHUM estorno registrado — mecanismo existe mas nao usado
+Evidencia 5: NENHUM FP com saldo_restante > 0 — primeiro caso
+Evidencia 6: NENHUMA baixa com valor_original <> FP.valor — primeiro caso
+Evidencia 7: Trigger trg_guardar_pagar_pago_sem_baixa — nao dispara em UPDATE de valor
+Evidencia 8: RPC f_confirmar_pagamento_prestador — valida saldo = valor (rejeita parcial)
+Evidencia 9: RPC f_confirmar_pagamento_fechamento — processa itens de fechamento
+Evidencia 10: PP 32fe474f — pagamento manual sem OS, R.177,92
+Evidencia 11: CESAR baixa — observacao referencia PP 32fe474f (pagamento consolidado)
+
+
+==========================================================================
+SECAO 12 — CLASSIFICACAO FINAL
+==========================================================================
+
+CESAR_RECONCILIATION = PASS
+
+Justificativa:
+  + Preserva R como pagamento historico real (baixa inalterada)
+  + Reconhece R,86 como saldo (saldo_restante)
+  + Nao duplica obrigacao (FP = PP = R,86)
+  + Nao falsifica historico (baixa preservada)
+  + Compativel com constraints (UPDATE, nao INSERT)
+  + Mantem DRE coerente (usa PP.valor_liquido, sem efeito)
+  + Rollback definido e seguro
+  + Rastreabilidade preservada (updated_at + observacoes)
+
+Ressalva:
+  ! Pagamento parcial via RPC padrao e bloqueado
+  ! Primeiro caso de saldo parcial no sistema
+  ! Requer verificacao de relatorios pos-write
+
+
+==========================================================================
+SECAO 13 — INSTRUCOES PARA EXECUCAO FUTURA
+==========================================================================
+
+1. PARAR IMEDIATAMENTE — plano definido, writes NAO executados
+2. Aguardar autorizacao explicita para executar Writes 1-4
+3. Executar Writes 1-3 na ordem (FP, baixa_valor_original, baixa_saldo)
+4. Executar Write 4 opcional (observacoes)
+5. Rodar CHECKs 1-7
+6. Verificar relatorios de DRE e Fluxo de Caixa
+7. Documentar resultado em relatorio final
+
+FIM DO PLANO DE RECONCILIACAO FIN-SANE-02M.5D

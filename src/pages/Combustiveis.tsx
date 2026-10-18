@@ -13,8 +13,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { combustiveisService, PrecoCombustivel } from "@/services/combustiveis";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 const fmtMoeda = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const COMB_KEY_MAP: Record<string, string> = {
+  "Gasolina": "Gasolina Comum",
+  "Diesel S10": "Diesel S10",
+};
+
+function getPrecoComb(comb: Record<string, any>, nome: string): number {
+  const key = COMB_KEY_MAP[nome] || nome;
+  return comb[key]?.preco ?? 0;
+}
 
 export default function Combustiveis() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,13 +33,8 @@ export default function Combustiveis() {
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
   const [loading, setLoading] = useState(true);
 
-  // MOCKS DA ESTRUTURA
-  const [comb, setComb] = useState<any>({
-    "Diesel S10": { preco: 5.92, var_dia: 0.05, var_7d: 0.12, var_30d: -0.03, data: new Date().toISOString(), fonte: "combustivelapi.com.br" },
-    "Diesel Comum": { preco: 5.85, var_dia: -0.01, var_7d: 0.08, var_30d: 0.02, data: new Date().toISOString(), fonte: "combustivelapi.com.br" },
-    "Gasolina Comum": { preco: 5.67, var_dia: 0.00, var_7d: -0.05, var_30d: -0.10, data: new Date().toISOString(), fonte: "ANP (Backup)" },
-    "Etanol": { preco: 3.89, var_dia: 0.08, var_7d: 0.15, var_30d: 0.20, data: new Date().toISOString(), fonte: "Manual" }
-  });
+  const [comb, setComb] = useState<any>(null);
+  const [combError, setCombError] = useState<string | null>(null);
 
   const [simulacao, setSimulacao] = useState(6.20);
   const [frotaConfig, setFrotaConfig] = useState([
@@ -44,13 +50,24 @@ export default function Combustiveis() {
   ]);
 
   useEffect(() => {
-    // Simulated fetch call using our Cascade service
-    combustiveisService.syncCombustivelPrice("SP", "diesel_s10").then(() => {
-      setLoading(false);
-    });
+    setCombError("Integração de combustíveis não configurada. Configure as chaves de API em Configurações > Integrações.");
+    setLoading(false);
   }, []);
 
   const CardCombustivel = ({ nome, icone: Icon, data }: any) => {
+    if (!data) {
+      return (
+        <Card className="relative overflow-hidden shadow-sm opacity-60">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 rounded-xl bg-slate-100 text-slate-400"><Icon className="w-5 h-5" /></div>
+              <span className="font-bold text-slate-400">{nome}</span>
+            </div>
+            <p className="text-slate-400 text-sm">Dados indisponiveis</p>
+          </CardContent>
+        </Card>
+      );
+    }
     const isUp = data.var_dia > 0;
     const isDown = data.var_dia < 0;
     const isManual = data.fonte === 'Manual';
@@ -124,73 +141,32 @@ export default function Combustiveis() {
 
         {/* --- DASHBOARD PRINCIPAL --- */}
         <TabsContent value="dashboard" className="space-y-6">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <CardCombustivel nome="Diesel S10" icone={Fuel} data={comb["Diesel S10"]} />
-              <CardCombustivel nome="Diesel Comum" icone={Fuel} data={comb["Diesel Comum"]} />
-              <CardCombustivel nome="Gasolina Comum" icone={Zap} data={comb["Gasolina Comum"]} />
-              <CardCombustivel nome="Etanol" icone={Zap} data={comb["Etanol"]} />
-           </div>
-
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-2 shadow-sm border-slate-200">
-                <CardHeader className="border-b pb-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <CardTitle className="text-lg">Indicadores de Impacto na Frota (Diesel S10)</CardTitle>
-                      <CardDescription>Resumo dos acréscimos comparando com a base de 30 dias atrás.</CardDescription>
-                    </div>
-                    <Badge className="bg-slate-800 hover:bg-slate-700">Mês Vigente</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6">
-                   <div className="bg-slate-50 p-4 rounded-xl border">
-                      <p className="text-xs font-bold text-slate-500 uppercase">Custo Médio/Km (VUC)</p>
-                      <p className="text-3xl font-black text-slate-800 mt-2">{fmtMoeda(comb["Diesel S10"].preco / 9)}</p>
-                      <p className="text-xs text-red-600 font-semibold mt-1">+{fmtMoeda((comb["Diesel S10"].preco / 9) - ((comb["Diesel S10"].preco - 0.03) / 9))} vs. mês anterior</p>
-                   </div>
-                   <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-                      <p className="text-xs font-bold text-red-800 uppercase">Impacto Global Projetado</p>
-                      <p className="text-3xl font-black text-red-600 mt-2">+ R$ 4.850</p>
-                      <p className="text-xs text-red-700 font-semibold mt-1">Custo extra estimado este mês</p>
-                   </div>
-                   <div className="bg-slate-50 p-4 rounded-xl border flex flex-col justify-center">
-                      <div className="flex items-center justify-between">
-                         <p className="text-sm font-bold text-slate-600">Próxima Leitura Automática API</p>
-                         <Clock className="w-4 h-4 text-slate-400" />
-                      </div>
-                      <p className="text-lg font-bold text-slate-800 mt-2">12:54:10</p>
-                      <div className="w-full bg-slate-200 h-1.5 rounded-full mt-3 overflow-hidden">
-                         <div className="bg-amber-500 h-full w-[40%]"></div>
-                      </div>
-                   </div>
-                </CardContent>
-              </Card>
-
-              <Card className="shadow-sm border-orange-200">
-                <CardHeader className="bg-orange-50/50 rounded-t-xl border-b border-orange-100 pb-4">
-                  <CardTitle className="text-orange-900 text-base flex gap-2 items-center"><AlertTriangle className="w-5 h-5 text-orange-600"/> Alertas Diretos</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4 space-y-4">
-                   <div className="border-l-4 border-red-500 pl-4 py-1">
-                      <p className="font-bold text-slate-800">Alta no Diesel S10</p>
-                      <p className="text-sm text-slate-600 mt-1">O preço subiu R$ 0,12/L hoje (+2,3%) na região de São Paulo.</p>
-                      <div className="flex gap-2 mt-3">
-                         <Button variant="outline" size="sm" className="h-7 text-[10px] w-full" onClick={() => handleTabChange('impacto')}>Ver Impacto Detalhado</Button>
-                      </div>
-                   </div>
-                   {/* Fallback de layout */}
-                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 pt-3 flex flex-col items-center justify-center text-center opacity-70">
-                      <Info className="w-4 h-4 text-slate-400 mb-2" />
-                      <p className="text-xs text-slate-500">Nenhuma variação súbita de Gasolina nas últimas 48h.</p>
-                   </div>
-                </CardContent>
-              </Card>
-           </div>
+           {combError && !comb ? (
+             <Card className="border-amber-200 bg-amber-50/30">
+               <CardContent className="p-8 text-center">
+                 <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-4" />
+                 <h3 className="text-lg font-semibold text-amber-800 mb-2">Integração não configurada</h3>
+                 <p className="text-amber-700 text-sm max-w-lg mx-auto">{combError}</p>
+                 <Button variant="outline" className="mt-4" onClick={() => window.location.href = "/configuracoes?tab=central-integracoes"}>
+                   <Settings className="w-4 h-4 mr-2" /> Ir para Integrações
+                 </Button>
+               </CardContent>
+             </Card>
+           ) : loading ? (
+              <div className="flex justify-center py-12"><ProgressiveBlocksLoader size="normal" /></div>
+            ) : null}
         </TabsContent>
 
         {/* --- IMPACTO OPERACIONAL --- */}
         <TabsContent value="impacto" className="space-y-6">
-           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           {!comb ? (
+             <Card className="border-amber-200 bg-amber-50/30">
+               <CardContent className="p-8 text-center">
+                 <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-4" />
+                 <p className="text-amber-700 text-sm">Integração de combustíveis não configurada.</p>
+               </CardContent>
+             </Card>
+           ) : (<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                  <CardHeader>
                     <CardTitle>Cálculo de Consumo por Perfil (km/Litro)</CardTitle>
@@ -201,7 +177,7 @@ export default function Combustiveis() {
                       <TableHeader><TableRow><TableHead>Veículo</TableHead><TableHead>Combustível</TableHead><TableHead className="text-right">Rendimento Config</TableHead><TableHead className="text-right">R$/Km Hoje</TableHead></TableRow></TableHeader>
                       <TableBody>
                          {frotaConfig.map((v, i) => {
-                           const pToday = comb[v.comb].preco;
+                           const pToday = getPrecoComb(comb, v.comb);
                            const custo = pToday / v.km;
                            return (
                              <TableRow key={i}>
@@ -257,10 +233,11 @@ export default function Combustiveis() {
                     </div>
                  </CardContent>
               </Card>
-           </div>
-        </TabsContent>
+            </div>
+           )}
+         </TabsContent>
 
-        {/* --- ABASTECIMENTOS E REEMBOLSOS --- */}
+         {/* --- ABASTECIMENTOS E REEMBOLSOS --- */}
         <TabsContent value="abastecimentos" className="space-y-6">
            <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-4">

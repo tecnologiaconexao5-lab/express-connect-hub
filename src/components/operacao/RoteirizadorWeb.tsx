@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -65,206 +65,142 @@ import {
 } from "@/services/roteirizacaoService";
 import { calcularDistanciaTempoRota } from "@/services/roteirizacaoMapbox";
 
-const mockPedidos: PedidoRoteirizacao[] = [
-  {
-    id: "1",
-    numeroPedido: "PED-2024-001",
-    cliente: "Magazine Luiza",
-    destinatario: "João Silva",
-    telefone: "11999999999",
-    cep: "01234-567",
-    enderecoCompleto: "Rua Augusta, 150, Consolação",
-    bairro: "Consolação",
-    cidade: "São Paulo",
-    estado: "SP",
-    latitude: -23.5505,
-    longitude: -46.6333,
-    pesoKg: 2.5,
-    quantidadeVolumes: 1,
-    comprimentoCm: 30,
-    larguraCm: 20,
-    alturaCm: 15,
-    cubagemM3: 0.009,
-    tipoCarga: "seco",
-    secoOuRefrigerado: "seco",
-    prioridade: "alta",
-    observacoes: "Cliente prefers morning delivery",
-    status: "pendente"
-  },
-  {
-    id: "2",
-    numeroPedido: "PED-2024-002",
-    cliente: "Americanas",
-    destinatario: "Maria Santos",
-    telefone: "11988888888",
-    cep: "04567-890",
-    enderecoCompleto: "Av. Paulista, 1000, Bela Vista",
-    bairro: "Bela Vista",
-    cidade: "São Paulo",
-    estado: "SP",
-    latitude: -23.5629,
-    longitude: -46.6544,
-    pesoKg: 5.0,
-    quantidadeVolumes: 2,
-    comprimentoCm: 40,
-    larguraCm: 30,
-    alturaCm: 20,
-    cubagemM3: 0.048,
-    tipoCarga: "seco",
-    secoOuRefrigerado: "seco",
-    prioridade: "media",
-    status: "pendente"
-  },
-  {
-    id: "3",
-    numeroPedido: "PED-2024-003",
-    cliente: "iFood",
-    destinatario: "Restaurante Sabor",
-    telefone: "11977777777",
-    cep: "02345-678",
-    enderecoCompleto: "Rua das Laranjeiras, 500, Laranjeiras",
-    bairro: "Laranjeiras",
-    cidade: "São Paulo",
-    estado: "SP",
-    latitude: -23.6500,
-    longitude: -46.6500,
-    pesoKg: 15.0,
-    quantidadeVolumes: 3,
-    comprimentoCm: 60,
-    larguraCm: 40,
-    alturaCm: 30,
-    cubagemM3: 0.216,
-    tipoCarga: "refrigerado",
-    secoOuRefrigerado: "refrigerado",
-    temperaturaMinima: 5,
-    janelaInicio: "10:00",
-    janelaFim: "14:00",
-    prioridade: "urgente",
-    observacões: "Manter refrigerado",
-    status: "pendente"
-  },
-  {
-    id: "4",
-    numeroPedido: "PED-2024-004",
-    cliente: "Mercado Livre",
-    destinatario: "Carlos Oliveira",
-    telefone: "11966666666",
-    cep: "05678-901",
-    enderecoCompleto: "Rua do Comércio, 200, Centro",
-    bairro: "Centro",
-    cidade: "Osasco",
-    estado: "SP",
-    latitude: -23.5327,
-    longitude: -46.7917,
-    pesoKg: 0.5,
-    quantidadeVolumes: 1,
-    comprimentoCm: 20,
-    larguraCm: 15,
-    alturaCm: 10,
-    cubagemM3: 0.003,
-    tipoCarga: "seco",
-    secoOuRefrigerado: "seco",
-    prioridade: "baixa",
-    status: "pendente"
-  },
-  {
-    id: "5",
-    numeroPedido: "PED-2024-005",
-    cliente: "Shopee",
-    destinatario: "Ana Paula",
-    telefone: "11955555555",
-    cep: "06789-012",
-    enderecoCompleto: "Av. Nacional, 350, Jardim",
-    bairro: "Jardim",
-    cidade: "Barueri",
-    estado: "SP",
-    latitude: -23.5088,
-    longitude: -46.8789,
-    pesoKg: 8.0,
-    quantidadeVolumes: 1,
-    comprimentoCm: 50,
-    larguraCm: 35,
-    alturaCm: 25,
-    cubagemM3: 0.044,
-    tipoCarga: "seco",
-    secoOuRefrigerado: "seco",
-    prioridade: "media",
-    status: "pendente"
-  }
-];
-
-const mockVeiculos: VeiculoRoteirizacao[] = [
-  {
-    id: "v1",
-    tipoVeiculo: "Fiorino",
-    placa: "ABC-1234",
-    motorista: "José Carlos",
-    prestadorId: "p1",
-    cepBasePrestador: "01234-000",
-    regiaoBase: "Centro",
-    capacidadePesoKg: 500,
-    capacidadeCubagemM3: 2.5,
-    tipoOperacao: "seco",
-    disponivel: true,
-    contratoOuAvulso: "contrato"
-  },
-  {
-    id: "v2",
-    tipoVeiculo: "Van_VUC",
-    placa: "DEF-5678",
-    motorista: "Pedro Santos",
-    prestadorId: "p2",
-    cepBasePrestador: "04567-000",
-    regiaoBase: "Zona Sul",
-    capacidadePesoKg: 1200,
-    capacidadeCubagemM3: 6,
-    tipoOperacao: "seco",
-    disponivel: true,
-    contratoOuAvulso: "avulso"
-  },
-  {
-    id: "v3",
-    tipoVeiculo: "Van_VUC",
-    placa: "GHI-9012",
-    motorista: "Ricardo Souza",
-    prestadorId: "p3",
-    cepBasePrestador: "05678-000",
-    regiaoBase: "Zona Oeste",
-    capacidadePesoKg: 1200,
-    capacidadeCubagemM3: 6,
-    tipoOperacao: "refrigerado",
-    temperaturaMinima: 0,
-    disponivel: true,
-    contratoOuAvulso: "contrato"
-  },
-  {
-    id: "v4",
-    tipoVeiculo: "Caminhao_34",
-    placa: "JKL-3456",
-    motorista: "Marcos Silva",
-    prestadorId: "p4",
-    cepBasePrestador: "01000-000",
-    regiaoBase: "Norte",
-    capacidadePesoKg: 3000,
-    capacidadeCubagemM3: 15,
-    tipoOperacao: "seco",
-    disponivel: true,
-    contratoOuAvulso: "contrato"
-  }
-];
-
-const veiculosSugeridos = sugerirVeiculosNecessarios(mockPedidos, ['seco', 'refrigerado']);
-
 const RoteirizadorWeb = () => {
   const [activeTab, setActiveTab] = useState("visao_geral");
-  const [pedidos, setPedidos] = useState<PedidoRoteirizacao[]>(mockPedidos);
-  const [veiculos, setVeiculos] = useState<VeiculoRoteirizacao[]>(mockVeiculos);
+  const [pedidos, setPedidos] = useState<PedidoRoteirizacao[]>([]);
+  const [veiculos, setVeiculos] = useState<VeiculoRoteirizacao[]>([]);
   const [modoRoteirizacao, setModoRoteirizacao] = useState<ModoRoteirizacao>("sugestao");
-  
+  const [loading, setLoading] = useState(true);
   
   const [importedPedidos, setImportedPedidos] = useState<PedidoRoteirizacao[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [fileError, setFileError] = useState("");
+  
+  // Carregar dados reais do Supabase
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        // Carregar pedidos reais de ordens_servico com enderecos
+        const { data: ordens } = await supabase
+          .from("ordens_servico")
+          .select("id, numero, cliente_id, cliente, enderecos, peso, volumes, cubagem, tipo_operacao, prioridade, carga_refrigerada, carga_tipo, instrucoes_operacionais_os, data_programada, status, created_at")
+          .in("status", ["pendente", "agendada", "em_aberto"])
+          .order("created_at", { ascending: false })
+          .limit(200);
+        
+        if (ordens && ordens.length > 0) {
+          const pedidosReais: PedidoRoteirizacao[] = [];
+          for (const os of ordens) {
+            const enderecos = os.enderecos ? (typeof os.enderecos === 'string' ? JSON.parse(os.enderecos) : os.enderecos) : [];
+            if (Array.isArray(enderecos)) {
+              enderecos.forEach((end: any, idx: number) => {
+                if (end.cidade) {
+                  pedidosReais.push({
+                    id: `${os.id}-${idx}`,
+                    numeroPedido: os.numero || `OS-${os.id?.toString().slice(0,8)}`,
+                    cliente: os.cliente || "N/I",
+                    destinatario: end.nome_destinatario || end.nome || os.cliente || "N/I",
+                    telefone: end.telefone || "",
+                    cep: (end.cep || "").toString().replace(/\D/g, ''),
+                    enderecoCompleto: `${end.logradouro || end.endereco || ""}, ${end.numero || ""} - ${end.bairro || ""}`,
+                    bairro: end.bairro || "",
+                    cidade: end.cidade || "",
+                    estado: end.uf || "",
+                    latitude: parseFloat(end.latitude) || 0,
+                    longitude: parseFloat(end.longitude) || 0,
+                    pesoKg: os.peso ? os.peso / Math.max(enderecos.length, 1) : 0,
+                    quantidadeVolumes: os.volumes ? Math.ceil(os.volumes / Math.max(enderecos.length, 1)) : 0,
+                    comprimentoCm: 0, larguraCm: 0, alturaCm: 0,
+                    cubagemM3: os.cubagem ? os.cubagem / Math.max(enderecos.length, 1) : 0,
+                    tipoCarga: os.carga_tipo || "seco",
+                    secoOuRefrigerado: os.carga_refrigerada ? "refrigerado" : "seco",
+                    prioridade: os.prioridade || "normal",
+                    observacoes: os.instrucoes_operacionais_os || "",
+                    status: "pendente" as const
+                  });
+                }
+              });
+            }
+            // Se não tem enderecos, usar origem/destino
+            if (enderecos.length === 0 && os.cliente) {
+              pedidosReais.push({
+                id: os.id || `os-${Date.now()}`,
+                numeroPedido: os.numero || `OS-${os.id?.toString().slice(0,8)}`,
+                cliente: os.cliente || "N/I",
+                destinatario: os.cliente || "N/I",
+                telefone: "",
+                cep: "",
+                enderecoCompleto: "",
+                bairro: "", cidade: "", estado: "",
+                latitude: 0, longitude: 0,
+                pesoKg: os.peso || 0,
+                quantidadeVolumes: os.volumes || 0,
+                comprimentoCm: 0, larguraCm: 0, alturaCm: 0,
+                cubagemM3: os.cubagem || 0,
+                tipoCarga: os.carga_tipo || "seco",
+                secoOuRefrigerado: os.carga_refrigerada ? "refrigerado" : "seco",
+                prioridade: os.prioridade || "normal",
+                observacoes: os.instrucoes_operacionais_os || "",
+                status: "pendente" as const
+              });
+            }
+          }
+          setPedidos(pedidosReais);
+        }
+
+        // Carregar veículos reais de prestadores + veiculos
+        const { data: prestadores } = await supabase
+          .from("prestadores")
+          .select("id, nome_completo, veiculos, status, cep, regiao_principal")
+          .eq("status", "ativo")
+          .limit(50);
+
+        const { data: veiculosData } = await supabase
+          .from("veiculos")
+          .select("id, tipo_veiculo, placa, capacidade_kg, capacidade_m3, prestador_vinculado, termica, status")
+          .eq("status", "Ativo")
+          .limit(100);
+
+        if (veiculosData && veiculosData.length > 0) {
+          const veiculosMap = new Map<string, any[]>();
+          veiculosData.forEach(v => {
+            const key = v.prestador_vinculado?.toString() || 'unknown';
+            if (!veiculosMap.has(key)) veiculosMap.set(key, []);
+            veiculosMap.get(key)!.push(v);
+          });
+
+          const veiculosReais: VeiculoRoteirizacao[] = [];
+          const prestadorMap = new Map<string, any>();
+          if (prestadores) prestadores.forEach(p => prestadorMap.set(p.id, p));
+
+          for (const v of veiculosData) {
+            const prest = v.prestador_vinculado ? prestadorMap.get(v.prestador_vinculado.toString()) : null;
+            veiculosReais.push({
+              id: v.id,
+              tipoVeiculo: v.tipo_veiculo || "VUC",
+              placa: v.placa || "SEM PLACA",
+              motorista: prest?.nome_completo || "N/I",
+              prestadorId: v.prestador_vinculado?.toString() || "",
+              cepBasePrestador: prest?.cep || "",
+              regiaoBase: prest?.regiao_principal || "",
+              capacidadePesoKg: v.capacidade_kg || CAPACIDADES_PADRAO_VEICULOS[v.tipo_veiculo as TipoVeiculo]?.capacidadeKg || 1000,
+              capacidadeCubagemM3: v.capacidade_m3 || CAPACIDADES_PADRAO_VEICULOS[v.tipo_veiculo as TipoVeiculo]?.capacidadeM3 || 5,
+              tipoOperacao: v.termica === "refrigerado" ? "refrigerado" : "seco",
+              disponivel: true,
+              contratoOuAvulso: "contrato"
+            });
+          }
+          setVeiculos(veiculosReais);
+        }
+      } catch (e: any) {
+        console.warn("[Roteirizador] Erro ao carregar dados:", e.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  });
 
   const processImportData = (data: any[]) => {
     const novosPedidos: PedidoRoteirizacao[] = data.map((row, index) => {
@@ -482,7 +418,8 @@ const RoteirizadorWeb = () => {
     setIsGerando(true);
     setTimeout(() => {
       try {
-        const veiculosParaUso = modoRoteirizacao === 'sugestao' ? veiculosSugeridos as any : veiculos;
+        const veiculosSugeridosCalc = pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']) : [];
+        const veiculosParaUso = modoRoteirizacao === 'sugestao' ? veiculosSugeridosCalc as any : veiculos;
         const res = distribuirPedidosEntreVeiculos(pedidos, veiculosParaUso, modoRoteirizacao);
         setDistribuicaoGerada(res);
         setRotasCalculadas(new Map());
@@ -571,8 +508,8 @@ const RoteirizadorWeb = () => {
 
   const downloadModeloPlanilha = () => {
     const csvContent = CABECALHO_PLANILHA.join(",") + "\n" + 
-      "PED-2024-001,Magazine Luiza,João Silva,11999999999,01234-567,Rua Augusta 150,Consolação,São Paulo,SP,2.5,1,30,20,15,seco,seco,,08:00,12:00,media,\n" +
-      "PED-2024-002,Americanas,Maria Santos,11988888888,04567-890,Av Paulista 1000,Bela Vista,São Paulo,SP,5.0,2,40,30,20,seco,seco,,,alta,";
+      "PED-001,Cliente A,João Silva,11999999999,01234-567,Rua Augusta 150,Consolação,São Paulo,SP,2.5,1,30,20,15,seco,seco,,08:00,12:00,media,\n" +
+      "PED-002,Cliente B,Maria Santos,11988888888,04567-890,Av Paulista 1000,Bela Vista,São Paulo,SP,5.0,2,40,30,20,seco,seco,,,alta,";
     
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -707,9 +644,9 @@ const RoteirizadorWeb = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{veiculosSugeridos.length}</p>
-                <p className="text-xs text-muted-foreground">
-                  {veiculosSugeridos.map(v => getNomeTipoVeiculo(v.tipo)).join(", ")}
+                <p className="text-2xl font-bold">{pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']).length : veiculos.length}</p>
+                  <p className="text-sm text-muted-foreground">
+                  {(pedidos.length > 0 ? sugerirVeiculosNecessarios(pedidos, ['seco', 'refrigerado']) : []).map(v => getNomeTipoVeiculo(v.tipo)).join(", ")}
                 </p>
               </CardContent>
             </Card>

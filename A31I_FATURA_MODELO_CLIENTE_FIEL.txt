@@ -1,0 +1,162 @@
+================================================================================
+ A31I — FATURA MODELO DO CLIENTE — REPRODUÇÃO FIEL DO PADRÃO VISUAL
+ Correção do PDF/Prévia para reproduzir o template de referência
+ Relatório de Fechamento — Missão A31-I (modo econômico)
+ Data: 2026-08-17   |   Escopo: PDF + Prévia do modelo de faturamento do cliente
+================================================================================
+
+================================================================================
+SEÇÃO 1 — OBJETIVO
+================================================================================
+Reproduzir VISUALMENTE o padrão de referência no PDF/Prévia do modelo de
+faturamento do cliente (internamente código "calvo"): logo grande centralizado,
+faixa salmão com razão social + dados, faixa cinza "Cobrança para:", tabela
+única FATURA|DESCRIÇÃO|PARCELA|VENCIMENTO|VALOR, descrição consolidada com
+romaneios, valor em azul escuro, dados bancários à esquerda, rodapé discreto.
+Sem migration, sem alterar dados de produção, sem emitir fatura real.
+
+================================================================================
+SEÇÃO 2 — ARQUIVOS ALTERADOS
+================================================================================
+1. src/utils/pdfFatura.ts — gerarPdfCalvo refeito para o layout da referência:
+   - Logo grande centralizado (fallback texto "CONEXÃO EXPRESS" quando sem imagem).
+   - NOVA faixa horizontal salmão/laranja claro com razão social
+     "CONEXÃO SERVIÇOS EXPRESS LTDA" + CNPJ/IE/endereço/e-mail centralizados.
+   - Faixa "Cobrança para:" em CINZA (não mais fundo claro) + dados cliente.
+   - Tabela com cabeçalho CINZA claro (não navy), bordas finas escuras,
+     colunas proporcionais (FATURA 85pt, PARCELA 55pt, VENCIMENTO 85pt,
+     VALOR 90pt, DESCRIÇÃO auto = maior parte).
+   - TOTAL DA FATURA em AZUL ESCURO (#003399).
+   - Dados bancários à esquerda ("Dados para Transferência Bancária").
+   - Rodapé discreto canto inferior direito "Fatura [nº] - Conexão Express"
+     (sem linha laranja, sem centralização).
+2. src/components/financeiro/FaturaPanel.tsx — PRÉVIA = PDF:
+   - Cabeçalho do modelo do cliente: logo grande centralizado, faixa salmão
+     com razão social + dados, faixa cinza "Cobrança para:" + CNPJ/IE/endereço.
+   - Tabela da prévia usa as MESMAS colunas do PDF
+     (FATURA/DESCRIÇÃO/PARCELA/VENCIMENTO/VALOR), cabeçalho cinza claro, bordas
+     finas; total em azul escuro; dados bancários à esquerda; rodapé discreto.
+   - Modelo "conexao_express" preservado (tabela Data/OS/Romaneio).
+   - Rótulo "Descrição da Fatura (Calvo)" → "Descrição da Fatura (consolidada)".
+   - Badge da prévia: "Modelo de faturamento do cliente" (não "Padrão Calvo").
+   - Seletor de modelo: opção "Modelo do cliente (consolidado)" (não "Padrão
+     Calvo"); card de resumo "Modelo do cliente (consolidado)".
+   - Logo da prévia: /logo-oficial-conexao.png (fallback oculta se ausente).
+3. src/components/financeiro/RegrasFinanceirasClienteTab.tsx — opção de modelo
+   por cliente renomeada para "Modelo do cliente (consolidado)" (configuração
+   por cliente — sem expor "Calvo" na UX).
+4. src/test/a31i_fatura_pdf_visual.test.ts — NOVO (teste visual local).
+
+================================================================================
+SEÇÃO 3 — COMO O LAYOUT FOI APROXIMADO DA REFERÊNCIA
+================================================================================
+- A4 retrato, fundo branco, margens 44pt.
+- Logo: grande, centralizado no topo, com espaço branco ao redor (não pequeno
+  no canto) — fallback textual quando imagem indisponível.
+- Faixa salmão (RGB 250,190,150) logo abaixo do logo, contendo razão social em
+  negrito e abaixo CNPJ/IE/endereço/e-mail centralizados (hierarquia preservada).
+- Faixa "Cobrança para:" em CINZA (RGB 210,210,210) com borda, texto em negrito;
+  abaixo CNPJ/IE/endereço alinhados à esquerda. NÃO é card.
+- Tabela única: cabeçalho cinza claro, bordas finas escuras, colunas com as
+  proporções pedidas (FATURA estreita, DESCRIÇÃO larga, PARCELA estreita,
+  VENCIMENTO média, VALOR média). SEM OS interna/data/origem/destino/prestador/
+  veículo.
+- Descrição: frase consolidada (montarDescricaoCalvo) — exemplo reproduzido:
+  "Receita de CT-e referente aos romaneios nº 343241, 343216, 343198, 340927
+  (sem cobrança), 342396 e 343099 e serviços de devolução."
+- Valor total destacado em azul escuro (#003399).
+- Bloco "Dados para Transferência Bancária" abaixo da tabela, à esquerda, com
+  BANCO/AGÊNCIA/CONTA/PIX (fonte configuração financeira oficial — sem hardcode).
+- Rodapé discreto, pequeno, cinza, canto inferior direito.
+
+================================================================================
+SEÇÃO 4 — LOGO
+================================================================================
+- PDF: getLogoWithFallback(false) → logo colorido centralizado (maxWidth 180,
+  maxHeight 64, align center); fallback texto "CONEXÃO EXPRESS" em navy.
+- Prévia: /logo-oficial-conexao.png centralizado (h-16), fallback oculto.
+
+================================================================================
+SEÇÃO 5 — TABELA PRINCIPAL
+================================================================================
+- PDF (autoTable): head cinza claro (220,220,220), texto escuro, lineColor
+  escuro fino; colunas 0=FATURA(85), 1=DESCRIÇÃO(auto), 2=PARCELA(55,center),
+  3=VENCIMENTO(85,center), 4=VALOR(90,right).
+- Prévia: mesma estrutura (thead #DCDCDC, border slate-400).
+
+================================================================================
+SEÇÃO 6 — COMO OS ROMANEIOS SÃO CONSOLIDADOS
+================================================================================
+- montarDescricaoCalvo (faturaService.ts) já consolida: dedup, vírgula + "e",
+  "(sem cobrança)" e sufixo "e serviços de devolução" — uma única frase.
+- O FaturaPanel gera essa descrição automaticamente no rascunho e permite edição
+  (Textarea) antes da emissão; prévia e PDF usam a mesma `descricao`.
+
+================================================================================
+SEÇÃO 7 — CLIENTE / VENCIMENTO / VALOR
+================================================================================
+- Cliente: razão social do cliente (faixa "Cobrança para:"), CNPJ/IE/endereço.
+- Vencimento: sugerido pela regra do cliente (sugerirVencimentoParaCliente) e
+  editável antes da emissão.
+- Valor: soma do Total Cliente dos serviços (montarPreviaFatura/fatura.itens)
+  + acréscimos - descontos; destacado em azul escuro.
+- FATURA: "Rascunho" na prévia (não consome numeração); número oficial após
+  emissão.
+
+================================================================================
+SEÇÃO 8 — COMO O MODELO É ASSOCIADO AO CLIENTE
+================================================================================
+- Sugestão automática: sugerirModeloFaturaParaCliente(clienteId) usa a REGRA DO
+  CLIENTE (configFinanceiraService → regras.modeloFaturaPadrao), NÃO o nome.
+- Configuração por cliente: RegrasFinanceirasClienteTab (Modelo de Fatura
+  Padrão por cliente).
+- O código técnico interno continua "calvo" (sem migration); apenas a UX usa
+  nome neutro.
+
+================================================================================
+SEÇÃO 9 — CONFIRMAÇÃO: "CALVO" NÃO EXPOSTO GENERICAMENTE NA UX
+================================================================================
+- grep nos componentes: "Calvo" só aparece como código técnico interno
+  (value="calvo", modeloFaturaPadrao: "calvo") — nunca como label visível.
+- Rótulos neutros adotados:
+  · "Modelo de faturamento do cliente" (badge da prévia)
+  · "Modelo do cliente (consolidado)" (seletor FaturaPanel + Regras cliente)
+  · "Descrição da Fatura (consolidada)" (campo editável)
+- Não foi feita migration para renomear o código técnico (fora de escopo).
+
+================================================================================
+SEÇÃO 10 — TESTE VISUAL REALIZADO
+================================================================================
+- src/test/a31i_fatura_pdf_visual.test.ts gera PDF local mocked (modelo
+  "calvo", dados fictícios) em test-results/a31i/fatura_modelo_cliente_visual.pdf
+  (≈7,9 KB), sem emitir fatura real e sem consumir numeração de produção.
+- Validação do conteúdo gerado (extração de texto do PDF):
+  · CONEXÃO SERVIÇOS EXPRESS ......... presente
+  · CNPJ / INSCRIÇÃO ESTADUAL ........ presente
+  · Cobrança para: CALVO LOGÍSTICA ... presente
+  · FATURA | DESCRIÇÃO | PARCELA | VENCIMENTO | VALOR ... presente
+  · TOTAL DA FATURA .................. presente
+  · Dados para Transferência Bancária  presente
+  · Fatura Rascunho - Conexão Express. presente (rodapé)
+- Ferramentas de rasterização (pdftoppm/ghostscript) não disponíveis no
+  ambiente Windows; a comparação visual fina fica como pendência para
+  conferência humana/QA com a referência.
+
+================================================================================
+SEÇÃO 11 — TESTES TÉCNICOS
+================================================================================
+- a31i_fatura_pdf_visual.test.ts (2 testes) — PASS (gera PDF + rascunho).
+- a30_modelos_fatura.test.ts (14) — PASS (montarDescricaoCalvo, sugestão).
+- fase2a_fatura.test.ts (10) — PASS.
+- fase2b_fatura_pdf.test.ts (11) — PASS.
+- npx tsc --noEmit → ✅ 0 erros
+- npx eslint (pdfFatura, FaturaPanel, RegrasFinanceirasClienteTab, teste) → ✅ 0
+- npm run build → ✅ 35.07s
+
+================================================================================
+SEÇÃO 12 — PENDÊNCIAS
+================================================================================
+- (QA/Humano) Comparar o PDF gerado (test-results/a31i/) com a referência e
+  refinar espaçamentos/fontes se necessário (sem rasterizer no ambiente atual).
+- Nenhuma migration executada; nenhum dado real de produção alterado; nenhuma
+  fatura emitida; numeração de produção intacta.

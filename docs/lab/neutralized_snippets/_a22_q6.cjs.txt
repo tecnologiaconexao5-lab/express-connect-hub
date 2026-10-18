@@ -1,0 +1,12 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const rpc = await c.query("SELECT p.proname, pg_get_function_result(p.oid) AS ret, pg_get_function_arguments(p.oid) AS args FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname IN ('f_contar_mensagens_nao_lidas_torre','f_marcar_mensagens_lidas_torre')");
+  console.log('RPC:', JSON.stringify(rpc.rows, null, 2));
+  const src = await c.query("SELECT pg_get_functiondef(oid) AS def FROM pg_proc WHERE proname='f_contar_mensagens_nao_lidas_torre'");
+  console.log('DEF:', src.rows[0]?.def);
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

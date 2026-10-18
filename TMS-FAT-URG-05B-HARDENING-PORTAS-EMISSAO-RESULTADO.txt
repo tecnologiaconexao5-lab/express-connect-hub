@@ -1,0 +1,166 @@
+================================================================================
+MISSAO: TMS-FAT-URG-05B-HARDENING-PORTAS-EMISSAO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: HARDENING CIRURGICO DO CONTRATO DE FATURAMENTO.
+================================================================================
+
+RESULTADO: PASS.
+  - f_regularizar_fatura_legada restrita a LEGADO (fatura JA emitida) e a service_role.
+  - UPDATE direto de status em faturas BLOQUEADO por trigger (guarda invoker).
+  - INSERT de fatura com status != 'rascunho' BLOQUEADO.
+  - Emissao oficial (f_emitir_fatura) segue como unica criadora de AR, exigindo 'aprovada'.
+  - Migration aplicada; 8 testes novos PASS; regressao 84/84; build OK.
+  - FAT-2026-000022 NAO alterada; zero lixo.
+
+================================================================================
+1. BEFORE x AFTER
+================================================================================
+BEFORE
+  - f_regularizar_fatura_legada: hash 9af1e4a6405da77e7e6dfdc6db6fe147; podia emitir
+    rascunho (criava AR + setava 'emitida'); GRANT EXECUTE para authenticated + service_role.
+  - f_emitir_fatura: hash e99e0d1b8b1743ff75678314a10e9a37 (exige 'aprovada').
+  - f_mover_fatura_status: hash eb410269aee78206f58e9a14e5e11827.
+  - faturas: trigger apenas trg_faturas_bloqueio_emissao_sem_ar. RLS fat_update_tms
+    (USING tenant) permitia UPDATE de QUALQUER coluna, INCLUSIVE status, por authenticated.
+AFTER
+  - f_regularizar_fatura_legada: hash 61dfcd8478ea8b81a907ad373c3060d6; SO aceita
+    v_fatura.status = 'emitida' (senao REGULARIZAR_SO_FATURA_EMITIDA); GRANT somente
+    service_role (authenticated/anon/PUBLIC REMOVIDOS).
+  - f_emitir_fatura: hash INALTERADO e99e...
+  - f_mover_fatura_status: hash INALTERADO eb41...
+  - faturas: novo trigger trg_faturas_protege_status (BEFORE INSERT OR UPDATE OF status),
+    funcao SECURITY INVOKER (prosecdef=false), que so permite mudanca de status por
+    RPC definer (current_user='postgres') ou service_role.
+
+================================================================================
+2. MIGRATION
+================================================================================
+APLICADA: supabase/migrations/20260925000004_fin_fat_urg_05b_hardening_portas.sql
+  (1) CREATE OR REPLACE f_regularizar_fatura_legada com guarda de status + grants restritos.
+  (2) CREATE OR REPLACE f_trg_faturas_protege_status (INVOKER) + CREATE TRIGGER
+      trg_faturas_protege_status BEFORE INSERT OR UPDATE OF status ON faturas.
+ROLLBACK : supabase/migrations/20260925000005_fin_fat_urg_05b_rollback.sql
+  (dropa trigger/funcao do guard e restaura f_regularizar + GRANT authenticated).
+Somente esta migration foi aplicada (nenhum lote). Aditiva/reversivel.
+
+================================================================================
+3. GRANTS (f_regularizar_fatura_legada)
+================================================================================
+BEFORE: authenticated, postgres, service_role
+AFTER : postgres, service_role  (authenticated/anon/PUBLIC sem EXECUTE)
+Comprovado: J2 => "permission denied for function f_regularizar_fatura_legada" (authenticated).
+
+================================================================================
+4. POLICIES / TRIGGERS
+================================================================================
+- RLS fat_update_tms: MANTIDA (edicao legitima continua). O controle de status passou a
+  ser feito por trigger (nao foi necessario mexer em policy).
+- faturas triggers AFTER: trg_faturas_bloqueio_emissao_sem_ar (ja existia) +
+  trg_faturas_protege_status (NOVO, BEFORE INSERT OR UPDATE OF status).
+- Funcao do guard: SECURITY INVOKER (prosecdef=false) — essencial para distinguir o
+  cliente (authenticated) das RPCs (definer/postgres).
+
+================================================================================
+5. MATRIZ DAS PORTAS
+================================================================================
+PORTA                        | RASCUNHO          | AGUARDANDO        | APROVADA | EMITIDA
+-----------------------------+-------------------+-------------------+----------+----------------------
+f_emitir_fatura              | BLOCK             | BLOCK             | PASS     | IDEMPOT (JA_EMITIDA)
+ (FATURA_NAO_APROVADA)       |                   |                   |          |
+f_regularizar_fatura_legada  | BLOCK             | BLOCK             | BLOCK    | LEGACY ONLY (service_role)
+ (REGULARIZAR_SO_FATURA_EMITIDA)                   |                   |          |
+UPDATE direto status (auth)  | BLOCK             | BLOCK             | BLOCK    | BLOCK
+ (FATURA_STATUS_SOMENTE_VIA_RPC)                  |                   |          |
+INSERT status != 'rascunho'  | BLOCK (FATURA_STATUS_INSERT_INVALIDO)               |
+f_mover_fatura_status        | rascunho->aguardando; aguardando->aprovada; aguardando->rascunho
+f_cancelar_fatura            | contrato oficial (definer)
+
+================================================================================
+6. TESTES NEGATIVOS (PROD, transacoes isoladas com ROLLBACK)
+================================================================================
+A) rascunho -> emitir (oficial): {success:false, error:"FATURA_NAO_APROVADA"}        BLOCK ✓
+B) aguardando -> emitir:         {success:false, error:"FATURA_NAO_APROVADA"}        BLOCK ✓
+C) aprovada -> emitir:           success=true, numero FAT-2026-000024; AR count=1     PASS ✓
+   retry -> {success:false, error:"FATURA_JA_EMITIDA"}; AR count continua=1           IDEMPOT ✓
+D) regularizar rascunho:         {success:false, error:"REGULARIZAR_SO_FATURA_EMITIDA"} BLOCK ✓
+E) regularizar aguardando:       {success:false, error:"REGULARIZAR_SO_FATURA_EMITIDA"} BLOCK ✓
+F) UPDATE direto status (auth):  FATURA_STATUS_SOMENTE_VIA_RPC                        BLOCK ✓
+F2) INSERT status='aprovada':    FATURA_STATUS_INSERT_INVALIDO                        BLOCK ✓
+F3) INSERT status='rascunho':    criada, status='rascunho'                            PASS ✓
+G) edicao legitima (auth):       vencimento=2026-10-05 e observacao='edit-ok' salvos;
+   status permanece 'rascunho'                                                        PASS ✓
+J1) emitir sem auth:             {success:false, error:"USUARIO_NAO_AUTENTICADO"}     BLOCK ✓
+J2) authenticated regularizar:   "permission denied for function ..."                 BLOCK ✓
+ZERO LIXO: faturas/AR iguais antes e depois (f=11, AR=49). Nada persistiu.
+
+================================================================================
+7. REGRESSAO / BUILD
+================================================================================
+Testes (8 arquivos): 84/84 PASS
+  fin_fat_urg_05b (8 novos) + fin_fat_urg_02 (18) + fin_fat_urg_04 (10) +
+  fin_ar_ux_01 (14) + fase2a_fatura (10) + fin_prog04b_emissao (3) +
+  f38_fatura_manual (16) + fin_prog05c3b_receber_paginacao (5).
+BUILD: npm run build -> OK ("built in 32.26s").
+TYPECHECK: sem alteracoes de TS alem de 1 arquivo de teste; erros pre-existentes
+  do financeiro permanecem (nao relacionados).
+
+================================================================================
+8. HASHES
+================================================================================
+f_regularizar_fatura_legada: BEFORE 9af1e4a6405da77e7e6dfdc6db6fe147
+                             AFTER  61dfcd8478ea8b81a907ad373c3060d6  (ALTEROU - hardening)
+f_emitir_fatura:             e99e0d1b8b1743ff75678314a10e9a37        (INALTERADO)
+f_mover_fatura_status:       eb410269aee78206f58e9a14e5e11827        (INALTERADO)
+f_trg_faturas_protege_status: criada, prosecdef=false (INVOKER)
+
+================================================================================
+9. ROLLBACK
+================================================================================
+20260925000005_fin_fat_urg_05b_rollback.sql:
+  - DROP TRIGGER trg_faturas_protege_status + DROP FUNCTION f_trg_faturas_protege_status.
+  - CREATE OR REPLACE f_regularizar_fatura_legada (versao original 20260924000001).
+  - REVOKE anon/PUBLIC; GRANT authenticated, service_role (restaura o BEFORE).
+Reversao de schema apenas; nao toca dados.
+
+================================================================================
+10. PROVA ZERO ALTERACAO EM FAT-2026-000022
+================================================================================
+FAT-2026-000022 (fatura 9977f2dc...): status=emitida, valor=300.00, vencimento=2026-10-25,
+conta_receber_id=c1c9013b... (INALTERADA). AR c1c9013b (aberto, 300.00) INALTERADO;
+count AR por fatura = 1. Nenhuma baixa/cancelamento/edicao. Zero DML sobre o caso.
+
+================================================================================
+11. HISTORICO / AUDITORIA (item 5)
+================================================================================
+- Mecanismo generico existente: tabela public.eventos_oficiais (migration 20260705000007
+  m99_event_bus_fundacao). NAO existe historico de transicoes de FATURA.
+- DECISAO: nao integrar agora (evitar mega-estrutura). Registrado como pendencia:
+  FAT-AUDIT-01 — historico das transicoes de fatura (rascunho->aguardando->aprovada->
+  emitida/cancelada) para o Fechamento TMS / Master 360.
+
+================================================================================
+12. RISCOS RESIDUAIS
+================================================================================
+R1. service_role (backend/admin) ainda pode alterar status direto — por design
+    (papel administrativo). O cliente/authenticated nao.
+R2. As RPCs oficiais (f_emitir/f_mover/f_cancelar) executam como definer (postgres),
+    permitidas pelo guard. Dependem de SECURITY DEFINER + search_path (mantidos).
+R3. RLS continua permitindo UPDATE de outras colunas (intencional); somente status
+    e' protegido. INSERT so aceita 'rascunho' (para nao-admins).
+R4. Sem historico de transicoes (FAT-AUDIT-01 pendente).
+R5. Erros TypeScript pre-existentes do ContasReceberEnterprise (divida) nao relacionados.
+
+================================================================================
+13. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-05B-HARDENING-PORTAS-EMISSAO-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-05B-HARDENING-PORTAS-EMISSAO-RESULTADO.txt
+ TAMANHO ..: 10735 bytes
+ DATA/HORA : 25/09/2026 19:31:53
+
+================================================================================
+FIM — TMS-FAT-URG-05B-HARDENING-PORTAS-EMISSAO
+================================================================================

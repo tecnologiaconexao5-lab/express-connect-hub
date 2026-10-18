@@ -1,0 +1,64 @@
+================================================================================
+MISSÃO A31-J1.4 — APLICAR TABELA DO CLIENTE + REGRAS DO PRESTADOR NO LANÇAMENTO
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+SERVICE/HELPER REUTILIZADO
+- src/services/precificacao/buscarTabelasService.ts (oficial, usado pela Escala/
+  precificacaoEngine):
+  * buscarTabelaValoresCliente() — seleção da tabela comercial ATIVA do cliente
+    (não recriei algoritmo; hierarquia 1..6 + universal).
+  * buscarTabelaPrestador() — custo/repasse do prestador (tabela_prestador →
+    cadastro prestadores → não encontrada).
+
+ORIGEM DA FRANQUIA/PREÇO KM DO CLIENTE
+- tabelas_valores ativa do cliente + tipo/perfil de veículo:
+  valor_base, franquia_km, valor_km_excedente (TabelaValorAplicada).
+  Autopreenche valor_frete quando vazio.
+
+ORIGEM DOS VALORES DO PRESTADOR
+- buscarTabelaPrestador(): valor_saida || valor_minimo || valor_diaria (repasse
+  base), km_incluso (franquia), valor_km (R$/km).
+  Autopreenche valor_repasse quando vazio. Sem cadastro duplicado.
+
+FÓRMULA APLICADA (igual à Escala, sem segunda regra)
+- excedente = max(0, km_realizado - franquia), POR PERNA:
+  * CLIENTE: franquia/preço da tabela comercial.
+  * PRESTADOR: franquia/preço do cadastro financeiro.
+- TOTAL CLIENTE = base + exced.Cliente + ajudante + diárias + outros - DescontoCliente.
+- TOTAL PRESTADOR = repasse + exced.Prestador + pedágio + combustível + ajudante
+  + diárias + reembolso + outros - DescontoPrestador.
+- Exemplo validado: franquia 140, R$1/km, km 159,6 → excedente 19,6 nas duas
+  pernas (cliente 600+19,6; prestador 520+19,6). NADA hardcoded.
+
+TRATAMENTO DOS DOIS DESCONTOS
+- Desconto Cliente (valor_desconto) → reduz SOMENTE Total Cliente.
+- Desconto / Ajuste Prestador (valor_desconto_prestador) → reduz SOMENTE Total
+  Prestador.
+- Gap de persistência: alocacoes_escala só tem `valor_desconto` (1 campo). O
+  desconto do prestador é tratado na PRÉVIA (local), NÃO é persistido nesta
+  missão (sem migration). Persiste-se apenas valor_desconto (fluxo oficial).
+
+ARQUIVOS ALTERADOS
+- src/services/financeiro/centralFinanceiroVisao.ts — calcularKmDuasPernas +
+  desconto prestador + tabela_km (módulo puro).
+- src/components/financeiro/ConferenciaFinanceira.tsx — carregamento de tabela
+  cliente/prestador (useTenant), autofill base, KM duas pernas no bloco Operação,
+  Desconto Cliente e Desconto/Ajuste Prestador, excedente nos blocos financeiros.
+- src/test/a31j1_resumo_lancamento_manual.test.ts — 14 testes (8 novos A31-J1.4).
+
+TESTES (vitest)
+- a31j1: 14/14 (KM 2 pernas, franquias distintas, abaixo da franquia=0, recálculo
+  por KM, desconto cliente≠prestador, totais com excedente).
+- Regressão: a31j0 6, a31e 6, a31c 5, fase1 6 → 37/37 PASS.
+
+VALIDACAO
+- npx tsc --noEmit → 0 erros
+- npm run build → OK (36.90s)
+
+GAP REAL DE PERSISTÊNCIA
+- Desconto/Ajuste do prestador NÃO tem coluna própria em alocacoes_escala
+  (só valor_desconto, aplicado pela Central às duas pernas). Nesta missão é
+  prévia local; persistência separada exige futura coluna `valor_desconto_
+  prestador` (fora do escopo).
+================================================================================

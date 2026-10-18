@@ -1,0 +1,135 @@
+{
+  "gerado_em": "2026-09-27T14:20:56.157Z",
+  "arquivos": [
+    {
+      "arquivo": "src/services/recrutamentoIntegracao.ts",
+      "existe": true,
+      "bytes": 10870,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "// src/services/recrutamentoIntegracao.ts\r | // Serviço centralizado de integração Recrutamento → Prestadores\r | // Regras: anti-duplicidade, mapeamento completo, vínculo de documentos\r"
+    },
+    {
+      "arquivo": "src/services/documentosPrestadorService.ts",
+      "existe": true,
+      "bytes": 6137,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "// src/services/documentosPrestadorService.ts\r | // Serviço centralizado para gestão de documentos de prestadores\r | // Regras: anti-duplicidade, rastreabilidade, compatibilidade\r"
+    },
+    {
+      "arquivo": "src/components/prestadores/PrestadorDetalhe.tsx",
+      "existe": true,
+      "bytes": 101310,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "import { useState, useEffect, useCallback, useRef } from \"react\";\r | import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, Shi"
+    },
+    {
+      "arquivo": "src/services/storage/storageRefService.ts",
+      "existe": true,
+      "bytes": 2923,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "export type StorageRef = { |   bucket: string; |   path: string;"
+    },
+    {
+      "arquivo": "src/services/documentos/documentoStorageService.ts",
+      "existe": true,
+      "bytes": 2458,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "import { |   assinarStorageRef, |   caminhoValido,"
+    },
+    {
+      "arquivo": "src/services/portal-prestador/portalPrestadorService.ts",
+      "existe": true,
+      "bytes": 15534,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "import { supabase } from \"@/lib/supabase\";\r | import { calculateScore, type ScoreResult } from \"@/services/scoreEngine\";\r | import { resolverUrlDocumento } from \"@/services/documentos/documentoStorage"
+    },
+    {
+      "arquivo": "src/services/recrutamento/conversaoCandidatoService.ts",
+      "existe": false
+    },
+    {
+      "arquivo": "src/modules/recrutamento/services/conversaoCandidatoService.ts",
+      "existe": true,
+      "bytes": 13255,
+      "tem_bom": false,
+      "utf8_invalido": false,
+      "mojibake_total": 0,
+      "detalhe": {
+        "mojibake_c_cedilha": 0,
+        "mojibake_a_til": 0,
+        "mojibake_o_agudo": 0,
+        "mojibake_e_agudo": 0,
+        "mojibake_seta": 0,
+        "mojibake_traco": 0,
+        "utf8_invalido": false
+      },
+      "amostra": "import { supabase } from '@/lib/supabase'\r | import { prestadoresService } from './prestadoresService'\r | import { enterpriseKanbanService } from '../components/enterprise-kanban/enterpriseKanbanServi"
+    }
+  ]
+}

@@ -1,0 +1,780 @@
+================================================================================
+  AUDITORIA READ-ONLY — FINANCEIRO / FATURAMENTO / OPERACIONAL / FISCAL
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+  Modo: SOMENTE LEITURA — nenhum arquivo, banco, migration ou RPC alterado.
+================================================================================
+
+================================================================================
+1. RESUMO EXECUTIVO
+================================================================================
+O TMS possui um núcleo financeiro-Operacional JÁ FUNCIONAL e parcialmente
+automatizado por TRIGGERS de banco (M66/M80), mas fragmentado em múltiplos
+vocabulários de status, com conceitos-chave (ROMANEIO / OC / FATURA) ainda
+imaturas ou inexistentes, e com telas "premium" de Conciliação/CNAB/Inadimplência
+que são 100% mock/placeholder.
+
+PONTO FORTE: a propagação financeira da operação até Contas a Receber/Pagar e
+Pagamento de Prestadores é feita em banco (idempotente, com UNIQUE os_id),
+reduzindo o risco de duplicidade na camada de dados.
+
+PONTOS CRÍTICOS:
+  - ROMANEIO: coluna `ordens_servico.romaneio` EXISTE mas é MORTA na UI
+    (0/121 registros preenchidos; nenhum formulário a usa).
+  - OC / Ordem de Carregamento: `alocacoes_escala.ordem_carregamento_id` é
+    coluna ÓRFÃ (0/183 preenchidos; sem FK, sem tabela, sem preenchimento).
+  - "Nº OC" na Escala é string livre gravada só em `metadata.numeroOC`
+    (36/183 alocações) — sem coluna nem entidade dedicada.
+  - FATURA: não existe entidade financeira dedicada de Fatura no TMS. O wizard
+    cria um "cabeça" em `financeiro_receber` (origem=fatura_consolidada) e o
+    PDF de fatura está DESABILITADO. `portal_faturas` não é lido pelo front.
+  - CONFERÊNCIA: tela funciona (alocacoes concluídas + POD) mas com badge
+    "Pendente" HARCODED (visual) — não lê status financeiro do banco, não tem
+    aprovação persistida, não tem "apto para faturar" real, não tem lote.
+  - PROTECÇÃO DUPLICADO: existe UNIQUE(os_id) no banco (forte) + verificação
+    de duplicata na aplicação (parcial). Mas não há UNIQUE(os_id) em
+    `financeiro_pagar`... na verdade EXISTE (uq_fp_os_id, M80). Forte no banco.
+  - TABELAS COMERCIAIS: pricing engine real e usado (OS/Escala/Orçamento),
+    com "fotografia" PARCIAL (tabela_aplicada/faixa_aplicada = texto-nome,
+    tabela_valores_id sem FK). Versionamento incrementa `versao` mas SEM
+    histórico (preço anterior é sobrescrito).
+  - FISCAL: emissão REAL pronta só para CT-e via Edge Function `focus-emissao`,
+    mas GATED por secrets (hoje desligada/simulada). MDF-e/NFS-e sempre simulados.
+  - BANCO: não há tabelas `contas_financeiras` nem `financeiro_prestador_auditoria`,
+    embora o frontend as consulte (queries falham silenciosamente / mocks).
+  - CNAB/Conciliação/Inadimplência/Recibos: 100% mock no frontend.
+
+CONCEITO CENTRAL PARA A FUTURA "CENTRAL DE CONTROLE":
+  A tela FINANCEIRO > CONFERÊNCIA é a melhor candidata para evoluir, pois já
+  cruza alocação + cliente + prestador + OS + POD. Porém hoje NÃO enxerga
+  financeiro_receber/pagar nem faturamento — precisaria ser enriquecida, não
+  substituída.
+
+================================================================================
+2. O QUE JÁ EXISTE
+================================================================================
+BANCO (estruturas reais e usadas):
+  - alocacoes_escala (107 colunas) — coração operacional-financeiro.
+  - ordens_servico (129 colunas) — OS com finanças + status_faturamento.
+  - financeiro_receber (37) — títulos a receber, UNIQUE(os_id), fatura consol.
+  - financeiro_pagar (41) — títulos a pagar, UNIQUE(os_id), fornecedor prestador.
+  - pagamentos_prestadores (45) + itens (12) — fechamento/período, UNIQUE(os_id).
+  - composicao_financeira_os (21) — margens por OS com trigger (UNIQUE os_id).
+  - tabelas_valores (53) / tabela_prestador (18) — pricing cliente e prestador.
+  - entregas_protocolo (20) — POD oficial único (M108C1).
+  - fiscal_ctes/nfse/mdfes + fiscal_documentos_vinculados + regras_fiscais_* +
+    configuracoes_fiscais + certificados_fiscais — estrutura fiscal completa.
+  - reembolsos_prestador (16) — reembolsos com trigger de derivação.
+  - historico_alocacoes_escala + os_historico — histórico operacional.
+  - View hierarquia tabelas: vw_hierarquia_tabelas.
+  - Views de relatório: vw_relatorio_faturamento_*, vw_relatorio_pagamento_*.
+  - Storage buckets: comprovantes-entrega, fiscal-documentos, certificados,
+    driver-evidence, contratos, documentos, prestadores, veiculos.
+
+TRIGGERS (automação real):
+  - trg_propagar_financeiro_alocacao (M66) — alocação → financeiro_receber /
+    pagamentos_prestadores / composicao (PERFORM+IF idempotente).
+  - trg_propagar_financeiro_os (M80/M80b) — OS → mesmas tabelas + margens,
+    fórmula unificada outros_custos = adicionais+ajudante-descontos.
+  - trg_cancelar_financeiro_alocacao — cancela títulos quando alocação cancela.
+  - trg_registrar_historico_alocacao — auditoria de alocação.
+  - trg_tabelas_valores_version / trg_tabela_prestador_version — versao++.
+  - trg_f_derivar_reembolso_prestador — deriva prestador no reembolso.
+  - trg_sync_delivery_proof_to_entregas — App delivery_proofs → entregas_protocolo.
+
+FRONTEND:
+  - src/pages/Financeiro.tsx — hub com 20 abas.
+  - ConferenciaFinanceira, ContasReceberEnterprise, ContasPagar,
+    PagamentoPrestadores, ContasBancarias, FluxoCaixaEnterprise, DREGerencial,
+    PlanoContas, MargemPorOS, MargemOperacional, SegurosFinanceiro,
+    ContabilidadeFinanceiro, PagamentoCNAB, PendenciasCadastro, Inadimplencia,
+    ConciliacaoAvancada, ReciboRapido, RelatorioFinanceiroCompleto.
+  - Services reais: receberService, pagarService, pagamentoPrestadorService,
+    relatorioService, precificacaoEngineService, buscarTabelasService,
+    podService, comprovantesService, cteService/nfseService/mdfeService/focusService.
+  - Engine de precificação usado em OS, Escala e Orçamento.
+  - Geração PDF profissional (jsPDF+autotable): relatórios, OS, orçamento,
+    contrato, prévia CT-e, repasse, fechamento comercial.
+  - Escala: numeroOC (metadata), financeiro completo no formulário.
+
+================================================================================
+3. O QUE ESTÁ FUNCIONANDO (fluxos comprovadamente conectados)
+================================================================================
+a) OS/Operação → Escala → Financeiro (via trigger M66/M80):
+   Ao inserir/atualizar alocação com valor_frete/valor_repasse, o banco cria
+   financeiro_receber, financeiro_pagar, pagamentos_prestadores e
+   composicao_financeira_os. Idempotente (PERFORM+IF + UNIQUE os_id).
+   EVIDÊNCIA: scripts/_audit_fin_evidencias.txt (contagens: receber 87,
+   pagar 83, pagamentos 82, composicao_os 54).
+
+b) Escala → App Motorista:
+   alocacoes_escala consumida por f_buscar_operacoes_motorista (via
+   vw_app_motorista_operacoes) e etapas via f_avancar_etapa_app_motorista.
+
+c) POD:
+   delivery_proofs (App) → trigger → entregas_protocolo (fonte única oficial).
+   Conferência Financeira e Pagamento de Prestadores leem entregas_protocolo
+   via comprovantesService.buscarPODsDeAlocacoes.
+
+d) Contas a Receber:
+   listarRecebiveis/criarRecebivel/baixarRecebivel (parcial/integral)/cancelar/
+   renegociar; lote de recebíveis; wizard de Fatura Consolidada (itens de
+   escala + OS + manuais) com verificação de duplicata por os_id.
+
+e) Pagamento de Prestadores:
+   Fechamento por período (criarFechamento) com itens; status triplo
+   (conferência/aprovação/pagamento); repasses; relatório; conta-corrente.
+
+f) Pricing:
+   calcularPreco/calcularPrecoRapido usados em OrdemServicoForm, EscalaLista,
+   OrcamentoForm, pedidosService. Hierarquia de busca de tabelas cliente e
+   prestador com vigência e prioridade.
+
+g) Relatórios:
+   Faturamento por cliente, pagamento por prestador, prestadores análise,
+   extrato operacional, margem real — com PDF e Excel.
+
+================================================================================
+4. O QUE ESTÁ INCOMPLETO
+================================================================================
+  - ROMANEIO: coluna existe, nada a preenche/usa na UI. (incompleto)
+  - OC / Ordem de Carregamento: coluna órfã + conceito só como string em metadata.
+  - FATURA: sem entidade financeira dedicada; wizard gera cabeça em receber;
+    sem PDF; portal_faturas não usado. (incompleto)
+  - CONFERÊNCIA: status "Pendente" hardcoded; sem aprovação persistida; sem
+    "apto para faturar" persistido; sem lote de faturamento. (incompleto)
+  - Recebimento: financeiro_receber tem status pendente/aberto/a vencer/pago/
+    vencido/vencido — mas "parcial" não aparece nos dados (3 pago, 1 parcial?).
+    Conciliação/baixa bancária inexistente.
+  - Dados bancários da empresa: empresaConfig.ts HARDCODED (não lê banco);
+    dados bancários PIX da empresa para fatura não estruturados.
+  - Auditoria financeira: registrarAuditoria grava em tabela que NÃO EXISTE.
+  - Faturamento fiscal: NFS-e/CT-e de fatura não vinculados a títulos receber.
+  - Inadimplência: service real existe mas UI usa dados hardcoded.
+  - Fluxo de caixa/DRE/plano de contas: componentes existem, alimentados por
+    financeiro_receber/pagar; verificação de completude não foi exaustiva.
+
+================================================================================
+5. O QUE ESTÁ DUPLICADO OU PARALELO
+================================================================================
+  - CONTAS A RECEBER: ContasReceberEnterprise.tsx (usado) + ContasReceber.tsx
+    (1225 linhas, NÃO importado — legado morto).
+  - STATUS FINANCEIRO: `status` (financeiro_receber) com vocabulário misto
+    (aberto/pendente/a vencer/a_vencer/vencido/vencida/pago). Service grava
+    `aberto`, UI filtra `pendente/vencido/pago/parcial/cancelado`. Duplicidade
+    semântica e de spelling (a vencer vs a_vencer).
+  - PAGAMENTOS PRESTADORES: `status` simples coexiste com status_conferencia/
+    status_aprovacao/status_pagamento (triplo). `pagamento_prestadores` (6 cols,
+    legada) + `pagamentos_prestadores` (45 cols, atual) — DUPLICADAS.
+  - TABELA DE VALORES: `tabelas_valores` (atual, usada) + `tabela_valores`
+    (8 cols, 0 uso TS — órfã) + `tabela_prestador_operacional` (0 uso TS).
+  - POD: `os_pod` (morta) + `delivery_proofs` (origem App) + `entregas_protocolo`
+    (oficial). Fotos também em alocacoes_escala.fotos_entrega/assinatura_url/
+    comprovante_url (duplicação de armazenamento).
+  - ESCALA: `escala_operacional` (17 cols, 0 registros, DEPRECATED) vs
+    `alocacoes_escala` (atual).
+  - FATURAMENTO_STATUS: `status_faturamento` (OS: a vista/a faturar/...) e
+    `faturamento_status` (OS: 'A Faturar', 121/121 preenchido) — DOIS campos
+    com o MESMO propósito. Igual: `status_pagamento` vs `repasse_status`.
+  - Auditoria: os_historico + historico_alocacoes_escala + eventos_oficiais +
+    fiscal_logs/events + financeiro_prestador_auditoria (inexistente).
+
+================================================================================
+6. MAPA DE DADOS
+================================================================================
+alocacoes_escala (107 cols)
+  - Identificação: id, empresa_id, cliente_id(FK clientes), prestador_id(FK),
+    ordem_servico_id(FK OS), ordem_carregamento_id(ÓRFÃO, sem FK/tabela),
+    data_escala, turno, tipo_veiculo, placa, regiao, rota, origem, destino.
+  - Operacional: status (planejada/aguardando_aceite/aceita/em_rota/concluida/
+    cancelada/recusada), aceite_prestador, data_aceite, finalizada,
+    data_finalizacao, horario_*_real, km_previstos/km_realizados/km_rodados,
+    quantidade_* , ocorrencias_*, operation_mode.
+  - Financeiro cliente: valor_frete, valor_total, valor_tipo, valor_percentual,
+    valor_fixo, valor_km, pedagio_*, diarias_adicionais, valor_diaria,
+    segunda/terceira_saida, saidas_adicionais, ajudantes, valor_ajudante_unit,
+    reembolsos_outros, valor_reembolso_outros.
+  - Financeiro prestador: valor_repasse.
+  - Adicionais/descontos: valor_pedagio, valor_combustivel, valor_ajudante,
+    valor_adicional, valor_desconto.
+  - Reversa: tipo_reversa + 20 campos reversa_*.
+  - Pricing: tabela_valores_id (SEM FK), tem_regra_especial, metadata
+    (numeroOC, faturamento{...}, repasse{...}, km, espera).
+  - Auditoria: created_by/updated_by/created_at/updated_at/tenant_id.
+  - Histórico: trigger trg_registrar_historico_alocacao → historico_alocacoes_escala.
+
+ordens_servico (129 cols)
+  - Identificação: id, numero, cliente(FK uuid) + cliente_id(TEXT — legado),
+    prestador(FK uuid) + prestador_id(TEXT — legado), veiculo_alocado(FK),
+    status, data, data_servico, data_programada, tipo_operacao, unidade,
+    centro_custo, modalidade, prioridade, numero_orcamento, orcamento_id.
+  - Financeiro cliente: valor_cliente, valor_total, margem, margem_bruta,
+    margem_liquida, percentual_margem_liquida, imposto_valor, seguro_valor.
+  - Financeiro prestador: custo_prestador, valor_prestador,
+    valor_prestador_calculado, outros_custos/outros_custos_prev.
+  - Adicionais: adicionais(jsonb), ajudante(jsonb), pedagio, descontos,
+    reembolso_previsto, lucro_estimado/lucro_lucro_margem.
+  - Faturamento: status_faturamento (a vista/a faturar/contrato/cortesia/
+    cancelado), faturamento_status ('A Faturar'), status_pagamento,
+    repasse_status ('Pendente p/ Extração'), tabela_aplicada, faixa_aplicada,
+    forma_cobranca.
+  - Carga: carga_tipo, peso, volumes, cubagem, pallets, valor_declarado,
+    carga_* flags, veiculo_tipo/termica/carroceria/subcategoria.
+  - Romaneio: romaneio (MORTA na UI), pedido_portal_id.
+  - Auditoria: created_at/updated_at (timestamptz vs sem tz), tenant_id.
+  - Histórico: os_historico + historico jsonb.
+
+financeiro_receber (37)
+  - cliente_id(FK), descricao, valor, vencimento, data_vencimento, data_emissao,
+    data_pagamento, status, categoria, observacoes, cliente_documento.
+  - Vínculos: os_id (TEXT, UNIQUE uq_fr_os_id), os_vinculadas, fatura,
+    serie, numero, contrato_vinculado, proposta_vinculada.
+  - Valores: valor_bruto, valor_liquido, desconto, juros, multa, abatimento.
+  - Recorrência: recorrente, quantidade_parcelas, parcela_atual, recorrencia.
+  - Classificação: centro_resultado, plano_conta, conta_entrada.
+  - Obs: NÃO tem coluna origem/origem_id/fatura_id no banco (o service usa
+    esses nomes no mapping mas as colunas reais são fatura/serie/numero/os_id).
+    Importante: verificar se a query .from("financeiro_receber") com
+    .eq("origem") funciona — coluna origem NÃO existe na tabela real.
+
+financeiro_pagar (41)
+  - Similar a receber, com fornecedor_id(FK prestadores), fornecedor_nome,
+    fornecedor_documento, fornecedor, documento, tipo_documento='NF', os_id
+    (TEXT, UNIQUE uq_fp_os_id), os_vinculada, chave_pix, codigo_barras,
+    conta_pagadora, competencia, plano_contas, centro_resultado, unidade_filial,
+    data_efetiva_pgto.
+
+pagamentos_prestadores (45)
+  - prestador_id(FK CASCADE), prestador_nome/documento, periodo_inicio/fim,
+    quantidade_os, valor_servicos, valor_reembolsos, valor_bonus,
+    valor_descontos, valor_adiantamentos, valor_liquido, status, data_pagamento,
+    os_id(UNIQUE uq_pp_os_id), qtd_os, pedagio, reembolsos, adicionais,
+    descontos, adiantamentos, multas, ajustes, status_conferencia,
+    status_aprovacao, status_pagamento, origem_lancamento, tipo_pagamento,
+    categoria_financeira, centro_custo, conta_contabil, competencia,
+    data_prevista_pagamento, elegivel_lote, lote_id, impacto_dre,
+    impacto_fluxo_caixa, observacao, os_numero, tipo_lancamento, natureza,
+    data_competencia.
+  - RLS: policy "Allow all pagamentos_prestadores [ALL]" — SEM isolamento.
+
+pagamentos_prestadores_itens (12)
+  - pagamento_id(FK CASCADE), os_id(FK), os_numero, valor_servico, pedagio,
+    adicional, valor_reembolso, valor_bonus, valor_desconto, status.
+  - 0 registros (INSERT no frontend nunca lido de volta).
+
+composicao_financeira_os (21)
+  - os_id (UNIQUE), cliente_id, prestador_id, valor_cliente, valor_prestador,
+    imposto_percentual(4.5), imposto_valor, seguro_valor, pedagio_valor,
+    outros_custos, margem_bruta, margem_liquida, percentual_*, origem_calculo,
+    combustivel_valor, ajudante_valor, adicional_valor, desconto_valor.
+
+tabelas_valores (53) / tabela_prestador (18) — ver seção 11.
+entregas_protocolo (20) / delivery_proofs (24) / os_pod (9) — ver seção 15.
+fiscal_* — ver seção 14.
+reembolsos_prestador (16): prestador(text!), os_id, tipo, descricao, valor,
+  data_despesa, comprovante_url, status, aprovado_por, data_aprovacao,
+  obs_rejeicao, created_by/auth.
+despesas_operacionais (10): veiculo_id, categoria, subcategoria, descricao,
+  valor, data_competencia, status, comprovante_url. 0 registros.
+portal_faturas (12): cliente_id, numero, competencia, valor, vencimento,
+  status, url_boleto, url_nf, os_ids jsonb. NÃO lido pelo front.
+centros_custo / unidades / filiais — cadastros simples.
+
+================================================================================
+7. MAPA DAS TELAS
+================================================================================
+Página: src/pages/Financeiro.tsx — 20 abas:
+  dashboard    → DashboardFinanceiroEnterprise
+  conferencia  → ConferenciaFinanceira  (alocacoes_escala concluídas + POD)
+  receber      → ContasReceberEnterprise (receberService; wizard de fatura)
+  pagar        → ContasPagar            (pagarService)
+  pagamento-prestadores → PagamentoPrestadores (4 sub-abas)
+  contas-caixas → ContasBancarias       (contas_financeiras — NÃO EXISTE; fallback mock)
+  fluxo        → FluxoCaixaEnterprise
+  dre          → DREGerencial
+  plano-contas → PlanoContas
+  margem-os    → MargemPorOS
+  margem       → MargemOperacional
+  seguros-auto → SegurosFinanceiro
+  contabilidade→ ContabilidadeFinanceiro (conciliacao OFX mock)
+  lotes        → PagamentoCNAB          (mock)
+  pendencias   → PendenciasCadastro
+  inadimplencia→ Inadimplencia          (mock; service real não conectado)
+  conciliacao  → ConciliacaoAvancada    (mock)
+  recibos      → ReciboRapido           (impressão sem implementação)
+  rentabilidade→ inline placeholder
+  relatorios   → RelatorioFinanceiroCompleto (5 sub-relatórios)
+
+Fluxo por tela → dados → tabela/RPC:
+  Conferência: supabase.from("alocacoes_escala").select("*").eq(status=concluida)
+               .eq(finalizada=true) + buscarPODsDeAlocacoes (entregas_protocolo).
+               Badge "Pendente" hardcoded; abas receber/pagar = mesmo dataset.
+  Contas a Receber: receberService (listar/criar/baixar/lote/wizard fatura).
+  Contas a Pagar: pagarService; bug criarParcelasPagavel("temp").
+  Pag. Prestadores: pagamentoPrestadorService + INSERT itens.
+
+================================================================================
+8. MAPA DAS INTEGRAÇÕES
+================================================================================
+OS/Escala → Financeiro (trigger M66/M80) → receber/pagar/pagamentos/composicao.
+App Motorista → alocacoes_escala (f_buscar_operacoes_motorista, f_avancar_etapa).
+App POD → delivery_proofs → entregas_protocolo (trigger) → conferência.
+Portal Cliente → portal_faturas (não lido), vw_portal_financeiro_cliente.
+Fiscal → fiscal_ctes/nfse/mdfes + fiscal_documentos_vinculados ↔ OS.
+Fatura (wizard) → financeiro_receber origem=fatura_consolidada + itens com fatura_id.
+Reembolso → reembolsos_prestador (trigger deriva prestador).
+Pricing → tabelas_valores/tabela_prestador → OS/Escala/Orçamento.
+
+================================================================================
+9. ROMANEIO / OC — DIAGNÓSTICO COMPLETO
+================================================================================
+EXISTÊNCIA:
+  - ordens_servico.romaneio (text) — coluna REAL, criada em
+    `20260715_m127e1_tms_contrato_app_operacao.sql` a partir de
+    cte.metadata->>'romaneio_numero'. 0/121 preenchidos. NENHUM form a usa
+    (OrdemServicoForm sem campo; toOSInsert não mapeia; OrdensServicoLista não exibe).
+  - alocacoes_escala.ordem_carregamento_id (uuid) — coluna REAL, criada em
+    `20260522_alocacoes_escala.sql`, SEM FK, SEM tabela ordem_carregamento,
+    SEM preenchimento (0/183). ÓRFÃ.
+  - metadata.numeroOC (Escala) — string livre auto-gerada OC-YYYYMMDD-rand
+    em EscalaLista.tsx:601, salva em alocacoes_escala.metadata->>'numeroOC'
+    (36/183). NÃO é uma entidade.
+  - Conceito fiscal: "Romaneio Calvo" existe no módulo fiscal (parser PDF +
+    vinculação a CT-e) via romaneioCalvoService + VincularRomaneioOsModal,
+    leitura de cte.metadata.romaneio_numero. É PARALELO ao campo OS.romaneio.
+  - App Motorista: vw_app_motorista_operacoes inclui os.romaneio; etapa
+    romaneio_informado + foto_romaneio em f_avancar_etapa_app_motorista.
+
+AVALIAÇÃO:
+  - Não é apenas "um campo com nomes diferentes na interface": são 4
+    representações PARALELAS (OS.romaneio, alocacao.ordem_carregamento_id,
+    alocacao.metadata.numeroOC, cte.metadata.romaneio_numero).
+  - Não há tabela de Romaneio/OC, nem vinculação Romaneio→NFs (a seção 6 do
+    pedido NÃO existe): não há estrutura para "Romaneio 343198 → NF 12345..."
+    O mais próximo é fiscal_documentos_vinculados (NFs vinculadas a OS/CT-e/MDF-e)
+    com numero/serie/chave/valor — mas sem vínculo a um romaneio.
+  - Fluxo App "motorista informa romaneio" existe na RPC de etapas, mas o
+    TMS não o propaga para financeiro nem o exibe em escala/conferência.
+
+================================================================================
+10. FATURAMENTO — DIAGNÓSTICO COMPLETO
+================================================================================
+EXISTENTE:
+  - Wizard de Fatura Consolidada em ContasReceberEnterprise.tsx:
+    buscarItensFaturaveisWizard consolida itens de alocacoes_escala (escala),
+    ordens_servico (os) e financeiro_receber origem=manual fatura_id IS NULL.
+    criarFaturaConsolidadaCompleta cria um "cabeça" em financeiro_receber com
+    fatura_numero = FAT-${Date.now()}, os itens recebem fatura_id.
+  - Porém: a TABELA financeiro_receber NÃO tem coluna `origem`, `origem_id`
+    nem `fatura_id` no banco (colunas reais: os_id, os_vinculadas, fatura,
+    serie, numero). O service usa esses nomes no mapping do cliente — as
+    queries .eq("origem"/"fatura_id") tendem a FALHAR ou ignorar.
+    EVIDÊNCIA: scripts/_audit_fin_schema.txt (colunas de financeiro_receber).
+  - Lote de recebíveis: criarRecebiveisEscalaEmLote + UI "Gerar Recebíveis
+    Selecionados".
+  - Agrupamento por romaneios p/ observação automática ("Referente aos
+    romaneios nº...") NÃO existe.
+  - PDF de fatura: NÃO existe. Botão "Exportar PDF" desabilitado
+    (ContasReceberEnterprise.tsx:1340). Não há gerarPDFFatura.
+  - Vencimento: data_vencimento = CURRENT_DATE+30 (trigger).
+  - portal_faturas: tabela existe (com os_ids jsonb) mas NÃO é lida pelo front.
+
+================================================================================
+11. TABELAS COMERCIAIS — DIAGNÓSTICO COMPLETO
+================================================================================
+REAIS E USADAS:
+  - tabelas_valores (53 cols): cliente/preço. Colunas chave: nome, tipo_veiculo,
+    km_inicial/km_final, valor_base, valor_km, valor_minimo, ativo, universal,
+    adicionais jsonb, financeiro jsonb, regras jsonb, faixas jsonb, status,
+    cliente(text), arredondamento, custo_teto_prestador, markup_desejavel,
+    km_franquia, valor_km_excedente, metodos_cobranca, minimo_faturavel,
+    franquia_km, custo_prestador, markup_percent, percentual_prestador(80),
+    tipo_repasse_prestador, valor_fixo_prestador, data_inicio/fim, versao,
+    motivo_alteracao, prioridade, tenant_id.
+  - tabela_prestador (18 cols): custo prestador. valor_minimo, km_incluso,
+    valor_km, valor_saida, cidade, uf, data_inicio/fim, versao, prioridade.
+
+HIERARQUIA DE ESCOLHA (buscarTabelasService.ts:43-168) — 7 níveis cliente,
+6 níveis prestador + cadastro. Com vigência (data_inicio/fim) e order prioridade
+desc. IMPORTANTE: Nível 1 (cliente_id + tipo_veiculo) SEM filtro de vigência →
+tabela vencida pode ser aplicada.
+
+FOTOGRAFIA DO PREÇO:
+  - PARCIAL. ordens_servico.tabela_aplicada (text-nome) e faixa_aplicada (text)
+    são gravados como snapshot de NOME, não de ID/versão/valor. Se a tabela for
+    alterada depois, o valor histórico não recalcula (sem trigger de
+    reprocessamento), MAS o snapshot não guarda o VALOR — apenas o nome.
+    alocacoes_escala.tabela_valores_id (uuid) SEM FK — não confiável.
+
+VERSIONAMENTO:
+  - REAL mas sem histórico: triggers trg_tabelas_valores_version /
+    trg_tabela_prestador_version executam f_log_tabela_alteracao() que faz
+    NEW.versao := COALESCE(OLD.versao,0)+1 em BEFORE UPDATE. O preço ANTERIOR
+    é SOBRESCRITO (sem tabela de versões). vw_hierarquia_tabelas existe.
+  - Índices e trigger confirmados no inventário (tabelas 540-542).
+
+RISCO DE RECÁLCULO HISTÓRICO:
+  - Não há mecanismo que recalcule histórico automaticamente (bom). Mas como o
+    snapshot é só o NOME, a rastreabilidade do valor aplicado é fraca.
+
+DIFERENÇA CLIENTE × PRESTADOR:
+  - Existe e é suportada: tabelas_valores.percentual_prestador (default 80),
+    custo_prestador, custo_teto_prestador + tabela_prestador separada.
+
+================================================================================
+12. CONTAS A RECEBER — DIAGNÓSTICO COMPLETO
+================================================================================
+- Tabela financeiro_receber com títulos, UNIQUE(os_id), vencimento, valores
+  bruto/líquido, desconto/juros/multa/abatimento, parcelas, recorrencia.
+- Fluxo futuro (Fatura → Título → vencimento → recebido parcial/integral →
+  baixa) é MAJORITARIAMENTE suportado: criarRecebivel, baixarRecebivel (parcial
+  acumula valor_pago e seta pago/parcial), renegociarRecebivel.
+- LACUNA: colunas de vínculo (fatura_id, origem, origem_id) usadas no service
+  NÃO existem no banco — o vínculo real é por `fatura` (text) e `os_id`/
+  `os_vinculadas`. Risco de query .eq() inválida.
+- Recorrência: campos existem (recorrente, quantidade_parcelas, recorrencia)
+  mas sem motor de recorrência (agendamento/gerador automático).
+- Conciliação bancária: inexistente (aba é mock).
+
+================================================================================
+13. CONTAS A PAGAR / PRESTADORES — DIAGNÓSTICO COMPLETO
+================================================================================
+- financeiro_pagar com UNIQUE(os_id), fornecedor_id→prestadores, chave_pix,
+  codigo_barras, parcelamento (com bug "temp").
+- pagamentos_prestadores com fechamento por período + itens + status triplo +
+  elegivel_lote + lote_id + impacto_dre/fluxo_caixa + natureza.
+- DUPLICIDADE: pagamento_prestadores (6 cols, legada, sem UNIQUE os_id) existe
+  em paralelo com pagamentos_prestadores. Confirmar qual está em uso — dados:
+  pagamentos_prestadores=82, pagamento_prestadores não consultado.
+- RLS pagamentos_prestadores: policy "Allow all [ALL]" — sem isolamento de
+  tenant/prestador (apenas authenticated). Risco de segurança.
+- Itens (pagamentos_prestadores_itens) são INSERT no front mas nunca lidos de
+  volta (0 registros) — fechamento por período não exibe detalhe persistido.
+- Lote CNAB: UI marca status_pagamento=em_lote e elegivel_lote, mas a geração
+  CNAB (PagamentoCNAB.tsx) usa dados mock, não lê pagamentos_prestadores.
+
+================================================================================
+14. DOCUMENTOS FISCAIS — DIAGNÓSTICO COMPLETO
+================================================================================
+- Estrutura completa no banco: fiscal_ctes, fiscal_nfse, fiscal_mdfes,
+  fiscal_documentos_vinculados (NFs importadas: numero/serie/chave/emitente/
+  destinatario/valor/peso/volumes), regras_fiscais_cte (CFOP/ICMS/CST por
+  cliente/UF/operação), regras_fiscais_nfse (ISS), configuracoes_fiscais
+  (emitentes multiempresa: razão social, CNPJ, IE, IM, endereço, Focus),
+  certificados_fiscais (A1), fiscal_events/logs/historico_status.
+- Emissão: rascunhos reais gravados no banco (cteService/nfseService/
+  mdfeService). Envio à SEFAZ via Edge Function focus-emissao: caminho REAL
+  implementado SÓ para CT-e (fetch Focus NFe), gated por secrets
+  FOCUS_REAL_ENABLED/FOCUS_TOKEN e produção por FOCUS_PRODUCAO_LIBERADA.
+  Hoje DESLIGADO (frontend força "desligado"; tela Fiscal com stubs toast.info).
+- MDF-e e NFS-e: SEMPRE simulados na Edge Function.
+- Vinculação: fiscal_documentos_vinculados ↔ OS/CT-e/MDF-e (FKs reais).
+- Romaneio Calvo: parser de PDF de romaneio + cruzamento com
+  fiscal_documentos_vinculados/fiscal_ctes (romaneioCalvoService).
+
+================================================================================
+15. POD / COMPROVANTES — DIAGNÓSTICO COMPLETO
+================================================================================
+- Fonte oficial ÚNICA: entregas_protocolo (decisão M108C1). 51 registros,
+  status todos 'entregue'.
+- Origem App: delivery_proofs → trigger f_sync_delivery_proof_to_entregas
+  (mapeia delivered/delivered_with_note/not_delivered → entregue/entregue_ressalva/nao_entregue).
+- os_pod: tabela MORTA (0 registros; appPrestadorService removido).
+- Storage: bucket comprovantes-entrega (public), driver-evidence (private).
+- Conferência financeira consulta POD: SIM (comprovantesService.
+  buscarPODsDeAlocacoes + derivarSituacaoPodFinanceiro → completo/parcial/
+  pendente/nao_entregue/entregue_ressalva).
+- FLUXO DE APROVAÇÃO DE POD: NÃO EXISTE (status é derivado de evidências;
+  sem aprovado_por/aprovado_em; sem botão aprovar/rejeitar).
+- Alerta de POD pendente: operacaoExigePOD + buscarPodsPendentes (Torre).
+
+================================================================================
+16. AUDITORIA / HISTÓRICO — DIAGNÓSTICO COMPLETO
+================================================================================
+- operacional: historico_alocacoes_escala (evento/status_anterior/novo/payload/
+  created_by/ip/user_agent) via trigger; os_historico (acao/status_novo/usuario);
+  ordens_servico.historico jsonb.
+- eventos_oficiais: event bus (trg_event_bus_consumer) com trg_evento_* em
+  várias tabelas (OS criada/finalizada/cancelada, alocação aceita/cancelada/
+  recusada/trocada, POD enviado, receber criado/pago, operação finalizada,
+  portal pedido/ocorrência).
+- fiscal: fiscal_events, fiscal_logs, fiscal_historico_status.
+- financeiro prestador: financeiro_prestador_auditoria — TABELA NÃO EXISTE
+  (INSERT falha silenciosamente). Além disso usa sessionStorage.tms_user
+  (bypass removido na M003).
+- Versionamento tabelas: versao++ (sem histórico).
+- Não há trilha unificada de "quem alterou o valor de um título receber/pagar".
+
+================================================================================
+17. GAPS
+================================================================================
+G-01 (financeiro) ROMANEIO não propagado: coluna morta, sem UI, sem vínculo
+      com financeiro. Impacto: rastreabilidade Romaneio→OS→Fatura impossível.
+G-02 (dados) OC / Ordem de Carregamento: coluna órfã + conceito em metadata
+      sem entidade. Impacto: 2 identificadores externos do cliente sem estrutura.
+G-03 (financeiro) FATURA não é entidade: sem tabela dedicada, sem PDF, sem
+      agrupamento por romaneio, observação automática, vencimento configurável.
+G-04 (dados) Colunas fantasma em financeiro_receber: origem/origem_id/fatura_id
+      usadas no service mas ausentes no banco → queries podem falhar silenciosamente.
+G-05 (auditoria) financeiro_prestador_auditoria inexistente + sessionStorage bypass.
+G-06 (segurança) RLS pagamentos_prestadores "Allow all" — sem isolamento.
+G-07 (financeiro) CONFERÊNCIA sem status financeiro real (badge hardcoded),
+      sem aprovação persistida, sem apto-faturar persistido, sem lote.
+G-08 (fiscal) Emissão NFS-e/MDF-e não implementada; CT-e gated por secrets.
+G-09 (UX) CNAB/Conciliação/Inadimplência/Recibos 100% mock.
+G-10 (dados) contas_financeiras inexistente (ContasBancarias falha → fallback mock).
+G-11 (financeiro) Dados bancários da empresa p/ fatura (PIX/banco) não estruturados;
+      empresaConfig.ts HARDCODED (PDFs com CNPJ fixo).
+G-12 (financeiro) Faturamento duplicado: proteção forte no banco (UNIQUE os_id)
+      mas ausente para combinação fatura/romaneio; wizard checa duplicidade por
+      parâmetro de memória (risco de corrida).
+G-13 (dados) pagamento_prestadores (legada) duplicada com pagamentos_prestadores.
+G-14 (dados) status duplicados/vocabulário misto: status vs status_pagamento vs
+      status_faturamento vs faturamento_status vs repasse_status; a vencer vs a_vencer.
+G-15 (dados) tabela_valores (singular) e tabela_prestador_operacional órfãs.
+G-16 (dados) itens de fechamento (pagamentos_prestadores_itens) nunca lidos.
+G-17 (dados) parcelas em ContasPagar criadas com pagavel_pai_id="temp" (bug).
+G-18 (financeiro) Nível 1 hierarquia de tabela ignora vigência.
+G-19 (auditoria) Sem snapshot do VALOR aplicado (só nome da tabela/faixa).
+G-20 (fiscal) portal_faturas não integrado ao financeiro/front.
+G-21 (financeiro) Motores de recorrência (títulos) e conciliação bancária inexistentes.
+G-22 (funcional) ContasReceber.tsx legado morto (1225 linhas).
+G-23 (UX) Escala: 11 subcomponentes órfãos; observação p/ faturamento salva como
+      observacoes (não tem coluna própria de observação de faturamento).
+
+================================================================================
+18. RISCOS
+================================================================================
+R-01 DUPLICIDADE DE STATUS: campos paralelos (status_faturamento vs
+     faturamento_status; status_pagamento vs repasse_status) podem divergir.
+R-02 DUPLICIDADE DE TABELAS: pagamentos_prestadores vs pagamento_prestadores;
+     tabelas_valores vs tabela_valores vs tabela_prestador_operacional;
+     escala_operacional vs alocacoes_escala.
+R-03 GRAVAÇÃO EM CAMPOS DIFERENTES: OS grava cliente(uuid)+cliente_id(text) e
+     prestador+prestador_id — risco de divergência entre os pares.
+R-04 RECÁLCULO HISTÓRICO: inexistente (bom), mas snapshot por nome perde o
+     valor aplicado (rastreabilidade fraca).
+R-05 FATURAMENTO DUPLICADO: UNIQUE(os_id) protege por OS; risco de corrida no
+     wizard de fatura consolidada (duplicidade checada só em memória).
+R-06 QUERIES FANTASMA: financeiro_receber.origem/fatura_id e contas_financeiras
+     e financeiro_prestador_auditoria → erros silenciosos (console.warn/catch).
+R-07 SEGURANÇA: RLS pagamentos_prestadores "Allow all"; sessionStorage bypass
+     em auditoriaPrestadorService.
+R-08 REGRAS APENAS FRONTEND: status "Pendente" da Conferência hardcoded;
+     CNAB/Conciliação/Inadimplência mock; ReciboRapido sem impressão.
+R-09 CONFIG HARDCODED: empresaConfig.ts (CNPJ/endereço) divergente do banco
+     configuracoes_fiscais/configuracoes_sistema.
+R-10 VALOR DE PEDÁGIO/COMBUSTÍVEL etc.: duplicação entre alocacao (valor_*)
+     e OS (pedagio numeric, adicionais jsonb) — fórmula M80 extrai de jsonb,
+     M66 usa colunas numéricas: MESMA OS pode propagar de 2 fontes distintas.
+R-11 INTEGRIDADE: ordens_servico.romaneio 0/121 preenchidos (dado vazio ≠ bug,
+     mas indica campo não utilizado, não propagado).
+
+================================================================================
+19. O QUE DEVE SER REAPROVEITADO
+================================================================================
+- TRIGGERS de propagação financeira (M66/M80) — evoluir, não substituir.
+- Engine de precificação (precificacaoEngineService + buscarTabelasService).
+- Conferência Financeira como base da futura Central de Controle.
+- receberService/pagarService/pagamentoPrestadorService (CRUD sólido).
+- comprovantesService + entregas_protocolo (POD oficial).
+- Wizard de Fatura Consolidada (base para faturamento real).
+- Estrutura fiscal (fiscal_ctes/nfse/mdfes, documentos_vinculados, regras,
+  configuracoes_fiscais, certificados).
+- PdfTemplateConexao + geradores PDF (relatório, OS, orçamento, contrato, prévia CT-e).
+- Views de relatório (vw_relatorio_faturamento_*, vw_relatorio_pagamento_*).
+- Historico_alocacoes_escala + eventos_oficiais (auditoria operacional).
+- vw_hierarquia_tabelas (auditoria de pricing).
+
+================================================================================
+20. O QUE NÃO DEVE SER DUPLICADO
+================================================================================
+- NÃO criar nova tabela de Romaneio se puder reaproveitar ordens_servico.romaneio
+  + fiscal_documentos_vinculados. NÃO criar "ordem_carregamento" nova sem
+  decidir se será entidade própria ou evolução de metadata/OS.
+- NÃO criar "novo financeiro" em paralelo a financeiro_receber/pagar.
+- NÃO criar nova tela de conferência — EVOLUIR ConferenciaFinanceira.
+- NÃO criar novo motor de pricing — EVOLUIR precificacaoEngineService.
+- NÃO criar novo POD — manter entregas_protocolo.
+- NÃO criar nova "ordem de pagamento" — EVOLUIR pagamentos_prestadores.
+- NÃO duplicar status (unificar vocabulário).
+
+================================================================================
+21. CENTRAL DE CONTROLE RECOMENDADA (conceito, sem implementação)
+================================================================================
+RECOMENDAÇÃO: EVOLUIR FINANCEIRO > CONFERÊNCIA (ConferenciaFinanceira.tsx) para
+virar a Central de Controle Financeiro-Operacional, enriquecendo-a com:
+  - JOIN a financeiro_receber/pagar/pagamentos_prestadores (por os_id) —
+    hoje a tela só enxerga alocação+POD.
+  - Colunas da futura grade: Status/Data/OS Interna/Cliente/Romaneio-OC/
+    Prestador/Veículo/Valor Cliente/Adicionais/Total Cliente/Valor Prestador/
+    Adicionais/Total Prestador/KM Excedente/Pedágio/Reembolsos/POD/Conferência/
+    Fatura/Fiscal/Recebimento.
+  - Filtros combinados (período, cliente, OS, romaneio, prestador, placa,
+    status operacional, faturado/não, vencimento, POD, pagamento).
+  - Ação "completar dados faltantes" gravando SEMPRE na estrutura original.
+JUSTIFICATIVA: a Conferência já cruza alocação+cliente+prestador+OS+POD e é
+read-only hoje; é a base natural. Criar "mais uma tela" paralela aumentaria o
+G-14 (duplicidade) sem valor.
+
+================================================================================
+22. ARQUITETURA/FLUXO RECOMENDADO (conceito, sem código)
+================================================================================
+OS / Operação ──► Escala/Alocação (alocacoes_escala)
+                        │  trigger M66/M80 (idempotente)
+                        ▼
+            financeiro_receber / financeiro_pagar / pagamentos_prestadores
+                        │
+                        ▼
+        Conferência Financeira EVOLUÍDA (Central de Controle)
+          ├─► Romaneio/OC (ordens_servico.romaneio + OC) como referência
+          ├─► POD (entregas_protocolo) checado antes de faturar
+          ├─► Fatura (entidade dedicada OU evol. de financeiro_receber com
+          │    vínculo fatura_id REAL) → NFS-e/CT-e quando aplicável
+          ├─► Contas a Receber (baixa/parcial) → conciliação
+          └─► Pagamento de Prestadores (fechamento por período) → CNAB
+
+App Motorista → alocacoes_escala (+ romaneio informado) → mesma fonte.
+
+================================================================================
+23. PLANO DE IMPLEMENTAÇÃO EM FASES (proposta, NÃO executada)
+================================================================================
+F0 (fundação dados): criar colunas de vínculo reais em financeiro_receber
+   (origem, origem_id, fatura_id) OU migrar mapping; unificar vocabulário de
+   status; dropar/redundar tabelas órfãs (com autorização).
+F1 (romaneio/OC): ativar ordens_servico.romaneio na UI (campo no form + coluna
+   na lista) + propagação Escala↔Financeiro + App (romaneio_informado já existe).
+F2 (fatura): entidade dedicada de fatura (ou evolução) com agrupamento por
+   romaneios, observação automática, vencimento configurável, PDF (reusando
+   PdfTemplateConexao), proteção anti-duplicado por fatura/romaneio.
+F3 (conferência → central): enriquecer ConferenciaFinanceira com financeiro,
+   filtros combinados e ações de completar dados na estrutura original.
+F4 (fiscal): desbloquear emissão real (CT-e já pronto; implementar NFS-e/MDF-e)
+   e vincular fatura→NFS-e/CT-e.
+F5 (prestador): corrigir itens de fechamento (ler de volta), auditoria real
+   (tabela existente), RLS pagamentos_prestadores, lote CNAB real.
+F6 (receber): conciliação bancária + recorrência de títulos.
+F7 (limpeza): remover ContasReceber legado, tabela_valores/tabela_prestador_
+   operacional órfãs, pagamento_prestadores legada, os_pod, appPrestadorService.
+
+================================================================================
+24. ORDEM SEGURA DE EXECUÇÃO (depois de aprovação)
+================================================================================
+1. F0 dados (vínculos reais + status unificados) — antes de qualquer feature.
+2. F1 romaneio/OC (UI + propagação) — base da rastreabilidade.
+3. F2 fatura (entidade + PDF + anti-duplicado).
+4. F3 central de controle (conferência enriquecida).
+5. F4 fiscal real (CT-e/NFS-e/MDF-e) — paralelo, com secrets.
+6. F5 prestador (itens/auditoria/RLS/CNAB).
+7. F6 conciliação/recorrência.
+8. F7 limpeza de código morto (após F1-F6 estarem estáveis).
+
+================================================================================
+25. ARQUIVOS QUE SERIAM IMPACTADOS NO FUTURO (NÃO alterados)
+================================================================================
+- src/components/financeiro/ConferenciaFinanceira.tsx
+- src/components/financeiro/ContasReceberEnterprise.tsx
+- src/services/financeiro/receberService.ts
+- src/components/operacao/EscalaLista.tsx
+- src/components/operacao/OrdemServicoForm.tsx
+- src/components/operacao/OrdensServicoLista.tsx
+- src/services/ordemServicoService.ts
+- src/lib/dbMappers.ts
+- src/services/precificacao/precificacaoEngineService.ts
+- src/services/precificacao/buscarTabelasService.ts
+- src/components/financeiro/PagamentoPrestadores.tsx
+- src/services/financeiro/pagamentoPrestadorService.ts
+- src/components/financeiro/ContasPagar.tsx / pagarService.ts
+- src/services/financeiro/auditoriaPrestadorService.ts
+- src/utils/empresaConfig.ts
+- src/utils/pdfTemplateConexao.ts (+ novo gerarPDFFatura)
+- src/services/fiscal/* (focusService, cte/nfse/mdfeService)
+- src/components/operacao/escala/* (subcomponentes)
+- src/components/financeiro/ConciliacaoAvancada.tsx, PagamentoCNAB.tsx,
+  Inadimplencia.tsx, ReciboRapido.tsx, ContasBancarias.tsx (mocks → reais)
+
+================================================================================
+26. BANCO QUE PODERIA SER IMPACTADO NO FUTURO (NÃO alterado)
+================================================================================
+- financeiro_receber (colunas de vínculo fatura/origem; status padronizado)
+- ordens_servico (romaneio ativo; status_faturamento unificado)
+- Nova entidade Fatura (ou evolução) + itens de fatura
+- pagamentos_prestadores_itens (leitura de volta)
+- financeiro_prestador_auditoria (CRIAR — hoje inexistente)
+- contas_financeiras (CRIAR — hoje inexistente)
+- RLS: pagamentos_prestadores (isolamento)
+- Nova RPC(s) de faturamento/conciliação (quando autorizadas)
+- limpeza: tabela_valores, tabela_prestador_operacional, pagamento_prestadores,
+  escala_operacional, os_pod (após decisão)
+- triggers: evolução M66/M80 para propagar romaneio/fatura
+
+================================================================================
+27. DÚVIDAS QUE PRECISAM DE DECISÃO DO USUÁRIO
+================================================================================
+D-01 ROMANEIO: é por OS (1:1) ou por operação com múltiplas NFs (1:N)? Deve
+     virar entidade própria ou campo propagado de OS.romaneio?
+D-02 OC / Ordem de Carregamento: é entidade separada do Romaneio ou sinônimo?
+     (O cliente usa os dois termos?)
+D-03 FATURA: entidade dedicada (tabela própria + itens) ou evolução do
+     financeiro_receber (origem=fatura_consolidada) com vínculo real?
+D-04 Aprovação de POD: é necessária uma etapa humana de aprovar/rejeitar POD
+     antes de faturar, ou o status derivado (completo/parcial) basta?
+D-05 Vencimento padrão: permanece +30 dias ou deve ser configurável por cliente
+     (prazo de pagamento/dia fixo)?
+D-06 Dados bancários da empresa: devem vir de configuracoes_fiscais/
+     configuracoes_sistema (banco) substituindo empresaConfig.ts hardcoded?
+D-07 Emissão fiscal: qual prioridade — CT-e, NFS-e ou MDF-e primeiro?
+D-08 CNAB: formato de arquivo (240/400) e banco(s) alvo para remessa/retorno?
+D-09 Unificação de status: pode-se padronizar o vocabulário (ex.: sempre
+     pendente/a_vencer/vencido/pago/parcial/cancelado)?
+D-10 Romaneio informado pelo motorista no App: deve atualizar a OS e o
+     financeiro automaticamente (mesmo registro), ou apenas exibir?
+D-11 Remover tabelas/telas legadas (tabela_valores, ContasReceber.tsx,
+     pagamento_prestadores, escala_operacional, os_pod) — autorizado?
+
+================================================================================
+28. CONCLUSÃO
+================================================================================
+- ARQUITETURA ATUAL É REAPROVEITÁVEL: o núcleo financeiro-operacional
+  (alocacoes_escala + triggers M66/M80 + financeiro_receber/pagar +
+  pagamentos_prestadores + entregas_protocolo + pricing engine) cobre o fluxo
+  principal com automação real e proteção anti-duplicado por UNIQUE(os_id).
+- QUANTO DO NECESSÁRIO JÁ EXISTE: aproximadamente 60-70% da base de dados e
+  do fluxo ponta a ponta (OS→Escala→Financeiro→Receber/Pagar→POD→Relatórios)
+  existe e funciona. O que falta é: Romaneio/OC ativado, Fatura como entidade
+  (com PDF), Conferência como central, emissão fiscal real, conciliação/CNAB,
+  auditoria financeira real e limpeza de duplicidades/mocks.
+- MAIOR GAP: FATURAMENTO (fatura não é entidade, sem PDF, sem agrupamento por
+  romaneio, sem proteção anti-duplicado por fatura) + ROMANEIO/OC (campos
+  mortos/órfãos) — porque sem essas duas peças a rastreabilidade
+  Romaneio→OS→Fatura→Recebimento não existe.
+- CAMINHO MAIS SEGURO: executar F0 (fundação de dados/vínculos) antes de
+  qualquer feature; ativar ROMANEIO na UI (baixo risco, campo já existe);
+  criar FATURA como entidade com PDF reutilizando o PdfTemplateConexao; evoluir
+  a CONFERÊNCIA (não criar nova tela); depois fiscal real, CNAB e conciliação.
+
+================================================================================
+EVIDÊNCIAS-CHAVE
+================================================================================
+- scripts/_audit_fin_inventario.txt  — inventário completo (tabelas/views/RPCs/
+  triggers/enums).
+- scripts/_audit_fin_schema.txt      — colunas + FKs/constraints das 34 tabelas.
+- scripts/_audit_fin_evidencias.txt  — triggers M66/M80, contagens, status,
+  romaneio/OC, storage.
+- src/pages/Financeiro.tsx            — 20 abas.
+- src/components/financeiro/ConferenciaFinanceira.tsx:71-82 — query conferência.
+- src/services/financeiro/receberService.ts — CRUD receber + wizard fatura.
+- src/services/financeiro/pagarService.ts:537 — criarParcelasPagavel("temp").
+- src/services/financeiro/auditoriaPrestadorService.ts:55 — tabela inexistente.
+- src/components/financeiro/ContasBancarias.tsx:147 — contas_financeiras.
+- src/components/operacao/EscalaLista.tsx:601 — numeroOC em metadata.
+- src/services/precificacao/buscarTabelasService.ts:43-168 — hierarquia.
+- src/utils/empresaConfig.ts — dados da empresa hardcoded.
+- supabase/migrations/20260715_m127e1_tms_contrato_app_operacao.sql:20-24 — OS.romaneio.
+- supabase/migrations/20260522_alocacoes_escala.sql:14 — ordem_carregamento_id.
+- supabase/functions/focus-emissao/index.ts — emissão CT-e real gated.
+- src/components/financeiro/PagamentoCNAB.tsx — mock CNAB.
+
+================================================================================
+  AUDITORIA READ-ONLY CONCLUÍDA — NENHUMA IMPLEMENTAÇÃO AUTORIZADA NESTA ETAPA.
+================================================================================

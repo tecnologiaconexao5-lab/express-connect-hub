@@ -1,0 +1,108 @@
+ESCALA-E2E-01-FLUXO-CANONICO
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: E2E CONTROLADO (read-only)
+
+==================================================
+RESULTADO
+==================================================
+
+RESULT=BLOCKED_NO_SAFE_TARGET (para a ESCRITA)
+  - Não existe alvo de TESTE seguro para SALVAR uma alocação: o INSERT em
+    `alocacoes_escala` dispara a propagação financeira (trigger M66 →
+    financeiro_receber + pagamentos_prestadores + composicao_financeira_os) e
+    exige uma Ordem de Serviço; qualquer gravação alteraria Financeiro/dados
+    comerciais reais (PROIBIDO). Não foram criados dados produtivos artificiais.
+  - A CADEIA CANÔNICA foi validada em modo READ-ONLY com dados reais
+    (funções reais do sistema), conforme abaixo.
+
+CODE_FIX_REQUIRED=NO
+  As regras já foram corrigidas em ESCALA-05/06/07 e ESCALA-PRESTADOR-02.
+
+==================================================
+PROVA DO FLUXO CANÔNICO (dados reais, read-only)
+==================================================
+
+Caso: CESAR (hr) × CALVO (tabela hr)
+
+TEST_TARGET_SAFE=NO (somente leitura)
+ALLOCATION_ID=N/A (sem escrita)
+PROVIDER_ID=fe7a75cc-a49f-43ef-a0b7-f869fbf07744 ("CESAR AUGUSTO HOLANDA SILVA")
+  valor_diaria=520.00 | valor_saida=520.00 | veículos=1 (não bloqueia)
+VEHICLE_ID=a16ee052-6194-4cc6-a94b-47cdde0c7d45
+VEHICLE_TYPE=hr (tipo_veiculo canônico)
+THERMAL_CONDITION=seco (veiculos.tipo_carga)
+CLIENT_ID=a49d5aa3-5d36-4d64-b490-c41a552ae1d8 ("CALVO COML IMP. E EXP. LTDA.")
+TABLE_ID=b9269e3f-cc3c-4bb0-9a2f-f77361e58b0d ("HR/VAN 1800 GUARULHOS" / cliente CALVO)
+
+--- CLIENTE (tabela) ---
+CLIENT_BASE=600
+CLIENT_FRANCHISE_KM=140 (franquia_km; km_franquia=0 → canônico vence)
+CLIENT_EXCESS_RATE=1.00 (valor_km_excedente; valor_km=0)
+CLIENT_FINAL_VALUE=660 (km=200 → 600 + (200-140)*1.00)
+
+--- PRESTADOR (cadastro) ---
+PROVIDER_REGISTER_VALUE=520 (valor_diaria ?? valor_saida; NÃO soma os dois)
+PROVIDER_REPASSE_MODE=cadastro (padrão)
+PROVIDER_PERCENT=n/a no modo cadastro (80% explícito → 528)
+PROVIDER_FINAL_VALUE=520
+
+CLIENT_PROVIDER_VALUES_SEPARATED=YES (cliente 660 por tabela; prestador 520 por cadastro)
+
+--- TÉRMICA (dimensão independente) ---
+seco | termico | refrigerado — tabela CALVO hr = seco; veículo = seco → compatível.
+misto/null → wildcard (não inventa condição).
+
+--- GUARDAS DE VEÍCULO (EscalaLista) ---
+sem veículo → bloqueio ("não possui veículo vinculado");
+múltiplos veículos → bloqueio ("mais de um veículo"); não escolhe arbitrariamente.
+(ex.: FRANKLIN be420cfc possui 3 veículos → bloqueado para escala)
+
+==================================================
+VALIDAÇÕES
+==================================================
+
+1. PRESTADOR: valor padrão = valor_diaria ?? valor_saida (não soma); modo cadastro
+   padrão; % sobre tabela só explícito → CONFORME.
+2. VEÍCULO: tipo_veiculo canônico; fallback legado; sem veículo/múltiplos → bloqueio;
+   sem hardcode Fiorino/VUC → CONFORME.
+3. CLIENTE/TABELA: match normalizado; específica antes de universal; ativa; tipo
+   compatível → CONFORME.
+4. TÉRMICA: dimensão independente; não inventa quando misto/null → CONFORME.
+5. FRANQUIA: franquia_km → km_franquia → 0; tarifa valor_km_excedente → valor_km → 0;
+   sem magic numbers → CONFORME.
+6. VALORES: cliente × prestador independentes → CONFORME.
+
+PERSISTÊNCIA (escrita): NÃO EXECUTADA
+  SAVE_RESULT=BLOCKED_NO_SAFE_TARGET
+  REAL_ID_RETURNED=N/A | DB_PERSISTENCE=N/A | RELOAD_RESULT=N/A
+  REOPEN_VALUES_MATCH=N/A | FALSE_SUCCESS=N/A
+
+==================================================
+REGRESSÕES
+==================================================
+
+ESCALA_VEIC_TABELA_05=PASS
+ESCALA_VEIC_TABELA_06=PASS
+ESCALA_VEIC_TABELA_07=PASS
+ESCALA_PRESTADOR_02=PASS
+CAD_VEIC_03=PASS
+
+Testes direcionados: 8/8 PASS (escala_e2e_01_fluxo_canonico.test.ts)
+Suíte completa: 1411 passed | 57 failed (100% pré-existentes) | 155 skipped
+TYPECHECK=0 erros novos
+BUILD=✓ built in 37.05s
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Clayton/GEW-2H93 NÃO alterados.
+- Saveiro×Fiorino NÃO decidido. Térmica NÃO inventada.
+- Tabela comercial real NÃO alterada.
+- Financeiro/Fatura/APP/POD/Recrutamento NÃO alterados.
+- Sem migration/RLS. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

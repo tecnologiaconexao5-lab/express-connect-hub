@@ -1,0 +1,152 @@
+FIN-MOT-2F — LUNA FIX CRASH EXTRATO DO PRESTADOR
+Data: 21/08/2026
+Status: B — CORRIGIDO NO CÓDIGO, MAS NÃO COMPROVADO NO NAVEGADOR
+
+============================================================
+CAUSA-RAIZ
+============================================================
+
+Componente: modal "Gerar Extrato do Período" dentro de
+PagamentoPrestadores.
+
+Arquivo: src/components/financeiro/PagamentoPrestadores.tsx
+
+Linha identificada antes da correção: 2343.
+
+Select responsável: filtro "Cliente (opcional)".
+
+Valor inválido:
+
+  <SelectItem value="">Todos os clientes</SelectItem>
+
+O Radix Select não aceita string vazia como valor de Select.Item.
+Quando o SelectContent do filtro Cliente é montado, o Radix lança:
+
+  A <Select.Item /> must have a value prop that is not an empty string
+
+Por que a tentativa anterior não resolveu:
+
+Ela tratou a ausência de cliente na chamada do serviço com `clienteId ||
+undefined`, mas o problema ocorria antes, na árvore React do modal. O item
+literal `<SelectItem value="">` continuou sendo renderizado fisicamente.
+Além disso, os mapas de Prestador e Cliente aceitavam registros com `id`
+nulo/vazio, que poderiam produzir outro `SelectItem` inválido.
+
+Observação de reprodução: a inspeção estática confirmou o `SelectItem` literal
+e sua linha exata. A reprodução autenticada no navegador não foi concluída
+nesta sessão porque as variáveis `PLAYWRIGHT_TAMIRIS_PASSWORD` e
+`PLAYWRIGHT_FINANCEIRO_PASSWORD` estão ausentes no ambiente local. Portanto,
+este relatório não inventa stack de navegador nem marca a correção como
+homologada visualmente.
+
+============================================================
+CORREÇÃO
+============================================================
+
+Arquivo alterado:
+
+  src/components/financeiro/PagamentoPrestadores.tsx
+
+Antes:
+
+  clienteId: ""
+  <SelectItem value="">Todos os clientes</SelectItem>
+  prestadores.map(p => <SelectItem value={p.id}>...</SelectItem>)
+  clientes.map(c => <SelectItem value={c.id}>...</SelectItem>)
+  clienteId: extratoPeriodo.clienteId || undefined
+
+Depois:
+
+  const TODOS_CLIENTES_VALUE = "__todos_clientes__";
+  clienteId: TODOS_CLIENTES_VALUE
+  <SelectItem value={TODOS_CLIENTES_VALUE}>Todos os clientes</SelectItem>
+  prestadores.filter(p => Boolean(p.id?.trim())).map(...)
+  clientes.filter(c => Boolean(c.id?.trim())).map(...)
+  clienteId: extratoPeriodo.clienteId === TODOS_CLIENTES_VALUE
+    ? undefined
+    : extratoPeriodo.clienteId
+
+O sentinel só existe no estado/UI. Nunca é enviado ao Supabase. Para o filtro
+de todos os clientes, o service recebe `undefined`, que representa ausência de
+filtro. Registros de prestador ou cliente sem ID não geram SelectItem.
+
+Os valores de Origem/Tipo já eram não vazios:
+
+  todos
+  ordem_servico
+  escala
+  manual
+
+O Select de Prestador mantém estado inicial vazio no Root, o que é permitido
+pelo Radix; somente os Select.Item são obrigados a ter valor não vazio.
+
+============================================================
+VALIDAÇÃO DE CÓDIGO
+============================================================
+
+[x] `npx tsc --noEmit -p tsconfig.json` — 0 erros
+[x] `npx vitest run src/test/extratoPrestadorService.test.ts` — 18/18
+[x] Busca no modal: nenhum `SelectItem value=""`
+[x] Prestadores inválidos não são renderizados como itens
+[x] Clientes inválidos não são renderizados como itens
+[x] Sentinela não é enviado ao serviço/Supabase
+
+============================================================
+PROVA VISUAL
+============================================================
+
+[ ] Financeiro abriu
+[ ] Pag. Prestadores abriu
+[ ] Gerar Extrato clicável
+[ ] Modal abriu
+[ ] Prestador visível
+[ ] Data inicial visível
+[ ] Data final visível
+[ ] Cliente visível
+[ ] Origem/Tipo visível
+[ ] Select Prestador abre
+[ ] Select Cliente abre
+[ ] Select Origem abre
+[ ] Sem ErrorBoundary
+[ ] Sem erro Radix no console
+
+Motivo das marcações pendentes: não há senha E2E configurada nesta sessão;
+as credenciais `PLAYWRIGHT_*_PASSWORD` são obrigatórias para navegar no fluxo
+protegido. O Redmi não é necessário.
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Causa-raiz estática identificada no arquivo e linha exatos.
+- Item Cliente com `value=""` removido.
+- Sentinel não vazio aplicado para "Todos os clientes".
+- IDs vazios/nulos bloqueados nos itens dinâmicos do modal.
+- Conversão do sentinel para ausência de filtro feita antes da consulta.
+- TypeScript e teste relacionado aprovados.
+
+============================================================
+FALTA
+============================================================
+
+- Prova autenticada no navegador com abertura dos três Selects.
+- Confirmar ausência do erro no console e ausência de ErrorBoundary.
+
+============================================================
+STATUS
+============================================================
+
+B — CORRIGIDO NO CÓDIGO, MAS NÃO COMPROVADO
+
+Não é status A porque a prova física no navegador não pôde ser executada sem
+credenciais E2E. Não é status C porque a causa concreta foi removida e as
+validações estáticas/typecheck/teste relacionado passaram.
+
+============================================================
+PRÓXIMA MISSÃO — UMA ÚNICA
+============================================================
+
+Executar a prova visual autenticada do FIN-MOT-2F usando uma senha
+`PLAYWRIGHT_*_PASSWORD` válida: abrir Pag. Prestadores, clicar em Gerar
+Extrato do Período, abrir os três Selects, fechar/reabrir o modal e registrar
+console sem erro Radix.

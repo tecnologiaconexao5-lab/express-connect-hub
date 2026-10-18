@@ -1,0 +1,285 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.5-GATE-PRESTADOR-DESIGN
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: AUDITORIA/DESIGN SOMENTE LEITURA. Nada implementado. Nada alterado.
+OBJETIVO: MENOR alteracao para a Conferencia virar o gate profissional do
+          pagamento ao prestador, reutilizando as estruturas existentes.
+VEREDITO: PASS — o desenho e implementavel SEM segundo Financeiro e SEM duplicar
+          AP/pagamento; a maior parte do gate JA EXISTE em colunas e na tela de
+          Pagamento de Prestadores. Falta apenas ligar Conferencia -> aprovacao ->
+          Tesouraria e filtrar a Tesouraria.
+================================================================================
+
+================================================================================
+A. AS-IS (fluxo real de hoje, provado)
+================================================================================
+A1) CRIACAO (trigger, cedo). M66 em alocacoes_escala e M80 em ordens_servico
+    criam, no INSERT/UPDATE, registros em financeiro_pagar (AP/titulo) e
+    pagamentos_prestadores (fila de pagamento) SEMPRE que valor_prestador>0 e
+    prestador_id preenchido. v_is_concluida apenas escolhe o STATUS
+    ('aberto'/'pendente'); NAO impede a criacao.
+    FONTE: _fn_f_trg_propagar_financeiro_alocacao.sql:43-44,67-80; M80 idem.
+    => O valor do prestador NASCE como titulo/fila, mas ja em estado "pendente/
+       em_aberto" e elegivel_lote=false (133/137). Ou seja, ja e, de fato, uma
+       PROVISAO nao elegivel — so nao esta sendo tratada como tal pela Tesouraria.
+
+A2) NORMALIZACAO p/ pagamento (manual, por linha). Em PagamentoPrestadores a
+    linha tem acoes: "Marcar Conferido" (status_conferencia='conferido' +
+    elegivel_lote), "Aprovar" (status_aprovacao='aprovado', so se podeAprovar),
+    "Rejeitar" (status_aprovacao='rejeitado'), "Liberar Lote"
+    (status_pagamento='em_lote' quando aprovado+pendente+elegivel).
+    FONTE: PagamentoPrestadores.tsx:578-586,1015-1031,1725-1743;
+           statusFinanceiroPrestador.ts:66-87.
+
+A3) FECHAMENTO (agrupamento). fechamentoService agrupa pp por prestador/periodo
+    e usa um ciclo de status: em_conferencia -> conferido -> aprovado -> pago
+    -> cancelado, mapeado nas MESMAS colunas status_conferencia/status_aprovacao
+    /status_pagamento. FONTE: fechamentoService.ts:4,19-21,73-75,101-189,
+    223-233,279-367,376-426.
+
+A4) PAGAMENTO/BAIXA. confirmarPagamento -> RPC f_confirmar_pagamento_prestador:
+    localiza o titulo em financeiro_pagar (por os_id+prestador+valor, FOR UPDATE),
+    insere financeiro_baixas, marca financeiro_pagar como 'parcial'/'pago' e
+    pagamentos_prestadores como pago. FONTE: pagamentoPrestadorService.ts:330-354;
+    _fn_f_confirmar_pagamento_prestador.sql:17-289.
+    Observacao: a RPC NAO exige status_conferencia='conferido'/aprovado — o gate
+    de hoje e apenas de UI (botoes), nao de banco.
+
+A5) TESOURARIA. PagamentoCNAB le pagamentos_prestadores WHERE impacto_dre=true
+    ORDER BY data_prevista_pagamento LIMIT 50 — SEM filtrar aprovacao/elegivel.
+    FONTE: PagamentoCNAB.tsx:34-51. (CNAB real inexistente; botoes desabilitados.)
+
+A6) CONFERENCIA. E o gate do CLIENTE (AR/fatura). Selecao (checkbox) -> "Criar
+    Fatura" -> rascunho. NAO aprova nem paga prestador. O dossie apenas EXIBE
+    receber/pagto prestador e o POD (entregas_protocolo). FONTE: 05D.3 (E01-E13),
+    ConferenciaFinanceira.tsx:1407-1474,2557-2563.
+
+A7) CANCELAMENTO. Trigger f_trg_cancelar_financeiro_alocacao: ao cancelar a
+    alocacao, cancela financeiro_receber, financeiro_pagar (exceto pago),
+    pagamentos_prestadores (status_pagamento='cancelado', status_conferencia=
+    'cancelado') e cancela a OS. NAO exclui pp 'pago' e NAO limpa lote_id.
+    FONTE: _fn_f_trg_cancelar_financeiro_alocacao.sql:37-73.
+
+STATUS REAIS EM PROD (contagens):
+  financeiro_pagar.status ...... aberto 72 | pendente 59 | cancelado 28 | pago 11
+                                 | a vencer 5 | cancelada 2 | parcial 1
+  pp.status ................... pendente 125 | pago 12
+  pp.status_conferencia ....... pendente 62 | em_aberto 60 | conferido 14 | cancelado 1
+  pp.status_aprovacao ......... aguardando_aprovacao 127 | aprovado 10
+  pp.status_pagamento ......... pendente 96 | nao_vencido 26 | pago 12 | cancelado 3
+  pp.origem_lancamento ........ escala_direta 62 | os_direta 54 | manual 15
+                                 | TESTE VALID-P1-P2 3 | fechamento 2 | os_finalizada 1
+  pp.elegivel_lote ............ true 4 | false 133
+  pp.lote_id .................. com lote 0 | sem lote 137  (nenhum lote nunca usado)
+  pp.classificacao_dado ....... real 20 | duvidoso 34 | teste 35 | null 48
+  pp.is_teste ................. true 23 | false 114
+
+================================================================================
+B. TO-BE PROPOSTO (menor alteracao)
+================================================================================
+OS/PROGRAMACAO FINALIZADA
+  -> aparece na CONFERENCIA (alocacoes status=concluida+finalizada)
+  -> valor do prestador existe como PROVISAO nao elegivel (M66/M80, INALTERADO)
+  -> humano valida execucao/POD/prestador/valor (semaforo + dossie)
+  -> seleciona 1..N operacoes (modo/pagamento separado do faturamento)
+  -> APROVAR PAGAMENTO (RPC) = status_conferencia='conferido' + status_aprovacao='aprovado' + elegivel_lote
+  -> GERAR ORDEM DE PAGAMENTO (RPC) = lote_id (UUID) + status_pagamento='em_lote'
+  -> pagamentos_prestadores elegiveis aparecem na TESOURARIA (filtro por aprovacao)
+  -> provider bancario futuro (iFi PIX/API ou CNAB) consome a fila aprovada
+  -> retorno -> confirmar pagamento (RPC f_confirmar_pagamento_prestador) -> financeiro_baixas
+
+Tudo reutilizando: financeiro_pagar, pagamentos_prestadores, status_conferencia,
+elegivel_lote, lote_id, financeiro_baixas, f_confirmar_pagamento_prestador,
+ConferenciaFinanceira, PagamentoPrestadores, Tesouraria(PagamentoCNAB).
+NENHUM segundo Financeiro. NENHUMA AP/pp duplicada.
+
+================================================================================
+C. OPCAO ESCOLHIDA: (A) PROVISAO CEDO, NAO ELEGIVEL
+================================================================================
+Escolha: A) continuar criando financeiro_pagar/pagamentos_prestadores cedo (como
+hoje), porem tratados como PROVISAO nao elegivel, e so virar pagamento apos a
+Conferencia (aprovacao). NAO criar obrigacao so depois (opcao B).
+
+================================================================================
+D. JUSTIFICATIVA DE MENOR REGRESSAO
+================================================================================
+D1) Os consumidores atuais dependem de o registro existir cedo:
+    - PagamentoPrestadores lista pp (e aprova por linha) — ficaria vazio ate a
+      Conferencia se a criacao fosse adiada (opcao B).
+    - ConferenciaFinanceira usa pp no dossie/semaforo.
+    - fechamentoService agrupa pp existentes.
+    - f_confirmar_pagamento_prestador localiza o TITULO em financeiro_pagar por
+      os_id/prestador/valor; sem o titulo previo, a baixa falharia.
+D2) A opcao B exigiria: reescrever M66/M80 (proibido/arriscado), criar um novo
+    caminho de INSERT na Conferencia, e adaptar varios consumidores — regressao
+    alta e contra "nao redesenhar o Financeiro".
+D3) O estado atual ja e quase a opcao A: pp nasce com status pendente/em_aberto,
+    status_aprovacao='aguardando_aprovacao' e elegivel_lote=false (133/137).
+    Falta apenas (i) a acao de aprovacao na Conferencia e (ii) o filtro da
+    Tesouraria. Mudanca minima e de baixo risco.
+
+================================================================================
+E. STATUS ATUAIS REUTILIZADOS (mapa de transicoes — SEM taxonomia nova)
+================================================================================
+PREVISAO ....... status_conferencia IN ('pendente','em_aberto')
+                 AND status_aprovacao='aguardando_aprovacao'  (criado por M66/M80)
+EM_CONFERENCIA . status_conferencia='em_aberto'  (em revisao; podendo haver POD pendente)
+CONFERIDO ...... status_conferencia='conferido'                (acao humana)
+APROVADO ....... status_aprovacao='aprovado'                   (acao humana)
+ELEGIVEL_LOTE .. status_aprovacao='aprovado' AND elegivel_lote=true
+EM_LOTE ........ status_pagamento='em_lote' AND lote_id IS NOT NULL  (valor ja usado em PagamentoPrestadores.tsx:1740)
+ENVIADO_BANCO .. (futuro) status_pagamento='enviado_banco'  (novo VALOR textual, sem nova coluna/tabela)
+PAGO ........... status_pagamento='pago' (+ financeiro_baixas)
+CANCELADO ...... status_pagamento='cancelado' AND status_conferencia='cancelado'
+=> Reaproveita integralmente colunas existentes. Unico valor novo eventual e
+   'enviado_banco' (texto). 'em_lote' e 'rejeitado' JA sao usados no codigo.
+
+================================================================================
+F. ALTERACOES MINIMAS POR ARQUIVO/RPC/TRIGGER (nao implementar agora)
+================================================================================
+F1) DB — NOVA FUNCAO idempotente `f_aprovar_pagamento_prestadores(p_ids uuid[])`:
+    UPDATE pagamentos_prestadores SET status_conferencia='conferido',
+      status_aprovacao='aprovado', elegivel_lote=true,
+      data_conferencia=COALESCE(data_conferencia,now()), data_aprovacao=COALESCE(data_aprovacao,now())
+    WHERE id = ANY(p_ids) AND status_pagamento NOT IN ('pago','cancelado');
+    (guarded; nao insere nada; reexecucao e no-op.)
+F2) DB — NOVA FUNCAO idempotente `f_gerar_lote_pagamento_prestadores(p_ids uuid[])`
+    RETURNS uuid: atribui um lote_id (gen_random_uuid()) as linhas
+    WHERE id=ANY(p_ids) AND status_aprovacao='aprovado'
+      AND status_pagamento NOT IN ('pago','cancelado') AND lote_id IS NULL
+      AND elegivel_lote=true; marca status_pagamento='em_lote'. Reexecucao: as
+    linhas ja com lote_id sao ignoradas (idempotente).
+    (Alternativa sem RPC: updates guarded no service; RPC preferivel p/
+    atomicidade e idempotencia.)
+F3) DB — AJUSTE no trigger de cancelamento (f_trg_cancelar_financeiro_alocacao):
+    excluir pp com status_pagamento='pago' do cancelamento e limpar
+    lote_id/elegivel_lote das linhas canceladas.
+F4) UI — ConferenciaFinanceira.tsx: adicionar modo/selecao de PRESTADOR e a acao
+    "Aprovar Pagamento" (e opcional "Gerar Ordem de Pagamento"), chamando F1/F2.
+    NAO misturar com o checkbox de faturamento do cliente.
+F5) UI — PagamentoCNAB.tsx (Tesouraria): filtrar a lista por
+    status_aprovacao='aprovado' AND elegivel_lote=true AND status_pagamento
+    NOT IN ('pago','cancelado') (inclui 'em_lote'). Rotulo "aprovado/preview".
+F6) UI — PagamentoPrestadores.tsx: JA suporta o fluxo por linha (conferir/aprovar/
+    liberar lote). Sem mudanca obrigatoria; opcional padronizar chamadas p/ F1/F2.
+F7) M66/M80: NAO TOCAR (criacao continua como provisao nao elegivel).
+F8) RLS: a tabela ja e legivel pelo TMS apos 05D.4 (pp_select_tms); F1/F2 sao
+    UPDATE/UPDATE — exigem policy de UPDATE do TMS que HOJE NAO EXISTE (somente
+    pp_update_own). >>> GAP DE RLS a tratar na micro-missao de implementacao.
+
+================================================================================
+G. NECESSIDADE DE NOVA TABELA "ORDEM DE PAGAMENTO"?
+================================================================================
+NAO e indispensavel. lote_id (UUID) + status_conferencia + status_aprovacao +
+elegivel_lote + status_pagamento + financeiro_baixas ja representam o gate e o
+lote com rastreabilidade minima (quem/quando via data_conferencia/data_aprovacao).
+Recomendacao: NAO criar agora. Se/quando a integracao bancaria (iFi/CNAB) exigir
+metadados de REMESSA/RETORNO (arquivo, banco, id do lote no provider), criar
+entao uma tabela CABECALHO minima `lotes_pagamento` (id, criado_por, criado_em,
+provider, status, arquivo_url, retorno_url) e referenciar por lote_id — SEM
+duplicar financeiro_pagar/pagamentos_prestadores/financeiro_baixas.
+
+================================================================================
+H. REGRA EXATA DE ELEGIBILIDADE PARA A TESOURARIA
+================================================================================
+Deve aparecer na Tesouraria SOMENTE pagamento:
+  status_aprovacao = 'aprovado'
+  AND elegivel_lote = true
+  AND status_pagamento NOT IN ('pago','cancelado')
+  AND impacto_dre = true
+  AND (RLS 05D.4: tenant do TMS)
+Ordenado por data_prevista_pagamento. NAO exibir: pendente/aguardando_aprovacao,
+em_conferencia, cancelado, pago. 'em_lote' DEVE aparecer (aguardando banco).
+Mapeamento: PagamentoCNAB.tsx:37-42 (trocar o filtro atual impacto_dre-only).
+
+================================================================================
+I. ESTRATEGIA DE IDEMPOTENCIA
+================================================================================
+I1) Criar AP/pp: unico(os_id) em financeiro_pagar/pp + M66/M80 com ON CONFLICT
+    (os_id) — reexecucao nao duplica. (inalterado)
+I2) Aprovar 2x: F1 e UPDATE guarded (sem INSERT); reexecucao no-op.
+I3) Gerar lote 2x: F2 so atribui lote_id WHERE lote_id IS NULL — 2a chamada ignora.
+I4) Pagar 2x: f_confirmar_pagamento_prestador faz FOR UPDATE no pp, rejeita se
+    status_pagamento='pago' ("Pagamento ja esta marcado como pago.") e valida
+    saldo do titulo — sem 2a baixa.
+I5) Baixa duplicada: financeiro_baixas por titulo com saldo conferido (RPC).
+Nenhuma etapa cria novo AP/pp/lote/baixa em reexecucao.
+
+================================================================================
+J. CANCELAMENTO / REABERTURA
+================================================================================
+J1) Antes da aprovacao: cancelar a alocacao -> trigger cancela fp (exceto pago),
+    pp (cancelado) e a OS. OK.
+J2) Depois da aprovacao / em lote: o trigger atual cancela pp e NAO limpa lote_id
+    e NAO protege 'pago'. GAP -> F3 (excluir pago; limpar lote_id/elegivel_lote).
+J3) Depois de pago: o trigger atual marcaria pp como 'cancelado' mesmo pago
+    (WHERE status_pagamento IS DISTINCT FROM 'cancelado'). BUG de coerencia —
+    corrigir em F3 (preservar pago; tratar estorno como processo separado).
+J4) REABERTURA: NAO existe caminho de reversao (cancelada -> ativa) para OS/
+    alocacao nem para fp/pp. GAP documentado: reabertura exige acao manual/
+    nova micro-missao; nao inventar agora.
+J5) Cancelamento de fechamento: cancelarFechamento marca status_conferencia=
+    'cancelado' dos itens (fechamentoService.ts:431-474) — coerente; reaproveitar.
+
+================================================================================
+K. CLASSIFICACAO DOS 20 REGISTROS SEM TENANT RESOLVIDO (somente evidencia)
+================================================================================
+Origem: 12 com os_id NULL + 8 com os_id orfao (aponta p/ OS/alocacao inexistente).
+Nenhum deles possui vinculo de OS valido => nenhum e pagamento operacional real
+em aberto. Classificacao por EVIDENCIA:
+
+K1) POTENCIAL REAL (manual, sem OS) — 4 registros:
+    Prestador CESAR AUGUSTO HOLANDA SILVA (fe7a75cc…), origem 'manual', tipo 'PIX',
+    classificacao_dado='duvidoso': 3 ja PAGOS + 1 PENDENTE (a2b2e3c7…, R$ 3.150,34).
+    => Conciliacao manual (historicamente ligados as missoes CESAR). Exigem
+       validacao humana e, se pagos, vinculacao/registro — NAO corrigir agora.
+K2) TESTE/HML — 8 registros (os_id NULL):
+    - BRUNO DA SILVA SANTOS (659f95ec…): 7 (TESTE VALID-P1-P2 / manual / fechamento;
+      is_teste=true na maioria), todos pagos.
+    - MOTORISTA TESTE 02L (5377592a…): 1 (fechamento; codigo de missao 02L).
+K3) TESTE/DUVIDOSO por OS ORFA — 8 registros:
+    - FRANKLIN DA SILVA PEREIRA (be420cfc…): 4-5 (is_teste true/false; teste/duvidoso).
+    - PRESTADOR TESTE APP (e6646799…): 1 (teste).
+    - BRUNO DA SILVA SANTOS (659f95ec…): 1-2 (duvidoso).
+RESUMO: 4 potencial real (CESAR, manual) + 16 teste/HML/duvidoso. Nenhum real
+        operacional com OS. NAO corrigir (fora de escopo).
+
+================================================================================
+L. MICRO-MISSOES EXATAS PARA IMPLEMENTACAO (ordem sugerida)
+================================================================================
+L1. RLS UPDATE do TMS em pagamentos_prestadores (prerequisito de F1/F2):
+    adicionar policy `pp_update_tms` (authenticated + tenant, mesmo padrao 05D.4),
+    sem afetar pp_update_own. Prova positiva/negativa como na 05D.4.
+L2. DB: criar `f_aprovar_pagamento_prestadores(uuid[])` (F1) — idempotente,
+    SECURITY DEFINER, com guarda de tenant; grants authenticated.
+L3. DB: criar `f_gerar_lote_pagamento_prestadores(uuid[])` (F2) — idempotente.
+L4. UI Conferencia: selecao/modo de PRESTADOR + acao "Aprovar Pagamento"
+    (opcional "Gerar Ordem de Pagamento"), separada do checkbox de fatura.
+L5. UI Tesouraria (PagamentoCNAB.tsx): trocar filtro p/ regra H (aprovado/
+    elegivel/nao pago) e rotular "aprovados para pagamento".
+L6. DB: ajustar trigger de cancelamento (F3): nao cancelar pago; limpar lote.
+L7. Regressao: testes de idempotencia (aprovar 2x, lote 2x, pagar 2x) e de
+    cancelamento (antes/depois/apos pago). tsc (baseline) + vitest financeiro.
+L8. Relatorio final com provas (positiva + negativa + idempotencia + cancelamento).
+
+PASS: o desenho NAO cria segundo Financeiro e NAO duplica AP/pagamento; reutiliza
+financeiro_pagar, pagamentos_prestadores, status_conferencia, elegivel_lote,
+lote_id, financeiro_baixas e f_confirmar_pagamento_prestador. Unico gap de
+seguranca a tratar na implementacao e a policy de UPDATE (L1).
+
+--------------------------------------------------------------------------------
+FORA DE ESCOPO (nao tratar nesta missao)
+--------------------------------------------------------------------------------
+iFi; CNAB; paginacao; Plano de Contas; Categoria; Centro de Resultado;
+nomenclatura; fluxo cliente; AR.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D5-GATE-PRESTADOR-DESIGN-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D5-GATE-PRESTADOR-DESIGN-RESULTADO.txt
+Tamanho ..: 18381 bytes
+Data .....: 24/09/2026 16:56:50
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.5
+================================================================================

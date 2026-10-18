@@ -1,0 +1,29 @@
+A31-J1.10 — PERSISTÊNCIA DESCONTO/AJUSTE DO PRESTADOR
+=====================================================================
+EXISTE CAMPO REUTILIZÁVEL? NÃO
+  - alocacoes_escala: só valor_desconto (único/compartilhado) — nada específico
+    do prestador por serviço.
+  - pagamentos_prestadores.(valor_descontos|valor_ajustes|descontos|ajustes) e
+    pagamentos_prestadores_itens.valor_desconto: nível FECHAMENTO/PAGAMENTO
+    (agregado/saída) — não é entrada por serviço.
+  - financeiro_pagar.desconto: saída derivada (M66).
+  - composicao_financeira_os.desconto_valor: fórmula unificada M80.
+  - prestadores.retencoes/retencoes_descontos: cadastro recorrente.
+  - metadata (jsonb) seria reutilizável SEM migration, mas a Central NÃO lê
+    desconto de metadata → persistir lá ficaria invisível (não usar).
+PROPOSTA MÍNIMA (NÃO APLICADA)
+  A31J110_PROPOSTA_DESCONTO_PRESTADOR.sql
+  alocacoes_escala.valor_desconto_prestador numeric(14,2) NOT NULL DEFAULT 0
+  Aditiva (ADD COLUMN IF NOT EXISTS), sem DROP/DELETE/alterar registros antigos.
+IMPACTO EM CENTRAL/PRESTADOR
+  Hoje descontosPrestador = valor_desconto (reduz prestador com desconto do
+  cliente — divergente). Com a coluna, Central/Detalhes passam a ler
+  valor_desconto_prestador; Desconto Cliente NÃO afeta Prestador e vice-versa.
+ARQUIVOS ALTERADOS
+  Nenhum (missão é proposta; sem migration aplicada, sem mudança TS).
+TESTES
+  Não executados — requer a coluna para persistir de forma oficial.
+TSC
+  Não aplicável (sem alteração TypeScript).
+MIGRATION NECESSÁRIA? SIM (única via limpa; sem ela o campo não persiste).
+SQL APLICADO? NÃO — proposta gerada, aguarda aprovação/aplicação manual.

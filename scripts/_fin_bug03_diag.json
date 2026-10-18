@@ -1,0 +1,348 @@
+{
+  "ts": "2026-10-07T02:09:54.868Z",
+  "checks": [
+    {
+      "name": "1_existe_f_mover_fatura_status",
+      "ok": true,
+      "detail": "[{\"proname\":\"f_mover_fatura_status\",\"args\":\"p_fatura_id uuid, p_novo_status text\",\"tem_guarda_aprovada\":false,\"tem_guarda_perfil\":true,\"tem_transicoes\":true,\"vol\":\"v\",\"definer\":true}]"
+    },
+    {
+      "name": "1_existe_f_emitir_fatura",
+      "ok": true,
+      "detail": "[{\"proname\":\"f_emitir_fatura\",\"args\":\"p_fatura_id uuid\",\"tem_guarda_aprovada\":true,\"tem_guarda_perfil\":false,\"tem_transicoes\":false,\"vol\":\"v\",\"definer\":true}]"
+    },
+    {
+      "name": "1_existe_f_gerar_numero_fatura",
+      "ok": true,
+      "detail": "sequencial FAT-YYYY-XXXXXX"
+    },
+    {
+      "name": "1b_emitir_exige_aprovada (FAT-URG-04)",
+      "ok": true,
+      "detail": "tem guarda FATURA_NAO_APROVADA = true"
+    },
+    {
+      "name": "1c_mover_tem_transicoes_e_perfil",
+      "ok": true,
+      "detail": "transicoes=true perfil=true"
+    },
+    {
+      "name": "2_tem_faturas_rascunho",
+      "ok": true,
+      "detail": "[{\"status\":\"aguardando_aprovacao\",\"qtd\":1},{\"status\":\"aprovada\",\"qtd\":1},{\"status\":\"cancelada\",\"qtd\":2},{\"status\":\"emitida\",\"qtd\":9},{\"status\":\"rascunho\",\"qtd\":1}]"
+    },
+    {
+      "name": "3_faturas_manuais_listadas",
+      "ok": true,
+      "detail": "9 faturas manuais recentes"
+    },
+    {
+      "name": "4_manuais_sem_numero",
+      "ok": true,
+      "detail": "[{\"status\":\"aguardando_aprovacao\",\"qtd\":1},{\"status\":\"aprovada\",\"qtd\":1},{\"status\":\"emitida\",\"qtd\":1}]"
+    },
+    {
+      "name": "5_ha_perfis_autorizados",
+      "ok": true,
+      "detail": "4 perfis (super_admin/admin_tenant/financeiro) ativos: financeiro@conexaoexpress.com.br(financeiro), admconexao2@gmail.com(super_admin), diegoconexao19@gmail.com(super_admin), tamiris.castilho@conexaoexpress.com.br(super_admin)"
+    },
+    {
+      "name": "6_policies_faturas",
+      "ok": true,
+      "detail": "4 policies (RLS ativo = true)"
+    },
+    {
+      "name": "7_triggers_faturas",
+      "ok": true,
+      "detail": "2: trg_faturas_bloqueio_emissao_sem_ar, trg_faturas_protege_status"
+    },
+    {
+      "name": "8_faturas_com_numero_oficial",
+      "ok": true,
+      "detail": "total=10 ultimo=FAT-2026-000022"
+    },
+    {
+      "name": "9_titles_com_fatura_id",
+      "ok": true,
+      "detail": "financeiro_receber com fatura_id = 10"
+    }
+  ],
+  "funcoes": [
+    {
+      "proname": "f_emitir_fatura",
+      "args": "p_fatura_id uuid",
+      "tem_guarda_aprovada": true,
+      "tem_guarda_perfil": false,
+      "tem_transicoes": false,
+      "vol": "v",
+      "definer": true
+    },
+    {
+      "proname": "f_gerar_numero_fatura",
+      "args": "p_fatura_id uuid",
+      "tem_guarda_aprovada": false,
+      "tem_guarda_perfil": false,
+      "tem_transicoes": false,
+      "vol": "v",
+      "definer": true
+    },
+    {
+      "proname": "f_mover_fatura_status",
+      "args": "p_fatura_id uuid, p_novo_status text",
+      "tem_guarda_aprovada": false,
+      "tem_guarda_perfil": true,
+      "tem_transicoes": true,
+      "vol": "v",
+      "definer": true
+    }
+  ],
+  "faturas_por_status": [
+    {
+      "status": "aguardando_aprovacao",
+      "qtd": 1
+    },
+    {
+      "status": "aprovada",
+      "qtd": 1
+    },
+    {
+      "status": "cancelada",
+      "qtd": 2
+    },
+    {
+      "status": "emitida",
+      "qtd": 9
+    },
+    {
+      "status": "rascunho",
+      "qtd": 1
+    }
+  ],
+  "faturas_manuais": [
+    {
+      "id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "aprovada",
+      "numero": null,
+      "numero_cliente": null,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "810.40",
+      "numero_manual": null,
+      "origem": "manual",
+      "criado_em": "2026-10-07T01:45:07.249Z",
+      "atualizado_em": "2026-10-07T01:49:08.933Z"
+    },
+    {
+      "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "aguardando_aprovacao",
+      "numero": null,
+      "numero_cliente": null,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "810.40",
+      "numero_manual": null,
+      "origem": "manual",
+      "criado_em": "2026-10-07T01:43:29.603Z",
+      "atualizado_em": "2026-10-07T01:43:30.274Z"
+    },
+    {
+      "id": "43ba8624-c644-413f-a9bf-1702e5b58535",
+      "status": "emitida",
+      "numero": "FAT-2026-000017",
+      "numero_cliente": 1,
+      "cliente_id": "b4917245-e99f-4a72-8ce7-4f1deaccff7c",
+      "valor_total": "300.00",
+      "numero_manual": null,
+      "origem": "manual",
+      "criado_em": "2026-09-24T20:01:33.815Z",
+      "atualizado_em": "2026-09-24T20:01:34.432Z"
+    },
+    {
+      "id": "7220ed09-50d8-41a1-b3ce-a315e416bcde",
+      "status": "emitida",
+      "numero": "FAT-2026-000014",
+      "numero_cliente": 5,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "2091.40",
+      "numero_manual": "42",
+      "origem": "manual",
+      "criado_em": "2026-09-22T16:02:00.483Z",
+      "atualizado_em": "2026-10-03T01:04:59.713Z"
+    },
+    {
+      "id": "ebbc46d2-41ff-4412-aa4c-a5b5e81d1411",
+      "status": "emitida",
+      "numero": "FAT-2026-000013",
+      "numero_cliente": 4,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "2114.60",
+      "numero_manual": "41",
+      "origem": "manual",
+      "criado_em": "2026-09-22T14:26:21.107Z",
+      "atualizado_em": "2026-09-24T01:41:41.171Z"
+    },
+    {
+      "id": "ed616465-4479-41e2-948f-969f0cadd3f7",
+      "status": "emitida",
+      "numero": "FAT-2026-000012",
+      "numero_cliente": 3,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "1200.00",
+      "numero_manual": "40.",
+      "origem": "manual",
+      "criado_em": "2026-09-03T11:21:31.092Z",
+      "atualizado_em": "2026-09-24T01:41:41.171Z"
+    },
+    {
+      "id": "8309a22b-9f13-4610-bdb7-ab4008d6fd81",
+      "status": "emitida",
+      "numero": null,
+      "numero_cliente": null,
+      "cliente_id": "a49d5aa3-5d36-4d64-b490-c41a552ae1d8",
+      "valor_total": "1200.00",
+      "numero_manual": "40",
+      "origem": "manual",
+      "criado_em": "2026-09-02T21:30:37.622Z",
+      "atualizado_em": "2026-09-02T21:30:39.274Z"
+    },
+    {
+      "id": "3cff86c2-1985-4492-90bf-8027d1cf20d7",
+      "status": "emitida",
+      "numero": "FAT-2026-000011",
+      "numero_cliente": 2,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "1597.48",
+      "numero_manual": "39",
+      "origem": "manual",
+      "criado_em": "2026-08-25T20:13:06.651Z",
+      "atualizado_em": "2026-09-24T01:41:41.171Z"
+    },
+    {
+      "id": "a22334a3-fdee-4fd2-8eb5-71321e981162",
+      "status": "emitida",
+      "numero": "FAT-2026-000010",
+      "numero_cliente": 1,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "valor_total": "3550.54",
+      "numero_manual": "38",
+      "origem": "manual",
+      "criado_em": "2026-08-21T14:59:26.254Z",
+      "atualizado_em": "2026-09-24T01:41:41.171Z"
+    }
+  ],
+  "manuais_sem_numero": [
+    {
+      "status": "aguardando_aprovacao",
+      "qtd": 1
+    },
+    {
+      "status": "aprovada",
+      "qtd": 1
+    },
+    {
+      "status": "emitida",
+      "qtd": 1
+    }
+  ],
+  "tenant_usuarios": [
+    {
+      "email": "contato@conexaoexpress.com.br",
+      "papel": "atendimento",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "cliente.teste@conexaoexpress.com.br",
+      "papel": "cliente",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": null,
+      "papel": "cliente",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "comercial@conexaoexpress.com.br",
+      "papel": "comercial",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "financeiro@conexaoexpress.com.br",
+      "papel": "financeiro",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "operacional@conexaoexpress.com.br",
+      "papel": "operacional",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "admconexao2@gmail.com",
+      "papel": "super_admin",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "diegoconexao19@gmail.com",
+      "papel": "super_admin",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "email": "tamiris.castilho@conexaoexpress.com.br",
+      "papel": "super_admin",
+      "status": "ativo",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "faturas_rls": [
+    {
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "relname": "faturas"
+    }
+  ],
+  "faturas_policies": [
+    {
+      "policyname": "fat_delete_tms",
+      "cmd": "DELETE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))",
+      "with_check": null
+    },
+    {
+      "policyname": "fat_insert_tms",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))"
+    },
+    {
+      "policyname": "fat_select_tms",
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))",
+      "with_check": null
+    },
+    {
+      "policyname": "fat_update_tms",
+      "cmd": "UPDATE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM tenant_usuarios\n  WHERE (tenant_usuarios.user_id = auth.uid()))) AND (tenant_id = current_tenant_id_safe()))",
+      "with_check": null
+    }
+  ],
+  "faturas_triggers": [
+    {
+      "tgname": "trg_faturas_bloqueio_emissao_sem_ar",
+      "def": "CREATE TRIGGER trg_faturas_bloqueio_emissao_sem_ar BEFORE INSERT OR UPDATE ON public.faturas FOR EACH ROW EXECUTE FUNCTION f_trg_faturas_bloqueio_emissao_sem_ar()"
+    },
+    {
+      "tgname": "trg_faturas_protege_status",
+      "def": "CREATE TRIGGER trg_faturas_protege_status BEFORE INSERT OR UPDATE OF status ON public.faturas FOR EACH ROW EXECUTE FUNCTION f_trg_faturas_protege_status()"
+    }
+  ],
+  "sequencial": {
+    "total": 10,
+    "ultimo": "FAT-2026-000022"
+  }
+}

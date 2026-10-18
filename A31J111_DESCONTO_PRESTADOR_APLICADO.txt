@@ -1,0 +1,42 @@
+A31-J1.11 — DESCONTO/AJUSTE DO PRESTADOR APLICADO
+=====================================================================
+MIGRATION APLICADA? SIM (script scripts/a31j111_aplicar_desconto_prestador.mjs,
+transação COMMIT OK — sem reset/db push, sem DROP/DELETE/UPDATE em massa).
+COLUNA CRIADA
+  public.alocacoes_escala.valor_desconto_prestador numeric(14,2) NOT NULL DEFAULT 0
+  (adição segura; registros antigos permanecem válidos — 185 alocações preservadas).
+SCHEMA FINAL
+  Desconto Cliente = valor_desconto (inalterado)
+  Desconto Prestador = valor_desconto_prestador (novo)
+ARQUIVOS TS ALTERADOS
+  centralFinanceiroService.ts: input+insert valor_desconto_prestador;
+    descontosPrestador passa a ler valor_desconto_prestador; whitelist de
+    complemento e select do dossiê ampliados.
+  ConferenciaFinanceira.tsx: submit do lançamento manual passa o campo;
+    complementação manual carrega/salva o campo; novo campo no dossiê.
+  centralFinanceiroVisao.ts: já usava valor_desconto_prestador (prévia) — sem mudança.
+TRIGGERS/SERVICES ALTERADOS (produção, edição localizada na função viva)
+  f_trg_propagar_financeiro_alocacao: prestador desconto = valor_desconto_prestador;
+    financeiro_pagar passa a gravar coluna desconto; trigger UPDATE OF inclui a coluna.
+  Perna Cliente (financeiro_receber) NÃO foi alterada.
+COMPORTAMENTO CLIENTE
+  Desconto Cliente reduz SÓ Total Cliente; não afeta Prestador.
+COMPORTAMENTO PRESTADOR
+  Desconto/Ajuste Prestador reduz SÓ Total Prestador; não afeta Cliente; coexiste
+  com o desconto do cliente; sobrevive a salvar/recarregar (Central + Detalhes).
+TESTES
+  NOVO a31j11_desconto_prestador.test.ts (7): 1 cliente só; 2 prestador só;
+  3 ambos coexistem; 4+5 salvar/reabrir preserva; 6 detalhes mostra os dois;
+  7 SQL aplicado (financeiro_pagar usa desconto prestador, cliente intocado);
+  8 sem regressão pedágio/KM (609,60 / 586,03).
+  Regressão direta: a31j16(7)+a31j19(7)+a31j1(14)+a31j18(3)+a31j17(7)+a31c(5)+
+  a31e(7) = 57/57 PASS.
+TSC/BUILD
+  npx tsc --noEmit = 0 erros | npm run build = OK (38,74s).
+PRODUÇÃO PRESERVADA
+  Função viva teve apenas 4 edições localizadas; backup em
+  scripts/_live_trg_before_a31j111.sql; migration final em
+  supabase/migrations/20260819_a31j111_desconto_prestador.sql (repo = produção).
+PENDÊNCIA REAL
+  Escala (EscalaLista.tsx) ainda grava desconto do prestador em valor_desconto
+  (modelo antigo) — migrar futuramente para valor_desconto_prestador.

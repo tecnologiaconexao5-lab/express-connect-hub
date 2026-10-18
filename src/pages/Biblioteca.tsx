@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { confirmAction } from "@/lib/confirmDialog";
 import { useSearchParams } from "react-router-dom";
 import { 
   Library, Folder, Upload, Download, Search, FileText, Image, Video, 
@@ -211,7 +212,7 @@ export default function Biblioteca() {
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (!msgsError && msgsData) {
+      if (!msgsError && msgsData && msgsData.length > 0) {
         setMensagens(msgsData);
         localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(msgsData));
       } else {
@@ -459,7 +460,13 @@ export default function Biblioteca() {
 
   // Excluir arquivo
   const handleDeleteFile = async (doc: any) => {
-    const confirmar = window.confirm(`Tem certeza que deseja excluir o arquivo "${doc.nome}"?`);
+    const confirmar = await confirmAction({
+      title: "Excluir arquivo",
+      description: `Tem certeza que deseja excluir o arquivo "${doc.nome}"?`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "destructive",
+    });
     if (!confirmar) return;
 
     try {
@@ -548,7 +555,7 @@ export default function Biblioteca() {
   // Criar nova mensagem rápida
   const handleNovaMensagem = () => {
     setMensagemEditando({
-      id: "",
+      id: crypto.randomUUID(),
       titulo: "",
       categoria: "Operacional",
       texto: "",
@@ -568,7 +575,8 @@ export default function Biblioteca() {
       return;
     }
 
-    const idMsg = mensagemEditando.id || Date.now().toString();
+    const isEditando = !!mensagemEditando.id;
+    const idMsg = isEditando ? mensagemEditando.id : crypto.randomUUID();
     const msgNormalizada = {
       id: idMsg,
       titulo: mensagemEditando.titulo.trim(),
@@ -622,7 +630,13 @@ export default function Biblioteca() {
 
   // Excluir Mensagem Rápida
   const handleExcluirMensagem = async (id: string) => {
-    const confirmar = window.confirm("Excluir esta mensagem rápida?");
+    const confirmar = await confirmAction({
+      title: "Excluir mensagem rápida",
+      description: "Excluir esta mensagem rápida?",
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "destructive",
+    });
     if (!confirmar) return;
 
     // Atualizar localmente
@@ -651,11 +665,17 @@ export default function Biblioteca() {
 
   // Salvar Fluxo de Recrutamento
   const handleSalvarFluxo = async () => {
-    localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(fluxoEtapas));
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const etapasAtualizadas = fluxoEtapas.map(e => ({
+      ...e,
+      id: uuidRegex.test(e.id) ? e.id : crypto.randomUUID()
+    }));
+    setFluxoEtapas(etapasAtualizadas);
+    localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(etapasAtualizadas));
     
     try {
       let errosCount = 0;
-      for (const etapa of fluxoEtapas) {
+      for (const etapa of etapasAtualizadas) {
         const { error } = await supabase
           .from('fluxo_recrutamento')
           .upsert([{

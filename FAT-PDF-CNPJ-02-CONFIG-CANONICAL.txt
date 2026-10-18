@@ -1,0 +1,166 @@
+FAT-PDF-CNPJ-02-CONFIG-CANONICAL
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+Prioridade: CRÍTICA
+
+==================================================
+RESULTADO OBRIGATÓRIO
+==================================================
+
+PROJECT_REF=uwrvzsjtpgaifkktpepn
+TARGET_ROW_EXISTS=YES
+TARGET_KEY_MATCH=YES
+BEFORE_CNPJ="" (vazio)
+ROWS_UPDATED=1
+AFTER_CNPJ=31.227.975/0001-80
+
+OTHER_CONFIG_FIELDS_PRESERVED=YES
+  (jsonb_set em valor.cnpj; TODAS as demais 21 chaves preservadas byte-a-byte)
+
+FISCAL_CONFIG_CHANGED=NO
+BANK_CONFIG_CHANGED=NO
+CLIENT_DATA_CHANGED=NO
+
+FATURA_CNPJ_SOURCE=config_financeira_empresa
+FATURA_RESOLVED_CNPJ=31.227.975/0001-80
+FISCAL_FALLBACK_USED=NO
+
+PDF_GENERATION_TEST=PASS (fluxo real, 2/2)
+PDF_NEW_CNPJ=31.227.975/0001-80
+OLD_CNPJ_PRESENT_IN_NEW_PDF=NO
+
+ROLLBACK_PREPARED=YES
+ROLLBACK_EXECUTED=NO
+
+DB_WRITES=1
+MIGRATIONS=0
+
+==================================================
+PASSO 1 — PREFLIGHT (READ-ONLY)
+==================================================
+
+PROJECT_REF confirmado por:
+  - DB_USER=postgres.uwrvzsjtpgaifkktpepn → ref=uwrvzsjtpgaifkktpepn
+  - VITE_SUPABASE_URL=https://uwrvzsjtpgaifkktpepn.supabase.co
+  (obs.: supabase/.temp/project-ref contém "aqpfayildtcnrkfeeyjg" — arquivo de
+   link local desatualizado; a conexão real usada é uwrvzsjtpgaifkktpepn.)
+
+TARGET_ROW_EXISTS=YES (1 linha)
+TARGET_KEY_MATCH=YES (chave=config_financeira_empresa)
+CURRENT_CNPJ_EMPTY=YES ("")
+BEFORE_VALOR (chaves): ie,uf,pix,cnpj,banco,conta,email,cidade,digito,agencia,
+  endereco,telefone,logoClaro,tipoConta,codigoBanco,razaoSocial,beneficiario,
+  logoColorido,nomeFantasia,emailFinanceiro,beneficiarioCnpj,inscricaoMunicipal
+  (sem senhas/secrets — apenas dados cadastrais/bancários vazios)
+
+==================================================
+PASSO 2 — UPDATE CIRÚRGICO
+==================================================
+
+SQL executado (jsonb_set — preserva o objeto):
+  UPDATE configuracoes_sistema
+  SET valor = jsonb_set(valor, '{cnpj}', to_jsonb('31.227.975/0001-80'::text), true)
+  WHERE id = '4c43dbfc-51ca-4574-951d-394cca1558a2'
+    AND chave = 'config_financeira_empresa';
+
+EXPECTED_ROWS_UPDATED=1  →  ROWS_UPDATED=1
+Nenhum outro registro/tabela foi alterado.
+
+==================================================
+PASSO 3 — PROVA AFTER
+==================================================
+
+CANONICAL_CONFIG.valor.cnpj = 31.227.975/0001-80
+OTHER_CONFIG_FIELDS_PRESERVED=YES (DIFF_KEYS=[] | KEYS_ADDED=[] | KEYS_REMOVED=[])
+
+FISCAL_ROW (4de4216d-3c19-4778-bc80-bd6a576db814) = 42.796.040/0001-31
+  → FISCAL_CONFIG_CHANGED=NO (inalterado)
+BANK contas_financeiras: 1 linha (BTG PACTUAL / ag 0050 / cc 572559) → inalterada
+  → BANK_CONFIG_CHANGED=NO
+CLIENT_DATA_CHANGED=NO
+
+==================================================
+PASSO 4 — PROVA DO FLUXO REAL
+==================================================
+
+buscarDadosEmpresaParaFatura() (faturaService.ts) executada com a fonte real:
+  → empresa.cnpj = 31.227.975/0001-80
+  → FATURA_CNPJ_SOURCE=config_financeira_empresa (FONTE 1)
+  → FISCAL_FALLBACK_USED=NO (FONTE 3 não sobrescreve CNPJ já resolvido)
+
+PDF gerado pelo fluxo real (gerarPDFFatura + montarInputPdfFatura):
+  test-results/fat-pdf-cnpj-02/fatura_cnpj_canonical.pdf
+  Texto contém "CNPJ: 31.227.975/0001-80" e NÃO contém "42.796.040/0001-31".
+
+Testes:
+  src/test/fat_pdf_cnpj_02_flow.test.ts → 2/2 PASS (integração real, read-only)
+
+==================================================
+PASSO 5 — REGRESSÃO
+==================================================
+
+CLIENT_CNPJ_PRESERVED=YES   (11.222.333/0001-81 no PDF)
+BANK_SOURCE_PRESERVED=YES   (contas_financeiras inalteradas; snapshot preservado)
+VALUES_PRESERVED=YES        (R$ 300,00)
+DUE_DATE_PRESERVED=YES      (31/08/2026)
+DESCRIPTION_PRESERVED=YES
+PDF_LAYOUT_PRESERVED=YES    (marcadores estruturais presentes)
+
+Fluxo Romaneio → Conferência → Validação → Faturamento → NF → Vencimento →
+Contas a Receber → Pagamento: NÃO alterado (nenhuma mudança de código nesta missão).
+
+Testes de regressão PDF:
+  fat_pdf_cnpj_01.test.ts            12/12 PASS
+  tms_s04_fatura_cliente_pdf.test.ts  6/6  PASS
+  fin_config_pdf_01a.test.ts         22/22 PASS
+  f38_fatura_manual.test.ts           PASS
+Suíte completa (npx vitest run):
+  Test Files: 10 failed | 84 passed | 1 skipped (95)
+  Tests:      57 failed | 1360 passed | 155 skipped (1572)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates).
+
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 43.02s
+
+==================================================
+ROLLBACK (preparado, NÃO executado)
+==================================================
+
+UPDATE configuracoes_sistema
+SET valor = jsonb_set(valor, '{cnpj}', to_jsonb(''::text), true)
+WHERE id = '4c43dbfc-51ca-4574-951d-394cca1558a2'
+  AND chave = 'config_financeira_empresa';
+  -- restaura BEFORE_CNPJ = ""
+
+ROLLBACK_PREPARED=YES
+ROLLBACK_EXECUTED=NO
+
+==================================================
+OBSERVAÇÕES / RISCO RESIDUAL (fora do escopo desta missão)
+==================================================
+
+1) RAZÃO SOCIAL: config_financeira_empresa.valor.razaoSocial está VAZIO, então a
+   resolução cai na FONTE 3 (fiscal) → empresa.razaoSocial = "CONEXAO SERVICOES
+   EXPRESS LTDA" (nome do emitente fiscal), agora combinado com o CNPJ canônico.
+   A missão restringe-se ao CNPJ (não alterar fiscal, não inventar razão social).
+   RECOMENDAÇÃO (não executada): preencher config_financeira_empresa.valor.razaoSocial
+   (e endereço/IE) com os dados da Conexão Express Transportes LTDA para consistência
+   total do cabeçalho da Fatura.
+
+2) Em ambiente de teste (anon), a FONTE 2 (contas_financeiras) retorna vazio por RLS;
+   em produção autenticada o banco é resolvido normalmente. Nenhuma mudança feita.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- configuracoes_fiscais NÃO alterada. CNPJ fiscal NÃO alterado.
+- Cliente, faturas existentes, contas bancárias: NÃO alterados.
+- Nenhuma fatura fictícia criada em produção.
+- Sem migration/RLS. Sem alteração de código adicional (apenas o teste de prova).
+- Não tocou CAD-VEIC / Escala / APP/POD. Não iniciou outra missão.
+
+DB_WRITES=1
+MIGRATIONS=0

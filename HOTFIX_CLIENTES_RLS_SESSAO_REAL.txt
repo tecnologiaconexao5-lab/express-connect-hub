@@ -1,0 +1,67 @@
+================================================================================
+HOTFIX CLIENTES RLS — DIAGNÓSTICO DA SESSÃO REAL (read-only; nada alterado)
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+USUÁRIO REAL:
+financeiro@conexaoexpress.com.br (de1c77e0-1818-431c-8503-ebe08bd95e80)
+- Login real mais recente registrado em auth_eventos_auditoria:
+  2026-08-17T13:36Z, Chrome 145/Windows (bate com o "navegador REAL").
+- tenant_usuarios: tenant 00000000-...-0001, papel financeiro, status ativo.
+- (tamiris=super_admin também logou, mas super_admin passa; o reprovador é
+  perfil não-admin.)
+
+TENANT DO USUÁRIO:
+00000000-0000-0000-0000-000000000001 (Conexao Express)
+
+TENANT ENVIADO NO INSERT:
+00000000-0000-0000-0000-000000000001
+- ClienteDetalhe.tsx: se novo e sem tenantId, chama current_tenant_id_safe()
+  (RPC com EXECUTE p/ authenticated; retorna a sentinela) → toClienteInsert
+  envia tenant_id = sentinela. O payload NÃO envia id (DB gera uuid_generate_v4()).
+
+FUNÇÃO RETORNA:
+f_usuario_pode_acessar_tenant(tenant_id do payload) -> TRUE  (WITH CHECK do INSERT passa)
+MAS o INSERT do navegador usa .select()  ->  INSERT ... RETURNING
+O RETURNING é filtrado pelas policies de SELECT:
+  clientes_select_own → f_usuario_pode_acessar_cliente(id) -> FALSE p/ não-admin
+  (subquery EXISTS em clientes.id = NEW.id NÃO enxerga a linha recém-inserida
+  na mesma instrução) → linha filtrada → erro RLS.
+
+CAUSA EXATA DO 403:
+O hotfix anterior corrigiu SOMENTE o WITH CHECK do INSERT
+(clientes_insert_own → f_usuario_pode_acessar_tenant(tenant_id)), que hoje
+passa. Porém ClienteDetalhe.tsx:248 faz `supabase.from("clientes")
+.insert([payload]).select()`. O `.select()` gera RETURNING, e o PostgreSQL
+valida as linhas retornadas contra as policies de SELECT. A policy
+`clientes_select_own` exige f_usuario_pode_acessar_cliente(id), que usa
+EXISTS autorreferente em clientes.id — falso durante a mesma instrução para
+não-admin → "new row violates row-level security policy for table 'clientes'"
+(comportamento documentado do PostgreSQL para INSERT ... RETURNING sob RLS).
+Prova (simulada com SET role + JWT claims, BEGIN/ROLLBACK):
+- super_admin  sem RETURNING: OK | com RETURNING: OK
+- financeiro   sem RETURNING: OK | com RETURNING: 403 RLS
+- f_usuario_pode_acessar_cliente(<id novo não persistido>): false (financeiro)
+Por isso o navegador REAL (financeiro, não-admin) continua 403, mesmo com a
+policy de INSERT corrigida. A validação do hotfix anterior reportou "OK" por
+artefato (INSERT sem RETURNING) — não reproduzia o caminho do navegador.
+
+CORREÇÃO MÍNIMA (proposta — NÃO aplicada, aguarda autorização):
+Ajustar a policy de SELECT `clientes_select_own` para cobrir o RETURNING sem
+depender da linha existente, adicionando a regra por tenant via tenant_usuarios:
+  CREATE POLICY clientes_select_own ON public.clientes FOR SELECT
+    TO anon, authenticated USING (
+      f_usuario_pode_acessar_cliente(id)
+      OR (id = f_obter_cliente_id_do_usuario())
+      OR EXISTS (SELECT 1 FROM tenant_usuarios tu
+                 WHERE tu.user_id = auth.uid() AND tu.status = 'ativo'
+                   AND COALESCE(clientes.tenant_id, tu.tenant_id) = tu.tenant_id)
+    );
+  (isso também devolve a visibilidade dos 23 clientes legados com tenant NULL
+  para usuários TMS não-admin — bug latente relacionado).
+Alternativa de contorno no front (sem tocar banco): em ClienteDetalhe, fazer
+`insert([payload])` SEM `.select()` e, em seguida, buscar o id
+`from('clientes').select('id').eq('cnpj', cnpj)`.
+Observação: o hotfix de INSERT já aplicado está correto e deve permanecer;
+ele apenas não era suficiente para o caminho com `.select()`.
+================================================================================

@@ -1,0 +1,596 @@
+{
+  "gerado_em": "2026-09-24T02:03:13.747Z",
+  "d_ids": [
+    {
+      "id": "bb828a6b-e6c2-4bc0-bdbb-6654fb3ba734",
+      "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "cf6eea7b-4c9d-4200-b306-4d209764112f",
+      "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+      "is_teste_antes": false,
+      "status_antes": "pago",
+      "dp_antes": "2026-07-01"
+    },
+    {
+      "id": "b0fc497a-f201-4218-a62b-b5fa3e005fc5",
+      "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "29e0b127-5d02-4631-9029-da162e87d9d7",
+      "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "3665c595-02bb-41d4-963f-903cbbd1a540",
+      "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "95b25c22-819f-4fe0-8058-e1b395fd2f5b",
+      "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "ac68bec4-6124-48a5-b73c-c17fe89164ca",
+      "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "ad02ce1a-73b8-4909-b75d-b073da7b9b0c",
+      "os_id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "2f910daf-ac2c-44e6-b81b-0aa503b0681f",
+      "os_id": "63129749-7e22-4088-97f3-52e0bd13d385",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "e1b8f9a8-66c2-4bf2-b5bb-210048ebe375",
+      "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "3bd62acd-2287-4f86-b1d0-977c5641cfc8",
+      "os_id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "e0c5355c-b1be-4de4-a87e-a52cd9fd9d96",
+      "os_id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "2bd14450-7a8b-4309-acec-21bc07222b6f",
+      "os_id": "8aca4262-b27e-467a-bf95-fd85d952bde2",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "4ddcf297-752b-4247-bda3-945fd6a83439",
+      "os_id": "bff76814-3149-408c-b5f8-467f1ff178a4",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "ecae95e6-6570-48be-bb16-fdb858f3d0b2",
+      "os_id": "fdd3e5ce-6736-4b6a-aa41-f837d4f5f219",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "22c7b93a-2437-4883-b199-4335047ffdd3",
+      "os_id": "93014234-8dc8-408c-b724-f0ef79ce284b",
+      "is_teste_antes": false,
+      "status_antes": "a vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "fb30838a-fc5f-430f-9aa3-9b7892e564d4",
+      "os_id": "9b75d097-9f2b-4b04-a615-3b7a0a7282d2",
+      "is_teste_antes": true,
+      "status_antes": "pago",
+      "dp_antes": null
+    },
+    {
+      "id": "f75f6e71-d7ee-4d41-bb5e-6c9546409634",
+      "os_id": "9f5a5630-715b-4e6e-8860-d0e93d48ff2e",
+      "is_teste_antes": true,
+      "status_antes": "a_vencer",
+      "dp_antes": null
+    },
+    {
+      "id": "dc56791e-e46d-4544-85c0-822af5429c2f",
+      "os_id": "c5b79fbd-f455-47c5-b5ed-8f142ad5612e",
+      "is_teste_antes": true,
+      "status_antes": "vencido",
+      "dp_antes": null
+    },
+    {
+      "id": "550b36cb-ab41-4440-a60d-03c108a87376",
+      "os_id": "127b1b3f-a1ae-447c-8a9b-fdc627d51db1",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "02b5bf02-b708-4dbd-b9c7-44d57120bb11",
+      "os_id": "89b922bc-7653-4315-a8db-69abb2983a95",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "6b935367-02db-4742-ba72-38c31430b6a0",
+      "os_id": "9521575c-5a7a-437d-b533-0645ea61520e",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "4a305e2f-1b39-4f84-b3a6-73e90384f8dc",
+      "os_id": "7c8a6289-ee94-4e50-8ae6-fe0a149f5b09",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "57b454fc-81f3-424c-a035-0a00ddf86393",
+      "os_id": "88f80b32-fe2b-4e4b-beaa-5a537a4b7e7d",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "8fa86342-7258-4644-ac80-99effc7cfb42",
+      "os_id": "3db46421-e706-4ca4-8195-1c7a07f3135c",
+      "is_teste_antes": true,
+      "status_antes": null,
+      "dp_antes": null
+    },
+    {
+      "id": "3c019285-a60d-485e-b290-33b2afd5b1c9",
+      "os_id": "0733bb97-8356-434c-bbdf-35d70bc0ff08",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "9470b2ae-dd89-426d-82e7-c748fb9e032c",
+      "os_id": "b6dd5ce8-5511-4b6f-92b8-610a8625fb88",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "200ecb02-c91e-48e1-9dc8-ff73f99e0227",
+      "os_id": "71e61468-af09-42e6-8d7e-e4624d9b1468",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "15d1b0d0-3bc9-4b74-8dc8-de094fa67cf4",
+      "os_id": "3a15f5d1-adc8-4a87-b8dd-2fce3ac007f1",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "7d51d307-b721-4bc7-8cd5-f78c86e22cbb",
+      "os_id": "1c7db493-d501-42df-9a93-c104c2be0530",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "b708aee7-e4a2-46fa-b7b2-6235e713b966",
+      "os_id": "8b06402c-4a19-4492-9943-46abc16f4918",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "89dc89e7-a7af-4e5b-a792-2be2d55cac2b",
+      "os_id": "edf1fff7-f2bc-4bdf-a03e-be366001d5a1",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "b2b51282-356b-4801-a1c7-90c13a4d4053",
+      "os_id": "4996bf7b-7700-4549-b4aa-a4e73e030f89",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "89600201-76ad-4689-809c-abc917812bf6",
+      "os_id": "aa5c8fde-f26a-4d07-a2de-c299445e5e45",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "5a1ecd9e-15af-425a-b499-cfef5c17e172",
+      "os_id": "b8fedeb1-f926-46d3-b26c-69c393a40077",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "ff54e4e2-cdcd-44bb-af70-fa06755341f8",
+      "os_id": "e8ffd31f-168c-4038-a061-bd4858ae8699",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "fda53bb5-913b-4775-a8a1-be9e197956d2",
+      "os_id": "4767a7f1-d198-469d-b1fd-7bd6e6ad21c0",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "06211e9b-05d8-4032-9d56-f7c3b0c6f8c7",
+      "os_id": "e936e03b-3a63-4251-bdd0-e177dc8967a9",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "218a9e47-047d-420b-b2b6-7ac84d49205d",
+      "os_id": "fb33a1bd-1e71-41ce-9734-cf495f137b12",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "1ae4d758-7e38-4f7f-9680-1c9069e14108",
+      "os_id": "bf4f8750-aaf6-4d34-837e-6d331978dacf",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "697e61df-a6ee-47ea-8163-acff1c415551",
+      "os_id": "b940fa0d-ea42-45d7-bf15-907d4b416ec2",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "90abcc23-1764-4242-a1dd-8235e9c49a37",
+      "os_id": "ee788641-0260-44cb-b53c-02d52828dfc8",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "f86b1328-cbde-4259-811e-323a7fc1d021",
+      "os_id": "cc2a9d21-a34e-4cbe-a964-e3feb224e653",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "59278800-8d94-4617-bd16-6429efafce9f",
+      "os_id": "45857f5f-d303-447b-b6b2-957b6eaf0dc7",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "4b983f52-fbee-42f7-a40f-84d8bc2d4cfb",
+      "os_id": "9c67c758-6745-4e48-ad6a-97dcd752b9e3",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "cb5f6a6a-cee4-4559-b900-61341fad67e9",
+      "os_id": "e1869e96-1d14-4654-bb93-4acda9986655",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "e72afe9e-fb9a-4adb-ae61-b33af8821f24",
+      "os_id": "215eaf04-7247-49c3-b7a9-f6a86c72c6a4",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "adab036f-c56e-4884-812f-d23034766075",
+      "os_id": "dda7be25-5e96-4633-93f2-9cf793231162",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "76dc2c4f-173f-4212-9def-5ece6be7c49f",
+      "os_id": "19eedf62-5fb0-4478-8fff-991611090e8e",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "210ff86b-1248-47f1-bad2-89041581d049",
+      "os_id": "2073a75d-62f7-453d-b4e3-eaf3e8ea212b",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "9bcd5a33-8190-4d48-bd99-67eda97a0060",
+      "os_id": "38961ecf-4c62-4a87-a614-ec9092c988e4",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "f66f8273-380b-4a4b-b8db-507c8cb3baa1",
+      "os_id": "b38da43d-4adb-4c1f-b101-eff96a7cbe8a",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "2a35cf05-00f8-435f-aae9-9bc5ce6213b5",
+      "os_id": "7320c76d-3033-4f83-a4c1-5c1ea6636d80",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "6104648d-b23e-4e28-9d0d-722118979715",
+      "os_id": "e668bf55-9f97-4e4d-a8e0-f6e9a2694854",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "b427ee36-fe30-432d-aaaf-8d50711a55cd",
+      "os_id": "6dae9368-bd0c-41df-8348-36e09552206a",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "ada1b009-8502-4fb6-883d-8f3ce3c057ad",
+      "os_id": "ea96785e-5769-4a42-a58c-559ec47d5588",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "07717add-7854-4b56-ae6a-f0d3c798231d",
+      "os_id": "16ddcba1-5a0a-4690-9980-a8a68bd1dae0",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "36a638b2-756a-459a-b203-fba3bb766268",
+      "os_id": "b9907bc8-1f0a-4a3e-8f97-29d4bf6f2712",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "df804677-5b7a-459e-9013-959c709c21f8",
+      "os_id": "cfdd3d7f-60c6-4b87-8d4e-f6cc2de64e2f",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "e1e05ee4-7f6a-4a4a-b55b-4acceca2b050",
+      "os_id": "5c9a87aa-b2a9-4fd5-9d85-c379bb496053",
+      "is_teste_antes": true,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "d9c81573-62fa-492d-9a11-92b4d3eea083",
+      "os_id": "eaa0e5fd-fd1f-4640-aa95-488dbd07eb97",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "75e0e5f0-c512-49b6-9542-716362705c08",
+      "os_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "9f3a6a6c-e5d2-4313-99cd-90389d7edecc",
+      "os_id": "3a6423b9-553d-4b70-bc5e-a03fd17daf4d",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "d4c9e73c-b1f9-4627-9174-d44f21140ad1",
+      "os_id": "f4869b05-5f53-4eb4-b4bb-49a123cc4f68",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "16609f03-a692-4610-85ad-4b0a5b74c9bc",
+      "os_id": "3e3aba1e-797c-437a-af1b-80ed1fe0c03f",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "c3998227-6b5e-48ae-8bf1-0f1049c8c01f",
+      "os_id": "405fe001-4947-44a6-8cd2-c0203a701cfd",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "f08536e7-392e-474b-a103-11f6f9363cad",
+      "os_id": "d5a8774a-6032-4a98-8389-af6aa0df38e0",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "7e283ebd-26c8-43e0-8fdc-0f73bf35084f",
+      "os_id": "1ddbfe6c-bc44-4d96-9c34-b700a03b1144",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "1dcc9b2a-4f2c-4a35-8ced-9faee8bf9343",
+      "os_id": "5bded789-d792-47a1-b49d-75a61b08c5e2",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "b4b4f199-f5ae-4c3d-8911-a3b1db2ec04c",
+      "os_id": "004a11d6-bc70-49a9-a2cf-959b5c59a43e",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "e2571717-19ed-4a9b-ac00-aa1907729974",
+      "os_id": "f97eac6c-a64e-4cb8-9d12-25ccc878d2c0",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "b9f73a07-3e1f-459a-8aa5-d607f30258df",
+      "os_id": "ee8847f9-3657-41d5-9300-cb889ced17ab",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "ce77c326-e807-486b-993c-11823510aa14",
+      "os_id": "b9dc3124-adc3-4604-aa7b-f530c9f9dee9",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "32d901db-620c-4b62-bffa-44e76d63f9da",
+      "os_id": "d6114430-6f88-4398-b7e0-6ab028b646d7",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    },
+    {
+      "id": "2ec7e1f2-96aa-4173-9fd1-91fd5d5686c4",
+      "os_id": "1e1b59fa-4ab6-46df-8648-a6a1f0facab2",
+      "is_teste_antes": true,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "078f0821-5d05-41b5-9ca6-5f931218ef2d",
+      "os_id": "2c24a4dc-3491-4f46-9d24-69ceb4d76d63",
+      "is_teste_antes": false,
+      "status_antes": "pendente",
+      "dp_antes": null
+    },
+    {
+      "id": "c5941bca-ea3b-439e-8547-a319fc883b43",
+      "os_id": "a39a2b95-ce63-4ccb-a4b1-e15cf6b9f880",
+      "is_teste_antes": false,
+      "status_antes": "aberto",
+      "dp_antes": null
+    }
+  ],
+  "ar_75e0e5f0_antes": {
+    "id": "75e0e5f0-c512-49b6-9542-716362705c08",
+    "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+    "descricao": "Faturamento ALOC-20260712-C0A7EE88",
+    "valor": 2000,
+    "vencimento": null,
+    "status": "aberto",
+    "created_at": "2026-07-12T03:51:23.468Z",
+    "updated_at": "2026-09-22T20:58:24.671Z",
+    "os_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+    "cliente": "M43_2026-06-29_18-27-54 Cliente",
+    "cliente_nome": "M43_2026-06-29_18-27-54 Cliente",
+    "data_vencimento": "2026-10-22T03:00:00.000Z",
+    "data_emissao": null,
+    "data_pagamento": null,
+    "categoria": null,
+    "observacoes": null,
+    "cliente_documento": null,
+    "fatura": null,
+    "serie": null,
+    "numero": null,
+    "os_vinculadas": null,
+    "contrato_vinculado": null,
+    "proposta_vinculada": null,
+    "valor_bruto": 0,
+    "valor_liquido": 0,
+    "desconto": 0,
+    "juros": 0,
+    "multa": 0,
+    "abatimento": 0,
+    "data_previsao_recebimento": null,
+    "recorrente": false,
+    "quantidade_parcelas": 1,
+    "parcela_atual": 1,
+    "centro_resultado": null,
+    "plano_conta": null,
+    "conta_entrada": null,
+    "recorrencia": "nenhuma",
+    "fatura_id": null,
+    "is_teste": false
+  },
+  "anti_dup_def_original": "CREATE OR REPLACE FUNCTION public.f_trg_fatura_itens_anti_duplicidade()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_os_ja_faturada uuid;\n  v_status_fatura text;\nBEGIN\n  IF NEW.os_id IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  SELECT status INTO v_status_fatura FROM public.faturas WHERE id = NEW.fatura_id;\n\n  -- Regra: mesmo serviço ativo não pode estar em duas faturas válidas\n  -- (válidas = não canceladas). Fatura cancelada libera o serviço.\n  IF v_status_fatura IS DISTINCT FROM 'cancelada' THEN\n    SELECT fi.id INTO v_os_ja_faturada\n    FROM public.fatura_itens fi\n    JOIN public.faturas f ON f.id = fi.fatura_id\n    WHERE fi.os_id = NEW.os_id\n      AND fi.status = 'ativo'\n      AND f.status IS DISTINCT FROM 'cancelada'\n      AND fi.fatura_id IS DISTINCT FROM NEW.fatura_id\n    LIMIT 1;\n\n    IF v_os_ja_faturada IS NOT NULL THEN\n      RAISE EXCEPTION 'SERVIÇO_JA_FATURADO: A OS % já está vinculada a outra fatura ativa.', NEW.os_id;\n    END IF;\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+  "contagens_pre": {
+    "receber_total": 122,
+    "receber_test_true": 21,
+    "baixas_total": 19,
+    "ar_oficial_346687cf": {
+      "id": "346687cf-f35d-4cde-8a26-47bdcff46de1",
+      "valor": 2120,
+      "status": "aberto"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Map, { Marker, Popup, NavigationControl, FullscreenControl, ScaleControl, Source, Layer, MapRef } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Truck, AlertTriangle, AlertCircle, CheckCircle, MapPin, X, Settings } from "lucide-react";
+import { Truck, AlertTriangle, AlertCircle, CheckCircle, MapPin, X, Settings, Package, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
@@ -10,17 +10,30 @@ export interface MapLocation {
   numero: string;
   latitude: number;
   longitude: number;
-  status: "em_rota" | "aguardando" | "ocorrencia" | "atrasado" | "concluida";
+  status: "em_rota" | "aguardando" | "ocorrencia" | "atrasado" | "concluida" | "em_coleta" | "em_entrega" | "parado";
   cliente?: string;
   prestador?: string;
   previsao?: string;
   sla?: string;
   sequencia?: number;
+  vehicleType?: string;
+  plate?: string;
+  driverName?: string;
+  gpsState?: string;
+  speed?: number;
+  accuracy?: number;
+  bateria?: number;
+  lastLocationAt?: string;
+  osNumero?: string;
+  currentStage?: string;
+  origin?: string;
+  destination?: string;
 }
 
 interface MapboxMapProps {
   locations?: MapLocation[];
   onMarkerClick?: (location: MapLocation) => void;
+  onOpenDetails?: (location: MapLocation) => void;
   showControls?: boolean;
   style?: "dark" | "light";
   height?: string;
@@ -30,20 +43,14 @@ interface MapboxMapProps {
   selectedLocationId?: string;
 }
 
-const defaultLocations: MapLocation[] = [
-  { id: "1", numero: "OS-1042", latitude: -23.5505, longitude: -46.6333, status: "em_rota", cliente: "Tech Solutions", prestador: "João Silva", previsao: "16:00" },
-  { id: "2", numero: "OS-1045", latitude: -23.2222, longitude: -45.9999, status: "ocorrencia", cliente: "Indústria Global", prestador: "Maria Costa", previsao: "14:30" },
-  { id: "3", numero: "OS-1090", latitude: -22.9068, longitude: -43.1729, status: "aguardando", cliente: "Comércio Varejo", prestador: "Pedro Santos", previsao: "17:00" },
-  { id: "4", numero: "OS-1088", latitude: -19.9167, longitude: -43.9345, status: "em_rota", cliente: "Distribuidora Norte", prestador: "Carlos Lima", previsao: "18:30" },
-  { id: "5", numero: "OS-1077", latitude: -25.4284, longitude: -49.2733, status: "atrasado", cliente: "Logística Sul", prestador: "Ana Oliveira", previsao: "12:00" },
-  { id: "6", numero: "OS-1091", latitude: -23.5610, longitude: -46.6560, status: "em_rota", cliente: "Tech Solutions", prestador: "João Silva" },
-  { id: "7", numero: "OS-1092", latitude: -23.5450, longitude: -46.6400, status: "concluida", cliente: "Tech Solutions", prestador: "João Silva" },
-  { id: "8", numero: "OS-1093", latitude: -23.5300, longitude: -46.6200, status: "aguardando", cliente: "Comércio Varejo", prestador: "Pedro Santos" },
-];
+
 
 const getStatusColor = (status: string) => {
   switch (status) {
     case "em_rota": return "#22c55e";
+    case "em_coleta": return "#0ea5e9";
+    case "em_entrega": return "#f97316";
+    case "parado": return "#f59e0b";
     case "aguardando": return "#eab308";
     case "ocorrencia": return "#ef4444";
     case "atrasado": return "#dc2626";
@@ -55,6 +62,9 @@ const getStatusColor = (status: string) => {
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "em_rota": return Truck;
+    case "em_coleta": return Package;
+    case "em_entrega": return MapPin;
+    case "parado": return Clock;
     case "aguardando": return Truck;
     case "ocorrencia": return AlertCircle;
     case "atrasado": return AlertTriangle;
@@ -66,6 +76,9 @@ const getStatusIcon = (status: string) => {
 const getStatusLabel = (status: string) => {
   switch (status) {
     case "em_rota": return "Em Rota";
+    case "em_coleta": return "Em Coleta";
+    case "em_entrega": return "Em Entrega";
+    case "parado": return "Parado";
     case "aguardando": return "Aguardando";
     case "ocorrencia": return "Ocorrência";
     case "atrasado": return "Atrasado";
@@ -75,8 +88,9 @@ const getStatusLabel = (status: string) => {
 };
 
 export default function MapboxMap({
-  locations = defaultLocations,
+  locations = [],
   onMarkerClick,
+  onOpenDetails,
   showControls = true,
   style = "dark",
   height = "100%",
@@ -126,6 +140,13 @@ export default function MapboxMap({
     }
   }, [locations]);
 
+  useEffect(() => {
+    if (!selectedLocation) return;
+    const atual = locations.find(l => l.id === selectedLocation.id);
+    if (atual) setSelectedLocation(atual);
+    else setSelectedLocation(null);
+  }, [locations]);
+
   const geojsonData = useMemo(() => ({
     type: "FeatureCollection" as const,
     features: locations.map(loc => ({
@@ -138,6 +159,8 @@ export default function MapboxMap({
         prestador: loc.prestador,
         previsao: loc.previsao,
         sla: loc.sla,
+        gpsState: loc.gpsState,
+        driverName: loc.driverName,
       },
       geometry: { type: "Point" as const, coordinates: [loc.longitude, loc.latitude] }
     }))
@@ -190,6 +213,20 @@ export default function MapboxMap({
             <Settings className="w-4 h-4" />
             Configurar Integração
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (locations.length === 0) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center bg-slate-900 rounded-lg" style={{ height }}>
+        <div className="text-center p-8">
+          <MapPin className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-white mb-2">Nenhuma localização</h3>
+          <p className="text-slate-400 mb-4 max-w-md">
+            Nenhuma OS com coordenadas disponível no momento. As localizações aparecerão aqui quando houver dados de rastreamento.
+          </p>
         </div>
       </div>
     );
@@ -274,6 +311,9 @@ export default function MapboxMap({
               paint={{
                 "circle-color": ["match", ["get", "status"],
                   "em_rota", "#22c55e",
+                  "em_coleta", "#0ea5e9",
+                  "em_entrega", "#f97316",
+                  "parado", "#f59e0b",
                   "aguardando", "#eab308",
                   "ocorrencia", "#ef4444",
                   "atrasado", "#dc2626",
@@ -330,30 +370,111 @@ export default function MapboxMap({
             closeButton={true}
             closeOnClick={false}
             className="z-50"
+            maxWidth="300px"
           >
-            <div className="p-2 min-w-[200px] text-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-sm">{selectedLocation.numero}</span>
-                <span 
-                  className="text-[10px] px-2 py-0.5 rounded-full text-white"
+            <div className="p-1.5 min-w-[260px] text-slate-800">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="font-bold text-sm truncate">{selectedLocation.osNumero || selectedLocation.numero}</span>
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded-full text-white shrink-0"
                   style={{ backgroundColor: getStatusColor(selectedLocation.status) }}
                 >
                   {getStatusLabel(selectedLocation.status)}
                 </span>
               </div>
-              {selectedLocation.cliente && (
-                <p className="text-xs text-gray-600 mb-1">Cliente: {selectedLocation.cliente}</p>
+
+              {/* SLA + GPS chips */}
+              <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                {selectedLocation.sla === "atrasado" && (
+                  <span className="text-[9px] font-bold uppercase text-white bg-rose-600 px-1.5 py-0.5 rounded">
+                    Atrasado
+                  </span>
+                )}
+                {selectedLocation.gpsState && selectedLocation.gpsState !== "sem_rastreamento" && (
+                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                    selectedLocation.gpsState === "atualizado" ? "bg-emerald-600 text-white"
+                    : selectedLocation.gpsState === "antigo" ? "bg-amber-500 text-white"
+                    : "bg-rose-600 text-white"
+                  }`}>
+                    {selectedLocation.gpsState === "atualizado" ? "GPS OK" : selectedLocation.gpsState === "antigo" ? "GPS Antigo" : "GPS Muito Antigo"}
+                  </span>
+                )}
+                {selectedLocation.speed != null && selectedLocation.speed > 0 && (
+                  <span className="text-[9px] font-bold uppercase text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                    {selectedLocation.speed} km/h
+                  </span>
+                )}
+              </div>
+
+              {selectedLocation.driverName && (
+                <p className="text-xs text-gray-700 mb-0.5 font-medium">{selectedLocation.driverName}</p>
               )}
-              {selectedLocation.prestador && (
-                <p className="text-xs text-gray-600 mb-1">Prestador: {selectedLocation.prestador}</p>
+              {selectedLocation.vehicleType && (
+                <p className="text-[10px] text-gray-500 mb-1">
+                  {selectedLocation.vehicleType}{selectedLocation.plate ? ` · ${selectedLocation.plate}` : ""}
+                </p>
+              )}
+              {selectedLocation.cliente && (
+                <p className="text-xs text-gray-600 mb-0.5">Cliente: {selectedLocation.cliente}</p>
+              )}
+              {selectedLocation.currentStage && (
+                <p className="text-[11px] text-indigo-600 font-medium mb-0.5">Etapa: {selectedLocation.currentStage}</p>
+              )}
+              {selectedLocation.gpsState && selectedLocation.gpsState !== "sem_rastreamento" && (
+                <p className="text-[10px] text-gray-500 mb-0.5">
+                  GPS {selectedLocation.gpsState === "atualizado" ? "atualizado" : selectedLocation.gpsState === "antigo" ? "desatualizado" : "muito antigo"}
+                  {selectedLocation.lastLocationAt ? ` (há ${(() => {
+                    const diffMin = Math.floor((Date.now() - new Date(selectedLocation.lastLocationAt).getTime()) / 60000);
+                    return diffMin < 60 ? `${diffMin}min` : `${Math.floor(diffMin / 60)}h`;
+                  })()})` : ""}
+                </p>
+              )}
+              {selectedLocation.accuracy != null && (
+                <p className="text-[10px] text-gray-500 mb-0.5">Precisão: ±{selectedLocation.accuracy}m</p>
+              )}
+              {(() => {
+                const bat = selectedLocation.bateria;
+                const valida = bat != null && bat > 0;
+                if (!valida) {
+                  return <p className="text-[10px] text-gray-400 mb-0.5">Bateria não informada</p>;
+                }
+                const nivel = bat >= 20 ? "normal" : bat >= 10 ? "atencao" : "critico";
+                const cor = nivel === "normal" ? "text-emerald-600" : nivel === "atencao" ? "text-amber-600" : "text-rose-600";
+                const barra = nivel === "normal" ? "bg-emerald-500" : nivel === "atencao" ? "bg-amber-500" : "bg-rose-500";
+                return (
+                  <p className="text-[10px] text-gray-500 mb-0.5 flex items-center gap-1.5">
+                    <span>Bateria: <span className={`font-bold ${cor}`}>{Math.round(bat)}%</span></span>
+                    <span className="w-8 h-1.5 rounded-full bg-gray-200 overflow-hidden inline-block">
+                      <span className={`block h-full ${barra}`} style={{ width: `${Math.min(100, bat)}%` }} />
+                    </span>
+                    {nivel === "critico" && <span className="text-[9px] font-bold uppercase text-rose-500">Crítico</span>}
+                    {nivel === "atencao" && <span className="text-[9px] font-semibold uppercase text-amber-500">Atenção</span>}
+                  </p>
+                );
+              })()}
+              {selectedLocation.origin && (
+                <p className="text-[10px] text-gray-500 mb-0.5 truncate">Origem: {selectedLocation.origin}</p>
+              )}
+              {selectedLocation.destination && (
+                <p className="text-[10px] text-gray-500 mb-0.5 truncate">Destino: {selectedLocation.destination}</p>
               )}
               {selectedLocation.previsao && (
-                <p className="text-xs text-gray-500">Previsão: {new Date(selectedLocation.previsao).toLocaleString("pt-BR")}</p>
-              )}
-              {selectedLocation.sla && (
-                <p className="text-xs font-semibold mt-1" style={{ color: getStatusColor(selectedLocation.sla) }}>
-                  SLA: {getStatusLabel(selectedLocation.sla)}
+                <p className={`text-[10px] mb-1 ${
+                  selectedLocation.sla === "atrasado" ? "text-rose-600 font-semibold" : "text-gray-500"
+                }`}>
+                  Previsão: {new Date(selectedLocation.previsao).toLocaleString("pt-BR")}
                 </p>
+              )}
+              {onOpenDetails && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetails(selectedLocation);
+                  }}
+                  className="w-full mt-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded-md font-medium transition-colors flex items-center justify-center gap-1.5"
+                >
+                  Abrir Painel Completo
+                </button>
               )}
             </div>
           </Popup>
@@ -369,12 +490,20 @@ export default function MapboxMap({
             <span className="text-xs text-slate-300">Em Rota</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-            <span className="text-xs text-slate-300">Aguardando</span>
+            <div className="w-3 h-3 rounded-full bg-sky-500" />
+            <span className="text-xs text-slate-300">Em Coleta</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span className="text-xs text-slate-300">Atrasado</span>
+            <div className="w-3 h-3 rounded-full bg-orange-500" />
+            <span className="text-xs text-slate-300">Em Entrega</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-amber-500" />
+            <span className="text-xs text-slate-300">Parado</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-yellow-500" />
+            <span className="text-xs text-slate-300">Aguardando</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-600" />

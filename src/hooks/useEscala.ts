@@ -10,10 +10,14 @@ import {
 } from "@/services/escala/escalaMapper";
 import {
   listarAlocacoes,
+  listarAlocacoesAppPrestador,
   aceitarAlocacao as escalaAceitarAlocacao,
   recusarAlocacao as escalaRecusarAlocacao,
   iniciarRota as escalaIniciarRota,
   finalizarAlocacao as escalaFinalizarAlocacao,
+  cancelarAlocacao as escalaCancelarAlocacao,
+  criarAlocacao as escalaCriarAlocacao,
+  atualizarAlocacao as escalaAtualizarAlocacao,
 } from "@/services/escala/escalaService";
 
 type ResultadoOperacao = {
@@ -98,6 +102,42 @@ export default function useEscala() {
     }
   }, []);
 
+  const carregarAlocacoesAppPrestador = useCallback(async (prestadorId: string) => {
+    if (!prestadorId) return [];
+    setLoading(true);
+    setError(null);
+    setMensagem("");
+    setErroSupabase(null);
+    try {
+      const resultado = await listarAlocacoesAppPrestador(prestadorId);
+      if (resultado.sucesso && resultado.dados) {
+        const normalizadas = resultado.dados.alocacoes.map((item: Record<string, any>) => ({
+          ...mapearBancoParaLocal(item),
+          id: item.id != null ? String(item.id) : String(Date.now()),
+        }));
+        salvarLocalStorage(normalizadas);
+        setAlocacoes(normalizadas);
+        setUsandoSupabase(true);
+        setFonteDados('supabase');
+        setMensagem(`Alocacoes carregadas: ${normalizadas.length}`);
+        return normalizadas;
+      }
+      throw new Error(resultado.erro || "Falha ao carregar alocacoes");
+    } catch (err) {
+      const msgErro = String((err as Error)?.message || err);
+      console.error("[Escala] AppPrestador - Erro AO VIVO:", msgErro);
+      setUsandoSupabase(false);
+      setFonteDados('localStorage');
+      setErroSupabase(msgErro);
+      setError(msgErro);
+      setMensagem("Erro ao carregar dados do servidor.");
+      setAlocacoes([]);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const criarAlocacao = useCallback(async (item: Record<string, any>): Promise<ResultadoOperacao> => {
     setLoading(true);
     setError(null);
@@ -115,53 +155,27 @@ export default function useEscala() {
           console.log("[ESCALA_DEBUG_FIELD]", k, v, typeof v);
         });
 
-        const isUUID = (v: string) =>
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-        const uuidFields = ["id", "prestador_id", "cliente_id", "os_id", "operacao_id", "ordem_servico_id", "ordem_carregamento_id", "empresa_id"];
-        uuidFields.forEach((campo) => {
-          const valor = itemParaBanco[campo];
-          if (valor && typeof valor === "string" && !isUUID(valor)) {
-            console.error("[UUID_INVALIDO]", campo, valor);
-            delete itemParaBanco[campo];
-          }
-        });
-        Object.keys(itemParaBanco).forEach((k) => {
-          if (itemParaBanco[k] === undefined || itemParaBanco[k] === null || itemParaBanco[k] === "") {
-            delete itemParaBanco[k];
-          }
-        });
+        const resultado = await escalaCriarAlocacao(itemParaBanco);
 
-        const { data, error } = await supabase
-          .from("alocacoes_escala")
-          .insert(itemParaBanco)
-          .select();
-
-        if (error) {
-          console.error("[ESCALA_DEBUG_ERROR]", JSON.stringify(error, null, 2));
-        }
-
-        if (!error && data) {
-          const camelData = (Array.isArray(data) ? data : [data]).map(mapearBancoParaLocal);
-          const next = [...alocacoes.filter((a) => String(a.id) !== String(item.id)), ...camelData];
+        if (resultado.sucesso && resultado.dados) {
+          const camelData = mapearBancoParaLocal(resultado.dados as Record<string, any>);
+          const next = [...alocacoes.filter((a) => String(a.id) !== String(item.id)), camelData];
           salvarLocalStorage(next);
           setAlocacoes(next);
-          camelData.forEach((alc: any) => {
-            sincronizarOSEscala(alc).then((res) => {
-              if (!res.sucesso) console.warn("[Escala] sync OS ignorada:", res.erro || res.acao);
-            }).catch((e: any) => {
-              console.error("[Escala] Erro ao sincronizar OS:", e);
-            });
-          });
+          try {
+            const res = await sincronizarOSEscala(camelData);
+            if (!res.sucesso) console.warn("[Escala] sync OS ignorada:", res.erro || res.acao);
+          } catch (e: any) {
+            console.error("[Escala] Erro ao sincronizar OS:", e);
+          }
           return { sucesso: true, mensagem: "Alocação enviada ao Supabase.", data: camelData };
         }
 
-        if (error) {
-          console.error("[Escala] Supabase falhou ao criar alocação:", error.message);
-          setErroSupabase(error.message);
-          setError(error.message);
-          setLoading(false);
-          return { sucesso: false, mensagem: `Supabase: ${error.message}` };
-        }
+        console.error("[Escala] Supabase falhou ao criar alocação:", resultado.erro || resultado.mensagem);
+        setErroSupabase(resultado.erro || "Falha ao criar alocação no Supabase");
+        setError(resultado.erro || "Falha ao criar alocação");
+        setLoading(false);
+        return { sucesso: false, mensagem: `Supabase: ${resultado.erro || resultado.mensagem}` };
       }
 
       const itemCamel = mapearBancoParaLocal(mapearLocalParaBanco(item));
@@ -197,36 +211,29 @@ export default function useEscala() {
           }
         });
         console.log("[ESCALA_DEBUG] Payload update:", JSON.stringify(updatesBanco, null, 2));
-        const { data, error } = await supabase
-          .from("alocacoes_escala")
-          .update(updatesBanco)
-          .eq("id", id)
-          .select();
+        const resultado = await escalaAtualizarAlocacao(id, updatesBanco);
 
-        if (!error && data) {
-          const camelData = (Array.isArray(data) ? data : [data]).map(mapearBancoParaLocal);
+        if (resultado.sucesso && resultado.dados) {
+          const camelData = mapearBancoParaLocal(resultado.dados as Record<string, any>);
           const next = alocacoes.map((alocacao) =>
-            String(alocacao.id) === String(id) ? { ...alocacao, ...camelData[0] } : alocacao
+            String(alocacao.id) === String(id) ? { ...alocacao, ...camelData } : alocacao
           );
           salvarLocalStorage(next);
           setAlocacoes(next);
-          camelData.forEach((alc: any) => {
-            sincronizarOSEscala(alc).then((res) => {
-              if (!res.sucesso) console.warn("[Escala] sync OS ignorada:", res.erro || res.acao);
-            }).catch((e: any) => {
-              console.error("[Escala] Erro ao sincronizar OS:", e);
-            });
-          });
+          try {
+            const res = await sincronizarOSEscala(camelData);
+            if (!res.sucesso) console.warn("[Escala] sync OS ignorada:", res.erro || res.acao);
+          } catch (e: any) {
+            console.error("[Escala] Erro ao sincronizar OS:", e);
+          }
           return { sucesso: true, mensagem: "Alocação atualizada.", data: camelData };
         }
 
-        if (error) {
-          console.error("[Escala] Supabase falhou ao atualizar alocação:", error.message);
-          setErroSupabase(error.message);
-          setError(error.message);
-          setLoading(false);
-          return { sucesso: false, mensagem: `Supabase: ${error.message}` };
-        }
+        console.error("[Escala] Supabase falhou ao atualizar alocação:", resultado.erro || resultado.mensagem);
+        setErroSupabase(resultado.erro || "Falha ao atualizar alocação no Supabase");
+        setError(resultado.erro || "Falha ao atualizar alocação");
+        setLoading(false);
+        return { sucesso: false, mensagem: `Supabase: ${resultado.erro || resultado.mensagem}` };
       }
 
       const updatesCamel = mapearBancoParaLocal(mapearLocalParaBanco(updates));
@@ -256,29 +263,21 @@ export default function useEscala() {
       }
 
       if (usandoSupabase) {
-        const { data, error } = await supabase
-          .from("alocacoes_escala")
-          .update({ status: "cancelada", status_pagamento: "cancelado", observacoes: motivo })
-          .eq("id", id)
-          .select();
+        const resultado = await escalaCancelarAlocacao(id, motivo);
 
-        if (!error && data) {
-          const camelData = (Array.isArray(data) ? data : [data]).map(mapearBancoParaLocal);
+        if (resultado.sucesso && resultado.dados) {
+          const camelData = mapearBancoParaLocal(resultado.dados as Record<string, any>);
           const next = alocacoes.map((alocacao) =>
-            String(alocacao.id) === String(id) ? { ...alocacao, ...camelData[0] } : alocacao
+            String(alocacao.id) === String(id) ? { ...alocacao, ...camelData } : alocacao
           );
           salvarLocalStorage(next);
           setAlocacoes(next);
           return { sucesso: true, mensagem: "Alocação cancelada.", data: camelData };
         }
 
-        if (error) {
-          console.error("[Escala] Supabase falhou ao cancelar alocação:", error.message);
-          setErroSupabase(error.message);
-          setError(error.message);
-          setLoading(false);
-          return { sucesso: false, mensagem: `Supabase: ${error.message}` };
-        }
+        console.warn("[Escala] Falha ao cancelar alocação no Supabase:", resultado.erro || resultado.mensagem);
+        setFonteDados('localStorage');
+        setErroSupabase(resultado.erro || "Falha ao cancelar alocação no Supabase");
       }
 
       const statusCanceladoBanco = normalizarStatusParaBanco("cancelado");
@@ -342,7 +341,7 @@ export default function useEscala() {
     }
   }, [alocacoes, usandoSupabase]);
 
-  const iniciarRotaHook = useCallback(async (id: string, prestadorId?: string): Promise<ResultadoOperacao> => {
+  const iniciarRotaHook = useCallback(async (id: string, prestadorId?: string, kmInicial?: number): Promise<ResultadoOperacao> => {
     setLoading(true);
     setError(null);
     setMensagem("");
@@ -350,7 +349,7 @@ export default function useEscala() {
       if (!id) throw new Error("ID da alocação é obrigatório");
 
       if (usandoSupabase) {
-        const resultado = await escalaIniciarRota(id, prestadorId);
+        const resultado = await escalaIniciarRota(id, prestadorId, kmInicial);
         if (resultado.sucesso && resultado.dados) {
           const camelData = mapearBancoParaLocal(resultado.dados as Record<string, any>);
           const next = alocacoes.map((a) =>
@@ -367,7 +366,7 @@ export default function useEscala() {
 
       const next = alocacoes.map((a) =>
         String(a.id) === String(id)
-          ? { ...a, status: "em_rota", horarioInicioReal: new Date().toISOString() }
+          ? { ...a, status: "em_rota", horarioInicioReal: new Date().toISOString(), kmInicial }
           : a
       );
       salvarLocalStorage(next);
@@ -384,7 +383,7 @@ export default function useEscala() {
 
   const finalizarAlocacaoHook = useCallback(async (
     id: string,
-    dados: { comprovante_url?: string; observacoes?: string; horario_fim_real?: string },
+    dados: { comprovante_url?: string; observacoes?: string; horario_fim_real?: string; km_realizados?: number },
     prestadorId?: string
   ): Promise<ResultadoOperacao> => {
     setLoading(true);
@@ -400,6 +399,7 @@ export default function useEscala() {
             horario_fim_real: dados.horario_fim_real || new Date().toISOString(),
             comprovante_url: dados.comprovante_url,
             observacoes: dados.observacoes,
+            km_realizados: dados.km_realizados,
           },
           prestadorId
         );
@@ -426,6 +426,7 @@ export default function useEscala() {
               horarioFimReal: dados.horario_fim_real || new Date().toISOString(),
               comprovanteUrl: dados.comprovante_url,
               observacoes: dados.observacoes,
+              km_realizados: dados.km_realizados ?? a.km_realizados,
             }
           : a
       );
@@ -494,6 +495,7 @@ export default function useEscala() {
     fonteDados,
     erroSupabase,
     carregarAlocacoes,
+    carregarAlocacoesAppPrestador,
     criarAlocacao,
     atualizarAlocacao,
     cancelarAlocacao,

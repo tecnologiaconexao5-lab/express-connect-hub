@@ -40,7 +40,7 @@ export function PrestadorFilters({
       {/* Filtro por Prestador na Escala */}
       <div className="mb-2">
         <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">
-          Filtrar Escala por Prestador
+          Filtrar Programação por Prestador
         </label>
         <SearchableSelect
           table="prestadores"
@@ -50,14 +50,14 @@ export function PrestadorFilters({
           onChange={(id, record) => {
             onFiltroPrestadorEscalaChange(id, record?.nome_completo || "");
           }}
-          placeholder="Prestador na escala..."
+          placeholder="Prestador na programação..."
         />
       </div>
 
       {/* Filtro por Cliente na Escala */}
       <div className="mb-3">
         <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">
-          Filtrar Escala por Cliente
+          Filtrar Programação por Cliente
         </label>
         <SearchableSelect
           table="clientes"
@@ -67,7 +67,7 @@ export function PrestadorFilters({
           onChange={(id, record) => {
             onFiltroClienteEscalaChange(id, record?.nome_fantasia || "");
           }}
-          placeholder="Cliente na escala..."
+          placeholder="Cliente na programação..."
         />
       </div>
 

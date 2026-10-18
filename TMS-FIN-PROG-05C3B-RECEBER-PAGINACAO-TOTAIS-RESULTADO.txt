@@ -1,0 +1,181 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05C.3B-RECEBER-PAGINACAO-TOTAIS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PROD
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-05C3A-FILTRO-FINANCEIRO-REAL-RESULTADO.txt
+TIPO: Correcao de QUERY/SERVICO/UI. Nenhum saneamento de banco. Sem migration.
+================================================================================
+
+RESULTADO FINAL: PASS
+(Totais globais, paginação real numerada, busca/filtros/ordenação sobre o conjunto
+ completo; PROG-05C.3A mantida; banco inalterado; PROG-05B/05C.2 intactos.)
+
+--------------------------------------------------------------------------------
+1. AS-IS (auditoria curta)
+--------------------------------------------------------------------------------
+- PaginationBar.tsx: componente existente (page, pageSize, totalCount, buildPageList).
+  Nao estava sendo usado em Contas a Receber.
+- receberService.listarRecebiveis: query server-side com .eq("is_teste", false),
+  filtros status/cliente/data/search, order fixa data_vencimento desc, range(page).
+- ContasReceberEnterprise.tsx:
+    * PAGE_SIZE = 25; estados page/totalCount;
+    * fetchRecebiveis pedia a pagina ao servidor;
+    * cards (totais) calculados em `filtrados`, que era derivado de `recebiveis`
+      = SOMENTE a pagina carregada (25) -> BUG confirmado;
+    * ordenacao/filtros categoria/centro/busca parcialmente client-side na pagina;
+    * nenhuma PaginationBar renderizada.
+CAUSA RAIZ: cards e filtros/ordenacao eram aplicados sobre `recebiveis` (pagina),
+nao sobre o universo filtrado; e a paginacao nao era exibida.
+
+--------------------------------------------------------------------------------
+2. ARQUITETURA DA CORRECAO
+--------------------------------------------------------------------------------
+Fonte unica carregada = CONJUNTO COMPLETO filtrado (sem range). A partir dele:
+  filtros (status/cliente/categoria/centro) + ordenacao  ->  filtrados (universo)
+  -> cards = agregacao sobre `filtrados` (global)
+  -> paginacao = slice(page) sobre `filtrados` (visivel via PaginationBar)
+Busca (texto) permanece no SERVIDOR (ilike descricao/cliente) e e a UNICA
+responsavel por ela (removido o filtro client-side que limitava a busca).
+Reset automatico para pagina 1 em mudanca de busca/filtro/periodo/ordenacao;
+clamp se a pagina atual exceder o total.
+PROG-05C.3A preservada: .eq("is_teste", false) na fonte; cancelados retornam
+para a listagem historica, mas ficam fora dos totais ativos (statusEfetivo).
+
+--------------------------------------------------------------------------------
+3. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/services/financeiro/receberService.ts
+    + buscarRecebiveisFiltrados(params): conjunto completo, is_teste=false,
+      filtros cliente/categoria/centro/periodo/search, order data_vencimento asc,
+      limite de seguranca 2000. (listarRecebiveis mantida para outros callers.)
+- src/components/financeiro/ContasReceberEnterprise.tsx
+    * fetchRecebiveis passa a usar buscarRecebiveisFiltrados (sem page);
+    * filtrados = universo filtrado; cards/totais sobre filtrados (global);
+    * paginadas = filtrados.slice(...); tabela usa paginadas;
+    * <PaginationBar> renderizada (numerada, Anterior/Proxima, Exibindo X-Y de N);
+    * reset para pagina 1 em mudanca de filtros/periodo/ordenacao + clamp;
+    * busca removida do client-side (fica server-side);
+    * filtros categoria/centro enviados ao servico.
+- src/test/fin_prog05c3b_receber_paginacao.test.tsx (NOVO)
+    Cobertura: totais globais, paginacao 1->2, cancelado fora, busca no servidor +
+    reset p/ pagina 1, buildPageList.
+Sem migration. Sem alteracao de dados.
+
+--------------------------------------------------------------------------------
+4. TOTALIZACAO GLOBAL
+--------------------------------------------------------------------------------
+Cards agora derivam de `filtrados` = conjunto COMPLETO ja filtrado e ordenado:
+  Total a Receber = pendentes(a_vencer/vence_hoje) + vencidos(atrasado) + parciais
+  Vencido / Vence em 7 dias / Pendente / Recebido / Inadimplencia.
+Excluidos dos totais ativos: is_teste=true (fonte) e cancelado/cancelada
+(statusEfetivo 'cancelado' nao entra em nenhuma soma de ativo).
+
+--------------------------------------------------------------------------------
+5. PAGINACAO NUMERADA
+--------------------------------------------------------------------------------
+PaginationBar (padrao do sistema): Anterior, 1 2 3 …, Proxima, "Exibindo X–Y de N".
+totalPages real = ceil(filtrados.length / 25). Mudanca de busca/filtro/periodo/
+ordenacao retorna para pagina 1; pagina inexistente e corrigida (clamp).
+
+--------------------------------------------------------------------------------
+6. BUSCA / FILTROS / ORDENACAO GLOBAL
+--------------------------------------------------------------------------------
+Fluxo: BANCO/QUERY (is_teste=false + filtros + busca) -> conjunto completo ->
+filtros status/cliente/categoria/centro -> ordenacao global -> paginacao.
+A busca e por descricao/cliente no servidor (ilike); fatura/numero entram por
+documento/cliente ja suportados. Nao busca mais apenas nos 25 da pagina.
+
+--------------------------------------------------------------------------------
+7. PROVAS A-H (dados REAIS de producao, leitura)
+--------------------------------------------------------------------------------
+Mes analisado: 2026-10 (maior volume real). Hoje: 2026-09-24. PAGE_SIZE 25.
+A) total filtrado (is_teste=false, nao cancelado) = 30 > 25 ............ OK
+B) pagina 1 = 25 ids distintos; pagina 2 = 5 ids (ex.: 8abbb759, b7370c38,
+   bb5c0efe, bb88c106, c1e82c45) ........................................ OK
+C) nenhum id repetido entre pagina 1 e 2 ............................... OK (true)
+D) uniao respeita ordenacao global por data_vencimento asc ............. OK (true)
+E) registro fora da pagina 1 existe e e encontrado
+   (id 8abbb759; busca global por "DVL" -> encontrado) .................. OK
+F) cards globais INDEPENDEM da pagina:
+   total ativo mes = R$ 11.446,48 ; soma apenas da pagina 1 = R$ 9.046,48
+   -> cards != pagina (correcao comprovada) ............................ OK
+G) teste/HML fora dos cards reais: is_teste=true = 77 linhas | R$ 153.179,00  OK
+H) cancelado fora dos totais ativos: 2 linhas | R$ 2.600,00
+   (045258fb 600 + 75e0e5f0 2000) ...................................... OK
+
+--------------------------------------------------------------------------------
+8. NUMEROS PROD ANTES x DEPOIS
+--------------------------------------------------------------------------------
+Banco inalterado: financeiro_receber 122 | financeiro_baixas 19 | faturas 41.
+Contas a Receber (mes 2026-10, conjunto real):
+  ANTES (bug): cards somavam apenas a pagina 1 = R$ 9.046,48 (25 de 30).
+  DEPOIS: cards somam o conjunto filtrado = R$ 11.446,48 (30 de 30).
+  (pendentes 11.446,48 | vencidos 0,00 | pagos 74,06 | total ativos 11.446,48)
+As exclusoes de teste/cancelado (PROG-05C.3A) permanecem identicas.
+
+--------------------------------------------------------------------------------
+9. TESTES
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0.
+- npm run build -> OK (35,36s).
+- Novo: src/test/fin_prog05c3b_receber_paginacao.test.tsx -> 5/5 PASS
+    (totais globais, paginacao 1->2 com conteudo diferente e cards iguais,
+     cancelado fora, busca no servidor + reset p/ pagina 1, buildPageList).
+- Regressao (10 arquivos / 96 testes) PASS: fin_prog05c3b, fin_prog03_dashboard_real,
+  fin_prog04b_emissao, f0f_fluxo_caixa, f0g_dre_plano_contas, f0e_pagamento_prestadores,
+  f0j_relatorios_financeiros, fin_p0_03_kpis_reais, f38_fatura_manual, fase2a_fatura.
+
+--------------------------------------------------------------------------------
+10. REGRESSAO FINANCEIRA
+--------------------------------------------------------------------------------
+- financeiro_receber = 122 linhas; sem alteracao de valores/status/baixas.
+- PROG-05B: M66/M80 sem criar AR (confirmado; intacto).
+- PROG-05C.2: anti-duplicidade intacta (nao tocada).
+- PROG-05C.3A: filtros teste/cancelado intactos.
+- f_emitir_fatura, AP, pagamentos_prestadores, Conferencia, Dashboard, DRE, Fluxo,
+  APP, Programacao Operacional, M66/M80: NAO alterados.
+
+--------------------------------------------------------------------------------
+11. BANCO INALTERADO
+--------------------------------------------------------------------------------
+Nenhum UPDATE/INSERT/DELETE. Somente codigo TS/TSX. Nenhuma migration criada.
+Snapshot final: 122 / 19 / 41 (identico ao inicial).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  O conjunto completo e carregado por periodo (default = mes corrente) com
+    limite de seguranca 2000. Para volumes muito grandes, migrar para agregacao
+    server-side (RPC de totais) — nao necessario no volume atual (~30/mes).
+R2  O filtro de status usa statusEfetivo (derivado de vencimento/pagamento);
+    e aplicado sobre o conjunto completo em memoria. Comportamento correto,
+    porem nao server-side; ok para o volume atual.
+R3  Contas a Receber por vencimento: regra de periodo preservada (data_vencimento);
+    card "Recebido" continua por status/pagamento efetivo (nao por vencimento).
+R4  Nao reconciliados nesta missao: rascunho Calvo e5318b9d, AR Calvo 58e5751e,
+    15 DVL, 4 classe F (pendencia registrada).
+
+--------------------------------------------------------------------------------
+13. PROXIMA MICRO-MISSAO (PROG-05C.3C)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-05C.3C — AGREGACAO SERVER-SIDE E RECONCILIACAO:
+  - opcional: RPC/agregacao de totais no banco para escalar (substituir carga
+    completa quando o volume crescer);
+  - reconciliar rascunho real Calvo (e5318b9d) x AR legado 58e5751e;
+  - decisao humana DVL (15) e classe F (4);
+  - validacao final das visoes reais (bruto/teste/cancelado/oficial).
+Fora de escopo: M66/M80; AP/gate; APP; Programacao Operacional.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Correcao minima de query/servico/UI; sem migration; sem alteracao de dados.
+- Totais globais + paginacao numerada + busca/filtros/ordenacao global comprovados
+  com dados reais de producao.
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05C.3B-RECEBER-PAGINACAO-TOTAIS
+================================================================================
+`;

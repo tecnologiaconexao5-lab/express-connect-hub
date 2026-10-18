@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
+import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -40,6 +41,7 @@ const KpiCard = ({ title, value, icon: Icon, trend, sub, accent }: {
 );
 
 const TabExecutivo = () => {
+  const { filters } = useDashboardFilters();
   const [loading, setLoading] = useState(true);
   const [clientes, setClientes] = useState(0);
   const [prestadores, setPrestadores] = useState(0);
@@ -55,22 +57,34 @@ const TabExecutivo = () => {
   const [evolucaoMensal, setEvolucaoMensal] = useState<{ mes: string; receita: number; custo: number; margem: number }[]>([]);
 
   useEffect(() => {
+    let active = true;
+    const timeout = setTimeout(() => {
+      if (active) setLoading(false);
+    }, 5000);
+
     const fetchData = async () => {
       try {
-        const [clientesCount, prestadoresCount, veiculosCount, osData, receberData, pagarData] = await Promise.all([
+        const results = await Promise.allSettled([
           supabase.from("clientes").select("id", { count: "exact", head: true }),
           supabase.from("prestadores").select("id", { count: "exact", head: true }),
           supabase.from("veiculos").select("id", { count: "exact", head: true }),
-          supabase.from("ordens_servico").select("status, veiculo_tipo, valor_cliente, custo_prestador, cliente, numero, created_at").order("created_at", { ascending: false }).limit(300),
+          supabase.from("ordens_servico").select("status, veiculo_tipo, valor_cliente, custo_prestador, cliente, numero, created_at").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59").order("created_at", { ascending: false }).limit(300),
           supabase.from("financeiro_receber").select("valor"),
           supabase.from("financeiro_pagar").select("valor"),
         ]);
 
-        setClientes(clientesCount.count || 0);
-        setPrestadores(prestadoresCount.count || 0);
-        setVeiculos(veiculosCount.count || 0);
+        if (!active) return;
 
-        if (osData.data) {
+        const clientesCount = results[0].status === "fulfilled" ? results[0].value : null;
+        const prestadoresCount = results[1].status === "fulfilled" ? results[1].value : null;
+        const veiculosCount = results[2].status === "fulfilled" ? results[2].value : null;
+        const osData = results[3].status === "fulfilled" ? results[3].value : null;
+
+        setClientes(clientesCount?.count || 0);
+        setPrestadores(prestadoresCount?.count || 0);
+        setVeiculos(veiculosCount?.count || 0);
+
+        if (osData?.data) {
           const items = osData.data;
           setOsTotal(items.length);
           const fin = items.filter(o => o.status === "finalizada").length;
@@ -121,11 +135,15 @@ const TabExecutivo = () => {
       } catch (err) {
         console.error("[TabExecutivo] Erro:", err);
       } finally {
-        setLoading(false);
+        if (active) {
+          clearTimeout(timeout);
+          setLoading(false);
+        }
       }
     };
     fetchData();
-  }, []);
+    return () => { active = false; clearTimeout(timeout); };
+  }, [filters]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 

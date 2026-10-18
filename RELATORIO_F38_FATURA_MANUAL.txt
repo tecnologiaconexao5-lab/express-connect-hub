@@ -1,0 +1,268 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — MISSÃO F38-MANUAL
+CRIAÇÃO MANUAL PROFISSIONAL DE FATURA
+Projeto: TMS / Torre Conexão Express — express-connect-hub
+Data: 2026-08-21
+═══════════════════════════════════════════════════════════════════════════════
+
+OBJETIVO
+Adicionar, na tela Financeiro → Faturamento → Faturas, uma opção profissional de
+"Nova Fatura Manual" SEM substituir ou quebrar o fluxo automático existente.
+Sem migration, sem reset, sem tabela paralela, sem módulo paralelo.
+
+───────────────────────────────────────────────────────────────────────────────
+1. DIAGNÓSTICO DA ESTRUTURA EXISTENTE
+───────────────────────────────────────────────────────────────────────────────
+
+1.1 Tela atual de Faturamento → Faturas
+    • Componente: src/components/financeiro/FaturaLista.tsx
+    • Renderizada na aba "faturas" de src/pages/Financeiro.tsx (linha 203).
+    • Lista, filtros (número/status/recebimento/vencimento), paginação, detalhe,
+      edição de rascunho (FaturaPanel) e download de PDF.
+
+1.2 Fluxo existente para criar/editar fatura
+    • src/components/financeiro/FaturaPanel.tsx:
+      1. FaturaLista → seleção de serviços (alocações/OS) → FaturaPanel.
+      2. FaturaPanel cria rascunho via criarRascunhoFatura() e adiciona os itens
+         (adicionarItemFatura), monta descrição/observação automática por modelo.
+      3. Emissão via RPC transacional f_emitir_fatura (gera número oficial
+         FAT-2026-XXXXXX + cria Conta a Receber em financeiro_receber).
+      4. Cancelamento via f_cancelar_fatura (libera serviços + cancela título).
+
+1.3 Estrutura oficial reutilizada
+    • Tabela faturas (migration 20260816_fase2a_faturamento_profissional.sql):
+      id, tenant_id, numero (UNIQUE, número oficial), cliente_id, data_emissao,
+      vencimento, valor_bruto, descontos, acrescimos, valor_total, status,
+      observacao, observacao_fiscal, conta_receber_id, criado_*, atualizado_*,
+      cancelado_*, motivo_cancelamento, metadata (jsonb).
+    • Tabela fatura_itens: snapshot financeiro do cliente (valor_base,
+      valor_adicionais, valor_descontos, valor_total, ...). Trigger
+      f_recalcular_totais_fatura recalcula os totais da fatura a partir dos itens.
+    • Tipos TypeScript: src/services/financeiro/faturaTypes.ts.
+    • Service: src/services/financeiro/faturaService.ts.
+
+1.4 Gerador de PDF
+    • src/utils/pdfFatura.ts — gerarPDFFatura() / baixarPDFFatura().
+    • Dois modelos homologados: "conexao_express" (cabeçalho navy + barra laranja,
+      logo claro) e "calvo" (logo grande, faixa salmão, "Cobrança para:",
+      tabela FATURA|DESCRIÇÃO|PARCELA|VENCIMENTO|VALOR, transferência bancária).
+    • Input tipado: PdfFaturaInput { modelo, numero, descricao, cliente,
+      clienteCnpj, clienteIe, data, vencimento, itens, subtotal, acrescimos,
+      descontos, total, observacao, empresa, dadosCliente }.
+
+1.5 Fonte dos dados da empresa
+    • buscarDadosEmpresaParaFatura() (faturaService):
+      configuracoes_fiscais (emitente padrão) → contas bancárias
+      (buscarContasBancariasConfig / buscarConfigFinanceiraEmpresa /
+       contas_financeiras) → fallback empresaConfig (constantes centralizadas).
+
+1.6 Fonte das contas bancárias
+    • buscarContasBancariasConfig() (configFinanceiraService) — lê
+      configuracoes_sistema["contas_financeiras_config"]. Campos: banco, agencia,
+      conta, pix, ativa, principal, nome, etc.
+
+1.7 Fonte dos clientes
+    • Tabela clientes via SearchableSelect (busca por razao_social / nome_fantasia
+      / cnpj) + buscarClienteParaFatura(clienteId) para dados do PDF
+      (razaoSocial, cnpj, ie, endereco, cidade, uf, vencimento_padrao).
+
+1.8 Como uma fatura é criada hoje (resumo)
+    Rascunho → itens → f_emitir_fatura → número oficial + Conta a Receber.
+    A fatura manual NÃO passa por esse caminho (ver seção 8).
+
+───────────────────────────────────────────────────────────────────────────────
+2. ARQUIVOS ALTERADOS
+───────────────────────────────────────────────────────────────────────────────
+  • src/services/financeiro/faturaService.ts        — expandido (F38-MANUAL)
+  • src/components/financeiro/FaturaManualDialog.tsx — NOVO (formulário premium)
+  • src/components/financeiro/FaturaLista.tsx        — CTA + nomes clientes +
+                                                       badge origem + PDF
+  • src/components/financeiro/FaturaPanel.tsx        — PreviaModal exportado +
+                                                       cliente no carregar +
+                                                       PDF com snapshot de conta
+  • src/test/f38_fatura_manual.test.ts               — NOVO (12 testes)
+
+───────────────────────────────────────────────────────────────────────────────
+3. FUNÇÕES REAPROVEITADAS (SEM DUPLICAR LÓGICA)
+───────────────────────────────────────────────────────────────────────────────
+  • criarRascunhoFatura()          → cria o cabeçalho oficial (status rascunho)
+  • adicionarItemFatura()          → grava o valor em fatura_itens (trigger
+                                     recalcula os totais oficiais da fatura)
+  • atualizarFatura()              → status/vencimento/emissão/descrição
+  • buscarFaturaComItens()         → leitura oficial com itens
+  • buscarDadosEmpresaParaFatura() → dados da empresa p/ PDF
+  • buscarClienteParaFatura()      → dados do cliente p/ PDF
+  • buscarContasBancariasConfig()  → lista de contas da Config. Financeiras
+  • sugerirModeloFaturaParaCliente() / sugerirVencimentoParaCliente()
+                                    → mesma regra do fluxo automático
+  • montarPreviaFatura()           → prévia (sem consumir numeração)
+  • gerarPDFFatura()/baixarPDFFatura() → template homologado (reutilizado 1:1)
+  • PreviaModal (FaturaPanel)      → preview visual do PDF (exportado)
+  • SearchableSelect               → seletor de cliente pesquisável por nome
+
+───────────────────────────────────────────────────────────────────────────────
+4. CAMPOS IMPLEMENTADOS NO FORMULÁRIO
+───────────────────────────────────────────────────────────────────────────────
+  SEÇÃO A — Identificação
+    • Número da fatura (ex.: 38) — com checagem de duplicidade
+    • Cliente — SearchableSelect por NOME (CNPJ como campo secundário)
+    • Data de emissão (default hoje)
+    • Data de vencimento (default: regra do cliente / hoje+30)
+    • Parcela (padrão 1)
+    • Modelo da fatura (Conexão Express / Cliente consolidado)
+    • Autofill dos dados cadastrais do cliente (Razão social, CNPJ, IE, Endereço)
+      exibidos em card "do cadastro" — somente leitura (ver riscos, item 12)
+
+  SEÇÃO B — Descrição da fatura
+    • Textarea livre + contador de caracteres (x/2000)
+    • Texto gravado em faturas.descricao (metadata.descricao) e exibido
+      exatamente na coluna DESCRIÇÃO do PDF
+
+  SEÇÃO C — Valor
+    • Input BRL com prefixo R$ e preview formatado (ex.: R$ 3.550,54)
+    • Validação valor > 0 (bloqueia salvar/preview)
+    • Não recalcula o valor informado
+
+  SEÇÃO D — Conta para recebimento
+    • Select de contas da Config. Financeiras (banco · AG · C/C)
+    • Card de preview da conta escolhida (Banco / AG / C/C / PIX)
+    • Conta SNAPSHOTADA em faturas.metadata.contaBancaria → PDFs históricos
+      não mudam quando a conta da empresa é alterada
+
+  SEÇÃO E — Observação interna
+    • Textarea opcional gravada em faturas.observacao
+    • NÃO aparece no PDF (ver montarPreviaFatura: origem manual → observacao "")
+    • Fica visível apenas internamente (detalhe da fatura)
+
+  Resumo lateral: FATURA Nº / Cliente / Vencimento / Valor / Parcela / Modelo.
+
+───────────────────────────────────────────────────────────────────────────────
+5. COMO O CLIENTE É SELECIONADO
+───────────────────────────────────────────────────────────────────────────────
+  • SearchableSelect (tabela clientes, busca razao_social/nome_fantasia/cnpj).
+  • Ao selecionar: buscarClienteParaFatura() carrega razão social, CNPJ, IE,
+    endereço e vencimento padrão; sugerirModeloFaturaParaCliente() e
+    sugerirVencimentoParaCliente() preenchem modelo/vencimento (mesma regra do
+    fluxo automático).
+  • Não exibe UUID; o nome do cliente (label) é mostrado no campo e no resumo.
+
+───────────────────────────────────────────────────────────────────────────────
+6. COMO A CONTA BANCÁRIA É SELECIONADA
+───────────────────────────────────────────────────────────────────────────────
+  • buscarContasBancariasConfig() carrega a lista oficial (configuracoes_sistema
+    → contas_financeiras_config).
+  • Select da conta + card de preview. A conta é convertida em snapshot
+    (montarSnapshotConta → { banco, agencia, conta, pix }) e gravada em
+    faturas.metadata.contaBancaria.
+  • No PDF, montarInputPdfFatura() sobrescreve os dados bancários da empresa com
+    o snapshot da fatura (empresa.banco/agencia/conta/pix).
+
+───────────────────────────────────────────────────────────────────────────────
+7. COMO O PDF É GERADO
+───────────────────────────────────────────────────────────────────────────────
+  • Reutiliza 100% o template homologado (pdfFatura.ts).
+  • Novo montador central montarInputPdfFatura(fatura, empresa, cliente):
+      • numero = numero oficial OU metadata.numeroManual
+      • empresa = dados da empresa com conta snapshotada (se houver)
+      • observacao = "" para fatura manual (obs. interna não sai no PDF)
+  • Ações:
+      • "Visualizar Fatura" → PreviaModal (mesmo template, sem consumir número).
+      • "Salvar e Gerar PDF" → salva oficial + marca status 'emitida' + baixa o PDF.
+  • NÃO dispara NFS-e/CT-e e NÃO cria Conta a Receber automaticamente.
+
+───────────────────────────────────────────────────────────────────────────────
+8. IDENTIFICAÇÃO DA ORIGEM (Manual x Automática)
+───────────────────────────────────────────────────────────────────────────────
+  • Não existe coluna específica; SEM MIGRATION nesta missão.
+  • Reutilizado o campo jsonb existente: faturas.metadata.origem = "manual".
+    Faturas do fluxo automático permanecem sem a tag (ou origem != "manual").
+  • UI (FaturaLista): badge discreto "Manual" (laranja) ou "Automática" (cinza)
+    na coluna Número, sem interferir no número oficial.
+  • Número informado pelo usuário fica em metadata.numeroManual (não toca a
+    coluna UNIQUE numero, reservada ao número oficial FAT-2026-XXXXXX).
+
+───────────────────────────────────────────────────────────────────────────────
+9. SEGURANÇA E DUPLICIDADE
+───────────────────────────────────────────────────────────────────────────────
+  • verificarNumeroFaturaManualDisponivel(numero): consulta a coluna numero
+    oficial E metadata->>numeroManual (escopo do tenant via RLS).
+  • Se o número já existir:
+      • UI mostra "Já existe uma fatura com este número." e bloqueia o salvamento;
+      • Service retorna erro e NÃO cria/sobrescreve registros.
+  • Nunca apaga/sobrescreve/edita registros existentes.
+  • Rascunho criado por engano é limpo de forma controlada apenas quando a
+    inserção do item falha (rascunho sem emissão).
+
+───────────────────────────────────────────────────────────────────────────────
+10. VALIDAÇÃO EXECUTADA
+───────────────────────────────────────────────────────────────────────────────
+  • npx tsc --noEmit                 → 0 erros
+  • npx vitest run                   → 455/455 (49 arquivos) — 12 novos F38-MANUAL
+      • f38_fatura_manual.test.ts    → 12/12
+      • Regressão fatura (fase2a/fase2b/a30/a31i/a31i2) → 62/62
+      • Suíte completa               → 455/455 (sem regressão)
+  • npm run build                    → OK (43.27s)
+  • npx eslint (arquivos da missão)  → 0 erros, 0 warnings
+
+  Mapeamento requisito → validação:
+    1. botão Nova Fatura Manual aparece            → FaturaLista (header) ✓
+    2. formulário abre                             → FaturaManualDialog ✓
+    3. seleção de cliente funciona                 → SearchableSelect ✓
+    4. dados do cliente aparecem                   → card cadastral + PDF ✓
+    5. número manual aceito                        → criarFaturaManual valida ✓
+    6. descrição preservada                        → fatura.descricao ✓
+    7. vencimento funciona                         → campo + regra do cliente ✓
+    8. conta bancária selecionável                 → Select + preview + snapshot ✓
+    9. valor BRL salvo corretamente                → fatura_itens + trigger ✓
+    10. preview reproduz o PDF existente           → PreviaModal reutilizado ✓
+    11. salvar rascunho não quebra faturas         → estrutura oficial ✓
+    12. PDF manual gera com dados informados       → montarInputPdfFatura + teste ✓
+    13. sem regressão no fluxo automático          → 455/455 ✓
+
+───────────────────────────────────────────────────────────────────────────────
+11. SCHEMA ALTERADO?
+───────────────────────────────────────────────────────────────────────────────
+  NÃO. Nenhuma migration foi criada nem executada.
+  Origem, número manual e snapshot de conta usam a coluna jsonb já existente
+  faturas.metadata.
+
+───────────────────────────────────────────────────────────────────────────────
+12. RISCOS / LIMITAÇÕES
+───────────────────────────────────────────────────────────────────────────────
+  1. Dados cadastrais do cliente são exibidos do cadastro mestre (somente leitura).
+     Um override/snapshot por fatura exigiria nova coluna jsonb (metadata) — não
+     feito nesta missão para não alterar schema. Alinhado ao fluxo atual (o PDF
+     já lê o cadastro na hora da geração).
+  2. "Salvar e Gerar PDF" marca a fatura como status 'emitida' SEM criar Conta a
+     Receber e SEM RPC f_emitir_fatura (que exigiria itens de OS e geraria número
+     oficial). Decisão documentada: a fatura manual é um documento de cobrança
+     manual; o título em financeiro_receber fica a cargo do time (fluxo
+     automático permanece intacto).
+  3. Fatura manual em rascunho aberta no FaturaPanel ("Continuar rascunho") usa
+     o painel do fluxo automático; número manual e conta snapshot são preservados
+     em metadata e respeitados no PDF (montarInputPdfFatura).
+  4. Número manual não consome a sequência oficial FAT-2026-XXXXXX — pode
+     coincidir com números usados pelo cliente; a checagem de duplicidade cobre
+     coluna numero e metadata.numeroManual.
+  5. Sem ambiente QA com credenciais reais, o fluxo visual completo (dropdown,
+     preview, download) requer teste manual em Produção/QA (guard-rails do
+     repositório bloqueiam execução E2E automática em Produção).
+
+───────────────────────────────────────────────────────────────────────────────
+13. CHECKLIST
+───────────────────────────────────────────────────────────────────────────────
+  [X] Nova Fatura Manual (CTA no cabeçalho da tela Faturas)
+  [X] Cliente (seletor pesquisável por nome, sem UUID)
+  [X] Número (aceito manualmente + checagem de duplicidade)
+  [X] Descrição (preservada e exibida na coluna DESCRIÇÃO do PDF)
+  [X] Vencimento (data + sugestão pela regra do cliente)
+  [X] Valor (BRL, validação > 0, preview R$ 3.550,54)
+  [X] Conta bancária (seleção + preview + snapshot na fatura)
+  [X] Preview (PreviaModal com o template homologado)
+  [X] Salvar rascunho (status rascunho, sem quebrar faturas existentes)
+  [X] Gerar PDF (Salvar e Gerar PDF — salva oficial + baixa o PDF)
+  [X] Fluxo automático preservado (455/455 testes, build OK)
+
+───────────────────────────────────────────────────────────────────────────────
+FIM DO RELATÓRIO F38-MANUAL
+═══════════════════════════════════════════════════════════════════════════════

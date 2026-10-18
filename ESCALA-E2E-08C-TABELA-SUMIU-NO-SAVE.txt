@@ -1,0 +1,116 @@
+ESCALA-E2E-08C-TABELA-SUMIU-NO-SAVE
+==================================================
+Ambiente: TMS + Supabase PROD | Data: 2026-09-22 | Modo: READ-ONLY
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. BANCO (READ-ONLY) — CONFIRMADO
+==================================================
+HML b8c78f48-0b8a-4b88-9a41-5d57c5af8886:
+  ativo=true | status='ATIVA' | universal=false | tipo_veiculo='vuc'
+  cliente='HOMOLOGAÇÃO APP' | classificacao_termica='seco'
+  valor_base=300.00 | franquia_km=100 | km_franquia=100 | valor_km_excedente=1.20
+  data_inicio=2026-09-22 | data_fim=2026-09-29 (vigente)
+PRESTADOR e6646799: valor_diaria=250.00 (valor_saida=NULL)
+VUC_TABLES=1 (apenas a HML) — nenhuma concorrente
+CLIENTE 3d2d079d: nome_fantasia='HOMOLOGAÇÃO APP' (exato)
+
+PASSO 4 — NADA FOI CRIADO:
+ALLOCATION_CREATED=NO | NEW_OS_CREATED=NO | NEW_FINANCE_CREATED=NO
+(ALLOC_E2E08=0)
+
+==================================================
+2. TEXTO EXATO DO BLOQUEIO
+==================================================
+FILE=src/components/operacao/EscalaLista.tsx
+- Toast (SAVE): linha 920
+  "Sem tabela de preço. Informe o 'Ajuste Manual' e o 'Motivo' para faturar."
+  Guarda: linha 919
+  if (novoClienteId && !tabelaValores && !ajusteClienteMotivo && ajusteClienteValor === 0)
+- Alerta visual (rose): linha 2169
+  "Nenhuma tabela de preço encontrada para este cliente/veículo."
+  Guarda: linha 2165 (novoClienteId && prestadorVeiculo?.tipo_veiculo && !tabelaValores && !loadingTabelaValores)
+
+Ambos dependem exclusivamente do estado `tabelaValores` (useState, linha 133).
+
+==================================================
+3. COMPARAÇÃO SELETOR × VALIDADOR
+==================================================
+INITIAL_SELECTOR = buscarTabelaValoresCliente (EscalaLista.tsx:175-279)
+SAVE_VALIDATOR   = handleCreateReserva (EscalaLista.tsx:894-925; checagem 919-920)
+SAME_FUNCTION=NO
+SAME_CRITERIA=NO
+TABLE_ID_PERSISTED_IN_STATE=YES (tabelaValores.id) — porém VOLÁTIL
+TABLE_LOST_ON_TAB_CHANGE=NO (nenhum efeito/handler de aba limpa o estado)
+TABLE_REQUERY_ON_SAVE=NO
+
+AUDITORIA DE useEffect/useMemo/useCallback:
+- useEffect: apenas 2 (linhas 161 e 359) — nenhum toca tabelaValores.
+- useMemo: 491, 536, 546, 557, 577 — nenhum toca tabelaValores.
+- useCallback: buscarTabelaValoresCliente (175), buscarDadosVeiculoPrestador (282).
+→ Nenhum limpa/recalcula tabelaValores por troca de aba/cliente/tipo/térmica.
+
+ESCRITAS DE tabelaValores (setTabelaValores):
+- 242 / 261: sucesso (tabela específica / universal)
+- 267 / 272: FALHA (sem match / catch) → seta NULL
+- 725: reset ao ABRIR nova alocação (handleCellClick)
+Chamadas do lookup: SOMENTE
+- 2146: onChange do CLIENTE (SearchableSelect) — e SÓ se prestadorVeiculo?.tipo_veiculo já estiver preenchido
+- 669: reabertura de alocação existente (handleEditAlocacao)
+
+==================================================
+4. CAUSA RAIZ
+==================================================
+ROOT_CAUSE=
+A busca da tabela é DESACOPLADA da resolução do prestador/veículo e do SAVE:
+  1) O lookup é disparado APENAS na seleção do CLIENTE (linha 2146) e condicionado a
+     `prestadorVeiculo?.tipo_veiculo` JÁ estar preenchido.
+  2) A seleção do PRESTADOR (linhas 2091-2098) chama apenas buscarDadosVeiculoPrestador()
+     (assíncrono, que seta prestadorVeiculo) e NUNCA (re)dispara buscarTabelaValoresCliente.
+  3) A validação do SAVE (linha 919) confia no estado volátil `tabelaValores` e NÃO re-consulta.
+Consequência: se o cliente for selecionado ANTES do prestador — ou antes de a carga assíncrona
+do veículo resolver (race) — o lookup é PULADO, `tabelaValores` permanece/fica NULL e o SAVE
+bloqueia com "Sem tabela de preço", mesmo com prestador/veículo/tabela válidos.
+Fator contribuinte: se o lookup for re-invocado com tipo/condição sem match, ele seta
+`tabelaValores=null` (linhas 267/272), o que explica "tabela exibida e depois sumida".
+
+ROOT_CAUSE_CLASS=Ordem/evento (trigger faltante) + validação sobre estado volátil sem re-query
+FILE=src/components/operacao/EscalaLista.tsx
+LINES/FUNCTION=
+  - 2091-2098 (onClick seleção do prestador — falta disparar o lookup)
+  - 282-314 (buscarDadosVeiculoPrestador — seta veículo sem re-disparar lookup)
+  - 2141-2149 (onChange cliente — único disparo, condicionado a prestadorVeiculo)
+  - 919-920 (validação do SAVE — depende só de tabelaValores)
+
+MINIMAL_FIX_PROPOSAL (NÃO implementar agora):
+  Opção 1 (mínima, recomendada): na seleção do prestador (após buscarDadosVeiculoPrestador),
+  se novoClienteId já estiver preenchido, chamar buscarTabelaValoresCliente(novoClienteId,
+  novoClienteNome, <tipo do veículo>, dataAlocacaoModal, <condição térmica>).
+  Ou: fazer buscarDadosVeiculoPrestador disparar o lookup ao final (quando houver cliente).
+  Opção 2 (fail-safe no SAVE): em handleCreateReserva, se novoClienteId && !tabelaValores,
+  re-consultar a tabela uma vez antes de bloquear.
+  Opção 3 (robustez): mover a resolução da tabela para um efeito derivado de
+  (novoClienteId + prestadorVeiculo.tipo_veiculo + condicao_termica), eliminando a dependência
+  de ordem.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+ROOT_CAUSE=(acima)
+ROOT_CAUSE_CLASS=Ordem/evento + estado volátil
+FILE=src/components/operacao/EscalaLista.tsx
+LINES/FUNCTION=2091-2098 / 282-314 / 2141-2149 / 919-920
+MINIMAL_FIX_PROPOSAL=(acima)
+ALLOCATION_CREATED=NO
+NEW_OS_CREATED=NO
+NEW_FINANCE_CREATED=NO
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum INSERT/UPDATE/DELETE; nenhuma migration; nenhuma correção implementada; dados HML
+preservados (tabela e valor_diaria mantidos). Outras pendências não tratadas.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

@@ -1,0 +1,237 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6B.1-GUARD-E-PERIODO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: (A/B) microcorrecao de seguranca da RPC; (C) auditoria temporal READ-ONLY.
+RESULTADO: A+B PASS (17/17 provas; PROD inalterado). C = PASS factual + BLOCKER
+           para o numero exato 40x47 (nao reproduzivel com os dados atuais).
+================================================================================
+
+################################ PARTE A — PERFIL AUTORIZADO ####################
+--------------------------------------------------------------------------------
+1. PAPEIS ENCONTRADOS
+--------------------------------------------------------------------------------
+tenant_usuarios.papel CHECK (schema atual) permite:
+  super_admin, admin_tenant, gestor, operacional, financeiro, comercial,
+  atendimento, cliente, prestador, motorista
+Linhas existentes em PROD (tenant_usuarios): super_admin 3, financeiro 1,
+  operacional 1, comercial 1, atendimento 1, cliente 2.
+  => NAO existem linhas com papel admin_tenant/gestor/prestador/motorista.
+
+--------------------------------------------------------------------------------
+2. REGRA APLICADA (sem inventar papel novo)
+--------------------------------------------------------------------------------
+Autorizados para aprovar: super_admin, admin_tenant, financeiro
+  (admin global, admin do tenant e financeiro).
+NAO autorizados: operacional, comercial, atendimento, cliente, gestor,
+  prestador, motorista (bloqueados).
+A decisao ocorre DENTRO da RPC (SECURITY DEFINER), apos validar auth.uid() e
+tenant ativo; retorna bloqueados + motivo PAPEL_NAO_AUTORIZADO.
+
+--------------------------------------------------------------------------------
+3. PROVAS DE PERFIL (todas em transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+A1 financeiro autorizado ................. aprovados=1, bloqueados=0 ......... PASS
+A2 super_admin autorizado ................ aprovados=1, bloqueados=0 ......... PASS
+A5 admin_tenant autorizado (papel simulado no schema, revertido)
+   ....................................... aprovados=1 ...................... PASS
+A3 operacional bloqueado ................. PAPEL_NAO_AUTORIZADO ............. PASS
+A4 comercial bloqueado ................... PAPEL_NAO_AUTORIZADO ............. PASS
+A6 prestador bloqueado ................... USUARIO_SEM_TENANT_ATIVO ......... PASS
+A7 cross-tenant continua bloqueado ....... 'Registro pertence a outro tenant' PASS
+
+#################### PARTE B — ESTADO INCONSISTENTE ##########################
+--------------------------------------------------------------------------------
+4. REGRA
+--------------------------------------------------------------------------------
+aprovado + elegivel_lote=true  -> JA_APROVADO (no-op idempotente; datas intactas)
+aprovado + elegivel_lote=false -> APROVADO_NAO_ELEGIVEL (BLOQUEADO; sem
+                                  normalizacao silenciosa; linha NAO alterada)
+Dado real: ha 9 linhas aprovado+elegivel=false e 1 aprovado+elegivel=true.
+
+--------------------------------------------------------------------------------
+5. PROVAS DO ESTADO INCONSISTENTE (transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+B1 aprovado+elegivel=true => JA_APROVADO no-op (apr=0, ja=1) ............... PASS
+B1b datas intactas ....................................................... PASS
+B2 aprovado+elegivel=false => APROVADO_NAO_ELEGIVEL (apr=0, bloq=1) ....... PASS
+B2b linha NAO alterada (aprovado/false; data_aprovacao intacta) .......... PASS
+
+--------------------------------------------------------------------------------
+6. MIGRATION / SEGURANCA
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260924000010_fin_prog05d6b1_rpc_guard_papel_inconsistente.sql
+Rollback: supabase/migrations/20260924000011_fin_prog05d6b1_rpc_guard_rollback.sql
+CREATE OR REPLACE da funcao (preserva guards, atomicidade e idempotencia da
+05D.6B). SECURITY DEFINER + search_path=public + auth.uid()/tenant/papel
+validados internamente. REVOKE PUBLIC/anon; GRANT EXECUTE authenticated.
+
+#################### PARTE C — AUDITORIA DO PERIODO (READ-ONLY) #############
+--------------------------------------------------------------------------------
+7. QUAL DATA COLOCA UM SERVICO NO PERIODO? (resposta objetiva)
+--------------------------------------------------------------------------------
+A inclusao no periodo NAO usa a data da OS, nem data_programada, nem conclusao,
+nem created_at como regra. Ela usa:
+    pagamentos_prestadores.periodo_inicio  /  periodo_fim
+Origem desse par de datas na CRIACAO (provisao):
+  * M66 (alocacoes_escala, origem 'escala_direta'):
+        periodo_inicio = periodo_fim = COALESCE(alocacoes_escala.data_escala, CURRENT_DATE)
+        (_fn_f_trg_propagar_financeiro_alocacao.sql:77-78)
+  * M80 (ordens_servico, origem 'os_direta'):
+        periodo_inicio = periodo_fim = CURRENT_DATE  (data de CRIACAO do registro)
+        (_fn_f_trg_propagar_financeiro_os.sql:146)  -- NAO usa ordens_servico.data
+  * manual: service grava periodo/competencia.
+Conclusao: a "data do serviço" para efeito de periodo e, hoje, data_escala
+(escala) ou a data de criacao (OS direta) — NUNCA a data do serviço da OS.
+
+--------------------------------------------------------------------------------
+8. A MESMA REGRA E USADA EM TODAS AS TELAS? NAO.
+--------------------------------------------------------------------------------
+Tres regras distintas para o mesmo par de datas:
+  * Visão do Período (fetchOss): SOBREPOSICAO de intervalo
+      periodo_inicio <= dataFim AND (periodo_fim >= dataInicio OR periodo_fim IS NULL)
+      (PagamentoPrestadores.tsx:597-598) + is_teste=false + status<>'cancelado'
+  * Relatório Financeiro (aba do PagamentoPrestadores, fetchPagamentos):
+      CONTENCAO em periodo_inicio (periodo_inicio BETWEEN ini AND fim)
+      (PagamentoPrestadores.tsx:751-752) + is_teste=false + status<>'cancelado'
+  * Fechamentos Anteriores (listarFechamentos):
+      periodo_inicio >= ini AND periodo_fim <= fim (fechamentoService.ts:257-258)
+  * "Repasses a Prestadores" (RelatorioFinanceiroCompleto) usa OUTRA fonte e OUTRA
+      data: ordens_servico.created_at e alocacoes_escala.data_escala
+      (relatorioService.ts:510-511,529-530), sem filtro is_teste/cancelado.
+
+--------------------------------------------------------------------------------
+9. EXPLICACAO 40 x 47 — RESULTADO FACTUAL + BLOCKER
+--------------------------------------------------------------------------------
+NAO foi possivel reproduzir exatamente 40 (Visão do Período) e 47 (Relatório
+Financeiro) com os dados atuais. Reproducao fiel das queries (mes/atual 09/2026):
+  Visão do Período (sobreposicao) ......... 41
+  Relatório Financeiro (contencao) ........ 41
+  Relatório Financeiro + manuais anexados . 41 + 12 = 53
+  Repasses a Prestadores (OS41+Escala11) .. 52
+  periodo_inicio em 09/2026: total 48 | sem cancelado 48 | sem teste 41
+Nenhuma combinacao retorna 47. Mecanismos que PODEM gerar divergencia (sem ser
+bug):
+  (a) campos de data diferentes (periodo_inicio vs created_at/data_escala);
+  (b) logica de intervalo diferente (sobreposicao vs contencao);
+  (c) o Relatório Financeiro ANEXA pagamentos manuais (origem_lancamento='manual')
+      alem da lista base (relatorioPrestadorHelper.gerarLinhasRelatorio:49-70) —
+      manuais tendem a aparecer em toda competencia, inflando o total;
+  (d) a tela "Repasses a Prestadores" usa fonte sem is_teste/cancelado e concatena
+      OS+Escala (possivel dupla contagem do mesmo servico).
+BLOCKER FACTUAL: para cravar 40/47 e necessario o filtro EXATO usado no momento
+(data inicial/final, prestador, origem) e o snapshot dos dados — registrado para
+decisao antes de qualquer UI.
+
+--------------------------------------------------------------------------------
+10. MATRIZ DE CAMPOS DISPONIVEIS POR SERVICO (pagamentos_prestadores)
+--------------------------------------------------------------------------------
+Campo                         | Existe? | Fonte/Observacao
+data do serviço (individual)  | SIM     | periodo_inicio/periodo_fim (pp) e
+                                        | data_competencia (pp); via join:
+                                        | ordens_servico.data / alocacoes_escala.data_escala
+OS (id/numero)                | SIM     | pp.os_id / pp.os_numero (os_numero pode ser nulo)
+prestador (id/nome/doc)       | SIM     | pp.prestador_id / prestador_nome / prestador_documento
+valor serviço                 | SIM     | pp.valor_servicos
+pedágio                       | SIM     | pp.pedagio
+adicional                     | SIM     | pp.adicionais
+reembolso/ajustes             | SIM     | pp.reembolsos / pp.ajustes / valor_bonus / valor_descontos / valor_adiantamentos
+valor líquido                 | SIM     | pp.valor_liquido
+=> TODOS os campos existem na propria linha de pagamentos_prestadores.
+
+--------------------------------------------------------------------------------
+11. MODAL "DETALHES DO FECHAMENTO" — mostr a data individual?
+--------------------------------------------------------------------------------
+NAO. O modal (PagamentoPrestadores.tsx:2252-2273) exibe colunas:
+  OS | Serviço | Pedágio | Adicional   (usa numero, custo_prestador, pedagio, adicionais).
+Nenhuma coluna de DATA por servico, apesar de o objeto OS.data (= periodo_inicio)
+existir (PagamentoPrestadores.tsx:81,626). O "Extrato de Fechamento"
+(PagamentoPrestadores.tsx:2649-2670) exibe "Data" (op.data_operacao).
+
+--------------------------------------------------------------------------------
+12. FILTROS EXISTENTES x AUSENTES
+--------------------------------------------------------------------------------
+Repasses a Prestadores (RelatorioPagamentoPrestador.tsx):
+  Período ini/fim ....... SIM (backend usa created_at/data_escala)
+  Prestador ............. UI existe, IGNORADO no backend
+  Cliente ............... AUSENTE
+  Origem/Tipo ........... AUSENTE
+  Status ................ UI existe, IGNORADO no backend
+  OS/busca .............. AUSENTE
+  Paginação ............. SIM, client-side (25/pág)
+Relatório Financeiro (aba do PagamentoPrestadores):
+  Período ini/fim ....... SIM (periodo_inicio)
+  Prestador ............. SIM
+  Cliente ............... UI existe, NAO aplicado
+  Origem ................ SIM
+  Busca ................. SIM (client-side)
+  Status ................ AUSENTE
+  Paginação ............. AUSENTE
+Visão do Período: prestador, origem, busca, período (sobreposicao). Sem status,
+  sem paginação.
+Fechamentos Anteriores: prestador + período (periodo_inicio>= e periodo_fim<=).
+
+--------------------------------------------------------------------------------
+13. RECOMENDACAO MINIMA PARA A PROXIMA MISSAO (nao implementar agora)
+--------------------------------------------------------------------------------
+D1. DECISAO CANONICA DE DATA (BLOQUEADOR): definir oficialmente se a data do
+    servico e ordens_servico.data / alocacoes_escala.data_escala e garantir que
+    periodo_inicio/periodo_fim representem o periodo (nao a data de criacao).
+    Hoje M80 grava CURRENT_DATE — divergencia estrutural a resolver ANTES da UI.
+D2. Unificar a REGRA DE PERIODO nas telas (sobreposicao x contencao) em um unico
+    helper/servico.
+D3. Exibir a DATA individual do servico no modal Detalhes do Fechamento e no
+    extrato (o dado ja existe em pp.periodo_inicio e no join da OS).
+D4. Parar de ANEXAR manuais duplicando a lista no Relatório (revisar
+    gerarLinhasRelatorio)/marcar origem.
+D5. Corrigir filtros inócuos (prestador/status em Repasses).
+D6. Registrar explicitamente periodo_inicio/periodo_fim no fechamento e manter a
+    data individual de cada servico (periodo do fechamento NAO substitui a data).
+
+#################### INTEGRIDADE / REGRESSAO #################################
+--------------------------------------------------------------------------------
+14. INTEGRIDADE (antes = depois) — PROD financeiramente inalterado
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | financeiro_pagar 178 | financeiro_baixas 19 |
+lote_id nao nulo 0 | soma valor_liquido 90.229,96 | soma financeiro_pagar 132.943,60
+Todas as provas A/B em transacao + ROLLBACK.
+
+--------------------------------------------------------------------------------
+15. REGRESSAO
+--------------------------------------------------------------------------------
+- Provas 05D.6B.1 (A+B): 17/17 PASS.
+- RPC 05D.6B (regressao): 20/20 PASS.
+- RLS 05D.6A (UPDATE): 15/15 PASS.
+- RLS 05D.4 (SELECT): 13/13 PASS.
+- vitest subset financeiro: 6 arquivos / 179 testes PASS.
+- tsc: EXIT 2 — 750 erros PRE-EXISTENTES (nenhum TS alterado).
+
+--------------------------------------------------------------------------------
+16. RISCOS
+--------------------------------------------------------------------------------
+R1 Papel 'gestor' excluido da lista autorizada (decisao de menor privilegio);
+   pode ser incluido se aprovado.
+R2 admin_tenant existe no schema mas sem linhas em PROD; testado por simulacao.
+R3 Periodo do servico divergente na origem (M80 = CURRENT_DATE) — impede
+   rastreabilidade temporal confiavel ate decisao canonica (BLOCKER C).
+R4 Filtros de data diferentes por tela podem gerar contagens divergentes; sem
+   unificacao, a conciliacao 40x47 permanece nao reproduzivel.
+R5 Relatório Financial anexa manuais e "Repasses" usa fonte distinta (sem
+   is_teste), podendo inflar/duplicar.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+lotes; Tesouraria; iFi/CNAB; valores; status reais; CESAR; 20 sem tenant; M66/M80;
+f_emitir_fatura; AR; faturas; Conferencia UI; PagamentoPrestadores UI; APP;
+Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6B1-GUARD-PERIODO-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6B1-GUARD-PERIODO-RESULTADO.txt
+Tamanho ..: 14535 bytes
+Data .....: 24/09/2026 17:14:39
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6B.1
+================================================================================

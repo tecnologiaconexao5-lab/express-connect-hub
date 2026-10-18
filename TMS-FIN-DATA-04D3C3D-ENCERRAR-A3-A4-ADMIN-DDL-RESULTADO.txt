@@ -1,0 +1,158 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C3D-ENCERRAR-A3-A4-ADMIN-DDL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero rede; zero DML/DDL real)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL + VALIDACAO ESTATICA.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+4/4 A3/A4 neutralizados (stub inerte na raiz + historico sanitizado em docs/lab). A4 comparado
+estaticamente com migrations: ambos os objetos (tabelas_valores, pagamentos_prestadores) estao
+COBERTO/OBSOLETO — nenhum objeto necessario perdido, nenhum BLOCKED. Consolidado 33/33 writers
+tratados (A1 23 + A2 6 + A3 2 + A4 2). Build OK; sem regressao; zero conexao/DML/DDL.
+
+--------------------------------------------------------------------------------
+1. ETAPA 1 — REVALIDACAO ESTATICA
+--------------------------------------------------------------------------------
+ query_sql.cjs ........ A3, SQL ad-hoc via rpc('pg_catalog', {statement: SELECT ...})
+                        (RPC inexistente -> inerte). Sem consumidor.
+ check_types.mjs ...... A3, SQL ad-hoc via rpc('pg_catalog', {statement: SELECT columns ...})
+                        (RPC inexistente -> inerte). Sem consumidor.
+ criar_schema.cjs ..... A4, DDL via rpc('create_table_tabelas_valores', CREATE TABLE tabelas_valores)
+ criar_tabelas.cjs .... A4, DDL via rpc('exec_sql', CREATE TABLE pagamentos_prestadores)
+ Dependencias reais: package.json=0 | src/UI=0 | scripts=0 | testes=0
+ (apenas relatorios TXT anteriores mencionam os nomes). Nenhum arquivo executado.
+
+--------------------------------------------------------------------------------
+2. ETAPA 2 — A4 x MIGRATIONS (comparacao de CODIGO; sem consultar banco)
+--------------------------------------------------------------------------------
+OBJETO TENTADO                       | FONTE LEGADA              | MIGRATION OFICIAL                    | STATUS
+-------------------------------------+---------------------------+--------------------------------------+-----------------
+public.tabelas_valores (tabela+cols)| criar_schema.cjs (RPC)    | 20260509000005_..._tabelas_valores   | COBERTO/OBSOLETO
+public.pagamentos_prestadores (tab.) | criar_tabelas.cjs (RPC)   | 20260510090000_baseline_external...  | COBERTO/OBSOLETO
+RPC create_table_tabelas_valores     | criar_schema.cjs          | (nao existe; ad-hoc)                 | OBSOLETO
+RPC exec_sql                         | criar_tabelas.cjs         | (nao existe; ad-hoc)                 | OBSOLETO
+
+ Detalhe:
+ - tabelas_valores: migration 20260509000005 cria a tabela (schema mais completo; adicionais/
+   financeiro/regras/faixas/status/etc.) e 20260530_escala_financeiro_valor_cliente adiciona
+   colunas. O DDL legado (subconjunto de colunas) esta SUPERSEDIDO -> OBSOLETO.
+ - pagamentos_prestadores: migration 20260510090000_baseline_external_tables cria a tabela
+   (schema mais completo; FKs, multiplas nomenclaturas). DDL legado SUPERSEDIDO -> OBSOLETO.
+ NENHUM objeto NAO ENCONTRADO que pareça necessario. NENHUM BLOCKED. Sem migrar/improvisar.
+
+--------------------------------------------------------------------------------
+3. ETAPA 3/4 — NEUTRALIZACAO
+--------------------------------------------------------------------------------
+ARQ                  | KIND | DEPOIS (raiz)              | HISTORICO SANITIZADO (.txt)
+---------------------+------+----------------------------+------------------------------------------------
+query_sql.cjs        | A3   | stub somente-comentario    | docs/lab/neutralized_admin/query_sql.cjs.txt
+check_types.mjs      | A3   | stub somente-comentario    | docs/lab/neutralized_admin/check_types.mjs.txt
+criar_schema.cjs     | A4   | stub somente-comentario    | docs/lab/neutralized_ddl/criar_schema.cjs.txt
+criar_tabelas.cjs    | A4   | stub somente-comentario    | docs/lab/neutralized_ddl/criar_tabelas.cjs.txt
+ Documentado nos stubs/historicos:
+  - A3: "SQL ad-hoc nao e mecanismo administrativo oficial do TMS." (ferramenta admin futura exige
+    contrato proprio: finalidade, authN/authZ, allowlist, preferencialmente read-only, auditoria,
+    ambiente explicito, sem SQL arbitrario, sem credencial hardcoded.)
+  - A4: "Alteracoes de schema do TMS devem ocorrer exclusivamente via migrations versionadas."
+ Nao criado port executavel; NAO aplicado guardHarness (nao sao harnesses de teste).
+
+--------------------------------------------------------------------------------
+4. SANITIZACAO
+--------------------------------------------------------------------------------
+ PROD ref -> REDACTED_PROD_REF | anon JWT -> REDACTED_ANON_KEY | postgres://user:pass@ ->
+ postgresql://REDACTED@ | tokens -> REDACTED_TOKEN | service_role -> REDACTED_SERVICE_ROLE.
+ Verificacao: 4/4 historicos (.txt) SEM segredo; 4/4 stubs SEM segredo. Nenhum valor impresso aqui.
+
+--------------------------------------------------------------------------------
+5. PROVA DE INERCIA (verificador scripts/_guard.verify_c3d.cjs)
+--------------------------------------------------------------------------------
+ Para os 4 originais (raiz): codigo executavel (sem comentarios)=0; sem createClient/RPC/SQL/DDL/
+ DML/Storage/fetch; sem hardcode PROD/anon/service_role/DB; stub sem segredo -> PASS (todos).
+ Historicos: 4 .txt sanitizados, 0 com segredo -> PASS.
+ imports em src/scripts: 0 (PASS) | package.json: 0 (PASS).
+
+--------------------------------------------------------------------------------
+6. PROVA CONSOLIDADA DOS 33 WRITERS
+--------------------------------------------------------------------------------
+ A1 = 23/23  PROTEGIDOS (scripts/lab + guardHarness; C3B1 11 + C3B2 12)
+ A2 =  6/6   NEUTRALIZADOS (stubs + docs/lab/neutralized_oneoffs)
+ A3 =  2/2   NEUTRALIZADOS/ARQUIVADOS (docs/lab/neutralized_admin)
+ A4 =  2/2   NEUTRALIZADOS/ARQUIVADOS (docs/lab/neutralized_ddl)
+ ---------------------------------------------
+ TOTAL = 33/33 writers tratados (evidencia via _guard.verify_c3d.cjs).
+
+--------------------------------------------------------------------------------
+7. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+ _guard.verify_c3d.cjs ...... PASS (33/33 consolidado; A3/A4 inertes)
+ _guard.verify_c3c.cjs ...... PASS
+ _guard.verify_c3b2.cjs ..... PASS
+ _guard.verify_c3b1.cjs ..... PASS
+ _guard.verify_p2.cjs ....... PASS
+ _guard.verify_p1.cjs ....... 13/13 OK | A-E PASS
+ _guard.selftest.cjs ........ TOTAL 13 | PASS 13 | FAIL 0
+ npm run build .............. OK ("built in 44.38s")
+ Nenhum fluxo executado; zero conexao/DML/DDL real.
+
+--------------------------------------------------------------------------------
+8. REVALIDACAO
+--------------------------------------------------------------------------------
+ A1 23/23 protegidos .... OK | A2 6/6 inertes ....... OK
+ C2 27 snippets inertes . OK | /dev-teste ausente .. OK
+ src/lib/testes ausente . OK
+
+--------------------------------------------------------------------------------
+9. NAO TOCADO
+--------------------------------------------------------------------------------
+ Classe C (_audit_001..008), Classe F (update_*), tests/e2e, tmp/scratch, .env, banco, RLS/RPC,
+ APP. Nenhuma migration criada.
+
+--------------------------------------------------------------------------------
+10. RISCOS RESTANTES
+--------------------------------------------------------------------------------
+ R1. Classe C com credencial de banco hardcoded (_audit_001..008) -> missao futura (limpeza de
+     credencial/padronizacao read-only via env).
+ R2. Classe F (update_financeiro.js, update_financeiro3.cjs, update_prestador.cjs,
+     update_sinistro.cjs) -> investigar/neutralizar.
+ R3. tests/e2e e scratch/tmp com credenciais (rotacao de credencial, infra).
+ R4. Ferramenta admin/SQL ad-hoc legitima futura exige contrato proprio (nao implementado aqui).
+
+--------------------------------------------------------------------------------
+11. ACEITE
+--------------------------------------------------------------------------------
+ 1. 4/4 A3/A4 sem capacidade perigosa ....... OK
+ 2. A4 comparados com migrations ............. OK (COBERTO/OBSOLETO)
+ 3. nenhum objeto necessario perdido ......... OK
+ 4. historicos sanitizados ................... OK (4 .txt)
+ 5. zero segredo ............................. OK
+ 6. zero conexao/DML/DDL ..................... OK
+ 7. build OK ................................. OK
+ 8. P1/P2 sem regressao ...................... OK
+ 9. prova consolidada 33/33 .................. OK
+
+--------------------------------------------------------------------------------
+12. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 4/4 A3/A4 neutralizados, A4 coberto por migrations (sem BLOCKED), historicos sanitizados,
+33/33 writers tratados, build OK, sem regressao.
+
+--------------------------------------------------------------------------------
+13. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3E — Classe C (read-only c/ credencial): remover credencial hardcoded dos
+_audit_001..008 e padronizar leitura via env/QA. Depois Classe F (update_*) e, por fim,
+tests/e2e + rotacao/limpeza de scratch/tmp.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C3D-ENCERRAR-A3-A4-ADMIN-DDL-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C3D-ENCERRAR-A3-A4-ADMIN-DDL-RESULTADO.txt
+Tamanho ..: 9924 bytes
+Data .....: 24/09/2026 21:44:19
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C3D
+================================================================================

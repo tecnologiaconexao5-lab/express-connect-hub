@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LucideIcon, Truck, MapPin, Package, Clock, AlertTriangle, CheckCircle, Eye, Phone, MessageSquare, ArrowRight, Calendar, User, ShieldCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ interface PortalDeliveryCardProps {
   onContactDriver?: () => void;
 }
 
-export function PortalDeliveryCard({
+export const PortalDeliveryCard = memo(function PortalDeliveryCard({
   osNumber,
   clientName,
   unit,
@@ -243,4 +244,4 @@ export function PortalDeliveryCard({
       </CardContent>
     </Card>
   );
-}
+});

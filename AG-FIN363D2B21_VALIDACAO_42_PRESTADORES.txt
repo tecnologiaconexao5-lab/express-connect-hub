@@ -1,0 +1,125 @@
+FIN-363D.2B2.1 — REVALIDAÇÃO DOS 42 PRESTADORES
+=================================================
+Data: 2026-09-07T17:22:29.691Z
+
+TOTAL ANALISADO: 42
+
+❌ a4fae89d  "PRESTADOR TESTE APP"  R$250.00  evid=[]
+❌ 2b3fb150  "PRESTADOR TESTE APP"  R$100.00  evid=[]
+❌ 28f2492b  "PRESTADOR TESTE APP"  R$100.00  evid=[]
+❌ 26f61bc9  "PRESTADOR TESTE APP"  R$100.00  evid=[]
+✅ f4e4cca6  "PRESTADOR TESTE APP"  R$50.00  evid=[OS HML-APP-001 is_teste=true; os_numero="HML-APP-001"]
+❌ cb866539  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 77cb490b  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 8a30b23a  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 524e1e1c  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ de8a1854  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ fcb0394d  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 1cf29cba  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 0cbf2763  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 33557f90  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 74eadd8d  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ da2f911b  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ fe7cc24f  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 54d4c635  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 6605e1e8  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 3313adda  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ 9fcf1435  "PRESTADOR TESTE APP"  R$1050.00  evid=[]
+❌ f20f38c9  "PRESTADOR TESTE APP"  R$420.00  evid=[]
+❌ 4cc0ee4e  "PRESTADOR TESTE APP"  R$580.00  evid=[]
+❌ 4ed52905  "PRESTADOR TESTE APP"  R$580.00  evid=[]
+❌ b6dac07c  "PRESTADOR TESTE APP"  R$350.00  evid=[]
+❌ dd142135  "PRESTADOR TESTE APP"  R$1490.00  evid=[]
+❌ e2e0159d  "PRESTADOR TESTE APP"  R$850.00  evid=[]
+❌ ded4388d  "PRESTADOR TESTE APP"  R$298.50  evid=[]
+✅ f9f844c2  "PRESTADOR TESTE APP"  R$103.50  evid=[OS OS-TESTE-MR6ITJ37 is_teste=true; os_numero="OS-TESTE-MR6ITJ37"]
+✅ ce5b9c81  "PRESTADOR TESTE APP"  R$103.50  evid=[OS OS-TESTE-MR6ISIWO is_teste=true; os_numero="OS-TESTE-MR6ISIWO"]
+✅ 50429c41  "PRESTADOR TESTE APP"  R$103.50  evid=[OS OS-TESTE-MR6IT7ZR is_teste=true; os_numero="OS-TESTE-MR6IT7ZR"]
+❌ e6e2bb83  "PRESTADOR TESTE APP"  R$103.50  evid=[]
+✅ 952861d6  "PRESTADOR TESTE APP"  R$103.50  evid=[OS OS-TESTE-MR6IPT2H is_teste=true; os_numero="OS-TESTE-MR6IPT2H"]
+❌ e968b1f2  "M43_2026-06-29_18-31-00 Motori"  R$1000.00  evid=[]
+❌ b6110500  "M43_2026-06-29_18-29-55 Motori"  R$1000.00  evid=[]
+❌ 24d6454d  "PRESTADOR TESTE APP"  R$280.00  evid=[]
+❌ 5d128941  "PRESTADOR TESTE APP"  R$850.00  evid=[]
+❌ bc12e3de  "PRESTADOR TESTE APP"  R$280.00  evid=[]
+❌ 32b3d662  "PRESTADOR TESTE APP"  R$895.00  evid=[]
+❌ bc826113  "PRESTADOR TESTE APP"  R$280.00  evid=[]
+❌ 8453492e  "PRESTADOR TESTE APP"  R$280.00  evid=[]
+❌ abfa3755  "PRESTADOR TESTE APP"  R$240.00  evid=[]
+
+═══════════════════════════════════════════════════════════
+CORREÇÃO DE DUVIDOSOS
+═══════════════════════════════════════════════════════════
+Flags corrigidas (true → false): 37
+  a4fae89d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  2b3fb150 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  28f2492b → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  26f61bc9 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  cb866539 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  77cb490b → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  8a30b23a → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  524e1e1c → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  de8a1854 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  fcb0394d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  1cf29cba → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  0cbf2763 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  33557f90 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  74eadd8d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  da2f911b → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  fe7cc24f → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  54d4c635 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  6605e1e8 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  3313adda → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  9fcf1435 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  f20f38c9 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  4cc0ee4e → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  4ed52905 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  b6dac07c → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  dd142135 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  e2e0159d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  ded4388d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  e6e2bb83 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  e968b1f2 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  b6110500 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  24d6454d → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  5d128941 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  bc12e3de → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  32b3d662 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  bc826113 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  8453492e → is_teste=false (DUVIDOSO — sem evidência além do nome)
+  abfa3755 → is_teste=false (DUVIDOSO — sem evidência além do nome)
+
+═══════════════════════════════════════════════════════════
+PROVA FINAL
+═══════════════════════════════════════════════════════════
+TOTAL REGISTROS: 90
+TOTAL is_teste=true: 5
+TOTAL is_teste=false: 85
+
+VALORES FINANCEIROS:
+  Soma total: R$ 66715.32
+  Soma teste: R$ 464.00
+  Soma real:  R$ 66251.32
+
+STATUS:
+  pago: 3
+  pendente: 87
+
+Somente is_teste alterado: SIM (37 flags corrigidas)
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+42 ANALISADOS: SIM
+CONFIRMADO_TESTE: 5
+DUVIDOSO: 37
+FLAGS CORRIGIDAS: 37
+VALORES ALTERADOS: NÃO
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+FIN-363D.2B2.1: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

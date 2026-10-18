@@ -1,0 +1,173 @@
+ESCALA-VEIC-TABELA-06-FRANQUIA-CANONICAL
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+OBJETIVO
+==================================================
+
+Corrigir leitura/cálculo/snapshot da franquia KM da TABELA DO CLIENTE,
+priorizando o campo canônico `franquia_km` e eliminando fallbacks artificiais
+(|| 200 e tarifa 2.50). ESCALA-PRESTADOR-02 permanece intacta.
+
+==================================================
+REGRA CANÔNICA
+==================================================
+
+franquia efetiva =
+  1. franquia_km, se valor válido (inclusive 0);
+  2. senão km_franquia legado, se válido (inclusive 0);
+  3. senão 0.
+
+0 É VALOR VÁLIDO. Nunca usar `||` para resolver franquia.
+
+Tarifa excedente = valor_km_excedente ?? valor_km ?? 0 (0 preservado).
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+CANONICAL_COMMERCIAL_FIELD=franquia_km
+LEGACY_FRANCHISE_FIELD=km_franquia
+EFFECTIVE_FRANCHISE_MINEIRAO=100
+ZERO_IS_VALID_VALUE=YES
+MAGIC_200_REMOVED=YES
+MAGIC_2_50_REMOVED_FROM_CLIENT_FLOW=YES
+ESCALA05_MATCH_PRESERVED=YES
+ESCALA_PRESTADOR_02_PRESERVED=YES
+CLIENT_PROVIDER_FRANCHISE_SEPARATED=YES
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+CASO REAL MINEIRÃO (evidência; sem hardcode de produção)
+==================================================
+
+Tabela: 1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+  franquia_km=100 | km_franquia=0 | valor_km_excedente=1.20 | valor_base=300
+
+FRANQUIA_EFETIVA=100
+
+Exemplos (calculados dinamicamente):
+  80 km  → cliente R$300
+  100 km → cliente R$300
+  101 km → cliente R$301,20
+  110 km → cliente R$312
+  150 km → cliente R$360
+
+==================================================
+IMPLEMENTAÇÃO
+==================================================
+
+1. src/helpers/franquiaKm.ts (NOVO)
+   - resolverFranquiaEfetiva(franquiaKm, kmFranquiaLegado): number
+       canonical != null/undefined/""/NaN → canonical; senão legacy válido; senão 0.
+       explicit 0 preservado.
+   - resolverTarifaKmExcedente(valorKmExcedente, valorKmLegado): number
+       valor_km_excedente → valor_km → 0. Sem preço artificial.
+
+2. src/components/operacao/EscalaLista.tsx
+   - SELECT (busca específica e universal): + franquia_km.
+   - setTabelaValores: franquia_km/km_franquia = resolverFranquiaEfetiva(...);
+     valor_km_excedente = resolverTarifaKmExcedente(...).
+     REMOVIDO `|| 200` e `|| 2.50`.
+   - calcularTotalAlocacao (engine): franquia_km = resolverFranquiaEfetiva(canonical, legado);
+     tarifa = resolverTarifaKmExcedente(valor_km_excedente, valor_km).
+   - totals.cliente.detalhes.km: franquia efetiva + tarifa efetiva.
+   - Snapshot metadata.faturamento.franquia_km = franquia efetiva;
+     metadata.faturamento.valor_km_excedente = tarifa efetiva.
+   - UI "Tabela aplicada": acrescentado "| Franquia: {efetiva} km" (encaixe natural,
+     sem redesenho).
+
+3. src/services/precificacao/buscarTabelasService.ts
+   - montarTabelaValorAplicada usa resolverFranquiaEfetiva/resolverTarifaKmExcedente.
+   - SERVICE_MAPPING_BEFORE = franquia_km ?? km_franquia (canonical-first) / valor_km_excedente ?? valor_km
+   - SERVICE_MAPPING_AFTER  = resolverFranquiaEfetiva / resolverTarifaKmExcedente
+   - BEFORE == AFTER para dados válidos (canonical-first preservado).
+
+4. src/test/escala_veic_tabela_06_franquia_canonical.test.ts (NOVO) — T1..T15.
+
+FILES_MODIFIED=
+  src/helpers/franquiaKm.ts (novo)
+  src/components/operacao/EscalaLista.tsx
+  src/services/precificacao/buscarTabelasService.ts
+  src/test/escala_veic_tabela_06_franquia_canonical.test.ts (novo)
+
+UI_CHANGE_SKIPPED_TO_PRESERVE_LAYOUT=NO
+  (painel "Tabela aplicada" comportou a franquia discretamente, sem redesenho)
+
+==================================================
+TESTES T1..T15 (16 asserts — 16/16 PASS)
+==================================================
+
+T1  match Mineirão/Fiorino preservado                        PASS
+T2  canonical=100 legacy=0 → 100                             PASS
+T3  canonical=0 legacy>0 → 0                                 PASS
+T4  canonical null → legacy                                  PASS
+T5  ambos ausentes → 0                                       PASS
+T6  0 km → sem excedente                                     PASS
+T7  100 km → sem excedente                                   PASS
+T8  101 km → 1 km excedente (cliente 301,20)                 PASS
+T9  110 km → 10 km excedentes (cliente 312)                  PASS
+T10 150 km → 50 km excedentes (cliente 360)                  PASS
+T11 tarifa vem da tabela (sem 2.50) + 0 preservado/legado    PASS
+T12 snapshot grava franquia efetiva (100, não 0)             PASS
+T13 ESCALA-05 permanece PASS                                 PASS
+T14 ESCALA-PRESTADOR-02 permanece PASS                       PASS
+T15 cliente/prestador separados                              PASS
+
+TESTS_TOTAL=15
+TESTS_EXECUTED=16
+TESTS_PASS=16
+TESTS_FAIL=0
+
+REGRESSÃO:
+  escala_veic_tabela_05_client_match.test.ts     24/24 PASS
+  escala_prestador_02_repasse_dual.test.ts       18/18 PASS
+
+SUÍTE COMPLETA (npx vitest run):
+  Test Files: 10 failed | 80 passed | 1 skipped (91)
+  Tests:      57 failed | 1308 passed | 155 skipped (1520)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates ausentes).
+  Nenhuma em franquiaKm/EscalaLista/buscarTabelasService/precificação.
+
+==================================================
+TSC / BUILD
+==================================================
+
+TSC_STATUS:
+  npm run typecheck → 0 erros novos nos arquivos desta missão.
+  Baseline pré-existente permanece (3 erros antigos em EscalaLista.tsx
+  linhas 2992/3211/3519: REVERSA_TIPO_LABELS, Camera, alocacaoEmEdicao —
+  não relacionados; demais em módulos/testes).
+  franquiaKm.ts / buscarTabelasService.ts / teste 06 → sem erros.
+
+BUILD_STATUS:
+  npm run build → ✓ built in 29.18s
+
+==================================================
+SEPARAÇÃO FINANCEIRA
+==================================================
+
+CLIENTE: franquia/tarifa da tabela do cliente (franquia_km/km_franquia).
+PRESTADOR: financeiro_real/franquia/regra própria (prestadores.franquia_km).
+Não misturados. Blocos de custo do prestador (linhas ~2292/2819) inalterados.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Não alterou banco de produção.
+- Não criou migration/RLS.
+- Não alterou a tabela Mineirão.
+- Não alterou o cadastro do Clayton.
+- Sem hardcode (100/300/1.20 apenas como evidência de teste).
+- Não tocou APP/POD.
+- Não tocou ESCALA-07 / loading global.
+- Sem mega-refactor. Não iniciou outra missão.
+- ESCALA-PRESTADOR-02 intacta.
+
+DB_WRITES=0
+MIGRATIONS=0

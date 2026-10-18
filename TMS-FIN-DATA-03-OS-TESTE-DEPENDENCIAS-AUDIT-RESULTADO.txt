@@ -1,0 +1,227 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-03-OS-TESTE-DEPENDENCIAS-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (nenhum DELETE/UPDATE/INSERT).
+RESULTADO: PASS (auditoria concluida). NADA IMPLEMENTADO.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA (perguntas 1-8):
+ 1. TESTE-PURO ................. 12 OS
+ 2. TESTE-COM-DEPENDENCIA ...... 15 OS
+ 3. CONFLITO ...................  6 OS
+ 4. DUVIDOSO ...................  0 OS
+ 5. Podemos remover com seguranca? SOMENTE as 12 TESTE-PURO. As 15 B exigem tratar
+    dependencias; as 6 C exigem decisao (rede/entidades reais).
+ 6. DELETE fisico apropriado? NAO. Recomendado ARQUIVAR/ANULAR (soft). Motivos: FKs
+    ON DELETE CASCADE (os_historico/os_pod/prestador_os/tracking_public_links/
+    rede_oportunidades), financeiro_receber.os_id SEM FK (gera orfaos), trilha de
+    auditoria e exposicao de rede.
+ 7. Ordem segura: ver item 7.
+ 8. Apos tratar as OS, os 46 TESTE-BLOCKED poderao ser removidos? SIM, condicionado a
+    neutralizar a recriacao (OS status='cancelada' ou valores zerados). Sem neutralizar,
+    NAO (triggers recriam em qualquer UPDATE da OS).
+
+--------------------------------------------------------------------------------
+1. TRIGGERS M66/M80 — O QUE DISPARA / O QUE ACONTECE
+--------------------------------------------------------------------------------
+Triggers ATIVOS em ordens_servico (AFTER INSERT e UPDATE):
+  - trg_propagar_financeiro_os -> f_trg_propagar_financeiro_os()   [M80]
+  - trg_evento_os_criada / trg_evento_os_finalizada / trg_evento_os_cancelada /
+    trg_evento_os_status_changed / trg_notificar_os_para_app
+Triggers ATIVOS em alocacoes_escala (AFTER INSERT e UPDATE):
+  - trg_propagar_financeiro_alocacao -> f_trg_propagar_financeiro_alocacao() [M66]
+  - trg_cancelar_financeiro_alocacao (BEFORE UPDATE) + eventos
+NAO ha trigger de DELETE em ordens_servico.
+
+Comportamento de f_trg_propagar_financeiro_os():
+  - RETURN NEW (no-op) se NEW.status = 'cancelada'.
+  - RETURN NEW (no-op) se valor_cliente = 0 E custo_prestador = 0.
+  - Caso contrario, cria/atualiza financeiro_receber, financeiro_pagar,
+    pagamentos_prestadores e composicao_financeira_os com base na OS.
+Comportamento de f_trg_propagar_financeiro_alocacao():
+  - RETURN NEW se status='cancelada' ou se todos os valores (frete/repasse/reversa)=0.
+  => RECRIACAO: enquanto a OS de teste permanecer com status != 'cancelada' e
+     valor_cliente>0, QUALQUER UPDATE da OS (ou da alocacao vinculada) re-propagara o
+     financeiro. Isso explica os 46 TESTE-BLOCKED.
+  => NEUTRALIZACAO: status='cancelada' (ou valores zerados) torna o trigger no-op.
+
+FK ON DELETE observadas (para OS):
+  CASCADE (apagam junto): os_historico, os_pod, prestador_os, tracking_public_links,
+    rede_oportunidades, historico_alocacoes_escala(alocacao).
+  SET NULL: alocacoes_escala.ordem_servico_id, fatura_itens.os_id,
+    pagamentos_prestadores_itens.os_id, rotas/rota_paradas.os_id, ocorrencias,
+    communication_events, operacao_mensagens, reembolsos_prestador.
+  NO ACTION (bloqueiam delete se existirem): fiscal_nfse/ctes/mdfes/documentos_vinculados
+    (0 registros para as 33 OS).
+  SEM FK: financeiro_receber.os_id (TEXT), financeiro_pagar.os_id (TEXT) -> DELETE de OS
+    NAO remove/limpa esses registros: viram ORFAOS.
+
+--------------------------------------------------------------------------------
+2. DEPENDENCIAS POR DOMINIO (totais nas 33 OS)
+--------------------------------------------------------------------------------
+  alocacoes_escala(ordem_servico_id) ........ 9
+  composicao_financeira_os(os_id) ........... 7
+  financeiro_receber(os_id) ................. 19   <- TESTE-BLOCKED
+  financeiro_pagar(os_id) ................... 14   <- TESTE-BLOCKED
+  pagamentos_prestadores(os_id) ............. 13   <- TESTE-BLOCKED
+  pagamentos_prestadores_itens(os_id) ....... 0
+  fatura_itens(os_id) ....................... 0
+  os_historico(ordem_servico_id) ............ 49   (trilha automatica; CASCADE)
+  os_ocorrencias / os_pod / prestador_os .... 0 / 0 / 0
+  fiscal_ctes / mdfes / nfse / docs ......... 0 / 0 / 0 / 0
+  rede_oportunidades(os_id) ................. 5    (publicada/aceita -> exposicao)
+  entregas_protocolo(via alocacao) .......... 3    (POD "entregue", recebedor teste,
+                                                     SEM foto/assinatura/canhoto)
+  patio_checkins(ordem_servico_id) .......... 1
+  operacao_localizacao(os_id) ............... 1
+  portal_tracking_realtime(os_id) ........... 1
+  demais (rotas, sinistros, portal_*, reembolsos, contratos, escala_operacional) 0
+
+--------------------------------------------------------------------------------
+3. MATRIZ DAS 33 OS (Nº | id | st | cliente | prestador | dep | dominios | CLASSE)
+--------------------------------------------------------------------------------
+A/TESTE-PURO (12)  [sem dependencia operacional; no maximo os_historico]
+ OS-TESTE-1000              16ab52c3  em_andamento  Empresa Teste          -     0  -                                  A
+ OS-TESTE-1001              7119b702  concluida     Empresa Teste          -     0  -                                  A
+ OS-TESTE-1002              8bfd87e1  em_andamento  Empresa Teste          -     0  -                                  A
+ OS-TESTE-1003              b62f9815  agendada      Empresa Teste          -     0  -                                  A
+ OS-TESTE-1004              1e64efa2  concluida     Empresa Teste          -     0  -                                  A
+ OS_AUDITORIA_1777344891607 aa7dda82  rascunho      Empresa Demo [DEV]     -     8  os_historico                       A
+ OS-TEST-1781311132820      a93b8f28  rascunho      Empresa Demo [DEV]     -     8  os_historico                       A
+ OS-TESTE-1776989832949     bf89eb61  em_andamento  Empresa Demo [DEV]     -     8  os_historico                       A
+ OS-TESTE-1776989922267     a94e561d  em_andamento  Empresa Demo [DEV]     -     8  os_historico                       A
+ TEST-M80-CANCEL-MR74LSE7   b190bb59  cancelada     M43 Cliente Teste      6cc41f68 0 -                              A
+ TESTE-FIN-202604-904241    2f29a428  finalizada    68fb8493 (teste)       16c5dece 0 -                              A
+ TESTE-OS-202604-151609     cc1d608a  finalizada    68fb8493 (teste)       e7381370 0 -                              A
+
+B/TESTE-COM-DEPENDENCIA (15)
+ HML-APP-001                1e1b59fa  pendente      -                      -     7  aloc,AR,AP,PP,track_rt,loc       B
+ M85-TEST-MR88HVOC-B        8b06402c  rascunho      -                      -     1  AR                               B
+ OS-TEST-1781310536075 (*)  45857f5f  pendente      Cydak do Brasil (REAL) -     4  aloc,AR,AP,PP                     C(*) ver C
+ OS-TESTE-MR6IPT2H          127b1b3f  finalizada    Cliente Teste App      e6646799 5  aloc,comp,AR,AP,PP               B
+ OS-TESTE-MR6ISIWO          89b922bc  finalizada    Cliente Teste App      e6646799 6  aloc,comp,AR,AP,PP,entregas     B
+ OS-TESTE-MR6IT7ZR          9521575c  finalizada    Cliente Teste App      e6646799 6  aloc,comp,AR,AP,PP,entregas     B
+ OS-TESTE-MR6ITJ37          7c8a6289  finalizada    Cliente Teste App      e6646799 6  aloc,comp,AR,AP,PP,entregas     B
+ TEST-M80-CANCEL-MRH2VCOA   eaa0e5fd  cancelada     M43 Cliente Teste      6cc41f68 4  aloc,AR,AP,PP                    B
+ TEST-M80-CF-MR751I7O       71e61468  pendente      M43 Cliente Teste      6cc41f68 3  AR,AP,PP                         B
+ TEST-M80-EDGE-MR7544Q6     1c7db493  finalizada    M43 Cliente Teste      6cc41f68 4  comp,AR,AP,PP                    B
+ TEST-M80-FULL-MR750V6O     b6dd5ce8  pendente      M43 Cliente Teste      6cc41f68 3  AR,AP,PP                         B
+ TEST-M80-MR74LQ3H          3db46421  finalizada    M43 Cliente Teste      6cc41f68 2  AR,AP                            B
+ TEST-M80-MRH2VAJP          5c9a87aa  finalizada    M43 Cliente Teste      6cc41f68 4  comp,AR,AP,PP                    B
+ TEST-M80-OK-MR752GEF       3a15f5d1  finalizada    M43 Cliente Teste      6cc41f68 4  comp,AR,AP,PP                    B
+ TESTE_MIN_1782757719968    e57fd47f  rascunho      Empresa Demo [DEV]     -     10 aloc,os_historico,patio_checkin  B
+ TESTE-001                  28640e7b  pendente      Empresa Demo [DEV]     -     9  aloc,os_historico                 B
+ (obs.: OS-TEST-1781310536075 consta aqui por dependencia, mas foi CLASSIFICADA C
+  por vincular cliente REAL — ver secao C.)
+
+C/CONFLITO (6)
+ M86-TEST-MR88UC58          edf1fff7  rascunho      M43 Cliente Teste      -     2  AR + rede_oportunidades(publicada)
+ M86-TEST-MR88UO6B          4996bf7b  rascunho      M43 Cliente Teste      -     2  AR + rede_oportunidades(publicada)
+ M90-TEST-MR8AHG3V          b8fedeb1  rascunho      M43 Cliente Teste      -     2  AR + rede_oportunidades(publicada)
+ M90-TEST-MR8AILKG          4767a7f1  rascunho      M43 Cliente Teste      -     2  AR + rede_oportunidades(publicada)
+ M90-TEST-MR8AK450          fb33a1bd  agendada      M43 Cliente Teste      FRANKLIN DA SILVA PEREIRA (REAL)
+                                                                              5  AR,AP,PP,os_historico + rede(ACEITA)
+ OS-TEST-1781310536075      45857f5f  pendente      Cydak do Brasil (REAL) -     4  aloc,AR,AP,PP
+
+D) DUVIDOSO (0)
+
+--------------------------------------------------------------------------------
+4. CLASSIFICACAO — CRITERIOS
+--------------------------------------------------------------------------------
+A) TESTE-PURO: numero/token de teste + is_teste=true + ZERO dependencia operacional
+   (apenas os_historico automatico, que e CASCADE).
+B) TESTE-COM-DEPENDENCIA: is_teste=true, numero de teste, porem possui dependentes
+   (alocacoes, composicao, financeiro, POD, checkin) que PRECISAM ser tratados antes.
+C) CONFLITO: is_teste=true, MAS ha evidencia de dado/operacao REAL associada:
+   - rede_oportunidades publicada/aceita (exposicao a prestadores reais; 1 ACEITA);
+   - vinculo com entidade REAL: cliente Cydak do Brasil LTDA (OS-TEST-1781310536075);
+     prestador FRANKLIN DA SILVA PEREIRA (M90-TEST-MR8AK450).
+D) DUVIDOSO: nenhum caso.
+
+--------------------------------------------------------------------------------
+5. RISCOS
+--------------------------------------------------------------------------------
+R1. Recriacao: OS com status != cancelada e valor_cliente>0 recria financeiro em qualquer
+    UPDATE (M80) / alocacao (M66). Os 46 TESTE-BLOCKED voltariam.
+R2. DELETE fisico da OS: CASCADE apaga os_historico, os_pod, prestador_os,
+    tracking_public_links e rede_oportunidades (perde trilha/exposicao).
+R3. financeiro_receber.os_id e financeiro_pagar.os_id sao TEXT SEM FK: deletar a OS nao
+    limpa o financeiro -> orfaos; e deletar financeiro antes de neutralizar a OS e inutil.
+R4. 6 OS CONFLITO tocam entidades reais (Cydak; FRANKLIN) e/ou rede publicada/aceita:
+    tratar sem apagar OS/cadastros.
+R5. POD de teste ("Joao Recebedor Teste") sem fotos/assinatura/canhoto: baixo risco de
+    Storage, mas entregas_protocolo referenciam alocacao/OS.
+R6. Contadores/faturamento: NENHUMA das 33 OS gerou fatura_itens nem fiscal (0/0),
+    logo nao afeta contadores de fatura.
+R7. Indicadores do prestador: prestadores e6646799/6cc41f68 participam; remocao de
+    pagamentos_prestadores pode alterar KPIs de repasse (verificar antes).
+
+--------------------------------------------------------------------------------
+6. RECOMENDACAO: DELETE x ARQUIVAMENTO
+--------------------------------------------------------------------------------
+ARQUIVAR/ANULAR (SOFT) — recomendado. DELETE FISICO — NAO recomendado.
+Justificativa: efeitos CASCADE em trilha/exposicao, orfaos de financeiro (sem FK),
+valor de auditoria e necessidade de coordenar com Financeiro/Comercial.
+Abordagem sugerida (missao futura, com autorizacao):
+  - Soft: ordens_servico.status='cancelada' (neutraliza triggers) + metadado
+    {arquivada_teste:true}. Preserva historico/FKs.
+  - Alternativa "inativar": zerar valor_cliente/custo_prestador (trigger no-op) mantendo
+    status — NAO preferida (perde valor historico da OS).
+
+--------------------------------------------------------------------------------
+7. PLANO MINIMO SEGURO (ordem)
+--------------------------------------------------------------------------------
+Pre-requisitos: backup (DATA-02 ja existe) + transacao unica + autorizacao explicita.
+ 1. Encerrar rede_oportunidades das 5 OS (status 'encerrada'/equivalente) — exposicao.
+ 2. Para cada OS de teste: status='cancelada' (torna M80/M66 no-op) — NAO deletar OS.
+ 3. Cancelar/neutralizar alocacoes_escala (9) vinculadas (dispara cancel-path).
+ 4. Remover financeiro dos 46 TESTE-BLOCKED (AR/AP/PP) — agora NAO recriaveis.
+ 5. Remover composicao_financeira_os (7).
+ 6. Tratar POD/checkins/tracking de teste (entregas_protocolo 3, patio_checkins 1,
+    operacao_localizacao 1, portal_tracking_realtime 1) — confirmar natureza de teste.
+ 7. Manter os_historico (trilha). Opcional: arquivar.
+ 8. Nao tocar cadastros de cliente/prestador (Cydak, FRANKLIN, demais) nem DUVIDOSOS.
+ 9. Revalidar pos-acao: 0 recriacao (contagem estavel), orfaos=0, P0=0.
+
+--------------------------------------------------------------------------------
+8. RESPOSTAS AS 8 PERGUNTAS (consolidado)
+--------------------------------------------------------------------------------
+ 1. TESTE-PURO ................. 12
+ 2. TESTE-COM-DEPENDENCIA ...... 15
+ 3. CONFLITO ...................  6
+ 4. DUVIDOSO ...................  0
+ 5. Remover com seguranca: SIM, apenas as 12 A. As 15 B so apos tratar dependencias;
+    as 6 C exigem decisao adicional (encerrar rede e validar entidades reais).
+ 6. DELETE fisico: NAO. Preferir ARQUIVAR/ANULAR (soft).
+ 7. Ordem: item 7 (encerrar rede -> cancelar OS -> alocacoes -> financeiro 46 ->
+    composicao -> POD/checkins/tracking).
+ 8. Apos tratar as OS: SIM, os 46 TESTE-BLOCKED poderao ser removidos, desde que as OS
+    estejam neutralizadas (status='cancelada' ou valores zerados). Sem isso, NAO.
+
+--------------------------------------------------------------------------------
+9. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (auditoria). Nenhuma alteracao executada. Recomendacao: soft-archive + neutralizar
+triggers antes de remover os 46 TESTE-BLOCKED. Autorizacao explicita necessaria para a
+missao de execucao.
+
+--------------------------------------------------------------------------------
+10. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04 — NEUTRALIZACAO E DESBLOQUEIO DOS 46: encerrar rede_oportunidades das
+5 OS; cancelar (soft) as 33 OS de teste; remover alocacoes/composicao/POD de teste;
+remover os 46 financeiro; provar ausencia de recriacao; fechar o P1 remanescente.
+Requer autorizacao de escrita.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-03-OS-TESTE-DEPENDENCIAS-AUDIT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-03-OS-TESTE-DEPENDENCIAS-AUDIT-RESULTADO.txt
+Tamanho ..: 15608 bytes
+Data .....: 24/09/2026 20:36:39
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-03
+================================================================================

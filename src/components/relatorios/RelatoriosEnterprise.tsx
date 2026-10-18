@@ -23,14 +23,17 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoBundledLight from "@/assets/logo-conexao-light.webp";
-import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { gerarPDFRepassePrestador, gerarPDFFaturamentoDetalhado } from "@/utils/pdfRelatorioOperacional";
 import {
   buscarDadosPagamentoPrestador,
   buscarClientesAtivos,
+  buscarDadosExtratoOperacional,
   type FiltrosPagamento,
+  type ExtratoOS,
+  type ExtratoCliente,
+  type ExtratoPrestador,
 } from "@/services/relatorios/relatorioService";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -84,56 +87,6 @@ const drawLogoPreserved = (
   }
 };
 
-interface OS {
-  id: number;
-  numero: string;
-  data: string;
-  cliente: string;
-  prestador: string;
-  origem: string;
-  destino: string;
-  status: string;
-  valorCliente: number;
-  custoPrestador: number;
-  margem: number;
-  margemPct: number;
-  placa?: string;
-  tipoVeiculo?: string;
-  horarioChegada?: string;
-  horarioSaida?: string;
-  diaria?: number;
-  kmTotal?: number;
-  kmExcedente?: number;
-  valorKm?: number;
-  observacao?: string;
-  obs?: string;
-  numeroOc?: string;
-}
-
-// REMOVED MOCK_OS
-
-interface Cliente {
-  id: number;
-  nome: string;
-  cnpj: string;
-  totalFaturado: number;
-  diarias: number;
-  contratosFixos: number;
-  operacoes: OS[];
-}
-
-// REMOVED MOCK_CLIENTES
-
-interface Prestador {
-  id: number | string;
-  nome: string;
-  cpfCnpj: string;
-  tipo: string;
-  totalOperacoes: number;
-  valorPago: number;
-  operacoes: any[];
-}
-
 interface PrestadorLinha {
   os: string;
   cliente: string;
@@ -175,7 +128,7 @@ const carregarLogoBase64 = async (): Promise<string | null> => {
   return null;
 };
 
-const generateExtratoPDF = async (data: OS[], filtros: any) => {
+const generateExtratoPDF = async (data: ExtratoOS[], filtros: any) => {
   const doc = new jsPDF("landscape", "mm", "a4");
   const logo = await carregarLogoBase64();
   const logoDimensions = logo ? await getImageDimensions(logo) : { w: 0, h: 0 };
@@ -335,7 +288,7 @@ const generateExtratoPDF = async (data: OS[], filtros: any) => {
 
 
 const generateFaturamentoPDF = async (
-  cliente: Cliente,
+  cliente: ExtratoCliente,
   filtros: { dataInicio: string; dataFim: string }
 ) => {
   const opsFiltradas = cliente.operacoes.filter(os => {
@@ -374,7 +327,7 @@ const generateFaturamentoPDF = async (
 };
 
 const generateExcelFaturamentoCliente = (
-  cliente: Cliente,
+  cliente: ExtratoCliente,
   filtrosObj: { dataInicio: string; dataFim: string; status: string }
 ) => {
   const opsFiltradas = cliente.operacoes.filter(os => {
@@ -615,9 +568,9 @@ export default function RelatoriosEnterprise() {
   });
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
 
-  const [relatorioOS, setRelatorioOS] = useState<OS[]>([]);
-  const [relatorioClientes, setRelatorioClientes] = useState<Cliente[]>([]);
-  const [relatorioPrestadores, setRelatorioPrestadores] = useState<Prestador[]>([]);
+  const [relatorioOS, setRelatorioOS] = useState<ExtratoOS[]>([]);
+  const [relatorioClientes, setRelatorioClientes] = useState<ExtratoCliente[]>([]);
+  const [relatorioPrestadores, setRelatorioPrestadores] = useState<ExtratoPrestador[]>([]);
   const [prestadoresLinhas, setPrestadoresLinhas] = useState<PrestadorLinha[]>([]);
   const [prestadoresOps, setPrestadoresOps] = useState<any[]>([]);
   const [clientesOptions, setClientesOptions] = useState<{ value: string; label: string }[]>([]);
@@ -627,209 +580,19 @@ export default function RelatoriosEnterprise() {
 
   useEffect(() => {
     async function loadData() {
-      const [{ data: osData }, { data: escalaData }, { data: cliData }, { data: prestData }, { data: tabelasData }] = await Promise.all([
-        supabase.from("ordens_servico").select("*").order("data", { ascending: false }),
-        supabase.from("alocacoes_escala").select("*").order("data_escala", { ascending: false }),
-        supabase.from("clientes").select("*"),
-        supabase.from("prestadores").select("*, veiculos(*)"),
-        supabase.from("tabelas_valores").select("*")
-      ]);
+      try {
+        const dados = await buscarDadosExtratoOperacional();
 
-      const formatOC = (val: any): string => {
-        if (!val) return "";
-        const str = String(val).trim();
-        return str.toUpperCase().startsWith("OC-") ? str.toUpperCase() : `OC-${str.toUpperCase()}`;
-      };
-
-      const formatVeiculo = (val: string) => {
-        if (!val) return "-";
-        if (val.toLowerCase() === "vuc") return "VUC";
-        if (val.toLowerCase() === "hr") return "HR";
-        return val.replace(/_/g, ' ').split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
-      };
-
-      const getTipoVeiculoFaturamentoCliente = (o: any) => {
-        const getTermica = (t: any) => {
-          const term = t?.exigencia_termica || t?.classificacao_termica || t?.classificacaoTermica;
-          return term && term !== 'N/A' && term !== 'Nenhuma' ? ` ${term}` : '';
-        };
-        
-        const tabT1 = o.metadata?.tabelaValores;
-        const tabT2 = o.metadata?.totals?.cliente?.tabela;
-        const tabT3 = o.metadata?.faturamento;
-        
-        const tabelaId = o.metadata?.faturamento?.tabela_id || o.metadata?.tabela_id || o.metadata?.tabelaId || tabT1?.id || tabT2?.id || tabT3?.id;
-        const tabelaBanco = tabelasData?.find((t: any) => String(t.id) === String(tabelaId));
-
-        let tipoTabela = null;
-        if (tabT1?.tipo_veiculo) tipoTabela = tabT1.tipo_veiculo + getTermica(tabT1);
-        else if (tabT2?.tipo_veiculo) tipoTabela = tabT2.tipo_veiculo + getTermica(tabT2);
-        else if (tabT3?.tipo_veiculo) tipoTabela = tabT3.tipo_veiculo + getTermica(tabT3);
-        else if (tabelaBanco?.tipo_veiculo) tipoTabela = tabelaBanco.tipo_veiculo + getTermica(tabelaBanco);
-        
-        // Em vez de retornar VUC ou nome da tabela, retorna o tipo exato
-        const finalTipo = tipoTabela || "-";
-        
-        if (String(o.cliente_nome || o.cliente || "").toUpperCase().includes("DVL")) {
-          console.log("=== AUDITORIA TIPO VEICULO DVL ===");
-          console.log("1. metadata.tabelaValores:", tabT1);
-          console.log("2. metadata.totals.cliente.tabela:", tabT2);
-          console.log("3. metadata.faturamento:", tabT3);
-          console.log("4. FINAL ENVIADO PARA EXCEL (tipoVeiculo):", finalTipo, formatVeiculo(finalTipo));
-        }
-        
-        return formatVeiculo(finalTipo);
-      };
-
-      const fmtdOS: OS[] = (osData || []).map(o => {
-         const margem = (o.valor_cliente || 0) - (o.custo_prestador || 0);
-         const margemPct = o.valor_cliente > 0 ? (margem / o.valor_cliente) * 100 : 0;
-         return {
-           id: o.id,
-           numero: formatOC(o.numero),
-           data: o.data || "",
-           cliente: cliData?.find((c: any) => c.id === o.cliente_id)?.nome_fantasia || o.cliente || "Avulso",
-           prestador: prestData?.find((p: any) => p.id === o.prestador_id)?.nome_completo || o.prestador || "Não alocado",
-           origem: o.enderecos?.[0]?.cidade || "N/A",
-           destino: o.enderecos?.[o.enderecos.length-1]?.cidade || "N/A",
-           status: o.status || "Pendente",
-           valorCliente: o.metadata?.totals?.cliente?.total || o.valor_cliente || 0,
-           custoPrestador: o.metadata?.totals?.prestador?.total || o.custo_prestador || 0,
-           basePrestador: o.metadata?.totals?.prestador?.valorBase || o.custo_prestador || 0,
-           margem: margem,
-           margemPct: margemPct,
-           placa: (() => {
-             if (o.veiculo_placa) return o.veiculo_placa;
-             if (o.placa) return o.placa;
-             if (o.metadata?.veiculo?.placa) return o.metadata.veiculo.placa;
-             if (o.metadata?.placa) return o.metadata.placa;
-             
-             const pData = prestData?.find((p: any) => String(p.id) === String(o.prestador_id));
-             if (pData?.veiculos && pData.veiculos.length > 0) {
-               const activeV = pData.veiculos.find((v: any) => v.status === 'ativo' || v.principal);
-               return activeV ? activeV.placa : pData.veiculos[0].placa;
-             }
-             return "-";
-           })(),
-           tipoVeiculo: getTipoVeiculoFaturamentoCliente(o),
-           metadata: o.metadata || null,
-           horarioChegada: o.tempo_chegada_patio || o.tempoChegadaPatio || "07:45",
-           horarioSaida: o.tempo_saida_rua || o.tempoSaidaRua || "08:30",
-           diaria: o.valor_base || o.diaria || 400,
-           kmTotal: o.km_total || o.kmRodados || 0,
-           kmExcedente: o.km_excedente || 0,
-           valorKm: o.valor_km || 2.50,
-           observacao: o.observacao || o.observacoesGerais || "-",
-           obs: o.obs || o.observacao_torre || "-",
-           numeroOc: formatOC(o.numero_oc || o.numero || "")
-         };
-      });
-
-      const fmtdEscala: OS[] = (escalaData || []).map(o => {
-         const valorFrete = o.metadata?.totals?.cliente?.total || o.valor_frete || o.valor_fixo || 0;
-         const valorRepasse = o.metadata?.totals?.prestador?.total || o.valor_repasse || o.valor_fixo || 0;
-         const margem = valorFrete - valorRepasse;
-         const margemPct = valorFrete > 0 ? (margem / valorFrete) * 100 : 0;
-         
-         const baseData = o.data_escala || o.created_at || "";
-         const dtString = baseData.includes('T') ? baseData.split('T')[0] : baseData;
-         const shortId = `OC-${dtString.replace(/-/g, '')}-${String(o.id).substring(0, 4).toUpperCase()}`;
-         const finalNumero = formatOC(o.metadata?.numeroOC || shortId);
-
-         let safeData = baseData;
-         if (safeData && !safeData.includes('T') && safeData.length === 10) {
-            safeData = `${safeData}T12:00:00`;
-         }
-
-         return {
-           id: o.id,
-           numero: finalNumero,
-           data: safeData,
-           cliente: cliData?.find((c: any) => String(c.id) === String(o.cliente_id))?.nome_fantasia || o.cliente_nome || "Avulso",
-           prestador: prestData?.find((p: any) => String(p.id) === String(o.prestador_id))?.nome_completo || o.prestador_nome || "Não alocado",
-           origem: "Base",
-           destino: "Rota",
-           status: o.status || "Pendente",
-           valorCliente: valorFrete,
-           custoPrestador: valorRepasse,
-           basePrestador: o.metadata?.totals?.prestador?.valorBase || o.valor_repasse || o.valor_fixo || 0,
-           margem: margem,
-           margemPct: margemPct,
-           placa: (() => {
-             if (o.veiculo_placa) return o.veiculo_placa;
-             if (o.placa) return o.placa;
-             if (o.metadata?.veiculo?.placa) return o.metadata.veiculo.placa;
-             if (o.metadata?.placa) return o.metadata.placa;
-             
-             const pData = prestData?.find((p: any) => String(p.id) === String(o.prestador_id));
-             if (pData?.veiculos && pData.veiculos.length > 0) {
-               const activeV = pData.veiculos.find((v: any) => v.status === 'ativo' || v.principal);
-               return activeV ? activeV.placa : pData.veiculos[0].placa;
-             }
-             return "-";
-           })(),
-           tipoVeiculo: getTipoVeiculoFaturamentoCliente(o),
-           metadata: o.metadata || null,
-           horarioChegada: o.metadata?.tempoChegadaPatio || o.tempo_chegada_patio || "07:45",
-           horarioSaida: o.metadata?.tempoSaidaRua || o.tempo_saida_rua || "09:15",
-           diaria: o.metadata?.totals?.cliente?.valorBase || o.valor_fixo || 0,
-           kmTotal: o.km_realizados || o.km_total || 0,
-           kmExcedente: o.metadata?.totals?.cliente?.detalhes?.km?.excedente || o.km_excedente || 0,
-           valorKm: o.metadata?.totals?.cliente?.detalhes?.km?.valorKm || o.valor_km || 0,
-           observacao: o.metadata?.instrucoesPrestador || o.observacoes || "-",
-           obs: o.metadata?.observacaoCliente || "-",
-           numeroOc: finalNumero
-         };
-      });
-
-      console.log("[DEBUG] loadData() fmtdEscala mapeado:", fmtdEscala.length, "registros", fmtdEscala);
-
-      const allOS = [...fmtdOS, ...fmtdEscala].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
-      console.log("[DEBUG] allOS consolidado:", allOS.length, "registros", allOS);
-      setRelatorioOS(allOS);
-
-      const fmtdCli: Cliente[] = (cliData || []).map((c: any) => {
-         const ops = allOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social || String(c.id) === o.cliente);
-         return {
-            id: c.id,
-            nome: c.nome_fantasia || c.razao_social || "",
-            cnpj: c.cnpj || "",
-            totalFaturado: ops.reduce((sum, o) => sum + o.valorCliente, 0),
-            diarias: ops.filter(o => o.diaria && o.diaria > 0).length,
-            contratosFixos: 0,
-            operacoes: ops
-         };
-      });
-
-      setRelatorioClientes(fmtdCli);
-
-      const fmtdPrest: Prestador[] = (prestData || []).map((p: any) => {
-         const ops = allOS.filter(o => o.prestador === p.nome_completo);
-         return {
-            id: p.id,
-            nome: p.nome_completo || "",
-            cpfCnpj: p.cpf_cnpj || "",
-            tipo: p.tipo_parceiro || "Agregado",
-            totalOperacoes: ops.length,
-            valorPago: ops.reduce((sum, o) => sum + o.custoPrestador, 0),
-            operacoes: ops
-         };
-      });
-      setRelatorioPrestadores(fmtdPrest);
-
-      const cliOpts = fmtdCli
-        .filter(c => c.nome)
-        .map(c => ({ value: String(c.id), label: c.nome }));
-      setClientesOptions(cliOpts);
-
-      const prestOpts = (prestData || [])
-        .filter(p => p.nome_completo)
-        .map(p => ({ value: String(p.id), label: p.nome_completo }));
-      setPrestadoresOptions(prestOpts);
-
-      const nomeMap: Record<string, string> = {};
-      (prestData || []).forEach(p => { if (p.id) nomeMap[String(p.id)] = p.nome_completo || ""; });
-      setPrestadorNomeMap(nomeMap);
+        setRelatorioOS(dados.os);
+        setRelatorioClientes(dados.clientes);
+        setRelatorioPrestadores(dados.prestadores);
+        setClientesOptions(dados.clientesOptions);
+        setPrestadoresOptions(dados.prestadoresOptions);
+        setPrestadorNomeMap(dados.prestadorNomeMap);
+      } catch (e) {
+        console.error("Erro ao carregar dados dos relatorios:", e);
+        toast.error("Erro ao carregar dados dos relatorios.");
+      }
     }
     loadData();
   }, []);

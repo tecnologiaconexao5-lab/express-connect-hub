@@ -1,0 +1,178 @@
+================================================================================
+ TMS-LAYOUT-01 — NAVEGAÇÃO PREMIUM DO TMS
+ Data: 2026-08-20  |  Projeto: Express Connect Hub
+================================================================================
+
+1. OBJETIVO
+--------------------------------------------------------------------------------
+Refinar a APRESENTAÇÃO/organização visual da navegação do TMS, preservando
+100% das rotas, funções, permissões e regras de negócio. Sem alteração de
+banco, migrations, regras financeiras, services ou App Flutter.
+
+2. ESCOPO CUMPRIDO
+--------------------------------------------------------------------------------
+PARTE 1 — Ícones profissionais por aba no módulo FINANCEIRO (e ícones por
+grupo de navegação agrupada), mantendo a estrutura Tabs/TabsList/TabsTrigger
+intacta (regressão F0-N preservada).
+PARTE 2 — Submódulos completos na sidebar (sidebarData.ts): grupos com subitens
+reais existentes nas páginas; removidos itens que apontavam para abas/sections
+inexistentes.
+PARTE 3 — Auto-recolhimento limpo: apenas um grupo aberto por vez; ao recolher
+a sidebar (mouseLeave) o estado de grupo expandido é limpo.
+PARTE 4 — Acabamento visual: recuo consistente, truncamento + tooltip em
+labels longos, hover elegante, pill ativa no modo recolhido.
+NÃO foi feita alteração de banco, migration, regra financeira, rota funcional,
+service, handler, query ou mutation.
+
+3. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+[+] src/pages/Financeiro.tsx
+    - Import lucide atualizado (sem imports mortos; remoção de ícones não
+      usados e adição dos ícones novos).
+    - NAV_ICONES mapeia ícone por aba real (dashboard, pendencias, conferencia,
+      faturas, receber, inadimplencia, pagar, pagamento-prestadores, fluxo,
+      contas-caixas, conciliacao, lotes, dre, margem-os, relatorios, recibos,
+      plano-contas, config-financeira, regras-cliente, seguros-auto,
+      contabilidade, margem, rentabilidade).
+    - GRUPO_ICONES mapeia ícone por grupo da navegação agrupada (Visão Geral,
+      Faturamento, Pagamentos, Tesouraria, Gestão, Outros (legado),
+      Configurações).
+    - Cada TabsTrigger do mapeamento de grupos agora exibe o ícone da aba
+      (herda currentColor do trigger — neutro inativo, branco ativo,
+      primary no hover).
+    - Preservados os 2 literais <TabsList> e 2 <TabsTrigger> exigidos pelo
+      teste F0-N; ícones injetados DENTRO do TabsTrigger (via JSX no .map()).
+    - Estrutura comprovada: TabsTrigger sempre dentro de TabsList.
+
+[+] src/lib/sidebarData.ts
+    Cadastros Base:
+      + Regiões            (/cadastros/auxiliares?tab=regioes)
+      + Tabelas Auxiliares (/cadastros/auxiliares?tab=tabelas)
+      Renomeações alinhadas à página: "Tipos de Veículo"→"Veículos",
+      "Locais (Bases/CDs)"→"Filiais", "Setores & CCs"→"Centros de Custo".
+    Apoio Operacional:
+      + Solicitações Cliente (/operacao?tab=solicitacoes)
+      - Programação (tab inexistente) removido.
+      Listados também Comprovantes de Entrega (/comprovantes) e Controle de
+      Pátio (/controle-patio) — rotas standalone reais.
+    Financeiro Enterprise:
+      Agora lista TODAS as abas reais do módulo Financeiro (23 subitens),
+      espelhando os GRUPOS_NAVEGACAO da própria página.
+    Fiscal & Faturamento:
+      Removidos fechamento/xmls (inexistentes); listadas as 10 abas reais
+      (dashboard, cte, mdfe, nfse, emitente, regras, regras_nfse, documentos,
+      focus, auditoria) — conferidas no Fiscal.tsx.
+    Contratos Automáticos:
+      - Anexos & Evidências removido; "Políticas GLOBAIS" corrigido para
+        /contratos?tab=configuracoes com label "Configurações" (tab real).
+    Recrutamento Inteligente:
+      + Pipeline Enterprise (/recrutamento?section=pipeline-kanban)
+      + Prestadores Aptos (/recrutamento?section=operacionais)
+      Todas as sections conferidas no index do módulo.
+    Biblioteca Global:
+      Agora com os 6 submódulos reais da página (operacional, prestador,
+      cliente, modelos, mensagens, fluxo) via /biblioteca?tab=...
+    SLA e Qualidade:
+      Labels alinhados às abas reais (cliente, nps, entrega, performance).
+    Relatórios Operacionais:
+      Removidos dashboard/volume/exportador (não existem no
+      RelatoriosEnterprise); mantidas apenas as 4 abas reais (extrato,
+      faturamento, margem, prestadores).
+    Nenhuma rota raiz foi removida; todos os módulos principais preservados.
+
+[+] src/components/AppSidebar.tsx
+    - Novo subcomponente SidebarSubItemComponent: recuo consistente
+      (ml-4 + pl-2 + borda lateral), truncamento e tooltip (title) para
+      labels longos, destaque do subitem ativo (text-white + borda
+      border-primary/60).
+    - SidebarItemComponent agora controlado (props open/onToggle) — abre
+      apenas um grupo por vez.
+    - Estado único openPath em AppSidebar: ao abrir um grupo, o anterior
+      fecha; useEffect limpa openPath quando collapsed=true (mouseLeave).
+    - Pill ativa no modo recolhido: destaque 40x40 centralizado sobre o ícone
+      (pointer-events-none, não afeta área clicável).
+    - Chevron rotaciona 180° quando aberto; escondido no modo recolhido.
+    - Hover refinado, espaçamento compacto (space-y-0.5) e scrollbar fina.
+    - Logo/branding "Conexao Express / TMS" preservados; botão de diagnóstico
+      Controle de Pátio (footer) preservado.
+
+[+] src/test/sidebarData.test.ts  — 9 novos testes TMS-LAYOUT-01 (nível de dados)
+[+] src/test/tms_layout_01_sidebar.test.tsx — NOVO (4 testes de componente)
+
+4. MENU ANTES x DEPOIS (RESUMO)
+--------------------------------------------------------------------------------
+Grupo                        Antes                    Depois
+Cadastros Base               4 subitens               9 subitens (Regiões,
+                                                     Tabelas Auxiliares,
+                                                     renames alinhados)
+Apoio Operacional            9 subitens (com         10 subitens (Solicitações
+                             Programação inexist.)   Cliente; sem Programação)
+Financeiro Enterprise        5 subitens              23 subitens (todas as
+                                                     abas reais)
+Fiscal & Faturamento         12 subitens (2 fantasma) 10 subitens (apenas reais)
+Contratos Automáticos        4 subitens (1 fantasma) 3 subitens (reais)
+Recrutamento Inteligente     12 subitens             14 subitens (+Pipeline
+                                                     Enterprise, +Prestadores
+                                                     Aptos)
+Biblioteca Global            2 subitens              6 subitens (submódulos
+                                                     reais da página)
+SLA e Qualidade              labels divergentes      labels alinhados às abas
+Relatórios Operacionais      7 subitens (3 fantasma) 4 subitens (apenas reais)
+
+5. ÍCONES APLICADOS NO FINANCEIRO
+--------------------------------------------------------------------------------
+NAV_ICONES (por aba):
+  dashboard → LayoutDashboard, pendencias → ListChecks,
+  conferencia → CircleCheck, faturas → Receipt, receber → HandCoins,
+  inadimplencia → UserX, pagar → Wallet, pagamento-prestadores → Users,
+  fluxo → ArrowRightLeft, contas-caixas → Landmark, conciliacao → ArrowLeftRight,
+  lotes → Banknote, dre → Calculator, margem-os → ChartNoAxesCombined,
+  relatorios → FileChartColumn, recibos → ReceiptText, plano-contas → BookOpen,
+  config-financeira → Settings, regras-cliente → SlidersHorizontal,
+  seguros-auto → ShieldCheck, contabilidade → Scale, margem → TrendingUp,
+  rentabilidade → TrendingUp
+GRUPO_ICONES (por grupo): Visão Geral → Gauge, Faturamento → Receipt,
+  Pagamentos → HandCoins, Tesouraria → Landmark, Gestão → FileChartColumn,
+  Outros (legado) → Layers, Configurações → Settings
+Nota: ícone FileInvoice NÃO existe no pacote lucide-react v0.462.0 —
+usado Receipt para "Faturas".
+
+6. VALIDAÇÕES EXECUTADAS
+--------------------------------------------------------------------------------
+npx tsc --noEmit .................................. OK (0 erros)
+npx vitest run ................................... 429/429 testes (47 arquivos)
+  - sidebarData.test.ts (12 + 9 novos) ........... OK
+  - f0n_hotfix_roving_focus.test.tsx (F0-N) ...... OK (4/4) — erro
+    RovingFocusGroupItem NÃO voltou
+  - tms_layout_01_sidebar.test.tsx (novo) ........ OK (4/4)
+    1. Biblioteca Global exibe os 6 submódulos
+    2. Apenas um grupo aberto por vez
+    3. Colapsar limpa o grupo expandido (mouseLeave)
+    4. Subitem ativo preserva destaque
+Verificações estruturais:
+  - Financeiro.tsx: 2 <TabsList> e 2 <TabsTrigger> literais (F0-N);
+    TabsTrigger sempre dentro de TabsList; ícones dentro do TabsTrigger.
+  - Tabs reais do Fiscal (10) e Operacao (8) conferidas contra os subitens
+    da sidebar.
+  - Nenhuma rota raiz removida (verificação no teste de dados).
+
+7. REGRAS DE OURO
+--------------------------------------------------------------------------------
+> Nenhuma regra de negócio, banco, migration, handler, query ou mutation
+  alterada. Alterações 100% de apresentação e organização da navegação.
+> BANCO NÃO ALTERADO.
+> REGRAS FINANCEIRAS NÃO ALTERADAS.
+> ROTAS FUNCIONAIS PRESERVADAS (nenhuma rota removida ou alterada;
+  subitens passaram a representar abas/sections REAIS das páginas).
+> APP FLUTTER NÃO ALTERADO.
+
+8. PENDÊNCIAS / OBSERVAÇÕES
+--------------------------------------------------------------------------------
+1. (QA) Teste visual em navegador (hover da sidebar, abertura de grupos,
+   recolhimento por mouseLeave, ícones do Financeiro por aba).
+2. RelatoriosEnterprise não lê ?tab= via URL (sempre abre na aba "extrato") —
+   os subitens /relatorios?tab=... preservam o comportamento pré-existente da
+   navegação anterior; caso desejado no futuro, o mecanismo de troca de aba
+   por query pode ser adicionado à página sem impacto aqui.
+3. Nenhuma migration aplicada nesta missão.
+================================================================================

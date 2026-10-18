@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { mascararTelefone } from "@/lib/masking";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -732,7 +733,7 @@ export default function MarketingMain() {
                     <TableRow key={l.id}>
                       <TableCell className="font-medium">{l.nome}</TableCell>
                       <TableCell>{l.empresa || "—"}</TableCell>
-                      <TableCell>{l.telefone || "—"}</TableCell>
+                      <TableCell>{mascararTelefone(l.telefone) || "—"}</TableCell>
                       <TableCell>{l.origem || "—"}</TableCell>
                       <TableCell>{l.tipo_lead}</TableCell>
                       <TableCell>{l.campanha_id ? getCampanhaNome(l.campanha_id) : "—"}</TableCell>

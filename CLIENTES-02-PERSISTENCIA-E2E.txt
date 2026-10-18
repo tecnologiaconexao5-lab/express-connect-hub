@@ -1,0 +1,139 @@
+CLIENTES-02-PERSISTENCIA-E2E
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+FASE 1 — AUDITORIA
+==================================================
+
+CLIENT_CREATE_HANDLER=src/components/clientes/ClienteDetalhe.tsx :: handleSave (isNew → toClienteInsert → insert().select())
+CLIENT_UPDATE_HANDLER=src/components/clientes/ClienteDetalhe.tsx :: handleSave (isUpdate → toClienteUpdate → update().eq(id).select())
+CLIENT_DELETE_HANDLER=src/components/clientes/ClientesLista.tsx :: confirmDelete
+CLIENT_RELOAD_SOURCE=ClientesLista.fetchClientes (listagem) / ClienteDetalhe carrega por id (reabertura)
+
+handleSave já valida erro e resposta vazia ANTES de exibir sucesso:
+  if (error) → erro; if (!savedCliente) → erro; só então toast.success.
+  → sem falso sucesso em CREATE/UPDATE.
+
+FKs reais que referenciam `clientes`:
+  SET NULL: alocacoes_escala, communication_events, fatura_itens, faturas,
+            financeiro_pagar, financeiro_receber, ocorrencias, ordens_servico, rotas
+  CASCADE:  clientes_contratos, communication_preferences, enderecos_clientes,
+            portal_ocorrencias, usuarios_cliente
+  NO ACTION (bloqueiam delete): enderecos_cliente, fiscal_ctes, fiscal_mdfes,
+            fiscal_nfse, regras_fiscais_cte, regras_fiscais_nfse
+  → Exclusão física INDISCRIMINADA poderia SET NULL/CASCADE histórico real.
+
+==================================================
+CORREÇÃO APLICADA (pequena e inequívoca)
+==================================================
+
+CODE_FIX_REQUIRED=YES (implementado)
+
+1. src/helpers/clienteReferencias.ts (NOVO)
+   - verificarReferenciasCliente(clienteId): conta vínculos em 11 tabelas-chave
+     (ordens_servico, alocacoes_escala, faturas, financeiro_receber, financeiro_pagar,
+      clientes_contratos, portal_ocorrencias, usuarios_cliente, fiscal_ctes,
+      fiscal_mdfes, fiscal_nfse).
+
+2. src/components/clientes/ClientesLista.tsx :: confirmDelete
+   - PROTEÇÃO 3 (integridade referencial): se houver QUALQUER vínculo, BLOQUEIA a
+     exclusão com mensagem listando os vínculos. Não apaga em cascata histórico.
+   - Delete agora usa `.select("id")` e só declara sucesso se ≥1 registro removido
+     (DELETE_SUCCESS_AFTER_DB_CONFIRMATION=YES; sem falso sucesso).
+
+FILES_MODIFIED=
+  src/helpers/clienteReferencias.ts (novo)
+  src/components/clientes/ClientesLista.tsx
+  src/test/clientes_02_persistencia_e2e.test.ts (novo)
+
+==================================================
+E2E REAL NO BANCO (cliente de TESTE, sem vínculos)
+==================================================
+
+TEST_CLIENT_ID=34c6fb03-ba64-4c85-b003-1df06ae20c61
+  (razão "ZZ_TESTE_CLIENTES02_*" — criado, editado e EXCLUÍDO no próprio E2E;
+   nenhum cliente comercial real foi alterado.)
+
+CREATE_PERSISTENCE=PASS
+CREATE_REAL_ID=PASS (uuid real retornado)
+CREATE_RELOAD=PASS (releitura confere razão/fantasia/CNPJ/e-mail/telefone)
+UPDATE_PERSISTENCE=PASS (nome_fantasia + telefone)
+UPDATE_RELOAD=PASS
+TEST_CLIENT_REFS=0
+DELETE_FLOW=PASS
+DELETE_DB_RESULT=DELETED_CONFIRMED (releitura: 0 registros)
+
+Guard de integridade (prova em cliente real COM histórico):
+  REFERENCED_CLIENT=04280785-4004-42c3-a406-886dd0730a8d
+  REFERENCES_FOUND=["ordens_servico:16","alocacoes_escala:19","faturas:23","financeiro_receber:41"]
+  DELETE_BLOCKED_WHEN_REFERENCED=YES (guard bloquearia; não executado destrutivo)
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+CLIENT_CREATE_HANDLER=ClienteDetalhe.handleSave (toClienteInsert → insert().select())
+CLIENT_UPDATE_HANDLER=ClienteDetalhe.handleSave (toClienteUpdate → update().select())
+CLIENT_DELETE_HANDLER=ClientesLista.confirmDelete
+
+TEST_CLIENT_ID=34c6fb03-ba64-4c85-b003-1df06ae20c61
+CREATE_PERSISTENCE=PASS
+CREATE_REAL_ID=PASS
+CREATE_RELOAD=PASS
+UPDATE_PERSISTENCE=PASS
+UPDATE_RELOAD=PASS
+
+REFERENCES_CHECKED=11 tabelas (OS, Escala/Alocações, Faturas, Contas a Receber/Pagar,
+  Contratos, Ocorrências do Portal, Usuários do Cliente, CT-e, MDF-e, NFS-e)
+DELETE_POLICY=FÍSICA com BLOQUEIO quando referenciado (guard de integridade)
+DELETE_BLOCKED_WHEN_REFERENCED=YES
+DELETE_FLOW=PASS (teste sem vínculos) / BLOCKED_SAFE (cliente com vínculos)
+DELETE_DB_RESULT=DELETED_CONFIRMED
+
+FALSE_SUCCESS_CREATE=NO
+FALSE_SUCCESS_UPDATE=NO
+FALSE_SUCCESS_DELETE=NO
+
+LEADING_SPACE_RECORDS=3
+  (" Cydak do Brasil LTDA" 1baf3223..., " DVL - DISTRIBUIDORA..." c4ee38d6...,
+   " Mineirao Abc..." b4917245...)
+TRIM_DATA_FIX_REQUIRED=YES (dados reais — NÃO corrigidos nesta missão; sem mascarar exibição)
+
+CLIENTES01_REGRESSION=PASS
+DB_WRITES=3 (create+update+delete do cliente de TESTE)
+MIGRATIONS=0
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+CREATE_PERSISTENCE=PASS | CREATE_REAL_ID=PASS | CREATE_RELOAD=PASS
+UPDATE_PERSISTENCE=PASS | UPDATE_RELOAD=PASS
+DELETE_FLOW=PASS | DELETE_DB_RESULT=DELETED_CONFIRMED
+FALSE_SUCCESS_CREATE=NO | FALSE_SUCCESS_UPDATE=NO | FALSE_SUCCESS_DELETE=NO
+PAGINATION_AFTER_MUTATION=PASS (recuo de página se esvaziar; totalCount recarregado)
+CLIENTES01_REGRESSION=PASS (A→Z global, ordem antes da paginação, páginas numeradas,
+  Anterior/Próxima, busca global)
+
+Testes:
+  clientes_02_persistencia_e2e.test.ts → 7/7 PASS
+  clientes_01_ordenacao_paginacao.test.ts → 13/13 PASS
+Suíte completa: 1384 passed | 57 failed (100% pré-existentes) | 155 skipped.
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 35.59s
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Senha admin NÃO auditada/alterada/exibida (validação de senha preservada).
+- Nenhum cliente comercial real alterado (apenas o cliente de TESTE, já removido).
+- Sem cascade destrutivo; histórico financeiro/operacional NÃO apagado.
+- Sem migration/RLS. Não tocou Fatura/Escala/Prestadores/APP/POD.
+- Não iniciou outra missão.
+
+DB_WRITES=3
+MIGRATIONS=0

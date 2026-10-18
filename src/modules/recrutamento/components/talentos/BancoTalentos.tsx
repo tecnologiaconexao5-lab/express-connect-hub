@@ -10,13 +10,14 @@ import type { TalentosCandidato } from '../../types/recrutamento'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { mascararTelefone } from '@/lib/masking'
 
 interface BancoTalentosProps {
   candidatos: TalentosCandidato[]
 }
 
 type ScoreClassificacao = 'Excelente' | 'Bom' | 'Regular' | 'Baixo'
-type OrderField = 'score' | 'recente' | 'nome'
+type OrderField = 'score' | 'recente' | 'nome' | 'risco' | 'resposta' | 'documentacao' | 'disponibilidade'
 
 const SCORE_LABELS: Record<ScoreClassificacao, string> = {
   Excelente: 'Excelente',
@@ -108,6 +109,19 @@ export function BancoTalentos({ candidatos }: BancoTalentosProps) {
       .sort((a, b) => {
         if (ordem === 'score') return b.scoreAderencia - a.scoreAderencia
         if (ordem === 'recente') return (b.dataContato || '').localeCompare(a.dataContato || '')
+        if (ordem === 'risco') {
+          const riscoOrder: Record<string, number> = { 'Baixo': 0, 'Moderado': 1, 'Alto': 2, 'Crítico': 3 }
+          return (riscoOrder[a.riscoDesistencia || 'Moderado'] || 1) - (riscoOrder[b.riscoDesistencia || 'Moderado'] || 1)
+        }
+        if (ordem === 'resposta') return (a.tempoMedioRespostaHoras || 999) - (b.tempoMedioRespostaHoras || 999)
+        if (ordem === 'documentacao') {
+          const docOrder = (s: string) => s === 'completo' ? 0 : s === 'parcial' ? 1 : 2
+          return docOrder(a.statusDocumental || '') - docOrder(b.statusDocumental || '')
+        }
+        if (ordem === 'disponibilidade') {
+          const dispOrder = (d: string) => d === 'integral' ? 0 : d === 'parcial' ? 1 : d === 'imediata' ? 0 : 2
+          return dispOrder(a.disponibilidade || '') - dispOrder(b.disponibilidade || '')
+        }
         return a.nome.localeCompare(b.nome)
       })
   }, [enriched, busca, filtroScore, ordem])
@@ -132,6 +146,10 @@ export function BancoTalentos({ candidatos }: BancoTalentosProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="score">Maior Score</SelectItem>
+              <SelectItem value="risco">Risco Menor Primeiro</SelectItem>
+              <SelectItem value="resposta">Resposta Mais Rápida</SelectItem>
+              <SelectItem value="documentacao">Documentação Completa</SelectItem>
+              <SelectItem value="disponibilidade">Disponibilidade Integral</SelectItem>
               <SelectItem value="recente">Mais Recente</SelectItem>
               <SelectItem value="nome">Nome (A-Z)</SelectItem>
             </SelectContent>
@@ -198,7 +216,7 @@ export function BancoTalentos({ candidatos }: BancoTalentosProps) {
 
                 <PremiumCardContent className="space-y-2 text-xs text-muted-foreground/60">
                   <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {candidato.regiao || '—'}</div>
-                  <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {candidato.telefone}</div>
+                  <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {mascararTelefone(candidato.telefone)}</div>
                   {candidato.disponibilidade && (
                     <div className="flex items-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full ${candidato.disponibilidade === 'imediata' ? 'bg-emerald-400' : candidato.disponibilidade === 'parcial' ? 'bg-amber-400' : 'bg-red-400'}`} />

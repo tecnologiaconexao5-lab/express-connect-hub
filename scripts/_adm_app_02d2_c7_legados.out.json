@@ -1,0 +1,53 @@
+{
+  "ts": "2026-09-27T19:46:28.150Z",
+  "bucket": "documentos_prestadores",
+  "total": 32,
+  "assinaveis": 29,
+  "orfaos": 2,
+  "url_vazia": 1,
+  "path_nulo": 0,
+  "orfaos_detalhe": [
+    {
+      "id": "bbfd407f-0f36-4300-9f3c-5802f6558237",
+      "path": "teste-1776993196251.txt",
+      "erro": "Object not found"
+    },
+    {
+      "id": "0221e624-7f48-4011-adb5-703fc3892b90",
+      "path": "teste-1776993548886.txt",
+      "erro": "Object not found"
+    }
+  ],
+  "paths_assinaveis": [
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Frente_1777578716075.pdf",
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Documento_Pessoal_1777578724384.pdf",
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CRLV_1777578730644.pdf",
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_ANTT_1777578741120.pdf",
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Outros_1777578745689.pdf",
+    "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Verso_1777578757225.pdf",
+    "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_CNH_Frente_1778120286698.pdf",
+    "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_Documento_Pessoal_1778183021093.pdf",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534192413.jpg",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534210972.jpg",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534237251.pdf",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534245940.pdf",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534726609.jpg",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534734742.jpg",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534742517.pdf",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534758256.pdf",
+    "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Verso_1778534769474.jpg",
+    "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CNH_Frente_1779994182298.jpeg",
+    "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_Documento_Pessoal_1779994182651.jpeg",
+    "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CRLV_1779994182929.jpeg",
+    "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_ANTT_1779994183223.jpeg",
+    "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CNH_Frente_1780317545757.pdf",
+    "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CRLV_1780317546304.jpeg",
+    "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_ANTT_1780317546674.pdf",
+    "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_ANTT_1788952096100.jpg",
+    "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952097302.jpg",
+    "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Frente_1788952097999.jpg",
+    "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Verso_1788952098978.jpg",
+    "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CRLV_1788952099800.jpg"
+  ],
+  "ok": true
+}

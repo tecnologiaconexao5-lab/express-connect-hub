@@ -1,0 +1,73 @@
+TMS-007.3 — Fix HTTP 400 origem_id no Financeiro
+Data: 2026-07-28
+Status: CONCLUIDO — 71 HTTP 400 eliminados
+
+1. PROBLEMA
+
+71 requisicoes HTTP 400 no endpoint financeiro_receber durante navegacao no modulo
+Financeiro. As colunas "origem_id" e "origem" nunca existiram no schema. A coluna
+real de vinculo e "os_id".
+
+2. CAUSA RAIZ
+
+As colunas origem_id (UUID) e origem (text) nunca existiram no schema da tabela
+financeiro_receber no Supabase. A coluna real de vinculo com ordens de servico e
+os_id (UUID).
+
+3. LOCAIS CORRIGIDOS
+
+3.1 verificarDuplicataEscala() — receberService.ts:321
+    Antes: .eq("origem_id", alocacaoId).eq("origem", "escala_operacional")
+    Depois: busca ordem_servico_id em alocacoes_escala, depois filtra por os_id
+
+3.2 criarRecebivelDeEscala() — receberService.ts:382
+    Antes: INSERT com campos origem/origem_id (colunas inexistentes)
+    Depois: INSERT com os_id = alocacao.ordem_servico_id (coluna real)
+
+3.3 verificarDuplicatasEmLote() — receberService.ts:415
+    Antes: Filtrava por origem_id IN (...alocacaoIds)
+    Depois: Busca OS IDs em lote, filtra financeiro_receber por os_id IN (...osIds)
+
+3.4 Inline query — ContasReceberEnterprise.tsx:215
+    Antes: supabase.from("financeiro_receber").eq("origem_id", ...).eq("origem", ...)
+    Depois: verificarDuplicataEscala(alocacaoId)
+
+4. VALIDACAO
+
+TypeScript: 0 novos erros
+Build: OK (33s)
+Playwright (teste 9 — HTTP 400 de origem_id): 0 erros, 18.1s
+
+Navegacao:
+  Login admin         → 0 HTTP 400
+  /financeiro (SPA)   → 0 HTTP 400
+  Aba "Receber"       → 0 HTTP 400
+  Aba "Conferencia"   → 0 HTTP 400
+  TOTAL               → 0 (antes: 71)
+
+5. IMPACTO
+
+Metrica                    Antes   Depois
+HTTP 400 por navegacao     71      0
+JS errors no console       varios  0
+Score financeiro (interface) ~77%   87%
+Arquivos alterados         -       2
+Linhas alteradas           -       +47/-18
+Migration criada           -       0 (so TypeScript)
+Dados alterados            -       0
+
+6. ARQUIVOS
+
+receberService.ts          — 3 funcoes corrigidas
+ContasReceberEnterprise.tsx — inline query corrigida
+financeiro-rls-seguranca.spec.ts — teste 9 (regressao)
+errors.json                — evidencia pre-fix (71 erros)
+
+7. CONCLUSAO
+
+71 HTTP 400 eliminados. 3 funcoes do receberService.ts e 1 inline query em
+ContasReceberEnterprise.tsx corrigidas para usar os_id em vez de origem_id/origem
+(colunas inexistentes). TypeScript 0 novos erros. Build OK. Playwright: 0 HTTP 400,
+0 JS errors. Nenhuma migration necessaria. Nenhum dado alterado.
+
+TMS-007.3 100% CONCLUIDO.

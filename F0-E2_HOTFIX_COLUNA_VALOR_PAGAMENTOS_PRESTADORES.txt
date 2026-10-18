@@ -1,0 +1,210 @@
+================================================================================
+F0-E2 — HOTFIX PAGAMENTO DE PRESTADORES: COLUNA `valor`
+Projeto: TMS / express-connect-hub
+Data: 2026-08-20
+Status: CONCLUÍDO — BANCO NÃO ALTERADO
+================================================================================
+
+--------------------------------------------------------------------------------
+1. SCHEMA REAL ENCONTRADO (auditoria READ-ONLY via information_schema)
+--------------------------------------------------------------------------------
+Tabela oficial gravada: public.pagamentos_prestadores (PLURAL)
+Total de colunas: 45
+
+id                      uuid NOT NULL DEFAULT gen_random_uuid()
+prestador_id            uuid
+prestador_nome          text
+prestador_documento     text
+periodo_inicio          date NOT NULL
+periodo_fim             date NOT NULL
+quantidade_os           integer DEFAULT 0
+valor_servicos          numeric DEFAULT 0
+valor_reembolsos        numeric DEFAULT 0
+valor_bonus             numeric DEFAULT 0
+valor_descontos         numeric DEFAULT 0
+valor_adiantamentos     numeric DEFAULT 0
+valor_liquido           numeric DEFAULT 0
+status                  text DEFAULT 'pendente'
+data_pagamento          date
+created_at              timestamptz DEFAULT now()
+updated_at              timestamptz DEFAULT now()
+os_id                   uuid
+qtd_os                  integer DEFAULT 0
+pedagio                 numeric DEFAULT 0
+reembolsos              numeric DEFAULT 0
+adicionais              numeric DEFAULT 0
+descontos               numeric DEFAULT 0
+adiantamentos           numeric DEFAULT 0
+multas                  numeric DEFAULT 0
+ajustes                 numeric DEFAULT 0
+status_conferencia      text DEFAULT 'em_aberto'
+status_aprovacao        text DEFAULT 'aguardando_aprovacao'
+status_pagamento        text DEFAULT 'pendente'
+origem_lancamento       text DEFAULT 'manual'
+tipo_pagamento          text
+categoria_financeira    text
+centro_custo            text
+conta_contabil          text
+competencia             date
+data_prevista_pagamento date
+elegivel_lote           boolean DEFAULT false
+lote_id                 uuid
+impacto_dre             boolean DEFAULT true
+impacto_fluxo_caixa     boolean DEFAULT true
+observacao              text
+os_numero               text
+tipo_lancamento         text DEFAULT 'Serviço Escala'
+natureza                text DEFAULT 'credito'
+data_competencia        date
+
+Verificação das colunas-alvo (F0-E2):
+  valor             -> NAO EXISTE
+  valor_total       -> NAO EXISTE
+  valor_liquido     -> EXISTE  (numeric DEFAULT 0)  <== VALOR OFICIAL
+  valor_servicos    -> EXISTE  (numeric DEFAULT 0)
+  pedagio           -> EXISTE  (numeric DEFAULT 0)
+  reembolsos        -> EXISTE  (numeric DEFAULT 0)
+  adicionais        -> EXISTE  (numeric DEFAULT 0)
+  descontos         -> EXISTE  (numeric DEFAULT 0)
+  adiantamentos     -> EXISTE  (numeric DEFAULT 0)
+  multas            -> EXISTE  (numeric DEFAULT 0)
+  ajustes           -> EXISTE  (numeric DEFAULT 0)
+
+Tabelas homônimas/paralelas (procura por engano):
+  pagamento_prestadores   (SINGULAR) -> EXISTE  (BASE TABLE, 6 colunas)
+  pagamentos_prestadores  (PLURAL)   -> EXISTE  (BASE TABLE, 45 colunas)  <== GRAVADA
+  pagamentos_prestadores_itens       -> EXISTE  (BASE TABLE)
+
+Views que referenciam a tabela (fonte alternativa em relatórios):
+  vw_relatorio_pagamento_prestador   (definição lê pagamentos_prestadores)
+  vw_relatorio_pagamento_detalhado   (definição lê pagamentos_prestadores)
+  Nenhuma view é usada para ESCRITA — a escrita permanece em
+  pagamentos_prestadores (plural), contrato confirmado.
+
+--------------------------------------------------------------------------------
+2. "valor" EXISTE OU NÃO?
+--------------------------------------------------------------------------------
+NAO. `valor` NÃO existe em public.pagamentos_prestadores.
+
+  * A coluna `valor` existe APENAS na tabela legada `pagamento_prestadores`
+    (singular, 6 colunas: id, os_id, prestador_id, valor, status, created_at).
+  * A coluna `valor` também aparece no migration file
+    20260510090000_baseline_external_tables.sql (linha 159:
+    "valor numeric(10,2) DEFAULT 0"), que NÃO reflete o schema vivo.
+  * Portanto, o erro de produção "Could not find the 'valor' column of
+    'pagamentos_prestadores' in the schema cache" é CORRETO e consistente:
+    o PostgREST rejeita a escrita de uma coluna que não existe.
+
+--------------------------------------------------------------------------------
+3. POR QUE F0-E ANTERIOR DIVERGIOU
+--------------------------------------------------------------------------------
+F0-E validou o contrato contra o migration file
+20260510090000_baseline_external_tables.sql (que declara `valor` na tabela
+plural), em vez de consultar o schema VIVO via information_schema.columns.
+
+Resultado: o teste F0-E listava `valor` em COLUNAS_REAIS e o payload de
+criarPagamento()/criarFechamento()/atualizarFechamento() gravava `valor`.
+Como o migration file (intenção) divergiu do schema real de produção
+(drift de migração — a tabela viva tem 45 colunas SEM `valor`), a escrita
+falhava em produção com o erro do schema cache do PostgREST.
+
+O F0-E2 corrige a fonte de verdade: information_schema VIVO (auditoria
+read-only executada nesta missão) em vez de migration file.
+
+--------------------------------------------------------------------------------
+4. PAYLOAD ANTES / DEPOIS
+--------------------------------------------------------------------------------
+ANTES (F0-E — bug): criarPagamento() enviava
+  { ..., valor: 500, valor_liquido: 500, valor_servicos: 500, ... }
+
+DEPOIS (F0-E2 — correto): criarPagamento() envia
+  { ..., valor_liquido: 500, valor_servicos: 500, ... }        (sem `valor`)
+
+ANTES (F0-E): criarFechamento() enviava
+  { ..., valor: 1000, valor_liquido: 1000, ... }
+
+DEPOIS (F0-E2): criarFechamento() envia
+  { ..., valor_liquido: 1000, ... }                            (sem `valor`)
+
+ANTES (F0-E): atualizarFechamento() gravava update.valor = total
+DEPOIS (F0-E2): atualizarFechamento() grava apenas update.valor_liquido
+
+ANTES (F0-E): atualizarStatusPagamento() aceitava status.valor e gravava
+              update.valor
+DEPOIS (F0-E2): campo `valor` removido da interface PagamentoPrestadorUpdate;
+              somente valor_liquido é gravado.
+
+Valor financeiro oficial confirmado: valor_liquido (numeric DEFAULT 0).
+Componentes preservados: valor_servicos, valor_reembolsos, valor_bonus,
+valor_descontos, valor_adiantamentos, pedagio, reembolsos, adicionais,
+descontos, adiantamentos, multas, ajustes. NENHUMA coluna substituta
+inventada — apenas remoção de coluna inexistente.
+
+--------------------------------------------------------------------------------
+5. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+1) src/services/financeiro/pagamentoPrestadorService.ts
+   - cabeçalho: documentação atualizada (F0-E2, `valor` não existe; input
+     `valor` mapeado para valor_liquido);
+   - interface PagamentoPrestadorUpdate: removido o campo `valor?`;
+   - criarPagamento(): removido `valor` do payload INSERT (mantido
+     valor_liquido como oficial);
+   - atualizarStatusPagamento(): removido o bloco que gravava update.valor;
+   - criarFechamento(): removido `valor` do payload INSERT;
+   - atualizarFechamento(): removido update.valor (apenas valor_liquido).
+
+2) src/components/financeiro/PagamentoPrestadores.tsx
+   - fetchExtratoContaCorrente(): leituras `pag.valor` (coluna inexistente
+     → undefined/NaN) alinhadas para `pag.valor_liquido` na aba Conta
+     Corrente, usando o valor financeiro oficial (mesma tela/tabela).
+     (Nenhuma outra área financeira foi alterada.)
+
+3) src/test/f0e_pagamento_prestadores.test.ts
+   - COLUNAS_REAIS: removido `valor`; comentário atualizado para o contrato
+     real de produção;
+   - criarPagamento(): nova asserção explícita payload sem `valor` +
+     valor_liquido = 500;
+   - criarFechamento(): nova asserção payload sem `valor` + valor_liquido = 1000;
+   - atualizarFechamento(): asserção passa de payload.valor para
+     payload.valor_liquido = 1200 + not.toHaveProperty("valor");
+   - cabeçalho do teste atualizado (F0-E/F0-E2).
+
+Scripts auxiliares criados (read-only, descartáveis):
+   - scripts/f0e2_audit_schema_pagamentos.mjs  (auditoria principal)
+   - scripts/_f0e2_tmp_compare.cjs             (comparativo singular/plural)
+
+--------------------------------------------------------------------------------
+6. RESULTADO tsc
+--------------------------------------------------------------------------------
+npx tsc --noEmit  ->  0 erros
+
+--------------------------------------------------------------------------------
+7. RESULTADO vitest
+--------------------------------------------------------------------------------
+npx vitest run src/test/f0e_pagamento_prestadores.test.ts
+  -> 11/11 tests passed
+
+npx vitest run (suíte completa — regressão)
+  -> 48 files passed | 443/443 tests passed
+
+Regressão preservada (PASSO 4):
+  - anti-duplicidade por OS/fechamento (idempotência)  OK
+  - vínculo prestador/OS (prestador_id, os_id, os_numero)  OK
+  - fechamento (criarFechamento/atualizarFechamento/vincularItensFechamento)  OK
+  - pagamento manual (criarPagamento via handleSalvarNovoPagamento)  OK
+  - tipo_pagamento / observacao / status / datas  OK
+  - vincularItensFechamento (pagamentos_prestadores_itens)  OK
+  - F0-E anterior (demais asserções de colunas/mapeamentos)  OK
+
+--------------------------------------------------------------------------------
+8. CONFIRMAÇÃO BANCO NÃO ALTERADO
+--------------------------------------------------------------------------------
+NENHUMA migration aplicada. NENHUMA DDL executada. NENHUMA escrita em banco.
+A auditoria foi exclusivamente SELECT em information_schema.columns,
+information_schema.tables e pg_views (somente leitura).
+A correção é 100% no payload TypeScript (camada de escrita do serviço) +
+testes. Sem reload de schema cache: a remoção da coluna do payload resolve o
+erro sem qualquer alteração no PostgreSQL/PostgREST.
+
+CONCLUÍDO — F0-E2 HOTFIX APLICADO.
+================================================================================

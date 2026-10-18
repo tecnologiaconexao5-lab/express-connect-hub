@@ -1,0 +1,148 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2C — AUTOMAÇÕES REAIS NO SUPABASE
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 22:55 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [HOMOLOGADO — AUTOMAÇÕES REAIS]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. DIAGNÓSTICO ANTES
+═══════════════════════════════════════════════════════════════════════════════
+
+  Tabela recrutamento_automacoes: NÃO EXISTIA no Supabase remoto
+  automacoesService.ts: 100% localStorage (STORAGE_KEY = 'recrutamento_automacoes_v2')
+  UI: AutomacoesList.tsx — listar, criar, editar, ativar/desativar, excluir
+  Tipos: TipoAutomacao = 'whatsapp' | 'email' | 'notificacao' | 'webhook' | 'score' | 'validade_documento'
+  Status: StatusAutomacao = 'ativa' | 'pausada' | 'desativada'
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MIGRATION APLICADA
+═══════════════════════════════════════════════════════════════════════════════
+
+  Arquivo: supabase/migrations/20260907_rec_062c_automacoes.sql
+
+  Tabela criada:
+    recrutamento_automacoes
+    ├── id UUID PK (gen_random_uuid)
+    ├── nome TEXT NOT NULL
+    ├── tipo TEXT NOT NULL CHECK (6 valores)
+    ├── trigger JSONB NOT NULL DEFAULT '{}'
+    ├── acao JSONB NOT NULL DEFAULT '{}'
+    ├── status TEXT NOT NULL DEFAULT 'ativa' CHECK (3 valores)
+    ├── ultima_execucao TIMESTAMPTZ
+    ├── total_execucoes INTEGER NOT NULL DEFAULT 0
+    ├── created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    └── updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+
+  Índices: status, tipo
+  Trigger: trg_rec_automacoes_updated_at (auto-update updated_at)
+  RLS: ENABLE ROW LEVEL SECURITY
+  Policies: 4 (SELECT/INSERT/UPDATE/DELETE) → TO authenticated
+  Grants: REVOKE ALL FROM anon; GRANT SELECT/INSERT/UPDATE/DELETE TO authenticated
+
+═══════════════════════════════════════════════════════════════════════════════
+3. SERVICE MIGRADO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Arquivo: src/modules/recrutamento/services/automacoesService.ts
+
+  ANTES: localStorage (getMock/persist)
+  DEPOIS: Supabase (import { supabase } from '@/lib/supabase')
+
+  Funções mantidas (mesma API):
+    listar() → SELECT * ORDER BY created_at DESC LIMIT 200
+    criar(data) → INSERT com payload mapeado (toDB)
+    atualizar(id, data) → UPDATE com payload mapeado
+    atualizarStatus(id, status) → wrapper para atualizar
+    remover(id) → DELETE
+
+  Mapeamento DB ↔ TS:
+    fromDB(): snake_case → camelCase (ultima_execucao → ultimaExecucao)
+    toDB(): camelCase → snake_case (totalExecucoes → total_execucoes)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. PROVA CRUD AUTHENTICATED
+═══════════════════════════════════════════════════════════════════════════════
+
+  auth.uid: 8c12fc67...8284
+  role: authenticated
+  session: OK
+
+  ┌──────────┬──────────────────────────────────────────────┐
+  │ Operação │ Resultado                                    │
+  ├──────────┼──────────────────────────────────────────────┤
+  │ SELECT   │ ✅ OK (0 rows antes do teste)                │
+  │ INSERT   │ ✅ OK (3 automações criadas)                 │
+  │ UPDATE   │ ✅ OK (status alterado)                      │
+  │ DELETE   │ ✅ OK (3 automações removidas)               │
+  └──────────┴──────────────────────────────────────────────┘
+
+  3 automações de teste criadas:
+    1. TESTE_RLS_062C_whatsapp — tipo: whatsapp, trigger: novo_candidato
+    2. TESTE_RLS_062C_score — tipo: score, trigger: score_min 70
+    3. TESTE_RLS_062C_doc — tipo: validade_documento, trigger: 30 dias
+
+  Todas criadas, atualizadas e removidas com sucesso.
+
+═══════════════════════════════════════════════════════════════════════════════
+5. PROVA ANON BLOQUEADO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Client ANON (sem autenticação):
+    SELECT: 🚫 BLOQUEADO
+    INSERT: 🚫 BLOQUEADO
+    UPDATE: 🚫 BLOQUEADO
+    DELETE: 🚫 BLOQUEADO
+
+  4/4 operações anon BLOQUEADAS.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. CLEANUP
+═══════════════════════════════════════════════════════════════════════════════
+
+  Registros TESTE_RLS_062C restantes: 0
+  Verificação pós-cleanup: ZERO registros de teste.
+
+═══════════════════════════════════════════════════════════════════════════════
+7. REGRESSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  npx tsc --noEmit → ✅ 0 erros
+  npx vitest run   → ✅ 1161/1166 pass (5 failures pré-existentes: rec03 legacy + f0k recibos)
+  Nenhuma falha relacionada à migration.
+
+═══════════════════════════════════════════════════════════════════════════════
+8. ARQUIVOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Migration:
+    supabase/migrations/20260907_rec_062c_automacoes.sql
+
+  Service migrado:
+    src/modules/recrutamento/services/automacoesService.ts
+
+  Scripts de prova:
+    scripts/rec062c_apply_migration.cjs — aplicação da migration
+    scripts/rec062c_prova_crud.cjs — prova CRUD + anon + cleanup
+
+═══════════════════════════════════════════════════════════════════════════════
+9. PENDÊNCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. UI AutomacoesList.tsx: não alterada (preservada 100%)
+     - A UI já funciona com a API do service (listar/criar/atualizar/remover)
+     - Persistência agora é real (Supabase), não mais localStorage
+
+  2. Execução real das automações: fora do escopo desta missão
+     - O service agora persiste as regras
+     - A execução automática (workers/triggers) requer implementação adicional
+
+  3. Outros módulos Recrutamento que ainda usam localStorage:
+     - Score/IA (scoreService.ts, iaService.ts) — fora do escopo
+     - Kanban (enterpriseKanbanService.ts) — fora do escopo
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2C AUTOMAÇÕES REAIS
+[HOMOLOGADO — AUTOMAÇÕES REAIS]
+═══════════════════════════════════════════════════════════════════════════════

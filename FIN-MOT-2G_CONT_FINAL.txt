@@ -1,0 +1,150 @@
+FIN-MOT-2G-CONT — CONCLUSÃO DO EXTRATO DO PRESTADOR (dados + PDF)
+Data: 21/08/2026
+Status: B — AGUARDA HOMOLOGAÇÃO DO USUÁRIO NO NAVEGADOR
+        (dados reais comprovados via SQL read-only; PDF compilado e build OK)
+
+============================================================
+1. REVISÃO DOS ARQUIVOS ALTERADOS (sem resíduos)
+============================================================
+
+[ok] src/services/financeiro/extratoPrestadorService.ts
+     - OS usa somente colunas reais (distancia_km, custo_prestador,
+       pedagio, adicionais, descontos, data, cliente, cliente_id, romaneio...).
+     - Escala usa somente colunas reais (ordem_servico_id, data_escala,
+       km_previstos, km_realizados, valor_repasse, valor_pedagio,
+       valor_adicional, valor_desconto, valor_reembolso_outros...).
+     - Manual não usa cliente_id; usa data_competencia com fallback para
+       periodo_inicio/periodo_fim.
+     - Erros de consulta são PROPAGADOS (throw), nunca convertidos em zero.
+     - Deduplicação Escala↔OS preservada (ordem_servico_id).
+
+[ok] src/lib/pdf/extratoPrestadorReport.ts
+     - import autoTable from 'jspdf-autotable'.
+     - As 2 tabelas usam autoTable(doc, {...}) — NENHUM doc.autoTable.
+     - Logo oficial via getLogoWithFallback(false) + drawLogoSafe.
+     - Declaração de módulo (declare module 'jspdf') mantida apenas por
+       compatibilidade — sem impacto em runtime.
+
+[ok] Removidos scripts temporários de evidência (_fin_mot_2g_schema.mjs,
+     _fin_mot_2g_evidence.mjs) — nenhum arquivo de script foi deixado.
+
+============================================================
+2. CAUSA DOS HTTP 400 (já diagnosticada e corrigida)
+============================================================
+
+| Tabela                | Coluna inválida (400) | Coluna real usada  |
+|-----------------------|-----------------------|--------------------|
+| ordens_servico        | km_total              | distancia_km       |
+| alocacoes_escala      | os_numero             | (removeu do select)|
+| pagamentos_prestadores| cliente_id            | (removeu do select)|
+
+Mensagens PostgREST reproduzidas:
+- column ordens_servico.km_total does not exist
+- column alocacoes_escala.os_numero does not exist
+- column pagamentos_prestadores.cliente_id does not exist
+
+Correções aplicadas no service (somente as consultas do extrato).
+
+============================================================
+3. DADOS REAIS (prova read-only via pg, sem criar/alterar dados)
+============================================================
+
+Prestador selecionado: PRESTADOR TESTE APP
+  id: e6646799-fbac-453e-a3ef-afdfc01a7085
+Período: 2026-06-01 a 2026-08-31
+
+  OS encontradas        = 4
+  Escalas encontradas   = 7
+  Manuais encontrados   = 0
+  Linhas após dedup     = 11   (4 OS + 7 escalas sem OS vinculada)
+  Créditos (total)      = R$ 1.484,00
+  Débitos (total)       = R$ 0,00
+  Valor líquido         = R$ 1.484,00
+
+Observações:
+- O volume de manuais encontrado no período para este prestador foi 0;
+  o fluxo de manuais está implementado (data_competencia com fallback
+  periodo_inicio/periodo_fim) e foi validado por teste unitário.
+- As escalas sem ordem_servico_id são exibidas como produção própria.
+- As escalas VINCULADAS a uma OS não geram linha duplicada.
+
+============================================================
+4. PDF
+============================================================
+
+Causa do crash anterior:
+  doc.autoTable is not a function
+  (stack apontava para src/lib/pdf/extratoPrestadorReport.ts)
+
+Correção aplicada:
+  import autoTable from 'jspdf-autotable';
+  autoTable(doc, { ... }) em todas as tabelas.
+
+Logo:
+  getLogoWithFallback(false) + drawLogoSafe — mesma solução usada em
+  pdfFatura.ts / OSPDF.tsx (padrão homologado).
+
+Validação:
+  - npx tsc --noEmit -p tsconfig.json -> 0 erros
+  - npx vitest run src/test/extratoPrestadorService.test.ts -> 18/18
+  - npm run build -> OK (38.79s)
+  - Nenhum doc.autoTable restante no projeto.
+
+============================================================
+5. CHECKLIST
+============================================================
+
+[ok] Service sem resíduos de patch
+[ok] OS sem 400 (distancia_km)
+[ok] Escala sem 400 (sem os_numero)
+[ok] Manual sem 400 (sem cliente_id)
+[ok] Erro não vira falso zero (throw em consulta com erro)
+[ok] Produção real aparece (4 OS + 7 escalas = 11 linhas, R$ 1.484,00)
+[ok] OS exibida
+[ok] Romaneio exibido quando existente (os.romaneio)
+[ok] Cliente exibido (os.cliente / cliente_id; manual não tem cliente)
+[ok] Valores exibidos
+[ok] Créditos corretos (R$ 1.484,00)
+[ok] Débitos corretos (R$ 0,00)
+[ok] Líquido correto (R$ 1.484,00)
+[ok] PDF gera (código compila; autoTable(doc,...))
+[ ] PDF aberto (requer navegador autenticado)
+[ ] Logo aparece (código usa fallback; requer verificação visual)
+[ ] TMS = PDF (requer navegador autenticado)
+
+============================================================
+6. CONCLUÍDO
+============================================================
+
+- Consultas do extrato corrigidas para colunas reais do schema.
+- Erros de consulta agora são propagados (não viram falso zero).
+- Deduplicação Escala↔OS validada com dados reais (11 linhas finais).
+- PDF migrado para o padrão autoTable(doc, ...) + logo com fallback.
+- Build, tsc e teste específico do extrato aprovados.
+
+============================================================
+7. FALTA
+============================================================
+
+- Prova visual autenticada no navegador: abrir o modal, selecionar o
+  prestador/período, confirmar a produção e o PDF na tela.
+- Confirmar visualmente logo e paridade TMS=PDF.
+
+============================================================
+STATUS
+============================================================
+
+B — AGUARDA HOMOLOGAÇÃO DO USUÁRIO
+
+A implementação está funcional e comprovada por dados reais (read-only) e
+build/tsc/testes. Falta apenas a confirmação visual autenticada no navegador.
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual autenticada do FIN-MOT-2G-CONT em ambiente com credenciais
+reais (PLAYWRIGHT_*_PASSWORD ou sessão TMS): abrir Financeiro -> Pagamentos
+-> Pag. Prestadores -> Gerar Extrato do Período, selecionar o prestador
+"PRESTADOR TESTE APP" (e6646799-fbac-453e-a3ef-afdfc01a7085) no período
+01/06/2026 a 31/08/2026, conferir 11 linhas / R$ 1.484,00, gerar e abrir o PDF.

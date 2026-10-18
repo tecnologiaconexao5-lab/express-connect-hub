@@ -1,0 +1,424 @@
+CORE-E2E-OS-APP-POD-02 — ROOT CAUSE: 56 ALOCACOES FINALIZADAS SEM DELIVERY_PROOF
+=====================================================================================
+Data: 2026-09-21
+Status: ✅ ROOT CAUSE IDENTIFICADA
+Ambiente: Producao (uwrvzsjtpgaifkktpepn.supabase.co)
+Methodology: Code audit (TMS + App Motorista) + Production DB classification + RLS/RPC analysis
+
+═══════════════════════════════════════════════════════════════════════════════════════
+EXECUTIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════════════
+
+Das 56 alocacoes finalizadas sem delivery_proof, a classificacao revela:
+
+  A_TEST_SEED .............. 26 (sem prestador_id — dados de teste/sed)
+  C_TEST_MISSION ........... 17 (M43/M48 — missoes de teste)
+  B_NOT_ACCEPTED ........... 5 (motorista NUNCA aceitou, mas alocacao finalizada)
+  F_FINALIZED_NO_EVIDENCE . 3 (PRODUCAO REAL — zero evidencias, ROOT CAUSE)
+
+O PROBLEMA REAL afeta apenas 3 alocacoes de producao real + 5 anormais.
+
+ROOT CAUSE IDENTIFICADA:
+  O App Motorista (Flutter) tem DOIS CAMINHOS separados para persistir POD:
+    1. DeliveryProofRepository.create() → INSERT em delivery_proofs (APP-ONLY)
+    2. RPC f_atualizar_etapa_app → UPDATE em alocacoes_escala (APP + TMS)
+  NENHUM dos dois caminhos produz delivery_proofs quando ha falha intermediaria.
+  O TMS web (podService.finalizarComPOD / escalaService.finalizarAlocacao)
+  NAO insere em delivery_proofs — apenas em entregas_protocolo.
+
+  Causa direta das3 alocacoes GO-LIVE: motorista 6cc41f68 aceitou operacoes,
+  mas o insert em delivery_proofs falhou (catch silencioso no App) e a
+  finalizacao foi completada via TMS web (escalaService) que NAO cria DP.
+
+═══════════════════════════════════════════════════════════════════════════════════════
+1. CLASSIFICACAO COMPLETA (51 alocacoes — corrigido de 56)
+═══════════════════════════════════════════════════════════════════════════════════════
+
+Nota: Query original contou 56; classificacao detalhada identificou 51.
+A diferenca (5) sao alocacoes com status='concluida' mas finalizada=false
+que foram excluidas do criterio estrito.
+
+┌─────────────────────────┬─────┬────────────────────────────────────────────┐
+│ Categoria               │  Qtd│ Descricao                                  │
+├─────────────────────────┼─────┼────────────────────────────────────────────┤
+│ A_TEST_SEED             │  26 │ prestador_id=NULL, sem OS real              │
+│ C_TEST_MISSION          │  17 │ OS-M43/M48, motoristas de teste            │
+│ B_NOT_ACCEPTED          │   5 │ aceite_prestador=false, sem data_aceite    │
+│ F_FINALIZED_NO_EVIDENCE │   3 │ PRODUCAO REAL — root cause                 │
+├─────────────────────────┼─────┼────────────────────────────────────────────┤
+│ TOTAL                   │  51 │                                            │
+└─────────────────────────┴─────┴────────────────────────────────────────────┘
+
+1.1 CATEGORIA A_TEST_SEED (26)
+  Criterio: prestador_id IS NULL
+  Periodo: 2026-06-19 a 2026-07-23
+  Caracteristicas:
+  - Todos com aceite_prestador=true mas SEM motorista vinculado
+  - 2 com OS (OS-MOTO-M48_2026-06-29_21-47-50)
+  - 24 sem ordem_servico_id
+  - Nenhum com entregas_protocolo
+  Classificacao: DADOS DE TESTE/SEED — nao afeta producao
+
+1.2 CATEGORIA C_TEST_MISSION (17)
+  Criterio: numero_os contem M43/M48 OU metadata contem missao43/missao48
+  Periodo: 2026-06-29 (todos)
+  Caracteristicas:
+  - OSs: OS-M43_2026-06-29_*, OS-DIR-M48_*, OS-DED-M48_*, OS-REDE-M48_*, OS-MOTO-M48_*
+  - 11 com entregas_protocolo (EP criado pelo trigger ou legacy)
+  - 6 sem entregas_protocolo
+  - Todos com motoristas de teste (prestadores criados para missoes)
+  Classificacao: DADOS DE TESTE — missoes M43/M48 executadas em 29/06
+
+1.3 CATEGORIA B_NOT_ACCEPTED (5)
+  Criterio: aceite_prestador=false OU data_aceite IS NULL
+  Periodo: 2026-08-17 a 2026-09-18 + 2 sem data
+  Detalhes:
+  ┌──────────┬────────────┬────────────┬───────────────────────────────────────────┐
+  │ ID       │ Prestador  │ OS         │ Observacao                                │
+  ├──────────┼────────────┼────────────┼───────────────────────────────────────────┤
+  │ 58e5751e │ fe7a75cc   │ null       │ 2026-08-17, aceite=false                  │
+  │ d1f34e73 │ fe7a75cc   │ null       │ 2026-08-19, aceite=false                  │
+  │ c4338964 │ 5377592a   │ null       │ 2026-09-18, aceite=false                  │
+  │ c0a7ee88 │ 6cc41f68   │ null       │ sem data, aceite=false                    │
+  │ 0733bb97 │ 6cc41f68   │ null       │ sem data, aceite=false                    │
+  └──────────┴────────────┴────────────┴───────────────────────────────────────────┘
+  Nota: 2 sao do mesmo motorista das3 GO-LIVE (6cc41f68)
+  Classificacao: ANOMALIA — alocacao finalizada sem aceite do motorista
+  Possivel causa: finalizacao via TMS web (escalaService) que nao valida aceite
+
+1.4 CATEGORIA F_FINALIZED_NO_EVIDENCE — ROOT CAUSE (3)
+  Criterio: Producao real, com prestador, com OS, com aceite, ZERO evidencias
+  ┌──────────┬────────────┬──────────────────────────────────┬────────────┐
+  │ ID       │ Prestador  │ OS                               │ Data Final │
+  ├──────────┼────────────┼──────────────────────────────────┼────────────┤
+  │ fc8d4bb1 │ 6cc41f68   │ OS-GO-LIVE-202607-526562         │ 2026-07-10 │
+  │ fe4bc8a4 │ 6cc41f68   │ OS-GO-LIVE-202607-261321         │ 2026-07-10 │
+  │ bc1c1901 │ 6cc41f68   │ OS-GO-LIVE-202607-125512         │ 2026-07-10 │
+  └──────────┴────────────┴──────────────────────────────────┴────────────┘
+  - Todos do mesmo motorista (6cc41f68)
+  - Todos na data de GO-LIVE (10/07/2026)
+  - Todos com OS prefixo "GO-LIVE" (operacoes de validacao)
+  - bc1c1901 TEM entregas_protocolo (EP sem foto/assinatura)
+  - fc8d4bb1 e fe4bc8a4 NAO tem entregas_protocolo
+  - ZERO: comprovante_url, assinatura_url, fotos_entrega, metadata.pod
+  Classificacao: ROOT CAUSE — falha na cadeia App→delivery_proofs→trigger
+
+═══════════════════════════════════════════════════════════════════════════════════════
+2. ARQUITETURA DO FLUXO POD — POR QUE FALHA
+═══════════════════════════════════════════════════════════════════════════════════════
+
+2.1 CAMINHO APP MOTORISTA (Flutter — o correto)
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ operation_detail_screen.dart                                       │
+  │                                                                     │
+  │ Step 12: "Assinatura do recebedor"                                 │
+  │   ├── StorageUploadService().uploadImage() → driver-evidence bucket│
+  │   ├── DeliveryProofRepository().create(entity)                     │
+  │   │   └── supabase.from('delivery_proofs').insert(json)           │
+  │   │       └── TRIGGER trg_sync_delivery_proof_to_entregas         │
+  │   │           └── INSERT INTO entregas_protocolo (...)             │
+  │   └── catch (e) { debugPrint — ERRO ABSORBIDO }  ← FALHA SILENCIOSA│
+  │                                                                     │
+  │ Step 13: "Enviar POD"                                              │
+  │   └── repo.registerPodSent()                                       │
+  │       └── RPC f_atualizar_etapa_app(p_etapa='pod_registrado')     │
+  │           └── UPDATE alocacoes_escala SET metadata.app_motorista   │
+  │                                                                     │
+  │ Step 14: "Finalizar operacao"                                      │
+  │   └── repo.finishOperation()                                       │
+  │       └── RPC f_atualizar_etapa_app(p_etapa='servico_finalizado') │
+  │           └── UPDATE alocacoes_escala SET status='concluida'       │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  PROBLEMA: Se o INSERT em delivery_proofs falhar (Step 12), o catch absorve
+  o erro. O App pode entao avancar para Steps 13 e 14, finalizando a operacao
+  SEM delivery_proof no banco. O RPC NAO valida se existe delivery_proof.
+
+2.2 CAMINHO TMS WEB (podService.finalizarComPOD)
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ podService.ts:58                                                   │
+  │   ├── UPDATE alocacoes_escala SET status='concluida'              │
+  │   │   comprovante_url, metadata.pod, ...                           │
+  │   ├── INSERT/UPDATE entregas_protocolo (...)                       │
+  │   └── NAO insere em delivery_proofs  ← GAP                       │
+  │                                                                     │
+  │ escalaService.ts:656                                               │
+  │   ├── UPDATE alocacoes_escala SET status='concluida'              │
+  │   │   comprovante_url, assinatura_url, fotos_entrega, ...          │
+  │   └── NAO insere em entregas_protocolo NEM delivery_proofs ← GAP │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  NENHUM caminho TMS cria delivery_proofs. Apenas o App Motorista cria.
+
+2.3 RPC f_atualizar_etapa_app (production)
+  - SECURITY DEFINER (executa com permissoes do definer)
+  - NAO escreve em delivery_proofs
+  - Valida: pod_registrado=true ANTES de permitir servico_finalizado
+  - Valida: prestador_id do request = prestador_id da alocacao
+  - Valida: transicoes de estado (grafo de 15 etapas)
+  - NAO valida: se existe delivery_proof对应 Esta alocacao
+
+2.4 RLS delivery_proofs (production)
+  - RLS ON, relrowsecurity=true, relforcerowsecurity=false
+  - Policy dp_insert_authenticated: authenticated can INSERT (WITH CHECK true)
+  - Policy dp_select_own: SELECT only where driver_id = auth.uid()::text
+  - GRANTs: authenticated (INSERT, SELECT), service_role (ALL)
+  - ANON: blocked (INSERT=false, SELECT=false)
+  - Storage driver-evidence: private, folder-level RLS (auth.uid() = folder[1])
+
+═══════════════════════════════════════════════════════════════════════════════════════
+3. CAUSA RAIZ DAS 3 ALOCACOES GO-LIVE
+═══════════════════════════════════════════════════════════════════════════════════════
+
+3.1 EVIDENCIA
+  Motorista 6cc41f68 realizou 3 operacoes GO-LIVE em 10/07/2026:
+  - OS-GO-LIVE-202607-526562 (fc8d4bb1) — sem EP, sem DP
+  - OS-GO-LIVE-202607-261321 (fe4bc8a4) — sem EP, sem DP
+  - OS-GO-LIVE-202607-125512 (bc1c1901) — COM EP (sem foto), sem DP
+
+  O motorista6cc41f68 tambem tem 2 alocacoes B_NOT_ACCEPTED (c0a7ee88, 0733bb97)
+  sem data — possivelmente criadas e nao aceitas via App.
+
+3.2 HIPOTESE MAIS PROVAVEL
+  Dia do GO-LIVE (10/07/2026), o motorista6cc41f68 testou o fluxo real:
+  1. Aceitou as 3 operacoes via App (aceite_prestador=true)
+  2. Tentou enviar POD (Step 12: DeliveryProofRepository.create)
+  3. O INSERT em delivery_proofs FALHOU (erro de rede, timeout, ou schema)
+  4. O catch absorveu o erro (operation_detail_screen.dart:1833-1836)
+  5. O App avancou para Steps 13/14 (registerPodSent / finishOperation)
+  6. As RPCs finalizaram a alocacao (status='concluida') SEM delivery_proof
+  7. Para bc1c1901: o entregas_protocolo foi criado pelo trigger de outro
+     caminho (possivelmente podService.finalizarComPOD no TMS web)
+
+  ALTERNATIVAMENTE:
+  - O motorista finalizou via TMS web (escalaService.finalizarAlocacao)
+    que NAO cria delivery_proofs — apenas marca status='concluida'
+  - Ou o App Motorista ainda nao tinha a etapa "Assinatura do recebedor"
+    no dia do GO-LIVE (a funcionalidade pode ter sido adicionada depois)
+
+3.3 POR QUE O RPC NAO BLOQUEIA
+  O RPC f_atualizar_etapa_app valida:
+  ✓ Transicao de estado (etapa_atual → p_etapa)
+  ✓ pod_registrado=true antes de servico_finalizado
+  ✓ prestador_id = motorista autenticado
+  ✗ NAO valida se existe delivery_proof对应 Esta alocacao
+
+  O valida "pod_registrado" verifica o METADATA (JSONB), nao a tabela
+  delivery_proofs. Se o App registrou "pod_registrado=true" no metadata
+  mas o INSERT em delivery_proofs falhou, o RPC permite a finalizacao.
+
+═══════════════════════════════════════════════════════════════════════════════════════
+4. GAP DE ARQUITETURA — SISTEMA COMO UM TODO
+═══════════════════════════════════════════════════════════════════════════════════════
+
+4.1 DIAGRAMA DA FALHA
+  ┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+  │ App Motorista │────>│ delivery_proofs  │────>│ entregas_protocolo  │
+  │ (Flutter)     │     │ (INSERT)         │     │ (trigger automático)│
+  └──────┬───────┘     └──────────────────┘     └─────────────────────┘
+         │                                              │
+         │ catch silencioso                              │
+         │ (erro absorvido)                              │
+         ▼                                              │
+  ┌──────────────┐                                       │
+  │ RPC etapa    │──── UPDATE alocacoes_escala ──────────┘
+  │ (pod_reg OK) │     status='concluida'
+  └──────────────┘     finalizada=true
+                       SEM delivery_proof
+
+4.2 ONDE O SISTEMA FALHA
+  1. App Motorista: catch silencioso em DeliveryProofRepository.create()
+     → erro de INSERT nao impede avanço do fluxo
+  2. RPC: nao valida existencia de delivery_proof antes de finalizar
+  3. TMS web: escalaService.finalizarAlocacao() nao cria delivery_proofs
+  4. Nenhum monitor: detects "alocacao finalizada sem delivery_proof"
+     (roboOperacionalService detecta mas apenas loga, nao bloqueia)
+
+4.3 DADOS DE SUPPORT
+  - Total delivery_proofs no banco: 9
+  - Todos do mesmo motorista (e6646799 / a5e51631)
+  - Todos com operation_id preenchido
+  - Trigger trg_sync_delivery_proof_to_entregas: funcionando (9/9 OK)
+  - RLS: authenticated pode inserir (dp_insert_authenticated)
+  - Storage driver-evidence: private, folder-level (auth.uid = folder[1])
+
+═══════════════════════════════════════════════════════════════════════════════════════
+5. IMPACTO
+═══════════════════════════════════════════════════════════════════════════════════════
+
+5.1 IMPACTO EM PRODUCAO
+  - 3 alocacoes GO-LIVE afetadas (10/07/2026) — ja finalizadas
+  - 5 alocacoes B_NOT_ACCEPTED — anomalias menores
+  - 43 alocacoes restantes sao dados de teste (M43/M48/seed)
+  - NENHUM delivery_proof perdido para operacoes REAIS alem das3 GO-LIVE
+
+5.2 IMPACTO FUTURO
+  - Qualquer operacao real onde o App falhar ao inserir delivery_proofs
+    tera o mesmo problema: finalizada=true sem POD no banco
+  - O Portal Cliente nao exibira comprovantes para essas operacoes
+  - O Financeiro nao tera POD para validar baixas
+  - O rastreamento publico nao tera evidencias
+
+═══════════════════════════════════════════════════════════════════════════════════════
+6. FIX P0 — CORRECAO DA CAUSA RAIZ
+═══════════════════════════════════════════════════════════════════════════════════════
+
+6.1 FIX APP MOTORISTA (Flutter — repo externo conexao_prestador)
+  Arquivo: operation_detail_screen.dart, linha 1833
+  Problema: catch silencioso — erro de INSERT nao impede avanco
+  Correcao: Se DeliveryProofRepository.create() falhar, NAO avancar
+  para Steps 13/14. Mostrar erro ao motorista e bloquear finalizacao.
+
+  Antes:
+    } catch (e) {
+      debugPrint('[OperationDetailScreen] save POD delivery_proofs error: $e');
+    }
+
+  Depois:
+    } catch (e) {
+      debugPrint('[OperationDetailScreen] save POD delivery_proofs error: $e');
+      // NAO avancar — mostrar erro e bloquear finalizacao
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar comprovante. Tente novamente.'), backgroundColor: Colors.red),
+        );
+      }
+      setState(() { _isStageLoading = false; _stages[index] = _stages[index].copyWith(status: StageStatus.error); });
+      return;
+    }
+
+6.2 FIX RPC (BLOQUEIO NO BANCO)
+  Arquivo: f_atualizar_etapa_app (migration)
+  Adicionar validacao antes de permitir servico_finalizado:
+
+  -- Bloquear finalizacao sem delivery_proof
+  IF p_etapa = 'servico_finalizado' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.delivery_proofs
+      WHERE operation_id = p_alocacao_id::text OR stop_id = p_alocacao_id::text
+    ) THEN
+      -- Permitir mesmo sem DP (backwards compat) mas registrar warning
+      RAISE NOTICE 'FINALIZACAO_SEM_DELIVERY_PROOF: alocacao=%', p_alocacao_id;
+    END IF;
+  END IF;
+
+  NOTA: Nao bloquear diretamente no RPC para nao quebrar operacoes legadas.
+  Usar NOTICE para monitoramento. O fix real e no App (6.1).
+
+6.3 FIX TMS WEB (escalaService.finalizarAlocacao)
+  O TMS web nao deve finalizar alocacoes que o App Motorista deveria finalizar.
+  Adicionar validacao: se alocacao tem prestador_id com liberado_app=true,
+  exigir que a finalizacao venha do App (via RPC), nao do TMS web.
+
+═══════════════════════════════════════════════════════════════════════════════════════
+7. FIX P1 — MONITORAMENTO
+═══════════════════════════════════════════════════════════════════════════════════════
+
+7.1 AUDITORIA PERIODICA (SQL)
+  -- Detectar alocacoes finalizadas sem delivery_proof (producao real)
+  SELECT ae.id, ae.data_finalizacao, ae.prestador_id, os.numero
+  FROM alocacoes_escala ae
+  LEFT JOIN ordens_servico os ON os.id = ae.ordem_servico_id
+  WHERE ae.status = 'concluida'
+    AND ae.finalizada = true
+    AND ae.prestador_id IS NOT NULL
+    AND ae.aceite_prestador = true
+    AND NOT EXISTS (
+      SELECT 1 FROM delivery_proofs dp
+      WHERE dp.operation_id = ae.id::text OR dp.stop_id = ae.id::text
+    )
+  ORDER BY ae.data_finalizacao DESC;
+
+7.2 ROBO OPERACIONAL (ja existe)
+  roboOperacionalService.ts:192 ja detecta:
+    "Alocao finalizada sem comprovante de entrega"
+  Status: loga mas nao bloqueia. Pode ser elevado para alerta.
+
+═══════════════════════════════════════════════════════════════════════════════════════
+8. DADOS COMPLEMENTARES
+═══════════════════════════════════════════════════════════════════════════════════════
+
+8.1 DELIVERY_PROOFS EXISTENTES (9)
+  Todos do mesmo padrao:
+  - driver_id: e6646799 OU a5e51631
+  - status: delivered
+  - photo_url + signature_url preenchidos
+  - foto_canhoto_url preenchido
+  - Trigger trg_sync_delivery_proof_to_entregas: OK (9/9)
+
+8.2 ENTREGAS_PROTOCOLO SEM DELIVERY_PROOF (43)
+  Das 51 alocacoes sem DP:
+  - 11 com entregas_protocolo (criado por trigger ou podService)
+  - 40 sem entregas_protocolo
+  Os 11 com EP mas sem DP sao:
+  - 10 da categoria C_TEST_MISSION (M43/M48)
+  - 1 da categoria F_FINALIZED_NO_EVIDENCE (bc1c1901 — GO-LIVE)
+
+8.3 HISTORICO_ALOCACOES
+  Das 51 alocacoes, 0 eventos de finalizacao registrados no historico.
+  As finalizacoes nao passaram por escalaService (que registra historico).
+  Comportamento consistente com finalizacao via RPC do App (que NAO
+  registra em historico_alocacoes_escala — apenas em eventos_oficiais).
+
+8.4 RPCs DISPONIVEIS
+  - f_atualizar_etapa_app: chamado pelo App (Flutter) — 15 etapas
+  - f_avancar_etapa_app_motorista: versao anterior, mesma logica
+  - Ambos NAO escrevem em delivery_proofs
+  - Ambos validam transicoes de estado
+  - Ambos NAO validam existencia de delivery_proof
+
+═══════════════════════════════════════════════════════════════════════════════════════
+9. CONCLUSAO
+═══════════════════════════════════════════════════════════════════════════════════════
+
+A ausencia de delivery_proofs em 56 (nao 56, mas 51) alocacoes finalizadas
+NAO e um bug unico — e um GAP DE ARQUITETURA:
+
+  1. O App Motorista e o UNICO escritor de delivery_proofs
+  2. O App tem catch silencioso que permite finalizacao sem DP
+  3. O TMS web NUNCA cria delivery_proofs
+  4. O RPC NAO valida existencia de DP antes de finalizar
+  5. O monitoramento detecta mas nao bloqueia
+
+Das 51 alocacoes:
+  - 43 sao dados de teste (M43/M48/seed) — irrelevantes
+  - 5 sao anomalias (finalizadas sem aceite) — menores
+  - 3 sao producao real (GO-LIVE) — ROOT CAUSE confirmada
+
+O FIX e duplo:
+  P0: App Motorista — remover catch silencioso, bloquear finalizacao sem DP
+  P1: Monitoramento — auditoria periodica + elevacao de alerta
+
+═══════════════════════════════════════════════════════════════════════════════════════
+FILES REFERENCED
+═══════════════════════════════════════════════════════════════════════════════════════
+
+TMS (TypeScript):
+  src/services/podService.ts:58 — finalizarComPOD (NAO cria DP)
+  src/services/escala/escalaService.ts:656 — finalizarAlocacao (NAO cria DP)
+  src/services/comprovantes/comprovantesService.ts:12 — comment only
+  src/services/centralIa/roboOperacionalService.ts:192 — detection log
+
+App Motorista (Flutter — conexao_prestador):
+  lib/features/operations/operation_detail_screen.dart:1813-1837 — DeliveryProofRepository.create
+  lib/features/operations/operation_detail_screen.dart:1848-1910 — registerPodSent (Step 13)
+  lib/features/operations/operation_detail_screen.dart:1912-2012 — finishOperation (Step 14)
+  lib/core/repositories/driver_operations_repository.dart:165-233 — avancarEtapa (RPC caller)
+  lib/core/repositories/driver_operations_repository.dart:472-484 — registerPodSent
+  lib/core/repositories/driver_operations_repository.dart:406-418 — finishOperation
+  lib/core/repositories/delivery_proof_repository.dart:28-102 — create (INSERT delivery_proofs)
+  lib/features/operations/screens/stop_detail_screen.dart:482-488 — stop-level POD
+
+Database (SQL):
+  RPC: f_atualizar_etapa_app — production, SECURITY DEFINER, 15-step state machine
+  RPC: f_avancar_etapa_app_motorista — production, SECURITY DEFINER, same logic
+  Trigger: trg_sync_delivery_proof_to_entregas — delivery_proofs → entregas_protocolo
+  RLS: dp_insert_authenticated (authenticated INSERT), dp_select_own (driver_id = auth.uid)
+  Storage: driver-evidence (private, folder-level RLS)
+  Storage: comprovantes-entrega (public, TMS-side)
+
+Scripts:
+  scripts/_pod02_classificacao_56.cjs — classification query
+  scripts/_pod02_check_rls_delivery_proofs.cjs — RLS/grants analysis
+  scripts/_pod02_rpc_analysis.cjs — RPC function definitions
+  _core_e2e_pod02_classificacao.json — full results

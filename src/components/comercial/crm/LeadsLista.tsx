@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import PaginationBar from "@/components/ui/PaginationBar";
 import { supabase } from "@/lib/supabase";
+import { mascararTelefone, mascararEmail } from "@/lib/masking";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -11,13 +13,20 @@ import { propostaService } from "@/services/comercial/propostaService";
 export default function LeadsLista() {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const PAGE_SIZE = 25;
 
   const carregarLeads = async () => {
     try {
-      const { data, error } = await supabase
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from("crm_leads")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (count !== null) setTotalCount(count);
 
       if (error) throw error;
       setLeads(data || []);
@@ -103,8 +112,8 @@ export default function LeadsLista() {
                   <TableCell>{lead.empresa}</TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3"/> {lead.telefone}</span>
-                      <span className="flex items-center gap-1"><Mail className="w-3 h-3"/> {lead.email}</span>
+                      <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3"/> {mascararTelefone(lead.telefone)}</span>
+                      <span className="flex items-center gap-1"><Mail className="w-3 h-3"/> {mascararEmail(lead.email)}</span>
                     </div>
                   </TableCell>
                   <TableCell className="capitalize">{lead.origem}</TableCell>

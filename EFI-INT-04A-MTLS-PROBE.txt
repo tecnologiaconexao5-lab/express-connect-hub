@@ -1,0 +1,231 @@
+================================================================================
+EFI-INT-04A — PROVA mTLS EFI HML
+================================================================================
+MISSAO.......: EFI-INT-04A — Prova de conexao HTTPS/mTLS para a Efi (HML)
+AMBIENTE.....: TMS + SUPABASE HML
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: Diagnostico. Nenhuma transacao financeira, nenhum boleto, nenhum Pix,
+              nenhum webhook, nenhum schema EFI, nenhuma alteracao de Financeiro,
+              producao intocada, nenhum secret impresso.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML  [ATUAL: prova mTLS]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+RESULTADO EXECUTIVO
+================================================================================
+  FASE 1 (ambiente)         = PARCIAL (executada; HML ausente)
+  FASE 2 (certificado)      = NAO EXECUTADA (requer acao do usuario; PARADA orientada)
+  FASE 3 (secrets HML)      = NAO EXECUTADA (bloqueada: sem projeto HML)
+  FASE 4 (Edge Function)    = CONCLUIDA (codigo criado; NAO deployado)
+  FASE 5 (teste hospedado)  = NAO EXECUTADA — BLOCKED (sem projeto HML acessivel)
+  FASE 6 (limpeza/decisao)  = Funcao mantida, marcada HML/diagnostico e protegida
+  DECISAO                   = NO-GO para EFI-INT-04B (bloqueio: HML inexistente)
+
+================================================================================
+FASE 1 — VERIFICACAO DO AMBIENTE
+================================================================================
+1.1 SUPABASE CLI
+  - Versao: 2.117.0 (instalada via npm).
+  - `supabase projects list` mostra APENAS 1 projeto acessivel:
+      REF uwrvzsjtpgaifkktpepn  NOME conexao-express-tms  REGIAO South America (Sao Paulo)
+      => este e o projeto de PRODUCAO (referenciado em .env / .env.production).
+  - Nenhum projeto HML/QA aparece na conta.
+
+1.2 PROJETO HML/QA (alvo do deploy)
+  - .env.qa e supabase/.temp/project-ref apontam para: aqpfayildtcnrkfeeyjg
+    (nome de link: conexao-express-qa).
+  - PROVA DE EXISTENCIA (sem credenciais):
+      DNS aqpfayildtcnrkfeeyjg.supabase.co -> NAO RESOLVE (NXDOMAIN).
+      REST https://aqpfayildtcnrkfeeyjg.supabase.co/rest/v1/ -> erro de resolucao.
+    => O projeto QA/HML NAO EXISTE mais (removido) ou nunca foi disponibilizado.
+    => O link em supabase/.temp/linked-project.json esta STALE (obsoleto).
+  - Producao uwrvzsjtpgaifkktpepn.supabase.co -> RESOLVE (HTTP 401 sem apikey).
+    => existe, mas NAO pode ser usado (proibido tocar producao).
+
+1.3 CONFIGURACAO EDGE FUNCTIONS
+  - supabase/config.toml: [edge_runtime] enabled = true; policy = per_worker;
+    deno_version = 2. project_id = "express-connect-hub".
+  - Funcoes existentes: criar-alocacao-escala, fiscal-documento-url,
+    fiscal-email-documentos, focus-consulta, focus-documentos, focus-emissao,
+    proxy-ia, whatsapp-recrutamento-webhook.
+
+1.4 RUNTIME EFETIVAMENTE DISPONIVEL / SUPORTE A Deno.createHttpClient
+  - Deno local NAO instalado nesta maquina (a prova seria no runtime hospedado).
+  - Nao foi possivel deployar/executar no runtime hospedado porque NAO ha projeto
+    HML acessivel (1.2). Logo, a verificacao EMPIRICA do runtime ficou BLOQUEADA.
+  - Conclusao estatica (herdada da EFI-INT-03, evidencia em edge-runtime PR #515 /
+    Deno 2.1): `Deno.createHttpClient({ cert, key })` existe no edge-runtime Deno 2;
+    opcoes corretas `cert`/`key` em PEM; chave deve ser PKCS#8.
+    => CONFIRMACAO EMPIRICA PENDENTE (nao executada).
+
+1.5 RPC f_registrar_baixa_financeira — COEXISTENCIA 10/11 PARAMETROS
+  - SOMENTE CONSULTA ESTATICA (migrations). Nenhuma RPC alterada/corrigida.
+  - Historico de assinaturas (todas via CREATE OR REPLACE, que MUDA aridade cria overload):
+      F0-C4 20260818000001: (text,uuid,numeric,date,text,text,text,text,uuid,text)  [10]
+      F0-D  20260818000002: MESMA aridade 10 (adiciona branch financeiro_receber)
+      fin_master361 20260903000000: (text,uuid,numeric,date,text,text,uuid,text,text,uuid,text) [11]
+  - RISCO CONFIRMADO (estatico): como a aridade mudou de 10 -> 11, o Postgres trata
+    como funcao DIFERENTE. A versao de 10 parametros tende a COEXISTIR como overload.
+    Pode haver AMBIGUIDADE na resolucao de chamada (ex.: chamadas nomeadas parciais).
+  - Verificacao no BANCO EM TEMPO DE EXECUCAO: NAO executada (sem HML; producao proibida).
+  - NENHUMA correcao aplicada nesta missao (conforme instruido).
+
+================================================================================
+FASE 2 — PREPARACAO SEGURA DO CERTIFICADO  (PARADA ORIENTADA — NAO EXECUTADA)
+================================================================================
+  [STOP] Nenhum comando de conversao foi executado. Nenhum .p12 foi lido/movido.
+         Nenhum material criptografico foi exibido, registrado ou copiado.
+
+  O usuario possui o .p12 HML. A conversao DEVE ocorrer FORA do repositorio,
+  em maquina controlada, e o .p12 NAO deve ser movido para dentro do projeto.
+
+  Passos recomendados (executar o usuario, nunca exibindo a chave):
+    1) Extrair o certificado X.509 (PEM):
+       openssl pkcs12 -in <Efi-HML>.p12 -clcerts -nokeys -out cert.pem
+    2) Extrair a chave e converte-la para PKCS#8 (PEM, SEM senha em runtime):
+       openssl pkcs12 -in <Efi-HML>.p12 -nocerts -nodes -out key.tmp.pem
+       openssl pkcs8 -topk8 -nocrypt -in key.tmp.pem -out key.pkcs8.pem
+       (apagar key.tmp.pem com seguranca)
+    3) NUNCA colar cert/key no chat, no repo, no TXT ou em log.
+    4) NAO copiar .p12/.pem/.key para o projeto (.gitignore ja cobre essas extencoes).
+
+  Formato decidido (EFI-INT-03): cert X.509 PEM + chave PEM PKCS#8, enviados aos
+  Secrets em base64. Nao usar PKCS#1 (derrubaria o isolate no runtime atual).
+
+================================================================================
+FASE 3 — SECRETS HML  (NAO EXECUTADA — BLOQUEADA)
+================================================================================
+  Motivo do bloqueio: NAO existe projeto HML acessivel para receber as secrets.
+  Nenhum `supabase secrets set` foi executado. Nenhum valor foi lido/impresso.
+
+  Quando o projeto HML existir, os NOMES a configurar sao:
+    EFI_ENVIRONMENT            (valor previsto "homologacao")
+    EFI_CERTIFICATE_HML        (cert PEM X.509, base64)
+    EFI_PRIVATE_KEY_HML        (chave PEM PKCS#8, base64)
+    EFI_PROBE_TOKEN            (token interno aleatorio — protecao do probe)
+    (opcional) EFI_API_BASE_URL_HML
+  NAO configurar nesta prova: EFI_CLIENT_ID_HML / EFI_CLIENT_SECRET_HML (sem OAuth).
+  Os valores devem ser informados pelo usuario via CLI/arquivo local — nunca no chat.
+
+================================================================================
+FASE 4 — EDGE FUNCTION DE DIAGNOSTICO (CONCLUIDA — CODE ONLY, NAO DEPLOYADA)
+================================================================================
+  Criada: supabase/functions/efi-mtls-probe/index.ts
+    - 100% server-side; sem Client Secret; sem transacao financeira; sem banco;
+      sem migration; sem payload financeiro; sem log de cert/key; timeout curto (8s).
+    - Protegida por token interno (EFI_PROBE_TOKEN ou TMS_EDGE_INTERNAL_TOKEN);
+      sem token configurado => responde 503 (segura por padrao).
+    - Resposta SANITIZADA: runtime, createHttpClient_available, cert_present,
+      key_present, http_client_created, tls_handshake (PASS/FAIL/NOT_RUN),
+      http_reached, http_status, auth_api (sempre NOT_TESTED), error_class.
+    - Regra de classificacao implementada: 401/403 NAO e falha de mTLS
+      (TLS_HANDSHAKE=PASS, AUTH_API=NOT_TESTED).
+  Criado: supabase/functions/efi-mtls-probe/README.md
+    - Marca claramente HML/diagnostico; comandos de deploy/uso/remocao (sem valores).
+  NAO deployada (FASE 5 bloqueada).
+
+================================================================================
+FASE 5 — TESTE HOSPEDADO  (NAO EXECUTADA — BLOCKED)
+================================================================================
+  function deployed: ......... NAO (nao ha projeto HML acessivel)
+  secrets presentes: ......... NAO verificavel (sem HML)
+  HTTP client criado: ........ NAO EXECUTADO
+  handshake TLS: ............. NOT_RUN (BLOQUEADO por ausencia de HML)
+  resposta HTTP alcancada: ... NAO EXECUTADO
+  codigo HTTP: ............... N/A
+  credenciais expostas: ...... NAO (nenhuma credencial lida/impressa)
+  => NAO foi possivel executar a prova real hospedada. NAO foi improvisado
+     proxy/shim (conforme instruido). Producao NAO foi usada.
+
+================================================================================
+FASE 6 — LIMPEZA / DECISAO
+================================================================================
+  - A funcao efi-mtls-probe PERMANECE no repo, porem: (a) NAO foi deployada;
+    (b) esta claramente marcada como TEMPORARIA/DIAGNOSTICO/HML no header e README;
+    (c) e protegida por token interno e responde 503 sem token.
+  - Recomendacao: remover apos a prova hospedada (comando no README).
+  - NENHUM avanco para boleto/Pix.
+
+================================================================================
+ARQUIVOS CRIADOS / ALTERADOS
+================================================================================
+  A  supabase/functions/efi-mtls-probe/index.ts    (Edge Function de diagnostico)
+  A  supabase/functions/efi-mtls-probe/README.md   (marcacao HML + comandos)
+  A  EFI-INT-04A-MTLS-PROBE.txt                     (este relatorio)
+  (Nenhum outro arquivo do projeto foi alterado nesta missao.)
+
+================================================================================
+GIT STATUS / DIFF (referente a esta missao)
+================================================================================
+  Ver secao "EVIDENCIA GIT" ao final deste TXT (coletada apos a escrita do arquivo).
+
+================================================================================
+EVIDENCIA GIT
+================================================================================
+  git status --short (somente arquivos desta missao):
+    ?? EFI-INT-04A-MTLS-PROBE.txt
+    ?? supabase/functions/efi-mtls-probe/
+
+  git diff --stat (arquivos rastreados): nenhuma alteracao atribuivel a esta missao.
+    (O working tree ja possui muitas mudancas pre-existentes de missoes anteriores;
+     nenhuma delas foi tocada aqui.)
+
+  => Esta missao criou APENAS 2 itens novos (funcao de diagnostico + este relatorio).
+     Nenhum arquivo existente do projeto foi modificado.
+
+================================================================================
+RISCOS
+================================================================================
+  R1 [BLOQUEADOR] NAO existe projeto Supabase HML/QA acessivel.
+     Evidencia: DNS de aqpfayildtcnrkfeeyjg.supabase.co = NXDOMAIN;
+     `supabase projects list` lista apenas a producao uwrvzsjtpgaifkktpepn.
+     Impacto: impede FASE 3 (secrets) e FASE 5 (prova hospedada).
+  R2 [ALTO] mTLS no runtime hospedado ainda NAO comprovado empiricamente
+     (depende de R1). Risco conhecido: chave PKCS#1 derruba o isolate; nomes
+     certChain/privateKey sao ignorados. Mitigacao: cert/key PKCS#8.
+  R3 [MEDIO] Coexistencia de overload da RPC de baixa (10 vs 11 parametros):
+     risco de ambiguidade na resolucao. Verificar no banco HML antes de A/B.
+     NAO corrigido nesta missao (conforme instruido).
+  R4 [MEDIO] mTLS de ENTRADA (webhook) pode exigir rejeicao TLS fora da URL
+     gerenciada; se confirmado, exige shim. (Nao avaliado nesta prova.)
+  R5 [CONTROLE] Producao NAO foi tocada. Nenhum secret/chave/cert no repo/TXT/log.
+
+================================================================================
+DECISAO GO/NO-GO
+================================================================================
+  NO-GO para EFI-INT-04B neste momento.
+  Justificativa: bloqueio de ambiente (R1) — sem projeto Supabase HML acessivel,
+  e proibido usar producao. A prova de handshake mTLS (FASE 5) NAO pode ser
+  executada; portanto o GO CONDICIONAL da EFI-INT-03 nao pode ser convertido em GO.
+
+  Para destravar (pre-requisitos):
+    1) Provisionar (ou restabelecer) um projeto Supabase HML e informar o ref.
+    2) Rodar `supabase link --project-ref <HML_REF>`.
+    3) Converter o .p12 HML (FASE 2) FORA do repo.
+    4) Configurar os secrets HML (FASE 3) com os NOMES listados (valores pelo usuario).
+    5) `supabase functions deploy efi-mtls-probe --no-verify-jwt --project-ref <HML_REF>`.
+    6) Executar o probe com o token e anexar a resposta sanitizada.
+  Feitos 1..6, o resultado do probe define:
+    - tls_handshake=PASS => GO para EFI-INT-04B.
+    - tls_handshake=FAIL (erro de runtime/cert) => NO-GO; avaliar shim/infra controlada.
+
+================================================================================
+DECLARACAO DE CONFORMIDADE
+================================================================================
+  [OK] Nenhuma transacao financeira/boleto/Pix/webhook.
+  [OK] Nenhum schema EFI aplicado; nenhuma migration.
+  [OK] Nenhuma RPC alterada (apenas consulta estatica).
+  [OK] Nenhuma alteracao no Financeiro/UI.
+  [OK] Producao NAO tocada.
+  [OK] Nao foi pedido Client ID/Secret.
+  [OK] Nenhum secret/cert/chave/PEM/base64 impresso neste TXT.
+  [OK] Conversao de certificado NAO executada (PARADA orientada ao usuario).
+
+================================================================================
+FIM — EFI-INT-04A-MTLS-PROBE.txt
+================================================================================

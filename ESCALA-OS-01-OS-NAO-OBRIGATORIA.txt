@@ -1,0 +1,104 @@
+ESCALA-OS-01-OS-NAO-OBRIGATORIA
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA + CORREÇÃO CONTROLADA
+
+==================================================
+AUDITORIA
+==================================================
+
+handleCreateReserva (EscalaLista.tsx):
+  bloqueava o salvamento quando nenhuma OS estava selecionada:
+    if (!novaOSId) return toast.error("Selecione uma Ordem de Serviço antes de salvar a alocação.");
+  O payload já suportava OS opcional; o INSERT chama criarAlocacao().
+
+escalaService.criarAlocacao:
+  "Auto-associate or create Ordem de Serviço (OS) if not provided" — se !ordem_servico_id:
+    • procura OS existente (cliente_id + prestador_id + data + tipo_veiculo) → vincula;
+    • senão cria via criarOrdemServico() (numero OS-YYYYMM-######, is_teste default false)
+      ANTES de inserir a alocação.
+
+criarOrdemServico (ordemServicoService):
+  gera numero oficial (OS-{ano}{mes}-{seq}) — sem numeração fictícia; custo_prestador=0
+  (sincronizado depois pelo M66).
+
+M66 (pós ESCALA-E2E-05):
+  INSERT ... ON CONFLICT (id) DO UPDATE → idempotente; não cria uma segunda OS.
+
+Risco de dupla OS: NÃO — a OS é criada UMA vez pelo service (ou vinculada) e o M66 apenas
+faz upsert pela mesma id.
+
+==================================================
+CORREÇÃO (mínima)
+==================================================
+
+EscalaLista.tsx (handleCreateReserva):
+  - removido o bloqueio `if (!novaOSId) return toast.error(...)`;
+  - payload: `ordem_servico_id: novaOSId || null` (normaliza vazio).
+Nada mais alterado. criarAlocacao já gera/vincula a OS pelo fluxo canônico.
+
+FILES_MODIFIED=
+  src/components/operacao/EscalaLista.tsx
+  src/test/escala_os_01_os_nao_obrigatoria.test.ts (novo)
+
+==================================================
+VALIDAÇÃO (BEGIN/ROLLBACK — sem operação real)
+==================================================
+
+Fluxo do service (OS criada antes do insert da alocação):
+  AUTO_OS_CREATED=7d656a36-... (OS interna gerada)
+  ALLOCATION_ID=eb1e0c1c-...
+  ALLOCATION_OS_ID_PERSISTED=YES
+  OS_ROWS_FOR_ALLOCATION=1  → DUPLICATE_OS_RISK=NO
+  FIN_RECEBER=1 | FIN_PAGAR=1
+  RESIDUAL=0 (nada persistido — rollback)
+
+Fonte (assertivas):
+  EscalaLista sem o bloqueio "Selecione uma Ordem de Serviço..." (0 ocorrências)
+  EscalaLista payload com "ordem_servico_id: novaOSId || null"
+  escalaService contém "Auto-associate or create Ordem de Serviço" + criarOrdemServico
+  a OS é criada ANTES do insert da alocação
+
+==================================================
+RESULTADO
+==================================================
+
+ROOT_CAUSE=EscalaLista bloqueava o save sem OS selecionada (guard `if (!novaOSId)`),
+  embora criarAlocacao() já gerasse/vinculasse a OS interna pelo fluxo canônico.
+FIX_IMPLEMENTED=YES
+OS_REQUIRED_BEFORE_SAVE=NO
+EXISTING_OS_LINK_FLOW=YES (busca por cliente_id+prestador_id+data+tipo_veiculo → vincula)
+AUTO_OS_FLOW=criarAlocacao → criarOrdemServico (numero oficial; is_teste default false)
+SINGLE_OS_GUARANTEED=YES (M66 ON CONFLICT (id); OS_ROWS_FOR_ALLOCATION=1)
+ROMANEIO_SEPARATED_FROM_INTERNAL_OS=YES (numeroOC em metadata; OS interna = ordem_servico_id)
+ATOMICITY_E2E05_PRESERVED=YES
+CANCEL_E2E03_PRESERVED=YES
+
+TESTS=102/102 PASS (5 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos (baseline pré-existente inalterado)
+BUILD=✓ built in 40.52s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+OBSERVAÇÕES (fora do escopo)
+==================================================
+
+- Editar uma alocação LEGADA sem OS (134 links históricos) e salvar sem selecionar OS:
+  o UPDATE envia ordem_servico_id=null → o M66 (imediato FK) pode falhar; nesse caso o
+  operador deve selecionar/criar a OS. Não tratado aqui (é o item "134 links").
+- custo_prestador × valor_repasse e redundância M66/M80 permanecem para missões próprias.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE (validação em BEGIN/ROLLBACK). Sem migration.
+- Sem numeração fictícia (numero oficial via criarOrdemServico).
+- Cliente/prestador/veículo/tabela preservados. M66/M80 não alterados.
+- APP/POD/Fatura/Recrutamento intactos. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

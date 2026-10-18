@@ -1,0 +1,147 @@
+ESCALA-E2E-04-ATOMICIDADE-ERROS-SILENCIOSOS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção; nenhuma migration)
+
+==================================================
+MAPA DOS TRATAMENTOS DE ERRO SILENCIOSO
+==================================================
+
+Cadeia: alocacoes_escala → M66 f_trg_propagar_financeiro_alocacao
+        → ordens_servico → M80 f_trg_propagar_financeiro_os
+        → financeiro_receber / financeiro_pagar / pagamentos_prestadores / composicao_financeira_os
+
+FUNCTION=f_trg_propagar_financeiro_alocacao  (M66, trigger trg_propagar_financeiro_alocacao)
+  BLOCK=resolução cliente_nome (linha ~38)
+    OPERATION=SELECT ... INTO STRICT FROM clientes
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN fallback 'Cliente #'
+    CAN_HIDE_FAILURE=NO (esperado: cliente ausente)  CAN_LEAVE_PARTIAL_STATE=NO
+    AFFECTED_TABLES=(nenhuma)
+  BLOCK=resolução prestador_nome/doc (linha ~41)
+    OPERATION=SELECT ... INTO STRICT FROM prestadores
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN fallback 'Prestador #'
+    CAN_HIDE_FAILURE=NO (esperado)  CAN_LEAVE_PARTIAL_STATE=NO
+    AFFECTED_TABLES=(nenhuma)
+  BLOCK=OS (linha ~63)
+    OPERATION=INSERT ordens_servico ... ON CONFLICT (id) DO UPDATE
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN NULL
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES
+    AFFECTED_TABLES=ordens_servico (+ cascata M80 → financeiro)
+  BLOCK=receber (linha ~70)
+    OPERATION=INSERT/UPDATE financeiro_receber (ON CONFLICT os_id)
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN NULL
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES  AFFECTED_TABLES=financeiro_receber
+  BLOCK=pagar (linha ~78)
+    OPERATION=INSERT/UPDATE financeiro_pagar (ON CONFLICT os_id)
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN NULL
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES  AFFECTED_TABLES=financeiro_pagar
+  BLOCK=pagamentos (linha ~86)
+    OPERATION=INSERT/UPDATE pagamentos_prestadores (ON CONFLICT os_id)
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN NULL
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES  AFFECTED_TABLES=pagamentos_prestadores
+  BLOCK=composicao (linha ~98)
+    OPERATION=INSERT/UPDATE composicao_financeira_os (ON CONFLICT os_id)
+    ERROR_BEHAVIOR=EXCEPTION WHEN OTHERS THEN NULL
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES  AFFECTED_TABLES=composicao_financeira_os
+  BLOCK=handler externo (linhas ~101-103)
+    OPERATION=corpo inteiro da função
+    ERROR_BEHAVIOR=GET STACKED DIAGNOSTICS + RAISE WARNING + RETURN NEW
+    CAN_HIDE_FAILURE=YES  CAN_LEAVE_PARTIAL_STATE=YES  AFFECTED_TABLES=todas
+    (RAISE WARNING NÃO é auditoria persistente)
+
+FUNCTION=f_trg_propagar_financeiro_os  (M80, trigger trg_propagar_financeiro_os)
+  BLOCK=(nenhum EXCEPTION)  OPERATION=PERFORM/INSERT/UPDATE receber/pagar/pagamentos/composicao
+  ERROR_BEHAVIOR=PROPAGA (aborta o statement) → atômico POR SI SÓ
+  CAN_HIDE_FAILURE=NO (isolado) — PORÉM fica MASCARADO quando a OS é criada/atualizada
+    dentro do BLOCK=OS do M66 (que engole o erro).
+  AFFECTED_TABLES=financeiro_receber/financeiro_pagar/pagamentos_prestadores/composicao_financeira_os
+
+Auditoria persistente: NENHUMA tabela de log encontrada (POSSIBLE_LOG_TABLES=[]).
+Frontend/service: escalaService.criarAlocacao/atualizarAlocacao validam apenas o
+  INSERT/UPDATE de alocacoes_escala (.select().single()) — não verificam a propagação.
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. receber falhar → INSERT/UPDATE da alocação ainda retorna sucesso? SIM (erro engolido).
+2. pagar falhar → receber pode permanecer criado? SIM (blocos independentes).
+3. pagamentos falhar → pagar pode permanecer criado? SIM.
+4. composição falhar → conclusão permanece concluída? SIM (status da alocação não é revertido).
+5. M66 e M80 mascaram-se mutuamente? M66 mascara M80 (o INSERT da OS dentro do bloco
+   engolidor do M66 absorve falhas do M80). M80 não mascara M66 (não tem handler).
+   Ambos escrevem as mesmas tabelas (redundância idempotente).
+6. Existe log/auditoria persistente da exceção? NÃO (apenas RAISE WARNING; blocos internos silenciosos).
+7. Frontend/service detecta propagação parcial? NÃO.
+8. CREATE/UPDATE pode apresentar sucesso com cadeia incompleta? SIM.
+9. Menor correção segura: remover os handlers internos `EXCEPTION WHEN OTHERS THEN NULL`
+   das 5 operações (OS/receber/pagar/pagamentos/composição), preservando a idempotência
+   via ON CONFLICT (os_id) e PERFORM+IF; manter os 2 fallbacks de SELECT STRICT (esperados).
+   Opcional p/ observabilidade: registrar em tabela de auditoria ANTES de re-RAISE.
+10. Remover a supressão + RAISE causaria rollback atômico do statement inteiro? SIM —
+    triggers rodam na mesma transação; erro não capturado aborta o INSERT/UPDATE da alocação.
+
+Tratamento especial necessário:
+  - unique violation: JÁ tratado por ON CONFLICT (os_id) → esperado/idempotente (não é falha).
+  - FK violation: hoje ENGOLIDO (ex.: cliente_id/prestador_id inválidos) → deveria propagar (falha real).
+  - dados opcionais: cliente_id/prestador_id nulos → blocos pulados por IF (esperado).
+  - registros existentes/idempotência: PERFORM 1 ... IF NOT FOUND / ON CONFLICT DO UPDATE → idempotente.
+  ⇒ Distinguir: exceções esperadas (STRICT sem linha, unique via ON CONFLICT) NÃO devem sumir;
+    falhas reais (FK, constraint, permissão) devem propagar.
+
+==================================================
+RESULTADO
+==================================================
+
+M66_SILENT_FAILURE_RISK=ALTO (5 blocos + handler externo engolem erro)
+M80_SILENT_FAILURE_RISK=BAIXO isolado (propaga), MAS MASCARADO pelo M66
+PARTIAL_STATE_POSSIBLE=YES
+FALSE_SUCCESS_POSSIBLE=YES
+ERROR_LOGGING_EXISTS=NO
+FRONTEND_DETECTS_PARTIAL_FAILURE=NO
+STATEMENT_ROLLBACK_IF_RAISE=YES
+
+ROOT_CAUSE=
+  f_trg_propagar_financeiro_alocacao (M66) envolve cada operação (OS, financeiro_receber,
+  financeiro_pagar, pagamentos_prestadores, composicao_financeira_os) em
+  `EXCEPTION WHEN OTHERS THEN NULL`, ocultando falhas reais e permitindo estados parciais;
+  o handler externo só emite RAISE WARNING (não persistente) e o frontend valida apenas o
+  INSERT/UPDATE da alocação → pode reportar sucesso com cadeia financeira incompleta.
+
+NEXT_MINIMAL_FIX (PROPOSTA — NÃO aplicar nesta missão):
+  Migration pequena: CREATE OR REPLACE de f_trg_propagar_financeiro_alocacao substituindo os
+  5 `EXCEPTION WHEN OTHERS THEN NULL` por propagação de erro (remover o handler interno),
+  mantendo:
+    • os 2 fallbacks de SELECT STRICT (cliente/prestador ausente);
+    • ON CONFLICT (os_id) / PERFORM+IF (idempotência; unique esperado);
+    • o cancelamento E2E-03 intacto.
+  Estratégia de observabilidade (opcional, mesma migration ou seguinte): inserir em uma tabela
+  de auditoria (ex.: financeiro_propagacao_log: alocacao_id, os_id, etapa, erro, created_at)
+  ANTES de re-RAISE, para não perder o diagnóstico.
+  Impacto: falha em qualquer etapa passa a fazer ROLLBACK atômico do INSERT/UPDATE da alocação
+  (sem estados parciais). Rollback correspondente: restaurar a versão atual da função.
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+FILES_MODIFIED=(nenhum — missão somente leitura)
+TESTS=90/90 PASS (regressão Escala direcionada)
+TYPECHECK=0 erros novos (baseline pré-existente inalterado)
+BUILD=✓ built in 39.35s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum CREATE OR REPLACE em produção. Nenhum INSERT/UPDATE/DELETE de dados.
+- Nenhuma migration aplicada. Cancelamento E2E-03 não alterado.
+- Não tratou custo_prestador×valor_repasse, dupla propagação, links históricos/órfãos.
+- Não tocou APP/POD/Fatura/Recrutamento. Não iniciou correção.
+
+DB_WRITES=0
+MIGRATIONS=0

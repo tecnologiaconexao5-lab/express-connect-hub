@@ -1,0 +1,225 @@
+================================================================================
+MISSAO: TMS-FIN-PP-UX-02C0-CONTRATOS-ACOES-PRESTADORES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: AUDITORIA / DESENHO DE CONTRATO READ-ONLY. ZERO IMPLEMENTACAO.
+================================================================================
+
+RESULTADO: PASS (contratos definidos). ZERO DML/DDL. Nenhuma RPC criada.
+  Objetivo: definir com precisao os contratos para reativar as 8 acoes bloqueadas,
+  sem DML direto e sem duplicar obrigacoes. S1/S2 preservados.
+
+================================================================================
+1. REGRA PRINCIPAL — FONTE DA VERDADE POR TABELA
+================================================================================
+financeiro_pagar (FP) ............ obrigacao CONTABIL / despesa do prestador (a pagar).
+                                   os_id TEXT; recebe BAIXA via financeiro_baixas (titulo_tabela='financeiro_pagar').
+                                   Fonte para DRE / Fluxo de Caixa / Contas a Pagar.
+pagamentos_prestadores (PP) ...... WORKFLOW OPERACIONAL do prestador (conferencia/aprovacao/lote/pagamento).
+                                   os_id UUID; possui status_conferencia/status_aprovacao/status_pagamento,
+                                   origem_lancamento, tipo_pagamento, lote_id, fechamento_id, natureza.
+alocacoes_escala ................. FONTE OPERACIONAL (Escala/Programacao) — dispara M66.
+ordens_servico ................... FONTE OPERACIONAL (OS direta) — dispara M80.
+composicao_financeira_os ......... snapshot de MARGEM (300/250) — nao e obrigacao nem pagamento.
+financeiro_baixas ................ EVENTO REAL de pagamento/recebimento (estornavel). titulo_tabela/titulo_id.
+lotes_pagamento / _itens ......... REMESSA BANCARIA (execucao) — agrupa PP (FK pagamento_prestador_id).
+fechamento ....................... agrupamento PERIODICO de PP por prestador (PP.fechamento_id self-FK).
+
+SEM ANTECEDENTE UNICO: FP nasce do trigger M66/M80 JUNTO com PP (mesma transacao) para o os_id.
+
+================================================================================
+2. DUPLICIDADE FP x PP (auditado)
+================================================================================
+- QUEM NASCE PRIMEIRO: ambos na MESMA transacao dos triggers M66 (alocacoes_escala) / M80
+  (ordens_servico): FP (financeiro_pagar) + PP (pagamentos_prestadores) + composicao_financeira_os.
+- QUEM REFERENCIA QUEM: SEM FK. Vinculo SOMENTE por `os_id` — e com TIPOS DIFERENTES
+  (FP.os_id = TEXT ; PP.os_id = UUID). Exige cast (fp.os_id = pp.os_id::text).
+- ID vs os_id: por os_id (nao ha fp_id em PP nem pp_id em FP).
+- OBRIGACAO CONTABIL: FP (valor/vencimento/status; baixa em financeiro_baixas).
+- WORKFLOW OPERACIONAL: PP (conferencia/aprovacao/lote/pagamento; natureza credito/debito).
+- ALIMENTA DRE: FP / financeiro_baixas (realizado). NAO somar PP.
+- ALIMENTA FLUXO DE CAIXA: financeiro_baixas (realizado). PP nao e caixa.
+- RECEBE BAIXA: FP (financeiro_baixas.titulo_tabela='financeiro_pagar', titulo_id=fp.id).
+- SINCRONIZACAO NO PAGAMENTO (f_confirmar_pagamento_prestador, DEFINER):
+    * PP.status_pagamento='pago' + data_pagamento;
+    * FP.status='pago'/'parcial';
+    * INSERT financeiro_baixas (titulo_tabela='financeiro_pagar', titulo_id=fp.id).
+  Prova real (read-only): pp 4262fec6 (os c4338964, 1430) <-> fp d4ae8efe (pago, 1430, 1 baixa);
+  pp 7bf3107d (os ae30da69, 520) <-> fp 6f871e9f (pago, 520, 1 baixa).
+- SINCRONIZACAO NO CANCELAMENTO: NAO HA RPC oficial; fechamentoService faz UPDATE direto (bloqueado por S1).
+- ESTORNO existente: f_estornar_baixa_financeira(p_baixa_id, p_motivo) — flag financeiro_baixas.estornada.
+  (OBS: definida como INVOKER em PROD — ver secao 8.)
+- RISCO DE DUPLA CONTABILIZACAO: somar PP + FP no mesmo indicador (DRE/Fluxo). PP NAO e caixa.
+
+REGRA EXPLICITA:
+  "FP e a OBRIGACAO CONTABIL (a pagar) do prestador; recebe baixa e alimenta DRE/Fluxo/Caixa."
+  "PP e o WORKFLOW OPERACIONAL do prestador (conferencia/aprovacao/lote/pagamento)."
+  "Nao devem ser somados juntos em DRE, Fluxo de Caixa, dashboard ou totais de contas a pagar
+   (apenas FP/baixas sao contabilmente validos; PP e workflow)."
+  "Vinculo FP<->PP SOMENTE por os_id (com cast de tipo); nao existe FK."
+  DIVERGENCIA REAL ja existente: PP com status_pagamento='pago' e os_id NULL (ex.: 3884e3c0,
+  32fe474f, 6266f2a1) SEM FP e SEM baixa -> "pago sem baixa" (divida historica; nao tratar aqui).
+
+================================================================================
+3. NOVO PAGAMENTO — SIGNIFICADO
+================================================================================
+Formulario atual (PagamentoPrestadores.tsx, Dialog "Novo Pagamento Manual"): escolhe prestador,
+OS, cliente(s), valores (servicos/repasse/reembolso/desconto/ajuste), natureza credito/debito,
+conta(s). O botao esta DISABLED (S2).
+O NOME "Novo Pagamento" esta SEMANTICAMENTE ERRADO: o formulario NAO paga nada; ele cria uma
+OBRIGACAO/ajuste e a joga no workflow (PP) — nao realiza baixa.
+Conceito correto (a decidir): (A) OBRIGACAO MANUAL AVULSA ao prestador — deve nascer ATOMICAMENTE:
+   FP (obrigacao contabil) + PP (workflow) no mesmo os_id/competencia, com idempotencia.
+Conceitos B/C/D: B) pagamento de obrigacao existente = ja e feito por "Marcar Pago" (RPC confirmar);
+C) ajuste/credito/debito = usar PP.natureza/ajustes/multas/adiantamentos (sem nova tabela);
+D) adiantamento/reembolso = PP.valor_adiantamentos/valor_reembolsos (ja previstos).
+DECISAO DE NEGOCIO NECESSARIA: o que "Novo Pagamento" deve criar (A vs C vs D) e o nome correto
+(ex.: "Lancar Despesa/Ajuste de Prestador"). NAO implementar.
+
+================================================================================
+4. REPROVAR / CANCELAR — CONTRATOS
+================================================================================
+REPROVAR (pagamento de prestador):
+  origem:    PP.status_aprovacao = 'aguardando_aprovacao'
+  destino:   PP.status_aprovacao = 'reprovado' (e status_conferencia='bloqueado' se aplicavel)
+  efeito FP: nenhum (a obrigacao contabil permanece; FP nao muda)
+  efeito PP: apenas workflow; deve LIMPAR elegivel_lote/lote_id
+  efeito lote/baixa/OS: nenhum (nao pago, nao baixado)
+  Se origem = 'aprovado': reabrir (aprovado->aguardando) antes de reprovar (sem estorno).
+CANCELAR (pagamento de prestador):
+  origem permitida: PP.status_pagamento IN ('pendente','nao_vencido','em_lote')
+  destino:          PP.status_pagamento='cancelado' ; status_conferencia/status_aprovacao coerentes
+  efeito FP:        FP.status='cancelado' (a obrigacao deixa de existir) SOMENTE se nao houver baixa
+  efeito lote:      se em_lote, remover item do lote (lotes_pagamento_itens) e devolver PP a pendente
+  efeito baixa:     PROIBIDO cancelar PP 'pago'. Se ja pago/baixado: exigir ESTORNO primeiro.
+  Se pago: usar o ESTORNO EXISTENTE f_estornar_baixa_financeira(baixa_id, motivo) (nao inventar),
+           reverter PP.status_pagamento e FP.status; sem DELETE.
+  Pago/baixado NUNCA pode ser simplesmente cancelado.
+
+================================================================================
+5. FECHAMENTO x LOTE (conceitos)
+================================================================================
+FECHAMENTO (existe hoje): agrupa PP de UM prestador num PERIODO. Modelo: PP.fechamento_id (self-FK)
+  + uma linha "mae" em PP (tipo_pagamento='fechamento', fechamento_id NULL). Estados derivados em TS:
+  em_conferencia -> conferido -> aprovado -> pago | cancelado. Pagamento em lote via RPC
+  f_confirmar_pagamento_fechamento (paga todos os itens do fechamento). Tabela ORFA concorrente:
+  fechamentos_prestador (+itens/movimentos) usada so por extratoPrestadorService (sem caller).
+  DB atual: 1 PP tipo_pagamento='fechamento' (mae) + 1 PP com fechamento_id (item).
+LOTE (existe hoje): agrupa PP APROVADOS+ELEGIVEIS para REMESSA BANCARIA. Modelo: lotes_pagamento
+  (status/provider/valor_total) + lotes_pagamento_itens (FK pagamento_prestador_id; dados bancarios).
+  RPC f_gerar_lote_pagamentos (A). DB atual: 0 lotes / 0 itens.
+CONCLUSAO: FECHAMENTO (consolidacao por periodo/prestador + aprovacao) e LOTE (execucao bancaria)
+  sao DISTINTOS, porem AMBOS agregam PP -> sobreposicao conceitual e risco de DUPLICIDADE.
+  Recomendacao: manter LOTE como execucao; reposicionar FECHAMENTO como consolidacao/aprovacao
+  periodica (sem pagar) OU depreca-lo. Depende de decisao de negocio (ver secao 9).
+
+================================================================================
+6. GERAR REPASSE — DUPLICIDADE COMPROVADA
+================================================================================
+Programacao/Escala: alocacao finalizada. Ao finalizar/inserir, os triggers M66 (alocacoes_escala)
+e M80 (ordens_servico) JA criam a PROVISAO: FP (financeiro_pagar) + PP (pagamentos_prestadores)
++ composicao_financeira_os, para o os_id.
+PROVA (read-only): PP.os_id distintos = 93 ; FP.os_id distintos = 111 ; para os finalizados ha
+  par FP<->PP (ex.: os c4338964 / ae30da69). A tela de Repasses deduplica contra PP por OS, ou seja,
+  ela so exibe alocacoes SEM PP — que sao os GAPS (alocacao sem prestador_id/valor, ou sem os_id).
+Portanto o botao "Gerar Repasse" que criasse PP manualmente DUPLICARIA a obrigacao para os casos
+que ja tem provisao. RECOMENDACAO: NAO criar RPC de "gerar repasse"; REMOVER/substituir o botao.
+Se existirem GAPS reais (alocacao finalizada sem PP/FP): corrigir na ORIGEM (M66/M80) ou criar uma
+RPC de PROVISIONAMENTO IDEMPOTENTE por alocacao_id/os_id (UNIQUE), nunca insert solto.
+
+================================================================================
+7. IDEMPOTENCIA (chaves propostas por acao)
+================================================================================
+- Provisionamento/repasse por operacao: (os_id) e/ou (alocacao_id) — PP/FP ja tem UNIQUE(os_id)
+  (uq_pp_os_id / uq_fp_os_id). Backfill: UNIQUE(alocacao_id).
+- Lancamento manual avulso: (prestador_id + competencia + natureza + valor) ou idempotency_key explicita.
+- Fechamento: UNIQUE(prestador_id, periodo_inicio, periodo_fim) — hoje INEXISTENTE (risco de duplicar).
+- Lote: ja atomico/idempotente (f_gerar_lote_pagamentos marca lote_id + em_lote; nao repete itens).
+- Reprovar/Cancelar: idempotente por checagem de estado (sem efeito duplicado).
+- Baixa/Estorno: por baixa_id (f_estornar_baixa_financeira).
+REGRA: nenhuma acao financeira futura pode duplicar obrigacao por clique duplo/retry.
+
+================================================================================
+8. SEGURANCA (padrao para futuras RPCs — preservar S1/S2)
+================================================================================
+- SECURITY DEFINER + SET search_path TO 'public'.
+- Guardas: auth.uid() nao nulo; perfil em ('super_admin','admin_tenant','financeiro');
+  tenant via tenant_usuarios (tu.user_id=auth.uid() e tu.tenant_id = registro).
+- Grants: apenas authenticated + service_role (sem PUBLIC/anon). NAO conceder DML direto a authenticated.
+- Validacoes: fatura/registro existente; estado de origem permitido; AR/baixa nao pago quando aplicavel;
+  transicao valida; idempotencia.
+- Auditoria: financeiro_prestador_auditoria (auditoriaPrestadorService) + logs IA/central.
+- Sem auth: retornar 'USUARIO_NAO_AUTENTICADO' (nao lancar excecao crua).
+- RESIDUAL: f_estornar_baixa_financeira e f_registrar_baixa_financeira estao SECURITY INVOKER em PROD
+  (definer=false) — registrar (nao corrigir aqui).
+- S1/S2 CONFIRMADOS: authenticated sem INSERT/UPDATE/DELETE; policies so SELECT; RPCs definer presentes.
+
+================================================================================
+9. MATRIZ DAS ACOES
+================================================================================
+ACAO | SIGNIFICADO | FONTE VERDADE | TABELAS | ORIGEM | DESTINO | IDEMPOT. | RPC? | RISCO | CLASSIF.
+-----+-------------+---------------+---------+--------+---------+----------+------+-------+---------
+Novo Pagamento (manual)|criar obrigacao/ajuste avulso|FE/PP|FP+PP|rascunho|-|(prestador+competencia)|SIM (nova)|duplicar obrigacao|NECESSITA DECISAO DE NEGOCIO + IMPLEMENTAR RPC
+Reprovar|rejeitar aprovacao|PP|PP|aguardando_aprovacao|reprovado|estado|SIM|reabrir se aprovado|IMPLEMENTAR RPC
+Cancelar|encerrar pagamento nao efetivado|PP/FP|PP+FP(+lote)|pendente/nao_vencido/em_lote|cancelado|estado|SIM|se pago exige estorno|IMPLEMENTAR RPC (REUTILIZAR estorno)
+Criar Fechamento|consolidar PP por periodo|PP|PP|aprovado|-|UNIQUE(prest+periodo)|SIM|duplicar fechamento|NECESSITA DECISAO (fechamento x lote)
+Conferir Fechamento|conferencia do fechamento|PP|PP|em_conferencia|conferido|estado|SIM|—|REUTILIZAR/IMPLEMENTAR
+Aprovar Fechamento|aprovacao do fechamento|PP|PP|conferido|aprovado|estado|SIM|—|REUTILIZAR/IMPLEMENTAR
+Cancelar Fechamento|encerrar fechamento|PP|PP(+lote)|!=pago/cancelado|cancelado|estado|SIM|se pago exige estorno|IMPLEMENTAR RPC
+Gerar Repasse|provisionar repasse manual|OS/alocacao|FP+PP|finalizada|-|(os_id/alocacao_id)|NAO NECESSARIA|DUPLICIDADE comprovada|REMOVER DA UI (nao criar RPC)
+[Reutilizar RPC existente] Aprovar/Marcar Pago/Gerar Lote/Pagar Fechamento -> f_aprovar_pagamento_prestadores,
+  f_confirmar_pagamento_prestador, f_gerar_lote_pagamentos, f_confirmar_pagamento_fechamento.
+
+================================================================================
+10. PLANO DE MICRO-MISSOES (por risco/contrato — nao agrupar)
+================================================================================
+PP-UX-02C1 (RISCO BAIXO / regra inequivoca) — Cancelamento/estorno oficial
+  RPC cancelar_pagamento_prestador(id, motivo) reaproveitando f_estornar_baixa_financeira quando pago;
+  sincronizar FP + remover de lote. Reprovar via RPC propria. Reabilitar botoes.
+PP-UX-02C2 — Fechamento: decisao fechamento x lote
+  Decidir consolidacao (fechamento) x execucao (lote); criar UNIQUE(prestador,periodo) se mantiver;
+  RPCs criar/conferir/aprovar/cancelar OU depreciar o fechamento. Depende de negocio.
+PP-UX-02C3 — Novo Pagamento (manual)
+  Definir conceito (obrigacao/ajuste/adiantamento) e RPC que cria FP+PP atomicos e idempotentes;
+  RENOMEAR o botao conforme significado. Depende de negocio.
+PP-UX-02C4 — Reprovar (se nao coberto por C1)
+PP-UX-02C5 — Gerar Repasse: REMOVER da UI (redundante com M66/M80). Se houver gaps reais,
+  RPC de provisionamento idempotente por alocacao/os (fonte: M66/M80), nunca insert solto.
+Ordem de prioridade (como solicitado): (1) regra inequivoca [C1 e idempotencia/UNIQUE];
+(2) fechamento [C2]; (3) manual [C3]; (4) cancelamentos/reprovacoes [C1/C4]; (5) repasse [C5 se necessario].
+
+================================================================================
+11. BACKLOG CUMULATIVO PRESERVADO (modulo NAO concluido)
+================================================================================
+Continuam pendentes em Pagamento de Prestadores (NAO marcar como concluido):
+  - PP-UX-02A estrutura/hierarquia (controles mortos, auditoria enganosa)
+  - PP-UX-02B paginacao/busca/ordenacao (4 listas sem paginacao; cap LIMIT 1000 em Aptos)
+  - PP-UX-02D Conta Corrente/Relatorio/Dashboard (filtros; usar vw_relatorio_pagamento_*)
+  - PP-UX-03 prova visual/E2E
+  - validacao dos KPIs contra banco (cards calculados por subconjunto)
+  - controles mortos ("Ver Detalhes" sem onClick; handlers nao usados)
+  - privilegio residual anon (GRANT SELECT/REFERENCES/TRIGGER/TRUNCATE)
+  - DML legado exportado (criarPagamento/fechamentoService.* bloqueados por S1)
+  - duplicidade conceitual FP x PP (+ "pago sem baixa" historico)
+  - tabela orfa `pagamento_prestadores`(singular) e `fechamentos_prestador` (sem caller)
+
+================================================================================
+12. CONFIRMACAO ZERO DML/DDL
+================================================================================
+[x] Somente SELECT/information_schema + leitura de codigo. Nenhum INSERT/UPDATE/DELETE/DDL.
+[x] Nenhuma RPC/migration criada. Nenhum pagamento/fechamento/lote alterado. Calvo/CESAR nao tocados.
+[x] S1/S2 nao reabertos. Scripts temporarios removidos.
+
+================================================================================
+13. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-PP-UX-02C0-CONTRATOS-ACOES-PRESTADORES-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-PP-UX-02C0-CONTRATOS-ACOES-PRESTADORES-RESULTADO.txt
+ TAMANHO ..: (informado no console apos gravacao)
+ DATA/HORA : (informado no console apos gravacao)
+
+================================================================================
+FIM — TMS-FIN-PP-UX-02C0-CONTRATOS-ACOES-PRESTADORES
+================================================================================

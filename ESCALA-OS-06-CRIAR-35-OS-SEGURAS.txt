@@ -1,0 +1,98 @@
+ESCALA-OS-06-CRIAR-35-OS-SEGURAS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: SANEAMENTO CONTROLADO DE DADOS
+
+==================================================
+MECANISMO (provado em BEGIN/ROLLBACK antes do 1º commit)
+==================================================
+
+Disparo da M66 (já corrigida em ESCALA-OS-03) via UPDATE neutro de coluna monitorada:
+  UPDATE alocacoes_escala SET valor_repasse = valor_repasse WHERE id = <alocação>;
+→ M66 cria a OS com id = alocação.id, número interno, vincula (ordem_servico_id) e propaga
+  financeiro/composição. NÃO usa criarOrdemServico do frontend.
+
+Prova (amostra 4992693a):
+  BEFORE: link=null | OS(id=alocação.id)=0 | fin 0/0/0
+  AFTER:  link=alocação.id | OS numero=ALOC-20260520-4992693A | valor_cliente=200 custo_prestador=160 | fin 1/1/1
+  M66_TRIGGER_FIRED=YES | BUSINESS_VALUE_CHANGED=NO | ROLLBACK_DONE
+
+==================================================
+EXECUÇÃO EM LOTES (precheck + dry-run + execute + postcheck por lote)
+==================================================
+
+LOTE 1 (10 A): PRECHECK=PASS DRYRUN=PASS → links=10 osCreated=10 dups=0
+LOTE 2 (10 A): PRECHECK=PASS DRYRUN=PASS → links=10 osCreated=10 dups=0
+LOTE 3 (10 A): PRECHECK=PASS DRYRUN=PASS → links=10 osCreated=10 dups=0
+LOTE 4 (5 B):  PRECHECK=PASS DRYRUN=PASS → links=5  osCreated=5  dups=0
+
+TOTAL: links=35, OS criadas=35, duplicadas=0, mudanças inesperadas=0.
+
+==================================================
+POSTCHECK
+==================================================
+
+Casos A (30) — SEM financeiro antes → CRIADOS por esta missão (os_id = alocação.id):
+  financeiro_receber=30 | financeiro_pagar=30 | pagamentos_prestadores=30 | ordens_servico=30 | links=30
+
+Casos B (5) — financeiro PRÉ-EXISTENTE → PRESERVADO (sem duplicação, sem alteração de valor/status):
+  financeiro_receber=5 | financeiro_pagar=5 | pagamentos_prestadores=5 (pré-existentes)
+  + ordens_servico=5 (criadas agora) + links=5
+  bfaec60f, fd1e89c2, 57801474, b7cdb83f, c0a7ee88 — valores/status mantidos (open).
+
+Bloqueados (3) — INTOCADOS:
+  58e5751e, d1f34e73, ae30da69 → ordem_servico_id=NULL, nenhuma OS criada.
+
+Número interno: ALOC-{YYYYMMDD}-{8 primeiros do id} (ex.: ALOC-20260520-4992693A).
+Romaneio/OC do cliente permanece referência EXTERNA (metadata), separado da OS interna.
+
+==================================================
+RESULTADO
+==================================================
+
+EXPECTED_SAFE=35
+PRECHECK_PASS=35
+DRY_RUN_PASS=YES
+SAFE_CREATED=35
+BLOCKED_CHANGED_STATE=0
+OS_CREATED=35
+LINKS_CREATED=35
+DUPLICATE_OS_CREATED=0
+FINANCIAL_COHERENCE=YES
+UNEXPECTED_CHANGES=0
+
+TOTAL_ALLOCATIONS=193
+WITH_OS_ID=107
+WITHOUT_OS_ID=86
+BLOCKED_3_UNTOUCHED=YES
+
+FILES_MODIFIED=supabase/migrations/20260922000010_escala_os_06_rollback.sql (novo — rollback)
+DB_WRITES=35 (UPDATE alocacoes_escala; M66 criou 35 OS + 30×3 registros financeiros para A)
+MIGRATIONS=0
+
+ROLLBACK (preparado — NÃO executado):
+  Casos A (30): DELETE financeiro_receber/pagar/pagamentos/composição (os_id=alocação.id),
+    DELETE ordens_servico (id=alocação.id), ordem_servico_id=NULL.
+  Casos B (5): DELETE apenas a OS criada (id=alocação.id) e ordem_servico_id=NULL —
+    PRESERVA o financeiro pré-existente.
+  Nunca remover registro que já existia antes.
+
+==================================================
+FORA DO ESCOPO (não tratado)
+==================================================
+
+- 3 casos C bloqueados (58e5751e, d1f34e73, ae30da69);
+- 16 Classe D; 67 Classe E; 9 divergências FIN-02; 27 órfãs;
+- redundância M66/M80; APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Não usou criarOrdemServico frontend. Não alterou M66/M80. Sem migration de schema.
+- Não tocou os 3 bloqueados, nem D/E/FIN-02/órfãs.
+- Não iniciou outra missão.
+
+DB_WRITES=35
+MIGRATIONS=0

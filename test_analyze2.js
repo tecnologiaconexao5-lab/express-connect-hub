@@ -1,0 +1,16 @@
+import { readFileSync } from "fs";
+const f = readFileSync("tests/e2e/central-ia-f25c-audit.spec.ts", "utf-8");
+const lines = f.split("\n");
+const l85 = lines[84];
+const l130 = lines[129];
+console.log("L85 length:", l85.length);
+console.log("L85:", JSON.stringify(l85));
+console.log("L85 last 20 chars:", JSON.stringify(l85.slice(-20)));
+console.log("L85 char at 90:", JSON.stringify(l85[90]), "code:", l85.charCodeAt(90));
+console.log("L85 char at 91:", JSON.stringify(l85[91]), "code:", l85.charCodeAt(91));
+console.log("---");
+console.log("L130 length:", l130.length);
+console.log("L130:", JSON.stringify(l130));
+console.log("L130 char at 89:", JSON.stringify(l130[89]), "code:", l130.charCodeAt(89));
+console.log("L130 char at 90:", JSON.stringify(l130[90]), "code:", l130.charCodeAt(90));
+console.log("L130 char at 91:", JSON.stringify(l130[91]), "code:", l130.charCodeAt(91));

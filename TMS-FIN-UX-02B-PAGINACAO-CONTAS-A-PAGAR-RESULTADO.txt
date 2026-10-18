@@ -1,0 +1,242 @@
+================================================================================
+MISSAO: TMS-FIN-UX-02B-PAGINACAO-CONTAS-A-PAGAR
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / repositorio local (sem banco; REDMI nao conectado)
+MODELO: MiMo-V2.5
+TIPO: micro-missao cirurgica de UX + testes locais
+BASE: FIN-UX-01 e FIN-UX-02A homologados PASS.
+================================================================================
+
+CONTAGEM MACRO
+  3 FECHAMENTO TMS  <- ESTAMOS AQUI
+  2 APP + E2E COMPLETO
+  1 MASTER 360 / GATE DE PRODUCAO
+  0 HOMOLOGADO
+
+RESULTADO: PASS.
+Contas a Pagar agora tem paginacao real, numerada e visivel, sobre o conjunto
+COMPLETO filtrado/ordenado; "Exibindo A-B de N"; volta para pagina 1 ao mudar
+busca/filtro/periodo. Nenhuma regra financeira, status, valor ou escrita alterada.
+Zero alteracao de banco/RLS/RPC/trigger/migration. Build OK, testes PASS.
+
+================================================================================
+1. PASSO 1 — AUDITORIA (ANTES)
+================================================================================
+Componente : src/components/financeiro/ContasPagar.tsx (tela Financeiro > Pagamentos
+             > Contas a Pagar; renderizada em src/pages/Financeiro.tsx:225).
+Service    : NAO usa pagarService.listarPagaveis. Faz query inline em
+             fetchLancamentos() (ContasPagar.tsx).
+Query ANTES (linhas 664-670):
+    supabase.from("financeiro_pagar").select("*")
+      .eq("is_teste", false)
+      .gte("data_vencimento", periodoEfetivo.inicio)
+      .lte("data_vencimento", periodoEfetivo.fim)
+      .order("data_vencimento", { ascending: true })
+  -> SEM .limit() / SEM .range() / SEM count. Materializa TODO o periodo.
+Filtros    : client-side no memo lancFiltrados (783-803): busca rapida (favorecido/
+             doc/NF/categoria), status (chips + modal), categoria, fornecedor.
+Busca      : client-side (substring, case-insensitive) sobre o conjunto carregado.
+Ordenacao  : 2 camadas: SQL order("data_vencimento", asc) + re-sort client-side em
+             lancFiltrados (vencimento_asc/desc, valor_asc/desc).
+Paginacao  : INEXISTENTE. O corpo da tabela renderizava o array inteiro:
+             {lancFiltrados.map((l) => ( ... ))} (linha 1051 original).
+Cap/silencioso: NAO havia cap na listagem (nao havia .limit). O defeito era a
+             AUSENCIA de paginacao (renderiza tudo) — nao um truncamento.
+             Observacao: existe .limit(10) na linha 221, mas pertence ao
+             FornecedorAutocomplete (max. 10 sugestoes), NAO a listagem.
+Page size  : nao existia.
+PaginationBar: ja existe em src/components/ui/PaginationBar.tsx e e o padrao do
+             financeiro (Contas a Receber, Margem por OS, e agora Conferencia).
+Selecao multipla: NAO existe na tela (sem checkboxes). Sem impacto.
+
+ANTES x DEPOIS (resumo)
+  ANTES : sem pagina; tabela renderiza lancFiltrados inteiro; sem "de N".
+  DEPOIS: lancFiltrados (filtrado/ordenado global) -> lancPagina (janela de 25)
+          -> render; PaginationBar "Anterior | 1 | 2 | 3 | ... | Proxima";
+          "Exibindo A-B de N"; reset para pagina 1 em busca/filtro/periodo.
+
+================================================================================
+2. PASSO 2 — IMPLEMENTACAO CIRURGICA
+================================================================================
+Arquivo: src/components/financeiro/ContasPagar.tsx
+
+  Linha 29   : + import PaginationBar from "@/components/ui/PaginationBar";
+  Linha 115  : + const PAGE_SIZE_PAGAR = 25;
+  Linha 606  : + const [pagina, setPagina] = useState(1);
+  Linhas 808-830: + bloco de paginacao:
+       - totalPaginas = ceil(lancFiltrados.length / PAGE_SIZE_PAGAR)
+       - clamp: if (pagina > totalPaginas) setPagina(totalPaginas)
+       - lancPagina = lancFiltrados.slice((pagina-1)*PAGE, ...)
+       - reset: useEffect(() => setPagina(1),
+                  [buscaRapida, filtrosAtivos, periodoEfetivo.inicio, periodoEfetivo.fim])
+  Linha 1077 : ~ {lancFiltrados.map(...)} -> {lancPagina.map(...)}
+  Linhas 1118-1127: + <PaginationBar page pageSize totalCount={lancFiltrados.length}
+                       onPageChange={setPagina} loading={isSubmitting} />
+
+Query DEPOIS (linhas 664-670): IDENTICA a antes — a missao NAO alterou a query,
+apenas adicionou paginacao sobre o conjunto ja carregado. Nenhum .limit()/range()
+introduzido; nenhum cap silencioso existente foi mantido escondido.
+
+================================================================================
+3. ESTRATEGIA DE PAGINACAO
+================================================================================
+Ordem exata:
+  1) Query SQL: financeiro_pagar do periodo (is_teste=false)            [server-side]
+  2) Busca rapida (substring) sobre o conjunto COMPLETO
+  3) Filtros (status/categoria/fornecedor) sobre o conjunto COMPLETO
+  4) Ordenacao (vencimento/valor) sobre o conjunto COMPLETO
+  5) Paginacao: janela de 25 sobre o resultado filtrado/ordenado
+  6) Render da pagina
+
+- Nao e "slice de conjunto truncado": a query nao trunca; a pagina e uma janela
+  de visualizacao sobre o conjunto completo filtrado.
+- Busca/filtros/ordenacao atuam sobre o CONJUNTO COMPLETO (nao apenas a pagina),
+  pois sao calculados no memo lancFiltrados sobre lancamentos (todo o conjunto).
+- Ordenacao ocorre ANTES da paginacao (lancFiltrados.sort -> lancPagina.slice).
+- Page size: 25 (consistente com Contas a Receber / Conferencia / Margem por OS).
+- Indicador: PaginationBar exibe "Exibindo A-B de N" + paginas numeradas.
+- Reset: qualquer mudanca de busca/filtro/periodo retorna a pagina 1.
+- KPIs permanecem calculados sobre lancamentos (comportamento existente, inalterado).
+
+================================================================================
+4. TESTES
+================================================================================
+Arquivo novo: src/test/fin_ux_02b_contas_pagar_paginacao.test.tsx (11 testes)
+  [render] 1) sem cap: 352 registros (>300) => "de 352"; so 25 linhas na pagina 1.
+  [render] 2) paginas numeradas (1,2,15) + Anterior desabilitado na pagina 1.
+  [render] 3) Proxima/Anterior mostram "26-50" e voltam para "1-25".
+  [render] 4) ultima pagina parcial: "351-352 de 352" (2 linhas).
+  [render] 5) busca GLOBAL: registro no indice 350 (fora da pagina 1) aparece e
+             reseta para a pagina 1 ("Exibindo 1-1 de 1").
+  [render] 6) nenhum fluxo financeiro disparado no carregamento.
+  [estrutura] 7) PAGE_SIZE=25 + PaginationBar + totalCount do conjunto filtrado.
+  [estrutura] 8) filtros/ordenacao ANTES da paginacao (lancFiltrados -> lancPagina).
+  [estrutura] 9) reset para pagina 1 em busca/filtro/periodo.
+  [estrutura]10) sem cap silencioso na query da listagem.
+  [puro]     11) buildPageList: primeira/ultima/reticencias.
+
+EXECUCAO — 3 arquivos / 27 testes, TODOS PASS:
+  src/test/fin_ux_02b_contas_pagar_paginacao.test.tsx ... 11 passed
+  src/test/fin_ux_02a_conferencia_paginacao.test.ts .... 11 passed (regressao 02A)
+  src/test/fin_prog05c3b_receber_paginacao.test.tsx ..... 5 passed (regressao AR)
+
+TYPECHECK
+  npx tsc --noEmit -p tsconfig.app.json -> ContasPagar.tsx apresenta 5 erros
+  PREEXISTENTES (linhas 172/886/931/944/955: statusEfetivo ausente em FORM_BLANK
+  e id string|number em handlers). NENHUM erro nas linhas/blocos novos
+  (606, 808-830, 1077, 1118-1127). Ja constavam do FIN-GATE-01 (66 erros TS no
+  financeiro). => NAO ha regressao de tipos causada por esta missao.
+
+BUILD
+  npm run build -> OK ("built in 36.60s").
+
+================================================================================
+5. EVIDENCIA (linhas)
+================================================================================
+  ContasPagar.tsx
+     29  import PaginationBar from "@/components/ui/PaginationBar";
+    115  const PAGE_SIZE_PAGAR = 25;
+    221  .limit(10)                       <- FornecedorAutocomplete (NAO a lista)
+    606  const [pagina, setPagina] = useState(1);
+    815  const totalPaginas = useMemo(
+    816  () => Math.max(1, Math.ceil(lancFiltrados.length / PAGE_SIZE_PAGAR)),
+    820  if (pagina > totalPaginas) setPagina(totalPaginas);
+    822  const lancPagina = useMemo(() => {
+    824  return lancFiltrados.slice(inicio, inicio + PAGE_SIZE_PAGAR);
+    828  setPagina(1);
+   1077  {lancPagina.map((l) => (
+   1119  <PaginationBar
+   1121  pageSize={PAGE_SIZE_PAGAR}
+   1122  totalCount={lancFiltrados.length}
+  Query de listagem (664-670): inalterada, sem .limit().
+  Zero arquivos de banco/migration/RLS/RPC/trigger alterados.
+
+================================================================================
+6. CRITERIO DE PASS
+================================================================================
+[x] paginacao visivel ................................ SIM (PaginationBar no Card)
+[x] paginas numeradas ............................... SIM (buildPageList 1,2,...,N)
+[x] Anterior/Proxima ................................ SIM (teste 3)
+[x] "Exibindo A-B de N" ............................. SIM (PaginationBar)
+[x] busca global antes da paginacao ................. SIM (teste 5, memo lancFiltrados)
+[x] filtros globais antes da paginacao .............. SIM (memo lancFiltrados)
+[x] ordenacao global antes da paginacao ............. SIM (sort -> slice; estrutura 8)
+[x] reset para pagina 1 ............................. SIM (efeito 828; teste 5)
+[x] sem cap silencioso .............................. SIM (352 > 300 => "de 352")
+[x] sem regressao financeira ........................ SIM (nenhuma regra/status/valor/
+                                                          escrita alterada; teste 6)
+[x] testes PASS ..................................... SIM (27/27)
+[x] build OK ........................................ SIM (36.60s)
+
+================================================================================
+7. RISCOS RESIDUAIS
+================================================================================
+R1. ESCALABILIDADE: a tela materializa no frontend TODO o conjunto do periodo
+    (query sem limit). Com volume crescente, a paginacao client-side nao evita o
+    carregamento completo. Recomendacao objetiva (micro-missao propria, sem
+    improviso): migrar para paginacao server-side com .range()+count no service
+    dedicado e mover busca/filtros/ordenacao para SQL (ou RPC/view). Registrar no
+    backlog. Nesta missao NAO foi criada RPC/view/migration.
+R2. `isSubmitting` compartilhado entre fetch e save e usado como `loading` do
+    PaginationBar; e aceitavel (desabilita botoes enquanto carrega), mas ideal
+    seria um `loadingLista` dedicado (fora de escopo).
+R3. Erros TS preexistentes em ContasPagar.tsx (5) seguem no backlog (divida de
+    tipos; nao bloqueiam runtime — o build passa).
+R4. Busca rapida dispara reset para pagina 1 a cada tecla (comportamento desejado),
+    sem debounce — nao introduzido nesta missao.
+
+================================================================================
+8. BACKLOG EXPLICITAMENTE NAO CORRIGIDO (preservado)
+================================================================================
+- confirm/alert/prompt nativos.
+- modal profissional de cancelamento.
+- tipografia global/premium.
+- logica de Pagamento de Prestadores / Novo Pagamento / Pagamentos Manuais /
+  Fechamentos Anteriores / Repasses da Programacao / Conta Corrente.
+Esses itens permanecem obrigatoriamente no backlog.
+
+================================================================================
+9. CHECKPOINT FINAL
+================================================================================
+HOMOLOGADO:
+  - FIN-UX-01
+  - FIN-UX-02A
+
+MISSAO ATUAL:
+  - FIN-UX-02B
+
+RESULTADO DA MISSAO:
+  - PASS.
+
+O QUE REALMENTE FOI CORRIGIDO:
+  - Contas a Pagar passou a ter paginacao real, numerada e visivel (25/pagina),
+    com "Exibindo A-B de N", Anterior/Proxima, busca/filtros/ordenacao globais
+    antes da paginacao e reset para pagina 1.
+
+O QUE AINDA ESTA PENDENTE (nao corrigido nesta missao):
+  - confirm/alert/prompt nativos (ContasPagar.tsx:916 e outros).
+  - modal profissional de cancelamento.
+  - tipografia premium global.
+  - bloco Pagamento de Prestadores (Novo Pagamento, Manuais, Fechamentos,
+    Repasses, Conta Corrente) — paginacao e correcoes funcionais/seguras.
+  - Paginacao server-side (range+count) em Conferencia e Contas a Pagar
+    (escalabilidade) — recomendada para micro-missao propria.
+  - Erros TS preexistentes no financeiro.
+
+QUANTIDADE ATUALIZADA DE MICRO-MISSOES RESTANTES (estimativa ate o gate):
+  - FIN-UX-02C+ : paginacao das demais telas financeiras sem paginacao
+                  (Pagamento de Prestadores, Tesouraria/Lotes) e demais polimentos
+                  UX do financeiro (nativos, tipografia, modais).  ~3 a 5 missoes.
+  - FIN-SEC-03  : RPCs oficiais das acoes hoje desabilitadas (reprovacao/
+                  cancelamento/fechamento/pagamento manual/repasse) + reabilitacao
+                  segura da UI.                                      ~1 a 2 missoes.
+  - FIN-DATA    : saneamento planejado (faturas sem AR, pp pago sem baixa, orfaos). ~1 missao.
+  - FECHAMENTO TMS (micro-missoes restantes estimadas) ............. ~5 a 8.
+  - APP + E2E COMPLETO ............................................ fase 2.
+  - MASTER 360 / GATE DE PRODUCAO ............................... fase 1.
+  Total macro restante ate HOMOLOGADO: 2 blocos grandes (APP+E2E; MASTER360/GATE),
+  alem do bloco atual (FECHAMENTO TMS).
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-UX-02B-PAGINACAO-CONTAS-A-PAGAR
+================================================================================

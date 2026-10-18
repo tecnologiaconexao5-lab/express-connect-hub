@@ -1,0 +1,152 @@
+================================================================================
+MISSAO: TMS-COM-ORC-02-PERSISTENCIA-TOTAL-DATA-PDF-FIX
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: CORRECAO CIRURGICA DOS BUGS COMPROVADOS EM COM-ORC-01.
+================================================================================
+
+RESULTADO: PASS.
+  - valorBase=2200 => valorFinal=2200 persistido (JSONB + colunas dedicadas).
+  - Save do formulário sem state stale (cálculo síncrono).
+  - Reload DB->domínio (data/CNPJ/valores corretos na listagem/PDF).
+  - PDF sem "undefined"; valorFinal correto; filename .pdf com fallback.
+  - Data de emissão de NOVO orçamento = hoje (sem data futura por default).
+  - 15 testes novos PASS; regressao 89/89; build OK. ORC-202609-8659 INTACTO.
+
+================================================================================
+1. BEFORE x AFTER
+================================================================================
+BEFORE (bugs COM-ORC-01)
+  - OrcamentoForm.handleSalvar: recalcular() (setData assincrono) seguido de
+    onSalvar(data) STALE -> valores.valorFinal=0 era salvo.
+  - handleSalvarRascunho: nem chamava recalcular.
+  - Mapper toOrcamentoInsert: nao espelhava valores.* nas colunas valor_base/valor_final
+    (colunas ficavam NULL; lidas de campos de topo inexistentes).
+  - Listagem: fetchOrcamentos guardava a linha CRUA (snake_case); UI lia orc.dataEmissao
+    (undefined) e orc.clienteCnpj (undefined) -> data "—" e CNPJ vazio.
+  - PDF: usava e.sequencia/e.contato (inexistentes) -> "undefined"; data ausente virava
+    data futura ficticia (+7 dias).
+AFTER
+  - Calculo canonico unico (orcamentoCalculo.ts) usado no form (save sincrono), mapper e reload.
+  - Payload do save JA contem valores.valorFinal calculado (sem race).
+  - Mapper espelha valores.valorBase/valorFinal em valor_base/valor_final.
+  - Reload via toOrcamentoDomain (contrato unico DB->dominio): dataEmissao/clienteCnpj/valores.
+  - PDF: campos reais (indice p/ "#", responsavel/telefone p/ contato), data "—" quando ausente,
+    filename `${numero||"ORC"}_Orcamento_Comercial.pdf`.
+
+================================================================================
+2. ARQUIVOS/FUNCOES ALTERADOS
+================================================================================
+- src/components/comercial/orcamentoCalculo.ts (NOVO) — funcao canonica:
+    calcularValorFinal, calcularValores, calcularValoresDoOrcamento, montarPayloadOrcamento.
+- src/components/comercial/OrcamentoForm.tsx
+    * import do calculo canonico.
+    * recalcular() -> usa calcularValoresDoOrcamento (fonte unica).
+    * handleSalvar / handleSalvarRascunho -> montam payload SINCRONO (montarPayloadOrcamento) e enviam.
+    * Input "Data de Emissão": max = hoje (impede data futura na UI).
+    * Corrigido mojibake reproduzido: generateProfessionalPDF(data, "ORÃ‡AMENTO") -> "ORÇAMENTO".
+- src/lib/dbMappers.ts
+    * toOrcamentoInsert: espelha valores.valorBase/valorFinal em valor_base/valor_final (sem 2a regra).
+    * toOrcamentoDomain (NOVO): DB->dominio (data_emissao->dataEmissao, cliente_cnpj->clienteCnpj,
+      valor_base/valores->valorBase, valor_final/valores->valorFinal, os_vinculada_*).
+- src/components/comercial/OrcamentosLista.tsx
+    * fetchOrcamentos: `(data||[]).map(toOrcamentoDomain)` (contrato unico de reload).
+- src/components/comercial/orcamentoPdf.ts
+    * fmtDate: ausente/invalida -> "—" (nao gera data futura).
+    * "Detalhamento de Pontos": usa indice/valores reais (sequencia ?? idx+1; responsavel/telefone).
+    * Status com fallback (STATUS_CONFIG[...]?.label || orc.status).
+    * filename com fallback de numero.
+- src/test/com_orc_02_persistencia.test.ts (NOVO — 15 testes).
+
+================================================================================
+3. FUNCAO CANONICA DE CALCULO
+================================================================================
+calcularValorFinal(v) =
+  valorBase + adicionais + pedagio + kmExcedente + ajudante + adValorem + gris + devolucao
+  + reentrega - descontos
+calcularValores(v) = { ...v, valorFinal, lucroEstimado=valorFinal-custoEstimado,
+                       margemEstimada = valorFinal>0 ? round(lucro/valorFinal*1000)/10 : 0 }
+calcularValoresDoOrcamento({valores,carga,cliente}) aplica a MESMA regra de adValorem (0,3%) e
+gris (0,15%) ja existente (com a exclusao Amazon/Industrias ABC) e recalcula o total.
+=> Exatamente os componentes ja existentes no contrato. Nenhuma tarifa/regra nova.
+
+================================================================================
+4. MAPA UI -> PAYLOAD -> DB -> RELOAD -> PDF
+================================================================================
+ETAPA     | CAMPO
+----------+------------------------------------------------------------------
+UI        | "Valor Base (R$)" -> data.valores.valorBase  (OrcamentoForm:965)
+CALCULO   | calcularValoresDoOrcamento -> valores.valorFinal (sincrono)
+PAYLOAD   | montarPayloadOrcamento(data) -> { ...data, valores {valorBase,valorFinal,...} }
+SERVICE   | OrcamentosLista.handleSalvar -> saveToSupabase -> toOrcamentoInsert (dbMappers)
+DB        | valores(jsonb){valorBase,valorFinal} + valor_base + valor_final (espelhados)
+RELOAD    | toOrcamentoDomain: data_emissao->dataEmissao; cliente_cnpj->clienteCnpj; valores->valorBase/valorFinal
+LISTAGEM  | orc.dataEmissao (data) ; orc.clienteCnpj ; fmt(orc.valores.valorFinal)
+PDF       | "Valor Transporte"=orc.valores.valorBase ; "VALOR FINAL"/"TOTAL GERAL"=orc.valores.valorFinal ;
+          | data=orc.dataEmissao ; CNPJ=orc.clienteCnpj ; Pontos=indice+responsavel/telefone ; filename .pdf
+
+================================================================================
+5. TESTES E RESULTADOS
+================================================================================
+src/test/com_orc_02_persistencia.test.ts -> 15/15 PASS
+  CASO 1  valorBase 2200, demais 0 => valorFinal 2200 ........ PASS
+  CASO 2  +adicionais 100 +pedagio 50 -desconto 20 => 2330 ... PASS
+  CASO 3  salvar imediatamente -> payload valorFinal 2200 .... PASS
+  CASO 4  salvar rascunho -> valorFinal 2200 ................ PASS
+  CASO 5  mapper grava valores.* E valor_base/valor_final .... PASS
+  CASO 6  reload snake->dominio (data/cnpj/valor) ........... PASS
+  CASO 7  listagem usa toOrcamentoDomain + campos corretos ... PASS
+  CASO 8  PDF sem undefined (sem e.sequencia/contato) ....... PASS
+  CASO 9  PDF usa valorFinal ................................ PASS
+  CASO 10 filename termina .pdf e usa numero ORC (fallback) . PASS
+  CASO 11 data de emissao default = hoje (max=hoje) ......... PASS
+  + adValorem/gris preservados; + encoding "ORÃ‡AMENTO" removido.
+REGRESSAO (7 arquivos): 89/89 PASS (com_orc_02 + fat_pdf_cnpj_01 + sidebarData +
+  fin_conf_ux_ord_01 + fin_fat_urg_07 + fin_fat_urg_05b + fin_ar_ux_01).
+BUILD: npm run build -> OK ("built in 44.54s").
+TYPECHECK: nenhum erro NOVO nos arquivos alterados (permanecem os erros PRE-EXISTENTES
+  do modulo Comercial/ClienteRow, ex.: CargaOrcamento/EnderecoOrcamento/ClienteRow).
+
+================================================================================
+6. PROVA CONTROLADA (PROD, BEGIN/ROLLBACK)
+================================================================================
+- Insert de orcamento com valorBase=2200 -> gravou valor_base=2200, valor_final=2200,
+  valores.valorFinal=2200, data_emissao=hoje. Reload dominio => dataEmissao=hoje, valorFinal=2200. ok=true.
+- ZERO LIXO: contagem de orcamentos 9 antes == 9 depois (ROLLBACK).
+- ORC-202609-8659 INTACTO (antes == depois): valor_base NULL, valor_final NULL,
+  valores.valorBase=2200, valores.valorFinal=0, data_emissao=2026-10-30. NAO alterado.
+
+================================================================================
+7. ORC-202609-8659 — prova de nao alteracao
+================================================================================
+Leitura read-only confirma os mesmos valores antes/depois da missao (nenhum UPDATE).
+O registro legado com data futura (2026-10-30) foi apenas EXIBIDO/registrado; NAO foi
+reescrito automaticamente (conforme instruido). Saneamento historico fica para missao propria.
+
+================================================================================
+8. RISCOS RESIDUAIS
+================================================================================
+R1. Registros LEGADOS continuam com valores.valorFinal=0 e data futura no banco (nao saneados);
+    as NOVAS gravacoes passam a ser coerentes. Saneamento legado = missao futura.
+R2. As colunas dedicadas valor_base/valor_final passam a ser preenchidas para NOVOS registros;
+    registros antigos permanecem NULL ate saneamento (a leitura usa valores.* como fallback).
+R3. Encoding: corrigido o caso reproduzido no orçamento (OrcamentoForm "ORÃ‡AMENTO"->"ORÇAMENTO").
+    Ha mojibake SISTEMICO em outros arquivos do Comercial/CRM (ex.: AgendaComercial.tsx,
+    CrmAtividades.tsx, CrmBase.tsx) — fora do escopo; recomenda-se missao dedicada de encoding.
+R4. Erros TypeScript pre-existentes do Comercial/ClienteRow permanecem (divida; nao bloqueiam build).
+R5. PDF gerado via jspdf sem autoTable para pontos? Mantido o comportamento atual; apenas
+    os campos foram corrigidos (sem redesenho).
+
+================================================================================
+9. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-COM-ORC-02-PERSISTENCIA-TOTAL-DATA-PDF-FIX-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-COM-ORC-02-PERSISTENCIA-TOTAL-DATA-PDF-FIX-RESULTADO.txt
+ TAMANHO ..: 10007 bytes
+ DATA/HORA : 25/09/2026 21:48:17
+
+================================================================================
+FIM — TMS-COM-ORC-02-PERSISTENCIA-TOTAL-DATA-PDF-FIX
+================================================================================

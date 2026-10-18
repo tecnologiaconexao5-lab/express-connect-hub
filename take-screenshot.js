@@ -10,7 +10,7 @@ import path from 'path';
 
   // Navigate to page
   console.log('Navigating to localhost:8800...');
-  await page.goto('http://localhost:8800/operacao?tab=escala', { waitUntil: 'networkidle0', timeout: 30000 });
+  await page.goto('http://localhost:8800/operacao?tab=escala', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
   console.log('Clicking the Controle Diário tab...');
   // Click on the tab that has value="tabelas" (or contains text "Controle Diário")

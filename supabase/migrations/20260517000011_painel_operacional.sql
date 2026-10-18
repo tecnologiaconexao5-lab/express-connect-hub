@@ -30,3 +30,5 @@ DROP TRIGGER IF EXISTS trg_operacao_localizacao_update ON public.operacao_locali
 CREATE TRIGGER trg_operacao_localizacao_update
 BEFORE INSERT OR UPDATE ON public.operacao_localizacao
 FOR EACH ROW EXECUTE FUNCTION public.update_operacao_localizacao_timestamp();
+
+

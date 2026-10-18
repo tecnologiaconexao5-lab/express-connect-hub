@@ -1,0 +1,14 @@
+import pg from "pg";
+import fs from "node:fs";
+pg.types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
+pg.types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
+const cs = fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const p = new pg.Pool({ connectionString: cs, ssl: { rejectUnauthorized: false } });
+const q = async (s) => (await p.query(s)).rows;
+console.log("41/42:", JSON.stringify(await q(`select id, numero, status, conta_receber_id, valor_total from faturas where metadata->>'numeroManual' in ('41','42') order by metadata->>'numeroManual'`)));
+console.log("emitidas sem AR:", (await q(`select count(*)::int n from faturas where status='emitida' and conta_receber_id is null`))[0].n);
+console.log("faturas total:", (await q(`select count(*)::int n from faturas`))[0].n);
+console.log("rascunhos:", (await q(`select count(*)::int n from faturas where status='rascunho'`))[0].n);
+console.log("contadores:", (await q(`select count(*)::int n from fatura_contadores_cliente`))[0].n);
+console.log("AR com fatura_id (1 = original):", (await q(`select count(*)::int n from financeiro_receber where fatura_id is not null`))[0].n);
+await p.end();

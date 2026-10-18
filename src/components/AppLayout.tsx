@@ -1,13 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Outlet, Navigate, useLocation } from "react-router-dom";
-import { getUser } from "@/lib/auth";
+import { Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import AppSidebar from "./AppSidebar";
 import AppTopbar from "./AppTopbar";
 
 const AppLayout = () => {
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const user = getUser();
   const location = useLocation();
 
   const handleMouseEnter = useCallback(() => {
@@ -31,7 +31,7 @@ const AppLayout = () => {
     };
   }, []);
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return null; // ProtectedRoute ja redireciona
 
   if (location.pathname === "/portal-cliente" || location.pathname === "/app-prestador") {
     return <Outlet />;

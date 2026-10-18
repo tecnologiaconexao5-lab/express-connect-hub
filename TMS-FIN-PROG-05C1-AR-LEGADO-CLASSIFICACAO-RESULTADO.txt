@@ -1,0 +1,291 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05C.1-AR-LEGADO-CLASSIFICACAO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO — READ-ONLY
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-05B-AR-SINGLE-SOURCE-RESULTADO.txt
+TIPO: AUDITORIA SOMENTE. Nenhuma escrita (apenas SELECT).
+================================================================================
+
+RESULTADO: CLASSIFICACAO COMPROVADA (com F para ambiguidade, sem adivinhar).
+
+--------------------------------------------------------------------------------
+1. SNAPSHOT INICIAL (e final identico)
+--------------------------------------------------------------------------------
+receber_total 122 | por_os 98 | por_fatura 6 | pagar 178 | prestadores 137 |
+baixas 19 | faturas 41.
+(Snapshot FINAL ao termino identico — secao 12.)
+
+--------------------------------------------------------------------------------
+2. CLASSIFICACAO QUANTITATIVA (98 AR por os_id)
+--------------------------------------------------------------------------------
+| Classe | Descricao                                   | Qtd | Soma (R$)   |
+|--------|---------------------------------------------|-----|-------------|
+| A      | Real ainda nao faturada oficialmente         | 16  | 8.580,00    |
+| B      | Real ja faturada com AR oficial (duplicidade)| 0   | 0           |
+| C      | Pago/recebido/baixado (preservar historico)  | 0   | 0           |
+| D      | Teste/HML                                    | 77  | 153.179,00  |
+| E      | Cancelado/invalido                           | 1   | 600,00      |
+| F      | Evidencia insuficiente -> decisao humana     | 4   | 4.500,00    |
+| Total  |                                              | 98  | 166.859,00  |
+Precedencia aplicada: E (cancelado) > D (teste) > C (pago) > F (sem cliente)
+  > B (duplicidade) > A (real nao faturada).
+Observacao: ha 2 AR com status pago/baixa que sao de TESTE (cf6eea7b Empresa
+Demo e fb30838a Empresa Teste) e por isso contam em D (preservar historico).
+Nao existe classe C "real paga": nenhum AR real por os_id esta pago.
+
+--------------------------------------------------------------------------------
+3. TABELA COMPLETA DOS 98 (id | os_id | cliente | valor | venc | status | baixa | fatura | classe | acao | risco)
+--------------------------------------------------------------------------------
+9f2f970f | dce846ff | (sem cliente) | 1000 | 2026-07-26 | aberto | - | - | F | DECISAO HUMANA | Medio (sem cliente)
+4c8845f8 | bb2cda88 | (sem cliente) | 1000 | 2026-07-26 | aberto | - | - | F | DECISAO HUMANA | Medio (sem cliente)
+18fd8d1a | c6a4e65a | (sem cliente) | 1000 | 2026-07-26 | aberto | - | - | F | DECISAO HUMANA | Medio (sem cliente)
+bb828a6b | 0b9852dc | M43_2026-06-29_18-29-55 Client | 1500 | 2026-07-29 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+cf6eea7b | 65c6a0e7 | Empresa Demo Ltda [DEV DEMO] | 1500 | 2026-06-29 | pago | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b0fc497a | d5a9e740 | M43_2026-06-29_18-31-49 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+29e0b127 | e993dc34 | M43_2026-06-29_18-45-22 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+3665c595 | 6ccde4ef | M43_2026-06-29_19-14-18 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+95b25c22 | 4b698baa | M43_2026-06-29_20-20-39 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ac68bec4 | e9a41a1b | M43_2026-06-29_21-28-01 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ad02ce1a | 1f0f56d8 | M48_2026-06-29_21-31-34 ABC Tr | 3200 | 2026-07-29 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+2f910daf | 63129749 | M48_2026-06-29_21-31-34 ABC Tr | 1800 | 2026-07-29 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+e1b8f9a8 | ad7138ad | M48_2026-06-29_21-31-34 ABC Tr | 2500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+3bd62acd | 67837438 | M48_2026-06-29_21-31-34 Delive | 80 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+e0c5355c | 7ece6848 | M48_2026-06-29_21-47-50 ABC Tr | 3200 | 2026-07-29 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+2bd14450 | 8aca4262 | M48_2026-06-29_21-47-50 ABC Tr | 1800 | 2026-07-29 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+4ddcf297 | bff76814 | M43_2026-06-29_21-47-50 Client | 1500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ecae95e6 | fdd3e5ce | M48_2026-06-29_21-47-50 ABC Tr | 2500 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+22c7b93a | 93014234 | M48_2026-06-29_21-47-50 Delive | 80 | 2026-06-29 | a vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+fb30838a | 9b75d097 | Empresa Teste | 1500 | 2026-07-16 | pago | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+f75f6e71 | 9f5a5630 | Empresa Teste | 1800 | 2026-08-15 | a_vencer | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+dc56791e | c5b79fbd | Empresa Teste | 2100 | 2026-09-14 | vencido | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+550b36cb | 127b1b3f | Cliente Teste App Motorista | 80 | 2026-08-21 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+02b5bf02 | 89b922bc | Cliente Teste App Motorista | 80 | 2026-08-21 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+6b935367 | 9521575c | Cliente Teste App Motorista | 80 | 2026-08-21 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+4a305e2f | 7c8a6289 | Cliente Teste App Motorista | 80 | 2026-08-21 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+57b454fc | 88f80b32 | Cliente Teste App Motorista | 150 | 2026-08-21 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+2e4d546c | 9f9130ba | (sem cliente) | 1500 | 2026-08-03 | aberto | - | - | F | DECISAO HUMANA | Medio (sem cliente)
+8fa86342 | 3db46421 | (sem cliente) | 999 | - | - | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+3c019285 | 0733bb97 | M43_2026-06-29_18-27-54 Client | 2000 | 2026-08-04 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+9470b2ae | b6dd5ce8 | M43_2026-06-29_18-27-54 Client | 2000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+200ecb02 | 71e61468 | M43_2026-06-29_18-27-54 Client | 3000 | 2026-08-27 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+15d1b0d0 | 3a15f5d1 | M43_2026-06-29_18-27-54 Client | 3000 | 2026-08-04 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+7d51d307 | 1c7db493 | M43_2026-06-29_18-27-54 Client | 5000 | 2026-08-04 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b708aee7 | 8b06402c | (sem cliente) | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+89dc89e7 | edf1fff7 | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b2b51282 | 4996bf7b | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+89600201 | aa5c8fde | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+5a1ecd9e | b8fedeb1 | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ff54e4e2 | e8ffd31f | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+fda53bb5 | 4767a7f1 | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+06211e9b | e936e03b | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+218a9e47 | fb33a1bd | M43_2026-06-29_18-27-54 Client | 650 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+1ae4d758 | bf4f8750 | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+697e61df | b940fa0d | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+90abcc23 | ee788641 | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+f86b1328 | cc2a9d21 | M43_2026-06-29_18-27-54 Client | 8000 | 2026-08-04 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+59278800 | 45857f5f |  Cydak do Brasil LTDA | 500 | 2026-08-06 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+4b983f52 | 9c67c758 | (sem cliente) | 1500 | 2026-08-09 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+cb5f6a6a | e1869e96 | (sem cliente) | 1500 | 2026-08-09 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+e72afe9e | 215eaf04 | (sem cliente) | 1500 | 2026-08-09 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+adab036f | dda7be25 | (sem cliente) | 1500 | 2026-08-09 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+76dc2c4f | 19eedf62 | (sem cliente) | 1500 | 2026-08-09 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+210ff86b | 2073a75d | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-09 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+9bcd5a33 | 38961ecf | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-09 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+f66f8273 | b38da43d | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+2a35cf05 | 7320c76d | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+6104648d | e668bf55 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b427ee36 | 6dae9368 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ada1b009 | ea96785e | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+07717add | 16ddcba1 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+36a638b2 | b9907bc8 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+df804677 | cfdd3d7f | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-10 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+e1e05ee4 | 5c9a87aa | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-11 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+d9c81573 | eaa0e5fd | M43_2026-06-29_18-27-54 Client | 1000 | 2026-08-11 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+75e0e5f0 | c0a7ee88 | M43_2026-06-29_18-27-54 Client | 2000 | 2026-10-22 | aberto | - | db157316,1f5c342d,cd0a4a67,db7d5d3a,09060a3f,b1ba12cb,42bed78d,FAT-2026-000001(AR),9e64ba81,2d95724d,e687356a,93731a9a,ca8f1937,b44e0f97,4af4d3d6,7ccecd07,3a1a0e63,e3edbb1a,1dab7122,b91070dc,80b69493,7c6fe3f2,ccd775ba | D | MARCAR TESTE (preservar) | Baixo (teste)
+9f3a6a6c | 3a6423b9 | Empresa Teste | 2500 | 2026-08-13 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+d4c9e73c | f4869b05 | Empresa Teste | 2500 | 2026-08-13 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+16609f03 | 3e3aba1e | Empresa Teste | 2500 | 2026-08-13 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+c3998227 | 405fe001 | Empresa Teste | 2500 | 2026-08-21 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+c7390f62 | ed09a11d | DVL - DISTRIBUIDORA | 1500 | 2026-08-21 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+f08536e7 | d5a8774a | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+7e283ebd | 1ddbfe6c | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+1dcc9b2a | 5bded789 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b4b4f199 | 004a11d6 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+e2571717 | f97eac6c | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b9f73a07 | ee8847f9 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+ce77c326 | b9dc3124 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+32d901db | d6114430 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-08-22 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+2ec7e1f2 | 1e1b59fa | (sem cliente) | 100 | 2026-08-28 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+078f0821 | 2c24a4dc | CLIENTE HML 136A | 500 | 2026-10-22 | pendente | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+bb5c0efe | 58e5751e | Calvo Comercio e Importacao | 600 | 2026-10-22 | aberto | - | e5318b9d | A | PRESERVAR (aguardar faturamento/reconciliacao) | Baixo
+045258fb | 5dbbec89 | CALVO | 600 | 2026-09-30 | cancelada | - | - | E | CANCELAR LOGICAMENTE (ja cancelada; preservar) | Baixo
+c5941bca | a39a2b95 | M43_2026-06-29_18-27-54 Client | 1500 | 2026-10-10 | aberto | - | - | D | MARCAR TESTE (preservar) | Baixo (teste)
+b7370c38 | 7ea4c873 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+3eef94a3 | 899692a7 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+3b6550b9 | b60142b4 | DVL - DISTRIBUIDORA | 680 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+c1e82c45 | a9f7f8ba | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+4a66efd9 | 57624cae | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+6846ec91 | 982a7def | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+14c0f5ae | aceef5f8 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+6c3b66f4 | 9a00da38 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+bb88c106 | f1a52e77 | DVL - DISTRIBUIDORA | 600 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+6c1aa442 | 25f69fa8 | DVL - DISTRIBUIDORA | 600 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+3163210c | b90348b8 | DVL - DISTRIBUIDORA | 600 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+59fe805f | d19763f1 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+76d9bf8a | dd977f3a | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+8abbb759 | 858c0cb2 | DVL - DISTRIBUIDORA | 400 | 2026-10-22 | pendente | - | - | A | DECISAO HUMANA (confirmar cliente DVL) / PRESERVAR | Medio (cliente a confirmar)
+
+--------------------------------------------------------------------------------
+4. ANALISE FAT-2026-000001 (caso especial)
+--------------------------------------------------------------------------------
+Fatura FAT-2026-000001 (id f517b9bd-5cd6-4ac8-a316-d1bee0e304bb) cliente 04280785-4004-42c3-a406-886dd0730a8d (M43_...),
+status emitida, valor_bruto 2000, valor_total 2120, conta_receber_id 346687cf.
+Item ce0b2c98: os_id NULL, alocacao_id c0a7ee88, valor_base 2000,
+  valor_adicionais 120, pedagio_cliente 120, valor_total 2120.
+AR por FATURA 346687cf: R$ 2.120,00, status aberto, venc 25/09, SEM baixa.
+AR por OS     75e0e5f0: R$ 2.000,00, status aberto, venc 22/10, os_id c0a7ee88,
+  descricao "Faturamento ALOC-20260712-C0A7EE88", SEM baixa.
+Alocacao c0a7ee88 (finalizada): valor_frete 2000, valor_adicional 120,
+  valor_pedagio 60. Composicao: valor_cliente 2000, outros_custos 120.
+DIFERENCA de R$ 120 = o ADICIONAL (120), que o M66 NAO soma no AR por os
+  (M66 usa valor_frete; a fatura inclui valor_adicional).
+QUAL CORRESPONDE AO VALOR EFETIVAMENTE FATURADO: o AR por FATURA (R$ 2.120),
+  pois e o valor_total da fatura oficial (base 2000 + adicionais 120).
+VINCULO: item da fatura aponta alocacao_id = c0a7ee88; AR por os tem os_id = c0a7ee88.
+PAGAMENTO/BAIXA: nenhum dos dois.
+STATUS: ambos 'aberto'.
+CONCLUSÃO: duplicidade economica CONFIRMADA de R$ 2.000,00 (o mesmo servico tem
+  2 titulos: 2.000 por os + 2.120 por fatura). Tratamento proposto (NAO executar):
+  PRESERVAR ambos; VINCULAR/RECONCILIAR: manter o AR por fatura (2.120) como
+  oficial e CANCELAR LOGICAMENTE o AR por os (75e0e5f0 2.000) com observacao de
+  referencia a FAT-2026-000001; se confirmado teste (cliente M43), MARCAR TESTE.
+  Nenhuma exclusao.
+
+--------------------------------------------------------------------------------
+5. ANALISE DOS RASCUNHOS (recalculado do zero)
+--------------------------------------------------------------------------------
+Total de faturas em rascunho: 26.
+Com risco de duplicar ao emitir (item com alocacao_id/os_id que JA tem AR por os):
+  23  -> sendo:
+    - risco REAL (cliente nao-teste): 1  [Calvo Comercio e Importacao 1266.43]
+    - risco TESTE (cliente M43): 22
+Sem AR legado correspondente (sem risco no momento): 3
+Inconclusivo: 0.
+Confirmacao: o numero "23" da auditoria anterior se confirma EXATAMENTE
+(23 rascunhos). Desses, apenas 1 e cliente real
+(Calvo) e 22 sao do cliente de teste M43 (mesma alocacao c0a7ee88).
+
+--------------------------------------------------------------------------------
+6. AUDITORIA ANTI-DUPLICIDADE
+--------------------------------------------------------------------------------
+Funcao trg_fatura_itens_anti_duplicidade (f_trg_fatura_itens_anti_duplicidade):
+  - Linha 1: "IF NEW.os_id IS NULL THEN RETURN NEW;" -> itens sem os_id NAO sao
+    verificados. TODOS os 44 fatura_itens tem os_id NULL (25 usam alocacao_id).
+  - A checagem usa fi.os_id = NEW.os_id (coluna os_id), ignorando alocacao_id.
+  => POR ISSO os itens com os_id NULL + alocacao_id preenchido ESCAPAM.
+Correcao minima proposta (PROG-05C.2, NAO implementar):
+  - Reconhecer a operacao por alocacao_id quando os_id for NULL:
+      chave = COALESCE(NEW.os_id::text, NEW.alocacao_id::text)
+      procurar em fatura_itens com COALESCE(fi.os_id::text, fi.alocacao_id::text) = chave
+      e fatura nao cancelada e fi.fatura_id <> NEW.fatura_id -> RAISE.
+  - Manter a permissao de varios itens legitimos (chaves diferentes) na mesma fatura.
+  - Nao quebrar historico: aplicar a checagem apenas em INSERT/UPDATE novos;
+    registros existentes nao sao revalidados por trigger.
+  - Nao usar DELETE. Sem novo trigger concorrente (ajustar a funcao existente).
+
+--------------------------------------------------------------------------------
+7. IMPACTO ATUAL (AR / DRE / Fluxo de Caixa)
+--------------------------------------------------------------------------------
+financeiro_receber total ................ 122 linhas | R$ 188.884,75
+  - AR oficial por fatura ............... 6  | R$ 12.674,02
+  - AR legado por os_id ................. 98 | R$ 166.859,00
+      A (real nao faturada) ............. 16 | R$ 8.580,00
+      D (teste/HML) ..................... 77 | R$ 153.179,00
+      E (cancelada) ..................... 1  | R$ 600,00
+      F (sem cliente) ................... 4  | R$ 4.500,00
+  - AR sem os_id nem fatura_id .......... 18 | R$ 9.351,73
+  - Pagos/baixados (status) ............. 11 | R$ 13.425,10
+  - Baixas nao estornadas ............... 7  | R$ 3.624,60
+
+Dupla contagem COMPROVADA: FAT-2026-000001 = R$ 2.000,00 (AR os 75e0e5f0 que
+  replica o AR fatura 346687cf de R$ 2.120). Afeta:
+  - Contas a Receber: lista os 2 titulos -> +R$ 2.000 indevido (teste M43).
+  - DRE (competencia): soma TEXT que financeiro_receber receber -> os 2 titulos
+    entram -> +R$ 2.000 indevido (teste).
+  - Fluxo de Caixa: usa financeiro_baixas; como NENHUM dos 2 foi baixado, NAO ha
+    impacto realizado hoje; so haveria se ambos fossem baixados.
+Risco FUTURO (nao computado): 1 rascunho real (Calvo) que, se
+  emitido, criaria um 2o AR para operacao que ja tem AR por os (legado).
+Observacao: DRE/Contas a Receber tambem incluem os 77 titulos de TESTE (is_teste
+  em parte false), inflando visoes se nao houver filtro de teste.
+
+--------------------------------------------------------------------------------
+8. PLANO INDIVIDUAL DE SANEAMENTO (acoes permitidas; NAO executar)
+--------------------------------------------------------------------------------
+Acoes por classe (a tabela da secao 3 traz linha a linha):
+  - A (16) .................. PRESERVAR (real ainda nao faturada). DVL: DECISAO
+                              HUMANA (confirmar se cliente real) + PRESERVAR.
+  - B (0) ................... (nenhum)
+  - C (0) ................... (nenhum real pago; 2 pagos sao teste -> D)
+  - D (77) .................. MARCAR TESTE (preservar; nao cancelar agora)
+  - E (1) ................... CANCELAR LOGICAMENTE (ja cancelada; preservar)
+  - F (4) ................... DECISAO HUMANA (sem cliente vinculado)
+Regra: DELETE nunca e solucao padrao. AR pago/baixado: preservacao obrigatoria.
+
+--------------------------------------------------------------------------------
+9. CASOS AUTOMATIZAVEIS COM SEGURANCA (proposta)
+--------------------------------------------------------------------------------
+  - E (1, ja cancelada): nenhuma acao adicional ou apenas registrar observacao.
+  - D (77): marcar metadata.is_teste/teste=true (se aprovado) para excluir de
+    visoes; operacao reversivel e nao destrutiva.
+  - Fatura FAT-2026-000001: CANCELAR LOGICAMENTE o AR os 75e0e5f0 (2.000) com
+    referencia textual a fatura, apos confirmacao de que o AR fatura e o oficial
+    (evidencia: valor_total da fatura = 2.120).
+  - Ajuste do anti-duplicidade (05C.2): impede novas duplicidades por alocacao_id.
+Automatizavel com seguranca SOMENTE o que nao depende de julgamento de negocio.
+
+--------------------------------------------------------------------------------
+10. CASOS QUE EXIGEM DECISAO HUMANA
+--------------------------------------------------------------------------------
+  - F (4): AR sem cliente vinculado (ALOC-* finalizada / OS-202606) — vincular
+    cliente e decidir faturar ou cancelar logicamente.
+  - A/DVL (15): confirmar se "DVL - DISTRIBUIDORA" e cliente real (faturar) ou
+    fixture de teste (marcar teste).
+  - D test pago (cf6eea7b, fb30838a): confirmar se o pagamento e real ou de teste.
+  - Rascunho real (Calvo 1): decidir faturar (gerando AR oficial)
+    sem duplicar o AR por os legado.
+
+--------------------------------------------------------------------------------
+11. DESENHO EXATO PROG-05C.2 (proposta; NAO implementar)
+--------------------------------------------------------------------------------
+Etapa 1 (anti-duplicidade): ALTERAR f_trg_fatura_itens_anti_duplicidade para usar
+  chave COALESCE(os_id, alocacao_id). Impacto: bloqueia itens repetidos por
+  alocacao; nao afeta registros existentes (trigger so em novos writes).
+Etapa 2 (classificacao/flag): marcar os AR de teste (D) com is_teste/teste por
+  atualizacao controlada (lista fixa de IDs), preservando valores/baixas.
+Etapa 3 (FAT-2026-000001): CANCELAR LOGICAMENTE o AR os 75e0e5f0 com observacao
+  "substituido pelo AR oficial da fatura FAT-2026-000001"; manter AR fatura.
+Etapa 4 (A/F): PRESERVAR; abrir itens de decisao para cliente/faturamento.
+Etapa 5 (validacao): DRE/Contas a Receber/Fluxo sem dupla contagem; snapshot +
+  rollback conforme PROG-04C.2.
+Fora de escopo: AP/gate de Conferencia; M66/M80; PROG-04B/04C; APP.
+
+--------------------------------------------------------------------------------
+12. SNAPSHOT FINAL (ZERO ESCRITA)
+--------------------------------------------------------------------------------
+receber_total 122 | por_os 98 | por_fatura 6 | pagar 178 | prestadores 137 |
+baixas 19 | faturas 41 — IDENTICO ao inicial (INALTERADO=true).
+Nenhum UPDATE/INSERT/DELETE; nenhuma migration; nenhum AR/fatura alterado.
+
+--------------------------------------------------------------------------------
+BASELINE PROG-05B CONFIRMADO
+--------------------------------------------------------------------------------
+M66 e M80 nao criam AR (removido em 05B); f_emitir_fatura permanece fonte normal;
+98 AR por os_id intactos; 38/39/40./41/42 intactas (FAT-2026-000010..14 / NC1..5);
+nenhum dado mudou durante esta auditoria.
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05C.1-AR-LEGADO-CLASSIFICACAO
+================================================================================

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import {
   Plus, Search, Filter, X, Check, AlertCircle,
   FileText, ArrowUpRight, RefreshCw, MoreHorizontal, Download, Eye,
@@ -25,8 +26,11 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PaginationBar from "@/components/ui/PaginationBar";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { criarPagavel, atualizarPagavel, baixarPagavel, cancelarPagavel, criarParcelasPagavel } from "@/services/financeiro/pagarService";
+import { calcularStatusEfetivo, statusEfetivoLabel, statusEfetivoClasses, hojeSP, type StatusEfetivo } from "@/helpers/statusVencimento";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,6 +59,7 @@ interface LancamentoPagar {
   favorecidoNome: string;
   favorecidoCnpjCpf: string;
   isLegadoPrestador?: boolean;
+  fornecedorCadastroId?: string;   // FIN-FORN-03: FK para fornecedores
   documentoNF: string;
   tipoDocumento: string; // NF, Fatura, Recibo, Boleto, Guia
   // Classificação
@@ -81,7 +86,9 @@ interface LancamentoPagar {
   chavePix: string;
   contaPagadora: string;
   dataEfetivaPgto?: string;
+  dataPagamento?: string;
   status: "a_vencer" | "vencida" | "paga" | "parcial" | "provisao" | "cancelada";
+  statusEfetivo: StatusEfetivo;
   recorrencia: string;
   observacoes: string;
   parcelas: ParcelaPagar[];
@@ -96,11 +103,16 @@ interface FiltrosAvancados {
   vencimentoInicio: string;
   vencimentoFim: string;
   contaPagadora: string;
+  fornecedor: string;
+  ordenacao: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// FIN-UX-02B — tamanho de página profissional, consistente com o financeiro (25).
+const PAGE_SIZE_PAGAR = 25;
 const fmtData = (s: string) => {
   if (!s) return "—";
   try { return new Date(s + "T12:00:00").toLocaleDateString("pt-BR"); } catch { return s; }
@@ -132,12 +144,25 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: React.El
   cancelada:{ label: "Cancelado",cls: "bg-gray-100 text-gray-500 border-gray-200", icon: X },
 };
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG["a_vencer"];
-  const Icon = cfg.icon;
+const StatusBadge = ({ status, statusEfetivo }: { status: string; statusEfetivo?: StatusEfetivo }) => {
+  const se = statusEfetivo || "desconhecido";
+  const label = statusEfetivoLabel(se);
+  const cls = statusEfetivoClasses(se);
+  const iconMap: Record<string, React.ElementType> = {
+    atrasado: AlertTriangle,
+    vence_hoje: Clock,
+    a_vencer: Clock,
+    pago: CheckCircle2,
+    parcial: TrendingDown,
+    provisao: FileText,
+    cancelado: X,
+    renegociado: TrendingDown,
+    desconhecido: FileText,
+  };
+  const Icon = iconMap[se] || FileText;
   return (
-    <Badge variant="outline" className={`text-[11px] font-semibold px-2 py-0.5 gap-1 ${cfg.cls}`}>
-      <Icon className="w-3 h-3" /> {cfg.label}
+    <Badge variant="outline" className={`text-[11px] font-semibold px-2 py-0.5 gap-1 ${cls}`}>
+      <Icon className="w-3 h-3" /> {label}
     </Badge>
   );
 };
@@ -145,7 +170,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 // ─── Formulário em branco ─────────────────────────────────────────────────────
 
 const FORM_BLANK: Omit<LancamentoPagar, "id" | "parcelas"> = {
-  favorecidoNome: "", favorecidoCnpjCpf: "", documentoNF: "", tipoDocumento: "NF",
+  favorecidoNome: "", favorecidoCnpjCpf: "", fornecedorCadastroId: "", documentoNF: "", tipoDocumento: "NF",
   categoria: "", planoContas: "", centroResultado: "Corporativo", unidadeFilial: "Matriz (SP)",
   despesaFixaBase: "Variável",
   competencia: "", emissao: hoje(), vencimento: "", dataPrevistaPgto: "",
@@ -157,35 +182,52 @@ const FORM_BLANK: Omit<LancamentoPagar, "id" | "parcelas"> = {
 const FILTROS_BLANK: FiltrosAvancados = {
   status: "todos", centroResultado: "", categoria: "",
   dataInicio: "", dataFim: "", vencimentoInicio: "", vencimentoFim: "", contaPagadora: "",
+  fornecedor: "", ordenacao: "vencimento_asc",
 };
 
-// ─── Autocomplete Fornecedor ───────────────────────────────────────────────────
+// ─── Autocomplete Fornecedor (FIN-FORN-03) ────────────────────────────────────
 
-interface FornecedorOption { id: string; nome: string; documento: string; }
+interface FornecedorOption {
+  id: string;
+  nome: string;
+  documento: string;
+  fantasia?: string;
+  fornecedor_cadastro_id: string;
+}
 
 interface FornecedorAutocompleteProps {
   value: string;
   onSelect: (f: FornecedorOption) => void;
+  onNovoCadastro?: () => void;
   error?: string;
 }
 
-function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocompleteProps) {
+function FornecedorAutocomplete({ value, onSelect, onNovoCadastro, error }: FornecedorAutocompleteProps) {
   const [input, setInput] = useState(value);
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<FornecedorOption[]>([]);
+  const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setInput(value); }, [value]);
 
   useEffect(() => {
-    if (!input.trim()) { setOptions([]); return; }
-    supabase.from("prestadores").select("id, nome_completo, cpf_cnpj, tipo_parceiro")
-      .or(`nome_completo.ilike.%${input}%,cpf_cnpj.ilike.%${input}%`)
+    if (!input.trim() || input.trim().length < 2) { setOptions([]); return; }
+    setLoading(true);
+    supabase.from("fornecedores")
+      .select("id, razao_social, nome_fantasia, cpf_cnpj")
+      .eq("status", "ativo")
+      .or(`razao_social.ilike.%${input}%,nome_fantasia.ilike.%${input}%,cpf_cnpj.ilike.%${input}%`)
       .limit(10)
       .then(({ data, error }) => {
-        if (error) { console.error("Erro ao buscar prestadores:", error); setOptions([]); return; }
-        setOptions((data || []).map((p: any) => ({
-          id: p.id, nome: p.nome_completo, documento: p.cpf_cnpj || ""
+        setLoading(false);
+        if (error) { console.error("Erro ao buscar fornecedores:", error); setOptions([]); return; }
+        setOptions((data || []).map((f: any) => ({
+          id: f.razao_social,
+          nome: f.razao_social,
+          fantasia: f.nome_fantasia || "",
+          documento: f.cpf_cnpj || "",
+          fornecedor_cadastro_id: f.id,
         })));
       });
   }, [input]);
@@ -198,34 +240,59 @@ function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocomple
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const handleSelect = (f: FornecedorOption) => {
+    onSelect(f);
+    setInput(f.fantasia ? `${f.nome} (${f.fantasia})` : f.nome);
+    setOpen(false);
+  };
+
   return (
     <div ref={ref} className="relative">
-      <div className="relative">
+      <div className="relative flex items-center">
         <Building2 className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
         <Input
           value={input}
           onChange={e => { setInput(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          placeholder="Fornecedor, Concessionária, Favorecido..."
-          className={`pl-9 h-10 ${error ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+          placeholder="Buscar fornecedor por nome, fantasia ou CPF/CNPJ"
+          className={`pl-9 h-10 ${onNovoCadastro ? "pr-10" : ""} ${error ? "border-red-400 focus-visible:ring-red-300" : ""}`}
         />
+        {onNovoCadastro && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+            onClick={e => { e.stopPropagation(); onNovoCadastro(); }}
+            title="Cadastrar novo fornecedor"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        )}
       </div>
       {error && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{error}</p>}
-      {open && options.length > 0 && (
+      {open && (options.length > 0 || loading) && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-popover border rounded-xl shadow-xl overflow-hidden">
+          {loading && <div className="px-3 py-2 text-xs text-muted-foreground">Buscando...</div>}
+          {!loading && options.length === 0 && input.trim().length >= 2 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">Nenhum fornecedor encontrado</div>
+          )}
           {options.map(f => (
             <button
-              key={f.id}
+              key={f.fornecedor_cadastro_id}
               type="button"
               className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/70 transition-colors"
-              onMouseDown={e => { e.preventDefault(); onSelect(f); setInput(f.nome); setOpen(false); }}
+              onMouseDown={e => { e.preventDefault(); handleSelect(f); }}
             >
               <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
                 <Wallet className="w-3.5 h-3.5 text-orange-600" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold truncate">{f.nome}</p>
-                <p className="text-xs text-muted-foreground font-mono">{f.documento}</p>
+                <div className="flex items-center gap-2">
+                  {f.fantasia && <p className="text-xs text-muted-foreground truncate">{f.fantasia}</p>}
+                  {f.documento && <p className="text-xs text-muted-foreground font-mono">{f.documento}</p>}
+                </div>
               </div>
             </button>
           ))}
@@ -235,11 +302,147 @@ function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocomple
   );
 }
 
+// ─── Modal Cadastro Rápido Fornecedor (FIN-FORN-03) ──────────────────────────
+
+interface CadastroRapidoFornecedorProps {
+  open: boolean;
+  onClose: () => void;
+  onSalvo: (f: FornecedorOption) => void;
+}
+
+function CadastroRapidoFornecedor({ open, onClose, onSalvo }: CadastroRapidoFornecedorProps) {
+  const [tipoPessoa, setTipoPessoa] = useState<"PF" | "PJ">("PJ");
+  const [razaoSocial, setRazaoSocial] = useState("");
+  const [nomeFantasia, setNomeFantasia] = useState("");
+  const [cpfCnpj, setCpfCnpj] = useState("");
+  const [telefone, setTelefone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setTipoPessoa("PJ"); setRazaoSocial(""); setNomeFantasia("");
+      setCpfCnpj(""); setTelefone(""); setErro("");
+    }
+  }, [open]);
+
+  const handleSalvar = async () => {
+    if (!razaoSocial.trim()) { setErro("Razão social / nome é obrigatório"); return; }
+    if (!cpfCnpj.trim()) { setErro("CPF/CNPJ é obrigatório"); return; }
+    setSaving(true); setErro("");
+    try {
+      const { data: existente } = await supabase.from("fornecedores")
+        .select("id, razao_social, nome_fantasia, cpf_cnpj, status")
+        .eq("cpf_cnpj", cpfCnpj.trim())
+        .eq("status", "ativo")
+        .maybeSingle();
+      if (existente) {
+        toast.info(`Fornecedor já cadastrado: ${existente.razao_social}`);
+        onSalvo({
+          id: existente.razao_social,
+          nome: existente.razao_social,
+          fantasia: existente.nome_fantasia || "",
+          documento: existente.cpf_cnpj || "",
+          fornecedor_cadastro_id: existente.id,
+        });
+        onClose();
+        return;
+      }
+      const { data: duplicado } = await supabase.from("fornecedores")
+        .select("id, razao_social, nome_fantasia, cpf_cnpj")
+        .eq("cpf_cnpj", cpfCnpj.trim())
+        .in("status", ["ativo", "inativo"])
+        .maybeSingle();
+      if (duplicado) {
+        setErro(`CPF/CNPJ já possui cadastro (${duplicado.razao_social}) — selecione-o na busca`);
+        setSaving(false);
+        return;
+      }
+      const { data: novo, error: insertErr } = await supabase.from("fornecedores").insert({
+        tipo_pessoa: tipoPessoa,
+        razao_social: razaoSocial.trim(),
+        nome_fantasia: nomeFantasia.trim() || null,
+        cpf_cnpj: cpfCnpj.trim(),
+        telefone: telefone.trim() || null,
+        status: "ativo",
+      }).select("id, razao_social, nome_fantasia, cpf_cnpj").maybeSingle();
+      if (insertErr) {
+        console.error("Erro ao cadastrar fornecedor:", insertErr);
+        setErro("Erro ao salvar: " + (insertErr.message || "verifique os dados"));
+        setSaving(false);
+        return;
+      }
+      if (novo) {
+        toast.success(`Fornecedor "${novo.razao_social}" cadastrado com sucesso!`);
+        onSalvo({
+          id: novo.razao_social,
+          nome: novo.razao_social,
+          fantasia: novo.nome_fantasia || "",
+          documento: novo.cpf_cnpj || "",
+          fornecedor_cadastro_id: novo.id,
+        });
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erro inesperado ao cadastrar fornecedor:", err);
+      setErro("Erro inesperado. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold flex items-center gap-2">
+            <div className="p-1 bg-orange-100 rounded-lg"><Plus className="w-3.5 h-3.5 text-orange-600" /></div>
+            Cadastro Rápido — Fornecedor
+          </DialogTitle>
+          <DialogDescription>Preencha os dados básicos. Campos com * são obrigatórios.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide">Tipo <span className="text-red-500">*</span></Label>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant={tipoPessoa === "PJ" ? "default" : "outline"} className={tipoPessoa === "PJ" ? "bg-orange-600 hover:bg-orange-700" : ""} onClick={() => setTipoPessoa("PJ")}>Pessoa Jurídica</Button>
+              <Button type="button" size="sm" variant={tipoPessoa === "PF" ? "default" : "outline"} className={tipoPessoa === "PF" ? "bg-orange-600 hover:bg-orange-700" : ""} onClick={() => setTipoPessoa("PF")}>Pessoa Física</Button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide">{tipoPessoa === "PJ" ? "Razão Social" : "Nome Completo"} <span className="text-red-500">*</span></Label>
+            <Input value={razaoSocial} onChange={e => { setRazaoSocial(e.target.value); setErro(""); }} placeholder={tipoPessoa === "PJ" ? "Empresa Exemplo LTDA" : "João da Silva"} className="h-9" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide">Nome Fantasia</Label>
+            <Input value={nomeFantasia} onChange={e => setNomeFantasia(e.target.value)} placeholder="Opcional" className="h-9" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide">{tipoPessoa === "PJ" ? "CNPJ" : "CPF"} <span className="text-red-500">*</span></Label>
+            <Input value={cpfCnpj} onChange={e => { setCpfCnpj(e.target.value); setErro(""); }} placeholder={tipoPessoa === "PJ" ? "00.000.000/0001-00" : "000.000.000-00"} className="h-9 font-mono" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs uppercase tracking-wide">Telefone</Label>
+            <Input value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="(00) 00000-0000" className="h-9" />
+          </div>
+          {erro && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{erro}</p>}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} className="h-9" disabled={saving}>Cancelar</Button>
+          <Button onClick={handleSalvar} disabled={saving} className="bg-orange-600 hover:bg-orange-700 text-white h-9">
+            {saving ? "Salvando..." : <><Check className="w-4 h-4 mr-1" /> Salvar</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Modal de Baixa de Pagamento ──────────────────────────────────────────────
 
 interface ModalBaixaPagarProps {
   lancamento: LancamentoPagar;
-  onConfirm: (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => void;
+  onConfirm: (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string, contaId?: string) => void;
   onClose: () => void;
 }
 
@@ -247,17 +450,32 @@ function ModalBaixaPagar({ lancamento, onConfirm, onClose }: ModalBaixaPagarProp
   const [tipoBaixa, setTipoBaixa] = useState<"total" | "parcial">("total");
   const [valorBaixar, setValorBaixar] = useState(lancamento.valorLiquido);
   const [conta, setConta] = useState(lancamento.contaPagadora || "Conta Corrente Principal");
+  const [contaId, setContaId] = useState<string | undefined>(undefined);
   const [forma, setForma] = useState(lancamento.formaPagamento || "PIX");
   const [obs, setObs] = useState("");
   const [dataBaixa, setDataBaixa] = useState(hoje());
   const [loading, setLoading] = useState(false);
+  const [contasDisponiveis, setContasDisponiveis] = useState<{ id: string; nome: string }[]>([]);
+
+  // FIN-MASTER-361 — carregar contas_financeiras reais
+  useEffect(() => {
+    const loadContas = async () => {
+      const { data } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome")
+        .eq("ativa", true)
+        .order("nome");
+      if (data) setContasDisponiveis(data);
+    };
+    loadContas();
+  }, []);
 
   const handleConfirm = async () => {
     if (!valorBaixar || valorBaixar <= 0) { toast.error("Informe um valor válido."); return; }
     if (valorBaixar > lancamento.valorLiquido) { toast.error("Valor não pode ser maior que o saldo a pagar."); return; }
     setLoading(true);
     try {
-      await onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, forma, obs, dataBaixa);
+      await onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, forma, obs, dataBaixa, contaId);
     } finally {
       setLoading(false);
     }
@@ -334,13 +552,23 @@ function ModalBaixaPagar({ lancamento, onConfirm, onClose }: ModalBaixaPagarProp
 
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Conta Pagadora</Label>
-          <Select value={conta} onValueChange={setConta}>
+          <Select value={conta} onValueChange={v => {
+            setConta(v);
+            const encontrada = contasDisponiveis.find(c => c.nome === v);
+            setContaId(encontrada?.id);
+          }}>
             <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="Conta Corrente Principal">C/C Principal</SelectItem>
-              <SelectItem value="Conta Reserva / Impostos">C/C Reserva</SelectItem>
-              <SelectItem value="Cartão Corporativo Digital">Cartão Corporativo Digital</SelectItem>
-              <SelectItem value="Caixa Interno — Pequenos Gastos">Caixa Físico</SelectItem>
+              {contasDisponiveis.length > 0 ? (
+                contasDisponiveis.map(c => (
+                  <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>
+                ))
+              ) : (
+                <>
+                  <SelectItem value="Conta Corrente Principal">C/C Principal</SelectItem>
+                  <SelectItem value="Conta Reserva / Impostos">C/C Reserva</SelectItem>
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -374,36 +602,95 @@ export default function ContasPagar() {
   const [buscaRapida, setBuscaRapida] = useState("");
   const [filtros, setFiltros] = useState<FiltrosAvancados>({ ...FILTROS_BLANK });
   const [filtrosAtivos, setFiltrosAtivos] = useState<FiltrosAvancados>({ ...FILTROS_BLANK });
+  // FIN-UX-02B — paginação real da listagem (página atual)
+  const [pagina, setPagina] = useState(1);
 
   const [form, setForm] = useState({ ...FORM_BLANK });
+  // Guard contra perda de alterações na despesa (dirty + beforeunload + saída).
+  const exitGuard = useFormExitGuard({ current: form, initial: FORM_BLANK, enabled: showNovo });
+  const fechar = async () => {
+    if (!(await exitGuard.confirmExit())) return;
+    setShowNovo(false);
+  };
   const [erros, setErros] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [gerarParcelas, setGerarParcelas] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
+  const [showCadastroFornecedor, setShowCadastroFornecedor] = useState(false);
+
+  // ── Mês / Período ──
+  const [mesOffset, setMesOffset] = useState(0);
+  const mesRef = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + mesOffset);
+    return d;
+  }, [mesOffset]);
+  const mesAtualStr = useMemo(() => {
+    return mesRef.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+  }, [mesRef]);
+  const mesAtualCodigo = useMemo(() => {
+    return mesRef.toLocaleDateString("sv-SE", { month: "numeric", year: "numeric", timeZone: "America/Sao_Paulo" }).slice(0, 7);
+  }, [mesRef]);
 
   const valorLiquido = calcLiquidoPagar(form.valorOriginal, form.desconto, form.multa, form.juros, form.impostosRetidos);
   useEffect(() => { setForm(p => ({ ...p, valorLiquido })); }, [valorLiquido]);
 
+  // FIN-MASTER-361 — pago no mês: fonte = financeiro_baixas (não status)
+  const [pagoMesValor, setPagoMesValor] = useState(0);
+
+  // ── Helpers de período ──
+  const periodoMes = useMemo(() => {
+    const y = mesRef.getFullYear();
+    const m = mesRef.getMonth();
+    const inicio = new Date(y, m, 1);
+    const fim = new Date(y, m + 1, 0);
+    return {
+      inicio: inicio.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }),
+      fim: fim.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }),
+    };
+  }, [mesRef]);
+
+  const periodoEfetivo = useMemo(() => {
+    if (filtros.dataInicio && filtros.dataFim) {
+      return { inicio: filtros.dataInicio, fim: filtros.dataFim };
+    }
+    return periodoMes;
+  }, [filtros.dataInicio, filtros.dataFim, periodoMes]);
+
   // ── Leitura inicial do Supabase ──
   useEffect(() => {
     fetchLancamentos();
-  }, []);
+    fetchPagoMes();
+  }, [periodoEfetivo.inicio, periodoEfetivo.fim]);
 
   const fetchLancamentos = async () => {
     try {
       setIsSubmitting(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from("financeiro_pagar")
         .select("*")
-        .order("data_vencimento", { ascending: true });
+        .eq("is_teste", false)
+        .gte("data_vencimento", periodoEfetivo.inicio)
+        .lte("data_vencimento", periodoEfetivo.fim);
+      const { data, error } = await query.order("data_vencimento", { ascending: true });
       if (error) throw error;
       if (data && data.length > 0) {
-        setLancamentos(data.map((r: any) => ({
+        setLancamentos(data.map((r: any) => {
+          const statusDb = mapStatusPagar(r.status);
+          const se = calcularStatusEfetivo({
+            statusPersistido: r.status,
+            dataVencimento: r.data_vencimento || r.vencimento,
+            dataPagamento: r.data_pagamento || r.data_baixa || r.data_efetiva_pgto,
+            valorPago: r.valor_baixado,
+            valorTotal: r.valor || r.valor_bruto,
+          });
+          return {
           id: r.id,
           favorecidoNome: r.fornecedor || "",
           favorecidoCnpjCpf: r.fornecedor_documento || "",
           isLegadoPrestador: !!(r.prestador_id || r.prestador),
+          fornecedorCadastroId: r.fornecedor_cadastro_id || "",
           documentoNF: r.documento || r.fatura || "",
           tipoDocumento: r.tipo_documento || "NF",
           categoria: r.categoria || "",
@@ -415,21 +702,23 @@ export default function ContasPagar() {
           emissao: r.data_emissao || "",
           vencimento: r.data_vencimento || r.vencimento || "",
           dataPrevistaPgto: r.data_previsao_pagamento || "",
-          valorOriginal: r.valor_bruto || r.valor || 0,
+          valorOriginal: r.valor || r.valor_bruto || 0,
           desconto: r.desconto || 0,
           multa: r.multa || 0,
           juros: r.juros || 0,
           impostosRetidos: r.impostos_retidos || 0,
-          valorLiquido: r.valor_liquido || r.valor || 0,
+          valorLiquido: r.valor || r.valor_liquido || 0,
           formaPagamento: r.forma_pagamento || "",
           codigoBarras: r.codigo_barras || "",
           chavePix: r.chave_pix || "",
           contaPagadora: r.conta_pagadora || "",
-          status: mapStatusPagar(r.status),
+          dataPagamento: r.data_pagamento || r.data_baixa || null,
+          status: statusDb,
+          statusEfetivo: se,
           recorrencia: r.recorrencia || "nenhuma",
           observacoes: r.observacoes || "",
           parcelas: []
-        })));
+        }}));
       } else {
         setLancamentos([]);
       }
@@ -441,31 +730,103 @@ export default function ContasPagar() {
     }
   };
 
-  // ── KPIs ──
-  const totalAPagar = lancamentos.filter(l => l.status === "a_vencer" || l.status === "parcial")
+  // FIN-MASTER-361 — pago no mês: soma baixas não estornadas do mês atual
+  const fetchPagoMes = async () => {
+    try {
+      const mesAtual = new Date().toISOString().slice(0, 7);
+      const dataInicioMes = `${mesAtual}-01`;
+      const proximoMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
+        .toISOString().split("T")[0];
+
+      const { data: baixasData, error: baixasError } = await supabase
+        .from("financeiro_baixas")
+        .select("valor_baixado, data_baixa, titulo_id")
+        .eq("titulo_tabela", "financeiro_pagar")
+        .eq("estornada", false)
+        .gte("data_baixa", dataInicioMes)
+        .lt("data_baixa", proximoMes);
+
+      if (baixasError) throw baixasError;
+
+      // Excluir baixas de títulos de teste
+      const tituloIds = [...new Set((baixasData || []).map((b: any) => b.titulo_id).filter(Boolean))];
+      let testIds = new Set<string>();
+      if (tituloIds.length > 0) {
+        const { data: parents } = await supabase
+          .from("financeiro_pagar")
+          .select("id, is_teste")
+          .in("id", tituloIds);
+        testIds = new Set((parents || []).filter((p: any) => p.is_teste === true).map((p: any) => p.id));
+      }
+
+      const total = (baixasData || [])
+        .filter((b: any) => !testIds.has(b.titulo_id))
+        .reduce((a, b) => a + (Number(b.valor_baixado) || 0), 0);
+      setPagoMesValor(total);
+    } catch (error) {
+      console.error("[ContasPagar] Erro ao buscar pago no mês:", error);
+      setPagoMesValor(0);
+    }
+  };
+
+  // ── KPIs (derivados do período selecionado) ──
+  const totalAPagar = lancamentos.filter(l => l.statusEfetivo === "a_vencer" || l.statusEfetivo === "vence_hoje" || l.statusEfetivo === "parcial")
     .reduce((a, l) => a + (l.valorLiquido || 0), 0);
-  const totalAtrasado = lancamentos.filter(l => l.status === "vencida").reduce((a, l) => a + (l.valorLiquido || 0), 0);
-  const totalPagoMes = lancamentos.filter(l => l.status === "paga").reduce((a, l) => a + (l.valorLiquido || 0), 0);
-  const totalProvisao = lancamentos.filter(l => l.status === "provisao").reduce((a, l) => a + (l.valorLiquido || 0), 0);
-  const hoje = new Date().toISOString().split("T")[0];
-  const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-  const mesAtual = new Date().toISOString().slice(0, 7);
+  const totalAtrasado = lancamentos.filter(l => l.statusEfetivo === "atrasado").reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const totalPagoMes = pagoMesValor;
+  const totalProvisao = lancamentos.filter(l => l.statusEfetivo === "provisao").reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const hojeCalc = hojeSP();
+  const em7diasCalc = new Date(Date.now() + 7 * 86400000).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
   const totalVence7 = lancamentos.filter(l =>
-    (l.status === "a_vencer" || l.status === "parcial") &&
-    l.vencimento >= hoje && l.vencimento <= em7dias
+    (l.statusEfetivo === "a_vencer" || l.statusEfetivo === "vence_hoje" || l.statusEfetivo === "parcial") &&
+    l.vencimento >= hojeCalc && l.vencimento <= em7diasCalc
   ).reduce((a, l) => a + (l.valorLiquido || 0), 0);
   const totalPrevisto = lancamentos.filter(l =>
-    l.vencimento?.startsWith(mesAtual) && l.status !== "cancelada"
+    l.vencimento?.startsWith(mesAtualCodigo) && l.statusEfetivo !== "cancelado"
   ).reduce((a, l) => a + (l.valorLiquido || 0), 0);
 
   // ── Filtros ──
-  const lancFiltrados = lancamentos.filter(l => {
-    const q = buscaRapida.toLowerCase();
-    const passaBusca = !q || l.favorecidoNome.toLowerCase().includes(q) || l.documentoNF.toLowerCase().includes(q);
-    const passaStatus = !filtrosAtivos.status || filtrosAtivos.status === "todos" || l.status === filtrosAtivos.status;
-    const passaCategoria = !filtrosAtivos.categoria || l.categoria === filtrosAtivos.categoria;
-    return passaBusca && passaStatus && passaCategoria;
-  });
+  const lancFiltrados = useMemo(() => {
+    let result = lancamentos.filter(l => {
+      const q = buscaRapida.toLowerCase();
+      const passaBusca = !q || l.favorecidoNome.toLowerCase().includes(q) || l.documentoNF.toLowerCase().includes(q) || l.categoria.toLowerCase().includes(q);
+      const passaStatus = !filtrosAtivos.status || filtrosAtivos.status === "todos" || l.statusEfetivo === filtrosAtivos.status;
+      const passaCategoria = !filtrosAtivos.categoria || filtrosAtivos.categoria === "todos" || l.categoria === filtrosAtivos.categoria;
+      const passaFornecedor = !filtrosAtivos.fornecedor || l.favorecidoNome.toLowerCase().includes(filtrosAtivos.fornecedor.toLowerCase());
+      return passaBusca && passaStatus && passaCategoria && passaFornecedor;
+    });
+    const ord = filtrosAtivos.ordenacao || "vencimento_asc";
+    result.sort((a, b) => {
+      switch (ord) {
+        case "vencimento_desc": return b.vencimento?.localeCompare(a.vencimento || "") || 0;
+        case "valor_desc": return (b.valorLiquido || 0) - (a.valorLiquido || 0);
+        case "valor_asc": return (a.valorLiquido || 0) - (b.valorLiquido || 0);
+        case "vencimento_asc":
+        default: return a.vencimento?.localeCompare(b.vencimento || "") || 0;
+      }
+    });
+    return result;
+  }, [lancamentos, buscaRapida, filtrosAtivos]);
+
+  // ── FIN-UX-02B — paginação real (janela sobre o conjunto COMPLETO filtrado) ──
+  // Ordem: query SQL (período) -> busca -> filtros -> ordenação (lancFiltrados)
+  //        -> paginação (lancPagina) -> render. Não há cap silencioso na lista
+  // (a query não usa .limit()); a página é apenas uma janela de visualização.
+  const totalPaginas = useMemo(
+    () => Math.max(1, Math.ceil(lancFiltrados.length / PAGE_SIZE_PAGAR)),
+    [lancFiltrados.length]
+  );
+  useEffect(() => {
+    if (pagina > totalPaginas) setPagina(totalPaginas);
+  }, [pagina, totalPaginas]);
+  const lancPagina = useMemo(() => {
+    const inicio = (pagina - 1) * PAGE_SIZE_PAGAR;
+    return lancFiltrados.slice(inicio, inicio + PAGE_SIZE_PAGAR);
+  }, [lancFiltrados, pagina]);
+  // Mudança de busca, filtros ou período retorna à página 1.
+  useEffect(() => {
+    setPagina(1);
+  }, [buscaRapida, filtrosAtivos, periodoEfetivo.inicio, periodoEfetivo.fim]);
 
   // ── Validação ──
   const validar = () => {
@@ -488,9 +849,14 @@ export default function ContasPagar() {
         return val;
       };
       
+      const descricao = [form.documentoNF, form.favorecidoNome].filter(Boolean).join(" - ") || "Despesa";
       const payload = {
+        descricao,
+        valor: valorLiquido || 0,
         fornecedor: form.favorecidoNome,
         fornecedor_documento: sanitizeValue(form.favorecidoCnpjCpf),
+        fornecedor_cadastro_id: form.fornecedorCadastroId || null,
+        fornecedor_nome: sanitizeValue(form.favorecidoNome),
         documento: sanitizeValue(form.documentoNF),
         tipo_documento: sanitizeValue(form.tipoDocumento),
         categoria: form.categoria,
@@ -508,48 +874,38 @@ export default function ContasPagar() {
         juros: form.juros || 0,
         impostos_retidos: form.impostosRetidos || 0,
         valor_liquido: valorLiquido || 0,
-        forma_pagamento: sanitizeValue(form.formaPagamento),
         codigo_barras: sanitizeValue(form.codigoBarras),
         chave_pix: sanitizeValue(form.chavePix),
         conta_pagadora: sanitizeValue(form.contaPagadora),
         status: form.status === "a_vencer" ? "a vencer" : form.status,
-        recorrencia: sanitizeValue(form.recorrencia),
+        recorrente: !!form.recorrencia && form.recorrencia !== "nenhuma",
         observacoes: sanitizeValue(form.observacoes),
       };
 
       if (editando) {
-        const { error } = await supabase.from("financeiro_pagar").update(payload).eq("id", editando.id);
-        if (error) throw error;
+        await atualizarPagavel(editando.id, payload);
         toast.success("Despesa atualizada com sucesso.");
       } else {
-        const { error } = await supabase.from("financeiro_pagar").insert([payload]);
-        if (error) throw error;
+        await criarPagavel(payload);
 
         if (gerarParcelas && numParcelas > 1 && form.vencimento) {
           const valParcela = Math.round((valorLiquido / numParcelas) * 100) / 100;
           const base = new Date(form.vencimento + "T12:00:00");
-          const parcelasPayload = Array.from({ length: numParcelas }, (_, i) => {
+          const parcelas = Array.from({ length: numParcelas }, (_, i) => {
             const dt = new Date(base); dt.setMonth(dt.getMonth() + i);
             return {
-              ...payload,
-              id: undefined,
-              documento: `${form.documentoNF} (${i + 1}/${numParcelas})`,
+              valor: valParcela,
               data_vencimento: dt.toISOString().split("T")[0],
-              data_previsao_pagamento: dt.toISOString().split("T")[0],
-              valor_bruto: valParcela,
-              desconto: 0, multa: 0, juros: 0, impostos_retidos: 0,
-              valor_liquido: valParcela,
-              quantidade_parcelas: numParcelas,
-              parcela_atual: i + 1,
             };
           });
-          await supabase.from("financeiro_pagar").insert(parcelasPayload);
+          await criarParcelasPagavel("temp", parcelas);
           toast.success(`${numParcelas} parcelas criadas!`);
         } else {
           toast.success("Nova despesa cadastrada!");
         }
       }
       await fetchLancamentos();
+      exitGuard.markClean();
       setShowNovo(false);
       setEditando(null);
       setForm({ ...FORM_BLANK });
@@ -565,24 +921,16 @@ export default function ContasPagar() {
   };
 
   // ── Ações com persistência Supabase ──
-  const handleBaixa = async (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => {
+  const handleBaixa = async (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string, contaId?: string) => {
     try {
       const lanc = lancamentos.find(l => l.id === id);
       if (!lanc) return;
       const novoStatus = tipo === "total" ? "pago" : "parcial";
       const novoValor = tipo === "parcial" ? (lanc.valorLiquido - valor) : 0;
 
-      const { error } = await supabase.from("financeiro_pagar").update({
-        status: novoStatus,
-        valor_liquido: novoValor,
-        data_efetiva_pgto: data,
-        conta_pagadora: conta,
-        forma_pagamento: forma,
-        observacoes: `${lanc.observacoes}\nPgto ${tipo}: ${fmtBRL(valor)} em ${data} | Forma: ${forma} | Obs: ${obs}`,
-      }).eq("id", id);
-      if (error) throw error;
+      await baixarPagavel(id, valor, data, conta, obs, forma, undefined, contaId);
       toast.success(tipo === "total" ? "Pagamento total registrado!" : `Baixa parcial de ${fmtBRL(valor)} registrada!`);
-      await fetchLancamentos();
+      await Promise.all([fetchLancamentos(), fetchPagoMes()]);
     } catch (error) {
       console.error("Erro na baixa:", error);
       toast.error("Erro ao registrar pagamento.");
@@ -593,8 +941,7 @@ export default function ContasPagar() {
   const handleCancelar = async (id: string | number) => {
     if (!confirm("Tem certeza que deseja cancelar?")) return;
     try {
-      const { error } = await supabase.from("financeiro_pagar").update({ status: "cancelada" }).eq("id", id);
-      if (error) throw error;
+      await cancelarPagavel(id);
       toast.success("Documento cancelado.");
       await fetchLancamentos();
     } catch (error) {
@@ -606,7 +953,9 @@ export default function ContasPagar() {
   const abrirEditar = (l: LancamentoPagar) => {
     setEditando(l);
     setForm({
-      favorecidoNome: l.favorecidoNome, favorecidoCnpjCpf: l.favorecidoCnpjCpf, documentoNF: l.documentoNF, tipoDocumento: l.tipoDocumento,
+      favorecidoNome: l.favorecidoNome, favorecidoCnpjCpf: l.favorecidoCnpjCpf,
+      fornecedorCadastroId: l.fornecedorCadastroId || "",
+      documentoNF: l.documentoNF, tipoDocumento: l.tipoDocumento,
       categoria: l.categoria, planoContas: l.planoContas, centroResultado: l.centroResultado, unidadeFilial: l.unidadeFilial,
       despesaFixaBase: l.despesaFixaBase, competencia: l.competencia, emissao: l.emissao, vencimento: l.vencimento, dataPrevistaPgto: l.dataPrevistaPgto,
       valorOriginal: l.valorOriginal, desconto: l.desconto, multa: l.multa, juros: l.juros, impostosRetidos: l.impostosRetidos, valorLiquido: l.valorLiquido,
@@ -618,7 +967,7 @@ export default function ContasPagar() {
 
   const limparFiltros = () => { setFiltros({ ...FILTROS_BLANK }); setFiltrosAtivos({ ...FILTROS_BLANK }); setShowFiltros(false); };
   const aplicarFiltros = () => { setFiltrosAtivos({ ...filtros }); setShowFiltros(false); };
-  const filtrosAtivosCount = Object.values(filtrosAtivos).filter(v => v && v !== "todos").length;
+  const filtrosAtivosCount = [filtrosAtivos.status, filtrosAtivos.categoria, filtrosAtivos.fornecedor, filtrosAtivos.dataInicio, filtrosAtivos.dataFim].filter(v => v && v !== "todos" && v !== "").length;
 
   return (
     <div className="space-y-4">
@@ -642,10 +991,60 @@ export default function ContasPagar() {
         ))}
       </div>
 
+      {/* ── Navegação por Mês ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setMesOffset(o => o - 1)}>
+            <ArrowUpRight className="w-4 h-4 rotate-[-90deg]" />
+          </Button>
+          <span className="text-sm font-bold text-foreground min-w-[160px] text-center capitalize">{mesAtualStr}</span>
+          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setMesOffset(o => o + 1)}>
+            <ArrowUpRight className="w-4 h-4 rotate-[90deg]" />
+          </Button>
+          {mesOffset !== 0 && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => setMesOffset(0)}>
+              Voltar ao mês atual
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={filtrosAtivos.ordenacao || "vencimento_asc"} onValueChange={v => { setFiltros({ ...filtros, ordenacao: v }); setFiltrosAtivos({ ...filtrosAtivos, ordenacao: v }); }}>
+            <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="vencimento_asc">Vencimento ↑</SelectItem>
+              <SelectItem value="vencimento_desc">Vencimento ↓</SelectItem>
+              <SelectItem value="valor_desc">Maior valor</SelectItem>
+              <SelectItem value="valor_asc">Menor valor</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* ── Filtros Rápidos + Busca ── */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar favorecido, doc ou NF..." value={buscaRapida} onChange={e => setBuscaRapida(e.target.value)} className="pl-9 h-9" />
+          <Input placeholder="Buscar favorecido, doc, NF, categoria..." value={buscaRapida} onChange={e => setBuscaRapida(e.target.value)} className="pl-9 h-9" />
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {[
+            { label: "Todos", value: "todos" },
+            { label: "Atrasados", value: "atrasado", cls: "bg-red-50 text-red-700 border-red-200 hover:bg-red-100" },
+            { label: "Vence Hoje", value: "vence_hoje", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+            { label: "A Vencer", value: "a_vencer", cls: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
+            { label: "Pago", value: "pago", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
+            { label: "Cancelado", value: "cancelado", cls: "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100" },
+          ].map(f => (
+            <Button
+              key={f.value}
+              variant="outline"
+              size="sm"
+              className={`h-8 text-xs font-semibold ${(filtrosAtivos.status || "todos") === f.value ? (f.cls || "bg-orange-50 text-orange-700 border-orange-300") : "bg-transparent"}`}
+              onClick={() => { setFiltros({ ...filtros, status: f.value }); setFiltrosAtivos({ ...filtrosAtivos, status: f.value }); }}
+            >
+              {f.label}
+            </Button>
+          ))}
         </div>
         <Button variant="outline" className={`gap-2 h-9 relative ${filtrosAtivosCount ? "border-orange-500 text-orange-600 bg-orange-50" : ""}`} onClick={() => setShowFiltros(true)}>
           <Filter className="w-4 h-4" /> Filtros
@@ -675,7 +1074,7 @@ export default function ContasPagar() {
             </TableRow></TableHeader>
             <TableBody>
               {lancFiltrados.length === 0 && <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Nenhuma despesa localizada.</TableCell></TableRow>}
-              {lancFiltrados.map((l) => (
+              {lancPagina.map((l) => (
                 <TableRow key={l.id} className="hover:bg-muted/20 group">
                   <TableCell className="pl-5 py-3">
                     <p className="font-semibold text-sm text-orange-700 dark:text-orange-400 font-mono">{l.documentoNF || "—"}</p>
@@ -699,15 +1098,15 @@ export default function ContasPagar() {
                   <TableCell className="py-3 text-sm text-muted-foreground">{l.competencia || "—"}</TableCell>
                   <TableCell className="py-3 text-sm font-medium">{fmtData(l.vencimento)}</TableCell>
                   <TableCell className="py-3 text-right pr-5 font-black text-sm">{fmtBRL(l.valorLiquido)}</TableCell>
-                  <TableCell className="py-3"><StatusBadge status={l.status} /></TableCell>
+                  <TableCell className="py-3"><StatusBadge status={l.status} statusEfetivo={l.statusEfetivo} /></TableCell>
                   <TableCell className="py-3 text-right pr-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-4 h-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem onClick={() => abrirEditar(l)}><Eye className="w-4 h-4 mr-2" /> Ver / Editar</DropdownMenuItem>
-                        {["a_vencer", "vencida", "provisao"].includes(l.status) && <DropdownMenuItem onClick={() => setBaixando(l)} className="text-emerald-700"><CheckCircle2 className="w-4 h-4 mr-2" /> Registrar Pagamento</DropdownMenuItem>}
+                        {["a_vencer", "vence_hoje", "atrasado", "provisao"].includes(l.statusEfetivo) && <DropdownMenuItem onClick={() => setBaixando(l)} className="text-emerald-700"><CheckCircle2 className="w-4 h-4 mr-2" /> Registrar Pagamento</DropdownMenuItem>}
                         <DropdownMenuSeparator />
-                        {!["paga", "cancelada"].includes(l.status) && <DropdownMenuItem onClick={() => handleCancelar(l.id)} className="text-red-600"><X className="w-4 h-4 mr-2" /> Cancelar</DropdownMenuItem>}
+                        {!["pago", "cancelado"].includes(l.statusEfetivo) && <DropdownMenuItem onClick={() => handleCancelar(l.id)} className="text-red-600"><X className="w-4 h-4 mr-2" /> Cancelar</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -715,11 +1114,21 @@ export default function ContasPagar() {
               ))}
             </TableBody>
           </Table>
+          {/* FIN-UX-02B — paginação real, numerada e visível (padrão do sistema) */}
+          <div className="px-4 pb-4 border-t border-slate-100">
+            <PaginationBar
+              page={pagina}
+              pageSize={PAGE_SIZE_PAGAR}
+              totalCount={lancFiltrados.length}
+              onPageChange={setPagina}
+              loading={isSubmitting}
+            />
+          </div>
         </CardContent>
       </Card>
 
       {/* MODAL CADASTRAR/EDITAR DESPESA ── */}
-      <Dialog open={showNovo} onOpenChange={open => !open && setShowNovo(false)}>
+      <Dialog open={showNovo} onOpenChange={open => !open && fechar()}>
         <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
@@ -733,7 +1142,25 @@ export default function ContasPagar() {
              <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs uppercase tracking-wide">Fornecedor / Favorecido <span className="text-red-500">*</span></Label>
-                  <FornecedorAutocomplete value={form.favorecidoNome} onSelect={f => { setForm({ ...form, favorecidoNome: f.nome, favorecidoCnpjCpf: f.documento }); setErros({ ...erros, fornecedor: "" }); }} error={erros.fornecedor} />
+                  <FornecedorAutocomplete
+                    value={form.favorecidoNome}
+                    onSelect={f => {
+                      setForm({
+                        ...form,
+                        favorecidoNome: f.nome,
+                        favorecidoCnpjCpf: f.documento,
+                        fornecedorCadastroId: f.fornecedor_cadastro_id,
+                      });
+                      setErros({ ...erros, fornecedor: "" });
+                    }}
+                    onNovoCadastro={() => setShowCadastroFornecedor(true)}
+                    error={erros.fornecedor}
+                  />
+                  {form.fornecedorCadastroId && (
+                    <p className="text-[10px] text-orange-600 flex items-center gap-1 mt-0.5">
+                      <Check className="w-3 h-3" /> Fornecedor do cadastro vinculado
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                    <div className="space-y-1.5">
@@ -850,10 +1277,9 @@ export default function ContasPagar() {
                 <SelectContent>
                   <SelectItem value="a_vencer">A Vencer</SelectItem>
                   <SelectItem value="provisao">Provisão</SelectItem>
-                  <SelectItem value="paga">Pago (Liquidado)</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" onClick={() => setShowNovo(false)} disabled={isSubmitting} className="h-10">Cancelar</Button>
+              <Button variant="outline" onClick={fechar} disabled={isSubmitting} className="h-10">Cancelar</Button>
               <Button onClick={handleSalvar} disabled={isSubmitting} className="bg-orange-600 hover:bg-orange-700 text-white h-10">
                 {isSubmitting ? "Salvando..." : <><Check className="w-4 h-4 mr-2" /> Salvar Despesa</>}
               </Button>
@@ -864,6 +1290,91 @@ export default function ContasPagar() {
 
       {/* Modal Baixa */}
       {baixando && <Dialog open={!!baixando} onOpenChange={() => setBaixando(null)}><ModalBaixaPagar lancamento={baixando} onConfirm={handleBaixa} onClose={() => setBaixando(null)} /></Dialog>}
+
+      {/* Modal Cadastro Rápido Fornecedor (FIN-FORN-03) */}
+      <CadastroRapidoFornecedor
+        open={showCadastroFornecedor}
+        onClose={() => setShowCadastroFornecedor(false)}
+        onSalvo={(f) => {
+          setForm({
+            ...form,
+            favorecidoNome: f.nome,
+            favorecidoCnpjCpf: f.documento,
+            fornecedorCadastroId: f.fornecedor_cadastro_id,
+          });
+          setErros({ ...erros, fornecedor: "" });
+        }}
+      />
+
+      {/* ── Modal Filtros Avançados ── */}
+      <Dialog open={showFiltros} onOpenChange={setShowFiltros}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-orange-600" /> Filtros Avançados
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Data Início</Label>
+                <Input type="date" value={filtros.dataInicio} onChange={e => setFiltros({ ...filtros, dataInicio: e.target.value })} className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Data Fim</Label>
+                <Input type="date" value={filtros.dataFim} onChange={e => setFiltros({ ...filtros, dataFim: e.target.value })} className="h-9" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Fornecedor / Favorecido</Label>
+              <Input value={filtros.fornecedor} onChange={e => setFiltros({ ...filtros, fornecedor: e.target.value })} placeholder="Filtrar por fornecedor..." className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Categoria</Label>
+              <Select value={filtros.categoria || "todos"} onValueChange={v => setFiltros({ ...filtros, categoria: v === "todos" ? "" : v })}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas</SelectItem>
+                  <SelectItem value="Combustível frota própria">Combustível</SelectItem>
+                  <SelectItem value="Manutenção">Manutenção</SelectItem>
+                  <SelectItem value="Energia elétrica">Energia</SelectItem>
+                  <SelectItem value="Aluguel">Aluguel</SelectItem>
+                  <SelectItem value="Folha de Pagamento">Folha Pgto</SelectItem>
+                  <SelectItem value="Impostos Federais">Impostos</SelectItem>
+                  <SelectItem value="Outros">Outros</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Status Efetivo</Label>
+              <Select value={filtros.status || "todos"} onValueChange={v => setFiltros({ ...filtros, status: v })}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="atrasado">Atrasado</SelectItem>
+                  <SelectItem value="vence_hoje">Vence Hoje</SelectItem>
+                  <SelectItem value="a_vencer">A Vencer</SelectItem>
+                  <SelectItem value="pago">Pago</SelectItem>
+                  <SelectItem value="parcial">Parcial</SelectItem>
+                  <SelectItem value="provisao">Provisão</SelectItem>
+                  <SelectItem value="cancelado">Cancelado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(filtros.dataInicio || filtros.dataFim || filtros.fornecedor || (filtros.categoria && filtros.categoria !== "todos") || (filtros.status && filtros.status !== "todos")) && (
+              <p className="text-[10px] text-muted-foreground">
+                Período personalizado ativo — KPIs refletem o filtro de data.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={limparFiltros} className="h-9">Limpar Tudo</Button>
+            <Button onClick={aplicarFiltros} className="bg-orange-600 hover:bg-orange-700 text-white h-9">
+              <Check className="w-4 h-4 mr-1" /> Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

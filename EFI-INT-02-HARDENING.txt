@@ -1,0 +1,191 @@
+================================================================================
+EFI-INT-02 — HARDENING DE SEGURANCA EFI HML
+================================================================================
+MISSAO.......: EFI-INT-02 — Hardening de seguranca ANTES de inserir credenciais Efi
+AMBIENTE.....: TMS (express-connect-hub) — HOMOLOGACAO
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: Somente seguranca de repositorio. Nenhuma Edge Function criada,
+              nenhuma migration, nenhum banco, nenhuma UI, nenhuma credencial real,
+              nenhum `supabase secrets set`, nenhum certificado copiado.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML  [ATUAL: seguranca]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+
+1. AUDITORIA DO .gitignore (ANTES)
+================================================================================
+Arquivo: .gitignore (raiz). Continha (apos alteracoes previas ja existentes no
+working tree, nao feitas nesta missao):
+  - Logs / node_modules / dist / dist-ssr / *.local
+  - Editor (.vscode, .idea, *.suo, etc.)
+  - Ambiente: .env, .env.local, .env.*.local, .env.*, !.env.example
+  - Playwright auth: tests/e2e/.auth/, playwright/.auth/, storageState.json
+
+LACUNA CONFIRMADA: NAO havia nenhuma regra para certificados/chaves
+(*.p12, *.pfx, *.pem, *.key) nem para pastas certs/ ou certificates/.
+
+2. ALTERACAO APLICADA (UNICA ALTERACAO DESTA MISSAO)
+================================================================================
+Arquivo alterado: .gitignore
+Regras ADICIONADAS ao final (todas as regras preexistentes PRESERVADAS):
+
+  # Credenciais e certificados bancarios (EFI HML) - NUNCA commitar
+  # Certificado .p12/.pfx da Efi, chaves e material criptografico.
+  *.p12
+  *.pfx
+  *.pem
+  *.key
+  *.crt
+  *.cer
+  certs/
+  certificates/
+
+Observacao: alem dos itens exigidos (*.p12, *.pfx, *.pem, *.key, certs/,
+certificates/), foram incluidos *.crt e *.cer por serem formatos de certificado
+equivalentes (mesma classe de risco). Nada mais foi alterado.
+
+3. DIFF RESUMIDO  [VALIDADO]
+================================================================================
+git --no-pager diff --stat -- .gitignore
+  => .gitignore | 20 +++++++++++++++++++-
+     1 file changed, 19 insertions(+), 1 deletion(-)
+
+git diff .gitignore (resumo do hunk):
+  @@ final do arquivo
+  -!.env.example            (sem newline no final)
+  +!.env.example
+  +# QA environment.env.qa
+  +
+  +# Playwright auth sessions (never commit)
+  +tests/e2e/.auth/
+  +playwright/.auth/
+  +storageState.json
+  +*.storageState.json
+  +
+  +# Credenciais e certificados bancarios (EFI HML) - NUNCA commitar
+  +# Certificado .p12/.pfx da Efi, chaves e material criptografico.
+  +*.p12
+  +*.pfx
+  +*.pem
+  +*.key
+  +*.crt
+  +*.cer
+  +certs/
+  +certificates/
+
+NOTA DE HONESTIDADE: o working tree JA continha o bloco "Playwright auth sessions"
+e "# QA environment.env.qa" antes desta missao (modificacao preexistente). Nesta
+missao, a UNICA adicao foi o bloco de certificados/chaves acima (8 regras + 2
+comentarios). Nenhum outro arquivo foi tocado.
+
+4. PROVA DE PROTECAO (git check-ignore)  [VALIDADO]
+================================================================================
+Comando: git check-ignore -- <alvo>
+  IGNORADO -> cert.p12                (cert.p12)
+  IGNORADO -> cert.pfx                (cert.pfx)
+  IGNORADO -> key.pem                 (key.pem)
+  IGNORADO -> server.key              (server.key)
+  IGNORADO -> ca.crt                  (ca.crt)
+  IGNORADO -> cert.cer                (cert.cer)
+  IGNORADO -> certs/efi.p12           (certs/efi.p12)
+  IGNORADO -> certificates/efi.pfx    (certificates/efi.pfx)
+=> Todas as extensoes/pastas sensiveis estao efetivamente protegidas.
+
+5. VARREDURA DO REPOSITORIO  [VALIDADO — SOMENTE CAMINHO/TIPO/RISCO]
+================================================================================
+Comando: busca recursiva por *.p12,*.pfx,*.pem,*.key,*.crt,*.cer
+         (excluindo node_modules) + pastas certs/ e certificates/
+  RESULTADO: NENHUM arquivo sensivel encontrado.
+             NENHUMA pasta certs/ ou certificates/ encontrada.
+
+Busca por EFI_CLIENT_ID | EFI_CLIENT_SECRET | EFI_CERTIFICATE | efi_client |
+gerencianet (diretorio do repo, excluindo node_modules/dist/.git):
+  RESULTADO: 1 (um) arquivo — apenas DOCUMENTACAO, sem valores:
+    docs/proximas-integracoes.md (linhas 113-115)
+
+  Detalhe do achado (sem conteudo de secret; sao apenas nomes de checklist):
+    - [ ] VITE_EFI_CLIENT_ID
+    - [ ] VITE_EFI_CLIENT_SECRET
+    - [ ] VITE_EFI_CERTIFICADO (base64)
+  RISCO (documentacao, NAO credencial real): os nomes sugeridos usam o prefixo
+  VITE_, que embute a variavel no BUNDLE do frontend (publica). Se algum dia
+  forem usados assim, a Client Secret e o certificado VAZARIAM para o navegador.
+  ACAO FUTURA (nao executada agora): corrigir a documentacao para apontar as
+  credenciais Efi para Supabase Secrets (backend), sem prefixo VITE_.
+  NENHUM valor de credencial foi encontrado; nada foi impresso.
+
+Conclusao da varredura: ZERO credenciais reais e ZERO certificados no repositorio.
+Nada foi copiado, criado ou solicitado nesta missao.
+
+6. PADRAO ATUAL DE SUPABASE SECRETS (EDGE FUNCTIONS)  [VALIDADO]
+================================================================================
+Padrao confirmado: Edge Functions (Deno 2) leem segredos EXCLUSIVAMENTE via
+`Deno.env.get("NOME")`. Os valores sao definidos fora do repo, via
+`supabase secrets set NOME=valor` (o comando NAO foi executado nesta missao).
+
+Exemplos de secrets ja usados em supabase/functions/*/index.ts:
+  - SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+  - EDGE_SUPABASE_URL, EDGE_SERVICE_ROLE_KEY
+  - TMS_EDGE_INTERNAL_TOKEN
+  - FOCUS_TOKEN, FOCUS_TOKEN_PRODUCAO, FOCUS_AMBIENTE, FOCUS_PRODUCAO_LIBERADA,
+    FOCUS_REAL_ENABLED, FOCUS_BASE_URL, FOCUS_BASE_URL_PRODUCAO
+  - GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
+  - FISCAL_EMAIL_WEBHOOK, N8N_WEBHOOK_ZOHO_EMAIL
+Referencia de implementacao segura: supabase/functions/proxy-ia/index.ts
+  (chaves so no backend, valida JWT, nao loga secrets).
+Padrao de ambiente: FOCUS_AMBIENTE + flags de liberacao de producao. Isso sera
+espelhado para a Efi via EFI_ENVIRONMENT (somente HML agora).
+
+7. NOMES DAS SECRETS FUTURAS (SOMENTE NOMES — SEM VALORES)
+================================================================================
+Definidas para HML (Homologacao), sem qualquer valor registrado:
+
+  EFI_ENVIRONMENT            -> ambiente ativo (valor previsto na fase de impl.: "homologacao")
+  EFI_CLIENT_ID_HML          -> Client ID da aplicacao Efi (HML)
+  EFI_CLIENT_SECRET_HML      -> Client Secret da aplicacao Efi (HML)
+  EFI_CERTIFICATE_HML        -> certificado .p12 (conteudo/referencia) da Efi (HML)
+
+PROPOSTA ADICIONAL (somente se tecnicamente necessario — nada inserido):
+  EFI_CERTIFICATE_PASSWORD_HML -> senha do arquivo .p12, caso o certificado seja
+                                  protegido por senha (cenario comum). Se o .p12
+                                  for sem senha, este nome NAO e necessario.
+  (Alternativa: se optar por certificado em base64, pode-se usar a propria
+   EFI_CERTIFICATE_HML com o conteudo em base64; nome unico, sem novo secret.)
+
+Nenhum valor foi definido, solicitado ou registrado. Nenhum `supabase secrets set`.
+
+8. IMPACTO / RISCOS E BLOQUEIOS
+================================================================================
+- [RESOLVIDO] Certificados/chaves agora protegidos contra commit (.p12/.pfx/.pem/
+  .key/.crt/.cer, certs/, certificates/).
+- [RISCO DOC] docs/proximas-integracoes.md sugere VITE_EFI_* (prefixo de bundle).
+  Corrigir na proxima missao de implementacao (usar Supabase Secrets, sem VITE_).
+- [BLOQUEIO FUTURO] Manuseio de mTLS/.p12 na Edge Function (Deno) ainda precisa
+  ser desenhado; nenhum suporte a certificado existe hoje no repo.
+- [BLOQUEIO FUTURO] Webhook Efi precisara de validacao de origem/idempotencia
+  (nao existe padrao bancario; webhooks_recebidos tem RLS permissiva legada).
+- [AMBIENTE] Somente HML. Producao permanece intocada.
+- Certificado .p12 NAO foi copiado para o projeto e NAO foi solicitado.
+
+9. DECLARACAO DE CONFORMIDADE DA MISSAO
+================================================================================
+- [OK] .gitignore auditado e reforcado; regras existentes preservadas.
+- [OK] Protecao comprovada via git check-ignore (8/8 alvos ignorados).
+- [OK] Varredura read-only: nenhuma credencial/certificado real encontrado.
+- [OK] Padrao de Supabase Secrets confirmado (Deno.env.get).
+- [OK] Nomes das secrets futuras definidos SEM valores.
+- [OK] Nenhum certificado copiado; nenhum certificado solicitado.
+- [OK] Nenhum `supabase secrets set` executado.
+- [OK] Nenhuma Edge Function, migration, tabela, banco ou UI criada/alterada.
+- [OK] Producao intocada.
+- [OK] Nenhum secret/conteudo de certificado neste TXT.
+- Unica alteracao no repositorio nesta missao: .gitignore (bloco de certificados).
+
+================================================================================
+FIM — EFI-INT-02-HARDENING.txt
+================================================================================

@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { listarRegrasNfse, salvarRegraNfse, type RegraFiscalNfse } from "@/services/fiscal/regrasFiscaisNfseService";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
@@ -53,7 +54,15 @@ export default function RegrasFiscaisNfse() {
     setSaving(false);
   };
 
-  if (loading) return <Card><CardContent className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></CardContent></Card>;
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center py-12">
+          <ProgressiveBlocksLoader size="normal" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">

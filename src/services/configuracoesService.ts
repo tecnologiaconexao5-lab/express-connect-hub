@@ -56,14 +56,19 @@ export async function carregarConfiguracoesSistemaComFonte(chaves: string[]) {
       salvarConfiguracoesLocalStorage(resultado);
       return { source: "supabase" as const, data: resultado };
     }
+    if (error) {
+      console.warn("Erro ao ler configurações do Supabase:", error.message);
+    }
   } catch (error) {
-    console.warn("Supabase indisponível ao carregar configurações, usando localStorage:", error);
+    console.warn("Supabase indisponível ao carregar configurações:", error);
   }
 
   return { source: "local" as const, data: filtrarChaves(lerConfiguracoesLocalStorage(), chaves) };
 }
 
 export async function salvarConfiguracoesSistemaComFonte(values: Record<string, any>) {
+  // FIN-CONFIG-PDF-01A: Schema real alinhado via migration 20260910.
+  // Coluna updated_at agora existe (DEFAULT now()).
   const payload = Object.entries(values).map(([chave, valor]) => ({
     chave,
     valor,
@@ -79,13 +84,15 @@ export async function salvarConfiguracoesSistemaComFonte(values: Record<string, 
       salvarConfiguracoesLocalStorage(values);
       return { success: true, source: "supabase" as const };
     }
-    console.warn("Erro ao salvar configurações no Supabase, usando localStorage:", error.message);
+    console.warn("Erro ao salvar configurações no Supabase:", error.message);
+    return { success: false, error: error.message, source: "supabase" as const };
   } catch (error) {
-    console.warn("Supabase indisponível ao salvar configurações, usando localStorage:", error);
+    console.warn("Supabase indisponível ao salvar configurações:", error);
   }
 
+  // Fallback: localStorage apenas como cache offline, NÃO como sucesso
   salvarConfiguracoesLocalStorage(values);
-  return { success: true, source: "local" as const };
+  return { success: false, error: "Supabase indisponível — dados salvos localmente apenas", source: "local" as const };
 }
 
 export async function carregarConfiguracoesSistema(chaves: string[]) {
@@ -93,14 +100,26 @@ export async function carregarConfiguracoesSistema(chaves: string[]) {
   return result.data;
 }
 
+export async function carregarConfiguracoesSistemaSource(chaves: string[]) {
+  return carregarConfiguracoesSistemaComFonte(chaves);
+}
+
 export async function salvarConfiguracoesSistema(values: Record<string, any>) {
   const result = await salvarConfiguracoesSistemaComFonte(values);
+  if (!result.success) {
+    throw new Error(result.error || "Falha ao salvar no Supabase");
+  }
   return result.success;
 }
 
 export async function carregarConfiguracaoSistema(chave: string) {
   const data = await carregarConfiguracoesSistema([chave]);
   return data?.[chave] ?? null;
+}
+
+export async function carregarConfiguracaoSistemaSource(chave: string) {
+  const result = await carregarConfiguracoesSistemaComFonte([chave]);
+  return { value: result.data?.[chave] ?? null, source: result.source };
 }
 
 export async function salvarConfiguracaoSistema(chave: string, valor: any) {

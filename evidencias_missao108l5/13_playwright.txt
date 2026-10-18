@@ -1,0 +1,25 @@
+PLAYWRIGHT — MISSÃO 108-L5
+
+Total: 18/18 testes passando (5.4min)
+
+Resultados:
+01 ✅ Sidebar item Multi Filial existe e navega sem erros
+02 ✅ Renderiza título e KPIs com dados reais ou estado vazio
+03 ✅ Visão Comparativa carrega sem erros
+04 ✅ Filtro de período recalcula dados
+05 ✅ Busca textual filtra filiais
+06 ✅ Abre detalhe da filial ao clicar em card
+07 ✅ Detalhe da filial exibe operações
+08 ✅ Detalhe da filial exibe financeiro
+09 ✅ Detalhe da filial exibe contratos
+10 ✅ Isolamento tenant: admin sem cliente vê mensagem
+11 ✅ Ausência de margem e repasse do prestador na tela
+12 ✅ Navegação ampla sem erros de console
+13 ✅ Navegação entre Visão Geral e Comparativo sem erros
+14 ✅ Botão Atualizar presente e funcional
+15 ✅ Zero erros ErrorBoundary na tela
+16 ✅ Zero 404 na navegação
+17 ✅ Fecha modal de detalhe ao clicar Fechar
+18 ✅ Zero mocks: dados vêm de ordens_servico via API
+
+Screenshots: 10 capturados em evidencias_missao108l5/

@@ -1,0 +1,612 @@
+{
+  "ts": "2026-10-04T22:41:11.626Z",
+  "total_composicoes": 57,
+  "por_origem": {
+    "os_direta": {
+      "total": 35,
+      "falhas": 25
+    },
+    "escala_direta": {
+      "total": 22,
+      "falhas": 3
+    }
+  },
+  "falhas": [
+    {
+      "os_id": "0166a207-646c-4dc8-a824-3d299e4eb553",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=25 esp=0"
+        },
+        {
+          "name": "imposto",
+          "detail": "gravado=90.0000000000000000/6 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=30 esp=15"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=525 esp=550"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=405.0000000000000000 esp=467.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=36.67"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=27.00000000000000000000 esp=31.17"
+        }
+      ]
+    },
+    {
+      "os_id": "a2ac3c46-b36f-4352-a1e7-dfecc1200387",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=25 esp=0"
+        },
+        {
+          "name": "imposto",
+          "detail": "gravado=90.0000000000000000/6 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=30 esp=15"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=525 esp=550"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=405.0000000000000000 esp=467.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=36.67"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=27.00000000000000000000 esp=31.17"
+        }
+      ]
+    },
+    {
+      "os_id": "ea967070-5553-497f-8528-c19048ed5932",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=25 esp=0"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=625 esp=650"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=487.5000000000000000 esp=512.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=26"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=19.50000000000000000000 esp=20.5"
+        }
+      ]
+    },
+    {
+      "os_id": "ca9f55b2-47eb-437f-8ea1-55263597e862",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=25 esp=0"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=625 esp=650"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=487.5000000000000000 esp=512.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=26"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=19.50000000000000000000 esp=20.5"
+        }
+      ]
+    },
+    {
+      "os_id": "dce846ff-d7ae-463a-b784-73d8d2d91b21",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=40"
+        }
+      ]
+    },
+    {
+      "os_id": "bb2cda88-cffd-4196-9a16-ed68fd2e472c",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=40"
+        }
+      ]
+    },
+    {
+      "os_id": "c6a4e65a-1622-406f-a20a-b6adccc9abbb",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=40"
+        }
+      ]
+    },
+    {
+      "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        }
+      ]
+    },
+    {
+      "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        }
+      ]
+    },
+    {
+      "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=34.38"
+        }
+      ]
+    },
+    {
+      "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=28"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1800"
+        }
+      ]
+    },
+    {
+      "os_id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=37.5"
+        }
+      ]
+    },
+    {
+      "os_id": "63129749-7e22-4088-97f3-52e0bd13d385",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        }
+      ]
+    },
+    {
+      "os_id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=34.38"
+        }
+      ]
+    },
+    {
+      "os_id": "bff76814-3149-408c-b5f8-467f1ff178a4",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "imposto",
+          "detail": "gravado=0.00000000000000000000/0 esp=67.5/4.5"
+        },
+        {
+          "name": "seguro",
+          "detail": "gravado=0 esp=15"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=500.00000000000000000000 esp=417.5"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=33.33333333333333333300 esp=27.83"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1000"
+        }
+      ]
+    },
+    {
+      "os_id": "fdd3e5ce-6736-4b6a-aa41-f837d4f5f219",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=28"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=0.00 esp=1800"
+        }
+      ]
+    },
+    {
+      "os_id": "93014234-8dc8-408c-b724-f0ef79ce284b",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=37.5"
+        }
+      ]
+    },
+    {
+      "os_id": "8aca4262-b27e-467a-bf95-fd85d952bde2",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=0 esp=33.33"
+        }
+      ]
+    },
+    {
+      "os_id": "88f80b32-fe2b-4e4b-beaa-5a537a4b7e7d",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=25 esp=0"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=46.5 esp=71.5"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=38.2500000000000000 esp=63.25"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=31.00 esp=47.67"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=25.50000000000000000000 esp=42.17"
+        },
+        {
+          "name": "AP=valor_liquido",
+          "detail": "AP=103.50 esp=78.5"
+        }
+      ]
+    },
+    {
+      "os_id": "0733bb97-8356-434c-bbdf-35d70bc0ff08",
+      "origem": "os_direta",
+      "fails": [
+        {
+          "name": "outros_custos",
+          "detail": "gravado=120 esp=0"
+        },
+        {
+          "name": "margem_bruta",
+          "detail": "gravado=720 esp=840"
+        },
+        {
+          "name": "margem_liquida",
+          "detail": "gravado=610.0000000000000000 esp=730"
+        },
+        {
+          "name": "pct_bruta",
+          "detail": "gravado=36.00 esp=42"
+        },
+        {
+          "name": "pct_liquida",
+          "detail": "gravado=30.50000000000000000000 esp=36.5"
+        },
+        {
+          "name": "AP=valor_liquido",
+          "detail": "AP=1100 esp=1160"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=1280.00 esp=1160"
+        }
+      ]
+    },
+    {
+      "os_id": "fd73f36c-287f-42e0-ab68-73956426b260",
+      "origem": "escala_direta",
+      "fails": [
+        {
+          "name": "AP=valor_liquido",
+          "detail": "AP=850.00 esp=1050"
+        }
+      ]
+    },
+    {
+      "os_id": "f97eac6c-a64e-4cb8-9d12-25ccc878d2c0",
+      "origem": "escala_direta",
+      "fails": [
+        {
+          "name": "AP=valor_liquido",
+          "detail": "AP=850.00 esp=1050"
+        }
+      ]
+    },
+    {
+      "os_id": "c4338964-d565-49fb-a72a-211246a60079",
+      "origem": "escala_direta",
+      "fails": [
+        {
+          "name": "AP=valor_liquido",
+          "detail": "AP=1430.00 esp=1350"
+        },
+        {
+          "name": "PP.valor_liquido",
+          "detail": "PP.liq=1430.00 esp=1350"
+        }
+      ]
+    }
+  ],
+  "drift": [
+    {
+      "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+      "os_vc": 2900,
+      "comp_vc": 1500,
+      "os_cp": 1000,
+      "comp_vp": 1000
+    },
+    {
+      "os_id": "2073a75d-62f7-453d-b4e3-eaf3e8ea212b",
+      "os_vc": 0,
+      "comp_vc": 1500,
+      "os_cp": 800,
+      "comp_vp": 800
+    },
+    {
+      "os_id": "38961ecf-4c62-4a87-a614-ec9092c988e4",
+      "os_vc": 0,
+      "comp_vc": 1500,
+      "os_cp": 800,
+      "comp_vp": 800
+    }
+  ],
+  "exemplos_ok": [
+    {
+      "os_id": "9f9130ba-eefb-420f-8071-be0d7dd8af30",
+      "origem": "os_direta",
+      "vc": 1500,
+      "vp": 850,
+      "margem_liquida": "567.5000000000000000"
+    },
+    {
+      "os_id": "2073a75d-62f7-453d-b4e3-eaf3e8ea212b",
+      "origem": "escala_direta",
+      "vc": 1500,
+      "vp": 800,
+      "margem_liquida": "617.5000000000000000"
+    },
+    {
+      "os_id": "38961ecf-4c62-4a87-a614-ec9092c988e4",
+      "origem": "escala_direta",
+      "vc": 1500,
+      "vp": 800,
+      "margem_liquida": "617.5000000000000000"
+    },
+    {
+      "os_id": "c25f8d11-a861-4dfa-9eb1-45c0f718ac59",
+      "origem": "escala_direta",
+      "vc": 350,
+      "vp": 280,
+      "margem_liquida": "32.2500000000000000"
+    },
+    {
+      "os_id": "47cfd745-5278-4f8d-bd47-dd8f76dc0ea4",
+      "origem": "escala_direta",
+      "vc": 1500,
+      "vp": 850,
+      "margem_liquida": "367.5000000000000000"
+    }
+  ]
+}

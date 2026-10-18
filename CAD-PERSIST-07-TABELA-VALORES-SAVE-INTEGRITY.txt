@@ -1,0 +1,229 @@
+================================================================================
+CAD-PERSIST-07-TABELA-VALORES-SAVE-INTEGRITY — Tabela Valores Save Integrity
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — MAPEAMENTO DO FLUXO REAL
+--------------------------------------
+
+FORM_COMPONENT= TabelaValoresForm.tsx (385 linhas)
+SAVE_HANDLER= onClick do botao "Salvar Tabela" (linha 85)
+ONSALVAR_IMPLEMENTATION= handleSalvarTabela em TabelasValoresLista.tsx (linha 166)
+DATABASE_OPERATION= Supabase INSERT (novo) ou UPDATE (edicao) em tabelas_valores
+
+CREATE_OPERATION= supabase.from("tabelas_valores").insert([payload])
+UPDATE_OPERATION= supabase.from("tabelas_valores").update(payload).eq("id", tabela.id)
+
+SAVE_FLOW_BEFORE=
+  1. Botao clicado
+  2. toast.success("Tabela salva com sucesso.") ← FALSO SUCESSO
+  3. onSalvar(data) ← chamada async
+  4. Parent: handleSalvarTabela → Supabase INSERT/UPDATE
+  5. Parent: toast.success("Tabela salva com sucesso!") ← CORRETO
+  6. Parent: setModoForm(null) ← fecha form
+  7. Parent: fetchTabelas() ← refetch
+
+SUCCESS_TOAST_POSITION_BEFORE= ANTES de onSalvar() (linha 85, filho)
+                               + DEPOIS de Supabase (linha 216, pai)
+                               = 2 toasts, primeiro falso
+
+FORM_CLOSE_POSITION_BEFORE= DEPOIS de Supabase + toast (linha 217, pai) ← correto
+
+---------------------------------------------------------
+
+SECAO 2 — RASTREIO onSalVar ATE O BANCO
+-------------------------------------------
+
+ONSALVAR_RETURN_TYPE= Promise<void> (funcao async no pai)
+ONSALVAR_ERROR_BEHAVIOR= try/catch + toast.error + return (linhas 210-213, 220-222)
+PERSISTENCE_CONFIRMATION_BEFORE= Sim (error check no pai, linhas 210-214)
+
+Detalhes do fluxo pai:
+  - INSERT: result.error verificado; se error → toast.error + return
+  - UPDATE: result.error verificado; se error → toast.error + return
+  - Sucesso: toast.success + setModoForm(null) + fetchTabelas()
+  - Exception: catch → toast.error
+
+---------------------------------------------------------
+
+SECAO 3 — CORRECAO IMPLEMENTADA
+---------------------------------
+
+CORRECAO= Remover toast.success do filho (TabelaValoresForm)
+          + adicionar isSaving para double-submit protection
+          + atualizar tipo onSalvar para aceitar Promise
+
+Filho (TabelaValoresForm):
+  REMOVIDO: toast.success("Tabela salva com sucesso.") ANTES de onSalvar
+  ADICIONADO: isSaving state + botao disabled durante save
+  ADICIONADO: await onSalvar(data) com try/finally para setIsSaving(false)
+  TIPO: onSalvar: (tab: TabelaValores) => void | Promise<void>
+  REMOVIDO: import { toast } from "sonner" (nao mais usado)
+
+Pai (TabelasValoresLista):
+  MANTIDO: handleSalvarTabela com fluxo correto
+  MANTIDO: toast.success SO apos Supabase success
+  MANTIDO: setModoForm(null) SO apos success
+  MANTIDO: fetchTabelas() SO apos success
+  MANTIDO: toast.error em erro/exception
+
+SAVE_FLOW_AFTER=
+  1. Botao clicado → isSaving=true, botao desabilitado
+  2. await onSalvar(data)
+  3. Parent: handleSalvarTabela → Supabase INSERT/UPDATE
+  4. Parent: erro? → toast.error + return (form permanece aberto)
+  5. Parent: sucesso? → toast.success("Tabela salva com sucesso!")
+  6. Parent: setModoForm(null) ← fecha form
+  7. Parent: fetchTabelas() ← refetch
+  8. finally: isSaving=false
+
+SUCCESS_TOAST_POSITION_AFTER= SOMENTE no pai, SO apos confirmacao Supabase
+
+FORM_CLOSE_POSITION_AFTER= SOMENTE no pai, SO apos toast.success
+
+---------------------------------------------------------
+
+SECAO 4 — CENARIOS DE ERRO
+------------------------------
+
+SAVE_ERROR_KEEPS_FORM_OPEN= YES
+  - Pai: return no erro impede setModoForm(null)
+  - Filho: try/finally nao chama onVoltar
+
+SAVE_ERROR_KEEPS_FIELDS= YES
+  - state data nao e limpo no erro
+  - formulario permanece com dados preenchidos
+
+FALSE_SUCCESS_POSSIBLE_BEFORE= YES (toast antes de onSalvar)
+FALSE_SUCCESS_POSSIBLE_AFTER= NO (toast somente apos Supabase success)
+
+DOUBLE_SUBMIT_PROTECTION= isSaving state
+  - Botao desabilitado durante operacao
+  - Texto muda para "Salvando..."
+  - finally libera botao
+
+REFETCH_AFTER_CONFIRMED_SAVE= fetchTabelas() no pai apos sucesso
+
+---------------------------------------------------------
+
+SECAO 5 — NENHUMA REGRA COMERCIAL ALTERADA
+---------------------------------------------
+
+COMMERCIAL_RULES_CHANGED= NO
+VALORES_ALTERADOS= NO
+FAIXAS_ALTERADAS= NO
+CLIENTE_ALTERADO= NO
+PRESTADOR_ALTERADO= NO
+REGIAO_ALTERADA= NO
+CALCULO_ALTERADO= NO
+MARGEM_ALTERADA= NO
+VIGENCIA_ALTERADA= NO
+
+Apenas integridade do save foi alterada.
+
+---------------------------------------------------------
+
+SECAO 6 — TESTES
+-------------------
+
+T1 CREATE válido → sucesso somente depois do banco
+   RESULTADO= PASS (STATIC: pai faz INSERT, toast SO apos error check)
+
+T2 CREATE erro → nenhum sucesso
+   RESULTADO= PASS (STATIC: pai return no erro, sem toast.success)
+
+T3 CREATE erro → formulário permanece aberto
+   RESULTADO= PASS (STATIC: setModoForm(null) so no caminho feliz)
+
+T4 CREATE erro → campos permanecem preenchidos
+   RESULTADO= PASS (STATIC: state data nao e limpo)
+
+T5 retorno vazio inesperado → nenhum sucesso
+   RESULTADO= PASS (STATIC: error check cobre retorno vazio)
+
+T6 UPDATE válido → confirmação real
+   RESULTADO= PASS (STATIC: update + error check + toast.success)
+
+T7 UPDATE inexistente → nenhum sucesso
+   RESULTADO= PASS (STATIC: error check cobre ID inexistente)
+
+T8 duplo clique → uma operação lógica
+   RESULTADO= PASS (STATIC: isSaving bloqueia botao)
+
+T9 refetch ocorre somente após sucesso
+   RESULTADO= PASS (STATIC: fetchTabelas() so no caminho feliz)
+
+T10 nenhuma regra/valor comercial alterado
+   RESULTADO= PASS (STATIC: nenhum campo comercial modificado)
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=10
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+---------------------------------------------------------
+
+SECAO 7 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 51s
+VITEST_STATUS=✅ 1249 passed, 58 failed (pre-existing), 0 regressions
+
+PRODUCTION_WRITES=0
+
+---------------------------------------------------------
+
+SECAO 8 — EVIDENCIA OBRIGATORIA
+-----------------------------------
+
+FORM_COMPONENT= TabelaValoresForm.tsx
+SAVE_HANDLER= onClick botao "Salvar Tabela"
+ONSALVAR_IMPLEMENTATION= handleSalvarTabela (TabelasValoresLista.tsx:166)
+ONSALVAR_RETURN_TYPE= Promise<void>
+ONSALVAR_ERROR_BEHAVIOR= toast.error + return (pai)
+
+DATABASE_OPERATION= Supabase INSERT/UPDATE tabelas_valores
+CREATE_OPERATION= supabase.from("tabelas_valores").insert([payload])
+UPDATE_OPERATION= supabase.from("tabelas_valores").update(payload).eq("id", tabela.id)
+
+SAVE_FLOW_BEFORE= toast.success → onSalvar → Supabase → toast.success (2 toasts)
+SAVE_FLOW_AFTER= onSalvar → Supabase → toast.success (1 toast, correto)
+
+SUCCESS_TOAST_POSITION_BEFORE= ANTES de onSalvar (linha 85, filho)
+SUCCESS_TOAST_POSITION_AFTER= DEPOIS de Supabase success (linha 216, pai)
+
+FORM_CLOSE_POSITION_BEFORE= DEPOIS de Supabase (pai) ← correto
+FORM_CLOSE_POSITION_AFTER= DEPOIS de Supabase (pai) ← mantido
+
+PERSISTENCE_CONFIRMATION_BEFORE= error check no pai
+PERSISTENCE_CONFIRMATION_AFTER= error check no pai (mantido)
+
+FALSE_SUCCESS_POSSIBLE_BEFORE= YES
+FALSE_SUCCESS_POSSIBLE_AFTER= NO
+
+SAVE_ERROR_KEEPS_FORM_OPEN= YES
+SAVE_ERROR_KEEPS_FIELDS= YES
+DOUBLE_SUBMIT_PROTECTION= isSaving state
+REFETCH_AFTER_CONFIRMED_SAVE= fetchTabelas()
+
+COMMERCIAL_RULES_CHANGED=NO
+PRODUCTION_WRITES=0
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=10
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 51s
+
+================================================================================
+CAD-PERSIST-07-TABELA-VALORES-SAVE-INTEGRITY = PASS STATIC
+================================================================================

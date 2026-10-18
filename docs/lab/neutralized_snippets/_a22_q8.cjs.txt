@@ -1,0 +1,12 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const r = await c.query("SELECT pg_get_functiondef(oid) AS def FROM pg_proc WHERE proname='f_responder_mensagem_torre'");
+  console.log('DEF f_responder_mensagem_torre:\n', r.rows[0]?.def);
+  const tr = await c.query("SELECT user_id, tenant_id, nome, role FROM public.tenant_usuarios LIMIT 10");
+  console.log('TENANT_USUARIOS:', JSON.stringify(tr.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

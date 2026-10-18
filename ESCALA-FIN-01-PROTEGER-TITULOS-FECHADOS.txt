@@ -1,0 +1,121 @@
+ESCALA-FIN-01-PROTEGER-TITULOS-FECHADOS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA
+
+==================================================
+AUDITORIA (semântica REAL de status)
+==================================================
+
+financeiro_receber: aberto, pendente, pago, recebido, cancelada
+  → FECHADO = pago | recebido | cancelada  (alinhado ao trigger E2E-03)
+financeiro_pagar: aberto, pendente, pago, a vencer, parcial, cancelado, cancelada
+  → FECHADO = pago | cancelado | cancelada
+pagamentos_prestadores: pendente, nao_vencido, pago, cancelado
+  → FECHADO = pago | cancelado
+
+UPDATEs sem guarda de status (antes):
+  M66 (f_trg_propagar_financeiro_alocacao):
+    financeiro_receber   ON CONFLICT (os_id) DO UPDATE SET valor = ...
+    financeiro_pagar     ON CONFLICT (os_id) DO UPDATE SET valor = ...
+    pagamentos_prestadores ON CONFLICT (os_id) DO UPDATE SET valor_liquido = ...
+  M80 (f_trg_propagar_financeiro_os):
+    UPDATE financeiro_receber ... WHERE os_id = NEW.id::TEXT
+    UPDATE financeiro_pagar   ... WHERE os_id = NEW.id::TEXT
+    UPDATE pagamentos_prestadores ... WHERE os_id = NEW.id
+  → risco: edição posterior da Escala/OS reescrevia o VALOR de títulos fechados.
+
+==================================================
+CORREÇÃO (mínima, forward-only)
+==================================================
+
+Adicionadas guardas de status nos UPDATEs de valor (abertos continuam recalculando):
+  financeiro_receber:      AND/WHERE status NOT IN ('pago','recebido','cancelada')
+  financeiro_pagar:        AND/WHERE status NOT IN ('pago','cancelado','cancelada')
+  pagamentos_prestadores:  AND/WHERE status_pagamento NOT IN ('pago','cancelado')
+  (M66: ON CONFLICT (os_id) DO UPDATE ... WHERE <guarda>; M80: WHERE os_id = ... AND <guarda>)
+
+Migration: supabase/migrations/20260922000004_escala_fin_01_proteger_titulos_fechados.sql
+Rollback:  supabase/migrations/20260922000005_escala_fin_01_rollback.sql
+  (rollback = definições EXATAS anteriores das duas funções, sem as guardas)
+Sem ALTER TABLE. Sem DELETE. Sem saneamento histórico. M66/M80 apenas com as guardas.
+
+==================================================
+VALIDAÇÃO (BEGIN/ROLLBACK — sem operação real)
+==================================================
+
+A) Título ABERTO recalculando:
+   A_OPEN_INITIAL rec=600 pag=520 pp=520
+   A_OPEN_RECALC  rec=700 pag=620 pp=620
+   OPEN_RECEIVABLE_RECALCULATES=YES
+   OPEN_PAYABLE_RECALCULATES=YES
+   OPEN_PROVIDER_PAYMENT_RECALCULATES=YES
+
+B) Título FECHADO (cancelada/cancelado) — atualização de origem não altera valor:
+   B_CLOSED_BEFORE rec=700 pag=620 pp=620
+   B_CLOSED_AFTER  rec=700 pag=620 pp=620  (origem foi para 999/888)
+   CLOSED_RECEIVABLE_VALUE_PRESERVED=YES
+   CLOSED_PAYABLE_VALUE_PRESERVED=YES
+   CLOSED_PROVIDER_PAYMENT_VALUE_PRESERVED=YES
+
+C) Idempotência: IDEMPOTENCY_ROWS rec=1 pag=1 (sem segunda obrigação)
+
+D) Pós-deploy (funções em produção, BEGIN/ROLLBACK):
+   POSTDEPLOY_OPEN_PAGAR=620.00
+   POSTDEPLOY_CLOSED_PAGAR=620.00 (não virou 999)
+   POSTDEPLOY_E2E03_OS=cancelada
+   RESIDUAL=0
+
+==================================================
+RESULTADO
+==================================================
+
+ROOT_CAUSE=M66/M80 atualizavam o VALOR de financeiro_receber/pagar/pagamentos_prestadores
+  sem verificar o status, sobrescrevendo títulos já fechados em edições posteriores.
+FIX_IMPLEMENTED=YES
+FINANCIAL_CLOSED_VALUE_PROTECTION=YES
+PRODUCTION_DEPLOYED=YES
+ROLLBACK_PREPARED=YES
+
+OPEN_PAYABLE_RECALCULATES=YES
+CLOSED_PAYABLE_VALUE_PRESERVED=YES
+OPEN_PROVIDER_PAYMENT_RECALCULATES=YES
+CLOSED_PROVIDER_PAYMENT_VALUE_PRESERVED=YES
+RECEIVABLE_PROTECTION_REQUIRED=YES (risco equivalente existia)
+OPEN_RECEIVABLE_RECALCULATES=YES
+CLOSED_RECEIVABLE_VALUE_PRESERVED=YES
+IDEMPOTENCY_PRESERVED=YES
+ATOMICITY_E2E05_PRESERVED=YES
+CANCEL_E2E03_PRESERVED=YES
+OS01_PRESERVED=YES
+
+FILES_MODIFIED=
+  supabase/migrations/20260922000004_escala_fin_01_proteger_titulos_fechados.sql (novo)
+  supabase/migrations/20260922000005_escala_fin_01_rollback.sql (novo)
+  src/test/escala_fin_01_proteger_titulos_fechados.test.ts (novo)
+
+TESTS=109/109 PASS (7 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 45.10s
+
+DB_WRITES=0 (somente DDL CREATE OR REPLACE FUNCTION)
+MIGRATIONS=1 (aplicada em produção)
+
+==================================================
+FORA DO ESCOPO (não tratado)
+==================================================
+
+- 12 divergências históricas; redundância M66/M80; 134 alocações sem OS;
+  27 alocações concluídas órfãs; APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Sem ALTER TABLE / DELETE / saneamento histórico. Validação em BEGIN/ROLLBACK.
+- M66/M80 alterados SOMENTE com as guardas. Títulos pagos não tocados.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=1

@@ -1,0 +1,978 @@
+================================================================================
+ADM-APP-02C.1 — PREFLIGHT REC-01 / SEGURANÇA
+TMS CONEXÃO EXPRESS — express-connect-hub
+================================================================================
+MISSÃO ....... ADM-APP-02C.1 (nível 7 — ADMIN APP + CADASTRO + RECRUTAMENTO)
+MODELO ....... DeepSeek V4.1 Flash
+REDMI ........ não conectado (não necessário)
+DATA ......... 2026-09-27
+ESCOPO ....... SOMENTE LEITURA / DIAGNÓSTICO
+
+NÃO aplicado nesta missão:
+  ✗ migration alguma          ✗ alteração de RLS        ✗ alteração de schema
+  ✗ alteração de dados        ✗ correção de código      ✗ execução da REC-01 inteira
+  ✗ service_role no frontend  ✗ tornar bucket privado   ✗ reabrir nível 8
+
+PROVA DE ESCRITA: apenas 7 transações COM ROLLBACK (Seção 2), em linhas TESTE
+identificadas. Verificação final de integridade: "persistiu_alteracao = false".
+Nenhum dado persistido. Nenhuma tabela criada (liberado_app_audit continua
+inexistente após os testes).
+
+Banco consultado via DATABASE_URL (.env) com cliente `pg`, somente SELECT/SHOW,
+mais as transações reversíveis declaradas. Scripts auditivos prefixados `_` em
+scripts/_adm_app_02c1_*.mjs (read-only) e _adm_app_02c1_selflib_test.mjs
+(transacional + ROLLBACK).
+
+================================================================================
+0. RESUMO EXECUTIVO
+================================================================================
+
+VEREDITO: NÃO aplicar a migration REC-01. Ela NÃO EXECUTA hoje (falha em 2
+pontos), parte do seu conteúdo é obsoleta, parte seria regressiva e o bloco de
+proteção contra self-liberação (E) é um no-op que nem cria trigger.
+
+Achados-chave desta missão:
+
+ D1. REC-01 aborta hoje no SQL da linha 136 (CREATE POLICY cip_delete_tms já
+     existe, criada pela REC-062B de 2026-09-07) e novamente na linha 361
+     (CREATE POLICY sobre match_operacoes_prestadores — tabela INEXISTENTE).
+     Ou seja: aplicar "de forma cega" falha por completo; e se fosse corrigida
+     a ordem, ainda sobrescreveria a REC-062B (ver D4).
+
+ D2. Bloco E da REC-01 (fn_block_self_liberado_app) cria APENAS a função —
+     NUNCA cria o trigger correspondente. E o corpo da função é um no-op
+     (o branch de bloqueio contém `NULL;` — nunca RAISE). Mesmo aplicada, a
+     REC-01 NÃO bloquearia auto-liberação. Falsa sensação de segurança.
+
+ D3. A-9 PROVADO COM DADO REAL (transação + rollback):
+     um prestador autenticado CONSEGUE hoje:
+       • liberado_app false→true ......... SIM (1 linha, T1)
+       • status em_analise→ativo ......... SIM (1 linha, T2)
+       • qualquer outro campo da própria linha — SIM (T3: status,
+         status_operacional, liberado_app, cpf_cnpj, data_aprovacao,
+         score_interno, ultimo_usuario, origem_cadastro, observacoes, metadata)
+     Único guard real existente: não pode trocar o próprio auth_user_id
+     (erro 42501) nem inserir linhas (42501), e não alcança linha de outro
+     prestador (0 linhas).
+
+ D4. REC-01 aplicada HOJE regrediria a REC-062B: o bloco A3 droppa
+     recrutamento_operacoes_select/insert/update/delete (nomes exatos
+     recriados pela REC-062B em produção) e os substitui por ro_*_auth.
+
+ D5. REC-02 (20260831000001) também NÃO foi aplicada — nenhuma das 12 tabelas
+     tem tenant_id. Ela também falharia hoje (linha 343 sem guarda para
+     match_operacoes_prestadores) e, se passasse, REABRIRIA anon (políticas
+     SELECT criadas TO anon, authenticated) — regressão face ao REVOKE feito
+     pela REC-062B.
+
+ D6. A-12 confirmado e maior do que documentado: qualquer authenticated lê e
+     escreve recrutamento_candidatos, recrutamento_prestadores,
+     recrutamento_operacoes e candidato_documentos SEM isolamento algum.
+     A exposição inclui CPF, RG, data de nascimento, endereço e `documentos`
+     de 10 prestadores (recrutamento_prestadores: 10/10 com cpf_cnpj e docs).
+     O App Motorista NÃO referencia essas tabelas (0 ocorrências em
+     C:\src\conexao_prestador) → restringir a TMS não quebra o App.
+
+ D7. Buraco anon restante: a tabela `candidatos` ainda tem GRANT de anon
+     (SELECT+INSERT) E policy com auth.role()='anon' — a lista de REVOKE da
+     REC-062B omitiu `candidatos`.
+
+ D8. REC-03 (20260901) bloco 1 está AUSENTE no banco: 16 colunas
+     (nome_completo, cpf, whatsapp, regiao, tipo_veiculo, tipo_carroceria,
+     experiencia_anos, como_conheceu, mensagem_livre, canal_captacao, status,
+     score_perfil, ultima_interacao, observacoes, avaliacao_nota,
+     avaliacao_comentario) não existem em recrutamento_candidatos.
+     Essas são EXATAMENTE as colunas que o pré-cadastro tenta inserir (A-1).
+     => REC-03 bloco 1 é o fix estrutural de A-1 e não está no banco.
+
+ D9. Grant anon em app_s6: em `app_s6_cpf_cnpj_ja_cadastrado` é NECESSÁRIO
+     (chamado do register_screen.dart ANTES do signUp — onboarding público);
+     em `app_s6_criar_prestador` é DESNECESSÁRIO (a função exige auth.uid() e
+     sempre lança para anon); em `app_s6_resolver_identidade_legada` é
+     necessário ao login legado mas é um oráculo de credential-stuffing.
+
+ D10. O App chama a RPC `app_s6_resolver_login_legado` que NÃO EXISTE no
+      banco (só existe app_s6_resolver_identidade_legada) → falha silenciosa
+      tratada por try/catch. Achado funcional (P2), fora do escopo desta
+      missão, registrado para a02C.2/02G.
+
+Gate (Seção 11): 8/8 itens entregues → PASS.
+Nenhuma mudança em produção.
+
+================================================================================
+1. REC-01 ARQUIVO × BANCO REAL
+================================================================================
+
+Arquivo: supabase/migrations/20260831000000_rec01_fundacao_seguranca.sql
+Tamanho: 15.510 bytes | 372 linhas | data declarada 2026-08-31
+Status declarado no cabeçalho: nenhuma menção de "aplicada"; verificação no
+banco confirma: 0 dos 8 objetos do bloco B/C/D/E existem.
+
+Legenda de classificação:
+  A = ausente e ainda necessário
+  B = já existe equivalente
+  C = existe diferente/conflitante
+  D = obsoleto
+  E = perigoso aplicar como está
+
+--------------------------------------------------------------------------------
+BLOCO A — POLICIES DE RECRUTAMENTO (A1..A4)
+--------------------------------------------------------------------------------
+
+OBJETO                          | REC-01 (arquivo)                | BANCO REAL                                            | CLASS | AÇÃO SEGURA
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+rc: drop 8 policies nomeadas    | linhas 25-34                    | existem SÓ 4: recrutamento_candidatos_select/         | C/D   | NÃO aplicar. Não há anon para remover
+  recrutamento_candidatos_*     | (4 M0601 + 4 M01)              | insert/update/delete (roles=public, qual=             |       | (REC-062B revogou). Substituir as 4
+                                |                                 | auth.role() IN ('authenticated','service_role')).     |       | policies na 02C.2 pela variante
+                                |                                 | Os 4 nomes *_anon/*_auth (M01) NÃO existem.           |       | tenant_usuarios (ver Seção 4).
+                                |                                 | GRANT anon: AUSENTE (REVOKE da REC-062B).             |
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+rc: CREATE rc_select/insert/    | linhas 37-51 — TO authenticated | equivalente funcional já existe (mesma cobertura:    | C     | Criar SOMENTE na 02C.2, com guard de
+  update/delete_auth USING true | USING (true) — SEM tenant       | authenticated+service_role). Cobertura igual,         |       | papel (tenant_usuarios). Não copiar
+                                |                                 | sem ganho de segurança.                               |       | USING (true).
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+rp: drop 8 + CREATE rp_*_auth   | linhas 59-87                    | 4 policies recrutamento_prestadores_* (mesmos nomes   | C/D   | NÃO aplicar. Igual A1. Substituir na
+  (recrutamento_prestadores)    |                                 | que REC-01 dropparia) + REVOKE anon aplicado.         |       | 02C.2.
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+ro: drop 8 + CREATE ro_*_auth   | linhas 95-121                   | 4 policies recrutamento_operacoes_* criadas pela      | E     | NÃO APLICAR JAMais assim. Dropparia a
+  (recrutamento_operacoes)      |                                 | REC-062B (20260907000004), que é POSTERIOR e já       |       | REC-062B (regressão). 02C.2 decide o
+                                |                                 | está em produção (TO authenticated USING              |       | padrão único para as 4 tabelas.
+                                |                                 | auth.role()='authenticated').                          |       |
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+cip: drop cip_insert/update/    | linhas 130-132                  | policies M01 AUSENTES — drops são no-ops              | D     | Descartar os drops.
+  delete_auth (M01)             |                                 |                                                       |       |
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+cip: CREATE cip_delete_tms      | linhas 136-140                  | JÁ EXISTE, com definição idêntica, criada pela        | E     | REMOVER do script. É este o ponto que
+                                |                                 | REC-062B. CREATE POLICY sem IF NOT EXISTS →           |       | aborta a REC-01 inteira hoje.
+                                |                                 | ERRO "policy cip_delete_tms already exists".          |       |
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+mop: ENABLE RLS + mop_select/   | linhas 358-368                  | TABELA match_operacoes_prestadores NÃO EXISTE no      | E     | REMOVER. Exigir IF EXISTS/guard na
+  insert_auth                   | (ALTER TABLE IF EXISTS, mas     | banco (confirmado em                                  |       | 02C.2 para qualquer objeto novo.
+                                | CREATE POLICY sem guarda)       | information_schema.tables). CREATE POLICY → ERRO      |       |
+                                |                                 | "relation does not exist". 2º ponto de abortamento.   |       |
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+Geral do bloco A                | não revoga grants de anon      | anon já REVOKEADO em 5 tabelas pela REC-062B          | D     | Bloco A inteiro: não aplicar. O gap
+                                |                                 | (candidatos ficou de fora — ver D7).                  |       | real remanescente é o de `candidatos`.
+--------------------------------+---------------------------------+-------------------------------------------------------+-------+--------------------------------------------
+
+RESUMO DO BLOCO A: 2 erros fatais de execução (linhas 136 e 361), 1 regressão
+de migration posterior (A3 × REC-062B), 4 blocos obsoletos. Ganho de segurança
+líquido = ZERO. Classificação dominante: C/D, com 2 itens classe E.
+
+--------------------------------------------------------------------------------
+BLOCO B — TRILHA DE AUDITORIA DE liberado_app (B1..B3)
+--------------------------------------------------------------------------------
+
+OBJETO                          | REC-01                                  | BANCO REAL         | CLASS | AÇÃO SEGURA
+--------------------------------+-----------------------------------------+--------------------+-------+------------------------------------
+tabela liberado_app_audit       | linhas 147-156: id, prestador_id UUID    | INEXISTENTE        | A     | Criar na 02C.2 COM desenho
+                                | NOT NULL, valor_anterior/novo BOOLEAN,   | (0 linhas, 0 cols) |       | reconciliado (Seção 3) — não copiar
+                                | actor_user_id, acao, motivo, created_at  |                    |       | literal: faltam campo/valores
+                                |                                         |                    |       | textuais, actor_tipo e papel.
+idx_liberado_app_audit_*        | linhas 159-162 (2 índices)              | INEXISTENTES       | A     | Criar junto.
+RLS liberado_app_audit          | linhas 165-179: laa_select_tms           | INEXISTENTE        | A     | Criar com SELECT restrito +
+                                | (tenant_usuarios) + laa_insert_service   |                    |       | NENHUMA policy de UPDATE/DELETE
+                                | (TO service_role)                       |                    |       | (append-only). Ver Seção 3.
+fn_audit_liberado_app           | linhas 182-211: AFTER UPDATE OF         | INEXISTENTE        | A     | Criar, mas cobrindo TODOS os campos
+                                | liberado_app, actor=auth.uid(),          |                    |       | privilegiados e gravando actor_tipo
+                                | motivo=NULL fixo                        |                    |       + motivo via GUC. Ver Seção 3.
+trg_audit_liberado_app          | linhas 214-218: AFTER UPDATE OF         | INEXISTENTE        | A     | Criar. Compatível: os writers atuais
+                                | liberado_app ON prestadores             | (só existe o       |       | (TMS service+tenant) disparam sem
+                                |                                         |  bridge AFTER      |       | erro; o trigger só REGISTRA.
+                                |                                         |  INSERT)           |       |
+--------------------------------+-----------------------------------------+--------------------+-------+------------------------------------
+
+RESUMO DO BLOCO B: classe A (ausente e ainda necessário), mas com desenho
+insuficiente — detalhado na Seção 3. É a única parte da REC-01 que vale
+transportar, e mesmo assim reescrita.
+
+--------------------------------------------------------------------------------
+BLOCO C — BUCKET documentos_prestadores (C1)
+--------------------------------------------------------------------------------
+
+OBJETO                          | REC-01                                  | BANCO REAL                | CLASS | AÇÃO SEGURA
+--------------------------------+-----------------------------------------+---------------------------+-------+----------------------------------
+obter_documento_signed_url      | linhas 229-247: SECURITY DEFINER que     | INEXISTENTE. Bucket       | D     | NÃO criar. É stub que retorna
+                                | SEMPRE retorna NULL ("por enquanto,      | documentos_prestadores    |       | NULL — não protege nada nem
+                                | retorna NULL")                          | continua PUBLIC=true com  |       | prepara nada. A privatização é
+                                |                                         | policies roles=public     |       | escopo da ADM-APP-02D.
+                                |                                         | (SELECT/UPDATE/DELETE/    |       | NÃO há conflito: REC-01 não toca
+                                |                                         | INSERT) — ver A-10        |       | storage.objects nem o bucket.
+--------------------------------+-----------------------------------------+---------------------------+-------+----------------------------------
+
+RESUMO DO BLOCO C: classe D. Comentário da própria REC-01 confirma que o bucket
+não seria tornado privado — compatível com 02D.
+
+--------------------------------------------------------------------------------
+BLOCO D — MASCARAMENTO (D1, D2)
+--------------------------------------------------------------------------------
+
+OBJETO            | REC-01                       | BANCO REAL  | CLASS | AÇÃO SEGURA
+------------------+------------------------------+-------------+-------+----------------------------------
+mascarar_cpf      | linhas 254-280, IMMUTABLE    | INEXISTENTE | A     | Criar na 02C.2 (baixa prioridade),
+                  | (11 díg → 123.***.***-00;    |             |       | ou deixar para 02D (exposição de
+                  | 14 díg → XX.XXX.***/****-XX) |             |       | CPF em telas). Não bloqueante.
+mascarar_telefone | linhas 283-308, IMMUTABLE    | INEXISTENTE | A     | Idem.
+------------------+------------------------------+-------------+-------+----------------------------------
+
+RESUMO DO BLOCO D: classe A, não bloqueante. Só faz sentido se algum leitor
+passar a usá-los (hoje nenhum código os referencia).
+
+--------------------------------------------------------------------------------
+BLOCO E — BLOQUEIO DE SELF-LIBERAÇÃO (RBAC via trigger)
+--------------------------------------------------------------------------------
+
+OBJETO                    | REC-01                                  | BANCO REAL          | CLASS | AÇÃO SEGURA
+--------------------------+-----------------------------------------+---------------------+-------+----------------------------------
+fn_block_self_liberado_app| linhas 316-351:                         | INEXISTENTE         | E     | NÃO aplicar. Reescrever por
+                          |  • NUNCA faz RAISE (o branch de         |                     |       | completo na 02C.2:
+                          |    bloqueio termina em `NULL;`,         |                     |       |  • RAISE EXCEPTION real;
+                          |    linhas 341-344)                      |                     |       |  • proteger status e TODOS os
+                          |  • usa current_setting('role') !=       |                     |       |    campos privilegiados (Seção 2);
+                          |    'service_role' (frágil: em conexão    |                     |       |  • discrимinador = tenant_usuarios
+                          |    direta retorna 'none')               |                     |       |    OU auth.role()='service_role';
+                          |  • sonda recrutamento_candidatos.stage   |                     |       |  • NÃO depender de tabela de
+                          |    (coluna stage existe, mas essa        |                     |       |    recrutamento para decidir;
+                          |    lógica é uma permissão por janela     |                     |       |  • motivo/actor via GUC.
+                          |    de 24h — regra de negócio frágil)     |                     |       |
+CREATE TRIGGER de bloqueio| **NÃO EXISTE no arquivo** — a REC-01    | não há trigger de   | E     | A 02C.2 deve criar o trigger
+                          | só cria trg_audit_liberado_app          | proteção em         |       | BEFORE UPDATE + o de auditoria.
+                          | (bloco B). O trigger de E nunca é       | prestadores (só o   |       |
+                          | declarado (verificado linha a linha:     | bridge AFTER INSERT)|       |
+                          | após a função vem o bloco F)            |                     |       |
+--------------------------+-----------------------------------------+---------------------+-------+----------------------------------
+
+RESUMO DO BLOCO E: classe E em dobro — (i) função no-op anexada a nenhum
+trigger; (ii) se houvesse trigger, ainda assim não bloquearia. Aplicar a REC-01
+daria a impressão de que A-9 estava fechado, sem fechar.
+
+--------------------------------------------------------------------------------
+MATRIZ CONSOLIDADA (contagem)
+--------------------------------------------------------------------------------
+Classe A: 7 objetos (tabela audit + 2 índices + RLS audit + fn_audit + trg_audit
+          + 2 funções de mascaramento, sendo estas 2 de baixa prioridade)
+Classe B: 0
+Classe C: 4 blocos (A1, A2, e as 2 variantes de policy equivalentes)
+Classe D: 4 blocos (drops M01 inexistentes, bloco C stub, revogação de anon já
+          feita pela REC-062B)
+Classe E: 4 blocos (A3 × REC-062B, cip_delete_tms já existente,
+          match_operacoes_prestadores inexistente, bloco E no-op sem trigger)
+
+DECISÃO: não executar REC-01; construir migration NOVA (02C.2) — Seção 7.
+
+================================================================================
+2. BLOQUEIO DE SELF-LIBERATION — RESPOSTAS OBJETIVAS
+================================================================================
+
+Método: transações explícitas BEGIN → SET LOCAL ROLE authenticated →
+set_config('request.jwt.claims'/'claim.sub'/'claim.role') → UPDATE → SELECT de
+verificação → ROLLBACK. Registros TESTE claramente identificados:
+
+  0b55f471-b8eb-419a-bda1-567ec3b37a39 "teste 2"                    (T1)
+  e9d43079-3d14-4083-b33e-f50174b6e663 "REC06 E2E Real Teste"       (T2)
+  b7f86dbb-c40e-4181-ba61-eaa078a2d4e3 "TESTECOREAPP01k"            (T3)
+  e6646799-fbac-453e-a3ef-afdfc01a7085 "PRESTADOR TESTE APP" (outro| T4)
+
+Verificação de integridade pós-testes (fora de transação):
+  {"persistiu_alteracao": false, "conclusao": "OK — tudo revertido (ROLLBACK)"}
+  liberado_app_audit após testes: {"existe_audit": false}
+
+--------------------------------------------------------------------------------
+PERGUNTA 1 — Um prestador autenticado consegue alterar liberado_app false→true?
+--------------------------------------------------------------------------------
+RESPOSTA: SIM. PROVADO.
+
+  T1_self_liberacao_liberado_app:
+    auth_uid  = 47da030a-a536-4046-8f0f-e4878948b94e
+    auth_role = authenticated
+    UPDATE prestadores SET liberado_app = true WHERE id = '0b55f471-...' →
+      linhas_afetadas = 1
+      valor_dentro_da_transacao = { liberado_app: true, status: "em_analise" }
+    rollback = true
+
+Por quê: policy `prestadores_update_own` (roles={authenticated},
+qual = auth_user_id IS NOT NULL AND ~uuid AND auth_user_id = auth.uid(),
+**with_check = NULL**). Não há:
+  • CHECK constraint em prestadores (só prestadores_pkey e
+    prestadores_auth_user_id_fkey — verificado em pg_constraint);
+  • privilégio por coluna (pg_attribute.attacl = vazio);
+  • trigger de UPDATE em prestadores (existe apenas
+    trg_bridge_prestador_para_recrutamento, AFTER INSERT, que não dispara);
+  • policy restritiva de coluna (Postgres não permite restringir colunas em RLS).
+
+--------------------------------------------------------------------------------
+PERGUNTA 2 — Consegue alterar status bloqueado/em_analise→ativo?
+--------------------------------------------------------------------------------
+RESPOSTA: SIM. PROVADO.
+
+  T2_self_liberacao_status_ativo:
+    auth_uid = 40210d5e-acfd-4eea-81a7-c529bb50b788
+    passo1 UPDATE status='em_analise' → 1 linha
+    passo2 UPDATE status='ativo'      → 1 linha
+    valor_dentro_da_transacao = { status: "ativo", status_operacional: null }
+    rollback = true
+
+Especificamente: a linha partiu de status = 'em_analise' e terminou (dentro da
+transação) em 'ativo'. Os valores de status hoje em prestadores são:
+  ativo 26 | analise 7 | em_analise 3 | inativo 2 | aprovado 1
+(nota: convivem 'analise' e 'em_analise' — dois rótulos para o mesmo estado).
+
+--------------------------------------------------------------------------------
+PERGUNTA 3 — Quais OUTROS campos sensíveis da própria linha ele consegue
+             modificar pela policy atual?
+--------------------------------------------------------------------------------
+RESPOSTA: TODOS os campos da tabela. PROVADO.
+
+  T3_campos_sensiveis_proprios (uid f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8):
+    UPDATE ... SET status='ativo', status_operacional='ativa',
+      liberado_app=true, cpf_cnpj='99988877766', data_aprovacao=current_date,
+      score_interno=99, ultimo_usuario='SELF-LIB-PROOF',
+      origem_cadastro='auto_lib_proof', observacoes='audit',
+      metadata = metadata || '{"self_lib_proof": true}'::jsonb
+    → linhas_afetadas = 1 (todos os campos confirmados por SELECT dentro da tx)
+
+Lista de campos sensíveis confirmados como alteráveis pelo próprio prestador
+(classe "PRIVILEGIADO" para a 02C.2 proteger):
+  1. liberado_app        (gate de acesso ao App)
+  2. status              (ativo / em_analise / inativo / aprovado)
+  3. status_operacional
+  4. data_aprovacao
+  5. auth_user_id        (PARCIAL: só é possível manter = próprio uid; trocar
+                          para NULL/outro dá 42501 — único guard existente)
+  6. cpf_cnpj            (identidade fiscal)
+  7. origem_cadastro
+  8. score_interno
+  9. ultimo_usuario      (auditoria falsificável)
+ 10. observacoes / observacoes_torre
+ 11. metadata            (contém veículo, dados bancários com chave PIX/CPF
+                          do favorecido — exposto em T3)
+ 12. foto, endereco, telefone, whatsapp, email, nome_completo, rg,
+     data_nascimento, indicacao, regiao_principal, aceite_acordo,
+     aceita_* (preferências), qtd_operacoes, índices — todos os demais.
+
+Campos que ELE NÃO consegue alterar (negativos provados):
+  T4_negativo_linha_de_outro_prestador → 0 linhas (não alcança linha de outro)
+  T5_negativo_alterar_auth_user_id     → erro 42501 (RLS WITH CHECK derivado)
+  T6_negativo_insert_prestadores       → erro 42501 (prestadores_insert_tms
+                                         exige tenant_usuarios)
+
+ALCANCE DE LEITURA (também provado):
+  T7_leitura_escopo: como o prestador, SELECT count(*) FROM prestadores = 35
+  (de 39) — porque `prestadores_select_own` tem
+  qual = (auth_user_id IS NULL) OR (auth_user_id não-UUID) OR (auth_user_id =
+  auth.uid()), ou seja ele enxerga TODAS as linhas sem vínculo de login.
+  Visíveis com auth_user_id preenchido: 1 (a própria).
+  => Exposição de PII (nome, CPF, telefone, endereço, dados bancários de
+     metadata) de 34 outros cadastros para qualquer usuário logado no App.
+
+--------------------------------------------------------------------------------
+PERGUNTA 4 — O trigger da REC-01 bloqueia só liberado_app ou precisa proteger
+             também status e demais campos de privilégio?
+--------------------------------------------------------------------------------
+RESPOSTA: a REC-01 protege NADA (ver bloco E da Seção 1) e, mesmo no desenho
+intencional dela, protegeria SÓ liberado_app — o que é INSUFICIENTE.
+
+Justificativa técnica:
+  • A trigger da REC-01 seria AFTER UPDATE OF liberado_app — AFTER não pode
+    cancelar a operação; e a função nunca chama RAISE.
+  • O vetor real de ataque não é só liberado_app: com status='ativo' +
+    liberado_app=true o cadastro passa em qualquer gate de elegibilidade
+    (prestadorOperacionalmenteElegivelDados exige status ∈ {ativo,aprovado}
+    AND liberado_app=true). Alterar apenas status já destrava parte do fluxo;
+    alterar data_aprovacao/score_interno/ultimo_usuario corrompe auditoria;
+    alterar cpf_cnpj/metadata corrompe identidade e dados bancários.
+  • Portanto o trigger de 02C.2 precisa ser BEFORE UPDATE cobrindo a lista de
+    campos PRIVILEGIADOS da Seção 2.3, com RAISE EXCEPTION real.
+
+Descriminador recomendado (já usado pelas policies do próprio banco):
+  permitir SE  auth.role() = 'service_role'
+          OU  EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())
+          OU  current_user for o owner/superuser (contexto de migration);
+  caso contrário → RAISE.
+  (current_setting('role') da REC-01 NÃO serve: em conexão direta retorna
+   'none', e a função ainda seria invocada sem trigger.)
+
+Evidência de que o App não depende dos campos privilegiados: em
+C:\src\conexao_prestador\lib, `prestadores` só aparece em SELECT
+(driver_documents_repository:127, financial_repository:61,
+network_repository:58, auth_provider:148) — NENHUM UPDATE pelo App.
+
+Coerência A-11 hoje (contagem real):
+  liberado_app=true com auth_user_id NULL ......... 1
+  auth_user_id preenchido com liberado_app=false .. 3
+  status='ativo' com liberado_app=false ........... 23
+
+================================================================================
+3. AUDITORIA liberado_app — DESENHO RECONCILIADO COM O SCHEMA ATUAL
+================================================================================
+
+Não criar a tabela nesta missão. Segue o diagnóstico do desenho da REC-01
+contra o schema real de `prestadores` (39 linhas; colunas verificadas).
+
+3.1 DESENHO REC-01 × NECESSIDADE REAL
+----------------+---------------------------------------------------+------------------------------------
+CAMPO REC-01   | PROBLEMA NO SCHEMA ATUAL                          | DESENHO RECONCILIADO (02C.2)
+----------------+---------------------------------------------------+------------------------------------
+valor_anterior  | BOOLEAN só serve para liberado_app; não guarda    | campo TEXT + valor_anterior_texto/
+valor_novo      | status ('ativo'/'em_analise'), nem cpf_cnpj       | valor_novo_texto OU (preferível)
+                |                                                   | uma linha por CAMPO alterado:
+                |                                                   | (prestador_id, campo, anterior,
+                |                                                   | novo) — modelo "who/what/when"
+----------------+---------------------------------------------------+------------------------------------
+(omitido)       | Não há coluna `campo` — impossível saber O QUE    | campo TEXT NOT NULL
+                | mudou (liberado_app? status? cpf?)                |
+----------------+---------------------------------------------------+------------------------------------
+actor_user_id   | auth.uid() fica NULL quando o ator é service_role | actor_user_id (uuid, nullable)
+                | ou conexão direta (migration/script) — e é        | actor_role TEXT (authenticated/
+                | exatamente esse o caso dos E2E/tools do App)      | service_role/none)
+                |                                                   | actor_tipo TEXT derivado:
+                |                                                   | 'tms' se EXISTS tenant_usuarios,
+                |                                                   | 'prestador' se auth.uid() bate com
+                |                                                   | auth_user_id da linha,
+                |                                                   | 'service_role', 'desconhecido'
+----------------+---------------------------------------------------+------------------------------------
+motivo          | sempre NULL (não há origem do motivo nem coluna   | aceitar via GUC opcional
+                | em prestadores); UPDATE direto nunca informa      | current_setting('app.audit_motivo',
+                |                                                   | true) — NULL permitido
+----------------+---------------------------------------------------+------------------------------------
+(omitido)       | prestadores NÃO tem tenant_id; a tabela é         | se quiser rastrear tenant:
+                | global (padrão 00000000-0000-0000-0000-000000000001| gravar snapshot de
+                | via current_tenant_id_safe())                     | current_tenant_id_safe() no INSERT
+                |                                                   | da auditoria (não inventar coluna
+                |                                                   | em prestadores) — opcional
+----------------+---------------------------------------------------+------------------------------------
+acao='update'   | não distingue tentativa BLOQUEADA de mudança      | acao: 'update' | 'bloqueada'
+                | aplicada                                          | (o trigger de guarda pode gravar a
+                |                                                   | linha de auditoria ANTES do RAISE)
+----------------+---------------------------------------------------+------------------------------------
+created_at      | ok (TIMESTAMPTZ DEFAULT now())                    | manter + índice DESC (já previsto)
+----------------+---------------------------------------------------+------------------------------------
+prestador_id    | UUID NOT NULL — compatível com prestadores.id      | manter + FK REFERENCES prestadores
+                |                                                   | ON DELETE CASCADE ( REC-01 não tem
+                |                                                   | FK; recomendo adicionar)
+----------------+---------------------------------------------------+------------------------------------
+
+3.2 COMPATIBILIDADE COM OS WRITERS ATUAIS DE liberado_app (src/)
+  • modules/recrutamento/services/prestadoresService.ts:387,389,432,577,591,
+    606,640 — alterna status↔liberado_app em aprovação/reprovação/pausa
+  • modules/recrutamento/services/conversaoCandidatoService.ts:305,331
+  • services/recrutamentoIntegracao.ts:217-221 — force false (fail-closed)
+  • lib/dbMappers.ts:223,289,368 — mapeamento de formulário (PrestadorDetalhe)
+  Todos rodam como authenticated com tenant_usuarios (TMS) → o trigger de
+  auditoria NÃO pode bloqueá-los; só REGISTRAR.
+  service_role (scripts/tools E2E do App) também não pode ser bloqueado.
+  => A função de auditoria deve ser SECURITY DEFINER (INSERT da auditoria
+     isento de policy, como a própria REC-01 já previa) e NUNCA fazer RAISE.
+
+3.3 RLS DA TABELA DE AUDITORIA
+  • SELECT: EXISTS tenant_usuarios (padrão laa_select_tms da REC-01) — OK.
+  • UPDATE/DELETE: NENHUMA policy → negado por default → trilha imutável
+    (a REC-01 também não cria; manter assim e NÃO copiar a REC-02 que criaria
+     laa_insert_tenant TO authenticated — permitiria a qualquer usuário logado
+     INJETAR linhas falsas de auditoria).
+  • INSERT: dispensado (SECURITY DEFINER do trigger, owner contorna RLS);
+    se mantida, restringir a service_role como na REC-01.
+
+3.4 PONTOS DE ATENÇÃO
+  • Nome da tabela: manter `liberado_app_audit` (já referenciada em documentos
+    REC-01/REC-02) e acrescentar colunas, para não quebrar narrativa histórica.
+  • A trigger de auditoria e a de GUARDA podem ser a MESMA função
+    BEFORE UPDATE: primeiro avalia a guarda (RAISE se negado), depois grava a
+    auditoria do que mudou. Menos objetos = menos superfície de falha.
+    Alternativa: BEFORE (guarda) + AFTER (auditoria), mais explícita.
+  • Índices: idx_liberado_app_audit_prestador e ..._created (como REC-01).
+
+================================================================================
+4. RLS RECRUTAMENTO — OPERAÇÕES ABERTAS A QUALQUER AUTHENTICATED
+================================================================================
+
+4.1 POLICIES ATUAIS (extraído de pg_policies, nomes REAIS)
+
+recrutamento_candidatos (RLS habilitada, force=false):
+  recrutamento_candidatos_select  SELECT   roles={public} qual = auth.role() IN ('authenticated','service_role')
+  recrutamento_candidatos_insert  INSERT   roles={public} check = idem
+  recrutamento_candidatos_update  UPDATE   roles={public} qual = idem
+  recrutamento_candidatos_delete  DELETE   roles={public} qual = idem
+
+recrutamento_prestadores: idêntico, 4 policies `recrutamento_prestadores_*`
+recrutamento_operacoes:    4 policies `recrutamento_operacoes_*` TO authenticated
+                           USING auth.role()='authenticated' (REC-062B)
+candidato_documentos:      4 policies `candidato_documentos_*` roles={public}
+                           qual/check = authenticated OR service_role
+candidatos (LEGADO):       candidatos_select qual = authenticated OR
+                           **anon** OR service_role ; candidatos_insert check
+                           inclui **anon** ; candidatos_update sem anon
+
+4.2 OPERAÇÕES ABERTAS (resposta direta)
+  SELECT/INSERT/UPDATE/DELETE em TODAS as linhas de:
+    recrutamento_candidatos, recrutamento_prestadores,
+    recrutamento_operacoes, candidato_documentos
+  estão liberadas para QUALQUER papel `authenticated` — sem tenant, sem
+  dono, sem filtro. Um motorista logado no App (papel authenticated, sem
+  linha em tenant_usuarios) tem o mesmo poder de escrita que o TMS.
+  Evidência de impacto (counts reais):
+    recrutamento_prestadores = 10 linhas, 10/10 com cpf_cnpj e 10/10 com
+    `documentos` (jsonb) — colunas PII presentes: cpf_cnpj, rg,
+    data_nascimento, contatos, endereco, documentos.
+    recrutamento_candidatos = 25 linhas (telefone, email, documentos jsonb).
+    candidato_documentos = 0 linhas (mas política de INSERT aberta).
+  GRANTs: anon REVOKEADO nessas 4 tabelas (REC-062B) — ou seja, o vetor é
+  `authenticated`, não `anon`.
+  EXCEÇÃO: `candidatos` ainda tem GRANT de anon (SELECT+INSERT) e policy com
+  auth.role()='anon' — buraco restante (D7). REC-062B revogou anon de
+  recrutamento_operacoes, crm_interacoes_prestadores,
+  recrutamento_prestadores, recrutamento_candidatos e candidato_documentos,
+  mas omitiu `candidatos` (1 linha, hoje).
+
+4.3 QUAL INFORMAÇÃO DE TENANT EXISTE HOJE (sem inventar)
+  recrutamento_candidatos ....... SEM tenant_id. Único vínculo real:
+                                  `prestador_id` (UUID → prestadores.id),
+                                  presente em 10 de 25 linhas (10 distintos);
+                                  15 linhas ÓRFÃS de vínculo.
+                                  Coluna criada pela REC-03 (linha 88).
+  recrutamento_prestadores ..... SEM tenant_id, SEM prestador_id — a tabela
+                                  É o espelho do prestador em recrutamento.
+  candidato_documentos .......... SEM tenant_id. Vínculo: `candidato_id` →
+                                  recrutamento_candidatos.id (FK REC-04,
+                                  ON DELETE CASCADE — aplicada).
+  prestadores (ponto de apoio) .. SEM tenant_id, SEM cliente_id.
+  current_tenant_id_safe() ...... EXISTE, STABLE, NÃO SECURITY DEFINER:
+                                  COALESCE(current_setting('app.current_tenant_id',true)::uuid,
+                                           '00000000-0000-0000-0000-000000000001')
+                                  + EXCEPTION → tenant padrão.
+  => Conclusão: NÃO existe coluna de tenant nessas tabelas, e a única relação
+     existente (prestador_id) não cobre 15/25 candidatos e não tem como
+     resolver tenant (prestadores também não tem tenant_id).
+
+4.4 ESTRATÉGIA SEGURA DEFINIDA (3 camadas, SEM inventar tenant_id)
+
+  CAMADA 1 — IMEDIATA, zero schema (fecha A-12) — recomendada para 02C.2:
+    Substituir as policies das 4 tabelas pela variante JÁ USADA no próprio
+    banco (crm_interacoes_prestadores, prestadores, financeiro_*):
+        USING (EXISTS (SELECT 1 FROM tenant_usuarios
+                        WHERE user_id = auth.uid()))
+    para SELECT/INSERT/UPDATE/DELETE, e REVOKE de anon em `candidatos` +
+    drop de candidatos_select/insert com auth.role()='anon'.
+    Efeito: apenas usuários TMS (com linha em tenant_usuarios) acessam o
+    pipeline de recrutamento. Anon bloqueado. Prestador/portal bloqueados.
+    Risco: NENHUM para o App Motorista (0 referências às tabelas em
+    C:\src\conexao_prestador\lib). Risco baixo para o TMS (todos os
+    usuários TMS testados têm linha em tenant_usuarios).
+
+  CAMADA 2 — OPCIONAL (não recomendada agora):
+    Liberar ao dono: SELECT/UPDATE em recrutamento_candidatos apenas nas
+    linhas com prestador_id → prestadores.auth_user_id = auth.uid().
+    Não criar hoje: não há consumidor (App não lê a tabela; o TMS é o único
+    leitor). Seria abrir superfície sem necessidade.
+
+  CAMADA 3 — FUTURA (substitui a REC-02, não a executa):
+    Se e quando o negócio exigir multi-tenant de verdade, migration NOVA com
+    tenant_id + backfill verificado + policies TO authenticated (NUNCA anon)
+    + índice/FK. É o que a REC-02 tenta fazer, mas com os defeitos da Seção 5.
+
+  REGRA EXPLÍCITA RESPEITADA: nenhum tenant_id foi inventado nem proposto
+  para as tabelas atuais; a estratégia usa a relação que já existe.
+
+================================================================================
+5. REC-02 / MIGRATIONS POSTERIORES
+================================================================================
+
+5.1 ESTADO DAS MIGRATIONS DA LINHAGEM REC (verificado no banco)
+
+  20260831000000 rec01_fundacao_seguranca ..... NÃO APLICADA (0 de 8 objetos)
+  20260831000001 rec02_tenant_isolation ....... NÃO APLICADA (0 de 12 tenant_id;
+                                                funções _rec02_* ausentes)
+  20260901000000 rec03_add_legacy_columns ..... PARCIALMENTE REFLETIDA:
+                                                bloco 2 (linhas 108-205) OK
+                                                (prestador_id, historico,
+                                                score_comprometimento, tags
+                                                etc. existem); **bloco 1
+                                                (linhas 36-101) AUSENTE** —
+                                                16 colunas não existem.
+  20260902000000 rec04_mapeamento_fk .......... APLICADA (FK
+                                                candidato_documentos_candidato_
+                                                id_rc_fkey →
+                                                recrutamento_candidatos ON
+                                                DELETE CASCADE confirmada)
+  20260902000001 rec061_bridge ................ APLICADA (trigger
+                                                trg_bridge_prestador_para_
+                                                recrutamento existe; AFTER INSERT)
+  20260907000004 rec_062b_fix_rls_recrutamento  APLICADA (4 policies de
+                                                recrutamento_operacoes +
+                                                cip_delete_tms + REVOKE anon
+                                                de 5 tabelas)
+
+5.2 BLOCOS QUE SERIAM PULADOS / FALhariam
+
+  REC-01:
+    linha 136  CREATE POLICY cip_delete_tms .......... FALHA (já existe)
+    linha 361  CREATE POLICY ... ON match_operacoes_  FALHA (tabela inexistente)
+               prestadores
+    linhas 25-34, 31-34, 59-62, 95-98, 130-132 ....... DROPs no-ops (políticas
+               M01 inexistentes)
+    bloco C .... stub NULL (inócuo)
+    bloco E .... função criada, trigger NUNCA criado
+    Efeito prático: qualquer erro aborta a transação inteira → nada é aplicado.
+
+  REC-02:
+    linha 343  SELECT _rec02_add_tenant_isolation('match_operacoes_prestadores')
+               — SEM guarda IF EXISTS na tabela → ALTER TABLE em relação
+               inexistente → FALHA hoje.
+    DO de reservas_banco (350-387) ......... guarda OK (criaria a tabela
+               phantom — efeito colateral indesejável: materializa uma tabela
+               que hoje não existe e que o código escreve em vano)
+    DO de liberado_app_audit (390-407) ..... IF EXISTS → PULADO EM SILÊNCIO
+               (mesmo modo de falha silenciosa já documentado do REC-02)
+    Seções 4 e 7 das policies .............. DROPs de nomes inexistentes
+               (rc_*, rp_*, ro_*, op_*, mop_*) = no-ops; mas DROPPA os nomes
+               REAIS atuais? NÃO — a REC-02 só dropa rc_/rp_/ro_/op_/hom_/fr_/
+               pd_/mop_/cip_*_tms e candidatos_*; os nomes reais
+               `recrutamento_candidatos_*` NÃO estão na lista → ficariam
+               ACUMULADOS com as novas policies de tenant (políticas
+               duplicadas e permissivas coexistindo = alívio de RLS POR OR).
+
+5.3 ALTERAÇÕES POSTERIORES QUE SERIAM SOBRESCRITAS
+  • REC-01 bloco A3 droppa as 4 policies de recrutamento_operacoes criadas
+    pela REC-062B (2026-09-07, posterior) → REGRESSÃO CONFIRMADA.
+  • REC-01 linha 136 recriaria cip_delete_tms já existente (equivalente).
+  • REC-02 linha 332-335 droppa cip_*_tms (padrão tenant_usuarios atual) e
+    os substitui por policies com SELECT **TO anon, authenticated** →
+    reabre anon (regressão face ao REVOKE da REC-062B).
+  • REC-02 linhas 146-266 droppam rc_/rp_/ro_*_auth — inexistentes hoje, mas
+    se a 02C.2 os criar, uma REC-02 futura os derrubaria: por isso a 02C.2
+    deve usar os MESMOS nomes que pretende manter (padrão `*_tms`) e deixar a
+    REC-02 oficialmente OBSOLETA.
+  • REC-02 criaria policies de audit INSERT TO authenticated (linhas 402-405)
+    → permitiria forjar auditoria.
+
+5.4 POR QUE A REC-02 NÃO PODE SER APLICADA COMO ESTÁ (além do erro da linha 343)
+  1. As policies SELECT são criadas `TO anon, authenticated` com
+     `tenant_id = current_tenant_id_safe()`; para anon a função cai no tenant
+     padrão → anon LÊ todas as linhas do tenant padrão das 12 tabelas.
+  2. Backfill + `SET NOT NULL` + FK `ON DELETE CASCADE` em 12 tabelas sem
+     verificação prévia de que o tenant 00000000-...-001 existe e de que não
+     há linhas órfãs (não testado aqui — read-only).
+  3. Materializa `reservas_banco` (tabela phantom) — efeito colateral não
+     pedido; é objeto do backlog A-13, não desta missão.
+  4. Não possui arquivo de rollback (diferente das demais migrations da linha).
+
+5.5 ORDEM SEGURA PARA A 02C.2
+  NÃO reaplicar histórico. Ordem recomendada:
+    1) Criar UMA migration nova de reconciliação (Seção 7).
+    2) Nunca executar 20260831000000 nem 20260831000001 como estão.
+    3) Marcar ambas como OBSOLETAS no cabeçalho/documentação (apenas
+       documental — não alterar migration já versionada; alteração de texto
+       histórico só com autorização explícita).
+    4) Qualquer derivação futura de REC-03 (bloco 1) é assunto da 02B, com
+       verificação de causa (não determinada nesta missão).
+
+================================================================================
+6. GRANTS / RPC DO APP
+================================================================================
+
+Estado real (pg_proc.proacl — TODAS com anon=X, EXECUTE concedido):
+
+  app_s6_cpf_cnpj_ja_cadastrado(p_cpf_cnpj text)            prosecdef=true
+  app_s6_criar_prestador(...)                               prosecdef=true
+  app_s6_resolver_identidade_legada(p_cpf_cnpj, p_senha)    prosecdef=true
+
+6.1 app_s6_criar_prestador — anon é NECESSÁRIO? NÃO.
+  • Corpo: `v_auth_uid := auth.uid(); IF v_auth_uid IS NULL THEN RAISE
+    EXCEPTION 'Acesso negado: usuário não autenticado'`. Para anon a RPC
+    SEMPRE falha → o grant é inútil (não é caminho de onboarding público).
+  • Consumidor: lib/core/auth/signup_recovery.dart — "recovery pós-signUp
+    ambíguo", ou seja, executa DEPOIS de supabase.auth.signUp() → sessão
+    autenticada. Também referenciada em tools/e2e11a_preparar.dart (tool).
+  • Conclusão: exposição = BAIXA (fail-closed), mas grant desnecessário.
+    AÇÃO: candidatar REVOKE FROM anon na 02C.2, APÓS teste E2E do registro
+    no App (teste negativo obrigatório na Seção 7).
+
+6.2 app_s6_cpf_cnpj_ja_cadastrado — anon é NECESSÁRIO? SIM.
+  • Corpo: SEM verificação de identidade; retorna boolean após varrer
+    `prestadores` por CPF/CNPJ normalizado (SECURITY DEFINER).
+  • Consumidor: lib/features/auth/register_screen.dart:473 — chamado ANTES de
+    criar a conta ("DEDUPLICAÇÃO (APP-S6) ... o RPC enxerga todos os
+    registros"), portanto em contexto **não autenticado**.
+  • Conclusão: é o caso legítimo de onboarding público. O grant é NECESSÁRIO
+    para o App funcionar. Risco residual = oráculo de enumeração de
+    CPF/CNPJ (boolean) — aceitável e documentado; entrada já validada com
+    length >= 11 e retorno limitado a TRUE/FALSE.
+    AÇÃO: PRESERVAR o grant anon. NÃO revogar nesta missão (e não revogar
+    na 02C.2 sem plano alternativo para o App).
+
+6.3 app_s6_resolver_identidade_legada — anon é NECESSÁRIO? SIM (com ressalva).
+  • Corpo: resolve CPF → auth_user_id → lê auth.users.email +
+    encrypted_password e valida com extensions.crypt(); retorna SOMENTE o
+    e-mail (não devolve o hash). Fail-closed com EXCEPTION → NULL.
+  • É um ORÁCULO: com CPF + chute de senha, um ator anon pode testar
+    credenciais de contas legadas (hoje 5 prestadores com auth_user_id).
+    Sem rate-limit nesta camada.
+  • Conclusão: o grant é necessário ao login legado (pré-autenticação), mas é
+    a exposição mais relevante do trio.
+    AÇÃO: PRESERVAR nesta missão; registrar como item para endurecimento
+    futuro (rate limit / Edge Function) — fora do escopo 02C.1/02C.2.
+
+6.4 ACHADO LIGADO (funcional, P2)
+  O App chama `app_s6_resolver_login_legado` (auth_provider.dart:261), mas o
+  banco só possui `app_s6_resolver_identidade_legada`. A chamada lança
+  exceção, é capturada e retorna null (login legado silenciosamente
+  indisponível). Nada a revogar; registrar para 02C.2/02G (alinhamento de
+  nome/contrato com o time Flutter).
+
+6.5 NADA foi revogado nesta missão.
+
+================================================================================
+7. PLANO CIRÚRGICO PARA A ADM-APP-02C.2
+================================================================================
+
+NÃO recomendar "rodar REC-01". Entrega: migration NOVA de reconciliação,
+sem tocar em nenhuma migration histórica já versionada.
+
+7.1 ARQUIVOS PROPOSTOS
+  supabase/migrations/20260927000000_adm_app_02c2_seguranca_reconciliada.sql
+  supabase/migrations/20260927000001_adm_app_02c2_rollback.sql
+  (data = data de criação real; prefixo próprio da missão; idempotente:
+   IF EXISTS / IF NOT EXISTS em TODOS os objetos, e DO $$ guards para tabelas
+   opcionais — lição dos abortamentos da REC-01/REC-02)
+
+7.2 OBJETOS REALMENTE NECESSÁRIOS (mínimo)
+  [1] fn_guardar_privilegio_prestador() + trg_guardar_privilegio_prestador
+      BEFORE UPDATE OF liberado_app, status, status_operacional,
+      data_aprovacao, auth_user_id, cpf_cnpj, origem_cadastro, score_interno,
+      ultimo_usuario, metadata ON prestadores FOR EACH ROW
+      → permite se auth.role()='service_role' OU EXISTS tenant_usuarios
+        OU current_user for owner/superuser;
+        senão RAISE EXCEPTION (código estável, ex. 'P0001' + mensagem
+        "auto-liberação não permitida").
+      → NÃO toca INSERT (bridge AFTER INSERT permanece intacto).
+      → NÃO bloqueia colunas não-privilegiadas (nenhum impacto: App só faz
+        SELECT em prestadores).
+      Fecha A-9.
+  [2] Tabela liberado_app_audit (desenho reconciliado da Seção 3):
+      id, prestador_id UUID NOT NULL REFERENCES prestadores(id) ON DELETE
+      CASCADE, campo TEXT NOT NULL, valor_anterior TEXT, valor_novo TEXT,
+      actor_user_id UUID, actor_role TEXT, actor_tipo TEXT, acao TEXT
+      (update|bloqueada), motivo TEXT, tenant_snapshot UUID,
+      created_at TIMESTAMPTZ DEFAULT now();
+      + 2 índices; ENABLE RLS; policy SELECT TO authenticated USING
+        EXISTS tenant_usuarios; NENHUMA policy UPDATE/DELETE/INSERT.
+      + fn_audit_prestadores_privilegio() SECURITY DEFINER (INSERT isento),
+        chamada AFTER UPDATE pela mesma trigger de guarda (ou trigger à parte).
+      Fecha A-8.
+  [3] Substituir as policies das 4 tabelas de recrutamento pela variante
+      tenant_usuarios (Seção 4.4, camada 1), nomes novos `*_tms` + DROP dos
+      nomes atuais (`recrutamento_candidatos_*`, `recrutamento_prestadores_*`,
+      `recrutamento_operacoes_*`, `candidato_documentos_*`).
+      + REVOKE/DELETE do buraco de `candidatos`:
+        DROP POLICY candidatos_select, candidatos_insert;
+        CREATE POLICY candidatos_select_tms / insert_tms / update_tms com
+        guard tenant_usuarios; REVOKE ALL ON candidatos FROM anon.
+      Fecha A-12.
+  [4] (Opcional, baixa prioridade) mascarar_cpf / mascarar_telefone — só se
+      algum leitor for criado junto; caso contrário adiar para 02D.
+  [5] (Opcional) REVOKE EXECUTE app_s6_criar_prestador FROM anon — somente
+      após teste E2E do registro no App; caso negativo, manter.
+
+7.3 OBJETOS QUE NÃO DEVEM SER CRIADOS
+  ✗ obter_documento_signed_url (stub NULL) — 02D trata
+  ✗ policies em match_operacoes_prestadores (tabela inexistente)
+  ✗ reservas_banco (tabela phantom) — backlog A-13
+  ✗ tenant_id em qualquer tabela de recrutamento — Seção 4.4 camada 3
+  ✗ qualquer policy SELECT TO anon
+  ✗ alters em 20260831000000 / 20260831000001
+
+7.4 POLICIES A SUBSTITUIR (nome antes → depois)
+  recrutamento_candidatos_select/insert/update/delete  → rc_select_tms / rc_insert_tms / rc_update_tms / rc_delete_tms
+  recrutamento_prestadores_select/insert/update/delete → rp_*_tms
+  recrutamento_operacoes_select/insert/update/delete    → ro_*_tms
+  candidato_documentos_select/insert/update/delete      → cd_*_tms
+  candidatos_select (com anon) / candidatos_insert (com anon) → ca_*_tms
+  (crm_interacoes_prestadores.*_tms — JÁ corretas, não tocar)
+
+7.5 GRANTS
+  PRESERVAR: EXECUTE anon em app_s6_cpf_cnpj_ja_cadastrado (obrigatório) e
+             em app_s6_resolver_identidade_legada (login legado).
+             EXECUTE authenticated/service_role em todos os app_s6_*.
+             SELECT/INSERT/UPDATE/DELETE de authenticated nas tabelas de
+             recrutamento (o guard passa a ser a policy, não o grant).
+             Grants anon de tabelas: manter o status atual (já revogados nas 4
+             + crm; permanecer revogados), EXCETO `candidatos` que deve ser
+             revogado (item [3]).
+  REVOGAR (após teste): EXECUTE anon em app_s6_criar_prestador.
+  NÃO REVOGAR nesta missão (próxima): grants de anon em `prestadores`
+             (hoje existem em nível de tabela mas são bloqueados pela policy
+             TO authenticated — defesa em profundidade, P3).
+
+7.6 TESTES NEGATIVOS OBRIGATÓRIOS (02C.2 — todos transação + rollback)
+  N01 prestador autenticado NÃO consegue liberado_app=false→true → espera ERRO
+  N02 N01 com status em_analise→ativo → espera ERRO
+  N03 N01 com data_aprovacao/score_interno/ultimo_usuario → espera ERRO
+  N04 N01 tentando trocar auth_user_id → continua ERRO (regressão do guard)
+  N05 authenticated SEM tenant_usuarios NÃO lê recrutamento_candidatos → 0 linhas
+  N06 idem para recrutamento_prestadores / recrutamento_operacoes /
+      candidato_documentos → 0 linhas
+  N07 anon NÃO lê nem insere em `candidatos` → 0 linhas / erro
+  N08 anon NÃO executa app_s6_criar_prestador (se revogado) → erro de privilégio
+  N09 INSERT em prestadores por não-TMS continua negado (42501) — regressão
+  P01 POSITIVO: usuário TMS (tenant_usuarios) AINDA consegue alterar
+      liberado_app/status → 1 linha
+  P02 POSITIVO: service_role continua conseguindo (E2E/tools do App)
+  P03 POSITIVO: App Motorista continua conseguindo SELECT em prestadores
+      (auth_provider/driver_documents/financial/network)
+  P04 POSITIVO: bridge AFTER INSERT ainda propaga para recrutamento_prestadores
+      (A-7 NÃO reaberto)
+  P05 POSITIVO: colunas não-privilegiadas continuam editáveis (telefone,
+      whatsapp, endereco, metadata? — definir a lista final e validar com o
+      formulário do TMS)
+  A01 auditoria registra linha com campo/anterior/novo/actor_tipo corretos
+  R01 ROLLBACK do arquivo de rollback restaura o estado pré-existente
+      (conferir pg_policies/pg_trigger/pg_class antes e depois)
+
+7.7 ROLLBACK
+  Arquivo dedicado (7.1) que: dropa as 2 triggers + 2 funções novas; dropa a
+  tabela liberado_app_audit (se vazia/nova) ou comenta como removível; recria
+  as policies anteriores com os nomes e qualificadores EXATOS capturados
+  nesta missão (Seção 4.1 e Seção 1) — transcript preservado nos arquivos de
+  evidência scripts/_adm_app_02c1_preflight*.out.json; reverte o REVOKE de
+  `candidatos` se necessário. Deve ser testado em transação antes do commit.
+
+================================================================================
+8. DOCUMENTOS PÚBLICOS (compatibilidade com a ADM-APP-02D)
+================================================================================
+
+CONFIRMAÇÃO: o fechamento da REC-01 NÃO conflitará com a futura privatização
+de `documentos_prestadores`.
+  • A REC-01 não tem NENHUMA instrução sobre storage.objects nem sobre o
+    flag `public` do bucket; o comentário do bloco C declara explicitamente
+    "NÃO tornamos o bucket privado nesta migration (quebraria o App)".
+  • O stub `obter_documento_signed_url` retorna NULL e não é chamado por
+    nenhum código → não há dependência a preservar nem a remover.
+  • Estado atual do bucket (registrado, NÃO alterado): documentos_prestadores
+    public=true; policies storage.objects para esse bucket:
+      "Permitir leitura"  SELECT   roles=public
+      "Permitir update"   UPDATE   roles=public
+      "Permitir delete"   DELETE   roles=public
+      "Permitir upload"   INSERT   roles=public (with_check só bucket)
+      "docprestadores_select_public" SELECT roles=public
+      "docprestadores_insert_auth"   INSERT roles=authenticated
+    ou seja: anon pode LER, ATUALIZAR e APAGAR documentos de prestadores.
+    Isso é A-10, escopo 02D — NÃO tornar bucket privado agora (cumprido).
+  • Observação para a 02D: antes de privatizar é preciso migrar os leitores
+    de getPublicUrl() (TMS: PrestadorDetalhe.tsx ~390-394; App:
+    driver_documents_repository.dart) para signed URL, senão o 02D quebra
+    o fluxo. A 02C.2 não toca nisso → sem interferência.
+
+================================================================================
+9. NÃO REABRIR — VERIFICAÇÃO
+================================================================================
+  ✗ Nível 8 ........................................ não reaberto (só 7)
+  ✗ Tracking ........................................ nada executado
+  ✗ POD ............................................. nada executado
+  ✗ Programação Operacional ........................ nada executado
+  ✗ REC-06.2D.2F ................................... permanece IMPLEMENTADO;
+                                                     nenhum arquivo de teste
+                                                     ou código tocado
+  ✓ Somente leitura + 7 transações com ROLLBACK declarado na Seção 2
+
+================================================================================
+10. BACKLOG CUMULATIVO (PRESERVADO — NADA FOI REMOVIDO)
+================================================================================
+
+A-1  pré-cadastro quebrado (criarCandidatoService insere 9 colunas inexistentes)
+     >> descoberta desta missão: as 16 colunas do bloco 1 da REC-03 são
+        exatamente o fix estrutural e NÃO existem no banco (D8) — entrada
+        obrigatória para a 02B.
+A-2  documentos de onboarding não persistem (submit envia só texto)
+A-3  payloads com colunas inexistentes (`prestadores.veiculo`, cidade, uf…)
+A-4  gate documental inatingível (documentos jsonb vazio em 25/25)
+A-5  dedup (cnh_validade inexistente; CPFs duplicados)
+A-6  Admin App = simulador (src/pages/AppPrestador.tsx)
+A-7  bridge sem UPDATE (só AFTER INSERT) — mantido, não tocado
+A-8  REC-01 ausente ............ PRESCREVE-SE EM RELAÇÃO À FORMA (Seção 1);
+                                 o objeto necessário passa a ser o da 02C.2
+A-9  self-liberation ........... PROVADO nesta missão (Seção 2) — prioridade
+                                 máxima da 02C.2
+A-10 bucket documentos_prestadores público (02D) — só confirmado (Seção 8)
+A-11 coerência liberado_app (1 liberado sem auth; 3 auth sem liberação;
+     23 ativos não liberados)
+A-12 RLS recrutamento sem tenant — confirmado e ampliado (Seção 4), inclui
+     buraco anon em `candidatos`
+A-13 órfãos/duplicidades (15 candidatos sem prestador_id; 3 docs órfãos;
+     reservas_banco inexistente; prestadores_app paralela; match_operacoes_
+     prestadores INEXISTENTE — novo detalhe)
+A-14 interesse_confirmado fora do mapa de score
+
+BACKLOG ANTERIOR (integral):
+GAP-F2-01..06, GAP-F3-04/05, GAP-F4-01..05, GAP-F5-03/04,
+APP-DATA-01, APP-SCHEMA-01, STORAGE-E2E11-PURGE (BLOCKED/EXTERNAL — não
+solicitar nem exibir), TEST-FIN-IS_TESTE-01 (>> observação desta missão:
+a coluna `is_teste` NÃO existe em `prestadores`; coluna `is_teste` ausente
+também de prestadores/recrutamento_candidatos/candidatos → migração
+FIN-363D2B2 não refletida neste escopo), tools/query_operation.dart/dotenv,
+OS esporádicas/motoboys, romaneio, KM/pedágio/adicionais/reembolsos,
+financeiro prestador, Rede de Oportunidades, proximidade/raio/distância,
+Radar, CAD-PERSIST, indicadores reais, dívida TypeScript (894 erros
+pré-existentes — NÃO reduzir 7→6).
+
+OBSERVAÇÕES NOVAS DESTE PREFLIGHT (registradas, sem escopo aberto):
+  O-1  App chama RPC `app_s6_resolver_login_legado` inexistente (P2 funcional)
+  O-2  REC-03 bloco 1 ausente (16 colunas) — causa não determinada (read-only)
+  O-3  `candidatos` com grant+policy de anon (fechar na 02C.2, item [3])
+  O-4  `prestadores` mantém grants de tabela para anon (bloqueados por policy;
+       defesa em profundidade P3)
+  O-5  policies com papel `anon` ainda existem em outras tabelas fora do
+       escopo desta missão (ex.: tenants, tenant_usuarios, perfis_permissoes,
+       rascunhos_prestador, rede_oportunidades, reembolsos_prestador,
+       tabela_prestador, tabelas_valores, rota_paradas, rotas…) — apenas
+       sinalização para futura auditoria; NÃO aberto aqui
+  O-6  dois rótulos de estado convivendo em prestadores: 'analise' (7) e
+       'em_analise' (3)
+
+================================================================================
+11. GATE
+================================================================================
+[x] matriz REC-01 × banco real ..................................... Seção 1
+[x] prova do risco self-liberation (tx + rollback, dado real) ........ Seção 2
+[x] campos sensíveis identificados (12 grupos + negativos) ........... Seção 2.3
+[x] desenho da auditoria reconciliado ............................... Seção 3
+[x] estratégia tenant para recrutamento (sem inventar coluna) ........ Seção 4
+[x] dependências REC-02 mapeadas (+ REC-03/04/061/062B) ............. Seção 5
+[x] grants APP analisados (nenhum revogado) ........................ Seção 6
+[x] plano incremental seguro para 02C.2 (objetos+tests+rollback) ..... Seção 7
+[ ] Nenhuma mudança em produção nesta missão ....................... CONFIRMADO
+    (0 migrations, 0 policies, 0 triggers, 0 tabelas, 0 UPDATE persistido)
+
+RESULTADO DO GATE: PASS (8/8)
+
+================================================================================
+12. VALIDAÇÃO E EVIDÊNCIAS
+================================================================================
+Leituras (scripts read-only, prefixo `_`):
+  scripts/_adm_app_02c1_preflight.mjs        (+ .out.json 63.302 bytes)
+  scripts/_adm_app_02c1_preflight2.mjs       (+ .out.json  9.677 bytes)
+  scripts/_adm_app_02c1_preflight3.mjs
+  scripts/_adm_app_02c1_preflight4.mjs
+Prova transacional (BEGIN → UPDATE → ROLLBACK):
+  scripts/_adm_app_02c1_selflib_test.mjs     (+ .out.json 25.392 bytes)
+  integridade final: persistiu_alteracao = false
+  liberado_app_audit após testes: inexistente
+Fontes consultadas:
+  supabase/migrations/20260831000000_rec01_fundacao_seguranca.sql (372 l.)
+  supabase/migrations/20260831000001_rec02_tenant_isolation.sql   (437 l.)
+  supabase/migrations/20260901..20260907 (rec03, rec04, rec061, rec062b)
+  pg_policies, pg_proc, pg_trigger, pg_constraint, pg_class, pg_attribute,
+  information_schema, storage.buckets
+  C:\src\conexao_prestador\lib (contratos — somente leitura)
+  src/ (leitura de writers de liberado_app)
+
+NÃO FEITO nesta missão (cumprido):
+  ✗ aplicar REC-01 / REC-02        ✗ alterar RLS/schema/dados
+  ✗ corrigir código de produção    ✗ revogar grants
+  ✗ tornar bucket privado          ✗ reabrir nível 8 / REC-06.2D.2F
+
+PRÓXIMA MISSÃO PREVISTA: ADM-APP-02C.2 — segurança reconciliada
+(implementar o plano da Seção 7; exige autorização de escrita).
+
+================================================================================
+FIM — ADM-APP-02C.1
+================================================================================

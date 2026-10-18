@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { supabase } from "@/lib/supabase";
+import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtFull = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -43,12 +44,16 @@ const KpiCard = ({ title, value, icon: Icon, colorClass, sub, trend, navigate: n
 
 const TabFinanceiro = () => {
   const navigate = useNavigate();
+  const { filters } = useDashboardFilters();
   const [loading, setLoading] = useState(true);
   const [financeiro, setFinanceiro] = useState({
     aFaturar: 0, faturado: 0,
     aReceber: 0, recebido: 0,
     aPagar: 0, pago: 0,
-    totalOS: 0, valorTotalOS: 0
+    totalOS: 0, valorTotalOS: 0,
+    faturamentoPrevisto: 0, pagamentoPrevisto: 0,
+    osAguardandoFaturamento: 0, pagamentosPendentes: 0,
+    recebimentosPendentes: 0,
   });
   const [vencimentos, setVencimentos] = useState<any[]>([]);
   const [composicao, setComposicao] = useState<any[]>([]);
@@ -57,10 +62,10 @@ const TabFinanceiro = () => {
     const fetchData = async () => {
       try {
         const [osData, receberData, pagarData, composicaoData] = await Promise.all([
-          supabase.from("ordens_servico").select("valor_cliente, custo_prestador, status_faturamento"),
-          supabase.from("financeiro_receber").select("valor, status, vencimento, descricao").order("vencimento", { ascending: true }).limit(100),
-          supabase.from("financeiro_pagar").select("valor, status, vencimento, descricao").order("vencimento", { ascending: true }).limit(100),
-          supabase.from("composicao_financeira_os").select("valor_cliente, custo_prestador, margem").limit(100),
+          supabase.from("ordens_servico").select("valor_cliente, custo_prestador, status_faturamento, status, created_at").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59"),
+          supabase.from("financeiro_receber").select("valor, status, vencimento, descricao").gte("vencimento", filters.dataInicio).lte("vencimento", filters.dataFim + "T23:59:59").order("vencimento", { ascending: true }).limit(100),
+          supabase.from("financeiro_pagar").select("valor, status, vencimento, descricao").gte("vencimento", filters.dataInicio).lte("vencimento", filters.dataFim + "T23:59:59").order("vencimento", { ascending: true }).limit(100),
+          supabase.from("composicao_financeira_os").select("valor_cliente, custo_prestador, margem_bruta, margem_liquida").limit(100),
         ]);
 
         const osItems = osData.data || [];
@@ -68,15 +73,22 @@ const TabFinanceiro = () => {
         const aFaturar = osItems.filter(o => o.status_faturamento === "a faturar").reduce((a, o) => a + (o.valor_cliente || 0), 0);
         const faturado = osItems.filter(o => o.status_faturamento === "faturada").reduce((a, o) => a + (o.valor_cliente || 0), 0);
 
+        const osNaoCanceladas = osItems.filter(o => o.status !== "cancelada");
+        const faturamentoPrevisto = osNaoCanceladas.reduce((a, o) => a + (o.valor_cliente || 0), 0);
+        const pagamentoPrevisto = osNaoCanceladas.reduce((a, o) => a + (o.custo_prestador || 0), 0);
+        const osAguardandoFaturamento = osItems.filter(o => !o.status_faturamento || o.status_faturamento !== "faturada").length;
+
         const recItems = receberData.data || [];
         const aReceber = recItems.filter(i => i.status === "aberto" || i.status === "a vencer").reduce((a, i) => a + (i.valor || 0), 0);
         const recebido = recItems.filter(i => i.status === "pago" || i.status === "recebido").reduce((a, i) => a + (i.valor || 0), 0);
+        const recebimentosPendentes = aReceber;
 
         const pagItems = pagarData.data || [];
         const aPagar = pagItems.filter(i => i.status === "aberto" || i.status === "a vencer").reduce((a, i) => a + (i.valor || 0), 0);
         const pago = pagItems.filter(i => i.status === "pago" || i.status === "quitado").reduce((a, i) => a + (i.valor || 0), 0);
+        const pagamentosPendentes = aPagar;
 
-        setFinanceiro({ aFaturar, faturado, aReceber, recebido, aPagar, pago, totalOS: osItems.length, valorTotalOS });
+        setFinanceiro({ aFaturar, faturado, aReceber, recebido, aPagar, pago, totalOS: osItems.length, valorTotalOS, faturamentoPrevisto, pagamentoPrevisto, osAguardandoFaturamento, pagamentosPendentes, recebimentosPendentes });
 
         // Próximos vencimentos (a receber + a pagar, ordenados)
         const hoje = new Date().toISOString().split("T")[0];
@@ -91,7 +103,7 @@ const TabFinanceiro = () => {
             id: `OS ${i + 1}`,
             receita: c.valor_cliente || 0,
             custo: c.custo_prestador || 0,
-            margem: c.margem || 0,
+            margem: c.margem_bruta || 0,
           })));
         }
       } catch (err) {
@@ -140,6 +152,17 @@ const TabFinanceiro = () => {
           <KpiCard title="Pago" value={fmt(financeiro.pago)} icon={Landmark} colorClass="text-emerald-600" />
           <KpiCard title="Lucro Bruto" value={fmt(lucroB)} icon={PiggyBank} colorClass={lucroB >= 0 ? "text-emerald-500" : "text-rose-500"} trend={lucroB >= 0 ? "up" : "down"} />
           <KpiCard title="Margem Líquida" value={`${margemPct.toFixed(1)}%`} icon={Percent} colorClass={margemPct >= 15 ? "text-emerald-500" : "text-amber-500"} />
+        </div>
+      </div>
+
+      {/* KPIs Operacional Financeiro */}
+      <div>
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2"><TrendingUp className="w-3.5 h-3.5 text-primary" />Financeiro Operacional</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard title="Faturamento Previsto" value={fmt(financeiro.faturamentoPrevisto)} icon={DollarSign} colorClass="text-emerald-500" sub="OS não canceladas" />
+          <KpiCard title="Pagamento Previsto" value={fmt(financeiro.pagamentoPrevisto)} icon={CreditCard} colorClass="text-rose-500" sub="custo de OS" />
+          <KpiCard title="OS Aguard. Faturamento" value={String(financeiro.osAguardandoFaturamento)} icon={FileText} colorClass="text-amber-500" to="/financeiro" navigate={navigate} />
+          <KpiCard title="Pagamentos Pendentes" value={fmt(financeiro.pagamentosPendentes)} icon={ArrowUpCircle} colorClass="text-rose-500" trend={financeiro.pagamentosPendentes > 0 ? "down" : "up"} />
         </div>
       </div>
 

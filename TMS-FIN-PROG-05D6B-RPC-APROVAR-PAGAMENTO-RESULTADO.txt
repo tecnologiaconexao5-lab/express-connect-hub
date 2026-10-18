@@ -1,0 +1,174 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.6B-RPC-APROVAR-PAGAMENTO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microimplementacao controlada de regra financeira (RPC). Sem UI. Sem lote.
+RESULTADO: PASS — tenant-safe, idempotente, atomica; PROD financeiramente inalterado.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. FUNCAO CRIADA
+--------------------------------------------------------------------------------
+public.f_aprovar_pagamento_prestadores(p_ids uuid[])
+  RETURNS TABLE(solicitados int, aprovados int, ja_aprovados int, bloqueados int, detalhes jsonb)
+  LANGUAGE plpgsql | SECURITY DEFINER | SET search_path=public | VOLATILE
+  Aprovacao aplicada: status_conferencia='conferido', status_aprovacao='aprovado',
+    elegivel_lote=true, data_conferencia=COALESCE(data_conferencia,now()),
+    data_aprovacao=COALESCE(data_aprovacao,now()).
+  NAO altera: status_pagamento, lote_id, valor, prestador, os_id, financeiro_pagar,
+    financeiro_baixas.
+
+Arquivo : supabase/migrations/20260924000008_fin_prog05d6b_rpc_aprovar_pagamento.sql
+Rollback: supabase/migrations/20260924000009_fin_prog05d6b_rpc_aprovar_pagamento_rollback.sql
+Base homologada: 05D.4 (SELECT) + 05D.6A (UPDATE) — tenant via f_pp_tenant_id(os_id).
+
+--------------------------------------------------------------------------------
+2. GUARDS (ordem de avaliacao por id)
+--------------------------------------------------------------------------------
+  1) auth.uid() nulo ......................... BLOQUEIA (USUARIO_NAO_AUTENTICADO)
+  2) usuario sem tenant_usuarios ativo ....... BLOQUEIA (USUARIO_SEM_TENANT_ATIVO)
+  3) registro inexistente .................... BLOQUEIA (NAO_ENCONTRADO)
+  4) tenant nao resolvivel (os_id) ........... BLOQUEIA (SEM_TENANT)
+  5) tenant da linha <> tenant do usuario .... BLOQUEIA (CROSS_TENANT)
+  6) operacao/OS vinculada cancelada ......... BLOQUEIA (OPERACAO_CANCELADA)
+  7) status_pagamento/status = 'pago' ........ BLOQUEIA (PAGO)
+  8) status_pagamento/conferencia = cancelado  BLOQUEIA (CANCELADO)
+  9) status_aprovacao = 'rejeitado' .......... BLOQUEIA (REJEITADO)
+ 10) prestador_id nulo ....................... BLOQUEIA (SEM_PRESTADOR)
+ 11) valor_liquido <= 0 ...................... BLOQUEIA (VALOR_INVALIDO)
+ 12) is_teste IS TRUE ........................ BLOQUEIA (TESTE)
+ 13) POD 'nao_entregue' vinculado ............ BLOQUEIA (POD_NAO_ENTREGUE)
+ 14) status_aprovacao = 'aprovado' ........... JA_APROVADO (no-op, datas preservadas)
+ 15) caso contrario .......................... APROVAVEL
+
+Reaprovacao apos 'rejeitado' NAO e permitida — coerente com a UI atual
+(PagamentoPrestadores.tsx:1729 so permite Aprovar quando aguardando_aprovacao/ausente).
+
+--------------------------------------------------------------------------------
+3. REGRA POD ENCONTRADA (sem inventar taxonomia)
+--------------------------------------------------------------------------------
+- Fonte oficial do POD = entregas_protocolo, vinculada por alocacao_id
+  (e ordem_servico_id). A Conferencia (centralFinanceiroService.ts:201-209) usa
+  alocacao_id.
+- Nao existe coluna os_id em entregas_protocolo (o vinculo e alocacao_id/
+  ordem_servico_id) — descoberta relevante.
+- Distribuicao real: 52 entregas, 100% status='entregue' (nenhum 'nao_entregue').
+  Cobertura POD nos pagamentos: 22 de 137.
+- O sistema trata POD ausente/'pendente' como ATENCAO (nao bloqueio) e SOMENTE
+  'nao_entregue' como BLOQUEIO (derivarSemaforoCentral, centralFinanceiroService.ts:140-149).
+- Guard aplicado = NEGATIVO: bloqueia apenas se existir entrega explicita
+  'nao_entregue' vinculada (p.os_id = alocacao_id OU ordem_servico_id). POD
+  ausente NAO bloqueia (opcional por operacao). Hoje e inerte (0 casos).
+
+--------------------------------------------------------------------------------
+4. SEGURANCA / GRANTS
+--------------------------------------------------------------------------------
+- SECURITY DEFINER com search_path fixo (public). Valida auth.uid() e tenant
+  DENTRO da funcao (nao confia apenas na RLS).
+- Grants da funcao: EXECUTE para authenticated (+ postgres/service_role);
+  PUBLIC/anon REVOGADOS. Prova: anon executar -> "permission denied for function".
+- Nao aprova cross-tenant (guard 5). Nao ha bypass de RLS pois a funcao impoe
+  explicitamente o tenant.
+
+--------------------------------------------------------------------------------
+5. RETORNO DA RPC
+--------------------------------------------------------------------------------
+  solicitados   — quantidade de ids unicos recebidos
+  aprovados     — quantos foram aprovados NESTA chamada
+  ja_aprovados  — quantos ja estavam aprovados (no-op)
+  bloqueados    — quantos foram recusados
+  detalhes      — jsonb [{id, resultado, motivo}] com motivo legivel
+
+--------------------------------------------------------------------------------
+6. ATOMICIDADE
+--------------------------------------------------------------------------------
+All-or-nothing por construcao: se QUALQUER id estiver bloqueado, NENHUM e
+aprovado; a funcao retorna aprovados=0 + bloqueados=N + detalhes com os motivos.
+Nao ha aprovacao parcial silenciosa. Se todos validos => aprova todos e retorna
+0 bloqueados.
+
+--------------------------------------------------------------------------------
+7. IDEMPOTENCIA
+--------------------------------------------------------------------------------
+- Reexecucao dos mesmos ids ja aprovados => aprovados=0, ja_aprovados=N,
+  bloqueados=0. Nao cria/duplica AP, pp, lote ou baixa.
+- datas preservadas: data_conferencia/data_aprovacao inalteradas na 2a execucao
+  (COALESCE(..., now()) so preenche quando NULL). Provado por comparacao de
+  timestamp antes/depois.
+- Reentrante na mesma transacao (temp tables com DROP IF EXISTS + ON COMMIT DROP).
+
+--------------------------------------------------------------------------------
+8. PROVAS A-J (todas em transacao com ROLLBACK — nenhuma aprovacao permanente)
+--------------------------------------------------------------------------------
+A) pagamento valido (ded4388d…): aprovados=1; linha => conferido/aprovado/
+   elegivel=true; data_conferencia e data_aprovacao preenchidas. PASS
+B) 2a execucao: aprovados=0, ja_aprovados=1, bloqueados=0; datas preservadas=true. PASS
+   (B2) id ja aprovado: no-op. PASS
+C) cross-tenant (usuario movido p/ tenant ...00ff): aprovados=0, motivo
+   'Registro pertence a outro tenant'. PASS
+D) usuario sem tenant_usuarios ativo: aprovados=0, motivo 'USUARIO_SEM_TENANT_ATIVO'. PASS
+E) is_teste=true: aprovados=0, motivo 'Registro de teste/HML'. PASS
+F) pago: aprovados=0, motivo 'Pagamento ja efetuado'. PASS
+G) cancelado: aprovados=0, motivo 'Pagamento cancelado'. PASS
+H) valor_liquido<=0: aprovados=0, motivo 'Valor liquido <= 0'. PASS
+I) tenant nao resolvivel (os_id NULL): aprovados=0, motivo 'Tenant do vinculo
+   (os_id) nao resolvivel'. PASS
+J) mistura valido + invalido: solicitados=2, aprovados=0, bloqueados=1; o id
+   valido NAO foi alterado (permaneceu aguardando_aprovacao / elegivel=false). PASS
+
+RESUMO: 20/20 PASS.
+
+--------------------------------------------------------------------------------
+9. INTEGRIDADE (antes = depois)
+--------------------------------------------------------------------------------
+pagamentos_prestadores .......... 137 (137)
+financeiro_pagar ................ 178 (178)
+financeiro_baixas ............... 19 (19)
+pagamentos_prestadores lote_id != null ... 0 (0)
+soma valor_liquido .............. 90.229,96 (inalterada)
+soma financeiro_pagar.valor ..... 132.943,60 (inalterada)
+Nenhuma aprovacao financeira permanente (todas as provas revertidas).
+
+--------------------------------------------------------------------------------
+10. REGRESSAO
+--------------------------------------------------------------------------------
+- Provas da RPC 05D.6B: 20/20 PASS.
+- RLS 05D.4 (SELECT): 13/13 PASS (reexecutado).
+- RLS 05D.6A (UPDATE): 15/15 PASS (reexecutado).
+- npx vitest run (subset financeiro): 6 arquivos / 179 testes PASS.
+- npx tsc -p tsconfig.app.json --noEmit: EXIT 2 — 750 erros PRE-EXISTENTES
+  (nenhum arquivo TS alterado; mudanca e SQL).
+
+--------------------------------------------------------------------------------
+11. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1 POD: o guard e negativo (so bloqueia 'nao_entregue'). Operacoes de logistica
+   reversa que registrem 'nao_entregue' legitimamente seriam bloqueadas — nao ha
+   regra por tipo de operacao no sistema; hoje e inerte (0 casos). Validacao de
+   POD continua tambem humana na Conferencia.
+R2 A funcao nao valida perfil/papel (qualquer usuario ativo do tenant pode
+   aprovar). Se for exigido papel financeiro/admin, adicionar guard de papel em
+   micro-missao futura.
+R3 Idempotencia de 'ja aprovado' considera status_aprovacao='aprovado'; uma linha
+   aprovada com elegivel_lote=false NAO e normalizada (tratada como no-op).
+R4 Sem concorrencia pessimista por linha (nao ha FOR UPDATE na selecao); apos a
+   checagem, o UPDATE nao revalida tenants individuais (responsabilidade da RLS
+   pp_update_tms, que permanece ativa). Recomendavel lock se houver alto paralelismo.
+R5 Existe apenas 1 tenant real; cross-tenant provado por simulacao.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+M66/M80; f_confirmar_pagamento_prestador; trigger de cancelamento; f_emitir_fatura;
+AR; faturas; Conferencia UI; PagamentoPrestadores UI; Tesouraria; lote; iFi/CNAB;
+CESAR; 20 registros sem tenant; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D6B-RPC-APROVAR-PAGAMENTO-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D6B-RPC-APROVAR-PAGAMENTO-RESULTADO.txt
+Tamanho ..: 10315 bytes
+Data .....: 24/09/2026 17:06:46
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.6B
+================================================================================

@@ -1,0 +1,179 @@
+E2E-COMPLETO-01-PLANO
+==================================================
+Ambiente: TMS + APP + Supabase | Data: 2026-09-22
+Modo: PLANEJAMENTO / READ-ONLY | Redmi: NÃO nesta missão
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. EVIDÊNCIA REUTILIZÁVEL POR ETAPA DA CADEIA
+==================================================
+Etapa | PROVEN | EVIDENCE | NEEDS_RETEST | WHY
+1 Pré-cadastro APP ......... PARCIAL | ADM_APP_01 (G02/G21) | YES | falta bridge upload→documentos + motivo_bloqueio
+2 Admin App Prestador ...... PARCIAL | ADM_APP_01 | YES | integração não provada ponta a ponta
+3 Análise/documentos ....... PARCIAL | ADM_APP_01, rec04 | YES | status/validação parcial
+4 Recrutamento ............. PARCIAL | REC-06.1..06.2D.2V | YES | retoma em REC-06.2D.2F (patch)
+5 Cadastro Prestador ....... SIM | CAD-PERSIST-02..05, CAD-PREST-IND-01/02, CAD-VEIC-01/02/03 | NO | persistência/E2E homologadas
+6 liberado_app/elegibilidade SIM | AG-07F/H (gate), ENV-QA | NO | gate duro validado
+7 Login/acesso APP ......... NÃO | — (APP externo) | YES | requer dispositivo/Redmi
+8 Escala ................... SIM | ESCALA-E2E-08J/09B | NO | SAVE/valores/idempotência provados
+9 OS automática ............ SIM | ESCALA-E2E-08J | NO | OS-202609-633728 criada sem OS manual
+10 APP recebe operação ..... PARCIAL | CORE-E2E-OS-APP-POD-01, M133-D.4 | YES | entrega ao APP não provada fisicamente
+11 aceite/início/execução .. PARCIAL | POD-01, A31B | YES | exige APP real
+12 status retorna ao TMS ... PARCIAL | M133-D.4 (RPCs), eventos_oficiais | YES | validar RPC/grants em fluxo real
+13 conclusão ............... PARCIAL | M66 (composição na conclusão) | YES | conclusão via APP não provada
+14 POD/fotos/recebedor ..... PARCIAL | CORE-E2E-OS-APP-POD-02/03, FIX-POD-00E | YES | PASS CODE; funcional pendente (Redmi)
+15 Baixas/Evidências/Comprovantes PARCIAL | PODDisplay, entregas_protocolo, EVID-POD-01 | YES | visão integrada não provada
+16 KM/pedágio/adicionais ... SIM | ESCALA-E2E-09B | NO | propagação provada
+17 valor cliente/prestador . SIM | ESCALA-E2E-08J/09B | NO | 360/250 independentes
+18 obrigação financeira .... SIM | ESCALA-E2E-08J (receber/pagar/pp) | NO | criação provada; falta POLÍTICA de isolamento E2E
+19 Contas Receber/Pagar .... SIM | ESCALA-E2E-08J, FIN-SANE | NO | títulos criados e reconciliados
+20 indicadores/relatórios .. PARCIAL | relatorios homologados; CAD-PREST-IND-02 | YES | indicadores sem regra; relatório do fluxo E2E não provado
+21 PDFs Cliente/Prestador .. PARCIAL | FAT-PDF-* | YES | OSPDF é documento único (B6)
+
+REUSABLE_EVIDENCE_COUNT=14 (etapas com prova reutilizável direta)
+
+==================================================
+2. GAPS REAIS (agrupados por causa raiz)
+==================================================
+G1 INTEGRATION_GAP (B7): status TMS↔APP e RPCs (f_avancar_etapa_app_motorista,
+   f_atualizar_reversa_app, grants/auth) não provados em fluxo real.
+G2 PHYSICAL_APP_GAP (B2): POD offline durability (POD-08), photoUrl com fallback local (POD-05),
+   retry/pending-sync/sync no resume, falha permanente; requer APP real.
+G3 CODE_GAP (B2): stop_detail_screen.dart com catch silencioso (nota CORE-E2E-OS-APP-POD-03).
+G4 UI_GAP (B6): OSPDF único (cliente+prestador juntos) — variante Cliente × Prestador e
+   possível página em branco; risco de expor custo do prestador ao cliente.
+G5 UI_GAP (B5): guards/draft ausentes em ClienteDetalhe, OrcamentoForm, TabelaValoresForm e
+   forms financeiros (CAD-PERSIST-01).
+G6 BUSINESS_RULE_GAP (B3): Admin App — G02 bridge upload→documentos; G21 bloqueio sem motivo.
+G7 BUSINESS_RULE_GAP (B4): Recrutamento REC-06.2D.2F (score/classificação).
+G8 DATA_GAP: identidade de homologação única + isolamento/cleanup do fluxo E2E.
+G9 BUSINESS_RULE_GAP: indicadores prestador (score/aceite/pontualidade/presença) sem regra
+   canônica — decisão: definir regra ou ocultar (não inventar).
+
+REAL_E2E_GAPS_COUNT=9 (7 de execução + 2 de política/regra)
+
+==================================================
+3. SEQUÊNCIA MÍNIMA DE MISSÕES (sem microfragmentação)
+==================================================
+E2E-02 — HML-IDENTITY + TMS↔APP-INTEGRATION
+  objetivo: definir identidade de teste única (cliente/prestador/veículo/operação),
+    política de isolamento financeiro e cleanup; validar RPCs/status TMS↔APP (G1,G8) via
+    código + BEGIN/ROLLBACK.
+  ambiente: código + Supabase (read-only/rollback) | Redmi: NO
+  prova: seleção/round-trip de RPCs e mapeamento de status; plano de IDs de cleanup
+  cleanup: nenhum write (BEGIN/ROLLBACK)
+
+E2E-03 — ADMIN-PRECADASTRO + RECRUTAMENTO
+  objetivo: fechar G6 (Admin App: G02 bridge documentos + G21 motivo_bloqueio) e G7
+    (REC-06.2D.2F), preservando o ponto de retomada do Recrutamento.
+  ambiente: código + migrations de app | Redmi: NO
+  prova: testes direcionados + typecheck + build; bridge e motivo persistidos
+  cleanup: n/a (dados de teste controlados, se houver)
+
+E2E-04 — APP-POD-OFFLINE-PHOTOURL
+  objetivo: G2 + G3 — POD offline durability (POD-08), photoUrl remota (POD-05), retry,
+    pending-sync, sync no resume, falha permanente, e eliminar catch silencioso no
+    stop_detail_screen (repo Flutter externo).
+  ambiente: código APP (C:\src\conexao_prestador) | Redmi: NO (código/build; prova física em E2E-06)
+  prova: testes estáticos/unit no APP + build
+  cleanup: n/a
+
+E2E-05 — PDFs-OS + FORM-GUARDS
+  objetivo: G4 + G5 — OSPDF variante Cliente × Prestador (sem vazamento de custo, sem página
+    em branco) e guards/draft nos formulários restantes.
+  ambiente: código (TMS) | Redmi: NO
+  prova: testes direcionados + typecheck + build; PDF cliente sem campos de prestador
+  cleanup: n/a
+
+E2E-06 — FISICO-CADEIA-COMPLETA (Redmi)
+  objetivo: executar a cadeia crítica ponta a ponta com o APP real (pré-cadastro → cadastro
+    → liberado_app → login → Escala → OS → APP aceite/execução → status TMS → conclusão →
+    POD/fotos/recebedor → Baixas/Comprovantes → financeiro → PDFs).
+  ambiente: TMS + APP + Supabase PROD (identidade HML de E2E-02) | Redmi: YES
+  prova: evidência física (fotos/timestamps) + consultas DB por IDs + PDFs gerados
+  cleanup: executar plano de E2E-02 (deletar por IDs exatos + restaurar cadastro HML)
+
+E2E-07 — COMPROVANTES/RELATORIOS + FECHAMENTO-NIVEL-2
+  objetivo: validar Baixas/Evidências/Ver comprovantes + relatórios do fluxo E2E; consolidar
+    E2E_COMPLETE_GATE; executar cleanup final e registrar evidências.
+  ambiente: TMS + DB | Redmi: NO
+  prova: telas de comprovantes/relatórios com dados do fluxo + delta DB = 0 após cleanup
+  cleanup: obrigatório (todos os IDs do fluxo)
+
+PHYSICAL_REDMI_MISSIONS_COUNT=1 (somente E2E-06)
+
+==================================================
+4. ESTRATÉGIA DE DADOS DE HOMOLOGAÇÃO (sem criar agora)
+==================================================
+- Identidade de teste (reusar padrão homologado): cliente "HOMOLOGAÇÃO APP" (3d2d079d);
+  prestador de teste dedicado (com liberado_app); veículo VUC; tabela de valores HML;
+  operação com rota/observação identificável (ex.: E2E-COMPLETO-<data>).
+- Isolamento financeiro: usar cliente/prestador de HOMOLOGAÇÃO (nunca reais); prever
+  obrigação financeira apenas no escopo HML.
+- Cleanup: por IDs EXATOS (alocação/OS/receber/pagar/pp/composição/baixas/eventos) na ordem
+  já validada (ESCALA-E2E-10B); restaurar qualquer campo de cadastro alterado (snapshot).
+- POD/evidências: comprovantes do fluxo HML; cleanup dos registros de POD/entregas_protocolo
+  criados pelo fluxo.
+- Nada é criado nesta missão; execução começa em E2E-02/E2E-06.
+
+==================================================
+5. APP OFFLINE/POD (incorporado ao plano)
+==================================================
+E2E-04 cobre: POD-05 photoUrl remota; POD-08 offline durability; retry de upload;
+pending-sync; sync no resume; falha permanente; e a regra "POD remoto confirmado antes de
+considerar a conclusão sincronizada". Sem repetir auditorias (usa CORE-E2E-OS-APP-POD-01/02/03).
+
+==================================================
+6. ADMIN/RECRUTAMENTO (B3/B4)
+==================================================
+Devem ser corrigidos ANTES do E2E físico (E2E-03), pois alimentam a cadeia
+(pré-cadastro→documentos→cadastro→liberado_app). Recrutamento retoma EXATAMENTE em
+REC-06.2D.2F (preservado).
+
+==================================================
+7. POD/TMS/PDF (validação integrada)
+==================================================
+- E2E-06 valida: Baixas e Evidências, Ver comprovantes, fotos, recebedor, geolocalização,
+  histórico, OS Cliente/Prestador.
+- E2E-05 valida: OSPDF variante Cliente × Prestador, página em branco, ausência de vazamento
+  financeiro (cliente não vê custo do prestador).
+- E2E-07 consolida comprovantes/relatórios do fluxo e executa o cleanup.
+
+==================================================
+8. CRITÉRIO PARA SAIR DO NÍVEL 2
+==================================================
+E2E_COMPLETE_GATE=
+  G1. Pré-cadastro APP → cadastro prestador → liberado_app comprovados (com IDs).
+  G2. Login/acesso APP real funcionando com o prestador HML.
+  G3. Escala criada pela UI → OS automática (1) → financeiro (receber/pagar/pp) coerentes.
+  G4. APP recebe a operação; aceite/início/execução; status retorna ao TMS (RPC/eventos).
+  G5. Conclusão via APP → POD com foto/assinatura/recebedor/geolocalização persistidos
+      (delivery_proofs → entregas_protocolo) e visíveis em Baixas/Comprovantes.
+  G6. Financeiro final: valor cliente e valor prestador corretos; composição na conclusão;
+      títulos em Contas Receber/Pagar; sem duplicidade.
+  G7. PDFs Cliente e Prestador corretos (sem página em branco; sem vazamento de custo).
+  G8. Cleanup executado; delta DB = 0; produção restaurada.
+  EXCLUI (Master 360): carga/performance, backup/restore, observabilidade final,
+  regressão global, checklist go-live, Control Tower.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+REUSABLE_EVIDENCE_COUNT=14
+REAL_E2E_GAPS_COUNT=9
+PHYSICAL_REDMI_MISSIONS_COUNT=1
+
+E2E_MISSION_SEQUENCE=E2E-02, E2E-03, E2E-04, E2E-05, E2E-06 (Redmi), E2E-07
+
+E2E_COMPLETE_GATE=(definido acima, G1..G8)
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-02-HML-IDENTITY-E-TMS-APP-INTEGRATION
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma alteração de código/banco; nenhuma migration; nenhum dado criado; nenhum E2E/Redmi
+executado; nível 3 não reaberto; Master 360/Control Tower não executados.
+
+DB_WRITES=0
+MIGRATIONS=0

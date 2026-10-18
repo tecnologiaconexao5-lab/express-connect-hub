@@ -1,0 +1,151 @@
+ESCALA-OS-10-20-REFERENCIAS-EVIDENCIAS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+==================================================
+ESCOPO — 20 CASOS (2 Classe B + 18 Classe E)
+==================================================
+
+B (2):  c67b91ec-d6a2-4f1d-ae85-a0cf5fac9889
+        fd2b074b-9c03-42fe-acad-112e617a62eb
+E (18): 47cfd745, 76af8e4a, 4c669b9e, a5426e83, 4473d537, 29f637bc, 4c5761c2, 45374f42,
+        fd73f36c, 71a7847c, 13465bc4, b84f7312, 766813eb, 813ea24f, 14bc23f6, fd964370,
+        c616675e, c02e0610
+
+==================================================
+ACHADO CENTRAL
+==================================================
+
+PRESTADOR: TODOS os 20 possuem prestador_id = e6646799-fbac-453e-a3ef-afdfc01a7085
+("PRESTADOR TESTE APP", CPF 12345678900) — persistido em alocacoes_escala.prestador_id
+e corroborado por fontes independentes:
+  - financeiro_pagar.fornecedor_id = e6646799 (fornecedor_nome "PRESTADOR TESTE APP")
+  - pagamentos_prestadores.prestador_id = e6646799 (prestador_documento 12345678900)
+  - composicao_financeira_os.prestador_id = e6646799 (quando existe)
+  - entregas_protocolo.prestador_id = e6646799 (quando existe)
+→ PROVIDER_CONFIDENCE_LEVEL = NÍVEL 1 (PROVA FORTE) para os 20.
+→ Observação: o prestador JÁ ESTÁ PREENCHIDO na alocação — não há nada a recuperar.
+
+CLIENTE: NENHUMA evidência objetiva de cliente_id em qualquer fonte:
+  - alocacoes_escala.cliente_id = NULL (20/20)
+  - financeiro_pagar.cliente_id = NULL (20/20)
+  - financeiro_receber: 0 linhas (nenhum título)
+  - composicao_financeira_os.cliente_id = NULL
+  - entregas_protocolo.cliente_id / delivery_proofs.cliente_id = NULL
+  - Nenhuma OS em ordens_servico pelos numeros/romaneios citados (OS-F17-*, OS-HML-*, 88001,
+    OC-20260618-6056) — busca vazia.
+  - Apenas menções TEXTUAIS (origem/destino "BAIRRO TESTE FINANCEIRO E2E", "Loja Paulista",
+    "CLIENTE HOMOLOGAÇÃO APP", "Cliente Teste App Motorista") — NÃO promovíveis a FK.
+→ CLIENT_CONFIDENCE_LEVEL = NÍVEL 3 (PROVÁVEL por texto) / insuficiente para vínculo.
+  Não há candidato único inequívoco → não inferir ID por nome.
+
+NOTA: O conjunto tem características de HOMOLOGAÇÃO/TESTE (PRESTADOR TESTE APP, "ROTA TESTE",
+"BAIRRO TESTE FINANCEIRO E2E", cliente textual "HOMOLOGAÇÃO APP"). Não reclassificado nesta
+missão (fora de escopo reabrir), apenas registrado como evidência.
+
+==================================================
+TABELA DOS 20 (decisão humana somente sobre CLIENTE)
+==================================================
+
+ID_8     | ST           | PROV (Nív)          | CLI (Nív) | FIN PAG/PP (status)          | BAIXAS
+c67b91ec | aguardando   | e6646799 (N1)       | N3 texto  | -                            | 0
+fd2b074b | aguardando   | e6646799 (N1)       | N3 texto  | -                            | 0
+47cfd745 | aguardando   | e6646799 (N1)       | N3 texto  | 05d87f10 aberto / pendente   | 0
+76af8e4a | aguardando   | e6646799 (N1)       | N3 texto  | b4292aa5 aberto / pendente   | 0
+4c669b9e | aguardando   | e6646799 (N1)       | N3 texto  | c3d6497c aberto / pendente   | 0
+a5426e83 | aguardando   | e6646799 (N1)       | N3 texto  | e8c0e809 aberto / pendente   | 0
+4473d537 | aguardando   | e6646799 (N1)       | N3 texto  | 23992136 aberto / nao_venc  | 0
+29f637bc | aguardando   | e6646799 (N1)       | N3 texto  | 8a11b1e4 aberto / nao_venc  | 0
+4c5761c2 | aguardando   | e6646799 (N1)       | N3 texto  | 2de29523 aberto / pendente   | 0
+45374f42 | aguardando   | e6646799 (N1)       | N3 texto  | e0e834f1 aberto / nao_venc  | 0
+fd73f36c | aguardando   | e6646799 (N1)       | N3 texto  | 5fb14b51 CANCELADO / pend.   | 0
+71a7847c | aguardando   | e6646799 (N1)       | N3 texto  | 4012738f aberto / pendente   | 0
+13465bc4 | aguardando   | e6646799 (N1)       | N3 texto  | ae1970cf pendente / nao_venc | 0
+b84f7312 | aguardando   | e6646799 (N1)       | N3 texto  | 78f766d2 aberto / nao_venc  | 0
+766813eb | aguardando   | e6646799 (N1)       | N3 texto  | 8d48485b aberto / pendente   | 0
+813ea24f | aguardando   | e6646799 (N1)       | N3 texto  | e6d84c7b pendente / nao_venc | 0
+14bc23f6 | aguardando   | e6646799 (N1)       | N3 texto  | d24b1678 aberto / nao_venc  | 0
+fd964370 | aguardando   | e6646799 (N1)       | N3 texto  | 2e1ae4a4 pendente / nao_venc | 0
+c616675e | aguardando   | e6646799 (N1)       | N3 texto  | f8a7a0d8 pendente / nao_venc | 0
+c02e0610 | aguardando   | e6646799 (N1)       | N3 texto  | b8c193e0 pendente / nao_venc | 0
+
+FINANCEIRO — identificação persistida do prestador ALÉM de os_id: SIM
+  financeiro_pagar.fornecedor_id / fornecedor_nome + pagamentos_prestadores.prestador_id /
+  prestador_nome / prestador_documento = e6646799 (convergente).
+BAIXAS: 0 em todos (nenhum título baixado).
+PP_STATUS_CONFERENCIA: em_aberto (maioria) / pendente (13465bc4, 813ea24f, fd964370, c616675e, c02e0610).
+
+==================================================
+CRUZAMENTO — 16 CONCLUÍDOS SEM PRESTADOR
+==================================================
+
+CONCLUDED_NULL_PROVIDER_IN_20=0
+(Os 20 têm prestador preenchido; os 16 concluídos sem prestador NÃO estão neste conjunto.)
+
+==================================================
+CLASSIFICAÇÃO DOS 20
+==================================================
+
+A = 0  (cliente+prestador Nível 1/2)
+B = 0  (somente cliente Nível 1/2)
+C = 20 (somente PRESTADOR Nível 1/2 — prestador já persistido)
+D = 0
+E = 0
+F = 0
+
+==================================================
+RESUMO
+==================================================
+
+TOTAL_REVIEWED=20
+LEVEL_1=20 (prestador — FK persistido + fontes convergentes)
+LEVEL_2=0
+LEVEL_3=20 (cliente — apenas textual, não promovível)
+LEVEL_4=0
+
+BOTH_RECOVERABLE=0
+CLIENT_ONLY_RECOVERABLE=0
+PROVIDER_ONLY_RECOVERABLE=20
+HUMAN_CONFIRM_REQUIRED=20 (exclusivamente sobre o CLIENTE)
+INSUFFICIENT=0
+CONFLICTING=0
+
+SAFE_REFERENCE_RECOVERY_COUNT=0  (prestador já preenchido — nada a recuperar; cliente não é recuperável)
+HUMAN_DECISION_COUNT=20          (cliente_id dos 20)
+UNRESOLVED_COUNT=0
+
+HAS_REAL_FINANCE=YES em 18 (Classe E) | NO em 2 (Classe B)
+FINANCIAL_STATUS: aberto/pendente/nao_vencido (1 cancelado em fd73f36c) | BAIXAS=0
+
+==================================================
+DECISÃO HUMANA NECESSÁRIA (somente CLIENTE)
+==================================================
+
+Os 20 registros permanecem com cliente_id NULL sem prova objetiva. A única decisão pendente é
+vincular (ou não) um cliente. NÃO criar OS enquanto cliente_id não for confiável.
+Candidatos textuais existentes no cadastro (NÃO promovidos): "Cliente Teste App Motorista"
+(bbc9d78b), "HOMOLOGAÇÃO APP" (3d2d079d) — porém sem vínculo objetivo comprovável.
+
+==================================================
+PRÓXIMA MISSÃO MÍNIMA
+==================================================
+
+Como o prestador já está resolvido (Nível 1) e o cliente não é objetivamente recuperável,
+a próxima missão não é de correção automática. Sugestão:
+  ESCALA-OS-11-DECISAO-CLIENTE-20 — o responsável confirma, caso a caso, o cliente_id dos 20
+  (ou confirma que são registros de homologação/teste sem cliente real). Sem INSERT/UPDATE até
+  a confirmação; nenhuma OS criada antes disso.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhuma OS criada/vinculada.
+- cliente_id/prestador_id não alterados. Financeiro não alterado.
+- Nenhum ID inferido por nome. Não tratou 9 FIN-02, APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

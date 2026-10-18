@@ -1,0 +1,224 @@
+================================================================================
+MISSÃO A23 — FASE D — INTEGRAÇÃO POD / COMPROVANTES ↔ FINANCEIRO
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Fonte de verdade: entregas_protocolo (M108C1)
+================================================================================
+
+STATUS FINAL: CONCLUÍDA
+-------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS CRIADOS
+--------------------------------------------------------------------------------
+  - src/test/a23D_podFinanceiro.test.ts                 (NOVO — 12 testes unitários)
+  - tests/e2e/a23_fase_d_pod_financeiro.spec.ts          (NOVO — 3 testes Playwright)
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS MODIFICADOS
+--------------------------------------------------------------------------------
+  - src/services/comprovantes/comprovantesService.ts
+      Novos helpers (fonte oficial entregas_protocolo):
+        * derivarSituacaoPodFinanceiro(pod)        — puro/testável
+        * derivarStatusComprovanteFinanceiro(pod)  — puro (enviado/pendente)
+        * SITUACAO_POD_FINANCEIRO_LABEL
+        * buscarPODsDeAlocacoes(alocacaoIds)       — SELECT read-only (Map)
+  - src/components/financeiro/ConferenciaFinanceira.tsx
+      Estados de POD profissionais (POD completo / POD parcial / Com ressalva /
+      Não entregue / POD pendente), indicadores Foto/Canhoto/Assinatura/Recebedor,
+      ação "Ver comprovante" (DossieEntregaSheet), vínculo claro OS/Romaneio.
+  - src/components/financeiro/PagamentoPrestadores.tsx
+      fetchEscalaRepasse agora busca POD real via entregas_protocolo
+      (buscarPODsDeAlocacoes) e injeta podOverride no adapter.
+  - src/services/escala/escalaFinanceiroAdapter.ts
+      escalaParaItemRepasse(aloc, podOverride?) — usa entregas_protocolo quando
+      podOverride é fornecido; mantém fallback histórico quando ausente.
+  - src/services/financeiro/receberService.ts
+      Preparação p/ faturamento (SEM bloqueio):
+        * podExisteParaFaturamento(pod)             — puro
+        * verificarPODParaFaturamento(alocacaoId)   — SELECT read-only
+  - src/components/financeiro/ContasReceberEnterprise.tsx
+      Alerta visual "Comprovante pendente" (e "não entregue / com ressalva")
+      ANTES de gerar recebível — NÃO bloqueia o faturamento.
+
+--------------------------------------------------------------------------------
+3. FONTE ANTIGA DO STATUS DE COMPROVANTE
+--------------------------------------------------------------------------------
+  - alocacoes_escala.comprovante_url (campo da alocação)
+  - alocacoes_escala.assinatura_url
+  - alocacoes_escala.fotos_entrega (array)
+  Origem do problema: o trigger App→entregas_protocolo NÃO atualiza
+  comprovante_url da alocação, então PODs existentes ficavam invisíveis
+  (falsos pendentes) para o Financeiro.
+
+--------------------------------------------------------------------------------
+4. FONTE NOVA
+--------------------------------------------------------------------------------
+  - entregas_protocolo (fonte oficial única de POD).
+  - Compartilhada com: Central /comprovantes (A23-A), Torre KPI (A23-B),
+    OS/Romaneio (A23-C) e agora Financeiro (A23-D).
+
+--------------------------------------------------------------------------------
+5. FUNCIONAMENTO DA CONFERÊNCIA FINANCEIRA
+--------------------------------------------------------------------------------
+  A Conferência agora carrega alocações concluídas e cruza POD via
+  buscarPODsDeAlocacoes (entregas_protocolo). A coluna POD exibe um badge
+  com o estado real + micro-indicadores:
+    - Foto (ícone Camera)
+    - Canhoto (ícone FileText)
+    - Assinatura (ícone Signature)
+    - Recebedor (texto truncado)
+  A coluna "OS / Romaneio" exibe o número da OS com destaque (ícone Hash),
+  deixando clara a cadeia Financeiro → OS → operação → comprovante.
+
+--------------------------------------------------------------------------------
+6. ESTADOS DE POD EXIBIDOS
+--------------------------------------------------------------------------------
+  - POD completo   (verde)   — foto + assinatura + recebedor
+  - POD parcial    (azul)    — possui algum POD mas incompleto
+  - Com ressalva   (âmbar)   — entregue_ressalva
+  - Não entregue   (vermelho)— nao_entregue
+  - POD pendente   (cinza)   — sem registro em entregas_protocolo
+  KPI superior: "Com POD Vinculado" agora mostra "X · Y pend." quando há pendentes.
+
+--------------------------------------------------------------------------------
+7. AÇÃO "VER COMPROVANTE"
+--------------------------------------------------------------------------------
+  - Disponibilizada na Conferência Financeira (coluna "Comprovante").
+  - Reutiliza EXATAMENTE o DossieEntregaSheet da A23-A.
+  - MESMO dossiê profissional para: Central /comprovantes, OS/Romaneio e
+    Financeiro. Nenhum visualizador adicional foi criado.
+
+--------------------------------------------------------------------------------
+8. VÍNCULO COM OS / ROMANEIO
+--------------------------------------------------------------------------------
+  - A coluna "OS / Romaneio" mostra o número da OS (ordens_servico.numero)
+    com destaque visual (ícone Hash + bold).
+  - A cadeia é: Financeiro → OS/Romaneio → alocação → entregas_protocolo.
+  - Nenhuma coluna nova no banco — apenas relacionamentos existentes
+    (alocacoes_escala.ordem_servico_id → ordens_servico.numero).
+
+--------------------------------------------------------------------------------
+9. COMPORTAMENTO DE PagamentoPrestadores
+--------------------------------------------------------------------------------
+  - fetchEscalaRepasse agora busca POD real via entregas_protocolo
+    (buscarPODsDeAlocacoes) e passa o POD (ou null) como podOverride para
+    escalaParaItemRepasse.
+  - comprovanteStatus passa a refletir entregas_protocolo: "enviado" quando
+    existe POD real, "pendente" quando não. Isto corrige o falso pendente
+    (POD em entregas_protocolo com comprovante_url null).
+  - O fallback histórico (detectarStatusComprovante sobre a alocação) é
+    mantido apenas quando podOverride não é fornecido (segurança p/ outros callers).
+
+--------------------------------------------------------------------------------
+10. REGRA DE APROVAÇÃO PRESERVADA
+--------------------------------------------------------------------------------
+  - A regra de aprovação/bloqueio do pagamento NÃO foi alterada.
+  - handleGerarRepasse continua: se comprovanteStatus === "pendente" →
+    aviso "O repasse será criado, mas a aprovação ficará bloqueada".
+  - O que mudou é APENAS a fonte de determinação do comprovante
+    (entregas_protocolo em vez de campos da alocação).
+  - isAlocacaoFaturavel inalterado (cancelada/statusPagamento cancelado
+    continuam excluídos). Nenhuma regra financeira inventada.
+
+--------------------------------------------------------------------------------
+11. TRATAMENTO DO FATURAMENTO SEM POD (PREPARAÇÃO)
+--------------------------------------------------------------------------------
+  - NÃO implantado bloqueio rígido.
+  - receberService ganhou verificarPODParaFaturamento(alocacaoId) (SELECT
+    read-only em entregas_protocolo) + podExisteParaFaturamento (puro).
+  - ContasReceberEnterprise: ao gerar recebível da escala, se POD estiver
+    pendente → toast de aviso "Comprovante pendente. O faturamento será
+    gerado..."; se não entregue/ressalva → toast informativo. O faturamento
+    é executado normalmente (sem bloqueio).
+
+--------------------------------------------------------------------------------
+12. ALERTAS ADICIONADOS
+--------------------------------------------------------------------------------
+  - Conferência Financeira: badge de estado de POD colorido + indicadores.
+  - ContasReceberEnterprise: toast warning "Comprovante pendente" antes de
+    gerar recebível (visual, não bloqueante).
+  - PagamentoPrestadores: aviso existente de comprovante pendente mantido,
+    agora com fonte correta (entregas_protocolo).
+
+--------------------------------------------------------------------------------
+13. ALTERAÇÕES EM receberService
+--------------------------------------------------------------------------------
+  - Novas funções: podExisteParaFaturamento, verificarPODParaFaturamento.
+  - NENHUMA alteração em criarRecebivelDeEscala / listarItensFaturaveis /
+    fluxos existentes de faturamento. Apenas capacidade de leitura do POD.
+
+--------------------------------------------------------------------------------
+14. TESTES
+--------------------------------------------------------------------------------
+  Unitários (src/test/a23D_podFinanceiro.test.ts — 12 testes):
+    1. Operação sem POD → Financeiro mostra pendente ✅
+    2. Operação com POD → reconhecida corretamente ✅
+    3. Foto detectada ✅
+    4. Assinatura detectada ✅
+    5. Canhoto detectado ✅
+    6. Entregue com ressalva ✅
+    7. Não entregue ✅
+    8. POD parcial (foto sem assinatura) → parcial ✅
+    9. PagamentoPrestadores reconhece POD em entregas_protocolo (podOverride) ✅
+   10. POD só em entregas_protocolo (comprovante_url null) → NÃO tratado ausente ✅
+   11. Regra atual de pagamento preservada (isAlocacaoFaturavel) ✅
+   12. Ausência de POD gera alerta para faturamento SEM bloqueio definitivo ✅
+
+  Playwright (tests/e2e/a23_fase_d_pod_financeiro.spec.ts — 3 testes, listados):
+    1. Conferência Financeira carrega sem erros JS ✅ (listado)
+    2. Consulta entregas_protocolo (fonte oficial de POD) ✅ (listado)
+    3. PagamentoPrestadores consulta entregas_protocolo ✅ (listado)
+  (Execução E2E requer ambiente QA + credenciais reais — guard-rails de Produção.)
+
+--------------------------------------------------------------------------------
+15. RESULTADO DO TSC
+--------------------------------------------------------------------------------
+  npx tsc --noEmit  →  0 erros
+
+--------------------------------------------------------------------------------
+16. RESULTADO DO BUILD
+--------------------------------------------------------------------------------
+  npm run build  →  ✅ 42.02s — build ok
+
+--------------------------------------------------------------------------------
+17. RESULTADO DO VITEST
+--------------------------------------------------------------------------------
+  npx vitest run  →  ✅ 66/66 testes (7 arquivos; 12 novos A23-D)
+
+--------------------------------------------------------------------------------
+18. CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+  - Nenhuma migration executada ................... CONFIRMADO
+  - Nenhum dado de Produção alterado .............. CONFIRMADO
+  - Nenhum trigger/RLS/RPC/schema alterado ........ CONFIRMADO
+  - App Flutter (C:\src\conexao_prestador) ........ CONFIRMADO (não tocado)
+  - Nenhuma regra financeira de pagamento alterada  CONFIRMADO
+  - Nenhum bloqueio definitivo de faturamento ..... CONFIRMADO
+  - Nenhuma nova tabela de faturas/NFS-e/CT-e ..... CONFIRMADO
+
+================================================================================
+O QUE AINDA FALTA NO FINANCEIRO
+(Próxima grande etapa — módulo profissional de faturamento)
+================================================================================
+  - Faturamento por cliente (agrupamento/fechamento mensal por cliente);
+  - Faturas (entidade/gestão de faturas consolidadas);
+  - NFS-e (emissão, envio, retorno);
+  - CT-e / MDF-e (documentos fiscais de transporte);
+  - Vencimento (regras de vencimento por cliente/contrato);
+  - Contas a receber (gestão completa, renegociação, baixa);
+  - Pagamento (repasse prestador completo);
+  - PDF de fatura (geração/documento);
+  - Configurações da Conexão (dados do emitente, séries, ambientes);
+  - Regras por cliente (prazos, impostos, retenções, frete mínimo);
+  - Histórico por romaneio (rastreabilidade fatura ↔ OS ↔ comprovante);
+  - Bloqueio definitivo de faturamento duplicado (regra rígida de negócio);
+  - Vínculo direto fatura ↔ romaneio ↔ comprovante (schema — fase futura).
+
+  Todos esses itens pertencem ao módulo profissional após o encerramento da
+  A23 — NÃO foram implementados nesta fase (conforme escopo).
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A23 — FASE D
+STATUS FINAL: CONCLUÍDA ✅
+================================================================================

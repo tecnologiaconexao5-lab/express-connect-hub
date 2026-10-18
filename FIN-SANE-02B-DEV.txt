@@ -1,0 +1,250 @@
+============================================================
+FIN-SANE-02B-DEV — UNIFICAÇÃO financeiro_pagar.valor COM
+pagamentos_prestadores.valor_liquido (OBRIGAÇÃO TOTAL)
+============================================================
+Data: 2026-09-13
+Status: DEV COMPLETO — Código corrigido, testes criados, dry-run
+        executado. Migration e rollback gerados. NENHUMA migration
+        aplicada em produção. NENHUM dado alterado.
+Ambiente: TMS LOCAL + Supabase Produção (somente leitura)
+Arquitetura: FIN-SANE-02A
+
+============================================================
+1. RESUMO DA MISSÃO
+============================================================
+
+Implementar a correção FIN-SANE-02B, que consiste em:
+
+1. Ajustar os triggers M66 e M80 para que financeiro_pagar.valor
+   represente a OBRIGAÇÃO TOTAL do prestador, ou seja,
+   pagamentos_prestadores.valor_liquido.
+
+2. Corrigir pagarFechamento() em fechamentoService.ts para que
+   não atualize status_pagamento sem baixa financeira atômica.
+
+3. Criar RPC f_confirmar_pagamento_fechamento para processar
+   todo o fechamento (título + itens) em uma única transação.
+
+4. Criar migration forward com snapshot de segurança e UPDATE
+   retroativo apenas em títulos não pagos.
+
+5. Criar migration rollback completa.
+
+6. Criar testes unitários para pagarFechamento() e documentar
+   os 12 cenários SQL de integração.
+
+7. Executar dry-run de produção para contar candidatos e
+   exclusões.
+
+8. Validar tsc --noEmit e npm run build.
+
+============================================================
+2. ARQUIVOS CRIADOS / MODIFICADOS
+============================================================
+
+CRIADOS:
+  supabase/migrations/20260913_fin_sane_02b_unifica_valor_pagar.sql
+    - Recria trigger M66: financeiro_pagar.valor = v_valor_liquido
+    - Recria trigger M80: financeiro_pagar.valor = v_valor_liquido
+    - Cria RPC f_confirmar_pagamento_fechamento (transacional)
+    - Cria tabela de snapshot fin_sane_02b_snapshot
+    - UPDATE retroativo em financeiro_pagar (não pagos)
+    - SELECT de auditoria count
+
+  supabase/migrations/20260913_fin_sane_02b_rollback.sql
+    - Restaura triggers M66/M80 com v_valor_prestador
+    - Drop da RPC f_confirmar_pagamento_fechamento
+    - Restaura financeiro_pagar.valor a partir do snapshot
+    - Drop da tabela de snapshot
+
+  src/test/fin_sane_02b.test.ts
+    - 8 testes unitários de pagarFechamento()
+    - Documentação dos 12 cenários SQL de integração
+
+  _fin_sane_02b_dryrun.mjs
+    - Script read-only de contagem de candidatos e exclusões
+
+MODIFICADOS:
+  src/services/financeiro/fechamentoService.ts
+    - pagarFechamento() agora chama RPC transacional
+    - Não atualiza status_pagamento diretamente
+    - Idempotência preservada
+
+============================================================
+3. DETALHES TÉCNICOS
+============================================================
+
+3.1 TRIGGERS AJUSTADOS
+
+  M66 (alocacoes_escala → financeiro):
+    Antes: v_valor_prestador (apenas repasse base)
+    Depois: v_valor_liquido (obrigação total)
+
+  M80 (ordens_servico → financeiro):
+    Antes: v_valor_prestador (apenas custo_prestador)
+    Depois: v_valor_liquido (obrigação total)
+
+  O cálculo de v_valor_liquido em ambos os triggers segue a
+  mesma fórmula canonica definida em FIN-SANE-02A:
+
+    v_valor_liquido =
+        COALESCE(v_valor_servicos, 0)
+      + COALESCE(v_valor_pedagio, 0)
+      + COALESCE(v_valor_adicionais, 0)
+      + COALESCE(v_valor_ajudante, 0)
+      + COALESCE(v_valor_reembolsos, 0)
+      + COALESCE(v_valor_bonus, 0)
+      - COALESCE(v_valor_descontos, 0)
+      - COALESCE(v_valor_adiantamentos, 0)
+      - COALESCE(v_valor_combustivel, 0)
+
+3.2 RPC NOVA: f_confirmar_pagamento_fechamento
+
+  Objetivo: tornar a baixa de fechamento atômica.
+
+  Assinatura:
+    f_confirmar_pagamento_fechamento(
+      p_fechamento_id   UUID,
+      p_data_pagamento  DATE
+    )
+
+  Retorno:
+    JSONB { sucesso, mensagem, itens_processados,
+            itens_ignorados, total_baixas }
+
+  Lógica:
+    1. Valida existência do fechamento.
+    2. Valida que fechamento está aprovado (não pago).
+    3. Para cada item vinculado:
+       a. Encontra financeiro_pagar correspondente.
+       b. Verifica se já existe baixa.
+       c. Verifica se fp.valor = pp.valor_liquido.
+       d. Registra baixa em financeiro_baixas.
+       e. Atualiza financeiro_pagar.status = 'pago'.
+       f. Atualiza pagamentos_prestadores.status = 'pago'.
+    4. Se qualquer passo falhar, ROLLBACK total.
+    5. Se tudo OK, COMMIT.
+
+3.3 ATUALIZAÇÃO RETROATIVA
+
+  Apenas registros NÃO PAGOS são atualizados:
+    - status NOT IN ('pago','paga','cancelado','cancelada','estornado')
+    - os_id IS NOT NULL
+    - fornecedor_id IS NOT NULL
+    - existe pagamentos_prestadores correspondente
+    - tipo_pagamento IS DISTINCT FROM 'fechamento'
+    - valor diverge de valor_liquido
+
+  Snapshot criado antes do UPDATE:
+    fin_sane_02b_snapshot(id, financeiro_pagar_id,
+                          valor_anterior, valor_novo, os_id,
+                          prestador_id, updated_at)
+
+============================================================
+4. VALIDAÇÃO
+============================================================
+
+4.1 TESTES UNITÁRIOS
+
+  Comando: npx vitest run src/test/fin_sane_02b.test.ts
+  Resultado: ✅ 8/8 PASS
+  Duração: ~17ms
+
+  Cenários testados:
+    ✓ Chama RPC para fechamento aprovado
+    ✓ Não chama RPC se já pago (idempotência)
+    ✓ Lança erro se RPC retorna sucesso=false
+    ✓ Lança erro se RPC retorna erro de comunicação
+    ✓ Lança erro se fechamento não está aprovado
+    ✓ Registra observação com conta financeira
+    ✓ Retorna FechamentoDetalhado após sucesso
+    ✓ NÃO faz UPDATE direto de status_pagamento
+
+4.2 TYPESCRIPT
+
+  Comando: npx tsc --noEmit
+  Resultado: ✅ 0 erros
+
+4.3 BUILD
+
+  Comando: npm run build
+  Resultado: ✅ built in 47.41s
+  Observações: apenas warnings pré-existentes sobre dynamic
+  imports e chunks grandes. Nenhum erro.
+
+4.4 DRY-RUN DE PRODUÇÃO
+
+  Comando: node _fin_sane_02b_dryrun.mjs
+  Resultado: SOMENTE LEITURA — 0 alterações
+
+  CANDIDATOS À ATUALIZAÇÃO:
+    qtd: 36
+    soma_diferencas: R$ 6.336,72
+    qtd_teste: 10
+    soma_dif_teste: R$ 1.435,50
+    qtd_real: 26
+    soma_dif_real: R$ 4.901,22
+
+  REGISTROS EXCLUÍDOS (breakdown, pode haver sobreposição):
+    status_terminal: 39
+    sem_os: 16
+    sem_prestador: 22
+    sem_pp_correspondente: 23
+    tipo_fechamento: 0
+    valores_iguais: 34
+    total_fp: 107
+
+  RISCO: TÍTULOS PAGOS COM DIVERGÊNCIA:
+    qtd: 1
+    → NÃO serão alterados pela migration.
+
+  DESPESAS GENÉRICAS (NÃO TOCADAS):
+    qtd: 15
+
+============================================================
+5. DECISÕES E RESTRIÇÕES
+============================================================
+
+- NENHUMA migration foi aplicada em produção.
+- NENHUM UPDATE/DELETE/INSERT foi executado em produção.
+- O dry-run foi executado via SELECT apenas.
+- A migration forward deve ser aplicada em ambiente QA/HML
+  antes de produção.
+- O rollback foi preparado e pode ser aplicado imediatamente
+  se necessário.
+- f_confirmar_pagamento_prestador permanece INALTERADO.
+
+============================================================
+6. PRÓXIMOS PASSOS
+============================================================
+
+1. Aplicar migration forward em ambiente QA/HML:
+   supabase db push --include-all
+   ou executar via SQL Editor o arquivo
+   20260913_fin_sane_02b_unifica_valor_pagar.sql
+
+2. Executar os 12 cenários SQL de integração documentados em
+   src/test/fin_sane_02b.test.ts.
+
+3. Validar ponta a ponta: criar OS/Escala → conferir → aprovar
+   → pagar fechamento → verificar baixa e saldo.
+
+4. Após validação em QA/HML, agendar aplicação em produção.
+
+5. Após produção, manter snapshot por pelo menos 30 dias antes
+   de dropar a tabela fin_sane_02b_snapshot.
+
+============================================================
+7. REFERÊNCIAS
+============================================================
+
+- FIN-SANE-02A.txt (decisão arquitetural)
+- supabase/migrations/20260913_fin_sane_02b_unifica_valor_pagar.sql
+- supabase/migrations/20260913_fin_sane_02b_rollback.sql
+- src/services/financeiro/fechamentoService.ts
+- src/test/fin_sane_02b.test.ts
+- _fin_sane_02b_dryrun.mjs
+
+============================================================
+FIM DO RELATÓRIO FIN-SANE-02B-DEV
+============================================================

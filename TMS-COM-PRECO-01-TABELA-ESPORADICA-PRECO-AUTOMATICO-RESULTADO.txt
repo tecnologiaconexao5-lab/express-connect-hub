@@ -1,0 +1,154 @@
+================================================================================
+TMS-COM-PRECO-01-TABELA-ESPORADICA-PRECO-AUTOMATICO — RESULTADO
+Missão: Fazer o Orçamento Comercial usar automaticamente a TABELA ESPORÁDICA
+existente (preço de venda), com snapshot e recálculo.
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS + Supabase. ZERO migration/DDL. ZERO banco persistido (ROLLBACK).
+================================================================================
+
+1. ESTRUTURA EXISTENTE ENCONTRADA
+--------------------------------------------------------------------------------
+- Tabelas de preço: public.tabelas_valores (cliente/universal, tipo_veiculo,
+  valor_base, franquia_km, valor_km_excedente, percentual_prestador, adicionais
+  JSONB, vigência data_inicio/data_fim, prioridade, ativo). 7 registros REAIS,
+  todos com valor_base>0.
+- Custo do prestador: public.tabela_prestador (1 registro) + prestadores cadastro.
+- Motor: src/services/precificacao/precificacaoEngineService.ts
+  (calcularPrecoRapido — bridge síncrona; calcularPreco — completo).
+- Seleção: src/services/precificacao/buscarTabelasService.ts
+  (hierarquia de 7 níveis: cliente_id → contrato → cliente+vigência → cliente →
+  universal+vigência → universal → fallback).
+- Tipos: src/services/precificacao/types.ts; franquia: helpers/franquiaKm.
+
+2. FONTE OFICIAL DO PREÇO
+--------------------------------------------------------------------------------
+tabelas_valores (via buscarTabelaValoresCliente) + fórmula existente
+calcularPrecoRapido. NÃO foi criada tabela/motor paralelo. Nenhuma tarifa inventada.
+
+3. CAMPOS / REGRAS
+--------------------------------------------------------------------------------
+valor_base + (km - franquia_km) * valor_km_excedente = valor base do cliente;
+custo prestador = % tabela (percentual_prestador) OU tabela_prestador/cadastro;
+adicionais, pedágio, ajudante, descontos aplicados conforme tabela/inputs.
+
+4. REGRA DE SELEÇÃO (existente, documentada)
+--------------------------------------------------------------------------------
+cliente específico (id) → contrato → cliente (nome)+vigência → cliente (sem vigência)
+→ universal+tipo_veiculo+vigência → universal+tipo_veiculo → fallback.
+GAP corrigido: o orçamento guarda o NOME do cliente (não id); adicionado
+`cliente_nome` ao PricingInput e uso em buscarTabelaValoresCliente para casar
+tabelas por nome (antes só universais eram encontradas).
+
+5. FÓRMULA EFETIVAMENTE USADA
+--------------------------------------------------------------------------------
+valorCliente = valor_base + max(0, km − franquia_km) × valor_km_excedente
+preçoFinal = valorCliente + adicionais + pedágio + ajudante + advalorem + GRIS
+           + devolução + reentrega − descontos (fórmula canônica COM-ORC-02).
+
+6. VEÍCULO UTILIZADO
+--------------------------------------------------------------------------------
+O veículo SELECIONADO (data.veiculo.tipo); se o usuário aplicar o recomendado
+(COM-CARGA-03), recalcula para a tabela daquele veículo. Incompatibilidade continua
+avisada (COM-CARGA-03).
+
+7. DISTÂNCIA UTILIZADA
+--------------------------------------------------------------------------------
+Distância real do orçamento (Mapbox via calcularDistancia → data.distancia_rota).
+Sem distância, não calcula. Mudança de distância/veículo → recálculo automático.
+
+8. PREÇO BASE (prova com tabelas REAIS)
+--------------------------------------------------------------------------------
+VUC "HML E2E-06 VUC" (base 300, franquia 100, exc 1,20) em 150 km → 300 + 50×1,20 = R$ 360,00.
+FIORINO "FIORINO DVL" (base 400, franquia 100, exc 2,10) em 150 km → 400 + 50×2,10 = R$ 505,00.
+
+9. ADICIONAIS
+--------------------------------------------------------------------------------
+Pedágio, ajudante, ad valorem, GRIS, km excedente, devolução, reentrega, descontos
+permanecem separados na composição. Não foram criados adicionais novos.
+
+10. PREÇO FINAL
+--------------------------------------------------------------------------------
+Composição transparente exibida (Resumo do Resultado) e preço final pela fórmula
+canônica (COM-ORC-02 preservado).
+
+11. OVERRIDE MANUAL
+--------------------------------------------------------------------------------
+Se o usuário ajustar o valor, o snapshot marca `overrideManual=true` e exibe
+"Calculado: R$ X · Ajustado: R$ Y". Botão "Recalcular pela tabela" reaplica a regra.
+Sem aprovação complexa (fora do escopo).
+
+12. SNAPSHOT
+--------------------------------------------------------------------------------
+Ao salvar, o orçamento grava em valores.pricing (JSONB): tabelaId, tabelaNome, fonte,
+veiculoTarifado, distanciaKm, franquiaKm, valorBase, kmExcedente, valorCalculado,
+overrideManual, contexto, calculadoEm. Mudança futura na tabela NÃO altera o snapshot.
+SEM migration (valores já é JSONB).
+
+13. PROVA BANCO / RELOAD (scripts/_com_preco_01_prova.ts)
+--------------------------------------------------------------------------------
+- Tabelas REAIS lidas do banco: VUC (base 300) e FIORINO DVL (base 400).
+- Cálculo pela fórmula existente → R$ 360 (VUC) e R$ 505 (Fiorino).
+- Custo do prestador separado (80% → R$ 288).
+- Save (transação) → reload: valorFinal e snapshot (tabela/veiculo/valorCalculado) preservados.
+- Mudança posterior da tabela não altera o snapshot histórico.
+- TODOS OS CHECKS PASSARAM.
+
+14. TESTE DE RECÁLCULO
+--------------------------------------------------------------------------------
+A) preço base pela tabela real ✅ · C) trocar veículo muda o preço (360→505) ✅ ·
+D) mudar distância/faixa recalcula ✅ · E) adicional (pedágio) ✅ · F) desconto no
+preço final ✅ · G) override snapshot ✅ · H) reload preserva ✅ · I) mudança de
+tabela não altera snapshot ✅ · J) incompatibilidade de veículo continua avisada ✅.
+
+15. ROLLBACK / LIMPEZA
+--------------------------------------------------------------------------------
+Prova em transação + ROLLBACK: 0 registros de teste persistidos. Nenhuma tabela
+real alterada; ORC-202609-8659 intocado.
+
+16. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (7 arquivos): 108/108 PASS
+    com_preco_01 (14), com_carga_04 (14), com_carga_03 (18), com_carga_02 (14),
+    com_carga_01 (19), com_orc_02 (15), com_orc_03 (14).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão.
+- npm run build -> OK (32.16s).
+- localhost:8800 ATIVO (HTTP 200).
+
+17. RISCOS / BLOQUEIOS
+--------------------------------------------------------------------------------
+- Tabela "Própria" é UMA fonte; providers/Fracionado entram na fase de cotação.
+- Custo do prestador usa % da tabela quando não há tabela_prestador — comportamento
+  herdado; NÃO é preço de venda (permanece separado). Bloco CUSTO×VENDA×MARGEM futuro.
+- A tabela HML do VUC tem vigência até 29/09/2026 (registro de homologação).
+
+18. PREPARAÇÃO FRACIONADO / PROVIDERS (contrato — não implementado)
+--------------------------------------------------------------------------------
+CargaNormalizada → MotorCotacao → QuoteProvider (TabelaPropriaProvider,
+ParceiroApiProvider, PlataformaFreteProvider, ManualProvider) → Opções de cotação
+(transportadora, serviço, prazo, custo, restrições, cubagem/peso taxável, cobertura)
+→ CUSTO DE COMPRA → PREÇO DE VENDA → MARGEM → PROPOSTA. Frenet = UM adapter/provider.
+A Tabela Esporádica é UMA fonte de cotação (TabelaPropriaProvider).
+
+19. BACKLOG CUMULATIVO PRESERVADO
+--------------------------------------------------------------------------------
+COMERCIAL: Tabela Esporádica já integrada (esta missão); custo×venda×margem;
+Fracionado/providers/adapters; saneamento legado/mojibake; regra de status
+"pronto p/ envio"; capacidade de pallets/carroceria no catálogo.
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento parcial;
+saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação global; Conta
+Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin APP;
+CAD-PERSIST; E2E final; Master 360/Gate.
+
+ARQUIVO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-PRECO-01-TABELA-ESPORADICA-PRECO-AUTOMATICO-RESULTADO.txt
+Tamanho: 8.904 bytes · Linhas: 154 · Data/hora: 26/09/2026 20:16:58
+
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

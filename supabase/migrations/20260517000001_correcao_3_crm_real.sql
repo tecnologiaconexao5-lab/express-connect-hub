@@ -132,3 +132,5 @@ SELECT table_name FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_name IN ('crm_leads', 'crm_historico', 'crm_followups')
 ORDER BY table_name;
+
+

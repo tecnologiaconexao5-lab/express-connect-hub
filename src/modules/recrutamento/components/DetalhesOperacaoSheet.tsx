@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { confirmAction } from '@/lib/confirmDialog'
 import { motion } from 'framer-motion'
 import { MapPin, Truck, Route, Calendar, DollarSign, Target, Users, Copy, MessageSquare, XCircle, Building2, Thermometer, Hash, Clock, Percent, Megaphone } from 'lucide-react'
 import { GeradorAnuncioWhatsApp } from './GeradorAnuncioWhatsApp'
@@ -65,7 +66,14 @@ export function DetalhesOperacaoSheet({ operacaoId, open, onOpenChange }: Detalh
   }
 
   const handleEncerrar = async () => {
-    if (window.confirm('Tem certeza que deseja encerrar esta operação?')) {
+    const confirmado = await confirmAction({
+      title: 'Encerrar operação',
+      description: 'Tem certeza que deseja encerrar esta operação?',
+      confirmText: 'Encerrar',
+      cancelText: 'Cancelar',
+      variant: 'destructive',
+    })
+    if (confirmado) {
       await atualizarStatus(op.id, 'encerrada')
       toast.success('Operação encerrada!')
       onOpenChange(false)

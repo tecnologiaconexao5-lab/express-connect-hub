@@ -1,0 +1,233 @@
+========================================================================
+APP-E2E-11F — LIMPEZA CONTROLADA + FECHAMENTO DO NÍVEL 8
+Projeto: TMS CONEXÃO EXPRESS
+Modelo: DeepSeek V4.1 Flash
+Data: 2026-09-27 (execução) | Redmi: NÃO | Migrations: 0 | Schema: 0
+Objetivo: fechar documentalmente o nível 8 e limpar resíduos TESTE
+========================================================================
+
+RESUMO EXECUTIVO
+----------------
+- Provas herdadas 11A..11E preservadas (nenhuma invalidação objetiva de 11C/11D).
+- Fixture mínima 11E: LIMPA com sucesso (transação única, child->parent, guard).
+  Todas as contagens = 0. Nada de DELETE cego. Auth user preservado.
+- Storage E2E-11 (4 objetos do bucket privado driver-evidence): PURGE = BLOCKED/EXTERNAL
+  (SQL direto proibido pelo Supabase; sem SERVICE_ROLE_KEY o Storage API não é acessível).
+  Identificadores preservados para limpeza administrativa futura.
+- Matriz funcional do nível 8: TODA PASS. Único resíduo = Storage (externo, rastreado).
+- DECISÃO: FECHAR NÍVEL 8 = 🟢  |  AVANÇAR PARA NÍVEL 7 (não significa homologado).
+
+========================================================================
+1. PROVAS HERDADAS (histórico válido)
+========================================================================
+11A  = PASS (preparação)
+11B.1= PASS (login + aceite)
+11B.2= PASS (status + tracking + POD)
+11B.3= PASS (finalização física)
+11C  = PASS (TMS + consistência + rollback banco)
+11D  = PASS (POD privado TMS/Portal)
+11E  = PASS (status/header APP — executado no repo APP)
+
+VERIFICAÇÃO DE INVALIDAÇÃO (somente o objetivo):
+[x] NÃO houve alteração posterior de schema/migrations.
+[x] Bucket driver-evidence continua PRIVADO (public=false) — 11D preservado.
+[x] Fixture 11C (18d50f0b...) permanece 0 em banco — 11C preservado.
+[x] Storage 11C (4 objetos) intacto — 11C preservado.
+[x] Testes 11D reexecutados: 22/22 PASS (11d 15 + parser 7) — 11D preservado.
+=> 11C/11D válidos. Nenhuma reexecução de jornada física.
+
+========================================================================
+2. INVENTÁRIO DOS RESÍDUOS (read-only, antes da limpeza)
+========================================================================
+A) FIXTURE MÍNIMA 11E
+   alocacao_id  : 9314c8f8-1698-4bc9-b227-6c313c226b0b
+   os_numero    : ALOC-20260928-9314C8F8
+   prestador_id : f35841b4-5fec-4bf1-961d-35d8f7e93e51 (PRESTADOR TESTE E2E-11)
+   tenant       : 00000000-0000-0000-0000-000000000001
+   estado alocação: status=cancelada, finalizada=true, aceite_prestador=true,
+                    data_finalizacao=null, etapa_atual=viagem_aceita
+   estado prestador: status=bloqueado, status_operacional=bloqueado,
+                    liberado_app=false
+   marcação TESTE: metadata.tipo=TESTE_E2E_11, homologacao=true, nao_comercial=true
+   observações: "FIXTURE TESTE NEUTRALIZADA APP-E2E-11E - ROLLBACK PENDENTE EXTERNO"
+   => Fixture já NEUTRALIZADA (cancelada/bloqueado), sem fluxo ativo.
+
+   Dependências (antes da limpeza):
+     historico_alocacoes_escala.alocacao_id .... 4
+     operation_timeline_events.operation_id .... 2
+     portal_notificacoes (origem_id=ALOC) ..... 1  (prestador_id=P) 1
+     financeiro_pagar.os_id ................... 1  (fornecedor_id=P) 1
+     pagamentos_prestadores.os_id ............. 1  (prestador_id=P) 1
+     alocacoes_escala.id ...................... 1
+     ordens_servico.id ........................ 1
+     prestadores.id ........................... 1
+   Demais tabelas conferidas = 0 (sem POD, sem tracking, sem composição,
+   sem financeiro_receber, sem ocorrências, sem OS-dependentes, etc.).
+
+   Registros financeiros da fixture (ANTES), confirmando TEST-FIN-IS_TESTE-01:
+     financeiro_pagar 213539ff: "Repasse ALOC-20260928-9314C8F8" R$250,00
+        status=cancelada, is_teste=FALSE
+     pagamentos_prestadores cf37cd73: R$250,00 liquido, status=pendente,
+        status_pagamento=cancelado, origem_lancamento=os_direta, is_teste=FALSE
+
+B) STORAGE E2E-11 (4 objetos órfãos, do 11C)
+   Bucket driver-evidence (PRIVADO). Owner auth HML a5e51631.
+   Path: a5e51631.../pod/18d50f0b-704f-4361-8626-ed43c8000601/2026/09/27/...
+     1) 0105e880-6d67-48cb-b29f-fa40dff51433.png  (id eb740edf-4d46-4324-bd27-cba2aeff4d97)  assinatura
+     2) 2a17e701-246f-4a76-9660-d30b70df0fd3.jpg  (id 3d85b226-ba9b-420a-a2ab-c43aedaaaaab)  upload órfão
+     3) 20e2a4c4-437c-4ca5-9c44-839aa4422a7b.jpg  (id ecff3bc5-87bd-4ff7-9f79-e629f69e26e1)  foto entrega
+     4) c9d7717f-5310-4aa6-b5fa-0dad0b4129b6.jpg  (id ea43dad2-188c-4b8c-a656-d0c6911dff7b)  canhoto
+   (Path recuperado do inventário do 11C — NÃO por adivinhação.)
+   Storage da fixture 11E = NENHUM objeto.
+
+========================================================================
+3. LIMPEZA DA FIXTURE 11E (EXECUTADA)
+========================================================================
+Mecanismo: conexão direta (DATABASE_URL) + TRANSAÇÃO ÚNICA + guard de resíduos
+(mesmo mecanismo autorizado e comprovado no rollback do 11C). NÃO foi DELETE cego.
+
+Script: scripts/_app_e2e_11f_cleanup.mjs — status = COMMIT
+Deletes efetivados (child -> parent):
+   historico_alocacoes_escala ........ 4
+   operation_timeline_events ......... 2
+   portal_notificacoes ............... 1
+   financeiro_pagar .................. 1
+   pagamentos_prestadores ............ 1
+   alocacoes_escala .................. 1
+   ordens_servico .................... 1
+   prestadores ....................... 1  (guard: 15 tabelas = 0 dependências)
+Total: 12 linhas. Nenhum trigger de DELETE nessas tabelas (só INSERT/UPDATE),
+logo a exclusão não propagou/gerou registros novos.
+
+TEST-FIXTURE-11E-CLEANUP = PASS
+
+========================================================================
+4. STORAGE PURGE (BLOCKED/EXTERNAL)
+========================================================================
+Tentativa de remoção direta em storage.objects por SQL:
+  BLOQUEADA pelo Supabase ("Direct deletion from storage tables is not
+  allowed. Use the Storage API instead."). Conforme a missão, NÃO se contorna
+  isso por SQL e NÃO se solicita/exibe SERVICE_ROLE_KEY.
+Remoção via Storage API exigiria SERVICE_ROLE_KEY de PRODUÇÃO, indisponível
+no ambiente (não solicitada, não impressa, não embutida em código).
+Bucket NÃO foi tornado público. Nenhum objeto de outras missões foi tocado
+(total do auth HML permanece 30). Os 4 objetos 11C seguem presentes.
+
+STORAGE-E2E11-PURGE = BLOCKED/EXTERNAL
+Identificadores preservados para limpeza administrativa futura (seção 2B).
+
+========================================================================
+5. PROVA PÓS-LIMPEZA
+========================================================================
+Após a limpeza (scripts/_app_e2e_11f_post.mjs):
+  fixture 11E: alocacoes_escala=0 | ordens_servico=0 | prestadores=0 |
+               historico=0 | operation_timeline_events=0 |
+               portal_notificacoes=0 | financeiro_pagar=0 |
+               pagamentos_prestadores=0
+  fixture 11C: alocacoes_escala=0 | ordens_servico=0 | prestadores=0
+  auth user a5e51631 (teste@conexao.com): PRESERVADO
+  Storage 11E: nenhum objeto (nada a remover)
+  Storage 11C: 4 objetos presentes (BLOCKED) | total auth HML = 30 (inalterado)
+  Buckets: driver-evidence privado; comprovantes-entrega público (inalterados)
+  Totais globais saudáveis (sem exclusão em massa):
+    alocacoes_escala=203 | ordens_servico=166 | prestadores=39 |
+    financeiro_pagar=116 | pagamentos_prestadores=99
+
+Resíduos restantes: SOMENTE os 4 objetos de Storage E2E-11 — identificados,
+em bucket PRIVADO (inacessíveis sem assinatura), sem referência em banco
+(fixture removida) e sem participação em fluxo operacional ativo.
+Não mascarados como removidos: classificados explicitamente BLOCKED/EXTERNAL.
+
+========================================================================
+6. TEST-FIN-IS_TESTE-01 (backlog obrigatório — NÃO corrigido aqui)
+========================================================================
+Achado: fixtures de homologação/não comercial geraram registros financeiros
+com is_teste=FALSE (apparentam dado real no Financeiro):
+  - financeiro_pagar.is_teste=false (R$250 do 11E; idem 11C)
+  - pagamentos_prestadores.is_teste=false
+Tratamento em: CAD-PERSIST / integridade / Financeiro.
+Este item está preservado no backlog. NÃO foi corrigido nesta missão.
+
+========================================================================
+7. MATRIZ FINAL DO NÍVEL 8
+========================================================================
+APP físico ................ PASS
+Header/status APP ......... PASS (11E)
+Supabase .................. PASS
+Tracking real ............. PASS
+POD ....................... PASS
+Finalização ............... PASS
+TMS Programação ........... PASS (11C)
+TMS comprovantes .......... PASS (11C/11D)
+POD privado Torre/Portal .. PASS (11D)
+Rollback banco E2E-11 ..... PASS (11C)
+Resíduo fixture 11E ....... PASS (limpeza executada — seção 3)
+Resíduo Storage E2E-11 .... BLOCKED/EXTERNAL (rastreado — seção 4)
+
+DECISÃO: os componentes funcionais permanecem PASS; o único resíduo é TESTE,
+identificado, em bucket privado, neutralizado e dependente de acesso externo.
+=> FECHAR NÍVEL 8 = 🟢  |  AVANÇAR PARA NÍVEL 7.
+(Isto NÃO significa sistema homologado.)
+
+========================================================================
+8. PRÓXIMA ETAPA (NÃO implementar aqui)
+========================================================================
+7 → Admin APP + Cadastro Prestador + Recrutamento.
+Próxima missão = AUDITORIA CURTA para definir o ponto real de retomada,
+SEM duplicar módulos. Recuperar o estado existente:
+  - fluxo APP pré-cadastro;
+  - Admin App Prestador;
+  - documentos/Storage;
+  - veículo;
+  - dados bancários;
+  - aprovação/bloqueio/liberação;
+  - Cadastro Prestador;
+  - Recrutamento pausado em REC-06.2D.2F.
+NÃO iniciar implementação do nível 7 nesta missão.
+
+========================================================================
+9. BACKLOG CUMULATIVO (preservado integralmente)
+========================================================================
+GAP-F2-01..F2-06
+GAP-F3-04 / GAP-F3-05
+GAP-F4-01..F4-05
+GAP-F5-03 / GAP-F5-04
+APP-DATA-01 — 141 alocações
+APP-SCHEMA-01
+tools/query_operation.dart / dotenv
+TEST-FIN-IS_TESTE-01 (seção 6)
+Storage purge E2E-11 (BLOCKED/EXTERNAL — 4 objetos identificados)
+fixture 11E cleanup (RESOLVIDO nesta missão; permanece registrado)
+GAP-APP-STATUS-LABEL-01 (tratado em 11E)
+OS esporádicos / motoboys
+romaneio
+KM / pedágio / adicionais / reembolsos
+financeiro prestador
+Rede de Oportunidades
+proximidade / raio progressivo / distância
+Radar Operacional
+Admin APP
+Cadastro Prestador
+Recrutamento REC-06.2D.2F
+CAD-PERSIST
+indicadores reais do prestador
+dívida TypeScript do TMS (894 erros pré-existentes registrados)
+Nenhum item foi removido do roadmap.
+
+========================================================================
+CONTAGEM REGRESSIVA
+========================================================================
+9 → 🟢 FECHADO
+8 → 🟢 FECHADO (11A..11F todos PASS; resíduo Storage = externo rastreado)
+7 → 🟡 PRÓXIMA ETAPA (Admin APP + Cadastro + Recrutamento — auditoria de retomada)
+6 → CAD-PERSIST / integridade
+5 → Fechamento Financeiro
+4 → Comercial / Orçamento
+3 → Fechamento TMS
+2 → E2E completo integrado
+1 → Master 360 / Gate de Produção
+0 → HOMOLOGADO
+
+========================================================================
+FIM — APP-E2E-11F
+========================================================================

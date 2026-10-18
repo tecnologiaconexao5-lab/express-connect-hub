@@ -19,7 +19,7 @@ export interface PDFTemplateOptions {
 
 const DEFAULT_EMPRESA = {
   nome: "Conexão Express Transportes LTDA",
-  cnpj: "42.796.040/0001-31"
+  cnpj: "31.227.975/0001-80"
 };
 
 export function createProfessionalPDF(): jsPDF {

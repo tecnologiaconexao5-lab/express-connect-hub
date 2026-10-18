@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { exportClienteAgregadoRefrigeradoToExcel } from "@/utils/excelExport";
+import { gerarPDFRelatorioOperacional } from "@/utils/pdfRelatorioOperacional";
 
 const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number) => (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -306,6 +307,33 @@ export default function RelatorioClienteAgregadoRefrigerado() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={loading || dados.length === 0}>
             <FileText className="w-4 h-4 mr-1.5" /> Excel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || dados.length === 0}
+            onClick={() => {
+              gerarPDFRelatorioOperacional({
+                titulo: "Relatório Cliente — Agregado Refrigerado",
+                colunas: ["Data", "Nº OC", "Placa", "Motorista", "Saída", "Diária", "KM Total", "KM Exc.", "Vlr KM", "Vlr Total"],
+                linhas: dados.map(d => [
+                  fmtData(d.data_viagem),
+                  d.numero_oc,
+                  d.placa,
+                  d.motorista,
+                  fmtHora(d.horario_saida),
+                  d.diaria_formatada,
+                  String(d.km_total),
+                  String(d.km_excedente),
+                  d.vlr_km_formatado,
+                  d.vlr_total_formatado,
+                ]),
+                subtitulo: `Cliente: ${clienteSelecionado?.nome_fantasia || "-"} | Motorista: ${prestadorSelecionado?.nome || "-"} | ${filtros.dataInicial} a ${filtros.dataFinal}`,
+              });
+              toast.success("PDF gerado com sucesso!");
+            }}
+          >
+            <Download className="w-4 h-4 mr-1.5" /> PDF
           </Button>
         </div>
       </div>

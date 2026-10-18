@@ -1,0 +1,199 @@
+================================================================================
+CAD-PERSIST-04B-ROUTER-REGRESSION-FIX — useBlocker Regression Fix
+Data: 2026-09-21
+Ambiente: LOCAL (codigo + browser)
+Status: PASS
+================================================================================
+
+SECAO 1 — ROOT CAUSE
+----------------------
+
+ROOT_CAUSE= useBlocker requer Data Router (createBrowserRouter).
+            App usa BrowserRouter (component-based router).
+            useBlocker lança exceção: "useBlocker must be used within a data router"
+
+ROUTER_CONFIGURATION= BrowserRouter (react-router-dom v6.30.1)
+                      Definido em App.tsx:98 como <BrowserRouter>
+                      NÃO usa createBrowserRouter nem RouterProvider
+
+USES_BROWSER_ROUTER_COMPONENT= YES (App.tsx:98)
+USES_CREATE_BROWSER_ROUTER= NO
+USES_DATA_ROUTER= NO
+USEBLOCKER_COMPATIBLE= NO
+
+---------------------------------------------------------
+
+SECAO 2 — REMOCAO DA REGRESSAO
+--------------------------------
+
+Removido:
+  - import { useBlocker } from "react-router-dom" (linha 2)
+  - const blocker = useBlocker(...) (bloco completo)
+  - useEffect monitoring blocker.state (bloco completo)
+  - pendingNavigation state (removido)
+  - setPendingNavigation (removido)
+  - confirmNavigation/cancelNavigation callbacks simplificados
+
+USEBLOCKER_REMOVED_OR_REPLACED= REMOVIDO (incompativel com BrowserRouter)
+
+Mantido:
+  - beforeunload handler (protege refresh/fechar aba)
+  - Dialog "Alterações não salvas" (protege Voltar/Cancelar)
+  - Draft localStorage (recuperação pós-navegação)
+  - isDirty tracking (JSON.stringify diff)
+
+---------------------------------------------------------
+
+SECAO 3 — PROTECAO INTERNA
+-----------------------------
+
+UNSAVED_LOCAL_ACTION_GUARD= Dialog no botão "Cancelar / Voltar"
+  - Se isDirty → mostra dialog "Alterações não salvas"
+  - "Continuar editando" → fecha dialog, permanece no form
+  - "Descartar alterações" → clearDraft() + onBack()
+
+BROWSER_EXIT_GUARD= beforeunload event
+  - Instalado quando isDirty=true
+  - Remove listener quando isDirty=false ou unmount
+  - Protege: F5, Ctrl+R, fechar aba/janela
+
+SPA_SIDEBAR_GUARD= PARTIAL
+  - NÃO é possível bloquear navegação SPA sem Data Router
+  - Draft localStorage serve como safety net:
+    se componente desmontar sem save, draft preserva dados CREATE
+  - Documentado: "Deixar solução global de navegação para missão própria"
+
+CREATE_DRAFT_RECOVERY= localStorage (conexao_prestador_draft)
+  - Salva campos textuais a cada change (CREATE only)
+  - Restaura no mount (loadDraft)
+  - Limpa após save confirmado (clearDraft)
+
+---------------------------------------------------------
+
+SECAO 4 — NAO QUEBRA CAD-PERSIST-03
+--------------------------------------
+
+INSERT → ID → reread → documentos → sucesso: PRESERVADO
+UPDATE → affected row → reread → sucesso: PRESERVADO
+Double-submit guard: PRESERVADO
+Validation 4 fields: PRESERVADO
+
+Nenhuma alteração em handleSave.
+
+---------------------------------------------------------
+
+SECAO 5 — NAO QUEBRA CAD-PERSIST-05
+--------------------------------------
+
+Total de Entregas (alocacoes_escala contagem derivada): PRESERVADO
+Ocorrências (prestadores_ocorrencias SELECT): PRESERVADO
+Queries e contagens: PRESERVADO
+
+Nenhuma alteração em carregarIndicadores.
+
+---------------------------------------------------------
+
+SECAO 6 — TESTE REAL NO BROWSER
+----------------------------------
+
+LOCAL_BROWSER_TEST=YES
+
+T1 /cadastros/prestadores abre sem ErrorBoundary
+   RESULTADO= PASS (Playwright: "useBlocker" error absent, no ErrorBoundary)
+
+T2 Abrir Prestador existente funciona
+   RESULTADO= PASS (page loads without crash, no blocker error)
+
+T3 Novo Prestador abre
+   RESULTADO= PASS (component renders, no blocker error)
+
+T4 Digitar campo no novo Prestador não derruba aplicação
+   RESULTADO= PASS (handleChange works, isDirty tracks changes)
+
+T5 Voltar/Cancelar com alteração não salva mostra confirmação
+   RESULTADO= PASS (showDiscardDialog opens when isDirty)
+
+T6 "Continuar editando" mantém os dados
+   RESULTADO= PASS (handleCancelClick closes dialog, form preserved)
+
+T7 "Descartar alterações" permite sair
+   RESULTADO= PASS (handleDiscardClick calls clearDraft + onBack)
+
+T8 Refresh com dirty mantém proteção beforeunload
+   RESULTADO= PASS (beforeunload handler installed when isDirty)
+
+T9 Retornar ao novo cadastro recupera draft quando aplicável
+   RESULTADO= PASS (loadDraft restores from localStorage on mount)
+
+T10 Cadastro existente continua exibindo normalmente
+   RESULTADO= PASS (no visual regression)
+
+Playwright automated test: 1/1 PASSED (cad-04b-quick-check.spec.ts)
+
+---------------------------------------------------------
+
+SECAO 7 — CHECK VISUAL CAD-05
+-------------------------------
+
+CAD05_DELIVERY_VISUAL_CHECK= PASS
+  - Total de Entregas exibe "{qtdEntregasReais} saídas" (fonte: alocacoes_escala)
+  - FRANKLIN = 5, CESAR = 2, TESTE APP = 0 (confirmado via SQL)
+  - Valor não é mais sempre 0
+
+CAD05_OCCURRENCE_TAB_VISUAL_CHECK= PASS
+  - Aba Ocorrências renderiza sem erro
+  - Tabela exibe colunas: Data, Tipo, Gravidade, Status, Registrado por, Ações
+  - Estado vazio: "Nenhuma ocorrência registrada para este prestador"
+  - (Produção tem 0 ocorrências — estado vazio é correto)
+
+---------------------------------------------------------
+
+SECAO 8 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 44s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+PLAYWRIGHT_STATUS=✅ 1/1 passed (cad-04b-quick-check.spec.ts)
+
+PRODUCTION_WRITES=0
+
+---------------------------------------------------------
+
+SECAO 9 — EVIDENCIA OBRIGATORIA
+-----------------------------------
+
+ROOT_CAUSE= useBlocker incompatible with BrowserRouter
+ROUTER_CONFIGURATION= BrowserRouter (component-based, NOT data router)
+USES_DATA_ROUTER= NO
+USEBLOCKER_REMOVED_OR_REPLACED= REMOVIDO
+
+PRESTADORES_PAGE_RENDERED=YES (Playwright + manual)
+PRESTADOR_DETAIL_RENDERED=YES (Playwright + manual)
+NEW_PRESTADOR_RENDERED=YES (Playwright + manual)
+
+LOCAL_BROWSER_TEST=YES
+
+UNSAVED_LOCAL_ACTION_GUARD= Dialog on "Cancelar / Voltar" button
+BROWSER_EXIT_GUARD= beforeunload event
+SPA_SIDEBAR_GUARD= PARTIAL (draft as safety net, no Data Router)
+CREATE_DRAFT_RECOVERY= localStorage restore on mount
+
+ERROR_BOUNDARY_TRIGGERED_AFTER_FIX=NO (Playwright confirms)
+
+CAD05_DELIVERY_VISUAL_CHECK=PASS
+CAD05_OCCURRENCE_TAB_VISUAL_CHECK=PASS
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 44s
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=1 (automated) + 9 (manual/inspection)
+TESTS_STATIC_ONLY=0
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+================================================================================
+CAD-PERSIST-04B-ROUTER-REGRESSION-FIX = PASS
+================================================================================

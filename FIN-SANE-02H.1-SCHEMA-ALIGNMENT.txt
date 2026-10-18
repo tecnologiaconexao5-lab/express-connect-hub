@@ -1,0 +1,69 @@
+FIN-SANE-02H.1 — SCHEMA ALIGNMENT (Lab → Production)
+Data: 2026-09-16
+GATE: PASS
+
+=== CONTEXT ===
+02G descobriu que composicao_financeira_os.os_id é UUID em produção (não TEXT).
+O 02F usava casts ::TEXT em composicao, seriam incompatíveis com produção.
+O 02F também mudou semântica de cliente_id/prestador_id na OS.
+
+=== 10 EDIÇÕES APLICADAS ===
+
+BASELINE (0000_fin_sane_02b_baseline.sql):
+  1. composicao_financeira_os.os_id text → uuid (linha 642)
+
+FORWARD M66 (20260913000000):
+  2. OS INSERT: NEW.cliente_id::TEXT → v_cliente_nome (para coluna cliente_id)
+  3. OS INSERT: NEW.prestador_id::TEXT → v_prestador_nome (para coluna prestador_id)
+  4. Composicao INSERT: v_os_id::TEXT → v_os_id (UUID direto)
+
+FORWARD M80 (20260913000000):
+  5. Composicao PERFORM: NEW.id::TEXT → NEW.id
+  6. Composicao INSERT: NEW.id::TEXT → NEW.id
+  7. Composicao UPDATE: NEW.id::TEXT → NEW.id
+
+ROLLBACK M66 (20260913000001):
+  8. Composicao INSERT: v_os_id::TEXT → v_os_id
+
+ROLLBACK M80 (20260913000001):
+  9. Composicao PERFORM/INSERT: NEW.id::TEXT → NEW.id
+  10. Composicao UPDATE: NEW.id::TEXT → NEW.id
+
+LAB RUNNER (_fin_sane_02f_lab_runner.cjs):
+  11. Teste M66→OS: assertions atualizadas para production semantics
+     (cliente_id = 'Cliente OS M66', prestador_id = 'Test OS M66')
+
+=== DECISÃO DE DESIGN ===
+  cliente_id/prestador_id na OS = v_cliente_nome/v_prestador_nome (NOME, não UUID).
+  Matches produção: M66 em produção grava nomes em cliente_id/prestador_id TEXT.
+  financeiro_receber/pagar usam NEW.cliente/NEW.prestador (UUID) para fornecedor_id/cliente_id.
+  composicao_financeira_os usa NEW.cliente_id/NEW.prestador_id (UUID FK) para cliente_id/prestador_id.
+
+=== RESULTADO LAB ===
+  PASS: Criar banco lab
+  PASS: 12 cenários SQL
+  PASS: Teste M66 → OS (fp.valor=760, cliente_id=nome, composicao OK)
+  PASS: Teste UPDATE alocação (fp.valor=850, mesma OS)
+  PASS: Verificação rollback (OS preservada, fp.valor=700, RPC removida)
+  PASS: Verificação reaplicação (OS criada, fp.valor=760, RPC existe)
+  PASS: 12 cenários após reaplicação
+
+  GATE FINAL: PASS
+
+=== SCHEMA FINAL ALINHADO ===
+  composicao_financeira_os.os_id  = UUID (antes TEXT)
+  ordens_servico.cliente_id       = TEXT  (v_cliente_nome, production match)
+  ordens_servico.prestador_id     = TEXT  (v_prestador_nome, production match)
+  ordens_servico.cliente          = UUID  (NEW.cliente_id, inalterado)
+  ordens_servico.prestador        = UUID  (NEW.prestador_id, inalterado)
+  financeiro_receber.cliente_id   = UUID  (NEW.cliente_id, inalterado)
+  financeiro_pagar.fornecedor_id  = UUID  (NEW.prestador_id, inalterado)
+  financeiro_pagar.valor          = v_valor_liquido (obrigação total, preservado)
+  financeiro_pagar.prestador      = v_prestador_nome (texto, preservado)
+  pagamentos_prestadores.os_id   = UUID  (v_os_id, inalterado)
+
+=== PRÓXIMOS PASSOS ===
+  1. Aplicar migration forward em produção (após autorização)
+  2. Validar composicao_financeira_os com os_id UUID em produção
+  3. Verificar que triggers não duplicam (ON CONFLICT preservado)
+  4. Manter rollback pronto

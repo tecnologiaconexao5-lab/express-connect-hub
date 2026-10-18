@@ -1,0 +1,110 @@
+FIN-MOT-2H — UNIFICAR FILTROS DO PAINEL E DO EXTRATO
+Data: 21/08/2026
+Status: B — IMPLEMENTADO; PROVA VISUAL AGUARDA HOMOLOGAÇÃO NO NAVEGADOR
+
+============================================================
+O QUE FOI FEITO
+============================================================
+
+Eliminada a duplicidade de filtros entre o painel "Fechamentos e
+Pagamentos" e o modal "Gerar Extrato do Período".
+
+1) Barra superior unificada (única), com os mesmos estados para
+   painel e extrato:
+   - Prestador (Select, com "Todos os prestadores")
+   - Período
+   - Data Início
+   - Data Fim
+   - Cliente (Select, com "Todos os clientes")
+   - Origem/Tipo (Todos / Ordem de Serviço / Escala / Lançamento Manual)
+   - Atualizar
+   - Gerar Extrato
+
+2) Removido o modal de seleção duplicado que pedia novamente
+   Prestador, Data inicial, Data final, Cliente e Origem/Tipo.
+
+3) Botão "Gerar Extrato":
+   - usa diretamente os filtros da tela;
+   - se Prestador = Todos (vazio), mostra aviso "Selecione um
+     prestador para gerar o extrato" (não gera relatório agregado);
+   - se prestador selecionado, chama o service com os filtros atuais
+     e abre o modal EXISTENTE já com o extrato montado;
+   - "Gerar PDF Completo" permanece dentro do modal.
+
+4) Estados NÃO duplicados:
+   - removido o estado `extratoPeriodo` (objeto separado);
+   - filtros de prestador/cliente/origem agora vivem em
+     `filtroPrestadorId`, `filtroClienteId`, `filtroOrigem`;
+   - datas compartilham `dataInicio`/`dataFim` já usadas pelo painel;
+   - `Atualizar` continua alimentando a tela (fetchOss + fetchPagamentos)
+     com as mesmas datas.
+
+============================================================
+ALTERAÇÕES (somente PagamentoPrestadores.tsx)
+============================================================
+
+- Removidos: estado `showExtratoPeriodo`, estado `extratoPeriodo`,
+  e todo o <Dialog> de seleção de filtros do extrato.
+- Adicionados: `filtroPrestadorId`, `filtroClienteId`, `filtroOrigem`.
+- `handleGerarExtratoPeriodo` lê os filtros do painel e abre direto
+  o modal de exibição (showExtrato).
+- Barra de filtros do CardHeader da aba "Fechamentos e Pagamentos"
+  ganhou os selects Prestador, Cliente e Origem/Tipo.
+
+NÃO alterados: service, PDF, banco, lógica financeira, app, torre.
+
+============================================================
+VALIDAÇÃO
+============================================================
+
+[x] npx tsc --noEmit -p tsconfig.json -> 0 erros
+[x] npm run build -> OK (34.36s)
+[x] Nenhuma referência restante a showExtratoPeriodo / extratoPeriodo
+[x] Botão "Gerar PDF Completo" preservado dentro do modal do extrato
+
+============================================================
+CHECKLIST (PROVA VISUAL)
+============================================================
+
+[ ] Prestador visível na barra de filtros
+[ ] Período visível
+[ ] Datas visíveis
+[ ] Cliente visível
+[ ] Origem/Tipo visível
+[ ] Atualizar visível
+[ ] Gerar Extrato visível
+[ ] clicar Gerar Extrato NÃO abre formulário duplicado
+[ ] abre diretamente o extrato
+[ ] PDF continua disponível
+
+(Marcado como pendente: requer navegador autenticado.)
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Filtros unificados em uma única barra, sem segundo modal de filtros.
+- Mesmos estados compartilhados entre painel e extrato.
+- Prestador "Todos" exige seleção antes de gerar extrato individual.
+- Build e typecheck aprovados.
+
+============================================================
+FALTA
+============================================================
+
+- Prova visual autenticada no navegador (checklist acima).
+
+============================================================
+STATUS
+============================================================
+
+B — IMPLEMENTADO; AGUARDA HOMOLOGAÇÃO DO USUÁRIO
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual do FIN-MOT-2H em ambiente com credenciais reais: abrir
+Pag. Prestadores, conferir os 7 controles na barra, clicar Gerar Extrato
+sem prestador (deve pedir seleção), selecionar prestador e gerar o
+extrato direto, e conferir PDF dentro do modal.

@@ -1,0 +1,312 @@
+FIN-SANE-02M.6 — RAIZ DOS 7 FP SEM PP
+======================================
+Investigacao READ-ONLY dos 7 registros de financeiro_pagar
+que possuem os_id mas nao possuem pagamentos_prestadores
+correspondente.
+
+Data: 2026-09-20
+Hora: 14:35 BRT
+Modelo: MiMo-V2.5
+Status: PASS — 7/7 CLASSIFICADOS COM EVIDENCIA
+Redmi: NAO NECESSARIO
+Ambiente: TMS codigo local + Supabase PRODUCAO (somente leitura)
+
+
+==========================================================================
+SECAO 1 — CONFIRMACAO ZERO WRITES
+==========================================================================
+
+Nenhum UPDATE, INSERT, DELETE ou DDL executado durante esta missao.
+Todas as queries sao SELECT.
+Nenhum dado foi modificado.
+
+
+==========================================================================
+SECAO 2 — QUERY USADA
+==========================================================================
+
+SELECT fp.id, fp.os_id, fp.prestador, fp.valor, fp.status,
+       fp.created_at, fp.updated_at
+FROM financeiro_pagar fp
+WHERE fp.os_id IS NOT NULL
+  AND fp.os_id ~ '^[0-9a-f]{8}-...-...$'
+  AND NOT EXISTS (
+    SELECT 1 FROM pagamentos_prestadores pp
+    WHERE pp.os_id = fp.os_id::uuid
+  )
+ORDER BY fp.created_at;
+
+Resultado: EXATAMENTE 7 registros.
+
+
+==========================================================================
+SECAO 3 — MATRIZ DOS 7
+==========================================================================
+
++----+--------------------------------------+--------------------------------------+-------------+----------+---------------+----------------+-----------+----------+-----------------+--------------+------+----------+-------+
+| #  | FP_ID                                | OS_ID                                | PRESTADOR   | FP_VALOR | FP_STATUS     | TIPO_OS_ID     | OS_ALOC   | PP       | BAIXA           | OBRIGACAO    | CLASS| CAUSA    | RISCO |
++----+--------------------------------------+--------------------------------------+-------------+----------+---------------+----------------+-----------+----------+-----------------+--------------+------+----------+-------+
+| 1  | 9b2e56ba-0457-42a7-b731-2daba9d6... | a2ac3c46-b36f-4352-a1e7-dfecc1200387 | UUID invalido| 900      | a vencer      | OS real        | NAO       | ZERO     | ZERO            | R$900 real   | PP_F | prest... | ALTO  |
+| 2  | f2149c94-7372-4aac-80ff-3d7dfddc... | ea967070-5553-497f-8528-c19048ed5932 | null        | 1800     | cancelado     | OS real        | NAO       | ZERO     | ZERO            | Nenhuma      | OK_S | cancel.. | BAIXO |
+| 3  | da733400-60da-41c2-9f83-fcf127fb... | ca9f55b2-47eb-437f-8ea1-55263597e862 | null        | 1800     | cancelada     | OS real        | NAO       | ZERO     | ZERO            | Nenhuma      | OK_S | cancel.. | BAIXO |
+| 4  | 9875fac1-d789-4149-bf26-7724dc72... | dce846ff-d7ae-463a-b784-73d8d2d91b21 | QA_CRIT_... | 600      | cancelado     | OS real+aloc   | SIM       | ZERO     | ZERO            | Nenhuma      | TEST | teste   | BAIXO |
+| 5  | 213864d5-701e-4ab0-ab6f-eee58582... | bb2cda88-cffd-4196-9a16-ed68fd2e472c | QA_CRIT_... | 600      | cancelado     | OS real+aloc   | SIM       | ZERO     | ZERO            | Nenhuma      | TEST | teste   | BAIXO |
+| 6  | eb7478c7-9d9a-4b7f-9797-a3ecccec... | c6a4e65a-1622-406f-a20a-b6adccc9abbb | QA_CRIT_... | 600      | cancelado     | OS real+aloc   | SIM       | ZERO     | ZERO            | Nenhuma      | TEST | teste   | BAIXO |
+| 7  | 9e07494b-6c13-4cd4-bbe7-8b2dd2bc... | 3db46421-e706-4ca4-8195-1c7a07f3135c | null        | 999      | cancelado     | OS real        | NAO       | ZERO     | ZERO            | Nenhuma      | OK_S | cancel.. | BAIXO |
++----+--------------------------------------+--------------------------------------+-------------+----------+---------------+----------------+-----------+----------+-----------------+--------------+------+----------+-------+
+
+LEGENDA:
+  CLASS: PP_F = PP_FALTANTE, OK_S = OK_SEM_PP, TEST = TESTE
+  OS_ALOC: SIM = alocacao existe, NAO = sem alocacao
+
+
+==========================================================================
+SECAO 4 — EVIDENCIAS INDIVIDUAIS
+==========================================================================
+
+--- FP 1/7: 9b2e56ba-0457-42a7-b731-2daba9d6ea26 (PP_FALTANTE) ---
+
+FATO COMPROVADO:
+  - OS a2ac3c46 existe, status=finalizada, criada 2026-04-28
+  - Composicao financeira existe: valor_cliente=1500, valor_prestador=900
+  - FP: valor=900, status="a vencer" (NAO cancelado, NAO pago)
+  - Prestador no FP: UUID 49042fec-2376-41d4-8ece-f1efe3d48dfc
+  - Prestador NAO existe na tabela prestadores (deletado ou legado)
+  - Baixas: ZERO
+  - PP: ZERO para este os_id
+
+HIPOTESE:
+  Trigger M66/M80 criou FP quando OS foi finalizada.
+  Composicao indicava valor_prestador=900.
+  PP deveria ter sido criado mas nao foi — possivelmente porque o
+  prestador foi removido do sistema antes ou depois.
+
+CLASSIFICACAO: PP_FALTANTE
+  Obrigacao real de R$900 ao prestador.
+  FP registrado mas PP nunca criado.
+  RISCO: ALTO — obrigacao pendente sem registro de pagamento.
+
+ACAO_FUTURA:
+  Criar PP para este FP com prestador_id correto (se recuperavel)
+  OU registrar como perda se prestador inacessivel.
+
+
+--- FP 2/7: f2149c94-7372-4aac-80ff-3d7dfddcf9c1 (OK_SEM_PP) ---
+
+FATO COMPROVADO:
+  - OS ea967070 existe, status=entregue, criada 2026-06-29
+  - Composicao financeira existe: valor_cliente=2500, valor_prestador=1800
+  - FP: valor=1800, status=cancelado
+  - Prestador: null
+  - Baixas: ZERO
+  - PP: ZERO
+
+CLASSIFICACAO: OK_SEM_PP
+  FP cancelado = obrigacao extinta.
+  PP nao e necessario para obrigacao cancelada.
+  RISCO: BAIXO
+
+
+--- FP 3/7: da733400-60da-41c2-9f83-fcf127fb8a3c (OK_SEM_PP) ---
+
+FATO COMPROVADO:
+  - OS ca9f55b2 existe, status=entregue, criada 2026-06-30
+  - Composicao financeira existe: valor_cliente=2500, valor_prestador=1800
+  - FP: valor=1800, status=cancelada
+  - Prestador: null
+  - Baixas: ZERO
+  - PP: ZERO
+
+CLASSIFICACAO: OK_SEM_PP
+  Identico ao FP 2. FP cancelado, sem obrigacao.
+  RISCO: BAIXO
+
+
+--- FP 4/7: 9875fac1-d789-4149-bf26-7724dc72147c (TESTE) ---
+
+FATO COMPROVADO:
+  - OS dce846ff existe, status=finalizada, criada 2026-06-26 02:15:13
+  - Alocacao existe: status=concluida, valor_total=600, prestador_id=null
+  - Composicao financeira: valor_cliente=1000, valor_prestador=600
+  - FP: valor=600, status=cancelado
+  - Prestador: "QA_CRIT_2026-06-26_02-15-12_PRESTADOR" (NOME DE TESTE)
+  - Baixas: ZERO
+  - PP: ZERO
+
+FATO COMPROVADO (TESTE):
+  - Nome do prestador contem "QA_CRIT_2026-06-26_02-15-12_PRESTADOR"
+  - Formato: QA_CRIT + timestamp + sufixo — padrao de teste automatizado
+  - Criado em 2026-06-26 02:15 — horario de execucao de testes
+
+CLASSIFICACAO: TESTE
+  Dados de teste QA CRITICO, todos cancelados.
+  RISCO: NENHUM
+
+
+--- FP 5/7: 213864d5-701e-4ab0-ab6f-eee58582d7b4 (TESTE) ---
+
+FATO COMPROVADO:
+  - OS bb2cda88 existe, status=finalizada, criada 2026-06-26 02:25:03
+  - Alocacao existe: status=concluida, valor_total=600, prestador_id=null
+  - Composicao: valor_cliente=1000, valor_prestador=600
+  - FP: valor=600, status=cancelado
+  - Prestador: "QA_CRIT_2026-06-26_02-25-02_PRESTADOR" (TESTE)
+
+CLASSIFICACAO: TESTE
+  Identico ao FP 4, 10 minutos depois.
+  RISCO: NENHUM
+
+
+--- FP 6/7: eb7478c7-9d9a-4b7f-9797-a3ecccead6da (TESTE) ---
+
+FATO COMPROVADO:
+  - OS c6a4e65a existe, status=finalizada, criada 2026-06-26 02:28:57
+  - Alocacao existe: status=concluida, valor_total=600, prestador_id=null
+  - Composicao: valor_cliente=1000, valor_prestador=600
+  - FP: valor=600, status=cancelado
+  - Prestador: "QA_CRIT_2026-06-26_02-28-56_PRESTADOR" (TESTE)
+
+CLASSIFICACAO: TESTE
+  Identico aos FPs 4 e 5.
+  RISCO: NENHUM
+
+
+--- FP 7/7: 9e07494b-6c13-4cd4-bbe7-8b2dd2bc8c8b (OK_SEM_PP) ---
+
+FATO COMPROVADO:
+  - OS 3db46421 existe, status=finalizada, criada 2026-07-05
+  - FP: valor=999, status=cancelado
+  - Prestador: null
+  - Composicao: NAO encontrada
+  - Baixas: ZERO
+  - PP: ZERO
+
+CLASSIFICACAO: OK_SEM_PP
+  FP cancelado, sem composicao, sem obrigacao.
+  RISCO: BAIXO
+
+
+==========================================================================
+SECAO 5 — CAUSA RAIZ POR CLASSE
+==========================================================================
+
+CLASSE 1: OK_SEM_PP (3 registros — FP2, FP3, FP7)
+  CAUSA: FP criado por trigger M66/M80 quando OS foi processada,
+         mas FP foi CANCELADO posteriormente.
+         Quando FP esta cancelado, nao existe obrigacao ativa.
+         PP nao e necessario — correto nao existir.
+  PADRAO: OS real + composicao existe + FP cancelado + PP inexistente
+  CORRECAO: NENHUMA necessaria.
+
+CLASSE 2: TESTE (3 registros — FP4, FP5, FP6)
+  CAUSA: Execucao de teste QA CRITICO em 2026-06-26 ~02:15-02:29.
+         Prestadores ficticios com nome "QA_CRIT_<timestamp>_PRESTADOR".
+         OS, alocacoes, composicoes e FPs criados pelo teste.
+         Todos cancelados apos execucao.
+  PADRAO: QA_CRIT + timestamp + cancelado + tudo consistente
+  CORRECAO: NENHUMA necessaria. Podem ser limpos se desired.
+
+CLASSE 3: PP_FALTANTE (1 registro — FP1)
+  CAUSA: Trigger M66/M80 criou FP quando OS a2ac3c46 foi finalizada
+         em 2026-04-28. Composicao indicava valor_prestador=900.
+         FP.status="a vencer" (obrigacao ativa).
+         Prestador UUID 49042fec nao existe mais na tabela prestadores.
+         PP nunca foi criado — possivelmente porque o prestador foi
+         removido do sistema antes que o fluxo de pagamento fosse
+         executado.
+  PADRAO: OS real + composicao + FP ativo + prestador fantasma + PP ausente
+  CORRECAO PROPOSTA:
+    Opcao A: Se prestador pode ser recuperado → criar PP + vincular
+    Opcao B: Se prestador irrecuperavel → cancelar FP (obrigacao inexistente)
+    Opcao C: Investigar historico de exclusao do prestador antes de decidir
+
+
+==========================================================================
+SECAO 6 — IMPACTO FINANCEIRO
+==========================================================================
+
+TOTAL FP ANALISADOS: 7
+VALOR TOTAL: R$6.099,00
+
+  OK_SEM_PP (3):  R$4.599,00 (FP2=1800 + FP3=1800 + FP7=999)
+    → Todos cancelados. Impacto: ZERO.
+
+  TESTE (3):      R$1.800,00 (FP4=600 + FP5=600 + FP6=600)
+    → Todos cancelados, dados de teste. Impacto: ZERO.
+
+  PP_FALTANTE (1): R$900,00 (FP1)
+    → Obrigacao ativa, status="a vencer", sem baixa.
+    → IMPACTO REAL: R$900,00 em obrigacao pendente sem PP.
+
+
+==========================================================================
+SECAO 7 — TOTAIS
+==========================================================================
+
+TOTAL_FP_ANALISADOS = 7
+OK_SEM_PP = 3          (FP2, FP3, FP7)
+PP_FALTANTE = 1        (FP1)
+VINCULO_INCORRETO = 0
+LEGADO = 0
+TESTE = 3              (FP4, FP5, FP6)
+ORFAO = 0
+DUPLICADO = 0
+INCONCLUSIVO = 0
+
+SOMA = 3 + 1 + 0 + 0 + 3 + 0 + 0 + 0 = 7 ✓
+
+
+==========================================================================
+SECAO 8 — PLANO FUTURO
+==========================================================================
+
+CLASSE OK_SEM_PP (3 registros):
+  NENHUMA acao necessaria. FP cancelado = obrigacao extinta.
+  Limpeza opcional: excluir FPs cancelados antigos.
+
+CLASSE TESTE (3 registros):
+  NENHUMA acao necessaria. Dados de teste cancelados.
+  Limpeza opcional: excluir FPs de teste + OS + alocacoes.
+
+CLASSE PP_FALTANTE (1 registro):
+  CORRECAO MINIMA SEGURA:
+    1. Identificar prestador correto (buscar historico de 49042fec)
+    2. Se encontrado: criar PP para este FP
+    3. Se nao encontrado: decidir entre cancelar FP ou manter como perda
+  NAO criar PP sem identificar prestador correto.
+
+
+==========================================================================
+SECAO 9 — CAUSA COMUM
+==========================================================================
+
+As 3 classes tem causas DIFERENTES:
+  - OK_SEM_PP: cancelamento normal de obrigacao
+  - TESTE: execucao de teste automatizado
+  - PP_FALTANTE: exclusao de prestador + trigger cria FP sem verificar
+
+NAO existe causa unica sistêmica para os 7.
+Cada classe requer abordagem propria.
+
+
+==========================================================================
+SECAO 10 — CLASSIFICACAO FINAL
+==========================================================================
+
+FP_WITHOUT_PP_ROOT_CAUSE = PASS
+
+Todos os 7 registros individualmente rastreados e classificados
+com evidencia LIVE suficiente.
+
+  FP1: PP_FALTANTE — obrigacao real R$900 sem PP
+  FP2: OK_SEM_PP — cancelado, sem obrigacao
+  FP3: OK_SEM_PP — cancelado, sem obrigacao
+  FP4: TESTE — QA_CRIT, cancelado
+  FP5: TESTE — QA_CRIT, cancelado
+  FP6: TESTE — QA_CRIT, cancelado
+  FP7: OK_SEM_PP — cancelado, sem obrigacao
+
+PASS NAO autoriza nenhuma correcao.
+
+
+FIM DA ANALISE FIN-SANE-02M.6

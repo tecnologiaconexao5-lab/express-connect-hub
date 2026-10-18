@@ -21,10 +21,12 @@ export interface Cliente {
   responsavelComercial?: string;
   observacoes?: string;
   origemComercial?: string;
+  dataCadastro?: string | null;
   exigeAgendamento: boolean;
   exigeSla: boolean;
   exigePortal: boolean;
   aceitaApi: boolean;
+  tenantId?: string;
 
   // Comercial
   tipoCobranca?: string;

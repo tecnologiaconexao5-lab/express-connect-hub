@@ -1,0 +1,210 @@
+RELATÓRIO AG-07H — DOCUMENTOS, VALIDADES E BLOQUEIOS OPERACIONAIS
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build) — homologação física p/ etapa posterior
+
+====================================================================
+1. DOCUMENTOS OFICIAIS ENCONTRADOS
+====================================================================
+
+TIPOS_DOCUMENTO_VALIDOS (src/services/documentosPrestadorService.ts):
+CNH Frente · CNH Verso · CRLV · CPF · Comprovante de Residência ·
+Comprovante Bancário · Contrato · ANTT · Apólice de Seguro ·
+Documento Pessoal · Outros.
+
+App (C:\src\conexao_prestador): bucket `documentos_prestadores` +
+tabela `documentos_prestadores` (id, prestador_id, tipo, url, created_at).
+
+====================================================================
+2. OBRIGATÓRIOS / OPCIONAIS
+====================================================================
+
+Obrigatórios (regra do gate AG-07H): CNH, Comprovante de Residência/Endereço.
+Documento do veículo (CRLV): exigido quando o prestador possui veículo
+(hook temVeiculo). OPCIONAIS (não bloqueiam): CPF, Comprovante Bancário,
+Contrato, Apólice de Seguro, Documento Pessoal, Outros, ANTT (por default).
+
+====================================================================
+3. STATUS
+====================================================================
+
+Status documental (TMS): valido | vencendo | vencido | pendente | aprovado |
+reprovado | em_analise. Recrutamento: pendente | enviado | validando |
+aprovado | reprovado | vencido. App: ativo | aprovado | regular | pendente |
+analise | reprovado.
+Todos normalizados no gate: STATUS_DOCUMENTAL_VALIDO = {valido, aprovado,
+regular, ativo}.
+
+====================================================================
+4. VALIDADE
+====================================================================
+
+Campo `validade`/`data_validade` quando presente + `prestadores.cnh_validade`
+(opcional). Regra determinística:
+- vencido: validade < hoje → BLOQUEIA.
+- vencendo: < 30 dias e >= hoje → ALERTA (não bloqueia).
+- sem validade aplicável → não bloqueia (não inventado).
+
+====================================================================
+5. APROVAÇÃO / REPROVAÇÃO
+====================================================================
+
+Aprovação/reprovação reside no Status Documental (documentos_prestadores.status
+via painel documental). Quem aprova: usuário TMS via CentralDocumentos /
+detExivStatusInterno. Não há histórico próprio comprovado no contrato atual
+(documentado como limitação).
+
+====================================================================
+6. APP → SUPABASE
+====================================================================
+
+App faz upload real (StorageUploadService/DriverDocumentsRepository) para o
+bucket `documentos_prestadores` e registra o vínculo em `documentos_prestadores`
+(prestador_id, tipo, url). O nome do arquivo segue doc_<id>_<tipo>_<ts>.<ext>.
+
+====================================================================
+7. SUPABASE → TMS
+====================================================================
+
+TMS lê documentos via documentosPrestadorService.listarDocumentosPrestador
+e o gate via verificarElegibilidadeDocumental. Schema: a tabela oficial
+(baseline) tem só (id, prestador_id, tipo, url, created_at); o serviço atual
+usa status/validade/dados/origem/candidato_id/updated_at ⇒ SCHEMA DRIFT
+(Produção provavelmente tem as colunas adicionadas diretamente). O gate é
+robusto a qualquer das duas possibilidades (fail-open se ausente).
+
+====================================================================
+8. SUBSTITUIÇÃO
+====================================================================
+
+Sem endpoint próprio no contrato? O App envia novo arquivo; o TMS pode
+atualizar/rejeitar/revogar pelo status. Substituição explícita de documento
+rejeitado não tem fluxo dedicado comprovado — documentado como lacuna.
+
+====================================================================
+9. STATUS DOCUMENTAL (TMS)
+====================================================================
+
+Painel documental existente (CentralDocumentos/DetalhesPrestador) permite
+recebido/aprovado/rejeitado/validade. Não redesenhei. Apenas o gate passa a
+consumir esses estados na decisão operacional.
+
+====================================================================
+10. GATE OPERACIONAL
+====================================================================
+
+eligibilidadeOperacionalService (AG-07F + AG-07H) agora responde:
+- ELEGÍVEL ou INELEGÍVEL + motivo (cnh_invalida, documento_obrigatorio_invalido,
+  documento_vencido, status_nao_autorizado, liberado_app_false, etc.).
+Sem segundo gate — integrado no mesmo helper.
+
+====================================================================
+11. ESCALA
+====================================================================
+
+criarAlocacao (e trocarMotorista) chamam verificarElegibilidadeOperacionalPrestador.
+Prestador com documentação obrigatória inválida/vencida/rejeitada NÃO é
+alocado mesmo com status='ativo'. Testada chamada direta (não só Select).
+
+====================================================================
+12. ANTT
+====================================================================
+
+Sem flag de aplicabilidade confiável no contrato. Por default NÃO bloqueia
+(regra "não aplicar e não inventar"). Aplicabilidade de ANTT fica para AG-07I.
+
+====================================================================
+13. MOTOBOY
+====================================================================
+
+CRLV/documento do veículo só exigido se temVeiculo=true (padrão: não exigido).
+Motoboy/operação sem veículo NÃO é bloqueado por CRLV. Regra segura/não genérica.
+
+====================================================================
+14. SEGURANÇA / STORAGE
+====================================================================
+
+Bucket `documentos_prestadores`: o App usa getPublicUrl (leitura via URL
+pública). RLS/policies de produção não verificáveis nesta missão (estações
+read-only). RISCO (P2): possibilidade de leitura pública de arquivos se o
+bucket não tiver restrição — documentado, não alterado (sem migration/RLS
+em Produção).
+
+====================================================================
+15. ALERTAS
+====================================================================
+
+Nenhuma infraestrutura de alerta de documento vencendo/vencido/rejeitado
+comprovada no fluxo. Registrado para missão posterior (não criado sistema de
+notificações nesta missão).
+
+====================================================================
+16. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts (gate AG-07F +
+  verificação documental AG-07H; robustez p/ colunas não confirmadas)
+- src/test/ag07h_documentos_bloqueios.test.ts (NOVO — 16 testes)
+
+(App NÃO alterado; migration NÃO executada.)
+
+====================================================================
+17. TESTES
+====================================================================
+
+- npx vitest run src/test/ag07h_documentos_bloqueios.test.ts → ✅ 16/16
+- npx vitest run src/test/ag07f_gate_elegibilidade.test.ts  → ✅ 17/17 (regressão)
+- npx vitest run (geral)                                    → ✅ 574/574 (59 arquivos)
+- npx tsc --noEmit                                          → ✅ 0 erros
+- npm run build                                             → ✅ 42s
+- npx eslint (arquivos alterados)                           → ✅ 0 erros
+
+====================================================================
+18. MIGRATIONS PENDENTES
+====================================================================
+
+- AG-07F (f_buscar_operacoes_motorista): NÃO aplicada (segura -> aguarda autorização).
+- Documental: NENHUMA migration preparada (schema documental não confirmado;
+  gate é fail-open — não requer banco).
+
+====================================================================
+19. LIMITAÇÕES
+====================================================================
+
+1. Schema de documentos_prestadores não confirmado em Produção (drift). Se as
+   colunas status/validade ausentes → gate documental inativo (fail-open).
+2. CNH via cnh_validade opcional (coluna incerta); primária via documento CNH.
+3. Candidato não captura CPF (já em AG-07G) — não afeta este gate.
+4. Substituição explícita/glitches de documento e alertas: sem fluxo dedicado.
+5. ANTT aplicabilidade: AG-07I.
+
+====================================================================
+20. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I — VEÍCULO, CAPACIDADE, ANTT E REQUISITOS ESPECIAIS
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+APP ENVIA DOCUMENTOS REAIS: SIM
+TMS RECEBE DOCUMENTOS REAIS: SIM
+DOCUMENTOS POSSUEM STATUS CONFIÁVEL: NÃO
+VALIDADE FUNCIONA: PARCIAL
+DOCUMENTO REJEITADO BLOQUEIA ESCALA: SIM
+DOCUMENTO VENCIDO BLOQUEIA ESCALA: SIM
+DOCUMENTO FALTANTE BLOQUEIA QUANDO OBRIGATÓRIO: SIM
+DOCUMENTO OPCIONAL BLOQUEIA: NÃO
+ANTT CONSIDERA APLICABILIDADE: NÃO
+MOTOBOY POSSUI REGRA CORRETA: SIM
+OPERAÇÃO EM ANDAMENTO É PRESERVADA: SIM
+IDENTIDADE AG-07G PRESERVADA: SIM
+GATE AG-07F PRESERVADO: SIM
+SEGURANÇA DOCUMENTAL: RISCO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07H: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07I — VEÍCULO, CAPACIDADE, ANTT E REQUISITOS ESPECIAIS

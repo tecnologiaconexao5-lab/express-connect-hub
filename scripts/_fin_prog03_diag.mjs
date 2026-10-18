@@ -1,0 +1,16 @@
+import pg from "pg";
+import fs from "node:fs";
+pg.types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
+const env = fs.readFileSync(".env", "utf8");
+const cs = env.match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const p = new pg.Pool({ connectionString: cs, ssl: { rejectUnauthorized: false } });
+const hoje = new Date().toISOString().split("T")[0];
+const em7 = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+console.log("hoje", hoje, "em7dias", em7);
+console.log("--- receber com vencimento entre hoje e +7d (is_teste=false) ---");
+console.log((await p.query(`select id, valor, status, data_vencimento, data_pagamento, cliente_id from financeiro_receber where is_teste=false and coalesce(data_vencimento,vencimento) between $1 and $2 order by data_vencimento`, [hoje, em7])).rows);
+console.log("--- receber status='vencida' ---");
+console.log((await p.query(`select id, valor, status, data_vencimento, data_pagamento from financeiro_receber where is_teste=false and status='vencida'`)).rows);
+console.log("--- receber venc<hoje e data_pagamento null, status distintos ---");
+console.log((await p.query(`select status, count(*)::int n, sum(valor) total from financeiro_receber where is_teste=false and coalesce(data_pagamento) is null and coalesce(data_vencimento,vencimento) < $1 group by status order by status`, [hoje])).rows);
+await p.end();

@@ -1,0 +1,226 @@
+RELATÓRIO AG-07I-B2 — BLOQUEIO POR CAPACIDADE KG / M³
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest) — homologação técnica
+
+====================================================================
+1. UNIDADE DE PESO COMPATÍVEL: SIM
+====================================================================
+
+veiculos.capacidade_kg: numeric (kg)
+ordens_servico.peso:     numeric (kg)
+App _vincularVeiculo:    envia _parseDouble(_capacidadeCtrl.text) → capacidade_kg
+
+Ambos usam quilogramas (kg). Comparação direta segura.
+
+====================================================================
+2. UNIDADE DE CUBAGEM COMPATÍVEL: SIM
+====================================================================
+
+veiculos.capacidade_m3: numeric (m³)
+ordens_servico.cubagem:  numeric (m³)
+App _vincularVeiculo:    envia _cubagem (calculada: comp × larg × alt / 1.000.000) → capacidade_m3
+
+Ambos usam metros cúbicos (m³). Comparação direta segura.
+
+====================================================================
+3. CAMPOS OS
+====================================================================
+
+ordens_servico.peso    — numeric, nullable (null/0 = sem peso informado)
+ordens_servico.cubagem — numeric, nullable (null/0 = sem cubagem informada)
+
+====================================================================
+4. CAMPOS VEÍCULO
+====================================================================
+
+veiculos.capacidade_kg — numeric, nullable (App envia null para moto)
+veiculos.capacidade_m3 — numeric, nullable (App envia null para moto)
+
+====================================================================
+5. REGRA DE PESO
+====================================================================
+
+capacidadeVeiculoCompativel(pesoOs, capacidadeKg, ...):
+
+  pesoOs > 0 AND capacidadeKg > 0:
+    pesoOs <= capacidadeKg → ✅ COMPATÍVEL
+    pesoOs >  capacidadeKg → ❌ capacidade_peso_insuficiente
+    Mensagem: "Carga (X kg) excede capacidade do veículo (Y kg)"
+
+  Qualquer campo = null/0 → não aplica regra de peso (fail-open)
+
+====================================================================
+6. REGRA DE CUBAGEM
+====================================================================
+
+capacidadeVeiculoCompativel(..., cubagemOs, capacidadeM3):
+
+  cubagemOs > 0 AND capacidadeM3 > 0:
+    cubagemOs <= capacidadeM3 → ✅ COMPATÍVEL
+    cubagemOs >  capacidadeM3 → ❌ capacidade_cubagem_insuficiente
+    Mensagem: "Cubagem (X m³) excede capacidade do veículo (Y m³)"
+
+  Qualquer campo = null/0 → não aplica regra de cubagem (fail-open)
+
+====================================================================
+7. COMPORTAMENTO NULL/0
+====================================================================
+
+Fail-open conservador:
+  - OS sem peso (null/0) → não bloqueia por peso
+  - OS sem cubagem (null/0) → não bloqueia por cubagem
+  - Veículo sem capacidade (null/0) → não bloqueia
+  - Moto com capacidade null → não bloqueia (campo estrutural ausente)
+
+Ausência NÃO é classificada como "validado".
+É classificada como "capacidade não informada" / "fail-open".
+
+====================================================================
+8. MOTOBOY
+====================================================================
+
+App envia capacidade_kg=null e capacidade_m3=null para moto (linha 799-800).
+Gate: null × null → fail-open → não bloqueia.
+Moto com capacidade null + OS sem peso/cubagem → OK.
+
+====================================================================
+9. CRIAR ALOCAÇÃO
+====================================================================
+
+escalaService.criarAlocacao (linha ~348):
+  1. verificarElegibilidadeOperacionalPrestador (status/liberado_app)
+  2. verificarElegibilidadeVeiculo (status veículo)
+  3. verificarCompatibilidadeTipoVeiculo (tipo OS × tipo veículo)
+  4. verificarCapacidadeVeiculo (peso/cubagem OS × capacidade veículo) ← NOVO
+
+  Se dados.ordem_servico_id E dados.placa existirem → compara.
+  Se Ausentes → fail-open.
+  Se insuficiente → retorna { sucesso: false, erro: "Capacidade do veículo insuficiente..." }
+
+====================================================================
+10. TROCAR MOTORISTA
+====================================================================
+
+escalaService.trocarMotorista (linha ~643):
+  1. prestadorOperacionalmenteElegivelDados (status/liberado_app)
+  2. verificarCompatibilidadeTipoVeiculo (tipo OS × tipo veículo novo)
+  3. verificarCapacidadeVeiculo (peso/cubagem OS × capacidade veículo novo) ← NOVO
+
+  Query atualizada para buscar: tipo, placa, capacidade_kg, capacidade_m3.
+  Se capacidade insuficiente → retorna erro.
+
+====================================================================
+11. TROCAR VEÍCULO
+====================================================================
+
+escalaService.trocarVeiculo (linha ~668):
+  1. verificarCompatibilidadeTipoVeiculo (tipo OS × tipo novo veículo)
+  2. verificarCapacidadeVeiculo (peso/cubagem OS × capacidade novo veículo) ← NOVO
+
+  Query atualizada para buscar: status, tipo, capacidade_kg, capacidade_m3.
+  Se capacidade insuficiente → retorna erro.
+
+====================================================================
+12. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts
+    +2 motivos: capacidade_peso_insuficiente, capacidade_cubagem_insuficiente
+    +capacidadeVeiculoCompativel (pure function, testável)
+    +verificarCapacidadeVeiculo (async, best-effort, fail-open)
+
+- src/services/escala/escalaService.ts
+    criarAlocacao:      +verificarCapacidadeVeiculo (após tipo)
+    trocarMotorista:    +verificarCapacidadeVeiculo (após tipo, busca capacidade_kg/m3)
+    trocarVeiculo:      +verificarCapacidadeVeiculo (após tipo, busca capacidade_kg/m3)
+
+- src/test/ag07ib2_capacidade_veiculo.test.ts (NOVO)
+
+====================================================================
+13. TESTES
+====================================================================
+
+24 testes criados no arquivo ag07ib2_capacidade_veiculo.test.ts:
+
+Regra pura (14 testes):
+  A) OS 2500kg × veículo 1500kg → BLOQUEADO
+  B) OS 1500kg × veículo 2500kg → OK
+  C) OS 2500kg × veículo 2500kg → OK (exatamente igual)
+  D) OS sem peso → não bloqueia
+  E) OS 12m³ × veículo 8m³ → BLOQUEADO
+  F) OS 8m³ × veículo 12m³ → OK
+  G) cubagem igual → OK
+  H) OS sem cubagem → não bloqueia
+  I) peso OK + cubagem insuficiente → BLOQUEADO
+  J) peso insuficiente + cubagem OK → BLOQUEADO
+  K) moto sem capacidade + OS sem requisito → OK
+  + Veículo sem capacidade cadastrada → não bloqueia
+  + Ambos insuficientes → bloqueia peso primeiro
+
+Async (7 testes):
+  L) criarAlocacao: OS peso alto + veículo baixo → bloqueado
+  M) OS + veículo OK → elegível
+  N) OS + veículo insuficiente → ineligível
+  O) OS sem peso → fail-open
+  P) OS inexistente → fail-open
+  Q) placa inexistente → fail-open
+  R) osId nulo → elegível
+  S) placa nula → elegível
+
+Regressão B1 (2 testes):
+  O) truck × van → INCOMPATÍVEL (B1 preservado)
+  O2) van × van → OK (B1 preservado)
+
+Regressão AG-07F (1 teste):
+  P) veículo inativo → ineligível
+
+npx vitest run src/test/ag07ib2_capacidade_veiculo.test.ts → ✅ 24/24
+npx vitest run (geral)                                   → ✅ 629/629 (61 arquivos)
+npx tsc --noEmit                                         → ✅ 0 erros
+
+====================================================================
+14. PENDÊNCIAS
+====================================================================
+
+1. OS legada sem peso/cubagem preenchidos: gate é fail-open.
+   Preenchimento dos campos na OS é pré-requisito para o gate atuar.
+
+2. Veículo legado sem capacidade_kg/capacidade_m3 cadastrados:
+   gate é fail-open. Atualizar cadastro do veículo é necessário
+   para que o gate funcione.
+
+3. Cubagem calculada pelo App (_cubagem = comp × larg × alt / 1e6)
+   pode divergir de cubagem preenchida manualmente na OS.
+   Unidades compatíveis (m³), mas precisa de coerência nos dados.
+
+====================================================================
+15. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I-B3 — REFRIGERADO / TÉRMICO / TEMPERATURA
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+UNIDADE DE PESO COMPATÍVEL: SIM
+UNIDADE DE CUBAGEM COMPATÍVEL: SIM
+PESO OS → CAPACIDADE VEÍCULO: OK
+CUBAGEM OS → CAPACIDADE VEÍCULO: OK
+CAPACIDADE INSUFICIENTE BLOQUEIA: SIM
+CUBAGEM INSUFICIENTE BLOQUEIA: SIM
+CRIAR ALOCAÇÃO PROTEGIDO: SIM
+TROCAR MOTORISTA PROTEGIDO: SIM
+TROCAR VEÍCULO PROTEGIDO: SIM
+MOTOBOY PRESERVADO: SIM
+TIPO VEÍCULO B1 PRESERVADO: SIM
+ANTT ALTERADA: NÃO
+REFRIGERADO ALTERADO: NÃO
+APP ALTERADO: NÃO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07I-B2: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07I-B3 — REFRIGERADO / TÉRMICO / TEMPERATURA

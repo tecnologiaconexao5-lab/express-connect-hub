@@ -1,0 +1,54 @@
+================================================================================
+MISSAO A31-J0 - DIFERENCIAR VISAO ESSENCIAL x FINANCEIRA COMPLETA
+================================================================================
+
+ARQUIVOS ALTERADOS
+- src/components/financeiro/ConferenciaFinanceira.tsx (UX da tabela "Central — Serviços Finalizados")
+- src/services/financeiro/centralFinanceiroVisao.ts (NOVO - presets puros de colunas por visão)
+- src/test/a31j0_visoes_central_financeira.test.ts (NOVO - 6 testes)
+
+COLUNAS DA VISAO ESSENCIAL (preset resumido - 14)
+- Status, Data, OS Interna, Cliente, Romaneio/OC, Prestador, Veículo
+- Total Cliente, Total Prestador
+- POD, Faturamento, Recebimento, Pagamento, Ações
+- Ocultas por padrão: Valor Cliente, Adic. Cliente, Valor Prestador, KM,
+  KM Exced. Cli./Prest., Pedágio, Comb./Pedágio, Ajud./Reemb., Diárias/Saídas
+
+COLUNAS DA VISAO FINANCEIRA COMPLETA (preset analítico - 21 + KM fixa)
+- Mesmas 14 da Essencial + Valor Cliente, Adic. Cliente, Valor Prestador,
+  KM (fixa), KM Exced. Cli., Pedágio Cli., Ajud. Cli., Diárias/Saídas,
+  KM Exced. Prest., Comb./Pedágio, Ajud./Reemb.
+
+COMPORTAMENTO DE SCROLL
+- Essencial: sem min-width forçado -> sem rolagem lateral excessiva.
+- Completa: container overflow-x-auto explicito + tabela min-w-[1180px]
+  (barra de rolagem visível), sem overflow-hidden em nenhum caso.
+- Completa exibe fade na borda direita + linha de apoio
+  "Tabela analítica — use a rolagem horizontal para ver todas as colunas."
+
+BOTAO "COLUNAS"
+- Continua funcional; agora é personalização manual SOBRE o preset da visão ativa.
+- Presets aplicam conjuntos visivelmente diferentes ao trocar Essencial x Completa.
+- Preferência salva por modo no localStorage (chave v2); formato legado v1
+  (mapa plano) é reaproveitado apenas como base da visão completa.
+
+TEXTOS DE APOIO
+- Essencial: "Visão resumida para conferência rápida."
+- Completa: "Detalhamento de KM, adicionais, custos, recebimentos e pagamentos."
+
+TESTES (vitest)
+- a31j0_visoes_central_financeira.test.ts: 6/6 (essencial resumido, completa maior,
+  troca de modo altera colunas, Colunas preserva personalização por modo,
+  legado v1 só afeta completa, mesmas colunas = só visibilidade muda)
+- fase1_centralFinanceiro.test.ts (regressão): 6/6
+- TOTAL: 12/12 PASS
+
+VALIDACAO
+- npx tsc --noEmit -> 0 erros
+- npm run build -> OK (1m05s)
+
+PENDENCIA
+- Cabeçalho sticky NÃO aplicado: componente Table shadcn possui wrapper
+  overflow próprio; exigiria refatoração maior (requisito opcional da missão).
+- QA visual em produção (troca de modo, scroll, Colunas) recomendado.
+================================================================================

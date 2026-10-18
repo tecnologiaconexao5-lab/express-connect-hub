@@ -1,0 +1,162 @@
+================================================================================
+MISSAO: TMS-FAT-URG-07-CANCELAMENTO-FATURA-OFICIAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: CORRECAO P0 CIRURGICA DO CANCELAMENTO OFICIAL DE FATURA.
+================================================================================
+
+RESULTADO: PASS.
+  - f_cancelar_fatura corrigida: cancela fatura+itens+AR de forma ATÔMICA e segura.
+  - Guard de itens ajustado (INVOKER + autorizacao do cancelamento oficial), sem
+    desabilitar protecao nem remover imunidade de fatura emitida.
+  - Migration aplicada; matriz de testes A-L PASS; hardening 04/05B NAO regrediu.
+  - Regressao 103/103; build OK. HML (FAT-000020/000022) intactos.
+
+================================================================================
+1. CAUSA-RAIZ
+================================================================================
+f_cancelar_fatura (versao original) executava, nesta ordem:
+  1) UPDATE faturas SET status='cancelada';
+  2) UPDATE fatura_itens SET status='cancelado' WHERE fatura_id=...;
+O trigger `f_trg_fatura_itens_bloqueio_emissao` (BEFORE INSERT/UPDATE/DELETE em
+fatura_itens) RAISE 'FATURA_BLOQUEADA' quando a fatura esta 'emitida' OU 'cancelada'.
+Como a RPC marcava a fatura como 'cancelada' ANTES de atualizar os itens, o passo (2)
+era bloqueado e a transacao ABORTAVA (defeito P0 confirmado no FAT-URG-06).
+Observacao: o guard tambem bloqueava a alteracao de itens com a fatura ainda 'emitida';
+portanto a simples reordenacao dentro da RPC NAO era suficiente — era necessario
+autorizar a transicao oficial de cancelamento no proprio guard.
+
+================================================================================
+2. CORRECAO (ordem/contrato)
+================================================================================
+(1) Guard `f_trg_fatura_itens_bloqueio_emissao`: passa a SECURITY INVOKER e AUTORIZA
+    SOMENTE a transicao oficial do item (UPDATE, OLD.status='ativo' -> NEW.status='cancelado')
+    quando executada por RPC SECURITY DEFINER (current_user='postgres') ou service_role.
+    Qualquer outra alteracao direta do cliente (authenticated) continua BLOQUEADA e a
+    protecao de fatura 'emitida' permanece. NAO desabilitamos trigger.
+(2) f_cancelar_fatura reordenada e com guards:
+    auth -> perfil(financeiro/admin) -> lock/fatura -> tenant -> estado(cancelada) ->
+    AR nao pago/parcial -> CANCELA ITENS -> CANCELA AR -> CANCELA FATURA.
+    Tudo em uma unica funcao (atômico). Mantida SECURITY DEFINER + search_path + grants.
+    NOVO erro FATURA_AR_COM_EFEITO_FINANCEIRO (bloqueia cancelar AR pago/parcial).
+
+REGRA SEMANTICA (auditada, nao assumida): cancelar a fatura DEVOLVE o servico a fila
+"Nao faturado" (intencional). Motivos: (a) o anti-duplicidade ignora fatura 'cancelada';
+(b) a derivacao de faturamento da Conferencia so considera 'emitida'/'rascunho'/
+'aguardando'/'aprovada' -> 'cancelada' retorna a 'nao_faturado'. O contrato original ja
+previa "servicos_liberados: true".
+
+================================================================================
+3. BEFORE / AFTER (hashes e grants)
+================================================================================
+f_cancelar_fatura:
+  BEFORE hash f67c05f1ce4cd5540be1ddcb31b5184c (quebrada)
+  AFTER  hash c2bcb46d1907efba8a27506ded8c923d
+f_trg_fatura_itens_bloqueio_emissao:
+  BEFORE hash 7c263add45f67ba966f37a017a217c86 | prosecdef=true  (DEFINER)
+  AFTER  hash 503cff6306c366df674aec2c3a37e892 | prosecdef=false (INVOKER)
+Grants f_cancelar_fatura: authenticated + service_role (+postgres owner) — PRESERVADOS
+  (sem PUBLIC/anon). Triggers de fatura_itens mantidos: anti_duplicidade, bloqueio_emissao,
+  recalcular_totais.
+
+================================================================================
+4. MIGRATION
+================================================================================
+APLICADA: supabase/migrations/20260925000006_fin_fat_urg_07_cancelamento_fatura_oficial.sql
+  - CREATE OR REPLACE f_trg_fatura_itens_bloqueio_emissao (INVOKER + autorizacao)
+  - CREATE OR REPLACE f_cancelar_fatura (ordem correta + guards)
+  - REVOKE/GRANT preservados.
+ROLLBACK : supabase/migrations/20260925000007_fin_fat_urg_07_rollback.sql
+  - restaura guard original (DEFINER, sem excecao) e f_cancelar_fatura original (20260816000001).
+Somente esta migration foi aplicada. Sem DELETE. Sem desabilitar trigger. M66/M80 intactos.
+
+================================================================================
+5. MATRIZ DE TESTES (PROD, transacoes isoladas com ROLLBACK)
+================================================================================
+A) fatura emitida elegivel + AR aberto -> CANCELA TUDO .......... PASS
+   -> r {success:true, status:'cancelada', servicos_liberados:true}
+   -> fatura=cancelada | fatura_itens=cancelado | AR=cancelado
+B) itens coerentes (status='cancelado') ....................... PASS
+C) AR coerente (status='cancelado') ........................... PASS
+D) operacao atomica (unica funcao/transacao) .................. PASS
+E) repetir cancelamento -> FATURA_JA_CANCELADA (erro seguro) .. PASS
+F) AR com efeito financeiro (parcial/pago) NAO cancela ........ PASS
+   -> FATURA_AR_COM_EFEITO_FINANCEIRO (ar_status 'parcial')
+G) tenant incorreto bloqueado -> guard presente no contrato; prova multi-tenant
+   PENDENTE (ambiente possui 1 tenant real) ................... PARCIAL
+H) usuario sem perfil -> SEM_PERMISSAO_PERFIL ................. PASS
+I) fatura inexistente -> FATURA_NAO_ENCONTRADA ................ PASS
+J) motivo: contrato ORIGINAL e OPCIONAL (p_motivo DEFAULT NULL) -> mantido opcional PASS
+K) nenhum DELETE (migration sem DELETE; operacao so UPDATE) ... PASS
+L) zero lixo apos rollback (faturas/AR/itens inalterados) ..... PASS
+
+GUARD (protecao preservada):
+  authenticated UPDATE direto em fatura_itens de fatura emitida
+    -> FATURA_BLOQUEADA (NAO permitido) ....................... PASS
+
+================================================================================
+6. NAO REGREDIR HARDENING (FAT-URG-04 / 05B) — reprovado
+================================================================================
+- rascunho -> emitir ....... FATURA_NAO_APROVADA ............ PASS (bloqueado)
+- aguardando -> emitir ..... FATURA_NAO_APROVADA ............ PASS (bloqueado)
+- aprovada -> emitir ....... success + exatamente 1 AR ....... PASS
+- UPDATE direto de status .. FATURA_STATUS_SOMENTE_VIA_RPC ... PASS (bloqueado)
+- edicao legitima (observacao/vencimento) ................... PASS (permitida; status preservado)
+- f_regularizar_fatura_legada continua service_role/legacy only (FAT-URG-05B) — INALTERADO.
+
+================================================================================
+7. ATOMICIDADE E PROVA FATURA+ITENS+AR
+================================================================================
+- A operacao roda dentro de f_cancelar_fatura (uma transacao). Se qualquer passo falhar
+  (ex.: AR pago), a funcao retorna erro ANTES de qualquer UPDATE persistente (valida o AR
+  antes de cancelar itens) e/ou o erro aborta a transacao -> nada muda.
+- Prova direta: A) apos cancelar, os TRES niveis ficaram coerentes:
+    faturas.status='cancelada'; fatura_itens.status='cancelado'; financeiro_receber.status='cancelado'.
+  E) reexecucao nao altera (FATURA_JA_CANCELADA) e nao duplica AR.
+
+================================================================================
+8. REGRESSAO / BUILD
+================================================================================
+Testes (10 arquivos): 103/103 PASS
+  fin_fat_urg_07 (6 novos) + fin_fat_urg_05b (8) + fin_fat_urg_04 (10) +
+  fin_fat_urg_02 (18) + fin_conf_ux_ord_01 (13) + fin_ar_ux_01 (14) +
+  fase2a_fatura (10) + fin_prog04b_emissao (3) + f38_fatura_manual (16) +
+  fin_prog05c3b_receber_paginacao (5).
+BUILD: npm run build -> OK ("built in 37.48s").
+
+================================================================================
+9. PROVA HML INTACTOS
+================================================================================
+FAT-2026-000020 (cancelada) e FAT-2026-000022 (cancelada) NAO foram alteradas
+(status permanece 'cancelada'; nao reativadas). Nenhum dado HML revertido.
+Totais globais apos os testes: faturas 11 | AR 49 | fatura_itens 48 (sem lixo;
+todos os testes em ROLLBACK). Dados reais preservados.
+
+================================================================================
+10. RISCOS RESIDUAIS
+================================================================================
+R1. Guard de itens passou de DEFINER para INVOKER (necessario para distinguir cliente x
+    RPC). Verificado: authenticated continua bloqueado; RPC definer autorizada.
+R2. f_cancelar_fatura agora exige perfil financeiro/admin + tenant (antes nao verificava).
+    Callers da UI (Faturas/FaturaPanel) sao financeiro -> compatível. Se algum integrador
+    externo usar outro perfil, sera bloqueado (comportamento desejado de seguranca).
+R3. Teste multi-tenant (G) nao executavel no ambiente (1 tenant) — guard presente; provar
+    em QA com 2 tenants.
+R4. Motivo permanece OPCIONAL (contrato original). Se o negocio exigir obrigatorio,
+    tratar em missao de UX/contrato.
+R5. fatura_itens de faturas ja canceladas ANTES desta correcao (ex.: HML do FAT-URG-06)
+    podem permanecer 'ativo' (foram canceladas por UPDATE admin). Sem efeito ativo.
+
+================================================================================
+11. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-07-CANCELAMENTO-FATURA-OFICIAL-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-07-CANCELAMENTO-FATURA-OFICIAL-RESULTADO.txt
+ TAMANHO ..: 10113 bytes
+ DATA/HORA : 25/09/2026 21:28:08
+
+================================================================================
+FIM — TMS-FAT-URG-07-CANCELAMENTO-FATURA-OFICIAL
+================================================================================

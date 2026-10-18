@@ -1,0 +1,775 @@
+================================================================================
+MISSAO: TMS-FIN-UX-01-FLUXO-REAL-MAPA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (LEITURA; zero DML/DDL; REDMI NAO conectado)
+MODELO: MiMo-V2.5
+TIPO: AUDITORIA SOMENTE LEITURA
+DATA/HORA: 25/09/2026 (gerado nesta sessao)
+BASE: leitura de codigo (file:line) + migrations + cross-check com relatorios
+      FIN-GATE-01 (2026-09-24 19:21) e FIN-PROG-05D3 (2026-09-24 16:42) e FIN-SEC-02.
+================================================================================
+
+CONTAGEM REGRESSIVA
+  3 FECHAMENTO TMS  <- ESTAMOS AQUI (FIN-UX-01)
+  2 APP + E2E COMPLETO
+  1 MASTER 360 / GATE DE PRODUCAO
+  0 HOMOLOGADO
+
+================================================================================
+0. SUMARIO EXECUTIVO
+================================================================================
+O nucleo do Financeiro JA EXISTE e, em grande parte, esta CORRETO:
+  - CLIENTE : Conferencia -> rascunho de fatura -> (Validar e) Emitir -> 1 titulo
+              em Contas a Receber -> baixa. Funciona (RPC f_emitir_fatura).
+  - PRESTADOR: provisao (triggers) -> Aprovar -> Aptos para Lote -> Lote (RPC)
+              -> Marcar Pago/Baixa (RPC). Funciona. Fechamento/Repasse/Manual
+              estao DELIBERADAMENTE BLOQUEADOS por seguranca (FIN-SEC-02 S1/S2).
+
+Os problemas reais sao de tres naturezas:
+  (A) UX/PRESENTACAO: sem paginacao em Conferencia/Contas a Pagar/Pag. Prestadores;
+      dialogs nativos alert/confirm/prompt; fontes muito pequenas; botoes
+      desabilitados sem explicacao; filtros existentes no backend sem controle de UI.
+  (B) LEGADO: telas/arquivos mortos (ContasReceber.tsx, "Gerar Fatura" desabilitado
+      em AR, estados de fatura aguardando_aprovacao/aprovada sem escritor).
+  (C) GAPS FUNCIONAIS: etapa intermediaria "Validar Fatura" separada de "Emitir";
+      cadastros (plano de contas/categoria/centro/forma) ainda texto livre;
+      RPCs de reprovacao/cancelamento/recebimento manual de prestador inexistentes;
+      Conta Corrente sem filtros e sem view contabil.
+
+VEREDITO: PASS (auditoria concluida, 100% leitura). Nada implementado, nada
+alterado. Nenhuma migration. Nenhum registro tocado. Base pronta para micro-missoes
+de polimento (FIN-UX-02+) SEM reconstruir o Financeiro.
+
+================================================================================
+1. ARQUIVOS INSPECIONADOS
+================================================================================
+PAGINAS / ROTEAMENTO
+  src/pages/Financeiro.tsx
+  src/components/financeiro/financeiroNav.ts
+  src/App.tsx (rota /financeiro, linha 127)
+
+CONFERENCIA / FATURAMENTO
+  src/components/financeiro/ConferenciaFinanceira.tsx  (147 KB / 2.566 linhas)
+  src/components/financeiro/FaturaPanel.tsx            (49 KB / 971 linhas)
+  src/components/financeiro/FaturaLista.tsx            (23 KB / 454 linhas)
+  src/components/financeiro/FaturaManualDialog.tsx     (31 KB)
+  src/services/financeiro/centralFinanceiroService.ts  (32 KB)
+  src/services/financeiro/faturaService.ts             (63 KB)
+  src/services/financeiro/faturaTypes.ts
+
+CONTAS A RECEBER
+  src/components/financeiro/ContasReceberEnterprise.tsx (82 KB)  <- ATIVA
+  src/components/financeiro/ContasReceber.tsx           (62 KB)  <- LEGADO (nao importado)
+  src/services/financeiro/receberService.ts             (31 KB)
+  src/helpers/statusVencimento.ts
+
+CONTAS A PAGAR
+  src/components/financeiro/ContasPagar.tsx             (69 KB / 1.344 linhas)
+  src/services/financeiro/pagarService.ts               (17 KB)
+  src/hooks/useFormExitGuard.ts
+  src/components/ui/PaginationBar.tsx (padrao alvo de paginacao)
+
+PAGAMENTO DE PRESTADORES / FECHAMENTO / CONTA CORRENTE
+  src/components/financeiro/PagamentoPrestadores.tsx    (178 KB / 3.347 linhas)
+  src/services/financeiro/pagamentoPrestadorService.ts  (24 KB)
+  src/services/financeiro/fechamentoService.ts          (19 KB)
+  src/services/financeiro/extratoPrestadorService.ts    (43 KB)
+  src/services/financeiro/auditoriaPrestadorService.ts
+  src/helpers/dashboardPrestadorHelper.ts
+  src/helpers/lotePagamentoHelper.ts
+  src/helpers/relatorioPrestadorHelper.ts
+  src/helpers/calculoRepassePrestador.ts
+  src/helpers/statusFinanceiroPrestador.ts
+  src/services/escala/escalaFinanceiroAdapter.ts
+  src/services/escala/escalaMapper.ts
+
+UX / APOIO
+  src/components/financeiro/Inadimplencia.tsx (alert nativo)
+
+MIGRATIONS-CHAVE (referencia; NAO aplicadas)
+  20260816000001_fase2a_faturamento_profissional.sql (faturas, fatura_itens, status)
+  20260924000000_fin_prog04b_numero_cliente_emissao_oficial.sql (f_emitir_fatura, 1 AR)
+  20260924000002_fin_prog05b_ar_single_source.sql (M66/M80 deixam de criar AR)
+  20260924000018_fin_sec02_s1_lock_pagamentos_prestadores.sql (REVOKE escrita pp)
+  20260911000001_fin_p1_03_fechamento_prestador.sql (fechamento_id em pp)
+  20260913000000_fin_sane_02b_unifica_valor_pagar.sql (f_confirmar_pagamento_fechamento)
+  20260924000016_fin_prog05d7c1_lote_cabecalho_snapshot.sql (f_gerar_lote_pagamentos)
+  20260821000000_fin_mot_1_extrato_fechamento_prestador.sql (fechamentos_prestador - orfa)
+  20260911000000_fin_p0_02_check_status_constraints.sql (CHECK status fp/fr)
+
+RELATORIOS-FONTE (evidencia de dados reais - leitura previa)
+  TMS-FIN-PROG-05D3-MAPA-FINANCEIRO-E2E-RESULTADO.txt (2026-09-24 16:42)
+  TMS-FIN-GATE-01-MASTER-CLOSING-AUDIT-RESULTADO.txt (2026-09-24 19:21)
+  TMS-FIN-SEC-02-S1-LOCK-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+  TMS-FIN-SEC-02-S2-UI-RPCS-PAGAMENTOS-PRESTADORES-RESULTADO.txt (2026-09-24 19:49)
+
+================================================================================
+2. FLUXO REAL ATUAL (o que o codigo faz HOJE)
+================================================================================
+
+2.1 FLUXO CLIENTE (Faturamento -> Receber)
+
+   [ alocacoes_escala ]  WHERE status='concluida' AND finalizada=true  LIMIT 300
+        |                 (centralFinanceiroService.ts:176-190)
+        v
+   +---------------------------------------------------------------+
+   | CONFERENCIA (ConferenciaFinanceira.tsx)                       |
+   |  - lista FATURADOS e NAO-FATURADOS juntos (sem filtro default)|
+   |  - checkbox individual (isElegivel) + "selecionar todos"      |
+   |  - elegibilidade = motivosBloqueio(): sem cliente / valor<=0 /|
+   |    ja faturado / romaneio-por-regra  (:1407-1422)             |
+   |  - POD e romaneio = AVISO, NAO bloqueiam  (:1462-1472)        |
+   |  - botao "Criar Fatura" (disabled so se 0 selecionados)       |
+   +------------------------------+--------------------------------+
+                                  | clique
+                                  v
+   +---------------------------------------------------------------+
+   | FaturaPanel  (FaturaPanel.tsx)                                |
+   |  1) criarRascunhoFatura() -> INSERT faturas status='rascunho'  |
+   |     (faturaService.ts:214-235)                                |
+   |  2) adicionarItemFatura() -> INSERT fatura_itens               |
+   |     os_id, alocacao_id, snapshot valores (faturaService:279-307)|
+   |  *** AQUI NAO NASCE TITULO EM CONTAS A RECEBER ***            |
+   +------------------------------+--------------------------------+
+                                  | botao "Validar e Emitir Fatura"
+                                  v   (FaturaPanel.tsx:606-608)
+   +---------------------------------------------------------------+
+   | RPC f_emitir_fatura(fatura_id)   (faturaService.ts:358-368)   |
+   |   - guards: FATURA_JA_EMITIDA / FATURA_SEM_ITENS /            |
+   |             STATUS_INVALIDO_EMISSAO                           |
+   |   - gera Nº Conexao + Nº Cliente                              |
+   |   - INSERT financeiro_receber (status='aberto', fatura_id)    |
+   |        <==== TITULO A RECEBER NASCE AQUI (na EMISSAO) ==      |
+   |   - UPDATE faturas status='emitida', conta_receber_id         |
+   +------------------------------+--------------------------------+
+                                  v
+   Conferencia recarrega: item vira badge "Faturado",
+   checkbox fica inelegivel, MAS O ITEM PERMANECE NA LISTA
+   (so desaparece se aplicar filtro Faturamento).
+                                  |
+                                  v
+   +---------------------------------------------------------------+
+   | CONTAS A RECEBER (ContasReceberEnterprise.tsx)               |
+   |  - lista financeiro_receber (limit 2000, busca server-side)   |
+   |  - status/ordenacao/paginacao no ARRAY carregado (client)     |
+   |  - baixa -> RPC f_registrar_baixa_financeira (conta_fin_id)   |
+   +---------------------------------------------------------------+
+
+2.2 FLUXO PRESTADOR (Provisao -> Pagamento -> Conta Corrente)
+
+   [ alocacoes_escala ]  (M66)            [ ordens_servico ]  (M80)
+        |  AFTER INSERT/UPDATE                 |  AFTER INSERT/UPDATE
+        +------------------+-------------------+
+                           v
+     pagamentos_prestadores (PROVISAO)
+       status_conferencia='em_aberto', status_pagamento='pendente'
+       (obrigacao nasce CEDO, junto com a operacao)
+     financeiro_pagar (provisao)
+                           |
+                           v
+   +---------------------------------------------------------------+
+   | PAGAMENTO DE PRESTADORES (PagamentoPrestadores.tsx)           |
+   |                                                               |
+   | Dashboard Operacional ....... leitura/KPIs .................. OK|
+   | Visao do Periodo ............ consolida; "Gerar Fechamento" . BLOQUEADO (S2)
+   | Aptos para Lote ............. RPC f_gerar_lote_pagamentos .... OK|
+   | Pagamentos Manuais .......... Conferir/Aprovar (RPC) ......... OK|
+   |                              Marcar Pago (RPC) -> baixa ...... OK|
+   |                              Reprovar/Cancelar ............... BLOQUEADO (S2)
+   | Fechamentos Anteriores ...... criar/conferir/aprovar/cancelar  BLOQUEADO (S2/S1)
+   |                              Pagar (RPC) .................... OK|
+   | Repasses da Programacao ..... leitura; "Gerar Repasse" ....... BLOQUEADO (S2)
+   | Relatorio Financeiro ........ leitura/export ................. OK|
+   | Conta Corrente .............. derivada em memoria de pp ...... PARCIAL|
+   +------------------------------+--------------------------------+
+                                  v
+   RPC f_confirmar_pagamento_prestador -> financeiro_baixas
+                                  |
+                                  v
+   Fluxo de Caixa / DRE
+
+================================================================================
+3. FLUXO ALVO (A e B)
+================================================================================
+
+3.1 ALVO A — CLIENTE
+   Conferencia -> selecao -> Gerar Fatura -> Faturas -> VALIDAR ->
+   Contas a Receber -> Receber/Baixar
+
+3.2 ALVO B — PRESTADOR
+   Programacao Operacional -> Repasse -> Fechamento -> Pagamento ->
+   Baixa -> Conta Corrente
+
+================================================================================
+4. REAL x ALVO — DIFFERENCAS / GAPS (somente o que difere)
+================================================================================
+CLIENTE
+  D1. "Gerar Fatura" (Conferencia) na verdade CRIA RASCUNHO, nao fatura.        [UX]
+  D2. Nao existe etapa "VALIDAR FATURA" separada de "EMITIR".
+      O botao diz "Validar e Emitir" e faz as duas coisas de uma vez (RPC).      [GAP]
+  D3. Por consequencia, o titulo em Contas a Receber nasce no EMITIR, nao no
+      VALIDAR. O alvo ("Fatura aguardando validacao -> VALIDAR -> titulo") nao
+      e suportado. MENOR GAP = writer/RPC de transicao de status (rascunho ->
+      aguardando_aprovacao -> aprovada). Estados JA existem no CHECK/type; falta
+      o caminho autorizado de escrita (atualizarFatura proibe 'status' de proposito)
+      + botao de UI. Nao requer coluna nova.                                    [GAP]
+  D4. Apos faturado, o servico NAO sai da fila (continua na lista, so inelegivel). [BUG]
+  D5. Conferencia NAO pagina (LIMIT 300 silencioso).                             [GAP]
+  D6. Divergencia de criterio entre semaforo, KPI "Prontos p/ Faturar" e
+      elegibilidade do checkbox.                                                 [UX]
+
+PRESTADOR
+  D7. Repasse manual: BLOQUEADO (sem RPC oficial).                               [BLOCKED-SEC]
+  D8. Fechamento (criar/conferir/aprovar/cancelar): BLOQUEADO (S2 na UI + S1 no banco). [BLOCKED-SEC]
+  D9. "Novo Pagamento" manual: BLOQUEADO (S2/S1).                                [BLOCKED-SEC]
+  D10. Conta Corrente do prestador: simplificada (so pp; ignora
+       movimentos_conta_corrente_prestador; sem filtros de periodo/cliente/OS/
+       origem/status/natureza/busca).                                            [GAP]
+  D11. Duas entidades "fechamento" concorrentes (pagamentos_prestadores
+       tipo='fechamento' x fechamentos_prestador). A tela usa a bloqueada; a
+       tabela fechamentos_prestador esta orfa.                                   [LEGADO]
+  D12. f_confirmar_pagamento_prestador tem 3 definicoes concorrentes (drift).     [NECESSITA-PROVA-DB]
+  D13. gerar_numero_fechamento_prestador usa LPAD com argumentos nomeados
+       inexistentes -> erro provavel; servico cai em fallback aleatorio.         [BUG]
+
+================================================================================
+5. AUDITORIA POR SECAO
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 FATURAMENTO — CONFERENCIA -> FATURAS -> CONTAS A RECEBER
+--------------------------------------------------------------------------------
+Fonte dos servicos: alocacoes_escala WHERE status='concluida' AND finalizada=true,
+order data_finalizacao desc, limit 300 (centralFinanceiroService.ts:176-190).
+Enriquecidos por joins em lote: entregas_protocolo (POD), financeiro_receber,
+financeiro_pagar, pagamentos_prestadores, composicao_financeira_os,
+fiscal_documentos_vinculados, fatura_itens+faturas (:204-286).
+Criterio de lista: default sem filtro de faturamento (mostra faturados e nao
+faturados). Filtros de periodo no SQL; demais em memoria (:451-502).
+Checkbox individual: SIM (Set<string>) :979, :1937-1946.
+Selecao multipla: SIM, so marca elegiveis (:1874-1892).
+Acao de faturamento: botao "Criar Fatura" :1710-1717 -> criarFatura() :1444-1474
+-> abre FaturaPanel (nao emite, nao cria AR).
+Disabled: apenas selecionados.size === 0 (:1714). Validacoes de cliente/romaneio/POD
+dentro do handler (:1446-1472); romaneio/POD sao aviso, nao bloqueio.
+Lote: existe para selecao, mas UMA fatura = UM cliente; sem RPC de lote; emissao
+por fatura.
+Duplicidade: front (elegibilidade) + join fatura_itens/faturas (:279-304) + trigger
+de banco por os_id (20260816000001:197-237). ATENCAO: itens com os_id NULL nao sao
+protegidos por UNIQUE (alocacao_id gravado mas sem UNIQUE).
+Vinculo OS: ordem_servico_id -> Fat.Paritem.os_id / alocacao_id.
+Cliente: join cliente_id. Romaneio: os.romaneio || metadata.numeroOC ||
+metadata.app_motorista.romaneio. Valor cliente: valor_frete+reversa+adicionais+kms
+(:327-336). Adicionais: mapeamento parcial aproximado no painel (:1492-1501).
+POD: exibido e usado em semaforo/KPI, mas NAO bloqueia faturamento (:1462-1472).
+Status de faturamento (derivado): nao_faturado | rascunho | faturado.
+
+O QUE ACONTECE AO FATURAR
+  ANTES  : alocacao concluida/finalizada; faturamento=nao_faturado; checkbox ON.
+  ACAO   : "Criar Fatura" -> FaturaPanel -> INSERT faturas status='rascunho' +
+           INSERT fatura_itens (snapshot). (NENHUM titulo criado.)
+  ACAO 2 : "Validar e Emitir" -> RPC f_emitir_fatura -> gera numeros, INSERT
+           financeiro_receber (status='aberto', fatura_id), UPDATE faturas
+           status='emitida' + conta_receber_id.
+  STATUS : fatura=emitida; AR=aberto; item da Conferencia=faturado.
+  RESULT.: item NAO sai da lista; checkbox inelegivel; some so com filtro.
+
+CLASSIFICACAO: nucleo [OK]; D3 (Validar separado) [GAP]; D4 (item permanece) [BUG];
+D5 (paginacao) [GAP]; D6 (criterio triplo) [UX].
+
+--------------------------------------------------------------------------------
+5.2 FATURAS — VALIDAR O GATE
+--------------------------------------------------------------------------------
+Criacao: automatica (Conferencia -> FaturaPanel) e manual (FaturaManualDialog:
+  "Salvar Rascunho" :287; "Salvar e Gerar PDF" :311/:329 -> criarFaturaManual +
+  emitirFatura). Funcoes: criarRascunhoFatura :214; criarFaturaManual :963;
+  emitirFatura :358; atualizarFatura :321; cancelarFatura :371.
+Origem: faturas + fatura_itens (ver 5.1).
+Status: 'rascunho','aguardando_aprovacao','aprovada','emitida','cancelada'
+  (CHECK 20260816000001:52-54; tipo faturaTypes.ts:7-12).
+"Emitida": significa NUMERO + 1 AR criados atomicamente na RPC f_emitir_fatura
+  (20260924000000:112-217). NAO gera PDF (PDF e acao manual).
+Status anterior: rascunho (real). aguardando_aprovacao/aprovada existem no CHECK
+  e nos labels, mas NAO tem escritor (estados mortos).
+Validacao: NAO existe etapa. O texto existe fundido na emissao ("Validar e Emitir
+  Fatura", FaturaPanel.tsx:606/:644/:704). Nao existe f_aprovar_fatura/f_validar_fatura.
+conta_receber_id: criado SOMENTE dentro de f_emitir_fatura (:194/:201). "Titulo
+  vinculado" aparece quando conta_receber_id truthy (FaturaLista.tsx:299/:429) —
+  logo, nunca em fatura "aguardando validacao".
+AR nasce: na EMISSAO. Nao existe trigger que crie AR a partir de faturas; existe
+  apenas a guarda trg_faturas_bloqueio_emissao_sem_ar (:86-107) e backfill legado
+  f_regularizar_fatura_legada.
+
+RESPOSTA OBJETIVA:
+  A arquitetura atual NAO suporta "Fatura aguardando validacao -> VALIDAR ->
+  titulo em Contas a Receber" como etapa intermediaria.
+  MENOR GAP: (1) um writer/RPC de transicao de status rascunho->
+  aguardando_aprovacao->aprovada (estados ja existem; nao ha coluna nova);
+  (2) um botao "Validar" na UI que o acione; (3) definicao de negocio se o AR
+  nasce no VALIDAR (hoje nasce no EMITIR). Sem implementar nesta missao.
+CLASSIFICACAO: fluxo atomico rascunho->emitida [OK]; etapa intermediaria [GAP].
+
+--------------------------------------------------------------------------------
+5.3 CONTAS A RECEBER
+--------------------------------------------------------------------------------
+Listagem: financeiro_receber, select *, eq is_teste=false, busca/filtros
+  server-side parciais, order data_vencimento, limit 2000 (receberService.ts:212-241).
+  Status/ordenacao/paginacao (PAGE_SIZE=25) no ARRAY (client) (ContasReceberEnterprise
+  :594-625); PaginationBar :1214-1220. Busca server (.or ilike :231-233);
+  status/ordenacao client-side.
+Origem dos titulos: manual (RPC f_criar_recebivel_manual, :301/:330) x fatura
+  (fatura_id, 1 por fatura). Os triggers M66/M80 NAO criam mais AR (removido no
+  PROG-05B, 20260924000002:75/:193).
+Vinculo fatura<->AR: financeiro_receber.fatura_id (FK, UNIQUE parcial
+  uq_receber_fatura_id) + faturas.conta_receber_id.
+Status: persistidos (aberto/pendente/a vencer/parcial/pago/cancelado/renegociado)
+  + efetivo calculado (statusVencimento.ts:76-139).
+Baixa: RPC f_registrar_baixa_financeira (com p_conta_financeira_id) :403-414.
+Competencia: NAO existe coluna; UI faz fallback de data_emissao.slice(0,7).
+Vencimento: data_vencimento (fatura: COALESCE(fatura.vencimento, emissao+30)).
+Cancelamento: ContasReceberEnterprise NAO tem cancelar (so Excluir :558-559 com
+  confirm nativo). O "cancelar" nativo esta no LEGADO ContasReceber.tsx:621.
+Filtros: existem busca, status, ordenacao, mes, paginacao. FALTAM controles de UI
+  para cliente/categoria/centro/data (estado existe :162-170, service suporta).
+Botao "Gerar Fatura": DESABILITADO por design (:737-744, title aponta para a
+  Conferencia). NAO tem handler. Duplica a Conferencia; pertence ao fluxo LEGADO.
+  Services criarRecebivelDeEscala/Lote/FaturaConsolidada sao stubs que lancam erro.
+Bugs: r.origem/r.competencia/r.valor_baixado/... inexistentes (whitelist
+  receberService.ts:39-50/:132-145); abrirDetalheFatura nunca dispara
+  (condicao origem==='fatura_consolidada' morta :326/:328) e passa r.id onde
+  espera fatura_id.
+ContasReceber.tsx: NAO importado em src (0 imports), nao compila (handlers
+  duplicados). [LEGADO]
+CLASSIFICACAO: listagem/baixa/paginacao [OK]; botao Gerar Fatura [LEGADO][OK
+  manter desabilitado]; campos fantasma/DetalheFatura [BUG]; filtros sem UI [GAP].
+
+--------------------------------------------------------------------------------
+5.4 CONTAS A PAGAR
+--------------------------------------------------------------------------------
+Query/listagem: INLINE no componente (nao usa listarPagaveis do service)
+  supabase.from("financeiro_pagar").select("*").eq is_teste=false + periodo,
+  order data_vencimento (ContasPagar.tsx:661-670). Sem count, sem limit/range.
+Quantidade total: carrega TODAS as linhas do periodo.
+Paginacao: INEXISTENTE. Nao ha page/PaginationBar/slice/range. Renderiza o array
+  inteiro (:1051). Este e o principal GAP de paginacao.
+Busca: client-side (:785-786). Filtros: status/categoria/fornecedor (memoria),
+  data (SQL). Ordenacao: banco + re-sort em memoria (:792-801). Loading: isSubmitting
+  compartilhado fetch/save (:610/:663/:819); sem loading de tabela.
+Cancelamento: handleCancelar :915-925 -> confirm("Tem certeza que deseja cancelar?")
+  :916 -> cancelarPagavel (UPDATE status='cancelado').
+  >>> ESTA E A ORIGEM DO DIALOGO NATIVO "localhost:8800 diz / Tem certeza que
+      deseja cancelar?" (Chromium usa a origem da pagina). Acionado por
+      linha -> menu Acoes -> "Cancelar" (:1083).
+GAP adicional: form oferece status "provisao" (:854/:1243) mas o CHECK ck_fp_status
+  permite 'provisorio' (nao 'provisao') -> INSERT violaria a constraint. [BUG]
+Service paginado listarPagaveis (:135-167) e codigo morto (0 callers). [LEGADO/GAP]
+Padrao alvo obrigatorio: src/components/ui/PaginationBar.tsx
+  ("Anterior | 1 | 2 | 3 | ... | Proxima"). ContasPagar NAO possui.
+
+ALERT/CONFIRM/PROMPT NATIVOS EM TODO O FINANCEIRO
+  ContasPagar.tsx:916 ........... confirm("Tem certeza que deseja cancelar?") -> Cancelar linha
+  ContasReceber.tsx:621 ......... confirm("Tem certeza que deseja cancelar?") -> LEGADO (nao usado)
+  ContasReceberEnterprise.tsx:559 confirm("Tem certeza que deseja excluir?") -> Excluir linha
+  FaturaLista.tsx:135 ........... confirm("Excluir rascunho ...?") -> Excluir rascunho
+  FaturaLista.tsx:138 ........... alert("Erro ao excluir: ...") -> erro do fluxo acima
+  FaturaLista.tsx:147 ........... prompt("Motivo do cancelamento (opcional):") -> Cancelar emitida
+  FaturaLista.tsx:150 ........... alert("Erro ao cancelar: ...") -> erro do fluxo acima
+  Inadimplencia.tsx:19 .......... alert("Disparando IA Cognitiva...") -> botao stub
+  useFormExitGuard.ts:91 ........ window.confirm("Ha alteracoes nao salvas...") -> fechar form
+  (Page/Financeiro.tsx e src/services/financeiro: ZERO nativos.)
+CLASSIFICACAO: sem paginacao [GAP]; search/filter/sort client [UX]; nativos [UX];
+  status provisao [BUG]; listarPagaveis morto [LEGADO].
+
+--------------------------------------------------------------------------------
+5.5 PAGAMENTO DE PRESTADORES — MAPA POR AREA (10 itens)
+--------------------------------------------------------------------------------
+Fonte primaria: pagamentos_prestadores (quase tudo le dessa tabela; o comentario
+FIN-P1-02 afirma ordens_servico=0 em producao).
+
+[A] NOVO PAGAMENTO
+ 1 componente: botao :1564-1567; modal :2716-2961; handler :1282-1375
+ 2 service: criarPagamento (pagamentoPrestadorService.ts:197) [inalcancavel]
+ 3 tabela: le pagamentos_prestadores (escrita pretendida)
+ 4 RPC: NENHUMA (INSERT direto bloqueado por S1)
+ 5 origem: fetchPrestadores/fetchOssDoPrestador/fetchContasFinanceiras
+ 6 cria: historicamente o INSERT de criarPagamento
+ 7 proximo passo: "Salvar Lancamento" :2956
+ 8 status: em_aberto / aguardando_aprovacao / pendente
+ 9 funcionalidade: LEGADA/BLOQUEADA
+ 10 bloqueio: botao disabled sempre + title; handler aborta :1283; S1 revoga INSERT
+
+[B] DASHBOARD OPERACIONAL
+ componente :1577-1678; helpers dashboardPrestadorHelper; tabela pp; sem RPC;
+ origem pagamentos+manuais+escalaRepasse; leitura; status pago/cancelado/divergente;
+ COMPLETA (leitura).
+
+[C] VISAO DO PERIODO
+ componente :1789-1856; service: calculoRepassePrestador + "Gerar Fechamento";
+ tabela pp; "Gerar Fechamento" bloquado (S2) :922; PARCIAL.
+
+[D] APTOS PARA LOTE
+ componente :1858-1949 + modal :2564-2604; helpers lotePagamentoHelper;
+ tabela pp (filtros conferido/aprovado/elegivel_lote=true/lote_id null);
+ RPC f_gerar_lote_pagamentos (pagamentoPrestadorService.ts:346); a RPC cria o lote;
+ proximo: "Gerar Ordem/Lote" :2599; status em_lote; COMPLETA.
+
+[E] PAGAMENTOS MANUAIS
+ componente :1951-2107; service pagamentoPrestadorService;
+ tabela pp origem_lancamento='manual'; RPC f_aprovar_pagamento_prestadores +
+ f_confirmar_pagamento_prestador; reprovar/cancelar SEM RPC (disabled :2075/:2094);
+ PARCIAL.
+
+[F] FECHAMENTOS ANTERIORES
+ componente :2109-2291; service fechamentoService (listar/buscar/conferir/aprovar/
+ pagar/cancelar); tabela pp tipo_pagamento='fechamento'; RPC f_confirmar_pagamento_
+ fechamento (so no Pagar); criar/conferir/aprovar/cancelar BLOQUEADOS (S2);
+ status em_conferencia/conferido/aprovado/pago/cancelado; PARCIAL.
+
+[G] REPASSES DA PROGRAMACAO
+ componente :2293-2407; service escalaMapper + escalaFinanceiroAdapter +
+ comprovantesService; tabela alocacoes_escala (finalizada=true, is_teste=false) +
+ entregas_protocolo; sem RPC; "Gerar Repasse" BLOQUEADO :720/:2381; LEGADA/BLOQUEADA.
+
+[H] RELATORIO FINANCEIRO
+ componente :2411-2505; helpers relatorioPrestadorHelper; derivado de pp; sem RPC;
+ leitura/print/CSV; filtros de status; COMPLETA.
+
+[I] CONTA CORRENTE
+ componente :2506-2561; SEM service dedicado (fetch inline :493-556); tabela pp
+ (prestador_id, is_teste=false, status<>cancelado); sem RPC; saldo montado em
+ memoria; PARTIAL.
+
+--------------------------------------------------------------------------------
+5.6 NOVO PAGAMENTO — POR QUE APARECE VERDE/DESABILITADO
+--------------------------------------------------------------------------------
+ - Cor VERDE fixa por classe Tailwind: "bg-green-600 hover:bg-green-700" (:1564).
+ - DESABILITADO incondicional: atributo `disabled` puro (sem expressao) :1564.
+ - Aparencia esmaecida: base do Button tem disabled:opacity-50/pointer-events-none.
+ - Existe casca (modal/handler/service), mas o handler aborta na 1a linha :1283
+   com toast "pendente de RPC oficial (S2)" e o restante e inalcancavel.
+ - Relacao FIN-SEC: S1 (20260924000018) REVOKE INSERT/UPDATE/DELETE de pp para
+   authenticated; S2 (TMS-FIN-SEC-02-S2, PASS 2026-09-24 19:49) desabilitou a UI
+   e removeu UPDATE direto (atualizarStatusPagamento passou a rotear por RPC ou
+   lancar erro).
+ RESPOSTA: e UX (esmaecido) + funcao INCOMPLETA por BLOCKED-SEC deliberado.
+ Nao existe contrato seguro reutilizavel para pagamento manual avulso; o unico
+ caminho seguro existente e o fluxo de lote/aprovacao/baixa por RPC. NAO reativar
+ DML direto.
+
+--------------------------------------------------------------------------------
+5.7 PAGAMENTOS MANUAIS — ORIGEM DAS LINHAS "Servico Escala / Origem Manual /
+    R$ 0,00 / Bloqueado / Pendente"
+--------------------------------------------------------------------------------
+ - Fonte: pagamentos_prestadores WHERE origem_lancamento='manual' AND is_teste=false
+   (fetchPagamentosManuais :459-484; fallback sem filtro de origem se 42P01).
+ - "Servico Escala" = valor de `tipo_lancamento` renderizado como Badge :1994.
+ - "Manual" = origem_lancamento==='manual' :1996-2007.
+ - "R$ 0,00" = valor_liquido=0 (:2009-2017; fmtMoeda tem guarda ??0 :249-250).
+ - "Bloqueado" = calcularStatusFinanceiro retorna bloqueado quando valorLiquido<=0
+   (statusFinanceiroPrestador.ts:69-70; label :45).
+ - "Pendente" = status_pagamento==='pendente' :2045-2049.
+ - Nao ha filtro textual por esses rotulos.
+ - EVIDENCIA (backup 2026-09-24, tabela pp 108 linhas): dos 12 registros
+   origem_lancamento='manual', 8 sao tipo_lancamento="Servico Escala" com
+   valor_liquido="0.00" -> exatamente essas linhas. Os outros 4 sao "Servico OS"
+   com valores reais.
+ - Sao registros REAIS (provisoes manuais antigas de valor zero), nao apenas teste.
+   Status atual em producao: NECESSITA-PROVA-DB.
+
+--------------------------------------------------------------------------------
+5.8 FECHAMENTOS ANTERIORES
+--------------------------------------------------------------------------------
+ - Entidade usada pela TELA: pagamentos_prestadores com tipo_pagamento='fechamento'
+   + fechamento_id (auto-FK) (20260911000001:12-27). Status DERIVADO em
+   TS (em_conferencia->conferido->aprovado->pago) fechamentoService.ts:223-233.
+ - Entidade CONCORRENTE orfa: fechamentos_prestador (+ itens_fechamento_prestador
+   + movimentos_conta_corrente_prestador) 20260821000000 — so o extratoPrestadorService
+   toca, sem chamador de UI.
+ - Criacao esperada: fechamentoService.criarFechamento (:101-189) INSERT + vinculo
+   de itens; na UI esta BLOQUEADO :921-923 ("pendente de RPC oficial (S2)"); no
+   banco, S1 revoga INSERT/UPDATE.
+ - Por que 0 fechamentos:
+     1) BLOQUEIO contratual S2 (nao cria pela UI);
+     2) BLOQUEIO de banco S1 (INSERT/UPDATE negados);
+     3) os triggers M66/M80 NAO gravam `tipo_pagamento='fechamento'` -> provisoes
+        automaticas tem tipo_pagamento NULL e nao entram como fechamento;
+     4) filtro de periodo = mes corrente por padrao (periodo_inicio>=dataInicio E
+        periodo_fim<=dataFim) -> historico fora da janela desaparece;
+     5) estado vazio explicito :2123-2127.
+ - Distincao: BLOCKED-SEC (criacao) + FILTRO (periodo) + FLUXO NAO IMPLEMENTADO
+   (RPC de criar/conferir/aprovar/cancelar) + provavel SEM DADOS (NECESSITA-PROVA-DB).
+
+--------------------------------------------------------------------------------
+5.9 REPASSES DA PROGRAMACAO
+--------------------------------------------------------------------------------
+ - O que e: repasse devido ao prestador por servico finalizado na Programacao que
+   ainda NAO foi convertido em pagamentos_prestadores.
+ - Fonte: alocacoes_escala finalizada=true, is_teste=false, data_escala no periodo
+   (:689-717) -> filtrar isAlocacaoFaturavel -> escalaParaItemRepasse; mapeado de
+   alocacoes_escala.valor_repasse.
+ - Criterio "pendente": finalizada E ainda nao provisionada; dedup contra
+   pagamentos_prestadores por numero de OS (:1427-1441).
+ - Mensagem "Nenhum repasse pendente da Programacao Operacional" :2324-2327 quando
+   escalaAgrupada vazio (sem alocacoes finalizadas no mes, ou todas ja convertidas,
+   ou filtro de comprovante zerando).
+ - Gerar Repasse: BLOQUEADO (S2) :720-722 / botao disabled :2381.
+ - Ja existe integracao M66/M80 que provisiona pp; NAO e preciso criar integracao
+   nova — o que falta e apenas o caminho oficial de geracao manual (RPC).
+ - Vazio em producao: NECESSITA-PROVA-DB.
+
+--------------------------------------------------------------------------------
+5.10 CONTA CORRENTE DO PRESTADOR
+--------------------------------------------------------------------------------
+ - Tela: inline em PagamentoPrestadores.tsx (:493-556 fetch; :2506-2561 render).
+ - Creditos: cada pagamento natureza='credito' -> credito=valor_liquido.
+ - Debitos: quando status='pago' -> linha extra debito=valor_liquido.
+ - Saldo: acumulado cronologico em memoria (nao vem de view contabil).
+ - Vinculo: OS/cliente via extratoPrestadorService.construirExtratoPorPeriodo
+   (casa alocacoes_escala.ordem_servico_id e clientes); fechamento via
+   pagamentos_prestadores_itens; pagamento via natureza/status.
+ - Tabela contabil existente NAO usada na tela: movimentos_conta_corrente_prestador
+   (lida por extratoPrestadorService.buscarMovimentosPeriodo :725-760).
+ - Filtros que JA existem (backend): prestador_id; extratoPrestadorService aceita
+   periodo, clienteId, origem; listarExtratos aceita status/status_pagamento.
+ - Filtros que FALTAM na TELA: periodo, cliente, OS, origem, status, credito/debito,
+   busca textual, paginacao. Prestador e single-select obrigatorio.
+ - Nao implementar nesta missao.
+
+--------------------------------------------------------------------------------
+5.11 UX / VISUAL (inventario; NAO redesenhar)
+--------------------------------------------------------------------------------
+ - Fontes muito pequenas: numerosos text-[9px]/text-[10px]/text-[11px] em
+   ContasPagar (:1040-1070 etc.), ContasReceber.tsx, ResumoExecutivoFinanceiro
+   (:211-302), RelatorioPagamentoPrestador (:220-380), MargemPorOS (:293-386),
+   ConfigFinanceira (:44-250), MonitoramentoCombustivel (:188-212).
+ - Hierarquia tipografica inconsistente entre telas (headers ora text-2xl, ora
+   text-[11px] uppercase em colunas).
+ - Tabelas densas: muitas colunas + sub-linhas font 10px (ContasPagar/Receber).
+ - Botoes disabled sem explicacao: ContasPagar (disabled sem title em 427/428/524/
+   580/1246/1247). Outros tem title util (PagamentoPrestadores S2).
+ - Ausencia de tooltip em varias acoes por icone.
+ - alert/confirm/prompt NATIVOS: ver 5.4 (8 ocorrencias no financeiro + 1 hook).
+ - Estados vazios: alguns claros (Fechamentos :2123-2127; Repasses :2324-2327);
+   outros genericos ("Nenhuma despesa localizada" durante loading).
+ - Falta de filtros com backend pronto: Contas a Receber (cliente/categoria/
+   centro/data) e Conta Corrente.
+ - Falta de paginacao: Conferencia, Contas a Pagar, Pagamento de Prestadores,
+   Tesouraria/Lotes (CNAB). Faturas: parcial (sem numeros). Contas a Receber e
+   Margem por OS: OK (numerica).
+ - Acoes por icone sem rotulo (eye/pencil/trash/printer) sem tooltip consistente.
+ - Empty/loading de tabela compartilhando flag de submit.
+ - Nomenclatura: "Financeiro Enterprise" visivel em sidebar/topbar vs titulo da
+   pagina "Financeiro e Rentabilidade" ([UX] ja registrado no GATE-01 U1).
+
+================================================================================
+6. MATRIZ DE CLASSIFICACAO OBRIGATORIA
+================================================================================
+Categorias: [OK] [UX] [BUG] [GAP] [LEGADO] [BLOCKED-SEC] [DATA] [NECESSITA-PROVA-DB]
+
+ID   | AREA            | ACHADO                                                        | CLASSIFICACAO
+-----+-----------------+---------------------------------------------------------------+-----------------
+F01  | Conferencia     | Fonte alocacoes concluidas+finalizadas; elegibilidade; checkbox | [OK]
+F02  | Conferencia     | Botao "Criar Fatura" cria rascunho (nome induz a erro)         | [UX]
+F03  | Conferencia     | Item faturado permanece na lista (nao sai da fila)             | [BUG]
+F04  | Conferencia     | Sem paginacao (LIMIT 300 silencioso)                           | [GAP]
+F05  | Conferencia     | Criterio triplo (semaforo/KPI/elegibilidade) divergente        | [UX]
+F06  | Conferencia     | Anti-duplicidade so por os_id; item sem OS desprotegido        | [BUG]
+F07  | Conferencia     | POD/romaneio sao aviso, nao gate de faturamento                | [OK/UX]
+FA01 | Faturas         | Fluxo rascunho -> emitir -> 1 AR (RPC) com guardas             | [OK]
+FA02 | Faturas         | Sem etapa "Validar" separada de "Emitir"                       | [GAP]
+FA03 | Faturas         | Estados aguardando_aprovacao/aprovada sem escritor             | [LEGADO/GAP]
+FA04 | Faturas         | "Titulo vinculado" so apos emissao                             | [OK]
+FA05 | Faturas         | atualizarFatura proibe status (transicao so por RPC)           | [OK]
+AR01 | Receber         | Listagem financeiro_receber + baixa RPC + paginacao numerica   | [OK]
+AR02 | Receber         | Botao "Gerar Fatura" desabilitado (legado)                     | [LEGADO]
+AR03 | Receber         | Campos fantasma (origem/competencia/valor_baixado) na UI       | [BUG]
+AR04 | Receber         | abrirDetalheFatura morto/passa r.id em vez de fatura_id        | [BUG]
+AR05 | Receber         | Filtros cliente/categoria/centro/data sem UI (backend pronto)  | [GAP]
+AR06 | Receber         | ContasReceber.tsx orfao (0 imports, nao compila)               | [LEGADO]
+AP01 | Pagar           | Sem paginacao (array inteiro)                                  | [GAP]
+AP02 | Pagar           | Busca/filtros/ordenacao client-side                            | [UX]
+AP03 | Pagar           | confirm nativo no Cancelar (localhost:8800)                    | [UX]
+AP04 | Pagar           | status "provisao" nao permitido pelo CHECK (provisorio)        | [BUG]
+AP05 | Pagar           | listarPagaveis paginado e codigo morto                         | [LEGADO/GAP]
+AP06 | Pagar           | Botoes disabled sem title                                      | [UX]
+PP01 | Pag. Prestador  | Novo Pagamento disabled + handler abortado                     | [BLOCKED-SEC]
+PP02 | Pag. Prestador  | Dashboard Operacional leitura                                  | [OK]
+PP03 | Pag. Prestador  | Visao do Periodo; Gerar Fechamento bloqueado                   | [BLOCKED-SEC]
+PP04 | Pag. Prestador  | Aptos para Lote (RPC f_gerar_lote_pagamentos)                  | [OK]
+PP05 | Pag. Prestador  | Manuais: aprovar/pagar RPC OK; reprovar/cancelar bloqueados    | [BLOCKED-SEC]
+PP06 | Pag. Prestador  | Linhas "Servico Escala / R$0,00 / Bloqueado / Pendente"        | [DATA]
+PP07 | Pag. Prestador  | Fechamentos: criar/conferir/aprovar/cancelar bloqueados        | [BLOCKED-SEC]
+PP08 | Pag. Prestador  | Fechamento pode mostrar 0 (bloqueio+periodo+sem dados)         | [BLOCKED-SEC/DATA]
+PP09 | Pag. Prestador  | Repasses: Gerar Repasse bloqueado                              | [BLOCKED-SEC]
+PP10 | Pag. Prestador  | Relatorio Financeiro leitura/export                            | [OK]
+PP11 | Pag. Prestador  | Conta Corrente simplificada (so pp, sem filtros)               | [GAP]
+PP12 | Pag. Prestador  | Duas entidades fechamento concorrentes                         | [LEGADO]
+PP13 | Pag. Prestador  | f_confirmar_pagamento_prestador com 3 definicoes (drift)       | [NECESSITA-PROVA-DB]
+PP14 | Pag. Prestador  | gerar_numero_fechamento_prestador com LPAD invalido            | [BUG]
+PP15 | Pag. Prestador  | Sem paginacao na listagem de pagamentos                        | [GAP]
+UX01 | UX              | Fontes 9-11px / densidade / hierarquia                         | [UX]
+UX02 | UX              | alert/confirm/prompt nativos (8 + hook)                        | [UX]
+UX03 | UX              | Faturas: paginacao parcial sem numeros                         | [UX]
+UX04 | UX              | "Financeiro Enterprise" visivel vs "Financeiro e Rentabilidade"|[UX]
+LG01 | Legado          | ContasReceber.tsx orfao                                        | [LEGADO]
+LG02 | Legado          | Estados de fatura mortos                                       | [LEGADO]
+LG03 | Legado          | Criacao de AR por M66/M80 removida (single source)             | [OK]
+DB01 | Dados           | 9 faturas emitidas sem AR (legado)                             | [DATA]
+DB02 | Dados           | 10 pp 'pago' sem baixa                                         | [DATA]
+DB03 | Dados           | 20 composicoes orfas; 23 pp teste; 20 sem tenant               | [DATA]
+DB04 | Dados           | 8 manuais "Servico Escala" valor 0                             | [DATA]
+
+================================================================================
+7. O QUE REUTILIZAR (preservar)
+================================================================================
+ - RPC f_emitir_fatura (rascunho -> 1 AR, guardas) e o fluxo Conferencia->FaturaPanel.
+ - Anti-duplicidade: uq_receber_fatura_id / uq_fr_os_id / uq_fp_os_id / uq_pp_os_id
+   + trigger por os_id + trg_faturas_bloqueio_emissao_sem_ar.
+ - Botao "Gerar Fatura" DESABILITADO em Contas a Receber (evita caminho paralelo).
+ - PaginationBar (numerica "Anterior | 1 | 2 | 3 | ... | Proxima") ja usada em
+   Contas a Receber e Margem por OS — adotar como padrao.
+ - RPCs do prestador: f_aprovar_pagamento_prestadores, f_gerar_lote_pagamentos,
+   f_confirmar_pagamento_prestador, f_confirmar_pagamento_fechamento (mantidas e
+   testadas pelo FIN-SEC-02).
+ - Bloqueios FIN-SEC S1/S2 (REVOKE + UI sem DML): NAO reabrir.
+ - Backend de filtros de Contas a Receber (cliente/categoria/centro/data) — so
+   faltam os controles de UI.
+ - helpers (dashboardPrestadorHelper, lotePagamentoHelper, relatorioPrestadorHelper,
+   statusVencimento) — funcoes puras e testaveis.
+ - FaturaPanel/FaturaManualDialog (modais profissionais) e o padrao de modal
+   PremiumDocumentDialog/PremiumDialogHeader.
+ - extratoPrestadorService.construirExtratoPorPeriodo (base para Conta Corrente
+   profissional, reutilizando OS/cliente/origem).
+
+================================================================================
+8. O QUE NAO DEVE SER REFEITO
+================================================================================
+ - Nao reconstruir a base do Financeiro (Conferencia, Faturas, AR, AP, RPCs, triggers
+   M66/M80, anti-duplicidade, baixas). Ja existe e funciona.
+ - Nao recriar telas de Pagamento de Prestadores; apenas completar RPCs pendentes.
+ - Nao remover/reativar o botao "Gerar Fatura" de Contas a Receber (e legado).
+ - Nao reintroduzir DML direto em pagamentos_prestadores (S1/S2).
+ - Nao alterar RLS/RPC/triggers/banco nesta ou nas micro-missoes de UX.
+ - Nao apagar ContasReceber.tsx sem missao dedicada (apenas marcar/ignorar).
+ - Nao mexer em Calvo/CESAR/pagamentos/baixas/orfaos/DRE/Caixa/migrations.
+ - Nao tocar nas dependencias da secao 12.
+
+================================================================================
+9. CORRECOES MINIMAS FUTURAS (sem implementar agora)
+================================================================================
+ - [UX] Padronizar paginacao com PaginationBar em Conferencia, Contas a Pagar,
+   Pagamento de Prestadores e Tesouraria/Lotes (server-side quando viavel).
+ - [UX] Substituir alert/confirm/prompt por AlertDialog/Toast padronizados
+   (ContasPagar, ContasReceberEnterprise, FaturaLista, Inadimplencia, hook).
+ - [UX] Conferencia: filtro default Faturamento = nao_faturado + "Limpar selecao"
+   claro + unificar criterio de elegibilidade (uma unica funcao reutilizada).
+ - [BUG] Conferencia: apos faturado, sumir da fila por default (sem apagar historico).
+ - [BUG] ContasPagar: corrigir "provisao" -> "provisorio" (ou ajustar CHECK).
+ - [BUG] Anti-duplicidade para itens sem OS (fatura_itens.alocacao_id).
+ - [GAP] Fatura: writer/RPC de transicao de status + botao "Validar" (menor gap;
+   estados ja existem). Decidir se AR nasce no Validar ou no Emitir.
+ - [GAP] Contas a Receber: expor filtros cliente/categoria/centro/data (backend ja
+   suporta) e corrigir campos fantasma/DetalheFatura.
+ - [BLOCKED-SEC] Criar RPCs oficiais para: reprovar/cancelar pagamento_prestador,
+   criacao/conferencia/aprovacao/cancelamento de fechamento, pagamento manual avulso
+   e geracao manual de repasse. So entao reabilitar os botoes desabilitados.
+ - [GAP] Conta Corrente: adicionar filtros (periodo/cliente/OS/origem/status/
+   natureza/busca) e considerar view contabil com movimentos_conta_corrente_prestador.
+ - [LEGADO] Marcar ContasReceber.tsx e estados de fatura mortos como legado
+   (documentado; remocao em missao propria).
+ - [UX] Renomear "Financeiro Enterprise" visivel -> "Financeiro e Rentabilidade".
+
+================================================================================
+10. ORDEM RECOMENDADA DAS MICRO-MISSOES
+================================================================================
+ 1. FIN-UX-02 — Paginacao padronizada (PaginationBar) nas telas sem paginacao.
+ 2. FIN-UX-03 — Substituir dialogs nativos por componentes padrao + tooltips de
+    botoes disabled.
+ 3. FIN-UX-04 — Conferencia: filtro default nao_faturado + unificar elegibilidade
+    + corrigir permanencia do faturado.
+ 4. FIN-UX-05 — Contas a Receber: expor filtros + corrigir campos fantasma/Detalhe.
+ 5. FIN-UX-06 — Contas a Pagar: corrigir status provisao + usar listarPagaveis.
+ 6. FIN-UX-07 — Conta Corrente: filtros + (avaliar) view contabil.
+ 7. FIN-SEC-03 — RPCs oficiais para acoes hoje desabilitadas (reprovacao/cancelamento/
+    fechamento/pagamento manual/repasse) e entao reabilitar UI.
+ 8. FIN-UX-08 — Gate "Validar Fatura" (writer + UI), se confirmado pelo negocio.
+ 9. FIN-UX-09 — Polimento visual (fontes/hierarquia/nomenclatura).
+ 10. FIN-DATA — Saneamento planejado (faturas sem AR, pp pago sem baixa, orfaos).
+
+================================================================================
+11. RISCOS
+================================================================================
+ R1. Reabrir escrita direta em pagamentos_prestadores (quebrar S1/S2). ALTO.
+ R2. Reativar o "Gerar Fatura" de AR criando caminho paralelo ao f_emitir_fatura. ALTO.
+ R3. Criar "Validar" que grave status sem RPC (a atualizarFatura proibe de proposito). MEDIO.
+ R4. Drift de f_confirmar_pagamento_prestador (3 definicoes) — confirmar a versao
+     ativa antes de qualquer alteracao. MEDIO.
+ R5. Filtro de periodo (mes corrente) escondendo fechamentos historicos. MEDIO.
+ R6. LPAD invalido em gerar_numero_fechamento_prestador (fallback aleatorio
+     silencioso). MEDIO.
+ R7. Paginacao "cosmetica" sobre array ja carregado (Contas a Receber/Faturas) nao
+     resolve volume; Conferencia tem LIMIT 300 silencioso. MEDIO.
+ R8. Dados legados/teste poluindo KPIs se filtros is_teste nao forem completos. MEDIO.
+
+================================================================================
+12. DEPENDENCIAS / NAO TOCAR (apenas registrado)
+================================================================================
+ Preservar e NAO substituir/eliminar:
+  04D3C4 audits/credenciais | 04D3C5 Classe F | tests/e2e | tmp/scratch |
+  rotacao controlada de credenciais | 04D4 auditoria negativa | Calvo | CESAR |
+  pagamentos/baixas | orfaos | P1 estruturais | dashboards x banco | DRE x Caixa |
+  Categoria x Plano x Centro | Config Financeira/PDF/RLS | migrations/schema drift |
+  CAD-PERSIST | Comercial/Orcamento | APP-STAB | APP E2E | Admin APP | Recrutamento |
+  Master 360.
+ Dependencias cruzadas encontradas: RLS de pagamentos_prestadores e demais tabelas
+  financeiras; triggers M66/M80; RPCs de baixa; contas_financeiras; composicao
+  financeira; Programacao Operacional/Escala; App Motorista (portal_tracking).
+  Apenas registrar — nada alterado.
+
+================================================================================
+13. EVIDENCIA DE DADOS REAIS (cross-check, leitura previa)
+================================================================================
+  FONTE: TMS-FIN-GATE-01 (2026-09-24 19:21) e TMS-FIN-PROG-05D3 (2026-09-24 16:42).
+  ATENCAO: os numeros sao daquela data; missoes FIN-DATA posteriores podem ter
+  alterado contagens de teste. Reconfirmar em missao com acesso ao banco.
+   - faturas 42 (17 emitida / 25 rascunho) | fatura_itens 44 | financeiro_receber 124
+   - financeiro_baixas 19 | financeiro_pagar 178 | pagamentos_prestadores 137
+   - contas_financeiras 1 | centros_custo 0 | lotes 0
+   - AR por fatura_id = 7 | duplicatas AR = 0 | AR orfao = 0
+   - faturas emitidas SEM AR = 9 (legado; guarda so vale para novas)
+   - pp: total 137 | teste 23 | pago 12 (10 pago sem baixa) | cancelado 3 |
+     conferido 14 | aprovado 10 | elegivel_lote 4 | sem_os 12 | sem_prestador 1 |
+     agregados (fechamento) 2 | com_lote 0
+   - status receber: aberto 34, pendente 60, a vencer 10, a_vencer 2, vencido 1,
+     vencida 1, cancelado 2, cancelada 1, pago 11, null 1
+   - status pagar: aberto 72, pendente 59, cancelado 28, cancelada 2, a vencer 5,
+     parcial 1, pago 11
+   - manuais pp: 12 (8 "Servico Escala" valor 0.00; 4 "Servico OS" com valor)
+  ITENS CLASSIFICADOS [NECESSITA-PROVA-DB] (codigo nao conclui):
+   P1. Existencia fisica de colunas (origem/competencia/etc.) em financeiro_receber.
+   P2. Versao ativa de f_confirmar_pagamento_prestador (3 definicoes).
+   P3. Contagem atual de fechamentos (pp tipo='fechamento' e fechamentos_prestador).
+   P4. Estado atual dos 8 manuais "Servico Escala" valor 0.
+   P5. Aplicacao em producao da migration 20260924000002 (AR single source).
+
+================================================================================
+14. PASS / BLOCKED / FAIL
+================================================================================
+ PASS — auditoria concluida em modo somente leitura.
+  - Zero DML/DDL. Zero migration. Zero alteracao de RLS/RPC/tela/registro.
+  - REDMI nao conectado. Nenhum secret exibido.
+  - Fluxos REAL x ALVO entregues (secao 2/3/4); matriz de classificacao (secao 6);
+    reutilizar (7), nao refazer (8), correcoes minimas (9), ordem (10), riscos (11).
+  - Unico artefato criado: este relatorio .txt.
+
+================================================================================
+15. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-UX-01-FLUXO-REAL-MAPA-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-UX-01-FLUXO-REAL-MAPA-RESULTADO.txt
+ TAMANHO ..: 49319 bytes
+ DATA/HORA : 25/09/2026 16:59:44
+
+================================================================================
+FIM DO RELATORIO — TMS-FIN-UX-01-FLUXO-REAL-MAPA
+================================================================================

@@ -1,0 +1,297 @@
+﻿===============================================================================
+RELATÓRIO DE AUDITORIA REAL — ESCALA / ORDENS DE SERVIÇO (TMS)
+MISSÃO: ESCALA-CORE-01A — AUDITORIA COMPLETA DE CÓDIGO E BANCO SUPABASE
+DATA: 2026-09-09
+AMBIENTE: TMS Conexão Express (Supabase Postgres Produção / Local Codebase)
+STATUS: SOMENTE AUDITORIA — NENHUM CÓDIGO ALTERADO
+===============================================================================
+
+1. RESUMO EXECUTIVO
+-------------------------------------------------------------------------------
+A auditoria técnica rastreou a implementação real do ciclo de vida de Escala e
+Ordens de Serviço (OS) em todo o frontend (React/TypeScript), backend (Edge 
+Functions, Services) e banco de dados Supabase (tabelas, triggers, RLS, RPCs).
+
+RESULTADO GLOBAL: O sistema possui tabelas e fluxos ricos implementados, mas
+opera com DESCONEXÃO CRÍTICA entre Escala e OS, RLS restritiva ocultando ordens,
+e divergência de nomenclaturas de status na Grade que quebram o uso diário:
+
+• 69% das alocações na base (131 de 190) NÃO POSSUEM OS VINCULADA.
+• 15% das OS no banco (18 de 121) estão INVISÍVEIS no TMS por ausência de policy
+  RLS de SELECT para operadores do TMS (usa policy do Portal Cliente).
+• A Grade de Escala (visualização semanal) compara status com strings legadas
+  ("confirmado", "operacao", "aguardando", "concluido") e renderiza TODAS as
+  alocações reais como cinza genérico (sem cor de badge ou semáforo operacional).
+• A edição de alocação deleta o campo status antes do update (delete updatePayload.status),
+  impedindo alterar o status pelo modal da grade.
+• Não existe botão para cancelar/desvincular alocação no modal da Grade.
+• A exclusão de OS na UI está bloqueada por chave de senha ausente no .env e
+  por ausência total de política RLS de DELETE na tabela ordens_servico.
+
+
+2. MATRIZ DE CLASSIFICAÇÃO DOS 14 ITENS RASTREADOS
+-------------------------------------------------------------------------------
+ITEM                        | CLASSIFICAÇÃO     | IMPACTO OPERACIONAL IMEDIATO
+----------------------------+-------------------+------------------------------
+01. Criação de Escala       | PARCIAL           | Funciona via Edge Function, mas desvinculada de OS
+02. Edição de Escala        | PARCIAL           | Salva valores, mas bloqueia mudança de status
+03. Exclusão de Escala      | PARCIAL           | Cancela na lista, mas impossível cancelar na Grade
+04. Exclusão de OS          | QUEBRADO          | Bloqueada por env ausente e sem DELETE no RLS
+05. Persistência Supabase   | RISCO DE DADO     | RLS de OS esconde 18 OS; navegação não refaz fetch
+06. Cliente                 | PARCIAL           | Salva cliente_id UUID, mas OS tem colunas redundantes
+07. Prestador               | PARCIAL           | Salva prestador_id, mas gates de serviço são bypassados
+08. Data                    | PARCIAL           | Usa timestamptz com split 'T12:00:00' para contornar TZ
+09. Região                  | NÃO IMPLEMENTADO  | Coluna regiao existe no DB mas é omitida no payload
+10. Status da Escala        | QUEBRADO          | Grade compara strings erradas; cards ficam todos cinza
+11. Número Interno Conexão  | PARCIAL           | OS gera random no front; Escala não tem numeração própria
+12. Romaneio / OC Cliente   | RISCO DE DADO     | Alocação não tem coluna: enterra no JSONB metadata
+13. Valores, KM, Pedágio    | FUNCIONANDO       | Fórmulas e triggers calculam receita e repasse
+14. Integração Finan. e App | PARCIAL           | Central Fin. e App perdem dados quando falta OS
+
+
+3. DETALHAMENTO DOS PROBLEMAS POR ITEM
+-------------------------------------------------------------------------------
+
+[01] CRIAÇÃO DE ESCALA / ALOCAÇÃO — PARCIAL
+• Arquivos envolvidos:
+  - src/components/operacao/EscalaLista.tsx (linhas 1041-1087)
+  - supabase/functions/criar-alocacao-escala/index.ts
+  - src/services/escala/escalaService.ts (linhas 296-421)
+• Evidência de Código:
+  O formulário de criação em EscalaLista.tsx importa criarAlocacao de escalaService.ts,
+  mas no handleCreateReserva NÃO UTILIZA a função do service. Em vez disso, invoca a Edge
+  Function criar-alocacao-escala enviando o header x-tms-internal-token.
+  Como consequência, os gates operacionais de elegibilidade de prestador e veículo
+  implementados em escalaService.ts (verificarElegibilidadeOperacionalPrestador,
+  verificarCompatibilidadeTipoVeiculo, etc.) são ignorados na criação pelo modal.
+• Além disso, se o operador não buscar manualmente uma OS no combobox (linha 2145),
+  a alocação é gravada com ordem_servico_id = null.
+
+[02] EDIÇÃO DE ESCALA / ALOCAÇÃO — PARCIAL
+• Arquivos envolvidos:
+  - src/components/operacao/EscalaLista.tsx (linhas 1030-1039)
+  - src/services/escala/escalaService.ts (atualizarAlocacao)
+• Evidência de Código:
+  Na linha 1031-1032 de EscalaLista.tsx:
+  `	s
+  const updatePayload = { ...payload };
+  delete updatePayload.status;
+  const resultado = await atualizarAlocacao(existing.id, updatePayload);
+  `
+  O campo status é explicitamente deletado antes do update. Se o operador abrir uma
+  alocação existente e tentar alterar o status para avançar ou corrigir o fluxo, a
+  alteração é completamente ignorada pelo banco.
+
+[03] EXCLUSÃO E CANCELAMENTO DE ALOCAÇÃO — PARCIAL
+• Arquivos envolvidos:
+  - src/components/operacao/EscalaLista.tsx (linhas 800-822, 1835, 3450-3457)
+  - src/services/escala/escalaService.ts (cancelarAlocacao)
+• Evidência de Código:
+  O cancelamento lógico (status = 'cancelada') funciona via cancelarAlocacao(), porém
+  o acionador visual só existe na aba de tabela "Controle Diário" (linha 1835).
+  Na Grade Semanal (onde a equipe de expedição passa 90% do tempo), ao clicar na célula
+  da alocação abre-se o modal. O rodapé do modal (linha 3450) possui APENAS dois botões:
+  "Confirmar via WA" e "Salvar na Grade". Não há botão "Cancelar Alocação" no modal.
+
+[04] EXCLUSÃO DE ORDEM DE SERVIÇO (OS) — QUEBRADO
+• Arquivos envolvidos:
+  - src/components/operacao/OrdensServicoLista.tsx (linhas 256-294)
+  - Banco de dados: pg_policies (tabela ordens_servico)
+  - .env
+• Evidência Comprovada:
+  1. No arquivo OrdensServicoLista.tsx:259:
+     const senhaCorreta = import.meta.env.VITE_ADMIN_DELETE_PASSWORD;
+     A variável VITE_ADMIN_DELETE_PASSWORD NÃO ESTÁ DEFINIDA no arquivo .env.
+     Qualquer clique em excluir OS resulta imediatamente em:
+     "Exclusão de OS desativada: configure VITE_ADMIN_DELETE_PASSWORD no .env".
+  2. No Postgres: A tabela ordens_servico NÃO possui NENHUMA policy de DELETE para a
+     role uthenticated (ao contrário de locacoes_escala que tem e_delete_tms).
+     Mesmo que a senha fosse informada, a API REST do Supabase retornaria erro de RLS.
+
+[05] PERSISTÊNCIA SUPABASE E POLÍTICAS RLS — RISCO DE DADO
+• Arquivos e Tabelas envolvidas:
+  - Banco de dados: pg_policies em ordens_servico
+  - src/components/operacao/EscalaLista.tsx (linhas 364-380, 528-540)
+• Evidências Comprovadas no Banco:
+  1. A tabela ordens_servico possui apenas 4 policies:
+     - os_insert_portal (INSERT autenticado para cliente)
+     - os_insert_tms (INSERT autenticado para operadores TMS)
+     - os_update_tms (UPDATE autenticado para operadores TMS)
+     - os_select_own (SELECT autenticado compartilhado)
+     NÃO EXISTE A POLICY os_select_tms!
+     A única policy de leitura (os_select_own) exige:
+     ((cliente_id IS NOT NULL) AND (cliente_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')).
+     Resultado comprovado na base: Das 121 OS registradas, 8 estão com cliente_id NULL e
+     10 com cliente_id em formato não-UUID (total 18 OS, ou 15% do acervo). Essas 18 OS
+     estão COMPLETAMENTE INVISÍVEIS na tela OrdensServicoLista.tsx.
+  2. Em EscalaLista.tsx (linhas 364-380):
+     loadAlocacoes executa gte('data_escala', inicioMes).lte('data_escala', fimMes) onde
+     hoje = new Date(). Ele roda uma única vez no mount. Quando o despachante clica nos
+     botões de navegação de semana/mês (
+extPeriodo / prevPeriodo), loadAlocacoes NÃO é
+     rechamado. Dados de semanas ou meses fora do mês corrente não aparecem na tela.
+
+[06] CLIENTE E PRESTADOR — PARCIAL
+• Arquivos e Tabelas envolvidas:
+  - Tabelas ordens_servico, locacoes_escala, clientes, prestadores
+  - src/lib/dbMappers.ts
+• Evidência Comprovada:
+  Na tabela ordens_servico existem colunas duplicadas que geram confusão estrutural:
+  cliente (uuid) vs cliente_id (text).
+  prestador (uuid) vs prestador_id (text).
+  A trigger _trg_propagar_financeiro_alocacao preenche cliente com o UUID e cliente_id
+  com a razão social/nome fantasia! Quando a trigger grava o nome fantasia em cliente_id,
+  a policy os_select_own oculta a OS recém-criada porque o texto não é um UUID válido.
+
+[07] PRESTADOR E DISPONIBILIDADE — PARCIAL
+• Arquivos envolvidos:
+  - src/components/operacao/EscalaLista.tsx (linhas 306-315)
+• Evidência Comprovada:
+  loadPrestadores filtra status = 'ativo'. Traz dados cadastrais e veículos vinculados.
+  Porém, ao salvar uma alocação, os gates de elegibilidade (como CNH vencida, veículo
+  incompatível com carga refrigerada, etc.) não barram a criação porque o modal ignora o service.
+
+[08] DATA E FUSO HORÁRIO — PARCIAL
+• Evidência de Código (EscalaLista.tsx:400):
+  data: (r.data_escala && r.data_escala.includes('T') ? r.data_escala.split('T')[0] : r.data_escala) + 'T12:00:00'
+  O sistema aplica um artificio de adicionar "T12:00:00" para evitar que o fuso GMT-3
+  subtraia 3 horas e mude a data para o dia anterior. Funciona como paliativo visual, mas
+  ao comparar com filtros de data do Postgres pode haver inconsistências nas bordas do mês.
+
+[09] REGIÃO — NÃO IMPLEMENTADO
+• Evidência Comprovada:
+  A tabela locacoes_escala possui a coluna egiao text.
+  No entanto, no objeto payload gerado em EscalaLista.tsx (linhas 898-966), a propriedade
+  egiao NÃO É INCLUÍDA. O campo fica permanentemente NULL nas alocações criadas pelo TMS.
+
+[10] STATUS DA ESCALA — QUEBRADO NA GRADE
+• Arquivos e Tabelas envolvidas:
+  - Banco: locacoes_escala.status
+  - src/components/operacao/EscalaLista.tsx (linhas 1623-1647)
+• Evidência Comprovada:
+  No banco de dados, os status válidos e reais são:
+  planejada, guardando_aceite, ceita, ecusada, em_rota, concluida, cancelada, ocorrencia.
+  Na renderização das células da Grade (linhas 1624-1644), o código verifica:
+  `	s
+  if (st === "confirmado") { ... }
+  else if (st === "operacao") { ... }
+  else if (st === "aguardando") { ... }
+  else if (["concluido", "finalizado"].includes(st)) { ... }
+  `
+  NENHUM desses valores corresponde aos status gravados no banco (guardando_aceite, ceita,
+  em_rota, concluida)!
+  Consequência: Toda alocação real cai invariavelmente no else:
+  slotStyle = "bg-slate-100 text-slate-600 border-b-2 border-b-slate-400"; slotLabel = st.toUpperCase();
+  Os slots perdem a identificação visual rápida de cores e ícones na grade diária.
+
+[11] NÚMERO INTERNO CONEXÃO (OS) — PARCIAL
+• Evidência Comprovada:
+  Em ordens_servico, a numeração interna é gerada no frontend via Math.random():
+  OS-YYYYMM-XXXXXX (OrdemServicoForm.tsx:253).
+  Em locacoes_escala, NÃO EXISTE coluna de numeração sequencial nem código Conexão.
+  A alocação possui apenas o UUID (id).
+  Se não estiver explicitamente vinculada a uma OS (ordem_servico_id), a alocação não
+  tem identidade numérica oficial Conexão.
+
+[12] ROMANEIO / OC DO CLIENTE — RISCO DE DADO
+• Evidência Comprovada:
+  Na tabela ordens_servico, existe a coluna omaneio text.
+  Na tabela locacoes_escala, NÃO EXISTE coluna omaneio e NÃO EXISTE coluna 
+umero_oc.
+  O romaneio digitado na Escala é salvo exclusivamente dentro de metadata.numeroOC.
+  Caso a alocação não tenha vínculo com OS, o romaneio fica encapsulado no JSONB, exigindo
+  tratamento de fallback em cascata para ser localizado pelo financeiro.
+
+[13] VALORES, KM, PEDÁGIO, ADICIONAIS — FUNCIONANDO COM RESSALVA
+• Evidência Comprovada:
+  Os valores de frete cliente (alor_frete), repasse prestador (alor_repasse), pedágio
+  (alor_pedagio), ajudante (alor_ajudante), adicionais (alor_adicional) e KM realizados
+  são persistidos corretamente nas colunas numéricas de locacoes_escala.
+  A trigger _trg_propagar_financeiro_alocacao calcula a composição líquida do prestador.
+  Ressalva: Em EscalaLista.tsx:913, alor_repasse envia apenas a base; os adicionais e pedágio
+  são enviados em colunas separadas e somados pela trigger, mas no modal de edição isso pode
+  gerar confusão na exibição do "Total Repasse".
+
+[14] INTEGRAÇÃO EXISTENTE COM FINANCEIRO E APP — PARCIAL
+• Evidências Comprovadas:
+  1. Central Financeira (centralFinanceiroService.ts:184):
+     Filtra alocações com status = 'concluida' AND finalizada = true.
+     Porém, das 57 alocações concluídas no banco, 31 (54%) ESTÃO SEM OS (ordem_servico_id = null).
+     Para essas 31 alocações, o cruzamento com inanceiro_receber, inanceiro_pagar,
+     pagamentos_prestadores e geração de Fatura FICA INVIABILIZADO (aparecem com badge "Sem OS").
+  2. App Motorista (_avancar_etapa_app_motorista):
+     Quando o motorista informa o romaneio no aplicativo móvel, a função tenta atualizar
+     o romaneio na tabela ordens_servico. Se a alocação não estiver vinculada a uma OS,
+     o romaneio não é propagado para o TMS operacional.
+
+
+4. NÚMEROS DA BASE DE DADOS (EVIDÊNCIAS SQL REAIS)
+-------------------------------------------------------------------------------
+• Total de Ordens de Serviço: 121
+  - Com cliente_id UUID: 103
+  - Sem cliente_id (NULL): 8  -> [INVISÍVEIS NO TMS VIA RLS]
+  - Com cliente_id não-UUID: 10 -> [INVISÍVEIS NO TMS VIA RLS]
+  - Com numeração 'ALOC%' / 'OS-ALOC%': 14
+
+• Total de Alocações na Escala: 190
+  - Com OS vinculada (ordem_servico_id NOT NULL): 59 (31%)
+  - Sem OS vinculada (ordem_servico_id IS NULL): 131 (69%)
+  - Concluídas e Finalizadas: 57
+  - Concluídas e Finalizadas SEM OS: 31 (54% das concluídas)
+
+• Distribuição de Status em alocacoes_escala:
+  - aguardando_aceite: 67
+  - concluida: 62
+  - planejada: 34
+  - em_rota: 12
+  - aceita: 7
+  - cancelada: 6
+  - recusada: 2
+
+
+5. LISTA CURTA DE CORREÇÕES EM ORDEM DE CRITICIDADE
+-------------------------------------------------------------------------------
+As correções abaixo são estritamente pontuais para viabilizar o uso operacional
+imediato da Escala HOJE, sem qualquer refatoração arquitetural:
+
+[P0 - CRÍTICO / BLOQUEADOR OPERACIONAL]
+1. CRIAR POLICY os_select_tms NA TABELA ordens_servico:
+   - Motivo: Atualmente, operadores do TMS não possuem policy de SELECT dedicada em
+     ordens_servico, usando a os_select_own do portal do cliente. Isso faz com que 18 OS
+     com cliente_id nulo ou preenchido com nome desapareçam do sistema.
+   - Ação: Adicionar policy de SELECT para usuários authenticated com vínculo em tenant_usuarios.
+
+2. CORRIGIR MAPEAMENTO DE STATUS NA GRADE DA ESCALA (EscalaLista.tsx):
+   - Motivo: A grade compara com strings inexistentes ("confirmado", "operacao", "aguardando",
+     "concluido"), fazendo com que todos os cards fiquem cinzas e sem badges de status.
+   - Ação: Ajustar as comparações para os valores reais: guardando_aceite, ceita,
+     em_rota, concluida, ocorrencia.
+
+3. PERMITIR ATUALIZAR STATUS NO MODAL DA GRADE (EscalaLista.tsx):
+   - Motivo: A linha 1032 executa delete updatePayload.status, tornando impossível avançar
+     ou retificar o status de uma alocação ao salvá-la na Grade.
+   - Ação: Manter o status selecionado pelo operador quando for uma transição válida.
+
+4. ADICIONAR BOTÃO "CANCELAR ALOCAÇÃO" NO MODAL DA GRADE (EscalaLista.tsx):
+   - Motivo: Não é possível cancelar alocação a partir da visualização de grade; o operador é
+     forçado a sair da grade, ir para a aba de tabela, procurar a linha e clicar no botão.
+   - Ação: Incluir botão de cancelamento (reutilizando setCancelTarget) no DialogFooter do modal.
+
+[P1 - CONSISTÊNCIA OPERACIONAL E FINANCEIRA]
+5. VINCULAÇÃO / GERAÇÃO AUTOMÁTICA DE OS AO CRIAR ALOCAÇÃO NA ESCALA:
+   - Motivo: 69% das alocações estão sem OS, o que quebra a conciliação na Central Financeira.
+   - Ação: Ao criar uma alocação na Escala sem OS selecionada, invocar a criação de uma OS mínima
+     vinculada e salvar o ordem_servico_id na alocação.
+
+6. HABILITAR RE-FETCH AO MUDAR SEMANA/MÊS NA ESCALA (EscalaLista.tsx):
+   - Motivo: loadAlocacoes só roda no mount e busca apenas o mês corrente. Ao avançar para
+     a próxima semana (se cair no mês seguinte) ou mudar de mês, a grade fica em branco.
+   - Ação: Disparar recarregamento de alocações quando o período visível ultrapassar o range carregado.
+
+7. PERSISTIR CAMPO egiao NO PAYLOAD DA ESCALA (EscalaLista.tsx):
+   - Motivo: O campo existe na tabela mas é omitido no objeto payload do formulário.
+   - Ação: Adicionar egiao: novoPrestadorRegiao || null no payload de INSERT/UPDATE.
+
+===============================================================================
+FIM DO RELATÓRIO DE AUDITORIA ESCALA-CORE-01A
+===============================================================================

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LucideIcon, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +16,7 @@ interface PortalKpiCardProps {
   className?: string;
 }
 
-export function PortalKpiCard({
+export const PortalKpiCard = memo(function PortalKpiCard({
   title,
   value,
   subtitle,
@@ -118,4 +119,4 @@ export function PortalKpiCard({
       </CardContent>
     </Card>
   );
-}
+});

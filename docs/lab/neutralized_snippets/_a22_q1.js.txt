@@ -1,0 +1,10 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const r = await c.query("SELECT id, nome_completo, auth_user_id, status FROM public.prestadores ORDER BY nome_completo LIMIT 30");
+  console.log(JSON.stringify(r.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

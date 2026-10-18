@@ -1,0 +1,192 @@
+FIN-363D-PREP — COLETA DE PROVAS DOS INDICADORES
+=================================================
+Data: 2026-09-07T02:33:14.033Z
+Ambiente: PRODUCAO (Supabase remoto)
+
+NENHUM CODIGO/BANCO/DADO ALTERADO
+
+═══════════════════════════════════════════════════════════════
+MATRIZ DE CONFIANCA
+═══════════════════════════════════════════════════════════════
+
+CAT | KPI | FONTE | FORMULA | VALOR DB | ESPERADO | CONTAM | EVIDÊNCIA
+----|-----|-------|---------|----------|----------|--------|----------
+FLUXO | Entradas realizadas | financeiro_baixas | SUM(valor_baixado) WHERE titulo_tabela=financeiro_receber AND NOT estornada | 74.06 | 74.06 | SIM | 6 registros
+FLUXO | Saídas realizadas | financeiro_baixas | SUM(valor_baixado) WHERE titulo_tabela=financeiro_pagar AND NOT estornada | 1656.53 | 1656.53 | SIM | 10 registros
+FLUXO | Fluxo realizado | financeiro_baixas | entradas-saídas | -1582.47 | -1581.54 | DIFERE | 74.06 - 1656.53 = -1582.47
+FLUXO | Conta: Cora | contas_financeiras+baixas | saldo_ini=0.93 entradas=24.70 saidas=1656.53 | -1631.83 | n/a | n/a | ID=9741ad36 12 baixas
+FLUXO | Saldo inicial (soma contas) | contas_financeiras | SUM(saldo_inicial) WHERE ativa=true | 0.93 | n/a | n/a | Soma dos saldos iniciais
+FLUXO | Entradas previstas | financeiro_receber | COUNT/SUM WHERE 0 baixas | 176728.21 | n/a | n/a | 101 títulos
+FLUXO | Saídas previstas | financeiro_pagar | COUNT/SUM WHERE 0 baixas | 67689.26 | n/a | n/a | 88 títulos
+FLUXO | Baixas s/ conta: financeiro_receber | financeiro_baixas | WHERE conta_financeira_id IS NULL AND NOT estornada | 4 baixas, R$49.36 | financeiro_receber sem conta | CONTAMINADO | Dados test/legacy
+DRE | Receita Bruta | financeiro_receber | SUM(valor) WHERE status<>cancelado AND vencimento no mês AND categoria NOT ~ financeira | 14870.54 | 14870.54 | SIM | 10 títulos
+DRE | (-) Deduções (impostos) | financeiro_pagar | SUM(valor) WHERE (categoria||plano_contas) ~ imposto/tributo/ISS/PIS/COFINS/ICMS/IRRF/INSS | NULL | 0.00 | SIM | 0 registros
+DRE | Receita Líquida | DRE | Receita Bruta - Deduções | 14870.54 | 14870.54 | SIM | 14870.54 - NULL
+DRE | Custos Prestadores | pagamentos_prestadores | SUM(valor_liquido) WHERE impacto_dre=true AND competencia BETWEEN mes | 3150.34 | 3150.34 | SIM | 1 pagamentos
+DRE | Resultado Bruto | DRE | Receita Líquida - Custos Prestadores | 11720.20 | 11720.20 | SIM | 14870.54 - 3150.34
+DRE | Despesas Operacionais | financeiro_pagar | SUM(valor) WHERE os_id IS NULL AND (categoria||plano_contas) NOT ~ imposto/financeira | 137.89 | 137.89 | SIM | 1 despesas
+DRE | Despesa class: outras | financeiro_pagar | classificarDespesa(categoria+plano_contas) | 137.89 | n/a | n/a | 1 registros
+DRE | Pagar categorias (detalhe) | financeiro_pagar | GROUP BY categoria, plano_contas | [{"c":"(vazia)","pc":"(vazio)","n":"13","t":"4167.89"}] | n/a | n/a | 1 combinações
+DRE | EBITDA/Lucro Líquido | DRE | Resultado Bruto - Despesas Operacionais | 11582.31 | 11582.31 | SIM | 11720.20 - 137.89
+DRE | Margem Bruta % | DRE | (Resultado Bruto / Receita Líquida) × 100 | 78.8% | 78.9% | SIM | n/a
+DRE | Margem Líquida % | DRE | (EBITDA / Receita Líquida) × 100 | 77.9% | 77.9% | SIM | n/a
+DRE | Receita comp. 2026-06 | financeiro_receber | SUM(valor) WHERE vencimento BETWEEN mes | 21251.25 | n/a | n/a | 14 títulos
+DRE | Receita comp. 2026-07 | financeiro_receber | SUM(valor) WHERE vencimento BETWEEN mes | 17500.00 | n/a | n/a | 11 títulos
+DRE | Receita comp. 2026-08 | financeiro_receber | SUM(valor) WHERE vencimento BETWEEN mes | 123020.00 | n/a | n/a | 59 títulos
+DRE | Receita comp. 2026-09 | financeiro_receber | SUM(valor) WHERE vencimento BETWEEN mes | 14870.54 | n/a | n/a | 10 títulos
+DRE | Receita comp. 2026-10 | financeiro_receber | SUM(valor) WHERE vencimento BETWEEN mes | 160.48 | n/a | n/a | 13 títulos
+MARGEM | Receita Total | margemOsService | SUM(receita) — fonte: financeiro_receber OU ordens_servico.valor_cliente | 168132.99 | 152731.99 | DIFERE | 121 OS
+MARGEM | Custo Total | margemOsService | SUM(custoPrestador+outrosCustos) — fonte: pagamentos_prestadores+financeiro_pagar | 45342.50 | 44258.00 | DIFERE | pp=31042.50 + pag=14300.00
+MARGEM | Margem Total | margemOsService | Receita - Custo | 122790.49 | 108473.99 | DIFERE | 168132.99 - 45342.50
+MARGEM | Margem Média % | margemOsService | (Margem/Receita)×100 | 73.0% | 71.0% | DIFERE | 122790.49/168132.99×100
+MARGEM | Quantidade OS | margemOsService | linhas.length | 121 | 103 | DIFERE | Todas OS
+MARGEM | OS negativas | margemOsService | COUNT WHERE margem<0 | 5 | 5 | SIM | Todas OS
+CONTAM | OS TEST/DEMO/AUDITORIA | ordens_servico | UPPER LIKE test/auditoria/dev/demo | 32 OS, receita=52002.74 custo=10169.00 margem=41833.74 | 0, R$0 | CONTAMINADO | M90-TEST-MR8AHG3V R$650.00; M86-TEST-MR88UC58 R$650.00; OS-TESTE-17769899222 R$1800.00; TEST-M80-CF-MR751I7O R$3000.00; M86-TEST-MR88UO6B R$650.00; TESTE-OS-202604-1516 R$91.37; TESTE-FIN-202604-904 R$91.37; TEST-M80-EDGE-MR7544 R$5000.00; OS-TESTE-17769898329 R$1800.00; TEST-M80-OK-MR752GEF R$3000.00; OS_AUDITORIA_1777344 R$0.00; OS-TESTE-1003 R$2400.00; TEST-M80-FULL-MR750V R$2000.00; TEST-M80-CANCEL-MRH2 R$1000.00; TEST-M80-MRH2VAJP R$1500.00; M90-TEST-MR8AK450 R$650.00; TEST-M80-CANCEL-MR74 R$1000.00; M85-TEST-MR88HVOC-B R$650.00; M90-TEST-MR8AILKG R$650.00; TEST-M80-MR74LQ3H R$1500.00; OS-TESTE-1002 R$2100.00; TESTE_MIN_1782757719 R$15000.00; OS-TESTE-1001 R$1800.00; OS-TESTE-1000 R$1500.00; OS-TESTE-1004 R$2700.00; OS-TESTE-MR6IPT2H R$80.00; OS-TESTE-MR6ISIWO R$80.00; OS-TESTE-MR6IT7ZR R$80.00; OS-TESTE-MR6ITJ37 R$80.00; OS-TEST-178131113282 R$0.00; OS-TEST-178131053607 R$500.00; TESTE-001 R$0.00
+CONTAM | OS REAIS | ordens_servico | Filtro exclude test/auditoria/dev/demo | 89 OS, receita=116130.25 custo=35173.50 margem=80956.75 | n/a | n/a | Apenas OS reais
+CONTAM | Impacto % | margemOsService | TEST_RECEITA / TOTAL_RECEITA × 100 | 30.9% | 0% | CONTAMINADO | test=52002.74 / total=168132.99
+CONTAM | Receber TEST | financeiro_receber | UPPER LIKE test/auditoria/dev/demo/sentinela | 20 registros, 26689.00 | 0, R$0 | CONTAMINADO | n/a
+CONTAM | Pagar TEST | financeiro_pagar | UPPER LIKE test/auditoria/dev/demo/sentinela | 24 registros, 15124.79 | 0, R$0 | CONTAMINADO | n/a
+DASH | Receber por status | financeiro_receber | GROUP BY status | [{"s":"pendente","n":"49","t":"96086.96"},{"s":"aberto","n":"32","t":"48290.00"},{"s":"a vencer","n":"11","t":"15660.00"},{"s":"pago","n":"10","t":"9874.56"},{"s":"a_vencer","n":"2","t":"3300.00"},{"s":null,"n":"1","t":"999.00"},{"s":"vencido","n":"1","t":"2100.00"},{"s":"cancelada","n":"1","t":"600.00"},{"s":"vencida","n":"1","t":"890.75"}] | n/a | n/a | Distribuição
+DASH | Pagar por status | financeiro_pagar | GROUP BY status | [{"s":"aberto","n":"47","t":"35400.00"},{"s":"pendente","n":"24","t":"15810.00"},{"s":"a vencer","n":"16","t":"16341.37"},{"s":"pago","n":"11","t":"1794.42"},{"s":"cancelada","n":"2","t":"2320.00"},{"s":null,"n":"1","t":"999.00"}] | n/a | n/a | Distribuição
+DASH | OS por status | ordens_servico | GROUP BY status | [{"s":"finalizada","n":"39","t":"48312.74"},{"s":"pendente","n":"34","t":"33800.00"},{"s":"rascunho","n":"17","t":"18979.00"},{"s":"em_andamento","n":"9","t":"19400.00"},{"s":"agendada","n":"7","t":"12250.50"},{"s":"entregue","n":"6","t":"5000.00"},{"s":"concluida","n":"3","t":"5390.75"},{"s":"cancelada","n":"2","t":"2000.00"},{"s":"programacao","n":"2","t":"14300.00"},{"s":"em_analise","n":"1","t":"0.00"},{"s":"atrasada","n":"1","t":"2100.00"}] | n/a | n/a | Distribuição
+
+═══════════════════════════════════════════════════════════════
+FLUXO DE CAIXA — MATEMATICA
+═══════════════════════════════════════════════════════════════
+
+ENTRADAS REALIZADAS = R$74.06 (6 registros)
+SAIDAS REALIZADAS   = R$1656.53 (10 registros)
+FLUXO REALIZADO     = R$74.06 - R$1656.53 = R$-1582.47
+
+FLUXO POR CONTA:
+  Cora: saldo_ini=0.93 entradas=24.70 saidas=1656.53 fluxo=-1631.83
+SALDO INICIAL: R$0.93
+ENTRADAS PREVISTAS: R$176728.21 (101 titulos)
+SAIDAS PREVISTAS:   R$67689.26 (88 titulos)
+
+BAIXAS SEM CONTA FINANCEIRA (4 sentinelas FIN-362.1):
+  financeiro_receber: 4 baixas, R$49.36
+
+NOTA: Diferença de R$0,93 no fluxo (74,06 - 1656,53 = -1582,47 vs -1581,54)
+  Saldo inicial Cora = R$0,93. Fluxo realizado inclui saldo inicial = R$0,93 + 24,70 - 1656,53 = -1630,90
+  Ou: fluxo = entradas - saídas = 74,06 - 1656,53 = -1582,47 (sem saldo inicial)
+  Verificar se UI inclui saldo inicial no cálculo.
+
+═══════════════════════════════════════════════════════════════
+DRE — COMPETENCIA ECONOMICA (setembro 2026)
+═══════════════════════════════════════════════════════════════
+
+DRE = COMPETENCIA (vencimento), NAO FLUXO DE CAIXA (recebimento).
+
+1. Receita Bruta:     R$14870.54 (10 titulos)
+   fonte: financeiro_receber WHERE categoria NOT ~ financeira
+2. (-) Deducoes:      R$NULL (0 registros)
+   fonte: financeiro_pagar WHERE (categoria+plano_contas) ~ imposto
+3. = Receita Liquida: R$14870.54
+4. (-) Custos Prest.: R$3150.34 (1 pagamentos impacto_dre=true)
+   fonte: pagamentos_prestadores WHERE impacto_dre=true
+5. = Resultado Bruto: R$11720.20
+6. (-) Despesas Op.:  R$137.89 (1 despesas)
+   fonte: financeiro_pagar WHERE os_id IS NULL AND NOT imposto/financeira
+7. = EBITDA:          R$11582.31
+8. Margem Bruta:      78.8%
+9. Margem Liquida:    77.9%
+
+Por que Receita DRE >> Recebido no Fluxo:
+  DRE: R$14.870,54 de titulos VENCIDOS no mes (competencia)
+  Caixa: R$74,06 de baixas EFETIVAS (recebimento)
+  Diferenca = titulos vencidos mas nao pagos = carteira a receber
+
+DETALHE CATEGORIAS PAGAR (mes):
+  cat="(vazia)" plano="(vazio)" 13x R$4167.89
+
+═══════════════════════════════════════════════════════════════
+MARGEM POR OS — formulas reais do margemOsService.ts
+═══════════════════════════════════════════════════════════════
+
+FORMULA POR OS:
+  Receita = financeiro_receber (faturamento) OU ordens_servico.valor_cliente (prevista)
+  CustoPrestador = pagamentos_prestadores.valor_liquido WHERE impacto_dre=true AND os match
+  OutrosCustos = financeiro_pagar WHERE os_id match AND NOT repasse
+  Margem = Receita - CustoPrestador - OutrosCustos
+
+TODAS OS: 121 OS, receita=168132.99, custo=45342.50, margem=122790.49, media=73.0%, negativas=5
+
+CONTAMINACAO:
+  TEST/DEMO/AUDITORIA: 32 OS, receita=52002.74, custo=10169.00, margem=41833.74
+  REAIS: 89 OS, receita=116130.25, custo=35173.50, margem=80956.75
+  Impacto: 30.9% da receita total
+  OS TEST identificadas:
+    M90-TEST-MR8AHG3V st=rascunho receita=650.00 custo=0.00+0.00 margem=650.00
+    M86-TEST-MR88UC58 st=rascunho receita=650.00 custo=0.00+0.00 margem=650.00
+    OS-TESTE-17769899222 st=em_andamento receita=1800.00 custo=0.00+0.00 margem=1800.00
+    TEST-M80-CF-MR751I7O st=pendente receita=3000.00 custo=1750.00+0.00 margem=1250.00
+    M86-TEST-MR88UO6B st=rascunho receita=650.00 custo=0.00+0.00 margem=650.00
+    TESTE-OS-202604-1516 st=finalizada receita=91.37 custo=0.00+0.00 margem=91.37
+    TESTE-FIN-202604-904 st=finalizada receita=91.37 custo=0.00+0.00 margem=91.37
+    TEST-M80-EDGE-MR7544 st=finalizada receita=5000.00 custo=2850.00+0.00 margem=2150.00
+    OS-TESTE-17769898329 st=em_andamento receita=1800.00 custo=0.00+0.00 margem=1800.00
+    TEST-M80-OK-MR752GEF st=finalizada receita=3000.00 custo=1750.00+0.00 margem=1250.00
+    OS_AUDITORIA_1777344 st=rascunho receita=0.00 custo=0.00+0.00 margem=0.00
+    OS-TESTE-1003 st=agendada receita=2400.00 custo=0.00+0.00 margem=2400.00
+    TEST-M80-FULL-MR750V st=pendente receita=2000.00 custo=1200.00+0.00 margem=800.00
+    TEST-M80-CANCEL-MRH2 st=cancelada receita=1000.00 custo=530.00+0.00 margem=470.00
+    TEST-M80-MRH2VAJP st=finalizada receita=1500.00 custo=1000.00+0.00 margem=500.00
+    M90-TEST-MR8AK450 st=agendada receita=650.00 custo=350.00+0.00 margem=300.00
+    TEST-M80-CANCEL-MR74 st=cancelada receita=1000.00 custo=0.00+0.00 margem=1000.00
+    M85-TEST-MR88HVOC-B st=rascunho receita=650.00 custo=0.00+0.00 margem=650.00
+    M90-TEST-MR8AILKG st=rascunho receita=650.00 custo=0.00+0.00 margem=650.00
+    TEST-M80-MR74LQ3H st=finalizada receita=1500.00 custo=0.00+0.00 margem=1500.00
+    OS-TESTE-1002 st=em_andamento receita=2100.00 custo=0.00+0.00 margem=2100.00
+    TESTE_MIN_1782757719 st=rascunho receita=15000.00 custo=0.00+0.00 margem=15000.00
+    OS-TESTE-1001 st=concluida receita=1800.00 custo=0.00+0.00 margem=1800.00
+    OS-TESTE-1000 st=em_andamento receita=1500.00 custo=0.00+0.00 margem=1500.00
+    OS-TESTE-1004 st=concluida receita=2700.00 custo=0.00+0.00 margem=2700.00
+    OS-TESTE-MR6IPT2H st=finalizada receita=80.00 custo=103.50+0.00 margem=-23.50
+    OS-TESTE-MR6ISIWO st=finalizada receita=80.00 custo=103.50+0.00 margem=-23.50
+    OS-TESTE-MR6IT7ZR st=finalizada receita=80.00 custo=103.50+0.00 margem=-23.50
+    OS-TESTE-MR6ITJ37 st=finalizada receita=80.00 custo=103.50+0.00 margem=-23.50
+    OS-TEST-178131113282 st=rascunho receita=0.00 custo=0.00+0.00 margem=0.00
+    OS-TEST-178131053607 st=pendente receita=500.00 custo=325.00+0.00 margem=175.00
+    TESTE-001 st=pendente receita=0.00 custo=0.00+0.00 margem=0.00
+
+Receber TEST/DEV/AUDITORIA/SENTINELA: 20 registros, R$26689.00
+Pagar TEST/DEV/AUDITORIA/SENTINELA: 24 registros, R$15124.79
+
+═══════════════════════════════════════════════════════════════
+DASHBOARD — STATUS
+═══════════════════════════════════════════════════════════════
+
+Receber por status:
+  pendente: 49 titulos, R$96086.96
+  aberto: 32 titulos, R$48290.00
+  a vencer: 11 titulos, R$15660.00
+  pago: 10 titulos, R$9874.56
+  a_vencer: 2 titulos, R$3300.00
+  null: 1 titulos, R$999.00
+  vencido: 1 titulos, R$2100.00
+  cancelada: 1 titulos, R$600.00
+  vencida: 1 titulos, R$890.75
+Pagar por status:
+  aberto: 47 titulos, R$35400.00
+  pendente: 24 titulos, R$15810.00
+  a vencer: 16 titulos, R$16341.37
+  pago: 11 titulos, R$1794.42
+  cancelada: 2 titulos, R$2320.00
+  null: 1 titulos, R$999.00
+OS por status:
+  finalizada: 39 OS, R$48312.74
+  pendente: 34 OS, R$33800.00
+  rascunho: 17 OS, R$18979.00
+  em_andamento: 9 OS, R$19400.00
+  agendada: 7 OS, R$12250.50
+  entregue: 6 OS, R$5000.00
+  concluida: 3 OS, R$5390.75
+  cancelada: 2 OS, R$2000.00
+  programacao: 2 OS, R$14300.00
+  em_analise: 1 OS, R$0.00
+  atrasada: 1 OS, R$2100.00
+
+═══════════════════════════════════════════════════════════════
+FIM DA COLETA
+═══════════════════════════════════════════════════════════════

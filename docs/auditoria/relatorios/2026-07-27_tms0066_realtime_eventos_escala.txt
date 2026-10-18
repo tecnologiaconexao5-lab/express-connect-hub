@@ -1,0 +1,47 @@
+TMS-006.6 — HOMOLOGACAO REALTIME E AUDITORIA DOS EVENTOS
+               DA ESCALA
+
+Data: 2026-07-27
+Status: REALTIME UPDATE HOMOLOGADO — TRIGGER "CONCLUIDA"
+        COM FALSO POSITIVO DOCUMENTADO
+Percentual: 50% (provisorio)
+
+=======================================================================
+REALTIME
+=======================================================================
+
+UPDATE (cancelada) recebido via postgres_changes:    ✅
+INSERT (criacao) nao recebido:                       ❌ (timing?)
+
+=======================================================================
+TRIGGERS MAPEADOS (5 em alocacoes_escala)
+=======================================================================
+
+trg_evento_alocacao_criada       INSERT   → criada     ✅
+trg_evento_alocacao_cancelada    cancel   → cancelada  ✅ (fixed)
+trg_evento_alocacao_recusada     recusada → recusada   ✅
+trg_evento_alocacao_motorista_trocado swap   → trocado ✅
+trg_evento_operacao_finalizada   finalizar→ concluida  ❌ FALSO POSITIVO
+
+=======================================================================
+BUG DOCUMENTADO
+=======================================================================
+
+Trigger trg_evento_operacao_finalizada (m99:250) cria
+escala.alocacao.concluida quando finalizada=true, inclusive
+durante cancelamento. Deveria excluir canceladas:
+  AND NEW.status != 'cancelada'
+
+=======================================================================
+EVENTOS E HISTORICO (TESTE)
+=======================================================================
+
+3 eventos oficiais: criada ✅ cancelada ✅ concluida ❌ (bug)
+Historico: mudanca_status + finalizacao
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+REALTIME UPDATE HOMOLOGADO - TRIGGER "CONCLUIDA" COM FALSO
+POSITIVO DOCUMENTADO

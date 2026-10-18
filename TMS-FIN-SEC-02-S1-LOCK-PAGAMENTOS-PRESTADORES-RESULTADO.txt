@@ -1,0 +1,151 @@
+================================================================================
+MISSAO: TMS-FIN-SEC-02-S1-LOCK-PAGAMENTOS-PRESTADORES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao de seguranca P0 (bloqueio de escrita direta). SEM UI.
+RESULTADO: PASS — authenticated nao faz INSERT/UPDATE/DELETE direto; RPCs oficiais
+           continuam funcionando; PROD sem alteracao financeira.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. AUDITORIA PREVIA (inventario)
+--------------------------------------------------------------------------------
+GRANTs ANTES (pagamentos_prestadores):
+  authenticated: SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER, TRUNCATE
+  anon:          SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER, TRUNCATE
+  service_role:  idem (backend)
+POLICIES ANTES: pp_insert_own, pp_select_own, pp_select_tms, pp_update_own,
+  pp_update_tms (todas TO authenticated).
+WRITERS da tabela:
+  - trigger M66 f_trg_propagar_financeiro_alocacao (SECURITY DEFINER) -> INSERT/UPDATE
+  - trigger M80 f_trg_propagar_financeiro_os (SECURITY DEFINER) -> INSERT/UPDATE
+  - trigger f_trg_cancelar_financeiro_alocacao (SECURITY DEFINER) -> UPDATE
+  - RPC f_aprovar_pagamento_prestadores (DEFINER) -> UPDATE
+  - RPC f_gerar_lote_pagamentos (DEFINER) -> UPDATE
+  - RPC f_confirmar_pagamento_prestador (INVOKER) -> UPDATE
+  - UI (atualizarStatusPagamento) -> UPDATE direto (bypass) [alvo desta missao]
+Migrations que criaram grants/policies: baseline + 20260924...0006 (pp_update_tms).
+=> A unica writer oficial que DEPENDE do GRANT direto era f_confirmar_pagamento_
+   prestador (INVOKER). As demais sao DEFINER/trigger (nao dependem do grant).
+
+--------------------------------------------------------------------------------
+2. RPC AUTHORITY (o que foi preservado / ajustado)
+--------------------------------------------------------------------------------
+- f_aprovar_pagamento_prestadores: SECURITY DEFINER + search_path (inalterada).
+- f_gerar_lote_pagamentos:        SECURITY DEFINER + search_path (inalterada).
+- f_confirmar_pagamento_prestador: era INVOKER -> passou a SECURITY DEFINER +
+  search_path=public + guarda de autorizacao (auth.uid() + papel
+  super_admin/admin_tenant/financeiro + tenant quando os_id resolvivel).
+  AJUSTE MINIMO de autoridade para nao quebrar a baixa oficial sem o GRANT direto.
+  NAO foi criada policy generica nem service_role no browser.
+- M66/M80/cancelamento: SECURITY DEFINER (nao dependem do GRANT authenticated).
+
+--------------------------------------------------------------------------------
+3. GRANTS ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES:  authenticated {SELECT, INSERT, UPDATE, DELETE, ...}; anon {SELECT, INSERT,
+        UPDATE, DELETE, ...}; service_role {ALL}.
+DEPOIS: authenticated {SELECT, REFERENCES, TRIGGER, TRUNCATE}  (SEM SELECT perdido)
+        anon          {SELECT, REFERENCES, TRIGGER, TRUNCATE}  (SEM escrita)
+        service_role  {ALL}  (backend intacto)
+REVOKE INSERT, UPDATE, DELETE FROM authenticated, anon.
+
+--------------------------------------------------------------------------------
+4. POLICIES ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES:  pp_insert_own, pp_select_own, pp_select_tms, pp_update_own, pp_update_tms
+DEPOIS: pp_select_own, pp_select_tms  (SOMENTE SELECT)
+  Removidas: pp_update_tms, pp_update_own, pp_insert_own.
+  (Prestador mantem SELECT proprio; TMS mantem SELECT do tenant.)
+
+--------------------------------------------------------------------------------
+5. TESTES NEGATIVOS (A-G) — todos PASS
+--------------------------------------------------------------------------------
+A) authenticated financeiro UPDATE status_pagamento direto -> NEGADO ....... PASS
+B) authenticated admin UPDATE status_aprovacao direto -> NEGADO ........... PASS
+C) authenticated INSERT direto -> NEGADO .................................. PASS
+D) authenticated DELETE direto -> NEGADO .................................. PASS
+E) anon UPDATE -> NEGADO ................................................. PASS
+F) prestador UPDATE de outro pagamento -> NEGADO ........................ PASS
+G) prestador UPDATE do proprio pagamento -> NEGADO ...................... PASS
+(Mensagens: "permission denied for table pagamentos_prestadores".)
+
+--------------------------------------------------------------------------------
+6. TESTES POSITIVOS (H-M) — todos PASS (transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+H) f_aprovar_pagamento_prestadores funciona (fixture) .................... PASS
+I) f_gerar_lote_pagamentos funciona (fixture bancaria valida) ............ PASS
+J) f_confirmar_pagamento_prestador funciona (baixa real) ................. PASS
+K) M66 cria provisao automatica (trigger DEFINER, sem GRANT authenticated) PASS
+L) SELECT financeiro do tenant funciona (pp_select_tms; 117 linhas) ...... PASS
+M) SELECT prestador restrito ao proprio escopo (pp_select_own) ........... PASS
+
+--------------------------------------------------------------------------------
+7. MIGRATION / ROLLBACK
+--------------------------------------------------------------------------------
+- supabase/migrations/20260924000018_fin_sec02_s1_lock_pagamentos_prestadores.sql
+  (REVOKE escrita + DROP pp_update_tms/pp_update_own/pp_insert_own + RPC definer).
+- supabase/migrations/20260924000019_fin_sec02_s1_lock_pagamentos_prestadores_rollback.sql
+  (restaura GRANTs + policies + RPC INVOKER original).
+Nao toca: contas_financeiras, financeiro_receber, financeiro_pagar, lotes, AR,
+Margem, Efi.
+
+--------------------------------------------------------------------------------
+8. BANCO ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | lote_id NOT NULL 0 | status_pagamento='em_lote' 0 |
+financeiro_pagar 178 | financeiro_baixas 19.
+Testes mutaveis em BEGIN...ROLLBACK. Nenhuma alteracao financeira permanente.
+
+--------------------------------------------------------------------------------
+9. REGRESSAO
+--------------------------------------------------------------------------------
+- 05D.6B (RPC aprovar; usa fixtures via postgres): 20/20 PASS.
+- 05D.7C.1 (lote header/snapshot): 20/20 PASS.
+- 05D.4 (RLS SELECT): 13/13 PASS.
+- 05D.6A (pp_update_tms) e partes de 05D.6B.1/05D.7B.1/concorrencia: seus HARNESSES
+  mutavam pagamentos_prestadores como `authenticated` (UPDATE direto). Com S1 isso
+  passou a ser NEGADO -> os harnesses abortam. ISSO E O COMPORTAMENTO ESPERADO
+  (a policy testada foi removida por design). A autoridade das RPCs segue provada
+  por S1(H/I/J) + 05D.6B(20/20) + 05D.7C.1(20/20).
+- vitest subset financeiro: 6 arquivos / 115 testes PASS.
+- npm run build: OK — "built in 38.87s".
+- tsc: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+10. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) A UI ANTIGA (PagamentoPrestadores -> atualizarStatusPagamento / Marcar Pago)
+    VAI QUEBRAR ao tentar alterar status/baixar, pois nao passa pelas RPCs.
+    EXPECTED. S2 deve redirecionar a UI para f_aprovar_pagamento_prestadores e
+    f_confirmar_pagamento_prestador (e f_gerar_lote_pagamentos).
+R2) actionEngineService (IA) ainda faz INSERT direto em financeiro_receber (outra
+    tabela) — P0 separado (nao tratado aqui; S1 foca pagamentos_prestadores).
+R3) f_confirmar_pagamento_prestador virou DEFINER: a autorizacao e garantida pela
+    guarda interna (papel+tenant). Manter.
+R4) authenticated ainda possui REFERENCES/TRIGGER/TRUNCATE (herdado do baseline).
+    Nao permitem escrita DML direta; avaliar least-privilege depois.
+R5) anon mantem SELECT/REFERENCES/TRIGGER/TRUNCATE, mas sem policy nao le/escreve.
+
+--------------------------------------------------------------------------------
+11. CONFIRMACAO EXPLICITA
+--------------------------------------------------------------------------------
+*** S2 AINDA FALTA *** — a UI continua usando UPDATE direto e por isso deixara de
+funcionar para mudanca de status/baixa; S2 deve redireciona-la para as RPCs oficiais.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+S2/UI; actionEngineService; financeiro_receber; OrdensServicoLista; 9 faturas
+legado; 10 pagos sem baixa; Margem/data; contas_financeiras; anon grants de OUTRAS
+tabelas; os_select_cliente; Efi; APP; Programacao.
+
+================================================================================
+Arquivo ..: TMS-FIN-SEC-02-S1-LOCK-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-SEC-02-S1-LOCK-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Tamanho ..: 9305 bytes
+Data .....: 24/09/2026 19:26:52
+================================================================================
+FIM DO RELATORIO — TMS-FIN-SEC-02-S1
+================================================================================

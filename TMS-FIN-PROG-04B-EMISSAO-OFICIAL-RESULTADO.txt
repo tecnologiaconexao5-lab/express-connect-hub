@@ -1,0 +1,230 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-04B-EMISSAO-OFICIAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS (React/Vite/TS) + Supabase Postgres (PRODUCAO)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-04A-FATURA-FLOW-AUDIT-RESULTADO.txt
+TIPO: Implementacao do fluxo oficial de emissao. SEM sanear historico.
+================================================================================
+
+RESULTADO FINAL: PASS
+Evidencia: RASCUNHO / EMISSAO / IDEMPOTENCIA / SEQUENCIA POR CLIENTE / BYPASS /
+BANCO=SERVICE=UI comprovados. Historico (41/42/14) intacto.
+
+--------------------------------------------------------------------------------
+1. MIGRATION CRIADA E APLICADA
+--------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20260924000000_fin_prog04b_numero_cliente_emissao_oficial.sql
+Aplicacao: transacao unica via scripts/_prog04b_apply.mjs -> "MIGRATION APPLIED (COMMIT OK)".
+Conteudo (aditivo, sem backfill, sem tocar dados historicos):
+  M1) ALTER TABLE faturas ADD COLUMN numero_cliente integer (NULL).
+  M2) CREATE TABLE fatura_contadores_cliente (tenant_id, cliente_id,
+      ultimo_numero, updated_at, PK(tenant_id, cliente_id)) + RLS _tms.
+  M3) CREATE UNIQUE INDEX uq_faturas_numero_cliente
+      ON faturas(tenant_id, cliente_id, numero_cliente) WHERE numero_cliente IS NOT NULL.
+  M4) CREATE UNIQUE INDEX uq_receber_fatura_id
+      ON financeiro_receber(fatura_id) WHERE fatura_id IS NOT NULL.
+  M5) Trigger trg_faturas_bloqueio_emissao_sem_ar
+      (BEFORE INSERT OR UPDATE ON faturas): proibe NOVAS transicoes para 'emitida'
+      sem conta_receber_id; compativel com legado (nao afeta linhas ja emitida).
+  M6) CREATE OR REPLACE f_emitir_fatura: gera Nº Conexao + Nº Cliente + 1 AR.
+  M7) REVOKE EXECUTE FROM PUBLIC, anon nas RPCs de faturamento.
+
+Nao ha DROP/TRUNCATE/DELETE. Nenhum dado historico alterado. Sem backfill.
+
+--------------------------------------------------------------------------------
+2. SCHEMA ANTES x DEPOIS
+--------------------------------------------------------------------------------
+faturas:
+  ANTES: sem numero_cliente. DEPOIS: numero_cliente integer NULL.
+         (numero text UNIQUE permanece = Nº CONEXAO / FAT-YYYY-NNNNNN.)
+fatura_contadores_cliente:
+  ANTES: inexistente. DEPOIS: criada (tenant_id, cliente_id, ultimo_numero, updated_at).
+Indices:
+  ANTES: uq_faturas_numero_cliente/ uq_receber_fatura_id inexistentes.
+  DEPOIS: ambos existem (UNIQUE parciais).
+Trigger em faturas:
+  ANTES: nenhum. DEPOIS: trg_faturas_bloqueio_emissao_sem_ar.
+Grants f_emitir_fatura:
+  ANTES: anon, authenticated, postgres, service_role.
+  DEPOIS: authenticated, postgres, service_role (anon REVOGADO).
+Snapshot (evidence):
+  ANTES: col_numero_cliente=[] | tbl_contador=null | idx=[] | trg=[] |
+         fn_sha=2753dffbdd2274c4 | sem numero_cliente
+  DEPOIS: col=[numero_cliente] | tbl=fatura_contadores_cliente |
+          idx=[uq_faturas_numero_cliente, uq_receber_fatura_id] |
+          trg=[trg_faturas_bloqueio_emissao_sem_ar] |
+          fn_sha=1decaa316679d52d | com numero_cliente | anon ausente
+
+--------------------------------------------------------------------------------
+3. RPC f_emitir_fatura ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES (sha256:2753dffbdd2274c4): gerava apenas Nº Conexao; AR vinculado; status.
+DEPOIS (sha256:1decaa316679d52d): mesma assinatura/seguranca, com:
+  - guarda nova: FATURA_SEM_CLIENTE (cliente obrigatorio para Nº Cliente);
+  - geracao atomica do Nº Cliente:
+      INSERT INTO fatura_contadores_cliente (...) VALUES (tenant, cliente, 1)
+      ON CONFLICT (tenant_id, cliente_id)
+      DO UPDATE SET ultimo_numero = ... + 1 RETURNING ultimo_numero;
+  - UPDATE faturas SET ..., numero_cliente = v_numero_cliente;
+  - retorno inclui 'numero_cliente'.
+A transacao e unica (INSERT AR + UPDATE fatura). Lock SELECT ... FOR UPDATE mantido.
+
+--------------------------------------------------------------------------------
+4. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+DB:
+  supabase/migrations/20260924000000_fin_prog04b_numero_cliente_emissao_oficial.sql (NOVO)
+App:
+  src/services/financeiro/faturaTypes.ts        (Fatura.numero_cliente)
+  src/services/financeiro/faturaService.ts       (mapFatura; emitirFatura->numeroCliente;
+                                                  atualizarFatura SEM 'status';
+                                                  criarFaturaManual numero opcional;
+                                                  montarInputPdfFatura numeroCliente)
+  src/components/financeiro/FaturaManualDialog.tsx (usa RPC; sem bypass; labels emissao)
+  src/components/financeiro/FaturaPanel.tsx      (Nº Conexao + Nº Cliente; msg pos-emissao)
+  src/components/financeiro/FaturaLista.tsx      (colunas Nº Conexao + Nº Cliente)
+  src/utils/pdfFatura.ts                         (PdfFaturaInput.numeroCliente + render)
+Testes:
+  src/test/fin_prog04b_emissao.test.tsx          (NOVO — SERVICE/UI)
+  src/test/tms_s04_fatura_cliente_pdf.test.ts    (assert atualizado: "Nº Conexao")
+Evidencias (scripts; nao alteram producao):
+  scripts/_prog04b_snapshot.mjs, _prog04b_apply.mjs, _prog04b_provas.mjs,
+  _prog04b_final_check.mjs, _prog04b_authuid.mjs
+
+--------------------------------------------------------------------------------
+5. PROVA — TESTE A (RASCUNHO)
+--------------------------------------------------------------------------------
+Rascunho criado e lido: status=rascunho, numero=null, numero_cliente=null,
+conta_receber=null, ARs=0.  -> CONFIRMADO.
+(Rascunho NAO recebe numero definitivo e NAO cria titulo financeiro.)
+
+--------------------------------------------------------------------------------
+6. PROVA — TESTE B (EMISSAO)
+--------------------------------------------------------------------------------
+RPC f_emitir_fatura retornou:
+  success=true, numero="FAT-2026-000006", numero_cliente=1,
+  conta_receber_id="8424d9d7-...", valor_total=100, vencimento="2026-10-24".
+Fatura: status=emitida, numero=FAT-2026-000006, numero_cliente=1,
+        conta_receber_id preenchido, valor=100, cliente coerente, venc=2026-10-24.
+financeiro_receber: EXATAMENTE 1 titulo, fatura_id correto, valor=100,
+        status=aberto, data_vencimento=2026-10-24, cliente coerente. -> CONFIRMADO.
+
+--------------------------------------------------------------------------------
+7. PROVA — TESTE C (IDEMPOTENCIA)
+--------------------------------------------------------------------------------
+Segunda chamada da MESMA fatura: { success:false, error:"FATURA_JA_EMITIDA" }.
+Estado apos: numero=FAT-2026-000006, numero_cliente=1, ARs=1, contador_cliente=1.
+Nenhum segundo AR, nenhum novo Nº Conexao, nenhum novo Nº Cliente. -> CONFIRMADO.
+Reforco estrutural: uq_receber_fatura_id (1 AR por fatura no banco).
+
+--------------------------------------------------------------------------------
+8. PROVA — TESTE D (SEQUENCIA POR CLIENTE)
+--------------------------------------------------------------------------------
+Cliente A: Nº Cliente = [1, 2]   (2 emissoes)
+Cliente B: Nº Cliente = [1, 2]   (2 emissoes)
+Contadores INDEPENDENTES por cliente; Nº Conexao global sequencial:
+  FAT-2026-000006, 000007, 000008, 000009. -> CONFIRMADO, sem duplicidade.
+
+--------------------------------------------------------------------------------
+9. PROVA — TESTE E (BYPASS BLOQUEADO) + FLUXO MANUAL CORRIGIDO
+--------------------------------------------------------------------------------
+DB: UPDATE direto faturas SET status='emitida' (sem AR) foi BLOQUEADO pelo trigger:
+  "FATURA_EMITIDA_SEM_AR: transicao para emitida exige Conta a Receber (use
+   f_emitir_fatura)."
+  Fatura permaneceu status=rascunho, numero=null, numero_cliente=null, AR=0.
+
+Codigo: nao existe mais nenhuma escrita de status='emitida' fora da RPC.
+  - src: 0 ocorrencias de  status:"emitida"  em services/components/pages.
+  - atualizarFatura() teve "status" REMOVIDO do tipo (nao compila bypass).
+  - FaturaManualDialog.handleSalvarEGerarPDF agora chama emitirFatura() (RPC),
+    o MESMO caminho do FaturaPanel. Existe UM UNICO caminho autorizado:
+    f_emitir_fatura. -> CONFIRMADO.
+
+--------------------------------------------------------------------------------
+10. BANCO = SERVICE = UI
+--------------------------------------------------------------------------------
+BANCO   : f_emitir_fatura (provas TESTE B) -> numero=FAT-2026-000006, numero_cliente=1.
+SERVICE : buscarFaturaComItens (mock com dados reais) -> numero="FAT-2026-000010",
+          numero_cliente=7, status=emitida, conta_receber_id="ar1".  [PASS]
+UI      : FaturaPanel renderizado exibe "Nº Conexao" = FAT-2026-000010,
+          "Nº Cliente" = 7 (emitida) e "sera gerado na emissao" (rascunho). [PASS]
+Teste: src/test/fin_prog04b_emissao.test.tsx -> 3/3 PASS.
+(SERVICE=UI usa a MESMA estrutura de dados provada em BANCO; chain verificada.)
+
+--------------------------------------------------------------------------------
+11. REGRESSAO
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0 (0 erros).
+- npm run build -> OK, built in 36.06s.
+- Testes Financeiro/Faturas/Conferencia/Receber/Dashboard PROG-03:
+  tms_s04_fatura_cliente_pdf, fin_prog04b_emissao, fin_prog03_dashboard_real,
+  f38_fatura_manual, fin_p0_01_status_vencimento, fase1_centralFinanceiro,
+  f0e_pagamento_prestadores, f0f_fluxo_caixa -> 8 arquivos / 89 testes PASS.
+- Suite maior de faturas (fase2a/fase2b/fat_pdf/a30/tms_s04c) -> PASS apos ajuste
+  de 1 assercao de nomenclatura ("Fatura nº" -> "Nº Conexao").
+- 31 testes globais preexistentes (migration/SQL/Supabase) permanecem como estavam,
+  NAO agravados por esta missao.
+
+--------------------------------------------------------------------------------
+12. CONFIRMACAO — 41/42/14 NAO ALTERADAS
+--------------------------------------------------------------------------------
+Estado apos a missao (read-only):
+  FATURA 41: id ebbc46d2, numero=null, status=emitida, conta_receber_id=null,
+             valor_total=2114.60  (INALTERADA)
+  FATURA 42: id 7220ed09, numero=null, status=emitida, conta_receber_id=null,
+             valor_total=2091.40  (INALTERADA)
+  emitidas sem AR: 14 (inalterado) | faturas total: 41 | rascunhos: 26.
+  contadores: 0 (testes rodaram em transacao com ROLLBACK).
+  AR com fatura_id: 1 (somente o original FAT-2026-000001).
+  AR orfao da 41, M66/M80, Dashboard PROG-03, APP, Programacao Operacional,
+  RLS geral e demais dados historicos: NAO tocados.
+Observacao: a sequence seq_fatura_2026 avancou durante os testes (nao e
+transacional); a proxima emissao real usara FAT-2026-000010 em diante. Os
+registros/faturas/AR/contadores de teste NAO persistiram (ROLLBACK).
+
+--------------------------------------------------------------------------------
+13. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  Historico: as 14 emitidas sem AR e o AR orfao da 41 continuam existindo
+    (consistente com a missao). Saneamento e backfill ficam para missao propria.
+R2  Faturas manuais LEGADAS (35/36/37 etc.) possuem metadata.numeroManual; a
+    partir de agora o fluxo manual NAO exige numero e passa a gerar AR. Divergencia
+    semantica controlada (documentada), sem quebra de dados.
+R3  A guarda de "emitida sem AR" e trigger (nao CHECK) para nao quebrar o legado;
+    se algum processo legado tentar reativar uma fatura historica emitida sem AR
+    via UPDATE, a mudanca para 'emitida' ja estaria no OLD.status e nao dispara.
+R4  Anti-duplicidade de OS permanece por trigger aplicacional (nao por unique) —
+    fora do escopo desta missao (ja registrado na PROG-04A).
+R5  O Nº Cliente inicia em 1 para clientes sem contador (sem backfill). Clientes
+    com historico ainda nao contabilizado terao o Nº Cliente reiniciando; o
+    backfill opcional sera tratado em missao de saneamento.
+R6  Existe 1 AR legado com `fatura` texto "41" (fatura_id NULL) — nao conflita com
+    uq_receber_fatura_id (indice parcial). Mantido.
+
+--------------------------------------------------------------------------------
+14. PROXIMA MENOR MISSAO (PROG-04C)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-04C — SANEAMENTO DE FATURAS LEGADAS (dados, sem UI nova):
+  - Classificar/regularizar as 14 emitidas sem AR e o AR orfao da 41 (sem apagar
+    evidencia), decidindo caso a caso: emitir oficialmente (gerar Nº Conexao +
+    Nº Cliente + AR idempotente) ou manter como historico isolado.
+  - Backfill do contador fatura_contadores_cliente por cliente para que o Nº
+    Cliente continue a sequencia historica (sem reinicio).
+  - Validar que apos o saneamento: 0 faturas emitidas sem AR (exceto decisoes
+    explicitas) e contadores coerentes.
+  - Requer autorizacao previa (mexe em dados historicos). Sem tocar M66/M80/APP.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Migration aditiva CRIADA e APLICADA; nenhum dado historico alterado; nenhum
+  backfill; 41/42/14 e AR orfao intactos; M66/M80/Dashboard/Programacao/APP
+  intocados; RLS geral nao alterada (apenas grants das RPCs de fatura).
+- Fluxo unico de emissao (f_emitir_fatura) garantido por: codigo (unico caller),
+  tipo (remocao de status), trigger (novas transicoes) e indices (idempotencia).
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-04B-EMISSAO-OFICIAL
+================================================================================

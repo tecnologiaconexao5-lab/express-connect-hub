@@ -1,0 +1,93 @@
+AG-FIN3623B_PROVA_RECEBER.txt
+FIN-362.3B — Prova Real: Baixa de Receber com Rastreabilidade Bancária
+Data: 2026-09-05 08:30 BRT
+Ambiente: localhost:8800 (dev) → uwrvzsjtpgaifkktpepn.supabase.co (prod)
+
+=== RESULTADO: 7/7 PASS — PROVA COMPLETA ===
+
+PASSO 1 — UI Contas a Receber renderiza: ✅ PASS (10.0s)
+  - Rota /financeiro?tab=receber carregou corretamente
+  - Aba "Contas a Receber" visível e clicável
+  - Tabela renderiza com dados reais do Supabase
+
+PASSO 2 — Conta Cora real (contas_financeiras): ✅ PASS (308ms)
+  - buscarContasBancariasConfig() retorna 1 conta ativa
+  - Conta: Cora (id: 9741ad36-79a6-4e1f-94a5-512e08758186)
+  - Banco: Cora | Agência: 0001 | Conta: 1390923-1
+  - Titular: Conexão Serviçoes Express Ltda
+  - Tipo: Conta Poupança | Chave PIX: 42796040000131
+
+PASSO 3 — Criar sentinela FIN3623B via UI: ✅ PASS (17.0s)
+  - Sentinela criada via "Nova Receita" no UI
+  - Cliente: Calvo Comercio e Importacao
+  - Valor: R$ 12,35
+  - ID financeiro_receber: 1788609433288
+
+PASSO 4 — Baixar sentinela via UI com conta real: ✅ PASS (27.4s)
+  - Botão "Baixa" clicado na linha da sentinela
+  - Dialog "Baixa de Recebível" aberto
+  - Conta "Cora" selecionada via dropdown (ArrowDown + Enter)
+  - Botão "Baixa Total" clicado
+  - RPC f_registrar_baixa_financeira executada com sucesso
+
+PASSO 5 — conta_financeira_id NÃO NULL = UUID: ✅ PASS (166ms)
+  - GATE: conta_financeira_id = 9741ad36-79a6-4e1f-94a5-512e08758186 (Cora)
+  - UUID válido confirmado (regex match)
+  - Conta existe e está ativa (SELECT contas_financeiras WHERE id AND ativa=true)
+  - Valor baixado: R$ 12,35 = valor do título
+  - Não estornada
+
+PASSO 6 — Status = pago, saldo_restante = 0: ✅ PASS (154ms)
+  - financeiro_receber.status = 'pago'
+  - financeiro_receber.data_pagamento = 2026-09-05
+  - financeiro_baixas.saldo_restante = 0.00
+  - Título 100% quitado
+
+PASSO 7 — UI exibe título como PAGO: ✅ PASS (11.3s)
+  - Após reload, badge "PAGO" visível na linha do título
+  - UI reflete corretamente o estado financeiro
+
+=== BUGS CORRIGIDOS DURANTE EXECUÇÃO ===
+
+BUG-4 — buscarContasBancariasConfig() query com colunas inexistentes (configFinanceiraService.ts)
+  - Problema: select usava "codigo_banco", "pix", "titular_cnpj" que NÃO EXISTEM na tabela contas_financeiras
+  - Erro HTTP 400: "column contas_financeiras.codigo_banco does not exist"
+  - Função retornava [] silenciosamente (.catch(() => []))
+  - Dropdown "Conta" no dialog de baixa ficava SEM OPÇÕES
+  - Correção: select改为 "chave_pix" (coluna real) | "codigo_banco"/"titular_cnpj" removidos
+  - Afeta: ContasReceberEnterprise (baixa), FaturaManualDialog, ConfigFinanceira
+  - Status: ✅ CORRIGIDO — buscarContasBancariasConfig + salvarContasBancariasConfig
+
+=== DADOS DA BAIXA (PROVA DB) ===
+  financeiro_baixas:
+    id: d1e18013-063b-4381-a1ed-fb2f1360b7ac
+    titulo_id: 1788609433288
+    titulo_tabela: financeiro_receber
+    valor_baixado: 12.35
+    saldo_restante: 0.00
+    conta_financeira_id: 9741ad36-79a6-4e1f-94a5-512e08758186 (Cora)
+    forma_pagamento: pix
+    estornada: false
+    data_baixa: 2026-09-05
+
+  financeiro_receber (pós-baixa):
+    id: 1788609433288
+    status: pago
+    data_pagamento: 2026-09-05
+    valor: 12.35
+
+=== MÉTRICAS ===
+  Testes:       7/7 PASS (1.1min)
+  Bugs fix:     1 (BUG-4 — configFinanceiraService.ts)
+  Colunas fix:  3 (codigo_banco→removido, pix→chave_pix, titular_cnpj→removido)
+  RPC:          f_registrar_baixa_financeira (11 params, p_conta_financeira_id = UUID)
+  Conta:        Cora (9741ad36) — Conta Poupança, ativa
+
+=== CONCLUSÃO ===
+FIN-362.3B PROVA COMPLETA: Baixa via UI com conta real (Cora) persiste
+conta_financeira_id = 9741ad36 (UUID não-nulo) em financeiro_baixas.
+Rastreabilidade bancária 100% funcional: UI → RPC → DB → UI.
+
+Bug adicional encontrado e corrigido: buscarContasBancariasConfig() usava
+3 colunas inexistentes no schema real de contas_financeiras, causando
+dropdown vazio silencioso. Corrigido para colunas reais (chave_pix).

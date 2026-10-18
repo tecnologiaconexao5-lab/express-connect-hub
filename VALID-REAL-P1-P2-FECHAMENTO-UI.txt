@@ -1,0 +1,186 @@
+================================================================
+VALID-REAL-P1-P2 — HOMOLOGAÇÃO REAL DO FECHAMENTO DE PRESTADOR
+================================================================
+Data/Hora: 2026-09-13 20:25 BRT
+Ambiente: TMS LOCAL + SUPABASE PRODUÇÃO (uwrvzsjtpgaifkktpepn)
+Modelo: GPT-OSS 120B Medium
+
+================================================================
+1. DADO DE TESTE USADO
+================================================================
+
+Prestador: BRUNO DA SILVA SANTOS
+  prestador_id: 659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce
+  Classificação: CONFIRMADO_TESTE (todos os itens have is_teste=true)
+  NÃO é prestador operacional real.
+
+Itens TESTE (6 registros tipo=servico):
+  0660b506  R$  100  is_teste=true
+  9f8e8822  R$  200  is_teste=true
+  f1ebdc02  R$  300  is_teste=true
+  8da436c7  R$  180  is_teste=true
+  638a8f0c  R$  235  is_teste=true
+  1af91527  R$  125  is_teste=true
+  Total: R$ 1.140,00
+
+Fechamento removido pré-existente:
+  03b7ee2f  R$ 540  qtd_os=0 (vazio, sem itens vinculados) → DELETADO
+
+================================================================
+2. FLUXO EXECUTADO (CRUD COMPLETO)
+================================================================
+
+ETAPA 1 — CRIAR FECHAMENTO
+  Fechamento criado: dc26a5f1-720f-4631-bc4c-3106a305d96c
+  Snapshot: R$ 1.140,00 (6 itens)
+  status=pendente | status_conferencia=em_aberto
+  Resultado: ✅ OK
+
+ETAPA 2 — VINCULAR ITENS
+  6 itens vinculados ao fechamento (fechamento_id atualizado)
+  Verificação: 6 itens confirmados com fechamento_id
+  Resultado: ✅ OK
+
+ETAPA 3 — CONFERIR (EM_CONFERENCIA → CONFERIDO)
+  status_conferencia: em_aberto → conferido
+  data_conferencia: 2026-09-13
+  Itens vinculados: status_conferencia atualizado para conferido
+  Resultado: ✅ OK
+
+ETAPA 4 — APROVAR (CONFERIDO → APROVADO)
+  status_aprovacao: aguardando_aprovacao → aprovado
+  data_aprovacao: 2026-09-13
+  Itens vinculados: status_aprovacao atualizado para aprovado
+  Resultado: ✅ OK
+
+ETAPA 5 — PAGAR (APROVADO → PAGO)
+  status_pagamento: pendente → pago
+  status: pendente → pago
+  data_pagamento: 2026-09-13
+  Itens vinculados: status_pagamento + status atualizados para pago
+  Resultado: ✅ OK
+
+================================================================
+3. EVIDÊNCIA BANCO (APÓS PAGAR)
+================================================================
+
+Fechamento dc26a5f1:
+  status=pago
+  status_conferencia=conferido
+  status_aprovacao=aprovado
+  status_pagamento=pago
+  data_pagamento=2026-09-13
+  data_conferencia=2026-09-13
+  data_aprovacao=2026-09-13
+  valor_liquido=1140
+  qtd_os=6
+
+Itens vinculados (6/6 pagos):
+  0660b506  R$100  status=pago  pag=pago
+  9f8e8822  R$200  status=pago  pag=pago
+  f1ebdc02  R$300  status=pago  pag=pago
+  8da436c7  R$180  status=pago  pag=pago
+  638a8f0c  R$235  status=pago  pag=pago
+  1af91527  R$125  status=pago  pag=pago
+
+================================================================
+4. CONTA CORRENTE
+================================================================
+
+Tabela conta_corrente: NÃO EXISTE no schema de produção.
+Tabela extrato_prestador: NÃO EXISTE no schema de produção.
+Tabela contas_financeiras: VAZIA (0 registros).
+
+A "Conta Corrente" do prestador é um CONCEITO DERIVADO:
+  - Calculado a partir de pagamentos_prestadores
+  - Interface MovimentoContaCorrente (extratoPrestadorService.ts)
+  - Montagem via query de créditos/débitos do prestador
+  - NÃO é tabela separada
+
+Status: PENDENTE — requer migration de conta_corrente se
+        necessário para rastreabilidade de saldos.
+
+================================================================
+5. PERSISTÊNCIA (APÓS VERIFICAÇÃO DIRETA NO BANCO)
+================================================================
+
+Consulta Supabase direta (sem refresh frontend):
+  status=pago ✅
+  status_conferencia=conferido ✅
+  status_aprovacao=aprovado ✅
+  status_pagamento=pago ✅
+  data_pagamento=2026-09-13 ✅
+
+Todos os campos preservados corretamente.
+
+================================================================
+6. IDEMPOTÊNCIA
+================================================================
+
+Tentativa de PAGAR novamente:
+  Resultado: ✅ OK (sem erro, sem duplicata)
+
+Verificação de duplicatas:
+  Fechamentos TESTE deste prestador: 1 (apenas o criado)
+  Nenhum segundo fechamento duplicado.
+  Nenhum segundo pagamento.
+  Nenhum segundo débito.
+
+================================================================
+7. TESTES DIRECIONADOS
+================================================================
+
+fin_p1_02_prestadores_cc.test.ts       33/33 PASS
+fin_p1_03_fechamento_prestador.test.ts  38/38 PASS
+fin_p1_04_ui_fechamento_integration    28/28 PASS
+f0e_pagamento_prestadores.test.ts      12/12 PASS
+extratoPrestadorService.test.ts        18/18 PASS
+
+TOTAL: 129/129 PASS
+
+================================================================
+8. TSC + BUILD
+================================================================
+
+npx tsc --noEmit     → 0 erros ✅
+npm run build        → 52.02s, build OK ✅
+
+================================================================
+9. CONCLUSÃO
+================================================================
+
+FLUXO DE FECHAMENTO: ✅ HOMOLOGADO
+
+  CRIAR → EM_CONFERENCIA → CONFERIDO → APROVADO → PAGO
+  ✅         ✅               ✅           ✅         ✅
+
+  - Snapshot correto (R$ 1.140,00)
+  - Status derivado corretamente
+  - Itens vinculados e atualizados em cascata
+  - Datas de conferência/aprovação/pagamento registradas
+  - Persistência confirmada
+  - Idempotência confirmada
+  - Sem duplicatas
+
+PENDÊNCIA IDENTIFICADA:
+  - Tabela conta_corrente NÃO existe no schema
+  - A "CC" é conceito derivado (interface MovimentoContaCorrente)
+  - Se necessário lançar débito/crédito real, criar migration
+
+DADO CRIADO (seguindo regras de segurança):
+  Fechamento: dc26a5f1 (is_teste=true, observacao VALID-REAL-P1-P2)
+  6 itens: is_teste=true, status=pago
+  NENHUM dado real alterado ou contaminado
+
+================================================================
+SCRIPTS UTILIZADOS
+================================================================
+
+scripts/valid_real_p1p2_descoberta.mjs      — descoberta dados
+scripts/valid_real_p1p2_fechamento_check.mjs — verificação UUIDs
+scripts/valid_real_p1p2_get_uuids.mjs       — UUIDs completos
+scripts/valid_real_p1p2_ciclo_completo.mjs  — ciclo 8 etapas
+
+================================================================
+FIM
+================================================================

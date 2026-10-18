@@ -1,0 +1,62 @@
+TMS-006.3.1 — CORRIGIR CRIACAO DE VEICULO PELA INTERFACE
+
+Data: 2026-07-27
+Status: CRIACAO DE VEICULO PELA INTERFACE CORRIGIDA E HOMOLOGADA
+        — HML001 LIBERADO PARA TESTE DE ESCALA
+Percentual: 49% (neutro)
+
+=======================================================================
+CAUSA RAIZ
+=======================================================================
+
+Mapper toVeiculoInsert() enviava colunas subcategoria,
+tipo_carroceria e classificacao_termica que NAO EXISTEM
+na tabela veiculos. PostgREST rejeitava com PGRST204.
+
+=======================================================================
+CORRECAO APLICADA
+=======================================================================
+
+Arquivo: src/lib/dbMappers.ts
+
+1. VeiculoRow: removidas subcategoria, tipo_carroceria,
+   classificacao_termica (nao sao colunas DB)
+2. toVeiculoInsert: removidos os 3 envios
+3. fromVeiculoRow: removidas as 3 leituras
+
+Campos mantidos em VeiculoForm (UI types) — selects do
+formulario continuam visiveis, apenas nao sao persistidos.
+
+=======================================================================
+TESTES
+=======================================================================
+
+Unitarios (vitest):  11/11  (arquivo veiculoMapper.test.ts)    ✅
+Regressao (vitest):  20/20  (arquivos existentes)              ✅
+UI (Playwright):     HML002 criado, 0 HTTP 400, cleanup OK    ✅
+typecheck:node:      0 erros                                   ✅
+build:               OK 45.40s                                 ✅
+
+=======================================================================
+EVIDENCIA DEFINITIVA
+=======================================================================
+
+HML002 criado via interface com sucesso:
+  ID:   ac868c85-783c-436f-bf10-9b338918ec5d
+  0 HTTP 400 errors
+  Confirmado no banco
+  Limpo apos confirmacao
+
+=======================================================================
+ERRATA TMS-006.3
+=======================================================================
+
+Antes: criacao via interface FALHOU
+Agora: CRIACAO VIA INTERFACE HOMOLOGADA
+
+=======================================================================
+CONCLUSAO
+=======================================================================
+
+CRIACAO DE VEICULO PELA INTERFACE CORRIGIDA E HOMOLOGADA -
+HML001 LIBERADO PARA TESTE DE ESCALA

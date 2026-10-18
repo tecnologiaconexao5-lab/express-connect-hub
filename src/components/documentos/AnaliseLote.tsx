@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { mascararCPF } from "@/lib/masking";
 
 interface PrestadorDoc {
   id: string;
@@ -63,8 +64,8 @@ export function AnaliseLote() {
       if (error) throw error;
 
       const { data: docsData } = await supabase
-        .from("provider_documents")
-        .select("id, prestador_id, tipo, status, validade, url");
+        .from("documentos_prestadores")
+        .select("id, prestador_id, tipo, url");
 
       const prestadoresComDocs = (prestadoresData || []).map(p => ({
         ...p,
@@ -314,7 +315,7 @@ export function AnaliseLote() {
                     />
                   </TableCell>
                   <TableCell className="font-medium">{prestador.nome_completo}</TableCell>
-                  <TableCell>{prestador.cpf_cnpj}</TableCell>
+                  <TableCell>{mascararCPF(prestador.cpf_cnpj)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {prestador.documentos.slice(0, 4).map((d, i) => (

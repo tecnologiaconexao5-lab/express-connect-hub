@@ -1,0 +1,61 @@
+ESCALA-UI-VEICULO-01-FIX-GRADE
+==================================================
+Ambiente: TMS | Data: 2026-09-22 | Modo: CORREÇÃO MÍNIMA + TESTES
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+IMPLEMENTAÇÃO (src/components/operacao/EscalaLista.tsx)
+==================================================
+Linha 399 — select dos prestadores da grade:
+  ANTES: veiculos(tipo, placa)
+  DEPOIS: veiculos(tipo, tipo_veiculo, placa)
+Mapping preservado (fallback legado): tipo_veiculo || tipo (linha 410).
+
+Auditoria do fluxo Escala (embeds de veiculos()):
+  - EscalaLista:319 (buscarDadosVeiculoPrestador) — já incluía tipo_veiculo (sem defeito)
+  - EscalaLista:399 (prestadores da grade) — CORRIGIDO
+  - escalaService.ts / useEscala.ts / components/operacao/escala — nenhum outro embed de veiculos()
+→ Nenhum outro local com o mesmo defeito.
+
+Não alterado: schema, cadastro do veículo, alocação, precificação, seleção automática de
+veículo, M66/M80.
+
+==================================================
+RESULTADO
+==================================================
+VEHICLE_DISPLAY_BUG_FIXED=YES
+CANONICAL_TYPE_DISPLAYED=YES   (HML-A27B: tipo=NULL, tipo_veiculo='vuc' → grade exibe VUC)
+LEGACY_FALLBACK_PRESERVED=YES  (veículo só com `tipo` continua resolvendo)
+
+==================================================
+TESTES (src/test/escala_ui_veiculo_01_fix_grade.test.ts) — 6/6 PASS
+==================================================
+1) tipo_veiculo='vuc', tipo=null → "vuc" ........................................ PASS
+2) legado tipo='fiorino', tipo_veiculo=null → "fiorino" .......................... PASS
+3) nenhum veículo ([] / null / undefined) → "" (comportamento preservado) ........ PASS
+4) placa HML-A27B preservada ..................................................... PASS
+5) fonte: select inclui veiculos(tipo, tipo_veiculo, placa) ....................... PASS
+6) nenhum embed de veiculos() sem tipo_veiculo no fluxo da Escala ................ PASS
+
+DIRECIONADOS (Escala): 75/75 PASS
+  (ui_veiculo_01 6, veic_tabela_05 24, veic_tabela_06 16, veic_tabela_07 19, e2e_08d 10)
+
+TYPECHECK: npx tsc --noEmit → 0 erros (exit 0)
+BUILD: npm run build → OK (built in 49.53s)
+
+==================================================
+FILES_MODIFIED
+==================================================
+- src/components/operacao/EscalaLista.tsx (select do embed veiculos + tipo_veiculo)
+- src/test/escala_ui_veiculo_01_fix_grade.test.ts (NOVO — 6 testes)
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem alteração de schema/cadastro de veículo/alocação/precificação/seleção automática;
+M66/M80 intactos; nenhum toque no banco.
+
+NEXT=ESCALA-E2E-10-CLEANUP-HML-PRECHECK

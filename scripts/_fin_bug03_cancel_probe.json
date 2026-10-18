@@ -1,0 +1,130 @@
+{
+  "ts": "2026-10-07T02:42:47.826Z",
+  "auth_uid_sem_claims": {
+    "uid": null
+  },
+  "rpc_existe": [
+    {
+      "proname": "f_cancelar_fatura",
+      "args": "p_fatura_id uuid, p_motivo text"
+    },
+    {
+      "proname": "f_emitir_fatura",
+      "args": "p_fatura_id uuid"
+    },
+    {
+      "proname": "f_mover_fatura_status",
+      "args": "p_fatura_id uuid, p_novo_status text"
+    }
+  ],
+  "usuarios_autorizados": [
+    {
+      "user_id": "de1c77e0-1818-431c-8503-ebe08bd95e80",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "papel": "financeiro",
+      "tenant": "Conexao Express",
+      "email": "financeiro@conexaoexpress.com.br"
+    },
+    {
+      "user_id": "323878d3-861f-4257-a0ef-8ee26f526ce0",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "papel": "super_admin",
+      "tenant": "Conexao Express",
+      "email": "admconexao2@gmail.com"
+    },
+    {
+      "user_id": "8c12fc67-4dac-4f1e-b4fd-23cf0d168284",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "papel": "super_admin",
+      "tenant": "Conexao Express",
+      "email": "tamiris.castilho@conexaoexpress.com.br"
+    },
+    {
+      "user_id": "9a9e96f2-d7bb-4bcf-acc3-8edf792f2a65",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "papel": "super_admin",
+      "tenant": "Conexao Express",
+      "email": "diegoconexao19@gmail.com"
+    }
+  ],
+  "faturas": [
+    {
+      "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "aguardando_aprovacao",
+      "numero": null,
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "conta_receber_id": null,
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "valor_total": "810.40",
+      "cancelado_em": null,
+      "cancelado_por": null,
+      "motivo_cancelamento": null,
+      "criado_em": "2026-10-07T01:43:29.603Z"
+    },
+    {
+      "id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "emitida",
+      "numero": "FAT-2026-000030",
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "conta_receber_id": "8ce6db9e-38fd-4e49-9448-8157748add86",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "valor_total": "810.40",
+      "cancelado_em": null,
+      "cancelado_por": null,
+      "motivo_cancelamento": null,
+      "criado_em": "2026-10-07T01:45:07.249Z"
+    }
+  ],
+  "itens": [
+    {
+      "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947",
+      "status": "ativo",
+      "qtd": 1
+    },
+    {
+      "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "status": "ativo",
+      "qtd": 1
+    }
+  ],
+  "candidato": {
+    "user_id": "de1c77e0-1818-431c-8503-ebe08bd95e80",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "papel": "financeiro",
+    "tenant": "Conexao Express",
+    "email": "financeiro@conexaoexpress.com.br"
+  },
+  "auth_uid_com_claims": {
+    "uid": "de1c77e0-1818-431c-8503-ebe08bd95e80"
+  },
+  "dry_run": {
+    "r": {
+      "status": "cancelada",
+      "success": true,
+      "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+      "servicos_liberados": true
+    }
+  },
+  "dry_run_estado": {
+    "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+    "status": "cancelada",
+    "cancelado": true
+  },
+  "apos_rollback": {
+    "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+    "status": "aguardando_aprovacao",
+    "cancelado": false
+  },
+  "gatilhos_antes_depois_iguais": false,
+  "emitida_sem_numero": [
+    {
+      "id": "8309a22b-9f13-4610-bdb7-ab4008d6fd81",
+      "status": "emitida",
+      "numero": null,
+      "numero_cliente": null,
+      "conta_receber_id": null,
+      "criado_em": "2026-09-02T21:30:37.622Z",
+      "numero_manual": "40"
+    }
+  ]
+}

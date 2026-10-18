@@ -1,0 +1,365 @@
+════════════════════════════════════════════════════════════════════════════════
+FIN-MASTER-363B — AUDITORIA FINAL ADVERSARIAL DO FINANCEIRO
+════════════════════════════════════════════════════════════════════════════════
+
+Data: 07/09/2026 (início 06/09/2026 22:41 UTC-3)
+Ambiente: TMS / Supabase real (produção uwrvzsjtpgaifkktpepn)
+Modelo: GLM-5.3 (variante high)
+Tipo: 100% READ-ONLY — NENHUM código, dado ou migration alterado.
+Missão: tentar DERRUBAR a hipótese de que o Financeiro está correto.
+
+STATUS FINAL
+-----------
+[NÃO HOMOLOGADO — FINANCEIRO COM P1 ABERTO]
+
+Motivo: existe 1 (um) P1 ATUAL COMPROVADO — bypass estrutural vivo de
+"pago sem baixa" em financeiro_pagar (o mesmo P0 corrigido para
+financeiro_receber em 363A.3 permanece ABERTO para financeiro_pagar),
+além de 3 P2 abertos documentados.
+
+Testes PASS (74/74) NÃO homologam: o bypass está nas camadas de
+aplicação/UI/DB, fora da cobertura dos testes atuais.
+
+════════════════════════════════════════════════════════════════════════════════
+0. CONTEXTO DA EXECUÇÃO (continuação de execução interrompida)
+════════════════════════════════════════════════════════════════════════════════
+
+Execuções anteriores preservadas (NÃO refeitas, conclusões NÃO alteradas):
+- FIN-362.3D — E2E pagamento prestador [HOMOLOGADO]
+- FIN-362.3E — RPC atômica f_confirmar_pagamento_prestador [HOMOLOGADO]
+- FIN-MASTER-363A — auditoria read-only (7 anomalias classificadas)
+- 363A.1 — investigação divergências (todas PRÉ-362.3E; APTO para 363B)
+- 363A.2 — verdade dos recebíveis (3x [C] pago sem evidência)
+- 363A.3 — bloqueio RECEBER pago sem baixa [P0 CORRIGIDO]
+- PRE_REC_06_2 (A/B/C) — trilha REC-06.2, fora de escopo desta auditoria
+
+Estado da 363B na interrupção: ZERO artefatos existiam. Nenhuma evidência
+havia sido coletada. A auditoria 363B foi executada integralmente nesta
+sessão, do ponto exato em que falhou (início).
+
+════════════════════════════════════════════════════════════════════════════════
+1. MÉTODO ADVERSARIAL
+════════════════════════════════════════════════════════════════════════════════
+
+Pergunta norteadora: "O Financeiro está correto?" — tentativa ativa de
+REFUTAÇÃO, não de confirmação.
+
+Vetores de ataque:
+- Análise de código de TODOS os caminhos de escrita de status financeiro
+- Metadados DB (pg_trigger, pg_constraint, pg_proc) — provas em produção
+- Universo completo de dados (não amostras) das 4 tabelas financeiras
+- Janela temporal pós-bloqueios (após 06/09 15:25 e 16:27)
+- Incoerências de 2ª ordem (data_pagamento, estornos, over-baixa, mutação pós-baixa)
+- Execução dos testes de regressão (corroboração, não prova)
+
+Scripts de evidência (read-only):
+- scripts/fin_master_363b_audit_adversarial.cjs (10 áreas)
+- scripts/fin_master_363b_drill_rpc_baixas.cjs (RPCs + CHECKs + baixas)
+
+════════════════════════════════════════════════════════════════════════════════
+2. RECEBER — RESULTADO ADVERSARIAL
+════════════════════════════════════════════════════════════════════════════════
+
+2.1 TRIGGER 363A.3 EM PRODUÇÃO (pg_trigger):
+    ✓ trg_guardar_receber_pago_sem_baixa — ATIVO (enabled=O)
+    ✓ trg_evento_financeiro_receber_criado — ativo
+    ✓ trg_evento_financeiro_receber_pago — ativo (só registra evento)
+
+2.2 PAGO SEM BAIXA (universo completo): 4 casos — TODOS LEGADO, intactos:
+    - 2d625b18  R$ 3.600,00  (Calvo, Ago/2026) — upd 20/08 16:49 (pré-trigger)
+    - 17e857d8  R$ 3.200,50  (TESTE/SEED M43) — upd 01/07 (pré-trigger)
+    - fb30838a  R$ 1.500,00  (TESTE)           — upd 01/07 (pré-trigger)
+    - cf6eea7b  R$ 1.500,00  (DEV DEMO M43)    — upd 29/06 (pré-trigger)
+
+2.3 VIOLAÇÕES NOVAS pós-trigger (upd > 06/09 16:27): 0 (ZERO)
+    >>> O bloqueio RECEBER AGUENTOU o ataque adversarial.
+
+2.4 Over-baixa (baixas > valor): 0
+2.5 data_pagamento com status não-pago: 0
+2.6 Pago com data_pagamento NULL: 3 (os legados conhecidos 2d/17e/fb)
+2.7 Estorno (f_estornar_baixa_financeira): reverte status para
+    'aberto'/'parcial' corretamente — verificado na definição da função.
+2.8 Múltiplas baixas ativas no mesmo título: 0
+2.9 Valor mutado pós-baixa (upd > created em títulos pagos c/ baixa): 0
+
+VEREDITO RECEBER: [SÓLIDO] — defesa em 3 camadas (service validarStatus*
++ UI-flow oficial + trigger DB). O resíduo é cosmético (seção 6.3) e
+o passivo histórico (seção 6.2) já classificado em 363A.
+
+════════════════════════════════════════════════════════════════════════════════
+3. PAGAR — RESULTADO ADVERSARIAL  *** AQUI A HIPÓTESE CAIU ***
+════════════════════════════════════════════════════════════════════════════════
+
+[P1] P1-A — BYPASS ESTRUTURAL VIVO: PAGAR "PAGO SEM BAIXA"
+─────────────────────────────────────────────────────────
+O MESMO defeito de classe P0 que o 363A.3 corrigiu para RECEBER existe
+HOJE, VIVO, para PAGAR. Prova em 4 camadas independentes:
+
+(1) BANCO — ZERO GUARDA (pg_trigger em financeiro_pagar): 0 triggers.
+    >>> "Trigger de GUARDA (pago sem baixa) em financeiro_pagar: NÃO — CONFIRMADO"
+    O trigger 363A.3 foi criado APENAS sobre financeiro_receber
+    (migration 20260906_fin_master_363a3: "ON public.financeiro_receber").
+
+(2) SERVICE — ACEITA PAGO DIRETO:
+    - pagarService.criarPagavel (linha 183): status: input.status || "aberto"
+      → aceita status 'pago'/'paga' no INSERT sem exigir baixa.
+    - pagarService.atualizarPagavel (linhas 84-88): STATUS_TRANSITIONS permite
+      'a vencer'→'paga', 'vencida'→'paga', 'provisao'→'paga' (alvo direto);
+      linha 275 setCampo("status", update.status) grava sem qualquer checagem
+      de baixa. NÃO existe equivalente de validarStatusAtualizacao.
+    - NÃO existe CHECK constraint de status em financeiro_pagar (0 constraints).
+
+(3) UI — EXPÕE O BYPASS AO USUÁRIO:
+    - ContasPagar.tsx:891 — formulário nova/editar despesa oferece a opção
+      "Pago (Liquidado)" (value="paga").
+    - ContasPagar.tsx:572 — payload.status = "paga" é enviado ao salvar.
+    - Fluxo: usuário marca "Pago (Liquidado)" → baixa NÃO é criada →
+      status persiste como pago/paga → DRE conta despesa, Tesouraria e
+      Fluxo de Caixa REALIZADO não registram nada (usam financeiro_baixas).
+
+(4) OCORRÊNCIA REAL DO DEFEITO (prova de que a classe já aconteceu):
+    - f83a3249 R$ 137,89 status='pago' SEM baixa (criado 03/09 02:56,
+      observação "FIN012_PAGAR_TESTE"). Universo atual: exatamente 1.
+
+Janela pós-362.3E: 0 casos novos AINDA (nenhum usuário passou pelo
+caminho desde 06/09) — mas o caminho está VIVO e DISPONÍVEL hoje.
+Assimetria comprovada: RECEBER tem 3 camadas de defesa; PAGAR tem ZERO.
+
+IMPACTO POTENCIAL IMEDIATO:
+- Fluxo de Caixa realizado subnotifica saídas (usa só baixas)
+- Tesouraria perde movimentação da conta
+- DRE conta a despesa por vencimento (competência) sem liquidação
+- Reconciliação receber×pagar×prestador quebra silenciosamente
+- Repetição exata do GAP de R$ 9.800,50 que motivou o 363A
+
+CORREÇÃO NECESSÁRIA (NÃO EXECUTADA — regra da missão):
+1. pagarService: replicar validarStatusCriacao/validarStatusAtualizacao
+   (STATUS_PAGO_SEM_BAIXA) em criarPagavel/atualizarPagavel
+2. Migration: trigger equivalente trg_guardar_pagar_pago_sem_baixa
+   em financeiro_pagar
+3. ContasPagar.tsx: remover opção "Pago (Liquidado)" do formulário;
+   pago somente via "Registrar Pagamento" (baixarPagavel → RPC)
+
+DISTRIBUIÇÃO DE STATUS financeiro_pagar (universo):
+    aberto: 45 (R$ 34.200,00) | pendente: 24 (R$ 15.810,00)
+    a vencer: 16 (R$ 16.341,37) | pago: 11 (R$ 1.794,42)
+    cancelada: 2 (R$ 2.320,00) | NULL: 1 (R$ 999,00 — "DUPLICATE TEST", teste)
+    >>> Ausência de CHECK constraint permite NULL/"paga"/qualquer string.
+
+════════════════════════════════════════════════════════════════════════════════
+4. PRESTADORES — RESULTADO ADVERSARIAL
+════════════════════════════════════════════════════════════════════════════════
+
+4.1 RPC f_confirmar_pagamento_prestador(p_pagamento_id uuid, p_data_pagamento date):
+    EXISTE em produção. Usa v_conta (conta real obrigatória), trava
+    pagamento+título, grava baixa integral na mesma transação.
+
+4.2 Pagamentos PAGOS sem baixa compatível: 2 — AMBOS legados conhecidos:
+    - 6266f2a1 R$ 658,20 (upd 04/09 17:05 — PRÉ-362.3E, código legado Math.min)
+    - 32fe474f R$ 2.177,92 (upd 20/08 — exceção histórica aceita em 363A.1)
+    Nenhum caso novo pós-362.3E.
+
+4.3 Pagamentos confirmados pós-362.3E (data_pagamento >= 06/09): 1
+    - 7bf3107d R$ 520,00 → baixa compatível ATIVA: 1 (c2a233cb, conta Cora,
+      "Baixa atomica - pagamento prestador 7bf3107d") ✓ REGRA ATÔMICA OK
+
+4.4 atualizarStatusPagamento (service): qualquer tentativa de status 'pago'
+    é roteada para a RPC atômica (sem bypass por justificativa) ✓
+
+4.5 Pago com data_pagamento NULL: 0 ✓
+4.6 Update pós-confirmação (upd > data_pg + 1d): 0 ✓
+
+VEREDITO PRESTADORES: [SÓLIDO] — a regra atômica 362.3E aguentou o ataque.
+
+════════════════════════════════════════════════════════════════════════════════
+5. TESOURARIA — RESULTADO ADVERSARIAL
+════════════════════════════════════════════════════════════════════════════════
+
+5.1 Contas: 1 conta real (Cora, id 9741ad36, ativa, saldo_inicial R$ 0,93) ✓
+
+5.2 [P2] P2-A — BAIXAS ATIVAS SEM conta_financeira_id: 4
+    - 40ead49e, ce4aec49, 7b293dd9, 17364968 — R$ 12,34 cada (R$ 49,36 total)
+    - Todas "SENTINELA FIN3621 - teste E2E" (04-05/09, pré-correção 362.3B)
+    - CAUSA ESTRUTURAL AINDA VIVA: f_registrar_baixa_financeira aceita
+      p_conta_financeira_id DEFAULT NULL sem rejeitar (verificado na
+      definição: nenhuma validação de conta).
+    - receberService.baixarRecebivel: contaFinanceiraId OPCIONAL (→ null)
+    - pagarService.baixarPagavel: contaFinanceiraId OPCIONAL (→ null)
+    - ModalBaixaPagar (ContasPagar.tsx:251): contaId inicia UNDEFINED — só é
+      setado se o usuário MUDAR o select; caminho default = baixa SEM conta.
+    - Impacto: tesouraria/conciliação por conta perde rastreabilidade.
+    - Fluxo oficial hoje funciona (10 baixas pagar com conta Cora;
+      baixa de receber 362.3B/363A.3 com Cora) — por isso P2, não P1.
+
+5.3 Estornos: 0 baixas estornadas em produção (0 títulos órfãos de estorno) ✓
+5.4 Título pago com TODAS as baixas estornadas: 0 (receber) / 0 (pagar) ✓
+
+VEREDITO TESOURARIA: [SÓLIDO COM RESSALVA P2-A] — enforcement de conta
+é por convenção de fluxo, não por obrigação de camada.
+
+════════════════════════════════════════════════════════════════════════════════
+6. FLUXO DE CAIXA / DRE / DASHBOARD / HISTÓRICOS
+════════════════════════════════════════════════════════════════════════════════
+
+6.1 FLUXO DE CAIXA: [SÓLIDO]
+    - Realizado = SOMENTE financeiro_baixas estornada=false (código e DB)
+    - Realizado atual: receber R$ 74,06 (6) | pagar R$ 1.656,53 (10)
+    - Baixas duplicadas exatas: 0 ✓
+    - Títulos com múltiplas baixas ativas: 0 ✓
+    - Baixas avulsas (titulo_id NULL): 0 ✓
+    - Never mistura previsto com realizado (calcularFluxo) ✓
+
+6.2 DRE: [SÓLIDO COM PASSIVO CONHECIDO]
+    - Competência correta: receita por vencimento; custos por
+      pagamentos_prestadores (impacto_dre); despesas financeiro_pagar
+      EXCLUINDO repasses (os_id IS NOT NULL: 87 registros R$ 69.189,00
+      devidamente excluídos — sem dupla contagem) ✓
+    - Baixas não são competência ✓ | cancelados excluídos ✓
+    - [P2] P2-B: os 4 recebíveis "pago sem baixa" (R$ 9.800,50) contam
+      como receita por vencimento. 2d625b18 (Calvo, R$ 3.600,00) vence
+      20/09/2026 → ENTRARÁ no DRE de Setembro/2026 sem recebimento
+      comprovado. Decisão gerencial pendente (363A.1 item P2).
+
+6.3 DASHBOARD/KPIs: [RESSALVA CONHECIDA]
+    - [P2] P2-C: DashboardFinanceiroEnterprise usa ordens_servico como
+      fonte de KPIs de receita (121 OS, 39 finalizadas) enquanto a
+      carteira real de financeiro_receber é R$ 166.927,71 (97 títulos
+      abertos). Inconsistência de fonte já documentada em 363A.
+    - [P3] P3-A: ContasReceberEnterprise.tsx:729 ainda EXPÕE a opção
+      "Pago" no formulário (resíduo cosmético). O bloqueio ocorre no
+      service (throw) e no trigger (RAISE EXCEPTION); o save falha com
+      toast genérico "Erro ao salvar recebível" — não direciona o usuário
+      ao fluxo de baixa. Divergência menor vs relatório 363A.3, que
+      afirmava "formulário não permite mais salvar com status='pago'":
+      o QUE está correto (save bloqueado), o COMO difere (opção visível).
+
+6.4 HISTÓRICOS: [INTACTOS — nada piorou, nada fabricado]
+    - RECEBER 2d625b18/17e857d8/fb30838a/cf6eea7b: intactos (363A.2)
+    - PAGAR f83a3249 (teste R$137,89): intacto
+    - PP 32fe474f / 6266f2a1: intactos (exceções históricas 363A.1)
+    - PAGAR 9e07494b "DUPLICATE TEST" R$ 999,00 status NULL (teste): intacto
+    - 0 baixas retroativas criadas | 0 valores alterados | 0 status mutados
+
+════════════════════════════════════════════════════════════════════════════════
+7. TESTES ADVERSARIAIS EXECUTADOS
+════════════════════════════════════════════════════════════════════════════════
+
+7.1 Vitest regressão financeira: 74/74 PASS
+    - f0e_pagamento_prestadores: 12/12
+    - f0f_fluxo_caixa: 5/5
+    - f0g_dre_plano_contas: 12/12
+    - fin_master361_core_financeiro: 36/36
+    - f0m_homologacao_financeira_final: 9/9
+    >>> NOTA ADVERSARIAL: nenhum destes testes cobre o caminho
+    criarPagavel/atualizarPagavel com status 'paga' — por isso PASS
+    não homologa (o bypass P1-A passa ilesa pela suíte atual).
+
+7.2 Ataques que FALHARAM (não derrubaram a hipótese nos módulos sãos):
+    - Novo "pago sem baixa" em RECEBER pós-trigger: bloqueado (0 violações)
+    - Over-baixa receber/pagar: 0
+    - Baixa duplicada exata: 0
+    - Baixa avulsa sem título: 0
+    - Pago com baixa 100% estornada: 0
+    - Múltiplas baixas ativas por título: 0
+    - Pagamento prestador pós-362.3E sem baixa atômica: 0
+    - PP pago com data NULL: 0
+    - Mutações de valor pós-baixa: 0
+    - Dupla contagem repasse no DRE: excluída por os_id IS NULL
+
+7.3 Ataque que SUCEDDUEU (derrubou a hipótese):
+    - PAGAR via UI "Pago (Liquidado)" / criarPagavel / atualizarPagavel:
+      caminho completo vivo, sem guarda em nenhuma camada (P1-A).
+
+════════════════════════════════════════════════════════════════════════════════
+8. MATRIZ FINAL
+════════════════════════════════════════════════════════════════════════════════
+
+ÁREA           | GUARDA DB | GUARDA SERVICE | GUARDA UI | VIOLAÇÕES NOVAS | VEREDITO
+---------------|-----------|----------------|-----------|-----------------|------------------------
+RECEBER        | SIM(3 trg)| SIM (363A.3)   | PARCIAL*  | 0               | SÓLIDO
+PAGAR          | NÃO (0)   | NÃO             | NÃO**     | 0 (caminho vivo)| [P1-A] ABERTO
+PRESTADORES    | RPC atôm. | SIM (362.3E)   | SIM       | 0               | SÓLIDO
+TESOURARIA     | —         | CONTA OPCIONAL  | PARCIAL***| 4 legado teste  | [P2-A] RESSALVA
+FLUXO DE CAIXA | —         | correto        | correto   | 0               | SÓLIDO
+DRE            | —         | correto        | correto   | 0               | [P2-B] passivo
+DASHBOARD/KPIs | —         | fonte diverg.  | —         | —               | [P2-C/P3-A]
+HISTÓRICOS     | —         | —              | —         | 0 mutações      | INTACTO
+
+* UI ainda expõe "Pago" (resíduo), mas service+DB bloqueiam (P3-A)
+** UI EXPÕE "Pago (Liquidado)" e NADA bloqueia (P1-A)
+*** ModalBaixaPagar contaId default undefined (P2-A)
+
+════════════════════════════════════════════════════════════════════════════════
+9. INVENTÁRIO FINAL DE DEFEITOS (com evidência)
+════════════════════════════════════════════════════════════════════════════════
+
+[P1] P1-A — PAGAR aceita status pago/paga SEM baixa (bypass estrutural vivo)
+     Evidência: pg_trigger (0 triggers em financeiro_pagar);
+     pagarService.ts:183 (INSERT aceita status), :84-88 (transições → paga),
+     :275 (UPDATE direto de status); ContasPagar.tsx:891 (opção "Pago
+     (Liquidado)") + :572 (payload "paga"); ocorrência real f83a3249;
+     0 CHECK constraints de status.
+     NÃO CORRIGIDO (regra da missão: documentar, não corrigir).
+
+[P2] P2-A — Baixa sem conta_financeira_id possível (RPC aceita NULL)
+     Evidência: assinatura f_registrar_baixa_financeira (p_conta_financeira_id
+     DEFAULT NULL, sem RAISE); 4 baixas ativas sem conta em produção
+     (sentinelas FIN3621); ModalBaixaPagar contaId default undefined.
+
+[P2] P2-B — 4 recebíveis "pago sem baixa" (R$ 9.800,50) contam no DRE;
+     2d625b18 vence 20/09/2026 → DRE Setembro incluirá R$ 3.600 sem
+     recebimento comprovado. Decisão gerencial pendente (363A.1).
+
+[P2] P2-C — Dashboard Enterprise usa ordens_servico como fonte de KPIs
+     de receita; carteira real (R$ 166.927,71 / 97 títulos) diverge.
+
+[P3] P3-A — UI ContasReceberEnterprise ainda expõe opção "Pago"
+     (ContasReceberEnterprise.tsx:729); save falha com toast genérico.
+
+[P3] P3-B — Dados de teste em produção: f83a3249 (R$137,89 "FIN012_PAGAR_
+     TESTE"), 9e07494b (R$999 "DUPLICATE TEST", status NULL), 4 sentinelas
+     FIN3621, baixas R$12,34/12,35/13,79 de testes.
+
+[P4] Históricos aceitos (documentados em 363A.1, sem ação):
+     32fe474f (R$2.177,92×R$520) e 6266f2a1 (R$658,20×R$520) — código
+     legado pré-362.3E.
+
+════════════════════════════════════════════════════════════════════════════════
+10. CONCLUSÃO
+════════════════════════════════════════════════════════════════════════════════
+
+A hipótese "Financeiro está correto" foi DERRUBADA no módulo PAGAR.
+
+O esforço de defesa concentrou-se em RECEBER (trigger 363A.3, 3 camadas)
+e PRESTADORES (RPC atômica 362.3E) e lá aguentou todos os ataques.
+PAGAR ficou SEM NENHUMA camada de guarda — o usuário pode HOJE marcar
+uma despesa como "Pago (Liquidado)" no formulário sem gerar baixa,
+reproduzindo exatamente a classe de defeito que motivou o bloqueio
+do RECEBER.
+
+DECLARAÇÃO IMPOSSÍVEL:
+Não pode ser declarado [HOMOLOGADO — FINANCEIRO 100%] porque existe
+1 P1 atual comprovado (P1-A) e 3 P2 abertos (P2-A, P2-B, P2-C).
+
+Status final: [NÃO HOMOLOGADO — FINANCEIRO COM P1 ABERTO]
+
+PRÓXIMA AÇÃO RECOMENDADA (fora do escopo desta missão — NÃO executada):
+Missão de correção dedicada replicando para financeiro_pagar o modelo
+já homologado de financeiro_receber (service + trigger + UI), seguida de
+re-auditoria 363C.
+
+════════════════════════════════════════════════════════════════════════════════
+11. CONFIRMAÇÃO FINAL
+════════════════════════════════════════════════════════════════════════════════
+
+✓ NENHUM código alterado
+✓ NENHUM dado alterado
+✓ NENHUMA migration criada ou aplicada
+✓ NENHUMA baixa/estorno/cancelamento executado
+✓ Somente SELECTs read-only + leitura de código + vitest (read-only)
+✓ Conclusões das missões 363A/362.3E PRESERVADAS (não reféitas, não revertidas)
+✓ Nenhuma correção executada sobre P0/P1 encontrados (documentados apenas)
+
+════════════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO FIN-MASTER-363B
+════════════════════════════════════════════════════════════════════════════════

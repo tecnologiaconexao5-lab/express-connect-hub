@@ -1,0 +1,146 @@
+CAD-VEIC-01-CLAYTON-CANONICAL-DATA-AUDIT
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO — SOMENTE LEITURA (nenhuma alteração de dados/código)
+
+AUDIT_STATUS=COMPLETO
+
+==================================================
+A — ESTADO REAL ATUAL DO BANCO (READ-ONLY)
+==================================================
+
+CPF comum: 251.098.938-37
+
+ACTIVE_CLAYTON_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+  nome="Clayton Alves Pimentel" | status=ativo | tipo_parceiro=autonomo
+  auth_user_id=null | liberado_app=false
+  created_at=2026-09-21T04:15:11.922Z | updated_at=2026-09-22T06:01:54.024Z
+  veículos=1
+
+DUPLICATE_CLAYTON_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+  nome="CLAYTON ALVES PIMENTEL" | status=bloqueado | tipo_parceiro=agregado
+  auth_user_id=null | liberado_app=false
+  created_at=2026-09-21T04:22:02.718Z | updated_at=2026-09-22T06:01:43.768Z
+  veículos=0
+
+Referências operacionais/financeiras (ambos): 
+  alocacoes_escala=0 | ordens_servico=0 | financeiro_pagar=0
+  pagamentos_prestadores=0 | documentos_prestadores=0 | recrutamento=0
+  → nenhum dos dois possui referência operacional/financeira.
+
+REGISTRO EFETIVAMENTE USADO HOJE:
+  O ATIVO 0673eca2 — é o único status=ativo (Escala filtra status='ativo'),
+  é o dono do único veículo e o referenciado por `veiculos.prestador_vinculado`.
+  O duplicado está bloqueado → excluído dos fluxos operacionais.
+  Evidência NÃO sustenta trocar o ativo: o ativo é o mais antigo (04:15:11),
+  tem o veículo (04:15:12) e está liberado como ativo.
+
+==================================================
+B — VEÍCULOS
+==================================================
+
+CANONICAL_VEHICLE_ID=c487f012-208e-47ae-b5d8-e976382eaab0
+  prestador_vinculado=0673eca2 (Clayton ativo)
+  placa=GEW-2H93 | marca=VW | modelo="SAVEIRO RB MBVS"
+  tipo=fiorino (legado) | tipo_veiculo=fiorino (canônico)
+  tipo_carga=misto | status=Ativo
+  created_at=2026-09-21T04:15:12.336Z
+
+CANONICAL_VEHICLE_OWNER=0673eca2-4594-4842-b78f-cd6cabe9177d
+VEHICLE_TYPE_CANONICAL=fiorino (veiculos.tipo_veiculo)
+VEHICLE_TYPE_LEGACY=fiorino (veiculos.tipo)
+MODEL_TYPE_CONSISTENT=NO
+  ("Fiorino" (utilitário/furgão) × modelo "SAVEIRO RB MBVS" (VW Saveiro, picape))
+OWNERSHIP_CONFIDENCE=ALTA
+  (vínculo explícito prestador_vinculado + created_at 1s após o prestador ativo)
+
+Observação: `tipo_carga=misto` é ambíguo para condição térmica
+  (normaliza para null/curinga — não classifica como seco/termico/refrigerado).
+
+==================================================
+C — CADASTRO PRESTADOR / PERSISTÊNCIA (código)
+==================================================
+
+Arquivo auditado: src/components/prestadores/PrestadorDetalhe.tsx
+(serviços/helpers envolvidos: src/lib/dbMappers.ts)
+
+VEHICLE_CREATE_WRITES_tipo=YES
+  handleAddVeiculo — payloadVeiculo usa `tipo: veiculoData.tipoVeiculo` (linha 485)
+VEHICLE_CREATE_WRITES_tipo_veiculo=NO
+VEHICLE_EDIT_WRITES_tipo=YES
+  handleUpdateVeiculo — payloadVeiculo usa `tipo: veiculoData.tipoVeiculo` (linha 548)
+VEHICLE_EDIT_WRITES_tipo_veiculo=NO
+SANITIZER_PRESERVES_tipo_veiculo=NO
+  sanitizeVeiculoPayload allowlist (linhas 429-435) inclui 'tipo' mas NÃO 'tipo_veiculo'
+  → o campo canônico é descartado no add/edit deste componente.
+RELOAD_READS_CANONICAL_tipo_veiculo=YES
+  PrestadoresLista.tsx mapeia `tipoVeiculo: v.tipo_veiculo` (canônico);
+  dbMappers.fromVeiculoRow lê `item.tipo_veiculo || item.tipoVeiculo`.
+  Existe também o fluxo de CREATE do prestador (linha 676) que grava
+  `tipo_veiculo: v.tipoVeiculo` (canônico) — writer INCONSISTENTE com o add/edit.
+
+Default artificial "fiorino": SIM (UI)
+  linha 176 `tipoVeiculo: "fiorino"` (estado inicial do modal)
+  linha 1103 `setNovoVeiculo({ tipoVeiculo: "fiorino", ... })` (botão Adicionar)
+  linha 1572 `value={novoVeiculo.tipoVeiculo || "fiorino"}` (Select)
+  linha 450 `tipoVeiculo: veiculoData.tipoVeiculo || "outro"` (fallback do objeto local)
+  → é default de UI (não grava forçado no banco), mas pode induzir salvamento de "fiorino".
+
+Escrita apenas no campo legado `tipo`: SIM (add/edit).
+Perda de `tipo_veiculo` após salvar/reabrir: SIM no add/edit do PrestadorDetalhe
+  (grava `tipo`; `tipo_veiculo` não é escrito e é removido pelo sanitizer).
+  Para o Clayton atual não há perda visível hoje porque o registro já possui
+  `tipo_veiculo='fiorino'` (gravado pelo fluxo de CREATE).
+
+==================================================
+D — IMPACTO ESCALA
+==================================================
+
+Fluxo Prestador → veículo → tipo_veiculo → condição térmica:
+  EscalaLista.buscarDadosVeiculoPrestador seleciona
+  `veiculos(tipo_veiculo, tipo, placa, modelo, tipo_carga)` e usa
+  `v.tipo_veiculo || v.tipo` (canônico com fallback legado) + `tipo_carga`.
+
+ACTIVE_PROVIDER_RESOLVES_REAL_VEHICLE=YES
+ESCALA_RECEIVES_CANONICAL_VEHICLE_TYPE=YES (tipo_veiculo=fiorino)
+ESCALA_RECEIVES_THERMAL_CONDITION=YES (tipo_carga='misto' → passa como condição; curinga)
+MULTIPLE_VEHICLE_AMBIGUITY_CURRENTLY_EXISTS=NO
+  (ativo tem 1 veículo; duplicado bloqueado tem 0)
+
+==================================================
+E — PLANO DE CORREÇÃO (NÃO EXECUTADO)
+==================================================
+
+CODE_FIX_REQUIRED=YES
+  Arquivo: src/components/prestadores/PrestadorDetalhe.tsx
+  Regra:
+   - incluir 'tipo_veiculo' na allowlist de sanitizeVeiculoPayload (linha ~430);
+   - handleAddVeiculo (linhas ~483-511) e handleUpdateVeiculo (linhas ~546-571)
+     devem gravar o campo CANÔNICO `tipo_veiculo` (ex.: usar toVeiculoInsert/
+     toVeiculoUpdate de src/lib/dbMappers.ts) em vez de apenas `tipo`;
+   - alinhar com o fluxo de CREATE do prestador (linha 676) que já grava `tipo_veiculo`;
+   - avaliar remover/mitigar o default artificial "fiorino" do modal (linhas 176/1103/1572).
+  NÃO IMPLEMENTADO nesta missão (proibido).
+
+DATA_FIX_REQUIRED=YES (proposta, NÃO executada)
+  Veículo c487f012: revisar `tipo_veiculo`/`modelo` (Fiorino × Saveiro) e
+  `tipo_carga` ('misto' → seco/termico/refrigerado) — requer confirmação humana.
+
+DUPLICATE_PROVIDER_CLEANUP_REQUIRED=YES (proposta, NÃO executada)
+  cadbbbb6 (bloqueado, mesmo CPF, 0 veículos, 0 referências).
+  Preferir manter o bloqueio atual e, após confirmação humana, consolidar
+  (merge/anonimização) sem exclusão direta; não há referências a relinkar hoje.
+
+VEHICLE_RECLASSIFICATION_REQUIRES_HUMAN_CONFIRMATION=YES
+
+==================================================
+EVIDÊNCIA / LIMITES
+==================================================
+
+- Somente SELECTs (READ-ONLY). Nenhum UPDATE/INSERT/DELETE.
+- Nenhuma alteração de código/Comercial/Escala/APP/POD/Financeiro/loading.
+- Nenhuma suposição: cada campo reportado tem evidência de banco ou de código.
+
+DB_WRITES=0
+MIGRATIONS=0

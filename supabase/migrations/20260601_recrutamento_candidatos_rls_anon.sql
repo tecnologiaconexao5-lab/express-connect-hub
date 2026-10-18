@@ -13,21 +13,31 @@ DROP POLICY IF EXISTS "recrutamento_candidatos_update" ON public.recrutamento_ca
 DROP POLICY IF EXISTS "recrutamento_candidatos_delete" ON public.recrutamento_candidatos;
 
 -- ========== 3. Recriar com TO anon, authenticated (explicito) ==========
-CREATE POLICY "recrutamento_candidatos_select" ON public.recrutamento_candidatos
+DROP POLICY IF EXISTS "recrutamento_candidatos_select" ON public.recrutamento_candidatos;
+DROP POLICY IF EXISTS "recrutamento_candidatos_select" ON recrutamento_candidatos;
+CREATE POLICY "recrutamento_candidatos_select" ON recrutamento_candidatos
   FOR SELECT TO anon, authenticated
   USING (true);
 
-CREATE POLICY "recrutamento_candidatos_insert" ON public.recrutamento_candidatos
+DROP POLICY IF EXISTS "recrutamento_candidatos_insert" ON public.recrutamento_candidatos;
+DROP POLICY IF EXISTS "recrutamento_candidatos_insert" ON recrutamento_candidatos;
+CREATE POLICY "recrutamento_candidatos_insert" ON recrutamento_candidatos
   FOR INSERT TO anon, authenticated
   WITH CHECK (true);
 
-CREATE POLICY "recrutamento_candidatos_update" ON public.recrutamento_candidatos
+DROP POLICY IF EXISTS "recrutamento_candidatos_update" ON public.recrutamento_candidatos;
+DROP POLICY IF EXISTS "recrutamento_candidatos_update" ON recrutamento_candidatos;
+CREATE POLICY "recrutamento_candidatos_update" ON recrutamento_candidatos
   FOR UPDATE TO anon, authenticated
   USING (true) WITH CHECK (true);
 
-CREATE POLICY "recrutamento_candidatos_delete" ON public.recrutamento_candidatos
+DROP POLICY IF EXISTS "recrutamento_candidatos_delete" ON public.recrutamento_candidatos;
+DROP POLICY IF EXISTS "recrutamento_candidatos_delete" ON recrutamento_candidatos;
+CREATE POLICY "recrutamento_candidatos_delete" ON recrutamento_candidatos
   FOR DELETE TO anon, authenticated
   USING (true);
 
 -- ========== 4. VERIFICACAO (rodar DEPOIS de aplicar) ==========
 -- SELECT policyname, roles, cmd, qual, with_check FROM pg_policies WHERE tablename = 'recrutamento_candidatos' ORDER BY policyname;
+
+

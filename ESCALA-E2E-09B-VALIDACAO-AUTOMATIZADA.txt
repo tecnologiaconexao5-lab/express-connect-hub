@@ -1,0 +1,90 @@
+ESCALA-E2E-09B-VALIDACAO-AUTOMATIZADA
+==================================================
+Ambiente: TMS + Supabase PROD | Data: 2026-09-22
+Modo: TESTE CONTROLADO BEGIN/ROLLBACK (produção restaurada)
+ALLOCATION_ID=730c9584-3bc2-455b-b2d3-1550a3b9445c
+OS_ID=bae6be02-7912-4159-a381-d33dc7fbd891
+DB_WRITES=0 (líquido) | MIGRATIONS=0
+
+==================================================
+1. SNAPSHOT PRÉ
+==================================================
+ALOC: km_realizados=0 | valor_frete=300 | valor_repasse=250 | status=aguardando_aceite
+OS:   n=1 | id=bae6be02 | valor_cliente=300.00 | custo_prestador=250.00
+RECEBER: id=3454fd38-b765-4b6e-9849-d7a7c9138cc4 | 300.00 | pendente
+PAGAR:   id=19164125-6f9f-42d1-8264-bfd4a4caa3ae | 250.00 | pendente
+PP:      id=d0ba5fac-5432-4156-a833-fc4e0a8dc2e5 | 250.00 | nao_vencido
+COMPOSICAO=0 | BAIXAS=0
+(IDs batem com os esperados.)
+
+==================================================
+2-3. UPDATE CONTROLADO (dentro de BEGIN) + PROVA
+==================================================
+UPDATE alocacoes_escala SET km_realizados=150, valor_frete=360, valor_repasse=250
+  WHERE id=730c9584... ;  -- status NÃO alterado
+ROWS_UPDATED=1
+
+APÓS UPDATE 1 (tudo na mesma transação):
+  ALOC: km=150 | valor_frete=360 | valor_repasse=250 | status=aguardando_aceite  ✔
+  OS:   COUNT=1 | MESMO ID=bae6be02 | valor_cliente=360.00 | custo_prestador=250.00  ✔
+  RECEBER: COUNT=1 | MESMO ID=3454fd38 | valor=360.00 | pendente  ✔
+  PAGAR:   COUNT=1 | MESMO ID=19164125 | valor=250.00 | pendente  ✔
+  PP:      COUNT=1 | MESMO ID=d0ba5fac | valor_liquido=250.00 | nao_vencido  ✔
+  COMPOSICAO=0 | BAIXAS=0
+  NO_DUPLICATE_OS / RECEBER / PAGAR / PP = OK
+
+KM_PROPAGATION_PASS=YES
+FINANCE_PROPAGATION_PASS=YES
+
+==================================================
+4. IDEMPOTÊNCIA (2º UPDATE idêntico na MESMA transação)
+==================================================
+ROWS_UPDATED=1
+APÓS UPDATE 2:
+  OS COUNT=1 (id bae6be02) | RECEBER COUNT=1 (3454fd38) | PAGAR COUNT=1 (19164125) |
+  PP COUNT=1 (d0ba5fac) — TODOS os IDs inalterados; valores 360/250/250; COMPOSICAO=0; BAIXAS=0.
+IDEMPOTENCY_PASS=YES (sem 2ª OS/receber/pagar/PP)
+
+==================================================
+5-6. ROLLBACK + SNAPSHOT PÓS
+==================================================
+ROLLBACK executado.
+SNAPSHOT PÓS-ROLLBACK (produção exatamente como antes):
+  ALOC: km=0 | valor_frete=300 | valor_repasse=250 | status=aguardando_aceite  ✔
+  OS:   valor_cliente=300.00 | custo_prestador=250.00  ✔
+  RECEBER: 300.00 pendente | PAGAR: 250.00 pendente | PP: 250.00 nao_vencido  ✔
+  COMPOSICAO=0 | BAIXAS=0  ✔
+Nenhum registro adicional permanece. RESIDUAL_WRITES=0
+ROLLBACK_PASS=YES
+
+==================================================
+ENTREGÁVEIS
+==================================================
+TRANSACTION_TEST_PASS=YES
+KM_PROPAGATION_PASS=YES
+FINANCE_PROPAGATION_PASS=YES
+SAME_OS_ID=YES (bae6be02-7912-4159-a381-d33dc7fbd891)
+SAME_RECEBER_ID=YES (3454fd38-b765-4b6e-9849-d7a7c9138cc4)
+SAME_PAGAR_ID=YES (19164125-6f9f-42d1-8264-bfd4a4caa3ae)
+SAME_PP_ID=YES (d0ba5fac-5432-4156-a833-fc4e0a8dc2e5)
+IDEMPOTENCY_PASS=YES
+ROLLBACK_PASS=YES
+RESIDUAL_WRITES=0
+
+VEHICLE_DISPLAY_BUG=PENDING_FIX
+  ("Sem veículo" já diagnosticado em 09-precheck: EscalaLista:399 omite tipo_veiculo no embed
+   veiculos(); NÃO corrigido nesta missão, conforme instrução.)
+
+CONCLUSÃO:
+KM/update/idempotência TECNICAMENTE VALIDADOS (alocação→OS→receber/pagar/PP, com IDs estáveis
+e sem duplicidade, idempotente por os_id/ON CONFLICT). Ressalva: a edição visual pela UI não foi
+repetida por decisão operacional (teste feito via transação SQL com o payload canônico auditado).
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem cancelamento persistente; sem cleanup HML; sem conclusão; sem pagamento/baixa; sem migration;
+M66/M80 intactos; produção restaurada ao estado anterior.
+
+DB_WRITES=0
+MIGRATIONS=0

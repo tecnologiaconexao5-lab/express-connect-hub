@@ -1,0 +1,170 @@
+================================================================================
+ F0-B — CONFIRMACAO READ-ONLY DO SCHEMA FINANCEIRO DE PRODUCAO
+ Projeto: TMS / express-connect-hub | Supabase Producao (uwrvzsjtpgaifkktpepn)
+ Data: 2026-08-18 | Modo: SOMENTE LEITURA (information_schema, sem escrita)
+--------------------------------------------------------------------------------
+ Metodo: conexao `pg` (DATABASE_URL do .env) + SELECT em information_schema.columns
+ para as 3 tabelas financeiras. Nenhuma DML/DDL executada. Nenhum fluxo alterado.
+ Script de evidencia: scripts/_f0b_schema_financeiro_readonly.mjs
+================================================================================
+
+--------------------------------------------------------------------------------
+TABELA | COLUNA | EXISTE EM PRODUCAO? | OBSERVACAO
+--------------------------------------------------------------------------------
+financeiro_receber (38 colunas totais)
+financeiro_receber | competencia     | NAO  | AUSENTE (causa do erro E1)
+financeiro_receber | saldo           | NAO  | AUSENTE
+financeiro_receber | origem          | NAO  | AUSENTE
+financeiro_receber | origem_id       | NAO  | AUSENTE
+financeiro_receber | parcela         | NAO  | AUSENTE (existe parcela_atual)
+financeiro_receber | total_parcelas  | NAO  | AUSENTE (existe quantidade_parcelas)
+financeiro_receber | tenant_id       | NAO  | AUSENTE
+financeiro_receber | fatura_numero   | NAO  | AUSENTE
+financeiro_receber | quantidade_itens| NAO  | AUSENTE
+financeiro_receber | fatura_id       | SIM  | FASE 2A aplicada (F0-A confirmado)
+
+financeiro_pagar (41 colunas totais)
+financeiro_pagar | descricao        | SIM  | coluna EXISTE (erro E3 e de VALIDACAO do service, nao de schema)
+financeiro_pagar | competencia      | SIM  | EXISTE (validado F0-A seção E)
+financeiro_pagar | saldo            | NAO  | AUSENTE (payload do criarPagavel quebraria apos descricao)
+financeiro_pagar | prestador_id     | NAO  | AUSENTE (existe fornecedor_id)
+financeiro_pagar | prestador_nome   | NAO  | AUSENTE (existe fornecedor_nome)
+financeiro_pagar | alocacao_id      | NAO  | AUSENTE
+financeiro_pagar | parcela          | NAO  | AUSENTE (existe parcela_atual)
+financeiro_pagar | total_parcelas   | NAO  | AUSENTE (existe quantidade_parcelas)
+financeiro_pagar | tenant_id        | NAO  | AUSENTE
+financeiro_pagar | forma_pagamento  | NAO  | AUSENTE (form ContasPagar na edicao quebraria aqui)
+financeiro_pagar | recorrencia      | NAO  | AUSENTE (existe recorrente boolean)
+financeiro_pagar | recorrente       | SIM  | EXISTE
+financeiro_pagar | quantidade_parcelas | SIM | EXISTE
+financeiro_pagar | parcela_atual    | SIM  | EXISTE
+
+pagamentos_prestadores (45 colunas totais)
+pagamentos_prestadores | arquivo          | NAO  | AUSENTE (causa do erro E2)
+pagamentos_prestadores | observacao       | SIM  | EXISTE (pode receber ref. de anexo)
+pagamentos_prestadores | conta_pagamento  | NAO  | AUSENTE (F0-A presumia presente; CORRIGIDO aqui)
+pagamentos_prestadores | elegivel_lote    | SIM  | EXISTE
+pagamentos_prestadores | conta_contabil   | SIM  | EXISTE
+pagamentos_prestadores | quantidade_os    | SIM  | EXISTE
+pagamentos_prestadores | periodo_inicio   | SIM  | EXISTE
+pagamentos_prestadores | periodo_fim      | SIM  | EXISTE
+pagamentos_prestadores | valor_liquido    | SIM  | EXISTE
+
+--------------------------------------------------------------------------------
+LISTA COMPLETA DE COLUNAS REAIS (producao)
+--------------------------------------------------------------------------------
+financeiro_receber (38):
+  id, cliente_id, descricao, valor, vencimento, status, created_at, updated_at,
+  os_id, cliente, cliente_nome, data_vencimento, data_emissao, data_pagamento,
+  categoria, observacoes, cliente_documento, fatura, serie, numero,
+  os_vinculadas, contrato_vinculado, proposta_vinculada, valor_bruto,
+  valor_liquido, desconto, juros, multa, abatimento,
+  data_previsao_recebimento, recorrente, quantidade_parcelas, parcela_atual,
+  centro_resultado, plano_conta, conta_entrada, recorrencia, fatura_id
+
+financeiro_pagar (41):
+  id, cliente_id, descricao, valor, vencimento, status, created_at, updated_at,
+  os_id, prestador, fornecedor_nome, data_vencimento, data_emissao,
+  data_pagamento, categoria, observacoes, fornecedor_id, fornecedor_documento,
+  fornecedor, documento, tipo_documento, os_vinculada, valor_bruto,
+  valor_liquido, desconto, juros, multa, impostos_retidos,
+  data_previsao_pagamento, conta_pagadora, codigo_barras, chave_pix, recorrente,
+  quantidade_parcelas, parcela_atual, competencia, plano_contas,
+  centro_resultado, unidade_filial, despesa_fixa_base, data_efetiva_pgto
+
+pagamentos_prestadores (45):
+  id, prestador_id, prestador_nome, prestador_documento, periodo_inicio,
+  periodo_fim, quantidade_os, valor_servicos, valor_reembolsos, valor_bonus,
+  valor_descontos, valor_adiantamentos, valor_liquido, status, data_pagamento,
+  created_at, updated_at, os_id, qtd_os, pedagio, reembolsos, adicionais,
+  descontos, adiantamentos, multas, ajustes, status_conferencia,
+  status_aprovacao, status_pagamento, origem_lancamento, tipo_pagamento,
+  categoria_financeira, centro_custo, conta_contabil, competencia,
+  data_prevista_pagamento, elegivel_lote, lote_id, impacto_dre,
+  impacto_fluxo_caixa, observacao, os_numero, tipo_lancamento, natureza,
+  data_competencia
+
+--------------------------------------------------------------------------------
+COLUNAS AUSENTES vs COLUNAS EXISTENTES EQUIVALENTES (mapeamento p/ correcao em codigo)
+--------------------------------------------------------------------------------
+financeiro_receber:
+  parcela        -> parcela_atual
+  total_parcelas -> quantidade_parcelas
+  saldo          -> valor (ou valor - baixas; hoje so valor)
+  competencia    -> descricao (compor "Competencia MM/AAAA") ou data_emissao
+  origem/origem_id -> categoria/observacoes/os_id
+  tenant_id      -> descartar (RLS via tenant_usuarios, nao coluna)
+  fatura_numero/quantidade_itens -> fatura/numero (FASE 2A nao precisa)
+  fatura_id      -> EXISTE (fluxo FASE 2A ok)
+
+financeiro_pagar:
+  prestador_id   -> fornecedor_id
+  prestador_nome -> fornecedor_nome (ou fornecedor)
+  saldo          -> valor
+  parcela        -> parcela_atual
+  total_parcelas -> quantidade_parcelas
+  alocacao_id    -> descartar/observacoes
+  tenant_id      -> descartar
+  forma_pagamento-> conta_pagadora/observacoes (sem coluna propria)
+  recorrencia    -> recorrente (boolean) + quantidade_parcelas/parcela_atual
+
+pagamentos_prestadores:
+  arquivo        -> observacao (referencia do anexo) — sem coluna propria
+  conta_pagamento-> observacao (ou nova decisao de negocio)
+  forma_pagamento(cliente_id/cliente_nome tambem no insert direto):
+    cliente_id/cliente_nome -> descartar (nao ha colunas)
+    forma_pagamento         -> tipo_pagamento (EXISTE) ou observacao
+
+--------------------------------------------------------------------------------
+CONCLUSOES
+--------------------------------------------------------------------------------
+1) F0-A CONFIRMADO — com 1 correcao de detalhe:
+   - E1 (competencia em financeiro_receber): CONFIRMADO ausente; e TODAS as
+     outras colunas do payload legado (saldo, origem, origem_id, parcela,
+     total_parcelas, tenant_id, fatura_numero, quantidade_itens) tambem sao
+     ausentes -> as funcoes legadas criarRecebivelDeEscala e
+     criarFaturaConsolidadaCompleta (e criarRecebivel/criarRecebiveisEmLote)
+     estao 100% incompativeis com producao.
+   - E2 (arquivo em pagamentos_prestadores): CONFIRMADO ausente. DETALHE
+     corrigido vs F0-A: conta_pagamento TAMBEM nao existe (F0-A presumia
+     presente pela ordem do erro de schema cache). Alem disso cliente_id,
+     cliente_nome e forma_pagamento do insert direto tambem sao ausentes.
+     IMPORTANTE: ate o service pagamentoPrestadorService.criarPagamento usa
+     cliente_id, cliente_nome e tenant_id (ausentes) -> precisa ajuste tambem.
+   - E3 (Descricao e obrigatoria): CONFIRMADO que a COLUNA `descricao` EXISTE
+     em financeiro_pagar; o erro e puramente validacao no service
+     (pagarService.ts:102) porque o form ContasPagar nao envia descricao.
+   - competencia em financeiro_pagar: EXISTE (validado).
+   - fatura_id em financeiro_receber: EXISTE (FASE 2A aplicada em producao).
+
+2) F0-C (Contas a Pagar) — corrigivel SOMENTE EM CODIGO: SIM.
+   Colunas necessarias existem (descricao, fornecedor, fornecedor_id,
+   fornecedor_documento, documento, data_vencimento, valor, valor_bruto,
+   valor_liquido, competencia, plano_contas, centro_resultado, unidade_filial,
+   despesa_fixa_base, conta_pagadora, codigo_barras, chave_pix, recorrente,
+   quantidade_parcelas, parcela_atual). Ajustar: payload do form (adicionar
+   descricao; trocar forma_pagamento/recorrencia) e payload do criarPagavel/
+   atualizarPagavel (usar somente colunas existentes). Sem alteracao de banco.
+
+3) F0-D (Contas a Receber) — corrigivel SOMENTE EM CODIGO: SIM.
+   Colunas equivalentes existem (fatura, numero, os_vinculadas, parcela_atual,
+   quantidade_parcelas, valor_bruto, valor_liquido, observacoes, data_emissao,
+   categoria, recorrencia, fatura_id). Ajustar funcoes legadas ou remover da UI
+   e apontar para o fluxo FASE 2A (faturaService + RPC f_emitir_fatura — 100%
+   compativel). Sem alteracao de banco.
+
+4) F0-E (Pagamento de Prestadores) — corrigivel SOMENTE EM CODIGO: SIM.
+   Basta remover do insert direto e do service criarPagamento as colunas
+   inexistentes (arquivo, conta_pagamento, forma_pagamento, cliente_id,
+   cliente_nome, tenant_id) e, se o anexo for necessario, gravar a referencia
+   em `observacao` (existe). Sem alteracao de banco.
+
+5) Necessidade REAL de alteracao de banco: NENHUMA para os 3 fluxos.
+   Todas as colunas necessarias ja existem em producao. Nenhuma criacao de
+   coluna/tabela e bloqueante. (Decisao OPCIONAL de negocio: criar coluna
+   `arquivo`/`conta_pagamento`/`forma_pagamento` para guardar anexo/conta, mas
+   nao e necessaria para corrigir os erros observados.)
+
+================================================================================
+ FIM DO RELATORIO F0-B
+================================================================================

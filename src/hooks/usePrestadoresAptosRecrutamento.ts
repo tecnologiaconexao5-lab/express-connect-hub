@@ -18,7 +18,7 @@ function determinarPrioridade(c: EnterpriseCandidate): InfoRecrutamento['priorid
 
 function determinarLabel(prioridade: InfoRecrutamento['prioridade']): string {
   switch (prioridade) {
-    case 'enviado_escala': return 'Enviado p/ Escala'
+    case 'enviado_escala': return 'Enviado p/ Programação'
     case 'pre_selecionado': return 'Pré-selecionado'
     case 'onboarding_concluido': return 'Onboarding OK'
     case 'disponivel_imediato': return 'Disponível'

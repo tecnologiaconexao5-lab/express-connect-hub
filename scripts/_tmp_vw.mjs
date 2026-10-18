@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const { rows } = await c.query(`SELECT pg_get_viewdef('public.vw_app_notificacoes_pendentes'::regclass) AS def`);
+console.log(rows[0].def.slice(0, 800));
+await c.end();

@@ -2,13 +2,17 @@ import { useState, useMemo } from "react";
 import {
   BarChart2, TrendingUp, TrendingDown, Users, Target, DollarSign,
   AlertTriangle, Clock, Award, CheckCircle, XCircle, Calendar,
-  ArrowUp, ArrowDown, Minus, PieChart, Activity, BookOpen, Filter
+  ArrowUp, ArrowDown, Minus, PieChart, Activity, BookOpen, Filter, Download, FileText
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Lead, ESTAGIOS_CONFIG, MotivoPerda, SEGMENTOS } from "./crmTypes";
+import { gerarPDFRelatorioOperacional } from "@/utils/pdfRelatorioOperacional";
+import { exportToExcel } from "@/utils/excelExport";
+import { toast } from "sonner";
 
 interface CrmRelatoriosProps {
   leads: Lead[];
@@ -101,17 +105,75 @@ export default function CrmRelatorios({ leads }: CrmRelatoriosProps) {
           </h3>
           <p className="text-xs text-muted-foreground">Análise completa do desempenho comercial.</p>
         </div>
-        <Select value={periodo} onValueChange={setPeriodo}>
-          <SelectTrigger className="w-36 h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="7dias" className="text-xs">Últimos 7 dias</SelectItem>
-            <SelectItem value="30dias" className="text-xs">Últimos 30 dias</SelectItem>
-            <SelectItem value="90dias" className="text-xs">Últimos 90 dias</SelectItem>
-            <SelectItem value="ano" className="text-xs">Este ano</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={periodo} onValueChange={setPeriodo}>
+            <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7dias" className="text-xs">Últimos 7 dias</SelectItem>
+              <SelectItem value="30dias" className="text-xs">Últimos 30 dias</SelectItem>
+              <SelectItem value="90dias" className="text-xs">Últimos 90 dias</SelectItem>
+              <SelectItem value="ano" className="text-xs">Este ano</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8"
+            disabled={leads.length === 0}
+            onClick={() => {
+              const rows = leads.map(l => ({
+                Lead: l.nome,
+                Empresa: l.empresa || "-",
+                Segmento: l.segmento || "-",
+                Origem: l.origem || "-",
+                "Estágio": ESTAGIOS_CONFIG[l.estagio]?.label || l.estagio,
+                "Responsável": l.responsavel || "-",
+                "Valor Estimado": l.valorEstimadoMensal || 0,
+                "Data Criação": l.dataCriacao ? new Date(l.dataCriacao).toLocaleDateString("pt-BR") : "-",
+              }));
+              exportToExcel(rows, [
+                { header: "Lead", key: "Lead" },
+                { header: "Empresa", key: "Empresa" },
+                { header: "Segmento", key: "Segmento" },
+                { header: "Origem", key: "Origem" },
+                { header: "Estágio", key: "Estágio" },
+                { header: "Responsável", key: "Responsável" },
+                { header: "Valor Estimado", key: "Valor Estimado" },
+                { header: "Data Criação", key: "Data Criação" },
+              ], "relatorio_crm_leads");
+              toast.success("Excel exportado com sucesso!");
+            }}
+          >
+            <Download className="w-3.5 h-3.5" /> Excel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8"
+            disabled={leads.length === 0}
+            onClick={() => {
+              gerarPDFRelatorioOperacional({
+                titulo: "Relatório CRM — Leads",
+                colunas: ["Lead", "Empresa", "Segmento", "Origem", "Estágio", "Responsável", "Valor Estimado"],
+                linhas: leads.map(l => [
+                  l.nome || "-",
+                  l.empresa || "-",
+                  l.segmento || "-",
+                  l.origem || "-",
+                  ESTAGIOS_CONFIG[l.estagio]?.label || l.estagio,
+                  l.responsavel || "-",
+                  (l.valorEstimadoMensal || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+                ]),
+                subtitulo: `Total: ${leads.length} leads | Período: ${periodo}`,
+              });
+              toast.success("PDF exportado com sucesso!");
+            }}
+          >
+            <FileText className="w-3.5 h-3.5" /> PDF
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}

@@ -25,10 +25,20 @@ CREATE TABLE IF NOT EXISTS public.escalonamentos_humanos (
 -- Habilitar RLS e Permissões padrão
 ALTER TABLE public.escalonamentos_humanos ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Permitir tudo em escalonamentos_humanos" ON public.escalonamentos_humanos;
-CREATE POLICY "Permitir tudo em escalonamentos_humanos" ON public.escalonamentos_humanos FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em escalonamentos_humanos" ON public.escalonamentos_humanos;
+DROP POLICY IF EXISTS "Permitir tudo em escalonamentos_humanos" ON escalonamentos_humanos;
+CREATE POLICY "Permitir tudo em escalonamentos_humanos" ON escalonamentos_humanos FOR ALL USING (true);
 
 -- Habilitar Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.escalonamentos_humanos;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'escalonamentos_humanos'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.escalonamentos_humanos;
+  END IF;
+END $$;
 
 -- Trigger para capturar ia_logs com precisa_humano = true
 CREATE OR REPLACE FUNCTION trg_ia_logs_escalonamento()
@@ -65,3 +75,5 @@ CREATE TRIGGER trg_ia_logs_escalonamento_insert
 AFTER INSERT ON public.ia_logs
 FOR EACH ROW
 EXECUTE FUNCTION trg_ia_logs_escalonamento();
+
+

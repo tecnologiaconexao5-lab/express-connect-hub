@@ -1,0 +1,98 @@
+================================================================================
+TMS-007.4A — RLS UPDATE em ordens_servico
+Data: 2026-07-28
+Branch: auditoria-final-integracao
+================================================================================
+
+CONCLUSAO: POLICY UPDATE DE ORDENS_SERVICO PREPARADA E SEGURA —
+           AGUARDANDO AUTORIZACAO PARA APLICACAO
+
+================================================================================
+1. ESTADO ATUAL (PRODUCAO)
+================================================================================
+
+Policies ativas em ordens_servico (confirmado 2026-07-23 + 2026-07-28):
+
+  os_select_own   SELECT  authenticated/anon  cliente_id + f_usuario_pode_acessar
+  os_insert_portal INSERT authenticated        cliente_id = f_obter_cliente_id
+  os_update_*     AUSENTE                      BLOQUEIO TOTAL DE UPDATE
+
+Impacto: finalizarOrdemServico() falha silenciosamente via REST API.
+Toda tentativa de UPDATE retorna HTTP 200 com 0 rows.
+
+================================================================================
+2. FUNCOES RLS VERIFICADAS (REMOTO)
+================================================================================
+
+  current_tenant_id_safe()            -> sentinel UUID
+  f_usuario_pode_acessar_cliente()    -> true (super_admin)
+  tenant_usuarios (tamiris)           -> super_admin, tenant sentinel
+
+================================================================================
+3. ANALISE DE PERFIS
+================================================================================
+
+  super_admin     tenant_usuarios: sim  -> UPDATE PERMITIDO
+  admin_tenant    tenant_usuarios: sim  -> UPDATE PERMITIDO
+  operacional     tenant_usuarios: sim  -> UPDATE PERMITIDO
+  financeiro      tenant_usuarios: sim  -> UPDATE PERMITIDO (restringido no front)
+  comercial       tenant_usuarios: sim  -> UPDATE PERMITIDO (restringido no front)
+  atendimento     tenant_usuarios: sim  -> UPDATE PERMITIDO (restringido no front)
+  cliente Portal  tenant_usuarios: nao  -> BLOQUEADO pelo guard
+  prestador App   tenant_usuarios: nao  -> BLOQUEADO pelo guard
+  anon            sem auth              -> BLOQUEADO (policy TO authenticated)
+
+================================================================================
+4. COMPARACAO DAS MIGRACOES CONCORRENTES
+================================================================================
+
+20260626 (missao16):
+  + Simples: USING (tenant_id = current_tenant_id_safe())
+  - Sem WITH CHECK
+  - Sem tenant_usuarios guard -> Portal pode atualizar OS com tenant sentinel
+  - Rejeitada
+
+20260725 (rls_fix_core):
+  + USING com tenant_usuarios guard + tenant_id match
+  + WITH CHECK identico
+  + Mesmo padrao de ae_update_tms (ja homologado em alocacoes_escala)
+  + Portal e prestador bloqueados naturalmente
+  - Adotada
+
+================================================================================
+5. POLICY PROPOSTA
+================================================================================
+
+CREATE POLICY "os_update_tms" ON ordens_servico
+  FOR UPDATE TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())
+    AND tenant_id = current_tenant_id_safe()
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())
+    AND tenant_id = current_tenant_id_safe()
+  );
+
+================================================================================
+6. ARQUIVOS ENTREGUES
+================================================================================
+
+  Migration:  supabase/migrations/20260728_m0074a_add_rls_update_ordens_servico.sql
+              SHA-256: 2965b894318ab5707639bfea656eb6350a1f6ad47c5828383573018373138931
+
+  Rollback:   supabase/migrations/20260728_m0074a_rollback.sql
+              SHA-256: 29db32aa383ad71d249e9f168108c251695227f2f3762367bab5ff53446f8329
+
+  Testes:     scripts/m0074a_test_rls_update_os.mjs
+              SHA-256: bc081838a5b31ee38339d7fe9b039c934d644c9ce3ac2d09b16bd624d91d042d
+
+================================================================================
+7. RISCOS
+================================================================================
+
+  Portal ganhar UPDATE nao intencional:  Baixa, guard tenant_usuarios bloqueia
+  Cross-tenant UPDATE:                   Baixa, tenant_id match bloqueia
+  Trigger M80b falhar por RLS:           Media, mas roda como TMS autenticado
+  Performance:                           Baixa, tenant_usuarios indexado
+================================================================================

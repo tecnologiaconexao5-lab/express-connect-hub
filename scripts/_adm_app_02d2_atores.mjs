@@ -1,0 +1,14 @@
+import pg from "pg";
+import fs from "node:fs";
+const cs = fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const c = new pg.Client({ connectionString: cs, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const u = await c.query(`select id, email, created_at from auth.users order by created_at`);
+console.log("AUTH USERS:\n" + JSON.stringify(u.rows, null, 1));
+const p = await c.query(`select id, nome_completo, auth_user_id from prestadores where auth_user_id is not null`);
+console.log("PRESTADORES COM AUTH:\n" + JSON.stringify(p.rows, null, 1));
+const orf = await c.query(`select id, prestador_id, tipo, left(url,90) url from documentos_prestadores where prestador_id is null or url is null or btrim(url)=''`);
+console.log("LINHAS ORFAS/VAZIAS:\n" + JSON.stringify(orf.rows, null, 1));
+const objs = await c.query(`select name from storage.objects where bucket_id='documentos_prestadores' and (name like 'doc\_%' or name like 'foto\_%') order by name limit 40`);
+console.log("OBJETOS CONVENCAO (40):\n" + objs.rows.map(r => r.name).join("\n"));
+await c.end();

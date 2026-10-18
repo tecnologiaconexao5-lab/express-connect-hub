@@ -1,0 +1,297 @@
+================================================================================
+ A31C — FECHAMENTO OPERACIONAL DA CENTRAL FINANCEIRA
+ Fatura refinada + NFs em lote + Lançamento manual + Romaneio App→OS
+ Relatório de Fechamento — Missão A31-C
+ Data: 2026-08-16   |   Fase: implementação + validação (sem escrita em produção)
+================================================================================
+
+================================================================================
+SEÇÃO 1 — OBJETIVO
+================================================================================
+Fechar operacionalmente a Central Financeira (ConferenciaFinanceira):
+  1. Corrigir o bug "modelo is not defined" na prévia da Fatura.
+  2. Refinar a Fatura: número "será gerado na emissão", data de emissão
+     editável (default hoje), valor automático, cliente obrigatório.
+  3. Vínculo de NFs em lote (apenas número) no dossiê fiscal.
+  4. Lançamento manual de serviço pela Central, em fonte única
+     (alocacoes_escala), sem base paralela e sem criar OS falsa.
+  5. Sincronização Romaneio App → OS → Central (proposta SQL separada,
+     NÃO executada).
+  6. Modelo Calvo verificado conforme especificação.
+  7. Testes (tsc/lint/vitest/build) + relatório final de 31 seções.
+
+================================================================================
+SEÇÃO 2 — AMBIENTE E MÉTODO
+================================================================================
+- Ambiente: PRODUÇÃO (projeto uwrvzsjtpgaifkktpepn). NENHUM dado inserido,
+  alterado ou removido. NENHUMA migration executada.
+- Correção de RPC/view: gerada como PROPOSTA separada (A31C_PROPOSTA_SYNC_APP_
+  ROMANEIO.sql), com todo o corpo comentado — exige comprovação/segurança antes
+  de qualquer execução.
+- Validação estática local: npx tsc --noEmit, npx vitest run, npm run build.
+
+================================================================================
+SEÇÃO 3 — BUG "MODELO IS NOT DEFINED" (CORRIGIDO)
+================================================================================
+- Causa: montarPreviaFatura (faturaService.ts) não retorna "modelo"; o
+  PreviaModal de FaturaPanel.tsx referenciava input.modelo indefinido.
+- Correção: prop "modelo" passada ao PreviaModal; gerarPDFFatura já recebia
+  input.modelo e usa gerarPdfCalvo/gerarPdfConexaoExpress conforme o modelo.
+- Validação: npx tsc --noEmit → 0 erros.
+
+================================================================================
+SEÇÃO 4 — FATURA: DATA DE EMISSÃO EDITÁVEL
+================================================================================
+- FaturaPanel adiciona state dataEmissao (default hoje via toISOString).
+- carregar() inicializa dataEmissao de f.data_emissao || hoje.
+- Criar rascunho seta dataEmissao para hoje antes de criar.
+- handleSalvarRascunho persiste data_emissao via atualizarFatura.
+- montarPdfInput usa dataEmissao || previa.data e vencimento || previa.vencimento
+  (deps: fatura, dadosEmpresa, dadosCliente, modelo, descricao, dataEmissao,
+  vencimento).
+- A data editável alimenta o PDF SEM alterar created_at da fatura.
+
+================================================================================
+SEÇÃO 5 — FATURA: NÚMERO "SERÁ GERADO NA EMISSÃO"
+================================================================================
+- Em rascunho (sem número), o resumo exibe "Será gerado na emissão".
+- Após emissão o número real (FAT-2026-000001) substitui a exibição.
+- Sem invenção de número em rascunho — respeita o fluxo de emissão existente.
+
+================================================================================
+SEÇÃO 6 — FATURA: RESUMO EM 7 CARDS
+================================================================================
+Header do FaturaPanel com 7 cards: Nº da Fatura, Cliente, Data da Fatura,
+Vencimento, Modelo, Quantidade de serviços, Valor total.
+
+================================================================================
+SEÇÃO 7 — FATURA: ALERTA CLIENTE AUSENTE + BLOQUEIO DE EMISSÃO
+================================================================================
+- Banner âmbar "Sem cliente vinculado" quando não há clienteNome.
+- Botão Emitir desabilitado (disabled + title tooltip) sem cliente.
+- Criar Fatura pela Central já bloqueia itens de clientes distintos.
+
+================================================================================
+SEÇÃO 8 — FATURA: SELETOR DE MODELO COM MINI DESCRIÇÃO
+================================================================================
+- Select de modelo (conexao_express / calvo) com pequena descrição embutida
+  nas opções, orientando o usuário sem depender de tooltip.
+
+================================================================================
+SEÇÃO 9 — FATURA: CAMPO "DESCRIÇÃO (CALVO)" CONDICIONAL
+================================================================================
+- Campo "Descrição da Fatura (Calvo)" aparece SOMENTE quando modelo === "calvo".
+- A descrição alimenta a coluna DESCRIÇÃO da tabela Calvo no PDF.
+
+================================================================================
+SEÇÃO 10 — FATURA: ATUALIZARFATURA COM DATA_EMISSAO
+================================================================================
+- faturaService.atualizarFatura: Pick<Fatura, ...> estendido para incluir
+  data_emissao. Salvamento de rascunho persiste a data editável.
+
+================================================================================
+SEÇÃO 11 — NFS EM LOTE: REGRA DE PARSING
+================================================================================
+- handleAdicionarNFsEmLote (DossieItemSheet): separa por vírgula, ponto e
+  vírgula, espaço ou quebra de linha (regex [\s,;]+).
+- Apenas o Número é obrigatório; série/chave/valor/emitente ficam em branco.
+- Trim em cada item; vazios removidos.
+
+================================================================================
+SEÇÃO 12 — NFS EM LOTE: SEM DUPLICADOS
+================================================================================
+- Dedupe via new Set antes de iterar — mesma NF não é vinculada duas vezes.
+- Contagem de sucesso (ok) e falhas (erros com o número) no feedback ao usuário.
+
+================================================================================
+SEÇÃO 13 — NFS EM LOTE: HANDLER + UI
+================================================================================
+- States: mostrarLoteNF, nfLote, salvandoNF (reutilizado).
+- UI: botão "NFs em lote" (violeta, Layers) e botão "Adicionar NF com detalhes"
+  (laranja, Plus) no dossiê fiscal; Textarea com placeholder; botões
+  Cancelar/Vincular em lote.
+- Após sucesso: nfLote limpo, painel fechado, mensagem de resumo, recarregarNFs.
+- Preserva fluxo individual "Adicionar NF com detalhes" e bloqueios CT-e/MDF-e
+  + soft-delete (status='desvinculada') da A31-B.
+
+================================================================================
+SEÇÃO 14 — LANÇAMENTO MANUAL: INTERFACE LancamentoManualServicoInput
+================================================================================
+- centralFinanceiroService.ts define LancamentoManualServicoInput com 18 campos:
+  data_escala (obrigatória), cliente_id, romaneio, origem, destino,
+  tipo_veiculo (obrigatório), placa, km_realizados, valor_frete, valor_repasse,
+  valor_pedagio, valor_combustivel, valor_ajudante, diarias_adicionais,
+  valor_diaria, ajudantes, valor_ajudante_unit, valor_adicional, valor_desconto,
+  observacoes.
+
+================================================================================
+SEÇÃO 15 — LANÇAMENTO MANUAL: lancarServicoManual (FONTE ÚNICA)
+================================================================================
+- Insere em alocacoes_escala (mesma fonte da Escala):
+    status = "concluida", status_pagamento = "pendente", finalizada = true,
+    data_finalizacao = now, km/valores normalizados (?? 0).
+- metadata = { numeroOC: romaneio (trim) || null, origem: "central_financeira_manual" }.
+  → A Central lê os.romaneio || metadata.numeroOC, então o romaneio manual
+    aparece mesmo sem OS vinculada.
+- NÃO cria OS falsa, NÃO escreve tabela paralela.
+- Valida data_escala e tipo_veiculo obrigatórios.
+- Retorno: { success, alocacaoId } ou { success:false, error }.
+
+================================================================================
+SEÇÃO 16 — LANÇAMENTO MANUAL: UI (BOTÃO + DIALOG)
+================================================================================
+- Botão "Lançar Serviço" na barra de visão da Central (Modo 1/2).
+- Dialog com formulário: Data, Tipo de veículo, Placa, Cliente (SearchableSelect
+  em "clientes" com nome_fantasia/cnpj), Romaneio/OC, Origem, Destino, KM,
+  valor frete/repasse/pedágio/combustível/ajudante/diárias/adicional/desconto,
+  observações.
+- Footer: Cancelar + "Lançar Serviço" (desabilitado sem data_escala/tipo_veiculo).
+- handleLancarServico: chama lancarServicoManual, reseta form, recarrega a Central.
+
+================================================================================
+SEÇÃO 17 — ROMANEIO APP→OS: CAUSA RAIZ (EVIDÊNCIA A31-B)
+================================================================================
+- RPC f_avancar_etapa_app_motorista grava romaneio em metadata.app_motorista
+  (JSONB) — NÃO em ordens_servico.romaneio.
+- 121 OS com romaneio = 0 preenchidas; 6 alocações com romaneio App SEM OS
+  vinculada (ordem_servico_id NULL) → Central (lê os.romaneio || metadata
+  .numeroOC) nunca vê esses romaneios.
+- View vw_app_motorista_operacoes em produção é espelho direto de
+  alocacoes_escala (sem romaneio, sem join OS); m127e1 não refletida.
+
+================================================================================
+SEÇÃO 18 — ROMANEIO APP→OS: PROPOSTA PARTE 1 (SINCRONIZAÇÃO RETROATIVA)
+================================================================================
+- Em A31C_PROPOSTA_SYNC_APP_ROMANEIO.sql (comentado): grava metadata
+  .app_motorista->>'romaneio' → ordens_servico.romaneio, apenas quando há OS
+  vinculada e o campo está vazio. Idempotente (DISTINCT ON + JOIN).
+- Nunca cria OS falsa; só preenche OS que já existe.
+
+================================================================================
+SEÇÃO 19 — ROMANEIO APP→OS: PROPOSTA PARTE 2 (RPC f_avancar_etapa)
+================================================================================
+- CREATE OR REPLACE da função completa (base M133-D.4) adicionando bloco
+  10.1: quando p_etapa = 'romaneio_informado' e há v_os_id e payload->>'romaneio',
+  UPDATE ordens_servico SET romaneio, updated_at.
+- Retorno inclui flag romaneio_sync.
+- Grants mantidos: authenticated + service_role (sem anon/PUBLIC).
+
+================================================================================
+SEÇÃO 20 — ROMANEIO APP→OS: PROPOSTA PARTE 3 (VIEW OFICIAL)
+================================================================================
+- CREATE OR REPLACE VIEW vw_app_motorista_operacoes conforme m127e1: join
+  LEFT em ordens_servico (os.romaneio), clientes, prestadores, veiculos
+  (prestador_fallback), rotas, portal_tracking_realtime.
+- Garante coluna romaneio na fonte oficial do App para leitura futura.
+
+================================================================================
+SEÇÃO 21 — MODELO CALVO: VERIFICAÇÃO (PDF)
+================================================================================
+- pdfFatura.ts já implementa gerarPdfCalvo conforme especificação:
+  logo grande centralizado (max 180x64) com fallback texto; razão social
+  CONEXÃO SERVIÇOS EXPRESS LTDA; CNPJ/IE/endereço/e-mail centralizados;
+  faixa "Cobrança para:" com CNPJ/IE/endereço do cliente; tabela FATURA /
+  DESCRIÇÃO / PARCELA / VENCIMENTO / VALOR; TOTAL DA FATURA; bloco Dados para
+  Transferência Bancária (banco/agência/conta/PIX); rodapé "Fatura {nº} -
+  Conexão Express"; paginação automática.
+- Não lista OS/origem/destino individualmente — apenas descrição/romaneio.
+
+================================================================================
+SEÇÃO 22 — VALIDAÇÃO: TSC
+================================================================================
+- npx tsc --noEmit → ✅ 0 erros.
+
+================================================================================
+SEÇÃO 23 — VALIDAÇÃO: VITEST
+================================================================================
+- npx vitest run → ✅ 211/211 testes (21 arquivos).
+- Novos: a31c_lancamento_manual.test.ts (5), a31c_nf_lote.test.ts (7).
+
+================================================================================
+SEÇÃO 24 — VALIDAÇÃO: BUILD
+================================================================================
+- npm run build → ✅ 35.81s (chunks > 500 kB são baseline pré-existente).
+
+================================================================================
+SEÇÃO 25 — ARQUIVOS ALTERADOS/CRIADOS
+================================================================================
+- src/services/financeiro/centralFinanceiroService.ts — lancarServicoManual +
+  LancamentoManualServicoInput (NOVO).
+- src/components/financeiro/FaturaPanel.tsx — dataEmissao, 7 cards resumo,
+  alerta cliente ausente, seletor modelo, descrição Calvo, bloqueio emissão,
+  PreviaModal com prop modelo.
+- src/services/financeiro/faturaService.ts — atualizarFatura inclui data_emissao.
+- src/components/financeiro/ConferenciaFinanceira.tsx — NFs em lote
+  (DossieItemSheet) + botão/dialog "Lançar Serviço" (Central) + imports Dialog,
+  SearchableSelect.
+- src/test/a31c_lancamento_manual.test.ts — NOVO (5 testes).
+- src/test/a31c_nf_lote.test.ts — NOVO (7 testes).
+- A31C_PROPOSTA_SYNC_APP_ROMANEIO.sql — NOVO (proposta, NÃO executada).
+
+================================================================================
+SEÇÃO 26 — MATRIZ CAMPO | APP | ESCALA | FONTE | CENTRAL | STATUS
+================================================================================
+CAMPO              | APP                      | ESCALA/OS            | FONTE (Central)      | STATUS
+-------------------|--------------------------|----------------------|----------------------|--------
+Romaneio           | metadata.app_motorista   | ordens_servico.      | os.romaneio ||        | ⚠️ Proposta
+                   | ->'romaneio' (RPC)       | romaneio (0/121)     | metadata.numeroOC    | SQL
+NumeroOC (manual)  | —                        | metadata.numeroOC    | metadata.numeroOC    | ✅ Central
+Status             | RPC avança etapa        | alocacoes_escala.    | status="concluida"   | ✅
+                   |                          | status               |                      |
+finalizada         | serviço finalizado      | alocacoes_escala.    | finalizada=true      | ✅
+                   |                          | finalizada           |                      |
+KM                 | km_realizados (payload) | alocacoes_escala.    | km_realizados        | ✅
+                   |                          | km_realizados        |                      |
+Valores            | valor_frete/repasse     | alocacoes_escala     | financeiro_receber/  | ✅ (trigger)
+                   |                          |                      | pagar/pagamentos     |
+NFs                | —                       | fiscal_documentos_   | Dossiê fiscal (NFs   | ✅ em lote
+                   |                          | vinculados (os_id)   | da OS)               |
+Data emissão       | —                       | fatura.data_emissao  | FaturaPanel          | ✅ editável
+
+================================================================================
+SEÇÃO 27 — CLASSIFICAÇÃO FINAL
+================================================================================
+- Fatura (data/número/modelo/cliente): PRONTO.
+- NFs em lote: PRONTO.
+- Lançamento manual (fonte única): PRONTO.
+- Modelo Calvo: PRONTO (verificação).
+- Romaneio App→OS→Central: PRONTO COM RESSALVAS — proposta SQL gerada,
+  exigindo aplicação em ambiente controlado e vínculo real das 6 alocações
+  órfãs (fora do escopo técnico).
+
+================================================================================
+SEÇÃO 28 — PENDÊNCIAS
+================================================================================
+1. (Prod) Aplicar A31C_PROPOSTA_SYNC_APP_ROMANEIO.sql após comprovação em
+   ambiente controlado; validar grants com has_function_privilege.
+2. (Prod) Vincular as 6 alocações App com romaneio a uma OS real (operacional).
+3. (Prod) Avaliar recriação da view vw_app_motorista_operacoes (m127e1) para
+   refletir romaneio — confirmar contrato com time Flutter antes.
+4. UX premium da Central/Detalhes e personalização de colunas (adiado).
+5. Playwright da Central (requer ambiente QA + credenciais reais).
+6. Atualizar AGENTS.md com resumo A31-C.
+
+================================================================================
+SEÇÃO 29 — REGRAS DE OURO CUMPRIDAS
+================================================================================
+- Fonte única: lançamento manual grava em alocacoes_escala — sem tabela
+  paralela, sem OS falsa, sem apagar rascunhos de teste.
+- NFs em lote preserva bloqueio fiscal (CT-e/MDF-e) + soft-delete da A31-B.
+- Nenhuma migration executada em produção; proposta SQL isolada e comentada.
+- Sem rollback destrutivo; sem db push/seed.
+
+================================================================================
+SEÇÃO 30 — PRÓXIMOS PASSOS
+================================================================================
+1. Aprovar e aplicar a proposta de sincronização do Romaneio App→OS.
+2. Playwright da Central (Fatura, NF em lote, Lançar Serviço) em QA.
+3. UX premium Central/Detalhes + personalização de colunas.
+4. Homologação manual do fluxo "Lançar Serviço → Central → Fatura → PDF".
+
+================================================================================
+SEÇÃO 31 — ASSINATURA
+================================================================================
+- Relatório A31C gerado em 2026-08-16.
+- Validações: tsc 0 erros | vitest 211/211 | build 35.81s.
+- Arquivo de proposta: A31C_PROPOSTA_SYNC_APP_ROMANEIO.sql (NÃO executado).
+================================================================================

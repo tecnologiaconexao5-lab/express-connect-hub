@@ -1,0 +1,34 @@
+A31-J1.12 — Sincronizar Desconto do Prestador na Escala
+=====================================================================
+ARQUIVOS ALTERADOS
+  src/components/operacao/EscalaLista.tsx (payload de salvar, SELECT/leitura,
+    reabertura de edição)
+  src/services/escala/escalaFinanceiroDesconto.ts (NOVO — helpers puros e testáveis)
+MAPEAMENTO ANTIGO
+  valor_desconto: totals.prestador.descontos  (prestador contaminava a perna cliente)
+  valor_desconto_prestador: (inexistente na Escala)
+MAPEAMENTO NOVO
+  valor_desconto            = desconto CLIENTE (ajuste cliente negativo)
+  valor_desconto_prestador  = desconto/ajuste PRESTADOR
+  valor_frete               = base + parte POSITIVA do ajuste cliente (sem duplicidade)
+SINCRONIZAÇÃO ESCALA/CENTRAL
+  Escala salva nos 2 campos oficiais → Central reconstrói Total Cliente (frete −
+  desconto cliente) e Total Prestador (repasse − desconto prestador) iguais.
+  Central salva desconto → Escala reabre: campo Cliente = valor_desconto (como
+  ajuste negativo); campo Prestador = valor_desconto_prestador (fallback legado
+  quando o campo novo é 0).
+TESTES
+  NOVO a31j12_desconto_escala_sync.test.ts (10): 1 cliente→valor_desconto;
+  2 prestador→valor_desconto_prestador; 3 reabrir preserva ambos; 3b legado;
+  4 Total Cliente só desconto cliente; 5 Total Prestador só desconto prestador;
+  5b coexistência; 6 sem impacto KM/pedágio; + 2 integração Escala→Central e
+  Central→Escala.
+  Regressão direta A31-J1.11 e pedágio/KM: a31j11(7)+a31j16(7)+a31j19(7)+
+  a31j1(14)+a31j18(3)+a31j17(7)+a31c(5)+a31e(7) = 67/67 PASS.
+TSC/BUILD
+  npx tsc --noEmit = 0 erros | build não executado (não necessário).
+PENDÊNCIA REAL
+  Alocações legadas (Escala antiga) com prestador desconto gravado em valor_desconto
+  seguem ambíguas — o fallback de leitura as trata como prestador; migração de dados
+  futura deve separá-las. Ajuste positivo do cliente continua embutido em valor_frete
+  (não é reaberto separadamente na edição).

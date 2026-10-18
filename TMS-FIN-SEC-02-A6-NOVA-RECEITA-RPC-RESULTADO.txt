@@ -1,0 +1,228 @@
+================================================================================
+MISSAO: TMS-FIN-SEC-02-A6-NOVA-RECEITA-RPC
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+RESULTADO: PASS — P0 eliminado (criação manual de AR agora via RPC oficial).
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+" Eliminado o DML direto da criacao manual de Contas a Receber? "  ==>  SIM.
+UI ativa -> receberService -> RPC oficial f_criar_recebivel_manual()
+(transacional, SECURITY DEFINER, idempotente). ZERO INSERT direto alcancavel.
+
+--------------------------------------------------------------------------------
+1. SCHEMA AUDITADO (real, PROD)
+--------------------------------------------------------------------------------
+financeiro_receber (39 colunas): id, cliente_id(uuid), descricao, valor(numeric),
+  vencimento(date), status, created_at, updated_at, os_id(text), cliente(text),
+  cliente_nome, data_vencimento(date), data_emissao(date), data_pagamento(date),
+  categoria, observacoes, cliente_documento, fatura, serie, numero, os_vinculadas,
+  contrato_vinculado, proposta_vinculada, valor_bruto, valor_liquido, desconto,
+  juros, multa, abatimento, data_previsao_recebimento, recorrente(bool),
+  quantidade_parcelas(int), parcela_atual(int), centro_resultado, plano_conta,
+  conta_entrada, recorrencia, fatura_id(uuid), is_teste(bool NOT NULL).
+  => NAO possui tenant_id. NAO possui conta_financeira_id. NAO possui idempotency_key.
+clientes: id, razao_social, nome_fantasia, cnpj, tenant_id  (tenant_id existe).
+contas_financeiras: id, nome, ativa, principal  (NAO referenciada por AR).
+tenant_usuarios: papeis reais = super_admin, financeiro, operacional, comercial,
+  atendimento, cliente.
+Constraints relevantes: pkey(id); uq_fr_os_id(os_id); uq_receber_fatura_id(fatura_id).
+Contagens PROD: financeiro_receber = 124 (116 avulsos, 8 com fatura, 77 is_teste).
+
+TENANT (decisao): sem coluna tenant_id em financeiro_receber, usou-se o vinculo
+SEGURO real disponivel: clientes.tenant_id = tenant do usuario autenticado. Nao foi
+inventado isolamento falso.
+
+--------------------------------------------------------------------------------
+2. MIGRATION / RPC (contrato final)
+--------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20260924000020_fin_sec02_a6_criar_recebivel_manual.sql
+Rollback: supabase/migrations/20260924000021_fin_sec02_a6_rollback.sql
+
+Conteudo:
+  a) ALTER TABLE financeiro_receber ADD COLUMN idempotency_key text (IF NOT EXISTS);
+  b) CREATE UNIQUE INDEX uq_fr_idempotency_key ON (idempotency_key) WHERE NOT NULL;
+  c) CREATE FUNCTION f_criar_recebivel_manual(p_payload jsonb, p_idempotency_key text)
+     RETURNS TABLE(recebivel_id uuid, criado boolean)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+  d) REVOKE ALL FROM PUBLIC/anon; GRANT EXECUTE TO authenticated, service_role;
+  e) COMMENT oficial (unica porta permitida).
+
+Requisitos atendidos:
+  1  SECURITY DEFINER com search_path fixo ......... OK (public, pg_temp)
+  2  auth.uid() obrigatorio ........................ OK (NAO_AUTENTICADO)
+  3  autorizacao financeiro/admin .................. OK (super_admin/admin/financeiro)
+  4  validacao de cliente .......................... OK (obrigatorio + tenant via clientes)
+  5  valor > 0 ..................................... OK (VALOR_INVALIDO)
+  6  vencimento obrigatorio ........................ OK (VENCIMENTO_OBRIGATORIO)
+  7  status inicial permitido ...................... OK ('aberto','pendente','a vencer',
+                                                        'a_vencer','previsto'; 'pago' BLOQUEADO)
+  8  idempotencia real ............................. OK (idempotency_key + unique index)
+  9  anti duplicacao retry/duplo clique ............ OK (ON CONFLICT DO NOTHING -> reuso)
+  10 retorna ID criado ............................. OK (recebivel_id)
+  11 erros claros, sem falso sucesso ............... OK (RAISE EXCEPTION nomeados)
+  12 UI sem INSERT direto .......................... OK (ver itens 3/4)
+
+--------------------------------------------------------------------------------
+3. FRONTEND/SERVICE ALTERADO
+--------------------------------------------------------------------------------
+src/services/financeiro/receberService.ts
+  - + gerarChaveIdempotencia(prefixo) -> uuid (crypto.randomUUID com fallback)
+  - + montarPayloadRecebivel() (extraido; mesmas validacoes locais)
+  - ~ criarRecebivel(): REMOVIDO .from("financeiro_receber").insert();
+    agora supabase.rpc("f_criar_recebivel_manual", { p_payload, p_idempotency_key })
+  - ~ criarRecebiveisEmLote(): REMOVIDO INSERT em lote; agora N chamadas RPC com
+    chave de lote (lote-key + indice). Retorna quantos foram criados.
+  - (ja descontinuados) criarRecebivelDeEscala()/criarRecebiveisEscalaEmLote() ->
+    throw (fluxo legado F0-D; nao fazem DML).
+  - + RecebivelInput.idempotency_key?: string
+
+src/components/financeiro/ContasReceberEnterprise.tsx
+  - + useRef novaReceitaKeyRef (chave por sessao do dialogo)
+  - ~ "Nova Receita" onClick / abertura de edicao: novaReceitaKeyRef =
+    gerarChaveIdempotencia("nr")
+  - ~ handleSalvarReceita: dataToSave.idempotency_key = novaReceitaKeyRef.current
+  - ~ handleGerarParcelas: dataToSave.idempotency_key = `${key}-p${i+1}` (por parcela)
+  - ZERO INSERT direto (herdado do service).
+
+Call sites remanescentes de INSERT direto:
+  - src/lib/testes/testeMissaoOSCompleta.ts (harness MANUAL de teste; NAO importado
+    por nenhuma UI/rota) — nao alcancavel por fluxo ativo. Registrado como P1 residual.
+  - scripts/* (execucao manual, fora do runtime da aplicacao) — sem impacto de UI.
+  - src/components/financeiro/ContasReceber.tsx — componente ORFAO (nao roteado).
+
+--------------------------------------------------------------------------------
+4. ANTES / DEPOIS
+--------------------------------------------------------------------------------
+ANTES (A5): UI -> criarRecebivel(payload) -> INSERT direto financeiro_receber
+            (sem RPC, sem idempotencia, sem contrato).
+DEPOIS(A6): UI -> criarRecebivel/parcelas -> RPC f_criar_recebivel_manual
+            (SECURITY DEFINER, validacoes, idempotencia, retorno de ID).
+
+--------------------------------------------------------------------------------
+5. IDEMPOTENCIA (prova real, transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+Chave "A6-TEST-<ts>":
+  chamada 1 -> { recebivel_id: 019321eb-..., criado: true }
+  chamada 2 -> { recebivel_id: 019321eb-..., criado: false } (MESMO id)
+  linhas com a chave: 1
+=> DUP-OK = true. Retry/duplo clique NAO duplica. Parcelamento usa chave por parcela.
+
+--------------------------------------------------------------------------------
+6. TESTES
+--------------------------------------------------------------------------------
+src/test/fin_sec02_a6_receber_rpc.test.ts -> 11/11 PASS
+  - service sem INSERT direto; UI sem INSERT direto
+  - chamada SOMENTE RPC; retorno {recebivel_id, criado}
+  - idempotencia (chave fixa em 2 chamadas)
+  - fail-safe (RPC sem ID / com erro) -> lanca, sem falso sucesso
+  - validacoes locais (cliente/vencimento/valor)
+  - lote: 3 chamadas com chaves distintas
+  - UI passa idempotency_key (unico e por parcela)
+  - migration com SECURITY DEFINER/search_path/auth.uid()/unique index/REVOKE anon
+Regressao full vitest: 1625 passed | 33 failed | 155 skipped.
+  - As 33 falhas sao PRE-EXISTENTES e NAO relacionadas a A6 (a31j11, ag07f, ag07h,
+    ag07j3, f0e, f0k, f0l, rec02, rec03_1, rec03, rec04). Nenhum arquivo de teste
+    falho referencia receberService/criarRecebivel/ContasReceberEnterprise/RPC A6.
+
+--------------------------------------------------------------------------------
+7. EVIDENCIAS (A–L)
+--------------------------------------------------------------------------------
+A) RPC criada/contrato final ....... pg_proc possui f_criar_recebivel_manual
+                                     (prosecdef=true); migration registrada.
+B) permissoes ..................... has_function_privilege: anon=EXECUTE -> FALSE;
+                                     authenticated -> TRUE. Grants: authenticated,
+                                     service_role (PUBLIC/anon revogados).
+C) idempotencia ................... chamada 1 criado=true; chamada 2 criado=false
+                                     mesmo ID; 1 linha.
+D) chamada unica/retry ............ idem C; nenhuma duplicata.
+E) criacao manual ................. registro: valor=1000, valor_bruto=1000,
+                                     valor_liquido=1000, vencimento=data_vencimento
+                                     =2026-12-01, status=pendente, cliente/cliente_nome
+                                     preenchidos.
+F) parcelamento ................... lote: 3 chamadas RPC, 3 chaves distintas
+                                     ("lote-*"); UI: `${key}-p${i+1}`.
+G) ZERO DML direto alcancavel ..... source scan service + UI (sem .insert em
+                                     financeiro_receber); legados throw; ContasReceber
+                                     orfao; harness de teste nao roteado.
+H) erro/fail-safe ................. SEM_PERMISSAO_FINANCEIRO (operacional);
+                                     VALOR_INVALIDO (0); VENCIMENTO_OBRIGATORIO;
+                                     STATUS_INICIAL_INVALIDO (pago);
+                                     IDEMPOTENCY_KEY_OBRIGATORIA;
+                                     CLIENTE_INVALIDO_OU_OUTRO_TENANT. Service lanca
+                                     se RPC sem ID ou com error (sem falso sucesso).
+I) RLS/grants ..................... policies fr_* (INSERT/UPDATE/DELETE/SELECT TO
+                                     authenticated, guard tenant_usuarios) inalteradas;
+                                     funcao com grants restritos.
+J) testes ......................... 11/11 PASS (A6) + full suite (falhas pre-existentes).
+K) build .......................... npm run build => "built in 1m 1s" OK.
+                                     tsc -p tsconfig.app.json: 749 erros (baseline 750;
+                                     NENHUM erro novo nos arquivos A6).
+L) PROD sem alteracao financeira ... financeiro_receber: 124 ANTES = 124 DEPOIS;
+                                     linhas com idempotency_key = 0 (nada persistido);
+                                     provas em BEGIN...ROLLBACK.
+
+--------------------------------------------------------------------------------
+8. RESULTADO
+--------------------------------------------------------------------------------
+PASS.
+- P0 "Nova Receita" (A5) ELIMINADO: criacao manual de AR via contrato oficial,
+  transacional, seguro e idempotente; ZERO INSERT direto alcancavel por UI/fluxos ativos.
+
+--------------------------------------------------------------------------------
+9. P0 / P1 RESTANTES
+--------------------------------------------------------------------------------
+P0 restantes: 0.
+  (S1, S2, A4 fechados antes; A5/P0 Nova Receita fechado nesta A6.)
+P1 restantes: 9.
+  1. 10 pagamentos 'pago' sem baixa (integ.)            [herdado A5]
+  2. 9 faturas emitidas sem AR                          [herdado A5]
+  3. contas_financeiras sem tenant_id                   [herdado A5]
+  4. grants residuais de anon em algumas tabelas        [herdado A5]
+  5. cast os_select_cliente                             [herdado A5]
+  6. data canonica da Margem                            [herdado A5]
+  7. DELETE de AR em OrdensServicoLista                 [herdado A5]
+  8. financeiro_receber SEM conta_financeira_id (conta_entrada textual) [NOVO estrutural]
+  9. categoria/plano_conta/centro_resultado sem fonte real (mocks de front) [NOVO]
+
+--------------------------------------------------------------------------------
+10. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- Isolamento por linha: financeiro_receber nao tem tenant_id; a autorizacao usa
+  clientes.tenant_id (unico vinculo seguro do schema). Sem coluna tenant_id nao ha
+  isolamento por linha alem do vinculo do cliente — herdado do schema, nao inventado.
+- Classificacao contabil: categoria/plano_conta/centro_resultado seguem persistidos
+  como texto a partir de mocks do front (nao ampliado nesta missao) -> P1 #9.
+- conta_entrada permanece TEXTO (sem FK para contas_financeiras) -> P1 #8.
+- criarRecebivel passou a retornar { recebivel_id, criado } em vez da linha completa.
+  Unicos callers ativos (ContasReceberEnterprise) nao usam o retorno (fazem refetch);
+  ContasReceber e orfao. Sem impacto funcional.
+- Armazenamento de idempotency_key: coluna nova aditiva; rollback documentado.
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-SEC-02-A7 — P1 estrutural do Receber: (a) adicionar conta_financeira_id
+(com FK a contas_financeiras) e (b) definir fonte REAL de classificacao contabil
+(categoria/plano_conta/centro_resultado), eliminando os mocks — sem mega-refatoracao
+fora do modulo Receber. Alternativa: tratar P1 operacionais (10 pagos sem baixa /
+9 faturas sem AR).
+
+--------------------------------------------------------------------------------
+12. CONFIRMACAO
+--------------------------------------------------------------------------------
+NAO alterados: S1/S2/A4; baixa financeira existente; 10 pagos sem baixa; 9 faturas
+sem AR; APP; Comercial; Efi; Programacao Operacional. Nenhum dado financeiro de PROD
+alterado (124 AR inalterado; provas em ROLLBACK). Nenhum secret impresso.
+
+================================================================================
+Arquivo ..: TMS-FIN-SEC-02-A6-NOVA-RECEITA-RPC-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-SEC-02-A6-NOVA-RECEITA-RPC-RESULTADO.txt
+Tamanho ..: 14264 bytes
+Data .....: 24/09/2026 20:20:28
+================================================================================
+FIM DO RELATORIO — TMS-FIN-SEC-02-A6
+================================================================================

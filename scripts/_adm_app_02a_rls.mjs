@@ -1,0 +1,13 @@
+import pg from "pg";
+import fs from "node:fs";
+const cs = fs.readFileSync(".env","utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const pool = new pg.Pool({ connectionString: cs, ssl:{rejectUnauthorized:false} });
+const q = async (s) => (await pool.query(s)).rows;
+const o = {};
+o.pol_prestadores_full = await q(`select policyname, cmd, roles::text, coalesce(qual,'(null)') qual, coalesce(with_check,'(null)') with_check from pg_policies where schemaname='public' and tablename='prestadores' order by policyname`);
+o.pol_recrut_candidatos = await q(`select policyname, cmd, roles::text, coalesce(qual,'(null)') qual, coalesce(with_check,'(null)') with_check from pg_policies where schemaname='public' and tablename in ('recrutamento_candidatos','recrutamento_prestadores','candidato_documentos','documentos_prestadores') order by tablename, policyname`);
+o.constrains_prestadores = await q(`select conname, pg_get_constraintdef(oid) def from pg_constraint where conrelid='public.prestadores'::regclass order by conname`);
+o.views = await q(`select table_name from information_schema.views where table_schema='public' and (table_name like '%prestad%' or table_name like '%recrut%' or table_name like '%candidat%') order by table_name`);
+o.func_app = await q(`select proname, prosecdef, provolatile, pg_get_function_identity_arguments(oid) args from pg_proc where proname like 'app_s6%' or proname like '%recrutamento%' or proname like 'f_bridge%' order by proname`);
+console.log(JSON.stringify(o,null,2));
+await pool.end();

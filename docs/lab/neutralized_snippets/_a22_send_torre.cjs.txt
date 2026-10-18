@@ -1,0 +1,25 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const fs = require('fs');
+const url = 'https://REDACTED_PROD_REF.supabase.co/rest/v1/rpc/f_responder_mensagem_torre';
+const anon = 'REDACTED_ANON_KEY';
+const token = fs.readFileSync(process.env.TOKENFILE, 'utf8').trim();
+const body = {
+  p_alocacao_id: 'ca5fe225-7114-42da-9997-c3d466e5df52',
+  p_mensagem: 'RESPOSTA HML A22 TORRE PARA APP',
+  p_idempotency_key: 'a22-hml-torre-' + Date.now() + '-' + 'f1e2d3c4-aaaa-bbbb-cccc-000000000001'
+};
+(async () => {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: anon,
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  const text = await res.text();
+  console.log('HTTP', res.status);
+  console.log(text);
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Star, Plus, Trash2, Users, Heart, TrendingUp, Award, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore } from "@/stores/talentBankStore";
 
 export default function ShortlistPanel() {
@@ -73,7 +74,7 @@ export default function ShortlistPanel() {
                 {talentosLista.map((t) => (
                   <div key={t.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setTalentoAtivo(t.id)}>
                     <div className="w-7 h-7 rounded-lg overflow-hidden bg-muted shrink-0">
-                      <img src={t.foto} alt="" className="w-full h-full object-cover" />
+                      <SafeImage src={t.foto} alt="" className="w-full h-full object-cover" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-foreground truncate">{t.nome}</p>

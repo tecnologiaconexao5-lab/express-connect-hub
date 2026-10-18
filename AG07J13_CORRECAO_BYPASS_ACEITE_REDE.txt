@@ -1,0 +1,227 @@
+AG-07J.13 — CORREÇÃO BYPASS ACEITE REDE
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+CELULAR/REDMI NECESSÁRIO:
+NÃO
+
+========================
+RPC
+========================
+
+RPC:
+f_aceitar_oportunidade_rede
+
+MIGRATION EFETIVA ANTERIOR:
+20260816_a27b_fix_aceitar_cliente_id.sql (A27B)
+- Parâmetro: p_prestador_uuid (renomeado de p_prestador_id em M111)
+- TS caller passa: p_prestador_id (M84 naming)
+- MISMATCH identificado e corrigido na nova migration
+
+NOVA MIGRATION CRIADA:
+SIM — 20260825_j13_fix_aceitar_rede_bypass.sql
+
+ASSINATURA PRESERVADA:
+SIM — (p_oportunidade_id uuid, p_prestador_id uuid, p_auth_user_id uuid DEFAULT NULL)
+Nota: parâmetro renomeado de p_prestador_uuid para p_prestador_id para alinhar com o caller TS (redePrestadoresService.ts:246)
+
+CONTRATO DE RETORNO PRESERVADO:
+SIM — JSONB com {sucesso, os_id, alocacao_id, rota_id, prestador_id, operation_mode, mensagem} (sucesso) ou {sucesso, erro} (falha)
+
+========================
+GATES
+========================
+
+STATUS PRESTADOR:
+VALIDADO — status = 'ativo'
+
+LIBERADO_APP:
+VALIDADO — liberado_app = true (ADICIONADO — versão anterior não validava)
+
+TIPO VEÍCULO:
+VALIDADO — match exato via LOWER(TRIM()), veículo obrigatório vinculado ao prestador (prestador_vinculado), ORDER BY principal DESC
+
+CAPACIDADE KG:
+VALIDADO — capacidade_kg >= peso OS (quando ambos > 0)
+
+CUBAGEM M3:
+VALIDADO — capacidade_m3 >= cubagem OS (quando ambos > 0)
+
+REFRIGERADO/TÉRMICO:
+VALIDADO — carga_refrigerada=true ou veiculo_termica IN ('refrigerado','congelado','termico') → veículo tipo_carga deve ser refrigerado/congelado/térmico (não 'seco')
+
+AJUDANTE:
+VALIDADO — carga_ajudante=true → BLOQUEIA aceite via Rede (alocação criada com ajudantes=0 por padrão, informação indisponível no momento do aceite)
+
+========================
+BYPASS
+========================
+
+VEÍCULO INCOMPATÍVEL CONSEGUE ACEITAR:
+NÃO — gate tipo_veiculo bloqueia antes de qualquer INSERT/UPDATE
+
+CAPACIDADE INSUFICIENTE CONSEGUE ACEITAR:
+NÃO — gate capacidade_kg/m3 bloqueia antes de qualquer INSERT/UPDATE
+
+REFRIGERADO INCOMPATÍVEL CONSEGUE ACEITAR:
+NÃO — gate térmico bloqueia antes de qualquer INSERT/UPDATE
+
+AJUDANTE INSUFICIENTE CONSEGUE ACEITAR:
+NÃO — gate ajudante bloqueia aceite via Rede quando OS exige ajudante
+
+RPC ESCREVE ANTES DE VALIDAR:
+NÃO — todos os gates posicionados ANTES das operações de escrita (linhas 67-162 do SQL)
+
+SYNC PÓS-RPC CONSEGUE CONTORNAR FALHA:
+NÃO — sincronizarComEscala() só é chamada SE data.sucesso === true (redePrestadoresService.ts:251-253); se gates bloqueiam, RPC retorna sucesso=false e sync NÃO é executada
+
+========================
+SEGURANÇA
+========================
+
+AUTH/OWNERSHIP PRESERVADO:
+SIM — SECURITY DEFINER mantido, p_auth_user_id validado contra auth.users
+
+SEARCH_PATH SEGURO:
+SIM — SET search_path TO 'public'
+
+REVOKE/GRANT:
+NÃO ALTERADO — mantém grants pré-existentes da migration A27B
+
+========================
+TESTES
+========================
+
+TESTES FOCALIZADOS:
+39/39 PASS (ag07j13_bypass_aceite_rede.test.ts)
+
+TESTE BYPASS REDE:
+PASS — cenário AF: OS exige VUC + prestador tem Truck → gate tipo bloqueia; cenário AG: OS exige refrigerado + prestador tem seco → gate térmico bloqueia; cenário AH: OS exige ajudante + 0 alocados → gate ajudante bloqueia
+
+AG-07I-B1:
+31/31 PASS
+
+AG-07I-B2:
+24/24 PASS
+
+AG-07I-B3:
+34/34 PASS
+
+AG-07I-B5:
+46/46 PASS
+
+AG-07F:
+17/17 PASS
+
+AG-07J.10.1:
+10/10 PASS
+
+AG-07J.11:
+14/14 PASS
+
+REGRESSÃO:
+838/838 PASS (68 arquivos)
+
+TYPESCRIPT:
+npx tsc --noEmit → 0 erros
+
+========================
+CONTROLE
+========================
+
+ARQUIVOS ALTERADOS:
+- supabase/migrations/20260825_j13_fix_aceitar_rede_bypass.sql (NOVO — migration corretiva)
+- src/test/ag07j13_bypass_aceite_rede.test.ts (NOVO — 39 testes)
+- scripts/ag07j13_test_rpc_bypass.sql (NOVO — teste manual SQL)
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+========================
+DETALHES DA CORREÇÃO
+========================
+
+MÉTODO: CREATE OR REPLACE FUNCTION (preserva assinatura anterior)
+
+GATES ADICIONADOS (7 validações, todas BEFORE any write):
+
+1. PRESTADOR ATIVO + LIBERADO_APP
+   - SELECT status, liberado_app FROM prestadores WHERE id = p_prestador_id
+   - status != 'ativo' → RECUSA
+   - liberado_app != true → RECUSA
+
+2. VEÍCULO VINCULADO
+   - SELECT FROM veiculos WHERE prestador_vinculado = p_prestador_id AND status = 'disponivel' ORDER BY principal DESC LIMIT 1
+   - NOT FOUND → RECUSA
+
+3. TIPO VEÍCULO
+   - LOWER(TRIM(veiculos.tipo_veiculo)) vs LOWER(TRIM(os.veiculo_tipo))
+   - match exato; OS sem tipo → PASS; veículo sem tipo → RECUSA
+
+4. CAPACIDADE KG
+   - veiculos.capacidade_kg >= os.peso (quando ambos > 0)
+
+5. CAPACIDADE M3
+   - veiculos.capacidade_m3 >= os.cubagem (quando ambos > 0)
+
+6. CAPACIDADE TÉRMICA
+   - os.carga_refrigerada=true OU os.veiculo_termica IN ('refrigerado','congelado','termico')
+   - → veiculos.tipo_carga deve ser 'refrigerado'/'congelado'/'termico'
+   - seco → RECUSA; NULL/desconhecido → RECUSA
+
+7. AJUDANTE
+   - os.carga_ajudante=true → RECUSA (aceite via Rede cria com ajudantes=0)
+
+FIX ADICIONAL:
+- Parâmetro renomeado de p_prestador_uuid para p_prestador_id (alinhamento com caller TS)
+
+========================
+SINCRONIZAÇÃO COM ESCALA
+========================
+
+sincronizarComEscala() (ordemServicoService.ts:36):
+- NÃO possui gates de tipo/capacidade/térmico/ajudante
+- Chamada APENAS após sucesso da RPC (redePrestadoresService.ts:267)
+- Se RPC retorna sucesso=false → sync NÃO executada
+- Conclusão: sync não é bypass — é write redundante pós-gate
+
+========================
+DECISÃO
+========================
+
+BYPASS ACEITE REDE:
+CORRIGIDO
+
+MIGRATION PRONTA PARA PRODUÇÃO:
+SIM
+
+PRÓXIMO BLOQUEIO REAL:
+Nenhum — todas as 7 dimensões de elegibilidade operacional estão protegidas no aceite via Rede
+
+PRÓXIMA MISSÃO:
+Nenhuma — sistema em estado consistente
+
+DECISÃO FINAL:
+A

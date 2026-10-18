@@ -1,0 +1,298 @@
+{
+  "ts": "2026-10-04T23:19:36.146Z",
+  "checks": [
+    {
+      "name": "orc_formula_canonica",
+      "ok": true,
+      "detail": "2/2 orcamentos com valor>0 batem com calcularValorFinal()"
+    },
+    {
+      "name": "orc_exibicao_resolverValorFinal",
+      "ok": true,
+      "detail": "resolverValorFinal devolve o valor efetivo em todos"
+    },
+    {
+      "name": "tabela_cliente_regra",
+      "ok": true,
+      "detail": "7 tabelas ativas: valor = base + km_excedente*valor_km (regra do engine)"
+    },
+    {
+      "name": "tabela_tem_regra_minima",
+      "ok": true,
+      "detail": "7 tabelas de cliente ativas"
+    },
+    {
+      "name": "orc_real_base",
+      "ok": true,
+      "detail": "ORC-202609-7150 valorBase=1920 valorFinal=1920"
+    }
+  ],
+  "orcamentos": [
+    {
+      "numero": "ORC-202609-7150",
+      "status": "em_analise",
+      "cliente": "Cydak do Brasil LTDA",
+      "veiculo_tipo": "vuc",
+      "valor_base_json": 1920,
+      "valor_final_json": 1920,
+      "valor_final_col": 1920,
+      "canonico": 1920,
+      "efetivo_exibicao": 1920,
+      "lucro": 1920,
+      "margem": 100,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202609-8659",
+      "status": "em_analise",
+      "cliente": "Cydak do Brasil LTDA",
+      "veiculo_tipo": "vuc",
+      "valor_base_json": 2200,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 2200,
+      "efetivo_exibicao": 2200,
+      "lucro": 2200,
+      "margem": 100,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202607-3557",
+      "status": "rascunho",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202607-3215",
+      "status": "rascunho",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202607-7806",
+      "status": "rascunho",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202607-9093",
+      "status": "rascunho",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202607-4172",
+      "status": "rascunho",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202605-8494",
+      "status": "enviado",
+      "cliente": "TESTE_AUDITORIA_FINANCEIRO",
+      "veiculo_tipo": "fiorino",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC-202605-9367",
+      "status": "aprovado",
+      "cliente": "",
+      "veiculo_tipo": "",
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    },
+    {
+      "numero": "ORC_AUDIT_1777345821508",
+      "status": "rascunho",
+      "cliente": "CLI_AUDIT_ORC",
+      "veiculo_tipo": null,
+      "valor_base_json": 0,
+      "valor_final_json": 0,
+      "valor_final_col": 0,
+      "canonico": 0,
+      "efetivo_exibicao": 0,
+      "lucro": 0,
+      "margem": 0,
+      "ok_canonico": true,
+      "ok_exibicao": true
+    }
+  ],
+  "tabelas": [
+    {
+      "nome": "HML E2E-06 VUC - HOMOLOGACAO APP",
+      "cliente": "HOMOLOGAÇÃO APP",
+      "tipo_veiculo": "vuc",
+      "base": 300,
+      "franquia": 100,
+      "km_exc_un": 1.2,
+      "valor_cliente": 335.11,
+      "engine_cliente": 335.11,
+      "engine_prestador": 268.09
+    },
+    {
+      "nome": "Fiorino térmica mineiro congelados  ",
+      "cliente": "Mineirao Abc",
+      "tipo_veiculo": "fiorino",
+      "base": 300,
+      "franquia": 100,
+      "km_exc_un": 1.2,
+      "valor_cliente": 335.11,
+      "engine_cliente": 335.11,
+      "engine_prestador": 268.09
+    },
+    {
+      "nome": "VAN 1800 kg Calvo",
+      "cliente": "Calvo Comercio e Importacao",
+      "tipo_veiculo": "hr",
+      "base": 600,
+      "franquia": 140,
+      "km_exc_un": 1,
+      "valor_cliente": 600,
+      "engine_cliente": 600,
+      "engine_prestador": 480
+    },
+    {
+      "nome": "3/4 3.500 refrigerada ",
+      "cliente": "DVL - DISTRIBUIDORA",
+      "tipo_veiculo": "tres_quartos",
+      "base": 900,
+      "franquia": 100,
+      "km_exc_un": 2.49,
+      "valor_cliente": 972.85,
+      "engine_cliente": 972.85,
+      "engine_prestador": 778.28
+    },
+    {
+      "nome": "HR/VAN 1800 GUARULHOS",
+      "cliente": "CALVO",
+      "tipo_veiculo": "hr",
+      "base": 600,
+      "franquia": 140,
+      "km_exc_un": 1,
+      "valor_cliente": 600,
+      "engine_cliente": 600,
+      "engine_prestador": 480
+    },
+    {
+      "nome": "FIORINO DVL",
+      "cliente": "DVL - DISTRIBUIDORA",
+      "tipo_veiculo": "fiorino",
+      "base": 400,
+      "franquia": 100,
+      "km_exc_un": 2.1,
+      "valor_cliente": 461.44,
+      "engine_cliente": 461.44,
+      "engine_prestador": 369.15
+    },
+    {
+      "nome": "Moto atualizada",
+      "cliente": "",
+      "tipo_veiculo": "moto",
+      "base": 25,
+      "franquia": 6,
+      "km_exc_un": 2.25,
+      "valor_cliente": 302.33,
+      "engine_cliente": 302.33,
+      "engine_prestador": 241.86
+    }
+  ],
+  "exemplos_engine": [
+    {
+      "tabela": "HML E2E-06 VUC - HOMOLOGACAO APP",
+      "distancia": 129.257734,
+      "valor_cliente": 335.11
+    },
+    {
+      "tabela": "Fiorino térmica mineiro congelados  ",
+      "distancia": 129.257734,
+      "valor_cliente": 335.11
+    },
+    {
+      "tabela": "VAN 1800 kg Calvo",
+      "distancia": 129.257734,
+      "valor_cliente": 600
+    },
+    {
+      "tabela": "3/4 3.500 refrigerada ",
+      "distancia": 129.257734,
+      "valor_cliente": 972.85
+    },
+    {
+      "tabela": "HR/VAN 1800 GUARULHOS",
+      "distancia": 129.257734,
+      "valor_cliente": 600
+    },
+    {
+      "tabela": "FIORINO DVL",
+      "distancia": 129.257734,
+      "valor_cliente": 461.44
+    },
+    {
+      "tabela": "Moto atualizada",
+      "distancia": 129.257734,
+      "valor_cliente": 302.33
+    }
+  ]
+}

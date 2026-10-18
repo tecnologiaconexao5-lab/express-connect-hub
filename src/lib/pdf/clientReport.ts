@@ -28,7 +28,7 @@ import { resolverNomenclaturaPorTipo } from "@/config/nomenclatura";
 import { obterStatusGlobalOS } from "@/components/operacao/osTypes";
 import { STATUS_GLOBAL_INFO } from "@/components/operacao/statusGlobal";
 
-const CNPJ_EMPRESA = "42.796.040/0001-31";
+const CNPJ_EMPRESA = "31.227.975/0001-80";
 
 /**
  * Gera o PDF profissional da OS para o CLIENTE.

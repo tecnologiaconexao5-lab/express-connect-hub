@@ -1,0 +1,124 @@
+ESCALA-E2E-10-CLEANUP-HML-PRECHECK
+==================================================
+Ambiente: TMS + Supabase PROD | Data: 2026-09-22 | Modo: READ-ONLY
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. IDENTIDADE (REVALIDADA)
+==================================================
+ALLOCATION_ID=730c9584-3bc2-455b-b2d3-1550a3b9445c
+  cliente=3d2d079d (HOMOLOGAÇÃO APP) | prestador=e6646799 (PRESTADOR TESTE APP)
+  placa=HML-A27B | tipo=vuc | km_realizados=0 | valor_frete=300 | valor_repasse=250
+  ordem_servico_id=bae6be02 | status=aguardando_aceite | OC=OC-20260922-5724
+OS_ID=bae6be02-7912-4159-a381-d33dc7fbd891 | numero=OS-202609-633728 | 300/250 | pendente
+RECEBER=3454fd38 (300, pendente) | PAGAR=19164125 (250, pendente) | PP=d0ba5fac (250, nao_vencido)
+→ Sem alteração humana posterior. IDENTITY_PASS=YES
+
+==================================================
+2. DEPENDÊNCIAS (por ALLOCATION_ID / OS_ID)
+==================================================
+alocacoes_escala=1 | ordens_servico=1 | financeiro_receber=1 | financeiro_pagar=1 |
+pagamentos_prestadores=1 | composicao_financeira_os=0 | financeiro_baixas=0 |
+historico_alocacoes_escala=0 | eventos_oficiais=2 | entregas_protocolo=0 | delivery_proofs=0
+
+Demais tabelas com FK para alocacoes_escala/ordens_servico (todas = 0):
+  operacao_mensagens, rotas, rota_paradas, ocorrencias, communication_events, fatura_itens,
+  os_historico, prestador_os, os_ocorrencias, os_pod, pagamentos_prestadores_itens,
+  fiscal_mdfes, fiscal_nfse, fiscal_ctes, fiscal_documentos_vinculados,
+  reembolsos_prestador, rede_oportunidades, tracking_public_links.
+DEPENDENCIES_COMPLETE=YES
+
+FKs relevantes (schema real):
+  alocacoes_escala.ordem_servico_id → ordens_servico (ON DELETE SET NULL)
+  historico_alocacoes_escala/entregas_protocolo → alocacoes_escala (ON DELETE CASCADE; ambos 0)
+  clientes.tabela_valores_padrao_id → tabelas_valores (ON DELETE SET NULL; nenhum cliente aponta p/ HML)
+
+==================================================
+3. SEGURANÇA FINANCEIRA
+==================================================
+BAIXAS_COUNT=0 ✔
+RECEBER: pendente (não recebido/pago) ✔
+PAGAR: pendente (não pago/parcial) ✔
+PP: nao_vencido (não pago) ✔
+COMPOSICAO_COUNT=0 ✔ | POD_COUNT=0 (entregas_protocolo=0, os_pod=0) ✔
+DELIVERY_PROOFS_COUNT=0 ✔
+→ Nenhum pagamento/baixa/POD real. CLEANUP_SAFE até aqui.
+
+==================================================
+4. DADOS TEMPORÁRIOS 07D
+==================================================
+prestadores.valor_diaria atual=250.00 | valor_saida=NULL | updated_at=2026-08-06T15:42:12.718Z
+  snapshot original (07C/07D): valor_diaria=NULL → PROVIDER_ORIGINAL_VALUE=NULL
+HML_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+  nome='HML E2E VUC - HOMOLOGACAO APP' | tipo_veiculo=vuc | cliente='HOMOLOGAÇÃO APP' | ativo=true ✔
+HML_TABLE_USAGE_COUNT=1 (somente a alocação 730c9584 referencia a tabela HML) ✔
+
+==================================================
+5. EFEITOS DE DELETE
+==================================================
+Triggers de DELETE em alocacoes_escala / ordens_servico / tabelas_valores: NENHUM.
+→ DELETE não dispara M66/M80, não cria títulos/OS, não gera eventos financeiros.
+M66 é AFTER INSERT/UPDATE; trg_cancelar_financeiro_alocacao é BEFORE UPDATE → não afetam DELETE.
+Método escolhido: A) DELETE FÍSICO CONTROLADO (sem cancelar antes).
+  Motivo: sem baixas/pagamento/POD; nenhum trigger de DELETE; menor conjunto de writes
+  (cancelar antes geraria writes extras e status 'cancelada' que seriam deletados em seguida).
+
+==================================================
+6. PLANO EXATO (NÃO EXECUTAR AGORA)
+==================================================
+BEGIN;
+  -- 1) Financeiro (títulos abertos; sem baixas)
+  DELETE FROM financeiro_pagar       WHERE id='19164125-6f9f-42d1-8264-bfd4a4caa3ae';  -- 1
+  DELETE FROM financeiro_receber     WHERE id='3454fd38-b765-4b6e-9849-d7a7c9138cc4';  -- 1
+  DELETE FROM pagamentos_prestadores WHERE id='d0ba5fac-5432-4156-a833-fc4e0a8dc2e5';  -- 1
+  -- composicao_financeira_os=0 e financeiro_baixas=0 → nada a fazer
+
+  -- 2) Eventos exclusivos do E2E
+  DELETE FROM eventos_oficiais WHERE id IN
+    ('423e836d-3c32-4a95-b250-c2f353dbf6ff','bb91c353-47e3-4214-98b0-96229c7cd3a9');  -- 2
+
+  -- 3) Alocação e OS do E2E
+  DELETE FROM alocacoes_escala WHERE id='730c9584-3bc2-455b-b2d3-1550a3b9445c';        -- 1
+  DELETE FROM ordens_servico   WHERE id='bae6be02-7912-4159-a381-d33dc7fbd891';        -- 1
+
+  -- 4) Tabela HML (07D)
+  DELETE FROM tabelas_valores  WHERE id='b8c78f48-0b8a-4b88-9a41-5d57c5af8886';        -- 1
+
+  -- 5) Restaurar prestador (07D)
+  UPDATE prestadores SET valor_diaria=NULL
+    WHERE id='e6646799-fbac-453e-a3ef-afdfc01a7085' AND valor_diaria=250.00;            -- 1
+COMMIT;
+
+Pós-cleanup esperado:
+  alocação HML=0 | OS HML=0 | receber HML=0 | pagar HML=0 | PP HML=0 | composição HML=0 |
+  baixas HML=0 | POD/proofs HML=0 | eventos HML=0 | HML_TABLE_ID=0 | prestador valor_diaria=NULL.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+IDENTITY_PASS=YES
+DEPENDENCIES_COMPLETE=YES
+BAIXAS_COUNT=0
+POD_COUNT=0
+HML_TABLE_USAGE_COUNT=1
+PROVIDER_CURRENT_VALUE=250.00
+PROVIDER_ORIGINAL_VALUE=NULL
+
+CLEANUP_METHOD=A (DELETE físico controlado)
+CLEANUP_ORDER=eventos → receber/pagar/pp → alocacao → OS → tabela HML → UPDATE prestador
+  (financeiro/eventos primeiro; alocação/OS depois; tabela e prestador por último)
+EXPECTED_DELETE_COUNTS=8 (receber 1 + pagar 1 + pp 1 + eventos 2 + alocacao 1 + OS 1 + tabela 1)
+EXPECTED_UPDATE_COUNTS=1 (prestador.valor_diaria → NULL)
+CLEANUP_SAFE=YES
+BLOCKERS=(nenhum)
+
+NEXT=ESCALA-E2E-10B-CLEANUP-HML-EXECUTAR
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum INSERT/UPDATE/DELETE; rollback 07D não executado; alocação não cancelada; M66/M80
+intactos; sem migration; nenhum dado histórico fora destes IDs tratado.
+
+DB_WRITES=0
+MIGRATIONS=0

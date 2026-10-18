@@ -1,0 +1,118 @@
+MISSAO 133-D.6 — Aplicacao Controlada da Migration M133-D.4 (RPCs App Motorista)
+==============================================================================
+Data: 2026-07-27
+Percentual oficial: 41%
+Ambiente: PRODUCAO (uwrvzsjtpgaifkktpepn.supabase.co)
+Status: APLICADA E VALIDADA — Escrita controlada aguardando autorizacao
+==============================================================================
+
+RESUMO:
+Aplicacao autorizada da migration 20260722_m133d4_fix_rpc_app_security.sql
+(SHA256: 3E71F461...) corrigindo 3 anomalias:
+  A01 - f_avancar_etapa_app_motorista: STABLE -> VOLATILE
+  A02 - f_atualizar_reversa_app: +auth.uid() + ownership
+  A03 - 3 RPCs: REVOKE PUBLIC/anon -> GRANT auth+service_role
+
+==============================================================================
+ETAPA 1 — PRE-CHECK
+==============================================================================
+  Branch: auditoria-final-integracao                     ✅
+  Migration SHA256: 3E71F461...                         ✅ Confere
+  Rollback SHA256: 59D2F94E...                          ✅ Confere
+  Remote SHA256 unchanged from D.3 freeze                ✅ 3/3
+  No overloads (1 cada)                                  ✅
+  A01 (STABLE bug) confirmado remoto                    ✅
+  A03 (PUBLIC+anon grants) confirmado remoto             ✅
+  Zero DML fora dos corpos                               ✅
+
+==============================================================================
+ETAPA 2 — APLICACAO UNICA
+==============================================================================
+  Inicio:   2026-07-27T17:04:22.287Z
+  Termino:  2026-07-27T17:04:22.615Z
+  Duracao:  0.3s
+  Transacao: COMMIT
+  Erros:    0
+
+==============================================================================
+ETAPA 3 — VALIDACAO IMEDIATA
+==============================================================================
+
+f_buscar_operacoes_motorista:
+  Volatility:          STABLE (correto)                  ✅
+  Grants:              [authenticated,postgres,service_role] ✅
+  Sem PUBLIC/anon:     SIM                                ✅
+  SHA256 pos:          4ebdfbde... (inalterado)          ✅
+
+f_avancar_etapa_app_motorista:
+  Volatility:          VOLATILE (FIX A01)                ✅
+  Grants:              [authenticated,postgres,service_role] ✅
+  Sem PUBLIC/anon:     SIM                                ✅
+  auth.uid()+ownership: SIM                              ✅
+  Assinatura:          5 args, 3 defaults                ✅
+  SHA256 pos:          be7142bf... (alterado)            ✅
+
+f_atualizar_reversa_app:
+  Volatility:          VOLATILE                          ✅
+  Grants:              [authenticated,postgres,service_role] ✅
+  Sem PUBLIC/anon:     SIM                                ✅
+  auth.uid()+ownership (FIX A02): SIM                    ✅
+  Assinatura:          12 args, 11 defaults              ✅
+  SHA256 pos:          f540aadb... (alterado)            ✅
+
+Colateral:
+  Tabelas inalteradas (7 verificadas)                    ✅
+  Triggers inalterados (117)                              ✅
+
+==============================================================================
+ETAPA 4 — TESTES SEM ESCRITA
+==============================================================================
+  anon REST API (3/3): HTTP 401 bloqueado                ✅
+  has_priv anon (3/3): FALSE                             ✅
+  has_priv authenticated (3/3): TRUE                     ✅
+  has_priv service_role (3/3): TRUE                      ✅
+  has_priv postgres (3/3): TRUE                          ✅
+  Chamada direta sem auth (3/3): USUARIO_NAO_AUTENTICADO ✅
+
+MATRIZ DE GRANTS (POS-APLICACAO):
+  Funcao                          anon  PUBLIC  auth  service_role
+  f_buscar_operacoes_motorista    -     -       OK    OK
+  f_avancar_etapa_app_motorista   -     -       OK    OK
+  f_atualizar_reversa_app         -     -       OK    OK
+
+==============================================================================
+ETAPA 5 — TESTES DE ESCRITA (PREPARADOS, NAO EXECUTADOS)
+==============================================================================
+  Plano: scripts/m133d6_write_test_plan.cjs
+  Prestadores com auth_user_id:    1
+  Alocacoes pendentes:             0
+  Alocacoes em andamento:          85
+  Aguardando autorizacao especifica.
+
+==============================================================================
+ARQUIVOS DE EVIDENCIA
+==============================================================================
+  Migration aplicada:  supabase/migrations/20260722_m133d4_fix_rpc_app_security.sql
+  Rollback:            supabase/migrations/20260722_m133d4_rollback.sql
+  Relatorio GO (D.5):  docs/auditoria/relatorios/2026-07-27_missao133d5_revisao_liberacao_m133d4.md
+  Relatorio aplicacao: docs/auditoria/relatorios/2026-07-27_missao133d6_aplicacao_rpcs_app.md  (ESTE)
+  Definicoes remotas:  docs/auditoria/02_evidencias/sql/f-*-motorista_remota*.sql
+  Scripts aplicacao:   scripts/m133d6_*.cjs
+
+==============================================================================
+CONCLUSÃO
+==============================================================================
+RPCs APLICADAS E SEGURANCA VALIDADA —
+ESCRITA CONTROLADA AGUARDANDO AUTORIZACAO
+
+Correcoes:
+  A01 - VOLATILE fix:                           ✅
+  A02 - auth.uid()+ownership fix:                ✅
+  A03 - Grants PUBLIC/anon removidos:            ✅
+  Zero impacto colateral:                        ✅
+  Rollback disponivel:                           ✅
+
+Pendente:
+  Testes de escrita (requer autorizacao)
+  Homologacao App Motorista (Flutter externo)
+  Percentual geral: 41% (inalterado)

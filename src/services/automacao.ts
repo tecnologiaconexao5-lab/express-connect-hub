@@ -46,7 +46,7 @@ export function getAutomacaoConfig(): AutomacaoConfig {
   _config = {
     n8n_webhook_url: import.meta.env.VITE_N8N_WEBHOOK_URL || "",
     n8n_api_key: import.meta.env.VITE_N8N_API_KEY || "",
-    groq_api_key: import.meta.env.VITE_GROQ_API_KEY || "",
+    groq_api_key: "",
     whatsapp_enabled: import.meta.env.VITE_WHATSAPP_ENABLED === "true",
     whatsapp_api_url: import.meta.env.VITE_WHATSAPP_API_URL || "",
     email_enabled: import.meta.env.VITE_EMAIL_ENABLED === "true",
@@ -207,12 +207,6 @@ export async function gerarTextoComGroq(
   prompt: string,
   contexto?: Record<string, any>
 ): Promise<string> {
-  const config = getAutomacaoConfig();
-
-  if (!config.groq_enabled || !config.groq_api_key) {
-    return prompt;
-  }
-
   try {
     const system = `Você é o Assistente Operacional da Conexão Express Hub. Sua função é gerar mensagens comerciais profissional e amigáveis para logística. Responda apenas com o texto da mensagem, sem prefixos, sem explicações. Seja direto, cordial e profissional.`;
 
@@ -220,31 +214,22 @@ export async function gerarTextoComGroq(
       ? `${prompt}\n\nContexto operacional:\n${JSON.stringify(contexto, null, 2)}`
       : prompt;
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.groq_api_key}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userMsg },
-        ],
-        temperature: 0.7,
-        max_tokens: 512,
-      }),
+    const resultado = await proxyIaClient.executar({
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+      prompt: `${system}\n\n${userMsg}`,
+      temperature: 0.7,
+      max_tokens: 512,
     });
 
-    if (!response.ok) {
-      throw new Error(`Groq API: ${response.status}`);
+    if (!resultado.sucesso) {
+      console.warn("[Automacao] Groq via proxy-ia indisponível:", resultado.erro);
+      return prompt;
     }
 
-    const data = await response.json();
-    return data.choices[0]?.message?.content?.trim() || prompt;
+    return resultado.resposta?.trim() || prompt;
   } catch (err) {
-    console.warn("[Automacao] Groq indisponível, retornando prompt original:", err);
+    console.warn("[Automacao] proxy-ia indisponível, retornando prompt original:", err);
     return prompt;
   }
 }

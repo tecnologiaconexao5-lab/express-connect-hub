@@ -1,0 +1,207 @@
+================================================================================
+RELATORIO AG-07J.3 — VALIDAÇÃO PRÉ-PRODUÇÃO DO GATE DO APP
+E PROTEÇÃO DE OPERAÇÕES LEGADAS
+Data: 2026-08-22
+Status: AUDITORIA CONCLUÍDA — DECISÃO: B (PRECISA DE CORREÇÃO)
+================================================================================
+
+1. RESPOSTAS OBRIGATÓRIAS
+--------------------------
+RPC AUDITADA: f_buscar_operacoes_motorista (2 overloads)
+OVERLOADS: 2 criados pela migration (0-param + 4-param)
+           + 1 existente M133-D.2 (p_auth_user_id UUID) = 4 TOTAL
+CONSUMIDOR FLUTTER: App Motorista (Flutter PWA externo)
+CONTRATO APP COMPATÍVEL: NÃO (overload 4-param tem assinatura diferente do M133-D.2)
+ATIVO+LIBERADO RECEBE: SIM (gate implementado)
+EM_ANALISE RECEBE NOVA OPERAÇÃO: NÃO (gate bloqueia)
+BLOQUEADO RECEBE NOVA OPERAÇÃO: NÃO (gate bloqueia)
+INATIVO RECEBE NOVA OPERAÇÃO: NÃO (gate bloqueia)
+LIBERADO_FALSE RECEBE NOVA: NÃO (gate bloqueia)
+OPERAÇÃO EM ANDAMENTO PRESERVADA: SIM (view não filtra por status)
+OPERAÇÕES LEGADAS PRESERVADAS: PARCIAL (0-param preserva; 4-param muda fonte)
+DUPLICIDADE INTRODUZIDA: NÃO
+ESCRITA DESTRUTIVA: NÃO
+FORMATO DE RETORNO PRESERVADO: PARCIAL (0-param SIM; 4-param NÃO)
+MIGRATION ALTERADA LOCALMENTE: NÃO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+TESTES: 38/38 (novo ag07j3_gate_rpc_operacoes.test.ts)
+TSC: 0 erros
+DECISÃO: B — PRECISA DE CORREÇÃO ANTES DA APLICAÇÃO
+PENDÊNCIAS: 5 gaps (ver seção 11)
+
+2. MIGRATION LINEAGE
+=====================
+
+  M111 (2026-07-13) → M127-E.1 (2026-07-15) → M128-C.2 (2026-07-17)
+    → M133-D.2 (2026-07-22) → M133-D.4 (2026-07-22)
+    → TMS-032 (2026-08-01) → AG-07F (2026-08-22) ← ESTA MIGRATION
+
+  Overloads existentes ANTES de AG-07F:
+  1. () → SETOF vw_app_motorista_operacoes (M128-C.2)
+  2. (p_auth_user_id UUID) → jsonb (M133-D.2)
+
+  Overloads APÓS AG-07F:
+  1. () → SETOF vw_app_motorista_operacoes (AG-07F sobrescreve M128-C.2) ✅
+  2. (p_auth_user_id UUID) → jsonb (M133-D.2 NÃO substituído) ⚠️
+  3. (p_prestador_id UUID, p_status TEXT, p_limit INT, p_offset INT) → jsonb (AG-07F NOVO) ⚠️
+
+3. GATE DE ELEGIBILIDADE — VALIDAÇÃO
+======================================
+
+  Regra SQL (idêntica ao TS):
+    lower(coalesce(p.status, '')) IN ('ativo', 'aprovado')
+    AND p.liberado_app = true
+
+  Cenário                          │ Overload 0-param │ Overload 4-param
+  ─────────────────────────────────┼──────────────────┼──────────────────
+  ativo + liberado_app=true        │ ✅ Retorna ops   │ ✅ Retorna ops
+  aprovado + liberado_app=true     │ ✅ Retorna ops   │ ✅ Retorna ops
+  em_analise + liberado_app=false  │ ❌ Zero rows     │ ❌ Erro JSON
+  bloqueado + liberado_app=false   │ ❌ Zero rows     │ ❌ Erro JSON
+  inativo + liberado_app=false     │ ❌ Zero rows     │ ❌ Erro JSON
+  reprovado + liberado_app=false   │ ❌ Zero rows     │ ❌ Erro JSON
+  ativo + liberado_app=false       │ ❌ Zero rows     │ ❌ Erro JSON
+  prestador inexistente            │ ❌ Zero rows     │ ❌ Erro JSON
+
+  ✅ Gate funciona corretamente para ambos os overloads.
+
+4. OPERAÇÃO EM ANDAMENTO
+=========================
+
+  A migration NÃO filtra por status da operação.
+  A view vw_app_motorista_operacoes retorna todas as alocações
+  onde prestador_id IS NOT NULL, independente do status.
+
+  Status da operação      │ Visível no App
+  ────────────────────────┼────────────────
+  pendente                │ ✅
+  aceita                  │ ✅
+  em_carregamento         │ ✅
+  em_rota                 │ ✅
+  entrega_em_andamento    │ ✅
+  concluida               │ ✅
+  cancelada               │ ✅ (view não exclui)
+  recusada                │ ✅ (view não exclui)
+
+  ⚠️ REGRA DE SEGURANÇA: Se motorista é bloqueado DEPOIS de
+  iniciar operação, a operação DESAPARECE do App (zero rows).
+  Isto é o comportamento INTENCIONAL da migration: elegibilidade
+  é verificada a cada chamada da RPC, não na criação da operação.
+
+5. GAPS IDENTIFICADOS
+======================
+
+GAP J.3-1: REVOKE ALL AUSENTE NO OVERLOAD 4-PARAM (P1)
+  Overload 0-param tem: REVOKE ALL FROM PUBLIC, anon ✅
+  Overload 4-param NÃO tem: herda permissões padrão do PostgreSQL ⚠️
+  Impacto: anon podría executar a RPC 4-param
+  Correção: adicionar REVOKE ALL antes do GRANT
+
+GAP J.3-2: OWNERSHIP CHECK REMOVIDO (P1)
+  M133-D.2 verificava: auth.uid() = prestadores.auth_user_id
+  AG-07F 4-param: aceita qualquer p_prestador_id sem verificar ownership
+  Impacto: qualquer authenticated pode consultar operações de qualquer prestador
+  Correção: adicionar WHERE auth.uid() = (SELECT auth_user_id FROM prestadores WHERE id = p_prestador_id)
+
+GAP J.3-3: M133-D.2 NÃO SUBSTITUÍDO (P1)
+  M133-D.2 (p_auth_user_id UUID) continua ativo no DB
+  Se App chama M133-D.2, gate AG-07F NÃO é aplicado
+  Impacto: bypass do gate se App usar assinatura antiga
+  Correção: DROP M133-D.2 após confirmar App migrou para nova assinatura
+
+GAP J.3-4: CANCELADA/RECUSADA NÃO EXCLUÍDA (P2)
+  M133-D.2 excluía: IS DISTINCT FROM 'cancelada'/'recusada'
+  AG-07F 4-param NÃO exclui (usa p_status caller-controlled)
+  Impacto: operações canceladas podem aparecer no App
+  Correção: adicionar filtro default ou documentar comportamento
+
+GAP J.3-5: FONTE DE DADOS MUDOU (P2)
+  M133-D.2: alocacoes_escala direta (30 campos manuais)
+  AG-07F 4-param: vw_app_motorista_operacoes (107 campos da view)
+  Impacto: row shape diferente, paradas podem não estar incluídas
+  Correção: validar com time Flutter se view tem todos os campos necessários
+
+6. SEGURANÇA DA MIGRATION
+==========================
+
+  ✅ CREATE OR REPLACE (não DROP+CREATE)
+  ✅ SECURITY DEFINER
+  ✅ search_path = public
+  ✅ Nenhum DROP destrutivo
+  ✅ Nenhum INSERT/UPDATE/DELETE em tabelas operacionais
+  ✅ Nenhuma limpeza de dados
+  ⚠️ REVOKE ALL ausente no overload 4-param
+  ⚠️ Ownership check ausente no overload 4-param
+
+7. CONTRATO FLUTTER — COMPATIBILIDADE
+=======================================
+
+  Overload 0-param:
+    Antes: SETOF vw_app_motorista_operacoes
+    Depois: SETOF vw_app_motorista_operacoes
+    Compatível: ✅ SIM (mesmo retorno)
+
+  Overload 4-param:
+    M133-D.2: (p_auth_user_id UUID) → jsonb
+    AG-07F:   (p_prestador_id UUID, p_status TEXT, p_limit INT, p_offset INT) → jsonb
+    Compatível: ❌ NÃO (assinatura diferente)
+
+  Envelope de retorno:
+    M133-D.2: { success, error, operacoes, total }
+    AG-07F:   { sucesso, erro, prestador_id, operacoes, total }
+    Compatível: ❌ NÃO (chaves diferentes, idioma diferente)
+
+8. TESTES — 38/38 PASS
+========================
+
+  Suite                              │ Testes │ Status
+  ───────────────────────────────────┼────────┼───────
+  Migration Security Audit           │   9    │  ✅
+  Eligibility Gate SQL Rule          │   5    │  ✅
+  Operation In-Progress Preservation │   5    │  ✅
+  Return Format Compatibility        │   6    │  ✅
+  Overload Coexistence Analysis      │   6    │  ✅
+  Data Source Regression Analysis    │   4    │  ✅
+  Final Checklist                    │   3    │  ✅
+  ───────────────────────────────────┼────────┼───────
+  TOTAL                              │  38    │  ✅
+
+  Regressão AG-07F: 17/17 ✅
+  Regressão AG-07J.1: 15/15 ✅
+  TOTAL GERAL: 70/70 ✅
+
+9. VALIDAÇÃO TYPESCRIPT
+------------------------
+  npx tsc --noEmit → EXIT:0 (0 erros)
+
+10. ARQUIVOS CRIADOS
+----------------------
+  src/test/ag07j3_gate_rpc_operacoes.test.ts — NOVO (38 testes)
+
+11. DECISÃO FINAL
+==================
+
+  CLASSIFICAÇÃO: B — PRECISA DE CORREÇÃO ANTES DA APLICAÇÃO
+
+  MOTIVO:
+  A migration introduz 5 gaps de segurança/compatibilidade que
+  devem ser corrigidos ANTES da aplicação em produção:
+
+  1. REVOKE ALL ausente no overload 4-param (P1)
+  2. Ownership check ausente no overload 4-param (P1)
+  3. M133-D.2 não substituído (P1)
+  4. Cancelada/recusada não excluída (P2)
+  5. Fonte de dados mudou (P2)
+
+  APLICAÇÃO EM PRODUÇÃO: NÃO Autorizada nesta missão.
+  Requer correção dos 5 gaps + autorização do usuário.
+
+12. PRÓXIMA MISSÃO
+====================
+  AG-07J.4 — PROVA INTEGRADA
+  CADASTRO APP → RECRUTAMENTO → APROVAÇÃO →
+  PRESTADOR → ELEGIBILIDADE → ESCALA
+
+================================================================================

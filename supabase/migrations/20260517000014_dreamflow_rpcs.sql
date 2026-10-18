@@ -176,3 +176,5 @@ BEGIN
     UPDATE escala_operacional SET status = 'ocorrencia', atualizado_em = now() WHERE id = escala_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+

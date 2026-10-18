@@ -8,203 +8,227 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  DollarSign, TrendingUp, TrendingDown, Percent, Users,
-  FileText, Download, RefreshCw, Search, SlidersHorizontal, Printer
+  DollarSign, TrendingUp, TrendingDown, Percent, FileText,
+  RefreshCw, Search, SlidersHorizontal, Printer
 } from "lucide-react";
 import { toast } from "sonner";
 import { gerarPDFProfissional } from "@/utils/pdfGenerator";
+import {
+  calcularMargemOs,
+  calcularIndicadores,
+  type MargemOsInput,
+  type LinhaMargemOs,
+  type IndicadoresMargem,
+} from "@/services/financeiro/margemOsService";
+
+// ============================================================================
+// F0-I — Margem por OS com fontes reais (sem composicao_financeira_os).
+//   Receita = financeiro_receber por os_id/os_vinculadas (real) OU valor
+//             operacional confirmado de ordens_servico.valor_cliente (prevista).
+//   Custo   = pagamentos_prestadores.valor_liquido (impacto_dre) por os_id/os_numero.
+//   Outros  = financeiro_pagar vinculado à OS (sem repasses de prestador).
+//   Margem R$ = Receita − Custo − Outros;  Margem % = Margem/Receita×100.
+// ============================================================================
 
 const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-const fmtData = (d: string) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+const fmtData = (d?: string | null) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
 
-interface Composicao {
-  id: string;
-  os_id: string;
-  created_at: string;
-  valor_cliente: number;
-  valor_prestador: number;
-  imposto_valor: number;
-  seguro_valor: number;
-  pedagio_valor: number;
-  outros_custos: number;
-  margem_bruta: number;
-  margem_liquida: number;
-  percentual_margem_liquida: number;
-  cliente_id?: string;
-  prestador_id?: string;
-  cliente_nome?: string;
-  prestador_nome?: string;
-  veiculo_tipo?: string;
-}
-
-const TIPOS_VEICULO = [
-  "todos", "Fiorino", "VAN", "3/4", "Toco", "Truck", "Carreta", "Bitruck", "Utilitário", "Outros"
-];
+const STATUS_LABEL: Record<string, string> = {
+  real: "Real",
+  prevista: "Prevista",
+  pendente: "Pendente",
+};
 
 export default function MargemPorOS() {
-  const [dados, setDados] = useState<Composicao[]>([]);
+  const [linhas, setLinhas] = useState<LinhaMargemOs[]>([]);
+  const [filtradas, setFiltradas] = useState<LinhaMargemOs[]>([]);
+  const [indicadores, setIndicadores] = useState<IndicadoresMargem | null>(null);
   const [loading, setLoading] = useState(false);
   const [showFiltros, setShowFiltros] = useState(false);
+  const [clientes, setClientes] = useState<string[]>([]);
+  const [prestadores, setPrestadores] = useState<string[]>([]);
+  const [statusOsList, setStatusOsList] = useState<string[]>([]);
   const [filtros, setFiltros] = useState({
     dataInicial: "",
     dataFinal: "",
-    clienteId: "",
-    prestadorId: "",
+    cliente: "todos",
+    prestador: "todos",
     busca: "",
-    tipoVeiculo: "todos",
-    margemMinima: "",
-  });
-
-  const [kpis, setKpis] = useState({
-    receitaTotal: 0,
-    totalPrestadores: 0,
-    totalOS: 0,
-    impostosTaxas: 0,
-    pedagioTotal: 0,
-    margemBruta: 0,
-    margemLiquida: 0,
-    pctMargemLiquida: 0,
-    ticketMedio: 0,
+    status: "todas", // prevista | real | pendente
+    margem: "todas", // positiva | negativa
+    statusOs: "todas",
   });
 
   const carregarDados = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from("composicao_financeira_os")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // OS master (fonte de cada operação)
+      let q = supabase
+        .from("ordens_servico")
+        .select(`
+          id, numero, cliente, prestador, valor_cliente, data, status,
+          clientes!cliente(id, nome_fantasia, razao_social),
+          prestadores!prestador(id, nome_completo)
+        `)
+        .order("data", { ascending: false })
+        .limit(500);
+      if (filtros.dataInicial) q = q.gte("data", filtros.dataInicial);
+      if (filtros.dataFinal) q = q.lte("data", filtros.dataFinal);
+      const { data: osData, error: errOs } = await q;
+      if (errOs) throw errOs;
 
-      if (filtros.dataInicial) query = query.gte("created_at", filtros.dataInicial);
-      if (filtros.dataFinal) query = query.lte("created_at", filtros.dataFinal + "T23:59:59");
-      if (filtros.clienteId) query = query.eq("cliente_id", filtros.clienteId);
-      if (filtros.prestadorId) query = query.eq("prestador_id", filtros.prestadorId);
-      if (filtros.tipoVeiculo && filtros.tipoVeiculo !== "todos") {
-        query = query.eq("veiculo_tipo", filtros.tipoVeiculo);
-      }
+      // Receita (fonte única) e custos — no período, mas sem limite de paginação
+      const [recR, pgtR, pagR] = await Promise.all([
+        supabase.from("financeiro_receber").select("id, os_id, os_vinculadas, valor, status"),
+        supabase.from("pagamentos_prestadores").select("id, os_id, os_numero, valor_liquido, impacto_dre"),
+        supabase.from("financeiro_pagar").select("id, os_id, descricao, valor"),
+      ]);
 
-      const { data, error } = await query.limit(200);
+      const receber = recR.data || [];
+      const pagtos = pgtR.data || [];
+      const pagar = pagR.data || [];
 
-      if (error) {
-        console.warn("Erro na query margem:", error.message);
-        setDados([]);
-        return;
-      }
+      const linhasBrutas: LinhaMargemOs[] = (osData || []).map((os: any) => {
+        const osId = os.id;
+        const osNumero = os.numero || "";
 
-      let dadosFiltrados = (data || []) as Composicao[];
-
-      // Filtro busca local
-      if (filtros.busca) {
-        const b = filtros.busca.toLowerCase();
-        dadosFiltrados = dadosFiltrados.filter(d =>
-          (d.os_id || "").toLowerCase().includes(b) ||
-          (d.cliente_nome || "").toLowerCase().includes(b) ||
-          (d.prestador_nome || "").toLowerCase().includes(b)
+        // Receita: faturamento/receber por os_id ou os_vinculadas (contém numero)
+        const receitasOs = receber.filter((r: any) =>
+          (r.os_id && String(r.os_id) === osId) ||
+          (r.os_vinculadas && String(r.os_vinculadas).includes(osNumero))
         );
-      }
+        const receitaFaturada = receitasOs.reduce((s: number, r: any) => s + (Number(r.valor) || 0), 0);
 
-      // Filtro margem mínima
-      if (filtros.margemMinima !== "") {
-        const minPct = parseFloat(filtros.margemMinima);
-        if (!isNaN(minPct)) {
-          dadosFiltrados = dadosFiltrados.filter(d => (d.percentual_margem_liquida || 0) >= minPct);
+        let receita = 0;
+        let receitaFonte: MargemOsInput["receitaFonte"] = "sem_receita";
+        if (receitaFaturada > 0) {
+          receita = receitaFaturada;
+          receitaFonte = "faturamento"; // real
+        } else if (Number(os.valor_cliente) > 0) {
+          receita = Number(os.valor_cliente);
+          receitaFonte = "operacional"; // prevista
         }
-      }
 
-      setDados(dadosFiltrados);
+        // Custo prestador: valor_liquido (impacto_dre) por os_id ou os_numero
+        const custoPrestador = pagtos
+          .filter((p: any) => !!p.impacto_dre && (p.os_id === osId || (p.os_numero && String(p.os_numero) === osNumero)))
+          .reduce((s: number, p: any) => s + (Number(p.valor_liquido) || 0), 0);
 
-      const receitaTotal = dadosFiltrados.reduce((s, d) => s + (d.valor_cliente || 0), 0);
-      const impostosTaxas = dadosFiltrados.reduce((s, d) => s + (d.imposto_valor || 0) + (d.seguro_valor || 0), 0);
-      const pedagioTotal = dadosFiltrados.reduce((s, d) => s + (d.pedagio_valor || 0), 0);
-      const margemBruta = dadosFiltrados.reduce((s, d) => s + (d.margem_bruta || 0), 0);
-      const margemLiquida = dadosFiltrados.reduce((s, d) => s + (d.margem_liquida || 0), 0);
-      const pct = receitaTotal > 0 ? (margemLiquida / receitaTotal) * 100 : 0;
-      const prestadoresUnicos = new Set(dadosFiltrados.filter(d => d.prestador_id).map(d => d.prestador_id)).size;
+        // Outros custos vinculados à OS (fora pagamentos_prestadores, sem repasse)
+        const outrosCustos = pagar
+          .filter((p: any) => p.os_id === osId && !String(p.descricao || "").toLowerCase().startsWith("repasse"))
+          .reduce((s: number, p: any) => s + (Number(p.valor) || 0), 0);
 
-      setKpis({
-        receitaTotal,
-        totalPrestadores: prestadoresUnicos,
-        totalOS: dadosFiltrados.length,
-        impostosTaxas,
-        pedagioTotal,
-        margemBruta,
-        margemLiquida,
-        pctMargemLiquida: pct,
-        ticketMedio: dadosFiltrados.length > 0 ? receitaTotal / dadosFiltrados.length : 0,
+        return calcularMargemOs({
+          osId,
+          osNumero,
+          data: os.data || null,
+          clienteNome: os.clientes?.nome_fantasia || os.clientes?.razao_social || null,
+          prestadorNome: os.prestadores?.nome_completo || null,
+          statusOs: os.status || null,
+          receita,
+          receitaFonte,
+          custoPrestador,
+          outrosCustos,
+        });
       });
-    } catch (err) {
-      console.error("Erro carregar dados margem:", err);
+
+      setLinhas(linhasBrutas);
+      setClientes(Array.from(new Set(linhasBrutas.map(l => l.clienteNome).filter((c): c is string => !!c))));
+      setPrestadores(Array.from(new Set(linhasBrutas.map(l => l.prestadorNome).filter((p): p is string => !!p))));
+      setStatusOsList(Array.from(new Set(linhasBrutas.map(l => l.statusOs).filter((s): s is string => !!s))));
+      aplicarFiltros(linhasBrutas, filtros);
+    } catch (err: any) {
+      console.error("Erro carregar margem por OS:", err);
       toast.error("Erro ao carregar dados");
-      setDados([]);
+      setLinhas([]);
+      setFiltradas([]);
     } finally {
       setLoading(false);
     }
-  }, [filtros]);
+  }, [filtros.dataInicial, filtros.dataFinal]);
+
+  const aplicarFiltros = useCallback((dataset: LinhaMargemOs[], f: typeof filtros) => {
+    const r = dataset.filter((l) => {
+      if (f.cliente !== "todos" && l.clienteNome !== f.cliente) return false;
+      if (f.prestador !== "todos" && l.prestadorNome !== f.prestador) return false;
+      if (f.status !== "todas" && l.statusMargem !== f.status) return false;
+      if (f.margem === "positiva" && l.margem < 0) return false;
+      if (f.margem === "negativa" && l.margem >= 0) return false;
+      if (f.statusOs !== "todas" && l.statusOs !== f.statusOs) return false;
+      if (f.busca) {
+        const b = f.busca.toLowerCase();
+        const alvo = `${l.osNumero || ""} ${l.clienteNome || ""} ${l.prestadorNome || ""}`.toLowerCase();
+        if (!alvo.includes(b)) return false;
+      }
+      return true;
+    });
+    setFiltradas(r);
+    setIndicadores(calcularIndicadores(r));
+  }, []);
+
+  useEffect(() => {
+    aplicarFiltros(linhas, filtros);
+  }, [linhas, filtros, aplicarFiltros]);
 
   useEffect(() => {
     carregarDados();
   }, [carregarDados]);
 
+  const setFiltro = (k: keyof typeof filtros, v: string) => setFiltros((p) => ({ ...p, [k]: v }));
+
   const exportarCSV = () => {
-    if (dados.length === 0) { toast.error("Sem dados para exportar"); return; }
-    const headers = [
-      "OS ID", "Data", "Cliente", "Prestador", "Tipo Veículo",
-      "Valor Cliente", "Valor Prestador", "Impostos", "Seguro", "Pedágio",
-      "Outros Custos", "Margem Bruta", "Margem Líquida", "% Margem"
-    ];
-    const rows = dados.map(d => [
-      d.os_id ? d.os_id.slice(0, 8) : "-",
-      fmtData(d.created_at),
-      d.cliente_nome || d.cliente_id?.slice(0, 8) || "-",
-      d.prestador_nome || d.prestador_id?.slice(0, 8) || "-",
-      d.veiculo_tipo || "-",
-      (d.valor_cliente || 0).toFixed(2),
-      (d.valor_prestador || 0).toFixed(2),
-      (d.imposto_valor || 0).toFixed(2),
-      (d.seguro_valor || 0).toFixed(2),
-      (d.pedagio_valor || 0).toFixed(2),
-      (d.outros_custos || 0).toFixed(2),
-      (d.margem_bruta || 0).toFixed(2),
-      (d.margem_liquida || 0).toFixed(2),
-      (d.percentual_margem_liquida || 0).toFixed(2),
+    if (filtradas.length === 0) { toast.error("Sem dados para exportar"); return; }
+    const headers = ["OS", "Data", "Cliente", "Prestador", "Status", "Receita", "Custo Prestador", "Outros", "Margem R$", "%"];
+    const rows = filtradas.map(l => [
+      l.osNumero || (l.osId ? l.osId.slice(0, 8) : "-"),
+      l.data || "-",
+      l.clienteNome || "-",
+      l.prestadorNome || "-",
+      STATUS_LABEL[l.statusMargem] || l.statusMargem,
+      l.receita.toFixed(2),
+      l.custoPrestador.toFixed(2),
+      l.outrosCustos.toFixed(2),
+      l.margem.toFixed(2),
+      `${l.margemPct.toFixed(2)}%`,
     ]);
     const csv = [headers.join(";"), ...rows.map(r => r.join(";"))].join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `margem_real_${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `margem_por_os_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success(`${dados.length} registros exportados`);
+    toast.success(`${filtradas.length} registros exportados`);
   };
 
   const exportarPDF = () => {
-    if (dados.length === 0) { toast.error("Sem dados para exportar"); return; }
-    
+    if (filtradas.length === 0) { toast.error("Sem dados para exportar"); return; }
     gerarPDFProfissional({
-      titulo: "Relatório de Margem Real por OS",
-      subtitulo: `Filtros ativos: ${filtrosAtivosCount}`,
+      titulo: "Relatório de Margem por OS",
+      subtitulo: "Fontes: financeiro_receber / pagamentos_prestadores / financeiro_pagar",
       orientacao: "landscape",
-      colunas: ["OS", "Data", "Cliente", "Prestador", "Vl Cliente", "Vl Prestador", "Mg Bruta", "Mg Liq", "%"],
-      linhas: dados.map(d => [
-        d.os_id ? d.os_id.slice(0, 8) : "-",
-        fmtData(d.created_at),
-        d.cliente_nome || d.cliente_id?.slice(0, 8) || "-",
-        d.prestador_nome || d.prestador_id?.slice(0, 8) || "-",
-        (d.valor_cliente || 0).toFixed(2),
-        (d.valor_prestador || 0).toFixed(2),
-        (d.margem_bruta || 0).toFixed(2),
-        (d.margem_liquida || 0).toFixed(2),
-        `${(d.percentual_margem_liquida || 0).toFixed(2)}%`
+      colunas: ["OS", "Data", "Cliente", "Prestador", "Status", "Receita", "Custo", "Outros", "Margem", "%"],
+      linhas: filtradas.map(l => [
+        l.osNumero || (l.osId ? l.osId.slice(0, 8) : "-"),
+        fmtData(l.data),
+        l.clienteNome || "-",
+        l.prestadorNome || "-",
+        STATUS_LABEL[l.statusMargem] || l.statusMargem,
+        l.receita.toFixed(2),
+        l.custoPrestador.toFixed(2),
+        l.outrosCustos.toFixed(2),
+        l.margem.toFixed(2),
+        `${l.margemPct.toFixed(2)}%`,
       ]),
-      totais: [
-        { label: "Receita Total:", valor: fmtBRL(kpis.receitaTotal) },
-        { label: "Margem Bruta:", valor: fmtBRL(kpis.margemBruta) },
-        { label: "Margem Líquida:", valor: fmtBRL(kpis.margemLiquida) },
-        { label: "% Margem Geral:", valor: fmtPct(kpis.pctMargemLiquida) }
-      ]
+      totais: indicadores ? [
+        { label: "Receita Total:", valor: fmtBRL(indicadores.receitaTotal) },
+        { label: "Custo Total:", valor: fmtBRL(indicadores.custoTotal) },
+        { label: "Margem Total:", valor: fmtBRL(indicadores.margemTotal) },
+        { label: "Margem Média:", valor: fmtPct(indicadores.margemMediaPct) },
+      ] : [],
     });
     toast.success("PDF gerado com sucesso");
   };
@@ -212,77 +236,56 @@ export default function MargemPorOS() {
   const getMargemBadge = (pct: number) => {
     if (pct < 0) return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
     if (pct < 8) return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
-    if (pct < 15) return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
     return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
   };
 
-  const limparFiltros = () => setFiltros({
-    dataInicial: "", dataFinal: "", clienteId: "", prestadorId: "",
-    busca: "", tipoVeiculo: "todos", margemMinima: "",
-  });
-
   const filtrosAtivosCount = [
-    filtros.dataInicial, filtros.dataFinal, filtros.clienteId,
-    filtros.prestadorId, filtros.busca, filtros.margemMinima,
-    filtros.tipoVeiculo !== "todos" ? filtros.tipoVeiculo : ""
+    filtros.dataInicial, filtros.dataFinal,
+    filtros.cliente !== "todos" ? filtros.cliente : "",
+    filtros.prestador !== "todos" ? filtros.prestador : "",
+    filtros.busca,
+    filtros.status !== "todas" ? filtros.status : "",
+    filtros.margem !== "todas" ? filtros.margem : "",
+    filtros.statusOs !== "todas" ? filtros.statusOs : "",
   ].filter(Boolean).length;
 
   const KPIS = [
-    { label: "Receita Total", value: fmtBRL(kpis.receitaTotal), icon: DollarSign, accent: "bg-emerald-500", color: "text-emerald-500" },
-    { label: "Total de OS", value: kpis.totalOS, icon: FileText, accent: "bg-blue-500", color: "text-blue-500" },
-    { label: "Prestadores", value: kpis.totalPrestadores, icon: Users, accent: "bg-violet-500", color: "text-violet-500" },
-    { label: "Ticket Médio", value: fmtBRL(kpis.ticketMedio), icon: TrendingUp, accent: "bg-cyan-500", color: "text-cyan-500" },
-    { label: "Impostos + Taxas", value: fmtBRL(kpis.impostosTaxas), icon: FileText, accent: "bg-rose-500", color: "text-rose-500" },
-    { label: "Pedágio Total", value: fmtBRL(kpis.pedagioTotal), icon: TrendingDown, accent: "bg-amber-500", color: "text-amber-500" },
-    { label: "Margem Bruta", value: fmtBRL(kpis.margemBruta), icon: TrendingUp, accent: "bg-indigo-500", color: "text-indigo-500" },
-    { label: "Margem Líquida", value: fmtBRL(kpis.margemLiquida), icon: Percent, accent: "bg-green-500", color: "text-green-500" },
-    { label: "% Margem Líq.", value: fmtPct(kpis.pctMargemLiquida), icon: Percent, accent: kpis.pctMargemLiquida >= 10 ? "bg-green-500" : kpis.pctMargemLiquida >= 0 ? "bg-amber-500" : "bg-red-500", color: kpis.pctMargemLiquida >= 10 ? "text-green-500" : kpis.pctMargemLiquida >= 0 ? "text-amber-500" : "text-red-500" },
+    { label: "Receita Total", value: fmtBRL(indicadores?.receitaTotal || 0), icon: DollarSign, accent: "bg-emerald-500", color: "text-emerald-500" },
+    { label: "Custo Total", value: fmtBRL(indicadores?.custoTotal || 0), icon: TrendingDown, accent: "bg-rose-500", color: "text-rose-500" },
+    { label: "Margem Total R$", value: fmtBRL(indicadores?.margemTotal || 0), icon: TrendingUp, accent: (indicadores?.margemTotal ?? 0) >= 0 ? "bg-indigo-500" : "bg-red-500", color: (indicadores?.margemTotal ?? 0) >= 0 ? "text-indigo-500" : "text-red-500" },
+    { label: "Margem Média %", value: fmtPct(indicadores?.margemMediaPct || 0), icon: Percent, accent: (indicadores?.margemMediaPct ?? 0) >= 0 ? "bg-green-500" : "bg-red-500", color: (indicadores?.margemMediaPct ?? 0) >= 0 ? "text-green-500" : "text-red-500" },
+    { label: "OS com Margem Negativa", value: indicadores?.osNegativas ?? 0, icon: TrendingDown, accent: "bg-amber-500", color: "text-amber-500" },
+    { label: "Quantidade de OS", value: indicadores?.quantidadeOs ?? 0, icon: FileText, accent: "bg-blue-500", color: "text-blue-500" },
   ];
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-primary" />
-            Relatório Margem Real por OS
+            Margem por OS
           </h2>
-          <p className="text-sm text-muted-foreground">Rentabilidade detalhada por ordem de serviço</p>
+          <p className="text-sm text-muted-foreground">Rentabilidade por operação (fontes reais: receber / pagamentos de prestadores)</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={carregarDados} disabled={loading} className="gap-1.5">
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            Atualizar
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Atualizar
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className={`gap-1.5 relative ${filtrosAtivosCount > 0 ? "border-primary text-primary" : ""}`}
-            onClick={() => setShowFiltros(v => !v)}
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            Filtros
+          <Button variant="outline" size="sm" className={`gap-1.5 relative ${filtrosAtivosCount > 0 ? "border-primary text-primary" : ""}`} onClick={() => setShowFiltros(v => !v)}>
+            <SlidersHorizontal className="w-4 h-4" /> Filtros
             {filtrosAtivosCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary rounded-full text-[9px] text-primary-foreground flex items-center justify-center font-bold">
-                {filtrosAtivosCount}
-              </span>
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary rounded-full text-[9px] text-primary-foreground flex items-center justify-center font-bold">{filtrosAtivosCount}</span>
             )}
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={exportarCSV}>
-            <FileText className="w-4 h-4" /> CSV
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={exportarPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
-            <Printer className="w-4 h-4" /> Imprimir
-          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={exportarCSV}><FileText className="w-4 h-4" /> CSV</Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={exportarPDF}><FileText className="w-4 h-4" /> PDF</Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}><Printer className="w-4 h-4" /> Imprimir</Button>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {KPIS.map(k => (
           <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm hover:-translate-y-0.5 transition-transform">
             <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
@@ -298,51 +301,74 @@ export default function MargemPorOS() {
       {showFiltros && (
         <Card className="bg-muted/30 border-border">
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
+              <div className="space-y-1"><Label className="text-xs">Data Inicial</Label><Input type="date" value={filtros.dataInicial} onChange={e => setFiltro("dataInicial", e.target.value)} className="h-9" /></div>
+              <div className="space-y-1"><Label className="text-xs">Data Final</Label><Input type="date" value={filtros.dataFinal} onChange={e => setFiltro("dataFinal", e.target.value)} className="h-9" /></div>
               <div className="space-y-1">
-                <Label className="text-xs">Data Inicial</Label>
-                <Input type="date" value={filtros.dataInicial} onChange={e => setFiltros(f => ({ ...f, dataInicial: e.target.value }))} className="h-9" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Data Final</Label>
-                <Input type="date" value={filtros.dataFinal} onChange={e => setFiltros(f => ({ ...f, dataFinal: e.target.value }))} className="h-9" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Buscar OS / Cliente</Label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input placeholder="Buscar..." value={filtros.busca} onChange={e => setFiltros(f => ({ ...f, busca: e.target.value }))} className="pl-8 h-9" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Tipo Veículo</Label>
-                <Select value={filtros.tipoVeiculo} onValueChange={v => setFiltros(f => ({ ...f, tipoVeiculo: v }))}>
+                <Label className="text-xs">Cliente</Label>
+                <Select value={filtros.cliente} onValueChange={v => setFiltro("cliente", v)}>
                   <SelectTrigger className="h-9"><SelectValue placeholder="Todos" /></SelectTrigger>
                   <SelectContent>
-                    {TIPOS_VEICULO.map(t => <SelectItem key={t} value={t}>{t === "todos" ? "Todos" : t}</SelectItem>)}
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {clientes.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Margem Mínima (%)</Label>
-                <Input
-                  type="number"
-                  placeholder="Ex: 5"
-                  value={filtros.margemMinima}
-                  onChange={e => setFiltros(f => ({ ...f, margemMinima: e.target.value }))}
-                  className="h-9"
-                  min="-100" max="100" step="1"
-                />
+                <Label className="text-xs">Prestador</Label>
+                <Select value={filtros.prestador} onValueChange={v => setFiltro("prestador", v)}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Todos" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {prestadores.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex gap-2 items-end">
-                <Button size="sm" onClick={carregarDados} className="h-9 flex-1">Aplicar</Button>
-                {filtrosAtivosCount > 0 && (
-                  <Button size="sm" variant="ghost" onClick={limparFiltros} className="h-9">Limpar</Button>
-                )}
+              <div className="space-y-1">
+                <Label className="text-xs">Status Margem</Label>
+                <Select value={filtros.status} onValueChange={v => setFiltro("status", v)}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="real">Real</SelectItem>
+                    <SelectItem value="prevista">Prevista</SelectItem>
+                    <SelectItem value="pendente">Pendente</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex items-end">
-                <p className="text-xs text-muted-foreground">{dados.length} registros</p>
+              <div className="space-y-1">
+                <Label className="text-xs">Margem</Label>
+                <Select value={filtros.margem} onValueChange={v => setFiltro("margem", v)}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="positiva">Positiva</SelectItem>
+                    <SelectItem value="negativa">Negativa</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Status OS</Label>
+                <Select value={filtros.statusOs} onValueChange={v => setFiltro("statusOs", v)}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    {statusOsList.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Buscar OS / Cliente / Prestador</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input placeholder="Buscar..." value={filtros.busca} onChange={e => setFiltro("busca", e.target.value)} className="pl-8 h-9" />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <Button size="sm" className="h-9" onClick={() => aplicarFiltros(linhas, filtros)}>Aplicar</Button>
+              <Button size="sm" variant="ghost" className="h-9" onClick={() => setFiltros({ dataInicial: "", dataFinal: "", cliente: "todos", prestador: "todos", busca: "", status: "todas", margem: "todas", statusOs: "todas" })}>Limpar</Button>
+              <p className="text-xs text-muted-foreground ml-auto">{filtradas.length} registros</p>
             </div>
           </CardContent>
         </Card>
@@ -355,92 +381,64 @@ export default function MargemPorOS() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
-                  <TableHead className="text-[11px] font-semibold uppercase pl-4">OS</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase pl-4">OS / Romaneio</TableHead>
                   <TableHead className="text-[11px] font-semibold uppercase">Data</TableHead>
                   <TableHead className="text-[11px] font-semibold uppercase">Cliente</TableHead>
                   <TableHead className="text-[11px] font-semibold uppercase">Prestador</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase">Veículo</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Vl. Cliente</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Vl. Prestador</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Imposto</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Seguro</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Pedágio</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase">Status</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase text-right">Receita</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase text-right">Custo Prest.</TableHead>
                   <TableHead className="text-[11px] font-semibold uppercase text-right">Outros</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Mg. Bruta</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase text-right">Mg. Líq.</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase text-right">Margem R$</TableHead>
                   <TableHead className="text-[11px] font-semibold uppercase text-center">% Margem</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={14} className="text-center py-12">
-                      <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary" />
-                      <p className="text-sm text-muted-foreground mt-2">Carregando dados...</p>
-                    </TableCell>
-                  </TableRow>
-                ) : dados.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={14} className="text-center py-16">
-                      <TrendingUp className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-                      <p className="text-sm font-semibold text-muted-foreground">Nenhuma OS com composição financeira</p>
-                      <p className="text-xs text-muted-foreground mt-1">Ajuste os filtros ou verifique se há OS finalizadas com composição</p>
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-12">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary" />
+                    <p className="text-sm text-muted-foreground mt-2">Carregando dados...</p>
+                  </TableCell></TableRow>
+                ) : filtradas.length === 0 ? (
+                  <TableRow><TableCell colSpan={10} className="text-center py-16">
+                    <TrendingUp className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-semibold text-muted-foreground">Nenhuma OS no período</p>
+                  </TableCell></TableRow>
                 ) : (
-                  dados.map((d, i) => {
-                    const pct = d.percentual_margem_liquida || 0;
-                    return (
-                      <TableRow key={d.id || i} className="hover:bg-muted/20 group">
-                        <TableCell className="pl-4 py-2.5">
-                          <span className="font-mono text-xs font-bold text-primary">
-                            {d.os_id ? d.os_id.slice(0, 8) : "-"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2.5">{fmtData(d.created_at)}</TableCell>
-                        <TableCell className="text-xs py-2.5 max-w-[120px] truncate" title={d.cliente_nome || d.cliente_id || ""}>
-                          {d.cliente_nome || (d.cliente_id ? d.cliente_id.slice(0, 8) : "-")}
-                        </TableCell>
-                        <TableCell className="text-xs py-2.5 max-w-[120px] truncate" title={d.prestador_nome || d.prestador_id || ""}>
-                          {d.prestador_nome || (d.prestador_id ? d.prestador_id.slice(0, 8) : "-")}
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          {d.veiculo_tipo ? (
-                            <Badge variant="outline" className="text-[10px] font-medium">{d.veiculo_tipo}</Badge>
-                          ) : <span className="text-xs text-muted-foreground">-</span>}
-                        </TableCell>
-                        <TableCell className="text-xs text-right text-emerald-600 dark:text-emerald-400 font-semibold py-2.5">{fmtBRL(d.valor_cliente || 0)}</TableCell>
-                        <TableCell className="text-xs text-right text-rose-500 py-2.5">-{fmtBRL(d.valor_prestador || 0)}</TableCell>
-                        <TableCell className="text-xs text-right text-rose-400 py-2.5">-{fmtBRL(d.imposto_valor || 0)}</TableCell>
-                        <TableCell className="text-xs text-right text-amber-500 py-2.5">-{fmtBRL(d.seguro_valor || 0)}</TableCell>
-                        <TableCell className="text-xs text-right text-amber-500 py-2.5">-{fmtBRL(d.pedagio_valor || 0)}</TableCell>
-                        <TableCell className="text-xs text-right text-muted-foreground py-2.5">-{fmtBRL(d.outros_custos || 0)}</TableCell>
-                        <TableCell className="text-xs text-right font-medium py-2.5">{fmtBRL(d.margem_bruta || 0)}</TableCell>
-                        <TableCell className={`text-xs text-right font-bold py-2.5 ${pct < 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400"}`}>
-                          {fmtBRL(d.margem_liquida || 0)}
-                        </TableCell>
-                        <TableCell className="text-center py-2.5">
-                          <Badge className={`text-xs font-mono font-bold border-0 ${getMargemBadge(pct)}`}>
-                            {fmtPct(pct)}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                  filtradas.map((l, i) => (
+                    <TableRow key={l.osId || i} className="hover:bg-muted/20 group">
+                      <TableCell className="pl-4 py-2.5">
+                        <span className="font-mono text-xs font-bold text-primary">{l.osNumero || (l.osId ? l.osId.slice(0, 8) : "-")}</span>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground py-2.5">{fmtData(l.data)}</TableCell>
+                      <TableCell className="text-xs py-2.5 max-w-[120px] truncate" title={l.clienteNome || ""}>{l.clienteNome || "-"}</TableCell>
+                      <TableCell className="text-xs py-2.5 max-w-[120px] truncate" title={l.prestadorNome || ""}>{l.prestadorNome || "-"}</TableCell>
+                      <TableCell className="py-2.5">
+                        <Badge variant="outline" className={`text-[10px] ${l.statusMargem === "real" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : l.statusMargem === "prevista" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-gray-100 text-gray-500"}`}>
+                          {STATUS_LABEL[l.statusMargem] || l.statusMargem}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-right text-emerald-600 dark:text-emerald-400 font-semibold py-2.5">{fmtBRL(l.receita)}</TableCell>
+                      <TableCell className="text-xs text-right text-rose-500 py-2.5">-{fmtBRL(l.custoPrestador)}</TableCell>
+                      <TableCell className="text-xs text-right text-muted-foreground py-2.5">-{fmtBRL(l.outrosCustos)}</TableCell>
+                      <TableCell className={`text-xs text-right font-bold py-2.5 ${l.margem < 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400"}`}>{fmtBRL(l.margem)}</TableCell>
+                      <TableCell className="text-center py-2.5">
+                        <Badge className={`text-xs font-mono font-bold border-0 ${getMargemBadge(l.margemPct)}`}>{fmtPct(l.margemPct)}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>
           </div>
-          {dados.length > 0 && (
-            <div className="px-4 py-2 border-t border-border/40 bg-muted/10 flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">{dados.length} registros exibidos</p>
-              <Button size="sm" variant="ghost" className="gap-1.5 text-xs h-7" onClick={exportarCSV}>
-                <Download className="w-3.5 h-3.5" /> Exportar CSV
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      <p className="text-[11px] text-muted-foreground">
+        Fonte: receita = financeiro_receber (real) ou valor operacional da OS (prevista);
+        custo = pagamentos_prestadores.valor_liquido (impacto_dre); outros = financeiro_pagar vinculado à OS.
+        Sem dupla contagem.
+      </p>
     </div>
   );
 }

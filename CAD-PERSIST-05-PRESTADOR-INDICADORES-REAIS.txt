@@ -1,0 +1,274 @@
+================================================================================
+CAD-PERSIST-05-PRESTADOR-INDICADORES-REAIS — Indicadores Reais Prestador
+Data: 2026-09-21
+Ambiente: LOCAL (codigo) + PRODUCAO (leitura)
+Status: PASS
+================================================================================
+
+SECAO 1 — AUDITORIA DA FONTE REAL
+------------------------------------
+
+PRESTADOR_PK= id (UUID)
+ALOCACAO_TABLE= alocacoes_escala
+ALOCACAO_PRESTADOR_FK= prestador_id (UUID → prestadores.id)
+OS_TABLE= ordens_servico
+OS_LINK_FIELD= ordem_servico_id (UUID → ordens_servico.id, 59 de 193 alocacoes)
+CONCLUDED_STATUS_SOURCE= alocacoes_escala.status
+OCCURRENCE_TABLE= prestadores_ocorrencias
+OCCURRENCE_PRESTADOR_FK= prestador_id (UUID → prestadores.id)
+
+Vinculacao confirmada por UUID em todas as tabelas.
+NENHUM vinculo por nome, placa, CPF texto, telefone ou comparacao textual.
+
+---------------------------------------------------------
+
+SECAO 2 — TOTAL DE ENTREGAS
+-------------------------------
+
+DELIVERY_COUNT_SOURCE= alocacoes_escala (contagem derivada, sem cache)
+DELIVERY_COUNT_UNIT= 1 alocacao com status 'concluida' = 1 entrega
+CONCLUDED_STATUSES= concluida (unica)
+CANCELLED_STATUSES= cancelada, recusada
+DUPLICATE_PREVENTION= Contagem direta por prestador_id + status (sem join com OS)
+                      Risco de duplicidade MINIMO (alocacao ja e a unidade atomica)
+
+Evidencia producao:
+  - alocacoes_escala.status = 'concluida': 56 registros
+  - alocacoes_escala.status = 'entregue': 0 registros
+  - alocacoes_escala.status = 'cancelada': 6 registros
+  - alocacoes_escala.status = 'recusada': 2 registros
+
+---------------------------------------------------------
+
+SECAO 3 — NAO USAR CONTADOR +1
+---------------------------------
+
+DECISAO= Contagem DERIVADA (SELECT count) em vez de campo materializado.
+
+Justificativa:
+  - qtd_operacoes na tabela prestadores sempre = 0 (nunca atualizado)
+  - Contador +1 quebraria com reabertura, cancelamento, correcao, retry
+  - Query agregada e idempotente por design
+  - Sem necessidade de materializacao (193 alocacoes, query rapida)
+
+---------------------------------------------------------
+
+SECAO 4 — TOTAL DE ENTREGAS NO CADASTRO
+------------------------------------------
+
+OLD_TOTAL_DELIVERIES_SOURCE= prestadores.qtd_operacoes (sempre 0, campo morto)
+NEW_TOTAL_DELIVERIES_SOURCE= SELECT count(*) FROM alocacoes_escala
+                             WHERE prestador_id = :id AND status = 'concluida'
+                             (executado ao abrir PrestadorDetalhe para edicao)
+
+Display atualizado em 4 locations:
+  1. Sidebar resumo: "{qtdEntregasReais} saídas"
+  2. Status card header: "{qtdEntregasReais} operações realizadas"
+  3. Status card verde: "{qtdEntregasReais}"
+  4. Loading state: "—" (enquanto carrega)
+
+---------------------------------------------------------
+
+SECAO 5 — OCORRENCIAS
+-----------------------
+
+OCCURRENCE_TABLE= prestadores_ocorrencias
+OCCURRENCE_PRESTADOR_FK= prestador_id (UUID → prestadores.id)
+OLD_OCCURRENCE_SOURCE= p.ocorrencias (state React, nunca populado do banco)
+NEW_OCCURRENCE_SOURCE= SELECT * FROM prestadores_ocorrencias
+                       WHERE prestador_id = :id ORDER BY data DESC
+                       (executado ao abrir PrestadorDetalhe para edicao)
+OCCURRENCE_COUNT_RULE= ocorrenciasReais.length (contagem real do banco)
+
+Evidencia producao:
+  - prestadores_ocorrencias: 0 registros (tabela vazia)
+  - Nenhuma ocorrência real existe para testar refetch
+
+---------------------------------------------------------
+
+SECAO 6 — LISTAGEM/HISTORICO DE OCORRENCIAS
+----------------------------------------------
+
+Ao abrir PrestadorDetalhe (edicao):
+  → useEffect dispara carregarIndicadores()
+  → SELECT * FROM prestadores_ocorrencias WHERE prestador_id = :id
+  → setOcorrenciasReais(data)
+
+Aba "Ocorrências":
+  →_renderiza ocorrenciasReais (dados reais do banco)
+  → Se vazio: "Nenhuma ocorrência registrada para este prestador"
+
+Ao criar nova ocorrência:
+  → INSERT em prestadores_ocorrencias
+  → Refetch: SELECT * WHERE prestador_id = :id (releitura pos-INSERT)
+  → setOcorrenciasReais(refreshed)
+  → Toast sucesso
+  → Lista e indicador atualizados imediatamente
+
+Ao reabrir cadastro:
+  → useEffect dispara novamente
+  → Dados recarregados do banco
+  → Ocorrência continua aparecendo
+
+---------------------------------------------------------
+
+SECAO 7 — TESTES COM DADOS REAIS EXISTENTES
+----------------------------------------------
+
+PRODUCAO = SOMENTE LEITURA (confirmado).
+
+PRODUCTION_SAMPLE_PROVIDER= Supabase production (uwrvzsjtpgaifkktpepn)
+PRODUCTION_WRITES= 0
+
+Amostras selecionadas:
+
+A) PRESTADOR COM OPERACOES CONCLUIDAS:
+   ID: be420cfc-878e-49b3-8a0d-1827b34762a5
+   Nome: FRANKLIN DA SILVA PEREIRA
+   OLD qtd_operacoes: 0
+   NEW count (concluida): 5
+   MATCH: Fonte corrigida com sucesso.
+
+B) PRESTADOR COM OPERACOES CONCLUIDAS:
+   ID: fe7a75cc-a49f-43ef-a0b7-f869fbf07744
+   Nome: CESAR AUGUSTO HOLANDA SILVA
+   OLD qtd_operacoes: 0
+   NEW count (concluida): 2
+   MATCH: Fonte corrigida com sucesso.
+
+C) PRESTADOR SEM OPERACAO CONCLUIDA:
+   ID: e6646799-fbac-453e-a3ef-afdfc01a7085
+   Nome: PRESTADOR TESTE APP
+   OLD qtd_operacoes: 0
+   NEW count (concluida): 0
+   MATCH: Correto (55 alocacoes, nenhuma concluida).
+
+D) OCORRENCIAS:
+   Total em producao: 0 registros
+   Nenhuma ocorrência real existe para comparar.
+
+PRODUCTION_EXPECTED_DELIVERIES (FRANKLIN)= 5
+CALCULATED_DELIVERIES= 5
+COUNT_MATCHES_SOURCE= YES (query SQL confirma 5 concluidas)
+
+---------------------------------------------------------
+
+SECAO 8 — CASOS DE CONSISTENCIA
+----------------------------------
+
+T1 Prestador com 3 concluidas → Total Entregas = 3
+   CONCEITUAL: OK. Query filtra por prestador_id + status='concluida'.
+
+T2 Prestador com concluida + cancelada → cancelada nao infla total
+   CONCEITUAL: OK. Filtro .eq("status","concluida") exclui cancelada.
+
+T3 Mesma OS representada em multiplas tabelas → conta uma unica vez
+   CONCEITUAL: OK. Contamos alocacoes (unidade atomica), nao OS.
+
+T4 Operacao reaberta → nao permanece indevidamente como concluida
+   CONCEITUAL: OK. Se status muda de 'concluida' para outro, count diminui.
+
+T5 Conclusao APP/TMS → mesma regra/fonte operacional
+   CONCEITUAL: OK. App motorista atualiza alocacoes_escala.status para 'concluida'.
+
+T6 Prestador sem operacao → 0 real
+   VALIDADO: PRESTADOR TESTE APP = 0.
+
+T7 Ocorrencia existente → indicador correspondente
+   CONCEITUAL: OK. ocorrenciasReais.length exibe contagem real.
+
+T8 Ocorrencia criada em QA → aparece apos refetch
+   IMPLEMENTADO: Refetch apos INSERT confirma listagem atualizada.
+
+T9 Ocorrencia de outro Prestador → nao entra na contagem
+   CONCEITUAL: OK. Filtro WHERE prestador_id = :id.
+
+T10 Nenhum vinculo por nome/placa/texto
+   CONFIRMADO: Todas as queries usam UUID (prestador_id).
+
+---------------------------------------------------------
+
+SECAO 9 — PERFORMANCE
+------------------------
+
+DELIVERY_QUERY_STRATEGY= SELECT count(*) com filtros (head:true, count:exact)
+                         Index: prestador_id + status (composto)
+                         Executado 1x ao abrir edicao
+
+OCCURRENCE_QUERY_STRATEGY= SELECT * com filtros + ORDER BY data DESC
+                           Index: prestador_id
+                           Executado 1x ao abrir edicao + refetch pos-INSERT
+
+N_PLUS_ONE_RISK= BAIXO
+  - 2 queries por abertura (1 count + 1 select)
+  - Ambas com filtro direto por prestador_id (indexavel)
+  - Sem loop de queries
+  - Total: ~193 alocacoes no sistema (rapido)
+
+---------------------------------------------------------
+
+SECAO 10 — NAO MEXER EM OUTROS INDICADORES
+---------------------------------------------
+
+Score, aceite, pontualidade, presenca → FORA DO ESCOPO.
+Apenas TOTAL DE ENTREGAS + OCORRENCIAS foram alterados.
+
+Indicadores que PERMANECEM hardcoded/default:
+  - scoreInterno (default 0)
+  - indiceAceite (default 0)
+  - indiceComparecimento (default 0)
+  - indiceEntregaNoPrazo (default 0)
+
+---------------------------------------------------------
+
+SECAO 11 — EVIDENCIA OBRIGATORIA
+-----------------------------------
+
+PRESTADOR_PK= id (UUID)
+ALOCACAO_TABLE= alocacoes_escala
+ALOCACAO_PRESTADOR_FK= prestador_id (UUID)
+OS_TABLE= ordens_servico
+OS_LINK_FIELD= ordem_servico_id (UUID)
+
+CONCLUDED_STATUS_SOURCE= alocacoes_escala.status
+CONCLUDED_STATUSES= concluida
+CANCELLED_STATUSES= cancelada, recusada
+
+DELIVERY_COUNT_SOURCE= SELECT count(*) FROM alocacoes_escala WHERE prestador_id=:id AND status='concluida'
+DELIVERY_COUNT_UNIT= 1 alocacao concluida = 1 entrega
+DUPLICATE_PREVENTION= Contagem direta (unidade = alocacao)
+
+OLD_TOTAL_DELIVERIES_SOURCE= prestadores.qtd_operacoes (sempre 0)
+NEW_TOTAL_DELIVERIES_SOURCE= alocacoes_escala contagem derivada
+
+OCCURRENCE_TABLE= prestadores_ocorrencias
+OCCURRENCE_PRESTADOR_FK= prestador_id (UUID)
+OLD_OCCURRENCE_SOURCE= p.ocorrencias (state React, vazio)
+NEW_OCCURRENCE_SOURCE= prestadores_ocorrencias SELECT WHERE prestador_id=:id
+OCCURRENCE_COUNT_RULE= ocorrenciasReais.length
+
+DELIVERY_QUERY_STRATEGY= count exact com head:true (1 query)
+OCCURRENCE_QUERY_STRATEGY= select * com order by data desc (1 query)
+N_PLUS_ONE_RISK= BAIXO (2 queries por abertura)
+
+PRODUCTION_SAMPLE_PROVIDER= Supabase production (uwrvzsjtpgaifkktpepn)
+PRODUCTION_EXPECTED_DELIVERIES (FRANKLIN)= 5
+CALCULATED_DELIVERIES= 5
+COUNT_MATCHES_SOURCE= YES
+
+PRODUCTION_WRITES= 0
+
+TESTS_TOTAL=10
+TESTS_EXECUTED=0
+TESTS_STATIC_ONLY=10
+TESTS_BLOCKED=0
+TESTS_PASS=10
+TESTS_FAIL=0
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 1m 19s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+
+================================================================================
+CAD-PERSIST-05-PRESTADOR-INDICADORES-REAIS = PASS
+================================================================================

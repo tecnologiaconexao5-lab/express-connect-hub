@@ -1,0 +1,438 @@
+================================================================================
+HML-RECOVER-01 — PLANO DE RESTAURACAO SUPABASE HML
+================================================================================
+MISSAO.......: HML-RECOVER-01 — Descobrir o necessario para recriar um Supabase HML
+AMBIENTE.....: TMS (express-connect-hub)
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: SOMENTE LEITURA. Nenhum projeto criado, nenhuma migration/seed
+              executada, nenhum banco alterado, nenhum secret configurado,
+              nenhum certificado convertido, nenhum .env alterado.
+              PRODUCAO NAO FOI TOCADA.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML [BLOQUEADA: restaurando HML]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+RESULTADO EXECUTIVO
+================================================================================
+  HML_ANTIGO           = INEXISTENTE / INACESSIVEL (ref aqpfayildtcnrkfeeyjg)
+  HML_RECOVERY         = CREATE_NEW_FROM_LIVE_BASELINE (pacote JA preparado)
+  HML_RECOVERY_READY   = PARCIAL — falta apenas a criacao humana do projeto
+  ARQUIVOS_ALTERADOS   = 0 (somente este relatorio foi criado)
+  DECISAO 04B          = NO-GO ate o novo HML existir (GO CONDICIONAL em HML-RECOVER-02)
+
+================================================================================
+1. EVIDENCIA DO HML ANTIGO INEXISTENTE / INACESSIVEL
+================================================================================
+1.1 IDENTIFICACAO
+  - Project ref: aqpfayildtcnrkfeeyjg
+  - Nome:        conexao-express-qa
+  - Org:         dkitbsslspqjsagbevck
+  - Criado:      ~2026-07-23, tier FREE (docs/qa/F2_A0_QA1_RELATORIO_FINAL.md)
+  - Link local:  supabase/.temp/project-ref e supabase/.temp/linked-project.json
+
+1.2 EVIDENCIAS READ-ONLY COLETADAS
+  - DNS: aqpfayildtcnrkfeeyjg.supabase.co -> NAO RESOLVE (NXDOMAIN).
+  - REST: https://aqpfayildtcnrkfeeyjg.supabase.co/rest/v1/ -> erro de resolucao.
+  - `supabase projects list` (CLI 2.117.0) -> lista APENAS:
+        uwrvzsjtpgaifkktpepn  conexao-express-tms  South America (Sao Paulo)  [PRODUCAO]
+    O projeto QA/HML NAO aparece na conta.
+  - DNS de producao uwrvzsjtpgaifkktpepn.supabase.co -> RESOLVE (HTTP 401 sem apikey).
+
+1.3 CAUSA PROVAVEL
+  - Projeto em FREE tier, criado em 2026-07-23, nunca populado (0 migrations, 0 inserts).
+    Free tier e pausado apos ~7 dias de inatividade e removido depois.
+  - Evidencia ja documentada em ENV-QA-01-QA-RECOVERY-PREFLIGHT.txt (2026-09-21) e
+    FIN-SANE-02M.9-PP-RLS-QA-VALIDATION.txt (mesma conclusao: ENOTFOUND).
+
+1.4 CONCLUSAO
+  QA_CURRENT_STATE = DELETED. Nao ha projeto HML/QA acessivel hoje.
+  Unica alternativa em uso seria a PRODUCAO — PROIBIDA para esta missao.
+
+================================================================================
+2. REFERENCIAS AO PROJECT-REF ANTIGO (aqpfayildtcnrkfeeyjg) — INVENTARIO
+================================================================================
+2.1 CONFIGURACAO ATIVA (afetam runtime/build)
+  - .env.qa                                    -> VITE_SUPABASE_URL + SUPABASE_QA_PROJECT_REF
+  - supabase/.temp/project-ref                 -> ref antigo (link STALE)
+  - supabase/.temp/linked-project.json         -> "conexao-express-qa" (link STALE)
+
+2.2 GUARD/SCRIPT (codigo, sem segredo)
+  - tests/e2e/helpers/ambiente.ts              -> SUPABASE_QA_REF (guard anti-producao)
+  - scripts/check-ambiente.cjs                 -> SUPABASE_QA_REF (guard de ambiente)
+  - scripts/qa/apply_baseline_to_qa.ts         -> script de aplicacao (com guard anti-prod)
+  - scripts/qa/assert-qa-environment.ts        -> assert de ambiente
+  - scripts/qa/extract_baseline.ts             -> extracao de schema (producao -> baseline)
+
+2.3 DOCUMENTACAO
+  - docs/VARIAVEIS_AMBIENTE_HIBRIDAS.md        -> tabela de ambientes (QA = ref antigo)
+  - docs/qa/F2_A0_QA1_RELATORIO_FINAL.md       -> relatorio de provisionamento do QA
+  - docs/qa/ (22 arquivos)                     -> planos/checklists QA (referenciam QA)
+
+2.4 ARTEFATOS / RELATORIOS / TEMPORARIOS (stale)
+  - EFI-INT-04A-MTLS-PROBE.txt, ENV-QA-01-QA-RECOVERY-PREFLIGHT.txt,
+    ENV-QA-02-BASELINE-PACKAGE.txt, ENV-QA-03-LOCAL-QA-PREFLIGHT.txt,
+    FAT-PDF-CNPJ-02-CONFIG-CANONICAL.txt, FIN-SANE-02C-PREFLIGHT.txt,
+    FIN-SANE-02M.9-PP-RLS-QA-VALIDATION.txt, REC_062B1_PREP_AUTH.txt
+  - scripts de HML pontuais (tem "_" e/ou "hml"): _precheck_hml.mjs,
+    a22_cleanup_hml.mjs, m133d7_fase1_search_hml.cjs, m136a_seed_cliente_hml_pg.mjs,
+    tms013_seed_hml.mjs, _tms012_criar_os_hml.cjs, etc.
+
+2.5 CONTAGENS
+  - 3 referencias de CONFIG ATIVA (1 .env + 2 arquivos de link no .temp)
+  - 2 guards + 3 scripts
+  - 2 documentos QA (+ 22 em docs/qa)
+  - ~20 relatorios/artefatos temporarios
+
+  ACOES: NAO alterar nenhuma dessas referencias agora (preservar evidencia ate o
+  novo HML existir — item 9.5).
+
+================================================================================
+3. AUDITORIA DE ARQUIVOS DE AMBIENTE / CONFIG / CI
+================================================================================
+3.1 .env.qa (ATIVO)  [nao exibir valores]
+  - Contem: VITE_SUPABASE_URL (ref antigo), SUPABASE_QA_PROJECT_REF (ref antigo),
+    DATABASE_URL (com credencial — NAO exibida), ENVIRONMENT=qa, NODE_ENV, flags
+    VITE_WHATSAPP_PRODUCAO_ENABLED=false / VITE_COMUNICACAO_PRODUCAO_ASSISTIDA=false,
+    credenciais Playwright (placeholders).
+  - Status: APONTA PARA PROJETO DELETADO.
+
+3.2 .env / .env.production  (PRODUCAO)  [nao exibir valores]
+  - VITE_SUPABASE_URL = uwrvzsjtpgaifkktpepn; DATABASE_URL de producao presente.
+  - NAO TOCAR.
+
+3.3 .env.qa.example / .env.production.example / .env.example
+  - Templates com NOMES de variaveis; sem valores reais.
+  - Nomes relevantes: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY, VITE_APP_URL, VITE_MAPBOX_*, VITE_EVOLUTION_*,
+    VITE_N8N_*, VITE_TMS_EDGE_INTERNAL_TOKEN, VITE_ZOHO_*, VITE_GROQ_API_KEY...
+
+3.4 supabase/config.toml
+  - project_id = "express-connect-hub"; [edge_runtime] deno_version = 2.
+  - [db.seed] enabled = true; sql_paths = ["./seed.sql"] — PORÉM NAO EXISTE
+    supabase/seed.sql no repo  => `supabase db reset` pode falhar/avisar.
+  - Nenhum projet-ref de HML embutido (correto).
+
+3.5 supabase/.temp/*
+  - project-ref, linked-project.json apontando para o ref DELETADO (stale).
+  - Varios logs historicos de db push/migrations (evidencia; nao limpar agora).
+
+3.6 Scripts QA/HML (inventario)
+  - scripts/check-ambiente.cjs (guard), scripts/qa/ (6 arquivos: extract_baseline,
+    extract_schema, inspect_baseline, apply_baseline_to_qa, assert-qa-environment,
+    seed_rls_test_data.sql), scripts/missao50_seed_auth_real.ts, m136a_seed_cliente_hml*,
+    m86_seed_*, seed-*, qa03_*/qa04_*, tms013_seed_hml.mjs.
+
+3.7 CI/CD
+  - NAO existe .github/workflows nem pipeline YAML no repo.
+  - Deploy e MANUAL: Dockerfile / docker-compose*.yml / nginx.conf / vercel.json /
+    ecosystem.config.cjs (pm2 zoho). => criacao/restauracao do HML sera manual.
+
+3.8 Playwright / E2E de QA
+  - playwright.config.ts + playwright-3623*.config.ts + playwright.fin*.config.ts.
+  - Guards: tests/e2e/helpers/ambiente.ts (bloqueia PRODUCAO), scripts/check-ambiente.cjs.
+  - Scripts package.json: dev:qa, build:qa, preview:qa, test:qa, playwright:qa,
+    playwright:qa:headed, check:env. (vite.config.ts usa envDir raiz; mode=qa carrega .env.qa.)
+
+================================================================================
+4. INVENTARIO DE MIGRATIONS E RISCOS PARA BOOTSTRAP EM BANCO VAZIO
+================================================================================
+4.1 QUANTIDADE / ESTRUTURA
+  - supabase/migrations/: 248 arquivos .sql (250 contando subdiretorios).
+  - Dentro delas, ~19 arquivos de ROLLBACK.
+  - Baselines declarados no repo:
+      * 20260510000001_core_baseline.sql
+      * 20260510090000_baseline_external_tables.sql
+  - Diretorios: supabase/baseline (3 arquivos), supabase/migrations_lab (3),
+    supabase/sql (1), supabase/migrations_original (0).
+  - Arquivos de schema alternativos LEGADOS na raiz (NAO canonicos):
+    schema.sql, supabase_schema.sql, supabase_schema_complete.sql,
+    rebuild_supabase_schema.sql. NAO usar como fonte.
+
+4.2 MIGRATIONS CONFLITANTES / PERIGOSAS EM BANCO VAZIO
+  - DML destrutivo dentro de migrations "normais" (dedup/limpeza):
+      * 20260705000003_m80_remocao_duplicidade_financeira.sql -> DELETE FROM financeiro_pagar
+      * 20260707000000_m104_go_live_enterprise.sql            -> DELETE FROM eventos_oficiais
+      * 20260707000001_m104a_correcao_propagacao_financeira_m66.sql -> DELETE FROM pagamentos_prestadores
+      * 20260817000000_a29d_km_evidencias_operacao.sql        -> DELETE FROM operation_km
+  - Rollbacks com DELETE FROM / DROP TABLE (NAO devem ser aplicados como forward):
+      * 20260922000010_escala_os_06_rollback.sql (DELETE em composicao/financeiro/pp/OS)
+      * 20260922000013_escala_os_08_rollback.sql (DELETE FROM ordens_servico)
+      * 20260812000001_a22_chat_operacional_rollback.sql (DROP TABLE)
+      * 20260913000001_fin_sane_02b_rollback.sql
+  - Reaplicacao proibida (documentada em missao anterior):
+      * P0 20260731000001_p0_propagacao_financeira_trigger.sql  (perigoso reaplicar)
+      * 02B rollback 20260913000001                              (NAO reaplicar)
+  - Conflitos de ASSINATURA (CREATE OR REPLACE mudando aridade -> overload):
+      * f_registrar_baixa_financeira: 10 args (F0-C4/F0-D) vs 11 args (fin_master361).
+      * f_confirmar_pagamento_prestador: (uuid,date) vs (uuid,date,numeric) [DROP no 02MF].
+    => aplicar a sequencia inteira de 248 migrations em banco vazio pode gerar
+       overloads/ambiguidades e resultados NAO identicos a producao.
+
+4.3 MIGRATIONS QUE DEPENDEM DE DADOS EXISTENTES (backfill)
+  - m66_fix_propagacao_financeira, m80b_fix_trigger_columns, m104a, m111_app_integracao_tms,
+    m133d2 (uuid/text), fase2a_faturamento_profissional, fin_sane_02b_unifica_valor_pagar,
+    m135b_portal_pedido_para_os, entre outras (DO $$ + UPDATE/INSERT ... SELECT).
+  => em banco vazio rodam sem efeito ou falham; nao reproduzem o estado de producao.
+
+4.4 SCHEMA BASELINE EXISTENTE (FONTE CANONICA JA EXTRAIDA — LIVE)
+  - supabase/baseline/full_production_schema_20260920.sql
+      Tamanho: 812.613 bytes (~793,57 KB); 17.373 linhas
+      SHA-256: 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+      Conteudo: 4 extensoes, 63 enums, 3 sequences, 237 tabelas, 631 constraints,
+                683 indexes, 135 funcoes/RPCs, 24 views, 120 triggers,
+                237 tabelas com RLS, 543 policies.
+      DATA_ROWS_EXPORTED = 0; BUSINESS_INSERTS = 0; SECRETS = 0.
+      RPCs confirmadas: f_registrar_baixa_financeira, f_confirmar_pagamento_prestador
+      (com p_valor_pago), f_confirmar_pagamento_fechamento, f_avancar_etapa_app_motorista.
+      Triggers M66/M80 presentes.
+  - supabase/baseline/01_core_tables.sql (15.339 bytes) — baseline PARCIAL (6 tabelas).
+  - supabase/baseline/BASELINE_MANIFEST_20260920.txt — inventario/checksum.
+
+4.5 ESTRATEGIA DE BOOTSTRAP (RECOMENDADA — herdada de ENV-QA-02, PASS)
+  - NAO rodar as 248 migrations legadas do zero (risco ALTO, fidelidade BAIXA).
+  - Aplicar o BASELINE LIVE (4.4) como schema unico do novo HML.
+  - Depois aplicar SOMENTE migrations novas e comprovadamente ainda nao refletidas.
+  - NAO reaplicar P0 nem 02B rollback.
+  - Monitorar retroatividade: marcar migrations ja refletidas no baseline em
+    supabase_migrations (somente se/quando decidido em missao propria).
+
+================================================================================
+5. SEEDS / DADOS NECESSARIOS PARA HML
+================================================================================
+A) ESTRUTURA / SCHEMA
+   - supabase/baseline/full_production_schema_20260920.sql (schema-only; 0 dados).
+B) DADOS MINIMOS OBRIGATORIOS (~15 registros) — ja preparados
+   - scripts/qa/seed_rls_test_data.sql: 1 tenant, 2 usuarios sinteticos
+     (super_admin + financeiro), 1 cliente, 2 prestadores (A fake "Cesar", B isolamento),
+     1 conta bancaria (Cora sintetica), 3 OS concluidas, 3 FP (integral/parcial/fechamento),
+     3 PP. Guard interno anti-producao. NAO EXECUTADO ainda.
+C) USUARIO ADM DE TESTE
+   - scripts/missao50_seed_auth_real.ts (5 usuarios corporativos + 5 agentes IA internos;
+     senhas como PLACEHOLDERS). Para HML minimo: pelo menos 1 super_admin + 1 financeiro
+     em Supabase Auth + vinculo em tenant_usuarios. Requer projeto HML e service role.
+D) DADOS OPERACIONAIS DE TESTE
+   - Conjunto de B (OS/alocacao/financeiro) + opcionalmente seed de veiculos
+     (scripts/m86_seed_veiculos_prestadores.ts) e enderecos (m132a_seed_homologacao_enderecos.ts),
+     clientes de portal (seed-2-clientes-portal.ts) se for testar Portal/App.
+E) DADOS QUE NAO DEVEM SER COPIADOS DE PRODUCAO
+   - NENHUM dado real: clientes, prestadores, motoristas, usuarios/emails, financeiro
+     (financeiro_receber/pagar/baixas), ordens_servico, alocacoes_escala, entregas_protocolo/POD,
+     comprovantes, logs, conversas. O baseline e schema-only (0 linhas) e assim deve permanecer.
+   - Nenhum arquivo de Storage de producao (comprovantes, documentos, PDFs) deve ser migrado.
+
+================================================================================
+6. EDGE FUNCTIONS A DEPLOYAR NO HML (CLASSIFICACAO)
+================================================================================
+  Necessarias para TMS core:
+    - fiscal-documento-url      (URL/consulta de documentos fiscais)
+    - focus-consulta            (consulta Focus NFe)
+    - focus-documentos          (download/gestao de documentos Focus)
+    - focus-emissao             (emissao CT-e/NFS-e/MDF-e)
+    - fiscal-email-documentos   (envio de documentos por e-mail)
+    - proxy-ia                  (proxy seguro de IA — chaves no backend)
+  Necessarias para APP:
+    - criar-alocacao-escala     (criacao de alocacao a partir do App)
+    - whatsapp-recrutamento-webhook (webhook publico de recrutamento/WhatsApp)
+  Necessarias para Efi:
+    - efi-mtls-probe            (DIAGNOSTICO temporario da EFI-INT-04A — nao funcional)
+    - efi-banking              (FUTURA — ainda nao existe)
+  Opcionais / legado:
+    - nenhuma obrigatoria adicional.
+
+================================================================================
+7. NOMES DE SECRETS NECESSARIOS PARA O HML (SOMENTE NOMES — SEM VALORES)
+================================================================================
+7.1 SUPABASE / TMS
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_ROLE_KEY
+    - EDGE_SUPABASE_URL
+    - EDGE_SERVICE_ROLE_KEY
+    - TMS_EDGE_INTERNAL_TOKEN
+    (Plus, no frontend/.env.qa: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
+     VITE_APP_URL, VITE_TMS_EDGE_INTERNAL_TOKEN — nao sao secrets de Edge Function.)
+
+7.2 INTEGRACOES EXISTENTES
+    - FOCUS_AMBIENTE, FOCUS_PRODUCAO_LIBERADA, FOCUS_REAL_ENABLED,
+      FOCUS_TOKEN, FOCUS_TOKEN_PRODUCAO, FOCUS_BASE_URL, FOCUS_BASE_URL_PRODUCAO
+    - FISCAL_EMAIL_WEBHOOK, N8N_WEBHOOK_ZOHO_EMAIL
+    - GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY
+    (N8N/Evolution/Zoho usados via webhooks do frontend: VITE_N8N_*, VITE_EVOLUTION_*,
+     VITE_ZOHO_* — opcionais no HML inicial.)
+
+7.3 APP
+    - TMS_EDGE_INTERNAL_TOKEN (compartilhado com criar-alocacao-escala)
+    - (Usuarios do App ficam no Supabase Auth + tabelas; nao sao secret.)
+
+7.4 EFI (HML) — apenas nomes
+    - EFI_ENVIRONMENT
+    - EFI_CLIENT_ID_HML
+    - EFI_CLIENT_SECRET_HML
+    - EFI_CERTIFICATE_HML       (PEM X.509, base64)
+    - EFI_PRIVATE_KEY_HML       (PEM PKCS#8, base64)
+    - EFI_PROBE_TOKEN           (protecao da funcao de diagnostico)
+    - (opcional) EFI_API_BASE_URL_HML
+    - (condicional) EFI_WEBHOOK_SECRET_HML
+  NENHUM valor e registrado, lido ou exibido.
+
+================================================================================
+8. ESTRATEGIA RECOMENDADA DE HML
+================================================================================
+  OPCAO 1 — NOVO PROJETO SUPABASE DEDICADO (HML/QA), tier PRO   [RECOMENDADA]
+    + Reproduz fielmente producao via baseline LIVE (schema-only).
+    + Suporta Edge Functions, secrets, webhooks publicos, Realtime, Storage.
+    + Atende App fisico, Efi HML (mTLS), E2E reais.
+    + Tier PRO evita a expiracao que derrubou o QA anterior (Free).
+    - Custo ~USD 25/mes.
+  OPCAO 2 — SUPABASE BRANCH / DATABASE BRANCH   [NAO RECOMENDADA agora]
+    - Supabase Branching reproduz schema via MIGRATIONS de um repo Git.
+      Este projeto tem 248 migrations NAO fidedignas (drift; prod com historico de
+      migrations inconsistente) e a fonte real e um DUMP live. Branching nao
+      reproduziria o schema atual sem trabalho extra; risco alto de divergencia.
+  OPCAO 3 — AMBIENTE LOCAL (supabase start)   [COMPLEMENTO]
+    + Excelente para desenvolvimento de migrations e testes unitarios.
+    - NAO atende: App fisico, webhooks publicos alcancaveis, Efi HML (mTLS para
+      a internet), E2E hospedado, Storage/Realtime de nuvem.
+    => Usar como apoio, NAO como HML.
+
+  RECOMENDACAO FINAL: OPCAO 1 (projeto dedicado, Pro) como HML; OPCAO 3 como apoio local.
+  Nome sugerido: conexao-express-hml-v2 (ou tms-hml-v2). Regiao: South America (Sao Paulo).
+
+================================================================================
+9. ROTEIRO EXATO PARA CRIACAO/RESTAURACAO
+================================================================================
+9.1 O QUE O USUARIO DEVE FAZER MANUALMENTE (Supabase Dashboard)
+  1. Acessar https://supabase.com/dashboard/projects.
+  2. Verificar se "conexao-express-qa" (aqpfayildtcnrkfeeyjg) aparece.
+     - Se aparecer "Paused": reativar (opcao de restaurar) — preferir PRO para nao expirar.
+     - Se NAO aparecer: criar projeto NOVO (passo 3).
+  3. New Project:
+     - Nome: conexao-express-hml-v2
+     - Regiao: South America (Sao Paulo)
+     - Tier: PRO (evita expiracao) — NAO usar Free.
+     - DB password: gerar e guardar em cofre (NAO no chat/repo).
+  4. Anotar (fora do chat): Project ref novo, anon key, service_role key, DB password.
+  5. Authentication > URL Configuration: definir Site URL e Redirect URLs do HML
+     (ex.: https://hml.tms.conexaoexpress.com.br e https://<HML_REF>.supabase.co).
+  6. Storage: criar os buckets usados pelo TMS (comprovantes, documentos, relatorios,
+     biblioteca) com as policies correspondentes.
+  7. Realtime: habilitar publicação para as tabelas necessarias (se aplicavel).
+  8. NAO copiar dados de producao.
+
+9.2 COMANDOS QUE PODERAO SER EXECUTADOS DEPOIS (pelo usuario/dev, no HML)
+  # a) Linkar SOMENTE o novo HML
+  supabase link --project-ref <NOVO_HML_REF>
+
+  # b) Aplicar BASELINE LIVE (schema-only), de preferencia via SQL Editor
+  #    (colar supabase/baseline/full_production_schema_20260920.sql)
+  #    OU via script com guard anti-producao:
+  QA_DATABASE_URL="<DATABASE_URL_DO_HML>" npx tsx scripts/qa/apply_baseline_to_qa.ts
+
+  # c) Validar estrutura (comparar com baseline)
+  npx tsx scripts/qa/inspect_baseline.ts
+
+  # d) Seed sintetico minimo (apos validar o schema)
+  psql "<DATABASE_URL_DO_HML>" -f scripts/qa/seed_rls_test_data.sql
+
+  # e) (Opcional) usuarios Auth de teste
+  npx tsx scripts/missao50_seed_auth_real.ts        # requer SERVICE_ROLE do HML
+
+  # f) Secrets de Edge Functions (nomes; valores informados localmente)
+  supabase secrets set --project-ref <NOVO_HML_REF> NOME=valor ...
+
+  # g) Deploy das Edge Functions (por funcao)
+  supabase functions deploy <funcao> --project-ref <NOVO_HML_REF>
+
+9.3 ORDEM CRITICA (NAO INVERTER)
+  link -> baseline -> validar -> seed -> auth users -> secrets -> deploy functions -> E2E.
+
+9.4 APOS O HML EXISTIR (somente entao): atualizar referencias
+  - .env.qa (VITE_SUPABASE_URL, SUPABASE_QA_PROJECT_REF, DATABASE_URL)
+  - tests/e2e/helpers/ambiente.ts (SUPABASE_QA_REF)
+  - scripts/check-ambiente.cjs (SUPABASE_QA_REF)
+  - docs/VARIAVEIS_AMBIENTE_HIBRIDAS.md
+  - supabase link (project-ref / linked-project.json)
+  NAO alterar nenhuma destas AGORA.
+
+9.5 PRESERVAR EVIDENCIA (ate o novo HML existir)
+  - Nao remover/alterar as referencias antigas; elas documentam o incidente e
+    evitam que um teste E2E bata, por engano, no ref morto ou em producao.
+
+================================================================================
+10. CHECKLIST DE VALIDACAO APOS A CRIACAO DO HML
+================================================================================
+  [ ] Projeto aparece em `supabase projects list` (nome conexao-express-hml-v2).
+  [ ] DNS https://<HML_REF>.supabase.co resolve (nao NXDOMAIN).
+  [ ] `supabase link --project-ref <HML_REF>` OK no projeto HML.
+  [ ] Baseline aplicado sem erro (transacao unica).
+  [ ] `inspect_baseline.ts` confirma: 237 tabelas, 135 funcoes, 120 triggers,
+      543 policies; RPCs criticas presentes.
+  [ ] Triggers M66 (trg_propagar_financeiro_alocacao) e M80 (trg_propagar_financeiro_os)
+      PRESENTES.
+  [ ] f_registrar_baixa_financeira e f_confirmar_pagamento_prestador presentes com
+      as assinaturas corretas (verificar OVERLOAD 10/11 da baixa).
+  [ ] Seed sintetico aplicado (~15 registros; prefixo QA-TEST-/HML-).
+  [ ] Usuarios Auth de teste criados + tenant_usuarios vinculado (super_admin/financeiro).
+  [ ] Secrets de Edge Functions configurados (nomes da secao 7), nenhum valor exposto.
+  [ ] Edge Functions core deployadas e respondendo.
+  [ ] Guards E2E atualizados para o novo ref (apos 9.4) e `check:env` = QA ok.
+  [ ] Playwright de fumaca roda no HML sem tocar producao.
+  [ ] efi-mtls-probe deployada no HML e handshake mTLS testado (EFI-INT-04A retomada).
+
+================================================================================
+11. ARQUIVOS ALTERADOS
+================================================================================
+  - ZERO alteracoes de codigo/config/banco nesta missao.
+  - Unico arquivo criado: HML-RECOVER-01-AUDIT.txt (este relatorio).
+  - Nenhuma migration, seed, secret, .env, RPC ou projeto foi tocado.
+
+================================================================================
+12. GIT STATUS
+================================================================================
+  git status --short -- HML-RECOVER-01-AUDIT.txt
+    ?? HML-RECOVER-01-AUDIT.txt
+  (O working tree ja possui inumeras mudancas pre-existentes de missoes anteriores;
+   nenhuma delas foi criada/alterada aqui.)
+
+================================================================================
+13. RISCOS
+================================================================================
+  R1 [BLOQUEADOR] Sem projeto HML acessivel. Impede 04B/E2E/Efi.
+  R2 [ALTO] Aplicar as 248 migrations em banco vazio NAO reproduz producao e pode
+     criar overloads/dados inconsistentes. Mitigacao: usar o baseline LIVE.
+  R3 [ALTO] Free tier expira de novo. Mitigacao: criar em tier PRO.
+  R4 [MEDIO] Baseline pode ficar desatualizado em relacao a producao.
+     Mitigacao: re-extrair snapshot imediatamente antes do bootstrap.
+  R5 [MEDIO] supabase/seed.sql ausente vs config.toml db.seed (sql_paths ["./seed.sql"]).
+     Mitigacao: criar seed.sql ou ajustar config antes de `supabase db reset`.
+  R6 [MEDIO] Overload da RPC f_registrar_baixa_financeira (10/11) — validar no HML.
+  R7 [CONTROLE] Producao NAO foi tocada; nenhum secret/cert exibido.
+
+================================================================================
+14. DECISAO GO/NO-GO PARA HML-RECOVER-02
+================================================================================
+  GO CONDICIONAL.
+  - O pacote de recuperacao JA existe (baseline live + scripts + seed sintetico).
+  - HML-RECOVER-02 pode executar ASSIM QUE o usuario criar/restaurar o projeto e
+    informar o NOVO project ref (nao e necessario enviar segredos no chat).
+  - Pre-condicao humana: item 9.1 (criar projeto Pro + anotar credenciais).
+  - Se o projeto antigo for apenas "Paused" e restaurar for mais barato que criar,
+    validar com o time — mas tier PRO e recomendado para nao repetir a expiracao.
+  - EFI-INT-04B permanece NO-GO ate o HML existir.
+
+================================================================================
+15. DECLARACAO DE CONFORMIDADE
+================================================================================
+  [OK] Somente leitura. [OK] Nenhum projeto criado. [OK] Producao intocada.
+  [OK] Nenhuma migration executada. [OK] Nenhum seed executado. [OK] Nenhum banco alterado.
+  [OK] Nenhum secret configurado/exibido. [OK] Nenhum certificado convertido.
+  [OK] .env NAO alterado. [OK] project-ref antigo preservado (evidencia).
+  [OK] Nenhum valor de secret neste TXT.
+
+================================================================================
+FIM — HML-RECOVER-01-AUDIT.txt
+================================================================================

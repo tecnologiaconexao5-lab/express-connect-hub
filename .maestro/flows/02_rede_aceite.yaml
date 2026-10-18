@@ -1,0 +1,105 @@
+# ============================================================================
+# ETAPA 2 (celular) - Rede de Oportunidades: validar a OS de MOTO criada pelo
+# Playwright, abrir o card e ACEITAR a corrida (dialogo + confirmacao).
+# Env (via orchestrator): OS_NUMERO, OS_PESO.
+# ============================================================================
+appId: ${MAESTRO_APP_ID}
+---
+# O app e trazido ao primeiro plano por `adb shell monkey` antes do flow (MIUI/
+# XSpace nega launch via dev.mobile.maestro), entao NAO usamos launchApp aqui.
+- waitForAnimationToEnd
+
+# Home -> card "Rede de Oportunidades" (fim do scroll da home).
+# O card tem titulo + subtitulo num unico no de acessibilidade -> casa por regex.
+- scrollUntilVisible:
+    element:
+      text: ".*Rede de Oportunidades.*"
+    direction: DOWN
+    timeout: 25000
+- tapOn:
+    text: ".*Rede de Oportunidades.*"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: ".*Rede de Oportunidades.*"
+    timeout: 40000
+- takeScreenshot: "02_rede_oportunidades"
+
+# Espera a oportunidade da OS criada pelo Playwright (numero OS-YYYYMM-NNNN).
+# O card mostra "OS <numero>" (prefixo proprio), entao casa por regex.
+- runFlow:
+    when:
+      true: ${OS_NUMERO != null}
+    commands:
+      - extendedWaitUntil:
+          visible: ".*${OS_NUMERO}.*"
+          timeout: 90000
+      - scrollUntilVisible:
+          element:
+            text: ".*${OS_NUMERO}.*"
+          direction: DOWN
+          timeout: 30000
+      - tapOn:
+          text: ".*${OS_NUMERO}.*"
+      - waitForAnimationToEnd
+
+# Dialogo de detalhe da oportunidade (acoes: Fechar / Recusar / Aceitar).
+# NOTA (BATERIA-TESTES-E2E-LIVE): a UI passou a usar DriverLanguage.aceitarOportunidade
+# = "Aceitar Serviço" (network_screen.dart:487/1234). O texto antigo "Aceitar
+# Oportunidade" NAO existe mais — o seletor abaixo foi atualizado.
+- extendedWaitUntil:
+    visible: ".*Aceitar Serviço.*"
+    timeout: 30000
+- takeScreenshot: "02b_card_os"
+
+- tapOn:
+    text: ".*Aceitar Serviço.*"
+- waitForAnimationToEnd
+
+# Confirmacao da aceitacao (dialogo "Aceitar oportunidade?" -> botao "Confirmar").
+# A confirmacao e TOLERANTE/IDEMPOTENTE: se o dialogo nao aparecer (variacao de
+# layout/timing), reabre e confirma de novo. A validacao DURA de que a OS foi
+# aceita ocorre a jusante (flow 04 abre a OS na aba Operacoes).
+- runFlow:
+    when:
+      visible: ".*Confirmar.*"
+    commands:
+      - takeScreenshot: "02b2_confirmacao"
+      - tapOn:
+          text: ".*Confirmar.*"
+      - waitForAnimationToEnd
+
+# Retry: se ainda nao houve sucesso, tenta aceitar novamente.
+- runFlow:
+    when:
+      notVisible: ".*aceita com sucesso.*"
+    commands:
+      - tapOn:
+          text: ".*Aceitar Serviço.*"
+          optional: true
+      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible: ".*Confirmar.*"
+          commands:
+            - tapOn:
+                text: ".*Confirmar.*"
+            - waitForAnimationToEnd
+
+# Evidencia (best-effort) do snackbar de sucesso.
+- runFlow:
+    when:
+      visible: ".*aceita com sucesso.*"
+    commands:
+      - takeScreenshot: "02c_aceita"
+- waitForAnimationToEnd
+
+# Fecha o dialogo de sucesso (se houver botao de fechar)
+- tapOn:
+    text: "OK"
+    optional: true
+- tapOn:
+    text: "Fechar"
+    optional: true
+- back
+- waitForAnimationToEnd

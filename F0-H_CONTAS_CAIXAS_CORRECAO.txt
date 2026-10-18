@@ -1,0 +1,50 @@
+F0-H — CONTAS & CAIXAS (CORREÇÃO)
+=====================================================================
+1. ESTRUTURA ENCONTRADA / CRIADA
+   contas_financeiras NÃO existia em Produção (tela procurava e falhava).
+   Criada tabela real via migration aditiva mínima. Sem seed de saldos.
+2. MIGRATION
+   supabase/migrations/20260819_f0h_contas_caixas.sql — APLICADA em Produção
+   (script scripts/f0h_aplicar_contas_caixas.mjs, transação COMMIT OK, ref
+   confirmado uwrvzsjtpgaifkktpepn). 100% aditiva, sem reset/drop/delete.
+3. CONTAS/CAIXAS
+   Tabela public.contas_financeiras: id, nome, tipo (corrente/poupança/caixa/
+   carteira), banco, agência, conta, dígito, titular, chave_pix, saldo (legado),
+   saldo_inicial, saldo_inicial_data, ativa, principal, empresa, plano_contas,
+   observacoes, cor, created_at, updated_at.
+4. SALDO INICIAL
+   Campo real saldo_inicial + saldo_inicial_data (cadastrado; nunca inventado).
+5. FÓRMULA SALDO REAL
+   Saldo Real = Saldo Inicial + Entradas Realizadas − Saídas Realizadas
+   Entradas = baixas financeiro_receber (estornada=false) vinculadas à conta;
+   Saídas = baixas financeiro_pagar (estornada=false) vinculadas à conta.
+6. FÓRMULA SALDO PROJETADO
+   Saldo Projetado = Saldo Real + Recebimentos Futuros − Pagamentos Futuros
+   (títulos não baixados com vencimento futuro; vínculo textual conta_entrada/
+   conta_pagadora). Saldo projetado NUNCA é chamado de saldo atual.
+7. VÍNCULO COM financeiro_baixas
+   Adicionada coluna financeiro_baixas.conta_financeira_id UUID → contas_financeiras
+   (ON DELETE SET NULL), aditiva; conta_financeira textual preservada como
+   fallback/compatibilidade (matching por ID com precedência e depois nome/banco).
+8. ALTERAÇÕES MÍNIMAS NO FLUXO DE CAIXA
+   Nenhuma nesta missão (fonte continua financeiro_baixas; a distinção
+   previsto×realizado já correta). Vínculo por ID fica disponível para uso futuro.
+9. RLS/SEGURANÇA
+   contas_financeiras: RLS ENABLED; policies SELECT/INSERT/UPDATE/DELETE somente
+   para authenticated (sem anon). Índice único parcial garante no máximo UMA
+   conta principal. Dados bancários seguem o padrão do projeto (colunas textuais,
+   sem exposição de segredos).
+10. TESTES
+    src/test/f0h_contas_caixas.test.ts — 9/9 PASS: saldo inicial 1.000; entrada
+    realizada 500; saída realizada 300; saldo real 1.200; futuro 400 → real 1.200
+    e projetado 1.600; estorno não compõe; filtro por conta; conta inativa
+    preserva histórico; vínculo por ID/texto.
+    npx tsc --noEmit = 0 erros.
+11. PENDÊNCIAS
+    Transferências internas ainda gravam a coluna saldo (legado) — migrar para
+    movimentação por baixas em missão futura; saldo inicial de contas só passa a
+    existir quando o gestor cadastrar; conciliação/CNAB segue fora de escopo.
+12. ALTERAÇÕES DE BANCO
+    SIM — migration aditiva mínima aplicada em PRODUÇÃO (contas_financeiras +
+    financeiro_baixas.conta_financeira_id). Produção preservada (sem reset/drop/
+    delete; sem alterar registros existentes).

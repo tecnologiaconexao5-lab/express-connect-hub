@@ -1,0 +1,92 @@
+﻿================================================================================
+RELATÓRIO DE EXECUÇÃO — MISSÃO ENV-QA-02-BASELINE-PACKAGE
+================================================================================
+
+Data/Hora: 2026-09-20T20:18:00.000Z
+Status Geral: BASELINE_PACKAGE = PASS
+
+1. CONTEXTO E DIAGNÓSTICO DO AMBIENTE
+   - Conforme confirmado, o antigo ambiente QA (aqpfayildtcnrkfeeyjg) está INDISPONÍVEL.
+   - O projeto ativo é exclusivamente a PRODUÇÃO (conexao-express-tms, ref: uwrvzsjtpgaifkktpepn).
+   - O objetivo desta missão foi preparar o pacote de baseline estrutural completo a partir do
+     schema LIVE de produção, sem gerar novas migrações e com ZERO dados reais de negócio.
+
+2. AUDITORIA E APERFEIÇOAMENTO DE scripts/qa/extract_baseline.ts
+   - O script original cobria apenas 6 tabelas estáticas.
+   - Foi completamente refatorado e expandido para extrair:
+     * Extensões ativas (pg_stat_statements, pgcrypto, supabase_vault, uuid-ossp);
+     * Schemas;
+     * 63 Enums e types customizados;
+     * 3 Sequences;
+     * 237 Tabelas base com colunas, tipos exatos, nulabilidade e defaults;
+     * 631 Constraints (Primary Keys, Foreign Keys, Uniques e Checks);
+     * 683 Indexes (otimizações e índices secundários com exclusão de duplicatas de constraints);
+     * 135 Functions / RPCs completas com corpos e definições de segurança;
+     * 24 Views de banco de dados;
+     * 120 Triggers de negócio (incluindo M66 e M80);
+     * 237 Tabelas com RLS habilitado e 543 Policies de segurança.
+
+3. EXECUÇÃO READ-ONLY CONTRA PRODUÇÃO
+   - Project ref verificado e confirmado antes de qualquer query: uwrvzsjtpgaifkktpepn.
+   - Modo de execução: estritamente READ-ONLY (SELECT em catálogos de metadados do PostgreSQL).
+   - ZERO escritas em produção (0 INSERTs, 0 UPDATEs, 0 DELETEs, 0 DDLs).
+   - Nenhuma alteração de registros em clientes, prestadores ou financeiro.
+
+4. GERAÇÃO DO BASELINE VERSIONADO
+   - Arquivo: supabase/baseline/full_production_schema_20260920.sql
+   - Tamanho: 812.613 bytes (~793,57 KB)
+   - Total de Linhas: 17.373
+   - SHA-256: 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+
+5. PROVA DE ZERO DATA E ZERO SECRETS
+   - Inspeção automatizada executada via scripts/qa/inspect_baseline.ts:
+     * DATA_ROWS_EXPORTED = 0
+     * BUSINESS_INSERTS = 0
+     * COPY_DATA_BLOCKS = 0
+     * Secrets encontrados: 0
+   - Não contém senhas, JWTs, chaves de API nem registros de pessoas ou empresas.
+
+6. CONFIRMAÇÃO DE COMPONENTES CRÍTICOS
+   - f_confirmar_pagamento_fechamento: PRESENTE
+   - f_confirmar_pagamento_prestador: PRESENTE (com aridade de 3 argumentos e p_valor_pago numeric DEFAULT NULL - 02M.5F)
+   - f_registrar_baixa_financeira: PRESENTE
+   - f_avancar_etapa_app_motorista: PRESENTE
+   - Trigger M66 (trg_propagar_financeiro_alocacao): PRESENTE
+   - Trigger M80 (trg_propagar_financeiro_os): PRESENTE
+   - Políticas RLS completas: 543 PRESENTE
+
+7. GUARD ANTI-PRODUÇÃO EM scripts/qa/apply_baseline_to_qa.ts
+   - Script preparado com guard rigoroso:
+     * Recusa o project ref de produção (uwrvzsjtpgaifkktpepn);
+     * Recusa connection strings que apontem para o host de produção;
+     * Exige QA_DATABASE_URL explicitamente definida;
+     * Aborta com erro caso detecte colisão com o banco de produção.
+   - O script NÃO FOI EXECUTADO em nenhum banco.
+
+8. SEED SINTÉTICO PREPARADO (scripts/qa/seed_rls_test_data.sql)
+   - Script de seed 100% fictício criado para a futura missão 02M.9 contendo:
+     * 1 Tenant fictício;
+     * 2 Usuários sintéticos (1 super_admin e 1 financeiro);
+     * 1 Cliente teste fictício;
+     * 2 Prestadores fictícios (Prestador A fake Cesar e Prestador B para teste de isolamento);
+     * 1 Conta bancária teste (Cora Sintética);
+     * 3 OS sintéticas concluídas;
+     * 3 Títulos FP sintéticos (integral, parcial e fechamento);
+     * 3 Pagamentos PP correspondentes.
+   - Guard interno impedindo execução em produção.
+   - O seed NÃO FOI EXECUTADO em nenhum banco.
+
+9. DIRETRIZES PARA O NOVO QA
+   - O baseline LIVE full_production_schema_20260920.sql será o ponto de partida único do novo QA.
+   - NÃO rodar as 234 migrations legadas após o baseline.
+   - NÃO reaplicar P0.
+   - NÃO reaplicar 02B rollback.
+   - NÃO inserir registros retroativos em supabase_migrations nesta missão.
+
+10. MANIFESTO GERADO
+    - Arquivo: supabase/baseline/BASELINE_MANIFEST_20260920.txt
+    - Contém o inventário completo e checksum do pacote.
+
+================================================================================
+CRITÉRIO PASS: BASELINE_PACKAGE = PASS
+================================================================================

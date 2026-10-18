@@ -1,0 +1,165 @@
+================================================================================
+MISSAO: TMS-FIN-MARGEM-01-CORRIGIR-400-MARGEM-OPERACIONAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PROD (somente leitura)
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao funcional de UI/consulta. SEM migration. SEM movimentacao.
+RESULTADO: PASS — Margem Operacional carrega sem HTTP 400, com dados reais.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ERRO ANTES / REPRODUCAO
+--------------------------------------------------------------------------------
+Componente: src/components/financeiro/MargemOperacional.tsx
+Query ANTES:
+  supabase.from("composicao_financeira_os").select(`
+    *, os:ordens_servico!inner(numero, cliente)
+  `).order("created_at", { ascending: false })
+O embed PostgREST `os:ordens_servico!inner(...)` exige um relacionamento
+detectavel entre composicao_financeira_os e ordens_servico. Como NAO existe FK,
+o PostgREST responde 400 ("Could not find a relationship between
+'composicao_financeira_os' and 'ordens_servico'"). => tela falhava com erro.
+
+--------------------------------------------------------------------------------
+2. CAUSA RAIZ (schema real)
+--------------------------------------------------------------------------------
+- composicao_financeira_os: PK id uuid; os_id uuid (SEM FK); cliente_id uuid;
+  prestador_id uuid; valor_cliente/valor_prestador/pedagio_valor/margem_liquida/
+  percentual_* numeric; created_at; origem_calculo; demais custos.
+  FKs de composicao_financeira_os = [] (nenhuma).
+- ordens_servico: id uuid (PK); numero text; cliente uuid; prestador uuid;
+  cliente_id/prestador_id text; tenant_id uuid; is_teste boolean.
+- composicao_financeira_os.os_id -> ordens_servico.id e vinculo SEMANTICO, mas
+  NAO e FK. 20 de 59 linhas tem os_id SEM OS correspondente (orfas).
+=> Causa raiz = ausencia de FK + uso de embed. Corrigir por FK exigiria resolver
+   20 orfaos e nao ha necessidade estrutural -> NAO criar FK (missao: evitar).
+
+--------------------------------------------------------------------------------
+3. SOLUCAO ESCOLHIDA (minima, sem migration)
+--------------------------------------------------------------------------------
+Consulta em ETAPAS (batch) pelo os_id — sem embed:
+  1) SELECT composicao_financeira_os (campos usados);
+  2) coletar os_ids -> SELECT ordens_servico (id, numero, cliente, is_teste)
+     .in("id", osIds);
+  3) coletar cliente(uuid) -> SELECT clientes (id, razao_social, nome_fantasia)
+     .in("id", cliIds);
+  4) montar linhas por os_id (helper puro); OS orfa/sem OS nao derruba a tela.
+NENHUMA migration. NENHUMA FK criada. Nenhuma estrutura financeira duplicada.
+
+--------------------------------------------------------------------------------
+4. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/financeiro/MargemOperacional.tsx
+    query sem embed + consulta em etapas; filtro is_teste via OS; paginacao real
+    (PaginationBar, 25); formatadores a prova de NaN; resumo via helper.
+- src/helpers/margemOperacionalHelper.ts (NOVO): montarMargens(), resumirMargens().
+- src/test/fin_margem01_operacional.test.ts (NOVO — 10 testes).
+
+--------------------------------------------------------------------------------
+5. QUERY ANTES x DEPOIS (resumo)
+--------------------------------------------------------------------------------
+ANTES:  from("composicao_financeira_os").select("*, os:ordens_servico!inner(...)") -> 400
+DEPOIS: from("composicao_financeira_os").select("id, os_id, cliente_id,
+        prestador_id, valor_cliente, valor_prestador, pedagio_valor,
+        margem_liquida, created_at") + from("ordens_servico").select("id,numero,
+        cliente,is_teste").in("id", osIds) + from("clientes").select("id,
+        razao_social,nome_fantasia").in("id", cliIds)
+
+--------------------------------------------------------------------------------
+6. ORIGEM DE CADA VALOR (fonte REAL; sem formula inventada)
+--------------------------------------------------------------------------------
+- receita / valor cliente ..... composicao_financeira_os.valor_cliente
+- custo prestador ............. composicao_financeira_os.valor_prestador
+- pedagio ..................... composicao_financeira_os.pedagio_valor
+- demais custos ............... imposto_valor/seguro_valor/outros_custos/
+                                combustivel_valor/ajudante_valor/adicional_valor/
+                                desconto_valor (existem; a tela usa repasse+pedagio)
+- margem ...................... composicao_financeira_os.margem_liquida (VALOR REAL
+                                ARMAZENADO; fallback receita-prestador-pedagio so se null)
+- percentual .................. exibido como margem/receita (razao para UI; nao
+                                reescreve o percentual armazenado)
+- OS/numero/cliente ........... join em etapas ordens_servico + clientes (por id)
+Separacao preservada: valor_cliente (receita) != valor_prestador (custo).
+
+--------------------------------------------------------------------------------
+7. REGRA TEMPORAL (auditada — NAO alterada)
+--------------------------------------------------------------------------------
+A tela ordena por composicao_financeira_os.created_at (data de CRIACAO da
+composicao financeira) e NAO aplica filtro de periodo. NAO e a data do servico
+nem competencia. REPORTADO: pode divergir da data do servico; nao foi trocado
+silenciosamente (missao: reportar primeiro; correcao so com regra inequivoca).
+
+--------------------------------------------------------------------------------
+8. RESULTADO DA TELA
+--------------------------------------------------------------------------------
+- Sem HTTP 400 (embed removido).
+- Dados carregam; loading termina (finally setLoading(false)).
+- Vazio real -> estado vazio ("Nenhum dado de composicao financeira encontrado.").
+- Erro real -> mensagem profissional ("Erro ao carregar dados: ...").
+- Sem NaN/undefined (formatadores Number.isFinite; valores normalizados para 0).
+- Nenhum total inventado (usa valores reais/armazenados).
+- Paginacao real: Anterior | 1 2 3 ... | Proxima (PaginationBar, 25/pagina);
+  filtros/ordenacao antes do slice; cards sobre conjunto COMPLETO (margens).
+
+--------------------------------------------------------------------------------
+9. TESTES A-L (10/10 PASS — unit + source-scan; sem banco)
+--------------------------------------------------------------------------------
+A) query nao usa embed os:ordens_servico!inner ........................... PASS
+B) composicao resolve OS (numero) correta ............................... PASS
+C) cliente correto (por id) ............................................. PASS
+D) prestador correto (valor_prestador) ................................. PASS
+E) receita correta (valor_cliente; != prestador) ....................... PASS
+F) custo correto (prestador + pedagio) ................................. PASS
+G) margem = valor REAL armazenado (nao recalcula formula) .............. PASS
+H) is_teste=true NAO infla o indicador ................................. PASS
+I) registro sem vinculo (OS orfa/sem OS) nao derruba a tela ........... PASS
+J) filtros/pagina NAO distorcem cards (resumo sobre conjunto completo) . PASS
+K) estado vazio funciona (sem NaN) ..................................... PASS
+L) erro backend tratado (setError/catch) .............................. PASS
+(resumo final: 10/10)
+
+--------------------------------------------------------------------------------
+10. BANCO ANTES = DEPOIS
+--------------------------------------------------------------------------------
+composicao_financeira_os = 59 (59); orfaos (os_id sem OS) = 20 (20).
+Nenhuma escrita nesta missao (somente leitura). Nenhum valor historico alterado.
+
+--------------------------------------------------------------------------------
+11. REGRESSAO
+--------------------------------------------------------------------------------
+- fin_margem01_operacional: 10/10 PASS.
+- vitest (subset financeiro + novos 7B.2/7B.3/6D.1/CONTA-01 etc.):
+  10 arquivos / 184 testes PASS.
+- Scripts: 05D.6B.1 17/17; 05D.6A 15/15; 05D.4 13/13; 05D.7B.1 concorrencia PASS.
+- 05D.7C.1/7B.x intactos (nenhuma alteracao de schema/RPC).
+- npm run build: OK — "built in 1m 4s".
+- tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Regra temporal: usa created_at da composicao, sem periodo. Pode divergir da
+    data do servico — reportado; ajuste requer decisao (nao feito agora).
+R2) 20 composicoes com os_id sem OS aparecem como "OS-<short>"/cliente "—"
+    (nao derruba a tela; nao inventa dado).
+R3) Sem FK composicao->OS: relacionamento resolvido por batch. Se futuramente
+    exigir integridade referencial, avaliar FK (apos sanear os 20 orfaos) —
+    fora do escopo.
+R4) 'demais custos' (impostos/seguro/combustivel/etc.) existem na composicao mas a
+    tela exibe apenas repasse+pedagio como custo (como antes); nao alterado.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+Efi/iFi; efi-mtls-probe; lotes_pagamento; snapshots; pagamentos; baixas;
+faturas/AR; contas financeiras; M66/M80; 21 indeterminados; CESAR; APP;
+Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-MARGEM-01-CORRIGIR-400-MARGEM-OPERACIONAL-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-MARGEM-01-CORRIGIR-400-MARGEM-OPERACIONAL-RESULTADO.txt
+Tamanho ..: 10109 bytes
+Data .....: 24/09/2026 19:16:14
+================================================================================
+FIM DO RELATORIO — TMS-FIN-MARGEM-01
+================================================================================

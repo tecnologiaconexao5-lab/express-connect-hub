@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileSpreadsheet, Download, Terminal, Info, History, AlertTriangle, ShieldAlert, XCircle, Send, CheckCircle2, Eye, GitBranch } from "lucide-react";
+import { FileSpreadsheet, Download, Terminal, Info, History, AlertTriangle, ShieldAlert, XCircle, Send, CheckCircle2, Eye, GitBranch, Loader2, RefreshCw, MapPin, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,9 @@ import CteTimeline from "./CteTimeline";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { abrirPreviaCte } from "@/utils/pdfPreviaCteSemValorFiscal";
 import { alterarStatusFiscalInterno, listarHistoricoStatus } from "@/services/fiscal/fiscalStatusService";
+import { enviarCteParaFocus, consultarStatusCteFocus, baixarDocumentosCteFocus, gerarUrlDocumentoFiscalCte, enviarCteParaFocusProducao } from "@/services/fiscal/focusService";
 
 interface CteDetailsProps {
   cte: any | null;
@@ -32,6 +34,14 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
   const [simulacaoAcao, setSimulacaoAcao] = useState("");
   const [motivoSimulacao, setMotivoSimulacao] = useState("");
   const [historico, setHistorico] = useState<any[]>([]);
+  const [enviandoFocus, setEnviandoFocus] = useState(false);
+  const [focusResult, setFocusResult] = useState<any>(null);
+  const [showFocusResult, setShowFocusResult] = useState(false);
+  const [consultandoFocus, setConsultandoFocus] = useState(false);
+  const [baixandoDocs, setBaixandoDocs] = useState(false);
+  const [showProducaoModal, setShowProducaoModal] = useState(false);
+  const [confirmacaoProducao, setConfirmacaoProducao] = useState("");
+  const [enviandoProducao, setEnviandoProducao] = useState(false);
 
   useEffect(() => {
     if (open && cte?.id) {
@@ -95,6 +105,124 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
     else toast.error("Erro: " + (result.error||""));
   };
 
+  const handleEnviarFocus = async function() {
+    if (!cte?.id) return;
+    setEnviandoFocus(true);
+    setFocusResult(null);
+
+    try {
+      const res = await enviarCteParaFocus(cte.id);
+      setFocusResult(res);
+      setShowFocusResult(true);
+
+      if (res.ok) {
+        toast.success(res.mensagem || "CT-e enviado para Focus com sucesso!");
+        fetchLogs();
+      } else {
+        toast.error(res.erro || res.motivo || "Erro ao enviar para Focus.");
+      }
+    } catch (err: any) {
+      toast.error("Erro inesperado: " + err.message);
+    } finally {
+      setEnviandoFocus(false);
+    }
+  };
+
+  const podeEnviarFocus = function() {
+    if (!cte) return false;
+    if (cte.status !== "rascunho") return false;
+    const meta = cte.metadata || {};
+    if (!meta.pronto_para_emissao) return false;
+    if (meta.pendente_conferencia_endereco === true) return false;
+    if (!meta.payload_focus) return false;
+    const docs = meta.payload_focus?.documentos_vinculados || [];
+    if (docs.length === 0) return false;
+    return true;
+  };
+
+  const podeConsultarFocus = function() {
+    if (!cte) return false;
+    const statusConsulta = ["processando", "rejeitado", "erro_emissao"];
+    if (!statusConsulta.includes(cte.status)) return false;
+    const meta = cte.metadata || {};
+    if (!meta.focus_response) return false;
+    return true;
+  };
+
+  const handleConsultarFocus = async function() {
+    if (!cte?.id) return;
+    setConsultandoFocus(true);
+    setFocusResult(null);
+
+    try {
+      const res = await consultarStatusCteFocus(cte.id);
+      setFocusResult(res);
+      setShowFocusResult(true);
+
+      if (res.ok) {
+        if (res.autorizado) {
+          toast.success("CT-e autorizado na Focus!");
+        } else if (res.rejeitado) {
+          toast.warning("CT-e rejeitado pela SEFAZ. Verifique o motivo.");
+        } else {
+          toast.info(res.mensagem || "Consulta realizada.");
+        }
+        fetchLogs();
+      } else {
+        toast.error(res.erro || "Erro ao consultar Focus.");
+      }
+    } catch (err: any) {
+      toast.error("Erro inesperado: " + err.message);
+    } finally {
+      setConsultandoFocus(false);
+    }
+  };
+
+  const handleBaixarDocumentos = async function(docs: ("xml" | "dacte")[] = ["xml", "dacte"]) {
+    if (!cte?.id) return;
+    setBaixandoDocs(true);
+    setFocusResult(null);
+
+    try {
+      toast.info("Baixando documentos fiscais...");
+      const res = await baixarDocumentosCteFocus(cte.id, docs);
+      setFocusResult(res);
+      setShowFocusResult(true);
+
+      if (res.ok && res.resultados) {
+        const xmlOk = res.resultados.xml?.salvo;
+        const dacteOk = res.resultados.dacte?.salvo;
+        if (xmlOk && dacteOk) toast.success("XML e DACTE salvos no Storage!");
+        else if (xmlOk) toast.success("XML salvo no Storage!");
+        else if (dacteOk) toast.success("DACTE salvo no Storage!");
+        else toast.warning(res.mensagem || "Nenhum documento foi salvo.");
+        fetchLogs();
+      } else {
+        toast.error(res.erro || "Erro ao baixar documentos.");
+      }
+    } catch (err: any) {
+      toast.error("Erro: " + err.message);
+    } finally {
+      setBaixandoDocs(false);
+    }
+  };
+
+  const handleEnviarProducao = async function() {
+    if (confirmacaoProducao !== "EMITIR PRODUCAO") {
+      toast.error('Digite exatamente "EMITIR PRODUCAO" para confirmar.');
+      return;
+    }
+    setEnviandoProducao(true);
+    try {
+      const res = await enviarCteParaFocusProducao(cte.id, confirmacaoProducao);
+      setFocusResult(res);
+      setShowFocusResult(true);
+      if (res.ok) { toast.success("CT-e enviado para producao!"); fetchLogs(); }
+      else { toast.error(res.erro || "Erro na emissao producao."); }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setEnviandoProducao(false); setShowProducaoModal(false); setConfirmacaoProducao(""); }
+  };
+
   if (!cte) return null;
 
   return (
@@ -117,19 +245,19 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
         <Tabs defaultValue={defaultTab} className="flex-1 flex flex-col min-h-0">
           <div className="px-6 pt-4 border-b">
             <TabsList className="w-full justify-start rounded-none border-b-0 bg-transparent p-0 gap-6">
-              <TabsTrigger value="resumo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none">
+              <TabsTrigger value="resumo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none font-medium">
                 <Info className="w-4 h-4 mr-2" /> Resumo
               </TabsTrigger>
-              <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none">
+              <TabsTrigger value="timeline" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none font-medium">
                 <History className="w-4 h-4 mr-2" /> Timeline
               </TabsTrigger>
-              <TabsTrigger value="xml" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none">
+              <TabsTrigger value="xml" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none font-medium">
                 <FileSpreadsheet className="w-4 h-4 mr-2" /> XML / DACTE
               </TabsTrigger>
-              <TabsTrigger value="fiscal" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none">
+              <TabsTrigger value="fiscal" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none font-medium">
                 <ShieldAlert className="w-4 h-4 mr-2" /> Fiscal
               </TabsTrigger>
-              <TabsTrigger value="logs" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none">
+              <TabsTrigger value="logs" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-0 pb-2 shadow-none font-medium">
                 <Terminal className="w-4 h-4 mr-2" /> Logs
               </TabsTrigger>
             </TabsList>
@@ -159,16 +287,87 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
                   <span className="text-xs text-muted-foreground">Protocolo</span>
                   <div className="text-sm font-mono">{cte.protocolo || "-"}</div>
                 </div>
+
+                {/* Origem operacional + Romaneio */}
                 <div className="col-span-2 space-y-1">
-                  <span className="text-xs text-muted-foreground">Cliente (Tomador)</span>
-                  <div className="text-sm font-medium">
-                    {cte.clientes?.nome_fantasia || cte.clientes?.razao_social || "Não vinculado"}
+                  <span className="text-xs text-muted-foreground">Origem Operacional</span>
+                  <div className="text-sm font-medium flex items-center gap-2">
+                    {cte.ordem_servico_id ? (
+                      <Badge className="bg-green-50 text-green-700 text-xs">OS {cte.ordens_servico?.numero || cte.ordem_servico_id?.slice(0,8)}</Badge>
+                    ) : (cte.metadata?.origem_cte === "romaneio_faturamento") ? (
+                      <Badge className="bg-blue-50 text-blue-700 text-xs">Romaneio/Faturamento</Badge>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                    {cte.metadata?.romaneio_numero && (
+                      <Badge variant="outline" className="text-[10px] font-mono">Romaneio {cte.metadata.romaneio_numero}</Badge>
+                    )}
                   </div>
                 </div>
+
+                {/* Origem CT-e */}
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Origem (Municipio)</span>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    {(() => {
+                      const meta = cte.metadata || {};
+                      const pf = meta.payload_focus || {};
+                      const cidade = pf.origem?.cidade || meta.origem_municipio || (meta.origem_cte === "romaneio_faturamento" ? "GUARULHOS" : null);
+                      const uf = pf.origem?.uf || meta.origem_uf || (meta.origem_cte === "romaneio_faturamento" ? "SP" : null);
+                      return cidade ? `${cidade}${uf ? `/${uf}` : ""}` : "-";
+                    })()}
+                  </div>
+                </div>
+
+                {/* NF-e */}
+                {cte.metadata?.nfe_numero && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">NF-e</span>
+                    <div className="text-sm font-medium font-mono">{cte.metadata.nfe_numero}</div>
+                  </div>
+                )} {!cte.metadata?.nfe_numero && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">NF-e</span>
+                    <div className="text-sm font-medium text-slate-400">-</div>
+                  </div>
+                )}
+
+                {/* Destino */}
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Destino</span>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    {cte.metadata?.payload_focus?.destino?.cidade || cte.metadata?.endereco_real_entrega_usado?.municipio || "-"}
+                    {cte.metadata?.payload_focus?.destino?.uf ? `/${cte.metadata.payload_focus.destino.uf}` : ""}
+                  </div>
+                </div>
+
+                <div className="col-span-2 space-y-1">
+                  <span className="text-xs text-muted-foreground">Cliente / Tomador</span>
+                  <div className="text-sm font-medium">
+                    {(() => {
+                      const meta = cte.metadata || {};
+                      const nome = cte.clientes?.nome_fantasia || cte.clientes?.razao_social || meta.tomador_nome || meta.cliente_nome || meta.payload_focus?.tomador?.nome;
+                      if (nome) return nome;
+                      if (meta.origem_cte === "romaneio_faturamento" && meta.romaneio_numero) return "CALVO COML IMP. E EXP. LTDA.";
+                      return "Nao vinculado";
+                    })()}
+                  </div>
+                </div>
+
+                {/* Observação */}
+                {cte.metadata?.observacao_cte && (
+                  <div className="col-span-2 space-y-1">
+                    <span className="text-xs text-muted-foreground">Observação CT-e</span>
+                    <div className="text-xs font-mono bg-slate-50 border rounded p-2 whitespace-pre-wrap">{cte.metadata.observacao_cte}</div>
+                  </div>
+                )}
+
                 <div className="col-span-2 space-y-1">
                   <span className="text-xs text-muted-foreground">Ordem de Serviço</span>
                   <div className="text-sm font-medium">
-                    {cte.ordens_servico?.numero || "Nenhuma OS vinculada"}
+                    {cte.ordens_servico?.numero || (cte.metadata?.operacao_tipo === "fixa_calvo" ? "Não obrigatória (operação fixa)" : "Nenhuma OS vinculada")}
                   </div>
                 </div>
                 {cte.motivo_rejeicao && (
@@ -182,12 +381,175 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
 
             {/* Aba Timeline */}
             <TabsContent value="timeline" className="m-0">
-              <CteTimeline cteId={cte.id} />
+              <CteTimeline cteId={cte.id} cteMetadata={cte.metadata} />
             </TabsContent>
 
             {/* Aba XML */}
             <TabsContent value="xml" className="m-0 space-y-4">
-              {cte.xml_url || cte.pdf_url ? (
+              {/* Rascunho nao autorizado */}
+              {cte.status !== "Autorizado" && cte.status !== "autorizado" && cte.status !== "Encerrado" && (
+                <div className="space-y-3">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                    <FileText className="w-6 h-6 text-blue-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-blue-700">CT-e em Rascunho</p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      XML e DACTE do CT-e serao disponibilizados apos autorizacao pela SEFAZ/Focus.
+                    </p>
+                  </div>
+
+                  {/* NF-e original vinculada */}
+                  {cte.metadata?.nfe_numero && (
+                    <div className="border rounded-lg">
+                      <div className="p-3 border-b bg-emerald-50/50 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-emerald-600" />
+                        <span className="font-semibold text-sm text-emerald-800">XML da NF-e original importado</span>
+                      </div>
+                      <div className="p-3 text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">NF-e Numero:</span>
+                          <span className="font-mono font-medium">{cte.metadata.nfe_numero || "-"}</span>
+                        </div>
+                        {cte.metadata.nfe_chave && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Chave:</span>
+                            <span className="font-mono text-[10px] break-all max-w-[200px] truncate">{cte.metadata.nfe_chave}</span>
+                          </div>
+                        )}
+                        {cte.metadata.nfe_serie && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Serie:</span>
+                            <span className="font-mono">{cte.metadata.nfe_serie}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Lote:</span>
+                          <span className="font-mono">{cte.metadata.romaneio_numero || "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!cte.metadata?.nfe_numero && (
+                    <div className="p-3 bg-slate-50 border rounded-lg text-xs text-slate-500 text-center">
+                      Nenhuma NF-e original vinculada a este CT-e.
+                    </div>
+                  )}
+
+                  {cte.metadata?.payload_focus && (
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => { toast.info("Gerando previa sem valor fiscal..."); abrirPreviaCte(cte); }}>
+                      <Eye className="w-4 h-4 mr-2" />
+                      Previa sem valor fiscal
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Autorizado */}
+              {(cte.status === "Autorizado" || cte.status === "autorizado") && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    <span className="text-sm font-medium text-green-800">CT-e Autorizado — Documentos Disponiveis</span>
+                  </div>
+
+                  {cte.metadata?.documentos_storage?.xml?.salvo ? (
+                    <Button variant="outline" className="justify-start h-12 w-full" onClick={async () => {
+                      toast.info("Gerando link temporario...");
+                      const res = await gerarUrlDocumentoFiscalCte(cte.id, "xml");
+                      if (res.ok && res.signedUrl) {
+                        window.open(res.signedUrl, "_blank");
+                        toast.success(`Link gerado. Valido por ${(res.expiresIn || 600) / 60} minutos.`);
+                      } else {
+                        toast.error(res.erro || "Erro ao gerar link.");
+                      }
+                    }}>
+                      <Download className="w-4 h-4 mr-3 text-green-500" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Abrir XML</span>
+                        <span className="text-xs text-muted-foreground">Link temporario gerado sob demanda</span>
+                      </div>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="justify-start h-12 w-full" onClick={() => handleBaixarDocumentos(["xml"])} disabled={baixandoDocs}>
+                      {baixandoDocs ? <Loader2 className="w-4 h-4 mr-3 animate-spin" /> : <Download className="w-4 h-4 mr-3 text-orange-500" />}
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Baixar XML da Focus</span>
+                        <span className="text-xs text-muted-foreground">Download e armazenamento no Storage</span>
+                      </div>
+                    </Button>
+                  )}
+
+                  {cte.metadata?.documentos_storage?.dacte?.salvo ? (
+                    <Button variant="outline" className="justify-start h-12 w-full" onClick={async () => {
+                      toast.info("Gerando link temporario...");
+                      const res = await gerarUrlDocumentoFiscalCte(cte.id, "dacte");
+                      if (res.ok && res.signedUrl) {
+                        window.open(res.signedUrl, "_blank");
+                        toast.success(`Link gerado. Valido por ${(res.expiresIn || 600) / 60} minutos.`);
+                      } else {
+                        toast.error(res.erro || "Erro ao gerar link.");
+                      }
+                    }}>
+                      <Download className="w-4 h-4 mr-3 text-red-500" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Abrir DACTE</span>
+                        <span className="text-xs text-muted-foreground">Link temporario gerado sob demanda</span>
+                      </div>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="justify-start h-12 w-full" onClick={() => handleBaixarDocumentos(["dacte"])} disabled={baixandoDocs}>
+                      {baixandoDocs ? <Loader2 className="w-4 h-4 mr-3 animate-spin" /> : <Download className="w-4 h-4 mr-3 text-red-500" />}
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Baixar DACTE da Focus</span>
+                        <span className="text-xs text-muted-foreground">Download e armazenamento no Storage</span>
+                      </div>
+                    </Button>
+                  )}
+
+                  {(!cte.metadata?.documentos_storage?.xml?.salvo || !cte.metadata?.documentos_storage?.dacte?.salvo) && (
+                    <Button variant="default" className="w-full" onClick={() => handleBaixarDocumentos(["xml", "dacte"])} disabled={baixandoDocs}>
+                      {baixandoDocs ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                      Baixar XML/DACTE
+                    </Button>
+                  )}
+
+                  {(cte.metadata?.documentos_storage?.xml?.salvo || cte.metadata?.documentos_storage?.dacte?.salvo) && (
+                    <Button variant="outline" size="sm" className="w-full text-amber-600 hover:bg-amber-50" onClick={() => {
+                      if (confirm("Tem certeza que deseja reprocessar os documentos? Os arquivos serao baixados novamente da Focus e sobrescritos no Storage.")) {
+                        handleBaixarDocumentos(["xml", "dacte"]);
+                      }
+                    }}>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Reprocessar XML/DACTE
+                    </Button>
+                  )}
+
+                  {cte.chave_acesso && (
+                    <div className="p-3 bg-slate-50 border rounded-lg text-xs">
+                      <span className="text-muted-foreground">Chave:</span>{" "}
+                      <span className="font-mono text-[10px] break-all">{cte.chave_acesso}</span>
+                    </div>
+                  )}
+
+                  {cte.metadata?.documentos_storage?.xml?.salvo && (
+                    <div className="p-2 bg-slate-50 border rounded text-[10px] text-slate-500">
+                      <span className="font-medium">XML:</span>{" "}
+                      {(cte.metadata.documentos_storage.xml.tamanho_bytes / 1024).toFixed(1)} KB — salvo em{" "}
+                      {cte.metadata.documentos_storage.xml.salvo_em ? new Date(cte.metadata.documentos_storage.xml.salvo_em).toLocaleDateString() : "-"}
+                    </div>
+                  )}
+                  {cte.metadata?.documentos_storage?.dacte?.salvo && (
+                    <div className="p-2 bg-slate-50 border rounded text-[10px] text-slate-500">
+                      <span className="font-medium">DACTE:</span>{" "}
+                      {(cte.metadata.documentos_storage.dacte.tamanho_bytes / 1024).toFixed(1)} KB — salvo em{" "}
+                      {cte.metadata.documentos_storage.dacte.salvo_em ? new Date(cte.metadata.documentos_storage.dacte.salvo_em).toLocaleDateString() : "-"}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* XML URLs diretos (legado) */}
+              {(cte.status !== "Autorizado" && cte.status !== "autorizado" && cte.status !== "rascunho") && (cte.xml_url || cte.pdf_url) && (
                 <div className="flex flex-col gap-3">
                   {cte.xml_url && (
                     <Button variant="outline" className="justify-start h-12">
@@ -208,11 +570,14 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
                     </Button>
                   )}
                 </div>
-              ) : (
+              )}
+
+              {/* Fallback sem status conhecido */}
+              {(cte.status !== "Autorizado" && cte.status !== "autorizado" && cte.status !== "rascunho") && !cte.xml_url && !cte.pdf_url && (
                 <div className="flex flex-col items-center justify-center p-8 border border-dashed rounded-lg text-muted-foreground">
                   <FileSpreadsheet className="w-10 h-10 mb-2 opacity-20" />
-                  <p className="text-sm font-medium">Arquivos não disponíveis</p>
-                  <p className="text-xs text-center mt-1 max-w-[250px]">O XML e o DACTE estarão disponíveis aqui após a autorização do documento na Sefaz.</p>
+                  <p className="text-sm font-medium">Arquivos nao disponiveis</p>
+                  <p className="text-xs text-center mt-1 max-w-[250px]">O XML e o DACTE estarao disponiveis aqui apos a autorizacao do documento na Sefaz.</p>
                 </div>
               )}
             </TabsContent>
@@ -324,13 +689,54 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
                           <span className="text-muted-foreground">CT-e</span>
                           <span className="font-mono">{cte?.numero || "S/N"}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Pronto para emissão?</span>
-                          <span className={`font-semibold ${temErros ? "text-red-600" : "text-green-600"}`}>
-                            {temErros ? "NÃO" : "SIM"}
-                          </span>
-                        </div>
+                        {(() => {
+                          const cfop = cte?.metadata?.payload_focus?.fiscal?.cfop || cte?.metadata?.payload_focus?.carga?.cfop || cte?.metadata?.cfop || null;
+                          const natureza = cte?.metadata?.payload_focus?.fiscal?.natureza_operacao || cte?.metadata?.payload_focus?.carga?.natureza_operacao || cte?.metadata?.natureza_operacao || null;
+                          const destinoCidade = cte?.metadata?.payload_focus?.destino?.cidade || cte?.metadata?.endereco_real_entrega_usado?.municipio || null;
+                          const destinoUf = cte?.metadata?.payload_focus?.destino?.uf || cte?.metadata?.endereco_real_entrega_usado?.uf || null;
+                          const codIbgeDestino = cte?.metadata?.endereco_real_entrega_usado?.codigo_ibge || (cte?.metadata?.payload_focus?.destino as any)?.codigo_municipio || null;
+                          return (
+                            <>
+                              {cfop && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">CFOP</span>
+                                  <span className="font-mono font-semibold">{cfop}</span>
+                                </div>
+                              )}
+                              {natureza && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Natureza Operacao</span>
+                                  <span className="text-xs">{natureza}</span>
+                                </div>
+                              )}
+                              {destinoCidade && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Municipio Destino</span>
+                                  <span className="font-medium">{destinoCidade}{destinoUf ? `/${destinoUf}` : ""}</span>
+                                </div>
+                              )}
+                              {codIbgeDestino && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Codigo IBGE</span>
+                                  <span className="font-mono">{codIbgeDestino}</span>
+                                </div>
+                              )}
+                              {cte?.valor != null && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Valor Prestacao</span>
+                                  <span className="font-semibold">{fmtFin(cte.valor)}</span>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="border-t pt-2 mt-2">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Pronto para emissao?</span>
+                            <span className={`font-semibold ${temErros ? "text-red-600" : "text-green-600"}`}>
+                              {temErros ? "NAO" : "SIM"}
+                            </span>
+                          </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Erros</span>
                             <span className="font-semibold text-red-600">{erros.length}</span>
@@ -343,119 +749,275 @@ export default function CteDetails({ cte, open, onOpenChange, defaultTab = "resu
                       </div>
                     </div>
 
-                    {/* BOTÃO EMITIR CT-e */}
+                    {/* BOTÃO ENVIAR FOCUS HOMOLOGAÇÃO */}
                     <div className="flex gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex-1 inline-block">
-                          <Button
-                            className="w-full"
-                            disabled={temErros}
-                            variant={temErros ? "outline" : "default"}
-                            onClick={pronto && !temErros ? handlePreEmissao : undefined}
-                          >
-                            <FileSpreadsheet className="w-4 h-4 mr-2" />
-                            Pre-emissao CT-e
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      {temErros && (
-                        <TooltipContent side="top" className="max-w-[250px] text-center">
-                          <p>Corrija as pendências fiscais antes da emissão.</p>
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="flex-1 inline-block">
+                            <Button
+                              className="w-full bg-blue-600 hover:bg-blue-700"
+                              disabled={!podeEnviarFocus() || enviandoFocus}
+                              onClick={handleEnviarFocus}
+                            >
+                              {enviandoFocus ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Send className="w-4 h-4 mr-2" />
+                              )}
+                              Enviar Focus Homologação
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        {!podeEnviarFocus() && (
+                          <TooltipContent side="top" className="max-w-[250px] text-center">
+                            <p className="text-xs">
+                              {cte?.status !== "rascunho"
+                                ? "CT-e precisa estar em rascunho."
+                                : cte?.metadata?.pendente_conferencia_endereco
+                                ? "Endereco real de entrega pendente de conferencia."
+                                : !cte?.metadata?.pronto_para_emissao
+                                ? "Corrija as pendencias fiscais antes da emissao."
+                                : "Payload Focus ou NF-e vinculada ausente."}
+                            </p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
                       <Button variant="outline" size="icon" className="h-10 w-10 flex-shrink-0" onClick={function(){setShowPreview(true);}} title="Visualizar Previa"><Eye className="w-4 h-4" /></Button>
                     </div>
 
-                    {/* Modal Pré-Emissão */}
-                    <Dialog open={showPreEmissao} onOpenChange={setShowPreEmissao}>
+                    {/* Botao Producao (apenas para rascunho pronto) */}
+                    {cte.status === "rascunho" && cte.metadata?.pronto_para_emissao && !cte.metadata?.pendente_conferencia_endereco && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full border-red-300 text-red-700 hover:bg-red-50"
+                          onClick={() => { setConfirmacaoProducao(""); setShowProducaoModal(true); }}
+                        >
+                          <Send className="w-4 h-4 mr-2" />
+                          Emitir em Producao (Individual)
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Modal Confirmacao Producao */}
+                    <Dialog open={showProducaoModal} onOpenChange={setShowProducaoModal}>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2 text-red-700">
+                            <AlertTriangle className="w-5 h-5" />
+                            Confirmar Emissao em Producao
+                          </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3 py-2">
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                            Esta acao emitira um <strong>CT-e real</strong> em ambiente de <strong>producao</strong>.
+                          </div>
+                          <div className="text-xs text-slate-600 space-y-1">
+                            <p>Confirme que:</p>
+                            <ul className="list-disc ml-4 space-y-0.5">
+                              <li>Contador/fiscal aprovou CFOP, CST, ICMS e tomador</li>
+                              <li>Focus confirmou serie e numeracao de producao</li>
+                              <li>Certificado A1 valido em producao</li>
+                              <li>Responsavel autorizou explicitamente</li>
+                            </ul>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Digite EMITIR PRODUCAO para confirmar:</Label>
+                            <Input
+                              value={confirmacaoProducao}
+                              onChange={(e) => setConfirmacaoProducao(e.target.value)}
+                              placeholder="EMITIR PRODUCAO"
+                              className="mt-1 font-mono"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowProducaoModal(false)}>Cancelar</Button>
+                          <Button
+                            variant="destructive"
+                            onClick={handleEnviarProducao}
+                            disabled={confirmacaoProducao !== "EMITIR PRODUCAO" || enviandoProducao}
+                          >
+                            {enviandoProducao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                            Emitir CT-e Producao
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* BOTÃO CONSULTAR STATUS FOCUS */}
+                    {podeConsultarFocus() && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          variant="outline"
+                          className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+                          disabled={consultandoFocus}
+                          onClick={handleConsultarFocus}
+                        >
+                          {consultandoFocus ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Consultar Status Focus
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Modal Resultado Focus */}
+                    <Dialog open={showFocusResult} onOpenChange={setShowFocusResult}>
                       <DialogContent className="max-w-lg">
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
-                            <Send className="w-5 h-5 text-primary" />
-                            Pre-emissao CT-e
+                            {focusResult?.autorizado
+                              ? <CheckCircle2 className="w-5 h-5 text-green-600" />
+                              : focusResult?.rejeitado
+                              ? <XCircle className="w-5 h-5 text-red-600" />
+                              : focusResult?.resultados
+                              ? <Download className="w-5 h-5 text-blue-600" />
+                              : focusResult?.ok
+                              ? <CheckCircle2 className="w-5 h-5 text-green-600" />
+                              : <XCircle className="w-5 h-5 text-red-600" />}
+                            Resultado — {focusResult?.resultados ? "Documentos Fiscais" : focusResult?.autorizado ? "CT-e Autorizado" : focusResult?.rejeitado ? "CT-e Rejeitado" : focusResult?.modo === "consulta" ? "Consulta Focus" : "Envio Focus Homologação"}
                           </DialogTitle>
-                          <DialogDescription>
-                            Dados internos prontos para emissao fiscal
-                          </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-3 py-2">
-                          <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                            <span className="text-sm font-medium text-green-800">Status: Dados internos prontos</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            {(() => {
-                              const pf = cte?.metadata?.payload_focus || {};
-                              return (
-                                <>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Emitente</span>
-                                    <p className="font-medium truncate">{pf.emitente?.nome || "-"}</p>
-                                    <p className="text-xs text-muted-foreground">{pf.emitente?.cnpj || ""}</p>
+                          {/* Resultado de Documentos */}
+                          {focusResult?.resultados && (
+                            <>
+                              {(focusResult.resultados.xml || focusResult.resultados.dacte) && (
+                                <div className="space-y-2">
+                                  {focusResult.resultados.xml && (
+                                    <div className={`p-3 border rounded-lg ${focusResult.resultados.xml.salvo ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                                      <div className="flex items-center gap-2">
+                                        {focusResult.resultados.xml.salvo ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <XCircle className="w-4 h-4 text-red-600" />}
+                                        <span className="text-sm font-medium">{focusResult.resultados.xml.salvo ? "XML salvo no Storage" : "XML nao salvo"}</span>
+                                      </div>
+                                      {focusResult.resultados.xml.salvo && (
+                                        <div className="mt-1 text-xs text-slate-600">
+                                          {focusResult.resultados.xml.ja_existia && <Badge className="bg-blue-100 text-blue-700 text-[10px] mr-1">Ja existia</Badge>}
+                                          {focusResult.resultados.xml.tamanho_bytes && <span>{(focusResult.resultados.xml.tamanho_bytes / 1024).toFixed(1)} KB</span>}
+                                        </div>
+                                      )}
+                                      {!focusResult.resultados.xml.salvo && focusResult.resultados.xml.erro && (
+                                        <p className="text-xs text-red-600 mt-1">{focusResult.resultados.xml.erro}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {focusResult.resultados.dacte && (
+                                    <div className={`p-3 border rounded-lg ${focusResult.resultados.dacte.salvo ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                                      <div className="flex items-center gap-2">
+                                        {focusResult.resultados.dacte.salvo ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <XCircle className="w-4 h-4 text-red-600" />}
+                                        <span className="text-sm font-medium">{focusResult.resultados.dacte.salvo ? "DACTE salvo no Storage" : "DACTE nao salvo"}</span>
+                                      </div>
+                                      {focusResult.resultados.dacte.salvo && (
+                                        <div className="mt-1 text-xs text-slate-600">
+                                          {focusResult.resultados.dacte.ja_existia && <Badge className="bg-blue-100 text-blue-700 text-[10px] mr-1">Ja existia</Badge>}
+                                          {focusResult.resultados.dacte.tamanho_bytes && <span>{(focusResult.resultados.dacte.tamanho_bytes / 1024).toFixed(1)} KB</span>}
+                                        </div>
+                                      )}
+                                      {!focusResult.resultados.dacte.salvo && focusResult.resultados.dacte.erro && (
+                                        <p className="text-xs text-red-600 mt-1">{focusResult.resultados.dacte.erro}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          {focusResult?.ok && !focusResult?.resultados ? (
+                            <>
+                              {focusResult.autorizado ? (
+                                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                    <span className="text-sm font-medium text-green-800">CT-e Autorizado na SEFAZ</span>
                                   </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Tomador</span>
-                                    <p className="font-medium truncate">{pf.tomador?.nome || "-"}</p>
-                                    <p className="text-xs text-muted-foreground">{pf.tomador?.cnpj || ""}</p>
+                                </div>
+                              ) : focusResult.rejeitado ? (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                  <div className="flex items-start gap-2">
+                                    <XCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                                    <div>
+                                      <p className="text-sm font-semibold text-red-800">CT-e Rejeitado</p>
+                                      <p className="text-xs text-red-600 mt-1">{focusResult.focusResponse?.motivo || focusResult.mensagem || "Motivo nao informado"}</p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">OS Vinculada</span>
-                                    <p className="font-medium">{cte?.ordens_servico?.numero || "S/N"}</p>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                  <span className="text-sm font-medium text-green-800">
+                                    {focusResult.mensagem || "Operacao concluida!"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {focusResult.chave_acesso && (
+                                <div className="p-3 bg-slate-50 border rounded-lg text-xs">
+                                  <div className="flex justify-between py-1">
+                                    <span className="text-muted-foreground">Chave de Acesso:</span>
+                                    <span className="font-mono text-[10px] break-all">{focusResult.chave_acesso}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">NF-e Vinculada</span>
-                                    <p className="font-medium">{pf.documentos_vinculados?.length || 0} documento(s)</p>
+                                </div>
+                              )}
+
+                              {focusResult.protocolo && (
+                                <div className="flex justify-between py-1 px-3 text-xs">
+                                  <span className="text-muted-foreground">Protocolo:</span>
+                                  <span className="font-mono text-[10px]">{focusResult.protocolo}</span>
+                                </div>
+                              )}
+
+                              {focusResult.focusResponse && !focusResult.autorizado && !focusResult.rejeitado && (
+                                <div className="p-3 bg-slate-50 border rounded-lg text-xs">
+                                  <div className="flex justify-between py-1">
+                                    <span className="text-muted-foreground">Status SEFAZ:</span>
+                                    <span className="font-medium">{focusResult.focusResponse.status_sefaz || focusResult.focusResponse.status || "processando"}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">CFOP</span>
-                                    <p className="font-medium font-mono">{pf.fiscal?.cfop || pf.carga?.cfop || "-"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Natureza Operacao</span>
-                                    <p className="font-medium text-xs">{pf.fiscal?.natureza_operacao || pf.carga?.natureza_operacao || "-"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Origem</span>
-                                    <p className="font-medium">{pf.origem?.cidade || "-"}/{pf.origem?.uf || "-"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Destino</span>
-                                    <p className="font-medium">{pf.destino?.cidade || "-"}/{pf.destino?.uf || "-"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Valor</span>
-                                    <p className="font-medium">{fmtFin(pf.valores?.valor_total)}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-xs text-muted-foreground">Pendencias</span>
-                                    <Badge className="bg-green-100 text-green-700 border-green-200">0</Badge>
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <span className="text-xs text-muted-foreground">Ambiente Fiscal</span>
-                            <p className="font-medium">Homologacao</p>
-                          </div>
-                          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                            <div className="flex items-start gap-2">
-                              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                              <p className="text-xs text-amber-800">
-                                Este CT-e esta pronto em dados internos, mas a emissao real ainda depende da configuracao Focus NFe, token, certificado digital A1 e ambiente fiscal.
-                              </p>
+                                </div>
+                              )}
+
+                              {(focusResult.xml_url || focusResult.pdf_url) && (
+                                <div className="flex gap-2">
+                                  {focusResult.xml_url && (
+                                    <Button variant="outline" size="sm" className="text-xs gap-1" asChild>
+                                      <a href={focusResult.xml_url} target="_blank" rel="noopener noreferrer">
+                                        <Download className="w-3 h-3" /> Baixar XML
+                                      </a>
+                                    </Button>
+                                  )}
+                                  {focusResult.pdf_url && (
+                                    <Button variant="outline" size="sm" className="text-xs gap-1" asChild>
+                                      <a href={focusResult.pdf_url} target="_blank" rel="noopener noreferrer">
+                                        <Download className="w-3 h-3" /> Baixar DACTE
+                                      </a>
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                              <div className="flex items-start gap-2">
+                                <XCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                                <div>
+                                  <p className="text-sm font-semibold text-red-800">Erro</p>
+                                  <p className="text-xs text-red-600 mt-1">{focusResult?.erro || focusResult?.motivo || "Erro desconhecido"}</p>
+                                </div>
+                              </div>
+                              {focusResult?.focusResponse && (
+                                <div className="mt-2 p-2 bg-white rounded border border-red-100 text-xs">
+                                  <pre className="whitespace-pre-wrap break-all text-red-700">{JSON.stringify(focusResult.focusResponse, null, 2)}</pre>
+                                </div>
+                              )}
                             </div>
-                          </div>
+                          )}
                         </div>
-                        <DialogFooter className="flex gap-2">
-                          <Button variant="outline" onClick={function() { setShowPreEmissao(false); }}>
-                            Fechar
-                          </Button>
-                          <Button onClick={function() { setShowPreEmissao(false); }}>
-                            Entendi, emissao ainda nao disponivel
-                          </Button>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowFocusResult(false)}>Fechar</Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>

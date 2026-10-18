@@ -1,0 +1,545 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ custom filepath { path: '/custom/path/.env' }
+========== 1. TABELAS (p├║blicas) ==========
+  _hml_seed_checkpoint
+  academia_cursos [RLS]
+  academia_materiais [RLS]
+  academia_progresso [RLS]
+  agentes_ia_internos [RLS] ÔÇö Funcionarios IA internos. NAO fazem login. Apenas assinam execucoes em logs.
+  alocacoes_escala [RLS] ÔÇö Tabela de aloca├º├Áes de escala operacional - gerencia a distribui├º├úo di├íria de prestadores/motoristas
+  auth_eventos_auditoria [RLS] ÔÇö Auditoria de eventos de autenticacao: login, logout, reset, falhas, acessos negados.
+  automacoes_aprovacoes [RLS]
+  automacoes_execucoes [RLS]
+  automacoes_fila [RLS]
+  automacoes_gatilhos
+  automacoes_gatilhos_execucao
+  automacoes_instrucoes
+  automacoes_logs [RLS]
+  automacoes_regras [RLS]
+  automacoes_regras_operacao
+  automacoes_robos [RLS]
+  automacoes_tarefas [RLS]
+  biblioteca_documentos [RLS]
+  campanhas [RLS]
+  candidatos [RLS]
+  central_integracoes [RLS]
+  centros_custo [RLS]
+  certificados_fiscais [RLS] ÔÇö Certificados digitais A1 por emitente fiscal. A senha do certificado nunca e armazenada nesta tabela.
+  clientes [RLS]
+  clientes_contratos [RLS]
+  communication_events [RLS] ÔÇö Eventos de comunica├º├úo gerados ÔÇö Miss├úo 46. Hist├│rico de todas as comunica├º├Áes enviadas/simuladas.
+  communication_preferences [RLS] ÔÇö Prefer├¬ncias de comunica├º├úo por cliente ÔÇö Miss├úo 46. Branding white-label e canais permitidos.
+  communication_templates [RLS] ÔÇö Templates de comunica├º├úo ÔÇö Miss├úo 46. Define mensagens por evento/p├║blico/canal.
+  composicao_financeira [RLS]
+  composicao_financeira_os [RLS]
+  comunicacoes_destinatarios_autorizados [RLS]
+  comunicacoes_mensagens [RLS]
+  configuracoes_fiscais [RLS] ÔÇö Emitentes fiscais multiempresa. Dados de configuracao para emissao de CT-e, NFS-e e MDF-e via Focus NFe.
+  configuracoes_sistema [RLS]
+  contratos_gerados [RLS]
+  contratos_historico [RLS]
+  contratos_modelos [RLS]
+  contratos_operacao [RLS]
+  contratos_operacao_execucao [RLS]
+  contratos_operacao_rotas [RLS]
+  convites [RLS]
+  criativos [RLS]
+  crm_conversas [RLS]
+  crm_followups [RLS]
+  crm_historico [RLS]
+  crm_interacoes_prestadores [RLS]
+  crm_leads [RLS]
+  crm_mensagens [RLS]
+  crm_templates_mensagem [RLS]
+  delivery_proofs [RLS]
+  despesas_operacionais [RLS]
+  diretor_virtual_decisoes_ia [RLS]
+  diretor_virtual_eventos_ia [RLS]
+  diretor_virtual_ia [RLS]
+  diretor_virtual_metricas_ia [RLS]
+  documentos_prestadores [RLS]
+  driver_incidents [RLS]
+  driver_operations [RLS]
+  driver_profiles [RLS]
+  enderecos_cliente [RLS]
+  enderecos_clientes [RLS] ÔÇö Endere├ºos cadastrados por cliente para re├║so em opera├º├Áes
+  entregas_protocolo [RLS]
+  escala_operacional
+  escalonamentos_humanos [RLS]
+  eventos_oficiais [RLS]
+  filiais [RLS]
+  financeiro_pagar [RLS]
+  financeiro_receber [RLS]
+  fiscal_ctes [RLS]
+  fiscal_documentos_vinculados [RLS] ÔÇö XMLs de NF-e e outros documentos fiscais importados e vinculados a OS, CT-e ou MDF-e.
+  fiscal_events [RLS]
+  fiscal_historico_status [RLS]
+  fiscal_logs [RLS]
+  fiscal_mdfes [RLS]
+  fiscal_nfse [RLS]
+  fiscal_xml_recebidos
+  fluxo_recrutamento [RLS]
+  historico_alocacoes_escala [RLS] ÔÇö Hist├│rico completo de altera├º├Áes nas aloca├º├Áes para auditoria e rastreabilidade
+  homologacoes [RLS]
+  ia_agenda_atividades [RLS]
+  ia_agenda_trabalho [RLS]
+  ia_agentes_execucao [RLS]
+  ia_aprendizado_eventos [RLS]
+  ia_aprovacoes_fila [RLS]
+  ia_aprovacoes_humanas [RLS]
+  ia_auditoria_performance [RLS]
+  ia_autoridade_acoes [RLS]
+  ia_comunicacoes_fila_robos [RLS]
+  ia_comunicacoes_robos [RLS]
+  ia_conector_robo [RLS]
+  ia_conectores [RLS]
+  ia_conhecimento [RLS]
+  ia_conhecimento_distribuicao [RLS]
+  ia_contextos [RLS]
+  ia_credenciais [RLS]
+  ia_credenciais_zoho [RLS]
+  ia_custos_ia
+  ia_decisoes_logs [RLS]
+  ia_escalonamento_config [RLS]
+  ia_execucoes_conectores [RLS]
+  ia_execucoes_ferramentas [RLS]
+  ia_ferramentas [RLS]
+  ia_fila_trabalho [RLS]
+  ia_fluxos_empresa [RLS]
+  ia_fluxos_etapas [RLS]
+  ia_fluxos_execucao_log [RLS]
+  ia_governanca_log [RLS]
+  ia_historico_indicadores [RLS]
+  ia_historico_trabalho [RLS]
+  ia_identidades [RLS]
+  ia_indicadores [RLS]
+  ia_insights_automaticos [RLS]
+  ia_integracoes_externas_logs [RLS]
+  ia_kpis_robo [RLS]
+  ia_limites_operacionais [RLS]
+  ia_logs [RLS] ÔÇö Logs de uso das IAs integradas ao TMS (Groq, Gemini, Claude)
+  ia_metas [RLS]
+  ia_missoes [RLS]
+  ia_missoes_execucao [RLS]
+  ia_modelos_mensagem [RLS]
+  ia_providers_config [RLS]
+  ia_regras [RLS]
+  ia_robo_ferramentas [RLS]
+  ia_score_robo [RLS]
+  ia_sessoes_operacionais [RLS]
+  ia_setores [RLS]
+  ia_sugestoes_melhoria [RLS]
+  ia_tarefas_automaticas [RLS]
+  ia_trabalhos [RLS]
+  ia_versoes_sistema [RLS]
+  integracoes_config [RLS] ÔÇö Configura├º├Áes de integra├º├Áes externas do TMS (Evolution, n8n, Groq, Gemini)
+  integracoes_logs [RLS]
+  leads [RLS]
+  memoria_conhecimento [RLS]
+  memoria_conversas [RLS]
+  memoria_entidades [RLS]
+  memoria_eventos [RLS]
+  memoria_preferencias [RLS]
+  memoria_resumos [RLS]
+  modelos_mensagens [RLS]
+  motorista_app_sessoes
+  motorista_checkins
+  municipios_ibge [RLS]
+  ocorrencias [RLS] ÔÇö Ocorr├¬ncias operacionais ÔÇö usado por TorreControle, App Prestador, Analytics e Portal Cliente. Miss├úo 44A.
+  operacao_localizacao [RLS]
+  operacao_mensagens [RLS] ÔÇö A22 ÔÇö Chat operacional bidirecional App Prestador Ôçä Torre de Controle. Vinculado ├á aloca├º├úo (opera├º├úo). Texto somente.
+  operacoes [RLS]
+  operation_km [RLS]
+  operation_timeline_events [RLS] ÔÇö Eventos de timeline operacional registrados pelo App Prestador
+  orcamentos [RLS]
+  ordens_servico [RLS]
+  os_historico [RLS]
+  os_ocorrencias [RLS]
+  os_pod [RLS]
+  pagamento_prestadores [RLS]
+  pagamentos_prestadores [RLS]
+  pagamentos_prestadores_itens [RLS]
+  patio_alertas [RLS] ÔÇö Alertas automaticos do patio (SLA, doca ocupada, no-show, etc.).
+  patio_checkins [RLS] ÔÇö Check-in de veiculos no patio. Cada entrada = um veiculo.
+  patio_docas [RLS] ÔÇö Docas fisicas disponiveis para carregamento/descarga.
+  patio_eventos [RLS] ÔÇö Eventos da timeline do patio (check-in, chamada, carregamento, saida).
+  patio_fila [RLS] ÔÇö Fila de carregamento com posicao, criterio e doca sugerida.
+  patio_regras_fila [RLS] ÔÇö Regras configuradas de ordenacao da fila por unidade.
+  patio_rodizio [RLS] ÔÇö Registro de rodizio entre prestadores/regioes/tipos.
+  patio_unidades [RLS] ÔÇö Unidades/CDs onde ocorre controle de patio.
+  pending_uploads [RLS]
+  perfis_permissoes [RLS] ÔÇö Matriz de permissoes por papel (papel x modulo). Espelho do permissoes.ts no front.
+  permissoes_prestador [RLS]
+  portal_avaliacoes [RLS]
+  portal_comprovantes [RLS]
+  portal_faturas [RLS]
+  portal_notificacoes [RLS]
+  portal_ocorrencias [RLS]
+  portal_pedidos [RLS]
+  portal_preferencias_cliente [RLS]
+  portal_protocolos [RLS]
+  portal_relatorios [RLS]
+  portal_rotas [RLS]
+  portal_tracking_realtime [RLS] ÔÇö M106 ÔÇö FONTE ├ÜNICA DE VERDADE para rastreamento em tempo real. Populada pelo App Motorista via RPC registrar_posicao_motorista(). Consumida por: Portal Cliente (PortalTrackingMap), NOC (TorreControle), Event Bus (tracking.iniciado). Realtime habilitado.
+  postagens [RLS]
+  prestador_disponibilidade [RLS]
+  prestador_os [RLS]
+  prestadores [RLS]
+  prestadores_app [RLS]
+  prestadores_ocorrencias [RLS]
+  processamento_fila [RLS]
+  provider_documents [RLS]
+  raciocinio_auditoria [RLS]
+  rascunhos_prestador [RLS] ÔÇö Rascunhos do cadastro multi-etapas do App Prestador. Acesso controlado por draft_token (header x-draft-token). SEM token = SEM acesso.
+  recrutamento_candidatos [RLS]
+  recrutamento_ia_config [RLS]
+  recrutamento_operacoes [RLS]
+  recrutamento_prestadores [RLS]
+  recrutamento_whatsapp_config [RLS]
+  recrutamento_whatsapp_conversas [RLS]
+  recrutamento_whatsapp_mensagens [RLS]
+  rede_oportunidades [RLS]
+  rede_visualizacoes [RLS]
+  reembolsos_prestador [RLS]
+  regioes [RLS]
+  regras_fiscais_cte [RLS] ÔÇö Regras fiscais de CT-e: CFOP, aliquota ICMS, CST por cliente/UF/operacao.
+  regras_fiscais_nfse [RLS]
+  roles_permissoes [RLS]
+  rota_execucoes [RLS]
+  rota_paradas [RLS]
+  rotas [RLS]
+  rotinas_execucoes_ia [RLS]
+  rotinas_ia [RLS]
+  route_stops [RLS]
+  seguros_apolices [RLS]
+  sinistros [RLS]
+  tabela_prestador [RLS] ÔÇö Tabela de custos operacionais (prestador). Miss├úo 76: adicionado tenant_id e RLS
+  tabela_prestador_operacional [RLS]
+  tabela_valores [RLS]
+  tabelas_valores [RLS] ÔÇö Tabela de pre├ºos comerciais (cliente). Miss├úo 76: adicionado tenant_id, RLS, franquia_km, percentual_prestador
+  tenant_usuarios [RLS] ÔÇö Vinculo N:N entre auth.users e tenants. Define o papel (papel) do usuario em cada tenant. Inclui role atendimento (Missao 50).
+  tenants [RLS] ÔÇö Multi-tenant: cada empresa (tenant) que usa o TMS. Tenant padrao Conexao Express tem UUID fixo 00000000-0000-0000-0000-000000000001.
+  tracking_public_links [RLS] ÔÇö Links p├║blicos de rastreamento ÔÇö Miss├úo 46. Tokens seguros para destinat├írios.
+  treinamento_arquivos_ia [RLS]
+  unidades [RLS]
+  usuarios_cliente [RLS]
+  veiculos [RLS]
+  webhooks_recebidos [RLS]
+  whatsapp_conversas [RLS] ÔÇö Conversas WhatsApp vinculadas ├ás inst├óncias Evolution API
+  whatsapp_instancias [RLS] ÔÇö Inst├óncias WhatsApp gerenciadas pelo Evolution API
+  whatsapp_mensagens [RLS] ÔÇö Hist├│rico de mensagens WhatsApp recebidas e enviadas
+
+========== 2. VIEWS ==========
+  central_ia_dashboard_view
+  portal_cliente_alocacoes_view
+  portal_cliente_financeiro_view
+  portal_cliente_ordens_view
+  portal_cliente_pedidos_view
+  portal_cliente_perfil_view
+  portal_cliente_pods_view
+  prestadores_public
+  vw_app_motorista_operacoes
+  vw_app_motorista_paradas
+  vw_app_notificacoes_pendentes ÔÇö M111 ÔÇö Notifica├º├Áes n├úo lidas para o App Motorista.
+  vw_hierarquia_tabelas
+  vw_motorista_checklist
+  vw_motorista_dashboard
+  vw_motorista_documentos
+  vw_motorista_financeiro
+  vw_motorista_viagens
+  vw_noc_operacional
+  vw_relatorio_faturamento_cliente
+  vw_relatorio_faturamento_detalhado
+  vw_relatorio_pagamento_detalhado
+  vw_relatorio_pagamento_prestador
+  vw_relatorio_prestadores_analise
+  vw_route_stops_driver
+
+========== 3. MATERIALIZED VIEWS ==========
+
+========== 4. ENUMS/TYPES ==========
+  acao_decisao_diretor: pause, resume, repriorizar, redistribuir, escalar
+  canal_integracao: whatsapp, email, zoho_mail, crm, leads, google_ads, meta_ads, api_externa, webhook
+  categoria_ferramenta: COMUNICACAO, MARKETING, FINANCEIRO, OPERACIONAL, COMERCIAL, DOCUMENTOS, AUTOMACAO_WEB, INTEGRACOES, RECRUTAMENTO
+  categoria_integracao: comunicacao, comercial, marketing, operacao
+  dia_semana: domingo, segunda, terca, quarta, quinta, sexta, sabado
+  escopo_memoria: compartilhada, privada
+  impacto_decisao_diretor: low, medium, high, critical
+  modo_conector: HOMOLOGACAO, PRODUCAO_ASSISTIDA, PRODUCAO, PRODUCAO_AUTONOMA
+  modo_diretor_virtual: auto, semi_auto, manual
+  nivel_autonomia_ferramenta: CONSULTA, EXECUTAR_COM_APROVACAO, EXECUTAR_AUTONOMO
+  nivel_risco: baixo, medio, alto, critico
+  patio_alerta_tipo: sla_excedido, doca_ocupada, carregamento_parado, documentacao_pendente, no_show, operacao_critica, fila_longa
+  patio_criterio_fila: ordem_chegada, horario_agendado, prioridade, sla, regiao, tipo_veiculo, tipo_carga, cliente_vip, rodizio_prestador, rodizio_regiao, doca_disponivel, urgencia
+  patio_doca_status: disponivel, ocupada, bloqueada, manutencao, reservada
+  patio_status: previsto, chegou_ao_patio, aguardando_checkin, checkin_realizado, aguardando_liberacao, aguardando_fila, chamado_para_doca, em_doca, carregamento_iniciado, carregamento_pausado, carregamento_concluido, aguardando_documentacao, liberado_para_saida, saiu_do_patio, cancelado, no_show
+  patio_tipo_rodizio: prestador, regiao, tipo_veiculo, cliente, contrato, manual
+  perfil_identidade: comercial, financeiro, operacional, fiscal, recrutamento, monitoramento, cliente, prestador, rh, suporte
+  periodicidade_kpi: diario, semanal, quinzenal, mensal, trimestral, semestral, anual
+  periodicidade_meta: diaria, semanal, quinzenal, mensal, bimestral, trimestral, semestral, anual
+  prioridade_comunicacao_robo: low, medium, high, critical
+  prioridade_missao: baixa, media, alta, critica
+  prioridade_trabalho: baixa, normal, alta, critica
+  rede_oportunidade_status: publicada, visualizada, interessada, aceita, expirada, cancelada
+  status_academia: rascunho, em_andamento, aprovado, obsoleto, revogado
+  status_arquivo_treinamento: rascunho, ativo, arquivado, expirado
+  status_comunicacao_robo: pendente, enviado, respondido, concluido, erro
+  status_credencial_zoho: ativo, expirado, revogado
+  status_decisao_diretor: pending, executed, rejected
+  status_diretor_virtual: active, paused
+  status_execucao_conector: SOLICITADA, AGUARDANDO_APROVACAO, APROVADA, EM_EXECUCAO, CONCLUIDA, FALHOU, CANCELADA
+  status_execucao_ferramenta: SOLICITADA, AGUARDANDO_APROVACAO, APROVADA, EM_EXECUCAO, CONCLUIDA, FALHOU, CANCELADA
+  status_execucao_missao: pendente, em_andamento, concluida, falhou, cancelada
+  status_execucao_rotina_ia: running, success, error
+  status_fila_trabalho: pendente, em_andamento, concluida, falhou
+  status_fluxo_execucao: pendente, em_andamento, concluido, falhou, bloqueado, cancelado
+  status_identidade: ativa, inativa, pausada, bloqueada
+  status_insight: novo, analisado, aprovado, rejeitado
+  status_instrucao: rascunho, em_revisao, publicado, arquivado
+  status_integracao_externa: simulada, bloqueada_governanca, bloqueada_identidade, erro
+  status_meta: ativa, pausada, atingida, nao_atingida, cancelada
+  status_missao: ativa, pausada, concluida, cancelada, rascunho
+  status_processamento: aguardando_processamento, processando, processado, erro, cancelado, reprocessando
+  status_regra_operacao: ativo, inativo, rascunho, vencido
+  status_rotina_ia: pending, running, success, error, paused
+  status_sessao_operacional: ativa, concluida, falhou, cancelada
+  status_sugestao_melhoria: pendente, aprovado, rejeitado, aplicado
+  status_trabalho: pendente, em_andamento, concluida, falhou, cancelada, escalada
+  tipo_acao_gatilho: criar_tarefa, criar_aprovacao, criar_alerta, acionar_humano, executar_robo_simulado, notificar_setor
+  tipo_atividade_agenda: prospeccao, followup, email, cobranca, analise, relatorio, reuniao, treinamento, comunicacao, outro
+  tipo_auditoria_performance: meta, kpi, score, missao_execucao
+  tipo_comunicacao_robo: solicitacao, resposta, delegacao, alerta, escalonamento
+  tipo_conector: EMAIL, WHATSAPP, CRM, IA, AUTOMACAO_WEB, REDE_SOCIAL, PLATAFORMA_VAGAS, FINANCEIRO, OUTRO
+  tipo_conhecimento: procedimento, politica, contrato, tabela_preco, treinamento, compliance, outro
+  tipo_credencial: whatsapp, zoho, smtp, crm, api, site_vagas, outro
+  tipo_decisao_diretor: priorizacao, risco, falha, overload, oportunidade
+  tipo_entidade: cliente, lead, motorista, prestador, fornecedor, colaborador, robo, projeto, contrato, outro
+  tipo_evento: negociacao, reclamacao, proposta, contratacao, atraso, pagamento, bloqueio, elogio, cancelamento, renovacao, alerta, outro
+  tipo_evento_aprendizado: execucao, erro, bloqueio, sucesso, decisao, performance, insight, fluxo
+  tipo_fluxo: comercial, financeiro, operacional, rh, marketing
+  tipo_material_academia: texto, pergunta_resposta, pdf, doc, docx, xls, xlsx, csv, xml, imagem, audio, video
+  tipo_rotina_ia: scheduled, interval, event, manual
+  tipo_sugestao_melhoria: fluxo, regra, kpi, prompt, ferramenta
+  tipo_versao_sistema: fluxo, regra, prompt, kpi
+
+========== 5. FUN├ç├òES/RPCs ==========
+  aceitar_os(p_prestador_id uuid, p_ordem_servico_id uuid) vol=v securdef=false
+  aceitar_viagem(token_acesso text, escala_id uuid) vol=v securdef=true
+  atualizar_atualizado_em() vol=v securdef=false
+  atualizar_status_viagem(token_acesso text, escala_id uuid, novo_status text) vol=v securdef=true
+  atualizar_timestamp_credenciais_zoho() vol=v securdef=false
+  atualizar_updated_at() vol=v securdef=false
+  buscar_detalhe_os(p_ordem_servico_id uuid) vol=v securdef=false
+  buscar_os_disponiveis(p_prestador_id uuid) vol=v securdef=false
+  calcular_margens_financeiras_os() vol=v securdef=false
+  check_automacoes_instrucoes_ativa() vol=v securdef=false
+  converter_pedido_para_os(p_pedido_id uuid, p_operador_id uuid DEFAULT NULL::uuid) vol=v securdef=true
+  current_tenant_id_safe() vol=s securdef=false
+  draft_create(p_cpf_cnpj text, p_current_step integer, p_dados jsonb) vol=v securdef=true
+  draft_delete(p_token uuid) vol=v securdef=true
+  draft_fetch(p_token uuid) vol=v securdef=true
+  draft_submit(p_token uuid) vol=v securdef=true
+  draft_update(p_token uuid, p_current_step integer, p_dados jsonb) vol=v securdef=true
+  f35_updated_at() vol=v securdef=false
+  f36_updated_at() vol=v securdef=false
+  f38_updated_at() vol=v securdef=false
+  f39_updated_at() vol=v securdef=false
+  f_aceitar_oportunidade_rede(p_oportunidade_id uuid, p_prestador_uuid uuid, p_auth_user_id uuid DEFAULT NULL::uuid) vol=v securdef=true
+  f_atualizar_etapa_app(p_alocacao_id uuid, p_etapa text, p_payload jsonb DEFAULT '{}'::jsonb, p_idempotency_key text DEFAULT ''::text, p_auth_user_id uuid DEFAULT NULL::uuid) vol=v securdef=true
+  f_atualizar_reversa_app(p_alocacao_id uuid, p_reversa_status text DEFAULT 'coletada'::text, p_reversa_qtd_coletada integer DEFAULT 0, p_reversa_motivo_divergencia text DEFAULT ''::text, p_reversa_responsavel text DEFAULT ''::text, p_reversa_telefone text DEFAULT ''::text, p_reversa_data_realizada timestamp with time zone DEFAULT now(), p_reversa_fotos text[] DEFAULT '{}'::text[], p_reversa_assinatura_url text DEFAULT ''::text, p_reversa_latitude numeric DEFAULT 0, p_reversa_longitude numeric DEFAULT 0, p_auth_user_id uuid DEFAULT NULL::uuid) vol=v securdef=true
+  f_atualizar_status_parada(p_parada_id uuid, p_status text, p_recebedor text DEFAULT NULL::text, p_assinatura_url text DEFAULT NULL::text, p_pod_url text DEFAULT NULL::text, p_fotos jsonb DEFAULT '[]'::jsonb, p_ocorrencia text DEFAULT NULL::text, p_latitude_fim numeric DEFAULT NULL::numeric, p_longitude_fim numeric DEFAULT NULL::numeric, p_volumes_entregues integer DEFAULT NULL::integer, p_observacoes text DEFAULT NULL::text) vol=v securdef=true
+  f_avancar_etapa_app_motorista(p_alocacao_id uuid, p_etapa text, p_payload jsonb DEFAULT '{}'::jsonb, p_idempotency_key text DEFAULT NULL::text, p_auth_user_id uuid DEFAULT NULL::uuid) vol=v securdef=true
+  f_buscar_operacoes_motorista(p_auth_user_id uuid DEFAULT NULL::uuid) vol=s securdef=true
+  f_buscar_oportunidades_para_prestador(p_prestador_uuid uuid) vol=s securdef=true
+  f_buscar_prestadores_compativeis(p_oportunidade_id uuid) vol=s securdef=false
+  f_calcular_financeiro_operacao(p_alocacao_id uuid, p_modo text DEFAULT 'completo'::text) vol=v securdef=true
+  f_contar_mensagens_nao_lidas_torre() vol=s securdef=true
+  f_enviar_mensagem_torre(p_alocacao_id uuid, p_mensagem text, p_idempotency_key text DEFAULT NULL::text) vol=v securdef=true
+  f_log_tabela_alteracao() vol=v securdef=true
+  f_marcar_mensagens_lidas_app(p_alocacao_id uuid) vol=v securdef=true
+  f_marcar_mensagens_lidas_torre(p_alocacao_id uuid) vol=v securdef=true
+  f_obter_cliente_id_do_usuario() vol=v securdef=true
+  f_obter_prestador_por_auth() vol=s securdef=true
+  f_registrar_notificacao_app(p_prestador_id uuid, p_titulo text, p_mensagem text, p_tipo text DEFAULT 'operacao'::text, p_origem_id uuid DEFAULT NULL::uuid, p_origem_tipo text DEFAULT NULL::text) vol=v securdef=true
+  f_reprocessar_pedido_portal(p_pedido_id uuid) vol=v securdef=true
+  f_responder_mensagem_torre(p_alocacao_id uuid, p_mensagem text, p_idempotency_key text DEFAULT NULL::text) vol=v securdef=true
+  f_sync_delivery_proof_to_entregas() vol=v securdef=true
+  f_sync_tracking_to_oper_localizacao() vol=v securdef=true
+  f_trg_atualizar_status_alocacao_tracking() vol=v securdef=true
+  f_trg_cancelar_financeiro_alocacao() vol=v securdef=true
+  f_trg_event_bus_consumer() vol=v securdef=true
+  f_trg_expiracao_oportunidade() vol=v securdef=false
+  f_trg_impedir_duplicidade_pedido() vol=v securdef=true
+  f_trg_notificar_oportunidade_rede() vol=v securdef=true
+  f_trg_notificar_os_para_app() vol=v securdef=true
+  f_trg_propagar_financeiro_alocacao() vol=v securdef=true
+  f_trg_propagar_financeiro_os() vol=v securdef=true
+  f_trg_rede_updated_at() vol=v securdef=false
+  f_trg_tracking_iniciado() vol=v securdef=true
+  f_usuario_pode_acessar_cliente(p_cliente_id uuid) vol=v securdef=true
+  fn_rascunhos_updated_at() vol=v securdef=false
+  gerar_numero_contrato() vol=v securdef=false
+  gerar_numero_contrato_operacao() vol=i securdef=false
+  gerar_numero_pedido() vol=i securdef=false
+  get_current_tenant_id() vol=s securdef=false
+  listar_usuarios_vinculados(p_cliente_id uuid) vol=s securdef=true
+  notificar_xml_recebido() vol=v securdef=true
+  obter_cliente_id_do_usuario() vol=v securdef=true
+  ocorrencias_updated_at() vol=v securdef=false
+  pull_automacoes_pendentes(limit_num integer DEFAULT 20) vol=v securdef=true
+  recuperar_rotinas_travadas() vol=v securdef=true
+  recusar_viagem(token_acesso text, escala_id uuid, motivo text) vol=v securdef=true
+  registrar_checkin_motorista(token_acesso text, escala_id uuid, tipo text, latitude numeric, longitude numeric, observacao text DEFAULT NULL::text) vol=v securdef=true
+  registrar_historico_alocacao() vol=v securdef=false
+  registrar_localizacao_motorista(token_acesso text, escala_id uuid, latitude numeric, longitude numeric, velocidade numeric DEFAULT NULL::numeric) vol=v securdef=true
+  registrar_posicao_motorista(p_latitude numeric, p_longitude numeric, p_alocacao_id uuid, p_ordem_servico_id uuid DEFAULT NULL::uuid, p_captured_at timestamp with time zone DEFAULT now(), p_precisao numeric DEFAULT 0, p_velocidade numeric DEFAULT 0, p_direcao numeric DEFAULT 0, p_bateria numeric DEFAULT NULL::numeric, p_altitude numeric DEFAULT NULL::numeric, p_status_operacional text DEFAULT 'em_deslocamento'::text, p_origem text DEFAULT 'app_motorista'::text) vol=v securdef=true
+  reportar_ocorrencia_motorista(token_acesso text, escala_id uuid, tipo text, descricao text, latitude numeric, longitude numeric) vol=v securdef=true
+  set_tenant_context(p_tenant_id uuid) vol=v securdef=true
+  set_updated_at() vol=v securdef=false
+  trg_escala_validacoes() vol=v securdef=true
+  trg_evento_alocacao_cancelada() vol=v securdef=false
+  trg_evento_alocacao_criada() vol=v securdef=false
+  trg_evento_alocacao_motorista_trocado() vol=v securdef=false
+  trg_evento_alocacao_recusada() vol=v securdef=false
+  trg_evento_financeiro_receber_criado() vol=v securdef=false
+  trg_evento_financeiro_receber_pago() vol=v securdef=false
+  trg_evento_operacao_finalizada() vol=v securdef=false
+  trg_evento_os_cancelada() vol=v securdef=false
+  trg_evento_os_criada() vol=v securdef=false
+  trg_evento_os_finalizada() vol=v securdef=false
+  trg_evento_os_status_changed() vol=v securdef=false
+  trg_evento_pod_enviado() vol=v securdef=false
+  trg_evento_portal_ocorrencia_aberta() vol=v securdef=false
+  trg_evento_portal_pedido_criado() vol=v securdef=false
+  trg_evento_prestador_aceitou() vol=v securdef=false
+  trg_eventos_oficiais_updated_at() vol=v securdef=false
+  trg_f_derivar_reembolso_prestador() vol=v securdef=true
+  trg_ia_logs_escalonamento() vol=v securdef=true
+  try_cast_uuid(p_text text) vol=i securdef=false
+  update_alocacoes_escala_updated_at() vol=v securdef=false
+  update_comunicacoes_robos_updated_at() vol=v securdef=false
+  update_configuracoes_fiscais_updated_at() vol=v securdef=false
+  update_diretor_virtual_updated_at() vol=v securdef=false
+  update_fiscal_updated_at_column() vol=v securdef=false
+  update_gatilhos_updated_at() vol=v securdef=false
+  update_hml_seed_checkpoint_updated_at() vol=v securdef=false
+  update_operacao_localizacao_timestamp() vol=v securdef=false
+  update_patio_updated_at() vol=v securdef=false
+  update_reembolsos_prestador_updated_at() vol=v securdef=false
+  update_regras_fiscais_cte_updated_at() vol=v securdef=false
+  update_regras_fiscais_nfse_updated_at() vol=v securdef=false
+  update_regras_operacao_updated_at() vol=v securdef=false
+  update_rotinas_ia_updated_at() vol=v securdef=false
+  update_tenants_updated_at() vol=v securdef=false
+  update_updated_at_column() vol=v securdef=false
+  user_has_tenant_access(p_tenant_id uuid) vol=s securdef=true
+  user_tenant_role(p_tenant_id uuid) vol=s securdef=true
+
+========== 6. TRIGGERS ==========
+  [_hml_seed_checkpoint] trg_hml_cp_updated_at: CREATE TRIGGER trg_hml_cp_updated_at BEFORE UPDATE ON public._hml_seed_checkpoint FOR EACH ROW EXECUTE FUNCTION update_hml_seed_checkpoint_updated_at()
+  [agentes_ia_internos] trg_agentes_ia_updated_at: CREATE TRIGGER trg_agentes_ia_updated_at BEFORE UPDATE ON public.agentes_ia_internos FOR EACH ROW EXECUTE FUNCTION update_tenants_updated_at()
+  [alocacoes_escala] trg_alocacoes_escala_updated_at: CREATE TRIGGER trg_alocacoes_escala_updated_at BEFORE UPDATE ON public.alocacoes_escala FOR EACH ROW EXECUTE FUNCTION update_alocacoes_escala_updated_at()
+  [alocacoes_escala] trg_cancelar_financeiro_alocacao: CREATE TRIGGER trg_cancelar_financeiro_alocacao BEFORE UPDATE OF status ON public.alocacoes_escala FOR EACH ROW WHEN (((new.status = 'cancelada'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION f_tr
+  [alocacoes_escala] trg_evento_alocacao_cancelada: CREATE TRIGGER trg_evento_alocacao_cancelada AFTER UPDATE OF status ON public.alocacoes_escala FOR EACH ROW WHEN (((new.status = 'cancelada'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION trg_even
+  [alocacoes_escala] trg_evento_alocacao_criada: CREATE TRIGGER trg_evento_alocacao_criada AFTER INSERT ON public.alocacoes_escala FOR EACH ROW EXECUTE FUNCTION trg_evento_alocacao_criada()
+  [alocacoes_escala] trg_evento_alocacao_motorista_trocado: CREATE TRIGGER trg_evento_alocacao_motorista_trocado AFTER UPDATE OF prestador_id ON public.alocacoes_escala FOR EACH ROW WHEN ((old.prestador_id IS DISTINCT FROM new.prestador_id)) EXECUTE FUNCTION trg_evento_alocacao_m
+  [alocacoes_escala] trg_evento_alocacao_recusada: CREATE TRIGGER trg_evento_alocacao_recusada AFTER UPDATE OF status ON public.alocacoes_escala FOR EACH ROW WHEN (((new.status = 'recusada'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION trg_evento
+  [alocacoes_escala] trg_evento_operacao_finalizada: CREATE TRIGGER trg_evento_operacao_finalizada AFTER UPDATE OF finalizada ON public.alocacoes_escala FOR EACH ROW WHEN (((new.finalizada = true) AND (old.finalizada IS DISTINCT FROM new.finalizada) AND (new.status <> 'can
+  [alocacoes_escala] trg_evento_prestador_aceitou: CREATE TRIGGER trg_evento_prestador_aceitou AFTER UPDATE OF aceite_prestador ON public.alocacoes_escala FOR EACH ROW WHEN (((new.aceite_prestador = true) AND (old.aceite_prestador IS DISTINCT FROM new.aceite_prestador)))
+  [alocacoes_escala] trg_propagar_financeiro_alocacao: CREATE TRIGGER trg_propagar_financeiro_alocacao AFTER INSERT OR UPDATE OF status, finalizada, valor_frete, valor_repasse, valor_pedagio, valor_combustivel, valor_ajudante, valor_adicional, valor_desconto, tipo_reversa, r
+  [alocacoes_escala] trg_registrar_historico_alocacao: CREATE TRIGGER trg_registrar_historico_alocacao AFTER INSERT OR UPDATE ON public.alocacoes_escala FOR EACH ROW EXECUTE FUNCTION registrar_historico_alocacao()
+  [automacoes_gatilhos] trg_gatilhos_updated_at: CREATE TRIGGER trg_gatilhos_updated_at BEFORE UPDATE ON public.automacoes_gatilhos FOR EACH ROW EXECUTE FUNCTION update_gatilhos_updated_at()
+  [automacoes_instrucoes] trg_automacoes_instrucoes_ativa: CREATE TRIGGER trg_automacoes_instrucoes_ativa AFTER INSERT OR UPDATE OF ativo, status ON public.automacoes_instrucoes FOR EACH ROW WHEN (((new.ativo = true) AND (new.status = 'publicado'::text))) EXECUTE FUNCTION check_
+  [automacoes_regras_operacao] trg_regras_operacao_updated_at: CREATE TRIGGER trg_regras_operacao_updated_at BEFORE UPDATE ON public.automacoes_regras_operacao FOR EACH ROW EXECUTE FUNCTION update_regras_operacao_updated_at()
+  [certificados_fiscais] trg_cert_updated_at: CREATE TRIGGER trg_cert_updated_at BEFORE UPDATE ON public.certificados_fiscais FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+  [composicao_financeira_os] trg_calcular_margens_financeiras_os: CREATE TRIGGER trg_calcular_margens_financeiras_os BEFORE INSERT OR UPDATE ON public.composicao_financeira_os FOR EACH ROW EXECUTE FUNCTION calcular_margens_financeiras_os()
+  [composicao_financeira_os] trg_margem: CREATE TRIGGER trg_margem BEFORE INSERT OR UPDATE ON public.composicao_financeira_os FOR EACH ROW EXECUTE FUNCTION calcular_margens_financeiras_os()
+  [configuracoes_fiscais] trg_cf_updated_at: CREATE TRIGGER trg_cf_updated_at BEFORE UPDATE ON public.configuracoes_fiscais FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+  [configuracoes_fiscais] update_configuracoes_fiscais_modtime: CREATE TRIGGER update_configuracoes_fiscais_modtime BEFORE UPDATE ON public.configuracoes_fiscais FOR EACH ROW EXECUTE FUNCTION update_configuracoes_fiscais_updated_at()
+  [delivery_proofs] trg_sync_delivery_proof_to_entregas: CREATE TRIGGER trg_sync_delivery_proof_to_entregas AFTER INSERT ON public.delivery_proofs FOR EACH ROW EXECUTE FUNCTION f_sync_delivery_proof_to_entregas()
+  [diretor_virtual_ia] trg_diretor_virtual_updated_at: CREATE TRIGGER trg_diretor_virtual_updated_at BEFORE UPDATE ON public.diretor_virtual_ia FOR EACH ROW EXECUTE FUNCTION update_diretor_virtual_updated_at()
+  [enderecos_clientes] trg_enderecos_clientes_updated_at: CREATE TRIGGER trg_enderecos_clientes_updated_at BEFORE UPDATE ON public.enderecos_clientes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [entregas_protocolo] trg_evento_pod_enviado: CREATE TRIGGER trg_evento_pod_enviado AFTER INSERT ON public.entregas_protocolo FOR EACH ROW EXECUTE FUNCTION trg_evento_pod_enviado()
+  [escala_operacional] trg_escala_validacoes_insert: CREATE TRIGGER trg_escala_validacoes_insert AFTER INSERT OR UPDATE ON public.escala_operacional FOR EACH ROW EXECUTE FUNCTION trg_escala_validacoes()
+  [eventos_oficiais] trg_event_bus_consumer: CREATE TRIGGER trg_event_bus_consumer AFTER INSERT ON public.eventos_oficiais FOR EACH ROW EXECUTE FUNCTION f_trg_event_bus_consumer()
+  [eventos_oficiais] trg_eventos_oficiais_updated_at: CREATE TRIGGER trg_eventos_oficiais_updated_at BEFORE UPDATE ON public.eventos_oficiais FOR EACH ROW EXECUTE FUNCTION trg_eventos_oficiais_updated_at()
+  [financeiro_receber] trg_evento_financeiro_receber_criado: CREATE TRIGGER trg_evento_financeiro_receber_criado AFTER INSERT ON public.financeiro_receber FOR EACH ROW EXECUTE FUNCTION trg_evento_financeiro_receber_criado()
+  [financeiro_receber] trg_evento_financeiro_receber_pago: CREATE TRIGGER trg_evento_financeiro_receber_pago AFTER UPDATE OF status ON public.financeiro_receber FOR EACH ROW EXECUTE FUNCTION trg_evento_financeiro_receber_pago()
+  [fiscal_ctes] update_fiscal_ctes_modtime: CREATE TRIGGER update_fiscal_ctes_modtime BEFORE UPDATE ON public.fiscal_ctes FOR EACH ROW EXECUTE FUNCTION update_fiscal_updated_at_column()
+  [fiscal_documentos_vinculados] trg_fdv_updated_at: CREATE TRIGGER trg_fdv_updated_at BEFORE UPDATE ON public.fiscal_documentos_vinculados FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+  [fiscal_documentos_vinculados] update_fiscal_docs_modtime: CREATE TRIGGER update_fiscal_docs_modtime BEFORE UPDATE ON public.fiscal_documentos_vinculados FOR EACH ROW EXECUTE FUNCTION update_fiscal_updated_at_column()
+  [fiscal_mdfes] update_fiscal_mdfes_modtime: CREATE TRIGGER update_fiscal_mdfes_modtime BEFORE UPDATE ON public.fiscal_mdfes FOR EACH ROW EXECUTE FUNCTION update_fiscal_updated_at_column()
+  [fiscal_nfse] update_fiscal_nfse_modtime: CREATE TRIGGER update_fiscal_nfse_modtime BEFORE UPDATE ON public.fiscal_nfse FOR EACH ROW EXECUTE FUNCTION update_fiscal_updated_at_column()
+  [ia_agenda_atividades] trg_ia_agenda_atividades_updated_at: CREATE TRIGGER trg_ia_agenda_atividades_updated_at BEFORE UPDATE ON public.ia_agenda_atividades FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_agenda_trabalho] trg_ia_agenda_trabalho_updated_at: CREATE TRIGGER trg_ia_agenda_trabalho_updated_at BEFORE UPDATE ON public.ia_agenda_trabalho FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_agentes_execucao] trg_ia_agentes_execucao_updated_at: CREATE TRIGGER trg_ia_agentes_execucao_updated_at BEFORE UPDATE ON public.ia_agentes_execucao FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_aprovacoes_fila] trg_aprovacoes_fila_updated_at: CREATE TRIGGER trg_aprovacoes_fila_updated_at BEFORE UPDATE ON public.ia_aprovacoes_fila FOR EACH ROW EXECUTE FUNCTION f35_updated_at()
+  [ia_aprovacoes_humanas] trg_ia_aprovacoes_atualizado_em: CREATE TRIGGER trg_ia_aprovacoes_atualizado_em BEFORE UPDATE ON public.ia_aprovacoes_humanas FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_autoridade_acoes] trg_autoridade_updated_at: CREATE TRIGGER trg_autoridade_updated_at BEFORE UPDATE ON public.ia_autoridade_acoes FOR EACH ROW EXECUTE FUNCTION f35_updated_at()
+  [ia_comunicacoes_robos] trg_comunicacoes_robos_updated_at: CREATE TRIGGER trg_comunicacoes_robos_updated_at BEFORE UPDATE ON public.ia_comunicacoes_robos FOR EACH ROW EXECUTE FUNCTION update_comunicacoes_robos_updated_at()
+  [ia_conhecimento] trg_ia_conhecimento_atualizado_em: CREATE TRIGGER trg_ia_conhecimento_atualizado_em BEFORE UPDATE ON public.ia_conhecimento FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_credenciais] trg_ia_credenciais_updated_at: CREATE TRIGGER trg_ia_credenciais_updated_at BEFORE UPDATE ON public.ia_credenciais FOR EACH ROW EXECUTE FUNCTION f36_updated_at()
+  [ia_credenciais_zoho] trg_ia_credenciais_zoho_atualizado: CREATE TRIGGER trg_ia_credenciais_zoho_atualizado BEFORE UPDATE ON public.ia_credenciais_zoho FOR EACH ROW EXECUTE FUNCTION atualizar_timestamp_credenciais_zoho()
+  [ia_fila_trabalho] trg_ia_fila_trabalho_updated_at: CREATE TRIGGER trg_ia_fila_trabalho_updated_at BEFORE UPDATE ON public.ia_fila_trabalho FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_fluxos_empresa] trg_fluxos_empresa_updated: CREATE TRIGGER trg_fluxos_empresa_updated BEFORE UPDATE ON public.ia_fluxos_empresa FOR EACH ROW EXECUTE FUNCTION f39_updated_at()
+  [ia_fluxos_etapas] trg_fluxos_etapas_updated: CREATE TRIGGER trg_fluxos_etapas_updated BEFORE UPDATE ON public.ia_fluxos_etapas FOR EACH ROW EXECUTE FUNCTION f39_updated_at()
+  [ia_identidades] trg_ia_identidades_updated_at: CREATE TRIGGER trg_ia_identidades_updated_at BEFORE UPDATE ON public.ia_identidades FOR EACH ROW EXECUTE FUNCTION f36_updated_at()
+  [ia_kpis_robo] trg_ia_kpis_robo_updated: CREATE TRIGGER trg_ia_kpis_robo_updated BEFORE UPDATE ON public.ia_kpis_robo FOR EACH ROW EXECUTE FUNCTION f38_updated_at()
+  [ia_limites_operacionais] trg_ia_limites_operacionais_updated_at: CREATE TRIGGER trg_ia_limites_operacionais_updated_at BEFORE UPDATE ON public.ia_limites_operacionais FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_logs] trg_ia_logs_escalonamento_insert: CREATE TRIGGER trg_ia_logs_escalonamento_insert AFTER INSERT ON public.ia_logs FOR EACH ROW EXECUTE FUNCTION trg_ia_logs_escalonamento()
+  [ia_metas] trg_ia_metas_updated_at: CREATE TRIGGER trg_ia_metas_updated_at BEFORE UPDATE ON public.ia_metas FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_missoes] trg_ia_missoes_updated_at: CREATE TRIGGER trg_ia_missoes_updated_at BEFORE UPDATE ON public.ia_missoes FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ia_missoes_execucao] trg_ia_missoes_exec_updated: CREATE TRIGGER trg_ia_missoes_exec_updated BEFORE UPDATE ON public.ia_missoes_execucao FOR EACH ROW EXECUTE FUNCTION f38_updated_at()
+  [ia_modelos_mensagem] trg_ia_modelos_atualizado_em: CREATE TRIGGER trg_ia_modelos_atualizado_em BEFORE UPDATE ON public.ia_modelos_mensagem FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_regras] trg_ia_regras_atualizado_em: CREATE TRIGGER trg_ia_regras_atualizado_em BEFORE UPDATE ON public.ia_regras FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_score_robo] trg_ia_score_robo_updated: CREATE TRIGGER trg_ia_score_robo_updated BEFORE UPDATE ON public.ia_score_robo FOR EACH ROW EXECUTE FUNCTION f38_updated_at()
+  [ia_sessoes_operacionais] trg_ia_sessoes_updated_at: CREATE TRIGGER trg_ia_sessoes_updated_at BEFORE UPDATE ON public.ia_sessoes_operacionais FOR EACH ROW EXECUTE FUNCTION f36_updated_at()
+  [ia_setores] trg_ia_setores_atualizado_em: CREATE TRIGGER trg_ia_setores_atualizado_em BEFORE UPDATE ON public.ia_setores FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_tarefas_automaticas] trg_ia_tarefas_atualizado_em: CREATE TRIGGER trg_ia_tarefas_atualizado_em BEFORE UPDATE ON public.ia_tarefas_automaticas FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [ia_trabalhos] trg_ia_trabalhos_updated_at: CREATE TRIGGER trg_ia_trabalhos_updated_at BEFORE UPDATE ON public.ia_trabalhos FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [integracoes_config] trg_integracoes_config_atualizado_em: CREATE TRIGGER trg_integracoes_config_atualizado_em BEFORE UPDATE ON public.integracoes_config FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [memoria_conversas] trg_memoria_conversas_updated_at: CREATE TRIGGER trg_memoria_conversas_updated_at BEFORE UPDATE ON public.memoria_conversas FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [memoria_entidades] trg_memoria_entidades_updated_at: CREATE TRIGGER trg_memoria_entidades_updated_at BEFORE UPDATE ON public.memoria_entidades FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [memoria_preferencias] trg_memoria_preferencias_updated_at: CREATE TRIGGER trg_memoria_preferencias_updated_at BEFORE UPDATE ON public.memoria_preferencias FOR EACH ROW EXECUTE FUNCTION atualizar_updated_at()
+  [ocorrencias] trg_ocorrencias_updated_at: CREATE TRIGGER trg_ocorrencias_updated_at BEFORE UPDATE ON public.ocorrencias FOR EACH ROW EXECUTE FUNCTION ocorrencias_updated_at()
+  [operacao_localizacao] trg_operacao_localizacao_update: CREATE TRIGGER trg_operacao_localizacao_update BEFORE INSERT OR UPDATE ON public.operacao_localizacao FOR EACH ROW EXECUTE FUNCTION update_operacao_localizacao_timestamp()
+  [ordens_servico] trg_evento_os_cancelada: CREATE TRIGGER trg_evento_os_cancelada AFTER UPDATE OF status ON public.ordens_servico FOR EACH ROW WHEN (((new.status = 'cancelada'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION trg_evento_os_ca
+  [ordens_servico] trg_evento_os_criada: CREATE TRIGGER trg_evento_os_criada AFTER INSERT ON public.ordens_servico FOR EACH ROW EXECUTE FUNCTION trg_evento_os_criada()
+  [ordens_servico] trg_evento_os_finalizada: CREATE TRIGGER trg_evento_os_finalizada AFTER UPDATE OF status ON public.ordens_servico FOR EACH ROW WHEN (((new.status = ANY (ARRAY['finalizada'::text, 'encerrada'::text])) AND (old.status IS DISTINCT FROM new.status)))
+  [ordens_servico] trg_evento_os_status_changed: CREATE TRIGGER trg_evento_os_status_changed AFTER UPDATE OF status ON public.ordens_servico FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION trg_evento_os_status_changed()
+  [ordens_servico] trg_notificar_os_para_app: CREATE TRIGGER trg_notificar_os_para_app AFTER INSERT OR UPDATE OF prestador_id ON public.ordens_servico FOR EACH ROW EXECUTE FUNCTION f_trg_notificar_os_para_app()
+  [ordens_servico] trg_propagar_financeiro_os: CREATE TRIGGER trg_propagar_financeiro_os AFTER INSERT OR UPDATE OF valor_cliente, custo_prestador, pedagio, adicionais, ajudante, descontos, status ON public.ordens_servico FOR EACH ROW WHEN ((new.status IS DISTINCT FRO
+  [patio_checkins] trg_patio_checkins_updated_at: CREATE TRIGGER trg_patio_checkins_updated_at BEFORE UPDATE ON public.patio_checkins FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [patio_docas] trg_patio_docas_updated_at: CREATE TRIGGER trg_patio_docas_updated_at BEFORE UPDATE ON public.patio_docas FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [patio_fila] trg_patio_fila_updated_at: CREATE TRIGGER trg_patio_fila_updated_at BEFORE UPDATE ON public.patio_fila FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [patio_regras_fila] trg_patio_regras_updated_at: CREATE TRIGGER trg_patio_regras_updated_at BEFORE UPDATE ON public.patio_regras_fila FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [patio_rodizio] trg_patio_rodizio_updated_at: CREATE TRIGGER trg_patio_rodizio_updated_at BEFORE UPDATE ON public.patio_rodizio FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [patio_unidades] trg_patio_unidades_updated_at: CREATE TRIGGER trg_patio_unidades_updated_at BEFORE UPDATE ON public.patio_unidades FOR EACH ROW EXECUTE FUNCTION update_patio_updated_at()
+  [portal_ocorrencias] trg_evento_portal_ocorrencia_aberta: CREATE TRIGGER trg_evento_portal_ocorrencia_aberta AFTER INSERT ON public.portal_ocorrencias FOR EACH ROW EXECUTE FUNCTION trg_evento_portal_ocorrencia_aberta()
+  [portal_ocorrencias] update_portal_ocorrencias_updated_at: CREATE TRIGGER update_portal_ocorrencias_updated_at BEFORE UPDATE ON public.portal_ocorrencias FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [portal_pedidos] trg_evento_portal_pedido_criado: CREATE TRIGGER trg_evento_portal_pedido_criado AFTER INSERT ON public.portal_pedidos FOR EACH ROW EXECUTE FUNCTION trg_evento_portal_pedido_criado()
+  [portal_pedidos] trg_impedir_duplicidade_pedido: CREATE TRIGGER trg_impedir_duplicidade_pedido BEFORE UPDATE OF status ON public.portal_pedidos FOR EACH ROW EXECUTE FUNCTION f_trg_impedir_duplicidade_pedido()
+  [portal_pedidos] update_portal_pedidos_updated_at: CREATE TRIGGER update_portal_pedidos_updated_at BEFORE UPDATE ON public.portal_pedidos FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [portal_preferencias_cliente] update_portal_preferencias_updated_at: CREATE TRIGGER update_portal_preferencias_updated_at BEFORE UPDATE ON public.portal_preferencias_cliente FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [portal_rotas] update_portal_rotas_updated_at: CREATE TRIGGER update_portal_rotas_updated_at BEFORE UPDATE ON public.portal_rotas FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [portal_tracking_realtime] trg_atualizar_status_alocacao_tracking: CREATE TRIGGER trg_atualizar_status_alocacao_tracking AFTER INSERT ON public.portal_tracking_realtime FOR EACH ROW EXECUTE FUNCTION f_trg_atualizar_status_alocacao_tracking()
+  [portal_tracking_realtime] trg_sync_tracking_to_oper_localizacao: CREATE TRIGGER trg_sync_tracking_to_oper_localizacao AFTER INSERT ON public.portal_tracking_realtime FOR EACH ROW EXECUTE FUNCTION f_sync_tracking_to_oper_localizacao()
+  [portal_tracking_realtime] trg_tracking_iniciado: CREATE TRIGGER trg_tracking_iniciado AFTER INSERT ON public.portal_tracking_realtime FOR EACH ROW EXECUTE FUNCTION f_trg_tracking_iniciado()
+  [prestadores_app] set_prestadores_app_updated_at: CREATE TRIGGER set_prestadores_app_updated_at BEFORE UPDATE ON public.prestadores_app FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [rascunhos_prestador] trg_rascunhos_updated_at: CREATE TRIGGER trg_rascunhos_updated_at BEFORE UPDATE ON public.rascunhos_prestador FOR EACH ROW EXECUTE FUNCTION fn_rascunhos_updated_at()
+  [rede_oportunidades] trg_notificar_oportunidade_rede: CREATE TRIGGER trg_notificar_oportunidade_rede AFTER INSERT ON public.rede_oportunidades FOR EACH ROW EXECUTE FUNCTION f_trg_notificar_oportunidade_rede()
+  [rede_oportunidades] trg_rede_oportunidades_expiracao: CREATE TRIGGER trg_rede_oportunidades_expiracao BEFORE INSERT OR UPDATE ON public.rede_oportunidades FOR EACH ROW EXECUTE FUNCTION f_trg_expiracao_oportunidade()
+  [rede_oportunidades] trg_rede_oportunidades_updated_at: CREATE TRIGGER trg_rede_oportunidades_updated_at BEFORE UPDATE ON public.rede_oportunidades FOR EACH ROW EXECUTE FUNCTION f_trg_rede_updated_at()
+  [reembolsos_prestador] trg_rp_derivar_prestador: CREATE TRIGGER trg_rp_derivar_prestador BEFORE INSERT ON public.reembolsos_prestador FOR EACH ROW EXECUTE FUNCTION trg_f_derivar_reembolso_prestador()
+  [reembolsos_prestador] trg_rp_updated_at: CREATE TRIGGER trg_rp_updated_at BEFORE UPDATE ON public.reembolsos_prestador FOR EACH ROW EXECUTE FUNCTION update_reembolsos_prestador_updated_at()
+  [regras_fiscais_cte] trg_rfc_updated_at: CREATE TRIGGER trg_rfc_updated_at BEFORE UPDATE ON public.regras_fiscais_cte FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+  [regras_fiscais_cte] update_regras_fiscais_cte_modtime: CREATE TRIGGER update_regras_fiscais_cte_modtime BEFORE UPDATE ON public.regras_fiscais_cte FOR EACH ROW EXECUTE FUNCTION update_regras_fiscais_cte_updated_at()
+  [regras_fiscais_nfse] update_regras_fiscais_nfse_modtime: CREATE TRIGGER update_regras_fiscais_nfse_modtime BEFORE UPDATE ON public.regras_fiscais_nfse FOR EACH ROW EXECUTE FUNCTION update_regras_fiscais_nfse_updated_at()
+  [rotinas_ia] trg_rotinas_ia_updated_at: CREATE TRIGGER trg_rotinas_ia_updated_at BEFORE UPDATE ON public.rotinas_ia FOR EACH ROW EXECUTE FUNCTION update_rotinas_ia_updated_at()
+  [seguros_apolices] trigger_update_seguros_apolices: CREATE TRIGGER trigger_update_seguros_apolices BEFORE UPDATE ON public.seguros_apolices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [sinistros] trigger_update_sinistros_updated_at: CREATE TRIGGER trigger_update_sinistros_updated_at BEFORE UPDATE ON public.sinistros FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+  [tabela_prestador] trg_tabela_prestador_version: CREATE TRIGGER trg_tabela_prestador_version BEFORE UPDATE ON public.tabela_prestador FOR EACH ROW EXECUTE FUNCTION f_log_tabela_alteracao()
+  [tabelas_valores] trg_tabelas_valores_version: CREATE TRIGGER trg_tabelas_valores_version BEFORE UPDATE ON public.tabelas_valores FOR EACH ROW EXECUTE FUNCTION f_log_tabela_alteracao()
+  [tenant_usuarios] trg_tu_updated_at: CREATE TRIGGER trg_tu_updated_at BEFORE UPDATE ON public.tenant_usuarios FOR EACH ROW EXECUTE FUNCTION update_tenants_updated_at()
+  [tenants] trg_tenants_updated_at: CREATE TRIGGER trg_tenants_updated_at BEFORE UPDATE ON public.tenants FOR EACH ROW EXECUTE FUNCTION update_tenants_updated_at()
+  [whatsapp_conversas] trg_whatsapp_conversas_atualizado_em: CREATE TRIGGER trg_whatsapp_conversas_atualizado_em BEFORE UPDATE ON public.whatsapp_conversas FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()
+  [whatsapp_instancias] trg_whatsapp_instancias_atualizado_em: CREATE TRIGGER trg_whatsapp_instancias_atualizado_em BEFORE UPDATE ON public.whatsapp_instancias FOR EACH ROW EXECUTE FUNCTION atualizar_atualizado_em()

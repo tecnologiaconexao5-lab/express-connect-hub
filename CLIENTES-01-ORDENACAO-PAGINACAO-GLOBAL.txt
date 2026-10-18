@@ -1,0 +1,137 @@
+CLIENTES-01-ORDENACAO-PAGINACAO-GLOBAL
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+FASE 1 — AUDITORIA (antes)
+==================================================
+
+CLIENT_LIST_COMPONENT=src/components/clientes/ClientesLista.tsx
+CLIENT_QUERY_SOURCE=supabase.from("clientes").select(...,{count:"exact"}).order("razao_social",asc).range(from,to)
+CURRENT_ORDERING=servidor: ORDER BY razao_social ASC (antes da paginação)
+CURRENT_PAGINATION=servidor (.range) — MAS sem UI de paginação
+CURRENT_PAGE_SIZE=25
+SEARCH_EXECUTION=FRONTEND: clientes.filter(...) sobre a PÁGINA ATUAL (bug)
+TOTAL_COUNT_SOURCE=select count "exact" (totalCount) — não exibido
+
+Problemas confirmados:
+  - `PaginationBar` importado mas NÃO renderizado → nenhuma paginação visível,
+    `page` nunca mudava (só a página 1 era acessível).
+  - Busca filtrava apenas os 25 registros carregados (não a base completa).
+  - totalCount capturado mas não exibido; sem páginas numeradas.
+
+==================================================
+IMPLEMENTAÇÃO
+==================================================
+
+1. src/components/ui/PaginationBar.tsx (reutilizado/padrão do TMS — estendido)
+   - Paginação NUMERADA (buildPageList exportado) com janela + reticências.
+   - Botões Anterior / Próxima (com título/aria) + números de página.
+   - Página atual destacada (aria-current="page"); Anterior desabilitado na 1ª,
+     Próxima desabilitada na última; estado `loading`.
+   - Props mantidas (page, pageSize, totalCount, onPageChange, loading) — compatível.
+
+2. src/components/clientes/ClientesLista.tsx
+   - fetchClientes: busca SERVER-SIDE (.or + ilike em razao_social, nome_fantasia,
+     cnpj, email, telefone) aplicada ANTES da paginação; termo sanitizado.
+   - Ordenação A→Z no servidor: .order("razao_social", asc, nullsFirst:false)
+     .order("nome_fantasia", asc, nullsFirst:false) — desempate determinístico.
+   - .range(from,to) mantém a paginação real (PAGE_SIZE=25).
+   - Debounce de 300ms + reset para página 1 ao buscar (setPage(1)).
+   - Remove o filtro local (const filtered = clientes) → busca é global.
+   - Renderiza <PaginationBar .../> sob a tabela; cabeçalho usa totalCount real.
+   - Exclusão: se a página atual esvaziar, recua uma página (paginação consistente);
+     senão refaz o fetch. Comportamento de exclusão preservado (senha admin intacta).
+
+FILES_MODIFIED=
+  src/components/ui/PaginationBar.tsx
+  src/components/clientes/ClientesLista.tsx
+  src/test/clientes_01_ordenacao_paginacao.test.ts (novo)
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+CLIENT_LIST_COMPONENT=src/components/clientes/ClientesLista.tsx
+CLIENT_QUERY_SOURCE=supabase.from("clientes").select(count exact).order(razao_social asc).range(from,to)
+
+ORDER_FIELD=razao_social (desempate: nome_fantasia)
+ORDER_DIRECTION=ASC
+ORDER_EXECUTION_LAYER=servidor (PostgREST/Postgres)
+ORDER_BEFORE_PAGINATION=YES
+
+PAGE_SIZE=25
+TOTAL_RECORDS=28
+TOTAL_PAGES=2
+
+SEARCH_EXECUTION_LAYER=servidor (.or + ilike sobre a base completa)
+SEARCH_FULL_DATASET=YES
+
+GLOBAL_ORDER_AZ=PASS
+NUMERIC_PAGES_VISIBLE=PASS
+PREVIOUS_NEXT_VISIBLE=PASS
+SEARCH_RESETS_PAGE=PASS
+FILTER_RESETS_PAGE=PASS (não há filtros funcionais além da busca; reset aplicado na busca)
+
+FIRST_PAGE_PREVIOUS_DISABLED=PASS
+LAST_PAGE_NEXT_DISABLED=PASS
+ORDER_BEFORE_PAGINATION=PASS
+PAGE_1_ORDER=PASS
+PAGE_2_ORDER=PASS
+TOTAL_COUNT_REAL=PASS
+CLIENT_EDIT_PRESERVED=PASS
+CLIENT_DELETE_PRESERVED=PASS
+NO_CLIENT_DATA_CHANGED=YES
+
+FILES_MODIFIED=src/components/ui/PaginationBar.tsx, src/components/clientes/ClientesLista.tsx, src/test/clientes_01_ordenacao_paginacao.test.ts
+TESTS=13/13 PASS (clientes_01_ordenacao_paginacao.test.ts)
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 43.03s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+PROVA REAL NO BANCO (read-only)
+==================================================
+
+TOTAL_RECORDS=28 | PAGE_SIZE=25 | TOTAL_PAGES=2
+PAGE_1_ROWS=25 | PAGE_2_ROWS=3
+PAGE_1_ORDER=A→Z_OK | PAGE_2_ORDER=A→Z_OK
+BOUNDARY_OK=YES (último da página 1 ≤ primeiro da página 2)
+  PAGE_1_FIRST=" Cydak do Brasil LTDA"
+  PAGE_1_LAST="M48_2026-06-29_21-31-34 Delivery Rápido ME"
+  PAGE_2_FIRST="M48_2026-06-29_21-31-34 Transportadora ABC Ltda"
+
+BUSCA GLOBAL (termo presente SOMENTE na página 2):
+  SEARCH_TERM="Transportadora ABC" → SEARCH_RESULTS=2
+  SEARCH_FOUND_PAGE2_ITEM=YES
+  ["M48_2026-06-29_21-31-34 Transportadora ABC Ltda",
+   "M48_2026-06-29_21-47-50 Transportadora ABC Ltda"]
+  → Antes (filtro local) retornaria 0; agora encontra na base completa.
+
+==================================================
+OBSERVAÇÕES (fora do escopo — não corrigidas)
+==================================================
+
+1) 3 clientes possuem espaço inicial na razão social (" Cydak...", " DVL...",
+   " Mineirao...") → ordenam antes das letras (espaço < letra). Determinístico;
+   corrigir seria saneamento de dados (fora do escopo).
+2) src/components/fornecedores/FornecedoresLista.tsx:224 passa props
+   `currentPage`/`totalPages` para PaginationBar (interface usa page/pageSize/
+   totalCount) → erro de tipo PRÉ-EXISTENTE e não relacionado a esta missão.
+3) Nenhuma senha admin foi lida/alterada/impressa (exclusão preservada).
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum dado de cliente alterado (DB_WRITES=0).
+- Senha admin não auditada/alterada/exibida.
+- Sem migration/RLS. Sem alteração de Financeiro/Fatura/Escala/Prestadores/APP/POD.
+- Sem mega-refactor. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

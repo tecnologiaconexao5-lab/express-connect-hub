@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface Props {
-  codigoRastreio: string;
+  token: string;
 }
 
-export default function CompartilharRastreioModal({ codigoRastreio }: Props) {
-  const link = `https://conexaoexpress.com.br/t/${codigoRastreio}`;
-  const wpText = `Acompanhe a sua entrega em tempo real através da Conexão Express Transportes!\n📦 Cód: ${codigoRastreio}\n\nAcesse: ${link}`;
+export default function CompartilharRastreioModal({ token }: Props) {
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://tms.conexaoexpress.com.br";
+  const link = `${baseUrl}/rastreamento/${token}`;
+  const wpText = `Acompanhe a sua entrega em tempo real através da Conexão Express Transportes!\n📦 Cód: ${token.slice(0, 8)}\n\nAcesse: ${link}`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(link);
@@ -24,7 +25,7 @@ export default function CompartilharRastreioModal({ codigoRastreio }: Props) {
   };
 
   const openEmail = () => {
-    window.open(`mailto:?subject=Acompanhe seu pedido ${codigoRastreio}&body=${encodeURIComponent(wpText)}`, '_blank');
+    window.open(`mailto:?subject=Acompanhe seu pedido ${token.slice(0, 8)}&body=${encodeURIComponent(wpText)}`, '_blank');
   };
 
   return (

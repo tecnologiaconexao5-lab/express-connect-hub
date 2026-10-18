@@ -1,0 +1,21 @@
+ZERO MOCKS — MISSÃO 108-L5
+
+O placeholder anterior tinha:
+- 5 objetos Unidade hardcoded com dados fictícios
+- "Solicitar Nova Filial" sem persistência
+- handleVerFilial() criando objeto mock "Filial Teste"
+
+A implementação atual:
+- Zero dados hardcoded no componente
+- Zero objetos mock no serviço
+- Todas as funções consultam Supabase diretamente:
+  * buscarFiliaisCliente() → ordens_servico + financeiro_receber + alocacoes_escala + contratos_operacao + portal_ocorrencias
+  * buscarDetalheFilial() → ordens_servico + financeiro_receber + contratos_operacao + portal_ocorrencias
+- Filtros (período, busca textual) recalcam via re-query do Supabase ou filtragem local
+- Loading/empty/error states sem dados falsos
+
+Fontes oficiais utilizadas:
+- ordens_servico (unidade, status, valor_cliente)
+- financeiro_receber (valor, valor_pago, data_vencimento, status)
+- contratos_operacao (id, status, cliente_id)
+- portal_ocorrencias (tipo, descricao, status)

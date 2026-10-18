@@ -1,0 +1,157 @@
+AG-FIN013 — QA HUMANO ASSISTIDO — PROVA REAL PELA INTERFACE
+=============================================================
+Data: 2026-09-03
+Status: PARCIAL (etapas 3-12 não executadas pelo usuário)
+Classificacao: PROVA PARCIAL — apenas criação via UI comprovada
+
+==================================================
+ETAPA 1 — PRÉ-FLIGHT
+==================================================
+AÇÃO HUMANA: N/A (verificação automática)
+RESULTADO NO BANCO: N/A
+RESULTADO NA UI: N/A
+VEREDITO: [OK] localhost:8800 rodando (HTTP 200)
+
+==================================================
+ETAPA 2 — CRIAR FATURA MANUAL PELA UI
+==================================================
+AÇÃO HUMANA: Usuário confirmou "CRIADA" após preencher campos na UI
+RESULTADO NA UI: Usuário relatou criação com sucesso
+RESULTADO NO BANCO (SELECT):
+  - Fatura encontrada: id=27f7bb25-da0a-492c-b5dc-c82701e29cd6
+  - numeroManual: FIN013-001 ✓
+  - modelo: conexao_express ✓
+  - descricao: "FIN013 TESTE REAL — HOMOLOGAÇÃO DO FATURAMENTO CONEXÃO EXPRESS" ✓
+  - valor_total: 123.45 ✓
+  - vencimento: 30/09/2026 ✓
+  - cliente_id: 336c5b17 (CLIENTE HOMOLOGACAO TMS 136A LTDA) ✓
+  - item descricao: texto correto ✓
+  - item valor_total: 123.45 ✓
+  - status: emitida (usuário emitiu direto, não salvou como rascunho)
+  - contaBancaria: null (conta Cora NÃO selecionada na UI)
+VEREDITO: [OK] Criação pela UI provada. Dados persistidos no banco.
+PENDENCIA: conta bancária snapshot não preenchido pelo usuário.
+
+==================================================
+ETAPA 3 — VISUALIZAR PDF
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA (usuário não inspecionou o PDF)
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+RESULTADO NO PDF/INDICADOR: NÃO PROVADO
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 4 — EDITAR PELA LISTAGEM
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 5 — TESTE FATURA 40
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 6 — EXCLUSÃO REAL
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 7 — CONTA A PAGAR PELA UI
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 8 — REGISTRAR PAGAMENTO
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 9 — DUPLA BAIXA
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 10 — INDICADORES
+==================================================
+AÇÃO HUMANA: NÃO EXECUTADA
+RESULTADO NA UI: NÃO PROVADO
+RESULTADO NO BANCO: N/A
+VEREDITO: [NÃO PROVADO]
+
+==================================================
+ETAPA 11 — TESTES AUTOMATIZADOS
+==================================================
+AÇÃO HUMANA: N/A
+RESULTADO NO BANCO: N/A
+  - npx tsc --noEmit → 0 erros (PASS)
+  - npx vitest run → 1124 passed, 5 failed, 12 skipped
+  - 5 falhas são pre-existentes (f0k_recibos month + rec03 candidatos)
+  - ZERO regressões introduzidas
+VEREDITO: [OK] Regressão limpa.
+
+==================================================
+ETAPA 12 — VEREDITO
+==================================================
+
+CHECKLIST:
+[OK] criação de fatura pela UI — USUÁRIO CONFIRMOU "CRIADA"
+[OK] cliente correto — SELECT provou cliente_id = 336c5b17
+[OK] descricao correta — SELECT provou metadata.descricao
+[NÃO PROVADO] endereço completo — não inspecionado no PDF
+[NÃO PROVADO] modelo PDF homologado visualmente pelo usuário
+[NÃO PROVADO] conta bancária correta — snapshot null
+[NÃO PROVADO] edição pela UI
+[NÃO PROVADO] mesmo ID (edição)
+[NÃO PROVADO] exclusão pela UI
+[NÃO PROVADO] nova despesa pela UI
+[NÃO PROVADO] Registrar Pagamento pela UI
+[NÃO PROVADO] financeiro_baixas possui baixa real
+[NÃO PROVADO] dupla baixa testada pela UI
+[NÃO PROVADO] indicadores reconciliados
+
+==================================================
+RELATÓRIO FINAL
+==================================================
+
+FIN-01.3: PARCIAL
+MODELO PDF HOMOLOGADO PELO USUÁRIO: NÃO PROVADO
+FATURA MANUAL E2E: SIM (criação via UI, dados no banco)
+EDIÇÃO E2E: NÃO PROVADO
+EXCLUSÃO E2E: NÃO PROVADO
+BAIXA E2E: NÃO PROVADO
+DUPLA BAIXA BLOQUEADA E2E: NÃO PROVADO
+INDICADORES RECONCILIADOS: NÃO PROVADO
+PRONTO PARA FIN-02: NÃO
+REC-06.2 PERMANECE CONGELADO: SIM
+
+==================================================
+PENDÊNCIAS PARA APROVAÇÃO
+==================================================
+1. ETAPA 3: Usuário inspecionar PDF e confirmar checklist visual
+2. ETAPA 4: Usuário editar FIN013-001 via UI (alterar descrição)
+3. ETAPA 5: Usuário localizar fatura 40 e reportar ações disponíveis
+4. ETAPA 6: Usuário criar + excluir FIN013-EXCLUIR pela UI
+5. ETAPA 7: Usuário criar FIN013-PAGAR pela UI (conta a pagar)
+6. ETAPA 8: Usuário registrar pagamento de FIN013-PAGAR pela UI
+7. ETAPA 9: Usuário tentar dupla baixa no mesmo título
+8. ETAPA 10: Usuário recarregar e conferir indicadores
+
+Para classificar como APROVADO, todas as 8 pendências acima
+precisam ser executadas pelo usuário na UI com prova SELECT.

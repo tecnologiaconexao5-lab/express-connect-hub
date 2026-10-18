@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const cols = await c.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name='ordens_servico' ORDER BY ordinal_position`);
+console.log(cols.rows.map(r=>`${r.column_name}:${r.data_type}`).join("\n"));
+await c.end();

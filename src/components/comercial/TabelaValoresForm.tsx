@@ -11,9 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { toast } from "sonner";
 import { TabelaValores, emptyTabelaValores, RegraFaixa, AdicionaisTaxas } from "./tabelaValoresTypes";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 
 const TIPOS_COBRANCA = [
   { id: 'saida', label: 'Por Saída (Valor fixo por operação)' },
@@ -33,7 +33,7 @@ interface Props {
   tabela?: TabelaValores | null;
   modo: "ver" | "editar" | "novo";
   onVoltar: () => void;
-  onSalvar: (tab: TabelaValores) => void;
+  onSalvar: (tab: TabelaValores) => void | Promise<void>;
 }
 
 const Field = ({ label, children, className = "" }: any) => (
@@ -45,7 +45,15 @@ const Field = ({ label, children, className = "" }: any) => (
 
 export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: Props) {
   const [data, setData] = useState<TabelaValores>(tabela || emptyTabelaValores());
+  const [isSaving, setIsSaving] = useState(false);
   const readOnly = modo === "ver";
+
+  // Guard contra perda de alterações (dirty + beforeunload + confirmação de saída).
+  const [baseline] = useState<TabelaValores>(() => tabela || emptyTabelaValores());
+  const exitGuard = useFormExitGuard({ current: data, initial: baseline });
+  const handleExit = async () => {
+    if (await exitGuard.confirmExit()) onVoltar();
+  };
 
   const update = (field: keyof TabelaValores, value: any) => setData(p => ({ ...p, [field]: value }));
   const updateNested = (objKey: "adicionais", field: keyof AdicionaisTaxas, updateObj: any) => {
@@ -74,7 +82,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
     <div className="space-y-4 max-w-[1400px] mx-auto pb-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onVoltar}><ArrowLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={handleExit}><ArrowLeft className="w-5 h-5" /></Button>
           <div>
             <h2 className="text-xl font-bold">{data.nome || "Nova Tabela de Valores"}</h2>
             <p className="text-sm text-muted-foreground">Versão: v{data.versao} | Status: <span className="uppercase text-[10px] bg-slate-200 px-1 py-0.5 rounded text-slate-700 font-bold">{data.status}</span></p>
@@ -82,7 +90,16 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
         </div>
         <div className="flex gap-2">
           {!readOnly && <Button variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"><Eye className="w-4 h-4 mr-2"/> Visualizar Impacto</Button>}
-          {!readOnly && <Button onClick={() => { toast.success("Tabela salva com sucesso."); onSalvar(data); }}><Save className="w-4 h-4 mr-2"/> Salvar Tabela</Button>}
+          {!readOnly && <Button onClick={async () => {
+            if (isSaving) return;
+            setIsSaving(true);
+            try {
+              await onSalvar(data);
+              exitGuard.markClean();
+            } finally {
+              setIsSaving(false);
+            }
+          }} disabled={isSaving}><Save className="w-4 h-4 mr-2"/> {isSaving ? "Salvando..." : "Salvar Tabela"}</Button>}
         </div>
       </div>
 
@@ -167,7 +184,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                          </SelectContent>
                        </Select>
                      </Field>
-                    <Field label="Exigência Térmica"><Select value={data.classificacaoTermica} onValueChange={v => update("classificacaoTermica", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="seco">Seco</SelectItem><SelectItem value="refrigerado">Refrigerado</SelectItem></SelectContent></Select></Field>
+                    <Field label="Exigência Térmica"><Select value={data.classificacaoTermica} onValueChange={v => update("classificacaoTermica", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="seco">Seco</SelectItem><SelectItem value="termico">Térmico</SelectItem><SelectItem value="refrigerado">Refrigerado</SelectItem></SelectContent></Select></Field>
                     <Field label="Arredondamento de Cálculos"><Select value={data.arredondamento} onValueChange={v => update("arredondamento", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="normal">Matemático Normal</SelectItem><SelectItem value="cima">Sempre p/ Cima</SelectItem></SelectContent></Select></Field>
 
 <div className="col-span-3 grid grid-cols-3 gap-4 border-t pt-4">
@@ -238,23 +255,24 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
 <div key={k} className={`p-4 rounded-xl border flex flex-col gap-3 ${cfg.ativo ? 'border-primary/50 bg-primary/5 shadow-sm' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                        <div className="flex justify-between items-center">
                           <Label className="font-bold text-slate-800 uppercase text-xs truncate max-w-[150px]">
-                            {k === 'espera' ? 'ESPERA (Tolerância + Valor/Hora)' : 
-                             k === 'pedagio' ? 'PEDÁGIO' :
-                             k === 'ajudante' ? 'AJUDANTE' :
-                             k === 'descarga' ? 'DESCARGA' :
-                             k === 'taxaAdmin' ? 'TAXA ADMIN' :
-                             k === 'devolucao' ? 'DEVOLUÇÃO' :
-                             k === 'reentrega' ? 'REENTREGA' :
-                             k === 'pernoite' ? 'PERNOITE' :
-                             k === 'taxaRisco' ? 'TAXA RISCO' :
-                             k === 'acessoDificil' ? 'ACESSO DIFÍCIL' :
-                             k === 'estacionamento' ? 'ESTACIONAMENTO' :
-                             k === 'agendamento' ? 'AGENDAMENTO' :
-                             k === 'escolta' ? 'ESCOLTA' :
-                             k === 'estadia' ? 'ESTADIA' :
-                             k === 'diariaExtra' ? 'DIÁRIA EXTRA' :
-                             k === 'segundaTentativa' ? '2ª TENTATIVA' :
-                             k}
+                             {k === 'espera' ? 'ESPERA (Tolerância + Valor/Hora)' : 
+                              k === 'pedagio' ? 'PEDÁGIO' :
+                              k === 'ajudante' ? 'AJUDANTE' :
+                              k === 'descarga' ? 'DESCARGA' :
+                              k === 'taxaAdmin' ? 'TAXA ADMIN' :
+                              k === 'devolucao' ? 'DEVOLUÇÃO' :
+                              k === 'reentrega' ? 'REENTREGA' :
+                              k === 'pernoite' ? 'PERNOITE' :
+                              k === 'taxaRisco' ? 'TAXA RISCO' :
+                              k === 'acessoDificil' ? 'ACESSO DIFÍCIL' :
+                              k === 'estacionamento' ? 'ESTACIONAMENTO' :
+                              k === 'agendamento' ? 'AGENDAMENTO' :
+                              k === 'escolta' ? 'ESCOLTA' :
+                              k === 'estadia' ? 'ESTADIA' :
+                              k === 'diariaExtra' ? 'DIÁRIA EXTRA' :
+                              k === 'segundaTentativa' ? '2ª TENTATIVA' :
+                              k === 'overbooking' ? 'OVERBOOKING (Cliente + Prestador)' :
+                              k}
                           </Label>
                          <Switch disabled={readOnly} checked={cfg.ativo} onCheckedChange={(v) => updateNested("adicionais", k as any, { ativo: v })} />
                       </div>
@@ -311,9 +329,36 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                                                   )}
                                                </div>
                                             ))}
-                                         </div>
-                                      )}
-                                   </div>
+                              </div>
+                           )}
+                           {k === 'overbooking' && cfg.ativo && (
+                              <div className="w-full flex flex-col gap-2 mt-3 col-span-full border-t pt-2">
+                                 <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                       <Label className="text-[9px] text-slate-500">Valor Base (R$)</Label>
+                                       <Input disabled={readOnly} type="number" value={cfg.valorBase ?? 0} onChange={e => updateNested("adicionais", "overbooking", { valorBase: Number(e.target.value) })} className="h-7 text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                       <Label className="text-[9px] text-slate-500">% Cliente</Label>
+                                       <div className="relative"><Input disabled={readOnly} type="number" value={cfg.percentualCliente ?? 50} onChange={e => updateNested("adicionais", "overbooking", { percentualCliente: Number(e.target.value) })} className="h-7 text-xs pr-7" /><span className="absolute right-2 top-1.5 text-[10px] text-slate-400">%</span></div>
+                                    </div>
+                                    <div className="space-y-1">
+                                       <Label className="text-[9px] text-slate-500">% Prestador</Label>
+                                       <div className="relative"><Input disabled={readOnly} type="number" value={cfg.percentualPrestador ?? 80} onChange={e => updateNested("adicionais", "overbooking", { percentualPrestador: Number(e.target.value) })} className="h-7 text-xs pr-7" /><span className="absolute right-2 top-1.5 text-[10px] text-slate-400">%</span></div>
+                                    </div>
+                                    <div className="space-y-1">
+                                       <Label className="text-[9px] text-slate-500">Observação</Label>
+                                       <Input disabled={readOnly} value={cfg.observacao ?? ''} onChange={e => updateNested("adicionais", "overbooking", { observacao: e.target.value })} className="h-7 text-xs" placeholder="Ex: Overbooking por alta demanda" />
+                                    </div>
+                                 </div>
+                                 {cfg.valorBase > 0 && cfg.percentualCliente > 0 && (
+                                    <div className="bg-blue-50 border border-blue-100 rounded p-2 text-[10px] text-blue-800">
+                                       <span className="font-bold">Previsão:</span> Cliente R$ {(cfg.valorBase * cfg.percentualCliente / 100).toFixed(2)} | Prestador R$ {(cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100).toFixed(2)} | Margem R$ {((cfg.valorBase * cfg.percentualCliente / 100) - (cfg.valorBase * cfg.percentualCliente / 100 * cfg.percentualPrestador / 100)).toFixed(2)}
+                                    </div>
+                                 )}
+                              </div>
+                           )}
+                       </div>
                                 )}
                              </div>
                           )}

@@ -1,0 +1,153 @@
+===============================================================================
+  MISSÃO A27 — REDE DE OPORTUNIDADES COMPLETA
+  Relatório final — fluxo ponta a ponta
+  Data: 2026-08-15
+===============================================================================
+
+FLUXO COMPLETO (objetivo da missão)
+  TMS publica OS na Rede → prestador (App) vê a oportunidade com dados
+  completos (origem/destino/peso/horário/repasse) → aceita de forma
+  ATÔMICA → alocação criada em alocacoes_escala → operação aparece em
+  Home/Operações com a jornada correta (f_buscar_operacoes_motorista).
+
+REPOSITÓRIOS
+  TMS : ...\express-connect-hub (React/TypeScript)
+  App : C:\src\conexao_prestador (Flutter 3.41.9 / Dart 3.11.5)
+  DB  : Supabase produção uwrvzsjtpgaifkktpepn (ÚNICO)
+
+=====================================================================
+1) ESTADO REAL DE PRODUÇÃO (auditado read-only)
+=====================================================================
+  - f_aceitar_oportunidade_rede já cria alocação com
+    metadata.aceite_tipo='rede_enterprise', status 'aceita' (ATÔMICO,
+    SELECT FOR UPDATE). Confirmado executando o fluxo pós-aceite.
+  - f_buscar_operacoes_motorista retorna
+    {'success': true, 'operacoes': [...], 'total': N}
+    (chave em INGLÊS "success", não "sucesso").
+  - 11 oportunidades em produção: 8 'publicada' + 3 'aceita'.
+  - NENHUMA oportunidade publicada está VIGENTE (todas expiraram em
+    2026-07-07/12). O App corretamente exibirá lista vazia até o TMS
+    publicar uma nova (prazo 24h).
+  - veiculo_necessario = {tipo, termica, capacidade_kg}.
+  - regiao pode ser 'São Paulo' ou null.
+
+=====================================================================
+2) BUGS P0 DO APP CORRIGIDOS (local)
+=====================================================================
+  BUG 1 (fetch) — App chamava f_buscar_prestadores_compativeis(p_uuid)
+  (overload inexistente em produção) e fallback com .eq('status',
+  'disponivel') (coluna inexistente) → lista vazia SEMPRE.
+    FIX: fetchOportunidades() usa RPC nova f_buscar_oportunidades_para_
+    prestador (primária) com fallback direto correto
+    (.inFilter status publicada/visualizada/interessada,
+     .isFilter prestador_aceite_id null, .gte prazo_expiracao agora).
+
+  BUG 2 (aceite) — produção retorna sucesso/mensagem/os_id/alocacao_id/
+  operation_mode; App lia success/message → "Resposta inválida do
+  servidor" MESMO com aceite criado no banco.
+    FIX: parseAceiteResponse() + AceiteResult.mensagemExibivel +
+    AceiteResult.oportunidadeIndisponivel (detecta estado concorrente
+    "Oportunidade no estado aceita não pode ser aceita").
+
+=====================================================================
+3) RPC NOVA — f_buscar_oportunidades_para_prestador (PROPOSTA)
+=====================================================================
+  ARQUIVO: supabase/migrations/20260815_a27_rpc_oportunidades_para_
+  prestador.sql  (+ _rollback.sql)
+  STATUS : PROPOSTA "NÃO AUTORIZADA" — NÃO APLICADA. Sem autorização
+           explícita NÃO executar (padrão TMS-032).
+
+  MOTIVO : RLS bloqueia o prestador de ler ordens_servico → App sem
+           origem/destino/peso/horário. A RPC resolve via
+           SECURITY DEFINER com join seguro.
+
+  VALIDADO (dry-run BEGIN/ROLLBACK, nada persistido):
+   - Função criada: STABLE + SECURITY DEFINER, search_path fixo.
+   - ACL final: somente postgres / authenticated / service_role
+     (anon e PUBLIC revogados).  ✅
+   - Chamada real retornou a oportunidade publicada simulada como
+     vigente com join à OS: os_id, origem 'São Paulo', destino
+     'Osasco', tipo_operacao 'Entrega', data_programada,
+     valor_prestador 900, veiculo_necessario {VUC,seco},
+     distancia_km 50.  ✅
+   - Compatibilidade confirmada com dados reais: prestador BRUNO
+     (659f95ec) tem veículo VUC → oportunidade VUC apareceu.
+   - NUNCA expõe valor_cliente/margem/prestador_id/custos.  ✅
+
+  OBSERVAÇÃO de dados reais tratada na RPC:
+   - Tipo de veículo com case inconsistente ('VUC'/'vuc'/'fiorino')
+     → comparação LOWER().
+   - Prestador com regiao_principal 'Todas as capitais'
+     → tratado como curinga; região ausente não restringe.
+
+=====================================================================
+4) APP — IMPLEMENTAÇÃO COMPLETA (C:\src\conexao_prestador)
+=====================================================================
+  Model  : lib/core/models/network_oportunidade.dart
+           (schema produção + campos exibíveis da OS via RPC; getters
+           ehNova/expirada/indisponivel/tipoVeiculoLabel/
+           tipoCargaLabel/horarioLabel; compatível com HML)
+  Repo   : lib/core/repositories/network_repository.dart
+           (fetch RPC→fallback direto; obterOportunidade; parseAceite;
+           subscribeOportunidades/unsubscribeOportunidades via
+           Realtime, PostgresChangeEvent)
+  Tela   : lib/features/network/network_screen.dart
+           (card Fase 6: badge NOVA, OS, repasse, coleta + distância,
+           destino, veículo necessário + capacidade, chips, requisitos,
+           observações, VER DETALHES, ACEITAR; dialog de detalhes;
+           distância até coleta; Realtime remove aceita/expirada)
+  Dist   : lib/features/network/oportunidade_distance_service.dart
+           (NOVO — posição injetável, testável, null = neutro)
+  i18n   : lib/core/presentation/driver_language.dart
+           (novos labels da Rede)
+
+  TESTES (flutter test --no-pub): 17/17 PASSANDO
+   - test/features/network/network_oportunidade_test.dart
+   - test/features/network/oportunidade_distance_service_test.dart
+   - test/core/repositories/network_repository_aceite_test.dart
+  flutter analyze: arquivos tocados sem issues.
+
+=====================================================================
+5) TMS — PAINEL DA REDE (express-connect-hub)
+=====================================================================
+  OrdemServicoForm.tsx: painel Rede agora exibe, quando aceita, o bloco
+  "Aceita na Rede de Prestadores" com:
+   - Prestador (nome via prestadores.prestador_aceite_id)
+   - Veículo (tipo + placa via alocacoes_escala / prestadores)
+   - Aceite em (data/hora via alocacoes_escala.data_aceite)
+   - Origem da alocação = Rede de Oportunidades
+   - ID da alocação
+  npx tsc --noEmit: 0 erros.
+
+=====================================================================
+6) STATUS DA MISSÃO
+=====================================================================
+  [CONCLUÍDO]
+   - Bugs P0 do App corrigidos (fetch + aceite) — 100% local.
+   - App exibe oportunidades com dados completos + distância + Realtime.
+   - Testes App 17/17. flutter analyze limpo.
+   - Painel TMS exibe detalhes do aceite.
+   - RPC proposta escrita, validada em dry-run (BEGIN/ROLLBACK) e
+     endurecida (anon/PUBLIC revogados).
+
+  [PARCIAL — DEPENDE DE PRODUÇÃO]
+   - RPC f_buscar_oportunidades_para_prestador NÃO aplicada (aguarda
+     autorização). Até lá o App usa o fallback direto (dados parciais,
+     sem origem/destino/peso/horário completos).
+   - Lista vazia em produção até o TMS publicar uma oportunidade nova
+     (as 11 existentes expiraram em 07/2026).
+
+  [PENDENTE DE HOMOLOGAÇÃO FÍSICA]
+   - Não executado: aceite real via App (Realtime + dialog) contra uma
+     oportunidade vigente real — não há oportunidade vigente para testar.
+   - Recomendações de produção:
+     a) Após autorização, aplicar a migration A27 (RPC + grants).
+     b) Publicar 1 OS de teste na Rede com prazo de 24h e homologar no
+        App (listagem → detalhes → aceite → alocação → operações).
+     c) Aplicar TMS-032 S2 (auth.uid() nas RPCs da Rede) — pendência de
+        segurança conhecida.
+     d) Revalidar visualmente no TMS o bloco de aceite após um aceite real.
+
+===============================================================================
+  FIM DO RELATÓRIO — MISSÃO A27
+===============================================================================

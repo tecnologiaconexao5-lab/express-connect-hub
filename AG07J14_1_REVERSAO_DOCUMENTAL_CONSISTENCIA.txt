@@ -1,0 +1,123 @@
+════════════════════════════════════════════════════════════════════════════════
+                    AG-07J.14.1 — RELATÓRIO DE AUDITORIA
+                 REVERSÃO DOCUMENTAL E CONSISTÊNCIA DE ELEGIBILIDADE
+════════════════════════════════════════════════════════════════════════════════
+Missão:         AG-07J.14.1
+Data:           2026-08-25
+Classificação:  B — OS PRESERVADA, GATE LÓGICO CORRETO, MARGEM ABERTA
+Status:         ✅ CONCLUÍDA
+════════════════════════════════════════════════════════════════════════════════
+
+§1  RESUMO EXECUTIVO
+─────────────────────
+Auditoria completa de reversão documental e consistência de elegibilidade
+operacional. Identificadas 3 fontes documentais, 7 action points, 6 gaps do
+AG-07J.14 reclassificados, e comportamento de preservação de operação em
+andamento confirmado como correto por design.
+
+Resultado: 32/32 testes focalizados, 870/870 regressão, tsc 0 erros.
+
+§2  FONTES DOCUMENTAIS
+──────────────────────
+Três fontes de dados documentais identificadas:
+
+┌───────────────────────────────┬──────────────────────┬──────────────┐
+│ Fonte                         │ Papel                │ Canônico?    │
+├───────────────────────────────┼──────────────────────┼──────────────┤
+│ documentos_prestadores        │ Documentos do        │ ✅ SIM       │
+│                               │ prestador (JSONB)    │ (operacional)│
+├───────────────────────────────┼──────────────────────┼──────────────┤
+│ prestadores.cnh_validade      │ Cache direto no      │ ❌ NÃO       │
+│                               │ registro do prestador│ (secundário) │
+├───────────────────────────────┼──────────────────────┼──────────────┤
+│ recrutamento_candidatos       │ Pipeline de          │ ❌ NÃO       │
+│ .documentos                   │ recrutamento         │ (legado)     │
+└───────────────────────────────┴──────────────────────┴──────────────┘
+
+Divergência: documentos_prestadores é consulta em verificarElegibilidadeDocumental()
+e verificarElegibilidadeOperacionalPrestador(). cnh_validade é verificação adicional
+(após documentos_prestadores). recrutamento_candidatos NÃO participa de elegibilidade
+operacional — usado apenas em calcularStatusDocumentalOperacional() do Kanban.
+
+§3  ACTION POINTS — MATRIZ DE GATES INSTANTÂNEOS
+─────────────────────────────────────────────────
+
+┌──────────────────────────────────┬───────────┬──────────┬──────────────┐
+│ Action Point                     │ Gate TS   │ Gate DB  │ Doc check?   │
+├──────────────────────────────────┼───────────┼──────────┼──────────────┤
+│ criarAlocacao (escalaService)    │ ✅ AG-07F │ —        │ ✅ docs+cnh  │
+│ syncEscalaParaEscalaOperacional  │ —         │ ✅ AG-07F│ ❌ status+app│
+│ converterCandidatoParaPrestador  │ ✅ AG-07J │ —        │ ✅ docs+cnh  │
+│ listarOportunidadesParaPrestador │ ❌ NENHUM │ —        │ ❌ NENHUM    │
+│ aceitarOportunidade              │ ✅ AG-07J │ —        │ ✅ status+app│
+│ f_avancar_etapa (App Motorista)  │ ❌ NENHUM │ —        │ ❌ NENHUM    │
+│ f_buscar_operacoes (RPC)         │ —         │ ✅ AG-07F│ ❌ status+app│
+└──────────────────────────────────┴───────────┴──────────┴──────────────┘
+
+Observação: criarAlocacao é o ÚNICO action point que valida documentos via
+prestadorOperacionalmenteElegivelDados(). Os outros verificam apenas status
++ liberado_app.
+
+§4  OPERAÇÃO EM ANDAMENTO — PRESERVAÇÃO CORRETA POR DESIGN
+────────────────────────────────────────────────────────────
+f_avancar_etapa_app_motorista NÃO valida elegibilidade:
+  - Intencional: motorista em rota NÃO pode ser bloqueado
+  - Documento vencido NÃO interrompe operação em andamento
+  - Operação é concluída, mas novas operações NÃO são atribuídas
+
+§5  RECLASSIFICAÇÃO DOS GAPS (AG-07J.14)
+────────────────────────────────────────
+
+┌─────┬────────────────────────────┬───────────┬───────────┬──────────────┐
+│ Gap │ Descrição original         │ Anterior  │ Atual     │ Ação         │
+├─────┼────────────────────────────┼───────────┼───────────┼──────────────┤
+│ G1  │ liberado_app não no admin  │ P0 open   │ P0 ✅ FIX │ FEITO (M)    │
+│ G2  │ Sem scheduler docs         │ P1 open   │ P1 ⚠️    │ Levantamento │
+│ G3  │ Listing sem filtro status  │ P1 open   │ P3 ℹ️    │ MITIGADO     │
+│ G4  │ em_rota não bloqueada      │ —         │ ℹ️ INFO  │ CORRETO      │
+│ G5  │ Sem gate f_avancar_etapa   │ P1 open   │ P3 ℹ️    │ MITIGADO     │
+│ G6  │ Sem reativação automática  │ P2 open   │ P1 ⚠️    │ Levantamento │
+└─────┴────────────────────────────┴───────────┴───────────┴──────────────┘
+
+Detalhamento:
+  G3: listarOportunidadesParaPrestador() não filtra por status/liberado_app.
+      Mitigação: aceitarOportunidade() valida status+liberado_app (AG-07J.13).
+      Impacto: prestador vê oportunidades mas NÃO pode aceitar → UX irritante.
+
+  G4: f_avancar_etapa_app_motorista NÃO valida elegibilidade.
+      CORRETO: operação em andamento preservada por design.
+
+  G5: f_avancar_etapa_app_motorista NÃO valida documentos.
+      Mitigação: criarAlocacao() valida documentos (AG-07F).
+      Impacto: baixo — motorista já alocado, documentos verificados na alocação.
+
+  G6: Sem reativação automática de liberado_app quando documentos são renovados.
+      Risco: admin precisa reativar manualmente após renovação documental.
+
+§6  RESULTADOS QUANTITATIVOS
+────────────────────────────
+  • Testes focalizados criados: 32
+  • Testes focalizados passando: 32/32 (100%)
+  • Regressão: 870/870 passando
+  • tsc --noEmit: 0 erros
+  • Arquivos modificados: 0 (apenas teste criado)
+  • Arquivos criados: 1 (ag07j14_1_reversao_documental.test.ts)
+
+§7  CONCLUSÃO
+─────────────
+Classificação: **B — OS PRESERVADA, GATE LÓGICO CORRETO, MARGEM ABERTA**
+
+Justificativa:
+  ✅ Gate lógico correto: status + liberado_app + documentos verificados
+  ✅ Operação em andamento preservada (correto por design)
+  ✅ Fail-open documental mantido (legado, não bloquear)
+  ✅ Renovação preserva estado administrativo (correto)
+  ⚠️ Listing sem filtro (mitigado por gate na aceitação)
+  ⚠️ Sem reativação automática (recomendado para F10)
+
+A margem aberta (G3 listing sem filtro) NÃO permite operação ilegal — apenas
+irrita o motorista. O gate decisório (aceitação + alocação) é correto.
+
+════════════════════════════════════════════════════════════════════════════════
+                         FIM DO RELATÓRIO
+════════════════════════════════════════════════════════════════════════════════

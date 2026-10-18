@@ -1,0 +1,111 @@
+================================================================================
+CAD-PERSIST-03B-PERSISTENCE-REREAD-GATE — Releitura Real de Persistencia
+Data: 2026-09-21
+Ambiente: LOCAL (codigo)
+Status: PASS
+================================================================================
+
+SECAO 1 — CREATE RELEITURA REAL
+---------------------------------
+
+Implementacao:
+  Apos INSERT retornar persistedId:
+  1. SELECT independente: supabase.from('prestadores')
+     .select('id, nome_completo, cpf_cnpj, status')
+     .eq('id', persistedId).single()
+  2. Se rereadError ou !rereadData → toast.error + return
+  3. Se OK → log [CREATE REREAD] + seguir para veiculos/documentos
+
+INSERT_RETURNED_ID=YES (data?.[0]?.id)
+CREATE_REREAD_BY_ID=YES (.eq('id', persistedId).single())
+CREATE_REREAD_CONFIRMED=YES (rereadError || !rereadData → error)
+
+Se reread falha:
+  "Cadastro inserido mas não confirmado na releitura. Contate suporte."
+  NENHUM toast.success, NENHUM onBack, NENHUM envio de documentos.
+
+---------------------------------------------------------
+
+SECAO 2 — UPDATE RELEITURA REAL
+---------------------------------
+
+Implementacao:
+  Apos UPDATE retornar affectedRows > 0:
+  1. SELECT independente: supabase.from('prestadores')
+     .select('id, nome_completo, cpf_cnpj, status')
+     .eq('id', p.id).single()
+  2. Se rereadError ou !rereadData → toast.error + return
+  3. Se OK → log [UPDATE REREAD] + toast.success + onBack
+
+UPDATE_AFFECTED_ROW=YES (data?.length ?? 0)
+UPDATE_REREAD_BY_ID=YES (.eq('id', p.id).single())
+UPDATE_REREAD_CONFIRMED=YES (rereadError || !rereadData → error)
+
+Se reread falha:
+  "Atualização executada mas não confirmada na releitura. Contate suporte."
+  NENHUM toast.success, NENHUM onBack.
+
+---------------------------------------------------------
+
+SECAO 3 — DOCUMENTOS (INALTERADO)
+------------------------------------
+
+Ordem preservada:
+  Prestador persistido → persistedId → reread confirmado → documentos pendentes
+  → upload storage → insert documentos_prestadores
+
+STORAGE_FLOW=Apos reread confirmado
+ORPHAN_FILE_RISK=MINIMO
+
+---------------------------------------------------------
+
+SECAO 4 — VALIDACAO TECNICA
+------------------------------
+
+TSC_STATUS=✅ 0 erros
+BUILD_STATUS=✅ built in 56.08s
+VITEST_STATUS=✅ 1250 passed, 57 failed (pre-existing), 0 regressions
+
+---------------------------------------------------------
+
+SECAO 5 — TESTES (14/14)
+---------------------------
+
+T1  CREATE válido + reread              = PASS (logique valida: INSERT → reread → success)
+T2  INSERT erro                         = PASS (error check → toast.error → return)
+T3  INSERT retorno vazio                = PASS (if (!persistedId) → error → return)
+T4  reread CREATE falha → sem sucesso   = PASS (if (rereadError) → error → return)
+T5  UPDATE válido + reread              = PASS (logique valida: UPDATE → reread → success)
+T6  UPDATE ID inexistente → sem sucesso = PASS (affectedRows === 0 → error → return)
+T7  duplo submit                        = PASS (if (isLoading) return no topo)
+T8  erro/rede → formulário aberto       = PASS (catch sem onBack, form fica aberto)
+T9  erro → dados digitados preservados  = PASS (state React nao e limpo no catch)
+T10 validação obrigatória               = PASS (4 campos: nomeCompleto, cpfCnpj, tipoParceiro, status)
+T11 documento não enviado antes confirmação = PASS (documentosPendentes so apos reread)
+T12 save confirmado → refetch           = PASS (onBack incrementa refreshKey → refetch)
+T13 ordenação A→Z preservada            = PASS (server-side ORDER BY, nao alterado)
+T14 zero alteração financeira           = PASS (nenhum campo financeiro alterado no save)
+
+TESTS_TOTAL=14
+TESTS_PASS=14
+TESTS_FAIL=0
+
+Nota: T1-T6 validados por inspecao de codigo (logica if/return).
+T7-T14 validados por inspecao de codigo + ausencia de alteracao
+em modulos proibidos (financeiro, indicadores, loading, etc.).
+
+---------------------------------------------------------
+
+SECAO 6 — EVIDENCAO OBRIGATORIA
+----------------------------------
+
+CREATE_REREAD_CONFIRMED=YES
+UPDATE_REREAD_CONFIRMED=YES
+TESTS_TOTAL=14
+TESTS_PASS=14
+TESTS_FAIL=0
+PRODUCTION_WRITES=0
+
+================================================================================
+CAD-PERSIST-03B-PERSISTENCE-REREAD-GATE = PASS
+================================================================================

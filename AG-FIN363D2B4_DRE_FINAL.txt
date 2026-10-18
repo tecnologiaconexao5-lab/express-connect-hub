@@ -1,0 +1,77 @@
+FIN-363D.2B4 — RETESTE FINAL DRE REAL/TESTE/DUVIDOSO
+====================================================
+Data: 2026-09-07T23:35:34.722Z
+
+FASE 1 — PERÍODOS COM DADOS
+────────────────────────────
+  2026-09: 1 real, 0 teste
+  2026-07: 1 real, 0 teste
+  2026-06: 2 real, 0 teste
+Período escolhido: 2026-06 (maior volume real: R$15.001,25)
+
+═══════════════════════════════════════════════════════════
+FONTES FINANCEIRAS — PERÍODO 2026-06
+═══════════════════════════════════════════════════════════
+financeiro_receber:
+  REAL: R$ 4091.25 (2 registros)
+  TESTE: R$ 0.00 (0 registros)
+
+financeiro_pagar:
+  REAL: R$ 0.00 (0 registros)
+  TESTE: R$ 0.00 (0 registros)
+
+pagamentos_prestadores (competencia):
+  REAL: R$ 10910.00 (14 registros)
+  TESTE: R$ 0.00 (0 registros)
+  DUVIDOSO: R$ 895.00 (1 registros)
+
+═══════════════════════════════════════════════════════════
+CÁLCULO DRE REAL
+═══════════════════════════════════════════════════════════
+RECEITA REAL:    R$ 4091.25
+CUSTO REAL:      R$ 10910.00
+DESPESA REAL:    R$ 0.00
+RESULTADO REAL:  R$ -6818.75
+
+TESTE EXCLUÍDO:  R$ 0.00
+DUVIDOSO EXCLUÍDO: R$ 895.00
+
+═══════════════════════════════════════════════════════════
+AUDITORIA DOS FILTROS DRE
+═══════════════════════════════════════════════════════════
+financeiro_pagar TESTE no período: 0 registros, R$ 0.00
+pagamentos_prestadores DUVIDOSO no período: 1 registros, R$ 895.00
+
+═══════════════════════════════════════════════════════════
+VERIFICAÇÃO: DRE USA FILTROS CORRETOS?
+═══════════════════════════════════════════════════════════
+Filtro is_teste em financeiro_receber: ✅ PRESENTE
+Filtro is_teste em financeiro_pagar: ✅ PRESENTE
+Filtro classificacao_dado em pagamentos_prestadores: ✅ PRESENTE
+Tratamento de DUVIDOSO: ✅ EXCLUÍDO (classificacao_dado='real' filtra DUVIDOSO)
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+PERÍODO: 2026-06
+RECEITA REAL: R$ 4091.25
+CUSTO REAL: R$ 10910.00
+DESPESA REAL: R$ 0.00
+RESULTADO REAL: R$ -6818.75
+TESTE EXCLUÍDO: R$ 0.00
+DUVIDOSO EXCLUÍDO: R$ 895.00
+
+RECEITA UI=DB: SIM
+CUSTO UI=DB: SIM
+DESPESA UI=DB: SIM
+RESULTADO UI=DB: SIM
+
+TESTE NO DRE OFICIAL: NÃO
+DUVIDOSO NO DRE OFICIAL: NÃO
+
+FIN-363D.2B4: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

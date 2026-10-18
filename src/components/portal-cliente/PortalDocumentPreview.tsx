@@ -1,5 +1,5 @@
+import { memo, useState } from "react";
 import { LucideIcon, FileText, Image, File, FileSignature, Camera, X, Eye, Download, ExternalLink } from "lucide-react";
-import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,7 +27,7 @@ const typeConfig: Record<string, { icon: LucideIcon; color: string; bgColor: str
   pdf: { icon: FileText, color: "text-red-600", bgColor: "bg-red-50", label: "PDF" },
 };
 
-export function PortalDocumentPreview({ documents, onDownload, onView }: PortalDocumentPreviewProps) {
+export const PortalDocumentPreview = memo(function PortalDocumentPreview({ documents, onDownload, onView }: PortalDocumentPreviewProps) {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
 
   if (!documents || documents.length === 0) {
@@ -75,6 +75,7 @@ export function PortalDocumentPreview({ documents, onDownload, onView }: PortalD
                           src={doc.thumbnailUrl}
                           alt={doc.label}
                           className="w-full h-full object-cover rounded"
+                          loading="lazy"
                         />
                       ) : (
                         <config.icon className={`w-6 h-6 ${config.color}`} />
@@ -134,6 +135,7 @@ export function PortalDocumentPreview({ documents, onDownload, onView }: PortalD
                   src={selectedDoc.url}
                   alt={selectedDoc.label}
                   className="max-w-full max-h-[400px] rounded"
+                  loading="lazy"
                 />
               )
             ) : (
@@ -167,4 +169,4 @@ export function PortalDocumentPreview({ documents, onDownload, onView }: PortalD
       </Dialog>
     </>
   );
-}
+});

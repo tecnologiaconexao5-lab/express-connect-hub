@@ -1,0 +1,252 @@
+================================================================================
+MISSAO: TMS-FAT-URG-03C-FAT000020-ROOT-CAUSE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: AUDITORIA FORENSE READ-ONLY. NADA CORRIGIDO.
+================================================================================
+
+RESULTADO: PASS — CAUSA-RAIZ COMPROVADA (PASS aqui NAO significa fluxo homologado).
+  - Todas as 3 divergencias foram explicadas com evidencia (banco + codigo).
+  - ZERO DML/DDL: apenas SELECT. Nenhum registro criado/alterado/excluido.
+
+================================================================================
+A — IDs REAIS DO CASO
+================================================================================
+Romaneio/OC (alocacao.metadata.numeroOC) : HML-FAT-01.
+OS (ordens_servico.numero)               : OS-202609-175861
+Fatura (faturas.numero)                   : FAT-2026-000020
+
+alocacao_id        : 5bab62b3-bc6a-4651-9646-56f0a2e8071d
+ordem_servico_id   : 16d52718-195f-4bce-b63b-cf2c16a97c96
+fatura_id          : 0e37e0d0-6abe-4bf8-b746-a3598c52b812
+fatura_item_id     : c57581ba-f885-4d1b-b952-7e6c704c614d
+conta_receber_id   : da2c943d-8323-4559-9918-2bf02cf4edef
+financeiro_receber.id (mesmo id acima) : da2c943d-8323-4559-9918-2bf02cf4edef
+tenant_id          : 00000000-0000-0000-0000-000000000001
+cliente_id         : b4917245-e99f-4a72-8ce7-4f1deaccff7c (Mineirao Abc)
+prestador_id       : be420cfc-878e-49b3-8a0d-1827b34762a5
+
+Timestamps (UTC):
+  alocacao.created_at ................ 2026-09-25T21:19:13.780Z
+  composicao.created_at .............. 2026-09-25T21:19:13.492Z
+  pagamentos_prestadores.created_at .. 2026-09-25T21:19:13.780Z
+  fatura.criado_em (rascunho) ........ 2026-09-25T21:23:23.352Z
+  fatura_item.criado_em .............. 2026-09-25T21:23:23.465Z
+  fatura.atualizado_em (emitida) ..... 2026-09-25T21:24:13.054Z   (~50s depois)
+  financeiro_receber.created_at ...... 2026-09-26T00:24:13.054Z   (mesma transacao; fuso +3h)
+  fatura.atualizado_por .............. 323878d3-861f-4257-a0ef-8ee26f526ce0 (super_admin)
+  fatura.criado_por .................. null
+  fatura.metadata .................... {"modelo":"conexao_express","descricao":""}
+
+================================================================================
+B — CONFERENCIA (SINTOMA 1: continua aparecendo)
+================================================================================
+Vinculo: fatura_itens.c57581ba (status='ativo') -> fatura 0e37e0d0 -> alocacao 5bab62b3.
+Fatura: status='emitida' (logo faturamento derivado = 'faturado').
+
+Regra exata (buscarCentralFinanceiro):
+  - Query base (centralFinanceiroService.ts:184-185):
+      .eq("status","concluida") AND .eq("finalizada", true)  -> a alocacao segue listada.
+  - Derivacao de faturamento (centralFinanceiroService.ts:283-304):
+      fatura_itens (status='ativo') join faturas!inner(id,numero,status);
+      if (fat.status === "emitida") status = "faturado"   (linha 299).
+  - Elegibilidade (ConferenciaFinanceira.tsx:1420-1421): se faturamento != 'nao_faturado'
+      -> motivo "Ja faturado"; isElegivel=false (linha 1433) -> checkbox DESABILITADO.
+  - Nao ha filtro default de faturamento (filtros iniciais = {}), portanto o item
+    faturado PERMANECE visivel no historico, porem nao-selecionavel.
+
+RESPOSTA OBJETIVA (A-F): A) a query LISTA HISTORICO de forma intencional (nao apaga/oculta)
+  e, ao mesmo tempo, B) FALTA o filtro default por faturamento ("nao_faturado").
+  NAO e C) status incorreto, D) join, nem E) cache/reload.
+  Obs.: nao ha risco de refaturamento (checkbox bloqueado), mas a REGRA DESEJADA
+  ("apos Criar Fatura, sair da fila operacional") NAO esta implementada.
+
+================================================================================
+C — FATURA FAT-2026-000020
+================================================================================
+faturas WHERE numero='FAT-2026-000020':
+  id=0e37e0d0... | status=emitida | numero_cliente=2 | valor_bruto=300.00 | valor_total=300.00
+  vencimento=2026-10-25 | data_emissao=2026-09-25 | conta_receber_id=da2c943d...
+  tenant_id=000...001 | cliente_id=b4917245... (Mineirao Abc)
+  criado_por=null | atualizado_por=323878d3... | criado_em=21:23:23Z | atualizado_em=21:24:13Z
+
+Como chegou a 'emitida':
+  - Criada como RASCUNHO via FaturaPanel (metadata = {modelo, descricao}; SEM
+    metadata.origem='manual' -> faturaService.ts:221), portanto NAO foi FaturaManualDialog
+    (que grava metadata.origem='manual' em faturaService.ts:1058).
+  - Emitida via emitirFatura -> supabase.rpc("f_emitir_fatura") (faturaService.ts:360;
+    acionada em FaturaPanel.tsx:314-318, botao/estado "Emitir Fatura" FaturaPanel.tsx:688/785).
+  - f_emitir_fatura cria numero + 1 AR e marca emitida (migration 20260924000000:112-217).
+
+RESPOSTA OBJETIVA: A) criou rascunho corretamente e, na sequencia, C) o caminho de
+  emissao usado foi o oficial f_emitir_fatura (nao ha caminho legado paralelo nesta fatura).
+  A RPC aceita origem 'rascunho'|'aguardando_aprovacao'|'aprovada'
+  (20260924000000:141) -> permite rascunho -> emitida DIRETO. Nao houve criacao de AR
+  fora da RPC.
+
+================================================================================
+D — VALIDACAO/APROVACAO (SINTOMA 2: pulou validacao)
+================================================================================
+Nao existe tabela de historico de status de fatura no schema (faturas so tem
+criado_em/atualizado_em/por). Portanto a SEQUENCIA exata e
+"NÃO COMPROVÁVEL PELO BANCO".
+
+Evidencia temporal + call-site:
+  - 21:23:23 rascunho criado; 21:24:13 (~50s) atualizada para emitida e AR criado na
+    MESMA transacao (f_emitir_fatura). Janela compativel tanto com um clique unico
+    (bundle antigo "Validar e Emitir") quanto com Enviar->Aprovar->Emitir em sequencia.
+  - O contrato da RPC permite emitir de 'rascunho' (20260924000000:141). Logo a etapa
+    de validacao NAO e obrigatoria no banco; a separacao Enviar/Aprovar/Emitir existe
+    apenas na UI implementada no FAT-URG-02 (FaturaPanel.tsx:658 Enviar / 672 Aprovar /
+    688 Emitir).
+  - Os botoes/estados do FAT-URG-02 nao deixam rastro em banco (f_mover_fatura_status
+    nao grava historico), por isso podem ter (ou nao) participado sem evidencia.
+
+RESPOSTA OBJETIVA: D) outra causa comprovada — a "validacao" foi pulada porque o
+  fluxo visual usado emitiu direto (via f_emitir_fatura, que aceita rascunho). Causa
+  provavel: bundle em producao ainda com o botao unico "Validar e Emitir" (UI FAT-URG-02
+  nao publicada) OU clique sequencial rapido. O banco nao distingue; o codigo confirma
+  que a emissao direta de rascunho e permitida.
+
+================================================================================
+E — "TITULO VINCULADO" (badge) — CRITICO
+================================================================================
+Regra do badge: FaturaLista.tsx:333 -> `f.conta_receber_id ? "Titulo vinculado" : "—"`.
+  O badge NAO verifica se o AR existe nem se passa nos filtros; olha SÓ conta_receber_id.
+
+1) faturas.conta_receber_id preenchido? SIM = da2c943d-8323-4559-9918-2bf02cf4edef.
+2) O registro existe fisicamente em financeiro_receber? SIM.
+3) Registro encontrado:
+     id            = da2c943d-8323-4559-9918-2bf02cf4edef
+     status        = aberto
+     valor         = 300.00 | valor_liquido = 300.00
+     cliente_id    = b4917245-e99f-4a72-8ce7-4f1deaccff7c (Mineirao Abc)
+     data_vencimento = 2026-10-25
+     numero        = FAT-2026-000020 | fatura_id = 0e37e0d0... | os_vinculadas = null
+     is_teste      = false
+     (sem soft-delete; nao cancelado)
+4) FK quebrada? NAO — o AR existe e aponta fatura_id correto.
+5) O badge mostra "Titulo vinculado" porque conta_receber_id NAO e NULL — SIM,
+   independentemente de a tela de Contas a Receber exibir o AR sob o filtro de mes.
+
+================================================================================
+F — CONTAS A RECEBER (SINTOMA 3: AR nao aparece)
+================================================================================
+O AR existe (ver E). A tela Contas a Receber NAO o mostra porque filtra por MES:
+  - ContasReceberEnterprise.tsx:138  mesOffset default = 0 (mes corrente).
+  - ContasReceberEnterprise.tsx:150-159 periodoMes = 1o ao ultimo dia do mes de mesRef.
+  - ContasReceberEnterprise.tsx:212-217 fetchRecebiveis usa
+      periodoInicio = filtros.dataInicio || periodoMes.inicio
+      periodoFim    = filtros.dataFim    || periodoMes.fim
+  - receberService.ts:229-230 (e 185-186) filtra:
+      .gte("data_vencimento", data_inicio).lte("data_vencimento", data_fim)
+    e .eq("is_teste", false) (receberService.ts:224).
+  - Data corrente = 2026-09-25 => mes corrente = Setembro/2026 (print mostra Set/2026).
+  - AR.data_vencimento = 2026-10-25 => FORA de Setembro/2026 => excluido da listagem.
+
+RESPOSTA OBJETIVA: B) AR existe mas o FILTRO (periodo/vencimento) exclui.
+  NAO e C) RLS (o titular do tenant le; o AR e do tenant 000...001 e is_teste=false),
+  NAO e E) is_teste (false), NAO e F) paginacao, NAO e A) inexistencia.
+  A hipotese levantada (mes Setembro x vencimento Outubro) esta COMPROVADA.
+
+================================================================================
+G — NAO DUPLICAR
+================================================================================
+SELECT count(*) FROM financeiro_receber WHERE fatura_id=0e37e0d0... => 1
+Pesquisa por conta_receber_id (da2c943d...) => mesmo e unico registro.
+Duplicatas de AR por fatura (group by having count>1) => NENHUMA.
+=> Nao criar outro AR. Nao duplicar em correcao futura.
+
+================================================================================
+H — OBRIGACOES DO PRESTADOR (mapear; NAO alterar)
+================================================================================
+- financeiro_pagar ......... id=0c9eff58-f659-46b8-b5c8-94f69f0af4b9 | os=16d52718 |
+                             status=aberto | valor=250.00 | venc=2026-10-25
+- pagamentos_prestadores ... id=4f8bb920-a9f0-4aac-ae54-6693e571c15a | os=16d52718 |
+                             status=pendente | status_pagamento=pendente |
+                             valor_liquido=250.00 | origem_lancamento=escala_direta
+- composicao_financeira_os . os=16d52718 | cliente=300.00 | prestador=250.00 | margem=50.00
+Origem: triggers M66/M80 ao inserir/finalizar a alocacao/OS (nao alterados).
+Esses registros deverao ser considerados no saneamento futuro do HML-FAT-01.
+
+================================================================================
+I — TABELA DE EVIDENCIA
+================================================================================
+CAMADA                  | ID (curto)        | STATUS            | VALOR   | VINCULO                         | VISIVEL UI?                | CAUSA
+------------------------+-------------------+-------------------+---------+---------------------------------+----------------------------+--------------------------------
+alocacao                | 5bab62b3          | concluida/final.  | 300/250 | OS 16d52718, item c57581ba      | SIM (Conferencia, ineleg.) | sem filtro default faturamento (sintoma 1)
+OS                      | 16d52718          | finalizada        | 300     | alocacao 5bab62b3               | SIM (coluna OS)            | ok
+fatura_item             | c57581ba          | ativo             | 300     | fatura 0e37e0d0, aloc 5bab62b3  | SIM (Conferencia badge FAT) | ok
+fatura                  | 0e37e0d0          | emitida           | 300     | AR da2c943d                     | SIM (Faturas)              | emitida via f_emitir_fatura (sintoma 2)
+financeiro_receber      | da2c943d          | aberto            | 300     | fatura_id 0e37e0d0              | NAO (mes Set/26)           | filtro de mes x venc Out/26 (sintoma 3)
+financeiro_pagar        | 0c9eff58          | aberto            | 250     | os 16d52718                     | (pag. prestadores)         | ok (M66/M80)
+pagamentos_prestadores  | 4f8bb920          | pendente          | 250     | os 16d52718                     | (pag. prestadores)         | ok (M66/M80)
+composicao_financeira_os| os 16d52718       | -                 | 300/250 | os 16d52718                     | (margem)                   | ok (M66/M80)
+
+================================================================================
+CAUSAS-RAIZ (resumo dos 3 sintomas)
+================================================================================
+SINTOMA 1 — "continua na Conferencia":
+  CAUSA = ausencia de filtro default de faturamento. A query lista historico
+  (status concluida + finalizada) e o item faturado permanece visivel, porem
+  inelegivel. Regra "sair da fila operacional" nao implementada. (item B)
+
+SINTOMA 2 — "foi direto para Emitida":
+  CAUSA = NAO comprovavel pelo banco (sem historico de status). A emissao ocorreu
+  via f_emitir_fatura, que aceita origem 'rascunho' (20260924000000:141), permitindo
+  rascunho -> emitida. A etapa de validacao existe apenas na UI do FAT-URG-02 e nao
+  e exigida no contrato do banco. (item D)
+
+SINTOMA 3 — "Titulo vinculado" sem AR na tela:
+  CAUSA = o AR EXISTE (da2c943d, aberto, 300, venc 2026-10-25); o badge usa apenas
+  conta_receber_id (FaturaLista.tsx:333). A tela Contas a Receber filtra por mes
+  corrente (Setembro/2026) e exclui o AR que vence em Outubro/2026. (item B)
+
+================================================================================
+MENOR CORRECAO SEGURA RECOMENDADA (NAO implementar agora)
+================================================================================
+1) Conferencia (sintoma 1): filtro DEFAULT "Faturamento = nao_faturado" (sem apagar
+   nem ocultar dados — apenas default de visao, com opcao de ver historico). Ponto:
+   ConferenciaFinanceira.tsx / centralFinanceiroService.ts.
+2) Emissao (sintoma 2): exigir status 'aprovada' em f_emitir_fatura para o fluxo
+   oficial (endurecer guard) OU garantir deploy da UI FAT-URG-02 e definir se o
+   caminho legado (emissao direta de rascunho) sera descontinuado. Impacta
+   FaturaManualDialog ("Salvar e Gerar PDF") — decisao de negocio.
+3) Contas a Receber (sintoma 3): nenhuma correcao de dados necessaria (AR correto).
+   Opcional UX: indicar que existem titulos em outros meses / pular para o mes do
+   vencimento. O badge "Titulo vinculado" poderia validar existencia/estado do AR,
+   nao apenas conta_receber_id nao nulo.
+
+================================================================================
+CONFIRMACAO ZERO DML/DDL
+================================================================================
+[x] Apenas SELECT. Nenhum INSERT/UPDATE/DELETE/DDL.
+[x] FAT-2026-000020 nao alterada; AR nao criado; nada cancelado; nada baixado;
+    HML-FAT-01 nao removido.
+[x] Migrations/RPC/triggers/APP/Comercial intactos.
+[x] Script temporario de diagnostico removido apos uso.
+
+================================================================================
+RISCOS
+================================================================================
+R1. Sintoma 2 nao e auditavel historicamente (nao ha tabela de historico de status
+    de fatura) — qualquer conclusao sobre a sequencia depende de call-site.
+R2. Se a correcao 2 (exigir aprovada) for aplicada sem ajustar o legado, o fluxo
+    "Nova Fatura Manual > Salvar e Gerar PDF" pode quebrar (emite de rascunho).
+R3. Existem obrigacoes de prestador associadas (financeiro_pagar 250,
+    pagamentos_prestadores 250, composicao 300/250) que precisam ser tratadas no
+    saneamento do caso HML-FAT-01.
+
+================================================================================
+CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-03C-FAT000020-ROOT-CAUSE-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-03C-FAT000020-ROOT-CAUSE-RESULTADO.txt
+ TAMANHO ..: 16208 bytes
+ DATA/HORA : 25/09/2026 18:29:19
+
+================================================================================
+FIM — TMS-FAT-URG-03C-FAT000020-ROOT-CAUSE
+================================================================================

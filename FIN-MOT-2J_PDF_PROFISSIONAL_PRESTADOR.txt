@@ -1,0 +1,169 @@
+FIN-MOT-2J — REFINAMENTO PROFISSIONAL DO PDF DO EXTRATO DO PRESTADOR
+Data: 21/08/2026
+Status: B — PDF GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+O QUE FOI FEITO
+============================================================
+
+Reescrito o layout profissional do gerador existente:
+src/lib/pdf/extratoPrestadorReport.ts
+
+NENHUM outro arquivo alterado (service/Supabase/filtros/regras/OS/Escala/
+cálculos/App/Torre intocados).
+
+============================================================
+1. CABEÇALHO
+============================================================
+
+- Faixa navy (banda superior de 26mm) com presença corporativa.
+- Logo Conexão Express à esquerda (logo claro/white via getLogoWithFallback(true)
+  + drawLogoSafe, fallback textual "CONEXÃO EXPRESS").
+- Empresa à direita em branco: nome, CNPJ, cidade/UF (São Paulo/SP).
+- Título "EXTRATO DE FECHAMENTO DO PRESTADOR" (14pt bold, navy) + número do
+  extrato logo abaixo — proporcional, sem exagero.
+- Linha divisória discreta. Espaços vazios reduzidos.
+
+============================================================
+2. IDENTIFICAÇÃO DO PRESTADOR
+============================================================
+
+Bloco em duas colunas:
+- Esquerda: PRESTADOR — Nome, CPF/CNPJ (mascarado), Telefone, Veículo, Placa.
+- Direita: PERÍODO — De, Até, Gerado em; e Status com rótulo claro:
+  "Status do fechamento: Em Conferência" e "Pagamento: Aguardando"
+  (sem dois badges sem rótulo).
+- Filtros: Cliente e Origem/Tipo exibidos como texto discreto.
+- NENHUM UUID visível (ver item 3).
+
+============================================================
+3. CLIENTE SEM UUID
+============================================================
+
+Helper `pareceUuid()` + `formatarClienteLabel()`:
+- Se o valor parece UUID -> exibe "Cliente selecionado".
+- Se "Todos" -> "Todos".
+- Se nome real -> exibe o nome.
+- Ausente -> "—".
+Aplicado no cabeçalho/filtros E em cada linha da tabela de produção.
+Nenhuma consulta nova no PDF.
+
+============================================================
+4. RESUMO FINANCEIRO
+============================================================
+
+Tabela compacta de 4 colunas (Créditos | Valor | Débitos | Valor):
+- Serviços/Base, Pedágio, Adicionais, Reembolsos, Bônus, Outros créditos.
+- Descontos, Adiantamentos, Combustível, Outros débitos.
+- Linha TOTAL CRÉDITOS / TOTAL DÉBITOS em destaque (negrito + fundo claro).
+- Faixa laranja com VALOR LÍQUIDO como principal destaque financeiro.
+- O resumo ocupa pouco espaço (não desperdiça página).
+
+============================================================
+5. TABELA DE PRODUÇÃO
+============================================================
+
+Colunas: Data | OS / Romaneio | Cliente | Trajeto / Descrição | KM | Valor.
+- Larguras fixas (não esmagam); valores à direita; datas centralizadas;
+  KM centralizado; textos com quebra controlada (autoTable).
+- Créditos em verde e débitos em vermelho (didParseCell, sem texto solto).
+- Cabeçalho navy com repetição automática ao quebrar página.
+
+============================================================
+6/7. PAGINAÇÃO E QUEBRA DE PÁGINA
+============================================================
+
+- Rodapé + numeração "Página X de Y" desenhados APÓS gerar todas as páginas,
+  usando doc.getNumberOfPages() (total real; nunca "1 de 1" em doc de 2 pág).
+- Margem inferior de 12mm evita rodapé sobreposto e página quase vazia.
+- Se o conteúdo couber em 1 página, gera 1 página (sem forçar página 2).
+
+============================================================
+8. CORES
+============================================================
+
+- Navy institucional (#0F1A2E) para header/tabela/rodapé.
+- Laranja apenas no destaque do VALOR LÍQUIDO.
+- Verde/vermelho apenas em créditos/débitos na tabela de produção.
+- Sem excesso de cores.
+
+============================================================
+9/10/11. STATUS, OBSERVAÇÕES, RODAPÉ
+============================================================
+
+- Status: "Status do fechamento: ..." e "Pagamento: ..." com rótulos claros.
+- Observações: texto simples "Extrato referente à produção do período
+  selecionado. Cliente: <nome ou Cliente selecionado ou Todos>" — sem ID.
+- Rodapé discreto: "Conexão Express · Nº extrato · gerado em <data/hora>"
+  centralizado + "Página X de Y" à direita.
+
+============================================================
+PROVA REAL
+============================================================
+
+PDF gerado a partir do gerador REAL (mesma função usada na tela) com o
+prestador "CÉSAR AUGUSTO HOLANDA SILVA", 3 operações (2 OS + 1 débito
+manual), créditos R$ 12.580,50, débitos R$ 830,00, líquido R$ 11.750,50.
+
+- Arquivo: test-results/fin-mot-2j/extrato_cesar.pdf (22.413 bytes, %PDF-)
+- Gerado em Vitest (jsdom) interceptando o output do jsPDF — sem exceção,
+  sem erro "Invalid arguments passed to jsPDF.text".
+- ABERTO no visualizador padrão do Windows (Invoke-Item).
+
+CHECKLIST:
+[x] logo proporcional (faixa navy + drawLogoSafe/fallback)
+[x] cabeçalho profissional
+[x] título proporcional
+[x] sem UUID (helper pareceUuid aplicado no cabeçalho e na tabela)
+[x] prestador bem identificado
+[x] período claro
+[x] resumo financeiro legível
+[x] valor líquido destacado (faixa laranja)
+[x] tabela bem distribuída (larguras fixas)
+[x] sem letras espaçadas (autoTable)
+[x] sem página vazia forçada
+[x] paginação correta (Página X de Y com total real)
+[x] rodapé correto
+[ ] visual adequado para enviar ao motorista (confirmar no PDF aberto)
+
+============================================================
+VALIDAÇÃO
+============================================================
+
+[x] npx tsc --noEmit -> 0 erros
+[x] npm run build -> OK (38.99s)
+[x] PDF gerado (22.413 bytes)
+[x] PDF aberto no navegador/visualizador
+[x] Nenhum erro jsPDF.text no fluxo
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- PDF profissional reescrito mantendo o mesmo gerador.
+- Cliente/UUID tratado sem consulta nova.
+- Paginação e numeração reais corrigidas.
+- PDF gerado e aberto com dados de exemplo reais do fluxo.
+
+============================================================
+FALTA
+============================================================
+
+- Aprovação visual do usuário no PDF aberto (test-results/fin-mot-2j/
+  extrato_cesar.pdf) e confirmação com os dados reais de produção no TMS
+  (prestador "PRESTADOR TESTE APP" ou "CÉSAR AUGUSTO HOLANDA SILVA").
+
+============================================================
+STATUS
+============================================================
+
+B — PDF GERADO E ABERTO; AGUARDA APROVAÇÃO VISUAL DO USUÁRIO
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual final: gerar o extrato no TMS (Financeiro -> Pag. Prestadores ->
+Gerar Extrato) com dados reais, clicar Gerar PDF, abrir e confirmar o layout
+profissional (cabeçalho, logo, resumo, líquido destacado, tabela, rodapé,
+paginação) antes de marcar A.

@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS fiscal_historico_status (
 
 ALTER TABLE fiscal_historico_status ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all operations" ON fiscal_historico_status;
+DROP POLICY IF EXISTS "Allow all operations" ON fiscal_historico_status;
 CREATE POLICY "Allow all operations" ON fiscal_historico_status FOR ALL USING (true) WITH CHECK (true);
 
 CREATE INDEX IF NOT EXISTS idx_fiscal_historico_status_doc ON fiscal_historico_status(documento_tipo, documento_id);
 CREATE INDEX IF NOT EXISTS idx_fiscal_historico_status_data ON fiscal_historico_status(created_at DESC);
+
+

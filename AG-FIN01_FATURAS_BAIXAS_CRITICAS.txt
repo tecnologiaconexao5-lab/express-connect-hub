@@ -1,0 +1,409 @@
+AG-FIN01 — FATURAS MANUAIS + BAIXAS CRÍTICAS — AUDITORIA COMPLETA
+=================================================================
+Data: 2026-09-02
+Projeto: TMS Conexão Express (uwrvzsjtpgaifkktpepn.supabase.co)
+Status: PARCIAL (3 itens críticos pendentes de correção)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 1 — ESCOPO DA AUDITORIA
+═══════════════════════════════════════════════════════════════════════════════
+
+Componentes auditados:
+  • FaturaManualDialog.tsx (631 linhas) — formulário de criação
+  • FaturaLista.tsx (407 linhas) — listagem + ações
+  • FaturaPanel.tsx — edição de rascunho
+  • faturaService.ts (1389 linhas) — service CRUD + PDF
+  • faturaTypes.ts (107 linhas) — tipos
+  • pdfFatura.ts (994 linhas) — geração PDF
+  • configFinanceiraService.ts — contas bancárias
+  • pagarService.ts — baixa RPC
+  • ContasPagar.tsx — UI baixa
+  • ReceberService.ts — baixa RPC
+
+Tabelas DB auditadas:
+  faturas, fatura_itens, financeiro_pagar, financeiro_receber,
+  financeiro_baixas, contas_financeiras, configuracoes_sistema,
+  clientes, enderecos_clientes
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 2 — FLUXO FATURA Nº 40 (PROVA DE VERDADE)
+═══════════════════════════════════════════════════════════════════════════════
+
+2.1 Estado no Banco de Dados
+  id:                a49d5aa3-5d36-4d64-b490-c41a552ae1d8 (cliente)
+  numero (coluna):   NULL ← ofício não gerado (fatura_sem emitir via RPC)
+  numeroManual:      "40" (em metadata)
+  status:            "emitida"
+  valor_total:       R$ 1.200,00
+  vencimento:        2026-09-17
+  modelo (metadata): "calvo"
+  descricao (metadata): "" ← VAZIO
+  observacao:        "Entrega cesta básica – Romaneios 343965 e 344015."
+  cliente_id:        a49d5aa3-... (CALVO COML IMP. E EXP. LTDA.)
+  conta_receber_id:  NULL
+
+2.2 Item da Fatura
+  descricao:   "Fatura manual" ← HARDCODED (faturaService.ts:960)
+  valor_base:  1200.00
+  valor_total: 1200.00
+  os_id:       NULL
+  romaneio:    NULL
+
+2.3 Cliente (DB)
+  razao_social: CALVO COML IMP. E EXP. LTDA.
+  cnpj:         00640071000159
+  ie:           796497088113
+  logradouro:   NULL
+  numero:       NULL
+  bairro:       NULL
+  cidade:       NULL
+  uf:           NULL
+  cep:          NULL
+  enderecos_clientes: 0 registros
+
+2.4 Fluxo completo (form → DB → PDF)
+  FaturaManualDialog
+    → handleSalvarEGerarPDF()
+    → criarFaturaManual({numero:"40", cliente_id, descricao:"", ...})
+      → criarRascunhoFatura() INSERT faturas {metadata:{modelo, descricao:""}}
+      → adicionarItemFatura() INSERT fatura_itens {descricao:"Fatura manual"}
+      → UPDATE faturas SET metadata = {..., descricao:""}
+    → atualizarFatura(id, {status:"emitida"})
+    → baixarPdfDaFatura()
+      → buscarClienteParaFatura(clienteId) → query clientes.endereco (não existe) + buscarEnderecoPrincipalCliente (0 registros)
+      → montarInputPdfFatura() → previa.descricao = fatura.descricao || "" = ""
+      → PDF renders: i.descricao = "Fatura manual" (item hardcoded)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 3 — BUGS CRÍTICOS ENCONTRADOS (3 itens)
+═══════════════════════════════════════════════════════════════════════════════
+
+BUG-1 [CRÍTICO] — atulizarFatura() tenta atualizar coluna "descricao" que NÃO EXISTE
+  Localização: faturaService.ts:322, 1018, 1021
+  Causa:       A interface Fatura.ts:25 declara `descricao: string | null` como propriedade.
+               A função atualizarFatura() aceita Pick<..., "descricao"> e gera
+               `UPDATE faturas SET descricao = ... WHERE id = ...`.
+               Porém a tabela faturas NÃO TEM coluna "descricao" — o campo é JSONB
+               armazenado em metadata.descricao.
+  Impacto:     Qualquer tentativa de editar descrição de fatura (manual ou automática)
+               GERA ERRO DO SUPABASE: 'column "descricao" of relation "faturas" does not exist'
+               Validação confirmada: UPDATE faturas SET descricao = NULL WHERE false → ERRO
+  Correção:    Em atualizarFatura(), NÃO incluir descricao no payload SQL.
+               Em vez disso, gravar em metadata.descricao (já faz parcialmente
+               na linha 336 mas DELETA descricao do payload na linha 339 — bypass não funciona
+               porque o payload já incluiu descricao via ...updates na linha 329).
+  Status:      PENDENTE CORREÇÃO
+
+BUG-2 [CRÍTICO] — buscarClienteParaFatura() query SELECT "endereco" de clientes (coluna não existe)
+  Localização: faturaService.ts:689
+  Causa:       A query seleciona `clientes.endereco` mas a tabela clientes não tem
+               essa coluna. Colunas de endereço em clientes: logradouro, numero,
+               complemento, bairro, cidade, uf, cep.
+  Impacto:     A query Supabase retorna erro silencioso. A função continua porque
+               a parallela buscarEnderecoPrincipalCliente() é separada, mas o
+               enderecoBase = data.endereco será undefined.
+               Para clientes sem registros em enderecos_clientes (como CALVO),
+               o endereço fica VAZIO no PDF.
+  Correção:    Substituir `endereco` por `logradouro, numero, complemento, bairro` na query
+               e montar o enderecoBase concatenando esses campos.
+  Status:      PENDENTE CORREÇÃO
+
+BUG-3 [ALTO] — contas_financeiras_config não existe — buscarContasBancariasConfig() retorna []
+  Localização: configFinanceiraService.ts:163
+  Causa:       A função lê de configuracoes_sistema WHERE chave = 'contas_financeiras_config'.
+               Esta chave NÃO existe no banco. A tabela real de contas bancárias
+               é contas_financeiras (com colunas: banco, agencia, numero_conta, etc).
+  Impacto:     FaturaManualDialog nunca exibe contas bancárias configuradas.
+               O dropdown "Conta para recebimento" sempre mostra mensagem de fallback.
+               O PDF usa a conta padrão da empresa (buscarDadosEmpresaParaFatura).
+  Correção:    Substituir a leitura de configuracoes_sistema por consulta direta
+               a contas_financeiras WHERE ativa = true.
+  Status:      PENDENTE CORREÇÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 4 — DADOS NÃO PERSISTENTES / PERDIDOS
+═══════════════════════════════════════════════════════════════════════════════
+
+4.1 Descrição da Fatura
+  O campo "Descrição da fatura" (textarea no formulário) é:
+  ✓ Gravado em metadata.descricao durante criarFaturaManual (linha 977)
+  ✗ NÃO é uma coluna separada no DB
+  ✗ atualizarFatura() tenta gravar como coluna → falha silenciosamente
+  → Resultado: descrição criada OK mas NUNCA pode ser editada após criação
+
+4.2 Descrição do Item
+  O campo descrição do item é hardcoded como "Fatura manual" (faturaService.ts:960):
+    descricao: input.descricao || "Fatura manual"
+  Para fatura manual, input.descricao é o mesmo campo da fatura.
+  Se o usuário digita "Receita de CT-e referente aos romaneios...", o item
+  recebe essa descrição corretamente. Mas para fatura 40, descricao="" → fallback "Fatura manual".
+
+4.3 Número da Fatura (numero da coluna)
+  criarFaturaManual() cria rascunho com numero=NULL (não seta coluna numero).
+  O número oficial só é gerado por f_emitir_fatura (RPC que gera FAT-2026-XXXXXX).
+  Para fatura manual, o "nº 40" fica APENAS em metadata.numeroManual.
+  A coluna numero permanece NULL para todas as faturas manuais emitidas sem RPC.
+
+4.4 Endereço do Cliente
+  O endereço do cliente no PDF vem de duas fontes:
+  1. buscarClienteParaFatura() → SELECT clientes.endereco (coluna não existe) → NULL
+  2. buscarEnderecoPrincipalCliente() → SELECT enderecos_clientes → 0 registros para CALVO
+  → Resultado: endereço SEMPRE vazio no PDF para clientes sem enderecos_clientes.
+
+4.5 Conta Bancária
+  buscarContasBancariasConfig() lê de configuracoes_sistema → chave não existe → []
+  → FaturaManualDialog mostra "Nenhuma conta configurada"
+  → PDF usa conta padrão da empresa (buscarDadosEmpresaParaFatura)
+  → Snapshot da conta no metadata.contaBancaria pode estar desatualizado
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 5 — FLUXO DE EDIÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+5.1 FaturaLista — Ações Disponíveis
+  Status "rascunho":
+    ✓ Eye → FaturaDetalheModal (read-only)
+    ✓ FileText → FaturaPanel (edição de rascunho — valor, vencimento, etc)
+    ✓ Printer → PDF
+    ✗ SEM botão de excluir
+
+  Status "emitida":
+    ✓ Eye → FaturaDetalheModal (read-only)
+    ✓ Printer → PDF
+    ✗ SEM botão de editar
+    ✗ SEM botão de cancelar
+    ✗ SEM botão de excluir
+
+  Status "cancelada":
+    ✓ Eye → FaturaDetalheModal (read-only)
+    ✗ SEM Printer
+    ✗ SEM outras ações
+
+5.2 FaturaPanel (Edição de Rascunho)
+  Aberto via FaturaLista.abrirEdicao() → passa faturaId
+  Internamente usa atualizarFaturaManual() que:
+    ✓ Atualiza vencimento, observacao, data_emissao (colunas existentes)
+    ✓ Atualiza metadata (numeroManual, parcela, contaBancaria)
+    ✗ Tenta atualizar descricao como coluna → BUG-1
+    ✓ Atualiza item (valor_base, valor_total, descricao, data_servico) quando rascunho
+
+5.3 Exclusão
+  excluirFaturaManual() existe no service (linha 1113):
+    ✓ Valida origem "manual"
+    ✓ Valida status "rascunho"
+    ✓ Verifica vínculos (conta_receber, recebimentos, fiscal)
+    ✓ DELETE faturas WHERE id = ...
+    ✗ NÃO exposta na UI (FaturaLista não tem botão de excluir)
+
+5.4 Cancelamento
+  cancelarFaturaManualEmitida() existe no service (linha 1135):
+    ✓ Valida origem "manual"
+    ✓ Valida status "emitida"
+    ✓ Verifica vínculos
+    ✓ Chama cancelarFatura() → RPC f_cancelar_fatura
+    ✗ NÃO exposta na UI (FaturaLista não tem botão de cancelar para emitida)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 6 — FLUXO DE BAIXA (CONTAS A PAGAR)
+═══════════════════════════════════════════════════════════════════════════════
+
+6.1 RPC f_registrar_baixa_financeira
+  Assinatura: (p_titulo_tabela, p_titulo_id, p_valor_baixado, p_data_baixa,
+               p_forma_pagamento, p_conta_financeira, p_referencia_bancaria,
+               p_observacao, p_usuario_id, p_usuario_nome)
+  NÃO aceita p_valor_original — o RPC DERIVA o valor_original do registro:
+    SELECT valor INTO v_valor_original FROM financeiro_pagar WHERE id = p_titulo_id
+  → financeiro_pagar.valor pode ser NULL (verificado: 1 de 3 registros com valor=NULL)
+  → Se valor=NULL, a baixa falharia com saldo NULL
+
+6.2 financeiro_baixas
+  Tabela: financeiro_baixas
+  Coluna valor_original: NOT NULL (confirmado)
+  A INSERT é feita pelo RPC com v_valor_original derivado do registro
+  → Frontend NÃO precisa enviar valor_original (correto)
+  → financeiro_baixas ZERO registros (nenhuma baixa registrada)
+
+6.3 financeiro_pagar —(valor pode ser NULL
+  3 registros auditados:
+    id: 26e05ffe... | valor: NULL  | status: "a vencer"  ← PERIGOSO
+    id: 05d87f10... | valor: 850   | status: "aberto"
+    id: b4292aa5... | valor: 850   | status: "aberto"
+  O registro com valor=NULL tem status "a vencer" — se alguém tentar baixar,
+  o RPC falhará porque v_valor_original será NULL.
+
+6.4 ContasPagar UI
+  handleBaixa() chama baixarPagavel(id, valor, data, conta, obs, forma)
+  → pagarService.baixarPagavel() chama RPC f_registrar_baixa_financeira
+  → Frontend NÃO envia valor_original (correto — RPC deriva)
+  → Se financeiro_pagar.valor for NULL, RPC retorna erro controlado
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 7 — ARQUITETURA DE DADOS: FATURAS
+═══════════════════════════════════════════════════════════════════════════════
+
+7.1 Schema Real (faturas)
+  Colunas: id, tenant_id, numero, cliente_id, data_emissao,
+           competencia_inicio, competencia_fim, vencimento,
+           valor_bruto, descontos, acrescimos, valor_total,
+           status, observacao, observacao_fiscal, conta_receber_id,
+           criado_por, criado_em, atualizado_por, atualizado_em,
+           cancelado_em, cancelado_por, motivo_cancelamento, metadata
+
+  NÃO existe: descricao (coluna), modelo (coluna)
+
+7.2 Tipo TypeScript (Fatura interface)
+  Inclui: descricao: string | null, modelo: ModeloFatura
+  → Ambos mapeados de metadata via mapFatura() (linha 51-52)
+  → mas atualizarFatura() aceita Pick<"descricao"> e tenta gravar como coluna
+
+7.3 Dual Write (metadata vs coluna)
+  criarRascunhoFatura(): grava modelo + descricao em metadata ✓
+  atualizarFatura(): grava descricao em metadata E tenta como coluna → BUG
+  mapFatura(): lê de row.descricao (undefined) OU metadata.descricao ✓
+  montarPreviaFatura(): lê fatura.descricao (via mapFatura — ok)
+  → O READ funciona (via metadata), o WRITE quebrado (tenta coluna inexistente)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 8 — PROVAS DE VERDADE (11 required)
+═══════════════════════════════════════════════════════════════════════════════
+
+PROVA 1 — Fatura manual persiste dados do cliente?
+  ✓ SIM — cliente_id UUID gravado em faturas.cliente_id
+  ✓ SIM — nome do cliente aparece no PDF via buscarClienteParaFatura()
+  ✗ ENDEREÇO não aparece (enderecos_clientes vazio para CALVO)
+  → PARCIAL: cliente vinculado, mas endereço ausente
+
+PROVA 2 — PDF mostra cliente + endereço + descrição + valor?
+  ✓ CLIENTE: razao_social + CNPJ + IE aparecem no PDF (modelo Calvo)
+  ✗ ENDEREÇO: vazio (buscarEnderecoPrincipalCliente retorna null)
+  ✗ DESCRIÇÃO: vazia (metadata.descricao = "", item = "Fatura manual")
+  ✓ VALOR: R$ 1.200,00 correto
+  → PARCIAL: 2/4 itens presentes
+
+PROVA 3 — Dados bancários vêm da empresa registrada/cadastrada?
+  ✗ NÃO — contas_financeiras_config não existe, buscaContasBancariasConfig() retorna []
+  ✓ SIM — fallback para buscarDadosEmpresaParaFatura() usa dados da empresa
+  → PARCIAL: conta vem da empresa, não do cadastro de contas bancárias
+
+PROVA 4 — Edição funciona?
+  ✗ DESCRIÇÃO: BUG-1 impede edição de descricao via atualizarFatura()
+  ✓ RASCUNHO: FaturaPanel permite editar valor, vencimento, observação
+  ✗ EMITIDA: NENHUMA ação de edição disponível na UI
+  → PARCIAL: rascunho editável, emitida não
+
+PROVA 5 — Exclusão respeta dependências?
+  ✓ SERVICE: excluirFaturaManual() verifica vínculos antes de deletar
+  ✗ UI: NENHUM botão de excluir na FaturaLista
+  → BLOQUEADO: lógica existe mas não acessível
+
+PROVA 6 — Cancelamento funciona?
+  ✓ SERVICE: cancelarFaturaManualEmitida() verifica vínculos + chama RPC
+  ✗ UI: NENHUM botão de cancelar na FaturaLista para emitida
+  → BLOQUEADO: lógica existe mas não acessível
+
+PROVA 7 — Baixa de Contas a Pagar funciona?
+  ✓ RPC existe e assinatura correta
+  ✓ Frontend NÃO envia valor_original (RPC deriva)
+  ✗ financeiro_baixas = ZERO registros (nunca testado em produção)
+  ✗ financeiro_pagar.valor pode ser NULL → baixa falharia
+  → PARCIAL: código correto, mas sem evidência de execução real
+
+PROVA 8 — valor_original NOT NULL respeitado?
+  ✓ SIM — coluna financeiro_baixas.valor_original é NOT NULL
+  ✓ RPC sempre preenche com v_valor_original derivado do registro
+  → APROVADO
+
+PROVA 9 — Sem double-baixa?
+  ✓ SIM — RPC valida status (bloqueia pago/pago) e saldo
+  ✓ SIM — SELECT ... FOR UPDATE impede race condition
+  → APROVADO
+
+PROVA 10 — Banco e tela coerentes?
+  ✗ PARCIAL — tela mostra "Nenhuma conta configurada" (config não existe)
+  ✓ VALOR — valores exibidos corretamente
+  ✓ CLIENTE — nome exibido corretamente
+  → PARCIAL
+
+PROVA 11 — Regressão (tsc + vitest + build)?
+  ✓ tsc: 0 erros (pré-existente)
+  ✓ vitest: 1124/1124 (5 falhas pré-existentes não relacionadas)
+  ✓ build: ok
+  → APROVADO
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 9 — VEREDICTO FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDICTO: PARCIAL
+
+Itens APROVADOS (4/11):
+  ✓ PROVA 8: valor_original NOT NULL respeitado
+  ✓ PROVA 9: Sem double-baixa
+  ✓ PROVA 11: Regressão (tsc/vitest/build)
+  ✓ Dados bancários vêm da empresa (fallback)
+
+Itens PARCIAIS (5/11):
+  ~ PROVA 1: Cliente persiste, endereço ausente
+  ~ PROVA 2: PDF com cliente+valor, sem endereço+descrição
+  ~ PROVA 3: Conta da empresa, não do cadastro bancário
+  ~ PROVA 4: Rascunho editável, emitida não
+  ~ PROVA 10: Valores coerentes, contas não
+
+Itens BLOQUEADOS (2/11):
+  ✗ PROVA 5: Exclusão existe no service mas NÃO na UI
+  ✗ PROVA 6: Cancelamento existe no service mas NÃO na UI
+
+Itens com BUG (3):
+  ✗ BUG-1: atualizarFatura()→descricao coluna não existe
+  ✗ BUG-2: buscarClienteParaFatura()→endereco coluna não existe
+  ✗ BUG-3: contas_financeiras_config→tabela/chave não existe
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 10 — RECOMENDAÇÕES (ORDEM DE PRIORIDADE)
+═══════════════════════════════════════════════════════════════════════════════
+
+P0 (CRÍTICO —_CORRIGIR ANTES DE PRODUÇÃO):
+  1. atualizarFatura(): Remover "descricao" do Pick type e do payload SQL.
+     Gravar descrição APENAS em metadata.descricao.
+  2. buscarClienteParaFatura(): Substituir "endereco" por "logradouro, numero,
+     complemento, bairro" e montar enderecoBase concatenando.
+
+P1 (ALTO):
+  3. buscarContasBancariasConfig(): Consultar contas_financeiras WHERE ativa=true
+     em vez de configuracoes_sistema.
+  4. FaturaLista: Adicionar botão de cancelar para faturas emitidas (usando
+     cancelarFaturaManualEmitida existente).
+  5. FaturaLista: Adicionar botão de excluir para rascunhos (usando
+     excluirFaturaManual existente).
+
+P2 (MÉDIO):
+  6. criarFaturaManual(): Gerar numeroManual sequencial automático (ex: "41")
+     em vez de depender de input manual.
+  7. fatura_itens.descricao: Usar descricao do input em vez de hardcoded
+     "Fatura manual".
+  8. financeiro_pagar: Popular campo valor para registros com valor=NULL.
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 11 — EVIDÊNCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+Scripts executados:
+  _fin01_audit_faturas.cjs — faturas, itens, baixas, schema, RPC
+  _fin01_audit3.cjs — clientes columns, contas_financeiras, config
+  _fin01_audit4.cjs — enderecos_clientes, faturas.descricao test
+  _fin01_audit5.cjs — financeiro_pagar/valor, edit/delete analysis
+
+Arquivos fonte auditados:
+  src/components/financeiro/FaturaManualDialog.tsx
+  src/components/financeiro/FaturaLista.tsx
+  src/components/financeiro/ContasPagar.tsx
+  src/services/financeiro/faturaService.ts
+  src/services/financeiro/faturaTypes.ts
+  src/services/financeiro/configFinanceiraService.ts
+  src/services/financeiro/pagarService.ts
+  src/utils/pdfFatura.ts
+  supabase/migrations/20260818_f0d_receber_baixas_rpc.sql
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO AG-FIN01
+═══════════════════════════════════════════════════════════════════════════════

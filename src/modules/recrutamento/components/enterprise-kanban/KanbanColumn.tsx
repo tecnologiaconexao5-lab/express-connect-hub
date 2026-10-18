@@ -78,6 +78,7 @@ export function KanbanColumn({
   draggingId,
   pageSize,
   page,
+  onLoadMore,
   onCardClick,
 }: KanbanColumnProps) {
   const col = PIPELINE_COLUMNS.find(c => c.id === stage)!

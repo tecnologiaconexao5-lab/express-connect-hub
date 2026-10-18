@@ -1,0 +1,211 @@
+============================================================
+FIN-SANE-02 — BLOQUEIO: INCOMPATIBILIDADE ESTRUTURAL DE VALORES
+============================================================
+Data: 2026-09-13
+Status: BLOQUEADO — RPC não pode ser reutilizado com segurança
+Ambiente: TMS LOCAL + Supabase Produção
+
+============================================================
+1. CAUSA RAIZ DO BLOQUEIO
+============================================================
+
+O RPC f_confirmar_pagamento_prestador exige EXATIDÃO entre:
+  financeiro_pagar.valor  ==  pagamentos_prestadores.valor_liquido
+
+Mas o trigger M66 (f_trg_propagar_financeiro_alocacao) cria
+valores DIFERENTES nas duas tabelas:
+
+  financeiro_pagar.valor = v_valor_prestador
+    (= alocacoes_escala.valor_repasse)
+
+  pagamentos_prestadores.valor_liquido = v_valor_prestador
+    + v_pedagio_valor
+    + v_adicional_valor
+    + v_ajudante_valor
+    - v_desconto_valor
+
+Fonte: supabase/migrations/20260819_a31j111_desconto_prestador.sql
+  Linha 31: v_valor_prestador := COALESCE(NEW.valor_repasse, 0);
+  Linha 59: v_outros_custos := v_adicional_valor + v_ajudante_valor - v_desconto_valor;
+  Linha 60: v_valor_liquido := v_valor_prestador + v_pedagio_valor + v_outros_custos;
+  Linha 79: INSERT INTO financeiro_pagar (...valor...) VALUES (...v_valor_prestador...)
+  Linha 87: INSERT INTO pagamentos_prestadores (...valor_liquido...) VALUES (...v_valor_liquido...)
+
+============================================================
+2. POR QUE O RPC FALHA
+============================================================
+
+O RPC (supabase/migrations/20260906_fin_362_3e_consistencia_pagamento_prestador.sql)
+faz:
+
+  Linha 48: v_valor := ROUND(COALESCE(v_pagamento.valor_liquido, 0), 2);
+  Linha 166: v_saldo := v_titulo.valor - v_total_baixado;
+  Linha 168: IF v_saldo <> v_valor THEN
+               RETURN false, 'Saldo do titulo nao reconcilia
+               integralmente com o pagamento...'
+             END IF;
+
+Ou seja:
+  v_saldo = financeiro_pagar.valor = v_valor_prestador
+  v_valor = pagamentos_prestadores.valor_liquido = v_valor_prestador + pedagio + adicional + ajudante - desconto
+
+Quando pedagio + adicional + ajudante - desconto ≠ 0:
+  v_saldo ≠ v_valor → RPC REJEITA o pagamento
+
+============================================================
+3. EXEMPLO CONCRETO
+============================================================
+
+Suponha uma OS com:
+  valor_repasse = R$ 500,00
+  valor_pedagio = R$ 30,00
+  valor_adicional = R$ 50,00
+  valor_desconto = R$ 0,00
+
+Trigger M66 cria:
+  financeiro_pagar.valor = R$ 500,00
+  pagamentos_prestadores.valor_liquido = R$ 580,00 (500+30+50)
+
+RPC executado para pagamento individual:
+  v_saldo = 500,00 (financeiro_pagar.valor)
+  v_valor = 580,00 (pagamentos_prestadores.valor_liquido)
+  500 ≠ 580 → FALHA: "Saldo do titulo nao reconcilia"
+
+Isso significa que o bug C1 já afeta TAMBÉM o pagamento
+individual quando há pedágio/adicional — não apenas fechamento.
+
+============================================================
+4. IMPACTO NO FLUXO DE FECHAMENTO
+============================================================
+
+pagarFechamento() (fechamentoService.ts:373-425):
+  1. Atualiza fechamento: status_pagamento='pago' ✅
+  2. Atualiza itens: status_pagamento='pago' ✅
+  3. NÃO chama RPC → financeiro_pagar NÃO é atualizado ❌
+  4. NÃO cria financeiro_baixas ❌
+
+Se tentássemos chamar confirmarPagamento() para cada item:
+  - Items COM pedagio/adicional/desconto → RPC REJEITA (valor divergente)
+  - Items SEM pedagio/adicional/desconto → RPC ACEITA (valores coincidem)
+
+Não é possível garantir que TODOS os itens de um fechamento
+tenham pedagio=0, adicional=0, desconto=0.
+
+============================================================
+5. POR QUE NÃO É SEGURO IMPLEMENTAR
+============================================================
+
+5.1. Reutilizar RPC para itens do fechamento:
+  RISCO: Itens com pedagio/adicional/desconto falham no RPC
+  CONSEQUÊNCIA: Fechamento marcado como "pago" na UI mas
+  financeiro_pagar permanece "aberto" — MESMO BUG ATUAL
+  mas com erro silencioso parcial
+
+5.2. Criar baixa direta sem RPC:
+  RISCO: "Improvisar" — bypass da validação atômica do RPC
+  CONSEQUÊNCIA: Transação não atômica (baixa + status podem
+  ficar inconsistentes se parte falhar)
+  VIOLAÇÃO: Instrução "NÃO improvisar"
+
+5.3. Atualizar financeiro_pagar.valor antes do RPC:
+  RISCO: Alterar valor de título contábil
+  CONSEQUÊNCIA: Inconsistência entre trigger M66 e baixa
+  VIOLAÇÃO: Instrução "NÃO alterar dados reais"
+
+============================================================
+6. RAIZ PROFUNDA
+============================================================
+
+O trigger M66 separa o valor financeiro (repasse) do valor
+operacional (líquido com pedágio/adicional/desconto):
+
+  financeiro_pagar = valor base (repasse)
+  pagamentos_prestadores = valor líquido (repasse + complementos)
+
+Mas o RPC f_confirmar_pagamento_prestador assume que são IGUAIS.
+Isso é uma falha de design do RPC — ele não foi projetado para
+o caso em que pagamentos_prestadores tem componentes adicionais.
+
+Para resolver CORRETAMENTE, seria necessário:
+  a) Criar NOVO RPC que aceite匹配 por OS_id + prestador
+     (sem depender de igualdade de valor), OU
+  b) Modificar o RPC existente para aceitar tolerância de
+     valor (pagamento parcial), OU
+  c) Criar financeiro_pagar com valor = valor_liquido
+     (mudar o trigger M66), OU
+  d) Criar baixa direta com lógica atômica equivalente
+
+Todas as opções requerem migration SQL ou novo RPC —
+escopo além do que foi solicitado ( correção mínima em TS).
+
+============================================================
+7. DADOS DE TESTE EXISTENTES
+============================================================
+
+Fechamento dc26a5f1-720f-4631-bc4c-3106a305d96c:
+  prestador: BRUNO DA SILVA SANTOS
+  valor_liquido: R$ 1.140,00
+  6 itens vinculados
+  is_teste: true
+
+Para validar o bug C1 com este fechamento:
+  1. Verificar se os 6 itens têm pedagio/adicional/desconto ≠ 0
+  2. Se SIM: confirma incompatibilidade estrutural
+  3. Se NÃO: o RPC funcionaria para ESTE caso específico,
+     mas não é generalizável
+
+============================================================
+8. RECOMENDAÇÃO PARA RESOLUÇÃO
+============================================================
+
+OPÇÃO A (RECOMENDADA) — Novo RPC para fechamento:
+  Criar f_confirmar_fechamento_prestador(p_fechamento_id, p_data)
+  que:
+  - Para cada item do fechamento:
+    - Busca financeiro_pagar por os_id + prestador (SEM exigir
+      igualdade de valor)
+    - Cria financeiro_baixas com valor_baixado = item.valor_liquido
+    - Atualiza financeiro_pagar para status=pago
+  - Em caso de saldo parcial: cria baixa parcial
+  - Tudo em transação atômica
+
+OPÇÃO B — Ajustar trigger M66:
+  Fazer financeiro_pagar.valor = valor_liquido (repasse+pedagio+adicional-desconto)
+  para que o RPC existente funcione. Mas isso altera valor de
+  título contábil em produção.
+
+OPÇÃO C — Tolerância no RPC:
+  Modificar linha 168 para aceitar pagamento parcial:
+  IF v_saldo < v_valor THEN ... (pagamento parcial)
+  Mas isso muda a semantics do RPC existente.
+
+============================================================
+9. CONCLUSÃO
+============================================================
+
+BLOQUEADO por incompatibilidade estrutural entre:
+  financeiro_pagar.valor (= repasse)
+  pagamentos_prestadores.valor_liquido (= repasse + complementos)
+
+RPC f_confirmar_pagamento_prestador exige igualdade exata.
+Quando pedagio + adicional + ajudante - desconto ≠ 0, o RPC
+rejeita o pagamento.
+
+Não é seguro improvisar correção em TypeScript sem resolver
+a raiz (divergência de valores entre as duas tabelas).
+
+PRÓXIMO PASSO: Criar migration com novo RPC para fechamento
+ou ajustar o trigger M66 para unificar valores.
+
+============================================================
+ARQUIVOS ANALISADOS
+============================================================
+1. src/services/financeiro/fechamentoService.ts (pagarFechamento)
+2. src/services/financeiro/pagamentoPrestadorService.ts (confirmarPagamento)
+3. supabase/migrations/20260906_fin_362_3e_consistencia_pagamento_prestador.sql (RPC)
+4. supabase/migrations/20260819_a31j111_desconto_prestador.sql (Trigger M66)
+5. FIN-SANE-01.txt (seção 11 — Fechamento → Contas a Pagar)
+
+============================================================
+FIM DO BLOQUEIO
+============================================================

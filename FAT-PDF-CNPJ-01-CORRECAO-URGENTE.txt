@@ -1,0 +1,152 @@
+FAT-PDF-CNPJ-01-CORRECAO-URGENTE
+==================================================
+Ambiente: TMS Conexão Express
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+Prioridade: CRÍTICA
+
+==================================================
+RELATÓRIO OBRIGATÓRIO
+==================================================
+
+OLD_CNPJ=42.796.040/0001-31
+NEW_CNPJ=31.227.975/0001-80
+
+PDF_FATURA_COMPONENT=src/utils/pdfFatura.ts (gerarPDFFatura)
+  Consumido por: FaturaPanel.tsx, FaturaLista.tsx, FaturaManualDialog.tsx,
+  RelatorioFaturamentoCliente.tsx, reciboService.ts — todos via
+  montarInputPdfFatura() (faturaService.ts).
+
+CNPJ_SOURCE=buscarDadosEmpresaParaFatura() (faturaService.ts) — cadeia:
+  FONTE 1: config_financeira_empresa (Config. Financeiras) → cnpj VAZIO ("")
+  FONTE 2: contas_financeiras (banco)
+  FONTE 3: configuracoes_fiscais (emitente fiscal ativo/padrão) → CNPJ ANTIGO
+  FONTE 4: empresaConfig (hardcoded) → CNPJ CORRETO
+  Como FONTE 1 está vazia, o CNPJ efetivo vem da FONTE 3 (fiscal) = ANTIGO.
+
+OLD_CNPJ_FOUND_IN_CODE=YES (era: 6 arquivos runtime + scripts)
+OLD_CNPJ_FOUND_IN_CONFIG=NO (empresaConfig já usa o correto; canonical DB vazio)
+OLD_CNPJ_FOUND_IN_DB=YES (configuracoes_fiscais, emitente ativo/padrão)
+OLD_CNPJ_IS_HARDCODED=YES (era — hardcodes legados substituídos nesta missão)
+
+DB_UPDATE_REQUIRED=YES
+  Motivo: o PDF de Fatura usa o emitente do BANCO. Corrigir o código NÃO basta
+  para a Fatura em produção enquanto a configuração do banco estiver vazia/antiga.
+
+  Correção recomendada (NÃO executada):
+    TABLE=configuracoes_sistema
+    ROW_ID=4c43dbfc-51ca-4574-951d-394cca1558a2
+    FIELD=valor.cnpj   (chave = config_financeira_empresa)
+    CURRENT_VALUE="" (vazio)
+    EXPECTED_VALUE=31.227.975/0001-80
+    → Preenche a FONTE 1 (canônica). A FONTE 3 deixa de sobrescrever. Baixo risco.
+
+  Achado secundário (requer confirmação humana):
+    TABLE=configuracoes_fiscais
+    ROW_ID=4de4216d-3c19-4778-bc80-bd6a576db814
+    (razao_social="CONEXAO SERVICOES EXPRESS LTDA", ativo=true, padrao=true)
+    FIELD=cnpj  CURRENT_VALUE=42.796.040/0001-31  EXPECTED_VALUE=31.227.975/0001-80
+    → ATENÇÃO: é o emitente FISCAL (CT-e/NFS-e). NÃO alterar sem confirmar com o
+      fiscal — pode afetar documentos fiscais. Preferir a correção da FONTE 1.
+
+PDF_NEW_CNPJ=31.227.975/0001-80  (no gerador — provado por teste)
+  O gerador renderiza o CNPJ recebido em `empresa.cnpj` (sem hardcode). Logo, ao
+  corrigir a fonte (DB FONTE 1 ou o emitente), a Fatura passa a exibir o correto.
+OLD_CNPJ_ACTIVE_RUNTIME_COUNT=0  (código de runtime)
+CLIENT_CNPJ_PRESERVED=YES
+BANK_SOURCE_PRESERVED=YES
+PDF_LAYOUT_PRESERVED=YES
+PDF_GENERATION_TEST=PASS (12/12 — PDF real gerado)
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 40.60s
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+CORREÇÕES APLICADAS (CÓDIGO — hardcodes legados)
+==================================================
+
+Substituído "42.796.040/0001-31" → "31.227.975/0001-80" em:
+  1. src/components/comercial/orcamentoPdf.ts (CNPJ_EMPRESA)
+  2. src/lib/pdf/clientReport.ts (CNPJ_EMPRESA)
+  3. src/lib/pdf/consolidatedReports.ts (CNPJ_EMPRESA)
+  4. src/lib/pdf/prestadorReport.ts (CNPJ_EMPRESA)
+  5. src/lib/professionalPdfTemplate.ts (cnpj)
+  6. src/pages/Contratos.tsx ({{empresa_cnpj}})
+
+FILES_MODIFIED=
+  src/components/comercial/orcamentoPdf.ts
+  src/lib/pdf/clientReport.ts
+  src/lib/pdf/consolidatedReports.ts
+  src/lib/pdf/prestadorReport.ts
+  src/lib/professionalPdfTemplate.ts
+  src/pages/Contratos.tsx
+  src/test/fat_pdf_cnpj_01.test.ts (novo)
+
+==================================================
+CLASSIFICAÇÃO DAS OCORRÊNCIAS RESTANTES (CNPJ antigo)
+==================================================
+
+ACTIVE_RUNTIME=0
+  Nenhum arquivo de runtime (src, excl. testes) contém o CNPJ antigo.
+HISTORICAL_DATA=
+  config_financeira_empresa.cnpj = "" (vazio) — sem snapshot de emitente na tabela faturas
+  (a tabela `faturas` não possui coluna de CNPJ de emitente).
+TEST_FIXTURE=
+  src/test/fat_pdf_cnpj_01.test.ts (verifica ausência — esperado)
+  src/test/fin_config_pdf_01a.test.ts (verifica ausência — esperado)
+DEAD_CODE=
+  Nenhum identificado para este CNPJ.
+DEV_SCRIPT (não-runtime; não executados em produção):
+  scripts/configurar-emitente-real-conexao.ts (provável origem do valor antigo no DB fiscal)
+  scripts/testar-focus-cte-2628647.ts
+  scripts/validar-xml-dacte.ts
+  scripts/_quick.ts
+DOCUMENTATION=
+  (nenhuma)
+
+==================================================
+TESTES T1..T12 (12 asserts — 12/12 PASS)
+==================================================
+
+T1  PDF emitente usa 31.227.975/0001-80                 PASS
+T2  CNPJ antigo não aparece no PDF novo                 PASS
+T3  CNPJ do cliente não é alterado                      PASS
+T4  razão social preservada                             PASS
+T5  valores da fatura preservados                       PASS
+T6  vencimento preservado                               PASS
+T7  descrição preservada                                PASS
+T8  dados bancários vêm da fonte (sem hardcode novo)    PASS
+T9  pdfFatura.ts sem CNPJ hardcoded                     PASS
+T10 layout premium preservado                           PASS
+T11 busca final old CNPJ em runtime = 0                 PASS
+T12 empresaConfig.cnpj = 31.227.975/0001-80             PASS
+
+PDF gerado (evidência visual/textual):
+  test-results/fat-pdf-cnpj-01/fatura_emitente_cnpj.pdf (223393 bytes)
+  Texto extraído contém "CNPJ: 31.227.975/0001-80" e NÃO contém o antigo.
+
+Regressão PDF (testes existentes):
+  tms_s04_fatura_cliente_pdf.test.ts    6/6 PASS
+  fin_config_pdf_01a.test.ts            22/22 PASS
+
+Suíte completa (npx vitest run):
+  Test Files: 10 failed | 83 passed | 1 skipped (94)
+  Tests:      57 failed | 1358 passed | 155 skipped (1570)
+  Falhas 100% PRÉ-EXISTENTES (migrations/RLS/recrutamento/gates).
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum UPDATE/DELETE/INSERT em banco (DB_WRITES=0).
+- Sem migration/RLS.
+- CNPJ do cliente não alterado.
+- Dados bancários preservados (fonte/snapshot intactos).
+- PDF não redesenhado. Fluxo de faturamento não alterado.
+- Não tocou Escala/APP/POD/CAD-VEIC.
+- Sem limpeza ampla de dados. Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=0

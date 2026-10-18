@@ -89,7 +89,7 @@ export async function generateContractPDF(
   doc.setFontSize(7);
   doc.text(`CNPJ: ${empresaCnpj}`, pageWidth - margin, 19, { align: 'right' });
   doc.text(empresaEndereco, pageWidth - margin, 23, { align: 'right' });
-  doc.text('vendas@conexaoexpress.com.br', pageWidth - margin, 27, { align: 'right' });
+  doc.text('operacional@conexaoexpress.com.br', pageWidth - margin, 27, { align: 'right' });
 
   // Título do documento e Número
   doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);

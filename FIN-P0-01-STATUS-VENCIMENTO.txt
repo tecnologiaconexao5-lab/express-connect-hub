@@ -1,0 +1,329 @@
+================================================================================
+FIN-P0-01 — STATUS FINANCEIRO REAL POR VENCIMENTO
+================================================================================
+Data: 2026-09-11
+Operador: Opencode
+Projeto: express-connect-hub
+Banco: uwrvzsjtpgaifkktpepn.supabase.co (PRODUÇÃO)
+Status: ✅ HOMOLOGADO
+
+================================================================================
+SEÇÃO 1 — CAUSA RAIZ
+================================================================================
+
+O componente ContasPagar.tsx (linha 638) executava:
+  status: mapStatusPagar(r.status)
+
+A função mapStatusPagar (linhas 113-123) apenas normalizava o texto:
+  "a vencer" → "a_vencer"
+  "pendente" → "a_vencer"
+  ...etc
+
+NÃO existia comparação runtime entre data_vencimento e a data atual.
+
+O componente StatusBadge (linhas 137-145) exibia o status direto do
+banco, sem cálculo derivado.
+
+NÃO existia trigger, cron job, pg_cron ou qualquer mecanismo que
+atualizasse o campo status com base na data_vencimento.
+
+Resultado: FRETEBRAS (R$ 198,09, vencido em 05/09/2026) aparecia
+como "A Vencer" (azul) em 11/09/2026 — 6 dias atrasado.
+
+================================================================================
+SEÇÃO 2 — FUNÇÃO CANÔNICA CRIADA
+================================================================================
+
+Arquivo: src/helpers/statusVencimento.ts
+
+Funções exportadas:
+  calcularStatusEfetivo(params) → StatusEfetivo
+  hojeSP() → string (YYYY-MM-DD em America/Sao_Paulo)
+  parseDataLocal(dateStr) → string | null
+  compararDatas(a, b) → -1 | 0 | 1
+  statusEfetivoLabel(status) → string
+  statusEfetivoClasses(status) → string
+
+Regra canônica:
+  1. Se status é "cancelado"/"cancelada" → CANCELADO
+  2. Se status é "renegociado" → RENEGOCIADO
+  3. Se status é "pago"/"paga"/"recebido" OU tem data_pagamento → PAGO
+  4. Se status é "parcial" → PARCIAL
+  5. Se status é "provisao" → PROVISAO
+  6. Se sem data_vencimento → DESCONHECIDO
+  7. Se data_vencimento < hoje → ATRASADO
+  8. Se data_vencimento = hoje → VENCE HOJE
+  9. Se data_vencimento > hoje → A VENCER
+
+Timezone: Usa hojeSP() que formata viatoLocaleDateString("sv-SE",
+{timeZone: "America/Sao_Paulo"}) — compara por dia civil.
+
+================================================================================
+SEÇÃO 3 — ARQUIVOS ALTERADOS
+================================================================================
+
+Arquivo                                          Alteração
+────────────────────────────────────────────── ─────────────────────────
+src/helpers/statusVencimento.ts                  NOVO (helper canônico)
+src/components/financeiro/ContasPagar.tsx        StatusBadge + KPIs + filtros
+src/components/financeiro/ContasReceberEnterprise.tsx  Badge + KPIs + filtros
+src/components/financeiro/DashboardFinanceiroEnterprise.tsx  Inadimplência
+src/test/fin_p0_01_status_vencimento.test.ts     NOVO (39 testes)
+
+================================================================================
+SEÇÃO 4 — REGRA ANTES/DEPOIS
+================================================================================
+
+ANTES (ContasPagar.tsx):
+  StatusBadge: usava STATUS_CONFIG[status] direto do banco
+  KPI Atrasado: filtro(l.status === "vencida") → SEMPRE R$ 0,00
+  KPI TotalAPagar: filtro(l.status === "a_vencer" || l.status === "parcial")
+  Filtro status: comparação com l.status
+
+DEPOIS (ContasPagar.tsx):
+  StatusBadge: usa calcularStatusEfetivo() → calcula status derivado
+  KPI Atrasado: filtro(l.statusEfetivo === "atrasado") → soma real
+  KPI TotalAPagar: filtro(l.statusEfetivo === "a_vencer" || "vence_hoje" || "parcial")
+  Filtro status: comparação com l.statusEfetivo
+
+ANTES (ContasReceberEnterprise.tsx):
+  Badge: cores fixas por r.status ("pago"=verde, "vencido"=vermelho, senão=azul)
+  KPI Vencidos: filtro(r.status === "vencido")
+  Filtro: r.status !== filtros.status
+
+DEPOIS (ContasReceberEnterprise.tsx):
+  Badge: statusEfetivoClasses(r.statusEfetivo) + statusEfetivoLabel(r.statusEfetivo)
+  KPI Vencidos: filtro(r.statusEfetivo === "atrasado")
+  Filtro: r.statusEfetivo !== filtros.status
+
+ANTES (DashboardFinanceiroEnterprise.tsx):
+  Inadimplência: r.status === "vencido" || (r.status === "aberto" && data_vencimento < hojeStr)
+  AReceber7d: r.status === "aberto" || r.status === "a_vencer"
+
+DEPOIS (DashboardFinanceiroEnterprise.tsx):
+  Inadimplência: calcularStatusEfetivo() === "atrasado"
+  AReceber7d: calcularStatusEfetivo() === "a_vencer" || "vence_hoje"
+
+================================================================================
+SEÇÃO 5 — TIMEZONE
+================================================================================
+
+Função hojeSP():
+  new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })
+  → Retorna YYYY-MM-DD no dia civil de São Paulo
+
+Comparação de datas: strings YYYY-MM-DD comparadas com <, >, =
+  → Funciona corretamente para ordenação cronológica
+
+Evitado: new Date("YYYY-MM-DD") que causa offset UTC e pode mudar o dia
+
+Validação: teste unitário "Cenário 8: timezone São Paulo" verifica
+que hojeSP() retorna formato YYYY-MM-DD válido
+
+================================================================================
+SEÇÃO 6 — FRETEBRAS ANTES/DEPOIS
+================================================================================
+
+REGISTRO NO BANCO:
+  ID:           717c5280-28f1-4626-bee2-097b74fa0691
+  Fornecedor:   FRETEBRAS
+  Valor:        R$ 198,09
+  Vencimento:   2026-09-05
+  Status (DB):  "a vencer" (STALE)
+  data_pagamento: NULL
+  is_teste:     false
+
+ANTES:
+  mapStatusPagar("a vencer") → "a_vencer"
+  StatusBadge("a_vencer") → label "A Vencer", bg-blue (azul)
+  KPI Atrasado: l.status === "vencida" → NÃO inclui este registro → R$ 0,00
+
+DEPOIS:
+  calcularStatusEfetivo({ statusPersistido: "a vencer", dataVencimento: "2026-09-05", hoje: "2026-09-11" })
+  → "atrasado"
+  StatusBadge → label "Atrasado", bg-red (vermelho)
+  KPI Atrasado: l.statusEfetivo === "atrasado" → R$ 198,09 INCLUÍDO
+
+================================================================================
+SEÇÃO 7 — AMOSTRAS REAIS (BANCO)
+================================================================================
+
+PAGAR — 51 registros que mudam para ATRASADO:
+  Todos têm data_vencimento < 2026-09-11
+  Status persistido: pendente, aberto, a vencer
+  Status efetivo calculado: atrasado
+  Nenhum tem data_pagamento ou data_baixa
+
+RECEBER — 82 registros que mudam para ATRASADO:
+  Todos têm data_vencimento < 2026-09-11
+  Status persistido: pendente, aberto, a vencer, vencida
+  Status efetivo calculado: atrasado
+  Nenhum tem data_pagamento ou data_recebimento
+
+TOTAL: 133 registros afetados pela correção (51 pagar + 82 receber)
+
+================================================================================
+SEÇÃO 8 — PAGAR: DETALHES
+================================================================================
+
+KPIs antes → depois:
+  Atrasado:  R$ 0,00 → R$ 12.689,49 (51 registros)
+  TotalAPagar: incluía apenas status "a_vencer" → agora inclui a_vencer + vence_hoje
+  Vence em 7 dias: filtrava l.status === "a_vencer" → agora usa statusEfetivo
+  Previsto no Mês: filtrava l.status !== "cancelada" → agora usa statusEfetivo !== "cancelado"
+
+Filtros:
+  Filtro por status: compara com l.statusEfetivo em vez de l.status
+
+Badge:
+  StatusBadge recebe statusEfetivo e exibe label/classe correspondente
+
+Ações:
+  Botão "Registrar Pagamento": aparece para a_vencer, vence_hoje, atrasado, provisao
+  Botão "Cancelar": aparece quando statusEfetivo !== "pago" e !== "cancelado"
+
+================================================================================
+SEÇÃO 9 — RECEBER: DETALHES
+================================================================================
+
+KPIs antes → depois:
+  Vencidos: filtro(r.status === "vencido") → filtro(r.statusEfetivo === "atrasado")
+  Pendentes: filtro(r.status === "pendente") → filtro(r.statusEfetivo === "a_vencer" || "vence_hoje")
+  Total: soma dos anteriores → inclui novos registros corretamente
+  Inadimplência: vencidos / (total + pagos) → cálculo com dados corretos
+  Vence em 7 dias: filtro por statusEfetivo + data
+
+Badge:
+  ANTES: cores fixas por r.status (3 cores)
+  DEPOIS: statusEfetivoClasses(r.statusEfetivo) (9 statuses)
+
+Filtros:
+  ANTES: r.status !== filtros.status
+  DEPOIS: r.statusEfetivo !== filtros.status
+
+================================================================================
+SEÇÃO 10 — DASHBOARD: DETALHES
+================================================================================
+
+Inadimplência (KPI):
+  ANTES: r.status === "vencido" || (r.status === "aberto" && data_vencimento < hojeStr)
+  DEPOIS: calcularStatusEfetivo(r) === "atrasado"
+
+Clientes Inadimplentes:
+  ANTES: mesma lógica incorreta
+  DEPOIS: usa calcularStatusEfetivo()
+
+A Receber 7 dias:
+  ANTES: r.status === "aberto" || r.status === "a_vencer"
+  DEPOIS: calcularStatusEfetivo() === "a_vencer" || "vence_hoje"
+
+================================================================================
+SEÇÃO 11 — TESTES
+================================================================================
+
+Arquivo: src/test/fin_p0_01_status_vencimento.test.ts
+Total: 39 testes — TODOS PASSARAM
+
+Cenários obrigatórios:
+  ✅ Cenário 1: 05/09/2026, hoje 11/09/2026, aberto → ATRASADO (4 variações)
+  ✅ Cenário 2: 11/09/2026, hoje 11/09/2026 → VENCE HOJE (2 variações)
+  ✅ Cenário 3: 12/09/2026, hoje 11/09/2026 → A VENCER (2 variações)
+  ✅ Cenário 4: 05/09/2026, PAGO → PAGO (4 variações)
+  ✅ Cenário 5: 05/09/2026, CANCELADO → CANCELADO (2 variações)
+  ✅ Cenário 6: Conta a receber vencida não recebida → ATRASADO (2 variações)
+  ✅ Cenário 7: Conta a receber vencida recebida → RECEBIDO (2 variações)
+  ✅ Cenário 8: Timezone São Paulo (2 testes)
+  ✅ Extras: provisão, renegociado, parcial (3 testes)
+  ✅ FRETEBRAS regression (1 teste)
+  ✅ parseDataLocal (5 testes)
+  ✅ compararDatas (3 testes)
+  ✅ Labels e classes (5 testes)
+  ✅ Sem data de vencimento (2 testes)
+
+================================================================================
+SEÇÃO 12 — BUILD E VALIDAÇÃO
+================================================================================
+
+npx tsc --noEmit → ✅ 0 erros
+npm run build → ✅ 33.19s (build ok)
+npx vitest run fin_p0_01 → ✅ 39/39 passaram (21ms)
+
+================================================================================
+SEÇÃO 13 — LIMITAÇÕES
+================================================================================
+
+1. Os 133 registros no banco NÃO foram atualizados (READ-ONLY).
+   O status "a vencer" permanece no banco. A correção é APENAS no
+   frontend (cálculo derivado). Se outro sistema ler o banco
+   diretamente, verá o status antigo.
+
+2. CHECK constraints do banco continuam ignorados. Valores como
+   "a vencer", "aberto", "cancelada" continuam entrando.
+   (Será corrigido em missão futura)
+
+3. Dados de teste (~20%) continuam misturados com dados reais.
+   (Será corrigido em missão futura)
+
+4. O componente PagamentoPrestadores.tsx NÃO foi alterado nesta
+   missão (fora do escopo).
+
+5. Filtros avançados em ContasPagar (dataInicio, dataFim, etc.)
+   continuam mortos. (Será corrigido em missão futura)
+
+================================================================================
+SEÇÃO 14 — ROLLBACK
+================================================================================
+
+Para reverter esta missão, restaurar os 4 arquivos modificados:
+
+  git checkout HEAD -- src/components/financeiro/ContasPagar.tsx
+  git checkout HEAD -- src/components/financeiro/ContasReceberEnterprise.tsx
+  git checkout HEAD -- src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+
+E remover os 2 arquivos criados:
+  rm src/helpers/statusVencimento.ts
+  rm src/test/fin_p0_01_status_vencimento.test.ts
+
+================================================================================
+SEÇÃO 15 — HOMOLOGAÇÃO
+================================================================================
+
+Critério                          Status
+──────────────────────────────── ──────
+FRETEBRAS = ATRASADO              ✅
+ContasPagar regra correta         ✅
+ContasReceber regra correta       ✅
+PAGO preservado                   ✅
+CANCELADO preservado              ✅
+VENCE HOJE correto                ✅
+A VENCER correto                  ✅
+Timezone correto                  ✅
+Card ATRASADO usa mesma regra     ✅
+Build/testes aprovados            ✅
+
+RESULTADO: ✅ HOMOLOGADO
+
+================================================================================
+RESULTADO FINAL
+================================================================================
+
+Missão: FIN-P0-01 — STATUS FINANCEIRO REAL POR VENCIMENTO
+Arquivos criados:
+  src/helpers/statusVencimento.ts
+  src/test/fin_p0_01_status_vencimento.test.ts
+Arquivos modificados:
+  src/components/financeiro/ContasPagar.tsx
+  src/components/financeiro/ContasReceberEnterprise.tsx
+  src/components/financeiro/DashboardFinanceiroEnterprise.tsx
+Total arquivos: 6 (2 novos, 4 modificados)
+Testes: 39/39 passaram
+Build: OK (33.19s)
+tsc: 0 erros
+Resultado: HOMOLOGADO
+Data/hora: 2026-09-11 19:13
+
+Caminho do relatório:
+  C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\FIN-P0-01-STATUS-VENCIMENTO.txt
+================================================================================
+FIM — FIN-P0-01
+================================================================================

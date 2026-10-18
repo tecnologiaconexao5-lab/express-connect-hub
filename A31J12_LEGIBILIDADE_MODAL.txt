@@ -1,0 +1,33 @@
+MISSAO A31-J1.2 - LEGIBILIDADE DO MODAL PREMIUM
+================================================
+ARQUIVO: src/components/financeiro/ConferenciaFinanceira.tsx (somente o modal)
+
+AJUSTES DE TIPOGRAFIA (dentro do modal)
+- Titulo principal: text-sm font-bold -> text-base font-semibold (16px)
+- Descricao do cabecalho: text-[11px] -> text-xs (12px)
+- Titulos dos 8 cards: text-[11px] font-bold -> text-[13px] font-semibold
+- Labels dos campos: text-[10px] -> text-xs font-medium (12px)
+- Texto dos inputs/textarea: text-xs -> text-sm (14px)
+- Placeholders: placeholder:text-[13px]
+- Menu lateral: titulo etapa text-[11px]->text-[13px] font-semibold;
+  descricao text-[9px]->text-[11px]; cabecalho "Etapas" text-[11px]
+- Textos auxiliares/explicativos: text-[9px]/text-[10px] -> text-[11px] min.
+- Totais financeiros (Total Cliente/Prestador banners + cards do Resumo):
+  valor text-sm/base font-extrabold -> text-base font-semibold (16px)
+- Tabela Itens Adicionais: text-[10px]->text-xs; badges Cobrado/Custo text-[11px]
+- Botoes do rodape: text-xs -> text-[13px]
+
+MANTIDO
+- Largura (92vw/1450px), h-[94vh], estrutura, sidebar w-60, scroll interno,
+  rodape fixo, cores, campos, logica, calculos, banco, integracoes.
+
+NAO ALTERADO FORA DO MODAL
+- Nenhum outro texto/tamanho fora do Dialog de lancamento foi tocado.
+- Hierarquia preservada: titulo > secoes > campos > auxiliares.
+
+VALIDACAO
+- npx tsc --noEmit -> 0 erros
+- Build NAO executado (microalteracao sem erro de TS - conforme missao).
+- Suites/lint nao executados (modo ultraeconomico).
+
+PENDENCIA: nenhuma.

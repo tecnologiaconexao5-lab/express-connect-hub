@@ -1,0 +1,159 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7B.3-FILA-APTOS-LOTE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PROD (somente leitura; RPC testada em ROLLBACK)
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao funcional da fila de formacao de lote. SEM migration.
+RESULTADO: PASS — OS direta + Programacao + manual legitima entram pela MESMA
+           fila e pelo MESMO fluxo de lote. PROD inalterado (lote_id=0).
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ORIGEM DA CONSULTA (fonte unica)
+--------------------------------------------------------------------------------
+Fonte: pagamentos_prestadores (fonte unica). fetchAptosLote:
+  SELECT ... FROM pagamentos_prestadores
+  WHERE status_conferencia='conferido' AND status_aprovacao='aprovado'
+    AND elegivel_lote=true AND lote_id IS NULL AND is_teste=false
+    AND tipo_pagamento <> 'fechamento'
+    AND status_pagamento NOT IN ('pago','cancelado')
+O cliente e resolvido por VINCULO OPERACIONAL (os_id -> ordens_servico /
+alocacoes_escala -> clientes), nao por texto.
+A RPC f_gerar_lote_pagamentos continua sendo a AUTORIDADE FINAL (os guards da UI
+sao apenas pre-filtro de UX; nao substituem a seguranca do backend).
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/financeiro/PagamentoPrestadores.tsx
+    * nova sub-aba "Aptos para Lote" (fila unificada, todas as origens);
+    * fetchAptosLote + enriquecimento de cliente;
+    * filtros (antes do slice) + PaginationBar + cards de total;
+    * selecao (linha / selecionar visiveis / limpar) e total selecionado;
+    * REUSO do modal + handleGerarLote (05D.7B.2);
+    * REMOVIDA a formacao de lote da aba "Pagamentos Manuais" (checkbox + botao).
+- src/helpers/lotePagamentoHelper.ts
+    + filtrarAptosLote(rows, filtros), totalLiquidoAptos(rows); campos cliente_id/
+      cliente_nome/valor_servicos/pedagio/adicionais/periodo_fim/origem_lancamento
+      em LinhaLote.
+- src/test/fin_prog05d7b3_fila_aptos_lote.test.ts (NOVO — 8 testes)
+NENHUMA migration. NENHUMA alteracao de schema/RLS/RPC.
+
+--------------------------------------------------------------------------------
+3. ORIGENS CONTEMPLADAS
+--------------------------------------------------------------------------------
+- os_direta (Ordem de Servico)
+- escala_direta (Programacao Operacional)
+- manual (legitima)
+Todos passam pelo MESMO predicado de aptidao e pela MESMA fila/acao de lote.
+
+--------------------------------------------------------------------------------
+4. FILTROS (antes da paginacao)
+--------------------------------------------------------------------------------
+- periodo/data do servico (periodo_inicio || data_competencia, pela data canonica);
+- prestador (por ID);
+- cliente (por ID real, resolvido por vinculo);
+- origem/tipo (OS / Programacao / Manual);
+- busca por OS ou Prestador.
+Aplicados sobre o conjunto COMPLETO antes do slice.
+
+--------------------------------------------------------------------------------
+5. PAGINACAO
+--------------------------------------------------------------------------------
+PaginationBar (Anterior | 1 2 3 ... | Proxima), pageSize=25 (padrao do sistema).
+Filtros/busca/ordenacao ANTES do slice. Reset de pagina ao mudar filtros.
+
+--------------------------------------------------------------------------------
+6. CARDS / TOTAIS (nao page-only)
+--------------------------------------------------------------------------------
+- Aptos (filtro) = aptosFiltrados.length;
+- Prestadores (filtro) = distinct(prestador) do conjunto filtrado;
+- Total liquido (filtro) = soma(valor_liquido) do conjunto filtrado.
+Calculados sobre o conjunto completo filtrado, independentes da pagina.
+
+--------------------------------------------------------------------------------
+7. SELECAO
+--------------------------------------------------------------------------------
+- selecionar linha (checkbox), "Selecionar visiveis" (pagina atual), "Limpar selecao";
+- badge "Selecionados: N · R$ X".
+NUNCA seleciona automaticamente teste/HML, pago, cancelado, agregado, ja em lote
+ou elegivel_lote=false (a lista so contem aptos e o toggle exige isAptoLote).
+
+--------------------------------------------------------------------------------
+8. CAMINHO UNICO PARA A RPC
+--------------------------------------------------------------------------------
+selecao -> modal profissional (05D.7B.2) -> f_gerar_lote_pagamentos(ids).
+A formacao de lote foi REMOVIDA da aba "Pagamentos Manuais" (nao ha caminho
+paralelo). Existe UM caminho visual oficial: a aba "Aptos para Lote".
+
+--------------------------------------------------------------------------------
+9. PROVAS A-I (8/8 PASS — unitarias, sem banco)
+--------------------------------------------------------------------------------
+A) os_direta apta aparece ................................................... PASS
+B) escala_direta apta aparece ............................................... PASS
+C) manual legitima apta aparece ............................................. PASS
+D) teste/HML NAO aparece .................................................... PASS
+E) pago NAO aparece ......................................................... PASS
+F) cancelado NAO aparece .................................................... PASS
+G) agregado (tipo_pagamento='fechamento') NAO aparece ...................... PASS
+H) ja em lote NAO aparece como apto (lote_id) ............................. PASS
+I) aprovado + elegivel_lote=false NAO aparece ............................. PASS
+Extras: filtro origem=Programacao so escala_direta; prestador/cliente por ID;
+busca por OS e por prestador; periodo pela data do servico; PAGINACAO >25
+(30 aptos -> p1=25/p2=5 sem overlap; total geral e soma independentes da pagina);
+selecao so inclui aptos.
+
+--------------------------------------------------------------------------------
+10. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+- fin_prog05d7b3_fila_aptos_lote.test.ts: 8/8 PASS.
+- vitest (7B.3 + 7B.2 + 6D.1 + CONTA-01 + config PDF + financeiro + 6D/6.1...):
+  12 arquivos / 257 PASS.
+- Scripts: 05D.7B.1 21/21 + concorrencia(P) PASS; 05D.6B.1 17/17; 05D.4 13/13.
+- npm run build: OK — "built in 1m 2s".
+- tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+11. BANCO ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores ....... 137
+lote_id NOT NULL ............. 0
+status_pagamento='em_lote' ... 0
+financeiro_pagar ............. 178
+financeiro_baixas ............ 19
+soma valor_liquido ........... 90.229,96
+Nenhum lote permanente criado (testes da RPC em transacao + ROLLBACK).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) fetchAptosLote usa .limit(1000); se a fila passar disso, avaliar paginacao
+    server-side (hoje o volume apto e baixo).
+R2) A aba e visual; a decisao final de aptidao continua na RPC (defesa em
+    profundidade — proposital).
+R3) Enriquecimento de cliente: +2 consultas por carga (OS/alocacao) + 1 clientes.
+R4) Itens sem os_id (manual sem OS) ficam sem cliente/OS — nao inventados
+    (exibidos como "—"), e o filtro de cliente os exclui quando ativo.
+
+--------------------------------------------------------------------------------
+13. PROXIMA MICRO-MISSAO
+--------------------------------------------------------------------------------
+05D.7B.4 — validacao visual (screenshots) da aba "Aptos para Lote" com login ADM
+e, quando autorizado, tabela cabecalho de lote para metadados de remessa/retorno
+(apenas na fase de integracao bancaria).
+
+================================================================================
+NAO TOCADO
+--------------------------------------------------------------------------------
+FIN-CONTA-01; contas_financeiras; MargemOperacional; iFi; CNAB; snapshot bancario;
+f_confirmar_pagamento_prestador; financeiro_baixas; M66/M80; datas historicas;
+faturas/AR; 21 indeterminados; CESAR; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7B3-FILA-APTOS-LOTE-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7B3-FILA-APTOS-LOTE-RESULTADO.txt
+Tamanho ..: 8977 bytes
+Data .....: 24/09/2026 18:33:03
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7B.3
+================================================================================

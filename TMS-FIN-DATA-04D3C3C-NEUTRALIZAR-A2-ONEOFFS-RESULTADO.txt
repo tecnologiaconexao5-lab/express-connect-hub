@@ -1,0 +1,135 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C3C-NEUTRALIZAR-A2-ONEOFFS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+6/6 writers A2 one-off/legado neutralizados: raiz substituida por STUB somente-comentario
+(inerte) e historico preservado APENAS em docs/lab/neutralized_oneoffs/<nome>.txt (sanitizado,
+nao executavel). Zero referencia em codigo/teste/package. Build OK; A1 23/23 e C2 27/27 sem
+regressao; zero conexao/DML.
+
+--------------------------------------------------------------------------------
+1. ANTES/DEPOIS DOS 6
+--------------------------------------------------------------------------------
+ARQ                    | OPERACAO PERIGOSA (antes)        | SEGREDO | DEPOIS
+-----------------------+----------------------------------+---------+-------------------------------
+criar_tabela_valores.cjs| INSERT (seed legado)            | sim     | stub comentario + arquivo historico
+criar_todas.cjs        | INSERT (seed legado)             | sim     | stub comentario + arquivo historico
+forcar_create.cjs      | INSERT (pagamento prestador)     | sim     | stub comentario + arquivo historico
+refresh.cjs            | UPSERT (pagamentos_prestadores)  | sim     | stub comentario + arquivo historico
+criar_tabela.cjs       | UPSERT (pagamentos_prestadores)  | sim     | stub comentario + arquivo historico
+test_doc.cjs           | UPSERT (documentos_prestadores)  | sim     | stub comentario + arquivo historico
+Confirmacao da classificacao A2 (C3A): 3x INSERT + 3x UPSERT; todos com URL/ref PROD + anon
+hardcoded (sem DDL; criar_tabela.cjs nao e DDL — apenas upsert). Nenhum virou harness com guard
+(nao era necessario) e nenhum foi mantido executavel na raiz.
+
+--------------------------------------------------------------------------------
+2. DESTINO HISTORICO (sanitizado, nao executavel)
+--------------------------------------------------------------------------------
+ docs/lab/neutralized_oneoffs/<nome>.txt  (6 arquivos, extensao .txt)
+ Cabecalho indica "historico sanitizado, NAO EXECUTAVEL" + motivo + equivalente moderno.
+
+--------------------------------------------------------------------------------
+3. SANITIZACAO
+--------------------------------------------------------------------------------
+ Aplicado aos arquivos historicos:
+ - URL/ref PROD ............... -> REDACTED_PROD_REF
+ - anon JWT .................. -> REDACTED_ANON_KEY
+ - postgres://user:pass@ ..... -> postgresql://REDACTED@
+ - token interno (tms-...) ... -> REDACTED_TOKEN
+ Verificacao: 6/6 arquivos historicos SEM segredo (arquivos .txt).
+
+--------------------------------------------------------------------------------
+4. REFERENCIAS ENCONTRADAS
+--------------------------------------------------------------------------------
+ - package.json ................ 0 (AUSENTE)
+ - src/UI ...................... 0 imports
+ - scripts ..................... 0 imports
+ - testes ...................... 0 dependencias de conteudo
+ - documentacao/texto ......... apenas relatorios anteriores (TMS-FIN-DATA-04D3C1/C3A/C3B2
+   .txt) mencionam os nomes. Nenhuma acao necessaria; nenhum historico foi tornado executavel.
+
+--------------------------------------------------------------------------------
+5. PROVA DE INERCIA (verificador estatico — scripts/_guard.verify_c3c.cjs)
+--------------------------------------------------------------------------------
+ Para os 6 originais (raiz):
+  - codigo executavel (sem comentarios) = 0 ............. PASS (todos)
+  - stub sem segredo .................................. PASS
+  - sem createClient/INSERT/UPDATE/DELETE/UPSERT/RPC/
+    Storage/fetch mutavel/DDL ......................... PASS (stub)
+ Arquivos historicos: 6 .txt, sanitizados, 0 com segredo ... PASS.
+
+--------------------------------------------------------------------------------
+6. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+ node scripts/_guard.verify_c3c.cjs ...... RESULTADO: PASS
+ node scripts/_guard.verify_c3b2.cjs ..... PASS
+ node scripts/_guard.verify_c3b1.cjs ..... PASS
+ node scripts/_guard.selftest.cjs ........ TOTAL 13 | PASS 13 | FAIL 0
+ node scripts/_guard.verify_p1.cjs ....... 13/13 OK | A-E PASS
+ node scripts/_guard.verify_p2.cjs ....... PASS
+ npm run build ........................... OK ("built in 49.13s")
+ Nenhum fluxo funcional executado; zero conexao/DML.
+
+--------------------------------------------------------------------------------
+7. REVALIDACAO
+--------------------------------------------------------------------------------
+ - A1 23/23 protegidos ......... OK
+ - C2 27 snippets inertes ...... OK
+ - /dev-teste ausente .......... OK
+ - src/lib/testes ausente ...... OK
+
+--------------------------------------------------------------------------------
+8. NAO TOCADO
+--------------------------------------------------------------------------------
+ A3 (query_sql.cjs, check_types.mjs); A4 (criar_schema.cjs, criar_tabelas.cjs); Classe C;
+ Classe F; tests/e2e; tmp/scratch; .env; banco; RLS/RPC; APP.
+
+--------------------------------------------------------------------------------
+9. RISCOS RESTANTES
+--------------------------------------------------------------------------------
+ R1. A3/A4 (query_sql, check_types, criar_schema, criar_tabelas) -> C3D (arquivar/contrato admin;
+     DDL deve ir por migrations; SQL ad-hoc exige contrato proprio).
+ R2. Classe C (com credencial em _audit_001..008) e Classe F (update_*) -> missao(de) futura.
+ R3. tests/e2e e scratch/tmp (credencial) fora do escopo.
+
+--------------------------------------------------------------------------------
+10. ACEITE
+--------------------------------------------------------------------------------
+ A) 6/6 A2 sem capacidade executavel ...... OK
+ B) raiz sem writer A2 funcional .......... OK
+ C) historico preservado e sanitizado ..... OK (6 .txt)
+ D) zero segredo .......................... OK
+ E) zero conexao/DML ...................... OK
+ F) A1 23/23 protegidos ................... OK
+ G) build OK .............................. OK
+ H) P1/P2 sem regressao ................... OK
+
+--------------------------------------------------------------------------------
+11. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 6/6 A2 neutralizados com evidencia objetiva (stub inerte + historico sanitizado),
+zero referencia executavel, build OK, sem regressao.
+
+--------------------------------------------------------------------------------
+12. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3C3D — A3/A4 (4): arquivar query_sql.cjs, check_types.mjs (SQL ad-hoc inerte)
+e criar_schema.cjs, criar_tabelas.cjs (DDL legado) como documentacao inerte; documentar que DDL
+vai por supabase/migrations e que SQL ad-hoc exige contrato admin. Sem guard de teste.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C3C-NEUTRALIZAR-A2-ONEOFFS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C3C-NEUTRALIZAR-A2-ONEOFFS-RESULTADO.txt
+Tamanho ..: 7744 bytes
+Data .....: 24/09/2026 21:40:39
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C3C
+================================================================================

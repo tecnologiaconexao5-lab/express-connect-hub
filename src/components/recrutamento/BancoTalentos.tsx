@@ -17,6 +17,7 @@ interface CandidatoFromDB {
   telefone: string;
   email: string;
   created_at: string;
+  score?: number;
 }
 
 export function BancoTalentos() {
@@ -31,14 +32,14 @@ export function BancoTalentos() {
   const carregarCandidatos = async () => {
     setLoading(true);
     let query = supabase
-      .from("candidatos")
-      .select("id, nome_completo, tipo_veiculo, regiao, status, telefone, email, created_at")
-      .in("status", ["pendente", "triagem", "interessado", "documentacao", "aprovado"])
+      .from("recrutamento_candidatos")
+      .select("id, nome as nome_completo, veiculo as tipo_veiculo, regiao, status, telefone, email, created_at, score")
+      .in("stage", ["novo_cadastro", "pre_triagem", "interesse_confirmado", "em_analise", "documentacao_pendente", "aprovado"])
       .order("created_at", { ascending: false })
       .limit(100);
 
     if (busca) {
-      query = query.or(`nome_completo.ilike.%${busca}%,tipo_veiculo.ilike.%${busca}%`);
+      query = query.or(`nome.ilike.%${busca}%,veiculo.ilike.%${busca}%`);
     }
 
     const { data, error } = await query;
@@ -71,12 +72,13 @@ export function BancoTalentos() {
   };
 
   const getScore = (c: CandidatoFromDB): number => {
-    let score = 50;
-    if (c.tipo_veiculo) score += 20;
-    if (c.regiao) score += 15;
-    if (c.telefone) score += 10;
-    if (c.email) score += 5;
-    return Math.min(score, 100);
+    if (c.score && c.score > 0) return Math.min(c.score, 100);
+    let computed = 50;
+    if (c.tipo_veiculo) computed += 20;
+    if (c.regiao) computed += 15;
+    if (c.telefone) computed += 10;
+    if (c.email) computed += 5;
+    return Math.min(computed, 100);
   };
 
   if (loading) {

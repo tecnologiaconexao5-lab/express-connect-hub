@@ -1,0 +1,75 @@
+FIN-363D.3 — VALIDAÇÃO INDEPENDENTE FINAL
+==========================================
+Data: 2026-09-07T23:39:29.510Z
+
+═══════════════════════════════════════════════════════════
+1. FLUXO — FLUXO REALIZADO
+═══════════════════════════════════════════════════════════
+Período: 2026-06
+Entradas realizadas: R$ 0.00
+Saídas realizadas: R$ 0.00
+Fluxo realizado (= entradas - saídas): R$ 0.00
+
+Fórmula fluxoCaixaService: ✅ SEM saldo_inicial em realizado
+DRE filtra pagamentos_prestadores por classificacao_dado='real': ✅
+
+═══════════════════════════════════════════════════════════
+2. DRE — PERÍODO 2026-09
+═══════════════════════════════════════════════════════════
+Receita Bruta: R$ 2120.00 (1 registros)
+Custos Prestadores: R$ 0.00 (0 registros)
+Despesas Operacionais: R$ 0.00 (0 registros)
+Resultado/EBITDA: R$ 2120.00
+
+TESTE excluído receber: R$ 0.00
+TESTE excluído pagar: R$ 0.00
+TESTE+DUVIDOSO excluído prestadores: R$ 3150.34
+
+══════════════════════════════════════════════════════════
+3. MARGEM — AUSÊNCIA DE TRUNCAMENTO + SEPARAÇÃO
+══════════════════════════════════════════════════════════
+MargemOperacional.tsx: limit(50) = ❌ PRESENTE (truncamento!)
+MargemPorOS.tsx: limit(50) = ✅ AUSENTE
+
+Período: 2026-06
+Receita (prevista/realizada): R$ 4091.25
+Custo realizado: R$ 10910.00
+Margem estimada: -166.7%
+
+TESTE+DUVIDOSO excluído margem: R$ 895.00
+
+Totais globais DB:
+  Receber REAL: R$ 151012.27
+  Pagar REAL: R$ 56950.00
+  Prestadores REAL: R$ 23183.50
+  Prestadores TESTE: R$ 11269.00
+  Prestadores DUVIDOSO: R$ 32262.82
+
+═══════════════════════════════════════════════════════════
+4. GARANTIAS
+═══════════════════════════════════════════════════════════
+Registros REAL: receber=87 pagar=71 prestadores=40
+  → 198 registros TOTAL permanecem visíveis
+
+financeiro_receber tem classificacao_dado: ✅ NÃO (usa is_teste)
+financeiro_pagar tem classificacao_dado: ✅ NÃO (usa is_teste)
+
+Prestadores com nome TEST/SEED classificados REAL: 19
+  ⚠️ 19 registros "PRESTADOR TESTE APP" / "M43_..." classificados REAL
+  → FALSO POSITIVO CONFIRMADO: todos sem os_numero, sem evidência real
+  → Deviam ser classificacao_dado='teste', mas NÃO ALTERADO (ordem: não alterar banco)
+  → Impacto: R$ 8.453,50 inflando RECEITA+CUSTO em indicadores
+
+═══════════════════════════════════════════════════════════
+VEREDITO
+═══════════════════════════════════════════════════════════
+
+[NÃO HOMOLOGADO — pendências bloqueadas por ordem];
+  - MargemOperacional.tsx contém limit(50) → BLOQUEADO (ordem: não corrigir código)
+  - 19 registros "PRESTADOR TESTE APP" classificados REAL → BLOQUEADO (ordem: não alterar banco)
+  - FIX NECESSÁRIO: remover .limit(50) de MargemOperacional.tsx
+  - FIX NECESSÁRIO: UPDATE pagamentos_prestadores SET classificacao_dado='teste' WHERE id IN (19 ids)
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

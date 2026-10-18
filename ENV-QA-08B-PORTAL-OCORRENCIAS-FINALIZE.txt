@@ -1,0 +1,131 @@
+# ENV-QA-08B: Portal Ocorrencias Finalize
+
+**Status:** RLS_DEPLOY_PACKAGE_FINAL = PASS
+**Date:** 2026-09-20
+**Duration:** ~25 min
+
+---
+
+## Schema Confirmado
+
+`portal_ocorrencias`:
+| Column | Type | Nullable |
+|--------|------|----------|
+| id | uuid | NO |
+| cliente_id | uuid | YES |
+| tipo | text | NO |
+| descricao | text | YES |
+| prioridade | text | YES |
+| status | text | YES |
+| created_at | timestamptz | YES |
+| updated_at | timestamptz | YES |
+
+**NO `os_id` column** — confirmed.
+
+## Causa do Gap
+
+ENV-QA-08A's `m08a_deploy.sql` referenced `portal_ocorrencias.os_id` in `po_select_tms` and `po_update_tms` policies. This column does not exist, causing:
+- 1st apply: policies created but with errors
+- 2nd+ apply: DROP IF EXISTS removes policies, CREATE fails, policies lost
+
+Additionally, `tenant_usuarios` had RLS enabled but **zero policies**, causing `EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())` to return false for non-superuser roles.
+
+## Solução Aplicada
+
+1. **portal_ocorrencias policies** use `cliente_id = f_obter_cliente_id_do_usuario()` instead of `os_id`
+2. **tenant_usuarios** gets `tu_select_own` policy (SELECT WHERE user_id = auth.uid())
+3. **pp_ocorrencias_all** (USING(true)) explicitly dropped
+
+## Policies Finais — portal_ocorrencias
+
+| Policy | Cmd | Role | USING | WITH CHECK |
+|--------|-----|------|-------|------------|
+| po_select_tms | SELECT | authenticated | tenant_usuarios exists AND (cliente_id IS NULL OR cliente_id = f_obter_cliente_id_do_usuario()) | — |
+| po_insert_tms | INSERT | authenticated | — | tenant_usuarios exists |
+| po_update_tms | UPDATE | authenticated | tenant_usuarios exists AND cliente_id = f_obter_cliente_id_do_usuario() | — |
+
+**0 anon/public policies. 0 USING(true). 0 os_id references.**
+
+## T1-T8 Results
+
+| Test | Description | Result |
+|------|-------------|:------:|
+| T1 | TMS autorizado SELECT portal_ocorrencias | ✅ 2 rows |
+| T2 | TMS autorizado UPDATE portal_ocorrencias | ✅ status=em_analise |
+| T3 | Tenant B não acessa ocorrência do tenant A | ✅ 0 rows |
+| T4 | Anon não acessa portal_ocorrencias | ✅ 0 rows |
+| T5 | Nenhuma policy com role anon/public | ✅ PASS |
+| T6 | Nenhuma policy usa os_id | ✅ PASS |
+| T7 | Nenhuma policy USING(true) | ✅ PASS |
+| T8 | Nenhuma policy com role public | ✅ PASS |
+
+## 18/18 RLS Suite
+
+| Test | Description | Result |
+|------|-------------|:------:|
+| A | anon SELECT pagamentos_prestadores = 0 | ✅ |
+| B | prestador_A SELECT own PP = 3 | ✅ |
+| C | prestador_B SELECT prestador_A PP = 0 | ✅ |
+| D | prestador_B SELECT own PP = 0 | ✅ |
+| E | prestador_A INSERT own PP | ✅ |
+| F | anon INSERT PP → BLOCKED | ✅ |
+| G | prestador_A UPDATE own PP → pago | ✅ |
+| H | prestador_B UPDATE prestador_A PP = 0 | ✅ |
+| I | anon SELECT clientes = 0 | ✅ |
+| J | authenticated SELECT own cliente = 1 | ✅ |
+| K | authenticated SELECT other cliente = 0 | ✅ |
+| L | TMS admin SELECT all clientes = 1 | ✅ |
+| M | prestador_A SELECT documentos_prestadores = 0 | ✅ |
+| N | anon SELECT documentos_prestadores = 0 | ✅ |
+| O | anon SELECT entregas_protocolo = 0 | ✅ |
+| P | 0 USING(true) on secured tables | ✅ |
+| Q | prestador_B SELECT entregas_protocolo = 0 | ✅ |
+| R | prestador_B SELECT clientes = 0 | ✅ |
+
+## Idempotência
+
+| Apply | Result | Duplicate Policies |
+|:-----:|:------:|:------------------:|
+| 1st | ✅ 0 errors | 3 (correct) |
+| 2nd | ✅ 0 errors | 3 (no change) |
+| 3rd | ✅ 0 errors | 3 (no change) |
+
+## Rollback + Reaplicação
+
+| Step | Result |
+|------|:------:|
+| Apply rollback | ✅ Insecure policies restored (pp_ocorrencias_all, Allow all, anon docs) |
+| Verify insecure | ✅ 6 insecure policies present |
+| Reapply deploy | ✅ 0 errors |
+| Verify secure | ✅ 0 insecure on target tables |
+| Re-run T1-T8 | ✅ 8/8 PASS |
+
+## Arquivos Finais
+
+| File | SHA-256 | Size |
+|------|---------|------|
+| m08b_deploy_FINAL.sql | `E110074833F90A06006F30DBCEDDEC401DE2D6DB8E171B6E7188788CBCC62978` | 16,228 bytes |
+| m08b_rollback_FINAL.sql | `00864D785451A630B49462F14B5F8CC2762252E0809900F770DC76AB7949A73F` | 7,822 bytes |
+
+## ZERO WRITES em Produção
+
+- ✅ Nenhum INSERT/UPDATE/DELETE em produção
+- ✅ Nenhum DDL em produção
+- ✅ Nenhuma migration aplicada em produção
+- ✅ Apenas consultas READ-ONLY para confirmar schema/policies
+
+## Conclusão
+
+**RLS_DEPLOY_PACKAGE_FINAL = PASS**
+
+- portal_ocorrencias incorporado corretamente ao pacote ✅
+- ZERO passos manuais necessários após deploy ✅
+- Pacote final autocontido ✅
+- 18/18 RLS PASS ✅
+- T1-T8 PASS ✅
+- Idempotência 3x PASS ✅
+- Rollback testado ✅
+- Reaplicação pós-rollback PASS ✅
+- ZERO writes em produção ✅
+
+**PASS NÃO AUTORIZA DEPLOY EM PRODUÇÃO.**

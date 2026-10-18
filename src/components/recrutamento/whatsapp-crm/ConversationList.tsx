@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Search, MessageSquare, Filter, ChevronDown, Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useWhatsAppCRMStore, type ConversationStatus } from "@/stores/whatsappCRMStore";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
@@ -61,7 +62,7 @@ export default function ConversationList() {
               <motion.button key={contato.id} onClick={() => setConversaAtiva(contato.id)} initial={false} animate={{ backgroundColor: isActive ? "hsl(var(--muted))" : "transparent" }} className={cn("w-full px-3 py-3 flex items-start gap-3 text-left transition-colors hover:bg-muted/50", isActive && "bg-muted")}>
                 <div className="relative shrink-0">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-muted">
-                    <img src={contato.avatar} alt="" className="w-full h-full object-cover" />
+                    <SafeImage src={contato.avatar} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className={cn("absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background", contato.humanoAssumiu ? "bg-orange-500" : "bg-primary")} />
                 </div>

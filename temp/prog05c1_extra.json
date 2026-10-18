@@ -1,0 +1,482 @@
+﻿{
+  "fat000001": {
+    "fatura": [
+      {
+        "id": "f517b9bd-5cd6-4ac8-a316-d1bee0e304bb",
+        "numero": "FAT-2026-000001",
+        "status": "emitida",
+        "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+        "valor_bruto": 2000,
+        "descontos": 0,
+        "acrescimos": 0,
+        "valor_total": 2120,
+        "vencimento": "2026-09-16",
+        "conta_receber_id": "346687cf-f35d-4cde-8a26-47bdcff46de1"
+      }
+    ],
+    "item": [
+      {
+        "id": "ce0b2c98-353f-4db8-83ce-c598657e1ae6",
+        "os_id": null,
+        "alocacao_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+        "valor_base": 2000,
+        "valor_adicionais": 120,
+        "valor_descontos": 0,
+        "valor_total": 2120,
+        "km_excedente": 0,
+        "pedagio_cliente": 120,
+        "ajudante_cliente": 0
+      }
+    ],
+    "ar_fatura": [
+      {
+        "id": "346687cf-f35d-4cde-8a26-47bdcff46de1",
+        "valor": 2120,
+        "status": "aberto",
+        "data_vencimento": "2026-09-25",
+        "data_pagamento": null,
+        "fatura_id": "f517b9bd-5cd6-4ac8-a316-d1bee0e304bb",
+        "os_id": null
+      }
+    ],
+    "ar_os": [
+      {
+        "id": "75e0e5f0-c512-49b6-9542-716362705c08",
+        "valor": 2000,
+        "status": "aberto",
+        "data_vencimento": "2026-10-22",
+        "data_pagamento": null,
+        "fatura_id": null,
+        "os_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      }
+    ],
+    "alocacao": [
+      {
+        "id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+        "status": "concluida",
+        "finalizada": true,
+        "valor_frete": 2000,
+        "valor_repasse": 1100,
+        "valor_pedagio": 60,
+        "valor_adicional": 120,
+        "valor_ajudante": 0,
+        "valor_desconto_prestador": 0,
+        "reversa_valor_cliente": 0,
+        "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+        "prestador_id": "6cc41f68-1467-455d-b8d5-c61bfe72cb7c",
+        "ordem_servico_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+        "data_escala": "2026-07-12"
+      }
+    ],
+    "composicao": [
+      {
+        "os_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+        "valor_cliente": 2000,
+        "valor_prestador": 1100,
+        "pedagio_valor": 60,
+        "outros_custos": 120,
+        "adicional_valor": 120,
+        "ajudante_valor": 0,
+        "desconto_valor": 0,
+        "margem_bruta": 720
+      }
+    ],
+    "baixas": [],
+    "os_aloc": [
+      {
+        "id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501",
+        "numero": "ALOC-20260712-C0A7EE88",
+        "status": "finalizada",
+        "valor_cliente": 2000,
+        "custo_prestador": 1100
+      }
+    ]
+  },
+  "rascunhos_risco": [
+    {
+      "fatura_id": "e5318b9d-120a-4a2b-a077-bebcdf8cf34c",
+      "cliente_id": "91b80fdb-6b87-4982-a550-f863f7f15866",
+      "cliente": "Calvo Comercio e Importacao",
+      "valor_total": 1266.43,
+      "status": "rascunho",
+      "n_itens": 2,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 2,
+      "ars_legados_os": [
+        "58e5751e-bd54-43c5-9bcf-55fe4e575e6b"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "db157316-c015-4948-9e16-02711b164879",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "1f5c342d-41e2-4b9e-a7f3-5339995f164c",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "cd0a4a67-a4f2-4046-b2e9-9a8ae5113c93",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "db7d5d3a-cb4a-4fbc-9685-865fd130c8a7",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "09060a3f-af58-4efd-af9b-e335dadf2dec",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "b1ba12cb-adcd-4c50-8c1c-222f9718260d",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "e687356a-d285-45b5-809d-64fd87469824",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "93731a9a-a6f5-4c40-9cc5-9e9821495eb6",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "ca8f1937-062e-410c-af4f-8a65a653049c",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "b44e0f97-fd8e-4117-abde-5b1836b20bcc",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "7ccecd07-3e63-4e12-9e40-bd310d87e9a6",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "4af4d3d6-ae58-4ff4-b323-b46c9439cd15",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "3a1a0e63-df6c-4cd9-b410-5898f886c4d2",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "e3edbb1a-1391-4975-9218-caf6cf1104e7",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "1dab7122-578e-45e4-8b7e-f339700bbadd",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "b91070dc-ecbb-4e17-bd96-eb5b9a6b5252",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "42bed78d-9928-4b79-bd90-4dccf07722eb",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "9e64ba81-0492-4ced-9491-f00ac7aa6479",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "2d95724d-974b-4a58-8e32-a529fa49dc9d",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "80b69493-e733-488d-8975-b8636f0e1ca8",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "7c6fe3f2-adca-4b68-b571-8d918e1ff2c7",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "ccd775ba-dded-48ef-ba57-2d900d162115",
+      "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+      "cliente": "M43_2026-06-29_18-27-54 Cliente",
+      "valor_total": 2120,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 1,
+      "ars_legados_os": [
+        "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      ],
+      "risco": "DUPLICARIA_AO_EMITIR"
+    },
+    {
+      "fatura_id": "f7ba1108-21a3-45ea-adf8-7f83a71f5a81",
+      "cliente_id": "a49d5aa3-5d36-4d64-b490-c41a552ae1d8",
+      "cliente": "CALVO",
+      "valor_total": 12345,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 0,
+      "ars_legados_os": null,
+      "risco": "SEM_AR_LEGADO"
+    },
+    {
+      "fatura_id": "f7a63f0b-a6cd-4e77-8919-ec1e7ead1ce1",
+      "cliente_id": "a49d5aa3-5d36-4d64-b490-c41a552ae1d8",
+      "cliente": "CALVO",
+      "valor_total": 12346,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 0,
+      "ars_legados_os": null,
+      "risco": "SEM_AR_LEGADO"
+    },
+    {
+      "fatura_id": "97ecfca1-54a7-4483-9729-94035c6c086c",
+      "cliente_id": "336c5b17-cefd-488c-a927-32ea0dc9a161",
+      "cliente": "CLIENTE HML 136A",
+      "valor_total": 123.46,
+      "status": "rascunho",
+      "n_itens": 1,
+      "n_itens_com_os": 0,
+      "n_itens_com_aloc": 0,
+      "ars_legados_os": null,
+      "risco": "SEM_AR_LEGADO"
+    }
+  ],
+  "anti_dup": "CREATE OR REPLACE FUNCTION public.f_trg_fatura_itens_anti_duplicidade()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_os_ja_faturada uuid;\n  v_status_fatura text;\nBEGIN\n  IF NEW.os_id IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  SELECT status INTO v_status_fatura FROM public.faturas WHERE id = NEW.fatura_id;\n\n  -- Regra: mesmo servi├ºo ativo n├úo pode estar em duas faturas v├ílidas\n  -- (v├ílidas = n├úo canceladas). Fatura cancelada libera o servi├ºo.\n  IF v_status_fatura IS DISTINCT FROM 'cancelada' THEN\n    SELECT fi.id INTO v_os_ja_faturada\n    FROM public.fatura_itens fi\n    JOIN public.faturas f ON f.id = fi.fatura_id\n    WHERE fi.os_id = NEW.os_id\n      AND fi.status = 'ativo'\n      AND f.status IS DISTINCT FROM 'cancelada'\n      AND fi.fatura_id IS DISTINCT FROM NEW.fatura_id\n    LIMIT 1;\n\n    IF v_os_ja_faturada IS NOT NULL THEN\n      RAISE EXCEPTION 'SERVI├çO_JA_FATURADO: A OS % j├í est├í vinculada a outra fatura ativa.', NEW.os_id;\n    END IF;\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+  "impacto": {
+    "receber_total_linhas": {
+      "n": 122,
+      "total": 188884.75
+    },
+    "ar_oficial_fatura": {
+      "n": 6,
+      "total": 12674.02
+    },
+    "ar_legado_os": {
+      "n": 98,
+      "total": 166859
+    },
+    "ar_sem_ambos": {
+      "n": 18,
+      "total": 9351.73
+    },
+    "ar_pagos_ou_baixados": {
+      "n": 11,
+      "total": 13425.1
+    },
+    "baixas_receber": {
+      "n": 7,
+      "total": 3624.6
+    }
+  }
+}

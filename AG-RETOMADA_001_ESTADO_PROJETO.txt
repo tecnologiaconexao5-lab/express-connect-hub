@@ -1,0 +1,192 @@
+AG-RETOMADA 001 — ESTADO ATUAL DO PROJETO
+==========================================
+Data: 2026-09-01
+Status: RETOMADA SEM ALTERACOES — REC-01 E REC-02 CONCLUIDAS
+
+
+1. OBJETIVO
+------------
+Recuperar o contexto do projeto apos fechar e reabrir VS Code/OpenCode,
+verificar estado real do repositorio, e determinar se REC-02 foi concluida
+ou se existe trabalho pendente.
+
+
+2. ESTADO ENCONTRADO
+---------------------
+git status: LIMPO (sem alteracoes staged, sem untracked changes relevantes)
+git log: 148b67f — "missao 133-D.2: relatorio final + evidencias de homologacao"
+Branch: main (padrao)
+
+Nenhum diff pendente. Nenhum arquivo modificado desde a ultima sessao.
+Todos os arquivos ja estavam commitados ou sao untracked (scripts temporarios, docs, relatorios).
+
+
+3. RELATORIOS EXISTENTES (AG-REC*)
+------------------------------------
+| Arquivo                                          | Status       | Conteudo                           |
+|--------------------------------------------------|--------------|------------------------------------|
+| AG-REC01_FUNDACAO_SEGURANCA.txt                  | EXISTE (156 linhas) | REC-01 completa: PII masking, logger, RLS, 24/24 testes |
+| AG-REC02_CONSOLIDACAO_ENTIDADES_TENANT.txt       | EXISTE (296 linhas) | REC-02 completa: tenant isolation, 12 tabelas, 20/20 testes |
+| AG-REC8_AUDITORIA_MESTRA_RECRUTAMENTO.txt        | EXISTE (1412 linhas) | Auditoria read-only do modulo recrutamento |
+| AG-REC8_AUDITORIA_MESTRA_RECRUTAMENTO.md         | EXISTE | Versao Markdown do mesmo relatorio |
+
+
+4. MIGRATIONS CRIADAS
+-----------------------
+| Migration                                        | Status           | Aplicada?     |
+|--------------------------------------------------|------------------|---------------|
+| 20260831_rec01_fundacao_seguranca.sql             | CRIADA           | NAO           |
+| 20260831_rec02_tenant_isolation.sql               | CRIADA           | NAO           |
+
+NENHUMA migration foi aplicada em ambiente QA ou PRODUCAO.
+Ambas requerem autorizacao explicita do usuario.
+
+
+5. TESTES EXISTENTES
+----------------------
+| Arquivo                              | Testes | Resultado hoje |
+|--------------------------------------|:------:|:--------------:|
+| src/test/rec01_fundacao_seguranca.ts |   24   |    24/24 PASS  |
+| src/test/rec02_consolidacao_entidades.ts | 20 | 20/20 PASS    |
+| TOTAL REC-01+REC-02                  |   44   |   44/44 PASS   |
+
+
+6. DETERMINACAO DO STATUS DA REC-02
+--------------------------------------
+CLASSIFICACAO: CONCLUIDA — RELATORIO JA EXISTENTE
+
+Justificativa:
+- Relatorio AG-REC02_CONSOLIDACAO_ENTIDADES_TENANT.txt existe (296 linhas, 24 secoes)
+- Migration CRIADA: 20260831_rec02_tenant_isolation.sql (437 linhas, 12 tabelas)
+- Testes: 20/20 PASS (validados novamente agora)
+- Dashboard migrado: candidatos -> recrutamento_candidatos
+- Tenant isolation: 12 tabelas com tenant_id + RLS
+- Legado documentado: tabelas marcadas LEGACY/DEPRECATED
+- Nenhuma alteracao pendente no codigo
+
+O que NAO foi feito (escopo adiado):
+- Migration NAO aplicada (requer autorizacao)
+- UNIQUE constraints nao adicionadas (deixado para REC-03)
+- 12 arquivos ainda leem de candidatos legacy (migracao em REC-03/04)
+- Consolidacao de 3 implementacoes BancoTalentos (REC-04+)
+- Unificacao provider_documents -> documentos_prestadores (REC-04+)
+
+
+7. ARQUIVOS CRIADOS (ACUMULADO REC-01 + REC-02)
+--------------------------------------------------
+CRIADOS:
+  - supabase/migrations/20260831_rec01_fundacao_seguranca.sql
+  - supabase/migrations/20260831_rec02_tenant_isolation.sql
+  - src/lib/masking.ts
+  - src/lib/logger.ts (modificado)
+  - src/test/rec01_fundacao_seguranca.test.ts
+  - src/test/rec02_consolidacao_entidades.test.ts
+  - AG-REC01_FUNDACAO_SEGURANCA.txt
+  - AG-REC02_CONSOLIDACAO_ENTIDADES_TENANT.txt
+
+MODIFICADOS:
+  - src/modules/recrutamento/hooks/useDashboardRecrutamento.ts (migrado)
+  - 12 componentes com mascaramento PII (REC-01)
+  - src/lib/logger.ts (PII masking)
+
+
+8. PRODUCAO ALTERADA: NAO
+---------------------------
+Nenhuma migration aplicada em producao.
+
+
+9. APP FLUTTER ALTERADO: NAO
+-------------------------------
+Nenhuma alteracao no App Motorista.
+
+
+10. REDMI UTILIZADO: NAO
+--------------------------
+N/A.
+
+
+11. TYPESCRIPT
+---------------
+npx tsc --noEmit: VERIFICAR (precisa executar)
+
+
+12. BUILD
+----------
+npx vitest run (rec01 + rec02): 44/44 PASS
+
+
+13. RLS/SEGURANCA
+-------------------
+REC-01: 16 policies anon removidas, 12 policies authenticated-only criadas
+REC-02: 12 tabelas com tenant_id + 4 policies por tabela (SELECT/INSERT/UPDATE/DELETE)
+Status: DEFINIDO EM SQL, NAO APLICADO
+
+
+14. TENANT
+-----------
+REC-02 adiciona tenant_id a 12 tabelas de recrutamento
+Padrao: current_tenant_id_safe() DEFAULT + NOT NULL + FK -> tenants(id)
+Backfill: dados existentes -> tenant padrao (00000000-0000-0000-0000-000000000001)
+
+
+15. IDENTIDADE
+---------------
+N/A nesta retomada.
+
+
+16. DUPLICIDADE/IDEMPOTENCIA
+-------------------------------
+REC-01: trigger de auditoria liberado_app (idempotent)
+REC-02: funcao helper _rec02_add_tenant_isolation (idempotent, usa IF NOT EXISTS)
+
+
+17. PENDENCIAS PARA PROXIMA MISSAO (REC-03)
+----------------------------------------------
+1. Aplicar migrations REC-01 + REC-02 em ambiente QA (REQUER AUTORIZACAO)
+2. Validar que Dashboard mostra dados corretos com Pipeline populado
+3. Verificar duplicatas antes de criar UNIQUE constraints
+4. Migrar 12 leitores restantes de candidatos -> recrutamento_candidatos
+5. Testes de isolamento cross-tenant (tenant A nao enxerga tenant B)
+6. Bind-sensitive statements no log
+7. Consolidacao de 3 implementacoes BancoTalentos em 1
+8. Unificacao provider_documents -> documentos_prestadores
+
+
+18. RISCOS RESTANTES
+----------------------
+| Risco                                          | Severidade |
+|------------------------------------------------|:----------:|
+| Dashboard pode mostrar dados incompletos        | MEDIA      |
+| 3 implementacoes BancoTalentos causam confusao  | BAIXA      |
+| provider_documents parcialmente substituido     | BAIXA      |
+| candidatos legacy continua ativa (12 arquivos)  | MEDIA      |
+
+
+19. DECISAO FINAL
+-------------------
+A — REC-01 E REC-02 HOMOLOGADAS (codigo + testes + relatorios prontos)
+B — PENDENTE: aplicacao de migrations em ambiente QA/producao
+
+A retomada NAO encontrou trabalho inacabado. Ambas as missoes estao
+completas com relatorios gerados. O proximo passo logico e REC-03
+(migrar leitores restantes de candidatos + constraints + isolamento).
+
+
+20. COMANDOS PARA CONTINUAR
+-------------------------------
+# Verificar testes REC-01 + REC-02:
+npx vitest run src/test/rec01_fundacao_seguranca.test.ts src/test/rec02_consolidacao_entidades.test.ts
+
+# Verificar build completo:
+npx tsc --noEmit
+
+# Executar regression completa:
+npx vitest run
+
+# Aplicar migrations (requer DATABASE_URL):
+# Opcao A: npx tsx scripts/apply-migration-pg.mjs
+# Opcao B: Supabase Dashboard > SQL Editor > colar conteudo da migration
+
+
+RELATORIO GERADO:
+C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\AG-RETOMADA_001_ESTADO_PROJETO.txt

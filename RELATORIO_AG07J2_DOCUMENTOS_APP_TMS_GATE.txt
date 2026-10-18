@@ -1,0 +1,227 @@
+================================================================================
+RELATORIO AG-07J.2 — DOCUMENTOS APP → TMS → ANÁLISE → GATE
+Data: 2026-08-22
+Status: AUDITORIA CONCLUÍDA — FLUXO REAL MAPEADO
+================================================================================
+
+1. RESPOSTAS OBRIGATÓRIAS
+--------------------------
+UPLOAD REAL EXISTE: SIM
+TELA REAL EXISTE: SIM (register_screen.dart, Block 3, step 8)
+ROTA ACESSÍVEL: SIM (/register)
+CADASTRO INICIAL ENVIA DOCUMENTOS: SIM (_uploadDocumentosPendentes)
+PÓS-CADASTRO ENVIA DOCUMENTOS: NÃO (Profile é READ-ONLY)
+BUCKET: documentos_prestadores
+TABELA: documentos_prestadores
+CHAVE DE VÍNCULO: prestador_id
+PRESTADOR_ID CORRETO: SIM (usa o ID criado no cadastro)
+TMS RECEBE: SIM (documentosPrestadorService + PrestadorDetalhe)
+TMS EXIBE: SIM (PrestadorDetalhe.tsx + StatusDocumental.tsx)
+TMS APROVA/REPROVA: NÃO (fluxo de aprovação escreve em tabela SEPARADA)
+VALIDADE: PARCIAL (upload OK, visualização OK, aprovação DESCONECTADA)
+GATE USA A MESMA FONTE: SIM (eligibilidadeOperacionalService lê documentos_prestadores)
+DOCUMENTO REJEITADO PODE SER SUBSTITUÍDO: NÃO (App não tem tela de substituição)
+DOCUMENTO VENCIDO PODE SER SUBSTITUÍDO: NÃO (App não tem tela de substituição)
+CONCLUSÃO AG-07J ESTAVA CORRETA: PARCIAL (upload existe, mas aprovação não alcança o gate)
+ARQUIVOS ALTERADOS: NENHUM (auditoria apenas)
+TESTES: NENHUM (auditoria apenas)
+FLUTTER ANALYZE: N/A (nenhum código Flutter alterado)
+TSC: N/A (nenhum código TMS alterado)
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+
+2. FLUXO REAL DOCUMENTAL — TRACED
+===================================
+
+2A. APP — UPLOAD NO CADASTRO
+------------------------------
+  register_screen.dart
+    Block 3 (sub-step 8) — "Documentos"
+    │
+    ├── 12 slots de upload via ImagePicker (camera/gallery)
+    │   CNH Frente, CNH Verso, CRLV, Comprovante Residencia,
+    │   Selfie, Veiculo Frente/Traseira/Lateral, Foto Placa,
+    │   Interna do Bau, ANTT, Certidao Negativa
+    │
+    ├── _submit() → _uploadDocumentosPendentes(prestadorId)
+    │   │
+    │   └── DriverDocumentsRepository().uploadAndLink()
+    │       ├── Storage: bucket "documentos_prestadores"
+    │       ├── Path: doc_{prestadorId}_{tipo}_{timestamp}.{ext}
+    │       ├── Table INSERT: {prestador_id, tipo, url, created_at}
+    │       └── Status default: pendente (DB default)
+    │
+    └── Prestador ID = o UUID criado no cadastro (correto)
+
+2B. APP — PÓS-CADASTRO (PERFIL)
+---------------------------------
+  profile_screen.dart
+    _loadDocuments() → DriverDocumentsRepository().fetchByAuthUserId()
+    │
+    ├── Tela: "Documentos e Certificados" dashboard
+    ├── Tela: "Documentacao Cadastral" list
+    ├── Somente LEITURA — sem upload de substituição
+    └── Rota: /profile
+
+2C. TMS — VISUALIZAÇÃO
+------------------------
+  PrestadorDetalhe.tsx
+    useEffect → SELECT documentos_prestadores WHERE prestador_id = ?
+    handleFotoUpload / handleDocUpload → upload para bucket + INSERT
+    (TMS também pode ADICIONAR documentos ao prestador)
+
+  StatusDocumental.tsx
+    SELECT ALL documentos_prestadores → dashboard de status
+
+2D. TMS — APROVAÇÃO/REPROVAÇÃO (DESCONECTADA)
+----------------------------------------------
+  AnaliseDocumentoIA.tsx
+    approveDocumentAnalysis() → UPDATE documento_analises SET status_final='aprovado'
+    rejectDocumentAnalysis() → UPDATE documento_analises SET status_final='rejeitado'
+
+  >>> CRÍTICO: escreve em documento_analises, NÃO em documentos_prestadores >>>
+  >>> NÃO há código que propague aprovação para documentos_prestadores >>>
+
+  AnaliseLote.tsx
+    SELECT de "provider_documents" (TABELA ERRADA — deveria ser documentos_prestadores)
+    "Aprovar Todos" → somente state local (não persiste no DB)
+
+2E. GATE — ELEGIBILIDADE
+--------------------------
+  eligibilidadeOperacionalService.ts
+    verificarElegibilidadeDocumental(prestadorId)
+      → SELECT tipo, status, validade FROM documentos_prestadores WHERE prestador_id = ?
+      → Verifica: CNH (obrigatória, válida, não vencida)
+      → Verifica: Comprovante de Residencia (obrigatório)
+      → Verifica: CRLV (se tem veículo)
+      → FAIL-OPEN: erro de query = elegivel=true
+
+    verificarElegibilidadeOperacionalPrestador(prestadorId)
+      → 3 queries: prestadores (status+liberado_app) + documentos + cnh_validade
+      → Hard gates: status IN (ativo,aprovado) + liberado_app=true
+      → Best-effort: docs (fail-open)
+
+    chamado por: escalaService.criarAlocacao (linha 348)
+
+3. DIAGRAMA DE FLUXO COMPLETO
+==============================
+
+  App Cadastro
+    │
+    ├── prestadores (status='em_analise', liberado_app=false)
+    │     └── id = prestador_id
+    │
+    └── documentos_prestadores (12 docs)
+          ├── prestador_id = prestador.id ✅ CORRETO
+          ├── status = pendente (default)
+          ├── url = public URL do bucket
+          └── tipo = "CNH Frente", "CRLV", etc.
+
+  App Perfil (READ-ONLY)
+    └── documentos_prestadores → exibe, NÃO edita
+
+  TMS PrestadorDetalhe
+    └── documentos_prestadores → exibe + pode ADICIONAR
+
+  TMS AnaliseDocumentoIA
+    └── documento_analises → aprova/reprova (TABELA SEPARADA)
+        >>> NÃO propagado para documentos_prestadores >>>
+
+  Gate Elegibilidade
+    └── documentos_prestadores → lê status/validade
+        >>> FAIL-OPEN: erro = elegivel >>>
+
+  escalaService.criarAlocacao
+    └── verificarElegibilidadeOperacionalPrestador
+        ├── prestadores.status + liberado_app = HARD GATE
+        └── documentos_prestadores = BEST-EFFORT (fail-open)
+
+4. GAPS IDENTIFICADOS
+======================
+
+GAP J.2-1: APROVAÇÃO DESCONECTADA (P1)
+  AnaliseDocumentoIA escreve em documento_analises
+  NÃO propaga para documentos_prestadores.status
+  Impacto: documentos永远ficam com status=pendente no gate
+  Solução: sync documento_analises → documentos_prestadores
+
+GAP J.2-2: FAIL-OPEN NO GATE DOCUMENTAL (P2)
+  verificarElegibilidadeDocumental retorna elegivel=true em caso de erro
+  Impacto: prestador com docs vencidos pode ser alocado se DB falhar
+  Solução: decisao do usuário (manter fail-open ou harden)
+
+GAP J.2-3: AnaliseLote USA TABELA ERRADA (P2)
+  SELECT de "provider_documents" em vez de "documentos_prestadores"
+  Impacto: componente mostra dados de tabela inexistente
+  Solução: corrigir tabela para documentos_prestadores
+
+GAP J.2-4: SEM SUBSTITUIÇÃO DE DOCUMENTO NO APP (P3)
+  App não tem tela para enviar novo documento após rejeição/vencimento
+  Impacto: motorista deve re-cadastrar inteiramente
+  Solução: adicionar tela de substituição no App (futuro)
+
+GAP J.2-5: STATUS DEFAULT = pendente (P3)
+  Upload do App insere com status=pendente (default)
+  Nenhum fluxo automático muda para 'valido' ou 'aprovado'
+  Impacto: gate documental pode bloquear indevidamente
+  Solução: definir regra de status pós-upload
+
+5. TIPOS DOCUMENTAIS — CONFRONTO APP × TMS
+============================================
+
+  App (register_screen.dart)          │ TMS (TIPOS_DOCUMENTO_VALIDOS)
+  ────────────────────────────────────┼──────────────────────────────
+  CNH Frente                          │ CNH Frente ✅
+  CNH Verso                           │ CNH Verso ✅
+  CRLV (Doc. Veiculo)                 │ CRLV ✅
+  Comprovante Residencia              │ Comprovante de Residencia ✅
+  Selfie do Prestador                 │ Documento Pessoal ⚠️ (alias)
+  Veiculo Frente                      │ Documento do Veiculo ⚠️ (alias)
+  Veiculo Traseira                    │ Outros ⚠️ (genérico)
+  Lateral do Veiculo                  │ Outros ⚠️ (genérico)
+  Foto Placa                          │ Outros ⚠️ (genérico)
+  Interna do Bau                      │ Outros ⚠️ (genérico)
+  ANTT/RNTRC                          │ ANTT ✅
+  Certidao Negativa                   │ Outros ⚠️ (genérico)
+
+  Discrepâncias: 5 tipos App mapeados para "Outros" no TMS
+  Impacto: gate documental NÃO reconhece esses tipos como obrigatórios
+  Não é bloqueante (outros são opcionais), mas reduz rastreabilidade
+
+6. IDENTIDADE — VALIDAÇÃO
+==========================
+
+  TODOS os documentos usam prestador_id do prestador criado no cadastro.
+  NÃO há uso de candidato.id, auth_user_id, telefone ou CPF como
+  substituto de prestador_id.
+
+  DriverDocumentsRepository.uploadAndLink(prestadorId, tipo, file)
+    → path: doc_{prestadorId}_{tipo}_{timestamp}.{ext}
+    → table: {prestador_id: prestadorId, tipo, url, created_at}
+
+  ✅ prestador_id está correto em TODOS os caminhos.
+
+7. CONCLUSÃO
+=============
+
+  AG-07J.2 CONFIRMA:
+  - Upload documental REAL existe no App (12 tipos)
+  - Bucket e tabela corretos (documentos_prestadores)
+  - prestador_id correto em todos os caminhos
+  - TMS recebe e exibe documentos
+  - Gate lê da mesma tabela
+
+  AG-07J.2 IDENTIFICA COMO PENDENTE:
+  - Aprovação/reprovação NÃO propaga para documentos_prestadores
+  - Fail-open no gate documental
+  - AnaliseLote lê tabela errada
+  - App sem tela de substituição de documento
+
+  CONCLUSÃO AG-07J: PARCIALMENTE CORRETA
+  - AG-07J disse "cadastro App não envia documentos" → INCORRETO
+  - App ENVIA documentos (12 tipos) durante cadastro
+  - Porém: documentos ficam com status=pendente indefinidamente
+    pois a aprovação não alcança a tabela correta
+
+================================================================================

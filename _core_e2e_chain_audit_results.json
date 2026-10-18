@@ -1,0 +1,1119 @@
+{
+  "1.1_alocacoes_total": [
+    {
+      "total": "193"
+    }
+  ],
+  "1.2_alocacoes_com_os": [
+    {
+      "total": "59"
+    }
+  ],
+  "1.3_alocacoes_sem_os": [
+    {
+      "total": "134"
+    }
+  ],
+  "1.4_os_total": [
+    {
+      "total": "121"
+    }
+  ],
+  "1.5_delivery_proofs_total": [
+    {
+      "total": "9"
+    }
+  ],
+  "1.6_entregas_protocolo_total": [
+    {
+      "total": "51"
+    }
+  ],
+  "1.7_entregas_com_os": [
+    {
+      "total": "2"
+    }
+  ],
+  "1.8_entregas_com_foto": [
+    {
+      "total": "12"
+    }
+  ],
+  "1.9_entregas_com_assinatura": [
+    {
+      "total": "5"
+    }
+  ],
+  "1.10_entregas_com_canhoto": [
+    {
+      "total": "4"
+    }
+  ],
+  "2.1_dp_columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "stop_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "operation_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "driver_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "receiver_name",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "receiver_document",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "receiver_relationship",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "photo_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "signature_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "latitude",
+      "data_type": "double precision",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "longitude",
+      "data_type": "double precision",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "gps_accuracy",
+      "data_type": "double precision",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observation",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "delivered_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tenant_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "foto_canhoto_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "rota_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "os_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "cliente_id",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "parada_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "idempotency_key",
+      "data_type": "text",
+      "is_nullable": "YES"
+    }
+  ],
+  "2.2_ep_columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "alocacao_id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "nome_recebedor",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "documento_recebedor",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "observacao",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "foto_entrega_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "foto_canhoto_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "assinatura_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_hora_entrega",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "latitude",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "longitude",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "gps_accuracy",
+      "data_type": "numeric",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "receiver_relationship",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "ordem_servico_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "tenant_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "parada_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    }
+  ],
+  "2.3_ae_columns": [
+    {
+      "column_name": "cliente_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "ordem_servico_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "aceite_prestador",
+      "data_type": "boolean",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "data_finalizacao",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "fotos_entrega",
+      "data_type": "ARRAY",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "metadata",
+      "data_type": "jsonb",
+      "is_nullable": "YES"
+    }
+  ],
+  "3.1_dp_recent": [
+    {
+      "id": "4e951450-a40b-5834-8740-d7bf55341593",
+      "operation_id": "14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "Diego Balbino",
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c/2026/08/15/7e8c3cac-0c66-465b-a414-87f15c46c14a.jpg",
+      "signature_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c/2026/08/15/ec2e916d-6199-4908-83e4-defd476f2b49.png",
+      "observation": "teste",
+      "delivered_at": "2026-08-15T14:06:44.049Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-15T17:06:44.644Z",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "4d5fa20e-65ac-4c79-b7b9-2c298fa61d85",
+      "operation_id": "b84f7312-9ab7-481f-83ef-ea4017925434",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "RECEBEDOR RETESTE HML",
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/b84f7312-9ab7-481f-83ef-ea4017925434/2026/08/12/c5206afa-0d45-412a-9214-30995a572bc6.jpg",
+      "signature_url": null,
+      "observation": "POD offline reteste A21",
+      "delivered_at": "2026-08-12T20:48:58.347Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-13T00:03:09.951Z",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "1b2450e6-825e-4701-8c2c-43aa415855ae",
+      "operation_id": "45374f42-1933-4793-ae2b-ce5939eeb563",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "RECEBEDOR D2 HML",
+      "photo_url": "a5e51631-5ed8-430d-9041-4b185c03d821/pod/45374f42-1933-4793-ae2b-ce5939eeb563/2026/08/11/a70cf198-cf3c-463c-97bc-196539df46be.jpg",
+      "signature_url": null,
+      "observation": "POD offline D2",
+      "delivered_at": "2026-08-11T23:45:58.405Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-12T02:54:23.874Z",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "0d0848dd-aedc-40dd-bfbb-0b0dc3e9721e",
+      "operation_id": "29f637bc-a750-4863-a6bb-c5b862b6bf04",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "RECEBEDOR D1 HML",
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/29f637bc-a750-4863-a6bb-c5b862b6bf04/2026/08/11/ddb763ad-88f9-4e51-99e9-29779044426e.jpg",
+      "signature_url": null,
+      "observation": "POD online D1",
+      "delivered_at": "2026-08-11T23:10:04.244Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-12T02:10:04.919Z",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "090de553-20ba-577c-adfc-76b736abc30c",
+      "operation_id": "4473d537-e266-41a5-b174-14bcc7d07cf4",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "Diego Balbino",
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/4473d537-e266-41a5-b174-14bcc7d07cf4/2026/08/07/784e7dae-3a30-46a4-a77c-261cbcd4a560.jpg",
+      "signature_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/4473d537-e266-41a5-b174-14bcc7d07cf4/2026/08/07/32ab9f7b-73bf-4f9d-89e9-2ee7e7afa779.png",
+      "observation": "",
+      "delivered_at": "2026-08-07T10:27:46.234Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-07T13:27:46.226Z",
+      "tenant_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "4.1_dp_with_ae": [
+    {
+      "dp_id": "4e951450-a40b-5834-8740-d7bf55341593",
+      "operation_id": "14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c",
+      "status": "delivered",
+      "delivered_at": "2026-08-15T14:06:44.049Z",
+      "ae_id": "14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c",
+      "ordem_servico_id": null,
+      "ae_status": "aguardando_aceite",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "cliente_id": null
+    },
+    {
+      "dp_id": "4d5fa20e-65ac-4c79-b7b9-2c298fa61d85",
+      "operation_id": "b84f7312-9ab7-481f-83ef-ea4017925434",
+      "status": "delivered",
+      "delivered_at": "2026-08-12T20:48:58.347Z",
+      "ae_id": "b84f7312-9ab7-481f-83ef-ea4017925434",
+      "ordem_servico_id": null,
+      "ae_status": "aguardando_aceite",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "cliente_id": null
+    },
+    {
+      "dp_id": "1b2450e6-825e-4701-8c2c-43aa415855ae",
+      "operation_id": "45374f42-1933-4793-ae2b-ce5939eeb563",
+      "status": "delivered",
+      "delivered_at": "2026-08-11T23:45:58.405Z",
+      "ae_id": "45374f42-1933-4793-ae2b-ce5939eeb563",
+      "ordem_servico_id": null,
+      "ae_status": "aguardando_aceite",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "cliente_id": null
+    },
+    {
+      "dp_id": "0d0848dd-aedc-40dd-bfbb-0b0dc3e9721e",
+      "operation_id": "29f637bc-a750-4863-a6bb-c5b862b6bf04",
+      "status": "delivered",
+      "delivered_at": "2026-08-11T23:10:04.244Z",
+      "ae_id": "29f637bc-a750-4863-a6bb-c5b862b6bf04",
+      "ordem_servico_id": null,
+      "ae_status": "aguardando_aceite",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "cliente_id": null
+    },
+    {
+      "dp_id": "090de553-20ba-577c-adfc-76b736abc30c",
+      "operation_id": "4473d537-e266-41a5-b174-14bcc7d07cf4",
+      "status": "delivered",
+      "delivered_at": "2026-08-07T10:27:46.234Z",
+      "ae_id": "4473d537-e266-41a5-b174-14bcc7d07cf4",
+      "ordem_servico_id": null,
+      "ae_status": "aguardando_aceite",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "cliente_id": null
+    }
+  ],
+  "4.2_dp_operation_id_is_uuid": [
+    {
+      "total": "9",
+      "is_uuid": "9"
+    }
+  ],
+  "5.1_ep_from_dp": [
+    {
+      "ep_id": "15dff916-e8f6-4fbf-8017-34cd086bb1ba",
+      "alocacao_id": "14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c",
+      "ep_status": "entregue",
+      "ordem_servico_id": null,
+      "data_hora_entrega": "2026-08-15T14:06:44.049Z",
+      "dp_id": "4e951450-a40b-5834-8740-d7bf55341593",
+      "dp_status": "delivered"
+    },
+    {
+      "ep_id": "a917344b-87c6-4f9a-a974-0d7935fbd2e9",
+      "alocacao_id": "b84f7312-9ab7-481f-83ef-ea4017925434",
+      "ep_status": "entregue",
+      "ordem_servico_id": null,
+      "data_hora_entrega": "2026-08-12T20:48:58.347Z",
+      "dp_id": "4d5fa20e-65ac-4c79-b7b9-2c298fa61d85",
+      "dp_status": "delivered"
+    },
+    {
+      "ep_id": "8b385ce4-b9ae-44f3-a9ab-b4452e85feff",
+      "alocacao_id": "45374f42-1933-4793-ae2b-ce5939eeb563",
+      "ep_status": "entregue",
+      "ordem_servico_id": null,
+      "data_hora_entrega": "2026-08-11T23:45:58.405Z",
+      "dp_id": "1b2450e6-825e-4701-8c2c-43aa415855ae",
+      "dp_status": "delivered"
+    },
+    {
+      "ep_id": "005c3c3e-9689-4990-9263-c3b88c13f2a7",
+      "alocacao_id": "29f637bc-a750-4863-a6bb-c5b862b6bf04",
+      "ep_status": "entregue",
+      "ordem_servico_id": null,
+      "data_hora_entrega": "2026-08-11T23:10:04.244Z",
+      "dp_id": "0d0848dd-aedc-40dd-bfbb-0b0dc3e9721e",
+      "dp_status": "delivered"
+    },
+    {
+      "ep_id": "ba3d95af-4403-4f4e-8edc-d2d13a02ab98",
+      "alocacao_id": "4473d537-e266-41a5-b174-14bcc7d07cf4",
+      "ep_status": "entregue",
+      "ordem_servico_id": null,
+      "data_hora_entrega": "2026-08-07T10:27:46.234Z",
+      "dp_id": "090de553-20ba-577c-adfc-76b736abc30c",
+      "dp_status": "delivered"
+    }
+  ],
+  "5.2_ep_sem_dp": [
+    {
+      "total": "43"
+    }
+  ],
+  "6.1_dp_photo_urls": [
+    {
+      "photo_url": "https://storage.example.com/foto_test_108c1.jpg",
+      "signature_url": "https://storage.example.com/assinatura_test_108c1.png",
+      "foto_canhoto_url": null
+    },
+    {
+      "photo_url": "/data/user/0/com.example.conexao_prestador/cache/scaled_56c1dafa-efcb-4b84-a915-c4665f6eeef46514229467237147308.jpg",
+      "signature_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/4eabccb2-e7d4-4d5e-9d01-ed01ac23d6c1/2026/08/06/b95dea73-a083-4f3b-911c-426bb53e4e59.png",
+      "foto_canhoto_url": null
+    },
+    {
+      "photo_url": "/data/user/0/com.example.conexao_prestador/cache/scaled_8d149cf8-1e18-4ad4-902b-41fddec776c0539333196469705324.jpg",
+      "signature_url": "",
+      "foto_canhoto_url": null
+    },
+    {
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/4473d537-e266-41a5-b174-14bcc7d07cf4/2026/08/07/784e7dae-3a30-46a4-a77c-261cbcd4a560.jpg",
+      "signature_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/4473d537-e266-41a5-b174-14bcc7d07cf4/2026/08/07/32ab9f7b-73bf-4f9d-89e9-2ee7e7afa779.png",
+      "foto_canhoto_url": null
+    },
+    {
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/29f637bc-a750-4863-a6bb-c5b862b6bf04/2026/08/11/ddb763ad-88f9-4e51-99e9-29779044426e.jpg",
+      "signature_url": null,
+      "foto_canhoto_url": null
+    }
+  ],
+  "6.2_ep_photo_urls": [
+    {
+      "foto_entrega_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/72390158-4849-41e4-8283-8a0551d20aac/mqiwe8t1821qvrtf.png",
+      "foto_canhoto_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/72390158-4849-41e4-8283-8a0551d20aac/mqiwe8exkhojobcd.png",
+      "assinatura_url": null
+    },
+    {
+      "foto_entrega_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/fd2b074b-9c03-42fe-acad-112e617a62eb/mqjbv8xpgc33levu.png",
+      "foto_canhoto_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/fd2b074b-9c03-42fe-acad-112e617a62eb/mqjbv86453dtci1h.png",
+      "assinatura_url": null
+    },
+    {
+      "foto_entrega_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/02c85042-6176-4f49-bdaf-ba74b2296425/mqjc19ri0j6nnnsc.png",
+      "foto_canhoto_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/02c85042-6176-4f49-bdaf-ba74b2296425/mqjc19cf75hmfgt7.png",
+      "assinatura_url": null
+    },
+    {
+      "foto_entrega_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/02c85042-6176-4f49-bdaf-ba74b2296425/mqjca4rb4yrh1aeq.png",
+      "foto_canhoto_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/02c85042-6176-4f49-bdaf-ba74b2296425/mqjca4fk4w0m1uch.png",
+      "assinatura_url": null
+    },
+    {
+      "foto_entrega_url": "https://storage.example.com/foto_test_108c1.jpg",
+      "foto_canhoto_url": null,
+      "assinatura_url": "https://storage.example.com/assinatura_test_108c1.png"
+    }
+  ],
+  "7.1_caso1_protocolo": [
+    {
+      "ep_id": "71f90259-b897-4959-b1f0-d86f773833cf",
+      "alocacao_id": "01fc1dce-a7b2-4b4d-a78a-06a267d02afd",
+      "prestador_id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "ordem_servico_id": "eebc9d93-0c74-4315-abb4-f2d73ab20a95",
+      "nome_recebedor": "TESTE_RECEBEDOR",
+      "ep_status": "entregue",
+      "data_hora_entrega": "2026-08-07T08:12:46.799Z",
+      "latitude": "-23.6767004",
+      "longitude": "-46.5986347",
+      "foto_entrega_url": "/data/user/0/com.example.conexao_prestador/cache/scaled_8d149cf8-1e18-4ad4-902b-41fddec776c0539333196469705324.jpg",
+      "foto_canhoto_url": null,
+      "assinatura_url": "",
+      "created_at": "2026-08-07T11:43:53.264Z"
+    }
+  ],
+  "7.2_caso1_alocacao": {
+    "error": "column \"veiculo_tipo\" does not exist"
+  },
+  "7.3_caso1_os": {
+    "error": "column \"status_financeiro\" does not exist"
+  },
+  "7.4_caso1_prestador": [
+    {
+      "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+      "nome_completo": "PRESTADOR TESTE APP",
+      "cpf_cnpj": "12345678900",
+      "telefone": "11999999999"
+    }
+  ],
+  "7.5_caso1_dp": [
+    {
+      "id": "ea173d6b-6da2-5e49-a10f-8f2d7136cdb2",
+      "operation_id": "01fc1dce-a7b2-4b4d-a78a-06a267d02afd",
+      "status": "delivered",
+      "receiver_name": "TESTE_RECEBEDOR",
+      "photo_url": "/data/user/0/com.example.conexao_prestador/cache/scaled_8d149cf8-1e18-4ad4-902b-41fddec776c0539333196469705324.jpg",
+      "signature_url": "",
+      "foto_canhoto_url": null,
+      "observation": "",
+      "delivered_at": "2026-08-07T08:12:46.799Z",
+      "os_id": null
+    }
+  ],
+  "7.6_caso2_dp": [
+    {
+      "id": "4e951450-a40b-5834-8740-d7bf55341593",
+      "operation_id": "14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c",
+      "driver_id": "a5e51631-5ed8-430d-9041-4b185c03d821",
+      "status": "delivered",
+      "receiver_name": "Diego Balbino",
+      "photo_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c/2026/08/15/7e8c3cac-0c66-465b-a414-87f15c46c14a.jpg",
+      "signature_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/driver-evidence/a5e51631-5ed8-430d-9041-4b185c03d821/pod/14bc23f6-fb0b-4e0c-87a4-39f79f35aa2c/2026/08/15/ec2e916d-6199-4908-83e4-defd476f2b49.png",
+      "observation": "teste",
+      "delivered_at": "2026-08-15T14:06:44.049Z",
+      "os_id": null,
+      "rota_id": null,
+      "created_at": "2026-08-15T17:06:44.644Z"
+    }
+  ],
+  "7.7_caso2_alocacao": {
+    "error": "column \"romaneio\" does not exist"
+  },
+  "7.8_caso2_ep": {
+    "error": "invalid input syntax for type uuid: \"null\""
+  },
+  "7.9_caso3_alocacao_sem_dp": {
+    "error": "column ae.romaneio does not exist"
+  },
+  "8.1_finalizadas_sem_dp": [
+    {
+      "total": "56"
+    }
+  ],
+  "8.2_finalizadas_com_dp": [
+    {
+      "total": "0"
+    }
+  ],
+  "8.3_dp_sem_ep": [
+    {
+      "total": "0"
+    }
+  ],
+  "8.4_ep_with_null_fields": [
+    {
+      "total": "51",
+      "sem_foto": "39",
+      "sem_assinatura": "46",
+      "sem_canhoto": "47",
+      "sem_recebedor": "0"
+    }
+  ],
+  "9.1_trigger_exists": [
+    {
+      "trigger_name": "trg_sync_delivery_proof_to_entregas",
+      "event_manipulation": "INSERT",
+      "event_object_table": "delivery_proofs"
+    }
+  ],
+  "9.2_sync_function": [
+    {
+      "routine_name": "f_sync_delivery_proof_to_entregas",
+      "routine_type": "FUNCTION"
+    }
+  ],
+  "10.1_view_columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "empresa_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "cliente_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "prestador_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "ordem_servico_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "ordem_carregamento_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "data_escala",
+      "data_type": "date"
+    },
+    {
+      "column_name": "turno",
+      "data_type": "text"
+    },
+    {
+      "column_name": "tipo_veiculo",
+      "data_type": "text"
+    },
+    {
+      "column_name": "placa",
+      "data_type": "text"
+    },
+    {
+      "column_name": "regiao",
+      "data_type": "text"
+    },
+    {
+      "column_name": "rota",
+      "data_type": "text"
+    },
+    {
+      "column_name": "origem",
+      "data_type": "text"
+    },
+    {
+      "column_name": "destino",
+      "data_type": "text"
+    },
+    {
+      "column_name": "status",
+      "data_type": "text"
+    },
+    {
+      "column_name": "status_pagamento",
+      "data_type": "text"
+    },
+    {
+      "column_name": "quantidade_entregas",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "quantidade_coletas",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "quantidade_paradas",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "km_previstos",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "km_realizados",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_frete",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_repasse",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_pedagio",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_combustivel",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_ajudante",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_adicional",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_desconto",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_total",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_tipo",
+      "data_type": "text"
+    },
+    {
+      "column_name": "valor_percentual",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_fixo",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "combustivel_valor",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "km_rodados",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "valor_km",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "pedagio_franquia",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "pedagio_excedente",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "pedagio_cobrar_excedente",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "diarias_adicionais",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "valor_diaria",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "segunda_saida",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "valor_segunda_saida",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "terceira_saida",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "valor_terceira_saida",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "saidas_adicionais",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "valor_saida_adicional",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "ajudantes",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "valor_ajudante_unit",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reembolsos_outros",
+      "data_type": "text"
+    },
+    {
+      "column_name": "valor_reembolso_outros",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "horario_saida",
+      "data_type": "time without time zone"
+    },
+    {
+      "column_name": "horario_retorno_previsto",
+      "data_type": "time without time zone"
+    },
+    {
+      "column_name": "horario_inicio_real",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "horario_fim_real",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "tempo_total_minutos",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "aceite_prestador",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "data_aceite",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "motivo_recusa",
+      "data_type": "text"
+    },
+    {
+      "column_name": "finalizada",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "data_finalizacao",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "comprovante_url",
+      "data_type": "text"
+    },
+    {
+      "column_name": "assinatura_url",
+      "data_type": "text"
+    },
+    {
+      "column_name": "fotos_entrega",
+      "data_type": "ARRAY"
+    },
+    {
+      "column_name": "ocorrencias_count",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "ocorrencias_descricao",
+      "data_type": "text"
+    },
+    {
+      "column_name": "observacoes",
+      "data_type": "text"
+    },
+    {
+      "column_name": "instrucoes_operacionais",
+      "data_type": "text"
+    },
+    {
+      "column_name": "observacoes_internas",
+      "data_type": "text"
+    },
+    {
+      "column_name": "tabela_valores_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "tem_regra_especial",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "metadata",
+      "data_type": "jsonb"
+    },
+    {
+      "column_name": "tags",
+      "data_type": "ARRAY"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "created_by",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "updated_by",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "tenant_id",
+      "data_type": "uuid"
+    },
+    {
+      "column_name": "tipo_reversa",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_valor_cliente",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reversa_valor_prestador",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reversa_qtd_volumes",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "reversa_status",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_pod_url",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_fotos",
+      "data_type": "jsonb"
+    },
+    {
+      "column_name": "reversa_observacoes",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_realizada_em",
+      "data_type": "timestamp with time zone"
+    },
+    {
+      "column_name": "reversa_qtd_coletada",
+      "data_type": "integer"
+    },
+    {
+      "column_name": "reversa_endereco_coleta",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_endereco_devolucao",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_unidade_cobranca",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_valor_unitario",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reversa_divergencia",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_motivo_divergencia",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_responsavel",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_documento_responsavel",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_telefone",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_data_prevista",
+      "data_type": "date"
+    },
+    {
+      "column_name": "reversa_data_realizada",
+      "data_type": "date"
+    },
+    {
+      "column_name": "reversa_valor_adicional",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reversa_assinatura_url",
+      "data_type": "text"
+    },
+    {
+      "column_name": "reversa_latitude",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "reversa_longitude",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "coleta_reversa",
+      "data_type": "boolean"
+    },
+    {
+      "column_name": "operation_mode",
+      "data_type": "text"
+    },
+    {
+      "column_name": "motivo_troca_motorista",
+      "data_type": "text"
+    },
+    {
+      "column_name": "endereco_origem",
+      "data_type": "jsonb"
+    },
+    {
+      "column_name": "endereco_destino",
+      "data_type": "jsonb"
+    }
+  ],
+  "10.2_view_count": [
+    {
+      "total": "193"
+    }
+  ],
+  "10.3_view_sample": {
+    "error": "column \"romaneio\" does not exist"
+  },
+  "11.1_os_from_alocacao": [
+    {
+      "total": "53"
+    }
+  ],
+  "11.2_os_standalone": [
+    {
+      "total": "68"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+F0-N — HOTFIX CRASH ROVING FOCUS AO ABRIR /financeiro
+=====================================================================
+1. CAUSA-RAIZ EXATA
+   Radix UI (Tabs) lança "'RovingFocusGroupItem' must be used within
+   'RovingFocusGroup'" porque TabsTrigger (que internamente renderiza
+   RovingFocusGroup.Item) foi colocado DENTRO de um <div> simples, fora de
+   qualquer TabsList. No Radix, o provider do RovingFocusGroup é o
+   TabsList (TabsPrimitive.List). Sem ele como ancestral, o Trigger não
+   encontra o contexto e o ErrorBoundary derruba a página inteira.
+2. ARQUIVO E COMPONENTE RESPONSÁVEIS
+   src/pages/Financeiro.tsx — bloco de navegação agrupada criado em F0-L
+   (linhas 114–136). O <div className="flex flex-wrap ..."> continha os
+   grupos, mas os <TabsTrigger> estavam SEM <TabsList> por perto.
+3. COMPONENTE FORA DO PROVIDER CORRETO
+   TabsTrigger (e, portanto, RovingFocusGroup.Item) fora do TabsList
+   (RovingFocusGroup provider). Todo trigger da navegação renderizava
+   órfão de provider.
+4. CORREÇÃO APLICADA (menor alteração)
+   Cada grupo da navegação agora renderiza seus triggers dentro de um
+   <TabsList> próprio (className override: h-auto bg-transparent p-0),
+   mantendo a separação visual por grupos. Radix suporta múltiplos
+   TabsList sob um mesmo Tabs; o estado ativo continua vindo do contexto
+   do Tabs raiz. Nada mais no arquivo foi alterado.
+5. NAVEGAÇÃO F0-L PRESERVADA (grupos intactos)
+   Visão Geral: Dashboard, Pendências
+   Faturamento: Conferência, Faturas, Contas a Receber, Inadimplência
+   Pagamentos: Contas a Pagar, Pag. Prestadores
+   Tesouraria: Fluxo de Caixa, Contas & Caixas, Conciliação, CNAB
+   Gestão: DRE, Margem por OS, Relatórios, Recibos
+   Outros (legado): Margem, Rentabilidade, Seguros Auto, Contabilidade
+   Configurações: Plano de Contas, Config. Financeiras, Regras por Cliente
+   Nenhuma rota/valor de aba alterado; flex-wrap responsivo mantido.
+6. TABS TESTADAS (por código/direção)
+   dashboard, conferencia, faturas, receber, pagar, pagamento-prestadores,
+   fluxo, dre, contas-caixas, relatorios, margem-os, recibos
+   (valores reais de financeiroNav.ts; todas possuem TabsContent na página;
+   a composição agrupada monta sem lançar erro — Radix lança em tempo de
+   render, então o mount sem throw é a prova do hotfix).
+7. RESULTADO VITEST
+   f0n_hotfix_roving_focus.test.tsx: 4/4 PASS (mount sem throw com 20 tabs,
+   alternância de aba ativa via mouseDown, zero trigger órfão, 12 TabsContent)
+   f0l_navegacao_conciliacao_cnab.test.ts: 7/7 PASS (regressão F0-L)
+8. RESULTADO TSC
+   npx tsc --noEmit → 0 erros.
+9. CONFIRMAÇÕES
+   BANCO NÃO ALTERADO
+   REGRAS FINANCEIRAS NÃO ALTERADAS
+   F0-M PRESERVADA (nenhuma fórmula/serviço tocado)

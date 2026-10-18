@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { buscarContratos, buscarModelosContratos, criarModeloContrato, atualizarModeloContrato, excluirModeloContrato, excluirContrato, baixarPDF, type ContratoGerado, type ContratoModelo, type BuscarContratosFiltros } from "@/services/contratosService";
 import { AssinarContratoModal } from "@/components/contratos/AssinarContratoModal";
 import { EvidenciasContratoModal } from "@/components/contratos/EvidenciasContratoModal";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 interface ModeloLocal {
   id: string;
@@ -227,7 +228,7 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
 
     const replacements: Array<[RegExp, string]> = [
       [/\{\{empresa_nome\}\}/g, "Conexão Express Transportes LTDA"],
-      [/\{\{empresa_cnpj\}\}/g, "42.796.040/0001-31"],
+      [/\{\{empresa_cnpj\}\}/g, "31.227.975/0001-80"],
       [/\{\{empresa_endereco\}\}/g, "Avenida Goitacazes, 45, São Caetano do Sul/SP"],
       [/\{\{prestador_nome\}\}/g, "João da Silva"],
       [/\{\{prestador_cpf\}\}/g, "123.456.789-00"],
@@ -374,8 +375,7 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
             <CardContent>
               {loadingModelos ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-muted-foreground">Carregando modelos...</span>
+                  <ProgressiveBlocksLoader size="normal" />
                 </div>
               ) : modelos.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -565,8 +565,7 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
 
               {loadingGerados ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-muted-foreground">Carregando contratos...</span>
+                  <ProgressiveBlocksLoader size="normal" />
                 </div>
               ) : contratosGerados.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">

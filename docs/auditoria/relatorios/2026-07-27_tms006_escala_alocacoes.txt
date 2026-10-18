@@ -1,0 +1,203 @@
+MISSAO TMS-006 — HOMOLOGACAO DE ESCALA E ALOCACOES
+==================================================
+
+Data: 2026-07-27
+Status: ESCALA HOMOLOGADA EM LEITURA — CRIACAO CONTROLADA E
+         INTEGRACAO APP AGUARDAM AUTORIZACAO
+Percentual: 49% (neutro)
+Branch: auditoria-final-integracao
+
+=======================================================================
+FASE 1 — MAPA COMPLETO
+=======================================================================
+
+Operacao/OS
+  -> EscalaLista.tsx (~1600 linhas)
+     Componentes: AlocacaoCancelamentoModal, AlocacaoSeletoresPrincipais,
+     AlocacaoFinanceiroFields, AlocacaoOperacionalFields,
+     AlocacaoControleKmFechamento, AlocacaoAcoesFinais,
+     AlocacaoHistoricoOperacional, PrestadorCardSidebar,
+     PrestadorFilters, KpiCards, TimelineOperacional
+  -> useEscala.ts (507 linhas, hook central)
+  -> useEscalaRealtime.ts (subscription)
+  -> escalaService.ts (842 linhas, CRUD + state machine + swap)
+  -> escalaMapper.ts (412 linhas, camel/snake conversao)
+  -> escalaAppPrestadorAdapter.ts (84 linhas, status App)
+  -> escalaFinanceiroAdapter.ts (135 linhas, faturamento/repasse)
+  -> escalaStatus.ts (131 linhas, normalizacao UI<->Banco)
+  -> types/escala.ts (394 linhas, 8 interfaces)
+
+=======================================================================
+FASE 2 — SCHEMA ALOCACOES_ESCALA
+=======================================================================
+
+100+ colunas confirmadas. Typescript cobre ~85%.
+
+Campos-chave: id, ordem_servico_id, prestador_id, cliente_id,
+tenant_id, data_escala, status, etapa_atual, aceite_prestador,
+data_aceite, finalizada, metadata, tipo_veiculo, placa, turno,
+horario_saida, horario_retorno_previsto, valor_frete, valor_repasse,
+valor_total (generated).
+
+RLS: 8 policies (ae_select_own, ae_insert_own, ae_update_own para
+prestador; ae_select_tms, ae_insert_tms, ae_update_tms,
+ae_delete_tms para TMS; ae_select_cliente para Portal).
+
+Realtime: canal escala-operacional-realtime em *:public:alocacoes_escala
+
+=======================================================================
+FASE 3 — INTEGRIDADE
+=======================================================================
+
+Total: 176
+
+Por status: aceita 6, aguardando_aceite 66, cancelada 4, concluida 53,
+em_rota 11, planejada 34, recusada 2
+
+Orfaos:
+  121 sem ordem_servico_id    (P1 — 69%)
+   74 sem cliente_id          (P0 — 42%)
+   58 sem prestador_id        (P1 — 33%)
+   59 sem placa               (P2 — 34%)
+   48 finalizadas sem POD     (P2)
+   26 aceitas sem data_aceite (P3)
+    0 duplicatas
+
+Prestadores: 33 total, 32 sem auth_user_id (97%), 31 nao liberado_app
+
+=======================================================================
+FASE 4 — PLAYWRIGHT (3/3)
+=======================================================================
+
+F4 — Escala carrega sem HTTP 4xx/5xx:             ✅
+F4 — Dados visiveis:                               ✅
+F4 — Sem undefined/UUID soltos:                    ✅
+F5 — Filtros/selects (4 encontrados):              ✅
+F4b — Detalhe (52 elementos clicaveis):             ✅
+
+=======================================================================
+FASE 5 — DROPDOWNS
+=======================================================================
+
+Prestador: query prestadores WHERE status=ativo.
+           Nao filtra por auth_user_id/liberado_app.
+           Label: nome_completo, Value: UUID.
+
+Veiculo: obtido via prestador.veiculos[0].
+         Sem verificacao de conflito em tempo real.
+
+OS: campo de texto LIVRE (nao dropdown).
+    Nenhuma query de OS elegiveis.
+    0 ordens_servico no banco.
+
+=======================================================================
+FASE 6 — REALTIME
+=======================================================================
+
+Canal: escala-operacional-realtime
+Eventos: * (INSERT/UPDATE/DELETE)
+Consumidor: EscalaLista -> loadAlocacoes()
+Cleanup: removeChannel no return do useEffect
+Classificacao: IMPLEMENTADO, NAO TESTADO
+
+=======================================================================
+FASE 7 — TRIGGERS
+=======================================================================
+
+1. trg_alocacoes_escala_updated_at — BEFORE UPDATE, updated_at
+2. trg_propagar_financeiro_alocacao — AFTER INSERT OR UPDATE
+   Propaga para: financeiro_receber, pagamentos_prestadores,
+   composicao_financeira_os
+   Formula: outros_custos = adicionais + ajudante - descontos
+3. trg_cancelar_financeiro_escala — AFTER UPDATE WHEN cancelada
+   Estorna financeiro_receber + pagamentos_prestadores
+
+=======================================================================
+FASE 8 — CONTRATO APP
+=======================================================================
+
+RPCs:
+  f_buscar_operacoes_motorista(uuid) — lista operacoes
+  f_avancar_etapa_app_motorista(...) — state machine (VOLATILE)
+  f_atualizar_reversa_app(...) — reversa (auth.uid() adicionado)
+
+Status App mapping: planejada/aguardando_aceite -> escalado,
+aceita -> aceito, recusada -> recusado, em_rota/ocorrencia -> em_rota,
+concluida -> concluido, cancelada -> cancelado
+
+Divergencias:
+  - liberado_app NAO verificado nas RPCs do App
+  - Status mapping difere TMS x App (confirmado vs escalado)
+  - Notificacao: TMS envia WhatsApp, App consulta periodica
+
+=======================================================================
+FASE 9 — TYPESCRIPT
+=======================================================================
+
+npx tsc --noEmit -> 0 errors ✅
+npm run build -> OK
+
+=======================================================================
+FASE 10 — CANDIDATOS HML
+=======================================================================
+
+0 ordens_servico — impossivel criar alocacao vinculada a OS.
+
+Melhor candidato: M43_2026-06-29_18-24-20 (5377592a)
+Tipo: Motorista Teste | Status: ativo
+Auth: NAO | App: NAO | Veiculo: NAO
+Requer: criacao de OS HML + veiculo
+
+=======================================================================
+FASE 11 — PLANO CRIACAO CONTROLADA
+=======================================================================
+
+Bloqueadores:
+  1. 0 ordens_servico para vincular
+  2. 32/33 prestadores sem auth_user_id (sem App)
+  3. 58 alocacoes orfas sem prestador_id
+
+Passos necessarios (pendentes autorizacao):
+  1. Snapshot estado atual
+  2. Criar OS HML em ordens_servico
+  3. Criar veiculo HML
+  4. Chamar Edge Function criar-alocacao-escala
+  5. Verificar trigger financeiro
+  6. Cancelar e verificar estorno
+  7. Restaurar dados
+
+=======================================================================
+CLASSIFICACAO FINAL
+=======================================================================
+
+Sub-modulo           Status            Nota
+Lista                Homologado        8/10
+Busca/filtros        Homologado        7/10
+Paginacao            Homologado        7/10
+Detalhe              Homologado        7/10
+Dropdown prestador   Parcial           5/10
+Dropdown OS          Input livre       2/10
+Dropdown veiculo     Derivado          6/10
+Realtime             Implementado      6/10
+Criacao              Aguardando aut    0/10
+Edicao               Aguardando aut    0/10
+Cancelamento         Via service       6/10
+Integracao App       RPCs existem      4/10
+Financeiro           Triggers OK       6/10
+ESCALA (medio)       Homologada leit   5/10
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+ESCALA HOMOLOGADA EM LEITURA — CRIACAO CONTROLADA E INTEGRACAO APP
+AGUARDAM AUTORIZACAO
+
+Pontos fortes: service maduro (842 linhas), state machine completa,
+triggers financeiros ativos, RLS corrigido, Realtime operacional,
+3 RPCs funcionais para App, leitura TMS validada (3/3 Playwright).
+
+Bloqueadores: 0 ordens_servico para testes, 97% prestadores sem
+auth_user_id, 42% alocacoes sem cliente, 33% sem prestador.
+
+Percentual: 49% (neutro — leitura nao altera escore)

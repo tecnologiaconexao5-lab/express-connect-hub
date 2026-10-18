@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const getEnvVar = (key: string): string | undefined => {
   if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -15,3 +15,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export function createServiceClient(serviceRoleKey?: string): SupabaseClient {
+  const key = serviceRoleKey || getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !key) {
+    throw new Error("Service Role Key não configurada. Defina SUPABASE_SERVICE_ROLE_KEY no .env");
+  }
+  return createClient(supabaseUrl, key);
+}

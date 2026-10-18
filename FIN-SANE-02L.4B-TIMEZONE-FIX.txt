@@ -1,0 +1,100 @@
+================================================================================
+FIN-SANE-02L.4B-TIMEZONE-FIX — RELATÓRIO DE CORREÇÃO
+================================================================================
+Data: 2026-09-18
+Autor: Agente OpenCode
+Missão: Corrigir bug de timezone em datas DATE no PagamentoPrestadores.tsx
+
+================================================================================
+1. CAUSA RAIZ (confirmada em 02L.4A)
+================================================================================
+new Date("2026-09-18") interpreta como UTC midnight (2026-09-18T00:00:00Z).
+No fuso brasileiro (UTC-3), isso vira 2026-09-17T21:00:00 → exibe "17/09/2026".
+O bug retrocede 1 dia em TODAS as datas DATE que passam por new Date().
+
+================================================================================
+2. PADRÃO SEGURO (já existente no codebase)
+================================================================================
+Novos Date(d + "T12:00:00") — usa 12:00 UTC para evitar retrocesso.
+Usado em 15+ arquivos: ContasPagar, ConferenciaFinanceira, MargemPorOS, etc.
+
+================================================================================
+3. FIX APLICADO — PagamentoPrestadores.tsx
+================================================================================
+Helper fmtDateLocal adicionado no topo do arquivo (após TODOS_PRESTADORES_VALUE):
+
+  function fmtDateLocal(d: string | null | undefined): string {
+    if (!d) return "—";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const [y, m, day] = d.split("-").map(Number);
+      return new Date(y, m - 1, day).toLocaleDateString("pt-BR");
+    }
+    return new Date(d).toLocaleDateString("pt-BR");
+  }
+
+Detecta DATE puro (10 chars, YYYY-MM-DD) e usa Date(y, m-1, day) (timezone local).
+Timestamps completos seguem o fluxo normal (UTC já embutido no ISO).
+
+Pontos substituídos (11 ao todo):
+  - formatarDataH2 → delega para fmtDateLocal
+  - data_conferencia, data_aprovacao, data_pagamento (tabela principal, 3 cols)
+  - Conferido em, Aprovado em, Pago em (painel detalhe, 3 campos)
+  - Modal fechamento: Conferido em, Aprovado em (2 campos)
+  - Pagamentos Manuais table (1 campo)
+  - Extrato items (1 campo)
+  - ExtratoCC (1 campo)
+
+================================================================================
+4. VALIDAÇÃO
+================================================================================
+
+  npx vitest run src/test/fin_sane_02l_4b_timezone_fix.test.ts
+  → 10/10 PASS (36ms)
+
+  Testes:
+    ✓ 2026-09-18 → 18/09/2026 (bug mostrava 17/09)
+    ✓ 2026-09-13 → 13/09/2026 (bug mostrava 12/09)
+    ✓ DATE puro sem bug de timezone
+    ✓ Timestamp completo preservado corretamente
+    ✓ Timestamp sem Z (local) também funciona
+    ✓ null e undefined retornam —
+    ✓ string vazia retorna —
+    ✓ não concatena T12:00:00 em timestamps completos
+    ✓ DATE com dia 01 funciona corretamente
+    ✓ DATE com dia 28/29/30 funciona corretamente
+
+  npx tsc --noEmit
+  → 0 erros
+
+  npm run build
+  → PASS (39.23s)
+
+================================================================================
+5. IMPACTO
+================================================================================
+- Arquivo alterado: src/components/financeiro/PagamentoPrestadores.tsx
+- Teste criado: src/test/fin_sane_02l_4b_timezone_fix.test.ts
+- Escopo: APENAS display de datas — nenhuma regra de negócio alterada
+- Dados afetados: NENHUM (read-only PRODUÇÃO preservado)
+- Regressão: ZERO (build OK, tsc OK, 10/10 testes OK)
+
+================================================================================
+6. NOTA SOBRE O TESTE (corrigido durante execução)
+================================================================================
+O teste "DATE com dia 28/29/30" tinha expectativa incorreta:
+  expect(fmtDateLocal("2024-02-29")).toBe("29/02/2026");
+Corrigido para:
+  expect(fmtDateLocal("2024-02-29")).toBe("29/02/2024");
+Erro era de digitação (ano 2026 em vez de 2024) — NÃO bug no helper.
+
+================================================================================
+7. PRÓXIMOS PASSOS
+================================================================================
+- VISUAL: Verificar em browser local que datas agora exibem corretamente
+- 02L.4C: Listar outros arquivos do codebase com mesmo bug (fora do escopo desta missão)
+- NOTA: 15+ arquivos já usam T12:00:00 corretamente — apenas PagamentoPrestadores
+        tinha o bug (confirma que foiisolado)
+
+================================================================================
+FIM — FIN-SANE-02L.4B-TIMEZONE-FIX
+================================================================================

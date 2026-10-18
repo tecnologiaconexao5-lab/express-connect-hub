@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "@/lib/supabase";
+import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const ttStyle = { backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: "8px", fontSize: "12px" };
 
-const KpiCard = ({ title, value, icon: Icon, color, sub, placeholder }: {
-  title: string; value: string; icon: any; color?: string; sub?: string; placeholder?: boolean;
+const KpiCard = ({ title, value, icon: Icon, color, sub }: {
+  title: string; value: string; icon: any; color?: string; sub?: string;
 }) => {
   const navigate = useNavigate();
   return (
@@ -22,9 +23,8 @@ const KpiCard = ({ title, value, icon: Icon, color, sub, placeholder }: {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">{title}</p>
-            <p className={`text-xl font-extrabold mt-1 ${placeholder ? "text-muted-foreground" : "text-foreground"}`}>{value}</p>
+            <p className="text-xl font-extrabold mt-1 text-foreground">{value}</p>
             {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-            {placeholder && <Badge variant="outline" className="text-[9px] mt-1 h-4">Em preparação</Badge>}
           </div>
           <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
             <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -36,8 +36,11 @@ const KpiCard = ({ title, value, icon: Icon, color, sub, placeholder }: {
 };
 
 const TabComercial = () => {
+  const { filters } = useDashboardFilters();
   const [loading, setLoading] = useState(true);
   const [clientes, setClientes] = useState(0);
+  const [clientesAtivos, setClientesAtivos] = useState(0);
+  const [clientesNovos, setClientesNovos] = useState(0);
   const [osData, setOsData] = useState({ total: 0, emAndamento: 0, finalizadas: 0, canceladas: 0, valorTotal: 0 });
   const [clientesTop, setClientesTop] = useState<{ cliente: string; valor: number; os: number }[]>([]);
   const [orcamentos, setOrcamentos] = useState({ total: 0, aprovados: 0, pendentes: 0, reprovados: 0, valorAprovado: 0 });
@@ -46,13 +49,21 @@ const TabComercial = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [clientesData, osRaw, orcRaw] = await Promise.all([
+        const [clientesData, clientesAtivosData, clientesNovosData, osRaw, orcRaw] = await Promise.all([
           supabase.from("clientes").select("id", { count: "exact", head: true }),
-          supabase.from("ordens_servico").select("status, cliente, valor_cliente").order("created_at", { ascending: false }).limit(300),
-          supabase.from("orcamentos").select("status, valor_final").limit(300),
+          supabase.from("ordens_servico").select("cliente").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59").limit(200),
+          supabase.from("clientes").select("id", { count: "exact", head: true }).gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59"),
+          supabase.from("ordens_servico").select("status, cliente, valor_cliente").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59").order("created_at", { ascending: false }).limit(300),
+          supabase.from("orcamentos").select("status, valor_final").gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim + "T23:59:59").limit(300),
         ]);
 
         setClientes(clientesData.count || 0);
+        setClientesNovos(clientesNovosData.count || 0);
+
+        if (clientesAtivosData.data) {
+          const ativos = new Set(clientesAtivosData.data.map((o: any) => o.cliente).filter(Boolean)).size;
+          setClientesAtivos(ativos);
+        }
 
         if (osRaw.data) {
           const items = osRaw.data;
@@ -92,7 +103,7 @@ const TabComercial = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [filters.dataInicio, filters.dataFim]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -112,9 +123,9 @@ const TabComercial = () => {
         <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2"><Users className="w-3.5 h-3.5" />Clientes</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           <KpiCard title="Total Clientes" value={String(clientes)} icon={Users} color="bg-blue-500" sub="cadastrados" />
-          <KpiCard title="Clientes Ativos" value={String(clientes)} icon={CheckCircle2} color="bg-emerald-500" sub="com OS no período" />
-          <KpiCard title="Novos no Mês" value="—" icon={UserPlus} color="bg-violet-500" placeholder />
-          <KpiCard title="Follow-ups Pend." value="—" icon={Clock} color="bg-amber-500" placeholder />
+          <KpiCard title="Clientes Ativos" value={String(clientesAtivos)} icon={CheckCircle2} color="bg-emerald-500" sub="com OS no período" />
+          <KpiCard title="Novos no Período" value={String(clientesNovos)} icon={UserPlus} color="bg-violet-500" />
+          <KpiCard title="Follow-ups Pend." value="—" icon={Clock} color="bg-amber-500" sub="CRM em implantação" />
         </div>
       </div>
 
@@ -122,11 +133,11 @@ const TabComercial = () => {
       <div>
         <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2"><FileText className="w-3.5 h-3.5" />Propostas / Orçamentos</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          <KpiCard title="Total Propostas" value={String(orcamentos.total)} icon={FileText} color="bg-blue-500" />
+          <KpiCard title="Total Período" value={String(orcamentos.total)} icon={FileText} color="bg-blue-500" />
           <KpiCard title="Aprovadas" value={String(orcamentos.aprovados)} icon={CheckCircle2} color="bg-emerald-500" sub={fmt(orcamentos.valorAprovado)} />
           <KpiCard title="Pendentes" value={String(orcamentos.pendentes)} icon={AlertCircle} color="bg-amber-500" />
           <KpiCard title="Taxa Conversão" value={`${taxaOrc}%`} icon={Percent} color="bg-violet-500" sub="propostas aprovadas" />
-          <KpiCard title="Oportunidades" value="—" icon={Target} color="bg-indigo-500" placeholder />
+          <KpiCard title="Oportunidades" value="—" icon={Target} color="bg-indigo-500" sub="CRM em implantação" />
         </div>
       </div>
 
@@ -172,8 +183,7 @@ const TabComercial = () => {
               </ResponsiveContainer>
             ) : (
               <div className="text-center py-12">
-                <p className="text-muted-foreground text-sm">Nenhum orçamento encontrado</p>
-                <Badge variant="outline" className="mt-2">Em preparação</Badge>
+                <p className="text-muted-foreground text-sm">Nenhum orçamento encontrado no período</p>
               </div>
             )}
           </CardContent>

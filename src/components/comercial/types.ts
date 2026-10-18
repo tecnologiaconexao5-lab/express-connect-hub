@@ -26,6 +26,13 @@ export interface EnderecoOrcamento {
   janelaFim: string;
 }
 
+export interface DimensaoCarga {
+  quantidade: number;
+  comprimentoCm: number;
+  larguraCm: number;
+  alturaCm: number;
+}
+
 export interface CargaOrcamento {
   tipo?: string;
   descricao: string;
@@ -42,6 +49,13 @@ export interface CargaOrcamento {
   perigosa: boolean;
   controlada: boolean;
   observacoes: string;
+  // TMS-COM-CARGA-01/02 — dimensões por grupo de volume (cm) + derivados calculados.
+  dimensoes?: DimensaoCarga[];
+  pesoCubado?: number;
+  fatorCubagem?: number | null;
+  pesoConsiderado?: number;
+  pesoCubadoDisponivel?: boolean;
+  fatorCubagemContexto?: string;
 }
 
 export interface ValoresOrcamento {
@@ -58,6 +72,23 @@ export interface ValoresOrcamento {
   custoEstimado: number;
   margemEstimada: number;
   lucroEstimado: number;
+  // TMS-COM-PRECO-01 — snapshot da regra de preço aplicada (histórico imutável).
+  pricing?: PricingSnapshot;
+}
+
+export interface PricingSnapshot {
+  tabelaId?: string;
+  tabelaNome?: string;
+  fonte?: string;
+  veiculoTarifado?: string;
+  distanciaKm?: number;
+  franquiaKm?: number;
+  valorBase?: number;
+  kmExcedente?: number;
+  valorCalculado?: number;
+  overrideManual?: boolean;
+  contexto?: string;
+  calculadoEm?: string;
 }
 
 export interface DistanciaRota {
@@ -97,6 +128,10 @@ export interface Orcamento {
     tipo: string;
     subcategoria: string;
     carroceria: string;
+    // TMS-COM-CARGA-01 — recomendação persistida (explicável) e seleção humana.
+    recomendado?: string;
+    recomendacaoDisponivel?: boolean;
+    recomendacaoMotivos?: string[];
   };
   valores: ValoresOrcamento;
   distancia_rota?: DistanciaRota;

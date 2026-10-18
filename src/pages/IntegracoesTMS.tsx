@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Smartphone, Server, Bot, Zap, FileText, Loader2, CheckCircle2,
   XCircle, QrCode, Send, RefreshCw, Wifi, WifiOff, Copy, AlertTriangle,
-  Play, Pause, ListTodo, Activity, Network, Clock, BrainCircuit, RefreshCcw, Headset, Check, RefreshCcwDot
+  Play, Pause, ListTodo, Activity, Network, Clock, BrainCircuit, RefreshCcw, Headset, Check, Calendar, Trash2
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -407,13 +407,13 @@ function AbaProvedoresIA({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllL
               </tbody>
             </table>
           </div>
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
-            <strong>Como configurar as chaves?</strong><br/>
-            As chaves de API não são expostas na interface por segurança. Adicione-as ao seu arquivo <code>.env</code> local:<br/>
-            <code>VITE_GROQ_API_KEY=sua_chave</code><br/>
-            <code>VITE_GEMINI_API_KEY=sua_chave</code><br/>
-            <code>VITE_OPENROUTER_API_KEY=sua_chave</code><br/>
-            <code>VITE_OPENAI_API_KEY=sua_chave</code>
+          <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg text-xs text-green-800">
+            <strong>Chaves de IA seguras 🔒</strong><br/>
+            As chaves de API não ficam mais no frontend. Gerenciadas via Supabase Edge Function (<code>proxy-ia</code>):<br/>
+            <code>supabase functions deploy proxy-ia</code><br/>
+            <code>supabase secrets set GROQ_API_KEY=sua_chave</code><br/>
+            <code>supabase secrets set GEMINI_API_KEY=sua_chave</code><br/>
+            <code>supabase secrets set OPENAI_API_KEY=sua_chave</code>
           </div>
         </CardContent>
       </Card>
@@ -744,7 +744,7 @@ function AbaEscalaOperacional() {
 
   const excluirEscala = async (id: string) => {
     await supabase.from('escala_operacional').delete().eq('id', id);
-    toast.success('Escala removida');
+    toast.success('Programação removida');
   };
 
   const copiarInfo = (txt: string) => {
@@ -791,7 +791,7 @@ function AbaEscalaOperacional() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><Calendar className="w-5 h-5 text-indigo-600"/> Escala Operacional</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Calendar className="w-5 h-5 text-indigo-600"/> Programação Operacional</CardTitle>
             <CardDescription>Operações de campo, motoristas e veículos</CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={carregarEscalas} disabled={loading}>
@@ -802,7 +802,7 @@ function AbaEscalaOperacional() {
           {escalas.length === 0 ? (
             <div className="text-center py-10 text-slate-500 border rounded-lg bg-slate-50">
               <Calendar className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-              <p>Nenhuma escala cadastrada.</p>
+              <p>Nenhuma programação cadastrada.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

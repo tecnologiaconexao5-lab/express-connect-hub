@@ -1,0 +1,10 @@
+BUILD — MISSÃO 108-L5
+
+npm run build → ✅ 30.57s
+
+PortalCliente chunk:
+  Antes: 475.77 kB (101.02 kB gzip)
+  Depois: 484.00 kB (101.45 kB gzip)
+  Delta: +8.23 kB (+0.43 kB gzip)
+
+Apenas warnings pré-existentes (mapbox-gl chunk 1.7 MB, actionEngineService dynamic import)

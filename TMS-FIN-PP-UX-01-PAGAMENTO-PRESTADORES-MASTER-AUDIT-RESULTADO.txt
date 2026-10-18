@@ -1,0 +1,306 @@
+================================================================================
+MISSAO: TMS-FIN-PP-UX-01-PAGAMENTO-PRESTADORES-MASTER-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: AUDITORIA FUNCIONAL/UX READ-ONLY. NADA CORRIGIDO.
+================================================================================
+
+RESULTADO: PASS (auditoria concluida). ZERO DML/DDL.
+  - Tela `PagamentoPrestadores.tsx` (3.347 linhas) mapeada bloco a bloco.
+  - S1/S2 CONFIRMADOS em PROD (sem regressao): authenticated so SELECT; RPCs definer presentes.
+  - A experiencia "igual" deve-se a 5 acoes DESABILITADAS (S2) + varias listas sem paginacao/busca.
+  - Acoes oficiais funcionais: Aprovar, Marcar Pago, Gerar Lote, Pagar Fechamento (via RPC).
+
+================================================================================
+1. ARQUITETURA ATUAL
+================================================================================
+Componente unico: src/components/financeiro/PagamentoPrestadores.tsx
+  Abas nivel 1: dashboard | listagem | relatorio | conta-corrente (estado `aba`).
+  Sub-abas (dentro de listagem): periodo | aptos | manuais | anteriores | repasses.
+Fonte primaria unica: public.pagamentos_prestadores (quase todos os blocos).
+Apoio: ordens_servico, alocacoes_escala, clientes, prestadores, contas_financeiras,
+       entregas_protocolo, financeiro_pagar, composicao_financeira_os.
+Tabelas correlatas: financeiro_pagar (obrigacao/despesa) e pagamentos_prestadores
+  (repasse ao prestador) — CONCEITOS DUPLICADOS (mesma obrigacao em duas fontes).
+Views existentes (nao usadas pela tela): vw_relatorio_pagamento_prestador,
+  vw_relatorio_pagamento_detalhado. Tabelas de lote: lotes_pagamento (0),
+  lotes_pagamento_itens (0). Tabela orfa: `pagamento_prestadores` (singular).
+
+================================================================================
+2. ORIGEM DE CADA BLOCO (UI -> service -> query/RPC -> tabela/view -> filtro -> status -> acao -> efeito)
+================================================================================
+[NOVO PAGAMENTO] botao 1564 (DISABLED)
+  UI: botao+Dialog 2716-2961; service criarPagamento (pagamentoPrestadorService.ts:197, INSERT direto).
+  Tabela: pagamentos_prestadores. Filtros: —. Status: em_aberto/aguardando_aprovacao/pendente.
+  Acao: handleSalvarNovoPagamento (1282) -> aborta com toast S2 (1283); corpo inalcancavel.
+  Efeito financeiro real: NENHUM. [Categoria C]
+
+[VISAO DO PERIODO] sub-aba periodo 1789-1856
+  UI: cards/totais por prestador; service: fetchOss (641) -> pagamentos_prestadores.
+  Filtros: is_teste=false, status<>cancelado, tipo_pagamento<>fechamento, periodo overlap,
+           prestador/origem (server); busca client (1042).
+  Status: exclui cancelado/fechamento. Acao: Eye->detalhe; "Gerar Fechamento" bloqueado (S2).
+  Efeito: NENHUM (leitura). [Acao = C]
+
+[APTOS PARA LOTE] sub-aba aptos 1858-1949
+  UI: tabela + selecao; service: fetchAptosLote (858) -> pagamentos_prestadores
+    (status_conferencia=conferido, status_aprovacao=aprovado, elegivel_lote=true,
+     lote_id null, is_teste=false, tipo<>fechamento, status_pagamento not in(pago,cancelado)).
+  Filtros client (lotePagamentoHelper.filtrarAptosLote). Paginacao client 25. LIMIT 1000 (871).
+  Acao: handleGerarLote (1153) -> RPC f_gerar_lote_pagamentos (A). Efeito: cria lote + status_pagamento='em_lote'.
+
+[PAGAMENTOS MANUAIS] sub-aba manuais 1951-2107
+  UI: tabela; service: fetchPagamentosManuais (459) -> pagamentos_prestadores
+    (origem_lancamento='manual', is_teste=false), order created_at desc, SEM limit/paginacao.
+  Filtros: nenhum (busca NAO aplicada). Status: status_conferencia (em_aberto/conferido/divergente/
+    bloqueado) + status_pagamento + derivado statusFinanceiro (calculado).
+  Acoes: Marcar Conferido (RPC aprovar), Aprovar (RPC aprovar), Marcar Pago (RPC confirmar);
+    Reprovar/Cancelar DISABLED (S2); "Ver Detalhes" SEM onClick (morto).
+  Efeito: Aprovar e Marcar Pago -> RPC oficial.
+
+[FECHAMENTOS ANTERIORES] sub-aba anteriores 2109-2291
+  UI: lista; service: fechamentoService.listarFechamentos (244) -> pagamentos_prestadores
+    tipo_pagamento='fechamento' (+ N+1 buscarFechamento). SEM paginacao.
+  Status derivado: em_conferencia/conferido/aprovado/pago/cancelado.
+  Acoes: Conferir/Aprovar/Cancelar DISABLED (S2); Pagar -> RPC f_confirmar_pagamento_fechamento (A).
+
+[REPASSES DA PROGRAMACAO] sub-aba repasses 2293-2407
+  UI: lista agrupada; service: fetchEscalaRepasse (689) -> alocacoes_escala (finalizada=true,
+    is_teste=false, data_escala no periodo) + entregas_protocolo (POD). SEM paginacao.
+  Dedup contra pagamentos_prestadores por OS. Acao "Gerar Repasse" DISABLED (S2). Efeito: NENHUM.
+
+[RELATORIO FINANCEIRO] aba relatorio 2411-2505
+  UI: tabela; service: fetchPagamentos (799) -> pagamentos_prestadores (is_teste=false,
+    status<>cancelado) + manuais. Filtros client (data/prestador/cliente/origem/status/busca).
+  Paginacao client 25 (PaginationBar 2488). Acoes read-only: Imprimir, CSV. Efeito: NENHUM.
+
+[CONTA CORRENTE] aba conta-corrente 2506-2561
+  UI: extrato por prestador; service: fetchExtratoContaCorrente (493) -> pagamentos_prestadores
+    (prestador_id, is_teste=false, status<>cancelado, order periodo_inicio asc).
+  Saldo/credito/debito montados em MEMORIA. SEM paginacao. Filtro: so prestador. Efeito: NENHUM.
+
+[DASHBOARD OPERACIONAL] aba dashboard 1577-1678
+  UI: KPIs/graficos; sem query propria (usa pagamentos/manuais/escalaRepasse ja carregados).
+  Helpers puros (dashboardPrestadorHelper). Efeito: NENHUM.
+
+================================================================================
+3. CADEIA PROGRAMACAO/OS -> FINANCEIRO -> PAGAMENTO
+================================================================================
+Programacao Operacional / OS (ordens_servico) / Escala (alocacoes_escala)
+  -> triggers M66 (trg_propagar_financeiro_alocacao) / M80 (trg_propagar_financeiro_os)
+     criam PROVISAO:
+        financeiro_pagar  (obrigacao/despesa)
+        pagamentos_prestadores (repasse; status_conferencia='pendente'/'em_aberto',
+                                status_aprovacao='aguardando_aprovacao', status_pagamento='pendente')
+        composicao_financeira_os (margem)
+  -> CONFERENCIA/APROVACAO (tela): RPC f_aprovar_pagamento_prestadores
+        -> status_conferencia='conferido', status_aprovacao='aprovado', elegivel_lote=true
+  -> APTOS PARA LOTE: RPC f_gerar_lote_pagamentos -> lotes_pagamento + itens + status_pagamento='em_lote'
+  -> PAGAMENTO: RPC f_confirmar_pagamento_prestador -> financeiro_baixas + financeiro_pagar
+        (pago/parcial) + pagamentos_prestadores.status_pagamento='pago'
+  -> HISTORICO/RELATORIO: pagamentos_prestadores + financeiro_baixas (Fluxo/DRE).
+
+DUPLICACAO DE CONCEITOS: `financeiro_pagar` (59 "pendente" + 29 "aberto" + ...) e
+`pagamentos_prestadores` (80 "pendente") representam a MESMA obrigacao de prestador em
+duas tabelas. A tela de Contas a Pagar e a de Pagamento de Prestadores sao telas distintas
+para o mesmo evento. Registrar como divida conceitual.
+
+================================================================================
+4. MAPA COMPLETO DOS STATUS (PROD, read-only)
+================================================================================
+STATUS | TABELA | ORIGEM | QUEM ALTERA | RPC/SERVICE | TELA | SIGNIFICADO
+-------+--------+--------+-------------+-------------+------+-------------
+pendente (93) | pagamentos_prestadores.status | legado | triggers/M66/M80 | - | (legado, nao usado na logica) | valor default
+pago (5) | pagamentos_prestadores.status | RPC confirmar | f_confirmar_pagamento_prestador | Pag. Prestadores | repasse quitado (legado)
+pendente (45) | status_conferencia | M66/M80 | RPC aprovar | f_aprovar_pagamento_prestadores | Manual/Fechamento | aguardando conferencia
+em_aberto (43) | status_conferencia | M66/M80 | - | - | Manual | conferencia nao iniciada
+conferido (7) | status_conferencia | RPC aprovar | f_aprovar_pagamento_prestadores | Manual | conferido e aprovado
+cancelado (3) | status_conferencia | cancelamentos | RPCs | - | cancelado
+aguardando_aprovacao (95) | status_aprovacao | M66/M80 | - | - | Manual | aguardando aprovacao
+aprovado (3) | status_aprovacao | RPC aprovar | f_aprovar_pagamento_prestadores | Aptos | aprovado p/ lote
+pendente (80) | status_pagamento | M66/M80 | triggers | - | todas | aguardando lote/pagamento
+nao_vencido (8) | status_pagamento | legado | - | - | - | legado
+cancelado (5) | status_pagamento | RPCs | - | - | cancelado
+pago (5) | status_pagamento | RPC confirmar | f_confirmar_pagamento_prestador | todas | pago
+em_lote (0) | status_pagamento | RPC lote | f_gerar_lote_pagamentos | Aptos | em lote (hoje 0)
+em_conferencia/conferido/aprovado/pago/cancelado | FECHAMENTO (derivado em TS) | fechamentoService | RPC pagar (pago) | Pag. Prestadores | fechamento
+financeiro_pagar: pendente 53 | aberto 29 | cancelado 23 | pago 5 | cancelada 3 | a vencer 1 | parcial 1
+lotes_pagamento: 0 | lotes_pagamento_itens: 0
+flags: total 98 | teste 2 | elegivel_lote 4 | com lote 0 | com fechamento 1 | impacto_dre 98
+
+================================================================================
+5. MAPA DOS BOTOES / ACOES (classificacao A-F)
+================================================================================
+A) FUNCIONAL + RPC OFICIAL
+  - Marcar Conferido (2066) / Aprovar (2072) -> atualizarStatusPagamento -> f_aprovar_pagamento_prestadores
+  - Marcar Pago (2086) -> confirmarPagamento -> f_confirmar_pagamento_prestador
+  - Gerar Ordem/Lote (2599) -> gerarLotePagamentos -> f_gerar_lote_pagamentos
+  - Pagar Fechamento (3256) -> pagarFechamento -> f_confirmar_pagamento_fechamento
+
+B) FUNCIONAL MAS LEGADO/INSEGURO (inalcancavel pela UI; bloqueado por S1)
+  - pagamentoPrestadorService.criarPagamento (insert 263), criarFechamento (insert 432), atualizarFechamento (update 471)
+  - fechamentoService.criarFechamento/conferir/aprovar/cancelar (insert/update) e pagarFechamento (update observacao 419)
+  - vincularItensFechamento (insert) ; extratoPrestadorService.salvar*/atualizarStatus/excluir (tabelas fechamentos_prestador)
+
+C) DESABILITADO / FAIL-SAFE (S2)
+  - "Novo Pagamento" (1564) title "Indisponivel: lancamento manual pendente de RPC oficial (S2)"
+  - "Reprovar" (2075) e "Cancelar" (2094) title S2
+  - "Gerar Repasse" (2381) title S2
+  - Fechamento: Conferir (2187), Aprovar (2192), Cancelar (3287) -> toast "pendente de RPC oficial (S2)"
+  - (guard-style por handler) Salvar Lancamento (2956->1283); Confirmar fechamento (2709->922)
+
+D) VISUAL SEM EFEITO
+  - "Ver Detalhes" (2090) SEM onClick
+  - Expand fechamento (2167) / selecao lote (checkbox 1917) = apenas estado
+
+E) DUPLICADO
+  - "Marcar Pago" (2086) x handleConfirmarPagamento (1240, nunca chamado) — mesma acao
+  - "Marcar Conferido" ja dispara a RPC de APROVACAO (atualizarStatusPagamento:315 inclui 'conferido'),
+    tornando o botao "Aprovar" quase redundante.
+
+F) NAO UTILIZADO
+  - handleAbrirFechamento (1031), handleVerExtrato (1468), handleConfirmarPagamento (1240),
+    export gerarLancamentosPrestadorPorOS (3299, no-op).
+  - extratoPrestadorService DML (salvar*/atualizar/excluir) sem caller; tabela orfa `pagamento_prestadores`.
+
+================================================================================
+6. RPCs OFICIAIS EXISTENTES (PROD)
+================================================================================
+- f_aprovar_pagamento_prestadores(p_ids uuid[]) .............. SECURITY DEFINER, VOLATILE
+- f_gerar_lote_pagamentos(p_ids uuid[]) ...................... SECURITY DEFINER, VOLATILE
+- f_confirmar_pagamento_prestador(p_pagamento_id uuid, p_data_pagamento date, p_valor_pago numeric) . DEFINER, VOLATILE
+- f_confirmar_pagamento_fechamento(p_fechamento_id uuid, p_data_pagamento date) . DEFINER, VOLATILE
+
+================================================================================
+7. CONFIRMACAO S1/S2 (sem regressao)
+================================================================================
+- grants pagamentos_prestadores: authenticated = {SELECT,REFERENCES,TRIGGER,TRUNCATE}
+  (SEM INSERT/UPDATE/DELETE); anon = {SELECT,REFERENCES,TRIGGER,TRUNCATE}; service_role = ALL.
+- policies: apenas pp_select_own, pp_select_tms (SELECT). Sem policy de escrita p/ authenticated.
+- Componente NAO faz DML direto em pagamentos_prestadores (somente SELECTs).
+- Aprovar/Pagar/Lote via RPC oficial. => S1/S2 PRESENTES. Sem regressao.
+
+================================================================================
+8. PROBLEMAS DE UX (objetivo)
+================================================================================
+- Muitos controles MORTOS ou DESABILITADOS sem explicacao suficiente (5 botoes S2 + "Ver Detalhes" sem handler).
+- Blocos que representam a MESMA obrigacao: Visao do Periodo x Relatorio x Dashboard x Manual x Conta Corrente
+  (todos leem pagamentos_prestadores; totais repetidos).
+- "Novo Pagamento": NAO e pagamento manual funcional — e um lancamento bloqueado (nao paga nada).
+- "Aptos para Lote": fila correta (conferido+aprovado+elegivel+sem lote), porem cap silencioso LIMIT 1000.
+- "Fechamentos Anteriores": pouco util hoje (1 registro), acoes de criacao/conferencia/aprovacao bloqueadas (S2).
+- "Repasses da Programacao": origem rastreavel em alocacoes_escala, mas a ACAO (gerar repasse) esta bloqueada.
+- "Conta Corrente": sem filtros de periodo/cliente/OS/origem/status; saldo em memoria (nao usa movimentos_conta_corrente).
+- "Relatorio Financeiro": dados reais (pagamentos_prestadores), mas sem uso das views vw_relatorio_pagamento_*.
+- Cards/totais: calculados no cliente sobre conjuntos parcialmente filtrados; risco de divergencia com a fonte.
+- Duplicidade "Marcar Conferido" vs "Aprovar"; "Ver Detalhes" inerte.
+
+================================================================================
+9. PAGINACAO / BUSCA / ORDENACAO (padrao TMS: recente->antigo, global, numerada)
+================================================================================
+LISTA                 | ORDEM (servidor)     | ORDEM ANTES PAG | PAGINACAO | BUSCA GLOBAL | CLASSIFICACAO
+----------------------+----------------------+-----------------+-----------+--------------+----------------
+Visao do Periodo      | periodo_inicio desc  | sim             | client 25 | client       | CLIENT-SIDE
+Aptos para Lote       | periodo_inicio desc  | sim (LIMIT1000) | client 25 | client       | CLIENT-SIDE (+ cap)
+Pagamentos Manuais    | created_at desc      | n/a             | NENHUMA   | nao aplicada | SEM PAGINACAO
+Fechamentos Anteriores| created_at desc      | n/a             | NENHUMA   | nao          | SEM PAGINACAO
+Relatorio Financeiro  | periodo_inicio desc  | sim             | client 25 | client       | CLIENT-SIDE
+Repasses Programacao  | data_escala desc     | n/a             | NENHUMA   | client       | SEM PAGINACAO
+Conta Corrente        | periodo_inicio asc   | n/a             | NENHUMA   | nao          | SEM PAGINACAO + ordem ASC
+(Nenhuma lista usa paginacao server-side .range; listarPagamentos do service tem .range mas e INUTILIZADO.)
+
+================================================================================
+10. CONFERENCIA DE CARDS/TOTAIS x BANCO (read-only)
+================================================================================
+Fonte independente (pagamentos_prestadores, is_teste=false):
+  total 98 | nao_teste 96 | A PAGAR (nao cancelado/pago) = R$ 61.061,34 | PAGO = R$ 6.216,12
+  elegivel_lote = 4 | em_lote = 0 | com lote_id = 0 | com fechamento = 1 | tipo_pagamento='fechamento' = 1
+  origem: os_direta 43 | escala_direta 42 | manual 12 | fechamento 1
+  status (legado) `status`: pendente 93 | pago 5 ; `status_pagamento`: pendente 80 | nao_vencido 8 | cancelado 5 | pago 5
+  teste = 2
+ATTENTION: os KPIs da tela sao calculados no cliente sobre subconjuntos (algumas abas filtram
+  cancelado/manual/fechamento e algumas NAO filtram periodo). NUMEROS PODEM DIVERGIR da fonte
+  conforme a aba/filtro ativo. Confirmar cada card contra a fonte correspondente = NECESSITA-PROVA-DB
+  por card (nesta auditoria a fonte foi medida; a tela nao foi executada visualmente).
+
+================================================================================
+11. EXEMPLOS REAIS (read-only)
+================================================================================
+Cadeia de um registro (escala_direta):
+  pp_id 65650e71-84ea-48cc-852e-d1bdfaa2882b | os_id 1a0f5994-c50e-48cd-8475-552ac855083c
+  prestador 0673eca2-4594-4842-b78f-cd6cabe9177d | valor_liquido 250.00
+  status_conferencia=em_aberto | status_aprovacao=aguardando_aprovacao | status_pagamento=pendente
+  origem_lancamento=escala_direta | is_teste=false | lote_id=null | fechamento_id=null
+  financeiro_pagar correspondente (os_id): 1 registro.
+Outros (os_direta) sem lote/fechamento: e3e3e3e3.., e2e2e2e2.., e1e1e1e1.. (prestador e6646799..),
+  5c862ef2 (92911a09.. 523,20), 63a2fb20 (af2828c5.. 528,56), 3f976351 (d2627865.. 528,56),
+  02d76e55 (231f2492.. 587,70) — todos sem lote/fechamento e status_pagamento=pendente.
+Nenhum Calvo/CESAR tratado nesta leitura.
+
+================================================================================
+12. MATRIZ (BLOCO/TELA | FUNCAO REAL | FONTE | RPC/SERVICE | STATUS | PROBLEMA | CORRECAO MINIMA)
+================================================================================
+Bloco          | Funcao real        | Fonte                 | RPC/Service        | Status         | Problema | Correcao minima
+---------------+--------------------+-----------------------+--------------------+----------------+----------+-----------------
+Novo Pagamento | manual bloqueado   | pagamentos_prestadores| criarPagamento(B)  | em_aberto/...  | C fail-safe; nao paga | RPC oficial de lancamento manual (PP-UX-02C)
+Visao Periodo  | consolidado/leitura| pagamentos_prestadores| fetchOss           | -              | gerar fechamento C; busca client | RPC fechamento + busca/paginacao (02B/02C)
+Aptos p/ Lote  | elegiveis->lote    | pagamentos_prestadores| f_gerar_lote_pagamentos (A)| aprovado/elegivel | LIMIT 1000; client | server-side range (02B)
+Manuais        | conferir/aprovar/pagar| pagamentos_prestadores| RPCs (A)         | conferencia/pag| sem paginacao/busca; reprovar/cancelar C | paginacao+busca (02B); RPC reprovar/cancelar (02C)
+Fechamentos    | consulta/pagar     | pagamentos_prestadores| f_confirmar_pagamento_fechamento (A)| derivados | criar/conferir/aprovar/cancelar C | RPCs oficiais (02C)
+Repasses       | mapear escala      | alocacoes_escala      | -                  | -              | gerar repasse C; sem paginacao | RPC gerar repasse (02C); paginacao (02B)
+Relatorio      | relatorio          | pagamentos_prestadores| -                  | -              | nao usa views | usar vw_relatorio_pagamento_* (02D)
+Conta Corrente | extrato memoria    | pagamentos_prestadores| -                  | -              | sem filtros; nao usa movimentos | filtros + view movimentos (02D)
+Dashboard      | KPIs graficos      | pagamentos_prestadores| -                  | -              | numeros por subconjunto | conferir fontes (02D)
+Ver Detalhes   | -                  | -                     | -                  | -              | D morto  | remover ou implementar (02A)
+
+================================================================================
+13. PLANO DE MICRO-MISSOES (quantidade real: 5)
+================================================================================
+PP-UX-02A — Estrutura/hierarquia + limpeza de controles mortos
+  Remover handlers/acoes nao usados ("Ver Detalhes" sem onClick, handleConfirmarPagamento,
+  handleAbrirFechamento, handleVerExtrato), corrigir ruido de auditoria no "Gerar Fechamento"
+  (nao registrar auditoria de algo que nao ocorreu). PRESERVAR layout/identidade.
+PP-UX-02B — Filtros/busca/ordenacao/paginacao (padrao TMS)
+  Aplicar ordem recente->antigo + paginacao numerada + busca global em: Manuais, Fechamentos,
+  Repasses, Conta Corrente; trocar client-side por abordagem global; remover cap 1000 silencioso dos Aptos.
+PP-UX-02C — Acoes/RPCs faltantes (reabilitar S2 com contrato oficial)
+  Criar RPCs oficiais para: lancamento manual ("Novo Pagamento"), reprovar/cancelar prestador,
+  criar/conferir/aprovar/cancelar fechamento, gerar repasse. So depois reabilitar botoes. NAO reabrir S1/S2.
+PP-UX-02D — Conta Corrente/Relatorio/Dashboard
+  Filtros profissionais na Conta Corrente (periodo/cliente/OS/origem/status/natureza) e uso de
+  movimentos_conta_corrente; Relatorio consumir vw_relatorio_pagamento_*; conferir KPIs x banco.
+PP-UX-03 — Prova visual/E2E (Playwright) de todos os blocos apos correcoes.
+
+================================================================================
+14. RISCOS
+================================================================================
+R1. A tela NAO tem pag/ busca global em 4 listas; volume pequeno hoje (98), cresce com o tempo.
+R2. Duplicidade conceitual financeiro_pagar x pagamentos_prestadores (risco de dupla leitura em DRE/Fluxo).
+R3. Funcoes legadas de DML (criarPagamento/fechamentoService.*) permanecem exportadas — bloqueadas por S1,
+   mas sao uma porta latente se a UI for alterada sem revisao.
+R4. anon possui GRANTs SELECT/REFERENCES/TRIGGER/TRUNCATE em pagamentos_prestadores (RLS sem policy anon
+   bloqueia leitura, mas e privilegio residual) — registrar (S3 do GATE-01).
+R5. Cap LIMIT 1000 em Aptos para Lote pode truncar a fila silenciosamente.
+R6. Fechamento: f_confirmar_pagamento_fechamento depende de DEFINER (verificado true em PROD).
+R7. KPIs/totais calculados no cliente por subconjunto — risco de divergencia com a fonte.
+
+================================================================================
+15. CONFIRMACAO ZERO DML/DDL
+================================================================================
+[x] Somente SELECT/leitura de codigo. Nenhum INSERT/UPDATE/DELETE/DDL.
+[x] Nenhum pagamento/fechamento/lote criado. Calvo/CESAR nao tocados.
+[x] Nenhum arquivo/migration alterado. Scripts temporarios removidos.
+
+================================================================================
+16. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-PP-UX-01-PAGAMENTO-PRESTADORES-MASTER-AUDIT-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-PP-UX-01-PAGAMENTO-PRESTADORES-MASTER-AUDIT-RESULTADO.txt
+ TAMANHO ..: 22807 bytes
+ DATA/HORA : 25/09/2026 21:54:28
+
+================================================================================
+FIM — TMS-FIN-PP-UX-01-PAGAMENTO-PRESTADORES-MASTER-AUDIT
+================================================================================

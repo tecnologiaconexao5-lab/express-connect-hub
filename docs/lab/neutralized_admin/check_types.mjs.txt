@@ -1,0 +1,22 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C3D (A3) — historico sanitizado, NAO EXECUTAVEL
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_ANON_KEY
+);
+
+async function check() {
+  const { data, error } = await supabase.rpc('pg_catalog', { 
+    statement: "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'ordens_servico'" 
+  });
+  if (error) {
+    console.log("pg_catalog failed");
+    // fallback, insert dummy and catch error for each column? No.
+  } else {
+    console.log(data);
+  }
+}
+check();

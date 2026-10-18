@@ -1,0 +1,226 @@
+================================================================================
+FIX-POD-00D — PRODUCTION PACKAGE CLEAN
+Mission: Clean and homologate FIX-POD package for production
+Date: 2026-09-21
+Status: ALL 11 TESTS PASSED — PACKAGE CLEAN — NO QA SHIMS
+================================================================================
+
+SUMMARY
+-------
+Clean production package for BUG-2 fix (ordem_servico_id link).
+NO ALTER TABLE — NO QA shims — NO schema changes.
+Based on LIVE production function definition.
+Only change: added UPDATE alocacoes_escala SET ordem_servico_id = v_os_id.
+
+FILES
+-----
+FIX-POD-00D-deploy-FINAL.sql    10,529 bytes  SHA256: F2375E19367C48064DFC71770A7250F657301D9066EB2B1B623F3AE2B3593ADF
+FIX-POD-00D-rollback-FINAL.sql  10,093 bytes  SHA256: 631DA494DC0668D1AD32871742A6BE947CE5D6991BE6BB851E347612DB896D6B
+
+ETAPA 1 — PRODUCTION COLUMN AUDIT
+-----------------------------------
+PRODUCTION_COLUMNS_CHECKED=13
+
+COLUMN                          EXISTS_IN_PRODUCTION  TYPE_IN_PRODUCTION  USED_BY_LIVE_TRIGGER  NEEDED_FOR_FIX
+observacoes                     YES                   text                NO                    NO
+valor_frete                     YES                   numeric             YES (UPDATE OF)       YES (read by function)
+valor_repasse                   YES                   numeric             YES (UPDATE OF)       YES (read by function)
+valor_pedagio                   YES                   numeric             YES (UPDATE OF)       YES (read by function)
+valor_adicional                 YES                   numeric             YES (UPDATE OF)       YES (read by function)
+valor_ajudante                  YES                   numeric             YES (UPDATE OF)       YES (read by function)
+valor_desconto_prestador        YES                   numeric             YES (UPDATE OF)       YES (read by function)
+tipo_reversa                    YES                   text                YES (UPDATE OF)       YES (read by function)
+reversa_valor_cliente           YES                   numeric             YES (UPDATE OF)       YES (read by function)
+reversa_valor_prestador         YES                   numeric             YES (UPDATE OF)       YES (read by function)
+reversa_qtd_volumes             YES                   integer             NO                    NO
+valor_combustivel               YES                   numeric             YES (UPDATE OF)       NO
+valor_desconto                  YES                   numeric             YES (UPDATE OF)       NO
+
+ALSO CONFIRMED:
+VALOR_CLIENTE_PRODUCTION=DOES NOT EXIST (production uses valor_frete)
+VALOR_PRESTADOR_PRODUCTION=DOES NOT EXIST (production uses valor_repasse)
+
+All 13 columns exist in production. None are QA-only shims.
+valor_cliente/valor_prestador do NOT exist in production.
+
+ETAPA 2 — QA SHIMS REMOVED
+----------------------------
+QA_ONLY_COLUMNS_REMOVED_FROM_DEPLOY=YES
+FINAL_DEPLOY_ALTER_TABLE_COUNT=0
+
+The 00C deploy contained 13 ALTER TABLE commands for QA compatibility.
+These have been REMOVED from the 00D clean package.
+The deploy contains ONLY:
+  Part 1: CREATE OR REPLACE FUNCTION (1 function)
+  Part 2: DROP TRIGGER IF EXISTS + CREATE TRIGGER (1 trigger)
+
+ETAPA 3 — FUNCTION BASED ON LIVE PRODUCTION
+---------------------------------------------
+LIVE_FUNCTION_USED_AS_BASE=YES
+
+Production function captured at: prod_func_before.sql (8,902 bytes)
+Production function uses: NEW.valor_frete, NEW.valor_repasse (NOT valor_cliente/valor_prestador)
+Production function has: SET search_path TO 'public'
+Production function has: SECURITY DEFINER
+
+Changes from LIVE production (minimal):
+  + UPDATE alocacoes_escala SET ordem_servico_id = v_os_id (BUG-2 fix, 2 lines)
+  + FIX-POD-00D log tag comment (traceability, no behavior change)
+
+Everything else preserved exactly as production.
+
+ETAPA 4 — TRIGGER LIVE COMPARISON
+-----------------------------------
+LIVE_TRIGGER_CONFIRMED=YES
+
+Production trigger definition (BEFORE):
+  CREATE TRIGGER trg_propagar_financeiro_alocacao
+  AFTER INSERT OR UPDATE OF status, finalizada, valor_frete, valor_repasse,
+    valor_pedagio, valor_combustivel, valor_ajudante, valor_adicional,
+    valor_desconto, valor_desconto_prestador, tipo_reversa,
+    reversa_valor_cliente, reversa_valor_prestador, prestador_id
+  ON public.alocacoes_escala
+  FOR EACH ROW
+  EXECUTE FUNCTION f_trg_propagar_financeiro_alocacao()
+
+AFTER deploy: IDENTICAL (trigger event not changed)
+  The deploy recreates the trigger with the same definition.
+  This is idempotent and preserves the existing behavior.
+
+BUG-3 production decision: Trigger EXISTS in production (tgenabled=O).
+  BUG-3 (missing trigger) was QA-only. No production action needed.
+
+ETAPA 5 — QA TESTS (11/11 PASSED)
+-------------------------------------
+QA_TESTS=11/11
+
+T1_OS_CREATED       PASS  OS record created in ordens_servico
+T1_ALLOC_LINKED     PASS  alocacoes_escala.ordem_servico_id = OS id
+T1_RECEBER          PASS  financeiro_receber record created
+T1_PAGAR            PASS  financeiro_pagar record created
+T1_PP               PASS  pagamentos_prestadores record created
+T2_POD_OS_LINK      PASS  entregas_protocolo.ordem_servico_id = OS id
+T3_PRESERVED_OS     PASS  allocation with pre-set OS preserves link
+T3_NO_NEW_OS        PASS  no second OS created for pre-existing link
+T4_NO_DUPLICATE_OS  PASS  UPDATE does not create duplicate OS
+T4_STILL_LINKED     PASS  UPDATE preserves ordem_servico_id link
+T5_RECEBER_1        PASS  financeiro_receber count = 1 (no duplication)
+T5_PAGAR_1          PASS  financeiro_pagar count = 1 (no duplication)
+T5_PP_1             PASS  pagamentos_prestadores count = 1 (no duplication)
+T6_RECEBER_1        PASS  no duplicate financial records from allocation trigger
+T6_PAGAR_1          PASS  no duplicate financial records from allocation trigger
+T7_NO_BAIXA         PASS  no artificial baixa records
+T8_NO_OS_ZERO       PASS  no OS for zero-value allocations
+T8_NO_LINK_ZERO     PASS  no link for zero-value allocations
+T9_SINGLE_OS        PASS  recursive trigger does not create duplicate OS
+T9_STILL_LINKED     PASS  recursive trigger preserves link
+T9_RECEBER_1        PASS  recursive trigger does not duplicate financial records
+T9_PAGAR_1          PASS  recursive trigger does not duplicate financial records
+T9_COMPOSICAO       PASS  composicao_financeira_os created on finalization
+T10_ROLLBACK        PASS  rollback reverts function to original (no fix)
+T11_REAPPLY         PASS  deploy restores fix after rollback
+T11_IDEMPOTENT      PASS  second apply succeeds with 0 errors
+
+OS_DUPLICATES=0
+FINANCIAL_DUPLICATES=0
+ARTIFICIAL_BAIXAS=0
+RECURSION_SAFE=YES
+
+ETAPA 6 — ROLLBACK
+--------------------
+ROLLBACK_TEST=PASS
+REAPPLY_TEST=PASS
+IDEMPOTENCY_TEST=PASS
+
+Rollback restores EXACTLY:
+  - Function: LIVE production BEFORE (no BUG-2 fix, no log tag)
+  - Trigger: LIVE production BEFORE (identical event definition)
+  - NO DROP COLUMN — NO schema changes
+
+ETAPA 7 — PRODUCTION VERIFICATION PLAN
+-----------------------------------------
+PRODUCTION_FAKE_DATA_PLAN=NONE
+
+Post-deploy verification (no fake data):
+
+A) pg_proc inspection:
+   SELECT prosrc FROM pg_proc
+   WHERE proname = 'f_trg_propagar_financeiro_alocacao';
+   -- Verify: contains "UPDATE alocacoes_escala SET ordem_servico_id"
+
+B) pg_trigger inspection:
+   SELECT tgname, tgenabled FROM pg_trigger
+   WHERE tgname = 'trg_propagar_financeiro_alocacao';
+   -- Verify: tgname exists, tgenabled = 'O'
+
+C) Hash comparison:
+   SELECT md5(prosrc) FROM pg_proc
+   WHERE proname = 'f_trg_propagar_financeiro_alocacao';
+   -- Compare with expected hash from QA validation
+
+D) Counts BEFORE/AFTER:
+   -- Before deploy: note counts of ordens_servico, financeiro_receber, etc.
+   -- After deploy: counts should be identical (no data changes)
+   SELECT
+     (SELECT COUNT(*) FROM ordens_servico) as os_count,
+     (SELECT COUNT(*) FROM financeiro_receber) as receber_count,
+     (SELECT COUNT(*) FROM financeiro_pagar) as pagar_count,
+     (SELECT COUNT(*) FROM pagamentos_prestadores) as pp_count;
+
+E) Observe real operation:
+   -- After deploy, monitor next allocation creation
+   -- Verify ordem_servico_id is set in alocacoes_escala
+   -- No synthetic data required
+
+ETAPA 8 — HASH
+----------------
+DEPLOY_SHA256=F2375E19367C48064DFC71770A7250F657301D9066EB2B1B623F3AE2B3593ADF
+ROLLBACK_SHA256=631DA494DC0668D1AD32871742A6BE947CE5D6991BE6BB851E347612DB896D6B
+
+PRODUCTION_WRITES=0
+
+DEPLOY COMMAND
+--------------
+docker run --rm -e PGPASSWORD="ConexaoExpress_DB_2026!#" \
+  postgres:15-alpine psql \
+  -h "aws-1-sa-east-1.pooler.supabase.com" \
+  -U "postgres.uwrvzsjtpgaifkktpepn" \
+  -d postgres \
+  -f /workspace/FIX-POD-00D-deploy-FINAL.sql
+
+ROLLBACK COMMAND
+----------------
+docker run --rm -e PGPASSWORD="ConexaoExpress_DB_2026!#" \
+  postgres:15-alpine psql \
+  -h "aws-1-sa-east-1.pooler.supabase.com" \
+  -U "postgres.uwrvzsjtpgaifkktpepn" \
+  -d postgres \
+  -f /workspace/FIX-POD-00D-rollback-FINAL.sql
+
+DIFF FROM 00C
+--------------
+FIX-POD-00C-deploy.sql:  15,418 bytes (13 ALTER TABLE + function + trigger)
+FIX-POD-00D-deploy.sql:  10,529 bytes (0 ALTER TABLE + function + trigger)
+Reduction:               -4,889 bytes (-32%)
+
+Removed: 13 ALTER TABLE ADD COLUMN IF NOT EXISTS commands
+Removed: QA-only column aliases (valor_frete/valor_repasse already in production)
+Preserved: Function with BUG-2 fix (identical logic)
+Preserved: Trigger event (identical definition)
+
+CRITERIA CHECK
+---------------
+FIX_POD_00D_PACKAGE = PASS
+
+- Pacote produtivo nao contem QA shims              YES (0 ALTER TABLE)
+- ALTER TABLE count = 0                              YES
+- Funcao parte da definicao LIVE                     YES
+- Trigger LIVE tratado corretamente                  YES (identical recreation)
+- Testes QA continuam PASS                           YES (11/11)
+- Rollback restaura exatamente BEFORE                YES
+- Verificacao produtiva nao exige dado fake          YES
+
+PASS NAO AUTORIZA DEPLOY.
+
+GENERATED: 2026-09-21
+================================================================================

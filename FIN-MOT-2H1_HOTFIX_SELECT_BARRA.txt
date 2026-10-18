@@ -1,0 +1,104 @@
+FIN-MOT-2H1 — HOTFIX REGRESSÃO SELECT DA BARRA UNIFICADA
+Data: 21/08/2026
+Status: B — CORRIGIDO NO CÓDIGO; PROVA VISUAL AGUARDA HOMOLOGAÇÃO NO NAVEGADOR
+
+============================================================
+CAUSA-RAIZ
+============================================================
+
+Arquivo: src/components/financeiro/PagamentoPrestadores.tsx
+
+A FIN-MOT-2H adicionou o Select "Prestador" na barra superior com:
+
+  <SelectItem value="">Todos os prestadores</SelectItem>
+
+Radix exige Select.Item com value NÃO vazio; ao montar o SelectContent,
+a tela voltou a cair com:
+
+  "A <Select.Item /> must have a value prop that is not an empty string"
+
+Os Selects de Cliente e Origem/Tipo da barra já usavam valores não vazios
+(TODOS_CLIENTES_VALUE / todos, ordem_servico, escala, manual) — o único
+responsável pela regressão era o item "Todos os prestadores" com value vazio.
+
+============================================================
+CORREÇÃO
+============================================================
+
+1. PRESTADOR (barra)
+   - Criada constante:  const TODOS_PRESTADORES_VALUE = "__todos_prestadores__";
+   - Estado inicial:    filtroPrestadorId = TODOS_PRESTADORES_VALUE
+   - SelectItem:        <SelectItem value={TODOS_PRESTADORES_VALUE}>Todos os prestadores</SelectItem>
+   - Handler Gerar Extrato:
+       if (!filtroPrestadorId || filtroPrestadorId === TODOS_PRESTADORES_VALUE)
+         -> toast "Selecione um prestador para gerar o extrato"
+
+2. CLIENTE (barra)
+   - Reutilizada a constante TODOS_CLIENTES_VALUE já existente (FIN-MOT-2F).
+   - Sem value vazio.
+
+3. ORIGEM/TIPO (barra)
+   - Valores: todos | ordem_servico | escala | manual (nenhum vazio).
+
+4. DADOS DINÂMICOS
+   - Prestadores:  prestadores.filter(p => Boolean(p.id?.trim())).map(...)
+   - Clientes:     clientes.filter(c => Boolean(c.id?.trim())).map(...)
+   - IDs inválidos não geram SelectItem.
+
+5. NÃO DUPLICAR CONSTANTES
+   - TODOS_CLIENTES_VALUE reutilizada (não criada de novo).
+   - TODOS_PRESTADORES_VALUE criada porque é outra opção (Prestador),
+     distinta de Cliente — não é a mesma sentinela duplicada.
+
+============================================================
+CHECKLIST (CÓDIGO)
+============================================================
+
+[x] value vazio localizado (SelectItem value="" do Prestador)
+[x] Prestador usa sentinel não vazio (__todos_prestadores__)
+[x] Cliente usa sentinel não vazio (__todos_clientes__ reutilizada)
+[x] Origem não usa vazio (todos/ordem_servico/escala/manual)
+[x] IDs inválidos filtrados (filter com Boolean(id?.trim()))
+[x] Nenhum SelectItem value="" restante no arquivo
+[x] npx tsc --noEmit -> 0 erros
+[x] npm run build -> OK (41.77s)
+
+CHECKLIST (PROVA VISUAL — pendente, requer navegador autenticado)
+[ ] Página abre
+[ ] Prestador abre
+[ ] Cliente abre
+[ ] Origem abre
+[ ] Sem ErrorBoundary
+[ ] Sem erro Radix
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Regressão localizada: SelectItem value="" do Prestador na barra.
+- Corrigido com sentinel não vazio; cliente reutiliza a sentinela
+  existente; origem sem vazio; IDs inválidos filtrados.
+- Typecheck e build aprovados. Nenhum valor vazio restante em SelectItem.
+
+============================================================
+FALTA
+============================================================
+
+- Prova visual na sessão autenticada: abrir Pag. Prestadores, abrir os
+  três Selects e confirmar console sem o erro Radix.
+
+============================================================
+STATUS
+============================================================
+
+B — CORRIGIDO NO CÓDIGO; AGUARDA HOMOLOGAÇÃO VISUAL
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual do FIN-MOT-2H1 na sessão autenticada/local: abrir
+Financeiro -> Pagamentos -> Pag. Prestadores, abrir os Selects de
+Prestador/Cliente/Origem, selecionar Todos e opções específicas, e
+confirmar console sem "Select.Item must have a value prop..." e sem
+ErrorBoundary.

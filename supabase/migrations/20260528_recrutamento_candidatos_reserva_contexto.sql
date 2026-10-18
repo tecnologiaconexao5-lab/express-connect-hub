@@ -4,3 +4,5 @@
 
 ALTER TABLE recrutamento_candidatos
   ADD COLUMN IF NOT EXISTS reserva_contexto JSONB DEFAULT NULL;
+
+

@@ -1,0 +1,336 @@
+{
+  "prestadores": {
+    "error": null,
+    "rows": [
+      {
+        "id": "e9d43079-3d14-4083-b33e-f50174b6e663",
+        "nome_completo": "REC06 E2E Real Teste",
+        "cpf_cnpj": "52998224725",
+        "status": "em_analise",
+        "liberado_app": false,
+        "created_at": "2026-09-03T00:46:09.879649"
+      }
+    ]
+  },
+  "docs_recentes": {
+    "error": "column documentos_prestadores.tipo_documento does not exist",
+    "rows": []
+  },
+  "bucket_raiz": {
+    "error": null,
+    "rows": [
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_ANTT_1788137824257.jpg",
+        "created_at": "2026-08-31T00:57:04.604Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_CNH_Frente_1788137819255.jpg",
+        "created_at": "2026-08-31T00:56:59.693Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_CNH_Verso_1788137819842.jpg",
+        "created_at": "2026-08-31T00:57:00.142Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_CRLV_1788137820228.jpg",
+        "created_at": "2026-08-31T00:57:00.472Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Documento_Pessoal_1788137820863.jpg",
+        "created_at": "2026-08-31T00:57:01.252Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Outros_1788137821462.jpg",
+        "created_at": "2026-08-31T00:57:02.265Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Outros_1788137822412.jpg",
+        "created_at": "2026-08-31T00:57:02.720Z"
+      },
+      {
+        "name": "doc_0b55f471-b8eb-419a-bda1-567ec3b37a39_Outros_1788137822858.jpg",
+        "created_at": "2026-08-31T00:57:04.165Z"
+      },
+      {
+        "name": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_ANTT_1780317546674.pdf",
+        "created_at": "2026-06-01T12:39:06.895Z"
+      },
+      {
+        "name": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CNH_Frente_1780317545757.pdf",
+        "created_at": "2026-06-01T12:39:06.118Z"
+      },
+      {
+        "name": "doc_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_CRLV_1780317546304.jpeg",
+        "created_at": "2026-06-01T12:39:06.581Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_ANTT_1788952096100.jpg",
+        "created_at": "2026-09-09T11:08:16.942Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Frente_1788952097999.jpg",
+        "created_at": "2026-09-09T11:08:18.637Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CNH_Verso_1788952098978.jpg",
+        "created_at": "2026-09-09T11:08:19.424Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_CRLV_1788952099800.jpg",
+        "created_at": "2026-09-09T11:08:20.566Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Documento_Pessoal_1788952092704.jpg",
+        "created_at": "2026-09-09T11:08:13.347Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952093887.jpg",
+        "created_at": "2026-09-09T11:08:14.399Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952094658.jpg",
+        "created_at": "2026-09-09T11:08:15.176Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952095439.jpg",
+        "created_at": "2026-09-09T11:08:16.010Z"
+      },
+      {
+        "name": "doc_b7f86dbb-c40e-4181-ba61-eaa078a2d4e3_Outros_1788952097302.jpg",
+        "created_at": "2026-09-09T11:08:17.925Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534245940.pdf",
+        "created_at": "2026-05-11T21:17:25.374Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_ANTT_1778534758256.pdf",
+        "created_at": "2026-05-11T21:25:58.227Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534192413.jpg",
+        "created_at": "2026-05-11T21:16:32.097Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Frente_1778534726609.jpg",
+        "created_at": "2026-05-11T21:25:28.042Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CNH_Verso_1778534769474.jpg",
+        "created_at": "2026-05-11T21:26:23.254Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534237251.pdf",
+        "created_at": "2026-05-11T21:17:16.629Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_CRLV_1778534742517.pdf",
+        "created_at": "2026-05-11T21:25:42.667Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534210972.jpg",
+        "created_at": "2026-05-11T21:16:50.651Z"
+      },
+      {
+        "name": "doc_be420cfc-878e-49b3-8a0d-1827b34762a5_Documento_Pessoal_1778534734742.jpg",
+        "created_at": "2026-05-11T21:25:35.157Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_ANTT_1777578741120.pdf",
+        "created_at": "2026-04-30T19:52:21.577Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Frente_1777578716075.pdf",
+        "created_at": "2026-04-30T19:51:56.672Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CNH_Verso_1777578757225.pdf",
+        "created_at": "2026-04-30T19:52:37.659Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_CRLV_1777578730644.pdf",
+        "created_at": "2026-04-30T19:52:11.056Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Documento_Pessoal_1777578724384.pdf",
+        "created_at": "2026-04-30T19:52:04.793Z"
+      },
+      {
+        "name": "doc_dd97812e-2a02-4264-a960-8d1e3fdb1a18_Outros_1777578745689.pdf",
+        "created_at": "2026-04-30T19:52:26.182Z"
+      },
+      {
+        "name": "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_CNH_Frente_1778120286698.pdf",
+        "created_at": "2026-05-07T02:18:07.952Z"
+      },
+      {
+        "name": "doc_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_Documento_Pessoal_1778183021093.pdf",
+        "created_at": "2026-05-07T19:43:42.888Z"
+      },
+      {
+        "name": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_ANTT_1779994183223.jpeg",
+        "created_at": "2026-05-28T18:49:43.547Z"
+      },
+      {
+        "name": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CNH_Frente_1779994182298.jpeg",
+        "created_at": "2026-05-28T18:49:42.586Z"
+      },
+      {
+        "name": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_CRLV_1779994182929.jpeg",
+        "created_at": "2026-05-28T18:49:43.181Z"
+      },
+      {
+        "name": "doc_fe7a75cc-a49f-43ef-a0b7-f869fbf07744_Documento_Pessoal_1779994182651.jpeg",
+        "created_at": "2026-05-28T18:49:42.905Z"
+      },
+      {
+        "name": "foto_0673eca2-4594-4842-b78f-cd6cabe9177d_1789987916601.jpeg",
+        "created_at": "2026-09-21T10:51:58.040Z"
+      },
+      {
+        "name": "foto_659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce_1780317588359.jpeg",
+        "created_at": "2026-06-01T12:39:48.573Z"
+      },
+      {
+        "name": "foto_be420cfc-878e-49b3-8a0d-1827b34762a5_1778534202098.jpeg",
+        "created_at": "2026-05-11T21:16:41.576Z"
+      },
+      {
+        "name": "foto_be420cfc-878e-49b3-8a0d-1827b34762a5_1778534714466.jpeg",
+        "created_at": "2026-05-11T21:25:17.342Z"
+      },
+      {
+        "name": "foto_d440e189-a749-4e1e-8d57-9c120af35115_1778082102637.jpeg",
+        "created_at": "2026-05-06T15:41:43.484Z"
+      },
+      {
+        "name": "foto_dd97812e-2a02-4264-a960-8d1e3fdb1a18_1777579021096.jpeg",
+        "created_at": "2026-04-30T19:57:01.561Z"
+      },
+      {
+        "name": "foto_dd97812e-2a02-4264-a960-8d1e3fdb1a18_1777642241113.png",
+        "created_at": "2026-05-01T13:30:43.248Z"
+      },
+      {
+        "name": "foto_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_1778120459418.jpeg",
+        "created_at": "2026-05-07T02:20:59.914Z"
+      },
+      {
+        "name": "foto_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_1778120499164.jpeg",
+        "created_at": "2026-05-07T02:21:39.614Z"
+      },
+      {
+        "name": "foto_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_1778161519358.jpeg",
+        "created_at": "2026-05-07T13:45:20.112Z"
+      },
+      {
+        "name": "foto_f9b37431-0b9b-4ff6-a5e1-d1b581a926c0_1778182942187.jpeg",
+        "created_at": "2026-05-07T19:42:23.108Z"
+      },
+      {
+        "name": "foto_temp_1777657188845_1777657188845.png",
+        "created_at": "2026-05-01T17:39:50.352Z"
+      },
+      {
+        "name": "foto_temp_1777659482050_1777659482050.png",
+        "created_at": "2026-05-01T18:18:04.504Z"
+      },
+      {
+        "name": "foto_temp_1777668334725_1777668334725.png",
+        "created_at": "2026-05-01T20:45:36.373Z"
+      },
+      {
+        "name": "foto_temp_1777668773221_1777668773221.jpeg",
+        "created_at": "2026-05-01T20:52:54.561Z"
+      },
+      {
+        "name": "foto_temp_1778026885814_1778026885815.png",
+        "created_at": "2026-05-06T00:21:28.316Z"
+      },
+      {
+        "name": "foto_temp_1778078971515_1778078971515.jpeg",
+        "created_at": "2026-05-06T14:49:31.916Z"
+      },
+      {
+        "name": "foto_temp_1778089031330_1778089031330.jpeg",
+        "created_at": "2026-05-06T17:37:11.838Z"
+      },
+      {
+        "name": "foto_temp_1778091289338_1778091289338.jpeg",
+        "created_at": "2026-05-06T18:14:50.125Z"
+      },
+      {
+        "name": "foto_temp_1778092359644_1778092359644.jpeg",
+        "created_at": "2026-05-06T18:32:40.195Z"
+      },
+      {
+        "name": "foto_temp_1778093842228_1778093842228.jpeg",
+        "created_at": "2026-05-06T18:57:22.890Z"
+      },
+      {
+        "name": "foto_temp_1778094840274_1778094840274.jpeg",
+        "created_at": "2026-05-06T19:14:07.424Z"
+      },
+      {
+        "name": "foto_temp_1778114707913_1778114707913.jpeg",
+        "created_at": "2026-05-07T00:45:09.665Z"
+      },
+      {
+        "name": "foto_temp_1778120053375_1778120053375.jpeg",
+        "created_at": "2026-05-07T02:14:14.190Z"
+      },
+      {
+        "name": "foto_temp_1778159291395_1778159291395.jpeg",
+        "created_at": "2026-05-07T13:08:11.996Z"
+      },
+      {
+        "name": "foto_temp_1779993963633_1779993963633.jpeg",
+        "created_at": "2026-05-28T18:46:04.410Z"
+      },
+      {
+        "name": "foto_temp_1787049508655_1787049508655.png",
+        "created_at": "2026-08-18T10:38:28.710Z"
+      },
+      {
+        "name": "foto_temp_1787049833250_1787049833250.png",
+        "created_at": "2026-08-18T10:43:53.256Z"
+      },
+      {
+        "name": "foto_temp_1787049848964_1787049848964.png",
+        "created_at": "2026-08-18T10:44:08.732Z"
+      },
+      {
+        "name": "foto_temp_1789953705238_1789953705238.jpeg",
+        "created_at": "2026-09-21T01:21:49.747Z"
+      },
+      {
+        "name": "foto_temp_1789983263200_1789983263200.jpeg",
+        "created_at": "2026-09-21T09:34:24.028Z"
+      },
+      {
+        "name": "teste-1776993148735.txt",
+        "created_at": "2026-04-24T01:12:28.857Z"
+      },
+      {
+        "name": "teste-1776993173208.txt",
+        "created_at": "2026-04-24T01:12:52.957Z"
+      },
+      {
+        "name": "teste-1776993526640.txt",
+        "created_at": "2026-04-24T01:18:46.579Z"
+      },
+      {
+        "name": "teste-real-1776992287350.txt",
+        "created_at": "2026-04-24T00:58:07.219Z"
+      },
+      {
+        "name": "teste-real-1776992439457.txt",
+        "created_at": "2026-04-24T01:00:39.114Z"
+      },
+      {
+        "name": "teste-real-1776992493517.txt",
+        "created_at": "2026-04-24T01:01:33.172Z"
+      }
+    ]
+  }
+}

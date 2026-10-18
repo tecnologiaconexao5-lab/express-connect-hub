@@ -1,0 +1,117 @@
+E2E-COMPLETO-06-FISICO-CONTINUAR
+==================================================
+Ambiente: TMS + Supabase PROD + APP físico | Data: 2026-09-22
+Modo: E2E REAL CONTROLADO | RESULT=BLOCKED
+  (PASSOS 0/1/2/3/4/6/8 exigem operador humano: Redmi + UI TMS; ambiente CLI sem automação)
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+PASSO 0 — APP ATUALIZADO (verificação)
+==================================================
+APK: C:\src\conexao_prestador\build\app\outputs\flutter-apk\app-debug.apk
+  APK_EXISTS=YES | SIZE=190.813.627 bytes | DATA=2026-09-22 21:41
+A RPC do E2E-05E é server-side (já aplicada em produção); o APK atual é suficiente para o login.
+APP_BUILD_CURRENT=YES (APK presente e recente; operador deve instalar se o Redmi não tiver o build)
+
+==================================================
+ESTADO ATUAL (verificado no banco)
+==================================================
+HML_TABLE d12cf0cd: ativo=true ✔ | PRESTADOR TESTE APP: valor_diaria=250.00 ✔
+HML_ALLOCS (cliente HOMOLOGAÇÃO APP + TESTE): apenas a histórica 01fc1dce (2026-08-01, placa
+  ABC-1234, valores nulos). ALLOCS_12H=0 → PASSO 2 (criar Escala) AINDA NÃO executado.
+POD do prestador: 9 (provas anteriores; nenhuma nova HML).
+
+==================================================
+BLOQUEIO
+==================================================
+Os passos de LOGIN no Redmi (1), CRIAÇÃO da Escala pela UI (2), EXECUÇÃO física no APP (4),
+CONFIRMAÇÕES visuais (6) e PDFs (8) requerem operador humano. Não são executáveis por CLI.
+Nada foi criado/alterado nesta sessão.
+
+APP_LOGIN_PASS=(pendente operador)
+AUTH_USER_ID_MATCH=YES (vínculo DB: cpf 12345678900 ↔ auth_user_id a5e51631 ↔ teste@conexao.com)
+ALLOCATION_ID=(pendente PASSO 2) | OS_ID=(pendente) | OS_NUMBER=(pendente)
+
+==================================================
+RUNBOOK (operador) — executar em sequência
+==================================================
+[PASSO 1] Redmi: instalar o APK (se necessário) e fazer LOGIN informando o CPF do PRESTADOR TESTE APP
+  e a senha existente (o operador digita direto no APP; NÃO enviar a senha ao agente).
+  Esperado: entra no painel operacional (auth ok, status ativo, liberado_app=true).
+
+[PASSO 2] TMS → Operação → Escala → Nova Alocação:
+  Prestador PRESTADOR TESTE APP · Cliente HOMOLOGAÇÃO APP · Veículo HML-A27B/VUC ·
+  Tabela "HML E2E-06 VUC - HOMOLOGACAO APP" · KM=0 · Observação "E2E-COMPLETO-06-HML".
+  NÃO selecionar OS manual. Conferir CLIENT_VALUE=300,00 e PROVIDER_VALUE=250,00. Salvar 1x.
+
+[PASSO 3/4] Redmi: sincronizar; a operação deve aparecer; aceitar; executar a sequência
+  (coleta/carregamento, saída, chegada, descarga); recebedor "HOMOLOGACAO E2E"; foto e assinatura
+  de homologação; concluir.
+
+[PASSO 6] TMS: (A) Operação → Baixas e Evidências (operação HML identificável);
+  (B) OS finalizada → Ver comprovantes (POD dedicado; foto; zoom; recebedor; status/data).
+
+[PASSO 8] TMS: OS → PDF Cliente e PDF Prestador (confirmar abertura; sem 1ª página vazia).
+
+==================================================
+VALIDAÇÃO AUTOMÁTICA (rodar após cada passo; substituir <ALLOC>/<OS>)
+==================================================
+-- PASSO 2
+SELECT a.id, a.ordem_servico_id, a.valor_frete, a.valor_repasse, a.status,
+       o.numero, o.valor_cliente, o.custo_prestador
+FROM alocacoes_escala a JOIN ordens_servico o ON o.id=a.ordem_servico_id
+WHERE a.cliente_id='3d2d079d-708b-4d4d-9c0b-1ed9b894e37e'
+  AND a.prestador_id='e6646799-fbac-453e-a3ef-afdfc01a7085'
+ORDER BY a.created_at DESC LIMIT 1;
+-- esperado: allocation=1, OS=1, receber=1, pagar=1, PP=1, duplicidades=0
+
+-- PASSO 5 (APP→TMS)
+SELECT status, metadata->'app_motorista' app FROM alocacoes_escala WHERE id='<ALLOC>';
+SELECT event_type, entity_id, created_at FROM eventos_oficiais WHERE entity_id IN ('<ALLOC>','<OS>') ORDER BY created_at;
+SELECT id, operation_id, os_id, prestador_id, photo_url, signature_url, receiver_name, latitude, longitude, status
+FROM delivery_proofs WHERE operation_id='<ALLOC>' OR os_id='<OS>';
+SELECT id, alocacao_id, ordem_servico_id, prestador_id, nome_recebedor, foto_entrega_url, assinatura_url, status
+FROM entregas_protocolo WHERE alocacao_id='<ALLOC>' OR ordem_servico_id='<OS>';
+-- esperado: 1 proof + 1 protocolo; photo_url REMOTA (http...); duplicidades=0
+
+-- PASSO 7 (Financeiro)
+SELECT count(*) FROM financeiro_receber WHERE os_id='<OS>';       -- 1 (300.00)
+SELECT count(*) FROM financeiro_pagar   WHERE os_id='<OS>';       -- 1 (250.00)
+SELECT count(*) FROM pagamentos_prestadores WHERE os_id='<OS>';   -- 1 (250.00)
+SELECT * FROM composicao_financeira_os WHERE os_id='<OS>';        -- 1 (conclusão)
+
+==================================================
+ENTREGÁVEIS
+==================================================
+APP_BUILD_CURRENT=YES
+APP_LOGIN_PASS=(pendente operador)
+AUTH_USER_ID_MATCH=YES
+ALLOCATION_ID=(pendente) | OS_ID=(pendente) | OS_NUMBER=(pendente)
+APP_RECEIVED_OPERATION=(pendente)
+APP_ACCEPT_PASS=(pendente)
+APP_EXECUTION_PASS=(pendente)
+APP_CONCLUSION_PASS=(pendente)
+TMS_STATUS_SYNC_PASS=(pendente)
+POD_REMOTE_CONFIRMED=(pendente)
+POD_DUPLICATES=(pendente)
+BAIXAS_EVIDENCIAS_PASS=(pendente)
+VER_COMPROVANTES_PASS=(pendente)
+POD_PHOTO_ZOOM_PASS=(pendente)
+CLIENT_VALUE=300.00 (esperado) | PROVIDER_VALUE=250.00 (esperado)
+FINANCIAL_CHAIN_PASS=(pendente)
+FINANCIAL_DUPLICATES=(pendente)
+CLIENT_PDF_PASS=(pendente) | PROVIDER_PDF_PASS=(pendente) | BLANK_FIRST_PAGE=(pendente)
+E2E_CRITICAL_CHAIN_PASS=(pendente)
+OPEN_GAPS=Passos de Redmi (login/execução) e UI (Escala/comprovantes/PDF) exigem operador humano
+
+RESULT=BLOCKED
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-06-FISICO-CONTINUAR
+  (operador executa PASSO 1→2→3/4→6→8; o agente valida PASSO 5/7 por DB; depois E2E-07)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma senha solicitada/registrada; nenhuma segunda operação; sem troca/reset de senha; sem
+criação de usuário/prestador; tabela HML/valor_diaria intactos; sem pagamento/baixa; sem cleanup;
+Master 360/Control Tower não executados.

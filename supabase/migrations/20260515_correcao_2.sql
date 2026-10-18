@@ -80,20 +80,25 @@ DROP POLICY IF EXISTS "Restrict insert orcamentos" ON public.orcamentos;
 DROP POLICY IF EXISTS "Restrict all orcamentos" ON public.orcamentos;
 DROP POLICY IF EXISTS "Allow insert anon orcamentos" ON public.orcamentos;
 
-CREATE POLICY "Allow insert orcamentos for anon"
-ON public.orcamentos FOR INSERT
+DROP POLICY IF EXISTS "Allow insert orcamentos for anon" ON public.orcamentos;
+DROP POLICY IF EXISTS "Allow insert orcamentos for anon" ON orcamentos;
+CREATE POLICY "Allow insert orcamentos for anon" ON orcamentos FOR INSERT
 TO anon, authenticated
 WITH CHECK (true);
 
-CREATE POLICY "Allow select orcamentos for anon"
-ON public.orcamentos FOR SELECT
+DROP POLICY IF EXISTS "Allow select orcamentos for anon" ON public.orcamentos;
+DROP POLICY IF EXISTS "Allow select orcamentos for anon" ON orcamentos;
+CREATE POLICY "Allow select orcamentos for anon" ON orcamentos FOR SELECT
 TO anon, authenticated
 USING (true);
 
-CREATE POLICY "Allow update orcamentos for anon"
-ON public.orcamentos FOR UPDATE
+DROP POLICY IF EXISTS "Allow update orcamentos for anon" ON public.orcamentos;
+DROP POLICY IF EXISTS "Allow update orcamentos for anon" ON orcamentos;
+CREATE POLICY "Allow update orcamentos for anon" ON orcamentos FOR UPDATE
 TO anon, authenticated
 USING (true)
 WITH CHECK (true);
 
 ALTER TABLE public.orcamentos ENABLE ROW LEVEL SECURITY;
+
+

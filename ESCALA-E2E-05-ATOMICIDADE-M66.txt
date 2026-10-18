@@ -1,0 +1,117 @@
+ESCALA-E2E-05-ATOMICIDADE-M66
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA
+
+==================================================
+CORREÇÃO
+==================================================
+
+Função: f_trg_propagar_financeiro_alocacao (M66).
+
+Antes (5 handlers internos + handler externo mascaravam falhas):
+  EXCEPTION WHEN OTHERS THEN NULL   × 5  (OS, receber, pagar, pagamentos, composição)
+  handler externo: RAISE WARNING '[M108F] ...' + RETURN NEW
+
+Depois:
+  EXCEPTION WHEN OTHERS THEN RAISE; END;   × 5  (as 5 etapas propagam)
+  handler externo: RAISE;  (propaga ao PostgreSQL)
+
+Preservado:
+  - fallbacks de SELECT ... INTO STRICT (cliente/prestador ausente) × 2;
+  - IFs de dados opcionais (cliente_id/prestador_id nulos);
+  - idempotência ON CONFLICT (id) e ON CONFLICT (os_id) DO UPDATE;
+  - M80 (f_trg_propagar_financeiro_os) NÃO alterado;
+  - E2E-03 (f_trg_cancelar_financeiro_alocacao) NÃO alterado.
+
+Migration: supabase/migrations/20260922000002_escala_e2e_05_atomicidade_m66.sql
+Rollback:  supabase/migrations/20260922000003_escala_e2e_05_rollback.sql
+  (rollback = definição EXATA da função anterior, com os 5 THEN NULL e o RAISE WARNING)
+
+Sem ALTER TABLE. Sem DELETE. Sem saneamento histórico. Sem tabela de log.
+
+==================================================
+VALIDAÇÃO
+==================================================
+
+1) Caminho normal (BEGIN/ROLLBACK): alocação válida → cadeia funcional
+   NORMAL_RECEBER=1 | NORMAL_PAGAR=1 | NORMAL_PAGAMENTOS=1
+
+2) Falha controlada (rollback-only, SEM contaminar produção):
+   Trigger temporário força exceção no INSERT de financeiro_receber; alocação válida
+   (com OS vinculada). Resultado com a função NOVA:
+     ERROR_PROPAGATED_TO_CALLER=YES (erro E2E05_FORCED chegou ao chamador)
+     ALLOCATION_PERSISTED_AFTER_FAILURE=NO
+     OS_PERSISTED_AFTER_FAILURE=NO
+     RECEBER_PERSISTED_AFTER_FAILURE=NO
+     PAGAR_PERSISTED_AFTER_FAILURE=NO
+     PAGAMENTOS_PERSISTED_AFTER_FAILURE=NO
+     COMPOSICAO_PERSISTED_AFTER_FAILURE=NO
+   (as 5 etapas usam o mesmo RAISE → qualquer falha faz rollback atômico do statement)
+
+   CONTRASTE (função ANTIGA, no mesmo cenário):
+     OLD_FUNCTION_INSERT_OK=true
+     OLD_ALLOCATION_PERSISTED_DESPITE_FAILURE=1
+     OLD_RECEBER_PERSISTED=1
+     → confirmava FALSO SUCESSO/estado parcial antes da correção.
+
+3) Idempotência (ON CONFLICT/UNIQUE os_id):
+   IDEMP_RECEBER_ROWS=1 (re-trigger por valor_frete → 1 registro, valor atualizado=650).
+
+4) Cancelamento E2E-03:
+   E2E03_OS_STATUS=cancelada (OS vinculada cancelada junto com a alocação).
+
+5) Pós-deploy (função em produção, BEGIN/ROLLBACK):
+   RAISE_INNER_BLOCKS=5 | THEN_NULL=0 | HAS_OUTER_RAISE=true | STRICT_FALLBACKS=2
+   POSTDEPLOY_NORMAL_RECEBER=1 | POSTDEPLOY_E2E03_OS=cancelada
+   POSTDEPLOY_FAILURE_PROPAGATED=YES | POSTDEPLOY_ALLOC_NOT_PERSISTED=0
+   RESIDUAL_TEST_OS=0 (nenhum dado de teste persistido)
+
+==================================================
+RESULTADO
+==================================================
+
+INTERNAL_SILENT_HANDLERS_REMOVED=YES (5 THEN NULL → RAISE)
+OUTER_HANDLER_PROPAGATES=YES (RAISE)
+ATOMIC_ROLLBACK_PROVEN=YES
+FALSE_SUCCESS_POSSIBLE=NO
+M80_PRESERVED=YES
+CANCEL_E2E03_PRESERVED=YES
+IDEMPOTENCY_PRESERVED=YES
+PRODUCTION_DEPLOYED=YES
+ROLLBACK_PREPARED=YES
+
+FILES_MODIFIED=
+  supabase/migrations/20260922000002_escala_e2e_05_atomicidade_m66.sql (novo)
+  supabase/migrations/20260922000003_escala_e2e_05_rollback.sql (novo)
+  src/test/escala_e2e_05_atomicidade_m66.test.ts (novo)
+
+TESTS=97/97 PASS (7 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 41.73s
+
+DB_WRITES=0 (somente DDL CREATE OR REPLACE FUNCTION)
+MIGRATIONS=1 (aplicada em produção)
+
+==================================================
+FORA DO ESCOPO (não tratado)
+==================================================
+
+- custo_prestador × valor_repasse;
+- redundância M66/M80;
+- 134 links históricos sem OS;
+- 27 alocações órfãs;
+- APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE de dados (validação em BEGIN/ROLLBACK).
+- Sem ALTER TABLE. Sem DELETE. Sem tabela de log.
+- Cancelamento E2E-03 não alterado. M80 não alterado.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=1

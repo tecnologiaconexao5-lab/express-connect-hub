@@ -1,0 +1,137 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C2-NEUTRALIZAR-SNIPPETS-CONSOLE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+Os 27 snippets _a22_* e o src/testes/validacaoTMS.ts foram neutralizados: conteudo
+historico arquivado (sanitizado, NAO executavel) em docs/lab/neutralized_snippets/, e os
+arquivos originais substituidos por stubs APENAS-COMENTARIO (inertes). Build OK; selftest
+13/13; P1/P2 sem regressao; zero secret/DML.
+
+--------------------------------------------------------------------------------
+1. 27 SNIPPETS _a22_* — ANTES / DEPOIS
+--------------------------------------------------------------------------------
+ANTES: cada arquivo era um snippet IIFE executavel de console (require('pg')/fetch/RPC),
+alguns com URL PROD + anon hardcoded; executavel contra PROD.
+DEPOIS (todos os 27): stub somente-comentario (0 instrucoes), apontando para o historico
+arquivado. Historico preservado em docs/lab/neutralized_snippets/<nome>.txt (sanitizado).
+
+  _a22_q1.cjs   _a22_q1.js   _a22_q2.cjs   _a22_q3.cjs   _a22_q4.cjs   _a22_q5.cjs
+  _a22_q6.cjs   _a22_q7.cjs  _a22_q7b.cjs  _a22_q8.cjs   _a22_q9.cjs   _a22_q10.cjs
+  _a22_q11.cjs  _a22_q12.cjs _a22_q13.cjs  _a22_q14.cjs  _a22_q15.cjs  _a22_q15b.cjs
+  _a22_q15c.cjs _a22_q16.cjs _a22_q16b.cjs _a22_q16c.cjs _a22_q17.cjs  _a22_q17b.cjs
+  _a22_q17c.cjs _a22_replay_torre.cjs      _a22_send_torre.cjs
+  => 27/27 STUBBED | 0 MISSING | 0 arquivo inventado.
+Destaque: _a22_send_torre.cjs chamava RPC mutavel f_responder_mensagem_torre via fetch com
+URL PROD + anon hardcoded; _a22_replay_torre.cjs tambem URL PROD + anon. Ambos agora inertes.
+
+--------------------------------------------------------------------------------
+2. src/testes/validacaoTMS.ts — ANTES / DEPOIS
+--------------------------------------------------------------------------------
+ANTES: snippet de validacao (console/DevTesteTMS) que usava o cliente da app ("@/lib/supabase")
+e importava servicos; orfao apos remocao do /dev-teste (04D3B).
+DEPOIS: ARQUIVADO em docs/lab/neutralized_snippets/validacaoTMS.ts.txt (sanitizado) e REMOVIDO
+de src/. Diretorio src/testes (vazio) removido.
+
+--------------------------------------------------------------------------------
+3. ARQUIVOS CRIADOS / MOVIDOS / STUB
+--------------------------------------------------------------------------------
+ CRIADO (arquivo): docs/lab/neutralized_snippets/ (28 .txt = 27 _a22_* + validacaoTMS)
+ STUB (sobrescrito, inerte): 27 _a22_* na raiz
+ ARQUIVADO + REMOVIDO de src: src/testes/validacaoTMS.ts
+ DIRETORIO removido: src/testes/ (vazio)
+ Funcionalidade preservada em lab? NAO foi criado port (nao justificavel). Historico mantido
+ apenas como documentacao. Se necessario no futuro: harness em scripts/lab com guardHarness.
+
+--------------------------------------------------------------------------------
+4. HARDCODES REMOVIDOS / SANITIZACAO
+--------------------------------------------------------------------------------
+ - _a22_replay_torre.cjs: URL/ref PROD + anon -> REMOVIDOS (stub) / sanitizados no arquivo.
+ - _a22_send_torre.cjs ..: URL/ref PROD + anon -> REMOVIDOS (stub) / sanitizados no arquivo.
+ - Demais _a22_* (q1..q17): usavam process.env (DBURL/TOKENFILE) — sem segredo hardcoded.
+ - Sanitizacao aplicada tambem nos arquivos de historico: ref PROD e anon JWT -> REDACTED;
+   credenciais postgres://user:pass@ -> REDACTED.
+ - Nenhum valor de segredo impresso neste relatorio.
+
+--------------------------------------------------------------------------------
+5. PROVA DE INERCIA (verificador estatico — scripts/_guard.verify_d3c2.cjs)
+--------------------------------------------------------------------------------
+ Para cada um dos 27 originais:
+  - codigo executavel (sem comentarios) = 0 linhas .......... PASS (todos)
+  - sem createClient/pg funcional ........................... PASS
+  - sem import de cliente da app ............................ PASS
+  - sem .insert/.update/.delete/.rpc mutavel ................ PASS
+  - sem URL/ref PROD hardcoded .............................. PASS (stub)
+  - sem anon/service_role hardcoded ......................... PASS (stub)
+  - sem DATABASE_URL com segredo ............................ PASS (stub)
+ Arquivamento: 28 arquivos .txt (NAO executaveis), 0 com segredo (sanitizados) = PASS.
+ validacaoTMS fora de src: PASS | src/testes ausente: PASS | arquivado: PASS.
+ Imports de _a22_ em src: 0 (PASS) | package.json cita _a22_: NAO (PASS).
+
+--------------------------------------------------------------------------------
+6. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+ node scripts/_guard.verify_d3c2.cjs ....... RESULTADO: PASS (exit 0)
+ node scripts/_guard.selftest.cjs .......... TOTAL 13 | PASS 13 | FAIL 0
+ node scripts/_guard.verify_p1.cjs ......... 13/13 OK | A-E PASS (sem regressao)
+ node scripts/_guard.verify_p2.cjs ......... 6/6 OK (1 N/A legado) | A-E PASS (sem regressao)
+ npm run build ............................. OK ("built in 51.58s")
+ /dev-teste ................................ AUSENTE (revalidado)
+ Nenhum snippet foi executado (apenas analise estatica; fs read/write).
+
+--------------------------------------------------------------------------------
+7. NAO TOCADO (conforme instrucao)
+--------------------------------------------------------------------------------
+ Classe A (31 writers) -> 04D3C3; Classe C; Classe E geral; Classe F; tests/e2e; tmp/scratch;
+ configs reais; banco/.env/RLS/RPC; APP.
+
+--------------------------------------------------------------------------------
+8. RISCOS RESTANTES
+--------------------------------------------------------------------------------
+ R1. Classe A (31 writers raiz) ainda atingem PROD -> 04D3C3.
+ R2. Classe C com credencial de banco hardcoded (_audit_001..008.mjs) -> 04D3C4.
+ R3. Classe F (update_financeiro.js, update_financeiro3.cjs, update_prestador.cjs,
+     update_sinistro.cjs) e codemods E -> 04D3C5.
+ R4. Historico arquivado contem SQL/consultas (sem segredo) em docs/lab/neutralized_snippets;
+     nao executavel (.txt). Manter fora de qualquer runner.
+
+--------------------------------------------------------------------------------
+9. ACEITE
+--------------------------------------------------------------------------------
+ A) Classe D executavel restante = 0 ................. OK (27/27 stub)
+ B) validacaoTMS fora de src ou inerte ............... OK (arquivado+removido)
+ C) zero segredo hardcoded nos arquivos tratados ..... OK
+ D) zero DML executavel .............................. OK
+ E) /dev-teste ausente ............................... OK
+ F) P1/P2 sem regressao .............................. OK
+ G) build OK ......................................... OK
+ H) zero conexao/DML real ............................ OK
+
+--------------------------------------------------------------------------------
+10. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 27/27 snippets neutralizados (stub inerte + historico sanitizado), validacaoTMS fora de
+src, zero segredo/DML, build OK, P1/P2 sem regressao.
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3C3 — WRITERS RAIZ (Classe A, 31): mover para scripts/lab com guardHarness +
+remover hardcodes PROD/anon + createClient via env; preservar utilitarios reais sem guard de
+teste. Depois 04D3C4 (dry-runs/read-only com credencial) e 04D3C5 (F + codemods).
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C2-NEUTRALIZAR-SNIPPETS-CONSOLE-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C2-NEUTRALIZAR-SNIPPETS-CONSOLE-RESULTADO.txt
+Tamanho ..: 8447 bytes
+Data .....: 24/09/2026 21:23:27
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C2
+================================================================================

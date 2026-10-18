@@ -1,0 +1,176 @@
+================================================================================
+MISSÃO A24 — PROVA FUNCIONAL A23 + CHAT PROFISSIONAL E VISÍVEL NA TORRE
+Projeto: EXPRESS CONNECT HUB (TMS CONEXÃO EXPRESS)
+Data: 2026-08-14
+Supabase Produção: uwrvzsjtpgaifkktpepn (somente leitura)
+================================================================================
+
+================================================================================
+# PROVA A23
+================================================================================
+
+FUNCIONALIDADE | ARQUIVO | CONECTADA À UI? | VISÍVEL AO USUÁRIO? | RESULTADO
+
+Central de Comprovantes (/comprovantes) | src/pages/Comprovantes.tsx | SIM — rota App.tsx:155 + lazy :70 | SIM — rota protegida acessível | IMPLEMENTADA E VISÍVEL
+Menu "Comprovantes de Entrega" | src/lib/sidebarData.ts:106 | SIM | SIM — subitem de Apoio Operacional | IMPLEMENTADA E VISÍVEL
+Permissão da rota | src/lib/routePermissions.ts:14 | SIM (módulo ordens_servico) | SIM | IMPLEMENTADA E VISÍVEL
+Filtros da Central | Comprovantes.tsx:159-231 | SIM — busca/periodo/cliente/OS/prestador/destinatário/situação | SIM | IMPLEMENTADA E VISÍVEL
+Dossiê ("Ver comprovante") | DossieEntregaSheet.tsx + Comprovantes.tsx:325-354 | SIM — abre o mesmo dossiê profissional | SIM | IMPLEMENTADA E VISÍVEL
+KPI "PODs Pendentes" | TorreControle.tsx:681 + ExecutiveKpis.tsx:37,76-89 | SIM — onClick → navigate("/comprovantes") | SIM | IMPLEMENTADA E VISÍVEL
+Clique do KPI | TorreControle.tsx:681 | SIM — renderiza <button> | SIM — navega para /comprovantes | IMPLEMENTADA E VISÍVEL
+POD dentro da OS | OrdemServicoForm.tsx:3020-3034 + EntregasComprovantes.tsx | SIM — card "Entregas e Comprovantes" | SIM — aba Histórico da OS | IMPLEMENTADA E VISÍVEL
+Ação "Ver comprovantes" (lista OS) | OrdensServicoLista.tsx:575 | SIM — abre OS em modo "ver" | SIM | IMPLEMENTADA E VISÍVEL
+POD no Financeiro | ConferenciaFinanceira.tsx:162-189,306,344 | SIM — montada em Financeiro.tsx:101,130 (tab Conferência) | SIM | IMPLEMENTADA E VISÍVEL
+Ação "Ver comprovante" no Financeiro | ConferenciaFinanceira.tsx:345-357,442-447 | SIM — reusa DossieEntregaSheet | SIM | IMPLEMENTADA E VISÍVEL
+PagamentoPrestadores (novo fluxo POD) | PagamentoPrestadores.tsx:535-554 | SIM — buscarPODsDeAlocacoes (entregas_protocolo) | SIM | IMPLEMENTADA E VISÍVEL
+
+NOTA DE PROVA:
+- Auditoria de conexão executada arquivo a arquivo (rotas → permissões → sidebar → componentes renderizados).
+- Validação read-only em Produção (SELECT):
+    - KPI apresentado na Torre: 42 PODs pendentes (mesma regra de buscarPodsPendentes).
+    - entregas_protocolo: 50 registros | 48 alocações com POD | 60 concluídas/finalizadas.
+- Conferência Financeira é acessada pela aba "Conferência" dentro de /financeiro (não tem subitem próprio de sidebar — mas é alcançável pelo usuário).
+
+Evidências da PROVA A23 (código):
+- App.tsx:70 lazy Comprovantes; App.tsx:155 rota /comprovantes.
+- sidebarData.ts:106 item de menu.
+- routePermissions.ts:14 /comprovantes → ordens_servico.
+- TorreControle.tsx:681 KPI PODs Pendentes com onClick; :768 <ExecutiveKpis/>; botão Mensagens novo.
+- OrdemServicoForm.tsx:3020-3034 card "Entregas e Comprovantes"; :3028 <EntregasComprovantes osId={data.id}>.
+- OrdensServicoLista.tsx:575 botão "Ver comprovantes" (FileCheck).
+- ConferenciaFinanceira.tsx:93-100 podMap; :162-189 renderPOD; :345-357 Ver comprovante; :442-447 DossieEntregaSheet.
+- Financeiro.tsx:101 TabsTrigger "Conferência"; :130 <ConferenciaFinanceira/>.
+- PagamentoPrestadores.tsx:552 buscarPODsDeAlocacoes; :554 escalaParaItemRepasse(a, pod).
+
+================================================================================
+# CHAT TORRE
+================================================================================
+
+ARQUITETURA A22 ENCONTRADA:
+- Tabela: operacao_mensagens (migration 20260812_a22_chat_operacional.sql, já aplicada em Produção).
+- Service: src/services/operacaoChatService.ts (listarMensagens, responderMensagem, marcarComoLidaTorre, contarNaoLidasTorre, inscreverMensagensOperacao, inscreverMensagensTorre).
+- Componente de conversa: src/components/torre-controle/ChatOperacaoPanel.tsx (thread + composer).
+- Aba "Mensagens" contextual: DetalhesOperacaoSheet.tsx:462 (tab) e :941-961 (ChatOperacaoPanel por alocação).
+- Badge global: AppTopbar.tsx (contarNaoLidasTorre + realtime + 30s poll).
+- Escrita restrita a RPCs SECURITY DEFINER (f_responder_mensagem_torre etc.) — sem INSERT/UPDATE diretos.
+
+O QUE JÁ EXISTIA (A22):
+- Infraestrutura completa de mensagens App Prestador ⇄ Torre (tabela + RPCs + realtime).
+- Chat contextual por operação dentro do DetalhesOperacaoSheet (aba "Mensagens").
+- Contador global de não lidas no topbar (AppTopbar).
+
+O QUE FOI ALTERADO (A24):
+- src/services/operacaoChatService.ts: novas funções PURAS e de leitura (SEM migration/SQL):
+    * montarConversasTorre(mensagens, resolver) — agrupa mensagens por alocação, calcula
+      não lidas, última mensagem/horário/remetente. Testável sem banco.
+    * listarConversasTorre() — SELECT read-only em operacao_mensagens + alocacoes_escala +
+      prestadores + ordens_servico (JOIN via relacionamentos existentes).
+- src/components/torre-controle/ChatTorrePanel.tsx (NOVO):
+    * Painel global de Mensagens/Chat com Prestadores dentro da Torre.
+    * Lista de conversas (prestador, OS/Romaneio, destino, última mensagem, horário, não lidas).
+    * Contador de não lidas (badge na conversa + total no cabeçalho).
+    * Busca por conversa.
+    * Ao selecionar, abre ChatOperacaoPanel (A22) — histórico + resposta via responderMensagem.
+    * Realtime via inscreverMensagensTorre (já existente) — sem infra adicional.
+- src/pages/TorreControle.tsx:
+    * Botão "Mensagens" no cabeçalho da Torre com badge numérico de não lidas (laranja).
+    * Sheet lateral com ChatTorrePanel.
+    * Efeito de contagem de não lidas (contarNaoLidasTorre + realtime + poll 30s).
+
+ONDE O BOTÃO/PAINEL DE MENSAGENS FICOU:
+- Botão "Mensagens" (ícone Inbox) no cabeçalho executivo da Torre, ao lado de "Atualizar".
+- Abre Sheet lateral (62%) com o painel ChatTorrePanel.
+- O DetalhesOperacaoSheet (aba "Mensagens" contextual) CONTINUA intacto — não foi removido.
+
+CONTADOR DE NÃO LIDAS:
+- Badge laranja no botão "Mensagens" da Torre (topo).
+- Badge por conversa na lista (contagem de mensagens do prestador com status 'enviada').
+- Total no cabeçalho do painel.
+- Prova read-only em Produção: 5 mensagens não lidas da Torre em 1 conversa.
+
+LISTA DE CONVERSAS:
+- Prestador, OS/Romaneio (hash), destino, última mensagem, horário, badge de não lidas.
+- Ordenada pelas mais recentes primeiro.
+
+ABERTURA DA CONVERSA:
+- Clique na conversa → seleciona alocação → ChatOperacaoPanel carrega histórico (listarMensagens)
+  e marca como lidas (marcarComoLidaTorre — mecanismo A22).
+
+RESPOSTA:
+- Via ChatOperacaoPanel → responderMensagem (RPC f_responder_mensagem_torre) — fluxo A22 existente.
+  Nenhum INSERT direto.
+
+VÍNCULO OS/PRESTADOR:
+- operacao_mensagens.alocacao_id (chave da conversa) + os_id + prestador_id (denormalizados pelas RPCs).
+- Painel exibe prestadorNome e osNumero a partir de alocacoes_escala/prestadores/ordens_servico.
+
+REALTIME:
+- inscreverMensagensTorre (event "*" em operacao_mensagens) — já existente na A22, reutilizado.
+- Nenhuma publicação/migration nova.
+
+ARQUIVOS CRIADOS:
+- src/components/torre-controle/ChatTorrePanel.tsx
+- src/test/a24_chatTorre.test.ts (12 testes)
+- tests/e2e/a24_prova_chat_torre.spec.ts (4 testes Playwright)
+- scripts/_a24_prova_readonly.mjs e scripts/_a24_kpi_readonly.mjs (validação read-only)
+
+ARQUIVOS MODIFICADOS:
+- src/services/operacaoChatService.ts (montarConversasTorre + listarConversasTorre)
+- src/pages/TorreControle.tsx (botão Mensagens + badge + Sheet + estado)
+
+TESTES (A24):
+- 1. Acesso Mensagens visível na Torre ✅ (botão renderizado)
+- 2. Contador de não lidas por conversa ✅
+- 3. Lista de conversas (agrupada por alocação) ✅
+- 4. OS/Romaneio associado ✅
+- 5. Prestador associado ✅
+- 6. Abrir conversa (alocação identificada) ✅
+- 7. Histórico carregado (última msg/horário/remetente) ✅
+- 8. Resposta usa serviço A22 existente (responderMensagem) ✅
+- 9. Aba Mensagens do DetalhesOperacaoSheet preservada (ChatOperacaoPanel existe) ✅
+- 10. Ausência de mensagens não quebra ✅
+- 11. A23 Central continua acessível (rota + menu) ✅
+- 12. KPI POD continua funcional (onClick) ✅
+
+================================================================================
+# VALIDAÇÕES
+================================================================================
+- npx tsc --noEmit  →  0 erros ✅
+- npm run build    →  ✅ 57.00s — build ok
+- npx vitest run   →  ✅ 78/78 testes (8 arquivos; 12 novos A24)
+- Playwright: tests/e2e/a24_prova_chat_torre.spec.ts — 4 testes LISTADOS
+  (execução E2E real requer ambiente QA + credenciais; guard-rails de Produção)
+- Validação funcional read-only em Produção (SELECT):
+    * KPI Torre "PODs Pendentes" = 42 (regra buscarPodsPendentes)
+    * operacao_mensagens: 6 mensagens | 1 conversa | 5 não lidas Torre | 1 da Torre
+    * entregas_protocolo: 50 | alocações com POD: 48 | concluídas/finalizadas: 60
+
+================================================================================
+# SEGURANÇA
+================================================================================
+- Nenhuma migration executada ................... CONFIRMADO (0 migrations nesta missão)
+- Nenhum dado de Produção alterado .............. CONFIRMADO (somente SELECT read-only)
+- Nenhum schema/RLS/RPC/trigger alterado ........ CONFIRMADO
+- Nenhuma nova tabela de chat ................... CONFIRMADO (reusa operacao_mensagens)
+- App Flutter (C:\src\conexao_prestador) ........ CONFIRMADO (não tocado)
+- DetalhesOperacaoSheet (aba Mensagens) ......... CONFIRMADO (preservado)
+- Nenhuma reconstrução da A22 ................... CONFIRMADO
+
+================================================================================
+CLASSIFICAÇÃO FINAL
+================================================================================
+- A23 Central / Comprovantes ............ IMPLEMENTADA E VISÍVEL
+- A23 Torre KPI ......................... IMPLEMENTADA E VISÍVEL (KPI atual = 42)
+- A23 OS/Romaneio (POD) ................. IMPLEMENTADA E VISÍVEL
+- A23 Financeiro (POD) ................. IMPLEMENTADA E VISÍVEL
+- A24 Chat visível na Torre ............. IMPLEMENTADO E VISÍVEL (botão + painel + badge)
+- Chat contextual (DetalhesOperacaoSheet) PRESERVADO
+
+AGUARDANDO HOMOLOGAÇÃO VISUAL DO USUÁRIO:
+- Renderização final no navegador com dados reais (login + clique) — os testes Playwright
+  estão listados e prontos para execução em ambiente QA com credenciais reais.
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A24
+STATUS: PROVA A23 CONCLUÍDA (tudo conectado) + CHAT TORRE IMPLEMENTADO
+================================================================================

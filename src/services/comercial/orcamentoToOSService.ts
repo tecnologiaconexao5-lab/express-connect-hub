@@ -5,6 +5,7 @@
 
 import { supabase } from "@/lib/supabase";
 import type { Orcamento } from "@/components/comercial/types";
+import { verificarInadimplenciaEName } from "@/services/financeiro/inadimplenciaService";
 
 export interface GerarOSResult {
   success: boolean;
@@ -194,7 +195,7 @@ export const gerarOSDoOrcamento = async (
       {
         data: new Date().toISOString(),
         acao: `OS gerada automaticamente do orçamento ${orc.numero}`,
-        status_novo: "rascunho",
+        status_novo: "em_analise",
         usuario: "Sistema",
       },
     ];
@@ -209,10 +210,13 @@ export const gerarOSDoOrcamento = async (
       tipo_operacao: orc.tipoOperacao || "Coleta e Entrega",
       modalidade: orc.modalidade || "esporadico",
       prioridade: orc.prioridade || "normal",
-      status: "rascunho",
-      responsavel: orc.responsavel || "",
-      pedido_interno: orc.pedidoInterno || "",
+      status: "em_analise",
       observacoes_gerais: orc.observacoesGerais || "",
+      observacao_torre: [
+        orc.pedidoInterno ? `Pedido Interno: ${orc.pedidoInterno}` : "",
+        orc.responsavel ? `Responsavel: ${orc.responsavel}` : "",
+      ].filter(Boolean).join(" | ") || null,
+      // pedido_interno e responsavel salvos em observacao_torre ate a migration ser aplicada
       // Vínculo com orçamento
       orcamento_origem: orc.numero,
       // Financeiro herdado do orçamento
@@ -247,7 +251,17 @@ export const gerarOSDoOrcamento = async (
     // Tentar adicionar orcamento_id se a coluna existir
     osPayload.orcamento_id = orc.id;
 
-    // 8. Inserir OS no banco
+    // 8. Verificar inadimplência do cliente antes de criar OS
+    if (orc.cliente) {
+      const inadimplencia = await verificarInadimplenciaEName(orc.cliente);
+      if (inadimplencia.inadimplente) {
+        throw new Error(
+          `Cliente inadimplente: ${inadimplencia.mensagem || "Possui títulos em aberto vencidos"}`
+        );
+      }
+    }
+
+    // 9. Inserir OS no banco
     const { data: novaOS, error: erroOS } = await supabase
       .from("ordens_servico")
       .insert([osPayload])

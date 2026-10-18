@@ -1,0 +1,298 @@
+═══════════════════════════════════════════════════════════════════════════════
+       AG-07J.15 — RELATÓRIO: DEPLOY CONTROLADO E PROVA INTEGRADA
+═══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+REDMI NECESSÁRIO:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                          PREFLIGHT
+═══════════════════════════════════════════════════════════════════════════════
+
+PROJETO SUPABASE:
+uwrvzsjtpgaifkktpepn.supabase.co
+
+AMBIENTE:
+produção (confirmado via .env + AGENTS.md)
+
+PROJECT REF:
+uwrvzsjtpgaifkktpepn
+
+BANCO REMOTO CONECTADO:
+SIM (produção)
+
+ALVO COMPROVADO:
+SIM
+
+MIGRATIONS PENDENTES (locais):
+  • 20260822_ag07f_gate_elegibilidade_operacional.sql (AG-07F)
+  • 20260825_j13_fix_aceitar_rede_bypass.sql (AG-07J.13)
+
+MIGRATIONS REMOTAS JÁ APLICADAS:
+  • NÃO É POSSÍVEL VERIFICAR SEM ACESSO DIRETO AO BANCO
+  • Ambas marcadas "PENDENTE DE APLICAÇÃO — NÃO EXECUTADA" nos headers
+
+AG-07F JÁ APLICADA:
+NÃO (confirmado pelo header da migration, linha 17)
+
+AG-07J.13 JÁ APLICADA:
+NÃO (confirmado pelo header da migration)
+
+CONFLITOS DE REDEFINIÇÃO:
+NÃO — nenhuma migration entre 20260822 e 20260825 modifica
+f_buscar_operacoes_motorista ou f_aceitar_oportunidade_rede
+
+ROLLBACK PREPARADO:
+SIM — ambas usam CREATE OR REPLACE; rollback = recriar versão anterior
+
+═══════════════════════════════════════════════════════════════════════════════
+              STOP CONDITION — DEPLOY NÃO EXECUTADO
+═══════════════════════════════════════════════════════════════════════════════
+
+DEPLOY NÃO EXECUTADO — ALVO NÃO COMPROVADO COMO AMBIENTE SEGURO
+
+Motivo: projeto uwrvzsjtpgaifkktpepn é PRODUÇÃO. As instruções da missão
+estabelecem STOP CONDITION inequívoca: se não for possível provar qual
+ambiente será alterado, PARAR. Produção é explícita em "NÃO ALTERAR BANCO".
+
+═══════════════════════════════════════════════════════════════════════════════
+                         AUDITORIA LOCAL
+═══════════════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────────────
+4. ORDEM DAS MIGRATIONS
+───────────────────────────────────────────────────────────────────────────────
+
+  AG-07F (20260822):
+    • Altera f_buscar_operacoes_motorista (0-param e 4-param)
+    • Adiciona gate de elegibilidade operacional (status + liberado_app)
+    • REVOKE ALL + GRANT authenticated em ambos overloads
+    • NÃO altera f_aceitar_oportunidade_rede
+
+  AG-07J.13 (20260825):
+    • Altera f_aceitar_oportunidade_rede
+    • Adiciona 7 gates de elegibilidade (status, liberado, veículo, tipo,
+      kg, m3, térmico, ajudante)
+    • NÃO altera f_buscar_operacoes_motorista
+
+  Ordem correta: AG-07F → AG-07J.13 (sem dependência direta, mas coesa)
+  Conflitos: NENHUM
+
+───────────────────────────────────────────────────────────────────────────────
+5. AUDITORIA AG-07J.13 — RENAME DE PARÂMETRO
+───────────────────────────────────────────────────────────────────────────────
+
+  ANTES (20260816_a27b_fix_aceitar_cliente_id.sql):
+    CREATE OR REPLACE FUNCTION public.f_aceitar_oportunidade_rede(
+      p_oportunidade_id uuid,
+      p_prestador_uuid uuid,      ← nome antigo
+      p_auth_user_id uuid DEFAULT NULL::uuid)
+
+  DEPOIS (20260825_j13_fix_aceitar_rede_bypass.sql):
+    CREATE OR REPLACE FUNCTION public.f_aceitar_oportunidade_rede(
+      p_oportunidade_id uuid,
+      p_prestador_id uuid,        ← nome novo
+      p_auth_user_id uuid DEFAULT NULL::uuid)
+
+  PostgreSQL: CREATE OR REPLACE identifica função por NAME + SCHEMA + DATA
+  TYPES (não por nomes de parâmetros). Renomear p_prestador_uuid →
+  p_prestador_id é SEGURO com CREATE OR REPLACE.
+
+  Veredicto: ✅ SEGURO — não requer DROP/recriação
+
+───────────────────────────────────────────────────────────────────────────────
+6. SEGURANÇA DAS RPCs
+───────────────────────────────────────────────────────────────────────────────
+
+  f_buscar_operacoes_motorista (AG-07F):
+    SECURITY DEFINER  ✅
+    SET search_path = public  ✅
+    REVOKE ALL FROM PUBLIC, anon  ✅
+    GRANT EXECUTE TO authenticated  ✅
+    Ownership check (4-param): auth.uid → prestadores.auth_user_id  ✅
+
+  f_aceitar_oportunidade_rede (AG-07J.13):
+    SECURITY DEFINER  ✅
+    SET search_path TO 'public'  ✅
+    Auth check: p_auth_user_id → auth.users  ✅
+    REVOKE/GRANT: preservado da migration anterior (20260801_tms032)  ✅
+
+  f_buscar_operacoes_motorista (4-param, AG-07F):
+    SECURITY DEFINER  ✅
+    SET search_path = public  ✅
+    REVOKE ALL FROM PUBLIC, anon  ✅
+    GRANT EXECUTE TO authenticated  ✅
+
+───────────────────────────────────────────────────────────────────────────────
+7. ROLLBACK
+───────────────────────────────────────────────────────────────────────────────
+
+  AG-07F rollback:
+    Recriar versão anterior de f_buscar_operacoes_motorista (0-param e 4-param)
+    sem gate de elegibilidade. Migration anterior: 20260801_tms032_hardening_rpc_grants.sql
+
+  AG-07J.13 rollback:
+    Recriar versão anterior de f_aceitar_oportunidade_rede (sem 7 gates).
+    Migration anterior: 20260816_a27b_fix_aceitar_cliente_id.sql
+
+  ROLLBACK PREPARADO:
+  SIM — ambas as versões anteriores estão documentadas e podem ser restauradas
+  via CREATE OR REPLACE com a definição da migration anterior.
+
+═══════════════════════════════════════════════════════════════════════════════
+                           DEPLOY
+═══════════════════════════════════════════════════════════════════════════════
+
+AG-07F EXECUTADA:
+NÃO
+
+RESULTADO:
+DEPLOY BLOQUEADO — PRODUÇÃO
+
+AG-07J.13 EXECUTADA:
+NÃO
+
+RESULTADO:
+DEPLOY BLOQUEADO — PRODUÇÃO
+
+OUTRAS MIGRATIONS EXECUTADAS:
+NENHUMA
+
+BANCO ALTERADO:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                       RPC AG-07F (VALIDAÇÃO LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+CONTRATO JSONB:
+PASS (returns { success, operacoes, total })
+
+LIBERADO_FALSE BLOQUEIA NOVAS:
+PASS (v_elegivel = false → retorna apenas em_rota/ocorrencia)
+
+EM_ROTA PRESERVADA:
+PASS (status IN ('em_rota', 'ocorrencia') para inelegível)
+
+OCORRENCIA PRESERVADA:
+PASS (status IN ('em_rota', 'ocorrencia') para inelegível)
+
+CANCELADA/RECUSADA OCULTAS:
+PASS (status NOT IN ('cancelada', 'recusada') para elegível)
+
+═══════════════════════════════════════════════════════════════════════════════
+                      RPC AG-07J.13 (VALIDAÇÃO LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+STATUS:
+PASS (7 gates implementados e validados via testes AG-07J.13)
+
+LIBERADO_APP:
+PASS (GATE 1: v_prestador_liberado = false → recusa)
+
+TIPO:
+PASS (GATE 3: v_os_tipo_veiculo != v_veiculo_tipo_norm → recusa)
+
+CAPACIDADE KG:
+PASS (GATE 4: v_veiculo.capacidade_kg < v_os_peso → recusa)
+
+CUBAGEM:
+PASS (GATE 5: v_veiculo.capacidade_m3 < v_os_cubagem → recusa)
+
+TÉRMICO:
+PASS (GATE 6: OS refrigerado + veículo seco → recusa)
+
+AJUDANTE:
+PASS (GATE 7: v_os_carga_ajudante = true → recusa)
+
+ATOMICIDADE:
+PASS (gates antes de qualquer INSERT/UPDATE — sem efeito colateral)
+
+═══════════════════════════════════════════════════════════════════════════════
+                      PROVA INTEGRADA (LOCAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+FLUXO POSITIVO:
+Não executável — requer banco remoto com dados reais
+
+FLUXOS NEGATIVOS:
+Não executáveis — requer banco remoto com dados reais
+
+BYPASS ENCONTRADO:
+NÃO (todos os gates documentados e auditados)
+
+═══════════════════════════════════════════════════════════════════════════════
+                         REGRESSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+TESTES:
+891/891 PASS (suite completa, incluindo AG-07F/AG-07J.13/AG-07J.14.1/AG-07J.14.2)
+
+TYPESCRIPT:
+0 erros
+
+═══════════════════════════════════════════════════════════════════════════════
+                          CONTROLE
+═══════════════════════════════════════════════════════════════════════════════
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+DADOS REAIS DESTRUÍDOS:
+NÃO
+
+═══════════════════════════════════════════════════════════════════════════════
+                          DECISÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+DEPLOY HOMOLOGADO:
+NÃO (PRODUÇÃO — STOP CONDITION ATIVADA)
+
+ROLLBACK NECESSÁRIO:
+NÃO (deploy não executado)
+
+PRÓXIMO BLOQUEIO REAL:
+Ambiente QA/Staging separado de Produção necessário para deploy controlado.
+Produção (uwrvzsjtpgaifkktpepn) não pode ser usada para migrations de teste.
+
+PRÓXIMA MISSÃO:
+AG-07J.16 — AUDITORIA MASTER FINAL
+
+DECISÃO FINAL:
+D — DEPLOY BLOQUEADO (PRODUÇÃO)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    JUSTIFICATIVA DA DECISÃO D
+═══════════════════════════════════════════════════════════════════════════════
+
+O projeto Supabase configurado (uwrvzsjtpgaifkktpepn) é PRODUÇÃO.
+As instruções da missão e do AGENTS.md estabelecem explicitamente:
+  • "NÃO alterar banco"
+  • "NÃO executar migration"
+  • "STOP CONDITION: se não for possível provar qual ambiente será alterado, PARAR"
+
+O ambiente alvo NÃO é seguro para deploy. Toda a auditoria local foi
+completada com sucesso (migrations auditadas, ordem verificada, rename
+de parâmetro validado, segurança confirmada, rollback preparado, 891/891
+testes passando). Mas a execução remota é bloqueada pela STOP CONDITION.
+
+Para prosseguir com o deploy, é necessário:
+  1. Criar ambiente QA/Staging separado de Produção, OU
+  2. Obter autorização explícita para deploy em Produção, OU
+  3. Executar via Supabase Dashboard com credenciais de service_role
+
+═══════════════════════════════════════════════════════════════════════════════
+                         FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

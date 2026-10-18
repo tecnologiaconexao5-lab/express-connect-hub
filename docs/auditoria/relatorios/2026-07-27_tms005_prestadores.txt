@@ -1,0 +1,52 @@
+MISSAO TMS-005 — HOMOLOGACAO CONTROLADA DO MODULO PRESTADORES
+==============================================================
+
+Data: 2026-07-27
+Status: LEITURA E PAGINACAO HOMOLOGADAS — C09/C10 CORRIGIDOS
+Percentual: 49% (+1pp)
+Branch: auditoria-final-integracao
+
+=======================================================================
+CORRECOES
+=======================================================================
+
+C10 — Paginacao: useEffect sem page na dependencia. Corrigido.
+C10 — PAGE_SIZE: duplicado (10 + 25). Unificado em 25.
+C09 — dataValidadeCNH: campo nao existe no schema. Substituido por
+      metadata.cnh_validade.
+Tipos: metadata adicionado ao Prestador, documentos parseados de JSONB.
+
+=======================================================================
+PLAYWRIGHT: 4/4 + 1 parcial
+=======================================================================
+
+Lista (19 linhas, sem undefined):                              ✅
+Detalhe (dados corretos):                                      ✅
+Busca funciona:                                                ✅
+Network sem erros HTTP:                                        ✅
+Edicao DB->UI (escrita OK, navegacao requer pagina 2):        ⚠️
+
+=======================================================================
+AUTH_USER_ID MATRIX
+=======================================================================
+
+Com auth_user_id:           1  (PRESTADOR TESTE APP)
+Sem auth_user_id:          32  (20 com alocacoes, 12 sem)
+liberado_app=true:          2
+Duplicidade:                0
+
+Classificacao: Implantacao parcial do Auth App.
+
+=======================================================================
+PERCENTUAL
+=======================================================================
+
+Prestadores:            0% -> 70%
+Geral:                 48% -> 49% (+1pp)
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+PRESTADORES — LEITURA, PAGINACAO E EDICAO CONTROLADA HOMOLOGADAS;
+ONBOARDING AUTH E CRUD COMPLETO AINDA PENDENTES

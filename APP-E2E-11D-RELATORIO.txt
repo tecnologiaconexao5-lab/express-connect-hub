@@ -1,0 +1,208 @@
+========================================================================
+APP-E2E-11D — CORRIGIR CONSUMO DE POD PRIVADO NO TMS/PORTAL
+Projeto: TMS CONEXÃO EXPRESS
+Modelo: DeepSeek V4.1 Flash
+Data: 2026-09-27 (execução)  |  Redmi: NÃO  |  Migrations: 0  |  Schema: 0
+Base: APP-E2E-11C (GAP-POD-PRIVATE-URL confirmado)
+========================================================================
+
+RESUMO EXECUTIVO
+----------------
+Corrigido o consumo de POD do bucket PRIVADO `driver-evidence` que ainda
+chegava como publicUrl crua (HTTP 400) na Torre de Controle e em partes do
+Portal Cliente. A correção REUTILIZA o podMediaService (fonte única) e resolve
+as mídias na camada de serviço, evitando duplicação de lógica nos componentes.
+Bucket continua PRIVADO. Sem service_role no frontend. Sem token hardcoded.
+Nenhum schema/migration. Testes direcionados 100% PASS. Gate 11D = PASS.
+
+========================================================================
+1. CAUSA RAIZ
+========================================================================
+- Bucket `driver-evidence` é PRIVADO (storage.buckets.public = false).
+- As referências persistidas em `delivery_proofs` e `entregas_protocolo`
+  (e em `alocacoes_escala.comprovante_url`) são "publicUrl"
+  (/storage/v1/object/public/driver-evidence/...).
+- publicUrl direta no bucket privado → HTTP 400 ("Bucket not found").
+- Alguns consumidores já resolviam (PodLista, Dossiê administrativo) usando
+  `resolverMidiasPod()`; outros (Torre + Portal) renderizavam a referência crua.
+- Solução correta: reutilizar `resolverMidiasPod()` / `resolverMidiasPods()`
+  do `src/services/comprovantes/podMediaService.ts` para converter a referência
+  persistida em SIGNED URL temporária ANTES de chegar à UI.
+
+========================================================================
+2. MATRIZ A/B/C/D — ANTES → DEPOIS
+========================================================================
+A = resolve via signed URL corretamente
+B = usa referência crua e quebra
+C = não consome mídia POD (só presença/contagem)
+D = inconclusivo
+
+| Consumidor                                             | Antes | Depois |
+|--------------------------------------------------------|:-----:|:------:|
+| Torre — DetalhesOperacaoSheet.tsx (via buscarPOD)      |   B   |   A    |
+| portalClienteService.buscarComprovantesPortal          |   B   |   A    |
+| portalClienteService.buscarPODsPorCliente              |   B   |   A    |
+| portalClienteService.buscarDetalhesEntregaCompleto     |   B   |   A    |
+| portalClienteService.buscarDetalheAlocacaoCliente      |   B   |   A    |
+| PortalComprovantesPremium                              |   B   |   A    |
+| PortalDrawerPOD                                        |   B   |   A    |
+| PortalEscalaOperacional                                |   B   |   A    |
+| PortalComparacaoEntregas                               |   C   |   C    |
+| PortalCliente.tsx (selectedEntrega comprovante/assin.) |   B   |   A    |
+| PodLista.tsx (Baixas e Evidências)                     |   A   |   A    |
+| Dossiê (comprovantesService.buscarDossieComprovante)   |   A   |   A    |
+| Comprovantes.tsx (só ícone "OK")                       |   C   |   C    |
+| PagamentoPrestadores (buscarPODsDeAlocacoes — presença)|   C   |   C    |
+| TorreControle.buscarPodsPendentes (presença)           |   C   |   C    |
+
+Nenhum consumidor que já estava correto (A) foi alterado.
+Consumidores C não renderizam imagem → fora de escopo, preservados.
+
+========================================================================
+3. SOLUÇÃO APLICADA (reuso — sem 2º sistema)
+========================================================================
+Fonte única: src/services/comprovantes/podMediaService.ts
+  - resolverMidiaPod(ref)  → signed URL (bucket privado) / raw (público/externo)
+  - resolverMidiasPod(row) → resolve foto_entrega_url, foto_canhoto_url,
+                             assinatura_url
+  - TTL = 600s (POD_MEDIA_TTL_SECONDS). Sem token hardcoded.
+  - Usa o cliente supabase (anon) + RLS de storage.objects; nada de service_role.
+
+Resolução na CAMADA DE SERVIÇO (evita duplicação nos componentes):
+  1) podService.buscarPOD(alocacaoId)
+       → passou a retornar POD já resolvido (Torre + hook usePod).
+  2) portalClienteService.buscarPODsPorCliente / buscarComprovantesPortal
+       → retorna lista com mídias resolvidas (PortalComprovantesPremium +
+         PortalComparacaoEntregas).
+  3) portalClienteService.buscarDetalhesEntregaCompleto
+       → POD resolvido + mídias da alocação (comprovante_url, assinatura_url,
+         fotos_entrega) resolvidas (PortalDrawerPOD).
+  4) portalClienteService.buscarDetalheAlocacaoCliente
+       → POD resolvido (PortalEscalaOperacional).
+  5) PortalCliente.tsx (selectedEntrega) — fluxo próprio (vanilla supabase na
+     página): corrigido cirurgicamente resolvendo comprovante_url/assinatura_url
+     da alocação no momento da montagem do mapa.
+
+Nota de arquitetura (Torre):
+  A correção foi feita na FONTE consumida pela Torre (`buscarPOD`), não no
+  componente. Assim o `<img src={pod.foto_*}>` do DetalhesOperacaoSheet recebe
+  sempre uma signed URL, sem duplicar resolução e sem alterar layout. O
+  DetalhesOperacaoSheet.tsx NÃO foi modificado (o caminho necessário passou a
+  ser resolvido no service que ele já consome).
+
+========================================================================
+4. ARQUIVOS ALTERADOS
+========================================================================
+- src/services/podService.ts
+    + import resolverMidiasPod
+    * buscarPOD(): resolve POD (metadata.pod e fallback entregas_protocolo)
+- src/services/portalCliente/portalClienteService.ts
+    + import * as podMedia (namespace)
+    * buscarPODsPorCliente/buscarComprovantesPortal: resolverMidiasPods(mapped)
+    * buscarDetalhesEntregaCompleto: resolverMidiasPod(pod) + mídias da alocação
+    * buscarDetalheAlocacaoCliente: resolverMidiasPod(protocolo)
+- src/pages/PortalCliente.tsx
+    + import resolverMidiaPod
+    * selectedEntrega: resolve comprovante_url/assinatura_url da alocação
+- src/test/app_e2e11d_pod_private_media.test.ts  (NOVO — 15 testes)
+
+NÃO alterados: DetalhesOperacaoSheet.tsx, PodLista.tsx, comprovantesService.ts,
+PortalComprovantesPremium.tsx, PortalDrawerPOD.tsx, PortalEscalaOperacional.tsx,
+PortalComparacaoEntregas.tsx (já corretos ou corrigidos via service).
+
+========================================================================
+5. SEGURANÇA
+========================================================================
+[x] Bucket driver-evidence continua PRIVADO (public=false) — reconfirmado.
+[x] Nenhuma SERVICE_ROLE no frontend (resolução via cliente anon + RLS).
+[x] Nenhuma chave/token hardcoded (signed URL gerada em runtime, TTL 600s).
+[x] Não expõe caminho de outro tenant/prestador (RLS de storage mantida).
+[x] Bucket comprovantes-entrega permanece público (inalterado).
+[x] Nenhum DDL/migration executado.
+
+========================================================================
+6. TESTES E TOTAIS
+========================================================================
+Novo: src/test/app_e2e11d_pod_private_media.test.ts — 15/15 PASS
+  1) publicUrl bucket privado → signed URL
+  2) referência já assinada → path preservado (sem corrupção)
+  3) bucket público/legado → permanece cru (sem re-assinatura)
+  4) URL externa → crua
+  5) referência nula/ausente/vazia → não quebra
+  6) foto_entrega / foto_canhoto / assinatura resolvidas; ausentes preservadas
+  7) erro de resolução → fallback controlado (sem crash)
+  8) buscarPOD (Torre) devolve signed URL — não crua
+  9) buscarPOD fallback sem crash quando assinatura falha
+ 10) buscarDetalhesEntregaCompleto (Portal) devolve signed URL
+ 11-15) garantias estruturais (Torre→buscarPOD; podService→podMediaService;
+        portalClienteService resolve; PortalCliente resolve; baseline intacto)
+
+Baseline preservado:
+  - src/test/app_e2e07_pod_media_parser.test.ts → 7/7 PASS
+
+Regressão direcionada (6 arquivos): 66/66 PASS
+  a23B_kpiComprovantes, a23C_podDentroOs, a23D_podFinanceiro,
+  e2e_completo_05b_pod_comprovantes, app_e2e07_pod_media_parser,
+  app_e2e11d_pod_private_media
+
+Typecheck: npx tsc -p tsconfig.app.json --noEmit
+  → 0 erros nos arquivos da missão (894 erros PRÉ-EXISTENTES no restante da
+    árvore de trabalho; nenhum atribuível a esta missão).
+
+ESLint (arquivos alterados):
+  → 0 erros NOVOS. O test file = 0 problemas. Nos services/página restam apenas
+    os `no-explicit-any` de BASELINE (linhas pré-existentes); nenhuma linha
+    adicionada introduziu `any` novo.
+
+========================================================================
+7. EVIDÊNCIA FUNCIONAL
+========================================================================
+A fixture E2E-11 já foi removida (11C) — NÃO foi recriada.
+A prova usa o podMediaService real + Supabase MOCKADO:
+  - Referência no formato quebrado (publicUrl de bucket privado) NÃO chega crua
+    ao consumidor corrigido:
+      * Torre: buscarPOD() retorna foto_entrega/canhoto/assinatura com
+        "/storage/v1/object/sign/driver-evidence/" (sem "/object/public/").
+      * Portal: buscarDetalhesEntregaCompleto() retorna POD com signed URL.
+  - Fallback: se a assinatura falha, retorna a referência original (sem crash).
+Nenhum dado real foi alterado em banco nesta missão.
+
+========================================================================
+8. GAPS PRESERVADOS (NÃO tratados aqui)
+========================================================================
+- GAP-APP-STATUS-LABEL-01 (APP)
+- Storage purge E2E-11 (4 objetos driver-evidence pendentes — SERVICE_ROLE)
+- APP-DATA-01 (141 alocações)
+- GAP-F2-01..06 / F3-04..05 / F4-01..05 / F5-03..04
+- financeiro is_teste (fixture 11C gerou pagar/pagamento com is_teste=false)
+- Admin APP / Cadastro Prestador / Recrutamento / CAD-PERSIST
+- App Motorista (Flutter externo) / romaneio / KM / pedágio / adicionais
+- Rede de Oportunidades / proximidade / Radar Operacional
+Todos mantidos no roadmap (backlog cumulativo).
+
+========================================================================
+9. GATE 11D
+========================================================================
+[x] bucket permanece privado
+[x] Torre resolve POD privado
+[x] Portal resolve POD privado
+[x] solução existente reutilizada (podMediaService)
+[x] sem service_role no frontend
+[x] testes direcionados PASS (15/15)
+[x] parser existente continua PASS (7/7)
+[x] nenhuma regressão funcional encontrada (66/66 nos testes relacionados)
+RESULTADO: PASS
+
+========================================================================
+10. PRÓXIMA MISSÃO EXATA
+========================================================================
+APP-E2E-11E — FECHAMENTO APP/STATUS + PENDÊNCIAS DO GATE
+  - Corrigir GAP-APP-STATUS-LABEL-01 (cabeçalho do detalhe no APP Prestador
+    não atualizava após aceite/em_rota/POD/finalização).
+  - Executar purge dos 4 objetos Storage da fixture E2E-11 via Storage API
+    (requer SERVICE_ROLE_KEY de produção).
+  - Revisar GAP cosmeticamente antes de avançar 8→7.
+
+========================================================================
+FIM — APP-E2E-11D
+========================================================================

@@ -5,9 +5,9 @@ import {
   Truck, User, Phone, Mail, ChevronRight, ChevronUp, ChevronDown, X, Camera, Signature, MapPinned, Activity, Calendar, BarChart3, 
   Send, Route, Users, FileUp, AlertCircle, TrendingUp, Wallet, CreditCard, Bell, Settings, LogIn,
   Clock3, Package2, Navigation, CheckCheck, MoreHorizontal, Eye, PhoneCall, MessageSquare, Play, Pause,
-  Grid3X3, List, Calculator, Map, Navigation2, Star, ThumbsUp, ThumbsDown, Minus, Plus, Filter,
+  Grid3X3, List, Calculator, Map as MapIcon, Navigation2, Star, ThumbsUp, ThumbsDown, Minus, Plus, Filter,
   QrCode, ExternalLink, RefreshCw, Moon, Sun, Building2, Home, Briefcase, Ruler, Scale, ArrowRight,
-  FilePlus, FileCheck, History, Award, TrendingDown, TrendingEqual, Brain, Zap, Copy, Trash2
+  FilePlus, FileCheck, History, Award, TrendingDown, TrendingEqual, Zap, Copy, Trash2, Brain, Sparkles
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,13 +19,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getUser, logout } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import type { TrackingPosition } from "@/services/rastreamento/trackingService";
 import { useToast } from "@/hooks/use-toast";
 import {
   AreaChart,
@@ -35,8 +37,6 @@ import {
   CartesianGrid,
   Tooltip as ChartTooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
   Cell,
 } from "recharts";
 import {
@@ -58,9 +58,15 @@ import {
   PortalNotificacoes,
   PortalWhatsApp,
   PortalCentralViva,
+  PortalAIReport,
   PortalPWA,
+  PortalPatio,
+  PerfilCliente,
+  PortalComprovantesPremium,
+  PortalRelatoriosPremium,
   type TimelineEvent,
 } from "@/components/portal-cliente";
+import { PortalOnboarding } from "@/components/portal-cliente/PortalOnboarding";
 import { usePortalRealtime } from "@/hooks/portalCliente";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -68,21 +74,26 @@ import {
   gerarInsights,
   buscarComprovantesPortal,
   buscarProtocolosPortal,
+  criarOcorrenciaPortal,
+  buscarOcorrenciasCliente,
+  criarAvaliacaoPortal,
 } from "@/services/portalCliente/portalClienteService";
+import { buscarStatusPatioCliente } from "@/services/patioService";
+import { resolverMidiaPod } from "@/services/comprovantes/podMediaService";
+import { PATIO_STATUS_LABELS } from "@/types/patio";
+import type { PatioCheckin } from "@/types/patio";
 
 import {
   criarPedidoPortal,
   buscarPedidosPortal,
   validarPedido,
-  sugerirVeiculo,
+  confirmarPedidoPortal,
   gerarResumoInteligente,
   gerarSugestaoInteligente,
-  calcularTempoRota,
-  sugerirVeiculoAvancado,
   type PedidoPortal,
   type ResumoInteligente,
-  statusCores,
-  prioridadeCores,
+  type ConfirmacaoPedidoResultado,
+
 } from "@/services/portalCliente/pedidosService";
 
 const fmtFin = (v: number | null | undefined) => {
@@ -104,17 +115,100 @@ const fmtHora = (d: string | null | undefined) => {
   return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 };
 
-const formatStatus = (s: string | undefined) => {
-  const map: Record<string, string> = {
-    programacao: "Programado",
-    coleta: "Em Coleta",
-    saiu_para_rota: "Saiu para Rota",
-    em_rota: "Em Rota",
-    entregue: "Entregue",
-    atrasada: "Atrasado",
-    problema: "Com Problema",
+const mapStatusCliente = (statusOS?: string, alocacao?: any): { label: string; descricao: string } => {
+  // Prioridade para status da alocação
+  if (alocacao?.finalizada) {
+    return { label: "Entrega concluída", descricao: "Sua operação foi finalizada com sucesso." };
+  }
+  if (alocacao?.status === "em_rota" || alocacao?.status === "em_andamento") {
+    return { label: "Em distribuição", descricao: "Sua carga está em trânsito para o destino." };
+  }
+  if (alocacao?.status === "aceita" || alocacao?.aceite_prestador) {
+    return { label: "Operação confirmada", descricao: "O prestador responsável já confirmou o atendimento." };
+  }
+  if (alocacao?.status === "aguardando_aceite") {
+    return { label: "Planejamento operacional", descricao: "Estamos alocando o prestador responsável pela sua operação." };
+  }
+
+  // Fallback para status da OS
+  const map: Record<string, { label: string; descricao: string }> = {
+    pendente: { label: "Pedido recebido", descricao: "Seu pedido foi registrado e está aguardando análise." },
+    rascunho: { label: "Pedido recebido", descricao: "Seu pedido foi registrado e está aguardando análise." },
+    em_andamento: { label: "Em distribuição", descricao: "Sua operação está em andamento." },
+    concluida: { label: "Entrega concluída", descricao: "Sua operação foi finalizada com sucesso." },
+    finalizada: { label: "Entrega concluída", descricao: "Sua operação foi finalizada com sucesso." },
+    cancelada: { label: "Solicitação cancelada", descricao: "Esta solicitação foi cancelada." },
   };
-  return map[s || ''] || s || "Pendente";
+  
+  const result = map[statusOS || ""];
+  if (result) return result;
+
+  // Mapeamento adicional para status do portal_pedidos
+  const pedidoMap: Record<string, { label: string; descricao: string }> = {
+    enviado: { label: "Recebemos sua solicitação", descricao: "Nossa equipe operacional está validando os detalhes para confirmar a melhor programação." },
+    em_analise: { label: "Pedido em análise", descricao: "Estamos conferindo disponibilidade, veículo ideal e janela de atendimento." },
+    programado: { label: "Serviço programado", descricao: "Sua operação foi programada com sucesso." },
+    coleta: { label: "Em coleta", descricao: "Sua carga está sendo coletada." },
+    em_rota: { label: "Em distribuição", descricao: "Sua carga está a caminho do destino." },
+    entregue: { label: "Entrega concluída", descricao: "A entrega foi realizada com sucesso." },
+    cancelado: { label: "Cancelado", descricao: "Esta solicitação foi cancelada." },
+  };
+
+  return pedidoMap[statusOS || ""] || { label: statusOS || "Pendente", descricao: "Aguardando atualização." };
+};
+
+const formatStatus = (s: string | undefined) => {
+  return mapStatusCliente(s).label;
+};
+
+const gerarTimelinePremium = (entrega: Entrega): TimelineEvent[] => {
+  const events: TimelineEvent[] = [];
+  const now = new Date().toISOString();
+
+  const addEvent = (id: string, step: string, label: string, timestamp: string, status: TimelineEvent["status"], description?: string) => {
+    events.push({ id, step, label, timestamp, status, description });
+  };
+
+  // 1. Pedido recebido / Solicitação recebida
+  addEvent("pedido-recebido", "pedido_criado", "Recebemos sua solicitação", entrega.created_at || now, "completed",
+    "Seu pedido foi registrado com sucesso.");
+
+  // 2. Serviço programado (OS criada/vinculada)
+  if (entrega.status !== "pendente" && entrega.status !== "rascunho") {
+    addEvent("servico-programado", "operacao_programada", "Planejamento operacional", entrega.previsao || entrega.created_at || now, "completed",
+      "Sua operação foi programada na nossa grade.");
+  }
+
+  // 3. Operação confirmada
+  if (entrega.aceite_prestador || entrega.alocacao_status === "aceita") {
+    addEvent("operacao-confirmada", "operacao_confirmada", "Operação confirmada", entrega.data_aceite || entrega.created_at || now, "completed",
+      entrega.prestador ? `Equipe operacional confirmou o atendimento.` : "Equipe operacional confirmou o atendimento.");
+  }
+
+  // 4. Em distribuição
+  if ((entrega.alocacao_status === "em_rota" || entrega.alocacao_status === "em_andamento" || entrega.alocacao_status === "coleta") || entrega.status === "em_andamento") {
+    addEvent("servico-andamento", "em_distribuicao", "Em distribuição", entrega.horario_inicio_real || entrega.created_at || now, "current",
+      "Sua carga está em trânsito para o destino.");
+  }
+
+  // 5. Entrega concluída
+  if (entrega.alocacao_finalizada || entrega.status === "concluida" || entrega.status === "finalizada") {
+    const hasPOD = !!(entrega.comprovante_url || entrega.assinatura_url);
+    addEvent("entrega-concluida", "entrega_concluida", "Entrega concluída", entrega.horario_fim_real || entrega.created_at || now, "completed",
+      hasPOD ? "Entrega concluída. Comprovante disponível." : undefined);
+  }
+
+  // 6. Comprovante disponível
+  if (entrega.comprovante_url || entrega.assinatura_url || entrega.pod?.foto_url) {
+    addEvent("comprovante-disponivel", "comprovante_anexado", "Comprovante disponível", entrega.horario_fim_real || entrega.created_at || now, "completed");
+  }
+
+  if (events.length <= 1) {
+    addEvent("aguardando-atualizacao", "pedido_criado", "Aguardando atualização", now, "current",
+      "Nossa equipe está processando sua solicitação.");
+  }
+
+  return events;
 };
 
 const diasAtrasStr = (dias: number, hora: string = "08:00:00") => {
@@ -167,6 +261,16 @@ interface Entrega {
   pod?: PodItem;
   ocorrencias?: OcorrenciaItem[];
   sla?: number;
+  // Dados da alocação (App Prestador)
+  alocacao_id?: string | null;
+  alocacao_status?: string | null;
+  aceite_prestador?: boolean;
+  data_aceite?: string | null;
+  alocacao_finalizada?: boolean;
+  comprovante_url?: string | null;
+  assinatura_url?: string | null;
+  horario_inicio_real?: string | null;
+  horario_fim_real?: string | null;
 }
 
 interface Endereco {
@@ -292,6 +396,17 @@ const statusCores: Record<string, string> = {
   "entregue": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
   "atrasada": "bg-red-100 text-red-600 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/50",
   "problema": "bg-red-100 text-red-600 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/50",
+  "pendente": "bg-amber-100 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/50",
+  "rascunho": "bg-amber-100 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/50",
+  "em_andamento": "bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/50",
+  "em_analise": "bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/50",
+  "concluida": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
+  "finalizada": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
+  "cancelada": "bg-red-100 text-red-600 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/50",
+  "recebemos": "bg-amber-100 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/50",
+  "prestador_confirmado": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
+  "servico_andamento": "bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/50",
+  "servico_concluido": "bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50",
 };
 
 const statusIcones: Record<string, typeof Truck> = {
@@ -302,33 +417,63 @@ const statusIcones: Record<string, typeof Truck> = {
   "entregue": CheckCircle,
   "atrasada": AlertTriangle,
   "problema": AlertCircle,
+  "pendente": Clock3,
+  "rascunho": Clock3,
+  "em_andamento": Truck,
+  "em_analise": Clock3,
+  "concluida": CheckCircle,
+  "finalizada": CheckCircle,
+  "cancelada": AlertCircle,
+  "recebemos": Clock3,
+  "prestador_confirmado": CheckCircle,
+  "servico_andamento": Truck,
+  "servico_concluido": CheckCircle,
 };
+
+const TIPOS_RELATORIO = [
+  { value: "entregas", label: "Entregas por Período" },
+  { value: "sla", label: "SLA e Performance" },
+  { value: "financeiro", label: "Financeiro" },
+  { value: "ocorrencias", label: "Ocorrências" },
+  { value: "comprovantes", label: "Comprovantes/POD" },
+];
 
 const itensSidebar = [
   { id: "dashboard", icon: Activity, label: "Dashboard" },
-  { id: "ao_vivo", icon: Activity, label: "Ao Vivo" },
+  { id: "executivo", icon: BarChart3, label: "Executivo" },
+  { id: "ia_operacional", icon: Brain, label: "Insights IA" },
+  { id: "escala", icon: Calendar, label: "Programação Operacional" },
+  { id: "multi_filial", icon: Building2, label: "Multi Filial" },
+  { id: "ai_report", icon: Sparkles, label: "AI Report" },
   { id: "pedidos", icon: Package, label: "Pedidos" },
-  { id: "carregamento", icon: Package2, label: "Carregamento" },
+  { id: "patio", icon: Truck, label: "Pátio" },
+  { id: "comprovantes", icon: FileCheck, label: "Comprovantes" },
+  { id: "financeiro", icon: DollarSign, label: "Financeiro" },
   { id: "rastreio", icon: MapPin, label: "Rastreamento" },
   { id: "roteirizacao", icon: Route, label: "Roteirização" },
-  { id: "escala", icon: Truck, label: "Escala" },
-  { id: "executivo", icon: BarChart3, label: "Executivo" },
-  { id: "economia", icon: DollarSign, label: "Economia" },
-  { id: "ia_operacional", icon: Brain, label: "Assistente Conexão" },
-  { id: "multi_filial", icon: Building2, label: "Filiais" },
-  { id: "whatsapp", icon: MessageSquare, label: "WhatsApp" },
-  { id: "notificacoes", icon: Bell, label: "Notificações" },
-  { id: "financeiro", icon: DollarSign, label: "Financeiro" },
-  { id: "ocorrencias", icon: AlertCircle, label: "Ocorrências" },
-  { id: "avaliacao", icon: Star, label: "Avaliação" },
   { id: "relatorios", icon: FileCheck, label: "Relatórios" },
-  { id: "comprovantes", icon: FileCheck, label: "Comprovantes" },
+  { id: "whatsapp", icon: MessageSquare, label: "WhatsApp" },
+  { id: "ocorrencias", icon: AlertCircle, label: "Acompanhamento" },
+  { id: "avaliacao", icon: Star, label: "Avaliação" },
+  { id: "perfil", icon: User, label: "Perfil" },
+  { id: "onboarding", icon: Settings, label: "Config. Inicial" },
 ];
 
 export default function PortalCliente() {
   const navigate = useNavigate();
-  const user = getUser();
   const { toast } = useToast();
+
+  const { user, logout } = useAuth();
+
+  useEffect(() => {
+    if (!user) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) {
+          navigate("/login?redirect=/portal-cliente", { replace: true });
+        }
+      });
+    }
+  }, [user, navigate]);
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -351,9 +496,11 @@ export default function PortalCliente() {
   const [sugestoesFavDestinos, setSugestoesFavDestinos] = useState<{ [index: number]: any[] }>({});
   const [clienteData, setClienteData] = useState<any>(null);
   const [selectedEntrega, setSelectedEntrega] = useState<Entrega | null>(null);
+  const [trackingPosition, setTrackingPosition] = useState<TrackingPosition | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showProblemaModal, setShowProblemaModal] = useState(false);
   const [showNovoPedidoModal, setShowNovoPedidoModal] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [showRotaModal, setShowRotaModal] = useState(false);
   const [showVeiculoModal, setShowVeiculoModal] = useState(false);
   const [showFilialModal, setShowFilialModal] = useState(false);
@@ -377,7 +524,7 @@ export default function PortalCliente() {
   const [selectedFatura, setSelectedFatura] = useState<Fatura | null>(null);
   const [novaOcorrencia, setNovaOcorrencia] = useState({ tipo: "", descricao: "", os_id: "", prioridade: "media" });
   const [novaAvaliacao, setNovaAvaliacao] = useState({ nota: 0, comentario: "", os_id: "" });
-  const [rotaDestinos, setRotaDestinos] = useState<any[]>([]);
+
   const [comprovantesData, setComprovantesData] = useState<ComprovanteResumo[]>([]);
   const [protocolosData, setProtocolosData] = useState<ProtocoloResumo[]>([]);
   const [comprovantesLoading, setComprovantesLoading] = useState(false);
@@ -386,6 +533,7 @@ export default function PortalCliente() {
   const [filtroPeriodoInicio, setFiltroPeriodoInicio] = useState("");
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
   const [filtroOS, setFiltroOS] = useState("");
+  const [importedCSV, setImportedCSV] = useState<File | null>(null);
   const [filtroDestinatario, setFiltroDestinatario] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroPrestador, setFiltroPrestador] = useState("");
@@ -397,6 +545,9 @@ export default function PortalCliente() {
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
   const [insights, setInsights] = useState<ReturnType<typeof gerarInsights>>([]);
   const [avaliacoes, setAvaliacoes] = useState<any[]>([]);
+  const [patioClientData, setPatioClientData] = useState<PatioCheckin[]>([]);
+  const [filtroPeriodoFinanceiro, setFiltroPeriodoFinanceiro] = useState("todas");
+  const [filtroStatusFinanceiro, setFiltroStatusFinanceiro] = useState("todas");
 
   useEffect(() => {
     const formatted = janelas
@@ -405,6 +556,53 @@ export default function PortalCliente() {
       .join(", ");
     setNovoPedidoData(prev => ({ ...prev, janela_recebimento: formatted }));
   }, [janelas]);
+
+  // Assina portal_tracking_realtime quando uma entrega é selecionada
+  useEffect(() => {
+    const alocacaoId = selectedEntrega?.alocacao_id;
+    if (!alocacaoId) { setTrackingPosition(null); return; }
+
+    const channel = supabase
+      .channel(`tracking-${alocacaoId}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "portal_tracking_realtime",
+        filter: `alocacao_id=eq.${alocacaoId}`,
+      }, (payload) => {
+        if (payload.new) setTrackingPosition(payload.new as TrackingPosition);
+      })
+      .subscribe();
+
+    // Busca posição inicial
+    supabase.from("portal_tracking_realtime")
+      .select("*")
+      .eq("alocacao_id", alocacaoId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setTrackingPosition(data as TrackingPosition); });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedEntrega?.alocacao_id]);
+
+  // Carrega ocorrências do banco quando a aba é aberta
+  useEffect(() => {
+    if (activeTab === "ocorrencias" && clienteData?.id) {
+      buscarOcorrenciasCliente(clienteData.id, 50).then(dados => {
+        if (dados.length > 0) {
+          setOcorrencias(dados.map(o => ({
+            id: o.id,
+            tipo: o.tipo,
+            descricao: o.descricao,
+            status: o.status,
+            prioridade: o.prioridade,
+            created_at: o.created_at,
+          })));
+        }
+      });
+    }
+  }, [activeTab, clienteData?.id]);
 
   const togglePinFavorite = (id: string) => {
     setFavoritosList(prev => {
@@ -495,6 +693,18 @@ export default function PortalCliente() {
     notificar_proximo_destino: false,
     notificar_entrega_concluida: false,
     notificar_ocorrencia: false,
+    // Coleta Reversa
+    reversa: false,
+    reversa_tipo: "coleta_reversa",
+    reversa_qtd_volumes: 0,
+    reversa_unidade: "unidade",
+    reversa_endereco: "",
+    reversa_devolucao: "",
+    reversa_responsavel: "",
+    reversa_telefone: "",
+    reversa_data: "",
+    reversa_instrucoes: "",
+    reversa_observacoes: "",
   });
   const [sugestoesColeta, setSugestoesColeta] = useState<any[]>([]);
   const [sugestoesDestinos, setSugestoesDestinos] = useState<{ [index: number]: any[] }>({});
@@ -763,6 +973,7 @@ export default function PortalCliente() {
     const newFav = {
       id: `fav-${Date.now()}`,
       label,
+      tipo_local: "residencia",
       cep: address.cep || "",
       rua: address.rua || "",
       numero: address.numero || "",
@@ -981,56 +1192,101 @@ export default function PortalCliente() {
           coleta_contato_nome: novoPedidoData.coleta_contato_nome,
           coleta_contato_telefone: novoPedidoData.coleta_contato_telefone,
           coleta_contato_ramal: novoPedidoData.coleta_contato_ramal,
-          coleta_orientacoes: novoPedidoData.coleta_orientacoes
+          coleta_orientacoes: novoPedidoData.coleta_orientacoes,
+          reversa: novoPedidoData.reversa,
+          reversa_tipo: novoPedidoData.reversa_tipo,
+          reversa_qtd_volumes: novoPedidoData.reversa_qtd_volumes,
+          reversa_unidade: novoPedidoData.reversa_unidade,
+          reversa_endereco: novoPedidoData.reversa_endereco,
+          reversa_devolucao: novoPedidoData.reversa_devolucao,
+          reversa_responsavel: novoPedidoData.reversa_responsavel,
+          reversa_telefone: novoPedidoData.reversa_telefone,
+          reversa_data: novoPedidoData.reversa_data,
+          reversa_instrucoes: novoPedidoData.reversa_instrucoes,
+          reversa_observacoes: novoPedidoData.reversa_observacoes
         }
       };
       
       const novoPed = await criarPedidoPortal(payload, clienteData?.id);
-      if (novoPed) {
-        setCreatedOrderDetails(novoPed);
+      if (!novoPed) {
+        toast({
+          title: "Não foi possível criar sua solicitação",
+          description: "Ocorreu um erro inesperado. Nossa equipe foi notificada e resolverá em breve.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // MISSÃO 83: Auto-confirmar pedido → criar OS real via engine de precificação
+      let confirmacao: ConfirmacaoPedidoResultado = { sucesso: false, erro: "Não processado" };
+      try {
+        confirmacao = await confirmarPedidoPortal(
+          novoPed.id,
+          clienteData?.id || "",
+          clienteData?.nome_fantasia || clienteData?.razao_social || "Cliente",
+        );
+      } catch (confirmErr) {
+        console.error("[PortalCliente] Falha ao confirmar pedido automaticamente:", confirmErr);
+      }
+
+      if (confirmacao.sucesso && confirmacao.os_id) {
+        setCreatedOrderDetails({
+          ...novoPed,
+          os_vinculada_id: confirmacao.os_id,
+          os_numero: confirmacao.os_numero,
+          preco_final: confirmacao.preco_final || 0,
+          tracking_link: confirmacao.tracking_link,
+          tracking_token: confirmacao.tracking_token,
+          status: "programado",
+        });
         setShowNovoPedidoModal(false);
         setShowSucessoModal(true);
         toast({
-          title: "Pedido criado com sucesso!",
-          description: `Número do pedido: ${novoPed.numero_pedido}`
+          title: "Pedido confirmado! OS gerada automaticamente.",
+          description: `OS: ${confirmacao.os_numero} — ${confirmacao.preco_final && confirmacao.preco_final > 0 ? `Valor: R$ ${confirmacao.preco_final.toFixed(2)}` : "Aguardando precificação"}`
         });
-        
-        setNovoPedidoData({
-          coleta_cep: "", coleta_rua: "", coleta_numero: "", coleta_complemento: "", coleta_bairro: "", coleta_cidade: "", coleta_uf: "", coleta_referencia: "", coleta_data: "",
-          coleta_contato_nome: "", coleta_contato_telefone: "", coleta_contato_ramal: "", coleta_orientacoes: "",
-          destinos: [
-            {
-              cep: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", referencia: "", data: "",
-              contato_nome: "", contato_telefone: "", contato_ramal: "", orientacoes: "", destinatario: "", email: "",
-              notifyRecipientWhatsapp: false, recipientWhatsapp: "",
-            }
-          ],
-          descricao: "", volumes: 1, peso: 0, comprimento: "", largura: "", altura: "", valor_declarado: "", tipo_carga: "seca", fragilidade: "normal", observacoes: "", necessidades: [],
-          temperatura_minima: "", temperatura_maxima: "",
-          permitir_terceiros: false, autorizados_receber: "", horario_limite: "", janela_recebimento: "", orientacoes_rapidas: [], instrucoes_adicionais: "",
-          notificar_automacao: false, notificar_canal: "whatsapp", notificar_motorista_saiu: false, notificar_proximo_destino: false, notificar_entrega_concluida: false, notificar_ocorrencia: false,
-        });
-        setNovoPedidoStep(1);
-        setJanelas([{ das: "08:00", ate: "12:00" }]);
-        setColetaSearch("");
-        setDestinosSearch({});
-        setSugestoesColeta([]);
-        setSugestoesDestinos({});
-        setSugestoesFavColeta([]);
-        setSugestoesFavDestinos({});
-        carregarDados();
       } else {
+        const erroMsg = confirmacao.erro || "Erro ao processar pedido";
         toast({
           title: "Erro ao criar pedido",
-          description: "Ocorreu um erro ao processar sua solicitação.",
+          description: `${erroMsg}. Pedido salvo como rascunho.`,
           variant: "destructive"
         });
+        return;
       }
+      
+      setNovoPedidoData({
+        coleta_cep: "", coleta_rua: "", coleta_numero: "", coleta_complemento: "", coleta_bairro: "", coleta_cidade: "", coleta_uf: "", coleta_referencia: "", coleta_data: "",
+        coleta_contato_nome: "", coleta_contato_telefone: "", coleta_contato_ramal: "", coleta_orientacoes: "",
+        destinos: [
+          {
+            cep: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", referencia: "", data: "",
+            contato_nome: "", contato_telefone: "", contato_ramal: "", orientacoes: "", destinatario: "", email: "",
+            notifyRecipientWhatsapp: false, recipientWhatsapp: "",
+          }
+        ],
+        descricao: "", volumes: 1, peso: 0, comprimento: "", largura: "", altura: "", valor_declarado: "", tipo_carga: "seca", fragilidade: "normal", observacoes: "", necessidades: [],
+        temperatura_minima: "", temperatura_maxima: "",
+        permitir_terceiros: false, autorizados_receber: "", horario_limite: "", janela_recebimento: "", orientacoes_rapidas: [], instrucoes_adicionais: "",
+        notificar_automacao: false, notificar_canal: "whatsapp", notificar_motorista_saiu: false, notificar_proximo_destino: false, notificar_entrega_concluida: false, notificar_ocorrencia: false,
+        reversa: false, reversa_tipo: "coleta_reversa", reversa_qtd_volumes: 0, reversa_unidade: "unidade",
+        reversa_endereco: "", reversa_devolucao: "", reversa_responsavel: "", reversa_telefone: "",
+        reversa_data: "", reversa_instrucoes: "", reversa_observacoes: "",
+      });
+      setNovoPedidoStep(1);
+      setJanelas([{ das: "08:00", ate: "12:00" }]);
+      setColetaSearch("");
+      setDestinosSearch({});
+      setSugestoesColeta([]);
+      setSugestoesDestinos({});
+      setSugestoesFavColeta([]);
+      setSugestoesFavDestinos({});
+      carregarDados();
     } catch (error) {
       console.error("Erro ao criar pedido:", error);
       toast({
-        title: "Erro crítico",
-        description: "Falha de processamento interna.",
+        title: "Falha na comunicação",
+        description: "Não conseguimos processar agora. Tente novamente em instantes.",
         variant: "destructive"
       });
     } finally {
@@ -1043,57 +1299,113 @@ export default function PortalCliente() {
     else setRefreshing(true);
     
     try {
-      const clienteNome = user?.name || user?.email || "";
-      const clienteFiltro = clienteNome ? clienteNome.replace(/@.+$/, "").trim() : "";
+      // === SEGURANÇA F20D: cliente_id resolvido via auth → usuarios_cliente ===
+      let clienteId: string | null = null;
+      let clienteInfo: any = null;
 
-      const [{ data: clienteInfo }] = await Promise.all([
-        clienteFiltro ? supabase.from('clientes').select('*').ilike('nome_fantasia', `%${clienteFiltro}%`).limit(1).maybeSingle() : Promise.resolve({ data: null }),
-      ]);
+      // 1. Tentar resolver via Supabase Auth session
+      const sessao = await supabase.auth.getSession();
+      const authUserId = sessao?.data?.session?.user?.id;
+      let clienteIdAuth: string | null = null;
+      if (authUserId) {
+        const { data: vinculos } = await supabase
+          .from("usuarios_cliente")
+          .select("cliente_id")
+          .eq("auth_user_id", authUserId)
+          .eq("ativo", true)
+          .limit(1);
+        clienteIdAuth = vinculos && vinculos.length > 0 ? vinculos[0].cliente_id : null;
+      }
+      if (clienteIdAuth) {
+        clienteId = clienteIdAuth;
+        const { data: c } = await supabase.from("clientes").select("*").eq("id", clienteId).maybeSingle();
+        clienteInfo = c;
+      }
+
+      // 2. Fallback removido (MISSÃO 004): localStorage e busca por nome
+      // eram bypass de segurança pós-MISSÃO 50. Apenas Supabase Auth válido.
 
       setClienteData(clienteInfo);
 
-      if (!clienteInfo) {
+      if (!clienteInfo || !clienteId) {
         setDashboardMetrics(null);
         setInsights([]);
         setEntregas([]);
         setFaturas([]);
-        setOcorrencias([]);
         setNotificacoes([]);
         setAvaliacoes([]);
         setComprovantesData([]);
+        toast({
+          title: "Bem-vindo ao Centro de Controle",
+          description: "Assim que houver operacoes registradas para sua empresa, elas aparecerao aqui. Entre em contato com nossa equipe para iniciar.",
+        });
         return;
       }
 
-      const [{ data: entregasData }, { data: faturasData }, { data: ocorrenciasData }, metrics] = await Promise.all([
-        supabase.from('ordens_servico').select('*').eq('cliente_id', clienteInfo.id).order('created_at', { ascending: false }).limit(50),
-        supabase.from('financeiro_receber').select('*').eq('cliente_id', clienteInfo.id).order('data_vencimento', { ascending: false }).limit(20),
-        supabase.from('ocorrencias').select('*').eq('cliente_id', clienteInfo.id).order('created_at', { ascending: false }).limit(20),
-        buscarDashboardMetrics(clienteInfo.id, clienteNome),
+      const [{ data: entregasData }, { data: faturasData }, metrics] = await Promise.all([
+        supabase.from('ordens_servico').select('id, numero, status, cliente, cliente_id, origem, destino, data_servico, created_at, valor_cliente, peso, volumes, carga_descricao, prestador, placa_alocada, veiculo').eq('cliente_id', clienteId).order('created_at', { ascending: false }).limit(50),
+        supabase.from('vw_portal_financeiro_cliente').select('*').eq('cliente_id', clienteId).order('data_vencimento', { ascending: false }).limit(20),
+        buscarDashboardMetrics(clienteId, clienteInfo?.nome_fantasia || ""),
       ]);
 
       setDashboardMetrics(metrics);
       setInsights(gerarInsights(metrics));
 
+      let alocacoesMap = new Map<string, any>();
+      if (entregasData && entregasData.length > 0) {
+        const osIds = entregasData.map((o: any) => o.id).filter(Boolean);
+        if (osIds.length > 0) {
+          const { data: alocacoes } = await supabase
+            .from("alocacoes_escala")
+            .select("id, ordem_servico_id, status, aceite_prestador, data_aceite, finalizada, comprovante_url, assinatura_url, fotos_entrega, prestador_id, horario_inicio_real, horario_fim_real")
+            .in("ordem_servico_id", osIds);
+          if (alocacoes) {
+            // APP-E2E-11D — resolve comprovante/assinatura da alocação (bucket privado).
+            await Promise.all(alocacoes.map(async (a: any) => {
+              alocacoesMap.set(a.ordem_servico_id, {
+                ...a,
+                comprovante_url: await resolverMidiaPod(a.comprovante_url),
+                assinatura_url: await resolverMidiaPod(a.assinatura_url),
+              });
+            }));
+          }
+        }
+      }
+
       if (entregasData) {
-        const entregasTransformadas = entregasData.map((os: any) => ({
-          id: os.id,
-          numero: os.numero || `OS-${os.id.slice(0, 8)}`,
-          status: os.status || 'programacao',
-          status_label: formatStatus(os.status),
-          origem: { cep: '', rua: '', numero: '', bairro: '', cidade: os.filial_origem || 'N/A', uf: '' },
-          destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.cidade_destino || os.cliente || 'N/A', uf: '' },
-          previsao: os.data_previsao || new Date().toISOString(),
-          created_at: os.created_at,
-          valor_frete: os.valor_cliente || os.valor_frete || 0,
-          peso: os.peso || 0,
-          volumes: os.volumes || 1,
-          mercadoria: os.carga_descricao || os.mercadoria || 'Mercadoria',
-          cliente_nome: os.cliente || clienteInfo?.nome_fantasia || 'Cliente',
-          destinatario: undefined,
-          prestador: os.prestador ? { nome: os.prestador } : undefined,
-          historico: [],
-          sla: 100,
-        }));
+        const entregasTransformadas = entregasData.map((os: any) => {
+          const aloc = alocacoesMap.get(os.id);
+          const statusInfo = mapStatusCliente(os.status, aloc);
+          return {
+            id: os.id,
+            numero: os.numero || `OS-${os.id.slice(0, 8)}`,
+            status: os.status || 'pendente',
+            status_label: statusInfo.label,
+            origem: { cep: '', rua: '', numero: '', bairro: '', cidade: os.origem || 'A definir', uf: '' },
+            destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.destino || 'A definir', uf: '' },
+            previsao: new Date().toISOString(),
+            created_at: os.created_at,
+            valor_frete: os.valor_cliente || 0,
+            peso: os.peso || 0,
+            volumes: os.volumes || 1,
+            mercadoria: os.carga_descricao || 'Mercadoria',
+            cliente_nome: clienteInfo?.nome_fantasia || clienteInfo?.razao_social || 'Cliente',
+            destinatario: undefined,
+            prestador: undefined,
+            historico: [],
+            sla: 100,
+            // Dados da alocação
+            alocacao_id: aloc?.id || null,
+            alocacao_status: aloc?.status || null,
+            aceite_prestador: aloc?.aceite_prestador || false,
+            data_aceite: aloc?.data_aceite || null,
+            alocacao_finalizada: aloc?.finalizada || false,
+            comprovante_url: aloc?.comprovante_url || null,
+            assinatura_url: aloc?.assinatura_url || null,
+            horario_inicio_real: aloc?.horario_inicio_real || null,
+            horario_fim_real: aloc?.horario_fim_real || null,
+          };
+        });
         setEntregas(entregasTransformadas);
       }
 
@@ -1110,17 +1422,6 @@ export default function PortalCliente() {
         setFaturas(faturasTransformadas);
       }
 
-      if (ocorrenciasData) {
-        const ocorrenciasTransformadas = ocorrenciasData.map((o: any) => ({
-          id: o.id,
-          tipo: o.tipo || 'outro',
-          descricao: o.descricao || '',
-          status: o.status || 'pendente',
-          prioridade: o.severidade === 'alta' ? 'alta' : 'media',
-          created_at: o.created_at,
-        }));
-        setOcorrencias(ocorrenciasTransformadas);
-      }
     } catch (error) {
       console.warn('Erro ao carregar dados do Supabase:', error);
     } finally {
@@ -1129,13 +1430,12 @@ export default function PortalCliente() {
     }
   }, [user]);
 
-  useEffect(() => {
-    // Dados reais carregados do Supabase via carregarDados().
-    // Sem fallback para mocks — se não houver OS no banco, mostra empty state.
-  }, [initialLoading, clienteData]);
-
   const onEntregaUpdate = useCallback((update: any) => {
-    setEntregas(prev => prev.map(e => e.id === update.id ? { ...e, status: update.status, status_label: formatStatus(update.status) } : e));
+    setEntregas(prev => prev.map(e => {
+      if (e.id !== update.id) return e;
+      const statusInfo = mapStatusCliente(update.status, { status: update.status, aceite_prestador: update.aceite_prestador, finalizada: update.finalizada });
+      return { ...e, status: update.status, status_label: statusInfo.label };
+    }));
   }, []);
 
   const onNotificacao = useCallback((n: any) => {
@@ -1158,6 +1458,19 @@ export default function PortalCliente() {
   useEffect(() => { 
     if (initialLoading) carregarDados(true); 
   }, [carregarDados, initialLoading]);
+
+  useEffect(() => {
+    if (clienteData?.id) {
+      buscarStatusPatioCliente(clienteData.id).then(setPatioClientData).catch((err) => console.warn("[PortalCliente] Erro ao buscar status pátio:", err));
+      // Carregar progresso do onboarding
+      supabase.from("portal_preferencias_cliente").select("onboarding_etapa_atual, onboarding_concluido")
+        .eq("cliente_id", clienteData.id).maybeSingle().then(({ data }) => {
+          if (data && !data.onboarding_concluido && data.onboarding_etapa_atual != null) {
+            setOnboardingStep(data.onboarding_etapa_atual);
+          }
+        }).catch((err) => console.warn("[PortalCliente] Erro ao carregar onboarding:", err));
+    }
+  }, [clienteData?.id]);
 
   const carregarComprovantes = useCallback(async () => {
     setComprovantesLoading(true);
@@ -1193,7 +1506,7 @@ export default function PortalCliente() {
     return <Icone className="w-4 h-4" />;
   };
 
-  const handleSair = () => { logout(); navigate("/login"); };
+  const handleSair = async () => { await logout(); navigate("/login"); };
 
   const toggleSelecionar = (id: string) => {
     const nova = new Set(selectedEntregas);
@@ -1208,12 +1521,8 @@ export default function PortalCliente() {
       setSelectedEntrega(entrega);
       setShowDetailModal(true);
     } else {
-      toast({ title: "Pedido não encontrado", description: " ID: " + id });
+      toast({ title: "Pedido não encontrado", description: "O pedido solicitado não está disponível no momento." });
     }
-  };
-
-  const handleVerRota = (id: string) => {
-    toast({ title: "Roteirização em desenvolvimento", description: "Funcionalidade estará disponível em breve." });
   };
 
   const handleVerVeiculo = (id: string) => {
@@ -1244,7 +1553,7 @@ export default function PortalCliente() {
   const handleBaixarRelatorio = (tipo: string) => {
     const dados = tipo === 'entregas' ? entregas : tipo === 'financeiro' ? faturas : tipo === 'ocorrencias' ? ocorrencias : entregas;
     if (dados.length === 0) {
-      toast({ title: "Sem dados", description: "Não há dados para exportar" });
+      toast({ title: "Nada a exportar", description: "Assim que houver informações, você poderá exportá-las." });
       return;
     }
     const csv = [
@@ -1275,6 +1584,10 @@ export default function PortalCliente() {
     if (comp?.url) {
       window.open(comp.url, '_blank');
     } else if (comp) {
+      const fotoEntrega = (comp as any)?.foto_entrega_url ? "Sim" : "Não";
+      const fotoCanhoto = (comp as any)?.foto_canhoto_url ? "Sim" : "Não";
+      const assinatura = (comp as any)?.assinatura_url ? "Sim" : "Não";
+      const obs = (comp as any)?.observacao || "—";
       const dados = `COMPROVANTE DE ENTREGA
 =========================
 OS: ${comp.titulo}
@@ -1282,6 +1595,10 @@ Tipo: ${comp.tipo}
 Destinatário: ${comp.nome_recebedor || "Não informado"}
 Documento: ${comp.documento_recebedor || "Não informado"}
 Data: ${comp.data_entrega ? new Date(comp.data_entrega).toLocaleString("pt-BR") : "Não informado"}
+Foto de entrega: ${fotoEntrega}
+Canhoto: ${fotoCanhoto}
+Assinatura: ${assinatura}
+Observação: ${obs}
 
 Gerado em: ${new Date().toLocaleString("pt-BR")}`;
       const blob = new Blob([dados], { type: 'text/plain;charset=utf-8;' });
@@ -1293,13 +1610,13 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
       URL.revokeObjectURL(url);
       toast({ title: "Download iniciado", description: "Arquivo gerado com os dados do comprovante" });
     } else {
-      toast({ title: "Comprovante não encontrado", description: "ID: " + id });
+      toast({ title: "Comprovante não encontrado", description: "O comprovante solicitado não está mais disponível." });
     }
   };
 
   const handleBaixarTodosComprovantes = () => {
     if (comprovantesData.length === 0) {
-      toast({ title: "Sem dados", description: "Não há comprovantes para baixar" });
+      toast({ title: "Nenhum comprovante disponível", description: "Assim que uma entrega for concluída, o comprovante aparecerá aqui." });
       return;
     }
     const dados = comprovantesData.map(c => 
@@ -1367,23 +1684,32 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
       toast({ title: "Preencha os campos", description: "Tipo e descrição são obrigatórios" });
       return;
     }
-    
-    const novasOcorrencias = [...ocorrencias, {
-      id: Date.now().toString(),
+
+    const result = await criarOcorrenciaPortal({
       tipo: novaOcorrencia.tipo,
       descricao: novaOcorrencia.descricao,
-      status: "pendente",
       prioridade: novaOcorrencia.prioridade,
-      created_at: new Date().toISOString()
-    }];
-    
-    setOcorrencias(novasOcorrencias);
-    setNovaOcorrencia({ tipo: "", descricao: "", os_id: "", prioridade: "media" });
-    setShowProblemaModal(false);
-    toast({ title: "Ocorrência reportada", description: "Nossa equipe analisará em breve" });
+    }, clienteData?.id);
+
+    if (result.sucesso) {
+      const novasOcorrencias = [...ocorrencias, {
+        id: result.id || Date.now().toString(),
+        tipo: novaOcorrencia.tipo,
+        descricao: novaOcorrencia.descricao,
+        status: "aberta",
+        prioridade: novaOcorrencia.prioridade,
+        created_at: new Date().toISOString()
+      }];
+      setOcorrencias(novasOcorrencias);
+      setNovaOcorrencia({ tipo: "", descricao: "", os_id: "", prioridade: "media" });
+      setShowProblemaModal(false);
+      toast({ title: "Ocorrência reportada", description: "Nossa equipe analisará em breve" });
+    } else {
+      toast({ title: "Erro ao reportar", description: "Não foi possível salvar a ocorrência. Tente novamente.", variant: "destructive" });
+    }
   };
 
-  const handleEnviarAvaliacao = () => {
+  const handleEnviarAvaliacao = async () => {
     if (avaliacaoNota === 0) {
       toast({ title: "Selecione uma nota", description: "Avaliação de 1 a 5 estrelas" });
       return;
@@ -1393,37 +1719,46 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
       return;
     }
     
-    const novasAvaliacoes = [...avaliacoes, {
-      id: Date.now().toString(),
+    const sucesso = await criarAvaliacaoPortal({
       nota: avaliacaoNota,
-      nota_pontualidade: avaliacaoPontualidade,
-      nota_comunicacao: avaliacaoComunicacao,
-      nota_conservacao: avaliacaoConservacao,
-      nota_atendimento: avaliacaoAtendimento,
-      nps: avaliacaoNps,
       comentario: avaliacaoComentario,
-      os_id: avaliacaoOS || selectedPrestadorAvaliacao?.entrega?.numero || "Geral",
-      prestador_id: selectedPrestadorAvaliacao?.id,
-      prestador_nome: selectedPrestadorAvaliacao?.nome,
-      veiculo: selectedPrestadorAvaliacao?.veiculo,
-      placa: selectedPrestadorAvaliacao?.placa,
-      entrega_origem: selectedPrestadorAvaliacao?.entrega_origem,
-      entrega_destino: selectedPrestadorAvaliacao?.entrega_destino,
-      created_at: new Date().toISOString()
-    }];
-    
-    setAvaliacoes(novasAvaliacoes);
-    setAvaliacaoNota(0);
-    setAvaliacaoPontualidade(0);
-    setAvaliacaoComunicacao(0);
-    setAvaliacaoConservacao(0);
-    setAvaliacaoAtendimento(0);
-    setAvaliacaoNps(5);
-    setAvaliacaoComentario("");
-    setAvaliacaoOS("");
-    setSelectedPrestadorAvaliacao(null);
-    setShowNovaAvaliacaoModal(false);
-    toast({ title: "Obrigado!", description: "Sua avaliação do prestador foi registrada" });
+      os_id: avaliacaoOS || selectedPrestadorAvaliacao?.id,
+    }, clienteData?.id);
+
+    if (sucesso) {
+      const novasAvaliacoes = [...avaliacoes, {
+        id: Date.now().toString(),
+        nota: avaliacaoNota,
+        nota_pontualidade: avaliacaoPontualidade,
+        nota_comunicacao: avaliacaoComunicacao,
+        nota_conservacao: avaliacaoConservacao,
+        nota_atendimento: avaliacaoAtendimento,
+        nps: avaliacaoNps,
+        comentario: avaliacaoComentario,
+        os_id: avaliacaoOS || selectedPrestadorAvaliacao?.id,
+        prestador_id: selectedPrestadorAvaliacao?.id,
+        prestador_nome: selectedPrestadorAvaliacao?.nome,
+        veiculo: selectedPrestadorAvaliacao?.veiculo,
+        placa: selectedPrestadorAvaliacao?.placa,
+        entrega_origem: selectedPrestadorAvaliacao?.entrega_origem,
+        entrega_destino: selectedPrestadorAvaliacao?.entrega_destino,
+        created_at: new Date().toISOString()
+      }];
+      setAvaliacoes(novasAvaliacoes);
+      setAvaliacaoNota(0);
+      setAvaliacaoPontualidade(0);
+      setAvaliacaoComunicacao(0);
+      setAvaliacaoConservacao(0);
+      setAvaliacaoAtendimento(0);
+      setAvaliacaoNps(5);
+      setAvaliacaoComentario("");
+      setAvaliacaoOS("");
+      setSelectedPrestadorAvaliacao(null);
+      setShowNovaAvaliacaoModal(false);
+      toast({ title: "Obrigado!", description: "Sua avaliação do prestador foi registrada" });
+    } else {
+      toast({ title: "Erro ao avaliar", description: "Não foi possível salvar a avaliação. Tente novamente.", variant: "destructive" });
+    }
   };
 
   const handleNotificacaoAction = (notifId: string, acao: string) => {
@@ -1464,8 +1799,34 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
     comparacaoDia: 12,
   }), [entregas]);
 
-  const totalFaturado = useMemo(() => faturas.filter(f => f.status === "paga").reduce((acc, f) => acc + f.valor, 0), [faturas]);
-  const totalAVencer = useMemo(() => faturas.filter(f => f.status === "a_vencer").reduce((acc, f) => acc + f.valor, 0), [faturas]);
+  const totalFaturado = useMemo(() => faturas.filter(f => f.status === "paga").reduce((acc, f) => acc + (f.valor || 0), 0), [faturas]);
+  const totalAVencer = useMemo(() => faturas.filter(f => f.status === "a_vencer").reduce((acc, f) => acc + (f.valor || 0), 0), [faturas]);
+  const totalVencidas = useMemo(() => {
+    const now = new Date();
+    return faturas.filter(f => {
+      if (f.status === "paga") return false;
+      if (f.status === "vencida") return true;
+      if (f.vencimento && new Date(f.vencimento).getTime() < now.getTime()) return true;
+      return false;
+    }).reduce((acc, f) => acc + (f.valor || 0), 0);
+  }, [faturas]);
+  const faturasFiltered = useMemo(() => {
+    let resultado = [...faturas];
+    if (filtroStatusFinanceiro !== "todas") {
+      resultado = resultado.filter(f => f.status === filtroStatusFinanceiro);
+    }
+    if (filtroPeriodoFinanceiro !== "todas") {
+      const dias = parseInt(filtroPeriodoFinanceiro.replace("dias", ""));
+      const dataCorte = new Date();
+      dataCorte.setDate(dataCorte.getDate() - dias);
+      resultado = resultado.filter(f => {
+        if (!f.vencimento) return true;
+        return new Date(f.vencimento) >= dataCorte;
+      });
+    }
+    return resultado;
+  }, [faturas, filtroPeriodoFinanceiro, filtroStatusFinanceiro]);
+  const comFotos = useMemo(() => comprovantesData.filter(c => c.foto_entrega_url || c.foto_canhoto_url).length, [comprovantesData]);
   const naoLidas = useMemo(() => notificacoes.filter(n => !n.lida).length, [notificacoes]);
 
   const npsScore = useMemo(() => {
@@ -1647,8 +2008,8 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             </Avatar>
             {!sidebarCollapsed && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-[#111827] truncate">{user?.name || "Cliente"}</p>
-                <p className="text-[10px] text-[#64748B] truncate">{clienteData?.nome_fantasia || user?.email || ""}</p>
+                <p className="text-sm font-bold text-[#111827] truncate">{user?.name || "Cliente Corporativo"}</p>
+                <p className="text-[10px] text-[#64748B] truncate">{clienteData?.nome_fantasia || clienteData?.razao_social || "Cliente Corporativo"}</p>
               </div>
             )}
             <button onClick={handleSair} className="p-1.5 text-[#64748B] hover:text-red-500 transition-colors">
@@ -1731,6 +2092,23 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
         {/* Content Area */}
         <ScrollArea className="flex-1 bg-[#F8FAFC]">
           <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+            {/* ===== DIAGNÓSTICO: INFORMA SOBRE O TMS ADMIN ===== */}
+            {user?.role === "cliente" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                </div>
+                <div className="text-sm">
+                  <p className="font-bold text-amber-800">Você está no Portal do Cliente</p>
+                  <p className="text-amber-700 mt-0.5">
+                    O módulo <strong>Controle de Pátio</strong> está disponível no <strong>TMS Administrativo</strong>,
+                    acessível com usuário administrativo (admin, super_admin ou operador).
+                    Para acessar, faça login em <code className="bg-amber-100 px-1 py-0.5 rounded text-xs font-mono">/login</code> com suas credenciais corporativas de gestão.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* ===== DASHBOARD ===== */}
             {/* ===== AO VIVO ===== */}
             {activeTab === "ao_vivo" && (
@@ -1749,146 +2127,363 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             )}
 
             {activeTab === "dashboard" && (
-              <div className="space-y-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-3xl font-extrabold text-[#111827] tracking-tight">{getSaudacao()}, {user?.name || "Cliente"}!</h2>
-                    <p className="text-[#475569] mt-1">Bem-vindo ao seu portal de inteligência logística.</p>
-                  </div>
-                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-full bg-white border border-[#E5E7EB] shadow-sm">
-                    <div className="relative flex items-center justify-center">
-                      <span className={`w-2.5 h-2.5 rounded-full ${
-                        operacaoStatus === "saudavel" ? "bg-emerald-500" : operacaoStatus === "atencao" ? "bg-amber-500" : "bg-red-500"
-                      }`} />
-                      <span className={`absolute w-full h-full rounded-full animate-ping opacity-75 ${
-                        operacaoStatus === "saudavel" ? "bg-emerald-500" : operacaoStatus === "atencao" ? "bg-amber-500" : "bg-red-500"
-                      }`} />
+              <div className="space-y-8">
+                {/* ============ HERO EXECUTIVO — REFINADO ============ */}
+                <div className="relative overflow-hidden rounded-3xl bg-white border border-[#E5E7EB] shadow-sm p-8 lg:p-10">
+                  {/* Subtle background accent */}
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-orange-50/60 rounded-full blur-3xl -mr-16 -mt-16" />
+                  <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-50/30 rounded-full blur-2xl -ml-8 -mb-8" />
+                  
+                  <div className="relative z-10 space-y-6">
+                    {/* Top row */}
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />
+                          <span className="text-[10px] font-black text-[#F97316] uppercase tracking-[0.2em]">Centro de Controle Operacional</span>
+                        </div>
+                        <h1 className="text-2xl lg:text-3xl font-extrabold text-[#0F172A] tracking-tight">
+                          {getSaudacao()}, {user?.name || "Bem-vindo novamente"}
+                        </h1>
+                        <p className="text-[#64748B] text-sm mt-0.5 font-medium">
+                          {clienteData?.nome_fantasia || clienteData?.razao_social || "Cliente Corporativo"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl border ${
+                          operacaoStatus === "saudavel" ? "bg-emerald-50 border-emerald-200" :
+                          operacaoStatus === "atencao" ? "bg-amber-50 border-amber-200" :
+                          "bg-red-50 border-red-200"
+                        }`}>
+                          <div className={`w-2 h-2 rounded-full ${
+                            operacaoStatus === "saudavel" ? "bg-emerald-500" : operacaoStatus === "atencao" ? "bg-amber-500" : "bg-red-500"
+                          }`} />
+                          <span className={`text-xs font-black uppercase tracking-wider ${
+                            operacaoStatus === "saudavel" ? "text-emerald-700" : operacaoStatus === "atencao" ? "text-amber-700" : "text-red-700"
+                          }`}>
+                            {operacaoStatus === "saudavel" ? "Operacao Saudavel" : operacaoStatus === "atencao" ? "Em Atencao" : "Operacao Critica"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-sm font-bold text-[#111827] uppercase tracking-wider">
-                      Status: {operacaoStatus === "saudavel" ? "Saudável" : operacaoStatus === "atencao" ? "Atenção" : "Crítico"}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Cards Metrics com novo Design System */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <PortalKpiCard
-                    title="Entregas Hoje"
-                    value={dashboardMetrics?.entregasHoje ?? metricas?.ativos ?? "-"}
-                    icon={Package}
-                    loading={initialLoading}
-                    status={dashboardMetrics?.entregasHoje ?? 0 > 0 ? "saudavel" : "atencao"}
-                  />
-                  <PortalKpiCard
-                    title="Em Andamento"
-                    value={dashboardMetrics?.emAndamento ?? metricas?.emRota ?? "-"}
-                    icon={Truck}
-                    loading={initialLoading}
-                    status={dashboardMetrics?.emAndamento ?? 0 > 0 ? "em_andamento" : "saudavel"}
-                  />
-                  <PortalKpiCard
-                    title="Entregues no Mês"
-                    value={dashboardMetrics?.concluidasMes ?? metricas?.concluidos ?? "-"}
-                    icon={CheckCircle}
-                    loading={initialLoading}
-                    status={dashboardMetrics?.concluidasMes ?? 0 > 0 ? "concluido" : "atencao"}
-                  />
-                  <PortalKpiCard
-                    title="SLA"
-                    value={`${dashboardMetrics?.slaMedio ?? metricas?.slaMedio ?? 0}%`}
-                    icon={Clock}
-                    loading={initialLoading}
-                    status={
-                      (dashboardMetrics?.slaMedio ?? metricas?.slaMedio ?? 0) >= 95
-                        ? "saudavel"
-                        : (dashboardMetrics?.slaMedio ?? metricas?.slaMedio ?? 0) >= 80
-                          ? "atencao"
-                          : "critico"
-                    }
-                  />
-                  <PortalKpiCard
-                    title="Atrasadas"
-                    value={dashboardMetrics?.atrasadas ?? metricas?.atrasados ?? "-"}
-                    icon={AlertTriangle}
-                    loading={initialLoading}
-                    status={
-                      (dashboardMetrics?.atrasadas ?? metricas?.atrasados ?? 0) > 0
-                        ? "critico"
-                        : "saudavel"
-                    }
-                  />
-                  <PortalKpiCard
-                    title="Ocorrências"
-                    value={dashboardMetrics?.totalOcorrencias ?? "-"}
-                    icon={AlertCircle}
-                    loading={initialLoading}
-                    status={
-                      (dashboardMetrics?.totalOcorrencias ?? 0) > 3
-                        ? "critico"
-                        : (dashboardMetrics?.totalOcorrencias ?? 0) > 0
-                          ? "atencao"
-                          : "saudavel"
-                    }
-                  />
-                  <PortalKpiCard
-                    title="Faturado (Pago)"
-                    value={fmtFin(dashboardMetrics?.totalFaturado ?? 0)}
-                    icon={DollarSign}
-                    loading={initialLoading}
-                  />
-                  <PortalKpiCard
-                    title="Valor Médio"
-                    value={fmtFin(dashboardMetrics?.valorMedioEntrega ?? 0)}
-                    icon={BarChart3}
-                    loading={initialLoading}
-                  />
-                </div>
-
-                {/* Insights Inteligentes */}
-                <PortalSectionCard
-                  title="Insights Inteligentes"
-                  description="Análise automática baseada nos seus dados operacionais"
-                >
-                  {insights.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {insights.slice(0, 6).map((insight, idx) => (
-                        <PortalInsightCard
-                          key={idx}
-                          type={insight.type}
-                          title={insight.title}
-                          description={insight.description}
-                          priority={insight.priority}
-                          metric={insight.metric}
-                          suggestion={insight.suggestion}
-                        />
+                    {/* Metrics row — clean white cards with colored accents */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      {[
+                        { label: "Operacoes Hoje", value: dashboardMetrics?.entregasHoje ?? "-", accent: "border-l-[#F97316]", dot: "bg-[#F97316]" },
+                        { label: "Em Distribuicao", value: dashboardMetrics?.emAndamento ?? "-", accent: "border-l-blue-500", dot: "bg-blue-500" },
+                        { label: "Concluidas Mes", value: dashboardMetrics?.concluidasMes ?? "-", accent: "border-l-emerald-500", dot: "bg-emerald-500" },
+                        { label: "SLA Medio", value: `${dashboardMetrics?.slaMedio ?? 0}%`, accent: "border-l-amber-500", dot: "bg-amber-500" },
+                        { label: "Atrasadas", value: dashboardMetrics?.atrasadas ?? "0", accent: "border-l-red-500", dot: "bg-red-500" },
+                        { label: "Ocorrencias", value: dashboardMetrics?.totalOcorrencias ?? "0", accent: "border-l-purple-500", dot: "bg-purple-500" },
+                      ].map((m, i) => (
+                        <div key={i} className={`bg-[#F8FAFC] rounded-2xl border-l-4 ${m.accent} border border-[#E5E7EB] border-l-transparent p-3.5 hover:shadow-md transition-shadow`}>
+                          <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">{m.label}</p>
+                          <div className="flex items-baseline gap-1.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />
+                            <p className="text-xl font-extrabold text-[#0F172A] tabular-nums">{m.value}</p>
+                          </div>
+                        </div>
                       ))}
                     </div>
-                  ) : (
-                    <PortalEmptyState
-                      type="sem-dados"
-                      title="Sem dados suficientes ainda"
-                      description="Assim que sua operação ganhar volume, a Conexão Express mostrará insights automáticos aqui."
-                    />
-                  )}
-                </PortalSectionCard>
 
-                {/* Gráficos */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <Card className="lg:col-span-2 bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    {/* Summary text — light and elegant */}
+                    <div className="flex items-start gap-3 px-5 py-4 rounded-2xl bg-[#F8FAFC] border border-[#E5E7EB]">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        operacaoStatus === "saudavel" ? "bg-emerald-50 text-emerald-600" :
+                        operacaoStatus === "atencao" ? "bg-amber-50 text-amber-600" :
+                        "bg-red-50 text-red-600"
+                      }`}>
+                        {operacaoStatus === "saudavel" ? <CheckCircle className="w-4 h-4" /> :
+                         operacaoStatus === "atencao" ? <AlertTriangle className="w-4 h-4" /> :
+                         <AlertCircle className="w-4 h-4" />}
+                      </div>
                       <div>
-                        <CardTitle className="text-base text-[#111827]">Evolução de Entregas</CardTitle>
-                        <CardDescription className="text-xs text-[#64748B]">Entregas diárias e SLA dos últimos 7 dias</CardDescription>
+                        <p className="text-xs font-black text-[#64748B] uppercase tracking-wider mb-1">Resumo Operacional</p>
+                        <p className="text-sm text-[#334155] leading-relaxed font-medium">
+                          {operacaoStatus === "saudavel"
+                            ? "A operacao encontra-se saudavel. Todas as entregas criticas permanecem dentro do SLA e nao existem ocorrencias abertas que demandem atencao imediata."
+                            : operacaoStatus === "atencao"
+                              ? "Existem operacoes que requerem atencao devido ao risco de atraso. Recomendamos verificar o painel \"Requer Atencao\" abaixo para detalhes."
+                              : "A operacao apresenta pontos criticos que exigem acao imediata. Verifique o painel \"Requer Atencao\" e entre em contato com nossa equipe operacional se necessario."
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-[11px] text-[#94A3B8] font-medium flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" />
+                        Atualizado {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      <button onClick={() => carregarDados()} className="text-xs font-bold text-[#F97316] hover:text-[#EA580C] transition-colors flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3" /> Atualizar dados
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ============ PAINEL REQUER ATENCAO — REFINADO ============ */}
+                <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl overflow-hidden">
+                  <CardHeader className="pb-2 border-b border-[#F1F5F9]">
+                    <CardTitle className="text-sm font-extrabold text-[#0F172A] flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      </div>
+                      Requer Atencao
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    {(() => {
+                      const atencaoItems: any[] = [];
+                      const atrasadas = dashboardMetrics?.atrasadas ?? 0;
+                      const ocorrencias = dashboardMetrics?.totalOcorrencias ?? 0;
+                      const slaVar = dashboardMetrics?.slaMedio ?? 100;
+
+                      if (atrasadas > 0) atencaoItems.push({ icon: AlertTriangle, tipo: "Operacional", desc: `${atrasadas} operacao(oes) com atraso`, prioridade: "alta", acao: "ver_entregas" });
+                      if (ocorrencias > 0) atencaoItems.push({ icon: AlertCircle, tipo: "Ocorrencia", desc: `${ocorrencias} ocorrencia(s) ativa(s)`, prioridade: ocorrencias > 3 ? "alta" : "media", acao: "ver_ocorrencias" });
+                      if (slaVar < 85) atencaoItems.push({ icon: Clock, tipo: "SLA", desc: `SLA medio de ${slaVar}% — abaixo do esperado`, prioridade: "alta", acao: "ver_monitor" });
+
+                      if (atencaoItems.length === 0) {
+                        return (
+                          <div className="flex items-center gap-3 py-3 px-4 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                              <CheckCircle className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-emerald-800">Nenhuma acao necessaria neste momento</p>
+                              <p className="text-xs text-emerald-600">Todas as operacoes estao dentro dos parametros esperados.</p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-1.5">
+                          {atencaoItems.map((item, i) => (
+                            <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all hover:shadow-sm ${
+                              item.prioridade === "alta" ? "bg-red-50/40 border-red-100 hover:border-red-200" : "bg-amber-50/40 border-amber-100 hover:border-amber-200"
+                            }`}>
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                item.prioridade === "alta" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
+                              }`}>
+                                <item.icon className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-[#94A3B8]">{item.tipo}</span>
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                    item.prioridade === "alta" ? "text-red-500" : "text-amber-600"
+                                  }`}>{item.prioridade === "alta" ? "Urgente" : "Atencao"}</span>
+                                </div>
+                                <p className="text-xs font-bold text-[#334155] mt-0.5">{item.desc}</p>
+                              </div>
+                              <Button size="sm" variant="ghost" className={`text-[11px] font-bold rounded-lg ${
+                                item.prioridade === "alta" ? "text-red-600 hover:bg-red-50" : "text-amber-600 hover:bg-amber-50"
+                              }`} onClick={() => { if (item.acao === "ver_entregas") setActiveTab("pedidos"); if (item.acao === "ver_ocorrencias") setActiveTab("ocorrencias"); }}>
+                                Ver <ChevronRight className="w-3 h-3 ml-0.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+
+                {/* ============ RESUMO DA OPERACAO + AGENDA — REFINADO ============ */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {/* Resumo da Operacao */}
+                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
+                    <CardHeader className="pb-3 border-b border-[#F1F5F9]">
+                      <CardTitle className="text-sm font-extrabold text-[#0F172A] flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-orange-50 flex items-center justify-center">
+                          <FileText className="w-3.5 h-3.5 text-[#F97316]" />
+                        </div>
+                        Resumo da Operacao
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-5">
+                      <div className="space-y-5">
+                        {[
+                          { label: "Concluidas", value: dashboardMetrics?.concluidasMes ?? 0, total: Math.max(1, (dashboardMetrics?.entregasHoje ?? 0) + (dashboardMetrics?.concluidasMes ?? 0)), color: "bg-emerald-500", pct: Math.round(((dashboardMetrics?.concluidasMes ?? 0) / Math.max(1, (dashboardMetrics?.entregasHoje ?? 0) + (dashboardMetrics?.concluidasMes ?? 0))) * 100) },
+                          { label: "Dentro do SLA", value: `${dashboardMetrics?.slaMedio ?? 0}%`, total: 100, color: "bg-[#F97316]", pct: dashboardMetrics?.slaMedio ?? 0 },
+                          { label: "Ocorrencias Ativas", value: dashboardMetrics?.totalOcorrencias ?? 0, total: 0, color: "bg-red-500", pct: dashboardMetrics?.totalOcorrencias ?? 0 > 0 ? 100 : 0 },
+                        ].map((item, i) => (
+                          <div key={i} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#475569]">{item.label}</span>
+                              <span className="text-xs font-extrabold text-[#0F172A] tabular-nums">{item.value}</span>
+                            </div>
+                            <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${item.pct}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t border-[#F1F5F9] pt-4 grid grid-cols-2 gap-4">
+                          <div className="bg-[#F8FAFC] rounded-xl p-3">
+                            <p className="text-[10px] font-black text-[#94A3B8] uppercase tracking-wider mb-1">Valor Movimentado</p>
+                            <p className="text-base font-extrabold text-[#0F172A]">{fmtFin(dashboardMetrics?.totalFaturado ?? 0)}</p>
+                          </div>
+                          <div className="bg-[#F8FAFC] rounded-xl p-3">
+                            <p className="text-[10px] font-black text-[#94A3B8] uppercase tracking-wider mb-1">Ticket Medio</p>
+                            <p className="text-base font-extrabold text-[#0F172A]">{fmtFin(dashboardMetrics?.valorMedioEntrega ?? 0)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Agenda Operacional */}
+                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
+                    <CardHeader className="pb-3 border-b border-[#F1F5F9]">
+                      <CardTitle className="text-sm font-extrabold text-[#0F172A] flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-blue-50 flex items-center justify-center">
+                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                        </div>
+                        Agenda Operacional
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {entregas && entregas.length > 0 ? (
+                        <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar pr-1">
+                          {entregas
+                            .filter(e => e.status === "programacao" || e.status === "pendente" || e.status === "coleta" || e.status === "em_rota")
+                            .slice(0, 8)
+                            .map((entrega, i) => {
+                              const statusInfo = mapStatusCliente(entrega.status, entrega);
+                              return (
+                                <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/80 border border-slate-100 hover:border-orange-200 hover:shadow-sm transition-all cursor-pointer group" onClick={() => { setSelectedEntrega(entrega); setShowDetailModal(true); }}>
+                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                    entrega.status === "em_rota" ? "bg-orange-100 text-orange-600" :
+                                    entrega.status === "coleta" ? "bg-blue-100 text-blue-600" :
+                                    "bg-slate-200 text-slate-600"
+                                  }`}>
+                                    <Package className="w-5 h-5" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-bold text-slate-800 truncate">{entrega.numero || `OS-${entrega.id?.slice(0,8)}`}</p>
+                                    <p className="text-xs text-slate-500 truncate">{entrega.destino?.cidade || "—"} · {statusInfo.label}</p>
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-400">{fmtData(entrega.previsao)}</span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        <PortalEmptyState
+                          type="sem-dados"
+                          title="Nenhuma operacao programada"
+                          description="As operacoes futuras aparecerao aqui assim que forem registradas."
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* ============ CONTROLE DE PATIO (CLIENTE) ============ */}
+                {patioClientData.length > 0 && (
+                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
+                    <CardHeader className="pb-3 border-b border-[#F1F5F9]">
+                      <CardTitle className="text-sm font-extrabold text-[#0F172A] flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-orange-50 flex items-center justify-center">
+                          <Truck className="w-3.5 h-3.5 text-[#F97316]" />
+                        </div>
+                        Controle de Patio
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-2">
+                        {patioClientData.map(checkin => {
+                          const s = PATIO_STATUS_LABELS[checkin.status];
+                          return (
+                            <div key={checkin.id} className="flex items-center gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#E5E7EB] hover:shadow-sm transition-all">
+                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${s?.cor || "bg-slate-100 text-slate-600"}`}>
+                                <Truck className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-extrabold text-[#0F172A]">{checkin.veiculo_placa}</span>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s?.cor}`}>{s?.label || checkin.status}</span>
+                                </div>
+                                <p className="text-[11px] text-[#64748B] truncate mt-0.5">
+                                  {checkin.numero_os || "—"} · {checkin.destino || "—"}
+                                  {checkin.posicao_fila > 0 && <span className="ml-2 font-black text-[#F97316]">#{checkin.posicao_fila} na fila</span>}
+                                  {checkin.doca_nome && <span className="ml-2">· {checkin.doca_nome}</span>}
+                                </p>
+                              </div>
+                              {checkin.tempo_aguardando_min > 0 && (
+                                <span className="text-[10px] font-bold text-[#94A3B8] shrink-0">{Math.floor(checkin.tempo_aguardando_min / 60)}h{checkin.tempo_aguardando_min % 60}m</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* ============ TIMELINE + GRAFICO — REFINADO ============ */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                  {/* Timeline Executiva */}
+                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
+                    <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-[#F1F5F9]">
+                      <CardTitle className="text-sm font-extrabold text-[#0F172A] flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-indigo-50 flex items-center justify-center">
+                          <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                        </div>
+                        Movimentacoes
+                      </CardTitle>
+                      <Tabs value={filtroPeriodo} onValueChange={setFiltroPeriodo} className="w-auto">
+                        <TabsList className="h-7 bg-[#F8FAFC] rounded-lg p-0.5">
+                          {["hoje","7dias","30dias"].map(p => (
+                            <TabsTrigger key={p} value={p} className="text-[10px] h-6 px-2.5 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#F97316]">
+                              {p === "hoje" ? "Hoje" : p === "7dias" ? "7d" : "30d"}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                      </Tabs>
+                    </CardHeader>
+                    <CardContent>
+                      {entregas && entregas.length > 0 ? (
+                        <div className="space-y-1 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                          {entregas.slice(0, 6).map((entrega, i) => {
+                            const timeline = gerarTimelinePremium(entrega);
+                            const lastEvent = timeline[timeline.length - 1];
+                            return (
+                              <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setSelectedEntrega(entrega); setShowDetailModal(true); }}>
+                                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                  lastEvent?.status === "completed" ? "bg-emerald-500" :
+                                  lastEvent?.status === "current" ? "bg-orange-500" : "bg-slate-300"
+                                }`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs font-bold text-slate-800 truncate">{lastEvent?.label || "Atualizacao"}</p>
+                                    <span className="text-[10px] text-slate-400 shrink-0">{fmtHora(entrega.created_at)}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 truncate mt-0.5">{entrega.numero || `OS-${entrega.id?.slice(0,8)}`} · {entrega.destino?.cidade || "—"}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <PortalEmptyState type="sem-dados" title="Sem movimentacoes" description="As atualizacoes operacionais aparecerao aqui." />
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Grafico */}
+                  <Card className="lg:col-span-2 bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
+                    <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-[#F1F5F9]">
+                      <div>
+                        <CardTitle className="text-sm font-extrabold text-[#0F172A]">Evolucao de Entregas</CardTitle>
+                        <CardDescription className="text-xs text-[#94A3B8]">Entregas e SLA — 7 dias</CardDescription>
                       </div>
                       <div className="flex items-center gap-4 text-xs font-bold">
-                        <span className="flex items-center gap-1.5 text-[#F97316]">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
-                          Entregas
-                        </span>
-                        <span className="flex items-center gap-1.5 text-[#0F1A2E]">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#0F1A2E]" />
-                          SLA (%)
-                        </span>
+                        <span className="flex items-center gap-1.5 text-[#F97316]"><span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />Entregas</span>
+                        <span className="flex items-center gap-1.5 text-[#0F1A2E]"><span className="w-2.5 h-2.5 rounded-full bg-[#0F1A2E]" />SLA (%)</span>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -1896,144 +2491,47 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={graficoEvolucaoData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <defs>
-                              <linearGradient id="colorEntregas" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#F97316" stopOpacity={0.4}/>
-                                <stop offset="95%" stopColor="#F97316" stopOpacity={0.01}/>
-                              </linearGradient>
-                              <linearGradient id="colorSla" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#0F1A2E" stopOpacity={0.2}/>
-                                <stop offset="95%" stopColor="#0F1A2E" stopOpacity={0.01}/>
-                              </linearGradient>
+                              <linearGradient id="colorEntregas" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F97316" stopOpacity={0.4}/><stop offset="95%" stopColor="#F97316" stopOpacity={0.01}/></linearGradient>
+                              <linearGradient id="colorSla" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0F1A2E" stopOpacity={0.2}/><stop offset="95%" stopColor="#0F1A2E" stopOpacity={0.01}/></linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                            <XAxis 
-                              dataKey="name" 
-                              stroke="#94A3B8" 
-                              fontSize={11} 
-                              tickLine={false} 
-                              axisLine={false} 
-                              dy={8}
-                            />
-                            <YAxis 
-                              stroke="#94A3B8" 
-                              fontSize={11} 
-                              tickLine={false} 
-                              axisLine={false} 
-                              dx={-8}
-                            />
+                            <XAxis dataKey="name" stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} dy={8} />
+                            <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} dx={-8} />
                             <ChartTooltip content={<CustomTooltip />} />
-                            <Area 
-                              type="monotone" 
-                              dataKey="Entregas" 
-                              stroke="#F97316" 
-                              strokeWidth={3}
-                              fillOpacity={1} 
-                              fill="url(#colorEntregas)" 
-                            />
-                            <Area 
-                              type="monotone" 
-                              dataKey="SLA (%)" 
-                              stroke="#0F1A2E" 
-                              strokeWidth={2.5}
-                              strokeDasharray="4 4"
-                              fillOpacity={1} 
-                              fill="url(#colorSla)" 
-                            />
+                            <Area type="monotone" dataKey="Entregas" stroke="#F97316" strokeWidth={3} fillOpacity={1} fill="url(#colorEntregas)" />
+                            <Area type="monotone" dataKey="SLA (%)" stroke="#0F1A2E" strokeWidth={2.5} strokeDasharray="4 4" fillOpacity={1} fill="url(#colorSla)" />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
                     </CardContent>
                   </Card>
-                  
-                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardHeader>
-                      <CardTitle className="text-base text-[#111827]">Status dos Pedidos</CardTitle>
-                      <CardDescription className="text-xs text-[#64748B]">Distribuição percentual por status</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-col items-center justify-center gap-6 py-2">
-                        <div className="relative w-full h-44 flex items-center justify-center">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={statusPedidosData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={55}
-                                outerRadius={70}
-                                paddingAngle={4}
-                                dataKey="value"
-                              >
-                                {statusPedidosData.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-black text-[#0F1A2E]">{taxaSucesso}%</span>
-                            <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Sucesso</span>
-                          </div>
-                        </div>
-                        <div className="w-full grid grid-cols-2 gap-2 mt-2">
-                          {[
-                            { name: "Entregues", color: "bg-emerald-500", key: "entregue" },
-                            { name: "Em Rota", color: "bg-[#F97316]", key: "em_rota" },
-                            { name: "Pendente", color: "bg-blue-500", key: "pendente" },
-                            { name: "Atrasado/Crítico", color: "bg-red-500", key: "critico" }
-                          ].map((st) => {
-                            const count = st.key === "entregue" 
-                              ? entregas.filter(e => e.status === "entregue").length
-                              : st.key === "em_rota"
-                              ? entregas.filter(e => e.status === "em_rota" || e.status === "saiu_para_rota").length
-                              : st.key === "pendente"
-                              ? entregas.filter(e => e.status === "programacao" || e.status === "coleta").length
-                              : entregas.filter(e => e.status === "atrasada" || e.status === "problema").length;
-
-                            const pct = entregas.length > 0 ? Math.round((count / entregas.length) * 100) : 0;
-
-                            return (
-                              <div key={st.name} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <div className={`w-2 h-2 rounded-full ${st.color} shrink-0`} />
-                                  <span className="text-[10px] font-bold text-[#475569] truncate">{st.name}</span>
-                                </div>
-                                <span className="text-[10px] font-black text-[#0F1A2E] pl-1">{pct}%</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
                 </div>
 
-                {/* Pedidos Recentes */}
-                <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-base text-[#111827]">Pedidos Recentes</CardTitle>
-                    <Button variant="ghost" size="sm" className="text-[#F97316]" onClick={() => setActiveTab("pedidos")}>Ver todos →</Button>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {entregas.slice(0, 4).map(entrega => (
-                      <div key={entrega.id} className="flex items-center justify-between p-3 bg-white rounded-xl hover:bg-[#F8FAFC] cursor-pointer transition border border-[#E5E7EB]" onClick={() => {setSelectedEntrega(entrega); setShowDetailModal(true);}}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${statusCores[entrega.status]}`}>
-                            {getStatusIcone(entrega.status)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-[#111827]">{entrega.numero}</p>
-                            <p className="text-xs text-[#475569]">{entrega.origem.cidade} → {entrega.destino.cidade}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline" className={statusCores[entrega.status]}>{entrega.status_label}</Badge>
-                          <span className="text-sm text-[#475569]">{fmtData(entrega.previsao)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+                {/* ============ ANÁlise Operacional ============ */}
+                <PortalSectionCard
+                  title="Analise Operacional Conexao Express"
+                  description="Recomendacoes baseadas no historico operacional da sua empresa"
+                >
+                  {insights.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {insights.slice(0, 6).map((insight, idx) => (
+                        <PortalInsightCard key={idx} type={insight.type} title={insight.title} description={insight.description} priority={insight.priority} metric={insight.metric} suggestion={insight.suggestion} />
+                      ))}
+                    </div>
+                  ) : (
+                    <PortalEmptyState type="sem-dados" title="Nenhum insight gerado ainda" description="Os dados operacionais sao analisados continuamente. Recomendacoes personalizadas aparecerao com volume suficiente." subtitle="A Conexao Express monitora SLA, ocorrencias e tendencias." />
+                  )}
+                </PortalSectionCard>
+              </div>
+            )}
+
+            {/* ===== PÁTIO ===== */}
+            {activeTab === "patio" && (
+              <div className="space-y-6">
+                <PortalPatio
+                  clienteId={clienteData?.id || user?.id || ""}
+                  clienteNome={clienteData?.nome_fantasia || clienteData?.razao_social}
+                />
               </div>
             )}
 
@@ -2067,13 +2565,9 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                         <SelectItem value="90dias">Últimos 90 dias</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button variant="outline" className="rounded-xl border-[#E5E7EB] text-[#475569] bg-white">
+                    <Button variant="outline" className="rounded-xl border-[#E5E7EB] text-[#475569] bg-white" onClick={() => handleBaixarRelatorio('entregas')}>
                       <Download className="w-4 h-4 mr-2" />
                       Exportar
-                    </Button>
-                    <Button className="bg-[#F97316] hover:bg-[#EA580C] text-white rounded-xl shadow-sm">
-                      <PlusCircle className="w-4 h-4 mr-2" />
-                      Novo Pedido
                     </Button>
                   </div>
                 </div>
@@ -2191,7 +2685,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   </div>
 
                   <PortalTrackingMap
-                    currentPosition={undefined}
+                    currentPosition={trackingPosition}
                     origin={selectedEntrega?.origem?.latitude && selectedEntrega?.origem?.longitude ? {
                       lat: selectedEntrega.origem.latitude,
                       lng: selectedEntrega.origem.longitude,
@@ -2208,6 +2702,8 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                     status={selectedEntrega?.status || "programacao"}
                     eta={selectedEntrega?.previsao ? new Date(selectedEntrega.previsao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : undefined}
                     distance={selectedEntrega?.distancia_km || selectedEntrega?.distanciaKm || undefined}
+                    mapboxToken={import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string}
+                    ultimaAtualizacao={trackingPosition?.updated_at}
                   />
 
                   {entregas.filter(e => e.status === "em_rota" || e.status === "saiu_para_rota").length > 0 && (
@@ -2350,17 +2846,14 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             {/* ===== ROTEIRIZAÇÃO ===== */}
             {activeTab === "roteirizacao" && (
               <PortalRoteirizacao
-                onGerarRoteiro={(destinos) => {
-                  setRotaDestinos(destinos || []);
-                  toast({ title: "Roteiro gerado", description: `${destinos?.length || 0} destinos otimizados` });
-                }}
-                onVerDetalhes={(rotaId) => handleVerRota(rotaId)}
+                clienteId={clienteData?.id}
+                clienteNome={clienteData?.nome_fantasia || clienteData?.razao_social}
               />
             )}
 
             {activeTab === "escala" && (
               <PortalEscalaOperacional
-                onVerVeiculo={(veiculoId) => handleVerVeiculo(veiculoId)}
+                clienteId={clienteData?.id}
                 onContatarMotorista={(telefone) => {
                   if (telefone) {
                     window.location.href = `tel:${telefone}`;
@@ -2373,6 +2866,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
 
             {activeTab === "ia_operacional" && (
               <PortalIAOperacional
+                clienteId={clienteData?.id}
                 onAction={(insightId) => toast({ title: "Insight registrado", description: "Nossa equipe analisará a sugestão" })}
                 onNavigate={(tab) => setActiveTab(tab)}
               />
@@ -2380,28 +2874,32 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
 
             {activeTab === "multi_filial" && (
               <PortalMultiFilial
-                onSelectUnidade={(unidadeId) => {
-                  handleVerFilial(unidadeId);
-                }}
-                onConsolidado={() => {
-                  toast({ title: "Visão consolidada", description: "Dados de todas as unidades" });
-                }}
+                clienteId={clienteData?.id}
               />
             )}
 
             {activeTab === "executivo" && (
-              <PortalExecutiveDashboard />
+              <PortalExecutiveDashboard
+                clienteId={clienteData?.id}
+              />
             )}
 
             {activeTab === "economia" && (
-              <PortalEconomia />
+              <PortalEconomia
+                clienteId={clienteData?.id}
+                clienteNome={clienteData?.nome_fantasia || clienteData?.razao_social}
+              />
+            )}
+
+            {activeTab === "ai_report" && (
+              <PortalAIReport
+                clienteId={clienteData?.id}
+              />
             )}
 
             {activeTab === "whatsapp" && (
               <PortalWhatsApp
-                onVerMensagem={(mensagemId) => {
-                  toast({ title: "Mensagem selecionada", description: "ID: " + mensagemId });
-                }}
+                clienteId={clienteData?.id}
               />
             )}
 
@@ -2426,7 +2924,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                         </div>
                         <div>
                           <p className="text-[10px] font-black text-[#64748B] uppercase tracking-widest mb-1">Vencidas</p>
-                          <p className="text-2xl font-black text-red-600">{fmtFin(0)}</p>
+                          <p className="text-2xl font-black text-red-600">{fmtFin(totalVencidas)}</p>
                         </div>
                       </div>
                     </CardContent>
@@ -2463,10 +2961,39 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   <CardHeader className="flex flex-row items-center justify-between bg-white border-b border-[#E5E7EB] py-4 px-6">
                     <CardTitle className="text-lg font-black text-[#111827] tracking-tight">Faturamento & Cobrança</CardTitle>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="rounded-full font-bold border-[#E5E7EB] text-[#475569] shadow-sm bg-white" onClick={() => handleBaixarRelatorio('financeiro')}><FileText className="w-4 h-4 mr-2" />Relatório</Button>
+                      <Button variant="outline" size="sm" className="rounded-full font-bold border-[#E5E7EB] text-[#475569] shadow-sm bg-white" onClick={() => handleBaixarRelatorio('financeiro')}><FileText className="w-4 h-4 mr-2" />Exportar</Button>
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
+                    <div className="p-4 border-b border-[#E5E7EB] bg-[#F8FAFC]">
+                      <div className="flex flex-wrap gap-3 items-center">
+                        <Select value={filtroPeriodoFinanceiro} onValueChange={setFiltroPeriodoFinanceiro}>
+                          <SelectTrigger className="w-[140px] rounded-full bg-white border-[#E5E7EB] h-9 text-xs font-bold">
+                            <SelectValue placeholder="Período" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todas">Todos</SelectItem>
+                            <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                            <SelectItem value="60dias">Últimos 60 dias</SelectItem>
+                            <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select value={filtroStatusFinanceiro} onValueChange={setFiltroStatusFinanceiro}>
+                          <SelectTrigger className="w-[140px] rounded-full bg-white border-[#E5E7EB] h-9 text-xs font-bold">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todas">Todas</SelectItem>
+                            <SelectItem value="paga">Pagas</SelectItem>
+                            <SelectItem value="a_vencer">A Vencer</SelectItem>
+                            <SelectItem value="vencida">Vencidas</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="sm" className="text-xs text-[#64748B]" onClick={() => { setFiltroPeriodoFinanceiro("todas"); setFiltroStatusFinanceiro("todas"); }}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader className="bg-white border-b border-[#E5E7EB]">
@@ -2476,16 +3003,17 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                             <TableHead className="font-black text-[10px] text-[#64748B] uppercase tracking-widest h-12">Valor</TableHead>
                             <TableHead className="font-black text-[10px] text-[#64748B] uppercase tracking-widest h-12">Vencimento</TableHead>
                             <TableHead className="font-black text-[10px] text-[#64748B] uppercase tracking-widest h-12">Status</TableHead>
+                            <TableHead className="font-black text-[10px] text-[#64748B] uppercase tracking-widest h-12">Ações</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {faturas.length > 0 ? faturas.map(fatura => (
-                            <TableRow key={fatura.id} className="hover:bg-[#F8FAFC] border-[#E5E7EB] transition-colors cursor-pointer" onClick={() => handleVerFatura(fatura.id)}>
+                          {faturasFiltered.length > 0 ? faturasFiltered.map(fatura => (
+                            <TableRow key={fatura.id} className="hover:bg-[#F8FAFC] border-[#E5E7EB] transition-colors">
                               <TableCell className="font-black text-sm text-[#111827]">{fatura.fatura}</TableCell>
                               <TableCell className="font-medium text-xs text-[#475569]">{fatura.competencia}</TableCell>
                               <TableCell className="font-bold text-sm text-[#111827]">{fmtFin(fatura.valor)}</TableCell>
                               <TableCell className="font-medium text-xs text-[#475569]">
-                                {fatura.vencimento && new Date(fatura.vencimento).getFullYear() > 1970 ? fmtData(fatura.vencimento) : "Sem vencimento definido"}
+                                {fatura.vencimento && new Date(fatura.vencimento).getFullYear() > 1970 ? fmtData(fatura.vencimento) : "Sem vencimento"}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={`font-bold px-3 py-1 rounded-full border-2 ${
@@ -2496,10 +3024,36 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                                   {fatura.status === "paga" ? "Liquidada" : fatura.status === "a_vencer" ? "Aberta" : "Vencida"}
                                 </Badge>
                               </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="sm" className="text-[#64748B]" onClick={() => handleVerFatura(fatura.id)} title="Visualizar">
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="text-[#64748B]" onClick={() => {
+                                    const txt = `Fatura: ${fatura.fatura}\nCompetência: ${fatura.competencia}\nValor: ${fmtFin(fatura.valor)}\nVencimento: ${fatura.vencimento || "—"}\nStatus: ${fatura.status}`;
+                                    const blob = new Blob([txt], { type: "text/plain" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `fatura_${fatura.fatura}.txt`;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                    toast({ title: "Download iniciado" });
+                                  }} title="Download dados">
+                                    <Download className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
                             </TableRow>
                           )) : (
                             <TableRow>
-                              <TableCell colSpan={5} className="h-32 text-center text-[#475569]">Nenhuma fatura encontrada.</TableCell>
+                              <TableCell colSpan={6} className="h-32 text-center">
+                                <div className="flex flex-col items-center gap-2 py-8">
+                                  <Wallet className="w-10 h-10 text-[#64748B]/30" />
+                                  <p className="text-sm font-bold text-[#475569]">Nenhuma fatura encontrada</p>
+                                  <p className="text-xs text-[#64748B]">Nenhuma fatura foi emitida para este período. Assim que houver operações, as faturas aparecerão aqui.</p>
+                                </div>
+                              </TableCell>
                             </TableRow>
                           )}
                         </TableBody>
@@ -2513,12 +3067,12 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             {/* ===== OCORRÊNCIAS ===== */}
             {activeTab === "ocorrencias" && (
               <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Abertas</p><p className="text-2xl font-black text-[#111827]">0</p></CardContent></Card>
-                    <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Em Análise</p><p className="text-2xl font-black text-amber-500">0</p></CardContent></Card>
-                    <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Resolvidas</p><p className="text-2xl font-black text-emerald-500">1</p></CardContent></Card>
-                    <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">SLA Atendimento</p><p className="text-2xl font-black text-[#F97316]">100%</p></CardContent></Card>
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Abertas</p><p className="text-2xl font-black text-[#111827]">{ocorrencias.filter(o => o.status === "aberta" || o.status === "pendente").length}</p></CardContent></Card>
+                      <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Em Análise</p><p className="text-2xl font-black text-amber-500">{ocorrencias.filter(o => o.status === "em_analise" || o.status === "analise").length}</p></CardContent></Card>
+                      <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">Resolvidas</p><p className="text-2xl font-black text-emerald-500">{ocorrencias.filter(o => o.status === "resolvida" || o.status === "fechada").length}</p></CardContent></Card>
+                      <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl"><CardContent className="p-6"><p className="text-[10px] font-extrabold text-[#64748B] uppercase tracking-widest mb-1">SLA Atendimento</p><p className="text-2xl font-black text-[#F97316]">{ocorrencias.length > 0 ? Math.round(ocorrencias.filter(o => o.status === "resolvida" || o.status === "fechada").length / ocorrencias.length * 100) : 100}%</p></CardContent></Card>
+                    </div>
 
                 <Card className="bg-white border-[#E5E7EB] shadow-sm overflow-hidden rounded-2xl">
                   <CardHeader className="flex flex-row items-center justify-between bg-[#F8FAFC] border-b border-[#E5E7EB] py-4 px-6">
@@ -2566,291 +3120,25 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
 
             {/* ===== RELATÓRIOS ===== */}
             {activeTab === "relatorios" && (
-              <div className="space-y-6">
-                <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                  <CardHeader>
-                    <CardTitle className="text-base text-[#111827]">Relatórios</CardTitle>
-                    <p className="text-sm text-[#475569]">Baixe relatórios detalhados da sua operação</p>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <Button variant="outline" className="h-auto py-4 flex-col gap-2 bg-white border-[#E5E7EB] text-[#111827]" onClick={() => handleBaixarRelatorio('entregas')}>
-                        <FileCheck className="w-6 h-6 text-[#F97316]" />
-                        <span className="font-medium">Entregas por Período</span>
-                        <span className="text-xs text-[#64748B]">CSV / PDF</span>
-                      </Button>
-                      <Button variant="outline" className="h-auto py-4 flex-col gap-2 bg-white border-[#E5E7EB] text-[#111827]" onClick={() => handleBaixarRelatorio('sla')}>
-                        <BarChart3 className="w-6 h-6 text-[#F97316]" />
-                        <span className="font-medium">SLA e Performance</span>
-                        <span className="text-xs text-[#64748B]">PDF</span>
-                      </Button>
-                      <Button variant="outline" className="h-auto py-4 flex-col gap-2 bg-white border-[#E5E7EB] text-[#111827]" onClick={() => handleBaixarRelatorio('financeiro')}>
-                        <DollarSign className="w-6 h-6 text-[#F97316]" />
-                        <span className="font-medium">Financeiro</span>
-                        <span className="text-xs text-[#64748B]">Excel / PDF</span>
-                      </Button>
-                      <Button variant="outline" className="h-auto py-4 flex-col gap-2 bg-white border-[#E5E7EB] text-[#111827]" onClick={() => handleBaixarRelatorio('ocorrencias')}>
-                        <AlertCircle className="w-6 h-6 text-[#F97316]" />
-                        <span className="font-medium">Ocorrências</span>
-                        <span className="text-xs text-[#64748B]">CSV</span>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <PortalRelatoriosPremium
+                onGerarRelatorio={async (filtros) => {
+                  const dados = filtros.tipo === "entregas" ? entregas
+                    : filtros.tipo === "financeiro" ? faturas
+                    : filtros.tipo === "ocorrencias" ? ocorrencias
+                    : filtros.tipo === "comprovantes" ? comprovantesData
+                    : [];
+                  return { dados, titulo: TIPOS_RELATORIO.find(t => t.value === filtros.tipo)?.label || "Relatório" };
+                }}
+              />
             )}
 
             {/* ===== COMPROVANTES ===== */}
             {activeTab === "comprovantes" && (
-              <div className="space-y-6">
-                {/* KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#F97316]/10 flex items-center justify-center">
-                          <FileCheck className="w-5 h-5 text-[#F97316]" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#64748B] uppercase font-bold tracking-tight">Total</p>
-                          <p className="text-2xl font-black text-[#111827]">{comprovantesData.length}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                          <Signature className="w-5 h-5 text-emerald-500" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#64748B] uppercase font-bold tracking-tight">Com Assinatura</p>
-                          <p className="text-2xl font-black text-[#111827]">{comprovantesData.filter(c => c.url || c.titulo).length}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                          <Camera className="w-5 h-5 text-blue-500" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#64748B] uppercase font-bold tracking-tight">Com Fotos</p>
-                          <p className="text-2xl font-black text-[#111827]">0</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-amber-500" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#64748B] uppercase font-bold tracking-tight">Protocolos</p>
-                          <p className="text-2xl font-black text-[#111827]">{protocolosData.length}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Header with filters */}
-                <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
-                  <CardHeader className="pb-4">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div>
-                        <CardTitle className="text-lg text-[#111827]">Comprovantes e Protocolos</CardTitle>
-                        <p className="text-sm text-[#64748B]">Acesse fotos, assinaturas, canhotos e protocolos das entregas</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          className="rounded-xl border-[#E5E7EB] text-[#475569]"
-                          onClick={handleBaixarTodosComprovantes}
-                          disabled={comprovantesLoading}
-                        >
-                          <Download className="w-4 h-4 mr-2" />
-                          Baixar Todos
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Filters */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                      <div className="col-span-2 md:col-span-3 lg:col-span-2">
-                        <Input
-                          placeholder="Buscar OS ou protocolo..."
-                          className="rounded-xl bg-white border-[#E5E7EB]"
-                          value={filtroOS}
-                          onChange={(e) => setFiltroOS(e.target.value)}
-                        />
-                      </div>
-                      <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-                        <SelectTrigger className="rounded-xl bg-white border-[#E5E7EB]">
-                          <SelectValue placeholder="Tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="todos">Todos os tipos</SelectItem>
-                          <SelectItem value="entrega">Entrega</SelectItem>
-                          <SelectItem value="coleta">Coleta</SelectItem>
-                          <SelectItem value="assinatura">Assinatura</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder="Destinatário"
-                        className="rounded-xl bg-white border-[#E5E7EB]"
-                        value={filtroDestinatario}
-                        onChange={(e) => setFiltroDestinatario(e.target.value)}
-                      />
-                      <Input
-                        placeholder="Prestador/Motorista"
-                        className="rounded-xl bg-white border-[#E5E7EB]"
-                        value={filtroPrestador}
-                        onChange={(e) => setFiltroPrestador(e.target.value)}
-                      />
-                      <Input
-                        placeholder="Veículo/Placa"
-                        className="rounded-xl bg-white border-[#E5E7EB]"
-                        value={filtroVeiculo}
-                        onChange={(e) => setFiltroVeiculo(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Select value={filtroPeriodoComprov} onValueChange={setFiltroPeriodoComprov}>
-                        <SelectTrigger className="w-[140px] rounded-xl bg-white border-[#E5E7EB]">
-                          <SelectValue placeholder="Período" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="hoje">Hoje</SelectItem>
-                          <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-                          <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-                          <SelectItem value="90dias">Últimos 90 dias</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button variant="outline" size="sm" className="rounded-xl border-[#E5E7EB] text-[#475569] bg-white" onClick={() => { setFiltroOS(""); setFiltroDestinatario(""); setFiltroTipo("todos"); setFiltroPrestador(""); setFiltroVeiculo(""); }}>
-                        Limpar Filtros
-                      </Button>
-                    </div>
-
-                    {/* Loading state */}
-                    {comprovantesLoading && (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F97316]" />
-                        <span className="ml-3 text-[#64748B]">Carregando comprovantes...</span>
-                      </div>
-                    )}
-
-                    {/* Empty state */}
-                    {!comprovantesLoading && filteredComprovantes.length === 0 && (
-                      <div className="text-center py-16 bg-[#F8FAFC] rounded-2xl border-2 border-dashed border-[#E5E7EB]">
-                        <FileCheck className="w-16 h-16 mx-auto text-[#64748B]/30 mb-4" />
-                        <p className="text-lg font-bold text-[#111827]">Nenhum comprovante disponível ainda</p>
-                        <p className="text-sm text-[#64748B] mt-2 max-w-md mx-auto">
-                          Assim que uma entrega for concluída, fotos, assinatura e protocolo aparecerão aqui.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Comprovantes list */}
-                    {!comprovantesLoading && filteredComprovantes.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredComprovantes.map((comp) => (
-                          <div key={comp.id} className="p-4 bg-white rounded-xl border border-[#E5E7EB] hover:border-[#F97316]/50 transition-colors">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <FileCheck className="w-4 h-4 text-[#F97316]" />
-                                <span className="text-sm font-bold text-[#111827]">{comp.titulo || "OS"}</span>
-                              </div>
-                              <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-500/10 text-xs">
-                                {comp.tipo || "entrega"}
-                              </Badge>
-                            </div>
-                            <div className="space-y-1 text-xs text-[#64748B]">
-                              <p className="flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {comp.nome_recebedor || "Não informado"}
-                              </p>
-                              <p className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {comp.data_entrega ? new Date(comp.data_entrega).toLocaleString("pt-BR") : "Não informado"}
-                              </p>
-                              {comp.documento_recebedor && (
-                                <p className="flex items-center gap-1">
-                                  <FileText className="w-3 h-3" />
-                                  {comp.documento_recebedor}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex gap-2 mt-3">
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="flex-1 bg-white border-[#E5E7EB] text-[#475569]"
-                                onClick={() => handleVerComprovante(comp.id)}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Ver
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="flex-1 bg-white border-[#E5E7EB] text-[#475569]"
-                                onClick={() => handleBaixarComprovante(comp.id)}
-                              >
-                                <Download className="w-3 h-3 mr-1" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Protocols Section */}
-                    {!comprovantesLoading && filteredProtocolos.length > 0 && (
-                      <div className="mt-6 pt-6 border-t border-[#E5E7EB]">
-                        <h3 className="text-sm font-bold text-[#111827] mb-4">Protocolos Gerados</h3>
-                        <div className="space-y-2">
-                          {filteredProtocolos.map((prot) => (
-                            <div key={prot.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-[#E5E7EB]">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                                  <FileText className="w-4 h-4 text-amber-500" />
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold text-[#111827]">{prot.protocolo}</p>
-                                  <p className="text-xs text-[#64748B]">
-                                    {prot.recebedor || "Recebedor não informado"} • {prot.horario ? new Date(prot.horario).toLocaleString("pt-BR") : ""}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {prot.status || "pendente"}
-                                </Badge>
-                                <Button 
-                                  size="sm" 
-                                  variant="ghost" 
-                                  className="text-[#64748B]"
-                                  onClick={() => handleCopiarProtocolo(prot.protocolo)}
-                                >
-                                  <Copy className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              <PortalComprovantesPremium
+                comprovantes={comprovantesData}
+                loading={comprovantesLoading}
+                onRefresh={carregarComprovantes}
+              />
             )}
 
             {/* ===== AVALIAÇÃO ===== */}
@@ -3226,6 +3514,55 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                 </Card>
               </div>
             )}
+
+            {/* ===== PERFIL ===== */}
+            {activeTab === "perfil" && (
+              <div className="animate-in fade-in duration-300">
+                {clienteData?.id ? (
+                  <PerfilCliente clienteId={clienteData.id} clienteNome={clienteData?.nome_fantasia} />
+                ) : (
+                  <PortalEmptyState
+                    type="sem-dados"
+                    title="Perfil não disponível"
+                    description="Seu perfil será carregado automaticamente quando houver dados vinculados à sua conta. Entre em contato com o suporte se precisar de ajuda."
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ===== ONBOARDING/CONFIG INICIAL ===== */}
+            {activeTab === "onboarding" && (
+              <div className="animate-in fade-in duration-300 max-w-2xl mx-auto">
+                <PortalOnboarding
+                  etapaInicial={onboardingStep}
+                  onStepChange={(step) => {
+                    setOnboardingStep(step);
+                    if (clienteData?.id) {
+                      supabase.from("portal_preferencias_cliente").upsert({
+                        cliente_id: clienteData.id,
+                        onboarding_etapa_atual: step,
+                        onboarding_iniciado: true,
+                        updated_at: new Date().toISOString(),
+                      }, { onConflict: "cliente_id" }).then(() => {});
+                    }
+                  }}
+                  onComplete={() => {
+                    if (clienteData?.id) {
+                      supabase.from("portal_preferencias_cliente").upsert({
+                        cliente_id: clienteData.id,
+                        onboarding_concluido: true,
+                        onboarding_concluido_em: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                      }, { onConflict: "cliente_id" }).then(() => {
+                        setActiveTab("dashboard");
+                        toast({ title: "Configuração concluída!", description: "Seu portal está pronto para uso." });
+                      });
+                    }
+                  }}
+                  onSkip={() => setActiveTab("dashboard")}
+                />
+              </div>
+            )}
           </div>
         </ScrollArea>
       </main>
@@ -3438,7 +3775,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
 
       {/* Modal Detalhe do Pedido */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="max-w-4xl bg-white border-[#E5E7EB] max-h-screen overflow-hidden flex flex-col p-0 gap-0 shadow-2xl">
+          <DialogContent className="max-w-4xl bg-white border-[#E5E7EB] max-h-screen overflow-hidden flex flex-col p-0 gap-0 shadow-2xl">
           <DialogHeader className="p-6 bg-[#F8FAFC] border-b border-[#E5E7EB] flex-shrink-0">
             <DialogTitle className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-[#F97316] flex items-center justify-center shadow-lg shadow-orange-500/20">
@@ -3460,8 +3797,8 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   </div>
                   <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
                     <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Status</p>
-                    <Badge className="mt-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-full font-bold px-3">
-                      {selectedEntrega.status || "Pendente"}
+                    <Badge variant="outline" className={statusCores[selectedEntrega.status] || "bg-amber-50 text-amber-600 border-amber-200"}>
+                      {selectedEntrega.status_label || selectedEntrega.status || "Pendente"}
                     </Badge>
                   </div>
                 </div>
@@ -3485,24 +3822,89 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   </div>
                 </div>
 
-                <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
-                  <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Previsão</p>
-                  <p className="text-sm font-semibold text-[#111827] mt-1">{selectedEntrega.previsao || "A definir"}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
+                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Previsão</p>
+                    <p className="text-sm font-semibold text-[#111827] mt-1">{selectedEntrega.previsao ? fmtData(selectedEntrega.previsao) : "A definir"}</p>
+                  </div>
+                  <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
+                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Mercadoria</p>
+                    <p className="text-sm font-semibold text-[#111827] mt-1">{selectedEntrega.mercadoria || "—"}</p>
+                  </div>
                 </div>
 
                 {selectedEntrega.prestador && (
                   <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
-                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Prestador</p>
-                    <p className="text-sm font-semibold text-[#111827] mt-1">
-                      {selectedEntrega.prestador.nome || "—"}
-                    </p>
+                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Transporte</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <div className="w-10 h-10 rounded-full bg-[#F97316]/10 flex items-center justify-center text-[#F97316] font-bold text-sm">
+                        {selectedEntrega.prestador.nome?.charAt(0) || "?"}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[#111827]">{selectedEntrega.prestador.nome}</p>
+                        {selectedEntrega.prestador.veiculo && (
+                          <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-tight">
+                            {selectedEntrega.prestador.veiculo} • {selectedEntrega.prestador.placa || "—"}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                <Button className="w-full bg-[#F97316] hover:bg-[#EA580C] text-white rounded-full font-bold"
-                  onClick={() => { setShowDetailModal(false); }}>
-                  Acompanhar
-                </Button>
+                {/* POD Card */}
+                {(selectedEntrega.comprovante_url || selectedEntrega.assinatura_url || selectedEntrega.alocacao_finalizada) && (
+                  <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                        <CheckCircle className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-800">
+                          {selectedEntrega.comprovante_url || selectedEntrega.assinatura_url
+                            ? "Comprovante disponível"
+                            : "Serviço concluído"}
+                        </p>
+                        <p className="text-[11px] text-emerald-600">
+                          {selectedEntrega.comprovante_url || selectedEntrega.assinatura_url
+                            ? "O comprovante de entrega pode ser consultado."
+                            : "Entrega finalizada. O comprovante será disponibilizado em breve."}
+                        </p>
+                      </div>
+                    </div>
+                    {selectedEntrega.comprovante_url && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-full"
+                        onClick={() => window.open(selectedEntrega.comprovante_url!, '_blank')}
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Ver comprovante
+                      </Button>
+                    )}
+                    {selectedEntrega.assinatura_url && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-full ml-2"
+                        onClick={() => window.open(selectedEntrega.assinatura_url!, '_blank')}
+                      >
+                        <Signature className="w-3.5 h-3.5 mr-1" />
+                        Ver assinatura
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Timeline Premium */}
+                <div className="bg-white rounded-xl border border-[#E5E7EB] overflow-hidden">
+                  <PortalTimeline
+                    events={gerarTimelinePremium(selectedEntrega)}
+                    title="Acompanhamento do Pedido"
+                    emptyMessage="Histórico operacional ainda não disponível"
+                  />
+                </div>
               </>
             ) : (
               <p className="text-sm text-[#475569]">Nenhum pedido selecionado.</p>
@@ -3701,12 +4103,6 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   Passo {novoPedidoStep} de 3
                 </span>
               </div>
-              <button
-                onClick={() => { setShowNovoPedidoModal(false); setNovoPedidoStep(1); }}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             {/* Content Scrollable */}
@@ -3967,6 +4363,69 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                         <Label className="text-xs font-black text-slate-500 uppercase tracking-wider">Data/Hora Estimada Coleta</Label>
                         <Input type="datetime-local" value={novoPedidoData.coleta_data} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, coleta_data: e.target.value })} className="bg-white border-slate-200 rounded-xl text-xs" />
                       </div>
+                    </div>
+
+                    {/* Coleta Reversa */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <Label className="text-xs font-bold text-amber-800 flex items-center gap-2">
+                          <Truck className="w-4 h-4" /> Coleta Reversa
+                        </Label>
+                        <Switch
+                          checked={novoPedidoData.reversa}
+                          onCheckedChange={(v) => setNovoPedidoData({ ...novoPedidoData, reversa: v })}
+                        />
+                      </div>
+                      {novoPedidoData.reversa && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="space-y-1"><Label className="text-xs">Tipo</Label>
+                            <Select value={novoPedidoData.reversa_tipo} onValueChange={(v) => setNovoPedidoData({ ...novoPedidoData, reversa_tipo: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="coleta_reversa">Coleta Reversa</SelectItem>
+                                <SelectItem value="devolucao">Devolução</SelectItem>
+                                <SelectItem value="troca">Troca</SelectItem>
+                                <SelectItem value="retorno_cd">Retorno ao CD</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Qtd Volumes</Label>
+                            <Input type="number" value={novoPedidoData.reversa_qtd_volumes} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_qtd_volumes: parseInt(e.target.value) || 0 })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Unidade</Label>
+                            <Select value={novoPedidoData.reversa_unidade} onValueChange={(v) => setNovoPedidoData({ ...novoPedidoData, reversa_unidade: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unidade">Unidade</SelectItem>
+                                <SelectItem value="caixa">Caixa</SelectItem>
+                                <SelectItem value="pallet">Pallet</SelectItem>
+                                <SelectItem value="kg">KG</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Endereço Coleta</Label>
+                            <Input value={novoPedidoData.reversa_endereco} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_endereco: e.target.value })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Endereço Devolução</Label>
+                            <Input value={novoPedidoData.reversa_devolucao} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_devolucao: e.target.value })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Responsável</Label>
+                            <Input value={novoPedidoData.reversa_responsavel} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_responsavel: e.target.value })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Telefone</Label>
+                            <Input value={novoPedidoData.reversa_telefone} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_telefone: e.target.value })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Data Desejada</Label>
+                            <Input type="date" value={novoPedidoData.reversa_data} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_data: e.target.value })} />
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Instruções</Label>
+                            <Input value={novoPedidoData.reversa_instrucoes} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_instrucoes: e.target.value })} />
+                          </div>
+                          <div className="space-y-1 md:col-span-3"><Label className="text-xs">Observações</Label>
+                            <Textarea value={novoPedidoData.reversa_observacoes} onChange={(e) => setNovoPedidoData({ ...novoPedidoData, reversa_observacoes: e.target.value })} rows={2} />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex gap-2 mt-4">
@@ -4316,8 +4775,34 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                             </Select>
                           </div>
                         </div>
-                        <div className="space-y-3">
-                          <Label className="text-xs font-black text-slate-500 uppercase tracking-wider">Necessidades Especiais do Transporte</Label>
+                          <div className="space-y-3">
+                            <Label className="text-xs font-black text-slate-500 uppercase tracking-wider">Protocolos Operacionais</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { id: "cliente_vip", label: "Cliente VIP", section: "protocolo" },
+                                { id: "entrega_sigilosa", label: "Entrega Sigilosa", section: "protocolo" },
+                                { id: "ligar_antes", label: "Ligar antes da entrega", section: "protocolo" },
+                                { id: "somente_responsavel", label: "Receber somente responsável", section: "protocolo" },
+                                { id: "documento_obrigatorio", label: "Documento obrigatório", section: "protocolo" },
+                                { id: "prioridade_maxima", label: "Prioridade máxima", section: "protocolo" },
+                                { id: "produto_perecivel", label: "Produto perecível", section: "protocolo" },
+                                { id: "nao_inclinar", label: "Não inclinar", section: "protocolo" },
+                                { id: "manter_vertical", label: "Manter posição vertical", section: "protocolo" },
+                                { id: "temperatura_controlada", label: "Temperatura controlada", section: "protocolo" },
+                                { id: "conferencia_obrigatoria", label: "Conferência obrigatória", section: "protocolo" },
+                              ].map((item) => (
+                                <div key={item.id} className={`flex items-center gap-2.5 p-2.5 border rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${novoPedidoData.necessidades.includes(item.id) ? "bg-orange-50/70 border-[#F97316] text-[#F97316] shadow-sm shadow-orange-500/10" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`} onClick={() => { const curr = novoPedidoData.necessidades; const updated = curr.includes(item.id) ? curr.filter(x => x !== item.id) : [...curr, item.id]; setNovoPedidoData({ ...novoPedidoData, necessidades: updated }); }}>
+                                  <div className={`w-4 h-4 rounded-full flex items-center justify-center border transition-all duration-200 ${novoPedidoData.necessidades.includes(item.id) ? "border-[#F97316] scale-110" : "border-slate-300"}`}>
+                                    {novoPedidoData.necessidades.includes(item.id) && <div className="w-2 h-2 rounded-full bg-[#F97316] animate-in zoom-in duration-200" />}
+                                  </div>
+                                  <span className="text-xs font-bold leading-tight">{item.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <Label className="text-xs font-black text-slate-500 uppercase tracking-wider">Necessidades Especiais do Transporte</Label>
                           <div className="grid grid-cols-2 gap-2">
                             {[
                               { id: "coleta_doca", label: "Coleta em doca" },
@@ -4419,10 +4904,10 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                           }`}>
                             {sugestao.tipo === "warning" ? <AlertTriangle className="w-4 h-4" /> :
                              sugestao.tipo === "tip" ? <Zap className="w-4 h-4" /> :
-                             <Brain className="w-4 h-4" />}
+                             <Calculator className="w-4 h-4" />}
                           </div>
                           <div className="space-y-1">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise Inteligente</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise Operacional Conexão Express</p>
                             <p className="text-xs font-semibold text-slate-700 leading-relaxed">{sugestao.mensagem}</p>
                           </div>
                         </div>
@@ -4431,10 +4916,10 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
 
                     <div className="bg-gradient-to-r from-orange-50 to-amber-50/60 border border-orange-100 p-4 rounded-2xl flex items-center justify-between mt-4">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black text-[#F97316] uppercase tracking-widest">Recomendação Inteligente de Veículo</p>
-                        <p className="text-base font-black text-slate-800">{resumo.veiculoSugerido}</p>
-                        <p className="text-xs text-slate-500 font-semibold">
-                          {novoPedidoData.peso || 0} kg · {resumo.cubagemM3} m³{novoPedidoData.necessidades.includes("refrigerado") ? " · Refrigerado" : ""}{novoPedidoData.necessidades.includes("plataforma") ? " · Plataforma" : ""}{novoPedidoData.fragilidade !== "normal" ? " · Frágil" : ""}{resumo.km > 0 ? ` · ${resumo.km} km` : ""} · Veículo recomendado automaticamente.
+                          <p className="text-[10px] font-black text-[#F97316] uppercase tracking-widest">Recomendação Conexão Express</p>
+                          <p className="text-base font-black text-slate-800">{resumo.veiculoSugerido}</p>
+                          <p className="text-xs text-slate-500 font-semibold">
+                            {novoPedidoData.peso || 0} kg · {resumo.cubagemM3} m³{novoPedidoData.necessidades.includes("refrigerado") ? " · Refrigerado" : ""}{novoPedidoData.necessidades.includes("plataforma") ? " · Plataforma" : ""}{novoPedidoData.fragilidade !== "normal" ? " · Frágil" : ""}{resumo.km > 0 ? ` · ${resumo.km} km` : ""} · Análise operacional da sua carga.
                         </p>
                       </div>
                       <div className="w-12 h-12 rounded-xl bg-orange-100 text-[#F97316] flex items-center justify-center">
@@ -4819,10 +5304,10 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                       }`}>
                         {sugestao.tipo === "warning" ? <AlertTriangle className="w-4 h-4" /> :
                          sugestao.tipo === "tip" ? <Zap className="w-4 h-4" /> :
-                         <Brain className="w-4 h-4" />}
+                         <Calculator className="w-4 h-4" />}
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise Inteligente</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise Operacional Conexão Express</p>
                         <p className="text-xs font-semibold text-slate-700 leading-relaxed">{sugestao.mensagem}</p>
                       </div>
                     </div>
@@ -4890,23 +5375,48 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
               <CheckCircle className="w-8 h-8" />
             </div>
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">Pedido Solicitado com Sucesso!</h3>
-            <p className="text-sm font-medium text-slate-500 mt-1">Seu pedido foi registrado com sucesso. Nossa equipe já está verificando o profissional mais adequado para o seu transporte. Em breve você poderá acompanhar em tempo real toda a operação.</p>
+            <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+              {createdOrderDetails?.os_numero ? "Pedido confirmado!" : "Recebemos sua solicitação!"}
+            </h3>
+            <p className="text-sm font-medium text-slate-500 mt-1">
+              {createdOrderDetails?.os_numero
+                ? "Sua solicitação já virou uma Ordem de Serviço e está disponível para acompanhamento."
+                : "Nossa equipe operacional está validando os detalhes para confirmar a melhor programação. Em breve você poderá acompanhar toda a operação."}
+            </p>
           </div>
 
           <div className="p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Número do Pedido</p>
-                <p className="text-xl font-black text-[#F97316] mt-1">{createdOrderDetails?.numero_pedido}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nº Pedido</p>
+                <p className="text-lg font-black text-[#F97316] mt-1">{createdOrderDetails?.numero_pedido}</p>
               </div>
+              {createdOrderDetails?.os_numero && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
+                  <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">OS Gerada</p>
+                  <p className="text-lg font-black text-emerald-700 mt-1">{createdOrderDetails.os_numero}</p>
+                </div>
+              )}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Inicial</p>
-                <Badge className="bg-amber-50 text-amber-600 border border-amber-200 rounded-full font-bold mt-1.5 px-3 py-0.5">
-                  Aguardando Triagem
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</p>
+                <Badge className={`rounded-full font-bold mt-1.5 px-3 py-0.5 ${
+                  createdOrderDetails?.status === "programado"
+                    ? "bg-blue-50 text-blue-600 border border-blue-200"
+                    : "bg-amber-50 text-amber-600 border border-amber-200"
+                }`}>
+                  {createdOrderDetails?.os_numero ? "Programado" : "Aguardando Triagem"}
                 </Badge>
               </div>
             </div>
+
+            {createdOrderDetails?.preco_final > 0 && (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Valor Estimado</p>
+                <p className="text-xl font-black text-[#F97316]">
+                  R$ {Number(createdOrderDetails.preco_final).toFixed(2)}
+                </p>
+              </div>
+            )}
 
             <div className="space-y-3 bg-white border border-slate-200 p-5 rounded-2xl">
               <div className="flex items-start gap-3">
@@ -4936,16 +5446,28 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
             </div>
           </div>
 
-          <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-            <Button
-              variant="outline"
-              className="bg-white border-slate-200 rounded-full px-6 font-bold"
-              onClick={() => {
-                window.print();
-              }}
-            >
-              Imprimir Canhoto
-            </Button>
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="bg-white border-slate-200 rounded-full px-6 font-bold"
+                onClick={() => window.print()}
+              >
+                Imprimir Canhoto
+              </Button>
+              {createdOrderDetails?.tracking_link && (
+                <Button
+                  variant="outline"
+                  className="bg-white border-slate-200 rounded-full px-6 font-bold text-[#F97316] hover:text-[#EA580C]"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdOrderDetails.tracking_link);
+                    toast({ title: "Link de rastreio copiado!", description: "Compartilhe com o destinatário." });
+                  }}
+                >
+                  Copiar Rastreio
+                </Button>
+              )}
+            </div>
             <Button
               className="bg-slate-800 hover:bg-slate-900 text-white rounded-full px-6 font-bold"
               onClick={() => setShowSucessoModal(false)}
@@ -5001,17 +5523,49 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
               </p>
             </div>
 
-            {selectedComprovante?.url && (
+            {(selectedComprovante as any)?.foto_entrega_url && (
               <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
-                <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Documento</p>
+                <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Foto da Entrega</p>
                 <Button 
                   variant="outline" 
                   className="w-full border-[#E5E7EB]"
-                  onClick={() => window.open(selectedComprovante.url!, '_blank')}
+                  onClick={() => window.open((selectedComprovante as any).foto_entrega_url!, '_blank')}
                 >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Abrir Documento
+                  <Camera className="w-4 h-4 mr-2" />
+                  Ver Foto da Entrega
                 </Button>
+              </div>
+            )}
+            {(selectedComprovante as any)?.foto_canhoto_url && (
+              <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
+                <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Canhoto / Comprovante</p>
+                <Button 
+                  variant="outline" 
+                  className="w-full border-[#E5E7EB]"
+                  onClick={() => window.open((selectedComprovante as any).foto_canhoto_url!, '_blank')}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Ver Canhoto
+                </Button>
+              </div>
+            )}
+            {(selectedComprovante as any)?.assinatura_url && (
+              <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
+                <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Assinatura</p>
+                <Button 
+                  variant="outline" 
+                  className="w-full border-[#E5E7EB]"
+                  onClick={() => window.open((selectedComprovante as any).assinatura_url!, '_blank')}
+                >
+                  <Signature className="w-4 h-4 mr-2" />
+                  Ver Assinatura
+                </Button>
+              </div>
+            )}
+            {(selectedComprovante as any)?.observacao && (
+              <div className="p-4 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB]">
+                <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Observação</p>
+                <p className="text-sm text-[#475569]">{(selectedComprovante as any).observacao}</p>
               </div>
             )}
           </div>

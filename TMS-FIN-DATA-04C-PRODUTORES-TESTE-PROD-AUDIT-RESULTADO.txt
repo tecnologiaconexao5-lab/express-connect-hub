@@ -1,0 +1,202 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04C-PRODUTORES-TESTE-PROD-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (nada implementado/alterado).
+RESULTADO: PASS (inventario concluido).
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+Foram identificados ~24 produtores de teste. O risco e ATIVO porque:
+  - o `.env` padrao aponta para PROD (ref uwrvzsjtpgaifkktpepn) e contem
+    SUPABASE_SERVICE_ROLE_KEY + DATABASE_URL;
+  - varios harnesses carregam `dotenv/config` (default = PROD) e ESCREVEM;
+  - ha URL PROD + anon key HARDCODED em script e nos helpers E2E;
+  - nao ha CI/CD configurado (baixo risco de pipeline);
+  - nao ha guard fail-closed global nos harnesses.
+Nao existe bloqueio que impeça hoje a reincidencia. Ver plano minimo (item 7).
+
+--------------------------------------------------------------------------------
+1. INVENTARIO DOS PRODUTORES
+--------------------------------------------------------------------------------
+CLASSIFICACAO: P1=risco ativo PROD | P2=somente manual, perigoso | P3=protegido por
+guard | P4=legado/inativo.
+
+--- P1 — RISCO ATIVO (escrevem em PROD por default; sem guard) ---
+ #  Arquivo                                              Origem gerada        Conexao
+ 1  scripts/missao43_teste_ponta_a_ponta.ts              M43_* (cliente/mot/OS) URL PROD + anon HARDCODED
+ 2  scripts/m81_test_financeiro_propagacao.ts            TEST-M80-*             env .env + service_role
+ 3  scripts/m85_seed_veiculos_prestadores.ts             M85/M86-TEST-*         env .env + service_role
+ 4  scripts/m86_seed_veiculos_prestadores.ts             M86-TEST-*             env .env + service_role
+ 5  scripts/m86_fix_region_matching.ts                   M86-TEST-*             env .env + service_role
+ 6  scripts/m90_test_fluxo_completo_rede.ts              M90-TEST-*             env .env + service_role
+ 7  scripts/_tms012_criar_os_hml.cjs                     HML-APP-001            DATABASE_URL (.env=PROD)
+ 8  scripts/tms013_seed_hml.mjs                          HML-APP-*              env .env
+ 9  scripts/seed-cliente-teste-real.ts                   OS-TESTE-1000..        service_role/anon
+10  scripts/seed_portal_cliente_demo.cjs                 Empresa Demo [DEV]     service_role
+11  scripts/seed-relatorios.js                           OS-TEST-<ts>           anon/service
+12  scripts/valid_real_p1p2_ciclo_completo.mjs           BRUNO is_teste PP/FP    service_role
+13  scripts/valid_real_p1p2_ui_auth.ts / ui_visual.ts    BRUNO is_teste         anon/service
+14  scripts/missao48_homologacao_operacional.ts          homologacao operacional service_role
+15  scripts/missao43_* (familia) + missao124*/tms03*     multiplos               .env PROD
+16  tests/e2e/* (suite Playwright)                       via UI (app local->PROD) VITE_* do .env=PROD
+
+--- P2 — MANUAL, PERIGOSO (nao UI; rodavel por tsx/node) ---
+17  src/lib/testes/testeMissaoOSCompleta.ts              OS-TESTE-<ts>, "Cliente Teste App Motorista"
+18  src/lib/testes/testeM66Corrigido.ts                  "Cliente Teste App Motorista"
+19  tmp/valid_real_ui.mjs                                BRUNO is_teste
+20  test_os_save.mjs / test_os_cep_horario.mjs (raiz)    OS-TEST-<ts>
+21  test_minimal.ts / test_min*.ts / test_snippet*.ts    OS TESTE_MIN
+
+--- P3 — PROTEGIDO POR GUARD (parcial) ---
+22  tests/e2e/helpers/supabase.ts                        guardarContraProducao() em 5 escritas destrutivas
+23  scripts/check-ambiente.cjs                           guard rail (usado por playwright:qa)
+24  supabase/functions/* (service_role)                  Edge Functions de fluxo real (nao teste)
+
+--- P4 — LEGADO / INATIVO ---
+- supabase/migrations/20260509000002_portal_cliente_pedidos.sql (INSERT seed 'Cliente Teste'
+  em portal_pedidos — migration ja aplicada, inerte).
+- scripts/m108c1_test_pod_unico.ts, m104a_test_propagacao_financeira.ts, m106_test_tracking_go_live.ts,
+  m110_stress_test.ts (harnesses antigos com service_role).
+- src/lib/testes/executarTesteReal.js/.cjs (documentacao/harness anon).
+
+--------------------------------------------------------------------------------
+2. ARQUIVOS / ROTAS / ENVS
+--------------------------------------------------------------------------------
+Env files (host = project ref; sem expor segredos):
+  .env ................ PROD uwrvzsjtpgaifkktpepn | anon PRESENTE | service_role PRESENTE | DATABASE_URL PRESENTE
+  .env.production ..... PROD uwrvzsjtpgaifkktpepn | service_role PRESENTE
+  .env.qa ............. QA   aqpfayildtcnrkfeeyjg | anon PRESENTE | service_role PRESENTE | DATABASE_URL PRESENTE
+  .env.development .... vazio (sem host)
+  .env.example / .qa.example / .production.example ... templates (sem host)
+Conclusao: existe projeto QA separado (aqpfayildtcnrkfeeyjg), mas o DEFAULT do repo e PROD.
+  -> `npx tsx scripts/...` (dotenv default) = PROD.
+  -> `npm run dev` (sem --mode qa) = PROD.
+  -> `npm run test:e2e` sobe app local (localhost:8800) apontando para PROD (VITE_* do .env).
+
+npm scripts perigosos (package.json): auditoria:financeiro-final, auditoria:financeiro-ux,
+  auditoria:fluxo-operacional-final, test:whatsapp-os*, corrigir:rascunhos-340612,
+  testar:focus-2628647, configurar:emitente-real. `playwright:qa` e protegido por
+  check-ambiente; `test:e2e` NAO tem guard.
+
+--------------------------------------------------------------------------------
+3. ORIGEM DOS REGISTROS REMOVIDOS (rastreabilidade)
+--------------------------------------------------------------------------------
+  M43_2026... Cliente Teste / M43 Motorista ......... scripts/missao43_teste_ponta_a_ponta.ts
+  M86-TEST-MR88* ................................... scripts/m85_*/m86_*
+  M90-TEST-MR8A* ................................... scripts/m90_test_fluxo_completo_rede.ts
+  TEST-M80-* / TEST-M80-CANCEL-* ................... scripts/m81_test_financeiro_propagacao.ts
+  HML-APP-001 / HML-APP-* .......................... scripts/_tms012_criar_os_hml.cjs, tms013_seed_hml.mjs
+  OS-TESTE-1000..1004 ............................. scripts/seed-cliente-teste-real.ts
+  OS-TESTE-<ts> / "Cliente Teste App Motorista" .... src/lib/testes/testeMissaoOSCompleta.ts
+  EMPRESA DEMO [DEV] / Empresa Demo Ltda ........... scripts/seed_portal_cliente_demo.cjs
+  OS-TEST-<ts> ..................................... scripts/seed-relatorios.js, test_os_*.mjs
+  OS_AUDITORIA_* ................................... scripts/auditoria-*.ts
+  TESTE_MIN_<ts> ................................... test_minimal.ts/test_min*.ts
+  TESTE-FIN-/TESTE-OS- ............................. (familia missao43/48/124 - homologacao)
+  BRUNO DA SILVA SANTOS (is_teste PP/FP) .......... scripts/valid_real_p1p2_*, tmp/valid_real_ui.mjs
+
+--------------------------------------------------------------------------------
+4. RISCOS POR PRODUTOR (resumo)
+--------------------------------------------------------------------------------
+- Hardcoded PROD: missao43 (URL+anon) e tests/e2e/helpers/supabase.ts (URL+anon). Remover
+  credencial do codigo (segredo vazado em repositorio).
+- Default PROD: `.env` unico compartilhado por app e testes; scripts carregam `.env` sem
+  exigir modo -> escrita acidental em PROD.
+- service_role/DATABASE_URL amplamente usados em scripts -> escrita direta sem RLS.
+- E2E via UI contra PROD: acoes de UI criam/alteram dados reais (mesmo com helpers guarded,
+  a suite como um todo nao e fail-closed).
+- Ausencia de guard global: nenhum harness verifica `ambiente != producao` antes de escrever.
+
+--------------------------------------------------------------------------------
+5. CI/CD
+--------------------------------------------------------------------------------
+Nao foram encontrados pipelines (.github/workflows, .gitlab-ci.yml, azure-pipelines,
+circleci, Jenkinsfile) — 0 arquivos. Portanto NAO ha risco de CI injetar credenciais PROD
+HOJE. Se um CI for adicionado, deve proibir secrets de PROD e rodar apenas contra QA.
+
+--------------------------------------------------------------------------------
+6. FRONTEND / APP / BANCO
+--------------------------------------------------------------------------------
+Frontend/TMS: `getServiceClient` (src/lib/supabase.ts) NAO e usado pela UI (0 imports).
+  `src/lib/testes/*` (testeMissaoOSCompleta/testeM66Corrigido) NAO estao importados por
+  nenhuma UI/rota -> nao ha botao que crie is_teste em PROD. Risco = execucao manual (tsx).
+APP (Flutter externo): nao executado. Risco localizado: RPCs do App usam auth.uid() e
+  gravam operacao real; nao ha indicio de criacao de is_teste pelo App.
+Banco: colunas is_teste existem em ordens_servico, financeiro_receber, financeiro_pagar,
+  pagamentos_prestadores. Nao ha RPC/trigger que force is_teste=true. FKs/triggers M66/M80
+  propagam por OS/alocacao (nao criam is_teste). Nenhuma regra de banco adicionada.
+
+--------------------------------------------------------------------------------
+7. PLANO MINIMO DE BLOQUEIO (recomendado — NAO implementado)
+--------------------------------------------------------------------------------
+Principios: fail closed; PROD nunca default de teste; opt-in explicito; HML como destino;
+nao quebrar fluxos reais.
+
+ 1. GUARD FAIL-CLOSED GLOBAL: `scripts/_guard.cjs` + bootstrap TS que detecta o project ref
+    da URL/DATABASE_URL; se == PROD e `ALLOW_TEST_WRITES !== 'true'` -> `process.exit(1)`.
+    Importar no topo de TODOS os scripts P1/P2 (1 linha).
+ 2. PROD NAO-DEFAULT: harnesses passam a carregar `.env.qa` por padrao
+    (dotenv.config({path:'.env.qa'})); PROD exige ENVFILE explicito + ALLOW_TEST_WRITES=true.
+ 3. OPT-IN: qualquer escrita exige `ALLOW_TEST_WRITES=true`; caso contrario modo read-only.
+ 4. RELOCAR: mover harnesses para `scripts/lab/` (fora do fluxo normal) e remover os npm
+    scripts perigosos apontando para PROD.
+ 5. REMOVER SEGREDOS HARDCODED: missao43 (URL/anon) e tests/e2e/helpers/supabase.ts -> ler de
+    env (com guard). Rotacionar a anon key exposta em repositorio (recomendado).
+ 6. E2E: incluir `node scripts/check-ambiente.cjs qa` em `test:e2e` (como `playwright:qa`) e/ou
+    rodar o dev server em modo qa apontando o app para o projeto QA.
+ 7. FRONTEND: manter src/lib/testes fora do bundle/rotas (ja ocorre); renomear para deixar
+    explicito "lab" e nunca importar na UI.
+ 8. MIGRATIONS: nenhum INSERT de teste em novas migrations (manter seeds apenas em QA).
+
+--------------------------------------------------------------------------------
+8. IMPACTO EM HML/QA
+--------------------------------------------------------------------------------
+- Projeto QA ja existe (aqpfayildtcnrkfeeyjg). Redirecionar harnesses para `.env.qa` preserva
+  testes sem tocar PROD.
+- `npm run dev:qa` / `build:qa` / `playwright:qa` ja suportam QA -> base para HML.
+- Requer confirmar que o projeto QA tem schema/seed necessarios (nao validado nesta missao).
+
+--------------------------------------------------------------------------------
+9. RESPOSTAS (A–I)
+--------------------------------------------------------------------------------
+A) Produtores: ~24 no total (16 P1, 5 P2, 3 P3, ~4 P4), incluindo a suite E2E.
+B) Conseguem atingir PROD hoje: TODOS os P1 (default `.env`=PROD) e a suite E2E via UI;
+   P2 via execucao manual (tsx/node).
+C) Usam service_role: m81, m85, m86, m90, seed-cliente-teste-real, seed_portal_cliente_demo,
+   valid_real_*, missao48, m104a/m106/m108c1/m110, e Edge Functions (fluxo real).
+D) Origem dos removidos: item 3 (M43/M85/M86/M90/TEST-M80/HML-APP/OS-TESTE/EMPRESA DEMO/etc.).
+E) Bloqueio minimo: itens 7.1–7.3 (guard fail-closed + nao-default PROD + opt-in explicito).
+F) Preservar HML: apontar harnesses para `.env.qa`/projeto QA e exigir ENVIRONMENT=qa.
+G) Separar credenciais/URLs: SIM — parar de compartilhar `.env` PROD com testes; usar `.env.qa`;
+   remover URL/keys hardcoded; rotacionar a anon key exposta.
+H) CI/CD: SEM risco hoje (0 pipelines). Risco futuro se pipeline receber secrets PROD.
+I) Banco: sem guard necessario imediatamente; opcional defense-in-depth (trigger que rejeite
+   is_teste fora de service_role/sessao de QA) — NAO criar agora.
+
+--------------------------------------------------------------------------------
+10. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (auditoria). Nenhuma alteracao. Risco de reincidencia CONFIRMADO (P1 ativo) por:
+default PROD + service_role + sem guard + segredos hardcoded. Plano minimo de bloqueio
+definido (nao implementado).
+
+--------------------------------------------------------------------------------
+11. PROXIMA MICRO-MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D — IMPLANTAR GUARD FAIL-CLOSED (micro): criar scripts/_guard.cjs + bootstrap,
+inserir 1 linha nos harnesses P1, redirecionar default para .env.qa, exigir
+ALLOW_TEST_WRITES=true, remover URL/keys hardcoded de missao43 e tests/e2e/helpers, e
+adicionar check-ambiente qa ao test:e2e. Nenhuma regra de banco nesta etapa.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04C-PRODUTORES-TESTE-PROD-AUDIT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04C-PRODUTORES-TESTE-PROD-AUDIT-RESULTADO.txt
+Tamanho ..: 13737 bytes
+Data .....: 24/09/2026 20:50:13
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04C
+================================================================================

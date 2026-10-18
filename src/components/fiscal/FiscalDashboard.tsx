@@ -3,6 +3,7 @@ import { LayoutDashboard, FileSpreadsheet, Truck, Stamp, UploadCloud, Building2,
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 export default function FiscalDashboard() {
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,7 @@ export default function FiscalDashboard() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
+    return <ProgressiveBlocksLoader size="page" />;
   }
 
   return (

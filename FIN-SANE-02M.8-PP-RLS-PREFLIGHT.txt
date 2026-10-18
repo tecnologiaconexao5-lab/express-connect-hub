@@ -1,0 +1,202 @@
+================================================================================
+FIN-SANE-02M.8 — PREFLIGHT: RLS pagamentos_prestadores
+2026-09-21 | READ-ONLY | NENHUMA ALTERACAO APLICADA
+================================================================================
+
+1. SITUACAO ATUAL
+================================================================================
+Tabela: pagamentos_prestadores (104 registros, 21 prestadores)
+RLS: HABILITADO (relrowsecurity=true) mas FORCAR=false (relforcerowsecurity=false)
+Policy: "Allow all pagamentos_prestadores" — ALL para public WHERE true=true
+  -> USUARIO ANON ACESSA TUDO
+  -> USUARIO AUTHENTICADO ACESSA TUDO
+  -> USUARIO SERVICE_ROLE ACESSA TUDO
+  -> NENHUMA RESTRIÇÃO
+
+Gravidade: CRITICA — qualquer pessoa com URL do Supabase lê/edita/deleta
+           todos os pagamentos de todos os prestadores.
+
+2. ESTRUTURA DA TABELA
+================================================================================
+Colunas-chave (50 no total):
+  id: uuid NOT NULL (PK)
+  prestador_id: uuid NULL (FK -> prestadores.id)
+  os_id: uuid NULL (FK, mas FK NAO existe — coluna avulsa)
+  fechamento_id: uuid NULL (FK -> pagamentos_prestadores.id — auto-ref)
+  valor_liquido: numeric NULL
+  status_pagamento: text NULL (pendente/pago/cancelado/nao_vencido)
+  is_teste: boolean NOT NULL
+  created_at: timestamp with time zone NULL
+  updated_at: timestamp with time zone NULL
+
+ATENCAO: NAO existe coluna tenant_id.
+  -> Nao e possivel usar o padrao "tu.tenant_id = X.tenant_id"
+  -> Alternativa: padrao "EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())"
+     (mesmo usado por financeiro_pagar, financeiro_baixas, composicao_financeira_os)
+
+Dados:
+  status_pagamento    | registros | valor_liquido total
+  ---------------------|-----------|--------------------
+  cancelado            |          3 |       R$    520.00
+  nao_vencido          |         26 |       R$ 12,076.62
+  pago                 |         12 |       R$  8,496.12
+  pendente             |         63 |       R$ 55,227.20
+  TOTAL                |        104 |       R$ 76,319.94
+
+Origens:
+  escala_direta:    62 registros
+  os_direta:        20 registros
+  manual:           16 registros
+  fechamento:        2 registros
+  TESTE VALID-P1-P2: 3 registros
+  os_finalizada:     1 registro
+
+PP com fechamento_id: 7 de 104
+
+3. RPCs QUE ESCREVEM EM pagamentos_prestadores
+================================================================================
+| RPC                                  | SECURITY DEFINER | Impacto RLS |
+|--------------------------------------|:----------------:|:-----------:|
+| f_confirmar_pagamento_prestador      | NAO              | AFETADO     |
+| f_confirmar_pagamento_fechamento     | SIM              | SEGURO      |
+
+f_confirmar_pagamento_prestador:
+  -> USA SELECT ... FOR UPDATE em pagamentos_prestadores
+  -> USA UPDATE pagamentos_prestadores SET ...
+  -> USA INSERT INTO financeiro_baixas
+  -> USA UPDATE financeiro_pagar SET ...
+  -> Chama pelo frontend (Authenticated role)
+  -> SE RLS restringir, SELECT pode falhar
+
+f_confirmar_pagamento_fechamento:
+  -> SECURITY DEFINER (executa como postgres)
+  -> Bypass RLS — seguro independente da policy
+
+4. TRIGGERS QUE ESCREVEM EM pagamentos_prestadores
+================================================================================
+| Trigger              | SECURITY DEFINER | Impacto RLS |
+|----------------------|:----------------:|:-----------:|
+| M66 (alocacao)       | SIM (postgres)   | SEGURO      |
+| M80 (os)             | SIM (postgres)   | SEGURO      |
+
+Ambos rodam como postgres -> bypass RLS -> INSERT seguro.
+
+5. FRONTEND CONSUMERS (55+ arquivos TypeScript)
+================================================================================
+Arquivo principal: src/components/financeiro/PagamentoPrestadores.tsx
+  -> .from('pagamentos_prestadores') em 9+ locais
+  -> SELECT com filtros: prestador_id, status_pagamento, is_teste
+  -> INSERT: novo pagamento (botao "Marcar Pago")
+  -> UPDATE: status_pagamento, data_pagamento
+
+Servicos:
+  -> pagamentoPrestadorService.ts (buscarPagamentos, confirmarPagamento)
+  -> centralFinanceiroService.ts (consulta pagamentos_prestadores)
+
+Hooks:
+  -> usePagamentosPrestadores hook
+
+6. PADRAO DE RLS DO PROJETO (para tabelas SEM tenant_id)
+================================================================================
+Tabelas financeiras SEM tenant_id (financeiro_pagar, financeiro_baixas,
+composicao_financeira_os) usam:
+
+  USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()))
+
+Isto:
+  -> PERMITE qualquer usuario autenticado (TMS)
+  -> BLOQUEIA anon
+  -> NAO filtra por tenant (todas as tabelas financeiras sao compartilhadas)
+
+NOTA: alocacoes_escala TEM tenant_id e usa:
+  USING (EXISTS (SELECT 1 FROM tenant_usuarios tu
+    WHERE tu.user_id = auth.uid() AND tu.tenant_id = alocacoes_escala.tenant_id))
+  -> Mais restritivo (filtra por tenant)
+
+Para pagamentos_prestadores (sem tenant_id), o padrao correto e:
+  -> Seguir financeiro_pagar: EXISTS tenant_usuarios (sem tenant match)
+
+7. RISCOS E MITIGACOES
+================================================================================
+| Risco | Probabilidade | Impacto | Mitigacao |
+|-------|:-------------:|:-------:|-----------|
+| f_confirmar_pagamento_prestador falha apos RLS | ALTA | CRITICO | Testar SELECT+UPDATE com RLS restrictiva; se falhar, considerar SECURITY DEFINER |
+| Frontend nao consegue ler PP | MEDIA | ALTO | Testar todas as queries .from('pagamentos_prestadores') com authenticated role |
+| PP sem prestador_id visivel | BAIXO | MEDIO | Verificar se todas as queries WHERE usam prestador_id — se sim, policy pode ser mais restritiva |
+| Insert manual via UI falha | MEDIA | MEDIO | Testar INSERT com authenticated role + RLS |
+| anon acesso indevido | CERTO | CRITICO | Corrigir — anon NUNCA deve acessar pagamentos_prestadores |
+
+8. PROPOSTA DE POLICY (NAO APLICADA — APENAS PROPOSTA)
+================================================================================
+-- Step 1: DROP policy permissiva
+DROP POLICY IF EXISTS "Allow all pagamentos_prestadores" ON pagamentos_prestadores;
+
+-- Step 2: SELECT — authenticated (TMS) pode ler
+CREATE POLICY pp_select_tms ON pagamentos_prestadores
+  FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+
+-- Step 3: INSERT — authenticated (TMS) pode criar
+CREATE POLICY pp_insert_tms ON pagamentos_prestadores
+  FOR INSERT TO authenticated
+  WITH CHECK (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+
+-- Step 4: UPDATE — authenticated (TMS) pode atualizar
+CREATE POLICY pp_update_tms ON pagamentos_prestadores
+  FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+
+-- Step 5: DELETE — TMS pode deletar (controle administrativo)
+CREATE POLICY pp_delete_tms ON pagamentos_prestadores
+  FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()));
+
+-- service_role continua com acesso total (bypass RLS)
+
+9. TESTES NECESSARIOS (T1-T15) — NAO EXECUTADOS
+================================================================================
+| # | Teste | Resultado Esperado | Status |
+|---|-------|--------------------|--------|
+| T1 | SELECT como anon | BLOQUEADO (0 rows) | PENDENTE |
+| T2 | SELECT como authenticated (TMS) | OK (104 rows) | PENDENTE |
+| T3 | SELECT como service_role | OK (104 rows) | PENDENTE |
+| T4 | INSERT como anon | BLOQUEADO (42501) | PENDENTE |
+| T5 | INSERT como authenticated (TMS) | OK | PENDENTE |
+| T6 | INSERT como service_role | OK | PENDENTE |
+| T7 | UPDATE como anon | BLOQUEADO | PENDENTE |
+| T8 | UPDATE como authenticated (TMS) | OK | PENDENTE |
+| T9 | DELETE como anon | BLOQUEADO | PENDENTE |
+| T10 | DELETE como authenticated (TMS) | OK | PENDENTE |
+| T11 | f_confirmar_pagamento_prestador como authenticated | Funciona sem erro | PENDENTE |
+| T12 | M66 trigger INSERT via alocacao | Funciona (SECDEF) | PENDENTE |
+| T13 | M80 trigger INSERT via OS | Funciona (SECDEF) | PENDENTE |
+| T14 | Frontend PagamentoPrestadores.tsx funciona | Sem erros | PENDENTE |
+| T15 | Frontend nao expoe dados para nao-autenticados | 0 rows via anon | PENDENTE |
+
+10. DECISAO RECOMENDADA
+================================================================================
+Aplicar policy padrao "EXISTS tenant_usuarios" (padrao do projeto).
+
+Porem ANTES de aplicar:
+  1. Testar T11 em staging (f_confirmar_pagamento_prestador com RLS)
+  2. Se T11 falhar: alternativas:
+     a) Tornar f_confirmar_pagamento_prestador SECURITY DEFINER
+     b) Criar policy INSERT/UPDATE especifica para a RPC
+  3. Aplicar migration em ambiente QA antes de producao
+  4. Rodar todos os T1-T15
+
+11. RESUMO
+================================================================================
+STATUS: NENHUMA MUDANCA FEITA — apenas diagnostico e proposta
+
+TABELA: pagamentos_prestadores
+RLS ATUAL: policy "Allow all" = WIDE OPEN
+COLUNA TENANT_ID: NAO EXISTE
+RPC CRITICA: f_confirmar_pagamento_prestador (NAO SECDEF, sera afetada)
+TRIGGERS: M66/M80 sao SECDEF, NAO serao afetados
+PROPOSTA: padrao EXISTS tenant_usuarios (mesmo de financeiro_pagar)
+PROXIMO: executar T1-T15 em ambiente QA, entao aplicar migration
+
+================================================================================
+FIM DO RELATORIO
+================================================================================

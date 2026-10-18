@@ -15,14 +15,18 @@ import {
 import { toast } from "sonner";
 import { gerarPDFRelatorioOperacional, gerarPDFFaturamentoDetalhado } from "@/utils/pdfRelatorioOperacional";
 import { exportFaturamentoToExcel } from "@/utils/excelExport";
+import { buscarDadosEmpresaParaFatura } from "@/services/financeiro/faturaService";
 import {
   buscarDadosFaturamento,
   buscarDadosFaturamentoDetalhado,
   buscarDadosEvolucaoFaturamento,
   buscarClientesAtivos,
   buscarStatusOptions,
+  buscarDadosFaturamentoIndividual,
   type FiltrosFaturamento,
+  type FaturamentoIndividualCliente,
 } from "@/services/relatorios/relatorioService";
+import { gerarPDFRelatorioFaturamentoIndividual } from "@/utils/pdfFatura";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Line, ComposedChart
@@ -86,6 +90,14 @@ export default function RelatorioFaturamentoCliente() {
   // Timezone-safe initial dates
   const hoje = new Date();
   const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+  // TMS-S04C — Relatório Individual do Cliente
+  const [visao, setVisao] = useState<"consolidada" | "individual">("consolidada");
+  const [clienteIndividualId, setClienteIndividualId] = useState("");
+  const [dataIniInd, setDataIniInd] = useState(obterDataLocalFormatada(primeiroDiaMes));
+  const [dataFimInd, setDataFimInd] = useState(obterDataLocalFormatada(hoje));
+  const [dadosIndividual, setDadosIndividual] = useState<FaturamentoIndividualCliente | null>(null);
+  const [carregandoIndividual, setCarregandoIndividual] = useState(false);
 
   // Active query filters
   const [filtros, setFiltros] = useState<FiltrosFaturamento>({
@@ -215,11 +227,11 @@ export default function RelatorioFaturamentoCliente() {
       colunas: ["Cliente", "CNPJ", "Qtd OS", "Valor Faturado", "Valor Pago", "Pendência", "Ticket Médio", "Última Operação"],
       linhas,
       totais: [
-        { label: "Total de Clientes:", valor: String(dados.length) },
+        { label: "Total de Clientes:", valor: String(dados.length), moeda: false },
         { label: "Total Faturado:", valor: fmtBRL(totais.faturamento) },
         { label: "Total Pago:", valor: fmtBRL(totais.pago) },
         { label: "Total Pendente:", valor: fmtBRL(totais.pendente) },
-        { label: "Total de Operações:", valor: String(totais.qtd) },
+        { label: "Total de Operações:", valor: String(totais.qtd), moeda: false },
         { label: "Ticket Médio:", valor: fmtBRL(totais.ticket) },
       ],
       usuario: "Administrador",
@@ -238,6 +250,54 @@ export default function RelatorioFaturamentoCliente() {
     }
   };
 
+  // ══ TMS-S04C — Relatório Individual do Cliente ═════════════════════════════
+  const carregarIndividual = useCallback(async () => {
+    if (!clienteIndividualId) return toast.error("Selecione um cliente");
+    setCarregandoIndividual(true);
+    setDadosIndividual(null);
+    try {
+      const res = await buscarDadosFaturamentoIndividual({
+        clienteId: clienteIndividualId,
+        dataInicial: dataIniInd || undefined,
+        dataFinal: dataFimInd || undefined,
+      });
+      setDadosIndividual(res);
+      if (!res || res.operacoes.length === 0) {
+        toast.info("Nenhuma operação encontrada para o cliente no período");
+      }
+    } catch (err) {
+      console.error("[FaturamentoIndividual] erro:", err);
+      toast.error("Erro ao carregar o relatório individual");
+    } finally {
+      setCarregandoIndividual(false);
+    }
+  }, [clienteIndividualId, dataIniInd, dataFimInd]);
+
+  const handleGerarPDFIndividual = async () => {
+    if (!dadosIndividual || dadosIndividual.operacoes.length === 0) return toast.error("Sem dados para gerar PDF");
+    try {
+      const empresa = await buscarDadosEmpresaParaFatura();
+      const doc = await gerarPDFRelatorioFaturamentoIndividual({
+        cliente: dadosIndividual.cliente.nome,
+        clienteCnpj: dadosIndividual.cliente.cnpj || undefined,
+        periodo: `${fmtData(dadosIndividual.periodoInicio || dataIniInd)} a ${fmtData(dadosIndividual.periodoFim || dataFimInd)}`,
+        itens: dadosIndividual.operacoes,
+        resumo: dadosIndividual.resumo,
+        empresa,
+      });
+      const nomeCliente = dadosIndividual.cliente.nome.replace(/[^\w-]/g, "_").toLowerCase().replace(/_+/g, "_");
+      doc.save(`Relatorio_Faturamento_${nomeCliente}.pdf`);
+      toast.success("Relatório individual PDF gerado com sucesso");
+    } catch (err) {
+      console.error("[FaturamentoIndividual] PDF erro:", err);
+      toast.error("Erro ao gerar PDF individual");
+    }
+  };
+
+  const fmtPeriodoIndividual = dadosIndividual
+    ? `${fmtData(dadosIndividual.periodoInicio || dataIniInd)} a ${fmtData(dadosIndividual.periodoFim || dataFimInd)}`
+    : `${fmtData(dataIniInd)} a ${fmtData(dataFimInd)}`;
+
   const topClientes = useMemo(() => {
     return [...dados]
       .sort((a, b) => (b.valor_faturado || 0) - (a.valor_faturado || 0))
@@ -250,6 +310,13 @@ export default function RelatorioFaturamentoCliente() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <Tabs value={visao} onValueChange={setVisao} className="w-full">
+        <TabsList className="bg-muted/50 rounded-xl p-1">
+          <TabsTrigger value="consolidada" className="gap-1.5 text-xs rounded-lg"><BarChart3 className="w-3.5 h-3.5" /> Visão Consolidada</TabsTrigger>
+          <TabsTrigger value="individual" className="gap-1.5 text-xs rounded-lg"><FileText className="w-3.5 h-3.5" /> Relatório Individual do Cliente</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="consolidada" className="space-y-6 pt-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner border border-primary/20">
@@ -746,6 +813,182 @@ export default function RelatorioFaturamentoCliente() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+      </Tabs>
+        </TabsContent>
+
+        {/* ══ RELATÓRIO INDIVIDUAL DO CLIENTE (TMS-S04C) ═══════════════════ */}
+        <TabsContent value="individual" className="space-y-6 pt-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner border border-primary/20">
+                <FileText className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Relatório Individual do Cliente</h1>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Detalhamento dos serviços realizados — documento para envio ao cliente
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="rounded-lg h-9" onClick={handleGerarPDFIndividual} disabled={carregandoIndividual || !dadosIndividual || dadosIndividual.operacoes.length === 0}>
+                <Download className="w-4 h-4 mr-1.5 text-primary" /> PDF
+              </Button>
+              <Button variant="outline" size="sm" className="rounded-lg h-9" onClick={() => window.print()} disabled={!dadosIndividual}>
+                <Printer className="w-4 h-4 mr-1.5 text-primary" /> Imprimir
+              </Button>
+            </div>
+          </div>
+
+          <Card className="border-none shadow-md bg-card rounded-2xl overflow-hidden">
+            <CardContent className="p-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="space-y-1 md:col-span-2">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Cliente (obrigatório)</Label>
+                  <Select value={clienteIndividualId} onValueChange={(v) => { setClienteIndividualId(v); setDadosIndividual(null); }}>
+                    <SelectTrigger className="h-9 text-xs rounded-lg border-muted-foreground/20">
+                      <SelectValue placeholder="Selecione o cliente..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[320px]">
+                      {[...clientesAtivos]
+                        .sort((a, b) => String(a.nome_fantasia || a.razao_social || "").localeCompare(String(b.nome_fantasia || b.razao_social || "")))
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id} className="text-xs">
+                            {c.nome_fantasia || c.razao_social}{c.cnpj ? ` — ${c.cnpj}` : ""}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Data inicial</Label>
+                  <Input type="date" value={dataIniInd} onChange={(e) => setDataIniInd(e.target.value)} className="h-9 text-xs rounded-lg border-muted-foreground/20" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Data final</Label>
+                  <Input type="date" value={dataFimInd} onChange={(e) => setDataFimInd(e.target.value)} className="h-9 text-xs rounded-lg border-muted-foreground/20" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/50">
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 rounded-lg px-4 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold"
+                  onClick={carregarIndividual}
+                  disabled={!clienteIndividualId || carregandoIndividual}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${carregandoIndividual ? "animate-spin" : ""}`} />
+                  {carregandoIndividual ? "Carregando..." : "Aplicar filtros"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {dadosIndividual && (
+            <>
+              <Card className="border-none shadow-md bg-card rounded-2xl overflow-hidden">
+                <CardContent className="p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">CLIENTE</p>
+                      <p className="text-lg font-extrabold text-foreground mt-0.5">{dadosIndividual.cliente.nome}</p>
+                      {dadosIndividual.cliente.cnpj && (
+                        <p className="text-xs text-muted-foreground mt-0.5">CNPJ: {dadosIndividual.cliente.cnpj}</p>
+                      )}
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Período</p>
+                      <p className="text-sm font-semibold text-foreground mt-0.5">{fmtPeriodoIndividual}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {dadosIndividual.resumo.quantidade} serviço(s) · Total faturado: <span className="font-bold text-emerald-600">{fmtBRL(dadosIndividual.resumo.totalFaturado)}</span>
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-md bg-card rounded-2xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/30">
+                      <TableRow>
+                        <TableHead className="font-semibold text-[10px] uppercase text-center py-3">Data</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase py-3">Romaneio / OC</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase py-3">Veículo / Placa</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3">Valor Base</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3">KM Adic.</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3">Pedágio</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3">Reembolso</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3 text-rose-500">Descontos</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase text-right py-3 text-emerald-500">Valor Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dadosIndividual.operacoes.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                            Nenhuma operação encontrada para o cliente no período.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        dadosIndividual.operacoes.map((item, idx) => (
+                          <TableRow key={item.id || idx} className="hover:bg-muted/40 transition-colors border-b border-border/50 even:bg-muted/20">
+                            <TableCell className="text-xs text-center font-medium text-muted-foreground">{fmtData(item.data)}</TableCell>
+                            <TableCell className="text-xs">
+                              <span className="font-semibold text-foreground">{item.romaneio || "—"}</span>
+                              {item.trajeto && <span className="block text-[10px] text-muted-foreground">{item.trajeto}</span>}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-medium">{item.veiculo || "—"}</TableCell>
+                            <TableCell className="text-xs text-right font-semibold">{fmtBRL(item.valorBase)}</TableCell>
+                            <TableCell className="text-xs text-right font-medium text-muted-foreground">{item.kmAdicional > 0 ? fmtBRL(item.kmAdicional) : "—"}</TableCell>
+                            <TableCell className="text-xs text-right font-medium text-muted-foreground">{item.pedagio > 0 ? fmtBRL(item.pedagio) : "—"}</TableCell>
+                            <TableCell className="text-xs text-right font-medium text-muted-foreground">{item.reembolso > 0 ? fmtBRL(item.reembolso) : "—"}</TableCell>
+                            <TableCell className="text-xs text-right font-bold text-rose-600 dark:text-rose-400">{item.descontos > 0 ? fmtBRL(-item.descontos) : "—"}</TableCell>
+                            <TableCell className="text-xs text-right font-extrabold text-emerald-600 dark:text-emerald-400">{fmtBRL(item.valorTotal)}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+
+              <Card className="border-none shadow-md bg-card rounded-2xl overflow-hidden bg-emerald-50/40 dark:bg-emerald-900/10">
+                <CardContent className="p-5">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Quantidade de serviços</p>
+                      <p className="text-xl font-extrabold text-foreground mt-0.5">{dadosIndividual.resumo.quantidade}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Valor Base</p>
+                      <p className="text-xl font-extrabold text-foreground mt-0.5">{fmtBRL(dadosIndividual.resumo.valorBase)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">KM Adicional</p>
+                      <p className="text-xl font-extrabold text-foreground mt-0.5">{fmtBRL(dadosIndividual.resumo.kmAdicional)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pedágios</p>
+                      <p className="text-xl font-extrabold text-foreground mt-0.5">{fmtBRL(dadosIndividual.resumo.pedagio)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Reembolsos</p>
+                      <p className="text-xl font-extrabold text-foreground mt-0.5">{fmtBRL(dadosIndividual.resumo.reembolso)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Descontos</p>
+                      <p className="text-xl font-extrabold text-rose-600 mt-0.5">{fmtBRL(-dadosIndividual.resumo.descontos)}</p>
+                    </div>
+                    <div className="md:col-span-2 bg-emerald-100/60 dark:bg-emerald-900/20 rounded-xl p-3 flex items-center justify-between">
+                      <p className="text-sm font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">TOTAL FATURADO</p>
+                      <p className="text-xl font-extrabold text-emerald-700 dark:text-emerald-300">{fmtBRL(dadosIndividual.resumo.totalFaturado)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>

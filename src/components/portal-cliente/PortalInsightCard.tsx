@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LucideIcon, TrendingDown, TrendingUp, Clock, AlertTriangle, BarChart3, Bell, Lightbulb, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ const priorityBorder: Record<Priority, string> = {
   baixa: "border-l-emerald-500",
 };
 
-export function PortalInsightCard({
+export const PortalInsightCard = memo(function PortalInsightCard({
   type,
   title,
   description,
@@ -103,4 +104,4 @@ export function PortalInsightCard({
       </CardContent>
     </Card>
   );
-}
+});

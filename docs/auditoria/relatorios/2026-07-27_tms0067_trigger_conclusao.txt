@@ -1,0 +1,36 @@
+TMS-006.7 — CORRECAO DO EVENTO FALSO DE CONCLUSAO NA ESCALA
+
+Data: 2026-07-27
+Status: TRIGGER DE CONCLUSAO CORRIGIDO — TESTE FUNCIONAL
+        PENDENTE
+Percentual: 50% (provisorio)
+
+=======================================================================
+CORRECAO
+=======================================================================
+
+Arquivo: 20260727_tms0067_fix_conclusao_falsa.sql
+Trigger: trg_evento_operacao_finalizada
+Alteracao: 1 linha — AND NEW.status != 'cancelada'
+SHA-256:   9C8ABE6197313FC60F8D7DC0DA670A8DC5AC49D6F312F9A52E0F7AEAA04FF828
+
+Efeito: eventos "concluida" nao sao mais criados em cancelamentos.
+
+=======================================================================
+APLICACAO
+=======================================================================
+
+Aplicada via pg Client (DATABASE_URL) em 2026-07-27.
+Trigger existe e ativo.
+
+=======================================================================
+PENDENTE
+=======================================================================
+
+Teste funcional (2 cenarios) aguardando autorizacao separada.
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+TRIGGER DE CONCLUSAO CORRIGIDO - TESTE FUNCIONAL PENDENTE

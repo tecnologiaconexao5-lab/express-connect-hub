@@ -1,0 +1,79 @@
+================================================================================
+FIN-03-BAIXA  LIQUIDACAO E BAIXA FINANCEIRA DE PRESTADORES
+Nivel 5 (Fechamento Financeiro)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:15:37.025Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  o fluxo de baixa/liquidacao esta ATOMICO e CONSISTENTE.
+
+--------------------------------------------------------------------------------
+1. MECANISMO DE BAIXA (RPCs oficiais em producao)
+--------------------------------------------------------------------------------
+f_confirmar_pagamento_prestador(id, data, valor?)  [SECURITY DEFINER]
+    -> trava a linha (FOR UPDATE), localiza o financeiro_pagar da OS+prestador+valor,
+       calcula saldo, INSERT financeiro_baixas (com conta_financeira_id),
+       UPDATE financeiro_pagar status='pago'/'parcial' e
+       UPDATE pagamentos_prestadores status='pago'/status_pagamento='pago'/data_pagamento.
+       Suporta pagamento parcial. Autz.: super_admin/admin_tenant/financeiro. Tenant isolado.
+f_confirmar_pagamento_fechamento(id, data)  [SECURITY DEFINER]
+    -> itera os itens do fechamento e chama f_confirmar_pagamento_prestador item a item
+       (atomico); exige status_aprovacao='aprovado' e soma dos itens == valor do fechamento.
+f_registrar_baixa_financeira(tabela, id, valor, ...)  [INVOKER]
+    -> baixa generica de financeiro_pagar/receber com suporte a parcial e estorno.
+f_gerar_lote_pagamentos(ids[])  [SECURITY DEFINER]
+    -> agrupa pagamentos elegiveis (conferido+aprovado+elegivel_lote+destino PIX/conta)
+       em lotes_pagamento + lotes_pagamento_itens (snapshot) e marca status_pagamento='em_lote'.
+f_estornar_pagamento_prestador / f_cancelar / f_reprovar  ciclo de reversao.
+
+--------------------------------------------------------------------------------
+2. GUARDAS DE INTEGRIDADE (impedem 'pago' sem baixa)
+--------------------------------------------------------------------------------
+  [OK] trg_guardar_pagar_pago_sem_baixa (financeiro_pagar)
+  [OK] trg_guardar_receber_pago_sem_baixa (financeiro_receber)
+  [OK] financeiro_pagar 'pago' SEM baixa: 0 titulos 'pago' SEM baixa
+
+--------------------------------------------------------------------------------
+3. INTEGRIDADE DAS BAIXAS (financeiro_baixas)
+--------------------------------------------------------------------------------
+  total=16 | geradas por pagar=6 | estornadas=0
+  [OK] saldo_restante == valor_original - valor_baixado (divergentes: 0)
+  [OK] nenhuma baixa excede o titulo (excedentes: 0)
+  [OK] nenhuma baixa com valor <= 0
+  [i] 9 baixas antigas sem conta_financeira_id (legado, pre-hardening).
+
+--------------------------------------------------------------------------------
+4. CICLO DE ENCERRAMENTO POR OS (pagamentos_prestadores 'pago')
+--------------------------------------------------------------------------------
+  PP status_pagamento='pago': 5  |  com baixa vinculada: 2
+   - 4262fec6 M43_2026-06-29_18-24-20 Motorist liq=1430.00 origem=escala_direta [OK baixa fe01c1a8 conta=9741ad36]
+   - 3884e3c0 MOTORISTA TESTE 02L liq=1430.00 origem=fechamento [AGREGADO - baixa por item]
+   - 32fe474f CESAR AUGUSTO HOLANDA SILVA  liq=2177.92 origem=manual [LEGADO - sem baixa]
+   - 6266f2a1 CESAR AUGUSTO HOLANDA SILVA  liq=658.20 origem=manual [LEGADO - sem baixa]
+   - 7bf3107d CESAR AUGUSTO HOLANDA SILVA  liq=520.00 origem=escala_direta [OK baixa c2a233cb conta=9741ad36]
+
+  [OK] Quando confirmado pela RPC oficial: PP.status_pagamento='pago' + data_pagamento +
+       financeiro_pagar.status='pago' + financeiro_baixas (mesma transacao). Ciclo fechado sem pendencia.
+  [i]  2 registros MANUAIS antigos estao 'pago' sem baixa (gravados fora da RPC  higiene legada).
+  [i]  1 registro de FECHAMENTO (agregado): a baixa ocorre nos itens, nao no cabecalho (by design).
+
+--------------------------------------------------------------------------------
+5. AGRUPAMENTO / LOTE (f_gerar_lote_pagamentos)
+--------------------------------------------------------------------------------
+  conferido+aprovado=3 | elegivel_lote=4 | em_lote=0 | com_lote_id=0
+  [OK] RPC de lote presente, idempotente e com guardas (tenant, cancelado, pago, destino bancario).
+  [i]  Nenhum lote materializado ainda (aguarda uso operacional).
+
+--------------------------------------------------------------------------------
+6. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] RPCs de baixa (individual, fechamento, generica, lote, estorno) presentes e atomicas.
+  [OK] Guardas impedem financeiro_pagar/receber 'pago' sem baixa (0 violacoes).
+  [OK] Integridade das baixas 100% (0 saldo errado, 0 excesso, 0 zerada).
+  [OK] Confirmacao via RPC encerra o ciclo da OS: PP pago + titulo pago + baixa + data_pagamento.
+  [i]  Residuos sao LEGADOS (2 manuais marcados pago fora da RPC; 1 fechamento agregado).
+
+EVIDENCIA: scripts/_fin03baixa_validacao.json | scripts/_fin03baixa_defs.sql
+================================================================================
+FIM  FIN-03-BAIXA
+================================================================================

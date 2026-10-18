@@ -1,0 +1,151 @@
+================================================================================
+MISSAO: TMS-FIN-SEC-02-A4-ACTIONENGINE-FINANCEIRO-RECEBER
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (auditoria + microcorrecao; sem escrita em PROD)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: eliminacao de DML direto inseguro (P0) no actionEngineService.
+RESULTADO: PASS na ELIMINACAO DO DML (P0 fechado) — caminho fail-safe.
+           Funcionalidade COM_REGISTRAR_PAGAMENTO = BLOCKED-CONTRATO (sem RPC oficial).
+================================================================================
+
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS AUDITADOS / ALTERADOS
+--------------------------------------------------------------------------------
+Auditados:
+  - src/services/ia/actionEngineService.ts (executarAcaoReal / case COM_REGISTRAR_PAGAMENTO)
+  - src/services/ia/rotinasMotorService.ts, agenteService.ts, diretorVirtualService.ts,
+    diretorVirtualLiveService.ts (callers)
+Alterados:
+  - src/services/ia/actionEngineService.ts (REMOCAO do INSERT direto; fail-safe)
+  - src/test/fin_sec02_a4_actionengine.test.ts (NOVO — 6 testes)
+SEM migration. SEM alterar RLS/grants. SEM service_role no browser.
+
+--------------------------------------------------------------------------------
+2. DML DIRETO ENCONTRADO
+--------------------------------------------------------------------------------
+actionEngineService.ts (executarAcaoReal), case "COM_REGISTRAR_PAGAMENTO":
+  await supabase.from("financeiro_receber").insert({
+    cliente_id, descricao, valor, status: "pago", data_pagamento
+  }).select().single();
+=> criava Conta a Receber ad-hoc marcada como 'pago', SEM baixa/gate/idempotencia.
+Era o P0 apontado no GATE-01 (item A4). Nenhum outro DML em financeiro_receber no
+arquivo (somente SELECTs de consulta: linhas 799, 919, 946 — permitidos/preservados).
+
+--------------------------------------------------------------------------------
+3. CALL SITES
+--------------------------------------------------------------------------------
+O caminho e acionado por ferramenta de IA (codigo_unico "COM_REGISTRAR_PAGAMENTO"):
+  actionEngineService.solicitarAcao() -> executarAcao() -> executarAcaoReal()
+Callers que disparam solicitacao/execucao:
+  - rotinasMotorService.ts:307 (rotinas IA)
+  - agenteService.ts:259/278, 386/417 (execucao autonoma)
+  - diretorVirtualService.ts:289/301, 430 (decisoes do Diretor Virtual)
+  - diretorVirtualLiveService.ts:230/282
+(Disparo real depende do vinculo robo<->ferramenta; a existencia do DML era
+ insegura independentemente de estar ativo.)
+
+--------------------------------------------------------------------------------
+4. CONTRATO/RPC SEGURO
+--------------------------------------------------------------------------------
+Nao existe RPC/contrato oficial para CRIAR um financeiro_receber ad-hoc:
+  - f_emitir_fatura: cria AR a partir de FATURA (rascunho->emitida). Nao serve.
+  - f_registrar_baixa_financeira: registra BAIXA em titulo EXISTENTE. Nao cria AR.
+  - f_aprovar/f_gerar_lote/f_confirmar_pagamento_prestador: dominio PRESTADOR.
+=> NAO havia contrato seguro compatível. Conforme regra critica: NAO improvisar RPC
+   nem mega-refatorar. Decisao: ELIMINAR o DML e retornar BLOCKED-CONTRATO para a
+   funcionalidade (desenho minimo no item 9).
+
+--------------------------------------------------------------------------------
+5. ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES: COM_REGISTRAR_PAGAMENTO -> INSERT direto em financeiro_receber status='pago'.
+DEPOIS: COM_REGISTRAR_PAGAMENTO -> NAO faz I/O; retorna resultado seguro:
+  { execucao_real:true, status:"BLOQUEADA", tabela:"financeiro_receber",
+    registros:0, acao:"pagamento_bloqueado",
+    motivo:"SEM_RPC_OFICIAL: ... exige RPC/contrato seguro oficial (A4 pendente)." }
+  + log de auditoria `acao_real_pagamento_bloqueado` (bloqueada_governanca).
+SEM falso sucesso; SEM criacao de titulo; SEM alteracao financeira.
+
+--------------------------------------------------------------------------------
+6. EVIDENCIAS / TESTES (6/6 PASS)
+--------------------------------------------------------------------------------
+A) DML direto encontrado (scan) ......................................... PASS
+E) ZERO INSERT/UPDATE/DELETE direto em financeiro_receber (scan) ........ PASS
+C) COM_REGISTRAR_PAGAMENTO nao cria titulo (fail-safe BLOQUEADA) ........ PASS
+D) SELECT de consulta permanece permitido ............................... PASS
+F) caminho retorna motivo/registros:0 (sem throw, sem falso sucesso) .... PASS
+G) log de bloqueio registrado (auditoria) .............................. PASS
+I) nao usa service_role ................................................ PASS
+- npx vitest run (test A4): 6/6 PASS.
+- npx tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo;
+  actionEngineService mantem os erros de tipo ja existentes do baseline).
+- npm run build: OK — "built in 53.19s".
+
+--------------------------------------------------------------------------------
+7. RLS / GRANTS PRESERVADOS (S1/S2 intactos)
+--------------------------------------------------------------------------------
+pagamentos_prestadores: authenticated {SELECT,REFERENCES,TRIGGER,TRUNCATE} (sem escrita);
+anon sem escrita; service_role ALL. (S1 permanece.)
+Nenhuma migration/alteracao de policy/grants nesta missao.
+
+--------------------------------------------------------------------------------
+8. PROD ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | lote_id NOT NULL 0 | status_pagamento='em_lote' 0 |
+financeiro_pagar 178 | financeiro_baixas 19.
+Nenhuma escrita em PROD (somente leitura; provas por source-scan; sem operacao real).
+
+--------------------------------------------------------------------------------
+9. DESENHO MINIMO DA CORRECAO NECESSARIA (feature BLOCKED-CONTRATO)
+--------------------------------------------------------------------------------
+Para reativar COM_REGISTRAR_PAGAMENTO de forma segura, e necessario um contrato
+oficial (RPC) de recebimento manual, por exemplo:
+  f_registrar_recebimento_manual(
+    p_cliente_id uuid, p_valor numeric, p_descricao text,
+    p_data_recebimento date, p_conta_financeira_id uuid,
+    p_idempotency_key text)
+  - SECURITY DEFINER + search_path fixo; auth.uid() + papel financeiro/admin;
+  - tenant do usuario; valida valor>0 e cliente;
+  - cria 1 financeiro_receber e registra a baixa via f_registrar_baixa_financeira
+    (ou grava baixa correspondente) numa unica transacao;
+  - idempotente por idempotency_key (uniq parcial).
+Enquanto isso NAO existir, a acao permanece BLOCKED (fail-safe). NAO improvisar.
+
+--------------------------------------------------------------------------------
+10. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) COM_REGISTRAR_PAGAMENTO fica indisponivel (fail-safe) ate existir RPC oficial.
+R2) FORA DO ESCOPO A4 (nao tocado): a UI "Nova Receita" (receberService.criarRecebivel)
+    tambem faz INSERT direto em financeiro_receber. Deve ser tratada em missao propria
+    (mesma classe de risco), se aplicavel.
+R3) P0 remanescentes do GATE-01 tratados: S1 (lock pp), S2 (UI->RPC) e A4 (este).
+R4) Erros TS pre-existentes no actionEngineService permanecem (nao introduzidos aqui).
+
+--------------------------------------------------------------------------------
+11. SITUACAO DOS P0 APOS A4
+--------------------------------------------------------------------------------
+- S1 (escrita direta em pagamentos_prestadores) ....... FECHADO (SEC-02-S1).
+- S2 (UI -> RPCs) ..................................... FECHADO (SEC-02-S2).
+- A4 (actionEngineService -> financeiro_receber) ...... FECHADO nesta missao.
+P0 restantes (GATE-01): 0 (mantidos S1/S2/A4; nenhuma regressao).
+
+--------------------------------------------------------------------------------
+12. PROXIMA MICRO-MISSAO RECOMENDADA
+--------------------------------------------------------------------------------
+P1 de integridade (nao iniciar automaticamente):
+  - reconciliar 10 pagamentos 'pago' SEM baixa;
+  - plano de reconciliacao das 9 faturas emitidas sem AR;
+  - (opcional) S3: REVOKE dos grants residuais de anon em tabelas financeiras.
+NAO iniciar P1 nesta missao.
+
+================================================================================
+Arquivo ..: TMS-FIN-SEC-02-A4-ACTIONENGINE-FINANCEIRO-RECEBER-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-SEC-02-A4-ACTIONENGINE-FINANCEIRO-RECEBER-RESULTADO.txt
+Tamanho ..: 8978 bytes
+Data .....: 24/09/2026 20:06:42
+================================================================================
+FIM DO RELATORIO — TMS-FIN-SEC-02-A4
+================================================================================

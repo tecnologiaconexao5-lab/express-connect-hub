@@ -1,0 +1,111 @@
+ESCALA-OS-03-M66-ORDEM-CRIACAO-LINK
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: CORREÇÃO CONTROLADA
+
+==================================================
+ROOT CAUSE (confirmada)
+==================================================
+
+Em f_trg_propagar_financeiro_alocacao (M66):
+  1. UPDATE alocacoes_escala.ordem_servico_id = v_os_id   (ANTES)
+  2. INSERT ordens_servico (id = v_os_id)                 (DEPOIS)
+A FK `alocacoes_escala_ordem_servico_id_fkey` é IMEDIATA (condeferrable=false).
+Quando a OS ainda não existe, o passo 1 viola a FK. Historicamente o erro era
+suprimido (THEN NULL) → ordem_servico_id ficava NULL (134 alocações). Após E2E-05
+(propaga), editar uma alocação sem OS FALHA.
+
+==================================================
+CORREÇÃO
+==================================================
+
+Reordenado o M66: quando ordem_servico_id IS NULL:
+  1. v_os_id = NEW.id (mecanismo canônico);
+  2. INSERT/upsert da OS PRIMEIRO (ON CONFLICT (id) DO UPDATE — idempotente);
+  3. SOMENTE DEPOIS UPDATE alocacoes_escala.ordem_servico_id = v_os_id;
+  4. propagação financeira normal (receber/pagar/pagamentos/composição).
+
+Migration: supabase/migrations/20260922000007_escala_os_03_m66_ordem_criacao_link.sql
+Rollback:  supabase/migrations/20260922000008_escala_os_03_rollback.sql
+  (rollback = definição EXATA anterior, com o link UPDATE antes do INSERT da OS)
+
+atualizarAlocacao NÃO foi alterado (autoridade única no backend = M66).
+
+Preservado: ON CONFLICT (id); EXCEPTION WHEN OTHERS THEN RAISE (E2E-05);
+guardas FIN-01; cancelamento E2E-03; OS não obrigatória OS-01.
+
+==================================================
+VALIDAÇÃO (BEGIN/ROLLBACK — sem operação real)
+==================================================
+
+CASO 1 — alocação sem OS e OS inexistente:
+  CASO1_LINK=true (ordem_servico_id = id) | OS_COUNT=1 | FIN pagar=1 receber=1
+  → OS criada primeiro, link persistido, sem FK violation, exatamente 1 OS.
+
+CASO 2 — alocação sem ordem_servico_id, mas OS id=alocacao.id já existe:
+  CASO2_OS_COUNT=1 | LINK=true  → reutiliza/upsert, sem segunda OS.
+
+CASO 3 — alocação já vinculada:
+  CASO3_OS_COUNT=1 | LINK_UNCHANGED=true → comportamento preservado.
+
+CASO 4 — falha financeira forçada (trigger no financeiro_receber):
+  CASO4_PROPAGATED=true (MSG=FORCED) | ALLOC_PERSISTED=0 | OS_PERSISTED=0
+  → atomicidade preservada; rollback total; sem estado parcial.
+
+CASO 5 — cancelamento:
+  CASO5_OS_STATUS=cancelada → E2E-03 coerente.
+
+Pós-deploy (função em produção, BEGIN/ROLLBACK):
+  PROD_OS_BEFORE_LINK=true
+  POSTDEPLOY_LINK=true | OS=1 | ROLLBACK_DONE
+
+==================================================
+RESULTADO
+==================================================
+
+ROOT_CAUSE=link UPDATE ANTES do INSERT da OS + FK imediata (+ supressão histórica de erro)
+FIX_IMPLEMENTED=YES
+PRODUCTION_DEPLOYED=YES
+LEGACY_EDIT_WITH_NULL_OS_SAFE=YES
+ROLLBACK_PREPARED=YES
+
+FK_FAILURE_FIXED=YES
+OS_CREATED_BEFORE_LINK=YES
+EXISTING_OS_REUSED=YES
+SINGLE_OS_GUARANTEED=YES
+FINANCIAL_PROPAGATION_PRESERVED=YES
+ATOMICITY_E2E05_PRESERVED=YES
+CANCEL_E2E03_PRESERVED=YES
+FIN01_PROTECTION_PRESERVED=YES
+OS01_PRESERVED=YES
+
+FILES_MODIFIED=
+  supabase/migrations/20260922000007_escala_os_03_m66_ordem_criacao_link.sql (novo)
+  supabase/migrations/20260922000008_escala_os_03_rollback.sql (novo)
+  src/test/escala_os_03_m66_ordem_criacao_link.test.ts (novo)
+
+TESTS=115/115 PASS (6 novos + regressão Escala direcionada)
+TYPECHECK=0 erros novos
+BUILD=✓ built in 29.52s
+
+DB_WRITES=0 (somente DDL CREATE OR REPLACE FUNCTION)
+MIGRATIONS=1 (aplicada em produção)
+
+==================================================
+FORA DO ESCOPO (não saneado)
+==================================================
+
+- 13 Classe A; 38 Classe B; 16 Classe D; 67 Classe E;
+- 9 divergências FIN-02; 27 órfãs; redundância M66/M80; APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE de dados (validação em BEGIN/ROLLBACK).
+- atualizarAlocacao não alterado. Sem saneamento. Sem DELETE.
+- Não iniciou outra missão.
+
+DB_WRITES=0
+MIGRATIONS=1

@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const p = await c.query(`SELECT id, nome_completo, status, regiao_principal, aceita_refrigerada, auth_user_id FROM prestadores WHERE nome_completo ILIKE '%TESTE%' OR nome_completo ILIKE '%PRESTADOR A%' ORDER BY created_at DESC LIMIT 10`);
+console.log("prestadores teste:", JSON.stringify(p.rows, null, 2));
+const v = await c.query(`SELECT id, prestador_vinculado, tipo_veiculo, capacidade_kg, status, placa FROM veiculos ORDER BY created_at DESC LIMIT 15`);
+console.log("veiculos:", JSON.stringify(v.rows, null, 2));
+await c.end();

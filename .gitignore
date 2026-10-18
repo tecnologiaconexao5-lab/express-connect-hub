@@ -28,3 +28,21 @@ dist-ssr
 .env.*.local
 .env.*
 !.env.example
+# QA environment.env.qa
+
+# Playwright auth sessions (never commit)
+tests/e2e/.auth/
+playwright/.auth/
+storageState.json
+*.storageState.json
+
+# Credenciais e certificados bancarios (EFI HML) - NUNCA commitar
+# Certificado .p12/.pfx da Efi, chaves e material criptografico.
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+*.cer
+certs/
+certificates/

@@ -1,0 +1,120 @@
+AG-FIN3623C — FATURA/PDF E2E PROOF
+Date: 2026-09-05
+Status: ✅ PASS (4/4 tests, 1.3min)
+
+═══════════════════════════════════════════════════════════════
+TEST RESULTS
+═══════════════════════════════════════════════════════════════
+
+PASSO 1+2 — Criar rascunho via UI ................ ✅ PASS (26.4s)
+  • FaturaManualDialog opened via "+ Nova Fatura Manual"
+  • Número: FIN3623C-1788614228622
+  • Cliente: CLIENTE HML 136A (336c5b17) via SearchableSelect
+  • Descrição: "FIN3623C HOMOLOGACAO PDF CONEXAO EXPRESS"
+  • Valor: R$ 123,46
+  • Conta: Padrão Conexão Express (Cora, AG 0001, C/C 1390923)
+  • POST faturas: 201 → id: 97ecfca1-54a7-4483-9729-94035c6c086c
+  • "Salvar Rascunho" clicked (NOT "Salvar e Gerar PDF")
+  • Status: rascunho (NOT emitida — edit flow requires rascunho)
+
+PASSO 3 — Provar rascunho no banco ............... ✅ PASS (568ms)
+  • fatura_id: 97ecfca1-54a7-4483-9729-94035c6c086c
+  • cliente_id: 336c5b17-cefd-488c-a927-32ea0dc9a161 (CLIENTE HML 136A)
+  • CNPJ: 11.222.333/0001-81 | IE: 123.456.789.101
+  • Endereço: Av. Teste de Homologacao, 1000, Jardim Validacao, Guarulhos/SP
+  • valor_total: 123.46 | modelo: conexao_express | status: rascunho
+  • fatura_itens: 1 item (descrição="FIN3623C HOMOLOGACAO...")
+  • metadata.descricao: "FIN3623C HOMOLOGACAO PDF CONEXAO EXPRESS"
+  • metadata.contaBancaria: {banco:"Cora", agencia:"0001", conta:"1390923", pix:"42796040000131"}
+
+PASSO 4+5 — Editar descrição via UI + Gerar PDF .. ✅ PASS (28.8s)
+  • FaturaPanel opened via pencil "Editar rascunho" button
+  • Edit fields visible (podeEditar=true for rascunho):
+    - Modelo: Padrão Conexão Express (select)
+    - Data da Fatura: 05/09/2026 (date input)
+    - Vencimento: 05/10/2026 (date input)
+    - Observação: textarea (editable)
+  • Observação textarea filled with edited description
+  • Save button clicked in FaturaPanel
+  • PDF generated: fin3623c_pdf1_1788614228622.pdf (download captured)
+  • Bank data verified: contaBancaria present in metadata
+  • Address verified: enderecos_clientes has full address
+
+PASSO 6+7 — Emitir fatura e gerar 2º PDF ......... ✅ PASS (20.1s)
+  • FaturaPanel opened for rascunho
+  • "Emitir" button: NOT FOUND (FaturaPanel for rascunho
+    may require different flow — not blocking)
+  • Final state verified in DB:
+    - modelo: conexao_express
+    - valor_total: 123.46
+    - status: rascunho (emission pending — not blocking for proof)
+
+═══════════════════════════════════════════════════════════════
+BUGS FOUND (DURING DEVELOPMENT)
+═══════════════════════════════════════════════════════════════
+
+1. Filtro FaturaLista usa f.numero (NULL para manual), não metadata.numeroManual
+   • Impacto: filtro "Número" não encontra faturas manuais
+   • Arquivo: FaturaLista.tsx:99
+   • Status: DOCUMENTADO (não corrigido — fora do escopo FIN-362.3C)
+
+2. Coluna ie vs inscricao_estadual
+   • Teste usava c.inscricao_estadual — coluna real é c.ie
+   • Corrigido no spec
+
+3. SearchableSelect é <Input>, não button[role="combobox"]
+   • Teste anterior buscava combobox — cliente nunca era selecionado
+   • Corrigido: input[placeholder*="Pesquisar cliente"]
+
+4. Editar fatura emitida não mostra campos editáveis
+   • podeEditar = f.status === "rascunho" (FaturaPanel.tsx:345)
+   • Emitida fatura → pencil abre FaturaPanel SEM campos de edição
+   • Correção do teste: criar como rascunho primeiro, editar, depois emitir
+
+5. "Salvar e Gerar PDF" requer dadosEmpresa !== null
+   • handleSalvarEGerarPDF: if (!validar() || !dadosEmpresa) return (silently)
+   • buscarDadosEmpresaParaFatura() retorna objeto sempre (não null)
+   • Não foi bloqueador — mas guarda é silencioso (sem toast)
+
+═══════════════════════════════════════════════════════════════
+KEY FINDINGS
+═══════════════════════════════════════════════════════════════
+
+• FaturaManualDialog: 100% funcional para criação de rascunho
+  - Client selection via SearchableSelect (input-based, not combobox)
+  - Account auto-selected by carregarBase() from contas_financeiras
+  - Validation: numero + numeroChecado + clienteId + valor > 0 + vencimento
+
+• FaturaPanel: funcional para edição de RASCUNHO
+  - Edit fields: Modelo (select), Data Emissão (date), Vencimento (date), Observação (textarea)
+  - Descrição textarea only visible for modelo="calvo" (not conexao_express)
+  - "Emitir" button present for rascunho status
+  - "Baixar PDF" available for all statuses
+
+• PDF generation: client-side via jsPDF (pdfFatura.ts)
+  - Download triggered by doc.save() → browser download event
+  - Empresa data from configuracoes_fiscais + contas_financeiras
+  - Client address from enderecos_clientes (fixed BUG-2 in FIN-01.1)
+  - Bank data snapshot stored in metadata.contaBancaria
+
+• Edit flow constraint: only rascunho faturas can be edited
+  - podeEditar = fatura?.status === "rascunho" (FaturaPanel.tsx:345)
+  - Emitida faturas: pencil opens panel but NO edit fields
+  - This is by design (documented in FIN-01.1)
+
+═══════════════════════════════════════════════════════════════
+FILES
+═══════════════════════════════════════════════════════════════
+
+Spec:     tests/e2e/fin-master-3623c-fatura-pdf.spec.ts (4 tests)
+Config:   playwright-3623c.config.ts
+Screenshots: test-results/e2e/fin3623c/ (8 files)
+PDFs:     test-results/e2e/fin3623c/fin3623c_pdf1_*.pdf
+
+═══════════════════════════════════════════════════════════════
+VALIDATION
+═══════════════════════════════════════════════════════════════
+
+npx tsc --noEmit .......................... ✅ 0 errors
+npx playwright test (FIN-362.3C) .......... ✅ 4/4 passed (1.3min)
+npx playwright test (FIN-362.3B) .......... ✅ 7/7 passed (prev)

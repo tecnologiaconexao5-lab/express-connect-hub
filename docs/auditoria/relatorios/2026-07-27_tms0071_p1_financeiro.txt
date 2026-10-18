@@ -1,0 +1,56 @@
+TMS-007.1 — REVISAO E CORRECAO DOS P1 DO FINANCEIRO
+
+Data: 2026-07-27
+Status: P1 DO FINANCEIRO CORRIGIDOS OU ISOLADOS — FLUXO HML
+        PRONTO PARA AUTORIZACAO
+Percentual: 51% (neutro)
+
+=======================================================================
+P1-01: ESCALA_OPERACIONAL LEGADO
+=======================================================================
+
+19 ocorrencias em 6 arquivos. Maioria e string constante
+(origem: "escala_operacional"), nao referencia de tabela.
+Unico acesso real a tabela: IntegracoesTMS.tsx (tab vazia).
+Status: ISOLADO — sem correcao urgente.
+
+=======================================================================
+P1-02: UNIQUE FINANCEIRO_PAGAR
+=======================================================================
+
+0 duplicatas atuais por os_id em todas as tabelas.
+Risco teorico. Migration proposta + ON CONFLICT (nao aplicada).
+Status: SEM URGENCIA.
+
+=======================================================================
+P1-03: MOCKS TYPES.TS
+=======================================================================
+
+8 mocks: 6 sem consumidor, 3 usados em dropdowns.
+PlanoContas.tsx: 100% mock — nao implementado.
+Marcados @deprecated.
+Status: CORRIGIDO (isolado).
+
+=======================================================================
+P1-04: CRUD SEM SERVICE LAYER
+=======================================================================
+
+3 componentes fazem INSERT direto ignorando services.
+Refatoracao grande demais para esta missao.
+Status: DOCUMENTADO.
+
+=======================================================================
+DECISÃO
+=======================================================================
+
+P1-01: ISOLADO
+P1-02: SEM URGENCIA (migration proposta)
+P1-03: CORRIGIDO (@deprecated)
+P1-04: DOCUMENTADO (requer refatoracao)
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+P1 DO FINANCEIRO CORRIGIDOS OU ISOLADOS -
+FLUXO HML PRONTO PARA AUTORIZACAO

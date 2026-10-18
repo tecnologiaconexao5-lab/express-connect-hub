@@ -1,0 +1,443 @@
+AG-07J.12 — AUDITORIA E UNIFICACAO DO GATE OPERACIONAL
+========================================================
+Status: CONCLUIDA
+Data: 2026-08-25
+Classificacao: B — REGRAS EXISTEM, MAS HA BYPASS NO ACEITE VIA REDE
+
+AMBIENTE:
+TMS
+
+REPOSITORIO:
+express-connect-hub
+
+CELULAR/REDMI NECESSARIO:
+NAO
+
+========================
+ARQUITETURA
+========================
+
+FUNCAO CENTRAL DE ELEGIBILIDADE EXISTE:
+SIM
+
+FUNCAO:
+src/services/escala/eligibilidadeOperacionalService.ts (611 linhas)
+
+FONTES UTILIZADAS:
+- prestadores (status, liberado_app, cnh_validade)
+- veiculos (status, tipo, capacidade_kg, capacidade_m3, tipo_carga)
+- ordens_servico (veiculo_tipo, peso, cubagem, carga_refrigerada, veiculo_termica, carga_ajudante)
+- documentos_prestadores (tipo, status, validade)
+
+PRESTADOR_ID E PRESERVADO:
+SIM — todas as funcoes usam prestador_id como identidade
+
+EXISTE LOGICA DUPLICADA:
+NAO — funcao centralizada, consumida por 3 pontos de enforcement TS
+
+========================
+TIPO DE VEICULO (AG-07I-B1)
+========================
+
+REGRA EXISTE:
+SIM
+
+LOCAL:
+eligibilidadeOperacionalService.ts:274-305 (tipoVeiculoCompativel — regra pura)
+eligibilidadeOperacionalService.ts:311-328 (verificarCompatibilidadeTipoVeiculo — async)
+
+TIPO COMPATIVEL:
+PASS — truck x truck = elegivel, van x van = elegivel, moto x moto = elegivel
+
+TIPO INCOMPATIVEL:
+PASS — truck x fiorino = bloqueado (motivo: tipo_veiculo_incompativel)
+
+NULL/DESCONHECIDO:
+RESULTADO — OS sem tipo exigido = elegivel (fail-open); veiculo sem tipo = inelegivel (fail-closed)
+
+Normalizacao:
+- minusculas + trim
+- equivalencias: NENHUMA (match exato)
+- "outro" NAO e wildcard
+
+========================
+CAPACIDADE (AG-07I-B2)
+========================
+
+REGRA EXISTE:
+SIM
+
+LOCAL:
+eligibilidadeOperacionalService.ts:368-402 (capacidadeVeiculoCompativel — regra pura)
+eligibilidadeOperacionalService.ts:408-426 (verificarCapacidadeVeiculo — async)
+
+UNIDADE:
+kg (peso) e m3 (cubagem)
+
+CAPACIDADE SUFICIENTE:
+PASS — OS 1500kg x veiculo 2500kg = elegivel
+
+CAPACIDADE INSUFICIENTE:
+PASS — OS 2500kg x veiculo 1500kg = bloqueado (capacidade_peso_insuficiente)
+
+LIMITE EXATO:
+PASS — OS 2500kg x veiculo 2500kg = elegivel
+
+NULL/DESCONHECIDO:
+RESULTADO — ambos ausentes/zero = fail-open (nao bloqueia)
+
+Regra: AMBOS os campos devem existir e ser > 0 para comparar.
+
+========================
+REFRIGERADO (AG-07I-B3)
+========================
+
+REGRA EXISTE:
+SIM
+
+LOCAL:
+eligibilidadeOperacionalService.ts:444-498 (operacaoRequerRefrigerado + veiculoPossuiCapacidadeTermica + refrigeradoCompativel)
+eligibilidadeOperacionalService.ts:577-611 (verificarRefrigerado — async)
+
+REQUER + POSSUI:
+PASS — OS refrigerada + veiculo refrigerado = elegivel
+
+REQUER + NAO POSSUI:
+PASS — OS refrigerada + veiculo seco = bloqueado (requisito_refrigerado_nao_atendido)
+
+REQUER + DESCONHECIDO:
+RESULTADO — OS refrigerada + veiculo null = bloqueado (fail-closed, nao assume)
+
+Fonte requisito: ordens_servico.carga_refrigerada (boolean) com precedencia sobre veiculo_termica (text)
+Fonte veiculo: veiculos.tipo_carga (text) — "seco"/"refrigerado"/"congelado"/"termico"
+
+========================
+TERMICO
+========================
+
+REGRA EXISTE:
+SIM
+
+E SEPARADA DE REFRIGERADO:
+NAO — "termico" e tratado como CAPACIDADE TERMICA do veiculo (mesmo grupo que refrigerado/congelado)
+No veiculo: TIPOS_CARGA_REFRIGERADO = {"refrigerado", "congelado", "termico", "termico"}
+Na operacao: veiculo_termica="termico" ativa o gate de refrigerado
+
+FONTE:
+- veiculos.tipo_carga: "termico" = veiculo com capacidade termica
+- ordens_servico.veiculo_termica: "termico" = operacao exige capacidade termica
+
+GATE:
+operacaoRequerRefrigerado() reconhece veiculo_termica="termico" como exigencia
+veiculoPossuiCapacidadeTermica() reconhece tipo_carga="termico" como capacidade
+
+Documentado: "termico" e um conceito UNICO com refrigerado no contexto deste sistema.
+Nao ha atributo "termico" separado de "refrigerado" — ambos mapeiam para
+a mesma dimensao: capacidade termica do veiculo.
+
+========================
+AJUDANTE (AG-07I-B5)
+========================
+
+REGRA EXISTE:
+SIM
+
+LOCAL:
+eligibilidadeOperacionalService.ts:518-571 (operacaoExigeAjudante + ajudanteCompativel + verificarAjudante)
+
+NAO EXIGE:
+PASS — carga_ajudante=false/null + ajudantes=0 = elegivel
+
+EXIGE + POSSUI:
+PASS — carga_ajudante=true + ajudantes=1 = elegivel
+
+EXIGE + NAO POSSUI:
+PASS — carga_ajudante=true + ajudantes=0 = bloqueado (ajudante_obrigatorio_ausente)
+
+QUANTIDADE E VALIDADA:
+SIM — ajudantes > 0 requerido quando carga_ajudante=true
+
+Fonte requisito: ordens_servico.carga_ajudante (boolean)
+Fonte alocacao: alocacoes_escala.ajudantes (integer)
+
+========================
+IDENTIDADE
+========================
+
+GATE USA prestador_id:
+SIM — todas as funcoes
+
+USA CPF COMO IDENTIDADE:
+NAO
+
+USA TELEFONE COMO IDENTIDADE:
+NAO
+
+USA EMAIL COMO IDENTIDADE:
+NAO
+
+USA NOME COMO IDENTIDADE:
+NAO
+
+PODE AVALIAR VEICULO DE OUTRO PRESTADOR:
+NAO — veiculos sao avaliados por PLACA, vinculados ao prestador via prestador_vinculado
+
+PODE HAVER AMBIGUIDADE COM MULTILOS VEICULOS:
+SIM — o gate avalia o veiculo ESPECIFICO (placa) informado na alocacao.
+Nao existe "veiculo_principal". O operador seleciona qual veiculo usar.
+
+========================
+PONTOS DE ENFORCEMENT
+========================
+
+--- TMS TypeScript (COM gate) ---
+
+1. criarAlocacao() — escalaService.ts:344-390
+   - Gate prestador: verificarElegibilidadeOperacionalPrestador
+   - Gate veiculo: verificarElegibilidadeVeiculo
+   - Gate tipo: verificarCompatibilidadeTipoVeiculo
+   - Gate capacidade: verificarCapacidadeVeiculo
+   - Gate refrigerado: verificarRefrigerado
+   - Gate ajudante: verificarAjudante
+
+2. trocarMotorista() — escalaService.ts:656-688
+   - Gate prestador: prestadorOperacionalmenteElegivelDados
+   - Gate tipo: verificarCompatibilidadeTipoVeiculo
+   - Gate capacidade: verificarCapacidadeVeiculo
+   - Gate refrigerado: verificarRefrigerado
+
+3. trocarVeiculo() — escalaService.ts:690-714
+   - Gate veiculo: verificacao inline de status
+   - Gate tipo: verificarCompatibilidadeTipoVeiculo
+   - Gate capacidade: verificarCapacidadeVeiculo
+   - Gate refrigerado: verificarRefrigerado
+
+--- RPC PostgreSQL (SEM gate de compatibilidade) ---
+
+4. f_aceitar_oportunidade_rede — a27b migration
+   - Valida: prestador existe + status='ativo'
+   - NAO valida: tipo_veiculo, capacidade, refrigerado, ajudante
+   - Cria alocacao_escala diretamente (INSERT/UPDATE)
+
+--- TS pos-RPC (SEM gate) ---
+
+5. sincronizarComEscala() — ordemServicoService.ts:36-160
+   - INSERT/UPDATE direto em alocacoes_escala
+   - SEM nenhuma verificacao de elegibilidade
+
+--- Rede/Filtro (filtro parcial) ---
+
+6. f_buscar_prestadores_compativeis — m84 migration
+   - Filtra: status='ativo', regiao (ILIKE), tipo_veiculo (score)
+   - NAO filtra: capacidade, refrigerado (score apenas), ajudante
+
+7. listarOportunidadesParaPrestador — redePrestadoresService.ts:378-459
+   - Filtra: regiao, refrigerado (aceita_refrigerada), veiculo cadastrado
+   - NAO filtra: capacidade, ajudante
+
+REDE FILTRA:
+PARCIAL — tipo veiculo (score) + regiao + refrigerado (boolean). Sem capacidade/ajudante.
+
+ACEITE REVALIDA:
+NAO — RPC f_aceitar_oportunidade_rede so valida prestador status='ativo'
+
+ALOCACAO REVALIDA:
+SIM — criarAlocacao() do TMS tem todos os gates. POREM a RPC cria a alocacao DIRETAMENTE.
+
+OPERACAO REVALIDA:
+NAO — sincronizarComEscala() e direto, sem gate
+
+PROTECAO SOMENTE NA UI:
+NAO — os gates estao no service layer (TS)
+
+BYPASS DIRETO POSSIVEL:
+SIM — chamada a f_aceitar_oportunidade_rede cria alocacao sem validar compatibilidade veiculo/OS
+
+========================
+MAPEAMENTO DE BYPASS
+========================
+
+FLUXO COM BYPASS:
+
+  App Motorista / TMS
+       |
+       v
+  aceitarOportunidade() [redePrestadoresService.ts]
+       |
+       v
+  RPC f_aceitar_oportunidade_rede [PostgreSQL]
+       |  - valida: prestador existe + status='ativo'
+       |  - NAO valida: veiculo, tipo, capacidade, refrigerado, ajudante
+       |
+       +-- INSERT/UPDATE alocacoes_escala (SEM GATE)
+       |
+       v
+  sincronizarComEscala() [ordemServicoService.ts]
+       |  - INSERT/UPDATE direto (SEM GATE)
+       |
+       v
+  Alocacao criada com veiculo potencialmente incompativel
+
+FLUXO SEM BYPASS (TMS Manual):
+
+  TMS Admin
+       |
+       v
+  criarAlocacao() [escalaService.ts]
+       |  - verificaElegibilidadeOperacionalPrestador
+       |  - verificarElegibilidadeVeiculo
+       |  - verificarCompatibilidadeTipoVeiculo
+       |  - verificarCapacidadeVeiculo
+       |  - verificarRefrigerado
+       |  - verificarAjudante
+       |
+       v
+  Alocacao criada com todos os gates
+
+========================
+TESTES EXISTENTES
+========================
+
+AG-07I-B1 (tipo veiculo):
+31 tests — PASS
+Cobre: regra pura, normalizacao, equivalencias, criarAlocacao, trocarMotorista, trocarVeiculo
+
+AG-07I-B2 (capacidade):
+24 tests — PASS
+Cobre: regra pura, kg/m3, limites, criarAlocacao, regressao B1
+
+AG-07I-B3 (refrigerado/termico):
+34 tests — PASS
+Cobre: regra pura, helpers, criarAlocacao, verificarRefrigerado, regressao B1/B2
+
+AG-07I-B5 (ajudante):
+46 tests — PASS
+Cobre: regra pura, helpers, verificarAjudante, regressao B1/B2/B3
+
+AG-07F (gate elegibilidade):
+17 tests — PASS
+Cobre: prestador status, liberado_app, criarAlocacao, f_buscar_operacoes_motorista
+
+AG-07J.10.1 (bypass conversao):
+10 tests — PASS
+
+AG-07J.11 (gate documental):
+14 tests — PASS
+
+TOTAL GATE TESTS: 176 tests — TODOS PASS
+
+========================
+ALTERACOES
+========================
+
+CLASSIFICACAO:
+B — REGRAS EXISTEM, MAS HA BYPASS NO ACEITE VIA REDE
+
+CORRECAO REALIZADA:
+NAO — correcao requer migration SQL (escopo: NAO alterar producao)
+
+ARQUIVOS ALTERADOS:
+NENHUM
+
+TESTES FOCALIZADOS:
+N/A (nenhuma correcao implementada)
+
+AG-07I-B1:
+31/31 PASS
+
+AG-07I-B2:
+24/24 PASS
+
+AG-07I-B3:
+34/34 PASS
+
+AG-07I-B5:
+46/46 PASS
+
+AG-07F:
+17/17 PASS
+
+AG-07J.10.1:
+10/10 PASS
+
+AG-07J.11:
+14/14 PASS
+
+REGRESSAO:
+176/176 PASS
+
+TYPESCRIPT:
+0 erros
+
+PRODUCAO ALTERADA:
+NAO
+
+BANCO ALTERADO:
+NAO
+
+MIGRATION EXECUTADA:
+NAO
+
+AG-07F EXECUTADA:
+NAO
+
+APP ALTERADO:
+NAO
+
+REDMI UTILIZADO:
+NAO
+
+BUILD APK:
+NAO
+
+========================
+BYPASS IDENTIFICADO — CORRECAO NECESSARIA
+========================
+
+GAP: f_aceitar_oportunidade_rede cria alocacao sem gate de compatibilidade
+
+IMPACTO:
+- Veiculo incompativel (tipo/capacidade/refrigerado) pode ser alocado via Rede
+- Alocacao fica registrada com dados potencialmente incompativeis
+- Gate de criarAlocacao() so protege o fluxo MANUAL do TMS
+
+CORRECAO NECESSARIA (requer migration SQL):
+1. Adicionar na RPC f_aceitar_oportunidade_rede:
+   - Buscar veiculo do prestador (veiculos.prestador_vinculado)
+   - Validar tipo_veiculo x OS.veiculo_tipo
+   - Validar capacidade_kg x OS.peso
+   - Validar tipo_carga x OS.carga_refrigerada/veiculo_termica
+   - Rejeitar aceite se incompativel
+
+2. NAO remover o sync fallback (sincronizarComEscala) — mantem compatibilidade
+
+3. Adicionar teste E2E: oportunidade Rede + veiculo incompativel = aceite recusado
+
+PRIORIDADE: ALTA — bypass permite alocacao com veiculo incompativel
+
+========================
+DECISAO
+========================
+
+GATE OPERACIONAL ESTA CENTRALIZADO:
+SIM — eligibilidadeOperacionalService.ts e a fonte unica
+
+BYPASS DE ELEGIBILIDADE EXISTE:
+SIM — RPC f_aceitar_oportunidade_rede nao revalida compatibilidade
+
+PROXIMO BLOQUEIO REAL:
+Correcao da RPC f_aceitar_oportunidade_rede para incluir gates de compatibilidade
+
+PROXIMA MISSAO:
+AG-07J.13 — Correcao do bypass no aceite via Rede (requer migration SQL)
+
+DECISAO FINAL:
+B — CORRECAO NECESSARIA
+
+DETALHAMENTO:
+- Arquitetura TS esta CORRETA e CENTRALIZADA
+- 176 testes validam as regras
+- Ha 1 bypass concreto: RPC cria alocacao sem gate
+- Correcao e isolada: adicionar validacoes na RPC
+- Nao ha divergencia entre funcoes (regra C nao se aplica)
+- Nao ha dependencia de schema novo (colunas ja existem)

@@ -15,7 +15,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -67,6 +67,12 @@ export default {
         "tms-sidebar-active": "hsl(var(--sidebar-active))",
         "tms-topbar": "hsl(var(--topbar-bg))",
         "tms-topbar-fg": "hsl(var(--topbar-fg))",
+      },
+      gridTemplateColumns: {
+        "16": "repeat(16, minmax(0, 1fr))",
+        "15": "repeat(15, minmax(0, 1fr))",
+        "14": "repeat(14, minmax(0, 1fr))",
+        "13": "repeat(13, minmax(0, 1fr))",
       },
       borderRadius: {
         lg: "var(--radius)",

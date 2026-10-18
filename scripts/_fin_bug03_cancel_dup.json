@@ -1,0 +1,147 @@
+{
+  "ts": "2026-10-07T02:43:40.429Z",
+  "alvo": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+  "original": "bb645429-b75b-49bb-be55-a612fec08947",
+  "motivo": "FIN-BUG-03 — duplicidade: fatura manual idêntica à FAT-2026-000030 (bb645429, R$ 810,40, mesma data/descrição/cliente); cancelada por correção assistida.",
+  "antes": {
+    "faturas": [
+      {
+        "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+        "status": "aguardando_aprovacao",
+        "numero": null,
+        "conta_receber_id": null,
+        "valor_total": "810.40",
+        "cancelado_em": null,
+        "cancelado_por": null,
+        "motivo_cancelamento": null
+      },
+      {
+        "id": "bb645429-b75b-49bb-be55-a612fec08947",
+        "status": "emitida",
+        "numero": "FAT-2026-000030",
+        "conta_receber_id": "8ce6db9e-38fd-4e49-9448-8157748add86",
+        "valor_total": "810.40",
+        "cancelado_em": null,
+        "cancelado_por": null,
+        "motivo_cancelamento": null
+      }
+    ],
+    "itens": [
+      {
+        "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947",
+        "status": "ativo",
+        "qtd": 1
+      },
+      {
+        "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+        "status": "ativo",
+        "qtd": 1
+      }
+    ],
+    "distribuicao": [
+      {
+        "status": "aguardando_aprovacao",
+        "qtd": 1
+      },
+      {
+        "status": "cancelada",
+        "qtd": 2
+      },
+      {
+        "status": "emitida",
+        "qtd": 10
+      },
+      {
+        "status": "rascunho",
+        "qtd": 1
+      }
+    ],
+    "ar": [
+      {
+        "id": "8ce6db9e-38fd-4e49-9448-8157748add86",
+        "status": "aberto",
+        "valor": "810.40",
+        "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947"
+      }
+    ]
+  },
+  "auth_uid": {
+    "uid": "de1c77e0-1818-431c-8503-ebe08bd95e80"
+  },
+  "rpc": {
+    "status": "cancelada",
+    "success": true,
+    "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+    "servicos_liberados": true
+  },
+  "commit": true,
+  "depois": {
+    "faturas": [
+      {
+        "id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+        "status": "cancelada",
+        "numero": null,
+        "conta_receber_id": null,
+        "valor_total": "0.00",
+        "cancelado_em": "2026-10-07T02:43:40.595Z",
+        "cancelado_por": "de1c77e0-1818-431c-8503-ebe08bd95e80",
+        "motivo_cancelamento": "FIN-BUG-03 — duplicidade: fatura manual idêntica à FAT-2026-000030 (bb645429, R$ 810,40, mesma data/descrição/cliente); cancelada por correção assistida."
+      },
+      {
+        "id": "bb645429-b75b-49bb-be55-a612fec08947",
+        "status": "emitida",
+        "numero": "FAT-2026-000030",
+        "conta_receber_id": "8ce6db9e-38fd-4e49-9448-8157748add86",
+        "valor_total": "810.40",
+        "cancelado_em": null,
+        "cancelado_por": null,
+        "motivo_cancelamento": null
+      }
+    ],
+    "itens": [
+      {
+        "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947",
+        "status": "ativo",
+        "qtd": 1
+      },
+      {
+        "fatura_id": "c4e74e94-3482-4a7f-911d-15dc1feadeeb",
+        "status": "cancelado",
+        "qtd": 1
+      }
+    ],
+    "distribuicao": [
+      {
+        "status": "cancelada",
+        "qtd": 3
+      },
+      {
+        "status": "emitida",
+        "qtd": 10
+      },
+      {
+        "status": "rascunho",
+        "qtd": 1
+      }
+    ],
+    "ar": [
+      {
+        "id": "8ce6db9e-38fd-4e49-9448-8157748add86",
+        "status": "aberto",
+        "valor": "810.40",
+        "fatura_id": "bb645429-b75b-49bb-be55-a612fec08947"
+      }
+    ]
+  },
+  "verificacoes": {
+    "duplicata cancelada": true,
+    "item da duplicata cancelado": true,
+    "motivo gravado": true,
+    "original intacta (FAT-2026-000030)": true,
+    "AR da original intacta": true,
+    "nenhuma AR nova": true,
+    "total de faturas igual": true,
+    "itens da original intactos": true
+  },
+  "ok": true
+}

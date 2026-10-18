@@ -1,0 +1,67 @@
+F0-G — DRE GERENCIAL + PLANO DE CONTAS (CORREÇÃO)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/services/financeiro/dreService.ts (NOVO — cálculos puros: classificar,
+     calcularDRE, periodoParaDatas)
+   src/components/financeiro/DREGerencial.tsx (reescrita da camada de dados;
+     fontes reais; sem estimativas inventadas; filtro por mês/trimestral/anual/
+     personalizado)
+   src/components/financeiro/PlanoContas.tsx (corrigido Select com value="" —
+     SelectItem value="" → "nenhum", normalizado no onValueChange)
+   src/test/f0g_dre_plano_contas.test.ts (NOVO — 12 validações)
+2. FONTES REAIS DO DRE
+   Receita      → financeiro_receber
+   Custos       → pagamentos_prestadores (impacto_dre = true)
+   Outras desp. → financeiro_pagar (sem repasses de prestador e sem impostos)
+   Baixas NÃO entram como competência.
+3. FONTE DE RECEITA
+   financeiro_receber é a ÚNICA fonte econômica de receita (fatura/OS não
+   duplicam). Filtro exclui status='cancelado'. Juros/aplicações classificados
+   como receita financeira (linha separada).
+4. FONTE DE CUSTOS DE PRESTADORES
+   pagamentos_prestadores com impacto_dre = true; valor usado = valor_liquido
+   (já embute serviços+pedágio+reembolsos+adicionais−descontos−adiantamentos+
+   multas+ajustes). impacto_dre=false não entra.
+5. OUTRAS DESPESAS
+   financeiro_pagar: competência por data_vencimento; EXCLUI cancelados,
+   repasses de prestador (os_id IS NOT NULL ou descricao 'Repasse%' — já em
+   pagamentos_prestadores) e impostos (vão para deduções).
+6. REGRA DE COMPETÊNCIA
+   Receber → data_vencimento; Pagar → data_vencimento (competencia quando houver);
+   Prestadores → competencia/data_competencia. Baixas/estornos não geram
+   competência. Sem inventar coluna onde não existe (receber não tem competencia).
+7. GRUPOS DO PLANO DE CONTAS
+   Reaproveitados os campos reais plano_conta/plano_contas/categoria/
+   categoria_financeira/conta_contabil. Grupos DRE: Receita Bruta, Deduções,
+   Receita Líquida, Custos de Prestadores, Despesas Operacionais (Adm/Comercial/
+   Outras), Financeiras, Resultado. Sem plano paralelo.
+8. FÓRMULA EXATA DO DRE
+   Receita Líquida = Receita Bruta − Deduções
+   Resultado Bruto = Receita Líquida − Custos Prestadores
+   EBITDA = Resultado Bruto − Despesas Operacionais (adm+comercial+outras)
+   EBIT = EBITDA − Depreciação(0)
+   Lucro antes IR = EBIT + Resultado Financeiro (rec. fin. − desp. fin.)
+   Lucro Líquido = Lucro antes IR − IR(0)
+9. EBITDA (mantido)
+   EBITDA = Receita Líquida − Custos Prestadores − Despesas Operacionais;
+   EXCLUI depreciação, despesas/receitas financeiras e IR. Sem fonte real de
+   depreciação/IR → 0 (não estimar). Regra documentada no código.
+10. PREVENÇÃO DE DUPLICIDADE
+    Receita contada 1x (financeiro_receber); custo prestador 1x
+    (pagamentos_prestadores; repasse excluído de financeiro_pagar);
+    impostos só nas deduções; baixas/estornos não entram no DRE.
+11. FILTROS
+    Mês (competência, lista derivada dos dados reais), Período
+    (mensal/trimestral/anual/personalizado com datas), comparação com período
+    anterior. Filtros fake (unidade/centro-custo hardcoded) removidos.
+12. RESULTADO DOS TESTES
+    npx vitest run f0g_dre_plano_contas.test.ts = 12/12 PASS
+    (receita não duplicada; custo não duplicado; impacto_dre; valor_liquido;
+     baixa não gera competência; estorno não altera; fórmula exata; sinais;
+     classificação plano de contas; filtros mensal/trimestral/anual/personalizado)
+13. PENDÊNCIAS
+    Depreciação/Amortização e IR/CSLL sem fonte real → zerados (não estimados);
+    rateio por centro de resultado/cliente quando houver dados; exportar e
+    reconciliar com contabilidade quando Plano de Contas oficial existir em banco.
+14. CONFIRMAÇÃO EXPLÍCITA: BANCO NÃO ALTERADO (correção somente em código;
+    nenhuma migration/SQL executada).

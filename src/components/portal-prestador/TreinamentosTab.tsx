@@ -1,8 +1,17 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { GraduationCap, Play, CheckCircle2, Clock, FileQuestion, Award, Share2 } from "lucide-react";
+import { GraduationCap, Play, CheckCircle2, Clock, FileQuestion, Award, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePortalPrestadorStore, type Treinamento } from "@/stores/portalPrestadorStore";
 import { Button } from "@/components/ui/button";
+
+const MOCK_TREINAMENTOS: Treinamento[] = [
+  { id: "t1", titulo: "Direção Defensiva", tipo: "video", status: "completo", progresso: 100, duracao: "45 min", imagem: "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400&h=300&fit=crop", concluidoEm: "2026-04-20" },
+  { id: "t2", titulo: "Segurança no Transporte de Cargas", tipo: "video", status: "completo", progresso: 100, duracao: "30 min", imagem: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&h=300&fit=crop", concluidoEm: "2026-04-25" },
+  { id: "t3", titulo: "Primeiros Socorros", tipo: "video", status: "em_andamento", progresso: 60, duracao: "50 min", imagem: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=400&h=300&fit=crop" },
+  { id: "t4", titulo: "Avaliação de Direção Defensiva", tipo: "prova", status: "pendente", progresso: 0, duracao: "20 min", imagem: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop" },
+  { id: "t5", titulo: "Certificação Transporte de Alimentos", tipo: "certificado", status: "completo", progresso: 100, duracao: "2h", imagem: "https://images.unsplash.com/photo-1553867745-7850eb3a3691?w=400&h=300&fit=crop", concluidoEm: "2026-05-01" },
+];
 
 const TIPO_CONFIG = {
   video: { icon: Play, label: "Vídeo", color: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800" },
@@ -13,8 +22,10 @@ const TIPO_CONFIG = {
 export default function TreinamentosTab() {
   const { treinamentos, iniciarTreinamento, concluirTreinamento } = usePortalPrestadorStore();
 
-  const completos = treinamentos.filter((t) => t.status === "completo").length;
-  const emAndamento = treinamentos.filter((t) => t.status === "em_andamento").length;
+  const listaTreinamentos = treinamentos.length > 0 ? treinamentos : MOCK_TREINAMENTOS;
+
+  const completos = listaTreinamentos.filter((t) => t.status === "completo").length;
+  const emAndamento = listaTreinamentos.filter((t) => t.status === "em_andamento").length;
 
   return (
     <div className="space-y-4 pb-4">
@@ -28,23 +39,30 @@ export default function TreinamentosTab() {
           <GraduationCap className="w-6 h-6 text-primary" />
           <div>
             <p className="text-sm font-semibold text-foreground">Progresso Geral</p>
-            <p className="text-xs text-muted-foreground">{Math.round((completos / treinamentos.length) * 100)}% completo</p>
+            <p className="text-xs text-muted-foreground">{Math.round((completos / (listaTreinamentos.length || 1)) * 100)}% completo</p>
           </div>
         </div>
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: `${(completos / treinamentos.length) * 100}%` }}
+            animate={{ width: `${(completos / (listaTreinamentos.length || 1)) * 100}%` }}
             className="h-full rounded-full bg-primary"
           />
         </div>
       </div>
 
-      <div className="space-y-3">
-        {treinamentos.map((t, i) => (
-          <TreinamentoCard key={t.id} treino={t} index={i} onStart={iniciarTreinamento} onComplete={concluirTreinamento} />
-        ))}
-      </div>
+      {listaTreinamentos.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <GraduationCap className="w-10 h-10 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">Nenhum treinamento disponível</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {listaTreinamentos.map((t, i) => (
+            <TreinamentoCard key={t.id} treino={t} index={i} onStart={iniciarTreinamento} onComplete={concluirTreinamento} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -52,6 +70,7 @@ export default function TreinamentosTab() {
 function TreinamentoCard({ treino, index, onStart, onComplete }: { treino: Treinamento; index: number; onStart: (id: string) => void; onComplete: (id: string) => void }) {
   const config = TIPO_CONFIG[treino.tipo];
   const Icon = config.icon;
+  const [imgErro, setImgErro] = useState(false);
 
   return (
     <motion.div
@@ -60,8 +79,12 @@ function TreinamentoCard({ treino, index, onStart, onComplete }: { treino: Trein
       transition={{ delay: index * 0.05 }}
       className={cn("rounded-2xl border overflow-hidden", treino.status === "completo" ? "border-green-200 opacity-70" : "border-border bg-card")}
     >
-      <div className="relative h-28 bg-muted overflow-hidden">
-        <img src={treino.imagem} alt={treino.titulo} className="w-full h-full object-cover" />
+      <div className="relative h-28 bg-muted overflow-hidden flex items-center justify-center">
+        {imgErro ? (
+          <ImageOff className="w-8 h-8 text-muted-foreground/40" />
+        ) : (
+          <img src={treino.imagem} alt={treino.titulo} className="w-full h-full object-cover" onError={() => setImgErro(true)} />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
         <div className="absolute bottom-2 left-3 right-3 flex items-start justify-between">
           <span className="text-xs text-white/80 font-medium truncate">{treino.duracao}</span>

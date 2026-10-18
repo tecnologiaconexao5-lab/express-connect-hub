@@ -1,0 +1,94 @@
+gESCALA-E2E-10B-CLEANUP-HML-EXECUTAR
+==================================================
+Ambiente: TMS + Supabase PRODUÇÃO | Data: 2026-09-22
+Modo: CLEANUP CONTROLADO / TRANSAÇÃO ÚNICA
+MIGRATIONS=0
+
+==================================================
+PASSO 1 — PRECHECK IMEDIATO
+==================================================
+PRECHECK_PASS=YES
+  alocação=1 | OS=1 | receber=1 | pagar=1 | PP=1 | eventos=2 | tabela HML=1
+  HML_TABLE_USAGE_COUNT=1 (somente a alocação 730c9584)
+  prestador.valor_diaria=250.00 | baixas=0 | composição=0 | POD/proofs=0
+  títulos pagos/recebidos/parciais=0
+  identidade: HOMOLOGAÇÃO APP / PRESTADOR TESTE APP / HML-A27B ✔
+  (Nota: as duas primeiras execuções do precheck deram falso-negativo por comparação
+   string/número e por encoding do literal acentuado no shell — SEM nenhum write; corrigido.)
+
+==================================================
+PASSO 2 — TRANSAÇÃO ÚNICA (BEGIN)
+==================================================
+DELETE financeiro_pagar        → 1
+DELETE financeiro_receber      → 1
+DELETE pagamentos_prestadores  → 1
+DELETE eventos_oficiais (2 IDs) → 2
+DELETE alocacoes_escala        → 1
+DELETE ordens_servico          → 1
+DELETE tabelas_valores (HML)   → 1
+UPDATE prestadores SET valor_diaria=NULL WHERE id=PROV AND valor_diaria=250.00 → 1
+(7 comandos DELETE → 8 linhas; 1 UPDATE)
+Nenhum rowcount divergente. Filtros por ID exato (sem nome/data).
+
+==================================================
+PASSO 3 — VALIDAÇÃO DENTRO DA TRANSAÇÃO
+==================================================
+INTXN: alloc=0 | os=0 | rec=0 | pag=0 | pp=0 | ev=0 | hml=0
+prestador.valor_diaria=NULL | valor_saida=NULL
+→ PASSOU
+
+==================================================
+PASSO 4 — COMMIT
+==================================================
+COMMIT=OK
+
+==================================================
+PASSO 5 — SNAPSHOT PÓS-COMMIT
+==================================================
+ALLOCATION_EXISTS=0
+OS_EXISTS=0
+RECEBER_EXISTS=0
+PAGAR_EXISTS=0
+PP_EXISTS=0
+COMPOSICAO_EXISTS=0
+BAIXAS_EXISTS=0
+POD_EXISTS=0
+PROOFS_EXISTS=0
+EVENTOS_EXISTS=0
+HML_TABLE_EXISTS=0
+PROVIDER_VALOR_DIARIA=NULL
+PROVIDER_VALOR_SAIDA=NULL
+
+GLOBAL_DELTA (produção, antes→depois): alloc=1, os=1, receber=1, pagar=1, pp=1, eventos=2,
+tabelas_valores=1 → exatamente as linhas do E2E. UNRELATED_DATA_CHANGED=NO.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+PRECHECK_PASS=YES
+TRANSACTION_PASS=YES
+DELETE_RECEBER=1
+DELETE_PAGAR=1
+DELETE_PP=1
+DELETE_EVENTOS=2
+DELETE_ALLOCATION=1
+DELETE_OS=1
+DELETE_HML_TABLE=1
+UPDATE_PROVIDER=1
+
+POSTCHECK_PASS=YES
+RESIDUAL_HML_ROWS=0
+PROVIDER_RESTORED=YES (valor_diaria=NULL; valor_saida=NULL; demais campos intactos)
+UNRELATED_DATA_CHANGED=NO
+
+RESULT=PASS
+DB_WRITES_LIQUIDOS=8 DELETEs + 1 UPDATE (7 comandos DELETE; eventos=2 linhas)
+MIGRATIONS=0
+
+NEXT=FECHAMENTO-TMS-PENDENCIAS-FINAIS-01
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Não cancelou antes de apagar; apenas IDs listados; nenhum histórico/teste antigo removido;
+cliente/veículo intactos; M66/M80 intactos; sem migration; outras pendências não tratadas.

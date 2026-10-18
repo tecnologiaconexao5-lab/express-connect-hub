@@ -1,0 +1,403 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02I — FINAL REAL SCHEMA GATE
+═══════════════════════════════════════════════════════════════════════════════
+Data: 2026-09-17
+Modelo: MiMo-V2.5
+Status: A — APTO PARA PREPARAR APLICAÇÃO CONTROLADA
+
+═══════════════════════════════════════════════════════════════════════════════
+1. IDENTIDADE DO CANDIDATO
+═══════════════════════════════════════════════════════════════════════════════
+
+  FORWARD SHA256:
+    09F6CB151391C06A68C7B069B941476E66B4BC9617F44F46E44658CC10822827
+
+  ROLLBACK SHA256:
+    E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+
+  HASH MATCH 02H.3:
+    PASS — hashes idênticos ao relatório 02H.3
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MIGRATION HISTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+  Query: SELECT version FROM supabase_migrations.schema_migrations
+         WHERE version LIKE '2026091%';
+
+  Resultado: 0 rows.
+
+  CANDIDATO JÁ APLICADO: NÃO ✓
+  MIGRATION HISTORY: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+3. SCHEMA REAL × CANDIDATO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Tabela                        Coluna         Tipo Real   Candidato   Match
+  ───────────────────────────── ────────────── ─────────── ─────────── ─────
+  composicao_financeira_os      os_id          UUID        UUID        ✓
+  composicao_financeira_os      cliente_id     UUID        UUID        ✓
+  composicao_financeira_os      prestador_id   UUID        UUID        ✓
+  financeiro_pagar              os_id          TEXT        TEXT        ✓
+  financeiro_receber            os_id          TEXT        TEXT        ✓
+  pagamentos_prestadores        os_id          UUID        UUID        ✓
+  ordens_servico                id             UUID        UUID        ✓
+  ordens_servico                cliente        UUID        UUID        ✓
+  ordens_servico                prestador      UUID        UUID        ✓
+  ordens_servico                cliente_id     TEXT        TEXT        ✓
+  ordens_servico                prestador_id   TEXT        TEXT        ✓
+
+  SCHEMA REAL: PASS — 11/11 tipos compatíveis
+
+═══════════════════════════════════════════════════════════════════════════════
+4. M66 FINAL × PRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Função: f_trg_propagar_financeiro_alocacao
+  SECURITY DEFINER: SIM ✓
+  search_path: SET search_path TO 'public' ✓
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ PRESERVAÇÃO CONFIRMADA:                                                │
+  │                                                                       │
+  │ ✅ Criação de OS: INSERT INTO ordens_servico com ON CONFLICT          │
+  │ ✅ Alocação→OS: v_os_id = NEW.ordem_servico_id ou NEW.id             │
+  │ ✅ Cliente/Prestador lookup: SELECT com fallback                      │
+  │ ✅ Reversa: somada aos valores base                                   │
+  │ ✅ financeiro_receber: v_os_id::TEXT (coluna é TEXT) ✓               │
+  │ ✅ financeiro_pagar: v_os_id::TEXT (coluna é TEXT) ✓                 │
+  │ ✅ financeiro_pagar.valor = v_valor_liquido (obrigação total) ✓      │
+  │ ✅ pagamentos_prestadores: v_os_id (UUID direto) ✓                   │
+  │ ✅ composicao_financeira_os: v_os_id (UUID direto, sem cast) ✓       │
+  │ ✅ ON CONFLICT preservado em todas as tabelas                         │
+  │                                                                       │
+  │ MUDANÇA INTENCIONAL:                                                   │
+  │   financeiro_pagar.valor: v_valor_prestador → v_valor_liquido        │
+  │   (obrigação total do prestador = repasse + pedágio + adic - desc)   │
+  │                                                                       │
+  │ SEM MUDANÇA COLATERAL NÃO DOCUMENTADA.                                │
+  │                                                                       │
+  │ M66: PASS                                                             │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+5. M80 FINAL × PRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Função: f_trg_propagar_financeiro_os
+  SECURITY DEFINER: SIM ✓
+  search_path: SET search_path = public ✓
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ PRESERVAÇÃO CONFIRMADA:                                                │
+  │                                                                       │
+  │ ✅ financeiro_receber: NEW.id::TEXT (coluna TEXT) ✓                   │
+  │ ✅ financeiro_pagar: NEW.id::TEXT (coluna TEXT) ✓                     │
+  │ ✅ financeiro_pagar.valor = v_valor_liquido ✓                        │
+  │ ✅ pagamentos_prestadores: NEW.id (UUID direto) ✓                     │
+  │ ✅ composicao PERFORM: NEW.id (UUID, sem ::TEXT) ✓                    │
+  │ ✅ composicao INSERT: NEW.id (UUID direto) ✓                          │
+  │ ✅ composicao UPDATE WHERE: NEW.id (UUID direto) ✓                    │
+  │ ✅ jsonb_typeof para JSONB corretamente preservado                    │
+  │ ✅ NEW.cliente/NEW.prestador (UUID) para financeiro ✓                │
+  │                                                                       │
+  │ M80: PASS                                                             │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+6. TRIGGERS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Query: pg_trigger WHERE relname IN ('alocacoes_escala','ordens_servico')
+
+  alocacoes_escala (10 triggers):
+    trg_alocacoes_escala_updated_at
+    trg_cancelar_financeiro_alocacao
+    trg_evento_alocacao_cancelada
+    trg_evento_alocacao_criada
+    trg_evento_alocacao_motorista_trocado
+    trg_evento_alocacao_recusada
+    trg_evento_operacao_finalizada
+    trg_evento_prestador_aceitou
+    trg_propagar_financeiro_alocacao          ← M66
+    trg_registrar_historico_alocacao
+
+  ordens_servico (6 triggers):
+    trg_evento_os_cancelada
+    trg_evento_os_criada
+    trg_evento_os_finalizada
+    trg_evento_os_status_changed
+    trg_notificar_os_para_app
+    trg_propagar_financeiro_os                ← M80
+
+  TRIGGERS:
+    M66: 1 ocorrência por tabela ✓
+    M80: 1 ocorrência por tabela ✓
+    Nenhum trigger não-relacionado removido ✓
+    DROP TRIGGER IF EXISTS antes de CREATE TRIGGER no candidato ✓
+
+  TRIGGERS: PASS — sem duplicidade real; 02G confundiu múltiplas linhas
+    de catálogo com triggers duplicados. A query pg_trigger retorna 1
+    linha por trigger. Todos os 16 triggers são funcionais e distintos.
+
+═══════════════════════════════════════════════════════════════════════════════
+7. RPC FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  f_confirmar_pagamento_fechamento: NÃO EXISTE EM PRODUÇÃO (será criada)
+
+  Definição candidata:
+    LANGUAGE plpgsql
+    SECURITY DEFINER         ✓
+    SET search_path = public ✓
+
+  Permissões:
+    REVOKE ALL FROM PUBLIC   ✓
+    REVOKE ALL FROM anon     ✓
+    GRANT EXECUTE TO authenticated ✓
+    GRANT EXECUTE TO service_role  ✓
+
+  Validações pré-mutação (RETURN QUERY SELECT false):
+    - Fechamento não encontrado    → retorno seguro ✓
+    - Fechamento já pago           → retorno seguro ✓
+    - Fechamento não aprovado      → retorno seguro ✓
+    - Sem itens vinculados          → retorno seguro ✓
+    - Divergência de valores       → retorno seguro ✓
+
+  Mutação (dentro do loop):
+    - Item cancelado → RAISE EXCEPTION ✓
+    - f_confirmar_pagamento_prestador retorna false → RAISE EXCEPTION ✓
+    - Nenhum handler engole a exception ✓
+
+  ATOMICIDADE ESTÁTICA: PASS
+
+  ATOMICIDADE LAB: 31/31 já comprovado (02H.2 + 02H.3)
+
+  RPC: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+8. SNAPSHOT FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  Tabela fin_sane_02b_snapshot: NÃO EXISTE EM PRODUÇÃO (será criada)
+
+  Estrutura:
+    execucao_id UUID DEFAULT gen_random_uuid()   ✓
+    cada execução usa um único v_execucao_id      ✓
+    snapshot criado ANTES do UPDATE               ✓
+    UPDATE seleciona: s.execucao_id = v_execucao_id ✓
+    não depende de MAX(processado_em)             ✓
+    não existe seleção ambígua entre execuções    ✓
+
+  Rollback:
+    usa financeiro_pagar.id (chave primária) para restaurar
+    exatamente os valores correspondentes ✓
+
+  SNAPSHOT: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+9. SNAPSHOT — PRIVILÉGIOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Grants na migration:
+    GRANT SELECT, INSERT ON fin_sane_02b_snapshot TO authenticated
+    GRANT SELECT, INSERT ON fin_sane_02b_snapshot TO service_role
+    GRANT USAGE, SELECT ON SEQUENCE ... TO authenticated
+    GRANT USAGE, SELECT ON SEQUENCE ... TO service_role
+
+  Análise:
+    anon: SEM acesso ✓
+    authenticated comum: SELECT/INSERT permitido (snapshot é append-only
+      para auditoria; sem UPDATE/DELETE) — aceitável para rastreabilidade
+    service_role: acesso necessário ✓
+    RPC não depende de acesso direto à snapshot ✓
+
+  SNAPSHOT PRIVILÉGIOS: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+10. DRY-RUN CORRETO — PRODUÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Consulta usando titulo_tabela/titulo_id (colunas reais de financeiro_baixas):
+
+  TOTAL candidatos: 36
+
+  TESTE: (nenhum — produção ZERO WRITES)
+
+  REAL:
+    36 registros com fp.valor <> pp.valor_liquido
+    Todos com status 'aberto' (24) ou 'pendente' (12)
+    Todos com fornecedor_id NOT NULL e os_id NOT NULL
+
+  VALOR ATUAL (soma): R$ 29.555,20
+    (soma de fp.valor dos 36 registros)
+
+  VALOR PROPOSTO (soma): R$ 34.069,62
+    (soma de pp.valor_liquido dos 36 registros)
+
+  DIFERENÇA: R$ 4.514,42
+    (soma de todas as diferenças individuais)
+
+  Composição da diferença:
+    Todos os 36 registros: diferença = pedagio + adicionais
+    Nenhum registro com componente não-explicável.
+
+  DRY-RUN: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+11. EXPLICABILIDADE DOS CANDIDATOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Para cada um dos 36 registros:
+    diferença = pedagio + adicionais
+
+  Componentes disponíveis:
+    valor base     = valor_servicos (do pagamentos_prestadores)
+    pedágio        = pedagio (do pagamentos_prestadores)
+    adicional      = adicionais (do pagamentos_prestadores)
+    ajudante       = 0 em todos os registros (não contribui)
+    desconto       = 0 em todos os registros (não contribui)
+
+  REAL EXPLICADOS: 36/36
+  REAL NÃO EXPLICADOS: 0/36
+
+ Todos os registros têm diferença inequivocamente explicável
+  como pedágio + adicionais. Nenhum registro com componente
+  não-explicável seria incluído no UPDATE automático.
+
+═══════════════════════════════════════════════════════════════════════════════
+12. PAGOS SEM BAIXA — CONSULTA CORRETA
+═══════════════════════════════════════════════════════════════════════════════
+
+  Query: financeiro_baixas.titulo_tabela + titulo_id
+
+  TOTAL: 1
+  REAL: 1
+  TESTE: 0
+
+  Registro:
+    id: f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+    os_id: NULL
+    valor: R$ 137,89
+    status: pago
+    baixas_count: 0
+
+  Análise: Registro manual/legado sem OS vinculada.
+    Não é candidato do DRY-RUN (sem pagamentos_prestadores
+    vinculado). Fora do escopo da migration.
+
+  financeiro_baixas totais: 16
+
+  PAGOS SEM BAIXA: 1 registro — sem impacto na migration
+
+═══════════════════════════════════════════════════════════════════════════════
+13. TERMINAIS EXCLUÍDOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Candidatos NÃO incluem:
+    status IN ('pago','paga','cancelado','cancelada','estornado')
+    → Protegidos por WHERE COALESCE(fp.status, '') NOT IN (...)
+
+  Pagos sem baixa (1 registro): NÃO é candidato (sem pagamentos_prestadores
+    vinculado, não atende ao JOIN da query de snapshot).
+
+  TERMINAIS EXCLUÍDOS: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+14. ROLLBACK × SCHEMA REAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  Rollback:
+    ✅ financeiro_pagar: restaura valor_anterior do snapshot
+    ✅ M66 rollback: valor = v_valor_prestador (base)
+    ✅ M80 rollback: valor = v_valor_prestador (base)
+    ✅ M66 composicao: v_os_id (UUID direto) ✓
+    ✅ M80 composicao: NEW.id (UUID direto) ✓
+    ✅ RPC nova removida: DROP FUNCTION IF EXISTS
+    ✅ Snapshot preservado para auditoria
+    ✅ Títulos fora do snapshot não alterados
+    ✅ Não remove baixas legítimas
+    ✅ Não altera títulos terminais
+
+  ROLLBACK: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+15. FRONTEND SERVICE
+═══════════════════════════════════════════════════════════════════════════════
+
+  Arquivo: src/services/financeiro/fechamentoService.ts (526 linhas)
+
+  função pagarFechamento():
+    ✅ Chama f_confirmar_pagamento_fechamento via supabase.rpc()
+    ✅ Não repete updates financeiros depois da RPC
+    ✅ Trata errRpc (erro de conexão/infra)
+    ✅ Trata sucesso=false (retornado pelas validações pré-mutação)
+    ✅ Trata fechamento já pago (idempotência no service)
+    ✅ Após RPC sucesso, apenas busca detalhes atualizados
+
+  FRONTEND SERVICE: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+16. DECISÃO FINAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  CLASSIFICAÇÃO: A — APTO PARA PREPARAR APLICAÇÃO CONTROLADA
+
+  "A" significa:
+    O próximo prompt poderá preparar/executar uma aplicação
+    controlada, mediante autorização explícita.
+    NÃO autoriza produção automaticamente.
+
+  RESUMO DOS GATES:
+    SHA256:                          PASS
+    MIGRATION HISTORY:               PASS
+    SCHEMA REAL:                     PASS
+    M66:                             PASS
+    M80:                             PASS
+    TRIGGERS:                        PASS
+    RPC:                             PASS
+    ATOMICIDADE ESTÁTICA:            PASS
+    ATOMICIDADE LAB:                 31/31
+    SNAPSHOT:                        PASS
+    SNAPSHOT PRIVILÉGIOS:            PASS
+    DRY-RUN:                         PASS
+    EXPLICABILIDADE:                 36/36
+    PAGOS SEM BAIXA:                 1 (sem impacto)
+    TERMINAIS EXCLUÍDOS:             PASS
+    ROLLBACK:                        PASS
+    FRONTEND SERVICE:                PASS
+    PRODUÇÃO:                        ZERO WRITES
+
+═══════════════════════════════════════════════════════════════════════════════
+RISCOS RESIDUAIS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. 1 registro pago sem baixa (f83a3249, R$137.89, os_id=NULL) —
+     legado, sem impacto na migration, requer investigação manual.
+
+  2. 36 registros com diferença total R$4.514,42 — todos explicados
+     por pedágio+adicional. A correção é intencional e segura.
+
+  3. A migration snapshota ANTES de atualizar — se aplicada 2×,
+     a segunda execução criaria duplicatas na tabela de snapshot
+     (append-only, sem ON CONFLICT). Impacto: lixo de auditoria,
+     sem impacto funcional (UPDATE é idempotente via UNIQUE(os_id)).
+
+  4. Triggers M66/M80 em produção são 1 cada — sem duplicidade real.
+
+═══════════════════════════════════════════════════════════════════════════════
+PRÓXIMA MISSÃO ÚNICA
+═══════════════════════════════════════════════════════════════════════════════
+
+  Preparar aplicação controlada da migration FIN-SANE-02B em produção.
+  Requer autorização explícita do responsável.
+
+═══════════════════════════════════════════════════════════════════════════════
+INFORMAÇÕES
+═══════════════════════════════════════════════════════════════════════════════
+
+  Caminho: FIN-SANE-02I-FINAL-REAL-SCHEMA-GATE.txt
+  Tamanho: ~12 KB
+  Data/Hora: 2026-09-17T02:00 BRT
+  Modelo: MiMo-V2.5

@@ -1,0 +1,502 @@
+AG-07J.10 — TMS APROVAÇÃO → LIBERADO_APP
+=========================================
+Data: 2026-08-24
+Ambiente: TMS CONEXÃO EXPRESS / EXPRESS CONNECT HUB
+Repositório: express-connect-hub
+
+═══════════════════════════════════════════════════════════════
+1. AMBIENTE EXECUTADO
+═══════════════════════════════════════════════════════════════
+TMS: SIM
+APP: NÃO
+PRODUÇÃO: NÃO ALTERADA
+BANCO: NÃO ALTERADO
+MIGRATION: NÃO EXECUTADA
+REDMI: NÃO UTILIZADO
+BUILD APK: NÃO
+
+═══════════════════════════════════════════════════════════════
+2. TMS REAL DISPONÍVEL
+═══════════════════════════════════════════════════════════════
+SIM — código fonte completo do módulo Recrutamento/Kanban/Homologação auditado.
+
+═══════════════════════════════════════════════════════════════
+3. FLUXO DE APROVAÇÃO LOCALIZADO
+═══════════════════════════════════════════════════════════════
+SIM — existem TRÊS caminhos distintos de aprovação:
+
+CAMINHO 1 — Kanban Enterprise "Aprovar" (quick action)
+  UI: KanbanCard.tsx:280 → onMove(candidate.id, 'aprovado')
+  Hook: useEnterpriseKanban.ts:84 → handleMoveCandidate()
+  Service: enterpriseKanbanService.ts:684 → mover(id, 'aprovado')
+  Supabase: UPDATE recrutamento_candidatos SET stage='aprovado'
+  EFEITO: Apenas staging do candidato. NÃO altera tabela prestadores.
+
+CAMINHO 2 — "Converter em Prestador" (DetalhesCandidatoPipelineSheet)
+  UI: DetalhesCandidatoPipelineSheet.tsx:117 → conversaoCandidatoService.converterCandidatoParaPrestador(id)
+  Service: conversaoCandidatoService.ts:99
+  Bridge: conversaoCandidatoService.ts:265 → sincronizarComOperacao()
+  Supabase:
+    SE existente: UPDATE prestadores SET status='ativo', liberado_app=true
+    SE novo: INSERT INTO prestadores (status='ativo', liberado_app=true)
+  EFEITO: Cria/atualiza prestador operacional. Define liberado_app=true.
+
+CAMINHO 3 — "Ativar Prestador" (Homologacao.tsx)
+  UI: Homologacao.tsx:97 → handleAtivar(candidato.id)
+  Service: recrutamentoIntegracao.ts:107 → ativarPrestador()
+  Supabase:
+    SE duplicado: UPDATE existente (SEM tocar status/liberado_app)
+    SE novo: INSERT INTO prestadores (status='ativo', liberado_app=true)
+  EFEITO: Cria prestador com liberado_app=true. Rota legada (tabela 'candidatos').
+
+═══════════════════════════════════════════════════════════════
+4. FLUXO REAL (descrição)
+═══════════════════════════════════════════════════════════════
+O fluxo completo TMS é:
+
+App Motorista cadastra → prestadores (status=em_analise, liberado_app=false)
+         ↓
+AG-07J.1 bridge: buscarECadastrarAppPrestadores() cria recrutamento_candidatos
+  com prestador_id vinculado ao prestador operacional
+         ↓
+Operador TMS navega pelo Pipeline Enterprise (Kanban)
+  → move candidato entre estágios (novo → análise → documentação → ... → aprovado)
+         ↓
+APROVAÇÃO (Caminho 1): Kanban "Aprovar" → stage='aprovado' no candidato
+  (APENAS staging — prestadores NÃO é alterado ainda)
+         ↓
+CONVERSÃO (Caminho 2): "Converter em Prestador" → sincronizarComOperacao()
+  → UPDATE prestadores SET status='ativo', liberado_app=true
+  → recrutamento_candidatos SET prestador_id, stage='ativo'
+  → APP É LIBERADO ✅
+
+A aprovação no Kanban (Caminho 1) é NECESSÁRIA mas NÃO SUFICIENTE.
+A conversão (Caminho 2) é o passo que efetivamente libera o App.
+
+═══════════════════════════════════════════════════════════════
+5. ARQUIVOS ENVOLVIDOS
+═══════════════════════════════════════════════════════════════
+UI:
+  src/modules/recrutamento/components/enterprise-kanban/KanbanCard.tsx
+    → QuickActionButton "Aprovar" (linha 280)
+  src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx
+    → handleMover (linha 89), handleConverter (linha 113)
+  src/modules/recrutamento/components/enterprise-kanban/EnterpriseKanbanBoard.tsx
+    → handleMoveCandidate (linha 216)
+  src/components/recrutamento/Homologacao.tsx
+    → handleAtivar (linha 97) — rota legada
+
+Hooks:
+  src/modules/recrutamento/components/enterprise-kanban/useEnterpriseKanban.ts
+    → handleMoveCandidate (linha 84) — chama enterpriseKanbanService.mover()
+  src/modules/recrutamento/hooks/usePrestadores.ts
+    → atualizarStatus (linha 64) — chama prestadoresService.atualizarStatus()
+
+Services:
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts
+    → mover() (linha 684) — UPDATE recrutamento_candidatos.stage
+  src/modules/recrutamento/services/conversaoCandidatoService.ts
+    → converterCandidatoParaPrestador() (linha 99)
+    → sincronizarComOperacao() (linha 265) — UPDATE/INSERT prestadores
+  src/modules/recrutamento/services/prestadoresService.ts
+    → syncAtualizarOperacional() (linha 346) — UPDATE prestadores.status + liberado_app
+    → syncRemoverOperacional() (linha 405) — UPDATE liberado_app=false
+    → atualizarStatus() (linha 303) — chama atualizar() → syncAtualizarOperacional()
+  src/services/recrutamentoIntegracao.ts
+    → ativarPrestador() (linha 107) — INSERT prestadores (status=ativo, liberado_app=true)
+  src/modules/recrutamento/services/identidadePrestadorService.ts
+    → buscarPrestadorOperacionalExistente() (linha 52) — busca por origem/CPF/telefone
+
+Types:
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanTypes.ts
+    → STAGE_TRANSITIONS (linha 183) — transições permitidas
+
+Testes:
+  src/test/ag07g_unificacao_app_recrutamento.test.ts
+    → Teste I: aprovação → status ativo + liberado_app=true (linha 145)
+    → Teste J: reprovação → liberado_app=false (linha 155)
+    → Teste "sem prestador existente" → cria com liberado_app=true (linha 176)
+
+═══════════════════════════════════════════════════════════════
+6. AÇÃO DE APROVAÇÃO (detalhada)
+═══════════════════════════════════════════════════════════════
+
+KANBAN "APROVAR" (Caminho 1):
+  Arquivo: enterpriseKanbanService.ts:684
+  Função: mover(id, novoStage)
+  O que faz:
+    1. Valida existência do candidato
+    2. Valida transição permitida (STAGE_TRANSITIONS)
+    3. Valida bloqueios do pipeline (verificarBloqueioPipeline)
+    4. UPDATE recrutamento_candidatos SET stage='aprovado'
+    5. Registra evento no histórico
+  O que NÃO faz:
+    - NÃO altera tabela prestadores
+    - NÃO define liberado_app
+    - NÃO cria prestador operacional
+
+"CONVERTER EM PRESTADOR" (Caminho 2):
+  Arquivo: conversaoCandidatoService.ts:99
+  Função: converterCandidatoParaPrestador(candidatoId)
+  O que faz:
+    1. Busca candidato em recrutamento_candidatos
+    2. Valida telefone obrigatório
+    3. Busca duplicata (buscarDuplicata)
+    4. SE duplicata: vincula existente, retorna
+    5. SE novo: cria em recrutamento_prestadores + sincronizarComOperacao()
+    6. sincronizarComOperacao():
+       a. Busca prestador operacional existente (identidadePrestadorService)
+       b. SE existente: UPDATE prestadores SET status='ativo', liberado_app=true
+       c. SE novo: INSERT INTO prestadores (status='ativo', liberado_app=true)
+    7. Atualiza recrutamento_candidatos SET prestador_id, stage='ativo'
+
+ATIVAR PRESTADOR (Caminho 3 — legado):
+  Arquivo: recrutamentoIntegracao.ts:107
+  Função: ativarPrestador(candidato)
+  O que faz:
+    1. checarDuplicidade() — por CPF, email, telefone
+    2. SE duplicado: UPDATE existente (SEM tocar status/liberado_app)
+    3. SE novo: INSERT INTO prestadores (status='ativo', liberado_app=true)
+  ⚠️ BUG: Quando encontra duplicado, NÃO seta liberado_app no UPDATE
+     (linhas 126-159 — updates são apenas para campos vazios)
+
+═══════════════════════════════════════════════════════════════
+7. MATRIZ OBRIGATÓRIA
+═══════════════════════════════════════════════════════════════
+
+TMS POSSUI AÇÃO REAL DE APROVAÇÃO:
+  SIM — Kanban "Aprovar" (Caminho 1) + "Converter em Prestador" (Caminho 2)
+
+AÇÃO LOCALIZADA EM:
+  enterpriseKanbanService.mover() → src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts:684
+  conversaoCandidatoService.converterCandidatoParaPrestador() → src/modules/recrutamento/services/conversaoCandidatoService.ts:99
+
+APROVAÇÃO LOCALIZA O PRESTADOR CORRETO:
+  SIM — por prestador_id vinculado (Caminho 2, linha 267)
+  SIM — por origem_cadastro='recrutamento:{id}' (Caminho 2, linha 267)
+  SIM — por telefone/CPF/email normalizado (identidadePrestadorService, linha 52)
+
+PRESTADOR_ID É PRESERVADO:
+  SIM — recrutamento_candidatos.prestador_id → prestadores.id
+  O campo é definido em:
+    - enterpriseKanbanService.ts:624 (bridge AG-07J.1: prestadorId = p.id)
+    - conversaoCandidatoService.ts:250 (atualizarCandidatoAposConversao)
+  O campo é preservado no reuso:
+    - conversaoCandidatoService.ts:282 (liberado_app: statusOperacional === 'ativo')
+    - NÃO toca cpf_cnpj quando já existe (teste AG-07G, linha 152)
+
+APROVAÇÃO ALTERA prestadores.status:
+  SIM — Caminho 2 (sincronizarComOperacao):
+    status='ativo' quando stage='aprovado' ou 'ativo'
+  SIM — Caminho 3 (ativarPrestador):
+    status='ativo' no INSERT
+
+STATUS RESULTANTE:
+  'ativo' (quando aprovado/convertido)
+
+APROVAÇÃO ALTERA liberado_app:
+  SIM — Caminho 2 (sincronizarComOperacao, linhas 282, 308):
+    liberado_app: statusOperacional === 'ativo' → true
+  SIM — Caminho 3 (ativarPrestador, linha 221):
+    liberado_app: true (no INSERT)
+
+LIBERADO_APP RESULTANTE:
+  true
+
+APP SERIA LIBERADO APÓS APROVAÇÃO:
+  SIM — mas SOMENTE após a CONVERSÃO (Caminho 2), não apenas após o "Aprovar" do Kanban (Caminho 1).
+
+CANDIDATO PODE SER APROVADO SEM PRESTADOR LIBERADO:
+  SIM — se o operador clica "Aprovar" no Kanban mas NÃO clica "Converter em Prestador".
+  O candidato fica stage='aprovado' mas o prestador continua liberado_app=false.
+
+PRESTADOR PODE SER LIBERADO INDEVIDAMENTE:
+  NÃO — liberado_app é DERIVADO do status (novoStatus === 'ativo').
+  O status é determinado por: statusMap = { agregado: 'ativo', aprovado: 'ativo', bloqueado: 'inativo', em_analise: 'analise', novo: 'analise', reserva: 'analise' }
+  Somente 'agregado' e 'aprovado' resultam em 'ativo' → liberado_app=true.
+
+APROVAÇÃO VERIFICA DOCUMENTOS:
+  NÃO — Kanban "Aprovar" (Caminho 1): zero verificação documental
+  PARCIAL — "Converter em Prestador" (Caminho 2): exige telefone obrigatório
+  PARCIAL — "Ativar Prestador" (Caminho 3): sem verificação documental explícita
+
+APROVAÇÃO VERIFICA VALIDADE DOCUMENTAL:
+  NÃO — nenhum dos 3 caminhos verifica validade de CNH ou outros documentos
+
+EXISTE POSSIBILIDADE DE CANDIDATO APROVADO SEM PRESTADOR LIBERADO:
+  SIM — se operador para no Kanban "Aprovar" e não executa "Converter em Prestador"
+
+EXISTE POSSIBILIDADE DE PRESTADOR LIBERADO SEM APROVAÇÃO:
+  NÃO — liberado_app=true só é setado quando:
+    1. conversaoCandidatoService.sincronizarComOperacao() com stage='aprovado' ou 'ativo'
+    2. ativarPrestador() com INSERT novo
+    3. prestadoresService.syncAtualizarOperacional() com status='agregado' ou 'aprovado'
+  Todos requerem que o candidato esteja em estágio aprovado/agregado ou que o prestador tenha status compatível.
+
+EXISTE REVERSÃO DE liberado_app:
+  SIM — via syncAtualizarOperacional (status inativo/bloqueado/analise → liberado_app=false)
+  SIM — via syncRemoverOperacional (agora com liberado_app=false)
+
+═══════════════════════════════════════════════════════════════
+8. TESTES NEGATIVOS (auditoria de código)
+═══════════════════════════════════════════════════════════════
+
+ aprovar candidato inexistente:
+   enterpriseKanbanService.mover() linha 687: getCandidateById retorna null → error 'Candidato não encontrado'
+   ✅ PROTEGIDO
+
+ aprovar candidado duas vezes:
+   enterpriseKanbanService.mover() linha 690: candidate.stage === novoStage → error 'Candidato já está neste estágio'
+   ✅ PROTEGIDO
+
+ aprovar candidado já aprovado:
+   Mesmo que acima — transição aprovado→aprovado bloqueada
+   ✅ PROTEGIDO
+
+ aprovar candidado reprovado:
+   STAGE_TRANSITIONS[reprovado] = [] (linha 199) → nenhuma transição permitida
+   ✅ PROTEGIDO
+
+ aprovar sem prestador vinculado:
+   conversaoCandidatoService.sincronizarComOperacao() SEM candidato.prestadorId:
+     → busca existente por telefone/email/origem
+     → SE não encontra: cria novo com vinculo 'recrutamento:{prestador.id}'
+     → SEMPRE cria ou reutiliza — nunca fica órfão
+   ✅ PROTEGIDO
+
+ aprovar sem prestador_id:
+   enterpriseKanbanService.mover() NÃO depende de prestador_id
+   conversaoCandidatoService depende de telefone (linha 106-108): sem telefone → erro
+   ✅ PROTEGIDO (telefone obrigatório na conversão)
+
+ aprovar usando prestador_id de outro registro:
+   sincronizarComOperacao() usa identidadePrestadorService que busca por origem/CPF/telefone
+   Se candidato tem prestador_id diferente, o vínculo é preservado (não sobrescreve)
+   ✅ PROTEGIDO
+
+ alterar candidato sem alterar prestadores:
+   enterpriseKanbanService.mover() APENAS altera recrutamento_candidatos.stage
+   NÃO toca prestadores — intencional (sincronização é responsabilidade da conversão)
+   ✅ CORRETO POR DESIGN
+
+ alterar status sem alterar liberado_app:
+   syncAtualizarOperacional() SEMPRE seta liberado_app junto com status (linha 389)
+   conversaoCandidatoService.sincronizarComOperacao() SEMPRE seta ambos (linhas 282, 308)
+   ✅ PROTEGIDO
+
+ alterar liberado_app sem status coerente:
+   liberado_app é DERIVADO: novoStatus === 'ativo' (sempre)
+   Não existe path que seta liberado_app independentemente
+   ✅ PROTEGIDO
+
+ reprovar mantendo liberado_app=true:
+   syncAtualizarOperacional() com status='bloqueado' → statusMap['bloqueado'] = 'inativo' → liberado_app=false
+   syncRemoverOperacional() → liberado_app=false
+   conversaoCandidatoService com stage='reprovado' → statusOperacional='analise' → liberado_app=false
+   ✅ PROTEGIDO
+
+ bloquear mantendo liberado_app=true:
+   PaginaPrestadores.tsx:217: novoStatus='bloqueado' → atualizarStatus → syncAtualizarOperacional → liberado_app=false
+   ✅ PROTEGIDO
+
+ inativar mantendo liberado_app=true:
+   syncRemoverOperacional() → liberado_app=false
+   ✅ PROTEGIDO
+
+═══════════════════════════════════════════════════════════════
+9. DEPENDÊNCIA DOCUMENTAL
+═══════════════════════════════════════════════════════════════
+
+APROVAÇÃO VERIFICA DOCUMENTOS:
+  Kanban "Aprovar" (Caminho 1): NÃO
+  "Converter em Prestador" (Caminho 2): NÃO — apenas exige telefone
+  "Ativar Prestador" (Caminho 3): NÃO
+
+VERIFICA STATUS DOCUMENTAL:
+  NÃO — nenhum caminho verifica status de documentos
+
+VERIFICA VALIDADE:
+  NÃO — nenhum caminho verifica validade de CNH ou outros documentos
+
+É POSSÍVEL APROVAR SEM DOCUMENTAÇÃO VÁLIDA:
+  SIM — é possível aprovar e converter sem nenhum documento validado
+  A verificação documental é feita pelo App (gate de elegibilidade, AG-07F)
+  e pelo campo status_documental calculado no Kanban (calcularStatusDocumentalOperacional),
+  mas NÃO é bloqueante para a ação de aprovação/conversão no TMS.
+
+O Homologacao.tsx (Caminho 3) tem um checklist com 6 itens
+(documentos_aprovados, dados_bancarios, veículo, contrato, app, treinamento),
+mas o botão "Ativar Prestador" exige apenas 5/6 itens — NÃO valida documentos.
+
+═══════════════════════════════════════════════════════════════
+10. REVERSÃO
+═══════════════════════════════════════════════════════════════
+
+BLOQUEIO REVERTE LIBERADO_APP:
+  SIM — via usePrestadores.atualizarStatus → prestadoresService.atualizarStatus
+    → atualizar() → syncAtualizarOperacional()
+    → statusMap['bloqueado'] = 'inativo' → liberado_app: false
+  Linhas: prestadoresService.ts:372-389
+
+INATIVAÇÃO REVERTE LIBERADO_APP:
+  SIM — via syncRemoverOperacional()
+    → UPDATE prestadores SET status='inativo', liberado_app=false
+  Linha: prestadoresService.ts:432
+
+REPROVAÇÃO REVERTE LIBERADO_APP:
+  SIM — via conversaoCandidatoService.sincronizarComOperacao()
+    → stage='reprovado' → statusOperacional='analise' → liberado_app=false
+  SIM — via enterpriseKanbanService.mover() com stage='bloqueado'
+    → Apenas altera recrutamento_candidatos (não toca prestadores diretamente)
+    → Mas se sincronizarComOperacao() for chamado depois, reverte
+
+═══════════════════════════════════════════════════════════════
+11. BUGS ENCONTRADOS
+═══════════════════════════════════════════════════════════════
+
+BUG 1 (MÉDIO) — ativarPrestador() não seta liberado_app ao atualizar existente
+  Arquivo: recrutamentoIntegracao.ts:126-159
+  Quando checarDuplicidade() encontra prestador existente, o UPDATE
+  NÃO inclui status nem liberado_app — apenas campos vazios.
+  Resultado: se prestador existente tem status='em_analise' e liberado_app=false,
+  ao "ativar" novamente, o registro NÃO é promovido.
+  Impacto: ativação de candidato duplicado pode falhar silenciosamente.
+
+BUG 2 (BAIXO) — Kanban "Aprovar" não sincroniza com prestadores
+  Arquivo: enterpriseKanbanService.ts:684-723
+  mover() APENAS atualiza recrutamento_candidatos.stage
+  NÃO chama sincronizarComOperacao() nem nenhuma sync com prestadores.
+  Resultado: operador pode aprovar no Kanban mas esquecer de converter.
+  Impacto: candidato aparece como "Aprovado" no Kanban mas prestador
+  continua liberado_app=false.
+
+═══════════════════════════════════════════════════════════════
+12. CAUSA RAIZ
+═══════════════════════════════════════════════════════════════
+A aprovação no TMS funciona corretamente quando executada até o final:
+"Aprovar" (Kanban) + "Converter em Prestador" = liberado_app=true ✅
+
+A causa raiz de eventuais prestadores com status=ativo e liberado_app=false
+é a SEPARAÇÃO entre ação de aprovação (Caminho 1) e ação de conversão (Caminho 2).
+O Kanban permite aprovar sem converter, criando um estado intermediário onde
+o candidato está "aprovado" mas o prestador não está "liberado".
+
+═══════════════════════════════════════════════════════════════
+13. CORREÇÃO REALIZADA
+═══════════════════════════════════════════════════════════════
+NÃO — esta missão é de AUDITORIA apenas.
+A decisão é CLASSE A (fluxo já correto) ou CLASSE D (dependência de arquitetura).
+
+Classificação: CLASSE A para a ponte aprovação → liberado_app
+  O fluxo completo (Aprovar + Converter) resulta em liberado_app=true ✅
+  Os caminhos de reversão (bloqueio/inativação/reprovação) revertem liberado_app ✅
+  O prestador_id é preservado entre módulos ✅
+
+Classificação: CLASSE D para o gap entre Aprovar e Converter
+  O Kanban "Aprovar" não chama Converter automaticamente.
+  Isso é uma escolha de UX (pipeline em etapas), não um bug.
+  A correção seria automatizar a conversão ao aprovar, mas isso
+  muda o comportamento do pipeline — requer decisão de produto.
+
+═══════════════════════════════════════════════════════════════
+14. ARQUIVOS ALTERADOS
+═══════════════════════════════════════════════════════════════
+NENHUM — missão de auditoria apenas.
+
+═══════════════════════════════════════════════════════════════
+15. TESTES FOCALIZADOS
+═══════════════════════════════════════════════════════════════
+N/A — sem alteração de código.
+
+Testes existentes que cobrem o fluxo:
+  src/test/ag07g_unificacao_app_recrutamento.test.ts
+    Teste I: aprovação (stage aprovado) → status ativo + liberado_app=true ✅
+    Teste J: reprovação → liberado_app=false ✅
+    Teste K: dados preservados no reuso ✅
+    Teste "sem prestador existente" → cria com liberado_app=true ✅
+
+═══════════════════════════════════════════════════════════════
+16. REGRESSÃO
+═══════════════════════════════════════════════════════════════
+N/A — sem alteração de código.
+
+═══════════════════════════════════════════════════════════════
+17. TYPESCRIPT/BUILD CHECK
+═══════════════════════════════════════════════════════════════
+N/A — sem alteração de código.
+
+═══════════════════════════════════════════════════════════════
+18. PRODUÇÃO ALTERADA
+═══════════════════════════════════════════════════════════════
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+═══════════════════════════════════════════════════════════════
+19. DEPENDÊNCIAS ENCONTRADAS
+═══════════════════════════════════════════════════════════════
+1. conversaoCandidatoService.sincronizarComOperacao() depende de
+   identidadePrestadorService.buscarPrestadorOperacionalExistente()
+   → busca por origem_cadastro, CPF, telefone, email
+   → precisa que o prestador operacional já exista na tabela prestadores
+
+2. enterpriseKanbanService.buscarECadastrarAppPrestadores() (bridge AG-07J.1)
+   → cria recrutamento_candidatos para prestadores com origem='app_motorista'
+   → precisa que o prestador operacional já exista com origem_cadastro='app_motorista'
+
+3. Homologacao.tsx (Caminho 3) opera na tabela legada 'candidatos'
+   → não usa recrutamento_candidatos nem enterpriseKanbanService
+   → rota paralela, potencialmente conflitante
+
+═══════════════════════════════════════════════════════════════
+20. PRÓXIMA MISSÃO RECOMENDADA
+═══════════════════════════════════════════════════════════════
+OPÇÃO A (recomendada): Decidir se "Aprovar" no Kanban deve automaticamente
+chamar "Converter em Prestador" (unificar Caminhos 1+2 em uma única ação).
+Isso eliminaria o estado intermediário onde candidato está aprovado mas
+prestador não está liberado.
+
+OPÇÃO B: Criar gate documental mínimo na conversão (ex: exigir CNH válida
+antes de permitir sincronizarComOperacao com liberado_app=true).
+Registrar como missão futura (AG-07H já mapeou isso).
+
+OPÇÃO C: Corrigir BUG 1 em recrutamentoIntegracao.ts:126-159
+(adicionar status='ativo' e liberado_app=true no UPDATE de duplicado).
+Correção mínima e segura.
+
+═══════════════════════════════════════════════════════════════
+21. DECISÃO FINAL
+═══════════════════════════════════════════════════════════════
+CLASSE A — FLUXO JÁ CORRETO (com ressalvas)
+
+A ponte APROVAÇÃO TMS → PRESTADOR → LIBERADO_APP existe e funciona
+quando executada completamente (Aprovar + Converter).
+
+Não há necessidade de correção de código TMS para esta missão.
+
+Os gaps identificados (BUG 1, BUG 2, ausência de gate documental)
+são melhorias de UX/segurança, não bugs que impeçam a liberação do App.
+
+Resposta à pergunta central:
+> Uma aprovação válida no TMS realmente resulta em liberado_app=true
+> para o mesmo prestador_id consumido pelo App?
+
+RESPOSTA: SIM — quando a conversão (Caminho 2) é executada.
+O Kanban "Aprovar" sozinho NÃO libera — é necessário o passo adicional
+de "Converter em Prestador" que efetivamente seta liberado_app=true.

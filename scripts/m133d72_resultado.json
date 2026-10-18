@@ -1,0 +1,247 @@
+{
+  "timestamp": "2026-07-27T17:44:50.837Z",
+  "alocacao_id": "76af8e4a-a3bc-492a-897d-4556574cc5d1",
+  "prestador_auth": "a5e51631-5ed8-430d-9041-4b185c03d821",
+  "idempotency_key": "MISSAO133D7-2026-07-27T17-44-50-5f0b2bab-4ea0-465f-a0ed-b5705b2b6864",
+  "hash_script": "5784A82C5063B352D7A245A0B0B90AFD2DA1E5CB83838CA0A57883E44AFC59FF",
+  "errors": [],
+  "results": {
+    "pre": {
+      "alocacao": {
+        "id": "76af8e4a-a3bc-492a-897d-4556574cc5d1",
+        "ordem_servico_id": null,
+        "status": "aguardando_aceite",
+        "aceite_prestador": false,
+        "data_aceite": null,
+        "finalizada": false,
+        "data_finalizacao": null,
+        "horario_inicio_real": null,
+        "horario_fim_real": null,
+        "etapa_atual": null,
+        "ultima_idempotency": null,
+        "updated_at": "2026-07-23T12:59:13.596Z"
+      },
+      "contagens": [
+        {
+          "tabela": "eventos_oficiais",
+          "qtd": 1
+        },
+        {
+          "tabela": "operation_timeline_events",
+          "qtd": 0
+        },
+        {
+          "tabela": "historico_alocacoes_escala",
+          "qtd": 1
+        }
+      ]
+    },
+    "durante": {
+      "alocacao": {
+        "id": "76af8e4a-a3bc-492a-897d-4556574cc5d1",
+        "ordem_servico_id": null,
+        "status": "aceita",
+        "aceite_prestador": true,
+        "data_aceite": "2026-07-27T17:44:50.513Z",
+        "finalizada": false,
+        "data_finalizacao": null,
+        "horario_inicio_real": null,
+        "horario_fim_real": null,
+        "etapa_atual": "viagem_aceita",
+        "ultima_idempotency": "MISSAO133D7-2026-07-27T17-44-50-5f0b2bab-4ea0-465f-a0ed-b5705b2b6864",
+        "updated_at": "2026-07-27T17:44:50.513Z"
+      },
+      "contagens": [
+        {
+          "tabela": "eventos_oficiais",
+          "qtd": 3
+        },
+        {
+          "tabela": "operation_timeline_events",
+          "qtd": 1
+        },
+        {
+          "tabela": "historico_alocacoes_escala",
+          "qtd": 3
+        }
+      ]
+    },
+    "pos": {
+      "alocacao": {
+        "id": "76af8e4a-a3bc-492a-897d-4556574cc5d1",
+        "ordem_servico_id": null,
+        "status": "aguardando_aceite",
+        "aceite_prestador": false,
+        "data_aceite": null,
+        "finalizada": false,
+        "data_finalizacao": null,
+        "horario_inicio_real": null,
+        "horario_fim_real": null,
+        "etapa_atual": null,
+        "ultima_idempotency": null,
+        "updated_at": "2026-07-23T12:59:13.596Z"
+      },
+      "contagens": [
+        {
+          "tabela": "eventos_oficiais",
+          "qtd": 1
+        },
+        {
+          "tabela": "operation_timeline_events",
+          "qtd": 0
+        },
+        {
+          "tabela": "historico_alocacoes_escala",
+          "qtd": 1
+        }
+      ]
+    },
+    "rpc": {
+      "etapa": "viagem_aceita",
+      "status": "aceita",
+      "message": "Etapa avançada com sucesso.",
+      "success": true,
+      "event_id": "9c8c0e2e-4a84-4886-a715-397f719e94ac",
+      "idempotent": false,
+      "etapa_anterior": ""
+    },
+    "assertivas": [
+      {
+        "id": 1,
+        "desc": "status = aceita",
+        "esperado": "aceita",
+        "obtido": "aceita",
+        "ok": true
+      },
+      {
+        "id": 2,
+        "desc": "aceite_prestador = true",
+        "esperado": true,
+        "obtido": true,
+        "ok": true
+      },
+      {
+        "id": 3,
+        "desc": "data_aceite preenchida",
+        "esperado": "NOT NULL",
+        "obtido": "2026-07-27T17:44:50.513Z",
+        "ok": true
+      },
+      {
+        "id": 4,
+        "desc": "etapa_atual = viagem_aceita",
+        "esperado": "viagem_aceita",
+        "obtido": "viagem_aceita",
+        "ok": true
+      },
+      {
+        "id": 5,
+        "desc": "finalizada = false",
+        "esperado": false,
+        "obtido": false,
+        "ok": true
+      },
+      {
+        "id": 6,
+        "desc": "eventos_oficiais criado",
+        "esperado": 2,
+        "obtido": 3,
+        "ok": true
+      },
+      {
+        "id": 7,
+        "desc": "operation_timeline criado",
+        "esperado": 1,
+        "obtido": 1,
+        "ok": true
+      },
+      {
+        "id": 8,
+        "desc": "historico criado (trigger)",
+        "esperado": 2,
+        "obtido": 3,
+        "ok": true
+      }
+    ],
+    "negativos": [
+      {
+        "id": "5.1",
+        "desc": "AUTH_USER_ID_INVALIDO",
+        "resultado": {
+          "error": "AUTH_USER_ID_INVALIDO",
+          "success": false
+        },
+        "ok": true
+      },
+      {
+        "id": "5.3",
+        "desc": "TRANSICAO_INVALIDA",
+        "resultado": {
+          "error": "TRANSICAO_INVALIDA",
+          "message": "Transição inválida: de \"viagem_aceita\" para \"servico_finalizado\"",
+          "success": false,
+          "etapa_atual": "viagem_aceita",
+          "etapa_solicitada": "servico_finalizado"
+        },
+        "ok": true
+      }
+    ],
+    "idempotencia": {
+      "key": "MISSAO133D7-2026-07-27T17-44-50-5f0b2bab-4ea0-465f-a0ed-b5705b2b6864",
+      "resultado": {
+        "etapa": "viagem_aceita",
+        "message": "Etapa já registrada (idempotente).",
+        "success": true,
+        "idempotent": true
+      },
+      "ok": true
+    },
+    "pos_validacao": [
+      {
+        "id": "V1",
+        "desc": "etapa voltou a NULL",
+        "ok": true
+      },
+      {
+        "id": "V2",
+        "desc": "aceite_prestador voltou a false",
+        "ok": true
+      },
+      {
+        "id": "V3",
+        "desc": "status voltou a aguardando_aceite",
+        "ok": true
+      },
+      {
+        "id": "V4",
+        "desc": "data_aceite voltou a NULL",
+        "ok": true
+      },
+      {
+        "id": "V5",
+        "desc": "finalizada continuou false",
+        "ok": true
+      },
+      {
+        "id": "V6",
+        "desc": "idempotency key removida",
+        "ok": true
+      },
+      {
+        "id": "V7",
+        "desc": "eventos_oficiais sem resíduo",
+        "ok": true
+      },
+      {
+        "id": "V8",
+        "desc": "operation_timeline sem resíduo",
+        "ok": true
+      },
+      {
+        "id": "V9",
+        "desc": "historico sem resíduo",
+        "ok": true
+      }
+    ]
+  }
+}

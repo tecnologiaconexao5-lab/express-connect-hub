@@ -1,0 +1,162 @@
+================================================================================
+TMS-COM-CARGA-02B-UI-VOLUMES-DIMENSOES-CUBAGEM-REAL — RESULTADO
+Missão: Entregar na TELA REAL a composição da carga por GRUPOS DE VOLUMES
+(quantidade, dimensões, cubagem por grupo, cubagem total, resumo físico e
+recomendação de veículo consolidada).
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS. APP/Redmi NÃO conectado. ZERO migration/DDL. ZERO banco (prova em rollback).
+================================================================================
+
+1. CAUSA DE COM-CARGA-02 "NÃO APARECER NA UI"
+--------------------------------------------------------------------------------
+- O código JÁ continha a seção de dimensões em OrcamentoForm.tsx (aba Carga),
+  e o servidor de desenvolvimento (vite, port 8800) SERVE essa versão.
+  Evidência (fetch do módulo transformado em 26/09/2026):
+    "Adicionar dimensão" = presente · "Dimensões dos volumes" = presente ·
+    "Quantidade de Volumes" = presente · "Peso real total" = presente.
+- A tela reportada exibia os rótulos NOVOS (Quantidade de Volumes / Peso real
+  total), porém sem a seção de grupos → causa mais provável: ABA CACHE/instância
+  desatualizada no navegador do usuário (bundle antigo em memória/cache), não o
+  código-fonte. index.html já desregistra Service Worker e limpa caches.
+- Nesta missão a seção foi REFORÇADA e tornada visualmente inconfundível, e a
+  inteligência de soma/físico foi ampliada (abaixo).
+
+2. COMPONENTES ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/comercial/OrcamentoForm.tsx  (UI Dados da Carga reforçada)
+- src/components/comercial/cargaCalculo.ts     (soma de volumes por grupo)
+- src/test/com_carga_02_dimensoes_capacidade.test.ts (caso 3 grupos / 4,168 m³)
+- scripts/_com_carga_02_prova.ts               (prova com 3 grupos)
+(types.ts e os demais já estavam prontos desde CARGA-02.)
+
+3. UI — DIMENSÕES DOS VOLUMES (tela real, aba "Dados da Carga")
+--------------------------------------------------------------------------------
+- Título destacado: "DIMENSÕES DOS VOLUMES" (tarja com borda/realce primary).
+- Botão: "+ Adicionar grupo de volumes".
+- Tabela por grupo: # | Qtd | Comprimento (cm) | Largura (cm) | Altura (cm) |
+  Cubagem do grupo (m³) | Remover.
+- Rodapé do bloco: "N volume(s) nos grupos · cubagem total X m³".
+  Se a "Quantidade de Volumes" informada divergir da soma, avisa (prevalece a soma ao salvar).
+- RESUMO FÍSICO DA CARGA (cards): Volumes totais · Peso real · Cubagem total ·
+  Peso cubado (— não configurado) · Peso considerado.
+- Recálculo em TEMPO REAL a cada digitação/adicionar/remover (useMemo sobre carga).
+
+4. CUBAGEM (cálculo por grupo e total)
+--------------------------------------------------------------------------------
+- cubagemGrupo = quantidade × (compC/100) × (largL/100) × (altA/100).
+- cubagemTotal = SOMA dos grupos válidos. Nunca NaN/Infinity/negativo (vira 0).
+- Caso da missão (3 grupos):
+    5 × 1,20 × 0,80 × 0,60 = 2,880 m³
+    3 × 0,60 × 0,40 × 0,40 = 0,288 m³
+    2 × 2,00 × 0,50 × 0,50 = 1,000 m³
+    TOTAL = 4,168 m³
+
+5. QUANTIDADE TOTAL INTELIGENTE
+--------------------------------------------------------------------------------
+- totalVolumesGrupos() soma as quantidades dos grupos.
+- Com grupos presentes, a "Quantidade de Volumes" passa a refletir a soma (e é
+  gravada assim no save). O campo legado é preservado quando NÃO há grupos.
+- Coerência: se o informado divergir, a UI avisa (não silencia).
+
+6. PESO REAL × PESO CUBADO × CONSIDERADO
+--------------------------------------------------------------------------------
+- Peso real = carga.peso. Peso cubado = cubagem × fator (configurável, NÃO hardcoded).
+- Sem fator configurado (chave fator_cubagem_kg_m3) → "Peso cubado: — não configurado";
+  Peso considerado = peso real. Com fator → mostra cubado e considerado = MAX(real, cubado).
+- NÃO altera preço/frete.
+
+7. RECOMENDAÇÃO DE VEÍCULO (carga CONSOLIDADA)
+--------------------------------------------------------------------------------
+- Usa peso considerado + cubagem TOTAL + MAIOR comprimento/largura/altura entre os
+  grupos (maiorDimensaoCm). Seleciona o MENOR tipo do catálogo real que satisfaz tudo.
+- Exibe "VEÍCULO RECOMENDADO PARA A OPERAÇÃO" + motivos objetivos (peso, cubagem,
+  pallets como informação, "Compatível com a capacidade cadastrada"). Sem "IA".
+- Caso 2.000 kg / 4,168 m³ → VUC.
+
+8. INCOMPATIBILIDADE VISÍVEL (veículo manual)
+--------------------------------------------------------------------------------
+- avaliarCompatibilidadeVeiculo(tipo, carga) compara peso/cubagem/dimensões da carga
+  com a capacidade cadastrada do veículo SELECIONADO.
+- Se inferior → aviso NÃO bloqueante: "A capacidade cadastrada deste veículo é
+  inferior aos dados da carga." + motivo (peso/cubagem/comprimento/largura/altura).
+- Ex.: Van (1.300 kg) com carga de 2.000 kg → incompatível (não recomendado).
+- Decisão operacional humana preservada.
+
+9. PALLETS E CARROCERIA (lacuna registrada — sem invenção)
+--------------------------------------------------------------------------------
+- O catálogo NÃO possui capacidade de pallets nem restrições de carroceria.
+  Pallets segue como informação (não afirma "compatível por pallets").
+- Nota fixa na UI: "Capacidade de pallets e restrição de carroceria não constam no
+  catálogo de veículos — validar manualmente."
+- BACKLOG: enriquecer cadastro/catálogo (capacidade de pallets/carroceria).
+
+10. PERSISTÊNCIA E RELOAD (sem campo/tabela duplicado)
+--------------------------------------------------------------------------------
+- Estrutura existente carga.dimensoes[] (JSONB). Prova em transação + ROLLBACK:
+  INSERT (3 grupos) → SELECT/toOrcamentoDomain → reload preserva 3 grupos,
+  cubagem 4,168, pesoCubado, pesoConsiderado e veículo recomendado. Nada persistiu (q=0).
+
+11. PDF E REGRESSÃO
+--------------------------------------------------------------------------------
+- PDF homologado inalterado (COM-ORC-04/05B): logo clara, 1 página, valor final.
+- Recebe os dados reais: PDF exibiu Cubagem 4,168 m³, Peso real 2.000 kg e descrição.
+- Arquivo: test-results/com-carga-02/ORC-202609-9502_Orcamento_Comercial.pdf
+- COM-ORC-02/03/04/05B preservados (sem tocar logo, layout, preço).
+
+12. TESTE CONTROLADO (evidência)
+--------------------------------------------------------------------------------
+GRUPO 1: 5 × 120×80×60 · GRUPO 2: 3 × 60×40×40 · GRUPO 3: 2 × 200×50×50.
+Esperado e comprovado: Volumes totais = 10 · Cubagem total = 4,168 m³ · VUC recomendado.
+Checks: A) 4,168 ✅ · soma 10 ✅ · B) persistência ✅ · C) reload ✅
+D) 1.300 kg incompatível ✅ · E) VUC compatível ✅ · F) recálculo (5,128) ✅
+G) PDF recebe dados ✅ · H) 0 persistidos ✅ — TODOS PASSARAM.
+
+13. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (4 arquivos): 62/62 PASS
+    com_carga_02 (14, +caso 3 grupos), com_carga_01 (19), com_orc_02 (15), com_orc_03 (14).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão (restantes são baseline).
+- npm run build -> OK (44.50s).
+
+14. EVIDÊNCIA DA TELA
+--------------------------------------------------------------------------------
+- Servidor de desenvolvimento ATIVO em http://localhost:8800 (vite) — HTTP 200.
+- Verificação do módulo servido (transformado) confirmou a presença de:
+  "Adicionar grupo de volumes", "Dimensões dos Volumes", "Cubagem do grupo",
+  "avaliarCompatibilidadeVeiculo".
+- Screenshot autenticado NÃO foi capturado por automação (a tela exige login real);
+  conforme a missão, a HOMOLOGAÇÃO VISUAL é do USUÁRIO.
+- Validação recomendada: Ctrl+F5 em http://localhost:8800 → Comercial → Orçamento →
+  Novo/Editar → aba "Dados da Carga" → usar os 3 grupos acima.
+
+15. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- Fator de cubagem não configurado → peso cubado indisponível por design (sem invenção).
+  Próxima micro-missão: parametrizar 'fator_cubagem_kg_m3' (por modalidade) com UI.
+- Capacidade de pallets/carroceria ausente no catálogo → validação manual; backlog registrado.
+- Se o navegador do usuário ainda exibir versão antiga, é cache local: Ctrl+F5 (o
+  index.html já desregistra Service Worker).
+
+16. BACKLOG (nada esquecido)
+--------------------------------------------------------------------------------
+COMERCIAL: fator de cubagem configurável; capacidade de pallets/carroceria no catálogo;
+Tabela Esporádica/preço automático; custo×venda×margem; Fracionado/providers;
+saneamento legado/mojibake; regra de status "pronto para envio".
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento parcial;
+saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação global;
+Conta Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin APP;
+CAD-PERSIST; E2E final; Master 360/Gate.
+
+ARQUIVO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-CARGA-02B-UI-VOLUMES-DIMENSOES-CUBAGEM-REAL-RESULTADO.txt
+Tamanho: 9.862 bytes · Linhas: 162 · Data/hora: 26/09/2026 19:14:34
+
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

@@ -1,0 +1,34 @@
+{
+  "missao": "108-L3",
+  "titulo": "IA Operacional Real - PortalCliente",
+  "fontes": [
+    "ordens_servico",
+    "alocacoes_escala",
+    "vw_noc_operacional",
+    "entregas_protocolo",
+    "portal_ocorrencias",
+    "contratos_operacao",
+    "operacao_localizacao"
+  ],
+  "tipos_insight": [
+    "Atrasos (critica)",
+    "SLA em risco (critica)",
+    "POD pendentes (alta)",
+    "Reversas pendentes (alta)",
+    "GPS sem sinal (alta)",
+    "Ocorrências em aberto (media/alta)",
+    "Operações sem movimentação (media)",
+    "Contratos ativos (media)",
+    "Concentração por região (media)",
+    "Taxa de atraso (critica/alta)",
+    "Tendência operacional (informativa)",
+    "Velocidade média (informativa)"
+  ],
+  "prioridades": ["critica", "alta", "media", "informativa"],
+  "fetch_queries": 6,
+  "sidecar_items": 1,
+  "componente": "PortalIAOperacional.tsx",
+  "service": "portalClienteService.ts",
+  "status": "sem placeholders, sem mocks, sem IA simulada",
+  "data_gerado": "2026-07-11T00:00:00.000Z"
+}

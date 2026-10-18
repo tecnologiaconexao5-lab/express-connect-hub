@@ -1,0 +1,242 @@
+═══════════════════════════════════════════════════════════════════════════
+REC-06.2C.2 — PROVA REAL INDEPENDENTE DAS 3 AUTOMAÇÕES
+Data: 2026-09-08
+Ambiente: Supabase PRODUCTION (uwrvzsjtpgaifkktpepn)
+Método: pg client direto (DATABASE_URL pooler)
+═══════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [NÃO HOMOLOGADO — Migration 20260907_rec_062c1 NÃO aplicada ao DB produção]
+
+Motivo: NENHUMA das 4 functions e NENHUM dos 3 triggers existe no schema
+do banco de dados de produção. A migration foi criada localmente mas
+nunca executada via psql/supabase-db-push. Sem triggers, os INSERT/UPDATE
+em recrutamento_candidatos NÃO geram eventos — toda a cadeia automação
+está inativa.
+
+═══════════════════════════════════════════════════════════════════════════
+FASE 0 — AUDITORIA DO ESTADO REAL
+═══════════════════════════════════════════════════════════════════════════
+
+[0.1] Functions (pg_proc):
+  ❌ f_trg_novo_candidato_evento  — NÃO EXISTE
+  ❌ f_trg_score_limiar_evento    — NÃO EXISTE
+  ❌ f_trg_validade_documento_evento — NÃO EXISTE
+  ❌ f_scan_validade_documentos   — NÃO EXISTE
+  Resultado: 0/4
+
+[0.2] Triggers (pg_trigger):
+  ❌ trg_novo_candidato_evento   — NÃO EXISTE
+  ❌ trg_score_limiar_evento     — NÃO EXISTE
+  ❌ trg_validade_documento_evento — NÃO EXISTE
+  Resultado: 0/3
+
+[0.3] Event Types no código (src/types/events.ts):
+  ✅ recrutamento.candidato.criado
+  ✅ recrutamento.score.limiar_cruzado
+  ✅ recrutamento.documento.vencimento_proximo
+  Resultado: 3/3
+
+[0.4] Worker Cases (src/services/eventBus/eventProcessorWorker.ts):
+  ✅ Case recrutamento.candidato.criado
+  ✅ Case recrutamento.score.limiar_cruzado
+  ✅ Case recrutamento.documento.vencimento_proximo
+  Resultado: 3/3
+
+[0.5] Tabela recrutamento_automacoes:
+  ✅ Existe
+
+[0.6] Bridge trigger (trg_bridge_prestador_para_recrutamento):
+  ✅ Preservado
+
+[0.7] TSC (npx tsc --noEmit):
+  ✅ 0 erros
+
+RESULTADO AUDITORIA: ❌ FALHA — triggers/functions ausentes no DB produção
+
+═══════════════════════════════════════════════════════════════════════════
+SNAPSHOT BEFORE (contagens iniciais)
+═══════════════════════════════════════════════════════════════════════════
+
+Automações existentes: 0
+Eventos recrutamento: 0
+Logs automação (candidato/score/validade): 0
+
+═══════════════════════════════════════════════════════════════════════════
+SETUP — AUTOMAÇÕES TESTE RECRIADAS
+═══════════════════════════════════════════════════════════════════════════
+
+Automação notificação: 4dbc951a-****-****-****-23811bd63395
+Automação score:       968fe5bf-****-****-****-8c0ff12b5ede
+Automação validade:    9d40b9ec-****-****-****-74cedd2b9ab5
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA A — NOVO CANDIDATO
+═══════════════════════════════════════════════════════════════════════════
+
+Ação: INSERT INTO recrutamento_candidatos (nome='TESTE_REC062C2_CAND_A',
+      score=50, stage='novo_cadastro')
+
+Resultado:
+  ❌ Eventos criados: 0 (esperado 1)
+  ❌ Logs auditoria: 0 (esperado >=1)
+  Contador automação: total=0, ultima_execucao=NULL
+
+Causa: Trigger trg_novo_candidato_evento NÃO existe no DB.
+       INSERT em recrutamento_candidatos não dispara nada.
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA B — SCORE LIMIAR CRUZADO
+═══════════════════════════════════════════════════════════════════════════
+
+Ação 1: INSERT candidato com score=30
+Ação 2: UPDATE score 30→65 (cruza limiar 60)
+
+Resultado Ação 2:
+  ❌ Eventos cruzamento: 0 (antes=0, depois=0, diff=0)
+  Causa: Trigger trg_score_limiar_evento NÃO existe.
+
+Ação 3: UPDATE score 65→80 (já acima do limiar)
+
+Resultado Ação 3:
+  ✅ Eventos adicionais: 0 (correto — não deveria gerar evento)
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA C — DOCUMENTO VENCIMENTO
+═══════════════════════════════════════════════════════════════════════════
+
+Ação: UPDATE documentos=[{nome:"CNH", validade: 2026-09-23 (15 dias)}]
+
+Resultado:
+  ❌ Eventos vencimento: 0 (antes=0, depois=0, diff=0)
+  Causa: Trigger trg_validade_documento_evento NÃO existe.
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA D — SCHEDULER f_scan_validade_documentos
+═══════════════════════════════════════════════════════════════════════════
+
+Ação: SELECT * FROM f_scan_validade_documentos() WHERE candidato_id = $1
+
+Resultado:
+  ❌ ERRO: function f_scan_validade_documentos() does not exist
+  ❌ Não foi possível chamar — função NÃO foi criada no DB
+
+Causa: A migration que define f_scan_validade_documentos nunca foi executada.
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA E — EVENTOS, LOGS E CONTADORES (BEFORE→AFTER)
+═══════════════════════════════════════════════════════════════════════════
+
+BEFORE:
+  Eventos recrutamento: 0
+  Logs automação: 0
+  Automações com contadores > 0: 0
+
+AFTER (provas executadas):
+  Eventos recrutamento TESTE: 0
+  Logs automação: 0
+  Automações com contadores > 0: 0
+
+Análise: Sem triggers, nenhum evento é gerado. A cadeia inteira está morta.
+         Event types e worker existem no código mas não há gatilho no DB.
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA F — PERSISTÊNCIA
+═══════════════════════════════════════════════════════════════════════════
+
+Candidatos persistidos: 3 (A, B, D) — confirmado por SELECT direto
+Automações persistidas: 3 (notif, score, validade) — confirmado por SELECT
+Eventos persistidos: 0
+
+Conclusão: INSERT/UPDATE em recrutamento_candidatos FUNCIONA (dados persistem),
+mas triggers não disparam (ausentes). Automações criadas persistem corretamente.
+
+═══════════════════════════════════════════════════════════════════════════
+PROVA G — CLEANUP
+═══════════════════════════════════════════════════════════════════════════
+
+Ação: DELETE FROM recrutamento_candidatos WHERE nome LIKE 'TESTE_REC062C2_%'
+      DELETE FROM recrutamento_automacoes WHERE nome LIKE 'TESTE_REC062C2_%'
+
+Resultado:
+  Candidatos removidos: 3
+  Automações removidas: 3
+  Eventos removidos: 0 (nenhum havia sido criado)
+
+Verificação independente (SELECT posterior):
+  Candidatos TESTE: 0 ✅
+  Automações TESTE: 0 ✅
+  Eventos TESTE: 0 ✅
+
+  ✅ CLEANUP COMPLETO — ZERO dados TESTE restantes
+  ✅ Dados históricos reais NÃO alterados
+  ✅ Contadores de automações reais NÃO alterados
+
+═══════════════════════════════════════════════════════════════════════════
+VERIFICAÇÕES DE RECESSÃO
+═══════════════════════════════════════════════════════════════════════════
+
+Bridge trigger (trg_bridge_prestador_para_recrutamento):
+  ✅ Preservado (presente em pg_trigger)
+
+RLS / anon:
+  Tabela recrutamento_automacoes: RLS ativo (anon não seleciona via REST sem role)
+  Tabela recrutamento_candidatos: RLS ativo (anon não insere sem auth)
+  ✅ Proteção preservada
+
+Código bridge (appPrestador → recrutamento):
+  ✅ Não alterado
+
+TSC:
+  ✅ 0 erros
+
+Regressão:
+  ✅ Nenhuma alteração em arquivos proibidos
+
+═══════════════════════════════════════════════════════════════════════════
+DIAGNÓSTICO E RECOMENDAÇÃO
+═══════════════════════════════════════════════════════════════════════════
+
+Causa-raiz: A migration SQL 20260907_rec_062c1_triggers_automacoes.sql foi
+criada localmente e o script de prova foi executado, mas a migration NUNCA
+foi aplicada ao banco de dados de produção.
+
+O que falta para HOMOLOGAR:
+  1. Aplicar a migration no Supabase produção:
+     - Opção A: Supabase Dashboard → SQL Editor → colar conteúdo da migration
+     - Opção B: psql com DATABASE_URL do .env
+     - Opção C: supabase db push --include-all
+  2. Verificar que as 4 functions + 3 triggers foram criadas
+  3. Re-executar esta prova (REC-06.2C.2)
+
+A migration é idempotente (CREATE OR REPLACE + IF NOT EXISTS) — segura para
+aplicar em produção sem risco de sobrescrever dados existentes.
+
+═══════════════════════════════════════════════════════════════════════════
+RESUMO EXECUTIVO
+═══════════════════════════════════════════════════════════════════════════
+
+Etapa              | Status | Detalhe
+-------------------|--------|------------------------------------------
+Functions (4)      |   ❌   | 0/4 — nenhuma existe no DB
+Triggers (3)       |   ❌   | 0/3 — nenhum existe no DB
+Event types (3)    |   ✅   | 3/3 no código
+Worker cases (3)   |   ✅   | 3/3 no código
+Tabela automacoes  |   ✅   | Existe
+Bridge trigger     |   ✅   | Preservado
+Prova A (candidato)|   ❌   | 0 eventos (trigger ausente)
+Prova B (score)    |   ❌   | 0 eventos (trigger ausente)
+Prova C (documento)|   ❌   | 0 eventos (trigger ausente)
+Prova D (scheduler)|   ❌   | function não existe
+Prova E (contagem) |   ❌   | 0 eventos, 0 logs
+Prova F (persist.) |   ✅   | Dados persistem, triggers não disparam
+Prova G (cleanup)  |   ✅   | ZERO restantes
+RLS/anon           |   ✅   | Protegido
+Bridge inalterado  |   ✅   | Código intacto
+TSC                |   ✅   | 0 erros
+Regressão          |   ✅   | Nenhuma
+
+VEREDITO: [NÃO HOMOLOGADO — Migration 20260907_rec_062c1 NÃO aplicada ao DB produção]
+
+═══════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO — REC-06.2C.2
+═══════════════════════════════════════════════════════════════════════════

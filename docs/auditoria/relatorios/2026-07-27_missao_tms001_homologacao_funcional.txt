@@ -1,0 +1,111 @@
+MISSAO TMS-001 — HOMOLOGACAO FUNCIONAL COMPLETA DO TMS
+=======================================================
+
+Data: 2026-07-27
+Status: CONCLUIDA — Auditoria funcional de 10 modulos
+Percentual oficial: 41% (geral) / 45% (funcional)
+Branch: auditoria-final-integracao
+
+=======================================================
+PRELIMINAR
+=======================================================
+
+npx tsc --noEmit: 0 erros
+npm run build: 35.27s
+Playwright tests: ~160+ listados
+Modulos auditados: 10/10
+
+=======================================================
+RESUMO POR MODULO
+=======================================================
+
+Modulo          | Arqs | Def | P0/P1 | Score
+----------------|-----:|----:|------:|:----:
+1. Operacional  |   51 |   5 |     0 | 8.5/10
+2. Financeiro   |   37 |  17 |     0 | 6.0/10
+3. Comercial    |   56 |  16 |     2 | 6.5/10
+4. Biblioteca   |    1 |  13 |     0 | 7.5/10
+5. Clientes     |    3 |   8 |     0 | 7.5/10
+6. Prestadores  |    5 |  10 |     2 | 6.5/10
+7. Veiculos     |   18 |  13 |     5 | 5.0/10
+8. Motoristas   |  (*) |   7 |     1 | 4.0/10
+9. Relatorios   |   19 |   6 |     0 | 7.5/10
+10.Configuracoes|  18+ |   7 |     1 | 7.0/10
+-----------------------------------------------
+Total          | ~209 | 102 |    10 | 6.6/10
+
+(*) Motoristas usam o mesmo modulo Prestadores
+
+=======================================================
+DEFEITOS CRITICOS (P0/P1)
+=======================================================
+
+C01 Veiculos  | TIPOS_VEICULO string[] .map(t.value) quebra Select
+              | VeiculoDetalhe.tsx:140 | 30min
+
+C02 Veiculos  | snake_case vs camelCase em 4 campos da lista
+              | VeiculosLista.tsx:113,120 | 1h
+
+C03 Veiculos  | snake_case vs camelCase em 5 campos do formulario
+              | VeiculoDetalhe.tsx:159,178-183 | 1h
+
+C04 Veiculos  | prestador_vinculado texto livre mas coluna DB e UUID
+              | VeiculoDetalhe.tsx:199 | 2h
+
+C05 Veiculos  | Combustiveis.tsx 100% mock
+              | Combustiveis.tsx:51-54 | 4h
+
+C06 Config    | validateAIConfig importado mas nao existe no arquivo
+              | CentralIntegracoes.tsx:13 + validacaoTMS.ts:10 | 15min
+
+C07 Comercial | Export relatorio referencia l.nome/l.dataCriacao
+              | CrmRelatorios.tsx:127,134,161,167 | 30min
+
+C08 Comercial | publiko_alvo (typo) + kampanye (indonesio)
+              | MarketingMain.tsx:175,193-194,423 | 30min
+
+C09 Prestador | dataValidadeCNH nao existe no schema (cast as any)
+              | PrestadorDetalhe.tsx:848 | 1h
+
+C10 Prestador | useEffect sem dep page, paginacao quebrada
+              | PrestadoresLista.tsx:51-53 | 30min
+
+Total esforco P0/P1: ~11h
+
+=======================================================
+PERCENTUAL
+=======================================================
+
+Funcionalidades efetivamente homologadas (ponderado):
+
+Modulo         | Peso | Funcional | Score
+---------------|:----:|:---------:|:----:
+Operacional    |  20% |       90% |  18%
+Financeiro     |  15% |       52% |   8%
+Comercial      |  15% |       60% |   9%
+Biblioteca     |   5% |       85% |   4%
+Clientes       |  10% |       75% |   8%
+Prestadores    |  10% |       65% |   7%
+Veiculos       |  10% |       40% |   4%
+Motoristas     |   5% |       20% |   1%
+Relatorios     |   5% |       75% |   4%
+Configuracoes  |   5% |       70% |   4%
+------------------------------------------
+Total          | 100% |           |  67%
+
+Percentual oficial: 41% -> 45% (+4pp)
+
+=======================================================
+CONCLUSAO
+=======================================================
+
+HOMOLOGACAO FUNCIONAL CONCLUIDA —
+102 DEFEITOS ENCONTRADOS (10 CRITICOS)
+SCORE FUNCIONAL GERAL: 67%
+SCORE OFICIAL PROJETO: 45%
+
+Recomendacao: Corrigir P0/P1 (~11h) antes de novas
+funcionalidades. 3 maiores problemas estruturais:
+(1) codigo mock sem persistencia no Supabase
+(2) codigo morto nao removido (~3.000 linhas)
+(3) inconsistencia sidebar vs abas reais

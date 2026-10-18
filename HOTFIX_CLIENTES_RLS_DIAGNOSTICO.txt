@@ -1,0 +1,79 @@
+================================================================================
+HOTFIX CLIENTES RLS — DIAGNÓSTICO (somente leitura; nada alterado em produção)
+TMS: express-connect-hub | Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+CAUSA RLS:
+A policy de INSERT da tabela `clientes` (`clientes_insert_own`) usa WITH CHECK
+`f_usuario_pode_acessar_cliente(id)`. Essa função, para usuários que NÃO são
+super_admin/admin, avalia:
+
+    EXISTS (SELECT 1 FROM clientes c
+            WHERE c.id = p_cliente_id AND c.tenant_id = v_tenant_id)
+
+com `p_cliente_id = NEW.id` (uuid gerado no INSERT). Durante o INSERT a linha
+ainda NÃO está visível para subqueries da mesma instrução → EXISTS sempre falso
+→ WITH CHECK falha → "new row violates row-level security policy for table
+'clientes'".
+
+Comprovado por simulação read-only (BEGIN/ROLLBACK, sem persistir):
+- super_admin (tamiris)  : INSERT OK
+- financeiro             : ERRO RLS (mesma mensagem do usuário)
+- comercial              : ERRO RLS
+- mesmo com tenant_id preenchido: ERRO RLS (só o papel super_admin/admin
+  sobrevive via atalho `papel IN (...)` — financeiro/comercial não).
+
+CAMPO/REGRA QUE FALHA:
+- Policy: `clientes_insert_own` (INSERT) da tabela `clientes`.
+- Função: `f_usuario_pode_acessar_cliente(uuid)` — 3º ramo faz subquery
+  autorreferente em `clientes.id = NEW.id`, invisível durante o INSERT.
+- Não é omissão de campo: `tenant_id` é enviado pelo front
+  (`current_tenant_id_safe()` → tenant 00000000-0000-0000-0000-000000000001,
+  RPC com EXECUTE granted p/ authenticated) e os 7 usuários TMS estão
+  vinculados a esse tenant em `tenant_usuarios` (status=ativo). O problema é
+  a própria regra usar a chave `id` (que só existe após o insert) em vez de
+  avaliar o NEW.tenant_id.
+
+CORREÇÃO MÍNIMA (proposta — NÃO aplicada, aguarda autorização):
+Migration SQL (2 partes):
+  1) Função que valida por tenant (NEW.tenant_id), sem subquery na própria
+     `clientes`:
+       CREATE OR REPLACE FUNCTION public.f_usuario_pode_acessar_tenant(
+         p_tenant_id uuid) RETURNS boolean
+       LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $f$
+       DECLARE v_tenant_id uuid; v_papel text;
+       BEGIN
+         SELECT tu.tenant_id, COALESCE(tu.papel,'') INTO v_tenant_id, v_papel
+         FROM public.tenant_usuarios tu WHERE tu.user_id = auth.uid();
+         IF v_tenant_id IS NULL THEN RETURN false; END IF;
+         IF v_papel IN ('super_admin','admin') THEN RETURN true; END IF;
+         RETURN COALESCE(p_tenant_id, v_tenant_id) = v_tenant_id;
+       END; $f$;
+       REVOKE ALL ON FUNCTION public.f_usuario_pode_acessar_tenant(uuid)
+         FROM PUBLIC, anon;
+       GRANT EXECUTE ON FUNCTION public.f_usuario_pode_acessar_tenant(uuid)
+         TO authenticated, service_role;
+  2) Ajustar a policy de INSERT:
+       DROP POLICY IF EXISTS clientes_insert_own ON public.clientes;
+       CREATE POLICY clientes_insert_own ON public.clientes
+         FOR INSERT TO authenticated
+         WITH CHECK (f_usuario_pode_acessar_tenant(tenant_id));
+  (SELECT/UPDATE continuam com a função antiga; opcional reforçar depois.)
+  Obs.: a mesma lógica vale p/ qualquer INSERT que use a chave `id` na WITH
+  CHECK em tabela com RLS — padrão deve ser validar pelo tenant/coluna real.
+
+PRECISA ALTERAR PRODUÇÃO? SIM
+- 1 migration com a nova função + DROP/CREATE da policy `clientes_insert_own`.
+- Front (opcional, hardening): manter envio de `tenant_id` (já feito via
+  current_tenant_id_safe); nenhuma mudança obrigatória no ClienteDetalhe.
+
+ERRO VITE:
+Independente e NÃO reproduzível no working tree atual. Verificado:
+- `npx tsc --noEmit` → 0 erros.
+- `esbuild` (transform) em todos os `src/services/financeiro/*.ts` + componentes
+  consumidores (FaturaPanel/FaturaLista/ConfigFinanceira/RegrasFinanceiras
+  ClienteTab) → sem erro de sintaxe/transform.
+Conclusão: o RLS é erro de runtime (banco), não de compilação. O aviso do Vite
+em src/services/financeiro/... era transitório/antigo (ou de estado pré-fix);
+não é consequência do RLS nem causa do problema de salvar cliente.
+================================================================================

@@ -1,0 +1,143 @@
+==================================================
+CORE-OS-LINK-01-REAL-OPERATION-GATE
+==================================================
+DATE: 2026-09-21
+ENVIRONMENT: PRODUCTION (uwrvzsjtpgaifkktpepn)
+MODE: READ-ONLY
+DEPLOY_DATE: 2026-09-21 (FIX-POD-00E)
+
+==================================================
+DEPLOY VERIFICATION
+==================================================
+FIX_LINE_IN_TRIGGER: UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;
+DEPLOY_ALREADY_PRESENT=YES
+TRIGGER_CHANGED=NO
+MIGRATION_EXECUTED=NO
+
+==================================================
+POST-DEPLOY ALLOCATION SEARCH
+==================================================
+SEARCH_CRITERIA: created_at >= 2026-09-21, status NOT IN (cancelado, cancelada),
+                 origem NOT LIKE %teste%/%test%/%demo%/%hml%/%qa%/%sentinela%
+POST_DEPLOY_ALLOCATIONS_FOUND=0
+POST_DEPLOY_ALLOCATIONS_ALL_STATUSES=0
+
+MOST_RECENT_ALLOCATION_OVERALL:
+  id=c4338964-d565-49fb-a72a-211246a60079
+  created_at=2026-09-18T07:20:00-03:00 (BEFORE deploy)
+  status=concluida
+  ordem_servico_id=null
+
+TOTAL_ALLOCATIONS=193
+ALLOCATIONS_WITH_OS=59
+ALLOCATIONS_WITHOUT_OS=134
+ALLOCATIONS_SINCE_2026-09-01=5
+ALLOCATIONS_LAST_7_DAYS=1
+
+LATEST_5_ALLOCATIONS (any date):
+  1. c4338964 | 2026-09-18 | concluida   | os_id=NULL
+  2. 67de5ce4 | 2026-09-10 | aguardando  | os_id=NULL
+  3. a39a2b95 | 2026-09-10 | aguardando  | os_id=NULL
+  4. 57801474 | 2026-09-08 | aguardando  | os_id=NULL
+  5. b7cdb83f | 2026-09-08 | aguardando  | os_id=NULL
+
+LATEST_5_ALLOCATIONS_WITH_OS (ordem_servico_id IS NOT NULL):
+  1. 2333f16e | 2026-08-16 | os_id=2c24a4dc
+  2. 01fc1dce | 2026-08-01 | os_id=eebc9d93
+  3. ecaedf20 | 2026-07-28 | os_id=1e1b59fa
+  4. 654888b4 | 2026-07-28 | os_id=28640e7b
+  5. 1e9b311e | 2026-07-14 | os_id=405fe001
+
+==================================================
+EVIDENCE
+==================================================
+REAL_OPERATIONS_CHECKED=0
+REAL_OPERATIONS_VALID=0
+
+REAL_ALLOCATION_ID=N/A
+REAL_ALLOCATION_CREATED_AT=N/A
+REAL_STATUS=N/A
+
+ALLOCATION_OS_ID=N/A
+
+OS_EXISTS=N/A
+OS_ID=N/A
+OS_CREATED_AT=N/A
+
+OS_TO_ALLOCATION_MATCH=N/A
+
+RELATED_OS_COUNT=N/A
+DUPLICATE_OS_FOUND=N/A
+
+ALLOCATION_WITHOUT_OS=N/A
+OS_LINK_VALID=N/A
+ORPHAN_FOR_SELECTED_OPERATION=N/A
+
+POD_AVAILABLE=N/A
+
+PRODUCTION_MANUAL_WRITES=0
+
+==================================================
+ANALYSIS
+==================================================
+The FIX-POD-00E deploy was executed on 2026-09-21 and the trigger
+f_trg_propagar_financeiro_alocacao now contains the line:
+
+  UPDATE alocacoes_escala SET ordem_servico_id = v_os_id WHERE id = NEW.id;
+
+However, NO new allocations have been created in production after
+the deploy date. The most recent allocation (c4338964) was created
+on 2026-09-18, THREE DAYS BEFORE the deploy.
+
+This means the trigger fix has NOT yet been exercised by a real
+operation in production. The fix is deployed and correct in the
+function body, but there is no post-deploy evidence to confirm
+the UPDATE fires correctly in the live INSERT path.
+
+This is NOT a FAIL. The fix is deployed and waiting for a real
+allocation INSERT to trigger it. The next allocation created via
+the normal App Motorista flow will activate the fix.
+
+Historical context:
+- 59 allocations already had ordem_servico_id (pre-fix, likely
+  set by UI flow or OS creation path)
+- 134 allocations lack ordem_servico_id (historical, before fix)
+- The fix is a forward-fix for all FUTURE allocations
+
+==================================================
+STATUS=BLOCKED_WAITING_REAL_OPERATION
+==================================================
+
+RECOMMENDATION:
+Wait for the next real allocation to be created via the normal
+operational flow (App Motorista → INSERT into alocacoes_escala).
+When that happens, the trigger will:
+1. Create/find the OS
+2. Execute: UPDATE alocacoes_escala SET ordem_servico_id = v_os_id
+3. The allocation will have ordem_servico_id pre-filled
+
+A follow-up CORE-OS-LINK-01 re-run after the next real operation
+will confirm the fix is working end-to-end.
+
+==================================================
+MISSION PROHIBITIONS COMPLIANCE
+==================================================
+ZERO INSERT manual producao: COMPLIED
+ZERO UPDATE manual producao: COMPLIED
+ZERO DELETE producao: COMPLIED
+NÃO criar OS fake: COMPLIED
+NÃO criar alocacao fake: COMPLIED
+NÃO criar POD fake: COMPLIED
+NÃO redeploy trigger: COMPLIED
+NÃO alterar funcao: COMPLIED
+NÃO criar migration: COMPLIED
+NÃO alterar schema: COMPLIED
+NÃO alterar RLS: COMPLIED
+NÃO mexer Financeiro: COMPLIED
+NÃO mexer Prestadores: COMPLIED
+NÃO mexer Tabela de Valores: COMPLIED
+NÃO mexer contrato: COMPLIED
+NÃO implementar POD UI: COMPLIED
+NÃO corrigir historico: COMPLIED
+READ-ONLY: COMPLIED
+==================================================

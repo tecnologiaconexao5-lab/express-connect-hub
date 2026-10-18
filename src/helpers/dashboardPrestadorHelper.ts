@@ -50,7 +50,10 @@ export function calcularKPIPrestador(
     const status = String(p.status_pagamento || p.status || "pendente");
     qtdPeriodo++;
 
-    if (vl <= 0) bloqueados++;
+    // Definição única de "bloqueado" (mesma da Caixa de Entrada / normalizarPagamento):
+    // sem prestador vinculado (fantasma) OU valor líquido inválido (<= 0).
+    const semPrestador = !p.prestador_id;
+    if (vl <= 0 || semPrestador) bloqueados++;
 
     switch (status) {
       case "pago":
@@ -123,7 +126,7 @@ export function gerarAlertas(
     alertas.push({
       tipo: "fechamento_incompleto",
       label: "Repasses não Processados",
-      descricao: `${escalaCount} repasse(s) da escala pendente(s) de processamento`,
+      descricao: `${escalaCount} repasse(s) da programação pendente(s) de processamento`,
       gravidade: escalaCount > 10 ? "alta" : "baixa",
       quantidade: escalaCount,
     });

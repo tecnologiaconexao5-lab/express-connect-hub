@@ -18,7 +18,7 @@ import OrcamentoPreview from "./OrcamentoPreview";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
-import { toOrcamentoInsert } from "@/lib/dbMappers";
+import { toOrcamentoInsert, toOrcamentoDomain } from "@/lib/dbMappers";
 import {
   aprovarOrcamento,
   gerarOSDoOrcamento,
@@ -72,8 +72,10 @@ const OrcamentosLista = () => {
         throw error;
       }
 
-      const lista = (data as any) || [];
-      setOrcamentos(lista);
+      // TMS-COM-ORC-02 — DB → domínio (contrato único): garante dataEmissao,
+      // clienteCnpj, valorBase/valorFinal corretos na listagem/PDF.
+      const lista = (((data as any[]) || [])).map(toOrcamentoDomain);
+      setOrcamentos(lista as any);
 
       // Carregar OS vinculadas para orçamentos convertidos
       const convertidos = lista.filter(

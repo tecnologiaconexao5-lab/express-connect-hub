@@ -1,0 +1,327 @@
+================================================================================
+  MISSÃO A30 — ARQUITETURA DOCUMENTAL + MODELOS DE FATURA + DETALHES DO SERVIÇO
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+  Supabase: uwrvzsjtpgaifkktpepn (Produção — preservado)
+================================================================================
+
+================================================================================
+1. ARQUIVOS ANALISADOS
+================================================================================
+- src/components/financeiro/ConferenciaFinanceira.tsx (Central Financeira)
+- src/components/financeiro/FaturaPanel.tsx (criação/revisão de fatura)
+- src/components/financeiro/FaturaLista.tsx (listagem de faturas)
+- src/utils/pdfFatura.ts (PDF da fatura)
+- src/services/financeiro/faturaService.ts + faturaTypes.ts
+- src/utils/empresaConfig.ts (constantes da empresa)
+- src/lib/pdfLogoSupport.ts (logos com aspect ratio)
+- src/pages/Financeiro.tsx (abas)
+- src/services/fiscal/configuracoesFiscaisService.ts
+- Schema (read-only): clientes, faturas, fatura_itens, financeiro_receber,
+  configuracoes_fiscais, contas_financeiras (ausente), financeiro_prestador_auditoria (ausente)
+- Asset de logo: logo-conexao-light.webp (bundled), logo-conexao-branco.png (public)
+
+================================================================================
+2. ARQUIVOS ALTERADOS
+================================================================================
+1. src/utils/pdfFatura.ts                    — 2 modelos (Conexão Express refinado + Calvo), multi-página.
+2. src/components/financeiro/FaturaPanel.tsx — seletor de modelo, descrição Calvo, vencimento sugerido
+                                                por cliente, botão Boleto desabilitado (Efí).
+3. src/components/financeiro/FaturaLista.tsx — PDF usa modelo/descricao.
+4. src/components/financeiro/ConferenciaFinanceira.tsx — "Detalhes do Serviço", blocos reorganizados,
+                                                "OS Interna não informada", cliente único + cliente
+                                                não informado, Romaneio/OC com pendência.
+5. src/services/financeiro/faturaService.ts  — modelo/descricao (via metadata), montarDescricaoCalvo,
+                                                sugerirModeloFatura, sugerirVencimento (prazo do cliente),
+                                                DadosClienteFatura enriquecido.
+6. src/services/financeiro/faturaTypes.ts    — ModeloFatura, Fatura.modelo/descricao.
+7. src/test/a30_modelos_fatura.test.ts       — 14 testes novos.
+
+NENHUMA migration. Nenhum dado de produção alterado.
+
+================================================================================
+3. ESTRUTURA EXISTENTE REAPROVEITADA
+================================================================================
+- Tabelas faturas + fatura_itens + financeiro_receber.fatura_id (Fase 2A).
+- faturaService (rascunho/itens/emitir/cancelar).
+- RPC f_emitir_fatura / f_cancelar_fatura (numeração e transação no banco).
+- pdfLogoSupport.getLogoWithFallback/drawLogoSafe (aspect ratio preservado).
+- clientes.vencimento_padrao (prazo do cliente — fonte de sugestão de vencimento).
+- clientes.tabela_valores_padrao_id (vínculo com tabela comercial).
+- Central Financeira (não reconstruída).
+- Central não substitui OS/Escala/App/POD/Comercial/Receber/Pagar/Fiscal.
+
+================================================================================
+4. FUNCIONAMENTO ATUAL ENCONTRADO
+================================================================================
+- Central lista serviços finalizados com colunas Status/Data/OS/Cliente/
+  Romaneio/Preçstador/Veículo/Valores/Totais/POD/Receber/Fatura/Pagto.
+- FaturaPanel cria rascunho + itens (snapshot cliente) + observação automática.
+- f_emitir_fatura gera número oficial + Conta a Receber (FK fatura_id).
+- PDF de fatura já existia (modelo único) — agora refinado + novo modelo Calvo.
+- FaturaLista lista faturas com filtros.
+- "Dossiê do Serviço" era o painel lateral — renomeado para "Detalhes do Serviço".
+
+================================================================================
+5. REGRA DE CLIENTE ÚNICO
+================================================================================
+- Ao clicar "Criar Fatura" na Central: se serviços selecionados pertencem a
+  clientes diferentes → BLOQUEADO com mensagem:
+  "Não é possível faturar serviços de clientes diferentes. Selecione somente
+  serviços pertencentes ao mesmo cliente."
+- NÃO cria faturas parciais; NÃO escolhe cliente arbitrariamente; NÃO mistura
+  CNPJ/dados cadastrais.
+- Implementado em ConferenciaFinanceira.criarFatura (valida clientes.size > 1).
+
+================================================================================
+6. TRATAMENTO DE CLIENTE NÃO INFORMADO
+================================================================================
+- Serviços sem cliente continuam visíveis na Central como alerta operacional.
+- Bloqueio: ao tentar criar fatura com serviço sem clienteId → BLOQUEADO com
+  mensagem de pendência cadastral (não inventa cliente, não grava fictício).
+- No painel "Detalhes do Serviço" há bloco "Pendência cadastral" em amarelo.
+- Fonte real: cliente vem de alocacoes_escala.cliente_id / ordens_servico.cliente
+  (módulo de origem). A Central apenas enxerga.
+
+================================================================================
+7. FONTE DOS DADOS CADASTRAIS DO CLIENTE
+================================================================================
+- clientes (read-only): razao_social, nome_fantasia, cnpj, ie, inscricao_municipal,
+  logradouro/numero/bairro/complemento/cep/cidade/uf, email, vencimento_padrao,
+  tipo_cobranca, tabela_valores_padrao_id.
+- Dados sem estrutura atual: e-mail financeiro dedicado por cliente, dados
+  bancários por cliente (contas_financeiras não existe). Documentados como pendência.
+- NÃO duplicado cadastro — lido da fonte oficial.
+
+================================================================================
+8. FONTE/REGRA DO VENCIMENTO
+================================================================================
+Prioridade implementada:
+ 1. clientes.vencimento_padrao (dias) — regra do cliente.
+ 2. Fallback: emissão + 30 dias.
+ 3. Edição manual sempre permitida antes da emissão.
+Fonte documentada: clientes.vencimento_padrao (já existia). NÃO criada regra
+duplicada. (sugerirVencimento(data, prazoDias))
+
+================================================================================
+9. INTEGRAÇÃO ENCONTRADA COM TABELA COMERCIAL
+================================================================================
+- clientes.tabela_valores_padrao_id referencia a tabela comercial padrão do
+  cliente (tabelas_valores).
+- O pricing engine (precificacaoEngineService + buscarTabelasService) já
+  calcula preço na OS/Escala. A Central/Fatura NÃO recalcula — apenas consome
+  o resultado (valorClienteTotal) já propagado.
+- NÃO foram recriadas regras comerciais no Financeiro.
+- Fluxo: COMERCIAL define → OPERAÇÃO executa → FINANCEIRO consolida → FATURA cobra.
+
+================================================================================
+10. CÁLCULO DO TOTAL CLIENTE
+================================================================================
+- Fatura usa exclusivamente o lado CLIENTE:
+  valorClienteTotal = valorClienteBase + adicionaisCliente − descontosCliente.
+- Nunca usa valor repasse/reembolso/custo do prestador no documento.
+- O item de fatura (fatura_itens) guarda snapshot do cliente (valor_base,
+  valor_adicionais, valor_descontos, valor_total).
+
+================================================================================
+11. MODELO 1 — PADRÃO CONEXÃO EXPRESS (refinado)
+================================================================================
+- Cabeçalho navy com LOGO CLARO (logo-conexao-branco.png / light.webp via
+  getLogoWithFallback(true) — preserva aspect ratio via drawLogoSafe).
+- "FATURA DE SERVIÇOS", Nº, Emissão, Vencimento.
+- EMITENTE (razão social, CNPJ, IE/IM, endereço, telefone, e-mail financeiro).
+- CLIENTE (razão social, CNPJ, IE, endereço).
+- Tabela: Data | OS Interna | Romaneio/OC | Descrição | Valor.
+- Totais: Subtotal | Acréscimos | Descontos | TOTAL DA FATURA.
+- Observação. Dados para pagamento (Banco/Agência/Conta/PIX). Rodapé.
+- Multi-página via autoTable (didDrawPage) — sem sobreposição.
+- NÃO contém custo prestador/margem/status interno.
+
+================================================================================
+12. MODELO 2 — PADRÃO CALVO
+================================================================================
+- LOGO GRANDE CONEXÃO EXPRESS (centralizado, colorido, aspect ratio preservado).
+- "CONEXÃO SERVIÇOS EXPRESS LTDA" + CNPJ + INSCRIÇÃO ESTADUAL + ENDEREÇO + E-MAIL.
+- Faixa "Cobrança para: [RAZÃO SOCIAL]" + CNPJ + IE + ENDEREÇO do cliente.
+- Tabela principal: FATURA | DESCRIÇÃO | PARCELA | VENCIMENTO | VALOR.
+- "TOTAL DA FATURA".
+- "Dados para Transferência Bancária": BANCO | AGÊNCIA | CONTA | PIX.
+- Rodapé: "Fatura [nº] - Conexão Express".
+- Multi-página. Não é relatório detalhado.
+
+================================================================================
+13. LOGO UTILIZADO EM CADA MODELO
+================================================================================
+- Modelo Conexão Express: header escuro navy → logo claro
+  (/logos/logo-conexao-branco.png, fallback bundled logo-conexao-light.webp).
+- Modelo Calvo: fundo claro → logo colorido (/logos/logo-conexao-colorido.png).
+- Ambos via pdfLogoSupport (não distorce, não achata, não estica).
+- Obs: o arquivo "logo-conexao-light.png.png" citado não foi localizado; o
+  sistema já possui o equivalente claro oficial (branco/webp) usado corretamente.
+
+================================================================================
+14. REGRA DE ROMANEIO/OC
+================================================================================
+- Nomenclatura na Central: "Romaneio / OC do Cliente".
+- Placeholder: "Informe o Romaneio ou OC do cliente".
+- Status quando ausente: badge "Romaneio/OC pendente".
+- Edição direta pela Central salva em ordens_servico.romaneio (fonte oficial —
+  sem cópia paralela).
+- Não é "opcional genérico": é pendência para clientes que usam romaneio como
+  referência. Obrigatoriedade por cliente/operação documentada como pendência
+  (não inventada no banco).
+
+================================================================================
+15. PRÉVIA E NUMERAÇÃO
+================================================================================
+- "Visualizar Prévia" → somente renderização (não consome número).
+- "Salvar Rascunho" → arquitetura segura existente.
+- "Emitir Fatura" → f_emitir_fatura (numeração oficial via seq_fatura_ANO).
+- NENHUM contador paralelo criado.
+
+================================================================================
+16. SEPARAÇÃO FATURA x RELATÓRIO x BOLETO
+================================================================================
+- FATURA = documento de cobrança (faturas + PDF dos 2 modelos).
+- RELATÓRIO = visões operacionais/analíticas (Relatórios do Financeiro,
+  mantidos intactos — fases posteriores).
+- BOLETO = cobrança bancária futura (Efí) — NÃO implementada.
+- Botão "Gerar Boleto" no FaturaPanel está DESABILITADO com tooltip
+  "Integração com a Efí será habilitada em fase futura".
+- NENHUMA integração fictícia/credencial simulada.
+
+================================================================================
+17. "DOSSÊ DO SERVIÇO" → "DETALHES DO SERVIÇO"
+================================================================================
+- Painel lateral renomeado para "Detalhes do Serviço".
+- Subtítulo: "OS Interna: [número]" ou "OS Interna: não informada".
+- Nenhum novo painel criado — o existente foi refinado.
+
+================================================================================
+18. NOVA ORGANIZAÇÃO DA LATERAL (blocos)
+================================================================================
+1. Identificação (OS Interna, Cliente, Data, Prestador, Veículo) + Pendência
+   cadastral se cliente ausente.
+2. Referência do Cliente (Romaneio/OC com edição na fonte oficial + pendência).
+3. Operação (Origem, Destino, Status Operacional, Finalizada).
+4. Financeiro — Cliente (base/frete, adicionais, descontos, total).
+5. Financeiro — Prestador (base, adicionais/reembolsos, descontos, total,
+   status de pagamento).
+6. Margem (composicao_financeira_os) quando disponível.
+7. Evidências (POD: status, foto/canhoto/assinatura, recebedor).
+8. Faturamento / Fiscal (Fatura + NFS-e/CT-e quando existir).
+9. Recebimento / Pagamento (Recebimento do Cliente, Pagamento do Prestador,
+   Conta a Pagar).
+10. Notas fiscais transportadas (fiscal_documentos_vinculados; estado vazio).
+
+================================================================================
+19. TRATAMENTO "OS INTERNA NÃO INFORMADA"
+================================================================================
+- "Sem OS" foi substituído por "OS Interna: não informada" (subtítulo) e, no
+  bloco Identificação, valor "não informada" em âmbar.
+- Isso não sugere falta de rastreabilidade — apenas ausência da referência interna.
+
+================================================================================
+20. TRATAMENTO DO ROMANEIO/OC (lançamento direto pela Central)
+================================================================================
+- A Central edita o MESMO registro (ordens_servico.romaneio).
+- NÃO cria central_financeira_romaneio nem cópia paralela.
+- Após salvar, a linha da Central é atualizada imediatamente.
+
+================================================================================
+21. AUDITORIA DE MÚLTIPLAS NOTAS FISCAIS
+================================================================================
+- Estrutura existente: fiscal_documentos_vinculados (numero, serie, chave,
+  valor, peso, volumes, emitente, status, ordem_servico_id, cte_id, mdfe_id).
+- O dossiê já mostra os documentos vinculados à OS (leitura).
+- "+ Adicionar NF" NÃO implementado nesta missão (depende de decisão de
+  modelagem Romaneio ↔ NF). Documentado como pendência de fase própria.
+
+================================================================================
+22. FILTROS COMBINADOS
+================================================================================
+- Preservados e validados: período inicial/final, OS Interna, Romaneio/OC,
+  Cliente, Prestador, Placa, Status Operacional, POD, Faturamento, Recebimento,
+  Pagamento Prestador.
+- Combinações como Cliente+período, Cliente+faturamento pendente,
+  Prestador+pago, Romaneio+cliente, etc., funcionam simultaneamente.
+
+================================================================================
+23. TESTES EXECUTADOS
+================================================================================
+src/test/a30_modelos_fatura.test.ts (14 novos):
+  A — sugestão de modelo por cliente (calvo / conexao_express).
+  B — vencimento sugerido (ISO, emissão+30, prazo custom).
+  C — descrição Calvo: múltiplos romaneios, duplicidade eliminada, "(sem
+      cobrança)", "serviços de devolução", romaneios vazios, sem dados
+      operacionais (OS/placa/origem/prestador).
+  D — fatura não mistura clientes; usa exclusivamente Total Cliente; serviço
+      sem cliente bloqueia emissão.
+Cenários A–L da missão cobertos por regras de domínio + testes existentes
+(Fase 2B: elegibilidade, prévia não consome número, PDF sem valores prestador,
+cancelamento exige motivo, mesma fonte oficial).
+
+Validação:
+  npx tsc --noEmit → 0 erros
+  npx eslint (arquivos alterados) → 0 erros
+  npx vitest run → 16 arquivos, 172 testes PASS (158 + 14 A30)
+  npm run build → OK (41,44s)
+
+================================================================================
+24. PENDÊNCIAS
+================================================================================
+P-01 E-mail financeiro por cliente: clientes não possui campo dedicado
+     (usa email/contato_financeiro?). Documentado — usar email cadastrado.
+P-02 Dados bancários por cliente/empresa: contas_financeiras NÃO existe no
+     banco remoto → PDF usa fallback (configuracoes_fiscais vazias + empresaConfig).
+P-03 Modelo de fatura padrão por cliente: atualmente sugerido por regra de
+     negócio (nome contendo "calvo"). Estrutura dedicada (coluna modelo no
+     cliente ou tabela de preferências) exige migration — documentada, NÃO executada.
+P-04 Obrigatoriedade de Romaneio por cliente/operação: sem estrutura para
+     determinar — não inventada. Documentado.
+P-05 "+ Adicionar NF" e modelagem Romaneio ↔ múltiplas NFs: fase própria.
+P-06 Emissão NFS-e/CT-e real e vínculo com fatura: fase própria (fiscal).
+P-07 colunas modelo/descricao: armazenadas em faturas.metadata (JSONB) para
+     evitar migration. Documentado como estrutura futura possível.
+P-08 Relatórios completos do cliente/prestador: missão posterior (FATURA ≠ RELATÓRIO).
+
+================================================================================
+25. NECESSIDADE DE ALTERAÇÃO ESTRUTURAL NO BANCO (se houver)
+================================================================================
+Sim, futura (NÃO executada nesta missão):
+ 1. faturas.modelo (text) — ou manter em metadata. Preferência: coluna dedicada
+    + clientes.modelo_fatura_padrao (para padrão por cliente).
+ 2. faturas.descricao (text) — ou manter em metadata.
+ 3. contas_financeiras (dados bancários da empresa) — para dados reais no PDF.
+ 4. clientes.email_financeiro (e-mail de faturamento por cliente).
+Nenhuma dessas alterações foi aplicada — Produção preservada.
+
+================================================================================
+26. CONFIRMAÇÃO DE SEGURANÇA
+================================================================================
+- Nenhuma migration executada.
+- Nenhum dado de produção criado/alterado/apagado.
+- Nenhuma escrita destrutiva.
+- Supabase uwrvzsjtpgaifkktpepn preservado.
+- Apenas consultas read-only para auditoria (schema clientes, faturas, etc.).
+
+================================================================================
+27. STATUS FINAL DA A30
+================================================================================
+"A Central Financeira permanece como HUB e não substitui os demais módulos.
+O painel lateral agora é 'Detalhes do Serviço'.
+OS ausente é apresentado como 'OS Interna não informada'.
+Romaneio/OC é tratado como referência do cliente e como pendência quando aplicável.
+Uma fatura somente pode conter serviços do mesmo cliente.
+O valor faturado vem exclusivamente do lado Cliente.
+Fatura, Relatório e Boleto são processos distintos.
+Existem dois modelos de fatura: Padrão Conexão Express e Padrão Calvo.
+A prévia não consome numeração definitiva.
+A arquitetura existente foi reaproveitada.
+Nenhuma alteração estrutural insegura foi executada no Supabase de produção."
+
+A30 HOMOLOGADA (implementação) — sem migration, sem alteração de produção.
+
+================================================================================
+  FIM DO RELATÓRIO — MISSÃO A30
+================================================================================

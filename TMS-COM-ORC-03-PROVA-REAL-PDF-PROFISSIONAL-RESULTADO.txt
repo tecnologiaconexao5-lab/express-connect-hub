@@ -1,0 +1,108 @@
+================================================================================
+TMS-COM-ORC-03-PROVA-REAL-PDF-PROFISSIONAL — RESULTADO
+Missão: Validar fluxo real do orçamento + PDF comercial atualizado/profissional
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS + Supabase PRODUÇÃO. APP/Redmi NÃO conectado.
+================================================================================
+
+1. COM-ORC-02 PRESERVADO (confirmado no código atual)
+--------------------------------------------------------------------------------
+- Cálculo canônico síncrono (orcamentoCalculo.ts: calcularValorFinal/Valores).
+- Payload de save já com valorFinal (montarPayloadOrcamento) — sem state stale.
+- Persistência JSONB `valores` + colunas dedicadas valor_base/valor_final.
+- Reload DB→domínio (toOrcamentoDomain) com dataEmissao/clienteCnpj/valorFinal.
+- Data de emissão default = hoje e input max=hoje.
+- PDF: sem "undefined", valorFinal usado, filename .pdf, sem data fictícia.
+- Encoding: OrcamentoForm sem "ORÃ‡AMENTO" (usa "ORÇAMENTO").
+
+2. CASO LEGADO ORC-202609-8659
+--------------------------------------------------------------------------------
+- NÃO usado como prova de falha do código atual.
+- Referência do padrão antigo: valorBase=2200, valorFinal=0, colunas dedicadas
+  NULL, validade (2026-09-30) ANTERIOR à emissão (2026-10-30).
+- NÃO foi corrigido nem alterado nesta missão.
+
+3. CASO CONTROLADO DESTA MISSÃO
+--------------------------------------------------------------------------------
+- Número: ORC-202609-9303 (identificável como teste desta missão).
+- Cliente controlado: "CLIENTE CONTROLADO ORC-03" (CNPJ 11.222.333/0001-81).
+- Valor Base: R$ 2.200,00 | Adicionais: R$ 0,00 | Descontos: R$ 0,00.
+- RESULTADO: VALOR FINAL = R$ 2.200,00 (ZERO situação "Transporte 2200 / Final 0").
+- Datas: Emissão 26/09/2026, Validade 26/10/2026 (validade >= emissão).
+- Carga: "Carga geral paletizada", 10 volumes, 500 kg, 2,5 m³, 5 pallets.
+- Veículo: truck / pesado / sider (rótulo "Veículo recomendado para a operação").
+- Pontos: 1 Coleta (São Paulo/SP) + 1 Entrega (Jundiaí/SP), com janelas e contato.
+
+4. FLUXO COMPROVADO (formulário→salvar→banco→reload→listagem→PDF)
+--------------------------------------------------------------------------------
+Script: scripts/_com_orc_03_prova.ts (npx tsx). TODOS OS CHECKS PASSARAM.
+- Cálculo: base 2200 => final 2200 (canônica) e no payload de save.
+- Banco (dentro de transação): valor_base=2200, valor_final=2200, JSONB coerente.
+- Reload real (SELECT + toOrcamentoDomain): valorFinal=2200, emissão preservada,
+  validade >= emissão, pontos preservados.
+- PDF gerado a partir do registro RELOAD (mesmos dados da listagem).
+- PROVA DE RELOAD sem persistir: transação + ROLLBACK — 0 orçamento criado.
+
+5. PDF — ALTERAÇÕES (padrão profissional)
+--------------------------------------------------------------------------------
+- Cabeçalho Conexão Express (azul-marinho + laranja): logo (fallback embutido),
+  nº, emissão, validade e status.
+- Hierarquia numerada: 1 Dados do Cliente; 2 Informações da Carga;
+  3 Operação / Veículo; 4 Coleta e Entrega / Pontos; 5 Resumo Financeiro;
+  6 Condições Comerciais + Observações; assinaturas.
+- Resumo Financeiro ÚNICO (removeu a duplicação "Resumo Executivo + Totalização"):
+  Valor do Transporte; adicionais/pedágio/km/ajudante/devolução/reentrega só se >0;
+  Descontos só se >0; destaque laranja "VALOR FINAL".
+- Carga: formatação segura — volumes/peso/cubagem/pallets com "—" quando 0/ausente;
+  valor declarado em R$ só quando >0; nunca "undefined"/"null".
+- Veículo: "Veículo recomendado para a operação" (nunca "sugerido pela IA").
+- Pontos: campos reais (sequência ?? índice, tipo, endereço + cidade/UF, contato,
+  janela); sem "[object Object]"/undefined; sem repetir cidade.
+- Rodapé em TODAS as páginas com paginação ("Página X de Y").
+- Encoding Latin-1 correto: ORÇAMENTO, INFORMAÇÕES, VEÍCULO, CONDIÇÕES (sem mojibake).
+- Filename: ORC-202609-9303_Orcamento_Comercial.pdf (sem UUID).
+
+6. PAGINAÇÃO / ARQUIVO
+--------------------------------------------------------------------------------
+- Páginas: 2 (conteúdo real e organizado; sem 1ª página em branco; sem 2ª vazia).
+  Página 1: cliente/carga/veículo/pontos. Página 2: financeiro/condições/assinaturas.
+- Arquivo: test-results/com-orc-03/ORC-202609-9303_Orcamento_Comercial.pdf
+  980.343 bytes | 26/09/2026 18:06:53
+
+7. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (2 arquivos): 24/24 PASS
+    com_orc_03_pdf_profissional (9) — render real: páginas, acentos, sem undefined,
+    carga/pontos/valor final, veículo, filename, rodapé.
+    com_orc_02_persistencia (15) — cálculo/persistência/reload/filename/encoding.
+- npx tsc --noEmit: SEM NOVOS ERROS nos arquivos da missão.
+- npm run build -> OK (37.40s).
+
+8. LIMPEZA / NEUTRALIZAÇÃO
+--------------------------------------------------------------------------------
+- Nenhum orçamento de teste persistido (transação + ROLLBACK).
+- Registro legado ORC-202609-8659 e os 9 orçamentos existentes NÃO foram alterados.
+- Nenhum dado real apagado ou modificado.
+
+9. BACKLOG PRESERVADO (não implementado aqui)
+--------------------------------------------------------------------------------
+FINANCEIRO/PRESTADORES: prova real do Novo Lançamento pela UI; Fechamento x Lote;
+pagamento parcial; saneamento; registros R$0; pagos sem baixa; Calvo/CESAR;
+paginação global; Conta Corrente/Relatório/KPIs; demais P1.
+COMERCIAL: dimensões; volumes/peso/cubagem/peso cubado; recomendação por capacidade;
+Tabela Esporádica; custo x venda x margem; Fracionado/providers; saneamento legado;
+mojibake restante do Comercial/CRM.
+DEPOIS: APP-STAB; E2E APP↔TMS↔Supabase↔Financeiro; Admin APP; CAD-PERSIST;
+Master 360/Gate.
+
+10. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- PDF do caso controlado aberto no visualizador padrão para o usuário avaliar.
+- NÃO declarar homologação visual. Status máximo:
+  IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

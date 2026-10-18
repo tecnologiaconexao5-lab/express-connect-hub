@@ -105,8 +105,8 @@ export default function StepVehicle() {
             </SelectTrigger>
             <SelectContent>
               {TIPOS_VEICULO.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
                 </SelectItem>
               ))}
             </SelectContent>

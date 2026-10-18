@@ -1,0 +1,52 @@
+MISSAO TMS-007.2A - SESSAO PLAYWRIGHT AUTENTICADA SEGURA
+========================================================
+Data: 2026-07-28
+Status: CONCLUIDO
+Branch: auditoria-final-integracao
+
+RESUMO EXECUTIVO
+----------------
+Sessao Playwright autenticada criada e reutilizavel para o modulo
+Financeiro. Login com tamiris.castilho@conexaoexpress.com.br
+(super_admin) bem-sucedido via fallback Conexao@2026. StorageState
+salvo localmente. Testes SELECT-only e reuso validados.
+
+LOGIN REALIZADO: tam***@conexaoexpress.com.br
+AUTH.UID: 8c12****8284
+ROLE REAL: super_admin (validada via acesso /financeiro HTTP 200)
+STORAGESTATE: tests/e2e/.auth/storageState.json (2794 bytes)
+STORAGESTATE CRIADO: 2026-07-28T11:46:14
+
+TESTES PLAYWRIGHT: 3/3 PASSARAM (26.7s)
+  Teste 1: Login + validacao + storageState .......... PASS (8.9s)
+  Teste 2: SELECT-only 6 tabelas .................... PASS (13.5s)
+    ordens_servico ............................. HTTP 200
+    prestadores ................................ HTTP 200
+    veiculos ................................... HTTP 200
+    financeiro_receber ........................ HTTP 200
+    financeiro_pagar .......................... HTTP 200 (78 linhas)
+    pagamentos_prestadores ................... HTTP 200
+  Teste 3: Reuso sessao novo contexto ............... PASS (1.2s)
+
+SEGURANCA:
+  storageState ignorado pelo git: SIM
+  storageState nao staged: SIM
+  Nenhum token em logs: SIM
+  Nenhuma senha em codigo novo: SIM
+
+TYPECHECK (node): OK
+BUILD: OK (34.88s)
+
+ARTEFATOS:
+  scripts/m0072a_login_manual.cjs (descontinuado)
+  tests/e2e/tms0072a-setup-sessao.spec.ts
+  playwright.setup.config.ts
+  tests/e2e/.auth/storageState.json (.gitignored)
+  .gitignore (atualizado)
+
+PENDENCIAS:
+  1. TMS-007.2 liberada para retomada
+  2. financeiro_receber mostrou 1 linha (possivel filtro)
+  3. composicao_financeira_os via React component
+
+PERCENTUAL GERAL: 51%

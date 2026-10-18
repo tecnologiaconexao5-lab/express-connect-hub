@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const cols = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='ordens_servico' AND (column_name ILIKE '%rede%' OR column_name ILIKE '%prestador%' OR column_name ILIKE '%public%') ORDER BY column_name`);
+console.log("colunas rede/prestador/public:", cols.rows.map(r=>r.column_name).join(", "));
+const { rows } = await c.query(`SELECT numero, status, custo_prestador, valor_cliente, prestador FROM ordens_servico WHERE numero IN ('OS-202610-634957','OS-202610-562467') ORDER BY created_at DESC`);
+console.log(rows);
+await c.end();

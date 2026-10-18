@@ -1,0 +1,422 @@
+﻿FIN-SANE-02M.7 — MIGRATIONS SCHEMA DRIFT AUDIT
+================================================
+Auditoria READ-ONLY de migrations vs schema LIVE.
+ZERO correcoes. Somente diagnostico.
+
+Data: 2026-09-20
+Hora: 17:50 BRT
+Modelo: MiMo-V2.5
+Status: PASS (auditoria concluida)
+Redmi: NAO NECESSARIO
+
+
+==========================================================================
+SECAO 1 — HISTORICO SUPABASE_MIGRATIONS
+==========================================================================
+
+Tabela supabase_migrations.schema_migrations contem APENAS 1 registro:
+
+  version | name
+  20260728 | hotfix001_rpcs_app_motorista
+
+IMPLICACAO CRITICA:
+  ~100 migrations do repositorio local foram aplicadas FORA do
+  controle de versao do Supabase (manual, script, pg direto).
+  Nao ha como saber automaticamente quais estao em producao
+  apenas pelo historico.
+
+  Conclusao: comparacao LIVE vs LOCAL e o metodo CORRETO.
+
+
+==========================================================================
+SECAO 2 — INVENTARIO LOCAL (MIGRATIONS FINANCEIRAS RELEVANTES)
+==========================================================================
+
+100+ migrations no total. Foco nas financeiras:
+
+  MIGRATION                              OBJETOS                          APLICADA?
+  20260705_m80 (M80)                     UNIQUE uq_fp_os_id               SIM (LIVE)
+  20260705_m80b                          M80 trigger fix columns          SIM (LIVE)
+  20260731_p0_propagacao_financeira      M66 trigger + function           SIM (LIVE)
+  20260801_e2_cancelamento_financeiro    Cancel trigger alocacao          SIM (LIVE)
+  20260818_f0c4_livro_baixas             financeiro_baixas table          SIM (LIVE)
+  20260818_f0d_receber_baixas_rpc        f_registrar + f_estornar RPCs    SIM (LIVE)
+  20260906_363a3_bloqueio_receber        trg_guardar_receber_pago_sem     SIM (LIVE)
+  20260907_363b1_bloqueio_pagar          trg_guardar_pagar_pago_sem       SIM (LIVE)
+  20260907_363d2a_flag_is_teste          is_teste columns                 SIM (LIVE)
+  20260913_02b_unifica_valor_pagar       M66/M80 valor=v_valor_liquido    SIM (LIVE)
+  20260920_02mf_fix_rpc_pagamento        f_confirmar_pagamento_prestador  SIM (LIVE)
+  20260920_02mf_rollback                 Rollback 02M.5F                  N/A (rollback)
+
+
+==========================================================================
+SECAO 3 — ESTADO LIVE: TABELAS CRITICAS
+==========================================================================
+
+financeiro_pagar: 43 colunas, PK id, UNIQUE os_id (uq_fp_os_id)
+  CHECK ck_fp_status: 12 valores (aberto, pago, vencido, atrasado,
+    cancelado, parcial, pendente, a vencer, cancelada, provisorio,
+    recebido, renegociado)
+  coluna is_teste: boolean NOT NULL DEFAULT false
+
+financeiro_receber: 39 colunas, PK id, UNIQUE os_id (uq_fr_os_id)
+  CHECK ck_fr_status: mesmos 12 valores
+  coluna is_teste: boolean NOT NULL DEFAULT false
+
+financeiro_baixas: 19 colunas, PK id
+  CHECK ck_financeiro_baixas_tabela: IN (financeiro_pagar, financeiro_receber)
+  CHECK ck_financeiro_baixas_valor_baixado: > 0
+  CHECK ck_financeiro_baixas_saldo: valor_original >= 0 AND saldo_restante >= 0
+  FK: conta_financeira_id -> contas_financeiras
+
+pagamentos_prestadores: 50 colunas, PK id, UNIQUE os_id (uq_pp_os_id)
+  CHECK chk_classificacao_dado: IN (real, teste, duvidoso)
+  coluna is_teste: boolean NOT NULL DEFAULT false
+  coluna fechamento_id (FK self)
+
+composicao_financeira_os: 21 colunas, PK id
+  UNIQUE os_id (2 constrants: composicao_financeira_os_os_id_key + idx_composicao_os_unique)
+  ⚠️ DUPLICATE UNIQUE INDEX
+
+ordens_servico: 130 colunas, PK id
+  coluna is_teste: boolean NOT NULL DEFAULT false
+
+alocacoes_escala: 108 colunas, PK id
+  FKs: ordem_servico_id, prestador_id, cliente_id
+
+
+==========================================================================
+SECAO 4 — FUNCOES/RPCs: LOCAL vs LIVE
+==========================================================================
+
+1. f_confirmar_pagamento_prestador
+   LOCAL:  3 args (p_pagamento_id, p_data_pagamento, p_valor_pago)
+   LIVE:   3 args (p_pagamento_id, p_data_pagamento, p_valor_pago)
+   MATCH:  SIM — versao 02M.5F com suporte a parcela + rejeicao <=0
+   VOLATILE: v (correto — faz INSERT/UPDATE)
+   SECDEF: false
+
+2. f_confirmar_pagamento_fechamento
+   LOCAL:  2 args (p_fechamento_id, p_data_pagamento)
+   LIVE:   2 args (p_fechamento_id, p_data_pagamento)
+   MATCH:  SIM — chama f_confirmar_pagamento_prestador para cada item
+   VOLATILE: v
+   SECDEF: true
+
+3. f_registrar_baixa_financeira
+   LOCAL:  11 args (inclui p_conta_financeira_id)
+   LIVE:   11 args (inclui p_conta_financeira_id)
+   MATCH:  SIM — suporta parcial, saldo, historico
+   VOLATILE: v
+   SECDEF: false
+
+4. f_estornar_baixa_financeira
+   LOCAL:  2 args (p_baixa_id, p_motivo_estorno)
+   LIVE:   2 args (p_baixa_id, p_motivo_estorno)
+   MATCH:  SIM — soft delete (estornada=true), recalcula saldo
+   VOLATILE: v
+   SECDEF: false
+
+5. f_trg_propagar_financeiro_alocacao (M66)
+   LOCAL:  financeiro_pagar.valor = v_valor_liquido
+   LIVE:   financeiro_pagar.valor = v_valor_liquido
+   MATCH:  SIM — versao 02B aplicada
+   TRIGGER: AFTER INSERT OR UPDATE (14 columns), SEM WHEN clause
+   LIVE:   mesmo pattern — SEM WHEN clause
+
+6. f_trg_propagar_financeiro_os (M80)
+   LOCAL:  financeiro_pagar.valor = v_valor_liquido
+   LIVE:   financeiro_pagar.valor = v_valor_liquido
+   MATCH:  SIM — versao 02B aplicada
+
+7. trg_guardar_pagar_pago_sem_baixa
+   LOCAL:  BEFORE INSERT OR UPDATE OF status
+   LIVE:   BEFORE INSERT OR UPDATE OF status
+   MATCH:  SIM
+
+8. trg_guardar_receber_pago_sem_baixa
+   LOCAL:  BEFORE INSERT OR UPDATE OF status
+   LIVE:   BEFORE INSERT OR UPDATE OF status
+   MATCH:  SIM
+
+
+==========================================================================
+SECAO 5 — TRIGGERS LIVE
+==========================================================================
+
+alocacoes_escala:
+  trg_propagar_financeiro_alocacao: AFTER INSERT ✅
+  trg_propagar_financeiro_alocacao: AFTER UPDATE ✅
+  trg_cancelar_financeiro_alocacao: BEFORE UPDATE ✅
+  trg_evento_* (6 triggers de eventos) ✅
+  trg_registrar_historico_alocacao: AFTER INSERT/UPDATE ✅
+
+ordens_servico:
+  trg_propagar_financeiro_os: AFTER INSERT ✅
+  trg_propagar_financeiro_os: AFTER UPDATE ✅
+  trg_evento_os_* (5 triggers de eventos) ✅
+
+financeiro_pagar:
+  trg_guardar_pagar_pago_sem_baixa: BEFORE INSERT/UPDATE ✅
+
+financeiro_receber:
+  trg_guardar_receber_pago_sem_baixa: BEFORE INSERT/UPDATE ✅
+
+composicao_financeira_os:
+  trg_calcular_margens_financeiras_os: BEFORE INSERT/UPDATE ✅
+  trg_margem: BEFORE INSERT/UPDATE ✅
+
+financeiro_baixas:
+  trg_financeiro_baixas_updated_at: BEFORE UPDATE ✅
+
+
+
+
+==========================================================================
+SECAO 6 — MATRIZ DE DRIFT
+==========================================================================
+
+OBJETO                          LOCAL       LIVE        ESTADO
+---------------------------------------------+-----------------+-------------
+f_confirmar_pagamento_prestador  02M.5F      02M.5F      MATCH
+f_confirmar_pagamento_fechamento 02B+        02B+        MATCH
+f_registrar_baixa_financeira     F0D         F0D         MATCH
+f_estornar_baixa_financeira      F0D         F0D         MATCH
+f_trg_propagar_financeiro (M66)  02B         02B         MATCH
+f_trg_propagar_financeiro (M80)  02B         02B         MATCH
+trg_guardar_pagar_pago_sem       363B        363B        MATCH
+trg_guardar_receber_pago_sem     363A        363A        MATCH
+financeiro_pagar CONSTRAINT      02B+        02B+        MATCH
+financeiro_baixas TABLE           F0C4        F0C4        MATCH
+is_teste columns                  363D        363D        MATCH
+RLS financeiro_pagar              M003+       M003+       MATCH
+RLS financeiro_baixas             F0C4        F0C4       MATCH
+RLS pagamentos_prestadores        ???         wide open   ⚠️ DRIFT
+UNIQUE composicao duplicado       ???         2 UNIQUE    ⚠️ DRIFT
+
+LEGENDA:
+  MATCH        = local = live, sem divergencia
+  DRIFT        = divergencia detectada
+  LOCAL_ONLY   = so existe local
+  PROD_ONLY    = so existe em producao
+
+
+==========================================================================
+SECAO 7 — DIVERGENCIAS ENCONTRADAS
+==========================================================================
+
+D1. DUPLICATE UNIQUE INDEX em composicao_financeira_os
+    PROD: composicao_financeira_os_os_id_key (UNIQUE)
+    PROD: idx_composicao_os_unique (UNIQUE) — REDUNDANTE
+    RISCO: BAIXO — nao causa erro, apenas overhead de indexacao
+    ACAO FUTURA: Remover idx_composicao_os_unique (duplicado)
+
+D2. DUPLICATE INDEX em financeiro_pagar
+    PROD: uq_fp_os_id (UNIQUE) + idx_financeiro_pagar_os_id (INDEX)
+    RISCO: BAIXO — UNIQUE ja protege; index normal e redundante
+    ACAO FUTURA: Remover idx_financeiro_pagar_os_id
+
+D3. DUPLICATE INDEX em financeiro_receber
+    PROD: uq_fr_os_id (UNIQUE) + idx_financeiro_receber_os_id (INDEX)
+    RISCO: BAIXO — mesmo padrao de D2
+    ACAO FUTURA: Remover idx_financeiro_receber_os_id
+
+D4. DUPLICATE INDEX em pagamentos_prestadores
+    PROD: uq_pp_os_id (UNIQUE) + idx_pagamentos_prestadores_os_id (INDEX)
+    RISCO: BAIXO — mesmo padrao
+    ACAO FUTURA: Remover idx_pagamentos_prestadores_os_id
+
+D5. RLS pagamentos_prestadores WIDE OPEN
+    PROD: "Allow all pagamentos_prestadores" — ALL para public USING true
+    LOCAL: Nao definido na migration F0C4 (provavel adicionado depois)
+    RISCO: MEDIO — qualquer usuario (incluindo anon) pode ler/escrever
+    ACAO FUTURA: Substituir por policies scoped (tenant_usuarios)
+
+D6. M66 trigger SEM WHEN clause
+    LOCAL (P0 original): WHEN (NEW.status IS DISTINCT FROM 'cancelada')
+    LOCAL (02B): SEM WHEN clause
+    LIVE: SEM WHEN clause
+    MATCH: LIVE = 02B (correto)
+    NOTA: O P0 original tinha WHEN; o 02B removeu (function handle internamente)
+
+D7. M66 trigger — UPDATE OF columns
+    P0 original: 12 columns
+    02B: 14 columns (adiciona valor_desconto_prestador, prestador_id)
+    LIVE: 14 columns ✅ (versao 02B)
+
+
+==========================================================================
+SECAO 8 — RISCO DE REAPLICACAO
+==========================================================================
+
+MIGRATION                          IDEMPOTENTE?  RISCO    MOTIVO
+--------------------------------+-------------+--------+------------------
+20260705_m80 (UNIQUE)            SIM (IF NOT)  BAIXO    Ja existe constraint
+20260705_m80b (trigger fix)      SIM (OR REP)  BAIXO    CREATE OR REPLACE
+20260731_p0 (M66 trigger)        SIM (OR REP)  ALTO     02B superseded P0;
+                                                         reaplicar P0 reverts
+                                                         v_valor_liquido→base
+20260818_f0c4 (baixas table)     SIM (IF NOT)  BAIXO    Ja existe tabela
+20260818_f0d (RPCs)              SIM (OR REP)  BAIXO    CREATE OR REPLACE
+20260906_363a3 (bloqueio)        SIM (OR REP)  BAIXO    CREATE OR REPLACE
+20260907_363b1 (bloqueio)        SIM (OR REP)  BAIXO    CREATE OR REPLACE
+20260907_363d2 (is_teste)        SIM (IF NOT)  BAIXO    Ja existem colunas
+20260913_02b (valor=liquido)     SIM (OR REP)  MEDIO    Se reaplicar P0
+                                                         primeiro, perde
+20260920_02mf (RPC parcela)      SIM (OR REP)  BAIXO    CREATE OR REPLACE
+
+PERIGOSA DE REAPLICAR:
+  20260731_p0_propagacao_financeira_trigger
+  MOTIVO: Reverteria M66 de v_valor_liquido para v_valor_prestador,
+  desfazendo a correcao 02B ja homologada e aplicada.
+
+  NAO REPLICAR sem antes confirmar que 02B continua aplicada.
+
+
+==========================================================================
+SECAO 9 — OBJETOS CRITICOS: COMPARACAO DETALHADA
+==========================================================================
+
+A. financeiro_pagar — 11 campos de valor:
+   valor, valor_bruto, valor_liquido, desconto, juros, multa,
+   impostos_retidos — todos NOT NULL DEFAULT 0
+   is_teste — boolean NOT NULL DEFAULT false
+   conta_pagadora — DEFAULT 'Conta Corrente Principal'
+   CK ck_fp_status — 12 valores validos
+
+B. financeiro_baixas — protecoes:
+   CK valor_baixado > 0
+   CK valor_original >= 0 AND saldo_restante >= 0
+   CK titulo_tabela IN (financeiro_pagar, financeiro_receber)
+   FK conta_financeira_id -> contas_financeiras
+
+C. RLS policies — mapeamento completo:
+
+   TABELA              SELECT    INSERT    UPDATE    DELETE
+   financeiro_pagar    tms ✅    tms ✅    tms ✅    tms ✅
+   financeiro_receber  tms+cli   tms ✅    tms ✅    tms ✅
+   financeiro_baixas   tms ✅    tms ✅    tms ✅    (none)
+   pagamentos_prest    PUBLIC ⚠️ PUBLIC ⚠️ PUBLIC ⚠️ PUBLIC ⚠️
+   composicao_fin_os   tms ✅    tms ✅    tms ✅    (none)
+
+   NOTA: financeiro_receber tem fr_select_own (anon+authenticated)
+   que permite a clientes verem seus proprios dados.
+   pagamentos_prestadores esta COMPLETAMENTE ABERTO.
+
+
+==========================================================================
+SECAO 10 — DEPENDENCIAS
+==========================================================================
+
+f_confirmar_pagamento_prestador DEPENDE DE:
+  - pagamentos_prestadores (SELECT FOR UPDATE)
+  - financeiro_pagar (SELECT FOR UPDATE, UPDATE)
+  - financeiro_baixas (INSERT)
+  - contas_financeiras (SELECT)
+
+f_confirmar_pagamento_fechamento DEPENDE DE:
+  - pagamentos_prestadores (SELECT FOR UPDATE, UPDATE)
+  - f_confirmar_pagamento_prestador (chamada interna)
+
+f_registrar_baixa_financeira DEPENDE DE:
+  - financeiro_pagar OU financeiro_receber (SELECT FOR UPDATE)
+  - financeiro_baixas (INSERT)
+  - trg_guardar_pagar_pago_sem_baixa (trigger AFTER UPDATE)
+
+f_estornar_baixa_financeira DEPENDE DE:
+  - financeiro_baixas (SELECT FOR UPDATE, UPDATE)
+  - financeiro_pagar OU financeiro_receber (UPDATE)
+
+M66 DEPENDE DE:
+  - clientes (SELECT nome)
+  - prestadores (SELECT nome, cpf_cnpj)
+  - ordens_servico (INSERT ON CONFLICT)
+  - financeiro_receber (INSERT ON CONFLICT)
+  - financeiro_pagar (INSERT ON CONFLICT)
+  - pagamentos_prestadores (INSERT ON CONFLICT)
+  - composicao_financeira_os (INSERT ON CONFLICT)
+
+M80 DEPENDE DE:
+  - mesmos que M66 (ordens_servico como target)
+
+
+
+
+==========================================================================
+SECAO 11 — PLANO FUTURO DE ALINHAMENTO (SEM EXECUTAR)
+==========================================================================
+
+PRIORIDADE ALTA:
+  P1. Resolver D5: RLS pagamentos_prestadores wide open
+      Acao: Criar migration com policies scoped (tenant_usuarios)
+      Risco de aplicacao: MEDIO — pode bloquear acesso existente
+      Requer: teste em QA antes
+
+PRIORIDADE MEDIA:
+  P2. Limpar D1-D4: Remover indexes redundantes
+      Acao: DROP INDEX idx_composicao_os_unique,
+            DROP INDEX idx_financeiro_pagar_os_id,
+            DROP INDEX idx_financeiro_receber_os_id,
+            DROP INDEX idx_pagamentos_prestadores_os_id
+      Risco: BAIXO — UNIQUE indexes permanecem
+      Requer: confirmar que nenhuma query usa esses indexes
+
+  P3. Alinhar historico supabase_migrations
+      Acao: Inserir registros das migrations ja aplicadas
+      Risco: BAIXO — apenas meta-dados
+      NOTA: Alternativa e ignorar historico e sempre comparar LIVE
+
+PRIORIDADE BAIXA:
+  P4. Consolidar M66/M80 (futuro)
+      Acao: Unificar triggers de propagacao em unica funcao
+      Risco: MEDIO — requer testes exaustivos
+      NOTA: funcional mas duplicado
+
+MIGRATIONS PERIGOSAS (NUNCA REPLICAR):
+  - 20260731_p0_propagacao_financeira_trigger (versao P0 do M66)
+    Motivo: Reverteria valor=v_valor_prestador (pre-02B)
+  - 20260913000001_fin_sane_02b_rollback
+    Motivo: Desfaz 02B, restaura M66/M80 com valor base
+
+
+==========================================================================
+SECAO 12 — RESUMO EXECUTIVO
+==========================================================================
+
+TOTAL MIGRATIONS LOCAIS: ~100+
+MIGRATIONS NO HISTORICO SUPABASE: 1 (quase vazio)
+OBJETOS CRITICOS COMPARADOS: 11
+DIVERGENCIAS ENCONTRADAS: 7 (D1-D7)
+OBJETOS MATCH: 8/11
+OBJETOS COM DRIFT: 3/11
+
+DRIFT CRITICO: NENHUM
+  - Todas as RPCs principais estao alinhadas (LOCAL = LIVE)
+  - Todos os triggers de propagacao estao alinhados (02B aplicado)
+  - Todas as constraints de protecao estao presentes
+  - is_teste esta em 4 tabelas (pagar, receber, OS, pagamentos_prestadores)
+
+DRIFT MODERADO: 1
+  - D5: RLS pagamentos_prestadores wide open (public ALL)
+
+DRIFT BAIXO: 6
+  - D1-D4: Indexes redundantes (4 indexes duplicados)
+  - D6-D7: Divergencias ja resolvidas (P0→02B)
+
+
+==========================================================================
+SECAO 13 — CLASSIFICACAO FINAL
+==========================================================================
+
+  SCHEMA_DRIFT_AUDIT = PASS
+
+  Significado: Auditoria concluida com evidencia suficiente.
+  NAO significa schema 100% alinhado — significa que o estado
+  foi determinado completamente e um plano seguro foi produzido.
+
+  Acoes imediatas necessarias: NENHUMA
+  Acoes futuras recomendadas: P1 (RLS) e P2 (indexes)
+  Migrations perigosas identificadas: 2 (P0 M66 e 02B rollback)
+
+
+FIM DA AUDITORIA FIN-SANE-02M.7

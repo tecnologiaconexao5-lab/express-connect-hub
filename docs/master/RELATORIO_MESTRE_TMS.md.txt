@@ -1,0 +1,336 @@
+AUDITORIA MESTRA — TMS CONEXÃO EXPRESS
+Data: 23/05/2026
+Ferramenta: OpenCode (DeepSeek V4 Flash)
+Propósito: Relatório Definitivo para Continuidade do Desenvolvimento
+1. ESTRUTURA GERAL DO PROJETO
+Dimensão	Quantidade	Observação
+Páginas (src/pages)	40	Sendo 4 wrappers (Recrutamento, WhatsAppCRM, BancoTalentos, Relatorios)
+Componentes (src/components)	~210	Incluindo ~52 shadcn/ui
+Hooks personalizados	15	Sendo 8 globais + 7 módulo recrutamento
+Services	74	Distribuídos em 12 subpastas
+Stores Zustand	6	3 globais + 3 módulo recrutamento
+Tabelas Supabase referenciadas	40+	Mapeadas via .from()
+Arquivos SQL/Migrations	72+	Migrations + scripts avulsos
+Rotas ativas	36	Todas ativas, nenhuma comentada
+Stack: React 18 + Vite 5 + TypeScript 5 + TailwindCSS + Shadcn/ui + Supabase + Zustand + React Router v6
+Integrações existentes:
+- Supabase (banco, auth, storage, functions)
+- Mapbox (mapas, geocodificação, rotas)
+- n8n (automação low-code, workflows)
+- Evolution API (WhatsApp)
+- Zoho Email
+- ViaCEP
+- SEFAZ
+2. MÓDULOS DO SISTEMA — STATUS DETALHADO
+2.1 Dashboard
+Percentual	Status	Risco	Prioridade
+60%	PARCIAL	BAIXO	MÉDIA
+Análise: Página shell em Dashboard.tsx (3.3KB). Tabs (Executivo, Financeiro, Operacional, Comercial, Alertas) renderizadas via DashboardTopbar. Dados mock no mockData.ts. Charts reais com recharts. Supabase integrado nas tabs individuais.
+Componentes: DashboardTopbar, TabExecutivo, TabFinanceiro, TabOperacional, TabComercial, TabAlertas, mockData
+O que falta: Integração com dados reais em tempo real, KPIs dinâmicos, alertas automáticos.
+2.2 Torre de Controle
+Percentual	Status	Risco	Prioridade
+30%	VISUAL APENAS	MÉDIO	MÉDIA
+Análise: TorreControle.tsx (17KB) — página standalone com layout definido mas sem dados reais significativos. Depende de PainelOperacionalMapa e integração com Mapbox. Não há dados de telemetria ou tracking em tempo real.
+O que falta: Tracking real, geofencing, alertas operacionais, integração com ordens de serviço ativas, comunicação com motoristas.
+2.3 Comercial
+Percentual	Status	Risco	Prioridade
+65%	PARCIAL	MÉDIO	ALTA
+Análise: Módulo mais robusto depois de Recrutamento. CRM completo com Kanban, Pipeline, Leads, Atividades, Comunicação, Propostas, Relatórios e Agenda. Orçamentos com formulário real e preview. Simulador de frete. Tabelas de valores. Mas: mockOrcamentos.ts, mockPropostas.ts, LEADS_MOCK. CRM usa Supabase como fallback após tentar localStorage.
+Services: automacaoComercial, followUpService, orcamentoToOSService, propostaService
+SQL: alter_clientes_flags_comercial.sql, propostas_comerciais_schema.sql, marketing_schema.sql
+Risco: OrcamentoForm (55KB) — excesso de responsabilidade. CrmPipeline (46KB) — borderline.
+2.4 Operação
+Percentual	Status	Risco	Prioridade
+60%	PARCIAL	ALTO	ALTA
+Análise: Operacao.tsx (4.3KB — minimal). Core do negócio: OS, escala, ocorrências, POD, roteirização. OrdemServicoForm.tsx (88KB) — o formulário mais complexo do sistema. OrdensServicoLista.tsx com filtros e CRUD real. Supabase integrado.
+Critical: EscalaLista.tsx (123KB) — maior componente depois do PortalCliente. Mistura escala, alocação de veículos, motoristas, visualização. Mock data + localStorage. ALTA PRIORIDADE DE REFATORAÇÃO.
+Services: ordemServicoService, cargaService, escalaService, roteirizacaoService
+2.5 Escala
+Percentual	Status	Risco	Prioridade
+50%	PARCIAL	MÉDIO	MÉDIA
+Análise: useEscala.ts hook (6.7KB), EscalaLista.tsx (123KB), escalaService.ts (15KB). Tabelas Supabase: alocacoes_escala, historico_alocacoes_escala, escala_operacional. Funções RPC para cálculos. Mock + localStorage para fallback.
+2.6 Prestadores
+Percentual	Status	Risco	Prioridade
+70%	PARCIAL	BAIXO	ALTA
+Análise: Cadastro completo, listas com filtros, detalhamento com abas. PrestadorDetalhe.tsx (88KB) — excessivo. PrestadoresLista.tsx com CRUD Supabase real. ContratoPrestadorModal com assinatura. Veículos vinculados. Documentos.
+Services: documentosPrestadorService, appPrestadorService
+Store: portalPrestadorStore
+Quase completo — faltam apenas integração fina com financeiro e documentos mais robusto.
+2.7 Clientes
+Percentual	Status	Risco	Prioridade
+60%	PARCIAL	BAIXO	MÉDIA
+Análise: ClientesLista.tsx, ClienteDetalhe.tsx (59KB). Cadastro completo com endereço viaCEP, contatos, documentos. Supabase real. Sem mock. Portal Cliente separado.
+2.8 Financeiro
+Percentual	Status	Risco	Prioridade
+75%	PARCIAL	MÉDIO	ALTA
+Análise: Módulo mais extenso depois de Recrutamento. Contas a Pagar/Receber, Fluxo de Caixa, DRE, Margem por OS, Conciliação, Inadimplência, Plano de Contas, CNAB. Mas: ContasReceber.tsx (63KB), PagamentoPrestadores.tsx (59KB), ContasReceberEnterprise.tsx (54KB) — arquivos grandes demais.
+Services: calculoService, composicaoFinanceiraService
+SQL: pagamentos_prestadores.sql, alter_pagamentos_prestadores_fechamento_conta_corrente.sql
+Relatórios financeiros: Faturamento cliente, Margem real, Pagamento prestador, Cliente agregado refrigerado.
+2.9 Contratos
+Percentual	Status	Risco	Prioridade
+55%	PARCIAL	MÉDIO	MÉDIA
+Análise: contratosService.ts (31KB — maior service). Contratos.tsx (38KB) com listagem, filtros, assinatura. Geração de PDF. Evidências. Supabase real + storage.
+O que falta: Workflow de aprovação, notificações, integração com financeiro para faturamento.
+2.10 Fiscal
+Percentual	Status	Risco	Prioridade
+25%	MOCKADO + LOCALSTORAGE	ALTO	MÉDIA
+Análise: Fiscal.tsx (24KB). 100% mock/localStorage. mockCtes, mockMdfes, mockNfses, mockXmls. Services sefaz.ts (2.8KB) e nfse.ts (2KB) existem mas são incipientes.
+Risco: ALTO — módulo fiscal lida com obrigações legais. Dados mock nunca devem ir para produção.
+2.11 Frota
+Percentual	Status	Risco	Prioridade
+40%	PARCIAL	MÉDIO	BAIXA
+Análise: Frota.tsx (14KB), CadastrosVeiculos.tsx, VeiculoDetalhe.tsx, VeiculosLista.tsx. CRUD básico de veículos com Supabase. Tipos de veículo em constants/tiposVeiculo.ts.
+O que falta: Manutenção programada, abastecimento, multas, documentação veicular, tracking.
+2.12 Recrutamento
+Percentual	Status	Risco	Prioridade
+80%	PARCIAL (MAIS COMPLETO)	BAIXO	ALTA
+Análise: Módulo com arquitetura própria em src/modules/recrutamento/. Pages, hooks, services, components, store, types, layout próprios. Kanban (Enterprise + Simple), operações, prestadores, CRM logístico, documentos, IA, onboarding, automações, score, talentos.
+MAS: Services usam localStorage + mock data como armazenamento primário (prestadoresService, operacoesService, crmService, documentosService, matchService, automacoesService). Supabase configurado mas não integrado nestes services.
+Store: recrutamentoStore (com persist localStorage)
+Hooks: useDashboardRecrutamento, useOperacoes, usePrestadores, useRecrutamentoRealtime, useRecrutamentoUI
+Duplicação: components/recrutamento/ (14 arquivos legados) e modules/recrutamento/components/ (30+ arquivos modernos) — duas bases de código paralelas.
+2.13 Banco de Talentos
+Percentual	Status	Risco	Prioridade
+60%	PARCIAL COM MOCK	MÉDIO	BAIXA
+Análise: BancoTalentos.tsx (wrapper), talentBankStore.ts (23KB — 2ª maior store). Componentes: AdvancedFilters, PipelineConversao, RegioesCriticas, ShortlistPanel, TalentList, TalentProfile, DashboardEstrategico. Mock data dominante.
+2.14 WhatsApp CRM
+Percentual	Status	Risco	Prioridade
+50%	PARCIAL COM MOCK	MÉDIO	MÉDIA
+Análise: WhatsAppCRM.tsx wrapper, whatsappCRMStore.ts (20KB — 3ª maior store). Layout completo com ChatWindow, ConversationList, ContactDetails, AIPanel, CampaignPanel, QueuePanel, AutomationRules, TemplateSelector. 100% mock via store. Services: evolutionApiService.ts (duplicado), whatsappInboundParser.ts, whatsappAutomation.ts. Docker: Evolution API configurado.
+O que falta: Conectar com Evolution API real, substituir mock da store por chamadas reais.
+2.15 Portal Cliente
+Percentual	Status	Risco	Prioridade
+40%	VISUAL + MOCK	ALTO	ALTA
+Análise: PortalCliente.tsx — 322KB — MAIOR ARQUIVO DO PROJETO. Contém 12+ funções generateMock*. Dashboard executivo, tracking, roteirização, economia, notificações, multi-filial, onboarding, PWA, WhatsApp. Dominantemente mock.
+Risco: CRÍTICO. Arquivo monstruoso misturando UI, lógica, dados mock, serviços. Refatoração obrigatória antes de qualquer evolução.
+2.16 Portal Prestador
+Percentual	Status	Risco	Prioridade
+35%	INICIAL	MÉDIO	MÉDIA
+Análise: PortalPrestador.tsx (5KB), AppPrestador.tsx (22KB). Abas: Dashboard, Documentos, Operações, Perfil, Treinamentos. Store portalPrestadorStore (13KB). AppPrestador tem rota própria dedicada.
+2.17 IA & Automações
+Percentual	Status	Risco	Prioridade
+45%	PARCIAL	MÉDIO	ALTA
+Análise: Duas páginas: IAAutomacoes.tsx (30KB) e IaAutomacao.tsx (10KB). Serviços fragmentados: aiOrchestrator.ts, aiProviderManager.ts, iaService.ts (3x), aiAutomacaoService.ts, automationEngine.ts, automacao.ts, automacaoWhatsapp.ts. Provedores IA configuráveis no Supabase (ia_providers_config, ia_logs). n8n com workflow JSON.
+Problema: 3 cópias de iaService.ts em locais diferentes. Fragmentação severa.
+2.18 Documentos
+Percentual	Status	Risco	Prioridade
+30%	INICIAL	MÉDIO	BAIXA
+Análise: AnaliseDocumentos.tsx, AnaliseDocumentoIA.tsx, AnaliseLote.tsx, StatusDocumental.tsx. Services: documentAI.ts, documentAnalysis.ts, documentQueue.ts. Documentos de prestadores com análise IA.
+2.19 OCR
+Percentual	Status	Risco	Prioridade
+0%	NÃO IMPLEMENTADO	—	BAIXA
+Análise: Nenhum arquivo encontrado. tesseract.js está no package.json como dependência, mas nunca foi implementado.
+2.20 Roteirizador
+Percentual	Status	Risco	Prioridade
+40%	PARCIAL COM MOCK	MÉDIO	MÉDIA
+Análise: Roteirizador.tsx (componente global), RoteirizadorWeb.tsx (65KB), roteirizacaoService.ts (24KB), roteirizacaoMapbox.ts (import quebrado), mapboxProvider.ts, distanceService.ts. Mapbox configurado. Dados mock em RoteirizadorWeb.tsx com mockPedidos, mockVeiculos.
+Import quebrado: roteirizacaoMapbox.ts importa ./types que não existe ali (deveria ser ./maps/types).
+2.21 Relatórios
+Percentual	Status	Risco	Prioridade
+50%	PARCIAL	MÉDIO	BAIXA
+Análise: Relatorios.tsx (wrapper 215 bytes), RelatoriosEnterprise.tsx (87KB). Relatórios financeiros, operacionais. DVL_MOCK_OS presente. Service relatorioService.ts (16KB) com queries SQL reais. Views no Supabase (views_relatorios_enterprise.sql).
+3. SUPABASE — MAPEAMENTO COMPLETO
+3.1 Módulos REALMENTE CONECTADOS (sem fallback mock)
+Módulo	Tabelas	Arquivos
+Cadastros (clientes)	clientes	ClientesLista, ClienteDetalhe
+Cadastros (prestadores)	prestadores, veiculos, documentos_prestadores	PrestadoresLista, PrestadorDetalhe
+Cadastros (veículos)	veiculos	VeiculosLista, VeiculoDetalhe
+Operação (OS)	ordens_servico, os_enderecos, composicao_financeira_os	OrdemServicoForm, OrdensServicoLista
+Operação (escala)	alocacoes_escala, historico_alocacoes_escala, escala_operacional	EscalaLista, useEscala
+Financeiro (parcial)	financeiro_receber, financeiro_pagar, lancamentos_financeiros	ContasReceber, ContasPagar, DREGerencial
+Contratos	contratos, contratos_gerados, contratos_historico, contratos_modelos	Contratos, ContratoPrestadorModal
+Comercial (parcial)	orcamentos, crm_leads, crm_historico, tabelas_valores	OrcamentosLista, OrcamentoForm, CrmBase
+Configurações	configuracoes_sistema, central_integracoes	Configuracoes, CentralIntegracoes
+Portal Cliente (parcial)	ordens_servico, clientes, ocorrencias, financeiro_receber, portal_pedidos	PortalCliente, portalClienteService
+IA	ia_providers_config, ia_logs	aiProviderManager, aiOrchestrator
+3.2 Módulos USANDO MOCK / localStorage
+Módulo	Tipo	Gravidade
+Recrutamento (services)	localStorage + mock	CRÍTICA — todos os 8 services usam localStorage como storage primário
+WhatsApp CRM (store)	mock data na store	ALTA — store inteira populada com mock
+Banco de Talentos (store)	mock data na store	ALTA — talentBankStore com mock
+Comercial	mockOrcamentos, mockPropostas, LEADS_MOCK	MÉDIA
+Dashboard	mockData.ts	BAIXA
+Fiscal	localStorage + mock	CRÍTICA — dados fiscais não podem ser mock
+Roteirizador	mockPedidos, mockVeiculos	MÉDIA
+Operação (escala)	localStorage fallback	MÉDIA
+Portal Cliente	12+ funções generateMock*	ALTA — 322KB de mock
+Relatórios	DVL_MOCK_OS	MÉDIA
+3.3 Fallbacks existentes
+- configuracoesService.ts: Tenta Supabase, cai em localStorage
+- hubComunicacaoService.ts: Tenta Supabase, cai em localStorage
+- CrmBase.tsx: Tenta crm_leads Supabase, fallback para LEADS_MOCK
+- prestadoresService.ts (recrutamento): localStorage primário
+- Todos os services do módulo recrutamento: localStorage com persist
+3.4 Pontos frágeis no Supabase
+1. RLS Policies: rls_fix_temporario.sql e rls_policies_fix.sql — indica políticas RLS problemáticas
+2. Bucket storage: Apenas bucket contratos confirmado; documentos mencionado em migration mas não verificado
+3. Edge Function: Apenas 1 (whatsapp-recrutamento-webhook) — necessita deploy
+4. Sem migrations organizadas: 72+ arquivos SQL espalhados entre supabase/migrations/, sql/, src/sql/, src/lib/, raiz
+5. Sem padrão de schema: tabelas em public schema sem namespaces
+4. PROBLEMAS TÉCNICOS
+4.1 Arquivos Excessivamente Grandes
+Arquivo	Tamanho	Problema
+src/pages/PortalCliente.tsx	322 KB	CRÍTICO — maior arquivo, mistura UI + mock + serviços
+src/components/operacao/EscalaLista.tsx	123 KB	CRÍTICO — escala + alocação + veículos + motoristas
+src/components/relatorios/RelatoriosEnterprise.tsx	89 KB	ALTO — múltiplos relatórios no mesmo arquivo
+src/components/prestadores/PrestadorDetalhe.tsx	88 KB	ALTO — detalhamento com abas + documentos + contratos
+src/components/operacao/OrdemServicoForm.tsx	88 KB	ALTO — formulário de OS mais todos os subcomponentes
+src/components/comercial/logoBase64.ts	82 KB	Dados base64 — deveria ser asset estático
+src/lib/dbMappers.ts	78 KB	ALTO — mapeamento de dados enorme
+src/components/operacao/RoteirizadorWeb.tsx	67 KB	MÉDIO
+src/components/financeiro/ContasReceber.tsx	63 KB	MÉDIO
+src/pages/Biblioteca.tsx	63 KB	MÉDIO
+Regra: Todo arquivo > 50KB deve ser refatorado.
+4.2 Services Duplicados / Redundantes
+Serviço	Cópias	Localizações
+zohoEmailService.ts	3	src/services/, src/services/integracoes/, src/services/email/
+iaService.ts	3	src/services/ia/, src/services/integracoes/, modules/recrutamento/services/
+evolutionApiService.ts	2	src/services/, src/services/integracoes/
+roteirizacaoService.ts	2	src/services/, src/services/portalCliente/
+pdfGenerator.ts	2	src/lib/, src/utils/
+use-toast.ts	2	src/hooks/, src/components/ui/
+4.3 Import Quebrado
+- src/services/roteirizacaoMapbox.ts → import.../types (deveria ser ./maps/types)
+4.4 Duplicação de Base de Código
+- src/components/recrutamento/ (14 arquivos legados) vs src/modules/recrutamento/components/ (30+ modernos)
+- src/pages/IAAutomacoes.tsx vs src/pages/IaAutomacao.tsx — páginas com nomes e propósitos sobrepostos
+4.5 Gargalos Arquiteturais
+1. PortalCliente.tsx (322KB): Bloqueia qualquer evolução do portal. Deve ser quebrado em 10+ componentes.
+2. EscalaLista.tsx (123KB): Mistura visual + lógica + dados. Impede testes e manutenção.
+3. Services de recrutamento: Todos usam localStorage como storage primário. Migrar para Supabase é pré-requisito.
+4. Três zohoEmailService: Risco de inconsistência nas credenciais.
+5. Fiscal 100% mock: Risco legal e operacional.
+6. 291 referências a mock: Média de ~14 por módulo. Estratégia de remoção deve ser sistemática.
+5. ECONOMIA DE TOKENS
+5.1 Áreas que EXIGEM Contexto Grande (Claude Sonnet / DeepSeek)
+Arquivo / Área	Tokens Estimados	Modelo Ideal
+PortalCliente.tsx (322KB)	~85K	Claude Sonnet ou DeepSeek
+EscalaLista.tsx (123KB)	~32K	Claude Sonnet
+RelatoriosEnterprise.tsx (89KB)	~23K	Claude Sonnet
+PrestadorDetalhe.tsx (88KB)	~23K	Claude Sonnet
+OrdemServicoForm.tsx (88KB)	~23K	Claude Sonnet
+dbMappers.ts (78KB)	~20K	Claude Sonnet
+RoteirizadorWeb.tsx (67KB)	~17K	Claude Haiku
+ContasReceber.tsx (63KB)	~16K	Claude Haiku
+Biblioteca.tsx (63KB)	~16K	Claude Haiku
+5.2 Áreas que PODEM usar Prompts Pequenos (Gemini Flash / Haiku)
+- Componentes shadcn/ui individuais
+- Hooks pequenos (< 200 linhas)
+- Types e interfaces
+- Stores Zustand (já encapsuladas)
+- Serviços de terceiros (CEP, Mapbox)
+- Componentes do design system (portal-cliente, design-system)
+- Scripts SQL individuais
+- Testes unitários
+5.3 Estratégia de Modelos
+Tarefa	Modelo	Motivo
+Refatoração de arquivos > 50KB	Claude Sonnet	Contexto grande, precisão
+Nova funcionalidade em módulo novo	Claude Haiku	Rápido, bom contexto
+Correção de bugs pontuais	Gemini Flash	Mais rápido, mais barato
+Criação de componentes isolados	Gemini Flash	Tarefa leve
+Geração SQL / Migrations	DeepSeek	Bom com SQL
+Auditoria / Análise	DeepSeek	Ótimo custo-benefício
+Mocks → Dados reais (mecânico)	Claude Haiku	Padrão repetitivo
+Integração Evolution API	Claude Sonnet	Documentação externa
+Ferramenta ideal para continuidade: OpenCode (integração com todos os modelos, controle de versão, multi-agente).
+6. ESTRATÉGIA IDEAL DE FINALIZAÇÃO
+6.1 PRIORIDADE ALTA (impacto crítico + dependências a montante)
+Ordem	Módulo	Ação	Justificativa
+1	Fiscal	Substituir mock/localStorage por Supabase + SEFAZ real	Risco legal
+2	Recrutamento (services)	Migrar localStorage para Supabase	Destrava CRM, WhatsApp, Talentos
+3	Storage Unificado	Consolidar zohoEmailService (3→1), iaService (3→1), evolutionApiService (2→1)	Elimina inconsistência
+4	PortalCliente	Refatorar 322KB → 10+ componentes	Bloqueio arquitetural
+5	WhatsApp CRM (store)	Conectar store à Evolution API real	Mock bloqueia produção
+6.2 PRIORIDADE MÉDIA (importante mas sem bloqueio)
+Ordem	Módulo	Ação
+6	EscalaLista	Refatorar 123KB → componentes menores
+7	Operação (OrdemServicoForm)	Refatorar 88KB → sub-formulários
+8	RelatoriosEnterprise	Refatorar 89KB → relatórios individuais
+9	Comercial (mock → real)	Remover mockOrcamentos, mockPropostas
+10	PrestadorDetalhe	Refatorar 88KB
+11	Banco de Talentos	Conectar store ao Supabase
+12	Financeiro (refatorar)	Quebrar ContasReceber, PagamentoPrestadores
+13	OCR	Implementar com tesseract.js
+14	Roteirizador	Corrigir import quebrado + remover mock
+15	Dashboard	Conectar tabs a dados reais (supabase queries)
+16	Torre de Controle	Integrar com tracking OS + Mapbox real
+6.3 PRIORIDADE BAIXA (pode esperar)
+Ordem	Módulo	Ação
+17	Frota	Expandir com manutenção, multas, abastecimento
+18	Contratos	Workflow de aprovação + notificações
+19	Documentos	Análise IA em lote
+20	Portal Prestador	Feature completo
+21	Seguros	Módulo novo
+22	Biblioteca	Organização de documentos
+7. ROADMAP FINAL — PRÓXIMOS 20 PROMPTS IDEAIS
+#	Prompt	Módulo	Ferramenta	Modelo	Complexidade
+1	"Migrar todos os services do módulo recrutamento de localStorage para Supabase com fallback"	Recrutamento	OpenCode	Claude Sonnet	ALTA
+2	"Consolidar zohoEmailService, iaService, evolutionApiService: unificar 3 cópias em 1 com provider pattern"	Infra	OpenCode	DeepSeek	MÉDIA
+3	"Refatorar PortalCliente.tsx: extrair DashboardExecutivo, TrackingMap, Notificacoes, Economia, MultiFilial, Onboarding em páginas/componentes individuais"	Portal Cliente	OpenCode	Claude Sonnet	ALTA
+4	"Criar serviço SEFAZ real para emissão de NFSe e consulta CT-e, substituindo mock localStorage"	Fiscal	OpenCode	Claude Sonnet	ALTA
+5	"Conectar WhatsAppCRMStore à Evolution API via evolutionApiService consolidado"	WhatsApp CRM	OpenCode	Claude Sonnet	ALTA
+6	"Refatorar EscalaLista.tsx: separar em EscalaCalendario, AlocacaoVeiculos, AlocacaoMotoristas"	Operação	OpenCode	Claude Sonnet	ALTA
+7	"Refatorar OrdemServicoForm.tsx: extrair DadosOS, Enderecos, Financeiro, Prestador em sub-formulários"	Operação	OpenCode	Claude Haiku	MÉDIA
+8	"Conectar Dashboard tabs (Executivo, Financeiro, Operacional, Comercial) a queries Supabase reais"	Dashboard	OpenCode	Claude Haiku	MÉDIA
+9	"Refatorar ContasReceber.tsx em componentes menores: ListaParcelas, Faturamento, Conciliacao"	Financeiro	OpenCode	Claude Haiku	MÉDIA
+10	"Remover mockOrcamentos e mockPropostas do Comercial: integrar com Supabase orcamentos e crm_propostas"	Comercial	OpenCode	Claude Haiku	MÉDIA
+11	"Implementar OCR com tesseract.js: extrair texto de documentos de prestadores"	Documentos/OCR	OpenCode	Gemini Flash	MÉDIA
+12	"Criar Portal Tracking real: integrar Mapbox com ordens_servico e operacao_localizacao"	Torre Controle	OpenCode	Claude Sonnet	ALTA
+13	"Refatorar PrestadorDetalhe.tsx: separar abas Documentos, Veiculos, Financeiro, Contratos"	Prestadores	OpenCode	Claude Haiku	MÉDIA
+14	"Conectar talentBankStore ao Supabase: substituir mockTalentos por query real"	Banco Talentos	OpenCode	Claude Haiku	MÉDIA
+15	"Refatorar RelatoriosEnterprise.tsx: separar em relatórios individuais por tipo"	Relatórios	OpenCode	Claude Haiku	MÉDIA
+16	"Remover DVL_MOCK_OS e mockPedidos do RoteirizadorWeb: integrar com ordens_servico e rotas"	Roteirizador	OpenCode	Claude Sonnet	ALTA
+17	"Criar modulo de tracking em tempo real para Torre de Controle com WebSocket Supabase realtime"	Torre Controle	OpenCode	Claude Sonnet	ALTA
+18	"Implementar RLS policies definitivas para todas as tabelas (substituir rls_fix_temporario)"	Supabase	OpenCode	DeepSeek	MÉDIA
+19	"Unificar módulo Recrutamento: remover componentes legados de components/recrutamento/, manter apenas modules/recrutamento/"	Recrutamento	OpenCode	Claude Haiku	BAIXA
+20	"Configurar deploy Vercel + CI/CD + testes E2E Playwright para fluxo crítico (OS → Financeiro → Pagamento)"	DevOps	OpenCode	DeepSeek	MÉDIA
+8. ESTIMATIVA FINAL
+8.1 Percentual Total Estimado do Sistema
+Métrica	Valor
+Cobertura de telas (UI)	~70%
+Cobertura de regras de negócio	~55%
+Cobertura de integração Supabase	~50%
+Dados reais vs mock	~40% real / ~60% mock
+Testes automatizados	< 5%
+Média geral do sistema	~50-55%
+8.2 O que Falta para Produção
+Itens OBRIGATÓRIOS (não negociáveis):
+1. ✅ Substituir todos os mock data fiscais por dados reais SEFAZ (risco legal)
+2. ✅ Migrar services do recrutamento de localStorage para Supabase (dados não persistem)
+3. ✅ Refatorar PortalCliente.tsx (322KB) (manutenção impossível)
+4. ✅ Consolidar services duplicados (inconsistência de dados)
+5. ✅ Conectar WhatsApp CRM à Evolution API (funcionalidade morta)
+6. ✅ Implementar testes para fluxo OS → Financeiro → Prestador (core do negócio)
+7. ✅ Configurar RLS policies definitivas (segurança)
+Itens RECOMENDADOS (qualidade):
+- Refatorar arquivos > 50KB
+- Substituir mock data do Comercial
+- Implementar OCR
+- Dashboard com dados reais
+- Torre de Controle com tracking
+8.3 Módulos mais Críticos (maior impacto no negócio)
+1. Operação (OS, escala, ocorrências) — core do TMS
+2. Financeiro (receber, pagar, DRE) — fluxo de caixa
+3. Fiscal (CT-e, NFSe, MDF-e) — obrigação legal
+4. Prestadores (cadastro, pagamento, documentos) — supply chain
+5. Recrutamento (captação, onboarding) — pipeline de motoristas
+8.4 Módulos Quase Finalizados (mais próximos de produção)
+1. Recrutamento — 80% (services precisam migrar para Supabase)
+2. Financeiro — 75% (arquivos grandes, mas lógica real)
+3. Prestadores — 70% (CRUD completo, documentos parciais)
+4. Comercial — 65% (CRM completo, orçamentos reais, mocks residuais)
+5. Clientes — 60% (cadastro completo, sem mocks)
+RESUMO EXECUTIVO
+EXPRESS CONNECT HUB — TMS
+Progresso geral: ~50-55%
+Risco técnico: ALTO (arquivos monolíticos, mock generalizado)
+Risco de negócio: MÉDIO (core operacional semi-funcional)
+Tempo estimado para produção: 3-6 meses (dedicado)
+Prioridade #1: Eliminar mock data + refatorar monolíticos
+Modelo ideal: OpenCode + Claude Sonnet (refatorações) + Claude Haiku (features)
+3 maiores riscos do projeto hoje:
+1. PortalCliente.tsx (322KB) — arquivo inviável técnica e cognitivamente
+2. Recrutamento 100% localStorage — dados não persistem entre sessões
+3. Fiscal 100% mock — exposição legal e operacional

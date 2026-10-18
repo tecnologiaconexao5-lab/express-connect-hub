@@ -1,0 +1,176 @@
+================================================================
+FIN-UI-BUG-02 — SANEAR CRASHES DE RUNTIME EM CONTAS A PAGAR
+================================================================
+Data/Hora: 2026-09-13
+Arquivo: FIN-UI-BUG-02-CONTAS-PAGAR-RUNTIME.txt
+
+================================================================
+1. CAUSA RAIZ
+================================================================
+
+APOS FIN-UI-BUG-01 (correcao de periodoEfetivo), o browser
+apresentou novo ReferenceError:
+
+  ReferenceError: hojeSP is not defined
+  Origem: ContasPagar.tsx:765
+
+Causa: hojeSP() e chamada na linha 765 mas NAO consta na
+lista de imports do arquivo. A funcao existe em:
+
+  src/helpers/statusVencimento.ts:40
+  export function hojeSP(): string
+
+O import na linha 31 era:
+  import { calcularStatusEfetivo, statusEfetivoLabel,
+    statusEfetivoClasses, type StatusEfetivo }
+    from "@/helpers/statusVencimento";
+
+Faltava: hojeSP
+
+================================================================
+2. AUDITORIA COMPLETA DO COMPONENTE
+================================================================
+
+Identificadores verificados em ContasPagar.tsx:
+
+  Helpers locais (definidos no arquivo):
+    fmtBRL        → linha 110  ✅
+    fmtData       → linha 111  ✅
+    hoje          → linha 115  ✅ (UTC, usado para default de form)
+    gerarId       → linha 116  ✅
+    mapStatusPagar → linha 118 ✅
+    calcLiquidoPagar → linha 130 ✅
+    STATUS_CONFIG → linha 133  ✅
+    StatusBadge   → linha 142  ✅
+    FORM_BLANK    → linha 167  ✅
+    FILTROS_BLANK → linha 177  ✅
+
+  Imports externos:
+    react         → linha 1    ✅
+    lucide-react  → linha 2    ✅
+    @/components/ui/* → linhas 8-27 ✅
+    sonner        → linha 28   ✅
+    @/lib/supabase → linha 29  ✅
+    pagarService  → linha 30   ✅
+    statusVencimento → linha 31 ⚠️ (hojeSP faltava, CORRIGIDO)
+
+  Componentes internos:
+    FornecedorAutocomplete → linha 200 ✅
+    CadastroRapidoFornecedor → linha 308 ✅
+    ModalBaixaPagar → linha 444 ✅
+
+  Identificadores NO_BODY_DO_COMPONENTE:
+    periodoEfetivo → linha 641 ✅ (corrigido em BUG-01)
+    periodoMes     → linha 630 ✅
+    mesRef         → linha 611 ✅
+    mesAtualStr    → linha 616 ✅
+    mesAtualCodigo → linha 619 ✅
+    hojeSP()       → linha 765 ⚠️ (SEM IMPORT, CORRIGIDO)
+    fetchLancamentos → linha 654 ✅
+    fetchPagoMes   → linha 721 ✅
+    calcLiquidoPagar → used inline ✅
+    valorLiquido   → linha 623 ✅
+    lancamentos    → useState ✅
+    filtros/filtrosAtivos → useState ✅
+    buscaRapida    → useState ✅
+    mesOffset      → useState ✅
+    form/erros     → useState ✅
+    editando/baixando/showNovo/showFiltros → useState ✅
+
+  Nenhum outro identificador quebrado encontrado.
+
+================================================================
+3. ARQUIVO ALTERADO
+================================================================
+
+  src/components/financeiro/ContasPagar.tsx
+
+  ANTES (linha 31):
+    import { calcularStatusEfetivo, statusEfetivoLabel,
+      statusEfetivoClasses, type StatusEfetivo }
+      from "@/helpers/statusVencimento";
+
+  DEPOIS (linha 31):
+    import { calcularStatusEfetivo, statusEfetivoLabel,
+      statusEfetivoClasses, hojeSP, type StatusEfetivo }
+      from "@/helpers/statusVencimento";
+
+  Mudanca: +1 import (hojeSP). Nenhuma outra alteracao.
+
+================================================================
+4. VERIFICACAO ContasReceber
+================================================================
+
+  ContasReceber.tsx:
+    - USA hoje() local (linha 113): new Date().toISOString()
+    - NAO usa hojeSP
+    - NAO usa periodoEfetivo
+    - SEMReferenceError → NAO ALTERADO
+
+  ContasReceberEnterprise.tsx:
+    - USA calcularStatusEfetivo importado ✅
+    - NAO usa hojeSP
+    - NAO usa periodoEfetivo
+    - SEMReferenceError → NAO ALTERADO
+
+================================================================
+5. TESTE DE MONTAGEM/RUNTIME
+================================================================
+
+  Arquivo: src/test/fin_ui_bug02_contas_pagar_runtime.test.ts
+
+  4 testes criados:
+    ✅ importar ContasPagar sem ReferenceError
+    ✅ hojeSP retorna formato YYYY-MM-DD
+    ✅ ContasPagar renderizável sem ReferenceError no corpo
+    ✅ todos os imports de statusVencimento disponíveis
+
+  Resultado: 4/4 PASS
+
+================================================================
+6. TESTES DIRECIONADOS FINANCEIROS
+================================================================
+
+  fin_p0_01_status_vencimento.test.ts  → 39/39 PASS
+  fin_p0_03_kpis_reais.test.ts         → 23/23 PASS
+  fin_p1_01_filtros_periodo.test.ts    → 34/34 PASS
+
+  Total: 96/96 PASS + 4/4 runtime = 100/100
+
+================================================================
+7. VALIDACAO
+================================================================
+
+  npx tsc --noEmit           → 0 erros
+  npm run build              → 50.11s, build OK
+  vitest runtime (4 tests)   → 4/4 PASS
+  vitest financeiros (96)    → 96/96 PASS
+
+================================================================
+8. RISCOS RESTANTES
+================================================================
+
+  NENHUM. A correcao e puramente de import.
+  Nenhuma logica, filtro, KPI ou regra alterada.
+
+  Nota: hojeSP() retorna data em America/Sao_Paulo.
+  hoje() (helper local) retorna UTC. Ambos sao usados
+  corretamente em seus contextos:
+    - hojeSP(): KPIs (vencimento, vence em 7 dias)
+    - hoje(): default de formulario (emissao)
+
+================================================================
+9. PROVA FINAL (PENDENTE OPERADOR)
+================================================================
+
+O operador deve:
+1. Abrir localhost:8800/financeiro?tab=pagar
+2. Verificar que a pagina carrega SEM ReferenceError
+3. Verificar que o KPI "Vence em 7 dias" calcula corretamente
+4. Navegar entre meses
+5. Aplicar periodo personalizado
+6. Confirmar dados reais na tabela
+
+================================================================
+FIM
+================================================================

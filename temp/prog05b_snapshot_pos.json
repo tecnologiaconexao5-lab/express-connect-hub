@@ -1,0 +1,72 @@
+{
+  "funcoes_INSERT_financeiro_receber": [],
+  "funcoes_UPDATE_financeiro_receber": [],
+  "funcoes_DELETE_financeiro_receber": [],
+  "M66_tem_financeiro_receber": false,
+  "M80_tem_financeiro_receber": false,
+  "sha_pos": {
+    "M66": "ce59b4f70faa2811",
+    "M80": "4e9dfc33b1646428"
+  },
+  "baseline_pos": {
+    "receber_total": 122,
+    "receber_por_os": 98,
+    "receber_por_fatura": 6,
+    "pagar_total": 178,
+    "pag_prest_total": 137,
+    "composicao_total": 59,
+    "fat2026000001": [
+      {
+        "id": "75e0e5f0-c512-49b6-9542-716362705c08",
+        "valor": 2000,
+        "status": "aberto",
+        "fatura_id": null,
+        "os_id": "c0a7ee88-e0f9-470b-8fe0-0bb141ff4501"
+      },
+      {
+        "id": "346687cf-f35d-4cde-8a26-47bdcff46de1",
+        "valor": 2120,
+        "status": "aberto",
+        "fatura_id": "f517b9bd-5cd6-4ac8-a316-d1bee0e304bb",
+        "os_id": null
+      }
+    ],
+    "saneadas": [
+      {
+        "ref": "38",
+        "numero": "FAT-2026-000010",
+        "numero_cliente": 1,
+        "status": "emitida",
+        "tem_ar": true
+      },
+      {
+        "ref": "39",
+        "numero": "FAT-2026-000011",
+        "numero_cliente": 2,
+        "status": "emitida",
+        "tem_ar": true
+      },
+      {
+        "ref": "40.",
+        "numero": "FAT-2026-000012",
+        "numero_cliente": 3,
+        "status": "emitida",
+        "tem_ar": true
+      },
+      {
+        "ref": "41",
+        "numero": "FAT-2026-000013",
+        "numero_cliente": 4,
+        "status": "emitida",
+        "tem_ar": true
+      },
+      {
+        "ref": "42",
+        "numero": "FAT-2026-000014",
+        "numero_cliente": 5,
+        "status": "emitida",
+        "tem_ar": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,174 @@
+================================================================================
+MISSAO: TMS-FAT-URG-05-E2E-VISUAL-FINAL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS REAL + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: HOMOLOGACAO FINAL ASSISTIDA (o USUARIO loga e clica; OpenCode acompanha o banco READ-ONLY).
+================================================================================
+
+RESULTADO: BLOCKED / PENDENTE DE EXECUCAO VISUAL ASSISTIDA.
+  - Varredura READ-ONLY em PROD (2026-09-25 ~19:1x): o caso HML-FAT-FINAL-01
+    AINDA NAO EXISTE (0 alocacoes, 0 fatura_itens com esse romaneio).
+  - Ou seja, a jornada ainda nao foi executada no TMS real.
+  - Este TXT e o ROTEIRO + PLANILHA + QUERIES para preenchimento durante a jornada.
+  - Nenhuma correcao aplicada; nenhum dado criado/alterado por esta sessao.
+  - Regra: NAO aceitar PASS declaratorio. Cada etapa exige evidencia visual + ID +
+    status no banco + reload. O usuario faz login/cliques manualmente (sem senha).
+
+COMO PROCEDER:
+  1. Login manual no TMS real. Executar a jornada do item "1. CASO CONTROLADO" ao "11. PDF".
+  2. Ao criar o caso, anotar e informar: alocacao_id, fatura_id, fatura_item_id, AR_id, numero.
+  3. OpenCode roda as QUERIES READ-ONLY por ID e preenche a planilha (colunas ID/BANCO).
+  4. Qualquer falha: registrar exatamente e PARAR (nao corrigir nesta sessao).
+
+================================================================================
+BASELINE (BEFORE) — read-only PROD (antes da jornada)
+================================================================================
+Contagens atuais:
+  alocacoes_escala .......... 201
+  faturas ................... 10   (todas 'emitida')
+  fatura_itens .............. 47
+  financeiro_receber ........ 48
+  financeiro_pagar .......... 114
+  pagamentos_prestadores .... 97
+  composicao_financeira_os .. 54
+Ultima alocacao HML conhecida: 5bab62b3 (HML-FAT-01., central_financeira_manual).
+Ultima fatura: FAT-2026-000020 (0e37e0d0, emitida, 300). NAO reutilizar.
+Contagens esperadas APOS a jornada (delta +1 do caso novo):
+  aloc +1, faturas +1, fatura_itens +1, financeiro_receber +1,
+  financeiro_pagar +1, pagamentos_prestadores +1, composicao +1
+  (M66/M80 criam as obrigacoes do prestador ao finalizar/inserir a alocacao/OS).
+
+================================================================================
+PLANILHA DE EVIDENCIAS (preencher durante a jornada)
+================================================================================
+ETAPA | EVIDENCIA VISUAL                    | ID (banco) | BANCO (status/valores)      | RELOAD | RESULTADO
+------+-------------------------------------+------------+-----------------------------+--------+-----------
+1     | Lancar Servico HML-FAT-FINAL-01     | (a)        | concluida/finalizada, tenant | SIM   | PENDENTE
+1b    | Servico continua na Conferencia      | (a)        | visivel (nao faturado)      | SIM   | PENDENTE
+2     | Fila DEFAULT "Nao faturado"          | (a)        | faturamento=nao_faturado     | -     | PENDENTE
+2b    | Selecionar SOMENTE este servico      | (a)        | checkbox ON, total correto   | -     | PENDENTE
+2c    | Criar Fatura                         | (f)        | fatura rascunho + item       | -     | PENDENTE
+2d    | Sai da fila default apos fatura      | (a)        | faturamento=rascunho/faturado| SIM   | PENDENTE
+2e    | Historico preserva o registro        | (a)        | aparece em "Todos/Faturado"  | -     | PENDENTE
+3     | Fatura estado inicial = rascunho     | (f)        | status=rascunho; AR COUNT=0  | -     | PENDENTE
+4     | Emissao bloqueada (rascunho)         | (f)        | UI nao oferece Emitir / erro | -     | PENDENTE
+5     | Enviar para Validacao                | (f)        | status=aguardando_aprovacao  | SIM   | PENDENTE
+5b    | AR apos envio = 0                    | (f)        | AR COUNT=0                   | -     | PENDENTE
+6     | Emissao bloqueada (aguardando)       | (f)        | UI nao oferece Emitir        | -     | PENDENTE
+7     | Aprovar                              | (f)        | status=aprovada              | SIM   | PENDENTE
+7b    | Aprovar NAO cria AR                  | (f)        | AR COUNT=0                   | -     | PENDENTE
+8     | Emitir                               | (f)+(r)    | emitida; numero; AR COUNT=1  | -     | PENDENTE
+8b    | AR fiel a fatura                     | (r)        | valor=valor_total; cliente   | -     | PENDENTE
+9     | Anti-duplicidade                     | (f)        | AR COUNT por fatura_id = 1   | SIM   | PENDENTE
+10    | Contas a Receber (mes do vencimento) | (r)        | aparece, "Mais recente"=p.1  | SIM   | PENDENTE
+11    | PDF da fatura                        | (f)        | corresponde ao caso          | -     | PENDENTE
+
+Legenda: (a)=alocacao_id  (f)=fatura_id  (r)=AR_id.
+
+================================================================================
+QUERIES READ-ONLY (por ID, apos cada etapa)
+================================================================================
+-- 1/1b/2) Alocacao
+SELECT id, tenant_id, cliente_id, prestador_id, ordem_servico_id, status, finalizada,
+       valor_frete, valor_repasse, (metadata->>'numeroOC') AS numero_oc,
+       (metadata->>'origem') AS origem, created_at
+  FROM public.alocacoes_escala WHERE id = :alocacao_id;
+
+-- 2c/2d) Item e faturamento derivado
+SELECT fi.id, fi.fatura_id, fi.os_id, fi.alocacao_id, fi.romaneio, fi.status,
+       fi.valor_total, f.numero, f.status AS fatura_status
+  FROM public.fatura_itens fi JOIN public.faturas f ON f.id=fi.fatura_id
+ WHERE fi.alocacao_id = :alocacao_id;
+-- (derivacao da Conferencia: f.status='emitida' => 'faturado';
+--  rascunho/aguardando/aprovada => 'rascunho' => sai da fila default "nao_faturado")
+
+-- 3/5/7/8) Fatura
+SELECT id, status, numero, numero_cliente, valor_bruto, valor_total, vencimento,
+       data_emissao, conta_receber_id, tenant_id, cliente_id, criado_em, atualizado_em
+  FROM public.faturas WHERE id = :fatura_id;
+
+-- 3/5b/7b/8/9) Anti-duplicidade de AR
+SELECT count(*)::int AS n FROM public.financeiro_receber WHERE fatura_id = :fatura_id;  -- 0 antes; 1 apos emitir
+
+-- 8/8b/10) AR
+SELECT id, status, valor, valor_liquido, cliente_id, data_vencimento, data_emissao,
+       fatura_id, numero, is_teste, created_at
+  FROM public.financeiro_receber WHERE fatura_id = :fatura_id;
+
+-- 10) Ordenacao (Mais recente) no mes do VENCIMENTO do AR
+SELECT id, created_at, data_vencimento,
+       row_number() OVER (ORDER BY created_at DESC NULLS LAST) AS pos
+  FROM public.financeiro_receber
+ WHERE to_char(data_vencimento,'YYYY-MM') = to_char(:vencimento::date,'YYYY-MM')
+ ORDER BY created_at DESC NULLS LAST LIMIT 20;
+
+-- 12) Mapa de dependencias (NAO deletar)
+SELECT 'financeiro_pagar' t, id::text, status, valor FROM public.financeiro_pagar WHERE os_id = :os_id
+UNION ALL
+SELECT 'pagamentos_prestadores', id::text, status_pagamento, valor_liquido FROM public.pagamentos_prestadores WHERE os_id = :os_id
+UNION ALL
+SELECT 'composicao_financeira_os', os_id::text, NULL, valor_prestador FROM public.composicao_financeira_os WHERE os_id = :os_id;
+
+================================================================================
+TESTES NEGATIVOS (obrigatorios, sem contornar por SQL/RPC)
+================================================================================
+4) Com status 'rascunho': a UI NAO deve oferecer Emitir (FaturaPanel so mostra "Emitir Fatura"
+   quando status='aprovada'). Se oferecer e emitir: FAIL e PARAR.
+   (Backend tambem bloqueia: f_emitir_fatura exige 'aprovada' => FATURA_NAO_APROVADA.)
+6) Com status 'aguardando_aprovacao': Emitir NAO deve estar disponivel. Se estiver: FAIL e PARAR.
+
+================================================================================
+CRITERIO FINAL (autoavaliacao)
+================================================================================
+[ ] lancamento persiste apos reload
+[ ] aparece em Nao faturado
+[ ] Criar Fatura gera rascunho
+[ ] sai da fila default da Conferencia
+[ ] permanece consultavel no historico
+[ ] rascunho nao pode emitir
+[ ] Enviar para Validacao funciona
+[ ] aguardando nao pode emitir
+[ ] Aprovar funciona
+[ ] aprovacao nao cria AR
+[ ] Emitir so funciona aprovada
+[ ] emissao cria exatamente 1 AR
+[ ] anti-duplicidade funciona
+[ ] AR aparece na tela correta
+[ ] ordenacao/paginacao corretas
+[ ] reload preserva tudo
+[ ] PDF corresponde ao caso
+[ ] nenhum erro de console relevante
+[ ] nenhum registro orfao/duplicado novo
+=> Como a jornada ainda NAO foi executada, o resultado permanece PENDENTE.
+
+================================================================================
+LIMPEZA
+================================================================================
+- NAO deletar nada.
+- O saneamento do HML-FAT-FINAL-01 sera feito junto do HML-FAT-01 em missao
+  separada e controlada, usando mecanismos oficiais (ex.: f_cancelar_fatura) apos
+  mapear as dependencias listadas no item 12.
+
+================================================================================
+ARQUIVOS/CODIGO DE REFERENCIA (sem alteracao)
+================================================================================
+- Fluxo UI: src/components/financeiro/FaturaPanel.tsx (Enviar/Aprovar/Emitir por estado)
+- Servico: src/services/financeiro/faturaService.ts (f_mover_fatura_status / f_emitir_fatura)
+- Conferencia: src/components/financeiro/ConferenciaFinanceira.tsx (fila default nao_faturado)
+- Central: src/services/financeiro/centralFinanceiroService.ts (derivacao de faturamento)
+- Contas a Receber: src/components/financeiro/ContasReceberEnterprise.tsx (ordenacao created_at desc)
+- RPCs aplicadas: f_mover_fatura_status (FAT-URG-02) e f_emitir_fatura exige 'aprovada' (FAT-URG-04).
+
+================================================================================
+CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-05-E2E-VISUAL-FINAL-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-05-E2E-VISUAL-FINAL-RESULTADO.txt
+ TAMANHO ..: 10406 bytes
+ DATA/HORA : 25/09/2026 19:14:12
+
+================================================================================
+FIM — TMS-FAT-URG-05-E2E-VISUAL-FINAL (aguardando execucao manual assistida)
+================================================================================

@@ -1,0 +1,257 @@
+FIN-SANE-02M.4-FP-PP-MISMATCH-DIAG
+====================================
+Data: 2026-09-19
+Modelo: MiMo-V2.5
+Ambiente: TMS LOCAL + Supabase PRODUCAO
+Modo: SOMENTE LEITURA (ZERO WRITES)
+
+================================================================
+PARTE A — 36 DO 02K
+================================================================
+Tabela: fin_sane_02b_snapshot
+Colunas: id, financeiro_pagar_id, os_id, pagamento_prestador_id,
+         prestador_id, valor_anterior, valor_novo, status_anterior,
+         motivo, processado_em, execucao_id
+
+SNAPSHOT COUNT: 36 (confirmado)
+FP existentes:  36 (confirmado)
+PP correspondentes: 36 (confirmado, via os_id)
+FP=PP:          36/36 (zero divergencia)
+Soma FP:        R$ 36.377,12 (confirmado)
+Soma PP:        R$ 36.377,12 (confirmado)
+Baixas:         0 (confirmado)
+
+Todos os 36 registros do snapshot 02K estao 100% consistentes.
+Motivo de todos: "Atualizacao FIN-SANE-02B: valor_anterior=base,
+valor_novo=valor_liquido"
+
+Resultado: PASS
+
+================================================================
+PARTE B — MISMATCHES FP x PP
+================================================================
+Consulta: LEFT JOIN pagamentos_prestadores pp
+          ON pp.os_id::text = fp.os_id::text
+          WHERE fp.os_id IS NOT NULL
+
+FP com os_id: 92
+FP=PP match:  71
+MISMATCHES:   21 total
+  - 7 com PP inexistente (LEFT JOIN retorna NULL)
+  - 14 com PP existente mas valor divergente
+
+Os 14 MISMATCHES DO 02M.3 (com PP existente):
+
+┌────┬───────────┬────────┬───────┬───────────┬────────┬──────────┬──────────────────┬────────────┬───────┐
+│ #  │ FP id     │ FP R$  │ FP st │ PP id     │ PP R$  │ PP st    │ Diferenca        │ Origem     │ TESTE │
+├────┼───────────┼────────┼───────┼───────────┼────────┼──────────┼──────────────────┼────────────┼───────┤
+│  1 │ ad826e0f  │ 1000   │ cancel│ 4f0f8ba3  │ 0      │ cancelado│ +1000,00         │ Missao 43  │ SIM   │
+│  2 │ e0ce6113  │ 1000   │ cancel│ fcb9286f  │ 0      │ cancelado│ +1000,00         │ Missao 43  │ SIM   │
+│  3 │ c0065dbe  │ 1000   │ cancel│ 8cb22e29  │ 0      │ pendente │ +1000,00         │ Missao 43  │ SIM   │
+│  4 │ 32558503  │ 1000   │ cancel│ b9353c3f  │ 0      │ pendente │ +1000,00         │ Missao 43  │ SIM   │
+│  5 │ 63a3707f  │ 1000   │ cancel│ dbe96d77  │ 0      │ pendente │ +1000,00         │ Missao 43  │ SIM   │
+│  6 │ fb197a7d  │ 1000   │ cancel│ 977b530c  │ 0      │ pendente │ +1000,00         │ Missao 43  │ SIM   │
+│  7 │ 1a62d2fe  │ 1800   │ cancel│ a4a29b24  │ 0      │ pendente │ +1800,00         │ M48 ded    │ SIM   │
+│  8 │ e6c59bf7  │ 1000   │ cancel│ 52325ff7  │ 0      │ pendente │ +1000,00         │ Missao 43  │ SIM   │
+│  9 │ 02760623  │ 1800   │ cancel│ e3c7baed  │ 0      │ pendente │ +1800,00         │ M48 ded    │ SIM   │
+│ 10 │ d8f6b7ed  │ 60     │ cancel│ 952861d6  │ 103,50 │ pendente │ -43,50           │ escala     │ NAO   │
+│ 11 │ 578cee70  │ 1100   │ cancel│ 894bf6ef  │ 1280   │ nao_venc │ -180,00          │ escala     │ NAO   │
+│ 12 │ 5fb14b51  │ 850    │ cancel│ 77cb490b  │ 1050   │ pendente │ -200,00          │ escala     │ NAO   │
+│ 13 │ 6393a818  │ 850    │ cancel│ fe7cc24f  │ 1050   │ pendente │ -200,00          │ escala     │ NAO   │
+│ 14 │ 9f2be89f  │ 520    │ PAGO  │ 7461daf6  │ 652,86 │ pendente │ -132,86          │ escala     │ NAO   │
+└────┴───────────┴────────┴───────┴───────────┴────────┴──────────┴──────────────────┴────────────┴───────┘
+
+================================================================
+PARTE C — CLASSIFICACAO
+================================================================
+
+--- CASO 1: PP valor_liquido = 0 (9 registros) ---
+Numeros: 1, 2, 3, 4, 5, 6, 7, 8, 9
+
+Classificacao: TESTE
+
+Evidencia:
+- Descricao contem "Missao 43" ou "M48" ou "dedicada"
+- Criados em 2026-06-29 (janela de teste da Missao 43)
+- FP status: todos cancelado/cancelada
+- PP status: cancelado ou pendente
+- PP valor_liquido: 0 (trigger nao populou valor na epoca)
+- PP origem: manual (inserido via UI/TS, nao via trigger)
+- Nenhum tem baixa
+- Nenhum esta no snapshot 02K
+- Todos sao de OS de teste (M43/M48)
+
+Causa: Missao 43 criou registros de teste via
+criarPagavel() com status=pendente. O PP foi criado
+com valor_liquido=0 porque o trigger M66 ainda nao
+estava populando corretamente para insercoes manuais.
+Posteriormente, os FP foram cancelados.
+
+Risco: NENHUM (todos cancelados, sem baixa, sem obrigacao)
+
+--- CASO 2: FP != PP com ambos > 0 (5 registros) ---
+Numeros: 10, 11, 12, 13, 14
+
+Classificacao por registro:
+
+#10 (d8f6b7ed): LEGITIMO
+  FP=60 (repasse), PP=103,50 (valor_liquido)
+  Diferenca: R$ 43,50 = pedagio + outros_custos
+  Origem: escala_direta (trigger M66)
+  Status: cancelado, sem baixa
+  Explicacao: PP.valor_liquido = FP.valor + pedagio + (adicionais + ajudante - descontos)
+  O trigger M66 soma componentes adicionais ao PP que nao estao no FP.
+  Isso e o comportamento correto do trigger.
+
+#11 (578cee70): LEGITIMO
+  FP=1100 (repasse), PP=1280 (valor_liquido)
+  Diferenca: R$ 180,00 = pedagio + outros_custos
+  Origem: escala_direta (trigger M66)
+  Status: cancelado, sem baixa
+  Explicacao: Mesmo mecanismo do #10.
+
+#12 (5fb14b51): LEGITIMO
+  FP=850 (repasse), PP=1050 (valor_liquido)
+  Diferenca: R$ 200,00 = pedagio + outros_custos
+  Origem: escala_direta (trigger M66)
+  Status: cancelado, sem baixa
+  Explicacao: Mesmo mecanismo.
+
+#13 (6393a818): LEGITIMO
+  FP=850 (repasse), PP=1050 (valor_liquido)
+  Diferenca: R$ 200,00 = pedagio + outros_custos
+  Origem: escala_direta (trigger M66)
+  Status: cancelado, sem baixa
+  Explicacao: Mesmo mecanismo.
+
+#14 (9f2be89f): INCONSISTENCIA REAL
+  FP=520 (repasse), PP=652,86 (valor_liquido)
+  Diferenca: R$ 132,86 = pedagio + outros_custos
+  Origem: escala_direta (trigger M66)
+  Status FP: PAGO (com baixa de R$520,00)
+  Status PP: pendente (SEM baixa)
+  Prestador: CESAR AUGUSTO HOLANDA SILVA
+  Teste: NAO (dado real)
+  Baixa: SIM (R$520,00 em financeiro_baixas)
+
+  INCONSISTENCIA: FP foi baixado por R$520, mas PP
+  continua pendente com valor_liquido=652,86.
+  O pagamento foi registrado em financeiro_pagar
+  mas NAO em pagamentos_prestadores.
+  Valor pago (520) < valor_liquido PP (652,86).
+  Diferenca de R$132,86 potencialmente nao paga.
+
+  Causa provavel: O trigger M66 criou FP e PP com
+  valores diferentes (FP so repasse, PP com adicionais).
+  O usuario baixou o FP (520) mas nao atualizou o PP.
+  Ou: o FP foi atualizado manualmente para 520 apos
+  o PP ja ter sido criado com 652,86.
+
+================================================================
+PARTE D — ORIGEM
+================================================================
+
+#1-9 (PP=0, TESTE):
+  Criados ANTES da correcao 02K.
+  Por fluxo MANUAL (criarPagavel via UI/TS).
+  Missao 43 (2026-06-29) e M48 (2026-06-29).
+  Trigger M66 nao estava populando PP corretamente
+  para insercoes manuais na epoca.
+
+#10-13 (FP < PP, LEGITIMO):
+  Criados POR TRIGGER M66 (escala_direta).
+  Diferenca e intencional: PP inclui pedagio + adicionais.
+  Todos cancelados, sem baixa, sem impacto financeiro.
+
+#14 (INCONSISTENCIA REAL):
+  Criado POR TRIGGER M66 (escala_direta).
+  FP foi baixado (R$520) mas PP nao foi atualizado.
+  Registro REAL (CESAR AUGUSTO HOLANDA SILVA).
+  Possivel causa: baixa via UI que nao atualiza PP,
+  ou FP foi editado manualmente apos criacao.
+
+================================================================
+PARTE E — RISCO
+================================================================
+
+TOTAL de 14: 14
+REAL:          1 (#14 — CESAR)
+TESTE:         9 (#1-9 — Missao 43/M48)
+LEGITIMO:      4 (#10-13 — diferencas de composicao)
+
+Obrigacao financeira potencialmente errada: 1 (#14)
+Ja pagos:      1 (#14 — FP pago, PP pendente)
+Com baixa:     1 (#14 — R$520,00)
+Terminais:     13 (todos cancelados, sem baixa, sem impacto)
+
+Precisam correcao: 1 (#14 — PP deve refletir status do FP)
+Nao precisam:      13
+Inconclusivos:     0
+
+CAUSA(S):
+1. Trigger M66 gera FP (valor=repasse) e PP (valor_liquido=
+   repasse+pedagio+adicionais). Valores diferentes por
+   design — nao e bug.
+2. Baixa de #14 registrou pagamento em FP mas nao em PP.
+   Possivel divergencia entre fluxo de baixa (financeiro_pagar)
+   e fluxo de conferencia (pagamentos_prestadores).
+3. #1-9 sao registros teste com PP=0 — sem impacto.
+
+================================================================
+RESUMO
+================================================================
+
+36 SNAPSHOT:
+  COUNT: 36
+  FP=PP: 36/36
+  SOMA FP: R$ 36.377,12
+  SOMA PP: R$ 36.377,12
+  BAIXAS: 0
+
+MISMATCH LIVE (14 do 02M.3):
+  TOTAL: 14
+  REAL: 1
+  TESTE: 9
+  LEGITIMO: 4
+
+  PP ZERO (9): #1-9
+  AMBOS > ZERO (5): #10-14
+
+  LEGITIMOS (4): #10, #11, #12, #13
+  LEGADO (0):
+  TESTE (9): #1-9
+  INCONSISTENCIA REAL (1): #14
+  INCONCLUSIVOS (0):
+
+  PAGOS (1): #14
+  COM BAIXA (1): #14
+  ATIVOS (0): todos cancelados
+
+  PRECISAM CORRECAO (1): #14
+  NAO PRECISAM (13): #1-13
+  INCONCLUSIVOS (0):
+
+  CAUSA(S):
+  - M66 gera FP e PP com valores diferentes por design
+  - #14: baixa registrada em FP mas nao em PP
+  - #1-9: registros teste com PP=0
+
+================================================================
+CONSISTENCIA FP x PP: BLOCKED
+================================================================
+
+Motivo: 1 registro REAL (#14 — CESAR, R$520, pago)
+possui obrigacao financeira potencialmente incorreta.
+FP baixado por R$520 mas PP pendente com valor_liquido
+R$652,86. Diferenca de R$132,86 nao explicada.
+
+Os 13 demais sao seguros (9 teste + 4 legitimos cancelados).
+
+================================================================
+PRODUCAO: ZERO WRITES
+================================================================
+
+Arquivo gerado: FIN-SANE-02M.4-FP-PP-MISMATCH-DIAG.txt
+Tamanho: ~5.8 KB
+Data/hora: 2026-09-19
+Modelo: MiMo-V2.5

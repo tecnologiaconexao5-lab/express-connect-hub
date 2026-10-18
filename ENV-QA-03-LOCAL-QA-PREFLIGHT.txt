@@ -1,0 +1,133 @@
+﻿================================================================================
+RELATÓRIO DE EXECUÇÃO — MISSÃO ENV-QA-03-LOCAL-QA-PREFLIGHT
+================================================================================
+
+Data/Hora: 2026-09-20T20:25:00.000Z
+Objetivo Único: Avaliar viabilidade de substituir QA Cloud por QA LOCAL isolado
+Status Final: LOCAL_QA_CAPABLE = BLOCKED (Com plano claro de desbloqueio)
+
+================================================================================
+1. VERIFICAÇÃO DE FERRAMENTAS E AMBIENTE LOCAL
+================================================================================
+- Docker instalado:            SIM (Docker version 29.4.1, build 055a478)
+- Docker Compose:              SIM (Docker Compose version v5.1.3)
+- Docker Desktop / Engine:     PARADO / NÃO OPERACIONAL
+                               Erro retornado: failed to connect to docker API at
+                               npipe:////./pipe/dockerDesktopLinuxEngine
+                               Serviço: com.docker.service (Status: Stopped)
+- Supabase CLI:                SIM (versão 2.117.0 instalada)
+- Node / npm:                  SIM (Node v24.14.1, npm 11.11.0)
+- Portas Locais (5432, 54321, 54322, 54323, 54324, 8000, 5173):
+                               LIVRES (Nenhum processo escutando nas portas padrão)
+- Espaço em Disco (C:):        9,32 GB Livres / 227,78 GB Usados (Suficiente para stack Supabase)
+
+================================================================================
+2. INSPEÇÃO DE CONFIGURAÇÕES E SCRIPTS
+================================================================================
+- supabase/config.toml:
+  * project_id: "express-connect-hub"
+  * api.port: 54321
+  * db.port: 54322
+  * studio.port: 54323
+  * inbucket.port: 54324
+  * db.major_version: 17
+- package.json:
+  * Scripts "playwright:qa" e "check:env" configurados.
+  * script "check:env" (scripts/check-ambiente.cjs) possui referências legadas
+    ao ref antigo (aqpfayildtcnrkfeeyjg) e ao ref de produção (uwrvzsjtpgaifkktpepn).
+- .env.qa.example:
+  * Modelo pronto para apontamento seguro de QA.
+
+================================================================================
+3. VIABILIDADE DE `supabase start` SEM AFETAR PRODUÇÃO
+================================================================================
+- O comando `supabase start` opera 100% via Docker local e lê exclusivamente
+  `supabase/config.toml`.
+- Ele NÃO se comunica com o projeto de produção (`uwrvzsjtpgaifkktpepn`) nem com `supabase.co`.
+- O risco de conexão ou alteração em produção pelo `supabase start` é ZERO.
+- Bloqueador atual para o start: O Docker Desktop precisa ser inicializado no Windows.
+
+================================================================================
+4. COMPATIBILIDADE DO BASELINE NO AMBIENTE LOCAL
+================================================================================
+Arquivo analisado: supabase/baseline/full_production_schema_20260920.sql (17.373 linhas)
+
+- Roles Supabase (anon, authenticated, service_role):
+  * No Supabase Local (`supabase start`), essas roles já são criadas nativamente pelo container de banco.
+  * Em um PostgreSQL puro, seria necessário criá-las via script antes.
+- Schemas internos (auth):
+  * Existem 281 referências a `auth.users` e `auth.uid()`.
+  * No Supabase Local, o schema `auth` e suas tabelas/funções são inicializados nativamente pelo GoTrue/Auth container.
+- Storage:
+  * 0 referências a tabelas do schema storage no baseline (100% limpo).
+- Extensões:
+  * pg_stat_statements: nativa
+  * pgcrypto: nativa
+  * uuid-ossp: nativa
+  * supabase_vault: requer atenção (se falhar no PostgreSQL local, pode ser ignorada ou instalada via extension package).
+- Functions SECURITY DEFINER: 70 funções preservadas.
+- Grants / Ownership: Zero cláusulas 'OWNER TO' ou 'GRANT' problemáticas no baseline.
+
+================================================================================
+5. ANÁLISE E ADAPTAÇÃO DO SCRIPT scripts/qa/apply_baseline_to_qa.ts
+================================================================================
+- Estado Atual:
+  * O script já aceita qualquer URL via QA_DATABASE_URL ou DATABASE_URL_QA.
+  * O script possui guard contra o project ref de produção: uwrvzsjtpgaifkktpepn.
+- Adaptação Proposta para Isolamento Absoluto (Local Only):
+  * Adicionar guard que valida se o host da URL é estritamente `localhost` ou `127.0.0.1`.
+  * Bloquear e abortar imediatamente caso contenha `supabase.co` ou qualquer host remoto.
+
+================================================================================
+6. PLANEJAMENTO DE ISOLAMENTO ABSOLUTO
+================================================================================
+- Destino de QA Local: estritamente `localhost` / `127.0.0.1:54322`.
+- Guard anti-cloud / anti-remoto no script de aplicação:
+  const isLocal = targetUrl.includes("localhost") || targetUrl.includes("127.0.0.1");
+  if (!isLocal || targetUrl.includes("supabase.co") || targetUrl.includes("uwrvzsjtpgaifkktpepn")) {
+    throw new Error("BLOCKED: O alvo deve ser estritamente LOCALHOST!");
+  }
+
+================================================================================
+7. PLANEJAMENTO DE DADOS SINTÉTICOS
+================================================================================
+- Utilizar exclusivamente: scripts/qa/seed_rls_test_data.sql.
+- 15 registros 100% fictícios (sem dados reais de clientes/prestadores).
+- ZERO cópia de dados de produção.
+
+================================================================================
+8. DECISÃO FINAL E MATRIZ DE EVIDÊNCIAS
+================================================================================
+DOCKER = INSTALADO (29.4.1)
+DOCKER_ENGINE = OFF (Docker Desktop Service Parado / socket inacessível)
+SUPABASE_CLI = DISPONÍVEL (2.117.0)
+LOCAL_PORTS = LIVRES (5432, 54321, 54322, 54323, 54324, 8000, 5173)
+BASELINE_LOCAL_COMPATIBILITY = ALTA (Nativo com Supabase CLI / GoTrue / Postgres 17)
+APPLY_SCRIPT_LOCAL_READY = SIM (Requer apenas guard host=localhost)
+PRODUCTION_GUARD = ATIVO (Zero comunicação remota)
+
+DECISÃO:
+LOCAL_QA_CAPABLE = BLOCKED
+
+MOTIVO DO BLOQUEIO:
+O Docker Desktop está instalado no Windows, porém o serviço/engine não está em execução
+(com.docker.service = Stopped). O comando `supabase start` depende do Docker daemon para
+subir os containers locais (Postgres, Auth, Storage, Studio).
+
+PLANO EXATO PARA DESBLOQUEIO (PRÓXIMA MISSÃO):
+1. Iniciar o Docker Desktop no Windows (ex: `Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"`).
+2. Aguardar o Docker daemon responder (`docker info`).
+3. Executar `supabase start` em modo local.
+4. O Supabase local subirá nas portas configuradas:
+   - Database: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+   - API: http://127.0.0.1:54321
+   - Studio: http://127.0.0.1:54323
+5. Aplicar o baseline `supabase/baseline/full_production_schema_20260920.sql` no banco local.
+6. Aplicar o seed sintético `scripts/qa/seed_rls_test_data.sql`.
+7. Conectar o frontend local / Playwright apontando para `http://127.0.0.1:54321`.
+
+ALTERNATIVA TÉCNICA (SEM DOCKER):
+Caso o Docker Desktop não possa ser iniciado, a alternativa técnica é utilizar um PostgreSQL
+local nativo (Windows service) na porta 5432, criando as roles básicas do Supabase
+(`anon`, `authenticated`, `service_role`) e aplicando o baseline diretamente nele.
+================================================================================

@@ -20,20 +20,30 @@ CREATE INDEX IF NOT EXISTS idx_crm_interacoes_data ON crm_interacoes_prestadores
 
 ALTER TABLE crm_interacoes_prestadores ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "authenticated_select" ON crm_interacoes_prestadores;
 CREATE POLICY "authenticated_select" ON crm_interacoes_prestadores
   FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "authenticated_insert" ON crm_interacoes_prestadores;
 CREATE POLICY "authenticated_insert" ON crm_interacoes_prestadores
   FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "authenticated_update" ON crm_interacoes_prestadores;
 CREATE POLICY "authenticated_update" ON crm_interacoes_prestadores
   FOR UPDATE TO authenticated USING (true);
+DROP POLICY IF EXISTS "authenticated_delete" ON crm_interacoes_prestadores;
 CREATE POLICY "authenticated_delete" ON crm_interacoes_prestadores
   FOR DELETE TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "anon_select" ON crm_interacoes_prestadores;
 CREATE POLICY "anon_select" ON crm_interacoes_prestadores
   FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "anon_insert" ON crm_interacoes_prestadores;
 CREATE POLICY "anon_insert" ON crm_interacoes_prestadores
   FOR INSERT TO anon WITH CHECK (true);
+DROP POLICY IF EXISTS "anon_update" ON crm_interacoes_prestadores;
 CREATE POLICY "anon_update" ON crm_interacoes_prestadores
   FOR UPDATE TO anon USING (true);
+DROP POLICY IF EXISTS "anon_delete" ON crm_interacoes_prestadores;
 CREATE POLICY "anon_delete" ON crm_interacoes_prestadores
   FOR DELETE TO anon USING (true);
+
+

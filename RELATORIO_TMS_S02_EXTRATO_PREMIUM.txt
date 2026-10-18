@@ -1,0 +1,218 @@
+RELATÓRIO TMS-S02 — FINALIZAÇÃO PREMIUM DO EXTRATO DO PRESTADOR
+Data: 22/08/2026
+Status: IMPLEMENTADO + PDF REAL GERADO E ABERTO (validação programática concluída)
+
+====================================================================
+1. ASSET FINAL DO LOGO UTILIZADO
+====================================================================
+
+public/logos/logo-conexao-oficial.png
+  → letras "CONEXÃO EXPRESS" em BRANCO + X colorido (laranja/cor oficial),
+    fundo transparente, proporções oficiais preservadas.
+
+Método seguro do próprio projeto utilizado:
+  src/lib/pdf/foundation.ts → loadLogo() (mesmo método já usado pela capa
+  corporativa de outros PDFs do TMS), que carrega exatamente
+  /logos/logo-conexao-oficial.png e mede as dimensões naturais (1024×682).
+
+ANÁLISE DE PIXELS (comprovada por decodificação das imagens):
+  - logo-conexao-branco.png, logo-conexao-colorido.png e
+    logo-conexao-express.png são ARQUIVOS IDÊNTICOS (mesmo SHA-256) com
+    texto ESCURO + X colorido → eram a CAUSA RAIZ: sumiam sobre o azul navy.
+  - logo-conexao-oficial.png: texto branco (≈32% dos pixels amostrados) +
+    X laranja/colorido + quase zero pixels escuros → VERSÃO CORRETA.
+
+====================================================================
+2. COMO FICOU O CABEÇALHO
+====================================================================
+
+- Faixa navy institucional COMPACTA: 22mm (antes 26mm) — mais alta proporção
+  de "faixa corporativa" e menos "banner".
+- ESQUERDA: logo oficial (letras brancas + X colorido), 17mm de altura,
+  centralizado verticalmente na faixa.
+- DIREITA (branco sobre navy):
+      Conexão Express Transportes LTDA   (bold 9pt)
+      CNPJ: 31.227.975/0001-80           (7pt, tom claro)
+      São Paulo/SP                       (7pt, tom claro)
+- Linha de acento laranja fina na base da faixa (toque institucional).
+- Título centralizado abaixo da faixa + "Extrato Nº <número>" à direita
+  (referência útil p/ o prestador), subtítulo discreto.
+- Sem área azul vazia; elementos equilibrados e alinhados verticalmente.
+
+====================================================================
+3. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/lib/pdf/extratoPrestadorReport.ts  (gerador do extrato — layout/visual)
+- src/test/tms_s02_extrato_pdf_visual.test.ts  (NOVO — 10 testes: helpers de
+  apresentação + geração do PDF real + validação de estrutura/ordem/valores)
+
+Nenhum outro arquivo do sistema foi alterado (nenhum service, banco, RPC,
+migration, filtro, pagamento ou status).
+
+====================================================================
+4. NOVA ORDEM DAS SEÇÕES (obrigatória)
+====================================================================
+
+CABEÇALHO AZUL → TÍTULO → PRESTADOR | CLIENTE → PERÍODO | PAGAMENTO →
+1) OPERAÇÕES DO PERÍODO → 2) OBSERVAÇÕES → 3) RESUMO FINANCEIRO →
+4) VALOR LÍQUIDO (fechamento visual final) → RODAPÉ/PAGINAÇÃO
+
+O VALOR LÍQUIDO agora é o ÚLTIMO elemento do documento (faixa laranja),
+depois do Resumo Financeiro. Nunca mais antes das operações.
+
+====================================================================
+5. REMOÇÃO VISUAL DO ROMANEIO — CONFIRMADA
+====================================================================
+
+SIM. A coluna "Ordem / Romaneio" foi removida da tabela do extrato do
+prestador. Não aparecem mais: número de OS, romaneio, "Ordem de Carregamento"
+nem códigos técnicos neste documento.
+
+NENHUM dado de romaneio foi alterado no banco/TMS — apenas deixou de ser
+exposto no extrato do motorista.
+
+====================================================================
+6. ESTRUTURA FINAL DA TABELA OPERAÇÕES
+====================================================================
+
+| Data | Serviço / Trajeto | Adicionais | Valor |
+  Data        → dd/mm/aaaa (ex.: 10/06/2026)
+  Serviço/Tr. → texto natural (ex.: "Guarulhos › Morumbi · 52 km" ou a
+                descrição real em lançamentos manuais) — sem UUID, sem
+                romaneio, sem código técnico
+  Adicionais  → labels reais da operação (ex.: "Pedágio · Adicional") ou "—"
+  Valor       → valor total da linha no padrão brasileiro
+                (crédito verde / débito vermelho)
+
+Larguras: Data 24 · Serviço/Trajeto 72 · Adicionais 38 · Valor 44 (mm).
+Cabeçalho navy repetido a cada página (autoTable).
+
+====================================================================
+7. ORIGEM UTILIZADA PARA A COLUNA ADICIONAIS
+====================================================================
+
+Somente campos REAIS já existentes em cada operação do fechamento
+(OperacaoFinanceira), SEM recalcular nada:
+  - valor_pedagio          → "Pedágio"
+  - valor_ajudante         → "Ajudante"
+  - valor_adicionais       → "Adicional"
+  - valor_reembolso_outros → "Reembolso"
+  - valor_combustivel      → "Combustível"
+Se mais de um, separados de forma compacta ("Pedágio · Adicional").
+Se nenhum adicional identificável → "—". Nada inventado.
+
+====================================================================
+8. FORMATAÇÃO MONETÁRIA APLICADA
+====================================================================
+
+Todos os valores do extrato agora usam o formato brasileiro com o formatter
+existente do projeto (formatarMoedaPDF / toLocaleString pt-BR + BRL),
+normalizando o espaço não-separável do Intl:
+
+  520      → R$ 520,00
+  66.43    → R$ 66,43
+  2177.92  → R$ 2.177,92
+  -830     → -R$ 830,00
+
+Aplicado em: tabela de operações, resumo financeiro (créditos/débitos),
+totais e faixa do valor líquido.
+
+====================================================================
+9. CORREÇÃO VISUAL DOS TRAJETOS
+====================================================================
+
+Novo helper limparTrajetoTexto() remove o espaçamento artificial entre
+letras (dados reais do tipo "G u a r u l h o s"):
+  "G u a r u l h o s" → "Guarulhos"
+  "C a m p i n a s"   → "Campinas"
+Preserva palavras reais compostas ("São Paulo", "Santo André") e siglas.
+
+Também: origem/destino que sejam UUID são ocultados; o separador direcional
+usado é "›" (U+203A, presente na codificação WinAnsi padrão das fontes do
+jsPDF) porque "→" (U+2192) NÃO existe nas fontes padrão do PDF e viraria
+caixa/em branco nos visualizadores.
+
+====================================================================
+10. CONFIRMAÇÃO — CÁLCULOS NÃO MODIFICADOS
+====================================================================
+
+SIM. Nenhuma soma, total, crédito, débito, líquido, regra de fechamento,
+filtro, origem de registro, pagamento ou status foi alterado. Apenas
+APRESENTAÇÃO:
+  - Sinal visual de débito/crédito na coluna Valor (mesmo valor, sinal
+    apresentado corretamente — crédito +, débito -);
+  - Datas com "T12:00:00" apenas para exibir o dia correto independente de
+    fuso (não muda o dado);
+  - Formatação pt-BR dos valores.
+
+====================================================================
+11. RODAPÉ — REF. INTERNA AVALIADA
+====================================================================
+
+"Ref. interna: <número>" era o número do fechamento (FP-...). Como ele tem
+utilidade para o prestador identificar o extrato ao falar com o financeiro,
+o número NÃO foi removido: foi relocado para o cabeçalho como
+"Extrato Nº FP-..." (rotulagem amigável).
+
+Rodapé final (discreto):
+  Centro: "Conexão Express · Gerado em dd/mm/aaaa, hh:mm"
+  Direita: "Página X de Y"
+Sem informações técnicas/internas desnecessárias para o motorista.
+
+====================================================================
+12. TESTES EXECUTADOS
+====================================================================
+
+- npx tsc --noEmit                     → ✅ 0 erros
+- npx vitest run                       → ✅ 487/487 (51 arquivos),
+                                           incl. financeiros existentes
+                                           (extratoPrestadorService 18/18)
+                                           + 10 novos TMS-S02
+- npm run build                        → ✅ 35,90s
+- npx eslint (extratoPrestadorReport +
+  tms_s02_extrato_pdf_visual.test)     → ✅ 0 erros
+
+Validação programática do PDF gerado (extração do conteúdo):
+  [x] cabeçalho navy compacto + empresa branca à direita
+  [x] logo oficial (branco + X colorido) embutido
+  [x] Prestador | Cliente
+  [x] Período | Pagamento — período horizontal "31/05/2026 a 21/08/2026"
+  [x] Operações do Período PRIMEIRO (antes de Resumo)
+  [x] sem coluna "Ordem / Romaneio"
+  [x] coluna Adicionais presente ("Pedágio · Adicional" / "—")
+  [x] valores "R$ 5.000,00" / "-R$ 830,00" / "R$ 11.750,50" (padrão brasileiro)
+  [x] trajetos sem letras espaçadas ("Campinas › Osasco · 85 km")
+  [x] Resumo Financeiro depois das operações
+  [x] Valor Líquido por último (faixa laranja)
+  [x] sem sobreposição (posições verticais distintas e ordenadas)
+  [x] rodapé sem "Ref. interna" · paginação "Página 1 de 1"
+  [x] 1 página (layout cabe na folha sem corte)
+
+====================================================================
+13. CAMINHO DO PDF GERADO
+====================================================================
+
+test-results/tms-s02/extrato_cesar_calvo.pdf
+  (Extrato FP-202608-ABC12345 — CÉSAR AUGUSTO HOLANDA SILVA + Calvo,
+   31/05/2026 a 21/08/2026 · créditos R$ 12.580,50 · débitos R$ 830,00 ·
+   líquido R$ 11.750,50 · 230.534 bytes)
+
+====================================================================
+RESULTADO
+====================================================================
+
+Extrato do Prestador finalizado em aparência premium: cabeçalho navy
+compacto com logo oficial (letras brancas + X colorido), empresa branca à
+direita, organização Prestador | Cliente / Período | Pagamento, tabela de
+operações sem romaneio com coluna de adicionais reais, valores no padrão
+brasileiro, trajetos legíveis, ordem OPERAÇÕES → RESUMO → VALOR LÍQUIDO e
+rodapé discreto. Todos os cálculos, valores e regras financeiras preservados.
+
+CABEÇALHO PREMIUM: SIM
+ROMANEIO REMOVIDO DO EXTRATO DO PRESTADOR: SIM
+OPERAÇÕES -> RESUMO -> VALOR LÍQUIDO: SIM
+MOEDA BRASILEIRA: SIM
+REGRAS FINANCEIRAS ALTERADAS: NÃO
+TMS-S02: HOMOLOGADA SIM
+PRÓXIMA MISSÃO: TMS-S03

@@ -1,0 +1,10 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const { rows } = await c.query(`SELECT ro.id, ro.status, ro.valor_prestador, ro.veiculo_necessario, ro.tipo_veiculo, ro.regiao, ro.prazo_expiracao, ro.created_at, os.numero FROM rede_oportunidades ro LEFT JOIN ordens_servico os ON os.id = ro.os_id ORDER BY ro.created_at DESC LIMIT 8`);
+console.log(JSON.stringify(rows, null, 2));
+await c.end();

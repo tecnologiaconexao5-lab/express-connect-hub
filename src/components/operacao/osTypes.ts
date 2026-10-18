@@ -2,7 +2,7 @@ import type { DistanceResult } from "@/services/maps/types";
 import { obterClasseBadgeGlobal, obterLabelGlobal, type StatusGlobal } from "./statusGlobal";
 
 export type OSStatus = 
-  | "rascunho" | "pendente" | "agendada" | "em_andamento" | "em_rota" 
+  | "rascunho" | "em_analise" | "pendente" | "agendada" | "em_andamento" | "em_rota" 
   | "coletado" | "entregue" | "finalizada" | "cancelada" | "ocorrencia";
 
 export interface StatusInfo {
@@ -12,6 +12,7 @@ export interface StatusInfo {
 
 export const STATUS_OPERACIONAL: Record<OSStatus, StatusInfo> = {
   "rascunho": { label: "Rascunho", twClass: "bg-slate-600 text-white" },
+  "em_analise": { label: "Em análise", twClass: "bg-orange-400 text-white" },
   "pendente": { label: "Pendente", twClass: "bg-amber-500 text-white" },
   "agendada": { label: "Alocado", twClass: "bg-blue-600 text-white" },
   "em_andamento": { label: "Carregando", twClass: "bg-orange-500 text-white" },
@@ -32,6 +33,7 @@ export function obterStatusInfoOS(statusOS: string): StatusInfo {
 export function obterStatusGlobalOS(statusOS: string): StatusGlobal {
   const mapa: Record<string, StatusGlobal> = {
     rascunho: "rascunho",
+    em_analise: "em_analise",
     pendente: "pendente",
     agendada: "alocado",
     em_andamento: "carregando",
@@ -65,7 +67,7 @@ export interface OSEndereco {
   id?: string;
   os_id?: string;
   sequencia: number;
-  tipo: "coleta" | "entrega" | "apoio" | "devolucao" | "retorno";
+  tipo: "coleta" | "entrega" | "apoio" | "devolucao" | "retorno" | "origem" | "destino" | "parada" | "coleta_reversa";
   nomeLocal: string;
   setor?: string;
   responsavel?: string;
@@ -98,7 +100,78 @@ export interface OSEndereco {
   observacoes: string;
   assinaturaBase64?: string;
   recebedor?: string;
+
+  /** MISSÃO 132-A — Campos operacionais de endereço */
+  portaria?: string;
+  doca?: string;
+  procedimentoEntrada?: string;
+  procedimentoSaida?: string;
+  estacionamento?: string;
+  documentoNecessario?: string;
+  codigoAcesso?: string;
+  exigenciaEpi?: boolean;
+  exigeAjudante?: boolean;
+  restricaoVeiculo?: string;
+  restricaoAltura?: string;
+  outrasRestricoes?: string;
+  horarioLimite?: string;
+  dataPrevista?: string;
+  recebedorPrevisto?: string;
+  contatoNome?: string;
+  contatoTelefone?: string;
 }
+
+export function parseOSEnderecoToOperational(e: OSEndereco): OperationalAddress {
+  return {
+    id: e.id,
+    tipo_ponto: e.tipo as OperationalAddress["tipo_ponto"],
+    nome_local: e.nomeLocal,
+    sequencia: e.sequencia,
+    endereco: e.endereco,
+    cep: e.cep,
+    logradouro: e.logradouro,
+    numero: e.numero,
+    complemento: e.complemento,
+    bairro: e.bairro,
+    cidade: e.cidade,
+    estado: e.estado,
+    uf: e.estado,
+    endereco_formatado: e.enderecoFormatado,
+    referencia: e.referencia,
+    mapbox_place_id: e.mapboxPlaceId,
+    latitude: e.latitude,
+    longitude: e.longitude,
+    contato_nome: e.contatoNome || e.contato,
+    contato_telefone: e.contatoTelefone || e.telefone,
+    responsavel: e.responsavel,
+    recebedor_previsto: e.recebedorPrevisto || e.recebedor,
+    data_prevista: e.dataPrevista,
+    janela_inicio: e.janelaInicio,
+    janela_fim: e.janelaFim,
+    horario_limite: e.horarioLimite,
+    prioridade: undefined,
+    instrucoes: e.instrucoes,
+    observacoes: e.observacoes,
+    observacao_ponto: e.observacaoPonto,
+    procedimento_entrada: e.procedimentoEntrada,
+    procedimento_saida: e.procedimentoSaida,
+    portaria: e.portaria,
+    doca: e.doca,
+    estacionamento: e.estacionamento,
+    documento_necessario: e.documentoNecessario,
+    codigo_acesso: e.codigoAcesso,
+    exigencia_epi: e.exigenciaEpi,
+    exige_ajudante: e.exigeAjudante,
+    restricao_veiculo: e.restricaoVeiculo,
+    restricao_altura: e.restricaoAltura,
+    outras_restricoes: e.outrasRestricoes,
+    restricoes: e.restricoes,
+    status_ponto: e.statusPonto,
+    agendamento: e.agendamento,
+  };
+}
+
+import type { OperationalAddress } from "@/types/operational-address";
 
 export interface OSHistorico {
   id?: string;
@@ -107,6 +180,19 @@ export interface OSHistorico {
   acao: string;
   status_novo: OSStatus;
   usuario: string;
+}
+
+export interface PortadorExterno {
+  /** Quando true, a OS está atribuída a um portador fora da base cadastrada */
+  ativo: boolean;
+  nome: string;
+  cpf: string;
+  placaMoto: string;
+  grupoOrigem: string;
+  /** FIX-USABILIDADE — dados financeiros do prestador avulso */
+  telefoneWhatsapp?: string;
+  pixTipo?: string;
+  pixChave?: string;
 }
 
 export interface OSCarga {
@@ -137,6 +223,8 @@ export interface OSCarga {
   observacoesCarga?: string;
   cubagemCalculada?: number;
   cubagemManual?: boolean;
+  /** ETAPA-2: Portador Externo/Avulso (parceiro fora da base cadastrada) */
+  portadorExterno?: PortadorExterno;
 }
 
 export interface OSVeiculoSugestao {
@@ -232,6 +320,7 @@ export interface OrdemServico {
   // Fin
   tabelaAplicada: string;
   faixaAplicada?: string;
+  romaneio?: string;
   valorCliente: number;
   custoPrestador: number;
   pedagio: number;
@@ -257,6 +346,12 @@ export interface OrdemServico {
   mapboxDestino?: string;
   pontosJson?: any[];
   rotaCalculada?: boolean;
+  tipoRota?: "rapida" | "curta" | "operacional";
+  distanciaAlternativas?: {
+    rapida?: { distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string } | null;
+    curta?: { distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string } | null;
+    operacional?: { distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string } | null;
+  };
 
   // TAREFA 4 - Financeiro
   financeiroGerado?: boolean;
@@ -308,4 +403,12 @@ export interface OrdemServico {
   vencimentoPadraoCliente?: number;
   cfopPadraoCliente?: string;
   tomadorCliente?: string;
+  // P3 - Ajuste manual de veiculo/tabela/valor
+  veiculoTipoOriginal?: string;
+  tabelaOriginal?: string;
+  valorClienteOriginal?: number;
+  custoPrestadorOriginal?: number;
+  motivoAjusteManual?: string;
+  usuarioAjusteManual?: string;
+  dataAjusteManual?: string;
 }

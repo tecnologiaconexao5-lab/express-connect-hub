@@ -1,0 +1,448 @@
+============================================================
+FIN-SANE-02C-PREFLIGHT — REVISÃO PRÉ-HOMOLOGAÇÃO
+============================================================
+Data: 2026-09-13
+Modelo: Kimi K2.7 Code
+Ambiente: TMS LOCAL + Supabase Produção (somente leitura)
+Missão anterior: FIN-SANE-02B-DEV
+
+============================================================
+1. CLASSIFICAÇÃO FINAL
+============================================================
+
+APROVADO PARA HOMOLOGAÇÃO EM AMBIENTE ISOLADO (A)
+
+A solução está tecnicamente sólida para ser aplicada e testada em
+ambiente QA/HML/local isolado. NENHUM bloqueador crítico foi
+encontrado que impessa a homologação.
+
+BLOQUEADORES PARA PRODUÇÃO (resolver antes do go-live):
+  B1. Snapshot CTE usa DISTINCT ON sem ORDER BY e depende de
+      MAX(processado_em) — fragilidade em reaplicação.
+  B2. 7 candidatos reais (de 26) têm diferença fp→pp não totalmente
+      explicada pelos componentes visíveis em pagamentos_prestadores.
+  B3. Ambiente QA/HML configurado em .env.qa está INACESSÍVEL.
+
+============================================================
+2. REVISÃO DA MIGRATION FORWARD
+============================================================
+
+Arquivo: supabase/migrations/20260913_fin_sane_02b_unifica_valor_pagar.sql
+
+2.1 SINTAXE E ESTRUTURA
+  ✅ Sintaxe PostgreSQL/Supabase válida (sem erros visuais).
+  ✅ CREATE OR REPLACE FUNCTION usado corretamente.
+  ✅ DROP TRIGGER IF EXISTS + CREATE TRIGGER para M66 e M80.
+  ✅ Nenhuma função/trigger anterior importante é perdida.
+
+2.2 FUNÇÕES RECRIADAS
+  ✅ f_trg_propagar_financeiro_alocacao() — M66
+  ✅ f_trg_propagar_financeiro_os() — M80
+  ✅ f_confirmar_pagamento_fechamento() — NOVA RPC
+
+2.3 TRIGGERS APONTAM PARA FUNÇÕES CORRETAS
+  ✅ trg_propagar_financeiro_alocacao → f_trg_propagar_financeiro_alocacao
+  ✅ trg_propagar_financeiro_os → f_trg_propagar_financeiro_os
+
+2.4 SEARCH_PATH
+  ✅ M66: SET search_path TO 'public'
+  ✅ M80: SET search_path = public
+  ⚠️  RPC nova não define search_path explicitamente (padrão public).
+      Recomendação: adicionar SET search_path = public para segurança.
+
+2.5 SECURITY DEFINER
+  ✅ Triggers M66/M80 usam SECURITY DEFINER (necessário para escrita
+     independente de RLS do usuário que dispara o trigger).
+  ⚠️  RPC nova não usa SECURITY DEFINER (mesmo padrão de
+     f_confirmar_pagamento_prestador). Pode falhar se RLS do caller
+     não permitir UPDATE em financeiro_pagar/baixas.
+
+2.6 GRANTS
+  ✅ Nova RPC: REVOKE de PUBLIC/anon; GRANT para authenticated e
+     service_role.
+  ✅ Snapshot: SELECT, INSERT para authenticated/service_role.
+  ✅ Nenhuma exposição para anon.
+
+2.7 OBSERVAÇÕES
+  ✅ Não altera migrations históricas.
+  ✅ Forward depende apenas da nova migration.
+
+============================================================
+3. ATOMICIDADE DO RPC
+============================================================
+
+Arquivo: 20260913_fin_sane_02b_unifica_valor_pagar.sql (linhas 451-545)
+
+3.1 COMMIT/ROLLBACK EXPLÍCITO
+  ❌ NÃO há COMMIT/ROLLBACK explícito. (CORRETO)
+
+3.2 MECANISMO DE ATOMICIDADE
+  ✅ Toda a função roda dentro de uma única transação do PostgreSQL.
+  ✅ Qualquer falha crítica gera RAISE EXCEPTION.
+  ✅ A exceção NÃO é engolida; propaga e força rollback total.
+  ✅ f_confirmar_pagamento_prestador também usa exceções/rollback
+     implícito dentro da mesma transação.
+
+3.3 CENÁRIO DE TESTE LÓGICO
+  Fechamento com 3 itens:
+    item 1 OK
+    item 2 OK
+    item 3 ERRO
+
+  RESULTADO ESPERADO:
+    item 1: NÃO persistido como pago ✅
+    item 2: NÃO persistido como pago ✅
+    item 3: erro propagado ✅
+    fechamento: NÃO pago ✅
+    baixas novas: ZERO ✅
+
+  Conclusão: atomicidade GARANTIDA pelo mecanismo transacional do
+  PostgreSQL + RAISE EXCEPTION não tratado.
+
+============================================================
+4. IDEMPOTÊNCIA
+============================================================
+
+4.1 NÍVEL FECHAMENTO
+  ✅ RPC verifica v_fechamento.status_pagamento = 'pago' e retorna
+     sucesso=false sem exceção.
+  ✅ TypeScript pagarFechamento() também verifica antes de chamar RPC.
+
+4.2 NÍVEL ITEM
+  ✅ RPC itera itens; se item.status_pagamento = 'pago' → ignora.
+  ✅ f_confirmar_pagamento_prestador verifica status pago/cancelado
+     antes de inserir baixa.
+
+4.3 NÍVEL BAIXA
+  ✅ f_confirmar_pagamento_prestador verifica saldo do título antes
+     de inserir; saldo zerado impede nova baixa.
+  ✅ financeiro_baixas permite múltiplas baixas por titulo_id, mas o
+     controle de saldo + status pago evita duplicidade funcional.
+
+4.4 CONCLUSÃO
+  ✅ Primeira execução: 1 baixa por título.
+  ✅ Segunda execução: ZERO novas baixas.
+
+============================================================
+5. CONCORRÊNCIA
+============================================================
+
+5.1 PROTEÇÃO EXISTENTE
+  ✅ RPC usa SELECT ... FOR UPDATE no fechamento (linha 480).
+  ✅ f_confirmar_pagamento_prestador usa FOR UPDATE em
+     pagamentos_prestadores (linha 39) e financeiro_pagar (linha 122
+     e 156).
+
+5.2 CENÁRIO SIMULTÂNEO
+  Sessão A e Sessão B chamam f_confirmar_pagamento_fechamento(X):
+    - A adquire lock no fechamento primeiro.
+    - B espera.
+    - A processa todos os itens, insere baixas, atualiza status,
+      commita.
+    - B adquire lock, vê status='pago', retorna sucesso=false.
+    - Resultado: 1 baixa total. ✅
+
+5.3 RISCO RESIDUAL
+  ⚠️  Não há lock explícito de financeiro_pagar compartilhado entre
+     fechamentos diferentes. Se um mesmo item aparecer em dois
+     fechamentos (violação de modelo), poderia haver race. Modelo
+     atual garante 1:1, então risco é BAIXO.
+
+  Classificação: risco MÉDIO/BAIXO — não bloqueia homologação, mas
+  pode ser endurecido com advisory lock no futuro.
+
+============================================================
+6. SNAPSHOT
+============================================================
+
+Tabela: public.fin_sane_02b_snapshot
+
+6.1 O QUE FUNCIONA
+  ✅ Snapshot acontece ANTES do UPDATE (INSERT snapshot → depois UPDATE).
+  ✅ IDs permitem rollback exato (financeiro_pagar_id).
+  ✅ valor_anterior e valor_novo registrados.
+  ✅ Somente registros elegíveis entram no snapshot.
+  ✅ Migration não destrói dados históricos.
+
+6.2 FRAGILIDADES IDENTIFICADAS
+  ⚠️  CTE do UPDATE usa DISTINCT ON (financeiro_pagar_id) sem ORDER BY.
+      Se houver snapshots duplicados, a linha escolhida é não
+      determinística (embora valor_novo seja igual na mesma batch).
+  ⚠️  Filtro s.processado_em >= MAX(processado_em) funciona porque
+      NOW() é constante dentro de uma transação, mas é frágil se a
+      migration for executada em batches próximos.
+  ⚠️  Filtro s.valor_novo >= 0 pode excluir valores negativos de
+      pp.valor_liquido, criando inconsistência snapshot vs UPDATE.
+  ⚠️  INSERT no snapshot não previne duplicatas em reaplicação.
+
+6.3 SEGURANÇA
+  ⚠️  Snapshot não possui RLS. Dados são financeiramente sensíveis.
+      Recomendação pós-homologação: adicionar RLS e/ou restringir
+      acesso a service_role/super_admin.
+
+6.4 CONCLUSÃO
+  Snapshot funciona para rollback, mas deve ser endurecido antes de
+  produção (B1).
+
+============================================================
+7. ROLLBACK REAL
+============================================================
+
+Arquivo: supabase/migrations/20260913_fin_sane_02b_rollback.sql
+
+7.1 RESTAURAÇÃO DE VALORES
+  ✅ UPDATE restaura fp.valor = s.valor_anterior somente para títulos
+     NÃO pagos/cancelados/estornados.
+  ✅ Títulos pagos após a migration NÃO são alterados.
+
+7.2 RESTAURAÇÃO DE FUNÇÕES/TRIGGERS
+  ✅ M66/M80 recriados com valor = v_valor_prestador (base).
+  ✅ Triggers recriados corretamente.
+
+7.3 RPC
+  ✅ DROP FUNCTION IF EXISTS public.f_confirmar_pagamento_fechamento(uuid, date).
+
+7.4 CONCLUSÃO
+  Rollback é seguro e não causa perda contábil de baixas já
+  registradas. Classificação: OK.
+
+============================================================
+8. UPDATE DOS 36 CANDIDATOS — DRY-RUN DETALHADO
+============================================================
+
+Arquivo auxiliar: _fin_sane_02c_preflight_dryrun.mjs
+Ambiente: Produção (somente SELECT)
+
+8.1 RESUMO
+  Total de candidatos: 36
+    Teste: 10
+    Reais: 26
+  Soma diferenças teste: R$ 1.435,50
+  Soma diferenças reais: R$ 4.901,22
+
+8.2 VALIDAÇÕES OBRIGATÓRIAS
+  ✅ Correspondência 1:1 — nenhum financeiro_pagar com múltiplos
+     pagamentos_prestadores.
+  ✅ Baixas — nenhum candidato possui baixa não estornada.
+  ✅ OS/prestador/pp — todos possuem os_id, fornecedor_id e pp
+     correspondente.
+  ✅ Status — todos NÃO estão pagos/cancelados/estornados.
+
+8.3 EXPLICAÇÃO POR COMPONENTES
+  ✅ Explicados pelos componentes visíveis: 29/36
+  ⚠️  Não explicados: 7/36
+
+  Os 7 não explicados indicam que a diferença fp→pp não é igual a
+  serviços + pedágio + adicionais + ajudante - descontos. Isso pode
+  ocorrer por:
+    - Outros componentes (reembolsos, bônus, ajustes, multas)
+      preenchidos em colunas não usadas na validação;
+    - Dados históricos inconsistentes;
+    - Arredondamentos.
+
+  AÇÃO RECOMENDADA: revisar manualmente os 7 IDs antes de aplicar
+  em produção. Eles devem ser atualizados para pp.valor_liquido (que
+  é a fonte canônica), mas a revisão manual elimina surpresas.
+
+8.4 CANDIDATOS TESTE
+  10 registros marcados com is_teste=true. Podem ser atualizados
+  automaticamente sem risco operacional.
+
+8.5 CANDIDATOS REAIS
+  26 registros. Requerem aprovação do time financeiro após revisão
+  dos 7 casos não explicados.
+
+============================================================
+9. CASOS PAGO-SEM-BAIXA
+============================================================
+
+Encontrados: 1 registro
+  - Teste: 1
+  - Reais: 0
+  - ID abreviado: f83a3249
+
+✅ Migration NÃO toca nesses casos (critério de status exclui
+  'pago'/'paga').
+✅ Casos continuam FORA da correção automática.
+
+============================================================
+10. TRIGGERS M66/M80
+============================================================
+
+10.1 M66 (alocacoes_escala)
+  ✅ Única mudança intencional: fp.valor = v_valor_liquido
+  ✅ Componentes usados: valor_repasse, valor_pedagio, valor_adicional,
+     valor_ajudante, valor_desconto_prestador
+  ✅ Não inventa componentes que a origem não possui.
+
+10.2 M80 (ordens_servico)
+  ✅ Única mudança intencional: fp.valor = v_valor_liquido
+  ✅ Componentes usados: custo_prestador, pedagio, adicionais (JSONB),
+     ajudante (JSONB), descontos
+  ✅ Não inventa componentes que a origem não possui.
+
+10.3 CONSISTÊNCIA
+  ✅ Ambos os triggers calculam v_valor_liquido da mesma forma
+     conceitual: base + pedágio + adicionais + ajudante - descontos.
+
+============================================================
+11. RPC NOVA
+============================================================
+
+f_confirmar_pagamento_fechamento
+
+11.1 VALIDAÇÕES
+  ✅ Verifica existência do fechamento.
+  ✅ Verifica se já está pago.
+  ✅ Verifica se está aprovado.
+  ✅ Ignora itens já pagos.
+  ✅ Rejeita itens cancelados.
+
+11.2 PROCESSAMENTO
+  ✅ Chama f_confirmar_pagamento_prestador por item.
+  ✅ Só atualiza fechamento para pago após todos os itens.
+  ✅ Retorno informativo (sucesso, mensagem, contadores).
+
+11.3 RISCOS
+  ⚠️  Se f_confirmar_pagamento_prestador retornar false por item já
+     pago (race), o fechamento RPC trata como EXCEPTION e faz rollback
+     total. Isso é conservador, mas pode falhar em cenários raros de
+     concorrência legítima.
+
+============================================================
+12. CÓDIGO TYPESCRIPT
+============================================================
+
+Arquivo: src/services/financeiro/fechamentoService.ts
+
+12.1 VALIDADO
+  ✅ Chama somente RPC novo (f_confirmar_pagamento_fechamento).
+  ✅ Não faz UPDATE direto de status depois.
+  ✅ Erro do RPC interrompe fluxo (throw).
+  ✅ sucesso=false não é tratado como sucesso.
+  ✅ Fechamento já pago é idempotente.
+  ✅ contaFinanceiraId/observação não cria efeito colateral.
+
+12.2 PEQUENOS AJUSTES RECOMENDADOS
+  ⚠️  Após sucesso do RPC, buscarFechamento() é chamado. Considerar
+     adicionar .single() e tratamento de erro.
+  ⚠️  Update de observação não verifica erro. Adicionar try/catch ou
+     log seria ideal.
+
+============================================================
+13. QA/HML
+============================================================
+
+13.1 CONFIGURAÇÃO
+  Arquivo .env.qa existe e aponta para:
+    VITE_SUPABASE_URL=https://aqpfayildtcnrkfeeyjg.supabase.co
+    DATABASE_URL=postgresql://postgres.aqpfayildtcnrkfeeyjg:...
+
+13.2 TESTE DE CONECTIVIDADE
+  ❌ QA INACESSÍVEL: erro "tenant/user postgres.aqpfayildtcnrkfeeyjg
+     not found".
+
+13.3 CONCLUSÃO
+  QA/HML está CONFIGURADO NO ARQUIVO mas INACESSÍVEL/INEXISTENTE no
+  momento. NÃO é seguro aplicar a migration sem ambiente isolado
+  funcional.
+
+  ESTRATÉGIAS ALTERNATIVAS:
+    1. Restaurar/criar projeto QA/HML no Supabase.
+    2. Usar Supabase CLI local (`supabase start`) para homologação.
+    3. Criar instância PostgreSQL local (Docker) com schema do projeto.
+
+============================================================
+14. TESTES POSSÍVEIS AGORA
+============================================================
+
+14.1 JÁ EXECUTADOS E PASSANDO
+  ✅ npx vitest run src/test/fin_sane_02b.test.ts — 8/8 PASS
+  ✅ npx tsc --noEmit — 0 erros
+  ✅ npm run build — built in 47.41s
+  ✅ Dry-run de produção — somente leitura, 36 candidatos mapeados
+
+14.2 PREPARADOS PARA EXECUÇÃO POSTERIOR
+  ✅ tests/sql/fin_sane_02b_cenarios.sql — 12 cenários de integração
+     para serem executados em ambiente QA/HML/local isolado.
+
+14.3 NÃO EXECUTÁVEIS AGORA
+  ❌ Testes de integração SQL writes (requer ambiente isolado).
+  ❌ Aplicação real da migration (proibida nesta missão).
+
+============================================================
+15. RISCOS RESTANTES
+============================================================
+
+R1 — Snapshot CTE frágil (B1)
+  Impacto: Baixo/Médio. Pode causar comportamento não determinístico
+  se migration for executada múltiplas vezes.
+  Mitigação: Adicionar migration_batch_id ou usar WHERE do INSERT
+  diretamente no UPDATE.
+
+R2 — 7 candidatos reais com diferença não explicada (B2)
+  Impacto: Médio. Pode indicar dados inconsistentes.
+  Mitigação: Revisão manual dos 7 IDs; adicionar validação de
+  componentes na migration.
+
+R3 — QA/HML inacessível
+  Impacto: Alto. Impede homologação controlada.
+  Mitigação: Restaurar QA ou usar Supabase CLI local.
+
+R4 — RPC sem SECURITY DEFINER
+  Impacto: Baixo/Médio. Pode falhar dependendo das RLS do caller.
+  Mitigação: Testar com usuários reais em QA; adicionar SECURITY
+  DEFINER se necessário.
+
+R5 — Snapshot sem RLS
+  Impacto: Médio. Dados financeiros ficam acessíveis a authenticated.
+  Mitigação: Adicionar RLS na tabela.
+
+============================================================
+16. PRÓXIMA MISSÃO RECOMENDADA
+============================================================
+
+FIN-SANE-02D-HOMOLOGACAO:
+  Objetivo: aplicar a migration em ambiente isolado (Supabase CLI
+  local ou QA/HML restaurado) e executar os 12 cenários SQL de
+  integração.
+
+  Entregáveis:
+    1. Ambiente isolado funcional.
+    2. Migration aplicada com sucesso.
+    3. 12 cenários PASS.
+    4. Testes de concorrência (dupla chamada simultânea).
+    5. Rollback testado e validado.
+    6. Correção dos itens B1/B2 se confirmados.
+    7. Relatório FIN-SANE-02D-HOMOLOGACAO.txt.
+
+============================================================
+17. CHECKLIST FINAL
+============================================================
+
+[✅] 1. PASS / FAIL / BLOQUEADO classificado
+[✅] 2. Revisão migration forward
+[✅] 3. Revisão migration rollback
+[✅] 4. Atomicidade validada
+[✅] 5. COMMIT/ROLLBACK explícito: NÃO
+[✅] 6. Tratamento de EXCEPTION validado
+[✅] 7. Concorrência avaliada
+[✅] 8. Idempotência validada
+[✅] 9. Snapshot auditado
+[✅] 10. Rollback validado
+[✅] 11. Candidatos teste (10)
+[✅] 12. Candidatos reais (26)
+[✅] 13. Candidatos excluídos após revisão (0 excluídos ainda; 7 sob revisão)
+[✅] 14. Casos pago-sem-baixa preservados (1 teste)
+[✅] 15. M66 validado
+[✅] 16. M80 validado
+[✅] 17. RPC validada
+[✅] 18. Código TS validado
+[✅] 19. QA/HML existe? NÃO (configurado mas inacessível)
+[✅] 20. Testes possíveis agora: unitários + dry-run
+[✅] 21. Riscos restantes documentados
+[✅] 22. Classificação final: APROVADO PARA HOMOLOGAÇÃO ISOLADA
+
+============================================================
+FIM DO RELATÓRIO FIN-SANE-02C-PREFLIGHT
+============================================================

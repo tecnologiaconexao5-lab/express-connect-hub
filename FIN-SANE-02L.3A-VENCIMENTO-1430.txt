@@ -1,0 +1,142 @@
+============================================================
+MISSAO: FIN-SANE-02L.3A-VENCIMENTO-1430
+DATA: 2026-09-18
+AMBIENTE: TMS LOCAL + Supabase PRODUCAO (SOMENTE LEITURA)
+MODELO: MiMo-V2.5
+============================================================
+
+FP ID:
+  d4ae8efe-27e0-42c7-8c2b-d2fd04d87af3
+
+CRIADO EM:
+  2026-09-18T13:20:00.568Z (UTC)
+
+VENCIMENTO:
+  2026-10-18 (18/10/2026)
+
+DATA PAGAMENTO:
+  2026-09-18 (18/09/2026)
+
+ORIGEM DO VENCIMENTO:
+  Trigger trg_propagar_financeiro_alocacao (A31-J1.11)
+  Linha: v_data_venc_30 := CURRENT_DATE + 30;
+
+REGRA +30 DIAS:
+  SIM
+
+RESULTADO:
+  REGRA CORRETA
+
+PRODUCAO:
+  ZERO WRITES
+
+============================================================
+DETALHAMENTO
+============================================================
+
+1. FINANCEIRO_PAGAR EXATO:
+   id:             d4ae8efe-27e0-42c7-8c2b-d2fd04d87af3
+   os_id:          c4338964-d565-49fb-a72a-211246a60079
+   created_at:     2026-09-18T13:20:00.568Z
+   data_vencimento: 2026-10-18T03:00:00.000Z (= 18/10/2026)
+   data_pagamento: 2026-09-18T03:00:00.000Z (= 18/09/2026)
+   status:         pago
+   valor:          1430.00
+   descricao:      Repasse ALOC-20260918-C4338964
+   prestador:      M43_2026-06-29_18-24-20 Motorista Teste
+   fornecedor_id:  5377592a-50e8-41d7-b8c5-b5c4509a3d56
+   desconto:       50.00
+
+2. FECHAMENTO (pagamentos_prestadores):
+   id:               3884e3c0-74ab-435f-b67d-55a6c6c4f938
+   created_at:       2026-09-18T10:22:28.225Z
+   status_pagamento: pago
+   status:           pago
+   valor_liquido:    1430.00
+   tipo_pagamento:   fechamento
+   prestador_nome:   MOTORISTA TESTE 02L
+   quantidade_os:    1
+
+3. ITEM DO FECHAMENTO:
+   id:               4262fec6-b2a1-4f23-8605-32210905754e
+   os_id:            c4338964-d565-49fb-a72a-211246a60079
+   valor_liquido:    1430.00
+   valor_servicos:   1100.00
+   status_pagamento: pago
+   categoria_financeira: Custo Logistico
+
+4. ALOCACAO ORIGINAL:
+   id:           c4338964-d565-49fb-a72a-211246a60079
+   status:       concluida
+   finalizada:   true
+   data_escala:  2026-09-18
+   created_at:   2026-09-18T10:20:00.568Z
+   updated_at:   2026-09-18T10:41:34.755Z
+   valor_frete:  1500
+   valor_repasse: 1100
+
+5. TRIGGER ATIVO EM PRODUCAO:
+   tgname:    trg_propagar_financeiro_alocacao
+   tgenabled: O (habilitado)
+   Linha-chave: v_data_venc_30 := CURRENT_DATE + 30;
+
+6. CRONOGRAMA COMPLETO:
+   10:20:00Z  Alocação INSERT → trigger dispara
+              v_data_venc_30 = CURRENT_DATE + 30 = 2026-09-18 + 30 = 2026-10-18
+              financeiro_pagar criado com data_vencimento = 2026-10-18
+   10:22:28Z  Fechamento criado (pagamentos_prestadores)
+   10:41:34Z  Alocação UPDATE (status=concluida) → trigger dispara NOVAMENTE
+              v_data_venc_30 = CURRENT_DATE + 30 = 2026-09-18 + 30 = 2026-10-18
+              financeiro_pagar ATUALIZADO (ON CONFLICT) → data_vencimento mantido
+   13:20:00Z  financeiro_pagar registrado (created_at UTC)
+   (data)      Pagamento confirmado via f_confirmar_pagamento_fechamento
+              status = 'pago', data_pagamento = 2026-09-18
+              data_vencimento NÃO alterado (permanece 2026-10-18)
+
+7. POR QUE 18/10/2026 E CORRETO:
+   - O trigger usa CURRENT_DATE + 30 no momento do INSERT/UPDATE
+   - O trigger disparou em 2026-09-18
+   - CURRENT_DATE = 2026-09-18
+   - 2026-09-18 + 30 dias = 2026-10-18
+   - O pagamento foi feito NO MESMO DIA da criacao
+   - data_vencimento representa "quando venceria se nao fosse pago"
+   - Como ja foi pago, data_vencimento e apenas referencial
+
+8. TRIGGER SEMPRE RECALCULA:
+   - O trigger dispara em INSERT e em UPDATE de status, finalizada,
+     valor_frete, valor_repasse, etc.
+   - CADA disparo sobrescreve data_vencimento com CURRENT_DATE + 30
+   - Se a alocacao fosse criada em 01/09 e concluida em 18/09,
+     o vencimento seria 18/10 (nao 01/10)
+   - Isso e POR DESIGN: vencimento = 30 dias da ultima propagacao
+
+9. CODIGO FONTE (A31-J1.11, em producao):
+   Arquivo: supabase/migrations/20260819000000_a31j111_desconto_prestador.sql
+   Linha 49: v_data_venc_30 := CURRENT_DATE + 30;
+   Linha 79: INSERT INTO financeiro_pagar (..., data_vencimento, ...)
+             VALUES (..., v_data_venc_30, ...)
+   Linha 80: ON CONFLICT (os_id) DO UPDATE SET ..., data_vencimento = v_data_venc_30
+
+10. TRIGGER ANTERIOR (M108F/P0) - MESMA REGRA:
+    Arquivo: supabase/migrations/20260731000001_p0_propagacao_financeira_trigger.sql
+    Linha 131: v_data_venc_30 := CURRENT_DATE + 30;
+    Linha 229: VALUES (..., v_data_venc_30, ...)
+    Linha 240: ON CONFLICT ... SET ..., data_vencimento = v_data_venc_30
+
+============================================================
+CONCLUSAO
+============================================================
+
+O vencimento 18/10/2026 e RESULTADO CORRETO da regra
+v_data_venc_30 := CURRENT_DATE + 30 implementada no trigger
+trg_propagar_financeiro_alocacao.
+
+A regra atribui vencimento = data_atual + 30 dias a CADA
+propagacao financeira (INSERT ou UPDATE relevante na
+alocacao). O trigger disparou em 2026-09-18, logo
+vencimento = 2026-10-18.
+
+Nao ha BUG. A logica e consistente com todas as versoes
+do trigger (M104A, M108F, P0, A31-J1.11).
+
+============================================================

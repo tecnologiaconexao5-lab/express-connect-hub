@@ -1,0 +1,1323 @@
+{
+  "ts": "2026-10-04T23:29:11.820Z",
+  "triggers": [
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_alocacoes_escala_updated_at",
+      "funcao": "update_alocacoes_escala_updated_at",
+      "timing": "BEFORE",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_cancelar_financeiro_alocacao",
+      "funcao": "f_trg_cancelar_financeiro_alocacao",
+      "timing": "BEFORE",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_alocacao_cancelada",
+      "funcao": "trg_evento_alocacao_cancelada",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_alocacao_criada",
+      "funcao": "trg_evento_alocacao_criada",
+      "timing": "AFTER",
+      "eventos": "INSERT",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_alocacao_motorista_trocado",
+      "funcao": "trg_evento_alocacao_motorista_trocado",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "prestador_id",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_alocacao_recusada",
+      "funcao": "trg_evento_alocacao_recusada",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_operacao_finalizada",
+      "funcao": "trg_evento_operacao_finalizada",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "finalizada",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_evento_prestador_aceitou",
+      "funcao": "trg_evento_prestador_aceitou",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "aceite_prestador",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_propagar_financeiro_alocacao",
+      "funcao": "f_trg_propagar_financeiro_alocacao",
+      "timing": "AFTER",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "prestador_id,status,valor_frete,valor_repasse,valor_pedagio,valor_combustivel,valor_ajudante,valor_adicional,valor_desconto,finalizada,tipo_reversa,reversa_valor_cliente,reversa_valor_prestador,valor_desconto_prestador",
+      "self_write": true,
+      "recursao": false
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "trigger": "trg_registrar_historico_alocacao",
+      "funcao": "registrar_historico_alocacao",
+      "timing": "AFTER",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "trigger": "trg_guardar_pagar_pago_sem_baixa",
+      "funcao": "trg_guardar_pagar_pago_sem_baixa",
+      "timing": "BEFORE",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "financeiro_receber",
+      "trigger": "trg_evento_financeiro_receber_criado",
+      "funcao": "trg_evento_financeiro_receber_criado",
+      "timing": "AFTER",
+      "eventos": "INSERT",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "financeiro_receber",
+      "trigger": "trg_evento_financeiro_receber_pago",
+      "funcao": "trg_evento_financeiro_receber_pago",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "financeiro_receber",
+      "trigger": "trg_guardar_receber_pago_sem_baixa",
+      "funcao": "trg_guardar_receber_pago_sem_baixa",
+      "timing": "BEFORE",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_evento_os_cancelada",
+      "funcao": "trg_evento_os_cancelada",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_evento_os_criada",
+      "funcao": "trg_evento_os_criada",
+      "timing": "AFTER",
+      "eventos": "INSERT",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_evento_os_finalizada",
+      "funcao": "trg_evento_os_finalizada",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_evento_os_status_changed",
+      "funcao": "trg_evento_os_status_changed",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "status",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_notificar_os_para_app",
+      "funcao": "f_trg_notificar_os_para_app",
+      "timing": "AFTER",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "prestador_id",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "ordens_servico",
+      "trigger": "trg_propagar_financeiro_os",
+      "funcao": "f_trg_propagar_financeiro_os",
+      "timing": "AFTER",
+      "eventos": "INSERT/UPDATE",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "status,data,adicionais,ajudante,pedagio,custo_prestador,valor_cliente,descontos",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "prestadores",
+      "trigger": "trg_audit_liberado_app",
+      "funcao": "fn_audit_liberado_app",
+      "timing": "AFTER",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "prestadores",
+      "trigger": "trg_bridge_prestador_para_recrutamento",
+      "funcao": "f_bridge_prestador_para_recrutamento",
+      "timing": "AFTER",
+      "eventos": "INSERT",
+      "habilitado": "O",
+      "definer": true,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    },
+    {
+      "tabela": "prestadores",
+      "trigger": "trg_guardar_privilegio_prestador",
+      "funcao": "fn_guardar_privilegio_prestador",
+      "timing": "BEFORE",
+      "eventos": "UPDATE",
+      "habilitado": "O",
+      "definer": false,
+      "update_of": "",
+      "self_write": false,
+      "recursao": false
+    }
+  ],
+  "indexes": [
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "alocacoes_escala_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX alocacoes_escala_pkey ON public.alocacoes_escala USING btree (id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_cliente",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_cliente ON public.alocacoes_escala USING btree (cliente_id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_data",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_data ON public.alocacoes_escala USING btree (data_escala)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_data_escala",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_data_escala ON public.alocacoes_escala USING btree (data_escala DESC)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_data_prestador",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_data_prestador ON public.alocacoes_escala USING btree (data_escala, prestador_id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_data_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_data_status ON public.alocacoes_escala USING btree (data_escala, status)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_etapa_app",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_etapa_app ON public.alocacoes_escala USING btree ((((metadata -> 'app_motorista'::text) ->> 'etapa_atual'::text))) WHERE ((metadata -> 'app_motorista'::text) IS NOT NULL)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_metadata",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_metadata ON public.alocacoes_escala USING gin (metadata)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_os",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_os ON public.alocacoes_escala USING btree (ordem_servico_id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_prestador",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_prestador ON public.alocacoes_escala USING btree (prestador_id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_prestador_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_prestador_id ON public.alocacoes_escala USING btree (prestador_id)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_status ON public.alocacoes_escala USING btree (status)"
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "indice": "idx_alocacoes_escala_tags",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_alocacoes_escala_tags ON public.alocacoes_escala USING gin (tags)"
+    },
+    {
+      "tabela": "clientes",
+      "indice": "clientes_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX clientes_pkey ON public.clientes USING btree (id)"
+    },
+    {
+      "tabela": "documentos_prestadores",
+      "indice": "documentos_prestadores_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX documentos_prestadores_pkey ON public.documentos_prestadores USING btree (id)"
+    },
+    {
+      "tabela": "documentos_prestadores",
+      "indice": "idx_documentos_prestador",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_documentos_prestador ON public.documentos_prestadores USING btree (prestador_id)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "financeiro_pagar_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX financeiro_pagar_pkey ON public.financeiro_pagar USING btree (id)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_financeiro_pagar_os_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_financeiro_pagar_os_id ON public.financeiro_pagar USING btree (os_id)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_financeiro_pagar_prestador_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_financeiro_pagar_prestador_status ON public.financeiro_pagar USING btree (prestador, status)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_fp_fornecedor_cadastro_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_fp_fornecedor_cadastro_id ON public.financeiro_pagar USING btree (fornecedor_cadastro_id)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_pagar_fornecedor",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagar_fornecedor ON public.financeiro_pagar USING btree (fornecedor)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_pagar_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagar_status ON public.financeiro_pagar USING btree (status)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "idx_pagar_vencimento",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagar_vencimento ON public.financeiro_pagar USING btree (data_vencimento)"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "indice": "uq_fp_os_id",
+      "indisunique": true,
+      "indisprimary": false,
+      "def": "CREATE UNIQUE INDEX uq_fp_os_id ON public.financeiro_pagar USING btree (os_id)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "financeiro_receber_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX financeiro_receber_pkey ON public.financeiro_receber USING btree (id)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_financeiro_receber_cliente_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_financeiro_receber_cliente_status ON public.financeiro_receber USING btree (cliente_id, status)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_financeiro_receber_fatura_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_financeiro_receber_fatura_id ON public.financeiro_receber USING btree (fatura_id)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_financeiro_receber_os_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_financeiro_receber_os_id ON public.financeiro_receber USING btree (os_id)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_receber_cliente",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_receber_cliente ON public.financeiro_receber USING btree (cliente)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_receber_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_receber_status ON public.financeiro_receber USING btree (status)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "idx_receber_vencimento",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_receber_vencimento ON public.financeiro_receber USING btree (data_vencimento)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "uq_fr_idempotency_key",
+      "indisunique": true,
+      "indisprimary": false,
+      "def": "CREATE UNIQUE INDEX uq_fr_idempotency_key ON public.financeiro_receber USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "uq_fr_os_id",
+      "indisunique": true,
+      "indisprimary": false,
+      "def": "CREATE UNIQUE INDEX uq_fr_os_id ON public.financeiro_receber USING btree (os_id)"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "indice": "uq_receber_fatura_id",
+      "indisunique": true,
+      "indisprimary": false,
+      "def": "CREATE UNIQUE INDEX uq_receber_fatura_id ON public.financeiro_receber USING btree (fatura_id) WHERE (fatura_id IS NOT NULL)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_cliente_data",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_cliente_data ON public.ordens_servico USING btree (cliente_id, data)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_created_at",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_created_at ON public.ordens_servico USING btree (created_at)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_orcamento_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_orcamento_id ON public.ordens_servico USING btree (orcamento_id)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_pedido_portal",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_pedido_portal ON public.ordens_servico USING btree (pedido_portal_id) WHERE (pedido_portal_id IS NOT NULL)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_prestador_data",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_prestador_data ON public.ordens_servico USING btree (prestador_id, data)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_status ON public.ordens_servico USING btree (status)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_ordens_servico_valor_cliente",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_ordens_servico_valor_cliente ON public.ordens_servico USING btree (valor_cliente)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_os_cliente",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_os_cliente ON public.ordens_servico USING btree (cliente_id)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_os_data_servico",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_os_data_servico ON public.ordens_servico USING btree (data_servico)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_os_prestador",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_os_prestador ON public.ordens_servico USING btree (prestador_id)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "idx_os_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_os_status ON public.ordens_servico USING btree (status)"
+    },
+    {
+      "tabela": "ordens_servico",
+      "indice": "ordens_servico_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX ordens_servico_pkey ON public.ordens_servico USING btree (id)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_os",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_os ON public.pagamentos_prestadores USING btree (os_id)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_periodo",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_periodo ON public.pagamentos_prestadores USING btree (periodo_inicio, periodo_fim)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_prestador",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_prestador ON public.pagamentos_prestadores USING btree (prestador_id)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_prestadores_os_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_prestadores_os_id ON public.pagamentos_prestadores USING btree (os_id)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_prestadores_prestador_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_prestadores_prestador_status ON public.pagamentos_prestadores USING btree (prestador_id, status_pagamento)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pagamentos_status",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pagamentos_status ON public.pagamentos_prestadores USING btree (status_pagamento)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pp_fechamento_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pp_fechamento_id ON public.pagamentos_prestadores USING btree (fechamento_id) WHERE (fechamento_id IS NOT NULL)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "idx_pp_fechamento_tipo",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_pp_fechamento_tipo ON public.pagamentos_prestadores USING btree (tipo_pagamento, prestador_id, periodo_inicio) WHERE (tipo_pagamento = 'fechamento'::text)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "pagamentos_prestadores_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX pagamentos_prestadores_pkey ON public.pagamentos_prestadores USING btree (id)"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "indice": "uq_pp_os_id",
+      "indisunique": true,
+      "indisprimary": false,
+      "def": "CREATE UNIQUE INDEX uq_pp_os_id ON public.pagamentos_prestadores USING btree (os_id)"
+    },
+    {
+      "tabela": "prestadores",
+      "indice": "idx_prestadores_auth_user_id",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_prestadores_auth_user_id ON public.prestadores USING btree (auth_user_id)"
+    },
+    {
+      "tabela": "prestadores",
+      "indice": "idx_prestadores_liberado_app",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_prestadores_liberado_app ON public.prestadores USING btree (liberado_app)"
+    },
+    {
+      "tabela": "prestadores",
+      "indice": "idx_prestadores_origem",
+      "indisunique": false,
+      "indisprimary": false,
+      "def": "CREATE INDEX idx_prestadores_origem ON public.prestadores USING btree (origem)"
+    },
+    {
+      "tabela": "prestadores",
+      "indice": "prestadores_pkey",
+      "indisunique": true,
+      "indisprimary": true,
+      "def": "CREATE UNIQUE INDEX prestadores_pkey ON public.prestadores USING btree (id)"
+    }
+  ],
+  "fks": [
+    {
+      "tabela": "alocacoes_escala",
+      "fk": "alocacoes_escala_cliente_id_fkey",
+      "def": "FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL",
+      "cols": [
+        "cliente_id"
+      ]
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "fk": "alocacoes_escala_ordem_servico_id_fkey",
+      "def": "FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE SET NULL",
+      "cols": [
+        "ordem_servico_id"
+      ]
+    },
+    {
+      "tabela": "alocacoes_escala",
+      "fk": "alocacoes_escala_prestador_id_fkey",
+      "def": "FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE SET NULL",
+      "cols": [
+        "prestador_id"
+      ]
+    },
+    {
+      "tabela": "clientes",
+      "fk": "clientes_tabela_valores_padrao_id_fkey",
+      "def": "FOREIGN KEY (tabela_valores_padrao_id) REFERENCES tabelas_valores(id) ON DELETE SET NULL",
+      "cols": [
+        "tabela_valores_padrao_id"
+      ]
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "fk": "financeiro_pagar_cliente_id_fkey",
+      "def": "FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL",
+      "cols": [
+        "cliente_id"
+      ]
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "fk": "financeiro_pagar_fornecedor_cadastro_id_fkey",
+      "def": "FOREIGN KEY (fornecedor_cadastro_id) REFERENCES fornecedores(id) ON DELETE SET NULL",
+      "cols": [
+        "fornecedor_cadastro_id"
+      ]
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "fk": "financeiro_pagar_fornecedor_id_fkey",
+      "def": "FOREIGN KEY (fornecedor_id) REFERENCES prestadores(id) ON DELETE SET NULL",
+      "cols": [
+        "fornecedor_id"
+      ]
+    },
+    {
+      "tabela": "financeiro_receber",
+      "fk": "financeiro_receber_cliente_id_fkey",
+      "def": "FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL",
+      "cols": [
+        "cliente_id"
+      ]
+    },
+    {
+      "tabela": "financeiro_receber",
+      "fk": "financeiro_receber_fatura_id_fkey",
+      "def": "FOREIGN KEY (fatura_id) REFERENCES faturas(id) ON DELETE SET NULL",
+      "cols": [
+        "fatura_id"
+      ]
+    },
+    {
+      "tabela": "ordens_servico",
+      "fk": "ordens_servico_cliente_fkey",
+      "def": "FOREIGN KEY (cliente) REFERENCES clientes(id) ON DELETE SET NULL",
+      "cols": [
+        "cliente"
+      ]
+    },
+    {
+      "tabela": "ordens_servico",
+      "fk": "ordens_servico_pedido_portal_id_fkey",
+      "def": "FOREIGN KEY (pedido_portal_id) REFERENCES portal_pedidos(id) ON DELETE SET NULL",
+      "cols": [
+        "pedido_portal_id"
+      ]
+    },
+    {
+      "tabela": "ordens_servico",
+      "fk": "ordens_servico_prestador_fkey",
+      "def": "FOREIGN KEY (prestador) REFERENCES prestadores(id) ON DELETE SET NULL",
+      "cols": [
+        "prestador"
+      ]
+    },
+    {
+      "tabela": "ordens_servico",
+      "fk": "ordens_servico_veiculo_alocado_fkey",
+      "def": "FOREIGN KEY (veiculo_alocado) REFERENCES veiculos(id) ON DELETE SET NULL",
+      "cols": [
+        "veiculo_alocado"
+      ]
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "fk": "fk_fechamento_pai",
+      "def": "FOREIGN KEY (fechamento_id) REFERENCES pagamentos_prestadores(id) ON DELETE SET NULL",
+      "cols": [
+        "fechamento_id"
+      ]
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "fk": "fk_pp_lote",
+      "def": "FOREIGN KEY (lote_id) REFERENCES lotes_pagamento(id) ON DELETE SET NULL",
+      "cols": [
+        "lote_id"
+      ]
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "fk": "pagamentos_prestadores_prestador_id_fkey",
+      "def": "FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE CASCADE",
+      "cols": [
+        "prestador_id"
+      ]
+    },
+    {
+      "tabela": "prestadores",
+      "fk": "prestadores_auth_user_id_fkey",
+      "def": "FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+      "cols": [
+        "auth_user_id"
+      ]
+    }
+  ],
+  "rpcs": [
+    {
+      "proname": "calcular_margens_financeiras_os",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f35_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f36_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f38_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f39_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_aceitar_oportunidade_rede",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_aprovar_pagamento_prestadores",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_atualizar_etapa_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_atualizar_reversa_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_atualizar_status_parada",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_avancar_etapa_app_motorista",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_bridge_prestador_para_recrutamento",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_buscar_operacoes_motorista",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_buscar_oportunidades_para_prestador",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_buscar_prestadores_compativeis",
+      "provolatile": "s",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_calcular_financeiro_operacao",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_cancelar_fatura",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_cancelar_pagamento_prestador",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_confirmar_pagamento_fechamento",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_confirmar_pagamento_prestador",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_contar_mensagens_nao_lidas_torre",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_criar_lancamento_manual_prestador",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_criar_recebivel_manual",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_emitir_fatura",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_enviar_mensagem_torre",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_estornar_baixa_financeira",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_estornar_pagamento_prestador",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_gerar_lote_pagamentos",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_gerar_numero_fatura",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_km_evidencias_operacao",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_log_tabela_alteracao",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_marcar_mensagens_lidas_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_marcar_mensagens_lidas_torre",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_mover_fatura_status",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_obter_cliente_id_do_usuario",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_obter_prestador_por_auth",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_pod_referencia_remota",
+      "provolatile": "i",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_pp_tenant_id",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_rec_automacoes_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_recalcular_totais_fatura",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_registrar_baixa_financeira",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_registrar_notificacao_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_regularizar_fatura_legada",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_reprocessar_pedido_portal",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_reprovar_pagamento_prestador",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_responder_mensagem_torre",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_scan_validade_documentos",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_sync_delivery_proof_to_entregas",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_sync_tracking_to_oper_localizacao",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_transferir_entre_contas",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_atualizar_status_alocacao_tracking",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_cancelar_financeiro_alocacao",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_event_bus_consumer",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_expiracao_oportunidade",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_fatura_itens_anti_duplicidade",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_fatura_itens_bloqueio_emissao",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_faturas_bloqueio_emissao_sem_ar",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_faturas_protege_status",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_impedir_duplicidade_pedido",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_notificar_oportunidade_rede",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_notificar_os_para_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_novo_candidato_evento",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_propagar_financeiro_alocacao",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_propagar_financeiro_os",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_rede_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "f_trg_score_limiar_evento",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_tracking_iniciado",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_trg_validade_documento_evento",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_usuario_pode_acessar_cliente",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_usuario_pode_acessar_tenant",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "f_validar_pod_operacao",
+      "provolatile": "s",
+      "prosecdef": true
+    },
+    {
+      "proname": "fn_audit_liberado_app",
+      "provolatile": "v",
+      "prosecdef": true
+    },
+    {
+      "proname": "fn_guardar_privilegio_prestador",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "fn_rascunhos_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    },
+    {
+      "proname": "fornecedores_updated_at",
+      "provolatile": "v",
+      "prosecdef": false
+    }
+  ],
+  "stats": [
+    {
+      "tabela": "alocacoes_escala",
+      "n_live_tup": "204",
+      "n_dead_tup": "32",
+      "seq_scan": "5212",
+      "idx_scan": "92287"
+    },
+    {
+      "tabela": "ordens_servico",
+      "n_live_tup": "167",
+      "n_dead_tup": "40",
+      "seq_scan": "97787",
+      "idx_scan": "132775"
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "n_live_tup": "119",
+      "n_dead_tup": "64",
+      "seq_scan": "3629",
+      "idx_scan": "5414"
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "n_live_tup": "100",
+      "n_dead_tup": "48",
+      "seq_scan": "3290",
+      "idx_scan": "6586"
+    },
+    {
+      "tabela": "financeiro_receber",
+      "n_live_tup": "49",
+      "n_dead_tup": "30",
+      "seq_scan": "92063",
+      "idx_scan": "28403"
+    },
+    {
+      "tabela": "prestadores",
+      "n_live_tup": "39",
+      "n_dead_tup": "32",
+      "seq_scan": "19934",
+      "idx_scan": "38453"
+    },
+    {
+      "tabela": "documentos_prestadores",
+      "n_live_tup": "32",
+      "n_dead_tup": "4",
+      "seq_scan": "228",
+      "idx_scan": "63"
+    },
+    {
+      "tabela": "clientes",
+      "n_live_tup": "28",
+      "n_dead_tup": "30",
+      "seq_scan": "823416",
+      "idx_scan": "26659"
+    }
+  ],
+  "checks": [
+    {
+      "name": "triggers_sem_recursividade",
+      "ok": true,
+      "detail": "nenhuma recursao direta (self-writes ocorrem fora do UPDATE OF)"
+    },
+    {
+      "name": "self_write_controlado",
+      "ok": true,
+      "detail": "1 trigger(s) escrevem na propria tabela, todos com UPDATE OF restrito: alocacoes_escala.trg_propagar_financeiro_alocacao"
+    },
+    {
+      "name": "triggers_habilitados",
+      "ok": true,
+      "detail": "todos os triggers habilitados (O)"
+    },
+    {
+      "name": "fks_indexadas",
+      "ok": false,
+      "detail": "FKs sem indice: clientes.clientes_tabela_valores_padrao_id_fkey(tabela_valores_padrao_id) | financeiro_pagar.financeiro_pagar_cliente_id_fkey(cliente_id) | financeiro_pagar.financeiro_pagar_fornecedor_id_fkey(fornecedor_id) | ordens_servico.ordens_servico_cliente_fkey(cliente) | ordens_servico.ordens_servico_prestador_fkey(prestador) | ordens_servico.ordens_servico_veiculo_alocado_fkey(veiculo_alocado) | pagamentos_prestadores.fk_pp_lote(lote_id)"
+    },
+    {
+      "name": "tenant_id_indexado",
+      "ok": false,
+      "detail": "sem indice tenant_id: ordens_servico, alocacoes_escala, clientes"
+    },
+    {
+      "name": "colunas_busca_indexadas",
+      "ok": false,
+      "detail": "sem indice: financeiro_pagar.cliente_id"
+    },
+    {
+      "name": "rpcs_leitura_stable",
+      "ok": false,
+      "detail": "VOLATILE: f_obter_cliente_id_do_usuario"
+    },
+    {
+      "name": "sem_seq_scan_excessivo",
+      "ok": true,
+      "detail": "nenhuma tabela com seq_scan alto e zero idx_scan"
+    },
+    {
+      "name": "dead_tuples_ok",
+      "ok": true,
+      "detail": "sem acumulo relevante de dead tuples"
+    }
+  ]
+}

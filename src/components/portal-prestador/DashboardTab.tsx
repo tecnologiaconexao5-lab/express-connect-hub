@@ -1,28 +1,31 @@
 import { motion } from "framer-motion";
-import { TrendingUp, DollarSign, Award, Bell, Circle, ChevronRight, MapPin } from "lucide-react";
+import { TrendingUp, DollarSign, Award, Bell, Circle, ChevronRight, MapPin, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePortalPrestadorStore } from "@/stores/portalPrestadorStore";
-import ScoreGauge from "@/components/onboarding/ScoreGauge";
-
-const STATUS_COLORS = {
-  Bronze: "from-amber-700 to-amber-500",
-  Prata: "from-slate-400 to-slate-300",
-  Ouro: "from-yellow-500 to-yellow-400",
-  Diamante: "from-cyan-500 to-blue-500",
-};
 
 export default function DashboardTab() {
-  const { score, ganhosMes, ganhosSemana, ranking, totalPrestadores, disponivel, operacoesPendentes, operacoesAtivas, perfil, notificacoes, toggleDisponivel, marcarTodasLidas } = usePortalPrestadorStore();
+  const { score, ganhosMes, ganhosSemana, ranking, totalPrestadores, disponivel, operacoesPendentes, operacoesAtivas, perfil, notificacoes, loading, toggleDisponivel, marcarTodasLidas } = usePortalPrestadorStore();
 
   const naoLidas = notificacoes.filter((n) => !n.lida).length;
   const recentes = notificacoes.slice(0, 3);
+
+  if (loading && !score) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Carregando painel...</p>
+      </div>
+    );
+  }
+
+  const nome = perfil.nome.split(" ")[0] || "Prestador";
 
   return (
     <div className="space-y-5 pb-4">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-muted-foreground">Bem-vindo de volta</p>
-          <h1 className="text-2xl font-bold text-foreground">{perfil.nome.split(" ")[0]}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{nome}</h1>
         </div>
         <div className="relative">
           <button onClick={marcarTodasLidas} className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center relative">
@@ -68,12 +71,12 @@ export default function DashboardTab() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-4 rounded-2xl border border-border bg-card">
           <div className="flex items-center justify-between mb-2">
             <Award className="w-5 h-5 text-amber-500" />
-            <span className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full">{score.classification}</span>
+            <span className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full">{score?.classification || "Bronze"}</span>
           </div>
-          <p className="text-2xl font-bold text-foreground">{score.total}</p>
+          <p className="text-2xl font-bold text-foreground">{score?.total || 0}</p>
           <p className="text-xs text-muted-foreground">Score geral</p>
           <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-            <motion.div initial={{ width: 0 }} animate={{ width: `${score.total}%` }} className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${score.color}, ${score.color}88)` }} />
+            <motion.div initial={{ width: 0 }} animate={{ width: `${score?.total || 0}%` }} className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${score?.color || "#cd7f32"}, ${score?.color || "#cd7f32"}88)` }} />
           </div>
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="p-4 rounded-2xl border border-border bg-card">
@@ -81,7 +84,7 @@ export default function DashboardTab() {
           <p className="text-2xl font-bold text-foreground">#{ranking}</p>
           <p className="text-xs text-muted-foreground">de {totalPrestadores} prestadores</p>
           <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="text-green-600 font-medium">Top {Math.round((1 - ranking / totalPrestadores) * 100)}%</span>
+            <span className="text-green-600 font-medium">Top {totalPrestadores > 0 ? Math.round((1 - ranking / totalPrestadores) * 100) : 0}%</span>
           </div>
         </motion.div>
       </div>

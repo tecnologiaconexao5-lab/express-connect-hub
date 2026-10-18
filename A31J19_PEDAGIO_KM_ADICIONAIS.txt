@@ -1,0 +1,32 @@
+A31-J1.9 — Pedágio, KM excedente e adicionais separados sem duplicidade
+=====================================================================
+CAUSA DA DUPLICIDADE
+  A perna PRESTADOR somava valor_pedagio (66,43) E "outros" = valor_adicional.
+  Quando o pedágio era lançado também em "Outros adicionais" (campo do bloco
+  CLIENTE), o prestador recebia 66,43 + 66,43 = 132,86 e o pedágio aparecia
+  como "Outros adicionais" do cliente. As fórmulas Central/prévia contavam
+  valor_adicional nas DUAS pernas.
+CAMPOS ENVOLVIDOS
+  valor_pedagio (reembolso prestador, cobrança cliente via flag)
+  pedagio_cobrar_excedente (cobrar ou não do cliente)
+  valor_adicional ("outros cobrados" CLIENTE) x valor_reembolso_outros
+  ("outros reembolsos" PRESTADOR) — campos oficiais SEPARADOS
+  metadata.faturamento / metadata.repasse (franquia e R$/km por perna)
+CORREÇÃO
+  valor_adicional NÃO alimenta mais a perna prestador (3 arquivos):
+  - centralFinanceiroVisao.ts: adicionaisPrestador usa valor_reembolso_outros
+  - centralFinanceiroService.ts: outrosPrestador = 0 (reembolso é a fonte)
+  - ConferenciaFinanceira.tsx: "Outros adicionais" → cliente only no resumo
+FÓRMULA FINAL
+  Cliente = base + kmExcCliente + pedagio(flag) + ajudante + diárias + outros(valor_adicional) - descontoCliente
+  Prestador = base + kmExcPrestador + pedágio + combustível + ajudante + diárias + reembolsoOutros(valor_reembolso_outros) - descontoPrestador
+  Cenário real: Cliente 600+19,6=619,60 | Prestador 520+19,6+66,43=606,03
+GAPS DE PERSISTÊNCIA (relatados, sem coluna/migration)
+  valor_desconto_prestador não tem coluna em alocacoes_escala → não persiste;
+  Central usa valor_desconto (campo único). Pedágio-cliente usa flag + campo único.
+TESTES
+  NOVO a31j19_pedagio_km_adicionais.test.ts (7 testes): 1 pedágio não duplica;
+  2 não vira "outros" cliente; 3 pernas independentes; 4+5 km reconstroem;
+  6+7 totais 619,60/606,03; 8 Central=Detalhes=prévia; regressão 132,86.
+  Regressão direta: a31j16(7)+a31j1(14)+a31j18(3)+a31j17(7)+a31c(5)+a31e(7)
+  = 50/50 PASS. tsc --noEmit = 0 erros. Build não executado (não necessário).

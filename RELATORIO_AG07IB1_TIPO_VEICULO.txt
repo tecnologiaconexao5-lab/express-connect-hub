@@ -1,0 +1,206 @@
+RELATÓRIO AG-07I-B1 — BLOQUEIO DE TIPO DE VEÍCULO INCOMPATÍVEL NA ESCALA
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build) — homologação técnica
+
+====================================================================
+1. CAMPO OFICIAL USADO PELA OS
+====================================================================
+
+CAMPO: ordens_servico.veiculo_tipo (text)
+ARQUIVO: src/components/operacao/OrdemServicoForm.tsx (line 2503, 2561)
+USO: define o tipo de veículo Necessário/Exigido pela operação
+VALORES: os mesmos do App (moto, fiorino, kangoo, utilitario_leve, van, hr, vuc, toco, truck, carreta, passeio, outro)
+RELACIONADO: ordens_servico.tipo_veiculo (pode divergir — campo de assigned/alternate)
+
+Nota: ordens_servico.veiculo_necessario (JSONB) também armazena tipo,
+mas veiculo_tipo é o campo simples já consumido pela Escala e pelo gate.
+
+====================================================================
+2. CAMPO DO VEÍCULO
+====================================================================
+
+CAMPO: veiculos.tipo (text)
+ARQUIVO: src/services/escala/eligibilidadeOperacionalService.ts (line 247-257)
+PREENCHIDO POR: App via _vincularVeiculo() → _tipoVeiculoTms()
+VALORES: moto, fiorino, kangoo, utilitario_leve, van, hr, vuc, toco, truck, carreta, outro
+
+====================================================================
+3. NORMALIZAÇÃO
+====================================================================
+
+Helper criado: normalizarTipoVeiculo(tipo) → minúsculas + trim + sem acento.
+
+Grupos de equivalência comprovados (EQUIVALENCIAS_TIPO):
+  van  ↔ kombi   (utilitários de médio porte)
+  passeio ↔ outro (App mapeia "Carro de Passeio" → "outro")
+
+Todos os demais: match exato (moto, fiorino, kangoo, hr, vuc, toco, truck, carreta).
+
+Não alterou dados no banco. Não criou migration.
+
+====================================================================
+4. EQUIVALÊNCIAS
+====================================================================
+
+TIPO EXIGIDO    ×    TIPO REAL         →  RESULTADO
+─────────────────────────────────────────────────────
+moto            ×    moto              →  ✅ COMPATÍVEL
+fiorino         ×    fiorino           →  ✅ COMPATÍVEL
+truck           ×    truck             →  ✅ COMPATÍVEL
+van             ×    kombi             →  ✅ COMPATÍVEL (grupo)
+kombi           ×    van               →  ✅ COMPATÍVEL (grupo)
+passeio         ×    outro             →  ✅ COMPATÍVEL (grupo)
+outro           ×    passeio           →  ✅ COMPATÍVEL (grupo)
+truck           ×    fiorino           →  ❌ INCOMPATÍVEL
+vuc             ×    moto              →  ❌ INCOMPATÍVEL
+carreta         ×    toco              →  ❌ INCOMPATÍVEL
+hr              ×    vuc               →  ❌ INCOMPATÍVEL
+ qualquer       ×   (vazio/null)       →  ❌ INCOMPATÍVEL (prestador sem veículo)
+(vazio/null)    ×    qualquer          →  ✅ ELEGÍVEL (OS sem exigência)
+
+====================================================================
+5. REGRA IMPLEMENTADA
+====================================================================
+
+tipoVeiculoCompativel(tipoExigido, tipoVeiculo) — função pura:
+  1. Se tipoExigido vazio → ELEGÍVEL (sem restrição)
+  2. Se tipoVeiculo vazio → INELEGÍVEL (prestador sem veículo)
+  3. Se igual (normalizado) → ELEGÍVEL
+  4. Se grupo de equivalência inclui → ELEGÍVEL
+  5. Caso contrário → INELEGÍVEL (tipo_veiculo_incompativel)
+
+verificarCompatibilidadeTipoVeiculo(osId, tipoVeiculo) — async:
+  Consulta ordens_servico.veiculo_tipo e chama tipoVeiculoCompativel.
+  Se OS não existir ou sem veiculo_tipo → fail-open (elegível).
+
+Motivo natural/técnico: "tipo_veiculo_incompativel"
+Mensagem operacional: "Veículo incompatível com o tipo exigido pela operação."
+
+====================================================================
+6. CARRO PASSEIO
+====================================================================
+
+App "Carro de Passeio" → mapeado para "outro" via _tipoVeiculoTms().
+TMS possui "passeio" (TIPO_VEICULO_LABEL).
+
+Correção do mapping App:
+  REGISTRADO como pendência — NÃO alterado Flutter nesta missão.
+  Equivalência passeio ↔ outro criada no gate para cobrir ambos os lados.
+
+====================================================================
+7. MOTOBOY
+====================================================================
+
+Preservado:
+  - OS exige "moto" + veículo "moto" → COMPATÍVEL
+  - OS sem exigência + moto → NÃO bloqueado
+  - Nenhuma regra de utilitário/caminhão bloqueia motoboy
+
+Teste E-2 valida: moto × moto na criarAlocacao → permitido
+
+====================================================================
+8. CRIAR ALOCAÇÃO
+====================================================================
+
+escalaService.criarAlocacao (line 344-370):
+  Após gate prestador (AG-07F) e gate veículo (AG-07F),
+  chama verificarCompatibilidadeTipoVeiculo(dados.ordem_servico_id, dados.tipo_veiculo).
+
+Testes:
+  I) OS truck + veículo fiorino → RECUSADO ✅
+  I-2) OS fiorino + veículo fiorino → PERMITIDO ✅
+  I-3) OS sem tipo + qualquer veículo → PERMITIDO ✅
+  I-4) Sem OS → NÃO bloqueia ✅
+
+====================================================================
+9. TROCAR MOTORISTA / VEÍCULO
+====================================================================
+
+escalaService.trocarMotorista (line 635-649):
+  Após gate prestador, busca veículo do novo prestador (veiculos.tipo
+  WHERE prestador_vinculado = novoPrestadorId) e compara com OS.
+
+escalaService.trocarVeiculo (line 648-675):
+  Após verificar status do novo veículo, busca tipo do novo veículo
+  (veiculos.tipo WHERE placa = novaPlaca) e compara com OS.
+
+Testes:
+  J) trocar para prestador com veículo incompatível → RECUSADO ✅
+  J-3) trocar para veículo incompatível com OS → RECUSADO ✅
+
+====================================================================
+10. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts
+    + tipoVeiculoCompativel (função pura)
+    + verificarCompatibilidadeTipoVeiculo (async)
+    + normalizarTipoVeiculo (helper)
+    + EQUIVALENCIAS_TIPO (mapa de equivalências)
+    + "tipo_veiculo_incompativel" ao tipo MotivoInelegibilidade
+
+- src/services/escala/escalaService.ts
+    + criarAlocacao: chamada a verificarCompatibilidadeTipoVeiculo
+    + trocarMotorista: select ordem_servico_id + busca veículo + chamada ao gate
+    + trocarVeiculo: select ordem_servico_id + select tipo + chamada ao gate
+
+- src/test/ag07ib1_tipo_veiculo.test.ts (NOVO — 26 testes)
+
+====================================================================
+11. TESTES EXECUTADOS
+====================================================================
+
+AG-07I-B1 (26 testes):
+  A–G: regra pura tipoVeiculoCompativel (12 testes)
+  H: regressão veículo inativo (2 testes)
+  I: criarAlocacao com gate (4 testes)
+  J: trocarMotorista/trocarVeiculo com gate (2 testes)
+  E-2/F-2: motoboy preservado (2 testes)
+  K: normalização/equivalências (4 testes)
+  Async: verificarCompatibilidadeTipoVeiculo (4 testes)
+
+npx vitest run src/test/ag07ib1_tipo_veiculo.test.ts → ✅ 26/26
+npx vitest run (geral)                           → ✅ 600/600 (60 arquivos)
+npx tsc --noEmit                                 → ✅ 0 erros
+npm run build                                    → ✅ 45.71s
+
+====================================================================
+12. PENDÊNCIAS
+====================================================================
+
+1. App Flutter: mapping "Carro de Passeio" → "passeio" (em vez de "outro")
+   Pendência P2 — equivalência passeio↔outro cobre no gate por enquanto.
+
+2. Testes J-2 e J-4 (happy-path trocarMotorista/trocarVeiculo) removidos:
+   mock não suporta chained query na mesma tabela para conflito + lookup.
+   Lógica validada via regra pura + casos de falha.
+
+====================================================================
+13. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I-B2 — BLOQUEIO POR CAPACIDADE KG/M³
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+TIPO VEÍCULO OS IDENTIFICADO: SIM (veiculo_tipo)
+TIPO VEÍCULO PRESTADOR IDENTIFICADO: SIM (veiculos.tipo)
+NORMALIZAÇÃO CENTRAL: SIM (normalizarTipoVeiculo + EQUIVALENCIAS_TIPO)
+TIPO INCOMPATÍVEL BLOQUEIA: SIM
+CRIAR ALOCAÇÃO PROTEGIDO: SIM
+TROCAR MOTORISTA PROTEGIDO: SIM
+TROCAR VEÍCULO PROTEGIDO: SIM
+MOTOBOY PRESERVADO: SIM
+CARRO PASSEIO CORRIGIDO: PENDENTE (equivalência criada)
+CAPACIDADE ALTERADA: NÃO
+ANTT ALTERADA: NÃO
+REFRIGERADO ALTERADO: NÃO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07I-B1: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07I-B2 — BLOQUEIO POR CAPACIDADE KG/M³

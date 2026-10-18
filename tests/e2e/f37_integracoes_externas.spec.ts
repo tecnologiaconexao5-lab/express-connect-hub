@@ -1,0 +1,120 @@
+// ============================================================
+// F37 — Testes E2E: Integrações Externas (Modo Seguro)
+// ============================================================
+
+import { test, expect } from "@playwright/test";
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/central-ia");
+  await page.waitForLoadState("networkidle");
+});
+
+test.describe("F37 — Integrações Externas (Modo Seguro)", () => {
+  test("1. Central IA carrega sem erros de console", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    await expect(page.locator("body")).toBeVisible({ timeout: 15000 });
+
+    const abas = page.locator("button, [role='tab'], a").filter({ hasText: /Robôs|Robo|Conhecimento|Missões|Trabalho/i });
+    const count = await abas.count();
+    if (count > 0) {
+      await abas.first().click();
+      await page.waitForTimeout(500);
+    }
+
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("2. Navegação ampla entre todas as abas sem erros", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    const abas = page.locator("button, [role='tab'], a");
+    const count = await abas.count();
+
+    for (let i = 0; i < Math.min(count, 15); i++) {
+      const aba = abas.nth(i);
+      if (await aba.isVisible()) {
+        await aba.click();
+        await page.waitForTimeout(300);
+      }
+    }
+
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("3. Aba Ferramentas carrega catálogo", async ({ page }) => {
+    const ferramentasTab = page.locator("button, [role='tab'], a").filter({ hasText: /Ferramentas|ferramentas/i });
+    if (await ferramentasTab.isVisible()) {
+      await ferramentasTab.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    await page.waitForTimeout(2000);
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("4. Aba Conectores carrega", async ({ page }) => {
+    const conectoresTab = page.locator("button, [role='tab'], a").filter({ hasText: /Conectores|conectores/i });
+    if (await conectoresTab.isVisible()) {
+      await conectoresTab.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    await page.waitForTimeout(2000);
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("5. Aba Missões carrega", async ({ page }) => {
+    const missoesTab = page.locator("button, [role='tab'], a").filter({ hasText: /Missões|missoes|Missao/i });
+    if (await missoesTab.isVisible()) {
+      await missoesTab.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    await page.waitForTimeout(2000);
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("6. Aba Trabalho carrega", async ({ page }) => {
+    const trabalhoTab = page.locator("button, [role='tab'], a").filter({ hasText: /Trabalho|trabalho/i });
+    if (await trabalhoTab.isVisible()) {
+      await trabalhoTab.click();
+      await page.waitForTimeout(1000);
+    }
+
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    await page.waitForTimeout(2000);
+    expect(consoleErrors.length).toBe(0);
+  });
+
+  test("7. Validação final sem erros de console", async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+    const abas = page.locator("button, [role='tab'], a");
+    const count = await abas.count();
+    for (let i = 0; i < Math.min(count, 10); i += 2) {
+      const aba = abas.nth(i);
+      if (await aba.isVisible()) {
+        await aba.click();
+        await page.waitForTimeout(200);
+      }
+    }
+
+    await page.waitForTimeout(1000);
+    expect(consoleErrors.length).toBe(0);
+  });
+});

@@ -1,0 +1,143 @@
+================================================================================
+ TMS-LAYOUT-02 — FINANCEIRO PREMIUM EM DOIS NÍVEIS
+ Data: 2026-08-20  |  Projeto: Express Connect Hub
+================================================================================
+
+1. OBJETIVO
+--------------------------------------------------------------------------------
+Corrigir SOMENTE a apresentação da navegação interna do Financeiro. A missão
+TMS-LAYOUT-01 deixou os ícones semanticamente corretos e todas as funções
+disponíveis, porém a tela ficou visualmente poluída porque grupos e funções
+apareciam simultaneamente em uma grande faixa horizontal. Esta missão cria
+hierarquia de ERP financeiro premium em DOIS NÍVEIS.
+
+2. NÃO ALTERADO
+--------------------------------------------------------------------------------
+rotas · TabsContent · regras financeiras · services · queries · mutations ·
+banco · migrations · fórmulas F0-M · sidebar global · App Flutter ·
+NAV_ICONES · GRUPO_ICONES (preservados integralmente do TMS-LAYOUT-01).
+
+3. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+[+] src/pages/Financeiro.tsx
+    - Nova navegação em 2 níveis substituindo a faixa horizontal única.
+    - Adicionados imports: cn (src/lib/utils) e grupoPorTab/funcaoPadraoDoGrupo
+      (financeiroNav).
+    - Estado derivado: grupoAtivo = grupoPorTab(currentTab).
+    - Handler de categoria: preserva aba ativa quando pertence ao grupo;
+      senão seleciona a função padrão (primeira) do grupo.
+[+] src/components/financeiro/financeiroNav.ts
+    - Novo grupoPorTab(tab): retorna a categoria que contém a aba (fallback
+      Faturamento). Fonte única de verdade da derivação.
+    - Novo funcaoPadraoDoGrupo(grupo): primeira função do grupo (troca de
+      categoria sem exigir cliques extras).
+[+] src/test/tms_layout_02_financeiro_dois_niveis.test.tsx — NOVO (14 testes)
+
+4. ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES (TMS-LAYOUT-01): barra única horizontal com TODOS os 7 grupos + todas as
+23 funções simultaneamente (VISÃO GERAL + Dashboard + Pendências + FATURAMENTO
++ Conferência + ... + CONFIGURAÇÕES + ...) — funcional, porém sem hierarquia.
+
+DEPOIS (TMS-LAYOUT-02):
+  NÍVEL 1 — CATEGORIAS (barra única, só os 7 grupos):
+    Visão Geral · Faturamento · Pagamentos · Tesouraria · Gestão · Outros ·
+    Configurações
+    - botão comum (não Radix) — área de clique confortável (h-12/48–52px);
+    - ícone discreto + label;
+    - categoria ativa com fundo suave primary/10 + borda primary/25;
+    - demais neutras com hover;
+  NÍVEL 2 — FUNÇÕES DO GRUPO ATIVO (somente o grupo selecionado, em um único
+    TabsList):
+    Visão Geral    → Dashboard, Pendências
+    Faturamento    → Conferência, Faturas, Contas a Receber, Inadimplência
+    Pagamentos     → Contas a Pagar, Pag. Prestadores
+    Tesouraria     → Fluxo de Caixa, Contas & Caixas, Conciliação, CNAB
+    Gestão         → DRE, Margem por OS, Relatórios, Recibos
+    Outros         → Margem (legado), Rentabilidade, Seguros Auto, Contabilidade
+    Configurações  → Plano de Contas, Config. Financeiras, Regras por Cliente
+
+5. COMO O GRUPO ATIVO É DERIVADO DA ABA
+--------------------------------------------------------------------------------
+A rota já identifica a aba (?tab=...). O grupo ativo é derivado por
+grupoPorTab(currentTab): localiza em qual categoria a aba atual pertence.
+
+Exemplos:
+  /financeiro?tab=margem-os  → categoria Gestão ativa → nível 2 mostra Gestão
+                               → Margem por OS ativa (sem cliques extras)
+  /financeiro?tab=receber    → categoria Faturamento ativa → nível 2 mostra
+                               Faturamento → Contas a Receber ativa
+
+Ao clicar em uma categoria:
+  - se a aba atual pertence ao grupo → preserva a aba ativa (sem navegação);
+  - caso contrário → seleciona a função padrão (primeira) do grupo.
+
+6. VISUAL PREMIUM
+--------------------------------------------------------------------------------
+Nível 1: fundo branco (bg-card), borda discreta, sombra leve, categorias
+bem espaçadas, altura 48–52px (h-12), nada apertado.
+Nível 2: visual leve (bg-muted/40), funções em pills/segmentos, ícone menor,
+item ativo com fundo primary + texto claro, labels text-sm (sem letras
+minúsculas demais). Layout "ONDE ESTOU? → Gestão / QUAL FUNÇÃO? → Margem por OS"
+imediato.
+
+7. RESPONSIVIDADE
+--------------------------------------------------------------------------------
+Nível 1: quebra organizada (flex-wrap); em telas pequenas as categorias
+esticam (flex-1) para área de toque confortável; em desktop mantêm largura
+natural (sm:flex-none).
+Nível 2: em telas pequenas permite scroll horizontal somente no nível 2
+(flex-nowrap overflow-x-auto); em desktop volta ao wrap organizado
+(sm:flex-wrap sm:overflow-visible). Nunca mistura categorias + funções; nunca
+esconde funções atrás de setas; sem overflow no container.
+
+8. RADIX / F0-N
+--------------------------------------------------------------------------------
+Preservado integralmente. A camada de categorias (nível 1) usa BOTÃO COMUM
+(button), fora do Radix Tabs — não é TabsTrigger. O Tabs real das funções
+(nível 2) permanece dentro da composição correta do Radix:
+  Tabs → TabsList (único) → TabsTrigger (map do grupo ativo) → TabsContent.
+Financeiro.tsx mantém EXATAMENTE 2 literais <TabsList> e 2 <TabsTrigger>
+(nav nível 2 + sub-tab Rentabilidade). RovingFocusGroupItem fora do provider
+NÃO pode ocorrer (nenhum TabsTrigger órfão).
+
+9. TESTES
+--------------------------------------------------------------------------------
+npx tsc --noEmit .................................. OK (0 erros)
+npx vitest run ................................... 443/443 testes (48 arquivos)
+  - f0n_hotfix_roving_focus.test.tsx (F0-N) ...... OK (4/4)
+  - tms_layout_01_sidebar.test.tsx (TMS-LAYOUT-01) OK (4/4)
+  - tms_layout_02_financeiro_dois_niveis.test.tsx . OK (14/14) NOVO
+      ✓ Derivação da categoria pela aba (23 abas + fallback)
+      ✓ Função padrão do grupo
+      ✓ 23 funções acessíveis via 7 categorias (sem duplicação)
+      ✓ Categorias exatas do nível 1 (7)
+      ✓ 2 literais TabsList / 2 TabsTrigger (F0-N)
+      ✓ TabsList ANTES do TabsTrigger no bloco da navegação
+      ✓ Nível 1 = button; Nível 2 = grupoAtivo.itens.map
+      ✓ Todas as 23 funções possuem TabsContent (nenhuma aba perdida)
+      ✓ Sub-tab Rentabilidade com TabsList antes do trigger
+      ✓ Comportamento: só funções do grupo ativo no nível 2
+      ✓ Clique em categoria → função padrão do grupo
+      ✓ Clique na categoria atual → preserva aba ativa
+      ✓ Navegação pelas 7 categorias acessa as 23 funções
+
+10. CONFIRMAÇÃO DAS 23 FUNÇÕES PRESERVADAS
+--------------------------------------------------------------------------------
+dashboard · pendencias · conferencia · faturas · receber · inadimplencia ·
+pagar · pagamento-prestadores · fluxo · contas-caixas · conciliacao · lotes ·
+dre · margem-os · relatorios · recibos · margem · rentabilidade ·
+seguros-auto · contabilidade · plano-contas · config-financeira ·
+regras-cliente
+Todas continuam com TabsContent e continuam alcançáveis pela navegação em
+2 níveis (sem nenhuma rota perdida).
+
+11. CONFIRMAÇÕES OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+> BANCO NÃO ALTERADO.
+> FUNÇÕES FINANCEIRAS NÃO ALTERADAS.
+> ROTAS PRESERVADAS.
+> F0-M PRESERVADA.
+> APP FLUTTER NÃO ALTERADO.
+> Nenhuma migration aplicada. Nenhum dado tocado.
+================================================================================

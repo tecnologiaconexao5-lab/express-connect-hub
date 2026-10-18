@@ -1,0 +1,18 @@
+TMS-ORC-PDF-01 — PROVA (read-only, transação + ROLLBACK)
+DATA/HORA: 2026-09-29T12:23:22.339Z (29/09/2026, 09:23:22)
+PROJETO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+REGISTRO: d577539b-1865-477c-b079-af94152fc3e9 (numero ORC-202609-8659)
+ROW ANTES: {"valor_base":null,"valor_final":null,"valores_valorBase":2200,"valores_valorFinal":0,"status":"em_analise","updated_at":"2026-09-24T22:52:38.862Z"}
+DOMINIO: valorBase=2200 valorFinal=2200 valores.valorFinal=2200
+PDF: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\ORC-PDF-01-EVIDENCIAS\ORC-202609-8659_Orcamento_Comercial.pdf
+BYTES: 982284
+PAGINAS: 1
+
+CHECKLIST:
+ - Duração estimada ausente do PDF — OK (preservada na tela)
+ - Distância estimada presente — OK
+ - Resumo: Valor Base do Frete — OK
+ - Faixa: VALOR FINAL DA PROPOSTA — OK
+ - VALOR FINAL impresso = R$ 2.200,00 (origem: regra canônica) — OK
+ - Banco intacto (valores.valorFinal original = 0, sem máscara) — OK
+ - Sem undefined/NaN/mojibake — OK

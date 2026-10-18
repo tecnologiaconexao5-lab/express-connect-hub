@@ -1,0 +1,74 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2B.2 — CRUD AUTH REAL CANDIDATO_DOCUMENTOS
+Conexão Express TMS — Supabase Remoto (PRODUÇÃO)
+Data: 2026-09-07 22:15 BRT
+═══════════════════════════════════════════════════════════════════════════════
+
+VEREDITO: [HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. SESSÃO AUTENTICADA
+═══════════════════════════════════════════════════════════════════════════════
+
+Método: signInWithPassword (Supabase JS Client)
+Supabase URL: https://uwrvzsjtpgaifkktpepn.supabase.co
+Auth UID: 8c12fc67...8284 (mascarado)
+Role: authenticated
+Session: OK
+
+═══════════════════════════════════════════════════════════════════════════════
+2. CADEIA TESTE CRIADA
+═══════════════════════════════════════════════════════════════════════════════
+
+  recrutamento_prestadores: ID 1d3ee3c3... (TESTE_RLS_062B2)
+  recrutamento_candidatos:  ID 4337ba76... (TESTE_RLS_062B2, vinculado ao prestador)
+  candidato_documentos:     INSERT com candidato_id FK → recrutamento_candidatos
+
+FK validada: candidato_documentos.candidato_id → recrutamento_candidatos.id
+
+═══════════════════════════════════════════════════════════════════════════════
+3. CRUD candidato_documentos (sessão authenticated)
+═══════════════════════════════════════════════════════════════════════════════
+
+  SELECT: ✅ OK (0 rows — tabela vazia antes do teste)
+  INSERT: ✅ OK (ID 45de2ddc, tipo=TESTE_RLS_062B2)
+  UPDATE: ✅ OK (tipo alterado para TESTE_RLS_062B2_UPD)
+  DELETE: ✅ OK (registro removido)
+
+  4/4 operações authenticated PASSARAM.
+
+═══════════════════════════════════════════════════════════════════════════════
+4. CLEANUP
+═══════════════════════════════════════════════════════════════════════════════
+
+  candidato_documentos removidos: 0 (já deletado no teste)
+  recrutamento_candidatos removidos: 1
+  recrutamento_prestadores removidos: 1
+
+  Verificação final: 0 registros TESTE_RLS_062B2 restantes.
+
+═══════════════════════════════════════════════════════════════════════════════
+5. ANON RECONFIRM
+═══════════════════════════════════════════════════════════════════════════════
+
+  candidato_documentos com client ANON (sem autenticação):
+    SELECT: 🚫 BLOQUEADO
+    INSERT: 🚫 BLOQUEADO
+    UPDATE: 🚫 BLOQUEADO
+    DELETE: 🚫 BLOQUEADO
+
+  4/4 operações anon BLOQUEADAS.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. SCHEMA CONFIRMADO
+═══════════════════════════════════════════════════════════════════════════════
+
+  candidato_documentos colunas: id, candidato_id, tipo, arquivo_url, status,
+  validade, dados_extraidos, created_at, updated_at
+
+  FK: candidato_id → recrutamento_candidatos.id (NOT NULL)
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM — REC-06.2B.2 CANDIDATO_DOCUMENTOS
+[HOMOLOGADO — RLS RECRUTAMENTO SEGURO]
+═══════════════════════════════════════════════════════════════════════════════

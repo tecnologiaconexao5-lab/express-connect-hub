@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { confirmAction } from '@/lib/confirmDialog'
 import { motion } from 'framer-motion'
 import { Zap, PlayCircle, PauseCircle, Trash2, Webhook, MessageSquare, Mail, Bell, Settings, Sparkles, Check, Save } from 'lucide-react'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent, PremiumCardFooter } from '../design-system/PremiumCard'
@@ -113,7 +114,14 @@ export function AutomacoesList({ automacoes, onRefresh }: AutomacoesListProps) {
   }
 
   const handleRemover = async (id: string) => {
-    if (window.confirm('Deseja realmente remover esta regra de automação?')) {
+    const confirmado = await confirmAction({
+      title: 'Remover automação',
+      description: 'Deseja realmente remover esta regra de automação?',
+      confirmText: 'Remover',
+      cancelText: 'Cancelar',
+      variant: 'destructive',
+    })
+    if (confirmado) {
       await automacoesService.remover(id)
       toast.success('Automação removida!')
       onRefresh()

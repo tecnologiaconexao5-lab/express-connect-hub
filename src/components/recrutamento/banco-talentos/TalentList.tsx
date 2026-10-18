@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Truck, Star, Heart, Clock, FileText, Award, User, ChevronRight, LayoutGrid, List } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore, type TalentoLogistico } from "@/stores/talentBankStore";
 
 const NIVEL_CORES = { diamante: "text-cyan-500", ouro: "text-yellow-500", prata: "text-slate-400", bronze: "text-amber-700" };
@@ -88,7 +89,7 @@ function TalentCard({ talento: t, isActive, onSelect, onToggleFav }: { talento: 
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-xl overflow-hidden bg-muted ring-2 ring-primary/10">
-              <img src={t.foto} alt="" className="w-full h-full object-cover" />
+              <SafeImage src={t.foto} alt="" className="w-full h-full object-cover" />
             </div>
             <div className={cn("absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background", t.disponivel ? "bg-green-500" : "bg-muted-foreground")} />
           </div>
@@ -134,7 +135,7 @@ function TalentRow({ talento: t, isActive, onSelect, onToggleFav }: { talento: T
     <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn("flex items-center gap-4 p-3 rounded-xl border transition-all cursor-pointer", isActive ? "border-primary bg-primary/[0.02]" : "border-border bg-card hover:border-primary/30")} onClick={onSelect}>
       <div className="relative shrink-0">
         <div className="w-9 h-9 rounded-lg overflow-hidden bg-muted">
-          <img src={t.foto} alt="" className="w-full h-full object-cover" />
+          <SafeImage src={t.foto} alt="" className="w-full h-full object-cover" />
         </div>
         <div className={cn("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background", t.disponivel ? "bg-green-500" : "bg-muted-foreground")} />
       </div>

@@ -1,0 +1,47 @@
+PORTAL CLIENTE — STATUS PÓS-AUDITORIA M108-J
+Data: 2026-07-11
+
+FUNCIONAIS (14):
+- PortalDashboardPremium — dados reais via props
+- PortalPatio — Supabase real
+- PortalComprovantesPremium — dados reais via props
+- PortalTrackingMap — Realtime subscription (M106)
+- PortalDrawerPOD — busca completa com entregas_protocolo
+- PortalEventosFeed — useEventosRealtime hook
+- PortalComparacaoEntregas — puramente visual
+- PortalTimeline — puramente visual
+- PortalStatusBadge — puramente visual
+- PortalKpiCard — puramente visual
+- PortalEmptyState — puramente visual
+- PortalInsightCard — puramente visual
+- PortalDeliveryCard — React.memo, puramente visual
+- PortalDocumentPreview — React.memo, puramente visual
+
+PLACEHOLDERS CORRIGIDOS (2):
+1. ✅ PortalRoteirizacao — conectado a roteirizacaoService.ts (buscarRotas real)
+2. ✅ PortalNotificacoes — conectado a portal_notificacoes tabela real
+
+PLACEHOLDERS RESTANTES (7):
+1. PortalEconomia — usar financeiro_receber real
+2. PortalAIReport — conectar a IA real
+3. PortalExecutiveDashboard — conectar a métricas reais
+4. PortalIAOperacional — conectar a memoria_entidades
+5. PortalEscalaOperacional — conectar a alocacoes_escala
+6. PortalMultiFilial — conectar a filiais reais
+7. PortalWhatsApp — conectar a Evolution API real
+
+SERVIÇOS REAIS (5):
+- portalClienteService.ts (829 linhas) — usado
+- pedidosService.ts (968 linhas) — usado
+- roteirizacaoService.ts (251 linhas) — NÃO usado (órfão)
+- analyticsService.ts (223 linhas) — usado
+- perfilClienteService.ts (119 linhas) — usado
+
+INTEGRAÇÕES CONFIRMADAS:
+- OS: real (ordens_servico)
+- Financeiro: real (financeiro_receber)
+- POD: real (entregas_protocolo)
+- Tracking: real (portal_tracking_realtime)
+- Event Bus: real (eventos_oficiais)
+- Ocorrências: real (portal_ocorrencias)
+- Pedidos: real (portal_pedidos → OS)

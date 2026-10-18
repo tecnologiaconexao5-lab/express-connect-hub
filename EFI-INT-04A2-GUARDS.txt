@@ -1,0 +1,219 @@
+================================================================================
+EFI-INT-04A.2 — BLINDAGEM DO PROBE + PREPARACAO mTLS HML
+================================================================================
+MISSAO.......: EFI-INT-04A.2 — Blindar efi-mtls-probe para SOMENTE HML da Efi
+AMBIENTE.....: TMS (express-connect-hub)
+MODELO......: MiMo-V2.5
+CEL/REDMI...: NAO conectado (nao necessario)
+DATA/HORA...: 2026-09-23
+ESCOPO......: Alterar SOMENTE supabase/functions/efi-mtls-probe/*.
+              Nenhum deploy, nenhum secret, nenhum banco, nenhum OAuth, nenhum
+              boleto/Pix, Producao Efi intocada. Nenhum arquivo fora do probe.
+-------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA
+  3 — Integracao Efi HML [ATUAL: blindagem mTLS]  <== ESTA MISSAO
+  2 — E2E financeiro/bancario
+  1 — Master 360 / Gate Producao
+  0 — Homologado
+================================================================================
+RESULTADO EXECUTIVO
+================================================================================
+  GUARDS IMPLEMENTADOS      = SIM (ambiente, allowlist, metodos, token)
+  TESTES ESTATICOS          = 40 PASS / 0 FAIL
+  ALLOWLIST HML             = CONFIRMADA (2 hosts HML permitidos; producao bloqueada)
+  ACESSO AO TMS             = ZERO (DB/RPC/Auth/Storage/Financeiro = NONE)
+  CERTIFICADO (preparacao)  = WAITING_USER (comandos entregues; conversao NAO executada)
+  DEPLOY                    = NAO (conforme escopo)
+  DECISAO                   = GO para EFI-INT-04A.3 (config Secrets + deploy) apos
+                              o usuario converter o certificado e confirmar.
+
+================================================================================
+PARTE 1 — HARD GUARDS IMPLEMENTADOS
+================================================================================
+Arquivo: supabase/functions/efi-mtls-probe/guards.ts  (NOVO — logica pura testavel)
+Arquivo: supabase/functions/efi-mtls-probe/index.ts    (REESCRITO — usa os guards)
+
+1. GUARD DE AMBIENTE
+   - `isHomologacao(environ)` => true SOMENTE se `EFI_ENVIRONMENT === "homologacao"`
+     (comparacao exata/case-sensitive).
+   - Ausente, "production", "HOMOLOGACAO" ou qualquer outro valor => ABORTA com
+     HTTP 503 ANTES de criar HttpClient/fetch.
+
+2. ALLOWLIST FIXA DE HOSTS
+   - EFI_ALLOWED_HOSTS = [ "pix-h.api.efipay.com.br",
+                           "cobrancas-h.api.efipay.com.br" ]
+   - EFI_FORBIDDEN_HOSTS = [ "pix.api.efipay.com.br",
+                             "cobrancas.api.efipay.com.br" ] (producao Efi)
+   - O host e extraido do `EFI_API_BASE_URL_HML` (default HML) e validado por
+     hostname (new URL(...).hostname, lowercase). Host fora da allowlist =>
+     ABORTA com HTTP 403 ANTES de criar HttpClient/fetch.
+   - Mesmo que `EFI_API_BASE_URL_HML` aponte para producao Efi ou host arbitrario,
+     a chamada e bloqueada.
+
+3. METODOS PERMITIDOS
+   - Somente GET e OPTIONS. Qualquer outro => HTTP 405.
+   - OPTIONS responde CORS (Access-Control-Allow-Methods: GET, OPTIONS).
+
+4. TOKEN INTERNO OBRIGATORIO
+   - Somente `EFI_PROBE_TOKEN`:
+       * nao configurado => HTTP 503 (probe desabilitado);
+       * ausente no header `x-efi-probe-token` => HTTP 401;
+       * incorreto => HTTP 401.
+   - O token NUNCA e retornado, logado ou refletido na resposta.
+   - (Removido o fallback anterior para TMS_EDGE_INTERNAL_TOKEN — menos superficie.)
+
+5. MANTIDOS
+   - Timeout curto (8s) via AbortController.
+   - Resposta SANITIZADA (booleanos/classes; nunca cert/key/token).
+   - Zero `console.log` de cert/key.
+   - Zero supabase-js; zero SUPABASE_SERVICE_ROLE_KEY; zero DB/RPC/Auth/Storage.
+
+6. FALLBACK NEUTRO (sem dados financeiros)
+   - REMOVIDO o caminho de listagem Pix `/v2/cob?...`.
+   - Substituido por: tentativa em `/` e, se falhar no nivel HTTP, em caminho
+     NEUTRO `/_efi_mtls_probe` (nao-financeiro; 404/401/403 => TLS provado).
+   - Finalidade: medir TRANSPORTE/mTLS, nao dados.
+
+================================================================================
+PARTE 2 — TESTES ESTATICOS / UNITARIOS
+================================================================================
+Arquivo de teste: supabase/functions/efi-mtls-probe/guards.test.ts
+Execucao:         npx tsx supabase/functions/efi-mtls-probe/guards.test.ts
+Resultado:        40 PASS / 0 FAIL
+
+CASOS NEGATIVOS (bloqueio) — TODOS PASS:
+  - ambiente ausente ................................ BLOQUEADO
+  - environment=production .......................... BLOQUEADO
+  - environment="HOMOLOGACAO" (case errado) ......... BLOQUEADO
+  - environment="homologacao " (espaco) ............. BLOQUEADO
+  - host producao Efi (pix.api.efipay.com.br) ....... BLOQUEADO
+  - host producao Efi (cobrancas.api.efipay.com.br) . BLOQUEADO
+  - host arbitrario (evil.example.com) .............. BLOQUEADO
+  - host vazio/null ................................. BLOQUEADO
+  - env EFI_API_BASE_URL_HML apontando p/ producao .. BLOQUEADO
+  - env com URL invalida ............................ BLOQUEADO
+  - metodo POST ..................................... BLOQUEADO
+  - metodo PUT ...................................... BLOQUEADO
+  - metodo DELETE ................................... BLOQUEADO
+  - token ausente (expected/sem header) ............. BLOQUEADO
+  - token incorreto ................................. BLOQUEADO
+
+CASOS POSITIVOS (permitido) — TODOS PASS:
+  - environment=homologacao ......................... PERMITIDO
+  - host HML Pix .................................... PERMITIDO
+  - host HML Cobrancas .............................. PERMITIDO
+  - host HML com maiusculas ......................... PERMITIDO
+  - metodo GET / OPTIONS ............................ PERMITIDO
+  - token correto ................................... PERMITIDO
+
+INSPECAO ESTATICA DO CODIGO (apos remover comentarios) — TODOS PASS:
+  - ausencia de import @supabase/supabase-js
+  - ausencia de createClient
+  - ausencia de SUPABASE_SERVICE_ROLE_KEY
+  - ausencia de supabase.from / supabase.rpc / supabase.storage / auth.getUser
+  - ausencia de TMS_EDGE_INTERNAL_TOKEN
+  - ausencia da rota financeira /v2/cob
+  - presenca efetiva de EFI_PROBE_TOKEN, isHomologacao, isAllowedHost, isAllowedMethod
+
+CONFIRMACAO DE ZERO ACESSO AO TMS:
+  DB_ACCESS ........ NONE
+  RPC_ACCESS ....... NONE
+  AUTH_ACCESS ...... NONE
+  STORAGE_ACCESS ... NONE
+  FINANCIAL_EFFECT . NONE
+
+================================================================================
+PARTE 3 — CERTIFICADO HML (ORIENTACAO — NAO EXECUTADO)
+================================================================================
+STATUS: WAITING_USER (aguardando o usuario converter o .p12 localmente).
+
+  [PARADA OBRIGATORIA] Nenhum comando abaixo foi executado. Nenhum .p12 foi lido,
+  movido ou copiado. Nenhuma chave privada foi impressa. Nada foi registrado neste
+  TXT (sem PEM, sem base64, sem senha).
+
+ANTES DE EXECUTAR, CONFIRMAR:
+  - arquivo de origem (.p12 HML) ......... informado pelo usuario
+  - diretorio de destino ................. FORA do repositorio (ex.: %USERPROFILE%\efi-hml-certs)
+    * CONFIRMAR: o caminho de destino NAO esta dentro de
+      "...\DOCUMENTOS EMPRESA\...\express-connect-hub".
+  - o usuario digita a senha do .p12 DIRETAMENTE no terminal (nunca no chat/TXT).
+
+PASSOS (converter LOCALMENTE, em maquina controlada):
+  1) Certificado X.509 (PEM):
+     openssl pkcs12 -in <ARQUIVO>.p12 -clcerts -nokeys -out <DESTINO>\cert.pem
+  2) Chave privada + conversao para PKCS#8 (PEM, sem senha em runtime):
+     openssl pkcs12 -in <ARQUIVO>.p12 -nocerts -nodes -out <DESTINO>\key.tmp.pem
+     openssl pkcs8 -topk8 -nocrypt -in <DESTINO>\key.tmp.pem -out <DESTINO>\key.pkcs8.pem
+  3) Apagar o temporario de forma segura:
+     Remove-Item -LiteralPath "<DESTINO>\key.tmp.pem"
+  4) Verificar localmente APENAS os cabecalhos (sem exibir a chave):
+     cert.pem  deve iniciar com  -----BEGIN CERTIFICATE-----
+     key.pkcs8.pem deve iniciar com  -----BEGIN PRIVATE KEY-----   (PKCS#8!)
+     (NAO colar o conteudo em chat/TXT/log.)
+
+OBSERVACOES:
+  - Se o .p12 nao tiver senha, o openssl nao pedira senha; se tiver, o usuario a
+    digita no prompt.
+  - NAO copiar cert.pem/key.pkcs8.pem para dentro do repositorio. O .gitignore
+    ja protege *.p12/*.pem/*.key, mas a regra e nao traze-los para o projeto.
+  - A codificacao base64 para os Secrets e o `supabase secrets set` serao feitos
+    na EFI-INT-04A.3 (NAO nesta missao).
+
+================================================================================
+PARTE 4 — NAO REALIZADO (CONFORME ESCOPO)
+================================================================================
+  - NAO executado `supabase secrets set`.
+  - NAO executado `supabase functions deploy`.
+  - NAO configurados EFI_CLIENT_ID_HML / EFI_CLIENT_SECRET_HML (OAuth fica p/ etapa futura).
+  - Nenhum acesso a banco/Auth/Storage/RPC/Financeiro.
+
+================================================================================
+ARQUIVOS ALTERADOS / CRIADOS (SOMENTE dentro do probe)
+================================================================================
+  M  supabase/functions/efi-mtls-probe/index.ts      (reescrito com hard guards)
+  A  supabase/functions/efi-mtls-probe/guards.ts     (logica de guard pura/testavel)
+  A  supabase/functions/efi-mtls-probe/guards.test.ts(40 testes PASS)
+  M  supabase/functions/efi-mtls-probe/README.md     (documenta a blindagem)
+  Nenhum outro arquivo do projeto foi alterado.
+
+================================================================================
+GIT STATUS / DIFF
+================================================================================
+  git status --short -- supabase/functions/efi-mtls-probe
+    ?? supabase/functions/efi-mtls-probe/   (pasta nova desde EFI-INT-04A)
+  - Nenhuma alteracao fora de supabase/functions/efi-mtls-probe/ nesta missao.
+
+================================================================================
+RISCOS
+================================================================================
+  R1 [BAIXO] A função continua residindo no repo (nao deployada). Sem exposicao.
+  R2 [MEDIO] Deploy futuro no projeto ATUAL = PRODUCAO (ver EFI-INT-04A.1):
+     exige autorizacao + remocao pos-prova. Os guards reduzem o risco a HML.
+  R3 [BAIXO] mTLS hospedado ainda nao provado (depende da conversao + deploy).
+  R4 [CONTROLE] Nenhum secret/cert/chave/PEM/base64 no TXT; nenhuma Producao Efi.
+
+================================================================================
+DECISAO GO/NO-GO PARA CONFIGURACAO DE SECRETS + DEPLOY DO PROBE
+================================================================================
+  GO CONDICIONAL para EFI-INT-04A.3, desde que:
+    (1) o usuario converta LOCALMENTE o .p12 HML (Parte 3) e confirme a conclusao;
+    (2) o destino da conversao esteja FORA do repositorio;
+    (3) `EFI_ENVIRONMENT`, `EFI_CERTIFICATE_HML`, `EFI_PRIVATE_KEY_HML` e
+        `EFI_PROBE_TOKEN` sejam configurados nos Supabase Secrets (valores nunca no chat);
+    (4) o deploy (se autorizado) seja feito ciente de que o projeto atual e PRODUCAO
+        (ver EFI-INT-04A.1), com remocao imediata apos a prova.
+  Enquanto (1)-(3) nao ocorrerem, o status permanece WAITING_USER.
+
+================================================================================
+DECLARACAO DE CONFORMIDADE
+================================================================================
+  [OK] Alterado somente supabase/functions/efi-mtls-probe/*.
+  [OK] Nenhum deploy. [OK] Nenhum secret configurado. [OK] Nenhum OAuth.
+  [OK] Nenhum banco/RPC/Auth/Storage/Financeiro.
+  [OK] Nenhum boleto/Pix. [OK] Producao Efi intocada.
+  [OK] Nenhum segredo/token/PEM/base64/senha/Client ID/Secret neste TXT.
+  [OK] Conversao de certificado NAO executada (WAITING_USER).
+
+================================================================================
+FIM — EFI-INT-04A2-GUARDS.txt
+================================================================================

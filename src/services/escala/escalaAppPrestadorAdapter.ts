@@ -76,8 +76,8 @@ export function escalaParaItemAppPrestador(aloc: Record<string, any>): ItemAppPr
     destino: aloc.destino || aloc.clienteNome || "",
     tipoVeiculo: aloc.prestadorVeiculo?.tipo_veiculo || aloc.tipoVeiculo || "",
     placa: aloc.prestadorVeiculo?.placa || aloc.placa || "",
-    status: mapearStatusEscalaParaAppPrestador(aloc.status),
-    statusOriginal: aloc.status || "",
+    status: mapearStatusEscalaParaAppPrestador(aloc.statusOriginal || aloc.status),
+    statusOriginal: aloc.statusOriginal || aloc.status || "",
     valorPrevisto: nf(aloc.totals?.total) || nf(aloc.valorRepasse),
     quantidadeEntregas: nf(aloc.quantidadeEntregas),
   };

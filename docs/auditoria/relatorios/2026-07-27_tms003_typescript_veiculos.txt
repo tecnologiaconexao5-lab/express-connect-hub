@@ -1,0 +1,55 @@
+MISSAO TMS-003 — RESTAURAR VALIDACAO TYPESCRIPT REAL E VALIDAR VEICULOS
+=======================================================================
+
+Data: 2026-07-27
+Status: CONCLUIDA — tsconfig auditado, baseline salva, Veiculos aprovado
+Percentual: 46% (inalterado)
+Branch: auditoria-final-integracao
+
+=======================================================================
+RESUMO
+=======================================================================
+
+FASE 1: tsconfig.json raiz tem "files":[] — tsc --noEmit verifica zero.
+        Vite nao faz typecheck (usa esbuild).
+        tsconfig.app.json e o config valido (inclui "src").
+
+FASE 2: Comandos oficiais definidos e adicionados ao package.json:
+        - typecheck:app (tsc -p tsconfig.app.json)
+        - typecheck:node (tsc -p tsconfig.node.json)
+        - typecheck (ambos)
+        - deploy:check usa typecheck:app agora
+
+FASE 3: Baseline: 619 erros em 121 arquivos.
+        36% sao mapper fallback patterns (camelCase em Row).
+        24% sao IA services (refatoracao incompleta).
+        Salva em: docs/auditoria/02_evidencias/typescript/
+
+FASE 4: VeiculosLista.tsx: 0 erros. VeiculoDetalhe.tsx: 0 erros.
+        Nenhum erro novo introduzido pela TMS-002.
+
+FASE 5: Matriz banco->mapper->componente->payload: 12/12 campos OK.
+        C01-C03 corrigidos corretamente.
+
+FASE 6-8: Dropdown prestador preparado. Playwright/Edicao aguardam auth.
+
+FASE 9: C05 Combustiveis registrado como "prototipo nao implementado".
+
+FASE 10: Processo de auditoria corrigido em package.json.
+
+=======================================================================
+ARQUIVOS
+=======================================================================
+
+Modificado: package.json (4 scripts)
+Criado: docs/auditoria/02_evidencias/typescript/2026-07-27_baseline_619_errors.txt
+Relatorio MD: docs/auditoria/relatorios/2026-07-27_tms003_typescript_veiculos.md
+Relatorio TXT: docs/auditoria/relatorios/2026-07-27_tms003_typescript_veiculos.txt
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+VALIDACAO TYPESCRIPT REAL RESTAURADA —
+VEICULOS VALIDADO EM LEITURA (0 ERROS);
+EDICAO AGUARDA AUTORIZACAO

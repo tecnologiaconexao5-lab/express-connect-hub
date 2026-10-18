@@ -1,0 +1,275 @@
+================================================================================
+FIN-SANE-02M.9 — PP RLS QA VALIDATION
+2026-09-21 | NENHUMA ALTERACAO APLICADA EM NENHUM AMBIENTE
+================================================================================
+
+1. RESULTADO
+================================================================================
+
+QA_ENVIRONMENT            = BLOCKED
+PP_RLS_QA_TEST            = BLOCKED
+RPC_PARTIAL_WITH_RLS      = NOT_TESTED
+SECURITY_DEFINER_REQUIRED = INCONCLUSIVE
+PRODUCTION_RLS_READY      = NO
+
+CAUSA: Projeto Supabase QA (aqpfayildtcnrkfeeyjg) NAO ACESSIVEL via DNS.
+Nenhuma alteracao foi feita em producao ou QA.
+ZERO writes em qualquer ambiente.
+
+================================================================================
+2. PRECHECK — AMBIENTE QA
+================================================================================
+
+2.1 Arquivo .env.qa encontrado
+  -> Project ref: aqpfayildtcnrkfeeyjg
+  -> URL: https://aqpfayildtcnrkfeeyjg.supabase.co
+  -> DB: postgresql://postgres.aqpfayildtcnrkfeeyjg:***@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+  -> Service role key: presente
+
+2.2 Verificacao DNS
+  -> supabase.co:                    OK (76.76.21.21)
+  -> uwrvzsjtpgaifkktpepn.supabase.co (producao): OK (104.18.38.10)
+  -> aqpfayildtcnrkfeeyjg.supabase.co (QA):       ENOTFOUND
+
+2.3 Tentativas de conexao (todas falharam)
+  -> Pooler port 5432: ENOTFOUND (tenant/user not found)
+  -> Pooler port 6543: ENOIDENTIFIER (no tenant identifier)
+  -> Direct db.*.supabase.co: ENOTFOUND
+  -> REST API via HTTPS: ENOTFOUND
+
+2.4 Conclusao
+  Projeto QA aqpfayildtcnrkfeeyjg NAO existe, foi deletado,
+  ou nao e acessivel desta rede.
+
+  QA_ENVIRONMENT = BLOCKED
+
+  -> Sem acesso ao banco QA, NENHUM DDL pode ser executado
+  -> NENHUM teste (T1-T15) pode ser executado
+  -> NENHUMA validacao de RLS e possivel
+  -> NENHUMA alteracao em producao autorizada
+
+================================================================================
+3. PRECHECK — ESTRUTURA COMPATIVEL (PRODUCAO — LEITURA APENAS)
+================================================================================
+
+Como referencia para quando QA estiver disponivel, a estrutura
+de PRODUCAO foi verificada (READ-ONLY):
+
+3.1 Tabelas necessarias (producao)
+  -> pagamentos_prestadores: EXISTS (104 registros, 50 colunas)
+  -> financeiro_pagar: EXISTS
+  -> financeiro_baixas: EXISTS
+  -> composicao_financeira_os: EXISTS
+  -> tenant_usuarios: EXISTS
+  -> contas_financeiras: EXISTS
+  -> prestadores: EXISTS
+  -> alocacoes_escala: EXISTS
+  -> ordens_servico: EXISTS
+
+3.2 RPCs criticas (producao)
+  -> f_confirmar_pagamento_prestador: EXISTS (NOT SECURITY DEFINER)
+  -> f_confirmar_pagamento_fechamento: EXISTS (SECURITY DEFINER)
+
+3.3 pagamentos_prestadores — estrutura (producao)
+  -> 50 colunas, NAO possui tenant_id
+  -> FK: prestador_id -> prestadores.id
+  -> FK: fechamento_id -> pagamentos_prestadores.id (auto-ref)
+  -> RLS: enabled=true, force=false
+  -> Policy: "Allow all pagamentos_prestadores" ALL for public USING true
+
+3.4 Dados (producao — leitura)
+  -> 104 registros, 21 prestadores
+  -> pendente: 63 (R$ 55,227.20)
+  -> nao_vencido: 26 (R$ 12,076.62)
+  -> pago: 12 (R$ 8,496.12)
+  -> cancelado: 3 (R$ 520.00)
+
+3.5 Dados de referencia (producao)
+  -> CESAR AUGUSTO HOLANDA SILVA: PP R$ 652.86 status=pendente, FP R$ 652.86 status=parcial
+  -> 02M.5F: RPC aceita p_valor_pago parcial, gera baixa parcial, saldo residual
+
+================================================================================
+4. PRECHECK — ASSINATURAS RPCs (PRODUCAO — NAO COMPARAVEL COM QA)
+================================================================================
+
+Nao foi possivel comparar com QA (inacessivel).
+Assinaturas em producao (referencia):
+
+4.1 f_confirmar_pagamento_prestador
+  SECURITY DEFINER: NAO
+  Parametros: (p_pagamento_id uuid, p_data_pagamento date DEFAULT CURRENT_DATE, p_valor_pago numeric DEFAULT NULL)
+  Grants: =X/postgres, postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, service_role=X/postgres
+  Escrita: SELECT FOR UPDATE pp + UPDATE pp + INSERT baixas + UPDATE FP
+
+4.2 f_confirmar_pagamento_fechamento
+  SECURITY DEFINER: SIM
+  Parametros: (p_fechamento_id uuid, p_data_pagamento date DEFAULT CURRENT_DATE)
+  Grants: postgres=X/postgres, authenticated=X/postgres, service_role=X/postgres
+  Escrita: UPDATE pp + INSERT baixas + UPDATE FP
+
+4.3 Triggers M66/M80 (referencia)
+  M66: SECURITY DEFINER (postgres) — INSERT INTO pp
+  M80: SECURITY DEFINER (postgres) — INSERT INTO pp
+
+================================================================================
+5. POLITICA CANDIDATA (NAO APLICADA — APENAS PROPOSTA PENDENTE QA)
+================================================================================
+
+Baseada no padrao de financeiro_pagar (tabela sem tenant_id):
+
+  -- Step 1: Remover policy permissiva
+  DROP POLICY IF EXISTS "Allow all pagamentos_prestadores"
+    ON pagamentos_prestadores;
+
+  -- Step 2: SELECT — authenticated (TMS)
+  CREATE POLICY pp_select_tms ON pagamentos_prestadores
+    FOR SELECT TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()
+    ));
+
+  -- Step 3: INSERT — authenticated (TMS)
+  CREATE POLICY pp_insert_tms ON pagamentos_prestadores
+    FOR INSERT TO authenticated
+    WITH CHECK (EXISTS (
+      SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()
+    ));
+
+  -- Step 4: UPDATE — authenticated (TMS)
+  CREATE POLICY pp_update_tms ON pagamentos_prestadores
+    FOR UPDATE TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()
+    ));
+
+  -- Step 5: DELETE — authenticated (TMS)
+  CREATE POLICY pp_delete_tms ON pagamentos_prestadores
+    FOR DELETE TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()
+    ));
+
+NOTA: Esta proposta NAO foi validada em QA.
+      Aplicacao em producao SEM validacao QA e PROIBIDA.
+
+RISCO PRINCIPAL: f_confirmar_pagamento_prestador NAO e SECURITY DEFINER.
+Faz SELECT FOR UPDATE + UPDATE em pagamentos_prestadores como role
+authenticated. Com a nova RLS, o authenticated precisa:
+  (a) ser membro de tenant_usuarios (condicao atendida)
+  (b) o pagamento precisa ser visivel via USING clause
+  -> Como USING so verifica tenant_usuarios existencia, e generico
+  -> O SELECT/UPDATE deve funcionar para qualquer PP existente
+
+================================================================================
+6. TESTES T1-T15 — NAO EXECUTADOS (QA INACESSIVEL)
+================================================================================
+
+| #  | Teste                                              | Status     |
+|----|----------------------------------------------------|------------|
+| T1 | SELECT legitimo (ADM/TMS via authenticated)        | NOT_TESTED |
+| T2 | SELECT financeiro (mesma role)                     | NOT_TESTED |
+| T3 | SELECT operacional (mesma role)                    | NOT_TESTED |
+| T4 | SELECT negado (anon/nao-autorizado)                | NOT_TESTED |
+| T5 | INSERT indevido negado (anon)                      | NOT_TESTED |
+| T6 | UPDATE indevido negado (anon)                      | NOT_TESTED |
+| T7 | DELETE indevido negado (anon)                      | NOT_TESTED |
+| T8 | Isolamento prestador vs prestador                  | NOT_TESTED |
+| T9 | Isolamento tenant/perfil                           | NOT_TESTED |
+| T10| Pagamento integral via RPC (02M.5F default)        | NOT_TESTED |
+| T11| Pagamento parcial via RPC (02M.5F com valor)       | NOT_TESTED |
+| T12| Fechamento via f_confirmar_pagamento_fechamento    | NOT_TESTED |
+| T13| financeiro_baixas criado corretamente              | NOT_TESTED |
+| T14| Frontend/APP flows (PagamentoPrestadores.tsx)      | NOT_TESTED |
+| T15| service_role/backend bypass RLS                    | NOT_TESTED |
+
+Motivo: QA inacessivel (DNS ENOTFOUND para aqpfayildtcnrkfeeyjg)
+
+================================================================================
+7. ROLLBACK PREPARADO (NAO EXECUTADO — NADA A RESTAURAR)
+================================================================================
+
+Nenhuma alteracao foi feita. Rollback nao aplicavel.
+
+Rollback futuro (quando QA estiver disponivel e testes passarem):
+
+  -- Restaurar policy original (caso queira reverter apos teste)
+  DROP POLICY IF EXISTS "pp_select_tms" ON pagamentos_prestadores;
+  DROP POLICY IF EXISTS "pp_insert_tms" ON pagamentos_prestadores;
+  DROP POLICY IF EXISTS "pp_update_tms" ON pagamentos_prestadores;
+  DROP POLICY IF EXISTS "pp_delete_tms" ON pagamentos_prestadores;
+  CREATE POLICY "Allow all pagamentos_prestadores" ON pagamentos_prestadores
+    FOR ALL TO public USING (true) WITH CHECK (true);
+
+================================================================================
+8. EVIDENCIAS
+================================================================================
+
+| Evidencia                                    | Status          |
+|----------------------------------------------|-----------------|
+| .env.qa lido e identificado                  | SIM             |
+| .env.qa.example comparado                    | SIM             |
+| DNS QA testado (4 formatos)                  | ENOTFOUND       |
+| DNS producao testado                         | OK (104.18.38.10)|
+| REST API QA testado                          | ENOTFOUND       |
+| Pooler QA testado (5432 + 6543 + direto)     | FAIL            |
+| Estrutura producao auditada (9 tabelas)      | SIM (READ-ONLY) |
+| RPCs producao auditadas (2 RPCs)             | SIM (READ-ONLY) |
+| Triggers producao auditadas (M66/M80)        | SIM (READ-ONLY) |
+| Producao: ZERO writes                        | CONFIRMADO      |
+| Policies QA capturadas                       | N/A (inacessivel)|
+| SQL aplicado em QA                           | NENHUM          |
+| T1-T15 executados                            | NENHUM          |
+| Rollback executado                           | N/A             |
+
+================================================================================
+9. PROXIMOS PASSOS OBRIGATORIOS
+================================================================================
+
+1. RESTAURAR AMBIENTE QA:
+   -> Verificar se projeto aqpfayildtcnrkfeeyjg foi deletado no Supabase Dashboard
+   -> Se deletado: criar novo projeto QA e atualizar .env.qa
+   -> Se existe mas inacessivel: verificar DNS/firewall/rede
+   -> Confirmar novo project ref e credenciais
+
+2. SINCRONIZAR ESTRUTURA QA:
+   -> Aplicar migrations necessarias no QA (pagamentos_prestadores, triggers, RPCs)
+   -> Garantir que QA tem estrutura 1:1 com producao
+   -> Confirmar com supabase_migrations
+
+3. EXECUTAR 02M.9 COM AMBIENTE QA FUNCIONAL:
+   -> Capturar policies BEFORE
+   -> Aplicar policy candidata
+   -> Executar T1-T15
+   -> Gerar relatorio com evidencias
+   -> Rollback QA
+   -> Decidir se PRODUCTION_RLS_READY = YES
+
+4. SOMENTE APOS 02M.9 PASS:
+   -> Criar migration de producao (com rollback)
+   -> Aplicar em producao com autorizacao
+   -> Validar pos-aplicacao
+
+================================================================================
+10. PROIBICOES CUMPRIDAS
+================================================================================
+
+| Proibicao                               | Status   |
+|-----------------------------------------|----------|
+| ZERO DDL em producao                    | CUMPRIDO |
+| ZERO CREATE/DROP/ALTER POLICY producao  | CUMPRIDO |
+| ZERO UPDATE/INSERT/DELETE producao      | CUMPRIDO |
+| ZERO alteracao de RPC producao          | CUMPRIDO |
+| ZERO alteracao de trigger producao      | CUMPRIDO |
+| NAO alterar CESAR                       | CUMPRIDO |
+| NAO mexer nos 7 FP                      | CUMPRIDO |
+| NAO remover indices                     | CUMPRIDO |
+| NAO manipular supabase_migrations       | CUMPRIDO |
+| NAO reaplicar P0                        | CUMPRIDO |
+| NAO rollback 02B                        | CUMPRIDO |
+| ZERO WRITES em qualquer ambiente        | CUMPRIDO |
+
+================================================================================
+FIM DO RELATORIO — FIN-SANE-02M.9
+Bloqueado por: QA ENVIRONMENT INACESSIVEL (DNS ENOTFOUND)
+Proxima acao: restaurar/criar ambiente QA antes de prosseguir
+================================================================================

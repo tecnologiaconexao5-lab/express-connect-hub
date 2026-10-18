@@ -1,0 +1,417 @@
+═══════════════════════════════════════════════════════════════════════════
+REC-06.2D-PREP — AUDITORIA: KANBAN E KPIs REAIS vs MOCK
+Data: 2026-09-08
+Ambiente: TMS Production
+═══════════════════════════════════════════════════════════════════════════
+
+SUMMARY: 13 MOCKS IDENTIFICADOS | 0 COLUNAS FALTANTES | PLANO MINIMO ABAIXO
+
+═══════════════════════════════════════════════════════════════════════════
+1. COLUNAS REAIS DE recrutamento_candidatos (47 colunas)
+═══════════════════════════════════════════════════════════════════════════
+
+Todas as colunas necessárias para o Kanban JÁ EXISTEM:
+  id, nome, foto, score (default=50), cidade, uf, veiculo, placa,
+  status_documental, prioridade, validade_cnh, data_validade_cnh,
+  tags (jsonb), observacoes_ia, telefone, email, stage,
+  data_entrada, data_atualizacao, documentos (jsonb), created_at,
+  updated_at, prestador_id, historico (jsonb), reserva_contexto (jsonb),
+  score_comprometimento (int, default=0), classificacao_comprometimento,
+  risco_desistencia, tempo_medio_resposta_horas (numeric),
+  quantidade_cobrancas (int, default=0), confirmou_interesse (bool),
+  data_confirmacao_interesse, confirmou_pre_inicio (bool),
+  data_confirmacao_pre_inicio, compareceu_primeiro_dia (bool),
+  completou_30_dias (bool), quantidade_reclamacoes (int, default=0),
+  possui_outra_operacao_fixa (bool), disponibilidade_recrutamento,
+  historico_desistencias (int, default=0), etiquetas_automaticas (jsonb),
+  parecer_ia, principais_riscos (jsonb), principais_pontos_positivos (jsonb),
+  proxima_acao_sugerida, questionario_respostas (jsonb),
+  pipeline_validacoes (jsonb)
+
+NENHUMA migration nova necessária.
+
+═══════════════════════════════════════════════════════════════════════════
+2. STAGES REAIS NO BANCO
+═══════════════════════════════════════════════════════════════════════════
+
+  novo_cadastro: 11
+  em_validacao:  2
+  ativo:         1
+  em_analise:    1
+  reprovado:     1
+  TOTAL:         16 candidatos reais
+
+Stage mapping (enterpriseKanbanService.ts L15-23):
+  app_motorista status → pipeline stage (OK, real)
+
+═══════════════════════════════════════════════════════════════════════════
+3. FONTES REAIS vs MOCK — INVENTÁRIO COMPLETO
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────┬──────────────────────────────────┬────────┬──────────────────────┐
+│  #  │ ARQUIVO / LINHA                  │ SEVER. │ DADO MOCK            │
+├─────┼──────────────────────────────────┼────────┼──────────────────────┤
+│ M01 │ enterpriseKanbanService.ts L25-68│ CRIT   │ 24 nomes hardcoded  │
+│ M02 │ enterpriseKanbanService.ts L36-44│ CRIT   │ 24 cidades + 13 UFs │
+│ M03 │ enterpriseKanbanService.ts L48-68│ CRIT   │ 8 tags + 14 obs IA  │
+│ M04 │ enterpriseKanbanService.ts L70-101│CRIT   │ 7 funções Math.rand │
+│ M05 │ enterpriseKanbanService.ts L217-293│CRIT  │ buildMockData() 24  │
+│ M06 │ enterpriseKanbanService.ts L668-682│HIGH  │ seedInitialData()   │
+│ M07 │ enterpriseKanbanService.ts L734,848│BUG   │ getLocalData/persist│
+│ M08 │ recrutamentoScoreService.ts L32-42│HIGH  │ score=50 fixo       │
+│ M09 │ scoreService.ts L25-27           │ MED   │ rep=70, reg=65, t=75│
+│ M10 │ IndicadoresRI.tsx L27-110        │ HIGH  │ 100% hardcoded KPIs │
+│ M11 │ RecrutamentoAnalytics.tsx L14-45 │ HIGH  │ 100% funnel fake    │
+│ M12 │ OperacoesRI.tsx L58-140          │ HIGH  │ 3 ops hardcoded     │
+│ M13 │ OperacoesRI.tsx L188-197         │ MED   │ localStorage seed   │
+└─────┴──────────────────────────────────┴────────┴──────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+4. DETALHAMENTO DE CADA MOCK
+═══════════════════════════════════════════════════════════════════════════
+
+── M01-M03: ARRAYS HARDCODED ───────────────────────────────────────────
+
+Arquivo: src/modules/recrutamento/components/
+         enterprise-kanban/enterpriseKanbanService.ts
+
+L25-34: NOMES = ['Ana Clara Oliveira', 'Bruno Santos Lima', ...] (24 nomes)
+L36-42: CIDADES = ['São Paulo', 'Guarulhos', ...] (24 cidades)
+L44:    UFS = ['SP', 'RJ', 'MG', ...] (13 UFs)
+L48-51: TAGS = ['experiente', 'veiculo_proprio', ...] (8 tags)
+L53-68: OBSERVACOES_IA = ['Candidato com perfil...', ...] (14 textos)
+
+Impacto: Nenhum — estes arrays só alimentam buildMockData() (M05),
+         que só é chamado por seedInitialData() (M06), que NUNCA
+         é chamado por nenhum componente UI.
+
+Patch: Remover linhas 25-68 (ou marcar @deprecated).
+
+
+── M04: FUNÇÕES Math.random() ──────────────────────────────────────────
+
+Arquivo: enterpriseKanbanService.ts
+
+L70-72:  generateMockPhone()     → telefone fake via Math.random()
+L75-89:  generateMockCNHDate()   → CNH fake (60% válida, 20% vencendo, 20% vencida)
+L92-101: gerarDataValidade()     → data validade fake
+L103-112:generateMockDocumentos()→ 5 docs fake (CNH/CRLV/Residencia/ANTT/Foto)
+L203-207:getRandomTags()         → tags aleatórias
+L209-215:getRandomPrioridade()   → prioridade aleatória
+
+Impacto: Nenhum — só alimentam buildMockData().
+
+Patch: Remover funções (linhas 70-112, 203-215).
+
+
+── M05: buildMockData() ────────────────────────────────────────────────
+
+Arquivo: enterpriseKanbanService.ts L217-293
+
+Gera 24 EnterpriseCandidate[] COMPLETOS com:
+  id: `ec_${idx}`
+  foto: dicebear URL
+  score: Math.floor(35 + Math.random() * 60)
+  cidade: CIDADES[idx]
+  placa: ABC + random
+  documentos: generateMockDocumentos()
+  observacoesIA: OBSERVACOES_IA[idx]
+  telefone: generateMockPhone()
+  email: `${nome}@email.com`
+  scoreComprometimento: Math.floor(40 + Math.random() * 55)
+  quantidadeCobrancas: Math.floor(Math.random() * 3)
+  quantidadeReclamacoes: Math.floor(Math.random() * 2)
+  historicoDesistencias: Math.floor(Math.random() * 2)
+
+Impacto: Nenhum — só chamado por seedInitialData() (M06).
+
+Patch: Remover função buildMockData() inteira.
+
+
+── M06: seedInitialData() ──────────────────────────────────────────────
+
+Arquivo: enterpriseKanbanService.ts L668-682
+
+async seedInitialData() {
+  const mockData = buildMockData()     // 24 fake
+  const rows = mockData.map(c => toDB(c))
+  const { data: inserted } = await supabase.from(TABLE).insert(rows).select()
+  if (!error && inserted) return inserted.map(fromDB)
+  return mockData                      // fallback: retorna mock sem Supabase
+}
+
+Impacto: seedInitialData() é EXPORTADA mas NUNCA CHAMADA por componente UI.
+  Grep em *.tsx: 0 callers. Se fosse chamada, INSERTaria 24 registros fake
+  na tabela real de produção.
+
+Patch: Remover export da função OU adicionar guard (ex: só em dev).
+
+
+── M07: BUG — getLocalData/persistLocal ────────────────────────────────
+
+Arquivo: enterpriseKanbanService.ts L734, L848
+
+adicionarObservacao() chama getLocalData() (L734) e persistLocal() (L734-738)
+criar() chama getLocalData() e persistLocal() (L848-850)
+
+Ambas as funções NÃO EXISTEM no arquivo. Seria ReferenceError em runtime.
+
+Impacto: BUG — adicionarObservacao() e criar() crasham se Supabase OK
+  (após o update/insert bem-sucedido).
+
+Patch: Remover as 3 linhas que chamam getLocalData/persistLocal em cada
+  função (L734-738 e L848-850). O Supabase já persiste.
+
+
+── M08: recrutamentoScoreService.ts — score sempre 50 ──────────────────
+
+Arquivo: src/services/recrutamento/recrutamentoScoreService.ts
+
+L32-34: calcularScoreComprometimento(_candidato) { return 50; }
+  → Parâmetro prefixado com _ (não usado). Retorna sempre 50.
+
+L36-38: classificarComprometimento(_score) { return "Regular"; }
+  → Não importa o score, sempre "Regular".
+
+L40-42: getCorClassificacao(_classificacao) {
+           return "text-muted-foreground bg-muted/10 border-muted/30";
+         }
+  → Cor fixa, ignora classificação.
+
+Impacto: score_comprometimento no Kanban sempre mostra 50,
+  classificação sempre "Regular".
+
+Fonte REAL disponível: A tabela recrutamento_candidatos TEM as colunas
+  score_comprometimento e classificacao_comprometimento (com defaults).
+  Os campos são preenchidos por algum caller externo (provavelmente bridge
+  ou trigger), mas o scoreService.ts não os calcula de verdade.
+
+Patch: Implementar cálculo real usando campos da tabela:
+  - tempo_medio_resposta_horas
+  - quantidade_cobrancas
+  - quantidade_reclamacoes
+  - historico_desistencias
+  - confirmou_interesse / confirmou_pre_inicio
+  - compareceu_primeiro_dia / completou_30_dias
+  - disponibilidade_recrutamento
+
+
+── M09: scoreService.ts — 3 scores fixos ───────────────────────────────
+
+Arquivo: src/modules/recrutamento/services/scoreService.ts
+
+L25: scoreReputacao = 70     (hardcoded)
+L26: scoreRegularidade = 65  (hardcoded)
+L27: scoreTendencia = 75     (hardcoded)
+
+Os 3 scores contribuem 15%+10%+10% = 35% do scoreGeral.
+Documentação (25%), Experiência (25%) e Perfil (15%) são calculados.
+
+Impacto: 35% do score geral é inventado.
+
+Fonte REAL possível:
+  - reputação → derivar de quantidade_reclamacoes + historico_desistencias
+  - regularidade → derivar de completou_30_dias + compareceu_primeiro_dia
+  - tendência → derivar de score_comprometimento histórico (se houver)
+
+Patch: Substituir hardcoded por cálculo baseado nos campos da tabela.
+
+
+── M10: IndicadoresRI.tsx — 100% hardcoded ─────────────────────────────
+
+Arquivo: src/components/recrutamento/IndicadoresRI.tsx
+
+L27:  R$ 2.450,00 (Média Lucro)
+L28:  +12.5% (tendência)
+L37:  "Rota Sul D+1" / R$ 3.800/Mês
+L47:  R$ 2,34 (Custo Médio/km)
+L81-110: Ranking hardcoded (Transferência Ouro Branco 32%, Rota Sul 28%, etc.)
+
+Zero queries Supabase. Zero dados reais.
+
+Fonte REAL possível:
+  - Média Lucro → financeiro_receber / composicao_financeira_os
+  - Melhor Operação → operacoes por lucro médio
+  - Custo/km → composicao_financeira_os / km_total
+  - Ranking → operacoes ordenadas por margem
+
+Patch: Criar queries Supabase + substituir hardcoded.
+  (Este componente pode ser REMOVIDO se DashboardRecrutamento já
+  mostra KPIs similares via useDashboardRecrutamento.)
+
+
+── M11: RecrutamentoAnalytics.tsx — 100% hardcoded ────────────────────
+
+Arquivo: src/components/recrutamento/RecrutamentoAnalytics.tsx
+
+L14: Funil: "Interessados (120)" "Triagem (65)" "Docs (42)" "Aprovados (28)" "Frotistas (12)"
+L31-33: Retenção: VUC 80%, Fiorino 65%, Caminhão 30%
+L45: Insight: "Região ABC tem alta demanda..."
+
+Zero queries Supabase.
+
+Fonte REAL possível:
+  - Funil → count por stage de recrutamento_candidatos
+  - Retenção → count ativos / total por tipo_veiculo (via prestadores join)
+  - Gaps geográficos → count por cidade vs operacoes por região
+
+Patch: Criar queries Supabase + substituir hardcoded.
+  (Este componente pode ser REMOVIDO se DashboardRecrutamento já
+  mostra distribuição por região/veículo.)
+
+
+── M12: OperacoesRI.tsx — 3 operações hardcoded ───────────────────────
+
+Arquivo: src/components/recrutamento/OperacoesRI.tsx
+
+L58-140: mockOperacoes = [
+  { nome: "Rota Sul D+1", cliente: "Magazine Luiza", ... },
+  { nome: "Distribuição Capital", cliente: "Amazon", ... },
+  { nome: "Transferência NE", cliente: "Mercado Livre", ... },
+]
+
+Fonte REAL: Tabela operacoes existe no banco (queryada por
+  useDashboardRecrutamento.ts L124-125, L154-157).
+
+Patch: Substituir mockOperacoes por query Supabase:
+  supabase.from('operacoes').select('*').eq('status', 'Ativo')
+
+
+── M13: OperacoesRI.tsx — localStorage persistence ─────────────────────
+
+Arquivo: OperacoesRI.tsx L188-197
+
+useEffect(() => {
+  const saved = localStorage.getItem("recrutamento_operacoes")
+  if (saved) { setOperacoes(JSON.parse(saved)) }
+  else { setOperacoes(mockOperacoes); localStorage.setItem(...) }
+}, []);
+
+Impacto: Dados persistidos em localStorage, não no banco.
+  Se usuário limpar cache, perde tudo e re-seeda mock.
+
+Patch: Substituir por query Supabase (junto com M12).
+
+
+── Bônus: useMetricasRecrutamento.ts — métricas derivadas de listar() ──
+
+Arquivo: src/modules/recrutamento/hooks/useMetricasRecrutamento.ts
+
+L27: const todos = await enterpriseKanbanService.listar()  // REAL query
+L55: tempoMedioOnboarding: '~3 dias (estimado)'  // HARDCODED
+
+Impacto: tempoMedioOnboarding é "~3 dias (estimado)" — não calculado.
+
+Fonte REAL: Tabela homologacoes tem data_homologacao e created_at
+  (já usado por useDashboardRecrutamento L173-183).
+
+Patch: Calcular de homologacoes ou remover o campo.
+
+═══════════════════════════════════════════════════════════════════════════
+5. KPIs QUE SÃO 100% REAIS (SEM MOCK)
+═══════════════════════════════════════════════════════════════════════════
+
+Arquivo: src/modules/recrutamento/hooks/useDashboardRecrutamento.ts
+
+Este hook faz 13 queries Parallels ao Supabase + Realtime em 5 tabelas.
+TODOS os KPIs derivam de dados reais:
+
+  candidatosAtivos   → count stage IN ['ativo','operacao_ativa','prestador_apto']
+  aprovados          → count stage IN ['aprovado','ativo','operacao_ativa','prestador_apto']
+  pendentes          → count stage IN ['novo_cadastro','pre_triagem',...]
+  bloqueados         → count stage IN ['bloqueado','reprovado']
+  tempoMedioAprovacao→ AVG(diferença) de homologacoes
+  scoreMedio         → AVG(score_interno) de prestadores
+  retencao           → prestadoresAtivos / totalPrestadores * 100
+  taxaConversao      → aprovados / totalCandidatos * 100
+  regioesCriticas    → count operacoes > prestadores por região
+  veiculosDisponiveis→ count veiculos WHERE status='Ativo'
+  operacoesSemCobertura→ count operacoes sem prestador na região
+  alertas            → cnhVencendo, excessoDemanda, faltaVeiculos, docsPendentes
+  evolucaoRecrutamento→ count por mês (últimos 12 meses)
+  rankingPrestadores → top 15 por score_interno
+  distribuicaoVeiculos→ count por tipo_veiculo
+  distribuicaoRegioes→ count por regiao_principal
+  statusDocumental   → count por status de documento_analises
+
+TABELAS CONSULTADAS:
+  recrutamento_candidatos, prestadores, veiculos, operacoes,
+  documento_analises, homologacoes
+
+REALTIME ATIVO: postgres_changes em 5 tabelas.
+
+═══════════════════════════════════════════════════════════════════════════
+6. PLANO MÍNIMO PARA REMOVER MOCKS
+═══════════════════════════════════════════════════════════════════════════
+
+PRIORIDADE 1 — CRÍT (funcionalidade quebrada):
+  P1-1: Remover getLocalData/persistLocal de adicionarObservacao() (L734-738)
+  P1-2: Remover getLocalData/persistLocal de criar() (L848-850)
+  Custo: 6 linhas removidas. Risco zero.
+
+PRIORIDADE 2 — ALTO (dados inventados visíveis):
+  P2-1: Implementar calcularScoreComprometimento() real
+        Usar: tempo_medio_resposta_horas, qtd_cobrancas, qtd_reclamacoes,
+        historico_desistencias, confirmou_interesse, completou_30_dias
+        Tabela: recrutamento_candidatos (campos JÁ EXISTEM)
+  P2-2: Implementar scoreService.ts: reputação, regularidade, tendência
+        Usar: campos da tabela + historico_desistencias + completou_30_dias
+  P2-3: Substituir mockOperacoes por query Supabase em OperacoesRI.tsx
+        Tabela: operacoes (JÁ EXISTE, queryada em useDashboardRecrutamento)
+  P2-4: Remover localStorage de OperacoesRI.tsx (junto com P2-3)
+  Custo: ~40 linhas novas, ~20 linhas removidas. Risco baixo.
+
+PRIORIDADE 3 — MÉDIO (componentes 100% decorativos):
+  P3-1: IndicadoresRI.tsx — conectar a queries reais OU remover
+        (se DashboardRecrutamento já cobre)
+  P3-2: RecrutamentoAnalytics.tsx — conectar a queries reais OU remover
+        (se DashboardRecrutamento já cobre)
+  P3-3: Remover NOMES/CIDADES/UFS/TAGS/OBSERVACOES_IA (L25-68)
+  P3-4: Remover funções mock (L70-112, 203-215, 217-293)
+  P3-5: Remover/gerar-guard seedInitialData() (L668-682)
+  P3-6: Corrigir tempoMedioOnboarding em useMetricasRecrutamento.ts L55
+  Custo: ~200 linhas removidas, ~80 linhas novas. Risco médio.
+
+NÃO NECESSÁRIO (já funciona):
+  - Kanban listar() → JÁ USA Supabase (enterpriseKanbanService L654-657)
+  - Dashboard KPIs → JÁ USA 13 queries reais (useDashboardRecrutamento)
+  - Score candidatos → coluna score (default=50) JÁ EXISTE na tabela
+  - Stage counts → JÁ CALCULADOS de dados reais
+
+═══════════════════════════════════════════════════════════════════════════
+7. RESUMO VISUAL
+═══════════════════════════════════════════════════════════════════════════
+
+  ┌─────────────────────────────────┬────────┬────────────┐
+  │ COMPONENTE                      │ REAL   │ MOCK       │
+  ├─────────────────────────────────┼────────┼────────────┤
+  │ useDashboardRecrutamento        │ 100%   │ 0%         │
+  │ useMetricasRecrutamento         │  95%   │ 5% (tempo) │
+  │ useKanbanRealtime               │ 100%   │ 0%         │
+  │ useEnterpriseKanban             │ 100%   │ 0%         │
+  │ enterpriseKanbanService.listar()│ 100%   │ 0%         │
+  │ enterpriseKanbanService.criar() │  95%   │ 5% (local) │
+  │ enterpriseKanbanService.mover() │ 100%   │ 0%         │
+  │ recrutamentoScoreService        │   0%   │ 100%       │
+  │ scoreService.ts                 │  65%   │ 35% (3 fix)│
+  │ IndicadoresRI.tsx               │   0%   │ 100%       │
+  │ RecrutamentoAnalytics.tsx       │   0%   │ 100%       │
+  │ OperacoesRI.tsx                 │   0%   │ 100%       │
+  │ BancoMotoristas.tsx             │   0%   │ 100%       │
+  ├─────────────────────────────────┼────────┼────────────┤
+  │ Dashboard GERAL (useDashboard)  │ 100%   │ 0%         │
+  │ Kanban Board (listar/mover)     │ 100%   │ 0%         │
+  │ Score Comprometimento           │   0%   │ 100%       │
+  │ Indicadores Executivos          │   0%   │ 100%       │
+  │ Analytics/Funil                 │   0%   │ 100%       │
+  │ Operações                       │   0%   │ 100%       │
+  └─────────────────────────────────┴────────┴────────────┘
+
+  MÓDULO: ~55% real | ~45% mock (por componente)
+  KPIs Dashboard: 100% real
+  Kanban Board: 100% real
+  Componentes laterais: 100% mock
+
+═══════════════════════════════════════════════════════════════════════════
+FIM DO RELATORIO — REC-06.2D-PREP
+═══════════════════════════════════════════════════════════════════════════

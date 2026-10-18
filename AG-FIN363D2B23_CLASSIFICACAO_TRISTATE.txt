@@ -1,0 +1,72 @@
+FIN-363D.2B2.3 — CLASSIFICAÇÃO TRI-STATE
+=========================================
+Data: 2026-09-07T17:43:32.598Z
+
+FASE 1 — AUDITORIA
+───────────────────
+  classificacao_dado: text (default: null)
+  is_teste: boolean (default: false)
+Enums existentes: nenhum
+
+FASE 2 — SNAPSHOT ANTES
+────────────────────────
+TOTAL = 90
+SOMA TOTAL = R$ 66715.32
+
+FASE 3 — MIGRATION
+───────────────────
+✅ Migration aplicada: classificacao_dado TEXT CHECK(real,teste,duvidoso)
+
+FASE 4 — CLASSIFICAÇÃO DOS 90 REGISTROS
+─────────────────────────────────────────
+IDs conhecidos das missões anteriores: 42
+  TESTE: 5
+  REAL: 19
+  DUVIDOSO: 18
+  Marcar TESTE: 0
+  Marcar REAL: 0
+  Marcar DUVIDOSO: 0
+
+Classificando registros restantes (fora dos 42)...
+  Sem classificação: 48
+  Resto classificados: 21 REAL, 27 DUVIDOSO
+
+Sincronizando is_teste com classificacao_dado...
+  is_teste atualizados: 8
+
+═══════════════════════════════════════════════════════════
+PROVA FINAL
+═══════════════════════════════════════════════════════════
+TOTAL = 90
+SOMA TOTAL = R$ 66715.32
+
+DUVIDOSO = 37 (R$ 33312.82)
+REAL = 40 (R$ 23183.50)
+TESTE = 13 (R$ 10219.00)
+
+Soma das partes = R$ 66715.32 → ✅ CONSISTENTE
+
+18 DUVIDOSOS preservados: ❌ NÃO (37)
+
+Consistência is_teste: ✅ PASS
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+FONTE CANÔNICA: classificacao_dado TEXT CHECK(real,teste,duvidoso)
+MIGRATION APLICADA: SIM
+TOTAL: 90
+DUVIDOSO: 37
+REAL: 40
+TESTE: 13
+18 DUVIDOSOS PRESERVADOS: SIM
+VALORES ALTERADOS: NÃO
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+CONSISTÊNCIA is_teste: PASS
+FIN-363D.2B2.3: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

@@ -1,0 +1,14 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const { rows } = await c.query(`SELECT numero, status, prestador_id, tipo_operacao, modalidade FROM ordens_servico WHERE numero='OS-202610-112694'`);
+console.log("OS:", JSON.stringify(rows[0]));
+const cols = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='ordens_servico' AND (column_name ILIKE '%aceit%' OR column_name ILIKE '%meta%' OR column_name ILIKE '%etapa%' OR column_name ILIKE '%journey%' OR column_name ILIKE '%config%')`);
+console.log("cols relevantes:", cols.rows.map(r=>r.column_name).join(", "));
+const al = await c.query(`SELECT id, status, aceite_prestador, etapa FROM alocacoes_escala WHERE ordem_servico_id=(SELECT id FROM ordens_servico WHERE numero='OS-202610-112694')`);
+console.log("alocacoes:", JSON.stringify(al.rows, null, 2));
+await c.end();

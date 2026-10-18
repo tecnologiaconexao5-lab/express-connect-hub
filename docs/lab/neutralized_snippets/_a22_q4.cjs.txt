@@ -1,0 +1,12 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const r = await c.query("SELECT id, prestador_id, status, rota, operation_mode, created_at FROM public.alocacoes_escala WHERE rota ILIKE '%MULTI-001%'");
+  console.log('ALOC:', JSON.stringify(r.rows, null, 2));
+  const r2 = await c.query("SELECT id, os_numero, prestador_id, status, created_at, modo FROM public.ordens_servico WHERE os_numero ILIKE '%MULTI-001%' LIMIT 5");
+  console.log('OS:', JSON.stringify(r2.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Package, MapPin, ArrowRight, Check, X, Clock, Search, Filter, Play, CheckCircle2 } from "lucide-react";
+import { Package, MapPin, ArrowRight, Check, X, Clock, Search, Filter, Play, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { usePortalPrestadorStore, type Operacao } from "@/stores/portalPrestadorStore";
+import { usePortalPrestadorStore } from "@/stores/portalPrestadorStore";
+import type { Operacao } from "@/stores/portalPrestadorStore";
 import { Button } from "@/components/ui/button";
 
 type FiltroStatus = "todas" | "pendente" | "aceita" | "em_andamento" | "concluida";
@@ -17,15 +18,51 @@ const STATUS_CONFIG = {
 };
 
 export default function OperacoesTab() {
-  const { operacoes, aceitarOperacao, recusarOperacao, iniciarOperacao, concluirOperacao } = usePortalPrestadorStore();
+  const { operacoes, loading, aceitarOperacao, recusarOperacao, iniciarOperacao, concluirOperacao } = usePortalPrestadorStore();
   const [filtro, setFiltro] = useState<FiltroStatus>("todas");
   const [busca, setBusca] = useState("");
+  const [acaoLoading, setAcaoLoading] = useState<string | null>(null);
 
   const filtradas = operacoes.filter((o) => {
     if (filtro !== "todas" && o.status !== filtro) return false;
     if (busca && !o.cliente.toLowerCase().includes(busca.toLowerCase()) && !o.carga.toLowerCase().includes(busca.toLowerCase())) return false;
     return true;
   });
+
+  const handleAceitar = async (id: string) => {
+    setAcaoLoading(id);
+    await aceitarOperacao(id);
+    setAcaoLoading(null);
+  };
+
+  const handleRecusar = async (id: string) => {
+    setAcaoLoading(id);
+    await recusarOperacao(id);
+    setAcaoLoading(null);
+  };
+
+  const handleIniciar = async (id: string) => {
+    setAcaoLoading(id);
+    await iniciarOperacao(id);
+    setAcaoLoading(null);
+  };
+
+  const handleConcluir = async (id: string) => {
+    setAcaoLoading(id);
+    await concluirOperacao(id);
+    setAcaoLoading(null);
+  };
+
+  if (loading && operacoes.length === 0) {
+    return (
+      <div className="space-y-4 pb-4">
+        <h1 className="text-xl font-bold text-foreground">Operações</h1>
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pb-4">
@@ -61,7 +98,15 @@ export default function OperacoesTab() {
         ) : (
           <div className="space-y-3">
             {filtradas.map((op) => (
-              <OperacaoCard key={op.id} op={op} onAccept={aceitarOperacao} onDecline={recusarOperacao} onStart={iniciarOperacao} onComplete={concluirOperacao} />
+              <OperacaoCard
+                key={op.id}
+                op={op}
+                acaoLoading={acaoLoading}
+                onAccept={handleAceitar}
+                onDecline={handleRecusar}
+                onStart={handleIniciar}
+                onComplete={handleConcluir}
+              />
             ))}
           </div>
         )}
@@ -70,15 +115,16 @@ export default function OperacoesTab() {
   );
 }
 
-function OperacaoCard({ op, onAccept, onDecline, onStart, onComplete }: { op: Operacao; onAccept: (id: string) => void; onDecline: (id: string) => void; onStart: (id: string) => void; onComplete: (id: string) => void }) {
+function OperacaoCard({ op, acaoLoading, onAccept, onDecline, onStart, onComplete }: { op: Operacao; acaoLoading: string | null; onAccept: (id: string) => void; onDecline: (id: string) => void; onStart: (id: string) => void; onComplete: (id: string) => void }) {
   const config = STATUS_CONFIG[op.status] || STATUS_CONFIG.pendente;
+  const isLoading = acaoLoading === op.id;
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="p-4 rounded-2xl border border-border bg-card">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-sm font-semibold text-foreground">{op.cliente}</p>
-          <p className="text-xs text-muted-foreground">{op.carga} · {op.peso}</p>
+          <p className="text-sm font-semibold text-foreground">{op.cliente || "Cliente"}</p>
+          <p className="text-xs text-muted-foreground">{op.carga} · {op.peso || "N/I"}</p>
         </div>
         <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-medium border", config.color)}>{config.label}</span>
       </div>
@@ -86,12 +132,12 @@ function OperacaoCard({ op, onAccept, onDecline, onStart, onComplete }: { op: Op
       <div className="space-y-2 mb-3">
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          <span className="text-foreground font-medium text-xs">{op.origem}</span>
+          <span className="text-foreground font-medium text-xs">{op.origem || "Origem"}</span>
           <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-          <span className="text-foreground font-medium text-xs">{op.destino}</span>
+          <span className="text-foreground font-medium text-xs">{op.destino || "Destino"}</span>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>{op.distancia}</span>
+          <span>{op.distancia || "-"}</span>
           <span>·</span>
           <span>R$ {op.valor.toLocaleString("pt-BR")}</span>
           <span>·</span>
@@ -102,25 +148,25 @@ function OperacaoCard({ op, onAccept, onDecline, onStart, onComplete }: { op: Op
       <AnimatePresence>
         {op.status === "pendente" && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="flex gap-2">
-            <Button onClick={() => onAccept(op.id)} size="sm" className="flex-1 gap-1.5 rounded-xl h-10 text-sm">
-              <Check className="w-4 h-4" /> Aceitar
+            <Button onClick={() => onAccept(op.id)} disabled={isLoading} size="sm" className="flex-1 gap-1.5 rounded-xl h-10 text-sm">
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Aceitar
             </Button>
-            <Button onClick={() => onDecline(op.id)} variant="outline" size="sm" className="flex-1 gap-1.5 rounded-xl h-10 text-sm">
+            <Button onClick={() => onDecline(op.id)} disabled={isLoading} variant="outline" size="sm" className="flex-1 gap-1.5 rounded-xl h-10 text-sm">
               <X className="w-4 h-4" /> Recusar
             </Button>
           </motion.div>
         )}
         {op.status === "aceita" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <Button onClick={() => onStart(op.id)} className="w-full gap-2 rounded-xl h-10 text-sm">
-              <Play className="w-4 h-4" /> Iniciar Viagem
+            <Button onClick={() => onStart(op.id)} disabled={isLoading} className="w-full gap-2 rounded-xl h-10 text-sm">
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Iniciar Viagem
             </Button>
           </motion.div>
         )}
         {op.status === "em_andamento" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <Button onClick={() => onComplete(op.id)} className="w-full gap-2 rounded-xl h-10 text-sm bg-green-600 hover:bg-green-700">
-              <CheckCircle2 className="w-4 h-4" /> Finalizar Entrega
+            <Button onClick={() => onComplete(op.id)} disabled={isLoading} className="w-full gap-2 rounded-xl h-10 text-sm bg-green-600 hover:bg-green-700">
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Finalizar Entrega
             </Button>
           </motion.div>
         )}

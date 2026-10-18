@@ -1,0 +1,160 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.4-RLS-PAGAMENTOS-PRESTADORES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao controlada de RLS (SELECT). Sem alteracao de dados.
+RESULTADO: PASS (prova positiva TMS + prova negativa de isolamento).
+================================================================================
+
+--------------------------------------------------------------------------------
+1. POLICIES ANTES x DEPOIS (public.pagamentos_prestadores)
+--------------------------------------------------------------------------------
+ANTES (3):
+  pp_insert_own   | INSERT | authenticated | prestadores.auth_user_id = auth.uid()
+  pp_select_own   | SELECT | authenticated | prestadores.auth_user_id = auth.uid()
+  pp_update_own   | UPDATE | authenticated | prestadores.auth_user_id = auth.uid()
+  -> Nenhuma policy de leitura para o TMS financeiro => SELECT retornava [].
+
+DEPOIS (4):
+  pp_insert_own   | INSERT | authenticated | (INALTERADA)
+  pp_select_own   | SELECT | authenticated | (INALTERADA — APP/prestador)
+  pp_update_own   | UPDATE | authenticated | (INALTERADA)
+  pp_select_tms   | SELECT | authenticated | NOVA -> tenant do TMS (ver item 2)
+
+RLS mantida habilitada (relrowsecurity = true; force = false).
+Nenhuma policy *_own removida/alterada. Nenhum INSERT/UPDATE/DELETE novo liberado.
+Nenhum uso de service_role.
+
+--------------------------------------------------------------------------------
+2. REGRA DE TENANT/PERFIL UTILIZADA
+--------------------------------------------------------------------------------
+Fato estrutural (05D.4): pagamentos_prestadores NAO possui coluna tenant_id, e
+prestadores tambem nao possui tenant_id. O vinculo SEGURO de tenant e derivado
+do os_id -> ordens_servico / alocacoes_escala (ambas possuem tenant_id).
+
+Helper (SECURITY DEFINER, STABLE, search_path=public):
+  public.f_pp_tenant_id(p_os_id uuid) RETURNS uuid
+    SELECT COALESCE(
+      (SELECT os.tenant_id FROM ordens_servico os WHERE os.id = p_os_id),
+      (SELECT ae.tenant_id FROM alocacoes_escala ae WHERE ae.id = p_os_id)
+    );
+  Grants: REVOKE de PUBLIC/anon; GRANT EXECUTE para authenticated, service_role.
+  (resolve o tenant sem disparar RLS de terceiros.)
+
+Policy pp_select_tms:
+  FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.tenant_usuarios tu
+      WHERE tu.user_id = auth.uid()
+        AND tu.status = 'ativo'
+        AND tu.tenant_id = public.f_pp_tenant_id(pagamentos_prestadores.os_id)
+    )
+  );
+
+Regra: leitura liberada SOMENTE se (a) o usuario e um vinculo ativo em
+tenant_usuarios e (b) o tenant derivado do registro (via os_id) e IGUAL ao tenant
+desse usuario. Perfil: qualquer papel ativo do TMS (financeiro/admin/operacional…),
+pois os demais modulos financeiros usam o mesmo criterio de vinculo TMS ativo.
+Linhas sem os_id/vinculo resolvivel => tenant NULL => NAO visiveis (default seguro).
+
+--------------------------------------------------------------------------------
+3. MIGRATION
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260924000004_fin_prog05d4_rls_pagamentos_prestadores.sql
+Rollback: supabase/migrations/20260924000005_fin_prog05d4_rls_pagamentos_prestadores_rollback.sql
+Idempotente: CREATE OR REPLACE FUNCTION + DROP POLICY IF EXISTS + CREATE POLICY.
+Aplicada em PROD via client pg (transacao). Rollback remove policy e funcao.
+
+--------------------------------------------------------------------------------
+4. PROVA TMS (POSITIVA) - contexto autenticado simulado (auth.uid via JWT claims)
+--------------------------------------------------------------------------------
+Contexto financeiro (de1c77e0…, tenant ...0001):
+  ANTES : count pagamentos_prestadores = 0   (recebia [])
+  DEPOIS: count pagamentos_prestadores = 117
+Contexto super_admin (8c12fc67…, tenant ...0001):
+  DEPOIS: count = 117
+Registros do tenant (vinculo os_id resolvido) = 117 de 137.
+
+--------------------------------------------------------------------------------
+5. PROVA CROSS-TENANT (NEGATIVA)
+--------------------------------------------------------------------------------
+- anon .................................... count = 0
+- authenticated sem vinculo em tenant_usuarios ... count = 0
+- CROSS-TENANT: usuario financeiro com tenant trocado (dentro de transacao
+  desfeita com ROLLBACK; criado tenant temporario '...00ff' e movido o vinculo)
+  .......................................... count = 0
+Conclusao: sem vinculo ativo no tenant do registro, a leitura e negada.
+
+--------------------------------------------------------------------------------
+6. PROVA PRESTADOR PROPRIO (pp_select_own preservada)
+--------------------------------------------------------------------------------
+Prestador "PRESTADOR TESTE APP" (auth_user_id proprio):
+  ve exatamente os SEUS pagamentos: count = 45 (esperado 45);
+  nao ve pagamentos de outros prestadores: outros = 0.
+=> pp_select_own continua funcionando e NAO foi ampliada.
+
+--------------------------------------------------------------------------------
+7. CONTAGENS / INTEGRIDADE (antes = depois)
+--------------------------------------------------------------------------------
+pagamentos_prestadores .......... 137 (137)
+financeiro_pagar ................ 178 (178)
+soma pagamentos_prestadores.valor_liquido ... 90.229,96 (inalterada)
+soma financeiro_pagar.valor ................. 132.943,60 (inalterada)
+pagamentos_prestadores com lote_id .......... 0 (nenhum lote criado)
+financeiro_baixas ........................... 19 (inalterada)
+Nenhum valor/status/lote/baixa alterado. Nenhuma emissao. Nenhum PIX/CNAB.
+
+--------------------------------------------------------------------------------
+8. PROVA UI (FONTE DA TESOURARIA deixa de retornar [])
+--------------------------------------------------------------------------------
+Query real de PagamentoCNAB.tsx executada sob contexto financeiro:
+  SELECT ... FROM pagamentos_prestadores WHERE impacto_dre = true
+  ORDER BY data_prevista_pagamento ASC LIMIT 50  -> 50 linhas (antes: 0).
+A fonte da Tesouraria passa a retornar registros; nenhum lote/baixa foi executado.
+
+--------------------------------------------------------------------------------
+9. REGRESSAO
+--------------------------------------------------------------------------------
+- RLS proofs (positiva/negativa/prestador/dados/UI): 13/13 PASS.
+- npx tsc -p tsconfig.app.json --noEmit: EXIT 2 — SOMENTE erros PRE-EXISTENTES
+  do baseline (nenhum arquivo TS foi alterado nesta missao; mudanca e SQL).
+- npx vitest run (subset financeiro relevante): 6 arquivos / 179 testes PASS
+  (fin_master361_core_financeiro, fin_prog05d1_gate_fatura, fin_p1_02_prestadores_cc,
+   fin_p1_03_fechamento_prestador, fin_p1_04_ui_fechamento_integration,
+   fin_p0_01_status_vencimento).
+
+--------------------------------------------------------------------------------
+10. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1 (escopo) 20 linhas de pagamentos_prestadores sem vinculo resolvivel
+   (12 com os_id NULL + 8 com os_id sem OS/alocacao) permanecem invisiveis ao TMS
+   por nao terem tenant provado. Se precisarem aparecer, exige backfill de os_id
+   ou criacao/backfill de tenant_id (fora do escopo desta micro-correcao).
+R2 (pre-existente, NAO causado por esta missao) RLS de ordens_servico possui a
+   policy os_select_cliente que faz cast de cliente_id (TEXT) para uuid; existem
+   linhas com valores nao-uuid ("Cliente Teste App Motorista", "DVL - DISTRIBUIDORA").
+   Quando os_select_tms nao satisfaz (outro tenant), a avaliacao pode estourar
+   "invalid input syntax for type uuid". Recomenda-se follow-up para corrigir o
+   cast/uso de cliente_id. Nao afeta otenant unico atual.
+R3 O helper f_pp_tenant_id e SECURITY DEFINER e executavel por authenticated;
+   apenas mapeia os_id -> tenant_id (sem expor dados financeiros).
+R4 Existe apenas 1 tenant em producao; o isolamento multi-tenant agora esta
+   logicamente imposto, mas nunca foi exercitado com um 2o tenant real.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+M66/M80; momento de criacao de AP; status_conferencia; f_emitir_fatura; AR;
+faturas; baixas; Conferencia; Ordem de Pagamento; Plano de Contas; Categoria;
+Centro de Resultado; paginacao; iFi; CNAB; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D4-RLS-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D4-RLS-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Tamanho ..: 9059 bytes
+Data .....: 24/09/2026 16:52:39
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.4
+================================================================================

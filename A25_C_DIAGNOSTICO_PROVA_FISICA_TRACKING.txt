@@ -1,0 +1,186 @@
+================================================================================
+MISSÃO A25-C — DIAGNÓSTICO DA PROVA FÍSICA DO TRACKING
+Projeto: EXPRESS CONNECT HUB (TMS) + App Flutter (C:\src\conexao_prestador)
+Supabase Produção: uwrvzsjtpgaifkktpepn
+Data: 2026-08-14
+Modo: SOMENTE LEITURA — NENHUM dado/objeto alterado
+================================================================================
+
+STATUS: CAUSA ENCONTRADA — PRONTO PARA CORREÇÃO
+(Cenário A — o Redmi NÃO gravou posição nova; o defeito está no caminho APP → RPC → BANCO)
+================================================================================
+
+================================================================================
+# PROVA DO BANCO (read-only — produção)
+================================================================================
+
+portal_tracking_realtime — estado REAL:
+  - Total de registros: 3
+  - Mais recente created_at: 2026-07-29T02:49:28Z
+  - Mais recente captured_at: 2026-07-29T02:49:28Z
+  - Posições nas últimas 48h: 0
+  - Posições do PRESTADOR TESTE APP: apenas 1 (seed 'homologacao' de 2026-07-29,
+    alocacao ecaedf20 / os 1e1b59fa, lat -23.5505 lng -46.6333, status 'pendente')
+
+RESPOSTA OBJETIVA:
+  → O REDMI NÃO GRAVOU POSIÇÃO NOVA. (Cenário A)
+
+Alocação da operação EM ROTA (OS-HML-MULTI-001):
+  - id ca5fe225-7114-42da-9997-c3d466e5df52
+  - status 'em_rota', finalizada false, ordem_servico_id NULL
+  - metadata.app_motorista: numero_os "OS-HML-MULTI-001", romaneio "HML-MULTI-001",
+    etapa_atual "saiu_em_rota", ultima_acao "saiu_em_rota", atualizado_por_app true,
+    saiu_rota_em 2026-08-11T14:47:57Z
+  - Posições de tracking desta alocação: 0 (nenhuma)
+
+OS "OS-HML-MULTI-001":
+  - NÃO existe como registro em ordens_servico (0 resultados para numero 'OS-HML-MULTI-001').
+  - Existe apenas como METADATA (app_motorista.numero_os) na alocação ca5fe225.
+
+================================================================================
+# APP
+================================================================================
+
+- O App ESTÁ transmitindo dados do fluxo (prova: metadata.app_motorista da alocação
+  ca5fe225 com etapa 'saiu_em_rota', atualizado_por_app true, timestamps de aceite/
+  carregamento/saída em rota). O gatilho de tracking (etapa "Sair em rota") foi atingido.
+- RealTrackingService.sendPosition() envia via RPC registrar_posicao_motorista.
+- Como NÃO existe posição nova, o envio ao banco FALHOU (vai para a fila offline).
+
+================================================================================
+# RPC — CAUSA RAIZ CONFIRMADA (evidência direta)
+================================================================================
+
+O RPC atual (após A25-B) executa na VALIDAÇÃO 2:
+
+  SELECT id, tenant_id INTO v_prestador_id, v_tenant_id
+  FROM public.prestadores
+  WHERE auth_user_id = auth.uid() AND status='ativo' AND liberado_app=true;
+
+Prova read-only direta:
+  SELECT id, tenant_id FROM public.prestadores  →  ERRO: column "tenant_id" does not exist
+
+CONFIRMAÇÃO NO SCHEMA:
+  - prestadores NÃO possui coluna tenant_id (colunas: id, nome_completo, cpf_cnpj, ...,
+    auth_user_id, liberado_app, ... — SEM tenant_id).
+  - alocacoes_escala TEM tenant_id (prova: ca5fe225 → tenant_id 00000000-...-0001).
+
+CONCLUSÃO:
+  - O RPC quebra na VALIDAÇÃO 2 com "column tenant_id does not exist" ANTES de
+    chegar ao INSERT.
+  - Por isso o App nunca vê sucesso → posição vai para a fila offline → nada chega
+    a portal_tracking_realtime → Torre sem posição.
+  - Este é o motivo real de "0 posições em 48h". A A25-B corrigiu as colunas do
+    INSERT, MAS a validação 2 ainda referencia prestadores.tenant_id (inexistente).
+
+ATENÇÃO (honestidade técnica):
+  - A A25-B NÃO está homologada ponta a ponta. A correção do INSERT foi aplicada,
+    mas a validação 2 continua quebrada por causa do tenant_id de prestadores.
+
+================================================================================
+# TORRE
+================================================================================
+
+- A Torre NÃO recebeu posição (não há posição no banco para receber).
+- O Realtime (portal_tracking_realtime INSERT) e buscarUltimasPosicoes estão
+  corretos, mas não há dados novos para consumir.
+- A regra A25-B (GPS tem prioridade; match por alocacao_id) está implementada,
+  porém não há posição para aplicar.
+
+================================================================================
+# 0 DE 0 OS — CAUSA EXATA
+================================================================================
+
+TorreControle monta o mapa a partir de osAtivas = SELECT * FROM ordens_servico
+(limit 50). Para cada OS: extrairCoordenadasOS(os) + posição de tracking.
+
+Fatos (read-only produção):
+  - ordens_servico: 120 OS (50 concluídas, 70 ativas).
+  - OS ativas com localizacao_entrega_json: 0.
+  - OS ativas com enderecos[] preenchido: 15 (de 70).
+  - A operação da prova (OS-HML-MULTI-001) NÃO existe como OS em ordens_servico —
+    existe apenas como metadata da alocação ca5fe225, que tem ordem_servico_id NULL.
+
+CONCLUSÃO "0 de 0 OS":
+  1. A operação EM ROTA no App (OS-HML-MULTI-001) é uma ALOCAÇÃO sem OS vinculada
+     (ordem_servico_id NULL). Ela não aparece na coleção osAtivas (que vem de
+     ordens_servico), então a Torre não tem essa operação no mapa — daí "0 de 0"
+     para a operação da prova.
+  2. Mesmo as OS reais ativas, em sua maioria, não possuem coordenadas próprias
+     (0 com localizacao_entrega_json; 15 com enderecos). Sem posição de tracking
+     (que não chega por causa do RPC) e sem coordenadas, não há marcador.
+  3. Divergência KPI "Operações Ativas" (de alocacoes_escala/OS) vs coleção do mapa
+     (osAtivas de ordens_servico com coordenada): a operação da prova está na
+     primeira, mas não na segunda.
+
+================================================================================
+# CAUSA-RAIZ (conclusão objetiva)
+================================================================================
+
+  C1 (BLOQUEADOR PRINCIPAL — gravação de posição):
+     RPC registrar_posicao_motorista quebra na VALIDAÇÃO 2:
+     referencia prestadores.tenant_id (inexistente).
+     → Nenhuma posição do App é gravada; fila offline; banco sem dados novos.
+
+  C2 (EXIBIÇÃO NA TORRE — "0 de 0 OS"):
+     A operação de prova existe apenas como alocação (ordem_servico_id NULL) e
+     como metadata app_motorista.numero_os; NÃO existe em ordens_servico.
+     → A coleção osAtivas do mapa não inclui a operação; somado a C1 (sem GPS),
+        não há marcador.
+
+  C3 (SECUNDÁRIO):
+     Poucas OS reais têm coordenadas próprias (0 localizacao_entrega_json;
+     15/70 com enderecos). Com GPS funcionando (C1 corrigido), a regra A25-B
+     (GPS tem prioridade) já resolve a exibição das operações com tracking ativo.
+
+================================================================================
+# CORREÇÃO NECESSÁRIA (objetos exatos)
+================================================================================
+
+A. SUPABASE PRODUÇÃO — RPC registrar_posicao_motorista (exige autorização; NÃO
+   executada nesta missão):
+   - Corrigir a VALIDAÇÃO 2 para NÃO usar prestadores.tenant_id:
+       SELECT id INTO v_prestador_id
+       FROM public.prestadores
+       WHERE auth_user_id = auth.uid() AND status='ativo' AND liberado_app=true;
+   - Resolver v_tenant_id a partir da alocação (alocacoes_escala.tenant_id), que
+     é a fonte real e existente — manter o restante da A25-B (INSERT em colunas
+     existentes, validações, dedup, SECURITY DEFINER).
+   - Arquivo de correção proposto (não aplicado): scripts/_a25c_fix_rpc_tenant.sql
+   - Rollback: scripts/_a25b_backup_rpc_registrar_posicao.sql (definição anterior).
+
+B. TMS — exibição "0 de 0 OS" (código; pode ser aplicado após autorização/etapa):
+   - Incluir na coleção do mapa as ALOCAÇÕES ativas sem OS vinculada (ou exibir
+     por alocação quando houver tracking/posição), complementando osAtivas.
+   - Manter a regra A25-B (GPS tem prioridade; fallback coordenada da OS).
+   - Opcional: backfill de coordenadas para OS reais (fora do escopo de código).
+
+C. APP — NENHUMA alteração necessária:
+   - O App transmite corretamente (prova no metadata da alocação).
+   - Assinatura do RPC preservada → APK build 1306 compatível.
+
+================================================================================
+# PRÓXIMO PASSO
+================================================================================
+1. Obter autorização para a correção A (RPC, única alteração de Produção).
+2. Aplicar a correção do RPC (tenant_id via alocação) e validar a definição.
+3. Reexecutar a prova física no Redmi (mesmo roteiro A25-B): Sair em rota → GPS →
+   verificar SELECT na portal_tracking_realtime (deve aparecer linha com
+   created_at recente e status='online').
+4. Se necessário, aplicar a correção B (exibição por alocação) no TMS.
+5. Só então reavaliar "PRONTO PARA HOMOLOGAÇÃO FÍSICA" / homologar.
+
+================================================================================
+# SEGURANÇA
+================================================================================
+  - Nenhuma migration executada ................... CONFIRMADO
+  - Nenhuma tabela/coluna criada/removida ......... CONFIRMADO
+  - Nenhuma RLS/trigger/RPC alterada .............. CONFIRMADO (apenas leitura)
+  - Nenhum dado manualmente alterado .............. CONFIRMADO
+  - App Flutter não alterado ...................... CONFIRMADO
+  - Nenhuma posição fabricada ..................... CONFIRMADO
+
+================================================================================
+FIM DO RELATÓRIO — MISSÃO A25-C
+STATUS: CAUSA ENCONTRADA — PRONTO PARA CORREÇÃO
+================================================================================

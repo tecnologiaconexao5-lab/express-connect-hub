@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,18 +18,65 @@ import { supabase } from "@/lib/supabase";
 import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
-  VeiculoPrestador,
+  VeiculoPrestador, normalizarStatusPrestador,
 } from "./types";
 import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
 import ContratoPrestadorModal from "./ContratoPrestadorModal";
 import { toPrestadorInsert, toPrestadorUpdate, sanitizePrestadorPayload } from "@/lib/dbMappers";
+import { formatarDataBR } from "@/lib/formatDates";
+import { sanitizeVeiculoPayload, camposTipoVeiculo } from "@/helpers/veiculoPayload";
 import { buscarCEP } from "@/services/cepService";
+import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
 
 const BUCKET_PRESTADORES = "documentos_prestadores";
+const DRAFT_KEY = "conexao_prestador_draft";
 
 interface Props {
   prestador?: Prestador;
   onBack: () => void;
+}
+
+/** Fields saved to draft (textual only, no binaries/passwords/tokens) */
+const DRAFT_FIELDS = [
+  "nomeCompleto", "nomeFantasia", "cpfCnpj", "rgIe", "dataNascimento",
+  "telefone", "whatsapp", "email", "rntrc", "antt",
+  "tipoParceiro", "status", "liberadoApp",
+  "regiaoPrincipal", "origemCadastro", "indicacao", "disponibilidade",
+  "turnosPreferenciais", "restricoesOperacionais",
+  "banco", "agencia", "conta", "digito", "tipoConta", "favorecido",
+  "cpfCnpjFavorecido", "chavePix", "tipoChavePix",
+  "valorDiaria", "valorKm", "valorSaida", "fixoMensal",
+  "valorAjudante", "valorEspera", "valorReentrega", "valorDevolucao", "franquiaKm",
+  "periodicidadePagamento", "prazoPagamento", "formaPreferencialPagamento",
+  "contaContabil", "centroCusto", "retencoes", "conferenciManual",
+  "observacoesFinanceiras",
+  "aceitaRefrigerada", "aceitaUrbana", "aceitaDedicada", "aceitaEsporadica",
+] as const;
+
+function saveDraft(data: Partial<Prestador>) {
+  try {
+    const draft: Record<string, any> = {};
+    for (const f of DRAFT_FIELDS) {
+      const val = (data as any)[f];
+      if (val !== undefined && val !== null) draft[f] = val;
+    }
+    if (data.endereco) draft.endereco = data.endereco;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch { /* storage full or private mode */ }
+}
+
+function loadDraft(): Partial<Prestador> | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (typeof draft !== "object" || draft === null) return null;
+    return draft;
+  } catch { return null; }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
 }
 
 const DOC_STATUS_STYLE: Record<StatusDocumento, string> = {
@@ -74,10 +121,10 @@ const renderStars = (score: number, size = "w-5 h-5") => (
 
 const fmt = (v?: number) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—";
 
-const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
-  const isNew = !initial;
-  const [p, setP] = useState<Partial<Prestador>>(initial || {
+function getDefaultPrestador(): Partial<Prestador> {
+  return {
     status: "analise",
+    liberadoApp: false,
     tipoParceiro: "autonomo",
     scoreInterno: 0,
     qtdOperacoes: 0,
@@ -92,8 +139,30 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     documentos: [],
     veiculos: [],
     contatosEmergencia: [{}, {}, {}] as any,
-  } as Partial<Prestador>);
+  } as Partial<Prestador>;
+}
+
+const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
+  const isNew = !initial;
+
+  // Restore draft for CREATE, or use initial data for EDIT
+  const getInitialState = useCallback((): Partial<Prestador> => {
+    if (!initial) {
+      const draft = loadDraft();
+      if (draft) return { ...getDefaultPrestador(), ...draft };
+    }
+    return initial || getDefaultPrestador();
+  }, [initial]);
+
+  const [p, setP] = useState<Partial<Prestador>>(getInitialState);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const initialStateRef = useRef<string>(JSON.stringify(initial || getDefaultPrestador()));
+
+  // === INDICADORES REAIS (do banco) ===
+  const [qtdEntregasReais, setQtdEntregasReais] = useState<number | null>(null);
+  const [ocorrenciasReais, setOcorrenciasReais] = useState<any[]>([]);
   const [docToAnalyze, setDocToAnalyze] = useState<string | null>(null);
   const [modalContratoOpen, setModalContratoOpen] = useState(false);
   const [modalVeiculoOpen, setModalVeiculoOpen] = useState(false);
@@ -107,12 +176,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     registradoPor: "Sistema"
   });
   const [novoVeiculo, setNovoVeiculo] = useState<Partial<VeiculoPrestador>>({
-    tipoVeiculo: "fiorino",
     status: "ativo"
   });
+  const [modoEdicaoVeiculo, setModoEdicaoVeiculo] = useState<"adicionar" | "editar">("adicionar");
   const [isUploading, setIsUploading] = useState(false);
   const [docUploadProgress, setDocUploadProgress] = useState<Record<string, boolean>>({});
-  const [fotoPreview, setFotoPreview] = useState<string | null>(initial?.foto || null);
+  const [fotoRef, setFotoRef] = useState<string | null>(initial?.foto || null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [documentosPendentes, setDocumentosPendentes] = useState<Array<{tipo: string, file: File}>>([]);
 
   // Carregar documentos do banco ao abrir prestador existente
@@ -128,16 +198,95 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         console.error("[Documentos] Erro ao carregar:", error);
       } else if (data) {
         console.log("[Documentos] Carregados do banco:", data.length);
-        const docsFromDb = data.map((d: any) => ({
-          tipo: d.tipo,
-          url: d.url,
-          status: "valido" as const
-        }));
+        const docsFromDb = await Promise.all(
+          data.map(async (d: any) => ({
+            tipo: d.tipo,
+            url: (await resolverUrlDocumento(d.url, { prestadorId: p.id })) ?? undefined,
+            status: "valido" as const
+          }))
+        );
         setP(prev => ({ ...prev, documentos: docsFromDb }));
       }
     };
     carregarDocumentos();
   }, [p.id]);
+
+  useEffect(() => {
+    let ativo = true;
+    const resolver = async () => {
+      if (!fotoRef) {
+        setFotoPreview(null);
+        return;
+      }
+      const resolvida = await resolverUrlDocumento(fotoRef, { prestadorId: p.id });
+      if (ativo) setFotoPreview(resolvida);
+    };
+    resolver();
+    return () => {
+      ativo = false;
+    };
+  }, [fotoRef, p.id]);
+
+  // === CARREGAR INDICADORES REAIS DO BANCO ===
+  useEffect(() => {
+    if (!p.id) return;
+
+    const carregarIndicadores = async () => {
+      // 1. Total de entregas CONCLUIDAS via alocacoes_escala (contagem derivada, sem cache)
+      // Status concluida = operacao realmente finalizada no app/topedo motorista
+      const { count: totalConcluidas } = await supabase
+        .from("alocacoes_escala")
+        .select("*", { count: "exact", head: true })
+        .eq("prestador_id", p.id!)
+        .eq("status", "concluida");
+
+      setQtdEntregasReais(totalConcluidas ?? 0);
+
+      // 2. Ocorrências reais do prestador — fonte canônica: tabela `ocorrencias`
+      //    (vínculo real por prestador_id; a tabela legada de ocorrências está vazia)
+      const { data: ocorrenciasData } = await supabase
+        .from("ocorrencias")
+        .select("*")
+        .eq("prestador_id", p.id!)
+        .order("created_at", { ascending: false });
+
+      setOcorrenciasReais(ocorrenciasData || []);
+    };
+
+    carregarIndicadores();
+  }, [p.id]);
+
+  // === DIRTY TRACKING ===
+  useEffect(() => {
+    const current = JSON.stringify(p);
+    setIsDirty(current !== initialStateRef.current);
+  }, [p]);
+
+  // Save draft on change (CREATE only)
+  useEffect(() => {
+    if (isNew && isDirty) saveDraft(p);
+  }, [p, isNew, isDirty]);
+
+  // === BROWSER EXIT GUARD (beforeunload) ===
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // === LOCAL NAV GUARD (Voltar/Cancelar button only) ===
+  const handleDiscardClick = useCallback(() => {
+    clearDraft();
+    onBack();
+  }, [onBack]);
+
+  const handleCancelClick = useCallback(() => {
+    setShowDiscardDialog(false);
+  }, []);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -201,19 +350,15 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         return;
       }
 
-      const { data: urlData } = supabase.storage
-        .from(BUCKET_PRESTADORES)
-        .getPublicUrl(uploadData.path);
+      const fotoRefPersistida = referenciaEstavelDocumento(uploadData.path) ?? uploadData.path;
+      setFotoRef(fotoRefPersistida);
+      setP(prev => ({ ...prev, foto: fotoRefPersistida }));
 
-      const fotoUrl = urlData.publicUrl;
-      setFotoPreview(fotoUrl);
-      setP(prev => ({ ...prev, foto: fotoUrl }));
-      
-      // Salva localmente caso não exista a coluna no DB
+      // Salva localmente caso nǜo exista a coluna no DB
       try {
         const localFotos = JSON.parse(localStorage.getItem('conexao_prestador_fotos') || '{}');
         if (prestadorId) {
-          localFotos[prestadorId] = fotoUrl;
+          localFotos[prestadorId] = fotoRefPersistida;
           localStorage.setItem('conexao_prestador_fotos', JSON.stringify(localFotos));
         }
       } catch (e) {}
@@ -259,17 +404,14 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
       console.log("[Documentos] Upload OK:", uploadData);
 
-      const { data: urlData } = supabase.storage
-        .from(BUCKET_PRESTADORES)
-        .getPublicUrl(uploadData.path);
-
-      const docUrl = urlData.publicUrl;
-      console.log("[Documentos] URL pública:", docUrl);
+      const docRefPersistida = referenciaEstavelDocumento(uploadData.path) ?? uploadData.path;
+      const docUrl = await resolverUrlDocumento(docRefPersistida, { prestadorId });
+      console.log("[Documentos] referencia persistida:", docRefPersistida);
 
       const docPayload = {
         prestador_id: prestadorId,
         tipo: tipoDocumento,
-        url: docUrl,
+        url: docRefPersistida,
         created_at: new Date().toISOString()
       };
       console.log("[Documentos] Insert payload:", docPayload);
@@ -285,8 +427,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
       const currentDocs = p.documentos || [];
       const updatedDocs = currentDocs.some(d => d.tipo === tipoDocumento)
-        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, url: docUrl, status: "valido" as const } : d)
-        : [...currentDocs, { tipo: tipoDocumento, url: docUrl, status: "valido" as const }];
+        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, url: docUrl ?? undefined, status: "valido" as const } : d)
+        : [...currentDocs, { tipo: tipoDocumento, url: docUrl ?? undefined, status: "valido" as const }];
       setP(prev => ({ ...prev, documentos: updatedDocs }));
       toast.success(`${tipoDocumento} enviado!`);
     } catch (error) {
@@ -298,25 +440,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
-  const sanitizeVeiculoPayload = (data: any) => {
-    const allowlist = [
-      'placa', 'tipo', 'marca', 'modelo', 'ano', 'renavam', 'antt',
-      'proprietario_nome', 'proprietario_documento', 'capacidade_kg', 'capacidade_m3',
-      'comprimento_m', 'largura_m', 'altura_m', 'tipo_carga', 'temperatura_min',
-      'temperatura_max', 'rastreador', 'seguro', 'restricoes_regiao', 'observacoes',
-      'principal', 'status', 'prestador_vinculado', 'updated_at'
-    ];
-    const sanitized: any = {};
-    for (const key of allowlist) {
-      if (data[key] !== undefined) {
-        sanitized[key] = data[key];
-      }
-    }
-    return sanitized;
-  };
-
   const handleAddVeiculo = async (veiculoData: Partial<VeiculoPrestador>) => {
     const prestadorId = p.id;
+    if (!veiculoData.tipoVeiculo) return toast.error("Selecione o tipo de veículo.");
     
     const newVeiculo: VeiculoPrestador = {
       id: veiculoData.id || `temp_${Date.now()}`,
@@ -355,7 +481,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     try {
       const payloadVeiculo = sanitizeVeiculoPayload({
         placa: veiculoData.placa,
-        tipo: veiculoData.tipoVeiculo,
+        ...camposTipoVeiculo(veiculoData.tipoVeiculo),
         marca: veiculoData.marca,
         modelo: veiculoData.modelo,
         ano: veiculoData.ano,
@@ -392,7 +518,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         }
         return;
       }
-      
+
+      // Confirmação real: só considera sucesso se o veículo foi persistido
+      if (!veiculoResult || veiculoResult.length === 0) {
+        toast.error("Nenhum veículo foi salvo. Verifique permissões e tente novamente.");
+        return;
+      }
+
       const currentVeiculos = p.veiculos || [];
       setP(prev => ({ ...prev, veiculos: [...currentVeiculos, newVeiculo] }));
       setModalVeiculoOpen(false);
@@ -412,12 +544,100 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
+  const handleUpdateVeiculo = async (veiculoData: Partial<VeiculoPrestador>) => {
+    if (!veiculoData.id) return toast.error("ID do veículo não encontrado.");
+    if (!veiculoData.tipoVeiculo) return toast.error("Selecione o tipo de veículo.");
+    
+    try {
+      const payloadVeiculo = sanitizeVeiculoPayload({
+        placa: veiculoData.placa,
+        ...camposTipoVeiculo(veiculoData.tipoVeiculo),
+        marca: veiculoData.marca,
+        modelo: veiculoData.modelo,
+        ano: veiculoData.ano,
+        renavam: veiculoData.renavam,
+        antt: veiculoData.antt,
+        proprietario_nome: veiculoData.proprietario,
+        proprietario_documento: veiculoData.cpfCnpjProprietario,
+        capacidade_kg: veiculoData.capacidadeKg,
+        capacidade_m3: veiculoData.capacidadeM3,
+        comprimento_m: veiculoData.comprimento,
+        largura_m: veiculoData.largura,
+        altura_m: veiculoData.altura,
+        tipo_carga: veiculoData.tipoCarga,
+        temperatura_min: veiculoData.tempMin,
+        temperatura_max: veiculoData.tempMax,
+        rastreador: veiculoData.rastreador === "Sim",
+        seguro: veiculoData.possuiSeguro,
+        restricoes_regiao: veiculoData.restricoesRegiao,
+        observacoes: veiculoData.observacoesOperacionais,
+        updated_at: new Date().toISOString()
+      });
+
+      const { data: updResult, error } = await supabase.from("veiculos").update(payloadVeiculo).eq("id", veiculoData.id).select("id");
+      if (error) throw error;
+
+      // Confirmação real: só considera sucesso se o veículo foi atualizado
+      if (!updResult || updResult.length === 0) {
+        toast.error("Nenhum veículo foi atualizado. Verifique permissões e tente novamente.");
+        return;
+      }
+
+      setP(prev => ({
+        ...prev,
+        veiculos: (prev.veiculos || []).map(v => 
+          v.id === veiculoData.id ? { ...v, ...veiculoData } : v
+        )
+      }));
+      setModalVeiculoOpen(false);
+      toast.success("Veículo atualizado com sucesso!");
+    } catch (error: any) {
+      console.error("Erro ao atualizar veículo:", error);
+      toast.error("Erro ao atualizar veículo: " + (error?.message || ""));
+    }
+  };
+
+  const handleDeleteVeiculo = async (veiculoId: string) => {
+    if (!veiculoId) return;
+    try {
+      const { error } = await supabase.from("veiculos").delete().eq("id", veiculoId);
+      if (error) throw error;
+      setP(prev => ({
+        ...prev,
+        veiculos: (prev.veiculos || []).filter(v => v.id !== veiculoId)
+      }));
+      toast.success("Veículo removido com sucesso!");
+    } catch (error: any) {
+      console.error("Erro ao remover veículo:", error);
+      toast.error("Erro ao remover veículo: " + (error?.message || ""));
+    }
+  };
+
   const handleSave = async () => {
+    // Double-submit protection
+    if (isLoading) return;
+
+    // Required field validation
+    const errors: string[] = [];
+    if (!p.nomeCompleto?.trim()) errors.push("Nome completo");
+    if (!p.cpfCnpj?.trim()) errors.push("CPF/CNPJ");
+    if (!p.tipoParceiro) errors.push("Tipo de parceiro");
+    if (!p.status) errors.push("Status");
+    if (errors.length > 0) {
+      toast.error(`Preencha os campos obrigatórios: ${errors.join(", ")}`);
+      return;
+    }
+
     try {
       setIsLoading(true);
       const isUpdate = !!initial?.id;
 
-      const payload = isUpdate ? toPrestadorUpdate(p) : toPrestadorInsert(p);
+      // E2E-05D — coerência: liberado_app SÓ pode ser true quando status ativo/aprovado.
+      // Bloqueado/reprovado/em análise → liberado_app permanece false.
+      const statusCanonico = normalizarStatusPrestador(p.status);
+      const pEfetivo = statusCanonico === "ativo" ? p : { ...p, liberadoApp: false };
+
+      const payload = isUpdate ? toPrestadorUpdate(pEfetivo) : toPrestadorInsert(pEfetivo);
       const sanitizedPayload = sanitizePrestadorPayload(payload);
 
       console.log("Payload enviado:", sanitizedPayload);
@@ -441,11 +661,32 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         toast.error(`Erro ao salvar: ${error.message}`);
         return;
       }
-      
-      if (isNew && data?.[0]?.id) {
-        const newId = data[0].id;
 
-        // Veículos salvos na tabela veiculos
+      // CREATE: confirm persistence via reread
+      if (isNew) {
+        const persistedId = data?.[0]?.id;
+        if (!persistedId) {
+          console.error("INSERT retornou dados vazios:", data);
+          toast.error("Cadastro falhou: banco não retornou registro. Tente novamente.");
+          return;
+        }
+
+        // REREAD: independent SELECT to confirm record exists
+        const { data: rereadData, error: rereadError } = await supabase
+          .from('prestadores')
+          .select('id, nome_completo, cpf_cnpj, status')
+          .eq('id', persistedId)
+          .single();
+
+        if (rereadError || !rereadData) {
+          console.error("CREATE reread falhou:", rereadError);
+          toast.error("Cadastro inserido mas não confirmado na releitura. Contate suporte.");
+          return;
+        }
+
+        console.log("[CREATE REREAD] Registro confirmado:", rereadData);
+
+        // Save vehicles linked to confirmed prestador
         if (p.veiculos?.length) {
           const veiculosPayload = p.veiculos.map(v => ({
             placa: v.placa,
@@ -456,43 +697,67 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             capacidade_kg: v.capacidadeKg,
             capacidade_m3: v.capacidadeM3,
             tipo_carga: v.tipoCarga,
-            prestador_vinculado: newId,
+            prestador_vinculado: persistedId,
             status: "Ativo",
             created_at: new Date().toISOString()
           }));
           await supabase.from("veiculos").insert(veiculosPayload);
         }
 
-        // Documentos salvos no Supabase Storage e tabela documentos_prestadores
+        // Send pending documents (only after reread confirmed)
         if (documentosPendentes.length > 0) {
           toast.info("Enviando documentos pendentes...");
           for (const doc of documentosPendentes) {
-            const fileName = `doc_${newId}_${doc.tipo.replace(/\s+/g, "_")}_${Date.now()}.${doc.file.name.split(".").pop()}`;
+            const fileName = `doc_${persistedId}_${doc.tipo.replace(/\s+/g, "_")}_${Date.now()}.${doc.file.name.split(".").pop()}`;
             const { data: uploadData, error: uploadError } = await supabase.storage
               .from(BUCKET_PRESTADORES)
               .upload(fileName, doc.file, { upsert: true });
 
             if (!uploadError && uploadData) {
-              const { data: urlData } = supabase.storage
-                .from(BUCKET_PRESTADORES)
-                .getPublicUrl(uploadData.path);
-              
               await supabase.from("documentos_prestadores").insert([{
-                prestador_id: newId,
+                prestador_id: persistedId,
                 tipo: doc.tipo,
-                url: urlData.publicUrl,
+                url: referenciaEstavelDocumento(uploadData.path) ?? uploadData.path,
                 created_at: new Date().toISOString()
               }]);
             }
           }
         }
+
+        toast.success("Prestador cadastrado com sucesso!");
+        clearDraft();
+        onBack();
+        return;
       }
-      
-      toast.success(isNew ? "Prestador cadastrado com sucesso!" : "Prestador atualizado com sucesso!");
+
+      // UPDATE: confirm persistence via reread
+      const affectedRows = data?.length ?? 0;
+      if (affectedRows === 0) {
+        console.error("UPDATE afetou 0 registros. ID pode não existir:", p.id);
+        toast.error("Atualização falhou: registro não encontrado no banco.");
+        return;
+      }
+
+      // REREAD: independent SELECT to confirm record exists and fields match
+      const { data: rereadData, error: rereadError } = await supabase
+        .from('prestadores')
+        .select('id, nome_completo, cpf_cnpj, status')
+        .eq('id', p.id)
+        .single();
+
+      if (rereadError || !rereadData) {
+        console.error("UPDATE reread falhou:", rereadError);
+        toast.error("Atualização executada mas não confirmada na releitura. Contate suporte.");
+        return;
+      }
+
+      console.log("[UPDATE REREAD] Registro confirmado:", rereadData);
+      toast.success("Prestador atualizado com sucesso!");
       onBack();
     } catch (error: any) {
       console.error("Erro ao salvar prestador:", error);
       toast.error("Erro ao salvar dados no Supabase");
+      // Form stays open — user's typed data is preserved in state
     } finally {
       setIsLoading(false);
     }
@@ -567,11 +832,11 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <CardContent className="p-4 pt-0 space-y-3 text-sm">
               <div className="flex justify-between items-center py-2 border-b border-muted/40">
                 <span className="text-muted-foreground text-xs">Desde / Cadastro</span>
-                <span className="text-xs font-bold">{p.dataCadastro ? new Date(p.dataCadastro).toLocaleDateString("pt-BR") : "-"}</span>
+                <span className="text-xs font-bold">{formatarDataBR(p.dataCadastro) || "-"}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-muted/40">
                 <span className="text-muted-foreground text-xs">Aprovação</span>
-                <span className="text-xs font-bold text-emerald-600">{p.dataAprovacao ? new Date(p.dataAprovacao).toLocaleDateString("pt-BR") : "Em análise"}</span>
+                <span className="text-xs font-bold text-emerald-600">{formatarDataBR(p.dataAprovacao) || "Em análise"}</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-muted/40">
                 <span className="text-muted-foreground text-xs">Idade</span>
@@ -579,12 +844,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               </div>
               <div className="flex justify-between items-center py-2 border-b border-muted/40">
                 <span className="text-muted-foreground text-xs">Total Entregas</span>
-                <span className="text-xs font-bold">{p.qtdOperacoes || 0} saídas</span>
+                <span className="text-xs font-bold">{qtdEntregasReais ?? "—"} saídas</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-muted/40">
                 <span className="text-muted-foreground text-xs">Ocorrências</span>
-                <span className={`text-xs font-bold ${p.torreControle?.ocorrenciasGraves ? 'text-red-500' : 'text-muted-foreground'}`}>
-                  {p.torreControle?.ocorrenciasGraves || 0} registrada(s)
+                <span className={`text-xs font-bold ${ocorrenciasReais.length > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  {ocorrenciasReais.length} registrada(s)
                 </span>
               </div>
               
@@ -654,6 +919,26 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     </label>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Liberado no Aplicativo</CardTitle></CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="liberado_app"
+                    checked={p.liberadoApp ?? false}
+                    onCheckedChange={(checked) => handleChange('liberadoApp', checked)}
+                  />
+                  <Label htmlFor="liberado_app" className="text-sm cursor-pointer">
+                    {p.liberadoApp ? "Librado para receber operações via aplicativo" : "Sem acesso ao aplicativo (somente rede interna)"}
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Controla se o prestador pode receber e aceitar oportunidades pela rede interna.
+                  Prestadores inativos, bloqueados ou com documentos vencidos devem ter este desligado.
+                </p>
               </CardContent>
             </Card>
 
@@ -782,7 +1067,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           tipoDocumento={tipo}
                           onAnaliseConcluida={(dados, validade) => {
                             if (validade) {
-                              handleChange("dataValidadeCNH" as any, validade);
+                              handleChange("metadata", { ...(typeof p.metadata === 'object' ? p.metadata : {}), cnh_validade: validade });
                             }
                             setDocToAnalyze(null);
                           }}
@@ -828,7 +1113,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           <TabsContent value="veiculos" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{p.veiculos?.length || 0} veículo(s) vinculada(s)</span>
-              <Button size="sm" className="gap-1.5" onClick={() => setModalVeiculoOpen(true)}><Plus className="w-4 h-4" /> Adicionar Veículo</Button>
+              <Button size="sm" className="gap-1.5" onClick={() => { setNovoVeiculo({ status: "ativo" }); setModoEdicaoVeiculo("adicionar"); setModalVeiculoOpen(true); }}><Plus className="w-4 h-4" /> Adicionar Veículo</Button>
             </div>
             {(p.veiculos || []).map((v) => (
               <Card key={v.id} className="overflow-hidden border-muted/60 shadow-sm">
@@ -847,7 +1132,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                       <Badge variant="outline" className={v.status === "ativo" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-600"}>
                         {v.status?.toUpperCase() || "ATIVO"}
                       </Badge>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"><Trash2 className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => { setNovoVeiculo(v); setModoEdicaoVeiculo("editar"); setModalVeiculoOpen(true); }}><Edit className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Remover" onClick={() => handleDeleteVeiculo(v.id)}><Trash2 className="w-4 h-4" /></Button>
                     </div>
                   </div>
                   
@@ -995,7 +1281,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     <p className="text-xs text-muted-foreground mt-1">Score interno</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-bold">{p.qtdOperacoes || 0}</p>
+                    <p className="text-3xl font-bold">{qtdEntregasReais ?? "—"}</p>
                     <p className="text-xs text-muted-foreground mt-1">Operações realizadas</p>
                   </div>
                   <div className="text-center">
@@ -1088,7 +1374,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center p-4 bg-muted/30 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">{p.qtdOperacoes || 0}</p>
+                    <p className="text-2xl font-bold text-green-600">{qtdEntregasReais ?? "—"}</p>
                     <p className="text-xs text-muted-foreground">Operacoes Hoje</p>
                   </div>
                   <div className="text-center p-4 bg-muted/30 rounded-lg">
@@ -1188,36 +1474,40 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(!p.ocorrencias || p.ocorrencias.length === 0) ? (
+                    {ocorrenciasReais.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-10 text-muted-foreground italic">
                           Nenhuma ocorrência registrada para este prestador.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      p.ocorrencias.map((o) => (
+                      ocorrenciasReais.map((o) => {
+                        const grav = (o.severidade || o.gravidade || "") as string;
+                        const registradoPor = o.metadata?.registrado_por || o.registrado_por || "—";
+                        return (
                         <TableRow key={o.id}>
-                          <TableCell className="text-xs">{new Date(o.data).toLocaleDateString("pt-BR")}</TableCell>
+                          <TableCell className="text-xs">{new Date(o.created_at || o.data).toLocaleDateString("pt-BR")}</TableCell>
                           <TableCell className="text-xs font-medium uppercase">{o.tipo}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={
-                              o.gravidade === "baixa" ? "text-green-600 border-green-200 bg-green-50" :
-                              o.gravidade === "media" ? "text-yellow-600 border-yellow-200 bg-yellow-50" :
-                              o.gravidade === "alta" ? "text-orange-600 border-orange-200 bg-orange-50" :
+                              grav === "baixa" ? "text-green-600 border-green-200 bg-green-50" :
+                              grav === "media" ? "text-yellow-600 border-yellow-200 bg-yellow-50" :
+                              grav === "alta" ? "text-orange-600 border-orange-200 bg-orange-50" :
                               "text-red-600 border-red-200 bg-red-50"
                             }>
-                              {o.gravidade.toUpperCase()}
+                              {grav.toUpperCase()}
                             </Badge>
                           </TableCell>
                           <TableCell>
                             <span className="text-xs">{o.status}</span>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{o.registradoPor}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{registradoPor}</TableCell>
                           <TableCell className="text-right">
                             <Button variant="ghost" size="sm">Ver Detalhes</Button>
                           </TableCell>
                         </TableRow>
-                      ))
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -1231,7 +1521,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       {/* BARRA FIXA INFERIOR */}
       <div className="fixed bottom-0 right-0 left-0 lg:left-64 bg-background/80 backdrop-blur-md border-t z-50 p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
         <div className="max-w-none flex justify-end items-center gap-3">
-          <Button variant="outline" onClick={onBack} disabled={isLoading}>
+          <Button variant="outline" onClick={() => {
+            if (isDirty) {
+              setShowDiscardDialog(true);
+            } else {
+              onBack();
+            }
+          }} disabled={isLoading}>
             Cancelar / Voltar
           </Button>
           <Button className="min-w-[120px] shadow-lg shadow-primary/20" onClick={handleSave} disabled={isLoading}>
@@ -1265,7 +1561,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 <Truck className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <DialogTitle className="text-xl font-bold">Cadastro de Veículo do Prestador</DialogTitle>
+                <DialogTitle className="text-xl font-bold">{modoEdicaoVeiculo === "editar" ? "Editar Veículo do Prestador" : "Cadastro de Veículo do Prestador"}</DialogTitle>
                 <p className="text-sm text-muted-foreground">Informe os dados operacionais, capacidade e documentação do veículo.</p>
               </div>
             </div>
@@ -1290,10 +1586,10 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 <div className="space-y-2">
                   <Label className="text-xs">Tipo de Veículo</Label>
                   <Select
-                    value={novoVeiculo.tipoVeiculo || "fiorino"}
+                    value={novoVeiculo.tipoVeiculo || ""}
                     onValueChange={(val) => setNovoVeiculo(prev => ({ ...prev, tipoVeiculo: val as TipoVeiculo }))}
                   >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Selecione o tipo de veículo" /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(TIPO_VEICULO_LABEL).map(([k, l]) => (
                         <SelectItem key={k} value={k}>{l}</SelectItem>
@@ -1476,8 +1772,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
           <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-background p-4 -mx-6 -mb-4">
             <Button variant="outline" className="flex-1" onClick={() => setModalVeiculoOpen(false)}>Cancelar</Button>
-            <Button className="flex-1" onClick={() => handleAddVeiculo(novoVeiculo)} disabled={!novoVeiculo.placa}>
-              <Truck className="w-4 h-4 mr-2" /> Salvar Veículo
+            <Button className="flex-1" onClick={() => modoEdicaoVeiculo === "editar" ? handleUpdateVeiculo(novoVeiculo) : handleAddVeiculo(novoVeiculo)} disabled={!novoVeiculo.placa || !novoVeiculo.tipoVeiculo}>
+              <Truck className="w-4 h-4 mr-2" /> {modoEdicaoVeiculo === "editar" ? "Atualizar Veículo" : "Salvar Veículo"}
             </Button>
           </div>
         </DialogContent>
@@ -1533,28 +1829,29 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <Button onClick={async () => {
               const prestadorId = p.id;
               if (!prestadorId) {
-                const ocorrenciaPayload = { ...novaOcorrencia, id: `temp_${Date.now()}` };
-                setP(prev => ({ ...prev, ocorrencias: [...(prev.ocorrencias || []), ocorrenciaPayload] }));
+                toast.warning("Salve o prestador primeiro para registrar ocorrências.");
                 setModalOcorrenciaOpen(false);
-                toast.success("Ocorrência registrada (temporário)! Salve o prestador para confirmar.");
                 return;
               }
 
               try {
                 const payloadOcorrencia = {
                   prestador_id: prestadorId,
-                  data: novaOcorrencia.data || new Date().toISOString().split('T')[0],
+                  prestador: p.nomeCompleto || null,
                   tipo: novaOcorrencia.tipo,
-                  gravidade: novaOcorrencia.gravidade,
-                  status: 'aberta',
+                  severidade: novaOcorrencia.gravidade,
+                  status: 'pendente',
                   descricao: novaOcorrencia.descricao,
-                  registrado_por: novaOcorrencia.registradoPor || 'Sistema',
+                  metadata: {
+                    data: novaOcorrencia.data || new Date().toISOString().split('T')[0],
+                    registrado_por: novaOcorrencia.registradoPor || 'Sistema',
+                  },
                   created_at: new Date().toISOString(),
                   updated_at: new Date().toISOString()
                 };
 
                 const { data: ocorrenciaResult, error: ocorrenciaError } = await supabase
-                  .from('prestadores_ocorrencias')
+                  .from('ocorrencias')
                   .insert(payloadOcorrencia)
                   .select();
 
@@ -1563,17 +1860,18 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                   if (ocorrenciaError.message.includes('does not exist') || ocorrenciaError.code === 'PGRST116') {
                     toast.error("Tabela de ocorrências não encontrada. Configure o banco de dados.");
                   } else {
-                    const ocorrenciaPayload = { ...novaOcorrencia, id: `temp_${Date.now()}` };
-                    setP(prev => ({ ...prev, ocorrencias: [...(prev.ocorrencias || []), ocorrenciaPayload] }));
-                    toast.warning("Ocorrência salva localmente (erro no banco): " + ocorrenciaError.message);
+                    toast.warning("Erro ao salvar ocorrência no banco: " + ocorrenciaError.message);
                   }
+                } else if (!ocorrenciaResult || ocorrenciaResult.length === 0) {
+                  toast.error("Nenhuma ocorrência foi salva. Verifique permissões e tente novamente.");
                 } else {
-                  const ocorrenciaPayload = { 
-                    ...novaOcorrencia, 
-                    id: ocorrenciaResult?.[0]?.id || `temp_${Date.now()}`,
-                    status: 'aberta'
-                  };
-                  setP(prev => ({ ...prev, ocorrencias: [...(prev.ocorrencias || []), ocorrenciaPayload] }));
+                  // Releitura: buscar ocorrências reais do banco após INSERT confirmado
+                  const { data: refreshed } = await supabase
+                    .from("ocorrencias")
+                    .select("*")
+                    .eq("prestador_id", prestadorId)
+                    .order("created_at", { ascending: false });
+                  setOcorrenciasReais(refreshed || []);
                   toast.success("Ocorrência salva com sucesso!");
                 }
               } catch (error) {
@@ -1584,6 +1882,26 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               setModalOcorrenciaOpen(false);
             }}>
               Salvar Ocorrência
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* DISCARD CHANGES DIALOG */}
+      <Dialog open={showDiscardDialog} onOpenChange={setShowDiscardDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Alterações não salvas</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Você tem alterações não salvas. Deseja salvar como rascunho e sair, ou descartar as alterações?
+          </p>
+          <div className="flex gap-3 justify-end pt-4">
+            <Button variant="outline" onClick={handleCancelClick}>
+              Continuar editando
+            </Button>
+            <Button variant="destructive" onClick={handleDiscardClick}>
+              Descartar alterações
             </Button>
           </div>
         </DialogContent>

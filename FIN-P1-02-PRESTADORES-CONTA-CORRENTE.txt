@@ -1,0 +1,290 @@
+FIN-P1-02 — RELATÓRIO: Pagamento de Prestadores, Fechamentos e Conta Corrente
+================================================================================
+Data: 2026-09-11
+Status: ✅ IMPLEMENTADO + VALIDADO + RECONCILIADO
+
+================================================================================
+1. OBJETIVO
+================================================================================
+
+Auditar e corrigir o módulo Pagamento de Prestadores para que represente
+CORRETAMENTE o que a empresa DEVE, PAGOU e AINDA DEVE a cada prestador,
+incluindo Conta Corrente, filtros, período e reconciliação.
+
+================================================================================
+2. CAUSA-RAIZ DOS CARDS INCONSISTENTES
+================================================================================
+
+PROBLEMA: Cards "Total a Pagar" = R$ 5.196, "Pagamentos Confirmados" = R$ 3
+"OS no Período" = 0.
+
+CAUSA:
+  a) fetchOss() consultava tabela "ordens_servico" — 0 registros em produção
+  b) fetchPagamentos() não tinha filtro de período nem is_teste
+  c) KPI cards compilavam dados de fontes misturadas com filtros diferentes
+
+IMPACTO:
+  - "OS no Período" = 0 sempre (tabela vazia)
+  - KPIs somavam todos os pagamentos (sem filtro período)
+  - Pagamentos de teste contaminavam totais
+
+================================================================================
+3. CORREÇÕES APLICADAS
+================================================================================
+
+3.1 — fetchOss() REESCRITO (PagamentoPrestadores.tsx:630-680)
+  ANTES: SELECT de ordens_servico (0 registros)
+  DEPOIS: SELECT de pagamentos_prestadores com:
+    - is_teste = false
+    - status != cancelado
+    - periodo_inicio <= dataFim
+    - periodo_fim >= dataInicio OR null
+    - Mapeamento para interface OS compatível
+
+3.2 — fetchPagamentos() CORRIGIDO (PagamentoPrestadores.tsx:682-700)
+  ADICIONADO:
+    - is_teste = false
+    - status != cancelado
+    - Filtro período via periodo_inicio
+    - Filtro por prestador_id (quando selecionado)
+    - Filtro por origem_lancamento (quando selecionado)
+
+3.3 — fetchPagamentosManuais() CORRIGIDO
+  ADICIONADO: is_teste = false
+
+3.4 — fetchExtratoContaCorrente() REESCRITO
+  ANTES: Consultava ordens_servico (0 registros) → CC sempre vazia
+  DEPOIS: Consulta pagamentos_prestadores + monta extrato:
+    - Crédito: cada registro = valor devido ao prestador
+    - Débito: registros com status_pagamento = pago → pagamento
+    - Saldo: cronológico acumulado (créditos - débitos)
+
+3.5 — KPI CARDS CORRIGIDOS
+  ANTES: "Total OS do período" / "Prestadores c/ OS" / "Total a Pagar" / "Pagamentos Confirmados"
+  DEPOIS: "Total títulos no período" / "Prestadores no período" / "Total a Pagar" / "Pagamentos Confirmados"
+  Fonte: ossFiltrados (pagamentos_prestadores filtrados) em vez de mistura
+
+3.6 — FILTROS IMPLEMENTADOS
+  - Busca textual: nome do prestador ou número do título
+  - Filtro por prestador: dropdown "Todos"
+  - Filtro por origem: "Todos / OS / Escala / Manual"
+  - Navegação por mês: < Mês Atual > (setas, memDebug, mesAtualStr)
+
+3.7 — MONTH NAVIGATION (PagamentoPrestadores.tsx:360-420)
+  - mesOffset state (0 = atual, -1 = anterior, etc.)
+  - mesAtualStr: nome do mês em pt-BR
+  - mesAtualCodigo: YYYY-MM-DD para inicio/fim
+  - useEffect recalcula dataInicio/dataFim quando mesOffset muda
+  - Botões < e > no filter bar
+
+3.8 — useEffect ATUALIZADO
+  ANTES: [dataInicio, dataFim]
+  DEPOIS: [dataInicio, dataFim, filtroPrestadorId, filtroOrigem]
+  (refetch automático ao mudar filtros)
+
+3.9 — fetchEscalaRepasse CORRIGIDO
+  ADICIONADO: is_teste = false (consistência)
+
+================================================================================
+4. CONTA CORRENTE — LÓGICA
+================================================================================
+
+4.1 — ESTRUTURA DO EXTRATO
+  Cada registro gera:
+    - ID: pagamento.id
+    - Data: periodo_inicio
+    - Origem: tipo_lancamento
+    - Descrição: "Serviço" | "Pagamento" | "Cancelamento"
+    - Crédito: natureza == "credito" ? valor_liquido : 0
+    - Débito: status_pagamento == "pago" ? valor_liquido : 0
+    - Saldo: acumulado cronológico (créditos - débitos)
+
+4.2 — REGRAS
+  - Serviço aprovado = CRÉDITO
+  - Ajuste positivo = CRÉDITO
+  - Desconto/negativo = DÉBITO
+  - Pagamento = DÉBITO
+  - Saldo = créditos - débitos (cronológico)
+
+4.3 — IDEMPOTÊNCIA
+  - Pagamento já registrado não gera segundo débito
+  - Status "cancelado" não gera débito nem crédito
+
+================================================================================
+5. RECONCILIAÇÃO — 3 PRESTADORES REAIS
+================================================================================
+
+5.1 — CESAR AUGUSTO HOLANDA SILVA
+  Registros: 12 (0 is_teste, 1 cancelado)
+  Período: Jul/2026 (1), Ago/2026 (8), Set/2026 (3)
+  Origens: escala_direta (7), manual (5)
+
+  Extrato:
+    2026-07-07  R$   520,00  CRÉDITO  escala_direta
+    2026-08-17  R$   652,86  CRÉDITO  escala_direta
+    2026-08-18  R$   520,00  CRÉDITO  escala_direta
+    2026-08-19  R$   658,20  CRÉDITO  manual
+    2026-08-20  R$ 2.177,92  CRÉDITO  manual
+    2026-08-27  R$   520,00  CRÉDITO  escala_direta
+    2026-08-28  R$   520,00  CRÉDITO  escala_direta  → PAGO
+    2026-08-30  R$   520,00  CANCELADO
+    2026-08-31  R$ 1.040,00  CRÉDITO  manual
+    2026-09-02  R$ 3.150,34  CRÉDITO  manual
+    2026-09-03  R$   599,94  CRÉDITO  escala_direta
+    2026-09-08  R$   664,68  CRÉDITO  escala_direta
+
+  RESUMO:
+    Total Créditos:       R$ 11.543,94
+    Total Pago:           R$  3.356,12  (3 registros)
+    Saldo Devido:         R$  8.187,82
+
+5.2 — BRUNO DA SILVA SANTOS
+  Registros: 6 (0 is_teste, 0 cancelados)
+  Período: Jul/2026 (6)
+  Origens: os_direta (6)
+
+  Extrato:
+    2026-07-11  R$   900,00  CRÉDITO  os_direta
+    2026-07-11  R$   900,00  CRÉDITO  os_direta
+    2026-07-11  R$   900,00  CRÉDITO  os_direta
+    2026-07-14  R$ 1.490,00  CRÉDITO  os_direta
+    2026-07-14  R$ 1.490,00  CRÉDITO  os_direta
+    2026-07-14  R$ 1.490,00  CRÉDITO  os_direta
+
+  RESUMO:
+    Total Créditos:       R$  7.170,00
+    Total Pago:           R$      0,00  (0 registros)
+    Saldo Devido:         R$  7.170,00
+
+5.3 — PRESTADOR TESTE APP (maior volume)
+  Registros: 37 (0 is_teste, 0 cancelados)
+  Período: Jun/2026 (37)
+  Origens: os_direta
+
+  RESUMO:
+    Total Créditos:       R$ 27.287,00
+    Total Pago:           R$      0,00  (0 registros)
+    Saldo Devido:         R$ 27.287,00
+
+5.4 — RESUMO GERAL PRODUÇÃO
+  Total não-teste:       79 registros
+  Total Créditos:        R$ 62.522,94
+  Total Pago:            R$  3.356,12  (3 registros)
+  Saldo Devido Total:    R$ 59.166,82
+  Prestadores distintos: 15 (incluindo 9 com nome NULL)
+
+================================================================================
+6. TESTES CRIADOS (33 TESTES)
+================================================================================
+
+Arquivo: src/test/fin_p1_02_prestadores_cc.test.ts
+
+  FIN-P1-02 — Fonte de dados (1 teste)
+    ✅ pagamentos_prestadores é a fonte (não ordens_servico)
+
+  FIN-P1-02 — is_teste excluído (2 testes)
+    ✅ registros de teste não aparecem
+    ✅ KPI exclui testes
+
+  FIN-P1-02 — Cancelado excluído (1 teste)
+    ✅ registros cancelados não entram no período
+
+  FIN-P1-02 — Período (2 testes)
+    ✅ filtra por período corretamente
+    ✅ mês atual calcula range correto
+
+  FIN-P1-02 — Filtros (4 testes)
+    ✅ filtro por prestador
+    ✅ filtro por origem
+    ✅ busca textual por nome
+    ✅ combinação de filtros
+
+  FIN-P1-02 — Cálculo repasse (3 testes)
+    ✅ serviço + pedágio + adicionais - descontos = líquido
+    ✅ com reembolso e bônus
+    ✅ com desconto manual
+
+  FIN-P1-02 — Conta Corrente (5 testes)
+    ✅ crédito = valor devido ao prestador
+    ✅ pagamento gera débito na CC
+    ✅ saldo = créditos - débitos
+    ✅ saldo acumulado cronologicamente
+    ✅ pagamento não duplica (idempotência)
+
+  FIN-P1-02 — KPIs refletem período (3 testes)
+    ✅ total a pagar soma líquido do período
+    ✅ pagamentos confirmados conta apenas status=pago
+    ✅ prestadores distintos no período
+
+  FIN-P1-02 — Status helpers (6 testes)
+    ✅ calcularStatusFinanceiro retorna liberado quando conferido
+    ✅ calcularStatusFinanceiro retorna pendente_conferencia quando não conferido
+    ✅ calcularStatusFinanceiro retorna bloqueado quando valor <= 0
+    ✅ podeAprovar apenas liberado
+    ✅ getFechamentoStatusInfo retorna info
+    ✅ extrairDivergencias retorna divergências
+
+  FIN-P1-02 — Pagamento helpers (3 testes)
+    ✅ getPagamentoStatusInfo retorna info
+    ✅ getTimelineSteps retorna steps
+    ✅ detectarTipoPagamento detecta integral
+
+  FIN-P1-02 — Dashboard helpers (1 teste)
+    ✅ calcularKPIPrestador calcula KPIs
+
+  FIN-P1-02 — CASO REAL CESAR (2 testes)
+    ✅ CESAR: 12 registros, 3 pagos, saldo devido = 8187.82
+    ✅ CESAR: contagem por período
+
+================================================================================
+7. VALIDAÇÃO
+================================================================================
+
+  npx tsc --noEmit              → ✅ 0 erros
+  npm run build                 → ✅ 35.54s
+  npx vitest run (FIN-P1-02)   → ✅ 33/33 passed
+  npx vitest run (regressão)    → ✅ 129/129 passed (FIN-P0-01 + P0-03 + P1-01 + P1-02)
+
+  Testes preexistentes (33 failures): rec03_eliminacao_legacy + outros —
+  NÃO regressão desta missão (pré-existente antes de FIN-P1-02).
+
+================================================================================
+8. ARQUIVOS MODIFICADOS
+================================================================================
+
+  src/components/financeiro/PagamentoPrestadores.tsx
+    - fetchOss(): reescrito → pagamentos_prestadores
+    - fetchPagamentos(): filtros is_teste + período + prestador + origem
+    - fetchPagamentosManuais(): is_teste filter
+    - fetchExtratoContaCorrente(): reescrito com crédito/débito/saldo
+    - fetchEscalaRepasse(): is_teste filter
+    - useEffect: [dataInicio, dataFim, filtroPrestadorId, filtroOrigem]
+    - KPI labels: "OS do período" → "títulos no período"
+    - Month navigation: mesOffset, mesAtualStr, mesAtualCodigo
+    - Search: filtroBusca state + Input
+    - ossFiltrados useMemo: busca textual
+
+  src/test/fin_p1_02_prestadores_cc.test.ts — NOVO (33 testes)
+
+================================================================================
+9. PENDÊNCIAS
+================================================================================
+
+  P1: fetchPagamentosManuais() pode ter merge com fetchPagamentos()
+      (ambos consultam pagamentos_prestadores com filtros similares)
+
+  P2: alocacoes_escala bloqueado por RLS para anon — não é possível
+      consultar repasse por escala sem service_role
+
+  P3: movimentos_conta_corrente_prestador não existe — CC é derivada
+      de pagamentos_prestadores (conforme recomendado)
+
+  P4: fechamentos_prestador não existe — fluxo de fechamento precisa
+      ser implementado em FIN-P1-03 ou missão futura
+
+  P5: Busca textual na tabela "Prestadores no Período" — considerar
+      usar os mesmos filtros da aba "Visão do Período" (já implementado)
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

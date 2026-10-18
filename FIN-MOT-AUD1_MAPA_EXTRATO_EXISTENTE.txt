@@ -1,0 +1,175 @@
+# FIN-MOT-AUD1 — MAPA DO EXTRATO DO PRESTADOR (READ-ONLY)
+**Data:** 21 de agosto de 2026
+**Modo:** SOMENTE LEITURA — nenhum código alterado nesta missão.
+
+---
+
+## 1. O QUE JÁ EXISTE (checklist)
+
+- [x] Serviço: `src/services/financeiro/extratoPrestadorService.ts`
+- [x] Gerador PDF: `src/lib/pdf/extratoPrestadorReport.ts` (`generateExtratoPrestadorPDF`)
+- [x] Integração na tela real: `src/components/financeiro/PagamentoPrestadores.tsx`
+  (botões "Ver Extrato" + "PDF" + modal "EXTRATO DE FECHAMENTO DO PRESTADOR")
+- [x] Testes: `src/test/extratoPrestadorService.test.ts` (6 testes, fonte real, sem DB)
+- [x] Migration (arquivo): `supabase/migrations/20260821_fin_mot_1_extrato_fechamento_prestador.sql`
+- [x] Período padrão = MÊS ATUAL (no `useEffect` inicial de PagamentoPrestadores)
+- [x] Página/componente isolados da FIN-MOT-1: **foram REMOVIDOS** na FIN-MOT-1H2
+  (`ExtratoPrestadorPage.tsx` e `ExtratoPrestadorComponent.tsx` NÃO existem mais).
+
+## 2. ONDE ESTÁ (arquivos + interface)
+
+| Camada | Arquivo | Função/Componente | Usado? |
+|--------|---------|-------------------|--------|
+| Tela real | `src/components/financeiro/PagamentoPrestadores.tsx` | aba "listagem" (Fechamentos e Pagamentos) → seção "Fechamentos Anteriores" → botões "Ver Extrato"/"PDF" | **SIM** |
+| Handler | `PagamentoPrestadores.tsx:1035` | `handleVerExtrato(p)` → `construirExtratoDeFechamento` | **SIM** |
+| Handler | `PagamentoPrestadores.tsx:1050` | `handleGerarPDFExtrato(p)` → `generateExtratoPrestadorPDF` | **SIM** |
+| Modal | `PagamentoPrestadores.tsx:2226` | Dialog "EXTRATO DE FECHAMENTO DO PRESTADOR" | **SIM** |
+| Service | `src/services/financeiro/extratoPrestadorService.ts:87` | `construirExtratoDeFechamento` | **SIM** (via tela) |
+| PDF | `src/lib/pdf/extratoPrestadorReport.ts:29` | `generateExtratoPrestadorPDF` | **SIM** (via tela) |
+| Testes | `src/test/extratoPrestadorService.test.ts` | 6 testes | **SIM** (vitest) |
+| Migration | `supabase/migrations/20260821_fin_mot_1_extrato_fechamento_prestador.sql` | cria tabelas `fechamentos_prestador` etc. | **INCERTO** (ver §8) |
+
+Interface: `src/pages/Financeiro.tsx:227` — `TabsContent value="pagamento-prestadores"` → `<PagamentoPrestadores />`.
+
+## 3. COMO ACESSAR HOJE (passo a passo)
+
+1. **Financeiro** (menu lateral)
+2. **Pagamentos**
+3. **Pag. Prestadores**
+4. Aba **Fechamentos e Pagamentos** (já a padrão; período inicia no **mês atual**)
+5. Role até a seção **"Fechamentos Anteriores"** (fica abaixo do card "Pagamentos Manuais" e abaixo da tabela de OS do período)
+6. Na coluna **Ações** do fechamento desejado:
+   - **"Ver Extrato"** → abre o modal completo
+   - **"PDF"** → baixa/abre o PDF do extrato
+7. No modal, **"Gerar PDF Completo"** também gera o PDF.
+
+**Condição para o botão aparecer:** a seção inteira "Fechamentos Anteriores" só renderiza quando `pagamentos.length > 0` (PagamentoPrestadores.tsx:1427). Ou seja: é preciso existir **pelo menos 1 registro em `pagamentos_prestadores`**. Cada linha da tabela tem os botões; não há condição por linha (aparecem para todos os fechamentos listados).
+
+## 4. MAPA DA INTERFACE (Pergunta §3)
+
+1. **Em qual aba?** → "listagem" = aba **"Fechamentos e Pagamentos"**.
+2. **Em qual seção?** → Card **"Fechamentos Anteriores"** (linha 1427).
+3. **Qual registro precisa existir?** → pelo menos um registro em `pagamentos_prestadores` (qualquer status), alimentado por `fetchPagamentos()` (linha 646, `select *` sem filtro de status).
+4. **O botão aparece em...**
+   - Pagamentos manuais? **NÃO** (tabela "Pagamentos Manuais" usa outro fluxo, sem botão de extrato).
+   - Fechamentos anteriores? **SIM** (cada linha).
+   - OS do período? **NÃO** (tabela de OS agrupadas por prestador tem apenas "olho" de detalhe).
+   - Todos? **NÃO** — apenas em "Fechamentos Anteriores".
+5. **Condição de código:** `{pagamentos.length > 0 && (<Card>...)}` (linha 1427) + botões incondicionais por linha (linhas 1487–1504).
+6. **Por que no print atual não está visível?** O mais provável: a seção "Fechamentos Anteriores" fica **abaixo da dobra** (depois do card de KPIs, tabela de OS do período e tabela "Pagamentos Manuais"), então é necessário **rolar a página**; OU não existe registro em `pagamentos_prestadores` no momento do print; OU o usuário estava olhando outra aba/sub-abat. Os botões **existem** no código desde a FIN-MOT-1H2.
+
+## 5. “FECHAMENTOS ANTERIORES” (Pergunta §4)
+
+- **Onde começa:** linha 1427 (`{pagamentos.length > 0 && (<Card>`)).
+- **Query que alimenta:** `fetchPagamentos()` (linha 646) → `supabase.from("pagamentos_prestadores").select("*").order("periodo_inicio", {ascending: false})` — **SEM filtro de período/status**.
+- **Rolagem:** a seção está após o card de filtros, 4 KPIs, tabela "OS do período" e card "Pagamentos Manuais" → **sim, precisa rolar**.
+- **Períodos que aparecem:** todos (qualquer `periodo_inicio/fim` existente em `pagamentos_prestadores`), do mais recente para o mais antigo.
+- **O filtro superior afeta?** **NÃO diretamente.** O filtro (dataInicio/dataFim) alimenta `fetchOss()` e `fetchPagamentosManuais()`, mas `fetchPagamentos()` (que alimenta "Fechamentos Anteriores") **não usa** dataInicio/dataFim. O botão "Atualizar" (linha 1214) chama `fetchOss(); fetchPagamentos();`.
+- **Botões Ver Extrato/PDF estão nela?** **SIM** (linhas 1487–1504).
+- **Como chegar a um extrato já existente:** ver §3.
+
+## 6. EXTRATO POR PRESTADOR / PERÍODO / CLIENTE (Pergunta §5)
+
+| Capacidade | Classificação | Comprovação |
+|-----------|---------------|-------------|
+| Selecionar prestador | **EXISTE PARCIALMENTE** | Não há seletor próprio; o extrato usa o `prestador_id/nome` gravado no fechamento. Há seletor de prestador só na aba "Conta Corrente" (para outro fim). |
+| Data inicial | **EXISTE** (para a tela, não para gerar extrato avulso) | Filtro superior `dataInicio` (PagamentoPrestadores.tsx:1208) alimenta OS do período, NÃO o extrato. |
+| Data final | **EXISTE** (idem) | `dataFim` (linha 1212). |
+| Cliente | **NÃO EXISTE** | Nenhum filtro/parâmetro de cliente no fluxo do extrato. O modal mostra cliente vindo da OS via `enriquecerOperacoesComOS` (se a OS tiver `cliente`/relação). |
+| Múltiplos clientes | **NÃO EXISTE** | — |
+| Buscar OS do período | **EXISTE PARCIALMENTE** | A tela busca OS do período (`fetchOss`, linha 518) para a tabela "OS do período"; mas o extrato NÃO agrega OS soltas — usa o fechamento + itens vinculados. |
+| Consolidar produção | **EXISTE PARCIALMENTE** | A tabela "OS do período" consolida por prestador (`totaisPorPrestador`, linha 670) e o `criarFechamento` gera o fechamento; o extrato consolida a partir do fechamento salvo. |
+| Gerar extrato sem fechamento prévio | **NÃO EXISTE** | `construirExtratoDeFechamento` exige uma linha de `pagamentos_prestadores`; sem ela não há extrato. |
+
+**Resumo §6:** hoje o extrato só existe **atrelado a um fechamento já salvo em `pagamentos_prestadores`**. Não há geração de extrato "na hora" escolhendo prestador + período + cliente sem antes criar/ter o fechamento.
+
+## 7. PDF (Pergunta §6) — `extratoPrestadorReport.ts`
+
+- **Quem chama hoje:** apenas `PagamentoPrestadores.tsx:29` (import) e `:1057` (`handleGerarPDFExtrato`). Nenhum outro caller.
+- **Objeto que recebe:** `ExtratoFechamentoPrestador` (retorno de `construirExtratoDeFechamento`).
+- **Funciona somente com fechamento existente?** **Sim, hoje** — porque o único construtor de objeto usado é o que parte de uma linha de `pagamentos_prestadores`. O próprio PDF em si **não exige** fechamento: ele só formata o objeto `ExtratoFechamentoPrestador`.
+- **Poderia receber extrato por período sem criar outro gerador?** **SIM, tecnicamente.** O gerador é agnóstico; basta montar um `ExtratoFechamentoPrestador` com `operacoes[]` do período (ex.: consolidando OS de um prestador entre dataInicio/dataFim). **Não precisa de gerador novo.**
+- **Existe mais de um gerador de extrato do prestador?** **NÃO para fechamento.** O `generatePrestadorReport` (`src/lib/pdf/prestadorReport.ts`, via `src/lib/pdfGenerator.ts`) é o **PDF de OS do prestador** (recibo/OS), usado por OrdemServicoForm/Preview — é outro documento, não um extrato de fechamento.
+
+## 8. SERVIÇO (Pergunta §7) — `extratoPrestadorService.ts`
+
+Funções públicas:
+
+| Função | Finalidade | Usada por | Fonte |
+|--------|-----------|-----------|-------|
+| `construirExtratoDeFechamento(pagamento)` | Monta extrato a partir de um fechamento real | **PagamentoPrestadores (Ver Extrato / PDF)** + teste | `pagamentos_prestadores` + `pagamentos_prestadores_itens` + `prestadores` + `ordens_servico` |
+| `buscarItensDeFechamento(id)` | Lê OS vinculadas do fechamento | interno (construirExtrato) | `pagamentos_prestadores_itens` |
+| `enriquecerOperacoesComOS(op)` | Preenche cliente/romaneio/origem/destino/km | interno | `ordens_servico` |
+| `criarExtrato(prest, ini, fim)` | (legado) consolida via `alocacoes_escala` | **NENHUM caller produtivo** | `alocacoes_escala` + `movimentos_conta_corrente_prestador` |
+| `buscarDadosPrestador(id)` | dados do prestador + veículo | interno (construirExtrato) | `prestadores` + `veiculos` |
+| `buscarOperacoesPeriodo` | (legado) OS/alocações do período | **NENHUM caller produtivo** | `alocacoes_escala` |
+| `buscarMovimentosPeriodo` | (legado) | **NENHUM caller produtivo** | `movimentos_conta_corrente_prestador` |
+| `calcularResumoFinanceiro` | soma créditos/débitos | **NENHUM caller produtivo** (interno ao antigo criarExtrato) | puro |
+| `gerarNumeroExtrato` | nº FP-... | **NENHUM caller produtivo** | RPC + fallback |
+| `salvarExtrato` / `salvarOperacoesExtrato` / `salvarMovimentosExtrato` | (legado) grava tabelas paralelas | **NENHUM caller produtivo** | `fechamentos_prestador`/`itens_fechamento_prestador`/`movimentos...` |
+| `buscarExtratoPorId` / `listarExtratos` / `atualizarStatus` / `excluirExtrato` | (legado) CRUD tabelas paralelas | **NENHUM caller produtivo** | `fechamentos_prestador` etc. |
+
+Respostas diretas §7:
+- Busca fechamento? **Sim, indiretamente** — recebe o objeto já buscado pela tela (não faz `select` do fechamento por id; a tela já tem a linha).
+- Busca OS diretamente? **Sim** (`buscarItensDeFechamento` → `pagamentos_prestadores_itens`; e enriquecimento via `ordens_servico`).
+- Aceita período? **Sim, no legado** (`criarExtrato`). No fluxo real, o período vem do fechamento.
+- Aceita prestador? **Sim, no legado** (`criarExtrato`). No fluxo real, vem do fechamento.
+- Aceita cliente? **NÃO.**
+- Aceita fechamentoId? **Sim** (`buscarItensDeFechamento(fechamentoId)`).
+- Consolida adicionais/descontos? **Sim** (soma em `construirExtratoDeFechamento`/`calcularResumoFinanceiro`).
+- Depende obrigatoriamente de `pagamentos_prestadores`? **No fluxo real, SIM** (via objeto passado). As funções legadas dependem das tabelas paralelas `fechamentos_prestador` (que provavelmente NÃO existem em produção).
+
+## 9. ARTEFATOS MORTOS / DUPLICADOS (Pergunta §8)
+
+| Item | Classificação | Observação |
+|------|---------------|-----------|
+| `src/pages/financeiro/ExtratoPrestadorPage.tsx` | **NÃO UTILIZADO (removido)** | Não existe mais (deletado na FIN-MOT-1H2). |
+| `src/components/financeiro/ExtratoPrestadorComponent.tsx` | **NÃO UTILIZADO (removido)** | Não existe mais. |
+| Rota antiga para a página | **NÃO UTILIZADO** | Não havia rota registrada; nenhuma referência restante em `.tsx`. |
+| Tabela `fechamentos_prestador` | **INCERTO** | Só o arquivo de migration existe. Sem acesso ao banco nesta missão (READ-ONLY), não é possível confirmar se foi aplicada. Nenhum código produtivo a lê hoje. |
+| Migration `20260821_fin_mot_1_extrato_fechamento_prestador.sql` | **LEGADO / INCERTO** | Cria tabelas que NENHUM fluxo produtivo usa (o fluxo real usa `pagamentos_prestadores`). Pode ter sido aplicada ou não. |
+| Funções legadas do service (salvar/listar/buscar/atualizar/excluir/criarExtrato/buscarMovimentos) | **NÃO UTILIZADO** | Sem caller produtivo; só o teste antigo (que foi reescrito e hoje testa `construirExtratoDeFechamento`). |
+| Testes `extratoPrestadorService.test.ts` | **ATIVO** | 6 testes passando (fonte real, sem DB). |
+
+**Nenhum artefato duplicado ativo de extrato de fechamento** — apenas um gerador PDF extra para OS do prestador (`prestadorReport.ts`), que é outro documento.
+
+## 10. RESPOSTA À PERGUNTA PRINCIPAL (Pergunta §9)
+
+### A. Onde está hoje o relatório no TMS?
+**Financeiro → Pagamentos → Pag. Prestadores → aba "Fechamentos e Pagamentos" → seção "Fechamentos Anteriores" → coluna Ações → "Ver Extrato" (modal) / "PDF" (download).** Ver §3.
+
+### B. O usuário consegue hoje gerar extrato escolhendo Prestador + Período + Cliente opcional?
+**NÃO.**
+- O extrato só existe **atrelado a um fechamento já salvo** em `pagamentos_prestadores`.
+- Não há tela/fluxo para escolher prestador + período + cliente e gerar o extrato na hora, sem fechamento prévio.
+- Não há filtro de cliente em nenhum ponto do fluxo do extrato.
+
+### C. Quanto da estrutura necessária já existe?
+- **PDF:** 100% (`generateExtratoPrestadorPDF`) — pronto e reutilizável; aceita qualquer `ExtratoFechamentoPrestador`.
+- **Modal de visualização:** 100% (modal completo no PagamentoPrestadores, com todos os campos exigidos).
+- **Fonte de dados de fechamento:** 100% (`pagamentos_prestadores` + itens + OS + prestador) para fechamentos existentes.
+- **Seleção por prestador para gerar extrato avulso:** **NÃO EXISTE** (só o seletor da aba Conta Corrente, com outro propósito).
+- **Consulta por período para gerar extrato avulso:** **NÃO EXISTE** para extrato (o filtro superior só alimenta OS do período e pagamentos manuais).
+- **Filtro cliente:** **NÃO EXISTE.**
+- **Consolidar OS de um período em um extrato sem fechamento:** **NÃO EXISTE** (existe a consolidação `totaisPorPrestador`/`criarFechamento` na tela, mas ela primeiro cria o fechamento).
+
+### D. Menor alteração necessária para entregar o uso desejado?
+A menor mudança seria **adicionar no fluxo do "Pagamento de Prestadores" um botão "Extrato por período"** que abra o modal existente com seletores de **prestador + dataInício + dataFim (+ cliente opcional)** e, ao confirmar, **monte um `ExtratoFechamentoPrestador` reutilizando o PDF existente** — sem criar fechamento novo nem gerador novo. Ou seja: reutilizar 100% do modal/PDF e adicionar um método no service que consolide `pagamentos_prestadores` (e/ou OS do período) para o prestador no intervalo escolhido, sem depender de fechamento salvo.
+
+## 11. CÓDIGO REUTILIZÁVEL (não refazer)
+
+- `generateExtratoPrestadorPDF` (PDF) — **reutilizar**.
+- Modal "Ver Extrato" do `PagamentoPrestadores.tsx` — **reutilizar**.
+- `construirExtratoDeFechamento` + `buscarItensDeFechamento` + `enriquecerOperacoesComOS` — **reutilizar** (parte do shape).
+- `prestadores` / `pagamentos_prestadores` / `pagamentos_prestadores_itens` / `ordens_servico` — fontes reais.
+- `totaisPorPrestador` / `fetchOss` da tela — base para consolidar por período.
+
+## 12. CÓDIGO DUPLICADO OU MORTO (somente identificar)
+
+- Funções legadas do service que leem tabelas paralelas (`salvarExtrato`, `buscarExtratoPorId`, `listarExtratos`, `atualizarStatus`, `excluirExtrato`, `criarExtrato`, `buscarMovimentosPeriodo`, `gerarNumeroExtrato`) — **mortas no fluxo produtivo**.
+- Migration das tabelas `fechamentos_prestador` — **possível código/DDL morto** se nunca aplicada; não confirmável sem banco.
+- Não há componente/página isolada restante (removidos).
+
+## 13. MENOR PRÓXIMA MISSÃO (recomendação — NÃO executada)
+
+**Recomendação única:** "Extrato por período (prestador + data inicial/final + cliente opcional)" — um botão no topo do fluxo "Fechamentos e Pagamentos" que abra o modal já existente com esses filtros e monte o `ExtratoFechamentoPrestador` a partir de `pagamentos_prestadores`/OS do período, gerando o PDF com o gerador já pronto. **Nada disso foi implementado nesta missão.**

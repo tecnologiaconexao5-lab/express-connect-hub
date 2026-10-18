@@ -1,0 +1,204 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-04C.2-SANEAMENTO-SEGURO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTES: TMS-FIN-PROG-04B-EMISSAO-OFICIAL / TMS-FIN-PROG-04C1-LEGADO-PLAN
+TIPO: SANEAMENTO CONTROLADO (snapshot + rollback ANTES; transacao atomica).
+================================================================================
+
+RESULTADO FINAL: PASS
+(Validadas dentro da transacao: 5 faturas regularizadas; 1 AR por fatura;
+ Nº Cliente 1..5; contador=5; AR pago da 38 intacto; AR 41 reaproveitado;
+ zero AR duplicado; proibidos intactos.)
+
+--------------------------------------------------------------------------------
+1. SNAPSHOT PRE (arquivo)
+--------------------------------------------------------------------------------
+Arquivo: temp/prog04c2_snapshot_pre.json (9.935 bytes)
+Conteudo: 5 faturas (todas as colunas), 2 ARs legados (0eab9f84 / bbbaa2dc),
+baixa da 38, contador do cliente, seq_fatura_2026.
+Resumo antes:
+  faturas_total 41 | emitidas 15 | emitidas_sem_ar 14 | rascunhos 26
+  ar_com_fatura_id 1 | ar_orfaos_texto 23 | financeiro_receber 119 | baixas 19
+  contadores 0 | seq_fatura_2026 9
+
+--------------------------------------------------------------------------------
+2. ROLLBACK PREPARADO (arquivo)
+--------------------------------------------------------------------------------
+Arquivo: temp/prog04c2_rollback.sql (1.493 bytes) — determinístico, com IDs exatos:
+  1) UPDATE financeiro_receber SET fatura_id=NULL (ARs 0eab9f84 e bbbaa2dc);
+  2) DELETE dos 3 ARs criados (por fatura_id de 39/40./42);
+  3) UPDATE faturas SET numero=NULL, numero_cliente=NULL, conta_receber_id=NULL
+     nas 5 faturas;
+  4) DELETE do contador do cliente 91b80fdb.
+Aviso no arquivo: a sequence seq_fatura_2026 nao e transacional e nao pode ser
+revertida (consumiu 5 numeros: 000010..000014).
+
+--------------------------------------------------------------------------------
+3. MIGRATION / PROCEDURE CRIADA
+--------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20260924000001_fin_prog04c2_regularizar_fatura_legada.sql
+Funcao: public.f_regularizar_fatura_legada(p_fatura_id uuid, p_ar_id uuid DEFAULT NULL)
+  - SECURITY DEFINER, search_path=public, VOLATILE (transactional).
+  - Tenant-safe: usa tenant_usuarios(auth.uid()) e compara com faturas.tenant_id.
+  - Idempotente: se numero+conta_receber_id ja preenchidos -> retorna "already".
+  - Valida: fatura existe, status != cancelada, tem itens ativos.
+  - Modo VINCULAR (p_ar_id): valida AR existente, nao vinculado a outra fatura,
+    cliente igual e valor igual (±0,005); ATUALIZA SOMENTE fatura_id (preserva
+    valor/status/data_pagamento/baixa).
+  - Modo CRIAR (p_ar_id NULL): falha se ja existir AR para a fatura; cria 1 AR.
+  - Gera Nº Conexao (f_gerar_numero_fatura) + Nº Cliente (upsert atomico no
+    contador por tenant+cliente) e marca a fatura emitida.
+  - REVOKE EXECUTE FROM PUBLIC, anon; GRANT authenticated, service_role.
+  - NAO e fluxo normal de emissao; uso restrito a saneamento/admin.
+
+--------------------------------------------------------------------------------
+4. REGISTROS REALMENTE ALTERADOS
+--------------------------------------------------------------------------------
+- 5 faturas (cliente 91b80fdb): 38, 39, 40., 41, 42 — receberam numero (Nº
+  Conexao), numero_cliente (Nº Cliente) e conta_receber_id.
+- 3 ARs CRIADOS (39, 40., 42):
+    39  -> 8fc87c02-95c6-4f9a-aac9-762df323d5c5
+    40. -> 95776e98-5b10-443a-aa8e-711b28fc82f0
+    42  -> ab090803-8e54-4e9f-a2a5-a8cadfb6972e
+- 2 ARs VINCULADOS (somente fatura_id):
+    38 -> 0eab9f84-3ff0-4a59-be5a-11fff05fddcd (ja existia, PAGO)
+    41 -> bbbaa2dc-a210-49df-abb6-d45b06e92288 (orfao, pendente)
+- 1 linha de contador criada: fatura_contadores_cliente(tenant, 91b80fdb, 5).
+Nada mais foi alterado.
+
+--------------------------------------------------------------------------------
+5. PROVA INDIVIDUAL 38 / 39 / 40. / 41 / 42
+--------------------------------------------------------------------------------
+| Fatura | Nº Conexao | Nº Cliente | AR | status AR | valor | vencimento | baixa | resultado |
+|--------|------------|------------|----|-----------|-------|------------|-------|-----------|
+| 38  | FAT-2026-000010 | 1 | 0eab9f84 | pago     | 3.550,54 | 05/09 (AR 04/09) | 3.550,54 | OK |
+| 39  | FAT-2026-000011 | 2 | 8fc87c02 | aberto   | 1.597,48 | 09/09 | 0 | OK |
+| 40. | FAT-2026-000012 | 3 | 95776e98 | aberto   | 1.200,00 | 18/09 | 0 | OK |
+| 41  | FAT-2026-000013 | 4 | bbbaa2dc | pendente | 2.114,60 | 07/10 | 0 | OK |
+| 42  | FAT-2026-000014 | 5 | ab090803 | aberto   | 2.091,40 | 07/10 | 0 | OK |
+Cada fatura com exatamente 1 AR (n_ar=1). Cliente/valor/vencimento preservados.
+"status AR" 38 mantido 'pago'; 41 manteve 'pendente' (nao alterado).
+
+--------------------------------------------------------------------------------
+6. PROVA — AR DA FATURA 38 PRESERVADO
+--------------------------------------------------------------------------------
+AR 0eab9f84: fatura_id = a22334a3 (38) | status = pago | valor = 3.550,54 |
+data_pagamento = 11/09/2026 | observacoes = "Baixa R$ 3550.54 em 2026-09-11..." |
+conta_entrada = "Cora".
+Baixa: id 0090243a | valor_baixado = 3.550,54 | data_baixa = 11/09/2026 |
+estornada = false.
+Nenhum campo do AR foi alterado alem de fatura_id. Baixa INTACTA.
+
+--------------------------------------------------------------------------------
+7. PROVA — AR DA FATURA 41 REAPROVEITADO
+--------------------------------------------------------------------------------
+A fatura 41 foi vinculada ao AR ja existente bbbaa2dc (fatura texto "41",
+valor 2.114,60, vencimento 07/10). NENHUM AR novo foi criado para a 41.
+financeiro_receber.fatura_id = ebbc46d2 (41) e faturas.conta_receber_id =
+bbbaa2dc. Status do AR permanece 'pendente' (nao alterado).
+
+--------------------------------------------------------------------------------
+8. PROVA — AUSENCIA DE AR DUPLICADO
+--------------------------------------------------------------------------------
+Consulta "group by fatura_id having count(*) > 1" -> vazio (nenhum duplicado).
+Indice estrutural uq_receber_fatura_id (WHERE fatura_id IS NOT NULL) garante 1 AR
+por fatura. As 5 faturas tem n_ar = 1.
+
+--------------------------------------------------------------------------------
+9. PROVA — Nº CLIENTE 1..5 (ordem historica)
+--------------------------------------------------------------------------------
+Ordem recalculada no banco por (data_emissao ASC, criado_em ASC, id ASC):
+  38(21/08) -> 39(25/08) -> 40.(03/09) -> 41(22/09 14:26) -> 42(22/09 16:02).
+Resultado == esperado da auditoria: 38=1, 39=2, 40.=3, 41=4, 42=5.
+(Validacao de ordem ANTES de escrever: se divergisse, o script retornaria
+ BLOCKED sem escrever. Ordem conferida e igual.)
+
+--------------------------------------------------------------------------------
+10. CONTADOR FINAL
+--------------------------------------------------------------------------------
+fatura_contadores_cliente: (tenant 000...001, cliente 91b80fdb, ultimo_numero=5).
+Unico registro na tabela. Upsert com GREATEST aplicado na funcao (nunca reduz;
+proxima emissao do cliente continua em 6).
+seq_fatura_2026: 9 -> 14 (consumiu FAT-2026-000010..000014).
+
+--------------------------------------------------------------------------------
+11. SEPARACAO REAL / TESTE / PENDENTE (pos-saneamento)
+--------------------------------------------------------------------------------
+EMITIDAS REAIS AUTORIZADAS SEM AR .......... 0   (meta atingida)
+TESTE/HML SEM AR (intencional, 8) .......... FIN013-001, FIN3623C-* (6), 001
+PENDENTE DECISAO HUMANA SEM AR (1) ......... fatura 40 (cliente a49d5aa3)
+Total emitidas sem AR apos saneamento ...... 9  (14 - 5 saneadas)
+Os 8 de teste: permanecem existentes, sem AR, sem Nº Cliente, sem consumir
+sequencia; nao cancelados/excluidos.
+
+--------------------------------------------------------------------------------
+12. SNAPSHOT POS + DIFF
+--------------------------------------------------------------------------------
+Arquivo: temp/prog04c2_snapshot_pos.json (14.694 bytes).
+| Metrica                     | ANTES | DEPOIS |
+|-----------------------------|-------|--------|
+| faturas_total               | 41    | 41     |
+| emitidas                    | 15    | 15     |
+| emitidas_sem_ar             | 14    | 9      |
+| rascunhos                   | 26    | 26     |
+| AR com fatura_id            | 1     | 6      |
+| AR orfaos (fatura texto)    | 23    | 21     |
+| financeiro_receber total    | 119   | 122    |
+| financeiro_baixas total     | 19    | 19     |
+| fatura_contadores_cliente   | 0     | 1      |
+| seq_fatura_2026             | 9     | 14     |
+Diffs esperados: +3 AR (39/40./42), +0 baixa, +1 contador, 2 orfaos passaram a
+vinculados (23->21), sequence +5. Nenhuma alteracao fora do escopo.
+
+--------------------------------------------------------------------------------
+13. TYPECHECK / BUILD / TESTES PERTINENTES
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0 (0 erros).
+- npm run build -> OK (33,84s).
+- Testes: fin_prog04b_emissao, fin_prog03_dashboard_real, f38_fatura_manual,
+  tms_s04_fatura_cliente_pdf, f0f_fluxo_caixa, fase1_centralFinanceiro
+  -> 6 arquivos / 38 testes PASS.
+(Codigo TS nao foi alterado nesta missao; apenas migration/procedure + dados.)
+
+--------------------------------------------------------------------------------
+14. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  Sequence seq_fatura_2026 avancou para 14 (nao reversivel); ha um "gap" sem
+    impacto funcional (numeros sao unicos e sequenciais).
+R2  O service oficial continua usando f_emitir_fatura para novas faturas; a
+    f_regularizar_fatura_legada e restrita ao saneamento (nao e segundo caminho
+    normal). Recomenda-se nao expor na UI.
+R3  38: o AR pago foi vinculado; qualquer futura correcao deve tratar valor/
+    baixa com cuidado (rollback documentado).
+R4  Eventos de dominio gerados pelos INSERTs de AR (triggers) permanecem mesmo se
+    o rollback for executado (rollback nao remove eventos/sequence).
+R5  Fate 40 (a49d5aa3) permanece ambigua (D) e os 8 de teste permanecem sem AR —
+    intencional; exigem decisao humana (PROG-04C.3 opcional).
+
+--------------------------------------------------------------------------------
+15. CONFIRMACAO — CASOS PROIBIDOS INTACTOS
+--------------------------------------------------------------------------------
+- fatura 40 (a49d5aa3): status emitida, numero NULL, numero_cliente NULL,
+  conta_receber_id NULL — NAO TOCADA.
+- M43 / 04280785 / FAT-2026-000001: numero FAT-2026-000001, numero_cliente NULL,
+  1 AR — NAO TOCADA.
+- 8 registros de teste (FIN013-001, 6x FIN3623C-*, 001): numero NULL,
+  numero_cliente NULL, conta_receber_id NULL, status emitida — NAO TOCADOS.
+- M66/M80, Dashboard PROG-03, APP, Programacao Operacional, RLS geral,
+  Financeiro Pagar, paginacao: NAO tocados. Nenhum arquivo de codigo TS alterado.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Snapshot e rollback gerados ANTES da escrita (temp/prog04c2_snapshot_pre.json,
+  temp/prog04c2_rollback.sql). Saneamento executado em transacao unica com
+  validacoes internas; COMMIT_OK apenas porque todas passaram.
+- Meta cumprida: EMITIDAS REAIS AUTORIZADAS SEM AR = 0.
+- Proibidos intactos; nenhuma exclusao; nenhum AR duplicado; AR pago preservado.
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-04C.2-SANEAMENTO-SEGURO
+================================================================================

@@ -1,0 +1,72 @@
+FIN-SANE-02H.2 — ATOMICIDADE RPC
+Data: 2026-09-17T01:29:37.869Z
+Modelo: MiMo-V2.5
+Tempo: 4.2s
+
+CAUSA:
+  f_confirmar_pagamento_fechamento usava EXIT + RETURN QUERY SELECT false
+  quando item falhava. Isso retornava "sucesso=false" ao caller mas NÃO
+  gerava EXCEPTION, permitindo que PostgreSQL commitasse alterações parciais
+  dos itens 1 e 2 processados antes da falha.
+
+ALTERAÇÃO EXATA:
+  Substituído por RAISE EXCEPTION dentro do loop, que provoca rollback
+  completo da transação. Removida variável v_erro_msg e bloco pós-loop.
+  Validações pré-loop (fechamento não encontrado, já pago, etc.) mantidas
+  com RETURN QUERY (sem mutações anteriores, seguro).
+
+ARQUIVOS:
+  supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  tests/sql/fin_sane_02h2_atomicidade.sql
+
+TESTE FALHA 3º ITEM:           PASS
+ITEM 1 APÓS FALHA:             PASS (pendente)
+ITEM 2 APÓS FALHA:             PASS (pendente)
+ITEM 3 APÓS FALHA:             PASS (pendente)
+BAIXAS APÓS FALHA:             PASS (zero)
+FECHAMENTO APÓS FALHA:         PASS (pendente)
+FINANCEIRO_PAGAR APÓS FALHA:   PASS (inalterado)
+PAGAMENTOS_PRESTADORES FALHA:  PASS (inalterado)
+
+TESTE SUCESSO 3/3:             PASS
+TESTE IDEMPOTÊNCIA:            PASS
+TESTE CONCORRÊNCIA 2 SESSÕES:  PASS
+BAIXAS DUPLICADAS:             NÃO
+
+12 CENÁRIOS:                   12/12 passaram
+REGRESSÃO 02H.1:               PASS
+ROLLBACK:                      PASS
+
+PRODUÇÃO:                      ZERO WRITES
+
+RESULTADO:                     PASS
+PENDÊNCIAS PRESERVADAS:
+  - snapshot B1
+  - triggers duplicados
+  - dry-run produção
+  - pagos sem baixa
+  - RLS/RPC
+
+PRÓXIMA MISSÃO:                FIN-SANE-02H.3-LAB-FINAL
+
+DETALHE:
+  PASS: TESTE1-RPC — Exceção recebida: Item f0000000-0000-0000-0000-000000000013 do fechamento falhou: Nao existe titul
+  PASS: TESTE1-BAIXAS — Zero novas baixas
+  PASS: TESTE1-PAGAR — financeiro_pagar inalterado
+  PASS: TESTE1-PP — pagamentos_prestadores inalterado
+  PASS: TESTE1-FECH — Fechamento não pago
+  PASS: TESTE1-ITENS — 3 itens permanecem pendentes
+  PASS: TESTE2-RPC — Fechamento pago com sucesso. Itens processados: 3, ignorados: 0, baixas: 3.
+  PASS: TESTE2-BAIXAS — 3 baixas criadas
+  PASS: TESTE2-TITULOS — 3 títulos pagos
+  PASS: TESTE2-ITENS — 3 itens pagos
+  PASS: TESTE2-FECH — Fechamento pago
+  PASS: TESTE3-RPC — Retorna "já pago"
+  PASS: TESTE3-BAIXAS — Zero novas baixas (3→3)
+  PASS: TESTE4-BAIXAS — 1 baixa(s) — sem duplicação
+  PASS: TESTE4-FECH — Fechamento pago (1 vez)
+  PASS: TESTE4-LOCK — Sessão B não sobrescreveu A
+  PASS: 12-CENARIOS — 12/12 passaram
+  PASS: 02H.1-UUID — composicao_financeira_os.os_id = uuid
+  PASS: ROLLBACK-RPC — f_confirmar_pagamento_fechamento removida
+  PASS: REAPLICAR — Forward reaplicado com sucesso

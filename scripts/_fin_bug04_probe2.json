@@ -1,0 +1,28 @@
+{
+  "ts": "2026-10-07T10:50:28.616Z",
+  "natureza_dist": [
+    {
+      "natureza": "credito",
+      "qtd": 102
+    }
+  ],
+  "natureza_manual": [
+    {
+      "natureza": "credito",
+      "qtd": 13
+    }
+  ],
+  "fn": [
+    {
+      "prosrc": "\nDECLARE\n  v_uid        uuid := auth.uid();\n  v_tenant     uuid;\n  v_papel      text;\n  v_prestador  RECORD;\n  v_tipos_validos text[] := ARRAY['Serviço Avulso','Ajuste','Reembolso','Adiantamento'];\n  v_tipo       text;\n  v_valor      numeric(18,2);\n  v_data       date;\n  v_desc       text;\n  v_forma      text;\n  v_conta      text;\n  v_key        text;\n  v_obs        text;\n  v_pp_id      uuid;\n  v_fp_id      uuid;\n  v_existente  uuid;\nBEGIN\n  -- 1. Autenticação\n  IF v_uid IS NULL THEN\n    RETURN QUERY SELECT false, 'USUARIO_NAO_AUTENTICADO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  -- 2. Tenant + perfil financeiro/admin\n  SELECT tu.tenant_id, tu.papel INTO v_tenant, v_papel\n    FROM public.tenant_usuarios tu\n   WHERE tu.user_id = v_uid AND tu.status = 'ativo'\n   LIMIT 1;\n  IF v_tenant IS NULL THEN\n    RETURN QUERY SELECT false, 'USUARIO_SEM_TENANT_ATIVO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n  IF NOT (COALESCE(v_papel,'') = ANY(ARRAY['super_admin','admin_tenant','financeiro'])) THEN\n    RETURN QUERY SELECT false, 'PAPEL_NAO_AUTORIZADO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  -- 3. Validação de prestador\n  IF p_prestador_id IS NULL THEN\n    RETURN QUERY SELECT false, 'PRESTADOR_OBRIGATORIO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n  SELECT p.id, p.nome_completo, p.cpf_cnpj INTO v_prestador\n    FROM public.prestadores p\n   WHERE p.id = p_prestador_id AND p.status = 'ativo';\n  IF NOT FOUND THEN\n    RETURN QUERY SELECT false, 'PRESTADOR_NAO_ENCONTRADO_OU_INATIVO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  -- 4. Tipo / data / valor / descrição\n  v_tipo := btrim(COALESCE(p_tipo_lancamento,''));\n  IF NOT (v_tipo = ANY(v_tipos_validos)) THEN\n    RETURN QUERY SELECT false, 'TIPO_INVALIDO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  IF p_data IS NULL THEN\n    RETURN QUERY SELECT false, 'DATA_OBRIGATORIA', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n  v_data := p_data;\n\n  v_valor := ROUND(COALESCE(p_valor,0)::numeric, 2);\n  IF v_valor <= 0 THEN\n    RETURN QUERY SELECT false, 'VALOR_INVALIDO', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  v_desc := btrim(COALESCE(p_descricao,''));\n  IF v_desc = '' THEN\n    RETURN QUERY SELECT false, 'DESCRICAO_OBRIGATORIA', NULL::uuid, NULL::uuid, false;\n    RETURN;\n  END IF;\n\n  v_forma := NULLIF(btrim(COALESCE(p_forma_pagamento,'')), '');\n  v_conta := NULLIF(btrim(COALESCE(p_conta_pagamento,'')), '');\n  v_key   := NULLIF(btrim(COALESCE(p_idempotency_key,'')), '');\n\n  -- 5. Idempotência: retry da MESMA submissão retorna o lançamento existente\n  IF v_key IS NOT NULL THEN\n    SELECT pp.id INTO v_existente\n      FROM public.pagamentos_prestadores pp\n     WHERE pp.origem_lancamento = 'manual'\n       AND pp.observacao LIKE '%[IDEMP:' || v_key || ']%'\n     LIMIT 1;\n    IF v_existente IS NOT NULL THEN\n      SELECT fp.id INTO v_fp_id\n        FROM public.financeiro_pagar fp\n       WHERE fp.os_vinculada = v_existente::text\n       LIMIT 1;\n      RETURN QUERY SELECT true, 'LANCAMENTO_JA_EXISTENTE', v_existente, v_fp_id, true;\n      RETURN;\n    END IF;\n  END IF;\n\n  v_obs := v_desc\n        || CASE WHEN v_conta IS NOT NULL THEN ' [Conta: ' || v_conta || ']' ELSE '' END\n        || CASE WHEN v_key   IS NOT NULL THEN ' [IDEMP:' || v_key || ']'   ELSE '' END;\n\n  -- 6. PP — workflow operacional (obrigação manual, sem OS)\n  INSERT INTO public.pagamentos_prestadores (\n    prestador_id, prestador_nome, prestador_documento,\n    os_id, os_numero,\n    valor_liquido, valor_servicos,\n    status, status_conferencia, status_aprovacao, status_pagamento,\n    origem_lancamento, tipo_lancamento, tipo_pagamento, natureza,\n    quantidade_os, categoria_financeira,\n    data_competencia, competencia, data_prevista_pagamento, periodo_inicio, periodo_fim,\n    elegivel_lote, impacto_dre, impacto_fluxo_caixa, observacao, is_teste\n  ) VALUES (\n    v_prestador.id, v_prestador.nome_completo, v_prestador.cpf_cnpj,\n    NULL, NULL,\n    v_valor, v_valor,\n    'pendente', 'em_aberto', 'aguardando_aprovacao', 'pendente',\n    'manual', v_tipo, v_forma, 'credito',\n    1, 'Custo Logístico',\n    v_data, v_data, v_data, v_data, v_data,\n    false, true, true, v_obs, false\n  ) RETURNING id INTO v_pp_id;\n\n  -- 7. FP — obrigação contábil (os_id NULL; vínculo via os_vinculada = pp.id)\n  INSERT INTO public.financeiro_pagar (\n    os_id, os_vinculada, descricao, valor, data_emissao, data_vencimento, status,\n    prestador, fornecedor_id, fornecedor_nome, categoria, observacoes\n  ) VALUES (\n    NULL, v_pp_id::text, v_desc, v_valor, v_data, v_data, 'aberto',\n    v_prestador.nome_completo, v_prestador.id, v_prestador.nome_completo,\n    'Custo Logístico', v_obs\n  ) RETURNING id INTO v_fp_id;\n\n  RETURN QUERY SELECT true, 'LANCAMENTO_CRIADO', v_pp_id, v_fp_id, false;\nEND;\n"
+    }
+  ],
+  "views": [
+    {
+      "table_name": "vw_relatorio_pagamento_prestador"
+    },
+    {
+      "table_name": "vw_relatorio_pagamento_detalhado"
+    }
+  ]
+}

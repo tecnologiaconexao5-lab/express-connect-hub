@@ -26,7 +26,15 @@ CREATE INDEX IF NOT EXISTS idx_escala_status ON public.escala_operacional (statu
 CREATE INDEX IF NOT EXISTS idx_escala_prestador ON public.escala_operacional (prestador_id);
 
 -- Habilitar Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.escala_operacional;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'escala_operacional'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.escala_operacional;
+  END IF;
+END $$;
 
 -- Função de validações IA (conflito motorista e veículo)
 CREATE OR REPLACE FUNCTION trg_escala_validacoes()
@@ -82,3 +90,5 @@ CREATE TRIGGER trg_escala_validacoes_insert
 AFTER INSERT OR UPDATE ON public.escala_operacional
 FOR EACH ROW
 EXECUTE FUNCTION trg_escala_validacoes();
+
+

@@ -99,6 +99,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
       setObservacoes('')
       setStage('novo_cadastro')
     } catch (error) {
+      console.error('[CadastrarInteressadoModal] Erro ao cadastrar:', error)
       toast.error('Erro ao cadastrar candidato')
     } finally {
       setSalvando(false)

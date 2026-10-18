@@ -1,0 +1,172 @@
+FIN-362.3D - PAGAMENTO PRESTADOR -> FINANCEIRO E2E
+================================================
+Data da prova: 05/09/2026
+Revalidacao read-only: 06/09/2026
+Ambiente: TMS / Supabase real
+
+STATUS
+------
+[HOMOLOGADO]
+
+Caso controlado utilizado
+--------------------------
+Pagamento: 32fe474f-41c7-432b-a21e-7d0b2831c1bb
+Prestador: CESAR AUGUSTO HOLANDA SILVA
+Prestador ID: fe7a75cc-a49f-43ef-a0b7-f869fbf07744
+Origem: manual
+Valor do pagamento_prestadores: R$ 2.177,92
+Data da baixa: 05/09/2026
+
+Origem real da obrigacao/pagamento
+----------------------------------
+A fonte real da obrigacao foi pagamentos_prestadores. O registro possui
+prestador_id, prestador_nome, valor_liquido, origem_lancamento=manual e
+status_conferencia=conferido. O pagamento nao veio do APP Motorista.
+
+Fluxo encontrado
+----------------
+UI Pagamentos Manuais
+  -> PagamentoPrestadores.handleMarcarPago()
+  -> calcularStatusFinanceiro() / podeAprovar()
+  -> pagamentoPrestadorService.confirmarPagamento()
+  -> UPDATE pagamentos_prestadores
+  -> SELECT conta ativa em contas_financeiras
+  -> SELECT titulo aberto em financeiro_pagar por prestador
+  -> RPC f_registrar_baixa_financeira()
+  -> INSERT financeiro_baixas + atualizacao do titulo financeiro_pagar
+  -> Fluxo de Caixa le financeiro_baixas nao estornadas
+  -> DRE le pagamentos_prestadores com impacto_dre=true
+  -> UI exibe pagamento confirmado e telas de Tesouraria/Gestao.
+
+Tabelas, RPCs e services envolvidos
+-----------------------------------
+- UI: src/components/financeiro/PagamentoPrestadores.tsx
+- Service: src/services/financeiro/pagamentoPrestadorService.ts
+- Helper: src/helpers/statusFinanceiroPrestador.ts
+- Obrigacao: pagamentos_prestadores
+- Titulo relacionado: financeiro_pagar
+- Baixa: financeiro_baixas
+- Conta: contas_financeiras
+- RPC: f_registrar_baixa_financeira
+- Fluxo: src/services/financeiro/fluxoCaixaService.ts
+- DRE: src/services/financeiro/dreService.ts e DREGerencial.tsx
+
+IDs e evidencias do banco
+-------------------------
+Pagamento:
+  status=pago
+  status_pagamento=pago
+  status_conferencia=conferido
+  data_pagamento=2026-09-05T03:00:00.000Z
+  impacto_dre=true
+  competencia=2026-08-20T03:00:00.000Z
+
+Baixa:
+  id=286c2c2d-90e4-403a-9692-8e68ccfd2a6c
+  titulo_tabela=financeiro_pagar
+  titulo_id=9f2be89f-5ece-4cc5-be29-50010b64e64e
+  valor_original=R$ 520,00
+  valor_baixado=R$ 520,00
+  saldo_restante=R$ 0,00
+  data_baixa=2026-09-05T03:00:00.000Z
+  forma_pagamento=Pagamento Prestador
+  estornada=false
+  observacao contem: pagamento prestador 32fe474f
+
+Conta financeira utilizada
+--------------------------
+Nome: Cora
+ID: 9741ad36-79a6-4e1f-94a5-512e08758186
+ativa=true
+Foi selecionada pelo service a partir de contas_financeiras.
+
+Estado antes/depois
+------------------
+ANTES:
+  status_pagamento=pendente
+  status_conferencia=conferido
+  valor_liquido=R$ 2.177,92
+  botao Marcar Pago visivel na UI.
+
+DEPOIS:
+  status_pagamento=pago
+  status=pago
+  data_pagamento preenchida
+  uma baixa financeira criada
+  titulo financeiro_pagar quitado, saldo restante R$ 0,00
+  conta_financeira_id preenchido com a conta Cora
+
+Observacao sobre os valores
+---------------------------
+O valor do pagamento do prestador era R$ 2.177,92, mas a baixa foi de
+R$ 520,00 porque o titulo financeiro_pagar correspondente tinha valor de
+R$ 520,00. O service aplica Math.min(valor_liquido, valor_do_titulo), e a
+RPC impede baixa acima do saldo do titulo. Nao houve divergencia de baixa.
+
+Verificacoes especificas
+------------------------
+- Duplicidade de baixa: 1 baixa, total R$ 520,00.
+- Pagamento sem origem: nao; prestador_id e prestador_nome preenchidos.
+- Conta financeira nula/errada: nao; Cora UUID preenchido e consistente.
+- Valor divergente: nao; baixa nao excedeu o titulo.
+- Baixa duplicada: nao; somente uma baixa nao estornada.
+- Status incoerente: nao; pagamento e titulo ficaram pagos.
+- Registro orfao: nao identificado no caso testado.
+- Impacto financeiro duplicado: nao; zero novo financeiro_pagar criado.
+- Movimento Cora em 05/09/2026: 6 baixas, total R$ 1.092,28.
+
+Evidencia E2E real
+------------------
+Playwright FIN-362.3D: 7/7 PASS na execucao de 05/09/2026.
+Passos cobertos:
+  1. Snapshot real e localizacao da linha na UI.
+  2. Clique real em Marcar Pago e toast de sucesso.
+  3. Status/data persistidos no banco.
+  4. Baixa persistida com conta Cora.
+  5. Movimento refletido no Fluxo de Caixa.
+  6. Tela DRE carregada com fonte de custo de prestadores.
+  7. Ausencia de dupla contagem.
+
+Screenshots existentes:
+  test-results/e2e/fin3623d/p1-manuais.png
+  test-results/e2e/fin3623d/p2-antes-click.png
+  test-results/e2e/fin3623d/p2-apos-click.png
+  test-results/e2e/fin3623d/p5-fluxo.png
+  test-results/e2e/fin3623d/p6-dre.png
+
+Bugs encontrados e correcoes realizadas
+-----------------------------------------
+- Removido uso de coluna inexistente conta_pagamento em confirmarPagamento().
+- Adicionado lookup de contas_financeiras ativas e envio do UUID da conta.
+- Adicionado p_conta_financeira_id na chamada da RPC.
+- Adicionado conta_financeira_id no INSERT direto de financeiro_baixas.
+- Corrigida busca de financeiro_pagar: prestador e uma coluna TEXT, nao
+  prestador_id UUID.
+- Corrigido calculo de status para nao exigir comprovante quando o campo nao
+  existe em pagamento manual.
+
+Arquivos alterados na implementacao da missao
+---------------------------------------------
+- src/services/financeiro/pagamentoPrestadorService.ts
+- src/helpers/statusFinanceiroPrestador.ts
+- tests/e2e/fin-master-3623d-prestador-e2e.spec.ts
+- playwright-3623d.config.ts
+- AG-FIN3623D_PRESTADOR_E2E.txt
+
+Pendencias e limites
+--------------------
+- A validacao do APP Motorista/Redmi continua pendente por instrucao e nao
+  foi usada nesta prova.
+- O caso ja esta pago; nao foi repetido para evitar segunda baixa.
+- O codigo ainda possui fallback que pode confirmar o pagamento mesmo se a
+  gravacao do movimento financeiro falhar; isso nao ocorreu neste caso e nao
+  foi ampliado nesta missao.
+- Nao iniciar FIN-MASTER-363, REC-06.2, AG-07J.9 ou Auditoria Master 360.
+
+Conclusao
+---------
+O caso real/controlado percorreu a UI ate pagamentos_prestadores,
+financeiro_pagar, f_registrar_baixa_financeira, financeiro_baixas, conta Cora,
+Fluxo de Caixa e DRE sem duplicidade observada. A prova E2E desta missao esta
+homologada para o fluxo TMS testado. A integracao do APP permanece fora do
+escopo e pendente.

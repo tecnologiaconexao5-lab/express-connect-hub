@@ -1,0 +1,204 @@
+AG-07J.14 — REVERSÃO E CONSISTÊNCIA DE ELEGIBILIDADE
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+CELULAR/REDMI NECESSÁRIO:
+NÃO
+
+========================
+REVERSÃO
+========================
+
+BLOQUEIO REVERTE LIBERADO_APP:
+NÃO — PrestadorDetalhe.tsx (PRESTADOR_ALLOWLIST em dbMappers.ts) inclui `status` mas NÃO inclui `liberado_app`. Admin pode setar status='bloqueado' sem alterar liberado_app.
+
+INATIVAÇÃO REVERTE LIBERADO_APP:
+NÃO — Mesmo problema. Alterar status para 'inativo' via form não toca liberado_app.
+
+REPROVAÇÃO REVERTE LIBERADO_APP:
+PARCIAL — prestigeService.syncRemoverOperacional() (linha 432) seta {status:'inativo', liberado_app:false}, mas só é chamado quando prestador é removido do kanban, não quando reprovado via form.
+
+DOCUMENTAÇÃO VENCIDA REVERTE LIBERADO_APP:
+NÃO — Não existe mecanismo automático. Nenhum cron, trigger, ou job verifica vencimento de documentos e reverte liberado_app.
+
+CNH VENCIDA REVERTE LIBERADO_APP:
+NÃO — permitirElegibilidadeDocumental (eligibilidadeOperacionalService.ts:189) é on-demand (chamada apenas em criarAlocacao), não automática.
+
+========================
+NOVAS OPERAÇÕES
+========================
+
+BLOQUEADO VÊ OPORTUNIDADE:
+SIM — listarOportunidadesParaPrestador (redePrestadoresService.ts:378) NÃO verifica status ou liberado_app
+
+BLOQUEADO ACEITA:
+SE J13 APLICADO: NÃO — f_aceitar_oportunidade_rede (J13) verifica status + liberado_app
+SE J13 NÃO APLICADO: SIM — versão M84/A27B só verifica status='ativo'
+
+INATIVO ACEITA:
+SE J13 APLICADO: NÃO — bloqueado
+SE J13 NÃO APLICADO: NÃO — status != 'ativo' bloqueia (M84)
+
+LIBERADO_FALSE ACEITA:
+SE J13 APLICADO: NÃO — bloqueado
+SE J13 NÃO APLICADO: SIM — bypass (liberado_app não verificado)
+
+DOCUMENTALMENTE INELEGÍVEL ACEITA:
+SE J13 APLICADO: NÃO — liberado_app=false bloqueia
+SE J13 NÃO APLICADO: SIM — sem verificação documental na RPC
+
+========================
+OPERAÇÃO EM ANDAMENTO
+========================
+
+BLOQUEIO DURANTE EM_ROTA:
+OPERAÇÃO PRESERVADA — f_avancar_etapa_app_motorista NÃO verifica status/liberado_app. Prestador bloqueado PODE concluir.
+
+INATIVAÇÃO DURANTE EM_ROTA:
+OPERAÇÃO PRESERVADA — mesmo comportamento acima
+
+LIBERADO_FALSE DURANTE EM_ROTA:
+OPERAÇÃO PRESERVADA — f_avancar_etapa não verifica liberado_app
+
+DOCUMENTO VENCE DURANTE EM_ROTA:
+OPERAÇÃO PRESERVADA — nenhuma verificação automática
+
+OPERAÇÃO É PRESERVADA:
+SIM — todos os caminhos de escrita (aceitarAlocacao, iniciarRota, finalizarAlocacao, f_avancar_etapa) NÃO verificam elegibilidade
+
+NOVA OPERAÇÃO É BLOQUEADA:
+SE AG-07F APLICADO: SIM — f_buscar_operacoes_motorista retorna apenas em_rota/ocorrencia para inelegíveis
+SE AG-07F NÃO APLICADO: NÃO — todos os operações são retornadas
+
+TRACKING CONTINUA:
+BLOQUEADO — f_registrar_posicao_motorista (hotfix 20260731) verifica status='ativo' AND liberado_app=true. Prestador bloqueado NÃO consegue enviar GPS.
+
+CONCLUSÃO CONTINUA:
+SIM — f_avancar_etapa_app_motorista NÃO verifica elegibilidade. Prestador bloqueado PODE concluir.
+
+========================
+CONSISTÊNCIA
+========================
+
+STATUS ATIVO + LIBERADO_FALSE EXISTE:
+SIM — PrestadorDetalhe.tsx permite setar status='ativo' sem alterar liberado_app (PRESTADOR_ALLOWLIST não inclui liberado_app)
+
+INATIVO + LIBERADO_TRUE EXISTE:
+SIM — PrestadorDetalhe.tsx permite setar status='inativo' sem alterar liberado_app
+
+BLOQUEADO + LIBERADO_TRUE EXISTE:
+SIM — PrestadorDetalhe.tsx permite setar status='bloqueado' sem alterar liberado_app
+
+MECANISMO DE RECONCILIAÇÃO EXISTE:
+NÃO — Não existe trigger, CHECK constraint, ou cron que reconcilie status e liberado_app
+
+========================
+MATRIZ DE REVERSÃO
+========================
+
+EVENTO                    | ALTERA STATUS | ALTERA LIBERADO | BLOQUEIA REDE | BLOQUEIA ACEITE | BLOQUEIA ALOCAÇÃO | PRESERVA OP ATUAL | PRESERVA TRACKING
+bloqueio (form admin)     | SIM           | NÃO             | SE J13        | SE J13          | SIM (criarAloc)   | SIM               | NÃO (tracking bloqueado)
+inativação (form admin)   | SIM           | NÃO             | SIM           | SIM             | SIM               | SIM               | NÃO
+reprovação (kanban)       | SIM           | SIM (via sync)  | SIM           | SIM             | SIM               | SIM               | NÃO
+doc vencido (automático)  | NÃO           | NÃO             | NÃO           | NÃO             | NÃO               | SIM               | SIM
+CNH vencida (automático)  | NÃO           | NÃO             | NÃO           | NÃO             | NÃO               | SIM               | SIM
+remoção (kanban)          | SIM           | SIM             | SIM           | SIM             | SIM               | N/A               | N/A
+
+========================
+ALTERAÇÕES
+========================
+
+CLASSIFICAÇÃO:
+B — HÁ GAP LOCAL CORRIGÍVEL NO TMS
+
+CORREÇÃO REALIZADA:
+NÃO — auditoria read-only conforme instruções
+
+MIGRATION LOCAL CRIADA:
+NÃO
+
+ARQUIVOS ALTERADOS:
+NENHUM (auditoria read-only)
+
+TESTES FOCALIZADOS:
+0/0 (sem correção = sem teste focalizado)
+
+REGRESSÃO:
+838/838 PASS (68 arquivos)
+
+TYPESCRIPT:
+npx tsc --noEmit → 0 erros
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+AG-07J.13 EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+========================
+GAPS IDENTIFICADOS
+========================
+
+G1 (P0) — liberado_app NÃO sincroniza com status no form admin:
+PRESTADOR_ALLOWLIST (dbMappers.ts:215-258) inclui `status` mas não `liberado_app`. Admin pode criar estados inconsistentes (ativo+liberado_false, bloqueado+liberado_true).
+
+G2 (P0) — Sem detecção automática de vencimento documental:
+Nenhum cron, trigger ou job verifica documentos vencidos e reverte liberado_app. Prestador com CNH vencida permanece liberado indefinidamente.
+
+G3 (P1) — listarOportunidadesParaPrestador não verifica elegibilidade:
+redePrestadoresService.ts:378 não checa status nem liberado_app. Prestador inativo vê todas as oportunidades.
+
+G4 (P1) — f_avancar_etapa_app_motorista sem gate de elegibilidade:
+Prestador bloqueado pode concluir operação em andamento via App. Gate existe apenas em f_registrar_posicao_motorista (GPS).
+
+G5 (P2) — sincronizarComEscala sem gates:
+ordemServicoService.ts:36 cria/Atualiza alocação sem verificar elegibilidade do prestador.
+
+G6 (P2) — Sem CHECK constraint em prestadores:
+Nenhuma restrição de banco impede estado inconsistente (status='bloqueado' + liberado_app=true).
+
+========================
+DECISÃO
+========================
+
+REVERSÃO ESTÁ CONSISTENTE:
+NÃO — G1 e G2 permitem estados inconsistentes
+
+OPERAÇÃO EM ANDAMENTO ESTÁ PRESERVADA:
+SIM — f_avancar_etapa preserva conclusão
+
+NOVAS OPERAÇÕES DE INELEGÍVEL ESTÃO BLOQUEADAS:
+SE J13+AG-07F APLICADOS: SIM
+SE NÃO APLICADOS: NÃO
+
+PRÓXIMO BLOQUEIO REAL:
+G1: PRESTADOR_ALLOWLIST sem liberado_app → estado inconsistente via form admin
+G2: Sem detecção automática de vencimento → liberado_app永久=true
+
+PRÓXIMA MISSÃO:
+Correção local de G1 (adicionar liberado_app ao PRESTADOR_ALLOWLIST + PrestadorForm)
+
+DECISÃO FINAL:
+B

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SafeImage } from "@/components/ui/safe-image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -664,11 +665,13 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                       className="h-24 rounded-t-lg flex items-center justify-center relative overflow-hidden"
                       style={{ background: `linear-gradient(135deg, ${p.corDestaque}22, ${p.corDestaque}44)` }}
                     >
-                      {p.capaCustomizada ? (
-                        <img src={p.capaCustomizada} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <FileText className="w-10 h-10" style={{ color: p.corDestaque }} />
-                      )}
+                      <SafeImage
+                        src={p.capaCustomizada}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        fallbackClassName="bg-transparent"
+                        fallback={<FileText className="w-10 h-10" style={{ color: p.corDestaque }} />}
+                      />
                       <button 
                         onClick={(e) => { e.stopPropagation(); toggleFavorita(p.id); }}
                         className="absolute top-2 right-2 p-1 rounded-full bg-white/80 hover:bg-white"

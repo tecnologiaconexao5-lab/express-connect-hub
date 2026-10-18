@@ -1,0 +1,169 @@
+RELATORIO FIN-FORN-03 — FORNECEDORES INTEGRADOS AO CONTAS A PAGAR
+==================================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: FIN-FORN-03 — Integrar cadastro fornecedores ao modal Lancar Despesa
+
+VEREDITO: [HOMOLOGADO — FORNECEDORES INTEGRADOS AO CONTAS A PAGAR]
+
+===============================================================================
+1. O QUE FOI FEITO
+===============================================================================
+
+1.1 FORNECEDOR AUTOCOMPLETE REESCRITO (ContasPagar.tsx)
+
+  ANTES: buscava de "prestadores" (tabela de motoristas/operacional)
+  AGORA: busca de "fornecedores" (tabela de cadastro administrativo)
+
+  Busca: razao_social, nome_fantasia, cpf_cnpj (ILIKE, 3 campos)
+  Filtro: WHERE status = 'ativo' (inativos não aparecem)
+  Placeholder: "Buscar fornecedor por nome, fantasia ou CPF/CNPJ"
+  Exibição: razão social + fantasia (se houver) + CPF/CNPJ
+
+1.2 BOTÃO "+" CADASTRO RÁPIDO
+
+  Adicionado ao lado direito do autocomplete
+  Abre modal pequeno (max-w-sm) com:
+    - Tipo (PF/PJ) — toggle button
+    - Razão social / nome completo (obrigatório)
+    - Nome fantasia (opcional)
+    - CPF/CNPJ (obrigatório)
+    - Telefone (opcional)
+  Validação de duplicidade CPF/CNPJ ativo:
+    - Se já existe ativo → toast.info + seleciona existente
+    - Se existe inativo/ativo → erro "já possui cadastro"
+  Ao salvar: INSERT real em fornecedores + seleciona automaticamente
+  Continua no mesmo modal de lançamento (sem sair da tela)
+
+1.3 SNAPSHOT AO SALVAR (handleSalvar)
+
+  Payload inclui:
+    fornecedor_cadastro_id: UUID → fornecedores.id
+    fornecedor_nome: texto → razão social (snapshot)
+    fornecedor: texto → razão social (snapshot legado)
+    fornecedor_documento: texto → CPF/CNPJ (snapshot)
+
+  Snapshot persistido em 4 colunas de financeiro_pagar:
+    fornecedor_cadastro_id (FK nova)
+    fornecedor_nome (coluna existente)
+    fornecedor (coluna existente — legado)
+    fornecedor_documento (coluna existente — legado)
+
+1.4 EDIÇÃO (abrirEditar)
+
+  Ao abrir título existente:
+    - se fornecedor_cadastro_id existir → carrega do novo cadastro
+    - se apenas fornecedor_id legado existir → preserva comportamento antigo
+  NÃO conversão automática de registros legados
+
+1.5 UX
+
+  Badge "Fornecedor do cadastro vinculado" quando fornecedor_cadastro_id preenchido
+  Indicador "Legado Prestador" preservado para títulos antigos
+
+===============================================================================
+2. PROVA REAL E2E — 10/10 PASSARAM
+===============================================================================
+
+  PASSO 1 — Fornecedor criado via Supabase: ✅
+    id, razao_social, cpf_cnpj, status=ativo
+
+  PASSO 2 — Titulo com fornecedor_cadastro_id: ✅
+    FK correta → fornecedores.id
+    Snapshot: fornecedor, fornecedor_documento, fornecedor_nome
+
+  PASSO 3 — JOIN financeiro_pagar → fornecedores: ✅
+    razao_social, cpf_cnpj, nome_fantasia via FK
+
+  PASSO 4 — Snapshot preservado após edição do fornecedor: ✅
+    titulo.fornecedor = "TESTE_FIN_FORN03 EMPRESA LTDA" (inalterado)
+    titulo.fornecedor_documento = "99888777000166" (inalterado)
+
+  PASSO 5 — Fornecedor inativo não aparece na busca: ✅
+    0 resultados para busca com status=ativo
+
+  PASSO 6 — Cadastro rápido: 2º fornecedor + 2º titulo: ✅
+    FK ok, INSERT ok
+
+  PASSO 7 — Titulos legados intactos: ✅
+    81 registros com fornecedor_id → prestadores
+
+  PASSO 8 — Indicadores financeiro_pagar intactos: ✅
+    total=103, a_vencer=13, vencida=0, paga=0
+
+  PASSO 9 — RLS fornecedores ativo: ✅
+
+  PASSO 10 — Cleanup completo: ✅
+    0 fornecedores, 0 titulos teste restantes
+
+===============================================================================
+3. tsc --noEmit
+===============================================================================
+
+  Resultado: 0 erros
+
+===============================================================================
+4. npm run build
+===============================================================================
+
+  Resultado: build ok (43.88s)
+
+===============================================================================
+5. ARQUIVOS MODIFICADOS
+===============================================================================
+
+  MODIFICADO:
+    src/components/financeiro/ContasPagar.tsx
+      - FornecedorAutocomplete: reescrito (busca fornecedores, status=ativo, 3 campos, botão +)
+      - CadastroRapidoFornecedor: NOVO componente inline (modal PF/PJ, 5 campos)
+      - LancamentoPagar interface: +fornecedorCadastroId
+      - FORM_BLANK: +fornecedorCadastroId
+      - handleSalvar: +fornecedor_cadastro_id, +fornecedor_nome no payload
+      - abrirEditar: +fornecedorCadastroId no form
+      - fetchLancamentos: +fornecedorCadastroId no map
+      - Dialog: autocomplete com onNovoCadastro + badge vinculação + modal cadastro rápido
+
+  SCRIPTS (descartaveis):
+    scripts/_fin_forn03_e2e.mjs — prova real E2E
+
+===============================================================================
+6. O QUE NAO FOI FEITO (PROPOSITAL)
+===============================================================================
+
+  - NAO alterado DRE (nao usa fornecedor para classificacao)
+  - NAO alterado pagamento de prestadores (PagamentoPrestadores.tsx)
+  - NAO migrado fornecedor_id legado (81 registros mantidos)
+  - NAO quebrado titulos historicos (103 intactos)
+  - NAO alterada semantica homologada do Financeiro
+
+===============================================================================
+7. GAPS RESOLVIDOS
+===============================================================================
+
+  G1: Autocomplete buscava de prestadores → RESOLVIDO (busca fornecedores ativos)
+  G2: Sem cadastro rápido de fornecedor → RESOLVIDO (botão + com modal)
+  G3: Sem vinculação fornecedor_cadastro_id ao salvar → RESOLVIDO (payload inclui FK)
+  G4: Edição não carregava fornecedor_cadastro_id → RESOLVIDO (abrirEditar)
+  G5: Snapshot não persistia fornecedor_nome → RESOLVIDO (coluna existente populada)
+
+===============================================================================
+8. RISCOS
+===============================================================================
+
+  P0: NENHUM
+  P1: NENHUM
+  P2: NENHUM
+
+===============================================================================
+9. PROXIMOS PASSOS (MISSAO FIN-FORN-04)
+===============================================================================
+
+  1. Relatório de despesas por fornecedor (agrupamento)
+  2. Dashboard de fornecedores no módulo Financeiro
+  3. Exportação de fornecedores (CSV/Excel)
+  4. Validação de CNPJ/CPF no frontend (máscara + dígitos verificadores)
+
+===============================================================================
+FIM DO RELATORIO — FIN-FORN-03
+HOMOLOGADO — FORNECEDORES INTEGRADOS AO CONTAS A PAGAR
+===============================================================================

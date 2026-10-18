@@ -1,0 +1,398 @@
+================================================================================
+ ADM-APP-02D.1 — PREPARAR DOCUMENTOS PARA STORAGE PRIVADO
+ RELATÓRIO DE MISSÃO (TMS CONEXÃO EXPRESS + APP PRESTADOR)
+================================================================================
+Missão ............: ADM-APP-02D.1
+Data/hora .........: 2026-09-27 11:26:03 -03:00
+Ambiente ..........: PRODUÇÃO (leitura) / código local
+Redmi .............: DESCONECTADO (nenhuma prova física executada)
+Caminho do relatório: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\
+                      DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+                      express-connect-hub\ADM-APP-02D1-RELATORIO.txt
+Tamanho (bytes) ...: <<<TAMANHO_BYTES:0000022767>>>
+Hashes/policies ...: policies_hash 02C.2 = 8763e6fbfdd99eb6b11a596439d85b01
+
+--------------------------------------------------------------------------------
+1. DECISÃO (campos obrigatórios do gate)
+--------------------------------------------------------------------------------
+READY_FOR_PRIVATE_BUCKET = YES
+
+PRÓXIMA MISSÃO = ADM-APP-02D.2 — PRIVATIZAR BUCKET documentos_prestadores
+                 + policies de storage.objects com guarda por prestador_id
+
+Justificativa do YES (9 itens do gate):
+  [1] Inventário de consumidores TMS completo ............... OK
+  [2] Inventário de consumidores APP completo ............... OK
+  [3] Zero getPublicUrl para o bucket documentos_prestadores  OK (TMS e APP)
+  [4] Padrão signed URL reutilizado (podMediaService) ....... OK
+  [5] TMS persiste referência estável (path puro) ........... OK
+  [6] APP persiste referência estável (path puro) ........... OK
+  [7] Signed URL nunca persistida (nem DB nem storage) ....... OK
+  [8] Sem UPDATE em massa no legado (31 public_url) ......... OK
+  [9] Testes T01–T10 executados e verdes .................... OK
+  Conclusão: nenhum consumidor público remanescente do bucket.
+
+--------------------------------------------------------------------------------
+2. INVENTÁRIO DE CONSUMIDORES — TMS (src/)
+--------------------------------------------------------------------------------
+2.1 Consumidores REAIS do bucket documentos_prestadores (com render)
+    - src/components/prestadores/PrestadorDetalhe.tsx
+      * foto do prestador: <img src={fotoPreview}> — ÚNICO render real do bucket
+      * documentação por card: resolve URL via resolverUrlDocumento()
+      * 3 sites de getPublicUrl REMOVIDOS nesta missão
+    - src/services/portal-prestador/portalPrestadorService.ts
+      * buscarDocumentos(): resolve signed URL antes de entregar ao store
+
+2.2 Leitores de METADADOS (não constroem nem renderizam URL) — NÃO são bloqueadores
+    - src/components/documentos/StatusDocumental.tsx:64-65
+      select "id, prestador_id, tipo, status, validade, url" -> usa apenas
+      status/validade. `url` nunca é lida depois da query.
+    - src/components/documentos/AnaliseLote.tsx:66-79
+      select "arquivo as url" -> coluna `arquivo` NÃO EXISTE (bug pré-existente,
+      ver GAP-01). `d.url` vira undefined e nunca é renderizado.
+      => Não constrói URL pública. NÃO é consumidor público.
+
+2.3 getPublicUrl restantes em src/ — TODOS de OUTROS buckets (fora de escopo)
+    ContratoPrestadorModal.tsx:505 -> bucket 'contratos'
+    Biblioteca.tsx:362 / :423      -> bucket biblioteca
+    bibliotecaTreinamentoService.ts:128-129 -> bucket treinamento
+    academyService.ts:160          -> bucket academy
+    conhecimentoCorporativoService.ts:355   -> delega p/ treinamento
+    relatorioService.ts:1069       -> bucket relatorios
+    contratosService.ts:921        -> bucket contratos
+    podService.ts:49               -> bucket comprovantes
+    NENHUM aponta para documentos_prestadores.
+
+2.4 Tabelas/código que usam a TABELA (colunas), não a URL pública
+    eligibilidadeOperacionalService.ts (185,196), documentosConstants.ts,
+    documentosPrestadorService.ts, recrutamentoIntegracao.ts (170,251),
+    PrestadorDetalhe.tsx, podMediaService.ts:20 (referência de padrão)
+
+--------------------------------------------------------------------------------
+3. INVENTÁRIO DE CONSUMIDORES — APP PRESTADOR (C:\src\conexao_prestador)
+--------------------------------------------------------------------------------
+3.1 lib/core/repositories/driver_documents_repository.dart (ALTERADO)
+    - bucket: 'documentos_prestadores' (L104), tabela: documentos_prestadores
+    - ANTES: supabase.storage.from(_bucket).getPublicUrl(path)
+    - DEPOIS: .from(_bucket).createSignedUrl(caminho, _signedUrlTtlSeconds) — TTL 600s
+    - uploadAndLink() persiste referenciaEstavel(path) e retorna URL assinada
+    - guarda: bucket correto + caminho válido + pertence ao prestador
+
+3.2 lib/screens/register_screen.dart
+    - faz upload/vínculo mas NÃO chama getPublicUrl (usa o repository) -> OK
+
+3.3 lib/core/services/storage_upload_service.dart (FORA DE ESCOPO — NÃO ALTERADO)
+    - usa getPublicUrl, porém bucket = 'driver-evidence' (L288/L338/L384)
+    - não é consumidor do bucket documentos_prestadores
+
+--------------------------------------------------------------------------------
+4. FORMATO PERSISTIDO (estado real, prova da auditoria read-only)
+--------------------------------------------------------------------------------
+Tabela documentos_prestadores = 5 colunas:
+    id uuid NOT NULL | prestador_id uuid NULL | tipo text | url text | created_at
+RLS ON (8 policies: dp_select/insert/update/delete × prestador/tms)
+
+Linhas (32):
+    public_url_bucket ............ 31  (URL pública completa legada)
+    path puro .................... 0
+    sign/authenticated ........... 0
+    externa http ................ 0
+    nula/vazia ................... 1
+    bucket apontado .............. documentos_prestadores (31/31)
+
+Classificação extra (guarda T10, script _adm_app_02d1_guarda_t10_analise.mjs):
+    OK pela guarda (doc_{id}_ / foto_{id}_) ......... 29
+    prestador_id NULL (órfãs, arquivos teste-*.txt) .. 2
+    URL vazia ....................................... 1
+    path fora da convenção com prestador_id ......... 0
+    => NENHUMA linha visível é escondida pela guarda T10.
+
+Storage: bucket public=true, 78 objetos; 6 storage policies SEM restrição de
+path (todas permitem qualquer authenticated) — é exatamente o alvo da 02D.2.
+Objetos do bucket: 29 referenciados existentes, 2 referenciados faltando
+(break pré-existente, hoje também quebrado) + órfãos não referenciados
+(foto_temp_*, teste-*).
+
+--------------------------------------------------------------------------------
+5. ESTRATÉGIA ADOTADA (referência estável + signed URL temporária)
+--------------------------------------------------------------------------------
+Regra: persistir SEMPRE o path puro (ex.: doc_{prestadorId}_{tipo}_{ts}.ext /
+foto_{prestadorId}_{ts}.ext); assinar APENAS em memória, TTL 600s.
+
+  parseStorageRef(valor, bucketDefault)         -> {bucket,path,external,raw}
+     * aceita URL pública legada e extrai bucket+path (regex /storage/v1/object/
+       public|sign|authenticated|render/{bucket}/{path})
+     * aceita path puro e bucket/path
+     * rejeita file://, data:, caminhos locais, http externo
+  referenciaEstavel(valor)                      -> path puro ou null
+  resolverUrlDocumento(valor, {prestadorId})    -> assina (TTL 600) ou null
+     * null se bucket != documentos_prestadores
+     * null se path malformado
+     * null se path não pertence ao prestador (T10)
+  assinarStorageRef(ref, 600, sign?)            -> createSignedUrl
+     * sign injetável (testabilidade); sem service_role; sem URL pública nova
+
+Propriedade do path: o TMS e o APP GERAM paths já embutindo o prestadorId,
+o que permite a guarda de propriedade (T10) sem consulta extra.
+
+--------------------------------------------------------------------------------
+6. ARQUIVOS CRIADOS / MODIFICADOS (caminho relativo ao TMS, bytes)
+--------------------------------------------------------------------------------
+CRIADOS (TMS)
+  src/services/storage/storageRefService.ts .......................... 2923
+  src/services/documentos/documentoStorageService.ts ................ 2458
+  src/test/adm_app_02d1_documentos_privados.test.ts ................. 10389
+  scripts/_adm_app_02d1_audit.mjs ................................... 5450
+  scripts/_adm_app_02d1_audit.out.json .............................. 62896
+  scripts/_adm_app_02d1_srcs.mjs ..................................... (aux)
+  scripts/_adm_app_02d1_cols.mjs ..................................... (aux)
+  scripts/_adm_app_02d1_encoding_check.mjs ........................... 2025
+  scripts/_adm_app_02d1_encoding_check.out.json ..................... 4546
+  scripts/_adm_app_02d1_encoding_diff.mjs ............................ 1125
+  scripts/_adm_app_02d1_fix_encoding.mjs ............................. 3271
+  scripts/_adm_app_02d1_guarda_t10_analise.mjs ...................... (análise)
+  scripts/_adm_app_02d1_recrutamentoIntegracao.corrompido.bak ....... 10990
+
+MODIFICADOS (TMS)
+  src/components/prestadores/PrestadorDetalhe.tsx ................... 101310
+  src/services/documentosPrestadorService.ts .......................... 6137
+  src/services/recrutamentoIntegracao.ts ............................. 10870
+  src/services/portal-prestador/portalPrestadorService.ts ............ 15534
+
+MODIFICADOS / CRIADOS (APP — C:\src\conexao_prestador)
+  lib/core/repositories/driver_documents_repository.dart .............. 8207
+  test/core/repositories/driver_documents_storage_ref_test.dart ....... 3762
+
+ALTERAÇÕES-CHAVE
+  PrestadorDetalhe.tsx
+    + estado fotoRef + efeito resolve->fotoPreview
+    - 3x supabase.storage.getPublicUrl(...)
+    + persiste referenciaEstavelDocumento(path) no upload e nos docs
+    + carregarDocumentos() resolve via resolverUrlDocumento(d.url,{prestadorId})
+  documentosPrestadorService.ts
+    + verificarDocumentoDuplicado usa mesmaReferencia()
+    + adicionarDocumentoPrestador persiste path puro
+    + migração de candidato_documentos normaliza url (sem UPDATE em massa na tabela)
+  recrutamentoIntegracao.ts
+    + import referenciaEstavelDocumento
+    + 2 inserts de documentos_prestadores persistem url = ref estável
+      (removidas colunas inexistentes arquivo/validade/status/candidato_id/origem)
+  portalPrestadorService.ts
+    + buscarDocumentos resolve signed URL (store zustand SEM persist ->
+      signed URL não grava em localStorage)
+  driver_documents_repository.dart (APP)
+    - getPublicUrl  |  + createSignedUrl(caminho, 600) + guards
+
+--------------------------------------------------------------------------------
+7. TESTES — T01 a T10
+--------------------------------------------------------------------------------
+TMS  src/test/adm_app_02d1_documentos_privados.test.ts ....... 17/17 PASS
+     T01 parseStorageRef (path puro, URL pública, bucket/path, externo, local)
+     T02 referenciaEstavelDocumento devolve path puro
+     T03 signed URL nunca é persistida
+     T04 TTL = 600s
+     T05 referências nulas/vazias não quebram
+     T06 bucket errado é rejeitado
+     T07 path malformado é rejeitado
+     T08a PrestadorDetalhe sem getPublicUrl no render final
+     T08b documentosPrestadorService persiste referência estável
+     T08c recrutamentoIntegracao persiste referência estável
+     T08d portalPrestadorService resolve via resolverUrlDocumento
+     T08e scan de fontes TMS (0 getPublicUrl no bucket)
+     T09  APP driver_documents_repository sem getPublicUrl
+     T10  guarda de propriedade (path de outro prestador rejeitado)
+     + extras: dedup mesmaReferencia, scans
+
+APP   test/core/repositories/driver_documents_storage_ref_test.dart 9/9 PASS
+     T01..T07 + T10, T10b (próprio prestador, docs e foto), T10c (temp sem id)
+     cmd: flutter test test/core/repositories/driver_documents_storage_ref_test.dart
+     resultado: "All tests passed!"
+
+--------------------------------------------------------------------------------
+8. VALIDAÇÕES TÉCNICAS FINAIS
+--------------------------------------------------------------------------------
+npx tsc --noEmit ................................................ EXIT 0
+npx vitest run src/test/adm_app_02d1_documentos_privados.test.ts  17/17 PASS
+npx vitest run (suíte completa)  13 arquivos failed | 38 tests failed |
+                                1912 passed | 155 skipped (2105 total)
+                                -> TODAS as 38 são PRÉ-EXISTENTES (ver §9)
+flutter analyze lib test ...... 0 errors, 21 warnings, 40 infos (61 = baseline)
+flutter test (02D.1) .......... 9/9 PASS
+Encoding (8 arquivos da missão) . BOM=0, mojibake=0, UTF-8 válido (§10)
+
+--------------------------------------------------------------------------------
+9. REGRESSÃO — BASELINE vs COM MUDANÇAS (prova de não-regressão)
+--------------------------------------------------------------------------------
+Método: git stash push dos 3 tracked da missão (tag de baseline), execução do
+mesmo subset de 13 arquivos de teste, comparação com as mudanças aplicadas.
+
+  Baseline (HEAD) .... 52 FAIL  |  Com mudanças ... 45 FAIL
+  NOVOS (regressão) .. 0        |  Diferenças .... 7 testes a menos
+
+Os 7 testes a menos falhavam no HEAD e passam com o working tree — são
+melhorias das missões anteriores (REC-03.1/REC-04), NÃO da 02D.1.
+Conclusão: ZERO regressão introduzida por esta missão.
+
+Subset de regressão (13 arquivos):
+  a31j11_desconto_prestador, ag07f_gate_elegibilidade, ag07h_documentos_bloqueios,
+  ag07j3_gate_rpc_operacoes, escala_e2e_05_atomicidade_m66, f0e_pagamento_prestadores,
+  f0k_recibos, f0l_navegacao_conciliacao_cnab, fin_prog05d1_gate_fatura,
+  rec02_consolidacao_entidades, rec03_1_fechamento_legacy_candidatos,
+  rec03_eliminacao_legacy_candidatos, rec04_documentos_elegibilidade
+
+As 38 falhas da suíte completa (13 arquivos) são as mesmas do baseline e têm
+causa conhecida e pré-existente: leitura de migration retornando string vazia
+(rec02/rec03/rec03_1/rec04/a31j11/ag07f/ag07j3/escala_e2e_05), mês do recibo
+f0k, scan de fonte f0l, gate de fatura fin_prog05d1, teste A f0e/ag07h.
+
+--------------------------------------------------------------------------------
+10. EPISÓDIO CORRIGIDO — ENCODING DE recrutamentoIntegracao.ts
+--------------------------------------------------------------------------------
+Problema detectado na conferência final: o arquivo ficou com UTF-8 BOM e
+30 ocorrências de mojibake (UTF-8 interpretado como CP1252 e regravado):
+  "Serviço" -> "ServiÃ§o" | "→" -> "â†’" | "—" -> "â€"
+Escopo: APENAS src/services/recrutamentoIntegracao.ts (os demais 7 arquivos
+da missão estavam limpos).
+
+Causa: gravação com decodificação CP1252/UTF-8 invertida durante a edição.
+
+Correção: scripts/_adm_app_02d1_fix_encoding.mjs
+  1. backup byte-a-byte -> scripts/_adm_app_02d1_recrutamentoIntegracao.corrompido.bak
+  2. utf8_decode -> cp1252_encode (tabela CP1252 0x80-0x9F completa)
+  3. remoção do BOM
+  4. validação estrita antes de escrever:
+     UTF-8 válido | sem BOM | sem mojibake | "Serviço" presente |
+     referenciaEstavelDocumento presente | .from("recrutamento_candidatos") |
+     liberado_app:false | zero .from("candidatos") | 0 chars não-representáveis
+  5. bytes: 10990 -> 10870
+
+Prova pós-correção (scripts/_adm_app_02d1_encoding_check.out.json):
+  8 arquivos auditados | BOM = 0 | mojibake_total = 0 | utf8_invalido = 0
+  amostra: "// Serviço centralizado de integração Recrutamento → Prestadores"
+
+Após a correção, todas as validações do §8 foram re-executadas e permaneceram
+verdes (tsc 0, 17/17, suíte 38 = baseline, dart 9/9).
+
+--------------------------------------------------------------------------------
+11. SEGURANÇA — O QUE NÃO FOI FEITO (proibições cumpridas)
+--------------------------------------------------------------------------------
+[OK] Bucket NÃO foi tornado privado (public continua true)
+[OK] NENHUMA storage policy alterada/criada/removida
+[OK] NENHUMA migration executada (histórica ou nova)
+[OK] NENHUM schema alterado; NENHUM UPDATE em massa no legado (31 public_url)
+[OK] Recrutamento/02B intacto; nível 8 não reaberto; contador não alterado
+[OK] NENHUM service_role usado no frontend
+[OK] Signed URL nunca persistida (DB, localStorage, store zustand)
+[OK] NENHUMA URL pública alternativa criada
+[OK] Nenhum escrita UPDATE/DELETE/INSERT em produção (somente leitura)
+[OK] Redmi desconectado — nenhuma prova física
+[OK] Nada tocado em A-1..A-7, A-11, A-13, A-14; APP-RPC-LEGACY-01,
+     APP-RPC-CRIAR-01 intactos; A-8, A-9, A-12 não reabertos;
+     A-5 (dedup) apenas tolerante à normalização
+
+--------------------------------------------------------------------------------
+12. GAPS CONHECIDOS E BACKLOG PRESERVADO (não tratados nesta missão)
+--------------------------------------------------------------------------------
+GAP-01 (pré-existente, NÃO corrigido por escopo):
+  AnaliseLote.tsx:68 select "arquivo as url" — coluna `arquivo` não existe em
+  documentos_prestadores (coluna real é `url`). Resultado: d.url undefined.
+  Não é bloqueador de privatização (não renderiza URL). Corrigir na 02D.2 ou
+  em missão de dívida técnica.
+
+GAP-02 (pré-existente): 2 objetos referenciados não existem no storage
+  (docs com URL legada sem objeto correspondente) — já quebrado hoje; após a
+  privatização o signed URL retornará 404 de forma explícita.
+
+GAP-03 (pré-existente): 2 linhas órfãs com prestador_id NULL (arquivos
+  teste-*.txt de homologação) + 1 URL vazia — nenhuma exibida na UI.
+
+Backlog mantido (NÃO iniciado): GAP-F2, GAP-F3, GAP-F4, GAP-F5, APP-DATA-01,
+APP-SCHEMA-01, STORAGE-E2E11-PURGE, TEST-FIN-IS_TESTE-01,
+tools/query_operation.dart, tools/dotenv, OS esporádicos/motoboys, romaneio,
+KM/pedágio/adicionais/reembolsos, financeiro prestador, Rede de Oportunidades,
+proximidade/raio/distância, Radar, CAD-PERSIST, indicadores, dívida TypeScript,
+todos os A-* abertos, PLAYWRIGHT pendências das missões anteriores.
+
+--------------------------------------------------------------------------------
+13. PLANO EXATO PARA ADM-APP-02D.2 — PRIVATIZAR BUCKET + POLICIES
+--------------------------------------------------------------------------------
+Pré-condições: 02D.1 com READY_FOR_PRIVATE_BUCKET=YES (este relatório);
+aplicação autorizada; backup do estado atual; ambiente com janela de manutenção.
+
+PARTE A — Estado inicial e rollback (read-only)
+  A1. Snapshot: SELECT de todas as policies de storage.objects para o bucket
+      documentos_prestadores (nome, cmd, roles, qual, with_check) + hash.
+  A2. Snapshot do bucket: id, name, public, allowed_mime_types, file_size_limit.
+  A3. Contagem de objetos e de linhas da tabela (baseline para pós-check).
+
+PARTE B — Migration de privatização (arquivo único + rollback irmão)
+  B1. Nome sugerido:
+      supabase/migrations/20260928000000_adm_app_02d2_bucket_documentos_privado.sql
+      supabase/migrations/20260928000001_adm_app_02d2_rollback.sql
+  B2. Conteúdo FORWARD:
+      1) BEGIN;
+      2) UPDATE storage.buckets SET public = false
+         WHERE id = 'documentos_prestadores';   -- afeta 1 linha
+      3) DROP das 6 policies atuais de storage.objects SOB o bucket
+         (guardar definições exatas do A1 no comentário da migration);
+      4) CREATE POLICY por cmd com regra de caminho:
+         - storage_read_documentos_prestador (SELECT):
+           bucket_id = 'documentos_prestadores'
+           AND name ~ ('^doc_' || prestador_id || '_|^foto_' || prestador_id || '_')
+           via EXISTS em prestadores WHERE prestadores.id = ... AND
+           prestadores.auth_user_id = auth.uid()
+           UNION caminho TMS: EXISTS em tenant_usuarios WHERE user_id = auth.uid()
+         - storage_insert_documentos_prestador (INSERT): mesma guarda + WITH CHECK
+         - storage_update_documentos_prestador (UPDATE): mesma guarda
+         - storage_delete_documentos_prestador (DELETE): mesma guarda
+         Observação: o prefixo do path embute o prestadorId (formato garantido
+         pela 02D.1), permitindo a comparação sem join adicional; o join com
+         prestadores continua obrigatório para validar a POSSE do id.
+      5) NÃO alterar: policies da tabela documentos_prestadores (8 dp_*),
+         grants, RLS de outras tabelas, schema.
+      6) COMMIT; análise do hash das policies pós-aplicação.
+  B3. Conteúdo ROLLBACK (arquivo irmão): recriar as 6 policies exatas do A1 e
+      SET public = true; validar em transação (BEGIN/ROLLBACK) antes.
+
+PARTE C — Testes obrigatórios (pos/neg)
+  C1. NEG anon: GET signed URL sem token -> 401/403; getPublicUrl -> 404.
+  C2. NEG terceiro: authenticated de outro prestador lendo path de terceiro -> 0.
+  C3. NEG path fora do bucket/outro bucket -> recusado.
+  C4. POS próprio prestador: upload + createSignedUrl(TTL 600) -> 200.
+  C5. POS TMS (tenant_usuarios): leitura/gravação no bucket -> 200.
+  C6. POS tabela: as 8 policies dp_* continuam funcionando (SELECT/INSERT/
+      UPDATE/DELETE) — prova de que nada da tabela foi afetado.
+  C7. Evidência dos 29 docs legados (paths já na convenção) continuam
+      assináveis; os 2 órfãos e a URL vazia permanecem sem exibição.
+  C8. Repetir T01-T10 da 02D.1 (17/17 TMS + 9/9 APP) após a mudança.
+
+PARTE D — Prova visual (única etapa com Redmi)
+  D1. Conectar Redmi; login TMS; abrir Prestadores -> detalhe; confirmar foto
+      e cards de documento renderizando via signed URL.
+  D2. Login App Prestador; abrir Documentos; confirmar visualização e novo
+      upload (path na convenção).
+  D3. Screenshot anexada ao relatório da 02D.2.
+
+PARTE E — Entregáveis da 02D.2
+  E1. ADM-APP-02D2-RELATORIO.txt na raiz do TMS (caminho/bytes/data-hora),
+      com hash das policies antes/depois, resultados de C1..C8 e
+      PRONTO_COM_RESSALVAS / NÃO PRONTO.
+  E2. Rollback validado e arquivado junto.
+  E3. Atualização do AGENTS.md.
+
+Ordem de execução: A -> B (em janela) -> C -> D -> E. Parar se qualquer item
+de C1/C2/C5/C6 falhar: executar rollback e emitir NÃO PRONTO.
+
+--------------------------------------------------------------------------------
+14. ENCERRAMENTO
+--------------------------------------------------------------------------------
+Status da missão 02D.1: CONCLUÍDA — GATE PASS (9/9 itens).
+READY_FOR_PRIVATE_BUCKET = YES
+Próxima missão: ADM-APP-02D.2 (plano na seção 13). MISSÃO ENCERRADA AQUI.
+
+Arquivos de evidência:
+  scripts/_adm_app_02d1_audit.out.json (62896 b)
+  scripts/_adm_app_02d1_encoding_check.out.json (4546 b)
+  scripts/_adm_app_02d1_recrutamentoIntegracao.corrompido.bak (10990 b)
+  scripts/_adm_app_02d1_guarda_t10_analise.mjs
+================================================================================

@@ -1,0 +1,84 @@
+ESCALA-OS-08-CRIAR-3-OS-FINANCEIRAS
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: SANEAMENTO CONTROLADO
+
+==================================================
+MECANISMO (homologado em ESCALA-OS-06)
+==================================================
+
+UPDATE neutro de coluna monitorada → M66:
+  UPDATE alocacoes_escala SET valor_repasse = valor_repasse WHERE id = <alocação>;
+→ OS criada (id = alocação.id) ANTES do vínculo; ordem_servico_id = alocação.id; 1 única OS.
+FIN-01.1 protege financeiro_pagar 'parcial'.
+
+==================================================
+PRECHECK (3/3 PASS) + DRY-RUN (BEGIN/ROLLBACK)
+==================================================
+
+58e5751e: link=NULL os=0 → DRYRUN link=true os=1 finSame=true baixasSame=true saldo 132.86→132.86
+d1f34e73: link=NULL os=0 → DRYRUN link=true os=1 finSame=true baixasSame=true saldo 0.00→0.00
+ae30da69: link=NULL os=0 → DRYRUN link=true os=1 finSame=true baixasSame=true saldo 0.00→0.00
+
+==================================================
+EXECUÇÃO PERSISTENTE (um por vez, postcheck)
+==================================================
+
+[58e5751e]
+  AFTER link=58e5751e | OS=1 | PAGAR_VALUE=652.86 | PAGAR_STATUS=parcial
+  VALOR_BAIXADO=520.00 | SALDO=132.86 | PP=pendente/em_aberto
+[ d1f34e73]
+  AFTER link=d1f34e73 | OS=1 | PAGAR_VALUE=520.00 | PAGAR_STATUS=pago
+  VALOR_BAIXADO=520.00 | SALDO=0.00 | PP=pendente/em_aberto
+[ae30da69]
+  AFTER link=ae30da69 | OS=1 | PAGAR_VALUE=520.00 | PAGAR_STATUS=pago
+  PP_STATUS=pago | PP_CONFERENCIA=conferido | VALOR_BAIXADO=520.00 | SALDO=0.00
+
+==================================================
+RESULTADO
+==================================================
+
+EXPECTED=3
+PRECHECK_PASS=3
+DRY_RUN_PASS=YES
+OS_CREATED=3
+LINKS_CREATED=3
+DUPLICATE_OS_CREATED=0
+FINANCIAL_VALUES_PRESERVED=YES
+FINANCIAL_STATUS_PRESERVED=YES
+BAIXAS_PRESERVED=YES
+SALDOS_PRESERVED=YES
+CASE_58E_PARTIAL_PRESERVED=YES
+
+UNIVERSO:
+TOTAL_ALLOCATIONS=193
+WITH_OS_ID=110
+WITHOUT_OS_ID=83
+(esperado 193/110/83 — CONFIRMADO)
+
+FILES_MODIFIED=supabase/migrations/20260922000013_escala_os_08_rollback.sql (novo — rollback)
+DB_WRITES=3 (UPDATE alocacoes_escala; M66 criou 3 OS)
+MIGRATIONS=0
+
+ROLLBACK (preparado — NÃO executado):
+  DELETE ordens_servico (id = alocação.id) das 3 alocações;
+  UPDATE alocacoes_escala SET ordem_servico_id = NULL.
+  PRESERVA integralmente financeiro/baixas pré-existentes.
+
+==================================================
+FORA DO ESCOPO (não tratado)
+==================================================
+
+- 67 Classe E; 16 Classe D; 9 FIN-02; 27 órfãs; redundância M66/M80;
+  APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Financeiro/baixas/valores/status preservados. Nenhum DELETE de histórico.
+- Não usou criarOrdemServico frontend. Sem migration de schema. Não iniciou outra missão.
+
+DB_WRITES=3
+MIGRATIONS=0

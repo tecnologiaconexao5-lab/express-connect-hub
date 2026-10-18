@@ -1,0 +1,143 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D2-GUARD-P1-CRITICOS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (nenhuma escrita no banco; nenhuma conexao PROD)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL (guard nos P1).
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+13 produtores P1 existentes integrados ao guard fail-closed (abortam ANTES de qualquer
+conexao/escrita); 6 arquivos tiveram hardcodes PROD/anon removidos (15 ocorrencias);
+2 itens registrados como BLOCKED. Matriz A-E PASS; selftest 13/13 PASS; ZERO conexao/DML;
+zero credencial nova.
+
+--------------------------------------------------------------------------------
+1. ARQUIVO POR ARQUIVO (import/chamada + posicao do guard)
+--------------------------------------------------------------------------------
+#  Arquivo                                    Import/call                         Guard ANTES de
+-- ----------------------------------------- ----------------------------------- ----------------------------
+1  scripts/missao43_teste_ponta_a_ponta.ts   import{guardHarness}from"./_guard.mjs" createClient()
+2  scripts/m81_test_financeiro_propagacao.ts idem                                 createClient()
+3  scripts/m86_seed_veiculos_prestadores.ts  idem                                 createClient()
+4  scripts/m86_fix_region_matching.ts        idem                                 leitura DATABASE_URL + new pg.Client()
+5  scripts/m90_test_fluxo_completo_rede.ts   idem                                 createClient() + new pg.Client()
+6  scripts/_tms012_criar_os_hml.cjs          require('./_guard.cjs')              new Client() (e antes da 1a query)
+7  scripts/tms013_seed_hml.mjs               import{guardHarness}from'./_guard.mjs' new pg.Pool()
+8  scripts/seed-cliente-teste-real.ts        import{guardHarness}from"./_guard.mjs" pg.Client()/writes
+9  scripts/seed_portal_cliente_demo.cjs      require("./_guard.cjs")              chromium.launch()/api()
+10 scripts/valid_real_p1p2_ciclo_completo.mjs idem                                createClient()/inserts
+11 scripts/valid_real_p1p2_ui_auth.ts        import{guardHarness}from"./_guard.mjs" chromium.launch()
+12 scripts/valid_real_p1p2_ui_visual.ts      idem                                 chromium.launch()
+13 scripts/missao48_homologacao_operacional.ts idem                               createClient()/inserts
+Observacao: o import do guard e estatico; a CHAMADA guardHarness(...) e a 1a instrucao de
+topo apos os imports, portanto executa ANTES de qualquer uso de rede/banco.
+
+--------------------------------------------------------------------------------
+2. REGISTRADOS COMO BLOCKED (nao inventados)
+--------------------------------------------------------------------------------
+ - scripts/m85_seed_veiculos_prestadores.ts :: ARQUIVO NAO EXISTE no repositorio.
+   Existem apenas m85_check_rls.ts, m85_apply_rls_fix.ts, m85_aplicar_e_validar_rede.ts,
+   m85_validar_rede.ts, m85_check_schema.ts (nao estavam no escopo). NAO criado arquivo novo.
+ - scripts/seed-relatorios.js :: snippet para colar no CONSOLE DO NAVEGADOR
+   (faz `import "/src/lib/supabase.ts"`); reaproveita o cliente da app (VITE env) e NAO
+   suporta import do guard node. Requer conversao para script node em missao futura.
+   (permanece desprotegido -> nao pode atingir PROD por si, mas e um produtor latente).
+
+--------------------------------------------------------------------------------
+3. HARDCODES PROD / ANON REMOVIDOS (15 ocorrencias em 6 arquivos)
+--------------------------------------------------------------------------------
+ Arquivo                                  | URL/ref PROD | anon key | acao
+ -----------------------------------------+--------------+----------+------------------------------
+ missao43_teste_ponta_a_ponta.ts          |      1       |    1     | passou a ler VITE_* do env QA
+ missao48_homologacao_operacional.ts      |      1       |    1     | idem
+ valid_real_p1p2_ciclo_completo.mjs       |      1       |    1     | idem
+ valid_real_p1p2_ui_visual.ts             |      3       |    3     | idem (3 blocos page.evaluate => env como arg)
+ seed_portal_cliente_demo.cjs             |      1       |    1     | idem
+ seed-cliente-teste-real.ts               |      1       |    0     | removido fallback hardcoded PROD
+ -----------------------------------------+--------------+----------+------------------------------
+ TOTAL                                    |      8       |    7     | 15 ocorrencias removidas
+Verificacao pos-varredura (grep por ref PROD + JWT anon) nos 13 arquivos: "No files found".
+
+--------------------------------------------------------------------------------
+4. MATRIZ A-E (guard central, env mockado — sem conexao)
+--------------------------------------------------------------------------------
+ A) env PROD -> BLOQUEIA .................................. PASS
+ B) PROD + ALLOW_TEST_WRITES=true -> BLOQUEIA ............. PASS
+ C) QA sem ALLOW_TEST_WRITES -> BLOQUEIA .................. PASS
+ D) QA + ALLOW_TEST_WRITES=true -> PASSA pelo guard ....... PASS (sem executar escrita)
+ E) ausencia de env -> BLOQUEIA ........................... PASS
+(Comportamento unico do guard; identico para todos os 13, pois chamam a mesma funcao.)
+
+--------------------------------------------------------------------------------
+5. EXECUCAO CONTROLADA POR HARNESS (prova de aborto antes da conexao)
+--------------------------------------------------------------------------------
+Cada harness foi EXECUTADO apenas para observar o aborto do guard (env default, sem opt-in),
+sem fluxo funcional e sem DML:
+  TODOS OS 13 -> "TEST WRITE BLOCKED" e exit != 0 (abortou no guard).
+Nenhum abriu conexao (sem ECONNREFUSED/ENOTFOUND/auth), nenhum escreveu.
+(Tambem valida a compilacao TS/ESM/CJS de cada arquivo alterado.)
+
+--------------------------------------------------------------------------------
+6. SELFTEST DO GUARD (reexecutado)
+--------------------------------------------------------------------------------
+node scripts/_guard.selftest.cjs -> TOTAL 13 | PASS 13 | FAIL 0. (T1..T11 + T-LANC + T-PURO)
+
+--------------------------------------------------------------------------------
+7. ZERO CONEXAO / ZERO DML / ZERO SEGREDO NOVO
+--------------------------------------------------------------------------------
+- Nenhuma conexao ao Supabase/PG; nenhum INSERT/UPDATE/DELETE/RPC executado.
+- Nenhuma credencial adicionada; hardcodes REMOVIDOS (nao adicionados).
+- Guard nunca imprime segredos; mensagens contem apenas project ref/flag.
+- Verificador node --check: _guard.cjs, _guard.verify_p1.cjs, _tms012, seed_portal,
+  valid_real_ciclo = OK.
+
+--------------------------------------------------------------------------------
+8. ARQUIVOS
+--------------------------------------------------------------------------------
+ CRIADO:
+  scripts/_guard.verify_p1.cjs ................ verificador P1 (estatico + execucao controlada)
+ ALTERADOS:
+  scripts/_guard.cjs ..... + loadHarnessEnv()/guardHarness() (env QA preferencial) — core mantido
+  scripts/_guard.mjs ..... re-export dos novos helpers
+  scripts/_guard.d.ts .... tipos dos novos helpers
+  + os 13 harnesses da lista (import + guardHarness no topo; hardcodes removidos quando havia)
+ NAO ALTERADOS (conforme instrucao): .env; package.json/test:e2e; tests/e2e/helpers/supabase.ts;
+  P2/P3; Edge Functions; RLS/migrations/RPC; APP.
+
+--------------------------------------------------------------------------------
+9. ACEITE
+--------------------------------------------------------------------------------
+- P1 criticos do escopo protegidos: 13/13 (2 BLOCKED registrados).
+- Nenhum consegue atingir PROD (execucao default aborta no guard).
+- Guard ocorre antes da 1a conexao/escrita (estatico + dinamico comprovados).
+- QA permanece tecnicamente utilizavel (QA + ALLOW_TEST_WRITES=true passa pelo guard).
+- Zero DML real; zero segredo novo; selftest continua PASS.
+
+--------------------------------------------------------------------------------
+10. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. Guard integrado nos P1 criticos, hardcodes PROD/anon eliminados, A-E PASS,
+13/13 abortam antes de conectar, selftest 13/13.
+
+--------------------------------------------------------------------------------
+11. PROXIMA MICRO-MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3 — GUARD NOS P2 + E2E: (a) integrar guard nos P2 de teste
+(src/lib/testes/*, tmp/valid_real_ui.mjs, test_os_*.mjs, test_min*.ts);
+(b) converter seed-relatorios.js em script node com guard; (c) adicionar
+`node scripts/check-ambiente.cjs qa` ao npm test:e2e e reutilizar o guard no global-setup;
+(d) remover hardcodes de tests/e2e/helpers/supabase.ts; (e) rotacionar a anon key exposta
+(acao de infra). Sem tocar banco/RPC.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D2-GUARD-P1-CRITICOS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D2-GUARD-P1-CRITICOS-RESULTADO.txt
+Tamanho ..: 9583 bytes
+Data .....: 24/09/2026 21:00:35
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D2
+================================================================================

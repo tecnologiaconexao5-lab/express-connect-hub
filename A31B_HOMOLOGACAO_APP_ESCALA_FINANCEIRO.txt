@@ -1,0 +1,305 @@
+════════════════════════════════════════════════════════════════════════════════
+ A31B — HOMOLOGAÇÃO INTEGRADA APP → ESCALA/OS → CENTRAL FINANCEIRA
+ Completude da Central Financeira — Relatório de Homologação
+ Data: 2026-07-16   |   Ambiente: PRODUÇÃO (leitura somente, read-only)
+════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 1 — OBJETIVO DA HOMOLOGAÇÃO
+────────────────────────────────────────────────────────────────────────────────
+Validar a integração ponta a ponta entre:
+  1. App Motorista (delivery_proofs + RPCs + metadata.app_motorista)
+  2. Escala/OS (alocacoes_escala + ordens_servico)
+  3. Central Financeira (ConferenciaFinanceira → financeiro_receber/pagar)
+Completar a Central com visão financeira detalhada (Modo 2) e complementação
+manual segura (sem base paralela), além de refinar a gestão de NFs no dossiê.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 2 — AMBIENTE E MÉTODO
+────────────────────────────────────────────────────────────────────────────────
+- Supabase de PRODUÇÃO (projeto uwrvzsjtpgaifkktpepn), via pooler (DATABASE_URL).
+- 7 scripts read-only executados:
+    a31b_prova_readonly.mjs      → RPCs App + cruzamento Central + POD + colunas
+    a31b_prova_triggers.mjs      → triggers de sincronização delivery_proofs
+    a31b_prova_views.mjs         → view vw_app_motorista_operacoes + entregas_protocolo
+    a31b_dump_view.mjs           → definição completa da view (mirror)
+    a31b_prova_pod.mjs           → POD por operation_id
+    a31b_prova_pod2.mjs          → função de sync delivery_proofs → entregas_protocolo
+    a31b_prova_romaneio.mjs      → romaneios App × OS vinculada
+- NENHUM dado foi inserido, alterado ou removido. NENHUMA migration executada.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 3 — RPCs DO APP MOTORISTA (EXISTENTES)
+────────────────────────────────────────────────────────────────────────────────
+  f_atualizar_reversa_app        → reversa (fotos, data) da alocação
+  f_avancar_etapa_app_motorista  → avança etapa/status; grava metadata.app_motorista
+  f_buscar_operacoes_motorista   → consulta operações do motorista
+Análise: a RPC de avanço grava o romaneio em metadata.app_motorista (JSONB) e NÃO
+escreve em ordens_servico.romaneio — esta é a causa raiz do romaneio "invisível".
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 4 — CAUSA RAIZ DO ROMANEIO (COMPROVADA COM DADOS REAIS)
+────────────────────────────────────────────────────────────────────────────────
+- Alocações totais:                   183
+- Alocações com metadata.app_motorista: 24
+- Alocações com romaneio no payload App:  6  (todas de homologação)
+- OS totais (ordens_servico):          121
+- OS com romaneio preenchido:            0
+- As 6 alocações com romaneio App estão SEM OS vinculada (ordem_servico_id NULL).
+- A Central lê "os.romaneio || metadata.numeroOC" → esses romaneios nunca aparecem.
+CONCLUSÃO: o problema NÃO é a Central; é a RPC do App gravar romaneio fora da OS
+e as alocações de homologação não possuírem OS. Ver pendência 4.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 5 — ROMANEIOS ENCONTRADOS NO PAYLOAD APP
+────────────────────────────────────────────────────────────────────────────────
+  HML-D1-001        (homologação)
+  HML-D2-001        (homologação)
+  HML-D2-RETEST-001 (homologação)
+  HML-MULTI-001     (homologação)
+  HML-ESC-001       (homologação)
+  HML-DIR-001       (homologação)
+Todos em alocações sem OS vinculada.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 6 — POD / ENTREGAS_PROTOCOLO / DELIVERY_PROOFS
+────────────────────────────────────────────────────────────────────────────────
+- delivery_proofs:             9 registros (todos status "entregue")
+- vínculo: operation_id (text) → alocacoes_escala.id (os_id sempre NULL)
+- entregas_protocolo: tabela espelho sincronizada por trigger
+- Sincronização validada: 9/9 delivery_proofs com entregas_protocolo correspondente
+- Mapeamento de status no sync:
+    delivered           → entregue
+    delivered_with_note → entregue_ressalva
+    not_delivered       → nao_entregue
+- ON CONFLICT DO NOTHING (idempotente).
+- Trigger existente: f_sync_delivery_proof_to_entregas (+ trg_evento_pod_enviado).
+- eventos_oficiais: 282 | operation_timeline_events: 291 | eventos com romaneio: 51.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 7 — COLUNAS REAIS DE DELIVERY_PROOFS (24)
+────────────────────────────────────────────────────────────────────────────────
+  id, stop_id, operation_id, driver_id, receiver_name, receiver_document,
+  receiver_relationship, status, photo_url, signature_url, latitude, longitude,
+  gps_accuracy, observation, delivered_at, created_at, updated_at, tenant_id,
+  foto_canhoto_url, rota_id, os_id, cliente_id, parada_id, idempotency_key
+Observação: NÃO existe coluna alocacao_id — o vínculo é via operation_id.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 8 — COLUNAS REAIS DE ENTREGAS_PROTOCOLO (20)
+────────────────────────────────────────────────────────────────────────────────
+  id, alocacao_id, prestador_id, nome_recebedor, documento_recebedor, observacao,
+  foto_entrega_url, foto_canhoto_url, assinatura_url, data_hora_entrega, latitude,
+  longitude, status, created_at, updated_at, gps_accuracy, receiver_relationship,
+  ordem_servico_id, tenant_id, parada_id
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 9 — VIEW vw_app_motorista_operacoes
+────────────────────────────────────────────────────────────────────────────────
+- A view é um ESPELHO DIRETO de alocacoes_escala (SELECT * FROM alocacoes_escala).
+- NÃO possui coluna romaneio.
+- NÃO faz JOIN com ordens_servico.
+- Corrige claim anterior do subagente: a migration 20260715_m127e1 (que adicionaria
+  romaneio via join) NÃO está refletida em produção.
+- Pendência 5: verificar necessidade de refresh/recriação da view com romaneio.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 10 — TRIGGERS DE SINCRONIZAÇÃO
+────────────────────────────────────────────────────────────────────────────────
+- trg_sync_delivery_proof_to_entregas → f_sync_delivery_proof_to_entregas
+  (INSERT em delivery_proofs → upsert em entregas_protocolo, idempotente)
+- trg_evento_pod_enviado (em entregas_protocolo → eventos_oficiais)
+- trg_alocacoes_escala_updated_a (auditoria de atualização de alocação)
+- TriggMs existentes confirmados em produção.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 11 — FISCAL: DOCUMENTOS VINCULADOS
+────────────────────────────────────────────────────────────────────────────────
+- fiscal_documentos_vinculados: 1 NF cadastrada
+- 0 NFs vinculadas a OS
+- 0 NFs usadas por CT-e/MDF-e
+- Conclusão: remoção segura possível; nenhum documento fiscal ativo bloqueia.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 12 — LEVANTAMENTO DO LADO ESCALA (FONTE DA CENTRAL)
+────────────────────────────────────────────────────────────────────────────────
+- Escala escreve financeiro em alocacoes_escala via atualizarAlocacao(id, payload).
+- escalaMapper.ts mapeia: km_rodados, valor_pedagio, diarias_adicionais,
+  saidas_adicionais, valor_ajudante_unit, reembolsos_outros, valor_reembolso_outros,
+  valor_frete, valor_repasse, valor_desconto etc.
+- iniciarRota grava km_inicial em metadata.km_inicial.
+- finalizarAlocacao computa km_realizados a partir de km_inicial/km_final.
+- Faturamento extra em metadata.faturamento (tabela_id, franquia_km,
+  valor_km_excedente) e repasse em metadata.repasse (valor_km_prestador).
+- Alocação com ordem_servico_id NULL ainda é fonte válida para a Central
+  (lê alocacoes_escala + metadata, sem depender de OS).
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 13 — MATRIZ DE SINCRONIZAÇÃO CAMPO | APP | ESCALA | FONTE | CENTRAL
+────────────────────────────────────────────────────────────────────────────────
+  Campo                      | App      | Escala/TMS        | Fonte Central             | Central
+  ---------------------------|----------|-------------------|---------------------------|---------
+  Romaneio/OC                | metadata | ordens_servico    | os.romaneio||numeroOC      | ✔ lê
+  Status da alocação         | RPC      | alocacoes_escala  | alocacoes_escala.status   | ✔ lê
+  KM inicial/final/rodados   | —        | alocacoes_escala  | km_realizados/rodados     | ✔ lê
+  Pedágio                    | —        | alocacoes_escala  | valor_pedagio             | ✔ lê
+  Diárias                    | —        | alocacoes_escala  | diarias_adicionais*       | ✔ lê
+  Saídas                     | —        | alocacoes_escala  | saidas_adicionais*        | ✔ lê
+  Ajudante                   | —        | alocacoes_escala  | valor_ajudante_unit*      | ✔ lê
+  Reembolso outros           | —        | alocacoes_escala  | valor_reembolso_outros    | ✔ lê
+  Combustível                | —        | alocacoes_escala  | valor_combustivel         | ✔ lê
+  KM excedente cliente       | —        | metadata.fat.     | franquia_km/km_excedente  | ✔ lê
+  KM excedente prestador     | —        | metadata.repasse  | valor_km_prestador        | ✔ lê
+  POD                        | trg sync | entregas_protocolo| entregas_protocolo.status | ✔ lê
+  Financeiro receber         | trigger  | trigger           | financeiro_receber        | ✔ lê
+  Financeiro pagar           | trigger  | trigger           | financeiro_pagar          | ✔ lê
+  Pagamento prestador        | trigger  | trigger           | pagamentos_prestadores    | ✔ lê
+  Margem                     | trigger  | trigger           | composicao_financeira_os  | ✔ lê
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 14 — IMPLEMENTAÇÃO: CENTRAL FINANCEIRA (SERVICE)
+────────────────────────────────────────────────────────────────────────────────
+centralFinanceiroService.ts:
+- CentralItemFinanceiro.detalhe (novo objeto) com:
+    kmRealizados, kmExcedenteCliente, valorKmExcedenteCliente, pedagioCliente,
+    ajudanteCliente, diariasCliente, saidasCliente, outrosCliente,
+    kmExcedentePrestador, valorKmExcedentePrestador, pedagioPrestador,
+    combustivelPrestador, ajudantePrestador, diariasPrestador, saidasPrestador,
+    reembolsoOutrosPrestador, outrosPrestador
+- Cálculo de KM excedente cliente: metadata.faturamento.franquia_km +
+  valor_km_excedente; prestador: metadata.repasse.valor_km_prestador.
+- salvarComplementoFinanceiroAlocacao(alocacaoId, campos): whitelist
+  CAMPOS_COMPLEMENTO_ALOCACAO com 19 colunas OFICIAIS de alocacoes_escala —
+  a Central NÃO cria base paralela; o trigger propaga para receber/pagar.
+- buscarCamposFinanceirosAlocacao(alocacaoId): lê 19 colunas oficiais para
+  pré-preencher o formulário de complemento.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 15 — IMPLEMENTAÇÃO: FATURA / NFs TRANSPORTADAS (SERVICE)
+────────────────────────────────────────────────────────────────────────────────
+faturaService.ts:
+- removerNFdaOS(nfId): consulta cte_id/mdfe_id → BLOQUEIA remoção se vinculada
+  a documento fiscal emitido; soft-delete preferido (status='desvinculada')
+  preservando histórico; delete controlado apenas como fallback de NF sem vínculo.
+- atualizarNFdaOS(nfId, input): BLOQUEIA edição se vinculada a CT-e/MDF-e;
+  atualiza numero, serie, chave_acesso, valor_total, emitente_nome/cnpj,
+  peso_bruto, volumes.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 16 — IMPLEMENTAÇÃO: UI CONFERÊNCIA FINANCEIRA (MODOS 1 E 2)
+────────────────────────────────────────────────────────────────────────────────
+ConferenciaFinanceira.tsx:
+- Seletor de visão (Layers): Modo 1 "Essencial" | Modo 2 "Financeira Completa".
+- Modo 1: Valor Cliente | Adic. Cliente | Total Cliente | Valor Prestador | Total
+  Prestador (comportamento original, sem quebra).
+- Modo 2: Km | KM Exced. Cli. | Pedágio Cli. | Ajud. Cli. | Diárias/Saídas |
+  Total Cliente | KM Exced. Prest. | Comb./Pedágio | Ajud./Reemb. | Total
+  Prestador — alimentado por a.detalhe.
+- Rodapé de fonte atualizado (alocacoes_escala + ordens_servico + entregas_protocolo
+  + financeiro + composicao_financeira_os + menção ao detalhe do Modo 2).
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 17 — IMPLEMENTAÇÃO: UI COMPLEMENTAÇÃO MANUAL ("COMPLETAR SERVIÇO")
+────────────────────────────────────────────────────────────────────────────────
+- Botão no dossiê (e item "Completar Serviço" no menu de ações da linha).
+- Sheet "Completar Serviço (complementação manual)": campos de alocacoes_escala
+  (km_realizados, valor_frete, valor_repasse, valor_pedagio, valor_combustivel,
+  valor_ajudante, diarias_adicionais, valor_diaria, saidas_adicionais,
+  valor_saida_adicional, valor_reembolso_outros, valor_desconto).
+- Ao abrir, pré-preenche via buscarCamposFinanceirosAlocacao.
+- Salvar → salvarComplementoFinanceiroAlocacao (whitelist, fonte única) e
+  recarrega a Central.
+- Explicitação no UI: "edita diretamente em alocacoes_escala — mesma fonte da
+  Escala/TMS (não é base paralela)".
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 18 — IMPLEMENTAÇÃO: UI NFs NO DOSSIÊ
+────────────────────────────────────────────────────────────────────────────────
+- Menu de ações por NF (DropdownMenu): Editar NF | Remover NF.
+- Editar: abre sheet com numero, serie, chave_acesso, valor_total, emitente;
+  usa atualizarNFdaOS (bloqueio fiscal incluso).
+- Remover: usa removerNFdaOS (bloqueio fiscal + soft-delete).
+- Mensagens de retorno visíveis (sucesso/erro).
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 19 — REGRA DE OURO CUMPRIDA
+────────────────────────────────────────────────────────────────────────────────
+> A Central Financeira NÃO cria base paralela: toda complementação manual grava
+> apenas em colunas OFICIAIS de alocacoes_escala (19 colunas whitelist), a mesma
+> fonte usada pela Escala/TMS, e os triggers M66/M80 propagam para
+> financeiro_receber/pagar/pagamentos_prestadores/composicao_financeira_os.
+> A gestão de NFs respeita bloqueio fiscal (CT-e/MDF-e) e prefere soft-delete.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 20 — VALIDAÇÃO AUTOMATIZADA
+────────────────────────────────────────────────────────────────────────────────
+- npx tsc --noEmit      → ✅ 0 erros
+- npx vitest run        → ✅ 199/199 testes (13 novos)
+    a31b_complemento_financeiro.test.ts → 8 testes
+    a31b_edicao_nf.test.ts             → 5 testes
+- npm run build         → ✅ 36.11s
+- eslint (arquivos da missão): 0 erros novos; 20 'any' restantes são baseline
+  pré-existente de centralFinanceiroService.ts.
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 21 — TESTES NOVOS (DETALHE)
+────────────────────────────────────────────────────────────────────────────────
+a31b_complemento_financeiro.test.ts:
+  1. grava campos oficiais em alocacoes_escala
+  2. ignora chaves fora da whitelist (sem base paralela)
+  3. falha sem alocação
+  4. falha sem nenhum campo válido
+  5. propaga erro do banco
+  6. buscarCamposFinanceirosAlocacao retorna null sem alocação
+  7. retorna campos selecionados da alocação
+  8. retorna null em erro
+
+a31b_edicao_nf.test.ts:
+  1. bloqueia remoção quando NF vinculada a CT-e/MDF-e
+  2. não encontrada
+  3. soft-delete (status 'desvinculada') quando NF suporta status
+  4. bloqueia edição quando NF vinculada a CT-e/MDF-e
+  5. atualiza campos da NF
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 22 — ARQUIVOS DA MISSÃO
+────────────────────────────────────────────────────────────────────────────────
+- src/services/financeiro/centralFinanceiroService.ts (expansão: detalhe +
+  complementação manual)
+- src/services/financeiro/faturaService.ts (expansão: remover/atualizar NF com
+  bloqueio fiscal)
+- src/components/financeiro/ConferenciaFinanceira.tsx (Modo 1/2 + Completar
+  Serviço + edição/remoção NF + rodapé de fonte)
+- src/test/a31b_complemento_financeiro.test.ts (NOVO)
+- src/test/a31b_edicao_nf.test.ts (NOVO)
+- scripts/a31b_prova_*.mjs (evidências read-only)
+- AGENTS.md (resumo atualizado)
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 23 — CLASSIFICAÇÃO FINAL
+────────────────────────────────────────────────────────────────────────────────
+  Central Financeira (leitura)           → PRONTO
+  Complementação manual (fonte única)    → PRONTO
+  Gestão de NFs no dossiê                → PRONTO
+  Sincronização POD App → entregas       → PRONTO (9/9, via trigger)
+  Romaneio App → Central                 → PRONTO COM RESSALVAS (exige fix no App:
+                                            gravar romaneio na OS vinculada + view)
+  Classificação global da missão A31B    → PRONTO COM RESSALVAS
+
+────────────────────────────────────────────────────────────────────────────────
+SEÇÃO 24 — PENDÊNCIAS (PRÓXIMOS PASSOS)
+────────────────────────────────────────────────────────────────────────────────
+1. (Prod) Corrigir RPC f_avancar_etapa_app_motorista para gravar romaneio em
+   ordens_servico.romaneio quando houver OS vinculada (p_os_id no payload).
+2. (Prod) Verificar/recriar vw_app_motorista_operacoes com coluna romaneio +
+   join com ordens_servico (migration m127e1 não aplicada em produção).
+3. Adicionar trigger/rotina para vincular alocações órfãs de homologação a OS
+   quando o App criar operações sem OS.
+4. Validar manualmente a UI (Modo 2 + Completar Serviço + Editar/Remover NF) em
+   ambiente QA com credenciais reais.
+5. Playwright E2E do novo fluxo de complementação manual e gestão de NFs.
+6. Revisar baseline de 'any' em centralFinanceiroService.ts (20 ocorrências).
+
+════════════════════════════════════════════════════════════════════════════════
+ FIM DO RELATÓRIO A31B — 24 SEÇÕES
+════════════════════════════════════════════════════════════════════════════════

@@ -97,21 +97,33 @@ CREATE TABLE IF NOT EXISTS public.webhooks_recebidos (
 
 -- Configurações permissivas de MVP
 DROP POLICY IF EXISTS "Permitir tudo em ia_contextos" ON public.ia_contextos;
-CREATE POLICY "Permitir tudo em ia_contextos" ON public.ia_contextos FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em ia_contextos" ON public.ia_contextos;
+DROP POLICY IF EXISTS "Permitir tudo em ia_contextos" ON ia_contextos;
+CREATE POLICY "Permitir tudo em ia_contextos" ON ia_contextos FOR ALL USING (true);
 ALTER TABLE public.ia_contextos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permitir tudo em automacoes_regras" ON public.automacoes_regras;
-CREATE POLICY "Permitir tudo em automacoes_regras" ON public.automacoes_regras FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_regras" ON public.automacoes_regras;
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_regras" ON automacoes_regras;
+CREATE POLICY "Permitir tudo em automacoes_regras" ON automacoes_regras FOR ALL USING (true);
 ALTER TABLE public.automacoes_regras ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permitir tudo em automacoes_execucoes" ON public.automacoes_execucoes;
-CREATE POLICY "Permitir tudo em automacoes_execucoes" ON public.automacoes_execucoes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_execucoes" ON public.automacoes_execucoes;
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_execucoes" ON automacoes_execucoes;
+CREATE POLICY "Permitir tudo em automacoes_execucoes" ON automacoes_execucoes FOR ALL USING (true);
 ALTER TABLE public.automacoes_execucoes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permitir tudo em automacoes_fila" ON public.automacoes_fila;
-CREATE POLICY "Permitir tudo em automacoes_fila" ON public.automacoes_fila FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_fila" ON public.automacoes_fila;
+DROP POLICY IF EXISTS "Permitir tudo em automacoes_fila" ON automacoes_fila;
+CREATE POLICY "Permitir tudo em automacoes_fila" ON automacoes_fila FOR ALL USING (true);
 ALTER TABLE public.automacoes_fila ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permitir tudo em webhooks_recebidos" ON public.webhooks_recebidos;
-CREATE POLICY "Permitir tudo em webhooks_recebidos" ON public.webhooks_recebidos FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir tudo em webhooks_recebidos" ON public.webhooks_recebidos;
+DROP POLICY IF EXISTS "Permitir tudo em webhooks_recebidos" ON webhooks_recebidos;
+CREATE POLICY "Permitir tudo em webhooks_recebidos" ON webhooks_recebidos FOR ALL USING (true);
 ALTER TABLE public.webhooks_recebidos ENABLE ROW LEVEL SECURITY;
+
+

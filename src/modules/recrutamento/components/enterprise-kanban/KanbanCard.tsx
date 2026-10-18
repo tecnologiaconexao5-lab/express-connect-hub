@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import type { EnterpriseCandidate, PipelineStage, Prioridade, ValidadeCNH, StatusDocumental, StatusOperacional, DisponibilidadeTipo } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
+import { SafeImage } from '@/components/ui/safe-image'
 
 interface KanbanCardProps {
   candidate: EnterpriseCandidate
@@ -180,7 +181,7 @@ export function KanbanCard({ candidate, onMove, possibleStages, isDragging, onCl
         <div className="flex items-start gap-3">
           <div className="relative shrink-0">
             <div className="w-11 h-11 rounded-xl overflow-hidden ring-2 ring-border/40 bg-muted shadow-sm">
-              <img
+              <SafeImage
                 src={candidate.foto}
                 alt={candidate.nome}
                 className="w-full h-full object-cover"

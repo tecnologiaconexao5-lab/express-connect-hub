@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase";
+import { criarOrdemServico, type CriarOSInput } from "@/services/ordemServicoService";
+import { gerarLinkRastreio } from "@/services/rastreamento/trackingService";
+import { gerarEventoComunicacao } from "@/services/communicationHubService";
+import { calcularPreco } from "@/services/precificacao/precificacaoEngineService";
+import type { PricingInput, PricingOutput } from "@/services/precificacao/types";
 
 export interface PedidoPortal {
   id: string;
@@ -120,6 +125,282 @@ export interface PedidoFormData {
   tipo_carga?: string;
   observacoes?: string;
   metadata?: Record<string, any>;
+  
+  // Coleta Reversa
+  reversa?: boolean;
+  reversa_tipo?: string;
+  reversa_qtd_volumes?: number;
+  reversa_unidade?: string;
+  reversa_endereco?: string;
+  reversa_devolucao?: string;
+  reversa_responsavel?: string;
+  reversa_telefone?: string;
+  reversa_data?: string;
+  reversa_instrucoes?: string;
+  reversa_observacoes?: string;
+}
+
+export interface ConfirmacaoPedidoResultado {
+  sucesso: boolean;
+  pedido_id?: string;
+  os_id?: string;
+  os_numero?: string;
+  tracking_link?: string;
+  preco_final?: number;
+  previsao_entrega?: string;
+  veiculo_sugerido?: string;
+  erro?: string;
+}
+
+// =====================================================
+// CONFIRMAR PEDIDO → GERA OPERAÇÃO REAL NO TMS
+// =====================================================
+/**
+ * Confirma um pedido do Portal Cliente, criando OS real no TMS.
+ * Fluxo completo:
+ *   1. Calcula precificação (preview) via Engine oficial
+ *   2. Cria Ordem de Serviço via service oficial (criarOrdemServico)
+ *   3. Vincula pedido à OS em portal_pedidos
+ *   4. Gera link de rastreio público
+ *   5. Registra evento de timeline (communication_events)
+ *
+ * Princípios:
+ *   - Reusa services do TMS (ordemServicoService, precificacaoEngineService)
+ *   - Cliente vê apenas preço final, prazo e veículo sugerido
+ *   - Cliente NUNCA vê margem, custo prestador, composição financeira
+ */
+export async function confirmarPedidoPortal(
+  pedidoId: string,
+  clienteId: string,
+  clienteNome: string,
+  tenantId?: string,
+): Promise<ConfirmacaoPedidoResultado> {
+  try {
+    // 1. Buscar pedido completo
+    const { data: pedido, error: pedidoErr } = await supabase
+      .from("portal_pedidos")
+      .select("*")
+      .eq("id", pedidoId)
+      .single();
+
+    if (pedidoErr || !pedido) {
+      return { sucesso: false, erro: "Pedido não encontrado" };
+    }
+
+    if (pedido.status !== "enviado" && pedido.status !== "em_analise" && pedido.status !== "aprovado") {
+      if (pedido.status === "convertido" && pedido.ordem_servico_id) {
+        const { data: os } = await supabase
+          .from("ordens_servico")
+          .select("id, numero")
+          .eq("id", pedido.ordem_servico_id)
+          .single();
+        return {
+          sucesso: true,
+          pedido_id: pedidoId,
+          os_id: pedido.ordem_servico_id,
+          os_numero: os?.numero,
+          preco_final: pedido.metadata?.preco_final || 0,
+          tracking_link: pedido.metadata?.tracking_link || "",
+        };
+      }
+      return { sucesso: false, erro: `Pedido em status "${pedido.status}" não pode ser confirmado` };
+    }
+
+    // 2. Calcular precificação (preview)
+    let precoFinal = 0;
+    let veiculoSugeridoFinal = pedido.veiculo_sugerido || "A definir";
+    let previsaoEntrega = pedido.prazo_estimado || "A definir";
+
+    try {
+      const distanciaKm = pedido.metadata?.distancia_km || 0;
+      const tipoVeiculo = pedido.veiculo_sugerido || "";
+      const qtdParadas = Array.isArray(pedido.metadata?.paradas)
+        ? (pedido.metadata.paradas as any[]).length + 1
+        : 1;
+
+      const pricingInput: PricingInput = {
+        tenant_id: tenantId || "00000000-0000-0000-0000-000000000000",
+        cliente_id: clienteId,
+        tipo_veiculo: tipoVeiculo || "Van",
+        tipo_operacao: "fracionado",
+        distancia_km: distanciaKm || 0,
+        quantidade_paradas: qtdParadas,
+        origem: {
+          cidade: pedido.coleta_cidade || "",
+          uf: pedido.coleta_uf || "",
+        },
+        destino: {
+          cidade: pedido.entrega_cidade || "",
+          uf: pedido.entrega_uf || "",
+        },
+        peso: pedido.peso || 0,
+        modo: "preview",
+      };
+
+      const resultado = await calcularPreco(pricingInput);
+      if (resultado.sucesso && resultado.cliente) {
+        precoFinal = resultado.cliente.total || 0;
+      } else {
+        await supabase.from("portal_pedidos").update({
+          status: "erro_conversao",
+          erro_processamento: "Falha ao calcular precificação: engine retornou sem sucesso",
+          codigo_erro: "PRICING_FAILED",
+          tentativas_processamento: (pedido.tentativas_processamento || 0) + 1,
+          ultima_tentativa_em: new Date().toISOString(),
+        }).eq("id", pedidoId);
+        return { sucesso: false, erro: "Falha ao calcular precificação. Pedido mantido pendente." };
+      }
+    } catch (pricingErr) {
+      await supabase.from("portal_pedidos").update({
+        status: "erro_conversao",
+        erro_processamento: `Erro na precificação: ${(pricingErr as Error).message}`,
+        codigo_erro: "PRICING_ERROR",
+        tentativas_processamento: (pedido.tentativas_processamento || 0) + 1,
+        ultima_tentativa_em: new Date().toISOString(),
+      }).eq("id", pedidoId);
+      return { sucesso: false, erro: `Erro ao calcular preço: ${(pricingErr as Error).message}` };
+    }
+
+    // 3. Chamar RPC transacional de conversão
+    const { data: rpcResult, error: rpcError } = await supabase
+      .rpc("converter_pedido_para_os", {
+        p_pedido_id: pedidoId,
+        p_operador_id: null,
+      });
+
+    if (rpcError || !rpcResult?.success) {
+      const errorCode = rpcResult?.error_code || "RPC_FAILED";
+      const erroMsg = rpcResult?.message || rpcError?.message || "Falha ao converter pedido";
+
+      // D13: Se o RPC retornou ALREADY_CONVERTED, buscar OS existente
+      if (errorCode === "ALREADY_CONVERTED" && rpcResult?.ordem_servico_id) {
+        const { data: osExistente } = await supabase
+          .from("ordens_servico")
+          .select("id, numero")
+          .eq("id", rpcResult.ordem_servico_id)
+          .single();
+        if (osExistente) {
+          await supabase.from("portal_pedidos").update({
+            status: "convertido",
+            os_vinculada_id: osExistente.id,
+          }).eq("id", pedidoId);
+          return {
+            sucesso: true,
+            pedido_id: pedidoId,
+            os_id: osExistente.id,
+            os_numero: osExistente.numero,
+            preco_final: precoFinal,
+            tracking_link: "",
+          };
+        }
+      }
+
+      await supabase.from("portal_pedidos").update({
+        status: "erro_conversao",
+        erro_processamento: erroMsg,
+        codigo_erro: errorCode,
+        tentativas_processamento: (pedido.tentativas_processamento || 0) + 1,
+        ultima_tentativa_em: new Date().toISOString(),
+      }).eq("id", pedidoId);
+      return { sucesso: false, erro: erroMsg };
+    }
+
+    // Validar retorno do RPC (D13)
+    const osId = rpcResult.ordem_servico_id;
+    if (!osId) {
+      await supabase.from("portal_pedidos").update({
+        status: "erro_conversao",
+        erro_processamento: "RPC não retornou ID da OS",
+        codigo_erro: "RPC_MISSING_OS_ID",
+        tentativas_processamento: (pedido.tentativas_processamento || 0) + 1,
+        ultima_tentativa_em: new Date().toISOString(),
+      }).eq("id", pedidoId);
+      return { sucesso: false, erro: "Falha ao criar OS: ID não retornado" };
+    }
+
+    // Verificar se o pedido já foi vinculado (idempotência client-side)
+    if (pedido.os_vinculada_id && pedido.os_vinculada_id === osId) {
+      return {
+        sucesso: true,
+        pedido_id: pedidoId,
+        os_id: osId,
+        os_numero: rpcResult.numero_os,
+        preco_final: precoFinal,
+        tracking_link: pedido.metadata?.tracking_link || "",
+      };
+    }
+
+    // 4. Gerar link de rastreio público
+    let trackingLink = "";
+    let trackingStatus = "pendente";
+    try {
+      const linkResult = await gerarLinkRastreio(osId);
+      if (linkResult) {
+        trackingLink = linkResult.link;
+        trackingStatus = "gerado";
+      } else {
+        trackingStatus = "falha";
+        console.error("[confirmarPedidoPortal] gerarLinkRastreio retornou null para OS:", osId);
+      }
+    } catch (trackingErr) {
+      trackingStatus = "erro";
+      console.error("[confirmarPedidoPortal] Falha ao gerar tracking:", trackingErr);
+    }
+
+    // 5. Salvar dados complementares no pedido
+    await supabase
+      .from("portal_pedidos")
+      .update({
+        metadata: {
+          ...((pedido.metadata as Record<string, any>) || {}),
+          preco_final: precoFinal,
+          tracking_link: trackingLink,
+          tracking_status: trackingStatus,
+          veiculo_sugerido: veiculoSugeridoFinal,
+          logs: [
+            ...((pedido.metadata?.logs as any[]) || []),
+            {
+              acao: "convertido",
+              timestamp: new Date().toISOString(),
+              os_id: osId,
+              os_numero: rpcResult.numero_os,
+              preco: precoFinal,
+              tracking_status: trackingStatus,
+            },
+          ],
+        },
+      })
+      .eq("id", pedidoId);
+
+    return {
+      sucesso: true,
+      pedido_id: pedidoId,
+      os_id: osId,
+      os_numero: rpcResult.numero_os,
+      tracking_link: trackingLink,
+      preco_final: precoFinal,
+      previsao_entrega: previsaoEntrega || pedido.prazo_estimado || "A definir",
+      veiculo_sugerido: veiculoSugeridoFinal,
+    };
+  } catch (err: any) {
+    console.error("[confirmarPedidoPortal] Erro geral:", err);
+    const erroMsg = err.message || "Erro desconhecido";
+    try {
+      const { data: pedidoAtual } = await supabase
+        .from("portal_pedidos")
+        .select("tentativas_processamento")
+        .eq("id", pedidoId)
+        .single();
+      const tentativas = (pedidoAtual?.tentativas_processamento || 0) + 1;
+      await supabase.from("portal_pedidos").update({
+        erro_processamento: erroMsg,
+        codigo_erro: "UNKNOWN_ERROR",
+        tentativas_processamento: tentativas,
+        ultima_tentativa_em: new Date().toISOString(),
+      }).eq("id", pedidoId);
+    } catch (_) {}
+    return { sucesso: false, erro: erroMsg };
+  }
 }
 
 // =====================================================
@@ -173,15 +454,18 @@ export async function criarPedidoPortal(
   clienteId?: string
 ): Promise<PedidoPortal | null> {
   try {
-    // Gerar número do pedido de forma robusta
-    let numeroPedido = `PED-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}`;
+    // Gerar número do pedido via RPC (D22: sem fallback randômico)
+    let numeroPedido = '';
     try {
       const { data: numeroData, error: numeroError } = await supabase.rpc('gerar_numero_pedido');
-      if (!numeroError && numeroData) {
-        numeroPedido = numeroData;
+      if (numeroError || !numeroData) {
+        console.error('[PedidosService] Erro RPC gerar_numero_pedido:', numeroError?.message);
+        return null;
       }
+      numeroPedido = numeroData;
     } catch (rpcErr) {
-      console.warn('[PedidosService] Erro ao chamar gerar_numero_pedido RPC:', rpcErr);
+      console.error('[PedidosService] Exceção RPC gerar_numero_pedido:', rpcErr);
+      return null;
     }
     
     // Calcular sugestões
@@ -305,78 +589,36 @@ export async function criarPedidoPortal(
           veiculo_sugerido: veiculoSugerido,
           prazo_estimado: prazoEstimado,
           
-          // Automação
+          solicitacao_via: "portal_cliente",
+          data_solicitada: new Date().toISOString(),
           payload_n8n: payloadN8n,
           metadata: dados.metadata || {},
+          
+          // Coleta Reversa
+          reversa: dados.reversa || false,
+          reversa_tipo: dados.reversa_tipo || null,
+          reversa_qtd_volumes: dados.reversa_qtd_volumes || 0,
+          reversa_unidade: dados.reversa_unidade || null,
+          reversa_endereco: dados.reversa_endereco || null,
+          reversa_devolucao: dados.reversa_devolucao || null,
+          reversa_responsavel: dados.reversa_responsavel || null,
+          reversa_telefone: dados.reversa_telefone || null,
+          reversa_data: dados.reversa_data || null,
+          reversa_instrucoes: dados.reversa_instrucoes || null,
+          reversa_observacoes: dados.reversa_observacoes || null,
         }])
         .select()
         .single();
       responseData = response.data;
       responseError = response.error;
     } catch (insertErr) {
-      console.warn('[PedidosService] Falha de inserção no banco de dados. Usando local fallback:', insertErr);
+      console.error('[PedidosService] Falha de inserção no banco de dados:', insertErr);
       responseError = insertErr;
     }
 
     if (responseError || !responseData) {
-      console.warn('[PedidosService] Utilizando fallback local para salvar pedido no localStorage:', responseError);
-      
-      const localPedido: PedidoPortal = {
-        id: `local-ped-${Date.now()}`,
-        cliente_id: clienteId || "local-client",
-        numero_pedido: numeroPedido,
-        status: 'enviado',
-        solicitante_nome: dados.solicitante_nome,
-        solicitante_email: dados.solicitante_email,
-        solicitante_telefone: dados.solicitante_telefone,
-        filial: dados.filial,
-        centro_custo: dados.centro_custo,
-        prioridade: (dados.prioridade as any) || 'normal',
-        coleta_cep: dados.coleta_cep,
-        coleta_rua: dados.coleta_rua,
-        coleta_numero: dados.coleta_numero,
-        coleta_complemento: dados.coleta_complemento,
-        coleta_bairro: dados.coleta_bairro,
-        coleta_cidade: dados.coleta_cidade,
-        coleta_uf: dados.coleta_uf,
-        coleta_referencia: dados.coleta_referencia,
-        coleta_data: dados.coleta_data,
-        entrega_destinatario: dados.entrega_destinatario,
-        entrega_telefone: dados.entrega_telefone,
-        entrega_email: dados.entrega_email,
-        entrega_notificar_whatsapp: dados.entrega_notificar_whatsapp,
-        entrega_notificar_email: dados.entrega_notificar_email,
-        entrega_cep: dados.entrega_cep,
-        entrega_rua: dados.entrega_rua,
-        entrega_numero: dados.entrega_numero,
-        entrega_complemento: dados.entrega_complemento,
-        entrega_bairro: dados.entrega_bairro,
-        entrega_cidade: dados.entrega_cidade,
-        entrega_uf: dados.entrega_uf,
-        entrega_referencia: dados.entrega_referencia,
-        entrega_data: dados.entrega_data,
-        descricao: dados.descricao,
-        volumes: dados.volumes || 1,
-        peso: dados.peso || 0,
-        comprimento: dados.comprimento,
-        largura: dados.largura,
-        altura: dados.altura,
-        valor_declarado: dados.valor_declarado,
-        tipo_carga: dados.tipo_carga,
-        observacoes: dados.observacoes,
-        veiculo_sugerido: veiculoSugerido,
-        prazo_estimado: prazoEstimado,
-        payload_n8n: payloadN8n,
-        metadata: dados.metadata || {},
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const localList = JSON.parse(localStorage.getItem('portal_pedidos_locais') || '[]');
-      localList.push(localPedido);
-      localStorage.setItem('portal_pedidos_locais', JSON.stringify(localList));
-
-      return localPedido;
+      console.error('[PedidosService] Erro ao salvar pedido no Supabase:', responseError?.message || responseError);
+      return null;
     }
     
     return responseData;
@@ -396,47 +638,25 @@ export async function buscarPedidosPortal(
 ): Promise<PedidoPortal[]> {
   if (!clienteId) return [];
   try {
-    const localList = JSON.parse(localStorage.getItem('portal_pedidos_locais') || '[]');
+    let query = supabase
+      .from('portal_pedidos')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
     
-    let supabaseData: PedidoPortal[] = [];
-    try {
-      let query = supabase
-        .from('portal_pedidos')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-      
-      if (clienteId) {
-        query = query.eq('cliente_id', clienteId);
-      }
-      if (status) {
-        query = query.eq('status', status);
-      }
-      
-      const { data, error } = await query;
-      if (!error && data) {
-        supabaseData = data;
-      } else if (error) {
-        console.warn('[PedidosService] Erro ao carregar pedidos do Supabase:', error.message);
-      }
-    } catch (dbErr) {
-      console.warn('[PedidosService] Erro de rede ou RLS ao buscar do Supabase:', dbErr);
-    }
-    
-    // Combinar listas e ordenar por data decrescente
-    const combined = [...localList, ...supabaseData];
-    
-    // Filtrar localmente caso o status ou cliente_id tenham sido passados
-    let filtered = combined;
     if (clienteId) {
-      filtered = filtered.filter(p => p.cliente_id === clienteId || p.cliente_id === "local-client");
+      query = query.eq('cliente_id', clienteId);
     }
     if (status) {
-      filtered = filtered.filter(p => p.status === status);
+      query = query.eq('status', status);
     }
-
-    filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return filtered.slice(0, limit);
+    
+    const { data, error } = await query;
+    if (error) {
+      console.error('[PedidosService] Erro ao carregar pedidos do Supabase:', error.message);
+      return [];
+    }
+    return data || [];
   } catch (error) {
     console.error('[PedidosService] Erro ao buscar pedidos:', error);
     return [];

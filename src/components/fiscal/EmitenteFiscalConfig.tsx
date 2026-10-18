@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 import {
   buscarEmitenteAtivo,
   salvarEmitenteFiscal,
@@ -151,7 +152,13 @@ export default function EmitenteFiscalConfig() {
   };
 
   if (loading) {
-    return <Card><CardContent className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></CardContent></Card>;
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <ProgressiveBlocksLoader size="normal" />
+        </CardContent>
+      </Card>
+    );
   }
 
   return (

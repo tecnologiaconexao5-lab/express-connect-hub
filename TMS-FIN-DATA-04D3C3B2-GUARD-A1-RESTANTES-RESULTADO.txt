@@ -1,0 +1,154 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C3B2-GUARD-A1-RESTANTES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML real)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+12/12 A1 restantes movidos da raiz para scripts/lab com guardHarness fail-closed ANTES de
+qualquer conexao/escrita; hardcodes removidos e fallback silencioso de PROD ELIMINADO (remocao
+do dotenv default). Consolidado: 23/23 A1 protegidos (11 de C3B1 + 12 de C3B2). Build OK;
+selftest/P1/P2/C3B1 sem regressao; zero DML/conexao/Storage.
+
+--------------------------------------------------------------------------------
+1. 12 ARQUIVOS — ANTES/DEPOIS
+--------------------------------------------------------------------------------
+ARQ (raiz)              | ANTES                                          | DEPOIS
+------------------------+------------------------------------------------+-------------------------------------
+teste_completo.cjs      | URL PROD + anon hardcoded; createClient        | scripts/lab/ + guard + env
+teste_fluxo_mapbox.cjs  | idem                                            | idem
+teste_os.cjs            | idem                                            | idem
+teste_pgto_completo.cjs | idem                                            | idem
+test_mapbox_valor.cjs   | idem                                            | idem
+test_pagamento.cjs      | idem                                            | idem
+validar_pagamento.cjs   | idem                                            | idem
+test_os_p2.mjs          | dotenv default (.env=PROD) + createClient       | scripts/lab/ + guard + dotenv REMOVIDO
+test_os_p3.mjs          | dotenv default (.env=PROD) + createClient       | idem
+valida.ts               | dotenv default (.env=PROD) + createClient       | idem
+valida_crud.ts          | dotenv default (.env=PROD) + createClient       | idem
+valida_status.ts        | dotenv default (.env=PROD) + createClient       | idem
+
+--------------------------------------------------------------------------------
+2. CAMINHOS
+--------------------------------------------------------------------------------
+ Todos em scripts/lab/<mesmo nome> ....... 12/12
+ Ausentes da raiz ........................ 12/12 (0 restantes)
+ Nenhum importado por src/UI ............ 0
+ package.json citando caminho antigo .... 0
+
+--------------------------------------------------------------------------------
+3. HARDCODES / FALLBACKS REMOVIDOS
+--------------------------------------------------------------------------------
+ - URL/ref PROD hardcoded .... 7 -> 0 (substituido por process.env.VITE_SUPABASE_URL)
+ - anon key hardcoded ....... 7 -> 0 (substituido por process.env.VITE_SUPABASE_ANON_KEY)
+ - service_role hardcoded ... 0 (ausente)
+ - DATABASE_URL com segredo . 0 (ausente)
+ - Fallback silencioso PROD . 5 arquivos (test_os_p2/p3.mjs, valida.ts, valida_crud.ts,
+   valida_status.ts): `dotenv.config()` (que carregava .env=PROD) e import do dotenv REMOVIDOS;
+   a configuracao passa a vir SOMENTE do ambiente validado pelo guard (guardHarness carrega
+   .env.qa preferencial). Resultado: nenhum caminho resolve PROD antes/depois do guard.
+
+--------------------------------------------------------------------------------
+4. POSICAO DO GUARD (antes de qualquer efeito)
+--------------------------------------------------------------------------------
+ Inserido como 1a barreira executavel, apos o import/require do supabase e ANTES de:
+ createClient / consts de URL/key / PG / fetch / Storage / RPC / INSERT/UPDATE/DELETE.
+ Ex.: scripts/lab/teste_completo.cjs
+   const { createClient } = require('@supabase/supabase-js');
+   const { guardHarness } = require("../_guard.cjs");
+   guardHarness("scripts/lab/teste_completo.cjs");   <-- antes de createClient
+   const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+ (analogo para .mjs/.ts com import de ../_guard.mjs).
+
+--------------------------------------------------------------------------------
+5. MATRIZ A-E POR HARNESS (guard central)
+--------------------------------------------------------------------------------
+ A) PROD -> BLOCKED ................................. PASS
+ B) PROD + ALLOW_TEST_WRITES=true -> BLOCKED ........ PASS
+ C) QA sem opt-in -> BLOCKED ......................... PASS
+ D) QA + opt-in -> PASS SOMENTE NO GUARD (sem corpo/DML) ... PASS
+ E) env ausente/incoerente -> BLOCKED ................ PASS
+ Execucao controlada (env default, sem opt-in): 12/12 abortaram com "TEST WRITE BLOCKED";
+ nenhum prosseguiu para conexao/DML/Storage.
+
+--------------------------------------------------------------------------------
+6. PROVA CONSOLIDADA 23/23 A1
+--------------------------------------------------------------------------------
+ - C3B1 (11): test-cliente, test-end2, test-endereco, test-financeiro, test-os, test-os2,
+   test-pagar, test-pf-final, test-prestador, test-vinculo, test-upload-final  -> OK
+ - C3B2 (12): teste_completo, teste_fluxo_mapbox, teste_os, teste_pgto_completo,
+   test_mapbox_valor, test_pagamento, validar_pagamento, test_os_p2, test_os_p3,
+   valida, valida_crud, valida_status                                          -> OK
+ - scripts/lab contem 23/23 A1; raiz contem 0.
+ - Zero PROD hardcoded | zero anon/service_role | zero DATABASE_URL com segredo.
+ - Zero conexao | zero DML | zero Storage | zero browser real.
+
+--------------------------------------------------------------------------------
+7. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+ node scripts/_guard.verify_c3b2.cjs ..... 12/12 estatico+dinamico PASS | A-E PASS
+ node scripts/_guard.verify_c3b1.cjs ..... 11/11 PASS (sem regressao)
+ node scripts/_guard.selftest.cjs ........ TOTAL 13 | PASS 13 | FAIL 0
+ node scripts/_guard.verify_p1.cjs ....... 13/13 OK | A-E PASS (sem regressao)
+ node scripts/_guard.verify_p2.cjs ....... PASS (sem regressao)
+ npm run build ........................... OK ("built in 43.21s")
+ Nenhum fluxo funcional de harness executado.
+
+--------------------------------------------------------------------------------
+8. REVALIDACAO
+--------------------------------------------------------------------------------
+ - C3B1 continua 11/11 protegido ... OK
+ - snippets C2 continuam inertes ... OK (27/27)
+ - /dev-teste ausente .............. OK
+ - src/lib/testes ausente .......... OK
+
+--------------------------------------------------------------------------------
+9. NAO TOCADO
+--------------------------------------------------------------------------------
+ test_doc.cjs (A2); 6 A2; 2 A3; 2 A4; Classe C; Classe F; tests/e2e; tmp/scratch; .env;
+ banco/RLS/RPC; APP.
+
+--------------------------------------------------------------------------------
+10. RISCOS RESTANTES
+--------------------------------------------------------------------------------
+ R1. A2 (6): criar_tabela_valores, criar_todas, forcar_create, refresh, criar_tabela,
+     test_doc -> C3C (neutralizar/arquivar).
+ R2. A3 (2): query_sql, check_types; A4 (2): criar_schema, criar_tabelas -> C3D
+     (arquivar/contrato admin; sem guard de teste).
+ R3. Classe C (com credencial em _audit_*), Classe F (update_*), tests/e2e, scratch/tmp.
+
+--------------------------------------------------------------------------------
+11. ACEITE
+--------------------------------------------------------------------------------
+ 23/23 A1 protegidos (C3B1+C3B2) ....... OK
+ Nenhum A1 writer executavel na raiz ... OK (0)
+ PROD impossivel pelos A1 .............. OK
+ QA somente com guard + opt-in ......... OK
+ Zero DML/conexao real ................. OK
+ Build OK / sem regressao .............. OK
+
+--------------------------------------------------------------------------------
+12. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. 12/12 A1 restantes movidos+guardados, hardcodes e fallback PROD eliminados,
+23/23 A1 consolidados, build OK, P1/P2/C3B1 sem regressao.
+
+--------------------------------------------------------------------------------
+13. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3C3C — A2 (6 one-offs): neutralizar para stub inerte + arquivar historico
+sanitizado (docs/lab). Depois C3D (A3/A4 arquivar/contrato admin).
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C3B2-GUARD-A1-RESTANTES-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C3B2-GUARD-A1-RESTANTES-RESULTADO.txt
+Tamanho ..: 9092 bytes
+Data .....: 24/09/2026 21:36:48
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C3B2
+================================================================================

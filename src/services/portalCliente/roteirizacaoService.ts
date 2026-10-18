@@ -14,6 +14,45 @@ export interface VeiculoEscala {
   regiao?: string;
 }
 
+export interface Parada {
+  id: string;
+  rota_id: string;
+  sequencia: number;
+  cliente_nome: string;
+  destinatario?: string;
+  endereco: string;
+  numero?: string;
+  bairro?: string;
+  cidade: string;
+  uf?: string;
+  cep?: string;
+  latitude?: number;
+  longitude?: number;
+  peso?: number;
+  volumes?: number;
+  cubagem?: number;
+  temperatura?: string;
+  prioridade?: string;
+  janela_entrega?: string;
+  instrucoes?: string;
+  status: string;
+  recebedor?: string;
+  assinatura_url?: string;
+  pod_url?: string;
+  fotos?: string[];
+  ocorrencia?: string;
+  data_hora?: string;
+  data_entrega?: string;
+  volumes_entregues?: number;
+  observacoes?: string;
+  pedido?: string;
+  nota_fiscal?: string;
+  contato?: string;
+  tipo_carga?: string;
+  os_id?: string;
+  alocacao_id?: string;
+}
+
 export interface Rota {
   id: string;
   nome: string;
@@ -26,6 +65,26 @@ export interface Rota {
   km: number;
   tempo: number;
   status: string;
+  motoristaNome?: string;
+  motoristaTelefone?: string;
+  placa?: string;
+  tipoVeiculo?: string;
+  dataEscala?: string;
+  horarioInicio?: string;
+  horarioFim?: string;
+  origem?: string;
+  destino?: string;
+  prestadorId?: string;
+  veiculoId?: string;
+  ordemServicoId?: string;
+  aceitePrestador?: boolean;
+  finalizada?: boolean;
+  temComprovante?: boolean;
+  trackingLat?: number;
+  trackingLng?: number;
+  numeroParadas?: number;
+  paradasPendentes?: number;
+  paradas?: Parada[];
 }
 
 export interface InsightIA {
@@ -49,154 +108,285 @@ export interface SaudeOperacional {
   tendencia: "subindo" | "estavel" | "caindo";
 }
 
-export async function buscarRotas(clienteId?: string, clienteNome?: string): Promise<Rota[]> {
-  if (!clienteId) return getFallbackRotas();
+function getPeriodoISO(periodo: string): { inicio: string; fim: string } {
+  const now = new Date();
+  let inicio: Date;
+  switch (periodo) {
+    case "7dias":
+      inicio = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case "30dias":
+      inicio = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case "90dias":
+      inicio = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case "mes_atual":
+      inicio = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    default:
+      inicio = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+  return {
+    inicio: inicio.toISOString(),
+    fim: now.toISOString(),
+  };
+}
+
+function estimarKm(distanciaTexto: string | null, kmRealizados: number | null): number {
+  if (kmRealizados && kmRealizados > 0) return kmRealizados;
+  return 0;
+}
+
+export async function buscarRotas(clienteId?: string, periodo?: string): Promise<Rota[]> {
+  if (!clienteId) return [];
+
+  const { inicio, fim } = getPeriodoISO(periodo || "30dias");
 
   try {
-    const { data, error } = await supabase
-      .from("ordens_servico")
-      .select("id, cidade_destino, veiculo_tipo, status")
+    const { data: rotasData, error } = await supabase
+      .from("rotas")
+      .select(`
+        id, nome, status, data_rota, tipo_rota,
+        distancia_km, duracao_min, peso_total, volumes_total,
+        veiculo_sugerido, prestador_id, motorista, veiculo,
+        os_id, cliente_id, numero_paradas, paradas_pendentes,
+        operation_mode, horario_previsto, horario_realizado,
+        origem, destino_final, created_at
+      `)
       .eq("cliente_id", clienteId)
+      .gte("created_at", inicio)
+      .lte("created_at", fim)
       .order("created_at", { ascending: false })
       .limit(100);
 
     if (error) {
       console.warn("[RoteirizacaoService] Erro ao buscar rotas:", error.message);
-      return getFallbackRotas();
+      return [];
     }
 
-    if (!data || data.length === 0) {
-      return getFallbackRotas();
+    if (!rotasData || rotasData.length === 0) return [];
+
+    const prestadorIds = [...new Set(rotasData.map(r => r.prestador_id).filter(Boolean))];
+    let prestadoresMap: Record<string, { nome: string; telefone: string }> = {};
+    if (prestadorIds.length > 0) {
+      const { data: prestadores } = await supabase
+        .from("prestadores")
+        .select("id, nome_completo, telefone")
+        .in("id", prestadorIds);
+      if (prestadores) {
+        prestadoresMap = Object.fromEntries(
+          prestadores.map(p => [p.id, { nome: p.nome_completo || "N/I", telefone: p.telefone || "" }])
+        );
+      }
     }
 
-    const regioes = [...new Set(data.map(d => d.cidade_destino).filter(Boolean))];
-    const rotas: Rota[] = regioes.slice(0, 5).map((regiao, idx) => ({
-      id: `${idx + 1}`,
-      nome: `Rota ${regiao}`,
-      regiao: regiao,
-      veiculo: "Van",
-      capacidade: 600,
-      ocupacao: Math.floor(Math.random() * 400) + 100,
-      pesoTotal: Math.floor(Math.random() * 300) + 100,
-      volumeTotal: Math.random() * 3 + 1,
-      km: Math.floor(Math.random() * 50) + 20,
-      tempo: Math.floor(Math.random() * 180) + 60,
-      status: idx === 0 ? "em_otimizacao" : "otimizada",
-    }));
+    const rotas: Rota[] = rotasData.map((r) => {
+      const prestadorInfo = r.prestador_id ? prestadoresMap[r.prestador_id] : undefined;
+      return {
+        id: r.id,
+        nome: r.nome || `Rota ${r.id?.slice(0, 8) || ""}`,
+        regiao: r.origem?.split(",")[0]?.trim() || "N/I",
+        veiculo: r.veiculo_sugerido || r.veiculo || "N/I",
+        capacidade: obterCapacidadePadrao(r.veiculo_sugerido || ""),
+        ocupacao: r.numero_paradas && r.paradas_pendentes != null
+          ? Math.round(((r.numero_paradas - r.paradas_pendentes) / r.numero_paradas) * 100) : 0,
+        pesoTotal: r.peso_total || 0,
+        volumeTotal: r.volumes_total || 0,
+        km: r.distancia_km || 0,
+        tempo: r.duracao_min || 0,
+        status: r.status || "programacao",
+        motoristaNome: r.motorista || prestadorInfo?.nome,
+        motoristaTelefone: prestadorInfo?.telefone,
+        placa: r.veiculo || "",
+        tipoVeiculo: r.veiculo_sugerido || "",
+        dataEscala: r.data_rota,
+        horarioInicio: r.horario_previsto || "",
+        horarioFim: r.horario_realizado || "",
+        origem: r.origem || "",
+        destino: r.destino_final || "",
+        prestadorId: r.prestador_id,
+        ordemServicoId: r.os_id,
+        aceitePrestador: r.status !== "pendente",
+        finalizada: r.status === "concluida",
+        temComprovante: false,
+        numeroParadas: r.numero_paradas || 0,
+        paradasPendentes: r.paradas_pendentes || 0,
+      };
+    });
 
     return rotas;
   } catch (error) {
     console.warn("[RoteirizacaoService] Exceção ao buscar rotas:", error);
-    return getFallbackRotas();
+    return [];
   }
 }
 
-export async function buscarEscala(clienteId?: string, clienteNome?: string): Promise<VeiculoEscala[]> {
-  if (!clienteId) return getFallbackEscala();
-
+export async function buscarParadasDaRota(rotaId: string): Promise<Parada[]> {
+  if (!rotaId) return [];
   try {
     const { data, error } = await supabase
-      .from("veiculos")
-      .select("id, modelo, placa, tipo, capacidade_peso, capacidade_volume, tipo_carroceria, status")
-      .limit(20);
+      .from("rota_paradas")
+      .select("*")
+      .eq("rota_id", rotaId)
+      .order("sequencia", { ascending: true });
+
+    if (error || !data) return [];
+    return data as Parada[];
+  } catch (e) {
+    console.warn("[RoteirizacaoService] Erro ao buscar paradas:", e);
+    return [];
+  }
+}
+
+function obterCapacidadePadrao(tipo: string): number {
+  const mapa: Record<string, number> = {
+    moto: 30, fiorino: 300, van: 600, hr: 1000,
+    vuc: 2000, truck: 10000, carreta: 15000, bitrem: 25000,
+  };
+  return mapa[tipo.toLowerCase()] || 600;
+}
+
+export async function buscarEscala(clienteId?: string, periodo?: string): Promise<VeiculoEscala[]> {
+  if (!clienteId) return [];
+
+  const { inicio, fim } = getPeriodoISO(periodo || "30dias");
+
+  try {
+    const { data: veiculosUsados, error } = await supabase
+      .from("alocacoes_escala")
+      .select("tipo_veiculo, placa, prestador_id")
+      .eq("cliente_id", clienteId)
+      .gte("created_at", inicio)
+      .lte("created_at", fim)
+      .not("tipo_veiculo", "is", null)
+      .limit(100);
 
     if (error) {
       console.warn("[RoteirizacaoService] Erro ao buscar escala:", error.message);
-      return getFallbackEscala();
+      return [];
     }
 
-    if (!data || data.length === 0) {
-      return getFallbackEscala();
+    if (!veiculosUsados || veiculosUsados.length === 0) return [];
+
+    const veiculoMap = new Map<string, { tipo: string; placa: string; count: number }>();
+    for (const v of veiculosUsados) {
+      const key = `${v.tipo_veiculo}-${v.placa || v.prestador_id}`;
+      const existing = veiculoMap.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        veiculoMap.set(key, { tipo: v.tipo_veiculo || "van", placa: v.placa || "---", count: 1 });
+      }
     }
 
-    return data.map(v => ({
-      id: v.id,
-      tipo: v.tipo || "fiorino",
-      modelo: v.modelo || "Veículo",
-      placa: v.placa || "---",
-      capacidadePeso: v.capacidade_peso || 300,
-      capacidadeVolume: v.capacidade_volume || 2,
-      tipoCarroceria: v.tipo_carroceria || "seco",
-      status: v.status || "disponivel",
-      ocupacao: Math.floor(Math.random() * 200),
-      entregasAtribuidas: Math.floor(Math.random() * 15),
+    return Array.from(veiculoMap.entries()).map(([key, v], idx) => ({
+      id: key,
+      tipo: v.tipo,
+      modelo: v.tipo,
+      placa: v.placa,
+      capacidadePeso: obterCapacidadePadrao(v.tipo),
+      capacidadeVolume: 4,
+      tipoCarroceria: "seco",
+      status: "em_operacao",
+      ocupacao: 0,
+      entregasAtribuidas: v.count,
     }));
   } catch (error) {
     console.warn("[RoteirizacaoService] Exceção ao buscar escala:", error);
-    return getFallbackEscala();
+    return [];
   }
 }
 
 export async function buscarInsights(clienteId?: string, clienteNome?: string): Promise<InsightIA[]> {
-  if (!clienteId) return getFallbackInsights();
+  if (!clienteId) return [];
 
   try {
-    const [entregasData, ocorrenciasData] = await Promise.all([
-      supabase.from("ordens_servico").select("status, sla, created_at").eq("cliente_id", clienteId).limit(50),
-      supabase.from("ocorrencias").select("tipo, created_at").eq("cliente_id", clienteId).limit(20),
-    ]);
+    const { data: alocacoes } = await supabase
+      .from("alocacoes_escala")
+      .select("status, finalizada, aceite_prestador")
+      .eq("cliente_id", clienteId)
+      .limit(100);
 
-    const atrasadas = entregasData.data?.filter(e => e.status === "atrasada").length || 0;
-    const entregasCount = entregasData.data?.length || 0;
-    const slaMedio = entregasData.data?.reduce((acc, e) => acc + (e.sla || 0), 0) / (entregasCount || 1) || 0;
-    const ocorrenciasCount = ocorrenciasData.data?.length || 0;
+    const { data: ocorrencias } = await supabase
+      .from("portal_ocorrencias")
+      .select("id, tipo")
+      .eq("cliente_id", clienteId)
+      .limit(20);
+
+    const alocs = alocacoes || [];
+    const total = alocs.length;
+    const pendentes = alocs.filter(a => a.status === "pendente" || a.status === "programacao").length;
+    const emAndamento = alocs.filter(a => a.status === "em_rota" || a.status === "saiu_para_rota").length;
+    const concluidas = alocs.filter(a => a.finalizada || a.status === "entrega_concluida").length;
+    const semAceite = alocs.filter(a => !a.aceite_prestador && !a.finalizada).length;
+    const ocorrenciasCount = ocorrencias?.length || 0;
 
     const insights: InsightIA[] = [];
 
-    if (atrasadas > 0) {
+    if (pendentes > 0) {
       insights.push({
-        id: "1",
-        tipo: "alerta",
-        titulo: "Entregas atrasadas detectadas",
-        descricao: `${atrasadas} entrega(s) está(ão) com atraso. Revise o status.`,
-        prioridade: "alta",
-        metric: `${atrasadas} entregas`,
+        id: "1", tipo: "alerta",
+        titulo: "Rotas pendentes de execução",
+        descricao: `${pendentes} rota(s) aguardando início. Verifique o status.`,
+        prioridade: pendentes > 5 ? "alta" : "media",
+        metric: `${pendentes} pendentes`,
       });
     }
 
-    if (slaMedio >= 95) {
+    if (emAndamento > 0) {
       insights.push({
-        id: "2",
-        tipo: "insight",
-        titulo: "Operação saudável",
-        descricao: "Parabéns! Sua operação está mantendo SLA acima de 95%.",
+        id: "2", tipo: "insight",
+        titulo: "Operação em andamento",
+        descricao: `${emAndamento} rota(s) ativa(s) no momento.`,
         prioridade: "baixa",
-        metric: `${Math.round(slaMedio)}% SLA`,
+        metric: `${emAndamento} ativas`,
       });
-    } else if (slaMedio >= 85) {
+    }
+
+    if (semAceite > 0) {
       insights.push({
-        id: "3",
-        tipo: "previsao",
-        titulo: "SLA em atenção",
-        descricao: "Mantenha o ritmo para garantir satisfação dos seus clientes.",
-        prioridade: "media",
-        metric: `${Math.round(slaMedio)}% SLA`,
+        id: "3", tipo: "alerta",
+        titulo: "Rotas sem aceite do motorista",
+        descricao: `${semAceite} rota(s) ainda não foram aceitas pelo motorista.`,
+        prioridade: semAceite > 3 ? "alta" : "media",
+        metric: `${semAceite} sem aceite`,
+      });
+    }
+
+    if (concluidas >= 10) {
+      insights.push({
+        id: "4", tipo: "insight",
+        titulo: "Volume de entregas concluídas",
+        descricao: `${concluidas} entrega(s) finalizada(s) no período.`,
+        prioridade: "baixa",
+        metric: `${concluidas} concluídas`,
       });
     }
 
     if (ocorrenciasCount > 0) {
       insights.push({
-        id: "4",
-        tipo: "alerta",
+        id: "5", tipo: "alerta",
         titulo: "Ocorrências registradas",
-        descricao: `${ocorrenciasCount} ocorrência(s) necesita(m) de atenção.`,
+        descricao: `${ocorrenciasCount} ocorrência(s) no período.`,
         prioridade: ocorrenciasCount > 3 ? "alta" : "media",
         metric: `${ocorrenciasCount} ocorrências`,
       });
     }
 
-    insights.push({
-      id: "5",
-      tipo: "sugestao",
-      titulo: "Otimizar rotas",
-      descricao: "Considere agrupar entregas por região para reduzir custos.",
-      prioridade: "baixa",
-    });
+    if (total === 0) {
+      insights.push({
+        id: "6", tipo: "sugestao",
+        titulo: "Nenhuma rota encontrada",
+        descricao: "Ainda não há rotas para este período. Tente ampliar o filtro.",
+        prioridade: "baixa",
+      });
+    }
 
     return insights;
   } catch (error) {
     console.warn("[RoteirizacaoService] Exceção ao buscar insights:", error);
-    return getFallbackInsights();
+    return [];
   }
 }
 
@@ -205,10 +395,10 @@ export async function buscarMapaOperacional(clienteId?: string) {
 
   try {
     const { data, error } = await supabase
-      .from("ordens_servico")
-      .select("id, status, cidade_destino, latitude, longitude")
+      .from("alocacoes_escala")
+      .select("id, status, origem, destino, prestador_id, tipo_veiculo, placa")
       .eq("cliente_id", clienteId)
-      .in("status", ["em_rota", "saiu_para_rota"])
+      .in("status", ["em_rota", "saiu_para_rota", "coleta"])
       .limit(50);
 
     if (error) {
@@ -223,66 +413,57 @@ export async function buscarMapaOperacional(clienteId?: string) {
   }
 }
 
-export async function buscarSaudeOperacional(clienteId?: string): Promise<SaudeOperacional> {
-  if (!clienteId) return getFallbackSaude();
+export async function buscarSaudeOperacional(clienteId?: string, periodo?: string): Promise<SaudeOperacional> {
+  if (!clienteId) return { score: 0, status: "critico", sla: 0, atrasos: 0, ocorrencias: 0, ocupacao: 0, devolucoes: 0, tendencia: "estavel" };
+
+  const { inicio, fim } = getPeriodoISO(periodo || "30dias");
 
   try {
-    const [entregasData, ocorrenciasData] = await Promise.all([
-      supabase.from("ordens_servico").select("status, sla").eq("cliente_id", clienteId).limit(100),
-      supabase.from("ocorrencias").select("id").eq("cliente_id", clienteId).limit(50),
+    const [alocacoesData, ocorrenciasData] = await Promise.all([
+      supabase
+        .from("alocacoes_escala")
+        .select("status, finalizada, aceite_prestador")
+        .eq("cliente_id", clienteId)
+        .gte("created_at", inicio)
+        .lte("created_at", fim)
+        .limit(200),
+      supabase
+        .from("portal_ocorrencias")
+        .select("id")
+        .eq("cliente_id", clienteId)
+        .gte("created_at", inicio)
+        .lte("created_at", fim)
+        .limit(50),
     ]);
 
-    const entregas = entregasData.data || [];
-    const atrasadas = entregas.filter(e => e.status === "atrasada").length;
-    const slaMedio = entregas.length > 0
-      ? Math.round(entregas.reduce((acc, e) => acc + (e.sla || 0), 0) / entregas.length)
-      : 100;
+    const alocs = alocacoesData.data || [];
+    const totalAlocs = alocs.length;
+    const concluidas = alocs.filter(a => a.finalizada || a.status === "entrega_concluida").length;
+    const atrasadas = alocs.filter(a => a.status === "atrasada").length;
+    const aceitas = alocs.filter(a => a.aceite_prestador).length;
     const ocorrencias = ocorrenciasData.data?.length || 0;
 
+    const sla = totalAlocs > 0 ? Math.round((concluidas / totalAlocs) * 100) : 100;
+    const ocupacao = totalAlocs > 0 ? Math.round((aceitas / totalAlocs) * 100) : 0;
+
     const score = Math.min(100, Math.max(0,
-      (slaMedio * 0.4) +
-      (100 - (atrasadas / Math.max(entregas.length, 1)) * 100) * 0.3 +
-      (100 - (ocorrencias / 10) * 100) * 0.3
+      (sla * 0.4) +
+      (100 - (atrasadas / Math.max(totalAlocs, 1)) * 100) * 0.3 +
+      (100 - (ocorrencias / Math.max(totalAlocs, 1)) * 100) * 0.3
     ));
 
     return {
       score,
       status: score >= 85 ? "saudavel" : score >= 70 ? "atencao" : "critico",
-      sla: slaMedio,
+      sla,
       atrasos: atrasadas,
       ocorrencias,
-      ocupacao: Math.floor(Math.random() * 30) + 60,
-      devolucoes: Math.floor(Math.random() * 3),
-      tendencia: "estavel",
+      ocupacao,
+      devolucoes: 0,
+      tendencia: score >= 80 ? "subindo" : score >= 60 ? "estavel" : "caindo",
     };
   } catch (error) {
     console.warn("[RoteirizacaoService] Exceção ao buscar saúde:", error);
-    return getFallbackSaude();
+    return { score: 0, status: "critico", sla: 0, atrasos: 0, ocorrencias: 0, ocupacao: 0, devolucoes: 0, tendencia: "estavel" };
   }
-}
-
-function getFallbackRotas(): Rota[] {
-  return [
-    { id: "1", nome: "Rota Zona Sul", regiao: "Zona Sul", veiculo: "Van", capacidade: 600, ocupacao: 450, pesoTotal: 380, volumeTotal: 2.8, km: 42, tempo: 180, status: "otimizada" },
-    { id: "2", nome: "Rota Centro", regiao: "Centro", veiculo: "Fiorino", capacidade: 300, ocupacao: 280, pesoTotal: 245, volumeTotal: 1.5, km: 28, tempo: 120, status: "otimizada" },
-    { id: "3", nome: "Rota Zona Oeste", regiao: "Zona Oeste", veiculo: "HR", capacidade: 1000, ocupacao: 650, pesoTotal: 620, volumeTotal: 5.2, km: 65, tempo: 240, status: "em_otimizacao" },
-  ];
-}
-
-function getFallbackEscala(): VeiculoEscala[] {
-  return [
-    { id: "1", tipo: "van", modelo: "Mercedes Sprinter", placa: "ABC-1234", capacidadePeso: 600, capacidadeVolume: 4, tipoCarroceria: "seco", status: "em_rota", ocupacao: 450, entregasAtribuidas: 12 },
-    { id: "2", tipo: "fiorino", modelo: "Fiat Fiorino", placa: "XYZ-5678", capacidadePeso: 300, capacidadeVolume: 2, tipoCarroceria: "seco", status: "disponivel", ocupacao: 0, entregasAtribuidas: 0 },
-    { id: "3", tipo: "hr", modelo: "Hyundai HR", placa: "DEF-9012", capacidadePeso: 1000, capacidadeVolume: 8, tipoCarroceria: "refrigerado", status: "em_rota", ocupacao: 850, entregasAtribuidas: 8 },
-  ];
-}
-
-function getFallbackInsights(): InsightIA[] {
-  return [
-    { id: "1", tipo: "insight", titulo: "Bem-vindo ao Portal", descricao: "Insights operacionais aparecerão aqui conforme sua operação evolui.", prioridade: "baixa" },
-  ];
-}
-
-function getFallbackSaude(): SaudeOperacional {
-  return { score: 87, status: "saudavel", sla: 94, atrasos: 3, ocorrencias: 2, ocupacao: 78, devolucoes: 1, tendencia: "estavel" };
 }

@@ -1,0 +1,968 @@
+{
+  "ordens_servico": {
+    "count": 20,
+    "dados": [
+      {
+        "id": "a94e561d-c0a7-4c82-b9ea-809fa5c4abed",
+        "numero": "OS-TESTE-1776989922267",
+        "status": "em_andamento",
+        "created_at": "2026-04-24T00:18:42.274",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 1800,
+        "custo_prestador": null
+      },
+      {
+        "id": "edf1fff7-f2bc-4bdf-a03e-be366001d5a1",
+        "numero": "M86-TEST-MR88UC58",
+        "status": "rascunho",
+        "created_at": "2026-07-05T20:28:34.01118",
+        "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+        "prestador": null,
+        "valor_cliente": 650,
+        "custo_prestador": 350
+      },
+      {
+        "id": "f538f14a-50bc-4001-acc1-85d0843296b6",
+        "numero": "OS-PGT-1777041733664-0",
+        "status": "entregue",
+        "created_at": "2026-06-28T02:48:00.312411",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": null,
+        "custo_prestador": 250
+      },
+      {
+        "id": "2682e2ac-529f-4936-80fc-389dc96616b3",
+        "numero": "OS-PGT-1777041733748-1",
+        "status": "entregue",
+        "created_at": "2026-07-01T02:48:00.312411",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": null,
+        "custo_prestador": 350
+      },
+      {
+        "id": "95f8f344-12ae-4cf4-a5f8-ce23f165833b",
+        "numero": "OS-TST-1777041433098",
+        "status": "rascunho",
+        "created_at": "2026-04-24T14:37:12.835064",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 243,
+        "custo_prestador": null
+      },
+      {
+        "id": "4996bf7b-7700-4549-b4aa-a4e73e030f89",
+        "numero": "M86-TEST-MR88UO6B",
+        "status": "rascunho",
+        "created_at": "2026-07-05T20:28:49.602933",
+        "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+        "prestador": null,
+        "valor_cliente": 650,
+        "custo_prestador": 350
+      },
+      {
+        "id": "9e4b0f85-e99a-4c7c-8848-3533ec53a553",
+        "numero": "OS-MAP-1777046612166",
+        "status": "rascunho",
+        "created_at": "2026-04-24T16:03:31.512146",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 243,
+        "custo_prestador": null
+      },
+      {
+        "id": "cfdd3d7f-60c6-4b87-8d4e-f6cc2de64e2f",
+        "numero": null,
+        "status": "agendada",
+        "created_at": "2026-07-11T00:51:15.765623",
+        "cliente_id": "04280785-4004-42c3-a406-886dd0730a8d",
+        "prestador": "659f95ec-779b-4d6e-9fc7-e06ee8a6b6ce",
+        "valor_cliente": 1500,
+        "custo_prestador": 900
+      },
+      {
+        "id": "c5c22755-308a-4cda-ab73-1de87bbf4a02",
+        "numero": "OS-30517",
+        "status": "em_analise",
+        "created_at": "2026-06-01T23:53:40.055648",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 0,
+        "custo_prestador": null
+      },
+      {
+        "id": "cc1d608a-885e-4254-93e4-a44fc9d65c86",
+        "numero": "TESTE-OS-202604-151609",
+        "status": "finalizada",
+        "created_at": "2026-04-28T01:02:32.458242",
+        "cliente_id": "68fb8493-c02e-4b2a-81a5-ab1261dfde74",
+        "prestador": null,
+        "valor_cliente": 91.37,
+        "custo_prestador": 56.3
+      },
+      {
+        "id": "2f29a428-28a6-4d7a-aaf0-3a02e072a331",
+        "numero": "TESTE-FIN-202604-904241",
+        "status": "finalizada",
+        "created_at": "2026-04-28T01:15:04.241",
+        "cliente_id": "68fb8493-c02e-4b2a-81a5-ab1261dfde74",
+        "prestador": null,
+        "valor_cliente": 91.37,
+        "custo_prestador": 56.3
+      },
+      {
+        "id": "0166a207-646c-4dc8-a824-3d299e4eb553",
+        "numero": "OS-202604-798361",
+        "status": "finalizada",
+        "created_at": "2026-04-28T02:19:59.021233",
+        "cliente_id": "6f18767c-69f6-442d-81cd-1737aa068f9a",
+        "prestador": null,
+        "valor_cliente": 1500,
+        "custo_prestador": 900
+      },
+      {
+        "id": "45857f5f-d303-447b-b6b2-957b6eaf0dc7",
+        "numero": "OS-TEST-1781310536075",
+        "status": "pendente",
+        "created_at": "2026-06-13T00:28:57.173578",
+        "cliente_id": "1baf3223-f590-463b-a709-a0353540b95a",
+        "prestador": null,
+        "valor_cliente": null,
+        "custo_prestador": null
+      },
+      {
+        "id": "a2ac3c46-b36f-4352-a1e7-dfecc1200387",
+        "numero": "OS-202604-149519",
+        "status": "finalizada",
+        "created_at": "2026-04-28T02:25:50.18619",
+        "cliente_id": "1baf3223-f590-463b-a709-a0353540b95a",
+        "prestador": null,
+        "valor_cliente": 1500,
+        "custo_prestador": 900
+      },
+      {
+        "id": "28640e7b-fbe5-4141-a59a-c5bead26d25a",
+        "numero": "TESTE-001",
+        "status": "pendente",
+        "created_at": "2026-04-22T22:07:29.84361",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": null,
+        "custo_prestador": null
+      },
+      {
+        "id": "bf89eb61-3400-4fc8-aa6d-7d75ecc659f4",
+        "numero": "OS-TESTE-1776989832949",
+        "status": "em_andamento",
+        "created_at": "2026-04-24T00:17:12.951",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 1800,
+        "custo_prestador": null
+      },
+      {
+        "id": "dafc7631-97eb-4aaa-aed3-b6edd1dc1077",
+        "numero": "OS-MAP-1777042359799",
+        "status": "rascunho",
+        "created_at": "2026-04-24T14:52:39.022183",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 243,
+        "custo_prestador": null
+      },
+      {
+        "id": "aa7dda82-a491-4b5e-994b-166dc989c8d7",
+        "numero": "OS_AUDITORIA_1777344891607",
+        "status": "rascunho",
+        "created_at": "2026-04-28T02:54:52.289414",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": null,
+        "custo_prestador": null
+      },
+      {
+        "id": "1fe779f0-feac-4417-945f-c4f8e8acfc96",
+        "numero": "OS-1776988549034",
+        "status": "em_andamento",
+        "created_at": "2026-04-23T23:55:48.255728",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 500,
+        "custo_prestador": null
+      },
+      {
+        "id": "c90f1af5-08da-4105-a013-36024d248d6c",
+        "numero": "OS-202606-669785",
+        "status": "atrasada",
+        "created_at": "2026-06-30T13:30:51.798",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "prestador": null,
+        "valor_cliente": 2100,
+        "custo_prestador": 0
+      }
+    ]
+  },
+  "alocacoes_escala": {
+    "dados": null
+  },
+  "financeiro_receber": {
+    "count": 20,
+    "dados": [
+      {
+        "id": "89dc89e7-a7af-4e5b-a792-2be2d55cac2b",
+        "os_id": "edf1fff7-f2bc-4bdf-a03e-be366001d5a1",
+        "valor": 650,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "b2b51282-356b-4801-a1c7-90c13a4d4053",
+        "os_id": "4996bf7b-7700-4549-b4aa-a4e73e030f89",
+        "valor": 650,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "5a1ecd9e-15af-425a-b499-cfef5c17e172",
+        "os_id": "b8fedeb1-f926-46d3-b26c-69c393a40077",
+        "valor": 650,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "ff54e4e2-cdcd-44bb-af70-fa06755341f8",
+        "os_id": "e8ffd31f-168c-4038-a061-bd4858ae8699",
+        "valor": 8000,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "fda53bb5-913b-4775-a8a1-be9e197956d2",
+        "os_id": "4767a7f1-d198-469d-b1fd-7bd6e6ad21c0",
+        "valor": 650,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "06211e9b-05d8-4032-9d56-f7c3b0c6f8c7",
+        "os_id": "e936e03b-3a63-4251-bdd0-e177dc8967a9",
+        "valor": 8000,
+        "status": "pendente",
+        "cliente_nome": "Cliente #04280785-4004-42c3-a406-886dd0730a8d"
+      },
+      {
+        "id": "59278800-8d94-4617-bd16-6429efafce9f",
+        "os_id": "45857f5f-d303-447b-b6b2-957b6eaf0dc7",
+        "valor": 500,
+        "status": "pendente",
+        "cliente_nome": " Cydak do Brasil LTDA"
+      },
+      {
+        "id": "e72afe9e-fb9a-4adb-ae61-b33af8821f24",
+        "os_id": "215eaf04-7247-49c3-b7a9-f6a86c72c6a4",
+        "valor": 1500,
+        "status": "pendente",
+        "cliente_nome": "M43_2026-06-29_18-27-54 Cliente"
+      },
+      {
+        "id": "adab036f-c56e-4884-812f-d23034766075",
+        "os_id": "dda7be25-5e96-4633-93f2-9cf793231162",
+        "valor": 1500,
+        "status": "pendente",
+        "cliente_nome": "M43_2026-06-29_18-27-54 Cliente"
+      },
+      {
+        "id": "76dc2c4f-173f-4212-9def-5ece6be7c49f",
+        "os_id": "19eedf62-5fb0-4478-8fff-991611090e8e",
+        "valor": 1500,
+        "status": "pendente",
+        "cliente_nome": "M43_2026-06-29_18-27-54 Cliente"
+      },
+      {
+        "id": "f66f8273-380b-4a4b-b8db-507c8cb3baa1",
+        "os_id": "b38da43d-4adb-4c1f-b101-eff96a7cbe8a",
+        "valor": 1500,
+        "status": "pendente",
+        "cliente_nome": "M43_2026-06-29_18-27-54 Cliente"
+      },
+      {
+        "id": "b0fc497a-f201-4218-a62b-b5fa3e005fc5",
+        "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+        "valor": 1500,
+        "status": "a vencer",
+        "cliente_nome": null
+      },
+      {
+        "id": "dbce15c2-6123-452d-abca-e1d1eac8e650",
+        "os_id": null,
+        "valor": null,
+        "status": "pendente",
+        "cliente_nome": ""
+      },
+      {
+        "id": "9f2f970f-a1ca-4f1d-af50-ae23d23950ca",
+        "os_id": "dce846ff-d7ae-463a-b784-73d8d2d91b21",
+        "valor": 1000,
+        "status": "aberto",
+        "cliente_nome": "QA_CRIT_2026-06-26_02-15-12_CLIENTE"
+      },
+      {
+        "id": "4c8845f8-6bce-4764-98d9-c5ab5745780e",
+        "os_id": "bb2cda88-cffd-4196-9a16-ed68fd2e472c",
+        "valor": 1000,
+        "status": "aberto",
+        "cliente_nome": "QA_CRIT_2026-06-26_02-25-02_CLIENTE"
+      },
+      {
+        "id": "18fd8d1a-357c-42de-b3a2-af314a6df46c",
+        "os_id": "c6a4e65a-1622-406f-a20a-b6adccc9abbb",
+        "valor": 1000,
+        "status": "aberto",
+        "cliente_nome": "QA_CRIT_2026-06-26_02-28-56_CLIENTE"
+      },
+      {
+        "id": "bb828a6b-e6c2-4bc0-bdbb-6654fb3ba734",
+        "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+        "valor": 1500,
+        "status": "aberto",
+        "cliente_nome": "M43_2026-06-29_18-29-55 Cliente"
+      },
+      {
+        "id": "29e0b127-5d02-4631-9029-da162e87d9d7",
+        "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+        "valor": 1500,
+        "status": "a vencer",
+        "cliente_nome": null
+      },
+      {
+        "id": "3665c595-02bb-41d4-963f-903cbbd1a540",
+        "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+        "valor": 1500,
+        "status": "a vencer",
+        "cliente_nome": null
+      },
+      {
+        "id": "4599cde0-2a25-434f-8f0a-317947c92312",
+        "os_id": "eabdaa60-0603-416e-bf4a-d07a62dd1349",
+        "valor": 1500,
+        "status": "a vencer",
+        "cliente_nome": null
+      }
+    ]
+  },
+  "financeiro_pagar": {
+    "count": 20,
+    "dados": [
+      {
+        "id": "26e05ffe-9180-4d2b-b199-e697db3116b1",
+        "os_id": null,
+        "valor": null,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "9b2e56ba-0457-42a7-b731-2daba9d6ea26",
+        "os_id": "a2ac3c46-b36f-4352-a1e7-dfecc1200387",
+        "valor": 900,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "f2149c94-7372-4aac-80ff-3d7dfddcf9c1",
+        "os_id": "ea967070-5553-497f-8528-c19048ed5932",
+        "valor": 1800,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "da733400-60da-41c2-9f83-fcf127fb8a3c",
+        "os_id": "ca9f55b2-47eb-437f-8ea1-55263597e862",
+        "valor": 1800,
+        "status": "cancelada",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "9875fac1-d789-4149-bf26-7724dc72147c",
+        "os_id": "dce846ff-d7ae-463a-b784-73d8d2d91b21",
+        "valor": 600,
+        "status": "aberto",
+        "fornecedor_nome": "QA_CRIT_2026-06-26_02-15-12_PRESTADOR"
+      },
+      {
+        "id": "213864d5-701e-4ab0-ab6f-eee58582d7b4",
+        "os_id": "bb2cda88-cffd-4196-9a16-ed68fd2e472c",
+        "valor": 600,
+        "status": "aberto",
+        "fornecedor_nome": "QA_CRIT_2026-06-26_02-25-02_PRESTADOR"
+      },
+      {
+        "id": "eb7478c7-9d9a-4b7f-9797-a3ecccead6da",
+        "os_id": "c6a4e65a-1622-406f-a20a-b6adccc9abbb",
+        "valor": 600,
+        "status": "aberto",
+        "fornecedor_nome": "QA_CRIT_2026-06-26_02-28-56_PRESTADOR"
+      },
+      {
+        "id": "fbc7b8c5-be10-41f1-9b49-adddd668d217",
+        "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+        "valor": 1000,
+        "status": "aberto",
+        "fornecedor_nome": "M43_2026-06-29_18-29-55 Motorista Teste"
+      },
+      {
+        "id": "810dcbab-a2f6-40b0-b392-86ba730d6093",
+        "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "ad826e0f-617f-47ce-b692-664afd5c83c2",
+        "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "e0ce6113-a163-46b7-97d3-00afc04de2c4",
+        "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "c0065dbe-6659-4a6f-92a1-1b98503c0665",
+        "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "32558503-a98b-4191-a6b7-439a638dae79",
+        "os_id": "eabdaa60-0603-416e-bf4a-d07a62dd1349",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "63a3707f-6916-480f-afc7-a4e41a1aace7",
+        "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "fb197a7d-1d67-4951-8ddc-939160977cea",
+        "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+        "valor": 1000,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "0dc29663-7aaf-4fa6-a7e9-72608ce65cdb",
+        "os_id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+        "valor": 2100,
+        "status": "aberto",
+        "fornecedor_nome": "M48_2026-06-29_21-31-34 Motorista Caminhão"
+      },
+      {
+        "id": "ebc456c7-3e9b-4227-acb4-dbdbdafa7322",
+        "os_id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+        "valor": 50,
+        "status": "aberto",
+        "fornecedor_nome": "M48_2026-06-29_21-31-34 Motoboy"
+      },
+      {
+        "id": "82876675-ffd0-4bce-ad1b-11d239d943be",
+        "os_id": "63129749-7e22-4088-97f3-52e0bd13d385",
+        "valor": 1200,
+        "status": "aberto",
+        "fornecedor_nome": "M48_2026-06-29_21-31-34 Motorista Rede"
+      },
+      {
+        "id": "1a62d2fe-996b-40a1-b284-93e4b283f9b6",
+        "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+        "valor": 1800,
+        "status": "a vencer",
+        "fornecedor_nome": null
+      },
+      {
+        "id": "29e7690e-63c1-4c55-a449-5c2690f5309e",
+        "os_id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+        "valor": 2100,
+        "status": "aberto",
+        "fornecedor_nome": "M48_2026-06-29_21-47-50 Motorista Caminhão"
+      }
+    ]
+  },
+  "pagamentos_prestadores": {
+    "count": 20,
+    "dados": [
+      {
+        "id": "339d77cd-45f9-4505-9463-30dedf3a1a27",
+        "os_id": "63129749-7e22-4088-97f3-52e0bd13d385",
+        "valor_liquido": 1200,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "a4a29b24-4059-4507-8635-ce3f4cfd7c3c",
+        "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "b6110500-5313-4a7f-b4fa-bd3e27bb9cc8",
+        "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+        "valor_liquido": 1000,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "e968b1f2-d5b6-436a-8429-7391bd684118",
+        "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+        "valor_liquido": 1000,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "4f0f8ba3-85a7-4e6c-b6f9-4e0d7968c6d0",
+        "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "fcb9286f-5632-4d0f-ab20-e906446f0dda",
+        "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "8cb22e29-4671-4472-b619-ba1755d59af8",
+        "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "b9353c3f-b90f-473b-a62c-6316d5c0cf0e",
+        "os_id": "eabdaa60-0603-416e-bf4a-d07a62dd1349",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "dbe96d77-3ebb-4982-a112-fc5b2a4895a0",
+        "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "977b530c-bbb9-4d08-950d-20d6cabff27f",
+        "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "d287566b-958e-473d-b6cb-6fc683b363b9",
+        "os_id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+        "valor_liquido": 2100,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "b74b34db-25c5-4569-9271-b93e40713ca8",
+        "os_id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+        "valor_liquido": 50,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "4665f694-4df6-4a63-b9c4-218c9616be0b",
+        "os_id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+        "valor_liquido": 2100,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "5648adde-f038-4707-b585-24b69497b4d4",
+        "os_id": "93014234-8dc8-408c-b724-f0ef79ce284b",
+        "valor_liquido": 50,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "f3b6dd15-6ca2-4153-aae9-b684fb58680f",
+        "os_id": "8aca4262-b27e-467a-bf95-fd85d952bde2",
+        "valor_liquido": 1200,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "52325ff7-3365-4636-a62e-46bb176dc089",
+        "os_id": "bff76814-3149-408c-b5f8-467f1ff178a4",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "e3c7baed-2b30-43e6-af5c-68916bd2b481",
+        "os_id": "fdd3e5ce-6736-4b6a-aa41-f837d4f5f219",
+        "valor_liquido": 0,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "952861d6-18fd-4cbe-940b-1d3737353bab",
+        "os_id": "127b1b3f-a1ae-447c-8a9b-fdc627d51db1",
+        "valor_liquido": 60,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "ce5b9c81-a0bf-4475-a561-3f93e39d92f2",
+        "os_id": "89b922bc-7653-4315-a8db-69abb2983a95",
+        "valor_liquido": 60,
+        "status_conferencia": "em_aberto"
+      },
+      {
+        "id": "50429c41-55a9-491f-b428-350d04b18135",
+        "os_id": "9521575c-5a7a-437d-b533-0645ea61520e",
+        "valor_liquido": 60,
+        "status_conferencia": "em_aberto"
+      }
+    ]
+  },
+  "pod_entregas": {
+    "count": 20,
+    "amostra": [
+      {
+        "id": "63ad695a-4894-47ea-94d3-a1fb8b82c324",
+        "alocacao_id": "72390158-4849-41e4-8283-8a0551d20aac",
+        "nome_recebedor": "RECEBEDOR TESTE E2E",
+        "data_hora_entrega": "2026-06-18T02:45:54.557+00:00",
+        "foto_entrega_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/72390158-4849-41e4-8283-8a0551d20aac/mqiwe8t1821qvrtf.png",
+        "assinatura_url": null,
+        "foto_canhoto_url": "https://uwrvzsjtpgaifkktpepn.supabase.co/storage/v1/object/public/comprovantes-entrega/pod/72390158-4849-41e4-8283-8a0551d20aac/mqiwe8exkhojobcd.png"
+      },
+      {
+        "id": "d845cb54-8715-42d5-a178-a547272a305c",
+        "alocacao_id": "a4be88d5-357a-4c76-8c02-296bd1988a75",
+        "nome_recebedor": "RECEBEDOR TESTE E2E",
+        "data_hora_entrega": "2026-06-18T09:33:44.309+00:00",
+        "foto_entrega_url": null,
+        "assinatura_url": null,
+        "foto_canhoto_url": null
+      },
+      {
+        "id": "e6d41cf3-d1de-4857-bb86-f7c8d785f260",
+        "alocacao_id": "aaadc1d0-0c5f-4cc3-a5fc-ef631f64a408",
+        "nome_recebedor": "RECEBEDOR TESTE E2E",
+        "data_hora_entrega": "2026-06-18T09:35:22.658+00:00",
+        "foto_entrega_url": null,
+        "assinatura_url": null,
+        "foto_canhoto_url": null
+      },
+      {
+        "id": "b35fa824-3a36-480b-9e17-7d44abdbee18",
+        "alocacao_id": "c67b91ec-d6a2-4f1d-ae85-a0cf5fac9889",
+        "nome_recebedor": "RECEBEDOR TESTE E2E",
+        "data_hora_entrega": "2026-06-18T09:36:55.293+00:00",
+        "foto_entrega_url": null,
+        "assinatura_url": null,
+        "foto_canhoto_url": null
+      },
+      {
+        "id": "fc3d5903-08e4-4ccc-a0b5-a7f44eb2c478",
+        "alocacao_id": "705c5199-6212-4b8d-b280-3d397b1d49ea",
+        "nome_recebedor": "RECEBEDOR TESTE E2E",
+        "data_hora_entrega": "2026-06-18T09:38:10.726+00:00",
+        "foto_entrega_url": null,
+        "assinatura_url": null,
+        "foto_canhoto_url": null
+      }
+    ]
+  },
+  "eventos_oficiais": {
+    "tipos": []
+  },
+  "tracking": {
+    "count": 2,
+    "dados": [
+      {
+        "id": "15543f23-6fae-4628-9bb4-77562a33ad8a",
+        "alocacao_id": "bc1c1901-71e4-4f02-8749-969a9936ae74",
+        "latitude": -23.5505,
+        "longitude": -46.6333,
+        "velocidade": 45
+      },
+      {
+        "id": "1a3269f6-6ebe-42ce-a5f6-bd99f7c2879e",
+        "alocacao_id": "bc1c1901-71e4-4f02-8749-969a9936ae74",
+        "latitude": -23.5605,
+        "longitude": -46.6433,
+        "velocidade": 60
+      }
+    ]
+  },
+  "composicao_financeira": {
+    "count": 20,
+    "dados": [
+      {
+        "id": "beec9770-89fb-4092-b069-e9f2e403dd54",
+        "os_id": "0166a207-646c-4dc8-a824-3d299e4eb553",
+        "valor_cliente": 1500,
+        "valor_prestador": 900,
+        "margem_bruta": 525,
+        "margem_liquida": 405,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "619899c2-8821-439b-8c52-c6ce17398431",
+        "os_id": "a2ac3c46-b36f-4352-a1e7-dfecc1200387",
+        "valor_cliente": 1500,
+        "valor_prestador": 900,
+        "margem_bruta": 525,
+        "margem_liquida": 405,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "339f473f-e708-47d2-90a7-d8b613fab393",
+        "os_id": "ea967070-5553-497f-8528-c19048ed5932",
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "margem_bruta": 625,
+        "margem_liquida": 487.5,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "ff1a80df-6cf9-4730-a4cf-f5aa280ccbee",
+        "os_id": "ca9f55b2-47eb-437f-8ea1-55263597e862",
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "margem_bruta": 625,
+        "margem_liquida": 487.5,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "73770c5a-5a39-489d-95a0-55c2225819ac",
+        "os_id": "dce846ff-d7ae-463a-b784-73d8d2d91b21",
+        "valor_cliente": 1000,
+        "valor_prestador": 600,
+        "margem_bruta": 400,
+        "margem_liquida": 345,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "cea2239f-1160-4594-a74a-2fe5fb1f6883",
+        "os_id": "bb2cda88-cffd-4196-9a16-ed68fd2e472c",
+        "valor_cliente": 1000,
+        "valor_prestador": 600,
+        "margem_bruta": 400,
+        "margem_liquida": 345,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "fee6d68c-f8a9-4f4c-b54b-adcd9b957cb7",
+        "os_id": "c6a4e65a-1622-406f-a20a-b6adccc9abbb",
+        "valor_cliente": 1000,
+        "valor_prestador": 600,
+        "margem_bruta": 400,
+        "margem_liquida": 345,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "af9dc355-856d-481b-a118-4d1bac89b066",
+        "os_id": "0b9852dc-630d-4a92-96ec-8f77d9de8393",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 417.5,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "6a3171be-4898-429b-94c2-28f39dab6605",
+        "os_id": "65c6a0e7-2a86-4115-b6a7-b8bbdc817217",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 417.5,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "cd64c476-6bff-4784-ba4e-6f5ae17ecbef",
+        "os_id": "d5a9e740-2eb5-46ac-a8d9-106b70d73b80",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "45dfff33-bcb3-44e4-a3a4-812bfd53b13e",
+        "os_id": "e993dc34-ae06-4620-b568-7ef8b39c24a8",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "9610367f-c319-47bf-9efc-f1589932e0c2",
+        "os_id": "6ccde4ef-6ce2-438d-8835-1c3c04bbf743",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "2523e783-0102-4006-bcab-6815df3cae47",
+        "os_id": "eabdaa60-0603-416e-bf4a-d07a62dd1349",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "08f13090-c3a4-4570-b9bd-21c0324ea9d2",
+        "os_id": "4b698baa-a46b-4550-be94-2fb096e6036b",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "6dd29f37-3195-46d6-84ab-8976a3874ce1",
+        "os_id": "e9a41a1b-0403-4b32-8390-b648aaf5e70e",
+        "valor_cliente": 1500,
+        "valor_prestador": 1000,
+        "margem_bruta": 500,
+        "margem_liquida": 500,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "0571b69d-ac70-4efd-8d96-f34460ad907e",
+        "os_id": "1f0f56d8-8c8d-4b49-aa5e-8598d0d8b3ff",
+        "valor_cliente": 3200,
+        "valor_prestador": 2100,
+        "margem_bruta": 1100,
+        "margem_liquida": 924,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "94ce6948-f0ae-4ce6-8ace-4000cdbda302",
+        "os_id": "ad7138ad-1b9f-4799-8016-ba1caa6cd4b1",
+        "valor_cliente": 2500,
+        "valor_prestador": 1800,
+        "margem_bruta": 700,
+        "margem_liquida": 562.5,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "56c80a73-7724-4386-9474-c2240aa3e9c3",
+        "os_id": "67837438-91ab-40da-a6e6-c84afa995ba0",
+        "valor_cliente": 80,
+        "valor_prestador": 50,
+        "margem_bruta": 30,
+        "margem_liquida": 25.6,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "eea3bd9e-03f7-437d-8d80-15d2b87d77c6",
+        "os_id": "63129749-7e22-4088-97f3-52e0bd13d385",
+        "valor_cliente": 1800,
+        "valor_prestador": 1200,
+        "margem_bruta": 600,
+        "margem_liquida": 501,
+        "origem_calculo": "os_direta"
+      },
+      {
+        "id": "114f9d96-51c0-4686-820b-fe6f1d7b662c",
+        "os_id": "7ece6848-e67b-4a8f-84b5-ed7f19b8a50f",
+        "valor_cliente": 3200,
+        "valor_prestador": 2100,
+        "margem_bruta": 1100,
+        "margem_liquida": 924,
+        "origem_calculo": "os_direta"
+      }
+    ]
+  },
+  "portal_pedidos": {
+    "count": 8,
+    "dados": [
+      {
+        "id": "92599702-8b25-4b6b-9fa2-a48bb646d2ea",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "1f2d51a4-c3e7-4639-b86a-67f0e9ace180",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "8e6f66e8-3e78-4f7d-b5c5-6d86605673af",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "ec303373-5d45-44e5-856b-ba5fa0b94c48",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "a6bcbd1c-e7ff-4be1-b645-9b593de8abbb",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "662dab28-09d9-4c72-b601-4a3f47c37ff9",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "71487aef-9479-469b-8fea-0d7c89c5e921",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "status": "enviado"
+      },
+      {
+        "id": "d50fe58a-f485-4dde-a7f2-94d6331dde25",
+        "cliente_id": null,
+        "status": "enviado"
+      }
+    ]
+  },
+  "portal_ocorrencias": {
+    "count": 6,
+    "dados": [
+      {
+        "id": "87d5f99b-d0d3-4efb-b28c-91c4102a144a",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "tipo": "atraso",
+        "status": "aberta"
+      },
+      {
+        "id": "453c7c7f-94b0-45f3-819a-ff90733c68b3",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "tipo": "avaria",
+        "status": "em_andamento"
+      },
+      {
+        "id": "a8f05c1a-184a-4c43-822b-7771a2bf36fe",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "tipo": "reclamacao",
+        "status": "resolvida"
+      },
+      {
+        "id": "153751b1-39e7-42e0-9103-9c1fe389686d",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "tipo": "informacao",
+        "status": "fechada"
+      },
+      {
+        "id": "d0f2c52b-ca39-4143-91d7-9c6c15c51fdb",
+        "cliente_id": "cd463c93-5190-408e-b5e6-ee639b688402",
+        "tipo": "troca",
+        "status": "em_andamento"
+      },
+      {
+        "id": "e9d4857b-6671-48d1-9f25-1487ef34c98b",
+        "cliente_id": null,
+        "tipo": "avariado",
+        "status": "aberta"
+      }
+    ]
+  }
+}

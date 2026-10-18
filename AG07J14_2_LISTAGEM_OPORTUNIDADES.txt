@@ -1,0 +1,108 @@
+═══════════════════════════════════════════════════════════════════════════════
+              AG-07J.14.2 — RELATÓRIO: LISTAGEM DE OPORTUNIDADES
+═══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+REDMI NECESSÁRIO:
+NÃO
+
+───────────────────────────────────────────────────────────────────────────────
+
+LISTAGEM VALIDA STATUS:
+SIM
+
+LISTAGEM VALIDA LIBERADO_APP:
+SIM
+
+LISTAGEM VALIDA DOCUMENTAÇÃO:
+SIM (best-effort, fail-open se schema indisponível)
+
+───────────────────────────────────────────────────────────────────────────────
+
+BLOQUEADO VÊ OPORTUNIDADE:
+NÃO
+
+INATIVO VÊ OPORTUNIDADE:
+NÃO
+
+LIBERADO_FALSE VÊ OPORTUNIDADE:
+NÃO
+
+CNH VENCIDA VÊ OPORTUNIDADE:
+NÃO
+
+DOCUMENTAÇÃO INELEGÍVEL VÊ OPORTUNIDADE:
+NÃO
+
+PRESTADOR ELEGÍVEL CONTINUA VENDO:
+SIM
+
+ACEITE CONTINUA COM GATE BACKEND:
+SIM
+
+───────────────────────────────────────────────────────────────────────────────
+
+ARQUIVOS ALTERADOS:
+
+  1. src/services/operacao/redePrestadoresService.ts
+     - listarOportunidadesParaPrestador(): adicionado select de status + liberado_app
+     - Adicionado gate base: prestadorOperacionalmenteElegivelDados() (pure, reuso)
+     - Adicionado gate documental: verificarElegibilidadeDocumental() (best-effort)
+     - Inelegível → retorna { sucesso: true, oportunidades: [] }
+
+TESTES FOCALIZADOS:
+21/21 PASS
+
+REGRESSÃO:
+891/891 PASS
+
+TYPESCRIPT:
+0 erros
+
+───────────────────────────────────────────────────────────────────────────────
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+───────────────────────────────────────────────────────────────────────────────
+
+DECISÃO FINAL:
+A — HOMOLOGADA
+
+───────────────────────────────────────────────────────────────────────────────
+
+JUSTIFICATIVA:
+
+  G3 (AG-07J.14.1) — "listarOportunidadesParaPrestador() não filtra por
+  status/liberado_app" — CORRIGIDO.
+
+  A listagem agora valida:
+    1. status compatível (ativo/aprovado) — via prestadorOperacionalmenteElegivelDados()
+    2. liberado_app=true — via prestadorOperacionalmenteElegivelDados()
+    3. documentação apta — via verificarElegibilidadeDocumental() (best-effort)
+
+  Gate reutilizado do eligibilityOperacionalService (sem duplicação de lógica).
+  Aceite/backend continua sendo a autoridade final.
+
+  Operação em andamento NÃO afetada — mudança é apenas sobre NOVAS oportunidades.
+
+═══════════════════════════════════════════════════════════════════════════════
+                         FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

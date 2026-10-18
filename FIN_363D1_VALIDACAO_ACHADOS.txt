@@ -1,0 +1,487 @@
+FIN-363D.1 — VALIDAÇÃO ADVERSARIAL DOS ACHADOS
+================================================
+Data: 2026-09-07T04:15:00-03:00
+Modelo: Qwen3.7 Max (high)
+Ambiente: TMS (código TypeScript auditado, DB via coleta FIN_363D_PREP)
+Coleta base: FIN_363D_PREP_COLETA_INDICADORES.txt (2026-09-07T02:33:14.033Z)
+
+NENHUM CÓDIGO/BANCO/DADO ALTERADO NESTA MISSÃO.
+NENHUMA CORREÇÃO EXECUTADA. APENAS VALIDAÇÃO E CLASSIFICAÇÃO.
+
+═══════════════════════════════════════════════════════════════
+1. FLUXO DE CAIXA — VALIDAÇÃO
+═══════════════════════════════════════════════════════════════
+
+1.1 MATEMÁTICA PURA
+  Entradas realizadas:  R$74,06  (6 baixas, financeiro_receber, NOT estornada)
+  Saídas realizadas:    R$1.656,53 (10 baixas, financeiro_pagar, NOT estornada)
+  Fluxo realizado:      74,06 − 1.656,53 = R$-1.582,47
+
+  PROVA: A fórmula do service está CORRETA.
+  Arquivo: src/services/financeiro/fluxoCaixaService.ts:52
+  Código:
+    fluxoRealizado: realizadoEntrada - realizadoSaida,
+
+  Arithmética: 74.06 - 1656.53 = -1582.47 ✓ CONFIRMADO
+
+1.2 UI EXIBE -1.581,54 — CAUSA RAIZ IDENTIFICADA
+  Arquivo: src/components/financeiro/FluxoCaixaEnterprise.tsx:465
+  Código:
+    {saldoInicialConfigurado
+      ? fmtFin(saldoInicial.valor + fluxoRealizado)
+      : fmtFin(fluxoRealizado)}
+
+  saldoInicial (Cora, id=9741ad36): R$0,93
+  Cálculo UI: 0,93 + (-1.582,47) = -1.581,54
+
+  Diferença exata: -1.581,54 − (-1.582,47) = +0,93 = saldo_inicial Cora
+
+1.3 ANÁLISE SEMÂNTICA
+  O card diz "Fluxo Realizado" mas exibe "Saldo Realizado".
+  Dois conceitos financeiros distintos estão sendo misturados:
+
+  | Conceito | Fórmula                  | Significado              |
+  |----------|--------------------------|--------------------------|
+  | Fluxo    | entradas − saídas        | Movimentação do período  |
+  | Saldo    | saldoInicial + fluxo     | Posição em ponto no tempo|
+
+  Os cards adjacentes exibem valores PUROS:
+    "Entradas Realizadas" → fmtFin(entradasRealizadas) → 74,06 (sem saldo)
+    "Saídas Realizadas"   → fmtFin(saidasRealizadas)  → 1.656,53 (sem saldo)
+    "Fluxo Realizado"     → saldoInicial + fluxo      → -1.581,54 (COM saldo)
+
+  Inconsistência: o usuário vê 74,06 − 1.656,53 e espera −1.582,47
+  mas o card ao lado mostra −1.581,54.
+
+  O saldo inicial JÁ APARECE corretamente em:
+    - Card "Saldo Inicial" (linha ~421)
+    - Card "Saldo Final" (linha ~320): saldoInicial + previstos
+    - Card "Saldo Acumulado" (linha ~214)
+
+  O "Fluxo Realizado" deveria ser PURO (entradas − saídas).
+
+1.4 SEMÂNTICA: "Fluxo realizado" deve ser entradas − saídas?
+  SIM. Fluxo = movimentação no período. Saldo = posição acumulada.
+  Saldo inicial pertence SOMENTE aos cards de saldo/acumulado.
+  Incluir saldo_inicial no "Fluxo Realizado" é erro conceitual contábil.
+
+1.5 CLASSIFICAÇÃO: [P1] — Bug semântico na UI do Fluxo de Caixa
+  Correção necessária: FluxoCaixaEnterprise.tsx:465
+  De:   {saldoInicialConfigurado ? fmtFin(saldoInicial.valor + fluxoRealizado) : fmtFin(fluxoRealizado)}
+  Para: {fmtFin(fluxoRealizado)}
+
+1.6 TESTE UNITÁRIO
+  src/test/f0f_fluxo_caixa.test.ts:68 valida apenas o service (correto):
+    expect(r.fluxoRealizado).toBe(230); // 350 - 120
+  Não existe teste que valide a fórmula de exibição da UI (linha 465).
+
+═══════════════════════════════════════════════════════════════
+2. DRE — VALIDAÇÃO
+═══════════════════════════════════════════════════════════════
+
+2.1 VALORES DE SETEMBRO/2026
+  | Linha DRE              | Valor      | Fonte                    | Fórmula                    | OK? |
+  |------------------------|------------|--------------------------|----------------------------|-----|
+  | Receita Bruta          | 14.870,54  | financeiro_receber       | SUM(valor) WHERE venc set  | ✓   |
+  | (-) Deduções           | 0,00       | financeiro_pagar         | 0 registros imposto        | ✓   |
+  | Receita Líquida        | 14.870,54  | DRE                      | 14.870,54 − 0,00          | ✓   |
+  | (-) Custos Prestadores | 3.150,34   | pagamentos_prestadores   | 1 reg impacto_dre=true     | ✓   |
+  | Resultado Bruto        | 11.720,20  | DRE                      | 14.870,54 − 3.150,34      | ✓   |
+  | (-) Despesas Operac.   | 137,89     | financeiro_pagar         | 1 reg os_id IS NULL        | ✓   |
+  | EBITDA/Lucro Líquido   | 11.582,31  | DRE                      | 11.720,20 − 137,89        | ✓   |
+  | Margem Bruta %         | 78,8%      | DRE                      | 11.720,20/14.870,54×100   | ✓   |
+  | Margem Líquida %       | 77,9%      | DRE                      | 11.582,31/14.870,54×100   | ✓   |
+
+  Todas as 9 linhas batem com a aritmética. ✓ CONFIRMADO
+
+2.2 FÓRMULAS NO CÓDIGO
+  Arquivo: src/services/financeiro/dreService.ts (calcularDRE, linhas 77-139)
+  Arquivo: src/components/financeiro/DREGerencial.tsx (fetchDadosDRE, linhas 93-182)
+
+  Receita Bruta:
+    Query: financeiro_receber WHERE data_vencimento BETWEEN 2026-09-01 AND 2026-09-30
+    Filtro TS: status !== 'cancelado'
+    Exclusão: categoria ~ financeir|juros|aplicac|rendimento → vai para receitasFinanceiras
+
+  Custo Prestadores:
+    Query: pagamentos_prestadores WHERE competencia BETWEEN 2026-09-01 AND 2026-09-30
+    Filtro TS: impacto_dre === true
+    Valor: valor_liquido
+
+  Despesas Operacionais:
+    Query: financeiro_pagar WHERE os_id IS NULL AND data_vencimento BETWEEN set/2026
+    Filtro TS: status !== 'cancelado' AND descricao NOT LIKE 'repasse%'
+    Classificação: regex exclui imposto → deduções; financeira → resultado financeiro
+
+  EBITDA = receitaLiquida − custosPrestadoresTotal − despesasOperacionais
+
+2.3 REGISTROS TEST/SEED NA DRE DE SETEMBRO
+  ANÁLISE: O subagente de query retornou 0 registros em financeiro_receber,
+  financeiro_pagar e ordens_servico. Isto é devido ao RLS do Supabase bloqueando
+  acesso via ANON key. A coleta FIN_363D_PREP (feita com acesso privilegiado)
+  mostra dados reais.
+
+  CONCLUSÃO SOBRE CONTAMINAÇÃO NA DRE SET/2026:
+  - financeiro_receber set/2026: 10 títulos, R$14.870,54
+    → Coleta não lista nomes/descrições individuais dos 10 títulos
+    → IMPACTO TEST: INDETERMINADO sem query privilegiada
+  - pagamentos_prestadores set/2026: 1 registro (R$3.150,34)
+    → Coleta mostra valor isolado. Sem evidência de TEST.
+  - financeiro_pagar set/2026 (os_id IS NULL): 1 despesa (R$137,89)
+    → Sem evidência de TEST.
+
+  NOTA: Coleta mostra 13 registros em financeiro_pagar com categoria vazia
+  totalizando R$4.167,89 (linha 29). Se algum for TEST, contamina a DRE.
+  Mas o filtro da DRE (os_id IS NULL + vencimento set/2026) restringe para 1.
+
+  NÃO HÁ FILTRO ANTI-TEST/SEED/DEMO no código da DRE.
+  Arquivo: src/services/financeiro/dreService.ts — 0 menções a TEST/SEED/DEMO
+  Arquivo: src/components/financeiro/DREGerencial.tsx — 0 menções a TEST/SEED/DEMO
+
+  Se registros TEST/SEED existirem com vencimento em set/2026 e status != cancelado,
+  eles SERÃO incluídos nos totais da DRE.
+
+2.4 CLASSIFICAÇÃO: [P1] — Sem filtro anti-TEST nos relatórios DRE
+  Correção necessária: adicionar filtro de exclusão no dreService.ts ou DREGerencial.tsx
+  para registros com numero/descricao contendo TEST/SEED/DEMO/AUDITORIA/SENTINELA.
+  Alternativamente, usar flag oficial (ver item 5).
+
+2.5 NOTA SOBRE MARGEM BRUTA
+  Coleta reporta 78,8% mas esperado 78,9%. Diferença de arredondamento.
+  11.720,20 / 14.870,54 × 100 = 78,815...% → 78,8% com 1 casa decimal.
+  NÃO É BUG. Arredondamento legítimo.
+
+═══════════════════════════════════════════════════════════════
+3. MARGEM POR OS — VALIDAÇÃO
+═══════════════════════════════════════════════════════════════
+
+3.1 DOIS COMPONENTES DIFERENTES COM FONTES DIFERENTES
+
+  | Componente           | Aba Financeiro | Fonte                    | Limit | OS    |
+  |----------------------|----------------|--------------------------|-------|-------|
+  | MargemPorOS.tsx      | margem-os      | ordens_servico (direto)  | 500   | 121   |
+  | MargemOperacional    | margem         | composicao_financeira_os | 50    | ~103  |
+  | RelatorioMargemReal  | Relatórios     | composicao_financeira_os | sem   | ~103  |
+
+3.2 CAUSA RAIZ: 121 vs 103
+
+  ordens_servico (fonte MargemPorOS):
+    121 OS — todas: rascunho, pendente, em_andamento, finalizada, cancelada, etc.
+    Query: MargemPorOS.tsx:67-75 (.limit(500), sem filtro status)
+
+  composicao_financeira_os (fonte MargemOperacional):
+    ~103 registros — apenas OS que foram finalizadas/concluídas
+    Motivo: trigger M66 (conclusão escala) e M80 (finalização OS) populam
+    composicao_financeira_os APENAS na conclusão. OS em rascunho/pendente/
+    cancelada antes da finalização NUNCA ganham registro nesta tabela.
+
+  121 − 103 = 18 OS sem composição financeira
+  (rascunhos: 17 + pendentes sem escala + canceladas sem composição)
+
+  UI observada mostrou 103 OS → provável que o usuário estava vendo
+  MargemOperacional ou RelatorioMargemReal (ambos usam composicao_financeira_os).
+
+3.3 VALORES CONFIRMADOS NO CÓDIGO
+
+  MargemPorOS (121 OS):
+    Receita: financeiro_receber por os_id/os_vinculadas OU ordens_servico.valor_cliente
+    Custo: pagamentos_prestadores.valor_liquido WHERE impacto_dre=true
+    Outros: financeiro_pagar.valor WHERE os_id match AND NOT repasse
+    Margem = Receita − Custo − Outros
+    Arquivo: src/services/financeiro/margemOsService.ts:48-59
+    Arquivo: src/components/financeiro/MargemPorOS.tsx:67-135
+
+  MargemOperacional (103 composições):
+    Receita = composicao_financeira_os.valor_cliente
+    Custo = composicao_financeira_os.valor_prestador + pedagio_valor
+    Margem = composicao_financeira_os.margem_liquida (trigger calcula)
+    Arquivo: src/components/financeiro/MargemOperacional.tsx:37-66
+
+3.4 POR QUE VALORES DIFERENTES (R$168.132,99 vs R$152.731,99)
+
+  Receita 168.132,99 (121 OS):
+    Inclui OS em rascunho/pendente com valor_cliente preenchido (prevista)
+    + OS finalizadas com receita faturada (real)
+
+  Receita 152.731,99 (103 OS):
+    Apenas OS com composicao_financeira_os (= finalizadas/concluídas)
+    Receita = valor_cliente da composição (calculado pelo trigger)
+
+  Diferença: 168.132,99 − 152.731,99 = R$15.401,00
+  = receita de 18 OS que existem mas não foram finalizadas
+
+  Custo 45.342,50 vs 44.258,00: diferença R$1.084,50
+  = custos de pagamentos_prestadores de OS não-finalizadas
+
+3.5 32 OS TEST/DEMO/AUDITORIA — IMPACTO
+
+  Coleta lista 32 OS com numero contendo TEST/SEED/AUDITORIA.
+  Receita TEST: R$52.002,74 (30,9% do total de R$168.132,99)
+  Custo TEST:   R$10.169,00
+  Margem TEST:  R$41.833,74
+
+  Sem filtro anti-TEST, esses valores contaminam os indicadores.
+
+  OS TEST com maior impacto:
+    TESTE_MIN_1782757719:  R$15.000,00 (rascunho)
+    TEST-M80-EDGE-MR7544:  R$5.000,00  (finalizada)
+    TEST-M80-CF-MR751I7O:  R$3.000,00  (pendente)
+    TEST-M80-OK-MR752GEF:  R$3.000,00  (finalizada)
+    OS-TESTE-1004:          R$2.700,00  (concluida)
+    OS-TESTE-1003:          R$2.400,00  (agendada)
+
+  OS REAIS (89):
+    Receita: R$116.130,25
+    Custo:   R$35.173,50
+    Margem:  R$80.956,75
+    Margem%: 69,7%
+
+3.6 5 OS NEGATIVAS — CONFIRMADO
+  Coleta mostra 5 OS negativas em ambos os cenários (121 e 103).
+  São 4 OS-TESTE-MR6* com margem = -R$23,50 cada + possível outra.
+  Se TEST removidos, restam possivelmente 1 negativa real.
+
+3.7 CLASSIFICAÇÃO:
+  [P0] — 32 OS TEST contaminam 30,9% da receita (R$52.002,74)
+         Sem filtro anti-TEST nos 3 componentes de Margem
+  [P1] — Dois componentes com fontes diferentes (121 vs 103) sem
+         esclarecimento ao usuário sobre o que cada um representa
+  [P1] — MargemOperacional com .limit(50) limita KPIs a 50 linhas
+         quando há 103 composições — KPIs não representam o total
+
+═══════════════════════════════════════════════════════════════
+4. DASHBOARDS — VALIDAÇÃO
+═══════════════════════════════════════════════════════════════
+
+4.1 R$0 / 0 OS NOS CARDS
+
+  CAUSA RAIZ: Filtro default "Mês" + dados antigos
+
+  Filtro default: DashboardFilterContext.tsx:54
+    useState<PeriodoFilter>("mes") → range = 2026-09-01 a 2026-09-07
+
+  Queries usam created_at: TabExecutivo.tsx:71
+    .gte("created_at", filters.dataInicio).lte("created_at", filters.dataFim)
+
+  Todas as 121 OS em ordens_servico têm created_at entre 2026-07-12 e 2026-07-29
+  (período de testes/homologação das missões M80-M90).
+
+  NENHUMA OS foi criada em agosto ou setembro de 2026.
+  Resultado: 0 registros no range → R$0 / 0 OS.
+
+4.2 CONFIRMAÇÃO: É LEGÍTIMO
+  Se o usuário mudar para "Trimestre" (cobre junho-setembro):
+    121 OS aparecerão com valores reais
+    R$168.132,99 de receita
+    39 finalizadas, 34 pendentes, etc.
+
+  NOTA: Os cards de "A Receber"/"Recebido" usam coluna `vencimento`
+  (não created_at), então PODEM ter valores em setembro.
+  Coleta mostra 10 títulos com vencimento em set/2026 → R$14.870,54.
+  Esses devem aparecer nos cards financeiros do Dashboard.
+
+4.3 CLASSIFICAÇÃO: [NÃO É BUG] — Comportamento correto do filtro de período
+  Melhoria recomendada [P2]: adicionar indicador visual quando resultado = 0
+  ("Nenhuma OS criada neste período — dados de julho/2026")
+
+═══════════════════════════════════════════════════════════════
+5. FLAG OFICIAL DE DADOS DE TESTE — AUDITORIA
+═══════════════════════════════════════════════════════════════
+
+5.1 RESULTADO: NÃO EXISTE FLAG OFICIAL
+
+  Nenhuma das tabelas de negócio possui campo oficial para classificar
+  registros como teste vs produção:
+
+  | Tabela                  | Coluna is_test | Coluna ambiente | Coluna classificacao |
+  |-------------------------|:--------------:|:---------------:|:--------------------:|
+  | ordens_servico          | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+  | financeiro_receber      | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+  | financeiro_pagar        | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+  | pagamentos_prestadores  | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+  | alocacoes_escala        | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+  | faturas                 | ✗ NÃO EXISTE   | ✗ NÃO EXISTE    | ✗ NÃO EXISTE         |
+
+5.2 COLUNAS EXISTENTES (INSUFICIENTES)
+
+  | Coluna                  | Tabela              | Serve como flag? | Motivo                          |
+  |-------------------------|---------------------|:----------------:|---------------------------------|
+  | origem (TEXT)           | ordens_servico      | NÃO              | Semântica ambígua (cidade/fonte)|
+  | origem (TEXT)           | alocacoes_escala    | NÃO              | Indica fonte operacional         |
+  | metadata.test_automated | alocacoes_escala    | PARCIAL          | Usado só em 2 scripts internos  |
+  | origem_lancamento       | pgto_prestadores    | NÃO              | Indica mecanismo, não teste     |
+  | status = 'rascunho'     | faturas/OS          | NÃO              | Estágio workflow, não teste     |
+  | ambiente                | ia_conectores       | NÃO APLICÁVEL    | Só em tabelas IA, não negócio   |
+
+5.3 PRÁTICA ATUAL: NOMENCLATURA
+  Classificação manual por padrões de texto:
+    - numero contendo "TEST", "HML", "SEED", "AUDITORIA"
+    - descricao contendo "TESTE", "DEMO"
+    - romaneio com prefixo "HML-"
+    - metadata.numeroOC com prefixo "HML-"
+
+  Este critério é FRÁGIL:
+    - Um registro real pode ter "test" no nome acidentalmente
+    - Um registro de teste pode não ter nenhum marcador
+    - Não é auditável nem automatizável de forma confiável
+
+5.4 CLASSIFICAÇÃO: [P0] — Criar flag oficial de ambiente/teste
+  Recomendação: migration com coluna is_test BOOLEAN DEFAULT false
+  nas 6 tabelas de negócio + padronizar metadata.is_test em INSERTs de teste.
+  Alternativa menos invasiva: usar metadata JSONB (padronizar metadata.is_test=true).
+
+═══════════════════════════════════════════════════════════════
+6. LISTA EXATA DE CORREÇÕES NECESSÁRIAS
+═══════════════════════════════════════════════════════════════
+
+┌────┬─────┬──────────────────────────────────────────────────────────────┬─────────────────────────────────────────────┐
+│  # │ PRI │ CORREÇÃO                                                    │ ARQUIVO:LINHA                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C1 │ P1  │ Fluxo Realizado: remover saldoInicial da fórmula de exibição│ FluxoCaixaEnterprise.tsx:465                │
+│    │     │ De: saldoInicial.valor + fluxoRealizado                     │                                             │
+│    │     │ Para: fluxoRealizado                                        │                                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C2 │ P0  │ Criar flag oficial is_test/metadata.is_test nas 6 tabelas   │ Migration SQL nova                          │
+│    │     │ de negócio para separar dados de teste de produção          │ (ordens_servico, financeiro_receber,          │
+│    │     │                                                             │ financeiro_pagar, pagamentos_prestadores,     │
+│    │     │                                                             │ alocacoes_escala, faturas)                    │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C3 │ P0  │ Adicionar filtro anti-TEST na Margem por OS                │ MargemPorOS.tsx:67 (query)                  │
+│    │     │ Excluir OS com numero ILIKE '%TEST%SEED%DEMO%AUDITORIA%'   │ margemOsService.ts (ou novo helper)           │
+│    │     │ OU usar flag oficial (C2) quando disponível                 │                                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C4 │ P1  │ Adicionar filtro anti-TEST na DRE                          │ DREGerencial.tsx:98-115 (queries)           │
+│    │     │ Excluir registros com descricao/numero TEST                │ dreService.ts (ou novo helper)                │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C5 │ P1  │ Adicionar filtro anti-TEST no Fluxo de Caixa               │ FluxoCaixaEnterprise.tsx (queries baixas)   │
+│    │     │ Excluir baixas de títulos TEST do realizado                 │                                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C6 │ P1  │ MargemOperacional: remover .limit(50) ou aumentar p/ 500   │ MargemOperacional.tsx:44                    │
+│    │     │ KPIs somam apenas 50 linhas quando há 103 composições       │                                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C7 │ P1  │ Unificar fonte dos componentes de Margem                   │ MargemPorOS.tsx + MargemOperacional.tsx      │
+│    │     │ Ou: esclarecer ao usuário que são visões diferentes         │ Adicionar tooltip/descrição em cada aba      │
+│    │     │ "Margem por OS" = todas as OS (prevista + real)            │                                             │
+│    │     │ "Margem Operacional" = apenas OS finalizadas (trigger)     │                                             │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C8 │ P2  │ Dashboard: indicador visual quando período vazio            │ TabExecutivo.tsx, TabOperacional.tsx         │
+│    │     │ "Nenhuma OS neste período" + sugestão mudar filtro          │ Adicionar EmptyState quando count = 0        │
+├────┼─────┼──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ C9 │ P2  │ Adicionar teste unitário para FluxoCaixaEnterprise:465     │ src/test/f0f_fluxo_caixa.test.ts            │
+│    │     │ Validar que fluxoRealizado NÃO inclui saldoInicial          │ Novo teste de renderização                    │
+└────┴─────┴──────────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+
+RESUMO POR PRIORIDADE:
+  P0: 2 correções (C2 flag oficial, C3 filtro TEST na Margem)
+  P1: 5 correções (C1 fluxo, C4 DRE, C5 fluxo, C6 limit, C7 unificar)
+  P2: 2 correções (C8 dashboard vazio, C9 teste unitário)
+
+═══════════════════════════════════════════════════════════════
+7. CLASSIFICAÇÃO FINAL POR ACHADO
+═══════════════════════════════════════════════════════════════
+
+| # | Achado                                    | Classificação | Correção |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 1 | Fluxo Realizado exibe -1.581,54           | [P1]          | C1       |
+|   | (deveria ser -1.582,47)                   | BUG semântico |          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 2 | DRE set/2026: valores aritmétic. corretos | [NÃO É BUG]   | —        |
+|   | 14.870,54 / 3.150,34 / 137,89 / 11.582,31| Fórmulas OK   |          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 3 | DRE sem filtro anti-TEST                  | [P1]          | C4       |
+|   | Registros TEST podem contaminar se houver | Sem evidência |          |
+|   |                                           | de TEST em set|          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 4 | Margem: 121 vs 103 OS                     | [NÃO É BUG]   | C7       |
+|   | Dois componentes, duas fontes diferentes  | Visões dif.   | (info)   |
+|   | 18 OS sem composição (não finalizadas)    |               |          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 5 | 32 OS TEST contaminam 30,9% da receita    | [P0]          | C2 + C3  |
+|   | R$52.002,74 de receita TEST              |               |          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 6 | Dashboards R$0/0 OS                       | [NÃO É BUG]   | C8       |
+|   | Filtro "Mês" + nenhuma OS em set/2026     | Legítimo      | (info)   |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 7 | Sem flag oficial de teste/produção        | [P0]          | C2       |
+|   | Classificação por nomenclatura é frágil   |               |          |
+|---|-------------------------------------------|:-------------:|:--------:|
+| 8 | MargemOperacional .limit(50) trunca KPIs  | [P1]          | C6       |
+|   | 103 composições, só 50 nos cálculos       |               |          |
+
+═══════════════════════════════════════════════════════════════
+8. VEREDITO
+═══════════════════════════════════════════════════════════════
+
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║   [INDICADORES NÃO HOMOLOGADOS — CORREÇÃO NECESSÁRIA]             ║
+║                                                                   ║
+║   MOTIVOS:                                                        ║
+║                                                                   ║
+║   1. [P0] 32 OS TEST contaminam 30,9% da receita da Margem       ║
+║      (R$52.002,74). Sem filtro, indicadores são irrealistas.      ║
+║                                                                   ║
+║   2. [P0] Não existe flag oficial para separar teste de          ║
+║      produção nas tabelas de negócio. Critério atual              ║
+║      (nomenclatura) é frágil e não-auditável.                     ║
+║                                                                   ║
+║   3. [P1] Fluxo Realizado na UI soma saldoInicial ao fluxo,      ║
+║      exibindo -1.581,54 em vez de -1.582,47. Bug semântico.      ║
+║                                                                   ║
+║   4. [P1] DRE, Fluxo e Margem não excluem registros TEST.        ║
+║      Se existirem no período, contaminam os totais.               ║
+║                                                                   ║
+║   5. [P1] MargemOperacional com .limit(50) calcula KPIs          ║
+║      sobre apenas 50 de 103 composições. KPIs truncados.         ║
+║                                                                   ║
+║   AÇÕES NECESSÁRIAS ANTES DA HOMOLOGAÇÃO:                        ║
+║   → C2 (flag oficial) + C3 (filtro TEST Margem) = BLOQUEANTES   ║
+║   → C1 (fluxo) + C4 (DRE) + C6 (limit) = RECOMENDADOS           ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════
+9. ORDEM DE EXECUÇÃO RECOMENDADA
+═══════════════════════════════════════════════════════════════
+
+FASE A (BLOQUEANTE — antes de qualquer homologação):
+  A1. Migration: adicionar is_test BOOLEAN DEFAULT false nas 6 tabelas (C2)
+  A2. Marcar 32 OS TEST + 20 receber TEST + 24 pagar TEST como is_test=true
+  A3. Adicionar filtro is_test=false na MargemPorOS (C3)
+  A4. Validar: Margem sem TEST deve mostrar ~89 OS, ~R$116.130,25 receita
+
+FASE B (RECOMENDADO):
+  B1. Corrigir FluxoCaixaEnterprise.tsx:465 (C1)
+  B2. Adicionar filtro anti-TEST na DRE (C4)
+  B3. Adicionar filtro anti-TEST no Fluxo de Caixa (C5)
+  B4. Remover .limit(50) do MargemOperacional (C6)
+  B5. Unificar/esclarecer componentes de Margem (C7)
+
+FASE C (MELHORIA):
+  C1. Dashboard: EmptyState quando período vazio (C8)
+  C2. Teste unitário fluxo realizado (C9)
+
+═══════════════════════════════════════════════════════════════
+10. DEPENDÊNCIAS E RISCOS
+═══════════════════════════════════════════════════════════════
+
+DEPENDÊNCIAS:
+  - C2 (flag oficial) é pré-requisito para C3, C4, C5
+  - Sem C2, filtros anti-TEST dependem de LIKE em texto (frágil)
+
+RISCOS:
+  - Migration C2 em PRODUÇÃO: baixo risco (DEFAULT false, sem impacto)
+  - Marcar registros como TEST: requer revisão manual dos 76 registros
+    (32 OS + 20 receber + 24 pagar) para confirmar classificação
+  - Filtros anti-TEST via LIKE podem excluir registros reais com
+    "test" no nome (ex: cliente "Test Motors")
+
+MITIGAÇÃO:
+  - Usar metadata.is_test (JSONB) em vez de coluna dedicada
+    → menos invasivo, sem migration
+  - Criar view vw_indicadores_sem_teste que filtra automaticamente
+  - Adicionar toggle "Incluir dados de teste" na UI (default: off)
+
+═══════════════════════════════════════════════════════════════
+FIM DA VALIDAÇÃO
+═══════════════════════════════════════════════════════════════

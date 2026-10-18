@@ -1,0 +1,180 @@
+RELATORIO REC-06.2D.2V — VALIDACAO SCORE CONTRA STAGES REAIS
+=============================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: REC-06.2D.2V — Validar score de comprometimento contra stages REALMENTE persistidos
+
+VEREDITO: [NAO HOMOLOGADO — STAGES/INTEGRAÇÃO: 4 gaps exatos]
+
+===============================================================================
+1. STAGES REAIS EM PRODUCAO
+===============================================================================
+
+| Stage | Candidatos |
+|-------|:----------:|
+| ativo | 1 |
+| em_analise | 1 |
+| em_treinamento | 3 |
+| em_validacao | 2 |
+| novo_cadastro | 11 |
+| reprovado | 1 |
+
+Total: 19 candidatos, 6 stages distintos.
+
+===============================================================================
+2. MATRIZ STAGE REAL → FUNCAO calcularScoreComprometimento
+===============================================================================
+
+| Stage Real | Existe na função? | Fatores aplicáveis | Denom. | Fallback? | Resultado |
+|------------|:-----------------:|:------------------:|:------:|:---------:|:---------:|
+| ativo | ✅ SIM | doc+conf+disp+tempo+comp+perm+desist+reclam | 90 | NÃO | Correto |
+| em_treinamento | ✅ SIM | doc+conf+disp+tempo+comp+desist+reclam | 80 | NÃO | Correto |
+| em_analise | ❌ GAP | desist+reclam (fallback contato_inicial) | 10 | SIM silencioso | **INCORRETO** |
+| em_validacao | ❌ GAP | desist+reclam (fallback contato_inicial) | 10 | SIM silencioso | **INCORRETO** |
+| novo_cadastro | ❌ GAP | desist+reclam (fallback contato_inicial) | 10 | SIM silencioso | **INCORRETO** |
+| reprovado | ❌ GAP | desist+reclam (fallback contato_inicial) | 10 | SIM silencioso | **INCORRETO** |
+
+**4 de 6 stages reais caem em fallback silencioso.**
+
+Stages implementados mas INEXISTENTES em produção:
+analise_documental, homologacao, aprovado, prestador_apto, operacao_ativa
+
+===============================================================================
+3. TESTE MATEMATICO POR STAGE REAL
+===============================================================================
+
+Cenário: candidato com TODOS os fatores no máximo (docs completo, confirmou,
+disponibilidade integral, 12h resposta, compareceu, completou30d, 0 desist, 0 reclam).
+
+| Stage real | score (máx) | classif | Fatores reais / Denom. | OK? |
+|------------|:-----------:|:-------:|:----------------------:|:---:|
+| ativo | 100 | Excelente | 90/90 × 100 = 100 | ✅ |
+| em_treinamento | 100 | Excelente | 80/80 × 100 = 100 | ✅ |
+| em_analise | 100 | Excelente | 10/10 × 100 = 100 | ⚠️ |
+| em_validacao | 100 | Excelente | 10/10 × 100 = 100 | ⚠️ |
+| novo_cadastro | 100 | Excelente | 10/10 × 100 = 100 | ⚠️ |
+| reprovado | 100 | Excelente | 10/10 × 100 = 100 | ⚠️ |
+
+⚠️ = score retorna 100 mas com apenas 10 pontos de denom. (2 de 8 fatores).
+Candidato "novo_cadastro" COMPLETO recebe "Excelente" com score 100 — injustificável.
+
+Cenário: candidato com TODOS os fatores zerados.
+
+| Stage real | score (mín) | classif | Fatores reais / Denom. | OK? |
+|------------|:-----------:|:-------:|:----------------------:|:---:|
+| ativo | 0 | Crítico | 0/90 × 100 = 0 | ✅ |
+| em_treinamento | 12 | Crítico | 10/80 × 100 = 12 | ✅ |
+| em_analise | 50 | Regular | 5/10 × 100 = 50 | ⚠️ |
+| em_validacao | 50 | Regular | 5/10 × 100 = 50 | ⚠️ |
+| novo_cadastro | 50 | Regular | 5/10 × 100 = 50 | ⚠️ |
+| reprovado | 50 | Regular | 5/10 × 100 = 50 | ⚠️ |
+
+⚠️ = candidato COMPLETAMENTE zerado recebe "Regular" com score 50 — equivalente ao stub antigo.
+
+===============================================================================
+4. PROVA E2E REAL
+===============================================================================
+
+| Passo | Verificacao | Resultado |
+|-------|-------------|:---------:|
+| Criar TESTE_REC_D2V (em_treinamento) | INSERT OK | ✅ |
+| Ler DB: score=100, classif=Excelente | persistência correta | ✅ |
+| Alterar doc completo→pendente | score 100→78 (Excelente→Bom) | ✅ |
+| Restaurar pendente→completo | score volta 100 | ✅ |
+| Cleanup | 0 restantes | ✅ |
+
+**E2E passa para stage `em_treinamento` (que existe na função).**
+
+===============================================================================
+5. AUDITORIA TRIGGER REC-06.2C
+===============================================================================
+
+Trigger: `trg_score_limiar_evento`
+Arquivo: `20260907_rec_062c1_triggers_automacoes.sql:144-149`
+
+```sql
+AFTER UPDATE OF score ON public.recrutamento_candidatos
+FOR EACH ROW
+WHEN (OLD.score IS DISTINCT FROM NEW.score)
+```
+
+**Campo observado: `score` (INTEGER, default 50)**
+**Campo NÃO observado: `score_comprometimento` (NUMERIC)**
+**Campo NÃO observado: `classificacao_comprometimento` (TEXT)**
+
+O botão "Recalcular Comprometimento" (DetalhesCandidatoPipelineSheet.tsx:390)
+atualiza `score_comprometimento` e `classificacao_comprometimento` — NÃO atualiza `score`.
+
+**O trigger REC-06.2C NÃO dispara ao recalcular score_comprometimento.**
+O trigger só dispara quando a coluna `score` (INTEGER) é alterada.
+
+O campo `classificacao_comprometimento` no payload do evento (linha 126) é apenas informativo — o trigger não o monitora.
+
+**Afirmação anterior "cruzamento de limiar já gera evento": REFUTADA.**
+O evento só dispara se `score` (INTEGER) mudar. `score_comprometimento` não alimenta o trigger.
+
+===============================================================================
+6. RECALCULO AUTOMATICO
+===============================================================================
+
+| Fonte | Ponto seguro existe? | Observação |
+|-------|:--------------------:|-----------|
+| documento | NÃO | Sem subscription Realtime na aba Comprometimento |
+| interesse | NÃO | confirmouInteresse é campo de formulário |
+| disponibilidade | NÃO | disponibilidade_recrutamento é campo de formulário |
+| stage | NÃO | Mudança de stage não dispara recalculo de score_comprometimento |
+
+Exigiria nova arquitetura:
+- Subscription Realtime na tabela recrutamento_candidatos
+- Handler que recalcula score_comprometimento ao detectar mudança
+- Proteção contra loop (evitar que recalculo gere novo trigger)
+- Decisão de negócio: quais campos devem disparar recalculo
+
+===============================================================================
+7. REGRESSAO
+===============================================================================
+
+| Verificacao | Resultado |
+|-------------|:---------:|
+| npx tsc --noEmit | 0 erros ✅ |
+| vitest rec06_2d2 (45 testes) | 45/45 ✅ |
+| REC-06.2C trigger | intacto (NÃO alterado) ✅ |
+| bridge APP→Recrutamento | intacta (NÃO alterada) ✅ |
+| RLS | intacto (NÃO alterado) ✅ |
+
+===============================================================================
+8. CLEANUP
+===============================================================================
+
+- TESTE_REC_D2V: removido ✅
+- TESTE_REC_D2* (artefatos anteriores): removidos ✅
+- Zero resíduos ✅
+
+===============================================================================
+9. GAPS ENCONTRADOS
+===============================================================================
+
+| # | Gap | Gravidade | Descrição |
+|---|-----|:---------:|-----------|
+| G1 | novo_cadastro sem mapeamento | CRÍTICA | 11/19 candidatos (58%) — stage mais comum, fallback silencioso |
+| G2 | em_validacao sem mapeamento | ALTA | 2/19 candidatos — etapa intermediária ignorada |
+| G3 | em_analise sem mapeamento | ALTA | 1/19 candidatos — etapa intermediária ignorada |
+| G4 | reprovado sem mapeamento | MÉDIA | 1/19 candidatos — stage final ignorado |
+| G5 | trigger observa score, não score_comprometimento | ALTA | REC-06.2C nunca dispara pelo botão "Recalcular" |
+| G6 | Sem recalculo automático | MÉDIA | Score só muda por ação manual do usuário |
+
+===============================================================================
+10. PATCH MINIMO NECESSARIO (REC-06.2D.2F)
+===============================================================================
+
+| # | Patch | Prioridade |
+|---|-------|:----------:|
+| P1 | Adicionar "novo_cadastro" ao mapa (desist+reclam = 10 pts, sem mais) | P0 |
+| P2 | Adicionar "em_validacao" ao mapa (doc+desist+reclam = 35 pts) | P1 |
+| P3 | Adicionar "em_analise" ao mapa (doc+tempo+desist+reclam = 50 pts) | P1 |
+| P4 | Decidir "reprovado": excluir do score OU mapear com fatores limitados | P2 |
+| P5 | Decidir se trigger deve observar score_comprometimento | P2 |
+
+===============================================================================
+FIM DO RELATORIO — REC-06.2D.2V
+NAO HOMOLOGADO — STAGES/INTEGRAÇÃO: 4 gaps exatos

@@ -21,8 +21,8 @@ export interface IntegrationLogEntry {
 // Chaves que nunca devem ser logadas
 const SENSITIVE_KEYS = [
   'apikey', 'api_key', 'api-key', 'token', 'secret', 'password', 'senha',
-  'authorization', 'auth', 'key', 'chave', 'client_secret', 'VITE_GROQ_API_KEY',
-  'VITE_GEMINI_API_KEY', 'VITE_EVOLUTION_API_KEY', 'VITE_MAPBOX_ACCESS_TOKEN',
+  'authorization', 'auth', 'key', 'chave', 'client_secret',
+  'VITE_EVOLUTION_API_KEY', 'VITE_MAPBOX_ACCESS_TOKEN',
   'VITE_MAPBOX_TOKEN', 'ZOHO_CLIENT_SECRET'
 ];
 

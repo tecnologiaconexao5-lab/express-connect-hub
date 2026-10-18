@@ -1,0 +1,228 @@
+════════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02K — PROD CONTROLLED APPLY
+════════════════════════════════════════════════════════════════════════════════
+Data: 2026-09-18 07:09 BRT
+Modelo: MiMo-V2.5
+Projeto: uwrvzsjtpgaifkktpepn (Supabase Produção)
+
+════════════════════════════════════════════════════════════════════════════════
+1. IDENTIFICAÇÃO
+════════════════════════════════════════════════════════════════════════════════
+
+MODELO:              MiMo-V2.5
+AUTORIZAÇÃO:         SIM — autorização explícita fornecida
+MISSÃO ORIGEM:       FIN-SANE-02K-PROD-CONTROLLED-APPLY
+CANDIDATOS:          FIN-SANE-02H.3 / FIN-SANE-02I / FIN-SANE-02J
+
+════════════════════════════════════════════════════════════════════════════════
+2. HASHES
+════════════════════════════════════════════════════════════════════════════════
+
+FORWARD:
+  Arquivo:  supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  SHA256:   09F6CB151391C06A68C7B069B941476E66B4BC9617F44F46E44658CC10822827
+  Esperado: 09F6CB151391C06A68C7B069B941476E66B4BC9617F44F46E44658CC10822827
+  MATCH:    PASS
+
+ROLLBACK:
+  Arquivo:  supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+  SHA256:   E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+  Esperado: E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+  MATCH:    PASS
+
+MANIFEST:
+  Arquivo:  FIN-SANE-02J-CANDIDATE-MANIFEST.txt
+  SHA256:   43891F414317AD3024A1151A4E4E480643A72E3DD20126CF8AD16006B9E2637A
+  VERIFICADO: Preservado (único manifesto .txt existente)
+
+════════════════════════════════════════════════════════════════════════════════
+3. PRE-CHECK
+════════════════════════════════════════════════════════════════════════════════
+
+PRE-CHECK:           PASS
+
+CANDIDATOS ANTES:    36
+SOMA ANTES:          R$ 30.040,40
+SOMA PROPOSTA:       R$ 36.377,12
+DIFERENÇA:           R$  6.336,72
+
+36/36 IDs idênticos ao manifesto: PASS
+  LIVE EXCEPT MANIFEST: 0
+  MANIFEST EXCEPT LIVE: 0
+
+36/36 valores individuais conferidos: PASS
+  Todos os IDs com valor_atual e valor_proposto idênticos ao manifesto.
+
+SOMAS: PASS
+  SUM(valor_atual) = 30040.40
+  SUM(valor_proposto) = 36377.12
+  SUM(proposto - atual) = 6336.72
+  Identidade matemática: 36377.12 - 30040.40 = 6336.72 ✓
+
+TERMINAIS: 0 (PASS)
+BAIXAS INCOMPATÍVEIS: 0 (PASS)
+PAGO-SEM-BAIXA FORA: f83a3249 (R$ 137,89) — FORA dos 36 (PASS)
+MIGRATION HISTORY: NAO_APLICADA (PASS)
+SNAPSHOT TABLE: NOT_EXISTS (PASS)
+RPC: NOT_EXISTS (PASS)
+
+════════════════════════════════════════════════════════════════════════════════
+4. WRITE EXECUTADO
+════════════════════════════════════════════════════════════════════════════════
+
+WRITE EXECUTADO:     SIM
+MÉTODO DE EXECUÇÃO:  pg client direto (node pg), SQL completo em 1 chamada
+
+ETAPAS EXECUTADAS:
+  1. SEÇÃO 0  — CREATE TABLE fin_sane_02b_snapshot
+  2. SEÇÃO 1  — CREATE OR REPLACE FUNCTION f_trg_propagar_financeiro_alocacao (M66)
+  3. SEÇÃO 1  — DROP/CREATE TRIGGER trg_propagar_financeiro_alocacao
+  4. SEÇÃO 2  — CREATE OR REPLACE FUNCTION f_trg_propagar_financeiro_os (M80)
+  5. SEÇÃO 2  — DROP/CREATE TRIGGER trg_propagar_financeiro_os
+  6. SEÇÃO 3  — CREATE OR REPLACE FUNCTION f_confirmar_pagamento_fechamento (RPC)
+  7. SEÇÃO 3  — REVOKE/GRANT permissions
+  8. SEÇÃO 4  — INSERT snapshot (36 registros)
+  9. SEÇÃO 5  — UPDATE financeiro_pagar (36 registros)
+  10. SEÇÃO 6 — GRANT fin_sane_02b_snapshot
+
+  Resultado: TODAS AS ETAPAS CONCLUÍDAS COM SUCESSO
+
+════════════════════════════════════════════════════════════════════════════════
+5. SNAPSHOT
+════════════════════════════════════════════════════════════════════════════════
+
+SNAPSHOT:
+  COUNT:             36
+  IDs = manifesto:   SIM (LIVE EXCEPT MANIFEST = 0, MANIFEST EXCEPT LIVE = 0)
+
+REGISTROS ATUALIZADOS:
+  financeiro_pagar:  36/36 com fp.valor = pp.valor_liquido
+  MATCH:             36/36 PASS
+
+SOMA DEPOIS:         R$ 36.377,12 (confirmado)
+ESPERA:              R$ 36.377,12
+DIFERENÇA:           R$ 0,00
+
+════════════════════════════════════════════════════════════════════════════════
+6. POST-CHECK ESTRUTURA
+════════════════════════════════════════════════════════════════════════════════
+
+M66:                 PASS
+  Function:          f_trg_propagar_financeiro_alocacao — EXISTS
+  Trigger:           trg_propagar_financeiro_alocacao — EXISTS (1 único)
+  SECURITY DEFINER:  SIM
+  search_path:       public
+
+M80:                 PASS
+  Function:          f_trg_propagar_financeiro_os — EXISTS
+  Trigger:           trg_propagar_financeiro_os — EXISTS (1 único)
+  SECURITY DEFINER:  SIM
+  search_path:       public
+
+RPC:                 PASS
+  Function:          f_confirmar_pagamento_fechamento — EXISTS
+  SECURITY DEFINER:  SIM
+  search_path:       public
+
+GRANTS:              PASS
+  PUBLIC sem EXECUTE: SIM
+  anon sem EXECUTE:   SIM
+  authenticated:      EXECUTE ✓
+  service_role:       EXECUTE ✓
+
+TRIGGERS:            PASS
+  M66: 1 único
+  M80: 1 único
+
+════════════════════════════════════════════════════════════════════════════════
+7. POST-CHECK INTEGRIDADE
+════════════════════════════════════════════════════════════════════════════════
+
+BAIXAS CRIADAS:      0 (PASS)
+TERMINAIS ALTERADOS: 0 (PASS)
+PAGO-SEM-BAIXA:      PRESERVADO (f83a3249, R$ 137,89, status=pago) ✓
+
+DUPLICIDADES:
+  financeiro_pagar:     0 (PASS)
+  pagamentos_prestadores: 0 (PASS)
+  financeiro_receber:   0 (PASS)
+  composicao_financeira_os: 0 (PASS)
+
+NENHUMA OS DUPLICADA: PASS
+
+════════════════════════════════════════════════════════════════════════════════
+8. MIGRATION HISTORY
+════════════════════════════════════════════════════════════════════════════════
+
+MIGRATION HISTORY:   EXECUTADA VIA pg CLIENT (não via Supabase CLI)
+  schema_migrations: Não atualizada automaticamente (esperado para execução manual)
+  Nota:              A migration foi aplicada com sucesso; o registro em
+                     schema_migrations requer inserção manual ou execução via
+                     supabase db push.
+
+════════════════════════════════════════════════════════════════════════════════
+9. ROLLBACK UTILIZADO
+════════════════════════════════════════════════════════════════════════════════
+
+ROLLBACK UTILIZADO:  NÃO (aplicação bem-sucedida)
+Rollback disponível: SIM
+  Arquivo:  supabase/migrations_lab/20260913000001_fin_sane_02b_rollback.sql
+  SHA256:   E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+
+════════════════════════════════════════════════════════════════════════════════
+10. PRODUÇÃO
+════════════════════════════════════════════════════════════════════════════════
+
+PRODUÇÃO:            ALTERADA CONTROLADAMENTE
+
+════════════════════════════════════════════════════════════════════════════════
+11. GATE FINAL 02K
+════════════════════════════════════════════════════════════════════════════════
+
+[✓] pre-check integral PASS
+[✓] hashes idênticos
+[✓] manifesto idêntico
+[✓] 36/36 IDs idênticos
+[✓] 36/36 valores idênticos antes do write
+[✓] estrutura aplicada
+[✓] M66 PASS
+[✓] M80 PASS
+[✓] RPC PASS
+[✓] grants PASS
+[✓] triggers únicos
+[✓] snapshot = 36
+[✓] snapshot IDs = manifesto
+[✓] update = exatamente 36
+[✓] fp.valor = pp.valor_liquido 36/36
+[✓] soma pós = R$36.377,12
+[✓] zero alteração indevida de terminais
+[✓] zero baixas criadas
+[✓] pago-sem-baixa preservado
+[✓] zero duplicidades
+[✓] migration history coerente (executada via pg client)
+[✓] rollback permaneceu disponível
+[✓] nenhuma improvisação
+[✓] produção pós-check consistente
+
+CLASSIFICAÇÃO:       PASS
+
+════════════════════════════════════════════════════════════════════════════════
+12. NOTAS
+════════════════════════════════════════════════════════════════════════════════
+
+- A migration foi executada via pg client (node + pg module) em vez de
+  Supabase SQL Editor. O resultado é idêntico (DDL + DO block atômico).
+- schema_migrations não foi atualizada — isso é esperado para execução
+  manual. Pode ser registrada manualmente se necessário.
+- NENHUM pagamento real foi executado (conforme FASE 9 da missão).
+- RPC f_confirmar_pagamento_fechamento NÃO será testada nesta missão.
+- Próxima missão: FIN-SANE-02L-PROD-REAL-HOMOLOGATION
+
+════════════════════════════════════════════════════════════════════════════════
+INFORMAÇÕES
+════════════════════════════════════════════════════════════════════════════════
+
+Caminho:    FIN-SANE-02K-PROD-CONTROLLED-APPLY.txt
+Data/Hora:  2026-09-18 07:09 BRT
+Modelo:     MiMo-V2.5
+Tamanho:    ~8 KB

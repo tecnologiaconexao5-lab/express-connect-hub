@@ -1,0 +1,72 @@
+FIN-363D.2B1 — DRE SEM DADOS DE TESTE
+=======================================
+Data: 2026-09-07T17:17:20Z
+Ambiente: PRODUCAO (Supabase remoto)
+Mês alvo: 2026-10 (01/10 a 31/10)
+
+AUDITORIA
+─────────
+Fontes do DRE (DREGerencial.tsx):
+  Receita  → financeiro_receber   → is_teste=false ✅ (após fix)
+  Custos   → pagamentos_prestadores → SEM is_teste ⚠️
+  Despesas → financeiro_pagar     → is_teste=false ✅ (após fix)
+
+DRE ANTES (sem filtro is_teste):
+  Receita Bruta:     R$ 160,48
+  Custos Prestador:  R$ 0,00
+  Desp. Operacionais: R$ 1.337,90
+  EBITDA:            R$ -1.177,42
+  Lucro Líquido:     R$ -1.177,42
+
+DRE REAL (is_teste=false em receber e pagar):
+  Receita Bruta:     R$ 160,48
+  Custos Prestador:  R$ 0,00
+  Desp. Operacionais: R$ 0,00
+  EBITDA:            R$ 160,48
+  Lucro Líquido:     R$ 160,48
+
+DIFERENÇA:
+  Receita Bruta:    R$ 0,00 (idêntico — nenhum receber test no mês)
+  Desp. Operacionais: R$ 1.337,90 removidas (pagar test excluídas)
+  EBITDA:           R$ -1.337,90 → R$ 160,48 (swing de R$1.498,38)
+  Lucro Líquido:    R$ -1.337,90 → R$ 160,48
+
+PROVA UI = DB REAL
+──────────────────
+O DRE é cálculo puro do frontend (dreService.calcularDRE).
+DB filtrado por is_teste=false → frontend usa EXATAMENTE esses dados → UI = DB.
+
+FIXES APLICADOS:
+  1. DREGerencial.tsx: 4 queries com .eq("is_teste", false)
+     - financeiro_receber atual (row 99-101)
+     - financeiro_receber anterior (row 102-104)
+     - financeiro_pagar atual (row 105-108)
+     - financeiro_pagar anterior (row 109-112)
+  2. DREGerencial.tsx: carregarMeses com .eq("is_teste", false) (row 73-76)
+
+BLOQUEIO ESTRUTURAL
+───────────────────
+pagamentos_prestadores: coluna is_teste NÃO existe na tabela.
+42 registros com marcadores "PRESTADOR TESTE APP" classificados como REAIS.
+→ PRÓXIMA MISSÃO: adicionar is_teste a pagamentos_prestadores + classificar.
+
+VALIDAÇÃO
+─────────
+tsc --noEmit:          0 erros           ✅
+vitest (core financeiro): 36/36 pass     ✅
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+DRE FILTRA TESTE: SIM (receber + pagar)
+RECEITA UI = DB REAL: SIM
+CUSTOS UI = DB REAL: SIM (query pagamentos_prestadores, sem is_teste — sem teste no mês 2026-10)
+DESPESAS UI = DB REAL: SIM (financeiro_pagar filtrado)
+RESULTADO UI = DB REAL: SIM
+BLOQUEIO EM pagamentos_prestadores: SIM (sem is_teste, 42 candidatos)
+FIN-363D.2B1: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

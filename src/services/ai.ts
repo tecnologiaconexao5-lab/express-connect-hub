@@ -1,5 +1,6 @@
 // src/services/ai.ts
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "@/services/ia/proxyIaClient";
 
 export interface AIResponse {
   success: boolean;
@@ -7,47 +8,22 @@ export interface AIResponse {
   error?: string;
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-
-// Helper for Anthropic API Calls
+// Helper for Anthropic API Calls via proxy-ia (backend seguro)
 async function callClaudeAPI(system: string, userMessage: string): Promise<string> {
-  const apiKey = localStorage.getItem("anthropic_api_key");
-  
-  if (!apiKey) {
-    console.warn("Chave da Anthropic não encontrada. Retornando Mock para UI.");
-    // Return mock response for UI if no key is present to prevent breaking
-    return "MOCK_RESPONSE: Função de Inteligência Artificial simulada (Chave API ausente). " + userMessage.substring(0, 30) + "...";
+  const prompt = `${system}\n\n${userMessage}`;
+  const resultado = await proxyIaClient.executar({
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    prompt,
+    max_tokens: 1024,
+  });
+
+  if (!resultado.sucesso) {
+    console.warn("proxy-ia indisponível, retornando mock:", resultado.erro);
+    return "MOCK_RESPONSE: Função de Inteligência Artificial simulada (proxy-ia indisponível). " + userMessage.substring(0, 30) + "...";
   }
 
-  try {
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        max_tokens: 1024,
-        system: system,
-        messages: [
-          { role: "user", content: userMessage }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (err: any) {
-    console.error("Erro no motor AI:", err);
-    throw err;
-  }
+  return resultado.resposta;
 }
 
 // 1. WhatsApp Agente (Mock de leitura/escrita)

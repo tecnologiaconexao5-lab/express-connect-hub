@@ -237,13 +237,13 @@ export function CentralComunicacao() {
               <div className="flex flex-wrap gap-2">
                 {TIPOS_VEICULO.map(v => (
                   <button
-                    key={v}
-                    onClick={() => toggleFiltro("tipo_veiculo", v)}
+                    key={v.value}
+                    onClick={() => toggleFiltro("tipo_veiculo", v.value)}
                     className={`px-3 py-1 rounded-full text-sm border ${
-                      filtros.tipo_veiculo.includes(v) ? "bg-primary text-primary-foreground" : ""
+                      filtros.tipo_veiculo.includes(v.value) ? "bg-primary text-primary-foreground" : ""
                     }`}
                   >
-                    {v}
+                    {v.label}
                   </button>
                 ))}
               </div>

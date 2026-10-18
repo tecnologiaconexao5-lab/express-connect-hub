@@ -1,0 +1,12 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const r = await c.query("SELECT id, alocacao_id, os_id, prestador_id, sender_type, sender_user_id, mensagem, status, read_at, idempotency_key, created_at FROM public.operacao_mensagens WHERE alocacao_id = 'ca5fe225-7114-42da-9997-c3d466e5df52' ORDER BY created_at ASC");
+  console.log('MENSAGENS:', JSON.stringify(r.rows, null, 2));
+  const n = await c.query("SELECT id, prestador_id, titulo, corpo, tipo, referencia, status, criada_em FROM public.portal_notificacoes WHERE tipo = 'operacao_mensagem' AND referencia = 'ca5fe225-7114-42da-9997-c3d466e5df52' ORDER BY criada_em DESC LIMIT 5");
+  console.log('NOTIFICACOES:', JSON.stringify(n.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

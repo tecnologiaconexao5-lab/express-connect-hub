@@ -1,0 +1,22 @@
+MISSAO A31-J1.1 - LARGURA DO MODAL PREMIUM
+===========================================
+ARQUIVO: src/components/financeiro/ConferenciaFinanceira.tsx
+
+AJUSTE (unica alteracao)
+- DialogContent "Lançar Serviço Manualmente":
+  sm:max-w-[1100px]  ->  sm:max-w-[1450px] + w-[92vw]
+
+MANTIDO
+- h-[94vh]; cabeçalho fixo; sidebar esquerda (w-60, largura inalterada);
+  scroll interno; rodape fixo; responsividade (w-[92vw] limita a viewport em
+  telas menores; max-w-[1450px] evita ultrapassar em telas grandes).
+- Area principal flex-1 ganha mais largura relativa a sidebar.
+
+NAO ALTERADO
+- Logica, campos, calculos, banco, Escala/App/Fatura. Nenhum redesenho.
+
+VALIDACAO
+- npx tsc --noEmit -> 0 erros
+- npm run build -> OK (48.23s)
+
+PENDENCIA: nenhuma.

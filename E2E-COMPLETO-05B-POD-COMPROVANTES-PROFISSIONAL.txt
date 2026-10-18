@@ -1,0 +1,132 @@
+1E2E-COMPLETO-05B-POD-COMPROVANTES-PROFISSIONAL
+==================================================
+Ambiente: TMS | Data: 2026-09-22 | Modo: IMPLEMENTAÇÃO CONTROLADA + TESTES | Redmi: NÃO
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. OS FINALIZADA → "VER COMPROVANTES"
+==================================================
+CAUSA RAIZ (corrigida): na listagem de OS, o botão "Ver comprovantes" fazia
+`setOsSelecionada(os); setModoForm("ver")` → abria o FORMULÁRIO da OS (edição/visualização),
+em vez de uma visão dedicada de POD.
+CORREÇÃO (OrdensServicoLista.tsx): o botão agora faz `setOsComprovantes(os)` e abre um
+Dialog dedicado que renderiza `EntregasComprovantes` (POD), sem entrar na edição da OS.
+Reuso de componentes/serviços existentes (sem módulo paralelo):
+  - EntregasComprovantes (lista entregas/POD da OS)
+  - DossieEntregaSheet (dossiê profissional do POD)
+  - comprovantesService.buscarEntregasDaOS / listarComprovantes
+
+FINALIZED_OS_POD_VIEW=PASS
+POD_DEDICATED_VIEW=PASS
+OS_EDIT_NOT_USED_AS_POD=PASS
+
+==================================================
+2. VISÃO PROFISSIONAL DO POD (DossieEntregaSheet)
+==================================================
+Exibe quando disponível: OS/Romaneio, Prestador, Veículo/placa, Destinatário, Recebedor,
+Documento do recebedor, Situação, Data/Hora, Fotos (foto_entrega/canhoto), Assinatura,
+Geolocalização (lat/long + link Google Maps), Observações e Timeline (histórico de eventos).
+Fotos renderizam por URL remota e permitem ampliação (setGaleriaAmpliada).
+Campos ausentes não são inventados.
+
+POD_PHOTOS_RENDER=PASS
+POD_PHOTO_ZOOM=PASS
+POD_RECEIVER_DATA=PASS
+POD_GEOLOCATION=PASS
+POD_HISTORY=PASS
+
+==================================================
+3. ORGANIZAÇÃO DA OS
+==================================================
+Nenhum redesenho da OS. A organização por contexto (Identificação/Carga/Veículo/Rotas e
+Paradas/Torre-Financeiro/Histórico) foi preservada. Para OS finalizada, o acesso ao
+comprovante/POD agora é direto pela listagem, sem exigir abrir a edição completa.
+
+==================================================
+4. BAIXAS E EVIDÊNCIAS (Comprovantes.tsx)
+==================================================
+Já consolidada: cada registro identificado por dados humanos — OS/Romaneio, Cliente,
+Prestador, Veículo, Destinatário, Data/Hora, Recebedor, Situação, Foto/Canhoto/Assinatura,
+Completo/Incompleto — e ação "Ver comprovante" abrindo o DossieEntregaSheet.
+Busca/filtros: OS, cliente, prestador, destinatário, recebedor, documento, período, situação.
+
+BAIXAS_EVIDENCIAS_HUMAN_IDENTIFICATION=PASS
+BAIXAS_EVIDENCIAS_SEARCH=PASS
+
+==================================================
+5. VÍNCULO CANÔNICO
+==================================================
+comprovantesService usa a fonte oficial `entregas_protocolo` com cruzamento por
+`alocacao_id` → `ordem_servico_id` → `prestador_id` (`.in("alocacao_id", ...)`), sem
+vínculo por texto/nome. Sem duplicação de POD (1 linha por alocação).
+
+CANONICAL_OS_POD_LINK=PASS
+POD_DUPLICATION_RISK=NO
+
+==================================================
+6. SEGURANÇA DE INFORMAÇÃO
+==================================================
+A visão de comprovantes/Dossiê NÃO expõe margem, custo interno, preço de venda ou regras
+financeiras — é comprovação operacional da entrega.
+FINANCIAL_DATA_LEAK=NO
+
+==================================================
+7. TESTES
+==================================================
+NOVO: src/test/e2e_completo_05b_pod_comprovantes.test.ts — 10/10 PASS
+  - "Ver comprovantes" não abre o form da OS (usa setOsComprovantes);
+  - listagem renderiza EntregasComprovantes (POD dedicado);
+  - EntregasComprovantes reutiliza DossieEntregaSheet + buscarEntregasDaOS;
+  - Dossiê: fotos, assinatura, recebedor, documento, geolocalização, zoom, timeline;
+  - Dossiê sem margem/custo/valor/repasse;
+  - Baixas/Evidências com identificação humana + busca + dossiê;
+  - vínculo canônico por alocacao_id/ordem_servico_id.
+DIRECTED_TESTS=10/10. Suíte global: 1522 passed / 31 failed / 155 skipped
+  (31 falhas BASELINE pré-existentes em 9 arquivos — não introduzidas).
+TYPECHECK=npx tsc --noEmit → 0 erros
+BUILD=npm run build → OK (built in 46.93s)
+
+==================================================
+8. PRESERVAÇÃO DO E2E-06
+==================================================
+HML_TABLE_ID=d12cf0cd-8c41-4e2f-9358-e608ea3439be — intacto (ativo, VUC, HOMOLOGAÇÃO APP)
+PRESTADOR=e6646799-fbac-453e-a3ef-afdfc01a7085 — valor_diaria=250.00 (intacto)
+HML_DATA_PRESERVED=YES
+
+==================================================
+ENTREGÁVEIS
+==================================================
+FINALIZED_OS_POD_VIEW=PASS
+POD_DEDICATED_VIEW=PASS
+OS_EDIT_NOT_USED_AS_POD=PASS
+
+POD_PHOTOS_RENDER=PASS
+POD_PHOTO_ZOOM=PASS
+POD_RECEIVER_DATA=PASS
+POD_GEOLOCATION=PASS
+POD_HISTORY=PASS
+
+BAIXAS_EVIDENCIAS_HUMAN_IDENTIFICATION=PASS
+BAIXAS_EVIDENCIAS_SEARCH=PASS
+CANONICAL_OS_POD_LINK=PASS
+POD_DUPLICATION_RISK=NO
+FINANCIAL_DATA_LEAK=NO
+
+HML_DATA_PRESERVED=YES
+
+DIRECTED_TESTS=10/10
+TYPECHECK=0
+BUILD=OK
+FILES_MODIFIED=
+  - src/components/operacao/OrdensServicoLista.tsx (Ver comprovantes → POD dedicado)
+  - src/test/e2e_completo_05b_pod_comprovantes.test.ts (NOVO)
+
+RESULT=PASS
+NEXT_EXACT_MISSION=E2E-COMPLETO-06-FISICO-CONTINUAR
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem Redmi; nenhuma alocação HML criada; tabela HML e valor_diaria preservados; sem
+pagamento/baixa; APP Flutter não alterado; nível 3 não reaberto; Master 360/Control Tower
+não executados; DB_WRITES=0; sem migration.

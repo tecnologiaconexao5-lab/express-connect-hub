@@ -1,0 +1,143 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3B-NEUTRALIZAR-DEV-TESTE-UI
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+A pagina /dev-teste foi REMOVIDA do roteamento e do bundle; os 5 harnesses de src/lib/testes
+foram MOVIDOS para scripts/lab (guard + env QA + sem hardcode); hardcodes PROD/anon/token
+removidos (7 ocorrencias); build OK; P1/P2 sem regressao; selftest 13/13; zero DML/conexao.
+
+--------------------------------------------------------------------------------
+1. MAPA ANTES (Passo 1)
+--------------------------------------------------------------------------------
+ Rota:
+  - src/App.tsx ............ lazy import DevTesteTMS (linha 57) + <Route path="/dev-teste"> (linha 151)
+  - src/lib/routePermissions.ts ... "/dev-teste": { modulo: configuracoes, super_admin } (linha 46)
+  - Menu/sidebar: NAO havia link para /dev-teste (apenas rota + permissao).
+ Bundle: DevTesteTMS era importado via lazy no App -> entrava no bundle (chunk separado).
+ Imports da pagina: testeTMSCompleto, testeDocumentos, recrutamentoIntegracao (checarDuplicidade/
+  ativarPrestador), RelatorioMargemReal, RelatorioClienteAgregadoRefrigerado. Botoes executavam DML
+  (criar/atualizar/deletar) e limpeza em financeiro_receber/pagar/ordens_servico/orcamentos.
+ Harnesses em src/lib/testes:
+  - testeTMSCompleto.ts ....... DML (orcamento/OS/financeiro) via "@/lib/supabase"; SEM hardcode.
+  - testeDocumentos.ts ........ DML (candidato/prestador/documento) via "@/lib/supabase" + services.
+  - executarTesteReal.js ...... DML escala/alocacao; URL PROD + anon HARDCODED (.js com sintaxe TS).
+  - executarTesteReal.cjs ..... idem (URL PROD + anon HARDCODED).
+  - testarEdgeFunction.cjs .... DML via Edge; URL PROD + anon + TMS_TOKEN HARDCODED.
+ (src/lib/testes/testeMissaoOSCompleta.ts e testeM66Corrigido.ts ja haviam sido movidos no 04D3A.)
+
+--------------------------------------------------------------------------------
+2. MAPA DEPOIS (Passos 2–4)
+--------------------------------------------------------------------------------
+ Rota:
+  - src/App.tsx ............ REMOVIDOS o lazy import e o <Route path="/dev-teste">.
+  - src/lib/routePermissions.ts ... REMOVIDA a entrada "/dev-teste".
+  - src/pages/DevTesteTMS.tsx ... MOVIDA para scripts/lab/DevTesteTMS.tsx (fora do src/bundle)
+    e NEUTRALIZADA para um stub (sem imports de UI/servicos; lanca erro se renderizada).
+  - src/lib/testes/ ......... VAZIO e REMOVIDO (nenhum harness permanece em src).
+ Arquivos MOVIDOS para scripts/lab/:
+  1 DevTesteTMS.tsx        (pagina) -> stub
+  2 testeTMSCompleto.ts    -> guard + createClient(env) + dbMappers relativo
+  3 testeDocumentos.ts     -> guard + createClient(env) + services relativos
+  4 executarTesteReal.js    -> guard + env (sem hardcode)
+  5 executarTesteReal.cjs   -> guard + env (sem hardcode)
+  6 testarEdgeFunction.cjs  -> guard + env (sem hardcode; token via env)
+ Compat: rec03_1_fechamento_legacy_candidatos.test.ts atualizado para ler o novo caminho
+  (scripts/lab/testeDocumentos.ts) — checagem textual historica, sem alterar asserts.
+
+--------------------------------------------------------------------------------
+3. HARDCODES REMOVIDOS (7 ocorrencias, 3 arquivos)
+--------------------------------------------------------------------------------
+  executarTesteReal.js  : URL/ref PROD (1) + anon JWT (1) = 2
+  executarTesteReal.cjs : URL/ref PROD (1) + anon JWT (1) = 2
+  testarEdgeFunction.cjs: URL/ref PROD (1) + anon JWT (1) + TMS_TOKEN (1) = 3
+  (testeTMSCompleto.ts/testeDocumentos.ts nao tinham hardcode: usavam "@/" alias; substituidos
+   por createClient(env) local + imports relativos.)
+  Varredura em scripts/lab: ZERO ref PROD / JWT / postgres.<prod> / token hardcoded.
+  Nao imprimido nenhum valor de segredo. Nenhuma credencial nova adicionada.
+
+--------------------------------------------------------------------------------
+4. POSICAO DO GUARD x CONEXAO/ESCRITA
+--------------------------------------------------------------------------------
+ Todos os 5 harnesses: guardHarness(...) e a 1a instrucao de topo apos os imports, ANTES de
+ createClient (e do import de servicos legados). PROD/permissao de escrita verificados antes
+ de qualquer efeito.
+
+--------------------------------------------------------------------------------
+5. PROVAS NEGATIVAS (Passo 5)
+--------------------------------------------------------------------------------
+ A) rota /dev-teste: NAO existe rota executavel no App (App.tsx sem "dev-teste"/"DevTesteTMS"). PASS
+ B) DevTesteTMS: NAO importada pelo router/bundle (arquivo fora de src; sem importer). PASS
+ C) src/lib/testes: diretorio removido; NENHUM harness de escrita importado pela UI
+    (varredura de imports reais em src = 0). PASS
+ D) arquivos tratados: zero ref PROD hardcoded; zero JWT/anon/service_role/token; zero
+    DATABASE_URL com segredo. PASS
+ E) harnesses movidos (guard central):
+      testeTMSCompleto.ts  -> PROD BLOCKED; PROD+opt-in BLOCKED; QA sem opt-in BLOCKED; QA+opt-in
+                              passa pelo guard; env ausente BLOCKED (execucao controlada: abortou no guard).
+      executarTesteReal.cjs-> abortou no guard.
+      testarEdgeFunction.cjs -> abortou no guard.
+      testeDocumentos.ts   -> guard estatico PASS; dynamic N/A (import de servico que usa
+                              "@lib/supabase" que exige env; pre-existente).
+      executarTesteReal.js -> guard estatico PASS; dynamic N/A (.js com sintaxe TS; o .cjs e o
+                              gemeo executavel e abortou no guard).
+ MATRIZ A-E (guard central): A=BLOCKED B=BLOCKED C=BLOCKED D=passa guard E=BLOCKED  -> PASS
+
+--------------------------------------------------------------------------------
+6. TESTES EXECUTADOS
+--------------------------------------------------------------------------------
+ _guard.selftest.cjs ....... TOTAL 13 | PASS 13 | FAIL 0
+ _guard.verify_p1.cjs ...... 13/13 OK | A-E PASS  (sem regressao)
+ _guard.verify_p2.cjs ...... 6/6 OK (1 N/A legado) | A-E PASS  (sem regressao)
+ _guard.verify_d3b.cjs ..... PASS (rota removida, sem importadores, 5 harnesses OK, A-E PASS)
+ npm run build ............. OK ("built in 1m 6s")
+ npx tsc -p tsconfig.app.json --noEmit ... 739 erros (baseline 749; NENHUM novo em
+   DevTesteTMS/lib-testes). Nenhum fluxo real do TMS quebrado.
+ Nenhuma execucao funcional dos harnesses (apenas para observar aborto do guard).
+
+--------------------------------------------------------------------------------
+7. PROVAS
+--------------------------------------------------------------------------------
+ Zero conexao Supabase/PG; zero DML; zero browser real contra PROD; zero segredo novo;
+ nenhum produtor de teste alcancavel pelo bundle/roteamento.
+
+--------------------------------------------------------------------------------
+8. RISCOS RESIDUAIS (registrar; fora de escopo)
+--------------------------------------------------------------------------------
+ R1. 2 mencoes TEXTUAIS (comentarios) a "dev-teste/DevTesteTMS": src/testes/validacaoTMS.ts
+     (snippet de console) e src/services/recrutamentoIntegracao.ts (comentario). Nao sao rota/import.
+ R2. src/testes/validacaoTMS.ts: snippet para console do navegador (sem guard) — recomenda-se
+     tratar como o seed-relatorios (04D3C).
+ R3. Dezenas de scripts na RAIZ, tests/e2e/*, tmp/ e scratch/ ainda com URL PROD + anon
+     hardcoded (fora do escopo desta missao; tratar em 04D3C/04D3D) + credencial em scratch/tmp.
+
+--------------------------------------------------------------------------------
+9. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. /dev-teste nao executavel pela aplicacao; harnesses de escrita fora do bundle; hardcodes
+removidos dos arquivos tratados; harnesses preservados apenas em scripts/lab com guard; P1/P2 sem
+regressao; build OK; zero conexao/DML real.
+
+--------------------------------------------------------------------------------
+10. PROXIMA MICRO-MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3C — CONSOLE SNIPPETS + RAIZ: neutralizar src/testes/validacaoTMS.ts (console) e
+aplicar guard/limpeza nos demais scripts de raiz com PROD+anon hardcoded (test-*.ts, test_*.cjs,
+criar_*, verificar_*, auditar_*), preservando apenas lab+guard. Depois 04D3D (tests/e2e + rotacao
+de credencial/limpeza de scratch/tmp).
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3B-NEUTRALIZAR-DEV-TESTE-UI-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3B-NEUTRALIZAR-DEV-TESTE-UI-RESULTADO.txt
+Tamanho ..: 9248 bytes
+Data .....: 24/09/2026 21:13:48
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3B
+================================================================================

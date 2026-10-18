@@ -148,6 +148,10 @@ export function RecrutamentoModule() {
         documentosAprovados: (c.documentos || []).filter(d => d.status === 'ok').length,
         statusDocumental: c.statusDocumental,
         disponibilidade: c.disponibilidadeTipo,
+        scoreComprometimento: c.scoreComprometimento,
+        riscoDesistencia: c.riscoDesistencia,
+        tempoMedioRespostaHoras: c.tempoMedioRespostaHoras,
+        classificacaoComprometimento: c.classificacaoComprometimento,
       }))
       setTalentos(mapped)
     } catch {
@@ -334,7 +338,7 @@ export function RecrutamentoModule() {
             <PageHeader
               icon={<CheckCircle className="w-5 h-5 text-primary" />}
               title="Prestadores Aptos"
-              description="Prestadores operacionalmente aptos — prontos para alocação na Escala/Torre"
+              description="Prestadores operacionalmente aptos — prontos para alocação na Programação Operacional/Torre"
             />
             <PrestadoresAptos />
           </div>

@@ -1,0 +1,263 @@
+RELATÓRIO AG-07I-B3 — BLOQUEIO REFRIGERADO / TÉRMICO / TEMPERATURA
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest) — homologação técnica
+
+====================================================================
+1. FONTE OFICIAL REQUISITO OPERAÇÃO
+====================================================================
+
+ordens_servico.carga_refrigerada (boolean) — precedência primária
+ordens_servico.veiculo_termica (text) — fallback
+
+Rede (redePrestadoresService.ts:94):
+  veiculo.termica = os.carga_refrigerada ? "refrigerado" : (os.veiculo_termica || "seco")
+
+carga_refrigerada=true OU veiculo_termica ∈ {refrigerado, congelado, termico, térmico}
+→ operação exige veículo com capacidade térmica.
+
+ordens_servico.carga_refrigerado (boolean) — existe mas menos usado.
+ordens_servico.tipo_carga (text) — usado em portal/roteirização, não no gate da Escala.
+
+====================================================================
+2. FONTE OFICIAL VEÍCULO
+====================================================================
+
+veiculos.tipo_carga (text) — campo estruturado, valores:
+  "seco" (default)
+  "refrigerado"
+  "congelado"
+  "termico" / "térmico"
+
+veiculos.temperatura_min (numeric) — existe, mas OS não tem faixa correspondente.
+veiculos.temperatura_max (numeric) — existe, mas OS não tem faixa correspondente.
+
+====================================================================
+3. SECO
+====================================================================
+
+Veículo seco (tipo_carga = "seco" ou null):
+  - NÃO possui capacidade térmica.
+  - Operação refrigerada + veículo seco → BLOQUEADO.
+  - Operação seca + veículo seco → PERMITIDO.
+
+====================================================================
+4. TÉRMICO
+====================================================================
+
+Térmico/refrigerado/congelado são classificada como "com capacidade térmica".
+Todos são aceitos quando a operação exige refrigerado.
+
+Não foram encontradas restrições que diferenciem térmico de refrigerado
+no gate. Conservadorismo: se a operação exige, qualquer capacidade
+térmica é aceita.
+
+====================================================================
+5. REFRIGERADO
+====================================================================
+
+Regras implementadas:
+
+  operação NÃO exige refrigerado
+  → veículo seco permitido (não bloqueia).
+
+  operação EXIGE refrigerado
+  + veículo possui tipo_carga ∈ {refrigerado, congelado, termico, térmico}
+  → PERMITIDO.
+
+  operação EXIGE refrigerado
+  + veículo seco/null
+  → BLOQUEADO (requisito_refrigerado_nao_atendido).
+
+  operação EXIGE refrigerado
+  + veículo sem informação (null/"")
+  → BLOQUEADO (não assumir compatível).
+
+====================================================================
+6. TEMPERATURA — DEPENDÊNCIA ESTRUTURAL
+====================================================================
+
+veiculos: temperatura_min, temperatura_max existem.
+ordens_servico: NÃO possui campos de faixa de temperatura.
+
+Conclusão: comparação de faixa NÃO é possível com o schema atual.
+Registrado como DEPENDÊNCIA ESTRUTURAL para missão futura.
+
+Exemplo futuro (quando OS tiver min/max):
+  OS exige 13°C a 16°C
+  Veículo suporta 10°C a 18°C → OK (faixa do veículo cobre a exigida).
+  Veículo suporta 18°C a 25°C → BLOQUEADO (faixa não cobre).
+
+====================================================================
+7. DADOS AUSENTES
+====================================================================
+
+Comportamento do gate:
+
+  OS exige refrigerado + veículo sem tipo_carga (null) → BLOQUEADO.
+  Motivo: "não declarar compatível quando não há informação".
+
+  OS sem exigência + qualquer veículo → ELEGÍVEL (fail-open para operação seca).
+
+Ausência de informação NÃO é classificada como "compatível".
+É classificada como "incapaz de confirmar compatibilidade" → BLOQUEADO
+quando há exigência.
+
+====================================================================
+8. APP
+====================================================================
+
+App (register_screen.dart:532):
+  aceita_refrigerado em metadata (boolean)
+  experiencia.refrigerado em metadata
+
+App NÃO preenche veiculos.tipo_carga — esse campo é preenchido
+pelo TMS no cadastro de veículos (formulário dedicado).
+
+Nenhum ajuste necessário no App para esta missão.
+O campo tipo_carga já é a fonte estruturada oficial do veículo.
+
+====================================================================
+9. GATE CENTRAL
+====================================================================
+
+eligibilidadeOperacionalService.ts:
+
+  +operacaoRequerRefrigerado() — helper puro, testável
+  +veiculoPossuiCapacidadeTermica() — helper puro, testável
+  +refrigeradoCompativel() — regra pura, testável sem banco
+  +verificarRefrigerado() — async, best-effort, fail-open
+  +requisito_refrigerado_nao_atendido — motivo adicionado
+
+Gate existente preservado:
+  status/liberado_app, documentos, status veículo,
+  tipo veículo (B1), capacidade kg/m³ (B2).
+
+====================================================================
+10. CRIAR ALOCAÇÃO
+====================================================================
+
+escalaService.criarAlocacao:
+  1. verificarElegibilidadeOperacionalPrestador (status/liberado_app)
+  2. verificarElegibilidadeVeiculo (status veículo)
+  3. verificarCompatibilidadeTipoVeiculo (tipo OS × tipo veículo)
+  4. verificarCapacidadeVeiculo (peso/cubagem OS × capacidade veículo)
+  5. verificarRefrigerado (carga_refrigerada/veiculo_termica × tipo_carga veículo) ← NOVO
+
+  Se OS exige refrigerado e veículo é seco/null → erro.
+
+====================================================================
+11. TROCAR MOTORISTA
+====================================================================
+
+escalaService.trocarMotorista:
+  Query busca: tipo, placa, capacidade_kg, capacidade_m3, tipo_carga
+  +verificarRefrigerado (após capacidade, antes de conflito)
+
+  Se veículo do novo motorista não atende requisito térmico → erro.
+
+====================================================================
+12. TROCAR VEÍCULO
+====================================================================
+
+escalaService.trocarVeiculo:
+  Query busca: status, tipo, capacidade_kg, capacidade_m3, tipo_carga
+  +verificarRefrigerado (após capacidade)
+
+  Se novo veículo não atende requisito térmico → erro.
+
+====================================================================
+13. TESTES
+====================================================================
+
+34 testes no arquivo ag07ib3_refrigerado_termico.test.ts:
+
+Helper operacaoRequerRefrigerado (7 testes):
+  carga_refrigerada=true/false, veiculo_termica various
+
+Helper veiculoPossuiCapacidadeTermica (6 testes):
+  refrigerado, congelado, termico, seco, null, vazio
+
+Regra pura refrigeradoCompativel (8 testes):
+  A) refrigerado+refrigerado=OK
+  B) refrigerado+seco=BLOQUEADO
+  C) sem requisito+seco=OK
+  D) sem requisito+não bloqueia
+  E) refrigerado+sem info=BLOQUEADO
+  E2) refrigerado+vazio=BLOQUEADO
+  F) refrigerado+congelado=OK
+  F2) refrigerado+termico=OK
+
+Async criarAlocacao (3 testes):
+  I) OS ref + veículo seco → bloqueado
+  I2) OS ref + veículo ref → OK
+  I3) OS seca + veículo seco → OK
+
+Async verificarRefrigerado (4 testes):
+  J) veiculo_termica=refrigerado + veículo seco → BLOQUEADO
+  J2) OS inexistente → fail-open
+  J3) OS ref + veículo inexistente → BLOQUEADO
+  J4) osId nulo → elegível
+
+Motoboy (1 teste):
+  L) sem requisito + moto → OK
+
+Regressão B1/B2 (4 testes):
+  M) truck×van → INCOMPATÍVEL (B1)
+  M2) van×van → OK (B1)
+  N) capacidade insuficiente → BLOQUEADO (B2)
+  N2) capacidade OK → OK (B2)
+
+Regressão veículo inativo (1 teste):
+  O) veículo inativo → ineligível
+
+npx vitest run src/test/ag07ib3_refrigerado_termico.test.ts → ✅ 34/34
+npx vitest run (geral)                                     → ✅ 663/663 (62 arquivos)
+npx tsc --noEmit                                           → ✅ 0 erros
+
+====================================================================
+14. PENDÊNCIAS
+====================================================================
+
+1. TEMPERATURA — DEPENDÊNCIA ESTRUTURAL:
+   OS NÃO possui campos de faixa de temperatura estruturada.
+   Comparação min/max exige migration futura para adicionar
+   campos na OS (ex: temp_requerida_min, temp_requerida_max).
+
+2. Veículo legado sem tipo_carga preenchido:
+   Gate é BLOQUEADO quando há exigência (não assumir compatível).
+   Preenchimento do campo é pré-requisito para operações refrigeradas.
+
+3. congrgelado ≠ refrigerado:
+   Tratados como equivalentes no gate (ambos têm capacidade térmica).
+   Se o sistema precisar distinguir no futuro, separar os conjuntos.
+
+====================================================================
+15. PRÓXIMA MISSÃO
+====================================================================
+
+AG-07I-B4 — ANTT / RNTRC E APLICABILIDADE
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+REQUISITO REFRIGERADO IDENTIFICADO: SIM
+CAPACIDADE TÉRMICA VEÍCULO IDENTIFICADA: SIM
+REFRIGERADO EXIGIDO + VEÍCULO SECO BLOQUEIA: SIM
+OPERAÇÃO SECA PRESERVADA: SIM
+TÉRMICO ≠ REFRIGERADO TRATADO CORRETAMENTE: SIM (ambos aceitos)
+TEMPERATURA: DEPENDÊNCIA ESTRUTURAL (OS sem faixa)
+CRIAR ALOCAÇÃO PROTEGIDO: SIM
+TROCAR MOTORISTA PROTEGIDO: SIM
+TROCAR VEÍCULO PROTEGIDO: SIM
+MOTOBOY PRESERVADO: SIM
+TIPO B1 PRESERVADO: SIM
+CAPACIDADE B2 PRESERVADA: SIM
+ANTT ALTERADA: NÃO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07I-B3: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07I-B4 — ANTT / RNTRC E APLICABILIDADE

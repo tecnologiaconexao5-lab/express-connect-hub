@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { enviarMensagemTexto } from "@/services/evolutionApiService";
+import { centralIaService } from "@/services/centralIaService";
 import { gerarRespostaIA, registrarLogIA } from "@/services/integracoes/iaService";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -68,13 +68,6 @@ function PainelConversa({
   const [gerando, setGerando] = useState(false);
   const [sugestaoIA, setSugestaoIA] = useState("");
 
-  // Config Evolution — lê do .env ou localStorage
-  const serverUrl = localStorage.getItem("evo_server_url") ||
-    import.meta.env.VITE_EVOLUTION_SERVER_URL || "http://127.0.0.1:8080";
-  const apiKey = localStorage.getItem("evo_api_key") || "";
-  const instancia = localStorage.getItem("evo_instancia") ||
-    import.meta.env.VITE_EVOLUTION_INSTANCE || "recrutamento-conexao-express";
-
   const carregarMensagens = useCallback(async () => {
     const { data } = await supabase
       .from("whatsapp_mensagens")
@@ -91,65 +84,99 @@ function PainelConversa({
     if (!texto.trim()) return;
     setEnviando(true);
     try {
-      const r = await enviarMensagemTexto(instancia, serverUrl, apiKey, conversa.telefone, texto);
-      if (r.ok) {
-        // Registrar no Supabase
-        await supabase.from("whatsapp_mensagens").insert([{
-          conversa_id: conversa.id,
-          telefone: conversa.telefone,
-          direcao: "enviada",
-          mensagem: texto,
-          status: "enviada",
-        }]);
-        // Atualizar conversa
-        await supabase.from("whatsapp_conversas").update({
-          ultima_mensagem: texto,
-          ultima_interacao: new Date().toISOString(),
-        }).eq("id", conversa.id);
+      // F25B: Envio direto bloqueado. Redireciona para gateway seguro.
+      const telefoneMascarado = conversa.telefone.replace(/(\d{2})\d{4,}(\d{2})/, "$1****$2");
 
-        setTexto("");
-        carregarMensagens();
-        toast.success("Mensagem enviada!");
-      } else {
-        toast.error(r.error || "Erro ao enviar");
+      // Criar tarefa de bloqueio
+      const tarefa = await centralIaService.criarTarefa({
+        setor: "Central IA",
+        tipo_tarefa: "bloqueio_envio_direto",
+        titulo: `Envio direto bloqueado - Mensagens WhatsApp`,
+        descricao: `Tentativa de envio direto bloqueada. Tel: ${telefoneMascarado}`,
+        prioridade: "normal",
+        status: "aguardando_aprovacao",
+        payload: {
+          origem: "MensagensWhatsApp.tsx",
+          conversa_id: conversa.id,
+          telefone_mascarado: telefoneMascarado,
+          mensagem_resumida: texto.slice(0, 100),
+        },
+      });
+
+      // Criar aprovação humana
+      if (tarefa) {
+        await centralIaService.criarAprovacao({
+          tarefa_id: tarefa.id,
+          tipo_aprovacao: "mensagem_cliente",
+          conteudo_original: { telefone: telefoneMascarado, mensagem: texto },
+          conteudo_sugerido: { telefone: telefoneMascarado, mensagem: texto },
+        });
       }
+
+      // Registrar mensagem bloqueada
+      await supabase.from("comunicacoes_mensagens").insert({
+        tarefa_id: tarefa?.id || null,
+        origem_tipo: "mensagens_whatsapp",
+        origem_id: conversa.id,
+        destinatario_tipo: "setor",
+        destinatario_nome: conversa.nome_contato || null,
+        canal: "whatsapp",
+        assunto: "Envio direto bloqueado",
+        conteudo: texto,
+        status: "bloqueado",
+        modo_seguro: true,
+        provider_message_id: null,
+        motivo_bloqueio: "Envio direto bloqueado pelo gateway F25B",
+        contexto: { conversa_id: conversa.id, telefone_mascarado: telefoneMascarado },
+      });
+
+      // Registrar log
+      await centralIaService.registrarLog({
+        acao: "envio_direto_bloqueado",
+        entrada: { conversa_id: conversa.id, telefone: telefoneMascarado },
+        saida: { tarefa_id: tarefa?.id, status: "bloqueado" },
+        status: "aviso",
+        erro: "Envio direto bloqueado. A mensagem foi enviada para aprovação na Central IA.",
+      });
+
+      // Salvar no histórico local
+      await supabase.from("whatsapp_mensagens").insert([{
+        conversa_id: conversa.id,
+        telefone: conversa.telefone,
+        direcao: "enviada",
+        mensagem: texto,
+        status: "bloqueado",
+      }]);
+
+      await supabase.from("whatsapp_conversas").update({
+        ultima_mensagem: texto,
+        ultima_interacao: new Date().toISOString(),
+      }).eq("id", conversa.id);
+
+      setTexto("");
+      carregarMensagens();
+      toast.warning("Envio direto bloqueado. A mensagem foi enviada para aprovação na Central IA.");
     } finally {
       setEnviando(false);
     }
   }
 
   async function gerarIA() {
-    const groqKey = import.meta.env.VITE_GROQ_API_KEY || localStorage.getItem("groq_api_key") || "";
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem("gemini_api_key") || "";
-    const apiKeyIA = groqKey || geminiKey;
-    const provider = groqKey ? "groq" : "gemini";
-
-    if (!apiKeyIA) {
-      toast.error("Configure a API Key do Groq ou Gemini em Integrações TMS");
-      return;
-    }
-
     setGerando(true);
     setSugestaoIA("");
 
     const ultimaMsg = mensagens.filter(m => m.direcao === "recebida").slice(-1)[0];
-    const prompt = `O contato ${conversa.nome_contato || conversa.telefone} disse: "${ultimaMsg?.mensagem || "Olá"}". 
+    const prompt = `O contato ${conversa.nome_contato || conversa.telefone} disse: "${ultimaMsg?.mensagem || "Ola"}". 
     Contexto: recrutamento de motoristas para transportadora. 
-    Gere uma resposta profissional e amigável em português, máximo 3 linhas.`;
+    Gere uma resposta profissional e amigavel em portugues, maximo 3 linhas.`;
 
     try {
-      const r = await gerarRespostaIA({ provider, apiKey: apiKeyIA, prompt });
+      const r = await gerarRespostaIA({ provider: "groq", prompt });
       if (r.ok && r.data) {
         setSugestaoIA(r.data);
-        await registrarLogIA({
-          provider,
-          origem: "mensagens_whatsapp",
-          telefone: conversa.telefone,
-          prompt,
-          resposta: r.data,
-        });
+        await registrarLogIA("groq", prompt, r.data, 0, true);
       } else {
-        toast.error(r.error || "IA não gerou resposta");
+        toast.error(r.error || "IA nao gerou resposta");
       }
     } finally {
       setGerando(false);

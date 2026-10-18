@@ -1,0 +1,249 @@
+================================================================================
+RELATORIO ADM-APP-02D.2 — PRIVATIZACAO DO BUCKET documentos_prestadores
+================================================================================
+Projeto TMS .........: express-connect-hub (C:\Users\DIEGO BALBINO\Desktop\Pasta
+                       Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+                       express-connect-hub)
+App Prestador .......: C:\src\conexao_prestador (Flutter)
+Ambiente ............: PRODUCAO (leitura) + escrita de testes controlados
+Projeto Supabase ....: uwrvzsjtpgaifkktpepn
+Gerado em ...........: 2026-09-27 19:19:52
+Caminho absoluto ....: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\
+                       DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\
+                       express-connect-hub\ADM-APP-02D2-RELATORIO.txt
+BYTES_TOTAL .........: [0000016082] (preenchido apos gravacao, largura fixa)
+
+================================================================================
+STATUS FINAL DA MISSAO
+================================================================================
+NAO PRONTO (GATE INCOMPLETO) — NAO declarar PASS.
+
+Motivo unico bloqueante: a PROVA FISICA OBRIGATORIA no Redmi (PARTE D do plano
+da 02D.1) nao foi concluida nesta sessao. Todos os demais gates tecnicos
+estao PASS e com evidencia arquivada. A pendencia do Redmi foi classificada
+como BLOCKED/F-ENV (ambiente), e NAO como falha do produto.
+
+================================================================================
+CORRECAO DE AMBIENTE — VERIFICACAO CONTRA VERCEL
+================================================================================
+[OK] Nenhuma URL da Vercel (qualquer *.vercel.app) existe nos arquivos da
+     missao: varredura feita em TODOS os 18 arquivos _adm_app_02d2_* (scripts,
+     evidencias JSON e spec Playwright) — resultado "sem vercel" em todos.
+[OK] Prova TMS LOCAL usa APENAS localhost:8800:
+     - playwright.config.ts -> baseURL "http://localhost:8800";
+     - spec usa page.goto RELATIVO ("/login", "/cadastros/prestadores",
+       "/cadastros/analise-documentos") — resolve para o baseURL local;
+     - netstat confirmou servidor local ouvindo 0.0.0.0:8800 (PID 21372);
+     - nenhum goto/codigo aponta para Vercel.
+[OK] Deploy Vercel NAO UTILIZADO nesta homologacao (e considerado DESATUALIZADO,
+     nao representando o codigo atual — nenhuma evidencia dele foi aceita).
+[OK] Correcoes oficiais preservadas: migration NAO revertida, bucket PRIVADO,
+     policies NAO tocadas, testes N/P NAO reexecutados, rollback ja validado.
+
+================================================================================
+1. PASS COMPROVADO (evidencia arquivada)
+================================================================================
+
+--- 1.1 Snapshot e migration ---
+[OK] Snapshot antes/depois: bucket public=false pos-forward; policies
+     storage.objects = 4 policies *_privado (TO authenticated); 78 objetos do
+     bucket e 32 linhas da tabela documentos_prestadores INALTERADOS.
+     Hashes:
+       storage/policies ANTES  = 97f18480895b2aca345798a70e83d336585649fedcc98171d3ea25ef629bebb1
+       storage/policies DEPOIS = b308c19d88f1ea0c5540568d1cd80711bcddb93b16f6ffa76d3da29e9074dc44
+       tabela dp_* (inalterado) = 477d12130df5c169947f2f09f921c1f828b368b1631a388e10f12ee89613db96
+     Evidencias:
+       scripts\_adm_app_02d2_snapshot_antes.json   17507 b  2026-09-27 16:00:19
+       scripts\_adm_app_02d2_snapshot_depois.json  19958 b  2026-09-27 16:12:56
+[OK] Migration FORWARD aplicada em producao (guard raisef e idempotente por
+     contagem — NAO reexecutavel, por design):
+       supabase\migrations\20260928000000_adm_app_02d2_bucket_documentos_privado.sql
+         7655 b  2026-09-27 16:11:50
+[OK] Rollback irmao criado e validado:
+       supabase\migrations\20260928000001_adm_app_02d2_rollback.sql
+         4021 b  2026-09-27 16:11:50
+[OK] Round-trip transacional (rollback -> forward -> ROLLBACK final, NUNCA
+     comitando a reversao): 10/10 PASS. Producao ficou no estado 02D.2 correto.
+     Evidencia: scripts\_adm_app_02d2_roundtrip.out.json  2663 b  16:35:45
+     (guards nao-idempotentes: rehearse por re-aplicacao NAO e possivel; o
+      round-trip transacional e a forma correta de provar reversibilidade.)
+
+--- 1.2 Testes N (negativos) e P (positivos) — 21/21 PASS ---
+Evidencia: scripts\_adm_app_02d2_testes.out.json  4283 b  2026-09-27 16:30:03
+  N01 anon NAO lista objetos (0 linhas)                          PASS
+  N02 anon NAO le objeto (download + public URL)                 PASS
+  N03 anon NAO faz upload (RLS)                                  PASS
+  N04 anon NAO atualiza objeto (RLS)                             PASS
+  N05 anon NAO exclui objeto                                     PASS
+  N06 prestador A NAO le documento de B                          PASS
+  N07 prestador A NAO assina path de B                           PASS
+  N08 prestador A NAO faz upload usando ID de B                  PASS
+  N09 prestador A NAO altera objeto de B                         PASS
+  N10 prestador A NAO exclui objeto de B                         PASS
+  N11 path malformado / fora da convencao e negado               PASS
+  N12 bucket/path externo nao concede acesso                     PASS
+  P01 prestador proprio faz upload                               PASS
+  P02 prestador proprio cria signed URL TTL 600                  PASS
+  P03 signed URL retorna o conteudo                              PASS
+  P04 proprio atualiza/exclui somente objeto TESTE proprio       PASS
+  P05 TMS (tenant_usuarios) lista e le                           PASS
+  P06 TMS cria signed URL                                        PASS
+  P07 TMS faz upload e delete de objeto TESTE                    PASS
+  P08 tabela documentos_prestadores continua funcional           PASS
+  P09 as 8 policies dp_* permanecem intactas                     PASS
+
+--- 1.3 P10 sign real (vitest, E2E) — 6/6 PASS ---
+src\test\adm_app_02d2_sign_real.test.ts  7007 b  2026-09-27 16:33:10
+  P10.0 ambiente / P10.1 signed 200 / P10.2 TTL 600s validado via claims do
+  token (exp-iat=600, scope=download) / P10.3 public URL -> 404 / P10.4 anon ->
+  null / P10.5 normalizacao A-5. Observacao: supabase-js createSignedUrl retorna
+  apenas {signedUrl} (sem expiresIn) — TTL provado decodificando o token.
+
+--- 1.4 C7 — 29 documentos legados continuam assinaveis — PASS ---
+Evidencia: scripts\_adm_app_02d2_c7_legados.out.json  2698 b  2026-09-27 16:46:28
+  total=32 | assinaveis=29 | orfaos=2 | url_vazia=1 | ok=true
+  (2 orfaos e a URL vazia permanecem SEM exibicao, como no baseline 02D.1.)
+
+--- 1.5 Regressao 02D.1 (T01-T10) — 17/17 PASS ---
+src\test\adm_app_02d1_documentos_privados.test.ts  10389 b  2026-09-27 11:06:02
+  Run conjunto pos-mudanca (02D.1 + P10 + GAP-01): 3 arquivos / 27/27 PASS.
+
+--- 1.6 Regressao Flutter APP — 9/9 PASS + analyze sem erros ---
+  flutter test test\core\repositories\driver_documents_storage_ref_test.dart
+    -> 9/9 PASS (concluido antes desta interrupcao).
+  flutter analyze lib test -> 61 issues, TODAS warnings/info preexistentes;
+    0 (zero) erros; nenhuma issue no arquivo da missao
+    (driver_documents_storage_ref_test.dart nao aparece no analyze).
+
+--- 1.7 Typecheck ---
+[OK] npx tsc --noEmit -p tsconfig.node.json -> 0 erros (NODE_TSC_OK).
+[OK] tsconfig.app.json -> erros PREEXISTENTES do repo (cteService,
+     focusService, actionEngineService etc.); varredura por
+     "adm_app_02d1"/"adm_app_02d2" -> 0 erros nos arquivos da missao.
+
+--- 1.8 Vitest full — falhas sao PREEXISTENTES (investigado) ---
+  Falhas observadas no run completo foram rastreadas individualmente:
+  - ENOENT de migrations com nome SEM padding (ex.: 20260822_ag07f_...; o arquivo
+    real e 20260822000000_ag07f_...; idem rec02, rec04, ag07h, a31j11, ag07j3):
+    mismatch nome de arquivo preexistente, nada a ver com a missao.
+  - f0k: drift de data ("REC-202608" hardcoded, hoje e 202609) — preexistente.
+  - f0l/f0e/escala_e2e_05: assercoes de fonte/servico preexistentes
+    (contem 'pagamentos_prestadores', mock de rpc, etc.).
+  Nenhuma falha referencia bucket, storage, documentos_prestadores ou arquivos
+  da missao. Conclusao: 0 regressoes novas introduzidas pela 02D.2.
+
+--- 1.9 GAP-01 — CORRIGIDO + teste direcionado PASS ---
+Causa: AnaliseLote.tsx linha 68 usava colunas inexistentes
+  ("id, prestador_id, tipo, status, validade, arquivo as url") — a tabela real
+  so tem: id, prestador_id, tipo, url, created_at. O SELECT falhava em
+  silencio e a aba "Analise em Lote" ficava vazia.
+Correcao cirurgica (1 linha):
+  src\components\documentos\AnaliseLote.tsx (12940 b, 2026-09-27 16:49:31)
+    -> .select("id, prestador_id, tipo, url")
+Teste direcionado:
+  src\test\adm_app_02d2_gap01_analise_lote.test.ts  2159 b  16:49:38  -> 4/4 PASS
+Prova em tela (prova TMS LOCAL): aba "Analise em Lote" renderizou 28 linhas
+  com badges CNH/CRLV/ANTT e 0 erros de console (sem PGRST204).
+
+--- 1.10 PROVA TMS LOCAL (Playwright, CÓDIGO ATUAL / localhost) — PASS ---
+Alvo: http://localhost:8800 (servidor local do projeto atual; NAO Vercel).
+Spec: tests\e2e\_adm_app_02d2_tms_render.spec.ts  8363 b  2026-09-27 17:06:41
+Comando: npx playwright test tests/e2e\_adm_app_02d2_tms_render.spec.ts
+         --project=chromium --reporter=list
+Resultado: 2 passed (36.5s), 0 falhas.
+  Item 1 — login fixture TMS (adm02d2_tms@teste.com)             PASSOU
+  Item 2 — detalhe prestador FRANKLIN DA SILVA PEREIRA com
+           <img src=".../object/sign/documentos_prestadores/foto_be420cfc-...
+           jpeg?token=..."> e naturalWidth=899 (render real)       PASSOU
+  Item 3 — aba Lote (GAP-01): 28 linhas, 0 erros de console       PASSOU
+Screenshots (bytes / data-hora):
+  test-results\02d2\tms_prestador_detalhe.png  78685 b  2026-09-27 17:07:22
+  test-results\02d2\tms_analise_lote.png       53403 b  2026-09-27 17:07:34
+Prova feita APENAS contra localhost (baseURL do config + goto relativos +
+netstat porta 8800). Sem nenhuma URL Vercel envolvida.
+
+================================================================================
+2. PENDENTE (nao executado nesta sessao — necessario para fechar o gate)
+================================================================================
+[P1] PROVA FISICA REDMI (PARTE D do plano 02D.1) — obrigatoria para PASS:
+       D1. adb reverse tcp:8800 tcp:8800 -> Chrome do Redmi ->
+           http://127.0.0.1:8800 -> login TMS -> Prestadores -> detalhe com
+           foto renderizando (NUNCA Vercel; TMS local obrigatorio).
+       D2. App Prestador ANDROID instalado no Redmi -> login Prestador A ->
+           Documentos -> visualizacao e novo upload (path doc_<id>_<tipo>_<ts>).
+       D3. Screenshots em test-results\02d2\.
+     Enquanto D1+D2 nao forem concluidos, o gate 02D.2 NAO e PASS.
+[P2] Limpeza das fixtures A/B/T (node scripts\_adm_app_02d2_fixture.mjs down):
+     NAO executada (fixtures seguem de pé por design ate o fim das provas —
+     D2 depende do login do Prestador A). Rodar apos D1/D2.
+[P3] Atualizacao do AGENTS.md com o resumo da 02D.2 (item E3 do plano 02D.1).
+
+================================================================================
+3. BLOCKED / F-ENV (ambiente — NAO e falha do produto)
+================================================================================
+[B1] Prova fisica Redmi (D1-D3): a tentativa automatizada (subagent) ficou
+     presa por quase 1 hora e foi cancelada. Classificada BLOCKED/F-ENV nesta
+     sessao; nenhuma nova tentativa de controle do Redmi sera feita aqui.
+     Nenhum dado foi alterado; nenhuma conclusao negativa sobre o produto.
+[B2] Credenciais corporativas Playwright (PLAYWRIGHT_*_PASSWORD) inexistentes
+     no .env — contornado com a fixture TMS da missao (sem impacto no gate).
+
+================================================================================
+4. NAO EXECUTADO (fora de escopo / nao requisitado nesta sessao)
+================================================================================
+[NE1] Upload novo via App Prestador no Redmi (parte de D2 — depende de P1).
+[NE2] Executar a suite Playwright completa do repo (nao requisito da missao).
+[NE3] Reexecutar testes N/P, round-trip, P10 e regressao 02D.1 — todos ja
+      PASS e NAO repetidos (orientacao oficial).
+[NE4] Reverter/alterar migration, bucket ou policies — PROIBIDO e nao feito.
+[NE5] UPDATE em massa das 31 URLs legadas — mantido fora de escopo (A-5).
+
+================================================================================
+5. BACKLOG CONHECIDO — PRESERVADO (nao tratado aqui)
+================================================================================
+A-1..A-7, A-11, A-13, A-14, APP-RPC-LEGACY-01, APP-RPC-CRIAR-01, GAP-02,
+GAP-03, GAP-F2/F3/F4/F5, APP-DATA-01, APP-SCHEMA-01, STORAGE-E2E11-PURGE,
+TEST-FIN-IS_TESTE-01, tools/query_operation.dart/dotenv, OS esporadicos/
+motoboys, romaneio, KM/pedagio/adicionais/reembolsos, financeiro prestador,
+Rede de Oportunidade, proximidade/raio/distancia, Radar, CAD-PERSIST,
+indicadores, divida TypeScript, PLAYWRIGHT pendencias.
+Débito de configuracao (registro, sem refatoracao agora): nenhum — varredura
+"vercel" nos arquivos da missao = 0 ocorrencias. (Specs legados de OUTRAS
+missoes usam localhost:8800; nenhum usa Vercel.)
+
+================================================================================
+6. PROXIMA AÇÃO (ordem exata)
+================================================================================
+1. Executar D1/D2/D3 no Redmi (adb reverse porta 8800 + app Android) — sem
+   Vercel, sem novos subagents nesta sessao.
+2. node scripts\_adm_app_02d2_fixture.mjs down  (limpar fixtures A/B/T).
+3. Atualizar AGENTS.md (E3).
+4. SO ENTAO declarar ADM-APP-02D.2 = PASS.
+
+================================================================================
+ARQUIVOS DE EVIDENCIA (caminho absoluto na raiz do projeto; bytes; data-hora)
+================================================================================
+C:\...\express-connect-hub\scripts\_adm_app_02d2_snapshot_antes.json      17507 b  2026-09-27 16:00:19
+C:\...\express-connect-hub\scripts\_adm_app_02d2_snapshot_depois.json     19958 b  2026-09-27 16:12:56
+C:\...\express-connect-hub\scripts\_adm_app_02d2_fixture.json              3155 b  2026-09-27 16:23:31
+C:\...\express-connect-hub\scripts\_adm_app_02d2_testes.out.json           4283 b  2026-09-27 16:30:03
+C:\...\express-connect-hub\scripts\_adm_app_02d2_roundtrip.out.json        2663 b  2026-09-27 16:35:45
+C:\...\express-connect-hub\scripts\_adm_app_02d2_c7_legados.out.json       2698 b  2026-09-27 16:46:28
+C:\...\express-connect-hub\supabase\migrations\20260928000000_adm_app_02d2_bucket_documentos_privado.sql  7655 b  2026-09-27 16:11:50
+C:\...\express-connect-hub\supabase\migrations\20260928000001_adm_app_02d2_rollback.sql  4021 b  2026-09-27 16:11:50
+C:\...\express-connect-hub\src\test\adm_app_02d2_sign_real.test.ts        7007 b  2026-09-27 16:33:10
+C:\...\express-connect-hub\src\test\adm_app_02d2_gap01_analise_lote.test.ts 2159 b  2026-09-27 16:49:38
+C:\...\express-connect-hub\src\test\adm_app_02d1_documentos_privados.test.ts 10389 b  2026-09-27 11:06:02
+C:\...\express-connect-hub\src\components\documentos\AnaliseLote.tsx     12940 b  2026-09-27 16:49:31
+C:\...\express-connect-hub\tests\e2e\_adm_app_02d2_tms_render.spec.ts     8363 b  2026-09-27 17:06:41
+C:\...\express-connect-hub\test-results\02d2\tms_prestador_detalhe.png    78685 b  2026-09-27 17:07:22
+C:\...\express-connect-hub\test-results\02d2\tms_analise_lote.png         53403 b  2026-09-27 17:07:34
+
+(Data-hora e conteudo do proprio relatorio ver abaixo no cabecalho; bytes do
+ relatorio preenchidos no campo BYTES_TOTAL, largura fixa, sem alterar o
+ tamanho final.)
+
+================================================================================
+FIM — MISSAO ADM-APP-02D.2 ENCERRADA NESTA SESSAO COMO
+       "NAO PRONTO (PROVA FISICA REDMI PENDENTE / BLOCKED-F-ENV)"
+================================================================================

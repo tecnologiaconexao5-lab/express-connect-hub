@@ -1,0 +1,224 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05B-AR-SINGLE-SOURCE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTE: TMS-FIN-PROG-05A-AR-AP-FLOW-AUDIT-RESULTADO.txt
+TIPO: Implementacao (migration + provas transacionais). SEM saneamento de legado.
+================================================================================
+
+RESULTADO FINAL: PASS
+(Provas A/B/C com rollback; M66/M80 nao criam mais AR; f_emitir_fatura = 1 AR;
+ AP/prestador/snapshot preservados; legado intacto.)
+
+--------------------------------------------------------------------------------
+1. SNAPSHOT PRE (arquivo)
+--------------------------------------------------------------------------------
+Arquivo: temp/prog05b_snapshot_pre.json (20.693 bytes) — contem as DEFINICOES
+COMPLETAS originais das duas funcoes + baseline.
+sha256 ORIG:
+  f_trg_propagar_financeiro_alocacao (M66) = cd7e84c87efbca5f
+  f_trg_propagar_financeiro_os       (M80) = aa81948870a8b6b5
+Baseline pre:
+  financeiro_receber total 122 | por os_id 98 | por fatura_id 6
+  FAT-2026-000001 duplicada: AR os 75e0e5f0 (R$2.000) + AR fatura 346687cf (R$2.120)
+  38=FAT-2026-000010/NC1, 39=000011/NC2, 40.=000012/NC3, 41=000013/NC4, 42=000014/NC5
+
+--------------------------------------------------------------------------------
+2. ROLLBACK PREPARADO (arquivo)
+--------------------------------------------------------------------------------
+Arquivo: temp/prog05b_rollback.sql (18.698 bytes) — restaura EXATAMENTE as duas
+funcoes originais (CREATE OR REPLACE com as definicoes capturadas), em BEGIN/COMMIT.
+
+--------------------------------------------------------------------------------
+3. MIGRATION APLICADA
+--------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20260924000002_fin_prog05b_ar_single_source.sql
+Aplicacao: node scripts/_prog05b_apply.mjs -> "MIGRATION APPLIED (COMMIT OK)".
+sha256 POS:
+  M66 = ce59b4f70faa2811  |  M80 = 4e9dfc33b1646428
+Removido EXCLUSIVAMENTE o bloco que cria/atualiza financeiro_receber.
+Sem novo trigger. Sem alterar demais blocos.
+
+--------------------------------------------------------------------------------
+4. DIFF M66 (f_trg_propagar_financeiro_alocacao)
+--------------------------------------------------------------------------------
+REMOVIDO (entre os marcadores "-- Receber" e "-- Pagar"):
+  IF v_valor_cliente > 0 AND NEW.cliente_id IS NOT NULL THEN
+     INSERT INTO financeiro_receber (...) ON CONFLICT (os_id) DO UPDATE ...;
+  END IF;
+  -> substituido por comentario: "TMS-FIN-PROG-05B: AR do cliente REMOVIDO...".
+PRESERVADO integralmente:
+  - efeito colateral de criar/vincular ordens_servico (ON CONFLICT id + link);
+  - financeiro_pagar (ON CONFLICT os_id, status/valores/desconto);
+  - pagamentos_prestadores (origem 'escala_direta');
+  - composicao_financeira_os (origem 'escala_direta');
+  - todos os calculos (valores cliente/prestador, reversa, pedagogio, adicionais);
+  - v_status_financeiro e idempotencia das demais tabelas;
+  - EXCEPTION WHEN OTHERS THEN RAISE.
+Nenhuma outra linha alterada.
+
+--------------------------------------------------------------------------------
+5. DIFF M80 (f_trg_propagar_financeiro_os)
+--------------------------------------------------------------------------------
+REMOVIDO (entre "-- 1. financeiro_receber" e "-- 2. financeiro_pagar"):
+  IF v_valor_cliente > 0 THEN PERFORM/INSERT/UPDATE financeiro_receber ... END IF;
+  -> substituido por comentario.
+PRESERVADO integralmente:
+  - financeiro_pagar; pagamentos_prestadores (origem 'os_direta');
+  - composicao_financeira_os (origem 'os_direta');
+  - calculos (v_outros_custos com jsonb, v_valor_liquido);
+  - status (aberto|pendente) e vínculo operacional.
+Nenhuma outra linha alterada.
+
+--------------------------------------------------------------------------------
+6. INVENTARIO DE TODOS OS ESCRITORES DE financeiro_receber
+--------------------------------------------------------------------------------
+DB (funcoes public):
+  INSERT: f_emitir_fatura (BASELINE — fonte unica normal de AR) e
+          f_regularizar_fatura_legada (SANITIZACAO/ADMIN — PROG-04C.2, restrita,
+          nao e fluxo normal).
+  UPDATE: f_cancelar_fatura (cancelamento), f_registrar_baixa_financeira /
+          f_estornar_baixa_financeira (baixa/estorno),
+          f_trg_cancelar_financeiro_alocacao (cancelamento operacional).
+  DELETE: nenhuma funcao.
+  M66/M80: NAO referenciam mais financeiro_receber.
+  => Conclusao de OS/alocacao NAO cria mais AR de cliente.
+
+Codigo (TS) — ocorrencias de escrita:
+  - src/services/ia/actionEngineService.ts:975 -> .from("financeiro_receber").insert(...)
+    CLASSIFICACAO: path de IA (registrar pagamento manual assistido), NAO ligado a
+    conclusao de OS. Fora do escopo; permanece (nao remover sem auditoria).
+  - src/components/operacao/OrdensServicoLista.tsx:281 -> .delete().eq("os_id", osId)
+    CLASSIFICACAO: limpeza ao excluir OS (delecao), NAO criacao.
+  - Demais ocorrencias sao SELECT (leituras) ou RPC de baixa. Nenhuma cria AR de
+    faturamento de cliente.
+  => f_emitir_fatura = UNICO caminho normal autorizado de AR de cliente.
+
+--------------------------------------------------------------------------------
+7. PROVA A — M66 SEM AR (transacional, ROLLBACK)
+--------------------------------------------------------------------------------
+Insert alocacao (status=concluida, finalizada=true, valor_frete=1000,
+valor_repasse=600, pedagio=50, prestador/cliente reais):
+  alocacao_id 78c1d5ed-...
+  ordens_servico criada/vinculada ........ SIM (true)
+  financeiro_pagar ....................... 1
+  pagamentos_prestadores ................. 1
+  composicao_financeira_os ............... 1
+  financeiro_receber por os_id ........... 0   <-- ZERO (meta)
+ROLLBACK executado; producao inalterada.
+
+--------------------------------------------------------------------------------
+8. PROVA B — M80 SEM AR (transacional, ROLLBACK)
+--------------------------------------------------------------------------------
+Insert ordens_servico (status=finalizada, valor_cliente=1000,
+custo_prestador=600, pedagio=50, prestador_id preenchido):
+  os_id 86e5747e-...
+  financeiro_pagar ....................... 1
+  pagamentos_prestadores ................. 1
+  composicao_financeira_os ............... 1
+  financeiro_receber por os_id ........... 0   <-- ZERO (meta)
+ROLLBACK executado; producao inalterada.
+
+--------------------------------------------------------------------------------
+9. PROVA C — f_emitir_fatura (1 AR) (transacional, ROLLBACK)
+--------------------------------------------------------------------------------
+fatura rascunho + 1 item:
+  AR no rascunho ......................... 0
+  emitir (1a vez): success=true, numero=FAT-2026-000015, numero_cliente=1,
+                   conta_receber_id=ee17b251-...  ->  AR por fatura_id = 1
+  emitir (2a vez): success=false, error=FATURA_JA_EMITIDA  ->  AR = 1 (inalterado)
+ROLLBACK executado; nenhuma fatura/AR de teste persistida.
+(Observacao: a sequence seq_fatura_2026 avancou para 15 — nao transacional.)
+
+--------------------------------------------------------------------------------
+10. AP / PRESTADOR / SNAPSHOT CONTINUAM FUNCIONANDO
+--------------------------------------------------------------------------------
+Comprovado nas provas A e B: financeiro_pagar, pagamentos_prestadores e
+composicao_financeira_os seguem sendo criados (1 cada) nos dois caminhos.
+Baseline pos identico ao pre para essas tabelas:
+  financeiro_pagar 178 | pagamentos_prestadores 137 | composicao_financeira_os 59.
+financeiro_pagar e pagamentos_prestadores NAO foram alterados nesta missao.
+
+--------------------------------------------------------------------------------
+11. SNAPSHOT POS (arquivo) + DIFF
+--------------------------------------------------------------------------------
+Arquivo: temp/prog05b_snapshot_pos.json (1.719 bytes).
+| Metrica                         | PRE   | POS   |
+|---------------------------------|-------|-------|
+| financeiro_receber total        | 122   | 122   |
+| financeiro_receber por os_id    | 98    | 98    |
+| financeiro_receber por fatura   | 6     | 6     |
+| financeiro_pagar total          | 178   | 178   |
+| pagamentos_prestadores total    | 137   | 137   |
+| composicao_financeira_os total  | 59    | 59    |
+| FAT-2026-000001 duplicada       | 2 ARs | 2 ARs |
+| 38/39/40./41/42 (FAT 10..14/NC1..5)| intactas | intactas |
+Unica mudanca de estado: as duas definicoes de funcao (+1 numero de sequence
+consumido em teste com rollback). Nenhum dado de negocio alterado.
+
+--------------------------------------------------------------------------------
+12. CONFIRMACAO — ZERO SANEAMENTO DE LEGADO
+--------------------------------------------------------------------------------
+NAO alterados nesta missao:
+  - 98 AR por os_id existentes;
+  - duplicata FAT-2026-000001 (AR os 75e0e5f0 + AR fatura 346687cf);
+  - 23 rascunhos apontados na auditoria PROG-05A;
+  - ARs pagos/baixados;
+  - faturas historicas.
+Todos permanecem para PROG-05C.
+
+--------------------------------------------------------------------------------
+13. REGRESSAO
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0 (0 erros).
+- npm run build -> OK (34,86s).
+- Testes pertinentes (10 arquivos / 69 testes) PASS, incluindo:
+  escala_e2e_05_atomicidade_m66, escala_os_03_m66_ordem_criacao_link,
+  a31j12_desconto_escala_sync, a31j13_homologacao_lancamento_completo,
+  fin_prog04b_emissao, fin_prog03_dashboard_real, fase1_centralFinanceiro,
+  f0f_fluxo_caixa, f0g_dre_plano_contas, f38_fatura_manual.
+- Confirmado: 38/39/40./41/42 permanecem com FAT-2026-000010..000014 e
+  Nº Cliente 1..5 (snapshot pos). f_emitir_fatura, uq_receber_fatura_id e
+  numero_cliente inalterados. Dashboard PROG-03 sem alteracao de codigo.
+
+--------------------------------------------------------------------------------
+14. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  Operacoes concluidas a partir de agora NAO geram AR automatico; o AR passa a
+    depender da emissao da fatura (comportamento desejado). Telas que hoje contam
+    AR por os_id refletirao apenas o legado ate o saneamento (PROG-05C).
+R2  Duplicata FAT-2026-000001 continua ativa e somando no DRE/Contas a Receber
+    ate PROG-05C.
+R3  Os 23 rascunhos com alocacao ja faturada continuarao aptos a gerar um 2o AR
+    ao emitir, pois o anti-duplicidade checa os_id (nulo nos itens). Mitigacao
+    prevista na PROG-05C (checar alocacao_id).
+R4  actionEngineService (IA) ainda insere em financeiro_receber (path de
+    automacao/manual). Fora do fluxo normal de OS; auditar em missao de IA se
+    necessario.
+R5  Sequencia seq_fatura_2026 avancou para 15 (gap de teste, sem impacto).
+
+--------------------------------------------------------------------------------
+15. PROXIMA MENOR MISSAO (PROG-05C)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-05C — SANEAMENTO DO AR LEGADO (dados, sem UI nova):
+  - Reconciliar as 98 AR por os_id com as faturas; resolver a duplicata
+    FAT-2026-000001 (escolher 1 titulo, sem apagar evidencia);
+  - bloquear duplicacao por alocacao_id no anti-duplicidade de itens;
+  - tratar os 23 rascunhos apontados;
+  - snapshot + rollback obrigatorios (padrao PROG-04C.2);
+  - validar DRE/Fluxo/Contas a Receber sem dupla contagem.
+Fora de escopo: reabrir PROG-04B/04C; AP/gate de Conferencia (missao propria);
+M66/M80 alem do ja feito; APP.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Migration aditiva aplicada; somente o bloco de AR removido de M66/M80; resto
+  preservado byte-a-byte. f_emitir_fatura permanece a fonte unica normal de AR.
+- Provas transacionais A/B/C com ROLLBACK (sem persistir dados de teste).
+- Legado 100% intacto; AP/prestador/snapshot inalterados; REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05B-AR-SINGLE-SOURCE
+================================================================================

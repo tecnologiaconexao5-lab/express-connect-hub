@@ -1,0 +1,85 @@
+{
+  "missao": "108-L2",
+  "titulo": "PortalExecutiveDashboard com Dados Reais",
+  "data": "2026-07-11",
+  "status": "✅ CONCLUÍDO",
+
+  "etapas": {
+    "etapa1_auditoria": {
+      "status": "✅",
+      "descricao": "Componente auditado: 385 linhas, 100% hardcoded/mock. Eliminados: defaultMetrics (29 propriedades), ExecutivaMetrics interface, trendColors, 3 mock arrays (custoPorRegiao, comparativoMensal, comparativoFiliais), heatmap mock, rankingUnidades mock, rankingRegioes mock, Math.random() no ID de operação, ID Operação fake."
+    },
+    "etapa2_kpis_reais": {
+      "status": "✅",
+      "kpis": {
+        "sla_entrega": { "fonte": "ordens_servico.status", "calculo": "(total_entregas - atrasadas) / total_entregas * 100" },
+        "volume_total": { "fonte": "ordens_servico (count) + peso", "calculo": "count(id) + sum(peso)" },
+        "produtividade": { "fonte": "ordens_servico.status", "calculo": "concluidas / total * 100" },
+        "economia_operacional": { "fonte": "financeiro_receber.valor - alocacoes_escala.valor_repasse", "calculo": "sum(recebido) - sum(custo)" },
+        "entregas_hoje": { "fonte": "ordens_servico.created_at", "calculo": "count where data = hoje" },
+        "em_andamento": { "fonte": "ordens_servico.status", "calculo": "count where status != entregue/concluida/cancelada" },
+        "atrasadas": { "fonte": "ordens_servico.status" },
+        "urgencias": { "fonte": "portal_ocorrencias.status = aberta", "calculo": "count" }
+      }
+    },
+    "etapa3_graficos_reais": {
+      "status": "✅",
+      "comparativo_mensal": { "fonte": "ordens_servico.created_at agrupado por mês (últimos 60 dias)", "descricao": "Barras empilhadas: atual (laranja) vs anterior (cinza)" },
+      "distribuicao_status": { "fonte": "ordens_servico.status", "descricao": "Barras horizontais proporcionais com cores por status" }
+    },
+    "etapa4_indicadores_operacionais": {
+      "status": "✅",
+      "indicadores": {
+        "evolucao_mensal": "ComparativoMensal (barras)",
+        "performance": "PerformanceFiliais (ranking por SLA)",
+        "produtividade": "KPI card",
+        "distribuicao_status": "gráfico de barras por status"
+      }
+    },
+    "etapa5_filtros": {
+      "status": "✅",
+      "filtros": ["7dias", "30dias", "Mês Atual"],
+      "observacao": "Os filtros alteram a visualização geral; a função buscarExecutiveDashboard() consulta últimos 60 dias para permitir comparativo mensal"
+    },
+    "etapa6_tenant_isolation": {
+      "status": "✅",
+      "descricao": "Todas as queries usam .eq('cliente_id', clienteId) — garantindo isolamento por tenant. RLS do Supabase também filtra por tenant."
+    }
+  },
+
+  "arquivos_modificados": {
+    "src/services/portalCliente/portalClienteService.ts": {
+      "acao": "Adicionado",
+      "descricao": "Interface ExecutiveDashboardData + função buscarExecutiveDashboard() — 4 queries paralelas (ordens_servico, alocacoes_escala, financeiro_receber, portal_ocorrencias), 18 métricas calculadas"
+    },
+    "src/components/portal-cliente/PortalExecutiveDashboard.tsx": {
+      "acao": "Reescrito",
+      "descricao": "385 → 440 linhas. Removido: defaultMetrics, interface mock. Adicionado: clienteId prop, loading/error states, useEffect com buscarExecutiveDashboard(), KPI cards com PortalKpiCard, gráfico comparativo mensal real, performance por filial, custo por região, distribuição por status, resumo do período, export funcional"
+    },
+    "src/pages/PortalCliente.tsx": {
+      "acao": "Modificado",
+      "descricao": "Passa clienteId={clienteData?.id} para PortalExecutiveDashboard"
+    }
+  },
+
+  "validacao": {
+    "tsc_noEmit": "✅ 0 erros",
+    "npm_run_build": "✅ build ok (31.17s)",
+    "playwright_pendente": "⏳ Teste criado em missao108-l2-executive-dashboard.spec.ts — executar com: npx playwright test missao108-l2-executive-dashboard --project=chromium"
+  },
+
+  "metricas_comparacao": {
+    "antes": {
+      "dados": "100% hardcoded (R$ 37.3k custo regiao, 98.4% SLA, 94.2% produtividade, etc.)",
+      "mocks": 8,
+      "math_random": 2,
+      "conexao_banco": "Nenhuma"
+    },
+    "depois": {
+      "dados": "100% de ordens_servico, alocacoes_escala, financeiro_receber, portal_ocorrencias",
+      "mocks": 0,
+      "math_random": 0,
+      "conexao_banco": "4 queries paralelas via portalClienteService"
+    }
+  }
+}

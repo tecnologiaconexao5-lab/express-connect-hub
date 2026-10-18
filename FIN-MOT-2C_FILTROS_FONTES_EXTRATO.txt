@@ -1,0 +1,148 @@
+# FIN-MOT-2C — CORRIGIR O BÁSICO DO GERADOR DE EXTRATO
+**Data:** 21 de agosto de 2026
+**Modelo:** DeepSeek V3.2 (mesma sessão — reaproveitou contexto)
+**Status:** ✅ Implementado (tsc 0, vitest 477/477, build ok). Aguarda prova visual (status B).
+
+---
+
+## RESUMO
+
+Adicionados os **5 filtros obrigatórios** no "Gerar Extrato do Período"
+(Financeiro → Pagamentos → Pag. Prestadores → Fechamentos e Pagamentos):
+**Prestador, Data inicial, Data final, Cliente (Todos/específico), Origem/Tipo
+(Todos/OS/Escala/Manual)**. O extrato consolidado agora junta **produção
+operacional (OS + Escala)** e **movimentos financeiros manuais**, com
+**deduplicação Escala↔OS**, exibido no modal existente com a tabela
+`Data | Origem | OS | Romaneio | Cliente | Descrição | Valor Base | KM/Adic |
+Créditos | Débitos | Total`. PDF reutilizado com filtros no cabeçalho.
+
+---
+
+## CHECKLIST
+
+- [x] Prestador (cadastro real de `prestadores`)
+- [x] Data inicial (obrigatória)
+- [x] Data final (obrigatória, padrão mês atual)
+- [x] Cliente (Todos / específico por ID)
+- [x] Todos os clientes (quando clienteId vazio)
+- [x] Origem/Tipo (Todos / Ordem de Serviço / Escala / Lançamento Manual)
+- [x] Todos (consolida OS + Escalas não duplicadas + manuais)
+- [x] Ordem de Serviço (somente produções de OS)
+- [x] Escala (somente produções cuja origem elegível é Escala, sem duplicar OS)
+- [x] Lançamento Manual (somente movimentos financeiros manuais)
+- [x] Produção operacional (OS + Escala)
+- [x] Movimentos manuais (crédito/débito, bônus, desconto, adiantamento)
+- [x] Deduplicação Escala/OS (mesma produção conta UMA vez)
+- [x] Créditos / Débitos / Líquido (todas as linhas somadas)
+- [x] Modal (reutilizado)
+- [x] PDF (reutilizado; filtros no cabeçalho)
+- [ ] Prova visual (pendente — requer subir o TMS)
+
+---
+
+## DEDUPLICAÇÃO
+
+**Chave canônica utilizada: `alocacoes_escala.ordem_servico_id === ordens_servico.id`**
+
+- Quando uma **Escala** tem `ordem_servico_id` apontando para uma **OS** do
+  prestador no período, a produção é representada **UMA ÚNICA vez** (linha da OS,
+  `tipoOrigem='ordem_servico'`), e a escala NÃO gera segunda linha.
+- marca-se `origemEscala=true` na linha da OS → rastreabilidade, sem crédito duplicado.
+- Escalas **sem** `ordem_servico_id` (ou apontando p/ OS fora do filtro) entram como
+  produção própria (`tipoOrigem='escala'`).
+- Filtro "Escala" mostra `tipoOrigem==='escala' || origemEscala===true` (as OS que
+  vieram da escala) — sem duplicar.
+- Filtro "OS" mostra apenas `tipoOrigem==='ordem_servico'`.
+
+**Exemplo comprovado (teste 7):** mesma produção presente em Escala(esc-1 →
+os-100) e OS(os-100) → resultado = **1 linha**, valor_servicos = 5000 (não 2×).
+
+---
+
+## FONTES UTILIZADAS
+
+| Necessidade | Fonte real | Campo |
+|-------------|-----------|-------|
+| OS (produção) | `ordens_servico` | `prestador_id`, `data`, `status finalizada/concluida` |
+| Escala (produção) | `alocacoes_escala` | `prestador_id`, `data_escala`, `status`, `ordem_servico_id` (dedup) |
+| Lançamentos manuais | `pagamentos_prestadores` | `origem_lancamento='manual'`, `natureza`, `valor_liquido`, `data_competencia` |
+| Cliente | `ordens_servico.cliente_id` / `alocacoes_escala.cliente_id` | filtro por ID (não texto) |
+| Valor do prestador | `ordens_servico.custo_prestador` / `alocacoes_escala.valor_base` | real do prestador |
+| Adicionais | `ordens_servico.adicionais` / `alocacoes_escala.valor_adicionais` | soma |
+| Pedágio | `ordens_servico.pedagio` / `alocacoes_escala.valor_pedagio` | soma |
+| Descontos | `ordens_servico.descontos` / `alocacoes_escala.valor_descontos` + débitos manuais | soma |
+| Adiantamento | `pagamentos_prestadores` débito (adiantamento/vale) | soma |
+| Combustível | `pagamentos_prestadores` débito (combustível) | quando existir; senão 0 |
+| Bônus/Reembolso (manual) | `pagamentos_prestadores` crédito manual (descrição) | soma |
+
+**Combustível integrado ao extrato: NÃO (por padrão).** Leitura de movimentos
+débito de combustível existe; a integração completa de abastecimento/fornecedores
+é missão futura. Ausência → zero corretamente, nada inventado.
+
+---
+
+## CÁLCULO / RESUMO
+
+`Total Créditos = Serviços + Pedágio + Adicionais + Reembolsos + Bônus`
+`Total Débitos = Descontos + Adiantamentos + Combustível`
+`VALOR LÍQUIDO = Total Créditos − Total Débitos` (garantido no código e no teste 8).
+
+---
+
+## VALIDAÇÃO
+
+- `npx tsc --noEmit` → ✅ 0 erros
+- `npx vitest run` → ✅ **477/477** (18 novos testes de extrato: FIN-MOT-2 + FIN-MOT-2C)
+- `npm run build` → ✅ 43.4s
+
+---
+
+## CONCLUÍDO (funciona)
+
+1. Modal com os 5 filtros (Prestador, Data inicial, Data final, Cliente, Origem/Tipo).
+2. Consolidação OS + Escala (dedup por `ordem_servico_id`) + movimentos manuais.
+3. Filtros por origem funcionando (testes 1–4) e por cliente (teste 5).
+4. Deduplicação Escala↔OS (teste 7).
+5. Líquido = créditos − débitos (teste 8).
+6. Tabela com a coluna Origem + Total; flag "Já fechada".
+7. PDF reutilizado com filtros no cabeçalho (Prestador/Período/Cliente/Origem).
+
+## FALTA (pendências reais)
+
+1. **Prova visual** em produção/QA: subir o TMS, navegar até o modal e confirmar
+   visualmente os 5 filtros + gerar extrato + PDF. (Enunciado exige; depende de ambiente.)
+2. **Nome do cliente por ID:** nas linhas de produção o `cliente_nome` usa
+   `os.cliente || os.cliente_id` — quando o banco só expõe o ID (UUID), o modal/PDF
+   mostra o ID. Resolver nome exigiria join com `clientes` (não implementado para não
+   escopar; sem inventar nome).
+3. **Combustível completo:** leitura existe, mas integração real de abastecimento é
+   missão futura (mostra zero quando ausente).
+
+---
+
+## STATUS
+
+**B — IMPLEMENTADO, MAS AGUARDA HOMOLOGAÇÃO DO USUÁRIO**
+
+Código validado (tsc/vitest/build). A prova visual no navegador (5 filtros visíveis +
+extrato + PDF) ainda não foi confirmada pelo usuário — o enunciado proíbe declarar
+"concluído" sem visual.
+
+---
+
+## PRÓXIMA MISSÃO (única — NÃO executada)
+
+**Prova visual do fluxo FIN-MOT-2C** em produção/QA: abrir Financeiro → Pagamentos →
+Pag. Prestadores → Fechamentos e Pagamentos → "Gerar Extrato do Período"; confirmar
+visualmente os 5 filtros; selecionar prestador + período + cliente + origem; Visualizar;
+Gerar PDF e conferir que TMS = PDF (screenshot como evidência).
+
+---
+
+## REGRA DE DEDUPLICAÇÃO (resumo final)
+
+**Chave canônica: `alocacoes_escala.ordem_servico_id` = `ordens_servico.id`.**
+Cada produção financeira é representada por UMA linha: a OS é a referência principal;
+a Escala vinculada apenas marca `origemEscala` (não gera linha extra). Escalas sem OS
+entram como produção própria. Chaves de linha: `os-{os.id}`, `esc-{esc.id}`, `man-{pag.id}`
+— garantem que a mesma operação nunca aparece duas vezes.

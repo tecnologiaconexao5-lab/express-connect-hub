@@ -1,0 +1,129 @@
+================================================================================
+FIX-POD-00C — PRODUCTION MIGRATION PACKAGE
+Mission: Production Migration Package for trigger fix
+Date: 2026-09-21
+Status: ALL 11 TESTS PASSED — READY FOR PRODUCTION DEPLOY
+================================================================================
+
+SUMMARY
+-------
+Fixed trigger f_trg_propagar_financeiro_alocacao: adds ordem_servico_id link
+in alocacoes_escala after OS creation, with FIX-POD-00C log tag. Trigger
+idempotent (ON CONFLICT), safe for concurrent writes, no regressions.
+
+FILES
+-----
+FIX-POD-00C-deploy.sql    15,418 bytes  SHA256: 48310DAD2A4A3505BC237B2C7E550EDDCD0849FCC07083927A3FF4D8A4977ED4
+FIX-POD-00C-rollback.sql  10,831 bytes  SHA256: 4C6E931CB73C13EB37B3AE784E79BC82D380B83A62A606FB594471DB82E3FA75
+
+TEST RESULTS (QA — 11/11 PASSED)
+---------------------------------
+T1_OS_CREATED       PASS  OS record created in ordens_servico
+T1_ALLOC_LINKED     PASS  alocacoes_escala.ordem_servico_id = OS id
+T1_RECEBER          PASS  financeiro_receber record created
+T1_PAGAR            PASS  financeiro_pagar record created
+T1_PP               PASS  pagamentos_prestadores record created
+T2_POD_OS_LINK      PASS  entregas_protocolo.ordem_servico_id = OS id
+T3_PRESERVED_OS     PASS  allocation with pre-set OS preserves link
+T3_NO_NEW_OS        PASS  no second OS created for pre-existing link
+T4_NO_DUPLICATE_OS  PASS  UPDATE does not create duplicate OS
+T4_STILL_LINKED     PASS  UPDATE preserves ordem_servico_id link
+T5_RECEBER_1        PASS  financeiro_receber count = 1 (no duplication)
+T5_PAGAR_1          PASS  financeiro_pagar count = 1 (no duplication)
+T5_PP_1             PASS  pagamentos_prestadores count = 1 (no duplication)
+T6_RECEBER_1        PASS  no duplicate financial records from allocation trigger
+T6_PAGAR_1          PASS  no duplicate financial records from allocation trigger
+T7_NO_BAIXA         PASS  no artificial baixa records
+T8_NO_OS_ZERO       PASS  no OS for zero-value allocations
+T8_NO_LINK_ZERO     PASS  no link for zero-value allocations
+T9_SINGLE_OS        PASS  recursive trigger does not create duplicate OS
+T9_STILL_LINKED     PASS  recursive trigger preserves link
+T9_RECEBER_1        PASS  recursive trigger does not duplicate financial records
+T9_PAGAR_1          PASS  recursive trigger does not duplicate financial records
+T9_COMPOSICAO       PASS  composicao_financeira_os created on finalization
+T10_ROLLBACK        PASS  rollback reverts function to original (no fix, no log tag)
+T11_REAPPLY         PASS  deploy restores fix+log after rollback (idempotent)
+T11_IDEMPOTENT      PASS  second apply succeeds with 0 errors
+
+WHAT THE MIGRATION DOES
+-----------------------
+Part 1 — Add missing QA columns (if absent):
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS observacoes text;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_frete numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_repasse numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_pedagio numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_adicional numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_ajudante numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_desconto_prestador numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS tipo_reversa text;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS reversa_valor_cliente numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS reversa_valor_prestador numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS reversa_qtd_volumes integer;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_combustivel numeric;
+  ALTER TABLE alocacoes_escala ADD COLUMN IF NOT EXISTS valor_desconto numeric;
+
+Part 2 — Replace trigger function:
+  CREATE OR REPLACE FUNCTION f_trg_propagar_financeiro_alocacao()
+  Returns trigger language plpgsql as $function$
+  -- Fixed: NEW.valor_cliente/valor_prestador (not valor_frete/valor_repasse)
+  -- Fixed: UPDATE alocacoes_escala SET ordem_servico_id = v_os_id (the link fix)
+  -- Fixed: FIX-POD-00C log tag for traceability
+
+Part 3 — Recreate trigger event (idempotent):
+  DROP TRIGGER IF EXISTS trg_propagar_financeiro_alocacao ON alocacoes_escala;
+  CREATE TRIGGER trg_propagar_financeiro_alocacao
+  AFTER INSERT OR UPDATE OF status, finalizada, ... ON alocacoes_escala
+  FOR EACH ROW EXECUTE FUNCTION f_trg_propagar_financeiro_alocacao();
+
+DEPLOY COMMAND
+--------------
+docker run --rm -e PGPASSWORD="ConexaoExpress_DB_2026!#" \
+  postgres:15-alpine psql \
+  -h "aws-1-sa-east-1.pooler.supabase.com" \
+  -U "postgres.uwrvzsjtpgaifkktpepn" \
+  -d postgres \
+  -f /workspace/FIX-POD-00C-deploy.sql
+
+ROLLBACK COMMAND
+----------------
+docker run --rm -e PGPASSWORD="ConexaoExpress_DB_2026!#" \
+  postgres:15-alpine psql \
+  -h "aws-1-sa-east-1.pooler.supabase.com" \
+  -U "postgres.uwrvzsjtpgaifkktpepn" \
+  -d postgres \
+  -f /workspace/FIX-POD-00C-rollback.sql
+
+RISK ASSESSMENT
+---------------
+Low risk:
+- CREATE OR REPLACE FUNCTION is non-destructive (no table locks)
+- ALTER TABLE ADD COLUMN IF NOT EXISTS is idempotent
+- DROP TRIGGER IF EXISTS + CREATE TRIGGER is idempotent
+- ON CONFLICT DO UPDATE prevents duplication
+- Trigger has EXCEPTION block (errors caught, never blocks allocation)
+- No data migration (schema + function only)
+
+DEPENDENCIES
+------------
+None. This migration is self-contained.
+
+VERIFICATION AFTER DEPLOY
+--------------------------
+1. Check function has fix:
+   SELECT prosrc FROM pg_proc
+   WHERE proname = 'f_trg_propagar_financeiro_alocacao';
+
+2. Check trigger is enabled:
+   SELECT tgname, tgenabled FROM pg_trigger
+   WHERE tgname = 'trg_propagar_financeiro_alocacao';
+
+3. Functional test (create allocation, verify OS created):
+   INSERT INTO alocacoes_escala (id, empresa_id, cliente_id, prestador_id,
+     data_escala, status, tipo_veiculo, origem, destino, valor_cliente, valor_prestador)
+   VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
+     '55555555-5555-5555-5555-555555555555', '33333333-3333-3333-3333-333333333333',
+     CURRENT_DATE, 'pendente', 'van', 'SP', 'Campinas', 500, 400);
+   -- Verify: ordens_servico has 1 new record, alocacoes_escala.ordem_servico_id is set
+
+GENERATED: 2026-09-21
+================================================================================

@@ -1,0 +1,78 @@
+ESCALA-E2E-08D-FIX-TABELA-SAVE
+==================================================
+Ambiente: TMS | Data: 2026-09-22 | Modo: CORREÇÃO MÍNIMA + TESTES
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+IMPLEMENTAÇÃO (src/components/operacao/EscalaLista.tsx)
+==================================================
+1) Reuso de buscarTabelaValoresCliente — NENHUM algoritmo de seleção duplicado.
+2) Resolução REATIVA (novo useEffect) dependente dos dados canônicos:
+   modalOpen, novoClienteId, novoClienteNome, prestadorVeiculo.tipo_veiculo,
+   prestadorVeiculo.condicao_termica, dataAlocacaoModal.
+   → funciona nos dois sentidos (Prestador→Cliente e Cliente→Prestador).
+   → removida a chamada manual no onChange do cliente (evita duplicidade).
+3) FAIL-SAFE no SAVE (handleCreateReserva): se houver cliente + veículo e tabelaValores
+   estiver NULL, faz UMA reconsulta via buscarTabelaValoresCliente e usa o resultado REAL
+   (tabelaEfetiva) para calcular/persistir ou bloquear. Sem ajuste automático, sem tabela
+   fake, sem fallback de valor zero.
+   - calcularTotalAlocacao(tabelaOverride?) passou a aceitar a tabela efetiva.
+   - payload.faturamento e financeiroStatus usam tabelaEfetiva.
+4) RACE: tabelaReqSeqRef (useRef) + reqId/isStale em buscarTabelaValoresCliente.
+   Respostas antigas retornam null e NÃO sobrescrevem o resultado mais recente;
+   loading só é desligado pela requisição mais recente.
+5) Reabertura/edição: espelha existing.prestadorVeiculo no estado para o efeito reativo
+   também recalcular ao trocar cliente em modo edição.
+
+==================================================
+RESULTADO
+==================================================
+ROOT_CAUSE_FIXED=YES
+ORDER_INDEPENDENT=YES
+SAVE_FAILSAFE=YES
+STALE_ASYNC_PROTECTED=YES
+REAL_NO_TABLE_STILL_BLOCKS=YES
+
+==================================================
+TESTES (src/test/escala_e2e_08d_fix_tabela_save.test.ts) — 10/10 PASS
+==================================================
+A) prestador→cliente: seleção encontra a tabela (sem ambiguidade) ................ PASS
+B) cliente→veículo resolve depois: efeito reativo (deps canônicas) ................ PASS
+C) troca de prestador/veículo: deps incluem tipo_veiculo + condicao_termica ........ PASS
+D) troca de cliente: deps incluem novoClienteId + novoClienteNome ................. PASS
+E) tabela inexistente: seleção nula + guarda de SAVE preservada .................. PASS
+F) fail-safe: reconsulta 1x antes de bloquear + usa tabelaEfetiva ................. PASS
+G) race: seqRef/isStale impedem sobrescrita por resposta antiga; sem chamada
+   duplicada no onChange ........................................................... PASS
+H) nenhum ajuste manual automático / tabela fake / fallback zero ................. PASS
++ valores canônicos (cliente 360 / prestador 250) ................................ PASS
+
+REGRESSÃO ESCALA (direcionada): 84/84 PASS
+  (e2e_01, veic_tabela_05, veic_tabela_07, os_01, prestador_02, 08d)
+SUÍTE GLOBAL: 1456 passed / 57 failed (BASELINE pré-existente, inalterado) / 155 skipped.
+  → NÃO se alega suíte global verde; as 57 falhas são baseline (rec06_2d2 etc.).
+
+TYPECHECK: npx tsc --noEmit → 0 erros (exit 0)
+BUILD: npm run build → OK (built in 1m 1s)
+
+==================================================
+BANCO — NÃO TOCADO
+==================================================
+HML b8c78f48-0b8a-4b88-9a41-5d57c5af8886: ativo=true | vuc | cliente='HOMOLOGAÇÃO APP' | seco
+PRESTADOR e6646799: valor_diaria=250.00 | valor_saida=NULL
+VUC_TABLES=1 | E2E08_ALLOC=0 (nada criado)
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+FILES_MODIFIED
+==================================================
+- src/components/operacao/EscalaLista.tsx (fix: efeito reativo, fail-safe, race guard, override)
+- src/test/escala_e2e_08d_fix_tabela_save.test.ts (NOVO — 10 testes)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Sem alteração de regra financeira; M66/M80 intactos; dados HML preservados; prestador/cliente/
+veículo não alterados; nenhuma migration; APP/POD não tocados; outras pendências não tratadas.
+
+NEXT=ESCALA-E2E-08E-RETEST-UI

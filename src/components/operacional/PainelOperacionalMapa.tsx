@@ -1,5 +1,4 @@
-// src/components/operacional/PainelOperacionalMapa.tsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Map, { Marker, NavigationControl, ScaleControl } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { supabase } from "@/lib/supabase";
@@ -9,15 +8,33 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-interface OperacaoLocalizacao {
+interface TrackingPosEnriquecida {
   id: string;
-  escala_id: string | null;
   latitude: number;
   longitude: number;
   velocidade?: number;
-  status?: string;
-  atualizado_em: string;
+  status: string;
+  updated_at: string;
+  created_at: string;
+  captured_at?: string;
   origem?: string;
+  alocacao_id?: string;
+  prestador_id?: string;
+  os_id?: string;
+  cliente_id?: string;
+  precisao?: number;
+  alocacao?: {
+    id: string;
+    status: string;
+    origem: string;
+    destino: string;
+    placa: string;
+    tipo_veiculo: string;
+    prestador_nome: string;
+    prestador_telefone: string;
+    os_numero: string;
+    os_cliente: string;
+  };
 }
 
 const statusColors: Record<string, string> = {
@@ -26,22 +43,77 @@ const statusColors: Record<string, string> = {
   critico: "bg-red-600",
   aguardando: "bg-gray-400",
   sem_sinal: "bg-slate-400",
+  online: "bg-emerald-500",
+  offline: "bg-slate-300",
   default: "bg-slate-300",
 };
 
 export default function PainelOperacionalMapa() {
   const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string | undefined;
-  const [locs, setLocs] = useState<OperacaoLocalizacao[]>([]);
+  const [locs, setLocs] = useState<TrackingPosEnriquecida[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch initial data
   const carregarLocs = async () => {
     try {
-      const { data, error } = await supabase
-        .from("operacao_localizacao")
-        .select("*");
+      const { data: trackingData, error } = await supabase
+        .from("portal_tracking_realtime")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
       if (error) throw error;
-      setLocs(data as OperacaoLocalizacao[]);
+
+      const alocacaoIds = [...new Set((trackingData || []).map(t => t.alocacao_id).filter(Boolean))];
+      let alocacoesMap: Record<string, any> = {};
+
+      if (alocacaoIds.length > 0) {
+        const { data: alocacoes } = await supabase
+          .from("alocacoes_escala")
+          .select(`
+            id, status, origem, destino, placa, tipo_veiculo,
+            prestadores (nome_completo, telefone),
+            ordens_servico (numero, cliente)
+          `)
+          .in("id", alocacaoIds);
+
+        for (const a of alocacoes || []) {
+          alocacoesMap[a.id] = a;
+        }
+      }
+
+      const enriquecidas: TrackingPosEnriquecida[] = (trackingData || []).map(t => {
+        const aloc = t.alocacao_id ? alocacoesMap[t.alocacao_id] : undefined;
+        return {
+          id: t.id,
+          latitude: t.latitude,
+          longitude: t.longitude,
+          velocidade: t.velocidade,
+          status: t.status || "offline",
+          updated_at: t.updated_at,
+          created_at: t.created_at,
+          captured_at: t.captured_at,
+          origem: t.origem,
+          alocacao_id: t.alocacao_id,
+          prestador_id: t.prestador_id,
+          os_id: t.os_id,
+          cliente_id: t.cliente_id,
+          precisao: t.precisao,
+          alocacao: aloc ? {
+            id: aloc.id,
+            status: aloc.status,
+            origem: aloc.origem,
+            destino: aloc.destino,
+            placa: aloc.placa,
+            tipo_veiculo: aloc.tipo_veiculo,
+            prestador_nome: aloc.prestadores?.nome_completo || "—",
+            prestador_telefone: aloc.prestadores?.telefone || "—",
+            os_numero: aloc.ordens_servico?.numero || "—",
+            os_cliente: aloc.ordens_servico?.cliente || "—",
+          } : undefined,
+        };
+      });
+
+      setLocs(enriquecidas);
     } catch (e: any) {
       toast.error("Erro ao carregar localizações", { description: e.message });
     } finally {
@@ -55,11 +127,8 @@ export default function PainelOperacionalMapa() {
       .channel("realtime_mapa")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "operacao_localizacao" },
-        (payload) => {
-          // Simplistic handling: re‑fetch all data on any change
-          carregarLocs();
-        }
+        { event: "INSERT", schema: "public", table: "portal_tracking_realtime" },
+        carregarLocs,
       )
       .subscribe();
     return () => {
@@ -67,20 +136,14 @@ export default function PainelOperacionalMapa() {
     };
   }, []);
 
-  // KPIs calculations
   const total = locs.length;
-  const emRota = locs.filter((l) => l.status === "em_rota").length;
-  const atrasadas = locs.filter((l) => l.status === "atrasado").length;
-  const criticas = locs.filter((l) => l.status === "critico").length;
-  const semSinal = locs.filter((l) => !l.status || l.status === "aguardando").length;
+  const emRota = locs.filter(l => l.status === "em_rota" || l.status === "online").length;
+  const atrasadas = locs.filter(l => l.status === "atrasado").length;
+  const criticas = locs.filter(l => l.status === "critico").length;
+  const semSinal = locs.filter(l => l.status === "offline" || l.status === "aguardando").length;
 
-  // Map view defaults – centre on first location if exists, else a generic point
   const initialView = locs[0]
-    ? {
-        latitude: locs[0].latitude,
-        longitude: locs[0].longitude,
-        zoom: 12,
-      }
+    ? { latitude: locs[0].latitude, longitude: locs[0].longitude, zoom: 12 }
     : { latitude: -23.55052, longitude: -46.633308, zoom: 4 };
 
   if (!token) {
@@ -94,7 +157,6 @@ export default function PainelOperacionalMapa() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* KPIs */}
       <div className="col-span-3 grid grid-cols-5 gap-2">
         <Card className="bg-slate-50 border-slate-200">
           <CardContent className="p-3 flex flex-col items-center">
@@ -128,33 +190,41 @@ export default function PainelOperacionalMapa() {
         </Card>
       </div>
 
-      {/* Map */}
       <div className="lg:col-span-2 h-96 rounded border">
-        <Map
-          mapboxAccessToken={token}
-          initialViewState={initialView}
-          style={{ width: "100%", height: "100%" }}
-          mapStyle="mapbox://styles/mapbox/streets-v12"
-        >
-          <NavigationControl position="top-left" />
-          <ScaleControl />
-          {locs.map((loc) => (
-            <Marker
-              key={loc.id}
-              longitude={loc.longitude}
-              latitude={loc.latitude}
-              anchor="bottom"
-            >
-              <div
-                className={`w-3 h-3 rounded-full ${statusColors[loc.status ?? "default"]}`}
-                title={`ID: ${loc.id}\nStatus: ${loc.status ?? "-"}\nVelocidade: ${loc.velocidade ?? "-"}`}
-              />
-            </Marker>
-          ))}
-        </Map>
+        {locs.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-slate-500 text-sm bg-slate-50 rounded">
+            <div className="text-center p-8">
+              <Loader2 className="animate-spin mx-auto mb-4" />
+              <p>{loading ? "Carregando localizações..." : "Nenhuma localização em tempo real disponível."}</p>
+              {!loading && <p className="text-xs text-slate-400 mt-2">As posições aparecerão aqui quando os motoristas ativarem o rastreamento pelo App Conexão Express.</p>}
+            </div>
+          </div>
+        ) : (
+          <Map
+            mapboxAccessToken={token}
+            initialViewState={initialView}
+            style={{ width: "100%", height: "100%" }}
+            mapStyle="mapbox://styles/mapbox/streets-v12"
+          >
+            <NavigationControl position="top-left" />
+            <ScaleControl />
+            {locs.map(loc => (
+              <Marker
+                key={loc.id}
+                longitude={loc.longitude}
+                latitude={loc.latitude}
+                anchor="bottom"
+              >
+                <div
+                  className={`w-3 h-3 rounded-full ${statusColors[loc.status] || statusColors.default}`}
+                  title={`OS: ${loc.alocacao?.os_numero || "—"}\nMotorista: ${loc.alocacao?.prestador_nome || "—"}\nStatus: ${loc.status}\nVel: ${loc.velocidade ?? "-"} km/h`}
+                />
+              </Marker>
+            ))}
+          </Map>
+        )}
       </div>
 
-      {/* Lateral list */}
       <Card className="h-96 overflow-hidden">
         <CardHeader>
           <CardTitle>Operações em Tempo Real</CardTitle>
@@ -166,27 +236,29 @@ export default function PainelOperacionalMapa() {
             </div>
           ) : locs.length === 0 ? (
             <div className="text-center py-10 text-slate-500">
-              Nenhuma localização operacional em tempo real ainda.
+              Nenhuma localização em tempo real ainda.
+              <p className="text-xs text-slate-400 mt-1">Ative o rastreamento no App Motorista para ver posições aqui.</p>
             </div>
           ) : (
             <ScrollArea className="h-[calc(100%-2rem)]">
               <ul className="divide-y">
-                {locs.map((loc) => (
+                {locs.map(loc => (
                   <li key={loc.id} className="p-2 flex justify-between items-center">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-slate-800 truncate" title={loc.origem ?? ""}>
-                        {loc.origem ?? "Sem origem"}
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-medium text-slate-800 truncate text-sm">
+                        {loc.alocacao?.os_numero !== "—" ? `OS ${loc.alocacao.os_numero}` : (loc.origem ?? "Sem origem")}
                       </span>
-                      <span className="text-xs text-slate-500">
-                        {new Date(loc.atualizado_em).toLocaleTimeString()}
+                      <span className="text-xs text-slate-500 truncate">
+                        {loc.alocacao?.prestador_nome || "—"} {loc.alocacao?.placa ? `· ${loc.alocacao.placa}` : ""}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(loc.created_at).toLocaleTimeString("pt-BR")}
+                        {loc.velocidade !== undefined && loc.velocidade !== null && ` · ${loc.velocidade} km/h`}
                       </span>
                     </div>
-                    <Badge className={statusColors[loc.status ?? "default"]}>
-                      {loc.status ?? "aguardando"}
+                    <Badge className={`${statusColors[loc.status] || statusColors.default} shrink-0 ml-2`}>
+                      {loc.status}
                     </Badge>
-                    {loc.velocidade !== undefined && (
-                      <span className="text-xs text-slate-600">{loc.velocidade} km/h</span>
-                    )}
                   </li>
                 ))}
               </ul>

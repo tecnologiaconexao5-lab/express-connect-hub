@@ -1,0 +1,239 @@
+================================================================================
+  FASE 2B — EMISSÃO DE FATURA PELA CENTRAL + PRÉVIA + PDF PROFISSIONAL
+  TMS CONEXÃO EXPRESS — express-connect-hub
+  Data: 2026-08-16
+================================================================================
+
+================================================================================
+A. ARQUIVOS ALTERADOS
+================================================================================
+1. src/components/financeiro/ConferenciaFinanceira.tsx  (MODIFICADO)
+   - Seleção múltipla por checkbox + barra de ação fixa com Total Cliente.
+   - Regras de elegibilidade (mesmo cliente, não faturado, cliente + valor).
+   - Aviso de romaneio/POD ausente. Integra FaturaPanel.
+2. src/components/financeiro/FaturaPanel.tsx  (NOVO)
+   - Painel de Fatura (rascunho/revisão): itens, soma automática, observação,
+     vencimento, prévia, emitir, cancelar.
+3. src/components/financeiro/FaturaLista.tsx  (NOVO)
+   - Listagem de Faturas com filtros + paginação + detalhe + PDF + cancelamento.
+4. src/utils/pdfFatura.ts  (NOVO)
+   - Gerador de PDF profissional da Fatura (jsPDF + autotable + logo oficial).
+5. src/services/financeiro/faturaService.ts  (MODIFICADO)
+   - buscarDadosEmpresaParaFatura, buscarClienteParaFatura, montarPreviaFatura.
+6. src/pages/Financeiro.tsx  (MODIFICADO)
+   - Nova aba "Faturas" (Receipt) renderizando FaturaLista.
+7. src/components/financeiro/ContasReceberEnterprise.tsx  (MODIFICADO)
+   - Banner no wizard legado direcionando para a nova estrutura oficial.
+8. src/test/fase2b_fatura_pdf.test.ts  (NOVO)
+   - 11 testes das regras críticas da Fase 2B.
+
+NENHUMA nova migration. Nenhum dado de produção criado/alterado.
+
+================================================================================
+B. FLUXO IMPLEMENTADO
+================================================================================
+Central Financeira → seleção múltipla (checkbox) → barra de ação (quantidade +
+Total Cliente) → Criar Fatura → FaturaPanel (rascunho) → revisão de itens →
+ajuste vencimento/observação → Visualizar Prévia → Emitir Fatura (RPC
+f_emitir_fatura) → número oficial + Conta a Receber + Central atualizada →
+PDF profissional (baixável).
+
+Fluxo de cancelamento: Fatura emitida → Cancelar Fatura (exige motivo) →
+f_cancelar_fatura (fatura cancelada, itens liberados, título tratado).
+
+================================================================================
+C. SELEÇÃO MÚLTIPLA
+================================================================================
+- Checkbox discreto em cada linha da Central (accent laranja).
+- Checkbox "selecionar todos" no header (apenas elegíveis).
+- Barra de ação fixa (sticky) quando há seleção:
+  "X serviço(s) selecionado(s) | Total Cliente R$ Y | Criar Fatura".
+- Total usa EXCLUSIVAMENTE valorClienteTotal (Total Cliente) — nunca prestador.
+- Seleção permanece ao navegar/rolar; desmarcar limpa a barra.
+
+================================================================================
+D. REGRAS DE ELEGIBILIDADE
+================================================================================
+Não selecionáveis para nova Fatura quando:
+  - já faturado (faturamento.status === 'faturado');
+  - em rascunho de fatura (status rascunho/aguardando/aprovada);
+  - sem cliente (clienteId ausente);
+  - sem valor faturável (valorClienteTotal <= 0).
+Romaneio/OC: NÃO bloqueia por si só — gera aviso "Romaneio/OC não informado"
+e exige confirmação antes de prosseguir.
+POD pendente: gera aviso claro (não bloqueia — regra de negócio não definida
+como absoluta).
+Mesmo cliente: se serviços de clientes diferentes forem selecionados →
+mensagem "Selecione serviços do mesmo cliente para gerar uma única fatura."
+O botão Criar Fatura valida isso antes de abrir o painel.
+
+================================================================================
+E. CRIAÇÃO DE RASCUNHO
+================================================================================
+- Ao clicar "Criar Fatura", o FaturaPanel cria a Fatura em status 'rascunho'
+  (criarRascunhoFatura) e adiciona cada serviço selecionado como item
+  (adicionarItemFatura), com snapshot financeiro do cliente.
+- Observação automática gerada por montarObservacaoRomaneios() (editável).
+- Sem número definitivo até a emissão.
+
+================================================================================
+F. PRÉVIA
+================================================================================
+- Botão "Visualizar Prévia" abre PreviaModal (obrigatório antes de emitir).
+- Prévia mostra: logo Conexão, dados emitente, dados cliente, itens, totais,
+  observação, dados para pagamento — mesma estrutura que irá para o PDF.
+- Nº exibido como "Rascunho" enquanto não emitida.
+- A prévia NÃO consome numeração (chama apenas montarPreviaFatura, leitura).
+
+================================================================================
+G. EMISSÃO
+================================================================================
+- Confirmação (AlertDialog) mostra Cliente, Qtd serviços, Total, Vencimento.
+- Chama f_emitir_fatura (RPC oficial transacional) — NUNCA reproduzida no React.
+- Resultado: número oficial (FAT-ANO-000001), snapshot bloqueado, Conta a
+  Receber criada e vinculada (financeiro_receber.fatura_id), status = emitida.
+- Tela pós-emissão: "Fatura FAT-... emitida com sucesso" com ações Baixar PDF
+  e Voltar para Central.
+- Central recarrega e mostra o número nas linhas correspondentes.
+
+================================================================================
+H. NUMERAÇÃO
+================================================================================
+- f_gerar_numero_fatura (sequência por ano, nextval atômico) atribuído na
+  emissão. Formato FAT-2026-000001. NÃO usa Date.now().
+
+================================================================================
+I. PDF
+================================================================================
+Biblioteca: jsPDF + jspdf-autotable.
+Template: novo pdfFatura.ts, reutilizando drawLogoSafe/getLogoWithFallback
+(padrão Conexão Express navy + laranja, logo oficial com fallback).
+Dados da empresa: buscarDadosEmpresaParaFatura() → configuracoes_fiscais
+(emitente padrão) + contas_financeiras (dados bancários) + fallback
+empresaConfig (constantes centralizadas — NÃO espalhadas no componente).
+Estrutura:
+  - Cabeçalho navy: logo + "FATURA DE SERVIÇOS" + Nº + Emissão + Vencimento.
+  - Emitente: razão social, CNPJ, IE/IM, endereço, telefone, email.
+  - Cliente: razão social, CNPJ, endereço.
+  - Serviços: tabela Data | OS Interna | Romaneio/OC | Descrição | Valor.
+  - Totais: Subtotal | Acréscimos | Descontos | TOTAL DA FATURA.
+  - Observação (romaneios).
+  - Dados para pagamento: Banco, Agência, Conta, PIX.
+  - Rodapé: contato financeiro.
+NÃO contém: valor do prestador, margem, custos internos, semáforo, status
+operacional — documento externo apropriado ao cliente.
+
+================================================================================
+J. CONTA A RECEBER
+================================================================================
+- Após emissão, financeiro_receber.fatura_id vincula o título à Fatura.
+- FaturaLista mostra "Título vinculado" quando conta_receber_id presente.
+- Detalhe da Fatura oferece ver a Conta a Receber (vínculo).
+- Quando o título for pago, a Fatura poderá refletir a situação via vínculo
+  (estrutura pronta).
+
+================================================================================
+K. CENTRAL FINANCEIRA
+================================================================================
+Estados exibidos:
+  - Não faturado (nenhuma fatura ativa);
+  - Rascunho (item em fatura não emitida);
+  - FAT-2026-000001 (fatura emitida);
+  - Cancelada (não conta como faturamento ativo; serviço volta ao fluxo).
+A Central recarrega após emissão e o filtro "Faturamento" usa a fonte oficial.
+
+================================================================================
+L. LISTAGEM DE FATURAS
+================================================================================
+- Nova aba "Faturas" no Financeiro (Receipt laranja).
+- Colunas: Número | Cliente | Emissão | Período | Vencimento | Qtd | Valor |
+  Status | Recebimento | Ações.
+- Filtros: número, status, recebimento, vencimento inicial/final, cliente.
+- Paginação (15 por página).
+- Ações: detalhe, continuar rascunho, PDF.
+
+================================================================================
+M. CANCELAMENTO
+================================================================================
+- Fatura emitida → "Cancelar Fatura" exige motivo (obrigatório).
+- Chama f_cancelar_fatura (RPC oficial): fatura = cancelada, itens = cancelados
+  (liberados para novo faturamento), título tratado, histórico permanece.
+- NUNCA DELETE da Fatura.
+
+================================================================================
+N. WIZARD LEGADO
+================================================================================
+- O wizard antigo (ContasReceberEnterprise > Gerar Fatura) usava colunas
+  inexistentes (fatura_id, origem, fatura_numero, competencia) e estava
+  comprovadamente quebrado.
+- Ação: NÃO removido. Foi adicionado um banner explicando que o faturamento
+  agora usa a estrutura oficial via Central Financeira. Código preservado.
+- O fluxo oficial (FaturaPanel) substitui o wizard como fonte.
+
+================================================================================
+O. PORTAL CLIENTE
+================================================================================
+- NÃO foi implementada sincronização (risco de duplicar conceitos).
+- Documentação: quando a nova Fatura (faturas) for emitida, deverá alimentar
+  portal_faturas via sincronização (trigger/service) em fase própria, mantendo
+  financeiro_receber + faturas como fonte financeira oficial.
+- O PDF/Fatura oficial usa `faturas` (não portal_faturas).
+
+================================================================================
+P. TESTES
+================================================================================
+- src/test/fase2b_fatura_pdf.test.ts (NOVO) — 11 testes:
+  1. observação múltiplos romaneios (gramática);
+  2. observação romaneio único;
+  3. clientes diferentes NÃO formam única fatura;
+  4. mesmo cliente forma fatura única;
+  5. serviço já faturado é excluído da seleção;
+  6. sem valor faturável bloqueia seleção;
+  7. total da seleção usa apenas Total Cliente (nunca prestador);
+  8. prévia exibe "Rascunho" (não consome número);
+  9. numeração definitiva tem formato FAT-ANO-000000;
+ 10. item de fatura NÃO possui campos de prestador/margem (PDF limpo);
+ 11. cancelamento exige motivo.
+- npx tsc --noEmit → 0 erros
+- npx eslint (arquivos alterados) → 0 erros
+- npx vitest run → 15 arquivos, 158 testes PASS (147 + 11 novos)
+- Nenhuma fatura real de teste criada em Produção.
+
+================================================================================
+Q. BUILD
+================================================================================
+- npm run build → OK (33,91s). Nenhum erro relacionado à missão.
+
+================================================================================
+R. PENDÊNCIAS
+================================================================================
+R-01 Dados bancários (banco/agência/conta/PIX) dependem da tabela
+     contas_financeiras, que NÃO existe no banco remoto — o PDF usa fallback
+     (empresaConfig + vazio). Criar/validar contas_financeiras em fase própria.
+R-02 Regra de vencimento por cliente (prazo/dia fixo) ainda não existe — usa
+     sugestão (vencimento da fatura ou emissão+30). Fase própria.
+R-03 portal_faturas permanece morta até decisão de sincronização (documentado).
+R-04 Wizard legado ainda acessível (com banner) — código preservado para
+     consulta; substituição completa na fase de limpeza autorizada.
+R-05 Qtd de serviços na listagem de faturas é preenchida no detalhe (busca de
+     itens); coluna Qtd na grade depende de carregar itens (melhorias futuras).
+
+================================================================================
+S. PRÓXIMA FASE RECOMENDADA
+================================================================================
+FASE 3 — REGRAS FINANCEIRAS POR CLIENTE + ROMANEIO ↔ MÚLTIPLAS NFs + PREPARAÇÃO FISCAL
+  1. Regra Financeira por Cliente: prazo de pagamento, dia fixo, vencimento
+     automático, contato financeiro, e-mail de faturamento, observação padrão,
+     forma de cobrança.
+  2. Romaneio ↔ múltiplas NFs: vínculo seguro (fiscal_documentos_vinculados)
+     e "+ Adicionar NF" no dossiê da fatura.
+  3. Preparação Fiscal: vincular NFS-e/CT-e à Fatura; desbloquear emissão real
+     (secrets) quando autorizado.
+  4. Sincronização portal_faturas (decisão).
+  5. Criar/validar contas_financeiras para dados bancários oficiais no PDF.
+
+================================================================================
+ÚLTIMA LINHA
+================================================================================
+  FASE 2B CONCLUÍDA — FATURAMENTO PROFISSIONAL COM SELEÇÃO, PRÉVIA, EMISSÃO E PDF INTEGRADO À CENTRAL FINANCEIRA.
+================================================================================

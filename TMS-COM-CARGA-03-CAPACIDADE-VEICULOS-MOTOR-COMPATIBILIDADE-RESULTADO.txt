@@ -1,0 +1,163 @@
+================================================================================
+TMS-COM-CARGA-03-CAPACIDADE-VEICULOS-MOTOR-COMPATIBILIDADE — RESULTADO
+Missão: Base profissional e parametrizável de capacidade por TIPO/CONFIGURAÇÃO
+de veículo + motor de compatibilidade (peso, cubagem, dimensão individual,
+pallets, carroceria/refrigeração).
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS. ZERO migration/DDL. ZERO banco persistido (prova em ROLLBACK).
+================================================================================
+
+1. ESTRUTURAS EXISTENTES ENCONTRADAS (reuso; nada paralelo)
+--------------------------------------------------------------------------------
+- src/constants/tiposVeiculo.ts → TIPOS_VEICULO + VEICULO_PARAMETROS
+  (pesoMax, compMax/largMax/altMax cm, cubagemMax) — ORIGEM dos números padrão.
+- src/components/comercial/cargaCalculo.ts (COM-CARGA-01/02) — cubagem/derivados.
+- src/services/operacao/cargaService.ts — VEICULOS_POR_PESO_CUBAGEM (operação).
+- src/services/escala/eligibilidadeOperacionalService.ts — capacidade_kg/m3 de
+  veículos REAIS (frota). Mantido; não duplicado.
+- src/services/configuracoesService.ts — persistência chave/valor (configuracoes_sistema).
+- Configurações (src/pages/Configuracoes.tsx) — evoluída com a nova aba "Veículos".
+
+2. ESTRUTURA FINAL ESCOLHIDA
+--------------------------------------------------------------------------------
+- Catálogo parametrizável VeiculoCapacidade[] em cargaCalculo.ts.
+- Persistência SEM migration em configuracoes_sistema['veiculo_capacidades']
+  (mesmo mecanismo do useLogo). Default derivado de VEICULO_PARAMETROS.
+
+3. CAPACIDADES EXISTENTES E SUAS FONTES (preservadas, não inventadas)
+--------------------------------------------------------------------------------
+Moto 40kg/0,2m³ · Passeio 200/0,75 · Fiorino 600/2,8 · Kangoo 900/3,0 ·
+Kombi 1100/4 · Van 1300/8 · HR 1800/10 · VUC 2500/16 · 3/4 4000/24 ·
+Toco 7500/40 · Truck 12000/60 · Bitruck 14000/65 · Carreta 30000/90 · Bitrem 45000/120.
+FONTE: VEICULO_PARAMETROS (rótulo "Padrão do sistema (derivado de VEICULO_PARAMETROS)").
+Nenhum número novo foi criado.
+
+4. CAMPOS ADICIONADOS/REUTILIZADOS
+--------------------------------------------------------------------------------
+VeiculoCapacidade: tipo, label, configuracao, capacidadeKg, comprimentoUtilCm,
+larguraUtilCm, alturaUtilCm, cubagemUtilM3, capacidadePallets (null=não param.),
+refrigerado (null=não param.), carroceriasPermitidas[], ativo, fonte.
+Carga (reuso): dimensoes[], cubagem, peso, pallets, valorDeclarado, refrigerado.
+
+5. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/comercial/cargaCalculo.ts (motor parametrizável + orientação)
+- src/services/comercial/veiculoCapacidadeService.ts (NOVO — carga/salva catálogo)
+- src/components/comercial/VeiculoCapacidadesConfig.tsx (NOVO — UI de parametrização)
+- src/pages/Configuracoes.tsx (nova aba "Veículos")
+- src/components/comercial/OrcamentoForm.tsx (catálogo no motor, critérios na UI,
+  correção do alerta de volumes)
+- src/test/com_carga_03_capacidade_veiculos.test.ts (NOVO — 18 testes)
+- scripts/_com_carga_03_prova.ts (NOVO — prova)
+
+6. REGRA DE PESO
+--------------------------------------------------------------------------------
+pesoConsiderado = MAX(peso real, peso cubado). Compatível se pesoConsiderado <=
+capacidadeKg. capacidadeKg=0 → "não parametrizado".
+
+7. REGRA DE CUBAGEM
+--------------------------------------------------------------------------------
+Compatível se cubagem total <= cubagemUtilM3 (capacidade operacional). Preserva-se
+conceitualmente a cubagem geométrica (comp×larg×alt) e a útil configurada.
+
+8. REGRA DE DIMENSÃO/ORIENTAÇÃO (sem bin packing)
+--------------------------------------------------------------------------------
+Cada grupo de volume precisa caber em ALGUMA das 6 orientações dentro das medidas
+úteis (comp/larg/alt). Ex.: 100×80×60 cabe num baú 80×100×60. Não é garantia de
+empilhamento 3D perfeito — é filtro de ENTRADA FÍSICA.
+
+9. REGRA DE PALLETS
+--------------------------------------------------------------------------------
+Só é critério quando capacidadePallets está cadastrada. Se pallets > capacidade →
+incompatível. Se não cadastrada → indeterminado ("Capacidade de pallets não
+parametrizada") — NUNCA reprova/aprova por pallets sem parâmetro.
+
+10. REGRA DE CARROCERIA/REFRIGERAÇÃO
+--------------------------------------------------------------------------------
+Carga refrigerada × veículo refrigerado=false → incompatível; refrigerado=true → ok;
+null → indeterminado. carroceriasPermitidas[] fica preparado (não usado como
+restrição quando vazio).
+
+11. CASO 24,144 m³ (carga real validada: 1×30×60×80 + 10×160×150×100)
+--------------------------------------------------------------------------------
+Cubagem total = 24,144 m³ · Volumes = 11. Motor avaliou o catálogo completo:
+- Moto/Passeio/Fiorino/Kangoo/Kombi/Van/HR → INCOMPATÍVEL por PESO.
+- VUC → INCOMPATÍVEL por CUBAGEM (16 < 24,144).
+- 3/4 → INCOMPATÍVEL por CUBAGEM (24 < 24,144).
+- Toco (7.500kg/40m³), Truck, Bitruck, Carreta, Bitrem → COMPATÍVEIS.
+
+12. VEÍCULOS REJEITADOS (motivo)
+--------------------------------------------------------------------------------
+Todos com cubagem útil < 24,144 ou peso < 2.000 kg. Ex.: 3/4 (cubagem 24,00 < 24,144).
+
+13. VEÍCULO RECOMENDADO
+--------------------------------------------------------------------------------
+TOCO — menor ativo e compatível por peso+cubagem+dimensão individual. Exibido como
+"VEÍCULO RECOMENDADO PARA A OPERAÇÃO" com critérios ✓/— e observação
+"Compatível pelos parâmetros cadastrados. Validação operacional recomendada...".
+
+14. PROVA UI / PERSISTÊNCIA / RELOAD
+--------------------------------------------------------------------------------
+- UI: aba "Dados da Carga" (grupos/cubagem/soma/resumo físico) — COM-CARGA-02B.
+  Aba "Veículo": critérios + recomendação + aviso de incompatibilidade do selecionado.
+- Parametrização: Configurações → aba "Veículos" (edita capacidades; salva em
+  configuracoes_sistema).
+- Persistência/reload (transação + ROLLBACK): gravou 2 grupos + cubagem 24,144 +
+  volumes 11 + recomendado 'toco'; reload preservou tudo; 0 persistido (q=0).
+
+15. CORREÇÃO DO ALERTA 0 × GRUPOS
+--------------------------------------------------------------------------------
+Antes: "Quantidade de Volumes informada (0) difere da soma dos grupos (11)."
+Agora o aviso só aparece quando a quantidade manual é POSITIVA e realmente conflitante:
+  Number(data.carga.volumes||0) > 0 && Number(...) !== derivados.volumesGrupos
+Com 0/null/vazio e grupos presentes, a soma dos grupos é a fonte automática (sem alerta falso).
+
+16. TESTES / BUILD
+--------------------------------------------------------------------------------
+- npx vitest run (5 arquivos): 80/80 PASS
+    com_carga_03 (18: casos A–J + 24,144 + parametrização), com_carga_01 (19),
+    com_carga_02 (14), com_orc_02 (15), com_orc_03 (14).
+- npx tsc --noEmit: sem novos erros nos arquivos da missão.
+- npm run build -> OK (46.57s).
+- Casos cobertos: A peso · B cubagem · C dimensão individual · D orientação válida ·
+  E pallets acima · F pallets não parametrizado (indeterminado) · G refrigerado ·
+  H nenhum atende · I menor compatível · J alerta 0×grupos.
+
+17. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+- Capacidade de pallets/carroceria padrão NÃO cadastrada (null) → permanece
+  indeterminada até parametrização (por design, sem inventar).
+- Fator de cubagem ainda não configurado (peso cubado indisponível) — backlog.
+- Motor é filtro por parâmetros, não bin packing 3D perfeito (documentado na UI).
+- Validação visual final na tela é do usuário.
+
+18. PREPARAÇÃO ARQUITETURAL PARA FRACIONADO / PROVIDERS
+--------------------------------------------------------------------------------
+Decisão registrada: o motor de compatibilidade opera sobre "carga normalizada" +
+"catálogo de capacidade" — desacoplado de fornecedor. Futuro padrão QuoteProvider
+(TabelaPropriaProvider, ParceiroApiProvider, PlataformaFreteProvider, ManualProvider),
+onde Frenet é UM adapter/provider, NÃO o motor central. Nada acoplado a Frenet.
+
+19. BACKLOG CUMULATIVO PRESERVADO
+--------------------------------------------------------------------------------
+COMERCIAL: fator de cubagem configurável (chave fator_cubagem_kg_m3); parametrizar
+capacidade de pallets/carroceria; Tabela Esporádica/preço automático; custo×venda×margem;
+Fracionado/providers/adapters; saneamento legado/mojibake; regra de status "pronto p/ envio".
+FINANCEIRO: prova real Novo Lançamento pela UI; Fechamento x Lote; pagamento parcial;
+saneamento; R$0; pagos sem baixa; Calvo/CESAR; FP x PP; paginação global; Conta
+Corrente/Relatório/KPIs; P1; migrations/RLS/security residual.
+DEPOIS: APP-STAB; AUTO-E2E; APP↔TMS↔Supabase↔Financeiro; POD/tracking; Admin APP;
+CAD-PERSIST; E2E final; Master 360/Gate.
+
+ARQUIVO
+--------------------------------------------------------------------------------
+Caminho: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\TMS-COM-CARGA-03-CAPACIDADE-VEICULOS-MOTOR-COMPATIBILIDADE-RESULTADO.txt
+Tamanho: 9.837 bytes · Linhas: 163 · Data/hora: 26/09/2026 19:42:12
+
+Status máximo: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

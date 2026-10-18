@@ -1,0 +1,975 @@
+﻿Ôùç injected env (21) from .env // tip: Ôîÿ multiple files { path: ['.env.local', '.env'] }
+
+### alocacoes_escala (107 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  empresa_id: uuid
+  cliente_id: uuid
+  prestador_id: uuid
+  ordem_servico_id: uuid
+  ordem_carregamento_id: uuid
+  data_escala: date NOT NULL
+  turno: text = 'diurno'::text
+  tipo_veiculo: text NOT NULL
+  placa: text
+  regiao: text
+  rota: text
+  origem: text
+  destino: text
+  status: text NOT NULL = 'planejada'::text
+  status_pagamento: text = 'pendente'::text
+  quantidade_entregas: integer = 0
+  quantidade_coletas: integer = 0
+  quantidade_paradas: integer = 0
+  km_previstos: numeric = 0
+  km_realizados: numeric = 0
+  valor_frete: numeric = 0
+  valor_repasse: numeric = 0
+  valor_pedagio: numeric = 0
+  valor_combustivel: numeric = 0
+  valor_ajudante: numeric = 0
+  valor_adicional: numeric = 0
+  valor_desconto: numeric = 0
+  valor_total: numeric
+  valor_tipo: text = 'fixo'::text
+  valor_percentual: numeric = 0
+  valor_fixo: numeric = 0
+  combustivel_valor: numeric = 0
+  km_rodados: numeric = 0
+  valor_km: numeric = 0
+  pedagio_franquia: numeric = 0
+  pedagio_excedente: numeric = 0
+  pedagio_cobrar_excedente: boolean = false
+  diarias_adicionais: integer = 0
+  valor_diaria: numeric = 0
+  segunda_saida: boolean = false
+  valor_segunda_saida: numeric = 0
+  terceira_saida: boolean = false
+  valor_terceira_saida: numeric = 0
+  saidas_adicionais: integer = 0
+  valor_saida_adicional: numeric = 0
+  ajudantes: integer = 0
+  valor_ajudante_unit: numeric = 0
+  reembolsos_outros: text
+  valor_reembolso_outros: numeric = 0
+  horario_saida: time without time zone
+  horario_retorno_previsto: time without time zone
+  horario_inicio_real: timestamp with time zone
+  horario_fim_real: timestamp with time zone
+  tempo_total_minutos: integer
+  aceite_prestador: boolean = false
+  data_aceite: timestamp with time zone
+  motivo_recusa: text
+  finalizada: boolean = false
+  data_finalizacao: timestamp with time zone
+  comprovante_url: text
+  assinatura_url: text
+  fotos_entrega: ARRAY
+  ocorrencias_count: integer = 0
+  ocorrencias_descricao: text
+  observacoes: text
+  instrucoes_operacionais: text
+  observacoes_internas: text
+  tabela_valores_id: uuid
+  tem_regra_especial: boolean = false
+  metadata: jsonb = '{}'::jsonb
+  tags: ARRAY
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  created_by: uuid
+  updated_by: uuid
+  tenant_id: uuid = current_tenant_id_safe()
+  tipo_reversa: text = 'sem_reversa'::text
+  reversa_valor_cliente: numeric = 0
+  reversa_valor_prestador: numeric = 0
+  reversa_qtd_volumes: integer = 0
+  reversa_status: text
+  reversa_pod_url: text
+  reversa_fotos: jsonb = '[]'::jsonb
+  reversa_observacoes: text
+  reversa_realizada_em: timestamp with time zone
+  reversa_qtd_coletada: integer = 0
+  reversa_endereco_coleta: text
+  reversa_endereco_devolucao: text
+  reversa_unidade_cobranca: text = 'unidade'::text
+  reversa_valor_unitario: numeric = 0
+  reversa_divergencia: text
+  reversa_motivo_divergencia: text
+  reversa_responsavel: text
+  reversa_documento_responsavel: text
+  reversa_telefone: text
+  reversa_data_prevista: date
+  reversa_data_realizada: date
+  reversa_valor_adicional: numeric = 0
+  reversa_assinatura_url: text
+  reversa_latitude: numeric
+  reversa_longitude: numeric
+  coleta_reversa: boolean = false
+  operation_mode: text = 'standard_delivery'::text
+  motivo_troca_motorista: text
+  endereco_origem: jsonb
+  endereco_destino: jsonb
+  [alocacoes_escala_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL
+  [alocacoes_escala_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE SET NULL
+  [alocacoes_escala_prestador_id_fkey] FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE SET NULL
+  [alocacoes_escala_pkey] PRIMARY KEY (id)
+
+### ordens_servico (129 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  numero: text
+  cliente: uuid
+  prestador: uuid
+  veiculo_alocado: uuid
+  status: text = 'pendente'::text
+  data: date
+  tipo_operacao: text
+  carga_tipo: text
+  peso: numeric
+  volumes: integer
+  created_at: timestamp without time zone = now()
+  updated_at: timestamp without time zone = now()
+  adicionais: jsonb
+  ajudante: jsonb
+  cargaadicional: jsonb
+  cargaAdicional: jsonb
+  correios: text
+  historico: jsonb = '[]'::jsonb
+  unidade: text
+  centro_custo: text
+  modalidade: text
+  prioridade: text
+  pedagio: numeric
+  custo_prestador: numeric
+  valor_cliente: numeric
+  status_faturamento: text
+  status_pagamento: text
+  distancia_rota: jsonb
+  enderecos: jsonb = '[]'::jsonb
+  carga_ajudante: boolean = false
+  carga_refrigerada: boolean = false
+  carga_fragil: boolean = false
+  pallets: numeric
+  cubagem: numeric
+  valor_declarado: numeric
+  carga_descricao: text
+  veiculo_tipo: text
+  veiculo_termica: text
+  carga_empilhavel: boolean = false
+  cliente_id: text
+  prestador_id: text
+  carga_refrigerado: boolean = false
+  carga_risco: boolean = false
+  frete_sugerido: jsonb
+  ocorrencias: jsonb = '[]'::jsonb
+  documentos: jsonb = '[]'::jsonb
+  anexos: jsonb = '[]'::jsonb
+  carga_perigosa: boolean = false
+  carga_controlada: boolean = false
+  carga: jsonb
+  tipo_veiculo: text
+  data_servico: timestamp with time zone
+  centro_custo_inicio: text
+  centro_custo_fim: text
+  conta_contabil: text
+  tabela_aplicada: text
+  faturamento_status: text = 'A Faturar'::text
+  repasse_status: text = 'Pendente p/ Extra├º├úo'::text
+  outros_custos_prev: numeric = 0
+  valor_prestador_calculado: numeric = 0
+  imposto_valor: numeric = 0
+  seguro_valor: numeric = 0
+  pedagio_valor: numeric = 0
+  outros_custos: numeric = 0
+  margem_bruta: numeric = 0
+  margem_liquida: numeric = 0
+  percentual_margem_liquida: numeric = 0
+  centro_custo_fin: text
+  comprovante_obrigatorio: boolean = false
+  cte_obrigatorio: boolean = false
+  data_programada: date
+  inicio_previsto: timestamp without time zone
+  placa_alocada: text
+  parceiro_id: uuid
+  enviar_whatsapp: boolean = false
+  forma_cobranca: text
+  descontos: numeric = 0
+  email_destinatario: text
+  nome_destinatario: text
+  telefone_destinatario: text
+  observacoes: text
+  tipo_carga: text
+  valor_total: numeric = 0
+  eventos_tracker: jsonb = '[]'::jsonb
+  faixa_aplicada: text
+  distancia_km: numeric = 0
+  tempo_minutos: numeric = 0
+  valor_prestador: numeric = 0
+  margem: numeric = 0
+  origem: text
+  destino: text
+  desconto: numeric = 0
+  veiculo: text
+  instrucoes_operacionais_os: text
+  is_reserva: boolean = false
+  xml_obrigatorio: boolean = false
+  operacao_dedicada: boolean = false
+  retorno_obrigatorio: boolean = false
+  notificar_destinatario: boolean = true
+  orcamento_origem: text
+  veiculo_subcategoria: text
+  veiculo_carroceria: text
+  data_agendada: text
+  observacao_agendamento: text
+  janela_operacional: text
+  previsao_inicio: text
+  previsao_termino: text
+  tipo_escala: text
+  instrucoes_operacionais: text
+  observacao_torre: text
+  whatsapp_destinatario: text
+  veiculo_sugerido: text
+  recebedor_nome: text
+  recebedor_documento: text
+  reembolso_previsto: numeric = 0
+  lucro_estimado: numeric = 0
+  margem_lucro: numeric = 0
+  tempo_estimado: numeric = 0
+  localizacao_entrega_json: jsonb
+  observacoes_gerais: text
+  orcamento_id: uuid
+  numero_orcamento: text
+  tenant_id: uuid = '00000000-0000-0000-0000-000000000001'::uuid
+  tipo_reversa: text = 'sem_reversa'::text
+  reversa_qtd_volumes: integer = 0
+  reversa_observacoes: text
+  romaneio: text
+  pedido_portal_id: uuid
+  [ordens_servico_cliente_fkey] FOREIGN KEY (cliente) REFERENCES clientes(id) ON DELETE SET NULL
+  [ordens_servico_pedido_portal_id_fkey] FOREIGN KEY (pedido_portal_id) REFERENCES portal_pedidos(id) ON DELETE SET NULL
+  [ordens_servico_prestador_fkey] FOREIGN KEY (prestador) REFERENCES prestadores(id) ON DELETE SET NULL
+  [ordens_servico_veiculo_alocado_fkey] FOREIGN KEY (veiculo_alocado) REFERENCES veiculos(id) ON DELETE SET NULL
+  [ordens_servico_pkey] PRIMARY KEY (id)
+
+### escala_operacional (17 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  os_id: uuid NOT NULL
+  rota_id: uuid
+  prestador_id: uuid NOT NULL
+  motorista_nome: text NOT NULL
+  veiculo_id: uuid NOT NULL
+  placa: text NOT NULL
+  data_operacao: date NOT NULL
+  inicio_previsto: timestamp with time zone NOT NULL
+  fim_previsto: timestamp with time zone NOT NULL
+  status: text NOT NULL
+  prioridade: text NOT NULL
+  observacoes: text
+  origem: text
+  criado_por: text
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [escala_operacional_pkey] PRIMARY KEY (id)
+
+### financeiro_receber (37 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  cliente_id: uuid
+  descricao: text
+  valor: numeric
+  vencimento: date
+  status: text
+  created_at: timestamp without time zone = now()
+  updated_at: timestamp without time zone = now()
+  os_id: text
+  cliente: text
+  cliente_nome: text
+  data_vencimento: date
+  data_emissao: date
+  data_pagamento: date
+  categoria: text
+  observacoes: text
+  cliente_documento: text
+  fatura: text
+  serie: text
+  numero: text
+  os_vinculadas: text
+  contrato_vinculado: text
+  proposta_vinculada: text
+  valor_bruto: numeric = 0
+  valor_liquido: numeric = 0
+  desconto: numeric = 0
+  juros: numeric = 0
+  multa: numeric = 0
+  abatimento: numeric = 0
+  data_previsao_recebimento: date
+  recorrente: boolean = false
+  quantidade_parcelas: integer = 1
+  parcela_atual: integer = 1
+  centro_resultado: text
+  plano_conta: text
+  conta_entrada: text
+  recorrencia: text = 'nenhuma'::text
+  [financeiro_receber_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL
+  [financeiro_receber_pkey] PRIMARY KEY (id)
+  [uq_fr_os_id] UNIQUE (os_id)
+
+### financeiro_pagar (41 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  cliente_id: uuid
+  descricao: text
+  valor: numeric
+  vencimento: date
+  status: text
+  created_at: timestamp without time zone = now()
+  updated_at: timestamp without time zone = now()
+  os_id: text
+  prestador: text
+  fornecedor_nome: text
+  data_vencimento: date
+  data_emissao: date
+  data_pagamento: date
+  categoria: text
+  observacoes: text
+  fornecedor_id: uuid
+  fornecedor_documento: text
+  fornecedor: text
+  documento: text
+  tipo_documento: text = 'NF'::text
+  os_vinculada: text
+  valor_bruto: numeric = 0
+  valor_liquido: numeric = 0
+  desconto: numeric = 0
+  juros: numeric = 0
+  multa: numeric = 0
+  impostos_retidos: numeric = 0
+  data_previsao_pagamento: date
+  conta_pagadora: text = 'Conta Corrente Principal'::text
+  codigo_barras: text
+  chave_pix: text
+  recorrente: boolean = false
+  quantidade_parcelas: integer = 1
+  parcela_atual: integer = 1
+  competencia: text
+  plano_contas: text
+  centro_resultado: text
+  unidade_filial: text
+  despesa_fixa_base: text = 'Vari├ível'::text
+  data_efetiva_pgto: date
+  [financeiro_pagar_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL
+  [financeiro_pagar_fornecedor_id_fkey] FOREIGN KEY (fornecedor_id) REFERENCES prestadores(id) ON DELETE SET NULL
+  [financeiro_pagar_pkey] PRIMARY KEY (id)
+  [uq_fp_os_id] UNIQUE (os_id)
+
+### pagamento_prestadores (6 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  os_id: uuid
+  prestador_id: uuid
+  valor: numeric
+  status: text = 'pendente'::text
+  created_at: timestamp with time zone = now()
+  [pagamento_prestadores_pkey] PRIMARY KEY (id)
+
+### pagamentos_prestadores (45 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  prestador_id: uuid
+  prestador_nome: text
+  prestador_documento: text
+  periodo_inicio: date NOT NULL
+  periodo_fim: date NOT NULL
+  quantidade_os: integer = 0
+  valor_servicos: numeric = 0
+  valor_reembolsos: numeric = 0
+  valor_bonus: numeric = 0
+  valor_descontos: numeric = 0
+  valor_adiantamentos: numeric = 0
+  valor_liquido: numeric = 0
+  status: text = 'pendente'::text
+  data_pagamento: date
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  os_id: uuid
+  qtd_os: integer = 0
+  pedagio: numeric = 0
+  reembolsos: numeric = 0
+  adicionais: numeric = 0
+  descontos: numeric = 0
+  adiantamentos: numeric = 0
+  multas: numeric = 0
+  ajustes: numeric = 0
+  status_conferencia: text = 'em_aberto'::text
+  status_aprovacao: text = 'aguardando_aprovacao'::text
+  status_pagamento: text = 'pendente'::text
+  origem_lancamento: text = 'manual'::text
+  tipo_pagamento: text
+  categoria_financeira: text
+  centro_custo: text
+  conta_contabil: text
+  competencia: date
+  data_prevista_pagamento: date
+  elegivel_lote: boolean = false
+  lote_id: uuid
+  impacto_dre: boolean = true
+  impacto_fluxo_caixa: boolean = true
+  observacao: text
+  os_numero: text
+  tipo_lancamento: text = 'Servi├ºo Escala'::text
+  natureza: text = 'credito'::text
+  data_competencia: date
+  [pagamentos_prestadores_prestador_id_fkey] FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE CASCADE
+  [pagamentos_prestadores_pkey] PRIMARY KEY (id)
+  [uq_pp_os_id] UNIQUE (os_id)
+
+### pagamentos_prestadores_itens (12 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  pagamento_id: uuid
+  os_id: uuid
+  os_numero: text
+  valor_servico: numeric = 0
+  pedagio: numeric = 0
+  adicional: numeric = 0
+  valor_reembolso: numeric = 0
+  valor_bonus: numeric = 0
+  valor_desconto: numeric = 0
+  status: text = 'pendente'::text
+  created_at: timestamp with time zone = now()
+  [pagamentos_prestadores_itens_os_id_fkey] FOREIGN KEY (os_id) REFERENCES ordens_servico(id) ON DELETE SET NULL
+  [pagamentos_prestadores_itens_pagamento_id_fkey] FOREIGN KEY (pagamento_id) REFERENCES pagamentos_prestadores(id) ON DELETE CASCADE
+  [pagamentos_prestadores_itens_pkey] PRIMARY KEY (id)
+
+### composicao_financeira (11 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  os_id: uuid
+  valor_cliente: numeric
+  valor_prestador: numeric
+  impostos: numeric = 0
+  seguro: numeric = 0
+  pedagio: numeric = 0
+  outros: numeric = 0
+  margem_bruta: numeric
+  margem_liquida: numeric
+  created_at: timestamp with time zone = now()
+  [composicao_financeira_pkey] PRIMARY KEY (id)
+
+### composicao_financeira_os (21 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  os_id: uuid
+  cliente_id: uuid
+  prestador_id: uuid
+  valor_cliente: numeric = 0
+  valor_prestador: numeric = 0
+  imposto_percentual: numeric = 4.5
+  imposto_valor: numeric = 0
+  seguro_valor: numeric = 0
+  pedagio_valor: numeric = 0
+  outros_custos: numeric = 0
+  margem_bruta: numeric = 0
+  margem_liquida: numeric = 0
+  percentual_margem_bruta: numeric = 0
+  percentual_margem_liquida: numeric = 0
+  created_at: timestamp with time zone = now()
+  origem_calculo: text = 'os_direta'::text
+  combustivel_valor: numeric = 0
+  ajudante_valor: numeric = 0
+  adicional_valor: numeric = 0
+  desconto_valor: numeric = 0
+  [composicao_financeira_os_pkey] PRIMARY KEY (id)
+  [composicao_financeira_os_os_id_key] UNIQUE (os_id)
+
+### tabelas_valores (53 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text NOT NULL
+  tipo_veiculo: text NOT NULL
+  km_inicial: numeric = 0
+  km_final: numeric = 999999
+  valor_base: numeric = 0
+  valor_km: numeric = 0
+  valor_minimo: numeric = 0
+  ativo: boolean = true
+  universal: boolean = true
+  created_at: timestamp without time zone = now()
+  adicionais: jsonb = '{}'::jsonb
+  financeiro: jsonb = '{}'::jsonb
+  regras: jsonb = '{}'::jsonb
+  faixas: jsonb = '[]'::jsonb
+  observacoes: text
+  status: text = 'ATIVA'::text
+  cliente: text
+  updated_at: timestamp without time zone = now()
+  arredondamento: jsonb = '{}'::jsonb
+  centro_custo_padrao: text
+  conta_contabil_padrao: text
+  custo_teto_prestador: numeric = 0
+  markup_desejavel: numeric = 0
+  km_franquia: numeric = 0
+  valor_km_excedente: numeric = 0
+  exigencia_termica: text
+  metodos_cobranca: jsonb = '{}'::jsonb
+  classificacao_termica: text
+  cobranca_principais: ARRAY = '{}'::text[]
+  minimo_faturavel: numeric = 0
+  cobranca_retorno: jsonb = '{"cobrado": false, "percentual": 0}'::jsonb
+  conta_contabil: text
+  franquia_km: numeric
+  custo_prestador: numeric
+  markup_percent: numeric
+  custo_minimo_prestador: numeric = 0
+  margem_minima_percent: numeric = 0
+  unidade: text
+  tipo_operacao: text
+  segmento_cliente: text
+  data_inicio: date
+  data_fim: date
+  versao: integer = 1
+  tipo_tabela: text
+  subcategoria_veiculo: text
+  percentual_prestador: numeric = 80
+  valor_cliente: numeric = 0
+  tipo_repasse_prestador: text = 'percentual'::text
+  valor_fixo_prestador: numeric = 0
+  tenant_id: uuid = current_tenant_id_safe()
+  motivo_alteracao: text
+  prioridade: integer = 0
+  [tabelas_valores_pkey] PRIMARY KEY (id)
+
+### tabela_valores (8 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text
+  tipo_veiculo: text
+  valor_minimo: numeric
+  km_incluso: numeric
+  valor_km: numeric
+  ativo: boolean = true
+  created_at: timestamp with time zone = now()
+  [tabela_valores_pkey] PRIMARY KEY (id)
+
+### tabela_prestador (18 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text
+  tipo_veiculo: text
+  regiao: text
+  valor_minimo: numeric = 0
+  km_incluso: numeric = 0
+  valor_km: numeric = 0
+  ativo: boolean = true
+  created_at: timestamp with time zone = now()
+  cidade: text
+  uf: text
+  valor_saida: numeric = 0
+  tenant_id: uuid = current_tenant_id_safe()
+  data_inicio: date
+  data_fim: date
+  versao: integer = 1
+  motivo_alteracao: text
+  prioridade: integer = 0
+  [tabela_prestador_pkey] PRIMARY KEY (id)
+
+### tabela_prestador_operacional (15 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text
+  prestador_id: uuid
+  tipo_veiculo: text
+  regiao: text
+  cidade: text
+  uf: text
+  valor_minimo: numeric = 0
+  km_incluso: numeric = 0
+  valor_km: numeric = 0
+  valor_saida: numeric = 0
+  valor_diaria: numeric = 0
+  percentual_bonus: numeric = 0
+  ativo: boolean = true
+  created_at: timestamp with time zone = now()
+  [tabela_prestador_operacional_pkey] PRIMARY KEY (id)
+
+### delivery_proofs (24 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  stop_id: text
+  operation_id: text
+  driver_id: text
+  receiver_name: text NOT NULL
+  receiver_document: text
+  receiver_relationship: text
+  status: text = 'pending'::text
+  photo_url: text
+  signature_url: text
+  latitude: double precision
+  longitude: double precision
+  gps_accuracy: double precision
+  observation: text
+  delivered_at: timestamp with time zone
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  tenant_id: uuid = current_tenant_id_safe()
+  foto_canhoto_url: text
+  rota_id: text
+  os_id: text
+  cliente_id: text
+  parada_id: uuid
+  idempotency_key: text
+  [delivery_proofs_pkey] PRIMARY KEY (id)
+
+### entregas_protocolo (20 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  alocacao_id: uuid NOT NULL
+  prestador_id: uuid NOT NULL
+  nome_recebedor: text NOT NULL
+  documento_recebedor: text
+  observacao: text
+  foto_entrega_url: text
+  foto_canhoto_url: text
+  assinatura_url: text
+  data_hora_entrega: timestamp with time zone NOT NULL = now()
+  latitude: numeric
+  longitude: numeric
+  status: text NOT NULL = 'entregue'::text
+  created_at: timestamp with time zone NOT NULL = now()
+  updated_at: timestamp with time zone NOT NULL = now()
+  gps_accuracy: numeric
+  receiver_relationship: text
+  ordem_servico_id: uuid
+  tenant_id: uuid = current_tenant_id_safe()
+  parada_id: uuid
+  [entregas_protocolo_alocacao_id_fkey] FOREIGN KEY (alocacao_id) REFERENCES alocacoes_escala(id) ON DELETE CASCADE
+  [entregas_protocolo_pkey] PRIMARY KEY (id)
+
+### os_pod (9 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  ordem_servico_id: uuid NOT NULL
+  prestador_id: uuid
+  nome_recebedor: text
+  grau_proximidade: text
+  documento_recebedor: text
+  observacao: text
+  foto_url: text
+  created_at: timestamp without time zone = now()
+  [fk_pod_os] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+  [fk_pod_prestador] FOREIGN KEY (prestador_id) REFERENCES prestadores(id) ON DELETE SET NULL
+  [os_pod_pkey] PRIMARY KEY (id)
+
+### fiscal_ctes (16 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  filial_id: uuid
+  cliente_id: uuid
+  ordem_servico_id: uuid
+  numero: character varying
+  chave_acesso: character varying
+  status: character varying NOT NULL = 'pendente'::character varying
+  valor: numeric
+  data_emissao: timestamp with time zone
+  xml_url: text
+  pdf_url: text
+  protocolo: character varying
+  motivo_rejeicao: text
+  metadata: jsonb
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  [fiscal_ctes_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  [fiscal_ctes_filial_id_fkey] FOREIGN KEY (filial_id) REFERENCES filiais(id)
+  [fiscal_ctes_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id)
+  [fiscal_ctes_pkey] PRIMARY KEY (id)
+
+### fiscal_nfse (16 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  filial_id: uuid
+  cliente_id: uuid
+  ordem_servico_id: uuid
+  numero: character varying
+  chave_acesso: character varying
+  status: character varying NOT NULL = 'pendente'::character varying
+  valor: numeric
+  data_emissao: timestamp with time zone
+  xml_url: text
+  pdf_url: text
+  protocolo: character varying
+  motivo_rejeicao: text
+  metadata: jsonb
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  [fiscal_nfse_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  [fiscal_nfse_filial_id_fkey] FOREIGN KEY (filial_id) REFERENCES filiais(id)
+  [fiscal_nfse_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id)
+  [fiscal_nfse_pkey] PRIMARY KEY (id)
+
+### fiscal_mdfes (16 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  filial_id: uuid
+  cliente_id: uuid
+  ordem_servico_id: uuid
+  numero: character varying
+  chave_acesso: character varying
+  status: character varying NOT NULL = 'pendente'::character varying
+  valor: numeric
+  data_emissao: timestamp with time zone
+  xml_url: text
+  pdf_url: text
+  protocolo: character varying
+  motivo_rejeicao: text
+  metadata: jsonb
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  [fiscal_mdfes_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  [fiscal_mdfes_filial_id_fkey] FOREIGN KEY (filial_id) REFERENCES filiais(id)
+  [fiscal_mdfes_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id)
+  [fiscal_mdfes_pkey] PRIMARY KEY (id)
+
+### fiscal_documentos_vinculados (29 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  tipo_documento: character varying NOT NULL = 'NFE'::character varying
+  chave_acesso: character varying
+  numero: character varying
+  serie: character varying
+  emitente_cnpj: character varying
+  emitente_nome: text
+  destinatario_cnpj: character varying
+  destinatario_nome: text
+  valor_total: numeric
+  peso_bruto: numeric
+  volumes: integer
+  produto_predominante: text
+  municipio_origem: text
+  uf_origem: character varying
+  municipio_destino: text
+  uf_destino: character varying
+  xml_original: text
+  ordem_servico_id: uuid
+  status: character varying NOT NULL = 'aguardando_vinculo'::character varying
+  metadata: jsonb
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  cte_id: uuid
+  mdfe_id: uuid
+  xml_storage_path: text
+  xml_nome_arquivo: text
+  peso_total: numeric
+  criado_por: uuid
+  [fiscal_documentos_vinculados_cte_id_fkey] FOREIGN KEY (cte_id) REFERENCES fiscal_ctes(id) ON DELETE SET NULL
+  [fiscal_documentos_vinculados_mdfe_id_fkey] FOREIGN KEY (mdfe_id) REFERENCES fiscal_mdfes(id) ON DELETE SET NULL
+  [fiscal_documentos_vinculados_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id)
+  [fiscal_documentos_vinculados_pkey] PRIMARY KEY (id)
+
+### reembolsos_prestador (16 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  prestador: text NOT NULL
+  os_id: uuid
+  tipo: text NOT NULL
+  descricao: text
+  valor: numeric NOT NULL
+  data_despesa: date NOT NULL
+  comprovante_url: text
+  status: text NOT NULL = 'pendente'::text
+  aprovado_por: uuid
+  data_aprovacao: timestamp with time zone
+  obs_rejeicao: text
+  tenant_id: uuid = current_tenant_id_safe()
+  created_by: uuid = auth.uid()
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [reembolsos_prestador_os_id_fkey] FOREIGN KEY (os_id) REFERENCES ordens_servico(id) ON DELETE SET NULL
+  [reembolsos_prestador_pkey] PRIMARY KEY (id)
+
+### despesas_operacionais (10 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  veiculo_id: uuid
+  categoria: text NOT NULL = 'outros'::text
+  subcategoria: text
+  descricao: text
+  valor: numeric NOT NULL = 0
+  data_competencia: date NOT NULL = CURRENT_DATE
+  status: text NOT NULL = 'pendente'::text
+  comprovante_url: text
+  created_at: timestamp with time zone = now()
+  [despesas_operacionais_veiculo_id_fkey] FOREIGN KEY (veiculo_id) REFERENCES veiculos(id) ON DELETE SET NULL
+  [despesas_operacionais_pkey] PRIMARY KEY (id)
+
+### portal_faturas (12 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  cliente_id: uuid
+  numero: text NOT NULL
+  competencia: text NOT NULL
+  valor: numeric = 0
+  vencimento: date
+  status: text = 'aberta'::text
+  url_boleto: text
+  url_nf: text
+  os_ids: jsonb = '[]'::jsonb
+  metadata: jsonb = '{}'::jsonb
+  created_at: timestamp with time zone = now()
+  [portal_faturas_pkey] PRIMARY KEY (id)
+
+### clientes_contratos (14 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  cliente_id: uuid
+  numero: text
+  tipo: text
+  valor: numeric = 0
+  objeto: text
+  vigencia_inicio: date
+  vigencia_fim: date
+  status: text = 'ativo'::text
+  observacoes: text
+  anexo_url: text
+  anexo_nome: text
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [clientes_contratos_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+  [clientes_contratos_pkey] PRIMARY KEY (id)
+
+### regras_fiscais_cte (18 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  cliente_id: uuid
+  uf_origem: text
+  uf_destino: text
+  tipo_operacao: text
+  cfop: text NOT NULL
+  natureza_operacao: text
+  aliquota_icms: numeric
+  observacao: text
+  ativo: boolean = true
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  nome: text
+  descricao: text
+  emitente_id: uuid
+  cst_icms: text = '00'::text
+  reducao_base: numeric = 0
+  padrao: boolean = false
+  [regras_fiscais_cte_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  [regras_fiscais_cte_emitente_id_fkey] FOREIGN KEY (emitente_id) REFERENCES configuracoes_fiscais(id)
+  [regras_fiscais_cte_pkey] PRIMARY KEY (id)
+
+### regras_fiscais_nfse (13 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  emitente_id: uuid
+  cliente_id: uuid
+  municipio_prestacao: text NOT NULL
+  uf: text
+  codigo_servico: text NOT NULL
+  descricao_servico: text
+  aliquota_iss: numeric
+  iss_retido: boolean
+  observacao: text
+  ativo: boolean = true
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  [regras_fiscais_nfse_cliente_id_fkey] FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  [regras_fiscais_nfse_emitente_id_fkey] FOREIGN KEY (emitente_id) REFERENCES configuracoes_fiscais(id)
+  [regras_fiscais_nfse_pkey] PRIMARY KEY (id)
+
+### operation_km (12 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  operation_id: uuid
+  driver_id: uuid
+  km_inicial: integer
+  km_final: integer
+  foto_km_inicial_url: text
+  foto_km_final_url: text
+  km_rodado: integer
+  km_adicional: integer
+  valor_adicional_estimado: double precision
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [operation_km_pkey] PRIMARY KEY (id)
+
+### historico_alocacoes_escala (11 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  alocacao_id: uuid NOT NULL
+  evento: text NOT NULL
+  status_anterior: text
+  status_novo: text
+  descricao: text
+  payload: jsonb = '{}'::jsonb
+  created_at: timestamp with time zone = now()
+  created_by: uuid
+  ip_origem: text
+  user_agent: text
+  [historico_alocacoes_escala_alocacao_id_fkey] FOREIGN KEY (alocacao_id) REFERENCES alocacoes_escala(id) ON DELETE CASCADE
+  [historico_alocacoes_escala_pkey] PRIMARY KEY (id)
+
+### os_historico (8 cols)
+  id: uuid NOT NULL = uuid_generate_v4()
+  ordem_servico_id: uuid
+  descricao: text
+  created_at: timestamp without time zone = now()
+  acao: text
+  status_novo: text
+  usuario: text
+  os_id: uuid
+  [os_historico_ordem_servico_id_fkey] FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+  [os_historico_pkey] PRIMARY KEY (id)
+
+### configuracoes_fiscais (34 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  razao_social: text
+  nome_fantasia: text
+  cnpj: text
+  ie: text
+  rntrc: text
+  cep: text
+  logradouro: text
+  numero: text
+  complemento: text
+  bairro: text
+  cidade: text
+  uf: text
+  telefone: text
+  email: text
+  ambiente_fiscal: text = 'homologacao'::text
+  ativo: boolean = true
+  created_at: timestamp with time zone = timezone('utc'::text, now())
+  updated_at: timestamp with time zone = timezone('utc'::text, now())
+  apelido: text
+  padrao: boolean = false
+  limite_plano: integer = 3
+  focus_empresa_id: text
+  focus_token_configurado: boolean = false
+  certificado_configurado: boolean = false
+  inscricao_municipal: text
+  codigo_ibge: text
+  crt: text
+  regime_tributario: text
+  cnae_principal: text
+  focus_status: text = 'pendente'::text
+  certificado_nome: text
+  certificado_validade: date
+  certificado_status: text = 'pendente'::text
+  [configuracoes_fiscais_pkey] PRIMARY KEY (id)
+
+### certificados_fiscais (11 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  emitente_id: uuid NOT NULL
+  nome_arquivo: text NOT NULL
+  storage_path: text NOT NULL
+  tipo: text = 'A1'::text
+  validade: date
+  status: text = 'pendente'::text
+  ativo: boolean = true
+  criado_por: uuid
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [certificados_fiscais_emitente_id_fkey] FOREIGN KEY (emitente_id) REFERENCES configuracoes_fiscais(id) ON DELETE CASCADE
+  [certificados_fiscais_pkey] PRIMARY KEY (id)
+
+### centros_custo (6 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text NOT NULL
+  descricao: text
+  status: text = 'Ativo'::text
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [centros_custo_pkey] PRIMARY KEY (id)
+
+### unidades (6 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text NOT NULL
+  descricao: text
+  status: text = 'Ativo'::text
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [unidades_pkey] PRIMARY KEY (id)
+
+### filiais (6 cols)
+  id: uuid NOT NULL = gen_random_uuid()
+  nome: text NOT NULL
+  descricao: text
+  status: text = 'Ativo'::text
+  created_at: timestamp with time zone = now()
+  updated_at: timestamp with time zone = now()
+  [filiais_pkey] PRIMARY KEY (id)

@@ -4,14 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import PaginationBar from "@/components/ui/PaginationBar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
+import { verificarReferenciasCliente } from "@/helpers/clienteReferencias";
+import { formatarDataBR } from "@/lib/formatDates";
+import { SafeImage } from "@/components/ui/safe-image";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Tipo interno (aceita tanto snake_case do Supabase quanto camelCase do form)
@@ -39,6 +44,7 @@ interface ClienteRow {
   numOsMes?: number;
   data_cadastro?: string;
   ultima_operacao?: string;
+  created_at?: string;
   responsavel_operacional?: string;
   responsavel_financeiro?: string;
   responsavel_comercial?: string;
@@ -73,7 +79,8 @@ const mapRow = (row: ClienteRow) => ({
   uf:                     row.uf,
   logo:                   row.logo,
   numOsMes:               row.num_os_mes         ?? row.numOsMes          ?? 0,
-  dataCadastro:           row.data_cadastro      || null,
+  // data_cadastro ainda não é gravado em clientes antigos → fallback para created_at
+  dataCadastro:           row.data_cadastro      || row.created_at        || null,
   ultimaOperacao:        row.ultima_operacao    || null,
   responsavelOperacional: row.responsavel_operacional || row.responsavel_operacional || "",
   responsavelFinanceiro:  row.responsavel_financeiro  || "",
@@ -95,71 +102,95 @@ interface Props {
 
 const ClientesLista = ({ onSelect, onNew }: Props) => {
   const [busca, setBusca]                         = useState("");
+  const [buscaDebounced, setBuscaDebounced]       = useState("");
   const [clientes, setClientes]                   = useState<ClienteMapped[]>([]);
   const [isLoading, setIsLoading]                 = useState(false);
   const [adminPassword, setAdminPassword]         = useState("");
   const [showDeleteDialog, setShowDeleteDialog]   = useState(false);
   const [selectedCliente, setSelectedCliente]     = useState<ClienteMapped | null>(null);
+  const [checkingRefs, setCheckingRefs]           = useState(false);
+  const [refsResumo, setRefsResumo]               = useState<string | null>(null);
   const [showQuickView, setShowQuickView]         = useState(false);
   const [quickViewCliente, setQuickViewCliente]   = useState<ClienteMapped | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const PAGE_SIZE = 25;
+
+  // Debounce da busca + reset para a página 1 (busca global, antes da paginação)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(1);
+      setBuscaDebounced(busca);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   useEffect(() => {
     fetchClientes();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, buscaDebounced]);
 
-  // ── FETCH ──────────────────────────────────────────────────────────────────
+  // ── FETCH (ordenação A→Z no banco → paginação → tela) ──────────────────────
   const fetchClientes = async () => {
     try {
       setIsLoading(true);
-      console.log("[ClientesLista] Buscando clientes...");
-      const { data, error } = await supabase
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      // Sanitiza termo para o filtro .or() do PostgREST (remove separadores/wildcards)
+      const termo = buscaDebounced.trim().replace(/[,()%*\\]/g, " ").replace(/\s+/g, " ").trim();
+
+      let query = supabase
         .from("clientes")
-        .select("*")
-        .order("razao_social");
+        .select("id,razao_social,nome_fantasia,cnpj,ie,segmento,porte,status,contato_principal,telefone,whatsapp,email,cidade,uf,logo,num_os_mes,data_cadastro,ultima_operacao,created_at,responsavel_operacional,responsavel_financeiro,responsavel_comercial,observacoes,origem_comercial,exige_agendamento,exige_sla,exige_portal,aceita_api", { count: "exact" });
+
+      if (termo) {
+        const like = `%${termo}%`;
+        query = query.or(
+          `razao_social.ilike.${like},nome_fantasia.ilike.${like},cnpj.ilike.${like},email.ilike.${like},telefone.ilike.${like}`
+        );
+      }
+
+      const { data, error, count } = await query
+        .order("razao_social", { ascending: true, nullsFirst: false })
+        .order("nome_fantasia", { ascending: true, nullsFirst: false })
+        .range(from, to);
+
+      if (count !== null) setTotalCount(count);
 
       if (error) {
-        console.error("[ClientesLista] Erro fetch:", error.message, error.code);
         throw error;
       }
 
-      const qtdeRecebida = data?.length ?? 0;
-      console.log("[ClientesLista] Registros recebidos:", qtdeRecebida);
-
-      if (qtdeRecebida === 0 && clientes.length > 0) {
-        console.log("[ClientesLista] Lista ficou vazia após fetch - mantendo anterior");
-      }
-
-      // Mapear snake_case → camelCase normalizado
       const mapped = (data || []).map(row => mapRow(row as ClienteRow));
       setClientes(mapped);
-      console.log("[ClientesLista] Lista atualizada:", mapped.length);
     } catch (err) {
-      console.error("[ClientesLista] Catch fetch:", err);
-      toast.error("Erro ao carregar clientes. Lista mantida.");
-      // NÃO sobrescreve clientes em caso de erro - mantém a lista anterior
+      toast.error("Erro ao carregar clientes.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── BUSCA (multi-campo) ────────────────────────────────────────────────────
-  const filtered = clientes.filter((c) => {
-    if (!busca.trim()) return true;
-    const q = busca.toLowerCase();
-    return (
-      String(c.razaoSocial  || "").toLowerCase().includes(q) ||
-      String(c.nomeFantasia || "").toLowerCase().includes(q) ||
-      String(c.cnpj         || "").toLowerCase().includes(q) ||
-      String(c.email        || "").toLowerCase().includes(q) ||
-      String(c.telefone     || "").toLowerCase().includes(q)
-    );
-  });
+  // ── BUSCA: executada no banco sobre a BASE COMPLETA (ver fetchClientes) ─────
+  // A ordenação A→Z e a paginação já vêm do servidor; não há filtro local.
+  const filtered = clientes;
 
   // ── ABRIR DIALOG DE EXCLUSÃO ───────────────────────────────────────────────
-  const openDeleteDialog = (cliente: ClienteMapped) => {
+  const openDeleteDialog = async (cliente: ClienteMapped) => {
     setSelectedCliente(cliente);
     setAdminPassword("");
     setShowDeleteDialog(true);
+    setRefsResumo(null);
+    setCheckingRefs(true);
+    try {
+      const refs = await verificarReferenciasCliente(cliente.id);
+      if (refs.length > 0) {
+        setRefsResumo(refs.map(r => `${r.label} (${r.count})`).join(", "));
+      }
+    } catch {
+      setRefsResumo("Não foi possível verificar os vínculos (erro de leitura).");
+    } finally {
+      setCheckingRefs(false);
+    }
   };
 
   // ── CONFIRMAR EXCLUSÃO (segura) ────────────────────────────────────────────
@@ -174,37 +205,72 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
       return;
     }
 
-    // PROTEÇÃO 2: senha admin
-    if (adminPassword !== "admin123") {
-      toast.error("Senha de administrador incorreta!");
-      return;
+    // PROTEÇÃO 2: senha admin (verificada em configuracoes_sistema; sem fallback hardcoded)
+    try {
+      const { data: cfgData } = await supabase
+        .from("configuracoes_sistema")
+        .select("valor")
+        .eq("chave", "senha_admin")
+        .maybeSingle();
+      if (cfgData?.valor && adminPassword !== cfgData.valor) {
+        toast.error("Senha de administrador incorreta!");
+        return;
+      }
+    } catch (cfgErr) {
+      console.warn("[DELETE CLIENTE] Nao foi possivel validar senha admin via configuracoes_sistema", cfgErr);
     }
 
     const clienteId = selectedCliente.id;
     const razao = selectedCliente.razaoSocial || selectedCliente.nomeFantasia || 'SEM_NOME';
-    console.log("[DELETE CLIENTE] Tentando excluir id:", clienteId, "| razão:", razao);
+    console.log("[DELETE CLIENTE] Tentando excluir/inativar id:", clienteId, "| razão:", razao);
 
     try {
-      const { error } = await supabase
-        .from("clientes")
-        .delete()
-        .eq("id", clienteId);
+      // Se tem referências, faz SOFT DELETE
+      if (refsResumo) {
+        const { error } = await supabase
+          .from("clientes")
+          .update({ status: "inativo" })
+          .eq("id", clienteId);
+        
+        if (error) {
+          console.error("[DELETE CLIENTE] Erro no Soft Delete:", error.message, error.code);
+          throw error;
+        }
+        
+        toast.success(`Cliente "${razao}" inativado com sucesso (Soft Delete).`);
+      } else {
+        // Sem referências, HARD DELETE
+        const { data: delData, error } = await supabase
+          .from("clientes")
+          .delete()
+          .eq("id", clienteId)
+          .select("id");
 
-      if (error) {
-        console.error("[DELETE CLIENTE] Erro Supabase:", error.message, error.code);
-        throw error;
+        if (error) {
+          console.error("[DELETE CLIENTE] Erro Supabase:", error.message, error.code);
+          throw error;
+        }
+
+        // Confirmação real: só considera sucesso se ao menos 1 registro foi removido
+        if (!delData || delData.length === 0) {
+          toast.error("Nenhum registro foi excluído. Verifique permissões e tente novamente.");
+          return;
+        }
+
+        console.log("[DELETE CLIENTE] Excluído com sucesso no banco:", clienteId);
+        toast.success(`Cliente "${razao}" excluído permanentemente.`);
       }
-
-      console.log("[DELETE CLIENTE] Excluído com sucesso no banco:", clienteId);
-      toast.success(`Cliente "${razao}" excluído.`);
 
       // Limpa busca após exclusão para evitar.confusão visual
       console.log("[DELETE CLIENTE] Limpando busca...");
       setBusca("");
 
-      // NÃO altera state manualmente - deixa fetchClientes() atualizar
-      console.log("[DELETE CLIENTE] Recarregando lista...");
-      await fetchClientes();
+      // Ajusta a paginação se a página atual ficar vazia após exclusão
+      if (clientes.length <= 1 && page > 1) {
+        setPage(page - 1); // dispara fetchClientes via useEffect
+      } else {
+        await fetchClientes();
+      }
 
       console.log("[DELETE CLIENTE] Quantidade após fetch:", clientes.length);
     } catch (err: any) {
@@ -227,8 +293,8 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
           <h2 className="text-xl font-bold">Clientes</h2>
           <p className="text-sm text-muted-foreground">
             {busca.trim()
-              ? `${filtered.length} resultado(s) para "${busca}"`
-              : `${clientes.length} cliente(s) cadastrado(s)`}
+              ? `${totalCount ?? clientes.length} resultado(s) para "${busca}"`
+              : `${totalCount ?? clientes.length} cliente(s) cadastrado(s)`}
           </p>
         </div>
         <Button onClick={onNew} className="gap-2 bg-primary">
@@ -275,7 +341,9 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-10">Carregando...</TableCell>
+                  <TableCell colSpan={12} className="text-center py-10">
+                    <ProgressiveBlocksLoader size="normal" />
+                  </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
@@ -300,6 +368,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                     >
                       <TableCell>
                         <Avatar className="w-8 h-8">
+                          <AvatarImage src={c.logo || undefined} alt="" className="object-cover" />
                           <AvatarFallback className="text-xs bg-primary/10 text-primary font-bold">
                             {(c.razaoSocial || c.nomeFantasia || "?").substring(0, 2).toUpperCase()}
                           </AvatarFallback>
@@ -372,9 +441,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                       <TableCell>{localidade}</TableCell>
                       <TableCell>{c.segmento || "—"}</TableCell>
                        <TableCell>
-                        {c.dataCadastro && !isNaN(new Date(c.dataCadastro).getTime())
-                          ? new Date(c.dataCadastro).toLocaleDateString("pt-BR") 
-                          : "—"}
+                        {formatarDataBR(c.dataCadastro) || "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -434,6 +501,15 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
         </CardContent>
       </Card>
 
+      {/* Paginação real (numerada) — ordenação A→Z global no servidor */}
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalCount={totalCount}
+        onPageChange={setPage}
+        loading={isLoading}
+      />
+
       {/* Modal de Visualização Rápida */}
       <Dialog open={showQuickView} onOpenChange={setShowQuickView}>
         <DialogContent className="max-w-2xl">
@@ -446,7 +522,13 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
             <div className="space-y-4">
               <div className="flex items-center gap-4">
                 {quickViewCliente.logo ? (
-                  <img src={quickViewCliente.logo} alt="Logo" className="w-16 h-16 rounded-lg object-cover" />
+                  <SafeImage
+                    src={quickViewCliente.logo}
+                    alt="Logo"
+                    className="w-16 h-16 rounded-lg object-cover"
+                    fallbackClassName="h-16 w-16 rounded-lg text-xl font-bold"
+                    fallback={(quickViewCliente.razaoSocial || quickViewCliente.nomeFantasia || "C").charAt(0).toUpperCase()}
+                  />
                 ) : (
                   <Avatar className="w-16 h-16">
                     <AvatarFallback className="text-xl">{(quickViewCliente.razaoSocial || quickViewCliente.nomeFantasia || "C").charAt(0)}</AvatarFallback>
@@ -572,9 +654,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                 <div>
                   <p className="text-muted-foreground text-xs">Data Cadastro</p>
                   <p className="font-medium">
-                    {quickViewCliente.dataCadastro 
-                      ? new Date(quickViewCliente.dataCadastro).toLocaleDateString("pt-BR") 
-                      : "—"}
+                    {formatarDataBR(quickViewCliente.dataCadastro) || "—"}
                   </p>
                 </div>
                 <div>
@@ -682,8 +762,22 @@ Status: ${quickViewCliente.status || "Ativo"}
               <AlertCircle className="w-5 h-5" /> Confirmar Exclusão
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir <strong>{selectedCliente?.razaoSocial || selectedCliente?.nomeFantasia}</strong>?
-              Esta ação não pode ser desfeita.
+              {checkingRefs ? (
+                <span className="flex items-center gap-2 mt-2">
+                  <ProgressiveBlocksLoader size="small" /> Verificando vínculos...
+                </span>
+              ) : refsResumo ? (
+                <span className="text-amber-600 block mt-2">
+                  Este cliente possui histórico no sistema ({refsResumo}). 
+                  <br /><br />
+                  Ele será <strong>inativado</strong> (Soft Delete) em vez de excluído permanentemente, para preservar a integridade dos dados.
+                </span>
+              ) : (
+                <span className="block mt-2">
+                  Tem certeza que deseja excluir <strong>{selectedCliente?.razaoSocial || selectedCliente?.nomeFantasia}</strong>?
+                  Esta ação não pode ser desfeita.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3">
@@ -704,9 +798,10 @@ Status: ${quickViewCliente.status || "Ativo"}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
+              disabled={checkingRefs}
               className="bg-destructive hover:bg-destructive/90 text-white"
             >
-              Excluir Cliente
+              {refsResumo ? "Inativar Cliente" : "Excluir Cliente"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

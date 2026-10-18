@@ -37,6 +37,7 @@ export interface AdicionaisTaxas {
   escolta: { ativo: boolean; valor: number };
   estadia: { ativo: boolean; valor: number };
   diariaExtra: { ativo: boolean; valor: number };
+  overbooking: { ativo: boolean; tipo: "%"|"R$"; valorBase: number; percentualCliente: number; percentualPrestador: number; valorCliente: number; valorPrestador: number; observacao: string };
 }
 
 export interface TabelaValores {
@@ -123,7 +124,8 @@ export const emptyTabelaValores = (): TabelaValores => ({
     agendamento: { ativo: false, valor: 0 },
     escolta: { ativo: false, valor: 0 },
     estadia: { ativo: false, valor: 0 },
-    diariaExtra: { ativo: false, valor: 0 }
+    diariaExtra: { ativo: false, valor: 0 },
+    overbooking: { ativo: false, tipo: "%", valorBase: 0, percentualCliente: 50, percentualPrestador: 80, valorCliente: 0, valorPrestador: 0, observacao: '' }
   },
   
   contaContabil: "",

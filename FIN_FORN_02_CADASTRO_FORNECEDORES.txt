@@ -1,0 +1,189 @@
+RELATORIO FIN-FORN-02 — CADASTRO REAL DE FORNECEDORES
+======================================================
+Data: 2026-09-08
+Operador: Opencode Agent (MINIO)
+Missao: FIN-FORN-02 — Cadastro de Fornecedores Integrado ao Financeiro
+
+VEREDITO: [HOMOLOGADO — CADASTRO DE FORNECEDORES]
+
+===============================================================================
+1. O QUE FOI FEITO
+===============================================================================
+
+1.1 MIGRATION SQL APLICADA EM PRODUCAO
+  Arquivo: supabase/migrations/20260908_fin_forn02_tabela_fornecedores.sql
+  Tabela: public.fornecedores (25 colunas, 26 linhas de SQL)
+  Aplicada via pg client direto no Supabase PRODUCAO
+
+  Tabela criada:
+    id uuid PK DEFAULT uuid_generate_v4()
+    tipo_pessoa text NOT NULL DEFAULT 'PJ' CHECK (PF/PJ)
+    razao_social text NOT NULL
+    nome_fantasia text
+    cpf_cnpj text NOT NULL
+    inscricao_estadual text
+    inscricao_municipal text
+    telefone text
+    email text
+    cep text
+    logradouro text
+    numero text
+    complemento text
+    bairro text
+    cidade text
+    uf text
+    chave_pix text
+    tipo_chave_pix text
+    banco text
+    agencia text
+    conta text
+    observacoes text
+    status text NOT NULL DEFAULT 'ativo' CHECK (ativo/inativo)
+    created_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now()
+
+  Indices:
+    idx_fornecedores_cpf_cnpj (busca por documento)
+    idx_fornecedores_status (filtro por status)
+    idx_fornecedores_razao_social (busca por nome)
+    idx_fornecedores_cpf_cnpj_unique UNIQUE PARCIAL WHERE status='ativo'
+
+  RLS:
+    ALTER TABLE fornecedores ENABLE ROW LEVEL SECURITY
+    REVOKE ALL FROM anon (bloqueado)
+    4 policies: fn_select_tms, fn_insert_tms, fn_update_tms, fn_delete_tms
+    Padrao: EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())
+
+  Trigger:
+    trg_fornecedores_updated_at — BEFORE UPDATE, atualiza updated_at
+
+1.2 FK EM financeiro_pagar
+  Coluna: fornecedor_cadastro_id uuid NULL
+  FK: financeiro_pagar_fornecedor_cadastro_id_fkey → fornecedores(id) ON DELETE SET NULL
+  Index: idx_fp_fornecedor_cadastro_id
+
+  NAO removido:
+    fornecedor_id (FK → prestadores.id) — preservado
+    fornecedor (text) — preservado
+    fornecedor_nome (text) — preservado
+    fornecedor_documento (text) — preservado
+
+1.3 FRONTEND CRIADO
+  Arquivos novos:
+    src/components/fornecedores/types.ts (62 linhas)
+    src/components/fornecedores/FornecedoresLista.tsx (225 linhas)
+    src/components/fornecedores/FornecedorDetalhe.tsx (267 linhas)
+    src/pages/CadastrosFornecedores.tsx (37 linhas)
+
+  Arquivos modificados:
+    src/lib/sidebarData.ts — item "Fornecedores" adicionado ao Cadastros Base
+    src/App.tsx — lazy import + 2 rotas (/cadastros/fornecedores, /cadastros/fornecedores/novo)
+
+===============================================================================
+2. PROVA REAL — 11/11 TESTES PASSARAM
+===============================================================================
+
+  1. INSERT fornecedor: OK (UUID gerado, status=ativo)
+  2. SELECT fornecedor: OK (todos os campos retornados)
+  3. UPDATE fornecedor: OK (telefone e nome_fantasia atualizados)
+  4. INSERT financeiro_pagar com fornecedor_cadastro_id: OK (FK valida)
+  5. JOIN financeiro_pagar → fornecedores: OK (razao_social + cpf_cnpj via FK)
+  6. CPF/CNPJ duplicado BLOQUEADO: OK (unique parcial impede dois ativos)
+  7. Novo fornecedor com mesmo doc (inativo existente): PERMITIDO (unique parcial OK)
+  8. 102 titulos historicos (101 original + 1 teste): INTACTOS
+  9. fornecedor_id legado: 81 registros mantidos com FK → prestadores
+  10. Cleanup: registros teste removidos
+  11. Contagem final: 0 fornecedores (limpo)
+
+===============================================================================
+3. PROVA REAL — RLS E SEGURANCA
+===============================================================================
+
+  RLS: true (ativo)
+  Policies: 4 (SELECT, INSERT, UPDATE, DELETE) — todas com tenant_usuarios guard
+  Anon: REVOKE ALL (bloqueado)
+  titulo_fornecedor_cadastro_id: FK existe e funciona
+  Unique parcial: idx_fornecedores_cpf_cnpj_unique (WHERE status='ativo')
+
+===============================================================================
+4. tsc --noEmit
+===============================================================================
+
+  Resultado: 0 erros
+
+===============================================================================
+5. ARQUIVOS CRIADOS/MODIFICADOS
+===============================================================================
+
+  CRIADOS:
+    supabase/migrations/20260908_fin_forn02_tabela_fornecedores.sql — migration
+    src/components/fornecedores/types.ts — tipos e constantes
+    src/components/fornecedores/FornecedoresLista.tsx — lista com busca/filtro/CRUD
+    src/components/fornecedores/FornecedorDetalhe.tsx — formulario profissional
+    src/pages/CadastrosFornecedores.tsx — page wrapper
+
+  MODIFICADOS:
+    src/lib/sidebarData.ts — +1 item sidebar
+    src/App.tsx — +1 import lazy + 2 rotas
+
+  SCRIPTS (descartaveis):
+    scripts/_fin_forn02_apply_migration.mjs — aplicador
+    scripts/_fin_forn02_verify.mjs — verificacao DB
+    scripts/_fin_forn02_crud_test.mjs — prova real CRUD
+
+===============================================================================
+6. TABELAS ENVOLVIDAS
+===============================================================================
+
+  NOVA: fornecedores (25 colunas, 0 registros em producao)
+  MODIFICADA: financeiro_pagar (+1 coluna fornecedor_cadastro_id, +1 FK)
+  PRESERVADA: financeiro_pagar.fornecedor_id → prestadores.id (legado)
+  PRESERVADA: 101 titulos historicos intactos
+
+===============================================================================
+7. GAPS RESOLVIDOS
+===============================================================================
+
+  G1: Nenhum cadastro de fornecedor como entidade visual → RESOLVIDO (FornecedoresLista + FornecedorDetalhe)
+  G2: Sidebar sem item "Fornecedores" → RESOLVIDO (sidebarData.ts)
+  G3: Nenhuma rota /cadastros/fornecedores → RESOLVIDO (App.tsx)
+  G4: Nenhum componente FornecedorLista/FornecedorDetalhe → RESOLVIDO (2 componentes)
+  G5: FornecedorAutocomplete inline (nao reutilizavel) → PENDENTE (proxima missao)
+  G6: financeiro_pagar sem FK para cadastro proprio → RESOLVIDO (fornecedor_cadastro_id)
+
+===============================================================================
+8. O QUE NAO FOI FEITO (PROPOSITAL)
+===============================================================================
+
+  - NAO alterado DRE (nao usa fornecedor para classificacao)
+  - NAO substituido autocomplete do Contas a Pagar (FornecedorAutocomplete continua buscando prestadores)
+  - NAO migrado fornecedor_id legado (preservado para compatibilidade)
+  - NAO mexido em pagamento de prestadores (PagamentoPrestadores.tsx)
+  - NAO alterado categorias/plano de contas (campos livres mantidos)
+  - NAO criado dados fake (tabela vazia, pronta para uso real)
+  - NAO alterada semantica homologada do Financeiro
+
+===============================================================================
+9. RISCOS
+===============================================================================
+
+  P0: NENHUM
+  P1: NENHUM
+  P2:
+    - FornecedorAutocomplete no ContasPagar ainda busca de prestadores (missao futura)
+    - centros_custo e despesas_operacionais vazios (depende de seeds futuros)
+
+===============================================================================
+10. PROXIMOS PASSOS (MISSAO FIN-FORN-03)
+===============================================================================
+
+  1. Atualizar FornecedorAutocomplete no ContasPagar.tsx para buscar de fornecedores
+  2. Adicionar botao "+" no autocomplete para cadastro rapido sem sair do fluxo
+  3. Preencher fornecedor_cadastro_id ao criar despesa manual
+  4. Relatorio de despesas por fornecedor (DRE continua por categoria)
+  5. Exportacao de dados de fornecedores
+
+===============================================================================
+FIM DO RELATORIO — FIN-FORN-02
+HOMOLOGADO — CADASTRO DE FORNECEDORES
+===============================================================================

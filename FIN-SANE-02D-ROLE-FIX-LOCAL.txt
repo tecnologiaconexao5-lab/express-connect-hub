@@ -1,0 +1,127 @@
+============================================================
+FIN-SANE-02D-ROLE-FIX-LOCAL
+Data: 2026-09-16
+Ambiente: Supabase LOCAL / TMS LOCAL
+Producao: ZERO WRITES
+============================================================
+
+1. SHA256 ORIGINAL
+============================================================
+91533C83F4AC6FDB78010D4BA4870CC9A1A2407AB7D86EF6453F221208B171A8
+
+2. ALTERACAO TEMPORARIA
+============================================================
+Arquivo: supabase/migrations/20260702000003_portal_rls_validacao.sql
+Linha: 209
+Antes:  PERFORM set_config('role', 'authenticated', true);
+Depois: PERFORM set_config('role', 'postgres', true);
+
+Backup: express-connect-hub\_temp_backup_20260702000003.sql
+Restauracao: CONFIRMADA (SHA256 identico ao original)
+
+3. SUPABASE START
+============================================================
+Resultado: PASS (parcial — 42501 eliminado, novo erro em migration diferente)
+
+Detalhes:
+- 80+ migrations aplicadas com sucesso
+- 20260702000003_portal_rls_validacao.sql: APLICADA OK
+- INSERT em supabase_migrations.schema_migrations: PASS
+- SQLSTATE 42501: ELIMINADO
+- Erro novo: column "nome" of relation "clientes" does not exist
+  (SQLSTATE 42703) — em 20260703000002_missao57_remover_mocks.sql
+
+4. MIGRATION 20260702000003
+============================================================
+Resultado: PASS
+
+Esta migration foi completamente aplicada.
+O set_config('role', 'postgres', true) na linha 209 nao gerou erro.
+O INSERT de tracking (schema_migrations) PASSOU.
+
+5. TRACKING INSERT
+============================================================
+Resultado: PASS
+
+Apos a correcao da linha 209 (authenticated → postgres),
+o INSERT INTO supabase_migrations.schema_migrations passou.
+O 42501 NAO apareceu.
+
+6. SQLSTATE 42501
+============================================================
+Status: ELIMINADO
+
+O erro permission denied for schema supabase_migrations
+desapareceu completamente apos a alteracao da linha 209.
+
+7. SUPABASE STATUS
+============================================================
+Nao foi possivel executar (bootstrap interrompido por novo erro
+SQLSTATE 42703 na migration 20260703000002_missao57_remover_mocks.sql).
+Os containers foram derrubados pelo CLI apos a falha.
+
+8. CAUSA DO 42501
+============================================================
+Classificacao: CONFIRMADA
+
+Comprovacao causal:
+  - ANTES da correcao: SQLSTATE 42501 (permission denied for
+    schema supabase_migrations) apos 20260702000003
+  - DEPOIS da correcao: SQLSTATE 42501 ELIMINADO
+  - A unica variavel alterada foi a linha 209
+    (authenticated → postgres)
+  - O INSERT de tracking PASSOU
+
+Mecanismo confirmado:
+  A migration 20260702000003_portal_rls_validacao.sql executa
+  set_config('role', 'authenticated', true) na linha 209,
+  mudando a role da sessao para "authenticated". Apos a
+  execucao do DO block, a role permanece como "authenticated"
+  na conexao do CLI. O INSERT de tracking executa como
+  "authenticated", que NAO tem USAGE no schema
+  supabase_migrations → SQLSTATE 42501.
+
+  Ao substituir authenticated por postgres (que e owner do
+  schema), o INSERT passa porque postgres tem implicitamente
+  ALL no proprio schema.
+
+9. PRODUCAO
+============================================================
+ZERO WRITES. Nenhuma alteracao em producao.
+
+10. GIT DIFF
+============================================================
+Nenhuma alteracao pendente. Arquivo restaurado ao original.
+SHA256 verificado: identico ao original.
+
+11. NOVO ERRO IDENTIFICADO
+============================================================
+Apos a eliminacao do 42501, um novo erro apareceu:
+
+  Migration: 20260703000002_missao57_remover_mocks.sql
+  Erro: column "nome" of relation "clientes" does not exist
+  SQLSTATE: 42703
+
+Esta migration tenta INSERT INTO public.clientes com coluna
+"nome", mas a tabela clientes nao tem coluna "nome" (provavelmente
+e "nome_fantasia" ou "razao_social").
+
+Este e um ERRO SEPARADO do 42501. Precisa de correcao propria
+(nao relacionada a role).
+
+12. PROXIMO PASSO
+============================================================
+Corrigir 20260703000002_missao57_remover_mocks.sql:
+  - Verificar colunas reais da tabela "clientes"
+  - Ajustar INSERT para usar colunas corretas (nome_fantasia,
+    razao_social, cnpj, etc.)
+  - NAO alterar a migration 20260702000003 (ja restaurada)
+
+Apos correcao do missao57: re-executar supabase start --debug
+para completar o bootstrap local.
+
+============================================================
+ARQUIVO: FIN-SANE-02D-ROLE-FIX-LOCAL.txt
+RESTORE: CONFIRMADO (SHA256 identico)
+PRODUCAO: INTACTA
+============================================================

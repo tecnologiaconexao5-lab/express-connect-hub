@@ -16,15 +16,26 @@ export interface LinhaRelatorioPrestador {
   statusConferencia: string;
   statusAprovacao: string;
   origem: string;
+  // 05D.6D.1 — vínculo real (por ID) para filtros funcionais
+  clienteId: string;
+  clienteNome: string;
+  osNumero: string;
+}
+
+export interface ClienteResolvido {
+  clienteId: string;
+  clienteNome: string;
 }
 
 export function gerarLinhasRelatorio(
   pagamentos: Record<string, unknown>[],
-  pagamentosManuais: Record<string, unknown>[]
+  pagamentosManuais: Record<string, unknown>[],
+  resolverCliente?: (pagamento: Record<string, unknown>) => ClienteResolvido
 ): LinhaRelatorioPrestador[] {
   const linhas: LinhaRelatorioPrestador[] = [];
 
   pagamentos.forEach(p => {
+    const cli = resolverCliente ? resolverCliente(p) : { clienteId: String(p.cliente_id || ""), clienteNome: String(p.cliente_nome || "") };
     linhas.push({
       prestadorNome: String(p.prestador_nome || ""),
       prestadorDocumento: String(p.prestador_documento || ""),
@@ -43,6 +54,9 @@ export function gerarLinhasRelatorio(
       statusConferencia: String(p.status_conferencia || ""),
       statusAprovacao: String(p.status_aprovacao || ""),
       origem: String(p.origem_lancamento || ""),
+      clienteId: cli.clienteId || "",
+      clienteNome: cli.clienteNome || "",
+      osNumero: String(p.os_numero || ""),
     });
   });
 
@@ -66,30 +80,74 @@ export function gerarLinhasRelatorio(
       statusConferencia: String(p.status_conferencia || ""),
       statusAprovacao: String(p.status_aprovacao || ""),
       origem: String(p.origem_lancamento || "manual"),
+      clienteId: String(p.cliente_id || ""),
+      clienteNome: String(p.cliente_nome || ""),
+      osNumero: String(p.os_numero || ""),
     });
   });
 
   return linhas;
 }
 
-export function exportarCSV(linhas: LinhaRelatorioPrestador[]): void {
-  const header = [
-    "Prestador", "Documento", "Período Início", "Período Fim",
-    "Qtd OS", "Serviços", "Adicionais", "Descontos", "Pedágio",
-    "Reembolsos", "Bônus", "Adiantamentos", "Valor Líquido",
-    "Status Pagamento", "Status Conferência", "Status Aprovação", "Origem"
-  ];
+export interface FiltrosLinhaRelatorio {
+  dataInicio?: string;
+  dataFim?: string;
+  prestadorNome?: string | null;
+  clienteId?: string | null;
+  origem?: string;
+  status?: string;
+  busca?: string;
+}
 
-  const rows = linhas.map(l => [
-    l.prestadorNome,
-    l.prestadorDocumento,
+const ORIGEM_PARA_LANCAMENTO: Record<string, string> = {
+  ordem_servico: "os_direta",
+  escala: "escala_direta",
+  manual: "manual",
+};
+
+/**
+ * Filtra o conjunto COMPLETO antes da paginacao (05D.6D.1).
+ * Periodo pela DATA DO SERVICO (periodoInicio). Busca por Prestador OU OS.
+ */
+export function filtrarLinhasRelatorio(
+  linhas: LinhaRelatorioPrestador[],
+  filtros: FiltrosLinhaRelatorio
+): LinhaRelatorioPrestador[] {
+  const busca = (filtros.busca || "").trim().toLowerCase();
+  const origemAlvo = filtros.origem && filtros.origem !== "todos" ? ORIGEM_PARA_LANCAMENTO[filtros.origem] : undefined;
+  return linhas.filter((l) => {
+    if (filtros.dataInicio && l.periodoInicio && l.periodoInicio < filtros.dataInicio) return false;
+    if (filtros.dataFim && l.periodoInicio && l.periodoInicio > filtros.dataFim) return false;
+    if (filtros.prestadorNome && l.prestadorNome !== filtros.prestadorNome) return false;
+    if (filtros.clienteId && l.clienteId !== filtros.clienteId) return false;
+    if (origemAlvo && l.origem !== origemAlvo) return false;
+    if (filtros.status && filtros.status !== "todos" && (l.statusPagamento || "pendente") !== filtros.status) return false;
+    if (busca && !((l.prestadorNome || "").toLowerCase().includes(busca) || (l.osNumero || "").toLowerCase().includes(busca))) return false;
+    return true;
+  });
+}
+
+export function paginarLinhas<T>(linhas: T[], page: number, pageSize: number): T[] {
+  const inicio = (Math.max(1, page) - 1) * pageSize;
+  return linhas.slice(inicio, inicio + pageSize);
+}
+
+export function montarLinhasCSV(linhas: LinhaRelatorioPrestador[]): { header: string[]; rows: (string | number)[][] } {
+  const header = [
+    "Data Serviço", "Prestador", "Cliente", "OS", "Origem",
+    "Serviço", "Pedágio", "Adicional", "Descontos", "Reembolsos", "Bônus", "Adiantamentos",
+    "Líquido", "Status Pagamento", "Status Conferência", "Status Aprovação",
+  ];
+  const rows = linhas.map((l) => [
     l.periodoInicio,
-    l.periodoFim,
-    l.quantidadeOs,
+    l.prestadorNome,
+    l.clienteNome,
+    l.osNumero,
+    l.origem,
     l.valorServicos.toFixed(2),
+    l.valorPedagio.toFixed(2),
     l.valorAdicionais.toFixed(2),
     l.valorDescontos.toFixed(2),
-    l.valorPedagio.toFixed(2),
     l.valorReembolsos.toFixed(2),
     l.valorBonus.toFixed(2),
     l.valorAdiantamentos.toFixed(2),
@@ -97,10 +155,13 @@ export function exportarCSV(linhas: LinhaRelatorioPrestador[]): void {
     l.statusPagamento,
     l.statusConferencia,
     l.statusAprovacao,
-    l.origem,
   ]);
+  return { header, rows };
+}
 
-  const csvContent = [header.join(";"), ...rows.map(r => r.join(";"))].join("\n");
+export function exportarCSV(linhas: LinhaRelatorioPrestador[]): void {
+  const { header, rows } = montarLinhasCSV(linhas);
+  const csvContent = [header.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
   const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);

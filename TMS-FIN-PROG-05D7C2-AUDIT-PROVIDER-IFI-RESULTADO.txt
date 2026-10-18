@@ -1,0 +1,258 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7C.2-AUDIT-PROVIDER-IFI
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase (auditoria SOMENTE LEITURA)
+MODELO: DeepSeek V4.1 Flash
+TIPO: auditoria arquitetural. NADA implementado. Nenhum secret exibido.
+RESULTADO: BLOCKED-CONTRATO-PROVIDER — provider identificado (Efi), mas o
+           contrato de API/HML e a prova de mTLS NAO estao disponiveis no repo.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. INVENTARIO + CLASSIFICACAO (A real / B placeholder / C config / D morto /
+   E doc / F credencial potencial - somente nome)
+--------------------------------------------------------------------------------
+A) IMPLEMENTACAO REAL ................ NENHUMA (nenhuma chamada bancaria real).
+B) PLACEHOLDER/DIAGNOSTICO
+   - supabase/functions/efi-mtls-probe/index.ts  (TEMPORARIO; SO handshake TLS HML;
+     NUNCA faz banco/RPC/Pix/boleto/webhook; guard de ambiente + allowlist HML)
+   - supabase/functions/efi-mtls-probe/guards.ts (+ guards.test.ts, README.md)
+   - src/components/financeiro/PagamentoCNAB.tsx (Tesouraria) — botoes
+     "Gerar Remessa/Importar Retorno/Enviar PIX" DESABILITADOS; nenhum CNAB real.
+C) CONFIGURACAO
+   - .gitignore: *.p12 *.pfx *.pem *.key certs/ certificates/ (material cripto).
+   - supabase/config.toml (edge runtime; Deno 2).
+D) CODIGO MORTO/LEGADO ............... NENHUM especifico (a Tesouraria e placeholder).
+E) DOCUMENTACAO
+   - docs/EFI_INTEGRACAO_DESIGN.md ; EFI-INT-03-DESIGN.txt (desenho tecnico Efi HML)
+   - EFI-INT-01-AUDIT.txt ; EFI-INT-02-HARDENING.txt ; EFI-INT-04A-MTLS-PROBE.txt ;
+     EFI-INT-04A1-SAFE-PROBE-AUDIT.txt ; EFI-INT-04A2-GUARDS.txt
+   - src/docs/FINANCEIRO_INTEGRACOES.md (Integracoes Futuras: Boleto-Efi, CNAB,
+     Conciliacao — generico, sem valores)
+   - docs/proximas-integracoes.md (secao Efi reescrita para server-side)
+F) CREDENCIAL POTENCIAL (SOMENTE NOMES; nada em .env/.env.example; vao em Secrets)
+   - EFI_ENVIRONMENT, EFI_CLIENT_ID_HML, EFI_CLIENT_SECRET_HML,
+     EFI_CERTIFICATE_HML (PEM X.509 base64), EFI_PRIVATE_KEY_HML (PEM PKCS#8 base64),
+     EFI_API_BASE_URL_HML, EFI_PROBE_TOKEN,
+     (condicional) EFI_WEBHOOK_SECRET_HML.
+   Nenhum valor presente no repositorio (confirmado: 0 em .env/.env.example).
+
+NAL: NENHUM secret real foi copiado/impresso neste TXT.
+
+--------------------------------------------------------------------------------
+2. CLASSIFICACAO OBJETIVA (SIM/NAO)
+--------------------------------------------------------------------------------
+Existe integracao iFi/Efi REAL hoje? ....... NAO.
+  Evidencia: a unica Edge Function Efi e um PROBE de mTLS (diagnostico), com guard
+  EFI_ENVIRONMENT==="homologacao" e allowlist HML; nao faz barco/Pix/boleto/webhook.
+Existe CNAB real? .......................... NAO (somente placeholder desabilitado).
+Existe webhook bancario? ................... NAO (nao ha endpoint/receptor/assinatura).
+Existe provider abstraction bancaria? ...... NAO. Existe apenas o padrao de
+  providers de IA (src/services/ia/providers: IProvider/ProviderRegistry) — modelo
+  reutilizavel, mas NAO de banco.
+
+--------------------------------------------------------------------------------
+3. PROVEDOR IDENTIFICADO (comprovado no repo)
+--------------------------------------------------------------------------------
+PROVEDOR = EFI (Efipay) — antiga Gerencianet.
+Evidencias:
+  - guards.ts: EFI_ALLOWED_HOSTS = pix-h.api.efipay.com.br, cobrancas-h.api.efipay.com.br;
+    EFI_FORBIDDEN_HOSTS = pix.api.efipay.com.br, cobrancas.api.efipay.com.br.
+  - index.ts: EFI_ENVIRONMENT, EFI_API_BASE_URL_HML, EFI_CERTIFICATE_HML,
+    EFI_PRIVATE_KEY_HML, EFI_PROBE_TOKEN; mTLS via Deno.createHttpClient({cert,key}).
+  - EFI-INT-03-DESIGN.txt: "Integracao Efi HML"; API Cobrancas/Pix da Efi exige mTLS
+    (cert .p12) + client_id/client_secret.
+=> Identificacao do fornecedor: COMPROVADA (Efi). O CONTRATO de API, porem, NAO
+   esta no repositorio (ver item 4).
+
+--------------------------------------------------------------------------------
+4. OPERACOES NECESSARIAS (Efi) — o que o projeto conhece x NÃO COMPROVADO
+--------------------------------------------------------------------------------
+- autenticacao ............ PARCIAL: mTLS (cert+key PEM PKCS#8) + client_id/
+                            client_secret conhecidos em NOME. Fluxo de token OAuth
+                            da Efi NAO COMPROVADO no repo.
+- envio PIX/transferencia . NAO COMPROVADO (endpoint/metodo/payload ausentes).
+- consulta de status ...... NAO COMPROVADO (endpoint de consulta ausente).
+- idempotencia ............ NAO COMPROVADO (formato de chave/txid Efi ausente;
+                            rascunho interno proposto no item 7).
+- identificador externo ... NAO COMPROVADO (endToEndId/txid/charge_id - apenas
+                            citados no design, sem contrato).
+- webhook/retorno ......... NAO COMPROVADO (sem endpoint; duvida se a Efi exige
+                            mTLS de ENTRADA - EFI-INT-03 R2).
+- erro/rejeicao ........... NAO COMPROVADO (modelo de erros da Efi ausente).
+- homologacao/sandbox ..... PARCIAL: hosts HML conhecidos (pix-h/cobrancas-h);
+                            credenciais/cert HML NAO disponiveis no ambiente.
+- producao ................ CONHECIDO apenas como PROIBIDO nesta fase
+                            (pix.api/cobrancas.api.efipay.com.br = forbidden).
+- certificado/mTLS ........ PARCIAL: requisito e mecanismo conhecidos
+                            (Deno.createHttpClient; PEM PKCS#8). Prova EMPIRICA
+                            NAO executada: EFI-INT-04A = FASE 5 BLOQUEADA
+                            (tls_handshake = NOT_RUN por ausencia de HML).
+=> Itens marcados NAO COMPROVADO impedem implementacao segura SEM inventar contrato.
+
+--------------------------------------------------------------------------------
+5. ARQUITETURA ATUAL (o que existe hoje)
+--------------------------------------------------------------------------------
+- Tesouraria: lotes_pagamento (cabecalho) + lotes_pagamento_itens (SNAPSHOT de
+  destino) + pagamentos_prestadores (lote_id/em_lote).  [05D.7C.1]
+- Baixa: f_confirmar_pagamento_prestador (idempotente; baixa + status na mesma
+  transacao) e f_registrar_baixa_financeira (titulos; grava financeiro_baixas).
+- Nao ha camada de execucao bancaria; PagamentoCNAB e somente leitura/placeholder.
+- Nao ha endpoint publico de webhook bancario no repo (existe whatsapp-recrutamento
+  -webhook e fiscal-*/focus-* e proxy-ia como referencias de Edge Functions).
+
+--------------------------------------------------------------------------------
+6. FONTE DO PAGAMENTO (arquitetura obrigatoria) — CONFIRMADA COM RESSALVA
+--------------------------------------------------------------------------------
+CORRETO (ja e o estado atual): provider deve consumir
+  lotes_pagamento -> lotes_pagamento_itens (SNAPSHOT) -> instrucao bancaria.
+ERRADO: prestadores atuais -> provider direto.
+O snapshot por item (banco/agencia/conta/digito/tipo_conta/favorecido/documento/
+chave_pix/tipo_chave_pix) + valor foram congelados na formacao do lote (05D.7C.1),
+garantindo imutabilidade. O provider recebe: lote, item, valor snapshot, destino
+snapshot e identificador idempotente interno. NUNCA deve ler cadastro vivo.
+
+--------------------------------------------------------------------------------
+7. PROPOSTA DE INTERFACE INTERNA (SEM implementar)
+--------------------------------------------------------------------------------
+interface BankPaymentProvider {
+  validateConfiguration(): Promise<{ ok: boolean; missing?: string[] }>;
+  createPayment(input: { loteId: string; itemId: string; valor: number;
+                         destino: DestinoSnapshot; idempotencyKey: string }): Promise<Resultado>;
+  getPaymentStatus(idExterno: string): Promise<StatusProvider>;
+  cancelPayment?(idExterno: string): Promise<Resultado>; // somente se suportado
+  handleWebhook(req: WebhookRequest, raw: string): Promise<WebhookResult>;
+}
+Dominio financeiro NAO conhece Efi; o provider apenas executa a instrucao bancaria.
+O lote continua sendo dominio do TMS.
+
+IDEMPOTENCIA (proposta): chave interna = lote_id + ":" + pagamento_prestador_id
+(ou pagamento_prestador_id como chave persistente), mapeada ao idExterno da Efi.
+Schema minimo RECOMENDADO (NAO criar agora) em lotes_pagamento_itens:
+  id_externo_provider text, status_provider text, erro_provider text,
+  enviado_at timestamptz, processado_at timestamptz;
+em lotes_pagamento: provider text, id_externo_provider text (ja existem).
+
+--------------------------------------------------------------------------------
+8. WEBHOOK / RETORNO (infra existente)
+--------------------------------------------------------------------------------
+- Supabase Edge Functions habilitadas (config.toml) e ja usadas (proxy-ia,
+  whatsapp-recrutamento-webhook, fiscal-*, efi-mtls-probe).
+- NAO ha endpoint de webhook bancario, nem validacao de assinatura/token/HMAC,
+  nem retry/agenda de reprocessamento dedicados a banco.
+- Onde um webhook bancario DEVERIA entrar: uma Edge Function dedicada
+  (ex.: efi-webhook) -> grava em uma tabela de eventos idempotente (design proposto
+  `efi_eventos`) -> aciona servico/RPC idempotente do TMS. NAO criar agora.
+- Pendencia critica: confirmar se a Efi exige mTLS de ENTRADA no webhook (se sim,
+  a URL gerenciada pode nao atender; avaliar shim/infra controlada - EFI-INT-03 R2).
+
+--------------------------------------------------------------------------------
+9. BAIXA (contrato atual — somente leitura)
+--------------------------------------------------------------------------------
+- f_confirmar_pagamento_prestador(p_pagamento_id, p_data_pagamento, p_valor_pago):
+  idempotente (rejeita pago/cancelado), FOR UPDATE, grava financeiro_baixas +
+  financeiro_pagar + pagamentos_prestadores (pago/parcial). PODE ser REUTILIZADA
+  como ponto de liquidacao apos o provider confirmar, eventualmente EVOLUIDA para
+  vincular o idExterno/baixa. NAO modificar agora.
+- Retorno bancario NAO deve escrever financeiro_baixas "solto": deve passar por
+  servico/RPC idempotente (confirma item/lote -> confirma pagamento -> baixa).
+- f_registrar_baixa_financeira (titulos) atende financeiro_receber (boleto).
+
+--------------------------------------------------------------------------------
+10. ESTADOS / FALHA (definicao, sem implementar)
+--------------------------------------------------------------------------------
+lotes_pagamento.status (ja existe CHECK): preparado | enviado | processando |
+processado | erro | cancelado.  (Nesta fase somente 'preparado' e produzido.)
+Necessarios no provider item (proposta): erro antes do envio (nao enviado) x
+envio aceito (aguardando) x processando x pago/liquidado x rejeitado x retorno
+desconhecido. REGRA: TIMEOUT NAO significa "nao pago" (pode haver aceite sem
+resposta) -> tratar como "processando/retorno desconhecido" e reconciliar por
+consulta/status, nunca marcar como falha definitiva automaticamente.
+
+--------------------------------------------------------------------------------
+11. SEGURANCA (proposta)
+--------------------------------------------------------------------------------
+- Secrets (client_id/secret/cert/key/token/webhook) SOMENTE em Supabase Secrets
+  (backend); NUNCA no frontend (sem VITE_*). Confirmado: 0 VITE_EFI_* no repo.
+- service_role somente server-side; certificado FORA do repositorio
+  (.gitignore cobre *.p12/*.pfx/*.pem/*.key).
+- Webhook autenticado (token/HMAC ou mTLS de entrada, a confirmar).
+- Logs sem PIX/conta completa; payload sanitizado.
+- Nenhum secret neste TXT.
+- Risco de segredo versionado: NAO identificado (nenhum material no repo).
+
+--------------------------------------------------------------------------------
+12. MATRIZ DE CAPACIDADES
+--------------------------------------------------------------------------------
+CAPACIDADE            | EXISTE HOJE? | EVIDENCIA                              | FALTA
+----------------------+--------------+----------------------------------------+-------------------------------------
+autenticacao          | PARCIAL      | nomes EFI_CLIENT_ID/SECRET_HML + mTLS  | fluxo OAuth/token e prova empirica
+provider              | NAO          | so probe diagnostico                   | provider Efi + adapter
+sandbox               | PARCIAL      | hosts HML allowlist                    | conta/cert HML + validacao
+env producao          | NAO          | proibido nesta fase                    | go-live futuro
+env homologacao       | PARCIAL      | EFI_ENVIRONMENT=homologacao            | credenciais HML ativas
+PIX                   | NAO          | design cita Pix; nada implementado     | contrato de envio Pix
+consulta status       | NAO          | ausente                                | endpoint/contrato de consulta
+idempotencia          | NAO          | apenas rascunho interno                | chave Efi (txid/e2e) + mapeamento
+webhook               | NAO          | sem endpoint/assinatura                | Edge Function + tabela eventos + auth
+retry                 | NAO          | nao existe                             | fila/agenda de reprocessamento
+cancelamento          | NAO          | nao implementado                       | contrato de cancelamento (se suportado)
+baixa                 | SIM (interna)| f_confirmar_pagamento_prestador        | ligacao com idExterno (se necess.)
+conciliacao           | PARCIAL      | financeiro_baixas + referencia_bancaria| conciliacao bancaria automatica
+logs                  | PARCIAL      | centralIaService/logs gerais           | log especifico de execucao bancaria
+secrets               | SIM (nomes)  | EFI_* em Secrets (backend)             | valores efetivamente configurados
+certificado           | NAO (ativo)  | requisito mTLS conhecido; .gitignore   | cert+key PEM PKCS#8 na HML
+testes                | PARCIAL      | guards.test.ts (probe)                 | testes de provider/handshake HML
+
+--------------------------------------------------------------------------------
+13. DECISAO FINAL
+--------------------------------------------------------------------------------
+*** BLOCKED-CONTRATO-PROVIDER ***
+
+Motivo: o FORNECEDOR esta identificado (Efi), porem o repositorio NAO contem:
+  (a) o contrato de API da Efi (endpoints/metodos/payloads de Pix/consulta/webhook);
+  (b) a prova empirica de mTLS em HML (EFI-INT-04A: tls_handshake = NOT_RUN/BLOCKED);
+  (c) credenciais/certificado HML para validar o transporte.
+Implementar agora exigiria "inventar" contrato — vetado pela missao.
+NAO implementar nada.
+
+DADOS/DOCUMENTOS NECESSARIOS (obter do usuario/banco):
+  1) Confirmacao de que o provedor e a EFI (Efipay) e a conta HML (client_id/secret).
+  2) Certificado .p12 da conta HML + conversao para PEM X.509 + chave PEM PKCS#8
+     (fora do repositorio).
+  3) Documentacao OFICIAL da API Efi (Pix e/ou Cobrancas): base URL HML, endpoints,
+     metodo, headers, payloads, regras de txid/idempotencia, formato de erro.
+  4) Contrato de WEBHOOK: URL de notificacao, mecanismo de autenticacao
+     (token/HMAC/mTLS de entrada), e se a Efi exige mTLS de ENTRADA.
+  5) Politica de homologacao (sandbox) da Efi: limites, chaves de teste, SLA.
+  6) Definicao de negocio: PIX por item do lote? boleto para receber? apenas um
+     dos dois? (define o escopo do provider).
+
+--------------------------------------------------------------------------------
+14. PROXIMA ACAO EXATA
+--------------------------------------------------------------------------------
+  1) Usuario confirma provedor (Efi) e disponibiliza a documentacao oficial + HML
+     (itens 1-5 acima). Nenhum secret deve ser colado em TXT/chat; usar Supabase
+     Secrets.
+  2) Executar a PROVA DE HANDSHAKE mTLS ja preparada (efi-mtls-probe) em HML
+     hospedado (EFI-INT-04A FASE 5) -> tls_handshake=PASS => GO para EFI-INT-04B.
+  3) Somente depois, implementar o adapter `BankPaymentProvider` + Edge Function
+     de execucao, consumindo lotes_pagamento/lotes_pagamento_itens (SNAPSHOT),
+     nunca `prestadores` vivos. Sem tocar em dinheiro nesta fase.
+  4) Pendencia paralela: decidir se o webhook exige shim (mTLS de entrada).
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+schema; migrations; lotes; snapshots; pagamentos; baixas; prestadores; contas
+financeiras; APP; Programacao Operacional; AR/faturas; MargemOperacional.
+Nenhum secret impresso. Auditoria 100% leitura.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7C2-AUDIT-PROVIDER-IFI-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7C2-AUDIT-PROVIDER-IFI-RESULTADO.txt
+Tamanho ..: 17125 bytes
+Data .....: 24/09/2026 18:53:42
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7C.2
+================================================================================

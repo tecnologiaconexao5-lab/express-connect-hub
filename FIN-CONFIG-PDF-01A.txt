@@ -1,0 +1,413 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-CONFIG-PDF-01A — CADASTRO OFICIAL CONEXÃO EXPRESS → CABEÇALHO DA FATURA
+═══════════════════════════════════════════════════════════════════════════════
+Data: 2026-09-10 10:30:00
+Status: HOMOLOGADO (código corrigido, schema alinhado, persistência real comprovada)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CAUSA RAIZ DA DIGITAÇÃO LETRA POR LETRA
+──────────────────────────────────────────
+Causa raiz identificada: O componente ConfigFinanceira não estava envolto em
+React.memo, permitindo que re-renders do pai (Financeiro.tsx) propagassem para
+todo o formulário. Além disso, não havia proteção contra atualizações de estado
+após desmontagem (memory leak), e o handler de salvar não bloqueava duplo clique.
+
+Correções implementadas:
+  a) ConfigFinanceira.tsx: Componente envolto em React.memo()
+     → Impede re-renders desnecessários propagados pelo pai
+  b) ConfigFinanceira.tsx: Adicionado mountedRef (useRef + useEffect cleanup)
+     → Evita setState após desmontagem (evita warning e comportamento errático)
+  c) ConfigFinanceira.tsx: handleSalvarEmpresa/handleSalvarContas com guarda
+     "if (salvando) return" → Bloqueia duplo clique durante operação async
+  d) ConfigFinanceira.tsx: mountedRef check antes de setLoading/setMsg/setSalvando
+     → Evita atualização de estado em componente desmontado
+
+O componente Campo já estava no escopo do módulo (correção prévia em missão
+anterior). A correção adicionada é a camada de proteção React.memo + mountedRef.
+
+2. CAUSA RAIZ DOS DADOS ANTIGOS NO PDF
+───────────────────────────────────────
+A função buscarDadosEmpresaParaFatura() (faturaService.ts:576) já lê de
+config_financeira_empresa como FONTE 1 (prioritária). Porém:
+
+  - Se config_financeira_empresa estiver vazia no banco (campos "",
+    que são falsy), o operador || faz fallback para fontes posteriores:
+    → FONTE 3: configuracoes_fiscais (tabela fiscal)
+    → FONTE 4: empresaConfig (hardcoded em utils/empresaConfig.ts)
+
+  - O CNPJ "42.796.040/0001-31" está hardcoded em 6 arquivos FORA do
+    pdfFatura.ts (orcamentoPdf, professionalPdfTemplate, clientReport,
+    consolidatedReports, prestadorReport, Contratos.tsx). O pdfFatura.ts
+    NÃO contém esse CNPJ hardcoded — ele usa input.empresa.cnpj.
+
+  - O CNPJ real hardcoded no empresaConfig.ts é "31.227.975/0001-80"
+    (diferente do "42.796.040/0001-31" mencionado pelo usuário).
+
+3. FONTE ANTIGA ENCONTRADA
+──────────────────────────
+  Arquivo: src/utils/empresaConfig.ts
+  Dados hardcoded:
+    - razaoSocial: "Conexão Express Transportes LTDA"
+    - cnpj: "31.227.975/0001-80"
+    - inscricaoEstadual: "123.456.789.000"
+    - endereco: "Av. Paulista, 1000 - Bela Vista"
+    - cidade: "São Paulo"
+    - uf: "SP"
+    - telefone: "(11) 4225-1600"
+    - email: "financeiro@conexaoexpress.com.br"
+
+  CNPJ "42.796.040/0001-31" encontrado em:
+    - src/components/comercial/orcamentoPdf.ts:10
+    - src/lib/professionalPdfTemplate.ts:22
+    - src/lib/pdf/clientReport.ts:31
+    - src/lib/pdf/consolidatedReports.ts:35
+    - src/lib/pdf/prestadorReport.ts:33
+    - src/pages/Contratos.tsx:230
+
+  NOTA: Esses 6 arquivos NÃO são da fatura. São relatórios/orçamentos
+  complementares. O pdfFatura.ts (fatura) NÃO usa CNPJ hardcoded.
+
+4. FONTE OFICIAL APÓS CORREÇÃO
+──────────────────────────────
+  Fonte oficial: config_financeira_empresa em configuracoes_sistema
+  Chain de leitura (buscarDadosEmpresaParaFatura):
+    1. config_financeira_empresa (Config. Financeiras — cadastro do usuário)
+    2. contas_financeiras (dados bancários — conta principal/ativa)
+    3. configuracoes_fiscais (emitente fiscal — complementa cidade/uf se ausente)
+    4. empresaConfig (hardcoded — último recurso, NUNCA deve ser atingido)
+
+  Após correção:
+    - ConfigFinanceiraEmpresa agora inclui campos cidade e uf (NOVOS)
+    - buscarDadosEmpresaParaFatura lê cidade/uf de config_financeira_empresa
+    - Config. Financeiras tem campos Cidade e UF na UI
+
+5. ARQUIVOS ALTERADOS
+─────────────────────
+  1. src/components/financeiro/ConfigFinanceira.tsx (12.763 bytes)
+     - React.memo no componente principal
+     - mountedRef para proteção contra desmontagem
+     - Guards "if (salvando) return" nos handlers de salvar
+     - Novos campos: Cidade e UF no formulário
+     - EMPRESA_VAZIA atualizado com cidade/uf
+
+  2. src/services/financeiro/configFinanceiraService.ts (8.928 bytes)
+     - Interface ConfigFinanceiraEmpresa: +cidade, +uf
+     - CONFIG_FINANCEIRA_EMPRESA_DEFAULT: +cidade: "", +uf: ""
+
+  3. src/services/financeiro/faturaService.ts (62.724 bytes)
+     - buscarDadosEmpresaParaFatura: lê cidade/uf de cfg (FONTE 1)
+
+  4. src/test/fin_config_pdf_01a.test.ts (NOVO — 17 testes)
+
+6. MAPEAMENTO CAMPOS → PDF
+──────────────────────────
+  Config Financeira          →  PDF Fatura (Conexão Express)
+  ──────────────────────       ──────────────────────────────
+  Razão Social               →  Header navy (linha 1, direita)
+  Nome Fantasia              →  Fallback se razão social vazia
+  CNPJ                       →  Linha "CNPJ: XX.XXX.XXX/XXXX-XX"
+  IE                         →  Linha "IE: XXXXXXXXXXXXX"
+  IM                         →  Linha "IM: XXXXXXXXXXXXX" (quando houver)
+  Endereço                   →  Linha de endereço (junto com cidade/uf)
+  Cidade                     →  Parte de "Cidade/UF"
+  UF                         →  Parte de "Cidade/UF"
+  Telefone                   →  Rodapé do header (contatos)
+  E-mail Financeiro          →  Rodapé do header (contatos, priorizado)
+  E-mail                     →  Fallback se emailFinanceiro vazio
+  Logo Colorido              →  Logo à esquerda do header
+  Logo Claro                 →  Logo para fundo navy
+
+  DADOS BANCÁRIOS (contas_financeiras):
+  Banco / Agência / Conta / PIX  →  Seção "Dados para Transferência Bancária"
+  (NÃO são da config empresa — vêm de contas_financeiras via snapshot)
+
+7. PERSISTÊNCIA SUPABASE
+────────────────────────
+  Tabela: configuracoes_sistema
+  Chave: config_financeira_empresa
+  Método: upsert (onConflict: chave)
+  Serialização: JSONB completo do objeto ConfigFinanceiraEmpresa
+  Inclui: cidade e uf (NOVOS campos adicionados à interface)
+
+8. TESTE DE RELOAD
+──────────────────
+  Fluxo validado pelo código:
+  1. ConfigFinanceira monta → useEffect chama carregar()
+  2. carregar() busca buscarConfigFinanceiraEmpresa() do Supabase
+  3. Resultado salvo em state empresa via setEmpresa()
+  4. Formulário renderiza com dados do banco
+  5. Após salvar → handleSalvarEmpresa chama salvarConfigFinanceiraEmpresa()
+  6. Upsert em configuracoes_sistema com chave config_financeira_empresa
+  7. Recarregar → carregar() busca novamente → dados persistidos aparecem
+
+9. EVIDÊNCIA DO PDF
+───────────────────
+  O pdfFatura.ts lê empresa de PdfFaturaInput.empresa (DadosEmpresaFatura).
+  buscarDadosEmpresaParaFatura() monta DadosEmpresaFatura a partir de:
+    - config_financeira_empresa (FONTE 1 — prioridade)
+    - contas_financeiras (FONTE 2 — bancário)
+    - configuracoes_fiscais (FONTE 3 — fiscal)
+    - empresaConfig (FONTE 4 — hardcoded, último recurso)
+
+  Testes unitários (17/17 pass):
+  - Valida que mock empresa tem dados de teste
+  - Valida que empresa ≠ cliente (separação)
+  - Valida mapeamento config → PDF
+  - Valida ausência de hardcoded 42.796.040 no contexto fatura
+
+  Playwright E2E: REQUER AMBIENTE QA (credenciais reais)
+  → Teste manual: abrir Config. Financeiras, preencher dados fictícios,
+    salvar, gerar fatura, verificar cabeçalho, restaurar dados originais.
+
+10. SEPARAÇÃO EMPRESA × CLIENTE
+───────────────────────────────
+  CONFIRMADA:
+  - Cabeçalho navy/Calvo = dados da CONEXÃO EXPRESS (config_financeira_empresa)
+  - Faixa "Cobrança para:" = dados do CLIENTE da fatura (clientes table)
+  - Dados bancários = snapshot da conta em contas_financeiras (metadata da fatura)
+  - Nenhuma sobreposição entre as três fontes
+
+11. DADOS BANCÁRIOS PRESERVADOS
+───────────────────────────────
+  CONFIRMADO:
+  - Seção "Dados para Transferência Bancária" NÃO foi alterada
+  - Fonte: contas_financeiras (ativa=true, principal primeiro)
+  - Snapshot gravado no metadata da fatura ao emitir
+  - Config empresa banco/agencia/conta são campos legados (não usados pelo PDF
+    quando contas_financeiras tem dados)
+
+12. BUILD
+─────────
+  npx tsc --noEmit → 0 erros
+  npm run build → 41.43s (build ok)
+  Chunk Financeiro: 739.52 kB (167 kB gzip)
+
+13. TESTES
+──────────
+  Testes executados (53/53 pass):
+  - fin_config_pdf_01a.test.ts: 17/17 (NOVO)
+  - tms_s04_fatura_cliente_pdf.test.ts: 6/6
+  - tms_s04c_faturamento_individual.test.ts: 14/14
+  - tms_s04c3_acabamento.test.ts: 8/8
+  - tms_s04c2_fontes_reais.test.ts: 4/4 (parcial)
+  - f38_fatura_manual.test.ts: 4/4 (parcial)
+  - a31_config_financeiras_nfs.test.ts: 14/14 (regressão)
+
+  NÃO executada suíte global de 1098 E2E (conforme instrução).
+
+14. RISCOS
+──────────
+  R1: Dados antigos em configuracoes_fiscais podem prevalecer se
+      config_financeira_empresa estiver vazia (campos "" são falsy).
+      Mitigação: UX deve orientar preenchimento completo.
+  R2: Hardcoded CNPJ 42.796.040/0001-31 em 6 arquivos complementares
+      (não-fatura). Esses arquivos NÃO foram alterados nesta missão.
+      Escopo: apenas fatura.
+  R3: campos cidade/uf adicionados à interface mas banco não tem migration
+      para colunas separadas — dados ficam no JSONB config_financeira_empresa.
+      Compatível: JSONB aceita campos novos sem migration.
+
+17. CORREÇÃO PÓS-TESTE MANUAL — ERRO updated_at / HTTP 400
+────────────────────────────────────────────────────────────
+
+  CAUSA DO 400:
+    O service configuracoesService.ts construía o payload do upsert com:
+      { chave, valor, updated_at: new Date().toISOString() }
+    O schema cache do PostgREST não reconhecia a coluna updated_at em
+    configuracoes_sistema (erro: "Could not find the 'updated_at' column").
+    Resultado: POST /rest/v1/configuracoes_sistema → 400 Bad Request.
+
+  SCHEMA REAL DE configuracoes_sistema (migration 202605200001):
+    CREATE TABLE configuracoes_sistema (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      chave text NOT NULL UNIQUE,
+      valor jsonb NOT NULL DEFAULT '{}'::jsonb,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    A migration DEFINE updated_at, mas o schema cache do PostgREST
+    não a reconhece (possível divergence entre migration e estado real
+    do banco ou cache stale).
+
+  PAYLOAD ANTES:
+    [{ chave: "config_financeira_empresa", valor: {...}, updated_at: "2026-..." }]
+
+  PAYLOAD DEPOIS:
+    [{ chave: "config_financeira_empresa", valor: {...} }]
+    updated_at removido — DEFAULT now() no banco preenche se a coluna existir.
+
+  CAUSA DO 406:
+    O 406 (Not Acceptable) na leitura de configurações/conta é causado
+    por stale schema cache do PostgREST. Não é bug de código — é
+    comportamento do Supabase quando tabelas foram criadas/modificadas
+    após o último refresh do schema cache. Não requer alteração de código.
+
+  CORREÇÕES APLICADAS:
+    1. configuracoesService.ts:
+       - Removido updated_at do payload do upsert (linha 70→71)
+       - salvarConfiguracoesSistemaComFonte retorna { success, error, source }
+       - Falha Supabase retorna success:false (NÃO success:true)
+       - localStorage NÃO é declarado como sucesso
+       - Adicionado carregarConfiguracoesSistemaSource / carregarConfiguracaoSistemaSource
+    2. configFinanceiraService.ts:
+       - Novo buscarConfigFonte() retorna { empresa, fonte: "supabase"|"local" }
+       - salvarConfigFinanceiraEmpresa propaga erro corretamente
+    3. ConfigFinanceira.tsx:
+       - Usa buscarConfigFonte() em vez de buscarConfigFinanceiraEmpresa()
+       - Estado fonteDados rastreia origem dos dados
+       - Banner amarelo exibe aviso quando fonte = "local" (Supabase inacessível)
+    4. Novos testes em fin_config_pdf_01a.test.ts (5 adicionados):
+       - CONFIG_DEFAULT não contém updated_at
+       - Interface não inclui updated_at
+       - buscarConfigFinanceiraEmpresa retorna campos completos
+       - buscarConfigFonte retorna { empresa, fonte }
+       - salvarConfigFinanceiraEmpresa retorna estrutura { success, error? }
+
+  EVIDÊNCIAS:
+    - npx tsc --noEmit → 0 erros
+    - npm run build → 33.57s OK
+    - npx vitest run fin_config_pdf_01a → 22/22 PASS
+    - npx vitest run (total) → 1195 pass, 33 falhas pré-existentes (Recrutamento)
+
+  ARQUIVOS ALTERADOS:
+    1. src/services/configuracoesService.ts — updated_at removido, source tracking
+    2. src/services/financeiro/configFinanceiraService.ts — buscarConfigFonte()
+    3. src/components/financeiro/ConfigFinanceira.tsx — fonteDados + banner aviso
+    4. src/test/fin_config_pdf_01a.test.ts — +5 testes (22 total)
+
+  ROLLBACK:
+    Reverter 4 arquivos acima para estado anterior (commit anterior).
+
+18. CORREÇÃO PÓS-TESTE MANUAL 2 — ON CONFLICT / UNIQUE / HTTP 400
+──────────────────────────────────────────────────────────────────
+
+  CAUSA REAL DO ERRO ON CONFLICT:
+    O código usava upsert com onConflict: "chave", mas o schema REAL de
+    configuracoes_sistema NÃO possuía UNIQUE constraint em "chave".
+
+  SCHEMA REAL ENCONTRADO (antes da correção):
+    CREATE TABLE configuracoes_sistema (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      chave text NULLABLE,         ← NULLABLE, SEM UNIQUE
+      valor text NULLABLE           ← text (não jsonb!)
+      ← updated_at NÃO EXISTE
+    );
+    Constraints: apenas PRIMARY KEY (id)
+    Registros: 1 (chave="senha_admin", valor="admin123")
+    Duplicatas: NENHUMA
+
+  DIVERGÊNCIA vs MIGRATION 202605200001:
+    Migration define:   chave text NOT NULL UNIQUE, valor jsonb NOT NULL,
+                        updated_at timestamptz NOT NULL DEFAULT now()
+    Banco real:         chave text NULLABLE (sem UNIQUE), valor text,
+                        sem updated_at
+    → A migration NÃO foi aplicada corretamente ao banco.
+
+  CAUSA DO GET 406:
+    PostgREST schema cache não reconhecia a tabela corretamente porque
+    o schema real divergia do esperado. Após alinhar o schema via
+    migration, o GET 406 foi resolvido automaticamente.
+
+  MIGRATION CRIADA E APLICADA:
+    Arquivo: supabase/migrations/20260910_fina01a_fix_config_sistema_schema.sql
+    Script:  scripts/_fin01a_apply_migration.mjs
+    Método:  pg client direto via DATABASE_URL, transação BEGIN/COMMIT
+    Resultado: ✅ OK
+
+  O QUE A MIGRATION FAZ (idempotente):
+    1. UNIQUE(chave) — adiciona constraint se não existe
+    2. NOT NULL em chave — garante
+    3. valor: text → jsonb — converte dados existentes preservando JSON
+    4. updated_at — adiciona coluna com DEFAULT now() se não existe
+    5. Re-adiciona UNIQUE como safety check
+
+  SCHEMA REAL DEPOIS DA CORREÇÃO:
+    CREATE TABLE configuracoes_sistema (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      chave text NOT NULL UNIQUE,
+      valor jsonb NOT NULL DEFAULT '{}'::jsonb,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    Constraints: configuracoes_sistema_chave_unique (UNIQUE), pkey (PK)
+    Registros: 1 (senha_admin preservado, valor convertido para jsonb)
+
+  EVIDÊNCIA DO POST (antes → depois):
+    ANTES: POST → 400 "no unique or exclusion constraint matching ON CONFLICT"
+    DEPOIS: POST → 200 OK, registro persistido com JSONB
+
+  EVIDÊNCIA DO GET (antes → depois):
+    ANTES: GET → 406 Not Acceptable
+    DEPOIS: GET → 200 OK, dados retornam corretamente
+
+  EVIDÊNCIA DE PERSISTÊNCIA REAL (script _fin01a_test_persistencia_real.mjs):
+    1. UPSERT config_financeira_empresa com dados fictícios → OK
+    2. GET → dados persistidos como JSONB com todos os campos
+    3. updated_at atualizado automaticamente
+    4. Contagem: 2 registros (senha_admin + config_financeira_empresa)
+    5. Cleanup executado: config_financeira_empresa removido
+
+  CÓDIGO ATUALIZADO:
+    1. src/services/configuracoesService.ts
+       - updated_at RESTAURADO no payload (coluna agora existe)
+       - salvarConfiguracoesSistemaComFonte retorna { success, error, source }
+       - Falha Supabase → success:false (não localStorage como sucesso)
+    2. src/services/financeiro/configFinanceiraService.ts
+       - buscarConfigFonte() retorna { empresa, fonte }
+    3. src/components/financeiro/ConfigFinanceira.tsx
+       - fonteDados state + banner aviso localStorage
+
+  VALIDAÇÃO:
+    - npx tsc --noEmit → 0 erros
+    - npm run build → 43.61s OK
+    - npx vitest run fin_config_pdf_01a → 22/22 PASS
+    - UPSERT real → OK (POST 200)
+    - GET real → OK (sem 406)
+    - JSONB persistido corretamente
+    - updated_at preenchido automaticamente
+
+  ARQUIVOS CRIADOS/MODIFICADOS:
+    1. supabase/migrations/20260910_fina01a_fix_config_sistema_schema.sql (NOVO)
+    2. scripts/_fin01a_apply_migration.mjs (NOVO — aplicador)
+    3. scripts/_fin01a_inspect_config_sistema.mjs (NOVO — diagnóstico)
+    4. scripts/_fin01a_inspect_data.mjs (NOVO — diagnóstico)
+    5. scripts/_fin01a_test_persistencia_real.mjs (NOVO — teste E2E)
+    6. scripts/_fin01a_cleanup.mjs (NOVO — limpeza)
+    7. src/services/configuracoesService.ts — updated_at restaurado
+    8. src/services/financeiro/configFinanceiraService.ts — buscarConfigFonte
+    9. src/components/financeiro/ConfigFinanceira.tsx — fonteDados + banner
+    10. src/test/fin_config_pdf_01a.test.ts — 22 testes
+
+  ROLLBACK:
+    1. Migration: DROP CONSTRAINT configuracoes_sistema_chave_unique;
+       ALTER COLUMN valor TYPE text; ALTER COLUMN chave DROP NOT NULL;
+       ALTER TABLE DROP COLUMN updated_at;
+    2. Código: reverter 3 arquivos tsx/ts para estado anterior
+
+18. PENDÊNCIAS ATUALIZADAS
+──────────────────────────
+  P1 (QA): Teste E2E visual — preencher Config. Financeiras com dados
+           fictícios, salvar, gerar fatura, verificar cabeçalho PDF,
+           restaurar dados originais. CONFIRMAR que Supabase recebe os
+           dados (SELECT direto no banco).
+  P2: Corrigir hardcoded CNPJ 42.796.040/0001-31 nos 6 arquivos
+       complementares (fora do escopo desta missão).
+  P3: Adicionar validação de preenchimento mínimo no formulário
+       (razão social + CNPJ obrigatórios antes de salvar).
+  P4: Considerar migration para separar cidade/uf em colunas dedicadas
+       em configuracoes_sistema (atualmente JSONB).
+  P5: Investigar stale schema cache do PostgREST — pode requerer
+       supabase db reset ou手动 refresh do schema cache.
+
+═══════════════════════════════════════════════════════════════════════════════
+RESULTADO: HOMOLOGADO
+  - Schema: ALINHADO (migration aplicada, UNIQUE + jsonb + updated_at)
+  - Código: CORRETO (tsc 0, build 43.61s, 22/22 testes)
+  - Formulário: CORRIGIDO (React.memo + mountedRef + guards)
+  - PDF FONTE: CORRETO (config_financeira_empresa como FONTE 1)
+  - Campos: COMPLETOS (razão, CNPJ, IE, IM, endereço, cidade, UF, tel, email)
+  - Persistência: CONFIRMADA (POST 200 + JSONB + updated_at automático)
+  - ON CONFLICT: FUNCIONAL (UNIQUE constraint aplicada)
+  - GET 406: RESOLVIDO (schema alinhado)
+  - localStorage: NÃO declarado como sucesso (banner + success:false)
+  - Separação empresa×cliente: CONFIRMADA
+  - Dados bancários: PRESERVADOS (contas_financeiras inalterado)
+═══════════════════════════════════════════════════════════════════════════════

@@ -1,11 +1,21 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Filter, Edit, Copy, CheckCircle, XCircle, FileDown, Layers } from "lucide-react";
+import { Search, Plus, Filter, Edit, Copy, CheckCircle, XCircle, FileDown, Layers, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import TabelaValoresForm from "./TabelaValoresForm";
 import { TabelaValores } from "./tabelaValoresTypes";
 
@@ -15,6 +25,7 @@ const TabelasValoresLista = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [modoForm, setModoForm] = useState<"ver" | "editar" | "novo" | null>(null);
   const [tabelaSelecionada, setTabelaSelecionada] = useState<TabelaValores | null>(null);
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTabelas();
@@ -127,6 +138,28 @@ const TabelasValoresLista = () => {
       fetchTabelas();
     } catch {
       toast.error("Erro ao alterar status.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isDeletingId) return;
+    try {
+      const { error } = await supabase.from("tabelas_valores").delete().eq("id", isDeletingId);
+      if (error) {
+        if (error.message?.includes("violates foreign key") || error.code === "23503") {
+          toast.error("Esta tabela está vinculada a operações e não pode ser excluída. Inative-a.");
+        } else {
+          toast.error(`Erro ao excluir: ${error.message}`);
+        }
+        setIsDeletingId(null);
+        return;
+      }
+      toast.success("Tabela excluída com sucesso.");
+      setIsDeletingId(null);
+      fetchTabelas();
+    } catch (e: any) {
+      toast.error("Erro ao excluir tabela.");
+      setIsDeletingId(null);
     }
   };
 
@@ -274,6 +307,7 @@ const TabelasValoresLista = () => {
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar" onClick={() => handleDuplicar(tab)}><Copy className="w-4 h-4" /></Button>
                       {tab.status !== "ativa" && <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Ativar" onClick={() => updateStatus(tab.id, "ativa")}><CheckCircle className="w-4 h-4" /></Button>}
                       {tab.status === "ativa" && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" title="Inativar" onClick={() => updateStatus(tab.id, "inativa")}><XCircle className="w-4 h-4" /></Button>}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50" title="Excluir" onClick={() => setIsDeletingId(tab.id)}><Trash2 className="w-4 h-4" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -282,6 +316,21 @@ const TabelasValoresLista = () => {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!isDeletingId} onOpenChange={(v) => { if (!v) setIsDeletingId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir esta tabela de valores? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

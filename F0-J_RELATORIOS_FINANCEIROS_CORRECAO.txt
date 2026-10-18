@@ -1,0 +1,41 @@
+F0-J — RELATÓRIOS FINANCEIROS (CORREÇÃO)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/services/financeiro/relatoriosFinanceirosService.ts (NOVO — funções puras)
+   src/components/financeiro/relatorios/ResumoExecutivoFinanceiro.tsx (NOVO)
+   src/components/financeiro/RelatorioFinanceiroCompleto.tsx (hub reorganizado)
+   src/test/f0j_relatorios_financeiros.test.ts (NOVO — 8 validações)
+2. RELATÓRIOS EXISTENTES PRESERVADOS (hub agora garante 9 tipos)
+   Contas a Receber · Contas a Pagar · Pagamento de Prestadores · Fluxo de Caixa ·
+   DRE · Margem por OS · Inadimplência · Faturamento por Cliente (Resumo por
+   Cliente) · Resumo Executivo (novo). Todos com fontes reais (F0-E..F0-I).
+3. FILTROS IMPLANTADOS
+   Resumo Executivo: período (início/fim), cliente, prestador.
+   Demais relatórios preservam seus filtros reais existentes (período, status,
+   cliente, prestador, busca). Sem filtro decorativo sem fonte.
+4. FONTES DE DADOS
+   faturado → financeiro_receber · recebido/pago → financeiro_baixas
+   (estornada=false) · previstoPagar → financeiro_pagar (sem repasses) ·
+   custoPrestador → pagamentos_prestadores (impacto_dre, valor_liquido).
+5. KPIs
+   Calculados sobre o MESMO dataset filtrado da tabela (faturado, recebido,
+   aReceber, previstoPagar, pagoRealizado, custoPrestador, fluxo líquido,
+   margem indicativa). Total da tabela por cliente = KPI (mesma fonte).
+6. PREVISTO × REALIZADO
+   Faturado/pagar previsto vêm dos títulos; recebido/pago real vêm das baixas
+   não estornadas. Estorno nunca compõe. Previsto nunca é tratado como realizado.
+7. EXPORTAÇÕES
+   CSV do Resumo Executivo usa o dataset filtrado (mesmos valores da tela);
+   exportações existentes (Faturamento/Prestadores PDF/Excel) respeitam seus
+   filtros já. Botões decorativos não foram adicionados.
+8. TESTES (f0j_relatorios_financeiros.test.ts — 8/8 PASS)
+   1 filtro por período · 2 filtro por cliente · 3 filtro por prestador ·
+   4 status previsto×realizado (estorno fora) · 5 total tabela = KPI ·
+   6 previsto não confundido com realizado · 7 export usa dataset filtrado ·
+   inadimplência (vencidos, dias de atraso, pago/cancelado fora).
+   npx tsc --noEmit = 0 erros.
+9. PENDÊNCIAS
+   Contas a Receber/Pagar como relatório reutilizam as páginas completas
+   (navegação geral ainda não reorganizada — F0-L); categorias/plano de contas
+   mais impactantes dependem de DRE por conta (F0-G já cobre grupo).
+10. CONFIRMAÇÃO: BANCO NÃO ALTERADO (correção somente em código).

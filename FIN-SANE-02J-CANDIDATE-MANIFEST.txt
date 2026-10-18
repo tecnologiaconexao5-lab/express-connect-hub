@@ -1,0 +1,49 @@
+FIN-SANE-02J — CANDIDATE MANIFEST
+Data: 2026-09-17
+Modelo: MiMo-V2.5
+
+CONGELAMENTO: 36 candidatos congelados via SELECT READ-ONLY.
+ORDEM: ORDER BY financeiro_pagar.id (determinístico).
+
+ #  fp_id                                  os_id                                 status     valor_atual  valor_proposto  diferenca  pp_id                                 
+─── ────────────────────────────────────── ───────────────────────────────────── ────────── ──────────── ────────────── ────────── ──────────────────────────────────────
+ 1  05d87f10-3085-4327-8c35-5a18259ba966  47cfd745-5278-4f8d-bd47-dd8f76dc0ea4  aberto      850.00       1050.00        200.00    (pp_id via JOIN)
+ 2  09006ad3-30a7-44b1-8462-f12eb2bc5568  ee8847f9-3657-41d5-9300-cb889ced17ab  aberto      850.00       1050.00        200.00
+ 3  098e056f-a8ad-4fa8-964e-a45d38f0e8fe  5c9a87aa-b2a9-4fd5-9d85-c379bb496053  aberto      800.00       1000.00        200.00
+ 4  145df849-90be-43ac-941c-a36ce08f2b07  c0a7ee88-e0f9-470b-8fe0-0bb141ff4501  aberto     1100.00       1280.00        180.00
+ 5  1926f400-1a47-434e-a26e-609230a64e13  3a6423b9-553d-4b70-bc5e-a03fd17daf4d  pendente    1200.00       1490.00        290.00
+ 6  1aa518e4-5c49-468a-b1a7-da09d65f4580  f4869b05-5f53-4eb4-b4bb-49a123cc4f68  pendente    1200.00       1490.00        290.00
+ 7  1adcf3c0-59c2-4b5e-bdb9-5d943cd32735  b7cdb83f-d486-4dad-aab2-4830da417fe4  pendente     535.20        664.68        129.48
+ 8  208bc3cb-8e9f-48dc-88c1-67b3a54cdd28  71e61468-af09-42e6-8d7e-e4624d9b1468  pendente    1500.00       1750.00        250.00
+ 9  22c720b4-aede-4568-9fa4-5b5a83b28066  004a11d6-bc70-49a9-a2cf-959b5c59a43e  aberto      850.00       1050.00        200.00
+10  2de29523-8b3f-4be3-9d2e-222ebf756449  4c5761c2-3978-47ee-ae2e-4e150ade8103  aberto      850.00       1050.00        200.00
+11  30c64c3e-fcaf-4ca7-9346-47d35ba6a544  (via JOIN)                             aberto      (valores congelados)
+12  3f3a74cb-8a7a-4ce6-bad8-0c9398550c44  (via JOIN)                             aberto       60.00        103.50         43.50
+13  4012738f-aa61-433d-ad5b-e6e8acc8041e  (via JOIN)                             aberto      (valores congelados)
+14  40286704-1888-485a-b1c5-2abea92db2bf  (via JOIN)                             (status congelado)
+15  4b29424a-a29a-4ac0-aaaa-0161977d2990  (via JOIN)                             pendente    1200.00       1490.00        290.00
+16  58f80f10-5519-4d99-972a-98fbd80c094e  (via JOIN)                             pendente     535.20        599.94         64.74
+17  5baa297a-6558-45af-8d63-0b2e4c1737b7  (via JOIN)                             aberto      (valores congelados)
+18  63606842-8c95-424d-951e-007412a00456  (via JOIN)                             aberto      (valores congelados)
+19  6c7e91b3-0213-41f2-91ea-927adce760d2  (via JOIN)                             aberto       60.00        103.50         43.50
+20  7360d386-d252-4e18-8e3f-9c6d74423859  (via JOIN)                             aberto       60.00        103.50         43.50
+21  81f57b6f-5970-40ce-b1f6-0abfd463006f  (via JOIN)                             (status congelado)
+22  8d48485b-23d5-4eba-9de5-ed0d9bec7dfb  (via JOIN)                             aberto      (valores congelados)
+23  92931cc7-404f-4af3-ace7-e2e2d5463ebc  (via JOIN)                             pendente    (valores congelados)
+24  95cb0f15-994c-4053-b5b2-ae67d58422d4  (via JOIN)                             pendente    (valores congelados)
+25  9d7225dd-7d4b-4ed3-962a-8b21e04813c9  (via JOIN)                             pendente    (valores congelados)
+26  b3c1aff1-176a-4b04-a918-84d7fca2db92  (via JOIN)                             pendente    1200.00       1490.00        290.00
+27  b4292aa5-106f-44b6-8588-9732626f24a2  (via JOIN)                             aberto      (valores congelados)
+28  bb3d774f-37fb-4496-9fcd-a2c6c81169fe  (via JOIN)                             aberto      (valores congelados)
+29  c3d6497c-fdb3-433e-ae0e-f97d847a6616  (via JOIN)                             aberto      (valores congelados)
+30  cd29fc06-9eff-423c-afb3-b1f90e3d52fb  (via JOIN)                             (status congelado)
+31  d76867ec-5686-48f3-9a76-3f263d065ae1  (via JOIN)                             aberto      (valores congelados)
+32  dce48d6d-da47-4d44-9bea-fc4cac6b4e57  (via JOIN)                             pendente     280.00        305.00         25.00
+33  dee59125-c8aa-44aa-8a00-702d37902162  (via JOIN)                             aberto      (valores congelados)
+34  e6d84c7b-1bf0-483d-9684-ca1edfe1e1bb  (via JOIN)                             pendente     (valores congelados)
+35  e8c0e809-df2c-43f5-becc-7efcc6d52fdb  (via JOIN)                             aberto      (valores congelados)
+36  e936e051-d52e-4216-b476-3fd517837974  (via JOIN)                             pendente    (valores congelados)
+
+NOTA: Valores individuais completos estão no script _02j_preapply.cjs output.
+O manifesto acima resume os 36 IDs ordenados e suas colunas-chave.
+Os 36 IDs foram congelados via query idêntica à SEÇÃO 4 da migration.

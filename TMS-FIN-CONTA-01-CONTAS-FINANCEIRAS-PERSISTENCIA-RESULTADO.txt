@@ -1,0 +1,172 @@
+================================================================================
+MISSAO: TMS-FIN-CONTA-01-CONTAS-FINANCEIRAS-PERSISTENCIA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (somente leitura; provas em transacao+ROLLBACK)
+MODELO: DeepSeek V4.1 Flash
+TIPO: diagnostico + microcorrecao E2E de persistencia. SEM migration.
+RESULTADO: PASS — nova conta persiste, recebe UUID real, recarrega e edita sem
+           duplicar. PROD inalterado (contas_financeiras 1 -> 1).
+================================================================================
+
+--------------------------------------------------------------------------------
+1. CAUSA RAIZ (provada)
+--------------------------------------------------------------------------------
+ConfigFinanceira.handleAddConta cria conta nova com ID TEMPORARIO de React:
+  `id: \`c-${Date.now()}\``  (ConfigFinanceira.tsx:100)
+Ao clicar "Salvar Contas", configFinanceiraService.salvarContasBancariasConfig
+enviava esse id em um UPSERT com onConflict 'id':
+  upsert([{ id: 'c-1790283538967', ... }], { onConflict: 'id' })
+A coluna public.contas_financeiras.id e do tipo UUID (PK) -> o Postgres tenta
+converter 'c-1790283538967' para uuid e falha:
+  ERROR 22P02: invalid input syntax for type uuid: "c-1790283538967"
+=> POST /rest/v1/contas_financeiras 400 Bad Request.
+PROVA (rollback): INSERT id='c-1790283538967' -> "invalid input syntax for type uuid".
+
+COLUNA QUE RECEBEU c-...: public.contas_financeiras.id (PK uuid).
+
+--------------------------------------------------------------------------------
+2. SCHEMA REAL (contas_financeiras)
+--------------------------------------------------------------------------------
+id uuid PK DEFAULT gen_random_uuid(); nome text NOT NULL; tipo text DEFAULT
+'Conta Corrente'; banco/agencia/numero_conta/digito/titular/chave_pix text NULL;
+saldo numeric DEFAULT 0; saldo_inicial numeric DEFAULT 0; saldo_inicial_data date;
+ativa boolean DEFAULT true; principal boolean DEFAULT false; empresa text;
+plano_contas text; observacoes text; cor text; created_at/updated_at timestamptz.
+- NAO possui tenant_id (tabela global).
+- Indice unico parcial EXISTENTE: uq_contas_financeiras_principal ON (principal)
+  WHERE principal  -> no maximo UMA conta principal (regra ja existente no schema).
+- RLS: policies TO authenticated (select/insert/update/delete USING true); nao ha
+  policy para anon. Grants amplos para anon/authenticated/service_role.
+
+--------------------------------------------------------------------------------
+3. FLUXO ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES:
+  Nova Conta -> id 'c-<ts>' (estado React)
+  Salvar Contas -> upsert com id 'c-<ts>' -> 400 invalid uuid -> nada persiste,
+    UI permanece com o id temporario.
+DEPOIS:
+  Nova Conta -> id 'c-<ts>' (somente no estado React)
+  Salvar Contas ->
+    - existentes (UUID real) -> UPDATE pela PK;
+    - novos (id 'c-...' ou vazio) -> INSERT SEM id (DEFAULT gen_random_uuid());
+    - principal unica: se ha 1 principal, libera a vaga (unset nas demais) antes;
+  -> sucesso -> REFETCH (carregar()) -> contas com UUIDs reais na UI.
+
+--------------------------------------------------------------------------------
+4. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/services/financeiro/configFinanceiraService.ts
+    salvarContasBancariasConfig reescrita: isUuidValido(); separa UPDATE (UUID) de
+    INSERT sem id; guarda de principal unica; aceita client injetavel (testes).
+    (export isUuidValido)
+- src/components/financeiro/ConfigFinanceira.tsx
+    handleSalvarContas: apos sucesso, refetch (carregar()) para substituir IDs
+    temporarios por UUIDs reais.
+- src/test/fin_conta01_contas_financeiras.test.ts (NOVO — 7 testes)
+NENHUMA migration. NENHUMA alteracao de schema/RLS.
+
+--------------------------------------------------------------------------------
+5. INSERT / UPDATE
+--------------------------------------------------------------------------------
+INSERT (novos): payload SEM 'id' -> banco gera UUID (gen_random_uuid()).
+UPDATE (existentes): update(payload).eq('id', uuidReal) -> mesma linha, sem
+  duplicar. Reexecutar sem mudanca atualiza a MESMA linha.
+Principal: apenas 1 permitida; ao gravar uma principal, atualiza
+  contas_financeiras SET principal=false WHERE principal=true AND id <> <nova>;
+  se mais de uma principal no payload -> erro claro "Apenas uma conta principal...".
+
+--------------------------------------------------------------------------------
+6. UUID REAL / PERSISTENCIA / REFETCH
+--------------------------------------------------------------------------------
+INSERT sem id retorna UUID valido (ex.: a50bd0e7-903c-4d7d-a1a6-96cdedf0b3b8);
+refetch por id retorna a conta; UPDATE pela PK altera a mesma linha. A UI passa a
+exibir/editar com o UUID real apos o refetch.
+
+--------------------------------------------------------------------------------
+7. TENANT / RLS / SEGURANCA
+--------------------------------------------------------------------------------
+- contas_financeiras NAO tem tenant_id -> isolamento por tenant nao se aplica
+  estruturalmente (tabela de configuracao global). Reportado (nao inventado).
+- RLS ja restringe a authenticated (sem policy para anon). anon bloqueado.
+- Nao foram alteradas RLS/policies/grants nesta missao.
+
+--------------------------------------------------------------------------------
+8. PRINCIPAL / ATIVA
+--------------------------------------------------------------------------------
+Regra EXISTENTE (nao inventada): indice unico parcial garante no maximo 1 principal.
+- Service passa a garantir 1 principal (bloqueia 2 e libera a vaga antes de gravar).
+- Ativa: default true; buscarContasBancariasConfig carrega apenas ativa=true (a
+  tela de config exibe contas ativas). Observacao registrada (ver riscos).
+
+--------------------------------------------------------------------------------
+9. PROVAS A-J
+--------------------------------------------------------------------------------
+Unitarias (7/7 PASS):
+  A/J) conta com id 'c-...' -> INSERT sem id; payload NUNCA contem 'c-...' ...... PASS
+  D/E) conta UUID real -> UPDATE pela PK, sem INSERT (nao duplica) ............. PASS
+  F) duas novas -> INSERT com 2 linhas sem IDs ................................ PASS
+  G) payload sem 'id' ......................................................... PASS
+  principal: duas principais -> erro claro ................................... PASS
+  principal: uma principal -> libera vaga (unset nas demais) ................ PASS
+  isUuidValido distingue UUID de 'c-...' ..................................... PASS
+Banco (7/7 PASS, transacao+ROLLBACK):
+  ROOT CAUSE: id 'c-...' rejeitado pela coluna uuid .......................... PASS
+  B) INSERT sem id gera UUID valido .......................................... PASS
+  C) refetch conta pelo UUID real ........................................... PASS
+  D) UPDATE na mesma linha (sem duplicar) ................................... PASS
+  F) dois novos -> UUIDs distintos .......................................... PASS
+  I) anon bloqueado (RLS) ................................................... PASS
+  INT contas_financeiras antes=depois (1 -> 1) ............................. PASS
+H) cross-tenant: NAO APLICAVEL (sem tenant_id) — documentado.
+
+--------------------------------------------------------------------------------
+10. CONSOLE ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES: POST /rest/v1/contas_financeiras -> 400 "invalid input syntax for type
+  uuid: 'c-1790283538967'".
+DEPOIS: o INSERT omite 'id' (UUID gerado no banco) -> sem erro de uuid.
+OUTROS 400 (nao relacionados, NAO corrigidos nesta missao):
+  - MargemOperacional.tsx: query com embed os:ordens_servico!inner(numero,cliente)
+    sobre composicao_financeira_os. CAUSA REGISTRADA: NAO existe FK entre
+    composicao_financeira_os e ordens_servico (pg_constraint = vazio) -> o embed
+    do PostgREST nao encontra relacionamento -> 400. Encaminhar para missao
+    posterior (corrigir embed/join ou criar FK), fora do escopo CONTA-01.
+
+--------------------------------------------------------------------------------
+11. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+- fin_conta01_contas_financeiras.test.ts: 7/7 PASS.
+- Provas DB CONTA-01: 7/7 PASS.
+- vitest (config PDF + financeiro + 7B.2 + 6D.1 + ...): 10 arquivos / 235 PASS.
+  (inclui fin_config_pdf_01a — dados bancarios do PDF vem de contas_financeiras,
+   snapshot/prioridade principal — preservado; fatura nao quebrada.)
+- npm run build: OK — "built in 52.16s".
+- tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Cross-tenant: contas_financeiras nao possui tenant_id; o isolamento por tenant
+    nao existe nesse recurso. Reportado (mudanca estrutural exige decisao).
+R2) buscarContasBancariasConfig lista apenas ativa=true; ao salvar uma conta como
+    Inativa, ela nao reaparece apos o refetch (comportamento pre-existente). Se for
+    necessario persistir inativas na tela, ajustar a busca (sem afetar fatura).
+R3) MargemOperacional permanece com 400 (embed sem FK) — missao separada.
+R4) 400s de tabelas/consultas preexistentes no console podem ter outras causas nao
+    capturadas neste ambiente (registry parcial).
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+05D.7B.2; lotes; Tesouraria; iFi; CNAB; pagamentos_prestadores; financeiro_pagar;
+financeiro_baixas; faturas/AR; M66/M80; APP; Programacao Operacional; RLS/RPC.
+
+================================================================================
+Arquivo ..: TMS-FIN-CONTA-01-CONTAS-FINANCEIRAS-PERSISTENCIA-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-CONTA-01-CONTAS-FINANCEIRAS-PERSISTENCIA-RESULTADO.txt
+Tamanho ..: 10443 bytes
+Data .....: 24/09/2026 18:10:28
+================================================================================
+FIM DO RELATORIO — TMS-FIN-CONTA-01
+================================================================================

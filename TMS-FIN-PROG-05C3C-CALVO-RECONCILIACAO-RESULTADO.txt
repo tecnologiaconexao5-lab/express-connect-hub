@@ -1,0 +1,205 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05C.3C-CALVO-RECONCILIACAO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+FONTES: 05C1 / 05C2 / 05C3B (relatorios)
+TIPO: Saneamento controlado do caso REAL Calvo (snapshot + rollback antes).
+================================================================================
+
+RESULTADO FINAL: PASS
+(Equivalencia E2 comprovada; AR legado sem baixa/pagamento; fatura emitida
+ oficialmente; 1 AR oficial; AR legado cancelado logicamente; sem dupla receita.)
+
+--------------------------------------------------------------------------------
+1. IDs COMPLETOS RESOLVIDOS
+--------------------------------------------------------------------------------
+Rascunho: faturas.id = e5318b9d-120a-4a2b-a077-bebcdf8cf34c
+  tenant_id 00000000-0000-0000-0000-000000000001
+  cliente_id 91b80fdb-6b87-4982-a550-f863f7f15866 (Calvo Comercio e Importacao LTDA)
+  status rascunho | valor_bruto 1200 | valor_total 1266.43 | vencimento 2026-10-08
+  numero NULL | numero_cliente NULL | conta_receber_id NULL | data_emissao 2026-09-08
+  Itens:
+   1) 4446d84c-0b40-49ab-84a7-13d927c40856 | os_id NULL | alocacao_id d1f34e73-a562-47c7-b057-ed079dd9b03a
+      romaneio 343646 | valor_base 600 | adicionais 0 | total 600
+   2) 894dc232-8f62-4e36-9f85-cbd01821c895 | os_id NULL | alocacao_id 58e5751e-bd54-43c5-9bcf-55fe4e575e6b
+      romaneio 343375 | valor_base 600 | adicionais 66.43 | total 666.43
+AR legado (operacao do item 2):
+  financeiro_receber.id = bb5c0efe-3193-49ee-a6cb-d213bee69f72
+  cliente_id 91b80fdb | os_id 58e5751e-bd54-43c5-9bcf-55fe4e575e6b
+  valor 600 | vencimento 2026-10-22 | status aberto | data_pagamento NULL
+  fatura_id NULL | descricao "Faturamento ALOC-20260817-58E5751E"
+  is_teste false | SEM baixa.
+  ("58e5751e" no relatorio anterior era o ALOCACAO_ID/os_id — resolvido aqui.)
+
+--------------------------------------------------------------------------------
+2. EVIDENCIA DE EQUIVALENCIA
+--------------------------------------------------------------------------------
+CLASSIFICACAO: E2 (mesma operacao, com adicional/diferenca de valor).
+Comparacao (AR legado bb5c0efe x item 2 da fatura e5318b9d):
+  cliente ........ IGUAL (91b80fdb Calvo)
+  alocacao ....... IGUAL (58e5751e-bd54-43c5-9bcf-55fe4e575e6b)
+  romaneio ....... IGUAL (343375)
+  data_servico ... 2026-08-17 (alocacao.data_escala) coerente
+  valor base ..... IGUAL (600)
+  adicionais ..... fatura 66.43 (pedagio/adicional) x AR 0 -> DIFERENCA 66.43
+  valor final .... fatura 666.43 x AR 600
+Justificativa: M66 gravava o AR legado apenas com valor_frete (600), sem o
+adicional/pedagio (66.43) que a fatura inclui. Mesma operacao economica -> E2.
+(E1 nao, pois ha diferenca; E3/E4 nao, pois a operacao e a mesma e ha evidencia.)
+
+--------------------------------------------------------------------------------
+3. ESTADO FINANCEIRO PRE
+--------------------------------------------------------------------------------
+AR legado bb5c0efe: status ABERTO | SEM baixa (0 linhas em financeiro_baixas) |
+SEM pagamento (data_pagamento NULL) | sem conciliacao | nao e teste.
+-> Atende a condicao para escrita automatica (sem baixa/pagamento real).
+Item 1 (alocacao d1f34e73): NAO possui AR legado (nada a reconciliar).
+
+--------------------------------------------------------------------------------
+4. DECISAO DE RECONCILIACAO E JUSTIFICATIVA
+--------------------------------------------------------------------------------
+- Preservar a FATURA como documento oficial e o AR gerado por f_emitir_fatura
+  como titulo oficial (regra 05B/04B).
+- Emitir a fatura e5318b9d pela funcao OFICIAL (sem criar excecao Calvo).
+- Cancelar LOGICAMENTE o AR legado bb5c0efe (mesma operacao), sem DELETE, com
+  observacao auditavel referenciando o numero oficial.
+- NAO vincular o AR legado a fatura (evita violar uq_receber_fatura_id / fluxo).
+- Anti-duplicidade 05C.2 intacta; f_emitir_fatura NAO alterada.
+
+--------------------------------------------------------------------------------
+5. SNAPSHOT PRE (arquivo)
+--------------------------------------------------------------------------------
+temp/prog05c3c_snapshot_pre.json (2.511 bytes): fatura + itens, AR legado,
+baixas, contador (5) e seq (15).
+
+--------------------------------------------------------------------------------
+6. ROLLBACK PREPARADO (arquivo)
+--------------------------------------------------------------------------------
+temp/prog05c3c_rollback.sql (927 bytes), deterministico:
+  1) restaura status/observacoes do AR bb5c0efe;
+  2) restaura faturas e5318b9d para rascunho (numero/numero_cliente/conta_receber_id NULL);
+  3) DELETE do AR oficial criado (por fatura_id; nao existia antes);
+  4) restaura contador do cliente (ultimo_numero=5).
+Aviso: a sequence seq_fatura_2026 nao e transacional (nao reversivel).
+
+--------------------------------------------------------------------------------
+7. EMISSAO OFICIAL
+--------------------------------------------------------------------------------
+select f_emitir_fatura('e5318b9d-...') -> success=true.
+Executado em transacao unica com revalidacao previa e pos (COMMIT_OK).
+
+--------------------------------------------------------------------------------
+8. Nº CONEXAO + Nº CLIENTE
+--------------------------------------------------------------------------------
+Nº Conexao (numero) ........ FAT-2026-000016
+Nº Cliente (numero_cliente)  6
+(Contador do cliente 91b80fdb: 5 -> 6. seq_fatura_2026: 15 -> 16.)
+
+--------------------------------------------------------------------------------
+9. AR OFICIAL CRIADO
+--------------------------------------------------------------------------------
+financeiro_receber.id = 4e3c5028-98c0-4a46-a8d9-80e5293ecd0a
+  valor 1266.43 | status aberto | cliente 91b80fdb | vencimento 2026-10-08
+  fatura_id e5318b9d-120a-4a2b-a077-bebcdf8cf34c | os_id NULL
+Exatamente 1 AR por fatura_id (validado).
+
+--------------------------------------------------------------------------------
+10. AR LEGADO ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES : id bb5c0efe | valor 600 | status aberto | os_id 58e5751e | sem baixa
+DEPOIS: id bb5c0efe | valor 600 | status CANCELADO | os_id 58e5751e | sem baixa
+        observacoes = " | AR operacional legado substituído pelo AR oficial da fatura FAT-2026-000016."
+Preservado por ID, valor, os_id, cliente, vencimento; NENHUM DELETE.
+
+--------------------------------------------------------------------------------
+11. PROVA DE AUSENCIA DE DUPLA RECEITA
+--------------------------------------------------------------------------------
+- AR por fatura_id da e5318b9d = 1 (oficial 4e3c5028, 1266.43).
+- AR legado da mesma operacao = 1, agora CANCELADO (nao compoe ativo).
+- Nenhum AR ativo duplicado para a operacao: apenas o oficial.
+- Item 1 (d1f34e73) nao tinha AR; passa a ser coberto pelo oficial (sem duplicar).
+- Ativo real (is_teste=false, nao cancelado):
+    antes  43 linhas | R$ 35.105,75
+    depois 44 linhas | R$ 35.772,18   (+R$ 666,43 = adicional antes omitido)
+  (o legado 600 saiu do ativo; o oficial 1.266,43 entrou -> +666,43 liquido)
+Nenhuma baixa criada/removida (financeiro_baixas 19 -> 19).
+
+--------------------------------------------------------------------------------
+12. IMPACTO FINANCEIRO ANTES x DEPOIS (telas NAO alteradas)
+--------------------------------------------------------------------------------
+- Contas a Receber: passa a exibir o titulo oficial 1.266,43 (era apenas o
+  legado 600 ativo). O legado some do ativo (cancelado), permanecendo no banco.
+- Dashboard/DRE/Fluxo previsto: passam a considerar 1.266,43 no lugar de 600
+  para essa operacao (ajuste de R$ 666,43, igual ao adicional faltante do legado).
+- Fluxo realizado: inalterado (nenhuma baixa nova/alterada).
+Regra de competencia/vencimento preservada (nada redefinido).
+
+--------------------------------------------------------------------------------
+13. BANCO / DIFFS
+--------------------------------------------------------------------------------
+| Metrica                     | ANTES | DEPOIS |
+|-----------------------------|-------|--------|
+| financeiro_receber total    | 122   | 123    |
+| financeiro_baixas total     | 19    | 19     |
+| faturas total               | 41    | 41     |
+| contador cliente 91b80fdb   | 5     | 6      |
+| seq_fatura_2026             | 15    | 16     |
+| 38/39/40./41/42             | OK    | OK     |
+Diffs esperados: +1 AR (oficial), 1 AR cancelado logicamente, faturas/baixas
+inalteradas. Nenhum DELETE.
+
+--------------------------------------------------------------------------------
+14. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0.
+- npm run build -> OK (40,42s).
+- Testes (8 arquivos / 60 testes) PASS: fin_prog05c3b_receber_paginacao,
+  fin_prog04b_emissao, fin_prog03_dashboard_real, f38_fatura_manual, fase2a_fatura,
+  escala_e2e_05_atomicidade_m66, f0f_fluxo_caixa, f0g_dre_plano_contas.
+- Baselines intactos:
+    anti-duplicidade (05C.2) sha 6a096597d926ad90;
+    f_emitir_fatura (04B)     sha 1decaa316679d52d.
+  PROG-04B/04C, 05B, 05C.2, 05C.3A, 05C.3B continuam validos.
+
+--------------------------------------------------------------------------------
+15. CASOS EXPLICITAMENTE NAO TOCADOS
+--------------------------------------------------------------------------------
+- 15 DVL (classe A) e 4 classe F — NAO alterados.
+- Outros ARs / faturas / baixas — NAO alterados.
+- faturas 38/39/40./41/42 (FAT-2026-000010..14 / NC1..5) — intactas.
+- M66/M80, f_emitir_fatura, anti-duplicidade 05C.2 — intactos.
+- AP, pagamentos_prestadores, Conferencia, Dashboard, DRE, Fluxo, APP,
+  Programacao Operacional — NAO alterados.
+
+--------------------------------------------------------------------------------
+16. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  A sequence seq_fatura_2026 avancou para 16 (nao reversivel); gap normal.
+R2  15 DVL e 4 classe F continuam pendentes de decisao humana (fora de escopo).
+R3  O AR legado cancelado permanece no banco (historico) e pode aparecer em
+    visoes que nao filtram status cancelado — esperado; filtros ja tratam ativo.
+R4  Eventos de dominio gerados pela emissao permanecem mesmo se o rollback for
+    executado (rollback nao remove eventos/sequence).
+
+--------------------------------------------------------------------------------
+17. PROXIMA MICRO-MISSAO (PROG-05C.3D)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-05C.3D — FECHAMENTO DOS PENDENTES:
+  - decisao humana: 15 DVL (real x teste) e 4 classe F (sem cliente);
+  - validar totais reais finais (bruto/teste/cancelado/oficial) apos os saneamentos;
+  - opcional: agregacao server-side de totais de Contas a Receber para escala.
+Fora de escopo: M66/M80; AP/gate; APP; Programacao Operacional.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Equivalencia E2 comprovada; AR legado sem baixa/pagamento; reconciliacao via
+  fluxo oficial (f_emitir_fatura) + cancelamento logico; NENHUM DELETE.
+- Snapshot e rollback gerados antes da escrita; transacao unica validada.
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05C.3C-CALVO-RECONCILIACAO
+================================================================================
+`;

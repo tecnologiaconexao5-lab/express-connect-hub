@@ -1,0 +1,64 @@
+A31-J1.7 — OS INTERNA OFICIAL NO LANÇAMENTO MANUAL (CENTRAL FINANCEIRA)
+======================================================================
+Data: 2026-08-18   Status: IMPLEMENTADO (tsc 0 erros · 19/19 testes)
+
+1. OBJETIVO
+   Financeiro → Lançar Serviço Manualmente passa a criar UMA OS Interna
+   REAL em ordens_servico (fluxo oficial) e vincular a alocação via
+   ordem_servico_id. Romaneio/OC do cliente permanece separado.
+
+2. FLUXO OFICIAL REUTILIZADO
+   criarOrdemServico() (src/services/ordemServicoService.ts) — única
+   função oficial de criação de OS (TMS e Portal usam ela). Recebe
+   os_id + os_numero do fluxo existente. NENHUM contador/sequence/
+   migration novo nesta missão.
+
+3. ARQUIVOS ALTERADOS
+   - src/services/financeiro/centralFinanceiroService.ts:
+     lancarServicoManual() agora cria a OS via criarOrdemServico quando
+     há cliente_id, e grava alocacoes_escala.ordem_servico_id = os_id.
+     Retorno ampliado: { osId, osNumero }. Sem cliente → fluxo
+     romaneio-only preservado (cliente NÃO é obrigatório no form).
+   - src/components/financeiro/ConferenciaFinanceira.tsx: nota de
+     rodapé do modal atualizada (comportamento novo).
+   - src/test/a31j17_os_interna_financeiro.test.ts (NOVO, 7 testes).
+   - src/test/a31c_lancamento_manual.test.ts e
+     a31e_lancamento_manual_premium.test.ts: mock ganhou suporte a
+     ordens_servico + asserções do novo vínculo.
+
+4. VÍNCULO
+   ordem_servico_id = ordens_servico.id. A Central lê o número da OS
+   pelo join (osNumero = os.numero) e Romaneio/OC segue em
+   metadata.numeroOC. Os dois campos continuam independentes.
+
+5. NUMERAÇÃO
+   Vem exclusivamente do fluxo oficial (criarOrdemServico → formato
+   OS-AAAAMM-XXXXXX). Nada inventado no financeiro (sem Date.now,
+   sem contador local, sem UUID visual).
+
+6. FINANCEIRO (M66/M80)
+   Sem segunda lógica no TS. M66 usa o os_id existente (ON CONFLICT
+   preserva numero e não cria segunda OS) e propaga financeiro_receber/
+   pagar/pagamentos/composicao com os valores reais do lançamento.
+   criarOrdemServico recebe valor_cliente = valor_frete (consistente).
+
+7. RESULTADO VISUAL (esperado em produção)
+   ANTES:  OS INTERNA: Sem OS   |   ROMANEIO/OC: 343646
+   DEPOIS: OS INTERNA: OS-2026... (número oficial)
+           ROMANEIO/OC: 343646 (inalterado)
+
+8. VALIDAÇÃO
+   - npx vitest (a31j17 + a31c + a31e): 19/19 PASS
+     · 1 lançamento = 1 OS + 1 alocação
+     · ordem_servico_id vinculado; numero preenchido
+     · Romaneio/OC separado (não vira número da OS)
+     · valores financeiros repassados; sem cliente → sem OS
+     · falha de OS aborta o lançamento (sem alocação órfã)
+   - npx tsc --noEmit: 0 erros
+   - Build: não executado (desnecessário nesta missão)
+
+9. PENDÊNCIA TÉCNICA (missão futura)
+   O fluxo legado criarOrdemServico gera o número da OS com
+   Math.random() (sem sequence/default/RPC oficial no banco). Registrado
+   como pendência para missão futura de numeração oficial — NÃO ampliado
+   agora.

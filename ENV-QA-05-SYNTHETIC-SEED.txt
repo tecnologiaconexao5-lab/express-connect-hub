@@ -1,0 +1,138 @@
+================================================================================
+MISSAO: ENV-QA-05-SYNTHETIC-SEED
+DATA: 2026-09-20
+STATUS: PASS
+================================================================================
+
+PRECHECKS
+---------
+1. Infrastructure:
+   - Docker Engine: UP (v29.4.1)
+   - Container supabase-db-qa: UP (postgres:15-alpine, port 54322)
+   - Connection: 127.0.0.1:54322 (local socket confirmed)
+
+2. Anti-Production Proof:
+   - QA_DATABASE_URL: NOT SET
+   - DATABASE_URL: NOT SET
+   - Server IP from DB: empty (local socket = SAFE)
+   - .env contains prod refs (expected) but apply script guards block them
+
+3. Baseline Sanity Check:
+   - BASELINE_TABLE_COUNT: 237 (CREATE TABLE in .sql)
+   - LOCAL_RELEVANT_TABLE_COUNT: 221 (initial)
+   - DIFFERENCE: 16 tables
+   - CAUSE: psql errors "schema auth does not exist" + "role authenticated does not exist"
+     during baseline application caused 16 CREATE TABLE statements to be skipped.
+   - FIX: All 16 tables created directly. Final count: 237 tables = baseline.
+   - Missing tables: alocacoes_escala, communication_events, communication_preferences,
+     communication_templates, delivery_proofs, entregas_protocolo, eventos_oficiais,
+     faturas, financeiro_transferencias, ocorrencias, portal_tracking_realtime,
+     reembolsos_prestador, rotas, tabela_prestador, tabelas_valores, tracking_public_links
+
+4. Critical Objects:
+   - pagamentos_prestadores: OK (50 cols)
+   - financeiro_pagar: OK
+   - financeiro_baixas: OK
+   - prestadores: OK
+   - clientes: OK
+   - ordens_servico: OK
+   - alocacoes_escala: OK
+   - tenant_usuarios: OK
+   - f_confirmar_pagamento_prestador: OK (INVOKER)
+   - f_confirmar_pagamento_fechamento: OK (DEFINER)
+   - 11 triggers present (including trg_propagar_financeiro_os x2)
+
+5. Seed Audit:
+   - Original seed_rls_test_data.sql had 7 column name mismatches:
+     * tenant_usuarios: email/nome columns don't exist
+     * ordens_servico: data_solicitacao -> data_servico
+     * financeiro_pagar: tenant_id column doesn't exist, prestador_id -> prestador (text)
+     * pagamentos_prestadores: valor_bruto -> valor_servicos, data_vencimento -> data_prevista_pagamento
+   - eventos_oficiais: recreated to match trigger schema (event_type, entity_type, etc.)
+   - Unique constraint added: uq_eventos_oficiais_type_entity
+   - All fixes applied, seed re-validated
+
+SEED APPLICATION
+----------------
+- Applied to: 127.0.0.1:54322
+- Tables: 9 (tenants, tenant_usuarios, clientes, prestadores, contas_financeiras,
+  ordens_servico, financeiro_pagar, financeiro_receber, pagamentos_prestadores)
+- Total records: 19
+- INSERT results: all "INSERT 0 N" (no conflicts)
+
+POST-SEED VALIDATION
+---------------------
+RECORDS:
+  tenants:                 1
+  tenant_usuarios:         2
+  clientes:                1
+  prestadores:             2 (A + B)
+  contas_financeiras:      1
+  ordens_servico:          3 (QA-001, QA-002, QA-003)
+  financeiro_pagar:        3
+  financeiro_receber:      3 (trigger-created)
+  pagamentos_prestadores:  3
+
+FK INTEGRITY:
+  OS->clientes:    3/3, 0 orphans
+  OS->prestadores: 3/3, 0 orphans
+  FP->OS:          3/3, 0 orphans
+  PP->OS:          3/3, 0 orphans
+
+FINANCIAL COHERENCE:
+  QA-001: FP=600, PP=600, OS.custo=600  FP=PP=OS OK
+  QA-002: FP=900, PP=900, OS.custo=900  FP=PP=OS OK
+  QA-003: FP=1200, PP=1200, OS.custo=1200  FP=PP=OS OK
+
+PARTIAL PAYMENT MATH:
+  QA-002: obrigacao=900, pago=520, saldo=380  900-520=380 MATH OK
+
+CRITICAL RPCS:
+  f_confirmar_pagamento_prestador:  EXISTS (INVOKER)
+  f_confirmar_pagamento_fechamento: EXISTS (DEFINER)
+
+CURRENT_PP_RLS:
+  Allow all pagamentos_prestadores (public, ALL) -- NOT YET FIXED
+
+IDEMPOTENCY TEST
+----------------
+  Before: 19 records
+  Re-apply: 8x "INSERT 0 0" (all ON CONFLICT DO NOTHING)
+  After: 19 records
+  Duplicates: 0
+  RESULT: PASS
+
+EVIDENCE
+--------
+  LOCAL_TARGET = 127.0.0.1:54322
+  PRODUCTION_CONNECTIONS = 0
+  PRODUCTION_WRITES = 0
+
+  BASELINE_TABLE_COUNT = 237
+  LOCAL_RELEVANT_TABLE_COUNT = 237
+  TABLE_COUNT_DIFFERENCE_CAUSE = psql auth/role errors skipped 16 tables; fixed directly
+
+  SYNTHETIC_RECORDS = 19
+  REAL_DATA_COPIED = 0
+  ORPHANS = 0
+  DUPLICATES_AFTER_SECOND_SEED = 0
+
+  FP_PP_INTEGRITY = PASS (3/3 scenarios FP=PP=OS.custo_prestador)
+  PARTIAL_PAYMENT_MATH = PASS (900-520=380)
+  CRITICAL_RPCS = PASS (2/2 exist)
+  CURRENT_PP_RLS = WIDE OPEN (Allow all ALL public)
+
+RESULTADO
+---------
+  ENV_QA_05 = PASS
+
+  Todos os criterios atendidos:
+  [x] Diferenca estrutural explicada (auth/role errors)
+  [x] Dataset sintetico integro (19 records, 0 orphans, 0 orphans)
+  [x] Seed reproduzivel/idempotente (19->19, INSERT 0 0)
+  [x] Ambiente 100% local (127.0.0.1:54322)
+  [x] Producao ZERO acessos de escrita
+
+================================================================================
+FIM DO RELATORIO - ENV-QA-05-SYNTHETIC-SEED
+================================================================================

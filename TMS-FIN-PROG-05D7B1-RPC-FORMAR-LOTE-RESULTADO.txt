@@ -1,0 +1,149 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7B.1-RPC-FORMAR-LOTE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+TIPO: microimplementacao controlada de backend (RPC). SEM UI. SEM Tesouraria.
+      SEM iFi/CNAB. SEM baixa. SEM tabela nova.
+RESULTADO: PASS — lote logico tenant-safe, all-or-nothing, idempotente, com
+           locking; PROD termina com lote_id NOT NULL = 0.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. FUNCAO CRIADA
+--------------------------------------------------------------------------------
+public.f_gerar_lote_pagamentos(p_ids uuid[])
+RETURNS TABLE(lote_id uuid, solicitados int, incluidos int, ja_em_lote int,
+              bloqueados int, detalhes jsonb)
+LANGUAGE plpgsql | SECURITY DEFINER | SET search_path=public
+Arquivo : supabase/migrations/20260924000014_fin_prog05d7b1_rpc_gerar_lote.sql
+Rollback: supabase/migrations/20260924000015_fin_prog05d7b1_rpc_gerar_lote_rollback.sql
+Formacao: novo_lote_id = gen_random_uuid(); nas linhas aprovaveis -> lote_id =
+  novo_lote_id e status_pagamento='em_lote'. NAO altera status_conferencia,
+  status_aprovacao, elegivel_lote, valores, prestador, os_id, datas,
+  data_pagamento, financeiro_pagar, financeiro_baixas.
+
+--------------------------------------------------------------------------------
+2. PAPEIS / SEGURANCA
+--------------------------------------------------------------------------------
+Autorizados (identico 05D.6B.1): super_admin, admin_tenant, financeiro.
+Bloqueados: operacional, comercial, atendimento, cliente, gestor, prestador,
+  motorista (PAPEL_NAO_AUTORIZADO). Tenant ativo obrigatorio (USUARIO_SEM_TENANT_ATIVO).
+SECURITY DEFINER (valida auth.uid/tenant/papel internamente; nao confia so na RLS).
+search_path fixo. Grants: EXECUTE -> authenticated (+postgres/service_role);
+PUBLIC/anon REVOGADOS. Prova: anon sem EXECUTE.
+
+--------------------------------------------------------------------------------
+3. GUARDS DE ELEGIBILIDADE (por id, ordem de avaliacao)
+--------------------------------------------------------------------------------
+  NAO_ENCONTRADO | SEM_TENANT | CROSS_TENANT | OPERACAO_CANCELADA | PAGO |
+  CANCELADO | TESTE(is_teste) | SEM_PRESTADOR | VALOR_INVALIDO |
+  AGREGADO(tipo_pagamento='fechamento') |
+  JA_EM_LOTE(lote_id not null) |
+  NAO_ELEGIVEL (nao conferido OU nao aprovado OU elegivel_lote<>true) |
+  APROVAVEL
+Elegivel exige: status_conferencia='conferido' AND status_aprovacao='aprovado'
+AND elegivel_lote=true AND lote_id IS NULL AND status_pagamento NOT IN
+('pago','cancelado') AND is_teste IS NOT TRUE AND prestador_id valido AND
+valor_liquido>0 AND nao cancelada AND nao agregado. (Sem POD adicional.)
+
+--------------------------------------------------------------------------------
+4. ATOMICIDADE / IDEMPOTENCIA
+--------------------------------------------------------------------------------
+ALL-OR-NOTHING: se qualquer id estiver bloqueado -> NENHUMA linha muda; retorna
+  incluidos=0 + bloqueados>0 + detalhes/motivos. Sem lote parcial silencioso.
+CASO A (todos ja no MESMO lote) -> retorna o lote existente (ja_em_lote=N,
+  incluidos=0), NAO cria UUID novo, NAO altera linhas.
+CASO B (mistura sem-lote + ja-em-lote) -> BLOQUEIA (MISTURA_JA_EM_LOTE_E_SEM_LOTE).
+CASO C (lotes diferentes) -> BLOQUEIA (LOTES_DIFERENTES).
+CASO D (ja em lote) -> nunca recebe novo lote_id por esta RPC.
+IDs duplicados: deduplicados (DISTINCT).
+
+--------------------------------------------------------------------------------
+5. CONCORRENCIA
+--------------------------------------------------------------------------------
+Locking pessimista: `PERFORM 1 FROM pagamentos_prestadores WHERE id = ANY(v_ids)
+FOR UPDATE` ANTES de classificar/atribuir. Duas chamadas simultaneas nao colocam
+o mesmo pagamento em dois lotes (a 2a espera o lock e depois ve JA_EM_LOTE).
+
+--------------------------------------------------------------------------------
+6. PROVAS A-P (todas em transacao + ROLLBACK)
+--------------------------------------------------------------------------------
+A) 1 valido -> incluidos=1, lote_id preenchido, status_pagamento='em_lote'   PASS
+B) 2 validos -> MESMO lote_id, incluidos=2                                   PASS
+C) reexec mesmos ids -> mesmo lote, ja_em_lote=2, incluidos=0 (no-op)         PASS
+D) valido + invalido -> incluidos=0, bloqueados=1, valido intacto (lote NULL) PASS
+E) aprovado + elegivel=false -> NAO_ELEGIVEL (bloqueado)                     PASS
+F) pago -> bloqueado ('Pagamento ja efetuado')                              PASS
+G) cancelado -> bloqueado ('Pagamento cancelado')                           PASS
+H) teste/HML -> bloqueado ('Registro de teste/HML')                         PASS
+I) cross-tenant -> bloqueado ('Registro pertence a outro tenant')           PASS
+J) sem tenant -> bloqueado ('Tenant do vinculo (os_id) nao resolvivel')     PASS
+K) agregado/fechamento -> bloqueado ('Registro agregado (fechamento)')      PASS
+L) papel operacional -> bloqueado ('PAPEL_NAO_AUTORIZADO')                  PASS
+M) prestador -> bloqueado ('USUARIO_SEM_TENANT_ATIVO')                      PASS
+N) ids duplicados -> solicitados=1, incluidos=1 (dedup)                     PASS
+O) mistura de lotes diferentes -> bloqueado ('LOTES_DIFERENTES')            PASS
+P) concorrencia: 2a conexao BLOQUEADA por lock (statement timeout) — sem
+   dupla atribuicao                                                          PASS
+RESUMO: 21/21 PASS + P PASS.
+
+--------------------------------------------------------------------------------
+7. CONTAGENS ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores ....... 137
+lote_id NOT NULL ............. 0
+status_pagamento='em_lote' ... 0
+financeiro_pagar ............. 178
+financeiro_baixas ............ 19
+soma valor_liquido ........... 90.229,96
+Nenhum lote permanente criado (todas as provas revertidas por ROLLBACK).
+
+--------------------------------------------------------------------------------
+8. REGRESSÃO
+--------------------------------------------------------------------------------
+- 05D.6B (RPC aprovar): 20/20 | 05D.6B.1: 17/17 | 05D.6A: 15/15 | 05D.4: 13/13.
+- vitest (subset financeiro + layout + filtros 6D.1): 8 arquivos / 205 PASS.
+- Nenhuma regressao da RPC de aprovacao.
+- tsc: baseline inalterado (nenhum TS alterado nesta missao).
+
+--------------------------------------------------------------------------------
+9. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Sem cabecalho de lote: nao ha status/total/remessa/retorno por lote (por
+    design nesta fase). Extensao "B" (tabela `lotes_pagamento`) sera avaliada
+    quando entrar iFi/CNAB.
+R2) 9 registros 'aprovado + elegivel_lote=false' continuam NAO_ELEGIVEL (nao
+    normalizados) — por decisao da missao.
+R3) A RPC usa SECURITY DEFINER e por isso ignora a RLS no UPDATE; a seguranca
+    e garantida pelos guards internos (tenant/papel). Manter assim.
+R4) 'em_lote' e atribuido, mas a Tesouraria ainda nao filtra por aprovacao
+    (proxima missao) — sem efeito visivel ainda.
+
+--------------------------------------------------------------------------------
+10. PROXIMA MICRO-MISSAO
+--------------------------------------------------------------------------------
+05D.7B.2 — UI minima + Tesouraria:
+  (a) acao "Gerar Ordem/Lote" (Conferencia ou PagamentoPrestadores) sobre a
+      selecao de aprovados/elegiveis chamando f_gerar_lote_pagamentos;
+  (b) Tesouraria (PagamentoCNAB) filtrando
+      status_aprovacao='aprovado' AND elegivel_lote=true AND status_pagamento
+      NOT IN ('pago','cancelado') (mostra 'em_lote' como aguardando banco);
+  (c) sem iFi/CNAB real; sem baixa; sem pagamento.
+
+================================================================================
+NAO TOCADO
+--------------------------------------------------------------------------------
+UI; PagamentoPrestadores.tsx; PagamentoCNAB/Tesouraria; fechamentoService; iFi;
+CNAB; dados bancarios; prestadores; snapshot; f_confirmar_pagamento_prestador;
+financeiro_baixas; financeiro_pagar; M66/M80; datas; AR/faturas; Conferencia UI;
+21 indeterminados; CESAR; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7B1-RPC-FORMAR-LOTE-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7B1-RPC-FORMAR-LOTE-RESULTADO.txt
+Tamanho ..: 8873 bytes
+Data .....: 24/09/2026 17:53:16
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7B.1
+================================================================================

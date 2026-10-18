@@ -1,0 +1,180 @@
+================================================================================
+MISSÃO 133-D.5 — REVISÃO FINAL DE LIBERAÇÃO DA MIGRATION M133-D.4
+Data: 2026-07-27
+Percentual oficial: 41% (inalterado)
+Ambiente: PRODUÇÃO (uwrvzsjtpgaifkktpepn.supabase.co)
+Status: GO - 12/12 checks aprovados
+================================================================================
+
+RESUMO:
+Revisão final de liberação da migration 20260722_m133d4_fix_rpc_app_security.sql
+(499 linhas) que corrige 3 anomalias de segurança nas RPCs do App Motorista:
+  A01 - f_avancar_etapa_app_motorista: STABLE -> VOLATILE
+  A02 - f_atualizar_reversa_app: +auth.uid() + validação prestador
+  A03 - Todas as 3 RPCs: REVOKE PUBLIC/anon -> GRANT auth+service_role
+
+================================================================================
+CHECK S2 - SECURITY DEFINER + SEARCH_PATH
+================================================================================
+Todas as 3 RPCs: SECURITY DEFINER + SET search_path TO 'public'.
+
+Objetos referenciados:
+  f_buscar_operacoes_motorista: auth.uid(), public.prestadores,
+    public.alocacoes_escala, public.rota_paradas
+    => 100% qualificado
+
+  f_avancar_etapa_app_motorista: auth.uid(), public.prestadores,
+    public.alocacoes_escala, public.eventos_oficiais,
+    public.operation_timeline_events, gen_random_uuid(), NOW()
+    => 100% qualificado (built-ins seguros)
+
+  f_atualizar_reversa_app: auth.uid(), auth.users, public.prestadores,
+    public.alocacoes_escala, public.eventos_oficiais,
+    public.financeiro_receber, public.financeiro_pagar
+    => 100% qualificado
+
+RESULTADO: PASS - Nenhum shadowing risk.
+
+================================================================================
+CHECK S3 - IDENTIDADE (auth.uid() + OWNERSHIP)
+================================================================================
+  f_buscar: auth.uid() + prestador lookup + pertencimento - IDÊNTICO
+  f_avancar_etapa: auth.uid() + prestador lookup + pertencimento - IDÊNTICO
+  f_atualizar_reversa:
+    ANTES: IF EXISTS (SELECT 1 FROM auth.users WHERE id = p_auth_user_id)
+    DEPOIS: auth.uid() + prestador lookup + IS DISTINCT FROM v_prestador_id
+    => Upgrade forte de segurança
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S4 - OWNER DAS RPCs
+================================================================================
+SECURITY DEFINER padrão. Sem alteração de owner. Owner tem permissões em todas
+as 7 tabelas acessadas. Sem risco.
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S5 - TRANSIÇÕES DE ESTADO (f_avancar_etapa_app_motorista)
+================================================================================
+15 transições verificadas contra remoto - 100% idênticas:
+
+  1. (inicio) -> viagem_aceita
+  2. viagem_aceita -> cheguei_coleta
+  3. cheguei_coleta -> carregamento_iniciado
+  4. carregamento_iniciado -> carregamento_finalizado
+  5. carregamento_finalizado -> romaneio_informado/foto_romaneio/km_inicial/saiu
+  6. romaneio_informado -> foto_romaneio/km_inicial
+  7. foto_romaneio -> km_inicial_informado
+  8. km_inicial_informado -> saiu_em_rota
+  9. saiu_em_rota -> chegou_entrega
+ 10. chegou_entrega -> descarregamento_iniciado
+ 11. descarregamento_iniciado -> descarga_finalizada
+ 12. descarga_finalizada -> km_final_informado
+ 13. km_final_informado -> assinatura_capturada
+ 14. assinatura_capturada -> pod_registrado
+ 15. pod_registrado -> servico_finalizado
+
+Status updates: viagem_aceita->aceita, cheguei_coleta->em_rota,
+                servico_finalizado->concluida
+
+RESULTADO: PASS - 0 alterações na máquina de estados.
+
+================================================================================
+CHECK S6 - IDEMPOTÊNCIA
+================================================================================
+CREATE OR REPLACE FUNCTION + REVOKE/GRANT são 100% idempotentes.
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S7 - FINANCEIRO
+================================================================================
+Bloco financeiro em f_atualizar_reversa_app preservado identicamente ao remoto:
+  UPDATE financeiro_receber SET valor = ... + v_valor_cliente
+  UPDATE financeiro_pagar SET valor = ... + v_valor_prestador
+
+Proteção adicional: agora apenas authenticated + service_role podem chamar.
+auth.uid() + pertencimento validados antes de executar.
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S8 - GRANTS
+================================================================================
+  f_buscar_operacoes_motorista:    REVOKE PUBLIC/anon -> GRANT auth+service_role
+  f_avancar_etapa_app_motorista:   REVOKE PUBLIC/anon -> GRANT auth+service_role
+  f_atualizar_reversa_app:         REVOKE PUBLIC/anon -> GRANT auth+service_role
+
+Rollback: REVOKE auth+service_role -> GRANT PUBLIC+anon (correto)
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S9 - VOLATILITY
+================================================================================
+  f_buscar_operacoes_motorista:    STABLE (READ-ONLY) -> CORRETO
+  f_avancar_etapa_app_motorista:   STABLE (BUG) -> VOLATILE (FIX) -> CORRETO
+  f_atualizar_reversa_app:         VOLATILE (default) -> VOLATILE -> CORRETO
+
+RESULTADO: PASS - A01 corrigida.
+
+================================================================================
+CHECK S10 - CONTRATO APP
+================================================================================
+Assinaturas preservadas (tipos, defaults, ordem):
+  f_buscar: (p_auth_user_id uuid DEFAULT NULL::uuid)
+  f_avancar_etapa: (p_alocacao_id uuid, p_etapa text, p_payload jsonb,
+                    p_idempotency_key text, p_auth_user_id uuid)
+  f_atualizar_reversa: (... date, jsonb, ...) - produção compatível
+
+Retornos preservados:
+  f_avancar_etapa: success/error (en-US)
+  f_atualizar_reversa: sucesso/erro (pt-BR)
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S11 - ROLLBACK
+================================================================================
+Rollback (20260722_m133d4_rollback.sql, 325 linhas, SHA256 59D2F94E...):
+  1. REVOKE auth+service_role + GRANT PUBLIC, anon -> RESTAURA grants inseguros
+  2. CREATE OR REPLACE f_avancar_etapa -> STABLE -> RESTAURA bug volatility
+  3. CREATE OR REPLACE f_atualizar_reversa -> sem auth.uid() -> RESTAURA bug auth
+
+100% reversível, idempotente (CREATE OR REPLACE).
+
+RESULTADO: PASS
+
+================================================================================
+CHECK S12 - SINTAXE
+================================================================================
+  dollar-quoting ($function$):  OK em todas as 3 funções
+  search_path string literal:   OK
+  auth.uid() calls:             OK em todas
+  IS DISTINCT FROM:             OK
+  COALESCE, jsonb_*, format:    OK
+  gen_random_uuid, NOW:         OK
+
+Achado S12.1 (pre-existente): f_atualizar_reversa INSERT em eventos_oficiais
+com colunas reduzidas (sem id, tenant_id, created_at) - mesmo padrao do remoto.
+
+RESULTADO: PASS
+
+================================================================================
+VEREDITO FINAL: GO
+================================================================================
+Todas as 12 verificacoes passaram. 3 anomalias (A01, A02, A03) corrigidas sem
+quebra de contrato. Rollback completo. Financeiro preservado e protegido.
+
+Pre-requisitos para aplicacao:
+  1. Autorizacao do time responsavel pela producao
+  2. Aplicar via Supabase Dashboard > SQL Editor ou psql/pg
+  3. Validar com SELECT 'M133-D.4 applied' AS status
+
+Riscos pos-aplicacao:
+  - App Motorista (Flutter) precisa usar JWT valido (Authorization: Bearer)
+  - Se App chamar como anon, RPCs serao bloqueadas (comportamento esperado)
+  - Aplicar em janela de baixa atividade
+================================================================================

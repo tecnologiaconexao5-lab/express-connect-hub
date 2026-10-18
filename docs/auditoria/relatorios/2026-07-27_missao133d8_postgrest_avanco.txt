@@ -1,0 +1,106 @@
+MISSAO 133-D.8 — HOMOLOGACAO POSTGREST DA RPC DE AVANCO
+=======================================================
+
+Data: 2026-07-27
+Status: NO-GO — Senha do usuario de teste desconhecida
+Percentual: 41% (inalterado)
+Branch: auditoria-final-integracao
+
+=======================================================
+1. RESUMO
+=======================================================
+
+Objetivo: comprovar que a RPC f_avancar_etapa_app_motorista
+funciona pelo mesmo caminho usado pelo App:
+
+  cliente autenticado -> JWT real -> PostgREST -> grants
+  -> RPC -> banco -> retorno HTTP
+
+Interrompido na FASE 2: senha de teste@conexao.com
+desconhecida (Homologar129c2! e 12345678 rejeitadas).
+
+Nenhuma escrita executada. Nenhum dado alterado.
+
+=======================================================
+2. O QUE FOI CONCLUIDO
+=======================================================
+
+FASE 1 — Conta de teste validada:
+  - auth user existe: a5e51631-... (teste@conexao.com)
+  - email confirmado: 2026-07-21
+  - prestador vinculado: PRESTADOR TESTE APP (e6646799-...)
+  - prestador ativo: status=ativo, liberado_app=true
+  - alocacao HML: 76af8e4a-... isolada, sem OS comercial
+
+FASE 3 — Pre-check da alocacao: 15/15 validacoes OK
+  - status=aguardando_aceite, etapa=NULL, aceite=false
+  - eventos=1, timeline=0, historico=1
+  - nenhum financeiro vinculado (sem OS)
+
+FASE 4 — Estrategia de reversibilidade definida:
+  - Snapshot antes/depois
+  - Restauracao exata de metadata original
+  - Delecao controlada de eventos/timeline/historico
+  - Validacao pos-cleanup (8 checks)
+
+PostgREST endpoint validado (parcial):
+  - Sem auth header: 401 "No API key found" (endpoint reachable)
+  - Com anon key: 401 "permission denied for function" (grant OK)
+  - Grants: anon bloqueado, authenticated tem EXECUTE
+
+=======================================================
+3. O QUE NAO FOI CONCLUIDO
+=======================================================
+
+FASE 2 — Obtencao do JWT:
+  - Senha Homologar129c2!: Invalid login credentials
+  - Senha fallback 12345678: Invalid login credentials
+  - SUPABASE_SERVICE_ROLE_KEY indisponivel no .env
+  - Motivo: senha alterada apos m129c2_set_password.mjs
+
+FASE 5 — Chamada PostgREST: NAO EXECUTADA (bloqueada)
+FASE 6 — Validacao banco: NAO EXECUTADA (bloqueada)
+FASE 7 — Idempotencia: NAO EXECUTADA (bloqueada)
+FASE 8 — Ownership: NAO EXECUTADO
+  - So 1 prestador com auth_user_id (teste@conexao.com)
+  - SQL ja testado em D.7.2: AUTH_USER_ID_INVALIDO OK
+FASE 9 — Cleanup: NAO EXECUTADO (nada a restaurar)
+
+=======================================================
+4. PERCENTUAL
+=======================================================
+
+Bloco: RPC avanco via PostgREST
+  Anterior:   0%
+  Atual:      0%  (NO-GO)
+  Confianca:  N/A (teste nao executado)
+  Impacto geral: Nulo
+
+Percentual geral oficial: 41% (inalterado)
+
+=======================================================
+5. CLASSIFICACAO OFICIAL
+=======================================================
+
+  - Logica SQL de avanco:         HOMOLOGADA (D.7.2)
+  - PostgREST com JWT real:       NAO HOMOLOGADO
+  - Flutter / App Motorista:      NAO HOMOLOGADO
+  - Reversa:                      NAO HOMOLOGADA
+
+=======================================================
+6. PENDENCIAS POS-D.8
+=======================================================
+
+P0 — Redefinir senha de teste@conexao.com via Supabase
+     Studio (Send recovery email) e documentar nova senha
+P0 — Reexecutar D.8 com a nova senha
+P1 — Criar segundo prestador de teste para ownership
+P2 — Validar App Motorista Flutter
+
+=======================================================
+7. CONCLUSAO
+=======================================================
+
+POSTGREST NAO HOMOLOGADO —
+SENHA DO USUARIO DE TESTE DESCONHECIDA.
+ESTADO DO BANCO INALTERADO (NENHUMA OPERACAO EXECUTADA).

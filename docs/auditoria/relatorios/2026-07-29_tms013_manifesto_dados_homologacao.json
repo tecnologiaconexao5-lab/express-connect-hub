@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "marcador": "HML-APP-20260729",
+    "missao": "TMS-013",
+    "criado_em": "2026-07-29T00:00:00.000Z",
+    "usuario_referencia": "teste@conexao.com",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "seed_executado": false,
+    "observacao": "Nenhum dado temporario foi inserido nesta missao. O seed nunca foi executado. Todos os IDs abaixo sao placeholders e serao substituidos por UUIDs reais apos execucao.",
+    "instrucoes_exclusao": "Usar supabase/scripts/cleanup_hml_app_20260729.sql",
+    "ordem_exclusao": [
+      1, "abastecimentos",
+      2, "reembolsos_prestador",
+      3, "entregas_protocolo",
+      4, "portal_tracking_realtime",
+      5, "ocorrencias",
+      6, "operation_timeline_events",
+      7, "historico_alocacoes_escala",
+      8, "pagamentos_prestadores",
+      9, "financeiro_pagar",
+      10, "financeiro_receber",
+      11, "alocacoes_escala",
+      12, "os_enderecos",
+      13, "ordens_servico",
+      14, "veiculos",
+      15, "prestadores",
+      16, "clientes"
+    ]
+  },
+  "clientes": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "11111111111111", "razao": "HML TRANSPORTES C1 LTDA" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "22222222222222", "razao": "HML FOODS C2 LTDA" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "33333333333333", "razao": "HML ECOMMERCE C3 LTDA" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "44444444444444", "razao": "HML REVERSA C4 LTDA" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "55555555555555", "razao": "HML OCORRENCIA C5 LTDA" },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "cnpj": "66666666666666", "razao": "HML FINANCEIRO C6 LTDA" }
+  ],
+  "prestadores": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "teste@conexao.com", "obs": "Reutilizado se existente" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "motoboy@hml.teste", "nome": "MOTOBOY HML C2" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "entregador@hml.teste", "nome": "ENTREGADOR HML C3" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "reversa@hml.teste", "nome": "LOG REVERSA HML C4" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "ocorrencia@hml.teste", "nome": "ENTREGADOR HML C5" },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "email": "financeiro@hml.teste", "nome": "TRANSP HML C6" }
+  ],
+  "veiculos": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML1A23", "tipo": "toco" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML2B34", "tipo": "moto" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML3C45", "tipo": "van" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML4D56", "tipo": "truck" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML5E67", "tipo": "van" },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "placa": "HML6F78", "tipo": "carreta" }
+  ],
+  "ordens_servico": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-001", "descricao": "OS direta com coleta e entrega" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-002", "descricao": "OS motoboy urbano" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-003", "descricao": "Rota e-commerce 5 paradas" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-004", "descricao": "Coleta reversa" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-005", "descricao": "Ocorrência e reentrega" },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "numero": "HML-OS-006", "descricao": "Repasse financeiro + reembolso + abastecimento" }
+  ],
+  "alocacoes": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "aguardando_aceite", "os": "HML-OS-001" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "aceita", "os": "HML-OS-002" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "em_rota", "os": "HML-OS-003" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "planejada", "os": "HML-OS-004" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "planejada", "os": "HML-OS-005", "obs": "Alocação principal" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "planejada", "os": "HML-OS-005", "obs": "Reentrega" },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "marcador": "HML-APP-20260729", "status": "concluida", "os": "HML-OS-006" }
+  ],
+  "enderecos_os": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "tipo": "coleta" },
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "tipo": "entrega" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "sequencia": 1 },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "sequencia": 2 },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "sequencia": 3 },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "sequencia": 4 },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "sequencia": 5 },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "tipo": "coleta_reversa" }
+  ],
+  "financeiro_receber": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "valor": 2500.00, "status": "aberto" }
+  ],
+  "financeiro_pagar": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "valor": 1500.00, "status": "aberto" }
+  ],
+  "pagamentos_prestadores": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "valor": 1500.00, "prestador": "TRANSP HML C6" }
+  ],
+  "entregas_protocolo": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "status": "entregue", "recebedor": "João Recebedor HML" }
+  ],
+  "tracking": [
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "reentrega": true },
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "alocacao": "concluida" }
+  ],
+  "ocorrencias": [
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "tipo": "tentativa_sem_sucesso", "severidade": "alta" }
+  ],
+  "reembolsos": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "tipo": "pedagio", "valor": 80.00 }
+  ],
+  "abastecimentos": [
+    { "cenario": 6, "id": "UUID-GERADO-PELO-SCRIPT", "litros": 58.30, "valor": 356.80, "tipo": "diesel" }
+  ],
+  "historico_alocacoes": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "evento": "criada" },
+    { "cenario": 2, "id": "UUID-GERADO-PELO-SCRIPT", "evento": "criada" },
+    { "cenario": 3, "id": "UUID-GERADO-PELO-SCRIPT", "evento": "criada" },
+    { "cenario": 4, "id": "UUID-GERADO-PELO-SCRIPT", "evento": "criada" },
+    { "cenario": 5, "id": "UUID-GERADO-PELO-SCRIPT", "evento": "reagendada" }
+  ],
+  "operation_events": [
+    { "cenario": 1, "id": "UUID-GERADO-PELO-SCRIPT", "type": "os_criada" }
+  ]
+}

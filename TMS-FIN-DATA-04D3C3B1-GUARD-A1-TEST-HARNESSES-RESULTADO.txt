@@ -1,0 +1,128 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C3B1-GUARD-A1-TEST-HARNESSES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL (zero banco; zero conexao PROD; zero DML/Storage real)
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: IMPLEMENTACAO LOCAL.
+RESULTADO: PASS.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+11/11 harnesses A1 movidos da raiz para scripts/lab, com guardHarness fail-closed antes de
+qualquer conexao/escrita/Storage e hardcodes PROD/anon removidos (22 ocorrencias). Verificador
+C3B1: 11/11 estatico+dinamico PASS (abortam no guard). Build OK; selftest 13/13; P1/P2 sem
+regressao; zero DML/conexao/Storage real.
+
+--------------------------------------------------------------------------------
+1. ANTES/DEPOIS POR ARQUIVO
+--------------------------------------------------------------------------------
+ARQ (raiz)             | ANTES                                   | DEPOIS
+-----------------------+-----------------------------------------+--------------------------------------
+test-cliente.ts        | URL PROD + anon hardcoded; createClient | scripts/lab/ + guard + env
+test-end2.ts           | idem                                     | idem
+test-endereco.ts       | idem                                     | idem
+test-financeiro.ts     | idem                                     | idem
+test-os.ts             | idem                                     | idem
+test-os2.ts            | idem                                     | idem
+test-pagar.ts          | idem                                     | idem
+test-pf-final.ts       | idem                                     | idem
+test-prestador.ts      | idem                                     | idem
+test-vinculo.ts        | idem                                     | idem
+test-upload-final.cjs  | URL PROD + anon hardcoded; createClient + STORAGE | scripts/lab/ + guard + env
+
+--------------------------------------------------------------------------------
+2. DESTINO EM scripts/lab (11/11)
+--------------------------------------------------------------------------------
+ Todos os 11 agora residem em scripts/lab/<mesmo nome>. Nenhum permanece na raiz.
+ Nenhum importado por src/UI; nenhuma referencia no package.json.
+
+--------------------------------------------------------------------------------
+3. GUARD — POSICAO (antes de conexao/escrita/Storage)
+--------------------------------------------------------------------------------
+ Inserido como 1a barreira executavel, imediatamente apos o import/require do supabase e ANTES
+ de: createClient, consts de URL/key, .storage/.upload, INSERT/UPDATE/DELETE/RPC.
+ Ex.: scripts/lab/test-cliente.ts
+   import { createClient } from "@supabase/supabase-js";
+   import { guardHarness } from "../_guard.mjs";
+   guardHarness("scripts/lab/test-cliente.ts");   <-- antes de createClient
+   const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+   const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+ (test-upload-final.cjs analogo com require("../_guard.cjs"); guard antes do Storage.)
+
+--------------------------------------------------------------------------------
+4. HARDCODES REMOVIDOS
+--------------------------------------------------------------------------------
+ - URL/ref PROD hardcoded .... 11 -> 0 (substituido por process.env.VITE_SUPABASE_URL)
+ - anon key hardcoded ....... 11 -> 0 (substituido por process.env.VITE_SUPABASE_ANON_KEY)
+ - service_role hardcoded ... 0 (ausente)
+ - DATABASE_URL com segredo . 0 (ausente)
+ TOTAL: 22 ocorrencias de hardcode removidas nos 11 arquivos.
+
+--------------------------------------------------------------------------------
+5. MATRIZ A-E POR HARNESS (guard central — mesmo comportamento para os 11)
+--------------------------------------------------------------------------------
+ A) PROD -> BLOCKED ................................. PASS
+ B) PROD + ALLOW_TEST_WRITES=true -> BLOCKED ........ PASS
+ C) QA sem opt-in -> BLOCKED ......................... PASS
+ D) QA + opt-in -> passa SOMENTE pelo guard (nao executa corpo/DML) ... PASS
+ E) env ausente -> BLOCKED ........................... PASS
+ (Execucao controlada: os 11, com env default sem opt-in, abortaram com "TEST WRITE BLOCKED";
+  nenhum prosseguiu para createClient/Storage/DML.)
+
+--------------------------------------------------------------------------------
+6. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+ node scripts/_guard.verify_c3b1.cjs ..... 11/11 estatico+dinamico PASS | A-E PASS
+ node scripts/_guard.selftest.cjs ........ TOTAL 13 | PASS 13 | FAIL 0
+ node scripts/_guard.verify_p1.cjs ....... 13/13 OK | A-E PASS (sem regressao)
+ node scripts/_guard.verify_p2.cjs ....... PASS (sem regressao)
+ npm run build ........................... OK ("built in 52.25s")
+ Raiz sem os 11 arquivos ................. OK (todos ausentes)
+ package.json referencia ............... 0 (OK)
+ Nenhum fluxo funcional de harness executado.
+
+--------------------------------------------------------------------------------
+7. PROVAS
+--------------------------------------------------------------------------------
+ - 11/11 fora da raiz | 11/11 em scripts/lab | 11/11 com guard antes da conexao/Storage.
+ - zero ref PROD hardcoded | zero anon/service_role | zero segredo DB.
+ - zero conexao | zero Storage real | zero DML.
+ - nenhum import pela UI | nenhum package.json apontando para caminho antigo.
+
+--------------------------------------------------------------------------------
+8. REVALIDACAO
+--------------------------------------------------------------------------------
+ - /dev-teste ......... AUSENTE OK
+ - snippets C2 ........ 27/27 inertes OK
+ - src/lib/testes ..... AUSENTE OK
+
+--------------------------------------------------------------------------------
+9. NAO TOCADO
+--------------------------------------------------------------------------------
+ outros 12 A1; 6 A2; 2 A3; 2 A4; Classe C; Classe F; tests/e2e; tmp/scratch; .env;
+ banco/RLS/RPC; APP.
+
+--------------------------------------------------------------------------------
+10. RISCOS RESTANTES
+--------------------------------------------------------------------------------
+ R1. Outros 12 A1 (teste_completo, teste_fluxo_mapbox, teste_os, teste_pgto_completo, test_doc,
+     test_mapbox_valor, test_pagamento, validar_pagamento, test_os_p2/p3, valida.ts,
+     valida_crud.ts, valida_status.ts) -> proxima missao C3B2.
+ R2. A2 (6) -> C3C; A3/A4 (4) -> C3D; Classe C/F; tests/e2e; scratch/tmp (credencial).
+
+--------------------------------------------------------------------------------
+11. PROXIMA MISSAO (sugestao)
+--------------------------------------------------------------------------------
+TMS-FIN-DATA-04D3C3B2 — mesmos passos para os 12 A1 restantes (teste_*/valida_*), com guard +
+env + remover hardcodes; depois C3C (A2 neutralizar) e C3D (A3/A4 arquivar/contrato).
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C3B1-GUARD-A1-TEST-HARNESSES-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C3B1-GUARD-A1-TEST-HARNESSES-RESULTADO.txt
+Tamanho ..: 7588 bytes
+Data .....: 24/09/2026 21:32:53
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C3B1
+================================================================================

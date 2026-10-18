@@ -447,7 +447,7 @@ export function PaginaNovaOperacao() {
                   <Select value={form.tipoVeiculo} onValueChange={v => setForm({...form, tipoVeiculo: v})}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
-                      {TIPOS_VEICULO.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                      {TIPOS_VEICULO.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

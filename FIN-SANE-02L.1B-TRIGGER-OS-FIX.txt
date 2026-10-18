@@ -1,0 +1,122 @@
+FIN-SANE-02L.1B — TRIGGER OS FIX
+================================================================
+Data: 2026-09-18 08:55 BRT
+Modelo: MiMo-V2.5
+Ambiente: TMS Local + Supabase PRODUÇÃO
+
+================================================================
+CAUSA CONFIRMADA
+================================================================
+
+ordens_servico:
+  prestador      UUID
+  prestador_id   TEXT (nome do motorista)
+
+trg_notificar_os_para_app usava:
+  NEW.prestador_id::UUID → "MOTORISTA TESTE"::UUID → SQLSTATE 22P02
+
+================================================================
+LINHA ALTERADA
+================================================================
+
+Função: f_trg_notificar_os_para_app
+
+ANTES (linhas 5 e 8):
+  IF NEW.prestador_id IS NOT NULL AND (OLD IS NULL OR OLD.prestador_id IS DISTINCT FROM NEW.prestador_id) THEN
+    ...
+    VALUES ( NEW.prestador_id::UUID, ... )
+
+DEPOIS:
+  IF NEW.prestador IS NOT NULL AND (OLD IS NULL OR OLD.prestador IS DISTINCT FROM NEW.prestador) THEN
+    ...
+    VALUES ( NEW.prestador, ... )
+
+Mudança: 2 ocorrências de "prestador_id" → "prestador"
+Cast removido: NEW.prestador já é UUID, não precisa de ::UUID
+
+================================================================
+SQLSTATE DESAPARECEU?                    SIM
+================================================================
+
+PASS 1 — INSERT direto em ordens_servico:
+  OS criada com cliente UUID + prestador UUID + nomes TEXT
+  Notificação criada com prestador_id = UUID (5377592a)
+  SQLSTATE 22P02: NÃO OCORREU
+  Resultado: PASS
+
+PASS 2 — Trigger de notificação executou:
+  portal_notificacoes: 1 registro tipo "nova_os"
+  prestador_id = 5377592a-50e8-41d7-b8c5-b5c4509a3d56 (UUID)
+  Resultado: PASS
+
+================================================================
+OS CRIADA?                              SIM
+================================================================
+
+PASS 3 — M66 criando alocação:
+  ordens_servico:          1 (PASS)
+  financeiro_pagar:        1 (PASS)
+  financeiro_receber:      1 (PASS)
+  pagamentos_prestadores:  1 (PASS)
+  FP valor = PP valor_liquido: PASS (R$ 1.100,00)
+  OS campos: cliente=UUID, cliente_id=TEXT, prestador=UUID, prestador_id=TEXT
+
+M66 VOLTOU A CRIAR OS?                  SIM
+
+================================================================
+FINANCEIRO PRESERVADO?                  SIM
+================================================================
+
+PASS 4 — Update adicional 120→200:
+  OS:  1 → 1 (sem duplicidade)
+  FP:  1 → 1 (sem duplicidade)
+  PP:  1 → 1 (sem duplicidade)
+  FP valor atualizado: R$ 1.300,00
+  PP valor_liquido atualizado: R$ 1.300,00
+  FP=PP: PASS
+
+================================================================
+DUPLICIDADE?                            NENHUMA
+================================================================
+
+================================================================
+36 REGISTROS 02K PRESERVADOS?          SIM
+================================================================
+
+PASS 5:
+  Snapshot:     36 (PASS)
+  36 FP=PP:     36/36 (PASS)
+  Soma:         R$ 36.377,12 (PASS)
+
+================================================================
+FECHAMENTO TEST PRESERVADO?            SIM
+================================================================
+
+PASS 6:
+  Fechamento 3884e3c0: pago/pago
+  Pago-sem-baixa R$137,89: 137.89 pago
+
+================================================================
+PRODUÇÃO ALTERADA CONTROLADAMENTE?      SIM
+================================================================
+
+CREATE OR REPLACE FUNCTION aplicado via pg client direto.
+Função atualizada em produção com a correção.
+Nenhum outro trigger, schema ou financeiro alterado.
+
+================================================================
+CLASSIFICAÇÃO: PASS
+================================================================
+
+Todos os 6 testes aprovados.
+Causa raiz eliminada.
+M66 cria OS normalmente.
+Financeiro preservado.
+Sem duplicidade.
+36 registros intactos.
+
+================================================================
+Caminho:  FIN-SANE-02L.1B-TRIGGER-OS-FIX.txt
+Tamanho:  ~5 KB
+Data:     2026-09-18 08:55 BRT
+Modelo:   MiMo-V2.5

@@ -1,4 +1,6 @@
-export type UserRole = "admin" | "operador" | "cliente" | "prestador";
+import { supabase } from "./supabase";
+
+export type UserRole = "super_admin" | "admin" | "operador" | "financeiro" | "comercial" | "atendimento" | "motorista" | "cliente" | "prestador";
 
 export interface User {
   email: string;
@@ -7,49 +9,64 @@ export interface User {
   unit: string;
 }
 
-const DEMO_USERS: Record<string, { password: string; user: User }> = {
-  "admin@conexaoexpress.com.br": {
-    password: "admin123",
-    user: { email: "admin@conexaoexpress.com.br", name: "Administrador", role: "admin", unit: "Matriz São Paulo" },
-  },
-  "operador@conexaoexpress.com.br": {
-    password: "oper123",
-    user: { email: "operador@conexaoexpress.com.br", name: "Operador", role: "operador", unit: "Filial Campinas" },
-  },
-  "cliente@empresa.com.br": {
-    password: "cli123",
-    user: { email: "cliente@empresa.com.br", name: "Cliente Corp", role: "cliente", unit: "Portal Cliente" },
-  },
-  "prestador@logistica.com.br": {
-    password: "prest123",
-    user: { email: "prestador@logistica.com.br", name: "Parceiro Log", role: "prestador", unit: "App Prestador" },
-  },
-};
-
-export function login(email: string, password: string): User | null {
-  const entry = DEMO_USERS[email];
-  if (entry && entry.password === password) {
-    localStorage.setItem("tms_user", JSON.stringify(entry.user));
-    return entry.user;
+export function mapPapelToUserRole(papel: string): UserRole {
+  switch (papel) {
+    case "super_admin": return "super_admin";
+    case "admin_tenant":
+    case "gestor":
+    case "admin": return "admin";
+    case "operacional":
+    case "operador": return "operador";
+    case "financeiro": return "financeiro";
+    case "comercial": return "comercial";
+    case "atendimento": return "atendimento";
+    case "cliente": return "cliente";
+    case "prestador": return "prestador";
+    case "motorista": return "motorista";
+    default: return "operador";
   }
-  return null;
-}
-
-export function getUser(): User | null {
-  const raw = localStorage.getItem("tms_user");
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
-}
-
-export function logout() {
-  localStorage.removeItem("tms_user");
 }
 
 export function getRedirectPath(role: UserRole): string {
   switch (role) {
+    case "super_admin":
     case "admin": return "/dashboard";
+    case "financeiro": return "/financeiro";
+    case "comercial": return "/comercial";
     case "operador": return "/operacao";
-    case "cliente": return "/portal-cliente";
+    case "atendimento": return "/dashboard";
+    case "motorista":
     case "prestador": return "/app-prestador";
+    case "cliente": return "/portal-cliente";
+  }
+}
+
+// Obter sessão atual do Supabase (para verificar se está logado via auth real)
+export async function getSessaoSupabase() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session || null;
+  } catch {
+    return null;
+  }
+}
+
+// Obter cliente_id do usuário logado via Supabase Auth
+export async function obterClienteIdAuth(): Promise<string | null> {
+  try {
+    const sessao = await getSessaoSupabase();
+    if (!sessao?.user?.id) return null;
+
+    const authUserId = sessao.user.id;
+    const { data: vinculos } = await supabase
+      .from("usuarios_cliente")
+      .select("cliente_id")
+      .eq("auth_user_id", authUserId)
+      .eq("ativo", true)
+      .limit(1);
+
+    return vinculos && vinculos.length > 0 ? vinculos[0].cliente_id : null;
+  } catch {
+    return null;
   }
 }

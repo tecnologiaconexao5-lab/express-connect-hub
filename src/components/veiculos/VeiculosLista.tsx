@@ -7,7 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { Veiculo } from "./types";
+import { fromVeiculoRow, VeiculoRow } from "@/lib/dbMappers";
 import { toast } from "sonner";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
 interface Props {
   onSelect: (id: string) => void;
@@ -19,6 +21,8 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
   const [tipoCargaFilter, setTipoCargaFilter] = useState("todos");
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
 
   useEffect(() => {
     fetchVeiculos();
@@ -27,9 +31,13 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
   const fetchVeiculos = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("veiculos").select("*").order("placa");
+      const PAGE_SIZE = 25;
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase.from("veiculos").select("*", { count: "exact" }).order("placa").range(from, to);
+      if (count !== null) setTotalCount(count);
       if (error) throw error;
-      setVeiculos((data as Veiculo[]) || []);
+      setVeiculos((data as VeiculoRow[] || []).map(fromVeiculoRow) as Veiculo[]);
     } catch (error) {
       console.error("Erro ao buscar veículos no Supabase, usando localStorage:", error);
       const localData = localStorage.getItem("veiculos_fallback");
@@ -45,7 +53,7 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
 
   const filtered = veiculos.filter((v) => {
     const matchBusca = (v.placa || "").toLowerCase().includes(busca.toLowerCase()) ||
-      (v.prestador_vinculado || "").toLowerCase().includes(busca.toLowerCase());
+      (v.prestadorVinculado || "").toLowerCase().includes(busca.toLowerCase());
     const matchTipoCarga = tipoCargaFilter === "todos" || v.tipoCarga === tipoCargaFilter;
     return matchBusca && matchTipoCarga;
   });
@@ -97,22 +105,26 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-10">Carregando...</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-10">
+                    <ProgressiveBlocksLoader size="normal" />
+                  </TableCell>
+                </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Nenhum veículo encontrado.</TableCell></TableRow>
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(v.id)}>
                     <TableCell className="font-semibold">{v.placa.toUpperCase()}</TableCell>
-                    <TableCell className="text-sm">{v.tipo_veiculo || "—"}</TableCell>
+                    <TableCell className="text-sm">{v.tipoVeiculo || "—"}</TableCell>
                     <TableCell>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${v.tipoCarga === 'refrigerado' ? 'bg-blue-100 text-blue-700' : v.tipoCarga === 'seco' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
                         {v.tipoCarga || 'Nao definido'}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm">{v.marca} {v.modelo}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{v.ano_fabricacao}/{v.ano_modelo}</TableCell>
-                    <TableCell className="text-sm truncate max-w-[150px]">{v.prestador_vinculado || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{v.anoFabricacao}/{v.anoModelo}</TableCell>
+                    <TableCell className="text-sm truncate max-w-[150px]">{v.prestadorVinculado || "—"}</TableCell>
                     <TableCell>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${v.status === "Ativo" ? "bg-green-100 text-green-700" : v.status === "Manutenção" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
                         {v.status || "Ativo"}
@@ -120,7 +132,7 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
                     </TableCell>
                     <TableCell>
                       {/* Lógica simulada de alerta documental */}
-                      {v.validade_documental && new Date(v.validade_documental) < new Date() ? (
+                      {v.validadeDocumental && new Date(v.validadeDocumental) < new Date() ? (
                         <div className="flex items-center text-red-600 gap-1"><AlertTriangle className="w-4 h-4" /><span className="text-xs">Vencido</span></div>
                       ) : <span className="text-xs text-muted-foreground">OK</span>}
                     </TableCell>

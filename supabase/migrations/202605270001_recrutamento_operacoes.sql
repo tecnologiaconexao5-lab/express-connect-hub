@@ -61,20 +61,34 @@ CREATE INDEX IF NOT EXISTS idx_recrutamento_operacoes_created_at ON recrutamento
 ALTER TABLE recrutamento_operacoes ENABLE ROW LEVEL SECURITY;
 
 -- RLS: authenticated users can SELECT
+DROP POLICY IF EXISTS "recrutamento_operacoes_select" ON recrutamento_operacoes;
 CREATE POLICY "recrutamento_operacoes_select" ON recrutamento_operacoes
   FOR SELECT USING (auth.role() = 'authenticated' OR auth.role() = 'service_role');
 
 -- RLS: authenticated users can INSERT
+DROP POLICY IF EXISTS "recrutamento_operacoes_insert" ON recrutamento_operacoes;
 CREATE POLICY "recrutamento_operacoes_insert" ON recrutamento_operacoes
   FOR INSERT WITH CHECK (auth.role() = 'authenticated' OR auth.role() = 'service_role');
 
 -- RLS: authenticated users can UPDATE
+DROP POLICY IF EXISTS "recrutamento_operacoes_update" ON recrutamento_operacoes;
 CREATE POLICY "recrutamento_operacoes_update" ON recrutamento_operacoes
   FOR UPDATE USING (auth.role() = 'authenticated' OR auth.role() = 'service_role');
 
 -- RLS: authenticated users can DELETE
+DROP POLICY IF EXISTS "recrutamento_operacoes_delete" ON recrutamento_operacoes;
 CREATE POLICY "recrutamento_operacoes_delete" ON recrutamento_operacoes
   FOR DELETE USING (auth.role() = 'authenticated' OR auth.role() = 'service_role');
 
 -- Add table to realtime publication so the frontend can subscribe
-ALTER PUBLICATION supabase_realtime ADD TABLE recrutamento_operacoes;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'recrutamento_operacoes'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.recrutamento_operacoes;
+  END IF;
+END $$;
+
+

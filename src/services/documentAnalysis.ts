@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "@/services/ia/proxyIaClient";
 
 export interface DocumentAnalysisResult {
   success: boolean;
@@ -158,60 +159,29 @@ export async function analyzeDocument(
   prestadorData?: PrestadorData,
   veiculoData?: VeiculoData
 ): Promise<DocumentAnalysisResult> {
-  const apiKey = localStorage.getItem("anthropic_api_key");
-  
-  if (!apiKey) {
-    return {
-      success: false,
-      error: "Chave da API Anthropic não configurada"
-    };
-  }
-
   try {
     const prompt = PROMPTS_BY_TYPE[tipoDoc] || PROMPTS_BY_TYPE.outro;
-    
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: "image/jpeg",
-                  data: imageBase64
-                }
-              },
-              {
-                type: "text",
-                text: prompt
-              }
-            ]
-          }
-        ]
-      })
+
+    const resultado = await proxyIaClient.executar({
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      prompt,
+      max_tokens: 2048,
+      images: [{ type: "image/jpeg", data: imageBase64 }],
     });
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+    if (!resultado.sucesso) {
+      return {
+        success: false,
+        error: resultado.erro || "Falha ao analisar documento via proxy-ia",
+      };
     }
 
-    const data = await response.json();
-    const content = data.content[0].text;
-    
+    const responseText = resultado.resposta;
+
     let parsedData;
     try {
-      parsedData = JSON.parse(content);
+      parsedData = JSON.parse(responseText);
     } catch {
       return {
         success: false,
@@ -270,15 +240,13 @@ export async function analyzeDocument(
       }
     }
 
-    const confianca = data.stop_reason === "end_turn" ? 95 : 70;
-
     return {
       success: true,
       data: {
         dados_extraidos: parsedData,
         divergencias,
-        confianca_pct: confianca,
-        observacoes: `Documento ${tipoDoc.toUpperCase()} analisado com ${confianca}% de confiança.`,
+        confianca_pct: 90,
+        observacoes: `Documento ${tipoDoc.toUpperCase()} analisado com sucesso via proxy-ia.`,
         recomendacao
       }
     };

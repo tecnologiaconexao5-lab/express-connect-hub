@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Download, FileText, ChevronDown, ChevronRight, Printer, RefreshCw, Filter } from "lucide-react";
+import { Download, FileText, ChevronDown, ChevronRight, RefreshCw, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,12 +10,30 @@ import autoTable from "jspdf-autotable";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { carregarLogoBase64Utils } from "@/utils/pdfGenerator";
+import {
+  calcularDRE,
+  periodoParaDatas,
+  type PeriodoDre,
+  type DreReceita,
+  type DreCustoPrestador,
+  type DreDespesa,
+  type DreTotais,
+} from "@/services/financeiro/dreService";
+
+// ============================================================================
+// F0-G — DRE Gerencial com fontes reais (competência econômica).
+//   Receita  → financeiro_receber (fonte oficial — fatura/OS não contam de novo)
+//   Custos   → pagamentos_prestadores (impacto_dre = true, valor_liquido)
+//   Despesas → financeiro_pagar (exclui repasses de prestador e impostos)
+// Baixas/estornos NÃO entram como competência. Sem estimativas inventadas.
+// ============================================================================
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => v.toFixed(1) + "%";
 const varPct = (atual: number, anterior: number) => {
   if (anterior === 0) return "—";
-  return `${((atual - anterior) / Math.abs(anterior) * 100) >= 0 ? '+' : ''}${((atual - anterior) / Math.abs(anterior) * 100).toFixed(1)}%`;
+  const pct = ((atual - anterior) / Math.abs(anterior) * 100);
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 };
 
 interface DRELine {
@@ -27,243 +45,135 @@ interface DRELine {
   children?: DRELine[];
 }
 
-const categoriasReceita = ["Frete", "Frete Dedicado", "Serviços Logísticos", "Others"];
-const categoriasCusto = ["Custo Prestadores", "Combustível", "Pedágio", "Seguros", "Outros"];
-const categoriasDespesa = ["Administrativas", "Comerciais", "Financeiras", "Depreciação"];
+const periodos: { value: PeriodoDre; label: string }[] = [
+  { value: "mensal", label: "Mensal" },
+  { value: "trimestral", label: "Trimestral" },
+  { value: "anual", label: "Anual" },
+  { value: "personalizado", label: "Personalizado" },
+];
 
 export default function DREGerencial() {
+  const hoje = new Date();
+  const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const [loading, setLoading] = useState(true);
-  const [competencia, setCompetencia] = useState("04/2026");
-  const [periodo, setPeriodo] = useState("mensal");
+  const [competencia, setCompetencia] = useState(mesAtual);
+  const [periodo, setPeriodo] = useState<PeriodoDre>("mensal");
+  const [dataInicio, setDataInicio] = useState<string>("");
+  const [dataFim, setDataFim] = useState<string>("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["1", "2", "4", "6"]));
-  const [unidade, setUnidade] = useState("todas");
-  const [centroCusto, setCentroCusto] = useState("todos");
-  const [planoContas, setPlanoContas] = useState("todos");
 
   const [dadosDRE, setDadosDRE] = useState<DRELine[]>([]);
+  const [resumo, setResumo] = useState<DreTotais | null>(null);
+  const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
+
+  // Meses com competência real disponível (fonte: financeiro_receber / financeiro_pagar / pagamentos_prestadores)
+  useEffect(() => {
+    const carregarMeses = async () => {
+      try {
+        const [rec, pag, pgt] = await Promise.all([
+          supabase.from("financeiro_receber").select("data_vencimento").eq("is_teste", false),
+          supabase.from("financeiro_pagar").select("data_vencimento, competencia").eq("is_teste", false),
+          supabase.from("pagamentos_prestadores").select("competencia, data_competencia"),
+        ]);
+        const s = new Set<string>();
+        (rec.data || []).forEach((r: any) => { const d = r.data_vencimento; if (d) s.add(String(d).substring(0, 7)); });
+        (pag.data || []).forEach((p: any) => { const d = p.competencia || p.data_vencimento; if (d) s.add(String(d).substring(0, 7)); });
+        (pgt.data || []).forEach((p: any) => { const d = p.competencia || p.data_competencia; if (d) s.add(String(d).substring(0, 7)); });
+        setMesesDisponiveis(Array.from(s).sort().reverse().slice(0, 24));
+      } catch { /* lista de meses é auxiliar */ }
+    };
+    carregarMeses();
+  }, []);
 
   useEffect(() => {
     fetchDadosDRE();
-  }, [competencia, periodo, unidade, centroCusto, planoContas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competencia, periodo, dataInicio, dataFim]);
 
-  const fetchDadosDRE = async () => {
+  async function fetchDadosDRE() {
     setLoading(true);
     try {
-      const [mes, ano] = competencia.split('/');
-      const competenciaAtual = `${ano}-${mes.padStart(2, '0')}`;
-      
-      const competenciaAnterior = parseInt(mes) === 1 
-        ? `12/${parseInt(ano) - 1}` 
-        : `${(parseInt(mes) - 1).toString().padStart(2, '0')}/${ano}`;
-      const competenciaAnteriorStr = parseInt(mes) === 1 
-        ? `${parseInt(ano) - 1}-12`
-        : `${ano}-${(parseInt(mes) - 1).toString().padStart(2, '0')}`;
+      const janela = periodoParaDatas(periodo, competencia, dataInicio || undefined, dataFim || undefined);
 
-      const { data: receberAtual } = await supabase
-        .from("financeiro_receber")
-        .select("valor, categoria")
-        .like("competencia", `%${competenciaAtual}%`);
+      const [recAtual, recAnt, pagAtual, pagAnt, pgtAtual, pgtAnt] = await Promise.all([
+        supabase.from("financeiro_receber")
+          .select("valor, categoria, plano_conta, data_vencimento, data_emissao, status")
+          .eq("is_teste", false)
+          .gte("data_vencimento", janela.inicio).lte("data_vencimento", janela.fim),
+        supabase.from("financeiro_receber")
+          .select("valor, categoria, plano_conta, data_vencimento, data_emissao, status")
+          .eq("is_teste", false)
+          .gte("data_vencimento", janela.inicioAnterior).lte("data_vencimento", janela.fimAnterior),
+        supabase.from("financeiro_pagar")
+          .select("valor, categoria, plano_contas, data_vencimento, competencia, os_id, descricao, status")
+          .eq("is_teste", false)
+          .is("os_id", null) // exclui repasses de prestador (já em pagamentos_prestadores)
+          .gte("data_vencimento", janela.inicio).lte("data_vencimento", janela.fim),
+        supabase.from("financeiro_pagar")
+          .select("valor, categoria, plano_contas, data_vencimento, competencia, os_id, descricao, status")
+          .eq("is_teste", false)
+          .is("os_id", null)
+          .gte("data_vencimento", janela.inicioAnterior).lte("data_vencimento", janela.fimAnterior),
+        supabase.from("pagamentos_prestadores")
+          .select("valor_liquido, impacto_dre, competencia, data_competencia, categoria_financeira, conta_contabil")
+          .eq("classificacao_dado", "real")
+          .gte("competencia", janela.inicio).lte("competencia", janela.fim),
+        supabase.from("pagamentos_prestadores")
+          .select("valor_liquido, impacto_dre, competencia, data_competencia, categoria_financeira, conta_contabil")
+          .eq("classificacao_dado", "real")
+          .gte("competencia", janela.inicioAnterior).lte("competencia", janela.fimAnterior),
+      ]);
 
-      const { data: receberAnterior } = await supabase
-        .from("financeiro_receber")
-        .select("valor, categoria")
-        .like("competencia", `%${competenciaAnteriorStr}%`);
+      const receitas = (rows: any[] | null): DreReceita[] =>
+        (rows || [])
+          .filter((r: any) => r.status !== "cancelado")
+          .map((r: any) => ({ valor: Number(r.valor) || 0, categoria: r.categoria || r.plano_conta || null }));
 
-      const { data: pagarAtual } = await supabase
-        .from("financeiro_pagar")
-        .select("valor, categoria")
-        .like("competencia", `%${competenciaAtual}%`);
+      const despesas = (rows: any[] | null): DreDespesa[] =>
+        (rows || [])
+          .filter((r: any) => r.status !== "cancelado" && !String(r.descricao || "").toLowerCase().startsWith("repasse"))
+          .map((r: any) => ({ valor: Number(r.valor) || 0, categoria: r.categoria || null, plano_conta: r.plano_contas || null }));
 
-      const { data: pagarAnterior } = await supabase
-        .from("financeiro_pagar")
-        .select("valor, categoria")
-        .like("competencia", `%${competenciaAnteriorStr}%`);
+      const custos = (rows: any[] | null): DreCustoPrestador[] =>
+        (rows || []).map((r: any) => ({ valor_liquido: Number(r.valor_liquido) || 0, impacto_dre: !!r.impacto_dre }));
 
-      const { data: lancamentosAtual } = await supabase
-        .from("lancamentos_financeiros")
-        .select("valor, tipo, categoria")
-        .like("data", `${competenciaAtual}%`);
+      const atual = calcularDRE(receitas(recAtual.data), custos(pgtAtual.data), despesas(pagAtual.data));
+      const anterior = calcularDRE(receitas(recAnt.data), custos(pgtAnt.data), despesas(pagAnt.data));
 
-      const { data: lancamentosAnterior } = await supabase
-        .from("lancamentos_financeiros")
-        .select("valor, tipo, categoria")
-        .like("data", `${competenciaAnteriorStr}%`);
+      setResumo(atual);
 
-      const somaReceberAtual = receberAtual?.reduce((acc, r) => acc + (parseFloat(r.valor) || 0), 0) || 0;
-      const somaReceberAnterior = receberAnterior?.reduce((acc, r) => acc + (parseFloat(r.valor) || 0), 0) || 0;
-
-      const somaPagarAtual = pagarAtual?.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0) || 0;
-      const somaPagarAnterior = pagarAnterior?.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0) || 0;
-
-      const despesaFinanceiraAtual = lancamentosAtual
-        ?.filter(l => l.tipo === "despesa" && l.categoria?.toLowerCase().includes("financeira"))
-        .reduce((acc, l) => acc + (parseFloat(l.valor) || 0), 0) || 0;
-      
-      const despesaFinanceiraAnterior = lancamentosAnterior
-        ?.filter(l => l.tipo === "despesa" && l.categoria?.toLowerCase().includes("financeira"))
-        .reduce((acc, l) => acc + (parseFloat(l.valor) || 0), 0) || 0;
-
-      const receitaFinanceiraAtual = lancamentosAtual
-        ?.filter(l => l.tipo === "entrada" && l.categoria?.toLowerCase().includes("financeira"))
-        .reduce((acc, l) => acc + (parseFloat(l.valor) || 0), 0) || 0;
-      
-      const receitaFinanceiraAnterior = lancamentosAnterior
-        ?.filter(l => l.tipo === "entrada" && l.categoria?.toLowerCase().includes("financeira"))
-        .reduce((acc, l) => acc + (parseFloat(l.valor) || 0), 0) || 0;
-
-      const deducaoAtual = somaReceberAtual * 0.10;
-      const deducaoAnterior = somaReceberAnterior * 0.10;
-
-      const receitaLiquidaAtual = somaReceberAtual - deducaoAtual;
-      const receitaLiquidaAnterior = somaReceberAnterior - deducaoAnterior;
-
-      const custosAtual = somaPagarAtual;
-      const custosAnterior = somaPagarAnterior;
-
-      const lucroBrutoAtual = receitaLiquidaAtual - custosAtual;
-      const lucroBrutoAnterior = receitaLiquidaAnterior - custosAnterior;
-
-      const despesasAdminAtual = somaPagarAtual * 0.15;
-      const despesasAdminAnterior = somaPagarAnterior * 0.15;
-      const despesasComerciais = somaPagarAtual * 0.08;
-      const outrasDespesas = somaPagarAtual * 0.05;
-      const totalDespesasAtual = despesasAdminAtual + despesasComerciais + outrasDespesas;
-      const totalDespesasAnterior = despesasAdminAnterior + (somaPagarAnterior * 0.08) + (somaPagarAnterior * 0.05);
-
-      const ebitdaAtual = lucroBrutoAtual - totalDespesasAtual;
-      const ebitdaAnterior = lucroBrutoAnterior - totalDespesasAnterior;
-
-      const depreciação = somaPagarAtual * 0.02;
-      const ebitAtual = ebitdaAtual - depreciação;
-      const ebitAnterior = ebitdaAnterior - (somaPagarAnterior * 0.02);
-
-      const resultadoFinanceiroAtual = receitaFinanceiraAtual - despesaFinanceiraAtual;
-      const resultadoFinanceiroAnterior = receitaFinanceiraAnterior - despesaFinanceiraAnterior;
-
-      const lucroAntesIRAtual = ebitAtual + resultadoFinanceiroAtual;
-      const lucroAntesIRAnterior = ebitAnterior + resultadoFinanceiroAnterior;
-
-      const irCSLLAtual = Math.max(0, lucroAntesIRAtual * 0.25);
-      const irCSLLAnterior = Math.max(0, lucroAntesIRAnterior * 0.25);
-
-      const lucroLiquidoAtual = lucroAntesIRAtual - irCSLLAtual;
-      const lucroLiquidoAnterior = lucroAntesIRAnterior - irCSLLAnterior;
+      const L = (id: string, label: string, tipo: DRELine["tipo"], get: (t: DreTotais) => number, children?: DRELine[]): DRELine => ({
+        id, label,
+        valorAtual: get(atual),
+        valorAnterior: get(anterior),
+        tipo,
+        children,
+      });
 
       const dreData: DRELine[] = [
-        {
-          id: "1",
-          label: "RECEITA BRUTA DE SERVIÇOS",
-          valorAtual: somaReceberAtual,
-          valorAnterior: somaReceberAnterior,
-          tipo: "receita",
-          children: [
-            { id: "1.1", label: "Frete Rodoviário", valorAtual: somaReceberAtual * 0.7, valorAnterior: somaReceberAnterior * 0.7, tipo: "receita" },
-            { id: "1.2", label: "Frete Dedicado", valorAtual: somaReceberAtual * 0.2, valorAnterior: somaReceberAnterior * 0.2, tipo: "receita" },
-            { id: "1.3", label: "Serviços Logísticos", valorAtual: somaReceberAtual * 0.08, valorAnterior: somaReceberAnterior * 0.08, tipo: "receita" },
-            { id: "1.4", label: "Outros Serviços", valorAtual: somaReceberAtual * 0.02, valorAnterior: somaReceberAnterior * 0.02, tipo: "receita" },
-          ]
-        },
-        {
-          id: "2",
-          label: "(-) DEDUÇÕES",
-          valorAtual: deducaoAtual,
-          valorAnterior: deducaoAnterior,
-          tipo: "deducao",
-          children: [
-            { id: "2.1", label: "ISS", valorAtual: deducaoAtual * 0.4, valorAnterior: deducaoAnterior * 0.4, tipo: "deducao" },
-            { id: "2.2", label: "PIS/COFINS", valorAtual: deducaoAtual * 0.5, valorAnterior: deducaoAnterior * 0.5, tipo: "deducao" },
-            { id: "2.3", label: "Outros", valorAtual: deducaoAtual * 0.1, valorAnterior: deducaoAnterior * 0.1, tipo: "deducao" },
-          ]
-        },
-        {
-          id: "3",
-          label: "= RECEITA LÍQUIDA",
-          valorAtual: receitaLiquidaAtual,
-          valorAnterior: receitaLiquidaAnterior,
-          tipo: "resultado",
-        },
-        {
-          id: "4",
-          label: "(-) CUSTOS DOS SERVIÇOS (CPV)",
-          valorAtual: custosAtual,
-          valorAnterior: custosAnterior,
-          tipo: "custo",
-          children: [
-            { id: "4.1", label: "Custo Prestadores", valorAtual: custosAtual * 0.55, valorAnterior: custosAnterior * 0.55, tipo: "custo" },
-            { id: "4.2", label: "Combustível e Pedágios", valorAtual: custosAtual * 0.25, valorAnterior: custosAnterior * 0.25, tipo: "custo" },
-            { id: "4.3", label: "Seguros Operacionais", valorAtual: custosAtual * 0.12, valorAnterior: custosAnterior * 0.12, tipo: "custo" },
-            { id: "4.4", label: "Outros Custos Diretos", valorAtual: custosAtual * 0.08, valorAnterior: custosAnterior * 0.08, tipo: "custo" },
-          ]
-        },
-        {
-          id: "5",
-          label: "= LUCRO BRUTO",
-          valorAtual: lucroBrutoAtual,
-          valorAnterior: lucroBrutoAnterior,
-          tipo: "resultado",
-        },
-        {
-          id: "6",
-          label: "(-) DESPESAS OPERACIONAIS",
-          valorAtual: totalDespesasAtual,
-          valorAnterior: totalDespesasAnterior,
-          tipo: "despesa",
-          children: [
-            { id: "6.1", label: "Despesas Administrativas", valorAtual: despesasAdminAtual, valorAnterior: despesasAdminAnterior, tipo: "despesa" },
-            { id: "6.2", label: "Despesas Comerciais", valorAtual: despesasComerciais, valorAnterior: somaPagarAnterior * 0.08, tipo: "despesa" },
-            { id: "6.3", label: "Despesas Financeiras", valorAtual: despesaFinanceiraAtual, valorAnterior: despesaFinanceiraAnterior, tipo: "despesa" },
-            { id: "6.4", label: "Depreciação", valorAtual: depreciação, valorAnterior: somaPagarAnterior * 0.02, tipo: "despesa" },
-          ]
-        },
-        {
-          id: "7",
-          label: "= EBITDA",
-          valorAtual: ebitdaAtual,
-          valorAnterior: ebitdaAnterior,
-          tipo: "resultado",
-        },
-        {
-          id: "8",
-          label: "(-) Depreciação e Amortização",
-          valorAtual: depreciação,
-          valorAnterior: somaPagarAnterior * 0.02,
-          tipo: "deducao",
-        },
-        {
-          id: "9",
-          label: "= EBIT",
-          valorAtual: ebitAtual,
-          valorAnterior: ebitAnterior,
-          tipo: "resultado",
-        },
-        {
-          id: "10",
-          label: "(+/-) Resultado Financeiro",
-          valorAtual: resultadoFinanceiroAtual,
-          valorAnterior: resultadoFinanceiroAnterior,
-          tipo: "deducao",
-        },
-        {
-          id: "11",
-          label: "= LUCRO ANTES DO IR",
-          valorAtual: lucroAntesIRAtual,
-          valorAnterior: lucroAntesIRAnterior,
-          tipo: "resultado",
-        },
-        {
-          id: "12",
-          label: "(-) IR e CSLL (estimado)",
-          valorAtual: irCSLLAtual,
-          valorAnterior: irCSLLAnterior,
-          tipo: "deducao",
-        },
-        {
-          id: "13",
-          label: "= LUCRO LÍQUIDO",
-          valorAtual: lucroLiquidoAtual,
-          valorAnterior: lucroLiquidoAnterior,
-          tipo: "resultado",
-        },
+        L("1", "RECEITA BRUTA DE SERVIÇOS", "receita", (t) => t.receitaBruta, [
+          L("1.1", "Frete e Serviços", "receita", (t) => t.receitaBruta),
+        ]),
+        L("2", "(-) DEDUÇÕES (impostos/tributos)", "deducao", (t) => t.deducoes, [
+          L("2.1", "Impostos e Tributos sobre Receita", "deducao", (t) => t.deducoes),
+        ]),
+        L("3", "= RECEITA LÍQUIDA", "resultado", (t) => t.receitaLiquida),
+        L("4", "(-) CUSTOS DOS SERVIÇOS (prestadores)", "custo", (t) => t.custosPrestadores, [
+          L("4.1", "Pagamentos a prestadores (impacto DRE)", "custo", (t) => t.custosPrestadores),
+        ]),
+        L("5", "= RESULTADO BRUTO", "resultado", (t) => t.receitaLiquida - t.custosPrestadores),
+        L("6", "(-) DESPESAS OPERACIONAIS", "despesa", (t) => t.despesasOperacionais, [
+          L("6.1", "Administrativas", "despesa", (t) => t.despesasAdministrativas),
+          L("6.2", "Comerciais", "despesa", (t) => t.despesasComerciais),
+          L("6.3", "Outras despesas operacionais", "despesa", (t) => t.despesasOutras),
+        ]),
+        L("7", "= EBITDA", "resultado", (t) => t.ebitda),
+        L("8", "(-) Depreciação e Amortização", "deducao", (t) => t.depreciacao),
+        L("9", "= RESULTADO OPERACIONAL (EBIT)", "resultado", (t) => t.ebit),
+        L("10", "(+/-) Resultado Financeiro", "deducao", (t) => t.resultadoFinanceiro),
+        L("11", "= LUCRO ANTES DO IR", "resultado", (t) => t.lucroAntesIR),
+        L("12", "(-) IR e CSLL (não estimado)", "deducao", (t) => t.ir),
+        L("13", "= LUCRO LÍQUIDO", "resultado", (t) => t.lucroLiquido),
       ];
 
       setDadosDRE(dreData);
@@ -271,51 +181,31 @@ export default function DREGerencial() {
       console.error("Erro ao buscar dados do DRE:", error);
       toast.error("Erro ao carregar dados do DRE");
       setDadosDRE([]);
+      setResumo(null);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const getMargemBruta = () => {
-    const receitaLiquida = dadosDRE.find(d => d.id === "3")?.valorAtual || 0;
-    const lucroBruto = dadosDRE.find(d => d.id === "5")?.valorAtual || 0;
-    return receitaLiquida > 0 ? (lucroBruto / receitaLiquida) * 100 : 0;
-  };
-
-  const getMargemEbitda = () => {
-    const receitaLiquida = dadosDRE.find(d => d.id === "3")?.valorAtual || 0;
-    const ebitda = dadosDRE.find(d => d.id === "7")?.valorAtual || 0;
-    return receitaLiquida > 0 ? (ebitda / receitaLiquida) * 100 : 0;
-  };
-
-  const getMargemLiquida = () => {
-    const receitaLiquida = dadosDRE.find(d => d.id === "3")?.valorAtual || 0;
-    const lucroLiquido = dadosDRE.find(d => d.id === "13")?.valorAtual || 0;
-    return receitaLiquida > 0 ? (lucroLiquido / receitaLiquida) * 100 : 0;
-  };
-
-  const getMargemOperacional = () => {
-    const receitaLiquida = dadosDRE.find(d => d.id === "3")?.valorAtual || 0;
-    const ebit = dadosDRE.find(d => d.id === "9")?.valorAtual || 0;
-    return receitaLiquida > 0 ? (ebit / receitaLiquida) * 100 : 0;
-  };
+  const getValor = (id: string) => dadosDRE.find(d => d.id === id)?.valorAtual || 0;
+  const getMargem = (num: number, den: number) => den > 0 ? (num / den) * 100 : 0;
 
   const toggleExpand = (id: string) => {
     const newExpanded = new Set(expanded);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
+    if (newExpanded.has(id)) newExpanded.delete(id); else newExpanded.add(id);
     setExpanded(newExpanded);
   };
 
-  const receitaBrutaAtual = dadosDRE.find(d => d.id === "1")?.valorAtual || 0;
+  const receitaBrutaAtual = getValor("1");
+  const receitaLiquidaAtual = getValor("3");
+  const ebitdaAtual = getValor("7");
+  const lucroLiquidoAtual = getValor("13");
+  const resultadoBruto = getValor("5");
 
   const DRELineRow = ({ line, level = 0 }: { line: DRELine, level?: number }) => {
     const hasChildren = line.children && line.children.length > 0;
     const isExpanded = expanded.has(line.id);
-    
+
     const getRowStyle = () => {
       switch (line.tipo) {
         case "titulo": return "bg-muted/60 font-bold text-base";
@@ -379,7 +269,7 @@ export default function DREGerencial() {
   const gerarPDF = async () => {
     const doc = new jsPDF();
     const logo = await carregarLogoBase64Utils();
-    
+
     if (logo) {
       doc.addImage(logo, "PNG", 14, 8, 36, 12);
       doc.setFontSize(16);
@@ -390,14 +280,14 @@ export default function DREGerencial() {
       doc.setTextColor(15, 26, 46);
       doc.text("DEMONSTRAÇÃO DE RESULTADO DO EXERCÍCIO", 105, 20, { align: "center" });
     }
-    
+
     doc.setFontSize(12);
     doc.setTextColor(100);
-    doc.text(`Competência: ${competencia} | Período: ${periodo === 'mensal' ? 'Mensal' : periodo === 'trimestral' ? 'Trimestral' : 'Anual'}`, 105, 28, { align: "center" });
-    
+    doc.text(`Competência: ${competencia} | Período: ${periodo === 'personalizado' ? `Personalizado ${dataInicio} a ${dataFim}` : periodo}`, 105, 28, { align: "center" });
+
     doc.setFontSize(10);
     doc.text(`Data de emissão: ${new Date().toLocaleDateString("pt-BR")}`, 105, 34, { align: "center" });
-    
+
     doc.setDrawColor(249, 115, 22);
     doc.setLineWidth(0.5);
     doc.line(20, 38, 190, 38);
@@ -410,18 +300,12 @@ export default function DREGerencial() {
         line.valorAnterior !== 0 ? `${((line.valorAtual - line.valorAnterior) / Math.abs(line.valorAnterior) * 100).toFixed(1)}%` : "—",
         fmtFin(line.valorAtual - line.valorAnterior)
       ];
-      
       if (line.children) {
-        return [
-          baseRow,
-          ...line.children.map(child => [
-            `   ${child.label}`,
-            fmtFin(child.valorAtual),
-            fmtFin(child.valorAnterior),
-            child.valorAnterior !== 0 ? `${((child.valorAtual - child.valorAnterior) / Math.abs(child.valorAnterior) * 100).toFixed(1)}%` : "—",
-            fmtFin(child.valorAtual - child.valorAnterior)
-          ])
-        ];
+        return [baseRow, ...line.children.map(child => [
+          `   ${child.label}`, fmtFin(child.valorAtual), fmtFin(child.valorAnterior),
+          child.valorAnterior !== 0 ? `${((child.valorAtual - child.valorAnterior) / Math.abs(child.valorAnterior) * 100).toFixed(1)}%` : "—",
+          fmtFin(child.valorAtual - child.valorAnterior)
+        ])];
       }
       return [baseRow];
     });
@@ -435,11 +319,8 @@ export default function DREGerencial() {
       bodyStyles: { fontSize: 9 },
       alternateRowStyles: { fillColor: [249, 249, 249] },
       columnStyles: {
-        0: { cellWidth: 80 },
-        1: { cellWidth: 28, halign: "right" },
-        2: { cellWidth: 28, halign: "right" },
-        3: { cellWidth: 22, halign: "right" },
-        4: { cellWidth: 28, halign: "right" },
+        0: { cellWidth: 80 }, 1: { cellWidth: 28, halign: "right" }, 2: { cellWidth: 28, halign: "right" },
+        3: { cellWidth: 22, halign: "right" }, 4: { cellWidth: 28, halign: "right" },
       },
       didParseCell: function(data) {
         if (data.section === "body" && data.column.index === 0) {
@@ -453,16 +334,16 @@ export default function DREGerencial() {
     });
 
     const finalY = (doc as any).lastAutoTable.finalY + 10;
-    
+
     doc.setFontSize(10);
     doc.setTextColor(15, 26, 46);
     doc.text("Indicadores de Performance", 20, finalY);
-    
+
     doc.setFontSize(9);
     doc.setTextColor(100);
-    doc.text(`Margem Bruta: ${getMargemBruta().toFixed(1)}%`, 20, finalY + 7);
-    doc.text(`Margem EBITDA: ${getMargemEbitda().toFixed(1)}%`, 20, finalY + 14);
-    doc.text(`Margem Líquida: ${getMargemLiquida().toFixed(1)}%`, 20, finalY + 21);
+    doc.text(`Margem Bruta: ${getMargem(resultadoBruto, receitaLiquidaAtual).toFixed(1)}%`, 20, finalY + 7);
+    doc.text(`Margem EBITDA: ${getMargem(ebitdaAtual, receitaLiquidaAtual).toFixed(1)}%`, 20, finalY + 14);
+    doc.text(`Margem Líquida: ${getMargem(lucroLiquidoAtual, receitaLiquidaAtual).toFixed(1)}%`, 20, finalY + 21);
 
     doc.setFontSize(8);
     doc.setTextColor(150);
@@ -470,6 +351,8 @@ export default function DREGerencial() {
 
     doc.save(`DRE_${competencia}.pdf`);
   };
+
+  const labelPeriodo = periodos.find(p => p.value === periodo)?.label || periodo;
 
   return (
     <div className="space-y-6">
@@ -479,95 +362,55 @@ export default function DREGerencial() {
             <FileText className="w-6 h-6 text-primary" />
             DRE Gerencial
           </h2>
-          <p className="text-sm text-muted-foreground">Demonstração de Resultados Enterprise</p>
+          <p className="text-sm text-muted-foreground">Competência econômica — fontes reais (receber / pagar / pagamentos de prestadores)</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchDadosDRE} disabled={loading} className="gap-1">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
-          <Select value={periodo} onValueChange={setPeriodo}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Período" />
-            </SelectTrigger>
+          <Select value={periodo} onValueChange={(v) => setPeriodo(v as PeriodoDre)}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Período" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="mensal">Mensal</SelectItem>
-              <SelectItem value="trimestral">Trimestral</SelectItem>
-              <SelectItem value="anual">Anual</SelectItem>
+              {periodos.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={competencia} onValueChange={setCompetencia}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Competência" />
-            </SelectTrigger>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Competência" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="04/2026">Abril 2026</SelectItem>
-              <SelectItem value="03/2026">Março 2026</SelectItem>
-              <SelectItem value="02/2026">Fevereiro 2026</SelectItem>
-            <SelectItem value="01/2026">Janeiro 2026</SelectItem>
-              <SelectItem value="2025">Ano 2025</SelectItem>
+              {(mesesDisponiveis.length > 0 ? mesesDisponiveis : [mesAtual]).map(m => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button onClick={async () => await gerarPDF()} className="gap-2 bg-orange-500 hover:bg-orange-600">
-            <Download className="w-4 h-4" />
-            Exportar PDF
+            <Download className="w-4 h-4" /> Exportar PDF
           </Button>
         </div>
       </div>
 
-      {/* Filtros Avançados */}
-      <Card className="bg-muted/30">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex items-center gap-2">
+      {periodo === "personalizado" && (
+        <Card className="bg-muted/30">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap gap-4 items-center">
               <Filter className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filtros:</span>
+              <span className="text-sm font-medium">Período personalizado:</span>
+              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="h-9 rounded-md border bg-card px-3 text-sm" />
+              <span className="text-muted-foreground">até</span>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="h-9 rounded-md border bg-card px-3 text-sm" />
             </div>
-            <Select value={unidade} onValueChange={setUnidade}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Unidade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todas">Todas as Unidades</SelectItem>
-                <SelectItem value="sp">São Paulo</SelectItem>
-                <SelectItem value="rj">Rio de Janeiro</SelectItem>
-                <SelectItem value="mg">Minas Gerais</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={centroCusto} onValueChange={setCentroCusto}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Centro de Resultado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="operacional">Operacional</SelectItem>
-                <SelectItem value="administrativo">Administrativo</SelectItem>
-                <SelectItem value="comercial">Comercial</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={planoContas} onValueChange={setPlanoContas}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Plano de Contas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="receita">Receitas</SelectItem>
-                <SelectItem value="custo">Custos</SelectItem>
-                <SelectItem value="despesa">Despesas</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Indicadores de Performance */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
-          { label: "Receita Bruta", value: fmtFin(dadosDRE.find(d => d.id === "1")?.valorAtual || 0), sub: varPct(dadosDRE.find(d => d.id === "1")?.valorAtual || 0, dadosDRE.find(d => d.id === "1")?.valorAnterior || 0), accent: "bg-blue-500", color: "text-blue-500" },
-          { label: "Receita Líquida", value: fmtFin(dadosDRE.find(d => d.id === "3")?.valorAtual || 0), sub: varPct(dadosDRE.find(d => d.id === "3")?.valorAtual || 0, dadosDRE.find(d => d.id === "3")?.valorAnterior || 0), accent: "bg-emerald-500", color: "text-emerald-500" },
-          { label: "EBITDA", value: fmtFin(dadosDRE.find(d => d.id === "7")?.valorAtual || 0), sub: `Margem: ${getMargemEbitda().toFixed(1)}%`, accent: "bg-violet-500", color: "text-violet-500" },
-          { label: "Lucro Líquido", value: fmtFin(dadosDRE.find(d => d.id === "13")?.valorAtual || 0), sub: `Margem: ${getMargemLiquida().toFixed(1)}%`, accent: "bg-purple-500", color: "text-purple-500" },
-          { label: "Margem Bruta", value: `${getMargemBruta().toFixed(1)}%`, sub: fmtFin(dadosDRE.find(d => d.id === "5")?.valorAtual || 0), accent: "bg-amber-500", color: "text-amber-500" },
+          { label: "Receita Bruta", value: fmtFin(getValor("1")), sub: fmtFin(getValor("1") - (dadosDRE.find(d => d.id === "1")?.valorAnterior || 0)), accent: "bg-blue-500", color: "text-blue-500" },
+          { label: "Receita Líquida", value: fmtFin(receitaLiquidaAtual), sub: `${getMargem(receitaLiquidaAtual, receitaBrutaAtual).toFixed(1)}% da bruta`, accent: "bg-emerald-500", color: "text-emerald-500" },
+          { label: "EBITDA", value: fmtFin(ebitdaAtual), sub: `Margem: ${getMargem(ebitdaAtual, receitaLiquidaAtual).toFixed(1)}%`, accent: "bg-violet-500", color: "text-violet-500" },
+          { label: "Lucro Líquido", value: fmtFin(lucroLiquidoAtual), sub: `Margem: ${getMargem(lucroLiquidoAtual, receitaLiquidaAtual).toFixed(1)}%`, accent: "bg-purple-500", color: "text-purple-500" },
+          { label: "Margem Bruta", value: `${getMargem(resultadoBruto, receitaLiquidaAtual).toFixed(1)}%`, sub: fmtFin(resultadoBruto), accent: "bg-amber-500", color: "text-amber-500" },
         ].map(k => (
           <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm hover:-translate-y-0.5 transition-transform">
             <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
@@ -608,24 +451,11 @@ export default function DREGerencial() {
         </Card>
       )}
 
-      {/* Resumo de Margens */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Margem Bruta", value: `${getMargemBruta().toFixed(1)}%`, sub: "Lucro Bruto / Rec. Líquida", color: "text-blue-500", accent: "bg-blue-500" },
-          { label: "Margem EBITDA", value: `${getMargemEbitda().toFixed(1)}%`, sub: "EBITDA / Rec. Líquida", color: "text-emerald-500", accent: "bg-emerald-500" },
-          { label: "Margem Líquida", value: `${getMargemLiquida().toFixed(1)}%`, sub: "Lucro Líquido / Rec. Líquida", color: "text-violet-500", accent: "bg-violet-500" },
-          { label: "Margem Operacional", value: `${getMargemOperacional().toFixed(1)}%`, sub: "EBIT / Rec. Líquida", color: "text-amber-500", accent: "bg-amber-500" },
-        ].map(k => (
-          <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm">
-            <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
-            <CardContent className="p-5">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{k.label}</p>
-              <p className={`text-3xl font-extrabold mt-1 ${k.color}`}>{k.value}</p>
-              <p className="text-xs text-muted-foreground mt-1">{k.sub}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Fonte: financeiro_receber (receita), pagamentos_prestadores com impacto_dre=true (custo prestador),
+        financeiro_pagar sem repasses de prestador (outras despesas). Depreciação e IR/CSLL não estimados
+        (sem fonte real confiável). Baixas financeiras não geram competência.
+      </p>
     </div>
   );
 }

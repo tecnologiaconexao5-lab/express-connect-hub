@@ -107,6 +107,29 @@ export const conversaoCandidatoService = {
         return { success: false, candidatoId, mensagem: 'Candidato sem telefone — necessário para conversão', tipo: 'erro' }
       }
 
+      const stagesPermitidos = ['aprovado', 'ativo', 'prestador_apto']
+      if (!stagesPermitidos.includes(candidate.stage)) {
+        return {
+          success: false,
+          candidatoId,
+          mensagem: `Candidato em estágio "${candidate.stage}" — conversão permitida apenas para aprovados`,
+          tipo: 'erro',
+        }
+      }
+
+      // AG-07J.11 — GATE DOCUMENTAL TMS (fail-closed)
+      // Reutiliza statusDocumental pré-computado por calcularStatusDocumentalOperacional()
+      // durante normalizeCandidate() em getCandidateById().
+      // Somente "completo" permite conversão; todos os demais estados bloqueiam.
+      if (candidate.statusDocumental !== 'completo') {
+        return {
+          success: false,
+          candidatoId,
+          mensagem: 'Documentação obrigatória incompleta ou inválida — conversão bloqueada',
+          tipo: 'erro',
+        }
+      }
+
       const duplicata = await this.buscarDuplicata(candidate)
       if (duplicata) {
         await this.atualizarCandidatoAposConversao(candidatoId, duplicata.id)
@@ -264,20 +287,38 @@ export const conversaoCandidatoService = {
 
   async sincronizarComOperacao(candidate: EnterpriseCandidate, prestador: Prestador): Promise<void> {
     try {
-      const telLimpo = candidate.telefone.replace(/\D/g, '')
-
-      const { data: existentes, error: selectError } = await supabase
-        .from('prestadores')
-        .select('id')
-        .or(`telefone.eq.${candidate.telefone},whatsapp.eq.${candidate.telefone}`)
-        .limit(1)
-
-      if (selectError) return
-      if (existentes && existentes.length > 0) return
-
-      const cpfUnico = `REC_${telLimpo.slice(0, 11)}`
-      const statusOperacional = candidate.stage === 'aprovado' || candidate.stage === 'ativo' ? 'ativo' : 'analise'
       const origemVinculo = `recrutamento:${prestador.id}`
+      const statusOperacional = candidate.stage === 'aprovado' || candidate.stage === 'ativo' ? 'ativo' : 'analise'
+
+      // AG-07G — REUTILIZA o prestador operacional existente (ex.: criado pelo
+      // App com CPF real) em vez de criar uma segunda pessoa.
+      const { buscarPrestadorOperacionalExistente } = await import('./identidadePrestadorService')
+      const existente = await buscarPrestadorOperacionalExistente({
+        telefone: candidate.telefone,
+        email: candidate.email,
+        origemCadastro: origemVinculo,
+      })
+
+      if (existente) {
+        const patch: Record<string, unknown> = {
+          status: statusOperacional,
+          liberado_app: statusOperacional === 'ativo',
+          origem_cadastro: origemVinculo,
+        }
+        // Preenche SOMENTE lacunas — nunca sobrescreve dados mais completos
+        // do App (CNH, telefone, endereço, veículo, documentos, CPF real).
+        if (!String(existente.nome_completo || '').trim()) patch.nome_completo = candidate.nome
+        if (!String(existente.telefone || '').trim()) patch.telefone = candidate.telefone
+        if (!String(existente.whatsapp || '').trim()) patch.whatsapp = candidate.telefone
+        if (!String(existente.email || '').trim() && candidate.email) patch.email = candidate.email
+        await supabase.from('prestadores').update(patch).eq('id', existente.id)
+        return
+      }
+
+      // Nenhum existente → cria. CPF real preservado se conhecido; REC_ somente
+      // como último recurso (candidato não possui CPF real no contrato atual).
+      const telLimpo = (candidate.telefone || '').replace(/\D/g, '')
+      const cpfUnico = `REC_${telLimpo.slice(0, 11)}`
 
       const { error: insertError } = await supabase
         .from('prestadores')
@@ -287,6 +328,7 @@ export const conversaoCandidatoService = {
           cpf_cnpj: cpfUnico,
           tipo_parceiro: candidate.veiculo || 'carreteiro',
           status: statusOperacional,
+          liberado_app: statusOperacional === 'ativo',
           telefone: candidate.telefone,
           whatsapp: candidate.telefone,
           email: candidate.email || null,

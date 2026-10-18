@@ -1,0 +1,132 @@
+MISSAO TMS-013 — RELATORIO TECNICO
+
+Data: 2026-07-29
+Status: PARCIAL — Planejamento validado, seed nao executado
+Classificacao: SITUACAO A
+Auditor responsavel: opencode
+
+================================================================================
+RESUMO EXECUTIVO
+================================================================================
+
+Missao destinada a criar dados de homologacao descartaveis para 6 cenarios
+operacionais do TMS. Durante a auditoria de encerramento, descobriu-se que
+o relatorio continha uma contradicao: afirmava simultaneamente que 54 registros
+haviam sido criados e que o seed aguardava execucao. Uma consulta direta ao
+banco de producao (16 tabelas, marcador HML-APP-20260729) confirmou 0 registros
+em 0 tabelas — o seed nunca foi executado. O relatorio foi corrigido, o script
+de cleanup teve seu PASSO 0 (conferencia) ativado, e o manifesto atualizado.
+
+================================================================================
+OBJETIVO
+================================================================================
+
+1. Planejar 6 cenarios de homologacao cobrindo fluxos criticos do TMS
+2. Criar seed script com dados descartaveis (marcador HML-APP-20260729)
+3. Criar cleanup script seguro (transacional, ordem filhos->pais)
+4. Gerar manifesto de dados para rastreabilidade
+5. Auditar o estado real do banco e corrigir contradicoes no relatorio
+
+================================================================================
+DESENVOLVIMENTO
+================================================================================
+
+ETAPA 1 — Planejamento (concluido anteriormente)
+
+6 cenarios planejados: OS direta, Motoboy, E-commerce 5 paradas,
+Coleta reversa, Ocorrencia + reentrega, Repasse financeiro.
+
+Artefatos criados:
+- scripts/tms013_seed_hml.mjs (~54 INSERTs em 16 tabelas)
+- supabase/scripts/cleanup_hml_app_20260729.sql (16 passos, transacional)
+- docs/.../tms013_manifesto_dados_homologacao.json (placeholders UUID)
+
+ETAPA 2 — Auditoria e Correcao
+
+Identificada contradicao:
+- Secao "Dados Temporarios Criados": exibia tabela com 54 registros
+- Status e Pendencias: afirmava "aguardando execucao"
+- Manifesto: todos UUID-GERADO-PELO-SCRIPT
+
+Verificacao:
+1. Script _tms013_check.mjs criado com consultas SELECT para 16 tabelas
+2. node -r dotenv/config com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
+3. Filtros: HML-APP-20260729, placas HML%, emails %@hml.teste, HML-OS-%
+4. Resultado: 0 registros em 0 tabelas — SITUACAO A
+
+ETAPA 3 — Correcao dos Artefatos
+
+1. Relatorio .md: secao corrigida, status alterado, % corrigido
+2. Cleanup: PASSO 0 descomentado
+3. Relatorio .txt: sincronizado
+
+================================================================================
+EVIDENCIAS
+================================================================================
+
+1. Manifesto: todos UUID-GERADO-PELO-SCRIPT — nenhum UUID real
+2. Consulta banco: 0 registros em 16 tabelas
+3. Cleanup: PASSO 0 agora ativo por padrao
+4. Relatorio corrigido: SITUACAO A, banco 0%, plano 95%
+
+================================================================================
+CORRECOES
+================================================================================
+
+C1 - Relatorio .md: tabela "54 registros" -> "0 registros"
+C2 - Relatorio .md: status "SCRIPTS PRONTOS" -> "SITUACAO A"
+C3 - Relatorio .md: % geral 95% -> plano 95% / banco 0%
+C4 - Cleanup: PASSO 0 comentado -> ativo
+C5 - Relatorio .txt: sincronizado
+C6 - Manifesto: campo seed_executado: false
+
+================================================================================
+TESTES
+================================================================================
+
+Teste: Consulta 16 tabelas (SELECT via Supabase anon key)
+Resultado: 0 registros (SITUACAO A)
+
+Teste: Validacao cleanup (16 regras)
+Resultado: Todas ok, PASSO 0 corrigido
+
+================================================================================
+RESULTADO
+================================================================================
+
+Metrica                    | Valor
+----------------------------+---------
+Cenarios planejados        | 6/6
+Tabelas mapeadas           | 16/18 (89%)
+Registros no banco         | 0
+Classificacao              | SITUACAO A
+% execucao (banco)         | 0%
+% prontidao (plano)        | 95%
+Relatorios corrigidos      | 2 (.md + .txt)
+Scripts com PASSO 0 ativo  | 1 (cleanup)
+
+================================================================================
+PENDENCIAS
+================================================================================
+
+[P0] Adicionar idempotencia (ON CONFLICT) ao seed script
+[P1] Obter autorizacao para executar seed
+[P2] Verificar existencia de os_enderecos no schema remoto
+[P2] Decidir sobre abastecimentos (tabela inexistente)
+[P3] Executar seed e validar 6 cenarios
+[P3] Executar cleanup apos validacao
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+A missao TMS-013 foi parcialmente concluida. O planejamento esta completo
+(6 cenarios, 16 tabelas, scripts de seed e cleanup, manifesto) e validado
+como pronto para execucao (95%). Porem nenhum dado foi inserido no banco (0%).
+
+A contradicao no relatorio foi corrigida com evidencia empirica de consulta
+direta ao Supabase producao (16 tabelas, 0 registros).
+
+Risco principal: falta de idempotencia no seed script. Se executado duas
+vezes, criara duplicatas. Recomenda-se adicionar ON CONFLICT antes de
+qualquer execucao em producao.

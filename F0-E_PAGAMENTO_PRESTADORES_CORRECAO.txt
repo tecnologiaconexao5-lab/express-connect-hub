@@ -1,0 +1,45 @@
+F0-E — PAGAMENTO DE PRESTADORES (CORREÇÃO / VALIDAÇÃO FINAL)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/test/f0e_pagamento_prestadores.test.ts — whitelist COLUNAS_REAIS corrigida:
+   faltava "valor" (coluna real numeric(10,2) DEFAULT 0 do schema
+   20260510090000_baseline_external_tables.sql). Serviço NÃO foi alterado
+   (estava correto — mapeia valor_total → valor).
+2. CONTRATO ANTES/DEPOIS
+   ANTES: teste exigia payload sem "valor" (whitelist incompleta) → 3 falhas.
+   DEPOIS: "valor" reconhecida como coluna oficial; teste passa sem mudar serviço.
+3. CAMPOS REMOVIDOS/MAPEADOS (serviço, já homologado)
+   forma_pagamento → tipo_pagamento
+   conta_pagamento → referência textual em observacao ([Conta de pagamento: ...])
+   arquivo → referência textual em observacao ([Anexo: ...]), nunca base64
+   NÃO enviados: arquivo, conta_pagamento, forma_pagamento, cliente_id,
+   cliente_nome, tenant_id (teste verifica ausência no payload).
+4. CRIAÇÃO/FECHAMENTO
+   criarPagamento: INSERT via service (colunas reais, valor arredondado).
+   criarFechamento: valor = arredondar2(valor_total); tipo_pagamento=fechamento;
+   qtd_os e quantidade_os gravados; itens vinculados via vincularItensFechamento.
+5. VÍNCULO PRESTADOR/OS
+   prestador_id/os_id/os_numero preservados no INSERT e usados no dedup.
+6. ANTI-DUPLICIDADE
+   mesmo os_id → retorno do existente (sem novo INSERT);
+   OS vinculada por os_numero + origem → dedup;
+   fechamento por prestador + período + tipo → dedup;
+   manual sem OS (sem os_id/os_numero) NÃO é bloqueado por valor igual.
+7. VÍNCULO DOS ITENS
+   vincularItensFechamento insere em pagamentos_prestadores_itens somente
+   colunas reais (id, pagamento_id, os_id, os_numero, valor_servico, pedagio,
+   adicional, valor_reembolso, valor_bonus, valor_desconto, status, created_at).
+8. RESULTADO DO VITEST
+   npx vitest run src/test/f0e_pagamento_prestadores.test.ts → 11/11 PASS.
+9. RESULTADO DO TSC
+   npx tsc --noEmit → 0 erros.
+10. PENDÊNCIAS RESTANTES
+   Nenhuma bloqueadora. QA visual em produção (fluxo completo do componente)
+   permanece como passo manual externo.
+11. ESCRITA CENTRALIZADA
+   PagamentoPrestadores.tsx importa o service e usa somente
+   criarPagamento/criarFechamento/atualizarFechamento/confirmarPagamento/
+   atualizarStatusPagamento/vincularItensFechamento.
+   ZERO INSERT/UPDATE direto em pagamentos_prestadores e
+   pagamentos_prestadores_itens (apenas SELECTs no componente).
+   CONFIRMAÇÃO EXPLÍCITA: BANCO NÃO ALTERADO.

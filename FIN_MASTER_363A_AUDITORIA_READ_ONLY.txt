@@ -1,0 +1,361 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-MASTER-363A — AUDITORIA FINANCEIRA READ-ONLY (FINAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+Data: 06/09/2026
+Executor: Qwen3.7 Max
+Status: [HOMOLOGADO COM RESSALVAS]
+
+═══════════════════════════════════════════════════════════════════════════════
+1. RESUMO EXECUTIVO
+═══════════════════════════════════════════════════════════════════════════════
+
+Total de anomalias detectadas: 7
+- P0 (crítico): 1 caso
+- P1 (alto): 0 casos
+- P2 (médio): 5 casos
+- P3 (baixo/histórico): 1 caso
+
+Conclusão: APTO para FIN-MASTER-363B após correção do P0 identificado.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. FONTES DE VERDADE IDENTIFICADAS
+═══════════════════════════════════════════════════════════════════════════════
+
+2.1. RECEBER
+   - Tabela principal: financeiro_receber
+   - Baixa: financeiro_baixas (titulo_tabela = 'financeiro_receber')
+   - RPC: f_registrar_baixa_financeira
+   - Conta: contas_financeiras (conta_financeira_id)
+
+2.2. PAGAR
+   - Tabela principal: financeiro_pagar
+   - Baixa: financeiro_baixas (titulo_tabela = 'financeiro_pagar')
+   - RPC: f_registrar_baixa_financeira
+   - Conta: contas_financeiras (conta_financeira_id)
+
+2.3. PRESTADORES
+   - Tabela principal: pagamentos_prestadores
+   - Baixa: financeiro_baixas (observacao LIKE '%pagamento prestador%')
+   - RPC: f_confirmar_pagamento_prestador (implementado em FIN-362.3E)
+   - Conta: contas_financeiras (conta_financeira_id)
+
+2.4. TESOURARIA
+   - Contas: contas_financeiras (id, nome, banco, agencia, saldo_inicial)
+   - Baixas: financeiro_baixas (conta_financeira_id)
+   - Estornos: financeiro_baixas (estornada = true)
+
+2.5. TRIGGERS DE PROPAGAÇÃO
+   ✓ alocacoes_escala.trg_propagar_financeiro_alocacao
+   ✓ alocacoes_escala.trg_cancelar_financeiro_alocacao
+   ✓ ordens_servico.trg_propagar_financeiro_os
+
+═══════════════════════════════════════════════════════════════════════════════
+3. RECONCILIAÇÃO FINANCEIRA
+═══════════════════════════════════════════════════════════════════════════════
+
+3.1. RECEBER
+   Títulos pagos:      R$ 9.874,56 (10 registros)
+   Baixas realizadas:  R$    74,06 (6 registros)
+   GAP:                R$ 9.800,50 (99,2% não baixado)
+
+   Causa: 4 recebíveis marcados como 'pago' sem baixa correspondente.
+   Todos são registros antigos (Jun-Ago 2026), pré-FIN-362.3D.
+
+3.2. PAGAR
+   Títulos pagos:      R$ 1.794,42 (11 registros)
+   Baixas realizadas:  R$ 1.656,53 (10 registros)
+   GAP:                R$   137,89 (7,7% não baixado)
+
+   Causa: 1 conta a pagar marcada como 'pago' sem baixa.
+   Registro de teste (FIN012_PAGAR_TESTE).
+
+3.3. PRESTADORES
+   Pagamentos pagos:   R$ 3.356,12 (3 registros)
+   Baixas realizadas:  R$ 1.560,00 (3 registros)
+   GAP:                R$ 1.796,12 (53,5% não baixado)
+
+   Causa: 2 pagamentos com valor divergente entre pagamento e baixa.
+   - 32fe474f: R$ 2177,92 vs R$ 520,00 (histórico, documentado)
+   - 6266f2a1: R$ 658,20 vs R$ 520,00 (P0, pós-FIN-362.3E)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. ANOMALIAS DETALHADAS
+═══════════════════════════════════════════════════════════════════════════════
+
+[P0] 6266f2a1 — PAGAMENTO PRESTADOR COM VALOR DIVERGENTE (PÓS-FIN-362.3E)
+─────────────────────────────────────────────────────────────────────────────
+ID: 6266f2a1-8f42-4898-9e44-a1fbd23add7b
+Criado: 04/09/2026 20:05:40 (APÓS implementação do FIN-362.3E)
+Valor pagamento: R$ 658,20
+Valor baixado: R$ 520,00
+Diferença: R$ 138,20
+Prestador: CESAR AUGUSTO HOLANDA SILVA
+Título baixado: 31fcab2b-8745-482b-aab7-6650795629e1 (R$ 520,00)
+
+Análise:
+- A RPC f_confirmar_pagamento_prestador deveria validar correspondência exata
+  de valor entre pagamento e título
+- O pagamento foi criado em 04/09/2026, ANTES do FIN-362.3E (06/09/2026)
+- A confirmação ocorreu em 05/09/2026, também ANTES do FIN-362.3E
+- Portanto, este pagamento usou o código LEGADO (confirmarPagamento antigo)
+- O código legado fazia: Math.min(valor_pagamento, valor_titulo) = 520,00
+- Isso explica a divergência: R$ 658,20 - R$ 520,00 = R$ 138,20
+
+Impacto:
+- Financeiro: R$ 138,20 não contabilizado como custo
+- DRE: custo subestimado em R$ 138,20
+- Fluxo de caixa: saída subestimada em R$ 138,20
+
+Correção necessária:
+1. Estornar a baixa 1922fc57 (R$ 520,00)
+2. Cancelar o pagamento 6266f2a1 (status = 'cancelado')
+3. Criar novo pagamento com valor correto (R$ 658,20)
+4. Vincular ao título correto ou criar novo título de R$ 658,20
+5. Confirmar pagamento usando RPC f_confirmar_pagamento_prestador (FIN-362.3E)
+
+Modelo recomendado: Qwen3.7 Plus (correção mecânica com validação)
+
+─────────────────────────────────────────────────────────────────────────────
+
+[P2] 4 RECEBÍVEIS PAGOS SEM BAIXA (LEGADO)
+─────────────────────────────────────────────────────────────────────────────
+IDs:
+- 2d625b18 (R$ 3.600,00) - Calvo Comercio - Ago/2026
+- 17e857d8 (R$ 3.200,50) - sem cliente - Jul/2026
+- fb30838a (R$ 1.500,00) - sem cliente - Jul/2026
+- cf6eea7b (R$ 1.500,00) - sem cliente - Jun/2026
+
+Análise:
+- Todos são registros antigos (pré-FIN-362.3D)
+- Status = 'pago' mas sem baixa correspondente
+- Provavelmente criados manualmente ou por serviço legado
+- Não afetam operações atuais
+
+Impacto:
+- GAP de R$ 9.800,50 na reconciliação
+- DRE: receita superestimada em R$ 9.800,50 (se considerados como receita)
+
+Correção necessária:
+- Opção A: Criar baixas retroativas (complexo, requer auditoria manual)
+- Opção B: Marcar como 'cancelado' com justificativa (mais simples)
+- Opção C: Documentar como exceção histórica (aceitar GAP)
+
+Modelo recomendado: Qwen3.8 Flash (decisão gerencial + documentação)
+
+─────────────────────────────────────────────────────────────────────────────
+
+[P2] f83a3249 — CONTA A PAGAR PAGA SEM BAIXA (TESTE)
+─────────────────────────────────────────────────────────────────────────────
+ID: f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+Valor: R$ 137,89
+Observação: "FIN012_PAGAR_TESTE"
+Criado: 03/09/2026 02:56:54
+
+Análise:
+- Registro de teste identificado pela observação
+- Status = 'pago' mas sem baixa
+- Não é dado de produção
+
+Impacto:
+- GAP de R$ 137,89 na reconciliação
+- Poluição de dados de teste em ambiente de produção
+
+Correção necessária:
+1. Cancelar o registro (status = 'cancelado')
+2. Adicionar observação: "Registro de teste - FIN-MASTER-363A"
+
+Modelo recomendado: Qwen3.8 Flash (correção mecânica)
+
+─────────────────────────────────────────────────────────────────────────────
+
+[P3] 32fe474f — CASO HISTÓRICO DOCUMENTADO (PRÉ-FIN-362.3E)
+─────────────────────────────────────────────────────────────────────────────
+ID: 32fe474f-41c7-432b-a21e-7d0b2831c1bb
+Valor pagamento: R$ 2.177,92
+Valor baixado: R$ 520,00
+Diferença: R$ 1.657,92
+Criado: 20/08/2026 (antes do FIN-362.3E)
+
+Análise:
+- Caso documentado em FIN-362.3D e FIN-362.3E
+- Usou código legado que permitia divergência de valor
+- Não é anomalia, é exceção histórica aceita
+
+Impacto:
+- GAP de R$ 1.657,92 na reconciliação
+- Documentado e aceito
+
+Correção necessária: NENHUMA (exceção histórica)
+
+═══════════════════════════════════════════════════════════════════════════════
+5. VALIDAÇÃO DE CONSISTÊNCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+5.1. RECEBER
+   ✓ Baixa sem título: 0 casos
+   ✓ Baixa duplicada: 0 casos
+   ✓ Valor divergente: 0 casos
+   ✓ Estornos: 0 casos
+   ✓ conta_financeira_id: 100% preenchido
+   ⚠ Pago sem baixa: 4 casos (legado, P2)
+
+5.2. PAGAR
+   ✓ Baixa sem título: 0 casos
+   ✓ Baixa duplicada: 0 casos
+   ✓ Valor divergente: 0 casos
+   ✓ Estornos: 0 casos
+   ✓ conta_financeira_id: 100% preenchido
+   ⚠ Pago sem baixa: 1 caso (teste, P2)
+
+5.3. PRESTADORES
+   ✓ Baixa sem título: 0 casos (após FIN-362.3E)
+   ✓ Baixa duplicada: 0 casos
+   ✓ Estornos: 0 casos
+   ✓ conta_financeira_id: 100% preenchido (após FIN-362.3E)
+   ⚠ Valor divergente: 2 casos
+      - 32fe474f: histórico (P3)
+      - 6266f2a1: pós-FIN-362.3E (P0)
+
+5.4. TESOURARIA
+   ✓ Contas cadastradas: 1 (Cora, ID: 9741ad36)
+   ✓ conta_financeira_id válido: 100%
+   ✓ Estornos: 0 casos
+   ✓ Sem contas hardcoded
+
+5.5. TRIGGERS
+   ✓ trg_propagar_financeiro_alocacao: ativo
+   ✓ trg_cancelar_financeiro_alocacao: ativo
+   ✓ trg_propagar_financeiro_os: ativo
+
+═══════════════════════════════════════════════════════════════════════════════
+6. MOCKS, FALLBACKS E HARDCODES
+═══════════════════════════════════════════════════════════════════════════════
+
+6.1. RECEBER
+   ✓ Sem mocks identificados
+   ✓ Sem fallbacks problemáticos
+   ✓ Sem hardcodes de valores
+
+6.2. PAGAR
+   ✓ Sem mocks identificados
+   ⚠ Fallback em baixarPagavel: usa valor_bruto se valor for NULL
+     (pagarService.ts:364-370)
+     Impacto: baixo, apenas corrige dados inconsistentes
+
+6.3. PRESTADORES
+   ✓ Sem mocks após FIN-362.3E
+   ✓ Fallback de baixa avulsa REMOVIDO em FIN-362.3E
+   ✓ Math.min() REMOVIDO em FIN-362.3E
+
+6.4. DASHBOARD/KPIs
+   ⚠ DashboardFinanceiroEnterprise.tsx consulta diretamente ordens_servico
+     em vez de financeiro_receber (linha 92-105)
+     Impacto: P2 (inconsistência de fonte, mas não afeta reconciliação)
+
+═══════════════════════════════════════════════════════════════════════════════
+7. DADOS DE TESTE
+═══════════════════════════════════════════════════════════════════════════════
+
+7.1. IDENTIFICADOS
+   - f83a3249: "FIN012_PAGAR_TESTE" (P2)
+
+7.2. IMPACTO
+   - GAP de R$ 137,89 na reconciliação
+   - Poluição de dados de produção
+
+7.3. RECOMENDAÇÃO
+   - Implementar script de limpeza de dados de teste
+   - Adicionar validação para impedir criação de registros de teste em produção
+
+═══════════════════════════════════════════════════════════════════════════════
+8. CONCLUSÃO E PRÓXIMOS PASSOS
+═══════════════════════════════════════════════════════════════════════════════
+
+8.1. STATUS FINAL
+   [HOMOLOGADO COM RESSALVAS]
+
+   A auditoria identificou:
+   - 1 caso P0 (crítico) que requer correção imediata
+   - 5 casos P2 (médio) que podem ser corrigidos em lote
+   - 1 caso P3 (histórico) documentado e aceito
+
+8.2. APTO PARA FIN-MASTER-363B?
+   NÃO — requer correção do P0 (6266f2a1) antes de prosseguir.
+
+8.3. CORREÇÕES NECESSÁRIAS
+
+   [P0] 6266f2a1 — Correção IMEDIATA
+   ───────────────────────────────────
+   1. Estornar baixa 1922fc57
+   2. Cancelar pagamento 6266f2a1
+   3. Recriar pagamento com valor correto
+   4. Confirmar usando RPC FIN-362.3E
+   Modelo: Qwen3.7 Plus
+   Tempo estimado: 15 minutos
+
+   [P2] 4 recebíveis pagos sem baixa — Correção em LOTE
+   ──────────────────────────────────────────────────────
+   1. Decisão gerencial: cancelar ou criar baixas retroativas
+   2. Executar correção em lote
+   3. Documentar decisão
+   Modelo: Qwen3.8 Flash
+   Tempo estimado: 30 minutos
+
+   [P2] f83a3249 — Limpeza de TESTE
+   ──────────────────────────────────
+   1. Cancelar registro
+   2. Adicionar observação de teste
+   Modelo: Qwen3.8 Flash
+   Tempo estimado: 5 minutos
+
+8.4. APÓS CORREÇÕES
+   - Reexecutar auditoria read-only
+   - Se GAP = 0, prosseguir para FIN-MASTER-363B
+   - Se GAP > 0, investigar causa raiz adicional
+
+═══════════════════════════════════════════════════════════════════════════════
+9. EVIDÊNCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+9.1. QUERIES EXECUTADAS
+   - fin_master_363a_readonly_audit.cjs (auditoria inicial)
+   - fin_master_363a_drill_down.cjs (investigação detalhada)
+   - fin_master_363a_final_investigation.cjs (validação final)
+
+9.2. RESULTADOS
+   - docs/auditoria/fin_master_363a/readonly_audit_result.json
+   - Total de anomalias: 7
+   - GAP total: R$ 11.734,51
+
+9.3. CASOS CRÍTICOS
+   - 6266f2a1: pagamento de R$ 658,20 com baixa de R$ 520,00
+   - 32fe474f: pagamento de R$ 2177,92 com baixa de R$ 520,00 (histórico)
+   - 4 recebíveis sem baixa (R$ 9.800,50)
+   - 1 conta a pagar sem baixa (R$ 137,89)
+
+═══════════════════════════════════════════════════════════════════════════════
+10. ARQUIVOS ANALISADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+10.1. SERVICES
+   - src/services/financeiro/receberService.ts (781 linhas)
+   - src/services/financeiro/pagarService.ts (468 linhas)
+   - src/services/financeiro/pagamentoPrestadorService.ts (559 linhas)
+   - src/services/financeiro/contasCaixasService.ts (88 linhas)
+   - src/services/financeiro/fluxoCaixaService.ts (54 linhas)
+   - src/services/financeiro/dreService.ts (193 linhas)
+
+10.2. COMPONENTS
+   - src/components/financeiro/DashboardFinanceiroEnterprise.tsx (771 linhas)
+   - src/components/financeiro/ContasReceber.tsx
+   - src/components/financeiro/ContasPagar.tsx
+   - src/components/financeiro/PagamentoPrestadores.tsx
+
+10.3. MIGRATIONS
+   - supabase/migrations/20260903_fin_master361_core_financeiro.sql
+   - supabase/migrations/20260906_fin_362_3e_consistencia_pagamento_prestador.sql
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DO RELATÓRIO
+═══════════════════════════════════════════════════════════════════════════════

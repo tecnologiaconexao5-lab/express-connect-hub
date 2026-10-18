@@ -1,0 +1,162 @@
+================================================================================
+MISSAO: TMS-COM-ORC-01-PERSISTENCIA-VALOR-DATA-PDF-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: AUDITORIA FORENSE READ-ONLY DO ORCAMENTO COMERCIAL. NADA CORRIGIDO.
+================================================================================
+
+RESULTADO: PASS — causa-raiz comprovada para os 4 sintomas (2 deles sistemicos).
+ZERO DML/DDL: apenas SELECT + leitura de codigo. Nada foi alterado/criado.
+
+================================================================================
+1. DADOS REAIS DO ORC-202609-8659
+================================================================================
+id            : d577539b-1865-477c-b079-af94152fc3e9
+numero        : ORC-202609-8659
+cliente       : " Cydak do Brasil LTDA" (com espaco a esquerda)
+cliente_cnpj  : "04.785.340/0001-26 " (com espaco a direita)
+status        : em_analise
+modalidade    : esporadico
+created_at    : 2026-09-24T22:52:38Z
+updated_at    : 2026-09-24T22:52:38Z
+data_emissao  : 2026-10-30  (!!! POSTERIOR ao created_at)
+validade      : 2026-09-30
+valor_base    : NULL   (coluna dedicada)
+valor_final   : NULL   (coluna dedicada)
+valores(jsonb): { valorBase: 2200, valorFinal: 0, adicionais: 0, pedagio: 0, kmExcedente: 0,
+                  ajudante: 0, adValorem: 0, gris: 0, devolucao: 0, reentrega: 0, descontos: 0,
+                  custoEstimado: 0, margemEstimada: 0, lucroEstimado: 0, tabelaVinculada: "" }
+distancia_rota: { distancia_km: 129.257734, duracao_min: 106, maps_provider: "mapbox", ... }
+veiculo       : { tipo: "vuc", carroceria: "grade baixa", subcategoria: "urbano" }
+enderecos     : 2 (coleta Sao Bernardo/SP; entrega Sao Jose dos Campos/SP)
+historico     : 1 ("Orcamento criado")
+
+CONSTATACAO-CHAVE: o R$ 2.200 ESTA no banco — em valores.valorBase (JSONB).
+Nao esta em valor_base (NULL). O TOTAL valores.valorFinal = 0.
+=> O valor NAO sumiu: ele esta no campo BASE, enquanto listagem/PDF leem o FINAL.
+
+================================================================================
+2. CADEIA FORMULARIO -> PAYLOAD -> BANCO -> RELOAD -> LISTAGEM -> PDF
+================================================================================
+FORMULARIO (src/components/comercial/OrcamentoForm.tsx)
+  - Campo "Valor Base (R$)" -> state `data.valores.valorBase`  (linha 965,
+    onChange update("valores.valorBase", ...), onBlur={recalcular}).
+  - Recalculo do total: `recalcular()` (linhas 394-403) seta
+    `valores.valorFinal = valorBase + adicionais + pedagio + kmExcedente + ajudante + ... - descontos`.
+  - SALVAR: handleSalvar (linhas 544-563):
+        544  const handleSalvar = () => {
+        ...
+        560    recalcular();       // setData ASSINCRONO
+        561    onSalvar(data);     // <-- usa `data` do render ATUAL (STALE, sem o recalculo)
+  - handleSalvarRascunho (linhas 565-569): NAO chama recalcular; envia `{...data}` stale.
+
+PAYLOAD/SERVICE (src/components/comercial/OrcamentosLista.tsx + src/lib/dbMappers.ts)
+  - handleSalvar -> saveToSupabase (OrcamentosLista.tsx:234-252) ->
+    toOrcamentoInsert(orc) (dbMappers.ts:1511-1600).
+  - Mapper mapeia colunas DEDICADAS lendo campos de TOPO:
+      dbMappers.ts:1544  if (has(form.valorBase)) d.valor_base = form.valorBase;
+      dbMappers.ts:1548  if (has(form.valorFinal)) d.valor_final = form.valorFinal;
+    MAS o formulario NAO tem `valorBase`/`valorFinal` no topo — eles vivem em
+    `form.valores.*`. Logo as colunas valor_base/valor_final NUNCA sao gravadas (NULL).
+  - O JSONB e gravado integralmente: dbMappers.ts:1587 `if (form.valores) d.valores = form.valores`.
+  - INSERT/UPDATE: OrcamentosLista.tsx:238 (insert) / :239 (update).
+
+BANCO (public.orcamentos)
+  - valor_base = NULL ; valor_final = NULL ; valores = { valorBase:2200, valorFinal:0 }.
+
+RELOAD/LISTAGEM (OrcamentosLista.tsx)
+  - fetchOrcamentos: `.from("orcamentos").select("*")` (:65-68) e `setOrcamentos(lista)`
+    com as LINHAS CRUAS (snake_case) — SEM mapper `fromOrcamentoRow`.
+  - Render: data : `{orc.dataEmissao ? ... : "—"}` (:348)  -> coluna DB e `data_emissao`
+    (camel vs snake) => SEMPRE "—".
+  - Render: valor: `fmt(orc.valores?.valorFinal || 0)` (:351) -> 0 => "R$ 0,00".
+  - CNPJ: `{orc.clienteCnpj}` (:345) -> coluna DB e `cliente_cnpj` => vazio.
+
+PDF (src/components/comercial/orcamentoPdf.ts)
+  - SUMMARY: "Valor Transporte" = fmt(orc.valores.valorBase) (:146) -> R$ 2.200,00.
+  - TOTAL: "VALOR FINAL" = fmt(orc.valores.valorFinal) (:175) e "TOTAL GERAL" (:268) -> R$ 0,00.
+  - Data: `Emissao: ${fmtDate(orc.dataEmissao)}` (:83) -> quando chamado da LISTA (linha crua),
+    `orc.dataEmissao` e undefined => fmtDate devolve DEFAULT (+7 dias) (orcamentoPdf.ts:13-18).
+  - Filename: `doc.save(`${orc.numero}_Orcamento_Comercial.pdf`)` (:352).
+  - Chamado por: OrcamentosLista.tsx:391, OrcamentoForm.tsx:611/1045, OrcamentoPreview.tsx:67.
+
+================================================================================
+3. MAPA DE CAMPOS
+================================================================================
+UI FIELD            | PAYLOAD (form)        | DB COLUMN     | RELOAD/LISTAGEM        | PDF FIELD
+--------------------+-----------------------+---------------+------------------------+----------------------
+Valor Base (R$)     | valores.valorBase     | valores(jsonb)| orc.valores.valorBase  | "Valor Transporte"
+(valor informado)   | (2200)                | valor_base=NULL| (nao exibido na lista)| (2200) OK
+Valor Final (total) | valores.valorFinal    | valores(jsonb)| orc.valores.valorFinal | "VALOR FINAL"/"TOTAL"
+                    | (0, nao recalculado)  | valor_final=NULL| (exibe R$0,00)         | (R$0,00) ERRO
+Data de Emissao     | dataEmissao           | data_emissao  | orc.dataEmissao (snake!) => "—" | orc.dataEmissao (undefined na lista) => default
+CNPJ Cliente        | clienteCnpj           | cliente_cnpj  | orc.clienteCnpj (snake!) => vazio | orc.clienteCnpj
+Numero              | numero                | numero        | orc.numero             | orc.numero (filename)
+Pontos (enderecos)  | enderecos[]           | enderecos     | -                      | e.sequencia/e.contato (NAO existem)
+
+================================================================================
+4. CAUSAS-RAIZ (tabela obrigatoria)
+================================================================================
+SINTOMA | CAUSA-RAIZ | ARQUIVO/FUNCAO | CAMPO DB | CORRECAO MINIMA
+--------+-----------+----------------+----------+-----------------
+R$ 0,00 | (1) handleSalvar chama recalcular() (setData assincrono) e em seguida onSalvar(data) com estado STALE -> valores.valorFinal=0 persiste. (2) Lista/PDF leem `valores.valorFinal` (0) em vez do valor informado em `valores.valorBase`. | OrcamentoForm.tsx:544-563 (handleSalvar), :560-561; recalcular :394-403 | valores.valorFinal (jsonb) e valor_final (NULL) | Calcular o total de forma SINCRONA antes de onSalvar (ex.: `const out = {...data, valores: calcular(data.valores)}; onSalvar(out)`) e usar o mesmo em handleSalvarRascunho. Exibir/somar `valorBase` quando `valorFinal` nao informado.
+Data    | Lista le `orc.dataEmissao` (camel) mas o DB retorna `data_emissao` (snake) — sem mapper. PDF idem (undefined -> default +7d). A data gravada (2026-10-30) tambem e INVALIDA (futura). | OrcamentosLista.tsx:348 (render), :65-76 (fetch sem mapper); orcamentoPdf.ts:83 | data_emissao | Mapear a linha do DB (fromOrcamentoRow, dbMappers.ts:1610) OU ler `orc.data_emissao`; validar data (nao permitir futura/sem data).
+PDF filename/extensao | Filename usa `${orc.numero}_Orcamento_Comercial.pdf` (ok, sem UUID). EXISTE um 2o gerador financeiro que baixa `.html` (extensao inadequada). Nao foi reproduzido UUID no fluxo comercial. | orcamentoPdf.ts:352; financeiro/OrcamentoPDF.tsx:74 (`Orcamento_${numero}.html`, SEM callers) | numero | Manter `${numero}_Orcamento_Comercial.pdf`; se o helper financeiro for usado, corrigir extensao/MIME. Se `numero` ausente, usar fallback claro (nao "undefined").
+undefined | PDF "DETALHAMENTO DE PONTOS" monta coluna "#" com `String(e.sequencia)` e "Contato" com `e.contato`, mas o jsonb `enderecos` NAO possui essas chaves (possui numero/responsavel/telefone) -> "undefined". | orcamentoPdf.ts:187-193 | enderecos (jsonb) | Alinhar os nomes de campo (enderecos) ao contrato salvo OU usar fallback `?? "—"`/indice.
+encoding | Arquivos-fonte sao UTF-8 VALIDOS (0 ocorrencias de U+FFFD em orcamentoPdf.ts/OrcamentosLista.tsx/OrcamentoForm.tsx) e o PDF usa jsPDF/helvetica (WinAnsi) que suporta acentos. Nao reproduzido em codigo. Provavel: render do console / dados com espacos. | - | cliente/cliente_cnpj com espacos | N/A em codigo (se houver caso real, coletar string exata+bytes).
+
+CLASSIFICACAO:
+  COMPROVADO ........ R$0 (valorFinal nao recalculado + leitura do campo total); data (snake/camel + data futura gravada); undefined ("Detalhamento de Pontos").
+  HIPOTESE / NAO COMPROVAVEL ... PDF UUID (nao reproduzido no fluxo comercial; helper financeiro usa .html); extensao (somente no helper financeiro SEM callers); encoding (fontes validos).
+
+================================================================================
+5. COMPARACAO COM OUTROS ORCAMENTOS (read-only)
+================================================================================
+numero            | status    | valor_base | valor_final | valores.valorBase | valores.valorFinal | data_emissao | created_at
+------------------+-----------+------------+-------------+-------------------+--------------------+--------------+------------
+ORC-202609-8659   | em_analise| NULL       | NULL        | 2200              | 0                  | 2026-10-30   | 2026-09-24
+ORC-202607-3557   | rascunho  | NULL       | NULL        | 0                 | 0                  | 2026-07-23   | 2026-07-23
+ORC-202607-3215   | rascunho  | NULL       | NULL        | 0                 | 0                  | 2026-07-23   | 2026-07-23
+ORC-202607-7806   | rascunho  | NULL       | NULL        | 0                 | 0                  | 2026-07-23   | 2026-07-23
+ORC-202607-9093   | rascunho  | NULL       | NULL        | 0                 | 0                  | 2026-07-23   | 2026-07-23
+CONCLUSAO: o problema e SISTEMICO (nao isolado):
+  - valor_base/valor_final SEMPRE NULL (mapper nunca preenche as colunas);
+  - valores.valorFinal SEMPRE 0 (total nunca recalculado no save).
+  O ORC-8659 e apenas o caso em que o usuario digitou valorBase=2200 (valor "sobrando"
+  no BASE), mas o TOTAL continuou 0. contrato divergente entre COLUNAS e JSONB.
+
+================================================================================
+6. CORRECAO MINIMA RECOMENDADA (nao implementar nesta missao)
+================================================================================
+1) OrcamentoForm.handleSalvar/handleSalvarRascunho: computar `valores` (incl. valorFinal)
+   de forma SINCRONA e passar o objeto final para `onSalvar` (elimina o race do setData).
+2) Padronizar a leitura: usar `fromOrcamentoRow` (dbMappers.ts:1610) em fetchOrcamentos,
+   OU ler snake_case na listagem/PDF (data_emissao). Corrigir tambem clienteCnpj/cliente_cnpj.
+3) Lista/PDF: se `valorFinal` for 0 e `valorBase`>0, exibir/considerar o valor informado
+   (ou garantir recalc no save). Definir a REGRA: "Valor Final" = total recalculado.
+4) PDF "Detalhamento de Pontos": alinhar chaves do jsonb enderecos (sequencia/contato).
+5) Validar data_emissao (nao permitir futura/ausente) no formulario/payload.
+6) Alinhar o mapper as colunas dedicadas (valor_base/valor_final) OU assumir o JSONB como
+   fonte unica e remover/depreciar as colunas (decisao de arquitetura).
+
+================================================================================
+7. CONFIRMACAO ZERO DML
+================================================================================
+[x] Somente SELECT/information_schema + leitura de arquivos. Nenhum INSERT/UPDATE/DELETE/DDL.
+[x] ORC-202609-8659 NAO alterado; nenhum orcamento criado/alterado.
+[x] Nenhuma migration; nenhum arquivo de codigo alterado. Financeiro/APP nao tocados.
+[x] Scripts temporarios de diagnostico removidos apos uso.
+
+================================================================================
+8. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-COM-ORC-01-PERSISTENCIA-VALOR-DATA-PDF-AUDIT-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-COM-ORC-01-PERSISTENCIA-VALOR-DATA-PDF-AUDIT-RESULTADO.txt
+ TAMANHO ..: 12901 bytes
+ DATA/HORA : 25/09/2026 21:33:56
+
+================================================================================
+FIM — TMS-COM-ORC-01-PERSISTENCIA-VALOR-DATA-PDF-AUDIT
+================================================================================

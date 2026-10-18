@@ -1,0 +1,82 @@
+MISSAO TMS-002 — CORRECAO CONTROLADA DO MODULO VEICULOS
+========================================================
+
+Data: 2026-07-27
+Status: C01-C04 CORRIGIDOS - C05 CLASSIFICADO - C06 CONFIRMADO
+Percentual: 45% -> 46% (+1pp)
+Branch: auditoria-final-integracao
+
+========================================================
+RESUMO
+========================================================
+
+C01 - TIPOS_VEICULO: CORRIGIDO
+      Causa: componente redefinia constante local como string[]
+      mas template usava .value/.label (apenas objetos).
+      Correcao: importar de @/constants/tiposVeiculo.
+
+C02 - snake_case/camelCase lista: CORRIGIDO
+      Causa: VeiculosLista nao usava fromVeiculoRow mapper.
+      5 campos exibiam undefined (tipo_veiculo,
+      ano_fabricacao, ano_modelo, prestador_vinculado,
+      validade_documental).
+      Correcao: mapper + 5 field references.
+
+C03 - snake_case/camelCase formulario: CORRIGIDO
+      9 campos com valor errado (classificacao_termica,
+      ano_fabricacao, ano_modelo, capacidade_kg, capacidade_m3,
+      qtd_pallets, prestador_vinculado, custo_km, custo_diaria,
+      validade_documental, seguro_apolice).
+      Correcao: camelCase + handleChange keys.
+
+C04 - prestador_vinculado: CORRIGIDO (parcial)
+      Label atualizado para "UUID do prestador".
+      Dropdown real requer autorizacao.
+
+C05 - Combustiveis: CLASSIFICADO
+      100% mock. 4 tabelas nunca migradas.
+      Prototipo conceitual sem backend.
+
+C06 - validateAIConfig: CONFIRMADO
+      Erro REAL mascarado por tsconfig root com "files":[].
+      tsc --project tsconfig.app.json revela 619 erros,
+      incluindo TS2305 para validateAIConfig.
+
+========================================================
+ARQUIVOS MODIFICADOS
+========================================================
+
+src/components/veiculos/VeiculosLista.tsx
+  - Import fromVeiculoRow, VeiculoRow
+  - Mapper apos fetch
+  - 5 field references (prestadorVinculado, tipoVeiculo,
+    anoFabricacao, anoModelo, validadeDocumental)
+
+src/components/veiculos/VeiculoDetalhe.tsx
+  - Import TIPOS_VEICULO de constantes
+  - Removeu constante local string[]
+  - 12 field references (classificacaoTermica, anoFabricacao,
+    anoModelo, capacidadeKg, capacidadeM3, qtdPallets,
+    prestadorVinculado, custoKm, custoDiaria,
+    validadeDocumental, seguroApolice)
+
+========================================================
+PERCENTUAL
+========================================================
+
+Veiculos leitura:   40% -> 80%
+Veiculos edicao:    40% -> 80%
+Veiculos criacao:   40% -> 70% (sem dropdown prestador)
+Veiculos exclusao:  40% -> 40% (nao alterado)
+Combustiveis:        0% -> 0%  (prototipo)
+
+Veiculos medio:     40% -> 65% (+25pp)
+
+Impacto geral:      45% -> 46% (+1pp)
+
+========================================================
+CONCLUSAO
+========================================================
+
+VEICULOS — LEITURA E FORMULARIO CORRIGIDOS;
+CRUD AGUARDA TESTE CONTROLADO

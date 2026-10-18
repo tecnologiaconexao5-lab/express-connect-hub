@@ -1,0 +1,249 @@
+============================================================
+FIN-SANE-02D — LOCAL BOOTSTRAP FIX
+============================================================
+Data: 2026-09-15
+Status: ANALISE COMPLETA + CORRECAO PREPARADA
+============================================================
+
+============================================================
+1. CAUSA RAIZ
+============================================================
+
+ERRO:
+  permission denied for schema supabase_migrations
+  SQLSTATE 42501
+
+OPERACAO QUE FALHA:
+  INSERT INTO supabase_migrations.schema_migrations
+  (version, name, statements) VALUES (...)
+
+CONTEXT:
+  npx supabase start executa migrations com sucesso,
+  mas o INSERT de tracking interno falha.
+  Depois disso o CLI desmonta os containers.
+
+ANALISE:
+  O Supabase CLI v2.117.0 (Bun-based) conecta ao banco
+  local como supabase_admin (login role) e executa
+  SET ROLE postgres para operacoes de superuser.
+
+  Com 100+ migrations no projeto, o pipeline de migracao
+  leva varios minutos. Durante esse tempo, o connection
+  pool do CLI pode reciclar conexoes idle (timeout padrao
+  10s do node-postgres). Quando a conexao e reciclada,
+  o SET ROLE postgres e PERDIDO.
+
+  O INSERT INTO supabase_migrations.schema_migrations
+  entao executa como supabase_admin (nao superuser).
+  O schema supabase_migrations e owned por postgres
+  (superuser), e supabase_admin nao tem USAGE privilege.
+
+  Resultado: SQLSTATE 42501 (insufficient_privilege).
+
+  NOTA: Este e o mesmo bug documentado em:
+  - supabase/cli PR #5895 (role step-down lost)
+  - supabase/cli Issue #6244 (pipeline stall)
+
+  O fix do PR #5895 desabilita idle reaping e adiciona
+  verify hook, mas o Bun-based CLI (v2.117.0) pode ter
+  implementacao propria com o mesmo problema.
+
+  FATOR SECUNDARIO: Docker volumes persistem o schema
+  supabase_migrations entre runs. Se o schema foi criado
+  por um role diferente em run anterior, o problema persiste.
+
+============================================================
+2. VERIFICACAO DE CONFIG.TOML
+============================================================
+
+ARQUIVO: supabase/config.toml
+
+CONFIGURACOES RELEVANTES:
+  [db]
+  port = 54322
+  shadow_port = 54320
+  major_version = 17
+
+  [db.pooler]
+  enabled = false          <-- pooler DESABILITADO
+
+  [db.migrations]
+  enabled = true
+  schema_paths = []        <-- sem schemas extras
+
+  [db.seed]
+  enabled = true
+  sql_paths = ["./seed.sql"]  <-- ARQUIVO NAO EXISTE!
+
+VERSÃO CLI: 2.117.0 (Bun v1.4.1)
+VERSÃO POSTGRES: 17.6.1.147
+DOCKER: DESLIGADO (daemon nao encontrado)
+
+PROBLEMAS ENCONTRADOS:
+  a) seed.sql NAO EXISTE - referenciado em config mas ausente
+     (nao causa o erro 42501, mas gera WARN)
+  b) Docker Desktop DESLIGADO - impossivel executar agora
+  c) .supabase/ NAO EXISTE no projeto - sem backup local
+  d) path com espaco "DIEGO BALBINO" causa EPERM no telemetry
+
+============================================================
+3. MIGRATIONS AUDITADAS
+============================================================
+
+TOTAL: 100+ migrations em supabase/migrations/
+
+PESQUISA POR:
+  - supabase_migrations: 0 ocorrencias em migrations do projeto
+  - schema_migrations: 0 ocorrencias
+  - ALTER SCHEMA ... OWNER: 0 ocorrencias
+  - REVOKE ON SCHEMA: 0 ocorrencias
+  - GRANT ON SCHEMA: 1 ocorrencia (GRANT USAGE ON SCHEMA public)
+  - ALTER DEFAULT PRIVILEGES: 0 ocorrencias
+  - SET ROLE: apenas em tests/database/ (nao em migrations)
+
+CONCLUSAO: NENHUMA migration do projeto toca indevidamente
+no schema supabase_migrations. O problema e EXTERNO
+ao codigo do projeto (e bug do CLI + stale volume).
+
+============================================================
+4. ARQUIVO/COMANDO RESPONSABEL
+============================================================
+
+Nao e um arquivo do projeto. E o proprio Supabase CLI
+que gerencia o schema supabase_migrations internamente.
+
+O schema e criado por:
+  CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+
+E a tabela por:
+  CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+    version text PRIMARY KEY,
+    name text,
+    statements text[]
+  );
+
+Ambos executados pelo CLI como postgres (superuser).
+O INSERT de tracking e o ultimo passo apos cada migration.
+
+============================================================
+5. CLASSIFICACAO
+============================================================
+
+CAUSA RAIZ:
+  Bug de connection pool no Supabase CLI v2.117.0
+  (Bun-based) que perde SET ROLE postgres durante
+  pipelines longos (100+ migrations), causando
+  INSERT como supabase_admin sem permissao.
+
+ARQUIVO/COMANDO RESPONSABEL:
+  N/A — bug interno do CLI, nao do projeto
+
+OWNER ATUAL (schema supabase_migrations):
+  postgres (superuser) — correto
+
+OWNER ESPERADO:
+  postgres (superuser) — identico
+
+ROLE DO CLI:
+  Conecta como supabase_admin
+  Precisa de SET ROLE postgres para superuser
+  SET ROLE e perdido durante pipeline longo
+
+MECANISMO DE CORRECAO:
+  Fixar permissoes do schema supabase_migrations
+  para que supabase_admin tenha acesso total,
+  mesmo sem SET ROLE postgres.
+
+ARQUIVOS QUE PRECISARIAM MUDAR:
+  NENHUM migration do projeto
+  NENHUM arquivo de codigo
+  Apenas operacao SQL direta no banco local
+
+ALTERA MIGRATION HISTORICA?
+  NAO
+
+AFETA PRODUCAO?
+  NAO — operacao apenas no banco local Docker
+
+============================================================
+6. CORRECAO PROPOSTA
+============================================================
+
+PRIORIDADE: A) corrigir configuracao/bootstrap LOCAL
+
+SOLUCAO:
+  Executar SQL de correcao no banco local Docker
+  para conceder permissoes a supabase_admin no
+  schema supabase_migrations.
+
+  Isso garante que, mesmo se o SET ROLE postgres
+  for perdido, o INSERT de tracking funcione.
+
+SCRIPT SQL:
+  (ver arquivo: scripts/fix-s02d-supabase-migrations-perms.sql)
+
+PROCEDIMENTO:
+  1. Iniciar Docker Desktop
+  2. Listar containers: docker ps -a
+  3. Iniciar container DB: docker start <nome>
+  4. Aguardar DB pronto (~5s)
+  5. Executar SQL via psql -h localhost -p 54322 -U postgres
+  6. Parar container: docker stop <nome>
+  7. Executar: npx supabase start
+  8. Verificar: npx supabase status
+
+COMANDO DE TESTE PROPOSTO:
+  docker ps -a  (ver containers)
+  psql -h localhost -p 54322 -U postgres -d postgres -c "
+    SELECT schema_name, schema_owner
+    FROM information_schema.schemata
+    WHERE schema_name = 'supabase_migrations';
+  "
+  (deve mostrar owner = postgres)
+
+  Depois do fix:
+  psql -h localhost -p 54322 -U postgres -d postgres -c "
+    SELECT grantee, privilege_type
+    FROM information_schema.schema_privileges
+    WHERE schema_name = 'supabase_migrations';
+  "
+  (deve mostrar postgres=ALL, supabase_admin=ALL)
+
+============================================================
+7. RESTRICOES
+============================================================
+
+- NAO edita migration historica
+- NAO altera producao (banco local Docker apenas)
+- NAO apaga volumes Docker
+- NAO executa docker system prune
+- NAO e reset destrutivo
+- NAO modifica codigo financeiro
+- NAO continua FIN-SANE-02D
+- NAO aplica FIN-SANE-02B
+
+============================================================
+8. STATUS
+============================================================
+
+PASS ou BLOQUEADO?
+
+BLOQUEADO — Docker Desktop DESLIGADO.
+
+O fix esta preparado mas NAO PODE SER EXECUTADO
+enquanto Docker nao estiver rodando.
+
+PROXIMO PASSO SEGURO:
+  1. Usuario inicia Docker Desktop
+  2. Executa o procedimento acima
+  3. Roda npx supabase start UMA vez
+  4. Se funcionar → PASS
+  5. Se falhar → PARAR (nao tentar mais)
+
+PRODUCAO ZERO WRITES: CONFIRMADO
+  Nenhuma operacao de escrita em producao.
+  Script SQL afeta apenas banco local Docker.
+
+============================================================
+FIM
+============================================================

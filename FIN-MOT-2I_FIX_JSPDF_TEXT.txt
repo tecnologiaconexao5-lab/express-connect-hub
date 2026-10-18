@@ -1,0 +1,125 @@
+FIN-MOT-2I — FIX JSPDF.text NO EXTRATO DO PRESTADOR
+Data: 21/08/2026
+Status: B — CORRIGIDO NO CÓDIGO; PDF físico/visual aguarda homologação no navegador
+
+============================================================
+CAUSA-RAIZ
+============================================================
+
+Arquivo: src/lib/pdf/extratoPrestadorReport.ts
+Stack:   linha 239, dentro do didDrawCell da tabela de RESUMO FINANCEIRO.
+
+Chamada responsável (antes):
+
+  doc.text(data.cell.text[1], data.cell.x + data.cell.width - 2, ...)
+
+O didDrawCell é invocado pelo autoTable para CADA célula da linha
+"SALDO LÍQUIDO" (summaryTableData.length - 2). A linha tem 2 células:
+
+  1. coluna 0 (rótulo "SALDO LÍQUIDO");
+  2. coluna 1 (valor "R$ ...").
+
+Para a célula 0, data.cell.text possui APENAS 1 linha ('SALDO LÍQUIDO'),
+portanto data.cell.text[1] === undefined. jsPDF.text recebe undefined
+como primeiro argumento -> "Invalid arguments passed to jsPDF.text".
+
+Para a célula 1, text[0] = valor, text[1] = undefined; além disso o valor
+era desenhado à ESQUERDA (data.cell.x + 2) em vez de à direita, e a chamada
+da direita quebrava no text[1].
+
+Argumento inválido identificado: data.cell.text[1] === undefined
+(linha única na célula do rótulo).
+
+============================================================
+CORREÇÃO (mínima, somente o didDrawCell responsável)
+============================================================
+
+Antes:
+  const centroY = ...;
+  doc.text(data.cell.text[0], data.cell.x + 2, centroY);            // esquerda
+  doc.text(data.cell.text[1], data.cell.x + data.cell.width - 2, centroY, {align:'right'});
+
+Depois:
+  const textoSeguro = (data.cell.text || [])
+    .flat()
+    .filter(t => t !== undefined && t !== null)
+    .map(t => String(t))
+    .join(' ');
+  const centroY = data.cell.y + data.cell.height / 2 + 1;
+  ...
+  if (data.column.index === 0) {
+    if (textoSeguro) doc.text(textoSeguro, data.cell.x + 2, centroY);       // rótulo à esquerda
+  } else if (textoSeguro) {
+    doc.text(textoSeguro, data.cell.x + data.cell.width - 2, centroY, { align: 'right' }); // valor à direita
+  }
+
+- texto sempre convertido para string (String(t));
+- undefined/null removidos;
+- fallback vazio: só desenha se houver texto;
+- coordenadas numéricas preservadas (data.cell.* são números do autoTable).
+
+O segundo didDrawCell (coluna Tipo, operações) usa apenas
+data.cell.text[0], que é sempre 'Crédito'/'Débito' definido; não era a
+fonte do erro relatado e não foi alterado (correção mínima).
+
+============================================================
+VALIDAÇÃO
+============================================================
+
+[x] Chamada doc.text responsável localizada (linha 239)
+[x] Argumento inválido identificado (data.cell.text[1] === undefined)
+[x] Correção mínima aplicada (somente o didDrawCell do resumo)
+[x] npx tsc --noEmit -p tsconfig.json -> 0 erros
+[x] npx vitest run src/test/extratoPrestadorService.test.ts -> 18/18
+[x] Nenhuma alteração em service/Supabase/filtros/consultas/banco
+[ ] PDF gerado (requer navegador)
+[ ] PDF aberto (requer navegador)
+[ ] Logo visível (requer navegador)
+[ ] Tabela/totais visíveis (requer navegador)
+
+============================================================
+CHECKLIST
+============================================================
+
+[x] chamada doc.text responsável localizada
+[x] argumento inválido identificado
+[x] correção mínima aplicada
+[ ] PDF gerado
+[ ] PDF aberto
+[ ] logo visível
+[ ] tabela visível
+[ ] totais visíveis
+[ ] sem erro jsPDF.text (comprovado por análise; físico requer navegador)
+[x] sem alteração em service/banco/filtros
+
+============================================================
+CONCLUÍDO
+============================================================
+
+- Causa exata identificada: data.cell.text[1] === undefined na célula de
+  rótulo da linha "SALDO LÍQUIDO".
+- Correção mínima aplicada apenas no didDrawCell responsável.
+- texto sempre string, sem undefined/null, fallback vazio, alinhamento
+  correto por coluna (rótulo esquerda / valor direita).
+- tsc e teste do service aprovados.
+
+============================================================
+FALTA
+============================================================
+
+- Prova visual autenticada: abrir o extrato, clicar Gerar PDF, abrir o PDF
+  e confirmar tabela, totais, logo e ausência do erro no console.
+
+============================================================
+STATUS
+============================================================
+
+B — CORRIGIDO NO CÓDIGO, MAS NÃO COMPROVADO NO NAVEGADOR
+
+============================================================
+PRÓXIMA MISSÃO (única — não executar automaticamente)
+============================================================
+
+Prova visual autenticada do FIN-MOT-2I: gerar o extrato do prestador,
+clicar "Gerar PDF", abrir o PDF, confirmar tabela/totais/logo e console
+sem "Invalid arguments passed to jsPDF.text".

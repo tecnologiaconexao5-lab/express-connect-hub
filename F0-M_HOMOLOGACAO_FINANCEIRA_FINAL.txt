@@ -1,0 +1,62 @@
+F0-M — HOMOLOGAÇÃO FINANCEIRA FINAL
+=====================================================================
+1. TESTES EXECUTADOS
+   F0-E Pagamento Prestadores (11) · F0-F Fluxo (5) · F0-G DRE (12) ·
+   F0-H Contas & Caixas (9) · F0-I Margem (6) · F0-J Relatórios (8) ·
+   F0-K Recibos (9) · F0-L Navegação/Conciliação/CNAB (7) = 67 PASS.
+   F0-M Prova matemática integrada (9) = 9 PASS.
+   Regressão Conferência/Escala/OS (A31-J1.7–1.13): 45 PASS.
+   TOTAL = 121/121 PASS · npx tsc --noEmit = 0 erros.
+2. RESULTADOS
+   Nenhuma falha. Nenhuma duplicidade de fato econômico encontrada.
+3. PROVA MATEMÁTICA (f0m — cenário controlado, sem persistência)
+   Receita 1.000 (OS=Fatura=Receber): faturado 1.000 · recebido (400+600) 1.000
+   · aReceber 0 · DRE receita 1.000 · Fluxo entrada realizada 1.000. Nunca 2.000.
+   Prestador 600 (valor_liquido): Pagamento 600 · DRE custo 600 · Margem custo 600
+   (componentes embutidos, sem somar de novo).
+   Outra despesa 100: Pagar 100 · baixa 100 · Fluxo saída realizada 100 ·
+   DRE despesa 100.
+   Resultado: 1.000 − 600 − 100 = 300 (DRE EBITDA).
+   Margem: vinculada 300 / 30% · não vinculada (adm) 400; DRE final 300.
+4. PREVISTO × REALIZADO
+   Título sem baixa → realizado 0. Baixa parcial → realizado = soma das baixas.
+   Baixa total → saldo 0. Estorno → fora do realizado; saldo/status recalculados.
+5. SALDO REAL × PROJETADO (F0-H)
+   Saldo inicial 1.000 + entrada 500 − saída 300 = Saldo real 1.200.
+   + futuro receber 400 − futuro pagar 100 = Saldo projetado 1.500.
+   Confirmado: saldo real (1.200) ≠ saldo projetado (1.500); nenhuma tela chama
+   o projetado de "saldo atual".
+6. DRE (F0-G)
+   Receita Líquida = Bruta − Deduções; EBITDA = RL − Custos Prestadores −
+   Despesas Operacionais; EBIT = EBITDA − Depreciação(0); Lucro Líquido =
+   EBIT + Financeiro − IR(0). 1.000 − 600 − 100 = 300. Baixas não geram competência.
+7. MARGEM (F0-I)
+   Margem R$ = Receita − valor_liquido(600) − outros vinculados; % = Margem/Receita.
+   Diferenciado: custo vinculado (300/30%) vs despesa administrativa (400 operacional).
+8. RELATÓRIOS (F0-J)
+   KPIs = mesma fonte da tabela; filtros (período/cliente/prestador/status/
+   previsto×realizado) produzem os mesmos totais; export usa dataset filtrado.
+9. RECIBOS (F0-K)
+   Gera registro; número único (REC-AAAAMM-SSSSS + índice único); histórico;
+   PDF com logo/dados da empresa; NÃO cria receita/despesa; cancelamento soft
+   preserva histórico.
+10. DUPLICIDADES ENCONTRADAS/DESCARTADAS
+    Fatura duplicando receita: DESCARTADA (receita 1x). Receber duplicando
+    Fatura: DESCARTADA. Prestador em Pagar: DESCARTADA (repasses excluídos).
+    Baixa no DRE: DESCARTADA (não é input). Estorno no Fluxo: DESCARTADA.
+    Custo 2x: DESCARTADA (valor_liquido). Retry duplicado: DESCARTADA (dedup).
+    KPI ≠ tabela: DESCARTADA (mesma fonte).
+11. ÁREAS HOMOLOGADAS
+    ✅ Escala/OS + Conferência (45/45) · ✅ Faturas/Receber · ✅ Contas a Pagar ·
+    ✅ Pagamento de Prestadores (11) · ✅ financeiro_baixas · ✅ Fluxo de Caixa (5) ·
+    ✅ Contas & Caixas (9) · ✅ Margem por OS (6) · ✅ Relatórios (8) ·
+    ✅ Recibos (9) · ✅ Navegação/Conciliação/CNAB (7).
+12. RESSALVAS (não bloqueantes)
+    ⚠️ DRE: depreciação e IR/CSLL = 0 (sem fonte real — não estimados).
+    ⚠️ Contas & Caixas: transferências internas ainda usam a coluna `saldo`
+    (livro de movimentações = melhoria futura).
+    ⚠️ Margem: vínculo de receita por os_vinculadas é textual (validar em produção).
+    ⚠️ Conciliação/CNAB: corretamente marcados como "não configurados".
+13. VEREDITO FINAL
+    **FINANCEIRO APTO PARA PRODUÇÃO: SIM**
+    (ressalvas acima são melhorias futuras não bloqueantes; nenhum bloqueio real restante).

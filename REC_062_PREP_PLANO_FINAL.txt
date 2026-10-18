@@ -1,0 +1,271 @@
+═══════════════════════════════════════════════════════════════════════════════
+REC-06.2-PREP — PLANO FINAL DE IMPLEMENTAÇÃO
+AUTOMAÇÕES CRUD · CRM · IA SCORE · DOCUMENTOS · RLS · APP BRIDGE
+Conexão Express TMS — 2026-09-07
+═══════════════════════════════════════════════════════════════════════════════
+
+STATUS: PLANO PRONTO PARA EXECUÇÃO (sem alterações feitas)
+CLASSIFICAÇÃO: LEITURA APENAS — NÃO ALTERAR CÓDIGO/BANCO
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 1 — CLASSIFICAÇÃO DOS 10 ITENS P0/P1/P2
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────┬──────────────────────────────────┬───────────┬──────────────────────────┐
+│ ID  │ ITEM                             │ STATUS    │ JUSTIFICATIVA            │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 1   │ CRUD Automações (P0)             │ PENDENTE  │ 100% localStorage        │
+│     │ automacoesService.ts             │           │ CRUD completo mas ZERO   │
+│     │ AutomacoesList.tsx               │           │ Supabase. Precisa        │
+│     │                                  │           │ migration + RLS.         │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 2   │ IA Score Real (P0)               │ PARCIAL   │ scoreService.ts:         │
+│     │ scoreService.ts                  │           │ determinístico funcional │
+│     │ iaService.ts                     │           │ (25/25/15/15/10/10%).    │
+│     │                                  │           │ iaService.ts: 100% stub  │
+│     │                                  │           │ Math.random() + fake     │
+│     │                                  │           │ "gpt-4o-mini" hardcoded. │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 3   │ CRM (P0)                         │ PRONTO    │ crmService.ts: CRUD      │
+│     │ crmService.ts                    │           │ Supabase funcional.      │
+│     │ CrmLogistico.tsx                 │           │ Tabela                   │
+│     │ RegistrarInteracaoSheet.tsx      │           │ crm_interacoes_prestad.  │
+│     │                                  │           │ LIST/CREATE/UPD/DEL OK.  │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 4   │ Kanban Pipeline (P0)             │ PARCIAL   │ conversaoCandidatoService│
+│     │ enterpriseKanbanService.ts       │           │ : gate documental +      │
+│     │ conversaoCandidatoService.ts     │           │ conversão → prestadores  │
+│     │                                  │           │ FUNCIONAL via Supabase.  │
+│     │                                  │           │ Kanban display: 100%     │
+│     │                                  │           │ Math.random() mock.      │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 5   │ Documentos (P0)                  │ PARCIAL   │ Gate documental em       │
+│     │ documentosService.ts             │           │ conversaoCandidato:      │
+│     │ CentralDocumentos.tsx            │           │ statusDocumental ===     │
+│     │                                  │           │ 'completo' FUNCIONAL.    │
+│     │                                  │           │ CRUD documentos:         │
+│     │                                  │           │ localStorage.            │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 6   │ RLS Policies (P1)                │ PENDENTE  │ Nenhuma migration RLS    │
+│     │                                  │           │ encontrada para tabelas  │
+│     │                                  │           │ recrutamento_*. Precisa  │
+│     │                                  │           │ auditoria DB remota.     │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 7   │ APP Bridge (P1)                  │ PRONTO    │ identidadePrestadorServ. │
+│     │ identidadePrestadorService.ts    │           │ : busca vinculo/CPF/     │
+│     │                                  │           │ telefone/email.          │
+│     │                                  │           │ conversaoCandidato:      │
+│     │                                  │           │ sincronizarComOperacao() │
+│     │                                  │           │ reutiliza prestador App. │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 8   │ Score KPI Dashboard (P1)         │ PENDENTE  │ KPIs do dashboard usam   │
+│     │ useDashboardRecrutamento.ts      │           │ enterpriseKanbanService  │
+│     │ DashboardRecrutamento.tsx        │           │ (mock). Não consome      │
+│     │                                  │           │ dados reais Supabase.    │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 9   │ Notificações/Push (P2)           │ PENDENTE  │ Nenhum serviço de notif. │
+│     │                                  │           │ push encontrado no       │
+│     │                                  │           │ módulo recrutamento.     │
+├─────┼──────────────────────────────────┼───────────┼──────────────────────────┤
+│ 10  │ Testes E2E (P2)                  │ PENDENTE  │ Cobertura Playwright     │
+│     │                                  │           │ zero para recrutamento.  │
+└─────┴──────────────────────────────────┴───────────┴──────────────────────────┘
+
+RESUMO: 2 PRONTOS · 4 PARCIAIS · 4 PENDENTES
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 2 — EVIDÊNCIA POR ITEM (ARQUIVO:LINHA)
+═══════════════════════════════════════════════════════════════════════════════
+
+ITEM 1 — CRUD Automações [PENDENTE]
+  automacoesService.ts:10-14    → getMock() lê localStorage
+  automacoesService.ts:17-19    → persist() grava localStorage
+  automacoesService.ts:22-62    → CRUD completo (listar/criar/atualizar/remover)
+  automacoesService.ts:3        → STORAGE_KEY = 'recrutamento_automacoes_v2'
+  ZERO imports de supabase.ts
+  ZERO referências a tabelas Supabase
+
+ITEM 2 — IA Score [PARCIAL]
+  scoreService.ts:4-49          → calcularScore() determinístico
+  scoreService.ts:8             → pesoDocs = (aprovados/total) × 100
+  scoreService.ts:11-16         → pesoExperiencia = status mapping
+  scoreService.ts:18-20         → pesoPerfil = contatos × 20
+  scoreService.ts:29-36         → scoreGeral = ponderado (0.25/0.25/0.15/0.15/0.10/0.10)
+  scoreService.ts:51-57         → obterNivel() classifica 5 faixas
+  iaService.ts:7                → Math.random() × 45
+  iaService.ts:12               → Math.random() × 35
+  iaService.ts:40               → Math.random() × 20
+  iaService.ts:43               → modeloUtilizado: 'gpt-4o-mini' (hardcoded)
+  iaService.ts:5                → await setTimeout(800) (fake delay)
+
+ITEM 3 — CRM [PRONTO]
+  crmService.ts:4               → TABLE = 'crm_interacoes_prestadores'
+  crmService.ts:42-46           → select('*').order('data').limit(200)
+  crmService.ts:70-78           → insert([toDB(dados)]).select().single()
+  crmService.ts:81-93           → update(toDB(dados)).eq('id', id)
+  crmService.ts:96-98           → delete().eq('id', id)
+
+ITEM 4 — Kanban Pipeline [PARCIAL]
+  conversaoCandidatoService.ts:7    → TABLE = 'recrutamento_candidatos'
+  conversaoCandidatoService.ts:99-219 → converterCandidatoParaPrestador() completa
+  conversaoCandidatoService.ts:124  → GATE: statusDocumental !== 'completo' → BLOQUEIA
+  conversaoCandidatoService.ts:221-263 → buscarDuplicata() via Supabase
+  conversaoCandidatoService.ts:288-352 → sincronizarComOperacao() → INSERT em prestadores
+  conversaoCandidatoService.ts:295  → import('./identidadePrestadorService') (lazy)
+  enterpriseKanbanService.ts:76-99  → Math.random() para documentos/mock
+  enterpriseKanbanService.ts:239    → score: Math.floor(35 + Math.random() * 60)
+
+ITEM 5 — Documentos [PARCIAL]
+  conversaoCandidatoService.ts:120-131 → AG-07J.11 GATE DOCUMENTAL TMS
+  conversaoCandidatoService.ts:124     → candidate.statusDocumental !== 'completo'
+  conversaoCandidatoService.ts:34-49   → mapearDocumentos() mapeia status ok/pendente/vencido
+  documentosService.ts                 → CRUD localStorage (não verificado nesta sessão)
+
+ITEM 6 — RLS Policies [PENDENTE]
+  Nenhuma migration encontrada em supabase/migrations/ para:
+    - recrutamento_prestadores
+    - recrutamento_candidatos
+    - recrutamento_automacoes
+    - crm_interacoes_prestadores
+  Verificação DB remota necessária.
+
+ITEM 7 — APP Bridge [PRONTO]
+  identidadePrestadorService.ts:52-70 → buscarPrestadorOperacionalExistente()
+  identidadePrestadorService.ts:62-69 → Priority 1: vínculo explícito (origem_cadastro)
+  identidadePrestadorService.ts:72-77 → Priority 2: busca massiva (limit 5000)
+  identidadePrestadorService.ts:79-80 → Priority 3: CPF normalizado
+  identidadePrestadorService.ts:14-17 → normalizarDocumento() - non-digits removed
+  identidadePrestadorService.ts:20-22 → normalizarTelefone()
+  identidadePrestadorService.ts:30-32 → ehCpfSintetico() - detecta REC_ prefix
+  conversaoCandidatoService.ts:295-316 → sincronizarComOperacao() reutiliza prestador
+  conversaoCandidatoService.ts:323-348 → INSERT fallback com CPF sintético REC_
+
+ITEM 8 — Score KPI Dashboard [PENDENTE]
+  enterpriseKanbanService.ts:239 → score: Math.floor(35 + Math.random() * 60)
+  enterpriseKanbanService.ts:271 → scoreComprometimento: Math.floor(40 + Math.random() * 55)
+  KPIs do dashboard consomem do kanban mock, não de scoreService.ts
+
+ITEM 9 — Notificações [PENDENTE]
+  Nenhum serviço de push notification encontrado.
+  Nenhum import de Firebase/messaging/sw no módulo recrutamento.
+
+ITEM 10 — Testes E2E [PENDENTE]
+  Nenhum spec Playwright para recrutamento em tests/e2e/.
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 3 — SEQUÊNCIA CIRÚRGICA DE IMPLEMENTAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+DEPENDÊNCIAS:
+  Item 6 (RLS) → Item 1 (Automações CRUD) → Item 8 (KPI Dashboard)
+  Item 5 (Documentos) → Item 4 (Kanban)
+  Item 7 (APP Bridge) → Item 2 (IA Score)
+  Item 10 (Testes) → Todos os anteriores
+
+FASE A — FUNDAÇÃO (Item 6 + Item 1)
+  A.1  Auditoria DB: quais tabelas recrutamento_* têm RLS habilitado?
+  A.2  Migration: criar tabela recrutamento_automacoes (id, nome, tipo, trigger_json, acao_json, status, ultima_execucao, total_execucoes, created_at, updated_at, tenant_id)
+  A.3  RLS policies: authenticated SELECT/INSERT/UPDATE/DELETE por tenant
+  A.4  Migrar automacoesService.ts de localStorage → Supabase
+  A.5  Validação: CRUD funcional via UI, tsc 0 erros
+
+FASE B — DOCUMENTOS + GATE (Item 5)
+  B.1  Migrar documentosService.ts de localStorage → Supabase (tabela recrutamento_documentos)
+  B.2  RLS policies para recrutamento_documentos
+  B.3  Validar gate documental em conversaoCandidatoService.ts:124 continua funcional
+
+FASE C — KANBAN REAIS (Item 4)
+  C.1  Migrar enterpriseKanbanService.ts: substituir Math.random() por query a recrutamento_candidatos
+  C.2  Garantir que conversão candidato→prestador preserva dados reais
+  C.3  Testar fluxo completo: cadastrar → pipeline → aprovar → converter
+
+FASE D — IA SCORE (Item 2)
+  D.1  Criar tabela recrutamento_score_historico (prestador_id, score_json, data, motivo)
+  D.2  Substituir iaService.ts stub por chamada real via proxy-ia (Edge Function)
+  D.3  Ou: implementar score determinístico completo (sem LLM) se proxy indisponível
+  D.4  Validar: score muda quando status/documentos mudam
+
+FASE E — KPI DASHBOARD (Item 8)
+  E.1  useDashboardRecrutamento.ts: consumir dados reais do Supabase
+  E.2  DashboardRecrutamento.tsx: KPIs com dados reais (aprovados, pendentes, score médio)
+  E.3  Remover dependência do enterpriseKanbanService para KPIs
+
+FASE F — TESTES (Item 10)
+  F.1  Criar spec Playwright: CRUD automação
+  F.2  Criar spec Playwright: conversão candidato→prestador com gate documental
+  F.3  Criar spec Playwright: CRM (registrar interação + listar)
+  F.4  Criar spec Playwright: Score/IA (validar determinístico)
+  F.5  Criar spec Playwright: Dashboard com dados reais
+
+FASE G — NOTIFICAÇÕES (Item 9) — OPCIONAL
+  G.1  Definir quais eventos disparam notificação (novo candidato, aprovação, vencimento doc)
+  G.2  Implementar via Supabase Realtime + toast in-app (sem push externo inicialmente)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 4 — TABELAS SUPABASE NECESSÁRIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+JÁ EXISTENTES (confirmadas):
+  ✅ recrutamento_prestadores    → CRUD funcional (prestadoresService.ts)
+  ✅ recrutamento_candidatos     → Conversão funcional (conversaoCandidatoService.ts)
+  ✅ crm_interacoes_prestadores  → CRUD funcional (crmService.ts)
+  ✅ prestadores                 → Tabela operacional (identidadePrestadorService.ts)
+
+CRIAR (necessárias para REC-06.2):
+  🔨 recrutamento_automacoes     → Item 1 (CRUD Automações)
+  🔨 recrutamento_documentos     → Item 5 (persistência real de documentos)
+  🔨 recrutamento_score_historico → Item 2 (histórico de score por prestador)
+
+POSSÍVELMENTE EXISTENTES (verificar):
+  ❓ recrutamento_metricas      → KPIs do dashboard
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 5 — RISCOS E MITIGAÇÕES
+═══════════════════════════════════════════════════════════════════════════════
+
+R1. PRODUÇÃO AFETADA — migration errada pode derrubar dados reais
+    Mitigação: usar BEGIN/ROLLBACK para testar migrations antes de commit
+
+R2. DUPLICIDADE DE PRESTADORES — migrar localStorage→Supabase pode criar duplicatas
+    Mitigação: usar identidadePrestadorService.buscarPrestadorOperacionalExistente() antes de INSERT
+
+R3. SCORE IA STUB — substituir por LLM real pode introduzir custo + latência
+    Mitigação: manter determinístico como fallback; LLM como opcional
+
+R4. KANBAN MOCK — 50 candidatos mockados podem confundir usuários em produção
+    Mitigação: FASE C primeiro; migrar para dados reais antes de liberar
+
+R5. RLS AUSENTE — tabelas recrutamento podem ser acessíveis por anon
+    Mitigação: FASE A.1 (auditoria) antes de qualquer migration
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 6 — ESFORÇO ESTIMADO
+═══════════════════════════════════════════════════════════════════════════════
+
+FASE A (Fundaça + Automações):  2-3 dias
+FASE B (Documentos):            1-2 dias
+FASE C (Kanban Reais):          2-3 dias
+FASE D (IA Score):              1-2 dias
+FASE E (KPI Dashboard):         1 dia
+FASE F (Testes):                2-3 dias
+FASE G (Notificações):          1-2 dias (opcional)
+                               ─────────
+TOTAL ESTIMADO:                 10-15 dias (1 dev full-time)
+
+═══════════════════════════════════════════════════════════════════════════════
+SEÇÃO 7 — REGRAS DE OURO
+═══════════════════════════════════════════════════════════════════════════════
+
+1. NUNCA alterar dados reais de produção (INSERT/UPDATE/DELETE direto)
+2. NUNCA comprometer identidade de prestadores existentes (usar identidadePrestadorService)
+3. TODAS as migrations devem ser testadas com BEGIN/ROLLBACK primeiro
+4. RLS policies obrigatórias em TODAS as tabelas novas
+5. scoreService.ts determinístico permanece como fallback; IA real é opcional
+6. Gate documental (conversaoCandidatoService.ts:124) NUNCA pode ser removido
+7. npx tsc --noEmit + npm run build + npx vitest run antes de cada commit
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DO PLANO — REC-06.2-PREP
+STATUS: PRONTO PARA EXECUÇÃO
+NENHUMA ALTERAÇÃO FEITA NESTA SESSÃO
+═══════════════════════════════════════════════════════════════════════════════

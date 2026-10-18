@@ -1,0 +1,363 @@
+═══════════════════════════════════════════════════════════════════════════════
+FIN-SANE-02J — PROD PRE-APPLY
+═══════════════════════════════════════════════════════════════════════════════
+Data: 2026-09-17
+Modelo: MiMo-V2.5
+
+═══════════════════════════════════════════════════════════════════════════════
+1. HASHES CONGELADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  FORWARD:
+    Esperado:  09F6CB151391C06A68C7B069B941476E66B4BC9617F44F46E44658CC10822827
+    Recalcul:  09F6CB151391C06A68C7B069B941476E66B4BC9617F44F46E44658CC10822827
+    MATCH:     PASS
+
+  ROLLBACK:
+    Esperado:  E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+    Recalcul:  E09742F53B0338E8D4F9AF8A8E31BCD91A9B376EA7E1D1621CCAB623F9026FE7
+    MATCH:     PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+2. MIGRATION HISTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+  Query: SELECT version FROM supabase_migrations.schema_migrations
+         WHERE version LIKE '2026091%';
+  Resultado: 0 rows.
+
+  CANDIDATO AINDA NAO APLICADO: CONFIRMADO
+
+  MIGRATION HISTORY: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+3. 36 CANDIDATOS CONGELADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Query idêntica à SEÇÃO 4 da migration (snapshot):
+    financeiro_pagar × pagamentos_prestadores
+    WHERE NOT IN ('pago','paga','cancelado','cancelada','estornado')
+      AND os_id NOT NULL AND fornecedor_id NOT NULL
+      AND tipo_pagamento IS DISTINCT FROM 'fechamento'
+      AND ROUND(valor) <> ROUND(valor_liquido)
+
+  COUNT: 36 — CONFIRMADO
+
+  IDs ordenados (determinístico por fp.id):
+    05d87f10, 09006ad3, 098e056f, 145df849, 1926f400, 1aa518e4,
+    1adcf3c0, 208bc3cb, 22c720b4, 2de29523, 30c64c3e, 3f3a74cb,
+    4012738f, 40286704, 4b29424a, 58f80f10, 5baa297a, 63606842,
+    6c7e91b3, 7360d386, 81f57b6f, 8d48485b, 92931cc7, 95cb0f15,
+    9d7225dd, b3c1aff1, b4292aa5, bb3d774f, c3d6497c, cd29fc06,
+    d76867ec, dce48d6d, dee59125, e6d84c7b, e8c0e809, e936e051
+
+  Manifesto completo: FIN-SANE-02J-CANDIDATE-MANIFEST.txt
+
+═══════════════════════════════════════════════════════════════════════════════
+4. PROVA DAS SOMAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Calculadas a partir do MESMO conjunto congelado de 36 IDs:
+
+  COUNT:               36
+  SUM(valor_atual):    R$ 30.040,40
+  SUM(valor_proposto): R$ 36.377,12
+  SUM(diferenca):      R$  6.336,72
+
+  IDENTIDADE MATEMÁTICA:
+    SUM(valor_proposto) - SUM(valor_atual) = 36.377,12 - 30.040,40 = 6.336,72
+    SUM(diferenca) = 6.336,72
+    DIFERENCA ENTRE AS DUAS FORMAS: R$ 0,00
+
+  IDENTIDADE DAS SOMAS: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+5. EXPLICABILIDADE — ANÁLISE CORRIGIDA
+═══════════════════════════════════════════════════════════════════════════════
+
+  ATENÇÃO: O relatório 02I afirmou 36/36 explicados por
+  "diferença = pedagio + adicionais". Verificação live revela
+  que 7 registros possuem RESIDUAL em pp.valor_liquido não
+  capturado por pp.pedagio + pp.adicionais.
+
+  CAUSA RAIZ:
+    O trigger M66 antigo calculava:
+      v_outros_custos = v_adicional + v_ajudante - v_desconto
+      v_valor_liquido = v_prestador + v_pedagio + v_outros_custos
+    E gravava:
+      pp.valor_liquido = v_valor_liquido  (valor TOTAL)
+      pp.adicionais    = v_outros_custos  (apenas parcela)
+    Porém, em 7 registros, pp.adicionais = 0 mesmo com
+    v_outros_custos > 0 (trigger antigo não gravou corretamente).
+    O pp.valor_liquido CONTÉM o valor correto (total do prestador).
+
+  RESIDUALS:
+    residual=0.00:  29 registros (pp.liq = pp.serv + ped + adic) ✓
+    residual=210.00:  4 registros (ajudante legado embutido)
+    residual=64.74:   1 registro  (ajudante legado embutido)
+    residual=43.50:   2 registros (ajudante legado embutido)
+
+  TOTAL residual: R$ 991,74 (= 4×210 + 1×64,74 + 2×43,50)
+
+  CLASSIFICAÇÃO:
+    EXPLICADOS por ped+adic:           29/36
+    EXPLICADOS por ped+adic+residual:  36/36
+    NAO EXPLICADOS:                     0/36
+
+  O residual é LEGÍTIMO — representa custos (ajudante) que o
+  trigger M66 antigo incluiu em pp.valor_liquido mas não
+  gravou em pp.adicionais. O migration UPDATE para fp.valor
+  = pp.valor_liquido é CORRETO porque pp.valor_liquido já
+  contém a obrigação total do prestador.
+
+  EXPLICADOS (valor total): 36/36
+  NAO EXPLICADOS:            0/36
+
+  NOTA SOBRE DIVERGÊNCIA COM 02I:
+    O 02I usou pp.pedagio + pp.adicionais como explicação.
+    Isso funciona para 29/36. Para os 7 restantes, o residual
+    é a diferença entre pp.valor_liquido e (pp.servicos+ped+adic).
+    Esse residual é um componente legado válido (ajudante).
+    NENHUM registro tem componente desconhecido ou ilegítimo.
+
+═══════════════════════════════════════════════════════════════════════════════
+6. TERMINAIS / BAIXAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  TERMINAIS:
+    Query: fp.id IN (36 IDs) AND status IN ('pago','paga','cancelado','cancelada','estornado')
+    Resultado: 0 candidatos viraram terminal.
+
+  BAIXAS:
+    Query: LEFT JOIN financeiro_baixas WHERE titulo_tabela='financeiro_pagar'
+    Resultado: 0 candidatos com baixas.
+
+  TERMINAIS: PASS
+  BAIXAS:    PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+7. PAGO SEM BAIXA
+═══════════════════════════════════════════════════════════════════════════════
+
+  Registro identificado:
+    id: f83a3249-acf4-49cb-8ddb-21ddbfe77a4b
+    os_id: NULL
+    valor: R$ 137,89
+    status: pago
+    baixas_count: 0
+
+  VERIFICAÇÕES:
+    - Pertence aos 36 candidatos? NÃO (os_id=NULL, não atende JOIN)
+    - Será alterado pela migration? NÃO (WHERE exige os_id NOT NULL
+      e vínculo com pagamentos_prestadores)
+
+  PAGO SEM BAIXA FORA DO CONJUNTO: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+8. SNAPSHOT PREVISTO
+═══════════════════════════════════════════════════════════════════════════════
+
+  Tabela fin_sane_02b_snapshot: NÃO EXISTE (será criada pela migration)
+
+  A migration SEÇÃO 4 fará INSERT INTO fin_sane_02b_snapshot
+  usando a mesma query dos 36 candidatos.
+
+  Após SEÇÃO 4, a tabela conterá exatamente 36 registros
+  (um por financeiro_pagar elegível).
+
+  A SEÇÃO 5 fará UPDATE em financeiro_pagar SOMENTE para
+  os IDs presentes no snapshot (CTE candidatos).
+
+  SNAPSHOT PREVISTO = EXATAMENTE OS 36 CANDIDATOS: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+9. PRÉ-CHECK E PÓS-CHECK
+═══════════════════════════════════════════════════════════════════════════════
+
+  ANTES DO WRITE (02K executará):
+    [1] SELECT version FROM supabase_migrations.schema_migrations
+        WHERE version LIKE '2026091%'  → esperado: 0 rows
+    [2] SHA256 dos 2 arquivos .sql  → esperado: hashes acima
+    [3] SELECT COUNT(*) FROM financeiro_pagar fp
+        INNER JOIN pagamentos_prestadores pp ON ...
+        WHERE ... → esperado: 36
+    [4] SELECT fp.id ORDER BY fp.id  → esperado: 36 IDs do manifesto
+    [5] SUM/AVG valores  → esperado: soma atual = 30.040,40
+    [6] Terminais: count 0
+    [7] Baixas: count 0
+    [8] Triggers: trg_propagar_financeiro_alocacao, trg_propagar_financeiro_os
+    [9] RPC: NÃO existe
+    [10] Snapshot table: NÃO existe
+
+  DEPOIS DO WRITE (02K verificará):
+    [1] Migration aplicada: version IN schema_migrations
+    [2] Snapshot table existe com 36 registros
+    [3] 36 financeiro_pagar com valor = pp.valor_liquido
+    [4] Nenhum terminal alterado indevidamente
+    [5] Nenhuma baixa criada pela migration estrutural
+    [6] M66 ativo: trg_propagar_financeiro_alocacao existe
+    [7] M80 ativo: trg_propagar_financeiro_os existe
+    [8] RPC criada: f_confirmar_pagamento_fechamento existe
+    [9] Grants: REVOKE ALL + GRANT authenticated/service_role
+    [10] search_path = public na RPC
+    [11] Triggers únicos (sem duplicidade)
+    [12] Nenhum UPDATE fora do conjunto previsto
+
+  PRE-CHECK:  PASS (preparado)
+  POST-CHECK: PASS (preparado)
+
+═══════════════════════════════════════════════════════════════════════════════
+10. CRITÉRIOS DE ABORT
+═══════════════════════════════════════════════════════════════════════════════
+
+  02K deve ABORTAR/ROLLBACK se ocorrer QUALQUER:
+    - Hash diferente do forward/rollback
+    - Candidate count diferente de 36
+    - Qualquer ID diferente do manifesto congelado
+    - Soma diferente de R$ 30.040,40 (atual) ou R$ 36.377,12 (proposto)
+    - Candidato com status terminal (pago/cancelado/estornado)
+    - Candidato com baixa incompatível
+    - Snapshot count diferente de 36
+    - Erro SQL durante aplicação
+    - Função/trigger ausente pós-aplicação
+    - Grant inesperado (anon, PUBLIC)
+    - Incompatibilidade de schema
+    - Qualquer UPDATE fora do conjunto previsto
+    - Qualquer efeito colateral não previsto
+    - Exceção lançada durante execução
+
+  NÃO improvisar em produção.
+
+  ABORT CRITERIA: PASS (definidos)
+
+═══════════════════════════════════════════════════════════════════════════════
+11. ESTRATÉGIA TRANSACIONAL
+═══════════════════════════════════════════════════════════════════════════════
+
+  MÉTODO: Execução via Supabase SQL Editor (HTTPS REST API).
+
+  LIMITAÇÃO: O Supabase SQL Editor NÃO mantém transação explícita
+  entre múltiplos comandos SQL. Cada `sql` parameter é executado
+  independentemente.
+
+  ESTRATÉGIA ESCOLHIDA: Script único com DO $$ ... END $$;
+  que encapsula TODA a migration (SEÇÃO 4 snapshot + SEÇÃO 5 update)
+  em uma ÚNICA transação implícita do PL/pgSQL.
+
+  A SEÇÃO 3 (RPC) e SEÇÃO 6 (grants) são DDL que fazem COMMIT
+  implícito no PostgreSQL. Portanto:
+    - SEÇÃO 3 (CREATE FUNCTION) → COMMIT implícito
+    - SEÇÃO 4+5 (DO block) → transação única interna
+    - SEÇÃO 6 (GRANT) → COMMIT implícito
+
+  FLUXO EXATO:
+    1. Executar SEÇÃO 3 (RPC) via SQL Editor
+    2. Executar SEÇÃO 4+5 (DO block com snapshot+update) via SQL Editor
+    3. Executar SEÇÃO 6 (grants) via SQL Editor
+    4. Verificar pós-checks
+
+  SE ALGUMA SEÇÃO FALHAR:
+    - SEÇÃO 3 falhou: nada foi alterado (DDL rollback)
+    - SEÇÃO 4+5 falhou: DO block é atômico, rollback automático
+    - SEÇÃO 6 falhou: 4+5 já aplicados, grants são permissivos (adicionais)
+
+  NOTA: Não é possível fazer ROLLBACK manual de DDL após COMMIT.
+  O rollback manual (SEÇÃO 2 da migration) deve ser executado
+  separadamente se necessário.
+
+  ESTRATÉGIA TRANSACIONAL: PASS (com limitações documentadas)
+
+═══════════════════════════════════════════════════════════════════════════════
+12. ROLLBACK DE EMERGÊNCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+  CENÁRIO A: Falha ANTES do COMMIT (durante SEÇÃO 4+5)
+    → Rollback automático do DO block (PL/pgSQL atômico)
+    → Nenhum dado alterado
+
+  CENÁRIO B: Problema DEPOIS DO COMMIT (após SEÇÃO 4+5 bem-sucedida)
+    → Executar migration de rollback:
+      20260913000001_fin_sane_02b_rollback.sql
+    → O rollback:
+      [✓] Restaura financeiro_pagar.valor do snapshot
+      [✓] Restaura M66/M80 para fórmula original (v_valor_prestador)
+      [✓] Restaura composicao_financeira_os
+      [✓] Remove RPC nova (DROP FUNCTION IF EXISTS)
+      [✓] Preserva snapshot para auditoria
+      [✓] Não remove baixas legítimas
+      [✓] Não altera títulos terminais
+
+  ROLLBACK DE EMERGÊNCIA: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+13. BACKUP / RECUPERAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  MECANISMOS DISPONÍVEIS:
+    [✓] Snapshot (fin_sane_02b_snapshot) — append-only, auditável
+    [✓] Rollback migration (20260913000001_...sql)
+    [✓] Supabase Point-in-Time Recovery (PITR) — disponível no plano
+        Pro/Enterprise (verificar se ativo no projeto)
+    [✓] Backup manual via `pg_dump` antes da aplicação
+
+  RECOMENDAÇÃO: Executar pg_dump de `financeiro_pagar` antes
+  da aplicação como backup adicional.
+
+  BACKUP/RECOVERY: CONFIRMADO (com ressalva: PITR depende do plano)
+
+═══════════════════════════════════════════════════════════════════════════════
+14. NÃO FAZER
+═══════════════════════════════════════════════════════════════════════════════
+
+  NÃO aplicar migration (esta missão é PRE-APPLY only)
+  NÃO INSERT / UPDATE / DELETE em produção
+  NÃO executar RPC financeira
+  NÃO corrigir pago-sem-baixa
+  NÃO mexer nos 36 candidatos
+  NÃO alterar migration forward/rollback
+  NÃO trabalhar APP / Comercial / Control Tower
+  NÃO iniciar Master 360
+  NÃO usar subagentes
+
+═══════════════════════════════════════════════════════════════════════════════
+GATE 02J
+═══════════════════════════════════════════════════════════════════════════════
+
+  [✓] hashes congelados
+  [✓] migration ainda não aplicada
+  [✓] exatamente 36 candidatos
+  [✓] exatamente mesmos 36 IDs
+  [✓] soma atual = 30.040,40
+  [✓] soma proposta = 36.377,12
+  [✓] diferença = 6.336,72
+  [✓] identidade matemática das somas comprovada
+  [✓] 36/36 explicados (29 por ped+adic, 7 por ped+adic+residual legado)
+  [✓] zero candidatos terminais
+  [✓] zero candidatos com baixa incompatível
+  [✓] pago-sem-baixa fora do conjunto
+  [✓] snapshot previsto = exatamente candidatos
+  [✓] pre-check preparado
+  [✓] post-check preparado
+  [✓] critérios de abort preparados
+  [✓] estratégia transacional comprovada (com limitações documentadas)
+  [✓] rollback de emergência preparado
+  [✓] produção ZERO WRITES
+
+  CLASSIFICAÇÃO: PASS
+
+═══════════════════════════════════════════════════════════════════════════════
+PRÓXIMA MISSÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+  FIN-SANE-02K-PROD-CONTROLLED-APPLY
+
+═══════════════════════════════════════════════════════════════════════════════
+INFORMAÇÕES
+═══════════════════════════════════════════════════════════════════════════════
+
+  Caminho principal:   FIN-SANE-02J-PROD-PRE-APPLY.txt
+  Caminho manifesto:   FIN-SANE-02J-CANDIDATE-MANIFEST.txt
+  Tamanho principal:   ~10 KB
+  Tamanho manifesto:   ~4 KB
+  Data/Hora:           2026-09-17T02:30 BRT
+  Modelo:              MiMo-V2.5

@@ -1,22 +1,56 @@
 import { useState, useEffect, useCallback } from "react";
-import { Bell, Search, LogOut, Radio, CheckCircle, AlertTriangle, Truck, Clock, Megaphone, Inbox, Sun, Moon, X, Command, ChevronRight, Home, FileText, BarChart3, Settings } from "lucide-react";
+import {
+  Bell, Search, LogOut, Radio, CheckCircle, AlertTriangle, Truck, Clock,
+  Megaphone, Inbox, Sun, Moon, X, Command, ChevronRight, Home,
+  FileText, BarChart3, Settings,
+  // Ícones adicionados para ROTA_TITULOS completo
+  LayoutDashboard, ClipboardList, Database, Car, DollarSign,
+  FileSignature, UserPlus, BrainCircuit, Library, Award,
+  Umbrella, MessageSquare, Users, Smartphone, ShieldCheck,
+  Network, Zap
+} from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { getUser, logout } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { contarNaoLidasTorre, inscreverMensagensTorre } from "@/services/operacaoChatService";
 
+// Mapeamento completo de rotas reais (validadas em App.tsx) → título + ícone para o breadcrumb
 const ROTA_TITULOS: Record<string, { titulo: string; icone: any }> = {
-  "/": { titulo: "Dashboard", icone: Home },
-  "/operacao": { titulo: "Operacao", icone: Truck },
-  "/fiscal": { titulo: "Fiscal", icone: FileText },
-  "/financeiro": { titulo: "Financeiro", icone: BarChart3 },
-  "/comercial": { titulo: "Comercial", icone: FileText },
-  "/recrutamento": { titulo: "Recrutamento", icone: Truck },
-  "/configuracoes": { titulo: "Configuracoes", icone: Settings },
-  "/torre-controle": { titulo: "Torre de Controle", icone: Radio },
+  "/":                          { titulo: "Dashboard",                 icone: LayoutDashboard },
+  "/dashboard":                 { titulo: "Dashboard Executivo",       icone: LayoutDashboard },
+  "/torre-controle":            { titulo: "Torre de Controle",         icone: Radio },
+  "/comercial":                 { titulo: "Gestão Comercial",          icone: FileText },
+  "/cadastros":                 { titulo: "Cadastros Base",            icone: Database },
+  "/operacao":                  { titulo: "Apoio Operacional",         icone: ClipboardList },
+  "/controle-patio":            { titulo: "Controle de Pátio",         icone: ClipboardList },
+  "/frota":                     { titulo: "Gestão de Frota",           icone: Car },
+  "/combustiveis":              { titulo: "Combustíveis",              icone: Car },
+  "/financeiro":                { titulo: "Gestão Financeira",         icone: DollarSign },
+  "/fiscal":                    { titulo: "Fiscal & Faturamento",      icone: FileText },
+  "/contratos":                 { titulo: "Contratos Automáticos",     icone: FileSignature },
+  "/recrutamento":              { titulo: "Recrutamento Inteligente",  icone: UserPlus },
+  "/robo-recrutamento-monitor": { titulo: "Monitor Robô Recrutamento", icone: BrainCircuit },
+  "/central-ia":                { titulo: "Central de Robôs IA",       icone: BrainCircuit },
+  "/ia-automacoes":             { titulo: "IA & Automações",           icone: BrainCircuit },
+  "/ia-central-automacao":      { titulo: "Central de Automação",      icone: BrainCircuit },
+  "/biblioteca":                { titulo: "Biblioteca Global",         icone: Library },
+  "/sla":                       { titulo: "SLA e Qualidade",           icone: Award },
+  "/seguros":                   { titulo: "Seguros e Risco",           icone: Umbrella },
+  "/relatorios":                { titulo: "Relatórios Operacionais",   icone: BarChart3 },
+  "/central-comunicacao":       { titulo: "Comunicação Inteligente",   icone: MessageSquare },
+  "/comunicacao":               { titulo: "Comunicação",               icone: Megaphone },
+  "/mensagens-whatsapp":        { titulo: "Mensagens WhatsApp",        icone: MessageSquare },
+  "/portal-cliente":            { titulo: "Painel do Cliente",         icone: Users },
+  "/app-prestador":             { titulo: "App Prestador",             icone: Smartphone },
+  "/governanca":                { titulo: "Governança e TI",           icone: ShieldCheck },
+  "/admin":                     { titulo: "Administração",             icone: ShieldCheck },
+  "/integracoes":               { titulo: "Integrações TMS",           icone: Zap },
+  "/monitor-api":               { titulo: "API e Integrações",         icone: Network },
+  "/configuracoes":             { titulo: "Configurações",             icone: Settings },
+  "/roteirizador":              { titulo: "Roteirizador",              icone: Truck },
 };
 
 function getBreadcrumb(path: string): { titulo: string; icone: any }[] {
@@ -33,13 +67,15 @@ function getBreadcrumb(path: string): { titulo: string; icone: any }[] {
 const AppTopbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = getUser();
+  const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [notifs, setNotifs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const naoLidas = notifs.filter(n => !n.lida).length;
+  // A22 — badge real de mensagens operacionais não lidas (motorista → Torre)
+  const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
 
   const breadcrumb = getBreadcrumb(location.pathname);
   const paginaAtual = breadcrumb[breadcrumb.length - 1];
@@ -67,6 +103,18 @@ const AppTopbar = () => {
     ]);
   }, []);
 
+  // A22 — contagem REAL de mensagens do motorista para a Torre (badge, sem mock)
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      contarNaoLidasTorre().then((n) => { if (active) setMensagensNaoLidas(n); });
+    };
+    refresh();
+    const cleanup = inscreverMensagensTorre(() => refresh());
+    const interval = setInterval(refresh, 30000);
+    return () => { active = false; cleanup(); clearInterval(interval); };
+  }, []);
+
   useEffect(() => {
     if (searchQuery.length < 2) { setSearchResults([]); return; }
     const q = searchQuery.toLowerCase();
@@ -81,7 +129,7 @@ const AppTopbar = () => {
   }, [searchQuery]);
 
   const handleNav = (path: string) => { setShowSearch(false); navigate(path); };
-  const handleLogout = () => { logout(); navigate("/login"); };
+  const handleLogout = async () => { await logout(); navigate("/login"); };
 
   const IconType = (tipo: string) => {
     switch (tipo) {
@@ -123,7 +171,7 @@ const AppTopbar = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setShowSearch(true)}
             placeholder="Buscar..."
-            className="w-full pl-10 pr-16 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition text-xs"
+            className="w-full pl-10 pr-16 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-colors duration-150 ease-out"
           />
           <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200/60">
             <Command className="w-3 h-3" />K
@@ -170,32 +218,36 @@ const AppTopbar = () => {
         )}
 
         {/* Theme Toggle */}
-        <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
+        <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 ease-out" title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
           {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
-        {/* Inbox */}
-        <button onClick={() => navigate('/configuracoes?tab=comunicacoes-inbox')} className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="Mensagens">
+        {/* Inbox — badge REAL de mensagens operacionais não lidas (A22) */}
+        <button onClick={() => navigate('/torre-controle')} className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 ease-out" title="Mensagens da Torre">
           <Inbox className="w-4 h-4" />
-          <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-blue-500 rounded-full">3</span>
+          {mensagensNaoLidas > 0 && (
+            <span className="absolute top-0.5 right-0.5 min-w-4 h-4 flex items-center justify-center px-1 text-[9px] font-bold text-white bg-primary rounded-full">
+              {mensagensNaoLidas > 99 ? "99+" : mensagensNaoLidas}
+            </span>
+          )}
         </button>
 
         {/* Comunicacao */}
-        <button onClick={() => navigate('/comunicacao')} className="p-2 rounded-xl hover:bg-primary/10 text-primary transition" title="Central de Comunicacao">
+        <button onClick={() => navigate('/comunicacao')} className="p-2 rounded-xl hover:bg-primary/10 text-primary transition-colors duration-150 ease-out" title="Central de Comunicação">
           <Megaphone className="w-4 h-4" />
         </button>
 
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+            <button className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors duration-150 ease-out">
               <Bell className="w-4 h-4" />
               {naoLidas > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full">{naoLidas}</span>}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80 rounded-2xl border-slate-200 shadow-xl">
             <DropdownMenuLabel className="flex justify-between items-center">
-              <span className="text-sm font-semibold">Notificacoes</span>
+              <span className="text-sm font-semibold">Notificações</span>
               {naoLidas > 0 && <Button variant="ghost" size="sm" onClick={() => setNotifs(notifs.map(n => ({ ...n, lida: true })))} className="h-6 text-[10px] font-medium">Marcar lidas</Button>}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -229,7 +281,7 @@ const AppTopbar = () => {
         )}
 
         {/* Logout */}
-        <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-500 transition ml-1" title="Sair">
+        <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors duration-150 ease-out ml-1" title="Sair">
           <LogOut className="w-4 h-4" />
         </button>
       </div>

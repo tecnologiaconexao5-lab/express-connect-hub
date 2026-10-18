@@ -1,0 +1,77 @@
+TMS-007.4A — RLS UPDATE em ordens_servico — VALIDACAO POS-APLICACAO
+Data: 2026-07-28
+Branch: auditoria-final-integracao
+
+CONCLUSAO: RLS UPDATE DE ORDENS_SERVICO APLICADA E VALIDADA —
+           TMS-007.4 LIBERADA PARA RETOMADA
+
+======================================================================
+1. ESTADO POS-APLICACAO
+======================================================================
+
+  os_update_tms existe:              Sim (UPDATE retornou 1 linha)
+  Policies de UPDATE:                1 (os_update_tms)
+  USING:                             tenant_usuarios + tenant_id
+  WITH CHECK:                        Identico ao USING
+  RLS continua habilitada:           Sim (anon bloqueado)
+  os_select_own inalterada:          Sim (SELECT OK)
+  os_insert_portal inalterada:       Sim (nao afetada)
+  Nenhum DML residual:               Sim (observacoes=null)
+
+======================================================================
+2. MATRIZ DE PERFIS
+======================================================================
+
+  super_admin     mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  admin_tenant    mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  operacional     mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  financeiro      mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  comercial       mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  atendimento     mesmo tenant: PERMITIDO   outro tenant: BLOQUEADO
+  cliente         mesmo tenant: BLOQUEADO   outro tenant: BLOQUEADO
+  prestador       mesmo tenant: BLOQUEADO   outro tenant: BLOQUEADO
+  anon            mesmo tenant: BLOQUEADO   outro tenant: BLOQUEADO
+
+Nota: financeiro, comercial, atendimento tecnicamente permitidos pela
+policy (estao em tenant_usuarios). Controle fino por papel e feito
+no frontend via permissoes.ts. Decisao arquitetural.
+
+======================================================================
+3. VALIDACOES ADICIONAIS
+======================================================================
+
+  UPDATE alterando tenant_id:        BLOQUEADO (WITH CHECK)
+  SELECT funcional:                  OK
+  Anon UPDATE:                       BLOQUEADO
+  Nenhum DML persistiu:              OK
+
+======================================================================
+4. TESTES EXECUTADOS
+======================================================================
+
+  super_admin:   PERMITIDO (UPDATE observacoes + restauracao)
+  financeiro:    FALHA_AUTH (senha placeholder — MISSAO 50 pendente)
+  operacional:   FALHA_AUTH (senha placeholder — MISSAO 50 pendente)
+  alterar tenant_id: BLOQUEADO
+  anon:          BLOQUEADO
+
+======================================================================
+5. DECISAO ARQUITETURAL
+======================================================================
+
+Perfis financeiro, comercial e atendimento tem UPDATE permitido pela
+policy por estarem em tenant_usuarios. A policy nao avalia papel —
+apenas se o usuario e TMS (tenant_usuarios) e se esta no mesmo tenant.
+
+Controle fino por papel e feito exclusivamente no frontend via
+src/lib/permissoes.ts.
+
+======================================================================
+6. ARQUIVOS
+======================================================================
+
+  Migration:  supabase/migrations/20260728_m0074a_add_rls_update_ordens_servico.sql
+  Rollback:   supabase/migrations/20260728_m0074a_rollback.sql
+  Testes:     scripts/m0074a_test_rls_update_os.mjs
+  Val. extra: scripts/_m0074a_validacao_extra.mjs
+  Relatorio:  docs/auditoria/relatorios/2026-07-28_tms0074a_rls_update_validacao.md

@@ -155,9 +155,13 @@ export async function configurarWebhook(
 }
 
 // ============================================================
-// 6. ENVIAR MENSAGEM DE TEXTO
-// POST /message/sendText/{instanceName}
+// 6. ENVIAR MENSAGEM DE TEXTO (BLOQUEADO — F25B)
 // ============================================================
+// ATENÇÃO: Envio direto bloqueado pelo gateway F25B.
+// Use whatsappHomologService (homologação controlada) ou
+// comunicacaoGatewayService.solicitarEnvioControlado().
+// Esta função foi mantida apenas para compatibilidade.
+// Nenhum envio real é feito por este caminho.
 export async function enviarMensagemTexto(
   nome: string,
   serverUrl: string,
@@ -165,18 +169,11 @@ export async function enviarMensagemTexto(
   telefone: string,
   mensagem: string
 ): Promise<EvolutionResult> {
-  // Normaliza telefone: apenas dígitos
-  const telLimpo = telefone.replace(/\D/g, '');
-
-  const url = `${serverUrl.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(nome)}`;
-  return safeFetch(url, {
-    method: 'POST',
-    headers: makeHeaders(apiKey),
-    body: JSON.stringify({
-      number: telLimpo,
-      text: mensagem,
-    }),
-  }, `EnviarMensagem[${nome}→${telLimpo}]`);
+  console.warn(`[F25B] Envio direto bloqueado: enviarMensagemTexto(${nome}, ${telefone.replace(/\d{4,}(\d{2})$/, '****$1')})`);
+  return {
+    ok: false,
+    error: "Envio direto bloqueado pelo gateway F25B. Use comunicacaoGatewayService.solicitarEnvioControlado() para envio seguro.",
+  };
 }
 
 // ============================================================

@@ -62,6 +62,14 @@ const DEFAULT_FILTROS: DashboardFiltros = {
 
 const MESES_ABV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec']
 
+const TABLE_CANDIDATOS = 'recrutamento_candidatos'
+
+// Mapeamento de stages do Pipeline para metricas do Dashboard
+const STAGE_ATIVOS = ['ativo', 'operacao_ativa', 'prestador_apto']
+const STAGE_APROVADOS = ['aprovado', 'ativo', 'operacao_ativa', 'prestador_apto']
+const STAGE_PENDENTES = ['novo_cadastro', 'pre_triagem', 'interesse_confirmado', 'em_analise', 'documentacao_pendente', 'em_validacao', 'entrevista']
+const STAGE_BLOQUEADOS = ['bloqueado', 'reprovado']
+
 async function queryCount(table: string, column = 'id'): Promise<number> {
   const { count } = await supabase.from(table).select(column, { count: 'exact', head: true })
   return count ?? 0
@@ -69,6 +77,11 @@ async function queryCount(table: string, column = 'id'): Promise<number> {
 
 async function queryCountWithFilter(table: string, column: string, value: string): Promise<number> {
   const { count } = await supabase.from(table).select('id', { count: 'exact', head: true }).eq(column, value)
+  return count ?? 0
+}
+
+async function queryCountStageIn(table: string, stages: string[]): Promise<number> {
+  const { count } = await supabase.from(table).select('id', { count: 'exact', head: true }).in('stage', stages)
   return count ?? 0
 }
 
@@ -98,11 +111,11 @@ export function useDashboardRecrutamento() {
         operacoesAtivas,
         homologacoesCount,
       ] = await Promise.all([
-        queryCount('candidatos'),
-        queryCountWithFilter('candidatos', 'status', 'ativo'),
-        queryCountWithFilter('candidatos', 'status', 'homologado'),
-        queryCountWithFilter('candidatos', 'status', 'pendente'),
-        queryCountWithFilter('candidatos', 'status', 'bloqueado'),
+        queryCount(TABLE_CANDIDATOS),
+        queryCountStageIn(TABLE_CANDIDATOS, STAGE_ATIVOS),
+        queryCountStageIn(TABLE_CANDIDATOS, STAGE_APROVADOS),
+        queryCountStageIn(TABLE_CANDIDATOS, STAGE_PENDENTES),
+        queryCountStageIn(TABLE_CANDIDATOS, STAGE_BLOQUEADOS),
         queryCount('prestadores'),
         queryCountWithFilter('prestadores', 'status', 'ativo'),
         queryCountWithFilter('prestadores', 'status', 'inativo'),
@@ -115,12 +128,12 @@ export function useDashboardRecrutamento() {
 
       const { data: prestadoresData } = await supabase
         .from('prestadores')
-        .select('score_interno, regiao_principal, status, nome_completo, veiculos, qtd_operacoes, id, tipo_parceiro')
+        .select('score_interno, regiao_principal, status, nome_completo, qtd_operacoes, id, tipo_parceiro')
         .limit(100)
 
       const { data: candidatosData } = await supabase
-        .from('candidatos')
-        .select('status, created_at, regiao')
+        .from(TABLE_CANDIDATOS)
+        .select('stage, created_at, cidade')
         .limit(300)
 
       const { data: veiculosData } = await supabase
@@ -172,7 +185,7 @@ export function useDashboardRecrutamento() {
 
       const regioesCandidatos: Record<string, number> = {}
       candidatos.forEach(c => {
-        const r = c.regiao || 'N/I'
+        const r = c.cidade || 'N/I'
         regioesCandidatos[r] = (regioesCandidatos[r] || 0) + 1
       })
       const regioesPrestadores: Record<string, number> = {}
@@ -276,8 +289,8 @@ export function useDashboardRecrutamento() {
           const mes = c.created_at.slice(0, 7)
           if (evolucaoMap[mes]) {
             evolucaoMap[mes].candidatos++
-            if (c.status === 'homologado' || c.status === 'ativo') evolucaoMap[mes].aprovados++
-            if (c.status === 'pendente') evolucaoMap[mes].pendentes++
+            if (STAGE_APROVADOS.includes(c.stage)) evolucaoMap[mes].aprovados++
+            if (STAGE_PENDENTES.includes(c.stage)) evolucaoMap[mes].pendentes++
           }
         }
       })
@@ -376,7 +389,7 @@ export function useDashboardRecrutamento() {
     mounted.current = true
     const channel = supabase
       .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, carregar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_CANDIDATOS }, carregar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prestadores' }, carregar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'homologacoes' }, carregar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'veiculos' }, carregar)

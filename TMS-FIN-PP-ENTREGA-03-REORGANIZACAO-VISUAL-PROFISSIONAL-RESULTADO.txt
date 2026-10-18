@@ -1,0 +1,115 @@
+================================================================================
+TMS-FIN-PP-ENTREGA-03-REORGANIZACAO-VISUAL-PROFISSIONAL — RESULTADO
+Missão: Reorganização visual do módulo "Pagamento de Prestadores"
+Data: 26/09/2026
+Modelo: DeepSeek V4.1 Flash
+Status: IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO
+Ambiente: TMS local (npm run dev — porta 8800). APP/Redmi NÃO conectado.
+================================================================================
+
+1. ESCOPO RESPEITADO
+--------------------------------------------------------------------------------
+- Sem auditoria; sem alteração de Supabase/RPC; sem alteração de regra financeira;
+  sem nova arquitetura; sem git stash/reset/clean.
+- ZERO INSERT/UPDATE/DELETE/DDL/migration. Nenhum dado real alterado.
+- MISSÃO 100% visual/organizacional.
+
+2. COMPONENTES ALTERADOS
+--------------------------------------------------------------------------------
+A) src/components/financeiro/PagamentoPrestadores.tsx  (principal)
+B) src/helpers/periodoHelper.ts                        (NOVO: fmtDateLocal,
+                                                         fmtPeriodo,
+                                                         nomeOuNaoInformado)
+C) src/test/pp_ux_03_reorganizacao_visual.test.ts      (NOVO: 21 testes)
+D) src/test/pp_ux_02_entrega_operacional.test.ts        (ajuste: ações secundárias)
+E) TMS-FIN-PP-ENTREGA-03-REORGANIZACAO-VISUAL-PROFISSIONAL-RESULTADO.txt (este)
+
+3. MUDANÇAS VISUAIS
+--------------------------------------------------------------------------------
+RELATÓRIO FINANCEIRO (prioridade):
+  - Cards Total Serviços / Total Adicionais / Total Descontos / Total Líquido
+    MOVIDOS para CIMA da tabela.
+  - Ordem visual: [Título + nº registros + período] → [4 cards]
+    → [Status / Imprimir / Exportar CSV] → [tabela].
+  - Totais visíveis sem rolar até o fim. Cálculos inalterados.
+
+VISÃO DO PERÍODO:
+  - Resumo (Títulos / Prestadores / Total a pagar / Confirmados) antes da tabela.
+  - Empty state limpo quando não há registros (sem cards zerados + tabela vazia).
+
+APTOS PARA LOTE:
+  - Indicadores (Aptos / Prestadores / Total líquido) acima da tabela.
+  - Ações (Selecionar visíveis / Limpar seleção / Gerar Ordem-Lote) movidas para
+    a faixa imediatamente acima da tabela, sem competir com os indicadores.
+  - Lógica do lote inalterada.
+
+PAGAMENTOS MANUAIS:
+  - Ações primárias visíveis com tooltip (Conferir, Aprovar, Reprovar,
+    Marcar como pago).
+  - Ações secundárias (Cancelar, Estornar pagamento) agora em menu "..."
+    (DropdownMenu), com rótulos legíveis — sem fileira confusa de símbolos.
+  - Estados condicionais preservados (só aparecem quando aplicáveis).
+
+HIERARQUIA DO MÓDULO:
+  - Barra principal (Dashboard / Fechamentos e Pagamentos / Relatório / Conta
+    Corrente) em container próprio.
+  - Sub-abas (Visão do Período / Aptos / Manuais / Anteriores / Repasses) em
+    container distinto + rótulo "Detalhamento — Fechamentos e Pagamentos".
+  - Fim da aparência de barras de abas soltas.
+
+PERÍODOS / REGISTROS SEM DADOS:
+  - Novo fmtPeriodo: nunca exibe "— a —".
+      ambos ausentes  -> "Não informado"
+      só início       -> "A partir de <data>"
+      só fim          -> "Até <data>"
+      mesmo dia       -> data única
+  - Nomes ausentes -> "Não informado".
+  - Aplicado em: Aptos, Relatório, Fechamentos (lista + detalhe) e Extrato.
+
+CONTA CORRENTE:
+  - Ao selecionar prestador: cards [Saldo atual] [Total créditos]
+    [Total débitos] ANTES do extrato.
+  - Valores calculados apenas dos dados já carregados (sem nova query).
+  - Seleção responsiva (w-full sm:w-1/2 lg:w-1/3). Empty state profissional.
+
+REPASSES DA PROGRAMAÇÃO OPERACIONAL:
+  - Mantido SOMENTE CONSULTA. Título e descrição profissionais.
+  - Sem ação "Gerar Repasse". Empty state com ícone + explicação.
+
+4. TESTES
+--------------------------------------------------------------------------------
+- npx vitest run (6 arquivos financeiros/paginação):
+    pp_ux_03_reorganizacao_visual.test.ts ........ 21 passed
+    pp_ux_02_entrega_operacional.test.ts ......... 16 passed
+    fin_ux_02a_conferencia_paginacao.test.ts ..... passed
+    fin_prog05d6d1_relatorio_filtros.test.ts ..... passed
+    fin_prog05d7b3_fila_aptos_lote.test.ts ....... passed
+    fin_ux_02b_contas_pagar_paginacao.test.tsx ... passed
+  Total: 76/76 passed.
+- npx tsc --noEmit (typecheck:app): SEM NOVOS ERROS nos arquivos da missão.
+  (3 erros remanescentes em PagamentoPrestadores são baseline pré-existente:
+   linhas 553/1023/2115 — não introduzidos nesta missão.)
+
+5. BUILD
+--------------------------------------------------------------------------------
+- npm run build -> ✓ built in 40.76s (0 erros).
+
+6. PENDÊNCIAS DE SANEAMENTO (NÃO executado)
+--------------------------------------------------------------------------------
+- "PRESTADOR TESTE APP", "M43... Motorista Teste" e registros R$ 0 sem
+  prestador PERMANECEM intactos/visíveis — saneamento financeiro pendente.
+- BACKLOG preservado: Novo Lançamento funcional; Fechamento x Lote;
+  paginação/busca/ordenação global; KPIs contra banco; Conta Corrente completa;
+  relatório completo; pagamento parcial; FP x PP; pagos sem baixa; Calvo/CESAR;
+  P1 financeiros; Comercial/PDF profissional; APP/E2E; Master 360.
+
+7. VALIDAÇÃO VISUAL
+--------------------------------------------------------------------------------
+- Servidor local mantido em execução (localhost:8800).
+- O usuário fará Ctrl+F5 e enviará prints.
+- NÃO declarar homologação visual. Status máximo:
+  IMPLEMENTADO — AGUARDANDO VALIDAÇÃO VISUAL DO USUÁRIO.
+
+================================================================================
+FIM
+================================================================================

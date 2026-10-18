@@ -1,0 +1,91 @@
+{
+  "ts": "2026-10-02T00:41:27.342Z",
+  "prestador_A": "4601ed1f-45f5-4f2d-b276-56da75ad7777",
+  "prestador_B": "fd30e512-e3b5-4817-b451-a0ece179b624",
+  "checks": [
+    {
+      "name": "1_row_prestador_A",
+      "ok": true,
+      "detail": "[{\"id\":\"7546f61c-4d0d-49c4-bbc8-734ef3767c4a\",\"prestador_id\":\"4601ed1f-45f5-4f2d-b276-56da75ad7777\",\"tipo\":\"Outros\",\"url\":\"doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png\",\"created_at\":\"2026-10-02T03:39:14.001Z\"}]"
+    },
+    {
+      "name": "2_path_estavel",
+      "ok": true,
+      "detail": "url persistida = doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png"
+    },
+    {
+      "name": "2b_url_persistida_nao_e_signed",
+      "ok": true,
+      "detail": "coluna url guarda apenas o path (sem /object/sign, token ou http)"
+    },
+    {
+      "name": "2c_tipo_Outros",
+      "ok": true,
+      "detail": "tipo = Outros"
+    },
+    {
+      "name": "3_objeto_no_bucket",
+      "ok": true,
+      "detail": "[{\"bucket_id\":\"documentos_prestadores\",\"name\":\"doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png\",\"created_at\":\"2026-10-02T00:39:11.937Z\"}]"
+    },
+    {
+      "name": "4_bucket_public_false",
+      "ok": true,
+      "detail": "bucket public = false"
+    },
+    {
+      "name": "5_anon_object_negado",
+      "ok": true,
+      "detail": "anon /object/ -> 400"
+    },
+    {
+      "name": "5b_anon_sign_negado",
+      "ok": true,
+      "detail": "anon sign sem authorization -> 400"
+    },
+    {
+      "name": "5c_anon_public_negado",
+      "ok": true,
+      "detail": "anon /object/public/ -> 400"
+    },
+    {
+      "name": "6_signed_url_com_token",
+      "ok": true,
+      "detail": "signedURL = /object/sign/documentos_prestadores/doc_4601ed1f-45f5-4f2d-b... (token omitido)"
+    },
+    {
+      "name": "6b_signed_legivel_sem_credencial",
+      "ok": true,
+      "detail": "status=200 bytes=11755 content-type=image/png"
+    },
+    {
+      "name": "6c_conteudo_identico_ao_enviado",
+      "ok": true,
+      "detail": "sha256 lido=ac291280a331f4ee origem=ac291280a331f4ee"
+    },
+    {
+      "name": "7_isolamento_outros_intactos",
+      "ok": true,
+      "detail": "total=33 outros=32 prestador_B=0"
+    }
+  ],
+  "row": {
+    "id": "7546f61c-4d0d-49c4-bbc8-734ef3767c4a",
+    "prestador_id": "4601ed1f-45f5-4f2d-b276-56da75ad7777",
+    "tipo": "Outros",
+    "url": "doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png",
+    "created_at": "2026-10-02T03:39:14.001Z"
+  },
+  "total_objetos_bucket": 79,
+  "bucket": {
+    "name": "documentos_prestadores",
+    "public": false
+  },
+  "signed_url_exemplo": "/object/sign/documentos_prestadores/doc_4601ed1f-45f5-4f2d-b276-56da75ad7777_Outros_1790901553460.png?token=OMITIDO",
+  "signed_bytes": 11755,
+  "isolamento": {
+    "total": 33,
+    "outros_prestadores": 32,
+    "prestador_B": 0
+  }
+}

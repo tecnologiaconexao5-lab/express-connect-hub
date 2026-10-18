@@ -1,0 +1,183 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.1-GATE-FATURA-AR
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: Correcao de UI (gate administrativo). Sem migration. Sem emissao real.
+================================================================================
+
+RESULTADO FINAL: PASS (codigo, com provas objetivas)
+GATE IMPLEMENTADO — HOMOLOGACAO VISUAL ADMIN PENDENTE
+
+--------------------------------------------------------------------------------
+1. FLUXO UI AS-IS
+--------------------------------------------------------------------------------
+Conferencia Financeira -> "Criar Fatura" -> FaturaPanel cria RASCUNHO
+(criarRascunhoFatura + adicionarItemFatura). Revisao dentro do FaturaPanel.
+Botao antigo "Emitir Fatura" abria um AlertDialog simples (resumo reduzido:
+cliente, qtd servicos, total, vencimento) e chamava emitirFatura (RPC).
+FaturaManualDialog tambem emite via emitirFatura (corrigido na PROG-04B).
+Contas a Receber: tela separada (?tab=receber) lista os titulos.
+
+--------------------------------------------------------------------------------
+2. BYPASSES ENCONTRADOS
+--------------------------------------------------------------------------------
+- Nenhum caminho de UI grava status="emitida" diretamente no banco.
+  Grep em src/services, src/components, src/pages: a UNICA ocorrencia e
+  FaturaManualDialog.tsx:337, que e um objeto LOCAL (faturaFinal) para gerar o
+  PDF APOS emitirFatura() — nao e escrita no banco.
+- atualizarFatura nao aceita mais "status" (removido na PROG-04B).
+=> Nenhum bypass a corrigir; o gate foi ENRIQUECIDO (UX) sem novo caminho.
+
+--------------------------------------------------------------------------------
+3. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/components/financeiro/FaturaPanel.tsx
+    * botao "Emitir Fatura" -> "Validar e Emitir Fatura" (gate visual);
+    * modal de confirmacao enriquecido (resumo profissional + mensagem);
+    * painel de sucesso pos-emissao com Nº Conexao, Nº Cliente, status,
+      valor, vencimento, Conta a Receber + botao "Ver em Contas a Receber";
+    * estado posEmissao + useNavigate; reset no fechamento.
+- src/test/fin_prog05d1_gate_fatura.test.tsx (NOVO) — 5 testes do gate.
+- src/test/fin_prog04b_emissao.test.tsx — renders envolvidos em MemoryRouter
+  (o FaturaPanel passou a usar useNavigate).
+Sem migration. Sem alteracao de dados. Nenhuma fatura real emitida.
+
+--------------------------------------------------------------------------------
+4. GATE IMPLEMENTADO
+--------------------------------------------------------------------------------
+Rascunho -> acao clara "Validar e Emitir Fatura" -> modal profissional
+(padrao Radix/AlertDialog do sistema, NAO window.confirm) -> confirmacao
+"Validar e Emitir" -> fluxo oficial f_emitir_fatura -> painel de sucesso.
+Regra de negocio preservada: Programacao/OS concluida NAO cria AR; Conferencia
+NAO cria AR; rascunho NAO cria AR; apenas a acao explicita cria o AR definitivo.
+
+--------------------------------------------------------------------------------
+5. MODAL (CONFIRMACAO PROFISSIONAL)
+--------------------------------------------------------------------------------
+Titulo: "Validar e Emitir Fatura".
+Resumo (dados REAIS da fatura): Cliente; Nº/Controle do cliente (metadata
+numeroManual quando aplicavel); Romaneios/OC; Servicos (itens); Valor base;
+Adicionais; Pedagio (quando > 0); Valor total; Vencimento.
+Mensagem (vermelho): "A emissao criara a Conta a Receber e nao deve ser usada
+antes da conferencia dos valores."
+Acoes: "Cancelar" (desabilitado durante emissao) e "Validar e Emitir"
+(loading + anti-duplo-clique; handleEmitir so roda uma vez por confirmacao;
+idempotencia backend mantida). Sem window.confirm/alert nativo.
+
+--------------------------------------------------------------------------------
+6. CAMPOS MOSTRADOS PARA CONFERENCIA
+--------------------------------------------------------------------------------
+Cliente, Nº/Controle do cliente, Romaneios/OC, Servicos (qtd de itens),
+Valor base, Adicionais, Pedagio (se houver), Valor total, Vencimento.
+Todos derivados de fatura/fatura_itens reais (nenhum campo inventado).
+
+--------------------------------------------------------------------------------
+7. FLUXO RASCUNHO -> EMISSAO
+--------------------------------------------------------------------------------
+Salvar/editar rascunho: atualizarFatura (sem status) -> continua rascunho.
+Emitir: emitirFatura -> RPC f_emitir_fatura -> Nº Conexao + Nº Cliente +
+exatamente 1 AR por fatura_id; fatura passa a status emitida.
+Fatura ja emitida: nao exibe botao de nova emissao; mostra badge "Emitida" e os
+dois numeros; permite PDF/cancelamento conforme comportamento existente.
+
+--------------------------------------------------------------------------------
+8. PROVA AR 0 ANTES / 1 DEPOIS
+--------------------------------------------------------------------------------
+Banco (PROD, leitura): faturas.status='rascunho' com AR por fatura_id = 0.
+  (query: rascunhos_com_ar = 0)
+FAT-2026-000016 (emitida): 1 AR por fatura_id (4e3c5028) — 1.
+Componente (teste): em rascunho, emitirFatura NAO e chamado (AR=0 logico);
+apos confirmar, emitirFatura e chamado 1x e o painel mostra o AR criado.
+
+--------------------------------------------------------------------------------
+9. PROVA IDEMPOTENCIA
+--------------------------------------------------------------------------------
+- UI: botao "Validar e Emitir" com loading/disabled durante o processamento;
+  handleEmitir nao e re-disparado apos sucesso (modal fecha).
+- Backend: f_emitir_fatura guarda status 'emitida' (FATURA_JA_EMITIDA) e
+  uq_receber_fatura_id garante 1 AR por fatura (provas nas PROG-04B/05C.2,
+  mantidas intactas). Nenhuma alteracao no backend.
+
+--------------------------------------------------------------------------------
+10. DOIS NUMEROS
+--------------------------------------------------------------------------------
+faturas.numero ......... Nº Interno da Fatura Conexao (global, FAT-YYYY-NNNNNN).
+faturas.numero_cliente . Nº da Fatura do Cliente (sequencial por cliente).
+UI: Nº Conexao / Nº Cliente (no resumo do painel e no pos-emissao). Nao se usa
+metadata.numeroManual como substituto do numero oficial.
+
+--------------------------------------------------------------------------------
+11. NAVEGACAO PARA CONTAS A RECEBER
+--------------------------------------------------------------------------------
+Botao "Ver em Contas a Receber" -> navigate("/financeiro?tab=receber").
+(Financeiro.tsx usa ?tab= como aba ativa; default "receber". Filtro direto por
+fatura_id na Contas a Receber fica como melhoria futura — nao implementado para
+nao expandir escopo.)
+
+--------------------------------------------------------------------------------
+12. EVIDENCIA VISUAL
+--------------------------------------------------------------------------------
+Automacao de browser (Playwright) NAO executada nesta missao (sem credenciais/QA).
+Evidencia objetiva por teste de componente (jsdom) do gate + resumo + pos-emissao.
+HOMOLOGACAO VISUAL ADMIN pendente (registrada explicitamente).
+
+--------------------------------------------------------------------------------
+13. BANCO PROD REAL INALTERADO
+--------------------------------------------------------------------------------
+Nenhuma escrita nesta missao (somente leitura). Snapshot PROD:
+  financeiro_receber 123 | financeiro_baixas 19 | faturas 41.
+  FAT-2026-000016: emitida, Nº Cliente 6, AR 4e3c5028 (INTACTA).
+  rascunhos com AR por fatura_id = 0; emitidas com AR = 7.
+Nenhuma fatura real foi emitida apenas para testar a UI.
+
+--------------------------------------------------------------------------------
+14. TESTES / REGRESSAO
+--------------------------------------------------------------------------------
+- npx tsc --noEmit -> EXIT 0.
+- npm run build -> OK (35,90s).
+- Novo: fin_prog05d1_gate_fatura.test.tsx -> 5/5 PASS
+    A/B) rascunho nao emite (AR=0)
+    C) modal com resumo real (romaneios 343646, 343375; valor base; adicionais)
+    D) cancelar -> continua rascunho, sem emissao
+    E/F) confirmar -> emitirFatura 1x; painel com Nº Conexao + Nº Cliente + EMITIDA
+    H) fatura emitida nao oferece nova emissao
+- Regressao (10 arquivos / 79 testes) PASS: fin_prog05d1, fin_prog04b_emissao,
+  fin_prog05c3b_receber_paginacao, fin_prog03_dashboard_real, f38_fatura_manual,
+  fase2a_fatura, f0f_fluxo_caixa, f0g_dre_plano_contas,
+  escala_e2e_05_atomicidade_m66, a30_modelos_fatura.
+- Baselines intactos: PROG-04B/04C, 05B, 05C.2, 05C.3A, 05C.3B; FAT-2026-000016
+  intacta; f_emitir_fatura e anti-duplicidade nao alterados.
+
+--------------------------------------------------------------------------------
+15. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1  Homologacao visual humana (ADMIN) pendente — sem execucao em browser real.
+R2  "Ver em Contas a Receber" navega para a aba; filtro automatico por fatura_id
+    nao implementado (melhoria futura; nao cria segundo AR).
+R3  FaturaManualDialog mantem emissao via emitirFatura (sem bypass); o gate visual
+    principal (resumo/modal/pos) foi aplicado no FaturaPanel. Padronizar o mesmo
+    modal no FaturaManualDialog fica como melhoria UX futura.
+R4  metadata.numeroManual continua apenas como referencia/controle do cliente.
+
+--------------------------------------------------------------------------------
+16. PROXIMA MICRO-MISSAO (PROG-05D.2)
+--------------------------------------------------------------------------------
+TMS-FIN-PROG-05D.2 — HOMOLOGACAO VISUAL ADMIN E PADRONIZACAO:
+  - executar Playwright/QA com credenciais para provar o gate visual ponta a ponta;
+  - (opcional) aplicar o mesmo modal profissional no FaturaManualDialog;
+  - (opcional) filtro por fatura_id em Contas a Receber a partir do pos-emissao.
+Fora de escopo: M66/M80; AP/gate; APP; Programacao Operacional.
+
+================================================================================
+DECLARACAO FINAL
+================================================================================
+- Gate administrativo implementado na UI; fluxo oficial unico preservado; nenhuma
+  fatura real emitida; banco PROD inalterado; nenhum DELETE.
+- GATE IMPLEMENTADO — HOMOLOGACAO VISUAL ADMIN PENDENTE
+- REDMI nao conectado.
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.1-GATE-FATURA-AR
+================================================================================
+`;

@@ -1,0 +1,169 @@
+================================================================================
+ A31E — LANÇAMENTO MANUAL PREMIUM NA CENTRAL FINANCEIRA
+ Prestador/Cliente reais + Veículo/Placa autopreenchidos + Blocos visuais premium
+ Relatório de Fechamento — Missão A31-E (curta)
+ Data: 2026-08-16   |   Escopo: exclusivamente o modal "Lançar Serviço Manualmente"
+================================================================================
+
+================================================================================
+SEÇÃO 1 — OBJETIVO
+================================================================================
+1. Transformar o modal "Lançar Serviço Manualmente" da Central Financeira em
+   um formulário profissional, organizado em blocos visuais premium.
+2. Integrar de verdade com a Escala Operacional:
+   - Prestador/Motorista: seleção real (mesma fonte oficial da Escala), com
+     busca por nome, placa, veículo, telefone; grava prestador_id real.
+   - Cliente: seleção real (mesma fonte oficial de Escala/OS); grava cliente_id.
+   - Veículo/placa: autopreenchidos do cadastro oficial do prestador quando
+     disponíveis (ajustáveis depois com segurança).
+3. Manter fonte única: tudo é gravado em alocacoes_escala (nunca base paralela).
+4. Separar visualmente Financeiro Cliente (receita/cobrança) de Financeiro
+   Prestador (custo/repasse/reembolso), SEM duplicar campos oficiais.
+5. Testes locais + tsc + vitest + build + eslint + relatório (esta seção).
+
+================================================================================
+SEÇÃO 2 — AMBIENTE E MÉTODO
+================================================================================
+- Ambiente: PRODUÇÃO (projeto uwrvzsjtpgaifkktpepn). NENHUMA migration aplicada.
+- NENHUM dado de produção alterado manualmente para teste.
+- Escopo travado: NÃO mexeu em Fatura, NF, App, PDF, nem em outras telas.
+- Validação estática local: npx tsc --noEmit (0 erros), npx vitest run
+  (229/229), npm run build (34,23s), npx eslint nos arquivos alterados
+  (0 erros novos).
+
+================================================================================
+SEÇÃO 3 — ARQUIVOS ALTERADOS
+================================================================================
+1. src/components/financeiro/ConferenciaFinanceira.tsx — modal reorganizado em
+   blocos premium + seletor de prestador com busca real + autofill veículo/placa
+   + envio de prestador_id e valor_reembolso_outros.
+2. src/services/financeiro/centralFinanceiroService.ts — LancamentoManualServicoInput
+   ganhou prestador_id e valor_reembolso_outros; insert passa ambos para
+   alocacoes_escala.
+3. src/test/a31e_lancamento_manual_premium.test.ts — NOVO (6 testes).
+
+================================================================================
+SEÇÃO 4 — FONTE DOS CLIENTES
+================================================================================
+- Mesma fonte oficial da Escala/OS: tabela clientes via <SearchableSelect>.
+- Busca real no Supabase por nome_fantasia, razao_social e cnpj
+  (table="clientes", searchFields, debounce 300ms, limit 10).
+- Ao selecionar: grava cliente_id (UUID real) e cliente_nome exibido.
+- NÃO há texto livre para cliente — seleção obrigatória pelo cadastro.
+
+================================================================================
+SEÇÃO 5 — FONTE DOS PRESTADORES/MOTORISTAS
+================================================================================
+- Mesma fonte oficial da Escala Operacional: tabela prestadores.
+- Query: supabase.from("prestadores").select(
+  "id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status")
+  .eq("status", "ativo").limit(50).
+- Mesma relação prestadores→veiculos embutida usada por
+  buscarDadosVeiculoPrestador() da EscalaLista (que deriva
+  tipo_veiculo: v?.tipo || "vuc", placa: v?.placa || "").
+- Busca local (filtro por nome, placa, veículo, CPF/CNPJ, telefone, whatsapp)
+  sobre a lista carregada — mesma experiência da Escala ("Pesquisar prestador...").
+- Ao selecionar: grava prestador_id real; autopreenche tipo_veiculo e placa
+  SOMENTE se os campos ainda estiverem vazios (seguro — não sobrescreve edição
+  manual). Botão/limpeza disponível para desvincular.
+
+================================================================================
+SEÇÃO 6 — COMO VEÍCULO/PLACA SÃO CARREGADOS
+================================================================================
+- O dropdown de prestador mostra o 1º veículo do prestador (tipo + placa) como
+  informação complementar.
+- Ao selecionar um prestador, tipo_veiculo e placa são preenchidos no form a
+  partir do cadastro oficial (mesmo padrão da Escala).
+- Se o prestador não tem veículo cadastrado, os campos ficam livres para
+  preenchimento manual (tipo_veiculo é obrigatório — coluna NOT NULL).
+- O campo "Tipo de veículo *" permanece obrigatório (validação preservada do
+  teste a31c), com fallback "vuc" quando a Escala processa sem veículo.
+
+================================================================================
+SEÇÃO 7 — CAMPOS GRAVADOS EM ALOCACOES_ESCALA
+================================================================================
+Identificação:
+- data_escala (obrigatória), romaneio (→ metadata.numeroOC),
+- cliente_id (UUID real), prestador_id (UUID real),
+- tipo_veiculo (obrigatório), placa.
+Operação:
+- origem, destino, km_realizados.
+Financeiro (colunas oficiais de alocacoes_escala, propagadas pelo trigger
+M66/M80 para financeiro_receber/pagar — mesmo fluxo da Escala):
+- valor_frete (cliente/receita), valor_adicional, valor_desconto,
+- valor_repasse (prestador/custo), valor_pedagio, valor_combustivel,
+- valor_reembolso_outros, valor_ajudante, diarias_adicionais, valor_diaria.
+Observações:
+- observacoes.
+Imutáveis do registro:
+- status="concluida", status_pagamento="pendente", finalizada=true,
+  data_finalizacao=now(), metadata={ numeroOC, origem:"central_financeira_manual" }.
+- NÃO cria OS falsa (ordem_servico_id não é gravado).
+
+================================================================================
+SEÇÃO 8 — SEPARAÇÃO CLIENTE x PRESTADOR (SEM DUPLICAR CAMPOS)
+================================================================================
+- Financeiro Cliente (bloco verde, receita/cobrança): valor frete, valor
+  adicional, desconto.
+- Financeiro Prestador (bloco rosa, custo/repasse/reembolso): valor repasse,
+  pedágio, combustível, reembolso outros, ajudante, diárias adicionais,
+  valor diária.
+- LIMITAÇÃO DOCUMENTADA: a estrutura de alocacoes_escala possui UM ÚNICO campo
+  para conceitos compartilhados — valor_pedagio (pedágio reembolsado ao
+  prestador e, quando aplicável, cobrado do cliente via pedagio_cobrar_excedente),
+  valor_ajudante, diarias_adicionais, valor_diaria, valor_adicional e
+  valor_desconto alimentam ambas as pernas conforme o trigger. NÃO foram
+  inventados campos duplicados — o bloco do cliente exibe uma nota explicativa
+  e a Central já calcula as pernas com essa regra (centralFinanceiroService.ts,
+  linhas ~306-335).
+- Novo campo exposto: valor_reembolso_outros (coluna oficial do prestador) que
+  antes não estava no modal.
+
+================================================================================
+SEÇÃO 9 — CONFIRMAÇÃO DA INTEGRAÇÃO COM A ESCALA
+================================================================================
+- O serviço lançado pela Central aparece na Escala com o MESMO prestador_id,
+  cliente_id, veículo/placa, data, origem, destino, romaneio e valores, porque
+  a Escala lê as colunas oficiais de alocacoes_escala — não há metadata
+  paralela para informação que possui coluna oficial.
+- Nenhuma tabela alternativa é criada. Única escrita: alocacoes_escala
+  (provado no teste "NAO cria base paralela").
+- O romaneio manual é exposto na Central via os.romaneio || metadata.numeroOC
+  (fallback A31-D), portanto o serviço lançado sem OS vinculada aparece
+  imediatamente na Central.
+
+================================================================================
+SEÇÃO 10 — TESTES
+================================================================================
+src/test/a31e_lancamento_manual_premium.test.ts (6 testes):
+1. grava prestador_id real do cadastro oficial ......... PASS
+2. grava veículo/placa do prestador quando selecionado  PASS
+3. grava reembolso/combustível/outros na perna prestador PASS
+4. NÃO cria base paralela (única tabela: alocacoes_escala) PASS
+5. mantém validações obrigatórias (data e tipo veículo) PASS
+6. permite lançar sem prestador_id (vincular depois na Escala) PASS
+
+Regressão:
+- a31c_lancamento_manual.test.ts ...................... 5/5 PASS (intacto)
+- a31d_fechamento_final.test.ts ...................... 12/12 PASS
+- Suíte completa ...................................... 229/229 PASS
+
+================================================================================
+SEÇÃO 11 — VALIDAÇÃO
+================================================================================
+- npx tsc --noEmit .................. ✅ 0 erros
+- npx vitest run ................... ✅ 229/229
+- npm run build .................... ✅ 34,23s
+- npx eslint (ConferenciaFinanceira + teste A31E) ✅ 0 erros novos
+
+================================================================================
+SEÇÃO 12 — LIMITAÇÕES E OBSERVAÇÕES
+================================================================================
+- valor_pedagio é campo único (reembolso ao prestador; cobrança ao cliente via
+  pedagio_cobrar_excedente) — sem campo duplicado por decisão de escopo.
+- A lista de prestadores carrega até 50 ativos; busca mais fina pode exigir
+  digitar para filtrar localmente (padrão da Escala). Não foi adicionado
+  paginação/pesquisa remota por ser o mesmo comportamento já existente.
+- Prestador não é obrigatório no lançamento manual (pode ser vinculado depois
+  na Escala), preservando o comportamento da Central sem inventar validação.
+- Nenhuma migration executada; nenhum dado de produção alterado.

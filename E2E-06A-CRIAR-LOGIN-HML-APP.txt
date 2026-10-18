@@ -1,0 +1,96 @@
+E2E-06A-CRIAR-LOGIN-HML-APP
+==================================================
+Ambiente: TMS + Supabase PRODUÇÃO | Data: 2026-09-22 | Modo: MICRO-MISSÃO CONTROLADA | Redmi: NÃO
+DB_WRITES=3 (1 auth.users + 1 auth.identities + 1 update prestadores) | MIGRATIONS=0
+
+ATENÇÃO: a senha NÃO é registrada neste TXT. As credenciais temporárias foram exibidas SOMENTE
+no terminal (LOGIN_HML / SENHA_HML). Este arquivo não contém senha.
+
+==================================================
+1. ROOT CAUSE DO LOGIN ATUAL
+==================================================
+O usuário autenticado é enviado para "Cadastro enviado para análise" porque o prestador vinculado
+ao auth_user_id NÃO satisfaz o gate (AuthStatusMapper/AuthGate AG-07J.7), que exige
+(status ∈ {ativo, aprovado}) AND liberado_app = true.
+Candidatos reais (prestadores com auth_user_id) que caem em análise:
+  - TESTECOREAPP01k (diegobalbino1000@outlook.com): status=em_analise, liberado_app=false
+  - teste 2 (sistemasconexao2@gmail.com): status=em_analise, liberado_app=false
+  - REC06 E2E Real Teste (rec06e2ereal@teste.com): status=em_analise, liberado_app=false
+(PRESTADOR TESTE APP estava ativo/liberado, porém o login por CPF não resolvia porque o e-mail do
+auth.users era teste@conexao.com — diferente do e-mail técnico derivado do CPF.)
+ROOT_CAUSE_CURRENT_LOGIN=prestador do usuário autenticado com status 'em_analise' e/ou
+  liberado_app=false → AuthStatusMapper retorna 'em_analise' → AuthGate → /analysis.
+
+==================================================
+2. IDENTIDADE HML TEMPORÁRIA (criada)
+==================================================
+Estratégia: criar NOVA identidade Auth temporária e VINCULAR ao PRESTADOR TESTE APP existente
+(e6646799), preservando snapshot do auth_user_id anterior. Nenhum prestador novo criado.
+  - auth.users: id=399796b7-4e3b-432f-8744-4eb91f0ee31d
+      email = prestador_12345678900@conexaoexpress.com.br  (= e-mail técnico do CPF 123.456.789-00,
+      de modo que o LOGIN POR CPF no APP resolva deterministicamente, sem depender da RPC legado)
+      email_confirmed_at=now(); encrypted_password via extensions.crypt (bcrypt)
+  - auth.identities: 1 linha (provider='email') vinculada ao usuário
+  - prestadores e6646799: auth_user_id = 399796b7... ; metadata.hml_e2e_06=true
+      status=ativo | liberado_app=true (inalterados)
+SNAPSHOT (rollback): old auth_user_id = a5e51631-5ed8-430d-9041-4b185c03d821 (teste@conexao.com).
+
+HML_AUTH_CREATED=YES
+HML_PROVIDER_ID=e6646799-fbac-453e-a3ef-afdfc01a7085
+HML_AUTH_USER_ID=399796b7-4e3b-432f-8744-4eb91f0ee31d
+AUTH_USER_ID_MATCH=YES
+STATUS_ACTIVE=YES
+LIBERADO_APP=YES
+APP_GATE_EXPECTED=ACTIVE (status ativo + liberado_app=true → /home)
+REAL_USER_CHANGED=NO (nenhum prestador real alterado; a5e51631 apenas desvinculado do teste)
+
+==================================================
+3. VALIDAÇÃO (Supabase Auth real + banco)
+==================================================
+AUTH_HTTP=200 | AUTH_OK=true | AUTH_USER_ID_MATCH=true | SUPABASE_AUTH_PASS=YES
+WRONG_PASSWORD_REJECTED=YES (senha errada → HTTP não-200, sem vazar identidade)
+AUTH_USER_EXISTS=1 | IDENTITIES=1 | PRESTADOR_LINK=1 (nenhum segundo vínculo)
+OLD_AUTH_ORPHAN=0 (a5e51631 desvinculado — snapshot p/ rollback)
+REAL_PRESTADORES_TOTAL=39 (inalterado; nenhum prestador criado/removido)
+HML_TABLE d12cf0cd: ativo=YES | valor_diaria=250.00 (preservados)
+
+==================================================
+4. CREDENCIAIS (exibidas SOMENTE no terminal)
+==================================================
+LOGIN_HML = prestador_12345678900@conexaoexpress.com.br
+  (equivale a digitar o CPF 123.456.789-00 no APP — o APP deriva o e-mail técnico determinístico)
+SENHA_HML = <exibida somente no terminal na execução desta missão; NÃO registrada aqui>
+Uso: uma vez no Redmi (E2E-06B). Será removida no cleanup (E2E-07).
+
+==================================================
+ENTREGÁVEIS
+==================================================
+ROOT_CAUSE_CURRENT_LOGIN=prestador do usuário autenticado com status 'em_analise'/liberado_app=false
+HML_AUTH_CREATED=YES
+HML_PROVIDER_ID=e6646799-fbac-453e-a3ef-afdfc01a7085
+HML_AUTH_USER_ID=399796b7-4e3b-432f-8744-4eb91f0ee31d
+AUTH_USER_ID_MATCH=YES
+STATUS_ACTIVE=YES
+LIBERADO_APP=YES
+APP_GATE_EXPECTED=ACTIVE
+REAL_USER_CHANGED=NO
+CLEANUP_IDS_RECORDED=YES
+  - auth.users id=399796b7-4e3b-432f-8744-4eb91f0ee31d (+ auth.identities do mesmo user)
+  - snapshot prestadores e6646799.auth_user_id = a5e51631-5ed8-430d-9041-4b185c03d821
+  - remover metadata.hml_e2e_06 de e6646799
+RESULT=PASS
+
+NEXT_EXACT_MISSION=E2E-06B-LOGIN-REDMI
+
+==================================================
+FILES_MODIFIED
+==================================================
+  - scripts/_e2e06a_login_hml.cjs (NOVO — cria identidade HML; sem senha embutida)
+  - scripts/_e2e06a_auth_test.cjs (NOVO — testa login GoTrue; sem senha embutida)
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Senha não registrada no TXT/log persistido; sem troca de senha de usuário REAL (apenas a identidade
+HML temporária); sem criar prestador; sem Escala/operação/financeiro/POD; sem cleanup; sem
+Master 360/Control Tower; tabela HML e valor_diaria preservados.

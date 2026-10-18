@@ -1,0 +1,175 @@
+================================================================================
+RELATORIO AG-07J.1 — VISIBILIDADE APP → RECRUTAMENTO/KANBAN
+Bridge: prestadores (origem='app_motorista') → recrutamento_candidatos
+Data: 2026-08-22
+Status: IMPLEMENTADO E VALIDADO (15/15 testes, 0 erros tsc, 194/194 regressão)
+================================================================================
+
+1. OBJETIVO
+-----------
+Criar ponte (bridge) automática entre a tabela `prestadores` (criados pelo App
+Motorista com origem_cadastro='app_motorista') e `recrutamento_candidatos` para
+que motoristas que se cadastram no App apareçam automaticamente no Kanban de
+Recrutamento do TMS, sem duplicação de registros.
+
+2. PROBLEMA IDENTIFICADO (AG-07J READ-ONLY)
+--------------------------------------------
+- App cria prestador com status='em_analise', liberado_app=false
+- Prestadores App ficam invisíveis no Kanban de Recrutamento
+- Nenhuma tabela conecta App → Kanban
+- Migration AG-07F (f_buscar_operacoes_motorista) não aplicada em produção
+- Gap J-3: App prestadores não alimentam pipeline de recrutamento
+
+3. ARQUITETURA DA SOLUÇÃO
+--------------------------
+  App Motorista → prestadores (origem='app_motorista')
+                         │
+                         ▼
+  enterpriseKanbanService.listar()
+       │
+       ├── buscarECadastrarAppPrestadores()
+       │     ├── SELECT prestadores WHERE origem_cadastro = 'app_motorista'
+       │     ├── SELECT recrutamento_candidatos WHERE prestador_id IS NOT NULL
+       │     ├── Filtra novos (sem prestador_id no Kanban)
+       │     ├── INSERT em recrutamento_candidatos (com prestador_id)
+       │     └── Retorna EnterpriseCandidate[]
+       │
+       ├── SELECT recrutamento_candidatos ORDER BY data_atualizacao
+       │
+       └── applyFilters (busca, score, tags, etc.)
+                         │
+                         ▼
+              EnterpriseCandidate[] → Kanban UI
+
+4. CAMPOS IMPLEMENTADOS
+------------------------
+  Campo                    │ Origem App              │ Kanban Card
+  ─────────────────────────┼─────────────────────────┼──────────────────
+  nome                     │ prestadores.nome_completo│ c.nome
+  telefone                 │ prestadores.telefone     │ c.telefone
+  email                    │ prestadores.email        │ c.email
+  cidade                   │ prestadores.endereco.cidade│ c.cidade
+  uf                       │ prestadores.endereco.estado│ c.uf
+  veiculo                  │ prestadores.veiculos[0].tipo│ c.veiculo
+  placa                    │ prestadores.veiculos[0].placa│ c.placa
+  stage                    │ STATUS_APP_TO_STAGE[p.status]│ c.stage
+  prestador_id             │ prestadores.id           │ c.prestadorId
+  tags                     │ ['veiculo_proprio','disponivel_imediato']│ c.tags
+  historico[0]             │ 'bridge AG-07J.1'       │ c.historico
+
+5. MAPEAMENTO STATUS APP → STAGE KANBAN
+-----------------------------------------
+  App Status      │ Kanban Stage
+  ────────────────┼──────────────
+  em_analise      │ em_analise
+  aprovado        │ aprovado
+  ativo           │ ativo
+  bloqueado       │ bloqueado
+  inativo         │ reprovado
+  novo            │ novo_cadastro
+  analise         │ em_analise
+
+6. PROTEÇÕES CONTRA DUPLICAÇÃO
+-------------------------------
+- Query de verificação: `SELECT prestador_id FROM recrutamento_candidatos WHERE prestador_id IS NOT NULL`
+- Set de IDs existentes construído antes do insert
+- Apenas prestadores cujo ID NÃO está no set são inseridos
+- Segunda chamada de listar() não cria segundo candidato (test B)
+- Candidato existente + mesmo prestador não duplica (test C)
+
+7. SEQUÊNCIA DE EXECUÇÃO (RACE CONDITION FIX)
+----------------------------------------------
+ANTES: Promise.all([buscarECadastrarAppPrestadores(), queryKanban])
+DEPOIS: await buscarECadastrarAppPrestadores(); then queryKanban
+
+Motivo: A query Kanban precisa rodar DEPOIS do bridge inserir os novos
+candidatos, caso contrário retorna dados incompletos.
+
+8. BUG CORRIGIDO: applyFilters DEFENSIVO
+-----------------------------------------
+PROBLEMA: applyFilters() acessava .length em arrays potencialmente undefined
+  - filtros.prioridade.length → TypeError quando prioridade é undefined
+  - Similar para statusDocumental, validadeCNH, tags, statusOperacional,
+    disponibilidade
+  - Erro era engolido pelo catch silencioso em listar(), retornando []
+
+SOLUÇÃO: Adicionado optional chaining (?) em todas as verificações de array:
+  - filtros.prioridade?.length
+  - filtros.statusDocumental?.length
+  - filtros.validadeCNH?.length
+  - filtros.tags?.length
+  - filtros.statusOperacional?.length
+  - filtros.disponibilidade?.length
+
+9. TESTES — 15/15 PASS
+------------------------
+  ID │ Descrição                                        │ Status
+  ───┼──────────────────────────────────────────────────┼───────
+  A  │ App prestador novo aparece no Kanban             │ ✅
+  B  │ Segunda chamada não cria segundo candidato       │ ✅
+  C  │ Candidato existente + mesmo prestador não duplica│ ✅
+  D  │ Dois prestadores App diferentes → dois cards     │ ✅
+  E  │ Sem prestadores App → Kanban funciona normalmente│ ✅
+  F  │ Múltiplos prestadores App → todos aparecem       │ ✅
+  G  │ Status mapping: em_analise, aprovado, bloqueado  │ ✅
+  H  │ Tags automáticas: veiculo_proprio + disponivel   │ ✅
+  I  │ Veículo preservado no card                       │ ✅
+  J  │ Documentos = array vazio                         │ ✅
+  K  │ Histórico inclui evento bridge AG-07J.1          │ ✅
+  L  │ Busca por nome encontra candidato App            │ ✅
+  M  │ Busca por placa encontra candidato App           │ ✅
+  N  │ Candidato Kanban existente não é afetado         │ ✅
+  O  │ Candidato Kanban com prestadorId diferente OK    │ ✅
+
+10. REGRESSÃO — 194/194 PASS
+-----------------------------
+  Suite                              │ Testes │ Status
+  ───────────────────────────────────┼────────┼───────
+  ag07f_gate_elegibilidade           │   17   │  ✅
+  ag07g_unificacao_app_recrutamento  │   11   │  ✅
+  ag07h_documentos_bloqueios         │   16   │  ✅
+  ag07ib1_tipo_veiculo               │   31   │  ✅
+  ag07ib2_capacidade_veiculo         │   24   │  ✅
+  ag07ib3_refrigerado_termico        │   34   │  ✅
+  ag07ib5_ajudante_requisitos        │   46   │  ✅
+  ag07j1_app_kanban                  │   15   │  ✅
+  ───────────────────────────────────┼────────┼───────
+  TOTAL                              │  194   │  ✅
+
+11. VALIDAÇÃO TYPESCRIPT
+--------------------------
+  npx tsc --noEmit → EXIT:0 (0 erros)
+
+12. ARQUIVOS MODIFICADOS
+--------------------------
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts
+    - const PRESTADORES_TABLE = 'prestadores'
+    - const ORIGEM_APP = 'app_motorista'
+    - const STATUS_APP_TO_STAGE mapping (7 status)
+    - Nova função: buscarECadastrarAppPrestadores()
+    - listar(): execução sequencial (bridge primeiro, depois query Kanban)
+    - toDB(): adicionado ['prestadorId', 'prestador_id'] e ['historico', 'historico']
+    - applyFilters(): optional chaining em 6 arrays
+
+  src/test/ag07j1_app_kanban.test.ts
+    - NOVO: 15 testes de bridge App→Kanban
+
+13. PENDÊNCIAS
+--------------
+  1. (Prod) Aplicar migration AG-07F para f_buscar_operacoes_motorista RPC
+  2. (Prod) Prestadores App em produção com status='em_analise' e liberado_app=false
+  3. (QA) Testar fluxo completo: App cadastra → Kanban exibe → TMS aprova
+  4. (AG-07J.2) Documentos App → TMS → Análise → Gate
+  5. (Opcional) Realtime subscription para atualização automática do Kanban
+
+14. CLASSIFICAÇÃO FINAL
+-------------------------
+  AG-07J.1: ✅ IMPLEMENTADO E VALIDADO
+  - Bridge automática App→Kanban funcionando
+  - Dedup por prestador_id
+  - Filtros de busca funcionais
+  - Status mapping correto
+  - Tags automáticas
+  - 0 erros tsc, 194/194 regressão
+
+================================================================================

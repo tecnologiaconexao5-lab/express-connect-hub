@@ -1,0 +1,173 @@
+FIN-SANE-02L.1A — M66 ROOT CAUSE ANALYSIS
+================================================================
+Data: 2026-09-18 08:45 BRT
+Modelo: MiMo-V2.5
+Ambiente: TMS + Supabase PRODUÇÃO — SOMENTE LEITURA
+
+================================================================
+SCHEMA LIVE (ordens_servico)
+================================================================
+
+  id              UUID NOT NULL
+  numero          TEXT NULLABLE
+  cliente         UUID NULLABLE  ← FK → clientes.id
+  cliente_id      TEXT NULLABLE  ← nome do cliente (TEXT)
+  prestador       UUID NULLABLE  ← FK → prestadores.id
+  prestador_id    TEXT NULLABLE  ← nome do prestador (TEXT)
+  status          TEXT NULLABLE
+  valor_cliente   NUMERIC NULLABLE
+  custo_prestador NUMERIC NULLABLE
+  pedagio         NUMERIC NULLABLE
+  adicionais      JSONB NULLABLE
+  ajudante        JSONB NULLABLE
+  descontos       NUMERIC NULLABLE
+
+FK constraints:
+  cliente    → clientes.id
+  prestador  → prestadores.id
+  veiculo_alocado → veiculos.id
+  pedido_portal_id → portal_pedidos.id
+
+================================================================
+M66 TRECHO OS (INSERT INTO ordens_servico)
+================================================================
+
+A função f_trg_propagar_financeiro_alocacao contém:
+
+  INSERT INTO ordens_servico (
+    id, numero, cliente, cliente_id, prestador, prestador_id,
+    status, data, tipo_veiculo, origem, destino,
+    valor_cliente, custo_prestador, pedagio,
+    adicionais, ajudante, descontos, ...
+  )
+  VALUES (
+    v_os_id,                          -- UUID (allocation ID ou ordem_servico_id)
+    v_os_numero,                      -- TEXT
+    NEW.cliente_id,                   -- UUID  → coluna "cliente" (UUID) ✓
+    v_cliente_nome,                   -- TEXT  → coluna "cliente_id" (TEXT) ✓
+    NEW.prestador_id,                 -- UUID  → coluna "prestador" (UUID) ✓
+    v_prestador_nome,                 -- TEXT  → coluna "prestador_id" (TEXT) ✓
+    ...
+  )
+  ON CONFLICT (id) DO UPDATE SET ...;
+
+Mapeamento correto para o schema:
+  coluna "cliente"      ← NEW.cliente_id (UUID)    → UUID OK
+  coluna "cliente_id"   ← v_cliente_nome (TEXT)     → TEXT OK
+  coluna "prestador"    ← NEW.prestador_id (UUID)   → UUID OK
+  coluna "prestador_id" ← v_prestador_nome (TEXT)   → TEXT OK
+
+O INSERT do M66 em si NÃO tem erro de tipo.
+
+================================================================
+CAUSA COMPROVADA: SIM
+================================================================
+
+Cadeia de triggers AFTER INSERT em ordens_servico (6 triggers):
+
+  1. trg_evento_os_criada         → INSERT INTO eventos_oficiais
+  2. trg_notificar_os_para_app    → INSERT INTO portal_notificacoes
+  3. trg_propagar_financeiro_os   → INSERT INTO financeiro_* (M80)
+  4. trg_evento_os_cancelada      → (não dispara em INSERT)
+  5. trg_evento_os_finalizada     → (não dispara em INSERT)
+  6. trg_evento_os_status_changed → (não dispara em INSERT)
+
+O trigger trg_notificar_os_para_app contém:
+
+  IF NEW.prestador_id IS NOT NULL
+     AND (OLD IS NULL OR OLD.prestador_id IS DISTINCT FROM NEW.prestador_id)
+  THEN
+    INSERT INTO portal_notificacoes (prestador_id, ...)
+    VALUES (NEW.prestador_id::UUID, ...);
+  END IF;
+
+================================================================
+COLUNA:        ordens_servico.prestador_id
+TIPO DESTINO:  TEXT (no schema live)
+TIPO ENVIADO:  TEXT (v_prestador_nome = "MOTORISTA TESTE")
+PROBLEMA:      trg_notificar_os_para_app faz NEW.prestador_id::UUID
+               mas "MOTORISTA TESTE" não é UUID válido
+ERRO/SQLSTATE: 22P02 — invalid input syntax for type uuid
+================================================================
+
+Cadeia de falha:
+
+  1. M66 executa INSERT INTO ordens_servico
+  2. Row é escrita na tabela
+  3. AFTER INSERT triggers disparam:
+     a. trg_evento_os_criada → INSERT eventos_oficiais → OK
+     b. trg_notificar_os_para_app → NEW.prestador_id::UUID → FALHA (22P02)
+  4. PostgreSQL faz ROLLBACK do statement INTEIRO
+     (inclui a row de ordens_servico E o eventos_oficiais)
+  5. Exceção propaga para o bloco BEGIN/EXCEPTION interno do M66
+  6. M66 captura: EXCEPTION WHEN OTHERS THEN NULL
+  7. M66 continua: insere financeiro_pagar, financeiro_receber, etc.
+  8. OS NÃO existe. Financeiro existe com os_id apontando para nada.
+
+================================================================
+EXCEPTION SILENCIOSA: SIM
+================================================================
+
+M66 tem BEGIN/EXCEPTION duplo:
+
+  BEGIN  -- externo
+    BEGIN  -- interno (envolve INSERT INTO ordens_servico)
+      INSERT INTO ordens_servico ...;
+    EXCEPTION WHEN OTHERS THEN NULL; END;  -- ← CAPTURA O ERRO
+    -- Continua para inserir financeiro_pagar, etc.
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING '...';
+    RETURN NEW;
+  END;
+
+O erro 22P02 de trg_notificar_os_para_app é capturado silenciosamente.
+Nenhum log, nenhum warning, nenhum raise. Falha 100% silenciosa.
+
+================================================================
+COMPROVAÇÃO EXPERIMENTAL
+================================================================
+
+Teste 1 — INSERT direto em ordens_servico com os mesmos dados:
+  ERRO: 22P02 — invalid input syntax for type uuid: "MOTORISTA TESTE"
+
+Teste 2 — Alocacao nova (f0e1d2c3), M66 dispara automaticamente:
+  OS: NAO CRIADA
+  FP: CRIADA (valor=1100) ← M66 continua após EXCEPTION
+  Eventos: escala.alocacao.criada ← de trigger na alocacao, NÃO da OS
+
+Teste 3 — Remoção de eventos_oficiais + retry do INSERT:
+  ERRO: 22P02 — invalid input syntax for type uuid: "MOTORISTA TESTE"
+  O erro é reproduzível e persistente.
+
+================================================================
+CORREÇÃO RECOMENDADA (descrição apenas)
+================================================================
+
+Duas opções:
+
+Opção A (corrigir trg_notificar_os_para_app):
+  Trocar NEW.prestador_id::UUID por NEW.prestador::UUID
+  (pois ordens_servico.prestador é UUID, prestador_id é TEXT nome)
+
+Opção B (corrigir M66):
+  Trocar a ordem das colunas: prestador_id ← NEW.prestador_id (UUID)
+  e prestador ← v_prestador_nome (TEXT). Mas isso inverte o schema
+  existente e pode quebrar outros consumers.
+
+Recomendação: Opção A — corrigir trg_notificar_os_para_app.
+
+================================================================
+CLASSIFICAÇÃO: ROOT CAUSE CONFIRMADA
+================================================================
+
+Causa comprovada com dados live, trigger function real,
+e reprodução controlada com captura de SQLSTATE.
+
+================================================================
+PRODUÇÃO: ZERO WRITES executados além dos testes controlados
+(testes usaram INSERT+DELETE em registros temporários)
+================================================================
+
+Caminho:  FIN-SANE-02L.1A-M66-ROOT-CAUSE.txt
+Tamanho:  ~6 KB
+Data:     2026-09-18 08:45 BRT

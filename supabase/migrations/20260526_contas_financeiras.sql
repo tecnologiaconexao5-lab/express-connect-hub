@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS public.contas_financeiras (
 ALTER TABLE public.contas_financeiras ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all on contas_financeiras" ON public.contas_financeiras;
-CREATE POLICY "Allow all on contas_financeiras" ON public.contas_financeiras
+DROP POLICY IF EXISTS "Allow all on contas_financeiras" ON public.contas_financeiras;
+DROP POLICY IF EXISTS "Allow all on contas_financeiras" ON contas_financeiras;
+CREATE POLICY "Allow all on contas_financeiras" ON contas_financeiras
     FOR ALL USING (true) WITH CHECK (true);
 
 -- Seed com contas iniciais (mesmo mock do ContasBancarias)
@@ -39,6 +41,20 @@ INSERT INTO public.contas_financeiras (nome, tipo, banco, agencia, numero_conta,
     ('Caixa Interno — Pequenos Gastos', 'Caixa Físico', '—', '—', '—', '—', 'Financeiro Interno', 1250.75, 2000, true, false, 'Matriz (SP)', 'Caixa Geral', 'Reposição mensal: R$ 2.000', '#0891b2')
 ON CONFLICT DO NOTHING;
 
--- Alterar coluna arquivo de VARCHAR(255) para TEXT
-ALTER TABLE public.pagamentos_prestadores
-    ALTER COLUMN arquivo TYPE TEXT USING arquivo::TEXT;
+-- Alterar coluna arquivo de VARCHAR(255) para TEXT (se existir)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'pagamentos_prestadores'
+      AND column_name = 'arquivo'
+  ) THEN
+    ALTER TABLE public.pagamentos_prestadores
+      ALTER COLUMN arquivo TYPE TEXT
+      USING arquivo::TEXT;
+  END IF;
+END $$;
+
+

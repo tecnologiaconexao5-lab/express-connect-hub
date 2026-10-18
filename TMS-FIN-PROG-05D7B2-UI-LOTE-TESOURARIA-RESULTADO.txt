@@ -1,0 +1,169 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.7B.2-UI-LOTE-TESOURARIA
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PROD (somente leitura; RPC via ROLLBACK nos testes)
+MODELO: DeepSeek V4.1 Flash
+TIPO: microimplementacao UI + integracao com RPC homologada. SEM iFi/CNAB/baixa.
+RESULTADO: PASS — RPC e a UNICA autoridade de lote; Tesouraria mostra so lote
+           real; nenhum botao movimenta dinheiro; PROD termina lote_id=0.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/helpers/lotePagamentoHelper.ts (NOVO — puro/testavel)
+    isAptoLote, resumoLoteSelecionado, filtrarFilaTesouraria,
+    agruparLotesTesouraria, loteIdCurto
+- src/services/financeiro/pagamentoPrestadorService.ts
+    + gerarLotePagamentos(ids, client?) -> unica chamada a RPC
+- src/components/financeiro/PagamentoPrestadores.tsx
+    selecao multipla (checkbox), botao "Gerar Ordem/Lote de Pagamento",
+    modal profissional, remocao do caminho antigo, exibicao curta do lote_id
+- src/components/financeiro/PagamentoCNAB.tsx (Tesouraria)
+    nova query + agrupamento por lote_id + botoes bancarios desabilitados
+- src/test/fin_prog05d7b2_ui_lote_tesouraria.test.ts (NOVO — 15 testes)
+
+--------------------------------------------------------------------------------
+2. CAMINHO ANTIGO REMOVIDO/DESABILITADO
+--------------------------------------------------------------------------------
+O botao "Liberar Lote" (que apenas fazia handleAtualizarStatus(id, {
+status_pagamento: 'em_lote' }) SEM criar lote_id) foi REMOVIDO. No lugar ficou
+apenas um texto informativo "apto p/ lote". Nao existe mais nenhum caminho que
+grave status_pagamento='em_lote' diretamente pela UI. A UNICA forma de formar
+lote e o botao "Gerar Ordem/Lote de Pagamento" -> RPC f_gerar_lote_pagamentos.
+
+--------------------------------------------------------------------------------
+3. MODAL DE CONFIRMACAO
+--------------------------------------------------------------------------------
+Dialog no padrao do TMS (sem window.confirm/alert) exibindo:
+  - quantidade de pagamentos;
+  - quantidade de prestadores;
+  - periodo minimo/maximo dos servicos (min/max de periodo_inicio);
+  - total liquido do lote;
+  - resumo por prestador (qtd + total).
+Botoes: "Cancelar" e "Gerar Ordem/Lote". Sem dados bancarios.
+Calculos por resumoLoteSelecionado (helper puro).
+
+--------------------------------------------------------------------------------
+4. CHAMADA RPC E TRATAMENTO DE RETORNO
+--------------------------------------------------------------------------------
+Ao confirmar: gerarLotePagamentos(ids) -> supabase.rpc("f_gerar_lote_pagamentos",
+{ p_ids }). Trata {lote_id, solicitados, incluidos, ja_em_lote, bloqueados,
+detalhes}.
+  - bloqueados>0 -> toast de erro com os motivos (RPC all-or-nothing, sem
+    sucesso parcial);
+  - lote_id -> toast "Lote gerado com sucesso — <8chars> · N pagamento(s)" +
+    limpar selecao + refetch;
+  - ja_em_lote -> toast informando lote existente + limpar selecao.
+NAO chama pagamento/baixa/banco.
+
+--------------------------------------------------------------------------------
+5. POS-SUCESSO
+--------------------------------------------------------------------------------
+Selecao limpa; consulta atualizada (fetchPagamentosManuais + fetchPagamentos);
+registros passam a "Em Lote" com o lote_id curto (8 chars) + botao copiar ID
+completo. Itens ja em lote tem checkbox DESABILITADO (isAptoLote exige
+lote_id nulo) — nao podem ser selecionados de novo.
+
+--------------------------------------------------------------------------------
+6. TESOURARIA — QUERY ANTES x DEPOIS
+--------------------------------------------------------------------------------
+ANTES: pagamentos_prestadores WHERE impacto_dre = true ORDER BY
+       data_prevista_pagamento LIMIT 50 (mostrava aprovados sem lote tambem).
+DEPOIS: status_aprovacao='aprovado' AND elegivel_lote=true AND
+        status_pagamento='em_lote' AND lote_id IS NOT NULL AND is_teste=false
+        (respeitando RLS/tenant). Mostra SOMENTE lote realmente formado.
+
+--------------------------------------------------------------------------------
+7. AGRUPAMENTO POR LOTE_ID (sem tabela cabecalho)
+--------------------------------------------------------------------------------
+agruparLotesTesouraria calcula a partir das linhas: 1 grupo por lote_id com
+  - ID curto do lote (8 chars) + copiar;
+  - quantidade de pagamentos;
+  - quantidade de prestadores;
+  - total liquido;
+  - periodo dos servicos (min/max);
+  - status visual "Aguardando execucao bancaria" (NAO persistido).
+Cards: lotes aguardando, pagamentos em lote, total liquido em lote.
+
+--------------------------------------------------------------------------------
+8. BOTOES BANCARIOS
+--------------------------------------------------------------------------------
+"Gerar Remessa", "Importar Retorno" e "Enviar PIX" permanecem DESABILITADOS com
+texto "Integracao bancaria ainda nao configurada". Nenhum botao executa
+pagamento/baixa/CNAB real.
+
+--------------------------------------------------------------------------------
+9. TESTES AUTOMATICOS (15/15 PASS)
+--------------------------------------------------------------------------------
+A) 2 aptos -> modal=2 ....................................................... PASS
+B) total modal = soma valor_liquido ......................................... PASS
+C) confirmar chama RPC 1x com IDs corretos .................................. PASS
+D) sucesso expoe lote_id + quantidade ....................................... PASS
+E) bloqueio da RPC nao apresenta sucesso .................................... PASS
+F) item ja em lote nao e selecionavel ....................................... PASS
+   F2) nao aptos rejeitados (teste/fechamento/aguardando/elegivel=false/pago/cancelado) PASS
+G) caminho antigo 'Liberar Lote' ausente (sem caminho paralelo) ............. PASS
+H) Tesouraria nao mostra aprovado sem lote .................................. PASS
+I) Tesouraria mostra em_lote + lote_id ...................................... PASS
+J/K/L) pago, cancelado e teste/HML nao aparecem ............................. PASS
+M) 3 itens mesmo lote -> 1 grupo, 3 pagamentos, total/prestadores/periodo ... PASS
+N) lotes diferentes -> grupos separados ..................................... PASS
+O) nenhum botao bancario executavel (3 botoes indisponiveis; sem chamada banco) PASS
+(15 testes; letras A-O cobertas.)
+
+--------------------------------------------------------------------------------
+10. BANCO ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores ....... 137
+lote_id NOT NULL ............. 0
+status_pagamento='em_lote' ... 0
+financeiro_pagar ............. 178
+financeiro_baixas ............ 19
+soma valor_liquido ........... 90.229,96
+Nenhum lote permanente criado. Testes de RPC real em transacao+ROLLBACK.
+
+--------------------------------------------------------------------------------
+11. REGRESSÃO
+--------------------------------------------------------------------------------
+- 05D.7B.1: 21/21 + P (concorrencia) PASS.
+- 05D.6B: 20/20 | 05D.6B.1: 17/17 | 05D.6A: 15/15 | 05D.4: 13/13.
+- vitest (subset financeiro + filtros 6D.1 + novos 7B.2): 9 arquivos / 220 PASS.
+- npm run build: OK — "built in 49.48s".
+- tsc -p tsconfig.app.json --noEmit: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+12. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Selecao implementada na aba "Pagamentos Manuais" (lista por linha existente).
+    Pagamentos aprovados de outras origens (os_direta/escala_direta) podem nao
+    aparecer nessa lista; para seleciona-los seria necessario expor uma lista
+    geral de "aptos" (melhoria futura) — a RPC continua sendo a autoridade.
+R2) Sem cabecalho de lote: status/total sao derivados das linhas (nao
+    persistidos). Suficiente nesta fase; tabela de lote sera avaliada com iFi.
+R3) O pre-filtro da UI espelha os guards, mas a decisao final e sempre da RPC.
+R4) 9 'aprovado + elegivel=false' seguem nao aptos (nao normalizados).
+
+--------------------------------------------------------------------------------
+13. PROXIMA MICRO-MISSAO
+--------------------------------------------------------------------------------
+05D.7B.3 — Lista geral de "Aptos para lote" (todas as origens) + eventuais
+ajustes de UX; depois avaliar tabela cabecalho `lotes_pagamento` somente quando a
+integracao bancaria (iFi/PIX/CNAB) for autorizada (sem duplicar financeiro).
+
+================================================================================
+NAO TOCADO
+--------------------------------------------------------------------------------
+iFi; CNAB real; snapshot bancario; cadastro bancario do prestador;
+financeiro_baixas; f_confirmar_pagamento_prestador; financeiro_pagar; M66/M80;
+datas; faturas/AR; 21 indeterminados; CESAR; APP; Programacao Operacional.
+RLS/RPC nao alterados nesta missao.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D7B2-UI-LOTE-TESOURARIA-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D7B2-UI-LOTE-TESOURARIA-RESULTADO.txt
+Tamanho ..: 9750 bytes
+Data .....: 24/09/2026 18:02:42
+================================================================================
+FIM DO RELATORIO — TMS-FIN-PROG-05D.7B.2
+================================================================================

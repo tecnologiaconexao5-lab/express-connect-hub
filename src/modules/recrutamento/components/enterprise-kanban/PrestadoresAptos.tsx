@@ -3,6 +3,7 @@ import { Truck, MapPin, Clock, Star, Shield, RotateCcw, Search, Users, CheckCirc
 import { enterpriseKanbanService } from './enterpriseKanbanService'
 import type { EnterpriseCandidate, DisponibilidadeTipo, ReservaContexto } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
+import { SafeImage } from '@/components/ui/safe-image'
 import { ContextoReservaModal } from './ContextoReservaModal'
 import { toast } from 'sonner'
 
@@ -58,13 +59,13 @@ export function PrestadoresAptos() {
       await enterpriseKanbanService.registrarEvento(candidate.id, {
         tipo: 'observacao_adicionada',
         descricao: isEnviado
-          ? 'Removido da shortlist operacional (Escala)'
-          : 'Enviado para shortlist operacional (Escala)',
+          ? 'Removido da shortlist operacional (Programação Operacional)'
+          : 'Enviado para shortlist operacional (Programação Operacional)',
         data: new Date().toISOString(),
       })
-      toast.success(isEnviado ? 'Removido da Escala' : 'Enviado para Escala')
+      toast.success(isEnviado ? 'Removido da Programação' : 'Enviado para Programação')
     } catch {
-      toast.error('Erro ao enviar para Escala')
+      toast.error('Erro ao enviar para Programação')
     }
   }, [])
 
@@ -150,7 +151,7 @@ export function PrestadoresAptos() {
           )}
         >
           <Send className="w-3.5 h-3.5" />
-          {soEnviadosEscala ? 'Mostrando reservas' : 'Reservas Escala'}
+          {soEnviadosEscala ? 'Mostrando reservas' : 'Reservas Programação'}
           {escalaCount > 0 && !soEnviadosEscala && (
             <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
           )}
@@ -224,7 +225,7 @@ export function PrestadoresAptos() {
             >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl overflow-hidden ring-2 ring-border/40 bg-muted shrink-0">
-                  <img src={candidate.foto} alt={candidate.nome} className="w-full h-full object-cover" />
+                  <SafeImage src={candidate.foto} alt={candidate.nome} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{candidate.nome}</p>
@@ -297,9 +298,9 @@ export function PrestadoresAptos() {
                   )}
                 >
                   {candidate.tags.includes('enviadoEscala' as any) ? (
-                    <><ArrowRightFromLine className="w-3.5 h-3.5" /> Remover da Escala</>
+                    <><ArrowRightFromLine className="w-3.5 h-3.5" /> Remover da Programação</>
                   ) : (
-                    <><Send className="w-3.5 h-3.5" /> Enviar para Escala</>
+                    <><Send className="w-3.5 h-3.5" /> Enviar para Programação</>
                   )}
                 </button>
                 {candidate.tags.includes('preSelecionado' as any) && (
@@ -311,7 +312,7 @@ export function PrestadoresAptos() {
                 {candidate.tags.includes('enviadoEscala' as any) && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-orange-400 bg-orange-500/10 border border-orange-500/20">
                     <Send className="w-3 h-3" />
-                    Enviado para Escala
+                    Enviado para Programação
                   </span>
                 )}
                 {candidate.tags.includes('enviadoEscala' as any) && (

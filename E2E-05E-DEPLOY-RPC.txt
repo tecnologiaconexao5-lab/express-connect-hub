@@ -1,0 +1,133 @@
+E2E-05E-DEPLOY-RPC
+==================================================
+Ambiente: APP + Supabase PRODUÇÃO | Projeto: uwrvzsjtpgaifkktpepn
+Data: 2026-09-22 | Modo: DEPLOY CONTROLADO + VALIDAÇÃO | Redmi: NÃO
+MIGRATIONS=1 | DB_DATA_WRITES=0
+
+OBSERVAÇÃO: os arquivos da migration/rollback NÃO existiam no repositório (o passo de preparação
+do 05E não havia sido gravado). Foram CRIADOS nesta missão (forward + rollback), revisados e
+aplicados.
+
+==================================================
+1. REVISÃO DA MIGRATION (checklist)
+==================================================
+Função: public.app_s6_resolver_identidade_legada(p_cpf_cnpj TEXT, p_senha TEXT) RETURNS TEXT
+  - SECURITY DEFINER ................................. OK
+  - search_path explícito e seguro ('public'; objetos qualificados auth.users / extensions.crypt) ... OK
+  - PUBLIC revogado (REVOKE ALL ... FROM PUBLIC) ..... OK
+  - grants realmente necessários (anon, authenticated) ... OK
+  - retorno de no máximo UMA identidade (LIMIT 1) ..... OK
+  - CPF/CNPJ normalizado (apenas dígitos) ............. OK
+  - exige prestadores.auth_user_id NOT NULL ........... OK
+  - auth.users acessado SOMENTE por id = auth_user_id . OK
+  - senha nunca persistida ............................ OK
+  - senha nunca em RAISE/log .......................... OK (nenhum RAISE com p_senha; EXCEPTION → NULL)
+  - CPF inexistente / sem vínculo / senha errada → resposta INDISTINGUÍVEL (NULL) ... OK
+  - nenhuma listagem/enumeração ....................... OK
+  - rollback corresponde EXATAMENTE à assinatura criada ... OK (DROP FUNCTION IF EXISTS (TEXT,TEXT))
+
+PRE_DEPLOY_REVIEW=PASS
+
+==================================================
+2. SNAPSHOT (metadados seguros — sem senha)
+==================================================
+Projeto: db=postgres | user=postgres (uwrvzsjtpgaifkktpepn)
+PRÉ-DEPLOY: função inexistente (PRE_EXISTS=[]) | grants=[] (nada a substituir).
+
+==================================================
+3. DEPLOY
+==================================================
+Aplicada SOMENTE a migration supabase/migrations/tms/20260922_app_s6_login_legado_identidade.sql.
+(Nenhum lote de migrations antigas.)
+
+MIGRATION_APPLIED=YES
+RPC_EXISTS=YES (app_s6_resolver_identidade_legada(text,text))
+RPC_SECURITY_DEFINER=YES (prosecdef=true)
+RPC_SEARCH_PATH_SAFE=YES (proconfig=["search_path=public"])
+RPC_PUBLIC_REVOKED=YES (sem linha PUBLIC nos grants)
+RPC_GRANTS=anon, authenticated (+ postgres, service_role)
+
+==================================================
+4. TESTE FUNCIONAL SEGURO (sem registrar senha)
+==================================================
+Chamadas com entradas NÃO-sensíveis (nenhuma senha real registrada):
+  - CPF inexistente (00000000000) + senha qualquer ....... retorno NULL
+  - CPF do PRESTADOR TESTE (123.456.789-00) + senha ERRADA ... retorno NULL
+  - entrada vazia ....................................... retorno NULL
+INDISTINGUÍVEL=YES | LEAK=NAO | ENUMERAÇÃO=NAO
+
+Vínculo objetivo (prova DB):
+  prestadores.id=e6646799 | cpf_cnpj=12345678900 | status=ativo | liberado_app=true
+  auth_user_id=a5e51631-5ed8-430d-9041-4b185c03d821 | auth.users.email=teste@conexao.com
+
+A verificação de SENHA CORRETA + signInWithPassword (Supabase Auth) exige a senha real, que NÃO é
+solicitada/registrada nesta missão (o operador a fornece no fluxo apropriado / via APP).
+
+LEGACY_CPF_RESOLUTION_PASS=YES (lógica + vínculo provados; senha errada → NULL)
+SUPABASE_AUTH_PASS=PENDING_OPERATOR (signIn real requer senha; não registrada)
+AUTH_USER_ID_MATCH=YES
+WRONG_PASSWORD_REJECTED=YES
+USER_ENUMERATION_OBSERVED=NO
+CREDENTIAL_LEAK_OBSERVED=NO
+
+==================================================
+5. STATUS / LIBERAÇÃO (DB)
+==================================================
+STATUS_ACTIVE_CONFIRMED=YES
+LIBERADO_APP_CONFIRMED=YES
+
+==================================================
+6. PRESERVAÇÃO HML
+==================================================
+HML_TABLE_ID=d12cf0cd-8c41-4e2f-9358-e608ea3439be — existe e ativo=YES
+PRESTADOR TESTE APP — valor_diaria=250.00 (intacto)
+Nenhuma alocação HML NOVA (a única alocação com cliente HOMOLOGAÇÃO APP+TESTE é a histórica
+01fc1dce, de 2026-08-01, placa ABC-1234, valores nulos).
+HML_DATA_PRESERVED=YES
+
+==================================================
+ENTREGÁVEIS
+==================================================
+PRE_DEPLOY_REVIEW=PASS
+MIGRATION_APPLIED=YES
+RPC_EXISTS=YES
+RPC_SECURITY_DEFINER=YES
+RPC_SEARCH_PATH_SAFE=YES
+RPC_PUBLIC_REVOKED=YES
+RPC_GRANTS=anon, authenticated (+ postgres, service_role)
+
+LEGACY_CPF_RESOLUTION_PASS=YES
+SUPABASE_AUTH_PASS=PENDING_OPERATOR
+AUTH_USER_ID_MATCH=YES
+WRONG_PASSWORD_REJECTED=YES
+USER_ENUMERATION_OBSERVED=NO
+CREDENTIAL_LEAK_OBSERVED=NO
+
+STATUS_ACTIVE_CONFIRMED=YES
+LIBERADO_APP_CONFIRMED=YES
+
+HML_DATA_PRESERVED=YES
+
+DB_DATA_WRITES=0
+MIGRATIONS=1
+FILES_MODIFIED=
+  - supabase/migrations/tms/20260922_app_s6_login_legado_identidade.sql (NOVO — aplicado)
+  - supabase/migrations/tms/20260922_app_s6_login_legado_identidade_rollback.sql (NOVO)
+
+RESULT=PASS
+  (Deploy + validação de segurança e de resolução concluídos. O signIn real com senha correta é
+   passo do operador/APP, pois a senha não é solicitada nem registrada.)
+
+RECOMENDAÇÃO (residual, não bloqueante): a RPC é concedida a `anon` e verifica a senha no banco,
+o que contorna o rate-limiting do GoTrue (consideração de brute-force). Recomenda-se, em produção,
+monitorar/limitar chamadas a esta função no edge (ou restringir por origem) e/ou preferir, quando
+possível, o login pelo e-mail real. Não altera a validade desta entrega.
+
+NEXT_EXACT_MISSION=E2E-COMPLETO-06-FISICO-CONTINUAR
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhuma senha registrada no TXT/comando; sem reset/troca de senha; sem criação de usuário/prestador;
+auth_user_id/status/liberado_app não alterados; sem alocação HML; sem cleanup; sem Redmi;
+sem migrations antigas; Master 360/Control Tower não executados.

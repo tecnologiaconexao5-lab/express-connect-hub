@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { confirmAction } from "@/lib/confirmDialog";
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Building, Clock, DollarSign, Phone, Mail, MessageSquare,
@@ -7,6 +8,7 @@ import {
   ArrowRight, Loader2
 } from "lucide-react";
 import { enviarFollowUp, registrarHistoricoCRM, FOLLOWUP_TEMPLATES } from "@/services/zohoEmailService";
+import { mascararTelefone, mascararEmail } from "@/lib/masking";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -79,25 +81,31 @@ export default function CrmPipeline({ leads, onLeadsChange, onSalvarNovoLead, us
     if (!leadSelecionado?.telefone) return toast.error("Telefone não informado.");
     const formatted = formatPhoneForWhatsApp(leadSelecionado.telefone);
     window.open(`https://wa.me/${formatted}`, "_blank");
-    console.log(`[CRM] WhatsApp aberto para ${leadSelecionado.telefone}`);
+    console.log(`[CRM] WhatsApp aberto`);
   };
 
   const handleEmail = () => {
     if (!leadSelecionado?.email) return toast.error("E-mail não informado.");
     window.open(`mailto:${leadSelecionado.email}?subject=Contato - ${encodeURIComponent(leadSelecionado.empresa)}`, "_blank");
-    console.log(`[CRM] E-mail aberto para ${leadSelecionado.email}`);
+    console.log(`[CRM] E-mail aberto`);
   };
 
   const handleCall = () => {
     if (!leadSelecionado?.telefone) return toast.error("Telefone não informado.");
     const phone = leadSelecionado.telefone.replace(/\D/g, "");
     window.open(`tel:${phone}`, "_blank");
-    console.log(`[CRM] Ligação iniciada para ${leadSelecionado.telefone}`);
+    console.log(`[CRM] Ligação iniciada`);
   };
 
-  const handleExcluirLead = () => {
+  const handleExcluirLead = async () => {
     if (!leadSelecionado) return;
-    const confirmar = window.confirm(`Tem certeza que deseja excluir o lead "${leadSelecionado.empresa}"?`);
+    const confirmar = await confirmAction({
+      title: "Excluir lead",
+      description: `Tem certeza que deseja excluir o lead "${leadSelecionado.empresa}"?`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "destructive",
+    });
     if (!confirmar) return;
     onLeadsChange(leads.filter(l => l.id !== leadSelecionado.id));
     setDetalheOpen(false);
@@ -631,8 +639,8 @@ export default function CrmPipeline({ leads, onLeadsChange, onSalvarNovoLead, us
 
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2"><User className="w-4 h-4 text-muted-foreground" /><span className="font-medium">{leadSelecionado.nomeContato}</span></div>
-                    {leadSelecionado.telefone && <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-muted-foreground" /><span>{leadSelecionado.telefone}</span></div>}
-                    {leadSelecionado.email && <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-muted-foreground" /><span className="text-xs truncate">{leadSelecionado.email}</span></div>}
+                    {leadSelecionado.telefone && <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-muted-foreground" /><span>{mascararTelefone(leadSelecionado.telefone)}</span></div>}
+                    {leadSelecionado.email && <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-muted-foreground" /><span className="text-xs truncate">{mascararEmail(leadSelecionado.email)}</span></div>}
                     {leadSelecionado.segmento && <div className="flex items-center gap-2"><Star className="w-4 h-4 text-muted-foreground" /><span>{leadSelecionado.segmento} · {leadSelecionado.regiao}</span></div>}
                   </div>
 

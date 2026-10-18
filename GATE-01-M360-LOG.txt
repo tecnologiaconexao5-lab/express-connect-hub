@@ -1,0 +1,100 @@
+================================================================================
+GATE-01-M360  MASTER 360 E AUDITORIA DE SANIDADE DO SISTEMA
+Nivel 1 (Master 360 / Gate Producao)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:50:10.528Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepk / express-connect-hub
+================================================================================
+
+VEREDITO MASTER 360:
+  * CORE TMS + E2E = HOMOLOGADO (Niveis 3,4,5,6,7,8 e programa E2E 100%).
+  * SEGURANCA (Nivel 9) = PARCIAL  1 achado ALTO (F1) + 3 de hardening.
+  * GO-LIVE COM DINHEIRO REAL (Nivel 0) = NAO RECOMENDADO (3 P0 + externos).
+
+--------------------------------------------------------------------------------
+1. INTEGRIDADE DA REGUA  NIVEIS 7 AO 2
+--------------------------------------------------------------------------------
+  NIVEL 7  CADASTROS / ADMIN / RECRUTAMENTO           => =â HOMOLOGADO*
+  NIVEL 6  PERSISTENCIA E OPERACIONAL                 => =â CONSOLIDADO
+  NIVEL 5  FINANCEIRO                                 => =â 100% HOMOLOGADO
+  NIVEL 4  COMERCIAL / ORCAMENTOS                     => =â 100% HOMOLOGADO
+  NIVEL 3  TMS CORE / OS / ESCALA / PROGRAMACAO       => =â 100% HOMOLOGADO
+  (programa) E2E  Integracao ponta a ponta (E2E-01 + E2E-02) .... => =â 100% HOMOLOGADO
+  NIVEL 2  FISCAL / SEFAZ (regulatorio, EXTERNO) ............... =>  PENDENTE
+
+  [OK] Niveis 7,6,5,4,3 homologados/consolidados.
+  [OK] Existe um 'Nivel 2 E2E COMPLETO' (validacao ponta a ponta) 100% HOMOLOGADO.
+  [i]  O 'Nivel 2 Fiscal/SEFAZ' da regua regulatoria segue PENDENTE (depende de SEFAZ/
+       emissor externo)  nao e o mesmo eixo do E2E.
+
+--------------------------------------------------------------------------------
+2. NIVEIS ALTOS
+--------------------------------------------------------------------------------
+  NIVEL 9  SEGURANCA / RLS ................................ => =6 PARCIAL
+  NIVEL 8  APP FLUTTER / INTEGRACAO ....................... => =â HOMOLOGADO* (prova Redmi APP-DOC-VIEW/UPLOAD)
+  NIVEL 1  INTEGRACOES EXTERNAS ........................... =>  PENDENTE
+  NIVEL 0  PRODUCAO REAL COM DINHEIRO ..................... => =4 NAO RECOMENDADO
+
+--------------------------------------------------------------------------------
+3. ACHADOS / GAPS CONSOLIDADOS (9)
+--------------------------------------------------------------------------------
+  - F1 [ALTO] tenant_usuarios legivel por ANON (policy tu_select_anon qual=true)
+  - F4 [MEDIO] f_atualizar_reversa_app sem guarda de tenant (anomalia A02) ... =4 GAP
+  - G3: divergencia TMS "Valido" x app "Pendente" ............... =4 GAP
+  - Execucao bancaria / Boleto / PIX (Efi  BLOQUEADO EXTERNO) ... =4 BLOQUEADO
+  - Comunicacao SEFAZ em producao ............................... =4 FASE FUTURA
+  - Efi (boleto/PIX/lote bancario) ............................... =4 BLOQUEADO EXTERNO
+  - Webhook retorno bancario ..................................... =4 FASE FUTURA
+  - CNAB: UI existe, sem provider ................................ =4 BLOQUEADO
+  - 3 P0 abertos (escrita direta fora de gate) ................... =4 BLOQUEADO
+
+--------------------------------------------------------------------------------
+4. CLASSIFICACAO DE RISCO PARA GO-LIVE
+--------------------------------------------------------------------------------
+  BLOQUEANTE (impede Go-Live com dinheiro / operacao regulatoria):
+   [P0] S1  policy pp_update_tms + GRANTs authenticated em pagamentos_prestadores
+             (permite alterar estado financeiro sem RPC).
+   [P0] S2  UI PagamentoPrestadores usa UPDATE direto (bypass da RPC oficial).
+   [P0] A4  actionEngineService (IA) faz INSERT direto em financeiro_receber.
+   [EXT] SEFAZ/Fiscal  sem homologacao (CT-e/MDF-e/NFS-e).
+   [EXT] Efi/Boleto/PIX/CNAB  sem provider bancario (liquidacao externa).
+
+  NAO-BLOQUEANTE (hardening de seguranca / cosmetico  tratar antes de expor publico):
+   [ALTO] F1  tenant_usuarios legivel por ANON (policy tu_select_anon qual=true).
+              Expoe metadados de usuario/tenant (nao financeiro). Prioridade alta de fix.
+   [MED]  F2  tu_update_auth UPDATE qual=true (authenticated) sem escopo de tenant.
+   [MED]  F3  GRANTs residuais a anon/PUBLIC em tabelas criticas (RLS bloqueia).
+   [MED]  F4  f_atualizar_reversa_app sem guarda de tenant (anomalia A02).
+   [BAIXO] G3  divergencia de exibicao de status TMS ('Valido') x App ('Pendente').
+
+--------------------------------------------------------------------------------
+5. CONDICOES PARA LIBERAR O GATE DE PRODUCAO (NIVEL 0)
+--------------------------------------------------------------------------------
+  1. Fechar P0: [S1] + [S2] + [A4].
+  2. Reconciliar integridade: [I1] + [C2/I2].
+  3. Corrigir [M2] data canonica da Margem Operacional.
+  4. Corrigir F1 (remover acesso anon a tenant_usuarios).
+  5. Prova fisica completa no Redmi (jornada APP).
+  6. Contratar Efi (boleto/lote) e habilitar SEFAZ.
+
+--------------------------------------------------------------------------------
+6. CONTAGEM DO CHECKLIST
+--------------------------------------------------------------------------------
+  Itens concluidos (=â): 70
+  Itens pendentes (): 21
+  GAPs/bloqueios (=4): 9
+
+--------------------------------------------------------------------------------
+7. CONCLUSAO MASTER 360
+--------------------------------------------------------------------------------
+  [OK] Cadeia comercial->operacional->app (E2E-01) e operacional->financeiro->baixa
+       (E2E-02) homologadas; core TMS (Niveis 3-8) consistente.
+  [OK] Auditorias TMS-01-SEC (RLS/multi-tenant) e TMS-02-PERF (triggers/indices) executadas.
+  [OK] GATE-01-M360 EXECUTADO e HOMOLOGADO como master gate (sanidade/documentacao).
+  [!] GO-LIVE COM DINHEIRO: bloqueado por 3 P0 (escrita fora de gate) + externos (Efi/SEFAZ).
+  [!] Top item de seguranca: F1 (anon em tenant_usuarios)  corrigir antes de exposicao publica.
+
+EVIDENCIAS: STATUS_CHECKLIST_CONEXAO_EXPRESS.txt | scripts/_gate01m360_parse.json
+            TMS-01-SEC-LOG.txt | TMS-02-PERF-LOG.txt | E2E-01-INTEG-LOG.txt | E2E-02-FIN-LOG.txt
+================================================================================
+FIM  GATE-01-M360
+================================================================================

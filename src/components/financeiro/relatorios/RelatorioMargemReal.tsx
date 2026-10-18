@@ -9,6 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { listarComposicoesFinanceiras } from "@/services/financeiro/composicaoFinanceiraService";
+import { gerarPDFRelatorioOperacional } from "@/utils/pdfRelatorioOperacional";
+import { exportToExcel } from "@/utils/excelExport";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -175,11 +177,73 @@ export default function RelatorioMargemReal() {
               Detalhamento por OS
             </span>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info("Exportação CSV em desenvolvimento")}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={composicoes.length === 0}
+                onClick={() => {
+                  const rows = composicoes.map(item => ({
+                    OS: item.os?.numero || "-",
+                    Status: item.os?.status || "-",
+                    Cliente: item.cliente_id || "-",
+                    Prestador: item.prestador_id || "-",
+                    "Valor Cliente": Number(item.valor_cliente) || 0,
+                    "Valor Prestador": Number(item.valor_prestador) || 0,
+                    Imposto: Number(item.imposto_valor) || 0,
+                    Seguro: Number(item.seguro_valor) || 0,
+                    "Pedágio": Number(item.pedagio_valor) || 0,
+                    Outros: Number(item.outros_custos) || 0,
+                    "Margem Bruta": Number(item.margem_bruta) || 0,
+                    "Margem Líquida": Number(item.margem_liquida) || 0,
+                    "% Margem": Number(item.percentual_margem_liquida)?.toFixed(1) || "0",
+                  }));
+                  exportToExcel(rows, [
+                    { header: "OS", key: "OS" },
+                    { header: "Status", key: "Status" },
+                    { header: "Cliente", key: "Cliente" },
+                    { header: "Prestador", key: "Prestador" },
+                    { header: "Valor Cliente", key: "Valor Cliente" },
+                    { header: "Valor Prestador", key: "Valor Prestador" },
+                    { header: "Imposto", key: "Imposto" },
+                    { header: "Seguro", key: "Seguro" },
+                    { header: "Pedágio", key: "Pedágio" },
+                    { header: "Outros", key: "Outros" },
+                    { header: "Margem Bruta", key: "Margem Bruta" },
+                    { header: "Margem Líquida", key: "Margem Líquida" },
+                    { header: "% Margem", key: "% Margem" },
+                  ], "relatorio_margem_real");
+                  toast.success("Excel exportado com sucesso!");
+                }}
+              >
                 <Download className="w-4 h-4" />
-                Exportar CSV
+                Exportar Excel
               </Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info("Exportação PDF em desenvolvimento")}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={composicoes.length === 0}
+                onClick={() => {
+                  gerarPDFRelatorioOperacional({
+                    titulo: "Relatório de Margem Real",
+                    colunas: ["OS", "Status", "Cliente", "Prestador", "Valor Cliente", "Valor Prestador", "Margem Bruta", "Margem Líquida", "% Margem"],
+                    linhas: composicoes.map(item => [
+                      item.os?.numero || "-",
+                      item.os?.status || "-",
+                      item.cliente_id || "-",
+                      item.prestador_id || "-",
+                      fmt(Number(item.valor_cliente) || 0),
+                      fmt(Number(item.valor_prestador) || 0),
+                      fmt(Number(item.margem_bruta) || 0),
+                      fmt(Number(item.margem_liquida) || 0),
+                      `${Number(item.percentual_margem_liquida)?.toFixed(1) || 0}%`,
+                    ]),
+                    subtitulo: `Período: ${filtroDataInicio || "Início"} a ${filtroDataFim || "Fim"} | ${composicoes.length} registros`,
+                  });
+                  toast.success("PDF exportado com sucesso!");
+                }}
+              >
                 <FileText className="w-4 h-4" />
                 Exportar PDF
               </Button>

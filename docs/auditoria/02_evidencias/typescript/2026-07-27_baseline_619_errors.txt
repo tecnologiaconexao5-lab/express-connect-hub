@@ -1,0 +1,713 @@
+src/components/comercial/crm/CrmRelatorios.tsx(127,25): error TS2339: Property 'nome' does not exist on type 'Lead'.
+src/components/comercial/crm/CrmRelatorios.tsx(134,35): error TS2339: Property 'dataCriacao' does not exist on type 'Lead'.
+src/components/comercial/crm/CrmRelatorios.tsx(134,60): error TS2339: Property 'dataCriacao' does not exist on type 'Lead'.
+src/components/comercial/crm/CrmRelatorios.tsx(161,21): error TS2339: Property 'nome' does not exist on type 'Lead'.
+src/components/comercial/marketing/MarketingMain.tsx(175,9): error TS2353: Object literal may only specify known properties, and 'publiko_alvo' does not exist in type 'SetStateAction<{ nome_campanha: string; tipo_campanha: string; objetivo: string; canal: string; publico_alvo: string; orcamento_estimado: number; data_inicio: string; data_fim: string; status: string; }>'.
+src/components/comercial/marketing/MarketingMain.tsx(193,7): error TS2353: Object literal may only specify known properties, and 'publiko_alvo' does not exist in type 'SetStateAction<{ nome_campanha: string; tipo_campanha: string; objetivo: string; canal: string; publico_alvo: string; orcamento_estimado: number; data_inicio: string; data_fim: string; status: string; }>'.
+src/components/comercial/marketing/MarketingMain.tsx(193,21): error TS2304: Cannot find name 'kampanye'.
+src/components/comercial/marketing/MarketingMain.tsx(194,27): error TS2304: Cannot find name 'kampanye'.
+src/components/comercial/marketing/MarketingMain.tsx(423,114): error TS2353: Object literal may only specify known properties, and 'publiko_alvo' does not exist in type 'SetStateAction<{ nome_campanha: string; tipo_campanha: string; objetivo: string; canal: string; publico_alvo: string; orcamento_estimado: number; data_inicio: string; data_fim: string; status: string; }>'.
+src/components/comercial/mockOrcamentos.ts(15,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: true; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(35,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: true; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(54,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: false; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(70,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: false; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(90,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: true; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(111,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: true; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(131,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: true; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/mockOrcamentos.ts(148,5): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: false; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/OrcamentoForm.tsx(98,3): error TS2739: Type '{ descricao: string; volumes: number; peso: number; cubagem: number; pallets: number; valorDeclarado: number; refrigerado: false; ajudante: false; observacoes: string; }' is missing the following properties from type 'CargaOrcamento': fragil, empilhavel, risco, perigosa, controlada
+src/components/comercial/OrcamentoForm.tsx(100,105): error TS2353: Object literal may only specify known properties, and 'adValorem' does not exist in type 'ValoresOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(172,49): error TS2365: Operator '>' cannot be applied to types 'boolean' and 'number'.
+src/components/comercial/OrcamentoForm.tsx(189,21): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/components/comercial/OrcamentoForm.tsx(189,87): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(189,181): error TS2339: Property 'estado' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(190,22): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/components/comercial/OrcamentoForm.tsx(190,90): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(190,187): error TS2339: Property 'estado' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(259,140): error TS2339: Property 'adValorem' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(259,157): error TS2339: Property 'gris' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(259,178): error TS2339: Property 'adValorem' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(259,227): error TS2339: Property 'gris' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(260,117): error TS2339: Property 'adValorem' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(260,138): error TS2339: Property 'gris' does not exist on type '{ tabelaVinculada: string; valorBase: number; adicionais: number; pedagio: number; kmExcedente: number; ajudante: number; devolucao: number; reentrega: number; descontos: number; valorFinal: number; custoEstimado: number; margemEstimada: number; lucroEstimado: number; }'.
+src/components/comercial/OrcamentoForm.tsx(347,16): error TS2551: Property 'clienteId' does not exist on type 'Orcamento'. Did you mean 'cliente'?
+src/components/comercial/OrcamentoForm.tsx(348,72): error TS2551: Property 'clienteId' does not exist on type 'Orcamento'. Did you mean 'cliente'?
+src/components/comercial/OrcamentoForm.tsx(359,26): error TS2551: Property 'clienteId' does not exist on type 'Orcamento'. Did you mean 'cliente'?
+src/components/comercial/OrcamentoForm.tsx(361,29): error TS2339: Property 'valor_cliente' does not exist on type 'Orcamento'.
+src/components/comercial/OrcamentoForm.tsx(362,31): error TS2339: Property 'custo_prestador' does not exist on type 'Orcamento'.
+src/components/comercial/OrcamentoForm.tsx(364,28): error TS2339: Property 'veiculo_tipo' does not exist on type 'Orcamento'.
+src/components/comercial/OrcamentoForm.tsx(380,32): error TS2339: Property 'logradouro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(381,28): error TS2339: Property 'numero' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(383,85): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(383,106): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(389,27): error TS2339: Property 'nome_local' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(392,23): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(599,71): error TS2339: Property 'logradouro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(599,101): error TS2339: Property 'numero' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(599,132): error TS2339: Property 'complemento' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(599,163): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(612,32): error TS2353: Object literal may only specify known properties, and 'logradouro' does not exist in type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(615,58): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(619,93): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(619,129): error TS2339: Property 'bairro' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoForm.tsx(823,59): error TS2345: Argument of type '"OR+âÔÇíAMENTO"' is not assignable to parameter of type '"OR+çAMENTO" | "ORDEM DE SERVI+çO"'.
+src/components/comercial/OrcamentoPreview.tsx(170,69): error TS2339: Property 'termica' does not exist on type '{ tipo: string; subcategoria: string; carroceria: string; }'.
+src/components/comercial/OrcamentoPreview.tsx(221,60): error TS2339: Property 'nomeLocal' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoPreview.tsx(224,26): error TS2339: Property 'responsavel' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoPreview.tsx(227,30): error TS2339: Property 'responsavel' does not exist on type 'EnderecoOrcamento'.
+src/components/comercial/OrcamentoPreview.tsx(237,22): error TS2339: Property 'observacoes' does not exist on type 'Orcamento'.
+src/components/comercial/OrcamentoPreview.tsx(243,73): error TS2339: Property 'observacoes' does not exist on type 'Orcamento'.
+src/components/comercial/propostas/ListaPropostas.tsx(122,5): error TS2345: Argument of type '({ arquivada: any; categoria: string; responsavel: string; versao: any; visualizacoes: number; tags: string[]; historico: { data: string; acao: string; usuario: string; }[]; corDestaque: string; id: string; ... 16 more ...; atualizarEm?: undefined; } | { ...; } | { ...; })[]' is not assignable to parameter of type 'Proposta[] | (() => Proposta[])'.
+  Type '({ arquivada: any; categoria: string; responsavel: string; versao: any; visualizacoes: number; tags: string[]; historico: { data: string; acao: string; usuario: string; }[]; corDestaque: string; id: string; ... 16 more ...; atualizarEm?: undefined; } | { ...; } | { ...; })[]' is not assignable to type 'Proposta[]'.
+    Type '{ arquivada: any; categoria: string; responsavel: string; versao: any; visualizacoes: number; tags: string[]; historico: { data: string; acao: string; usuario: string; }[]; corDestaque: string; id: string; ... 16 more ...; atualizarEm?: undefined; } | { ...; } | { ...; }' is not assignable to type 'Proposta'.
+      Type '{ arquivada: any; categoria: string; responsavel: string; versao: any; visualizacoes: number; tags: string[]; historico: { data: string; acao: string; usuario: string; }[]; corDestaque: string; id: string; ... 16 more ...; atualizarEm?: undefined; }' is not assignable to type 'Proposta'.
+        Types of property 'tipo' are incompatible.
+          Type 'string' is not assignable to type '"modelo" | "personalizada"'.
+src/components/comercial/propostas/ListaPropostas.tsx(124,47): error TS2339: Property 'arquivada' does not exist on type '{ id: string; titulo: string; subtitulo: string; tipo: string; cliente: string; segmento: string; tipoServico: string; status: string; favorita: boolean; guardadaNaBiblioteca: boolean; dataGuardada: string; ... 6 more ...; atualizarEm?: undefined; } | { ...; } | { ...; }'.
+  Property 'arquivada' does not exist on type '{ id: string; titulo: string; subtitulo: string; tipo: string; cliente: string; segmento: string; tipoServico: string; status: string; favorita: boolean; guardadaNaBiblioteca: boolean; dataGuardada: string; ... 6 more ...; atualizarEm?: undefined; }'.
+src/components/comercial/propostas/ListaPropostas.tsx(127,17): error TS2339: Property 'versao' does not exist on type '{ id: string; titulo: string; subtitulo: string; tipo: string; cliente: string; segmento: string; tipoServico: string; status: string; favorita: boolean; guardadaNaBiblioteca: boolean; dataGuardada: string; ... 6 more ...; atualizarEm?: undefined; } | { ...; } | { ...; }'.
+  Property 'versao' does not exist on type '{ id: string; titulo: string; subtitulo: string; tipo: string; cliente: string; segmento: string; tipoServico: string; status: string; favorita: boolean; guardadaNaBiblioteca: boolean; dataGuardada: string; ... 6 more ...; atualizarEm?: undefined; }'.
+src/components/comercial/TabelaValoresForm.tsx(317,29): error TS2367: This comparison appears to be unintentional because the types '"espera"' and '"overbooking"' have no overlap.
+src/components/comunicacao/CentralComunicacao.tsx(144,9): error TS2561: Object literal may only specify known properties, but 'recorrente' does not exist in type 'Partial<ComunicacaoLote>'. Did you mean to write 'recurrente'?
+src/components/comunicacao/CentralComunicacao.tsx(240,28): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/comunicacao/CentralComunicacao.tsx(241,67): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/comunicacao/CentralComunicacao.tsx(243,55): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/comunicacao/CentralComunicacao.tsx(246,24): error TS2339: Property 'label' does not exist on type 'string'.
+src/components/configuracoes/CentralIntegracoes.tsx(13,36): error TS2305: Module '"@/services/integracoes/iaService"' has no exported member 'validateAIConfig'.
+src/components/configuracoes/CentralIntegracoes.tsx(279,30): error TS2339: Property 'replace' does not exist on type 'never'.
+src/components/financeiro/ContasPagar.tsx(522,32): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/components/financeiro/ContasPagar.tsx(525,28): error TS2345: Argument of type '{ fornecedor: string; fornecedor_documento: any; documento: any; tipo_documento: any; categoria: string; plano_contas: any; centro_resultado: any; unidade_filial: any; despesa_fixa_base: any; ... 16 more ...; observacoes: any; }' is not assignable to parameter of type 'PagavelInput'.
+  Type '{ fornecedor: string; fornecedor_documento: any; documento: any; tipo_documento: any; categoria: string; plano_contas: any; centro_resultado: any; unidade_filial: any; despesa_fixa_base: any; ... 16 more ...; observacoes: any; }' is missing the following properties from type 'PagavelInput': descricao, valor
+src/components/financeiro/ContasPagar.tsx(566,27): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/components/financeiro/ContasPagar.tsx(579,29): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/components/financeiro/ContasReceber.tsx(158,31): error TS2344: Type '"id" | "nome_fantasia" | "cnpj" | "razao_social"' does not satisfy the constraint 'keyof Cliente'.
+  Type '"nome_fantasia"' is not assignable to type 'keyof Cliente'. Did you mean '"nomeFantasia"'?
+src/components/financeiro/ContasReceber.tsx(177,37): error TS2304: Cannot find name 'supabase'.
+src/components/financeiro/ContasReceber.tsx(237,64): error TS2345: Argument of type 'ClienteOption' is not assignable to parameter of type 'Pick<Cliente, "id" | "nome_fantasia" | "cnpj" | "razao_social">'.
+  Property 'nome_fantasia' is optional in type 'ClienteOption' but required in type 'Pick<Cliente, "id" | "nome_fantasia" | "cnpj" | "razao_social">'.
+src/components/financeiro/ContasReceber.tsx(449,37): error TS2304: Cannot find name 'supabase'.
+src/components/financeiro/ContasReceber.tsx(546,34): error TS2345: Argument of type 'string | number' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/components/financeiro/ContasReceber.tsx(549,30): error TS2345: Argument of type '{ fatura: string; serie: string; numero: string; cliente_id: string; cliente: string; cliente_documento: string; os_vinculadas: string; contrato_vinculado: string; proposta_vinculada: string; ... 16 more ...; observacoes: string; }' is not assignable to parameter of type 'RecebivelInput'.
+  Type '{ fatura: string; serie: string; numero: string; cliente_id: string; cliente: string; cliente_documento: string; os_vinculadas: string; contrato_vinculado: string; proposta_vinculada: string; ... 16 more ...; observacoes: string; }' is missing the following properties from type 'RecebivelInput': descricao, valor
+src/components/financeiro/ContasReceber.tsx(602,9): error TS2451: Cannot redeclare block-scoped variable 'handleRenegociar'.
+src/components/financeiro/ContasReceber.tsx(614,9): error TS2451: Cannot redeclare block-scoped variable 'handleCancelar'.
+src/components/financeiro/ContasReceber.tsx(627,9): error TS2451: Cannot redeclare block-scoped variable 'handleRenegociar'.
+src/components/financeiro/ContasReceber.tsx(635,9): error TS2451: Cannot redeclare block-scoped variable 'handleCancelar'.
+src/components/financeiro/ContasReceber.tsx(954,29): error TS2345: Argument of type '(p: { status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; clienteId: string; numero: string; vencimento: string; documento: string; observacoes: string; clienteNome: string; ... 18 more ...; contaEntrada: string; }) => { ...; }' is not assignable to parameter of type 'SetStateAction<{ status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; clienteId: string; numero: string; vencimento: string; documento: string; observacoes: string; clienteNome: string; ... 18 more ...; contaEntrada: string; }>'.
+  Type '(p: { status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; clienteId: string; numero: string; vencimento: string; documento: string; observacoes: string; clienteNome: string; ... 18 more ...; contaEntrada: string; }) => { ...; }' is not assignable to type '(prevState: { status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; clienteId: string; numero: string; vencimento: string; documento: string; observacoes: string; clienteNome: string; ... 18 more ...; contaEntrada: string; }) => { ...; }'.
+    Call signature return types '{ clienteId: string; clienteNome: unknown; clienteDocumento: string; status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; numero: string; vencimento: string; documento: string; ... 18 more ...; contaEntrada: string; }' and '{ status: "cancelada" | "paga" | "a_vencer" | "vencida" | "parcial" | "negociada"; clienteId: string; numero: string; vencimento: string; documento: string; observacoes: string; clienteNome: string; ... 18 more ...; contaEntrada: string; }' are incompatible.
+      The types of 'clienteNome' are incompatible between these types.
+        Type 'unknown' is not assignable to type 'string'.
+src/components/financeiro/ContasReceberEnterprise.tsx(195,9): error TS18004: No value exists in scope for the shorthand property 'page'. Either declare one or provide an initializer.
+src/components/financeiro/ContasReceberEnterprise.tsx(196,19): error TS2304: Cannot find name 'PAGE_SIZE'.
+src/components/financeiro/ContasReceberEnterprise.tsx(200,25): error TS2339: Property 'search' does not exist on type '{ busca: string; status: string; cliente: string; categoria: string; centroResultado: string; dataInicio: string; dataFim: string; }'.
+src/components/financeiro/ContasReceberEnterprise.tsx(202,7): error TS2304: Cannot find name 'setTotalCount'.
+src/components/financeiro/ContasReceberEnterprise.tsx(306,41): error TS2304: Cannot find name 'supabase'.
+src/components/financeiro/ContasReceberEnterprise.tsx(606,30): error TS2345: Argument of type '{ cliente_id: string; cliente_nome: string; cliente_documento: string; fatura: string; serie: any; numero: any; os_vinculadas: any; contrato_vinculado: any; proposta_vinculada: any; categoria: any; ... 18 more ...; competencia: string; }' is not assignable to parameter of type 'RecebivelInput'.
+  Type '{ cliente_id: string; cliente_nome: string; cliente_documento: string; fatura: string; serie: any; numero: any; os_vinculadas: any; contrato_vinculado: any; proposta_vinculada: any; categoria: any; ... 18 more ...; competencia: string; }' is missing the following properties from type 'RecebivelInput': descricao, valor, cliente
+src/components/financeiro/ContasReceberEnterprise.tsx(669,30): error TS2345: Argument of type '{ cliente_id: string; cliente_nome: string; cliente_documento: string; fatura: string; serie: any; numero: string; os_vinculadas: any; contrato_vinculado: any; proposta_vinculada: any; categoria: any; ... 15 more ...; competencia: string; }' is not assignable to parameter of type 'RecebivelInput'.
+  Type '{ cliente_id: string; cliente_nome: string; cliente_documento: string; fatura: string; serie: any; numero: string; os_vinculadas: any; contrato_vinculado: any; proposta_vinculada: any; categoria: any; ... 15 more ...; competencia: string; }' is missing the following properties from type 'RecebivelInput': descricao, valor, cliente
+src/components/financeiro/ContasReceberEnterprise.tsx(918,91): error TS2339: Property 'cpf' does not exist on type 'Cliente'.
+src/components/financeiro/DashboardFinanceiroEnterprise.tsx(265,45): error TS2339: Property 'custoPrestadoresMes' does not exist on type '{ receitaMes: any; receitaAnt: any; custosTotais: any; resultado: number; margemOp: number; qtdOS: number; custoMedioOS: number; ticketMedioOS: number; margemMedia: number; variacaoReceita: number; variacaoCusto: number; }'.
+src/components/financeiro/DashboardFinanceiroEnterprise.tsx(354,40): error TS2339: Property 'custoPrestadoresMes' does not exist on type '{ receitaMes: any; receitaAnt: any; custosTotais: any; resultado: number; margemOp: number; qtdOS: number; custoMedioOS: number; ticketMedioOS: number; margemMedia: number; variacaoReceita: number; variacaoCusto: number; }'.
+src/components/financeiro/DashboardFinanceiroEnterprise.tsx(354,90): error TS2339: Property 'custoGeralMes' does not exist on type '{ receitaMes: any; receitaAnt: any; custosTotais: any; resultado: number; margemOp: number; qtdOS: number; custoMedioOS: number; ticketMedioOS: number; margemMedia: number; variacaoReceita: number; variacaoCusto: number; }'.
+src/components/financeiro/MargemPorOS.tsx(322,64): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/financeiro/MargemPorOS.tsx(322,80): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/financeiro/MargemPorOS.tsx(322,90): error TS2339: Property 'label' does not exist on type 'string'.
+src/components/financeiro/PagamentoPrestadores.tsx(674,65): error TS2339: Property 'descontos' does not exist on type 'OS'.
+src/components/financeiro/PagamentoPrestadores.tsx(752,44): error TS2304: Cannot find name 'prestadorEmFocoId'.
+src/components/financeiro/relatorios/RelatorioPagamentoPrestador.tsx(137,55): error TS2345: Argument of type '{ totalRepasses: any; qtd: number; media: number; pendencias: any; aprovado: any; }' is not assignable to parameter of type '{ totalRepasses: number; qtdOperacoes: number; mediaOperacional: number; pendencias: number; valorAprovado: number; }'.
+  Type '{ totalRepasses: any; qtd: number; media: number; pendencias: any; aprovado: any; }' is missing the following properties from type '{ totalRepasses: number; qtdOperacoes: number; mediaOperacional: number; pendencias: number; valorAprovado: number; }': qtdOperacoes, mediaOperacional, valorAprovado
+src/components/fiscal/cte/ControleRomaneioCalvo.tsx(250,99): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/fiscal/cte/ControleRomaneioCalvo.tsx(251,77): error TS2322: Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(240,55): error TS2339: Property 'enderecoCompleto' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(240,80): error TS2339: Property 'endereco_completo' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(486,63): error TS2304: Cannot find name 'temEndereco'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(496,28): error TS2304: Cannot find name 'temEndereco'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(498,64): error TS2304: Cannot find name 'temEndereco'.
+src/components/fiscal/cte/GerarLoteCteModal.tsx(507,30): error TS2304: Cannot find name 'temEndereco'.
+src/components/fiscal/cte/PainelAssistenteFiscalLote.tsx(322,76): error TS2339: Property 'motivo_rejeicao' does not exist on type 'CteLoteItem'.
+src/components/fiscal/cte/PainelAssistenteFiscalLote.tsx(334,117): error TS2339: Property 'motivo_rejeicao' does not exist on type 'CteLoteItem'.
+src/components/fiscal/cte/PainelFiscalExecutivo.tsx(146,132): error TS2304: Cannot find name 'Eye'.
+src/components/fiscal/cte/PreviaRomaneioCteModal.tsx(158,54): error TS2339: Property 'enderecoCompleto' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/cte/PreviaRomaneioCteModal.tsx(158,80): error TS2339: Property 'endereco_completo' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/cte/PreviaRomaneioCteModal.tsx(378,9): error TS2322: Type '{ documentoId: string; valorRateado: number; peso: any; proporcao: number; ajuste: number; }[]' is not assignable to type 'RateioItem[]'.
+  Property 'percentual' is missing in type '{ documentoId: string; valorRateado: number; peso: any; proporcao: number; ajuste: number; }' but required in type 'RateioItem'.
+src/components/fiscal/cte/XmlImportadosList.tsx(253,55): error TS2339: Property 'enderecoCompleto' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/cte/XmlImportadosList.tsx(253,80): error TS2339: Property 'endereco_completo' does not exist on type 'EnderecoRealEntrega'.
+src/components/fiscal/DocumentosTab.tsx(33,7): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/DocumentosTab.tsx(34,7): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/DocumentosTab.tsx(35,7): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(61,37): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(82,34): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(93,30): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(96,30): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(107,34): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(111,39): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(118,35): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(128,34): error TS2304: Cannot find name 'sup'.
+src/components/fiscal/NfseTab.tsx(177,17): error TS2304: Cannot find name 'sup'.
+src/components/ia/ConhecimentoCorporativoTab.tsx(267,125): error TS2322: Type 'string' is not assignable to type 'TipoConhecimento'.
+src/components/ia/ConhecimentoCorporativoTab.tsx(305,117): error TS2322: Type 'string' is not assignable to type 'StatusConhecimento'.
+src/components/ia/ConhecimentoCorporativoTab.tsx(347,75): error TS2367: This comparison appears to be unintentional because the types '"ativo" | "rascunho" | "vencido"' and '"arquivado"' have no overlap.
+src/components/ia/ConhecimentoCorporativoTab.tsx(388,137): error TS2322: Type 'string' is not assignable to type 'TipoConhecimento'.
+src/components/ia/RotinasTab.tsx(268,27): error TS2345: Argument of type '(prev: Record<string, RotinaIA[]>) => { [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to parameter of type 'SetStateAction<Record<string, RotinaIA[]>>'.
+  Type '(prev: Record<string, RotinaIA[]>) => { [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to type '(prevState: Record<string, RotinaIA[]>) => Record<string, RotinaIA[]>'.
+    Type '{ [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to type 'Record<string, RotinaIA[]>'.
+      'string' index signatures are incompatible.
+        Type 'RotinaIA[] | RotinaExecucaoIA[]' is not assignable to type 'RotinaIA[]'.
+          Type 'RotinaExecucaoIA[]' is not assignable to type 'RotinaIA[]'.
+            Type 'RotinaExecucaoIA' is missing the following properties from type 'RotinaIA': nome, descricao, tipo, cron_expression, and 12 more.
+src/components/ia/RotinasTab.tsx(605,49): error TS2345: Argument of type '(prev: Record<string, RotinaIA[]>) => { [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to parameter of type 'SetStateAction<Record<string, RotinaIA[]>>'.
+  Type '(prev: Record<string, RotinaIA[]>) => { [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to type '(prevState: Record<string, RotinaIA[]>) => Record<string, RotinaIA[]>'.
+    Type '{ [x: string]: RotinaIA[] | RotinaExecucaoIA[]; }' is not assignable to type 'Record<string, RotinaIA[]>'.
+      'string' index signatures are incompatible.
+        Type 'RotinaIA[] | RotinaExecucaoIA[]' is not assignable to type 'RotinaIA[]'.
+          Type 'RotinaExecucaoIA[]' is not assignable to type 'RotinaIA[]'.
+            Type 'RotinaExecucaoIA' is missing the following properties from type 'RotinaIA': nome, descricao, tipo, cron_expression, and 12 more.
+src/components/integracoes/ZohoEmailStatus.tsx(52,70): error TS2339: Property 'apiUrl' does not exist on type '{ configured: boolean; oauth2: string; accountId: any; dataCenter: any; fromEmail: any; n8nWebhook: string; apiKeyLegacy: string; }'.
+src/components/onboarding/AIDashboard.tsx(136,21): error TS2304: Cannot find name 'Ban'.
+src/components/onboarding/StepVehicle.tsx(108,36): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/onboarding/StepVehicle.tsx(108,52): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/onboarding/StepVehicle.tsx(109,22): error TS2339: Property 'label' does not exist on type 'string'.
+src/components/onboarding/UploadZone.tsx(30,19): error TS2350: Only a void function can be called with the 'new' keyword.
+src/components/onboarding/UploadZone.tsx(30,19): error TS2554: Expected 1 arguments, but got 0.
+src/components/operacao/EscalaLista.tsx(1001,64): error TS2345: Argument of type '{ metadata: { kmInicial: number; kmFinal: number; numeroOC: string; financeiro_status: string; statusOperacional: string; observacaoOperacional: string; instrucoesPrestador: string; observacaoCliente: string; ... 17 more ...; tipo_operacao: string; }; ... 48 more ...; km_realizados: number; }' is not assignable to parameter of type 'AtualizarAlocacaoEscala'.
+  Types of property 'status' are incompatible.
+    Type 'string' is not assignable to type 'EscalaStatus'.
+src/components/operacao/EscalaLista.tsx(2843,135): error TS2304: Cannot find name 'REVERSA_TIPO_LABELS'.
+src/components/operacao/EscalaLista.tsx(3062,74): error TS2304: Cannot find name 'Camera'.
+src/components/operacao/EscalaLista.tsx(3370,185): error TS2304: Cannot find name 'alocacaoEmEdicao'.
+src/components/operacao/OrdemServicoForm.tsx(36,100): error TS2440: Import declaration conflicts with local declaration of 'SugestaoVeiculo'.
+src/components/operacao/OrdemServicoForm.tsx(295,69): error TS2345: Argument of type '() => ReversaFields | { tipo_reversa: any; reversa_qtd_volumes: any; reversa_observacoes: any; reversa_endereco_coleta: any; reversa_endereco_devolucao: any; reversa_unidade_cobranca: any; ... 12 more ...; reversa_impacto_cliente: any; }' is not assignable to parameter of type 'ReversaFields | (() => ReversaFields)'.
+  Type '() => ReversaFields | { tipo_reversa: any; reversa_qtd_volumes: any; reversa_observacoes: any; reversa_endereco_coleta: any; reversa_endereco_devolucao: any; reversa_unidade_cobranca: any; ... 12 more ...; reversa_impacto_cliente: any; }' is not assignable to type '() => ReversaFields'.
+    Type 'ReversaFields | { tipo_reversa: any; reversa_qtd_volumes: any; reversa_observacoes: any; reversa_endereco_coleta: any; reversa_endereco_devolucao: any; reversa_unidade_cobranca: any; ... 12 more ...; reversa_impacto_cliente: any; }' is not assignable to type 'ReversaFields'.
+      Type '{ tipo_reversa: any; reversa_qtd_volumes: any; reversa_observacoes: any; reversa_endereco_coleta: any; reversa_endereco_devolucao: any; reversa_unidade_cobranca: any; reversa_valor_unitario: any; ... 11 more ...; reversa_impacto_cliente: any; }' is missing the following properties from type 'ReversaFields': reversa_modelo_cliente, reversa_valor_unitario_cliente, reversa_valor_fixo_cliente, reversa_modelo_prestador, and 11 more.
+src/components/operacao/OrdemServicoForm.tsx(334,19): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/components/operacao/OrdemServicoForm.tsx(334,157): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoForm.tsx(335,20): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/components/operacao/OrdemServicoForm.tsx(335,162): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoForm.tsx(412,24): error TS2345: Argument of type '{ distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string; }' is not assignable to parameter of type 'SetStateAction<DistanceResult>'.
+  Property 'provider' is missing in type '{ distanciaKm: number; duracaoMin: number; distanciaTexto: string; duracaoTexto: string; }' but required in type 'DistanceResult'.
+src/components/operacao/OrdemServicoForm.tsx(1277,24): error TS2322: Type '{ table: string; labelField: string; valueField: string; returnField: string; value: string; onChange: (v: string, record: any) => Promise<void>; disabled: boolean; searchFields: string[]; }' is not assignable to type 'IntrinsicAttributes & SearchableSelectProps'.
+  Property 'disabled' does not exist on type 'IntrinsicAttributes & SearchableSelectProps'.
+src/components/operacao/OrdemServicoForm.tsx(2025,31): error TS2322: Type '{ label: string; value: any; onChange: (obj: EnderecoType) => void; readOnly: boolean; }' is not assignable to type 'IntrinsicAttributes & EnderecoCompletoProps'.
+  Property 'readOnly' does not exist on type 'IntrinsicAttributes & EnderecoCompletoProps'.
+src/components/operacao/OrdemServicoForm.tsx(2299,54): error TS2339: Property 'label' does not exist on type 'SugestaoVeiculo'.
+src/components/operacao/OrdemServicoForm.tsx(2303,65): error TS2339: Property 'label' does not exist on type 'SugestaoVeiculo'.
+src/components/operacao/OrdemServicoForm.tsx(2477,26): error TS2322: Type '{ table: string; labelField: string; valueField: string; searchFields: string[]; filters: { status: string; }; value: string; onChange: (v: string, record: any) => Promise<void>; disabled: boolean; }' is not assignable to type 'IntrinsicAttributes & SearchableSelectProps'.
+  Property 'disabled' does not exist on type 'IntrinsicAttributes & SearchableSelectProps'.
+src/components/operacao/OrdemServicoPreview.tsx(33,7): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(34,7): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(35,7): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(36,7): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(37,7): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(48,40): error TS2304: Cannot find name 'sup'.
+src/components/operacao/OrdemServicoPreview.tsx(81,74): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoPreview.tsx(83,77): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoPreview.tsx(86,115): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoPreview.tsx(87,118): error TS2339: Property 'uf' does not exist on type 'OSEndereco'.
+src/components/operacao/OrdemServicoPreview.tsx(446,19): error TS2339: Property 'documentos' does not exist on type 'OrdemServico'.
+src/components/operacao/OrdemServicoPreview.tsx(446,36): error TS2339: Property 'documentos' does not exist on type 'OrdemServico'.
+src/components/operacao/OrdemServicoPreview.tsx(448,23): error TS2339: Property 'documentos' does not exist on type 'OrdemServico'.
+src/components/operacao/osTypes.ts(167,5): error TS2322: Type '"pendente" | "falhou" | "chegou" | "concluido" | "a caminho"' is not assignable to type '"pendente" | "falhou" | "a_caminho" | "chegou" | "concluido"'.
+  Type '"a caminho"' is not assignable to type '"pendente" | "falhou" | "a_caminho" | "chegou" | "concluido"'. Did you mean '"a_caminho"'?
+src/components/operacao/RoteirizadorWeb.tsx(334,48): error TS2352: Conversion of type '{ id: string; numeroPedido: string; cliente: string; destinatario: string; telefone: string; cep: string; enderecoCompleto: string; bairro: string; cidade: string; estado: string; latitude: number; ... 14 more ...; observacoes?: string; }' to type 'PedidoRoteirizacao' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Types of property 'prioridade' are incompatible.
+    Type '"normal"' is not comparable to type '"media" | "alta" | "baixa" | "urgente"'.
+src/components/operacao/RoteirizadorWeb.tsx(775,106): error TS2322: Type 'string' is not assignable to type '"refrigerado" | "seco"'.
+src/components/operacao/RoteirizadorWeb.tsx(1027,32): error TS2322: Type '"outline" | "blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+  Type '"blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+src/components/operacao/RoteirizadorWeb.tsx(1283,46): error TS2322: Type '"outline" | "blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+  Type '"blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+src/components/operacao/RoteirizadorWeb.tsx(1319,23): error TS2322: Type '{ id: string; numero: string; latitude: number; longitude: number; status: string; cliente: string; sequencia: number; }[]' is not assignable to type 'MapLocation[]'.
+  Type '{ id: string; numero: string; latitude: number; longitude: number; status: string; cliente: string; sequencia: number; }' is not assignable to type 'MapLocation'.
+    Types of property 'status' are incompatible.
+      Type 'string' is not assignable to type '"ocorrencia" | "em_rota" | "concluida" | "aguardando" | "atrasado"'.
+src/components/operacao/RoteirizadorWeb.tsx(1403,32): error TS2322: Type '"outline" | "blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+  Type '"blue"' is not assignable to type '"default" | "destructive" | "outline" | "secondary"'.
+src/components/operacao/statusGlobal.ts(185,29): error TS2304: Cannot find name 'rascunho'.
+src/components/portal-cliente/PerfilCliente.tsx(161,39): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/portal-cliente/PerfilCliente.tsx(237,44): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/portal-cliente/PerfilCliente.tsx(238,46): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/portal-cliente/PerfilCliente.tsx(239,41): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/portal-cliente/PerfilCliente.tsx(240,46): error TS2322: Type 'boolean' is not assignable to type 'string'.
+src/components/portal-cliente/PerfilCliente.tsx(324,49): error TS2367: This comparison appears to be unintentional because the types 'string' and 'boolean' have no overlap.
+src/components/portal-cliente/PerfilCliente.tsx(372,67): error TS2367: This comparison appears to be unintentional because the types 'string' and 'boolean' have no overlap.
+src/components/portal-cliente/PerfilCliente.tsx(373,24): error TS2367: This comparison appears to be unintentional because the types 'string' and 'boolean' have no overlap.
+src/components/portal-cliente/PerfilCliente.tsx(374,24): error TS2367: This comparison appears to be unintentional because the types 'string' and 'boolean' have no overlap.
+src/components/portal-cliente/PortalComprovantesPremium.tsx(131,56): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/components/portal-cliente/PortalComprovantesPremium.tsx(241,80): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/components/portal-cliente/PortalComprovantesPremium.tsx(409,173): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/components/portal-cliente/PortalDashboardPremium.tsx(6,45): error TS2724: '"lucide-react"' has no exported member named 'TrendingEqual'. Did you mean 'TrendingUp'?
+src/components/portal-cliente/PortalEmptyState.tsx(35,5): error TS2741: Property '$$typeof' is missing in type '(props: SVGProps<SVGSVGElement>) => Element' but required in type 'ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>'.
+src/components/portal-cliente/PortalPatio.tsx(215,13): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/portal-cliente/PortalPatio.tsx(222,13): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/portal-cliente/PortalPatio.tsx(229,13): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/portal-cliente/PortalPatio.tsx(236,13): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/portal-cliente/PortalRelatoriosPremium.tsx(84,9): error TS2554: Expected 3-4 arguments, but got 2.
+src/components/prestadores/PrestadoresLista.tsx(114,32): error TS2339: Property 'documentos' does not exist on type 'PrestadorForm'.
+src/components/prestadores/PrestadoresLista.tsx(115,40): error TS2339: Property 'contatosEmergencia' does not exist on type 'PrestadorForm'.
+src/components/recrutamento/banco-talentos/TalentProfile.tsx(75,26): error TS2304: Cannot find name 'User'.
+src/components/recrutamento/banco-talentos/TalentProfile.tsx(161,63): error TS2304: Cannot find name 'User'.
+src/components/recrutamento/NovaOperacaoRI.tsx(71,9): error TS2353: Object literal may only specify known properties, and 'pneumaticoKm' does not exist in type 'SetStateAction<{ nomeOperacao: string; cliente: string; regiaoCarregamento: string; tipoVeiculo: string; capacidadeKg: string; capacidadeM3: string; valorSaida: number; kmFranquia: number; valorKmAdicional: number; ... 18 more ...; observacoes: string; }>'.
+src/components/recrutamento/OperacoesRI.tsx(106,5): error TS2561: Object literal may only specify known properties, but 'aprobados' does not exist in type 'Operacao'. Did you mean to write 'aprovados'?
+src/components/recrutamento/OperacoesRI.tsx(132,5): error TS2561: Object literal may only specify known properties, but 'aprobados' does not exist in type 'Operacao'. Did you mean to write 'aprovados'?
+src/components/recrutamento/OperacoesRI.tsx(159,5): error TS2353: Object literal may only specify known properties, and 'valor' does not exist in type 'Partial<Operacao> | (() => Partial<Operacao>)'.
+src/components/recrutamento/OperacoesRI.tsx(250,59): error TS2339: Property 'valor' does not exist on type 'Partial<Operacao>'.
+src/components/recrutamento/OperacoesRI.tsx(299,101): error TS2353: Object literal may only specify known properties, and 'valor' does not exist in type 'SetStateAction<Partial<Operacao>>'.
+src/components/recrutamento/OperacoesRI.tsx(454,128): error TS2339: Property 'valor' does not exist on type 'Operacao'.
+src/components/recrutamento/OperacoesRI.tsx(512,110): error TS2339: Property 'valor' does not exist on type 'Operacao'.
+src/components/recrutamento/OperacoesRI.tsx(647,61): error TS2339: Property 'valor' does not exist on type 'Operacao'.
+src/components/recrutamento/OperacoesRI.tsx(838,66): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/recrutamento/OperacoesRI.tsx(838,82): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/components/recrutamento/OperacoesRI.tsx(838,92): error TS2339: Property 'label' does not exist on type 'string'.
+src/components/recrutamento/OperacoesRI.tsx(932,101): error TS2339: Property 'valor' does not exist on type 'Partial<Operacao>'.
+src/components/recrutamento/OperacoesRI.tsx(932,208): error TS2353: Object literal may only specify known properties, and 'valor' does not exist in type 'SetStateAction<Partial<Operacao>>'.
+src/components/recrutamento/whatsapp-crm/WhatsAppCRMLayout.tsx(23,57): error TS2339: Property 'notificacoes' does not exist on type 'WhatsAppCRMState'.
+src/components/relatorios/RelatoriosEnterprise.tsx(233,36): error TS2339: Property 'getNumberOfPages' does not exist on type '{ events: PubSub; scaleFactor: number; pageSize: { width: number; getWidth: () => number; height: number; getHeight: () => number; }; pages: number[]; getEncryptor(objectId: number): (data: string) => string; }'.
+src/components/relatorios/RelatoriosEnterprise.tsx(301,27): error TS2551: Property 'numeroOc' does not exist on type 'ExtratoOS'. Did you mean 'numero'?
+src/components/relatorios/RelatoriosEnterprise.tsx(301,41): error TS2339: Property 'id' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(303,38): error TS2551: Property 'tipo_veiculo' does not exist on type 'ExtratoOS'. Did you mean 'tipoVeiculo'?
+src/components/relatorios/RelatoriosEnterprise.tsx(309,15): error TS2339: Property 'diaria' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(311,17): error TS2339: Property 'kmTotal' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(312,16): error TS2339: Property 'kmTotal' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(312,37): error TS2339: Property 'kmTotal' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(312,49): error TS2339: Property 'kmExcedente' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(313,22): error TS2339: Property 'placa' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(314,20): error TS2339: Property 'observacao' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(358,23): error TS2339: Property 'diaria' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(359,24): error TS2339: Property 'kmTotal' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(360,28): error TS2339: Property 'kmExcedente' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(361,26): error TS2339: Property 'valorKm' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(368,19): error TS2339: Property 'placa' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(370,24): error TS2339: Property 'observacao' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(371,32): error TS2339: Property 'horarioChegada' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(372,30): error TS2339: Property 'horarioSaida' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(378,19): error TS2551: Property 'numeroOc' does not exist on type 'ExtratoOS'. Did you mean 'numero'?
+src/components/relatorios/RelatoriosEnterprise.tsx(379,17): error TS2339: Property 'obs' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(507,27): error TS2551: Property 'valorBasePrestador' does not exist on type 'PrestadorLinha'. Did you mean 'valorPrestador'?
+src/components/relatorios/RelatoriosEnterprise.tsx(569,64): error TS2304: Cannot find name 'Cliente'.
+src/components/relatorios/RelatoriosEnterprise.tsx(851,39): error TS2339: Property 'id' does not exist on type 'ExtratoOS'.
+src/components/relatorios/RelatoriosEnterprise.tsx(1377,52): error TS2339: Property 'cpfCnpj' does not exist on type 'ExtratoPrestador'.
+src/components/relatorios/RelatoriosEnterprise.tsx(1377,76): error TS2339: Property 'tipo' does not exist on type 'ExtratoPrestador'.
+src/config/nomenclatura.ts(53,7): error TS2322: Type '"Ordem de Carregamento"' is not assignable to type '"Ordem de Servi+ºo"'.
+src/config/nomenclatura.ts(54,7): error TS2322: Type '"OC"' is not assignable to type '"OS"'.
+src/contexts/AuthContext.tsx(86,15): error TS2339: Property 'data' does not exist on type '{}'.
+src/contexts/AuthContext.tsx(86,31): error TS2339: Property 'error' does not exist on type '{}'.
+src/contexts/AuthContext.tsx(87,9): error TS2345: Argument of type 'PostgrestFilterBuilder<any, any, any, { papel: any; tenants: { nome: any; }[]; }[], "tenant_usuarios", unknown, "GET">' is not assignable to parameter of type 'Promise<unknown>'.
+  Type 'PostgrestFilterBuilder<any, any, any, { papel: any; tenants: { nome: any; }[]; }[], "tenant_usuarios", unknown, "GET">' is missing the following properties from type 'Promise<unknown>': catch, finally, [Symbol.toStringTag]
+src/contexts/AuthContext.tsx(204,20): error TS2367: This comparison appears to be unintentional because the types '"INITIAL_SESSION" | "PASSWORD_RECOVERY" | "SIGNED_IN" | "TOKEN_REFRESHED" | "USER_UPDATED" | "MFA_CHALLENGE_VERIFIED"' and '"TOKEN_REFRESH_FAILED"' have no overlap.
+src/contexts/TenantContext.tsx(53,93): error TS2367: This comparison appears to be unintentional because the types '"PASSWORD_RECOVERY" | "TOKEN_REFRESHED" | "USER_UPDATED" | "MFA_CHALLENGE_VERIFIED"' and '"TOKEN_REFRESH_FAILED"' have no overlap.
+src/hooks/portalCliente/index.ts(2,15): error TS2724: '"./usePortalRealtime"' has no exported member named 'UsePortalRealtimeOptions'. Did you mean 'usePortalRealtime'?
+src/hooks/portalCliente/usePortalRealtime.ts(63,17): error TS2367: This comparison appears to be unintentional because the types 'REALTIME_SUBSCRIBE_STATES' and '"subscribed"' have no overlap.
+src/hooks/useEscala.ts(158,53): error TS2345: Argument of type 'Record<string, any>' is not assignable to parameter of type 'NovaAlocacaoEscala'.
+  Type 'Record<string, any>' is missing the following properties from type 'NovaAlocacaoEscala': data_escala, tipo_veiculo
+src/lib/dbMappers.ts(753,42): error TS2551: Property 'razaoSocial' does not exist on type 'ClienteRow'. Did you mean 'razao_social'?
+src/lib/dbMappers.ts(754,44): error TS2551: Property 'nomeFantasia' does not exist on type 'ClienteRow'. Did you mean 'nome_fantasia'?
+src/lib/dbMappers.ts(767,52): error TS2551: Property 'contatoPrincipal' does not exist on type 'ClienteRow'. Did you mean 'contato_principal'?
+src/lib/dbMappers.ts(775,37): error TS2551: Property 'numOsMes' does not exist on type 'ClienteRow'. Did you mean 'num_os_mes'?
+src/lib/dbMappers.ts(776,64): error TS2551: Property 'responsavelOperacional' does not exist on type 'ClienteRow'. Did you mean 'responsavel_operacional'?
+src/lib/dbMappers.ts(777,62): error TS2551: Property 'responsavelFinanceiro' does not exist on type 'ClienteRow'. Did you mean 'responsavel_financeiro'?
+src/lib/dbMappers.ts(778,60): error TS2551: Property 'responsavelComercial' does not exist on type 'ClienteRow'. Did you mean 'responsavel_comercial'?
+src/lib/dbMappers.ts(780,50): error TS2551: Property 'origemComercial' does not exist on type 'ClienteRow'. Did you mean 'origem_comercial'?
+src/lib/dbMappers.ts(781,52): error TS2551: Property 'exigeAgendamento' does not exist on type 'ClienteRow'. Did you mean 'exige_agendamento'?
+src/lib/dbMappers.ts(782,36): error TS2551: Property 'exigeSla' does not exist on type 'ClienteRow'. Did you mean 'exige_sla'?
+src/lib/dbMappers.ts(783,42): error TS2551: Property 'exigePortal' does not exist on type 'ClienteRow'. Did you mean 'exige_portal'?
+src/lib/dbMappers.ts(784,38): error TS2551: Property 'aceitaApi' does not exist on type 'ClienteRow'. Did you mean 'aceita_api'?
+src/lib/dbMappers.ts(914,16): error TS2339: Property 'seguroApolice' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(914,56): error TS2339: Property 'seguroApolice' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(916,16): error TS2339: Property 'validadeDocumental' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(916,66): error TS2339: Property 'validadeDocumental' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(917,16): error TS2339: Property 'prestadorVinculado' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(917,66): error TS2339: Property 'prestadorVinculado' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(918,16): error TS2339: Property 'unidade' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(918,43): error TS2339: Property 'unidade' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(919,16): error TS2339: Property 'custoKm' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(919,44): error TS2339: Property 'custoKm' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(920,16): error TS2339: Property 'custoDiaria' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(920,52): error TS2339: Property 'custoDiaria' does not exist on type 'Partial<VeiculoForm>'.
+src/lib/dbMappers.ts(949,42): error TS2551: Property 'tipoVeiculo' does not exist on type 'VeiculoRow'. Did you mean 'tipo_veiculo'?
+src/lib/dbMappers.ts(953,46): error TS2551: Property 'anoFabricacao' does not exist on type 'VeiculoRow'. Did you mean 'ano_fabricacao'?
+src/lib/dbMappers.ts(954,38): error TS2551: Property 'anoModelo' does not exist on type 'VeiculoRow'. Did you mean 'ano_modelo'?
+src/lib/dbMappers.ts(958,44): error TS2551: Property 'capacidadeKg' does not exist on type 'VeiculoRow'. Did you mean 'capacidade_kg'?
+src/lib/dbMappers.ts(959,44): error TS2551: Property 'capacidadeM3' does not exist on type 'VeiculoRow'. Did you mean 'capacidade_m3'?
+src/lib/dbMappers.ts(963,40): error TS2551: Property 'qtdPallets' does not exist on type 'VeiculoRow'. Did you mean 'qtd_pallets'?
+src/lib/dbMappers.ts(964,48): error TS2551: Property 'tipoCarroceria' does not exist on type 'VeiculoRow'. Did you mean 'tipo_carroceria'?
+src/lib/dbMappers.ts(965,60): error TS2551: Property 'classificacaoTermica' does not exist on type 'VeiculoRow'. Did you mean 'classificacao_termica'?
+src/lib/dbMappers.ts(967,3): error TS2353: Object literal may only specify known properties, and 'seguroApolice' does not exist in type 'VeiculoForm'.
+src/lib/dbMappers.ts(967,46): error TS2551: Property 'seguroApolice' does not exist on type 'VeiculoRow'. Did you mean 'seguro_apolice'?
+src/lib/dbMappers.ts(969,56): error TS2551: Property 'validadeDocumental' does not exist on type 'VeiculoRow'. Did you mean 'validade_documental'?
+src/lib/dbMappers.ts(970,56): error TS2551: Property 'prestadorVinculado' does not exist on type 'VeiculoRow'. Did you mean 'prestador_vinculado'?
+src/lib/dbMappers.ts(972,34): error TS2551: Property 'custoKm' does not exist on type 'VeiculoRow'. Did you mean 'custo_km'?
+src/lib/dbMappers.ts(973,42): error TS2551: Property 'custoDiaria' does not exist on type 'VeiculoRow'. Did you mean 'custo_diaria'?
+src/lib/dbMappers.ts(1154,14): error TS2551: Property 'clienteId' does not exist on type 'Partial<OSForm>'. Did you mean 'cliente'?
+src/lib/dbMappers.ts(1154,45): error TS2551: Property 'clienteId' does not exist on type 'Partial<OSForm>'. Did you mean 'cliente'?
+src/lib/dbMappers.ts(1213,14): error TS2339: Property 'veiculoPlaca' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1213,51): error TS2339: Property 'veiculoPlaca' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1218,18): error TS2339: Property 'dataAgendada' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1218,65): error TS2339: Property 'dataAgendada' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1219,18): error TS2339: Property 'observacaoAgendamento' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1219,76): error TS2339: Property 'observacaoAgendamento' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1253,18): error TS2339: Property 'recebedorNome' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1253,60): error TS2339: Property 'recebedorNome' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1254,18): error TS2339: Property 'recebedorDocumento' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1254,70): error TS2339: Property 'recebedorDocumento' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1255,16): error TS2339: Property 'localizacaoEntregaJson' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1255,75): error TS2339: Property 'localizacaoEntregaJson' does not exist on type 'Partial<OSForm>'.
+src/lib/dbMappers.ts(1332,42): error TS2551: Property 'centroCusto' does not exist on type 'OSRow'. Did you mean 'centro_custo'?
+src/lib/dbMappers.ts(1333,50): error TS2551: Property 'orcamentoOrigem' does not exist on type 'OSRow'. Did you mean 'orcamento_origem'?
+src/lib/dbMappers.ts(1335,48): error TS2551: Property 'veiculoAlocado' does not exist on type 'OSRow'. Did you mean 'veiculo_alocado'?
+src/lib/dbMappers.ts(1336,44): error TS2551: Property 'tipoOperacao' does not exist on type 'OSRow'. Did you mean 'tipo_operacao'?
+src/lib/dbMappers.ts(1341,40): error TS2551: Property 'refCliente' does not exist on type 'OSRow'. Did you mean 'ref_cliente'?
+src/lib/dbMappers.ts(1342,46): error TS2551: Property 'pedidoInterno' does not exist on type 'OSRow'. Did you mean 'pedido_interno'?
+src/lib/dbMappers.ts(1343,42): error TS2551: Property 'slaOperacao' does not exist on type 'OSRow'. Did you mean 'sla_operacao'?
+src/lib/dbMappers.ts(1344,54): error TS2551: Property 'observacoesGerais' does not exist on type 'OSRow'. Did you mean 'observacoes_gerais'?
+src/lib/dbMappers.ts(1345,64): error TS2551: Property 'comprovanteObrigatorio' does not exist on type 'OSRow'. Did you mean 'comprovante_obrigatorio'?
+src/lib/dbMappers.ts(1346,48): error TS2551: Property 'cteObrigatorio' does not exist on type 'OSRow'. Did you mean 'cte_obrigatorio'?
+src/lib/dbMappers.ts(1347,48): error TS2551: Property 'xmlObrigatorio' does not exist on type 'OSRow'. Did you mean 'xml_obrigatorio'?
+src/lib/dbMappers.ts(1348,52): error TS2551: Property 'operacaoDedicada' does not exist on type 'OSRow'. Did you mean 'operacao_dedicada'?
+src/lib/dbMappers.ts(1350,3): error TS2353: Object literal may only specify known properties, and 'carga' does not exist in type 'OSForm'.
+src/lib/dbMappers.ts(1351,35): error TS2551: Property 'cargaTipo' does not exist on type 'OSRow'. Did you mean 'carga_tipo'?
+src/lib/dbMappers.ts(1352,45): error TS2551: Property 'cargaDescricao' does not exist on type 'OSRow'. Did you mean 'carga_descricao'?
+src/lib/dbMappers.ts(1357,50): error TS2551: Property 'valorDeclarado' does not exist on type 'OSRow'. Did you mean 'valor_declarado'?
+src/lib/dbMappers.ts(1358,38): error TS2551: Property 'qtdNotas' does not exist on type 'OSRow'. Did you mean 'qtd_notas'?
+src/lib/dbMappers.ts(1359,49): error TS2551: Property 'cargaRefrigerada' does not exist on type 'OSRow'. Did you mean 'carga_refrigerada'?
+src/lib/dbMappers.ts(1360,43): error TS2551: Property 'cargaAjudante' does not exist on type 'OSRow'. Did you mean 'carga_ajudante'?
+src/lib/dbMappers.ts(1361,39): error TS2551: Property 'cargaFragil' does not exist on type 'OSRow'. Did you mean 'carga_fragil'?
+src/lib/dbMappers.ts(1362,47): error TS2551: Property 'cargaEmpilhavel' does not exist on type 'OSRow'. Did you mean 'carga_empilhavel'?
+src/lib/dbMappers.ts(1363,37): error TS2551: Property 'cargaRisco' does not exist on type 'OSRow'. Did you mean 'carga_risco'?
+src/lib/dbMappers.ts(1364,55): error TS2551: Property 'conferenciasObrigatoria' does not exist on type 'OSRow'. Did you mean 'conferencia_obrigatoria'?
+src/lib/dbMappers.ts(1365,55): error TS2551: Property 'equipamentoObrigatorio' does not exist on type 'OSRow'. Did you mean 'equipamento_obrigatorio'?
+src/lib/dbMappers.ts(1366,48): error TS2551: Property 'condicaoTransporte' does not exist on type 'OSRow'. Did you mean 'condicao_transporte'?
+src/lib/dbMappers.ts(1375,42): error TS2339: Property 'veiculoTipo' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1376,58): error TS2551: Property 'veiculoSubcategoria' does not exist on type 'OSRow'. Did you mean 'veiculo_subcategoria'?
+src/lib/dbMappers.ts(1377,54): error TS2551: Property 'veiculoCarroceria' does not exist on type 'OSRow'. Did you mean 'veiculo_carroceria'?
+src/lib/dbMappers.ts(1378,48): error TS2551: Property 'veiculoTermica' does not exist on type 'OSRow'. Did you mean 'veiculo_termica'?
+src/lib/dbMappers.ts(1379,22): error TS2339: Property 'placa_alocada' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1379,44): error TS2339: Property 'veiculo_placa' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1379,66): error TS2339: Property 'veiculoPlaca' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1380,38): error TS2551: Property 'isReserva' does not exist on type 'OSRow'. Did you mean 'is_reserva'?
+src/lib/dbMappers.ts(1381,56): error TS2551: Property 'retornoObrigatorio' does not exist on type 'OSRow'. Did you mean 'retorno_obrigatorio'?
+src/lib/dbMappers.ts(1383,22): error TS2339: Property 'data_agendada' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1383,44): error TS2339: Property 'dataAgendada' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1384,31): error TS2339: Property 'observacao_agendamento' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1384,62): error TS2339: Property 'observacaoAgendamento' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1385,48): error TS2551: Property 'dataProgramada' does not exist on type 'OSRow'. Did you mean 'data_programada'?
+src/lib/dbMappers.ts(1386,54): error TS2551: Property 'janelaOperacional' does not exist on type 'OSRow'. Did you mean 'janela_operacional'?
+src/lib/dbMappers.ts(1387,48): error TS2551: Property 'previsaoInicio' does not exist on type 'OSRow'. Did you mean 'previsao_inicio'?
+src/lib/dbMappers.ts(1388,50): error TS2551: Property 'previsaoTermino' does not exist on type 'OSRow'. Did you mean 'previsao_termino'?
+src/lib/dbMappers.ts(1389,40): error TS2551: Property 'tipoEscala' does not exist on type 'OSRow'. Did you mean 'tipo_escala'?
+src/lib/dbMappers.ts(1390,64): error TS2551: Property 'instrucoesOperacionais' does not exist on type 'OSRow'. Did you mean 'instrucoes_operacionais'?
+src/lib/dbMappers.ts(1391,50): error TS2551: Property 'observacaoTorre' does not exist on type 'OSRow'. Did you mean 'observacao_torre'?
+src/lib/dbMappers.ts(1392,48): error TS2551: Property 'tabelaAplicada' does not exist on type 'OSRow'. Did you mean 'tabela_aplicada'?
+src/lib/dbMappers.ts(1393,44): error TS2551: Property 'valorCliente' does not exist on type 'OSRow'. Did you mean 'valor_cliente'?
+src/lib/dbMappers.ts(1394,48): error TS2551: Property 'custoPrestador' does not exist on type 'OSRow'. Did you mean 'custo_prestador'?
+src/lib/dbMappers.ts(1399,54): error TS2551: Property 'reembolsoPrevisto' does not exist on type 'OSRow'. Did you mean 'reembolso_previsto'?
+src/lib/dbMappers.ts(1400,46): error TS2551: Property 'contaContabil' does not exist on type 'OSRow'. Did you mean 'conta_contabil'?
+src/lib/dbMappers.ts(1401,49): error TS2551: Property 'centroCustoFin' does not exist on type 'OSRow'. Did you mean 'centro_custo_fin'?
+src/lib/dbMappers.ts(1402,54): error TS2551: Property 'statusFaturamento' does not exist on type 'OSRow'. Did you mean 'status_faturamento'?
+src/lib/dbMappers.ts(1403,50): error TS2551: Property 'statusPagamento' does not exist on type 'OSRow'. Did you mean 'status_pagamento'?
+src/lib/dbMappers.ts(1404,54): error TS2551: Property 'emailDestinatario' does not exist on type 'OSRow'. Did you mean 'email_destinatario'?
+src/lib/dbMappers.ts(1405,60): error TS2551: Property 'whatsappDestinatario' does not exist on type 'OSRow'. Did you mean 'whatsapp_destinatario'?
+src/lib/dbMappers.ts(1406,62): error TS2551: Property 'notificarDestinatario' does not exist on type 'OSRow'. Did you mean 'notificar_destinatario'?
+src/lib/dbMappers.ts(1407,48): error TS2551: Property 'eventosTracker' does not exist on type 'OSRow'. Did you mean 'eventos_tracker'?
+src/lib/dbMappers.ts(1408,23): error TS2339: Property 'recebedor_nome' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1408,46): error TS2339: Property 'recebedorNome' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1409,28): error TS2339: Property 'recebedor_documento' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1409,56): error TS2339: Property 'recebedorDocumento' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1410,32): error TS2339: Property 'localizacao_entrega_json' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1410,65): error TS2339: Property 'localizacaoEntregaJson' does not exist on type 'OSRow'.
+src/lib/dbMappers.ts(1411,46): error TS2551: Property 'faixaAplicada' does not exist on type 'OSRow'. Did you mean 'faixa_aplicada'?
+src/lib/dbMappers.ts(1412,46): error TS2551: Property 'lucroEstimado' does not exist on type 'OSRow'. Did you mean 'lucro_estimado'?
+src/lib/dbMappers.ts(1413,42): error TS2551: Property 'margemLucro' does not exist on type 'OSRow'. Did you mean 'margem_lucro'?
+src/lib/dbMappers.ts(1414,50): error TS2551: Property 'veiculoSugerido' does not exist on type 'OSRow'. Did you mean 'veiculo_sugerido'?
+src/lib/dbMappers.ts(1415,69): error TS2551: Property 'instrucoesOperacionaisOS' does not exist on type 'OSRow'. Did you mean 'instrucoes_operacionais_os'?
+src/lib/dbMappers.ts(1611,42): error TS2551: Property 'clienteCnpj' does not exist on type 'OrcamentoRow'. Did you mean 'cliente_cnpj'?
+src/lib/dbMappers.ts(1613,42): error TS2551: Property 'centroCusto' does not exist on type 'OrcamentoRow'. Did you mean 'centro_custo'?
+src/lib/dbMappers.ts(1615,42): error TS2551: Property 'dataEmissao' does not exist on type 'OrcamentoRow'. Did you mean 'data_emissao'?
+src/lib/dbMappers.ts(1617,44): error TS2551: Property 'tipoOperacao' does not exist on type 'OrcamentoRow'. Did you mean 'tipo_operacao'?
+src/lib/dbMappers.ts(1620,46): error TS2551: Property 'pedidoInterno' does not exist on type 'OrcamentoRow'. Did you mean 'pedido_interno'?
+src/lib/dbMappers.ts(1621,54): error TS2551: Property 'observacoesGerais' does not exist on type 'OrcamentoRow'. Did you mean 'observacoes_gerais'?
+src/lib/dbMappers.ts(1623,48): error TS2551: Property 'cargaDescricao' does not exist on type 'OrcamentoRow'. Did you mean 'carga_descricao'?
+src/lib/dbMappers.ts(1624,44): error TS2551: Property 'cargaVolumes' does not exist on type 'OrcamentoRow'. Did you mean 'carga_volumes'?
+src/lib/dbMappers.ts(1625,38): error TS2551: Property 'cargaPeso' does not exist on type 'OrcamentoRow'. Did you mean 'carga_peso'?
+src/lib/dbMappers.ts(1626,44): error TS2551: Property 'cargaCubagem' does not exist on type 'OrcamentoRow'. Did you mean 'carga_cubagem'?
+src/lib/dbMappers.ts(1627,44): error TS2551: Property 'cargaPallets' does not exist on type 'OrcamentoRow'. Did you mean 'carga_pallets'?
+src/lib/dbMappers.ts(1628,59): error TS2551: Property 'cargaValorDeclarado' does not exist on type 'OrcamentoRow'. Did you mean 'carga_valor_declarado'?
+src/lib/dbMappers.ts(1629,52): error TS2551: Property 'cargaRefrigerado' does not exist on type 'OrcamentoRow'. Did you mean 'carga_refrigerado'?
+src/lib/dbMappers.ts(1630,46): error TS2551: Property 'cargaAjudante' does not exist on type 'OrcamentoRow'. Did you mean 'carga_ajudante'?
+src/lib/dbMappers.ts(1631,52): error TS2551: Property 'cargaObservacoes' does not exist on type 'OrcamentoRow'. Did you mean 'carga_observacoes'?
+src/lib/dbMappers.ts(1632,42): error TS2339: Property 'veiculoTipo' does not exist on type 'OrcamentoRow'.
+src/lib/dbMappers.ts(1633,58): error TS2551: Property 'veiculoSubcategoria' does not exist on type 'OrcamentoRow'. Did you mean 'veiculo_subcategoria'?
+src/lib/dbMappers.ts(1634,54): error TS2551: Property 'veiculoCarroceria' does not exist on type 'OrcamentoRow'. Did you mean 'veiculo_carroceria'?
+src/lib/dbMappers.ts(1635,38): error TS2551: Property 'valorBase' does not exist on type 'OrcamentoRow'. Did you mean 'valor_base'?
+src/lib/dbMappers.ts(1639,40): error TS2551: Property 'valorFinal' does not exist on type 'OrcamentoRow'. Did you mean 'valor_final'?
+src/lib/dbMappers.ts(1640,46): error TS2551: Property 'custoEstimado' does not exist on type 'OrcamentoRow'. Did you mean 'custo_estimado'?
+src/lib/dbMappers.ts(1642,3): error TS2353: Object literal may only specify known properties, and 'distancia_rota' does not exist in type 'OrcamentoForm'.
+src/lib/dbMappers.ts(1762,38): error TS2551: Property 'clienteId' does not exist on type 'ReceberRow'. Did you mean 'cliente_id'?
+src/lib/dbMappers.ts(1763,42): error TS2551: Property 'clienteNome' does not exist on type 'ReceberRow'. Did you mean 'cliente_nome'?
+src/lib/dbMappers.ts(1764,52): error TS2551: Property 'clienteDocumento' does not exist on type 'ReceberRow'. Did you mean 'cliente_documento'?
+src/lib/dbMappers.ts(1767,44): error TS2551: Property 'osVinculadas' does not exist on type 'ReceberRow'. Did you mean 'os_vinculadas'?
+src/lib/dbMappers.ts(1769,54): error TS2551: Property 'contratoVinculado' does not exist on type 'ReceberRow'. Did you mean 'contrato_vinculado'?
+src/lib/dbMappers.ts(1770,54): error TS2551: Property 'propostaVinculada' does not exist on type 'ReceberRow'. Did you mean 'proposta_vinculada'?
+src/lib/dbMappers.ts(1771,40): error TS2551: Property 'valorBruto' does not exist on type 'ReceberRow'. Did you mean 'valor_bruto'?
+src/lib/dbMappers.ts(1775,44): error TS2551: Property 'valorLiquido' does not exist on type 'ReceberRow'. Did you mean 'valor_liquido'?
+src/lib/dbMappers.ts(1776,42): error TS2551: Property 'dataEmissao' does not exist on type 'ReceberRow'. Did you mean 'data_emissao'?
+src/lib/dbMappers.ts(1777,48): error TS2551: Property 'dataVencimento' does not exist on type 'ReceberRow'. Did you mean 'data_vencimento'?
+src/lib/dbMappers.ts(1778,46): error TS2551: Property 'dataPagamento' does not exist on type 'ReceberRow'. Did you mean 'data_pagamento'?
+src/lib/dbMappers.ts(1779,50): error TS2551: Property 'dataRecebimento' does not exist on type 'ReceberRow'. Did you mean 'data_recebimento'?
+src/lib/dbMappers.ts(1781,52): error TS2551: Property 'formaRecebimento' does not exist on type 'ReceberRow'. Did you mean 'forma_recebimento'?
+src/lib/dbMappers.ts(1782,55): error TS2551: Property 'contaFinanceiraId' does not exist on type 'ReceberRow'. Did you mean 'conta_financeira_id'?
+src/lib/dbMappers.ts(1784,56): error TS2551: Property 'quantidadeParcelas' does not exist on type 'ReceberRow'. Did you mean 'quantidade_parcelas'?
+src/lib/dbMappers.ts(1917,44): error TS2551: Property 'fornecedorId' does not exist on type 'PagarRow'. Did you mean 'fornecedor_id'?
+src/lib/dbMappers.ts(1918,48): error TS2551: Property 'fornecedorNome' does not exist on type 'PagarRow'. Did you mean 'fornecedor_nome'?
+src/lib/dbMappers.ts(1919,58): error TS2551: Property 'fornecedorDocumento' does not exist on type 'PagarRow'. Did you mean 'fornecedor_documento'?
+src/lib/dbMappers.ts(1921,46): error TS2551: Property 'tipoDocumento' does not exist on type 'PagarRow'. Did you mean 'tipo_documento'?
+src/lib/dbMappers.ts(1922,42): error TS2551: Property 'categoriaId' does not exist on type 'PagarRow'. Did you mean 'categoria_id'?
+src/lib/dbMappers.ts(1923,45): error TS2551: Property 'planoContaId' does not exist on type 'PagarRow'. Did you mean 'plano_conta_id'?
+src/lib/dbMappers.ts(1924,55): error TS2551: Property 'centroResultadoId' does not exist on type 'PagarRow'. Did you mean 'centro_resultado_id'?
+src/lib/dbMappers.ts(1925,38): error TS2551: Property 'unidadeId' does not exist on type 'PagarRow'. Did you mean 'unidade_id'?
+src/lib/dbMappers.ts(1926,46): error TS2551: Property 'valorOriginal' does not exist on type 'PagarRow'. Did you mean 'valor_original'?
+src/lib/dbMappers.ts(1930,40): error TS2551: Property 'valorFinal' does not exist on type 'PagarRow'. Did you mean 'valor_final'?
+src/lib/dbMappers.ts(1931,42): error TS2551: Property 'dataEmissao' does not exist on type 'PagarRow'. Did you mean 'data_emissao'?
+src/lib/dbMappers.ts(1932,48): error TS2551: Property 'dataVencimento' does not exist on type 'PagarRow'. Did you mean 'data_vencimento'?
+src/lib/dbMappers.ts(1933,46): error TS2551: Property 'dataPagamento' does not exist on type 'PagarRow'. Did you mean 'data_pagamento'?
+src/lib/dbMappers.ts(1934,51): error TS2551: Property 'contaPagadoraId' does not exist on type 'PagarRow'. Did you mean 'conta_pagadora_id'?
+src/lib/dbMappers.ts(1935,48): error TS2551: Property 'formaPagamento' does not exist on type 'PagarRow'. Did you mean 'forma_pagamento'?
+src/lib/dbMappers.ts(1936,44): error TS2551: Property 'numeroBoleto' does not exist on type 'PagarRow'. Did you mean 'numero_boleto'?
+src/lib/dbMappers.ts(1937,44): error TS2551: Property 'codigoBarras' does not exist on type 'PagarRow'. Did you mean 'codigo_barras'?
+src/lib/dbMappers.ts(1939,42): error TS2551: Property 'despesaFixa' does not exist on type 'PagarRow'. Did you mean 'despesa_fixa'?
+src/lib/dbMappers.ts(1941,56): error TS2551: Property 'quantidadeParcelas' does not exist on type 'PagarRow'. Did you mean 'quantidade_parcelas'?
+src/lib/dbMappers.ts(1942,54): error TS2551: Property 'contratoVinculado' does not exist on type 'PagarRow'. Did you mean 'contrato_vinculado'?
+src/lib/dbMappers.ts(1943,42): error TS2551: Property 'osVinculada' does not exist on type 'PagarRow'. Did you mean 'os_vinculada'?
+src/lib/dbMappers.ts(2000,36): error TS2551: Property 'modeloId' does not exist on type 'ContratoRow'. Did you mean 'modelo_id'?
+src/lib/dbMappers.ts(2001,40): error TS2551: Property 'modeloNome' does not exist on type 'ContratoRow'. Did you mean 'modelo_nome'?
+src/lib/dbMappers.ts(2002,46): error TS2551: Property 'prestadorNome' does not exist on type 'ContratoRow'. Did you mean 'prestador_nome'?
+src/lib/dbMappers.ts(2003,42): error TS2551: Property 'clienteNome' does not exist on type 'ContratoRow'. Did you mean 'cliente_nome'?
+src/lib/dbMappers.ts(2067,42): error TS2551: Property 'tipoVeiculo' does not exist on type 'TabelaPrestadorRow'. Did you mean 'tipo_veiculo'?
+src/lib/dbMappers.ts(2069,42): error TS2551: Property 'valorMinimo' does not exist on type 'TabelaPrestadorRow'. Did you mean 'valor_minimo'?
+src/lib/dbMappers.ts(2070,38): error TS2551: Property 'kmIncluso' does not exist on type 'TabelaPrestadorRow'. Did you mean 'km_incluso'?
+src/lib/dbMappers.ts(2071,34): error TS2551: Property 'valorKm' does not exist on type 'TabelaPrestadorRow'. Did you mean 'valor_km'?
+src/lib/dbMappers.ts(2073,42): error TS2551: Property 'prestadorId' does not exist on type 'TabelaPrestadorRow'. Did you mean 'prestador_id'?
+src/lib/dbMappers.ts(2146,28): error TS2551: Property 'osId' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'os_id'?
+src/lib/dbMappers.ts(2147,44): error TS2551: Property 'valorCliente' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'valor_cliente'?
+src/lib/dbMappers.ts(2148,48): error TS2551: Property 'valorPrestador' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'valor_prestador'?
+src/lib/dbMappers.ts(2153,42): error TS2551: Property 'margemBruta' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'margem_bruta'?
+src/lib/dbMappers.ts(2154,46): error TS2551: Property 'margemLiquida' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'margem_liquida'?
+src/lib/dbMappers.ts(2155,63): error TS2551: Property 'percentualMargemBruta' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'percentual_margem_bruta'?
+src/lib/dbMappers.ts(2156,67): error TS2551: Property 'percentualMargemLiquida' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'percentual_margem_liquida'?
+src/lib/dbMappers.ts(2157,56): error TS2551: Property 'custosOperacionais' does not exist on type 'ComposicaoFinanceiraRow'. Did you mean 'custos_operacionais'?
+src/lib/pdf/consolidatedReports.ts(315,14): error TS2304: Cannot find name 'pedagio'.
+src/lib/sidebarData.ts(51,29): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'SidebarItem' is not assignable to type '{ children: SidebarSubItem[]; title: string; icon: LucideIcon; path: string; modulo?: string; }'.
+    Property 'children' is optional in type 'SidebarItem' but required in type '{ children: SidebarSubItem[]; title: string; icon: LucideIcon; path: string; modulo?: string; }'.
+src/lib/testes/testeDocumentos.ts(161,103): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "documentos_prestadores", unknown, "DELETE">'. Did you mean 'match'?
+src/lib/testes/testeDocumentos.ts(162,92): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "prestadores", unknown, "DELETE">'. Did you mean 'match'?
+src/lib/testes/testeDocumentos.ts(163,91): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "candidatos", unknown, "DELETE">'. Did you mean 'match'?
+src/lib/testes/testeDocumentos.ts(225,70): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "prestadores", unknown, "DELETE">'. Did you mean 'match'?
+src/lib/testes/testeTMSCompleto.ts(87,5): error TS2353: Object literal may only specify known properties, and 'carga' does not exist in type 'Partial<OrcamentoForm>'.
+src/lib/testes/testeTMSCompleto.ts(145,5): error TS2353: Object literal may only specify known properties, and 'carga' does not exist in type 'Partial<OSForm>'.
+src/lib/testes/testeTMSCompleto.ts(324,54): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, string, unknown, "DELETE">'. Did you mean 'match'?
+src/modules/recrutamento/components/automacoes/AutomacoesList.tsx(191,23): error TS2322: Type '"xs"' is not assignable to type '"default" | "icon" | "sm" | "lg"'.
+src/modules/recrutamento/components/automacoes/AutomacoesList.tsx(200,23): error TS2322: Type '"xs"' is not assignable to type '"default" | "icon" | "sm" | "lg"'.
+src/modules/recrutamento/components/documentos/CentralDocumentos.tsx(319,33): error TS2322: Type '"xs"' is not assignable to type '"default" | "icon" | "sm" | "lg"'.
+src/modules/recrutamento/components/documentos/CentralDocumentos.tsx(327,33): error TS2322: Type '"xs"' is not assignable to type '"default" | "icon" | "sm" | "lg"'.
+src/modules/recrutamento/components/documentos/CentralDocumentos.tsx(339,29): error TS2322: Type '"xs"' is not assignable to type '"default" | "icon" | "sm" | "lg"'.
+src/modules/recrutamento/components/enterprise-kanban/CadastrarInteressadoModal.tsx(84,9): error TS2322: Type 'string[]' is not assignable to type 'TagType[]'.
+  Type 'string' is not assignable to type 'TagType'.
+src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts(647,18): error TS2304: Cannot find name 'getLocalData'.
+src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts(651,7): error TS2304: Cannot find name 'persistLocal'.
+src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts(761,18): error TS2304: Cannot find name 'getLocalData'.
+src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts(763,5): error TS2304: Cannot find name 'persistLocal'.
+src/modules/recrutamento/components/enterprise-kanban/KanbanCard.tsx(173,11): error TS2339: Property 'dataTransfer' does not exist on type 'MouseEvent | TouchEvent | PointerEvent'.
+  Property 'dataTransfer' does not exist on type 'MouseEvent'.
+src/modules/recrutamento/components/enterprise-kanban/KanbanColumn.tsx(146,22): error TS2304: Cannot find name 'onLoadMore'.
+src/modules/recrutamento/components/OperacaoFormLogistica.tsx(59,12): error TS2345: Argument of type '{ financeiro: FinanceiroOperacaoExpandido; logistica: LogisticaOperacao; id: string; nome: string; cliente: string; regiao: string; ... 23 more ...; createdBy: string; }' is not assignable to parameter of type 'Operacao'.
+  Types of property 'financeiro' are incompatible.
+    Type 'FinanceiroOperacaoExpandido' is missing the following properties from type 'FinanceiroOperacao': percentualPrestador, valorKmExcedente, franquiaKmIda, franquiaKmVolta, percentualKmPrestador
+src/modules/recrutamento/components/OperacaoFormLogistica.tsx(522,40): error TS2739: Type 'FinanceiroOperacaoExpandido' is missing the following properties from type 'FinanceiroOperacao': percentualPrestador, valorKmExcedente, franquiaKmIda, franquiaKmVolta, percentualKmPrestador
+src/modules/recrutamento/hooks/useDashboardRecrutamento.ts(306,34): error TS2339: Property 'veiculos' does not exist on type '{ score_interno: any; regiao_principal: any; status: any; nome_completo: any; qtd_operacoes: any; id: any; tipo_parceiro: any; }'.
+src/modules/recrutamento/pages/PaginaNovaOperacao.tsx(198,5): error TS2353: Object literal may only specify known properties, and 'produto' does not exist in type 'Partial<Operacao> | (() => Partial<Operacao>)'.
+src/modules/recrutamento/pages/PaginaNovaOperacao.tsx(450,66): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/modules/recrutamento/pages/PaginaNovaOperacao.tsx(450,82): error TS2551: Property 'value' does not exist on type 'string'. Did you mean 'valueOf'?
+src/modules/recrutamento/pages/PaginaNovaOperacao.tsx(450,92): error TS2339: Property 'label' does not exist on type 'string'.
+src/modules/recrutamento/services/conversaoCandidatoService.ts(35,3): error TS2322: Type '{ id: string; prestadorId: string; tipo: "outro" | TipoDocumento; status: StatusDocumento; url: string; nomeArquivo: string; dataEnvio: string; dataValidade: string; dataAprovacao: string; aprovadoPor: string; observacao: string; versao: number; }[]' is not assignable to type 'DocumentoPrestador[]'.
+  Type '{ id: string; prestadorId: string; tipo: "outro" | TipoDocumento; status: StatusDocumento; url: string; nomeArquivo: string; dataEnvio: string; dataValidade: string; dataAprovacao: string; aprovadoPor: string; observacao: string; versao: number; }' is not assignable to type 'DocumentoPrestador'.
+    Types of property 'tipo' are incompatible.
+      Type '"outro" | TipoDocumento' is not assignable to type 'TipoDocumento'.
+        Type '"outro"' is not assignable to type 'TipoDocumento'.
+src/modules/recrutamento/services/conversaoCandidatoService.ts(150,9): error TS2322: Type 'string' is not assignable to type 'OrigemCadastro'.
+src/modules/recrutamento/services/conversaoCandidatoService.ts(155,9): error TS2322: Type 'string' is not assignable to type 'CanalCaptacao'.
+src/modules/recrutamento/services/operacoesService.ts(95,3): error TS2739: Type '{ valorCliente: number; valorPrestador: number; percentualImposto: number; percentualSeguro: number; percentualPrestador: number; margemTransportadora: number; valorImposto: number; valorSeguro: number; ... 9 more ...; dataPagamento: string; }' is missing the following properties from type 'FinanceiroOperacao': franquiaKmIda, franquiaKmVolta, kmExcedenteCliente, kmExcedentePrestador, percentualKmPrestador
+src/pages/AcceptInvite.tsx(72,12): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, any, "buscar_usuario_por_email", null, "RPC">'. Did you mean 'match'?
+src/pages/AppPrestador.tsx(158,27): error TS2339: Property 'erro' does not exist on type 'ResultadoOperacao'.
+src/pages/AppPrestador.tsx(174,27): error TS2339: Property 'erro' does not exist on type 'ResultadoOperacao'.
+src/pages/AppPrestador.tsx(194,27): error TS2339: Property 'erro' does not exist on type 'ResultadoOperacao'.
+src/pages/CentralIA.tsx(1066,109): error TS2322: Type 'string' is not assignable to type 'StatusConhecimento'.
+src/pages/Combustiveis.tsx(265,34): error TS2304: Cannot find name 'CheckCircle'.
+src/pages/Combustiveis.tsx(318,99): error TS2304: Cannot find name 'Sparkles'.
+src/pages/DevTesteTMS.tsx(7,15): error TS2459: Module '"@/lib/testes/testeTMSCompleto"' declares 'ResultadoTeste' locally, but it is not exported.
+src/pages/DevTesteTMS.tsx(120,9): error TS2322: Type '"erro" | "criado" | "atualizado" | "ja_existente"' is not assignable to type '"criado" | "atualizado" | "ja_existente"'.
+  Type '"erro"' is not assignable to type '"criado" | "atualizado" | "ja_existente"'.
+src/pages/DevTesteTMS.tsx(349,80): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/pages/PortalCliente.tsx(10,54): error TS2724: '"lucide-react"' has no exported member named 'TrendingEqual'. Did you mean 'TrendingUp'?
+src/pages/PortalCliente.tsx(527,60): error TS2304: Cannot find name 'ComprovanteResumo'.
+src/pages/PortalCliente.tsx(528,56): error TS2304: Cannot find name 'ProtocoloResumo'.
+src/pages/PortalCliente.tsx(530,66): error TS2304: Cannot find name 'ComprovanteResumo'.
+src/pages/PortalCliente.tsx(531,62): error TS2304: Cannot find name 'ProtocoloResumo'.
+src/pages/PortalCliente.tsx(544,60): error TS2304: Cannot find name 'DashboardMetrics'.
+src/pages/PortalCliente.tsx(1110,22): error TS2304: Cannot find name 'PedidoFormData'.
+src/pages/PortalCliente.tsx(1238,39): error TS2339: Property 'tracking_token' does not exist on type 'ConfirmacaoPedidoResultado'.
+src/pages/PortalCliente.tsx(1414,20): error TS2345: Argument of type '{ id: any; fatura: any; competencia: any; os_vinculadas: any[]; vencimento: any; valor: any; status: string; }[]' is not assignable to parameter of type 'SetStateAction<Fatura[]>'.
+  Type '{ id: any; fatura: any; competencia: any; os_vinculadas: any[]; vencimento: any; valor: any; status: string; }[]' is not assignable to type 'Fatura[]'.
+    Type '{ id: any; fatura: any; competencia: any; os_vinculadas: any[]; vencimento: any; valor: any; status: string; }' is not assignable to type 'Fatura'.
+      Types of property 'status' are incompatible.
+        Type 'string' is not assignable to type '"paga" | "a_vencer" | "vencida"'.
+src/pages/PortalCliente.tsx(1463,12): error TS2339: Property 'catch' does not exist on type 'PromiseLike<void>'.
+src/pages/PortalCliente.tsx(2524,55): error TS2339: Property 'id' does not exist on type 'User'.
+src/pages/PortalCliente.tsx(2681,54): error TS2339: Property 'latitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2681,91): error TS2339: Property 'longitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2682,51): error TS2339: Property 'latitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2683,51): error TS2339: Property 'longitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2686,60): error TS2339: Property 'latitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2686,98): error TS2339: Property 'longitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2687,52): error TS2339: Property 'latitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2688,52): error TS2339: Property 'longitude' does not exist on type 'Endereco'.
+src/pages/PortalCliente.tsx(2696,48): error TS2339: Property 'distancia_km' does not exist on type 'Entrega'.
+src/pages/PortalCliente.tsx(2696,81): error TS2339: Property 'distanciaKm' does not exist on type 'Entrega'.
+src/pages/PortalCliente.tsx(2776,139): error TS2339: Property 'plate' does not exist on type '{ nome: string; foto_url?: string; telefone?: string; veiculo?: string; placa?: string; }'.
+src/services/automacao.ts(217,29): error TS2304: Cannot find name 'proxyIaClient'.
+src/services/centralIa/roboRecrutamentoService.ts(125,36): error TS2339: Property 'nome' does not exist on type 'AutomacaoInstrucao'.
+src/services/centralIa/roboRecrutamentoService.ts(127,67): error TS2339: Property 'pergunta' does not exist on type 'IaConhecimento'.
+src/services/centralIa/roboRecrutamentoService.ts(129,46): error TS2339: Property 'descricao' does not exist on type 'AutomacaoRegraOperacao'.
+src/services/centralIa/roboRecrutamentoService.ts(129,61): error TS2339: Property 'nome' does not exist on type 'AutomacaoRegraOperacao'.
+src/services/centralIa/roboRecrutamentoService.ts(166,7): error TS2741: Property 'execucao_id' is missing in type '{ candidato: null; robo: null; contexto: null; recomendacao: null; tarefa: null; etapas: { acao: string; status: string; erro?: string; }[]; }' but required in type 'ResultadoDeteccao'.
+src/services/centralIaService.ts(537,12): error TS2352: Conversion of type '{ robo_nome: string; }[]' to type 'AutoTarefa[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ robo_nome: string; }' is missing the following properties from type 'AutoTarefa': id, robo_id, setor, tipo_tarefa, and 14 more.
+src/services/centralIaService.ts(641,12): error TS2352: Conversion of type '{ tarefa_titulo: string; }[]' to type 'AutoAprovacao[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ tarefa_titulo: string; }' is missing the following properties from type 'AutoAprovacao': id, tarefa_id, tipo_aprovacao, conteudo_original, and 7 more.
+src/services/centralIaService.ts(739,20): error TS2352: Conversion of type '{ conteudo_original: any; conteudo_sugerido: any; }' to type '{ tarefa_id: string; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'tarefa_id' is missing in type '{ conteudo_original: any; conteudo_sugerido: any; }' but required in type '{ tarefa_id: string; }'.
+src/services/centralIaService.ts(1699,7): error TS2741: Property 'regrasOperacao' is missing in type '{ robo: null; instrucaoAtiva: null; conhecimento: undefined[]; promptFinal: string; alertasSeguranca: string[]; }' but required in type 'PromptOperacionalRobo'.
+src/services/comercial/automacaoComercial.ts(55,28): error TS2554: Expected 2 arguments, but got 1.
+src/services/comercial/automacaoComercial.ts(78,28): error TS2554: Expected 2 arguments, but got 1.
+src/services/comercial/automacaoComercial.ts(105,28): error TS2554: Expected 2 arguments, but got 1.
+src/services/comercial/propostaService.ts(27,67): error TS2554: Expected 2 arguments, but got 3.
+src/services/comercial/propostaService.ts(31,35): error TS2339: Property 'valorSugerido' does not exist on type 'number'.
+src/services/comercial/propostaService.ts(38,29): error TS2339: Property 'valorSugerido' does not exist on type 'number'.
+src/services/comercial/propostaService.ts(43,106): error TS2339: Property 'valorSugerido' does not exist on type 'number'.
+src/services/comercial/propostaService.ts(53,35): error TS2339: Property 'valorSugerido' does not exist on type 'number'.
+src/services/configuracoesService.ts(46,13): error TS2558: Expected 2 type arguments, but got 1.
+src/services/contratos/contratoOperacaoService.ts(112,92): error TS2339: Property 'origem_logradouro' does not exist on type 'ContratoOperacaoRota'.
+src/services/contratos/contratoOperacaoService.ts(112,130): error TS2339: Property 'origem_numero' does not exist on type 'ContratoOperacaoRota'.
+src/services/contratos/contratoOperacaoService.ts(112,164): error TS2339: Property 'origem_bairro' does not exist on type 'ContratoOperacaoRota'.
+src/services/contratos/contratoOperacaoService.ts(113,95): error TS2339: Property 'destino_logradouro' does not exist on type 'ContratoOperacaoRota'.
+src/services/contratos/contratoOperacaoService.ts(113,134): error TS2339: Property 'destino_numero' does not exist on type 'ContratoOperacaoRota'.
+src/services/contratos/contratoOperacaoService.ts(113,169): error TS2339: Property 'destino_bairro' does not exist on type 'ContratoOperacaoRota'.
+src/services/email/emailAutomationService.ts(38,14): error TS2554: Expected 4 arguments, but got 3.
+src/services/email/emailAutomationService.ts(46,14): error TS2304: Cannot find name 'enviarEmailOSCriada'.
+src/services/email/emailAutomationService.ts(52,14): error TS2304: Cannot find name 'enviarEmailOrcamento'.
+src/services/email/emailAutomationService.ts(64,14): error TS2304: Cannot find name 'enviarEmailComprovanteEntrega'.
+src/services/email/emailAutomationService.ts(76,14): error TS2304: Cannot find name 'enviarEmailPesquisaSatisfacao'.
+src/services/email/zohoEmailService.ts(497,5): error TS2353: Object literal may only specify known properties, and 'subject' does not exist in type 'EmailEvent'.
+src/services/email/zohoEmailService.ts(522,5): error TS2353: Object literal may only specify known properties, and 'subject' does not exist in type 'EmailEvent'.
+src/services/escala/escalaService.ts(642,50): error TS2353: Object literal may only specify known properties, and 'prestador_id' does not exist in type 'AtualizarAlocacaoEscala'.
+src/services/escala/syncDiagnostico.ts(223,17): error TS2339: Property 'osNumero' does not exist on type '{ temOS: boolean; divergente: boolean; status: DivergenciaTipo; label: string; classeBadge: string; }'.
+src/services/escala/syncDiagnostico.ts(224,17): error TS2551: Property 'osStatus' does not exist on type '{ temOS: boolean; divergente: boolean; status: DivergenciaTipo; label: string; classeBadge: string; }'. Did you mean 'status'?
+src/services/financeiro/composicaoFinanceiraService.ts(67,3): error TS2741: Property 'os_id' is missing in type '{ valor_cliente: number; valor_prestador: number; imposto_percentual: number; imposto_valor: number; seguro_valor: number; pedagio_valor: number; outros_custos: number; margem_bruta: number; margem_liquida: number; percentual_margem_bruta: number; percentual_margem_liquida: number; origem_calculo: string; }' but required in type 'ComposicaoFinanceiraOS'.
+src/services/financeiro/pagarService.ts(161,19): error TS2554: Expected 0-1 arguments, but got 2.
+src/services/financeiro/receberService.ts(167,19): error TS2554: Expected 0-1 arguments, but got 2.
+src/services/fiscal/cteLoteService.ts(245,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteLoteService.ts(252,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteLoteService.ts(259,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteLoteService.ts(511,9): error TS2353: Object literal may only specify known properties, and 'origem_cte' does not exist in type 'CteMetadata'.
+src/services/fiscal/cteService.ts(73,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteService.ts(84,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteService.ts(98,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteService.ts(109,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteService.ts(123,9): error TS2345: Argument of type 'PromiseLike<any>' is not assignable to parameter of type 'Promise<any>'.
+  Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/fiscal/cteService.ts(752,7): error TS2353: Object literal may only specify known properties, and 'regime_tributario' does not exist in type 'FocusCteEmitente'.
+src/services/fiscal/cteService.ts(845,7): error TS2353: Object literal may only specify known properties, and 'origem_cte' does not exist in type 'CteMetadata'.
+src/services/fiscal/focusService.ts(483,7): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "fiscal_logs", unknown, "POST">'. Did you mean 'match'?
+src/services/fiscal/focusService.ts(545,7): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, null, "fiscal_logs", unknown, "POST">'. Did you mean 'match'?
+src/services/fiscal/focusService.ts(658,23): error TS2339: Property 'chave_acesso' does not exist on type 'CteLoteItem'.
+src/services/ia/actionEngineService.ts(656,81): error TS2322: Type 'string' is not assignable to type '"erro" | "sucesso" | "info" | "aviso"'.
+src/services/ia/actionEngineService.ts(682,9): error TS2322: Type '"bloqueada_governanca"' is not assignable to type '"erro" | "sucesso" | "info" | "aviso"'.
+src/services/ia/actionEngineService.ts(701,9): error TS2322: Type '"aguardando_aprovacao"' is not assignable to type '"erro" | "sucesso" | "info" | "aviso"'.
+src/services/ia/actionEngineService.ts(716,11): error TS2322: Type 'string' is not assignable to type '"critica" | "alta" | "baixa" | "normal"'.
+src/services/ia/agenteService.ts(302,45): error TS2353: Object literal may only specify known properties, and 'passo_anterior' does not exist in type '{ encadeamento: { sessao_id: any; }; }'.
+src/services/ia/comercialIA/aprendizadoService.ts(21,7): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/followUpService.ts(110,7): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(52,9): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(118,11): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(273,9): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(327,29): error TS2304: Cannot find name 'proxyIaClient'.
+src/services/ia/comercialIA/hunterService.ts(417,9): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(464,7): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/hunterService.ts(522,7): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/comercialIA/providers/ManualProvider.ts(27,3): error TS2353: Object literal may only specify known properties, and 'adicionarProspect' does not exist in type 'HunterProvider'.
+src/services/ia/comercialIA/providers/ManualProvider.ts(33,25): error TS2339: Property 'fonte_nome' does not exist on type 'Omit<ProspectBruto, "data_coleta" | "provider_origem" | "confianca_origem" | "fonte_nome">'.
+src/services/ia/comercialIA/providers/ProviderRegistry.ts(43,31): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'HunterProvider'.
+  Type '{}' is missing the following properties from type 'HunterProvider': id, nome, tipo, ativo, and 8 more.
+src/services/ia/comercialIA/providers/ProviderRegistry.ts(45,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'HunterProvider'.
+  Type '{}' is missing the following properties from type 'HunterProvider': id, nome, tipo, ativo, and 8 more.
+src/services/ia/comercialIAWorker.ts(90,7): error TS2304: Cannot find name 'parar'.
+src/services/ia/diretorVirtualLiveService.ts(69,15): error TS2339: Property 'catch' does not exist on type 'PromiseLike<PostgrestSingleResponse<null>>'.
+src/services/ia/enterpriseOrchestratorService.ts(380,15): error TS18004: No value exists in scope for the shorthand property 'aprovado_f35'. Either declare one or provide an initializer.
+src/services/ia/gestaoFuncionariosService.ts(184,5): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/gestaoFuncionariosService.ts(213,5): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/gestaoFuncionariosService.ts(284,5): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/gestaoFuncionariosService.ts(607,5): error TS2353: Object literal may only specify known properties, and 'tipo' does not exist in type '{ robo_id?: string; tarefa_id?: string; acao: string; entrada?: Record<string, unknown>; saida?: Record<string, unknown>; status?: "erro" | "sucesso" | "info" | "aviso"; erro?: string; }'.
+src/services/ia/governancaService.ts(472,15): error TS2339: Property 'default' does not exist on type 'typeof import("C:/Users/DIEGO BALBINO/Desktop/Pasta Compartilhada/DOCUMENTOS EMPRESA/08_TECNOLOGIA_SISTEMAS/express-connect-hub/src/services/ia/actionEngineService")'.
+src/services/ia/governancaService.ts(512,15): error TS2339: Property 'default' does not exist on type 'typeof import("C:/Users/DIEGO BALBINO/Desktop/Pasta Compartilhada/DOCUMENTOS EMPRESA/08_TECNOLOGIA_SISTEMAS/express-connect-hub/src/services/ia/actionEngineService")'.
+src/services/ia/identidadeService.ts(114,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'IaIdentidade' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'IaIdentidade': id, robo_id, nome_operacional, email_operacional, and 9 more.
+src/services/ia/identidadeService.ts(146,24): error TS2339: Property 'catch' does not exist on type 'PostgrestBuilder<any, any, false>'.
+src/services/ia/identidadeService.ts(243,17): error TS2352: Conversion of type 'Record<string, unknown>' to type 'IaSessaoOperacional' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'IaSessaoOperacional': id, robo_id, identidade_id, motivo, and 11 more.
+src/services/ia/performanceEngineService.ts(390,17): error TS2352: Conversion of type 'Record<string, unknown>' to type 'IaScoreRobo' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'IaScoreRobo': id, robo_id, performance_score, eficiencia_score, and 4 more.
+src/services/ia/rotinasMotorService.ts(114,48): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Object literal may only specify known properties, and 'nullsLast' does not exist in type '{ ascending?: boolean; nullsFirst?: boolean; foreignTable?: string; }'.
+src/services/ia/rotinasMotorService.ts(308,15): error TS2561: Object literal may only specify known properties, but 'roboId' does not exist in type '{ robo_id: string; ferramenta_id: string; solicitacao: string; contexto?: Record<string, unknown>; }'. Did you mean to write 'robo_id'?
+src/services/ia/rotinasMotorService.ts(313,42): error TS2339: Property 'id' does not exist on type '{ sucesso: boolean; execucao?: IaExecucaoFerramenta; motivo?: string; }'.
+src/services/ia/rotinasMotorService.ts(314,88): error TS2339: Property 'id' does not exist on type '{ sucesso: boolean; execucao?: IaExecucaoFerramenta; motivo?: string; }'.
+src/services/ia/workforceOrchestratorService.ts(266,7): error TS2322: Type '"alerta"' is not assignable to type '"erro" | "sucesso" | "info" | "aviso"'.
+src/services/operacao/redePrestadoresService.ts(455,29): error TS2322: Type '{ id: any; os_id: any; status: any; valor_prestador: any; veiculo_necessario: any; regiao: any; prazo_expiracao: any; created_at: any; ordens_servico: { numero: any; tipo_operacao: any; data_programada: any; carga_tipo: any; peso: any; volumes: any; enderecos: any; }[]; }[]' is not assignable to type '(RedeOportunidade & { os?: Record<string, any>; })[]'.
+  Type '{ id: any; os_id: any; status: any; valor_prestador: any; veiculo_necessario: any; regiao: any; prazo_expiracao: any; created_at: any; ordens_servico: { numero: any; tipo_operacao: any; data_programada: any; carga_tipo: any; peso: any; volumes: any; enderecos: any; }[]; }' is not assignable to type 'RedeOportunidade & { os?: Record<string, any>; }'.
+    Type '{ id: any; os_id: any; status: any; valor_prestador: any; veiculo_necessario: any; regiao: any; prazo_expiracao: any; created_at: any; ordens_servico: { numero: any; tipo_operacao: any; data_programada: any; carga_tipo: any; peso: any; volumes: any; enderecos: any; }[]; }' is missing the following properties from type 'RedeOportunidade': prestador_aceite_id, requisitos, aceite_em, expirada_em, updated_at
+src/services/ordemServicoService.ts(459,79): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/services/ordemServicoService.ts(460,78): error TS2353: Object literal may only specify known properties, and 'endereco' does not exist in type 'PricingEndereco'.
+src/services/ordemServicoService.ts(564,29): error TS2322: Type '"financeiro_trigger_m66"' is not assignable to type '"atualizada" | "ignorada" | "sem_os"'.
+src/services/patioService.ts(340,10): error TS2352: Conversion of type 'GenericStringError[]' to type 'PatioCheckin[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ error: true; } & String' is missing the following properties from type 'PatioCheckin': id, veiculo_placa, status, posicao_fila, and 7 more.
+src/services/portalCliente/aiReportService.ts(116,84): error TS2493: Tuple type '[PostgrestSingleResponse<{ id: any; status: any; valor_cliente: any; created_at: any; origem: any; destino: any; cidade_destino: any; cliente_id: any; }[]>, PostgrestSingleResponse<{ valor: any; status: any; data_vencimento: any; }[]>, PostgrestSingleResponse<...>, PostgrestSingleResponse<...>, PostgrestSingleRespon...' of length '5' has no element at index '5'.
+src/services/precificacao/precificacaoEngineService.ts(294,29): error TS2448: Block-scoped variable 'totalCliente' used before its declaration.
+src/services/precificacao/precificacaoEngineService.ts(485,7): error TS2304: Cannot find name 'margemLiquida'.
+src/services/recrutamentoIntegracao.ts(58,3): error TS2739: Type 'PromiseLike<any>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/recrutamentoIntegracao.ts(64,19): error TS2339: Property 'cpf_cnpj' does not exist on type 'PostgrestSingleResponse<any>'.
+  Property 'cpf_cnpj' does not exist on type 'PostgrestResponseFailure'.
+src/services/recrutamentoIntegracao.ts(69,3): error TS2739: Type 'PostgrestBuilder<any, any, false>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/recrutamentoIntegracao.ts(80,3): error TS2739: Type 'PostgrestBuilder<any, any, false>' is missing the following properties from type 'Promise<any>': catch, finally, [Symbol.toStringTag]
+src/services/relatorios/relatorioService.ts(814,36): error TS2339: Property 'error' does not exist on type '{ data: { publicUrl: string; }; }'.
+src/services/roteirizacaoMapbox.ts(1,45): error TS2307: Cannot find module './types' or its corresponding type declarations.
+src/services/whatsappInboundParser.ts(69,74): error TS2322: Type '"ocorrencia"' is not assignable to type 'Setor'.
+src/testes/validacaoTMS.ts(10,10): error TS2305: Module '"@/services/integracoes/iaService"' has no exported member 'validateAIConfig'.
+src/utils/pdfGenerator.ts(116,42): error TS2339: Property 'getNumberOfPages' does not exist on type '{ events: PubSub; scaleFactor: number; pageSize: { width: number; getWidth: () => number; height: number; getHeight: () => number; }; pages: number[]; getEncryptor(objectId: number): (data: string) => string; }'.
+src/utils/pdfPreviaCteSemValorFiscal.ts(10,17): error TS2350: Only a void function can be called with the 'new' keyword.

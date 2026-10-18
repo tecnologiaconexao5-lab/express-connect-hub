@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "./proxyIaClient";
 
 export interface AIProviderConfig {
   id: string;
@@ -14,13 +15,14 @@ export interface AIProviderConfig {
 }
 
 export const aiProviderManager = {
-  // Pega chaves do env
+  // Chaves agora ficam no backend (proxy-ia Edge Function)
+  // Este método retorna placeholder — o proxy-ia no backend tem as chaves reais
   getKeys() {
     return {
-      groq: import.meta.env.VITE_GROQ_API_KEY || null,
-      gemini: import.meta.env.VITE_GEMINI_API_KEY || null,
-      openrouter: import.meta.env.VITE_OPENROUTER_API_KEY || null,
-      openai: import.meta.env.VITE_OPENAI_API_KEY || null,
+      groq: "proxy-ia",
+      gemini: "proxy-ia",
+      openrouter: "proxy-ia",
+      openai: "proxy-ia",
     };
   },
 
@@ -51,16 +53,16 @@ export const aiProviderManager = {
 
   async ensureDefaultProviders(): Promise<void> {
     const defaults: Omit<AIProviderConfig, 'id'>[] = [
-      { provider: 'groq', model: 'llama3-8b-8192', ativo: true, prioridade: 1, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: true, metadata: {} },
+      { provider: 'groq', model: 'llama-3.1-8b-instant', ativo: true, prioridade: 1, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: true, metadata: {} },
       { provider: 'gemini', model: 'gemini-1.5-pro', ativo: true, prioridade: 2, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
       { provider: 'openrouter', model: 'openrouter/auto', ativo: true, prioridade: 3, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
-      { provider: 'openai', model: 'gpt-4o', ativo: true, prioridade: 4, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
+      { provider: 'openrouter', model: 'openai/gpt-4o', ativo: true, prioridade: 4, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
     ];
 
     const providerNames = defaults.map((item) => item.provider);
     const { data: existing, error } = await supabase
       .from('ia_providers_config')
-      .select('id, provider')
+      .select('id, provider, model')
       .in('provider', providerNames);
 
     if (error) {
@@ -68,144 +70,91 @@ export const aiProviderManager = {
       return;
     }
 
-    const existingProviders = (existing || []).map((item) => item.provider);
+    const chavesExistentes = new Set(
+      (existing || []).map((item) => `${item.provider}::${item.model}`)
+    );
 
     for (const prov of defaults) {
-      if (!existingProviders.includes(prov.provider)) {
+      const chave = `${prov.provider}::${prov.model}`;
+      if (!chavesExistentes.has(chave)) {
         const { error: insertError } = await supabase
           .from('ia_providers_config')
           .insert([prov]);
         if (insertError) {
-          console.error(`Erro ao inserir provider padrão ${prov.provider}:`, insertError);
+          console.error(`Erro ao inserir provider padrão ${prov.provider}/${prov.model}:`, insertError);
         }
       }
     }
   },
 
   async testarProvider(provider: AIProviderConfig): Promise<{ success: boolean; message: string }> {
-    const keys = this.getKeys();
-    const key = keys[provider.provider as keyof typeof keys];
-    
-    if (!key) {
-      return { success: false, message: "Chave não configurada no .env" };
-    }
-
     try {
-      let result = "";
-      if (provider.provider === 'groq') result = await this.testGroq(key, provider.model);
-      else if (provider.provider === 'gemini') result = await this.testGemini(key, provider.model);
-      else if (provider.provider === 'openrouter') result = await this.testOpenRouter(key, provider.model);
-      else if (provider.provider === 'openai') result = await this.testOpenAI(key, provider.model);
-      
-      await this.registrarLogIA(provider.provider, provider.model, 'test', "Ping", result, 10, true);
-      return { success: true, message: "Conexão bem sucedida!" };
+      const resultado = await proxyIaClient.executar({
+        provider: provider.provider,
+        model: provider.model,
+        prompt: "Ping",
+        max_tokens: 10,
+      });
+
+      if (resultado.sucesso) {
+        await this.registrarLogIA(provider.provider, provider.model, 'test', "Ping", resultado.resposta, 10, true);
+        return { success: true, message: "Conexão bem sucedida via proxy-ia!" };
+      }
+      await this.registrarLogIA(provider.provider, provider.model, 'test', "Ping", "", 0, false, resultado.erro);
+      return { success: false, message: resultado.erro || "Erro na conexão via proxy-ia" };
     } catch (e: any) {
       await this.registrarLogIA(provider.provider, provider.model, 'test', "Ping", "", 0, false, e.message);
       return { success: false, message: e.message || "Erro na conexão" };
     }
   },
 
-  async testGroq(key: string, model: string) {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: "Ping" }], max_tokens: 10 })
-    });
-    if (!res.ok) throw new Error(`Groq HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "Pong";
-  },
-
-  async testGemini(key: string, model: string) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: "Ping" }] }] })
-    });
-    if (!res.ok) throw new Error(`Gemini HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Pong";
-  },
-
-  async testOpenRouter(key: string, model: string) {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { 
-        "Authorization": `Bearer ${key}`, 
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: "Ping" }], max_tokens: 10 })
-    });
-    if (!res.ok) throw new Error(`OpenRouter HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "Pong";
-  },
-
-  async testOpenAI(key: string, model: string) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: "Ping" }], max_tokens: 10 })
-    });
-    if (!res.ok) throw new Error(`OpenAI HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "Pong";
-  },
-
   async gerarResposta(provider: AIProviderConfig, prompt: string, context: string = ""): Promise<string> {
-    const keys = this.getKeys();
-    const key = keys[provider.provider as keyof typeof keys];
-    
-    if (!key) throw new Error("Chave não configurada");
+    const resultado = await proxyIaClient.executar({
+      provider: provider.provider,
+      model: provider.model,
+      prompt,
+      context,
+      temperature: provider.temperatura,
+      max_tokens: provider.max_tokens,
+    });
 
-    const fullPrompt = context ? `Contexto:\n${context}\n\nPrompt:\n${prompt}` : prompt;
-
-    let result = "";
-    if (provider.provider === 'groq') {
-       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-         method: "POST",
-         headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-         body: JSON.stringify({ model: provider.model, messages: [{ role: "user", content: fullPrompt }], temperature: provider.temperatura, max_tokens: provider.max_tokens })
-       });
-       if (!res.ok) throw new Error("Erro Groq");
-       const data = await res.json();
-       result = data.choices[0].message.content;
-    } else if (provider.provider === 'gemini') {
-       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${provider.model}:generateContent?key=${key}`, {
-         method: "POST",
-         headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
-       });
-       if (!res.ok) throw new Error("Erro Gemini");
-       const data = await res.json();
-       result = data.candidates[0].content.parts[0].text;
-    } else if (provider.provider === 'openrouter') {
-       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-         method: "POST",
-         headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-         body: JSON.stringify({ model: provider.model, messages: [{ role: "user", content: fullPrompt }], temperature: provider.temperatura })
-       });
-       if (!res.ok) throw new Error("Erro OpenRouter");
-       const data = await res.json();
-       result = data.choices[0].message.content;
-    } else if (provider.provider === 'openai') {
-       const res = await fetch("https://api.openai.com/v1/chat/completions", {
-         method: "POST",
-         headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-         body: JSON.stringify({ model: provider.model, messages: [{ role: "user", content: fullPrompt }], temperature: provider.temperatura, max_tokens: provider.max_tokens })
-       });
-       if (!res.ok) throw new Error("Erro OpenAI");
-       const data = await res.json();
-       result = data.choices[0].message.content;
+    if (!resultado.sucesso) {
+      throw new Error(resultado.erro || `Provedor ${provider.provider} falhou via proxy-ia`);
     }
-    
-    await this.registrarLogIA(provider.provider, provider.model, 'generate', prompt, result, result.length, true);
-    return result;
+
+    await this.registrarLogIA(provider.provider, provider.model, 'generate', prompt, resultado.resposta, resultado.tokens_saida, true);
+    return resultado.resposta;
   },
 
-  async gerarRespostaComFallback(prompt: string, context: string = ""): Promise<string> {
-    const providers = await this.listarProviders();
-    const actives = providers.filter(p => p.ativo).sort((a, b) => a.prioridade - b.prioridade);
+  async gerarRespostaComFallback(prompt: string, context: string = "", roboId?: string): Promise<string> {
+    let providers = await this.listarProviders();
+    let actives = providers.filter(p => p.ativo);
+
+    // Se roboId fornecido, tenta ordenar pelo config.llm do robô
+    if (roboId) {
+      const { data: robo } = await supabase
+        .from("automacoes_robos")
+        .select("config")
+        .eq("id", roboId)
+        .single();
+      if (robo?.config?.llm) {
+        const llm = robo.config.llm as Record<string, string>;
+        const ordemNome: string[] = [];
+        if (llm.modelo_principal) ordemNome.push(llm.modelo_principal);
+        if (llm.modelo_secundario) ordemNome.push(llm.modelo_secundario);
+        if (llm.fallback) ordemNome.push(llm.fallback);
+        actives.sort((a, b) => {
+          const ai = ordemNome.indexOf(`${a.provider}-${a.model}`);
+          const bi = ordemNome.indexOf(`${b.provider}-${b.model}`);
+          if (ai !== -1 && bi !== -1) return ai - bi;
+          if (ai !== -1) return -1;
+          if (bi !== -1) return 1;
+          return a.prioridade - b.prioridade;
+        });
+      }
+    } else {
+      actives.sort((a, b) => a.prioridade - b.prioridade);
+    }
 
     for (const provider of actives) {
       try {

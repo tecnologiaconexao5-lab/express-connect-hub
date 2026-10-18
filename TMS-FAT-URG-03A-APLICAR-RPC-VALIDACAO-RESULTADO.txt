@@ -1,0 +1,187 @@
+================================================================================
+MISSAO: TMS-FAT-URG-03A-APLICAR-RPC-VALIDACAO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: aplicacao controlada de migration unica + prova objetiva no banco.
+BASE: FAT-URG-01 (diagnostico) e FAT-URG-02 (implementacao local PASS).
+================================================================================
+
+RESULTADO: PASS (com prova objetiva no banco).
+  - Migration 20260925000000_fin_fat_urg_02_validacao_fatura_rpc.sql APLICADA.
+  - public.f_mover_fatura_status instalada, SECURITY DEFINER, search_path=public.
+  - Grants: authenticated + service_role; PUBLIC e anon SEM EXECUTE.
+  - Transicoes/guards comprovados; NAO cria financeiro_receber.
+  - f_emitir_fatura, M66 (f_trg_propagar_financeiro_alocacao), M80
+    (f_trg_propagar_financeiro_os) e triggers INALTERADOS (hash identico).
+  - Testes controlados A-F PASS, todos em BEGIN...ROLLBACK (zero lixo).
+  - 18 testes FAT-URG-02 PASS; regressao 61/61; build OK.
+  - E2E real NAO executado (fora do escopo desta missao).
+
+================================================================================
+1. CONFIRMACAO DE PROJETO/REF (ANTES)
+================================================================================
+- VITE_SUPABASE_URL host .......... uwrvzsjtpgaifkktpepn.supabase.co
+- DATABASE_URL usuario (ref) ...... postgres.uwrvzsjtpgaifkktpepn
+- => Projeto conectado = uwrvzsjtpgaifkktpepn (PRODUCAO), coerente com o app.
+- ATENCAO/registro: supabase/.temp/linked-project.json aponta para
+  aqpfayildtcnrkfeeyjg (conexao-express-qa) — link do CLI DESATUALIZADO. Nao foi
+  usado. A aplicacao foi feita na conexao pg de PRODUCAO acima.
+- current_database=postgres | current_user=postgres.
+
+================================================================================
+2. ESTADO BEFORE
+================================================================================
+- f_mover_fatura_status existia? NAO (pg_proc count = 0).
+- Hashes (md5 de pg_get_functiondef) registrados para comparacao:
+    f_emitir_fatura                       = 7021208e2c91268c8076ce715e0d8a37
+    f_cancelar_fatura                     = f67c05f1ce4cd5540be1ddcb31b5184c
+    f_gerar_numero_fatura                 = 223c21cbc3341eb459c0bf0ae19901a6
+    f_trg_faturas_bloqueio_emissao_sem_ar = e64403b5c42c6e7b260b8af3d2197447
+    f_trg_propagar_financeiro_alocacao(M66)=6c4be677b3f88590139f2de2dd4cfcde
+    f_trg_propagar_financeiro_os(M80)     = 02a5902d470730c24cc1906d2fa262d8
+- Triggers (md5 agregado): alocacoes_escala, ordens_servico, faturas, fatura_itens.
+- Contagens: faturas_total=9 (todas 'emitida'), financeiro_receber=47,
+  fatura_itens=46, faturas com AR=8.
+- Migration lida novamente: aditiva (CREATE OR REPLACE FUNCTION + GRANT/REVOKE),
+  sem DROP/DELETE/ALTER de dados; rollback = DROP FUNCTION IF EXISTS (reversivel).
+
+================================================================================
+3. MIGRATION APLICADA
+================================================================================
+Arquivo: supabase/migrations/20260925000000_fin_fat_urg_02_validacao_fatura_rpc.sql
+Acao   : CREATE OR REPLACE FUNCTION public.f_mover_fatura_status(uuid, text)
+         + REVOKE ALL FROM PUBLIC, anon + GRANT EXECUTE TO authenticated, service_role.
+- SOMENTE esta migration foi aplicada. Nenhuma outra migration pendente foi tocada.
+- Aplicacao via conexao pg de PRODUCAO (a mesma do app).
+
+================================================================================
+4. PROVA pg_proc (AFTER)
+================================================================================
+- proname=f_mover_fatura_status | prosecdef=true (SECURITY DEFINER)
+  | proconfig=[search_path=public] | owner=postgres | retorno=jsonb.
+- Apenas 1 assinatura (uuid, text).
+
+================================================================================
+5. GRANTS (AFTER)
+================================================================================
+- information_schema.routine_privileges: authenticated, postgres, service_role.
+- proacl = {postgres=X/postgres, authenticated=X/postgres, service_role=X/postgres}
+  => PUBLIC e anon AUSENTES.
+- has_function_privilege:
+    anon('EXECUTE') .......... false
+    authenticated('EXECUTE') . true
+    service_role('EXECUTE') .. true
+
+================================================================================
+6. SEARCH PATH
+================================================================================
+- SET search_path TO 'public' (fixo) — confirmado em proconfig e no functiondef.
+
+================================================================================
+7. TRANSICOES / GUARDS (functiondef instalado)
+================================================================================
+- security_definer=true; search_path_public=true.
+- transicoes: rascunho->aguardando_aprovacao=OK; aguardando_aprovacao->aprovada=OK;
+  aguardando_aprovacao->rascunho=OK.
+- guards presentes: USUARIO_NAO_AUTENTICADO, SEM_PERMISSAO_PERFIL,
+  SEM_PERMISSAO_TENANT, TRANSICAO_INVALIDA, FATURA_CANCELADA, FATURA_JA_EMITIDA,
+  FATURA_NAO_ENCONTRADA, STATUS_SOLICITADO_INVALIDO.
+- idempotencia presente ('idempotente', true).
+- no_financeiro_receber_insert=true; no_conta_receber_id_update=true.
+
+================================================================================
+8. TESTES CONTROLADOS A-F (BEGIN...ROLLBACK, sem lixo)
+================================================================================
+Contexto: tenant=00000000-...-000000000001; finUid=8c12fc67…; cliUid=ea38c1b4…
+A) Nao autenticado (role authenticated sem claims):
+   -> {"success":false,"error":"USUARIO_NAO_AUTENTICADO"}            PASS
+B) Perfil invalido (usuario papel 'cliente'):
+   -> {"success":false,"error":"SEM_PERMISSAO_PERFIL"}               PASS
+C) Transicao invalida (rascunho -> aprovada) com perfil financeiro:
+   -> {"success":false,"error":"TRANSICAO_INVALIDA",
+       "status_anterior":"rascunho","status_solicitado":"aprovada"}  PASS
+   Valida (rascunho -> aguardando_aprovacao):
+   -> success=true, status=aguardando_aprovacao, idempotente=false   PASS
+D) Idempotencia (repetir aguardando_aprovacao):
+   -> success=true, idempotente=true, status=aguardando_aprovacao    PASS
+   Valida (aguardando_aprovacao -> aprovada):
+   -> success=true, status=aprovada, idempotente=false               PASS
+E) Nao cria AR / nao altera conta_receber_id:
+   -> financeiro_receber WHERE fatura_id=temp = 0 | status_final=aprovada
+      | conta_receber_id=null                                        PASS
+F) Nada de negocio alterado:
+   before {faturas 9, AR 47, itens 46, com_ar 8}
+   after  {faturas 9, AR 47, itens 46, com_ar 8} -> unchanged=true    PASS
+   (a fatura temporaria dos testes C/D/E foi criada e REMOVIDA por ROLLBACK)
+
+NOTA: no estado atual nao havia faturas em 'rascunho' (9 registros, todas
+'emitida'), por isso os testes C/D/E usaram uma fatura TEMPORARIA criada dentro
+da transacao e desfeita no ROLLBACK — nenhum dado persistiu.
+
+================================================================================
+9. INTEGRIDADE (NAO alterou terceiros)
+================================================================================
+function_hashes_unchanged (BEFORE == AFTER):
+  f_emitir_fatura, f_cancelar_fatura, f_gerar_numero_fatura,
+  f_trg_faturas_bloqueio_emissao_sem_ar,
+  f_trg_propagar_financeiro_alocacao (M66), f_trg_propagar_financeiro_os (M80) = true.
+triggers_unchanged (BEFORE == AFTER):
+  alocacoes_escala, ordens_servico, faturas, fatura_itens = true.
+
+================================================================================
+10. ROLLBACK CONTINUA VALIDO
+================================================================================
+- rollback = DROP FUNCTION IF EXISTS public.f_mover_fatura_status(uuid, text)
+  (arquivo 20260925000001_fin_fat_urg_02_validacao_fatura_rollback.sql).
+- Validacao sem remover a RPC: BEGIN; DROP FUNCTION IF EXISTS ...; ROLLBACK;
+    exists_inside_txn = 0 (DROP executou) | exists_after_rollback = 1 (RPC intacta).
+  => rollback_drop_valid=true e REVERSIVEL. A RPC permanece instalada.
+
+================================================================================
+11. TESTES AUTOMATIZADOS / BUILD
+================================================================================
+- src/test/fin_fat_urg_02_validacao_fatura.test.ts ........ 18/18 PASS
+- Regressao (5 arquivos): fase2a_fatura (10), fin_prog04b_emissao (3),
+  tms_s04c_faturamento_individual (14), f38_fatura_manual (16) + o de 18
+  => TOTAL 61/61 PASS.
+- npm run build -> OK ("built in 36.26s").
+
+================================================================================
+12. CONFIRMACAO DE ZERO LIXO / DADOS DE NEGOCIO
+================================================================================
+[x] Nenhum INSERT/UPDATE/DELETE persistido em dados de negocio.
+[x] Nenhuma fatura de teste persistente; testes A-F 100% em BEGIN...ROLLBACK.
+[x] Contagens de negocio identicas BEFORE==AFTER (faturas/AR/itens/com_ar).
+[x] Nenhuma outra migration aplicada (apenas a desta missao).
+[x] Nenhuma alteracao em M66/M80/f_emitir_fatura/triggers (hash identico).
+[x] Nenhuma cobranca emitida, nenhum recebivel baixado, Comercial/APP intactos.
+[x] Scripts temporarios de diagnostico removidos apos uso.
+
+================================================================================
+13. RISCOS RESIDUAIS
+================================================================================
+R1. E2E real ainda NAO executado (rascunho real -> enviar -> aprovar -> emitir ->
+    baixa). Recomendado em missao propria (FAT-URG-03B), sem criar dado persistente
+    de teste ou com fatura real de homologacao.
+R2. No estado atual nao existem faturas em 'rascunho'/'aguardando_aprovacao';
+    o fluxo so sera exercitado de ponta a ponta quando houver um rascunho real.
+R3. O caminho legado "Nova Fatura Manual > Salvar e Gerar PDF" ainda emite direto
+    de rascunho (f_emitir_fatura aceita rascunho). Se o negocio exigir aprovacao
+    obrigatoria antes da emissao, restringir o guard de f_emitir_fatura em missao
+    dedicada (nao feito aqui).
+R4. Link do CLI Supabase aponta para QA (aqpfay...); usar sempre a conexao de
+    PRODUCAO (uwrvzsjtpgaifkktpepn) para evitar aplicar em ambiente errado.
+
+================================================================================
+14. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-03A-APLICAR-RPC-VALIDACAO-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-03A-APLICAR-RPC-VALIDACAO-RESULTADO.txt
+ TAMANHO ..: 11042 bytes
+ DATA/HORA : 25/09/2026 17:57:53
+
+================================================================================
+FIM DO RELATORIO — TMS-FAT-URG-03A-APLICAR-RPC-VALIDACAO
+================================================================================

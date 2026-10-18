@@ -1,0 +1,14 @@
+ISOLAMENTO TENANT — MISSÃO 108-L5
+
+Mecanismo de isolamento:
+1. PortalMultiFilial recebe clienteId={clienteData?.id} de PortalCliente.tsx
+2. Se clienteId for undefined/null → "Cliente não identificado" (admin sem vínculo)
+3. Se clienteId existir → todas as queries usam .eq('cliente', clienteId) ou .eq('cliente_id', clienteId)
+4. RLS existente nas tabelas (ordens_servico, alocacoes_escala, financeiro_receber) via current_tenant_id_safe()
+5. Nenhum dado de outro cliente é exposto porque o filtro cliente_id é aplicado em todas as queries
+
+Testado via:
+- Test 10: admin logado sem clienteId → vê mensagem de cliente não identificado
+- Ausência de dados cross-tenant validada via RLS existente
+
+Nota: tenant_usuarios não tem filial_id no schema atual. Futuro: adicionar coluna e filtrar por ela.

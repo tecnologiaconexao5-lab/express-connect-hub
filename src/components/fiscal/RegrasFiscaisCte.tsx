@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 import {
   listarRegrasFiscaisCte,
   salvarRegraFiscalCte,
@@ -77,7 +78,7 @@ export default function RegrasFiscaisCte() {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          <ProgressiveBlocksLoader size="normal" />
         </CardContent>
       </Card>
     );

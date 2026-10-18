@@ -1,0 +1,28 @@
+[1] f_aceitar_oportunidade_rede len=9154 auth.uid=false SEM_PERMISSAO=false PRESTADOR_INVALIDO=false liberado_app=false GATE=false etapa_atual=true
+[2] f_aceitar_oportunidade_rede -> -: EXECUTE
+[2] f_aceitar_oportunidade_rede -> postgres: EXECUTE
+[2] f_aceitar_oportunidade_rede -> anon: EXECUTE
+[2] f_aceitar_oportunidade_rede -> authenticated: EXECUTE
+[2] f_aceitar_oportunidade_rede -> service_role: EXECUTE
+[2] f_avancar_etapa_app_motorista -> postgres: EXECUTE
+[2] f_avancar_etapa_app_motorista -> authenticated: EXECUTE
+[2] f_avancar_etapa_app_motorista -> service_role: EXECUTE
+[2] f_buscar_operacoes_motorista -> postgres: EXECUTE
+[2] f_buscar_operacoes_motorista -> authenticated: EXECUTE
+[2] f_buscar_operacoes_motorista -> service_role: EXECUTE
+[3] M66 live len=8378 sane02b_valor_liquido=true m104a_outros=true
+[3] INSERT financeiro_pagar live: INSERT INTO financeiro_pagar (os_id, descricao, valor, data_vencimento, status, prestador, fornecedor_id, fornecedor_nome, desconto) |         VALUES (v_os_id::TEXT, 'Repasse ' || v_os_numero || CASE WHEN v_reversa_prestador > 0 THEN ' (c/ reversa)' ELSE '' END, v_valor_liquido, v_data_venc_30, v_status_financeiro, v_prestador_nome, NEW.prestador_id, v_prestador_nome, v_desconto_valor) |         ON CONFLICT (os_id) DO UPDATE SET valor = v_valor_liquido, status = CASE WHEN v_is_concluida THEN 'aberto' WHEN financeiro_pagar.status = 'aberto' THEN 'aberto' ELSE 'pendente' END, data_vencimento = v_data_venc_30, fornecedor_id = NEW.prestador_id, fornecedor_nome = v_prestador_nome, desconto = v_descon
+[4] M80 live len=8795
+[4] v_valor_liquido formula: v_valor_liquido := v_valor_prestador |                    + COALESCE(NEW.pedagio, 0) |                    + v_outros_custos; |  |   -- TMS-FIN-PROG-05B: AR do cliente REMOVIDO (fonte unica = f_emitir_fatura). |  |   -- 2. financeiro_pagar (INALTERADO) |   IF v_valor_prestador > 0 AND NEW.prestador_id IS NOT NULL 
+[4] INSERT financeiro_pagar live: INSERT INTO financeiro_pagar ( |         os_id, descricao, valor, data_vencimento, status, |         prestador, fornecedor_id, fornecedor_nome |       ) VALUES ( |         NEW.id::TEXT, |         'Repasse ' || COALESCE(NEW.numero, 'OS#' || SUBSTRING(NEW.id::TEXT, 1, 8)), |         v_valor_liquido, |         v_data_venc_30, |         CASE WHEN v_is_finalizada THEN 'aberto' ELSE 'pendente' END, |         v_prestador_nome, |         NEW.prestador, |         v_prestador_nome |       ); |     ELSE |       UPDATE financeiro_pagar SET |         valor          = v_valor_liquido, |         prestador      = v_prestador_nome, |         fornecedor_id  = NEW.prestador, |         fornecedor_nome = v_prestador_nome, |         status         = 
+[5] CHECKs: financeiro_pagar.ck_fp_status VALID ; financeiro_receber.ck_fr_status VALID
+[6] policies anon/permissive: NENHUMA (anon bloqueado)
+[7] financeiro_pagar status: pendente=60(os:60), aberto=34(os:34), cancelado=25(os:22), pago=7(os:4), cancelada=3(os:3), a vencer=1(os:0), parcial=1(os:1)
+[8] pagamentos_prestadores: total=112 os_numero_NULL=112 pendentes=93
+[9] composicao_financeira_os: total=59 mb_null=0 outros_custos_divergente=6
+[10] triggers: alocacoes_escala:trg_alocacoes_escala_updated_at, alocacoes_escala:trg_cancelar_financeiro_alocacao, alocacoes_escala:trg_evento_alocacao_cancelada, alocacoes_escala:trg_evento_alocacao_criada, alocacoes_escala:trg_evento_alocacao_motorista_trocado, alocacoes_escala:trg_evento_alocacao_recusada, alocacoes_escala:trg_evento_operacao_finalizada, alocacoes_escala:trg_evento_prestador_aceitou, alocacoes_escala:trg_propagar_financeiro_alocacao, alocacoes_escala:trg_registrar_historico_alocacao, ordens_servico:trg_evento_os_cancelada, ordens_servico:trg_evento_os_criada, ordens_servico:trg_evento_os_finalizada, ordens_servico:trg_evento_os_status_changed, ordens_servico:trg_notificar_os_para_app, ordens_servico:trg_propagar_financeiro_os
+[10] com "status" no corpo: trg_cancelar_financeiro_alocacao, trg_evento_alocacao_cancelada, trg_evento_alocacao_recusada, trg_evento_operacao_finalizada, trg_propagar_financeiro_alocacao, trg_evento_os_cancelada, trg_evento_os_finalizada, trg_evento_os_status_changed, trg_propagar_financeiro_os
+[11] cadastro: {"prestadores":"40","prest_ativos":"27","liberados":"4","sem_doc":"7","veiculos":"66","sem_placa":"0"}
+[12] volatility: f_aprovar_pagamento_prestadores=v, f_atualizar_reversa_app=v, f_avancar_etapa_app_motorista=v, f_buscar_operacoes_motorista=s, f_registrar_baixa_financeira=v
+[13] últimas migrations aplicadas: 20260923160000, 20260923093000, 20260728
+[14] db now=2026-10-14 01:02:25.236545+00 tz=UTC

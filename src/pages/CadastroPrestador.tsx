@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { criarCandidatoService } from "@/services/recrutamento/criarCandidatoService";
 import { toast } from "sonner";
 import { useOnboardingStore } from "@/components/onboarding/onboardingStore";
 import StepPersonal from "@/components/onboarding/StepPersonal";
@@ -131,7 +132,7 @@ export default function CadastroPrestador() {
 
     setSubmitting(true);
     try {
-      const { error } = await supabase.from("candidatos").insert([{
+      const resultado = await criarCandidatoService.criar({
         nome_completo: nome,
         cpf: cpf.replace(/\D/g, ""),
         telefone: "",
@@ -143,10 +144,9 @@ export default function CadastroPrestador() {
         tipo_carroceria: tipoCarga,
         mensagem_livre: `Modelo: ${modelo}, Ano: ${ano}, Capacidade: ${capacidade}`,
         canal_captacao: "onboarding_app",
-        status: "interessado",
-      }]);
+      });
 
-      if (error) throw error;
+      if (!resultado.sucesso) throw new Error(resultado.erro);
 
       submitComplete();
       toast.success("Cadastro concluído com sucesso!", {

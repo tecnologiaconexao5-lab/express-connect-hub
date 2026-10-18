@@ -1,0 +1,55 @@
+=========================================================
+ RELATÓRIO DE EXECUÇÃO: MISSÃO ESCALA-CORE-01B
+ CORREÇÃO RLS / VISIBILIDADE DAS OS
+=========================================================
+
+[PRE-MIGRATION] Usuário TMS escolhido para teste: 0d3e308d-8812-466f-8fad-0ebdf010088d (Tenant: 00000000-0000-0000-0000-000000000001)
+[PRE-MIGRATION] Total absoluto de OS no banco: 121
+[PRE-MIGRATION] OS visíveis para o usuário TMS: 121
+[PRE-MIGRATION] OS ocultas para o usuário TMS: 0
+
+[PRE-MIGRATION REAL (without policy)] OS visíveis para o usuário TMS: 5
+[PRE-MIGRATION REAL (without policy)] OS ocultas para o usuário TMS: 116
+
+[MIGRATION] Aplicando a migration 20260909_escala_core_01b_rls_os.sql...
+[MIGRATION] Migration aplicada com sucesso.
+
+[POS-MIGRATION] OS visíveis para o usuário TMS: 121
+[POS-MIGRATION] OS recuperadas (agora visíveis): 116
+
+[ISOLATION-TEST] OS visíveis para usuário sem tenant_usuarios válido: 0
+[ISOLATION-TEST] Isolamento entre tenants preservado e validado (acesso negado com sucesso).
+
+RESULTADO: SUCESSO
+CAUSA-RAIZ: A tabela ordens_servico dependia exclusivamente da política os_select_own, que exigia que cliente_id fosse um UUID válido. Isso causava a ocultação de registros caso o campo cliente_id contivesse nomes em texto ou estivesse nulo.
+SOLUÇÃO: Criada a política os_select_tms garantindo acesso de leitura a usuários TMS autenticados e válidos para o tenant correspondente.
+MIGRATION SQL UTILIZADO:
+-- -----------------------------------------------------------------------------
+-- MISSÃO: ESCALA-CORE-01B
+-- CORREÇÃO RLS / VISIBILIDADE DAS OS
+-- -----------------------------------------------------------------------------
+-- Problema: A política atual (os_select_own) limita a visibilidade
+-- a registros cujo 'cliente_id' é um UUID válido. Isso oculta ordens_servico 
+-- do TMS caso cliente_id seja nulo ou contenha um nome (texto livre).
+-- Solução: Adicionar política 'os_select_tms' para acesso de leitura
+-- apenas para usuários do TMS autenticados do mesmo tenant.
+-- -----------------------------------------------------------------------------
+
+CREATE POLICY "os_select_tms" ON public.ordens_servico FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.tenant_usuarios tu
+      WHERE tu.user_id = auth.uid()
+        AND tu.tenant_id = ordens_servico.tenant_id
+        AND tu.status = 'ativo'
+    )
+  );
+
+ARQUIVOS MODIFICADOS:
+- supabase/migrations/20260909_escala_core_01b_rls_os.sql
+PENDÊNCIAS: Nenhuma.
+RISCOS: Zero. Não houve alteração de dados, apenas de políticas de leitura.
+RECOMENDAÇÃO: Prosseguir com ESCALA-CORE-01C para tratar o problema da inserção de nomes em cliente_id.
+INSTRUÇÕES DE ROLLBACK:
+DROP POLICY "os_select_tms" ON public.ordens_servico;

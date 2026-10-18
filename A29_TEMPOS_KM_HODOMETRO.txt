@@ -1,0 +1,55 @@
+================================================================================
+A29 — TEMPOS / KM / HODÔMETRO — STATUS
+================================================================================
+
+CONTEXTO
+- TMS oficial: express-connect-hub
+- Supabase: uwrvzsjtpgaifkktpepn
+- A29-C: conclusões de auditoria usadas (não refeita na A29-D).
+- Painel de KM implementado NO TMS OFICIAL (repo Lovable NÃO alterado).
+
+A29-D — CORREÇÃO MÍNIMA + PAINEL KM (CONCLUÍDA)
+1) UNIQUE(operation_id) em operation_km:
+   - Produção tinha DUPLICATAS (38 linhas / 18 operation_id distintos).
+   - Dedup prévio: mantém a linha mais completa por operation_id
+     (foto_km_final > km_final > updated_at > created_at > id). NÃO fabrica dados.
+   - Criado: operation_km_operation_id_key (UNIQUE btree operation_id).
+   - Tipos/FKs/RLS de operation_km NÃO alterados.
+
+2) RPC f_km_evidencias_operacao(UUID):
+   - STABLE SECURITY DEFINER SET search_path TO 'public'.
+   - Guard: tenant_usuarios (user_id=auth.uid() AND status='ativo').
+   - OS→alocação via alocacoes_escala.ordem_servico_id.
+   - operation_km por operation_id (uuid) = alocação.
+   - operation_timeline_events.operation_id é TEXT → cast a.id::TEXT.
+   - Sem has_role/profiles/user_roles.
+   - Grants no padrão A27/A28: REVOKE PUBLIC/anon; GRANT authenticated + service_role.
+     Verificado: anon=false, public=false, authenticated=true, service_role=true.
+   - Retorno: os_id/os_numero + alocacoes[] (km inicial/final/percorrido/fotos,
+     tempos, timeline). Leitura pura.
+
+3) Painel de KM no TMS oficial:
+   - src/services/operacao/kmEvidenciasService.ts (NOVO) — buscarKmEvidenciasDaOS.
+   - src/components/operacao/KmEvidenciasPanel.tsx (NOVO) — exibe KM inicial+foto,
+     KM final+foto, KM percorrido, horários/tempos e timeline (somente leitura).
+   - Integrado no dossiê da Central Financeira (ConferenciaFinanceira.tsx, seção
+     "Operação") usando osId/alocacaoId do item.
+   - Repo Lovable NÃO alterado.
+
+DADOS REAIS (verificação read-only)
+- operation_km: 38 linhas → 18 após dedup (todas operation_id distintos).
+- Alocações de teste com KM (ex.: km 100→250, 5888→6888) estão SEM OS vinculada
+  (ordem_servico_id NULL) → não aparecem no painel (esperado). A prova física no
+  Redmi usará operação real com OS vinculada.
+
+VALIDAÇÃO
+- npx tsc --noEmit → 0 erros.
+- Migration aplicada em PRODUÇÃO (script scripts/a29d_aplicar_km_evidencias.mjs).
+- Função responde guard (USUARIO_NAO_AUTENTICADO sem auth) e agregação válida.
+- Suíte ampla/build NÃO executados (missão mínima; sem erro de TS que justifique).
+
+PENDÊNCIA (prova física)
+- CONECTAR O REDMI: operação real deve informar KM inicial+foto e KM final+foto
+  via App (operation_km + operation_timeline_events). Painel no TMS passa a exibir
+  as evidências. NÃO foram fabricadas KM/fotos no banco.
+================================================================================

@@ -1,0 +1,198 @@
+================================================================================
+ A31H — SINCRONIZAÇÃO ESCALA ↔ APP PRESTADOR ↔ FINANCEIRO
+ Inspeção técnica + correção localizada (tempos reais do App na Escala)
+ Relatório de Fechamento — Missão A31-H (modo econômico)
+ Data: 2026-08-17   |   Fonte de verdade: estruturas já conectadas (sem migration)
+================================================================================
+
+================================================================================
+SEÇÃO 1 — MATRIZ DADO | FONTE OFICIAL | ESCALA | APP | FINANCEIRO | STATUS
+================================================================================
+| DADO                        | FONTE OFICIAL                          | ESCALA                  | APP                    | FINANCEIRO                  | STATUS |
+|-----------------------------|----------------------------------------|-------------------------|------------------------|-----------------------------|--------|
+| Identificador interno       | ordens_servico.numero (via ordem_servico_id) | ✅ osNumero/OS          | ✅ (lê via f_buscar)  | ✅ osNumero (join)          | OK     |
+| Romaneio/OC do cliente      | os.romaneio || metadata.numeroOC || app_motorista.romaneio | ✅ metadata.numeroOC | ✅ romaneio_informado → app_motorista | ✅ centralFinanceiroService:370 | OK* |
+| Prestador                   | alocacoes_escala.prestador_id → prestadores | ✅                      | ✅ auth.uid() → prestador | ✅ join                     | OK     |
+| Veículo/placa               | alocacoes_escala.tipo_veiculo/placa      | ✅                      | ✅ (lê via f_buscar)  | ✅                          | OK     |
+| Cliente                     | alocacoes_escala.cliente_id → clientes   | ✅                      | ✅                    | ✅ join                     | OK     |
+| Origem/destino              | alocacoes_escala.origem/destino          | ✅                      | ✅                    | ✅                          | OK     |
+| Valores financeiros         | alocacoes_escala (valor_* ) + triggers   | ✅                      | — (só exibição)       | ✅ CAMPOS_COMPLEMENTO        | OK     |
+| Horários reais da operação  | eventos_oficiais + horario_inicio/fim_real | ✅ AGORA (A31-H)       | ✅ (grava eventos)    | ✅ data_finalizacao          | OK     |
+| POD/evidências              | entregas_protocolo (trigger delivery_proofs) | ✅ dossiê              | ✅ (envia POD)        | ✅ DossieEntregaSheet        | OK     |
+
+* OK com ressalva de prioridade/cascata (ver Seção 6).
+
+================================================================================
+SEÇÃO 2 — LIGAÇÕES (ESCALA ↔ APP ↔ FINANCEIRO)
+================================================================================
+Escala → App ............... OK
+  - Escala grava em alocacoes_escala (fonte única); App lê via
+    f_buscar_operacoes_motorista (STABLE, auth.uid()). Mesma alocação.
+App → Escala ............... OK
+  - f_avancar_etapa_app_motorista grava status, horario_inicio_real,
+    horario_fim_real, data_finalizacao, finalizada, metadata.app_motorista,
+    eventos_oficiais e operation_timeline_events.
+  - Escala consome via useEscalaRealtime (postgres_changes em alocacoes_escala).
+Escala → Financeiro ........ OK
+  - Central lê alocacoes_escala (status concluida+finalizada), joins de
+    cliente/prestador/OS, NFs em fiscal_documentos_vinculados, POD em
+    entregas_protocolo. Trigger M66/M80 propaga valores.
+App → Financeiro ........... OK
+  - Via alocacoes_escala + ordens_servico + eventos_oficiais: o Financeiro
+    lê romaneio (os.romaneio || metadata.numeroOC || app_motorista.romaneio),
+    POD (entregas_protocolo) e finalização (data_finalizacao).
+
+================================================================================
+SEÇÃO 3 — CAUSA-RAIZ ENCONTRADA E CORRIGIDA
+================================================================================
+PROBLEMA: a Escala calculava os tempos operacionais (aguardando, carregamento,
+em rota, total) a partir de horários MANUAIS digitados no modal
+(tempoChegadaPatio, tempoInicioCarregamento, tempoFimCarregamento,
+tempoSaidaRua, tempoFinalizacaoEntregas), gravados em metadata — enquanto o App
+já registrava eventos REAIS com timestamps em eventos_oficiais
+(arrived_pickup, loading_started, loading_finished, route_started,
+arrived_delivery, operation_finished) e horário real em
+horario_inicio_real/horario_fim_real.
+
+Isso gerava DOIS relógios independentes: o manual da Escala e o real do App.
+
+CORREÇÃO (causa-raiz, sem migration):
+- Criado src/services/escala/escalaTemposService.ts:
+  · busca eventos_oficiais da alocação (source='app_motorista');
+  · normaliza via eventAdapter.normalizarEvento (reuso);
+  · deriva TemposOperacionaisReais: chegadaOrigem=arrived_pickup,
+    inicioCarregamento=loading_started, fimCarregamento=loading_finished,
+    saidaRota=route_started, chegadaDestino=arrived_delivery,
+    finalizacao=operation_finished;
+  · calcula tempoAguardando=inicio−chegada, tempoCarregamento=fim−inicio,
+    tempoEmRota=finalização−saída, tempoTotal=finalização−chegada;
+  · formatarDuracaoMin para exibição.
+- EscalaLista.tsx: ao abrir o modal de uma alocação com id real, carrega os
+  tempos reais via buscarTemposReaisAlocacao. No painel de tempos, usa os
+  tempos do App quando disponíveis (banner azul "Tempos calculados a partir dos
+  eventos REAIS do App Motorista"), mantendo os campos manuais apenas como
+  fallback para alocações criadas só no TMS.
+
+Não foi criada tabela paralela, não houve migration e não foi alterado o banco.
+
+================================================================================
+SEÇÃO 4 — COMPROVAÇÃO TÉCNICA (LEITURA DE DADOS REAIS DE HOMOLOGAÇÃO)
+================================================================================
+Scripts read-only executados (scripts/a31h_inspecao_readonly.mjs e _2.mjs):
+- Eventos do App em eventos_oficiais: 74 eventos vinculados a alocações válidas,
+  15 tipos (operation_accepted, arrived_pickup, loading_started/finished,
+  romaneio_informado, romaneio_foto, km_registered, route_started,
+  arrived_delivery, unloading_started/finished, km_final, signature_captured,
+  pod_sent, operation_finished).
+- 3 alocações com eventos App E OS vinculada (homologação), ex.:
+  · 01fc1dce → OS-202608-981024: 17 eventos, POD 1, horario_inicio_real
+    2026-08-06T22:58Z, horario_fim_real + data_finalizacao 2026-08-07T11:43Z.
+  · 4eabccb2 → OS-202607-426505: 10 eventos, POD 1, finalizada com
+    horario_fim_real/data_finalizacao.
+  · ecaedf20 → HML-APP-001: 4 eventos, status aceita, financeiro_receber=1 e
+    financeiro_pagar=1 já criados (trigger M66).
+- Financeiro por os_id: financeiro_receber=83, financeiro_pagar=82,
+  pagamentos_prestadores=82 (dados existentes).
+- Timestamps reais em alocacoes_escala: 39 com horario_inicio_real, 35 com
+  horario_fim_real, 48 com data_finalizacao.
+
+CONCLUSÃO: o caminho App → eventos → alocação → OS → Financeiro está funcional
+em produção/homologação. A única falha de UX era a Escala não consumir esses
+tempos reais — corrigida nesta missão.
+
+================================================================================
+SEÇÃO 5 — LINGUAGEM DO MOTORISTA (APP) / SERVIÇOS EXPRESS
+================================================================================
+- NÃO foi alterado o App nesta missão (não há APK/build Flutter nesta missão).
+- Rótulo atual da RPC: etapa 'romaneio_informado' → event_type
+  'romaneio_informado', label no eventAdapter: "Romaneio informado". Para o
+  App exibir "Romaneio / ordem de carregamento", a alteração é no app Flutter
+  (externo) — documento na Seção 8 (teste físico).
+- NÃO existe duplicidade de campo: a referência do cliente é ÚNICA (romaneio),
+  com cascata os.romaneio || metadata.numeroOC || metadata.app_motorista.romaneio.
+- Serviços Express/OS: a RPC já torna 'romaneio_informado' OPCIONAL (etapa
+  permitida mas não obrigatória na transição carregamento_finalizado → pode
+  seguir para km_inicial_informado ou saiu_em_rota). Nenhuma obrigatoriedade
+  imposta — fluxo simplificado preservado.
+
+================================================================================
+SEÇÃO 6 — ROMANEIO / OC: PRIORIDADE E CASCATA (sem divergência)
+================================================================================
+- Prioridade de leitura (centralFinanceiroService.ts:370):
+  os.romaneio → metadata.numeroOC → metadata.app_motorista.romaneio.
+- Escrita autorizada:
+  · Escala grava metadata.numeroOC (referência do cliente no modal).
+  · App grava metadata.app_motorista.romaneio (etapa romaneio_informado) e,
+    quando há OS vinculada, o bloco 10.1 (A31-D aplicado em produção) grava
+    também ordens_servico.romaneio.
+- A31-D já aplicou sync retroativo. Metadata preservada para histórico/
+  compatibilidade; a fonte oficial de exibição permanece a cascata acima.
+- Não foi criado segundo campo.
+
+================================================================================
+SEÇÃO 7 — EVIDÊNCIAS (FOTO ROMANEIO / ENTREGA / CANHOTO)
+================================================================================
+- Fonte oficial única de POD/evidências: entregas_protocolo (trigger
+  f_sync_delivery_proof_to_entregas a partir de delivery_proofs do App).
+- Dossiê Financeiro (DossieEntregaSheet) e Escala consomem a MESMA fonte.
+- Foto do romaneio/OC: App envia na etapa 'foto_romaneio' → event_type
+  'romaneio_foto' em eventos_oficiais (payload com URL) — evidência vinculada à
+  alocação, acessível via timeline do dossiê (eventos_oficiais). NÃO é
+  duplicada em storage paralelo.
+- Não foi criada estrutura nova.
+
+================================================================================
+SEÇÃO 8 — O QUE AINDA EXIGE HOMOLOGAÇÃO FÍSICA (App no Redmi)
+================================================================================
+1. Abrir uma alocação de agregado no App e executar as etapas reais
+   (cheguei_coleta → carregamento_iniciado/finalizado → romaneio_informado →
+   saiu_em_rota → chegou_entrega → km_final → pod_registrado →
+   servico_finalizado). Confirmar no TMS:
+   - Escala → modal → painel de tempos exibe "Tempos calculados a partir dos
+     eventos REAIS do App Motorista" com as durações.
+   - Central Financeira mostra o serviço concluído com os mesmos horários
+     (data_finalizacao) e POD.
+2. Verificar que o rótulo no App exibe "Romaneio / ordem de carregamento"
+   (a string atual no app Flutter é "Informar o romaneio"; ajuste de texto é
+   no projeto Flutter externo prestador.conexaoexpress.com.br).
+3. Serviço Express/moto sem romaneio: executar fluxo simples (aceitar → cheguei
+   → entrega → POD) e confirmar que NÃO é exigido romaneio.
+
+================================================================================
+SEÇÃO 9 — ARQUIVOS ALTERADOS
+================================================================================
+1. src/services/escala/escalaTemposService.ts — NOVO: derivação de tempos
+   operacionais a partir de eventos_oficiais (App).
+2. src/components/operacao/EscalaLista.tsx — integra tempos reais no modal
+   (banner "via App") + fallback manual; import do helper.
+3. src/test/a31h_tempos_operacionais.test.ts — NOVO (8 testes).
+4. scripts/a31h_inspecao_readonly.mjs / a31h_inspecao_readonly2.mjs — NOVOS
+   (leitura read-only de comprovação).
+
+================================================================================
+SEÇÃO 10 — TESTES / VALIDAÇÃO
+================================================================================
+- src/test/a31h_tempos_operacionais.test.ts (8 testes) — PASS:
+  1. chegada à origem alimenta tempo aguardando (75min);
+  2. início/fim carregamento alimentam tempo de carregamento (45min);
+  3. saída/encerramento alimentam tempo em rota (150min);
+  4. tempo total = chegada→finalização (270min);
+  5. sem eventos retorna nulos (não inventa tempo);
+  6. eventos parciais não geram médias inventadas;
+  7. formatarDuracaoMin horas/minutos;
+  8. formatarDuracaoMin null → em-dash.
+- npx tsc --noEmit → ✅ 0 erros
+- npm run build → ✅ 1m12s
+- npx eslint (escalaTemposService + teste) → ✅ 0 erros
+- NÃO rodada suíte completa (modo econômico). Regressão a31d/a31f preservada
+  (testes específicos executados e passando).
+
+================================================================================
+SEÇÃO 11 — PENDÊNCIAS REAIS
+================================================================================
+- (App Flutter, externo) Ajustar rótulo "Informar o romaneio" →
+  "Romaneio / ordem de carregamento" no app do motorista.
+- (Homologação física) Teste no Redmi descrito na Seção 8.
+- Nenhuma migration necessária; nenhum dado real de produção alterado nesta
+  missão (leitura read-only + alteração exclusivamente de front-end/serviço
+  de leitura).

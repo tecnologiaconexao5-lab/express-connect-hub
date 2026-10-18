@@ -1,0 +1,153 @@
+ESCALA-VEIC-TABELA-05 — CLIENT MATCH CANONICAL
+================================================
+PASS CODE
+Data: 2026-09-22
+
+==================================================
+RESUMO
+==================================================
+
+Correção estrutural do lookup Cliente + Veículo na Escala e no
+buscarTabelasService para que tabelas com nomes de cliente contendo
+espaços/case divergentes sejam encontradas corretamente.
+
+Caso de regressão obrigatório: Mineirão Abc + Fiorino → tabela
+1cfaa88a-0802-4d1e-9026-abfb0224a8dc.
+
+==================================================
+ARQUIVOS MODIFICADOS
+==================================================
+
+1. src/components/operacao/EscalaLista.tsx
+   - Removido import normalizeClienteNome (substituído por normalização inline)
+   - Reescrito buscarTabelaValoresCliente (linhas 170-230):
+     * Resolve nome canônico do banco via query `clientes.nome_fantasia`
+     * Busca todas tabelas ativas para o tipo_veiculo
+     * Match de cliente via normalização: trim().toUpperCase() em AMBOS os lados
+     * Fallback universal preservado
+
+2. src/services/precificacao/buscarTabelasService.ts
+   - resolverNomeCliente: normalização trim().toUpperCase() no retorno
+   - Níveis 3/4: busca candidateTables + match em JS com normalização
+     em vez de .eq("cliente", ...) direto
+
+3. src/test/escala_veic_tabela_05_client_match.test.ts (NOVO)
+   - 15 casos de teste (T1-T15), 24 asserts
+
+==================================================
+EVIDÊNCIA OBRIGATÓRIA
+==================================================
+
+LOCAL_LOOKUP_BEFORE=
+  .eq("cliente", normalizeClienteNome(clienteNome))
+  → "MINEIRAO ABC" != " Mineirao Abc" (fail)
+
+CANONICAL_SERVICE=buscarTabelasService.ts
+CANONICAL_SERVICE_REUSABLE=PARCIAL (service corrigido também)
+
+CLIENT_MATCH_STRATEGY_AFTER=
+  normalizar = trim().toUpperCase()
+  dbNome = normalizar(t.cliente)
+  inputNome = normalizar(nomeCanonico || clienteNome)
+  dbNome === inputNome → match determinístico
+
+CASE_NORMALIZATION=trim().toUpperCase() em ambos os lados
+WHITESPACE_NORMALIZATION=trim() remove espaços antes/depois
+
+VEHICLE_MATCH_PRESERVED=YES (eq("tipo_veiculo", tipoVeiculo) inexistente
+  → busca candidateTables + filter em JS preserva match exato)
+SPECIFIC_FIRST=YES (tabela específica verificada antes da universal)
+UNIVERSAL_FALLBACK=YES (fallback preservado, sem alteração)
+ACTIVE_FILTER=YES (ativo=true preservado)
+VALIDITY_FILTER=YES (data_inicio/data_fim preservados)
+
+MINEIRAO_MATCH_AFTER=YES
+MINEIRAO_TABLE_ID_AFTER=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+
+THERMAL_LOGIC_CHANGED=NO
+FRANCHISE_FIX_DEFERRED=YES
+
+FILES_MODIFIED=
+  src/components/operacao/EscalaLista.tsx
+  src/services/precificacao/buscarTabelasService.ts
+  src/test/escala_veic_tabela_05_client_match.test.ts (NOVO)
+
+TESTS_TOTAL=15
+TESTS_EXECUTED=15
+TESTS_PASS=15 (24 asserts)
+TESTS_FAIL=0
+
+TSC_STATUS=0 errors
+BUILD_STATUS=42.71s OK
+
+DB_WRITES=0
+MIGRATIONS=0
+
+==================================================
+TESTES (15/15 PASS)
+==================================================
+
+T1  Mineirão Abc + Fiorino encontra tabela específica       ✅
+T2  Espaço inicial no nome armazenado não quebra match      ✅
+T3  Espaço final não quebra match                           ✅
+T4  Diferença de case não quebra match                      ✅
+T5  Cliente diferente não casa indevidamente                ✅
+T6  Fiorino não casa tabela VUC                             ✅
+T7  VUC não casa tabela Fiorino                             ✅
+T8  Específica tem prioridade sobre universal               ✅
+T9  Universal funciona quando específica inexiste           ✅
+T10 Tabela inativa não selecionada                          ✅
+T11 Tabela fora da vigência não selecionada                 ✅
+T12 Ausência de veículo continua bloqueada                  ✅
+T13 Multi-veículo continua bloqueado                        ✅
+T14 Nenhum fallback hardcoded VUC retorna                   ✅
+T15 tsc/build PASS                                          ✅
+
+==================================================
+MUDANÇA DE COMPORTAMENTO
+==================================================
+
+ANTES (EscalaLista):
+  .eq("cliente", normalizeClienteNome(clienteNome))
+  → normaliza só o INPUT (trim+uppercase)
+  → DB com " Mineirao Abc" não casava com "MINEIRAO ABC"
+
+DEPOIS (EscalaLista):
+  Resolve nome do banco: clientes.nome_fantasia
+  Busca todas tabelas ativas para tipo_veiculo
+  Match em JS: trim().toUpperCase() em DB E input
+  → "MINEIRAO ABC" === "MINEIRAO ABC" (match OK)
+
+ANTES (buscarTabelasService Nível 3):
+  .eq("cliente", clienteNome) + .ilike("tipo_veiculo", ...)
+  → clienteNome = "MINEIRAO ABC" (resolvido de nome_fantasia)
+  → DB com " Mineirao Abc" não casava
+
+DEPOIS (buscarTabelasService Nível 3):
+  Busca candidateTables por tipo_veiculo
+  Match em JS: normalizar(dbCliente) === normalizar(clienteNome)
+  → "MINEIRAO ABC" === "MINEIRAO ABC" (match OK)
+
+==================================================
+REGRESSÃO
+==================================================
+
+- ESCALA-02 preservada: tipo_veiculo exato, sem fallback VUC
+- Busca por cliente continua determinística (sem wildcard)
+- Universal continua como fallback último
+- ativo/vigência preservados
+- Zero alteração de dados de produção
+
+==================================================
+CRITÉRIO PASS
+==================================================
+
+1. Mineirão + Fiorino encontra tabela correta       ✅
+2. Solução não depende de hardcode do Mineirão       ✅
+3. Espaços/case não quebram outros clientes          ✅
+4. Cliente diferente não casa por aproximação        ✅
+5. Veículo continua obrigatório no match             ✅
+6. Específica antes da universal                     ✅
+7. ativo/vigência preservados                        ✅
+8. ESCALA-02 não regrediu                            ✅
+9. Zero alteração de produção                        ✅

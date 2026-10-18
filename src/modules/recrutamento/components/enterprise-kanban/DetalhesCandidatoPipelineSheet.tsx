@@ -1,18 +1,24 @@
 import { useState, useMemo, useCallback } from 'react'
+import { promptAction } from '@/lib/confirmDialog'
 import {
   MapPin, Truck, Phone, Mail, Shield,
   FileText, MessageSquare,
   UserCheck, Ban, Send, Star, Calendar, Save, Award, XCircle,
   UserCircle, Clock, Users, Link2, History, ClipboardCheck, CheckCircle2, Circle,
+  TrendingUp, AlertTriangle, Zap, ClipboardList, Heart, ThumbsUp, Target,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { SafeImage } from '@/components/ui/safe-image'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { useEnterpriseKanbanStore } from './enterpriseKanbanStore'
 import { enterpriseKanbanService } from './enterpriseKanbanService'
 import { conversaoCandidatoService } from '../../services/conversaoCandidatoService'
 import { prestadoresService } from '../../services/prestadoresService'
+import { recrutamentoScoreService } from '@/services/recrutamento/recrutamentoScoreService'
+import type { CandidatoScoreInput } from '@/services/recrutamento/recrutamentoScoreService'
 import { PIPELINE_COLUMNS, STAGE_TRANSITIONS, DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS } from './enterpriseKanbanTypes'
 import type { PipelineStage, DocumentoCandidato } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
@@ -26,27 +32,39 @@ interface DetalhesCandidatoPipelineSheetProps {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  novo_cadastro: 'Novo Cadastro',
+  novo_cadastro: 'Novo Lead',
+  pre_triagem: 'Pré-Triagem',
+  interesse_confirmado: 'Interesse Confirmado',
   em_analise: 'Em Análise',
-  documentacao_pendente: 'Doc. Pendente',
+  documentacao_pendente: 'Documentação',
   em_validacao: 'Em Validação',
   entrevista: 'Entrevista',
-  em_treinamento: 'Em Treinamento',
+  em_treinamento: 'Treinamento',
+  homologacao: 'Homologação',
+  confirmacao_inicio: 'Conf. de Início',
   aprovado: 'Aprovado',
+  prestador_apto: 'Prestador Apto',
   ativo: 'Ativo',
+  operacao_ativa: 'Operação Ativa',
   bloqueado: 'Bloqueado',
   reprovado: 'Reprovado',
 }
 
 const STAGE_COLORS: Record<string, string> = {
   novo_cadastro: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+  pre_triagem: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
+  interesse_confirmado: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
   em_analise: 'text-violet-400 bg-violet-500/10 border-violet-500/30',
   documentacao_pendente: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
   em_validacao: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
   entrevista: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
   em_treinamento: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
+  homologacao: 'text-teal-400 bg-teal-500/10 border-teal-500/30',
+  confirmacao_inicio: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
   aprovado: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+  prestador_apto: 'text-lime-400 bg-lime-500/10 border-lime-500/30',
   ativo: 'text-green-400 bg-green-500/10 border-green-500/30',
+  operacao_ativa: 'text-green-500 bg-green-600/10 border-green-600/30',
   bloqueado: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
   reprovado: 'text-gray-400 bg-gray-500/10 border-gray-500/30',
 }
@@ -64,6 +82,21 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
     [store.candidates, candidateId],
   )
 
+  // AG-07J.11.2 — Gate documental UX: estado derivado do statusDocumental
+  const documentacaoApta = candidate?.statusDocumental === 'completo'
+
+  const MOTIVO_BLOQUEIO_DOCUMENTAL: Record<string, string> = {
+    parcial: 'Complete os documentos obrigatórios antes da conversão.',
+    pendente: 'Documentação obrigatória pendente.',
+    vencido: 'Existe documentação vencida. Regularize antes da conversão.',
+    bloqueado: 'Documentação com bloqueio. Regularize antes da conversão.',
+  }
+
+  const feedbackDocumentacao = candidate && !documentacaoApta
+    ? MOTIVO_BLOQUEIO_DOCUMENTAL[candidate.statusDocumental]
+      ?? 'Documentação não validada. Conversão indisponível.'
+    : null
+
   const possibleStages = candidate ? STAGE_TRANSITIONS[candidate.stage] ?? [] : []
 
   const handleConverterTop = async () => {
@@ -73,10 +106,32 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
 
   const handleMover = async (stage: PipelineStage) => {
     if (!candidate) return
+    // G21 — bloqueio exige motivo; persistido no historico (estrutura existente).
+    let motivo: string | undefined
+    if (stage === 'bloqueado') {
+      const input = (await promptAction({
+        title: 'Bloquear candidato',
+        description: 'Informe o motivo do bloqueio (obrigatório).',
+        inputLabel: 'Motivo do bloqueio',
+        placeholder: 'Ex.: documentação irregular',
+        confirmText: 'Bloquear',
+        cancelText: 'Cancelar',
+      })) ?? ''
+      if (!input.trim()) {
+        toast.error('Informe o motivo do bloqueio.')
+        return
+      }
+      motivo = input.trim()
+    }
     const previousStage = candidate.stage
     store.moveCandidate(candidate.id, stage)
     try {
-      await enterpriseKanbanService.mover(candidate.id, stage)
+      const result = await enterpriseKanbanService.mover(candidate.id, stage, motivo)
+      if (result.error) {
+        store.moveCandidate(candidate.id, previousStage)
+        toast.error(result.error)
+        return
+      }
       toast.success(`Candidato movido para "${STAGE_LABELS[stage] ?? stage}"`)
       onOpenChange(false)
     } catch {
@@ -184,7 +239,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
         <SheetHeader className="mb-6">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl overflow-hidden ring-2 ring-border/40 bg-muted shadow-sm shrink-0">
-              <img src={candidate.foto} alt={candidate.nome} className="w-full h-full object-cover" />
+              <SafeImage src={candidate.foto} alt={candidate.nome} className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0 flex-1">
               <SheetTitle className="text-lg truncate">{candidate.nome}</SheetTitle>
@@ -208,20 +263,38 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
         </SheetHeader>
 
         <div className="mb-4">
-          <Button 
-            className="w-full text-xs h-9 gap-1.5" 
-            variant="outline"
-            onClick={handleConverterTop}
-          >
-            <UserCircle className="w-4 h-4 text-primary" />
-            Converter em Prestador
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                className="w-full text-xs h-9 gap-1.5" 
+                variant="outline"
+                onClick={handleConverterTop}
+                disabled={convertendo || !documentacaoApta}
+              >
+                <UserCircle className="w-4 h-4 text-primary" />
+                Converter em Prestador
+              </Button>
+            </TooltipTrigger>
+            {!documentacaoApta && (
+              <TooltipContent side="bottom" className="max-w-xs">
+                <p className="text-xs">{feedbackDocumentacao}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+          {feedbackDocumentacao && (
+            <p className="mt-1.5 text-[11px] text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              {feedbackDocumentacao}
+            </p>
+          )}
         </div>
 
         <Tabs defaultValue="perfil" className="w-full">
-          <TabsList className="w-full grid grid-cols-5 h-9 mb-4">
+          <TabsList className="w-full grid grid-cols-7 h-9 mb-4">
             <TabsTrigger value="perfil" className="text-[10px] gap-1"><MapPin className="w-3 h-3" /> Perfil</TabsTrigger>
+            <TabsTrigger value="comprometimento" className="text-[10px] gap-1"><TrendingUp className="w-3 h-3" /> Compromet.</TabsTrigger>
             <TabsTrigger value="documentos" className="text-[10px] gap-1"><FileText className="w-3 h-3" /> Documentos</TabsTrigger>
+            <TabsTrigger value="questionario" className="text-[10px] gap-1"><ClipboardList className="w-3 h-3" /> Questionário</TabsTrigger>
             <TabsTrigger value="onboarding" className="text-[10px] gap-1"><ClipboardCheck className="w-3 h-3" /> Onboarding</TabsTrigger>
             <TabsTrigger value="historico" className="text-[10px] gap-1"><History className="w-3 h-3" /> Histórico</TabsTrigger>
             <TabsTrigger value="acoes" className="text-[10px] gap-1"><Send className="w-3 h-3" /> Ações</TabsTrigger>
@@ -288,6 +361,147 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="comprometimento" className="space-y-4 mt-0">
+            {(() => {
+              const scoreInput: CandidatoScoreInput = {
+                tempoMedioRespostaHoras: candidate.tempoMedioRespostaHoras,
+                statusDocumental: candidate.statusDocumental,
+                quantidadeCobrancas: candidate.quantidadeCobrancas,
+                stage: candidate.stage,
+                compareceuPrimeiroDia: candidate.compareceuPrimeiroDia,
+                completou30Dias: candidate.completou30Dias,
+                quantidadeReclamacoes: candidate.quantidadeReclamacoes,
+                historicoDesistencias: candidate.historicoDesistencias,
+                possuiOutraOperacaoFixa: candidate.possuiOutraOperacaoFixa,
+                disponibilidadeRecrutamento: candidate.disponibilidadeRecrutamento,
+                confirmouInteresse: candidate.confirmouInteresse,
+                confirmouPreInicio: candidate.confirmouPreInicio,
+                questionarioRespostas: candidate.questionarioRespostas,
+              }
+              const scoreComp = candidate.scoreComprometimento || recrutamentoScoreService.calcularScoreComprometimento(scoreInput)
+              const classif = scoreComp !== null && scoreComp !== undefined
+                ? (candidate.classificacaoComprometimento || recrutamentoScoreService.classificarComprometimento(scoreComp))
+                : recrutamentoScoreService.classificarComprometimento(null)
+              const risco = candidate.riscoDesistencia || recrutamentoScoreService.calculcarRiscoDesistencia(scoreInput)
+              const etiquetas = candidate.etiquetasAutomaticas.length > 0 ? candidate.etiquetasAutomaticas : recrutamentoScoreService.gerarEtiquetasAutomaticas(scoreInput)
+              const parecer = candidate.parecerIA ? { parecer: candidate.parecerIA, riscos: candidate.principaisRiscos, pontosPositivos: candidate.principaisPontosPositivos, proximaAcao: candidate.proximaAcaoSugerida } : recrutamentoScoreService.gerarParecerOperacional(scoreInput)
+              const corClassif = recrutamentoScoreService.getCorClassificacao(classif)
+              const scorePercent = scoreComp ?? 0
+
+              const handleConfirmarComprometimento = async () => {
+                if (!candidate) return
+                const novoScore = recrutamentoScoreService.calcularScoreComprometimento(scoreInput)
+                const novaClassif = recrutamentoScoreService.classificarComprometimento(novoScore)
+                const novoRisco = recrutamentoScoreService.calcularRiscoDesistencia(scoreInput)
+                const novasEtiquetas = recrutamentoScoreService.gerarEtiquetasAutomaticas(scoreInput)
+                const novoParecer = recrutamentoScoreService.gerarParecerOperacional(scoreInput)
+                const update = {
+                  scoreComprometimento: novoScore,
+                  classificacaoComprometimento: novaClassif,
+                  riscoDesistencia: novoRisco,
+                  etiquetasAutomaticas: novasEtiquetas,
+                  parecerIA: novoParecer.parecer,
+                  principaisRiscos: novoParecer.riscos,
+                  principaisPontosPositivos: novoParecer.pontosPositivos,
+                  proximaAcaoSugerida: novoParecer.proximaAcao,
+                }
+                store.updateCandidate(candidate.id, update as any)
+                try { await enterpriseKanbanService.atualizar(candidate.id, update as any); toast.success('Comprometimento recalculado!') } catch { toast.error('Erro ao salvar') }
+              }
+
+              return (
+                <>
+                  <div>
+                    <SectionDivider title="Score de Comprometimento" />
+                    <div className="mt-2 p-4 rounded-xl bg-muted/10 border border-border/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium">Score</span>
+                        <div className="flex items-center gap-2">
+                          {scoreComp !== null && scoreComp !== undefined ? (
+                            <>
+                              <div className="w-32 h-4 rounded-full bg-muted/30 overflow-hidden">
+                                <div className={cn('h-full rounded-full transition-all', scoreComp >= 90 ? 'bg-emerald-500' : scoreComp >= 75 ? 'bg-blue-500' : scoreComp >= 50 ? 'bg-amber-500' : 'bg-rose-500')} style={{ width: `${Math.min(100, scorePercent)}%` }} />
+                              </div>
+                              <span className="text-xl font-bold tabular-nums">{scoreComp}</span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground italic">—</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium border', corClassif)}>{classif}</span>
+                        <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium border', risco === 'Crítico' || risco === 'Alto' ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' : risco === 'Moderado' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30')}>
+                          <AlertTriangle className="w-3 h-3" /> Risco: {risco}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <SectionDivider title="Checklist de Comprometimento" />
+                    <div className="space-y-1.5 mt-2">
+                      {[
+                        { label: 'Respondeu em menos de 24h', ok: candidate.tempoMedioRespostaHoras !== null && candidate.tempoMedioRespostaHoras > 0 && candidate.tempoMedioRespostaHoras <= 24 },
+                        { label: 'Documentação completa sem cobrança', ok: candidate.statusDocumental === 'completo' && candidate.quantidadeCobrancas === 0 },
+                        { label: 'Compareceu ao treinamento', ok: candidate.stage === 'em_treinamento' || candidate.stage === 'homologacao' || candidate.confirmouPreInicio },
+                        { label: 'Concluiu treinamento', ok: candidate.confirmouPreInicio },
+                        { label: 'Confirmou disponibilidade pós-treinamento', ok: candidate.confirmouInteresse },
+                        { label: 'Compareceu ao primeiro dia', ok: candidate.compareceuPrimeiroDia },
+                        { label: 'Completou 30 dias de operação', ok: candidate.completou30Dias },
+                        { label: 'Sem reclamações operacionais', ok: candidate.quantidadeReclamacoes === 0 },
+                      ].map((item, idx) => (
+                        <div key={idx} className={cn('flex items-center gap-3 p-2.5 rounded-lg border', item.ok ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-muted/10 border-border/30')}>
+                          {item.ok ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-muted-foreground/30 shrink-0" />}
+                          <span className={cn('text-xs', item.ok ? 'text-emerald-300' : 'text-muted-foreground')}>{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {etiquetas.length > 0 && (
+                    <div>
+                      <SectionDivider title="Etiquetas Automáticas" />
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {etiquetas.map((etq: string, idx: number) => <span key={idx} className="px-2 py-1 rounded-md bg-muted/30 text-[10px] font-medium text-muted-foreground border border-border/30">{etq}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <SectionDivider title="Parecer IA" />
+                    <div className="p-3 rounded-lg bg-muted/20 text-xs text-muted-foreground leading-relaxed mt-2">{parecer.parecer}</div>
+                  </div>
+                  {parecer.riscos.length > 0 && (
+                    <div>
+                      <SectionDivider title="Principais Riscos" />
+                      <div className="space-y-1 mt-2">{parecer.riscos.map((r: string, idx: number) => <div key={idx} className="flex items-center gap-2 text-xs text-rose-400"><AlertTriangle className="w-3 h-3 shrink-0" /> {r}</div>)}</div>
+                    </div>
+                  )}
+                  {parecer.pontosPositivos.length > 0 && (
+                    <div>
+                      <SectionDivider title="Pontos Positivos" />
+                      <div className="space-y-1 mt-2">{parecer.pontosPositivos.map((p: string, idx: number) => <div key={idx} className="flex items-center gap-2 text-xs text-emerald-400"><ThumbsUp className="w-3 h-3 shrink-0" /> {p}</div>)}</div>
+                    </div>
+                  )}
+                  <div>
+                    <SectionDivider title="Próxima Ação Sugerida" />
+                    <div className="flex items-start gap-2 mt-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                      <Target className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                      <span className="text-xs text-blue-300">{parecer.proximaAcao}</span>
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={handleConfirmarComprometimento}><Zap className="w-3.5 h-3.5" /> Recalcular Comprometimento</Button>
+                </>
+              )
+            })()}
+          </TabsContent>
+
+          <TabsContent value="questionario" className="space-y-4 mt-0">
+            <QuestionarioTab candidate={candidate} onSave={async (respostas: Record<string, string>) => {
+              const update = { questionarioRespostas: respostas }
+              store.updateCandidate(candidate.id, update as any)
+              try { await enterpriseKanbanService.atualizar(candidate.id, update as any); toast.success('Questionário salvo!') } catch { toast.error('Erro ao salvar questionário') }
+            }} />
           </TabsContent>
 
           <TabsContent value="documentos" className="space-y-4 mt-0">
@@ -638,16 +852,25 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                 >
                   <Send className="w-3.5 h-3.5" /> WhatsApp
                 </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="gap-1.5 col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white"
-                  onClick={handleConverter}
-                  disabled={convertendo}
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  {convertendo ? 'Convertendo...' : 'Converter em Prestador'}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="gap-1.5 col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white"
+                      onClick={handleConverter}
+                      disabled={convertendo || !documentacaoApta}
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      {convertendo ? 'Convertendo...' : 'Converter em Prestador'}
+                    </Button>
+                  </TooltipTrigger>
+                  {!documentacaoApta && (
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <p className="text-xs">{feedbackDocumentacao}</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
               </div>
             </div>
 
@@ -699,5 +922,78 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
         </Tabs>
       </SheetContent>
     </Sheet>
+  )
+}
+
+const PERGUNTAS_QUESTIONARIO = [
+  { key: 'empresas_atuais', pergunta: 'Atualmente trabalha para quais empresas?' },
+  { key: 'intencao_renda', pergunta: 'Sua intenção é renda principal ou complementar?' },
+  { key: 'dias_iniciar', pergunta: 'Caso aprovado, em quantos dias consegue iniciar?' },
+  { key: 'disponibilidade_tipo', pergunta: 'Disponibilidade integral ou parcial?' },
+  { key: 'possui_outra_operacao', pergunta: 'Possui outra operação fixa?' },
+  { key: 'o_que_faria_desistir', pergunta: 'O que faria você desistir de uma operação?' },
+  { key: 'restricao_regiao', pergunta: 'Tem restrição de região?' },
+  { key: 'restricao_horario', pergunta: 'Tem restrição de horário?' },
+  { key: 'restricao_peso', pergunta: 'Tem restrição de peso/paradas?' },
+  { key: 'ja_desistiu', pergunta: 'Já desistiu de operação após aprovado?' },
+]
+
+function QuestionarioTab({ candidate, onSave }: { candidate: any; onSave: (respostas: Record<string, string>) => Promise<void> }) {
+  const [respostas, setRespostas] = useState<Record<string, string>>(candidate.questionarioRespostas || {})
+  const [salvando, setSalvando] = useState(false)
+
+  const handleChange = (key: string, value: string) => {
+    setRespostas(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleSave = async () => {
+    setSalvando(true)
+    try {
+      await onSave(respostas)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 rounded-lg bg-muted/10 border border-border/20 text-xs text-muted-foreground">
+        Questionário de perfil operacional. As respostas são usadas para cálculo de score de comprometimento e risco de desistência.
+      </div>
+      <div className="space-y-3">
+        {PERGUNTAS_QUESTIONARIO.map(({ key, pergunta }) => (
+          <div key={key} className="space-y-1">
+            <label className="text-[11px] font-medium text-muted-foreground">{pergunta}</label>
+            <input
+              type="text"
+              value={respostas[key] || ''}
+              onChange={e => handleChange(key, e.target.value)}
+              placeholder="Digite a resposta..."
+              className="w-full h-9 rounded-md border border-border/50 bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+            />
+          </div>
+        ))}
+      </div>
+      <Button size="sm" className="w-full gap-1.5" onClick={handleSave} disabled={salvando}>
+        <Save className="w-3.5 h-3.5" />
+        {salvando ? 'Salvando...' : 'Salvar Questionário'}
+      </Button>
+      {Object.keys(respostas).length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Resumo</span>
+            <div className="flex-1 h-px bg-border/30" />
+          </div>
+          <div className="space-y-1 mt-2">
+            {PERGUNTAS_QUESTIONARIO.filter(q => respostas[q.key]).map(({ key, pergunta }) => (
+              <div key={key} className="flex items-start gap-2 text-[11px]">
+                <span className="text-muted-foreground/70 shrink-0">{pergunta}</span>
+                <span className="text-foreground font-medium">{respostas[key]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

@@ -1,0 +1,38 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C3D (A4) — historico sanitizado, NAO EXECUTAVEL
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = 'https://REDACTED_PROD_REF.supabase.co';
+const supabaseKey = 'REDACTED_ANON_KEY';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+async function verificarECriar() {
+  console.log('=== VERIFICANDO E TENTANDO CRIAR TABELA ===\n');
+  
+  console.log('1. Verificando se tabela existe...');
+  const { data: check, error: eCheck } = await supabase.from('tabelas_valores').select('id').limit(1);
+  console.log('Existe:', eCheck?.message || (check ? 'SIM' : 'NÃO'));
+  
+  console.log('\n2. Tentando executar via RPC...');
+  const { data: rpc, error: eRpc } = await supabase.rpc('create_table_tabelas_valores', { sql: `
+    CREATE TABLE IF NOT EXISTS public.tabelas_valores (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      cliente_id UUID,
+      nome TEXT NOT NULL,
+      tipo_veiculo TEXT NOT NULL,
+      km_inicial INTEGER NOT NULL DEFAULT 0,
+      km_final INTEGER NOT NULL,
+      valor_base NUMERIC(10,2) DEFAULT 0,
+      valor_km NUMERIC(10,2) DEFAULT 0,
+      valor_minimo NUMERIC(10,2) DEFAULT 0,
+      pedagio_incluso BOOLEAN DEFAULT false,
+      ativo BOOLEAN DEFAULT true,
+      universal BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `});
+  console.log('RPC:', rpc, eRpc?.message);
+}
+
+verificarECriar().catch(e => console.log('ERRO:', e.message));

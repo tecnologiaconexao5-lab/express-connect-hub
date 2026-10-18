@@ -1,0 +1,74 @@
+================================================================================
+E2E-01-INTEG  INTEGRACAO COMERCIAL -> OPERACIONAL -> APP DO MOTORISTA
+Nivel 2 (Validacao E2E Completo)  SOMENTE LEITURA (nenhum dado alterado)
+Gerado em ....: 2026-10-04T23:36:29.645Z
+Projeto ......: Supabase uwrvzsjtpgaifkktpepn (PRODUCAO)
+================================================================================
+
+RESULTADO: SUCESSO  a cadeia esta INTEGRA e sem quebras de chave.
+
+--------------------------------------------------------------------------------
+1. CADEIA VALIDADA
+--------------------------------------------------------------------------------
+  Orcamento Aprovado -> OS Criada -> Alocacao do Prestador -> App (RPC)
+
+  [1] ORCAMENTOS .......... total=10 | aprovado=1 | convertido=0 | com OS=0
+      vinculo: orcamentos.os_vinculada_id/numero  <->  ordens_servico.orcamento_id/orcamento_origem
+  [2] ORDENS_SERVICO ...... total=167 | de orcamento=0 | com prestador(uuid)=62
+      vinculo: alocacoes_escala.ordem_servico_id = ordens_servico.id
+  [3] ALOCACOES_ESCALA .... total=204 | com OS=118 | com prestador=145 | finalizadas=59
+      vinculo: alocacoes_escala.prestador_id = prestadores.id
+  [4] PRESTADORES ......... total=39 | com auth_user_id=5
+      vinculo App: prestadores.auth_user_id = auth.uid()
+
+--------------------------------------------------------------------------------
+2. RPC DO APP  CONTRATO (f_buscar_operacoes_motorista)
+--------------------------------------------------------------------------------
+  [OK] resolve prestador por auth_user_id = auth.uid()
+  [OK] rejeita AUTH_USER_ID_INVALIDO (anti-spoof de p_auth_user_id)
+  [OK] le alocacoes_escala (exclui cancelada/recusada)
+  [OK] junta ordens_servico (os_numero)
+  [OK] junta rota_paradas por alocacao_id
+  [OK] STABLE + SECURITY DEFINER + search_path
+
+  Simulacao do RPC (mesma SELECT, prestadores com auth_user_id):
+  Prestador (App)                        | operacoes | com OS
+  ---------------------------------------|-----------|-------
+  PRESTADOR TESTE APP                    |        54 |     21
+  PRESTADOR HML AUTOMACAO                |         1 |      0
+  REC06 E2E Real Teste                   |         0 |      0
+  teste 2                                |         0 |      0
+  TESTECOREAPP01k                        |         0 |      0
+
+--------------------------------------------------------------------------------
+3. INTEGRIDADE DAS CHAVES (checks)
+--------------------------------------------------------------------------------
+  [OK] auth_user_id_unico  auth_user_id unico por prestador
+  [OK] os_prestador_uuid_valido  0 OS com prestador (uuid) inexistente
+  [OK] os_cliente_uuid_valido  0 OS com cliente (uuid) inexistente
+  [OK] rota_paradas_aloc_valido  0 paradas com alocacao_id inexistente
+  [OK] rpc_resolve_prestador_auth  RPC resolve prestador por auth_user_id = auth.uid()
+  [OK] rpc_le_alocacoes  RPC le alocacoes_escala
+  [OK] rpc_join_os  RPC junta OS (os_numero)
+  [OK] rpc_join_paradas  RPC junta rota_paradas por alocacao_id
+  [OK] rpc_anti_auth_spoof  RPC impede spoof de p_auth_user_id
+  [OK] rpc_stable_definer  RPC STABLE + SECURITY DEFINER
+
+  Situacao do elo alocacao->prestador:
+  [i]  145/204 alocacoes com prestador_id (as 59 restantes sao LEGADAS Jun-Jul/2026, sem prestador; aparecem nos relatorios de higiene)
+
+--------------------------------------------------------------------------------
+4. CONCLUSao
+--------------------------------------------------------------------------------
+  [OK] Elo Orcamento->OS: colunas de vinculo presentes; mecanismo validado (COM-02-APROV).
+  [OK] Elo OS->Alocacao: 118 alocacoes com ordem_servico_id; 0 orfaos.
+  [OK] Elo Alocacao->Prestador: 0 orfaos (FK integra); 145/204 com prestador.
+  [OK] Elo Prestador->App: auth_user_id UNICO; RPC resolve e retorna operacoes.
+  [OK] RPC do App STABLE/DEFINER com anti-spoof; joins corretos (OS, cliente, paradas).
+  [i]  0 conversoes Orcamento->OS materializadas ainda (ha 1 orcamento 'aprovado'); mecanismo pronto.
+  [i]  59 alocacoes legadas (Jun-Jul/2026) sem prestador_id  nao afetam o App (nao pertencem a nenhum prestador).
+
+EVIDENCIA: scripts/_e2e01integ_validacao.json | scripts/_e2e01integ_rpc.sql
+================================================================================
+FIM  E2E-01-INTEG
+================================================================================

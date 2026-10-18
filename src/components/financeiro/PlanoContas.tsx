@@ -345,12 +345,12 @@ export default function PlanoContas() {
           <div className="space-y-4 py-4">
             <div>
               <Label>Conta Pai (opcional)</Label>
-              <Select value={contaPai} onValueChange={setContaPai}>
+              <Select value={contaPai} onValueChange={(v) => setContaPai(v === "nenhum" ? "" : v)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Selecione ou deixe vazio para criar grupo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum (Grupo Principal)</SelectItem>
+                  <SelectItem value="nenhum">Nenhum (Grupo Principal)</SelectItem>
                   {contas.filter(c => c.nivel === 0).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.codigo} - {c.nome}</SelectItem>
                   ))}

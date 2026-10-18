@@ -3,6 +3,7 @@
 // Regras: anti-duplicidade, mapeamento completo, vínculo de documentos
 import { supabase } from "@/lib/supabase";
 import { vincularDocumentoCandidatoAPrestador } from "./documentosPrestadorService";
+import { referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
 
 export interface CandidatoRecrutamento {
   id: string;
@@ -168,12 +169,8 @@ export async function ativarPrestador(
         if (!doc.url_arquivo) continue;
         await supabase.from("documentos_prestadores").insert([{
           prestador_id: existente.id,
-          candidato_id: candidato.id,
           tipo: doc.tipo || "outro",
-          arquivo: doc.url_arquivo,
-          validade: doc.validade || null,
-          status: "valido",
-          origem: "recrutamento_migrado",
+          url: referenciaEstavelDocumento(doc.url_arquivo) ?? doc.url_arquivo,
           created_at: new Date().toISOString(),
         }]).then(({ error: docError }) => {
           if (docError) console.warn("[Recrutamento→Prestador] Erro ao vincular doc:", docError);
@@ -182,7 +179,7 @@ export async function ativarPrestador(
       }
     }
 
-    await supabase.from("candidatos").update({
+    await supabase.from("recrutamento_candidatos").update({
       status: "ativo",
       prestador_id: existente.id,
       updated_at: new Date().toISOString(),
@@ -218,6 +215,11 @@ export async function ativarPrestador(
     regiao_principal: candidato.regiao || "",
     tipo_parceiro: "autonomo",
     status: "ativo",
+    // REC-04-C3: liberado_app=false — fail-closed. A autorização real vem de
+    // conversaoCandidatoService.sincronizarComOperacao() que usa
+    // liberado_app: statusOperacional === 'ativo' (gate documental+estágio).
+    // Este caminho é legacy (Homologacao.tsx morto, DevTesteTMS dev-only).
+    liberado_app: false,
     origem_cadastro: "recrutamento",
     data_cadastro: new Date().toLocaleDateString("pt-BR"),
     data_aprovacao: new Date().toISOString(),
@@ -249,9 +251,7 @@ export async function ativarPrestador(
       await supabase.from("documentos_prestadores").insert([{
         prestador_id: prestador.id,
         tipo: doc.tipo || "outro",
-        arquivo: doc.url_arquivo,
-        validade: doc.validade || null,
-        status: "valido",
+        url: referenciaEstavelDocumento(doc.url_arquivo) ?? doc.url_arquivo,
         created_at: new Date().toISOString(),
       }]).then(({ error: docError }) => {
         if (docError) console.warn("[Recrutamento→Prestador] Erro ao vincular doc:", docError);
@@ -260,7 +260,7 @@ export async function ativarPrestador(
     }
   }
 
-  await supabase.from("candidatos").update({
+  await supabase.from("recrutamento_candidatos").update({
     status: "ativo",
     prestador_id: prestador.id,
     updated_at: new Date().toISOString(),
@@ -296,7 +296,7 @@ export async function atualizarEtapaCandidato(
   candidatoId: string,
   novaEtapa: string
 ): Promise<void> {
-  await supabase.from("candidatos").update({
+  await supabase.from("recrutamento_candidatos").update({
     status: novaEtapa,
     updated_at: new Date().toISOString(),
   }).eq("id", candidatoId);

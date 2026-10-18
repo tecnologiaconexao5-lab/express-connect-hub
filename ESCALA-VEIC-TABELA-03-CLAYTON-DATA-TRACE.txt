@@ -1,0 +1,413 @@
+ESCALA-VEIC-TABELA-03 — CLAYTON DATA TRACE
+============================================
+PASS AUDIT — SOMENTE LEITURA
+Data: 2026-09-22
+
+CLAYTON_ACTIVE_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+CLAYTON_DUPLICATE_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+DUPLICATE_ORIGIN=manual (ambos)
+DUPLICATE_RELATIONSHIP=mesmo CPF 251.098.938-37, criados 7 minutos de intervalo
+
+==================================================
+1 — DUPLICIDADE DO CLAYTON
+==================================================
+
+CLAYTON_ACTIVE_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+  status: ativo
+  tipo_parceiro: agregado
+  created_at: 2026-09-21T04:22:02.718Z
+  updated_at: 2026-09-22T05:05:33.376Z
+  auth_user_id: null
+  metadata: {}
+  veiculos vinculados: 0
+
+CLAYTON_DUPLICATE_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+  status: analise
+  tipo_parceiro: autonomo
+  created_at: 2026-09-21T04:15:11.922Z (PRIMEIRO criado)
+  updated_at: 2026-09-21T13:52:34.490Z
+  auth_user_id: null
+  metadata: {}
+  veiculos vinculados: 1 (GEW-2H93)
+
+DUPLICATE_ORIGIN=manual (ambos, origem="manual")
+DUPLICATE_RELATIONSHIP=mesmo CPF, criados 7 min de intervalo.
+  O primeiro (0673eca2) ficou em "analise".
+  O segundo (cadbbbb6) foi direto para "ativo".
+  Nenhum veiculo vinculado ao "ativo".
+
+==================================================
+2 — ONDE A UI MOSTRA FIORINO
+==================================================
+
+CADASTRO_UI_FILE=src/components/prestadores/PrestadorDetalhe.tsx
+CADASTRO_VEHICLE_QUERY=supabase.from("veiculos").select("*").eq("prestador_vinculado", prestadorId)
+CADASTRO_VEHICLE_SOURCE=tabela veiculos (via FK reversa prestador_vinculado)
+CADASTRO_VEHICLE_SAVE_FUNCTION=handleAddVeiculo() — linha 445
+
+FIORINO_VISIBLE_SOURCE=DEFAULT HARDCODED NO COMPONENTE
+
+Evidencia: PrestadorDetalhe.tsx:176:
+  const [novoVeiculo, setNovoVeiculo] = useState<Partial<VeiculoPrestador>>({
+    tipoVeiculo: "fiorino",   ← DEFAULT HARDCODED
+    status: "ativo"
+  });
+
+Quando o usuario abre o dialog de novo veiculo, "Fiorino" ja esta pre-selecionado.
+Se ele nao mudar, salva como "fiorino".
+
+Porem, a funcao handleAddVeiculo (linha 483-509) grava:
+  tipo: veiculoData.tipoVeiculo   (coluna "tipo" legada)
+  NAO grava "tipo_veiculo" (coluna nova)
+
+O sanitizeVeiculoPayload (linha 428-442) so permite:
+  allowlist = ['placa', 'tipo', 'marca', 'modelo', ...]
+  NAO inclui 'tipo_veiculo'
+
+Portanto: veiculos criados via PrestadorDetalhe grava em "tipo" (legado),
+NUNCA em "tipo_veiculo" (nova). A tela de Cadastro mostra "Fiorino" porque
+esta pre-selecionado no estado local.
+
+==================================================
+3 — TODOS OS VEICULOS CANDIDATOS
+==================================================
+
+VEHICLE_ID=c487f012-208e-47ae-b5d8-e976382eaab0
+  PLACA=GEW-2H93
+  TIPO=null
+  TIPO_VEICULO=fiorino
+  MODELO=SAVEIRO RB MBVS (eh uma Saveiro, NAO uma Fiorino)
+  PRESTADOR_VINCULADO=0673eca2-4594-4842-b78f-cd6cabe9177d (CLAYTON DUPLICATE - analise)
+  CREATED_AT=2026-09-21T04:15:12.336Z (1 segundo APOS o prestador)
+  ORIGIN_EVIDENCE=criado junto com o prestador 0673eca2
+
+Este veiculo esta vinculado ao Clayton "analise" (0673eca2).
+Foi classificado como "fiorino" mas e uma Saveiro. Modelo nao bate com tipo.
+
+VEHICLE_ID=18357205-c941-40ce-9dfb-f1c4f01482c9
+  PLACA=EKV OG70
+  TIPO=null
+  TIPO_VEICULO=fiorino
+  MODELO=null
+  PRESTADOR_VINCULADO=null (SEM vinculo)
+  CREATED_AT=2026-05-06T15:02:47.539Z
+  ORIGIN_EVIDENCE=placa EKV, tipo fiorino, criado em maio (antes do Clayton)
+
+VEHICLE_ID=de6e8497-274e-45d4-94f6-ee55921f37f3
+  PLACA=EKV OG70
+  TIPO=null
+  TIPO_VEICULO=fiorino
+  MODELO=fiorino
+  PRESTADOR_VINCULADO=null (SEM vinculo)
+  CREATED_AT=2026-05-06T17:41:01.647Z
+  ORIGIN_EVIDENCE=mesma placa, modelo "fiorino", duplicata sem vinculo
+
+VEHICLE_ID=a95e8662-e2b0-45bd-b129-17b45b0e0d16
+  PLACA=EKV0G70
+  TIPO=null
+  TIPO_VEICULO=fiorino
+  MODELO=Fiorino
+  PRESTADOR_VINCULADO=501cc614-4f55-443e-8ccd-bc84bcfb2b5d
+  CREATED_AT=2026-05-07T16:09:49.321Z
+  ORIGIN_EVIDENCE=placa EKV0G70, vinculado a outro prestador
+
+VEHICLE_ID=e266d85d-6810-46c5-90d8-f84c331f71e8
+  PLACA=EKV0G70
+  TIPO=null
+  TIPO_VEICULO=fiorino
+  MODELO=Fiorino
+  PRESTADOR_VINCULADO=f9b37431-0b9b-4ff6-a5e1-d1b581a926c0
+  CREATED_AT=2026-05-07T22:44:51.578Z
+  ORIGIN_EVIDENCE=placa EKV0G70, vinculado a terceiro prestador
+
+VEHICLE_ID=c487f012-208e-47ae-b5d8-e976382eaab0 (CLAYTON - duplicata)
+  PLACA=GEW-2H93
+  TIPO_VEICULO=fiorino
+  MODELO=SAVEIRO RB MBVS
+  PRESTADOR_VINCULADO=0673eca2 (CLAYTON analise)
+  CREATED_AT=2026-09-21T04:15:12.336Z
+  ORIGIN_EVIDENCE=vinculado ao Clayton, mas placa/modelo nao sao Fiorino
+
+CONCLUSAO: Nenhum veiculo EKV0G70 esta vinculado a nenhum dos dois Clayton.
+O unico veiculo vinculado ao Clayton (c487f012) e uma Saveiro classificada
+como "fiorino" erroneamente.
+
+==================================================
+4 — CADEIA DE CRIACAO DO VEICULO
+==================================================
+
+EXPECTED_VEHICLE_CREATION_FLOW=
+  App/pre-cadastro → Recrutamento → Cadastro Prestador → INSERT veiculos → prestador_vinculado
+
+ACTUAL_CLAYTON_FLOW=
+  PrestadorDetalhe.tsx:handleAddVeiculo() →
+    sanitizeVeiculoPayload({ tipo: tipoVeiculo, ... }) →
+    supabase.from("veiculos").insert(payload) →
+    payload inclui prestador_vinculado: prestadorId
+    payload NAO inclui "tipo_veiculo" (só "tipo" legado)
+
+BROKEN_STEP=
+  O payload de INSERT写入 "tipo" (legado), NAO "tipo_veiculo" (novo).
+  Porem o veiculo c487f012 tem tipo_veiculo="fiorino" e tipo=null.
+  Isso indica que este veiculo NAO foi criado pelo PrestadorDetalhe.tsx.
+  
+  Provavelmente foi criado por:
+  - Script de importacao/migracao
+  - Outra tela/code path que grava "tipo_veiculo"
+  - App Motorista (pre-cadastro)
+  
+  A funcao handleAddVeiculo em PrestadorDetalhe NAO grava "tipo_veiculo".
+  Qualquer veiculo com tipo_veiculo preenchido veio de outra origem.
+
+==================================================
+5 — FONTE CANONICA APOS ESCALA-02
+==================================================
+
+CANONICAL_LINK=veiculos.prestador_vinculado → prestadores.id (FK reversa)
+CANONICAL_TYPE=veiculos.tipo_veiculo (novo) → veiculos.tipo (legado fallback)
+
+EscalaLista.tsx:262-263:
+  const effectiveType = v.tipo_veiculo || v.tipo || "";
+
+buscarTabelasService.ts:176:
+  franquia_km: N(t.franquia_km ?? t.km_franquia ?? 0)
+
+==================================================
+6 — TABELA MINEIRAO
+==================================================
+
+TABELA_ID=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+DB_VALUE_BASE=300
+DB_EXCESS_KM_VALUE=1.2
+
+DB_KM_FIELDS=
+  km_franquia=0          (coluna que Escala lê diretamente)
+  franquia_km=100        (coluna que Comercial UI lê e grava)
+  km_inicial=0
+  km_final=999999
+  valor_km=0
+  valor_km_excedente=1.2
+
+PROBLEMA: DUAS COLUNAS PARA A MESMA COISA
+  km_franquia = "0"  (coluna antiga, lida pela Escala direto)
+  franquia_km = "100" (coluna nova, lida pelo Comercial UI e buscarTabelasService)
+
+==================================================
+7 — POR QUE UI MOSTRA 100 KM
+==================================================
+
+COMMERCIAL_UI_FILE=src/components/comercial/TabelasValoresLista.tsx
+  Linha 86: franquiaKm: t.franquia_km || 0
+  Linha 190: franquia_km: tabela.franquiaKm
+
+  Le de "franquia_km" (=100) e exibe "KM incluído na franquia: 100"
+
+KM_100_FORM_SOURCE=franquia_km (=100, coluna correta para Comercial)
+KM_100_STATE_SOURCE=TabelasValoresLista state {franquiaKm: 100}
+KM_100_DB_MAPPING=tabelas_valores.franquia_km → TabelasValoresLista.franquiaKm
+KM_100_SAVE_MAPPING=TabelasValoresLista.franquiaKm → tabelas_valores.franquia_km
+
+WHY_UI_SHOWS_100=Comercial UI le/grava corretamente de "franquia_km" (=100)
+
+WHY_AUDIT_FOUND_0=A Escala (EscalaLista.tsx:181) faz query direta:
+  .select("..., km_franquia, ...")
+  E usa tabelaValores?.km_franquia (que = 0)
+  
+  A Escala NAO le "franquia_km" na query direta.
+  Apenas o buscarTabelasService (usado pelo engine de precificacao)
+  resolve a ambiguidade com fallback: franquia_km ?? km_franquia
+
+Resumo:
+  Comercial grava em: franquia_km (=100) ← correto
+  Escala lê diretamente: km_franquia (=0) ← campo errado vazio
+  buscarTabelasService resolve: franquia_km ?? km_franquia (=100) ← funciona
+  Escala direto: km_franquia (=0) ← DIVERGENCIA
+
+==================================================
+8 — ESCALA CONSUMIDORA DA TABELA
+==================================================
+
+ESCALA_BASE_FIELD=tabelaValores.valor_base (direto da query)
+ESCALA_FRANCHISE_FIELD=tabelaValores.km_franquia (direto da query, =0)
+ESCALA_EXCESS_KM_FIELD=tabelaValores.valor_km_excedente (direto da query)
+ESCALA_EXCESS_VALUE_FIELD=tabelaValores.valor_km (fallback)
+
+COMMERCIAL_TO_ESCALA_MAPPING_OK=NO
+
+Divergencia exata:
+  Comercial salva franquia_km=100
+  Escala query direta seleciona km_franquia (que=0)
+  Escala:710 usa km_franquia ?? franquia_km (fallback existe mas so no engine)
+  Escala:1024 salva metadata.faturamento.franquia_km = km_franquia (=0) ← SALVA 0
+
+  Isto significa que a metadata da alocacao sera gravada com franquia_km=0,
+  mesmo que a tabela real tenha franquia_km=100.
+  O motorista sera cobrado por KM excedente indevidamente.
+
+==================================================
+9 — NAO CALCULAR FINANCEIRO ERRADO
+==================================================
+
+Clayton (0673eca2, analise) + Fiorino + Mineirão:
+  Clayton NAO tem veiculo EKV0G70 vinculado.
+  O unico veiculo vinculado (c487f012) e uma Saveiro classificada como "fiorino".
+
+Se Escala hoje fizesse matching por tipo_veiculo="fiorino":
+  Tabela Mineirao tem tipo_veiculo="fiorino" → MATCH
+  valor_base=R$300, km_franquia=0 (campo legado), franquia_km=100
+
+  Se Escala usa km_franquia (=0):
+    INCLUDED_KM=0
+    Ex: 50km rodados → 50km excedentes × R$1.20 = R$60额外
+
+  Se Escala usa franquia_km (=100):
+    INCLUDED_KM=100
+    Ex: 50km rodados → 0km excedentes = R$0
+
+  O resultado financeiro muda completamente dependendo de qual campo eh lido.
+
+EXPECTED_TABLE_MATCH=fiorino → Mineirao (1cfaa88a)
+EXPECTED_BASE_VALUE=300
+EXPECTED_INCLUDED_KM=AMBIGUOUS
+  km_franquia=0 (coluna antiga, lida pela Escala direto)
+  franquia_km=100 (coluna nova, lida pelo Comercial e buscarTabelasService)
+  A Escala grava metadata com km_franquia=0, mesmo que o Comercial tenha salvo 100
+EXPECTED_EXCESS_RATE=1.2
+
+==================================================
+10 — ROOT CAUSE CONSOLIDADA
+==================================================
+
+ROOT_CAUSE_CLAYTON_DUPLICATE=
+  Dois registros manual com mesmo CPF criados 7 min de intervalo.
+  O primeiro (0673eca2) ficou em "analise" com 1 veiculo vinculado.
+  O segundo (cadbbbb6) foi para "ativo" com 0 veiculos.
+  O "ativo" (que a Escala usa) nao tem veiculos → fallback "vuc" → bloqueio.
+  O "analise" tem 1 veiculo mas esta classificado erroneamente como "fiorino"
+  sendo na verdade uma Saveiro (modelo=SAVEIRO RB MBVS).
+
+ROOT_CAUSE_VEHICLE_NOT_LINKED=
+  O prestador ativo (cadbbbb6) NAO tem veiculos na tabela veiculos.
+  Nenhum veiculo EKV0G70 esta vinculado a nenhum dos dois Clayton.
+  O unico veiculo vinculado (c487f012, placa GEW-2H93) esta no registro
+  "analise" (0673eca2) e foi classificado como "fiorino" erroneamente.
+
+ROOT_CAUSE_FIORINO_VISIBLE_BUT_NOT_CANONICAL=
+  A tela Cadastro mostra "Fiorino" porque PrestadorDetalhe.tsx:176
+  tem default hardcoded tipoVeiculo="fiorino". Quando o usuario adiciona
+  um veiculo e nao muda o tipo, salva como "fiorino" na coluna "tipo" (legada).
+  Porem a Escala le "tipo_veiculo" (novo) via FK reversa, que pode estar vazio
+  ou conter valor diferente do que a tela mostra.
+
+ROOT_CAUSE_KM_100_VS_0=
+  DUAS COLUNAS DISTINTAS para a mesma informacao:
+  - km_franquia = "0" (coluna antiga, lida pela Escala query direta)
+  - franquia_km = "100" (coluna nova, lida pelo Comercial UI)
+  
+  Comercial grava em "franquia_km" (=100) — correto.
+  Escala query direta seleciona "km_franquia" (=0) — campo vazio.
+  Escala:710 usa km_franquia ?? franquia_km (fallback) — funciona no calculo.
+  Escala:1024 grava metadata com km_franquia=0 — SALVA VALOR ERRADO.
+  
+  Resultado: o calculo em tempo real usa 100km (via fallback),
+  mas a metadata persistida na alocacao grava 0km.
+  Motorista pode ser cobrado indevidamente por km excedente.
+
+==================================================
+CORRECOES NECESSARIAS (NAO EXECUTAR)
+==================================================
+
+DATA_FIX_REQUIRED=
+  1. Decidir qual Clayton manter (ativo cadbbbb6 ou analise 0673eca2)
+  2. Se manter "ativo": migrar veiculo c487f012 para cadbbbb6 OU cadastrar novo
+  3. Se manter "analise": promote para ativo, desativar cadbbbb6
+  4. Corrigir classificacao do veiculo c487f012: tipo_veiculo="fiorino" esta errado
+     (eh uma Saveiro). Corrigir para tipo_veiculo correto OU cadastrar Fiorino real.
+  5. Decidir qual placa EKV0G70 pertence ao Clayton (nenhum esta vinculado)
+
+CODE_FIX_REQUIRED=
+  1. PrestadorDetalhe.tsx:handleAddVeiculo — grava "tipo" mas NAO "tipo_veiculo"
+     Adicionar tipo_veiculo ao sanitizeVeiculoPayload allowlist
+  2. EscalaLista.tsx:1024 — grava metadata.faturamento.franquia_km = km_franquia (=0)
+     Deveria usar buscarTabelasService para resolver a ambiguidade
+  3. EscalaLista.tsx:181 — query seleciona km_franquia mas nao franquia_km
+     Adicionar franquia_km ao select
+
+MIGRATION_REQUIRED=
+  Considere unificar km_franquia e franquia_km em um unico campo
+  (depreciar km_franquia, manter franquia_km como canônico)
+
+==================================================
+EVIDENCIA OBRIGATORIA
+==================================================
+
+CLAYTON_ACTIVE_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+CLAYTON_DUPLICATE_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+DUPLICATE_ORIGIN=manual (ambos)
+DUPLICATE_RELATIONSHIP=mesmo CPF, 7 min de intervalo, sem vinculo entre si
+
+CADASTRO_UI_FILE=src/components/prestadores/PrestadorDetalhe.tsx
+CADASTRO_VEHICLE_QUERY=supabase.from("veiculos").select("*").eq("prestador_vinculado", prestadorId)
+CADASTRO_VEHICLE_SOURCE=tabela veiculos (FK reversa)
+CADASTRO_VEHICLE_SAVE_FUNCTION=handleAddVeiculo() linha 445
+FIORINO_VISIBLE_SOURCE=DEFAULT HARDCODED PrestadorDetalhe.tsx:176 tipoVeiculo="fiorino"
+
+VEHICLE_CANDIDATES=
+  c487f012 (GEW-2H93, fiorino, Saveiro, vinculado Clayton analise)
+  18357205 (EKV OG70, fiorino, sem vinculo)
+  de6e8497 (EKV OG70, fiorino, sem vinculo)
+  a95e8662 (EKV0G70, fiorino, vinculado 501cc614)
+  e266d85d (EKV0G70, fiorino, vinculado f9b37431)
+
+EXPECTED_VEHICLE_CREATION_FLOW=App→Recrutamento→Cadastro→veiculos→prestador_vinculado
+ACTUAL_CLAYTON_FLOW=PrestadorDetalhe grava "tipo" (legado), NAO "tipo_veiculo"
+BROKEN_STEP=veiculo c487f012 NAO foi criado por PrestadorDetalhe (tem tipo_veiculo preenchido)
+
+CANONICAL_LINK=veiculos.prestador_vinculado → prestadores.id
+CANONICAL_TYPE=veiculos.tipo_veiculo || veiculos.tipo
+
+TABELA_ID=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+DB_VALUE_BASE=300
+DB_KM_FIELDS=km_franquia=0, franquia_km=100, km_inicial=0, km_final=999999, valor_km=0, valor_km_excedente=1.2
+DB_EXCESS_KM_VALUE=1.2
+
+COMMERCIAL_UI_FILE=src/components/comercial/TabelasValoresLista.tsx
+KM_100_FORM_SOURCE=tabelas_valores.franquia_km (=100)
+KM_100_STATE_SOURCE=TabelasValoresLista.franquiaKm (=100)
+KM_100_DB_MAPPING=franquia_km → TabelasValoresLista.franquiaKm (leitura)
+KM_100_SAVE_MAPPING=TabelasValoresLista.franquiaKm → franquia_km (gravacao)
+
+WHY_UI_SHOWS_100=Comercial le/grava de "franquia_km" (=100)
+WHY_AUDIT_FOUND_0=Escala query direta seleciona "km_franquia" (=0)
+
+ESCALA_BASE_FIELD=tabelaValores.valor_base
+ESCALA_FRANCHISE_FIELD=tabelaValores.km_franquia (=0, campo legado vazio)
+ESCALA_EXCESS_KM_FIELD=tabelaValores.valor_km_excedente (=1.2)
+ESCALA_EXCESS_VALUE_FIELD=tabelaValores.valor_km (=0)
+COMMERCIAL_TO_ESCALA_MAPPING_OK=NO — km_franquia=0 vs franquia_km=100
+
+EXPECTED_TABLE_MATCH=fiorino → Mineirao (1cfaa88a)
+EXPECTED_BASE_VALUE=300
+EXPECTED_INCLUDED_KM=AMBIGUOUS (km_franquia=0 vs franquia_km=100)
+EXPECTED_EXCESS_RATE=1.2
+
+ROOT_CAUSE_CLAYTON_DUPLICATE=Dois registros manual, mesmo CPF, 7min intervalo. Ativo sem veiculos.
+ROOT_CAUSE_VEHICLE_NOT_LINKED=Prestador ativo (cadbbbb6) tem 0 veiculos. Nenhum EKV0G70 vinculado.
+ROOT_CAUSE_FIORINO_VISIBLE_BUT_NOT_CANONICAL=Default hardcoded "fiorino" em PrestadorDetalhe:176
+ROOT_CAUSE_KM_100_VS_0=Duas colunas: km_franquia=0 (Escala) vs franquia_km=100 (Comercial)
+
+DATA_FIX_REQUIRED=Decidir Clayton, vincular veiculo correto, classificar tipo corretamente
+CODE_FIX_REQUIRED=PrestadorDetalhe:gravar tipo_veiculo; Escala:usar buscarTabelasService
+MIGRATION_REQUIRED=Unificar km_franquia e franquia_km
+
+FILES_MODIFIED=0
+DB_WRITES=0
+
+PASS CRITERIA:
+1. Fiorino no cadastro: default hardcoded PrestadorDetalhe.tsx:176
+2. Por que nao chega a Escala: veiculos.prestador_vinculado=vazio para Clayton ativo
+3. Veiculo existente pode ser associado: c487f012 (GEW-2H93) esta vinculado ao duplicate
+4. Origem dos dois cadastros: ambos manual, mesmo CPF, 7min intervalo
+5. Origem do 100km: tabelas_valores.franquia_km=100 (coluna correta)
+6. Valor que Escala consumiria: km_franquia=0 (se query direta) ou franquia_km=100 (se buscarTabelasService)
+7. Correcoes necessarias: DATA (Clayton+veiculo) + CODE (tipo_veiculo+km_franquia) + MIGRATION (unificar colunas)

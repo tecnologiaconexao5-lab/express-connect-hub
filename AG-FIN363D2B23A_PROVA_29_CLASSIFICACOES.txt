@@ -1,0 +1,101 @@
+FIN-363D.2B2.3A — PROVA DAS 29 CLASSIFICAÇÕES NOVAS
+====================================================
+Data: 2026-09-07T17:55:45.194Z
+
+FASE 1 — IDENTIFICAR OS 29 REGISTROS NOVOS
+────────────────────────────────────────────
+Registros classificados REAL ou TESTE: 53
+
+═══════════════════════════════════════════════════════════
+AUDITORIA INDIVIDUAL
+═══════════════════════════════════════════════════════════
+🟢 52325ff7  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_21-47-50(real)]
+🟢 977b530c  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_21-28-01(real)]
+🟢 a4a29b24  R$0.00  REAL  [OS_FK=OS-DED-M48_2026-06-29_21-31-34(real)]
+🟢 4f0f8ba3  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_18-31-49(real)]
+🟢 fcb9286f  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_18-45-22(real)]
+🟢 e3c7baed  R$0.00  REAL  [OS_FK=OS-DED-M48_2026-06-29_21-47-50(real)]
+🟢 8cb22e29  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_19-14-18(real)]
+🟢 b9353c3f  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_19-16-01(real)]
+🟢 dbe96d77  R$0.00  REAL  [OS_FK=OS-M43_2026-06-29_20-20-39(real)]
+🟢 a4fae89d  R$250.00  REAL  [OS_FK=OS-202608-680216(real); fp=9b80fa68(real)]
+🟢 2b3fb150  R$100.00  REAL  [fp=8a11b1e4(real)]
+🟢 26f61bc9  R$100.00  REAL  [fp=8a11b1e4(real)]
+🟢 28f2492b  R$100.00  REAL  [fp=8a11b1e4(real)]
+🟢 f20f38c9  R$420.00  REAL  [fp=23992136(real)]
+🟢 4cc0ee4e  R$580.00  REAL  [fp=08a2df38(real)]
+🟢 b6dac07c  R$350.00  REAL  [fp=d24b1678(real)]
+🟢 4ed52905  R$580.00  REAL  [fp=08a2df38(real)]
+🟢 eeb5c299  R$1490.00  REAL  [OS_FK=OS-202607-797249(real)]
+🟢 0dd5e780  R$1490.00  REAL  [OS_FK=OS-202607-919619(real)]
+🟢 dd142135  R$1490.00  REAL  [OS_FK=OS-202607-938413(real)]
+🟢 68828a34  R$1490.00  REAL  [OS_FK=OS-202607-171410(real)]
+🟢 e2e0159d  R$850.00  REAL  [fp=05d87f10(real)]
+🟢 655b3755  R$800.00  REAL  [OS_FK=OS-GO-LIVE-202607-125512(real); fp=ac8727af(real)]
+🟢 8dcbea55  R$800.00  REAL  [OS_FK=OS-GO-LIVE-202607-261321(real); fp=ac8727af(real)]
+🟢 894bf6ef  R$1280.00  REAL  [OS_FK=ALOC-20260705-0733BB97(real)]
+🟢 e6e2bb83  R$103.50  REAL  [OS_FK=M66-MR6JVPDH(real)]
+🟢 339d77cd  R$1200.00  REAL  [OS_FK=OS-REDE-M48_2026-06-29_21-31-34(real); fp=82876675(real)]
+🟢 b6110500  R$1000.00  REAL  [OS_FK=OS-M43_2026-06-29_18-29-55(real); fp=fbc7b8c5(real)]
+🟢 e968b1f2  R$1000.00  REAL  [OS_FK=OS-M43_2026-06-29_18-31-00(real)]
+🟢 d287566b  R$2100.00  REAL  [OS_FK=OS-DIR-M48_2026-06-29_21-31-34(real); fp=0dc29663(real)]
+🟢 b74b34db  R$50.00  REAL  [OS_FK=OS-MOTO-M48_2026-06-29_21-31-34(real); fp=ebc456c7(real)]
+🟢 4665f694  R$2100.00  REAL  [OS_FK=OS-DIR-M48_2026-06-29_21-47-50(real); fp=29e7690e(real)]
+🟢 5648adde  R$50.00  REAL  [OS_FK=OS-MOTO-M48_2026-06-29_21-47-50(real); fp=eec65c8f(real)]
+🟢 f3b6dd15  R$1200.00  REAL  [OS_FK=OS-REDE-M48_2026-06-29_21-47-50(real); fp=5155b733(real)]
+🟢 bc12e3de  R$280.00  REAL  [fp=658f73d1(real)]
+🟢 24d6454d  R$280.00  REAL  [fp=658f73d1(real)]
+🟢 5d128941  R$850.00  REAL  [OS_FK=OS-202606-323721(real); fp=05d87f10(real)]
+🟢 bc826113  R$280.00  REAL  [fp=658f73d1(real)]
+🟢 8453492e  R$280.00  REAL  [OS_FK=OS-REDE2-M48_2026-06-29_21-47-50(real); fp=658f73d1(real)]
+🟢 abfa3755  R$240.00  REAL  [fp=b8c193e0(real)]
+🔴 f4e4cca6  R$50.00  TESTE  [OS_FK=HML-APP-001(teste); fp=0fc717d3(real)]
+🔴 7178a5ca  R$1750.00  TESTE  [OS_FK=TEST-M80-CF-MR751I7O(teste)]
+🔴 e2e55985  R$530.00  TESTE  [OS_FK=TEST-M80-CANCEL-MRH2VCOA(teste)]
+🔴 e9a39650  R$1000.00  TESTE  [OS_FK=TEST-M80-MRH2VAJP(teste); fp=dee59125(teste)]
+🔴 097ebc7c  R$325.00  TESTE  [OS_FK=OS-TEST-1781310536075(teste)]
+🔴 2e6a4f4a  R$350.00  TESTE  [OS_FK=M90-TEST-MR8AK450(teste); fp=82a6cd6f(teste)]
+🔴 6018085b  R$2850.00  TESTE  [OS_FK=TEST-M80-EDGE-MR7544Q6(teste)]
+🔴 31837cb2  R$1750.00  TESTE  [OS_FK=TEST-M80-OK-MR752GEF(teste)]
+🔴 0e065a76  R$1200.00  TESTE  [OS_FK=TEST-M80-FULL-MR750V6O(teste)]
+🔴 50429c41  R$103.50  TESTE  [OS_FK=OS-TESTE-MR6IT7ZR(teste)]
+🔴 ce5b9c81  R$103.50  TESTE  [OS_FK=OS-TESTE-MR6ISIWO(teste)]
+🔴 f9f844c2  R$103.50  TESTE  [OS_FK=OS-TESTE-MR6ITJ37(teste)]
+🔴 952861d6  R$103.50  TESTE  [OS_FK=OS-TESTE-MR6IPT2H(teste)]
+
+═══════════════════════════════════════════════════════════
+CORREÇÕES
+═══════════════════════════════════════════════════════════
+Nenhuma correção necessária — todos confirmados
+
+═══════════════════════════════════════════════════════════
+PROVA FINAL — TOTAIS DOS 90
+═══════════════════════════════════════════════════════════
+TOTAL = 90
+DUVIDOSO = 37
+REAL = 40
+TESTE = 13
+
+18 originais B2.2 preservados DUVIDOSO: ✅ SIM
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+29 ANALISADOS: SIM
+REAL CONFIRMADOS: 40
+TESTE CONFIRMADOS: 13
+RECLASSIFICADOS DUVIDOSO: 0
+18 ORIGINAIS PRESERVADOS: SIM
+TOTAL FINAL: 90
+DUVIDOSO: 37
+REAL: 40
+TESTE: 13
+VALORES ALTERADOS: NÃO
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+FIN-363D.2B2.3A: PASS
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

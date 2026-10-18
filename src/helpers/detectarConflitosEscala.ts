@@ -25,6 +25,9 @@ export interface DadosConflitoEscala {
   alocacoesExistentes: AlocacaoConflito[];
   prestadorStatus?: string;
   alocacaoIdExcluir?: string;
+  placa?: string;
+  motoristaId?: string;
+  veiculoId?: string;
 }
 
 export interface ResultadoConflitoEscala {
@@ -67,6 +70,12 @@ function horariosSobrepoem(
   return aInicio < bFim && bInicio < aFim;
 }
 
+export interface AlocacaoComVeiculoMotorista extends AlocacaoConflito {
+  placa?: string;
+  motoristaId?: string;
+  veiculoId?: string;
+}
+
 export function detectarConflitosEscala(
   dados: DadosConflitoEscala,
   alocacoesExistentes: AlocacaoConflito[],
@@ -74,7 +83,7 @@ export function detectarConflitosEscala(
 ): ResultadoConflitoEscala {
   const conflitos: string[] = [];
   const avisos: string[] = [];
-  const { prestadorId, os, dataEscala, horarioInicio, horarioFim, alocacaoIdExcluir } = dados;
+  const { prestadorId, os, dataEscala, horarioInicio, horarioFim, alocacaoIdExcluir, placa, motoristaId, veiculoId } = dados;
 
   const alocacoesAtivas = alocacoesExistentes.filter((a) =>
     statusAtivo(a.status) && a.id !== alocacaoIdExcluir
@@ -110,12 +119,36 @@ export function detectarConflitosEscala(
     }
   }
 
-  // 3. Prestador bloqueado/indisponível (AVISO)
+  // 3. Veículo (placa) já alocado no mesmo dia (BLOQUEANTE)
+  if (placa && placa.trim()) {
+    const alocMesmaPlaca = alocacoesAtivas.filter(
+      (a) =>
+        (a as AlocacaoComVeiculoMotorista).placa === placa &&
+        mesmoDia(a.data, dataEscala)
+    );
+    if (alocMesmaPlaca.length > 0) {
+      conflitos.push(`Veículo placa ${placa} já está alocado no mesmo dia.`);
+    }
+  }
+
+  // 4. Motorista já alocado no mesmo dia (BLOQUEANTE)
+  if (motoristaId && motoristaId.trim()) {
+    const alocMesmoMotorista = alocacoesAtivas.filter(
+      (a) =>
+        (a as AlocacaoComVeiculoMotorista).motoristaId === motoristaId &&
+        mesmoDia(a.data, dataEscala)
+    );
+    if (alocMesmoMotorista.length > 0) {
+      conflitos.push(`Motorista já está alocado no mesmo dia.`);
+    }
+  }
+
+  // 5. Prestador bloqueado/indisponível (AVISO)
   if (prestadorStatus && prestadorStatus === "indisponivel") {
     avisos.push("Prestador está marcado como indisponível. Verifique antes de alocar.");
   }
 
-  // 4. Sobreposição de horário (AVISO)
+  // 6. Sobreposição de horário (AVISO)
   if (horarioInicio && horarioFim) {
     const alocMesmoPrestador = alocacoesExistentes.filter(
       (a) =>

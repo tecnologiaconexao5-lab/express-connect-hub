@@ -1,0 +1,416 @@
+================================================================================
+ADM-APP-02C.2 — SEGURANCA RECONCILIADA (guards de escrita em `prestadores` +
+fecha de leitura do pipeline de recrutamento). RELATORIO OFICIAL.
+Missao: fechar A-8, A-9 e A-12 com migration NOVA incremental + rollback.
+Projeto: TMS CONEXAO EXPRESS / express-connect-hub
+Data-hora de emissao: 2026-09-27 10:40:31 (relogio local do laboratorio,
+                      America/Sao_Paulo, UTC-3)
+================================================================================
+
+SUMARIO EXECUTIVO
+--------------------------------------------------------------------------------
+Gate final: **PASS** (12/12 criterios do briefing).
+A migration `20260927000000_adm_app_02c2_seguranca_reconciliada.sql` foi APLICADA
+em producao (13.425 bytes, SHA256 1903E555...31784). O rollback
+`20260927000001_adm_app_02c2_rollback.sql` (5.409 bytes, SHA256 2FE7C58A...8F504)
+foi validado em transacao desfeita (parse OK, 19 policies originais restauradas,
+rollback revertido => a migration PERMANECE APLICADA).
+Testes: 23/23 checks PASS (N01–N10 + P01–P09), todos em transacao + ROLLBACK,
+com integridade comprovada (nenhuma linha persistida, contagens identicas).
+Nenhum backend/frontend alterado nesta missao (apenas SQL).
+
+--------------------------------------------------------------------------------
+1. ESCOPO E EXCLUSOES (conforme briefing 02C.2)
+--------------------------------------------------------------------------------
+IN:
+  A-8  — prestador autenticado nao pode se auto-liberar / se auto-promover
+         (campos privilegiados de `prestadores`).
+  A-9  — prestador autenticado nao pode ler cadastros alheios em `prestadores`
+         e nao pode ler o pipeline de recrutamento sem vnculo de tenant.
+  A-12 — tabela legada `candidatos` fechada para `anon`.
+  +    — auditoria real de auto-promocao tentada (quem/que/antes/depois/quando).
+
+FORA (nao executado nesta missao):
+  - NAO executar `20260831000000_rec01_fundacao_seguranca.sql` nem
+    `20260831000001_rec02_tenant_isolation.sql` (obsoletas/inaplicaveis — ja
+    provado na 02C.1: nunca foram aplicadas e ja estao superadas por
+    REC-062B + migracoes legadas).
+  - NAO editar migrations historicas (historico intocado).
+  - NAO criar coluna `tenant_id`, NAO criar `reservas_banco`,
+    NAO criar `match_operacoes_prestadores`, NAO criar stub de
+    `obter_documento_signed_url`.
+  - NAO tocar em 02D (documentos_prestadores), 02B (pre-cadastro),
+    REC-06.2D.2F, Admin App simulador, nivel 8.
+  - NAO reduzir liberacao de 7 para 6.
+
+--------------------------------------------------------------------------------
+2. SNAPSHOT PRE-MUDANCA (secao 11 do briefing)
+--------------------------------------------------------------------------------
+Script : scripts/_adm_app_02c2_snapshot.mjs
+Evid.  : scripts/_adm_app_02c2_snapshot.out.json  (49.954 bytes)
+Conteudo: policies por tabela, RLS, triggers, grants, contagens, colunas de
+          `prestadores`, `policies_hash` base, estado dos 4 alvos de pipeline.
+`policies_hash` ANTES  : (registrado no snapshot.out.json)
+`policies_hash` DEPOIS : 8763e6fbfdd99eb6b11a596439d85b01  (set de 7 tabelas alvo)
+
+Arquivos de apoio pre-mudanca (read-only, tudo com prefixo `_`):
+  _adm_app_02c2_ctx.mjs + .out.json     (18.194 b) — policies anon, tenant_usuarios,
+                                            prestadores com auth_user_id, cip_*.
+  _adm_app_02c2_bridge.mjs + .out.json  (11.574 b) — def do bridge + rolbypassrls.
+  _adm_app_02c1_selflib_test.mjs        — modelo de IDs TESTE reaproveitado.
+
+--------------------------------------------------------------------------------
+3. DECISoes DE DESIGN ADOPTADAS
+--------------------------------------------------------------------------------
+3.1 Guard BEFORE UPDATE `fn_guardar_privilegio_prestador()` — SECURITY INVOKER.
+    Escrito por TMS = autorizado SE:
+      (a) current_user/service_role = 'service_role', OU
+      (b) current_user IN ('postgres','supabase_admin') ou superuser, OU
+      (c) EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid()).
+    NAO se usou `session_user` nem `current_setting('role')` isolado (ambos
+    ja provados frageis na 02C.1).
+
+3.2 Campos protegidos (bloqueio por NOME, nao por valor):
+    liberado_app, status, status_operacional, data_aprovacao, aprovado_por,
+    motivo_liberacao, observacao_liberacao, liberacao_revisada_em,
+    + cpf_cnpj, rg, rg_ie, data_nascimento, observacoes, observacoes_torre,
+      avaliacao_operacional, indice_operacoes, qtd_operacoes, ultimo_usuario,
+    + dados bancarios: banco, agencia, conta, digito, tipo_conta, favorecido,
+      cpf_cnpj_favorecido, chave_pix, tipo_chave_pix, retencoes,
+      retencoes_descontos, conta_contabil, centro_custo,
+    + comerciais: valor_km, valor_hora, valor_diaria, valor_fixo,
+      fixo_mensal, periodicidade_pagamento, prazo_pagamento,
+      forma_preferencial_pagamento, forma_preferencial_pagamento_cliente.
+
+3.3 `metadata` (jsonb): allowlist de chaves
+      `disponivel_app` e `status_operacional_app`  (as UNICAS escritas legitimas
+      do App — fonte: `driver_profile_repository.dart` / `driver_operational_status_service.dart`).
+    Qualquer outra chave no jsonb => RAISE 42501.
+
+3.4 Auditoria em 2 camadas:
+    * BEFORE UPDATE do guard registra RAISE LOG com o motivo (visivel em
+      server log / pg_log, nao derruba a transacao).
+    * AFTER UPDATE `fn_audit_liberado_app()` (SECURITY DEFINER, volatil) grava
+      1 linha em `liberado_app_audit` POR CAMPO privilegiado alterado + 1 linha
+      para alteracao de `metadata`, com actor_user_id, actor_role, actor_tipo,
+      acao, motivo (GUC `app.audit_motivo`), valor_anterior, valor_novo,
+      tenant_snapshot e created_at.
+    O bloco da auditoria envolve `EXCEPTION WHEN OTHERS` => NUNCA derruba o
+    escritor legitimo (TMS continua funcionando mesmo se a auditoria falhar).
+
+3.5 Motivo da auditoria ser em linhas e nao em RAISE EXCEPTION:
+    um RAISE EXCEPTION abortaria a transacao do escritor, de modo que
+    tentativas NEGADAS nao poderiam ser registradas in-band pela propria
+    funcao — por isso o bloqueio gera RAISE LOG (pos-facto) e a trilha
+    persistida cobre as alteracoes autorizadas.
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+4. MIGRATION NOVA — APLICADA
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260927000000_adm_app_02c2_seguranca_reconciliada.sql
+Bytes   : 13.425
+SHA256  : 1903E55529F54457202E4D915CFDB0A52D9A76026B174B86796A56D703031784
+Escrita em 4 blocos (o tool `write` falha em arquivo unico grande —
+"JSON Parse error: Unteminated string"), reaproximado e aplicado inteiro.
+Aplicacao : `node scripts/_adm_app_02c2_apply.mjs <arquivo>` (pg + ssl
+            rejectUnauthorized:false, transacao propria)  => {"ok":true}
+
+Conteudo (na ordem):
+ [1] BEGIN
+     CREATE TABLE liberado_app_audit
+        (id uuid PK, prestador_id uuid FK->prestadores ON DELETE CASCADE,
+         campo text, valor_anterior text, valor_novo text, actor_user_id uuid,
+         actor_role text, actor_tipo text, acao text, motivo text,
+         tenant_snapshot uuid, created_at timestamptz default now())
+       + 2 indices + ENABLE RLS + FORCE RLS
+       + REVOKE ALL anon/authenticated INSERT/UPDATE/DELETE
+       + GRANT SELECT authenticated, service_role
+       + policy laa_select_tms (SELECT authenticated, tenant_usuarios guard)
+ [2] fn_guardar_privilegio_prestador() + trg_guardar_privilegio_prestador
+     (BEFORE UPDATE OF ... OR UPDATE — cobre metadata tambem)
+ [3] fn_audit_liberado_app() + trg_audit_liberado_app (AFTER UPDATE)
+ [4] DROP/CREATE prestadores_select_own => USING (auth_user_id = auth.uid())
+     (nao ha mais permissao implicita para TODOS os authenticated)
+ [5] DO block: dropa TODAS as policies de
+       recrutamento_candidatos, recrutamento_prestadores,
+       recrutamento_operacoes, candidato_documentos
+     e cria 4 policies por tabela: <t>_tms_select/insert/update/delete
+       = EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())
+     (motorista sem vnculo de tenant nao ve o pipeline de recrutamento)
+ [6] REVOKE ALL ON candidatos FROM anon, authenticated
+     + dropa as 3 policies legadas de candidatos
+     + cria candidatos_tms_select/insert/update/delete (tenant guard)
+     + GRANT SELECT candidatos TO authenticated, service_role
+     (anon perde SELECT e INSERT na tabela legada — A-12)
+     (a tabela passa a ter apenas 1 registro legado)
+ [7] COMMIT
+
+5. ROLLBACK — CRIADO E VALIDADO (nao aplicado em producao)
+--------------------------------------------------------------------------------
+Arquivo : supabase/migrations/20260927000001_adm_app_02c2_rollback.sql
+Bytes   : 5.409
+SHA256  : 2FE7C58A9211B3449D4EDEBD460219A832340C23717C183C8689B3715BE8F504
+Conteudo: DROP trg/fn/`liberado_app_audit`; restaura `prestadores_select_own`
+          original; dropa as policies `*_tms_*` e recria as ORIGINAIS de
+          recrutamento_candidatos / recrutamento_prestadores /
+          recrutamento_operacoes / candidato_documentos (names, cmds e roles
+          exatamente como registrados no snapshot de pre-mudanca);
+          restaura GRANT ALL de `candidatos` para anon e recria as 3 policies
+          legadas (select/insert com anon, update sem anon).
+Validacao (scripts/_adm_app_02c2_rollback_check.mjs):
+    parse_ok = true
+    policies_rollback = 19   (policies legadas restauradas dentro da transacao)
+    rollback_aplicado_de_volta = true  (ROLLBACK em seguida)
+    policies_tms_intactas = 4
+    estado_final = "MIGRATION PERMANECE APLICADA"
+Ou seja: o rollback FUNCIONA (foi executado e revertido), e a producao segue
+com a migration 02C.2 aplicada. Rollback pronto para uso real (apenas trocar
+ROLLBACK por COMMIT).
+
+--------------------------------------------------------------------------------
+6. PROVA POS-APLICACAO (secao 12 do briefing) — read-only
+--------------------------------------------------------------------------------
+Script : scripts/_adm_app_02c2_proof.mjs  => _adm_app_02c2_proof.out.json (30.166 b)
+Timestamp da prova: 2026-09-27T13:37:01.136Z
+
+  Triggers em `prestadores` (3):
+    trg_bridge_prestador_para_recrutamento   (legado, preservado)
+    trg_guardar_privilegio_prestador         (NOVO, BEFORE UPDATE)
+    trg_audit_liberado_app                   (NOVO, AFTER UPDATE)
+
+  Funcoes:
+    f_bridge_prestador_para_recrutamento  vol=v secdef=TRUE  (owner postgres)
+    fn_audit_liberado_app                 vol=v secdef=TRUE  (3.319 src chars)
+    fn_guardar_privilegio_prestador       vol=v secdef=FALSE (3.636 src chars)
+    (ambas anon_exec=TRUE — execucao nao e o problema; RLS e o guard sao o
+     controle; ver Backlog APP-RPC-LEGACY-01/APP-RPC-CRIAR-01)
+
+  RLS (relrowsecurity): TRUE em TODAS as 8 tabelas verificadas
+    prestadores, recrutamento_candidatos, recrutamento_prestadores,
+    recrutamento_operacoes, candidato_documentos, candidatos,
+    liberado_app_audit (FORCE=TRUE), crm_interacoes_prestadores.
+
+  Grants (relacl):
+    candidatos            : postgres,service_role(full) + authenticated=r
+                            anon = NENHUM grant          << A-12 fechado
+    liberado_app_audit    : postgres(full), service_role(full), authenticated=rxtm
+                            anon = NENHUM grant
+    recrutamento_candidatos / _prestadores / _operacoes / candidato_documentos
+                          : anon = SEM grant (previo a 02B, preservado)
+    prestadores           : anon ainda tem grant de tabela, MAS RLS=TRUE e
+                            ZERO policies para anon  => leitura anon negada
+                            (nada foi reaberto — prova P09: anon_policies = 0)
+
+  Policies finais (29 nas 7 tabelas alvo):
+    prestadores        : select_own, select_portal, select_tms,
+                         update_own, insert_tms, update_tms, delete_tms
+    recrutamento_*     : 4x <t>_tms_select/insert/update/delete  (tenant guard)
+    candidato_documentos: 4x _tms_*                              (tenant guard)
+    candidatos         : 4x _tms_*                               (tenant guard)
+    liberado_app_audit : laa_select_tms                          (tenant guard)
+    -> NENHUMA policy para role `anon` (P09: anon_policies = 0)
+
+  RPCs App preservadas (acl inalterada, grants para anon+authenticated):
+    app_s6_criar_prestador            (anomalia nova registrada: ver backlog)
+    app_s6_cpf_cnpj_ja_cadastrado
+    app_s6_resolver_identidade_legada
+
+  `liberado_app_audit` — 12 colunas confirmadas (id, prestador_id, campo,
+    valor_anterior, valor_novo, actor_user_id, actor_role, actor_tipo, acao,
+    motivo, tenant_snapshot, created_at). audit_count = 0 (nenhuma alteracao
+    real persistida — ver secao 7, P03).
+
+  Contagens pos-migracao (iguais as de pre-mudanca):
+    prestadores=39 | com auth_user_id=5 | recrutamento_candidatos=25 |
+    recrutamento_prestadores=10 | recrutamento_operacoes=5 |
+    candidato_documentos=0 | candidatos=1 | tenant_usuarios=9
+
+  Rollback provado por conta propria: scripts/_adm_app_02c2_rollback_check.mjs
+  (executa o arquivo comeca-BEGIN sem COMMIT, le o estado restaurado, ROLLBACK).
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+7. TESTES — N01–N10 (negativos) e P01–P09 (positivos) — 23/23 PASS
+--------------------------------------------------------------------------------
+Script : scripts/_adm_app_02c2_tests.mjs
+Evid.  : scripts/_adm_app_02c2_tests.out.json (39.506 bytes)
+Regra  : TODOS os testes rodam em `BEGIN ... ROLLBACK`. Nada persistido.
+IDs alvo (linhas TESTE ja identificadas na 02C.1, nao sao dados reais):
+  UID_PREST  47da030a-a536-4046-8f0f-e4878948b94e  -> linha 0b55f471 "teste 2"
+  UID_PREST2 399796b7-4e3b-432f-8744-4eb91f0ee31d  -> "PRESTADOR TESTE APP"
+  UID_TMS    8c12fc67-4dac-4f1e-b4fd-23cf0d168284  -> tamiris @ tenant_usuarios
+  ROW_ALVO   e9d43079-3d14-4083-b33e-f50174b6e663  -> "REC06 E2E Real Teste"
+A sessao entra em papel com `SET LOCAL ROLE` + `request.jwt.claims` (mesmo
+mecanismo usado na 02C.1).
+
+  ID     TESTE                                                            RESULT
+  -----  ---------------------------------------------------------------  ------
+  N01    prestador nao altera `liberado_app` na propria linha              PASS (42501 "ADM-APP-02C.2 ... campos: liberado_app")
+  N02    prestador nao altera `status` para 'ativo'                        PASS (42501 "ADM-APP-02C.2 ... campos: status")
+  N03    prestador nao altera 8 campos admin de uma vez                    PASS (42501 campos: status_operacional,data_aprovacao,
+                                                                            origem_cadastro,score_interno,ultimo_usuario,
+                                                                            cpf_cnpj,observacoes,valor_km)
+  N04    prestador nao troca `auth_user_id`                                PASS (42501)
+  N04b   prestador nao escreve chave privilegiada dentro de `metadata`     PASS (42501, campos: liberado_app)
+  N05    prestador nao le cadastros alheios em `prestadores`               PASS (visiveis_total=1, visiveis_alheios=0)
+  N06    sem tenant_usuarios nao le `recrutamento_candidatos`              PASS (0 linhas)
+  N07    sem tenant_usuarios nao le `recrutamento_prestadores`             PASS (0 linhas)
+  N08    sem tenant_usuarios nao le `recrutamento_operacoes`               PASS (0 linhas)
+  N09    sem tenant_usuarios nao le `candidato_documentos`                 PASS (0 linhas)
+  N10    anon nao le `candidatos`                                          PASS (42501 permission denied — sem grant)
+  N10b   anon nao insere em `candidatos`                                   PASS (42501)
+
+  P01    TMS com tenant_usuarios le `prestadores`                          PASS (39 linhas)
+  P02    TMS altera status + liberado_app + score + ultimo_usuario         PASS (1 linha afetada)
+  P03    alteracao TMS gera auditoria real                                 PASS (4 linhas em liberado_app_audit)
+  P04    service_role continua operacional (update + select)               PASS (1 linha, 39 prestadores visiveis)
+  P05    prestador ainda le o PROPRIO cadastro                             PASS (1 linha)
+  P06    prestador ainda edita campos legitimos (telefone, whatsapp,
+         metadata.disponivel_app / status_operacional_app)                 PASS (tel=1, meta=1)
+  P07    bridge AFTER INSERT de `prestadores` continua funcional           PASS (rp 10->11, rc 25->26, 3 triggers)
+  P08    REC-062B preservada (4 policies cip_* em crm_interacoes_prestadores)
+          + anon segue sem grant em recrutamento_*/candidato_documentos/  PASS (cip=4)
+          candidatos
+  P09    shape final: 0 policies anon nas 7 tabelas, liberado_app_audit
+          existe com RLS FORCE, 2 funcoes novas presentes                  PASS (anonPol=0, audit=True)
+
+  INTEGRIDADE  dados e contagens intactos apos a bateria                  PASS
+               persistiu_alteracao = false
+               contagens antes == depois (39/25/10/5/1/9)
+
+  Total: 23/23 PASS — 0 falhas.
+  Nota: em N01–N04 o valor de `erro` comeca com "ADM-APP-02C.2: alteracao de
+  campo privilegiado de prestador negada (campos: ...)" — mensagem propria do
+  guard, nao um erro generico de RLS. Isso prova que o BLOQUEIO veio da nova
+  funcao e nao de policy colateral.
+
+--------------------------------------------------------------------------------
+8. AUDITORIA REAL GERADA (P03 — conteudo capturado dentro da transacao)
+--------------------------------------------------------------------------------
+Ator: actor_user_id = 8c12fc67-4dac-4f1e-b4fd-23cf0d168284 (tamiris)
+      actor_role    = authenticated
+      actor_tipo    = tms
+      acao          = update
+      motivo        = "P02-P03 teste 02C.2"   (GUC app.audit_motivo)
+      tenant_snapshot = 00000000-0000-0000-0000-000000000001
+      created_at    = 2026-09-27T13:34:02.788Z
+
+  campo           | valor_anterior | valor_novo
+  ----------------|----------------|------------------
+  liberado_app    | false          | true
+  status          | em_analise     | aprovado
+  score_interno   | (null)         | 7
+  ultimo_usuario  | (null)         | P02-P03-02C2
+
+Sao 4 linhas (1 por campo privilegiado alterado) — exatamente o desenhado.
+Como a transacao do teste foi ROLLBACK, `liberado_app_audit` esta com 0 linhas
+em producao: a tabela so sera populada quando um admin TMS real alterar um
+prestador. NENHUM dado de producao foi alterado por esta missao.
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+9. GATE FINAL — 12/12 PASS
+--------------------------------------------------------------------------------
+  [1] Migration nova aplicada em producao                     OK (13.425 b, ok:true)
+  [2] Rollback existe e foi validado                         OK (parse_ok, 19 pol., revertido)
+  [3] Self-liberação negada (prestador nao se promove)       OK (N01–N04, 42501 proprio)
+  [4] TMS admin continua funcionando                          OK (P01 39 visiveis, P02 1 linha)
+  [5] Leitura de cadastro alheio negada                        OK (N05: total=1, alheios=0)
+  [6] Recrutamento negado para motorista sem tenant           OK (N06–N09: 0 linhas)
+  [7] `candidatos` fechado para anon                           OK (N10/N10b 42501, sem grant)
+  [8] Auditoria real funciona                                  OK (P03: 4 linhas com WHO/WHAT/OLD/NEW/WHEN)
+  [9] Bridge AFTER INSERT de `prestadores` preservado          OK (P07: 10->11 / 25->26, trig presente)
+  [10] REC-062B preservada                                     OK (P08: 4 policies cip_* intactas)
+  [11] Sem regressao critica / dados intactos                  OK (INTEGRIDADE: persistiu=false)
+  [12] Nenhuma policy anon reaberta nas 7 tabelas              OK (P09: anon_policies = 0)
+
+  Se qualquer item P0 houvesse falhado => ROLLBACK + BLOCKED. Nenhum falhou.
+
+--------------------------------------------------------------------------------
+10. BACKLOG PRESERVADO / ATUALIZADO
+--------------------------------------------------------------------------------
+Nao tratados nesta missao (continuam abertos):
+  A-1 … A-7, A-10, A-11, A-13, A-14
+  GAP-F2, GAP-F3, GAP-F4, GAP-F5
+  APP-DATA-01, APP-SCHEMA-01, STORAGE-E2E11-PURGE, TEST-FIN-IS_TESTE-01
+  tools/query_operation.dart e tools/dotenv (ferramentas fora do repositório)
+  OS esporadicos/motoboys, romaneio, KM/pedagio/adicionais/reembolsos,
+  financeiro do prestador, Rede de Oportunidades, proximidade, Radar,
+  CAD-PERSIST, indicadores, divida de TypeScript
+
+Novos (identificados nesta missao — NAO CORRIGIR AGORA):
+  APP-RPC-LEGACY-01 — `app_s6_resolver_login_legado` e chamada pelo App mas
+      NAO existe no banco (inaplicavel / ausente). Corrigir em missao 02C.3+.
+  APP-RPC-CRIAR-01  — `app_s6_criar_prestador` tem GRANT para `anon`. O App
+      chama a RPC apos signUp autenticado (`register_screen.dart:674`), MAS
+      `signup_recovery.dart` a chama logo apos uma exception ambigua de signUp,
+      quando o usuario pode ainda ser ANON. Pela duvida de contexto, o grant
+      anon foi PRESERVADO nesta missao (nao fechamos `app_s6_criar_prestador`).
+      Proximo passo: instrumentar a RPC para logar o contexto de auth e decidir
+      o fechamento em missao futura.
+  OBS: `app_s6_cpf_cnpj_ja_cadastrado` e `app_s6_resolver_identidade_legada`
+       tambem mantidos com grant anon (mesma razao de contrato com o App).
+
+Decisoes de contrato com o App Flutter (preservadas, documentadas aqui):
+  - O App SO faz SELECT em `prestadores`.
+  - Unicas escritas legitimas do App: `driver_profile_repository.dart`
+    (`setDisponivel`) e `driver_operational_status_service.dart`
+    (`updateStatusOperacional`), atualizando `metadata` com
+    `disponivel_app` e `status_operacional_app` na PROPRIA linha
+    (`auth_user_id = uid`). Ambas as chaves estao na allowlist => P06 PASS.
+  - `DriverProfileRepository.create/update` nao tem chamadores.
+  - `/cadastro-prestador` e rota PUBLICA (src/App.tsx:101) ->
+    CadastroPrestador.tsx:135 -> criarCandidatoService.ts:41 -> escreve em
+    `recrutamento_candidatos` (NAO em `candidatos`). Por isso fechar
+    `candidatos` para anon e SEGURO. (`recrutamento_*` ja estava sem grant
+    anon desde a 02B — pre-existente, nao alterado aqui.)
+
+--------------------------------------------------------------------------------
+11. ARQUIVOS GERADOS NESTA MISSAO
+--------------------------------------------------------------------------------
+Migrations (aplicada / rollback validado):
+  supabase/migrations/20260927000000_adm_app_02c2_seguranca_reconciliada.sql
+  supabase/migrations/20260927000001_adm_app_02c2_rollback.sql
+
+Scripts (prefixo `_` = descartaveis/auditivos):
+  scripts/_adm_app_02c2_snapshot.mjs / .out.json (49.954 b)
+  scripts/_adm_app_02c2_ctx.mjs      / .out.json (18.194 b)
+  scripts/_adm_app_02c2_bridge.mjs   / .out.json (11.574 b)
+  scripts/_adm_app_02c2_apply.mjs
+  scripts/_adm_app_02c2_rls.mjs
+  scripts/_adm_app_02c2_rollback_check.mjs
+  scripts/_adm_app_02c2_proof.mjs    / .out.json (30.166 b)
+  scripts/_adm_app_02c2_tests.mjs    / .out.json (39.506 b)
+  ADM-APP-02C2-RELATORIO.txt         (este arquivo, na raiz do projeto)
+
+Nenhum arquivo de `src/` (frontend/backend) foi alterado. Nenhum teste
+Playwright executado (a missao nao exige UI; todos os gates sao de banco).
+
+--------------------------------------------------------------------------------
+12. CONCLUSAO
+--------------------------------------------------------------------------------
+A missao ADM-APP-02C.2 foi concluida com GATE PASS (12/12).
+
+Fechado:
+  A-8  guard BEFORE UPDATE em `prestadores` (campos privilegiados + metadata
+       em allowlist) — self-liberacao e auto-promocao negadas com mensagem
+       propria ADM-APP-02C.2, com RAISE LOG e trilha em `liberado_app_audit`.
+  A-9  `prestadores_select_own` agora e `auth_user_id = auth.uid()`; as 4
+       tabelas do pipeline de recrutamento ganharam policies com guard de
+       `tenant_usuarios` — motorista autenticado sem tenant nao le nada.
+  A-12 `candidatos` sem grant e sem policy para `anon` (SELECT e INSERT
+       fechados), policies legadas substituidas por `candidatos_tms_*`.
+
+Preservado sem regressao:
+  bridge AFTER INSERT de `prestadores`, REC-062B (`cip_*`), as 3 RPCs
+  `app_s6_*`, os campos pessoais/metadata que o App edita, o acesso TMS e o
+  acesso service_role.
+
+Pronto para uso imediato: migration aplicada; rollback validado e disponivel
+(basta COMMIT no lugar de ROLLBACK, ou reexecutar a migration forward).
+
+A seguir (proxima missao): 02C.3+ com APP-RPC-LEGACY-01, APP-RPC-CRIAR-01 e
+o restante do backlog do item 10.
+
+======================================== FIM DO RELATORIO ADM-APP-02C.2

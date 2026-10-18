@@ -1,0 +1,187 @@
+================================================================================
+MISSAO: TMS-FIN-SEC-02-A5-NOVA-RECEITA-AUDIT
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA. Nada corrigido. Nada alterado.
+RESULTADO: PASS (auditoria concluida) — caminho CLASSIFICADO como P0.
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+" Nova Receita pode permanecer como esta em producao? "  ==>  NAO.
+Justificativa tecnica no item 9 (Severidade P0).
+
+--------------------------------------------------------------------------------
+1. ARQUIVOS / CALL SITES
+--------------------------------------------------------------------------------
+DML (INSERT direto em financeiro_receber):
+  - src/services/financeiro/receberService.ts
+      criarRecebivel()            -> INSERT (linhas 273-277)
+      criarRecebiveisEmLote()     -> INSERT em lote (linhas 299-302)
+      criarRecebivelDeEscala()    -> INSERT (linha ~552)  [legado/fora do botao]
+CALL SITES ATIVOS (UI atual):
+  - src/components/financeiro/ContasReceberEnterprise.tsx
+      :21  import criarRecebivel
+      :415 handleSalvarReceita()  -> criarRecebivel  (botao "Salvar", :1071)
+      :476 handleGerarParcelas()  -> criarRecebivel  (botao "Gerar Parcelas", :1066)
+      :745 botao "Nova Receita" (abre dialog)
+CALL SITES INATIVOS (codigo orfao):
+  - src/components/financeiro/ContasReceber.tsx (:31 import; :554/:561 uso) — NAO
+    roteado na aplicacao (componente orfao conforme auditorias anteriores).
+
+--------------------------------------------------------------------------------
+2. FLUXO UI -> SERVICE -> BANCO
+--------------------------------------------------------------------------------
+Contas a Receber (ContasReceberEnterprise) -> botao "Nova Receita" -> Dialog
+" Nova Receita - Contas a Receber " -> handleSalvarReceita() -> criarRecebivel(payload)
+-> supabase.from("financeiro_receber").insert([payload]).select().single().
+
+--------------------------------------------------------------------------------
+3. DML
+--------------------------------------------------------------------------------
+INSERT direto em public.financeiro_receber (sem RPC). Nao ha UPDATE/DELETE no
+caminho de criacao (exclusao/cancelamento sao funcoes separadas: excluirRecebivel/
+cancelarRecebivel, com guardas).
+
+--------------------------------------------------------------------------------
+4. ESTA REALMENTE ATIVO NA UI ATUAL?
+--------------------------------------------------------------------------------
+SIM. ContasReceberEnterprise e o componente ativo da aba Financeiro > Receber
+(Financeiro.tsx:220) e o botao "Nova Receita" (:745) esta habilitado.
+(A confirmar apenas por execucao humana; o codigo esta roteado e ativo.)
+
+--------------------------------------------------------------------------------
+5. PAYLOAD GRAVADO (campos reais)
+--------------------------------------------------------------------------------
+Via normalizarPayloadRecebivel (whitelist CAMPOS_REAIS_RECEBER):
+  cliente_id, cliente_nome, cliente_documento, fatura (documento), serie, numero,
+  os_vinculadas, contrato_vinculado, proposta_vinculada, categoria, centro_resultado,
+  plano_conta, valor_bruto, desconto, juros, multa, abatimento, valor_liquido,
+  valor, data_emissao, data_vencimento, data_previsao_recebimento, conta_entrada,
+  status, recorrente, quantidade_parcelas, parcela_atual, observacoes.
+  + fatura_id NAO e gravado (AR avulso).
+  + origem/origem_id NAO sao gravados (whitelist descarta).
+  + categoria/centro_resultado/plano_conta vem de MOCKS do frontend (baixa qualidade
+    de dado contabil).
+
+--------------------------------------------------------------------------------
+6. STATUS INICIAL
+--------------------------------------------------------------------------------
+' aberto ' por padrao (input.status || 'aberto'), com validarStatusCriacao()
+BLOQUEANDO explicitamente 'pago'/'recebido'/'baixado' (fix FIN-MASTER-363A).
+=> NAO cria titulo como pago. Bom controle; nao ha falso "pago".
+
+--------------------------------------------------------------------------------
+7. CRIA BAIXA?
+--------------------------------------------------------------------------------
+NAO. Nenhuma linha em financeiro_baixas e criada pelo caminho de criacao; a baixa
+ocorre apenas via baixarRecebivel -> RPC f_registrar_baixa_financeira.
+
+--------------------------------------------------------------------------------
+8. CONTA FINANCEIRA
+--------------------------------------------------------------------------------
+NAO grava conta_financeira_id. `conta_entrada` recebe TEXTO (nome da conta) —
+coluna textual; sem FK/consistencia com contas_financeiras.
+
+--------------------------------------------------------------------------------
+9. COMPETENCIA / VENCIMENTO / CLIENTE / TENANT / RLS / GRANTS
+--------------------------------------------------------------------------------
+- Vencimento: OBRIGATORIO (validarData). Competencia: TEXT (MM/AAAA) quando informada.
+- Cliente: OBRIGATORIO (cliente_id e/ou cliente).
+- Tenant: financeiro_receber NAO possui coluna tenant_id. A policy de INSERT
+  (fr_insert_tms, TO authenticated) usa apenas `EXISTS (SELECT 1 FROM tenant_usuarios
+  WHERE user_id = auth.uid())` — valida PERTENCIMENTO ao TMS, sem checar o tenant da
+  linha (nao ha coluna). Nao impede inserir cliente de outro tenant se conhecido.
+- RLS/grants: authenticated possui SELECT/INSERT/UPDATE/DELETE (policies fr_*_tms com
+  guard de usuario TMS). anon possui GRANTs amplos, porem SEM policy -> bloqueado por
+  RLS (privilegio residual).
+
+--------------------------------------------------------------------------------
+10. RISCO DE DUPLICIDADE / IDEMPOTENCIA
+--------------------------------------------------------------------------------
+- Constraint UNIQUE relevantes: pkey(id); uq_fr_os_id (os_id); uq_receber_fatura_id
+  (fatura_id WHERE NOT NULL). Para AR manual (fatura_id NULL, os_id NULL) NAO ha
+  chave de idempotencia -> duplo clique / reenvio pode gerar 2 titulos identicos.
+- handleGerarParcelas cria N titulos em loop (cada parcela 1 INSERT) — sem chave de
+  lote/idempotencia; reexecucao duplica.
+- Dados: 124 AR, sendo 116 avulsos (fatura_id NULL), 8 com fatura, 77 is_teste.
+
+--------------------------------------------------------------------------------
+11. RPC/CONTRATO OFICIAL COMPATIVEL?
+--------------------------------------------------------------------------------
+NAO existe RPC oficial para CRIAR um financeiro_receber manual/avulso.
+  - f_emitir_fatura: cria AR a partir de FATURA (gate oficial do faturamento).
+  - f_registrar_baixa_financeira: registra BAIXA de titulo existente (nao cria AR).
+  - demais RPCs: dominio PRESTADOR.
+=> O caminho "Nova Receita" e uma SEGUNDA PORTA de criacao de AR, fora do gate.
+
+--------------------------------------------------------------------------------
+12. CONFLITO COM FATURAMENTO / AR / BAIXAS?
+--------------------------------------------------------------------------------
+- NAO conflita com f_emitir_fatura (usa fatura_id), pois o avulso tem fatura_id NULL.
+- PORÉM cria AR sem origem de faturamento (sem fatura_id, sem os_id): titulo "orfao
+  de origem", dificil conciliacao com DRE/faturamento; risco de KPI divergente.
+- NAO cria baixa; nao afeta financeiro_baixas. mas se futuramente marcado pago por
+  caminho indevido, cairia nos "pagos sem baixa" (ja tratado fora de escopo).
+
+--------------------------------------------------------------------------------
+13. IMPACTO CONTABIL/FINANCEIRO
+--------------------------------------------------------------------------------
+- Receita reconhecida sem lastro de fatura/OS (pode inflar "A Receber" e DRE por
+  competencia impropria).
+- Categoria/plano/centro via MOCKS -> classificacao contabil incorreta.
+- conta_entrada textual -> sem rastreio de conta financeira real.
+- Sem idempotencia -> risco de duplicidade de receita.
+
+--------------------------------------------------------------------------------
+14. SEVERIDADE
+--------------------------------------------------------------------------------
+CLASSIFICACAO: P0
+Justificativa: o GATE-01 definiu que QUALQUER caminho capaz de alterar estado
+financeiro SEM passar pelas RPCs/gates oficiais e BLOQUEADOR DE PRODUCAO (P0).
+"Nova Receita" grava AR (financeiro_receber) por INSERT direto, sem RPC/contrato,
+sem idempotencia e sem lastro de faturamento. Mitigantes existentes: status inicial
+'aberto' (validarStatusCriacao bloqueia 'pago'), RLS exige usuario TMS, e o fluxo e
+acionado por UI (nao por IA). Ainda assim, permanece DML direto de estado financeiro.
+
+--------------------------------------------------------------------------------
+15. RESULTADO DA AUDITORIA / PROXIMA CORRECAO MINIMA (NAO IMPLEMENTADA)
+--------------------------------------------------------------------------------
+RESULTADO: PASS (auditoria). Caminho classificado P0.
+
+CORRECAO MINIMA RECOMENDADA (para missao futura, SEM implementar agora):
+  Criar RPC oficial `f_criar_recebivel_manual(...)` (SECURITY DEFINER, search_path
+  fixo; auth.uid() + papel financeiro/admin; tenant; valida cliente/valor/vencimento;
+  idempotency_key unica) que faca 1 INSERT controlado em financeiro_receber e
+  devolva o id; a UI passa a chamar SOMENTE essa RPC. Alternativa: reutilizar/estender
+  o contrato de faturamento quando houver fatura; para avulso, exigir idempotency_key
+  e gravar conta_financeira_id (nao apenas texto). Parcelas via chave de lote unica.
+  Acoes sugeridas no frontend: trocar criarRecebivel() por chamada a RPC; remover
+  mocks de categoria/plano/centro. NAO implementar nesta missao.
+
+--------------------------------------------------------------------------------
+16. P0/P1 RESTANTES APOS A CLASSIFICACAO
+--------------------------------------------------------------------------------
+- P0 (originais do GATE-01): S1 FECHADO, S2 FECHADO, A4 FECHADO.
+- P0 (NOVO, classificado aqui): 1 -> "Nova Receita" INSERT direto em financeiro_receber.
+- P1 (inalterados): 10 pagamentos 'pago' sem baixa; 9 faturas emitidas sem AR;
+  contas_financeiras sem tenant_id; grants residuais de anon; cast os_select_cliente;
+  data canonica da Margem; DELETE de AR em OrdensServicoLista.
+P0 restantes: 1 (Nova Receita)  |  P1 restantes: 7 (inalterados).
+
+--------------------------------------------------------------------------------
+17. CONFIRMACAO
+--------------------------------------------------------------------------------
+Somente leitura: NENHUM codigo/RLS/grant/migration/dado alterado. S1/S2/A4 intactos.
+Nao tratados: 10 pagos sem baixa; 9 faturas sem AR; APP; Comercial; Efi; Programacao.
+
+================================================================================
+Arquivo ..: TMS-FIN-SEC-02-A5-NOVA-RECEITA-AUDIT-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-SEC-02-A5-NOVA-RECEITA-AUDIT-RESULTADO.txt
+Tamanho ..: 11240 bytes
+Data .....: 24/09/2026 20:09:56
+================================================================================
+FIM DO RELATORIO — TMS-FIN-SEC-02-A5
+================================================================================

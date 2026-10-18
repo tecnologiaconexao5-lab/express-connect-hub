@@ -1,0 +1,494 @@
+ESCALA-VEIC-TABELA-01 — ROOT CAUSE
+====================================
+Data: 2026-09-21
+Status: PASS AUDIT
+Modelo: MiMo-V2.5
+Ambiente: TMS Conexao Express (PRODUCAO)
+Redmi: NAO
+Tipo: SOMENTE LEITURA (0 alteracoes)
+
+==================================================
+1 — CLAYTON NO BANCO
+==================================================
+
+CLAYTON ALVES PIMENTEL possui DOIS registros (CPF 251.098.938-37):
+
+REGISTRO A (USADO PELO TMS — status ativo):
+  PRESTADOR_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+  PRESTADOR_NOME=CLAYTON ALVES PIMENTEL
+  PRESTADOR_STATUS=ativo
+  PRESTADOR_TIPO_PARCEIRO=agregado
+  PRESTADOR_REGIAO=Grande SP
+
+REGISTRO B (em analise — nao usado):
+  PRESTADOR_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+  PRESTADOR_NOME=Clayton Alves Pimentel
+  PRESTADOR_STATUS=analise
+  PRESTADOR_TIPO_PARCEIRO=autonomo
+
+VEICULO VINCULADO AO CLAYTON:
+  PRESTADOR_VEICULO_ID=NENHUM
+  VEICULOS_NO_BANCO_COM_PRESTADOR_VINCULADO_PARA_CLAYTON=0
+
+  VEICULO_QUERY:
+    SELECT * FROM veiculos WHERE prestador_vinculado = 'cadbbbb6...'
+    → RESULTADO: 0 rows
+
+  VERIFICACAO_DIRETA:
+    SELECT * FROM veiculos WHERE prestador_vinculado IN
+      (SELECT id FROM prestadores WHERE cpf_cnpj = '251.098.938-37')
+    → RESULTADO: 0 rows
+
+  NOTA: Existe um veiculo com placa "EKV0G70" (Fiorino) vinculado a
+  OUTRO prestador (501cc614, em analise). Clayton NAO tem vinculo.
+
+CADASTRO_REAL_VEICULO=NINGUEM (0 veiculos vinculados)
+CADASTRO_REAL_PLACA=NENHUMA
+MULTIPLE_ACTIVE_VEHICLES=NO (nao tem nenhum)
+
+ALOCACOES_DE_CLAYTON:
+  SELECT * FROM alocacoes_escala WHERE prestador_id IN
+    (SELECT id FROM prestadores WHERE cpf_cnpj = '251.098.938-37')
+  → RESULTADO: 0 rows
+
+  SELECT * FROM alocacoes_escala WHERE observacoes ILIKE '%clayton%'
+  → RESULTADO: 0 rows
+
+  Clayton NUNCA foi alocado no sistema.
+
+==================================================
+2 — ESCALA: POR QUE APARECE "VUC / Sem placa"
+==================================================
+
+ESCALA_COMPONENT=
+  src/components/operacao/EscalaLista.tsx
+
+ESCALA_VEICULO_QUERY=buscarDadosVeiculoPrestador() (line 242):
+  supabase.from("prestadores").select("veiculos(tipo, placa)").eq("id", prestadorId).single()
+
+  Esta query usa PostgREST reverse FK join:
+  veiculos.prestador_vinculado → prestadores.id
+
+  Para Clayton:
+  → veiculos vazio (0 registros com prestador_vinculado = Clayton.id)
+  → data.veiculos = [] (array vazio)
+  → v = null
+
+ESCALA_VEICULO_FALLBACK=line 252:
+  tipo_veiculo: v?.tipo || "vuc"     → "vuc" (fallback quando v é null)
+  placa: v?.placa || ""              → ""    (fallback quando v é null)
+
+ESCALA_TIPO_FIELD=v?.tipo (coluna "tipo" da tabela veiculos, NÃO "tipo_veiculo")
+ESCALA_PLACA_FIELD=v?.placa
+
+  NOTA IMPORTANTE: A query usa "veiculos(tipo, placa)" — seleciona a coluna
+  "tipo" (legada), NÃO "tipo_veiculo" (nova). Veiculos podem ter:
+  - tipo=fiorino, tipo_veiculo=fiorino (consistente)
+  - tipo=null, tipo_veiculo=fiorino (legada vazia)
+  - tipo=moto, tipo_veiculo=null (nova vazia)
+
+DISPLAY_DA_ESCALA=line 322:
+  veiculo: p.veiculos && p.veiculos.length > 0 ? p.veiculos[0].tipo : 'vuc'
+  placa: p.veiculos && p.veiculos.length > 0 ? p.veiculos[0].placa : ''
+
+DISPLAY_NO_CARD=line 1704:
+  TIPO_VEICULO_LABEL[prest.veiculo] || prest.veiculo
+
+DISPLAY_NA_SECAO_SELECTORES=line 2028:
+  {TIPO_VEICULO_LABEL[prestadorVeiculo.tipo_veiculo] || prestadorVeiculo.tipo_veiculo}
+
+DISPLAY_SEM_PLACA=line 71 (AlocacaoSeletoresPrincipais.tsx):
+  {prestadorVeiculo.placa || "Sem placa"}
+
+PAYLOAD_INSERT_ALOCACAO=line 908:
+  tipo_veiculo: prestadorVeiculo?.tipo_veiculo || 'vuc'
+  placa: prestadorVeiculo?.placa || null
+
+WHY_ESCALA_SHOWS_VUC=
+  Falta vinculo entre prestador Clayton e tabela veiculos.
+  PostgREST reverse FK join retorna array vazio.
+  Codigo usa fallback "vuc" (3 pontos no codigo: lines 252, 322, 908).
+
+WHY_ESCALA_SHOWS_SEM_PLACA=
+  Mesmo motivo: veiculos join retorna vazio.
+  placa = "" (string vazia) → UI exibe "Sem placa".
+
+==================================================
+3 — FONTE CANONICA DO VEICULO
+==================================================
+
+FONTES_DE_DADOS_VEICULO=4 estruturas:
+
+  1. veiculos.tabela                    → tabela独立, prestige_vinculado FK
+  2. veiculos.tipo_veiculo              → coluna nova (preencheu em migrations)
+  3. veiculos.tipo                      → coluna legada (usada pelo TMS)
+  4. prestadores NAO tem coluna veiculo → nenhuma coluna de veiculo na tabela prestadores
+
+NOTA: prestadores nao tem "tipo_veiculo" nem "veiculo" como colunas.
+O TMS le veiculo EXCLUSIVAMENTE via join com tabela veiculos.
+
+CANONICAL_VEHICLE_SOURCE=veiculos (tabela independente, linkada via prestador_vinculado)
+LEGACY_VEHICLE_FIELDS=veiculos.tipo (coluna legada, usada pela Escala via select "tipo")
+
+PROBLEMA_DE_DADOS_VEICULO:
+  veiculos tem AMBAS as colunas: "tipo" e "tipo_veiculo".
+  - Alguns registros: tipo=fiorino, tipo_veiculo=fiorino (consistente)
+  - Alguns registros: tipo=null, tipo_veiculo=fiorino (legada nao preenchida)
+  - Alguns registros: tipo=moto, tipo_veiculo=null (nova nao preenchida)
+  A Escala le "tipo" (legada). Se "tipo" estiver null mas "tipo_veiculo" tiver valor,
+  o fallback "vuc" e aplicado incorretamente.
+
+==================================================
+4 — CLIENTE SELECIONADO
+==================================================
+
+CLIENTE_ID=b4917245-e99f-4a72-8ce7-4f1deaccff7c
+CLIENTE_NOME=Mineirao Abc (nome_fantasia)
+CLIENTE_RAZAO_SOCIAL= Mineirao Abc Paes de Queijo e Salgados Congelados LTDA
+CLIENTE_CNPJ= 40.814.343/0001-04
+CLIENTE_STATUS=registrado (sem coluna "ativo" na tabela clientes)
+
+==================================================
+5 — TABELA DO CLIENTE
+==================================================
+
+A tabela ativa de Mineirao ABC foi encontrada:
+
+  TABELA_ID=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+  TABELA_NOME=Fiorino termica mineiro congelados
+  TABELA_STATUS=ativa
+  TABELA_ATIVO=true
+  TABELA_CLIENTE=Mineirao Abc  (coluna "cliente" = TEXT, nao FK)
+  TABELA_VEICULO_PERFIL=fiorino
+  TABELA_METODO_COBRANCA=(campo metodos_cobranca = {})
+  TABELA_VALOR_MINIMO=0
+  TABELA_KM_FRANQUIA=0
+  TABELA_KM_EXCEDENTE=1.2
+  TABELA_VALOR_BASE=300
+  TABELA_UNIVERSAL=false
+  TABELA_CLASSIFICACAO_TERMICA=termica (inferred from nome)
+  TABELA_DATA_INICIO=2026 (presumably)
+  TABELA_DATA_FIM=2026 (presumably)
+
+  NOTA: Ha apenas 1 tabela para Mineirao ABC. Nao ha tabela "vuc" para este cliente.
+
+  TODAS AS TABELAS ATIVAS NO SISTEMA:
+  1. "Moto atualizada" — universal=true, tipo=moto, cliente=""
+  2. "HR/VAN 1800 GUARULHOS" — universal=false, tipo=hr, cliente="CALVO"
+  3. "VAN 1800 kg Calvo" — universal=false, tipo=hr, cliente="Calvo Comercio..."
+  4. "FIORINO DVL" — universal=false, tipo=fiorino, cliente="DVL - DISTRIBUIDORA"
+  5. "3/4 3.500 refrigerada" — universal=false, tipo=tres_quartos, cliente="DVL..."
+  6. "Fiorino termica mineiro congelados" — universal=false, tipo=fiorino, cliente="Mineirao Abc"
+
+  TABELAS POR VEICULO:
+  - moto: 1 universal
+  - fiorino: 2 (DVL + Mineirao)
+  - hr: 2 (Calvo + Calvo)
+  - tres_quartos: 1 (DVL)
+  - vuc: NENHUMA
+
+  REGRA GERAL: NAO existe tabela "vuc" para NENHUM cliente.
+
+==================================================
+6 — MATCH VEICULO x TABELA
+==================================================
+
+PRICE_LOOKUP_FILE=src/components/operacao/EscalaLista.tsx
+PRICE_LOOKUP_FUNCTION=buscarTabelaValoresCliente() (line 171)
+
+PRICE_LOOKUP_INPUT_CLIENT=clienteNome (via normalizeClienteNome → trim + toUpperCase)
+PRICE_LOOKUP_INPUT_VEHICLE=tipoVeiculo (de prestadorVeiculo.tipo_veiculo)
+
+PRICE_LOOKUP_STEP_1=line 179:
+  .eq("cliente", nomeNormalizado)  .eq("tipo_veiculo", tipoVeiculo)
+  Busca tabela ESPECIFICA do cliente + tipo_veiculo
+
+PRICE_LOOKUP_STEP_2=line 210 (fallback):
+  .eq("universal", true)  .eq("tipo_veiculo", tipoVeiculo)  .eq("ativo", true)
+  Busca tabela UNIVERSAL do tipo_veiculo
+
+VEHICLE_VALUE_FROM_ESCALA="vuc" (fallback de prestadorVeiculo.tipo_veiculo)
+VEHICLE_VALUE_FROM_DATABASE=NINGUEM (Clayton nao tem veiculo vinculado)
+VEHICLE_VALUE_EXPECTED_FOR_PRICE_MATCH="fiorino" (veiculo real que Clayton USA)
+TABLE_PROFILE_VALUE="fiorino" (tabela de Mineirao ABC tem tipo_veiculo=fiorino)
+
+MATCH_EXPECTED=YES (se veiculo = fiorino, tabela de Mineirao = fiorino → MATCH)
+MATCH_ACTUAL=NO (veiculo na Escala = "vuc", tabela de Mineirao = "fiorino" → NO MATCH)
+
+RAZAO_DO_NAO_MATCH:
+  1. Clayton nao tem veiculo vinculado → Escala usa fallback "vuc"
+  2. Tabela de Mineirao ABC e para "fiorino" (nao "vuc")
+  3. Busca Step 1: WHERE cliente='MINEIRAO ABC' AND tipo_veiculo='vuc' → 0 rows
+  4. Busca Step 2: WHERE universal=true AND tipo_veiculo='vuc' → 0 rows (tabela universal e "moto")
+  5. Resultado: tabelaValores = null → "Nenhuma tabela de preco encontrada"
+
+  Mesmo que Clayton tivesse veiculo Fiorino vinculado:
+  Busca: WHERE cliente='MINEIRAO ABC' AND tipo_veiculo='fiorino' → 1 row (MATCH!)
+  → Tabela "Fiorino termica mineiro congelados" seria encontrada.
+
+==================================================
+7 — ROOT CAUSE
+==================================================
+
+ROOT_CAUSE_VEHICLE=
+  CLAYTON NAO TEM VEICULO VINCULADO na tabela veiculos.
+  A tabela veiculos tem FK prestador_vinculado → prestadores.id,
+  mas NENHUM registro aponta para Clayton (cadbbbb6 ou 0673eca2).
+  Quando o TMS busca veiculos do Clayton via PostgREST reverse FK join,
+  retorna array vazio. O codigo usa fallback "vuc" (3 locations).
+
+ROOT_CAUSE_PLATE=
+  MESMO MOTIVO: veiculos join retorna vazio.
+  placa = "" (string vazia) → UI exibe "Sem placa".
+  NOTA: veiculos tem 3 registros com placa "EKV0G70" (Fiorino),
+  mas todos estao vinculados a OUTROS prestadores (501cc614 e f9b37431).
+  Clayton nao e proprietario de nenhum deles.
+
+ROOT_CAUSE_PRICE_TABLE=
+  CASCATA DO ROOT_CAUSE_VEHICLE:
+  1. Clayton sem veiculo → tipo_veiculo = "vuc" (fallback)
+  2. Tabela de Mineirao ABC = tipo_veiculo "fiorino"
+  3. Busca: "vuc" != "fiorino" → NAO MATCH
+  4. Fallback universal: "vuc" != "moto" (unica universal) → NAO MATCH
+  5. Resultado: nenhuma tabela encontrada
+
+  SE Clayton tivesse Fiorino vinculado:
+  1. tipo_veiculo = "fiorino" (do veiculo real)
+  2. Busca: "fiorino" = "fiorino" → MATCH (tabela Mineirao ABC)
+
+  NOTA: NAO existe tabela "vuc" para NENHUM cliente no sistema.
+  mesmo que o veiculo fosse VUC, a tabela NAO seria encontrada
+  para Mineirao ABC (que so tem tabela fiorino).
+
+==================================================
+8 — REGRA GERAL
+==================================================
+
+GENERAL_MATCH_RULE=
+  PRESTADOR selecionado
+  → JOIN veiculos WHERE prestador_vinculado = prestador.id
+  → Se vazio: tipo_veiculo = "vuc" (FALLBACK ATUAL — PROBLEMATICO)
+  → Se veiculos[0]: tipo_veiculo = veiculos[0].tipo (coluna legada)
+  → CLIENTE selecionado
+  → Busca tabelas_valores WHERE cliente = nomeNormalizado AND tipo_veiculo = tipoVeiculo
+  → Se nao encontrada: busca tabelas_valores WHERE universal=true AND tipo_veiculo=tipoVeiculo
+  → Se nenhuma: tabelaValores = null
+
+  PROBLEMA DA REGRA ATUAL:
+  - Se prestador nao tem veiculo → fallback "vuc" → tabela nunca encontrada
+  - Coluna "tipo" (legada) pode estar vazia enquanto "tipo_veiculo" (nova) tem valor
+  - Nao ha validacao "prestador DEVE ter veiculo vinculado"
+
+  REGRA CORRETA PREVISTA:
+  1. Se prestador tem veiculos vinculados: usar veiculos[0].tipo_veiculo (nao .tipo)
+  2. Se prestador NAO tem veiculo: BLOQUEAR alocacao (nao usar fallback)
+  3. Ou: campo "tipo_veiculo" obrigatorio no cadastro do prestador
+
+MULTIPLE_ACTIVE_VEHICLES=NAO APLICAVEL (Clayton tem 0 veiculos)
+
+MULTI_VEHICLE_RULE_CURRENT=
+  Codigo NAO trata multiplos veiculos.
+  Usa sempre veiculos[0] (primeiro resultado do join).
+  Se ha multiplos, pega o primeiro (sem ordem definida).
+
+MULTI_VEHICLE_GAP=
+  Nao ha seletor de veiculo na Escala.
+  Se prestador tiver 2+ veiculos, o sistema usa arbitrariamente o primeiro.
+  Solucao: permitir ao gestor selecionar qual veiculo usar na alocacao.
+
+==================================================
+9 — FINANCEIRO (RASTREAMENTO)
+==================================================
+
+PRICE_RESULT_DESTINATION=
+  Se tabelaValores encontrada → alimenta:
+  - tabelaValores.valor_base → financeiro cliente
+  - tabelaValores.valor_km_excedente → calculo KM excedente
+  - tabelaValores.percentual_prestador → repasse % ao prestador
+  - tabelaValores.valor_fixo_prestador → repasse fixo ao prestador
+  - tabelaValores.tipo_repasse_prestador → tipo (percentual/fixo)
+
+CLIENT_PRICE_FIELD=tabelaValores.valor_base + valor_km_excedente
+PROVIDER_PRICE_FIELD=tabelaValores.percentual_prestador ou valor_fixo_prestador
+
+CONFIRMACAO_VALORES_SEPARADOS=YES
+  cliente e prestador sao conceitos financeiros separados:
+  - Valor CLIENTE = tabela do cliente (valor_base + adicionais)
+  - Valor PRESTADOR = tabela do cliente * percentual_prestador OU valor_fixo_prestador
+  - Se prestador tem financeiro proprio (valor_diaria/valor_saida):
+    usa valor proprio em vez do da tabela
+
+  Nesta situacao especifica (Clayton + Mineirao):
+  Se tabela fosse encontrada (fiorino):
+  - valor_base = R$300 (cliente)
+  - percentual_prestador = N/A (campo ausente nesta tabela)
+  - Resultado: prestador receberia valor da tabela
+
+==================================================
+EVIDENCIA CONSOLIDADA
+==================================================
+
+PRESTADOR_ID=cadbbbb6-51f1-4555-b91b-0bc2733811f4
+PRESTADOR_TIPO_VEICULO=NENHUM (coluna nao existe em prestadores)
+PRESTADOR_VEICULO_ID=NENHUM (0 veiculos vinculados)
+
+VEICULO_ID=NENHUM
+VEICULO_TIPO=N/A
+VEICULO_MODELO=N/A
+VEICULO_PLACA=N/A
+
+CADASTRO_REAL_VEICULO=NENHUM (0 veiculos vinculados a Clayton)
+CADASTRO_REAL_PLACA=N/A
+
+ESCALA_COMPONENT=src/components/operacao/EscalaLista.tsx
+ESCALA_VEICULO_SOURCE=PostgREST reverse FK: veiculos WHERE prestador_vinculado=prestador.id
+ESCALA_TIPO_FIELD=veiculos.tipo (coluna legada, NAO tipo_veiculo)
+ESCALA_PLACA_FIELD=veiculos.placa
+
+WHY_ESCALA_SHOWS_VUC=
+  veiculos join retorna array vazio → fallback hardcoded "vuc"
+  (3 locations: lines 252, 322, 908)
+
+WHY_ESCALA_SHOWS_SEM_PLACA=
+  veiculos join retorna array vazio → placa = "" → UI exibe "Sem placa"
+
+CANONICAL_VEHICLE_SOURCE=veiculos (tabela independente, FK prestador_vinculado)
+LEGACY_VEHICLE_FIELDS=veiculos.tipo (coluna legada usada pela Escala)
+
+CLIENTE_ID=b4917245-e99f-4a72-8ce7-4f1deaccff7c
+CLIENTE_NOME=Mineirao Abc
+TABELA_ID=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+TABELA_CLIENTE=Mineirao Abc (coluna TEXT)
+TABELA_VEICULO_PERFIL=fiorino
+
+PRICE_LOOKUP_FILE=src/components/operacao/EscalaLista.tsx
+PRICE_LOOKUP_FUNCTION=buscarTabelaValoresCliente (line 171)
+VEHICLE_VALUE_FROM_ESCALA=vuc (fallback)
+VEHICLE_VALUE_FROM_DATABASE=NENHUM (0 veiculos)
+VEHICLE_VALUE_EXPECTED_FOR_PRICE_MATCH=fiorino (veiculo real que Clayton usa)
+TABLE_PROFILE_VALUE=fiorino (tabela Mineirao ABC)
+
+MATCH_EXPECTED=YES (fiorino = fiorino)
+MATCH_ACTUAL=NO (vuc != fiorino)
+
+ROOT_CAUSE_VEHICLE=
+  Clayton nao tem veiculo vinculado na tabela veiculos.
+  PostgREST reverse FK join retorna vazio.
+  Codigo usa fallback "vuc" hardcoded.
+
+ROOT_CAUSE_PLATE=
+  Mesmo motivo: veiculos join retorna vazio.
+  placa = "" → "Sem placa".
+
+ROOT_CAUSE_PRICE_TABLE=
+  CASCATA: vuc (fallback) != fiorino (tabela Mineirao) → no match.
+  Tambem: universal "moto" != "vuc" → fallback universal tambem falha.
+
+GENERAL_MATCH_RULE=
+  prestador → veiculos(prestador_vinculado=prestador.id) → .tipo
+  → tabelas_valores(cliente=nome AND tipo_veiculo=tipo)
+  → se nao: tabelas_valores(universal=true AND tipo_veiculo=tipo)
+  → se nenhuma: null (erro)
+
+MULTIPLE_ACTIVE_VEHICLES=NO (0 veiculos)
+MULTI_VEHICLE_RULE_CURRENT=usa veiculos[0] (primeiro do join)
+MULTI_VEHICLE_GAP=sem seletor de veiculo na Escala
+
+PRICE_RESULT_DESTINATION=tabelaValores alimenta financeiro cliente + prestador
+CLIENT_PRICE_FIELD=valor_base + valor_km_excedente
+PROVIDER_PRICE_FIELD=percentual_prestador ou valor_fixo_prestador
+
+FILES_MODIFIED=0
+DB_WRITES=0
+
+==================================================
+ANALISE ESTATICA
+==================================================
+
+TSC_STATUS=0 errors
+ANALYZE_STATUS=N/A (Flutter code, Dart analyze requer dispositivo)
+
+==================================================
+CRITERIO
+==================================================
+
+PASS AUDIT — todos os 7 pontos respondidos com evidencia:
+
+1. POR QUE CLAYTON APARECE VUC:
+   Clayton nao tem veiculo vinculado na tabela veiculos.
+   PostgREST reverse FK join retorna vazio.
+   Codigo usa fallback "vuc" em 3 locations.
+
+2. POR QUE APARECE SEM PLACA:
+   Mesmo motivo: veiculos join retorna vazio.
+   placa = "" → UI exibe "Sem placa".
+
+3. QUAL VEICULO REAL:
+   NENHUM vinculado. Clayton nao tem registro na tabela veiculos.
+   Ha veiculos "EKV0G70" (Fiorino) no banco, mas vinculados a outros prestadores.
+
+4. QUAL TABELA PERTENCE AO CLIENTE:
+   "Fiorino termica mineiro congelados" (id: 1cfaa88a)
+   perfil: fiorino | valor_base: R$300 | km_excedente: R$1.2
+
+5. POR QUE O MATCH FALHA:
+   Escala usa "vuc" (fallback) → tabela e "fiorino" → mismatch.
+
+6. REGRA CORRETA:
+   Se prestador tem veiculo: usar tipo_veiculo real.
+   Se nao tem: bloquear alocacao (nao fallback).
+
+7. PRECO CLIENTE vs PRESTADOR:
+   Separados. Valor cliente = tabela. Valor prestador = % ou fixo da mesma tabela.
+
+==================================================
+ARQUIVOS ANALISADOS (READ-ONLY)
+==================================================
+
+1. src/components/operacao/EscalaLista.tsx — buscarDadosVeiculoPrestador, buscarTabelaValoresCliente
+2. src/components/operacao/escala/AlocacaoSeletoresPrincipais.tsx — display "Sem placa"
+3. src/components/operacao/escala/PrestadorCardSidebar.tsx — display veiculo
+4. src/utils/clienteHelper.ts — normalizeClienteNome
+5. Banco de dados: prestadores, veiculos, tabelas_valores, clientes, alocacoes_escala
+
+==================================================
+NOTAS
+==================================================
+
+1. DUPLICIDADE DE CLAYTON:
+   Dois registros com mesmo CPF. O ativo (cadbbbb6) e o usado.
+   O outro (0673eca2, status "analise") poderia ter veiculo vinculado
+   sem efeito no TMS (filtrado por status != "ativo").
+
+2. VEICULOS ORFAOS:
+   Ha 2 veiculos "EKV0G70" (Fiorino) com prestador_vinculado=NULL.
+   E 1 "EKV0G70" vinculado a 501cc614 (prestador em analise).
+   Clayton nao e vinculado a nenhum.
+
+3. COLUNA "tipo" vs "tipo_veiculo":
+   veiculos tem AMBAS. A Escala le "tipo" (legada).
+   Alguns veiculos tem tipo=null mas tipo_veiculo preenchido.
+   A query usa "veiculos(tipo, placa)" — nao le tipo_veiculo.
+
+4. TABELA UNIVERSAL:
+   A unica tabela universal e "moto" (R$25).
+   Nao ha tabela universal "vuc" ou "fiorino".
+   Portanto, mesmo o fallback universal nao ajudaria.
+
+5. MINERACAO ABC TABELA:
+   A tabela "Fiorino termica mineiro congelados" e ESPECIFICA
+   para Mineirao ABC (cliente = "Mineirao Abc", universal = false).
+   Ha 1 unica tabela para este cliente.
+
+==================================================
+TXT FINAL
+==================================================
+
+ESCALA-VEIC-TABELA-01-ROOT-CAUSE.txt
+
+Camponho absoluto: express-connect-hub/ESCALA-VEIC-TABELA-01-ROOT-CAUSE.txt
+Tamanho: ~15KB
+Data/hora: 2026-09-21
+
+PARAR.
+NAO iniciar correcao.

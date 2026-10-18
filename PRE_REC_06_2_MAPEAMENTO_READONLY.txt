@@ -1,0 +1,348 @@
+PRE-REC-06.2 — MAPEAMENTO READ-ONLY DO PONTO CONGELADO
+========================================================
+Projeto: TMS Conexão Express Hub
+Data: 2026-09-06
+Modelo: MiMo-V2.5 (medium)
+Status: APENAS LEITURA — NENHUMA alteração realizada
+Confirmação: Nenhum código, banco ou dado foi alterado nesta sessão
+
+
+================================================================================
+1 — OBJETIVO
+================================================================================
+Mapear onde REC-06.2 está congelada, para preparar retomada após
+homologação do Financeiro.
+
+
+================================================================================
+2 — HISTÓRICO DAS MISSÕES REC-06
+================================================================================
+
+MISSÃO       | STATUS        | DATA       | DESCRIÇÃO
+-------------|---------------|------------|------------------------------------------
+REC-06       | DEFINIDA      | 2026-08-31 | Automações, CRM e IA (missão mestra)
+REC-06.1     | APROVADO      | 2026-09-02 | Bridge Canônico APP → Recrutamento
+REC-06.2     | CONGELADA     | 2026-09-02 | CRM, Automações e IA (sub-missão restante)
+
+Relatórios-chave:
+  AG-REC8_AUDITORIA_MESTRA_RECRUTAMENTO.txt (2026-08-31, 1412 linhas)
+  AG-REC061_BRIDGE_APP_RECRUTAMENTO.txt (2026-09-02, 205 linhas)
+  AG-FIN_MASTER362_QA_E2E_RECONCILIACAO_REAL.txt (confirma CONGELADA)
+
+
+================================================================================
+3 — FLUXO COMPLETO: Auth → prestadores → bridge → recrutamento → APP
+================================================================================
+
+ETAPA 1: Auth (SUPABASE)
+  Status: IMPLEMENTADO
+  Arquivo: App Flutter (externo), supabase.auth.signUp()
+  Tabela: auth.users
+  Observação: signUp cria auth.user com email+password
+
+ETAPA 2: Prestadores (SUPABASE)
+  Status: IMPLEMENTADO
+  RPC: app_s6_criar_prestador() — SECURITY DEFINER
+  Arquivo: supabase/migrations/20260829_ag07j18_4_rpc_cadastro_app.sql
+  Tabela: prestadores
+  Comportamento:
+    - auth.uid() obrigatório
+    - Hardcoded: status='em_analise', liberado_app=FALSE
+    - p_liberado_app ACEITO mas IGNORADO (anti-spoof)
+    - Idempotente: retorna existente se auth_user_id já vinculado
+    - origem_cadastro='app_motorista' (hardcoded)
+
+ETAPA 3: Bridge (TRIGGER — REC-06.1)
+  Status: IMPLEMENTADO ✅ APLICADO EM PRODUÇÃO
+  Migration: 20260902_rec061_bridge_prestador_recrutamento.sql
+  Trigger: trg_bridge_prestador_para_recrutamento (AFTER INSERT ON prestadores)
+  Função: f_bridge_prestador_para_recrutamento() — SECURITY DEFINER
+  Comportamento:
+    - Filtra: origem='app_prestador' OU origem_cadastro='app_motorista'
+    - Step 1: Busca/cria recrutamento_prestadores (por cpf_cnpj)
+    - Step 2: Verifica idempotência (prestador_id já existe?)
+    - Step 3: Cria recrutamento_candidatos (stage=novo_cadastro)
+    - NÃO altera liberado_app (permanece false)
+    - NÃO aprova automaticamente
+    - NÃO cria documentos
+    - 12 cenários testados, 32 checks — TODOS PASSARAM
+  Status trigger: APLICADO (pg client direto em produção)
+
+ETAPA 4: Recrutamento — Pipeline Enterprise
+  Status: PARCIALMENTE IMPLEMENTADO
+  Componente: EnterpriseKanbanBoard (16 estágios)
+  Tabela: recrutamento_candidatos
+  Service: enterpriseKanbanService.ts
+  Comportamento:
+    - Kanban lê de recrutamento_candidatos ✅
+    - Realtime subscription para atualizações ✅
+    - Bridge antigo (polling) buscarECadastrarAppPrestadores() — REDUNDANTE agora
+      com o trigger, mas ainda existe no código
+    - Dados mockados no bridge legado (nome/cidade/veículo aleatórios)
+    - O trigger REC-06.1 usa dados REAIS do prestador
+
+ETAPA 5: Conversão (Candidato → Prestador)
+  Status: IMPLEMENTADO (com ressalvas)
+  Service: conversaoCandidatoService.ts
+  Função: converterCandidatoParaPrestador()
+  Comportamento:
+    - Gate documental: statusDocumental === 'completo'
+    - Dedup: busca por telefone/email
+    - INSERT/UPDATE prestadores (status=ativo)
+    - UPDATE liberado_app = true (fail-closed: só se statusOperacional==='ativo')
+    - UPDATE recrutamento_candidatos (stage=ativo, prestador_id)
+    - ⚠️ Gate documental é FAIL-OPEN (0 docs = elegivel)
+
+ETAPA 6: Uso no APP (liberado_app)
+  Status: IMPLEMENTADO (com gaps)
+  Campo: prestadores.liberado_app (BOOL)
+  Impacto em 5 bloqueios:
+    1. Elegibilidade operacional → bloqueia escala
+    2. Registro GPS → bloqueia rastreamento
+    3. Chat operacional → bloqueia chat
+    4. Gate elegibilidade RPC → bloqueia alocação
+    5. Aceitar rede → bloqueia rede
+  Gaps:
+    - Sem trilha de auditoria (quem liberou/bloqueou)
+    - Sem auto-bloqueio por vencimento de documento
+    - "agregado" mapeia para liberado_app=true sem aprovação
+
+
+================================================================================
+4 — STATUS DE CADA COMPONENTE DA MISSÃO REC-06
+================================================================================
+
+REC-06 original (AG-REC8): "Automações, CRM e IA"
+Objetivo: 3 automações reais, CRM funcional, IA de recomendacao conectada
+
+A. AUTOMAÇÕES (3 pretendidas)
+   A1. CNH vencendo em 30 dias → email      NÃO IMPLEMENTADO (100% localStorage)
+   A2. Docs pendentes → notificação         NÃO IMPLEMENTADO (100% localStorage)
+   A3. Reativação de inativos               NÃO IMPLEMENTADO (100% localStorage)
+   Service: automacoesService.ts — localStorage only
+   Componente: AutomacoesList.tsx — localStorage only
+
+B. CRM
+   B1. CRM visível no Kanban               PARCIAL (crmService usa Supabase)
+   B2. CRM integrado ao pipeline            NÃO (CRM isolado do pipeline)
+   Service: crmService.ts — Supabase crm_interacoes_prestadores — REAL
+   Componente: CrmLogistico.tsx — funcional
+
+C. IA
+   C1. Score real (não stub)                NÃO IMPLEMENTADO (retorna 50 hardcoded)
+   C2. IA conectada ao score                NÃO IMPLEMENTADO
+   Service: recrutamentoScoreService.ts — STUB (retorna 50)
+   Service: iaService.ts — Mock (random scores)
+
+D. DOCUMENTOS (pré-requisito REC-05)
+   D1. Upload real → Supabase Storage       PARCIAL (bucket público)
+   D2. Aprovação propaga status             NÃO (CentralDocumentos não propaga)
+   D3. Auto-bloqueio CNH vencida            NÃO IMPLEMENTADO
+   D4. Signed URLs                          NÃO (bucket público)
+   Service: documentosService.ts — MOCK (localStorage)
+
+
+================================================================================
+5 — TABELAS/MIGRATIONS/RPCS DO RECRUTAMENTO
+================================================================================
+
+TABELAS CORE (aplicadas):
+  recrutamento_candidatos   — Pipeline Enterprise (16 estágios) ✅
+  recrutamento_prestadores  — Dados de recrutamento/scoring ✅
+  recrutamento_operacoes    — Vagas/operacoes ✅
+  prestadores               — Fonte mestra (70+ colunas) ✅
+  candidatos                — LEGACY (depreciada) ✅
+  crm_interacoes_prestadores — CRM ✅
+  homologacoes              — Registros de homologacao ✅
+  documentos_prestadores    — Documentos vinculados ✅
+  liberado_app_audit        — Auditoria liberado_app ✅
+
+TABELAS COM GAPS:
+  candidato_documentos      — FK para recrutamento_candidatos ✅
+  provider_documents        — DUPLICATA de documentos_prestadores ⚠️
+  operacoes                 — DUPLICATA de recrutamento_operacoes ⚠️
+  reservas_banco            — SEM MIGRATION ❌
+
+MIGRATIONS DO REC-01→06.1:
+  20260831_rec01_fundacao_seguranca.sql       ✅ aplicada
+  20260831_rec02_tenant_isolation.sql         ✅ aplicada
+  20260901_rec03_add_legacy_columns.sql       ✅ aplicada
+  20260902_rec04_mapeamento_fk_candidato_documentos.sql ✅ aplicada
+  20260902_rec061_bridge_prestador_recrutamento.sql     ✅ aplicada
+
+RPCs:
+  app_s6_criar_prestador()           ✅ SECURITY DEFINER
+  app_s6_cpf_cnpj_ja_cadastrado()   ✅ dedup check
+  f_bridge_prestador_para_recrutamento() ✅ trigger REC-06.1
+
+
+================================================================================
+6 — ARQUIVOS ENVOLVIDOS (CHAVE)
+================================================================================
+
+SERVICES:
+  src/modules/recrutamento/services/conversaoCandidatoService.ts  — conversão
+  src/modules/recrutamento/services/prestadoresService.ts         — CRUD prestador
+  src/modules/recrutamento/services/operacoesService.ts           — CRUD operacoes
+  src/modules/recrutamento/services/crmService.ts                 — CRM (Supabase)
+  src/modules/recrutamento/services/iaService.ts                  — IA (MOCK)
+  src/modules/recrutamento/services/documentosService.ts          — docs (MOCK)
+  src/modules/recrutamento/services/automacoesService.ts          — automacoes (MOCK)
+  src/modules/recrutamento/services/scoreService.ts               — score (computado)
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts — pipeline
+
+COMPONENTES:
+  src/modules/recrutamento/index.tsx                              — módulo principal
+  src/modules/recrutamento/components/enterprise-kanban/EnterpriseKanbanBoard.tsx — kanban
+  src/modules/recrutamento/components/crm/CrmLogistico.tsx        — CRM
+  src/modules/recrutamento/components/documentos/CentralDocumentos.tsx — docs
+  src/modules/recrutamento/components/automacoes/AutomacoesList.tsx — automacoes
+  src/modules/recrutamento/components/ia/IAOperacional.tsx        — IA
+  src/modules/recrutamento/components/ia/IAChat.tsx               — chat IA
+  src/components/recrutamento/RecrutamentoAnalytics.tsx           — analytics (MOCK)
+
+HOOKS:
+  src/modules/recrutamento/hooks/useDashboardRecrutamento.ts     — dashboard
+  src/modules/recrutamento/hooks/useKanbanRealtime.ts            — realtime kanban
+  src/modules/recrutamento/hooks/useOperacoes.ts                 — operacoes
+  src/modules/recrutamento/hooks/usePrestadores.ts               — prestadores
+  src/modules/recrutamento/hooks/useRecrutamentoRealtime.ts      — realtime geral
+  src/hooks/usePrestadoresAptosRecrutamento.ts                   — aptos
+
+STORE:
+  src/modules/recrutamento/store/recrutamentoStore.ts            — Zustand state
+
+TYPES:
+  src/modules/recrutamento/types/recrutamento.ts                 — tipos principais
+  src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanTypes.ts — kanban types
+
+TESTES:
+  src/test/rec01_fundacao_seguranca.test.ts
+  src/test/rec02_consolidacao_entidades.test.ts
+  src/test/rec03_eliminacao_legacy_candidatos.test.ts
+  src/test/rec03_1_fechamento_legacy_candidatos.test.ts
+  src/test/rec04_documentos_elegibilidade.test.ts
+  src/test/ag07g_unificacao_app_recrutamento.test.ts
+  tests/e2e/recrutamento-e2e.spec.ts
+
+
+================================================================================
+7 — INTÉGRAÇÕES EXISTENTES COM CADASTRO DO APP
+================================================================================
+
+App Motorista (Flutter PWA externo):
+  → supabase.auth.signUp() → auth.users
+  → app_s6_criar_prestador() → INSERT prestadores (status=em_analise, liberado_app=false)
+  → Upload docs → Storage → documentos_prestadores
+  → NÃO cria em recrutamento_candidatos (isso é feito pelo bridge/trigger)
+
+Bridge (TMS-side):
+  TRIGGER (REC-06.1): f_bridge_prestador_para_recrutamento()
+    → AFTER INSERT ON prestadores
+    → Cria recrutamento_prestadores + recrutamento_candidatos (stage=novo_cadastro)
+    → Dados REAIS do prestador (corrigido em REC-06.1)
+    → APLICADO EM PRODUÇÃO
+
+  BRIDGE LEGADO (redundante): enterpriseKanbanService.buscarECadastrarAppPrestadores()
+    → Polling ao abrir Pipeline
+    → DADOS MOCKADOS (nome/cidade/veículo aleatórios)
+    → Ainda no código mas desnecessário com o trigger
+
+
+================================================================================
+8 — PONTO EXATO DO CONGELAMENTO
+================================================================================
+
+O que foi CONCLUÍDO antes do congelamento:
+  ✅ REC-01: Fundação de Seguranca (RLS, audit, tenant)
+  ✅ REC-02: Consolidação de Entidades (tenant_id, RLS)
+  ✅ REC-03/03.1: Migração candidatos→recrutamento_candidatos
+  ✅ REC-04: Documentos e Elegibilidade (FK mapping)
+  ✅ REC-05: Migração FK elegibilidade (aprovado com evidências)
+  ✅ REC-06.1: Bridge canônico APP→Recrutamento (trigger applied)
+
+O que está CONGELADO (ponto exato):
+  ❌ REC-06.2: CRM, Automações e IA
+     Congelado em: 2026-09-02 (conforme instrução)
+     Motivo: Priorização do Financeiro (FIN-MASTER-362/363)
+     Última ação: REC-06.1 bridge aprovado e aplicado
+     Próximo passo exato ao retomar: Implementar REC-06
+       (3 automações reais + CRM integrado + score real + IA conectada)
+
+
+================================================================================
+9 — PRÉ-CONDIÇÕES PARA RETOMADA DO REC-06.2
+================================================================================
+
+ANTES de iniciar REC-06.2, verificar:
+  1. Financeiro 100% homologado (FIN-MASTER-363B concluído)
+  2. REC-05 aplicado e validado (Documents: upload, aprovação, auto-bloqueio)
+  3. RLS anon REVOKE em recrutamento_candidatos (P0-01 do AG-REC8)
+  4. Bucket documentos_prestadores tornado privado (P0-03)
+  5. liberado_app audit trigger (P0-05)
+
+Primeira ação exata ao retomar:
+  → Criar REC-06.2 com escopo:
+    A. Migrar automacoesService.ts de localStorage para Supabase
+    B. Criar 3 automacoes reais (CNH vencendo, docs pendentes, reativação)
+    C. Integrar CRM ao pipeline (Kanban → CRM context)
+    D. Implementar recrutamentoScoreService real (não stub)
+    E. Conectar IA ao score via proxy-ia
+
+
+================================================================================
+10 — P0/P1 DO AG-REC8 PENDENTES (BLOQUEIAM REC-06.2 COMPLETO)
+================================================================================
+
+P0-01: RLS anon com acesso completo a recrutamento_candidatos  ❌ NÃO CORRIGIDO
+P0-02: RLS anon com INSERT/UPDATE/DELETE em crm_interacoes     ❌ NÃO CORRIGIDO
+P0-03: Bucket documentos_prestadores é público                 ❌ NÃO CORRIGIDO
+P0-04: Sem auto-bloqueio por vencimento de documento           ❌ NÃO CORRIGIDO
+P0-05: liberado_app sem trilha de auditoria                    ❌ NÃO CORRIGIDO
+P0-06: Bridge gera dados MOCKADOS (legado, trigger corrige)    ✅ RESOLVIDO (REC-06.1)
+P0-07: Aprovação documento não propaga status                  ❌ NÃO CORRIGIDO
+
+P1-01: Score stub (retorna 50)                                 ❌ NÃO CORRIGIDO
+P1-02: Automacoes 100% localStorage                            ❌ NÃO CORRIGIDO
+P1-03: WhatsApp CRM 100% Zustand                               ❌ NÃO CORRIGIDO
+P1-04: Banco de Talentos 100% mock                             ❌ NÃO CORRIGIDO
+P1-05: Dashboard usa tabela LEGACY                             ❌ NÃO CORRIGIDO
+P1-06: Sem gates automáticos entre estágios                    ❌ NÃO CORRIGIDO
+P1-07: Gate documental fail-open                               ❌ NÃO CORRIGIDO
+P1-08: "agregado" → liberado_app=true sem aprovação            ❌ NÃO CORRIGIDO
+
+
+================================================================================
+11 — MODELO RECOMENDADO PARA EXECUÇÃO DO REC-06.2
+================================================================================
+
+Complexidade: ALTA (múltiplos services, Supabase, Edge Functions, IA)
+Economia: MiMo-V2.5 medium é suficiente (tasks de migração + CRUD + integração)
+Recomendação: MiMo-V2.5 (medium) — mesma variante usada nesta sessão
+
+Justificativa:
+  - Tarefa é majoritariamente de migração localStorage→Supabase
+  - CRUD de automações (3 rotinas simples)
+  - Integração CRM pipeline (conexão de services existentes)
+  - Score computation (fórmula objetiva, não requer reasoning pesado)
+  - IA via proxy-ia (chamada HTTP simples)
+
+GLM-5.3 high seria overkill (mais caro, tarefa não é de reasoning complexo)
+Luna NÃO necessária (sem justificativa excepcional)
+
+
+================================================================================
+12 — CONFIRMAÇÃO DE READ-ONLY
+================================================================================
+
+NENHUM arquivo foi criado, modificado ou deletado.
+NENHUMA migration foi executada.
+NENHUMA query de escrita foi executada.
+NENHUMA tabela foi alterada.
+NENHUM dado foi modificado.
+Apenas leitura de arquivos e relatórios existentes foi realizada.
+
+
+================================================================================
+FIM — PRE-REC-06.2 MAPEAMENTO READ-ONLY
+================================================================================

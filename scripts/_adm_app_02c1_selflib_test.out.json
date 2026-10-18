@@ -1,0 +1,828 @@
+﻿[
+  {
+    "estado_antes": [
+      {
+        "id": "0b55f471-b8eb-419a-bda1-567ec3b37a39",
+        "nome_completo": "teste 2",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "47da030a-a536-4046-8f0f-e4878948b94e",
+        "cpf_cnpj": "000",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "d",
+            "raio_km": "At├® 30 km",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "fs"
+          },
+          "veiculo": {
+            "ano": "55",
+            "antt": null,
+            "marca": "jj",
+            "placa": "99",
+            "altura": "",
+            "modelo": "jj",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": "At├® 300 km",
+            "aceita": true
+          },
+          "endereco": {
+            "uf": "SP",
+            "cep": "04194250",
+            "bairro": "Jardim S├úo Sav├®rio",
+            "cidade": "S├úo Paulo",
+            "numero": "6",
+            "logradouro": "Rua Lira dos Verdes Anos"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "887",
+            "favorecido": "hhh",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CPF",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "jjh"
+          },
+          "experiencia": {
+            "tempo": "6",
+            "ecommerce": false,
+            "segmentos": "Di├íria avulsa",
+            "farma_auto": false,
+            "observacao": "hh",
+            "refrigerado": false,
+            "tipos_carga": "Mercado / Farma",
+            "media_saidas": "3",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "3",
+            "disponibilidade": "gg",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Moto",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "fs",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": "Uso cart├úo / cr├®dito"
+        },
+        "observacoes": null
+      },
+      {
+        "id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+        "nome_completo": "TESTECOREAPP01k",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8",
+        "cpf_cnpj": "98765432100k11998765432kcoree2e01b@teste.comkyTeste2026kgTeste2026k",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "sp",
+            "raio_km": "At├® 30 km",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "s├úo Paulo"
+          },
+          "veiculo": {
+            "ano": "3588",
+            "antt": null,
+            "marca": "kkkkkkk",
+            "placa": "yuuuuuy",
+            "altura": "",
+            "modelo": "jjjkkkkjjj",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": null,
+            "aceita": false
+          },
+          "endereco": {
+            "uf": "1000",
+            "cep": "1000",
+            "bairro": "1000",
+            "cidade": "1000",
+            "numero": "1000",
+            "logradouro": "1000"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "gujjkkkkkkkkk",
+            "favorecido": "ghghjkkjjjjj",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CNPJ",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "67778999"
+          },
+          "experiencia": {
+            "tempo": "",
+            "ecommerce": false,
+            "segmentos": "Opera├º├úo fixa",
+            "farma_auto": false,
+            "observacao": "",
+            "refrigerado": false,
+            "tipos_carga": "Alimentos secos",
+            "media_saidas": "5",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "700",
+            "disponibilidade": "10 as 20",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "hjghjkk",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Moto",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "s├úo Paulo",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": "Tenho recursos pr├│prios"
+        },
+        "observacoes": null
+      },
+      {
+        "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+        "nome_completo": "PRESTADOR TESTE APP",
+        "status": "ativo",
+        "liberado_app": true,
+        "auth_user_id": "399796b7-4e3b-432f-8744-4eb91f0ee31d",
+        "cpf_cnpj": "12345678900",
+        "data_aprovacao": null,
+        "status_operacional": "ativo",
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": null,
+        "metadata": {
+          "hml_e2e_06": true,
+          "disponivel_app": true,
+          "status_operacional_app": "delivering"
+        },
+        "observacoes": "REGISTRO DE TESTE - APP PRESTADOR P5"
+      },
+      {
+        "id": "e9d43079-3d14-4083-b33e-f50174b6e663",
+        "nome_completo": "REC06 E2E Real Teste",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "40210d5e-acfd-4eea-81a7-c529bb50b788",
+        "cpf_cnpj": "52998224725",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "sp",
+            "raio_km": "",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "s├úo Paulo"
+          },
+          "veiculo": {
+            "ano": "2024",
+            "antt": null,
+            "marca": "Teste",
+            "placa": "REC0001",
+            "altura": "",
+            "modelo": "E2E",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "1500",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": null,
+            "aceita": false
+          },
+          "endereco": {
+            "uf": "SP",
+            "cep": "04194250",
+            "bairro": "Jardim S├úo Sav├®rio",
+            "cidade": "S├úo Paulo",
+            "numero": "100",
+            "logradouro": "Rua Lira dos Verdes Anos"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "52998224725",
+            "favorecido": "Diego Balbino",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CPF",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "52998224725"
+          },
+          "experiencia": {
+            "tempo": "",
+            "ecommerce": false,
+            "segmentos": "",
+            "farma_auto": false,
+            "observacao": "",
+            "refrigerado": false,
+            "tipos_carga": "",
+            "media_saidas": "",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "",
+            "disponibilidade": "",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Fiorino",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "s├úo Paulo",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": null
+        },
+        "observacoes": null
+      }
+    ]
+  },
+  {
+    "T1_self_liberacao_liberado_app": {
+      "executado": true,
+      "rollback": true,
+      "auth_uid": "47da030a-a536-4046-8f0f-e4878948b94e",
+      "auth_role": "authenticated",
+      "linhas_afetadas": 1,
+      "valor_dentro_da_transacao": {
+        "liberado_app": true,
+        "status": "em_analise"
+      },
+      "prestadores_visiveis_ao_prestador": 35
+    }
+  },
+  {
+    "T2_self_liberacao_status_ativo": {
+      "executado": true,
+      "rollback": true,
+      "auth_uid": "40210d5e-acfd-4eea-81a7-c529bb50b788",
+      "passo1_em_analise": 1,
+      "passo2_ativo": 1,
+      "valor_dentro_da_transacao": {
+        "status": "ativo",
+        "status_operacional": null
+      }
+    }
+  },
+  {
+    "T3_campos_sensiveis_proprios": {
+      "executado": true,
+      "rollback": true,
+      "auth_uid": "f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8",
+      "linhas_afetadas": 1,
+      "valores_dentro_da_transacao": {
+        "status": "ativo",
+        "status_operacional": "ativa",
+        "liberado_app": true,
+        "cpf_cnpj": "99988877766",
+        "data_aprovacao": "2026-09-27T03:00:00.000Z",
+        "score_interno": "99",
+        "ultimo_usuario": "SELF-LIB-PROOF",
+        "origem_cadastro": "auto_lib_proof",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "sp",
+            "raio_km": "At├® 30 km",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "s├úo Paulo"
+          },
+          "veiculo": {
+            "ano": "3588",
+            "antt": null,
+            "marca": "kkkkkkk",
+            "placa": "yuuuuuy",
+            "altura": "",
+            "modelo": "jjjkkkkjjj",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": null,
+            "aceita": false
+          },
+          "endereco": {
+            "uf": "1000",
+            "cep": "1000",
+            "bairro": "1000",
+            "cidade": "1000",
+            "numero": "1000",
+            "logradouro": "1000"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "gujjkkkkkkkkk",
+            "favorecido": "ghghjkkjjjjj",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CNPJ",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "67778999"
+          },
+          "experiencia": {
+            "tempo": "",
+            "ecommerce": false,
+            "segmentos": "Opera├º├úo fixa",
+            "farma_auto": false,
+            "observacao": "",
+            "refrigerado": false,
+            "tipos_carga": "Alimentos secos",
+            "media_saidas": "5",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "700",
+            "disponibilidade": "10 as 20",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "hjghjkk",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Moto",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "self_lib_proof": true,
+          "aceita_dedicado": false,
+          "regiao_principal": "s├úo Paulo",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": "Tenho recursos pr├│prios"
+        }
+      }
+    }
+  },
+  {
+    "T4_negativo_linha_de_outro_prestador": {
+      "executado": true,
+      "rollback": true,
+      "linhas_afetadas": 0,
+      "esperado": 0
+    }
+  },
+  {
+    "T5_negativo_alterar_auth_user_id": {
+      "executado": false,
+      "rollback": true,
+      "erro": "new row violates row-level security policy for table \"prestadores\"",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "T6_negativo_insert_prestadores": {
+      "executado": false,
+      "rollback": true,
+      "erro": "new row violates row-level security policy for table \"prestadores\"",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "T7_leitura_escopo": {
+      "executado": true,
+      "rollback": true,
+      "auth_uid": "47da030a-a536-4046-8f0f-e4878948b94e",
+      "visiveis": 35,
+      "visiveis_com_auth_user": 1,
+      "amostra": {
+        "nome_completo": null,
+        "sem_auth": true
+      }
+    }
+  },
+  {
+    "estado_depois": [
+      {
+        "id": "0b55f471-b8eb-419a-bda1-567ec3b37a39",
+        "nome_completo": "teste 2",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "47da030a-a536-4046-8f0f-e4878948b94e",
+        "cpf_cnpj": "000",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "d",
+            "raio_km": "At├® 30 km",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "fs"
+          },
+          "veiculo": {
+            "ano": "55",
+            "antt": null,
+            "marca": "jj",
+            "placa": "99",
+            "altura": "",
+            "modelo": "jj",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": "At├® 300 km",
+            "aceita": true
+          },
+          "endereco": {
+            "uf": "SP",
+            "cep": "04194250",
+            "bairro": "Jardim S├úo Sav├®rio",
+            "cidade": "S├úo Paulo",
+            "numero": "6",
+            "logradouro": "Rua Lira dos Verdes Anos"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "887",
+            "favorecido": "hhh",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CPF",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "jjh"
+          },
+          "experiencia": {
+            "tempo": "6",
+            "ecommerce": false,
+            "segmentos": "Di├íria avulsa",
+            "farma_auto": false,
+            "observacao": "hh",
+            "refrigerado": false,
+            "tipos_carga": "Mercado / Farma",
+            "media_saidas": "3",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "3",
+            "disponibilidade": "gg",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Moto",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "fs",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": "Uso cart├úo / cr├®dito"
+        },
+        "observacoes": null
+      },
+      {
+        "id": "b7f86dbb-c40e-4181-ba61-eaa078a2d4e3",
+        "nome_completo": "TESTECOREAPP01k",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "f87fe6b6-8b26-4ab6-bf8a-bf7e203e74b8",
+        "cpf_cnpj": "98765432100k11998765432kcoree2e01b@teste.comkyTeste2026kgTeste2026k",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "sp",
+            "raio_km": "At├® 30 km",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "s├úo Paulo"
+          },
+          "veiculo": {
+            "ano": "3588",
+            "antt": null,
+            "marca": "kkkkkkk",
+            "placa": "yuuuuuy",
+            "altura": "",
+            "modelo": "jjjkkkkjjj",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": null,
+            "aceita": false
+          },
+          "endereco": {
+            "uf": "1000",
+            "cep": "1000",
+            "bairro": "1000",
+            "cidade": "1000",
+            "numero": "1000",
+            "logradouro": "1000"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "gujjkkkkkkkkk",
+            "favorecido": "ghghjkkjjjjj",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CNPJ",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "67778999"
+          },
+          "experiencia": {
+            "tempo": "",
+            "ecommerce": false,
+            "segmentos": "Opera├º├úo fixa",
+            "farma_auto": false,
+            "observacao": "",
+            "refrigerado": false,
+            "tipos_carga": "Alimentos secos",
+            "media_saidas": "5",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "700",
+            "disponibilidade": "10 as 20",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "hjghjkk",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Moto",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "s├úo Paulo",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": "Tenho recursos pr├│prios"
+        },
+        "observacoes": null
+      },
+      {
+        "id": "e6646799-fbac-453e-a3ef-afdfc01a7085",
+        "nome_completo": "PRESTADOR TESTE APP",
+        "status": "ativo",
+        "liberado_app": true,
+        "auth_user_id": "399796b7-4e3b-432f-8744-4eb91f0ee31d",
+        "cpf_cnpj": "12345678900",
+        "data_aprovacao": null,
+        "status_operacional": "ativo",
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": null,
+        "metadata": {
+          "hml_e2e_06": true,
+          "disponivel_app": true,
+          "status_operacional_app": "delivering"
+        },
+        "observacoes": "REGISTRO DE TESTE - APP PRESTADOR P5"
+      },
+      {
+        "id": "e9d43079-3d14-4083-b33e-f50174b6e663",
+        "nome_completo": "REC06 E2E Real Teste",
+        "status": "em_analise",
+        "liberado_app": false,
+        "auth_user_id": "40210d5e-acfd-4eea-81a7-c529bb50b788",
+        "cpf_cnpj": "52998224725",
+        "data_aprovacao": null,
+        "status_operacional": null,
+        "score_interno": null,
+        "ultimo_usuario": null,
+        "origem_cadastro": "app_motorista",
+        "metadata": {
+          "regioes": {
+            "chips": [
+              "SP - Capital"
+            ],
+            "cidades": "sp",
+            "raio_km": "",
+            "observacao": "",
+            "macro_regiao": "",
+            "estado_principal": "s├úo Paulo"
+          },
+          "veiculo": {
+            "ano": "2024",
+            "antt": null,
+            "marca": "Teste",
+            "placa": "REC0001",
+            "altura": "",
+            "modelo": "E2E",
+            "cubagem": "0.00",
+            "largura": "",
+            "tipo_bau": "Fechado",
+            "comprimento": "",
+            "possui_antt": false,
+            "capacidade_kg": "1500",
+            "categoria_cnh": "B"
+          },
+          "viagens": {
+            "faixa": null,
+            "aceita": false
+          },
+          "endereco": {
+            "uf": "SP",
+            "cep": "04194250",
+            "bairro": "Jardim S├úo Sav├®rio",
+            "cidade": "S├úo Paulo",
+            "numero": "100",
+            "logradouro": "Rua Lira dos Verdes Anos"
+          },
+          "financeiro": {
+            "banco": "",
+            "conta": "",
+            "agencia": "",
+            "titular": "",
+            "chave_pix": "52998224725",
+            "favorecido": "Diego Balbino",
+            "tipo_conta": "Corrente",
+            "codigo_banco": "",
+            "digito_conta": "",
+            "digito_agencia": "",
+            "tipo_chave_pix": "CPF",
+            "cpf_cnpj_titular": "",
+            "cpf_cnpj_favorecido": "52998224725"
+          },
+          "experiencia": {
+            "tempo": "",
+            "ecommerce": false,
+            "segmentos": "",
+            "farma_auto": false,
+            "observacao": "",
+            "refrigerado": false,
+            "tipos_carga": "",
+            "media_saidas": "",
+            "tipo_agregacao": "Agregado fixo",
+            "valor_desejado": "",
+            "disponibilidade": "",
+            "possui_ajudante": false
+          },
+          "referencias": [
+            {
+              "nome": "",
+              "empresa": "",
+              "telefone": ""
+            },
+            {
+              "nome": "",
+              "telefone": ""
+            }
+          ],
+          "tipo_veiculo": "Fiorino",
+          "aceita_urbano": false,
+          "tipo_parceiro": "agregado",
+          "aceita_dedicado": false,
+          "regiao_principal": "s├úo Paulo",
+          "aceita_refrigerado": false,
+          "combustivel_organizacao": null
+        },
+        "observacoes": null
+      }
+    ]
+  },
+  {
+    "INTEGRIDADE": {
+      "persistiu_alteracao": false,
+      "conclusao": "OK ÔÇö tudo revertido (ROLLBACK)"
+    }
+  },
+  {
+    "liberado_app_audit_apos_testes": {
+      "existe_audit": false
+    }
+  }
+]

@@ -60,8 +60,8 @@ export function BancoReservas() {
         .order("score_adequacao", { ascending: false });
 
       const { data: candidatosData } = await supabase
-        .from("candidatos")
-        .select("*")
+        .from("recrutamento_candidatos")
+        .select("*, nome as nome_completo, veiculo as tipo_veiculo, stage as status, score as score_perfil")
         .in("id", (reservasData || []).map(r => r.candidato_id));
 
       const reservaMap: Record<string, Reserva> = {};

@@ -1,0 +1,21 @@
+import pg from "pg";
+import fs from "node:fs";
+const cs = fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.+)$/m)[1].trim();
+const c = new pg.Client({ connectionString: cs, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const r = await c.query(`select policyname, cmd, roles::text[] roles, qual, with_check
+  from pg_policies where schemaname='public' and tablename='prestadores' order by policyname`);
+console.log("PRESTADORES POLICIES:\n" + JSON.stringify(r.rows, null, 1));
+const rls = await c.query(`select relrowsecurity, relforcerowsecurity from pg_class where oid='public.prestadores'::regclass`);
+console.log("PRESTADORES RLS:", JSON.stringify(rls.rows));
+const tu = await c.query(`select policyname, cmd, roles::text[] roles, qual from pg_policies where schemaname='public' and tablename='tenant_usuarios' order by policyname`);
+console.log("TENANT_USUARIOS POLICIES:\n" + JSON.stringify(tu.rows, null, 1));
+const roles = await c.query(`select rolname, rolbypassrls, rolcanlogin from pg_roles where rolname in ('anon','authenticated','service_role','postgres') order by rolname`);
+console.log("ROLES:", JSON.stringify(roles.rows, null, 1));
+const cols = await c.query(`select column_name, is_nullable, column_default from information_schema.columns where table_schema='public' and table_name='prestadores' order by ordinal_position`);
+console.log("PRESTADORES COLS:", cols.rows.map(x => `${x.column_name}${x.is_nullable === 'NO' ? '*' : ''}${x.column_default ? ' = ' + x.column_default.slice(0, 40) : ''}`).join("\n"));
+const cols2 = await c.query(`select column_name, is_nullable from information_schema.columns where table_schema='public' and table_name='tenant_usuarios' order by ordinal_position`);
+console.log("TENANT_USUARIOS COLS:", cols2.rows.map(x => `${x.column_name}${x.is_nullable === 'NO' ? '*' : ''}`).join(", "));
+const trg = await c.query(`select tgname, pg_get_triggerdef(oid) d from pg_trigger where tgrelid='public.prestadores'::regclass and not tgisinternal`);
+console.log("PRESTADORES TRIGGERS:", JSON.stringify(trg.rows, null, 1));
+await c.end();

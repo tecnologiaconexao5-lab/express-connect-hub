@@ -1,5 +1,5 @@
 // Distance Service - Serviço de cálculo de distância
-import type { DistanceResult, Coordinates } from "./types";
+import type { DistanceResult, Coordinates, RoutesResult } from "./types";
 import { mapboxProvider } from "./mapboxProvider";
 import { geocodificarEndereco } from "./mapboxAutocomplete";
 
@@ -93,6 +93,30 @@ export async function calcularDistancia(
 
   console.error("[DistanceService] Não foi possível calcular rota");
   return null;
+}
+
+export async function calcularRotasAlternativas(
+  origem: string,
+  destino: string
+): Promise<RoutesResult | null> {
+  if (!origem || !destino || !origem.trim() || !destino.trim()) {
+    console.error("[DistanceService] Origem ou destino vazios para rotas alternativas");
+    return null;
+  }
+
+  const geoOrigem = await geocodificarEndereco(origem);
+  if (!geoOrigem) {
+    console.error("[DistanceService] Nao foi possivel geocodificar origem para alternativas");
+    return null;
+  }
+
+  const geoDestino = await geocodificarEndereco(destino);
+  if (!geoDestino) {
+    console.error("[DistanceService] Nao foi possivel geocodificar destino para alternativas");
+    return null;
+  }
+
+  return mapboxProvider.calcularRotasAlternativas(geoOrigem.coordinates, geoDestino.coordinates);
 }
 
 export default calcularDistancia;

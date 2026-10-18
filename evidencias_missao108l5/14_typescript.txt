@@ -1,0 +1,8 @@
+TYPESCRIPT — MISSÃO 108-L5
+
+npx tsc --noEmit → 0 erros
+
+Tipos exportados:
+- FilialClienteResumo (12 campos)
+- FilialComparativo (extends FilialClienteResumo + entregas_no_prazo, atrasos, evolucao_periodo)
+- FilialDetalhe (resumo, operacoes[], financeiro, ocorrencias[], pods, contratos)

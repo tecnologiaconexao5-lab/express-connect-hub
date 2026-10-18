@@ -1,0 +1,37 @@
+MISSAO TMS-004 — EDICAO CONTROLADA DE VEICULO HML
+===================================================
+
+Data: 2026-07-27
+Status: VEICULOS — EDICAO CONTROLADA HOMOLOGADA
+Percentual: 48% (+1pp)
+Branch: auditoria-final-integracao
+
+=======================================================================
+RESULTADOS
+=======================================================================
+
+Candidato: ABC-1F23 (Honda CG 160, moto, ativo, sem prestador)
+
+Playwright 2/2:
+  Cenario 1 — Marker escrito via Supabase aparece na UI:   ✅
+  Cenario 2 — Limpar valor via UI save e restaurar:        ✅
+
+Persistencia comprovada: DB -> mapper -> UI -> save -> DB
+
+TypeScript: Veiculos 0 erros
+Build: OK
+
+=======================================================================
+PERCENTUAL
+=======================================================================
+
+Veiculos leitura:  85% -> 100%
+Veiculos edicao:    0% ->  90%
+Geral:             47% ->  48% (+1pp)
+
+=======================================================================
+CONCLUSÃO
+=======================================================================
+
+VEICULOS — EDICAO CONTROLADA HOMOLOGADA;
+CRIACAO E EXCLUSAO AINDA PENDENTES

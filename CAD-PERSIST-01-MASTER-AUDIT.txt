@@ -1,0 +1,463 @@
+================================================================================
+CAD-PERSIST-01-MASTER-AUDIT — Auditoria Completa de Persistencia de Cadastros
+Data: 2026-09-21
+Ambiente: PRODUCAO (uwrvzsjtpgaifkktpepn)
+Escopo: Prestador/Motorista, Formularios Principais, Indicadores, Loading
+Status: READ-ONLY — NENHUMA CORRECAO IMPLEMENTADA
+================================================================================
+
+SECAO A — PERSISTENCIA DO FORMULARIO PRESTADOR/MOTORISTA
+---------------------------------------------------------
+
+Arquitetura do Fluxo Prestador:
+  CadastrosPrestadores.tsx (page, rota /cadastros-prestadores)
+    ├── view="lista" → PrestadoresLista.tsx (componente)
+    ├── view="detalhe" → PrestadorDetalhe.tsx (componente)
+    └── view="novo" → PrestadorDetalhe.tsx (componente)
+
+O componente "page" usa useState<"lista"|"detalhe"|"novo"> para alternar.
+Pre存cia: NENHUM service layer dedicado. Supabase chamado DIRETO do form.
+
+Fluxo de Criacao/Edicao:
+  1. PrestadoresLista carrega: supabase.from('prestadores').select('*').range(from, to)
+  2. Usuario clica "Novo Prestador" → view="novo" → PrestadorDetalhe montado
+  3. PrestadorDetalhe usa useState<Partial<Prestador>> para TODOS os campos
+  4. Upload de documentos vai para Supabase Storage ANTES do INSERT principal
+  5. handleSave faz INSERT ou UPDATE direto no Supabase (sem service layer)
+  6. Sucesso: toast.success + onBack() → volta para lista
+  7. Falha: try/catch + setErro/toast.error
+
+Riscos Identificados:
+  - Sem validacao antes de salvar (PrestadorDetalhe: handleSave nao valida nada)
+  - Sem beforeunload, sem useBlocker, sem exit guard
+  - Click "Voltar" ou sidebar perde TODOS os dados nao salvos
+  - Upload de documentos pode criar arquivos orfas no Storage se INSERT falhar
+  - Lista nao tem refresh trigger explicito (remount mitigates parcialmente)
+
+---------------------------------------------------------
+
+SECAO B — REGISTROS "DESAPARECIDOS" — MECANISMOS IDENTIFICADOS
+---------------------------------------------------------
+
+Mecanismo 1 (CRITICO) — Bug de Paginacao:
+  Arquivo: PrestadoresLista.tsx:149
+  Bug: totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  filtered.length e o array CLIENT-SIDE (max 25 registros da pagina atual)
+  totalCount (line 72) e calculado mas NUNCA USADO (dead code)
+  Impacto: Se houver 26+ prestadores, paginacao mostra apenas 1 pagina
+           Registro na pagina 2 fica PERMANENTEMENTE INVISIVEL
+
+  Prova producao:
+    SELECT COUNT(*) FROM prestadores → 40 registros
+    Pagina 1: 25 registros → filtered.length=25 → totalPages=1
+    Pagina 2: 15 registros → INACESSIVEL (botao "Next" nunca aparece)
+
+Mecanismo 2 (ALTO) — Mock Fallback Silencioso:
+  Arquivo: PrestadoresLista.tsx:75,121,125
+  Tres caminhos substituem dados reais por mock:
+    - Erro 42P01 (tabela nao existe) → mock
+    - Query vazia (0 registros na pagina) → mock
+    - Qualquer outro erro (RLS, rede, auth) → mock
+  Impacto: 6 registros fake substituem todos os registros reais
+
+Mecanismo 3 (ALTO) — nome_completo Vazio Filtra o Registro:
+  Arquivo: PrestadoresLista.tsx:133 + dbMappers.ts:447
+  Filtro: if (!p.nomeCompleto) return false
+  Mapper: nomeCompleto: item.nome_completo || ""
+  Se nome_completo e NULL/empty no DB → registro inserido com sucesso
+  mas INVISIVEL na lista (filtro remove)
+
+Mecanismo 4 (MEDIO) — Sem Refresh apos Criacao:
+  Arquivo: PrestadoresLista.tsx:50-52
+  useEffect depende apenas de [page], nao de dados
+  Mitigacao: CadastrosPrestadores conditional render causa remount
+
+Mecanismo 5 (MEDIO) — Mapper Normaliza Silenciosamente:
+  Arquivo: dbMappers.ts:430-509
+  Todas as colunas null/undefined viram defaults
+  endereco: JSON.parse com catch vazio → endereco corrompido
+
+Mecanismo 6 (MEDIO) — Sem tenant_id em prestadores:
+  Tabela prestadores NAO tem coluna tenant_id em producao
+  Todos os tenants veem TODOS os prestadores
+
+Mecanismo 7 (BAIXO) — recrutamento Sync Sobrescreve Status:
+  Arquivo: prestadoresService.ts:372-376
+  syncAtualizarOperacional mapeia status: em_analise→analise, etc.
+  Pode sobrescrever status definido no TMS
+
+---------------------------------------------------------
+
+SECAO C — PERDA DE DADOS AO NAVEGAR ENTRE FORMULARIOS
+---------------------------------------------------------
+
+Causa Raiz: NENHUM formularios principal usa react-hook-form.
+TODOS usam useState com handlers manuais.
+ZERO beforeunload (exceto OrdemServicoForm).
+ZERO useBlocker / usePrompt (React Router).
+ZERO rota-level navigation guards.
+ZERO localStorage/sessionStorage drafts para formularios principais.
+
+Pesquisa no codigo:
+  beforeunload → 1 ocorrencia (OrdemServicoForm:710-719, browser-only)
+  useBlocker/usePrompt → 0 ocorrencias
+  autosave/autoSave → 0 ocorrencias
+  unsaved/unsavedChanges → 0 ocorrencias
+  react-hook-form/useForm → 0 em forms principais (apenas wrapper ui/form.tsx)
+  localStorage draft → 0 em forms principais
+
+Risco: Cada vez que usuario navega via sidebar, clica "Voltar", ou clica
+"Cancelar", dados NAO salvos sao PERDIDOS SEM CONFIRMACAO.
+
+---------------------------------------------------------
+
+SECAO D — AUDITORIA ESTRUTURAL DE TODOS OS FORMULARIOS PRINCIPAIS
+---------------------------------------------------------
+
+| Formulario            | State | Dirty | beforeunload | Draft | Validacao | Sucesso     | Nav Guard | CLASSIFICACAO                    |
+|----------------------|-------|-------|-------------|-------|-----------|-------------|-----------|----------------------------------|
+| OrdemServicoForm     | useState (30+) | SIM (L456-708) | SIM (L710-719) | Rascunho (L1300) | SIM (7 checks) | toast+dirty | browser only | SAFE + TEM_EXIT_GUARD (parcial) |
+| EscalaLista (modal)  | useState (40+) | NAO   | NAO         | NAO   | SIM (5)   | NENHUM      | NAO       | PERDE_DADOS + FALSO_SUCESSO     |
+| OrcamentoForm        | useState        | NAO   | NAO         | Rascunho (L557) | NENHUM   | delegado    | NAO       | PERDE_DADOS + FALSO_SUCESSO     |
+| ClienteDetalhe       | useState        | NAO   | NAO         | NAO   | MINIMAL   | toast+back  | NAO       | PERDE_DADOS                      |
+| PrestadorDetalhe     | useState        | NAO   | NAO         | NAO   | NENHUM    | toast+back  | NAO       | PERDE_DADOS                      |
+| TabelaValoresForm    | useState        | NAO   | NAO         | NAO   | NENHUM    | FALSO SUCESSO| NAO      | PERDE_DADOS + FALSO_SUCESSO     |
+| ContasReceber        | useState        | NAO   | NAO         | NAO   | MINIMAL   | error-only  | NAO       | PERDE_DADOS                      |
+| ContasPagar          | useState        | NAO   | NAO         | NAO   | MINIMAL   | NENHUM      | NAO       | PERDE_DADOS                      |
+| PagamentoPrestadores | useState        | NAO   | NAO         | NAO   | MINIMAL   | error-only  | NAO       | PERDE_DADOS                      |
+| ContasReceberEnt.    | useState        | NAO   | NAO         | NAO   | MINIMAL   | error-only  | NAO       | PERDE_DADOS                      |
+| ContasBancarias      | useState        | NAO   | NAO         | NAO   | MINIMAL   | error-only  | NAO       | PERDE_DADOS                      |
+| ConfigFinanceira     | useState        | NAO   | NAO         | NAO   | NENHUM    | setMsg      | NAO       | PERDE_DADOS                      |
+| FaturaManualDialog   | useState        | NAO   | N/A (dialog)| Rascunho (L280) | SIM (5) | dialog close| N/A      | SAFE (contexto dialog)           |
+| FaturaPanel          | useState        | NAO   | N/A (panel) | SIM (L261)| MINIMAL  | state update| N/A      | SAFE (contexto panel)            |
+| ContratoPrestadorMod.| useState        | NAO   | N/A (dialog)| NAO   | NENHUM    | toast       | N/A       | SAFE (contexto dialog)           |
+
+Detalhes Criticos:
+
+  OrdemServicoForm (SAFE com ressalva):
+    - Tem dirty tracking (compara JSON.stringify com initialDataRef)
+    - Tem beforeunload (bloqueia fechar aba/F5)
+    - Porem: onVoltar NAO verifica formDirty → sidebar click perde dados
+    - beforeunload so pega browser navigation, nao SPA navigation
+
+  EscalaLista (RISCO ALTO):
+    - Modal com 50+ campos (financeiro, operacao, KM, coleta reversa)
+    - Fechar modal = perder tudo
+    - Sucesso: setModalOpen(false) roda FORA do try → fecha mesmo com erro
+    - Linha 1050: modal fecha silenciosamente sem toast de confirmacao
+
+  TabelaValoresForm (FALSO SUCESSO):
+    - Linha 85: toast.success("Tabela salva com sucesso.") ANTES de onSalvar()
+    - Toast dispara antes do Supabase completar → usuario vê "sucesso" mesmo se salvar falhar
+
+  PrestadorDetalhe (PERDA TOTAL):
+    - 0 validacao antes de salvar
+    - Upload de documentos para Storage ANTES do INSERT
+    - Se INSERT falha → arquivos orfas no Storage
+    - Click "Voltar" perde tudo sem confirmacao
+
+---------------------------------------------------------
+
+SECAO E — INDICADORES DO PERFIL PRESTADOR/MOTORISTA
+---------------------------------------------------------
+
+Indicadores Encontrados no PrestadorDetalhe:
+
+  Sidebar "Resumo Operacional" (L627-662):
+    - Desde/Cadastro → p.dataCadastro
+    - Aprovacao → p.dataAprovacao
+    - Idade → p.dataNascimento
+    - Total Entregas → p.qtdOperacoes → valor REAL: SEMPRE 0
+    - Ocorrencias → p.torreControle?.ocorrenciasGraves → valor REAL: SEMPRE 0
+    - Observacao Torre → p.observacoesTorre
+
+  Aba "Qualidade" (L1072-1168):
+    - Score interno → p.scoreInterno → valor REAL: SEMPRE 0
+    - Operacoes realizadas → p.qtdOperacoes → valor REAL: SEMPRE 0
+    - Indice de aceite → p.indiceAceite → valor REAL: SEMPRE 0
+    - Entrega no prazo → p.indiceEntregaNoPrazo → valor REAL: SEMPRE 0
+    - Indice de comparecimento → p.indiceComparecimento → valor REAL: SEMPRE 0
+
+  Aba "Torre" (L1170-1215):
+    - Operacoes Hoje → p.qtdOperacoes (REUTILIZADO, nao e "hoje") → SEMPRE 0
+    - Entregas no Prazo → p.indiceEntregaNoPrazo → SEMPRE 0
+    - Comparecimento → p.indiceComparecimento → SEMPRE 0
+    - Taxa de Aceite → p.indiceAceite → SEMPRE 0
+
+  Aba "Ocorrencias" (L1256-1311):
+    - Tabela de ocorrencias → p.ocorrencias[] (STATE LOCAL, nao query)
+    - INSERT em prestadores_ocorrencias funciona
+    - SELECT de prestadores_ocorrencias NAO e feito ao carregar
+    - Ocorrencias da sessao atual aparecem, mas some ao reabrir
+
+Causa Raiz: Indicadores NAO sao atualizados automaticamente.
+
+  Triggers na tabela alocacoes_escala:
+    trg_propagar_financeiro_alocacao → financeiro (NÃO toca prestadores)
+    trg_cancelar_financeiro_alocacao → financeiro (NÃO toca prestadores)
+    trg_evento_* → eventos_oficiais (log apenas, NÃO toca prestadores)
+    trg_registrar_historico_alocacao → historico (log apenas)
+
+  NENHUM trigger em alocacoes_escala ou ordens_servico faz:
+    UPDATE prestadores SET qtd_operacoes = qtd_operacoes + 1
+    UPDATE prestadores SET score_interno = ...
+    Qualquer outra atualizacao de indicadores
+
+  Triggers na tabela prestadores:
+    update_prestadores_updated_at → so atualiza updated_at
+    trg_bridge_prestador_para_recrutamento → insere em recrutamento_prestadores
+
+  Resultado: Todas as colunas de indicadores ficam com DEFAULT 0 para SEMPRE.
+
+Evidencia Producao:
+  40 prestadores no total
+  0 com qtd_operacoes > 0
+  0 com score_interno > 0
+  0 registros em prestadores_ocorrencias
+  193 alocacoes no total (56 concluidas, 135 com prestador_id)
+  NENHUM dos 56 registros concluidos atualizou indicadores do prestador
+
+Indicadores Fonte (de onde OS DADOS REAIS deveriam vir):
+  Total Entregas: COUNT de alocacoes WHERE prestador_id=X AND status='concluida'
+  Ocorrencias: COUNT de prestadores_ocorrencias WHERE prestador_id=X
+  Score: MEDIA de avaliacoes em entregas_protocolo ou portal_avaliacoes
+  Indice Aceite: COUNT(aceite_prestador=true) / COUNT(*) WHERE prestador_id=X
+  Indice Prazo: COUNT(data_fim_real <= data_previsao_fim) / COUNT(*)
+  Indice Comparecimento: COUNT(presenca_confirmada=true) / COUNT(*)
+
+---------------------------------------------------------
+
+SECAO F — INVENTARIO DE COMPONENTES DE LOADING
+---------------------------------------------------------
+
+Componentes Reutilizaveis (4):
+  A1. Skeleton (ui/skeleton.tsx) — barra pulsada, ~10 imports
+  A2. Progress (ui/progress.tsx) — barra horizontal, ~13 imports
+  A3. SidebarMenuSkeleton (ui/sidebar.tsx) — interno, 1 uso
+  A4. SkeletonCard + SkeletonTable (recrutamento) — ~3-5 imports
+
+Componentes Estruturados do Modulo Recrutamento (4):
+  B1. SkeletonCard — card pulsado configuravel
+  B2. SkeletonTable — tabela pulsada
+  B3. MetricCard (loading prop) — metrica pulsada
+  B4. KanbanCardSkeleton — card kanban pulsado
+
+Loading Global de Rotas (2):
+  C1. PageLoader (App.tsx:73-77) — Loader2 centralizado, Suspense fallback
+  C2. ProtectedRoute spinner (ProtectedRoute.tsx:87-125) — "Carregando sessao..."
+
+Loading Inline (INCOMUM, duplicado em 100+ arquivos):
+  D1. Loader2 full-page → ~40 arquivos (w-6 a w-12, cores variadas)
+  D2. Loader2 button → ~30 arquivos (w-4, em botoes)
+  D3. CSS border spinner → ~5 arquivos (sem icone)
+  D4. RefreshCw spinning → ~10 arquivos
+  D5. Clock spinning → 1 arquivo (TorreControle)
+  D6. Inline skeleton cards → ~15 arquivos (hand-crafted)
+  D7. Text-only "Carregando..." → ~35 arquivos (sem spinner)
+  D8. Pulsing dots (status, nao loading) → ~20 arquivos
+  D9. toast.loading() → 4 arquivos
+
+Estatisticas:
+  - 0 componentes de loading centralizados (alem de Skeleton primitivo)
+  - 7+ estilos visuais diferentes para o mesmo conceito
+  - 6+ convencoes de nomes de state: isLoading, loading, saving, salvando, enviando, isSaving
+  - Tamanhos de spinner: w-3 a w-12
+  - Cores: text-primary, text-muted-foreground, text-[#F97316], text-indigo-500, text-blue-400
+  - NENHUM barra de progresso de transicao de rota (tipo NProgress)
+  - Modulo recrutamento e o unico com design system de loading estruturado
+
+---------------------------------------------------------
+
+SECAO G — RECOMENDACOES DE ARQUITETURA (DRAFT/PROTECTION)
+---------------------------------------------------------
+
+G.1 — Componente Centralizado de Loading (PRIORIDADE: MEDIA)
+  Criar src/components/ui/LoadingSpinner.tsx:
+    - Variants: page (w-8 centered), button (w-4 inline), overlay (absolute fill)
+    - Props: size, label, variant
+    - Padroniza cor (text-primary), tamanho, animacao
+  Criar src/components/ui/PageSkeleton.tsx:
+    - Skeleton padrao para carregamento de pagina
+    - Header + 3 rows + sidebar placeholder
+  Impacto: Substitui ~100 instancias inline por 2 componentes
+
+G.2 — Exit Guard Universal (PRIORIDADE: ALTA)
+  Criar src/hooks/useFormExitGuard.ts:
+    - Hook que detecta beforeunload (browser) + SPA navigation (sidebar/voltar)
+    - Mostra Dialog "Dados nao salvos. Deseja sair?" com Sim/Nao
+    - Integrar com React Router v6 useBlocker
+  Aplicar em: OrdemServicoForm, OrcamentoForm, ClienteDetalhe,
+              PrestadorDetalhe, TabelaValoresForm
+  Impacto: Elimina perda silenciosa de dados em 5+ formularios
+
+G.3 — Schema Validation com Zod (PRIORIDADE: ALTA)
+  Criar src/schemas/prestadorSchema.ts, clienteSchema.ts, etc.
+  - Definir required fields, tipos, ranges
+  - Integrar com react-hook-form (recomendado) ou validacao manual
+  - Mensagens de erro de campo especificas
+  Impacto: Elimina insercoes com campos obrigatorios vazios
+
+G.4 — React-Hook-Form Migration (PRIORIDADE: MEDIA)
+  Migrar formularios principais de useState para react-hook-form:
+    - formState.isDirty → substitui dirty tracking manual
+    - formState.isValid → gate para submit
+    - useFormik-style validation → schema-driven
+  Comecar por: PrestadorDetalhe (mais perigoso), depois ClienteDetalhe
+  Impacto: Elimina toda a logica manual de validacao e dirty tracking
+
+G.5 — Fix do Bug de Paginacao Prestadores (PRIORIDADE: CRITICA)
+  PrestadoresLista.tsx:149 — trocar:
+    DE: const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+    PARA: const totalPages = Math.ceil((totalCount ?? filtered.length) / PAGE_SIZE) || 1;
+  E remover dead code totalCount (line 41, 72)
+  Impacto: Libera 15 registros invisiveis (pags 2)
+
+G.6 — Fix dos Indicadores do Prestador (PRIORIDADE: ALTA)
+  Criar trigger em alocacoes_escala AFTER UPDATE:
+    WHEN NEW.status = 'concluida' AND OLD.status != 'concluida'
+    UPDATE prestadores SET
+      qtd_operacoes = qtd_operacoes + 1,
+      score_interno = calculo_movel,
+      indice_aceite = calculo_movel
+  Ou: criar pg_cron que recalcula periodicamente
+  Impacto: Indicadores passam de 0 para valores reais
+
+G.7 — Fix do Mock Fallback (PRIORIDADE: ALTA)
+  PrestadoresLista.tsx:75,121,125 — remover fallback para mock
+  Em vez de setPrestadores(mockPrestadores):
+    - Logar erro no console
+    - Mostrar toast de erro
+    - Manter lista vazia ou mostrar estado de erro
+  Impacto: Evita que 6 registros fake substituam dados reais
+
+G.8 — Fix do Falso Sucesso (PRIORIDADE: MEDIA)
+  TabelaValoresForm.tsx:85 — mover toast.success PARA DENTRO do callback async:
+    DE: toast.success("..."); onSalvar(data);
+    PARA: await onSalvar(data); toast.success("...");
+  Impacto: Toast so aparece apos sucesso real
+
+G.9 — Loading Global de Transicao (PRIORIDADE: BAIXA)
+  Instalar nprogress ou criar barra simples:
+    - Mostra barra no topo ao navegar entre rotas
+    - Progresso 0%→90% no inicio, 100% no fim
+  Impacto: Feedback visual de transicao entre paginas
+
+G.10 — Fix Ocorrencias Prestador (PRIORIDADE: MEDIA)
+  PrestadorDetalhe.tsx — ao carregar prestador existente:
+    - Fazer SELECT de prestadores_ocorrencias WHERE prestador_id=X
+    - Popular p.ocorrencias com dados reais
+  Impacto: Ocorrencias historicas visiveis na aba
+
+---------------------------------------------------------
+
+SECAO H — RISCOS POR PRIORIDADE
+---------------------------------------------------------
+
+CRITICA (acao imediata necessaria):
+  1. Bug paginacao PrestadoresLista — 15 registros invisiveis
+  2. Mock fallback silencioso — dados reais substituidos por fake
+
+ALTA (correcao no proximo ciclo):
+  3. Indicadores prestador sempre zero — sem trigger de atualizacao
+  4. Zero exit guards — qualquer sidebar click perde dados
+  5. Zero schema validation — insercoes com campos vazios
+  6. Falso sucesso TabelaValoresForm — toast antes do save
+
+MEDIA (correcao planejada):
+  7. EscalaLista fecha mesmo com erro (modal)
+  8. OrcamentoForm sem validacao
+  9. Ocorrencias prestador nao carregam do banco
+  10. 100+ loading components inline (inconsistencia visual)
+  11. Arquivos orfas no Storage (PrestadorDetalhe upload antes de INSERT)
+
+BAIXA (melhoria continua):
+  12. Sem barra de transicao de rota
+  13. Sem react-hook-form em nenhum form principal
+  14. Zero useBlocker/usePrompt no projeto
+  15. 7+ estilos visuais de loading
+
+---------------------------------------------------------
+
+SECAO I — DADOS DE PRODUCAO (AUDITORIA READ-ONLY)
+---------------------------------------------------------
+
+Tabela prestadores:
+  Total: 40 registros
+  Com qtd_operacoes > 0: 0
+  Com score_interno > 0: 0
+  Status: todos "ativo"
+
+Tabela alocacoes_escala:
+  Total: 193
+  Concluidas: 56
+  Com prestador_id: 135
+  Nenhuma atualizou indicadores do prestador
+
+Tabela prestadores_ocorrencias:
+  Total: 0 registros
+
+Tabela ordens_servico:
+  Total: 121
+  Todas criadas por triggers (OS direta = 0 antes de M80)
+
+Tabela financeiro_receber: 113 registros
+Tabela financeiro_pagar: 145 registros
+Tabela pagamentos_prestadores: 104 registros
+Tabela financeiro_baixas: 18 registros
+
+E2E Proof:
+  56 alocacoes concluidas com prestador vinculado
+  0 indicadores atualizados
+  0 ocorrencias registradas
+  40 prestadores com todos os campos de indicador = 0
+
+---------------------------------------------------------
+
+SECAO J — LISTA DE ARQUIVOS AUDITADOS
+---------------------------------------------------------
+
+Formularios Principais:
+  src/components/prestadores/PrestadoresLista.tsx — lista + paginacao + mock
+  src/components/prestadores/PrestadorDetalhe.tsx — form criar/editar
+  src/components/clientes/ClienteDetalhe.tsx — form cliente
+  src/components/operacao/OrdemServicoForm.tsx — form OS (30+ campos)
+  src/components/operacao/EscalaLista.tsx — modal alocacao
+  src/components/comercial/OrcamentoForm.tsx — form orcamento
+  src/components/comercial/TabelaValoresForm.tsx — form tabela valores
+  src/components/financeiro/ContasReceber.tsx
+  src/components/financeiro/ContasPagar.tsx
+  src/components/financeiro/PagamentoPrestadores.tsx
+  src/components/financeiro/ContasReceberEnterprise.tsx
+  src/components/financeiro/ContasBancarias.tsx
+  src/components/financeiro/ConfigFinanceira.tsx
+  src/components/financeiro/FaturaManualDialog.tsx
+  src/components/financeiro/FaturaPanel.tsx
+  src/components/prestadores/ContratoPrestadorModal.tsx
+
+Mappers/Types:
+  src/lib/dbMappers.ts — fromPrestadorRow, toPrestadorInsert
+  src/components/prestadores/types.ts — interface Prestador
+  src/components/prestadores/mockPrestadores.ts — 6 registros fake
+
+Loading/Spinner:
+  src/components/ui/skeleton.tsx
+  src/components/ui/progress.tsx
+  src/components/ui/sidebar.tsx (SidebarMenuSkeleton)
+  src/App.tsx (PageLoader)
+  src/components/ProtectedRoute.tsx (Carregando sessao...)
+
+Banco de Dados:
+  supabase/baseline/full_production_schema_20260920.sql — schema completo
+  sql/migration_prestadores_expandida.sql — colunas de indicadores (DEFAULT 0)
+
+================================================================================
+FIM DO RELATORIO — CAD-PERSIST-01-MASTER-AUDIT
+Total de secoes: 10 (A-J)
+Total de mecanismos de desaparecimento: 7
+Total de formularios auditados: 15
+Total de indicadores zerados: 7
+Total de componentes de loading: 13 categorias
+Total de recomendacoes: 10
+Classificacao Geral: CRITICA — multiplos bugs de persistencia e indicadores
+Status: READ-ONLY — nenhuma correcao implementada
+================================================================================

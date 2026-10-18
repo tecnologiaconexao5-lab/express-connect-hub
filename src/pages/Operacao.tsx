@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ClipboardList, Calendar, MapPin, Truck, AlertTriangle, FileCheck, ArrowRightLeft, RotateCcw } from "lucide-react";
+import { ClipboardList, Calendar, MapPin, Truck, AlertTriangle, FileCheck, ArrowRightLeft, RotateCcw, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrdensServicoLista from "@/components/operacao/OrdensServicoLista";
@@ -8,6 +8,7 @@ import OcorrenciasLista from "@/components/operacao/OcorrenciasLista";
 import EscalaLista from "@/components/operacao/EscalaLista";
 import PodLista from "@/components/operacao/PodLista";
 import RoteirizadorWeb from "@/components/operacao/RoteirizadorWeb";
+import SolicitacoesClienteLista from "@/components/operacao/SolicitacoesClienteLista";
 import { Route as MapIconSolid } from "lucide-react";
 
 const Operacao = () => {
@@ -32,13 +33,17 @@ const Operacao = () => {
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card border w-full justify-start overflow-x-auto">
+          <TabsTrigger value="solicitacoes" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
+            <Users className="w-4 h-4 mr-2" />
+            Solicitações Cliente
+          </TabsTrigger>
           <TabsTrigger value="os" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <ClipboardList className="w-4 h-4 mr-2" />
             Ordens de Serviço
           </TabsTrigger>
           <TabsTrigger value="escala" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <Calendar className="w-4 h-4 mr-2" />
-            Escala Operacional
+            Programação Operacional
           </TabsTrigger>
           <TabsTrigger value="roteirizacao" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <MapIconSolid className="w-4 h-4 mr-2" />
@@ -62,6 +67,9 @@ const Operacao = () => {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="solicitacoes">
+          <SolicitacoesClienteLista />
+        </TabsContent>
         <TabsContent value="os">
           <OrdensServicoLista />
         </TabsContent>

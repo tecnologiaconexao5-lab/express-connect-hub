@@ -1,0 +1,111 @@
+══════════════════════════════════════════════════════════════════════════════
+AG-07J.11 — GATE DOCUMENTAL TMS
+══════════════════════════════════════════════════════════════════════════════
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+FONTE DOCUMENTAL UTILIZADA:
+recrutamento_candidatos.documentos (JSONB) — documentos do candidato no
+pipeline de recrutamento. Campo statusDocumental pré-computado por
+calcularStatusDocumentalOperacional() durante normalizeCandidate() em
+getCandidateById().
+
+FUNÇÃO DOCUMENTAL UTILIZADA:
+calcularStatusDocumentalOperacional() — em enterpriseKanbanService.ts:129-166.
+Reutilizada indiretamente via candidate.statusDocumental (campo pré-computado
+no objeto EnterpriseCandidate retornado por getCandidateById()).
+
+DOCUMENTOS OBRIGATÓRIOS:
+['CNH', 'CRLV', 'Comprovante Residência', 'Foto Veículo']
+(Define DOCS_MINIMOS_OBRIGATORIOS em enterpriseKanbanTypes.ts:47)
+
+GATE IMPLEMENTADO:
+SIM
+
+LOCAL:
+conversaoCandidatoService.ts — converterCandidatoParaPrestador()
+Após validação de stage (AG-07J.10.1), antes de busca de duplicidade.
+Fail-closed: somente statusDocumental === 'completo' permite conversão.
+
+COMPLETO CONVERTE:
+SIM
+
+PARCIAL CONVERTE:
+NÃO
+
+PENDENTE CONVERTE:
+NÃO
+
+VENCIDO CONVERTE:
+NÃO
+
+BLOQUEADO CONVERTE:
+NÃO
+
+SEM DOCUMENTOS CONVERTE:
+NÃO
+
+CNH VENCIDA CONVERTE:
+NÃO
+
+DOCUMENTO OBRIGATÓRIO AUSENTE CONVERTE:
+NÃO
+
+STATUS DOCUMENTAL INESPERADO CONVERTE:
+NÃO (fail-closed: allowlist de 'completo')
+
+FALHA DOCUMENTAL CONSEGUE GERAR STATUS ATIVO:
+NÃO
+
+FALHA DOCUMENTAL CONSEGUE GERAR LIBERADO_APP TRUE:
+NÃO
+
+ARQUIVOS ALTERADOS:
+- src/modules/recrutamento/services/conversaoCandidatoService.ts
+  (+9 linhas: gate documental com comment AG-07J.11)
+- src/test/ag07j11_gate_documental.test.ts (NOVO: 14 testes)
+- src/test/ag07j10_1_bypass_conversao.test.ts
+  (atualizado: candidatos agora incluem statusDocumental)
+
+TESTES FOCALIZADOS:
+14/14 PASS (ag07j11_gate_documental.test.ts)
+
+REGRESSÃO:
+10/10 PASS (ag07j10_1_bypass_conversao.test.ts — AG-07J.10.1)
+67/67 arquivos, 799/799 testes (suite completa vitest)
+
+TYPESCRIPT:
+npx tsc --noEmit → 0 erros
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+PRÓXIMO BLOQUEIO REAL:
+Aguardar QA visual do fluxo completo Kanban → Conversão com candidatos
+com dados documentais reais. Validar que o gate bloqueia conversão de
+candidatos com documentação pendente/parcial/vencida/bloqueada.
+
+DECISÃO FINAL:
+A — HOMOLOGADA

@@ -1,0 +1,116 @@
+================================================================================
+ A31G — IDENTIFICADOR INTERNO CONEXÃO NA ESCALA
+ Separação inequívoca entre "Identificação Conexão (OS Interna)" e
+ "Romaneio / OC do Cliente" no Gerenciar Alocação de Recurso
+ Relatório de Fechamento — Missão A31-G (modo econômico)
+ Data: 2026-08-17   |   Escopo: Operações → Escala de Operação
+================================================================================
+
+================================================================================
+SEÇÃO 1 — CAUSA ENCONTRADA
+================================================================================
+- Na tela "Gerenciar Alocação de Recurso" existia um único campo rotulado
+  "Nº OC / Ordem de Carregamento". Esse valor (metadata.numeroOC) é a referência
+  fornecida pelo CLIENTE (romaneio/OC/ordem de carregamento) — mas o rótulo
+  permitia confundi-lo com o identificador interno da Conexão Express.
+- A grade principal da Escala tinha uma coluna "OS" que exibia
+  a.metadata?.numeroOC || a.numero_oc || a.os — ou seja, mostrava o Romaneio/OC
+  do cliente no lugar do número interno da OS, e em muitos casos exibia o UUID
+  bruto (a.os = ordem_servico_id) quando não havia OC.
+- O loadAlocacoes do EscalaLista NÃO buscava ordem_servico_id nem o JOIN de
+  ordens_servico, então o número interno oficial (ordens_servico.numero) não
+  estava disponível na grade nem no preenchimento do modal.
+
+================================================================================
+SEÇÃO 2 — IDENTIFICADOR INTERNO OFICIAL ENCONTRADO
+================================================================================
+- Identificador interno oficial da Conexão Express = NÚMERO da OS Interna
+  (coluna ordens_servico.numero).
+- Relação com alocacoes_escala: FK alocacoes_escala.ordem_servico_id →
+  ordens_servico(id). O JOIN em escalaService.listarAlocacoes (linha 54) já
+  trazia ordens_servico(id, numero); o escalaMapper mapeia
+  ordem_servico_id → local.os (UUID) e ordens_servico.numero → local.osNumero.
+- NÃO existe numeração fictícia: o número interno só existe quando há uma OS
+  oficial vinculada (fluxo ordens_servico). Não foi criado segundo sistema.
+
+================================================================================
+SEÇÃO 3 — TABELA / CAMPO DE ORIGEM
+================================================================================
+- OS Interna:  ordens_servico.numero   (número interno oficial)
+- Vínculo:     alocacoes_escala.ordem_servico_id  (FK → ordens_servico.id)
+- Romaneio/OC: alocacoes_escala.metadata.numeroOC (referência do cliente);
+               quando há OS vinculada, o Financeiro lê
+               os.romaneio || metadata.numeroOC || metadata.app_motorista?.romaneio
+               (centralFinanceiroService.ts:370)
+
+================================================================================
+SEÇÃO 4 — DIFERENÇA IDENTIFICADOR CONEXÃO x ROMANEIO/OC
+================================================================================
+| Identificação Conexão (OS Interna)      | Romaneio / OC do Cliente            |
+|------------------------------------------|--------------------------------------|
+| Gerado internamente pelo TMS (OS)        | Informado pelo cliente              |
+| Número da OS: ordens_servico.numero      | metadata.numeroOC (ou os.romaneio)  |
+| Não editável aqui (vem da OS oficial)    | Editável no modal                   |
+| Vincula alocacoes_escala.ordem_servico_id| Usado no Financeiro/faturamento    |
+| Não pode ser inventado na interface      | Pode ser informado livremente       |
+
+================================================================================
+SEÇÃO 5 — ARQUIVOS ALTERADOS
+================================================================================
+1. src/components/operacao/EscalaLista.tsx (somente este arquivo):
+   - loadAlocacoes: SELECT agora inclui ordem_servico_id + JOIN
+     ordens_servico!ordem_servico_id!left(id, numero); mapeia osNumero (número
+     oficial) e osId (UUID) no objeto local.
+   - handleCellClick: ao abrir o modal com alocação existente, carrega
+     novaOS = existing.osNumero (número oficial) e novaOSId = existing.osId
+     (UUID); numeroOC continua carregando metadata.numeroOC.
+   - Modal "Gerenciar Alocação de Recurso": novo bloco "Identificação Conexão
+     (OS Interna)" — exibe o número interno oficial em destaque quando existe
+     (com botão Desvincular); quando não existe, mostra aviso claro de que não é
+     gerada numeração fictícia + SearchableSelect em ordens_servico (numero)
+     para vincular OS oficial.
+   - Campo OC renomeado para "Romaneio / OC do Cliente" com ícone FileText e
+     subtexto: "Referência fornecida pelo cliente (romaneio / OC / ordem de
+     carregamento). Usada no Financeiro e faturamento. Não é o número interno
+     da Conexão Express."
+   - Grade principal (coluna OS): agora exibe o número interno oficial
+     (osNumero) em primeiro plano e, quando existir Romaneio/OC, mostra
+     "OC: ..." em sublinha discreta (sem poluir).
+   - Visão lista (coluna OS/Cliente): mesma coerência (osNumero + OC em
+     sublinha quando ambos existirem).
+   - Import do ícone Hash adicionado.
+
+================================================================================
+SEÇÃO 6 — COMPORTAMENTO FINAL
+================================================================================
+- Identificação Conexão (OS Interna) e Romaneio/OC do Cliente são exibidos
+  como dados DISTINTOS no modal.
+- OS existente vinculada aparece automaticamente (número oficial) ao abrir o
+  modal de uma alocação com OS vinculada.
+- Sem OS vinculada: NÃO é gerada numeração fictícia — aviso claro + busca
+  oficial de OS para vincular.
+- Romaneio/OC continua editável e é gravado no mesmo local de sempre
+  (metadata.numeroOC) — sem duplicação, sem migration.
+- Save/Update preservam ordem_servico_id (UUID) e metadata.os (número) — o
+  vínculo oficial continua sendo feito pelo fluxo existente.
+
+================================================================================
+SEÇÃO 7 — VALIDAÇÃO ECONÔMICA
+================================================================================
+1. Identificação interna e Romaneio/OC são dados distintos .... ✅ (Seção 4)
+2. OS existente aparece corretamente .......................... ✅ (osNumero)
+3. Romaneio/OC continua editável/salvável no local correto ..... ✅ (metadata.numeroOC)
+4. Nenhuma estrutura paralela criada .......................... ✅ (sem migration, sem tabela)
+5. TypeScript dos arquivos afetados ........................... ✅ npx tsc --noEmit → 0 erros
+6. Testes diretamente relacionados ............................ Não há teste unitário do EscalaLista/osNumero
+7. Build (fechamento) ......................................... ✅ npm run build → 43.40s
+   Lint: os 30 erros de eslint no EscalaLista.tsx são baseline pré-existente
+   (any/no-var em outras linhas); nenhum erro introduzido pelas alterações A31-G.
+
+================================================================================
+SEÇÃO 8 — PENDÊNCIAS
+================================================================================
+- (QA) Verificar visualmente na tela a nova separação (bloco azul de
+  Identificação Conexão + campo Romaneio/OC do Cliente) em ambiente QA.
+- Nenhuma migration necessária; nenhum dado de produção alterado.
+- Não foi tocado Financeiro, App Prestador, Fatura/PDF ou NF.

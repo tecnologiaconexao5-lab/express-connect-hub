@@ -1,0 +1,200 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-02-SANEAMENTO-TESTES-CONFIRMADOS
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: LIMPEZA controlada (DELETE) de TESTE CONFIRMADO. Escrita em PROD autorizada.
+RESULTADO: PASS (limpeza executada com backup, transacao e provas).
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+Removidos SOMENTE registros TESTE CONFIRMADO (181 registros / R$ 260.971,84).
+Preservados INTEGRALMENTE REAL e DUVIDOSO. 46 TESTE-BLOCKED (origem de teste viva)
+NAO removidos por seguranca. Backup comprovado antes de qualquer DELETE.
+
+--------------------------------------------------------------------------------
+1. RE-EXECUCAO DO INVENTARIO (DATA-01) ANTES DE TUDO
+--------------------------------------------------------------------------------
+Consultas do FIN-DATA-01 reexecutadas. DRIFT = 0 (contagens/classificacoes identicas
+ao inventario):
+  financeiro_receber      R29 | T78 | D17
+  financeiro_pagar        R74 | T66 | D38
+  pagamentos_prestadores  R64 | T42 | D31
+  faturas                 R 7 | T34 | D 1
+  financeiro_baixas       R 4 | T 7 | D 8
+Compatibilidade confirmada => autorizada a execucao.
+
+--------------------------------------------------------------------------------
+2. BACKUP OBRIGATORIO (comprovado ANTES do DELETE)
+--------------------------------------------------------------------------------
+Diretorio ..: express-connect-hub\backups\
+SQL  .......: TMS-FIN-DATA-02_backup_2026-09-24T23-31-56-901Z.sql
+  bytes ....: 637.088
+  sha256 ...: 4ddfee21bc92d4907b2b880766be7e88c107d315bb10036c650574eaf8f9b820
+JSON .......: TMS-FIN-DATA-02_backup_2026-09-24T23-31-56-901Z.json
+  bytes ....: 780.599
+  sha256 ...: f93873727ab8b05d97db163d91037e3e651073062d40d4f363a44456ea320963
+Manifesto ..: TMS-FIN-DATA-02_backup_<ts>.manifest.json
+Data/hora ..: 2026-09-24T23:31:57Z (20:31 local)
+Formato ....: snapshot FULL das 9 tabelas; restauravel nativamente via
+              json_populate_recordset(NULL::tabela, $J$[...]$J$).
+Registros por tabela:
+  financeiro_baixas 19 | financeiro_receber 124 | financeiro_pagar 178
+  pagamentos_prestadores 137 | pagamentos_prestadores_itens 0 | faturas 42
+  fatura_itens 45 | composicao_financeira_os 59 | financeiro_transferencias 1
+DELETE NAO iniciado ate a gravacao/confirmacao do arquivo e hash acima.
+
+--------------------------------------------------------------------------------
+3. CONTAGENS ANTES / DEPOIS (por tabela)
+--------------------------------------------------------------------------------
+TABELA                   | ANTES | REMOVIDOS | DEPOIS
+--------------------------------------------------------
+financeiro_baixas        |   19  |     7     |   12
+faturas                  |   42  |    34     |    8
+fatura_itens             |   45  |     0     |   45
+financeiro_receber       |  124  |    59     |   65
+financeiro_pagar         |  178  |    52     |  126
+pagamentos_prestadores   |  137  |    29     |  108
+pagamentos_prestadores_itens | 0  |     0     |    0
+composicao_financeira_os |   59  |     0*    |   59   (*nao excluida: BLOCKED)
+financeiro_transferencias|    1  |     0**   |    1   (**DUVIDOSO, preservado)
+
+--------------------------------------------------------------------------------
+4. REGISTROS E VALORES REMOVIDOS (TESTE CONFIRMADO)
+--------------------------------------------------------------------------------
+TABELA                 | REMOVIDOS | VALOR REMOVIDO
+-----------------------------------------------------
+financeiro_baixas      |     7     | R$     96,53
+faturas                |    34     | R$ 74.563,67
+financeiro_receber     |    59     | R$131.872,35
+financeiro_pagar       |    52     | R$ 41.975,79
+pagamentos_prestadores |    29     | R$ 12.463,50
+-----------------------------------------------------
+TOTAL                  |   181     | R$260.971,84
+
+--------------------------------------------------------------------------------
+5. REGISTROS PRESERVADOS (REAL e DUVIDOSO) + TESTE-BLOCKED
+--------------------------------------------------------------------------------
+REAL (todos preservados; 1 AR reclassificado p/ DUVIDOSO, ver item 9):
+  AR 29 -> 28 | AP 74 -> 74 | PP 64 -> 64 | FAT 7 -> 7 | BX 4 -> 4
+DUVIDOSO (100% preservado):
+  AR 17 -> 18 | AP 38 -> 38 | PP 31 -> 31 | FAT 1 -> 1 | BX 8 -> 8
+TESTE-BLOCKED (TESTE CONFIRMADO NAO removido por seguranca):
+  Motivo: origem de teste VIVA (OS com is_teste=true ainda existente) -> risco de
+  recriacao pelos triggers M66/M80; nao ampliar escopo apagando OS sem autorizacao.
+  AR 19 (R$ 21.319,00) | AP 14 (R$ 11.174,50) | PP 13 (R$ 10.219,00)
+  composicao_financeira_os de OS teste: 0 excluida (derivada/BLOCKED).
+  IDs completos no item 12 (evidencias).
+
+--------------------------------------------------------------------------------
+6. ORDEM DE DEPENDENCIA USADA (folhas primeiro, transacao unica)
+--------------------------------------------------------------------------------
+  1. fatura_itens (das faturas T)             -> 0
+  2. financeiro_baixas (titulos T)            -> 7
+  3. faturas (T)                              -> 34
+  4. financeiro_receber (T deletavel)         -> 59
+  5. financeiro_pagar (T deletavel)           -> 52
+  6. pagamentos_prestadores_itens (dos PP T)  -> 0
+  7. pagamentos_prestadores (T deletavel)     -> 29
+  BEGIN ... COMMIT unico; qualquer erro => ROLLBACK total.
+  FKs ON DELETE SET NULL respeitadas (faturas.conta_receber_id, AR.fatura_id).
+  Nenhum trigger de DELETE nas tabelas alvo (somente INSERT/UPDATE).
+
+--------------------------------------------------------------------------------
+7. PROVAS POS-LIMPEZA (A–K)
+--------------------------------------------------------------------------------
+A) TESTE CONFIRMADO removido das tabelas alvo:
+   AR is_teste reduziu 77->19 (restantes = BLOCKED) | AP 30->14 | PP 23->13.
+   faturas T: 34->0 | baixas T: 7->0.
+B) REAL preservado: nenhum registro REAL excluido (AR 28 + 1 reclassificado a D).
+C) DUVIDOSO preservado: 100% (AR18/AP38/PP31/FAT1/BX8).
+D) Nenhuma baixa orfa nova: bx_titulo (orfas) = 0.
+E) Nenhuma fatura real quebrada: fatura.conta_receber_id orfao = 0.
+F) Nenhum AR/AP real removido: checado por conjunto (delete set ∩ REAL/DUVIDOSO = vazio).
+G) Nenhum vinculo financeiro real quebrado: AR.fatura_id orfao = 0; FAT
+   conta_receber orfao = 0.
+H) Contagens antes/depois: item 3.
+I) Valores antes/depois:
+   AR 190.451,18 -> 58.578,83 | AP 132.943,60 -> 90.967,81
+   BX   6.909,22 ->  6.812,69 | PP  90.229,96 -> 77.766,46
+   FAT 87.884,12 -> 13.320,45
+J) Triggers NAO recriaram registros: contagem imediatamente pos-transacao estavel;
+   nenhum INSERT de recriacao disparado (OS nao foi tocada).
+K) P0 continua = 0 (RPC A6 e fluxos de criacao intactos; nenhum P0 aberto).
+
+--------------------------------------------------------------------------------
+8. P1 ANTES / DEPOIS
+--------------------------------------------------------------------------------
+- faturas emitidas sem AR ........ 9 -> 1  (resta 8309a22b, Calvo R$1.200, DUVIDOSO)
+- financeiro_receber pago s/ baixa  4 -> 2  (17e857d8 R$3.200,50 e 2d625b18 R$3.600, DUVIDOSO)
+- financeiro_pagar pago s/ baixa .  0 -> 0
+- pagamentos_prestadores pagos ...  12 -> 5 (restantes DUVIDOSO/BLOCKED)
+- orfaos AR.os_id ................ 21 -> 2
+- orfaos baixa/ fatura.conta_receber  0 -> 0
+- residuos is_teste=true ......... AR 77->19 | AP 30->14 | PP 23->13 (BLOCKED) | OS 33
+
+--------------------------------------------------------------------------------
+9. INCONSISTENCIAS REMANESCENTES
+--------------------------------------------------------------------------------
+I1. 1 AR reclassificado REAL -> DUVIDOSO: id 346687cf (cliente M43, is_teste=false,
+    R$2.120,00, status aberto). Motivo: estava REAL por vinculo com a fatura emitida
+    FAT-2026-000001 (que era TESTE por entidade/cliente M43). A fatura foi excluida
+    (T) e a FK ON DELETE SET NULL anulou AR.fatura_id, removendo o vinculo "real".
+    REGISTRO PRESERVADO (nao excluido). Sinaliza ajuste de criterio AR (fatura T com
+    numero nao-token) -> tratar como DUVIDOSO no futuro.
+I2. TESTE-BLOCKED (46): AR19/AP14/PP13 ligados a OS is_teste=true viva. Para remove-los
+    seria necessario tratar/anonimizar as OS de teste (fora do escopo autorizado).
+I3. Duplicidades remanescentes em DUVIDOSO (sem marcador objetivo): clusters com
+    c4ee38d6 (400,00 x10), 3d2d079d (12,34 x5), 91b80fdb (12,35 x5), 04280785 (650 x5),
+    bbc9d78b (80,00 x4), null (1000 x3). Preservados por regra (nao sao TESTE confirmado).
+I4. contas_financeiras = 1 (Cora). financeiro_transferencias = 1 (R$1,00, DUVIDOSO).
+I5. Simbolo de numeracao de faturas preservado: fatura_contadores_cliente INTACTO
+    (2 linhas). Nenhum contador resetado; nenhum numero emitido reutilizado.
+
+--------------------------------------------------------------------------------
+10. INTEGRIDADE / BACKUP / ROLLBACK
+--------------------------------------------------------------------------------
+- Backup full (9 tabelas) gravado e hasheado ANTES do DELETE (item 2).
+- Execucao em transacao unica; COMMIT confirmado; sem erro.
+- Rollback disponivel: restaurar via
+    psql -f backups\TMS-FIN-DATA-02_backup_<ts>.sql
+  (o arquivo faz DELETE+INSERT tipado das 9 tabelas).
+- Riscos nao materializados: triggers M66/M80 nao dispararam (OS nao tocada);
+  nenhuma recriacao; nenhuma FK violada.
+
+--------------------------------------------------------------------------------
+11. O QUE NAO FOI TRATADO (conforme instrucao)
+--------------------------------------------------------------------------------
+DUVIDOSOS; conta_financeira_id; categoria/plano_conta/centro_resultado; grants;
+tenant estrutural; Margem; dashboards; APP; Comercial; Efi; Programacao Operacional.
+Nao resetar contadores; nao reutilizar numeros ja emitidos.
+
+--------------------------------------------------------------------------------
+12. EVIDENCIAS COMPLEMENTARES (IDs TESTE-BLOCKED)
+--------------------------------------------------------------------------------
+AR BLOCKED (19): 59278800,89dc89e7,b2b51282,5a1ecd9e,fda53bb5,2ec7e1f2,4a305e2f,
+  200ecb02,e1e05ee4,d9c81573,8fa86342,9470b2ae,15d1b0d0,7d51d307,550b36cb,b708aee7,
+  218a9e47,02b5bf02,6b935367
+AP BLOCKED (14): 0fc717d3,d8f6b7ed,6c7e91b3,9e07494b,208bc3cb,3f3a74cb,40286704,
+  82a6cd6f,098e056f,81f57b6f,92931cc7,9d7225dd,dce48d6d,dee59125
+PP BLOCKED (13): 952861d6,ce5b9c81,50429c41,f9f844c2,6018085b,e9a39650,097ebc7c,
+  e2e55985,2e6a4f4a,f4e4cca6,0e065a76,31837cb2,7178a5ca
+
+--------------------------------------------------------------------------------
+13. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS. Backup comprovado; limpeza transacional de 181 TESTE CONFIRMADO executada;
+REAL e DUVIDOSO preservados; 46 TESTE-BLOCKED documentados; P0 = 0.
+Proxima missao sugerida: TMS-FIN-DATA-03 — tratamento das OS de teste (origem) para
+liberar os 46 TESTE-BLOCKED, seguido de nova rodada de saneamento.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-02-SANEAMENTO-TESTES-CONFIRMADOS-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-02-SANEAMENTO-TESTES-CONFIRMADOS-RESULTADO.txt
+Tamanho ..: 11661 bytes
+Data .....: 24/09/2026 20:33:23
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-02
+================================================================================

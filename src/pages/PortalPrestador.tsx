@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Package, FileText, GraduationCap, User,
-  Bell, ChevronLeft, Clock, Wifi, Battery, Signal,
+  Clock, Wifi, Battery, Signal, Loader2, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePortalPrestadorStore } from "@/stores/portalPrestadorStore";
+import { obterPrestadorPorAuth } from "@/services/portal-prestador/portalPrestadorService";
 import DashboardTab from "@/components/portal-prestador/DashboardTab";
 import OperacoesTab from "@/components/portal-prestador/OperacoesTab";
 import DocumentosTab from "@/components/portal-prestador/DocumentosTab";
@@ -41,12 +42,54 @@ const TAB_TITLES: Record<TabId, string> = {
 export default function PortalPrestador() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [time, setTime] = useState(new Date());
-  const notificacoes = usePortalPrestadorStore((s) => s.notificacoes.filter((n) => !n.lida).length);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const { initialized, loading, error, notificacoes, initialize } = usePortalPrestadorStore();
+  const naoLidas = notificacoes.filter((n) => !n.lida).length;
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const auth = await obterPrestadorPorAuth();
+        if (auth) {
+          await initialize(auth.prestadorId);
+        } else {
+          setAuthError("Nenhum prestador vinculado ao seu usuário. Entre em contato com o suporte.");
+        }
+      } catch (err) {
+        setAuthError(String((err as Error)?.message || err));
+      }
+      setAuthLoading(false);
+    })();
+  }, [initialize]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-dvh bg-background flex items-center justify-center max-w-lg mx-auto">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Autenticando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="min-h-dvh bg-background flex items-center justify-center max-w-lg mx-auto p-4">
+        <div className="text-center space-y-3 max-w-sm">
+          <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
+          <h2 className="text-lg font-bold">Acesso não autorizado</h2>
+          <p className="text-sm text-muted-foreground">{authError}</p>
+        </div>
+      </div>
+    );
+  }
 
   const ActiveComponent = TAB_COMPONENTS[activeTab];
 
@@ -60,6 +103,7 @@ export default function PortalPrestador() {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
           <Signal className="w-3.5 h-3.5 text-muted-foreground" />
           <Wifi className="w-3.5 h-3.5 text-muted-foreground" />
           <Battery className="w-4 h-3.5 text-muted-foreground" />
@@ -67,6 +111,12 @@ export default function PortalPrestador() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 scrollbar-none">
+        {error && (
+          <div className="mb-3 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {error}
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -85,7 +135,7 @@ export default function PortalPrestador() {
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
-            const hasNotification = tab.id === "dashboard" && notificacoes > 0;
+            const hasNotification = tab.id === "dashboard" && naoLidas > 0;
 
             return (
               <button
@@ -107,7 +157,7 @@ export default function PortalPrestador() {
                       animate={{ scale: 1 }}
                       className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold flex items-center justify-center"
                     >
-                      {notificacoes}
+                      {naoLidas}
                     </motion.span>
                   )}
                 </div>

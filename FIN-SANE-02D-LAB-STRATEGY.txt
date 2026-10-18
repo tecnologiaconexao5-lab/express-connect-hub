@@ -1,0 +1,283 @@
+============================================================
+FIN-SANE-02D-LAB-STRATEGY
+Data: 2026-09-16
+Ambiente: TMS LOCAL / Supabase LOCAL
+Producao: SOMENTE LEITURA (nao realizada nesta missao)
+============================================================
+
+1. DEPENDENCIAS FIN-SANE-02B (lista fechada)
+============================================================
+
+Artefatos da mudanca:
+  - supabase/migrations/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+  - supabase/migrations/20260913000001_fin_sane_02b_rollback.sql
+  - tests/sql/fin_sane_02b_cenarios.sql
+  - src/services/financeiro/fechamentoService.ts (usa RPC f_confirmar_pagamento_fechamento)
+
+Tabelas necessarias:
+  1. public.clientes
+       - id, nome_fantasia, razao_social, status
+  2. public.prestadores
+       - id, nome_completo, cpf_cnpj, status
+  3. public.alocacoes_escala
+       - id, cliente_id, prestador_id, ordem_servico_id, status, finalizada,
+         data_escala, valor_frete, valor_repasse, valor_pedagio, valor_adicional,
+         valor_ajudante, valor_desconto_prestador, valor_combustivel, valor_desconto,
+         tipo_reversa, reversa_qtd_volumes, reversa_valor_cliente, reversa_valor_prestador,
+         origem, destino, tipo_veiculo, observacoes
+  4. public.ordens_servico
+       - id, numero, cliente, cliente_id, prestador, prestador_id, status, data,
+         tipo_veiculo, origem, destino, valor_cliente, custo_prestador, pedagio,
+         adicionais, ajudante, descontos, tipo_reversa, reversa_qtd_volumes,
+         observacoes_gerais, created_at, updated_at
+  5. public.financeiro_receber
+       - os_id (UNIQUE), descricao, valor, data_vencimento, status,
+         cliente, cliente_nome, cliente_id
+  6. public.financeiro_pagar
+       - os_id (UNIQUE), descricao, valor, data_vencimento, status,
+         prestador, fornecedor_id, fornecedor_nome, desconto
+  7. public.pagamentos_prestadores
+       - id, prestador_id, prestador_nome, prestador_documento, os_id (UNIQUE),
+         qtd_os, valor_liquido, valor_servicos, pedagio, adicionais,
+         status_conferencia, status_pagamento, status, status_aprovacao,
+         tipo_pagamento, fechamento_id, origem_lancamento, quantidade_os,
+         categoria_financeira, data_prevista_pagamento, competencia,
+         impacto_dre, impacto_fluxo_caixa, periodo_inicio, periodo_fim,
+         created_at, updated_at
+  8. public.financeiro_baixas
+       - titulo_tabela, titulo_id, valor, data_baixa, conta_financeira_id,
+         conta_financeira, estornada, etc.
+  9. public.composicao_financeira_os
+       - os_id (UNIQUE), cliente_id, prestador_id, valor_cliente, valor_prestador,
+         imposto_percentual, imposto_valor, seguro_valor, pedagio_valor,
+         outros_custos, combustivel_valor, ajudante_valor, adicional_valor,
+         desconto_valor, margem_bruta, margem_liquida,
+         percentual_margem_bruta, percentual_margem_liquida, origem_calculo
+ 10. public.fin_sane_02b_snapshot (criada pela propria migration 02B)
+ 11. public.contas_financeiras
+       - id, nome, ativa, principal
+
+Funcoes/RPCs necessarias (pre-02B):
+  - public.f_confirmar_pagamento_prestador(uuid, date)
+        [definida em 20260906000000_fin_362_3e_consistencia_pagamento_prestador.sql]
+  - public.f_trg_propagar_financeiro_alocacao() (versao ANTES do 02B)
+  - public.f_trg_propagar_financeiro_os() (versao ANTES do 02B)
+
+Funcoes/RPCs criadas pelo 02B:
+  - public.f_confirmar_pagamento_fechamento(uuid, date)
+  - public.f_trg_propagar_financeiro_alocacao() (versao 02B)
+  - public.f_trg_propagar_financeiro_os() (versao 02B)
+
+Triggers relevantes:
+  - trg_propagar_financeiro_alocacao ON alocacoes_escala
+  - trg_propagar_financeiro_os ON ordens_servico
+
+PKs/FKs/UNIQUEs relevantes:
+  - clientes.id PK
+  - prestadores.id PK
+  - alocacoes_escala.id PK
+  - ordens_servico.id PK
+  - financeiro_receber.os_id UNIQUE
+  - financeiro_pagar.os_id UNIQUE
+  - pagamentos_prestadores.os_id UNIQUE
+  - composicao_financeira_os.os_id UNIQUE
+  - FKs de alocacoes_escala → clientes/prestadores (se existirem)
+
+RLS/policies: NENHUMA necessaria para os 12 cenarios SQL.
+Os testes usam service_role/ambient authentication do psql.
+
+Enums/tipos custom: nenhum especifico identificado neste subconjunto.
+
+2. BASELINE ATUAL EXISTENTE
+============================================================
+
+Arquivos de schema encontrados:
+  - supabase_schema.sql           (357 linhas, 52 defs)
+  - supabase_schema_complete.sql  (713 linhas, 65 defs)
+  - rebuild_supabase_schema.sql   (808 linhas, 46 defs)
+  - sql_final_supabase.sql        (schema parcial)
+
+Avaliacao:
+  - NENHUM contem f_trg_propagar_financeiro_alocacao/os.
+  - NENHUM contem f_confirmar_pagamento_prestador.
+  - NENHUM contem alocacoes_escala na forma exata da migration M66.
+  - Os schemas sao artefatos de desenvolvimento antigos/incompletos.
+
+Conclusao: NAO EXISTE baseline confiavel e atual para FIN-SANE-02B.
+
+3. ROTAS AVALIADAS
+============================================================
+
+ROTA A — Continuar corrigindo migrations historicas sequencialmente
+  - Seguranca: alta (usa migrations oficiais).
+  - Fidelidade para FIN-SANE-02B: alta SE chegar ate o fim.
+  - Risco de falso PASS: baixo.
+  - Trabalho estimado: desconhecido, potencialmente muito grande.
+    Ja encontramos 3 blockers em 20260702/20260703/20260705.
+    O historico tem 100+ migrations ate 20260913.
+  - Producao: nao necessaria.
+  - Rollback: possivel (restaurar arquivos originais).
+  - Triggers/RPC/concorrencia: testados realmente.
+  - VEREDICTO: tecnicamente valida, mas NAO e a mais curta.
+    Risco de entrar em rabbit hole de correcoes historicas.
+
+ROTA B — Criar baseline local a partir do schema atual do projeto
+  - Seguranca: alta (dados sinteticos).
+  - Fidelidade: depende da qualidade do baseline.
+  - Risco de falso PASS: medio se o baseline omitir constraints
+    ou comportamentos relevantes.
+  - Trabalho: medio (montar schema unico a partir das migrations).
+  - Producao: nao necessaria.
+  - Rollback: facil (recriar container).
+  - Triggers/RPC/concorrencia: testados realmente.
+  - VEREDICTO: viavel, mas exige extrair schema completo de ~10 migrations.
+
+ROTA C — Laboratorio financeiro minimo isolado
+  - Seguranca: muito alta (apenas objetos necessarios, sem dados reais).
+  - Fidelidade: suficiente para FIN-SANE-02B se a lista de dependencias
+    for completa.
+  - Risco de falso PASS: medio/baixo — mitigado por executar os 12
+    cenarios reais e comparar comportamento com producao controlada.
+  - Trabalho: o menor possivel (extrair ~11 tabelas + 3 funcoes).
+  - Producao: nao necessaria.
+  - Rollback: trivial (container novo).
+  - Triggers/RPC/concorrencia: testados realmente em PostgreSQL.
+  - VEREDICTO: MELHOR opcao para gate local de FIN-SANE-02B.
+
+ROTA D — Outras alternativas
+  - supabase db diff: exige banco de referencia funcionando.
+  - pg_dump schema-only de producao: viola restricao de nao gerar
+    dump remoto e pode conter metadados sensiveis.
+  - Docker Postgres puro: perde compatibilidade com Supabase Auth/RLS
+    se necessario no futuro; para 02B e aceitavel.
+  - VEREDICTO: nenhuma supera ROTA C para este objetivo especifico.
+
+4. ESTRATEGIA ESCOLHIDA
+============================================================
+
+ROTA C — Laboratorio Financeiro Minimo Isolado.
+
+Implementacao proposta (NAO executar ainda):
+
+  1. Criar diretorio temporario:
+       supabase/migrations_lab/
+
+  2. Criar baseline unico:
+       supabase/migrations_lab/0000_fin_sane_02b_baseline.sql
+     Contendo SOMENTE:
+       - As 11 tabelas listadas na secao 1, com colunas/defaults/PKs/UNIQUEs.
+       - As 3 funcoes pre-02B (M66, M80, f_confirmar_pagamento_prestador).
+       - Os triggers M66/M80.
+       - Seed minimo: 1 conta financeira ativa em contas_financeiras.
+
+  3. Copiar para o mesmo diretorio:
+       supabase/migrations_lab/20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+
+  4. Backup do diretorio original:
+       mv supabase/migrations supabase/migrations_original
+       mv supabase/migrations_lab supabase/migrations
+
+  5. Executar:
+       npx supabase start
+
+  6. Aplicar testes:
+       psql ... -f tests/sql/fin_sane_02b_cenarios.sql
+
+  7. Restaurar diretorio original:
+       rm -rf supabase/migrations
+       mv supabase/migrations_original supabase/migrations
+
+5. JUSTIFICATIVA
+============================================================
+
+A ROTA C foi escolhida porque:
+  - Elimina a necessidade de reparar dezenas de migrations historicas.
+  - Nao usa dados reais de producao.
+  - Mantem fidelidade funcional para FIN-SANE-02B (mesmas tabelas,
+    colunas, triggers, funcoes, constraints relevantes).
+  - Permite testar atomicidade, idempotencia e concorrencia em
+    PostgreSQL real.
+  - Pode ser recriado do zero a qualquer momento.
+  - O escopo e fechado e verificavel pelos 12 cenarios SQL.
+
+6. RISCO DE FALSO PASS
+============================================================
+
+Medio, mitigavel:
+  - Risco: baseline omitir coluna/constraint/funcao usada implicitamente.
+  - Mitigacao 1: executar os 12 cenarios SQL reais; cada falha revela
+    uma dependencia omitida.
+  - Mitigacao 2: comparar o DDL do baseline com as migrations oficiais
+    das tabelas envolvidas (20260510000001_core_baseline.sql,
+    20260522_alocacoes_escala.sql, 20260510090000_baseline_external_tables.sql,
+    20260626000004_missao021_fechamento_financeiro.sql,
+    20260704000001_m66_fix_propagacao_financeira.sql,
+    20260906000000_fin_362_3e_consistencia_pagamento_prestador.sql).
+  - Mitigacao 3: validar producao controlada APOS sucesso no laboratorio.
+
+7. GATE DE FIDELIDADE
+============================================================
+
+O laboratorio sera aceito quando:
+  (a) npx supabase start concluir sem erro;
+  (b) migration 20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+      aplicar sem erro;
+  (c) tests/sql/fin_sane_02b_cenarios.sql executar os 12 cenarios
+      sem ASSERT failure;
+  (d) rollback 20260913000001_fin_sane_02b_rollback.sql aplicar sem erro;
+  (e) reaplicacao da forward migration aplicar sem erro;
+  (f) estrutura resultante permitir chamada real de
+      fechamentoService.pagarFechamento() via Supabase client local.
+
+8. O LABORATORIO PROVARA
+============================================================
+
+  - FIN-SANE-02B aplica corretamente sobre um schema compativel.
+  - Triggers M66/M80 (versao 02B) calculam financeiro_pagar.valor
+    como valor_liquido.
+  - RPC f_confirmar_pagamento_fechamento e atomica.
+  - Idempotencia do pagamento (cenario 9).
+  - Itens ja pagos sao ignorados (cenario 10).
+  - Divergencia gera rollback total (cenario 12).
+  - Rollback forward+rollback+forward funciona.
+
+9. O LABORATORIO NAO PROVARA
+============================================================
+
+  - Comportamento com dados reais de producao (volumes, valores,
+    status heterogeneos, tenant_id, RLS).
+  - Interacao com portal cliente, app motorista, IA, comunicacao,
+    fiscal, contratos e demais modulos.
+  - Performance em escala.
+  - Efeitos colaterais em tabelas fora do subconjunto (ex: RLS,
+    policies, views).
+  - Sequencia exata de migrations em producao.
+
+Esses itens deverao ser confirmados posteriormente em ambiente de
+producao controlada com rollout gradual.
+
+10. PRODUCAO
+============================================================
+
+ZERO WRITES.
+Nenhum dump remoto gerado.
+Nenhum dado real copiado.
+
+11. PROXIMA MISSAO UNICA
+============================================================
+
+FIN-SANE-02D-LAB-BUILD:
+  - construir o arquivo
+    supabase/migrations_lab/0000_fin_sane_02b_baseline.sql
+  - validar SHA256 dos originais
+  - criar backup do diretorio migrations
+  - trocar migrations por migrations_lab
+  - executar npx supabase start
+  - aplicar e validar os 12 cenarios SQL
+  - documentar PASS/FAIL de cada cenario
+  - restaurar migrations original
+
+============================================================
+ARQUIVO: FIN-SANE-02D-LAB-STRATEGY.txt
+PRODUCAO: INTACTA
+============================================================

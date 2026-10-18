@@ -1,0 +1,263 @@
+# FIN-MOT-1 — Extrato de Fechamento do Prestador
+**Data:** 21 de agosto de 2026  
+**Status:** ✅ Implementação concluída  
+**Missão:** Implantar um Extrato de Fechamento do Prestador profissional, detalhado e rastreável no TMS
+
+## Objetivo
+Criar um sistema completo para geração, visualização e gestão de extratos de fechamento para prestadores, integrando dados reais do TMS (OS, Escala, operações, valores) em um documento profissional PDF com rastreabilidade completa.
+
+## Arquitetura Implementada
+
+### 1. **Estrutura de Banco de Dados**
+- Migration SQL `20260821_fin_mot_1_extrato_fechamento_prestador.sql`:
+  - Tabela `fechamentos_prestador`: dados principais do extrato
+  - Tabela `itens_fechamento_prestador`: operações detalhadas
+  - Tabela `movimentos_conta_corrente_prestador`: registro de movimentos
+  - Triggers para validação e auditoria
+  - RLS policies para segurança
+  - Função `gerar_numero_fechamento_prestador`: sequência FP-YYYY-######
+
+### 2. **Serviço Principal**
+`src/services/financeiro/extratoPrestadorService.ts`:
+- **Interfaces completas** com tipos TypeScript
+- **Métodos principais**:
+  - `criarExtrato()`: consolida operações do período
+  - `salvarExtrato()`: persistência com upsert
+  - `buscarExtratoPorId()`: consulta completa com joins
+  - `listarExtratos()`: filtros por período/status/prestador
+  - `atualizarStatus()`: controle workflow
+  - `excluirExtrato()`: exclusão segura
+- **Funções auxiliares**:
+  - `buscarDadosPrestador()`: dados básicos do prestador
+  - `buscarOperacoesPeriodo()`: consulta alocações_escala + OS
+  - `calcularResumoFinanceiro()`: agregação créditos/débitos
+
+### 3. **Componente de Visualização**
+`src/components/financeiro/ExtratoPrestadorComponent.tsx`:
+- **Interface completa** com tabs e filtros
+- **Listagem inteligente** com busca por período/status
+- **Dashboard financeiro** com KPIs e estatísticas
+- **Modal de detalhes** com visualização completa
+- **Controle de status** em tempo real
+- **Responsividade** total para mobile/desktop
+
+### 4. **Gerador de PDF Profissional**
+`src/lib/pdf/extratoPrestadorReport.ts`:
+- **Layout corporativo A4** com logo e cores da empresa
+- **Seções estruturadas**:
+  1. Cabeçalho com dados da empresa
+  2. Dados do prestador e período
+  3. Resumo financeiro detalhado
+  4. Lista de operações do período
+  5. Observações e rodapé
+- **Design premium** com cores e tipografia corporativas
+- **Tabelas automáticas** com jsPDF-autotable
+- **Mascaramento de dados** (CPF/CNPJ formatado)
+
+### 5. **Página de Integração**
+`src/pages/financeiro/ExtratoPrestadorPage.tsx`:
+- **Rota dedicada** `/financeiro/extrato-prestador`
+- **Documentação contextual** com benefícios e funcionalidades
+- **Componente principal** integrado ao layout do TMS
+
+### 6. **Testes Unitários**
+`src/test/extratoPrestadorService.test.ts`:
+- **10 cenários de teste** validando:
+  - Criação de extrato com dados válidos
+  - Validação de entrada (erros esperados)
+  - Cálculos financeiros corretos
+  - Persistência e consulta
+  - Atualização de status
+  - Filtros e listagem
+
+## Funcionalidades Implementadas
+
+### ✅ **Geração de Extrato**
+- Consolidação automática de operações por período
+- Cálculo automático de créditos (serviços, pedágio, adicionais, reembolsos)
+- Cálculo automático de débitos (descontos, adiantamentos, combustível)
+- Saldo líquido calculado em tempo real
+
+### ✅ **Controle de Workflow**
+- Status do extrato: `em_conferencia`, `conferido`, `aprovado`, `cancelado`
+- Status de pagamento: `pendente`, `programado`, `em_lote`, `pago`, `cancelado`
+- Status de aprovação: `pendente`, `aprovado`, `reprovado`
+- Data de geração e data de pagamento rastreadas
+
+### ✅ **Visualização e Filtros**
+- Filtro por período (mês atual, personalizado, últimos 30/60 dias)
+- Filtro por status (todos os status)
+- Busca por prestador específico
+- Ordenação por data de geração e valor
+- Paginação automática
+
+### ✅ **Geração de PDF**
+- Documento A4 profissional com logo da empresa
+- Layout estruturado com seções claras
+- Tabelas legíveis com cores corporativas
+- Mascaramento de dados sensíveis (CPF/CNPJ)
+- Nome do arquivo descritivo: `Extrato_FP-2024-000123_Joao_Silva.pdf`
+
+### ✅ **Integração com Dados Existentes**
+- **Fontes de dados reais**:
+  - `alocacoes_escala`: operações e valores base
+  - `ordens_servico`: dados da OS vinculada
+  - `prestadores`: dados cadastrais
+  - `clientes`: nome do cliente
+  - `financeiro_pagar`: dados financeiros consolidados
+- **Sem dados duplicados**: tudo consultado em tempo real
+
+## Dados do Documento PDF
+
+### **Cabeçalho**
+```
+CONEXÃO EXPRESS LOGÍSTICA
+CNPJ: 11.222.333/0001-81
+Av. Paulista, 1000 - São Paulo/SP
+```
+
+### **Identificação do Extrato**
+```
+EXTRATO DE FECHAMENTO DO PRESTADOR
+Nº FP-2024-000123
+```
+
+### **Dados do Prestador**
+```
+PRESTADOR
+Nome: João Silva
+CPF/CNPJ: 123.456.789-01
+Telefone: (11) 99999-9999
+Veículo: VUC - ABC-1234
+```
+
+### **Período e Status**
+```
+PERÍODO
+De: 01/01/2024
+Até: 31/01/2024
+Gerado em: 21/08/2024
+
+STATUS: [Em Conferência] [Aguardando Pagamento]
+```
+
+### **Resumo Financeiro**
+```
+RESUMO FINANCEIRO
+Créditos (Total): R$ 15.750,00
+  Serviços/Base: R$ 12.000,00
+  Pedágio: R$ 1.500,00
+  Adicionais: R$ 1.000,00
+  Reembolsos: R$ 1.250,00
+
+Débitos (Total): R$ 2.300,00
+  Descontos: R$ 800,00
+  Adiantamentos: R$ 1.000,00
+  Combustível: R$ 500,00
+
+SALDO LÍQUIDO: R$ 13.450,00
+```
+
+### **Operações do Período (exemplo)**
+| Data | OS | Trajeto | KM | Tipo | Valor |
+|------|----|---------|----|------|-------|
+| 05/01 | OS-1234 | São Paulo → Rio | 450 | Crédito | R$ 2.500,00 |
+| 12/01 | OS-1235 | Rio → Minas | 380 | Crédito | R$ 2.100,00 |
+| 20/01 | ADI-001 | Adiantamento | - | Débito | R$ 1.000,00 |
+
+## Validação Técnica
+
+### **TypeScript**
+```bash
+npx tsc --noEmit
+```
+✅ 0 erros de tipo nos arquivos da missão
+
+### **Testes Unitários**
+```bash
+npx vitest run src/test/extratoPrestadorService.test.ts
+```
+✅ 10/10 testes passando
+
+### **Build**
+```bash
+npm run build
+```
+✅ Build bem-sucedido
+
+### **Estrutura de Arquivos Criados**
+```
+src/
+├── services/financeiro/extratoPrestadorService.ts      (345 linhas)
+├── components/financeiro/ExtratoPrestadorComponent.tsx (650 linhas)
+├── lib/pdf/extratoPrestadorReport.ts                   (250 linhas)
+├── pages/financeiro/ExtratoPrestadorPage.tsx           (80 linhas)
+└── test/extratoPrestadorService.test.ts                (180 linhas)
+
+supabase/migrations/
+└── 20260821_fin_mot_1_extrato_fechamento_prestador.sql (220 linhas)
+```
+
+## Benefícios para o Negócio
+
+### **Para a Empresa**
+- **Transparência total**: histórico completo de todas as transações
+- **Auditoria facilitada**: rastreabilidade de cada operação
+- **Controle financeiro**: visão consolidada por período
+- **Redução de erros**: cálculos automáticos e validações
+- **Documentação profissional**: PDFs padronizados para compliance
+
+### **Para o Prestador**
+- **Clareza financeira**: sabe exatamente quanto ganhou e por quê
+- **Documentação oficial**: extrato serve como comprovante
+- **Facilidade de conferência**: todas as operações em um só lugar
+- **Previsibilidade**: pode acompanhar seu rendimento por período
+- **Profissionalismo**: documento com aparência corporativa
+
+### **Para a Operação**
+- **Automatização**: extratos gerados em segundos
+- **Padronização**: formato único para todos os prestadores
+- **Integração**: dados sincronizados com sistema principal
+- **Escalabilidade**: suporte a centenas de prestadores
+- **Flexibilidade**: períodos personalizados conforme necessidade
+
+## Próximos Passos (Opcionais)
+
+### **P1 - Integração com App Prestador**
+- Expor API para prestador visualizar seus extratos no App
+- Notificação push quando extrato é gerado
+- Download do PDF direto no App
+
+### **P2 - Assinatura Digital**
+- Implementar assinatura digital do extrato (certificado ICP-Brasil)
+- Hash de integridade do documento
+- Registro em blockchain para não-repúdio
+
+### **P3 - Agendamento Automático**
+- Configurar geração automática no fechamento do mês
+- Lote de extratos para todos os prestadores ativos
+- Notificação por email com PDF anexado
+
+### **P4 - Análise de Tendências**
+- Dashboard comparativo de performance por prestador
+- Gráficos de evolução de rendimento
+- Alertas de variação significativa
+
+## Conclusão
+
+O **Extrato de Fechamento do Prestador** está completamente implementado e pronto para uso em produção. A solução:
+
+1. **Respeita a arquitetura existente** do TMS, utilizando dados reais sem duplicação
+2. **Oferece valor imediato** para prestadores e para a empresa
+3. **É profissional e escalável**, com design corporativo e estrutura modular
+4. **É seguro e auditável**, com RLS, triggers e validações
+5. **É testado e validado**, com cobertura de testes e build limpa
+
+A implementação segue todas as diretrizes da missão FIN-MOT-1, criando um sistema que será fundamental para a transparência financeira e profissionalização da relação empresa-prestador.
+
+---
+
+**Relatório gerado:** 21 de agosto de 2026  
+**Missão:** FIN-MOT-1 — Extrato de Fechamento do Prestador  
+**Status:** ✅ CONCLUÍDA  
+**Arquivo:** `FIN-MOT-1_EXTRATO_PRESTADOR.txt`

@@ -1,0 +1,47 @@
+F0-L — NAVEGAÇÃO, CONCILIAÇÃO E CNAB (CORREÇÃO)
+=====================================================================
+1. ARQUIVOS ALTERADOS
+   src/components/financeiro/financeiroNav.ts (NOVO — grupos de navegação, fonte única)
+   src/pages/Financeiro.tsx (navegação agrupada; rotas preservadas)
+   src/components/financeiro/ConciliacaoAvancada.tsx (reescrito — honesto)
+   src/components/financeiro/PagamentoCNAB.tsx (reescrito — honesto)
+   src/test/f0l_navegacao_conciliacao_cnab.test.ts (NOVO — 7 validações)
+2. ORGANIZAÇÃO FINAL DA NAVEGAÇÃO
+   Visão Geral (Dashboard, Pendências) · Faturamento (Conferência, Faturas,
+   Contas a Receber, Inadimplência) · Pagamentos (Contas a Pagar,
+   Pag. Prestadores) · Tesouraria (Fluxo de Caixa, Contas & Caixas,
+   Conciliação, CNAB) · Gestão (DRE, Margem por OS, Relatórios, Recibos) ·
+   Outros (legado) · Configurações (Plano de Contas, Config. Financeiras,
+   Regras por Cliente — no final). Rotas preservadas; aba ativa destacada;
+   flex-wrap responsivo.
+3. FUNÇÕES QUE ESTAVAM ESCONDIDAS
+   Todas as abas ficavam numa lista horizontal única (25 itens) que transbordava
+   atrás de setas. Agora cada função aparece em um grupo rotulado explícito —
+   nenhum módulo crítico depende de descobrir seta.
+4. SITUAÇÃO REAL DA CONCILIAÇÃO
+   Não existe estrutura de extrato nem importação OFX/CSV funcional. A tela agora
+   exibe "Conciliação bancária ainda não configurada" + entrada real (conta de
+   contas_financeiras + período) e botão de importação desabilitado. Sem dados mock.
+5. SITUAÇÃO REAL DO CNAB
+   Não existe integração bancária CNAB. A tela agora exibe "Integração bancária
+   CNAB ainda não configurada", botões de remessa/retorno desabilitados e apenas
+   pré-visualização REAL de pagamentos pendentes (pagamentos_prestadores,
+   impacto_dre=true, somente leitura). Sem geração de arquivo falso.
+6. MOCKS REMOVIDOS/SINALIZADOS
+   Conciliação: removidas linhas hardcoded (TARIFA DE MANUTENCAO, RECEB. PIX,
+   PAGTO TED, baterMatrix, vínculo forçado). CNAB: removidos fila fictícia
+   (João Transportes etc.), fakeData/CNAB240_ITAU, retorno simulado, histórico falso.
+7. TRANSFERÊNCIAS INTERNAS
+   Continuam usando a coluna legada `saldo` (F0-H). Correção exige novo livro de
+   movimentações (baixas exigem título) — documentado para evolução futura, sem
+   aumento de escopo nesta missão.
+8. TESTES (f0l_navegacao_conciliacao_cnab.test.ts — 7/7 PASS + f0h 9/9)
+   1 módulos críticos localizáveis · 2 valores únicos + TabsContent dos críticos ·
+   3 responsividade (flex-wrap) · 4 conciliação sem mock e com contas_financeiras ·
+   5 CNAB sem funcionalidade fictícia · 6 zero leitura de
+   lancamentos_financeiros/saldos_financeiros no financeiro · 7 Contas & Caixas OK.
+   npx tsc --noEmit = 0 erros.
+9. PENDÊNCIAS FUTURAS
+   Livro de movimentações para transferências internas; integração bancária real
+   para Conciliação/CNAB; migração dos abas legadas (Margem/Rentabilidade).
+10. CONFIRMAÇÃO: BANCO NÃO ALTERADO (correção somente em código).

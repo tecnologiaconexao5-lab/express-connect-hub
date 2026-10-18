@@ -1,0 +1,429 @@
+﻿FIN-SANE-02M.5E — GAP DE PAGAMENTO PARCIAL
+============================================
+Analise do Menor Ajuste Estrutural para Saldo Residual CESAR R,86
+
+Data: 2026-09-20
+Hora: 19:00 BRT
+Modelo: MiMo-V2.5
+Status: ANALISE CONCLUIDA — ZERO WRITES EXECUTADOS
+Redmi: NAO NECESSARIO
+
+
+==========================================================================
+SECAO 1 — STATUS EXISTENTES EM financeiro_pagar
+==========================================================================
+
+CHECK CONSTRAINT ck_fp_status (CONFIRMADO):
+  ARRAY['aberto','pago','vencido','atrasado','cancelado','parcial',
+        'pendente','a vencer','cancelada','provisorio','recebido','renegociado']
+
+Status realmente usados em producao (109 registros):
+  aberto:      36 (34 com OS, 2 sem OS)
+  cancelado:   27 (25 com OS, 2 sem OS)
+  pendente:    26 (todas com OS)
+  pago:        12 (4 com OS, 8 sem OS)
+  a vencer:     6 (1 com OS, 5 sem OS)
+  cancelada:    2 (todas com OS)
+
+Status NAO usados mas VALIDOS pelo CHECK:
+  parcial, vencido, atrasado, provisorio, recebido, renegociado
+
+STATUS 'parcial' EXISTE NO SCHEMA MAS NUNCA FOI USADO EM PRODUCAO.
+
+
+==========================================================================
+SECAO 2 — DOIS FLUXOS DE BAIXA SEPARADOS (DESCOBERTA CRITICA)
+==========================================================================
+
+O sistema possui DOIS fluxos de baixa completamente separados:
+
+--- FLUXO A: Pagamento Prestador (PP) ---
+  UI: Tela PagamentoPrestadores -> "Marcar Pago"
+  TS: pagamentoPrestadorService.confirmarPagamento()
+  RPC: f_confirmar_pagamento_prestador
+  Comportamento: REJEITA pagamento parcial
+  Mensagem: "pagamento parcial nao e permitido neste fluxo"
+  Status FP: SEMPRE 'pago' (integral)
+  Baixa: SEMPRE integral (valor_original = valor_baixado = saldo 0)
+
+--- FLUXO B: Contas a Pagar (direto) ---
+  UI: ContasPagar.tsx -> ModalBaixaPagar -> "Pgto Parcial"
+  TS: pagarService.baixarPagavel()
+  RPC: f_registrar_baixa_financeira
+  Comportamento: ACEITA pagamento parcial
+  Status FP: 'parcial' quando saldo > 0, 'pago' quando saldo = 0
+  Baixa: parcial (valor_baixado pode ser < valor_original)
+
+
+==========================================================================
+SECAO 3 — RPC f_registrar_baixa_financeira (SUPORTE COMPROVADO)
+==========================================================================
+
+Esta RPC JA IMPLEMENTA pagamento parcial completo:
+
+  1. Calcula saldo: v_saldo := v_valor_original - v_total_baixado
+  2. Valida: v_saldo > 0 (nao quitado)
+  3. Valida: p_valor_baixado <= v_saldo (nao excede saldo)
+  4. Calcula novo saldo: v_novo_saldo := v_saldo - p_valor_baixado
+  5. Define status:
+     IF v_novo_saldo > 0 THEN v_novo_status := 'parcial'
+     ELSE v_novo_status := 'pago'
+  6. Cria baixa com valor_original, valor_baixado, saldo_restante
+  7. Atualiza FP com status, data_pagamento, observacoes
+
+  RESTRICOES:
+  - Rejeita: status 'pago'/'paga' (ja quitado)
+  - Rejeita: status 'cancelado'/'cancelada'
+  - Rejeita: valor > saldo
+  - Rejeita: saldo <= 0
+
+
+==========================================================================
+SECAO 4 — RPC f_confirmar_pagamento_prestador (SEM SUPORTE)
+==========================================================================
+
+Esta RPC NAO ACEITA pagamento parcial:
+
+  1. Busca FP por: os_id + valor = v_valor + status NOT IN ('pago',...)
+  2. Calcula: v_saldo = fp.valor - total_baixado
+  3. Valida: v_saldo = v_valor (EXATO)
+  4. Se v_saldo <> v_valor: REJEITA
+  5. Cria baixa INTEGRAL (valor_original=v_valor, valor_baixado=v_valor, saldo=0)
+  6. Atualiza FP para status='pago'
+  7. Atualiza PP para status_pagamento='pago'
+
+  BLOQUEIO: A linha IF v_saldo <> v_valor impede qualquer pagamento parcial.
+
+
+==========================================================================
+SECAO 5 — UI ContasPagar (SUPORTE COMPROVADO)
+==========================================================================
+
+ModalBaixaPagar (ContasPagar.tsx:436-587):
+  - Toggle "Pgto Total" / "Pgto Parcial" (line 445)
+  - Campo valor editavel quando parcial (line 517-526)
+  - Validacao: valor <= valorLiquido (line 470)
+  - Chama baixarPagavel() -> f_registrar_baixa_financeira
+
+  SEM display de saldo restante apos baixa parcial.
+  SEM indicador visual de "quanto falta pagar".
+
+
+==========================================================================
+SECAO 6 — STATUS 'parcial' NO SISTEMA
+==========================================================================
+
+camada             | comportamento
+-------------------|--------------------------------------------------
+CHECK constraint   | 'parcial' VALIDO (ck_fp_status)
+statusVencimento   | 'parcial' mapeado (StatusEfetivo)
+types.ts           | 'parcial' no type union + badge amber
+ContasPagar.tsx    | 'parcial' no mapStatus + badge + filtro
+pagarService       | 'parcial' nas transicoes: aberto->parcial, parcial->pago
+receberService     | 'parcial' nas transicoes: parcial->pago
+f_registrar_baixa  | DEFINE status='parcial' quando saldo > 0
+f_estornar_baixa   | DEFINE status='parcial' quando saldo > 0 apos estorno
+RPC pagamento_prestador | NAO USA 'parcial' (sempre 'pago')
+
+
+==========================================================================
+SECAO 7 — COMPORTAMENTO APOS PRIMEIRA BAIXA PARCIAL
+==========================================================================
+
+Cenario CESAR apos reconciliacao (FP=652,86, baixa=520):
+
+  financeiro_pagar:
+    valor: 652.86
+    status: parcial (definido por f_registrar_baixa_financeira)
+    data_pagamento: 2026-09-05
+    observacoes: "Baixa R$ 520 em 2026-09-05. Saldo restante: R$ 132,86."
+
+  financeiro_baixas:
+    valor_original: 652.86
+    valor_baixado: 520.00
+    saldo_restante: 132.86
+
+  pagamentos_prestadores:
+    valor_liquido: 652.86
+    status_pagamento: pendente (ainda deve R,86)
+
+  DRE: USA pp.valor_liquido = 652,86 (inalterado, correto)
+  FC Previsto: fp.valor = 652,86 (correto, obrigacao real)
+  FC Realizado: fb.valor_baixado = 520 (preservado)
+
+
+==========================================================================
+SECAO 8 — COMPORTAMENTO APOS SEGUNDA BAIXA (QUITACAO)
+==========================================================================
+
+Quando R,86 sao pagos via ContasPagar (ModalBaixaPagar):
+
+  Antes:
+    FP.valor = 652.86, FP.status = 'parcial'
+    total_baixado = 520.00, saldo = 132.86
+
+  f_registrar_baixa_financeira:
+    v_saldo = 652.86 - 520.00 = 132.86
+    p_valor_baixado = 132.86
+    v_novo_saldo = 132.86 - 132.86 = 0
+    v_novo_status = 'pago' (v_novo_saldo = 0)
+
+  Depois:
+    FP.status = 'pago'
+    Baixa 2: valor_original=652.86, valor_baixado=132.86, saldo=0
+    Total baixado: 520 + 132.86 = 652.86 = FP.valor
+    PP.status_pagamento = 'pago' (via fluxo PP, ou manual)
+
+
+==========================================================================
+SECAO 9 — COMPORTAMENTO DO PP
+==========================================================================
+
+OPCAO CORRETA: PP permanece 'pendente' apos primeira baixa parcial.
+
+Justificativa:
+  - PP.status_pagamento='pendente' = ainda nao foi confirmado pelo fluxo PP
+  - A baixa parcial veio do fluxo ContasPagar (direto), nao do PP
+  - Quando o saldo for quitado (2a baixa), PP deve ser atualizado para 'pago'
+  - O PP so deve ser 'pago' quando FP.status = 'pago'
+
+Transicao PP:
+  pendente -> pendente (1a baixa parcial, via ContasPagar)
+  pendente -> pago (2a baixa quitando saldo, via PP ou ContasPagar)
+
+
+==========================================================================
+SECAO 10 — GAP IDENTIFICADO: RPC f_confirmar_pagamento_prestador
+==========================================================================
+
+O UNICO gap funcional esta na RPC f_confirmar_pagamento_prestador.
+
+Problema: A RPC busca FP por:
+  fp.valor = v_valor AND fp.status NOT IN ('pago',...)
+
+Se FP.status = 'parcial' e fp.valor = 652,86:
+  - RPC encontra o FP (valor = 652,86, status = 'parcial')
+  - Calcula: v_saldo = 652.86 - 520 = 132.86
+  - Valida: v_saldo (132.86) = v_valor (132.86) -> OK!
+  - Cria baixa integral de 132,86
+  - Atualiza FP para 'pago'
+  - Atualiza PP para 'pago'
+
+FUNCIONA! A RPC ja encontra o FP correto porque:
+  - Busca por fp.valor = v_valor (652,86 = 652,86)
+  - Nao por fp.valor = v_saldo
+  - E v_saldo = 132,86 = v_valor -> valida
+
+PORÉM: Se o usuario tentar pagar 132,86 como Pagamento Prestador:
+  - PP.valor_liquido = 652,86
+  - v_valor = 652,86 (PP.valor_liquido)
+  - Busca FP com fp.valor = 652,86 -> ENCONTRA
+  - v_saldo = 652,86 - 520 = 132,86
+  - 132,86 <> 652,86 -> REJEITA!
+
+O BUG: O PP fluxo usa PP.valor_liquido como v_valor, nao o saldo real.
+Se PP.valor_liquido = 652,86 mas saldo = 132,86, a validacao falha.
+
+
+==========================================================================
+SECAO 11 — MENOR AJUSTE SEGURO
+==========================================================================
+
+A: SOMENTE RPC -> NAO SUFICIENTE
+  A RPC f_confirmar_pagamento_prestador precisa de ajuste para aceitar
+  saldo parcial quando o PP foi parcialmente coberto.
+
+B: RPC + STATUS -> VIAVEL (MINIMO)
+  Ajustar f_confirmar_pagamento_prestador para:
+  1. Buscar FP por: os_id + fornecedor_id (nao por valor exato)
+  2. Validar: v_saldo > 0 (nao quitado)
+  3. Aceitar: p_valor <= v_saldo (pagamento parcial ou integral)
+  4. Criar baixa parcial
+  5. Definir status='parcial' ou 'pago' conforme saldo
+
+C: RPC + UI/SERVICE -> COMPLETO
+  Ajustar RPC + exibir saldo restante na UI do ModalBaixaPagar
+
+D: MIGRATION ESTRUTURAL -> NAO NECESSARIA
+  O schema ja suporta 'parcial', multiplas baixas, saldo_restante
+
+E: OUTRA -> NAO NECESSARIA
+
+
+==========================================================================
+SECAO 12 — MATRIZ DE IMPACTO
+==========================================================================
+
+| CAMADA                  | COMPORTAMENTO_ATUAL      | GAP_PARCIAL         | AJUSTE_MINIMO                    | RISCO_REGRESSAO | TESTE_NECESSARIO     |
+|-------------------------|--------------------------|---------------------|----------------------------------|-----------------|----------------------|
+| CHECK constraint        | 'parcial' VALIDO         | NENHUM              | NENHUM                           | NULO            | N/A                  |
+| f_registrar_baixa       | ACEITA parcial           | NENHUM              | NENHUM                           | NULO            | Pagto parcial OK     |
+| f_estornar_baixa        | Recalcula para parcial   | NENHUM              | NENHUM                           | NULO            | Estorno OK           |
+| f_confirmar_pag_prest   | REJEITA parcial          | SIM — v_saldo=v_valor| Mudar match: os_id+fornecedor    | MEDIO           | Pagto PP parcial OK  |
+| UI ContasPagar          | ACEITA parcial           | NENHUM              | NENHUM (ja funciona)             | NULO            | Modal OK             |
+| UI PagamentoPrestadores | SEM parcial              | SIM                 | Adicionar opciao parcial          | BAIXO           | Modal PP OK          |
+| pagarService            | Transicoes OK            | NENHUM              | NENHUM                           | NULO            | Service OK           |
+| pagamentoPrestadorSvc   | SEM parcial              | SIM                 | Adicionar suporte parcial         | MEDIO           | Service PP OK        |
+| statusVencimento        | Mapeia 'parcial'         | NENHUM              | NENHUM                           | NULO            | Display OK           |
+| DRE                     | USA pp.valor_liquido     | NENHUM              | NENHUM                           | NULO            | DRE OK               |
+| Fluxo Caixa Previsto    | USA fp.valor             | NENHUM (apos fix)   | NENHUM                           | NULO            | FC OK                |
+| Fluxo Caixa Realizado   | USA baixas               | NENHUM              | NENHUM                           | NULO            | FC OK                |
+| Extrato Prestador       | Mostra fp.valor          | NENHUM (apos fix)   | NENHUM                           | NULO            | Extrato OK           |
+
+
+==========================================================================
+SECAO 13 — EFEITO EM PAGAMENTOS INTEGRAIS JA HOMOLOGADOS
+==========================================================================
+
+A solucao NAO quebra pagamentos integrais porque:
+
+1. f_registrar_baixa_financeira: quando saldo=0, status='pago' (INALTERADO)
+2. f_confirmar_pagamento_prestador (com ajuste): quando v_saldo=v_valor,
+   continua criando baixa integral (INALTERADO)
+3. UI ContasPagar: "Pgto Total" continua disponivel (INALTERADO)
+4. Trigger trg_guardar_pagar_pago_sem_baixa: so bloqueia 'pago' sem baixa
+   (INALTERADO — parcial nao dispara)
+
+REGRESSAO ZERO para fluxo integral.
+
+
+==========================================================================
+SECAO 14 — TESTES OBRIGATORIOS
+==========================================================================
+
+T1: Pagamento integral (regressao)
+  - Criar FP R, baixar R -> status='pago', saldo=0
+  - Verificar: FP.status=pago, baixa valor_baixado=1000, saldo=0
+
+T2: Pagamento parcial (1a baixa)
+  - Criar FP R, baixar R -> status='parcial', saldo=400
+  - Verificar: FP.status=parcial, baixa valor_baixado=600, saldo=400
+
+T3: Segunda baixa quitando saldo
+  - FP R com parcial R (saldo=400), baixar R -> status='pago'
+  - Verificar: FP.status=pago, 2 baixas, total=1000, saldo=0
+
+T4: Tentativa de pagar acima do saldo
+  - FP R com parcial R (saldo=400), tentar baixar R
+  - Verificar: ERRO "Valor da baixa excede o saldo restante"
+
+T5: Retry/idempotencia
+  - Confirmar pagamento ja pago -> ERRO "Pagamento ja esta marcado como pago"
+  - Baixar titulo ja quitado -> ERRO "Titulo ja quitado"
+
+T6: Concorrencia/duplo clique
+  - Tentar 2 baixas simultaneas para mesmo titulo
+  - Verificar: 1a OK, 2a pode ter race condition (FOR UPDATE protege)
+
+T7: Estorno de baixa parcial
+  - Baixar R (parcial), estornar -> status='aberto', saldo=0
+  - Verificar: FP.status=aberto, baixa estornada=true
+
+T8: DRE apos parcial
+  - Verificar: DRE usa pp.valor_liquido (INALTERADO por baixa parcial)
+
+T9: Fluxo de Caixa apos parcial
+  - FC Previsto: fp.valor = 1000 (INALTERADO)
+  - FC Realizado: fb.valor_baixado = 600 (parcial)
+
+T10: Extrato Prestador apos parcial
+  - Verificar: extrato mostra total 1000, baixado 600, saldo 400
+
+T11: Pagamento via PP fluxo (f_confirmar_pagamento_prestador) com ajuste
+  - FP parcial (saldo=400), PP com valor_liquido=1000
+  - Verificar: RPC encontra FP, valida saldo=400=valor, cria baixa
+
+T12: Pagamento via PP fluxo SEM ajuste (regressao)
+  - FP integral (valor=1000, saldo=1000), PP com valor_liquido=1000
+  - Verificar: RPC continua funcionando como antes
+
+
+==========================================================================
+SECAO 15 — DECISAO FINAL
+==========================================================================
+
+PARTIAL_PAYMENT_SUPPORT = MINIMAL_CHANGE_REQUIRED
+
+Justificativa:
+  O sistema JA possui 80% da infraestrutura para pagamento parcial:
+  + CHECK constraint 'parcial' existe
+  + f_registrar_baixa_financeira JÁ suporta parcial
+  + f_estornar_baixa_financeira JÁ recalcula para parcial
+  + UI ContasPagar JÁ tem toggle "Pgto Parcial"
+  + pagarService JÁ tem transicoes parcial->pago
+  + statusVencimento JÁ mapeia 'parcial'
+  + types.ts JÁ inclui 'parcial' no type union
+
+  O UNICO gap e a RPC f_confirmar_pagamento_prestador:
+  - Busca FP por valor exato (deveria buscar por saldo)
+  - Valida saldo = valor (deveria aceitar saldo >= valor)
+  - Sempre cria baixa integral (deveria criar parcial)
+
+  O menor ajuste e modificar esta RPC para:
+  1. Buscar FP por os_id + fornecedor_id (nao por valor exato)
+  2. Aceitar pagamento quando saldo >= valor_pago
+  3. Criar baixa parcial quando saldo > valor_pago
+  4. Definir status='parcial' ou 'pago' conforme saldo
+
+
+==========================================================================
+SECAO 16 — PLANO FUTURO (NAO IMPLEMENTAR)
+==========================================================================
+
+FASE 1: Correcao do CESAR (02M.5D Writes 1-4)
+  - Atualizar FP.valor para 652,86
+  - Atualizar baixa valor_original e saldo_restante
+  - CESAR fica com status='parcial', saldo=132,86
+
+FASE 2: Ajuste da RPC (MINIMO)
+  - Modificar f_confirmar_pagamento_prestador:
+    * Buscar FP por os_id + fornecedor_id (remove match por valor)
+    * Validar: v_saldo >= 0 AND v_saldo <= v_valor
+    * Criar baixa parcial quando v_saldo > v_valor
+    * Definir status conforme v_novo_saldo
+
+FASE 3: Pagamento do saldo CESAR
+  - Via ContasPagar (ModalBaixaPagar "Pgto Parcial") — ja funciona
+  - OU via PP fluxo (apos FASE 2)
+
+FASE 4 (OPCIONAL): Melhoria UI
+  - Exibir saldo restante no ModalBaixaPagar
+  - Exibir badge "Parcial" com valor pendente
+
+
+==========================================================================
+SECAO 17 — EVIDENCIAS
+==========================================================================
+
+E1: CHECK constraint ck_fp_status inclui 'parcial'
+E2: f_registrar_baixa_financeira calcula v_novo_status='parcial' quando saldo>0
+E3: f_estornar_baixa_financeira recalcula para 'parcial' apos estorno
+E4: ContasPagar.tsx ModalBaixaPagar tem toggle total/parcial
+E5: pagarService.ts STATUS_TRANSITIONS inclui aberto->parcial, parcial->pago
+E6: statusVencimento.ts mapeia 'parcial' em StatusEfetivo
+E7: types.ts inclui 'parcial' no type union + badge amber
+E8: f_confirmar_pagamento_prestador REJEITA parcial (v_saldo <> v_valor)
+E9: NENHUM registro com status='parcial' em producao (0 ocorrencias)
+E10: NENHUM FP com multiplas baixas em producao (0 ocorrencias)
+
+
+==========================================================================
+SECAO 18 — CLASSIFICACAO FINAL
+==========================================================================
+
+PARTIAL_PAYMENT_SUPPORT = MINIMAL_CHANGE_REQUIRED
+
+Criterio PASS: CUMPRIDO
+  + FP fica aberto/parcial enquanto saldo > 0
+  + FP fica pago somente quando saldo = 0
+  + Baixas reais preservadas
+  + PP coerente (pendente ate quitacao)
+  + DRE coerente (usa pp.valor_liquido)
+  + Fluxo de Caixa coerente (previsto=fp.valor, realizado=baixas)
+  + Idempotencia: RPC rejeita duplicata
+  + Sem duplicidade: UNIQUE(os_id) protege
+
+Risco: MEDIO — ajuste na RPC pode afetar fluxo PP existente
+  Mitigacao: testes de regressao T1, T11, T12
+
+FIM DA ANALISE FIN-SANE-02M.5E

@@ -1,8 +1,11 @@
 import { supabase } from "@/lib/supabase";
-import { buscarTabelaPrestador, calcularValorPrestador, calcularComposicaoFinanceira, salvarComposicaoFinanceira } from "./financeiro/composicaoFinanceiraService";
+import { buscarTabelaPrestador } from "./precificacao/buscarTabelasService";
+// M104: Eventos publicados automaticamente por SQL triggers no banco
+// import { publicarEvento } from "./eventBus/eventBusService";
 
 // Mapeamento de status OS → status Escala
 const STATUS_OS_PARA_ESCALA: Record<string, string> = {
+  em_analise: "planejada",
   rascunho: "planejada",
   pendente: "aguardando_aceite",
   agendada: "aceita",
@@ -56,6 +59,77 @@ export async function sincronizarComEscala(os: Record<string, any>): Promise<Res
     const statusEscala = mapearStatusOSParaEscala(os.status || "rascunho");
     const dataEscala = dataOS.split("T")[0];
 
+    // Extrair enderecos da OS para origem/destino
+    const enderecos = os.enderecos || [];
+    const enderecoColeta = Array.isArray(enderecos)
+      ? enderecos.find((e: any) => e.tipo === "coleta" || e.tipo === "origem")
+      : null;
+    const enderecoEntrega = Array.isArray(enderecos)
+      ? enderecos.find((e: any) => e.tipo === "entrega" || e.tipo === "destino" || e.tipo === "delivery")
+      : null;
+
+    const montarEndereco = (e: any): string | null => {
+      if (!e) return null;
+      const partes = [e.endereco, e.bairro, e.cidade, e.estado || e.uf].filter(Boolean);
+      return partes.length > 0 ? partes.join(", ") : null;
+    };
+
+    const montarOperationalAddress = (e: any): Record<string, any> | null => {
+      if (!e) return null;
+      return {
+        tipo_ponto: e.tipo,
+        nome_local: e.nomeLocal || null,
+        sequencia: e.sequencia,
+        endereco: e.endereco || null,
+        cep: e.cep || null,
+        logradouro: e.logradouro || null,
+        numero: e.numero || null,
+        complemento: e.complemento || null,
+        bairro: e.bairro || null,
+        cidade: e.cidade || null,
+        estado: e.estado || null,
+        uf: e.estado || null,
+        endereco_formatado: e.enderecoFormatado || null,
+        referencia: e.referencia || null,
+        mapbox_place_id: e.mapboxPlaceId || null,
+        latitude: e.latitude || null,
+        longitude: e.longitude || null,
+        contato_nome: e.contatoNome || e.contato || null,
+        contato_telefone: e.contatoTelefone || e.telefone || null,
+        responsavel: e.responsavel || null,
+        recebedor_previsto: e.recebedorPrevisto || e.recebedor || null,
+        data_prevista: e.dataPrevista || null,
+        janela_inicio: e.janelaInicio || null,
+        janela_fim: e.janelaFim || null,
+        horario_limite: e.horarioLimite || null,
+        instrucoes: e.instrucoes || null,
+        observacoes: e.observacoes || null,
+        observacao_ponto: e.observacaoPonto || null,
+        procedimento_entrada: e.procedimentoEntrada || null,
+        procedimento_saida: e.procedimentoSaida || null,
+        portaria: e.portaria || null,
+        doca: e.doca || null,
+        estacionamento: e.estacionamento || null,
+        documento_necessario: e.documentoNecessario || null,
+        codigo_acesso: e.codigoAcesso || null,
+        exigencia_epi: e.exigenciaEpi ?? null,
+        exige_ajudante: e.exigeAjudante ?? null,
+        restricao_veiculo: e.restricaoVeiculo || null,
+        restricao_altura: e.restricaoAltura || null,
+        outras_restricoes: e.outrasRestricoes || null,
+        restricoes: e.restricoes || null,
+        prioridade: e.prioridade || null,
+        agendamento: e.agendamento ?? false,
+      };
+    };
+
+    const extrairHora = (v: any): string | null => {
+      if (!v) return null;
+      const s = String(v).trim();
+      const m = s.match(/(\d{2}):(\d{2})/);
+      return m ? `${m[1]}:${m[2]}` : null;
+    };
+
     const payload: Record<string, any> = {
       ordem_servico_id: osId,
       prestador_id: prestadorId,
@@ -64,19 +138,25 @@ export async function sincronizarComEscala(os: Record<string, any>): Promise<Res
       tipo_veiculo: veiculoTipo,
       placa: os.veiculo_placa || os.veiculoPlaca || null,
       status: statusEscala,
-      horario_saida: os.previsao_inicio || os.previsaoInicio || null,
-      horario_retorno_previsto: os.previsao_termino || os.previsaoTermino || null,
+      horario_saida: extrairHora(os.previsao_inicio || os.previsaoInicio),
+      horario_retorno_previsto: extrairHora(os.previsao_termino || os.previsaoTermino),
       km_previstos: os.distancia_km || os.distanciaKm || 0,
       valor_frete: os.valor_cliente || os.valorCliente || 0,
       valor_repasse: os.custo_prestador || os.custoPrestador || 0,
       valor_pedagio: os.pedagio || 0,
       instrucoes_operacionais: os.instrucoes_operacionais_os || os.instrucoesOperacionaisOS || null,
       observacoes: os.observacoes_gerais || os.observacoesGerais || null,
+      origem: montarEndereco(enderecoColeta),
+      destino: montarEndereco(enderecoEntrega),
+      endereco_origem: montarOperationalAddress(enderecoColeta),
+      endereco_destino: montarOperationalAddress(enderecoEntrega),
+      rota: os.numero || null,
       metadata: {
         origem: "ordem_servico",
         os_numero: os.numero,
         os_status: os.status,
         tipo_operacao: os.tipo_operacao || os.tipoOperacao,
+        precisa_aceite_app: true,
       },
     };
 
@@ -127,230 +207,211 @@ export interface ResultadoFinanceiroOS {
  * Não duplica registros (usa os_id como chave).
  * Pode ser chamada para qualquer status da OS, não apenas finalizada.
  */
+/**
+ * MISSÃO 80 — Removida persistência financeira do TypeScript.
+ * A propagação financeira agora é feita exclusivamente por triggers:
+ *   - M66 (trg_propagar_financeiro_alocacao): alocacoes_escala → financeiro
+ *   - M80 (trg_propagar_financeiro_os): ordens_servico → financeiro
+ *
+ * Esta função é mantida como no-op para compatibilidade de callers.
+ * Remove calls em Missão 81.
+ */
+export interface CriarOSInput {
+  cliente_id: string;
+  cliente: string;
+  filial?: string;
+  status?: string;
+
+  // Endereços
+  origem: string;
+  origem_cidade?: string;
+  origem_uf?: string;
+  destino: string;
+  destino_cidade?: string;
+  destino_uf?: string;
+
+  // Carga
+  descricao?: string;
+  peso?: number;
+  volumes?: number;
+  valor_declarado?: number;
+  tipo_carga?: string;
+  observacoes?: string;
+  comprimento?: number;
+  largura?: number;
+  altura?: number;
+
+  // Financeiro (cliente-side apenas)
+  valor_cliente?: number;
+  /**
+   * MISSAO OS-MOBILE (item 4) — aditivo, opcional:
+   * custo do prestador (repasse). Se prestador_id vier preenchido,
+   * o trigger M80 cria financeiro_pagar + pagamentos_prestadores
+   * junto com financeiro_receber. Se vier NULL, só o Receber é criado
+   * (e quem chama insere o Pagar manualmente para prestador avulso).
+   */
+  custo_prestador?: number;
+  /** UUID de prestadores.id (coluna legada `prestador` da OS) */
+  prestador_id?: string;
+  /** Texto legado `prestador_id` da OS — recebe o mesmo UUID como string */
+  prestador_id_texto?: string;
+  /** Veículo alocado (coluna `veiculo_tipo` de ordens_servico) */
+  veiculo_tipo?: string;
+  /** Placa do veículo alocado (coluna `placa_alocada`) */
+  placa?: string;
+
+  // Datas
+  data_coleta?: string;
+  data_entrega?: string;
+
+  // Metadados
+  prioridade?: string;
+  tenant_id?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface CriarOSResultado {
+  sucesso: boolean;
+  os_id?: string;
+  os_numero?: string;
+  erro?: string;
+}
+
+/**
+ * Cria uma Ordem de Serviço real a partir de dados estruturados.
+ * Usa o mapper toOSInsert para garantir compatibilidade com o form TMS.
+ * Insere endereços em os_enderecos.
+ * Esta é a única função de criação de OS — tanto TMS quanto Portal usam ela.
+ */
+export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSResultado> {
+  try {
+    // Gerar número da OS
+    const now = new Date();
+    const ano = now.getFullYear();
+    const mes = String(now.getMonth() + 1).padStart(2, '0');
+    const seq = String(Math.floor(Math.random() * 900000) + 100000).padStart(6, '0');
+    const numero = `OS-${ano}${mes}-${seq}`;
+
+    // Montar carga_descricao
+    const cargaDescricao = input.descricao || input.tipo_carga || "Portal Cliente";
+
+    // NOTA: ordens_servico.cliente = UUID (FK clientes.id), cliente_id = TEXT (legado)
+    // input.cliente_id contém o UUID do cliente
+    const payload: Record<string, any> = {
+      numero,
+      data: new Date().toISOString().split('T')[0],
+      cliente_id: input.cliente_id,
+      cliente: input.cliente_id,
+      unidade: input.filial || null,
+      status: input.status || "pendente",
+      origem: input.origem,
+      destino: input.destino,
+      tipo_operacao: input.metadata?.tipo_operacao || "fracionado",
+      carga_descricao: cargaDescricao,
+      peso: input.peso || 0,
+      volumes: input.volumes || 1,
+      valor_declarado: input.valor_declarado || 0,
+      tipo_carga: input.tipo_carga || "seca",
+      observacoes_gerais: input.observacoes || "",
+      carga: {
+        tipo: input.tipo_carga || "seca",
+        descricao: cargaDescricao,
+        volumes: input.volumes || 1,
+        peso: input.peso || 0,
+        cubagem: 0,
+        valorDeclarado: input.valor_declarado || 0,
+        refrigerada: input.tipo_carga === "refrigerado",
+      },
+
+      // Financeiro (cliente-side)
+      valor_cliente: input.valor_cliente || 0,
+      custo_prestador: input.custo_prestador || 0,
+
+      // Datas
+      data_programada: input.data_coleta || null,
+
+      // Metadados
+      prioridade: input.prioridade || "normal",
+      veiculo_sugerido: input.metadata?.veiculo_sugerido || null,
+
+      // Controle
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // MISSAO OS-MOBILE (item 4) — prestador + veículo alocado (aditivo):
+    // `prestador` (UUID) e `prestador_id` (TEXT) são preenchidos com o
+    // MESMO UUID para satisfazer a leitura do trigger M80
+    // (NEW.prestador_id::UUID) e as queries legadas do TMS.
+    if (input.prestador_id) {
+      payload.prestador = input.prestador_id;
+      payload.prestador_id = input.prestador_id_texto || input.prestador_id;
+    }
+    if (input.veiculo_tipo) payload.veiculo_tipo = input.veiculo_tipo;
+    if (input.placa) payload.placa_alocada = input.placa;
+
+    if (input.comprimento) payload.comprimento = input.comprimento;
+    if (input.largura) payload.largura = input.largura;
+    if (input.altura) payload.altura = input.altura;
+
+    // Inserir OS
+    const { data: os, error } = await supabase
+      .from("ordens_servico")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error || !os) {
+      console.error("[criarOrdemServico] Erro ao criar OS:", error?.message);
+      return { sucesso: false, erro: error?.message || "Falha ao criar OS" };
+    }
+
+    // Inserir endereços em os_enderecos
+    if (os.id && input.metadata?.enderecos) {
+      const enderecos = input.metadata.enderecos as any[];
+      if (Array.isArray(enderecos) && enderecos.length > 0) {
+        const endInsert = enderecos.map((e: any) => ({
+          os_id: os.id,
+          sequencia: e.sequencia || 0,
+          tipo: e.tipo || "entrega",
+          nome_local: e.nome_local || e.nomeLocal || "",
+          logradouro: e.logradouro || "",
+          numero: e.numero || "",
+          bairro: e.bairro || "",
+          cidade: e.cidade || "",
+          estado: e.estado || e.uf || "",
+          endereco: e.endereco || "",
+          cep: e.cep || "",
+          referencia: e.referencia || "",
+          responsavel: e.responsavel || "",
+          telefone: e.telefone || "",
+          email: e.email || "",
+          janela_inicio: e.janela_inicio || e.janelaInicio || "",
+          janela_fim: e.janela_fim || e.janelaFim || "",
+          observacao: e.observacao || e.observacaoPonto || "",
+          latitude: e.latitude || null,
+          longitude: e.longitude || null,
+        }));
+        await supabase.from("os_enderecos").insert(endInsert);
+      }
+    }
+
+    // M104: Evento os.ordem_servico.criada publicado pelo trigger SQL trg_evento_os_criada
+
+    return { sucesso: true, os_id: os.id, os_numero: os.numero };
+  } catch (err: any) {
+    console.error("[criarOrdemServico] Erro geral:", err);
+    return { sucesso: false, erro: err.message || "Erro desconhecido" };
+  }
+}
+
 export async function sincronizarFinanceiroOS(osData: Record<string, any>): Promise<ResultadoFinanceiroOS> {
   const osId = osData.id || osData.osId;
-  const osNumero = osData.numero || osData.osNumero || "";
-  const valorCliente = Number(osData.valor_cliente || osData.valorCliente || 0);
-  const valorPrestador = Number(osData.custo_prestador || osData.custoPrestador || 0);
-  const prestadorId = osData.prestador_id || osData.prestadorId;
-  let prestadorNome = osData.prestador || "";
-  const clienteId = osData.cliente_id || osData.clienteId;
-  const clienteNome = osData.cliente || "";
-  const dataOS = osData.data || osData.dataProgramada || new Date().toISOString().split("T")[0];
-  const pedagio = Number(osData.pedagio_valor || osData.pedagio || 0);
-
-  const resultado: ResultadoFinanceiroOS = { sucesso: false, osId };
-
-    if (!osId) {
-    resultado.erro = "OS sem ID";
-    return resultado;
+  if (!osId) {
+    return { sucesso: false, osId: "", erro: "OS sem ID" };
   }
-
-  const osStatus = osData.status || "";
-  const isCancelada = osStatus === "cancelada";
-
-  try {
-    // Buscar prestador_id por nome se necessário
-    let prestadorIdReal = prestadorId;
-    if (!prestadorIdReal && prestadorNome) {
-      const { data: pData } = await supabase
-        .from("prestadores")
-        .select("id")
-        .eq("nome", prestadorNome)
-        .limit(1)
-        .maybeSingle();
-      if (pData) prestadorIdReal = pData.id;
-    }
-
-    // Buscar dados completos do prestador
-    let prestadorDocumento = "";
-    if (prestadorIdReal) {
-      const { data: pd } = await supabase
-        .from("prestadores")
-        .select("nome_completo, cpf_cnpj")
-        .eq("id", prestadorIdReal)
-        .maybeSingle();
-      if (pd) {
-        prestadorNome = pd.nome_completo || prestadorNome;
-        prestadorDocumento = pd.cpf_cnpj || "";
-      }
-    }
-
-    // 1. Financeiro Receber
-    if (valorCliente > 0 && !isCancelada) {
-      const { data: existenteRec } = await supabase
-        .from("financeiro_receber")
-        .select("id")
-        .eq("os_id", osId)
-        .limit(1)
-        .maybeSingle();
-
-      if (existenteRec) {
-        await supabase
-          .from("financeiro_receber")
-          .update({
-            valor: valorCliente,
-            descricao: `Faturamento OS ${osNumero}`,
-            cliente: clienteNome,
-            cliente_id: clienteId || null,
-            status: "aberto",
-          })
-          .eq("id", existenteRec.id);
-        resultado.financeiroReceber = { id: existenteRec.id, valor: valorCliente, action: "updated" };
-      } else {
-        const dataVencimento = new Date();
-        dataVencimento.setDate(dataVencimento.getDate() + 30);
-        const { data: novo, error } = await supabase
-          .from("financeiro_receber")
-          .insert([{
-            os_id: osId,
-            descricao: `Faturamento OS ${osNumero}`,
-            valor: valorCliente,
-            data_vencimento: dataVencimento.toISOString().split("T")[0],
-            status: "aberto",
-            cliente: clienteNome,
-            cliente_id: clienteId || null,
-          }])
-          .select("id,valor")
-          .single();
-        if (novo) resultado.financeiroReceber = { id: novo.id, valor: novo.valor, action: "created" };
-        else if (error) console.error("[FinanceiroAuto] Erro criar receber:", error.message);
-      }
-    } else {
-      // Cancelar receber existente se OS cancelada ou valor zerado
-      const { data: existenteRec } = await supabase
-        .from("financeiro_receber")
-        .select("id")
-        .eq("os_id", osId)
-        .limit(1)
-        .maybeSingle();
-      if (existenteRec) {
-        await supabase
-          .from("financeiro_receber")
-          .update({
-            valor: 0,
-            status: "cancelado",
-          })
-          .eq("id", existenteRec.id);
-        resultado.financeiroReceber = { id: existenteRec.id, valor: 0, action: "updated" };
-      }
-    }
-
-    // 2. Pagamento Prestador
-    if (valorPrestador > 0 && (prestadorIdReal || prestadorNome) && !isCancelada) {
-      const { data: existePg } = await supabase
-        .from("pagamentos_prestadores")
-        .select("id")
-        .eq("os_id", osId)
-        .limit(1)
-        .maybeSingle();
-
-      if (existePg) {
-        await supabase
-          .from("pagamentos_prestadores")
-          .update({
-            prestador_id: prestadorIdReal || null,
-            prestador_nome: prestadorNome,
-            prestador_documento: prestadorDocumento,
-            cliente_id: clienteId || null,
-            cliente_nome: clienteNome || null,
-            valor: valorPrestador,
-            valor_liquido: valorPrestador,
-            valor_servicos: valorPrestador,
-            os_numero: osNumero,
-            data_competencia: dataOS,
-          })
-          .eq("id", existePg.id);
-        resultado.pagamentoPrestador = { id: existePg.id, valor: valorPrestador, action: "updated" };
-      } else {
-        const { data: novo, error } = await supabase
-          .from("pagamentos_prestadores")
-          .insert([{
-            prestador_id: prestadorIdReal || null,
-            prestador_nome: prestadorNome,
-            prestador_documento: prestadorDocumento,
-            cliente_id: clienteId || null,
-            cliente_nome: clienteNome || null,
-            os_id: osId,
-            os_numero: osNumero,
-            tipo_lancamento: "Serviço OS",
-            natureza: "credito",
-            valor: valorPrestador,
-            valor_liquido: valorPrestador,
-            valor_servicos: valorPrestador,
-            data_competencia: dataOS,
-            data_prevista_pagamento: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
-            status_conferencia: "em_aberto",
-            status_pagamento: "pendente",
-            origem_lancamento: "os_finalizada",
-            quantidade_os: 1,
-            periodo_inicio: dataOS,
-            periodo_fim: dataOS,
-            categoria_financeira: "Custo Logístico",
-          }])
-          .select("id,valor")
-          .single();
-        if (novo) resultado.pagamentoPrestador = { id: novo.id, valor: novo.valor, action: "created" };
-        else if (error) console.error("[FinanceiroAuto] Erro criar pagamento:", error.message);
-      }
-    } else {
-      // Cancelar pagamento existente se OS cancelada, sem prestador, ou valor zerado
-      const { data: existePg } = await supabase
-        .from("pagamentos_prestadores")
-        .select("id")
-        .eq("os_id", osId)
-        .limit(1)
-        .maybeSingle();
-      if (existePg) {
-        await supabase
-          .from("pagamentos_prestadores")
-          .update({
-            valor: 0,
-            valor_liquido: 0,
-            valor_servicos: 0,
-            status_conferencia: "cancelado",
-            status_pagamento: "cancelado",
-          })
-          .eq("id", existePg.id);
-        resultado.pagamentoPrestador = { id: existePg.id, valor: 0, action: "updated" };
-      }
-    }
-
-    // 3. Composição Financeira
-    const impostoPercentual = 4.5;
-    const seguroValor = valorCliente * 0.01;
-    const composicaoCalc = calcularComposicaoFinanceira({
-      valor_cliente: valorCliente,
-      valor_prestador: valorPrestador,
-      imposto_percentual: impostoPercentual,
-      seguro_valor: seguroValor,
-      pedagio_valor: pedagio,
-      outros_custos: 0,
-    });
-
-    const composicaoSalva = await salvarComposicaoFinanceira(osId, {
-      ...composicaoCalc,
-      cliente_id: clienteId,
-      prestador_id: prestadorIdReal,
-    });
-
-    if (composicaoSalva.success && composicaoSalva.id) {
-      resultado.composicaoFinanceira = {
-        id: composicaoSalva.id,
-        margemBruta: composicaoCalc.margem_bruta,
-        margemLiquida: composicaoCalc.margem_liquida,
-        action: composicaoSalva.id ? "updated" : "created",
-      };
-    }
-
-    resultado.sucesso = true;
-    return resultado;
-
-  } catch (err: any) {
-    console.error("[FinanceiroAuto] Erro geral:", err);
-    resultado.erro = err.message || "Erro desconhecido";
-    return resultado;
-  }
+  console.log("[M80] sincronizarFinanceiroOS no-op — trigger OS cuida da persistência financeira");
+  return { sucesso: true, osId: osId };
 }
 
 export interface FinalizarOSResult {
@@ -417,24 +478,33 @@ export async function finalizarOrdemServico(osId: string): Promise<FinalizarOSRe
 
     console.log("[OrdemServicoService] Buscando tabela para:", { prestadorId, tipoVeiculo, cidade, uf });
 
-    tabelaUsada = await buscarTabelaPrestador({
-      prestador_id: prestadorId,
-      tipo_veiculo: tipoVeiculo,
-      cidade,
-      uf
+    const origemEnd = Array.isArray(os.enderecos) ? os.enderecos.find((e: any) => e.tipo === "coleta" || e.tipo === "origem") : null;
+    const destinoEnd = Array.isArray(os.enderecos) ? os.enderecos.find((e: any) => e.tipo === "entrega" || e.tipo === "destino") : null;
+    const distanciaKm = os.distancia_rota?.distancia_km || os.distancia_km || 0;
+
+    const buscaTabela = await buscarTabelaPrestador({
+      tenant_id: os.tenant_id || "",
+      cliente_id: os.cliente_id || "",
+      tipo_veiculo: tipoVeiculo || "",
+      tipo_operacao: "fracionado",
+      distancia_km: Number(distanciaKm),
+      quantidade_paradas: 1,
+      origem: { cidade: origemEnd?.cidade || cidade, uf: origemEnd?.uf || uf, endereco: "", bairro: "", cep: "" },
+      destino: { cidade: destinoEnd?.cidade || "", uf: destinoEnd?.uf || "", endereco: "", bairro: "", cep: "" },
+      modo: "preview",
+      prestador_id: prestadorId || undefined,
     });
+    tabelaUsada = buscaTabela?.tabela || null;
 
     // 4. Calcular valor do prestador se tiver distância e tabela
-    if (tabelaUsada && os.distancia_rota) {
-      const distanciaKm = os.distancia_rota?.distancia_km || 
-                          (typeof os.distancia_rota === 'object' ? os.distancia_rota.distancia_km : 0) ||
-                          (os.distancia_km || 0);
-      
-      if (distanciaKm > 0) {
-        const calc = calcularValorPrestador(distanciaKm, tabelaUsada);
-        valorPrestadorCalculado = calc.valor;
-        console.log("[OrdemServicoService] Valor prestador calculado:", calc);
-      }
+    if (tabelaUsada && distanciaKm > 0) {
+      const vmin = Number(tabelaUsada.valor_minimo) || 0;
+      const kmInc = Number(tabelaUsada.km_incluso) || 0;
+      const vKm = Number(tabelaUsada.valor_km) || 0;
+      const vSaida = Number(tabelaUsada.valor_saida) || 0;
+      const kmExc = Math.max(0, distanciaKm - kmInc);
+      valorPrestadorCalculado = Math.round((vmin + (kmExc * vKm) + vSaida) * 100) / 100;
+      console.log("[OrdemServicoService] Valor prestador calculado:", { valor: valorPrestadorCalculado, kmExc });
     } else if (!tabelaUsada) {
       console.log("[OrdemServicoService] Tabela não encontrada, mantendo valor manual ou 0");
     }
@@ -468,190 +538,11 @@ export async function finalizarOrdemServico(osId: string): Promise<FinalizarOSRe
 
     console.log("[OrdemServicoService] OS atualizada para finalizada");
 
-    // 6. Criar/Atualizar financeiro_receber
-    if (valorCliente > 0) {
-      const { data: existenteReceber } = await supabase
-        .from("financeiro_receber")
-        .select("id,valor")
-        .eq("os_id", osId)
-        .limit(1)
-        .maybeSingle();
+    // M80: Financeiro propagado pelo trigger OS (trg_propagar_financeiro_os) ao atualizar status=finalizada
+    // O trigger cuida de financeiro_receber, financeiro_pagar, pagamentos_prestadores, composicao_financeira_os
+    console.log("[OrdemServicoService] Financeiro propagado via trigger OS (M80)");
 
-      if (existenteReceber) {
-        // Atualizar
-        await supabase
-          .from("financeiro_receber")
-          .update({
-            valor: valorCliente,
-            descricao: `Faturamento OS ${os.numero}`,
-            status: "aberto"
-          })
-          .eq("id", existenteReceber.id);
-        
-        result.financeiroReceber = {
-          id: existenteReceber.id,
-          valor: valorCliente,
-          action: "updated"
-        };
-        console.log("[OrdemServicoService] financeiro_receber atualizado:", existenteReceber.id);
-      } else {
-        // Criar
-        const dataVencimento = new Date();
-        dataVencimento.setDate(dataVencimento.getDate() + 30);
-
-        const { data: novoReceber, error: erroReceber } = await supabase
-          .from("financeiro_receber")
-          .insert([{
-            os_id: osId,
-            descricao: `Faturamento OS ${os.numero}`,
-            valor: valorCliente,
-            data_vencimento: dataVencimento.toISOString().split("T")[0],
-            status: "aberto",
-            cliente: os.cliente,
-            cliente_id: os.cliente_id
-          }])
-          .select("id,valor")
-          .single();
-
-        if (erroReceber) {
-          console.log("[OrdemServicoService] Erro ao criar financeiro_receber:", erroReceber.message);
-        } else if (novoReceber) {
-          result.financeiroReceber = {
-            id: novoReceber.id,
-            valor: novoReceber.valor,
-            action: "created"
-          };
-          console.log("[OrdemServicoService] financeiro_receber criado:", novoReceber.id);
-        }
-      }
-    }
-
-    // 7. Criar/Atualizar pagamento em pagamentos_prestadores (fluxo unificado)
-    if (valorPrestadorCalculado > 0 && (os.prestador || os.prestador_id)) {
-      // Buscar dados completos do prestador
-      let prestadorNome = os.prestador || "";
-      let prestadorDocumento = "";
-      if (os.prestador_id) {
-        const { data: prestadorData } = await supabase
-          .from("prestadores")
-          .select("nome_completo, cpf_cnpj")
-          .eq("id", os.prestador_id)
-          .maybeSingle();
-        if (prestadorData) {
-          prestadorNome = prestadorData.nome_completo || prestadorNome;
-          prestadorDocumento = prestadorData.cpf_cnpj || "";
-        }
-      }
-
-      // Verificar se já existe para evitar duplicidade
-      const { data: existentePrestador } = await supabase
-        .from("pagamentos_prestadores")
-        .select("id, valor")
-        .eq("os_id", osId)
-        .eq("origem_lancamento", "os_finalizada")
-        .limit(1)
-        .maybeSingle();
-
-      if (existentePrestador) {
-        await supabase
-          .from("pagamentos_prestadores")
-          .update({
-            prestador_nome: prestadorNome,
-            prestador_documento: prestadorDocumento,
-            cliente_id: os.cliente_id || null,
-            cliente_nome: os.cliente || null,
-            valor: valorPrestadorCalculado,
-            valor_liquido: valorPrestadorCalculado,
-            valor_servicos: valorPrestadorCalculado,
-            tipo_lancamento: "Serviço OS",
-            data_competencia: os.data || new Date().toISOString().split("T")[0],
-          })
-          .eq("id", existentePrestador.id);
-
-        result.pagamentoPrestador = {
-          id: existentePrestador.id,
-          valor: valorPrestadorCalculado,
-          action: "updated"
-        };
-        console.log("[OrdemServicoService] pagamentos_prestadores atualizado:", existentePrestador.id);
-      } else {
-        const { data: novoPrestador, error: erroPrestador } = await supabase
-          .from("pagamentos_prestadores")
-          .insert([{
-            prestador_id: os.prestador_id,
-            prestador_nome: prestadorNome,
-            prestador_documento: prestadorDocumento,
-            cliente_id: os.cliente_id || null,
-            cliente_nome: os.cliente || null,
-            os_id: osId,
-            os_numero: os.numero,
-            tipo_lancamento: "Serviço OS",
-            natureza: "credito",
-            valor: valorPrestadorCalculado,
-            valor_liquido: valorPrestadorCalculado,
-            valor_servicos: valorPrestadorCalculado,
-            data_competencia: os.data || new Date().toISOString().split("T")[0],
-            data_prevista_pagamento: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
-            status_conferencia: "em_aberto",
-            status_pagamento: "pendente",
-            origem_lancamento: "os_finalizada",
-            quantidade_os: 1,
-            periodo_inicio: os.data || new Date().toISOString().split("T")[0],
-            periodo_fim: os.data || new Date().toISOString().split("T")[0],
-            categoria_financeira: "Custo Logístico",
-          }])
-          .select("id,valor")
-          .single();
-
-        if (erroPrestador) {
-          console.error("[OrdemServicoService] Erro ao criar pagamentos_prestadores:", erroPrestador.message);
-        } else if (novoPrestador) {
-          result.pagamentoPrestador = {
-            id: novoPrestador.id,
-            valor: novoPrestador.valor,
-            action: "created"
-          };
-          console.log("[OrdemServicoService] pagamentos_prestadores criado:", novoPrestador.id);
-        }
-      }
-    }
-
-    // 8. Criar/Atualizar composicao_financeira_os
-    const pedagio = os.pedagio_valor || os.pedagio || 0;
-    const impostoPercentual = 4.5; // Default
-    const seguroValor = (valorCliente * 0.01); // 1% placeholder
-
-    const composicaoCalc = calcularComposicaoFinanceira({
-      valor_cliente: valorCliente,
-      valor_prestador: valorPrestadorCalculado,
-      imposto_percentual: impostoPercentual,
-      seguro_valor: seguroValor,
-      pedagio_valor: pedagio,
-      outros_custos: 0
-    });
-
-    const composicaoSalva = await salvarComposicaoFinanceira(osId, {
-      ...composicaoCalc,
-      cliente_id: os.cliente_id,
-      prestador_id: os.prestador_id
-    });
-
-    if (composicaoSalva.success && composicaoSalva.id) {
-      // Buscar dados calculados
-      const { data: composicaoAtualizada } = await supabase
-        .from("composicao_financeira_os")
-        .select("*")
-        .eq("id", composicaoSalva.id)
-        .single();
-
-      result.composicaoFinanceira = {
-        id: composicaoSalva.id,
-        margemBruta: composicaoAtualizada?.margem_bruta || composicaoCalc.margem_bruta,
-        margemLiquida: composicaoAtualizada?.margem_liquida || composicaoCalc.margem_liquida,
-        action: composicaoSalva.id ? "updated" : "created"
-      };
-      console.log("[OrdemServicoService] composicao_financeira_os salva:", composicaoSalva.id);
-    }
+    // M104: Evento os.ordem_servico.finalizada publicado pelo trigger SQL trg_evento_os_finalizada
 
     result.success = true;
     console.log("[OrdemServicoService] Finalização concluída com sucesso!");
@@ -670,83 +561,6 @@ export interface ResultadoSyncOSEscala {
   osId?: string;
   mensagem?: string;
   erro?: string;
-}
-
-/**
- * Sincroniza financeiro direto de alocacao (sem OS vinculada).
- * Usa alocacao_id como referencia nas tabelas financeiras.
- */
-async function sincronizarFinanceiroOSAlocacao(alocId: string, alocData: Record<string, any>): Promise<ResultadoFinanceiroOS> {
-  const resultado: ResultadoFinanceiroOS = { sucesso: false, osId: alocId };
-
-  try {
-    const valorCliente = Number(alocData.valor_frete || alocData.valor_cliente || alocData.financeiro?.valorCliente || 0);
-    const valorPrestador = Number(alocData.valor_repasse || alocData.custo_prestador || alocData.financeiro?.valorFixo || 0);
-    const prestadorId = alocData.prestador_id || alocData.prestadorId;
-    const prestadorNome = alocData.prestador_nome || alocData.prestador || alocData.prestadorNome || '';
-    const clienteId = alocData.cliente_id || alocData.clienteId;
-    const clienteNome = alocData.cliente_nome || alocData.cliente || alocData.clienteNome || '';
-    const dataEscala = alocData.data_escala || alocData.data || new Date().toISOString().split('T')[0];
-    const tipoVeiculo = alocData.tipo_veiculo || alocData.prestadorVeiculo?.tipo_veiculo || '';
-    const pedagio = Number(alocData.valor_pedagio || alocData.financeiro?.pedagio || 0);
-    const osNumero = `ALOC-${alocId.slice(0, 8)}`;
-
-    console.log("[ESCALA_FINANCEIRO_DEBUG] sincronizarFinanceiroOSAlocacao", {
-      alocId,
-      valorCliente,
-      valorPrestador,
-      prestadorId,
-      prestadorNome,
-      clienteId,
-      clienteNome,
-      dataEscala,
-      osNumero,
-    });
-
-    let prestadorIdReal = prestadorId;
-    let prestadorDocumento = '';
-    if (prestadorIdReal) {
-      const { data: pd } = await supabase.from("prestadores").select("nome_completo, cpf_cnpj").eq("id", prestadorIdReal).maybeSingle();
-      if (pd) {
-        prestadorDocumento = pd.cpf_cnpj || '';
-      }
-    }
-
-    const dataVencimento = new Date();
-    dataVencimento.setDate(dataVencimento.getDate() + 30);
-    const dataVencStr = dataVencimento.toISOString().split("T")[0];
-
-    if (valorCliente > 0) {
-      const { data: existenteRec } = await supabase.from("financeiro_receber").select("id").eq("os_id", alocId).limit(1).maybeSingle();
-      if (existenteRec) {
-        await supabase.from("financeiro_receber").update({ valor: valorCliente, cliente: clienteNome, cliente_id: clienteId || null, status: "aberto" }).eq("id", existenteRec.id);
-        resultado.financeiroReceber = { id: existenteRec.id, valor: valorCliente, action: "updated" };
-      } else {
-        const { data: novo, error } = await supabase.from("financeiro_receber").insert([{ os_id: alocId, descricao: `Faturamento ${osNumero}`, valor: valorCliente, data_vencimento: dataVencStr, status: "aberto", cliente: clienteNome, cliente_id: clienteId || null }]).select("id,valor").single();
-        if (novo) resultado.financeiroReceber = { id: novo.id, valor: novo.valor, action: "created" };
-        else if (error) console.error("[FinanceiroAloc] Erro criar receber:", error.message);
-      }
-    }
-
-    if (valorPrestador > 0 && (prestadorIdReal || prestadorNome)) {
-      const { data: existePg } = await supabase.from("pagamentos_prestadores").select("id").eq("os_id", alocId).limit(1).maybeSingle();
-      if (existePg) {
-        await supabase.from("pagamentos_prestadores").update({ prestador_id: prestadorIdReal || null, prestador_nome: prestadorNome, prestador_documento: prestadorDocumento, cliente_id: clienteId || null, cliente_nome: clienteNome || null, valor: valorPrestador, valor_liquido: valorPrestador, valor_servicos: valorPrestador, os_numero: osNumero, data_competencia: dataEscala }).eq("id", existePg.id);
-        resultado.pagamentoPrestador = { id: existePg.id, valor: valorPrestador, action: "updated" };
-      } else {
-        const { data: novo, error } = await supabase.from("pagamentos_prestadores").insert([{ prestador_id: prestadorIdReal || null, prestador_nome: prestadorNome, prestador_documento: prestadorDocumento, cliente_id: clienteId || null, cliente_nome: clienteNome || null, os_id: alocId, os_numero: osNumero, tipo_lancamento: "Serviço Escala", natureza: "credito", valor: valorPrestador, valor_liquido: valorPrestador, valor_servicos: valorPrestador, data_competencia: dataEscala, data_prevista_pagamento: dataVencStr, status_conferencia: "em_aberto", status_pagamento: "pendente", origem_lancamento: "escala_direta", quantidade_os: 1, periodo_inicio: dataEscala, periodo_fim: dataEscala, categoria_financeira: "Custo Logístico" }]).select("id,valor").single();
-        if (novo) resultado.pagamentoPrestador = { id: novo.id, valor: novo.valor, action: "created" };
-        else if (error) console.error("[FinanceiroAloc] Erro criar pagamento:", error.message);
-      }
-    }
-
-    resultado.sucesso = true;
-    return resultado;
-  } catch (err: any) {
-    console.error("[FinanceiroAloc] Erro geral:", err);
-    resultado.erro = err.message;
-    return resultado;
-  }
 }
 
 /**
@@ -775,14 +589,12 @@ export async function sincronizarOSEscala(alocacaoData: Record<string, any>): Pr
   });
 
   if (!osId) {
-    console.log("[ESCALA_FINANCEIRO_DEBUG] Sem OS vinculada, sincronizando financeiro direto");
-    const syncResult = await sincronizarFinanceiroOSAlocacao(alocId, alocacaoData);
-    if (syncResult.sucesso) {
-      console.log("[ESCALA_FINANCEIRO_DEBUG] Financeiro direto OK:", JSON.stringify(syncResult));
-      return { sucesso: true, acao: "financeiro_direto", mensagem: "Financeiro sincronizado diretamente da alocação" };
-    }
-    console.error("[ESCALA_FINANCEIRO_DEBUG] Financeiro direto falhou:", syncResult.erro);
-    return { sucesso: false, acao: "financeiro_falhou", erro: syncResult.erro || "Financeiro não sincronizado" };
+    // MISSÃO 76: Removida chamada a sincronizarFinanceiroOSAlocacao() que duplicava trigger M66.
+    // A trigger SQL f_trg_propagar_financeiro_alocacao já propaga automaticamente
+    // os valores de alocacoes_escala para financeiro_receber, pagamentos_prestadores
+    // e composicao_financeira_os quando a alocação é inserida/atualizada.
+    console.log("[ESCALA_FINANCEIRO_DEBUG] Sem OS vinculada. Trigger M66 cuidará da propagação financeira.");
+    return { sucesso: true, acao: "financeiro_trigger_m66", mensagem: "Propagação financeira delegada à trigger M66" };
   }
 
     let alocacao = alocacaoData;
@@ -852,34 +664,11 @@ export async function sincronizarOSEscala(alocacaoData: Record<string, any>): Pr
       return { sucesso: false, acao: "ignorada", erro: updError.message };
     }
 
-    // Sincronizar financeiro após atualizar OS
-    const osDataCompleto = { ...updatePayload, id: osId, numero: osAtual.id };
-    sincronizarFinanceiroOS(osDataCompleto).catch((e) =>
-      console.error("[SyncOSEscala] Financeiro não sincronizado:", e.message)
-    );
-
-    return { sucesso: true, acao: "atualizada", osId, mensagem: "OS atualizada a partir da Escala" };
+    // M80: Financeiro propagado pelo trigger OS — não mais pelo TS
+    return { sucesso: true, acao: "atualizada", osId, mensagem: "OS atualizada a partir da Programação Operacional" };
   } catch (err: any) {
     console.error("[SyncOSEscala] Erro geral:", err);
     return { sucesso: false, acao: "ignorada", erro: err.message };
   }
 }
 
-// Função para verificar duplicidade
-export async function verificarDuplicidadeFinanceira(osId: string): Promise<{
-  financeiroReceberCount: number;
-  pagamentoPrestadorCount: number;
-  composicaoFinanceiraCount: number;
-}> {
-  const [receber, pagamento, composicao] = await Promise.all([
-    supabase.from("financeiro_receber").select("id", { count: "exact" }).eq("os_id", osId),
-    supabase.from("pagamentos_prestadores").select("id", { count: "exact" }).eq("os_id", osId),
-    supabase.from("composicao_financeira_os").select("id", { count: "exact" }).eq("os_id", osId)
-  ]);
-
-  return {
-    financeiroReceberCount: receber.count || 0,
-    pagamentoPrestadorCount: pagamento.count || 0,
-    composicaoFinanceiraCount: composicao.count || 0
-  };
-}

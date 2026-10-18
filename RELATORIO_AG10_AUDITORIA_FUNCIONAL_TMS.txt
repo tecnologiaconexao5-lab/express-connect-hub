@@ -1,0 +1,317 @@
+============================================================
+AG-10 — AUDITORIA FUNCIONAL PROFUNDA DO TMS
+============================================================
+
+1. RESUMO EXECUTIVO
+A auditoria revelou que a base principal do sistema (Contas a Pagar/Receber, Torre de Controle, PDFs e Portal do Cliente) está consumindo dados reais do Supabase e não se apoia em falsos mocks. No entanto, foram identificados grandes gargalos arquiteturais de agregação de dados no frontend (Dashboards), tabelas inexistentes no módulo de seguros, duplicação na persistência de POD (comprovantes) e abas isoladas (como Plano de Contas e Busca do AppTopbar) que usam dados hardcoded ou não estão implementadas.
+
+2. MÓDULOS AUDITADOS
+- Financeiro (Dashboards, Seguros, Plano de Contas, Faturas, Conciliação, Margem, etc.)
+- Operacional (Operações, OS, Logística Reversa, Pátio)
+- Torre de Controle (Realtime, Tracking, Chat)
+- Comprovantes / POD (Evidências)
+- Recrutamento / Cadastros
+- Clientes (Portal Cliente)
+- Relatórios / PDFs
+- Configurações (Permissões, Regras)
+- Cross-cutting (AppTopbar, AI Assistant)
+
+3. MÓDULOS TOTALMENTE OK
+- Torre de Controle (Realtime/Chat)
+- POD/Comprovantes (Evidências e Renderização)
+- Recrutamento/Cadastro (Wrappers e Fluxo multi-step)
+- Relatórios/PDFs (jsPDF dinâmico sem mocks)
+- Controle de Pátio
+
+4. P0 ENCONTRADOS
+- Nenhum P0 impeditivo crasso que quebre o sistema inteiro no estado atual foi encontrado. (O Realtime da Torre está OK e é crítico).
+
+5. P1 ENCONTRADOS
+- F01: Dashboard Financeiro (agregação massiva no front)
+- F02: Seguros Financeiro (tabelas inexistentes e erros silenciados)
+- F03: Plano de Contas (mocks isolados na memória)
+- CLI-001: Portal Cliente (agregação de grande volume no front, arquivo massivo)
+- POD-001: Fonte de verdade duplicada no POD
+- APP-001: Busca Global e Notificações (AppTopbar usa mockDb estático)
+
+6. P2 ENCONTRADOS
+- F04: Contabilidade Financeiro
+- F06: FaturaLista (Input de UUID)
+- F08: Exportações Financeiras (Aba Rentabilidade)
+- OPS-001: Logística Reversa e Reentregas
+- TORRE-002: Exposição técnica de UUID no Tracking
+- CFG-001: Permissões de rotas hardcoded e Fallback localStorage
+
+7. P3 ENCONTRADOS
+- F05: Conciliação Avançada
+- F07: Margem Operacional (Botões fantasmas)
+- OPS-002: Código morto (sincronizarFinanceiroOS)
+- OPS-003: Controle de Pátio (Refatoração de tamanho)
+- TORRE-001: Sincronização RT (Informativo)
+- POD-002: Fluxo E2E (Informativo)
+- CAD-001: Recrutamento (Informativo)
+- REL-001: Relatórios PDF (Informativo)
+
+8. MOCKS/HARDCODES
+- Busca no AppTopbar: `mockDb` sendo filtrado.
+- Notificações no AppTopbar: array fixo na inicialização.
+- IA Assistant Widgets: `mockCandidatos` na simulação de Alocação.
+- Plano de Contas: `mockPlanoContas`
+- Seguros Financeiros: `mockApolices`, `mockAverbacoes`.
+
+9. INTEGRAÇÕES FRÁGEIS
+- Seguros: Tenta fazer insert no supabase em tabela inexistente e engole o erro `42P01`.
+
+10. DUPLICIDADES/RISCOS FINANCEIROS
+- POD-001: Comprovantes salvos simultaneamente em `alocacoes_escala` e `entregas_protocolo`. Risco de dessincronização em falhas parciais.
+
+11. ROTAS/BOTÕES/COMPONENTES QUEBRADOS
+- Botões de Exportar PDF/Excel inativos na aba de Rentabilidade do Financeiro (F08).
+- Botão fantasma na listagem de Margem Operacional (F07).
+- Busca de fatura por cliente exigindo digitação de UUID (F06).
+
+12. DADOS TÉCNICOS EXPOSTOS
+- TORRE-002: Fallback do Rastreio mostrando substring do UUID da OS.
+- F06: Placeholder de Filtro exigindo UUID.
+
+13. REGISTROS LEGADOS/TESTE
+- OPS-002: `sincronizarFinanceiroOS` no `ordemServicoService` mantido mas vazio (no-op).
+
+14. PROBLEMAS DE FONTE DA VERDADE
+- POD-001: Arquitetura de comprovação dupla, onde há um risco de `metadata.pod` diferir de `entregas_protocolo`.
+
+15. PROBLEMAS QUE EXIGEM PRODUÇÃO/HOMOLOGAÇÃO REAL
+- Para testar integralmente a escalabilidade e os engasgos do F01 (DashboardFinanceiroEnterprise) e CLI-001 (Portal Cliente) é necessário massa de dados real.
+
+16. LISTA DE FUNCIONALIDADES NÃO IMPLEMENTADAS
+- Logística Reversa (OPS-001)
+- Demandas de Reentrega (OPS-001)
+- Conciliação Avançada (OFX/CSV) (F05)
+- Plano de Contas e Contabilidade (F03, F04)
+
+17. TESTES EXECUTADOS
+- Varredura estática de código-fonte de todos os arquivos.
+- Busca estruturada (grep) por keywords (mock, TODO, Placeholder).
+- Leitura sintática e lógica de funções críticas de serviços e componentes chave.
+
+18. LIMITAÇÕES DA AUDITORIA
+- Auditoria 100% estática via análise do código TypeScript/React.
+- Não houve execução do sistema no navegador para constatar falhas de usabilidade em tempo real.
+- As consultas ao banco (views e RPCs) foram presumidas com base no que os serviços chamam; não foi efetuada uma validação interna do banco de dados (esquema vs services).
+
+19. MATRIZ MESTRE DOS ACHADOS
+
+--------------------------------------------------
+ID: F01
+MÓDULO: Financeiro (Dashboard)
+STATUS: 🟠 RISCO
+PRIORIDADE: P1
+TIPO: arquitetura
+EVIDÊNCIA: `DashboardFinanceiroEnterprise.tsx:92-117` (`fetchData`). Agregações e reduções pesadas (`useMemo` em arrays inteiros) no lado do cliente com base em dezenas de registros brutos.
+IMPACTO: Gargalo de performance; congelamento de UI com massa alta de dados.
+CORREÇÃO RECOMENDADA: Transferir agregações para Views/RPCs no banco.
+ARQUIVOS PROVÁVEIS: `DashboardFinanceiroEnterprise.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F02
+MÓDULO: Financeiro (Seguros)
+STATUS: 🔴 QUEBRADO
+PRIORIDADE: P1
+TIPO: dados / legado/teste
+EVIDÊNCIA: `SegurosFinanceiro.tsx:30-50` (`mockApolices`, `mockAverbacoes`). `SegurosFinanceiro.tsx:78` esconde exceção `42P01` (relation does not exist) do Supabase.
+IMPACTO: Perda de dados submetidos pelo usuário (sucesso falso em tela).
+CORREÇÃO RECOMENDADA: Criar as tabelas reais, remover os dados hardcoded, expor os erros reais do banco no componente.
+ARQUIVOS PROVÁVEIS: `SegurosFinanceiro.tsx`, migrações SQL.
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F03
+MÓDULO: Financeiro (Plano de Contas)
+STATUS: ⚪ NÃO IMPLEMENTADO
+PRIORIDADE: P1
+TIPO: financeiro / legado/teste
+EVIDÊNCIA: `PlanoContas.tsx:44-72` usa estado em memória (`mockPlanoContas`) e o save só altera o state local.
+IMPACTO: Funcionalidade não persiste nada.
+CORREÇÃO RECOMENDADA: Conectar com o serviço real para tabela de plano de contas.
+ARQUIVOS PROVÁVEIS: `PlanoContas.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F04
+MÓDULO: Financeiro (Contabilidade)
+STATUS: ⚪ NÃO IMPLEMENTADO
+PRIORIDADE: P2
+TIPO: legado/teste
+EVIDÊNCIA: `ContabilidadeFinanceiro.tsx:41-54`, `77-90`. Strings e valores fixos no código.
+IMPACTO: Apenas UI demonstrativa.
+CORREÇÃO RECOMENDADA: Ligar aos dados do backend (ou remover se não estiver no roadmap).
+ARQUIVOS PROVÁVEIS: `ContabilidadeFinanceiro.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F05
+MÓDULO: Financeiro (Conciliação)
+STATUS: ⚪ NÃO IMPLEMENTADO
+PRIORIDADE: P3
+TIPO: funcional
+EVIDÊNCIA: `ConciliacaoAvancada.tsx:56-62`. Exibe alert informando que não está implementado.
+IMPACTO: Funcionalidade indisponível.
+CORREÇÃO RECOMENDADA: Implementar importação OFX/CSV.
+ARQUIVOS PROVÁVEIS: `ConciliacaoAvancada.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F06
+MÓDULO: Financeiro (Faturas)
+STATUS: 🟠 RISCO
+PRIORIDADE: P2
+TIPO: navegação / usabilidade
+EVIDÊNCIA: `FaturaLista.tsx:201-202`. Input de pesquisa placeholder "uuid".
+IMPACTO: UX ruim, exposição de UUID.
+CORREÇÃO RECOMENDADA: Usar AutoComplete component.
+ARQUIVOS PROVÁVEIS: `FaturaLista.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F07
+MÓDULO: Financeiro (Margem)
+STATUS: 🟡 PARCIAL
+PRIORIDADE: P3
+TIPO: funcional
+EVIDÊNCIA: `MargemOperacional.tsx:150-152`. Botão com ícone Eye não possui `onClick`.
+IMPACTO: Clique sem ação.
+CORREÇÃO RECOMENDADA: Atrelar função de detalhe.
+ARQUIVOS PROVÁVEIS: `MargemOperacional.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: F08
+MÓDULO: Financeiro (Rentabilidade)
+STATUS: 🟡 PARCIAL
+PRIORIDADE: P2
+TIPO: relatórios
+EVIDÊNCIA: `Financeiro.tsx` botões de PDF/Excel inativos.
+IMPACTO: Funcionalidade não conectada.
+CORREÇÃO RECOMENDADA: Ligar ao gerador.
+ARQUIVOS PROVÁVEIS: `Financeiro.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: OPS-001
+MÓDULO: Operacional
+STATUS: ⚪ NÃO IMPLEMENTADO
+PRIORIDADE: P2
+TIPO: funcional
+EVIDÊNCIA: `Operacao.tsx:93-108`. Renderiza `PlaceholderPage`.
+IMPACTO: Abas de devoluções/reentregas inacessíveis.
+CORREÇÃO RECOMENDADA: Implementar funcionalidades pendentes.
+ARQUIVOS PROVÁVEIS: `Operacao.tsx`, `DemandasReentregaLista.tsx` (a criar).
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: OPS-002
+MÓDULO: Operacional
+STATUS: 🟡 PARCIAL
+PRIORIDADE: P3
+TIPO: legado/teste
+EVIDÊNCIA: `ordemServicoService.ts:210-216`. `sincronizarFinanceiroOS` virou no-op.
+IMPACTO: Código obsoleto.
+CORREÇÃO RECOMENDADA: Remover e limpar chamadas.
+ARQUIVOS PROVÁVEIS: `ordemServicoService.ts`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: TORRE-002
+MÓDULO: Torre de Controle
+STATUS: 🟠 RISCO
+PRIORIDADE: P2
+TIPO: dados
+EVIDÊNCIA: `Tracking.tsx:62`. `osData.id.slice(0, 8)` como código rastreio.
+IMPACTO: Exposição UUID e instabilidade para uso do cliente.
+CORREÇÃO RECOMENDADA: Criar gerador de código semântico amigável de rastreio.
+ARQUIVOS PROVÁVEIS: `Tracking.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: POD-001
+MÓDULO: Comprovantes
+STATUS: 🟠 RISCO
+PRIORIDADE: P1
+TIPO: dados
+EVIDÊNCIA: `podService.ts:85-97`. Insere em duas tabelas para provar entrega.
+IMPACTO: Risco de assimetria.
+CORREÇÃO RECOMENDADA: Manter `entregas_protocolo` como única fonte da verdade e usar View ou JOIN para leitura.
+ARQUIVOS PROVÁVEIS: `podService.ts`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: CLI-001
+MÓDULO: Clientes
+STATUS: 🟡 PARCIAL
+PRIORIDADE: P1
+TIPO: arquitetura
+EVIDÊNCIA: `PortalCliente.tsx` e `portalClienteService.ts:356+`. O arquivo possui ~341KB e faz processamento massivo em memória.
+IMPACTO: Peso grande no client e baixa manutenção devido ao tamanho.
+CORREÇÃO RECOMENDADA: Quebrar em submódulos menores, agregar dados usando Views do Supabase.
+ARQUIVOS PROVÁVEIS: `PortalCliente.tsx`, `portalClienteService.ts`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: CFG-001
+MÓDULO: Configurações
+STATUS: 🟡 PARCIAL
+PRIORIDADE: P2
+TIPO: segurança operacional
+EVIDÊNCIA: `routePermissions.ts` controla rotas sem garantia total que a base reflete essas roles, e fallback no `configuracoesService.ts`.
+IMPACTO: Potencial discrepância permissão de tela vs API real.
+CORREÇÃO RECOMENDADA: Garantir sincronia com RLS; alertar usuário do uso do fallback local.
+ARQUIVOS PROVÁVEIS: `routePermissions.ts`, `configuracoesService.ts`
+DEPENDE DE PRODUÇÃO? SIM (para verificar RLS real em dev/prod).
+DEPENDE DO APP? NÃO
+
+--------------------------------------------------
+ID: APP-001
+MÓDULO: Sistema (Topbar)
+STATUS: 🟠 RISCO
+PRIORIDADE: P1
+TIPO: integração
+EVIDÊNCIA: `AppTopbar.tsx:121-128`. `mockDb` sendo percorrido no campo de busca. Além disso, notificações estão fixas.
+IMPACTO: O principal campo de busca no cabeçalho inteiro do sistema retorna dados irreais.
+CORREÇÃO RECOMENDADA: Integrar campo de busca com RPC (ex: busca global Full Text Search).
+ARQUIVOS PROVÁVEIS: `AppTopbar.tsx`
+DEPENDE DE PRODUÇÃO? NÃO
+DEPENDE DO APP? NÃO
+
+============================================================
+FECHAMENTO
+============================================================
+TMS AUDITADO: SIM
+PRODUÇÃO ALTERADA: NÃO
+CÓDIGO ALTERADO: NÃO
+P0: 0
+P1: 6
+P2: 6
+P3: 6
+FUNCIONALIDADES QUEBRADAS: 1
+FUNCIONALIDADES PARCIAIS: 5
+FUNCIONALIDADES NÃO IMPLEMENTADAS: 4
+RISCO DE DUPLICIDADE FINANCEIRA: SIM
+MOCK/HARDCODE REAL IDENTIFICADO: SIM
+AG-10: CONCLUÍDA SIM
+
+PRÓXIMA MISSÃO:
+AG-09 — AUDITORIA FUNCIONAL PROFUNDA DO APP PRESTADOR

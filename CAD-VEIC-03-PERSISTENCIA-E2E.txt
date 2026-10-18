@@ -1,0 +1,170 @@
+CAD-VEIC-03-PERSISTENCIA-E2E
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: BUILD/EXECUÇÃO
+
+==================================================
+FASE 1 — PREPARAÇÃO
+==================================================
+
+TEST_PROVIDER_ID=c1e3055c-114e-4a96-b674-39405e1610bc
+  ("M43_2026-06-29_18-27-54 Motorista Teste")
+TEST_PROVIDER_SAFE=YES (0 alocações, 0 financeiro, 0 veículos antes do teste)
+TEST_VEHICLE_CREATED=YES (temporário, removido no cleanup)
+
+NÃO utilizados/alteados:
+  Clayton 0673eca2-4594-4842-b78f-cd6cabe9177d (intacto)
+  Veículo c487f012-208e-47ae-b5d8-e976382eaab0 / GEW-2H93 (intacto)
+
+==================================================
+E2E REAL (fluxo do Cadastro do Prestador)
+==================================================
+
+Payload espelha handleAddVeiculo: sanitizeVeiculoPayload({ placa,
+  ...camposTipoVeiculo(tipo), marca, modelo, ano, tipo_carga,
+  principal, status, prestador_vinculado, timestamps }).
+
+TEST_VEHICLE_ID=fa589917-7df9-4973-93c4-b81240f04dbd
+CREATE_PERSISTENCE=PASS
+VEHICLE_REAL_ID=PASS
+CREATE_tipo_veiculo="fiorino"
+CREATE_tipo="fiorino"
+CANONICAL_CREATE_MATCH=YES
+LEGACY_MIRROR_CREATE_MATCH=YES
+
+CREATE_RELOAD=PASS (nova leitura do banco)
+UI_TYPE_AFTER_RELOAD=fiorino
+CANONICAL_FIRST_READ=YES
+
+UPDATE (fiorino → vuc):
+UPDATE_PERSISTENCE=PASS
+UPDATE_tipo_veiculo="vuc"
+UPDATE_tipo="vuc"
+CANONICAL_UPDATE_MATCH=YES
+LEGACY_MIRROR_UPDATE_MATCH=YES
+
+UPDATE_RELOAD=PASS (segunda reabertura)
+UI_TYPE_AFTER_SECOND_RELOAD=vuc
+OLD_TYPE_NOT_RETURNED=YES
+CANONICAL_VALUE_SURVIVES_RELOAD=YES
+
+==================================================
+TESTE NEGATIVO (sem gravação)
+==================================================
+
+EMPTY_TYPE_SAVE_BLOCKED=YES
+  (validação "Selecione o tipo de veículo" + botão desabilitado
+   `!novoVeiculo.placa || !novoVeiculo.tipoVeiculo`)
+ARTIFICIAL_FIORINO_DEFAULT=NO (default removido em CAD-VEIC-02)
+
+==================================================
+FALSO SUCESSO
+==================================================
+
+FALSE_SUCCESS_CREATE=NO  (ADD: insert().select() + checagem de resultado vazio)
+FALSE_SUCCESS_UPDATE=NO  (EDIT: update().select("id") + checagem de resultado vazio)
+
+Melhoria aplicada nesta missão (pequena, inequívoca):
+  - handleAddVeiculo: exige `veiculoResult.length > 0` antes do toast de sucesso.
+  - handleUpdateVeiculo: passou a usar `.select("id")` e exige `updResult.length > 0`.
+
+==================================================
+LIMPEZA DO TESTE
+==================================================
+
+TEST_DATA_CLEANUP_REQUIRED=NO (já executado)
+TEST_DATA_REFERENCES=[] (nenhuma FK: alocacoes_escala/ordens_servico)
+TEST_DATA_CLEANUP_RESULT=DELETED_CONFIRMED
+  (veículo de teste removido; provider volta a 0 veículos — sem cascade/histórico)
+
+==================================================
+REGRESSÕES
+==================================================
+
+CAD_VEIC_02_PRESERVED=PASS
+ESCALA05_PRESERVED=PASS
+ESCALA06_PRESERVED=PASS
+ESCALA07_PRESERVED=PASS
+ESCALA_PRESTADOR_02_PRESERVED=PASS
+
+Testes direcionados: 104/104 PASS
+  cad_veic_03 (8), cad_veic_02 (19), escala_veic_tabela_05 (24),
+  escala_veic_tabela_06 (16), escala_veic_tabela_07 (19), escala_prestador_02 (18)
+Suíte completa: 1392 passed | 57 failed (100% pré-existentes) | 155 skipped
+TYPECHECK=0 erros novos nos arquivos da missão
+BUILD=✓ built in 41.86s
+
+==================================================
+RESULTADO OBRIGATÓRIO
+==================================================
+
+TEST_PROVIDER_ID=c1e3055c-114e-4a96-b674-39405e1610bc
+TEST_PROVIDER_SAFE=YES
+
+TEST_VEHICLE_ID=fa589917-7df9-4973-93c4-b81240f04dbd
+CREATE_PERSISTENCE=PASS
+VEHICLE_REAL_ID=PASS
+
+CREATE_tipo_veiculo=fiorino
+CREATE_tipo=fiorino
+CANONICAL_CREATE_MATCH=YES
+LEGACY_MIRROR_CREATE_MATCH=YES
+
+CREATE_RELOAD=PASS
+UI_TYPE_AFTER_RELOAD=fiorino
+CANONICAL_FIRST_READ=YES
+
+UPDATE_PERSISTENCE=PASS
+UPDATE_tipo_veiculo=vuc
+UPDATE_tipo=vuc
+CANONICAL_UPDATE_MATCH=YES
+LEGACY_MIRROR_UPDATE_MATCH=YES
+
+UPDATE_RELOAD=PASS
+UI_TYPE_AFTER_SECOND_RELOAD=vuc
+OLD_TYPE_NOT_RETURNED=YES
+CANONICAL_VALUE_SURVIVES_RELOAD=YES
+
+EMPTY_TYPE_SAVE_BLOCKED=YES
+ARTIFICIAL_FIORINO_DEFAULT=NO
+
+FALSE_SUCCESS_CREATE=NO
+FALSE_SUCCESS_UPDATE=NO
+
+TEST_DATA_CLEANUP_REQUIRED=NO
+TEST_DATA_REFERENCES=[]
+TEST_DATA_CLEANUP_RESULT=DELETED_CONFIRMED
+
+CAD_VEIC_02_PRESERVED=PASS
+ESCALA05_PRESERVED=PASS
+ESCALA06_PRESERVED=PASS
+ESCALA07_PRESERVED=PASS
+ESCALA_PRESTADOR_02_PRESERVED=PASS
+
+FILES_MODIFIED=src/components/prestadores/PrestadorDetalhe.tsx,
+  src/test/cad_veic_03_persistencia_e2e.test.ts (novo)
+
+DB_WRITES=3 (insert+update+delete do veículo de TESTE)
+MIGRATIONS=0
+
+==================================================
+PENDÊNCIAS HUMANAS (NÃO resolvidas aqui)
+==================================================
+
+- modelo "SAVEIRO RB MBVS" × tipo_veiculo=fiorino (Clayton/GEW-2H93)
+- tipo_carga=misto
+- duplicado Clayton bloqueado
+Nenhum desses dados foi alterado.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Sem teste destrutivo com prestador real (usado provider de teste sem refs).
+- Clayton/GEW-2H93 intactos. Saveiro/Fiorino NÃO decidido. Sem térmica inventada.
+- Sem migration/RLS. Não tocou Clientes/Fatura/Comercial/Escala/Financeiro/APP/POD.
+- Não iniciou outra missão.
+
+DB_WRITES=3
+MIGRATIONS=0

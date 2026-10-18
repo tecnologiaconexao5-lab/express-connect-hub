@@ -1,0 +1,10 @@
+// ARQUIVO NEUTRALIZADO em TMS-FIN-DATA-04D3C2 (conteudo original, sanitizado, NAO EXECUTAVEL)
+const { Client } = require('pg');
+const DB_URL = process.env.DBURL;
+(async () => {
+  const c = new Client({ connectionString: DB_URL });
+  await c.connect();
+  const r = await c.query("SELECT id, ordem_servico_id, prestador_id, status, finalizada, data_escala, data_finalizacao, horario_inicio_real, horario_fim_real, operation_mode, rota FROM public.alocacoes_escala WHERE prestador_id = 'e6646799-fbac-453e-a3ef-afdfc01a7085' ORDER BY created_at DESC LIMIT 15");
+  console.log(JSON.stringify(r.rows, null, 2));
+  await c.end();
+})().catch(e => { console.error('ERR', e.message); process.exit(1); });

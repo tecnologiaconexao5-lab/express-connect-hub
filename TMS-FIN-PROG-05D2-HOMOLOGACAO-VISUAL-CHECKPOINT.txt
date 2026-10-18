@@ -1,0 +1,129 @@
+================================================================================
+MISSAO: TMS-FIN-PROG-05D.2-HOMOLOGACAO-VISUAL-GATE
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (somente leitura)
+MODELO: DeepSeek V4.1 Flash
+REDMI: NAO conectado
+TIPO: Homologacao visual do gate administrativo. Sem emissao. Sem migration.
+================================================================================
+
+RESULTADO: GATE VISUAL PREPARADO — AGUARDANDO APROVACAO VISUAL DO ADMIN
+NENHUMA FATURA EMITIDA. NENHUMA CONTA A RECEBER CRIADA. BANCO PROD INALTERADO.
+
+--------------------------------------------------------------------------------
+1. FATURA / FIXTURE ESCOLHIDA
+--------------------------------------------------------------------------------
+- fatura_id ................ 97ecfca1-54a7-4483-9729-94035c6c086c
+- Cliente .................. CLIENTE HOMOLOGACAO TMS 136A LTDA (fantasia: CLIENTE HML 136A)
+- cliente_id ............... 336c5b17-cefd-488c-a927-32ea0dc9a161
+- Nº/Controle do cliente ... FIN3623C-1788614228622 (metadata.numeroManual)
+- Descricao ................ FIN3623C HOMOLOGACAO PDF CONEXAO EXPRESS
+- Origem ................... manual (fixture de homologacao criada na FIN-MASTER-362.3C)
+- Valor total .............. R$ 123,46
+- Itens .................... 1
+- Vencimento ............... 05/10/2026
+
+--------------------------------------------------------------------------------
+2. PROVA DE QUE E SEGURA PARA HOMOLOGACAO
+--------------------------------------------------------------------------------
+- status = rascunho (NAO emitida)
+- conta_receber_id = NULL
+- Conta a Receber (financeiro_receber) por fatura_id = 0
+- os_id = NULL e alocacao_id = NULL (nao afeta operacao)
+- Cliente de HOMOLOGACAO (nao e cliente real)
+- EXCLUSOES RESPEITADAS:
+    * NAO e FAT-2026-000016
+    * NAO e fatura 38/39/40/41/42 (numero e numero_cliente = NULL)
+    * NAO e DVL (as ARs DVL pertencem a cliente 'DVL - DISTRIBUIDORA')
+    * NAO e classe F (classificacao legada de AR)
+    * NAO e fatura real ambigua
+    * NAO possui risco financeiro (AR = 0)
+- Ja existia fixture QA/HML claramente identificada como TESTE.
+  NAO foi necessario criar nova fixture. NAO foi criada AR.
+
+--------------------------------------------------------------------------------
+3. STATUS PRE = rascunho
+--------------------------------------------------------------------------------
+Confirmado por leitura direta no banco: public.faturas.status = 'rascunho'.
+
+--------------------------------------------------------------------------------
+4. AR PRE = 0
+--------------------------------------------------------------------------------
+SELECT count(*) FROM public.financeiro_receber WHERE fatura_id = 97ecfca1... => 0
+Snapshot PROD (somente leitura): faturas = 41 | financeiro_receber = 123.
+
+--------------------------------------------------------------------------------
+5. URL / TELA ABERTA
+--------------------------------------------------------------------------------
+- App local ................ http://127.0.0.1:8800 (Vite dev, apontando p/ Supabase PROD)
+- Navegacao ................ http://127.0.0.1:8800/financeiro?tab=faturas
+- Fluxo UI ................. Faturas --> linha "FIN3623C-1788614228622 / CLIENTE HML 136A"
+                             --> botao "Continuar rascunho" --> painel "Fatura — Rascunho"
+                             --> botao "Validar e Emitir Fatura" --> MODAL aberto.
+- Navegador VISIVEL (Chromium) aberto e MANTIDO na tela do modal.
+- Observacao de login: a sessao salva em tests/e2e/.auth/storageState.json estava
+  EXPIRADA (access token exp 28/07/2026; refresh token invalido). Por isso o navegador
+  foi aberto na tela de LOGIN para o ADMIN efetuar o login MANUALMENTE.
+  Nenhuma senha foi solicitada, impressa ou gravada neste TXT.
+
+--------------------------------------------------------------------------------
+6. CAMPOS APRESENTADOS NO MODAL (AlertDialog "Validar e Emitir Fatura")
+--------------------------------------------------------------------------------
+- Cliente
+- Nº/Controle do cliente (metadata.numeroManual quando aplicavel)
+- Vencimento
+- Romaneios/OC
+- Servicos (itens)
+- Valor base
+- Adicionais
+- Pedagio (somente quando > 0)
+- Valor total
+- Mensagem obrigatoria (vermelha):
+    "A emissao criara a Conta a Receber e nao deve ser usada antes da conferencia dos valores."
+- Acoes: "Cancelar" e "Validar e Emitir" (a confirmacao NAO foi clicada).
+
+--------------------------------------------------------------------------------
+7. SCREENSHOT / EVIDENCIA
+--------------------------------------------------------------------------------
+- Diretorio: test-results/fin_prog05d2/
+- Arquivos (gerados automaticamente apos o login do ADMIN):
+    * 01-lista-faturas-rascunho.png
+    * 02-painel-fatura-rascunho.png
+    * 03-MODAL-validar-e-emitir.png   (MODAL aberto — evidencia principal)
+    * evidence.json                   (fatura, url, botoes visiveis, confirmado=false)
+    * progress.log                    (log da automacao)
+- Status: captura pendente do login ADM (automacao aguardando na tela).
+
+--------------------------------------------------------------------------------
+8. CONFIRMACAO DE QUE NAO HOUVE EMISSAO
+--------------------------------------------------------------------------------
+- A automacao NAO clicou em "Validar e Emitir".
+- Nenhuma chamada a emitirFatura() / RPC f_emitir_fatura foi executada.
+- Nenhuma Conta a Receber foi criada.
+- Banco PROD acessado APENAS em leitura (nenhuma escrita).
+
+--------------------------------------------------------------------------------
+9. INSTRUCAO EXATA PARA O USUARIO
+--------------------------------------------------------------------------------
+   "CONFIRA OS DADOS NA TELA.
+    SE ESTIVEREM CORRETOS, CLIQUE UMA UNICA VEZ EM
+    VALIDAR E EMITIR FATURA."
+
+--------------------------------------------------------------------------------
+10. ESTADO FINAL
+--------------------------------------------------------------------------------
+   AGUARDANDO APROVACAO VISUAL DO ADMIN.
+
+--------------------------------------------------------------------------------
+NAO ALTERADOS (por instrucao): M66/M80; f_emitir_fatura; anti-duplicidade;
+ARs reais; Calvo reconciliado; DVL; classe F; AP; Conferencia; Dashboard;
+DRE; Fluxo; APP; Programacao Operacional.
+
+================================================================================
+Arquivo ..: TMS-FIN-PROG-05D2-HOMOLOGACAO-VISUAL-CHECKPOINT.txt
+Caminho ..: express-connect-hub\TMS-FIN-PROG-05D2-HOMOLOGACAO-VISUAL-CHECKPOINT.txt
+Tamanho ..: 6807 bytes
+Data .....: 24/09/2026 16:13:09
+================================================================================
+FIM DO CHECKPOINT — TMS-FIN-PROG-05D.2-HOMOLOGACAO-VISUAL-GATE
+================================================================================

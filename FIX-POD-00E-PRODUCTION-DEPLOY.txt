@@ -1,0 +1,104 @@
+================================================================================
+FIX-POD-00E — PRODUCTION DEPLOY
+Mission: Apply homologated package to production
+Date: 2026-09-21
+Status: DEPLOY PASS — NO DATA CHANGES — NO ERRORS
+================================================================================
+
+PRECHECK
+--------
+PROJECT_REF=uwrvzsjtpgaifkktpepn
+DEPLOY_SHA256=F2375E19367C48064DFC71770A7250F657301D9066EB2B1B623F3AE2B3593ADF
+ROLLBACK_SHA256=631DA494DC0668D1AD32871742A6BE947CE5D6991BE6BB851E347612DB896D6B
+PRECHECK_HASH=PASS (both hashes match 00D homologated)
+PRECHECK_PROJECT=PASS (connection to uwrvzsjtpgaifkktpepn confirmed)
+
+DEPLOY CONTENTS
+---------------
+ALTER TABLE COUNT=0
+INSERT COUNT=0 (standalone)
+DELETE COUNT=0
+UPDATE de dados fora da funcao=0
+
+BEFORE SNAPSHOT
+---------------
+FUNCTION_BEFORE_HASH=e9b8e49c02e830d156ae915aa59cea02
+FUNCTION_FIX_PRESENT=NO (before deploy)
+TRIGGER_EXISTS=YES
+TRIGGER_ENABLED=YES
+BEFORE_OS=121
+BEFORE_ALLOC=193
+BEFORE_RECEBER=113
+BEFORE_PAGAR=145
+BEFORE_PP=104
+BEFORE_BAIXAS=18
+
+DEPLOY EXECUTION
+----------------
+Command: docker run ... psql -f /workspace/deploy.sql
+Result: BEGIN → CREATE FUNCTION → DROP TRIGGER → CREATE TRIGGER → COMMIT
+DEPLOY_ERRORS=(none)
+
+POST-DEPLOY VERIFICATION
+-------------------------
+FUNCTION_AFTER_HASH=b5f961c37b309a17ba6775ea206ae08b
+FUNCTION_FIX_PRESENT=YES (UPDATE alocacoes_escala SET ordem_servico_id = v_os_id)
+SECURITY_DEFINER_PRESERVED=YES (provolatile = v)
+SEARCH_PATH_PRESERVED=YES (search_path=public)
+TRIGGER_EXISTS=YES
+TRIGGER_ENABLED=YES
+TRIGGER_DEFINITION_MATCH=YES (identical to homologated package)
+
+DELTA COUNTS
+-------------
+AFTER_OS=121
+DELTA_OS=0
+
+AFTER_ALLOC=193
+DELTA_ALLOCATIONS=0
+
+AFTER_RECEBER=113
+DELTA_RECEBER=0
+
+AFTER_PAGAR=145
+DELTA_PAGAR=0
+
+AFTER_PP=104
+DELTA_PP=0
+
+AFTER_BAIXAS=18
+DELTA_BAIXAS=0
+
+SYNTHETIC_DATA_CREATED=0
+ROLLBACK_REQUIRED=NO
+ROLLBACK_EXECUTED=NO
+
+SECURITY
+--------
+Nenhuma senha/credencial exposta.
+Nenhuma connection string com senha no relatorio.
+Nenhum novo segredo criado.
+Credenciais inalteradas.
+
+PRODUCTION_DEPLOY_STATUS=PASS
+
+CRITERIO CHECK
+---------------
+- Hashes corretos                              YES
+- Projeto correto                              YES
+- Deploy executado sem erro                    YES
+- Funcao correta instalada                     YES (fix present, hash changed)
+- SECURITY DEFINER/search_path preservados     YES
+- Trigger existente e habilitado               YES
+- Nenhum dado de negocio alterado pelo deploy  YES (all deltas = 0)
+- Nenhum dado sintetico criado                 YES
+
+PASS confirma DEPLOY TECNICO.
+Nao confirma E2E funcional produtivo.
+
+PROXIMO PASSO necessario:
+Primeira operacao real controlada devera comprovar:
+  alocacao → OS → ordem_servico_id → POD → entregas_protocolo
+
+GENERATED: 2026-09-21
+================================================================================

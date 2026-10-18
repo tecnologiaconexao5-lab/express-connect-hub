@@ -4,99 +4,20 @@ import type {
   DocumentoCandidato, StatusDocumental, StatusOperacional, DisponibilidadeTipo,
   OnboardingItem, OnboardingStatus, ReservaContexto,
 } from './enterpriseKanbanTypes'
-import { DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS } from './enterpriseKanbanTypes'
-import { TIPOS_VEICULO } from '@/constants/tiposVeiculo'
-
-const STORAGE_KEY = 'enterprise_kanban_candidates_v2'
+import { DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS, STAGE_TRANSITIONS } from './enterpriseKanbanTypes'
 const TABLE = 'recrutamento_candidatos'
+const PRESTADORES_TABLE = 'prestadores'
 
-const NOMES = [
-  'Ana Clara Oliveira', 'Bruno Santos Lima', 'Carlos Eduardo Pereira',
-  'Daniela Souza Costa', 'Eduardo Almeida Neto', 'Fernanda Lima Rocha',
-  'Gabriel Barbosa Santos', 'Helena Martins Dias', 'Igor Costa Ribeiro',
-  'Julia Oliveira Campos', 'Lucas Henrique Silva', 'Mariana Fernandes Souza',
-  'Nelson Batista Alves', 'Patricia Gomes Correia', 'Rafael Torres Mendes',
-  'Sabrina Castro Lima', 'Thiago Nogueira Pinto', 'Vanessa Oliveira Rios',
-  'William Cardoso Braga', 'Yasmin Santos Teixeira', 'Adriano Melo Costa',
-  'Beatriz Campos Rodrigues', 'Caio Vinicius Pereira', 'Débora Farias Lima',
-]
+const ORIGEM_APP = 'app_motorista'
 
-const CIDADES = [
-  'São Paulo', 'Guarulhos', 'Campinas', 'Santo André', 'Osasco',
-  'Rio de Janeiro', 'Niterói', 'Duque de Caxias', 'Belo Horizonte',
-  'Contagem', 'Uberlândia', 'Curitiba', 'Londrina', 'Porto Alegre',
-  'Florianópolis', 'Joinville', 'Salvador', 'Recife', 'Fortaleza',
-  'Brasília', 'Goiânia', 'Manaus', 'Belém', 'Sorocaba',
-]
-
-const UFS = ['SP', 'RJ', 'MG', 'PR', 'RS', 'SC', 'BA', 'PE', 'CE', 'DF', 'GO', 'AM', 'PA']
-
-const VEICULOS = TIPOS_VEICULO
-
-const TAGS: string[] = [
-  'experiente', 'veiculo_proprio', 'indicado', 'recorrente',
-  'disponivel_imediato', 'recomendado', 'risco', 'prioritario',
-]
-
-const OBSERVACOES_IA = [
-  'Candidato com perfil alinhado às necessidades da operação. Recomenda-se agilizar análise documental.',
-  'Pontos fortes: experiência em rotas noturnas. Atenção: documentação incompleta.',
-  'Perfil compatível. Sugere-se validação de referências anteriores.',
-  'Alta pontuação em avaliação comportamental. Baixo risco de turnover.',
-  'Motorista experimental recomendado pelo time de frota. Priorizar entrevista.',
-  'Documentação regularizada. Histórico de entregas sem ocorrências nos últimos 12 meses.',
-  'Treinamento obrigatório: MOPP. CNH com validade próxima ao vencimento.',
-  'Perfil analítico com experiência em operações logísticas integradas.',
-  'Disponibilidade imediata para viagens longas. Veículo próprio em bom estado.',
-  'Indicação do prestador Rafael Mendes. Score de confiança elevado.',
-  'Candidato com restrições cadastrais. Necessário análise complementar.',
-  'Perfil proativo com ótimo feedback em operações anteriores.',
-  'Documentação pendente há 15 dias. Recomenda-se contato para regularização.',
-  'Veículo adequado para operações urbanas. Experiência comprovada em entregas.',
-]
-
-function generateMockPhone(): string {
-  const ddd = Math.floor(11 + Math.random() * 18)
-  return `(${ddd}) 9${Math.floor(3000 + Math.random() * 7000)}-${Math.floor(1000 + Math.random() * 9000)}`
-}
-
-function generateMockCNHDate(): { validade: string; data: string } {
-  const r = Math.random()
-  if (r < 0.6) {
-    const d = new Date()
-    d.setFullYear(d.getFullYear() + 1 + Math.floor(Math.random() * 4))
-    return { validade: 'valida', data: d.toISOString().slice(0, 10) }
-  } else if (r < 0.8) {
-    const d = new Date()
-    d.setMonth(d.getMonth() + 1 + Math.floor(Math.random() * 2))
-    return { validade: 'vencendo', data: d.toISOString().slice(0, 10) }
-  } else {
-    const d = new Date()
-    d.setMonth(d.getMonth() - Math.floor(Math.random() * 12) - 1)
-    return { validade: 'vencida', data: d.toISOString().slice(0, 10) }
-  }
-}
-
-function gerarDataValidade(anosValidade: number, chanceVencido = 0.15): string {
-  if (Math.random() < chanceVencido) {
-    const d = new Date()
-    d.setMonth(d.getMonth() - Math.floor(Math.random() * 6) - 1)
-    return d.toISOString().slice(0, 10)
-  }
-  const d = new Date()
-  d.setFullYear(d.getFullYear() + anosValidade + Math.floor(Math.random() * 2))
-  return d.toISOString().slice(0, 10)
-}
-
-function generateMockDocumentos(): DocumentoCandidato[] {
-  const docs: DocumentoCandidato[] = [
-    { nome: 'CNH', status: 'ok', dataValidade: gerarDataValidade(3, 0.15) },
-    { nome: 'CRLV', status: Math.random() > 0.15 ? 'ok' : 'pendente', dataValidade: Math.random() > 0.15 ? gerarDataValidade(1, 0.1) : undefined },
-    { nome: 'Comprovante Residência', status: Math.random() > 0.2 ? 'ok' : 'pendente' },
-    { nome: 'ANTT', status: Math.random() > 0.35 ? 'ok' : 'pendente', dataValidade: Math.random() > 0.35 ? gerarDataValidade(1, 0.1) : undefined },
-    { nome: 'Foto Veículo', status: Math.random() > 0.25 ? 'ok' : 'pendente' },
-  ]
-  return docs
+const STATUS_APP_TO_STAGE: Record<string, PipelineStage> = {
+  em_analise: 'em_analise',
+  aprovado: 'aprovado',
+  ativo: 'ativo',
+  bloqueado: 'bloqueado',
+  inativo: 'reprovado',
+  novo: 'novo_cadastro',
+  analise: 'em_analise',
 }
 
 function recalcularDocsValidade(docs: DocumentoCandidato[]): DocumentoCandidato[] {
@@ -188,78 +109,6 @@ function calcularStatusOperacional(
   return 'pendente'
 }
 
-function getRandomTags(): string[] {
-  const count = 1 + Math.floor(Math.random() * 3)
-  const shuffled = [...TAGS].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, count)
-}
-
-function getRandomPrioridade(): string {
-  const r = Math.random()
-  if (r < 0.5) return 'baixa'
-  if (r < 0.8) return 'media'
-  if (r < 0.95) return 'alta'
-  return 'urgente'
-}
-
-function buildMockData(): EnterpriseCandidate[] {
-  const stages: string[] = [
-    'novo_cadastro', 'em_analise', 'documentacao_pendente', 'em_validacao',
-    'entrevista', 'em_treinamento', 'aprovado', 'ativo', 'bloqueado', 'reprovado',
-  ]
-
-  return NOMES.map((nome, idx) => {
-    const docs = generateMockDocumentos()
-    const docCalc = calcularStatusDocumentalOperacional(docs)
-    const tags = getRandomTags() as string[]
-    const dispTipo = getDisponibilidadeTipo(tags)
-    const onboarding = extrairOnboarding(tags)
-    const stage = stages[idx % stages.length] as PipelineStage
-    const statusOp = calcularStatusOperacional(docCalc.status, stage, dispTipo)
-    const dias = Math.floor(Math.random() * 60)
-    const dataEntrada = new Date(Date.now() - dias * 86400000).toISOString()
-    const regioesPossiveis = [['SP', 'RJ', 'MG'], ['SP', 'PR', 'SC'], ['RJ', 'ES', 'BA'], ['SP', 'GO', 'DF'], ['RS', 'SC', 'PR']]
-
-    return {
-      id: `ec_${idx}`,
-      nome,
-      foto: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(nome)}&backgroundColor=3b82f6,6366f1,8b5cf6,ec4899,10b981,14b8a6&backgroundType=gradientLinear&fontSize=40`,
-      score: Math.floor(35 + Math.random() * 60),
-      cidade: CIDADES[idx % CIDADES.length],
-      uf: UFS[idx % UFS.length],
-      veiculo: VEICULOS[idx % VEICULOS.length].value,
-      placa: `ABC${String(1000 + Math.floor(Math.random() * 9000)).slice(0, 4)}`,
-      statusDocumental: docCalc.status,
-      statusOperacional: statusOp,
-      disponibilidadeTipo: dispTipo,
-      prioridade: getRandomPrioridade() as any,
-      validadeCNH: docCalc.validadeCNH as any,
-      dataValidadeCNH: docCalc.dataValidadeCNH,
-      tags: tags as any,
-      observacoesIA: OBSERVACOES_IA[idx % OBSERVACOES_IA.length],
-      telefone: generateMockPhone(),
-      email: `${nome.toLowerCase().replace(/\s+/g, '.')}@email.com`,
-      stage,
-      dataEntrada,
-      dataAtualizacao: new Date(Date.now() - Math.floor(Math.random() * 7) * 86400000).toISOString(),
-      documentos: docs,
-      prestadorId: undefined,
-      historico: [{
-        tipo: 'criado' as const,
-        descricao: 'Candidato cadastrado no pipeline',
-        data: dataEntrada,
-      }],
-      regioesAtuacao: regioesPossiveis[idx % regioesPossiveis.length],
-      horariosDisponiveis: ['06:00-14:00', '08:00-18:00', '14:00-22:00', '22:00-06:00', '06:00-18:00'][idx % 5],
-      diasDisponiveis: ['Seg-Sex', 'Seg-Sab', 'Dom-Dom', 'Seg-Dom', 'Seg-Sex'][idx % 5].split('-'),
-      onboardingStatus: onboarding.status,
-      onboardingProgress: onboarding.progress,
-      onboardingChecklist: onboarding.checklist,
-      reservaContexto: undefined,
-    }
-  })
-}
-
 function fromDB(row: any): EnterpriseCandidate {
   const docs: DocumentoCandidato[] = Array.isArray(row.documentos) ? row.documentos : []
   const docCalc = calcularStatusDocumentalOperacional(docs)
@@ -303,11 +152,31 @@ function fromDB(row: any): EnterpriseCandidate {
     onboardingProgress: onboarding.progress,
     onboardingChecklist: onboarding.checklist,
     reservaContexto: row.reserva_contexto ?? undefined,
+    scoreComprometimento: row.score_comprometimento ?? 0,
+    classificacaoComprometimento: row.classificacao_comprometimento ?? '',
+    riscoDesistencia: row.risco_desistencia ?? '',
+    tempoMedioRespostaHoras: row.tempo_medio_resposta_horas ?? null,
+    quantidadeCobrancas: row.quantidade_cobrancas ?? 0,
+    confirmouInteresse: row.confirmou_interesse ?? false,
+    dataConfirmacaoInteresse: row.data_confirmacao_interesse ?? null,
+    confirmouPreInicio: row.confirmou_pre_inicio ?? false,
+    dataConfirmacaoPreInicio: row.data_confirmacao_pre_inicio ?? null,
+    compareceuPrimeiroDia: row.compareceu_primeiro_dia ?? false,
+    completou30Dias: row.completou_30_dias ?? false,
+    quantidadeReclamacoes: row.quantidade_reclamacoes ?? 0,
+    possuiOutraOperacaoFixa: row.possui_outra_operacao_fixa ?? false,
+    disponibilidadeRecrutamento: row.disponibilidade_recrutamento ?? '',
+    historicoDesistencias: row.historico_desistencias ?? 0,
+    etiquetasAutomaticas: Array.isArray(row.etiquetas_automaticas) ? row.etiquetas_automaticas : [],
+    parecerIA: row.parecer_ia ?? '',
+    principaisRiscos: Array.isArray(row.principais_riscos) ? row.principais_riscos : [],
+    principaisPontosPositivos: Array.isArray(row.principais_pontos_positivos) ? row.principais_pontos_positivos : [],
+    proximaAcaoSugerida: row.proxima_acao_sugerida ?? '',
+    questionarioRespostas: row.questionario_respostas ?? null,
   }
 }
 
 function toDB(candidate: Partial<EnterpriseCandidate>): Record<string, unknown> {
-  const ignored = ['id']
   const map: [keyof EnterpriseCandidate, string][] = [
     ['nome', 'nome'],
     ['foto', 'foto'],
@@ -330,10 +199,28 @@ function toDB(candidate: Partial<EnterpriseCandidate>): Record<string, unknown> 
     ['documentos', 'documentos'],
     ['prestadorId', 'prestador_id'],
     ['historico', 'historico'],
-    ['regioesAtuacao', 'regioes_atuacao'],
-    ['horariosDisponiveis', 'horarios_disponiveis'],
-    ['diasDisponiveis', 'dias_disponiveis'],
     ['reservaContexto', 'reserva_contexto'],
+    ['scoreComprometimento', 'score_comprometimento'],
+    ['classificacaoComprometimento', 'classificacao_comprometimento'],
+    ['riscoDesistencia', 'risco_desistencia'],
+    ['tempoMedioRespostaHoras', 'tempo_medio_resposta_horas'],
+    ['quantidadeCobrancas', 'quantidade_cobrancas'],
+    ['confirmouInteresse', 'confirmou_interesse'],
+    ['dataConfirmacaoInteresse', 'data_confirmacao_interesse'],
+    ['confirmouPreInicio', 'confirmou_pre_inicio'],
+    ['dataConfirmacaoPreInicio', 'data_confirmacao_pre_inicio'],
+    ['compareceuPrimeiroDia', 'compareceu_primeiro_dia'],
+    ['completou30Dias', 'completou_30_dias'],
+    ['quantidadeReclamacoes', 'quantidade_reclamacoes'],
+    ['possuiOutraOperacaoFixa', 'possui_outra_operacao_fixa'],
+    ['disponibilidadeRecrutamento', 'disponibilidade_recrutamento'],
+    ['historicoDesistencias', 'historico_desistencias'],
+    ['etiquetasAutomaticas', 'etiquetas_automaticas'],
+    ['parecerIA', 'parecer_ia'],
+    ['principaisRiscos', 'principais_riscos'],
+    ['principaisPontosPositivos', 'principais_pontos_positivos'],
+    ['proximaAcaoSugerida', 'proxima_acao_sugerida'],
+    ['questionarioRespostas', 'questionario_respostas'],
   ]
   const row: Record<string, unknown> = {}
   for (const [camel, snake] of map) {
@@ -345,16 +232,46 @@ function toDB(candidate: Partial<EnterpriseCandidate>): Record<string, unknown> 
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  novo_cadastro: 'Novo Cadastro',
+  novo_cadastro: 'Novo Lead',
+  pre_triagem: 'Pré-Triagem',
+  interesse_confirmado: 'Interesse Confirmado',
   em_analise: 'Em Análise',
-  documentacao_pendente: 'Doc. Pendente',
+  documentacao_pendente: 'Documentação',
   em_validacao: 'Em Validação',
   entrevista: 'Entrevista',
-  em_treinamento: 'Em Treinamento',
+  em_treinamento: 'Treinamento',
+  homologacao: 'Homologação',
+  confirmacao_inicio: 'Conf. de Início',
   aprovado: 'Aprovado',
+  prestador_apto: 'Prestador Apto',
   ativo: 'Ativo',
+  operacao_ativa: 'Operação Ativa',
   bloqueado: 'Bloqueado',
   reprovado: 'Reprovado',
+}
+
+function verificarBloqueioPipeline(candidate: EnterpriseCandidate, novoStage: PipelineStage): string | null {
+  // Bloqueio 1: Sem confirmação de interesse, não avança para Homologação
+  if (novoStage === 'homologacao' && !candidate.confirmouInteresse) {
+    return 'É necessário confirmar o interesse do candidato antes de avançar para Homologação.'
+  }
+
+  // Bloqueio 2: Sem treinamento concluído, não avança para Homologação
+  if (novoStage === 'homologacao' && candidate.stage !== 'em_treinamento' && candidate.stage !== 'aprovado') {
+    return 'O candidato precisa concluir o Treinamento antes da Homologação.'
+  }
+
+  // Bloqueio 3: Sem confirmação de início, não avança para Prestador Apto
+  if (novoStage === 'prestador_apto' && !candidate.confirmouPreInicio) {
+    return 'É necessário confirmar o pré-início antes de tornar o candidato Prestador Apto.'
+  }
+
+  // Bloqueio 4: Sem comparecimento primeiro dia, não avança para Operação Ativa
+  if (novoStage === 'operacao_ativa' && !candidate.compareceuPrimeiroDia) {
+    return 'O candidato precisa comparecer ao primeiro dia de operação antes de avançar para Operação Ativa.'
+  }
+
+  return null
 }
 
 async function registrarEvento(id: string, evento: HistoricoEvento): Promise<void> {
@@ -380,14 +297,6 @@ async function registrarEvento(id: string, evento: HistoricoEvento): Promise<voi
 
   if (updateError) {
     console.error('[registrarEvento] Erro ao salvar historico:', updateError)
-  }
-
-  const list = getLocalData()
-  const idx = list.findIndex(c => c.id === id)
-  if (idx >= 0) {
-    const hist = list[idx].historico ?? []
-    list[idx] = { ...list[idx], historico: [...hist, evento], dataAtualizacao: now }
-    persistLocal(list)
   }
 }
 
@@ -431,19 +340,28 @@ function normalizeCandidate(c: any): EnterpriseCandidate {
     onboardingProgress: onboarding.progress,
     onboardingChecklist: onboarding.checklist,
     reservaContexto: c.reservaContexto ?? undefined,
+    scoreComprometimento: c.scoreComprometimento ?? 0,
+    classificacaoComprometimento: c.classificacaoComprometimento ?? '',
+    riscoDesistencia: c.riscoDesistencia ?? '',
+    tempoMedioRespostaHoras: c.tempoMedioRespostaHoras ?? null,
+    quantidadeCobrancas: c.quantidadeCobrancas ?? 0,
+    confirmouInteresse: c.confirmouInteresse ?? false,
+    dataConfirmacaoInteresse: c.dataConfirmacaoInteresse ?? null,
+    confirmouPreInicio: c.confirmouPreInicio ?? false,
+    dataConfirmacaoPreInicio: c.dataConfirmacaoPreInicio ?? null,
+    compareceuPrimeiroDia: c.compareceuPrimeiroDia ?? false,
+    completou30Dias: c.completou30Dias ?? false,
+    quantidadeReclamacoes: c.quantidadeReclamacoes ?? 0,
+    possuiOutraOperacaoFixa: c.possuiOutraOperacaoFixa ?? false,
+    disponibilidadeRecrutamento: c.disponibilidadeRecrutamento ?? '',
+    historicoDesistencias: c.historicoDesistencias ?? 0,
+    etiquetasAutomaticas: Array.isArray(c.etiquetasAutomaticas) ? c.etiquetasAutomaticas : [],
+    parecerIA: c.parecerIA ?? '',
+    principaisRiscos: Array.isArray(c.principaisRiscos) ? c.principaisRiscos : [],
+    principaisPontosPositivos: Array.isArray(c.principaisPontosPositivos) ? c.principaisPontosPositivos : [],
+    proximaAcaoSugerida: c.proximaAcaoSugerida ?? '',
+    questionarioRespostas: c.questionarioRespostas ?? null,
   }
-}
-
-function getLocalData(): EnterpriseCandidate[] {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved) {
-    try { return JSON.parse(saved).map(normalizeCandidate) } catch { }
-  }
-  return []
-}
-
-function persistLocal(data: EnterpriseCandidate[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
 
 function applyFilters(list: EnterpriseCandidate[], filtros?: KanbanFilter): EnterpriseCandidate[] {
@@ -462,21 +380,93 @@ function applyFilters(list: EnterpriseCandidate[], filtros?: KanbanFilter): Ente
   }
   if (filtros.scoreMin > 0) filtered = filtered.filter(c => c.score >= filtros.scoreMin)
   if (filtros.scoreMax < 100) filtered = filtered.filter(c => c.score <= filtros.scoreMax)
-  if (filtros.prioridade.length) filtered = filtered.filter(c => filtros.prioridade.includes(c.prioridade as any))
-  if (filtros.statusDocumental.length) filtered = filtered.filter(c => filtros.statusDocumental.includes(c.statusDocumental as any))
-  if (filtros.validadeCNH.length) filtered = filtered.filter(c => filtros.validadeCNH.includes(c.validadeCNH as any))
-  if (filtros.tags.length) filtered = filtered.filter(c => c.tags.some(t => filtros.tags.includes(t)))
-  if (filtros.statusOperacional.length) filtered = filtered.filter(c => filtros.statusOperacional.includes(c.statusOperacional as any))
-  if (filtros.disponibilidade.length) filtered = filtered.filter(c => filtros.disponibilidade.includes(c.disponibilidadeTipo as any))
+  if (filtros.prioridade?.length) filtered = filtered.filter(c => filtros.prioridade.includes(c.prioridade as any))
+  if (filtros.statusDocumental?.length) filtered = filtered.filter(c => filtros.statusDocumental.includes(c.statusDocumental as any))
+  if (filtros.validadeCNH?.length) filtered = filtered.filter(c => filtros.validadeCNH.includes(c.validadeCNH as any))
+  if (filtros.tags?.length) filtered = filtered.filter(c => c.tags.some(t => filtros.tags.includes(t)))
+  if (filtros.statusOperacional?.length) filtered = filtered.filter(c => filtros.statusOperacional.includes(c.statusOperacional as any))
+  if (filtros.disponibilidade?.length) filtered = filtered.filter(c => filtros.disponibilidade.includes(c.disponibilidadeTipo as any))
   if (filtros.cidade) filtered = filtered.filter(c => c.cidade.toLowerCase().includes(filtros.cidade.toLowerCase()))
   if (filtros.veiculo) filtered = filtered.filter(c => c.veiculo.toLowerCase().includes(filtros.veiculo.toLowerCase()))
 
   return filtered.sort((a, b) => new Date(b.dataAtualizacao).getTime() - new Date(a.dataAtualizacao).getTime())
 }
 
+/**
+ * AG-07J.1 — Busca prestadores criados pelo App (origem_cadastro='app_motorista')
+ * e cria registros correspondentes em recrutamento_candidatos quando inexistentes.
+ * Retorna a lista de candidatos App como EnterpriseCandidate[] prontos para o Kanban.
+ *
+ * NÃO cria segundo prestador. NÃO duplica pessoa.
+ * O prestador_id vincula candidato ↔ prestador operacional.
+ */
+async function buscarECadastrarAppPrestadores(): Promise<EnterpriseCandidate[]> {
+  try {
+    const { data: appPrestadores, error: appError } = await supabase
+      .from(PRESTADORES_TABLE)
+      .select('id, nome_completo, cpf_cnpj, telefone, whatsapp, email, status, liberado_app, origem_cadastro, veiculos, endereco')
+      .eq('origem_cadastro', ORIGEM_APP)
+      .order('created_at', { ascending: false })
+
+    if (appError || !appPrestadores || appPrestadores.length === 0) return []
+
+    const { data: existentes } = await supabase
+      .from(TABLE)
+      .select('prestador_id')
+      .not('prestador_id', 'is', null)
+
+    const prestadorIdsExistentes = new Set(
+      (existentes ?? []).map((r: any) => r.prestador_id).filter(Boolean)
+    )
+
+    const novos = appPrestadores.filter((p: any) => !prestadorIdsExistentes.has(p.id))
+    if (novos.length > 0) {
+      const now = new Date().toISOString()
+      const rows = novos.map((p: any) => {
+        const veiculoArr = Array.isArray(p.veiculos) ? p.veiculos : []
+        const veiculo = veiculoArr[0] ?? {}
+        const stage = (STATUS_APP_TO_STAGE[p.status] ?? 'novo_cadastro') as PipelineStage
+        return toDB({
+          nome: p.nome_completo ?? '',
+          telefone: p.telefone ?? '',
+          email: p.email ?? '',
+          cidade: p.endereco?.cidade ?? '',
+          uf: p.endereco?.estado ?? '',
+          veiculo: veiculo.tipo ?? '',
+          placa: veiculo.placa ?? '',
+          stage,
+          dataEntrada: now,
+          dataAtualizacao: now,
+          prestadorId: p.id,
+          tags: ['veiculo_proprio', 'disponivel_imediato'] as any,
+          historico: [{
+            tipo: 'criado' as const,
+            descricao: 'Prestador App — cadastro automático via bridge AG-07J.1',
+            data: now,
+          }],
+        })
+      })
+      await supabase.from(TABLE).insert(rows)
+    }
+
+    const { data: todos } = await supabase
+      .from(TABLE)
+      .select('*')
+      .not('prestador_id', 'is', null)
+      .order('data_atualizacao', { ascending: false })
+
+    return (todos ?? []).map(fromDB)
+  } catch (err) {
+    console.error('[buscarECadastrarAppPrestadores] Erro:', err)
+    return []
+  }
+}
+
 export const enterpriseKanbanService = {
   async listar(filtros?: KanbanFilter): Promise<EnterpriseCandidate[]> {
     try {
+      await buscarECadastrarAppPrestadores()
+
       const { data, error } = await supabase
         .from(TABLE)
         .select('*')
@@ -484,67 +474,59 @@ export const enterpriseKanbanService = {
 
       if (!error && data) {
         const candidates = data.map(fromDB)
-        persistLocal(candidates)
         return filtros ? applyFilters(candidates, filtros) : candidates
       }
     } catch { }
 
-    // Fallback: dados offline — usado apenas quando Supabase indisponivel
-    console.warn('[Talentos] Supabase indisponivel — usando dados offline (localStorage).')
-    const local = getLocalData()
-    return filtros ? applyFilters(local, filtros) : local
+    return []
   },
 
-  async seedInitialData(): Promise<EnterpriseCandidate[]> {
-    const mockData = buildMockData()
-    try {
-      const rows = mockData.map(c => toDB(c))
-      const { data: inserted, error } = await supabase
-        .from(TABLE)
-        .insert(rows)
-        .select()
-
-      if (!error && inserted) {
-        return inserted.map(fromDB)
-      }
-    } catch { }
-    return mockData
-  },
-
-  async mover(id: string, novoStage: PipelineStage): Promise<void> {
+  async mover(id: string, novoStage: PipelineStage, motivo?: string): Promise<{ error?: string }> {
     const now = new Date().toISOString()
 
-    let stageAnterior: string | undefined
-    const list = getLocalData()
-    const idx = list.findIndex(c => c.id === id)
-    if (idx >= 0) {
-      stageAnterior = list[idx].stage
+    const candidate = await this.getCandidateById(id)
+    if (!candidate) return { error: 'Candidato não encontrado' }
+
+    if (candidate.stage === novoStage) return { error: 'Candidato já está neste estágio' }
+
+    // G21 — bloqueio exige motivo (persistido no historico JSONB, sem coluna nova).
+    const motivoBloqueio = (motivo ?? '').trim()
+    if (novoStage === 'bloqueado' && !motivoBloqueio) {
+      return { error: 'MOTIVO_BLOQUEIO_OBRIGATORIO' }
     }
+
+    const allowedTransitions = STAGE_TRANSITIONS[candidate.stage] ?? []
+    if (!allowedTransitions.includes(novoStage)) {
+      return { error: `Transição de "${STAGE_LABELS[candidate.stage]}" para "${STAGE_LABELS[novoStage]}" não é permitida.` }
+    }
+
+    const bloqueio = verificarBloqueioPipeline(candidate, novoStage)
+    if (bloqueio) return { error: bloqueio }
+
+    const stageAnterior = candidate.stage
 
     const { error: updateError } = await supabase
       .from(TABLE)
       .update({ stage: novoStage, data_atualizacao: now, updated_at: now })
       .eq('id', id)
 
-    if (updateError) throw updateError
+    if (updateError) return { error: updateError.message }
 
-    if (idx >= 0) {
-      const tipo = novoStage === 'bloqueado' ? 'bloqueado' as const
-        : novoStage === 'aprovado' ? 'aprovado' as const
-        : 'mudou_etapa' as const
-      const descricao = `${STAGE_LABELS[stageAnterior ?? ''] ?? stageAnterior} → ${STAGE_LABELS[novoStage] ?? novoStage}`
+    const tipo = novoStage === 'bloqueado' ? 'bloqueado' as const
+      : novoStage === 'aprovado' || novoStage === 'prestador_apto' ? 'aprovado' as const
+      : 'mudou_etapa' as const
+    const descricao = `${STAGE_LABELS[stageAnterior] ?? stageAnterior} → ${STAGE_LABELS[novoStage] ?? novoStage}`
 
-      list[idx] = { ...list[idx], stage: novoStage, dataAtualizacao: now }
-      persistLocal(list)
+    await registrarEvento(id, {
+      tipo,
+      descricao,
+      data: now,
+      stageAnterior,
+      stageNovo: novoStage,
+      ...(motivoBloqueio ? { motivo: motivoBloqueio } : {}),
+    })
 
-      await registrarEvento(id, {
-        tipo,
-        descricao,
-        data: now,
-        stageAnterior,
-        stageNovo: novoStage,
-      })
-    }
+    return {}
   },
 
   async adicionarObservacao(id: string, obs: string): Promise<void> {
@@ -555,13 +537,6 @@ export const enterpriseKanbanService = {
       .eq('id', id)
 
     if (obsError) throw obsError
-
-    const list = getLocalData()
-    const idx = list.findIndex(c => c.id === id)
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], observacoesIA: obs, dataAtualizacao: now }
-      persistLocal(list)
-    }
 
     const descricao = obs.length > 80 ? obs.slice(0, 80) + '...' : obs
     await registrarEvento(id, {
@@ -580,13 +555,6 @@ export const enterpriseKanbanService = {
       .eq('id', id)
 
     if (updateError) throw updateError
-
-    const list = getLocalData()
-    const idx = list.findIndex(c => c.id === id)
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], ...data, dataAtualizacao: now }
-      persistLocal(list)
-    }
   },
 
   async criar(candidate: Partial<EnterpriseCandidate>): Promise<EnterpriseCandidate> {
@@ -633,43 +601,50 @@ export const enterpriseKanbanService = {
       onboardingProgress: onboarding.progress,
       onboardingChecklist: onboarding.checklist as any,
       reservaContexto: candidate.reservaContexto ?? undefined,
+      scoreComprometimento: 0,
+      classificacaoComprometimento: '',
+      riscoDesistencia: 'Moderado',
+      tempoMedioRespostaHoras: null,
+      quantidadeCobrancas: 0,
+      confirmouInteresse: false,
+      dataConfirmacaoInteresse: null,
+      confirmouPreInicio: false,
+      dataConfirmacaoPreInicio: null,
+      compareceuPrimeiroDia: false,
+      completou30Dias: false,
+      quantidadeReclamacoes: 0,
+      possuiOutraOperacaoFixa: false,
+      disponibilidadeRecrutamento: '',
+      historicoDesistencias: 0,
+      etiquetasAutomaticas: [],
+      parecerIA: '',
+      principaisRiscos: [],
+      principaisPontosPositivos: [],
+      proximaAcaoSugerida: 'Realizar primeiro contato com o candidato',
+      questionarioRespostas: null,
     }
+
+    const dbData = toDB(newCandidate)
+    console.log('[criar] payload enviado:', JSON.stringify(dbData, null, 2))
 
     const { data: inserted, error } = await supabase
       .from(TABLE)
-      .insert({
-        nome: newCandidate.nome,
-        foto: newCandidate.foto,
-        score: newCandidate.score,
-        cidade: newCandidate.cidade,
-        uf: newCandidate.uf,
-        veiculo: newCandidate.veiculo,
-        placa: newCandidate.placa,
-        status_documental: newCandidate.statusDocumental,
-        prioridade: newCandidate.prioridade,
-        validade_cnh: newCandidate.validadeCNH,
-        data_validade_cnh: newCandidate.dataValidadeCNH,
-        tags: newCandidate.tags,
-        observacoes_ia: newCandidate.observacoesIA,
-        telefone: newCandidate.telefone,
-        email: newCandidate.email,
-        stage: newCandidate.stage,
-        data_entrada: newCandidate.dataEntrada,
-        data_atualizacao: newCandidate.dataAtualizacao,
-        documentos: newCandidate.documentos,
-        historico: newCandidate.historico,
-        prestador_id: newCandidate.prestadorId ?? null,
-      })
+      .insert(dbData)
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('[criar] erro Supabase:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+      throw error
+    }
     if (!inserted) throw new Error('Falha ao inserir candidato')
 
     const mapped = fromDB(inserted)
-    const list = getLocalData()
-    list.unshift(mapped)
-    persistLocal(list)
     return mapped
   },
 
@@ -684,14 +659,13 @@ export const enterpriseKanbanService = {
       if (!error && data) return fromDB(data)
     } catch { }
 
-    return getLocalData().find(c => c.id === id) ?? null
+    return null
   },
 
   async resetStorage(): Promise<void> {
     try {
       await supabase.from(TABLE).delete().neq('id', '00000000-0000-0000-0000-000000000000')
     } catch { }
-    localStorage.removeItem(STORAGE_KEY)
   },
 
   async registrarEvento(id: string, evento: HistoricoEvento): Promise<void> {
@@ -706,13 +680,6 @@ export const enterpriseKanbanService = {
         .update({ reserva_contexto: contexto, data_atualizacao: now, updated_at: now })
         .eq('id', id)
     } catch { }
-
-    const list = getLocalData()
-    const idx = list.findIndex(c => c.id === id)
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], reservaContexto: contexto, dataAtualizacao: now }
-      persistLocal(list)
-    }
 
     await registrarEvento(id, {
       tipo: 'observacao_adicionada',

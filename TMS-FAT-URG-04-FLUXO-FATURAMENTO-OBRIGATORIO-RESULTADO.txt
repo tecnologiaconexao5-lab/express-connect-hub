@@ -1,0 +1,194 @@
+================================================================================
+MISSAO: TMS-FAT-URG-04-FLUXO-FATURAMENTO-OBRIGATORIO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: CORRECAO CIRURGICA baseada na causa-raiz do FAT-URG-03C.
+================================================================================
+
+RESULTADO: PASS (implementacao + migration aplicada + testes).
+  - Conferência: visão DEFAULT = somente NÃO FATURADOS (fila operacional).
+  - Emissão: SOMENTE a partir de status 'aprovada' (FATURA_NAO_APROVADA caso contrário).
+  - Fatura Manual: cria rascunho e ENVIA PARA VALIDAÇÃO (não emite mais direto).
+  - Migration 20260925000002_... aplicada; grants/search_path preservados; M66/M80 intactos.
+  - 10 testes novos PASS; regressão 71/71 PASS (6 arquivos); build OK.
+  - Caso FAT-2026-000020 NÃO alterado.
+
+================================================================================
+1. BEFORE x AFTER
+================================================================================
+BEFORE
+  - f_emitir_fatura (md5 7021208e2c91268c8076ce715e0d8a37) aceitava
+    'rascunho' | 'aguardando_aprovacao' | 'aprovada' -> permitia rascunho->emitida.
+  - Conferência: filtros iniciais = {} (mostrava faturados/rascunho junto da fila).
+  - FaturaManualDialog: "Salvar e Gerar PDF" emitia DIRETO de rascunho.
+
+AFTER
+  - f_emitir_fatura (md5 e99e0d1b8b1743ff75678314a10e9a37) exige status 'aprovada';
+    rascunho/aguardando retornam FATURA_NAO_APROVADA.
+  - Conferência: default = { faturado: "nao_faturado" } (fila operacional); itens em
+    fatura ativa (rascunho/aguardando/aprovada) e emitidos saem do default, e ficam
+    consultáveis via "Em processo (rascunho)" / "Faturado (emitido)" / "Todos (histórico)".
+  - FaturaManualDialog: botão "Salvar e Enviar para Validação" (cria rascunho + envia
+    para validação); a emissão ocorre em Faturas após aprovação.
+
+================================================================================
+2. ARQUIVOS ALTERADOS
+================================================================================
+- src/components/financeiro/ConferenciaFinanceira.tsx
+    * estado inicial filtros = { faturado: "nao_faturado" }
+    * limparFiltros restaura { faturado: "nao_faturado" }
+    * Select Faturamento: Não faturado (fila) / Em processo (rascunho) /
+      Faturado (emitido) / Todos (histórico)
+- src/services/financeiro/centralFinanceiroService.ts
+    * semântica do filtro de faturamento: 'nao_faturado' agora é ESTRITO
+      (status === "nao_faturado"); novos: 'em_processo', 'faturado', 'todos'.
+- src/components/financeiro/FaturaManualDialog.tsx
+    * handleSalvarEGerarPDF -> handleSalvarEEnviarValidacao (criar + enviar validação)
+    * botão "Salvar e Enviar para Validação"; removido uso de emitirFatura()
+- supabase/migrations/20260925000002_fin_fat_urg_04_emissao_exige_aprovacao.sql (NOVO, APLICADO)
+- supabase/migrations/20260925000003_fin_fat_urg_04_rollback.sql (NOVO)
+- src/test/fin_fat_urg_04_fluxo_obrigatorio.test.ts (NOVO, 10 testes)
+
+NAO alterado: M66/M80, financeiro_receber (regra), Pagamento de Prestadores,
+Comercial, APP, RLS, dados de negocio, caso FAT-2026-000020.
+
+================================================================================
+3. MIGRATION / RPC
+================================================================================
+Arquivo: 20260925000002_fin_fat_urg_04_emissao_exige_aprovacao.sql
+Acao   : CREATE OR REPLACE FUNCTION public.f_emitir_fatura(uuid) + REVOKE/GRANT.
+Unica mudanca de regra:
+    ANTES: IF v_fatura.status NOT IN ('rascunho','aguardando_aprovacao','aprovada')
+           THEN STATUS_INVALIDO_EMISSAO
+    AGORA: IF v_fatura.status <> 'aprovada' THEN FATURA_NAO_APROVADA
+Preservado: FATURA_CANCELADA, FATURA_JA_EMITIDA, FATURA_SEM_CLIENTE, FATURA_SEM_ITENS,
+  numeração Nº Conexão + Nº Cliente, 1 AR por fatura (UNIQUE), guarda de emissão sem AR.
+Rollback: 20260925000003_fin_fat_urg_04_rollback.sql (restaura a versão anterior).
+APLICADA apenas esta migration (nenhum lote).
+
+================================================================================
+4. REGRA ANTIGA x NOVA
+================================================================================
+Transicao                | ANTES            | AGORA
+-------------------------+------------------+-------------------------------
+rascunho -> emitida      | PERMITIDO        | BLOQUEADO (FATURA_NAO_APROVADA)
+aguardando -> emitida    | PERMITIDO        | BLOQUEADO (FATURA_NAO_APROVADA)
+aprovada -> emitida      | PERMITIDO        | PERMITIDO
+validar/aprovar          | nao cria AR      | nao cria AR (inalterado)
+Conferencia default      | mostra tudo      | somente nao_faturado (fila)
+
+================================================================================
+5. PROVAS DE BANCO (apos aplicacao, em BEGIN...ROLLBACK -> zero lixo)
+================================================================================
+- HASH f_emitir_fatura: BEFORE 7021208e2c91268c8076ce715e0d8a37
+                        AFTER  e99e0d1b8b1743ff75678314a10e9a37  (mudou)
+- functiondef: exige_aprovada=true; erro FATURA_NAO_APROVADA=true;
+  FATURA_JA_EMITIDA=true; FATURA_SEM_ITENS=true; NOT IN antigo=true(false).
+- fn: prosecdef=true (SECURITY DEFINER); proconfig=[search_path=public].
+- grants: authenticated + service_role (+postgres); anon/PUBLIC AUSENTES.
+- M66/M80 (f_trg_propagar_financeiro_alocacao / _os) hashes INALTERADOS
+  (6c4be677b3f88590139f2de2dd4cfcde / 02a5902d470730c24cc1906d2fa262d8).
+
+TESTE 1 — rascunho -> emitir: {success:false, error:"FATURA_NAO_APROVADA"}   PASS (BLOQUEADO)
+TESTE 2 — aguardando -> emitir: {success:false, error:"FATURA_NAO_APROVADA"} PASS (BLOQUEADO)
+TESTE 3 — aprovada -> emitir: success=true, numero "FAT-2026-000021"          PASS
+TESTE 4 — emissao cria AR: count financeiro_receber(fatura)=1                  PASS
+TESTE 5 — repetir emissao: FATURA_JA_EMITIDA; AR count ainda =1                PASS
+TESTE 6 — validar nao cria AR: 0 antes; TESTE 7 — aprovar nao cria AR: 0       PASS
+- ZERO LIXO: counts before {faturas:10, AR:48} == after {faturas:10, AR:48}.
+  (toda a massa do teste foi revertida por ROLLBACK; nada persistiu)
+
+================================================================================
+6. TESTES / CONTAGENS / BUILD
+================================================================================
+Novo arquivo: src/test/fin_fat_urg_04_fluxo_obrigatorio.test.ts (10 testes, 10 PASS)
+  8/9) default nao_faturado traz só não faturados (rascunho/emitida saem)
+  10) 'todos' traz tudo; 'faturado' só emitidas; 'em_processo' só rascunho
+  5) item faturado nunca volta a ser elegível
+  Estado inicial da tela = { faturado: "nao_faturado" }
+  1/2/3) SQL: bloqueia rascunho/aguardando; permite só aprovada; erro FATURA_NAO_APROVADA
+  4/5) SQL: 1 INSERT em financeiro_receber + FATURA_JA_EMITIDA (anti-duplicidade)
+  Segurança: SECURITY DEFINER + search_path + grants sem anon
+  6/7) f_mover não cria AR (sem INSERT em financeiro_receber) + guards de tenant/perfil
+  11) FaturaManualDialog não emite direto; usa enviarFaturaParaValidacao
+  Serviço: 'nao_faturado' estrito (=== "nao_faturado")
+
+Regressao (6 arquivos): 71/71 PASS
+  fin_fat_urg_04 (10) + fin_fat_urg_02 (18) + fase2a_fatura (10) +
+  fin_prog04b_emissao (3) + f38_fatura_manual (16) + tms_s04c (14).
+BUILD: npm run build -> OK ("built in 36.26s").
+TYPECHECK: 0 erros nos arquivos alterados.
+
+================================================================================
+7. IMPACTO NA FATURA MANUAL
+================================================================================
+- "Salvar e Gerar PDF" (que emitia de rascunho) foi substituído por
+  "Salvar e Enviar para Validação" (cria rascunho + f_mover -> aguardando_aprovacao).
+- A emissão passa a acontecer em Faturas, pelo fluxo Enviar -> Aprovar -> Emitir.
+- A previa/PDF de rascunho continua disponível (não é emissão).
+- NENHUMA exceção no banco para a fatura manual: a regra é única
+  ("nenhuma fatura é emitida sem aprovação").
+
+================================================================================
+8. CONTAS A RECEBER (item 4) — pendencias registradas
+================================================================================
+- NAO foi criado segundo AR para FAT-2026-000020 e a logica financeira NAO foi alterada.
+- Melhoria de UX (badge "Título vinculado" abrir/navegar para o titulo/mes correto):
+  registrada como PENDENCIA FAT-UX (nao implementada nesta missao para nao ampliar escopo).
+
+================================================================================
+9. HISTORICO/AUDITORIA DE STATUS (item 5)
+================================================================================
+- AUDITORIA: existe mecanismo oficial generico de eventos — tabela
+  public.eventos_oficiais (migration 20260705000007_m99_event_bus_fundacao.sql).
+- NAO existe tabela de historico de status de fatura.
+- DECISAO: a integracao das transicoes (rascunho->aguardando->aprovada->emitida)
+  ao barramento de eventos NAO foi feita nesta missao (evitar megaestrutura e
+  alterar de novo RPCs ja aplicadas sem teste dedicado). Registrada como PENDENCIA
+  do GATE/MASTER 360 (integrar sem duplicar arquitetura).
+- Observacao: por isso a sequencia exata de transicoes segue "não comprovável pelo
+  banco" (como no FAT-URG-03C) — a pendencia de eventos resolve isso no futuro.
+
+================================================================================
+10. HASHES
+================================================================================
+f_emitir_fatura:
+  BEFORE 7021208e2c91268c8076ce715e0d8a37
+  AFTER  e99e0d1b8b1743ff75678314a10e9a37
+M66 f_trg_propagar_financeiro_alocacao: 6c4be677b3f88590139f2de2dd4cfcde (inalterado)
+M80 f_trg_propagar_financeiro_os:       02a5902d470730c24cc1906d2fa262d8 (inalterado)
+
+================================================================================
+11. ZERO ALTERACAO NO CASO FAT-2026-000020
+================================================================================
+- fatura 0e37e0d0-6abe-4bf8-b746-a3598c52b812 = FAT-2026-000020: status=emitida,
+  valor=300.00, vencimento=2026-10-25, conta_receber_id=da2c943d... (INALTERADA).
+- AR da2c943d-8323-4559-9918-2bf02cf4edef: status=aberto, valor=300.00
+  (INALTERADO; count AR por fatura = 1, sem duplicata).
+- HML-FAT-01 / OS-202609-175861 nao modificados; nada cancelado; nada baixado.
+
+================================================================================
+12. RISCOS RESIDUAIS
+================================================================================
+R1. QUALQUER caminho que emita de rascunho/aguardando passara a falhar com
+    FATURA_NAO_APROVADA (efeito desejado). Verificados os call-sites: FaturaPanel
+    (emitir só em aprovada) e FaturaManualDialog (agora só envia para validação).
+R2. Historico/auditoria de transicoes ainda ausente (pendencia Gate/Master 360).
+R3. UX de Contas a Receber (mes do vencimento) ainda sem atalho (pendencia FAT-UX).
+R4. A fila default reduz os KPIs da Conferencia ao operacional (nao faturado);
+    historico permanece acessivel pelos filtros.
+R5. Faturas legadas ja 'emitida' sem AR (histórico) nao sao afetadas por esta regra.
+
+================================================================================
+13. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FAT-URG-04-FLUXO-FATURAMENTO-OBRIGATORIO-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-04-FLUXO-FATURAMENTO-OBRIGATORIO-RESULTADO.txt
+ TAMANHO ..: 12013 bytes
+ DATA/HORA : 25/09/2026 18:37:38
+
+================================================================================
+FIM — TMS-FAT-URG-04-FLUXO-FATURAMENTO-OBRIGATORIO
+================================================================================

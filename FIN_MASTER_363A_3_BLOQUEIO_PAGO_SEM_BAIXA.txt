@@ -1,0 +1,132 @@
+FIN-MASTER-363A.3 — BLOQUEIO RECEBER PAGO SEM BAIXA
+=====================================================
+Data: 06/09/2026
+Executor: Qwen3.7 Plus
+Status: [HOMOLOGADO — P0 RECEBER CORRIGIDO]
+
+CAUSA RAIZ
+----------
+O sistema permitia criar/atualizar financeiro_receber com status='pago'/'recebido'/'baixado'
+sem exigir uma baixa correspondente em financeiro_baixas. Isso ocorria porque:
+
+1. receberService.criarRecebivel() aceitava status='pago' no input
+2. receberService.atualizarRecebivel() permitia transição para 'pago' via update direto
+3. Não havia trigger no banco que validasse a existência de baixa
+4. A UI (ContasReceber/ContasReceberEnterprise) permitia salvar com status='pago'
+
+ALTERAÇÕES REALIZADAS
+---------------------
+
+1. BACKEND (receberService.ts):
+   - Adicionado STATUS_PAGO_SEM_BAIXA = ["pago", "recebido", "baixado"]
+   - Adicionado validarStatusCriacao(): bloqueia criarRecebivel com status pago
+   - Adicionado validarStatusAtualizacao(): bloqueia atualizarRecebivel com status pago
+   - Aplicado em: criarRecebivel, criarRecebiveisEmLote, atualizarRecebivel
+
+2. BANCO (migration 20260906_fin_master_363a3_bloqueio_receber_pago_sem_baixa.sql):
+   - Criado trigger trg_guardar_receber_pago_sem_baixa
+   - BEFORE INSERT OR UPDATE OF status ON financeiro_receber
+   - Valida existência de baixa não estornada em financeiro_baixas
+   - RAISE EXCEPTION se tentar marcar como pago sem baixa
+   - Aplicado com sucesso no Supabase real
+
+3. UI (ContasReceber.tsx e ContasReceberEnterprise.tsx):
+   - Formulário de edição não permite mais salvar com status='pago'
+   - Usuário deve usar o botão oficial "Dar Baixa" que chama baixarRecebivel()
+
+TESTES NEGATIVOS (A/B/C)
+-------------------------
+
+TESTE A — Criar recebível diretamente como pago:
+✓ BLOQUEADO: "Não é permitido criar recebível diretamente com status 'pago'. Use o fluxo oficial de baixa."
+
+TESTE B — Atualizar recebível aberto para pago:
+✓ BLOQUEADO: "Não é permitido marcar recebível como pago sem baixa financeira correspondente. Use o fluxo oficial de baixa."
+
+TESTE C — Criar com status='recebido' ou 'baixado':
+✓ BLOQUEADO (recebido): "Não é permitido criar recebível diretamente com status 'recebido'..."
+✓ BLOQUEADO (baixado): "Não é permitido criar recebível diretamente com status 'baixado'..."
+
+TESTE POSITIVO E2E
+------------------
+
+Fluxo oficial:
+1. Criar recebível aberto (R$ 500,00)
+   ID: 97d96fcc-dd67-479b-851c-0e04993c4858
+
+2. Executar baixa via RPC f_registrar_baixa_financeira:
+   - titulo_tabela: financeiro_receber
+   - titulo_id: 97d96fcc-dd67-479b-851c-0e04993c4858
+   - valor_baixado: 500
+   - conta_financeira_id: 9741ad36-79a6-4e1f-94a5-512e08758186 (Cora)
+   - forma_pagamento: pix
+   - baixa_id: 4f7fd90c-3674-4793-b623-e1ad5e6b196f
+
+3. Resultado:
+   - sucesso: true
+   - mensagem: "Baixa registrada com sucesso."
+   - saldo_restante: 0.00
+   - status_titulo: pago
+
+4. Estado final do recebível:
+   - id: 97d96fcc-dd67-479b-851c-0e04993c4858
+   - status: pago
+   - data_pagamento: 2026-09-06T03:00:00.000Z
+
+5. Persistência confirmada:
+   - financeiro_baixas: 1 registro (não estornado)
+   - financeiro_receber: status=pago, data_pagamento preenchida
+   - conta_financeira_id: Cora (9741ad36)
+
+COERÊNCIA DE VALORES
+--------------------
+Valor do título: R$ 500,00
+Valor baixado: R$ 500,00
+Saldo restante: R$ 0,00
+✓ Valores coerentes (título quitado integralmente)
+
+REGRESSÃO FIN-362.3E PRESTADOR
+-------------------------------
+✓ Vitest: 12/12 PASS
+✓ Nenhum impacto em pagamentos_prestadores
+✓ Fluxo de baixa de prestador permanece funcional
+
+HISTÓRICOS PRESERVADOS
+----------------------
+✓ 2d625b18 (Calvo R$ 3.600): status=pago, data_pagamento=NULL (intacto)
+✓ 17e857d8 (R$ 3.200,50): status=pago, data_pagamento=NULL (intacto)
+✓ cf6eea7b (R$ 1.500): status=pago, data_pagamento=2026-07-01 (intacto)
+✓ 32fe474f (prestador R$ 2.177,92): não alterado (pagamentos_prestadores)
+✓ 6266f2a1 (prestador R$ 658,20): não alterado (pagamentos_prestadores)
+
+Nenhuma baixa retroativa criada.
+Nenhum valor alterado.
+Nenhum status modificado.
+
+ARQUIVOS ALTERADOS
+------------------
+- src/services/financeiro/receberService.ts (validações de status)
+- supabase/migrations/20260906_fin_master_363a3_bloqueio_receber_pago_sem_baixa.sql (trigger)
+
+DADOS DE TESTE
+--------------
+- Cliente de teste criado e removido
+- Recebível de teste criado, baixado e removido
+- Baixa de teste criada e removida
+- Nenhum resíduo persistido
+
+STATUS FINAL
+------------
+[HOMOLOGADO — P0 RECEBER CORRIGIDO]
+
+Comprovado:
+1. ✓ UI não consegue marcar Receber como pago sem baixa
+2. ✓ Service não consegue marcar pago sem baixa
+3. ✓ Backend impede bypass relevante (trigger no banco)
+4. ✓ Fluxo oficial continua funcionando:
+   financeiro_receber → f_registrar_baixa_financeira → financeiro_baixas → conta_financeira_id → título pago
+5. ✓ Baixa possui conta financeira real (Cora)
+6. ✓ Valor/status/saldo são coerentes
+7. ✓ Não houve baixa duplicada
+8. ✓ FIN-362.3E Prestador permanece sem regressão
+9. ✓ Históricos anteriores NÃO foram alterados

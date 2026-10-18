@@ -1,0 +1,24 @@
+{
+  "prestadorA": {
+    "status": 400,
+    "body": {
+      "code": "42703",
+      "details": null,
+      "hint": null,
+      "message": "column prestadores.ativo does not exist"
+    }
+  },
+  "loginA": {
+    "status": 200,
+    "access_token_presente": true,
+    "error": null
+  },
+  "docs_range": {
+    "status": 200,
+    "content_range": "0-31/32"
+  },
+  "bucket": {
+    "status": 200,
+    "public": false
+  }
+}

@@ -1,0 +1,183 @@
+RELATÓRIO AG-07F — GATE ÚNICO DE ELEGIBILIDADE OPERACIONAL / ESCALA
+Data: 22/08/2026
+Status: IMPLEMENTADO + VALIDADO (tsc/vitest/build) — HOMOLOGAÇÃO FÍSICA FICA P/ AG-07G
+
+====================================================================
+1. CAUSA
+====================================================================
+
+P1 comprovada (AG-07E): a elegibilidade dependia de filtros de UI e o
+backend de alocação não tinha gate completo. Em criarAlocacao existia
+apenas um bloco parcial (MISSAO 03) que bloqueava 'bloqueado'/'inativo'
+e CNH vencida — mas NÃO bloqueava 'analise'/'em_analise'/'reprovado'.
+Além disso, status='ativo' com liberado_app=false gerava estado
+intermediário (App deixava o motorista entrar pelo status, mas
+tracking/chat exigiam liberado_app=true). f_buscar_operacoes_motorista
+não filtrava status/liberado_app.
+
+====================================================================
+2. GATE EXISTENTE ENCONTRADO OU NÃO
+====================================================================
+
+Existia APENAS bloco inline parcial em escalaService.criarAlocacao
+(MISSAO 03). NÃO existia helper/RPC central de elegibilidade reutilizável.
+Criado gate central único (reutilizado pela Escala e, via migration
+pendente, pelo App).
+
+====================================================================
+3. ARQUIVOS ALTERADOS
+====================================================================
+
+- src/services/escala/eligibilidadeOperacionalService.ts   (NOVO — gate central)
+- src/services/escala/escalaService.ts                     (gate em criarAlocacao + trocarMotorista)
+- src/modules/recrutamento/services/prestadoresService.ts  (coerência liberado_app nas aprovações)
+- supabase/migrations/20260822_ag07f_gate_elegibilidade_operacional.sql (NOVO, PENDENTE — RPC App)
+- src/test/ag07f_gate_elegibilidade.test.ts                (NOVO — 17 testes)
+
+====================================================================
+4. REGRA FINAL DE ELEGIBILIDADE
+====================================================================
+
+Um prestador é operacionalmente elegível quando:
+  1. status autorizado (ativo/aprovado);
+  2. liberado_app = true (coerente com App/tracking/chat);
+  3. veículo elegível quando a operação exigir veículo/placa;
+  4. sem bloqueio documental comprovável pelos campos oficiais
+     (CNH: cnh_validade verificada quando presente).
+
+====================================================================
+5. STATUS CONSIDERADOS
+====================================================================
+
+Autorizados: ativo, aprovado.
+Bloqueados: analise, em_analise, inativo, bloqueado, reprovado,
+cancelado, pendente, interessado.
+(status normalizados em minúsculas — cobre 'em_analise' do App e
+'analise' do TMS.)
+
+====================================================================
+6. COMPORTAMENTO LIBERADO_APP
+====================================================================
+
+- Elegível exige liberado_app=true (mesmo contrato de tracking/chat).
+- Aprovação operacional (status→ativo) AGORA seta liberado_app=true.
+- Bloqueio/inativação/análise seta liberado_app=false.
+- status='ativo' + liberado_app=false → INELEGÍVEL (estado incoerente
+  não gera operação intermediária; exige correção/liberação).
+
+====================================================================
+7. PROTEÇÃO NA ESCALA
+====================================================================
+
+criarAlocacao (backend) e trocarMotorista agora chamam o gate central.
+Uma chamada direta ao backend NÃO cria alocação para prestador
+inelegível — não depende do Select da UI.
+
+====================================================================
+8. PROTEÇÃO BACKEND
+====================================================================
+
+SIM — o gate está no serviço TS (criarAlocacao/trocarMotorista), com
+erros claros de motivo (status não autorizado / liberado_app=false /
+CNH vencida / veículo inelegível).
+
+====================================================================
+9. PROTEÇÃO NA BUSCA DE OPERAÇÕES (APP)
+====================================================================
+
+Migration NOVA (PENDENTE, NÃO executada) corrige
+f_buscar_operacoes_motorista (overload 0 e 4 parâmetros) para retornar
+apenas operações de prestador com status autorizado AND liberado_app=true.
+Como o TMS já bloqueia a criação de alocação para inelegível, operações
+NOVAS inelegíveis não chegam ao App; a migration fecha também as
+existentes. Aplicar em AG-07G.
+
+====================================================================
+10. DOCUMENTAÇÃO
+====================================================================
+
+BLOQUEIO DOCUMENTAL — DEPENDÊNCIA ESTRUTURAL.
+O status/validade de documentos (documentos_prestadores) não é contrato
+confiável de enforcement no caminho de alocação (depende de SQL ad-hoc).
+NÃO foi inventado bloqueio. Mantida a verificação da CNH
+(prestadores.cnh_validade) quando o campo existir.
+
+====================================================================
+11. VEÍCULO
+====================================================================
+
+COMPLETO (quando aplicável). verificarElegibilidadeVeiculo reutiliza o
+contrato já usado pela Escala: veiculos.status em
+manutencao/inativo/indisponivel bloqueia. Sem placa → não bloqueia
+(motoboy/operação sem veículo preservada).
+
+====================================================================
+12. TESTES
+====================================================================
+
+- npx vitest run src/test/ag07f_gate_elegibilidade.test.ts → ✅ 17/17
+    A ativo+liberado OK · B em_analise · C bloqueado · D inativo ·
+    E reprovado · F ativo+liberado=false · G inexistente · regressão
+    ativo válido · backend verificarElegibilidade · criarAlocacao
+    (analise/bloqueado/OK/veículo) · RPC (conteúdo da migration).
+- npx vitest run (geral)                      → ✅ 547/547 (57 arquivos)
+- npx tsc --noEmit                            → ✅ 0 erros
+- npm run build                               → ✅ 1m01s
+- npx eslint (arquivos alterados)             → apenas baseline pré-existente
+
+====================================================================
+13. PENDÊNCIAS
+====================================================================
+
+1. Migration f_buscar_operacoes_motorista PENDENTE de aplicação (AG-07G).
+2. Dados legados: prestadores ativos com liberado_app=false ficarão
+   inelegíveis até serem liberados (aprovação/liberação).
+3. BLOQUEIO DOCUMENTAL — DEPENDÊNCIA ESTRUTURAL (missão específica).
+4. App Flutter não modificado nesta missão (validação contratual no
+   computador; homologação física depois).
+
+====================================================================
+14. IMPACTO NO APP
+====================================================================
+
+Após aplicar a migration, o App NÃO recebe operação de prestador
+inelegível. Sem mudança no código Flutter nesta missão (contrato fechado
+no backend).
+
+====================================================================
+15. IMPACTO NO TMS
+====================================================================
+
+Escala e troca de motorista passam a exigir status autorizado +
+liberado_app=true; recrutamento passa a liberar o App ao aprovar.
+Operadores recebem motivo claro quando o prestador não é elegível.
+
+====================================================================
+16. PRÓXIMA MISSÃO ÚNICA
+====================================================================
+
+AG-07G — UNIFICAÇÃO APP → RECRUTAMENTO → PRESTADOR E PREVENÇÃO DE DUPLICIDADE
+(inclui aplicar a migration do gate na RPC e validar contrato ponta a ponta).
+
+====================================================================
+FECHAMENTO
+====================================================================
+
+GATE CENTRAL DE ELEGIBILIDADE: SIM
+ESCALA PROTEGIDA SOMENTE POR UI: NÃO
+BACKEND PROTEGE ALOCAÇÃO: SIM
+EM_ANALISE PODE SER ALOCADO: NÃO
+BLOQUEADO PODE SER ALOCADO: NÃO
+INATIVO PODE SER ALOCADO: NÃO
+STATUS x LIBERADO_APP COERENTE: SIM
+APP RECEBE OPERAÇÃO INELEGÍVEL: NÃO
+BLOQUEIO DOCUMENTAL: DEPENDÊNCIA ESTRUTURAL
+VEÍCULO: COMPLETO
+MIGRATION EXECUTADA: NÃO
+PRODUÇÃO ALTERADA: NÃO
+REDMI UTILIZADO: NÃO
+AG-07F: HOMOLOGAÇÃO TÉCNICA SIM
+
+PRÓXIMA MISSÃO:
+AG-07G — UNIFICAÇÃO APP → RECRUTAMENTO → PRESTADOR
+E PREVENÇÃO DE DUPLICIDADE

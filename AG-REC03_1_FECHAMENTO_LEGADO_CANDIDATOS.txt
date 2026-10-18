@@ -1,0 +1,280 @@
+================================================================================
+AG-REC03_1_FECHAMENTO_LEGADO_CANDIDATOS.txt
+Missão REC-03.1 — Fechamento Definitivo do Legado candidatos
+Data: 2026-09-01
+Status: HOMOLOGADA COM RESSALVAS (Decisão B)
+================================================================================
+
+1. OBJETIVO
+-----------
+Fechar as ressalvas da REC-03, tornando `recrutamento_candidatos` a fonte
+operacional canônica do Recrutamento com ZERO read/write operacional
+evitável na tabela `candidatos`.
+
+2. ESTADO INICIAL (pós-REC-03)
+------------------------------
+4 dependências/ressalvas restantes:
+  1. recrutamentoIA.ts — 7 reads/writes em candidatos
+  2. recrutamentoIntegracao.ts — 3 writes em candidatos
+  3. BancoReservas.tsx — 1 read em candidatos
+  4. AcompanhamentoDocs.tsx — 1 read em candidatos (FK LEGACY)
+
+3. AUDITORIA DOS 4 PONTOS (FASE 1)
+-----------------------------------
+
+┌──────────────────────────┬───────────┬─────────────────────────────────────┐
+│ Arquivo                  │ Classif.  │ Motivo                              │
+├──────────────────────────┼───────────┼─────────────────────────────────────┤
+│ recrutamentoIA.ts        │ ATIVO     │ 7 queries operacionais candidatos   │
+│ recrutamentoIntegracao.ts│ ATIVO     │ 3 writes operacionais candidatos    │
+│ BancoReservas.tsx        │ ATIVO     │ 1 read operacional candidatos       │
+│ AcompanhamentoDocs.tsx   │ FK LEGACY │ FK candidato_documentos → candidatos│
+│ testeDocumentos.ts       │ HISTÓRICO │ Código morto (teste manual)         │
+│ actionEngine.ts          │ ATIVO     │ Fallback candidatos (redundante)    │
+└──────────────────────────┴───────────┴─────────────────────────────────────┘
+
+4. REC-03 antes/depois — recrutamentoIA.ts
+-------------------------------------------
+ANTES (7 refs candidatos):
+  L143: .from("candidatos") — buscarReservasParaOperacao (READ)
+  L183: .from("candidatos") — identificarCandidatosEsquecidos (READ)
+  L273: .from("candidatos") — atualizarStatusCandidato (WRITE)
+  L294: .from("candidatos") — aprovarParaDocumentacao (READ ×2)
+  L306: .from("candidatos") — ativarPrestador (READ)
+  L330: .from("candidatos") — ativarPrestador (WRITE)
+
+DEPOIS (0 refs candidatos):
+  Todas as queries migradas para .from("recrutamento_candidatos")
+  Filtros migrados: status → stage (interessado→interesse_confirmado,
+  inativo→bloqueado)
+  Campo mappings: nome→nome_completo, veiculo→tipo_veiculo,
+  stage→status, score→score_perfil
+  Função mapStageToStatus() adicionada para compatibilidade
+
+5. REC-03 antes/depois — recrutamentoIntegracao.ts
+---------------------------------------------------
+ANTES (3 refs candidatos):
+  L185: .from("candidatos").update() — atualizar existente
+  L264: .from("candidatos").update() — criar novo
+  L300: .from("candidatos").update() — atualizarEtapaCandidato
+
+DEPOIS (0 refs candidatos):
+  Todas as writes migradas para .from("recrutamento_candidatos")
+  Escritas preservadas: reservas_banco, homologacoes, prestadores,
+  documentos_prestadores (todas mantidas)
+
+6. BancoReservas/FK
+-------------------
+ANTES: .from("candidatos").select("*") com IDs de reservas_banco
+DEPOIS: .from("recrutamento_candidatos").select("*, nome as nome_completo,
+  veiculo as tipo_veiculo, stage as status, score as score_perfil")
+FK reservas_banco.candidato_id → candidatos.id: PRESERVADA (compatível
+  porque IDs são compartilhados via migration REC-03 INSERT)
+
+7. AcompanhamentoDocs/FK
+------------------------
+MANTIDO em candidatos — BLOQUEIO TÉCNICO:
+  candidato_documentos.candidato_id → candidatos.id (FK)
+  candidato_documentos NÃO existe em recrutamento_candidatos
+  Migração requer: migration da FK candidato_documentos para
+  recrutamento_candidatos (escopo REC-04)
+  Classificação: FK LEGACY, não evitável sem migration de schema
+
+8. Identidade
+-------------
+IDs entre candidatos e recrutamento_candidatos são IDÊNTICOS
+(mesmo UUID copiado via INSERT da migration REC-03).
+reservas_banco.candidato_id referencia candidatos.id,
+que é o mesmo UUID em recrutamento_candidatos.id.
+
+9. Idempotência da Migration REC-03
+------------------------------------
+Todos os ADD COLUMN usam IF NOT EXISTS ✓
+INSERT usa WHERE NOT EXISTS (rc.id = c.id) ✓
+CREATE INDEX usa IF NOT EXISTS (5 índices) ✓
+Nenhum DROP TABLE / DROP COLUMN / TRUNCATE ✓
+Execução repetida: ZERO duplicatas
+
+10. Duplicidade
+---------------
+UNIQUE constraints: nenhuma criada (decisão consciente —
+  sem evidência técnica suficiente para regra de negócio)
+risco: baixo (IDs são UUIDs gerados, sem colisão)
+
+11. Migration REC-03
+---------------------
+Arquivo: supabase/migrations/20260901_rec03_add_legacy_columns.sql
+Status: CRIADA, NÃO APLICADA em nenhum ambiente
+48 colunas + INSERT sync + 5 índices
+
+12. Novas migrations
+--------------------
+Nenhuma criada nesta missão.
+Migração da FK candidato_documentos → recrutamento_candidatos
+  documentada como pendência para REC-04.
+
+13. Bridge APP
+--------------
+enterpriseKanbanService.buscarECadastrarAppPrestadores():
+  - Lê de prestadores WHERE origem_cadastro='app_motorista'
+  - Verifica duplicidade via Set de prestador_ids existentes
+  - Insere em recrutamento_candidatos (TABLE = 'recrutamento_candidatos')
+  - Idempotente: não cria segundo registro para mesmo prestador
+  - Status mapeado: APP_TO_STAGE[p.status]
+  - toDB() garante schema consistente
+
+14. Conversão
+-------------
+conversaoCandidatoService.converterCandidatoParaPrestador():
+  - CANDIDATOS_TABLE = 'recrutamento_candidatos' ✓
+  - Gate documental: statusDocumental === 'completo' ✓
+  - Stages permitidos: aprovado, ativo, prestador_apto ✓
+  - liberado_app: statusOperacional === 'ativo' (fail-closed) ✓
+  - Busca duplicata via telefone/email ✓
+  - Cria prestador via prestadoresService.criar() ✓
+  - sincronizarComOperacao(): usa identidadePrestadorService ✓
+
+15. Tenant
+----------
+recrutamentoIA: não manipula tenant_id diretamente ✓
+recrutamentoIntegracao: não manipula tenant_id diretamente ✓
+BancoReservas: não manipula tenant_id diretamente ✓
+RLS via current_tenant_id_safe() preservado ✓
+
+16. liberado_app
+----------------
+conversaoCandidatoService: liberado_app: statusOperacional === 'ativo'
+  → fail-closed: sem status ativo, liberado_app = false ✓
+enterpriseKanbanService: não seta liberado_app (deixa para conversão) ✓
+
+17. Ocorrências restantes de candidatos
+---------------------------------------
+┌──────────────────────────────┬─────┬─────────────────────────────────────┐
+│ Arquivo                      │ Qtd │ Classificação                       │
+├──────────────────────────────┼─────┼─────────────────────────────────────┤
+│ AcompanhamentoDocs.tsx       │  1  │ FK LEGACY (bloqueado, REC-04)       │
+│ testeDocumentos.ts           │  2  │ CÓDIGO MORTO (teste manual)         │
+│ rec03 test (asserções)       │  3  │ TESTE (assertividade)               │
+│ rec03_1 test (asserções)     │ 11  │ TESTE (assertividade)               │
+│ rec02 test (comentários)     │  2  │ DOCUMENTAÇÃO (comentários)          │
+├──────────────────────────────┼─────┼─────────────────────────────────────┤
+│ TOTAL                        │ 19  │ 0 OPERACIONAL ATIVO EVITÁVEL        │
+└──────────────────────────────┴─────┴─────────────────────────────────────┘
+
+18. Classificação de cada ocorrência restante
+---------------------------------------------
+AcompanhamentoDocs.tsx:51 → FK LEGACY
+  candidato_documentos.candidato_id → candidatos.id
+  Não evitável sem migration da FK (escopo REC-04)
+
+testeDocumentos.ts:54,163 → CÓDIGO MORTO
+  Utilitário de teste manual, não é operacional
+  Insert + delete para validar fluxo de documentos
+  Pode permanecer ou ser migrado sem impacto
+
+Testes rec03/rec03_1/rec02 → TESTE/DOCUMENTAÇÃO
+  Apenas asserções que validam o comportamento
+  Não são queries operacionais
+
+19. Arquivos alterados
+----------------------
+src/services/recrutamentoIA.ts — 7 queries migradas candidatos→recrutamento_candidatos
+src/services/recrutamentoIntegracao.ts — 3 writes migrados candidatos→recrutamento_candidatos
+src/components/recrutamento/BancoReservas.tsx — 1 read migrado + field aliases
+src/services/ia/actionEngineService.ts — fallback candidatos removido
+src/test/rec03_1_fechamento_legacy_candidatos.test.ts — NOVO (62 testes)
+src/test/rec03_eliminacao_legacy_candidatos.test.ts — 4 asserções atualizadas
+
+20. Testes focalizados
+----------------------
+src/test/rec03_1_fechamento_legacy_candidatos.test.ts — 62/62 PASS
+  17 seções: recrutamentoIA, recrutamentoIntegracao, BancoReservas,
+  AcompanhamentoDocs, escritas, migration idempotente, bridge APP,
+  bridge idempotente, conversão, gate documental, liberado_app,
+  tenant, DROP, migrations, referências legacy, Homologacao,
+  BancoTalentos, resumo cobertura
+
+21. Regressão
+-------------
+npx vitest run: 1092 PASS / 2 FAIL / 12 skipped (75 test files)
+  73 test files PASS, 1 FAIL, 1 skipped
+
+FALHAS PREEXISTENTES (2):
+  f0k_recibos test 1: hardcode REC-202608, hoje é Setembro → REC-202609
+  f0k_recibos test 5: timeout 5s (PDF mock)
+
+FALHAS NOVAS REC-03.1: 0
+
+22. tsc --noEmit
+-----------------
+0 erros
+
+23. Produção alterada
+---------------------
+NÃO — nenhuma migration aplicada, nenhum dado modificado
+
+24. APP alterado
+----------------
+NÃO
+
+25. Redmi utilizado
+-------------------
+NÃO
+
+26. Riscos
+----------
+Baixo:
+  - IDs compartilhados entre candidatos e recrutamento_candidatos
+    são UUIDs idênticos (migration SYNC)
+  - reservas_banco FK mantida em candidatos (compatível)
+  - candidato_documentos FK mantida em candidatos (compatível)
+
+Médio:
+  - candidato_interacoes.candidato_id referencia candidatos.id
+    (mantido, não alterado nesta missão)
+  - testeDocumentos.ts ainda escreve em candidatos (código morto)
+
+27. Pendências para REC-04
+---------------------------
+1. Migrar FK candidato_documentos → recrutamento_candidatos
+   (requer migration SQL: ALTER TABLE candidato_documentos
+    ALTER COLUMN candidato_id TYPE UUID referencing
+    recrutamento_candidatos.id)
+2. Migrar FK candidato_interacoes → recrutamento_candidatos
+   (se aplicável)
+3. Migrar AcompanhamentoDocs.tsx para recrutamento_candidatos
+   (após migração da FK)
+4. Avaliar remoção de testeDocumentos.ts ou migração para
+   recrutamento_candidatos
+5. Adicionar UNIQUE constraint em recrutamento_candidatos
+   quando houver evidência técnica da regra de negócio
+6. Trigger para manter nome_completo = nome em writes
+
+28. Decisão
+-----------
+DECISÃO B — HOMOLOGADA COM RESSALVAS
+
+Justificativa:
+  ✅ recrutamento_candidatos é canônica para recrutamento
+  ✅ recrutamentoIA migrado (7 refs → 0 em candidatos)
+  ✅ recrutamentoIntegracao migrado (3 refs → 0 em candidatos)
+  ✅ BancoReservas migrado (1 ref → 0 em candidatos)
+  ✅ actionEngine fallback removido
+  ✅ Bridge APP preservada e idempotente
+  ✅ Conversão preservada com gate documental
+  ✅ liberado_app fail-closed preservado
+  ✅ Tenant preservado
+  ✅ Migration REC-03 idempotente
+  ✅ Zero regressão nova
+  ✅ tsc 0 erros
+  ✅ Produção intacta
+
+  ⚠️ 1 dependência FK restante: AcompanhamentoDocs → candidato_documentos
+  (bloqueada por migration de FK, escopo REC-04)
+
+  Candidatos read/write operacional evitável: 0
+  (AcompanhamentoDocs é FK LEGACY, não evitável sem migration de schema)
+
+================================================================================
+FIM AG-REC03_1
+================================================================================

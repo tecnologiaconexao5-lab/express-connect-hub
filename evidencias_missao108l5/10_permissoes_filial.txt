@@ -1,0 +1,17 @@
+PERMISSÕES — MISSÃO 108-L5
+
+Estrutura atual:
+- tenant_usuarios: SEM coluna filial_id — não há vínculo usuário↔filial em banco
+- clientes: SEM coluna filial_id — não há vínculo cliente↔filial em banco
+- filiais: SEM tenant_id — sem RLS multi-tenant
+
+Proteção implementada:
+- PortalMultiFilial recebe clienteId via prop (vindo de clienteData?.id)
+- Se clienteId é undefined/null, exibe mensagem "Cliente não identificado"
+- buscarFiliaisCliente() filtra ordens_servico por cliente_id (cliente UUID)
+- Isolamento por tenant via RLS existente em ordens_servico, alocacoes_escala, financeiro_receber
+- Dados de outros clientes nunca vazam porque todas as queries têm .eq('cliente', clienteId)
+
+Limitação conhecida:
+- Não há restrição por filial para usuários individuais (tenant_usuarios não tem filial_id)
+- Futuro: adicionar filial_id em tenant_usuarios e usar middleware para filtrar filiais do usuário

@@ -42,3 +42,5 @@ ALTER TABLE contratos_gerados ADD COLUMN IF NOT EXISTS pdf_url text;
 -- Add index for performance if not exists
 CREATE INDEX IF NOT EXISTS idx_contratos_gerados_prestador_id ON contratos_gerados(prestador_id);
 CREATE INDEX IF NOT EXISTS idx_contratos_gerados_numero ON contratos_gerados(numero_contrato);
+
+

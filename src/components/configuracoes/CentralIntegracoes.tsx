@@ -202,31 +202,21 @@ export function CentralIntegracoes() {
         }
 
         case "groq": {
-          const groqKey = import.meta.env.VITE_GROQ_API_KEY;
-          if (!groqKey) {
-            erroMsg = "VITE_GROQ_API_KEY não configurada";
+          const result = await testarGroq();
+          if (result.ok) {
+            novoStatus = "conectado";
           } else {
-            const result = await testarGroq(groqKey);
-            if (result.ok) {
-              novoStatus = "conectado";
-            } else {
-              erroMsg = result.error || "Erro desconhecido";
-            }
+            erroMsg = result.error || "Erro desconhecido";
           }
           break;
         }
 
         case "gemini": {
-          const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-          if (!geminiKey) {
-            erroMsg = "VITE_GEMINI_API_KEY não configurada";
+          const result = await testarGemini();
+          if (result.ok) {
+            novoStatus = "conectado";
           } else {
-            const result = await testarGemini(geminiKey);
-            if (result.ok) {
-              novoStatus = "conectado";
-            } else {
-              erroMsg = result.error || "Erro desconhecido";
-            }
+            erroMsg = result.error || "Erro desconhecido";
           }
           break;
         }

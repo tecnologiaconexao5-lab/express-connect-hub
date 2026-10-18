@@ -43,13 +43,23 @@ ALTER TABLE public.ia_logs ENABLE ROW LEVEL SECURITY;
 
 -- Políticas permissivas temporárias (MVP)
 DROP POLICY IF EXISTS "Permitir leitura total provedores" ON public.ia_providers_config;
-CREATE POLICY "Permitir leitura total provedores" ON public.ia_providers_config FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Permitir leitura total provedores" ON public.ia_providers_config;
+DROP POLICY IF EXISTS "Permitir leitura total provedores" ON ia_providers_config;
+CREATE POLICY "Permitir leitura total provedores" ON ia_providers_config FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Permitir escrita total provedores" ON public.ia_providers_config;
-CREATE POLICY "Permitir escrita total provedores" ON public.ia_providers_config FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir escrita total provedores" ON public.ia_providers_config;
+DROP POLICY IF EXISTS "Permitir escrita total provedores" ON ia_providers_config;
+CREATE POLICY "Permitir escrita total provedores" ON ia_providers_config FOR ALL USING (true);
 
 DROP POLICY IF EXISTS "Permitir leitura total logs" ON public.ia_logs;
-CREATE POLICY "Permitir leitura total logs" ON public.ia_logs FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Permitir leitura total logs" ON public.ia_logs;
+DROP POLICY IF EXISTS "Permitir leitura total logs" ON ia_logs;
+CREATE POLICY "Permitir leitura total logs" ON ia_logs FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Permitir escrita total logs" ON public.ia_logs;
-CREATE POLICY "Permitir escrita total logs" ON public.ia_logs FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir escrita total logs" ON public.ia_logs;
+DROP POLICY IF EXISTS "Permitir escrita total logs" ON ia_logs;
+CREATE POLICY "Permitir escrita total logs" ON ia_logs FOR ALL USING (true);
+
+

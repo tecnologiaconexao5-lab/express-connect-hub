@@ -1,8 +1,20 @@
 import { toast } from "sonner";
 
-const ZOHO_API_URL = import.meta.env.VITE_ZOHO_EMAIL_API_URL;
-const ZOHO_API_KEY = import.meta.env.VITE_ZOHO_EMAIL_API_KEY;
+// ⚠️ LEGADO: Este arquivo será substituído pelo ZohoMailProvider (via Conectores IA)
+// Mantido para compatibilidade com serviços existentes (propostaService, followUpService, etc.)
+
+// Novas vars OAuth2 (oficial)
+const ZOHO_CLIENT_ID = import.meta.env.VITE_ZOHO_CLIENT_ID;
+const ZOHO_CLIENT_SECRET = import.meta.env.VITE_ZOHO_CLIENT_SECRET;
+const ZOHO_REFRESH_TOKEN = import.meta.env.VITE_ZOHO_REFRESH_TOKEN;
+const ZOHO_ACCOUNT_ID = import.meta.env.VITE_ZOHO_ACCOUNT_ID;
+const ZOHO_DATA_CENTER = import.meta.env.VITE_ZOHO_DATA_CENTER || "mail.zoho.com";
 const ZOHO_EMAIL_FROM = import.meta.env.VITE_ZOHO_EMAIL_FROM;
+
+// Deprecated: antigas vars API Key (mantidas para fallback, serão removidas)
+const ZOHO_API_URL_DEPRECATED = import.meta.env.VITE_ZOHO_EMAIL_API_URL;
+const ZOHO_API_KEY_DEPRECATED = import.meta.env.VITE_ZOHO_EMAIL_API_KEY;
+
 const N8N_WEBHOOK_EMAIL = import.meta.env.VITE_N8N_WEBHOOK_EMAIL_URL;
 
 export interface EmailPayload {
@@ -34,8 +46,54 @@ export interface EmailEvent {
   origem: "tms_conexao_express";
 }
 
+// Cache do access_token (em memória, não persiste, não loga)
+let cachedAccessToken: string | null = null;
+let cachedExpiresAt: number = 0;
+
+const obterAccessToken = async (): Promise<string> => {
+  if (cachedAccessToken && Date.now() < cachedExpiresAt) {
+    return cachedAccessToken;
+  }
+
+  if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN) {
+    throw new Error("Zoho Mail OAuth2 não configurado. Configure VITE_ZOHO_CLIENT_ID, VITE_ZOHO_CLIENT_SECRET e VITE_ZOHO_REFRESH_TOKEN no .env");
+  }
+
+  const params = new URLSearchParams();
+  params.set("refresh_token", ZOHO_REFRESH_TOKEN);
+  params.set("grant_type", "refresh_token");
+  params.set("client_id", ZOHO_CLIENT_ID);
+  params.set("client_secret", ZOHO_CLIENT_SECRET);
+
+  const response = await fetch("https://accounts.zoho.com/oauth/v2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Erro desconhecido");
+    throw new Error(`Zoho OAuth2 token error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data.access_token) {
+    throw new Error("Zoho OAuth2: access_token não retornado");
+  }
+
+  const expiresIn = (data.expires_in as number) || 3600;
+  cachedAccessToken = data.access_token as string;
+  cachedExpiresAt = Date.now() + (expiresIn - 60) * 1000;
+
+  return cachedAccessToken;
+};
+
 const isConfigured = (): boolean => {
-  return !!(ZOHO_API_URL && ZOHO_API_KEY && ZOHO_EMAIL_FROM);
+  // Prioriza OAuth2
+  if (ZOHO_CLIENT_ID && ZOHO_CLIENT_SECRET && ZOHO_REFRESH_TOKEN && ZOHO_ACCOUNT_ID) return true;
+  // Fallback para API Key deprecated
+  if (ZOHO_API_URL_DEPRECATED && ZOHO_API_KEY_DEPRECATED && ZOHO_EMAIL_FROM) return true;
+  return false;
 };
 
 const buildN8NPayload = (evento: EmailEvent): Record<string, unknown> => {
@@ -85,30 +143,71 @@ const sendEmail = async (payload: EmailPayload): Promise<EmailResponse> => {
   }
 
   try {
-    const response = await fetch(`${ZOHO_API_URL}/api/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Zoho-api-key ${ZOHO_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: payload.from || ZOHO_EMAIL_FROM,
-        to: payload.to,
-        subject: payload.subject,
-        html: payload.html ? payload.body : undefined,
-        text: !payload.html ? payload.body : undefined,
-        cc: payload.cc,
-        bcc: payload.bcc,
-      }),
-    });
+    // Tenta OAuth2 primeiro
+    if (ZOHO_CLIENT_ID && ZOHO_CLIENT_SECRET && ZOHO_REFRESH_TOKEN && ZOHO_ACCOUNT_ID) {
+      const accessToken = await obterAccessToken();
+      const endpoint = `https://${ZOHO_DATA_CENTER}/api/accounts/${ZOHO_ACCOUNT_ID}/messages`;
 
-    if (response.ok) {
-      const data = await response.json();
-      return { success: true, messageId: data.messageId };
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+        },
+        body: JSON.stringify({
+          fromAddress: payload.from || ZOHO_EMAIL_FROM,
+          toAddress: payload.to,
+          subject: payload.subject,
+          content: payload.body,
+          mailFormat: payload.html ? "html" : "plain",
+          ccAddress: payload.cc || undefined,
+          bccAddress: payload.bcc || undefined,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data?.data?.messageId || data?.messageId };
+      }
+
+      if (response.status === 401) {
+        cachedAccessToken = null;
+        cachedExpiresAt = 0;
+      }
+
+      const error = await response.text();
+      return { success: false, error };
     }
 
-    const error = await response.text();
-    return { success: false, error: error };
+    // Fallback: API Key deprecated
+    if (ZOHO_API_URL_DEPRECATED && ZOHO_API_KEY_DEPRECATED) {
+      const response = await fetch(`${ZOHO_API_URL_DEPRECATED}/api/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `ZohoMail ${ZOHO_API_KEY_DEPRECATED}`,
+        },
+        body: JSON.stringify({
+          from: payload.from || ZOHO_EMAIL_FROM,
+          to: payload.to,
+          subject: payload.subject,
+          html: payload.html ? payload.body : undefined,
+          text: !payload.html ? payload.body : undefined,
+          cc: payload.cc,
+          bcc: payload.bcc,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data.messageId };
+      }
+
+      const error = await response.text();
+      return { success: false, error };
+    }
+
+    return { success: false, reason: "Nenhum método de autenticação configurado" };
   } catch (err) {
     console.error("[ZohoEmail] Erro ao enviar email:", err);
     return { success: false, error: String(err) };
@@ -433,10 +532,12 @@ export const processarEmailXMLRecebido = async (
 export const getZohoStatus = () => {
   return {
     configured: isConfigured(),
-    apiUrl: ZOHO_API_URL ? "configurado" : "não configurado",
-    apiKey: ZOHO_API_KEY ? "configurado" : "não configurado",
+    oauth2: ZOHO_CLIENT_ID && ZOHO_CLIENT_SECRET && ZOHO_REFRESH_TOKEN ? "configurado" : "não configurado",
+    accountId: ZOHO_ACCOUNT_ID || "não configurado",
+    dataCenter: ZOHO_DATA_CENTER,
     fromEmail: ZOHO_EMAIL_FROM || "não configurado",
     n8nWebhook: N8N_WEBHOOK_EMAIL ? "configurado" : "não configurado",
+    apiKeyLegacy: ZOHO_API_KEY_DEPRECATED ? "configurado (deprecated)" : "não configurado",
   };
 };
 

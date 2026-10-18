@@ -1,0 +1,134 @@
+================================================================================
+MISSÃO A25-L — HOMOLOGAÇÃO FINAL TORRE DE CONTROLE / TRACKING
+================================================================================
+Data: 2026-08-15
+Status: CÓDIGO + TESTES CONCLUÍDOS. HOMOLOGAÇÃO FINAL (A25-M) PERTENCE AO USUÁRIO.
+
+--------------------------------------------------------------------------------
+1. OBJETIVO
+--------------------------------------------------------------------------------
+Validar os 3 defeitos comprovados da Torre de Controle e corrigir o bug
+funcional do painel que abria VAZIO para alocação ativa SEM OS (Grupo 2 do mapa):
+
+  (1) Bateria não aparece no popup do marcador.
+  (2) Crash "Rendered more hooks than during the previous render" ao clicar em
+      "Abrir Painel Completo".
+  (3) Popup exibia "GPS desatualizado (há 38min)".
+
+--------------------------------------------------------------------------------
+2. RESTRIÇÕES RESPEITADAS
+--------------------------------------------------------------------------------
+- Nunca inventar percentual de bateria (defeito 1 é exibição correta).
+- Não mascarar o crash com try/catch.
+- Não remover o Error Boundary.
+- Não aumentar a janela de 60 min de recência do GPS.
+- NÃO declarar A25 homologada (decisão A25-M é do usuário).
+- Auditoria de banco 100% read-only.
+
+--------------------------------------------------------------------------------
+3. PARTE A — AUDITORIA READ-ONLY (scripts/a25l_audit_readonly.mjs)
+--------------------------------------------------------------------------------
+Respostas confirmadas:
+  A. Coluna `bateria` NÃO existe em `portal_tracking_realtime` → MapboxMap usa
+     `posicao?.bateria ?? undefined` e mostra "Bateria não informada".
+     `bateria=0.0` em todas as linhas → exibição CORRETA (valida bat != null && bat > 0).
+  B. Esquema real da tabela: alocacao_id, os_id, latitude, longitude, precisao,
+     velocidade, bateria (ausente), captured_at, origem, status, created_at,
+     veiculo_placa, veiculo_tipo, motorista_nome.
+  C. RPCs existentes: f_buscar_ultimas_posicoes (usada), registrar_posicao (app).
+  D. Última posição da alocação ca5fe225... : GPS RECENTE (recência ≤ 60min OK),
+     origem homologacao, status em_rota/saiu_em_rota.
+  E. Prestador: "PRESTADOR TESTE APP" (tabela prestadores), veículo Fiorino ABC1T23.
+  F. Os 3 defeitos: (1) e (3) = comportamento correto; (2) crash = bug real.
+
+--------------------------------------------------------------------------------
+4. PARTE B (BATERIA) — CONCLUSÃO
+--------------------------------------------------------------------------------
+Confirmado que a tabela de origem NÃO possui coluna de bateria. Sem inventar valor.
+Exibição "Bateria não informada" é o comportamento correto. NENHUMA alteração feita.
+
+--------------------------------------------------------------------------------
+5. PARTE C (CRASH) — DIAGNÓSTICO
+--------------------------------------------------------------------------------
+Caça estática completa em TorreControle.tsx e MapboxMap.tsx NÃO encontrou violação
+de hooks (nenhum hook após return condicional). Reprodução via Playwright NÃO
+apresentou crash nem Error Boundary ao clicar "Abrir Painel Completo".
+Hipótese: o crash já foi eliminado pelas correções do working tree (A25-D) —
+o teste A25-L atua agora como REGRESSÃO permanente do fluxo "Abrir Painel Completo".
+
+--------------------------------------------------------------------------------
+6. PARTE E — BUG FUNCIONAL CORRIGIDO (painel vazio para Grupo 2)
+--------------------------------------------------------------------------------
+CAUSA RAIZ:
+  Marcadores do Grupo 2 (alocação ativa SEM OS) usam id "aloc-<uuid>".
+  O DetalhesOperacaoSheet consultava alocacoes_escala por `ordem_servico_id = osId`
+  (uuid do marcador, com prefixo) e ordens_servico por id → ambos sem resultado →
+  painel abria VAZIO.
+
+CORREÇÃO (src/components/torre-controle/DetalhesOperacaoSheet.tsx):
+  - Contrato compartilhado criado em markerAdapter.ts:
+      PREFIXO_MARCADOR_ALOC_SEM_OS = "aloc-"
+      marcadorIdAlocacaoSemOS(alocacaoId)  → "aloc-<uuid>"
+      extrairIdAlocacaoDeMarcador(markerId) → uuid ou null
+  - Sheet deriva alocSemOSId = extrairIdAlocacaoDeMarcador(osId).
+  - fetchAlocacoes(): Grupo 2 → .eq("id", alocSemOSId); Grupo 1 → .eq("ordem_servico_id", osId).
+  - fetchOSFull()/fetchComposicao(): retornam cedo quando alocSemOSId (não há OS).
+  - Tracking: Grupo 2 → obterPosicaoAtualPorAlocacao(alocSemOSId);
+              Grupo 1 → obterPosicaoAtual(osId). (bug intermediário corrigido)
+  - fetchTracking() removido (dead code).
+  - liveTracking: busca trackingPositions por p.alocacao_id === alocSemOSId no Grupo 2.
+  - Título do sheet: fallback "Alocação <8 chars>" para Grupo 2.
+  - montarMarcadorAlocacaoSemOS passou a usar marcadorIdAlocacaoSemOS().
+
+--------------------------------------------------------------------------------
+7. PARTE D — REALTIME (auditoria)
+--------------------------------------------------------------------------------
+TorreControle.tsx (~184-202): handler INSERT atualiza trackingPositions por
+alocacao_id e chama carregarAlocacoesSemOS(). Memo markers (~570-658) recomputa
+Grupo 2 via montarMarcadorAlocacaoSemOS — retorna null sem posição recente
+(janela 60 min), consistente com buscarUltimasPosicoes. Sem alterações.
+
+--------------------------------------------------------------------------------
+8. PARTE F — TESTES AUTOMATIZADOS
+--------------------------------------------------------------------------------
+E2E (tests/e2e/a25_l_painel_sem_os.spec.ts) — 3/3 PASSED (1.2-1.4m):
+  1. Torre abre sem Error Boundary e sem erro realtime (regressão A25-D).
+     pageerrors críticos: 0.
+  2. Abrir Painel Completo de um marcador renderiza o sheet sem crash.
+     [PROVA] popup visível: true | status:true prestador:true gps:true
+     pageerrors críticos: 0.
+  3. Remontagem da Torre sem erro de hooks (sair e voltar).
+     pageerrors críticos: 0.
+
+Unit (src/test/a25BTracking.test.ts) — 14/14 PASSED, inclui 4 novos testes
+do contrato Grupo 2: round-trip aloc-<uuid>, Grupo 1 → null, "aloc-" → null,
+montarMarcadorAlocacaoSemOS usa id com prefixo.
+
+Validação geral:
+  npx tsc --noEmit        → 0 erros
+  npm run build           → OK (47.54s)
+  npx vitest run          → 130/130 passed (12 arquivos)
+  npx playwright test a25_l_painel_sem_os.spec.ts → 3/3 passed
+
+Prova visual (DOM, sem leitura de imagem):
+  test-results/a25l-probe.txt (temporário, removido após leitura):
+  MARCADORES DOM: 1 | TÍTULO: OS-HML-MULTI-001E | Status da Operação: true |
+  Prestador e Veículo: true | GPS: true | Pendências Operacionais: true |
+  Aba Mensagens: true | pageerrors: 0
+
+Screenshots: test-results/e2e/a25-l/
+  01-torre.png, 02-torre-map.png, 03-painel-aberto.png, 04-torre-remontada.png
+
+--------------------------------------------------------------------------------
+9. PARECER TÉCNICO
+--------------------------------------------------------------------------------
+- Defeito 1 (bateria): comportamento CORRETO — exibição "Bateria não informada".
+- Defeito 3 (GPS desatualizado): comportamento CORRETO — popup reflete recência
+  real do último evento (20min no teste, dentro da janela de 60min).
+- Defeito 2 (crash): NÃO reproduzido nesta execução; regressão automatizada cobre
+  o fluxo "Abrir Painel Completo" com 0 pageerrors em todas as execuções.
+- Bug funcional (painel vazio Grupo 2): CORRIGIDO e coberto por testes unitários
+  do contrato de id + validação E2E do sheet com conteúdo real.
+
+HOMOLOGAÇÃO FINAL: PENDENTE — decisão do usuário (A25-M), com prova visual.
+================================================================================

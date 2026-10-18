@@ -1,0 +1,54 @@
+{
+  "ts": "2026-10-04T23:26:17.988Z",
+  "base": "https://uwrvzsjtpgaifkktpepn.supabase.co",
+  "probes": [
+    {
+      "tabela": "tenant_usuarios",
+      "status": 200,
+      "linhas_retornadas": 3,
+      "erro": null
+    },
+    {
+      "tabela": "ordens_servico",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "clientes",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "prestadores",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "pagamentos_prestadores",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "financeiro_pagar",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "financeiro_receber",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    },
+    {
+      "tabela": "documentos_prestadores",
+      "status": 200,
+      "linhas_retornadas": 0,
+      "erro": null
+    }
+  ]
+}

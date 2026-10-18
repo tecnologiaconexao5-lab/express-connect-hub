@@ -2,6 +2,7 @@
 // Serviço centralizado para gestão de documentos de prestadores
 // Regras: anti-duplicidade, rastreabilidade, compatibilidade
 import { supabase } from "@/lib/supabase";
+import { mesmaReferencia, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
 
 export interface DocumentoPrestador {
   id?: string;
@@ -33,18 +34,18 @@ export async function verificarDocumentoDuplicado(
     return { duplicado: false };
   }
 
+  // G02 — schema real de documentos_prestadores: (id, prestador_id, tipo, url, created_at).
   let query = supabase
     .from("documentos_prestadores")
     .select("*")
     .eq("prestador_id", prestadorId)
-    .eq("tipo", tipoDocumento)
-    .in("status", ["valido", "pendente"]);
+    .eq("tipo", tipoDocumento);
 
   const { data: existentes } = await query;
 
   if (existentes && existentes.length > 0) {
     if (urlArquivo) {
-      const mesmoArquivo = existentes.find(d => d.url === urlArquivo);
+      const mesmoArquivo = existentes.find(d => mesmaReferencia(d.url, urlArquivo));
       if (mesmoArquivo) {
         return { duplicado: true, existente: mesmoArquivo };
       }
@@ -62,18 +63,28 @@ export async function vincularDocumentoCandidatoAPrestador(
   const erros: string[] = [];
   let migrados = 0;
 
-  const { data: docsCandidato } = await supabase
-    .from("documentos_prestadores")
-    .select("*")
+  // G02 — Fonte canônica dos documentos do candidato: candidato_documentos
+  // (candidato_id, tipo, arquivo_url). NÃO existe coluna candidato_id em
+  // documentos_prestadores (schema real: id, prestador_id, tipo, url, created_at).
+  const { data: docsCandidato, error: readError } = await supabase
+    .from("candidato_documentos")
+    .select("id, tipo, arquivo_url")
     .eq("candidato_id", candidatoId);
+
+  if (readError) {
+    return { success: false, migrados: 0, erros: [readError.message] };
+  }
 
   if (!docsCandidato || docsCandidato.length === 0) {
     return { success: true, migrados: 0, erros: [] };
   }
 
   for (const doc of docsCandidato) {
-    const { duplicado } = await verificarDocumentoDuplicado(prestadorId, doc.tipo, doc.url);
+    const urlOriginal = doc.arquivo_url;
+    if (!urlOriginal) continue;
+    const url = referenciaEstavelDocumento(urlOriginal) ?? urlOriginal;
 
+    const { duplicado } = await verificarDocumentoDuplicado(prestadorId, doc.tipo, url);
     if (duplicado) {
       console.log(`[Documentos] pulando duplicado: ${doc.tipo}`);
       migrados++;
@@ -82,13 +93,7 @@ export async function vincularDocumentoCandidatoAPrestador(
 
     const { error } = await supabase
       .from("documentos_prestadores")
-      .update({
-        prestador_id: prestadorId,
-        candidato_id: null,
-        origem: "recrutamento_migrado",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", doc.id);
+      .insert([{ prestador_id: prestadorId, tipo: doc.tipo, url }]);
 
     if (error) {
       erros.push(`${doc.tipo}: ${error.message}`);
@@ -125,15 +130,11 @@ export async function adicionarDocumentoPrestador(
     };
   }
 
+  // G02 — somente colunas reais de documentos_prestadores.
   const payload = {
     prestador_id: doc.prestador_id,
-    candidato_id: doc.candidato_id || null,
     tipo: doc.tipo,
-    url: doc.url_arquivo || doc.arquivo || null,
-    dados: doc.dados || null,
-    validade: doc.validade || null,
-    status: doc.status || "pendente",
-    origem: doc.origem || "cadastro",
+    url: referenciaEstavelDocumento(doc.url_arquivo || doc.arquivo) ?? doc.url_arquivo ?? doc.arquivo ?? null,
     created_at: doc.created_at || new Date().toISOString(),
   };
 
@@ -177,7 +178,7 @@ export async function verificarDocumentosOrfaos(): Promise<{
 }> {
   const { data } = await supabase
     .from("documentos_prestadores")
-    .select("id, tipo, url, created_at, origem")
+    .select("id, tipo, url, created_at")
     .is("prestador_id", null)
     .order("created_at", { ascending: false })
     .limit(50);

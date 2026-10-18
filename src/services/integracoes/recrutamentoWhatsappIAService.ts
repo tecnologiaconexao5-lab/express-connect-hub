@@ -8,6 +8,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { proxyIaClient } from "@/services/ia/proxyIaClient";
 
 // ============================================================
 // ENUMS E TIPOS
@@ -365,30 +366,17 @@ async function chamarGroq(
   prompt: string,
   systemPrompt: string
 ): Promise<string | null> {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) return null;
-
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
+    const resultado = await proxyIaClient.executar({
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+      prompt: `${systemPrompt}\n\n${prompt}`,
+      max_tokens: 500,
+      temperature: 0.7,
     });
-    const json = await res.json();
-    return json.choices?.[0]?.message?.content ?? null;
+    return resultado.sucesso ? (resultado.resposta || null) : null;
   } catch (err) {
-    console.error("[WhatsAppIA] Erro Groq:", err);
+    console.error("[WhatsAppIA] Erro Groq via proxy-ia:", err);
     return null;
   }
 }
@@ -397,29 +385,16 @@ async function chamarOpenAI(
   prompt: string,
   systemPrompt: string
 ): Promise<string | null> {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  if (!apiKey) return null;
-
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 500,
-      }),
+    const resultado = await proxyIaClient.executar({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      prompt: `${systemPrompt}\n\n${prompt}`,
+      max_tokens: 500,
     });
-    const json = await res.json();
-    return json.choices?.[0]?.message?.content ?? null;
+    return resultado.sucesso ? (resultado.resposta || null) : null;
   } catch (err) {
-    console.error("[WhatsAppIA] Erro OpenAI:", err);
+    console.error("[WhatsAppIA] Erro OpenAI via proxy-ia:", err);
     return null;
   }
 }
@@ -588,7 +563,7 @@ export async function processarMensagemPrestador(
   resposta: RespostaIA;
   respostaSalva: Mensagem;
 }> {
-  console.log(`[WhatsAppIA] 📨 Nova mensagem de ${telefone}: "${mensagem}"`);
+  console.log(`[WhatsAppIA] Nova mensagem recebida`);
 
   // 1. Busca ou cria conversa
   const conversa = await buscarOuCriarConversa(telefone, nome);

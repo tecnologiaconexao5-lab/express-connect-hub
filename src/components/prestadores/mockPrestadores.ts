@@ -73,11 +73,11 @@ export const mockPrestadores: Prestador[] = [
     dataCadastro: "2023-04-15",
     dataAprovacao: "2023-04-20",
     historicoAlteracoes: [
-      { campo: "WhatsApp", antes: "(11) 91111-2222", depois: "(11) 98765-4321", usuario: "admin@conexaoexpress.com.br", data: "2026-01-15" },
-      { campo: "Região secundária", antes: "—", depois: "Litoral SP", usuario: "admin@conexaoexpress.com.br", data: "2025-10-02" },
+      { campo: "WhatsApp", antes: "(11) 91111-2222", depois: "(11) 98765-4321", usuario: "tamiris.castilho@conexaoexpress.com.br", data: "2026-01-15" },
+      { campo: "Região secundária", antes: "—", depois: "Litoral SP", usuario: "tamiris.castilho@conexaoexpress.com.br", data: "2025-10-02" },
     ],
     ultimaAtualizacao: "2026-03-20",
-    ultimoUsuario: "admin@conexaoexpress.com.br",
+    ultimoUsuario: "tamiris.castilho@conexaoexpress.com.br",
     observacoesTorre: "Parceiro confiável para rotas SP capital. Priorizar em operações urgentes.",
   },
   {
@@ -110,7 +110,7 @@ export const mockPrestadores: Prestador[] = [
     historicoOcorrencias: [],
     historicoBloqueios: [],
     dataCadastro: "2022-08-10", dataAprovacao: "2022-08-15",
-    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-18", ultimoUsuario: "operador@conexaoexpress.com.br",
+    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-18", ultimoUsuario: "operacional@conexaoexpress.com.br",
   },
   {
     id: "3", foto: "", nomeCompleto: "João Pedro Oliveira", cpfCnpj: "987.654.321-00",
@@ -131,7 +131,7 @@ export const mockPrestadores: Prestador[] = [
     ],
     conferenciManual: false, scoreInterno: 3.0, qtdOperacoes: 12, indiceAceite: 75, indiceComparecimento: 83, indiceEntregaNoPrazo: 80,
     historicoOcorrencias: [], historicoBloqueios: [],
-    dataCadastro: "2026-03-01", historicoAlteracoes: [], ultimaAtualizacao: "2026-03-01", ultimoUsuario: "admin@conexaoexpress.com.br",
+    dataCadastro: "2026-03-01", historicoAlteracoes: [], ultimaAtualizacao: "2026-03-01", ultimoUsuario: "tamiris.castilho@conexaoexpress.com.br",
   },
   {
     id: "4", foto: "", nomeCompleto: "Expresso Sul Logística EIRELI", nomeFantasia: "Sul Express",
@@ -160,7 +160,7 @@ export const mockPrestadores: Prestador[] = [
     indiceAceite: 99, indiceComparecimento: 99, indiceEntregaNoPrazo: 97,
     historicoOcorrencias: [], historicoBloqueios: [],
     dataCadastro: "2021-02-10", dataAprovacao: "2021-02-15",
-    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-22", ultimoUsuario: "admin@conexaoexpress.com.br",
+    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-22", ultimoUsuario: "tamiris.castilho@conexaoexpress.com.br",
   },
   {
     id: "5", foto: "", nomeCompleto: "Ricardo Mendes", cpfCnpj: "456.789.012-34",
@@ -191,9 +191,9 @@ export const mockPrestadores: Prestador[] = [
     ],
     dataCadastro: "2024-06-01", dataAprovacao: "2024-06-05",
     historicoAlteracoes: [
-      { campo: "Status", antes: "Ativo", depois: "Bloqueado", usuario: "admin@conexaoexpress.com.br", data: "2025-12-01" },
+      { campo: "Status", antes: "Ativo", depois: "Bloqueado", usuario: "tamiris.castilho@conexaoexpress.com.br", data: "2025-12-01" },
     ],
-    ultimaAtualizacao: "2025-12-01", ultimoUsuario: "admin@conexaoexpress.com.br",
+    ultimaAtualizacao: "2025-12-01", ultimoUsuario: "tamiris.castilho@conexaoexpress.com.br",
     observacoesTorre: "Bloqueado por documentação vencida e histórico de ocorrências. Reavaliar após regularização.",
   },
   {
@@ -222,6 +222,6 @@ export const mockPrestadores: Prestador[] = [
     indiceAceite: 92, indiceComparecimento: 96, indiceEntregaNoPrazo: 90,
     historicoOcorrencias: [], historicoBloqueios: [],
     dataCadastro: "2023-11-01", dataAprovacao: "2023-11-05",
-    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-19", ultimoUsuario: "operador@conexaoexpress.com.br",
+    historicoAlteracoes: [], ultimaAtualizacao: "2026-03-19", ultimoUsuario: "operacional@conexaoexpress.com.br",
   },
 ];

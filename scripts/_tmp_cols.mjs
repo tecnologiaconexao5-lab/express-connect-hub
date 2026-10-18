@@ -1,0 +1,12 @@
+﻿import { readFileSync } from "node:fs";
+import pg from "pg";
+const root = process.env.ROOT;
+const env = readFileSync(`${root}/.env`, "utf8");
+const db = env.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL=")).slice("DATABASE_URL=".length).trim();
+const c = new pg.Client({ connectionString: db, ssl: { rejectUnauthorized: false } });
+await c.connect();
+const pc = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='prestadores' ORDER BY ordinal_position`);
+console.log("prestadores cols:", pc.rows.map(r=>r.column_name).join(", "));
+const pn = await c.query(`SELECT column_name FROM information_schema.columns WHERE table_name='portal_notificacoes' ORDER BY ordinal_position`);
+console.log("portal_notificacoes cols:", pn.rows.map(r=>r.column_name).join(", "));
+await c.end();

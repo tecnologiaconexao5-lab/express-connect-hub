@@ -1,0 +1,341 @@
+ESCALA-VEIC-TABELA-04 — THERMAL MATCH ROOT CAUSE
+==================================================
+PASS AUDIT — SOMENTE LEITURA
+Data: 2026-09-22
+
+==================================================
+1 — VEICULO ATUAL DO CLAYTON
+==================================================
+
+PRESTADOR_ID=0673eca2-4594-4842-b78f-cd6cabe9177d (analise)
+VEICULO_ID=c487f012-208e-47ae-b5d8-e976382eaab0
+PLACA=GEW-2H93
+TIPO_VEICULO=fiorino
+TIPO_LEGADO=fiorino
+MODELO=SAVEIRO RB MBVS (eh uma Saveiro, NAO uma Fiorino)
+MARCA=VW
+
+VEHICLE_THERMAL_FIELDS=
+  temperatura_min: null
+  temperatura_max: null
+  tipo_carga: "misto"
+  (Nao existem colunas: refrigerado, termico, classificacao_termica, controle_temperatura)
+
+VEHICLE_THERMAL_VALUE=null (nenhum campo termico preenchido)
+
+O veiculo NAO possui indicacao termica de nenhuma especie.
+Null em temperatura_min/max. "misto" em tipo_carga.
+Nao ha como determinar se e refrigerado, termico ou seco.
+
+==================================================
+2 — TABELA MINEIRAO
+==================================================
+
+TABELA_ID=1cfaa88a-0802-4d1e-9026-abfb0224a8dc
+TABLE_CLIENT=" Mineirao Abc" (com ESPACO ANTES do M)
+TABLE_ACTIVE=true
+TABLE_VEHICLE_PROFILE=fiorino
+TABLE_THERMAL_REQUIREMENT=null (coluna exigencia_termica = null)
+TABLE_CLASSIFICACAO_TERMICA=refrigerado
+
+Confirmado: Fiorino + Refrigerado
+exigencia_termica = null
+classificacao_termica = "refrigerado"
+
+A tabela NAO declara exigencia_termica (null).
+Mas classificacao_termica = "refrigerado".
+
+==================================================
+3 — LOOKUP REAL DA ESCALA
+==================================================
+
+LOOKUP_CLIENT_INPUT=item.nome_fantasia = "Mineirao Abc"
+  (EscalaLista.tsx:2087: item.nome_fantasia || item.razao_social || "")
+
+LOOKUP_VEHICLE_INPUT=prestadorVeiculo.tipo_veiculo = "fiorino"
+
+LOOKUP_THERMAL_INPUT=NENHUM
+  A Escala NAO busca nem filtra por condicao termica.
+
+MATCH_FILTERS=  (EscalaLista.tsx:179-183)
+  1. .eq("cliente", normalizeClienteNome(clienteNome))
+     → .eq("cliente", "MINEIRAO ABC")
+  2. .eq("tipo_veiculo", tipoVeiculo)
+     → .eq("tipo_veiculo", "fiorino")
+
+A Escala usa SOMENTE 2 filtros: cliente + tipo_veiculo.
+Nao usa: exigencia_termica, classificacao_termica, regiao, vigencia (na query).
+A vigencia e verificada depois no codigo (line 195-198).
+
+==================================================
+4 — MATCH PASSO A PASSO
+==================================================
+
+CLIENT_MATCH=
+  Query: .eq("cliente", "MINEIRAO ABC")
+  DB table: " Mineirao Abc" (com espaco antes)
+  Resultado: NAO COMPARAVEL
+  Postgrest .eq() e case-sensitive e exato.
+  "MINEIRAO ABC" != " Mineirao Abc" (diferenca: espaco anterior + case)
+  
+  NORMALIZACAO: normalizeClienteNome (clienteHelper.ts:1-3)
+    nome.trim().toUpperCase()
+    "Mineirao Abc" → "MINEIRAO ABC"
+    Porem a coluna no DB tem " Mineirao Abc" (com espaco)
+    "MINEIRAO ABC" != " Mineirao Abc"
+
+VEHICLE_MATCH=
+  Query: .eq("tipo_veiculo", "fiorino")
+  DB table: tipo_veiculo = "fiorino"
+  Resultado: MATCH OK
+
+THERMAL_MATCH=N/A (filtro nao existe na query)
+
+STATUS_MATCH=
+  Filtro: .eq("ativo", true) (implicito, baseQuery line 60)
+  DB table: ativo = true
+  Resultado: MATCH OK
+
+VALIDITY_MATCH=
+  Codigo: data_inicio <= dataEscala AND (data_fim >= dataEscala OR data_fim IS NULL)
+  DB table: data_inicio = 2026-09-22T03:00:00Z, data_fim = 2028-01-21T03:00:00Z
+  Data escala = hoje (2026-09-22)
+  Resultado: MATCH OK (dentro da vigencia)
+
+OTHER_MATCHES=
+  Busca posterior (line 210-217): universal=true, tipo_veiculo=fiorino, ativo=true
+  DB table: universal=false
+  Resultado: NAO e universal, NAO match
+
+FIRST_FILTER_THAT_FAILS=CLIENT_MATCH
+
+A comparacao literal:
+  VEHICLE_VALUE="fiorino"
+  TABLE_VEHICLE_VALUE="fiorino"
+  → MATCH
+
+  VEHICLE_THERMAL_VALUE=null
+  TABLE_THERMAL_VALUE=null (exigencia_termica) / "refrigerado" (classificacao_termica)
+  → N/A (filtro nao usado)
+
+O PRIMEIRO FILTRO QUE FALHA E O CLIENTE.
+Nao e o veiculo, nao e o termico, nao e a vigencia.
+
+==================================================
+5 — NORMALIZACAO
+==================================================
+
+VEHICLE_NORMALIZED="fiorino"
+TABLE_VEHICLE_NORMALIZED="fiorino"
+→ NORMALIZATION_PROBLEM=NO (tipo_veiculo bate exatamente)
+
+THERMAL_NORMALIZED_VEHICLE=null
+THERMAL_NORMALIZED_TABLE=null (exigencia_termica) / "refrigerado" (classificacao_termica)
+→ N/A (filtro nao usado)
+
+NORMALIZATION_PROBLEM=NO para veiculo
+NORMALIZATION_PROBLEM=YES para cliente:
+  normalizeClienteNome("Mineirao Abc") = "MINEIRAO ABC"
+  DB " Mineirao Abc" (com espaco) != "MINEIRAO ABC"
+  A funcao trim() NAO remove o espaco do DB — remove o espado do INPUT.
+
+==================================================
+6 — MODELO TERMICO ATUAL
+==================================================
+
+CURRENT_THERMAL_OPTIONS=
+  Coluna exigencia_termica: null (nulo = sem exigencia)
+  Coluna classificacao_termica: "refrigerado" (classificacao propria da tabela)
+  
+  Nao existe enum de exigencia_termica no schema public.
+  (Verificado via pg_enum: nenhum tipo com "term" ou "exig" encontrado)
+
+SECO= Nao e valor de exigencia_termica. Pode ser valor de classificacao_termica.
+TERMICO= Nao existe como valor de exigencia_termica nem classificacao_termica.
+REFRIGERADO= Existe como classificacao_termica = "refrigerado"
+
+THERMAL_LEVEL_MISSING=YES
+  Nao existe nivel "Termico" como opcao.
+  So existem: null (sem exigencia) e "refrigerado" (classificacao).
+
+==================================================
+7 — REGRA DE NEGOCIO CORRETA
+==================================================
+
+VEHICLE_TYPE_SEPARATE_FROM_THERMAL=YES
+  tipo_veiculo: "fiorino" (dimensao do veiculo)
+  exigencia_termica: null (dimensao da tabela)
+  Sao campos independentes em tabelas_valores.
+
+CURRENT_MODEL_SUPPORTS_MATRIX=NO
+  So existem 2 dimensoes:
+    tipo_veiculo (fiorino, moto, vuc, etc.)
+    exigencia_termica (null ou refrigerado)
+  
+  Nao existe nivel "Termico" intermediario.
+  Nao e possivel representar:
+    Fiorino + Seco
+    Fiorino + Termico
+    Fiorino + Refrigerado
+  sem criar classificacao_termica manual.
+
+==================================================
+8 — COMPORTAMENTO DE MATCH
+==================================================
+
+CURRENT_THERMAL_MATCH_RULE=INDIFINIDO
+  A Escala NAO filtra por exigencia_termica nem classificacao_termica.
+  O match e SOMENTE: cliente + tipo_veiculo.
+  
+  A tabela Mineirao tem exigencia_termica=null.
+  Se a Escala filter por exigencia_termica, null poderia significar:
+    A) Aceita qualquer condicao (inclusivo)
+    B) Somente seco (exclusivo)
+    C) Nao participa do match (ignorado)
+  
+  O codigo atual escolhe C: nao participa do match.
+
+EXPECTED_THERMAL_MATCH_RULE=BUSINESS_RULE_REQUIRED
+  Precisa-se definir regra comercial:
+    Se tabela.exigencia_termica IS NULL → aceita qualquer veiculo?
+    Se tabela.exigencia_termica = "refrigerado" → so veiculos refrigerados?
+    Como indicar que um veiculo e refrigerado/termico?
+
+==================================================
+9 — FRANQUIA 100 x 0
+==================================================
+
+FRANCHISE_MAPPING_SEPARATE_BUG=YES
+  Este problema e SEPARADO do match.
+  O match falha no CLIENTE, antes de chegar ao campo de franquia.
+
+COMMERCIAL_FRANCHISE_KM=100 (tabelas_valores.franquia_km)
+ESCALA_LEGACY_KM_FRANQUIA=0 (tabelas_valores.km_franquia)
+
+==================================================
+10 — ROOT CAUSE
+==================================================
+
+TABLE_NOT_FOUND_ROOT_CAUSE=CLIENT_MATCH
+
+A tabela Mineirao NAO e encontrada porque:
+
+1. A Escala (EscalaLista.tsx:179-183) busca por:
+   .eq("cliente", normalizeClienteNome("Mineirao Abc"))
+   .eq("tipo_veiculo", "fiorino")
+
+2. normalizeClienteNome("Mineirao Abc") = "MINEIRAO ABC"
+   (trim().toUpperCase() — clienteHelper.ts:1-3)
+
+3. A coluna "cliente" na tabela Mineirao contem:
+   " Mineirao Abc" (com ESPACO ANTES do M)
+   (razao_social do clientes: " Mineirao Abc Paes de Queijo e Salgados Congelados LTDA")
+
+4. Postgrest .eq() compara strings exatas:
+   "MINEIRAO ABC" != " Mineirao Abc"
+
+5. Portanto a query retorna 0 resultados.
+
+6. A busca por tabela universal (line 210-217) tambem falha:
+   tabela.universal = false
+
+7. Resultado: Nenhuma tabela encontrada.
+
+O problema NAO e:
+  - thermal mismatch (exigencia_termica=null, nao filtrado)
+  - vehicle mismatch (tipo_veiculo="fiorino", match OK)
+  - status mismatch (ativo=true, match OK)
+  - validity mismatch (dentro da vigencia, match OK)
+
+O problema E:
+  - CLIENT NAME MISMATCH por espaco anterior no campo "cliente"
+  - normalizeClienteNome() faz trim no INPUT mas nao no DB
+  - A coluna "cliente" no DB tem espaco anterior (dados sujos)
+
+THERMAL_LEVEL_TERMICO_REQUIRED=NO (para este bug especifico)
+  O nivel "Termico" nao e necessario para resolver o bug atual.
+  O match falha no CLIENTE, nao no termico.
+
+CODE_FIX_REQUIRED=
+  Opcao A (correcao pontual): EscalaLista.tsx normalizar o nome ANTES de comparar
+    Ou usar .ilike() em vez de .eq() para cliente
+    Ou trim() no DB (migration)
+  
+  Opcao B (correcao estrutural): usar buscarTabelasService em vez de lookup local
+    A Escala define sua propria buscarTabelaValoresCliente (shadowing)
+    O service buscarTabelasService resolve nome do DB (resolverNomeCliente)
+    e faria match correto
+
+DATA_FIX_REQUIRED=
+  Corrigir " Mineirao Abc" → "Mineirao Abc" na coluna "cliente"
+  (remover espaco anterior)
+  OU
+  Corrigir o razao_social no clientes (remover espacos)
+
+MIGRATION_REQUIRED=OPCIONAL
+  Se optar por migration de dados:
+    UPDATE tabelas_valores SET cliente = TRIM(cliente) WHERE cliente != TRIM(cliente);
+  Isso corrige TODAS as tabelas com espacos.
+
+==================================================
+EVIDENCIA OBRIGATORIA
+==================================================
+
+PRESTADOR_ID=0673eca2-4594-4842-b78f-cd6cabe9177d
+VEICULO_ID=c487f012-208e-47ae-b5d8-e976382eaab0
+PLACA=GEW-2H93
+TIPO_VEICULO=fiorino
+MODELO=SAVEIRO RB MBVS
+
+VEHICLE_THERMAL_FIELDS=temperatura_min=null, temperatura_max=null, tipo_carga=misto
+VEHICLE_THERMAL_VALUE=null
+
+TABLE_CLIENT=" Mineirao Abc" (com espaco)
+TABLE_ACTIVE=true
+TABLE_VEHICLE_PROFILE=fiorino
+TABLE_THERMAL_REQUIREMENT=null (exigencia_termica)
+TABLE_CLASSIFICACAO_TERMICA=refrigerado
+
+LOOKUP_CLIENT_INPUT="Mineirao Abc" (nome_fantasia, sem espaco)
+LOOKUP_VEHICLE_INPUT="fiorino"
+LOOKUP_THERMAL_INPUT=NENHUM (filtro nao existe)
+
+MATCH_FILTERS=cliente (eq) + tipo_veiculo (eq) + ativo (eq) + vigencia (gte/lte)
+  + universal (eq, busca secundaria)
+
+CLIENT_MATCH=FAIL ("MINEIRAO ABC" != " Mineirao Abc")
+VEHICLE_MATCH=OK ("fiorino" = "fiorino")
+THERMAL_MATCH=N/A (filtro nao existe)
+STATUS_MATCH=OK (ativo=true)
+VALIDITY_MATCH=OK (dentro da vigencia)
+OTHER_MATCHES=universal=false, NAO match na busca secundaria
+
+FIRST_FILTER_THAT_FAILS=CLIENT_MATCH
+
+NORMALIZATION_PROBLEM=YES (trim sozinho nao resolve; DB tem espaco)
+
+CURRENT_THERMAL_OPTIONS=exigencia_termica (null), classificacao_termica ("refrigerado")
+SECO=Nao e valor de exigencia_termica
+TERMICO=NAO EXISTE como valor
+REFRIGERADO=Existe como classificacao_termica
+THERMAL_LEVEL_MISSING=YES
+
+VEHICLE_TYPE_SEPARATE_FROM_THERMAL=YES
+CURRENT_MODEL_SUPPORTS_MATRIX=NO
+
+CURRENT_THERMAL_MATCH_RULE=INDIFINIDO (Escala nao filtra termico)
+EXPECTED_THERMAL_MATCH_RULE=BUSINESS_RULE_REQUIRED
+
+FRANCHISE_MAPPING_SEPARATE_BUG=YES
+COMMERCIAL_FRANCHISE_KM=100
+ESCALA_LEGACY_KM_FRANQUIA=0
+
+TABLE_NOT_FOUND_ROOT_CAUSE=CLIENT_MATCH (espaco anterior no campo "cliente")
+THERMAL_LEVEL_TERMICO_REQUIRED=NO (para este bug; sim para modelo futuro)
+
+CODE_FIX_REQUIRED=corrigir normalizacao do nome do cliente OU usar buscarTabelasService
+DATA_FIX_REQUIRED=TRIM(cliente) em tabelas_valores OU corrigir razao_social
+MIGRATION_REQUIRED=OPCIONAL (UPDATE tabelas_valores SET cliente = TRIM(cliente))
+
+FILES_MODIFIED=0
+DB_WRITES=0

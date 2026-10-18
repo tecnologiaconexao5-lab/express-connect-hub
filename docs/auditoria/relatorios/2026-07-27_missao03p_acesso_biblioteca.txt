@@ -1,0 +1,117 @@
+MISSAO 03P — CORRECAO DE ACESSO A BIBLIOTECA OPERACIONAL
+========================================================
+Data: 2026-07-27
+Branch: auditoria-final-integracao
+Correcao: D06 (rota /biblioteca)
+Status: APLICADA E VALIDADA
+
+===============================================================================
+DEFEITOS
+===============================================================================
+Defeito  Causa                                      Arquivo            Linha  Status
+-------  ------------------------------------------ -----------------  -----  --------
+D06      Rota /biblioteca mapeada como configuracoes routePermissions.ts  32   APLICADO
+D05      Race condition AuthContext (init vs INIT)  AuthContext.tsx   109-136 PENDENTE
+
+===============================================================================
+D06 — CAUSA RAIZ
+===============================================================================
+
+routePermissions.ts:32 mapeava:
+  "/biblioteca": { modulo: "configuracoes" }
+
+O modulo "configuracoes" so permite acesso aos perfis super_admin e admin
+(pode_ver: true). Todos os demais (financeiro, operador, comercial,
+atendimento) tem pode_ver: false para configuracoes.
+
+--- Analise da Biblioteca (6 abas) ---
+Aba          Titulo                       Conteudo                          Modulo (se isolado)
+-----------  ---------------------------  --------------------------------  --------------------
+operacional  Central Operacional          POPs, normas seguranca, PGR       ordens_servico
+prestador    Pasta do Prestador (App)     CNH, CRLV, ANTT                  prestadores
+cliente      Pasta do Cliente (Portal)    Faturamento, tarifas, contratos   clientes
+modelos      Modelos e Templates          Fichas cadastrais, propostas      clientes
+mensagens    Mensagens Rapidas            Templates WhatsApp               cross-module
+fluxo        Fluxo de Recrutamento        Fluxo de recrutamento             prestadores
+
+Conclusao: Nenhum modulo unico cobre todas as abas.
+Solucao: Roles explicitas em vez de modulo.
+
+===============================================================================
+CORRECAO APLICADA
+===============================================================================
+
+Antes (routePermissions.ts:32):
+  "/biblioteca": { modulo: "configuracoes" },
+
+Depois:
+  "/biblioteca": { roles: ["super_admin", "admin", "operador", "financeiro",
+                            "comercial", "atendimento"] },
+
+--- Perfis ---
+super_admin  SIM  Gestao total do sistema
+admin        SIM  Gerencia operacoes
+operador     SIM  Usa Central Operacional (POPs, normas)
+financeiro   SIM  Acessa Pasta do Cliente (faturamento, contratos)
+comercial    SIM  Usa Modelos/Templates e Mensagens
+atendimento  SIM  Consulta manuais para suporte
+prestador    NAO  Portal proprio (/portal-prestador)
+cliente      NAO  Portal proprio (/portal-cliente)
+motorista    NAO  Portal proprio
+
+===============================================================================
+VALIDACAO TECNICA
+===============================================================================
+Comando              Resultado  Duracao
+-------------------  ---------  -------
+npx tsc --noEmit     0 erros    -
+npm run build        ok         45.45s
+
+===============================================================================
+PLAYWRIGHT
+===============================================================================
+Arquivo: tests/e2e/missao03p_biblioteca_acesso.spec.ts
+
+Testes:
+1. Financeiro acessa /biblioteca?tab=operacional -> Acesso permitido
+2. Usuario nao autenticado redirecionado para /login
+3. Sidebar "Biblioteca Global" visivel para financeiro
+4. Usuario com role invalida continua bloqueado
+
+===============================================================================
+D05 — PENDENTE
+===============================================================================
+Causa: init() effect (linhas 109-136) redundante com INITIAL_SESSION (linha 142).
+Ambos disparam buildUserFromSession em paralelo -> 2 queries tenant_usuarios
+concorrentes. Timeout 5000ms em uma -> fallback role="operador" sobrescreve.
+
+Timeline:
+T+0: init() + INITIAL_SESSION disparam em paralelo
+T+0: Duas queries tenant_usuarios simultaneas
+T+5s: Uma timeout -> setUser({role: "operador"})
+T+5s+: Outra resolve -> setUser({role: "financeiro"}) [ou vice-versa]
+
+===============================================================================
+COMPARACAO (D06)
+===============================================================================
+Evidencia                      Antes              Depois             Resultado
+------------------------------ ------------------ ------------------ ---------
+Modulo exigido                 configuracoes      roles explicitas   OK
+financeiro acessa /biblioteca  Acesso Restrito    Permitido          OK
+operador acessa /biblioteca    Acesso Restrito    Permitido          OK
+admin acessa /biblioteca       Permitido          Permitido          OK
+prestador acessa /biblioteca   Bloqueado          Bloqueado          OK
+tsc --noEmit                   -                  0 erros            OK
+npm run build                  -                  ok                 OK
+D05 (timeout/role instavel)    Pendente           Pendente           PENDENTE
+
+===============================================================================
+ARQUIVOS ALTERADOS
+===============================================================================
+src/lib/routePermissions.ts  (linha 32)
+tests/e2e/missao03p_biblioteca_acesso.spec.ts  (novo)
+
+===============================================================================
+LINHAS E SHA256
+===============================================================================
+EOF

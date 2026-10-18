@@ -1,0 +1,95 @@
+ESCALA-OS-04-LINKAR-13-OS-EXISTENTES
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: SANEAMENTO CONTROLADO DE DADOS
+
+==================================================
+PRECHECK (13/13 PASS | BLOCKED_CHANGED_STATE=0)
+==================================================
+
+Para cada caso: ordem_servico_id IS NULL; exatamente 1 OS com id = alocação.id;
+nenhuma segunda OS candidata (por prestador+data+tipo); financeiro (quando existe)
+com os_id = alocação.id.
+
+ALLOCATION_ID                     | osCount | second | fin(pag/rec/pp) | status            | resultado
+02c85042-6176-4f49-bdaf-ba74b2296425 | 1 | 0 | 0/0/0 | aguardando_aceite | PASS
+0733bb97-8356-434c-bbdf-35d70bc0ff08 | 1 | 0 | 1/1/1 | concluida | PASS
+1a46b5a9-f739-409f-ab5b-a744cfa6a8d5 | 1 | 0 | 0/0/0 | aguardando_aceite | PASS
+341fe14a-c4ba-4018-8595-a0eb56903363 | 1 | 0 | 0/0/0 | concluida | PASS
+36e49824-8804-478a-b1ed-3df35846f552 | 1 | 0 | 0/0/0 | aguardando_aceite | PASS
+61cd4358-1050-4a4f-b785-ebff9f54eb86 | 1 | 0 | 0/0/0 | concluida | PASS
+7ab8ad9c-0962-4ef1-89c8-0f74e744286a | 1 | 0 | 0/0/0 | aguardando_aceite | PASS
+9bd5744e-b2ea-4773-beea-a907cbbb32a9 | 1 | 0 | 0/0/0 | em_rota | PASS
+bb2cda88-cffd-4196-9a16-ed68fd2e472c | 1 | 0 | 1/1/0 | concluida | PASS
+c6a4e65a-1622-406f-a20a-b6adccc9abbb | 1 | 0 | 1/1/0 | concluida | PASS
+ca905169-c958-4ad8-89c0-d6c6e742c924 | 1 | 0 | 0/0/0 | aguardando_aceite | PASS
+dce846ff-d7ae-463a-b784-73d8d2d91b21 | 1 | 0 | 1/1/0 | concluida | PASS
+f12a56b4-a3f7-4473-97dd-bf180995d2f2 | 1 | 0 | 0/0/0 | concluida | PASS
+
+Dry-run (BEGIN/ROLLBACK): FIN_SAME=true; 13 linkadas; rollback restaura 13 NULL.
+
+==================================================
+EXECUÇÃO (um caso por vez)
+==================================================
+
+Comando: UPDATE alocacoes_escala SET ordem_servico_id = id WHERE id = <id> AND ordem_servico_id IS NULL;
+
+Resultado por caso (13): AFTER_LINK = ALLOCATION_ID; OS_COUNT_BEFORE = OS_COUNT_AFTER = 1;
+FINANCIAL_VALUE_CHANGED=NO; STATUS_CHANGED=NO; EXPECTED_MATCH=YES.
+
+Nota técnica: o UPDATE altera SOMENTE ordem_servico_id, que NÃO está na lista de colunas
+monitoradas pelo M66 (AFTER UPDATE OF status, finalizada, valores, prestador_id) → M66 não
+dispara; nenhuma alteração financeira/status. O histórico da alocação é registrado pelo
+trigger trg_registrar_historico_alocacao (esperado).
+
+LINKS_UPDATED=13
+
+==================================================
+APÓS EXECUÇÃO
+==================================================
+
+REMAINING_WITHOUT_OS=121   (134 − 13)
+CLASS_A_REMAINING=0
+NEW_OS_CREATED=0           (OS_BEFORE=121, OS_AFTER=121)
+DUPLICATE_OS_CREATED=0
+FINANCIAL_VALUE_CHANGED_ANY=NO
+STATUS_CHANGED_ANY=NO
+
+==================================================
+RESULTADO
+==================================================
+
+EXPECTED_CASES=13
+PRECHECK_PASS=13
+LINKS_UPDATED=13
+BLOCKED_CHANGED_STATE=0
+
+SAFE_LINKS_RESTORED=13
+FINANCIAL_VALUES_PRESERVED=YES
+NO_NEW_OS_CREATED=YES
+ROLLBACK_PREPARED=YES
+  supabase/migrations/20260922000009_escala_os_04_rollback.sql
+  (ordem_servico_id → NULL SOMENTE nas 13; NÃO executado)
+
+FILES_MODIFIED=supabase/migrations/20260922000009_escala_os_04_rollback.sql (novo — rollback)
+DB_WRITES=13 (alocacoes_escala.ordem_servico_id nas 13)
+MIGRATIONS=0
+
+==================================================
+FORA DO ESCOPO (não tratado)
+==================================================
+
+- 38 Classe B; 16 Classe D; 67 Classe E; 9 divergências FIN-02; 27 órfãs;
+  redundância M66/M80; APP/POD/Fatura/Recrutamento.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhuma OS criada/vinculada nova (apenas vínculo restaurado). Sem DELETE.
+- Nenhum valor/status financeiro alterado. Sem migration de schema. Sem saneamento amplo.
+- Não iniciou outra missão.
+
+DB_WRITES=13
+MIGRATIONS=0

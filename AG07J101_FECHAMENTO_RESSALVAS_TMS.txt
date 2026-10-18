@@ -1,0 +1,249 @@
+AG-07J.10.1 — FECHAMENTO DAS RESSALVAS TMS
+
+AMBIENTE:
+TMS
+
+REPOSITÓRIO:
+express-connect-hub
+
+CELULAR/REDMI NECESSÁRIO:
+NÃO
+
+DATA:
+2026-08-25
+
+============================
+CAMINHO LEGADO
+============================
+
+ativarPrestador() É ALCANÇÁVEL:
+NÃO
+
+PROVA DE ALCANÇABILIDADE:
+- Função existe em src/services/recrutamentoIntegracao.ts:107
+- Única UI que a chama: src/components/recrutamento/Homologacao.tsx:100
+- Homologacao.tsx NÃO é importado por nenhum componente
+- NÃO existe rota /homologacao no App.tsx
+- NÃO existe item sidebar para Homologação
+- NÃO é renderizado em nenhum módulo do recrutamento
+- Rotas adicionais: DevTesteTMS.tsx:6 importa (rota /dev-teste — tela de dev, não operador)
+- BancoReservas.tsx:45 menciona "aprovados_sem_ativar" mas NÃO chama ativarPrestador
+- Classificação: CÓDIGO MORTO
+
+INSERT DEFINE STATUS:
+SIM
+VALOR: "ativo"
+
+INSERT DEFINE LIBERADO_APP:
+SIM
+VALOR: true
+
+UPDATE DEFINE STATUS:
+NÃO (campo ausente no objeto updates)
+
+UPDATE DEFINE LIBERADO_APP:
+NÃO (campo ausente no objeto updates)
+
+BUG DO DUPLICADO CONFIRMADO:
+SIM (código morto — não impacta fluxo real)
+- Se chamado com prestador existente status='em_analise' + liberado_app=false
+- UPDATE NÃO alteraria status nem liberado_app
+- Prestador permaneceria em_analise despite UI informando ativação
+
+CORREÇÃO REALIZADA:
+NÃO (código morto — não justifica correção)
+
+============================
+CONVERSÃO
+============================
+
+CONVERSÃO EXIGE APROVAÇÃO:
+NÃO (ANTES da correção)
+SIM (DEPOIS da correção aplicada)
+
+SERVICE VALIDA STAGE:
+NÃO (ANTES — sem validação de stage)
+SIM (DEPOIS — valida stage ∈ ['aprovado', 'ativo', 'prestador_apto'])
+
+NOVO PODE CONVERTER:
+NÃO (rejeitado pelo service)
+
+TRIAGEM PODE CONVERTER:
+NÃO (rejeitado)
+
+ANALISE PODE CONVERTER:
+NÃO (rejeitado)
+
+DOCUMENTACAO PODE CONVERTER:
+NÃO (rejeitado)
+
+APROVADO PODE CONVERTER:
+SIM
+
+REPROVADO PODE CONVERTER:
+NÃO (rejeitado)
+
+BLOQUEADO PODE CONVERTER:
+NÃO (rejeitado)
+
+BYPASS DE CONVERSÃO CONFIRMADO:
+SIM (ANTES — cualquier stage podia converter via chamada direta)
+CORRIGIDO (DEPOIS — service valida stage antes de converter)
+
+CORREÇÃO REALIZADA:
+SIM
+- Arquivo: src/modules/recrutamento/services/conversaoCandidatoService.ts
+- Adicionada validação de stage no início de converterCandidatoParaPrestador()
+- Stages permitidos: ['aprovado', 'ativo', 'prestador_apto']
+- Retorna erro claro se stage incompatível
+
+============================
+APROVAR → CONVERTER
+============================
+
+SEPARAÇÃO É INTENCIONAL:
+SIM
+
+MOTIVO COMPROVADO:
+Pipeline Enterprise tem 16 estágios com múltiplos caminhos:
+- em_treinamento → homologacao → confirmacao_inicio → prestador_apto → ativo
+- em_treinamento → aprovado → prestador_apto → ativo
+- entrevista → aprovado → ativo
+
+"Aprovado" é estágio conceitual no pipeline. "Converter" é a materialização
+operacional (criar registro em tabela prestadores com status/liberado_app).
+A separação permite que o candidato passe por etapas intermediárias
+(documentação, validação, contrato, dados bancários) entre aprovação
+conceitual e liberação efetiva.
+
+EXISTEM REQUISITOS ENTRE APROVAR E CONVERTER:
+SIM
+- Homologação (checklist 6 itens): documentos, dados bancários, veículo, contrato, app, treinamento
+- Confirmação de Início
+- Prestador Apto (pré-requisito confirmouPreInicio)
+
+CONVERSÃO VALIDA ESSE REQUISITOS:
+NÃO (a conversão em si não valida — o pipeline bloqueia por STAGE_TRANSITIONS)
+
+UI EXPLICA QUE APROVAÇÃO NÃO LIBERA APP:
+NÃO (após mover para "Aprovado", card fica verde sem indicação de etapa restante)
+
+CTA DE CONVERSÃO É CLARO:
+SIM — botão "Converter em Prestador" sempre visível no Sheet de detalhes
+
+RISCO DE ESTADO INTERMEDIÁRIO:
+SIM — operador pode achar que "Aprovado" = "App liberado"
+
+============================
+IDENTIDADE
+============================
+
+PRESTADOR_ID PRESERVADO:
+SIM
+- converterCandidatoParaPrestador: buscaDuplicata() reutiliza ID existente
+- ativarPrestador: checarDuplicidade() reutiliza ID existente
+
+AUTH_USER_ID PRESERVADO:
+SIM (não alterado pela conversão — preservado no cadastro original)
+
+CONVERTER 2X É SEGURO:
+SIM
+- buscarDuplicata() encontra prestador existente
+- Retorna tipo: 'ja_existente' sem criar duplicado
+- atualizarCandidatoAposConversao() move candidato para 'ativo'
+
+ATIVAR 2X É SEGURO:
+NÃO SE APLICA (código morto)
+- Mas se fosse chamado: checarDuplicidade() reutiliza ID existente
+
+PODE CRIAR DUPLICIDADE:
+NÃO
+- Ambos os services buscam duplicata por telefone/email/CPF antes de criar
+- Em caso de match, reutilizam o ID existente
+
+============================
+VALIDAÇÃO
+============================
+
+ARQUIVOS ALTERADOS:
+- src/modules/recrutamento/services/conversaoCandidatoService.ts (validação de stage)
+- src/test/ag07j10_1_bypass_conversao.test.ts (NOVO — 10 testes)
+
+TESTES FOCALIZADOS:
+10/10 PASS
+- aprovado → converte OK
+- ativo → converte OK
+- prestador_apto → converte OK
+- novo_cadastro → rejeitado
+- em_analise → rejeitado
+- documentacao_pendente → rejeitado
+- reprovado → rejeitado
+- bloqueado → rejeitado
+- inexistente → erro
+- sem telefone → erro (antes da validação de stage)
+
+REGRESSÃO:
+785/785 PASS (suite completa)
+- ag07g_unificacao_app_recrutamento: 11/11
+- ag07j1_app_kanban: 15/15
+- ag07h_documentos_bloqueios: 16/16
+
+TYPESCRIPT:
+npx tsc --noEmit → 0 erros
+
+PRODUÇÃO ALTERADA:
+NÃO
+
+BANCO ALTERADO:
+NÃO
+
+MIGRATION EXECUTADA:
+NÃO
+
+AG-07F EXECUTADA:
+NÃO
+
+APP ALTERADO:
+NÃO
+
+REDMI UTILIZADO:
+NÃO
+
+BUILD APK:
+NÃO
+
+============================
+DECISÃO
+============================
+
+GAP LEGADO:
+CÓDIGO MORTO
+- ativarPrestador() não é alcançável por operador/fluxo atual
+- Homologacao.tsx não é importado/renderizado em nenhum lugar
+- Bug do duplicado (UPDATE não seta status/liberado_app) confirmado mas irrelevante
+- Recomendação: futura remoção/depreciação
+
+GAP CONVERSÃO:
+BYPASS CORRIGIDO
+- converterCandidatoParaPrestador() NÃO validava stage antes da correção
+- Qualquer candidato (novo, análise, documentação, reprovado, bloqueado) podia ser convertido
+- Correção aplicada: service valida stage ∈ ['aprovado', 'ativo', 'prestador_apto']
+- 10/10 testes focalizados + 785/785 regressão
+
+SEPARAÇÃO APROVAR→CONVERTER:
+INTENCIONAL
+- Pipeline Enterprise tem 16 estágios com caminhos múltiplos
+- "Aprovado" é conceitual; "Converter" é materialização operacional
+- Etapas intermediárias: homologação, confirmação início, prestador apto
+- Risco de UX: operador pode achar que aprovado = app liberado (documentar para gate documental)
+
+PRÓXIMO BLOQUEIO REAL:
+- Gate documental: aprovação/conversão não validam documentos, validade, contrato
+- UX estado intermediário: card "Aprovado" não indica que conversão é necessária
+
+PRÓXIMA MISSÃO:
+- Gate documental (validação de documentos antes da conversão)
+- UX do estado intermediário (indicar que aprovado ≠ liberado)
+
+DECISÃO FINAL:
+A — HOMOLOGADA

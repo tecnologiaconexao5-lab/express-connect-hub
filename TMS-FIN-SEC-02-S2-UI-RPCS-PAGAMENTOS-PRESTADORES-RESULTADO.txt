@@ -1,0 +1,160 @@
+================================================================================
+MISSAO: TMS-FIN-SEC-02-S2-UI-RPCS-PAGAMENTOS-PRESTADORES
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO (provas em ROLLBACK)
+MODELO: DeepSeek V4.1 Flash
+TIPO: microcorrecao funcional/seguranca P0 (UI -> RPC). SEM reabrir S1.
+RESULTADO: PASS — UI nao faz DML direto de estado; acoes por RPC ou indisponiveis;
+           S1 intacto; PROD sem alteracao financeira.
+================================================================================
+
+CONFIRMACAO EXPLICITA:
+  *** ZERO DML DIRETO DE ESTADO EM pagamentos_prestadores NA UI ***
+
+--------------------------------------------------------------------------------
+1. MATRIZ DE ACOES (ANTES x DEPOIS)
+--------------------------------------------------------------------------------
+ACAO UI              | WRITER ANTES                         | RPC/DECISAO DEPOIS
+---------------------+--------------------------------------+------------------------------------------
+Conferir             | atualizarStatusPagamento (.update)   | f_aprovar_pagamento_prestadores
+Aprovar              | atualizarStatusPagamento (.update)   | f_aprovar_pagamento_prestadores
+Rejeitar/Reprovar    | atualizarStatusPagamento (.update)   | SEM RPC -> DESABILITADA (pendencia)
+Cancelar (per-line)  | atualizarStatusPagamento (.update)   | SEM RPC -> DESABILITADA (pendencia)
+Marcar Pago / Baixa  | f_confirmar_pagamento_prestador      | f_confirmar_pagamento_prestador (mantido)
+Gerar Ordem/Lote     | f_gerar_lote_pagamentos              | f_gerar_lote_pagamentos (mantido)
+Liberar Lote (antigo)| (removido na 05D.7B.2)               | — (nao existe)
+Gerar Repasse        | criarPagamento (.insert)             | SEM RPC -> DESABILITADA (pendencia)
+Novo Pagamento manual| criarPagamento (.insert)             | SEM RPC -> DESABILITADA (pendencia)
+Fechamento: criar    | fechamentoService (.insert)          | SEM RPC -> DESABILITADA (pendencia)
+Fechamento: conferir | fechamentoService (.update)          | SEM RPC -> DESABILITADA (pendencia)
+Fechamento: aprovar  | fechamentoService (.update)          | SEM RPC -> DESABILITADA (pendencia)
+Fechamento: cancelar | fechamentoService (.update)          | SEM RPC -> DESABILITADA (pendencia)
+Fechamento: pagar    | f_confirmar_pagamento_fechamento     | f_confirmar_pagamento_fechamento (mantido)
+
+--------------------------------------------------------------------------------
+2. DML DIRETO ENCONTRADO (inventario)
+--------------------------------------------------------------------------------
+pagamentoPrestadorService.ts: criarPagamento(.insert), atualizarStatusPagamento(.update),
+  criarFechamento(.insert), atualizarFechamento(.update).
+fechamentoService.ts: criarFechamento(.insert), conferir/aprovar(.update),
+  cancelar(.update), pagar usa RPC.
+centralFinanceiroService.ts: update/insert (Conferencia — FORA do escopo S2).
+Componente PagamentoPrestadores.tsx: nao possui .from("pagamentos_prestadores")
+  .update/insert/delete direto (usa services).
+
+--------------------------------------------------------------------------------
+3. DML DIRETO RESTANTE (nao alcancavel pela UI)
+--------------------------------------------------------------------------------
+Apos S2, as funcoes abaixo ainda contem DML, porem NAO sao mais acionaveis pela UI
+(handlers guardados/desabilitados). Ficam como PENDENCIA de RPC oficial:
+  - pagamentoPrestadorService.criarPagamento / criarFechamento / atualizarFechamento
+  - fechamentoService.criarFechamento / conferirFechamento / aprovarFechamento /
+    cancelarFechamento
+O caminho de STATUS (atualizarStatusPagamento) foi integralmente convertido:
+  NAO contem mais .update/.insert/.delete (prova automatizada).
+
+--------------------------------------------------------------------------------
+4. RPC POR ACAO
+--------------------------------------------------------------------------------
+Conferir/Aprovar -> f_aprovar_pagamento_prestadores([id]).
+  Retorno tratado: aprovados=0 & ja_aprovados=0 -> lanca erro com motivo (ex.:
+  "Pagamento ja efetuado"), sem alteracao parcial.
+Baixa/Marcar Pago -> f_confirmar_pagamento_prestador(p_pagamento_id, p_data_pagamento)
+  (data real; sem inventar valor).
+Lote -> f_gerar_lote_pagamentos(ids) (inalterado).
+
+--------------------------------------------------------------------------------
+5. TRATAMENTO DE CANCELAR/REPROVAR
+--------------------------------------------------------------------------------
+NAO existe RPC oficial de reprovacao/cancelamento de pagamento_prestador.
+Decisao: botoes DESABILITADOS + handler seguro (lanca "indisponivel") e
+atualizarStatusPagamento lanca erro para {status_aprovacao:'rejeitado'} e
+{status_pagamento:'cancelado'}. NAO foi reaberto UPDATE. Registrado como pendencia
+especifica: "criar RPC de reprovacao/cancelamento (fase futura)". PASS de S2 NAO
+depende disso.
+
+--------------------------------------------------------------------------------
+6. ARQUIVOS ALTERADOS
+--------------------------------------------------------------------------------
+- src/services/financeiro/pagamentoPrestadorService.ts
+    atualizarStatusPagamento: agora roteia (aprovado/conferido -> RPC) ou lanca erro;
+    REMOVIDO o .update() direto. NOVO aprovarPagamentos() (chama a RPC).
+- src/components/financeiro/PagamentoPrestadores.tsx
+    guards (toast+return) em: handleGerarRepasse, handleSalvarNovoPagamento,
+    handleCriarFechamentoService, handleConferirFechamento, handleAprovarFechamento,
+    handleCancelarFechamento; gerarLancamentosPrestadorPorOS -> no-op seguro;
+    botoes Rejeitar/Cancelar/Gerar Repasse/Novo Pagamento DESABILITADOS.
+- src/test/fin_sec02_s2_ui_rpcs.test.ts (NOVO — 10 testes).
+SEM migration. SEM reabrir grants/policies. SEM service_role no browser.
+
+--------------------------------------------------------------------------------
+7. TESTES A-L (10/10 PASS)
+--------------------------------------------------------------------------------
+A) Conferir usa RPC (nao UPDATE) ......................................... PASS
+B) Aprovar usa RPC oficial ............................................... PASS
+C) Lote continua por f_gerar_lote_pagamentos ............................ PASS
+D) Marcar Pago usa f_confirmar_pagamento_prestador ...................... PASS
+E) S1 preservado (REVOKE authenticated; pp_update_tms removida) ......... PASS
+F) RPC chamada 1x com IDs corretos; bloqueio -> motivo, sem parcial ..... PASS
+H') reprovar/cancelar lancam erro (sem UPDATE direto) ................... PASS
+I) Acoes sem RPC desabilitadas/guardadas ("pendente de RPC oficial") .... PASS
+L) service_role ausente no frontend ..................................... PASS
++ ZERO DML de estado em pagamentos_prestadores no service (scan) ......... PASS
++ ZERO DML direto no componente (scan) .................................. PASS
+(J/K cross-tenant/prestador: cobertos pelas provas S1 A-G — negacao de escrita.)
+
+--------------------------------------------------------------------------------
+8. PROVA S1 PRESERVADA
+--------------------------------------------------------------------------------
+Policies pp: somente pp_select_own, pp_select_tms (SELECT).
+Grants authenticated: {SELECT, REFERENCES, TRIGGER, TRUNCATE} (sem escrita).
+anon: sem escrita. service_role: ALL (backend).
+S1 proofs reexecutadas: 17/17 PASS (negativas A-G NEGADO; positivas H-M; INT ok).
+05D.6B 20/20; 05D.7C.1 20/20.
+
+--------------------------------------------------------------------------------
+9. REGRESSAO
+--------------------------------------------------------------------------------
+- fin_sec02_s2_ui_rpcs: 10/10 PASS.
+- vitest subset (S2 + 7B.3 + 7B.2 + MARGEM-01 + CONTA-01 + fin_master361):
+  6 arquivos / 86 PASS (execucao isolada); S2 10/10.
+- S1 proofs 17/17; 05D.6B 20/20; 05D.7C.1 20/20.
+- npm run build: OK — "built in 47.26s".
+- tsc: 750 erros PRE-EXISTENTES (nenhum novo).
+
+--------------------------------------------------------------------------------
+10. PROD ANTES = DEPOIS
+--------------------------------------------------------------------------------
+pagamentos_prestadores 137 | lote_id NOT NULL 0 | status_pagamento='em_lote' 0 |
+financeiro_pagar 178 | financeiro_baixas 19.
+Testes mutaveis em BEGIN...ROLLBACK. Nenhuma alteracao financeira permanente.
+
+--------------------------------------------------------------------------------
+11. RISCOS RESIDUAIS
+--------------------------------------------------------------------------------
+R1) Acoes DISABILITADAS ate existir RPC: Rejeitar/Reprovar, Cancelar (por linha),
+    Gerar Repasse manual, Novo Pagamento manual e Fechamento (criar/conferir/
+    aprovar/cancelar). Registrado como pendencias de RPC (fase futura).
+R2) funcoes de service (criarPagamento/criarFechamento/atualizarFechamento e
+    fechamentoService.*) ainda contem DML direto, porem INALCANCAVEL pela UI.
+    Recomendado converte-las a RPCs em missao dedicada e remover o DML.
+R3) actionEngineService (IA) continua com INSERT direto em financeiro_receber — P0
+    separado (fora do escopo S2; nao tocado).
+R4) f_confirmar_pagamento_prestador permanece SECURITY DEFINER (S1) com guarda; a UI
+    envia apenas data (valor integral). Pagamento parcial pela UI nao exposto.
+
+--------------------------------------------------------------------------------
+NAO TOCADO
+--------------------------------------------------------------------------------
+actionEngineService/A4; financeiro_receber; OrdensServicoLista; 9 faturas sem AR;
+10 pagos sem baixa; Margem; contas_financeiras; anon grants das outras tabelas;
+os_select_cliente; Efi; APP; Programacao Operacional. S1 permanece intacto.
+
+================================================================================
+Arquivo ..: TMS-FIN-SEC-02-S2-UI-RPCS-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-SEC-02-S2-UI-RPCS-PAGAMENTOS-PRESTADORES-RESULTADO.txt
+Tamanho ..: 10133 bytes
+Data .....: 24/09/2026 19:49:02
+================================================================================
+FIM DO RELATORIO — TMS-FIN-SEC-02-S2
+================================================================================

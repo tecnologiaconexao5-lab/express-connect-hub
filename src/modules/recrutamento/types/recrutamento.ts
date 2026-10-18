@@ -297,6 +297,10 @@ export interface TalentosCandidato {
   documentosAprovados: number
   statusDocumental: string
   disponibilidade: string
+  scoreComprometimento?: number
+  riscoDesistencia?: string
+  tempoMedioRespostaHoras?: number | null
+  classificacaoComprometimento?: string
 }
 
 export interface AutomacaoRegra {

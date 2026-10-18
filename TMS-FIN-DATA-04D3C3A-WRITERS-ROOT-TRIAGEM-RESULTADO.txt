@@ -1,0 +1,139 @@
+================================================================================
+MISSAO: TMS-FIN-DATA-04D3C3A-WRITERS-ROOT-TRIAGEM
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS / REPOSITORIO LOCAL
+MODELO: MiMo-V2.5
+REDMI: NAO conectado.
+TIPO: AUDITORIA SOMENTE LEITURA (analise estatica; nada alterado/executado).
+RESULTADO: PASS (triagem concluida; nenhuma correcao aplicada).
+CONTAGEM: 3 Fechamento TMS <- ESTA MISSAO | 2 E2E completo | 1 Master 360/Gate | 0 Homologado
+================================================================================
+
+RESPOSTA DIRETA:
+33 writers raiz triados (a "lista base" da missao tem, na pratica, 32 itens + 1 borderline;
+nao ha 31). Classificacao: A1=23 | A2=6 | A3=2 | A4=2 | A5=0.
+Descoberta: refresh.cjs, criar_tabela.cjs e test_doc.cjs SAO WRITE (via .upsert, nao .insert/
+.update) — estavam mascarados; criar_schema.cjs/criar_tabelas.cjs fazem DDL via RPC.
+
+--------------------------------------------------------------------------------
+1. METODOLOGIA (sem executar nada)
+--------------------------------------------------------------------------------
+- Leitura estatica: fs read + regex + grep. NENHUM writer executado; zero rede/banco/DML.
+- "WRITE" = DDL / INSERT / UPDATE / DELETE / RPC mutavel / Storage / Edge/API mutavel
+  (inclui .upsert, que a heuristica inicial nao capturava -> corrigido manualmente).
+- "PROD hard" = project ref de PRODUCAO literal no arquivo; "anon" = JWT anon literal;
+  "cred DB" = postgres://...:...@ literal (nenhum writer raiz possui cred DB) -> AUSENTE.
+
+--------------------------------------------------------------------------------
+2. TABELA DOS 33 (arquivo | classe | WRITE | credencial | PROD hard | uso atual | equivalente | acao)
+--------------------------------------------------------------------------------
+ARQ                    | CL | WRITE (tipo)        | mecanismo        | PROD | uso atual   | equiv.moderno        | ACAO
+-----------------------+----+---------------------+------------------+------+-------------+----------------------+-------------------------
+criar_schema.cjs       | A4 | DDL (via RPC)       | anon hard        | SIM  | npm/UI NAO  | migrations supabase/ | ARQUIVAR (nao executar)
+criar_tabelas.cjs      | A4 | DDL (via RPC)       | anon hard        | SIM  | npm/UI NAO  | migrations supabase/ | ARQUIVAR (nao executar)
+criar_tabela_valores.cjs| A2| INSERT(seed)        | anon hard        | SIM  | npm/UI NAO  | migrations/seed QA   | NEUTRALIZAR (arquivo historico)
+criar_todas.cjs        | A2 | INSERT(seed)        | anon hard        | SIM  | npm/UI NAO  | migrations/seed QA   | NEUTRALIZAR
+forcar_create.cjs      | A2 | INSERT(pgto prest)  | anon hard        | SIM  | npm/UI NAO  | services/RPC oficial | NEUTRALIZAR
+refresh.cjs            | A2 | WRITE-UP (upsert)   | anon hard        | SIM  | npm/UI NAO  | services/RPC oficial | NEUTRALIZAR
+criar_tabela.cjs( bord)| A2 | WRITE-UP (upsert)   | anon hard        | SIM  | npm/UI NAO  | services/RPC oficial | NEUTRALIZAR
+query_sql.cjs          | A3 | RPC (SQL ad-hoc)    | anon hard        | SIM  | npm/UI NAO  | (RPC inexistente)    | CONTRATO ADMIN / ARQUIVAR
+check_types.mjs        | A3 | RPC (SQL ad-hoc)    | dotenv default   | NAO  | npm/UI NAO  | (RPC inexistente)    | CONTRATO ADMIN / ARQUIVAR
+test_doc.cjs           | A2 | WRITE-UP (upsert)   | anon hard        | SIM  | npm/UI NAO  | services docs        | NEUTRALIZAR
+test-cliente.ts        | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-end2.ts           | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-endereco.ts       | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-financeiro.ts     | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-os.ts             | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-os2.ts            | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-pagar.ts          | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-pf-final.ts       | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-prestador.ts      | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-vinculo.ts        | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test-upload-final.cjs  | A1 | INSERT/UPDATE+STOR  | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+teste_completo.cjs     | A1 | INSERT              | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+teste_fluxo_mapbox.cjs | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+teste_os.cjs           | A1 | INSERT              | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+teste_pgto_completo.cjs| A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test_mapbox_valor.cjs  | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test_pagamento.cjs     | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+validar_pagamento.cjs  | A1 | INSERT/UPDATE       | anon hard        | SIM  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test_os_p2.mjs         | A1 | INSERT/DELETE       | dotenv default   | NAO  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+test_os_p3.mjs         | A1 | INSERT/DELETE       | dotenv default   | NAO  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+valida.ts              | A1 | INSERT/DELETE       | dotenv default   | NAO  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+valida_crud.ts         | A1 | INSERT/UPDATE/DELETE| dotenv default   | NAO  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+valida_status.ts       | A1 | INSERT/DELETE       | dotenv default   | NAO  | npm/UI NAO  | guard+QA (lab)       | MOVER p/ lab + guard
+
+Observacoes:
+- Nenhum dos 33 e invocado por package.json (pkgRef=false) nem importado por src/UI.
+- Nenhum possui guard, dry-run, rollback ou confirmacao interativa (has.*=false em todos).
+- Nenhum possui credencial de BANCO hardcoded (dbCred=false em todos) — mas 26 possuem URL/ref
+  PROD e/ou anon hardcoded (PRESENTE); os 6 com dotenv default dependem de .env (=PROD).
+
+--------------------------------------------------------------------------------
+3. CASOS ESPECIAIS — RESOLVIDOS
+--------------------------------------------------------------------------------
+- criar_schema.cjs / criar_tabelas.cjs (A4): chamam RPC com DDL (CREATE TABLE ... tabelas_valores),
+  fora do sistema de migrations -> DDL legado/risco. NAO executar; comparar com supabase/migrations.
+- criar_tabela.cjs (borderline, A2): NAO e DDL; faz .upsert() de registro de teste em
+  pagamentos_prestadores (WRITE). Resolvido: WRITE (upsert), one-off.
+- refresh.cjs (A2): NAO e read; faz .upsert() em pagamentos_prestadores (WRITE) para "forcar
+  refresh de schema". Operacao definidora = .upsert (escrita). Resolvido: WRITE.
+- test_doc.cjs (A2): .upsert() em documentos_prestadores (WRITE) — um dos testes "doc" e escrita.
+- query_sql.cjs / check_types.mjs (A3): tentam SQL ad-hoc via rpc('pg_catalog', {statement:...})
+  (RPC inexistente -> inerte hoje). Sao utilitarios administrativos/diagnostico; NAO receber
+  guard de teste; se necessarios, exigir CONTRATO ADMIN proprio (read-only, auditado).
+
+--------------------------------------------------------------------------------
+4. RESUMO
+--------------------------------------------------------------------------------
+ A1 (TESTE/HARNESS -> lab+guard) ............ 23
+ A2 (ONE-OFF/LEGADO -> neutralizar/arquivar)  6
+ A3 (UTILITARIO ADMIN REAL -> contrato) .....  2
+ A4 (DDL/SCHEMA LEGADO) .....................  2
+ A5 (INCERTO) ...............................  0
+ TOTAL ...................................... 33
+
+--------------------------------------------------------------------------------
+5. SEGREDOS (PRESENTE/AUSENTE — sem valores)
+--------------------------------------------------------------------------------
+ - URL/ref PROD hardcoded ..... PRESENTE (26 arquivos: A1 hardcoded + A2 + A4 + A3 hard)
+ - anon key hardcoded ......... PRESENTE (mesmos)
+ - service_role hardcoded ..... AUSENTE (0)
+ - credencial de BANCO ........ AUSENTE nos writers raiz (0)
+ - dotenv default (.env=PROD) . PRESENTE (check_types, test_os_p2/p3, valida, valida_crud, valida_status)
+
+--------------------------------------------------------------------------------
+6. REVALIDACAO
+--------------------------------------------------------------------------------
+ - 27 snippets C2 ..... 27/27 inertes (stub somente-comentario) OK
+ - /dev-teste ......... AUSENTE OK
+ - src/lib/testes ..... AUSENTE OK | src/testes AUSENTE OK
+ - guard selftest ..... PRESENTE OK
+ - P1/P2 protegidos ... NAO modificados OK
+
+--------------------------------------------------------------------------------
+7. PROPOSTA DE PROXIMAS MICRO-MISSOES (NAO implementar agora)
+--------------------------------------------------------------------------------
+ 04D3C3B — A1 (23 harnesses): mover para scripts/lab + guardHarness + remover hardcodes
+            (createClient via env QA) + opt-in; provar aborto no guard; sem DML.
+ 04D3C3C — A2 (6 one-offs): neutralizar para stub inerte + arquivar historico sanitizado
+            (docs/lab) — criar_tabela_valores, criar_todas, forcar_create, refresh,
+            criar_tabela, test_doc.
+ 04D3C3D — A3/A4 (query_sql, check_types / criar_schema, criar_tabelas): ARQUIVAR como legado;
+            documentar que DDL vai por migrations e SQL ad-hoc exige contrato admin. Sem guard
+            de teste (nao sao harnesses).
+
+--------------------------------------------------------------------------------
+8. PASS/BLOCKED/FAIL
+--------------------------------------------------------------------------------
+PASS (auditoria). 33 writers triados (A1=23, A2=6, A3=2, A4=2, A5=0), casos especiais
+resolvidos, segredos PRESENTE/AUSENTE sem valores, revalidacoes OK. Nada alterado.
+
+================================================================================
+Arquivo ..: TMS-FIN-DATA-04D3C3A-WRITERS-ROOT-TRIAGEM-RESULTADO.txt
+Caminho ..: express-connect-hub\TMS-FIN-DATA-04D3C3A-WRITERS-ROOT-TRIAGEM-RESULTADO.txt
+Tamanho ..: 11153 bytes
+Data .....: 24/09/2026 21:27:17
+================================================================================
+FIM DO RELATORIO — TMS-FIN-DATA-04D3C3A
+================================================================================

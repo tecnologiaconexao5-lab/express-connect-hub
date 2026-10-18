@@ -1,0 +1,345 @@
+================================================================================
+ENV-QA-01 — QA RECOVERY PREFLIGHT
+2026-09-21 | READ-ONLY | ZERO WRITES EM QUALQUER AMBIENTE
+================================================================================
+
+1. RESULTADO
+================================================================================
+
+QA_CURRENT_STATE     = DELETED
+QA_RECOVERY_STRATEGY = CREATE_NEW_FROM_BASELINE
+PROD_SCHEMA_SOURCE   = LIVE_SCHEMA_BASELINE
+QA_RECOVERY_READY    = NO (acao humana necessaria)
+
+CAUSA: Projeto QA aqpfayildtcnrkfeeyjg foi deletado ou expirado.
+       DNS ENOTFOUND confirma inexistencia. Criado em 2026-07-23
+       como Free tier. Free tier projects sao deletados apos
+       ~7 dias de inatividade no Supabase.
+
+================================================================================
+2. FASE 1 — CONFIGURACAO LOCAL (INVENTARIO)
+================================================================================
+
+QA_PROJECT_REF_REFERENCES = 8 arquivos
+
+Arquivos com project ref hardcoded "aqpfayildtcnrkfeeyjg":
+
+| #  | Arquivo                                        | Tipo       |
+|----|------------------------------------------------|------------|
+| 1  | .env.qa                                        | Config     |
+| 2  | tests/e2e/helpers/ambiente.ts                  | Guard      |
+| 3  | scripts/check-ambiente.cjs                     | Guard      |
+| 4  | scripts/qa/apply_baseline_to_qa.ts             | Script     |
+| 5  | scripts/qa/extract_baseline.ts                 | Script     |
+| 6  | scripts/qa/assert-qa-environment.ts            | Guard      |
+| 7  | docs/VARIAVEIS_AMBIENTE_HIBRIDAS.md            | Documentacao|
+| 8  | docs/qa/F2_A0_QA1_RELATORIO_FINAL.md          | Documentacao|
+
+Outros arquivos que referenciam QA (sem project ref):
+| Local                                          | Conteudo                |
+|------------------------------------------------|-------------------------|
+| package.json                                   | 6 scripts (dev/build/test/playwright:qa) |
+| vite.config.ts                                 | envDir carrega .env.qa  |
+| supabase/config.toml                           | project_id = express-connect-hub (local) |
+| supabase/baseline/01_core_tables.sql           | Schema 6 tabelas        |
+| docs/qa/ (22 arquivos)                         | Planos, relatorios, checklists |
+| scripts/qa/ (4 arquivos)                       | Extracao, assert, apply |
+
+Scripts QA no package.json:
+  dev:qa          -> vite --mode qa
+  build:qa        -> vite build --mode qa
+  preview:qa      -> vite preview --mode qa
+  test:qa         -> vitest run --mode qa
+  playwright:qa   -> check-ambiente.cjs qa && playwright test
+  playwright:qa:headed -> same + --headed
+
+================================================================================
+3. FASE 2 — ESTADO DO QA
+================================================================================
+
+QA_CURRENT_STATE = DELETED
+
+Evidencia:
+  DNS: aqpfayildtcnrkfeeyjg.supabase.co -> ENOTFOUND
+  HTTP: https://aqpfayildtcnrkfeeyjg.supabase.co -> ENOTFOUND
+  Pooler: postgres.aqpfayildtcnrkfeeyjg@aws-1-sa-east-1.pooler -> ENOTFOUND
+  REST: /rest/v1/ -> ENOTFOUND
+
+Comparacao:
+  supabase.co          -> OK (76.76.21.21)
+  uwrvzsjtpgaifkktpepn -> OK (104.18.38.10) [producao]
+  api.supabase.com     -> OK (2606:4700:4405::6812:2ae6)
+
+Causa provavel:
+  Projeto criado em 2026-07-23 como Free tier (documentado em
+  F2_A0_QA1_RELATORIO_FINAL.md). Free tier projects no Supabase
+  sao automaticamente pausados apos 7 dias sem atividade e
+  deletados apos periodo adicional. Projeto nao tinha dados
+  desde criacao (0 migrations aplicadas, 0 inserts).
+
+Nao e possivel determinar automaticamente se:
+  A) foi deletado definitivamente, ou
+  B) esta pausado e pode ser restaurado
+
+Acao humana necessaria:
+  1. Acessar https://supabase.com/dashboard/projects
+  2. Verificar se "conexao-express-qa" (aqpfayildtcnrkfeeyjg) aparece
+     na lista de projetos
+  3. Se aparecer como "Paused" -> pode ser reativado
+  4. Se NAO aparecer -> foi deletado -> necessario criar novo projeto
+
+================================================================================
+4. FASE 3 — FONTE CANONICA DO SCHEMA
+================================================================================
+
+PROD_SCHEMA_SOURCE = LIVE_SCHEMA_BASELINE
+
+Analise de 3 estrategias:
+
+OPCAO A — Migrations locais do zero (234 arquivos)
+  Risco: ALTO
+  Fidelidade: BAIXA
+  Motivo: producao tem apenas 1 registro em supabase_migrations
+          (234 migrations locais, mas maioria nunca aplicada em prod).
+          Reproduzir 234 migrations NAO reproduz producao.
+          P0 (20260731) ja foi aplicado em prod mas e PERIGOSO reaplicar.
+          02B rollback (20260713000001) NAO deve ser reaplicado.
+  Conclusao: NAO USAR como fonte unica.
+
+OPCAO B — Schema dump de producao (LIVE SCHEMA BASELINE) [RECOMENDADA]
+  Risco: BAIXA
+  Fidelidade: MAXIMA
+  Metodo: Extrair schema-only da producao via pg (information_schema
+          + pg_class + pg_trigger + pg_policy + pg_proc).
+          Script existente: scripts/qa/extract_baseline.ts
+  Vantagem: Garante que QA == producao exata (estrutura).
+  Risco: producao pode mudar entre extracao e uso.
+  Mitigacao: extrair snapshot e versionar.
+  Conclusao: RECOMENDADA como fonte primaria.
+
+OPCAO C — Baseline parcial + migrations selecionadas
+  Risco: MEDIO
+  Fidelidade: MEDIA
+  Metodo: baseline 01_core_tables.sql (6 tabelas) + apenas migrations
+          relevantes para RLS (M136-A, M133-D.4, 02M.5F).
+  Vantagem: Rapido, focado no escopo RLS.
+  Risco: schema incompleto (faltam tabelas auxiliares).
+  Conclusao: USAR como complemento para RLS, nao como schema unico.
+
+DECISAO:
+  PROD_SCHEMA_SOURCE = LIVE_SCHEMA_BASELINE
+  -> Extrair schema completo da producao via pg
+  -> Aplicar como baseline no novo projeto QA
+  -> Depois aplicar apenas migrations de RLS e financeiro relevantes
+  -> NUNCA tentar reaplicar todas as 234 migrations locais
+
+================================================================================
+5. FASE 4 — INVENTARIO PARA CLONE ESTRUTURAL
+================================================================================
+
+5.1 SCHEMAS NECESSARIOS
+  -> public (padrao)
+  -> extensions (padrao Supabase)
+
+5.2 TABELAS NECESSARIAS PARA TESTE RLS (pagamentos_prestadores)
+  Core (obrigatorio):
+    pagamentos_prestadores (50 colunas, sem tenant_id)
+    financeiro_pagar
+    financeiro_baixas
+    composicao_financeira_os
+    tenant_usuarios
+    prestadores (com auth_user_id)
+    clientes
+    contas_financeiras
+    alocacoes_escala (com tenant_id)
+    ordens_servico (com tenant_id)
+
+  Complementar:
+    usuarios_cliente (para portal)
+    tabelas_valores (FK de clientes)
+    portal_pedidos (FK de OS)
+    automacoes_robos (para tenant_usuarios)
+
+5.3 RPCs NECESSARIAS
+    f_confirmar_pagamento_prestador (NOT SECDEF)
+    f_confirmar_pagamento_fechamento (SECDEF)
+    current_tenant_id_safe (lookup tenant)
+    f_obter_cliente_id_do_usuario (lookup cliente)
+
+5.4 TRIGGERS NECESSARIOS
+    M66: f_trg_propagar_financeiro_alocacao (SECDEF)
+    M80: f_trg_propagar_financeiro_os (SECDEF)
+    f_atualizar_updated_at (generico)
+
+5.5 RLS / POLICIES
+    pagamentos_prestadores: "Allow all" (ATUAL — a corrigir)
+    financeiro_pagar: fp_select_tms, fp_insert_tms, fp_update_tms, fp_delete_tms
+    financeiro_baixas: fb_select_tms, fb_insert_tms, fb_update_tms
+    composicao_financeira_os: cfo_select_tms, cfo_insert_tms, cfo_update_tms
+    alocacoes_escala: ae_select_tms, ae_select_cliente, ae_insert_tms, etc.
+    ordens_servico: os_select_tms, os_select_cliente, os_insert_tms, etc.
+    prestadores: prestadores_select_tms, prestadores_select_portal, etc.
+
+5.6 EXTENSOES
+    uuid-ossp (uuid_generate_v4)
+    pgcrypto (se usado)
+
+5.7 DADOS SINTETICOS MINIMOS (seed)
+    | Dado                          | Qtd | Proposito                    |
+    |-------------------------------|-----|------------------------------|
+    | tenant ( conexao-express )    | 1   | tenant_usuarios              |
+    | tenant_usuarios (ADM)         | 1   | role super_admin             |
+    | tenant_usuarios (financeiro)  | 1   | role financeiro              |
+    | prestador A (CESAR fake)      | 1   | pagamento integral/parcial   |
+    | prestador B                   | 1   | isolamento prestador         |
+    | cliente 1                     | 1   | OS/fechamento                |
+    | contas_financeiras (Cora)     | 1   | conta para baixa             |
+    | OS 1 (status concluida)      | 1   | trigger M80                  |
+    | alocacao 1 (status concluida) | 1   | trigger M66                  |
+    | FP 1 (status pendente)       | 1   | pagamento integral T10       |
+    | FP 2 (status pendente)       | 1   | pagamento parcial T11        |
+    | FP 3 (status pendente)       | 1   | fechamento T12               |
+    | PP 1 (status pendente)       | 1   | antes do pagamento           |
+    | PP 2 (status pendente)       | 1   | antes do pagamento parcial   |
+    | PP 3 (status pendente)       | 1   | antes do fechamento          |
+
+  TOTAL: ~15 registros sinteticos (sem dados reais)
+
+================================================================================
+6. FASE 5 — PLANO DE BASELINE
+================================================================================
+
+ETAPA 1 — Extrair schema completo da producao (READ-ONLY)
+  Script: scripts/qa/extract_baseline.ts (ja existe, expandir)
+  Metodo: pg information_schema + pg_class + pg_trigger + pg_policy + pg_proc
+  Output: supabase/baseline/full_production_schema.sql
+  Escopo: TODAS as tabelas, functions, triggers, policies, indexes
+  Protecao: somente SELECT, zero DML
+
+ETAPA 2 — Criar novo projeto QA no Supabase Dashboard
+  Acao humana obrigatoria:
+    1. Acessar https://supabase.com/dashboard/projects
+    2. New Project -> nome: tms-qa-v2 (ou conexao-express-qa-v2)
+    3. Regiao: South America (Sao Paulo)
+    4. Tier: Pro (USD 25/mes) — NAO Free (evita expiracao)
+    5. Anotar: project_ref, anon_key, service_role_key, db_password
+    6. Atualizar .env.qa com novas credenciais
+
+ETAPA 3 — Aplicar schema baseline no novo QA
+  Metodo A (recomendado):
+    1. Abrir Supabase Dashboard > SQL Editor
+    2. Colar conteudo de full_production_schema.sql
+    3. Executar (CREATE TABLEs, CREATE FUNCTIONs, etc.)
+  Metodo B:
+    1. psql com DATABASE_URL do novo QA
+    2. \i full_production_schema.sql
+
+ETAPA 4 — Aplicar migrations relevantes (NAO todas as 234)
+  Apenas as migrations criticas para o teste RLS:
+    20260722_m133d4_fix_rpc_app_security.sql
+    20260725_missao_rls_fix_priority_tables.sql
+    20260725_missao_rls_fix_core_operations.sql
+    20260728_missao50_auth_real.sql
+    20260806_m136c2_f2_a1_fix_rls_ordens_servico.sql
+    20260913000000_fin_sane_02b_unifica_valor_pagar.sql
+    20260920_02mf_fix_rpc_pagamento_prestador_parcial.sql
+  NOTA: NAO aplicar P0 (20260731000001) nem 02B rollback
+
+ETAPA 5 — Popular dados sinteticos
+  Seed script com ~15 registros (ver FASE 4.7)
+  Todos com prefixo "QA-TEST-" para facilitar limpeza
+
+ETAPA 6 — Validar schema
+  Rodar extract_baseline.ts contra o novo QA
+  Comparar com producao (diff estrutural)
+  Confirmar: tabelas, colunas, types, constraints, policies, triggers
+
+ETAPA 7 — Marcar migrations como executadas (SE necessario)
+  O Supabase rastreia migrations em supabase_migrations.schema_migrations.
+  Se baseline ja criou as tabelas, as migrations correspondentes devem
+  ser marcadas como "aplicadas" para evitar conflito.
+  Metodo: INSERT INTO supabase_migrations (version) VALUES (...)
+
+CONTROLE DE MIGRATIONS FUTURAS:
+  -> A partir do baseline, novas migrations locais serao
+     aplicadas normalmente via supabase db push
+  -> NUNCA reaplicar migrations anteriores ao baseline
+  -> Mantar migrations perigosas (P0, 02B rollback) documentadas
+     como "JA APLICADAS EM PROD — NAO REPLICAR"
+
+================================================================================
+7. RISCOS E MITIGACOES
+================================================================================
+
+| Risco                                  | Probabilidade | Impacto | Mitigacao                           |
+|----------------------------------------|:-------------:|:-------:|-------------------------------------|
+| Schema extraido ficou desatualizado    | MEDIA         | MEDIO   | Re-extrair antes de cada uso        |
+| Migrations conflitam com baseline      | ALTA          | ALTO    | Marcar migrations no supabase_migrations |
+| Free tier expira novamente             | CERTO         | CRITICO | Usar Pro tier (USD 25/mes)          |
+| RPC muda entre extracao e teste        | BAIXA         | ALTO    | Re-extrair RPCs antes de T10-T12    |
+| Trigger M66/M80 ausente no QA          | MEDIA         | ALTO    | Verificar na ETAPA 6                 |
+| Dados sinteticos insuficientes         | MEDIA         | MEDIO   | Expandir seed conforme necessidade  |
+| RLS producao muda antes do teste       | BAIXA         | MEDIO   | Snapshot timestamp da extracao      |
+
+================================================================================
+8. EVIDENCIAS
+================================================================================
+
+| Evidencia                                         | Status         |
+|---------------------------------------------------|----------------|
+| .env.qa lido e analisado                          | SIM            |
+| 8 arquivos com project ref mapeados               | SIM            |
+| 6 scripts QA no package.json identificados        | SIM            |
+| 22 docs QA documentados                           | SIM            |
+| baseline 01_core_tables.sql analisado (467 linhas) | SIM           |
+| extract_baseline.ts analisado (152 linhas)         | SIM           |
+| apply_baseline_to_qa.ts analisado (44 linhas)      | SIM           |
+| ambiente.ts guard rail analisado                   | SIM            |
+| check-ambiente.cjs guard rail analisado            | SIM            |
+| DNS QA testado (4 formatos)                       | ENOTFOUND      |
+| HTTP QA testado (3 endpoints)                     | ENOTFOUND      |
+| DNS producao testado                              | OK             |
+| HTTP producao testado                             | OK (401)       |
+| Producao ZERO writes                              | CONFIRMADO     |
+| Local migrations: 234 arquivos                    | CONFIRMADO     |
+| Producao supabase_migrations: 1 registro          | CONFIRMADO     |
+| Baseline existe: 6 tabelas centrais               | CONFIRMADO     |
+| Script extracao existe                            | CONFIRMADO     |
+
+================================================================================
+9. INSTRUCAO UNICA PARA O USUARIO
+================================================================================
+
+Acessar https://supabase.com/dashboard/projects e verificar se o projeto
+"conexao-express-qa" (aqpfayildtcnrkfeeyjg) aparece na lista de projetos.
+Se aparecer como Paused, reativar. Se NAO aparecer, o projeto foi deletado
+e sera necessario criar um novo projeto Pro tier com nome "tms-qa-v2".
+
+================================================================================
+10. PROIBICOES CUMPRIDAS
+================================================================================
+
+| Proibicao                                   | Status   |
+|---------------------------------------------|----------|
+| ZERO CREATE PROJECT                         | CUMPRIDO |
+| ZERO DELETE PROJECT                         | CUMPRIDO |
+| ZERO DDL producao                           | CUMPRIDO |
+| ZERO DML producao                           | CUMPRIDO |
+| ZERO alteracao QA                           | CUMPRIDO |
+| ZERO migration                              | CUMPRIDO |
+| ZERO db push                                | CUMPRIDO |
+| ZERO schema restore                         | CUMPRIDO |
+| ZERO copia de dados reais                   | CUMPRIDO |
+| NAO alterar .env.qa                         | CUMPRIDO |
+| NAO alterar secrets                         | CUMPRIDO |
+| NAO manipular supabase_migrations           | CUMPRIDO |
+| NAO mexer em RLS                            | CUMPRIDO |
+| NAO mexer em CESAR                          | CUMPRIDO |
+| NAO mexer nos 7 FP                          | CUMPRIDO |
+| NAO avancar para 02M.9                      | CUMPRIDO |
+| Sem subagentes                              | CUMPRIDO |
+
+================================================================================
+FIM DO RELATORIO — ENV-QA-01
+Proxima acao: acao humana no Supabase Dashboard (ver secao 9)
+================================================================================

@@ -6,6 +6,7 @@ import {
   Paperclip, PanelsTopLeft, PanelRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/safe-image";
 import { useWhatsAppCRMStore, type MessageOrigin } from "@/stores/whatsappCRMStore";
 import TemplateSelector from "./TemplateSelector";
 
@@ -59,7 +60,7 @@ export default function ChatWindow({ onToggleDetails }: { onToggleDetails: () =>
           </button>
           <div className="relative">
             <div className="w-9 h-9 rounded-xl overflow-hidden bg-muted">
-              <img src={contato.avatar} alt="" className="w-full h-full object-cover" />
+              <SafeImage src={contato.avatar} alt="" className="w-full h-full object-cover" />
             </div>
             <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card", contato.humanoAssumiu ? "bg-orange-500" : "bg-primary")} />
           </div>

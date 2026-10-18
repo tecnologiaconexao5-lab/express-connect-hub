@@ -1,0 +1,184 @@
+================================================================================
+MISSAO: TMS-FIN-AR-UX-01-NOME-ORDENACAO-EDITAR-RECEBIVEL
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: correcao cirurgica de UX + bug real em Contas a Receber (sem redesenho).
+================================================================================
+
+RESULTADO: PASS.
+  - Nomenclatura visivel: "Financeiro Enterprise" -> "Gestao Financeira".
+  - Ordenacao GLOBAL mais recente -> mais antigo (created_at desc), antes da paginacao.
+  - Bug de edicao (status='pago') corrigido na origem; PAGO continua bloqueado.
+  - 14 testes novos PASS; regressao 68/68; build OK.
+  - FAT-2026-000020 NAO alterada; zero lixo.
+
+================================================================================
+1. CAUSA-RAIZ DO STATUS='PAGO' (ponto 3)
+================================================================================
+Fluxo auditado: ContasReceberEnterprise -> handleSalvarReceita -> atualizarRecebivel
+-> validarStatusAtualizacao (receberService.ts:252-258).
+
+Causa-raiz (comprovada no codigo):
+  a) `abrirEditar(r)` (ContasReceberEnterprise) fazia `setNovaReceita({ ...r })`,
+     copiando `status` persistido para o formulario.
+  b) `handleSalvarReceita` montava o payload SEMPRE com
+     `status: novaReceita.status || "pendente"` e o enviava no UPDATE.
+  c) O Select de Status do modal oferecia a opcao "Pago"
+     (<SelectItem value="pago">), e os status persistidos reais ('aberto'/
+     'a vencer'/'pendente') NAO constavam das opcoes — o campo aparecia vazio,
+     induzindo o usuario a escolher um valor; escolher "Pago" (ou reenviar
+     'pago') disparava a validacao.
+  d) `validarStatusAtualizacao` BLOQUEIA qualquer envio de status pago/recebido/
+     baixado (comportamento correto e MANTIDO).
+
+Em resumo: a edicao comum enviava `status` (incluindo potencialmente 'pago'),
+e o modal permitia selecionar 'Pago'. A protecao funcionou; a origem do envio
+indevido era o formulario/servico, nao a validacao.
+
+CORRECAO (minima, sem afrouxar nada):
+  - `handleSalvarReceita`: ao EDITAR, NAO envia `status` (preserva o persistido):
+      ...(recebivelSelecionado?.id ? {} : { status: novaReceita.status || "pendente" })
+  - Modal: em EDICAO o Status vira somente-leitura (badge, "alteravel apenas por
+    baixa/renegociacao/cancelamento"); no CADASTRO o Select perde a opcao "Pago".
+  - `validarStatusAtualizacao`/`validarStatusCriacao` NAO foram alterados.
+  - PAGO permanece exclusivamente via `baixarRecebivel` (RPC f_registrar_baixa_financeira).
+
+================================================================================
+2. NOMENCLATURA (ponto 1) — somente UI/texto
+================================================================================
+- src/lib/sidebarData.ts:132  "Financeiro Enterprise" -> "Gestao Financeira"
+- src/components/AppTopbar.tsx:31  titulo -> "Gestao Financeira"
+- src/test/sidebarData.test.ts (referencia atualizada p/ "Gestao Financeira")
+NAO alterado: tabelas, rotas (/financeiro), APIs, componentes, contratos, banco.
+Titulo da pagina (Financeiro.tsx) permanece "Financeiro e Rentabilidade" (nao era
+"Financeiro Enterprise"); nenhuma ocorrencia de "Financeiro Enterprise" restou em src/.
+
+================================================================================
+3. ORDENACAO GLOBAL (ponto 2)
+================================================================================
+Campo oficial usado: created_at (mapeado para `createdAt`), DESC.
+Desempate estavel: id ASC.
+Novo helper puro: src/helpers/ordenacaoRecebiveis.ts (ordenarRecebiveis/compararRecebiveis).
+Default da tela: ordenacao = "recente_desc" (antes: "vencimento_asc").
+Select de ordenacao: adicionado "Mais recente" como primeira opcao.
+A ordenacao roda sobre o CONJUNTO COMPLETO (filtrado por busca/status/cliente/etc.)
+e ANTES da paginacao:
+    const filtrados = useMemo(() => { ...filtros...; return ordenarRecebiveis(result, ordenacao); }, ...)
+    const paginadas = filtrados.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE)
+O server continua retornando o conjunto completo (busca server-side); nada mudou na query.
+
+PROVA COM DADOS REAIS (PROD, read-only):
+  Conjunto vencimento OUTUBRO/2026 ordenado por created_at desc:
+    pos 1 = da2c943d-8323-4559-9918-2bf02cf4edef (AR da FAT-2026-000020)
+            created_at 2026-09-26T00:24:13Z | venc 2026-10-25 | aberto | 300
+  => FAT-2026-000020 passa para a POSICAO 1 (pagina 1), corrigindo "estava na pagina 2".
+
+================================================================================
+4. BEFORE x AFTER
+================================================================================
+Item                         | ANTES                                  | DEPOIS
+-----------------------------+----------------------------------------+--------------------------------------
+Sidebar/Topbar titulo        | "Financeiro Enterprise"                | "Gestao Financeira"
+Ordenacao default AR         | vencimento_asc (vencimento primeiro)   | created_at desc (mais recente primeiro)
+Campo de ordenacao           | vencimento                             | created_at (desempate id asc)
+Editar recebivel (payload)   | enviava status (risco 'pago')          | NAO envia status (preserva o persistido)
+Modal Status (edicao)        | Select com opcao "Pago"                | somente-leitura (badge)
+Modal Status (cadastro)      | opcoes incluiam "Pago"                 | sem "Pago" (pendente/a_vencer/vencido/parcial/cancelado)
+PAGO                         | via baixa                              | via baixa (inalterado)
+
+================================================================================
+5. ARQUIVOS ALTERADOS
+================================================================================
+- src/lib/sidebarData.ts                          (titulo visivel)
+- src/components/AppTopbar.tsx                    (titulo visivel da rota /financeiro)
+- src/test/sidebarData.test.ts                    (referencia do titulo)
+- src/components/financeiro/ContasReceberEnterprise.tsx
+    * import ordenarRecebiveis
+    * default ordenacao = "recente_desc"
+    * sort do conjunto completo via helper; paginacao depois
+    * opcao "Mais recente" no Select de ordenacao
+    * handleSalvarReceita: NAO envia status ao editar (preserva)
+    * Status do modal: somente-leitura em edicao; sem "Pago" no cadastro
+- src/helpers/ordenacaoRecebiveis.ts              (NOVO - helper puro)
+- src/test/fin_ar_ux_01_nome_ordenacao_editar.test.ts (NOVO - 14 testes)
+
+================================================================================
+6. TESTES / CONTAGENS
+================================================================================
+Novo arquivo: src/test/fin_ar_ux_01_nome_ordenacao_editar.test.ts -> 14/14 PASS
+  A) sidebar/topbar = "Gestao Financeira"; sem "Financeiro Enterprise"
+  B) ordenacao created_at desc (mais recente -> mais antigo) + desempate id asc
+  C/D) pagina 1 = mais recentes; pagina 2 = posteriores; sem duplicar/omitir
+  E) busca (subconjunto) preserva ordem
+  F) filtro (subconjunto) preserva ordem + sort ANTES do slice (estrutural)
+  G/H) editar sem status nao valida status e nao envia 'status'
+  I) componente: payload de edicao nao inclui status
+  J) atualizarRecebivel('pago') BLOQUEADO; criarRecebivel('pago') BLOQUEADO (RPC nao chamada)
+  K) baixarRecebivel usa RPC oficial f_registrar_baixa_financeira
+  + Select de Status do modal nao oferece mais "Pago"
+
+Regressao (5 arquivos): 68/68 PASS
+  fin_ar_ux_01 (14) + sidebarData + fin_prog05c3b_receber_paginacao (5) +
+  fin_fat_urg_02 (18) + fin_fat_urg_04 (10).
+BUILD: npm run build -> OK ("built in 50.15s").
+TYPECHECK: nenhum erro NOVO. Permanecem 5 erros PRE-EXISTENTES em
+  ContasReceberEnterprise.tsx (linhas 174/432/493/749: defaultRecebivel sem
+  `statusEfetivo`; linha 790: Cliente.cpf) + 1 em sidebarData.ts:51 (type predicate)
+  — ja registrados no FIN-GATE-01 (divida de tipos do financeiro; nao bloqueiam).
+
+================================================================================
+7. PROVA CONTROLADA (BEGIN/ROLLBACK) — status preservado, zero lixo
+================================================================================
+PROD, transacao com ROLLBACK:
+  - INSERT AR temporario status='aberto'; UPDATE observacoes='edit-hml', valor=150.
+    status_before='aberto' -> status_after='aberto'  (edicao NAO altera status)  PASS
+  - zero_lixo = true (contagem financeiro_receber before == after).
+PROVA DE BLOQUEIO (nivel app, vitest):
+  - atualizarRecebivel(id, { status:'pago' }) -> REJEITA ("...Use o fluxo oficial de baixa")
+  - criarRecebivel({ status:'pago' }) -> REJEITA e NAO chama RPC
+  - baixarRecebivel -> RPC oficial f_registrar_baixa_financeira
+
+================================================================================
+8. ZERO ALTERACAO NA FAT-2026-000020 / ZERO LIXO
+================================================================================
+- FAT-2026-000020 (fatura 0e37e0d0...): status=emitida, AR da2c943d... status=aberto,
+  valor=300.00, venc=2026-10-25 — ANTES e DEPOIS identicos.
+- Nenhum INSERT/UPDATE/DELETE persistido; testes transacionais com ROLLBACK.
+- Nao houve baixa, edicao ou cancelamento do caso. Nenhuma alteracao de regra de
+  emissao, M66/M80, Pagamento de Prestadores, Comercial, APP.
+
+================================================================================
+9. CAMPOS EDITAVEIS (ponto 4)
+================================================================================
+Auditados: cliente, documento/serie/numero, categoria/centro/plano, valores
+(bruto/desconto/juros/multa/abatimento/valor liquido), emissao/vencimento/previsao,
+conta financeira, recorrencia/parcelas, OS/contrato/proposta, observacoes.
+Todos persistem via `atualizarRecebivel` (whitelist CAMPOS_REAIS_RECEBER). Nenhum
+campo exibido ficou sem contrato de persistencia; o unico problema era o `status`,
+agora preservado. Campos nao suportados pelo banco (ex.: observacao/centro_custo)
+seguem descartados pela whitelist (comportamento existente, nao alterado).
+
+================================================================================
+10. RISCOS RESIDUAIS
+================================================================================
+R1. A ordenacao e aplicada no cliente sobre o conjunto carregado (mesmo padrao do
+    projeto; busca server-side). Para volumes muito grandes, avaliar ordenacao
+    server-side por created_at em missao futura (nao bloqueante).
+R2. Erros TypeScript pre-existentes do ContasReceberEnterprise permanecem (divida).
+R3. O titulo da pagina (h1 em Financeiro.tsx) segue "Financeiro e Rentabilidade"
+    (distinto do menu/topbar "Gestao Financeira"); se padronizacao for desejada,
+    tratar em missao de nomenclatura global.
+
+================================================================================
+11. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARQUIVO ..: TMS-FIN-AR-UX-01-NOME-ORDENACAO-EDITAR-RECEBIVEL-RESULTADO.txt
+ CAMINHO ..: express-connect-hub\TMS-FIN-AR-UX-01-NOME-ORDENACAO-EDITAR-RECEBIVEL-RESULTADO.txt
+ TAMANHO ..: 11512 bytes
+ DATA/HORA : 25/09/2026 19:07:01
+
+================================================================================
+FIM — TMS-FIN-AR-UX-01-NOME-ORDENACAO-EDITAR-RECEBIVEL
+================================================================================

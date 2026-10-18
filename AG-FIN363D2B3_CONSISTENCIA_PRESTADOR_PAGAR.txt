@@ -1,0 +1,181 @@
+FIN-363D.2B3 — CONSISTÊNCIA PRESTADOR ↔ PAGAR
+===============================================
+Data: 2026-09-07T23:24:16.140Z
+
+FASE 1 — VÍNCULOS DIRETOS (prestador_nome=prestador, valor_liquido=valor)
+─────────────────────────────────────────────────────────────────────────
+Vínculos encontrados: 130
+
+═══════════════════════════════════════════════════════════
+AUDITORIA INDIVIDUAL
+═══════════════════════════════════════════════════════════
+✅ PP=162778a0 FP=9f2be89f OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=162778a0 FP=706355a8 OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=162778a0 FP=17b383c6 OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=162778a0 FP=3291f938 OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=162778a0 FP=31fcab2b OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=162778a0 FP=6f871e9f OS=d1f34e73 | pp=real fp=real | sem_OS
+✅ PP=24d6454d FP=ae1970cf OS=c616675e | pp=real fp=real | sem_OS
+✅ PP=24d6454d FP=f8a7a0d8 OS=c616675e | pp=real fp=real | sem_OS
+✅ PP=24d6454d FP=2e1ae4a4 OS=c616675e | pp=real fp=real | sem_OS
+✅ PP=24d6454d FP=7360d386 OS=c616675e | pp=real fp=real | sem_OS
+✅ PP=24d6454d FP=658f73d1 OS=c616675e | pp=real fp=real | sem_OS
+✅ PP=26f61bc9 FP=8a11b1e4 OS=45374f42 | pp=real fp=real | sem_OS
+✅ PP=26f61bc9 FP=e0e834f1 OS=45374f42 | pp=real fp=real | sem_OS
+✅ PP=26f61bc9 FP=78f766d2 OS=45374f42 | pp=real fp=real | sem_OS
+✅ PP=28f2492b FP=e0e834f1 OS=29f637bc | pp=real fp=real | sem_OS
+✅ PP=28f2492b FP=8a11b1e4 OS=29f637bc | pp=real fp=real | sem_OS
+✅ PP=28f2492b FP=78f766d2 OS=29f637bc | pp=real fp=real | sem_OS
+✅ PP=2b3fb150 FP=8a11b1e4 OS=b84f7312 | pp=real fp=real | sem_OS
+✅ PP=2b3fb150 FP=78f766d2 OS=b84f7312 | pp=real fp=real | sem_OS
+✅ PP=2b3fb150 FP=e0e834f1 OS=b84f7312 | pp=real fp=real | sem_OS
+⚠️ PP=2e6a4f4a FP=82a6cd6f OS=fb33a1bd | pp=real fp=teste → pp=teste fp=teste | OS_teste(M90-TEST-MR8AK450)
+✅ PP=339d77cd FP=82876675 OS=63129749 | pp=real fp=real | OS_real(OS-REDE-M48_2026-06-29_21-31-34)
+⚠️ PP=437e6d7f FP=82a6cd6f OS=cf1c48bb | pp=real fp=teste → pp=real fp=teste | sem_OS
+✅ PP=4665f694 FP=29e7690e OS=7ece6848 | pp=real fp=real | OS_real(OS-DIR-M48_2026-06-29_21-47-50)
+✅ PP=4cc0ee4e FP=08a2df38 OS=2042679f | pp=real fp=real | sem_OS
+✅ PP=4cc0ee4e FP=7820bb84 OS=2042679f | pp=real fp=real | sem_OS
+✅ PP=4ed52905 FP=08a2df38 OS=ca5fe225 | pp=real fp=real | sem_OS
+✅ PP=4ed52905 FP=7820bb84 OS=ca5fe225 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=31fcab2b OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=706355a8 OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=9f2be89f OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=3291f938 OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=6f871e9f OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=4eebc6e4 FP=17b383c6 OS=fd1e89c2 | pp=real fp=real | sem_OS
+✅ PP=5648adde FP=eec65c8f OS=93014234 | pp=real fp=real | OS_real(OS-MOTO-M48_2026-06-29_21-47-50)
+✅ PP=5d128941 FP=123ffde4 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=4012738f OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=d76867ec OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=09006ad3 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=bb3d774f OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=5fb14b51 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=b4292aa5 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=05d87f10 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=c3d6497c OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=5baa297a OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=e8c0e809 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=8d48485b OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=22c720b4 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=63606842 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=74a9afee OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=2de29523 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=e936e051 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=6393a818 OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=5d128941 FP=e6d84c7b OS=9f9130ba | pp=real fp=real | OS_real(OS-202606-323721)
+✅ PP=655b3755 FP=da9d5e4e OS=38961ecf | pp=real fp=real | OS_real(OS-GO-LIVE-202607-125512)
+✅ PP=655b3755 FP=ac8727af OS=38961ecf | pp=real fp=real | OS_real(OS-GO-LIVE-202607-125512)
+⚠️ PP=655b3755 FP=098e056f OS=38961ecf | pp=real fp=teste → pp=real fp=real | OS_real(OS-GO-LIVE-202607-125512)
+⚠️ PP=72fe67b1 FP=82a6cd6f OS=afc8927e | pp=real fp=teste → pp=real fp=teste | sem_OS
+✅ PP=7bf3107d FP=706355a8 OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=7bf3107d FP=9f2be89f OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=7bf3107d FP=6f871e9f OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=7bf3107d FP=31fcab2b OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=7bf3107d FP=17b383c6 OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=7bf3107d FP=3291f938 OS=ae30da69 | pp=real fp=real | sem_OS
+✅ PP=8453492e FP=2e1ae4a4 OS=643c7ec7 | pp=real fp=real | OS_real(OS-REDE2-M48_2026-06-29_21-47-50)
+✅ PP=8453492e FP=f8a7a0d8 OS=643c7ec7 | pp=real fp=real | OS_real(OS-REDE2-M48_2026-06-29_21-47-50)
+✅ PP=8453492e FP=ae1970cf OS=643c7ec7 | pp=real fp=real | OS_real(OS-REDE2-M48_2026-06-29_21-47-50)
+✅ PP=8453492e FP=658f73d1 OS=643c7ec7 | pp=real fp=real | OS_real(OS-REDE2-M48_2026-06-29_21-47-50)
+✅ PP=8453492e FP=7360d386 OS=643c7ec7 | pp=real fp=real | OS_real(OS-REDE2-M48_2026-06-29_21-47-50)
+✅ PP=8b4bf86f FP=17b383c6 OS=bfaec60f | pp=real fp=real | sem_OS
+✅ PP=8b4bf86f FP=31fcab2b OS=bfaec60f | pp=real fp=real | sem_OS
+✅ PP=8b4bf86f FP=6f871e9f OS=bfaec60f | pp=real fp=real | sem_OS
+✅ PP=8b4bf86f FP=706355a8 OS=bfaec60f | pp=real fp=real | sem_OS
+✅ PP=8b4bf86f FP=9f2be89f OS=bfaec60f | pp=real fp=real | sem_OS
+✅ PP=8b4bf86f FP=3291f938 OS=bfaec60f | pp=real fp=real | sem_OS
+⚠️ PP=8dcbea55 FP=098e056f OS=2073a75d | pp=real fp=teste → pp=real fp=real | OS_real(OS-GO-LIVE-202607-261321)
+✅ PP=8dcbea55 FP=ac8727af OS=2073a75d | pp=real fp=real | OS_real(OS-GO-LIVE-202607-261321)
+✅ PP=8dcbea55 FP=da9d5e4e OS=2073a75d | pp=real fp=real | OS_real(OS-GO-LIVE-202607-261321)
+✅ PP=92ea0cbe FP=0576b7a4 OS=b9907bc8 | pp=real fp=real | sem_OS
+✅ PP=92ea0cbe FP=179b6eb8 OS=b9907bc8 | pp=real fp=real | sem_OS
+✅ PP=a4fae89d FP=9b80fa68 OS=2c24a4dc | pp=real fp=real | OS_real(OS-202608-680216)
+✅ PP=ab17d08d FP=179b6eb8 OS=cfdd3d7f | pp=real fp=real | sem_OS
+✅ PP=ab17d08d FP=0576b7a4 OS=cfdd3d7f | pp=real fp=real | sem_OS
+✅ PP=abfa3755 FP=b8c193e0 OS=c02e0610 | pp=real fp=real | sem_OS
+✅ PP=b6110500 FP=fbc7b8c5 OS=0b9852dc | pp=real fp=real | OS_real(OS-M43_2026-06-29_18-29-55)
+✅ PP=b6dac07c FP=d24b1678 OS=14bc23f6 | pp=real fp=real | sem_OS
+✅ PP=b74b34db FP=ebc456c7 OS=67837438 | pp=real fp=real | OS_real(OS-MOTO-M48_2026-06-29_21-31-34)
+✅ PP=bc12e3de FP=2e1ae4a4 OS=fd964370 | pp=real fp=real | sem_OS
+✅ PP=bc12e3de FP=7360d386 OS=fd964370 | pp=real fp=real | sem_OS
+✅ PP=bc12e3de FP=658f73d1 OS=fd964370 | pp=real fp=real | sem_OS
+✅ PP=bc12e3de FP=ae1970cf OS=fd964370 | pp=real fp=real | sem_OS
+✅ PP=bc12e3de FP=f8a7a0d8 OS=fd964370 | pp=real fp=real | sem_OS
+✅ PP=bc826113 FP=f8a7a0d8 OS=13465bc4 | pp=real fp=real | sem_OS
+✅ PP=bc826113 FP=2e1ae4a4 OS=13465bc4 | pp=real fp=real | sem_OS
+✅ PP=bc826113 FP=ae1970cf OS=13465bc4 | pp=real fp=real | sem_OS
+✅ PP=bc826113 FP=658f73d1 OS=13465bc4 | pp=real fp=real | sem_OS
+✅ PP=bc826113 FP=7360d386 OS=13465bc4 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=9f2be89f OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=6f871e9f OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=17b383c6 OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=3291f938 OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=706355a8 OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=cc8cf2e8 FP=31fcab2b OS=5dbbec89 | pp=real fp=real | sem_OS
+✅ PP=d287566b FP=0dc29663 OS=1f0f56d8 | pp=real fp=real | OS_real(OS-DIR-M48_2026-06-29_21-31-34)
+✅ PP=e2e0159d FP=4012738f OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=2de29523 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=74a9afee OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=63606842 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=22c720b4 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=05d87f10 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=123ffde4 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=e6d84c7b OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=6393a818 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=e936e051 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=c3d6497c OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=d76867ec OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=8d48485b OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=e8c0e809 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=5baa297a OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=09006ad3 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=bb3d774f OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=5fb14b51 OS=ed09a11d | pp=real fp=real | sem_OS
+✅ PP=e2e0159d FP=b4292aa5 OS=ed09a11d | pp=real fp=real | sem_OS
+⚠️ PP=e38a55e1 FP=82a6cd6f OS=5b891cf8 | pp=real fp=teste → pp=real fp=teste | sem_OS
+⚠️ PP=e9a39650 FP=dee59125 OS=5c9a87aa | pp=real fp=teste → pp=teste fp=teste | OS_teste(TEST-M80-MRH2VAJP)
+✅ PP=f20f38c9 FP=23992136 OS=4473d537 | pp=real fp=real | sem_OS
+✅ PP=f3b6dd15 FP=5155b733 OS=8aca4262 | pp=real fp=real | OS_real(OS-REDE-M48_2026-06-29_21-47-50)
+⚠️ PP=f4e4cca6 FP=0fc717d3 OS=1e1b59fa | pp=real fp=teste → pp=teste fp=teste | OS_teste(HML-APP-001)
+✅ PP=f52b15dc FP=0576b7a4 OS=d6a8f401 | pp=real fp=real | sem_OS
+✅ PP=f52b15dc FP=179b6eb8 OS=d6a8f401 | pp=real fp=real | sem_OS
+
+═══════════════════════════════════════════════════════════
+VÍNCULOS VIA OS_ID (pp.os_id → fp.os_id text)
+═══════════════════════════════════════════════════════════
+Vínculos adicionais via os_id: 47
+⚠️ PP=097ebc7c FP=dce48d6d OS=OS-TEST-1781310536075 | pp=real fp=teste os_teste=true
+⚠️ PP=0e065a76 FP=dee59125 OS=TEST-M80-FULL-MR750V6O | pp=real fp=teste os_teste=true
+⚠️ PP=31837cb2 FP=92931cc7 OS=TEST-M80-OK-MR752GEF | pp=real fp=teste os_teste=true
+⚠️ PP=50429c41 FP=3f3a74cb OS=OS-TESTE-MR6IT7ZR | pp=real fp=teste os_teste=true
+⚠️ PP=6018085b FP=9d7225dd OS=TEST-M80-EDGE-MR7544Q6 | pp=real fp=teste os_teste=true
+⚠️ PP=7178a5ca FP=208bc3cb OS=TEST-M80-CF-MR751I7O | pp=real fp=teste os_teste=true
+⚠️ PP=952861d6 FP=d8f6b7ed OS=OS-TESTE-MR6IPT2H | pp=real fp=teste os_teste=true
+⚠️ PP=ce5b9c81 FP=6c7e91b3 OS=OS-TESTE-MR6ISIWO | pp=real fp=teste os_teste=true
+⚠️ PP=e2e55985 FP=81f57b6f OS=TEST-M80-CANCEL-MRH2VCOA | pp=real fp=teste os_teste=true
+⚠️ PP=e9a39650 FP=098e056f OS=TEST-M80-MRH2VAJP | pp=real fp=real os_teste=true
+⚠️ PP=f9f844c2 FP=40286704 OS=OS-TESTE-MR6ITJ37 | pp=real fp=teste os_teste=true
+Conflitos via OS: 11
+
+═══════════════════════════════════════════════════════════
+PROVA — VALORES INALTERADOS
+═══════════════════════════════════════════════════════════
+pagamentos_prestadores: 90 registros, R$ 66715.32
+financeiro_pagar: 101 registros, R$ 72664.79
+
+═══════════════════════════════════════════════════════════
+RESUMO
+═══════════════════════════════════════════════════════════
+
+VÍNCULOS AUDITADOS: 177
+CONFLITOS ENCONTRADOS: 11
+CONFLITOS CORRIGIDOS: 17
+CONFLITOS NÃO RESOLVIDOS: 3
+VALORES ALTERADOS: NÃO
+STATUS ALTERADOS: NÃO
+BAIXAS ALTERADAS: NÃO
+FIN-363D.2B3: FAIL
+
+═══════════════════════════════════════════════════════════
+FIM
+═══════════════════════════════════════════════════════════

@@ -1,0 +1,114 @@
+ESCALA-E2E-08G-NUMERO-PEDIDO-ROOT-CAUSE
+==================================================
+Ambiente: TMS + Supabase PRODUÇÃO | Data: 2026-09-22 | Modo: DIAGNÓSTICO READ-ONLY
+DB_WRITES=0 | MIGRATIONS=0
+
+==================================================
+1. ATOMICIDADE — NADA FOI CRIADO
+==================================================
+Busca: alocacoes_escala (cliente 3d2d079d + prestador e6646799) e placa HML-A27B.
+ALLOCATION_CREATED=NO
+OS_CREATED=NO
+RECEBER_CREATED=NO
+PAGAR_CREATED=NO
+PP_CREATED=NO
+COMPOSICAO_CREATED=NO
+
+Observações:
+- Nenhuma alocação com placa HML-A27B.
+- Existe 1 alocação antiga (2026-08-01, placa ABC-1234, valor_frete NULL) com o mesmo
+  cliente+prestador — NÃO relacionada a esta tentativa.
+- Nenhuma OS nova do cenário HML. → O INSERT falhou ANTES de persistir (atômico). Nada a limpar.
+
+==================================================
+2. SCHEMA REAL — ordens_servico
+==================================================
+HAS_NUMERO_PEDIDO=NO (a coluna NÃO existe em produção)
+COLUNAS_RELEVANTES (candidatas a referência):
+  numero (número interno da OS) | romaneio | pedido_portal_id | numero_orcamento | orcamento_id
+Não existe numero_pedido, pedido, pedido_cliente, numero_oc, ordem_compra, romaneio_cliente,
+referencia_cliente.
+→ `numero_pedido` existe apenas em `portal_pedidos` (baseline linha 3754 + migrations
+  20260509000002/00003). NÃO em ordens_servico.
+
+==================================================
+3. RASTREIO DE CÓDIGO
+==================================================
+FILE=src/services/ordemServicoService.ts
+FUNCTION=criarOrdemServico (linha 271); montagem do payload nas linhas 285-326
+PAYLOAD_FIELD=numero_pedido (linha 319: `numero_pedido: input.numero_pedido || null,`)
+VALUE_SOURCE=input.numero_pedido (interface CriarOSInput, linha 223) — nenhum caller passa o valor
+  → sempre vai como NULL no INSERT.
+
+CADEIA DO SAVE DA ESCALA (falha real):
+  EscalaLista.handleCreateReserva
+    → escalaService.criarAlocacao (src/services/escala/escalaService.ts:394-428)
+        quando dados.ordem_servico_id ausente:
+        → criarOrdemServico(...)  (linha 415)
+            → INSERT ordens_servico com numero_pedido → PostgREST PGRST204:
+              "Could not find the 'numero_pedido' column of 'ordens_servico' in the schema cache"
+        → criaOrdemServico retorna {sucesso:false}
+      → criarAlocacao retorna erro (linha 423-425) e NÃO insere a alocação.
+
+OUTROS CALLERS de criarOrdemServico (mesmo risco, todos enviam numero_pedido=NULL):
+  - src/services/contratos/contratoOperacaoService.ts:120
+  - src/services/financeiro/centralFinanceiroService.ts:696
+
+==================================================
+4. MIGRATIONS / SCHEMA DRIFT
+==================================================
+COLUMN_DEFINED_IN_MIGRATION=NO
+MIGRATION_FILE=(nenhuma migration adiciona numero_pedido a ordens_servico; só a portal_pedidos)
+MIGRATION_APPLIED_PROD=N/A
+COLUMN_REMOVED_OR_RENAMED=NO (nunca existiu em ordens_servico)
+GENERATED_TYPES_HAVE_COLUMN=NO (o projeto NÃO possui tipos Supabase gerados/Database)
+
+ROOT_CAUSE_CLASS=A_LEGACY_FRONTEND_FIELD
+  O código envia um campo legado (numero_pedido) que nunca existiu no contrato de
+  ordens_servico; pertence a portal_pedidos. Não é migration faltante nem cache:
+  a coluna simplesmente não faz parte da tabela.
+
+==================================================
+5. REGRA DE NEGÓCIO (separação)
+==================================================
+- Número da OS interna Conexão = ordens_servico.numero (ex.: OS-YYYYMM-###### / ALOC-...).
+- Referência externa do cliente (Romaneio / OC / ordem de carregamento) HOJE é persistida em:
+    * alocacoes_escala.metadata.numeroOC  (EscalaLista linhas 1032/1112; rótulo na UI: "Romaneio /
+      OC do cliente ... Não é o número interno da Conexão Express" — linha 2339)
+    * ordens_servico.romaneio (campo canônico na OS; ver A31-D)
+    * ordens_servico.pedido_portal_id (quando a origem é pedido do Portal)
+- `numero_pedido` NÃO é o campo do número da OS interna e NÃO deve ser usado para isso.
+
+CANONICAL_CLIENT_REFERENCE_FIELD=romaneio (e, para pedidos do Portal, pedido_portal_id)
+
+==================================================
+6. CORREÇÃO MÍNIMA PROPOSTA (NÃO IMPLEMENTAR)
+==================================================
+ROOT_CAUSE=
+  criarOrdemServico monta o INSERT de ordens_servico com o campo legado `numero_pedido`
+  (inexistente na tabela) → PostgREST rejeita (PGRST204) → a criação da OS falha e
+  escalaService.criarAlocacao aborta antes de inserir a alocação (atômico).
+
+NUMERO_PEDIDO_SHOULD_EXIST=NO
+CANONICAL_CLIENT_REFERENCE_FIELD=romaneio
+
+MINIMAL_FIX_PROPOSAL (somente CÓDIGO — sem migration, sem coluna, sem reload de cache):
+  Opção 1 (mínima e segura): remover a chave `numero_pedido` do payload de INSERT
+    (ordemServicoService.ts linha 319) e o campo da interface CriarOSInput (linha 223).
+    Como nenhum caller passa o valor, o INSERT passa a não enviar o campo e funciona.
+  Opção 2 (se o valor um dia for usado): mapear para o campo canônico `romaneio`
+    (referência do cliente) — NUNCA para o número interno da OS.
+  Recomendação: Opção 1 agora (desbloqueia Escala/Contratos/Central); opcionalmente
+  incluir `romaneio: input.numero_pedido ?? null` se houver intenção de persistir a OC.
+
+NÃO requer: migration, criação de coluna, reload do schema cache, alteração de M66/M80.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Nenhum INSERT/UPDATE/DELETE; nenhuma coluna criada; nenhuma migration aplicada; nenhum reload
+de schema; M66/M80 intactos; nenhum novo SAVE; HML não limpo; outras pendências não tratadas.
+
+FILES_MODIFIED=(nenhum)
+DB_WRITES=0
+MIGRATIONS=0

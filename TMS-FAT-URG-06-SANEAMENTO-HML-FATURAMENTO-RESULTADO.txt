@@ -1,0 +1,173 @@
+================================================================================
+MISSAO: TMS-FAT-URG-06-SANEAMENTO-HML-FATURAMENTO
+PROJETO: TMS CONEXAO EXPRESS
+AMBIENTE: TMS + Supabase PRODUCAO
+MODELO: DeepSeek V4.1 Flash
+APP/REDMI: NAO conectado.
+TIPO: SANEAMENTO CONTROLADO DOS 2 CASOS DE HOMOLOGACAO.
+================================================================================
+
+RESULTADO: PASS (com ressalva registrada: f_cancelar_fatura esta QUEBRADA em PROD).
+  - Ambos os casos neutralizados: zero AR ativo, zero AP ativo, zero PP ativo,
+    zero retorno a fila, zero fatura ativa.
+  - Backup gerado e validado (SHA256).
+  - Dados reais preservados (nenhum DELETE global; apenas status/classificacao HML).
+  - Regressao 97/97 PASS; build OK.
+
+================================================================================
+1. IDS DOS CASOS
+================================================================================
+CASO A — HML-FAT-01 / OS-202609-175861
+  alocacao_id        : 5bab62b3-bc6a-4651-9646-56f0a2e8071d
+  ordem_servico_id   : 16d52718-195f-4bce-b63b-cf2c16a97c96
+  fatura_id          : 0e37e0d0-6abe-4bf8-b746-a3598c52b812 (FAT-2026-000020)
+  fatura_item_id     : c57581ba-f885-4d1b-b952-7e6c704c614d
+  AR_id              : da2c943d-8323-4559-9918-2bf02cf4edef
+  financeiro_pagar   : 0c9eff58-f659-46b8-b5c8-94f69f0af4b9
+  pagamentos_prest.  : 4f8bb920-a9f0-4aac-ae54-6693e571c15a
+  composicao         : (os 16d52718) cliente 300 / prestador 250
+CASO B — HML-FAT-FINAL-01 / OS-202609-347861
+  alocacao_id        : 785834d1-19f2-48f9-8375-2103869f1ad4
+  ordem_servico_id   : ddfeb834-637b-4c0d-b527-19fcfa6f63e8
+  fatura_id          : 9977f2dc-f1c8-49b0-a5e8-4c568563a4f1 (FAT-2026-000022)
+  fatura_item_id     : 4f5a042a-2073-4d22-9672-a7fcdd5f196f
+  AR_id              : c1c9013b-b3d6-40e7-8aca-67daed1b98b7
+  financeiro_pagar   : 1db6588e-d74c-4189-8e93-2eee11eb326f
+  pagamentos_prest.  : c499d24b-cb6d-48df-aa0f-bbb0f0b62c6e
+  composicao         : (os ddfeb834) cliente 300 / prestador 250
+  tenant_id          : 00000000-0000-0000-0000-000000000001 (ambos)
+  cliente_id         : b4917245-e99f-4a72-8ce7-4f1deaccff7c (Mineirao Abc) (ambos)
+
+================================================================================
+2. INVENTARIO BEFORE (resumo)
+================================================================================
+CASO A: fatura emitida (300) ; item ativo (HML-FAT-01.) ; AR aberto (300, is_teste=false) ;
+        baixas=0 ; fiscal=0 ; AP aberto (250) ; PP pendente (250) ; composicao 300/250 ;
+        alocacao concluida/finalizada ; OS finalizada ; historico_alocacao=0.
+CASO B: fatura emitida (300) ; item ativo (HML-FAT-FINAL-01) ; AR aberto (300) ;
+        baixas=0 ; fiscal=0 ; AP aberto (250) ; PP pendente (250) ; composicao 300/250 ;
+        alocacao concluida/finalizada ; OS finalizada ; historico_alocacao=0.
+Confirmacao: TODOS os registros-alvo pertencem EXCLUSIVAMENTE a HML-FAT-01 / HML-FAT-FINAL-01.
+Nenhuma dependencia mistura dado real. Sem efeito fiscal, sem pagamento, sem conciliacao.
+
+================================================================================
+3. BACKUP + SHA256
+================================================================================
+Arquivo : TMS-FAT-URG-06-BACKUP-HML.json (raiz do projeto)
+Tamanho : 54356 bytes
+SHA256  : 6cfec9e22edd5f495e58e159c73ec56e548fdc2e582ceb54cfef4d879edb73d0
+Conteudo: snapshot completo (SELECT *) de faturas, fatura_itens, financeiro_receber,
+          alocacoes_escala, ordens_servico, financeiro_pagar, pagamentos_prestadores,
+          composicao_financeira_os, fiscal_documentos_vinculados e
+          historico_alocacoes_escala dos 2 casos — BEFORE qualquer escrita.
+Restauracao/rollback: re-INSERT dos registros do JSON pelas PKs (os registros NAO foram
+          apagados; apenas status/is_teste alterados — ver secao 5). Para reverter os
+          status, aplicar os valores do JSON (status/status_pagamento/is_teste/cancelado_em).
+
+================================================================================
+4. ESTRATEGIA / MECANISMOS
+================================================================================
+- Fatura/AR: tentado o mecanismo OFICIAL `f_cancelar_fatura`.
+    RESULTADO: FALHOU em PROD -> "FATURA_BLOQUEADA: Não é permitido alterar itens de fatura
+    cancelada (status cancelada)".
+    CAUSA: a propria RPC marca faturas.status='cancelada' e, em seguida, tenta
+    UPDATE fatura_itens SET status='cancelado'; porém o trigger
+    `trg_fatura_itens_bloqueio_emissao` (BEFORE INSERT/UPDATE/DELETE em fatura_itens)
+    BLOQUEIA alteracao de itens quando a fatura esta 'emitida'/'cancelada' -> a RPC
+    aborta a transacao. DEFEITO CONTRATUAL registrado (nao corrigido nesta missao).
+    NEUTRALIZACAO ADOTADA: UPDATE administrativo de status (postgres):
+      - financeiro_receber.status='cancelado' (+ is_teste=true)
+      - faturas.status='cancelada' (+ cancelado_em/cancelado_por/motivo)
+    (Mesmo efeito pretendido pela RPC, sem o bug de itens.)
+- Alocacao/AP/PP: usado o fluxo OFICIAL comprovado:
+    UPDATE alocacoes_escala SET status='cancelada' -> dispara
+    `trg_cancelar_financeiro_alocacao` -> cancela financeiro_pagar (status='cancelada')
+    e pagamentos_prestadores (status_pagamento='cancelado'/status_conferencia='cancelado').
+- OS: classificada/neutralizada (is_teste=true) e, por coerencia operacional, acabou
+    'cancelada' (cascata da cancelacao da alocacao).
+- Classificacao extra: is_teste=true em financeiro_receber, financeiro_pagar,
+    pagamentos_prestadores e ordens_servico (mecanismo padrao de "TESTE/HOMOLOGACAO"
+    para nao contaminar dashboards que filtram is_teste=false).
+- composicao_financeira_os: SEM mecanismo oficial de cancelamento e SEM coluna is_teste
+    -> PRESERVADA (historico do snapshot de margem) e registrada como residual.
+
+================================================================================
+5. OPERACOES REALIZADAS (por caso, individualmente)
+================================================================================
+CASO A:
+  1) f_cancelar_fatura(FAT-000020) ......... FALHOU (defeito) -> rollback
+  2) UPDATE alocacoes_escala status='cancelada' (5bab62b3) -> AP/PP cancelados (trigger)
+  3) UPDATE ordens_servico is_teste=true (16d52718)
+  4) UPDATE financeiro_pagar is_teste=true (0c9eff58; status='cancelada')
+  5) UPDATE pagamentos_prestadores is_teste=true (4f8bb920; status_pagamento='cancelado')
+  6) UPDATE financeiro_receber status='cancelado', is_teste=true (da2c943d)
+  7) UPDATE faturas status='cancelada', cancelado_em=now(), motivo='Saneamento HML FAT-URG-06' (0e37e0d0)
+CASO B: idem, com os IDs do CASO B (fatura 9977f2dc, aloc 785834d1, os ddfeb834,
+  AP 1db6588e, PP c499d24b, AR c1c9013b).
+
+================================================================================
+6. AFTER (estado final PROD)
+================================================================================
+faturas ............ FAT-2026-000020 = cancelada ; FAT-2026-000022 = cancelada
+financeiro_receber . da2c943d = cancelado (is_teste=true) ; c1c9013b = cancelado (is_teste=true)
+financeiro_pagar ... 0c9eff58 = cancelada (is_teste=true) ; 1db6588e = cancelada (is_teste=true)
+pagamentos_prest.... 4f8bb920 = cancelado (is_teste=true) ; c499d24b = cancelado (is_teste=true)
+alocacoes_escala ... 5bab62b3 = cancelada (status_pagamento=cancelado)
+                     785834d1 = cancelada (status_pagamento=cancelado)
+ordens_servico ..... 16d52718 = cancelada (is_teste=true) ; ddfeb834 = cancelada (is_teste=true)
+composicao ......... 2 registros PRESERVADOS (residual documentado)
+historico_alocacao . 2 registros (gerados pela mudanca de status)
+
+HML ATIVOS (criterios):
+  AR ativo (is_teste=false e status ativo) .................... 0
+  AP ativo (status nao cancelado) ............................. 0
+  PP ativo (status_pagamento nao cancelado) ................... 0
+  Retorno a fila "Nao faturado" (concluida+finalizada) ........ 0
+  Fatura ativa (status != cancelada) .......................... 0
+  Duplicidade de AR por fatura ................................ 0
+
+================================================================================
+7. CONTAGENS / SOMAS / ORFAOS / DADOS REAIS
+================================================================================
+Totais globais (apos): faturas 11 | AR 49 | AP 115 | PP 98 | alocacoes 202 | OS 165.
+  -> Nenhum DELETE: contagens globais inalteradas por esta missao; apenas status/is_teste
+     dos registros HML foram alterados. DADOS REAIS PRESERVADOS.
+Somas ATIVAS globais (is_teste=false, status ativos): AR 28.034,73 | AP 50.622,59
+  (excluem os HML por status cancelado + is_teste=true).
+Orfaos globais (pre-existentes, modelo os_id TEXT/legado; NAO introduzidos por esta missao):
+  item_fatura_orfa=36 | ap_os_orfa=34 | pp_os_orfa=26 | comp_os_orfa=20 | ar_fatura_orfa=0.
+  => nenhum orfao NOVO atribuivel a esta missao (nao houve delete).
+
+================================================================================
+8. TESTES / BUILD
+================================================================================
+Regressao: 97/97 PASS (9 arquivos — Conferencia/Faturas/AR/emissao/cancelamento/Prestadores).
+BUILD: npm run build -> OK ("built in 35.38s").
+Nenhum arquivo de codigo/migration alterado nesta missao (saneamento de dados).
+
+================================================================================
+9. RISCOS RESIDUAIS
+================================================================================
+R1. f_cancelar_fatura esta QUEBRADA em PROD (bloqueio de itens impede cancelar fatura
+    emitida). Registrado para correcao em missao propria (nao alterar RPC aqui).
+    Impacto: o cancelamento oficial de fatura nao funciona; usado neutralizacao admin.
+R2. composicao_financeira_os dos 2 HML permanece (sem cancel/is_teste). Margem por OS
+    (MargemPorOS) le ordens_servico e NAO filtra is_teste -> pode listar os 2 casos como
+    historicos. Residual de baixo valor (2 x R$300/250); tratar em missao de Margem.
+R3. fatura_itens dos 2 casos permanecem 'ativo' (bloqueio de itens). Sem efeito ativo
+    (fatura cancelada + alocacao cancelada); apenas classificacao interna. Documentado.
+R4. Orfaos globais pre-existentes (modelo os_id). Nao relacionados; nao removidos.
+
+================================================================================
+10. CONFIRMACAO DE ENTREGA
+================================================================================
+ ARTEFATOS:
+  - TMS-FAT-URG-06-SANEAMENTO-HML-FATURAMENTO-RESULTADO.txt (este relatorio)
+  - TMS-FAT-URG-06-BACKUP-HML.json (backup/snapshot BEFORE; sha256 6cfec9e2...)
+ CAMINHO ..: express-connect-hub\TMS-FAT-URG-06-SANEAMENTO-HML-FATURAMENTO-RESULTADO.txt
+ TAMANHO ..: 11083 bytes
+ DATA/HORA : 25/09/2026 19:48:44
+
+================================================================================
+FIM — TMS-FAT-URG-06-SANEAMENTO-HML-FATURAMENTO
+================================================================================

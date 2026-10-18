@@ -1,3 +1,9 @@
+/**
+ * @deprecated MISSÃO 78 — A lógica de cálculo de alocação foi movida
+ * para dentro de EscalaLista.tsx usando precificacaoEngineService.calcularPrecoRapido().
+ * Este helper não é mais chamado por nenhum componente.
+ * Mantido apenas para referência. Remover após validação.
+ */
 import { normalizarNumeroFinanceiro } from "@/services/escala/escalaMapper";
 
 export interface DadosCalculoEscala {

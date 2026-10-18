@@ -1,0 +1,589 @@
+================================================================================
+STATUS-GERAL-PROJETO.txt
+TMS CONEXAO EXPRESS — DIAGNÓSTICO GERAL (LEITURA PURA — SEM ALTERAÇÕES)
+Gerado em: 2026-10-01 20:55 (America/Sao_Paulo) por Antigravity AGY
+Repositório: express-connect-hub
+Projeto Supabase: uwrvzsjtpgaifkktpepn
+================================================================================
+
+--------------------------------------------------------------------------------
+SEÇÃO 0 — VISÃO EXECUTIVA
+--------------------------------------------------------------------------------
+O projeto TMS Conexão Express é um sistema web (React + TypeScript + Vite +
+Supabase/PostgreSQL) que integra:
+  - TMS Web: painel operacional, financeiro, comercial, CRM, IA, fiscal
+  - APP Flutter/Android: app do prestador (motorista) — repo separado C:\src\conexao_prestador
+  - Portal Cliente: portal web multifilial para clientes
+
+ESTÁGIO GERAL (2026-10-01):
+  • Nível 3 (TMS Core / OS / Escala): HOMOLOGADO INTERNAMENTE ✅
+  • Nível 4 (Comercial / Orçamentos): HOMOLOGADO INTERNAMENTE ✅
+  • Nível 5 (Financeiro): HOMOLOGÁVEL COM RESSALVAS — 3 P0 / 9 P1 abertos ⚠️
+  • Nível 6 (Persistência de Cadastros): HOMOLOGADO com pendências menores ✅
+  • Nível 7 (Cadastros / Admin / Recrutamento): HOMOLOGADO com ressalvas ✅
+  • Nível 8 (App Flutter / Integração): FECHADO (jornada física pendente no Redmi) ⚠️
+  • Nível 9 (Segurança Enterprise / RLS Multi-Tenant): PARCIAL — políticas ativas, drift detectado 🔶
+  • PRODUÇÃO COM DINHEIRO REAL: NÃO RECOMENDADO — aguarda fechamento de P0s
+
+--------------------------------------------------------------------------------
+SEÇÃO 1 — INVENTÁRIO DO REPOSITÓRIO
+--------------------------------------------------------------------------------
+Total de arquivos no workspace:          951 arquivos | 32 diretórios
+Migrations SQL (supabase/migrations/):   289 arquivos .sql
+Scripts auxiliares (scripts/):           901 arquivos (diagnóstico, auditoria, seeds)
+Testes unitários Vitest (src/test/):     154 arquivos de teste
+Testes E2E Playwright (tests/e2e/):      144 arquivos de spec .ts
+Relatórios .txt na raiz:                 ~120 arquivos de evidência gerados por missões
+Páginas React (src/pages/):              50 arquivos .tsx
+Serviços (src/services/):                41 arquivos raiz + 25 subpastas
+Componentes (src/components/):           29 subpastas temáticas
+
+--------------------------------------------------------------------------------
+SEÇÃO 2 — ÚLTIMAS MIGRATIONS APLICADAS EM PRODUÇÃO
+--------------------------------------------------------------------------------
+DATA         | ARQUIVO                                            | DESCRIÇÃO
+-------------|----------------------------------------------------|-----------------------------------------
+2026-09-28   | 20260928000000_adm_app_02d2_bucket_documentos_     | Bucket documentos_prestadores → PRIVADO
+             | privado.sql                                        | (21/21 testes N/P PASS)
+2026-09-28   | 20260928000001_adm_app_02d2_rollback.sql           | Rollback companion (round-trip validado)
+2026-09-27   | 20260927000000_adm_app_02c2_seguranca_             | Reconciliação de segurança APP-02C2
+             | reconciliada.sql                                   |
+2026-09-27   | 20260927000001_adm_app_02c2_rollback.sql           | Rollback companion 02C2
+2026-09-26   | 20260926000004_app_e2e08_pod_evidencia_            | POD evidência obrigatória (APP E2E-08)
+             | obrigatoria.sql                                    |
+2026-09-26   | 20260926000003_app_e2e07_storage_pod_signed_       | Storage POD signed URL + RLS
+             | url_rls.sql                                        |
+2026-09-26   | 20260926000002_app_e2e04_contrato_os_romaneio_     | Contrato OS + romaneio + cliente
+             | cliente.sql                                        |
+2026-09-26   | 20260926000001_fin_pp_func01_novo_lancamento.sql   | RPC novo lançamento pagamento prestador
+2026-09-25   | 20260925000010_fin_pp_02c1b_acoes_seguras_         | Ações seguras prestador (RLS/RPC)
+             | prestador.sql                                      |
+2026-09-25   | 20260925000006_fin_fat_urg_07_cancelamento_        | Cancelamento oficial de fatura
+             | fatura_oficial.sql                                 |
+2026-09-25   | 20260925000004_fin_fat_urg_05b_hardening_          | Hardening portas financeiras
+             | portas.sql                                         |
+2026-09-25   | 20260925000002_fin_fat_urg_04_emissao_exige_       | Emissão exige aprovação (gate)
+             | aprovacao.sql                                      |
+2026-09-25   | 20260925000000_fin_fat_urg_02_validacao_           | Validação RPC fatura (guarda integridade)
+             | fatura_rpc.sql                                     |
+2026-09-24   | 20260924000020_fin_sec02_a6_criar_recebivel_       | RPC criar recebível manual (gate oficial)
+             | manual.sql                                         |
+2026-09-24   | 20260924000018_fin_sec02_s1_lock_pagamentos_       | Lock pagamentos prestadores
+             | prestadores.sql                                    |
+2026-09-24   | 20260924000016_fin_prog05d7c1_lote_cabecalho_      | Lote pagamentos: header + snapshot
+             | snapshot.sql                                       |
+2026-09-24   | 20260924000014_fin_prog05d7b1_rpc_gerar_lote.sql   | RPC f_gerar_lote_pagamentos
+2026-09-24   | 20260924000012_fin_prog05d6c_data_canonica_        | Data canônica prestador
+             | prestador.sql                                      |
+2026-09-24   | 20260924000008_fin_prog05d6b_rpc_aprovar_          | RPC f_aprovar_pagamento_prestadores
+             | pagamento.sql                                      |
+2026-09-22   | 20260922000011_escala_fin_01_1_proteger_           | Proteger títulos fechados (parcial)
+             | parcial.sql                                        |
+2026-09-13   | 20260913000000_fin_sane_02b_unifica_valor_         | Unifica valor a pagar (M66/M80 fix)
+             | pagar.sql                                          |
+2026-09-20   | 20260920_02mf_fix_rpc_pagamento_prestador_         | Fix RPC pagamento prestador parcial
+             | parcial.sql                                        |
+
+TOTAL DE MIGRATIONS NO PROJETO: 289 arquivos SQL
+(inclui forwards, rollbacks, seeds, patches de segurança e hotfixes)
+
+--------------------------------------------------------------------------------
+SEÇÃO 3 — MAPEAMENTO DE SCHEMAS E TABELAS PRINCIPAIS
+--------------------------------------------------------------------------------
+DOMÍNIO         | TABELAS PRINCIPAIS
+----------------|-------------------------------------------------------------------
+AUTH/TENANT     | auth.users, tenants, usuarios_tenants, usuarios_tenant_perfis
+CADASTROS       | prestadores, clientes, veiculos, fornecedores, auxiliares
+RECRUTAMENTO    | candidatos, recrutamento_etapas, vagas_abertas, documentos_candidatos
+OPERACIONAL     | ordens_servico, alocacoes_escala, historico_alocacoes_escala,
+                | operation_timeline_events, ocorrencias, patio_controle
+ESCALA          | alocacoes_escala (principal), programacao_escala
+FISCAL          | fiscal_documentos_vinculados, configuracoes_fiscais, regras_fiscais_*,
+                | certificados_fiscais, municipios_ibge
+FINANCEIRO      | financeiro_pagar, financeiro_receber, financeiro_baixas,
+                | pagamentos_prestadores, lotes_pagamento, lotes_pagamento_itens,
+                | composicao_financeira_os, faturas, faturas_itens, contas_financeiras,
+                | centros_custo
+PORTAL CLIENTE  | portal_clientes_usuarios, portal_pedidos, portal_notificacoes,
+                | portal_rastreamento
+COMERCIAL       | orcamentos, orcamento_itens, contratos, contratos_itens
+COMUNICAÇÃO/IA  | central_ia_conversas, automacoes_robos, treinamento_arquivos_ia,
+                | mensagens_whatsapp, central_integracoes
+DOCUMENTOS      | documentos_prestadores (bucket PRIVADO), biblioteca_global
+RASTREAMENTO    | posicoes_rastreamento, tracking_publico
+
+FUNÇÕES RPC CRÍTICAS:
+  f_emitir_fatura                    — SECURITY DEFINER — emissão fatura + AR
+  f_aprovar_pagamento_prestadores    — SECURITY DEFINER — aprovação fluxo prestador
+  f_gerar_lote_pagamentos            — SECURITY DEFINER — geração lote + snapshot
+  f_confirmar_pagamento_prestador    — INVOKER — confirmação pagamento (baixa)
+  f_registrar_baixa_financeira       — INVOKER — registro baixa (11 parâmetros)
+  f_registrar_baixa_recebivel        — INVOKER — registro baixa recebível
+  f_criar_recebivel_manual           — SECURITY DEFINER — criação recebível via gate
+  f_cancelar_fatura_manual           — SECURITY DEFINER — cancelamento oficial fatura
+  f_avancar_etapa_app_motorista      — SECURITY DEFINER — etapas APP (inclui romaneio sync)
+  f_registrar_posicao_motorista      — tracking GPS motorista
+  f_buscar_operacoes_motorista       — listagem operações para o APP
+
+--------------------------------------------------------------------------------
+SEÇÃO 4 — MÓDULOS IMPLEMENTADOS COM TESTES/EVIDÊNCIAS (PASS COMPROVADO)
+--------------------------------------------------------------------------------
+
+[NÍVEL 8 — INTEGRAÇÃO APP FLUTTER]
+  ✅ APP-E2E-11A..11F: Login prestador + aceite operação + status + tracking + POD
+     Evidência: APP-E2E-11F-RELATORIO.txt | Nível 8 FECHADO (matriz funcional 100% PASS)
+     Ressalva: prova física no Redmi bloqueada por ambiente (BLOCKED/F-ENV)
+  ✅ Bucket documentos_prestadores: PRIVADO (ADM-APP-02D2 — 21/21 N/P PASS)
+     Evidência: ADM-APP-02D2-RELATORIO.txt | migration 20260928000000 aplicada
+  ✅ ADM-APP-02C2: Reconciliação de segurança (migrations 20260927000000 + rollback PASS)
+     Evidência: ADM-APP-02C2-RELATORIO.txt
+  ✅ ADM-APP-02A: Auditoria pré-cadastro APP (37 KB de evidências)
+  ✅ Tracking GPS: f_registrar_posicao_motorista corrigida (A25B..A25H2 — PASS)
+     Evidência: A25_H2_TRACKING_PONTA_A_PONTA.txt | A25_L_HOMOLOGACAO_TORRE_TRACKING.txt
+  ✅ Chat Torre/APP: realtime confirmado (A24 + A24B hotfix PASS)
+  ✅ Rede de Oportunidades: A27B homologada (prestador enxerga/aceita oportunidades)
+  ✅ Recrutamento APP: ag07f..j18 — gate de elegibilidade, documentos, bypass, bypass_aceite_rede
+     Evidências: src/test/ag07f_gate_elegibilidade.test.ts..ag07j18_4_rpc_cadastro_app.test.ts
+
+[NÍVEL 7 — CADASTROS / ADMIN / RECRUTAMENTO]
+  ✅ Cadastro de Prestadores: listagem, edição, indicadores reais (tms005/cad-persist-02)
+  ✅ Cadastro de Veículos: tipo canônico, persistência, refrigerado/térmico
+     Evidências: src/test/cad_veic_02_tipo_veiculo_canonical.test.ts | 03 | ag07ib1..b5
+  ✅ Cadastro de Clientes: ordenação, paginação, persistência E2E
+     Evidências: src/test/clientes_01_ordenacao_paginacao.test.ts | 02
+  ✅ Recrutamento: rec01 (segurança), rec02 (entidades), rec03 (legacy fechado),
+     rec04 (documentos/elegibilidade), rec06 (score comprometimento)
+     Evidências: src/test/rec01..rec06 (5 suítes completas, ~70 testes)
+  ✅ Análise de Documentos IA: candidatos, documentos, score, pipeline
+  ✅ Segurança Candidatos: RLS anon + authenticated (20260601 + 20260620 migrations PASS)
+
+[NÍVEL 6 — PERSISTÊNCIA E OPERACIONAL]
+  ✅ Escala/Alocações: fluxo canônico E2E (escala_e2e_01..08h)
+     Evidências: src/test/escala_e2e_01..08 (8 suítes)
+  ✅ OS <-> Escala linkage: M66 + M80 corrigidos (FIN-SANE-02F GATE FINAL PASS)
+     Evidência: FIN-SANE-02F-DEV-FIX.txt | migration 20260913000000
+  ✅ Cancelamento OS coerente (20260922000000 PASS)
+  ✅ Atomicidade M66 (20260922000002 PASS)
+  ✅ Comprovantes/POD: A23A..D (fases A/B/C/D — PASS)
+     Evidências: A23_FASE_A..D_*.txt | src/test/a23B..D*.test.ts
+  ✅ Controle de Pátio: Controle PATIO M53 (controle-patio-m53.spec.ts PASS)
+  ✅ Notas Fiscais Transportadas: A31F (lote, dedup, remoção com confirmação — PASS)
+  ✅ Escala → Financeiro sync: A31H (sincronização escala-financeiro — PASS)
+  ✅ Identificador interno Escala: A31G (PASS)
+  ✅ Tempos/KM/Hodômetro: A29, A31H (tempos operacionais — PASS)
+  ✅ Controle de Combustível (Combustiveis.tsx, monitoramento)
+
+[NÍVEL 5 — FINANCEIRO]
+  ✅ Emissão de Faturas: f_emitir_fatura (SECURITY DEFINER) — fatura → 1 AR → Nº Conexão
+     Evidência: TMS-FIN-GATE-01 | fin_master361_core_financeiro.test.ts | fin-master-362*.spec.ts
+  ✅ Contas a Receber: paginação real, busca server, filtros, status vencimento
+     Evidência: fin-master-3623b-prova-receber.spec.ts (7/7 PASS)
+  ✅ Fatura Manual + PDF (modelos Conexão Express / Calvo): A30 + A31B + A31I + A31I2
+     Evidências: A30_FINANCEIRO_MODELOS_FATURA.txt | AG-FIN3623C_FATURA_PDF_E2E.txt (4/4 PASS)
+  ✅ Baixa Financeira: f_registrar_baixa_financeira (11 params) — PASS
+  ✅ Pagamento de Prestadores: 5 bugs corrigidos em confirmarPagamento()
+     Evidência: AG-FIN3623D_PRESTADOR_E2E.txt (7/7 PASS)
+  ✅ Aprovação Prestador: f_aprovar_pagamento_prestadores (SECURITY DEFINER) — PASS
+  ✅ Lote de Pagamentos: f_gerar_lote_pagamentos + snapshot + FK — PASS (05D.7B PASS)
+  ✅ DRE Gerencial: competência/plano de contas (DREGerencial.tsx) — PASS
+  ✅ Fluxo de Caixa: financeiro_baixas (fin-master-3621-sentinelas.spec.ts PASS)
+  ✅ Composição Financeira OS: valor_pagar unificado (FIN-SANE-02 série completa)
+  ✅ Margem Operacional: paginação real, 400 corrigido (MARGEM-01 PASS)
+  ✅ Contas Financeiras: UUID corrigido, conta principal única, PDF (CONTA-01 PASS)
+  ✅ Extrato Prestador: extratoPrestadorService.ts (tms_s02_extrato_pdf_visual.test.ts PASS)
+  ✅ Recibo Rápido: reciboService.ts (f0k_recibos.test.ts PASS)
+  ✅ Hardening Portas: fin_fat_urg_05b (migration 20260925000004 PASS)
+  ✅ Cancelamento Oficial Fatura: fin_fat_urg_07 (migration 20260925000006 PASS)
+  ✅ Contas a Pagar: pagarService.ts (listagem, filtros, baixa com conta_financeira_id)
+  ✅ ConfigFinanceira: buscarContasBancariasConfig() lê contas_financeiras WHERE ativa=true
+     (BUG-3 corrigido FIN-MASTER-362.2)
+  ✅ Recebível Manual via gate RPC (fin_sec02_a6 — 20260924000020 PASS)
+
+[NÍVEL 4 — COMERCIAL / ORÇAMENTOS]
+  ✅ Orçamento: persistência valor/data, PDF profissional, logo real
+     Evidências: TMS-COM-ORC-01..05B (6 relatórios PASS) | ORC-PDF-01-RELATORIO.txt (PASS)
+     Testes: com_orc_02..03, com_orc_pdf_01 + com_preco_01
+  ✅ Cubagem/Capacidade Veículos: motor de compatibilidade (CARGA-01..04 PASS)
+     Evidências: TMS-COM-CARGA-01..04 | src/test/com_carga_01..04 (65 testes)
+  ✅ Tabela de Preço Esporádica: cálculo automático (PRECO-01 PASS)
+  ✅ Contratos: contratosService.ts (Contratos.tsx — 38 KB de implementação)
+  ✅ Roteirizador: Mapbox, roteirização por distância/tempo (Roteirizador.tsx — 21 KB)
+  ✅ Portal Cliente: portal-cliente-patio, portal-cliente-perfil, portal-cliente-rls (PASS)
+     Evidência: missao107-fase3-portal-cliente.spec.ts
+
+[NÍVEL 3 — TMS CORE / OS / ESCALA / PROGRAMAÇÃO]
+  ✅ TMS Core: sidebar, navegação, roteamento (tms_layout_01..02 PASS)
+  ✅ Ordens de Serviço: ordemServicoService.ts (24 KB), criação, edição, cancelamento
+  ✅ Torre de Controle: TorreControle.tsx (55 KB) — KPIs, Realtime, Chat
+     Evidências: a23 (comprovantes), a24 (chat/realtime), a25 (tracking)
+  ✅ Central IA: CentralIA.tsx (126 KB) — robôs, modo seguro, treinamento, biblioteca
+     Evidências: central-ia-f22..f40 (19 suítes E2E)
+  ✅ Programação: AppPrestador.tsx (34 KB)
+  ✅ Login/Auth: ProtectedRoute.tsx, Login.tsx, AcceptInvite.tsx
+  ✅ Dashboard: DashboardFinanceiroEnterprise.tsx (42 KB)
+  ✅ SLA: SLA.tsx (13 KB)
+
+--------------------------------------------------------------------------------
+SEÇÃO 5 — MÓDULOS IMPLEMENTADOS SEM PROVA FORMAL (CÓDIGO EXISTE, SEM E2E)
+--------------------------------------------------------------------------------
+  ⚠️ Fiscal: CTE/MDF-e (testar-focus-cte-2628647.ts existe mas spec bloqueado)
+     Tabelas: fiscal_documentos_vinculados, regras_fiscais_cte, certificados
+     Status: código implementado em src/services/fiscal/, UI em src/pages/Fiscal.tsx
+  ⚠️ NFS-e: nfse.ts (serviço criado mas sem integração homologada com emissor)
+  ⚠️ Boleto/PIX (Efi/Gerencianet): BLOQUEADO EXTERNO — contrato pendente
+  ⚠️ Conciliação Bancária: UI existe (ConciliacaoAvancada.tsx), sem backend real
+  ⚠️ CNAB: PagamentoCNAB.tsx existe, sem provider real
+  ⚠️ Webhook de retorno bancário: sem provider/webhook implementado
+  ⚠️ Execução bancária de lotes: f_gerar_lote OK, envio ao banco BLOQUEADO EXTERNO
+  ⚠️ Zoho CRM: zohoEmailService.ts + scripts OAuth, sem homologação formal
+  ⚠️ Portal Prestador: PortalPrestador.tsx (7 KB) — mínimo implementado
+  ⚠️ Relatórios avançados: Relatorios.tsx (215 bytes — apenas placeholder)
+  ⚠️ Seguros: Seguros.tsx (3 KB), SegurosFinanceiro.tsx (30 KB) — sem E2E
+  ⚠️ WhatsApp CRM: WhatsAppCRM.tsx (placeholder), MensagensWhatsApp.tsx (17 KB)
+  ⚠️ Monitor Integrações: MonitorIntegracoes.tsx (12 KB) — sem prova E2E
+  ⚠️ Frota: Frota.tsx (17 KB) — sem E2E formal
+  ⚠️ Plano de Contas: PlanoContas.tsx (24 KB) — mock/hardcoded, sem entidade BD
+  ⚠️ Centro de Resultado: centros_custo tabela existe mas vazia/incompleta
+  ⚠️ Recorrência/Parcelamento AP: campos existem (recorrente/quantidade_parcelas), sem UI
+
+--------------------------------------------------------------------------------
+SEÇÃO 6 — GAPS TÉCNICOS E FUNCIONAIS MAPEADOS
+--------------------------------------------------------------------------------
+
+P0 — BLOQUEIA DINHEIRO / INTEGRIDADE / SEGURANÇA (CORRIGIR ANTES DE PRODUÇÃO):
+
+  [S1] RLS pp_update_tms + GRANTs authenticated em pagamentos_prestadores
+       — permite alterar estado financeiro sem RPC (UPDATE/INSERT/DELETE direto)
+       Arquivo: supabase/migrations/*.sql (policies pp_update_tms)
+       Ação: remover policy + REVOKE; usar f_aprovar_pagamento_prestadores exclusivamente
+
+  [S2] UI PagamentoPrestadores.tsx usa atualizarStatusPagamento() (UPDATE direto)
+       — bypass de f_aprovar_pagamento_prestadores para Conferir/Aprovar/Cancelar
+       Arquivo: src/components/financeiro/PagamentoPrestadores.tsx
+       Ação: redirecionar para RPC oficial
+
+  [A4] actionEngineService (IA) faz INSERT direto em financeiro_receber
+       (COM_REGISTRAR_PAGAMENTO) — fora do gate oficial f_emitir_fatura/baixa
+       Arquivo: src/services/ia/actionEngineService.ts
+       Ação: rotear via RPC/gate
+
+P1 — BLOQUEIA HOMOLOGAÇÃO PROFISSIONAL:
+
+  [I1] 10 pagamentos_prestadores com status='pago' SEM baixa vinculada
+       (dívida histórica — reconciliar via plano de saneamento)
+
+  [C2/I2] 9 faturas 'emitida' sem AR (conta_receber_id NULL — legado)
+          (reconciliar; trigger só vale para novas emissões)
+
+  [M2] Margem Operacional usa composicao_financeira_os.created_at como data canônica
+       (deveria usar data operacional/competência do serviço)
+       Arquivo: src/services/financeiro/margemOsService.ts
+
+  [CF2] contas_financeiras sem tenant_id — policies USING(true) — risco multi-tenant
+        Arquivo: supabase/migrations/*_contas_financeiras.sql
+        Ação: adicionar tenant_id + RLS por tenant
+
+  [S3] anon possui GRANTs amplos (SELECT/INSERT/UPDATE/DELETE) em tabelas financeiras
+       — RLS sem policy para anon bloqueia, mas é privilégio residual
+       Ação: REVOKE anon nas tabelas financeiras
+
+  [S4] os_select_cliente (policy ordens_servico): cast TEXT→uuid em linhas com valor
+       não-UUID → erro runtime/DoS de policy quando tenant não satisfaz
+       Ação: corrigir cast + filtro defensivo
+
+  [A5] OrdensServicoLista.tsx: DELETE de títulos AR em cleanup ao excluir OS
+       — caminho de DELETE financeiro não controlado
+       Arquivo: src/components/operacional/OrdensServicoLista.tsx
+
+P2 — MELHORIAS NECESSÁRIAS (não bloqueiam mas geram dívida técnica):
+
+  [TS1] 750 erros TypeScript total (tsc --noEmit); 66 no módulo Financeiro
+        — build OK (esbuild) mas tipos inconsistentes
+        Destaque: faturaService.ts 35 erros, ContasReceber.tsx 8 erros
+
+  [AP1] Categoria/Plano de Contas/Centro de Resultado: texto hardcoded em AP
+        — sem entidade BD para estes cadastros auxiliares
+
+  [D1] Risco de dupla contagem: provisão (financeiro_pagar/receber) vs baixa
+       (financeiro_baixas) coexistindo em indicadores que somam ambos
+
+  [M3] 20 composições financeiras órfãs (os_id sem OS correspondente)
+
+  [MG1] Possível overload f_registrar_baixa_financeira (10 vs 11 params)
+        por CREATE OR REPLACE — verificar consolidação
+
+  [X1] 23 registros TESTE, 2 agregados, 20 sem tenant na base produção
+       (não inflam cards/lote/DRE — filtros existem — mas exigem saneamento)
+
+  [U2] window.confirm/alert residual em ContasReceber/FaturaLista
+       Paginação parcial em Faturas (sem numeração)
+
+  [P3] Cancelamento operacional de lote ausente (fase futura)
+  [C3] NF/NFS-e / conciliação automática ausentes (fase futura)
+  [C4] Boleto/PIX Efi — BLOQUEADO EXTERNO (sem contrato)
+
+--------------------------------------------------------------------------------
+SEÇÃO 7 — TESTES: COBERTURA ATUAL
+--------------------------------------------------------------------------------
+
+VITEST (unit + integração):
+  Total de arquivos de teste: 154 (src/test/)
+  Última execução registrada: 1160/1160 PASS (conforme AGENTS.md)
+  Falhas pré-existentes: 5 em rec03_eliminacao_legacy_candidatos (legado)
+  Suítes principais:
+    - Financeiro: fin_master361, fin_p0, fin_p1, fin_prog05*, escala_fin*, a31*
+    - Comercial:  com_orc*, com_carga*, com_preco*
+    - Recrutamento: rec01..rec06
+    - Escala: escala_e2e_01..08h, escala_veic_*
+    - App/Recrutamento: ag07f..j18
+    - PDF/Fatura: fat_pdf_*, tms_s02, tms_s04*
+
+PLAYWRIGHT (E2E browser):
+  Total de specs: 144 (tests/e2e/)
+  Suítes com PASS documentado:
+    - fin-master-3623b-prova-receber.spec.ts: 7/7 PASS
+    - fin-master-3623c-fatura-pdf.spec.ts: 4/4 PASS
+    - fin-master-3623d-prestador-e2e.spec.ts: 7/7 PASS
+    - fin-master-3621-sentinelas.spec.ts: 5/5 PASS (assertions fortalecidas)
+    - a31d_fechamento_final.spec.ts: PASS
+    - central-ia-f22..f40: 19 suítes (PASS)
+    - ADM-APP-02D2: 21/21 N/P PASS
+  Specs com restrição de ambiente (prod guard):
+    - _orc_pdf_01_qa_tela.spec.ts: bloqueado (guarda de PRODUÇÃO)
+  Specs Flutter (integração física):
+    - flutter-prestador-real.spec.ts: dependente do Redmi físico
+    - _adm_app_02d2_r1_upload_tms.spec.ts: BLOCKED/F-ENV
+
+BUILD E TIPAGEM:
+  npm run build: ✅ OK (esbuild não bloqueia por tipo)
+  tsc --noEmit:  ⚠️ 750 erros (66 no Financeiro, 195 dbMappers.ts, 58 src/test)
+  eslint:        ✅ 0 erros nos módulos financeiro/escala principais
+
+--------------------------------------------------------------------------------
+SEÇÃO 8 — SERVIÇOS BACKEND: MAPA COMPLETO
+--------------------------------------------------------------------------------
+SERVIÇO                        | ARQUIVO                              | STATUS
+-------------------------------|--------------------------------------|----------
+Ordens de Serviço              | ordemServicoService.ts (24KB)        | ✅ ATIVO
+Escala / Alocações             | escala/escalaService.ts (33KB)       | ✅ ATIVO
+Financeiro Prestador           | financeiro/pagamentoPrestadorService  | ✅ ATIVO
+                               | .ts (30KB)                           |
+Fatura / PDF                   | financeiro/faturaService.ts (65KB)   | ✅ ATIVO
+Contas a Receber               | financeiro/receberService.ts (32KB)  | ✅ ATIVO
+Contas a Pagar                 | financeiro/pagarService.ts (17KB)    | ✅ ATIVO
+Extrato Prestador              | financeiro/extratoPrestadorService    | ✅ ATIVO
+                               | .ts (44KB)                           |
+Composição Financeira          | financeiro/composicaoFinanceiraServ.  | ✅ ATIVO
+                               | ts (4KB)                             |
+DRE                            | financeiro/dreService.ts (7KB)       | ✅ ATIVO
+Fluxo de Caixa                 | financeiro/fluxoCaixaService.ts (1KB)| ✅ ATIVO
+Fechamento                     | financeiro/fechamentoService.ts (20KB)| ✅ ATIVO
+Margem OS                      | financeiro/margemOsService.ts (3KB)  | ⚠️ data canônica P1
+Configuração Financeira        | financeiro/configFinanceiraService.ts | ✅ ATIVO (BUG-3 corrigido)
+                               | (11KB)                               |
+Central Financeiro             | financeiro/centralFinanceiroService   | ✅ ATIVO
+                               | .ts (36KB)                           |
+Recrutamento                   | recrutamento/ (múltiplos)            | ✅ ATIVO
+Contratos                      | contratosService.ts (31KB)           | ✅ ATIVO
+Comunicação Hub                | communicationHubService.ts (19KB)    | ✅ ATIVO
+Central IA                     | centralIaService.ts (63KB)           | ✅ ATIVO
+Rastreamento                   | rastreamento/ (múltiplos)            | ✅ ATIVO
+POD / Comprovantes             | podService.ts (7KB)                  | ✅ ATIVO
+Pátio                          | patioService.ts (14KB)               | ✅ ATIVO
+Roteirização                   | roteirizacaoService.ts (23KB)        | ✅ ATIVO
+Fiscal (CTE/NFS-e)             | fiscal/ (múltiplos)                  | ⚠️ SEM E2E
+Portal Cliente                 | portalCliente/ (múltiplos)           | ✅ ATIVO
+Documentos / Biblioteca        | documentos/ + storage/               | ✅ ATIVO
+Admin Tenants                  | adminTenantsService.ts (5KB)         | ✅ ATIVO
+Zoho Email                     | zohoEmailService.ts (7KB)            | ⚠️ SEM HML
+Automação WhatsApp             | automacaoWhatsapp.ts (6KB)           | ⚠️ SEM HML
+Evolution API                  | evolutionApiService.ts (7KB)         | ⚠️ SEM HML
+n8n Client                     | n8nClient.ts (3KB)                   | ⚠️ SEM HML
+
+--------------------------------------------------------------------------------
+SEÇÃO 9 — INTEGRAÇÃO APP FLUTTER (TMS ↔ APP)
+--------------------------------------------------------------------------------
+FUNCIONALIDADE                         | STATUS         | EVIDÊNCIA
+---------------------------------------|----------------|---------------------------
+Login APP (email+senha Supabase)       | ✅ PASS        | APP-E2E-11A
+Listagem de Operações (APP)            | ✅ PASS        | APP-E2E-11B.1
+Aceite de Operação                     | ✅ PASS        | APP-E2E-11B.1 / A27B
+Registro de Etapas (timeline)          | ✅ PASS        | APP-E2E-11B.2
+Tracking GPS                           | ✅ PASS        | A25B..A25H2
+POD Upload (evidência física)          | ✅ PASS        | APP-E2E-11D / A23C / A23D
+Finalização de OS pelo APP             | ✅ PASS        | APP-E2E-11B.3
+Sincronização Romaneio App→OS          | ✅ PASS        | A31D (SQL aplicado prod)
+Bucket documentos PRIVADO              | ✅ PASS        | ADM-APP-02D2 (21/21)
+Segurança RLS prestador A≠B            | ✅ PASS        | ADM-APP-02D2 (N06/N07/N08)
+Chat APP ↔ Torre                       | ✅ PASS        | A24 / A24B
+Rede de Oportunidades                  | ✅ PASS        | A27B
+Cadastro APP (recrutamento)            | ✅ PASS        | ag07j18_4
+POD evidência obrigatória (gate)       | ✅ PASS        | migration 20260926000004
+Contrato OS + cliente no APP           | ✅ PASS        | migration 20260926000002
+Prova física Redmi (jornada completa)  | ⚠️ BLOCKED     | ADM-APP-02D2 (F-ENV)
+Execução bancária (pagamento APP)      | ⚠️ EXTERNO     | sem Efi
+
+--------------------------------------------------------------------------------
+SEÇÃO 10 — CHECKLIST RÉGUA DE HOMOLOGAÇÃO (NÍVEL 7 AO NÍVEL 0)
+--------------------------------------------------------------------------------
+
+NÍVEL 7 — CADASTROS / ADMIN / RECRUTAMENTO
+  [✅] Cadastro de prestadores (CRUD completo)
+  [✅] Cadastro de veículos (tipo canônico, capacidade, condição térmica)
+  [✅] Cadastro de clientes (CRUD, regras financeiras)
+  [✅] Cadastro de fornecedores
+  [✅] Cadastros auxiliares (origens, destinos, tipos, etc.)
+  [✅] Recrutamento: candidatos, documentos, elegibilidade, score
+  [✅] Análise IA de documentos (pipeline de recrutamento)
+  [✅] Segurança RLS candidatos (anon + authenticated)
+  [⚠️] Banco de Talentos: BancoTalentos.tsx (244 bytes — placeholder)
+  [⚠️] Usuários cliente: portal_clientes_usuarios (implementado, sem E2E admin)
+
+NÍVEL 6 — PERSISTÊNCIA E OPERACIONAL
+  [✅] Escala de alocações (criação, edição, cancelamento, E2E)
+  [✅] Ordens de Serviço (criação, vinculação escala, cancelamento coerente)
+  [✅] Comprovantes / POD (upload, visualização, financeiro POD)
+  [✅] Controle de Pátio
+  [✅] Notas Fiscais Transportadas (lote, dedup, remoção)
+  [✅] Sincronização Escala ↔ Financeiro
+  [✅] Tempos operacionais / KM / hodômetro
+  [✅] Controle de combustível
+  [✅] Ocorrências
+
+NÍVEL 5 — FINANCEIRO
+  [✅] Emissão de faturas com gate RPC (f_emitir_fatura)
+  [✅] Contas a Receber (paginação real, baixa, conta_financeira_id)
+  [✅] Contas a Pagar (baixa, filtros, conta_financeira_id)
+  [✅] Pagamento de Prestadores (aprovação, elegibilidade, baixa)
+  [✅] Lote de Pagamentos (geração, snapshot, FK)
+  [✅] DRE Gerencial
+  [✅] Fluxo de Caixa / Tesouraria
+  [✅] Margem Operacional (PASS com ressalva P1 data canônica)
+  [✅] Extrato Prestador / Recibo Rápido
+  [✅] Contas Financeiras (UUID, principal única, PDF)
+  [✅] Fatura Manual + PDF (modelos Conexão / Calvo)
+  [✅] Cancelamento oficial de fatura (gate RPC)
+  [✅] Hardening das portas financeiras
+  [⚠️] Plano de Contas real (mock/hardcoded — P2)
+  [⚠️] Forma de Pagamento no cadastro AP (só na baixa — P2)
+  [⚠️] Recorrência/Parcelamento AP (campos existem — UI ausente — P2)
+  [❌] Execução bancária / Boleto / PIX (BLOQUEADO EXTERNO — Efi)
+  [❌] Conciliação automática bancária (FASE FUTURA)
+
+NÍVEL 4 — COMERCIAL / ORÇAMENTOS
+  [✅] Orçamentos: criação, edição, PDF profissional, logo real
+  [✅] Cálculo canônico de preço (resolverValorFinal)
+  [✅] Cubagem / Capacidade de veículos (motor de compatibilidade)
+  [✅] Tabela de preço esporádica com cálculo automático
+  [✅] Contratos comerciais
+  [✅] Portal Cliente (visão comercial, pátio, perfil)
+  [⚠️] Validação de Orçamento por supervisor (UI sem RPC gate formal)
+
+NÍVEL 3 — TMS CORE / OS / ESCALA / PROGRAMAÇÃO
+  [✅] Login/Auth/Tenant
+  [✅] Sidebar/Navegação/Roteamento
+  [✅] Dashboard Financeiro Enterprise
+  [✅] Torre de Controle (realtime, KPIs, chat)
+  [✅] Central IA (robôs, modo seguro, treinamento, biblioteca)
+  [✅] Roteirizador (Mapbox, distância/tempo)
+  [✅] Rastreamento público
+  [✅] SLA
+  [✅] Governança
+  [⚠️] Relatórios avançados: placeholder (215 bytes)
+  [⚠️] WhatsApp CRM: placeholder
+
+NÍVEL 2 — FISCAL / SEFAZ
+  [⚠️] CT-e: código implementado, sem homologação SEFAZ
+  [⚠️] MDF-e: código parcial
+  [⚠️] NFS-e: código implementado, sem integração emissor homologada
+  [⚠️] Certificado Digital: tabela existe, sem UI de gestão
+  [❌] Comunicação SEFAZ em produção: FASE FUTURA
+
+NÍVEL 1 — INTEGRAÇÕES EXTERNAS
+  [⚠️] WhatsApp (Evolution API / n8n): código existe, sem HML formal
+  [⚠️] Zoho CRM: OAuth implementado, sem HML
+  [❌] Efi (boleto/PIX/lote bancário): BLOQUEADO EXTERNO
+  [❌] Webhook retorno bancário: FASE FUTURA
+  [❌] CNAB: UI existe, sem provider
+
+NÍVEL 0 — PRODUÇÃO REAL COM DINHEIRO
+  [❌] NÃO RECOMENDADO — 3 P0 abertos (escrita direta fora de gate)
+  Condições para liberação:
+    1. Fechar P0: [S1] + [S2] + [A4]
+    2. Reconciliar integridade: [I1] + [C2/I2]
+    3. Corrigir [M2] data canônica margem
+    4. Prova física completa no Redmi (jornada APP)
+    5. Contratar Efi (boleto/lote bancário)
+
+--------------------------------------------------------------------------------
+SEÇÃO 11 — PENDÊNCIAS CONHECIDAS PRIORIZADAS
+--------------------------------------------------------------------------------
+PRIORIDADE | ID   | DESCRIÇÃO                                           | OWNER
+-----------|------|-----------------------------------------------------|-------
+P0         | S1   | Remover pp_update_tms + REVOKE GRANTs authenticated | TECH
+P0         | S2   | Redirecionar UI para RPC de aprovação prestador      | TECH
+P0         | A4   | Remover INSERT direto IA em financeiro_receber       | TECH
+P1         | I1   | Reconciliar 10 pp 'pago' sem baixa                   | TECH/OPS
+P1         | C2   | Tratar 9 faturas emitidas sem AR (plano reconcil.)   | TECH/OPS
+P1         | M2   | Corrigir data canônica Margem Operacional            | TECH
+P1         | CF2  | Adicionar tenant_id + RLS em contas_financeiras      | TECH
+P1         | S3   | REVOKE GRANTs anon tabelas financeiras               | TECH
+P1         | S4   | Corrigir cast TEXT→uuid em os_select_cliente         | TECH
+P1         | A5   | Remover DELETE financeiro em OrdensServicoLista      | TECH
+P1         | ENV  | Prova física Redmi (jornada APP completa)            | OPS
+P2         | TS1  | Reduzir 750 erros TypeScript (66 financeiro)         | TECH
+P2         | AP1  | Criar cadastros reais: Plano de Contas / Centro Res. | PRODUTO
+P2         | D1   | Auditar dupla contagem provisão vs baixa nos KPIs   | TECH
+P2         | M3   | Sanear 20 composições financeiras órfãs              | TECH/OPS
+P2         | MG1  | Verificar assinatura f_registrar_baixa_financeira    | TECH
+P2         | X1   | Saneamento registros TESTE/sem-tenant na produção    | OPS
+P3         | C3   | NF/NFS-e integrado (FASE FUTURA)                    | PRODUTO
+P3         | C4   | Boleto/PIX Efi (BLOQUEADO EXTERNO)                  | NEGÓCIO
+EXTERNO    | EFI  | Contrato Efi (execução bancária)                    | NEGÓCIO
+
+--------------------------------------------------------------------------------
+SEÇÃO 12 — ESTATÍSTICAS GERAIS
+--------------------------------------------------------------------------------
+Migrations totais:            289 SQL
+Scripts de diagnóstico:       901 (pasta scripts/)
+Testes unitários:             154 arquivos Vitest
+Testes E2E:                   144 specs Playwright
+Relatórios de evidência:      ~120 .txt na raiz + subpastas
+Serviços implementados:       ~65 arquivos de serviço
+Componentes React:            ~200+ arquivos .tsx
+Páginas web:                  50 páginas
+Missões documentadas:         A21..A31J, ADM-APP-02A..D, FIN-MASTER-361..363,
+                              FIN-SANE-01..02M.9, TMS-COM-*, APP-E2E-11A..11F,
+                              FIN-01, AG-FIN363*, ORC-PDF-01, ADM-APP-02*
+Bugs corrigidos (documentados): 30+ bugs de produção identificados e corrigidos
+P0 abertos:                   3
+P1 abertos:                   9
+P2 abertos:                   14+
+P3/EXTERNO:                   4
+
+--------------------------------------------------------------------------------
+SEÇÃO 13 — REFERÊNCIAS DE RELATÓRIOS CRÍTICOS
+--------------------------------------------------------------------------------
+ARQUIVO                                    | DATA       | MISSÃO
+-------------------------------------------|------------|--------------------------
+TMS-FIN-GATE-01-MASTER-CLOSING-AUDIT-      | 2026-09-24 | Auditoria master financeiro
+RESULTADO.txt                              |            |
+ADM-APP-02D2-RELATORIO.txt                 | 2026-09-27 | Bucket PRIVADO APP
+ADM-APP-02D2-R1-REDMI-CLOSE-RELATORIO.txt  | 2026-09-27 | Redmi (BLOCKED/F-ENV)
+ADM-APP-02C2-RELATORIO.txt                 | 2026-09-27 | Reconciliação segurança APP
+ADM-APP-02C1-RELATORIO.txt                 | 2026-09-27 | Auditoria APP (65KB)
+ADM-APP-02A-RELATORIO.txt                  | 2026-09-27 | Auditoria pré-cadastro APP
+APP-E2E-11F-RELATORIO.txt                  | 2026-09-27 | Fechamento Nível 8
+ORC-PDF-01-RELATORIO.txt                   | 2026-09-29 | PDF Orçamento (último)
+AG-FIN3623B_PROVA_RECEBER.txt              | 2026-09-05 | E2E Receber (7/7 PASS)
+AG-FIN3623C_FATURA_PDF_E2E.txt             | 2026-09-05 | E2E Fatura PDF (4/4 PASS)
+AG-FIN3623D_PRESTADOR_E2E.txt              | 2026-09-05 | E2E Prestador (7/7 PASS)
+FIN-SANE-02G-FINAL-REAL-SCHEMA-GATE.txt    | 2026-09-25 | Gate schema final (40KB)
+FIN-SANE-02M.9-PP-RLS-QA-VALIDATION.txt   | 2026-09-25 | Validação RLS PP QA
+FIN-SANE-02F-DEV-FIX.txt                   | AGENTS.md  | Fix M66/M80/Rollback
+
+================================================================================
+FIM DO RELATÓRIO STATUS-GERAL-PROJETO.txt
+Gerado: 2026-10-01 — express-connect-hub — Diagnóstico SOMENTE LEITURA
+NENHUM arquivo de código ou banco foi alterado durante esta análise.
+================================================================================

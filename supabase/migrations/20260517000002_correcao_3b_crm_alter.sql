@@ -94,3 +94,5 @@ WHERE table_schema = 'public'
   AND table_name IN ('crm_leads', 'crm_historico', 'crm_followups')
   AND column_name IN ('estagio', 'empresa', 'lead_id', 'assunto', 'titulo')
 ORDER BY table_name, column_name;
+
+

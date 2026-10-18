@@ -1,0 +1,126 @@
+ESCALA-OS-02-LINKS-LEGADOS-CLASSIFICAR
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: AUDITORIA READ-ONLY (nenhuma correção)
+
+==================================================
+RECONTAGEM
+==================================================
+
+TOTAL_ALLOCATIONS=193
+WITH_OS_ID=59
+WITHOUT_OS_ID=134
+
+OS_WITH_ID_EQUAL_ALLOCATION_ID=14  (OS cujo id = id de alguma alocação — auto-create histórico M66)
+UNLINKED_ALLOC_WITH_MATCHING_OS_ID=13  (alocação sem OS cujo id JÁ existe em ordens_servico)
+  → as outras 1 (14-13) já estão vinculadas (ordem_servico_id preenchido).
+
+Alocação sem OS por status: aguardando_aceite 59, concluida 31, planejada 28, em_rota 11, cancelada 5.
+Sem referência (prestador_id ou cliente_id NULL): 67.
+
+==================================================
+CLASSIFICAÇÃO (134 sem OS)
+==================================================
+
+CLASS_A=13  — existe exatamente 1 OS inequívoca (id = alocação.id); apenas vincular
+  (id é PK → único; financeiro, quando existe, está com os_id = alocação.id = OS.id)
+  4 dos 13 já possuem financeiro com os_id = alocação.id (= OS id) → vínculo consistente.
+CLASS_B=38  — sem OS, alocação REAL ativa; precisará criação controlada de OS
+  (22 planejada + 9 aguardando_aceite + 7 concluida — prestador/cliente reais)
+  7 dos 38 possuem financeiro com os_id = alocação.id → criar OS com id = alocação.id
+  para não orfanar o financeiro.
+CLASS_C=0   — nenhuma ambiguidade (0 OS candidatas por cliente+prestador+data+tipo)
+CLASS_D=16  — teste/cancelada (5 canceladas + 11/1 prestador de teste M43/M48) — histórico
+CLASS_E=67  — prestador_id ou cliente_id NULL → referência insuficiente (decisão humana)
+CLASS_F=0
+
+TOTAL_WITHOUT_OS=134 | soma A+B+C+D+E+F=134
+
+Nota: não houve match por cliente+prestador+data+tipo para NENHUMA das 121 não-A
+(CAND_DIST=0) → sem Classe C por candidatas; nada de vínculo por aproximação fraca.
+
+==================================================
+RISCO AO EDITAR HOJE (alocação sem OS)
+==================================================
+
+EDIT_WITH_NULL_OS_BEHAVIOR=FAIL_RISK — editar uma alocação legada sem OS pode FALHAR hoje.
+M66_AUTO_LINK_BEHAVIOR=BROKEN — em f_trg_propagar_financeiro_alocacao, o
+  `UPDATE alocacoes_escala SET ordem_servico_id = v_os_id` ocorre ANTES do INSERT da OS;
+  com FK IMEDIATA (alocacoes_escala_ordem_servico_id_fkey, condeferrable=false), o UPDATE
+  viola a FK quando a OS ainda não existe. Historicamente o erro era engolido (THEN NULL),
+  deixando ordem_servico_id=NULL → os 134 sem OS. Após ESCALA-E2E-05 (propaga), o erro
+  aborta o statement → editar alocação sem OS falha.
+M66_AUTO_CREATE_BEHAVIOR=INEFETIVO — o INSERT da OS (id=alocação.id) não chega a completar
+  quando o UPDATE de link precede e falha (ou era engolido).
+SERVICE_UPDATE_BEHAVIOR=atualizarAlocacao NÃO cria/vincula OS (apenas criarAlocacao cria).
+FK_FAILURE_RISK=YES (para edição de alocação sem OS; para as 13 Classe A o FK já é satisfeito).
+
+==================================================
+RESPOSTAS
+==================================================
+
+1. Podem receber link automático com segurança: 13 (Classe A; OS com id = alocação.id).
+2. Precisam de criação de OS: 38 (Classe B; reais ativas).
+3. Testes/canceladas que permanecem históricas: 16 (Classe D).
+4. Ambíguas: 0 (Classe C).
+5. Editar alocação legada sem OS pode falhar hoje? SIM (FK imediata; link UPDATE antes do
+   INSERT da OS; E2E-05 propaga o erro).
+6. Correção = AMBOS: (a) código — M66 deve inserir a OS ANTES do UPDATE de link (ou
+   atualizarAlocacao criar/vincular a OS); (b) dados — vincular as 13 A e criar OS para as
+   38 B com id = alocação.id.
+7. Risco de OS duplicada? BAIXO — vínculo A é por id (único); criação B com id=alocação.id
+   é única; M66 usa ON CONFLICT (id). Risco residual: usar criarOrdemServico (id novo)
+   orfanaria o financeiro existente (os_id=alocação.id) nos 7 casos B com financeiro.
+8. Casos com financeiro que impedem criação ingênua de OS: 7 (Classe B) + 4 (Classe A já
+   consistentes). Para os 7, criar OS com id=alocação.id mantém os_id coerente.
+
+==================================================
+RESUMO
+==================================================
+
+TOTAL_WITHOUT_OS=134
+CLASS_A=13
+CLASS_B=38
+CLASS_C=0
+CLASS_D=16
+CLASS_E=67
+CLASS_F=0
+
+SAFE_LINK_COUNT=13
+SAFE_CREATE_COUNT=38
+AMBIGUOUS_COUNT=0
+HISTORICAL_NO_ACTION_COUNT=16
+
+==================================================
+ROOT_CAUSE / NEXT_MINIMAL_FIX (proposta — NÃO executar)
+==================================================
+
+ROOT_CAUSE=
+  Em f_trg_propagar_financeiro_alocacao (M66), o UPDATE que grava
+  alocacoes_escala.ordem_servico_id acontece ANTES do INSERT da OS; com FK IMEDIATA, o
+  UPDATE falha quando a OS ainda não existe. Historicamente o erro era suprimido
+  (EXCEPTION WHEN OTHERS THEN NULL) → ordem_servico_id ficava NULL (134 casos). O serviço
+  atualizarAlocacao também não cria/vincula OS. Após E2E-05 (propaga), editar alocação sem
+  OS falha.
+
+NEXT_MINIMAL_FIX=
+  1) CÓDIGO (forward-only): em M66, mover o UPDATE de link para DEPOIS do INSERT da OS
+     (garante FK satisfeita) — pequena migration com rollback. Alternativa/complemento:
+     fazer atualizarAlocacao criar/vincular OS (espelhar criarAlocacao).
+  2) DADOS (missão separada, controlada): vincular as 13 Classe A (ordem_servico_id = id);
+     criar OS para as 38 Classe B com id = alocação.id (preservando os_id do financeiro);
+     deixar 16 Classe D; 67 Classe E dependem de decisão humana (referência insuficiente).
+  Não tratar aqui: 9 casos FIN-02 restantes, 27 órfãs, redundância M66/M80.
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+
+- Nenhum INSERT/UPDATE/DELETE. Nenhuma migration. Nenhum vínculo/OS criado.
+- M66/M80 não alterados. Não tocou os 9 casos FIN-02, 27 órfãs, APP/POD/Fatura/Recrutamento.
+
+FILES_MODIFIED=(nenhum)
+TESTS=(nenhum — auditoria read-only)
+DB_WRITES=0
+MIGRATIONS=0

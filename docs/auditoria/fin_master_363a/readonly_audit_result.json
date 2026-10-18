@@ -1,0 +1,233 @@
+{
+  "timestamp": "2026-09-06T18:35:30.367Z",
+  "auditoria": {
+    "receber_por_status": [
+      {
+        "status": "pendente",
+        "qtd": "49",
+        "total": "96086.96"
+      },
+      {
+        "status": "aberto",
+        "qtd": "32",
+        "total": "48290.00"
+      },
+      {
+        "status": "a vencer",
+        "qtd": "11",
+        "total": "15660"
+      },
+      {
+        "status": "pago",
+        "qtd": "10",
+        "total": "9874.56"
+      },
+      {
+        "status": "a_vencer",
+        "qtd": "2",
+        "total": "3300.00"
+      },
+      {
+        "status": null,
+        "qtd": "1",
+        "total": "999"
+      },
+      {
+        "status": "vencido",
+        "qtd": "1",
+        "total": "2100"
+      },
+      {
+        "status": "cancelada",
+        "qtd": "1",
+        "total": "600.00"
+      },
+      {
+        "status": "vencida",
+        "qtd": "1",
+        "total": "890.75"
+      }
+    ],
+    "receber_pago_sem_baixa": [
+      {
+        "id": "cf6eea7b-4c9d-4200-b306-4d209764112f",
+        "valor": "1500",
+        "status": "pago",
+        "cliente": null,
+        "data_pagamento": "2026-07-01T03:00:00.000Z"
+      },
+      {
+        "id": "fb30838a-fc5f-430f-9aa3-9b7892e564d4",
+        "valor": "1500",
+        "status": "pago",
+        "cliente": null,
+        "data_pagamento": null
+      },
+      {
+        "id": "17e857d8-184e-4c79-883d-a26da3f86edf",
+        "valor": "3200.50",
+        "status": "pago",
+        "cliente": null,
+        "data_pagamento": null
+      },
+      {
+        "id": "2d625b18-c262-4d29-814b-7fab65edbe22",
+        "valor": "3600",
+        "status": "pago",
+        "cliente": null,
+        "data_pagamento": null
+      }
+    ],
+    "receber_baixa_sem_titulo": [],
+    "receber_valor_divergente": [],
+    "receber_baixa_duplicada": [],
+    "receber_baixa_sem_conta": [],
+    "pagar_por_status": [
+      {
+        "status": "aberto",
+        "qtd": "45",
+        "total": "34200.00"
+      },
+      {
+        "status": "pendente",
+        "qtd": "24",
+        "total": "15810.00"
+      },
+      {
+        "status": "a vencer",
+        "qtd": "16",
+        "total": "16341.37"
+      },
+      {
+        "status": "pago",
+        "qtd": "11",
+        "total": "1794.42"
+      },
+      {
+        "status": "cancelada",
+        "qtd": "2",
+        "total": "2320.00"
+      },
+      {
+        "status": null,
+        "qtd": "1",
+        "total": "999"
+      }
+    ],
+    "pagar_pago_sem_baixa": [
+      {
+        "id": "f83a3249-acf4-49cb-8ddb-21ddbfe77a4b",
+        "valor": "137.89",
+        "status": "pago",
+        "fornecedor": null,
+        "data_pagamento": "2026-09-03T03:00:00.000Z"
+      }
+    ],
+    "pagar_baixa_sem_titulo": [],
+    "pagar_valor_divergente": [],
+    "pagar_baixa_duplicada": [],
+    "pagar_baixa_sem_conta": [],
+    "prestadores_por_status": [
+      {
+        "status_pagamento": "pendente",
+        "qtd": "62",
+        "total": "52027.20"
+      },
+      {
+        "status_pagamento": "nao_vencido",
+        "qtd": "24",
+        "total": "10812.00"
+      },
+      {
+        "status_pagamento": "pago",
+        "qtd": "3",
+        "total": "3356.12"
+      },
+      {
+        "status_pagamento": "cancelado",
+        "qtd": "1",
+        "total": "520.00"
+      }
+    ],
+    "prestador_pago_sem_baixa": [],
+    "prestador_valor_divergente": [
+      {
+        "id": "32fe474f-41c7-432b-a21e-7d0b2831c1bb",
+        "valor_pagamento": "2177.92",
+        "valor_baixado": "520.00",
+        "diferenca": "1657.92"
+      },
+      {
+        "id": "6266f2a1-8f42-4898-9e44-a1fbd23add7b",
+        "valor_pagamento": "658.20",
+        "valor_baixado": "520.00",
+        "diferenca": "138.20"
+      }
+    ],
+    "contas_financeiras": [
+      {
+        "id": "9741ad36-79a6-4e1f-94a5-512e08758186",
+        "nome": "Cora",
+        "banco": "Cora",
+        "ativa": true,
+        "saldo_inicial": "0.93"
+      }
+    ],
+    "baixa_conta_invalida": [],
+    "estornos": [
+      {
+        "qtd": "0",
+        "total": null
+      }
+    ],
+    "reconciliacao": [
+      {
+        "receber_pago": "9874.56",
+        "receber_baixado": "74.06",
+        "pagar_pago": "1794.42",
+        "pagar_baixado": "1656.53",
+        "prestador_pago": "3356.12",
+        "prestador_baixado": "1560.00"
+      }
+    ],
+    "caso_historico_32fe474f": [
+      {
+        "id": "32fe474f-41c7-432b-a21e-7d0b2831c1bb",
+        "valor_liquido": "2177.92",
+        "status_pagamento": "pago",
+        "prestador_nome": "CESAR AUGUSTO HOLANDA SILVA ",
+        "total_baixado": "520.00"
+      }
+    ]
+  },
+  "resumo": {
+    "total_anomalias": 7,
+    "anomalias_por_tipo": {
+      "receber_pago_sem_baixa": 4,
+      "receber_baixa_sem_titulo": 0,
+      "receber_valor_divergente": 0,
+      "receber_baixa_duplicada": 0,
+      "receber_sem_conta": 0,
+      "pagar_pago_sem_baixa": 1,
+      "pagar_baixa_sem_titulo": 0,
+      "pagar_valor_divergente": 0,
+      "pagar_baixa_duplicada": 0,
+      "pagar_sem_conta": 0,
+      "prestador_pago_sem_baixa": 0,
+      "prestador_valor_divergente": 2,
+      "baixa_conta_invalida": 0
+    },
+    "reconciliacao": {
+      "receber_pago": "9874.56",
+      "receber_baixado": "74.06",
+      "pagar_pago": "1794.42",
+      "pagar_baixado": "1656.53",
+      "prestador_pago": "3356.12",
+      "prestador_baixado": "1560.00"
+    },
+    "estornos": {
+      "qtd": "0",
+      "total": null
+    }
+  }
+}

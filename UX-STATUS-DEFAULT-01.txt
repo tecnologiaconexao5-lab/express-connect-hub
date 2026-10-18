@@ -1,0 +1,92 @@
+RELATORIO UX-STATUS-DEFAULT-01 — Status Padrao "Em analise"
+=========================================================
+Data: 2026-09-13
+Autor: Subagente (opencode)
+
+RESUMO
+------
+Alterado o status padrao de novos documentos (Orcamento e OS) de
+"rascunho" para "em_analise" em todo o frontend. Sem migration de
+banco — mudanca 100% no frontend.
+
+ANTES (valor antigo)
+--------------------
+- OrcamentoForm: data.status = "rascunho"
+- OrcamentoForm: handleSalvarRascunho → status "rascunho"
+- OrcamentoForm: canRascunho → true quando status="rascunho"
+- OrdemServicoForm: data.status = "rascunho"
+- OrdemServicoForm: historico[0].status_novo = "rascunho"
+- OrdemServicoForm: STATUS_TRANSICOES_VALIDAS["rascunho"] = ["em_analise","pendente","cancelada"]
+- OrdemServicoForm: validacao "OS nova deve iniciar como Rascunho ou Pendente"
+- OrdemServicoForm: canRascunho → true quando status="rascunho"
+- OrcamentoForm → OS: status_novo = "rascunho"
+- OrcamentoForm → OS: status = "rascunho"
+- ordemServicoService: STATUS_OS_PARA_ESCALA sem "em_analise"
+- dbMappers: fallback status = "rascunho"
+
+DEPOIS (novo valor)
+-------------------
+- OrcamentoForm: data.status = "em_analise"
+- OrcamentoForm: handleSalvarRascunho → statusOverrideRef = "rascunho" + handleSalvar
+- OrcamentoForm: canRascunho → true quando status != "rascunho"
+- OrdemServicoForm: data.status = "em_analise"
+- OrdemServicoForm: historico[0].status_novo = "em_analise"
+- OrdemServicoForm: STATUS_TRANSICOES_VALIDAS["em_analise"] = ["rascunho","pendente","cancelada"]
+- OrdemServicoForm: validacao "OS nova deve iniciar como Em analise, Rascunho ou Pendente"
+- OrdemServicoForm: canRascunho → true quando status != "rascunho"
+- OrdemServicoForm: statusOverrideRef (ref) + handleSalvarRascunho aplica override no payload
+- OrcamentoForm → OS: status_novo = "em_analise"
+- OrcamentoForm → OS: status = "em_analise"
+- ordemServicoService: STATUS_OS_PARA_ESCALA["em_analise"] = "planejada"
+- dbMappers: fallback status = "em_analise"
+
+ARQUIVOS MODIFICADOS
+--------------------
+1. src/components/comercial/OrcamentoForm.tsx
+2. src/components/operacao/OrdemServicoForm.tsx
+3. src/services/comercial/orcamentoToOSService.ts
+4. src/services/ordemServicoService.ts
+5. src/lib/dbMappers.ts
+
+PROVA ORCAMENTO
+---------------
+- Linha 115: const [data, setData] = useState(initialData || { status: "em_analise", ... })
+- Linha 491: gerarOS(): status: "em_analise"
+- canRascunho: data.status !== "rascunho"
+- handleSalvarRascunho: statusOverrideRef.current = "rascunho" + handleSalvar()
+
+PROVA OS
+--------
+- Linha 255: const [data, setData] = useState(initialData || { status: "em_analise", ... })
+- Linha 262: historico: [{ ... status_novo: "em_analise" }]
+- STATUS_TRANSICOES_VALIDAS["em_analise"] = ["rascunho","pendente","cancelada"]
+- Linha 1049: validacao permite "em_analise"
+- Linha 440: osInicialRef + statusOverrideRef (novo)
+- canRascunho: data.status !== "rascunho"
+- handleSalvarRascunho: statusOverrideRef.current = "rascunho" + handleSalvar()
+
+PROVA SALVAR RASCUNHO (AMBOS)
+------------------------------
+- OrcamentoForm: handleSalvarRascunho força status="rascunho" antes de salvar
+- OrdemServicoForm: handleSalvarRascunho usa statusOverrideRef para forçar
+  status="rascunho" no payload SQL (sanitizedPayload.status = statusFinal)
+- Botao "Salvar rascunho" no FormFooterBar chama onSalvarRascunho
+
+FLUXO CONVERTER ORCAMENTO → OS
+-------------------------------
+- orcamentoToOSService.ts linha 198: historico status_novo = "em_analise"
+- orcamentoToOSService.ts linha 213: payload status = "em_analise"
+
+TESTES
+------
+- npx tsc --noEmit → 0 erros
+- npx vitest run → 1395 passed, 33 failed (todos pre-existentes: rec06_2d2_score_comprometimento, rec03_eliminacao_legacy)
+- Nenhum teste novo quebrado pela alteracao
+
+NOTA SOBRE BANCO
+-----------------
+- Nenhuma migration aplicada
+- Coluna "status" em ordens_servico aceita texto livre (TEXT)
+- Valores "rascunho" e "em_analise" sao validados apenas no frontend
+- Se houver constraints no banco que aceitam apenas "rascunho",
+  sera necessario migration para adicionar "em_analise" ao CHECK

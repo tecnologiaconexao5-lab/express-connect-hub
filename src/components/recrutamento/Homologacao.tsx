@@ -52,9 +52,9 @@ export function Homologacao() {
   const loadCandidatosAprovados = async () => {
     try {
       const { data: candidatosData } = await supabase
-        .from("candidatos")
-        .select("id, nome_completo, tipo_veiculo, regiao, created_at")
-        .eq("status", "aprovado")
+        .from("recrutamento_candidatos")
+        .select("id, nome as nome_completo, veiculo as tipo_veiculo, regiao, created_at, cpf, telefone, whatsapp, email, cidade, uf, placa, status")
+        .eq("stage", "aprovado")
         .order("created_at", { ascending: false });
 
       const { data: homogData } = await supabase
@@ -98,12 +98,12 @@ export function Homologacao() {
     setActivating(candidatoId);
     try {
       const { ativarPrestador: ativar } = await import("@/services/recrutamentoIntegracao");
-      const { data: candidato } = await supabase.from("candidatos").select("*").eq("id", candidatoId).single();
+      const { data: candidato } = await supabase.from("recrutamento_candidatos").select("*").eq("id", candidatoId).single();
       if (!candidato) throw new Error("Candidato não encontrado");
 
       const resultado = await ativar({
         id: candidato.id,
-        nome_completo: candidato.nome_completo,
+        nome_completo: candidato.nome_completo || candidato.nome,
         cpf_cnpj: candidato.cpf,
         telefone: candidato.telefone,
         whatsapp: candidato.whatsapp,
@@ -111,11 +111,11 @@ export function Homologacao() {
         cidade: candidato.cidade,
         uf: candidato.uf,
         regiao: candidato.regiao,
-        tipo_veiculo: candidato.tipo_veiculo,
+        tipo_veiculo: candidato.tipo_veiculo || candidato.veiculo,
         placa: candidato.placa,
-        status: candidato.status,
+        status: candidato.status || candidato.stage,
         created_at: candidato.created_at,
-        score_perfil: 0,
+        score_perfil: candidato.score_perfil || candidato.score || 0,
         prioridade: 0,
       });
 

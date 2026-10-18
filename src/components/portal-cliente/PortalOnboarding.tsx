@@ -14,6 +14,8 @@ interface OnboardingStep {
 }
 
 interface PortalOnboardingProps {
+  etapaInicial?: number;
+  onStepChange?: (step: number) => void;
   onComplete?: () => void;
   onSkip?: () => void;
 }
@@ -28,8 +30,8 @@ const stepsDefault: OnboardingStep[] = [
   { id: "tutorial", titulo: "Tutorial", descricao: "Explore o portal", icon: Sparkles, completado: false },
 ];
 
-export function PortalOnboarding({ onComplete, onSkip }: PortalOnboardingProps) {
-  const [step, setStep] = useState(0);
+export function PortalOnboarding({ etapaInicial = 0, onStepChange, onComplete, onSkip }: PortalOnboardingProps) {
+  const [step, setStep] = useState(etapaInicial);
   const [steps, setSteps] = useState<OnboardingStep[]>(stepsDefault);
   const [formData, setFormData] = useState({
     nomeEmpresa: "",
@@ -42,8 +44,10 @@ export function PortalOnboarding({ onComplete, onSkip }: PortalOnboardingProps) 
 
   const handleNext = () => {
     if (step < steps.length - 1) {
+      const nextStep = step + 1;
       setSteps(prev => prev.map((s, i) => i === step ? { ...s, completado: true } : s));
-      setStep(step + 1);
+      setStep(nextStep);
+      onStepChange?.(nextStep);
     } else {
       onComplete?.();
     }

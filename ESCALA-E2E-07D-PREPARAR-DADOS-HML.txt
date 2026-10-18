@@ -1,0 +1,133 @@
+ESCALA-E2E-07D-PREPARAR-DADOS-HML
+==================================================
+Ambiente: TMS Conexão Express / Supabase PRODUÇÃO
+Data: 2026-09-22
+Modo: PREPARAÇÃO CONTROLADA E REVERSÍVEL
+
+RESULT=OK
+DB_WRITES=2
+MIGRATIONS=0
+
+==================================================
+PASSO 1 — SNAPSHOT (PRÉ-WRITE)
+==================================================
+SNAPSHOT_OK=true
+prestador.valor_diaria=NULL
+prestador.valor_saida=NULL
+prestador.updated_at=2026-08-06T15:42:12.718Z
+VUC_TABLE_COUNT=0
+VEICULOS_VINCULADOS_AO_PRESTADOR=1
+CLIENTE=3d2d079d-708b-4d4d-9c0b-1ed9b894e37e | "HOMOLOGAÇÃO APP" | status=ativo
+PRESTADOR=e6646799-fbac-453e-a3ef-afdfc01a7085 | "PRESTADOR TESTE APP"
+→ Nenhuma divergência. Prosseguiu.
+
+==================================================
+PASSO 2 — UPDATE CONTROLADO
+==================================================
+UPDATE prestadores SET valor_diaria=250.00
+WHERE id='e6646799-fbac-453e-a3ef-afdfc01a7085' AND valor_diaria IS NULL;
+ROWS_UPDATED=1  ✔
+
+POSTCHECK (nenhum outro campo alterado):
+  valor_diaria=250.00
+  valor_saida=NULL
+  valor_km=NULL | franquia_km=NULL | fixo_mensal=NULL
+  updated_at=2026-08-06T15:42:12.718Z (INALTERADO — sem trigger de updated_at em UPDATE)
+
+==================================================
+PASSO 3 — INSERT TABELA HML
+==================================================
+INSERT tabelas_valores (1 registro) RETURNING id:
+  nome='HML E2E VUC - HOMOLOGACAO APP'
+  tipo_veiculo='vuc'
+  valor_base=300.00 | franquia_km=100 | km_franquia=100 | valor_km_excedente=1.20
+  universal=false | cliente='HOMOLOGAÇÃO APP' | ativo=true
+  tenant_id=00000000-0000-0000-0000-000000000001
+  classificacao_termica='seco'
+  percentual_prestador=NULL | tipo_repasse_prestador=NULL | valor_fixo_prestador=NULL
+  data_inicio=CURRENT_DATE | data_fim=CURRENT_DATE+7
+ROWS_INSERTED=1  ✔
+HML_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+
+==================================================
+PASSO 4 — PROVA DE SELEÇÃO (algoritmo REAL da Escala, sem criar alocação)
+==================================================
+Candidatas VUC ativas=1
+SPECIFIC_MATCH (cliente exato 'HOMOLOGAÇÃO APP')=1
+THERMAL_COMPAT ('seco' × veículo tipo_carga='seca')=1
+DISTINTAS=1 → AMBIGUOUS=false
+
+SELECTED_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+SELECTED_MATCHES_HML=true
+CLIENT_MATCH=YES
+TYPE_MATCH=vuc
+THERMAL_MATCH=seco
+AMBIGUOUS=NO
+
+REPASSE (modo 'cadastro' = valor_diaria ?? valor_saida):
+PROVIDER_SOURCE=valor_diaria
+PROVIDER_VALUE=250.00
+
+CENÁRIO FUTURO (KM=150, HORÁRIO_SAÍDA ≤ 11:00):
+CLIENT_BASE=300.00
+FRANCHISE=100
+EXCESS_KM=50
+EXCESS_RATE=1.20
+EXCESS_VALUE=60.00
+EXPECTED_CLIENT_VALUE=360.00
+EXPECTED_PROVIDER_VALUE=250.00
+CLIENT_PROVIDER_INDEPENDENT=YES
+DVL_MULTIPLIER_APPLIED=NO (hora de saída ≤ 11:00 ⇒ multDVL=1.0)
+
+==================================================
+PASSO 5 — SNAPSHOT PARA E2E-08
+==================================================
+PRESTADOR_ID=e6646799-fbac-453e-a3ef-afdfc01a7085
+VEICULO_ID=87dceca0-3d81-45a9-8878-047019fa3a58
+CLIENTE_ID=3d2d079d-708b-4d4d-9c0b-1ed9b894e37e
+HML_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+
+PRE_E2E_ALLOCATION_COUNT=193
+PRE_E2E_OS_COUNT=159
+PRE_E2E_RECEBER_COUNT=143
+PRE_E2E_PAGAR_COUNT=175
+PRE_E2E_PP_COUNT=134
+PRE_E2E_COMPOSICAO_COUNT=59
+
+OBS: o E2E-08 NÃO deve usar apenas contagem global no cleanup — deverá rastrear os IDs
+criados (alocação/OS/títulos) pelo id da alocação.
+
+==================================================
+PASSO 6 — ROLLBACK PREPARADO (NÃO EXECUTADO)
+==================================================
+Arquivo: ESCALA-E2E-07D-ROLLBACK.sql
+  1) DELETE FROM tabelas_valores WHERE id='b8c78f48-0b8a-4b88-9a41-5d57c5af8886';
+  2) UPDATE prestadores SET valor_diaria=NULL
+       WHERE id='e6646799-fbac-453e-a3ef-afdfc01a7085' AND valor_diaria=250.00;
+Executar SOMENTE após E2E-08 + cleanup. NÃO genérico.
+
+==================================================
+ENTREGÁVEIS
+==================================================
+RESULT=OK
+ROWS_UPDATED_PROVIDER=1
+ROWS_INSERTED_TABLE=1
+HML_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
+TABLE_SELECTION_PROVEN=YES
+PROVIDER_COST_PROVEN=YES
+EXPECTED_CLIENT_VALUE=360.00
+EXPECTED_PROVIDER_VALUE=250.00
+DVL_MULTIPLIER_APPLIED=NO
+TEMP_DATA_READY=YES
+GO_FOR_E2E_08=YES
+
+==================================================
+PROIBIÇÕES CUMPRIDAS
+==================================================
+Não criou alocação/OS/financeiro. Não alterou veículo/cliente/BRUNO. Não usou percentual de
+repasse. Não criou tabela_prestador. Nenhuma migration. Outras pendências não tratadas.
+
+FILES_MODIFIED=ESCALA-E2E-07D-ROLLBACK.sql (novo)
+DB_WRITES=2
+MIGRATIONS=0
+HML_TABLE_ID=b8c78f48-0b8a-4b88-9a41-5d57c5af8886
