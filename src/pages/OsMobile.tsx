@@ -61,7 +61,6 @@ import {
   OPCOES_PAGAMENTO_PRESTADOR,
   VALOR_KM_RETORNO,
   VALOR_ESPERA_EXCEDENTE,
-  FRANQUIA_ESPERA_MIN,
   VALOR_PARADA_EXTRA,
   type TipoPagamentoPrestador,
 } from "@/lib/custoMotoboy";
@@ -119,6 +118,9 @@ const STATUS_EM_ABERTO = [
   "em_rota",
   "coletado",
 ];
+
+// Finalizadas permanecem acessíveis para reimpressão/geração do recibo.
+const STATUS_FINALIZADAS = ["finalizada", "entregue"];
 
 const OPCOES_PIX_TIPO = ["CPF/CNPJ", "Celular", "E-mail", "Chave Aleatória"];
 
@@ -489,8 +491,9 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
   const baseCliente =
     veiculoTipo === "moto" ? receitaMoto.total : Number(valorBaseManual) || 0;
 
-  const esperaExcedente = Math.max(0, tempoEspera - FRANQUIA_ESPERA_MIN);
-  const esperaValor = Math.round(esperaExcedente * VALOR_ESPERA_EXCEDENTE * 100) / 100;
+  // Regra do chamado: cada minuto de espera aumenta o valor do cliente.
+  // O motor do prestador mantém a franquia operacional de 20 min.
+  const esperaValor = Math.round(Math.max(0, tempoEspera) * VALOR_ESPERA_EXCEDENTE * 100) / 100;
   const paradasExtras = Math.max(0, paradas.length - 2);
   const paradasAdicionaisAuto = paradasExtras * VALOR_PARADA_EXTRA;
   const paradasAdicionaisValor = paradasAdicionaisManual ?? paradasAdicionaisAuto;
@@ -990,6 +993,17 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
           </div>
         </div>
 
+        <p className="text-center text-[10px] font-semibold text-slate-500">
+          KM total considerado:{" "}
+          <span className="text-slate-800">
+            {(kmIda + (retornoOrigem ? kmRetorno : 0)).toLocaleString("pt-BR", {
+              maximumFractionDigits: 2,
+            })}{" "}
+            km
+          </span>
+          {retornoOrigem ? " (ida + retorno à origem)" : " (somente ida)"}
+        </p>
+
         {rotaErro && (
           <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -1199,7 +1213,7 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-              <Clock className="h-3.5 w-3.5" /> Aguarde (min)
+              <Clock className="h-3.5 w-3.5" /> Tempo de Espera (Aguarde) *
             </Label>
             <Input
               type="number"
@@ -1210,9 +1224,9 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
               className="mt-1 h-10"
             />
             <p className="mt-1 text-[10px] text-slate-400">
-              {esperaExcedente > 0
-                ? `${esperaExcedente} min excedentes × R$ 0,40 = ${fmtBRL(esperaValor)}`
-                : `Franquia de ${FRANQUIA_ESPERA_MIN} min`}
+              {tempoEspera > 0
+                ? `${tempoEspera} min × R$ 0,40 = ${fmtBRL(esperaValor)} no total do cliente`
+                : "Cada minuto de espera soma R$ 0,40 ao cliente"}
             </p>
           </div>
           <div>
@@ -1614,6 +1628,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
   const [dataInicio, setDataInicio] = useState(diasAtrasISO(30));
   const [dataFim, setDataFim] = useState(hojeISO());
   const [busca, setBusca] = useState("");
+  const [mostrarFinalizadas, setMostrarFinalizadas] = useState(false);
 
   const [osSelecionada, setOsSelecionada] = useState<OSMobileLista | null>(null);
   const [recebedor, setRecebedor] = useState("");
@@ -1628,12 +1643,16 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
+      const statuses = mostrarFinalizadas
+        ? [...STATUS_EM_ABERTO, ...STATUS_FINALIZADAS]
+        : STATUS_EM_ABERTO;
+
       let query = supabase
         .from("ordens_servico")
         .select(
           "id, numero, status, data, created_at, cliente, cliente_id, prestador, prestador_id, veiculo_tipo, valor_cliente, custo_prestador, distancia_km, origem, destino, peso, volumes, observacoes_gerais, recebedor_nome, recebedor_documento, enderecos, localizacao_entrega_json, carga",
         )
-        .in("status", STATUS_EM_ABERTO)
+        .in("status", statuses)
         .order("created_at", { ascending: false })
         .limit(200);
 
@@ -1713,7 +1732,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     } finally {
       setCarregando(false);
     }
-  }, [dataInicio, dataFim]);
+  }, [dataInicio, dataFim, mostrarFinalizadas]);
 
   useEffect(() => {
     if (ativo) void carregar();
@@ -1874,7 +1893,9 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-800">OS em aberto</h2>
+            <h2 className="text-sm font-bold text-slate-800">
+              {mostrarFinalizadas ? "OS em aberto e finalizadas" : "OS em aberto"}
+            </h2>
             <p className="text-[11px] text-slate-500">
               {filtradas.length} OS · filtro por data de criação/serviço
             </p>
@@ -1941,6 +1962,16 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
             className="h-9 text-sm"
           />
         </div>
+
+        <label className="mt-2 flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-slate-600">
+          <input
+            type="checkbox"
+            checked={mostrarFinalizadas}
+            onChange={(e) => setMostrarFinalizadas(e.target.checked)}
+            className="h-4 w-4 accent-orange-600"
+          />
+          Incluir finalizadas (gerar recibo)
+        </label>
       </div>
 
       {carregando && (
@@ -1952,14 +1983,17 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       {!carregando && filtradas.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
           <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-500" />
-          <p className="text-sm font-bold text-slate-700">Nenhuma OS em aberto</p>
-          <p className="text-[11px] text-slate-500">Ajuste o filtro de data ou crie uma nova OS.</p>
+          <p className="text-sm font-bold text-slate-700">Nenhuma OS encontrada</p>
+          <p className="text-[11px] text-slate-500">
+            Ajuste o filtro de data, marque “Incluir finalizadas” ou crie uma nova OS.
+          </p>
         </div>
       )}
 
       <div className="space-y-2">
         {filtradas.map((os) => {
           const badge = statusBadge(os.status);
+          const finalizada = STATUS_FINALIZADAS.includes(os.status);
           return (
             <article key={os.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -1998,19 +2032,32 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                 </span>
               </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => abrirBaixa(os)}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
-                >
-                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Dar baixa
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => setReciboOS(os)}>
-                  <Receipt className="mr-1.5 h-3.5 w-3.5" /> Recibo
-                </Button>
-              </div>
+              {finalizada ? (
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setReciboOS(os)}
+                    className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    <Receipt className="mr-1.5 h-3.5 w-3.5" /> Gerar recibo da OS finalizada
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => abrirBaixa(os)}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Dar baixa
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setReciboOS(os)}>
+                    <Receipt className="mr-1.5 h-3.5 w-3.5" /> Recibo
+                  </Button>
+                </div>
+              )}
             </article>
           );
         })}
