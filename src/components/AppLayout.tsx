@@ -33,7 +33,13 @@ const AppLayout = () => {
 
   if (!user) return null; // ProtectedRoute ja redireciona
 
-  if (location.pathname === "/portal-cliente" || location.pathname === "/app-prestador") {
+  // Telas de campo: rodam em tela cheia, sem sidebar/topbar do desktop.
+  // /os-mobile e /portal-cliente e /app-prestador mantêm o ProtectedRoute (auth) intacto.
+  if (
+    location.pathname === "/portal-cliente" ||
+    location.pathname === "/app-prestador" ||
+    location.pathname === "/os-mobile"
+  ) {
     return <Outlet />;
   }
 

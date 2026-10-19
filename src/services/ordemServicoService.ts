@@ -268,6 +268,14 @@ export interface CriarOSInput {
   prioridade?: string;
   tenant_id?: string;
   metadata?: Record<string, any>;
+
+  // OS Mobile (aditivo) — dados ricos de rota/paradas gravados na própria OS
+  distancia_km?: number;
+  distancia_rota?: Record<string, any>;
+  enderecos?: Record<string, any>[];
+  carga?: Record<string, any>;
+  retorno_obrigatorio?: boolean;
+  tempo_estimado?: number;
 }
 
 export interface CriarOSResultado {
@@ -321,6 +329,7 @@ export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSRes
         cubagem: 0,
         valorDeclarado: input.valor_declarado || 0,
         refrigerada: input.tipo_carga === "refrigerado",
+        ...(input.carga || {}),
       },
 
       // Financeiro (cliente-side)
@@ -333,6 +342,13 @@ export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSRes
       // Metadados
       prioridade: input.prioridade || "normal",
       veiculo_sugerido: input.metadata?.veiculo_sugerido || null,
+
+      // OS Mobile (aditivo) — rota, paradas e marcador de origem
+      distancia_km: input.distancia_km ?? 0,
+      distancia_rota: input.distancia_rota || null,
+      enderecos: input.enderecos || [],
+      retorno_obrigatorio: input.retorno_obrigatorio ?? false,
+      tempo_estimado: input.tempo_estimado ?? 0,
 
       // Controle
       created_at: new Date().toISOString(),
