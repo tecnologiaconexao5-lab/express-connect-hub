@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 
 import { podeAcessar } from "./permissoes";
-import type { User } from "./auth";
+import type { User, UserRole } from "./auth";
 import { Building2 } from "lucide-react";
 
 export interface SidebarSubItem {
@@ -14,6 +14,7 @@ export interface SidebarSubItem {
   path: string;
   icon?: LucideIcon;
   modulo?: string;
+  roles?: UserRole[];
   children?: SidebarSubItem[];
 }
 
@@ -22,10 +23,13 @@ export interface SidebarItem {
   icon: LucideIcon;
   path: string;
   modulo?: string;
+  roles?: UserRole[];
+  highlight?: boolean;
   children?: SidebarSubItem[];
 }
 
-const checkPermission = (modulo: string | undefined, user: User): boolean => {
+const checkPermission = (modulo: string | undefined, user: User, roles?: UserRole[]): boolean => {
+  if (roles && roles.length > 0 && !roles.includes(user.role)) return false;
   if (!modulo) return true;
   return podeAcessar(modulo, "ver", user);
 };
@@ -35,11 +39,11 @@ export const getVisibleSidebarItems = (user: User | null): SidebarItem[] => {
   
   return sidebarItems
     .map(item => {
-      const visibleChildren = item.children?.filter(child => checkPermission(child.modulo, user));
+      const visibleChildren = item.children?.filter(child => checkPermission(child.modulo, user, child.roles));
       const hasVisibleChildren = visibleChildren && visibleChildren.length > 0;
       
-      // Se o item pai tem filhos visíveis, permite ver o pai mesmo que o modulo específico do pai seja restritivo
-      const isParentVisible = hasVisibleChildren || checkPermission(item.modulo, user);
+      // Se o item pai tem filhos vis��veis, permite ver o pai mesmo que o modulo espec��fico do pai seja restritivo
+      const isParentVisible = hasVisibleChildren || checkPermission(item.modulo, user, item.roles);
       
       if (!isParentVisible) return null;
       
@@ -48,7 +52,7 @@ export const getVisibleSidebarItems = (user: User | null): SidebarItem[] => {
         children: visibleChildren
       };
     })
-    .filter((item): item is SidebarItem => item !== null);
+    .filter((item) => item !== null) as SidebarItem[];
 };
 
 export const sidebarItems: SidebarItem[] = [
@@ -63,6 +67,15 @@ export const sidebarItems: SidebarItem[] = [
     icon: Radio,
     path: "/torre-controle",
     modulo: "ordens_servico",
+  },
+  {
+    // Acesso rápido do desktop ao módulo de campo (a página abre em tela cheia).
+    title: "📱 OS Mobile (Campo)",
+    icon: Smartphone,
+    path: "/os-mobile",
+    modulo: "ordens_servico",
+    roles: ["super_admin", "admin", "operador"],
+    highlight: true,
   },
   {
     title: "Gestão Comercial",

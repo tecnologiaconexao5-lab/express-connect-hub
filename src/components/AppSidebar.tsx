@@ -82,6 +82,8 @@ const SidebarItemComponent = ({
             ? "bg-primary/20 text-white font-medium shadow-sm border border-primary/30"
             : isActive && collapsed
             ? "text-white font-medium"
+            : item.highlight
+            ? "text-white font-semibold bg-orange-500/15 ring-1 ring-orange-400/40 hover:bg-orange-500/25"
             : "text-slate-300 hover:bg-white/10 hover:text-white"
         )}
         title={item.title}

@@ -25,6 +25,7 @@ const ROTA_TITULOS: Record<string, { titulo: string; icone: any }> = {
   "/comercial":                 { titulo: "Gestão Comercial",          icone: FileText },
   "/cadastros":                 { titulo: "Cadastros Base",            icone: Database },
   "/operacao":                  { titulo: "Apoio Operacional",         icone: ClipboardList },
+  "/os-mobile":                 { titulo: "OS Mobile (Campo)",         icone: Smartphone },
   "/controle-patio":            { titulo: "Controle de Pátio",         icone: ClipboardList },
   "/frota":                     { titulo: "Gestão de Frota",           icone: Car },
   "/combustiveis":              { titulo: "Combustíveis",              icone: Car },
@@ -69,6 +70,9 @@ const AppTopbar = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const podeOsMobile = Boolean(
+    user && ["super_admin", "admin", "operador"].includes(user.role),
+  );
   const [notifs, setNotifs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -215,6 +219,19 @@ const AppTopbar = () => {
             <Radio className="w-3.5 h-3.5" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Ao Vivo</span>
           </div>
+        )}
+
+        {/* Acesso rápido ao módulo de campo */}
+        {podeOsMobile && (
+          <button
+            onClick={() => navigate("/os-mobile")}
+            className="hidden sm:flex items-center gap-1.5 mr-1 px-2.5 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 transition-colors duration-150 ease-out"
+            title="Abrir 📱 OS Mobile (Campo)"
+            aria-label="Abrir OS Mobile (Campo)"
+          >
+            <Smartphone className="w-4 h-4" />
+            <span className="text-[11px] font-bold whitespace-nowrap">OS Mobile</span>
+          </button>
         )}
 
         {/* Theme Toggle */}
