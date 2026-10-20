@@ -317,8 +317,47 @@ const horarioDoPonto = (ponto: Record<string, unknown>): string => {
   return inicio || fim || "A combinar";
 };
 
-const linkMapsDoPonto = (ponto: Record<string, unknown>): string =>
-  `https://maps.google.com/?q=${encodeURIComponent(formatarEnderecoCompletoPonto(ponto))}`;
+/**
+ * Endereço exibido no Padrão Rota (grupos): SEM número, com bairro, cidade/UF e CEP.
+ */
+const formatarEnderecoSemNumeroPonto = (ponto: Record<string, unknown>): string => {
+  const logradouro = primeiroTexto(ponto.logradouro);
+  const bairro = primeiroTexto(ponto.bairro);
+  const cidade = primeiroTexto(ponto.cidade);
+  const uf = primeiroTexto(ponto.estado, ponto.uf);
+  const cep = formatarCep(ponto.cep);
+
+  const endereco = [
+    logradouro,
+    bairro,
+    [cidade, uf].filter(Boolean).join("/"),
+    cep ? `CEP ${cep}` : "",
+  ]
+    .filter(Boolean)
+    .join(" - ");
+
+  return (
+    endereco ||
+    primeiroTexto(ponto.endereco_formatado, ponto.endereco) ||
+    "Endereço não informado"
+  );
+};
+
+/**
+ * Link curto do Maps: codifica apenas "Logradouro, número - Cidade".
+ */
+const linkMapsCurtoDoPonto = (ponto: Record<string, unknown>): string => {
+  const logradouro = primeiroTexto(ponto.logradouro);
+  const numero = primeiroTexto(ponto.numero);
+  const cidade = primeiroTexto(ponto.cidade);
+
+  const ruaENumero = [logradouro, numero].filter(Boolean).join(", ");
+  const consulta = [ruaENumero, cidade].filter(Boolean).join(" - ");
+
+  return `https://maps.google.com/?q=${encodeURIComponent(
+    consulta || formatarEnderecoCompletoPonto(ponto),
+  )}`;
+};
 
 const rotuloFormaPagamento = (statusFaturamento?: string | null): string => {
   const status = valorTexto(statusFaturamento).toLowerCase();
@@ -363,11 +402,10 @@ const gerarPadraoRotaWhatsApp = (
     maximumFractionDigits: 2,
   });
 
-  const observacao =
-    valorTexto(os.observacoesGerais)
-      .replace(/^\[OS MOBILE\]\s*/i, "")
-      .replace(/\s+/g, " ")
-      .trim() || "ENCAIXE PERMITIDO";
+  const observacao = valorTexto(os.observacoesGerais)
+    .replace(/^\[OS MOBILE\]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
   const blocos: string[] = [];
   let sequencia = 0;
@@ -377,9 +415,9 @@ const gerarPadraoRotaWhatsApp = (
     const icone = tipo === "RET" ? "🟣" : "🟠";
     blocos.push(
       [
-        `${icone} 【 ${sequencia} 】 ${tipo} • ${formatarEnderecoCompletoPonto(ponto)}`,
+        `*${icone} 【 ${sequencia} 】 ${tipo}* • ${formatarEnderecoSemNumeroPonto(ponto)}`,
         `⏰ ${horarioDoPonto(ponto)}`,
-        `🗺️ ${linkMapsDoPonto(ponto)}`,
+        `🗺️ ${linkMapsCurtoDoPonto(ponto)}`,
       ].join("\n"),
     );
   };
@@ -392,10 +430,10 @@ const gerarPadraoRotaWhatsApp = (
   );
 
   const linhas = [
-    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+    "*🟠 CONEXÃO ⚡ EXPRESS 🟣*",
     "━━━━━━━━━━━━━━━━━🏍️",
     "",
-    `${bairroRetirada} ━➤ ${bairroEntrega} | ${distancia}`,
+    `*${bairroRetirada} ━➤ ${bairroEntrega}* | ${distancia}`,
     "",
     blocos.join("\n\n"),
     "",
@@ -440,6 +478,97 @@ const gerarMensagemWhatsApp = (
 
 const montarMensagemComprovante = (os: OSMobileLista, dados: FechamentoOSMobile) =>
   gerarPadraoRotaWhatsApp(os, dados);
+
+/**
+ * Orientação privada enviada ao motorista (WhatsApp individual).
+ * Diferente do Padrão Rota, exibe o endereço COMPLETO (com número) e todas as
+ * instruções operacionais de cada parada.
+ */
+const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
+  const pontos = [...os.enderecos].sort(
+    (a, b) => Number(a.sequencia ?? 0) - Number(b.sequencia ?? 0),
+  );
+
+  const retiradas = pontos.filter((ponto) => tipoDoPonto(ponto) === "retirada");
+  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) !== "retirada");
+
+  const pontoRetirada: Record<string, unknown> =
+    retiradas[0] || (os.origem ? { endereco: os.origem } : {});
+  const pontoEntrega: Record<string, unknown> =
+    entregas[entregas.length - 1] || (os.destino ? { endereco: os.destino } : {});
+
+  const observacaoOS = valorTexto(os.observacoesGerais)
+    .replace(/^\[OS MOBILE\]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const valorRepasse = (Number(os.custoPrestador) || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  const blocos: string[] = [];
+  let sequencia = 0;
+
+  const adicionarBloco = (tipo: "RETIRADA" | "ENTREGA", ponto: Record<string, unknown>) => {
+    sequencia += 1;
+    const icone = tipo === "RETIRADA" ? "🟣" : "🟠";
+
+    const procurarPor =
+      primeiroTexto(ponto.procurar_por, ponto.contato, ponto.nome_local) || "—";
+    const telefone = primeiroTexto(ponto.telefone, ponto.contato_telefone) || "—";
+    const instrucoes = primeiroTexto(ponto.instrucoes, ponto.descricao) || "—";
+    const orientacoes =
+      primeiroTexto(ponto.observacoes, ponto.observacao, ponto.referencia) || observacaoOS || "—";
+
+    blocos.push(
+      [
+        "━━━━━━━━━━━━━━━━━",
+        `${icone} 【 ${sequencia} 】 ${tipo}`,
+        "━━━━━━━━━━━━━━━━━",
+        `📍 ENDEREÇO: ${formatarEnderecoCompletoPonto(ponto)}`,
+        `🗺️ ${linkMapsCurtoDoPonto(ponto)}`,
+        `⏰ JANELA: ${horarioDoPonto(ponto)}`,
+        `👤 PROCURAR: ${procurarPor}`,
+        `📞 TELEFONE: ${telefone}`,
+        `📦 RETIRAR: ${instrucoes}`,
+        `⚠️ ORIENTAÇÕES: ${orientacoes}`,
+      ].join("\n"),
+    );
+  };
+
+  (retiradas.length > 0 ? retiradas : [pontoRetirada]).forEach((ponto) =>
+    adicionarBloco("RETIRADA", ponto),
+  );
+  (entregas.length > 0 ? entregas : [pontoEntrega]).forEach((ponto) =>
+    adicionarBloco("ENTREGA", ponto),
+  );
+
+  const linhas = [
+    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+    "📋 ORIENTAÇÃO DE EXECUÇÃO",
+    `OS nº ${os.numero || os.id}`,
+    "",
+    `Olá, ${os.prestadorNome || "Motorista"}! Você foi selecionado para executar esta OS.`,
+    "",
+    `🚚 VEÍCULO: ${os.veiculoTipo || "Moto"}`,
+    `💰 VALOR: R$ ${valorRepasse}`,
+    `💳 PAGAMENTO: ${valorTexto(os.statusFaturamento) || "À vista"}`,
+    "",
+    blocos.join("\n\n"),
+    "",
+    "━━━━━━━━━━━━━━━━━",
+    "📸 COMPROVAÇÃO",
+    "Enviar o comprovante de entrega pelo WhatsApp após a conclusão.",
+    "",
+    "🤝 CONDUTA PROFISSIONAL",
+    "Seja sempre educado e cordial, utilize trajes adequados à operação e mantenha uma postura profissional. Em caso de dúvida, dificuldade, atraso ou ocorrência, entre em contato com a Conexão Express imediatamente.",
+    "",
+    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+  ];
+
+  return linhas.join("\n");
+};
 
 // ============================================================
 // Shell mobile
@@ -1009,6 +1138,18 @@ function NovaOSView() {
     }
   };
 
+  const copiarOrientacaoCriada = async () => {
+    if (!osCriada) return;
+    try {
+      await navigator.clipboard.writeText(gerarOrientacaoWhatsApp(osCriada));
+      toast.success("Copiado!", {
+        description: "Orientação privada pronta para enviar ao motorista.",
+      });
+    } catch {
+      toast.error("Não foi possível copiar a Orientação");
+    }
+  };
+
   if (osCriada) {
     return (
       <div className="space-y-3">
@@ -1022,13 +1163,23 @@ function NovaOSView() {
             {osCriada.distanciaKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km
           </p>
 
-          <Button
-            type="button"
-            onClick={() => void copiarPadraoRotaCriada()}
-            className="mt-4 h-12 w-full bg-green-600 text-sm font-bold text-white hover:bg-green-700"
-          >
-            📋 Copiar Padrão Rota (WhatsApp)
-          </Button>
+          <div className="mt-4 grid grid-cols-1 gap-2">
+            <Button
+              type="button"
+              onClick={() => void copiarPadraoRotaCriada()}
+              className="h-12 w-full bg-green-600 text-sm font-bold text-white hover:bg-green-700"
+            >
+              📋 Copiar Padrão Rota
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => void copiarOrientacaoCriada()}
+              className="h-12 w-full bg-slate-900 text-sm font-bold text-white hover:bg-slate-800"
+            >
+              📋 Copiar Orientação Privada
+            </Button>
+          </div>
 
           <Button
             type="button"
@@ -2050,10 +2201,22 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     try {
       await navigator.clipboard.writeText(texto);
       toast.success("Padrão Rota copiado", {
-        description: "Cole no WhatsApp para enviar ao motorista.",
+        description: "Cole no WhatsApp do grupo.",
       });
     } catch {
       toast.error("Não foi possível copiar o Padrão Rota");
+    }
+  };
+
+  const copiarOrientacao = async (os: OSMobileLista) => {
+    const texto = gerarOrientacaoWhatsApp(os);
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast.success("Orientação copiada", {
+        description: "Cole no WhatsApp do motorista (privado).",
+      });
+    } catch {
+      toast.error("Não foi possível copiar a Orientação");
     }
   };
 
@@ -2304,15 +2467,26 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                 </span>
               </div>
 
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="mt-2 w-full"
-                onClick={() => void copiarPadraoRota(os)}
-              >
-                <Copy className="mr-1.5 h-3.5 w-3.5" /> Copiar Padrão Rota
-              </Button>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void copiarPadraoRota(os)}
+                >
+                  📋 Copiar Padrão Rota
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void copiarOrientacao(os)}
+                >
+                  📋 Copiar Orientação Privada
+                </Button>
+              </div>
 
               {finalizada ? (
                 <div className="mt-2">
