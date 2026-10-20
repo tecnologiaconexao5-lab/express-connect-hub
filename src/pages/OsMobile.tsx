@@ -246,26 +246,200 @@ const statusBadge = (status: string) => {
   return mapa[status] || { label: status, className: "bg-slate-100 text-slate-700 border-slate-200" };
 };
 
-const montarMensagemComprovante = (os: OSMobileLista, dados: FechamentoOSMobile) =>
-  [
-    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
-    "",
-    "✅ *COMPROVANTE DE ENTREGA*",
-    `OS: ${os.numero || os.id}`,
-    `Cliente: ${os.clienteNome || "—"}`,
-    `Recebedor: ${dados.recebedor}`,
-    `Documento: ${dados.documento || "—"}`,
-    `Local: ${dados.local}`,
-    `Data/Hora: ${fmtDataHora(dados.dataHoraEntrega)}`,
-    `Fotos do comprovante: ${dados.fotos.length}`,
-    os.distanciaKm > 0 ? `KM: ${os.distanciaKm.toLocaleString("pt-BR")} km` : null,
-    `Valor: ${fmtBRL(os.valorCliente)}`,
-    dados.observacao ? `Observação: ${dados.observacao}` : null,
-    "",
-    "Obrigado pela preferência!",
+const valorTexto = (valor: unknown): string => {
+  if (typeof valor === "string") return valor.trim();
+  if (typeof valor === "number" && Number.isFinite(valor)) return String(valor);
+  return "";
+};
+
+const primeiroTexto = (...valores: unknown[]): string => {
+  for (const valor of valores) {
+    const texto = valorTexto(valor);
+    if (texto) return texto;
+  }
+  return "";
+};
+
+const formatarCep = (valor: unknown): string => {
+  const digitos = valorTexto(valor).replace(/\D/g, "");
+  if (digitos.length === 8) return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
+  return valorTexto(valor);
+};
+
+const tipoDoPonto = (ponto: Record<string, unknown>): "retirada" | "entrega" | "outro" => {
+  const tipo = primeiroTexto(ponto.tipo_parada, ponto.tipo).toLowerCase();
+  if (tipo.includes("retirada") || tipo.includes("coleta") || tipo.includes("origem")) return "retirada";
+  if (tipo.includes("entrega") || tipo.includes("destino")) return "entrega";
+  return "outro";
+};
+
+const formatarEnderecoCompletoPonto = (ponto: Record<string, unknown>): string => {
+  const logradouro = primeiroTexto(ponto.logradouro);
+  const numero = primeiroTexto(ponto.numero);
+  const complemento = primeiroTexto(ponto.complemento);
+  const bairro = primeiroTexto(ponto.bairro);
+  const cidade = primeiroTexto(ponto.cidade);
+  const uf = primeiroTexto(ponto.estado, ponto.uf);
+  const cep = formatarCep(ponto.cep);
+
+  const rua = [logradouro, numero].filter(Boolean).join(", ");
+  const endereco = [
+    rua ? (complemento ? `${rua} - ${complemento}` : rua) : "",
+    bairro,
+    [cidade, uf].filter(Boolean).join("/"),
+    cep ? `CEP ${cep}` : "",
   ]
-    .filter((linha): linha is string => typeof linha === "string")
-    .join("\n");
+    .filter(Boolean)
+    .join(" - ");
+
+  return (
+    endereco ||
+    primeiroTexto(ponto.endereco_formatado, ponto.endereco) ||
+    "Endereço não informado"
+  );
+};
+
+const bairroDoPonto = (ponto: Record<string, unknown>): string => {
+  const bairro = primeiroTexto(ponto.bairro);
+  if (bairro) return bairro;
+  const endereco = primeiroTexto(ponto.endereco_formatado, ponto.endereco);
+  const partes = endereco
+    .split(",")
+    .map((parte) => parte.trim())
+    .filter(Boolean);
+  return partes.length >= 2 ? partes[1] : "";
+};
+
+const horarioDoPonto = (ponto: Record<string, unknown>): string => {
+  const inicio = primeiroTexto(ponto.janela_inicio, ponto.janelaInicio);
+  const fim = primeiroTexto(ponto.janela_fim, ponto.janelaFim);
+  if (inicio && fim) return `${inicio} às ${fim}`;
+  return inicio || fim || "A combinar";
+};
+
+const linkMapsDoPonto = (ponto: Record<string, unknown>): string =>
+  `https://maps.google.com/?q=${encodeURIComponent(formatarEnderecoCompletoPonto(ponto))}`;
+
+const rotuloFormaPagamento = (statusFaturamento?: string | null): string => {
+  const status = valorTexto(statusFaturamento).toLowerCase();
+  if (status.includes("faturad")) return "Faturada";
+  if (status.includes("fatur")) return "A faturar";
+  if (status.includes("pago") || status.includes("paga")) return "Pago";
+  if (status.includes("vista")) return "À vista";
+  return "À vista";
+};
+
+/**
+ * Padrão de rota do WhatsApp (layout EXATO solicitado).
+ * - 1 bloco RET para cada retirada e 1 bloco ENT para cada entrega/parada.
+ * - `fechamento` é opcional e, quando informado, acrescenta a baixa de campo
+ *   ao final (usado pelo botão "Concluir e Enviar WhatsApp").
+ */
+const gerarPadraoRotaWhatsApp = (
+  os: OSMobileLista,
+  fechamento?: Partial<FechamentoOSMobile> | null,
+): string => {
+  const pontos = [...os.enderecos].sort(
+    (a, b) => Number(a.sequencia ?? 0) - Number(b.sequencia ?? 0),
+  );
+
+  const retiradas = pontos.filter((ponto) => tipoDoPonto(ponto) === "retirada");
+  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) !== "retirada");
+
+  const pontoRetirada: Record<string, unknown> =
+    retiradas[0] || (os.origem ? { endereco: os.origem } : {});
+  const pontoEntrega: Record<string, unknown> =
+    entregas[entregas.length - 1] || (os.destino ? { endereco: os.destino } : {});
+
+  const bairroRetirada = bairroDoPonto(pontoRetirada) || "Origem";
+  const bairroEntrega = bairroDoPonto(pontoEntrega) || "Destino";
+  const distancia =
+    os.distanciaKm > 0
+      ? `${os.distanciaKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`
+      : "—";
+
+  const valorTotal = (Number(os.valorCliente) || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  const observacao =
+    valorTexto(os.observacoesGerais)
+      .replace(/^\[OS MOBILE\]\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim() || "ENCAIXE PERMITIDO";
+
+  const blocos: string[] = [];
+  let sequencia = 0;
+
+  const adicionarBloco = (tipo: "RET" | "ENT", ponto: Record<string, unknown>) => {
+    sequencia += 1;
+    const icone = tipo === "RET" ? "🟣" : "🟠";
+    blocos.push(
+      [
+        `${icone} 【 ${sequencia} 】 ${tipo} • ${formatarEnderecoCompletoPonto(ponto)}`,
+        `⏰ ${horarioDoPonto(ponto)}`,
+        `🗺️ ${linkMapsDoPonto(ponto)}`,
+      ].join("\n"),
+    );
+  };
+
+  (retiradas.length > 0 ? retiradas : [pontoRetirada]).forEach((ponto) =>
+    adicionarBloco("RET", ponto),
+  );
+  (entregas.length > 0 ? entregas : [pontoEntrega]).forEach((ponto) =>
+    adicionarBloco("ENT", ponto),
+  );
+
+  const linhas = [
+    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+    "━━━━━━━━━━━━━━━━━🏍️",
+    "",
+    `${bairroRetirada} ━➤ ${bairroEntrega} | ${distancia}`,
+    "",
+    blocos.join("\n\n"),
+    "",
+    "━━━━━━━━━━━━━━━━━",
+    `💰 R$ ${valorTotal} | ${rotuloFormaPagamento(os.statusFaturamento)}`,
+    "",
+    `⚠️ ATENÇÃO: ${observacao}`,
+  ];
+
+  let mensagem = linhas.join("\n");
+
+  if (fechamento) {
+    const recebedor = primeiroTexto(fechamento.recebedor);
+    const documento = primeiroTexto(fechamento.documento);
+    const local = primeiroTexto(fechamento.local);
+    const dataHora = primeiroTexto(fechamento.dataHoraEntrega);
+    const observacaoBaixa = primeiroTexto(fechamento.observacao);
+    const totalFotos = Array.isArray(fechamento.fotos) ? fechamento.fotos.length : 0;
+    const temDadosDeBaixa = Boolean(
+      recebedor || documento || local || dataHora || observacaoBaixa || totalFotos > 0,
+    );
+
+    if (temDadosDeBaixa) {
+      const baixa = ["", "✅ BAIXA DE CAMPO"];
+      if (recebedor) baixa.push(`👤 Recebido por: ${recebedor}`);
+      if (documento) baixa.push(`🪪 Documento: ${documento}`);
+      if (local) baixa.push(`📌 Local: ${local}`);
+      if (dataHora) baixa.push(`🕒 Data/Hora: ${fmtDataHora(dataHora)}`);
+      if (totalFotos > 0) baixa.push(`📷 Comprovantes: ${totalFotos} foto(s)`);
+      if (observacaoBaixa) baixa.push(`📝 Observação: ${observacaoBaixa}`);
+      mensagem += `\n${baixa.join("\n")}`;
+    }
+  }
+
+  return mensagem;
+};
+
+const gerarMensagemWhatsApp = (
+  os: OSMobileLista,
+  fechamento?: Partial<FechamentoOSMobile> | null,
+): string => gerarPadraoRotaWhatsApp(os, fechamento);
+
+const montarMensagemComprovante = (os: OSMobileLista, dados: FechamentoOSMobile) =>
+  gerarPadraoRotaWhatsApp(os, dados);
 
 // ============================================================
 // Shell mobile
@@ -1584,6 +1758,7 @@ interface OSRowLista {
   prestador_id: string | null;
   veiculo_tipo: string | null;
   valor_cliente: number | string | null;
+  status_faturamento: string | null;
   custo_prestador: number | string | null;
   distancia_km: number | string | null;
   origem: string | null;
@@ -1650,7 +1825,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       let query = supabase
         .from("ordens_servico")
         .select(
-          "id, numero, status, data, created_at, cliente, cliente_id, prestador, prestador_id, veiculo_tipo, valor_cliente, custo_prestador, distancia_km, origem, destino, peso, volumes, observacoes_gerais, recebedor_nome, recebedor_documento, enderecos, localizacao_entrega_json, carga",
+          "id, numero, status, data, created_at, cliente, cliente_id, prestador, prestador_id, veiculo_tipo, valor_cliente, status_faturamento, custo_prestador, distancia_km, origem, destino, peso, volumes, observacoes_gerais, recebedor_nome, recebedor_documento, enderecos, localizacao_entrega_json, carga",
         )
         .in("status", statuses)
         .order("created_at", { ascending: false })
@@ -1708,6 +1883,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
           prestadorNome: prestadorId ? prestadoresMap.get(prestadorId) || null : null,
           veiculoTipo: row.veiculo_tipo,
           valorCliente: numeroOuZero(row.valor_cliente),
+          statusFaturamento: row.status_faturamento,
           custoPrestador: numeroOuZero(row.custo_prestador),
           distanciaKm: numeroOuZero(row.distancia_km),
           origem: row.origem,
@@ -1792,6 +1968,18 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     });
   };
 
+  const copiarPadraoRota = async (os: OSMobileLista) => {
+    const texto = gerarPadraoRotaWhatsApp(os);
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast.success("Padrão Rota copiado", {
+        description: "Cole no WhatsApp para enviar ao motorista.",
+      });
+    } catch {
+      toast.error("Não foi possível copiar o Padrão Rota");
+    }
+  };
+
   const concluir = async (enviarWhatsApp: boolean) => {
     if (!osSelecionada) return;
     if (!recebedor.trim()) {
@@ -1803,9 +1991,34 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       return;
     }
 
+    // A mensagem é montada de forma SÍNCRONA com os dados já preenchidos.
+    // Isso mantém o gesto do usuário e permite abrir o WhatsApp diretamente,
+    // sem depender de await/upload (que costuma bloquear pop-up no celular).
+    const dadosPreview: FechamentoOSMobile = {
+      recebedor: recebedor.trim(),
+      documento: documentoRecebedor.trim(),
+      local: localEntrega,
+      dataHoraEntrega,
+      observacao: observacaoEntrega.trim(),
+      fotos: fotos.map((foto) => foto.preview),
+    };
+    const mensagemWhatsApp = gerarMensagemWhatsApp(osSelecionada, dadosPreview);
+
     let janelaWhats: Window | null = null;
     if (enviarWhatsApp) {
-      janelaWhats = window.open("about:blank", "_blank");
+      const url = `https://wa.me/?text=${encodeURIComponent(mensagemWhatsApp)}`;
+      janelaWhats = window.open(url, "_blank");
+
+      if (!janelaWhats) {
+        try {
+          await navigator.clipboard.writeText(mensagemWhatsApp);
+          toast.info("Mensagem copiada", {
+            description: "Abra o WhatsApp e cole a mensagem.",
+          });
+        } catch {
+          toast.info("Permita pop-ups para abrir o WhatsApp automaticamente.");
+        }
+      }
     }
 
     setSalvando(true);
@@ -1835,24 +2048,6 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
         recebedorDocumento: dados.documento,
         fechamento: dados,
       };
-
-      const mensagem = montarMensagemComprovante(osSelecionada, dados);
-
-      if (enviarWhatsApp) {
-        const url = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
-        if (janelaWhats && !janelaWhats.closed) {
-          janelaWhats.location.href = url;
-        } else {
-          try {
-            await navigator.clipboard.writeText(mensagem);
-            toast.info("Comprovante copiado", {
-              description: "Abra o WhatsApp e cole a mensagem.",
-            });
-          } catch {
-            toast.info("Abra o WhatsApp para enviar o comprovante");
-          }
-        }
-      }
 
       toast.success("Baixa concluída", {
         description: `OS ${osSelecionada.numero || osSelecionada.id} finalizada`,
@@ -2032,6 +2227,16 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                 </span>
               </div>
 
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2 w-full"
+                onClick={() => void copiarPadraoRota(os)}
+              >
+                <Copy className="mr-1.5 h-3.5 w-3.5" /> Copiar Padrão Rota
+              </Button>
+
               {finalizada ? (
                 <div className="mt-2">
                   <Button
@@ -2084,6 +2289,15 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   {osSelecionada.destino || "Destino"}
                 </p>
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => void copiarPadraoRota(osSelecionada)}
+              >
+                <Copy className="mr-1.5 h-4 w-4" /> Copiar Padrão Rota
+              </Button>
 
               <div>
                 <Label className="text-[11px] font-semibold text-slate-600">Nome de quem recebeu *</Label>
