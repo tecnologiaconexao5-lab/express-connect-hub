@@ -544,7 +544,8 @@ function LinhaResumo({
 // Aba 1 — Nova OS
 // ============================================================
 
-function NovaOSView({ onCriada }: { onCriada: () => void }) {
+function NovaOSView() {
+  const [osCriada, setOsCriada] = useState<OSMobileLista | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
   const [clienteNome, setClienteNome] = useState("");
   const [paradas, setParadas] = useState<ParadaForm[]>(() => [
@@ -955,11 +956,40 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
         }
       }
 
-      toast.success(`OS ${resultado.os_numero} criada`, {
+      // Snapshot da OS recém-criada para o painel de sucesso e para o
+      // "Copiar Padrão Rota" — o formulário pode ser limpo em seguida.
+      const osSnapshot: OSMobileLista = {
+        id: resultado.os_id,
+        numero: resultado.os_numero || null,
+        status: "pendente",
+        data: hojeISO(),
+        createdAt: new Date().toISOString(),
+        clienteId,
+        clienteNome: clienteNome || null,
+        prestadorId,
+        prestadorNome: prestadorId ? prestadorNome : avulsoNome.trim() || null,
+        veiculoTipo,
+        valorCliente: totalCliente,
+        statusFaturamento: null,
+        custoPrestador: custoPrestadorFinal,
+        distanciaKm: kmTotal,
+        origem: montarEnderecoTexto(primeira.endereco),
+        destino: montarEnderecoTexto(ultima.endereco),
+        peso: pesoNumero,
+        volumes: Number(volumes) || 1,
+        observacoesGerais: `[OS MOBILE] ${observacoes.trim()}`.trim(),
+        recebedorNome: null,
+        recebedorDocumento: null,
+        enderecos: enderecosMeta,
+        fechamento: null,
+        isMobile: true,
+      };
+
+      toast.success(`OS ${resultado.os_numero || resultado.os_id} criada com sucesso!`, {
         description: `${fmtBRL(totalCliente)} ao cliente · ${fmtBRL(custoPrestadorFinal)} ao prestador`,
       });
+      setOsCriada(osSnapshot);
       limpar();
-      onCriada();
     } catch (error) {
       toast.error("Não foi possível criar a OS", {
         description: error instanceof Error ? error.message : String(error),
@@ -968,6 +998,53 @@ function NovaOSView({ onCriada }: { onCriada: () => void }) {
       setCriando(false);
     }
   };
+
+  const copiarPadraoRotaCriada = async () => {
+    if (!osCriada) return;
+    try {
+      await navigator.clipboard.writeText(gerarPadraoRotaWhatsApp(osCriada));
+      toast.success("Copiado!");
+    } catch {
+      toast.error("Não foi possível copiar o Padrão Rota");
+    }
+  };
+
+  if (osCriada) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-emerald-200 bg-white p-5 text-center shadow-sm">
+          <CheckCircle2 className="mx-auto h-11 w-11 text-emerald-600" />
+          <p className="mt-2 text-base font-black text-slate-800">
+            OS {osCriada.numero || osCriada.id} criada com sucesso!
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {osCriada.clienteNome || "Cliente"} · {fmtBRL(osCriada.valorCliente)} ·{" "}
+            {osCriada.distanciaKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km
+          </p>
+
+          <Button
+            type="button"
+            onClick={() => void copiarPadraoRotaCriada()}
+            className="mt-4 h-12 w-full bg-green-600 text-sm font-bold text-white hover:bg-green-700"
+          >
+            📋 Copiar Padrão Rota (WhatsApp)
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              limpar();
+              setOsCriada(null);
+            }}
+            className="mt-2 h-11 w-full"
+          >
+            Criar Outra OS
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -2766,7 +2843,7 @@ export default function OsMobile() {
         style={{ paddingBottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}
       >
         <div className={aba === "nova" ? "block" : "hidden"}>
-          <NovaOSView onCriada={() => setAba("aberto")} />
+          <NovaOSView />
         </div>
         <div className={aba === "aberto" ? "block" : "hidden"}>
           <EmAbertoView ativo={aba === "aberto"} empresa={empresa} />
