@@ -42,6 +42,27 @@ export interface Recibo {
   created_at: string;
 }
 
+// ── Assinatura digital (autenticação determinística) ───────────────────────────
+// Hash único baseado na data de emissão + identificador da OS/recibo. É estável
+// no mesmo dia, permitindo comparar a prévia em tela com o PDF gerado.
+export function gerarHashAssinatura(
+  identificador: string,
+  data?: string | null,
+): string {
+  const base = `${identificador}|${data || ""}|CONEXAO-EXPRESS`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x1000193;
+  for (let i = 0; i < base.length; i++) {
+    const code = base.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 16777619) >>> 0;
+    h2 = Math.imul(h2 + code, 2654435761) >>> 0;
+  }
+  const hex = `${h1.toString(16).padStart(8, "0")}${h2
+    .toString(16)
+    .padStart(8, "0")}`.toUpperCase();
+  return hex.replace(/(.{4})(?=.)/g, "$1-");
+}
+
 // ── Numeração (pura/testável): REC-AAAAMM-SSSSS ────────────────────────────────
 export function montarNumeroRecibo(ano: number, mes: number, sequencia: number): string {
   return `REC-${ano}${String(mes).padStart(2, "0")}-${String(sequencia).padStart(5, "0")}`;
@@ -287,6 +308,20 @@ export function montarPDFRecibo(recibo: Recibo, empresa: DadosPDFRecibo, assinat
     doc.text(linhas, 16, y);
     y += linhas.length * 5 + 3;
   }
+
+  // Assinatura digital
+  const hashAssinatura = gerarHashAssinatura(
+    recibo.os_numero || recibo.numero,
+    recibo.data_emissao,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(5, 120, 87);
+  doc.text("ASSINADO DIGITALMENTE · CONEXÃO EXPRESS", 95, 236, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(90);
+  doc.text(`Autenticação: ${hashAssinatura}`, 95, 241, { align: "center" });
 
   // Assinatura
   doc.setDrawColor(90);

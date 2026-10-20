@@ -518,21 +518,27 @@ async function handleSimular(tel: string, nome: string, msg: string) {
       origem: "simulador_tms"
     };
     
-    fetch("http://localhost:5678/webhook/recrutamento-whatsapp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-      .then(response => {
-        if (response.ok) {
-          console.log("[Simular] ✅ Enviado para n8n webhook");
-        } else {
-          console.warn("[Simular] Erro ao enviar para n8n:", response.status);
-        }
+    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL?.trim() || "";
+
+    if (webhookUrl) {
+      fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       })
-      .catch(err => {
-        console.warn("[Simular] Erro ao conectar com n8n:", err);
-      });
+        .then(response => {
+          if (response.ok) {
+            console.log("[Simular] OK. Enviado para n8n webhook");
+          } else {
+            console.warn("[Simular] Erro ao enviar para n8n:", response.status);
+          }
+        })
+        .catch(err => {
+          console.warn("[Simular] Erro ao conectar com n8n:", err);
+        });
+    } else {
+      console.warn("[Simular] Webhook n8n não configurado (VITE_N8N_WEBHOOK_URL).");
+    }
 
     const resultado = await processarMensagemPrestador(tel, msg, nome);
     await carregarConversas();

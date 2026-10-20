@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import {
   montarPDFRecibo,
   valorPorExtenso,
+  gerarHashAssinatura,
   type DadosPDFRecibo,
   type Recibo,
 } from "@/services/financeiro/reciboService";
@@ -119,6 +120,14 @@ export default function ReciboPagamento({ open, onClose, os, empresa }: Props) {
   const recibo = useMemo(
     () => (os ? montarRecibo(os, tipo, empresa, formaPagamento, observacoes) : null),
     [os, tipo, empresa, formaPagamento, observacoes],
+  );
+
+  const hashAssinatura = useMemo(
+    () =>
+      recibo
+        ? gerarHashAssinatura(recibo.os_numero || recibo.numero, recibo.data_emissao)
+        : "",
+    [recibo],
   );
 
   const montarEmpresaPdf = async (): Promise<DadosPDFRecibo> => {
@@ -317,7 +326,16 @@ export default function ReciboPagamento({ open, onClose, os, empresa }: Props) {
               />
             </div>
 
-            <div className="mt-10 flex flex-col items-center">
+            <div className="mt-10 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/60 px-3 py-2 text-center">
+              <p className="text-[10px] font-black uppercase tracking-wide text-emerald-700">
+                Assinado digitalmente · Conexão Express
+              </p>
+              <p className="mt-0.5 font-mono text-[9px] text-emerald-800">
+                Autenticação: {hashAssinatura}
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-col items-center">
               <div className="h-px w-64 bg-slate-400" />
               <p className="mt-2 text-xs font-semibold text-slate-700">
                 {tipo === "prestador"

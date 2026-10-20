@@ -69,15 +69,6 @@ export const sidebarItems: SidebarItem[] = [
     modulo: "ordens_servico",
   },
   {
-    // Acesso rápido do desktop ao módulo de campo (a página abre em tela cheia).
-    title: "📱 OS Mobile (Campo)",
-    icon: Smartphone,
-    path: "/os-mobile",
-    modulo: "ordens_servico",
-    roles: ["super_admin", "admin", "operador"],
-    highlight: true,
-  },
-  {
     title: "Gestão Comercial",
     icon: Briefcase,
     path: "/comercial",
@@ -333,5 +324,14 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Central de Robôs", path: "/central-ia", icon: BrainCircuit },
       { title: "IA & Automações (Legado)", path: "/ia-automacoes", icon: Sparkles },
     ],
+  },
+  {
+    // Acesso rápido do desktop ao módulo de campo (fim da lista principal).
+    title: "📱 OS Mobile (Campo)",
+    icon: Smartphone,
+    path: "/os-mobile",
+    modulo: "ordens_servico",
+    roles: ["super_admin", "admin", "operador"],
+    highlight: true,
   },
 ];

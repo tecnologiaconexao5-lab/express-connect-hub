@@ -54,7 +54,7 @@ export default function Governanca() {
                        <TableCell className="font-semibold text-sm">Diego Balbino</TableCell>
                        <TableCell><Badge variant="outline" className="text-blue-600 bg-blue-50 border-blue-200">UPDATE :: PRICE_TABLE</Badge></TableCell>
                        <TableCell className="text-sm">Comercial</TableCell>
-                       <TableCell className="text-xs font-mono text-muted-foreground">192.168.0.1 (BR)</TableCell>
+                       <TableCell className="text-xs font-mono text-muted-foreground">189.55.10.42 (BR)</TableCell>
                        <TableCell><span className="text-xs font-bold text-green-600 flex gap-1 items-center"><UserCheck className="w-3 h-3"/> Commit</span></TableCell>
                      </TableRow>
                      <TableRow className="bg-orange-50/30">

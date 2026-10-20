@@ -95,6 +95,7 @@ import {
 } from "@/services/mobile/osMobileService";
 import type { DadosEmpresaFatura } from "@/services/financeiro/faturaService";
 import { useAuth } from "@/contexts/AuthContext";
+import { toClienteInsert } from "@/lib/dbMappers";
 import ReciboPagamento from "@/components/os-mobile/ReciboPagamento";
 
 // ============================================================
@@ -205,7 +206,7 @@ const FILTRO_ATIVO = { status: "ativo" };
 interface ParadaForm {
   id: string;
   sequencia: number;
-  tipo: "retirada" | "entrega";
+  tipo: "retirada" | "entrega" | "ambos";
   nomeLocal: string;
   endereco: EnderecoType;
   janelaInicio: string;
@@ -213,11 +214,14 @@ interface ParadaForm {
   instrucoes: string;
 }
 
-const criarParada = (tipo: "retirada" | "entrega", sequencia: number): ParadaForm => ({
+const etiquetaParada = (tipo: ParadaForm["tipo"]) =>
+  tipo === "retirada" ? "Retirada" : tipo === "entrega" ? "Entrega" : "Retirada e Entrega";
+
+const criarParada = (tipo: "retirada" | "entrega" | "ambos", sequencia: number): ParadaForm => ({
   id: uid(),
   sequencia,
   tipo,
-  nomeLocal: tipo === "retirada" ? "Retirada" : "Entrega",
+  nomeLocal: etiquetaParada(tipo),
   endereco: {
     cep: "",
     logradouro: "",
@@ -266,8 +270,18 @@ const formatarCep = (valor: unknown): string => {
   return valorTexto(valor);
 };
 
-const tipoDoPonto = (ponto: Record<string, unknown>): "retirada" | "entrega" | "outro" => {
+const tipoDoPonto = (
+  ponto: Record<string, unknown>,
+): "retirada" | "entrega" | "ambos" | "outro" => {
   const tipo = primeiroTexto(ponto.tipo_parada, ponto.tipo).toLowerCase();
+  if (
+    tipo.includes("ambos") ||
+    (tipo.includes("retirada") && tipo.includes("entrega")) ||
+    tipo.includes("retirada_entrega") ||
+    tipo.includes("coleta_entrega")
+  ) {
+    return "ambos";
+  }
   if (tipo.includes("retirada") || tipo.includes("coleta") || tipo.includes("origem")) return "retirada";
   if (tipo.includes("entrega") || tipo.includes("destino")) return "entrega";
   return "outro";
@@ -383,12 +397,15 @@ const gerarPadraoRotaWhatsApp = (
   );
 
   const retiradas = pontos.filter((ponto) => tipoDoPonto(ponto) === "retirada");
-  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) !== "retirada");
+  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) === "entrega");
+  const ambos = pontos.filter((ponto) => tipoDoPonto(ponto) === "ambos");
 
   const pontoRetirada: Record<string, unknown> =
-    retiradas[0] || (os.origem ? { endereco: os.origem } : {});
+    retiradas[0] || ambos[0] || (os.origem ? { endereco: os.origem } : {});
   const pontoEntrega: Record<string, unknown> =
-    entregas[entregas.length - 1] || (os.destino ? { endereco: os.destino } : {});
+    entregas[entregas.length - 1] ||
+    ambos[ambos.length - 1] ||
+    (os.destino ? { endereco: os.destino } : {});
 
   const bairroRetirada = bairroDoPonto(pontoRetirada) || "Origem";
   const bairroEntrega = bairroDoPonto(pontoEntrega) || "Destino";
@@ -410,9 +427,9 @@ const gerarPadraoRotaWhatsApp = (
   const blocos: string[] = [];
   let sequencia = 0;
 
-  const adicionarBloco = (tipo: "RET" | "ENT", ponto: Record<string, unknown>) => {
+  const adicionarBloco = (tipo: "RET" | "ENT" | "RET/ENT", ponto: Record<string, unknown>) => {
     sequencia += 1;
-    const icone = tipo === "RET" ? "🟣" : "🟠";
+    const icone = tipo === "ENT" ? "🟠" : tipo === "RET" ? "🟣" : "🟣🟠";
     blocos.push(
       [
         `*${icone} 【 ${sequencia} 】 ${tipo}* • ${formatarEnderecoSemNumeroPonto(ponto)}`,
@@ -422,12 +439,17 @@ const gerarPadraoRotaWhatsApp = (
     );
   };
 
-  (retiradas.length > 0 ? retiradas : [pontoRetirada]).forEach((ponto) =>
-    adicionarBloco("RET", ponto),
-  );
-  (entregas.length > 0 ? entregas : [pontoEntrega]).forEach((ponto) =>
-    adicionarBloco("ENT", ponto),
-  );
+  if (pontos.length > 0) {
+    pontos.forEach((ponto) => {
+      const tipo = tipoDoPonto(ponto);
+      if (tipo === "retirada") adicionarBloco("RET", ponto);
+      else if (tipo === "ambos") adicionarBloco("RET/ENT", ponto);
+      else adicionarBloco("ENT", ponto);
+    });
+  } else {
+    adicionarBloco("RET", pontoRetirada);
+    adicionarBloco("ENT", pontoEntrega);
+  }
 
   const linhas = [
     "*🟠 CONEXÃO ⚡ EXPRESS 🟣*",
@@ -490,12 +512,15 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
   );
 
   const retiradas = pontos.filter((ponto) => tipoDoPonto(ponto) === "retirada");
-  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) !== "retirada");
+  const entregas = pontos.filter((ponto) => tipoDoPonto(ponto) === "entrega");
+  const ambos = pontos.filter((ponto) => tipoDoPonto(ponto) === "ambos");
 
   const pontoRetirada: Record<string, unknown> =
-    retiradas[0] || (os.origem ? { endereco: os.origem } : {});
+    retiradas[0] || ambos[0] || (os.origem ? { endereco: os.origem } : {});
   const pontoEntrega: Record<string, unknown> =
-    entregas[entregas.length - 1] || (os.destino ? { endereco: os.destino } : {});
+    entregas[entregas.length - 1] ||
+    ambos[ambos.length - 1] ||
+    (os.destino ? { endereco: os.destino } : {});
 
   const observacaoOS = valorTexto(os.observacoesGerais)
     .replace(/^\[OS MOBILE\]\s*/i, "")
@@ -510,9 +535,12 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
   const blocos: string[] = [];
   let sequencia = 0;
 
-  const adicionarBloco = (tipo: "RETIRADA" | "ENTREGA", ponto: Record<string, unknown>) => {
+  const adicionarBloco = (
+    tipo: "RETIRADA" | "ENTREGA" | "RETIRADA E ENTREGA",
+    ponto: Record<string, unknown>,
+  ) => {
     sequencia += 1;
-    const icone = tipo === "RETIRADA" ? "🟣" : "🟠";
+    const icone = tipo === "RETIRADA" ? "🟣" : tipo === "ENTREGA" ? "🟠" : "🟣🟠";
 
     const procurarPor =
       primeiroTexto(ponto.procurar_por, ponto.contato, ponto.nome_local) || "—";
@@ -537,12 +565,17 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
     );
   };
 
-  (retiradas.length > 0 ? retiradas : [pontoRetirada]).forEach((ponto) =>
-    adicionarBloco("RETIRADA", ponto),
-  );
-  (entregas.length > 0 ? entregas : [pontoEntrega]).forEach((ponto) =>
-    adicionarBloco("ENTREGA", ponto),
-  );
+  if (pontos.length > 0) {
+    pontos.forEach((ponto) => {
+      const tipo = tipoDoPonto(ponto);
+      if (tipo === "retirada") adicionarBloco("RETIRADA", ponto);
+      else if (tipo === "ambos") adicionarBloco("RETIRADA E ENTREGA", ponto);
+      else adicionarBloco("ENTREGA", ponto);
+    });
+  } else {
+    adicionarBloco("RETIRADA", pontoRetirada);
+    adicionarBloco("ENTREGA", pontoEntrega);
+  }
 
   const linhas = [
     "🟠 CONEXÃO ⚡ EXPRESS 🟣",
@@ -677,6 +710,12 @@ function NovaOSView() {
   const [osCriada, setOsCriada] = useState<OSMobileLista | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
   const [clienteNome, setClienteNome] = useState("");
+  const [clienteRapidoOpen, setClienteRapidoOpen] = useState(false);
+  const [clienteRapidoNome, setClienteRapidoNome] = useState("");
+  const [clienteRapidoFantasia, setClienteRapidoFantasia] = useState("");
+  const [clienteRapidoCnpj, setClienteRapidoCnpj] = useState("");
+  const [clienteRapidoTelefone, setClienteRapidoTelefone] = useState("");
+  const [salvandoClienteRapido, setSalvandoClienteRapido] = useState(false);
   const [paradas, setParadas] = useState<ParadaForm[]>(() => [
     criarParada("retirada", 1),
     criarParada("entrega", 2),
@@ -862,6 +901,11 @@ function NovaOSView() {
   const limpar = () => {
     setClienteId(null);
     setClienteNome("");
+    setClienteRapidoOpen(false);
+    setClienteRapidoNome("");
+    setClienteRapidoFantasia("");
+    setClienteRapidoCnpj("");
+    setClienteRapidoTelefone("");
     setParadas([criarParada("retirada", 1), criarParada("entrega", 2)]);
     setRetornoOrigem(false);
     setTempoEspera(0);
@@ -898,11 +942,62 @@ function NovaOSView() {
     setRotaErro("");
   };
 
+  const salvarClienteRapido = async () => {
+    const nome = clienteRapidoNome.trim() || clienteRapidoFantasia.trim();
+    if (!nome) {
+      toast.error("Informe o nome do cliente");
+      return;
+    }
+    setSalvandoClienteRapido(true);
+    try {
+      const { data: tenantId } = await supabase.rpc("current_tenant_id_safe");
+      const payload = toClienteInsert({
+        razaoSocial: clienteRapidoNome.trim() || clienteRapidoFantasia.trim(),
+        nomeFantasia: clienteRapidoFantasia.trim() || clienteRapidoNome.trim(),
+        cnpj: clienteRapidoCnpj.trim() || undefined,
+        telefone: clienteRapidoTelefone.trim() || undefined,
+        status: "pre-cadastro",
+        observacoes: "Cadastro via Mobile - Requer Validação",
+        tenantId: typeof tenantId === "string" ? tenantId : undefined,
+      });
+
+      const { data, error } = await supabase
+        .from("clientes")
+        .insert([payload])
+        .select("id, nome_fantasia, razao_social")
+        .single();
+
+      if (error) throw error;
+
+      const row = data as Record<string, unknown> | null;
+      setClienteId(String(row?.id || ""));
+      setClienteNome(
+        String(row?.nome_fantasia || row?.razao_social || payload.nome_fantasia || nome),
+      );
+      setClienteRapidoOpen(false);
+      setClienteRapidoNome("");
+      setClienteRapidoFantasia("");
+      setClienteRapidoCnpj("");
+      setClienteRapidoTelefone("");
+      toast.success("Cliente pré-cadastrado", {
+        description: "Status: Pré-cadastro · requer validação pelo backoffice.",
+      });
+    } catch (error) {
+      toast.error("Não foi possível cadastrar o cliente", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSalvandoClienteRapido(false);
+    }
+  };
+
   const validar = (): string[] => {
     const erros: string[] = [];
     if (!clienteId) erros.push("Selecione o cliente da OS");
-    if (!paradas.some((p) => p.tipo === "retirada")) erros.push("Inclua pelo menos uma retirada");
-    if (!paradas.some((p) => p.tipo === "entrega")) erros.push("Inclua pelo menos uma entrega");
+    if (!paradas.some((p) => p.tipo === "retirada" || p.tipo === "ambos"))
+      erros.push("Inclua pelo menos uma retirada");
+    if (!paradas.some((p) => p.tipo === "entrega" || p.tipo === "ambos"))
+      erros.push("Inclua pelo menos uma entrega");
     if (paradas.some((p) => !enderecoTemCidade(p.endereco))) {
       erros.push("Preencha cidade/UF de todas as paradas");
     }
@@ -935,7 +1030,8 @@ function NovaOSView() {
         sequencia: index + 1,
         tipo: p.tipo === "retirada" ? "coleta" : "entrega",
         tipo_parada: p.tipo,
-        nome_local: p.nomeLocal || (p.tipo === "retirada" ? "Retirada" : "Entrega"),
+        ambos: p.tipo === "ambos",
+        nome_local: p.nomeLocal || etiquetaParada(p.tipo),
         logradouro: p.endereco.logradouro || "",
         numero: p.endereco.numero || "",
         complemento: p.endereco.complemento || "",
@@ -1215,7 +1311,88 @@ function NovaOSView() {
           secondaryField="cnpj"
           filters={FILTRO_ATIVO}
         />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-2 w-full border-dashed"
+          onClick={() => setClienteRapidoOpen(true)}
+        >
+          <Plus className="mr-2 h-4 w-4" /> Cadastro rápido (Pré-cadastro)
+        </Button>
       </SecaoMobile>
+
+      <Dialog open={clienteRapidoOpen} onOpenChange={setClienteRapidoOpen}>
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-md overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Cadastro rápido de cliente</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+              O cliente será criado como <strong>Pré-cadastro</strong> e ficará marcado como
+              “Cadastro via Mobile - Requer Validação” no TMS.
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-semibold text-slate-600">Razão social / Nome *</Label>
+              <Input
+                value={clienteRapidoNome}
+                onChange={(e) => setClienteRapidoNome(e.target.value)}
+                placeholder="Ex.: Transportes Silva Ltda"
+                className="mt-1 h-10"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-semibold text-slate-600">Nome fantasia</Label>
+              <Input
+                value={clienteRapidoFantasia}
+                onChange={(e) => setClienteRapidoFantasia(e.target.value)}
+                placeholder="Opcional"
+                className="mt-1 h-10"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600">CNPJ</Label>
+                <Input
+                  value={clienteRapidoCnpj}
+                  onChange={(e) => setClienteRapidoCnpj(e.target.value)}
+                  placeholder="Opcional"
+                  className="mt-1 h-10"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600">Telefone</Label>
+                <Input
+                  type="tel"
+                  value={clienteRapidoTelefone}
+                  onChange={(e) => setClienteRapidoTelefone(e.target.value)}
+                  placeholder="Opcional"
+                  className="mt-1 h-10"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => void salvarClienteRapido()}
+              disabled={salvandoClienteRapido}
+              className="h-11 w-full bg-orange-600 text-white hover:bg-orange-700"
+            >
+              {salvandoClienteRapido ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              Salvar pré-cadastro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <SecaoMobile
         icon={<MapPinned className="h-4 w-4" />}
@@ -1265,6 +1442,18 @@ function NovaOSView() {
                   }`}
                 >
                   <MapPin className="h-3.5 w-3.5" /> Entrega
+                </button>
+                <button
+                  type="button"
+                  onClick={() => atualizarParada(parada.id, { tipo: "ambos" })}
+                  className={`col-span-2 flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-bold transition-colors ${
+                    parada.tipo === "ambos"
+                      ? "border-violet-500 bg-violet-600 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  <MapPin className="h-3.5 w-3.5" /> Retirada e Entrega (Ambos)
                 </button>
               </div>
 
@@ -2700,6 +2889,7 @@ interface FinanceiroRowMobile {
   prestador: string | null;
   fornecedor_nome: string | null;
   fornecedor_documento: string | null;
+  chave_pix: string | null;
   observacoes: string | null;
   data_pagamento: string | null;
 }
@@ -2717,7 +2907,7 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
       const { data, error } = await supabase
         .from("financeiro_pagar")
         .select(
-          "id, descricao, valor, vencimento, data_vencimento, status, os_id, prestador, fornecedor_nome, fornecedor_documento, observacoes, data_pagamento",
+          "id, descricao, valor, vencimento, data_vencimento, status, os_id, prestador, fornecedor_nome, fornecedor_documento, chave_pix, observacoes, data_pagamento",
         )
         .in("status", ["pendente", "aberto", "parcial"])
         .order("vencimento", { ascending: true })
@@ -2751,6 +2941,28 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
         });
       }
 
+      const prestadorIds = [
+        ...new Set(
+          rows
+            .map((r) => r.prestador)
+            .filter((v): v is string => Boolean(v) && /^[0-9a-f-]{36}$/i.test(String(v))),
+        ),
+      ];
+      const pixPrestador = new Map<string, string>();
+
+      if (prestadorIds.length) {
+        const { data: prestadoresData } = await supabase
+          .from("prestadores")
+          .select("id, chave_pix")
+          .in("id", prestadorIds);
+
+        (prestadoresData || []).forEach((p) => {
+          const row = p as Record<string, unknown>;
+          const chave = typeof row.chave_pix === "string" ? row.chave_pix.trim() : "";
+          if (row.id && chave) pixPrestador.set(String(row.id), chave);
+        });
+      }
+
       const mapped: RepasseMobile[] = rows.map((row) => {
         const os = row.os_id ? osMap.get(row.os_id) : undefined;
         const obsLower = (row.observacoes || "").toLowerCase();
@@ -2767,6 +2979,7 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
           prestador: row.prestador,
           fornecedorNome: row.fornecedor_nome,
           fornecedorDocumento: row.fornecedor_documento,
+          chavePix: row.chave_pix || (row.prestador ? pixPrestador.get(row.prestador) || null : null),
           observacoes: row.observacoes,
           dataPagamento: row.data_pagamento,
           isMobile: Boolean(os?.isMobile || marcadorMobile),
@@ -2833,6 +3046,22 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
       });
     } finally {
       setBaixando(null);
+    }
+  };
+
+  const copiarPix = async (repasse: RepasseMobile) => {
+    const chave = (repasse.chavePix || "").trim();
+    if (!chave) {
+      toast.error("Chave PIX não cadastrada", {
+        description: "Cadastre a chave PIX do prestador no TMS.",
+      });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(chave);
+      toast.success("PIX copiado", { description: chave });
+    } catch {
+      toast.error("Não foi possível copiar a chave PIX");
     }
   };
 
@@ -2952,6 +3181,18 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Abrir TMS
               </Button>
             </div>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void copiarPix(repasse)}
+              disabled={!repasse.chavePix}
+              className="mt-2 w-full"
+            >
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" /> Copiar PIX
+              {repasse.chavePix ? "" : " (não cadastrado)"}
+            </Button>
           </article>
         ))}
       </div>

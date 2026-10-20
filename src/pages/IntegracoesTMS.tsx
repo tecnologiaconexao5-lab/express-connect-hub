@@ -56,14 +56,14 @@ function LogBox({ logs }: { logs: LogEntry[] }) {
 // ── Aba WhatsApp / Evolution API ───────────────────────────────────────────
 function AbaWhatsApp({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllLogs: React.Dispatch<React.SetStateAction<LogEntry[]>> }) {
   const [serverUrl, setServerUrl] = useState(
-    import.meta.env.VITE_EVOLUTION_SERVER_URL || "http://127.0.0.1:8080"
+    import.meta.env.VITE_EVOLUTION_SERVER_URL || import.meta.env.VITE_EVOLUTION_API_URL || ""
   );
   const [apiKey, setApiKey] = useState("");
   const [instancia, setInstancia] = useState(
     import.meta.env.VITE_EVOLUTION_INSTANCE || "recrutamento-conexao-express"
   );
   const [webhookUrl, setWebhookUrl] = useState(
-    import.meta.env.VITE_N8N_WEBHOOK_URL || "http://localhost:5678/webhook/recrutamento-whatsapp"
+    import.meta.env.VITE_N8N_WEBHOOK_URL || ""
   );
   const [telTeste, setTelTeste] = useState("5511999999999");
   const [msgTeste, setMsgTeste] = useState("Teste TMS Conexão Express 🚚");
@@ -94,7 +94,7 @@ function AbaWhatsApp({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllLogs:
             <div className="space-y-1">
               <Label>Server URL</Label>
               <Input value={serverUrl} onChange={e => setServerUrl(e.target.value)}
-                placeholder="http://127.0.0.1:8080" />
+                placeholder="https://evolution.suaempresa.com.br" />
             </div>
             <div className="space-y-1">
               <Label>API Key (Global)</Label>
@@ -234,7 +234,7 @@ function AbaWhatsApp({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllLogs:
 
 // ── Aba n8n ────────────────────────────────────────────────────────────────
 function AbaNCN({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllLogs: React.Dispatch<React.SetStateAction<LogEntry[]>> }) {
-  const [n8nUrl, setN8nUrl] = useState(import.meta.env.VITE_N8N_WEBHOOK_URL || "http://localhost:5678/webhook/recrutamento-whatsapp");
+  const [n8nUrl, setN8nUrl] = useState(import.meta.env.VITE_N8N_WEBHOOK_URL || "");
   const [loading, setLoading] = useState(false);
   const log = (msg: string, ok: boolean) => addLog(setAllLogs, msg, ok);
 
@@ -261,7 +261,7 @@ function AbaNCN({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllLogs: Reac
           <div className="space-y-1">
             <Label>URL do Webhook Recrutamento</Label>
             <Input value={n8nUrl} onChange={e => setN8nUrl(e.target.value)}
-              placeholder="http://localhost:5678/webhook/recrutamento-whatsapp" />
+              placeholder="https://n8n.suaempresa.com.br/webhook/recrutamento-whatsapp" />
           </div>
 
           <Button variant="outline" size="sm" disabled={loading}

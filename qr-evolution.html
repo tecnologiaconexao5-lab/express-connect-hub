@@ -119,14 +119,25 @@
             document.getElementById('status').className = 'status connecting';
         }, 30000);
         
+        // Configuração da API via query string (?api=https://...&apikey=...)
+        // ou localStorage. Nunca usa localhost/IP local por padrão.
+        const params = new URLSearchParams(window.location.search);
+        const apiBase = (params.get('api') || localStorage.getItem('evolution_api_url') || '').replace(/\/+$/, '');
+        const apiKey = params.get('apikey') || localStorage.getItem('evolution_api_key') || '';
+        const instance = params.get('instance') || localStorage.getItem('evolution_instance') || 'conexao-express';
+
+        if (!apiBase) {
+            document.getElementById('status').innerHTML = 'Configure a URL pública da Evolution API via ?api=https://seu-servidor';
+        }
+
         // Verificar conexão a cada 10 segundos
         let tentativas = 0;
         const verificarConexao = async () => {
-            if (tentativas >= 10) return;
+            if (!apiBase || tentativas >= 10) return;
             tentativas++;
             try {
-                const response = await fetch('http://localhost:8080/instance/connectionState/conexao-express', {
-                    headers: { 'apikey': '123456' }
+                const response = await fetch(`${apiBase}/instance/connectionState/${instance}`, {
+                    headers: { 'apikey': apiKey }
                 });
                 const data = await response.json();
                 if (data.instance?.state === 'open') {

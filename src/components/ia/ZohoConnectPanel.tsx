@@ -6,8 +6,17 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, CheckCircle2, AlertTriangle, ExternalLink, ServerOff, Mail, RefreshCw, Plug, Unplug, Shield, LogOut, Send, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
-const SERVER_PORT = Number(import.meta.env.VITE_ZOHO_CONNECT_PORT) || 3031;
-const SERVER_URL = `http://localhost:${SERVER_PORT}`;
+/**
+ * Backend OAuth do Zoho. Configurado em VITE_ZOHO_CONNECT_URL (nuvem).
+ * Não há fallback para localhost/IP local — o painel falha de forma
+ * explícita quando o backend público não está configurado.
+ */
+const SERVER_URL = (import.meta.env.VITE_ZOHO_CONNECT_URL || import.meta.env.VITE_BACKEND_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
+const BACKEND_CONFIGURADO = Boolean(SERVER_URL);
+const MENSAGEM_BACKEND_AUSENTE =
+  "Backend do Zoho não configurado. Defina VITE_ZOHO_CONNECT_URL no ambiente de produção.";
 
 interface StatusConexao {
   conectado: boolean;
@@ -37,6 +46,12 @@ export function ZohoConnectPanel() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const verificarStatus = async () => {
+    if (!BACKEND_CONFIGURADO) {
+      setServerOnline(false);
+      setStatus(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${SERVER_URL}/api/integracoes/zoho/status`, { signal: AbortSignal.timeout(5000) });
@@ -72,6 +87,12 @@ export function ZohoConnectPanel() {
   };
 
   const testarEnvio = async () => {
+    if (!BACKEND_CONFIGURADO) {
+      setEstadoTeste("erro");
+      setResultado(MENSAGEM_BACKEND_AUSENTE);
+      toast.error(MENSAGEM_BACKEND_AUSENTE);
+      return;
+    }
     setTestando(true);
     setEstadoTeste("solicitando");
     setResultado(null);
@@ -96,6 +117,12 @@ export function ZohoConnectPanel() {
 
   const executarTeste = async () => {
     if (!tarefaId) return;
+    if (!BACKEND_CONFIGURADO) {
+      setEstadoTeste("erro");
+      setResultado(MENSAGEM_BACKEND_AUSENTE);
+      toast.error(MENSAGEM_BACKEND_AUSENTE);
+      return;
+    }
     setEstadoTeste("enviando");
     setResultado(null);
     try {
@@ -125,7 +152,7 @@ export function ZohoConnectPanel() {
 
   // Polling: when aguardando_aprovacao, check every 5s if approved
   useEffect(() => {
-    if (estadoTeste === "aguardando_aprovacao" && tarefaId) {
+    if (estadoTeste === "aguardando_aprovacao" && tarefaId && BACKEND_CONFIGURADO) {
       pollingRef.current = setInterval(async () => {
         try {
           const res = await fetch(`${SERVER_URL}/api/integracoes/zoho/test-status?tarefa_id=${tarefaId}`, {
@@ -158,6 +185,10 @@ export function ZohoConnectPanel() {
   }, [estadoTeste, tarefaId]);
 
   const desconectar = async () => {
+    if (!BACKEND_CONFIGURADO) {
+      toast.error(MENSAGEM_BACKEND_AUSENTE);
+      return;
+    }
     setDesconectando(true);
     try {
       const res = await fetch(`${SERVER_URL}/api/integracoes/zoho/disconnect`, {
@@ -381,7 +412,7 @@ export function ZohoConnectPanel() {
         )}
 
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-800">
-          <span>Servidor local: {SERVER_URL}</span>
+          <span>Backend: {SERVER_URL || "não configurado"}</span>
           <Button variant="ghost" size="sm" className="h-6 text-xs text-slate-500 hover:text-slate-300" onClick={verificarStatus}>
             <RefreshCw className="w-3 h-3 mr-1" />
             Atualizar

@@ -19,10 +19,10 @@ import { describe, it, expect, beforeAll, beforeAll as beforeAllAlias } from 'vi
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // =============================================================================
-// CONFIG — usa o Supabase local via env (PORT 54321) ou remoto via .env
+// CONFIG — usa exclusivamente as variáveis de ambiente (sem fallback local)
 // =============================================================================
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'http://localhost:54321'
-const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || ''
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() || ''
+const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim() || ''
 
 // Usuário de teste (deve ser criado antes dos testes)
 const TEST_EMAIL = 'ag07j18_4_teste_rpc@conexaoexpress.com.br'
@@ -35,6 +35,11 @@ let rpcExists = false
 // SETUP — detecta se a RPC existe antes de rodar os testes
 // =============================================================================
 beforeAll(async () => {
+  if (!SUPABASE_URL || !ANON_KEY) {
+    console.log('[AG-07J.18.4] VITE_SUPABASE_URL/ANON_KEY ausentes — testes serão pulados')
+    return
+  }
+
   supabase = createClient(SUPABASE_URL, ANON_KEY)
 
   // Testar se a RPC existe (chamando com params mínimos e verificando erro)
@@ -63,7 +68,7 @@ beforeAll(async () => {
     await supabase.auth.signUp({
       email: TEST_EMAIL,
       password: TEST_PASSWORD,
-      data: { origem: 'test_ag07j18_4', tipo_usuario: 'prestador' },
+      options: { data: { origem: 'test_ag07j18_4', tipo_usuario: 'prestador' } },
     })
   }
 

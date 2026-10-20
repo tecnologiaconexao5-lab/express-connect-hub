@@ -5,8 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, CheckCircle2, AlertTriangle, ExternalLink, ArrowRight } from "lucide-react";
 
-const SERVER_PORT = Number(import.meta.env.VITE_ZOHO_CONNECT_PORT) || 3031;
-const SERVER_URL = `http://localhost:${SERVER_PORT}`;
+/**
+ * Backend OAuth do Zoho. Deve ser uma URL pública (nuvem) configurada em
+ * VITE_ZOHO_CONNECT_URL. Nunca usamos localhost/IP local como fallback.
+ */
+const SERVER_URL = (import.meta.env.VITE_ZOHO_CONNECT_URL || import.meta.env.VITE_BACKEND_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
 
 export default function ZohoCallback() {
   const navigate = useNavigate();
@@ -39,8 +44,17 @@ export default function ZohoCallback() {
   }, []);
 
   async function executar() {
+    if (!SERVER_URL) {
+      setStatus("erro");
+      setMensagem("Backend do Zoho não configurado.");
+      setDetalhe(
+        "Defina VITE_ZOHO_CONNECT_URL apontando para o backend público (nuvem) que expõe /api/integracoes/zoho.",
+      );
+      return;
+    }
+
     try {
-      setMensagem("Conectando ao servidor local...");
+      setMensagem("Conectando ao backend do Zoho...");
       const statusRes = await fetch(`${SERVER_URL}/api/integracoes/zoho/status`, {
         signal: AbortSignal.timeout(5000),
       });
@@ -77,8 +91,8 @@ export default function ZohoCallback() {
     } catch (err: any) {
       setStatus("erro");
       if (err.name === "TimeoutError" || err.name === "AbortError") {
-        setMensagem("Servidor local não respondeu.");
-        setDetalhe("Certifique-se de que o servidor está rodando: npx tsx scripts/zoho_connect_server.ts");
+        setMensagem("Backend do Zoho não respondeu.");
+        setDetalhe(`Verifique se o backend público configurado em VITE_ZOHO_CONNECT_URL está no ar (${SERVER_URL}).`);
       } else {
         setMensagem(err.message || "Erro desconhecido");
         setDetalhe("");

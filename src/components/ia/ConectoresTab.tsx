@@ -522,7 +522,7 @@ export function ConectoresTab() {
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div><Label>URL Base</Label><Input value={formConector.url_base} onChange={e => setFormConector({ ...formConector, url_base: e.target.value })} placeholder="Ex: http://localhost:8080" /></div>
+              <div><Label>URL Base</Label><Input value={formConector.url_base} onChange={e => setFormConector({ ...formConector, url_base: e.target.value })} placeholder="Ex: https://evolution.suaempresa.com.br" /></div>
               <div><Label>Limite de Uso / Dia</Label><Input type="number" min={1} value={formConector.limite_uso_dia} onChange={e => setFormConector({ ...formConector, limite_uso_dia: parseInt(e.target.value) || 100 })} placeholder="100" /></div>
             </div>
             <div className="border rounded-md p-3 bg-muted/30">

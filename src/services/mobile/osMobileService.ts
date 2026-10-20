@@ -26,6 +26,7 @@ export interface OSMobileLista {
   prestadorNome: string | null;
   veiculoTipo: string | null;
   valorCliente: number;
+  statusFaturamento?: string | null;
   custoPrestador: number;
   distanciaKm: number;
   origem: string | null;
@@ -61,6 +62,7 @@ export interface RepasseMobile {
   prestador: string | null;
   fornecedorNome: string | null;
   fornecedorDocumento: string | null;
+  chavePix: string | null;
   observacoes: string | null;
   dataPagamento: string | null;
   isMobile: boolean;
@@ -78,6 +80,7 @@ interface OSRow {
   prestador_id: string | null;
   veiculo_tipo: string | null;
   valor_cliente: number | string | null;
+  status_faturamento: string | null;
   custo_prestador: number | string | null;
   distancia_km: number | string | null;
   origem: string | null;
@@ -105,6 +108,7 @@ interface FinanceiroRow {
   prestador: string | null;
   fornecedor_nome: string | null;
   fornecedor_documento: string | null;
+  chave_pix: string | null;
   observacoes: string | null;
   data_pagamento: string | null;
 }
@@ -160,7 +164,7 @@ export async function listarOSAbertas(params: {
     let query = supabase
       .from("ordens_servico")
       .select(
-        "id, numero, status, data, created_at, cliente, cliente_id, prestador, prestador_id, veiculo_tipo, valor_cliente, custo_prestador, distancia_km, origem, destino, peso, volumes, observacoes_gerais, recebedor_nome, recebedor_documento, enderecos, localizacao_entrega_json, carga, historico, anexos",
+        "id, numero, status, data, created_at, cliente, cliente_id, prestador, prestador_id, veiculo_tipo, valor_cliente, status_faturamento, custo_prestador, distancia_km, origem, destino, peso, volumes, observacoes_gerais, recebedor_nome, recebedor_documento, enderecos, localizacao_entrega_json, carga, historico, anexos",
       )
       .in("status", params.status)
       .order("created_at", { ascending: false })
@@ -215,6 +219,7 @@ export async function listarOSAbertas(params: {
         prestadorNome: prestadorId ? prestadoresMap.get(prestadorId) || null : null,
         veiculoTipo: row.veiculo_tipo,
         valorCliente: num(row.valor_cliente),
+        statusFaturamento: row.status_faturamento,
         custoPrestador: num(row.custo_prestador),
         distanciaKm: num(row.distancia_km),
         origem: row.origem,
@@ -360,7 +365,7 @@ export async function listarRepassesPendentes(): Promise<RepasseMobile[]> {
     const { data, error } = await supabase
       .from("financeiro_pagar")
       .select(
-        "id, descricao, valor, vencimento, data_vencimento, status, os_id, prestador, fornecedor_nome, fornecedor_documento, observacoes, data_pagamento",
+        "id, descricao, valor, vencimento, data_vencimento, status, os_id, prestador, fornecedor_nome, fornecedor_documento, chave_pix, observacoes, data_pagamento",
       )
       .in("status", ["pendente", "aberto", "parcial"])
       .order("vencimento", { ascending: true })
@@ -394,6 +399,28 @@ export async function listarRepassesPendentes(): Promise<RepasseMobile[]> {
       });
     }
 
+    const prestadorIds = [
+      ...new Set(
+        rows
+          .map((r) => r.prestador)
+          .filter((v): v is string => Boolean(v) && /^[0-9a-f-]{36}$/i.test(String(v))),
+      ),
+    ];
+    const pixPrestador = new Map<string, string>();
+
+    if (prestadorIds.length) {
+      const { data: prestadoresData } = await supabase
+        .from("prestadores")
+        .select("id, chave_pix")
+        .in("id", prestadorIds);
+
+      (prestadoresData || []).forEach((p) => {
+        const row = p as Record<string, unknown>;
+        const chave = typeof row.chave_pix === "string" ? row.chave_pix.trim() : "";
+        if (row.id && chave) pixPrestador.set(String(row.id), chave);
+      });
+    }
+
     return rows.map((row) => {
       const os = row.os_id ? osMap.get(row.os_id) : undefined;
       const obsLower = (row.observacoes || "").toLowerCase();
@@ -410,6 +437,7 @@ export async function listarRepassesPendentes(): Promise<RepasseMobile[]> {
         prestador: row.prestador,
         fornecedorNome: row.fornecedor_nome,
         fornecedorDocumento: row.fornecedor_documento,
+        chavePix: row.chave_pix || (row.prestador ? pixPrestador.get(row.prestador) || null : null),
         observacoes: row.observacoes,
         dataPagamento: row.data_pagamento,
         isMobile: Boolean(os?.isMobile || marcadorMobile),
