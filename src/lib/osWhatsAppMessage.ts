@@ -27,11 +27,17 @@ export interface PontoEnderecoMensagem {
   janela_fim?: string;
   contato?: string;
   contatoNome?: string;
+  nomeContato?: string;
+  nome_contato?: string;
+  contato_nome?: string;
   recebedor?: string;
   recebedorPrevisto?: string;
   telefone?: string;
   telefoneContato?: string;
+  telefone_contato?: string;
   contatoTelefone?: string;
+  contato_telefone?: string;
+  material?: string;
   instrucoes?: string;
   observacoes?: string;
   observacaoPonto?: string;
@@ -221,17 +227,22 @@ const enderecoCompleto = (e: PontoEnderecoMensagem): string => {
   return partes.join(" - ") || "—";
 };
 
-const nomeMotoboy = (data: DadosMensagemMotoboy): string =>
-  primeiroNaoVazio(
+const nomeMotoboy = (data: DadosMensagemMotoboy): string => {
+  const nome = primeiroNaoVazio(
     data?.nomeMotorista,
     data?.prestadorNome,
     data?.nomePrestador,
     data?.prestador,
     data?.avulsoNome,
   );
+  return nome === "—" ? "Motorista" : nome;
+};
 
 const contatoPonto = (e: PontoEnderecoMensagem): string =>
   primeiroNaoVazio(
+    e?.nomeContato,
+    e?.nome_contato,
+    e?.contato_nome,
     e?.contato,
     e?.contatoNome,
     e?.recebedor,
@@ -240,17 +251,19 @@ const contatoPonto = (e: PontoEnderecoMensagem): string =>
   );
 
 const telefonePonto = (e: PontoEnderecoMensagem): string =>
-  primeiroNaoVazio(e?.telefone, e?.contatoTelefone, e?.telefoneContato);
+  primeiroNaoVazio(
+    e?.telefoneContato,
+    e?.telefone_contato,
+    e?.contatoTelefone,
+    e?.contato_telefone,
+    e?.telefone,
+  );
+
+const materialPonto = (e: PontoEnderecoMensagem, data: DadosMensagemMotoboy): string =>
+  primeiroNaoVazio(e?.material, e?.volumes, data?.volumes);
 
 const instrucoesPonto = (e: PontoEnderecoMensagem): string =>
   primeiroNaoVazio(e?.instrucoes, e?.observacoes, e?.observacaoPonto);
-
-const volumesPonto = (e: PontoEnderecoMensagem, data: DadosMensagemMotoboy): string => {
-  const v = e?.volumes ?? data?.volumes;
-  const n = Number(v);
-  if (Number.isFinite(n) && n > 0) return String(v);
-  return primeiroNaoVazio(v);
-};
 
 // ============================================================
 // TEMPLATE 1 — RESUMO DA ROTA (privacidade: sem número da porta)
@@ -308,7 +321,7 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
     `⏰ JANELA: ${janela(origem)}`,
     `👤 PROCURAR: ${contatoPonto(origem)}`,
     `📞 TELEFONE: ${telefonePonto(origem)}`,
-    `📦 RETIRAR: ${volumesPonto(origem, data)}`,
+    `📦 RETIRAR: ${materialPonto(origem, data)}`,
     `⚠️ ORIENTAÇÕES: ${instrucoesPonto(origem)}`,
     "",
     "━━━━━━━━━━━━━━━━━",
@@ -320,7 +333,7 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
     `⏰ JANELA: ${janela(destino)}`,
     `👤 PROCURAR: ${contatoPonto(destino)}`,
     `📞 TELEFONE: ${telefonePonto(destino)}`,
-    `📦 ENTREGAR: ${volumesPonto(destino, data)}`,
+    `📦 ENTREGAR: ${materialPonto(destino, data)}`,
     `⚠️ ORIENTAÇÕES: ${instrucoesPonto(destino)}`,
     "",
     "━━━━━━━━━━━━━━━━━",

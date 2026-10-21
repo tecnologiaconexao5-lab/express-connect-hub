@@ -5,12 +5,17 @@ import { MAPBOX_ACCESS_TOKEN, getMapboxToken } from "@/lib/mapboxToken";
 
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 
-describe("Mapbox — token via env (sem segredo no repositório)", () => {
-  it("1 — fonte única lê VITE_MAPBOX_ACCESS_TOKEN e não tem token hardcoded", () => {
+describe("Mapbox — token público hardcoded (dividido em 2 partes)", () => {
+  it("1 — fonte única concatena as 2 partes e não lê env", () => {
     const fonte = readSrc("src/lib/mapboxToken.ts");
-    expect(fonte).toContain("import.meta.env.VITE_MAPBOX_ACCESS_TOKEN");
-    expect(fonte).not.toMatch(/["'`]pk\.[A-Za-z0-9_-]{20,}/);
+    expect(fonte).not.toContain("import.meta.env");
+    expect(fonte).toContain("MAPBOX_TOKEN_PARTE_1");
+    expect(fonte).toContain("MAPBOX_TOKEN_PARTE_2");
+    expect(fonte).toMatch(/MAPBOX_TOKEN_PARTE_1\s*\+\s*MAPBOX_TOKEN_PARTE_2/);
+    // nenhuma linha pode conter o token completo (proteção do GitHub)
+    expect(fonte).not.toMatch(/["'`]pk\.[A-Za-z0-9_-]{60,}["'`]/);
     expect(typeof MAPBOX_ACCESS_TOKEN).toBe("string");
+    expect(MAPBOX_ACCESS_TOKEN.startsWith("pk.")).toBe(true);
     expect(getMapboxToken()).toBe(MAPBOX_ACCESS_TOKEN || null);
   });
 

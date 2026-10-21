@@ -232,6 +232,12 @@ interface ParadaForm {
   janelaInicio: string;
   janelaFim: string;
   instrucoes: string;
+  /** Com quem falar no local (placeholder "PROCURAR" do WhatsApp) */
+  nomeContato: string;
+  /** Telefone do contato no local (placeholder "TELEFONE" do WhatsApp) */
+  telefoneContato: string;
+  /** O que será retirado/entregue no local (placeholder "RETIRAR/ENTREGAR") */
+  material: string;
   /** Salva o endereço em `enderecos_clientes` vinculado ao cliente da OS */
   salvarFavorito: boolean;
 }
@@ -257,6 +263,9 @@ const criarParada = (tipo: "retirada" | "entrega" | "ambos", sequencia: number):
   janelaInicio: "",
   janelaFim: "",
   instrucoes: "",
+  nomeContato: "",
+  telefoneContato: "",
+  material: "",
   salvarFavorito: false,
 });
 
@@ -562,12 +571,24 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
     sequencia += 1;
     const icone = tipo === "RETIRADA" ? "🟣" : tipo === "ENTREGA" ? "🟠" : "🟣🟠";
 
+    const verboMaterial =
+      tipo === "ENTREGA" ? "ENTREGAR" : tipo === "RETIRADA" ? "RETIRAR" : "RETIRAR/ENTREGAR";
+
     const procurarPor =
-      primeiroTexto(ponto.procurar_por, ponto.contato, ponto.nome_local) || "—";
-    const telefone = primeiroTexto(ponto.telefone, ponto.contato_telefone) || "—";
-    const instrucoes = primeiroTexto(ponto.instrucoes, ponto.descricao) || "—";
+      primeiroTexto(
+        ponto.nome_contato,
+        ponto.procurar_por,
+        ponto.contato_nome,
+        ponto.contato,
+        ponto.nome_local,
+      ) || "—";
+    const telefone =
+      primeiroTexto(ponto.telefone_contato, ponto.contato_telefone, ponto.telefone) || "—";
+    const material = primeiroTexto(ponto.material, ponto.volumes) || "—";
     const orientacoes =
-      primeiroTexto(ponto.observacoes, ponto.observacao, ponto.referencia) || observacaoOS || "—";
+      primeiroTexto(ponto.instrucoes, ponto.observacoes, ponto.observacao, ponto.referencia) ||
+      observacaoOS ||
+      "—";
 
     blocos.push(
       [
@@ -579,7 +600,7 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
         `⏰ JANELA: ${horarioDoPonto(ponto)}`,
         `👤 PROCURAR: ${procurarPor}`,
         `📞 TELEFONE: ${telefone}`,
-        `📦 RETIRAR: ${instrucoes}`,
+        `📦 ${verboMaterial}: ${material}`,
         `⚠️ ORIENTAÇÕES: ${orientacoes}`,
       ].join("\n"),
     );
@@ -761,6 +782,8 @@ function NovaOSView() {
   const [veiculoManual, setVeiculoManual] = useState(false);
   const [prestadorId, setPrestadorId] = useState<string | null>(null);
   const [prestadorNome, setPrestadorNome] = useState("");
+  /** Nome usado na saudação do WhatsApp ("Olá, {nomeMotorista}!"). */
+  const [nomeMotorista, setNomeMotorista] = useState("");
   const [avulsoNome, setAvulsoNome] = useState("");
   const [avulsoDocumento, setAvulsoDocumento] = useState("");
   const [avulsoTelefone, setAvulsoTelefone] = useState("");
@@ -945,6 +968,7 @@ function NovaOSView() {
     setVeiculoManual(false);
     setPrestadorId(null);
     setPrestadorNome("");
+    setNomeMotorista("");
     setAvulsoNome("");
     setAvulsoDocumento("");
     setAvulsoTelefone("");
@@ -1103,8 +1127,11 @@ function NovaOSView() {
         estado: p.endereco.estado || "",
         cep: p.endereco.cep || "",
         referencia: p.endereco.referencia || "",
-        contato_nome: p.endereco.contatoNome || "",
-        contato_telefone: p.endereco.contatoTelefone || "",
+        contato_nome: p.nomeContato || p.endereco.contatoNome || "",
+        contato_telefone: p.telefoneContato || p.endereco.contatoTelefone || "",
+        nome_contato: p.nomeContato || p.endereco.contatoNome || "",
+        telefone_contato: p.telefoneContato || p.endereco.contatoTelefone || "",
+        material: p.material || "",
         endereco: montarEnderecoTexto(p.endereco),
         endereco_formatado: montarEnderecoTexto(p.endereco),
         latitude: p.endereco.latitude ?? null,
@@ -1123,6 +1150,7 @@ function NovaOSView() {
         tipo_operacao: "fracionado",
         veiculo_sugerido: veiculoTipo,
         enderecos: enderecosMeta,
+        nome_motorista: nomeMotorista.trim() || undefined,
         prestador_avulso: prestadorId
           ? undefined
           : {
@@ -1237,8 +1265,8 @@ function NovaOSView() {
               uf: p.endereco.estado,
               referencia: p.endereco.referencia,
               instrucoes: p.instrucoes || p.endereco.referencia,
-              contatoLocal: p.endereco.contatoNome,
-              telefoneLocal: p.endereco.contatoTelefone,
+              contatoLocal: p.nomeContato || p.endereco.contatoNome,
+              telefoneLocal: p.telefoneContato || p.endereco.contatoTelefone,
               latitude: p.endereco.latitude ?? null,
               longitude: p.endereco.longitude ?? null,
             }),
@@ -1302,7 +1330,7 @@ function NovaOSView() {
         clienteId,
         clienteNome: clienteNome || null,
         prestadorId,
-        prestadorNome: prestadorId ? prestadorNome : avulsoNome.trim() || null,
+        prestadorNome: nomeMotorista.trim() || (prestadorId ? prestadorNome : avulsoNome.trim()) || null,
         veiculoTipo,
         valorCliente: totalCliente,
         statusFaturamento: null,
@@ -1588,6 +1616,8 @@ function NovaOSView() {
                   const nomeAtual = parada.nomeLocal.trim().toLowerCase();
                   atualizarParada(parada.id, {
                     instrucoes: parada.instrucoes || salvo.instrucoes || salvo.referencia || "",
+                    nomeContato: parada.nomeContato || salvo.contatoLocal || "",
+                    telefoneContato: parada.telefoneContato || salvo.telefoneLocal || "",
                     nomeLocal:
                       (!nomeAtual || nomeAtual === etiquetaAtual) && salvo.nomeLocal
                         ? salvo.nomeLocal
@@ -1660,6 +1690,52 @@ function NovaOSView() {
                   value={parada.instrucoes}
                   onChange={(e) => atualizarParada(parada.id, { instrucoes: e.target.value })}
                   placeholder="Ex.: falar na portaria, documento com RG"
+                  className="mt-1 h-9 bg-white text-sm"
+                />
+              </div>
+
+              <div className="mt-2">
+                <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Procurar por (contato no local)
+                </Label>
+                <Input
+                  value={parada.nomeContato}
+                  onChange={(e) => atualizarParada(parada.id, { nomeContato: e.target.value })}
+                  placeholder="Ex.: João da portaria"
+                  className="mt-1 h-9 bg-white text-sm"
+                />
+              </div>
+
+              <div className="mt-2">
+                <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Telefone do contato
+                </Label>
+                <Input
+                  type="tel"
+                  inputMode="tel"
+                  value={parada.telefoneContato}
+                  onChange={(e) => atualizarParada(parada.id, { telefoneContato: e.target.value })}
+                  placeholder="(11) 99999-9999"
+                  className="mt-1 h-9 bg-white text-sm"
+                />
+              </div>
+
+              <div className="mt-2">
+                <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {parada.tipo === "entrega"
+                    ? "O que entregar (material)"
+                    : parada.tipo === "retirada"
+                      ? "O que retirar (material)"
+                      : "O que retirar / entregar (material)"}
+                </Label>
+                <Input
+                  value={parada.material}
+                  onChange={(e) => atualizarParada(parada.id, { material: e.target.value })}
+                  placeholder={
+                    parada.tipo === "entrega"
+                      ? "Ex.: 2 caixas de documentos"
+                      : "Ex.: 1 envelope e 1 volume"
+                  }
                   className="mt-1 h-9 bg-white text-sm"
                 />
               </div>
@@ -2171,12 +2247,33 @@ function NovaOSView() {
           placeholder="Opcional: pesquisar prestador cadastrado..."
           value={prestadorId}
           onChange={(value, record) => {
+            const nome = record?.nome_completo || "";
             setPrestadorId(value);
-            setPrestadorNome(record?.nome_completo || "");
+            setPrestadorNome(nome);
+            setNomeMotorista(value ? nome : "");
           }}
           secondaryField="cpf_cnpj"
           filters={FILTRO_ATIVO}
         />
+
+        <div className="mt-2">
+          <Label className="text-[11px] font-semibold text-slate-600">
+            Nome do motorista (saudação do WhatsApp)
+          </Label>
+          <Input
+            value={nomeMotorista}
+            onChange={(e) => setNomeMotorista(e.target.value)}
+            placeholder={
+              prestadorId
+                ? prestadorNome || "Nome do prestador"
+                : avulsoNome.trim() || "Motorista"
+            }
+            className="mt-1 h-10 bg-white"
+          />
+          <p className="mt-1 text-[10px] leading-tight text-slate-500">
+            Usado na saudação: “Olá, {nomeMotorista.trim() || (prestadorId ? prestadorNome : avulsoNome.trim()) || "Motorista"}!”
+          </p>
+        </div>
 
         {!prestadorId && (
           <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -2262,7 +2359,7 @@ function NovaOSView() {
 
         {prestadorId && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            <p className="font-bold">{prestadorNome}</p>
+            <p className="font-bold">{nomeMotorista.trim() || prestadorNome}</p>
             <p className="text-emerald-700">
               Receber e Pagar serão criados automaticamente pelo TMS ao salvar a OS.
             </p>
