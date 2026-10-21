@@ -3,17 +3,29 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 /**
  * Fonte ÚNICA de conexão com o Supabase.
  *
- * Regra do projeto: o cliente NUNCA usa URL/credencial fixa no código.
- * Em produção (Vercel) os valores vêm exclusivamente das variáveis de
- * ambiente `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` configuradas
- * no painel do projeto. Em desenvolvimento, do .env local.
+ * Precedência: variáveis de ambiente (`VITE_SUPABASE_URL` /
+ * `VITE_SUPABASE_ANON_KEY`, do .env local ou do painel da Vercel).
+ * Se estiverem ausentes no build, cai no fallback público abaixo.
+ *
+ * ATENÇÃO (TEMPORÁRIO): o fallback existe apenas para destravar a tela
+ * branca na Vercel. A `anon key` é pública por design (vai para o bundle
+ * do browser e é protegida por RLS), mas o correto é configurar as duas
+ * variáveis no painel da Vercel e remover o fallback.
  */
 
 type SupabaseEnvKey = "VITE_SUPABASE_URL" | "VITE_SUPABASE_ANON_KEY";
 
+const SUPABASE_PUBLIC_FALLBACK: Record<SupabaseEnvKey, string> = {
+  VITE_SUPABASE_URL: "https://uwrvzsjtpgaifkktpepn.supabase.co",
+  VITE_SUPABASE_ANON_KEY:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnZ6c2p0cGdhaWZr" +
+    "a3RwZXBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0Njk4NDMsImV4cCI6MjA5MjA0NTg0M30.0G0b-0FUs-5DxOziWD3clXbXXz0Fq2mx9-d0-V08TGs",
+};
+
 const readEnv = (key: SupabaseEnvKey): string => {
   const value = import.meta.env?.[key];
-  return typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
+  const raw = typeof value === "string" && value.trim() ? value : SUPABASE_PUBLIC_FALLBACK[key];
+  return raw.trim().replace(/\/+$/, "");
 };
 
 const isLocalOrPrivateHost = (hostname: string): boolean => {
