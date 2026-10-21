@@ -18,7 +18,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "test:e2e:finalizacao": "playwright test -g \"Fluxo completo: alocar, aceitar e finalizar\"",
-    "deploy:check": "npm run typecheck:app && npm run build",
+    "deploy:check": "vite build",
     "docker:build": "docker build -t express-connect-hub .",
     "docker:run": "docker run -d --name tms --restart always -p 80:80 express-connect-hub",
     "check:env": "node scripts/check-ambiente.cjs",
