@@ -15,7 +15,11 @@ import {
   cepCompleto,
   MapboxSuggestion,
 } from "@/services/maps/mapboxAutocomplete";
-import { supabase } from "@/lib/supabase";
+import {
+  buscarHistoricoEnderecosCliente,
+  normalizarTextoEndereco,
+  type EnderecoHistoricoCliente,
+} from "@/services/clientes/historicoEnderecosCliente";
 
 export interface EnderecoType {
   cep?: string;
@@ -62,6 +66,8 @@ interface EnderecoCompletoProps {
   hideOperationalDetails?: boolean;
   /** REFINAMENTO-B2B — oculta o box verde de debug "Coordenadas capturadas" (dado interno, não exibir ao cliente) */
   hideDebugInfo?: boolean;
+  /** Notifica quando um endereço salvo/recente do cliente é aplicado (preenche campos extras do formulário) */
+  onSelectEnderecoSalvo?: (endereco: EnderecoHistoricoCliente) => void;
 }
 
 const ESTADOS = [
@@ -76,126 +82,9 @@ const mascaraCep = (v: string) => {
   return v;
 };
 
-/* MISSÃO ENDERECOS-INTELIGENTES — endereços salvos do cliente */
-
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-interface EnderecoSalvoCliente {
-  id: string;
-  nomeLocal?: string | null;
-  tipoEndereco?: string | null;
-  cep?: string | null;
-  logradouro?: string | null;
-  numero?: string | null;
-  complemento?: string | null;
-  bairro?: string | null;
-  cidade?: string | null;
-  uf?: string | null;
-  referencia?: string | null;
-  instrucoes?: string | null;
-  contatoLocal?: string | null;
-  telefoneLocal?: string | null;
-  portaria?: string | null;
-  doca?: string | null;
-  procedimentoEntrada?: string | null;
-  procedimentoSaida?: string | null;
-  restricoes?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  usos: number;
-}
-
-const normalizarTexto = (v?: string | null) =>
-  (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-
-const chaveEndereco = (logradouro?: string | null, numero?: string | null) =>
-  `${normalizarTexto(logradouro)}|${normalizarTexto(numero)}`;
-
-const COLUNAS_ENDERECO_COMPLETAS =
-  "id, nome_local, tipo_endereco, cep, logradouro, numero, complemento, bairro, cidade, uf, referencia, instrucoes, contato_local, telefone_local, portaria, doca, procedimento_entrada, procedimento_saida, restricoes, latitude, longitude";
-const COLUNAS_ENDERECO_BASE =
-  "id, nome_local, tipo_endereco, cep, logradouro, numero, complemento, bairro, cidade, uf, latitude, longitude";
-
-const cacheEnderecosCliente = new Map<string, Promise<EnderecoSalvoCliente[]>>();
-
-const carregarEnderecosSalvosCliente = (clienteId: string): Promise<EnderecoSalvoCliente[]> => {
-  const existente = cacheEnderecosCliente.get(clienteId);
-  if (existente) return existente;
-
-  const promessa = (async (): Promise<EnderecoSalvoCliente[]> => {
-    let consulta = supabase
-      .from("enderecos_clientes")
-      .select(COLUNAS_ENDERECO_COMPLETAS)
-      .eq("cliente_id", clienteId)
-      .order("created_at", { ascending: false })
-      .limit(20);
-    let resultado: any = await consulta;
-    if (resultado.error) {
-      // Colunas extras da M132-A podem não existir em alguns ambientes → tenta base
-      resultado = await supabase
-        .from("enderecos_clientes")
-        .select(COLUNAS_ENDERECO_BASE)
-        .eq("cliente_id", clienteId)
-        .order("created_at", { ascending: false })
-        .limit(20);
-    }
-    const linhas = resultado.data;
-    if (resultado.error || !linhas) return [];
-
-    const usos = new Map<string, number>();
-    try {
-      const { data: oss } = await supabase
-        .from("ordens_servico")
-        .select("enderecos")
-        .eq("cliente_id", clienteId)
-        .limit(100);
-      (oss || []).forEach((os: any) => {
-        const lista = Array.isArray(os?.enderecos) ? os.enderecos : [];
-        lista.forEach((e: any) => {
-          if (!e?.logradouro) return;
-          const chave = chaveEndereco(e.logradouro, e.numero);
-          usos.set(chave, (usos.get(chave) || 0) + 1);
-        });
-      });
-    } catch {
-      // contagem de uso é opcional — não bloqueia a lista
-    }
-
-    const lista = (linhas as any[]).map((l) => ({
-      id: l.id,
-      nomeLocal: l.nome_local,
-      tipoEndereco: l.tipo_endereco,
-      cep: l.cep,
-      logradouro: l.logradouro,
-      numero: l.numero,
-      complemento: l.complemento,
-      bairro: l.bairro,
-      cidade: l.cidade,
-      uf: l.uf,
-      referencia: l.referencia,
-      instrucoes: l.instrucoes,
-      contatoLocal: l.contato_local,
-      telefoneLocal: l.telefone_local,
-      portaria: l.portaria,
-      doca: l.doca,
-      procedimentoEntrada: l.procedimento_entrada,
-      procedimentoSaida: l.procedimento_saida,
-      restricoes: l.restricoes,
-      latitude: l.latitude,
-      longitude: l.longitude,
-      usos: usos.get(chaveEndereco(l.logradouro, l.numero)) || 0,
-    })) as EnderecoSalvoCliente[];
-
-    // mais usados primeiro (sort estável preserva created_at desc em empates)
-    lista.sort((a, b) => (b.usos || 0) - (a.usos || 0));
-    return lista;
-  })().catch(() => [] as EnderecoSalvoCliente[]);
-
-  cacheEnderecosCliente.set(clienteId, promessa);
-  return promessa;
-};
-
-export function EnderecoCompleto({ value, onChange, label, required, clienteId, readOnly, hideOperationalDetails = false, hideDebugInfo = false }: EnderecoCompletoProps) {
+export function EnderecoCompleto({ value, onChange, label, required, clienteId, readOnly, hideOperationalDetails = false, hideDebugInfo = false, onSelectEnderecoSalvo }: EnderecoCompletoProps) {
   const safeValue: EnderecoType = value || { cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "" };
   
   const [loadingCep, setLoadingCep] = useState(false);
@@ -206,7 +95,7 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loadingMapbox, setLoadingMapbox] = useState(false);
   const [showOperacional, setShowOperacional] = useState(false);
-  const [enderecosSalvos, setEnderecosSalvos] = useState<EnderecoSalvoCliente[]>([]);
+  const [enderecosSalvos, setEnderecosSalvos] = useState<EnderecoHistoricoCliente[]>([]);
   
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -227,7 +116,7 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
     let ativo = true;
     setEnderecosSalvos([]);
     if (!clienteId || !UUID_REGEX.test(clienteId)) return;
-    carregarEnderecosSalvosCliente(clienteId).then((lista) => {
+    buscarHistoricoEnderecosCliente(clienteId).then((lista) => {
       if (ativo) setEnderecosSalvos(lista);
     });
     return () => { ativo = false; };
@@ -391,17 +280,17 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
   }, [onChange, safeValue]);
 
   // MISSÃO ENDERECOS-INTELIGENTES — filtragem e aplicação de endereço salvo do cliente
-  const textoBusca = normalizarTexto(logradouroInput);
+  const textoBusca = normalizarTextoEndereco(logradouroInput);
   const enderecosSalvosFiltrados = !textoBusca
     ? enderecosSalvos
     : enderecosSalvos.filter((e) =>
-        normalizarTexto(e.logradouro).includes(textoBusca) ||
-        normalizarTexto(e.nomeLocal).includes(textoBusca) ||
-        normalizarTexto(e.bairro).includes(textoBusca) ||
-        normalizarTexto(e.cep).includes(textoBusca)
+        normalizarTextoEndereco(e.logradouro).includes(textoBusca) ||
+        normalizarTextoEndereco(e.nomeLocal).includes(textoBusca) ||
+        normalizarTextoEndereco(e.bairro).includes(textoBusca) ||
+        normalizarTextoEndereco(e.cep).includes(textoBusca)
       );
 
-  const handleSelectEnderecoSalvo = useCallback((salvo: EnderecoSalvoCliente) => {
+  const handleSelectEnderecoSalvo = useCallback((salvo: EnderecoHistoricoCliente) => {
     selecaoTokenRef.current++; // cancela complemento Mapbox pendente
     const logradouro = salvo.logradouro || "";
     const linhas = [
@@ -436,8 +325,9 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
     setSuggestions([]);
     setShowSuggestions(false);
     onChange(atualizado);
-    toast.success(salvo.nomeLocal ? `Endereço "${salvo.nomeLocal}" aplicado` : "Endereço salvo do cliente aplicado");
-  }, [onChange, safeValue]);
+    onSelectEnderecoSalvo?.(salvo);
+    toast.success(salvo.nomeLocal ? `Endereço "${salvo.nomeLocal}" aplicado` : "Endereço do cliente aplicado");
+  }, [onChange, onSelectEnderecoSalvo, safeValue]);
 
   return (
     <div ref={containerRef} className="space-y-3">
@@ -476,7 +366,7 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
                 {enderecosSalvosFiltrados.length > 0 && (
                   <div className="border-b">
                     <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border-b border-amber-100">
-                      Endereços salvos do cliente
+                      Endereços salvos e recentes do cliente
                     </div>
                     {enderecosSalvosFiltrados.map((salvo) => (
                       <button
@@ -493,9 +383,20 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
                           {[salvo.bairro, [salvo.cidade, salvo.uf].filter(Boolean).join("/"), salvo.cep].filter(Boolean).join(" · ")}
                         </div>
                         <div className="text-[10px] text-amber-700 font-medium">
-                          {salvo.tipoEndereco || "Endereço"}
+                          {salvo.origem === "cadastro" ? salvo.tipoEndereco || "Cadastro" : "Recente"}
                           {salvo.usos > 0 ? ` · Usado em ${salvo.usos} OS${salvo.usos > 1 ? "s" : ""}` : ""}
                         </div>
+                        {(salvo.contatoLocal || salvo.telefoneLocal) && (
+                          <div className="text-[10px] text-gray-600 break-words">
+                            👤 Procurar: {salvo.contatoLocal || "Contato não informado"}
+                            {salvo.telefoneLocal ? ` · ${salvo.telefoneLocal}` : ""}
+                          </div>
+                        )}
+                        {salvo.instrucoes && (
+                          <div className="text-[10px] text-gray-600 break-words">
+                            📝 {salvo.instrucoes}
+                          </div>
+                        )}
                       </button>
                     ))}
                   </div>

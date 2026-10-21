@@ -96,6 +96,8 @@ import {
 import type { DadosEmpresaFatura } from "@/services/financeiro/faturaService";
 import { useAuth } from "@/contexts/AuthContext";
 import { toClienteInsert } from "@/lib/dbMappers";
+import { gerarMensagemComprovantePOD } from "@/lib/podComprovante";
+import { limparCacheHistoricoEnderecos } from "@/services/clientes/historicoEnderecosCliente";
 import ReciboPagamento from "@/components/os-mobile/ReciboPagamento";
 
 // ============================================================
@@ -497,9 +499,6 @@ const gerarMensagemWhatsApp = (
   os: OSMobileLista,
   fechamento?: Partial<FechamentoOSMobile> | null,
 ): string => gerarPadraoRotaWhatsApp(os, fechamento);
-
-const montarMensagemComprovante = (os: OSMobileLista, dados: FechamentoOSMobile) =>
-  gerarPadraoRotaWhatsApp(os, dados);
 
 /**
  * Orientação privada enviada ao motorista (WhatsApp individual).
@@ -1040,6 +1039,8 @@ function NovaOSView() {
         estado: p.endereco.estado || "",
         cep: p.endereco.cep || "",
         referencia: p.endereco.referencia || "",
+        contato_nome: p.endereco.contatoNome || "",
+        contato_telefone: p.endereco.contatoTelefone || "",
         endereco: montarEnderecoTexto(p.endereco),
         endereco_formatado: montarEnderecoTexto(p.endereco),
         latitude: p.endereco.latitude ?? null,
@@ -1150,6 +1151,7 @@ function NovaOSView() {
       }
 
       await supabase.from("ordens_servico").update({ enderecos: enderecosMeta }).eq("id", resultado.os_id);
+      limparCacheHistoricoEnderecos(clienteId as string);
 
       // Prestador avulso: o trigger só cria Receber. O Pagar é criado aqui.
       if (!prestadorId) {
@@ -1471,7 +1473,19 @@ function NovaOSView() {
 
               <EnderecoCompleto
                 value={parada.endereco}
+                clienteId={clienteId || undefined}
                 onChange={(endereco) => atualizarParada(parada.id, { endereco })}
+                onSelectEnderecoSalvo={(salvo) => {
+                  const etiquetaAtual = etiquetaParada(parada.tipo).toLowerCase();
+                  const nomeAtual = parada.nomeLocal.trim().toLowerCase();
+                  atualizarParada(parada.id, {
+                    instrucoes: parada.instrucoes || salvo.instrucoes || salvo.referencia || "",
+                    nomeLocal:
+                      (!nomeAtual || nomeAtual === etiquetaAtual) && salvo.nomeLocal
+                        ? salvo.nomeLocal
+                        : parada.nomeLocal,
+                  });
+                }}
                 hideDebugInfo
                 hideOperationalDetails
               />
@@ -2494,21 +2508,29 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     }
   };
 
-  const copiarComprovante = async () => {
+  const copiarComprovantePOD = async () => {
     if (!osSelecionada) return;
-    const dados: FechamentoOSMobile = {
-      recebedor: recebedor.trim() || "—",
+    if (!recebedor.trim()) {
+      toast.error("Informe o nome de quem recebeu");
+      return;
+    }
+
+    const texto = gerarMensagemComprovantePOD({
+      osNumero: osSelecionada.numero || osSelecionada.id,
+      recebedor: recebedor.trim(),
       documento: documentoRecebedor.trim(),
       local: localEntrega,
-      dataHoraEntrega,
+      dataHora: dataHoraEntrega,
       observacao: observacaoEntrega.trim(),
-      fotos: fotos.map((f) => f.preview),
-    };
+    });
+
     try {
-      await navigator.clipboard.writeText(montarMensagemComprovante(osSelecionada, dados));
-      toast.success("Comprovante copiado");
+      await navigator.clipboard.writeText(texto);
+      toast.success("Comprovante (POD) copiado", {
+        description: "Cole no WhatsApp do cliente final.",
+      });
     } catch {
-      toast.error("Não foi possível copiar");
+      toast.error("Não foi possível copiar o comprovante");
     }
   };
 
@@ -2808,7 +2830,6 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   <input
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     multiple
                     className="hidden"
                     onChange={(e) => {
@@ -2854,8 +2875,14 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   <Button type="button" variant="outline" onClick={() => void concluir(false)} disabled={salvando}>
                     <CheckCircle2 className="mr-1.5 h-4 w-4" /> Apenas concluir
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => void copiarComprovante()} disabled={salvando}>
-                    <Copy className="mr-1.5 h-4 w-4" /> Copiar texto
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void copiarComprovantePOD()}
+                    disabled={salvando}
+                    className="text-[11px]"
+                  >
+                    📋 Copiar Comprovante (POD)
                   </Button>
                 </div>
               </div>
