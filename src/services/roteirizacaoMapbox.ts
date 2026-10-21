@@ -1,16 +1,7 @@
 import { Coordinates, DistanceResult } from "./types";
+import { getMapboxToken } from "@/lib/mapboxToken";
 
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
-
-function getMapboxToken(): string | null {
-  const token = 
-    import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.VITE_MAPBOX_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_TOKEN?.trim() ||
-    null;
-  return token;
-}
 
 async function buscarRotaMapbox(
   origemCoords: Coordinates,

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
 
 interface TrackingPosEnriquecida {
   id: string;
@@ -49,7 +50,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function PainelOperacionalMapa() {
-  const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string | undefined;
+  const token = MAPBOX_ACCESS_TOKEN;
   const [locs, setLocs] = useState<TrackingPosEnriquecida[]>([]);
   const [loading, setLoading] = useState(true);
 

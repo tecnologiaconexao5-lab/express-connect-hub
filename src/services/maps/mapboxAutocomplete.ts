@@ -1,5 +1,6 @@
 // Mapbox Geocoding Autocomplete Service
 import { Coordinates } from "./types";
+import { getMapboxToken } from "@/lib/mapboxToken";
 
 const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 
@@ -28,16 +29,6 @@ export interface MapboxSuggestion {
 export interface MapboxGeocodingResult {
   suggestions: MapboxSuggestion[];
   error?: string;
-}
-
-function getMapboxToken(): string | null {
-  const token = 
-    import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.VITE_MAPBOX_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_TOKEN?.trim() ||
-    null;
-  return token;
 }
 
 export async function buscarEnderecos(

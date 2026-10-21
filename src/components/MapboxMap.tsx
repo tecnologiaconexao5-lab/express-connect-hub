@@ -4,6 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { Truck, AlertTriangle, AlertCircle, CheckCircle, MapPin, X, Settings, Package, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
 
 export interface MapLocation {
   id: string;
@@ -123,10 +124,7 @@ export default function MapboxMap({
   }, [selectedLocationId, locations]);
 
   useEffect(() => {
-    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || localStorage.getItem("mapbox_token");
-    if (token) {
-      setMapToken(token);
-    }
+    setMapToken(MAPBOX_ACCESS_TOKEN);
   }, []);
 
   useEffect(() => {

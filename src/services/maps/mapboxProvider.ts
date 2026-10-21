@@ -1,18 +1,11 @@
 // Mapbox Provider - Provider para Mapbox API
 import type { MapsProvider, DistanceResult, RoutesResult, GeocodingResult, Coordinates } from "./types";
+import { getMapboxToken } from "@/lib/mapboxToken";
+
+export { getMapboxToken };
 
 const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
-
-export function getMapboxToken(): string | null {
-  const token = 
-    import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.VITE_MAPBOX_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_ACCESS_TOKEN?.trim() ||
-    import.meta.env.MAPBOX_TOKEN?.trim() ||
-    null;
-  return token;
-}
 
 async function geocodificarEndereco(endereco: string, token: string): Promise<GeocodingResult | null> {
   const encodedAddress = encodeURIComponent(endereco);
@@ -118,7 +111,7 @@ export const mapboxProvider: MapsProvider = {
     const token = getMapboxToken();
 
     if (!token) {
-      console.error("[Mapbox] Token não configurado. Defina VITE_MAPBOX_ACCESS_TOKEN no .env");
+      console.error("[Mapbox] Token não configurado em src/lib/mapboxToken.ts");
       return null;
     }
 

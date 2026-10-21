@@ -10,6 +10,7 @@ import { buscarRotas, buscarSaudeOperacional, buscarInsights, buscarParadasDaRot
 import type { Rota, SaudeOperacional, InsightIA, Parada } from "@/services/portalCliente/roteirizacaoService";
 import { PortalTrackingMap } from "./PortalTrackingMap";
 import type { TrackingPosition } from "@/services/rastreamento/trackingService";
+import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
 
 interface PortalRoteirizacaoProps {
   clienteId?: string;
@@ -390,7 +391,7 @@ export function PortalRoteirizacao({ clienteId, clienteNome }: PortalRoteirizaca
                 plate={selectedRota.placa}
                 status={selectedRota.status}
                 currentPosition={trackPosToTracking(selectedRota, trackingPos)}
-                mapboxToken={import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}
+                mapboxToken={MAPBOX_ACCESS_TOKEN}
                 ultimaAtualizacao={trackingPos?.updated_at}
               />
 

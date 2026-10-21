@@ -27,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
 import type { TrackingPosition } from "@/services/rastreamento/trackingService";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -2702,7 +2703,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                     status={selectedEntrega?.status || "programacao"}
                     eta={selectedEntrega?.previsao ? new Date(selectedEntrega.previsao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : undefined}
                     distance={selectedEntrega?.distancia_km || selectedEntrega?.distanciaKm || undefined}
-                    mapboxToken={import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string}
+                    mapboxToken={MAPBOX_ACCESS_TOKEN}
                     ultimaAtualizacao={trackingPosition?.updated_at}
                   />
 

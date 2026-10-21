@@ -1,5 +1,38 @@
 # Summary
 
+## MISSÃO FIX-MAPBOX-TOKEN-PRODUCAO — Autocomplete/rotas sem env na Vercel (2026-10-21)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos · teste novo **4/4 PASS** · regressão autocomplete **37/37** · `npm run build` ok. Token **não** fica no repositório.
+
+### Causa
+O autocomplete/rotas liam `import.meta.env.VITE_MAPBOX_ACCESS_TOKEN` espalhado em vários arquivos; a variável não existe na Vercel → `getMapboxToken()` retornava `null` → busca sem token (lista vazia).
+
+### O que mudou
+- **NOVO `src/lib/mapboxToken.ts`** — fonte única que lê `VITE_MAPBOX_ACCESS_TOKEN` (fallback `VITE_MAPBOX_TOKEN`/`MAPBOX_ACCESS_TOKEN`/`MAPBOX_TOKEN`) e expõe `getMapboxToken()` + `MAPBOX_ACCESS_TOKEN`. Nenhum token hardcoded (GitHub Push Protection não bloqueia).
+- Substituídas TODAS as leituras de env do Mapbox:
+  - `src/services/maps/mapboxAutocomplete.ts` (geocoding/autocomplete) → importa `getMapboxToken` da fonte única.
+  - `src/services/maps/mapboxProvider.ts` (rotas/geocoding) → importa/re-exporta `getMapboxToken` (contrato mantido para `mobileRouteService`/`CentralIntegracoes`).
+  - `src/services/roteirizacaoMapbox.ts` → importa `getMapboxToken`.
+  - `src/components/MapboxMap.tsx` → usa `MAPBOX_ACCESS_TOKEN` (removido fallback `localStorage.mapbox_token`).
+  - `src/components/operacional/PainelOperacionalMapa.tsx` → `MAPBOX_ACCESS_TOKEN`.
+  - `src/components/portal-cliente/PortalRoteirizacao.tsx` e `src/pages/PortalCliente.tsx` → `mapboxToken={MAPBOX_ACCESS_TOKEN}`.
+- Nenhum `import.meta.env.(VITE_)?MAPBOX*` permanece fora de `src/lib/mapboxToken.ts` (teste de regressão cobre a varredura).
+
+### Configuração obrigatória (Vercel)
+1. Project → Settings → Environment Variables → adicionar `VITE_MAPBOX_ACCESS_TOKEN` com o token `pk.` (Production, Preview e Development).
+2. Redeploy. Localmente a variável já existe no `.env` (não versionado).
+3. Manter as *URL restrictions* do token no painel do Mapbox; se houver rotação, atualizar apenas o valor na Vercel/.env.
+
+### Arquivos
+- `src/lib/mapboxToken.ts` (NOVO) · `src/services/maps/mapboxAutocomplete.ts` · `src/services/maps/mapboxProvider.ts` · `src/services/roteirizacaoMapbox.ts` · `src/components/MapboxMap.tsx` · `src/components/operacional/PainelOperacionalMapa.tsx` · `src/components/portal-cliente/PortalRoteirizacao.tsx` · `src/pages/PortalCliente.tsx`
+- `src/test/fix_mapbox_token_env.test.ts` (NOVO, 4 casos)
+
+### Pendências
+1. (deploy) Configurar `VITE_MAPBOX_ACCESS_TOKEN` na Vercel e republicar.
+2. (QA) Em produção, abrir a busca de endereço na OS (desktop e `/os-mobile`) e confirmar sugestões do Mapbox.
+
+---
+
 ## MISSÃO OS MOBILE — PIX na baixa, histórico por cliente, favoritos e pré-cadastro (2026-10-21)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · `npx eslint` 0 erros nos arquivos da missão · teste novo **18/18 PASS** · regressão **155/155** (7 specs) · `npm run build` 42.42s.
