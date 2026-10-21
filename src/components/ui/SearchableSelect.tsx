@@ -89,6 +89,12 @@ export function SearchableSelect({
       
       if (filters) {
          Object.entries(filters).forEach(([k, v]) => {
+            if (Array.isArray(v)) {
+               // Filtro por lista (ex.: status em ["ativo","pre-cadastro"]).
+               if (v.length > 0) query = query.in(k, v);
+               return;
+            }
+            if (v === undefined || v === null) return;
             query = query.eq(k, v);
          });
       }

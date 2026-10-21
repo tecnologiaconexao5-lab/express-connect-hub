@@ -50,6 +50,7 @@ import {
   FileText,
   Send,
   LockKeyhole,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -97,7 +98,7 @@ import type { DadosEmpresaFatura } from "@/services/financeiro/faturaService";
 import { useAuth } from "@/contexts/AuthContext";
 import { toClienteInsert } from "@/lib/dbMappers";
 import { gerarMensagemComprovantePOD } from "@/lib/podComprovante";
-import { limparCacheHistoricoEnderecos } from "@/services/clientes/historicoEnderecosCliente";
+import { limparCacheHistoricoEnderecos, salvarEnderecoFavoritoCliente } from "@/services/clientes/historicoEnderecosCliente";
 import ReciboPagamento from "@/components/os-mobile/ReciboPagamento";
 
 // ============================================================
@@ -195,6 +196,20 @@ function validarPixChave(tipo: string, chave: string): boolean {
   return valor.length >= 10;
 }
 
+/** Normaliza os rótulos de PIX usados no TMS para as opções do OS Mobile. */
+function normalizarTipoPix(tipo?: string | null): string {
+  const valor = (tipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (!valor) return "CPF/CNPJ";
+  if (valor.includes("email") || valor.includes("e-mail")) return "E-mail";
+  if (valor.includes("celular") || valor.includes("telefone") || valor.includes("fone")) {
+    return "Celular";
+  }
+  if (valor.includes("aleator")) return "Chave Aleatória";
+  if (valor.includes("cpf") || valor.includes("cnpj")) return "CPF/CNPJ";
+  const exato = OPCOES_PIX_TIPO.find((opcao) => opcao.toLowerCase() === valor);
+  return exato || "CPF/CNPJ";
+}
+
 const uid = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -204,6 +219,9 @@ const uid = () => {
 const CLIENTE_SEARCH_FIELDS = ["nome_fantasia", "razao_social", "cnpj"];
 const PRESTADOR_SEARCH_FIELDS = ["nome_completo", "cpf_cnpj", "telefone", "whatsapp"];
 const FILTRO_ATIVO = { status: "ativo" };
+// Clientes incluem os pré-cadastros feitos no próprio mobile (requerem validação
+// pelo backoffice, mas precisam aparecer para a operação de rua).
+const FILTRO_CLIENTES_OS = { status: ["ativo", "pre-cadastro"] };
 
 interface ParadaForm {
   id: string;
@@ -214,6 +232,8 @@ interface ParadaForm {
   janelaInicio: string;
   janelaFim: string;
   instrucoes: string;
+  /** Salva o endereço em `enderecos_clientes` vinculado ao cliente da OS */
+  salvarFavorito: boolean;
 }
 
 const etiquetaParada = (tipo: ParadaForm["tipo"]) =>
@@ -237,6 +257,7 @@ const criarParada = (tipo: "retirada" | "entrega" | "ambos", sequencia: number):
   janelaInicio: "",
   janelaFim: "",
   instrucoes: "",
+  salvarFavorito: false,
 });
 
 const statusBadge = (status: string) => {
@@ -941,6 +962,29 @@ function NovaOSView() {
     setRotaErro("");
   };
 
+  const resolverTenantId = async (): Promise<string | undefined> => {
+    try {
+      const { data } = await supabase.rpc("current_tenant_id_safe");
+      if (typeof data === "string" && data) return data;
+    } catch {
+      // segue para o fallback
+    }
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUserId = authData?.user?.id;
+      if (!authUserId) return undefined;
+      const { data: vinculo } = await supabase
+        .from("tenant_usuarios")
+        .select("tenant_id")
+        .eq("user_id", authUserId)
+        .maybeSingle();
+      const tenantId = (vinculo as Record<string, unknown> | null)?.tenant_id;
+      return typeof tenantId === "string" && tenantId ? tenantId : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const salvarClienteRapido = async () => {
     const nome = clienteRapidoNome.trim() || clienteRapidoFantasia.trim();
     if (!nome) {
@@ -949,30 +993,45 @@ function NovaOSView() {
     }
     setSalvandoClienteRapido(true);
     try {
-      const { data: tenantId } = await supabase.rpc("current_tenant_id_safe");
+      const tenantId = await resolverTenantId();
+      const novoId = uid();
       const payload = toClienteInsert({
         razaoSocial: clienteRapidoNome.trim() || clienteRapidoFantasia.trim(),
         nomeFantasia: clienteRapidoFantasia.trim() || clienteRapidoNome.trim(),
-        cnpj: clienteRapidoCnpj.trim() || undefined,
+        cnpj: somenteDigitos(clienteRapidoCnpj) || undefined,
         telefone: clienteRapidoTelefone.trim() || undefined,
         status: "pre-cadastro",
         observacoes: "Cadastro via Mobile - Requer Validação",
-        tenantId: typeof tenantId === "string" ? tenantId : undefined,
+        tenantId,
       });
+      // ID gerado no cliente: garante o vínculo da OS mesmo quando o
+      // RETURNING do INSERT é bloqueado pelo RLS de SELECT.
+      payload.id = novoId;
 
-      const { data, error } = await supabase
-        .from("clientes")
-        .insert([payload])
-        .select("id, nome_fantasia, razao_social")
-        .single();
-
+      // Insert sem `.select()` — o RLS de SELECT pode ocultar a linha recém
+      // criada e transformar um INSERT bem-sucedido em falso erro.
+      const { error } = await supabase.from("clientes").insert([payload]);
       if (error) throw error;
 
-      const row = data as Record<string, unknown> | null;
-      setClienteId(String(row?.id || ""));
+      // Verificação best-effort (não bloqueia o fluxo de campo).
+      const { data: confirma } = await supabase
+        .from("clientes")
+        .select("id, nome_fantasia, razao_social, status")
+        .eq("id", novoId)
+        .maybeSingle();
+      if (!confirma) {
+        console.warn(
+          "[OsMobile] Pré-cadastro gravado, mas a leitura foi bloqueada pelo RLS.",
+          novoId,
+        );
+      }
+
+      const row = confirma as Record<string, unknown> | null;
+      setClienteId(novoId);
       setClienteNome(
         String(row?.nome_fantasia || row?.razao_social || payload.nome_fantasia || nome),
       );
+      limparCacheHistoricoEnderecos();
       setClienteRapidoOpen(false);
       setClienteRapidoNome("");
       setClienteRapidoFantasia("");
@@ -982,9 +1041,14 @@ function NovaOSView() {
         description: "Status: Pré-cadastro · requer validação pelo backoffice.",
       });
     } catch (error) {
-      toast.error("Não foi possível cadastrar o cliente", {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      const detalhe =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message: unknown }).message)
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      console.error("[OsMobile] Erro ao pré-cadastrar cliente:", error);
+      toast.error("Não foi possível cadastrar o cliente", { description: detalhe });
     } finally {
       setSalvandoClienteRapido(false);
     }
@@ -1009,7 +1073,7 @@ function NovaOSView() {
       if (!avulsoNome.trim()) erros.push("Informe o nome do prestador avulso");
       if (!validarTelefone(avulsoTelefone)) erros.push("Telefone (WhatsApp) do prestador inválido");
       if (!avulsoOrigem.trim()) erros.push("Informe a origem (local/ponto do motoboy)");
-      if (!validarPixChave(avulsoPixTipo, avulsoPixChave)) erros.push("Chave PIX inválida para o tipo selecionado");
+      // PIX é OPCIONAL na criação da OS — exigido apenas na baixa/finalização.
     }
 
     return erros;
@@ -1153,6 +1217,48 @@ function NovaOSView() {
       await supabase.from("ordens_servico").update({ enderecos: enderecosMeta }).eq("id", resultado.os_id);
       limparCacheHistoricoEnderecos(clienteId as string);
 
+      // Favoritos por cliente: grava em enderecos_clientes os pontos marcados
+      // com "Salvar endereço como favorito" — sempre vinculados ao cliente_id.
+      const favoritos = paradas.filter(
+        (p) => p.salvarFavorito && Boolean((p.endereco.logradouro || "").trim()),
+      );
+      if (favoritos.length > 0 && clienteId) {
+        const resultados = await Promise.all(
+          favoritos.map((p) =>
+            salvarEnderecoFavoritoCliente(clienteId, {
+              tipoEndereco: etiquetaParada(p.tipo),
+              nomeLocal: p.nomeLocal,
+              cep: p.endereco.cep,
+              logradouro: p.endereco.logradouro,
+              numero: p.endereco.numero,
+              complemento: p.endereco.complemento,
+              bairro: p.endereco.bairro,
+              cidade: p.endereco.cidade,
+              uf: p.endereco.estado,
+              referencia: p.endereco.referencia,
+              instrucoes: p.instrucoes || p.endereco.referencia,
+              contatoLocal: p.endereco.contatoNome,
+              telefoneLocal: p.endereco.contatoTelefone,
+              latitude: p.endereco.latitude ?? null,
+              longitude: p.endereco.longitude ?? null,
+            }),
+          ),
+        );
+        const salvos = resultados.filter((r) => r.ok).length;
+        const falhas = resultados.length - salvos;
+        if (salvos > 0) {
+          toast.success(
+            `${salvos} endereço(s) salvo(s) como favorito(s) do cliente`,
+            falhas > 0 ? { description: `${falhas} falhou(aram) — confira o endereço.` } : undefined,
+          );
+        } else {
+          const motivo = resultados.find((r) => !r.ok)?.erro;
+          toast.warning("Não foi possível salvar os endereços favoritos", {
+            description: motivo || undefined,
+          });
+        }
+      }
+
       // Prestador avulso: o trigger só cria Receber. O Pagar é criado aqui.
       if (!prestadorId) {
         const vencimento = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -1160,7 +1266,9 @@ function NovaOSView() {
           .split("T")[0];
         const obsWhatsApp = `WhatsApp: ${avulsoTelefone.trim()}`;
         const obsOrigem = `Origem: ${avulsoOrigem.trim()}`;
-        const obsPix = `PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`;
+        const obsPix = avulsoPixChave.trim()
+          ? ` · PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`
+          : " · PIX a informar na baixa";
         const { error: erroPagar } = await supabase.from("financeiro_pagar").insert([
           {
             descricao: `Repasse OS Mobile · ${resultado.os_numero || resultado.os_id}`,
@@ -1175,7 +1283,7 @@ function NovaOSView() {
             chave_pix: avulsoPixChave.trim() || null,
             observacoes:
               `Prestador avulso cadastrado via /os-mobile · OS ${resultado.os_numero || resultado.os_id}` +
-              ` · ${obsWhatsApp} · ${obsOrigem} · ${obsPix}`,
+              ` · ${obsWhatsApp} · ${obsOrigem}${obsPix}`,
           },
         ]);
         if (erroPagar) {
@@ -1311,7 +1419,7 @@ function NovaOSView() {
             );
           }}
           secondaryField="cnpj"
-          filters={FILTRO_ATIVO}
+          filters={FILTRO_CLIENTES_OS}
         />
 
         <Button
@@ -1489,6 +1597,35 @@ function NovaOSView() {
                 hideDebugInfo
                 hideOperationalDetails
               />
+
+              <label
+                className={`mt-2 flex items-start gap-2 rounded-xl border px-2.5 py-2 text-[11px] font-semibold transition-colors ${
+                  parada.salvarFavorito
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-slate-200 bg-white text-slate-600"
+                } ${clienteId ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={parada.salvarFavorito}
+                  disabled={!clienteId}
+                  onChange={(e) =>
+                    atualizarParada(parada.id, { salvarFavorito: e.target.checked })
+                  }
+                  className="mt-0.5 h-4 w-4 accent-amber-500"
+                />
+                <span className="flex items-start gap-1.5">
+                  <Star className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <span>
+                    Salvar endereço como favorito para este cliente
+                    <span className="block text-[10px] font-normal text-slate-500">
+                      {clienteId
+                        ? "Ficará disponível no autocomplete deste cliente nas próximas OS."
+                        : "Selecione o cliente para habilitar."}
+                    </span>
+                  </span>
+                </span>
+              </label>
 
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <div>
@@ -2025,7 +2162,7 @@ function NovaOSView() {
       <SecaoMobile
         icon={<Bike className="h-4 w-4" />}
         titulo="Prestador / motoboy"
-        subtitulo="Cadastrado usa o financeiro do TMS. Avulso exige os 4 campos financeiros."
+        subtitulo="Cadastrado usa o financeiro do TMS. Avulso exige nome, WhatsApp e origem (PIX na baixa)."
       >
         <SearchableSelect
           table="prestadores"
@@ -2093,7 +2230,7 @@ function NovaOSView() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-                  <KeyRound className="h-3.5 w-3.5" /> Tipo de PIX *
+                  <KeyRound className="h-3.5 w-3.5" /> Tipo de PIX
                 </Label>
                 <select
                   value={avulsoPixTipo}
@@ -2108,15 +2245,18 @@ function NovaOSView() {
                 </select>
               </div>
               <div>
-                <Label className="text-[11px] font-semibold text-slate-600">Chave PIX *</Label>
+                <Label className="text-[11px] font-semibold text-slate-600">Chave PIX</Label>
                 <Input
                   value={avulsoPixChave}
                   onChange={(e) => setAvulsoPixChave(e.target.value)}
-                  placeholder="Chave PIX"
+                  placeholder="Opcional"
                   className="mt-1 h-10 bg-white"
                 />
               </div>
             </div>
+            <p className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] leading-tight text-slate-500">
+              O PIX é opcional na criação da OS. Ele será exigido na baixa/finalização do serviço.
+            </p>
           </div>
         )}
 
@@ -2245,6 +2385,11 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
   const [fotos, setFotos] = useState<{ file: File; preview: string }[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [reciboOS, setReciboOS] = useState<OSMobileLista | null>(null);
+  const [pixTipoBaixa, setPixTipoBaixa] = useState("CPF/CNPJ");
+  const [pixChaveBaixa, setPixChaveBaixa] = useState("");
+  const [carregandoPix, setCarregandoPix] = useState(false);
+  // Evita que o pré-carregamento assíncrono de uma OS sobrescreva outra.
+  const baixaTokenRef = useRef(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -2372,7 +2517,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     );
   }, [osLista, busca]);
 
-  const abrirBaixa = (os: OSMobileLista) => {
+  const abrirBaixa = async (os: OSMobileLista) => {
     setOsSelecionada(os);
     setRecebedor(os.fechamento?.recebedor || os.recebedorNome || "");
     setDocumentoRecebedor(os.fechamento?.documento || os.recebedorDocumento || "");
@@ -2380,6 +2525,54 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
     setDataHoraEntrega(os.fechamento?.dataHoraEntrega || agoraLocalInput());
     setObservacaoEntrega(os.fechamento?.observacao || "");
     setFotos([]);
+    setPixTipoBaixa("CPF/CNPJ");
+    setPixChaveBaixa("");
+    const token = ++baixaTokenRef.current;
+
+    // PIX é exigido na baixa: pré-carrega da conta a pagar da OS (avulso) ou
+    // do cadastro do prestador para o operador só confirmar.
+    setCarregandoPix(true);
+    try {
+      const { data: pagar } = await supabase
+        .from("financeiro_pagar")
+        .select("chave_pix, observacoes")
+        .eq("os_id", os.id)
+        .limit(1)
+        .maybeSingle();
+
+      const row = pagar as Record<string, unknown> | null;
+      let chave = typeof row?.chave_pix === "string" ? row.chave_pix.trim() : "";
+      let tipo = "CPF/CNPJ";
+      const obs = typeof row?.observacoes === "string" ? row.observacoes : "";
+      const match = obs.match(/PIX\s+([^:]+):\s*([^·]+)/i);
+      if (match) {
+        tipo = normalizarTipoPix(match[1]);
+        if (!chave) chave = match[2].trim();
+      }
+
+      if (!chave && os.prestadorId) {
+        const { data: prestador } = await supabase
+          .from("prestadores")
+          .select("chave_pix, tipo_chave_pix")
+          .eq("id", os.prestadorId)
+          .maybeSingle();
+        const dadosPrestador = prestador as Record<string, unknown> | null;
+        if (typeof dadosPrestador?.chave_pix === "string") {
+          chave = dadosPrestador.chave_pix.trim();
+        }
+        if (dadosPrestador?.tipo_chave_pix) {
+          tipo = normalizarTipoPix(String(dadosPrestador.tipo_chave_pix));
+        }
+      }
+
+      if (baixaTokenRef.current !== token) return;
+      setPixTipoBaixa(tipo);
+      setPixChaveBaixa(chave);
+    } catch (error) {
+      console.warn("[OsMobile] Não foi possível pré-carregar o PIX da baixa:", error);
+    } finally {
+      if (baixaTokenRef.current === token) setCarregandoPix(false);
+    }
   };
 
   const adicionarFotos = (files: FileList | null) => {
@@ -2433,6 +2626,13 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       toast.error("Informe o horário da entrega");
       return;
     }
+    // PIX é obrigatório na baixa/finalização (não na criação da OS).
+    if (!validarPixChave(pixTipoBaixa, pixChaveBaixa)) {
+      toast.error("Informe a chave PIX do repasse", {
+        description: "O PIX é exigido na baixa para liberar o pagamento do prestador.",
+      });
+      return;
+    }
 
     // A mensagem é montada de forma SÍNCRONA com os dados já preenchidos.
     // Isso mantém o gesto do usuário e permite abrir o WhatsApp diretamente,
@@ -2483,6 +2683,40 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
 
       const resultado = await concluirOSMobile(osSelecionada.id, dados, user?.name || null);
       if (!resultado.ok) throw new Error(resultado.erro || "Falha ao concluir a OS");
+
+      // Grava o PIX confirmado na baixa na conta a pagar do repasse.
+      try {
+        const { data: pagarRows } = await supabase
+          .from("financeiro_pagar")
+          .select("id, chave_pix, observacoes")
+          .eq("os_id", osSelecionada.id);
+
+        const chavePix = pixChaveBaixa.trim();
+        for (const linha of (pagarRows || []) as unknown as Record<string, unknown>[]) {
+          const idPagar = typeof linha.id === "string" ? linha.id : "";
+          if (!idPagar) continue;
+          const chaveAtual = typeof linha.chave_pix === "string" ? linha.chave_pix.trim() : "";
+          if (chaveAtual && chaveAtual !== chavePix) continue;
+          const obsAtual = typeof linha.observacoes === "string" ? linha.observacoes : "";
+          const obsSemPix = obsAtual
+            .replace(/PIX\s+[^:·]+:\s*[^·]*/gi, "")
+            .replace(/·\s*PIX a informar na baixa/gi, "")
+            .replace(/\s{2,}/g, " ")
+            .replace(/·\s*$/, "")
+            .trim();
+          const obsNova = `${obsSemPix ? `${obsSemPix} · ` : ""}PIX ${pixTipoBaixa}: ${chavePix}`;
+          await supabase
+            .from("financeiro_pagar")
+            .update({
+              chave_pix: chavePix,
+              observacoes: obsNova,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", idPagar);
+        }
+      } catch (error) {
+        console.warn("[OsMobile] PIX da baixa não atualizado no financeiro:", error);
+      }
 
       const atualizada: OSMobileLista = {
         ...osSelecionada,
@@ -2715,7 +2949,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => abrirBaixa(os)}
+                    onClick={() => void abrirBaixa(os)}
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
                     <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Dar baixa
@@ -2818,6 +3052,46 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   placeholder="Ex.: entregue na portaria, lacre conferido..."
                   className="mt-1 text-sm"
                 />
+              </div>
+
+              <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-orange-800">
+                  <KeyRound className="h-3.5 w-3.5" /> PIX do repasse ao prestador *
+                  {carregandoPix && <Loader2 className="h-3 w-3 animate-spin" />}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px] font-semibold uppercase tracking-wide text-orange-700">
+                      Tipo de PIX
+                    </Label>
+                    <select
+                      value={pixTipoBaixa}
+                      onChange={(e) => setPixTipoBaixa(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-orange-200 bg-white px-2 text-sm"
+                    >
+                      {OPCOES_PIX_TIPO.map((tipo) => (
+                        <option key={tipo} value={tipo}>
+                          {tipo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-semibold uppercase tracking-wide text-orange-700">
+                      Chave PIX
+                    </Label>
+                    <Input
+                      value={pixChaveBaixa}
+                      onChange={(e) => setPixChaveBaixa(e.target.value)}
+                      placeholder="Chave do prestador"
+                      className="mt-1 h-10 bg-white"
+                    />
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[10px] leading-tight text-orange-700">
+                  Obrigatório para concluir a baixa. Se o prestador já possui PIX cadastrado, o campo
+                  vem preenchido automaticamente.
+                </p>
               </div>
 
               <div>

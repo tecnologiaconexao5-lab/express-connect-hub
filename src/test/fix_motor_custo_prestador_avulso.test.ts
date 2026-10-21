@@ -171,7 +171,7 @@ describe("C) OsMobile — UI do motor", () => {
 });
 
 // ============================================================================
-// D) Prestador avulso — 4 campos obrigatórios + persistência
+// D) Prestador avulso — cadastro (PIX opcional) e PIX obrigatório na baixa
 // ============================================================================
 describe("D) Prestador avulso — campos financeiros", () => {
   const src = readSrc("src/pages/OsMobile.tsx");
@@ -185,14 +185,20 @@ describe("D) Prestador avulso — campos financeiros", () => {
     expect(src).toContain("OPCOES_PIX_TIPO.map");
     expect(src).toContain("Telefone (WhatsApp) *");
     expect(src).toContain("Origem (local/ponto do motoboy) *");
-    expect(src).toContain("Tipo de PIX *");
-    expect(src).toContain("Chave PIX *");
+    // PIX deixou de ser obrigatório na criação da OS.
+    expect(src).toContain("Tipo de PIX");
+    expect(src).toContain("Chave PIX");
+    expect(src).not.toContain("Tipo de PIX *");
+    expect(src).not.toContain("Chave PIX *");
+    expect(src).toContain("O PIX é opcional na criação da OS");
   });
 
-  it("D.2 — validação: telefone, origem e chave PIX por tipo", () => {
+  it("D.2 — criação não exige PIX; baixa exige chave válida", () => {
     expect(src).toContain("validarTelefone(avulsoTelefone)");
     expect(src).toContain('erros.push("Informe a origem (local/ponto do motoboy)")');
-    expect(src).toContain("validarPixChave(avulsoPixTipo, avulsoPixChave)");
+    expect(src).not.toContain("validarPixChave(avulsoPixTipo, avulsoPixChave)");
+    expect(src).toContain("validarPixChave(pixTipoBaixa, pixChaveBaixa)");
+    expect(src).toContain('toast.error("Informe a chave PIX do repasse"');
     expect(src).toContain('"CPF/CNPJ"');
     expect(src).toContain('"Celular"');
     expect(src).toContain('"E-mail"');
@@ -211,7 +217,10 @@ describe("D) Prestador avulso — campos financeiros", () => {
     expect(src).toContain("Prestador avulso cadastrado via /os-mobile");
     expect(src).toContain("`WhatsApp: ${avulsoTelefone.trim()}`");
     expect(src).toContain("`Origem: ${avulsoOrigem.trim()}`");
-    expect(src).toContain("`PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`");
+    expect(src).toContain("PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}");
+    expect(src).toContain("PIX a informar na baixa");
+    // PIX confirmado na baixa é gravado de volta na conta a pagar.
+    expect(src).toContain('chave_pix: chavePix');
   });
 
   it("D.5 — reset em limpar() limpa os 4 campos", () => {

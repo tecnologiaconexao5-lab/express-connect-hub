@@ -1,5 +1,41 @@
 # Summary
 
+## MISSÃO OS MOBILE — PIX na baixa, histórico por cliente, favoritos e pré-cadastro (2026-10-21)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · `npx eslint` 0 erros nos arquivos da missão · teste novo **18/18 PASS** · regressão **155/155** (7 specs) · `npm run build` 42.42s.
+
+### O que mudou
+
+**1. PIX opcional na criação e obrigatório na baixa (`src/pages/OsMobile.tsx`)**
+- Removida a validação `validarPixChave(avulsoPixTipo, avulsoPixChave)` do `validar()` da criação; labels "Tipo de PIX"/"Chave PIX" sem `*` + aviso "O PIX é opcional na criação da OS. Ele será exigido na baixa/finalização do serviço.".
+- `financeiro_pagar` do avulso grava `chave_pix` só quando informada e `observacoes` com "PIX a informar na baixa" quando vazio.
+- **Baixa de campo** ganhou card "PIX do repasse ao prestador *" (tipo + chave). `abrirBaixa()` pré-carrega de `financeiro_pagar.chave_pix` (parsing do `observacoes`) e, se vazio, de `prestadores.chave_pix/tipo_chave_pix` (normalização de rótulos). `concluir()` exige `validarPixChave(...)` e, após a baixa, grava a chave confirmada em `financeiro_pagar` (chave_pix + observações, sem sobrescrever chave existente divergente).
+
+**2. Histórico de endereços por `cliente_id` (`src/services/clientes/historicoEnderecosCliente.ts`)**
+- Causa raiz: os SELECTs usavam colunas opcionais (`nome_local`, `referencia`, `latitude`...) ausentes em produção → erro silencioso → lista sempre vazia.
+- Leitura agora usa `select("*")` + `.eq("cliente_id", clienteId)` + `.limit(50)`; `buscarHistoricoEnderecosCliente` valida UUID e não consulta sem cliente. Histórico de OS segue filtrado por `cliente_id`/`cliente`.
+- `salvarEnderecoFavoritoCliente()` NOVO: insert/update em `enderecos_clientes` sempre com `cliente_id`, dedup por logradouro+número, fallback para o conjunto base de colunas quando os extras não existem e limpeza do cache do cliente.
+
+**3. Checkbox de favorito nas paradas (`OsMobile.tsx`)**
+- `ParadaForm.salvarFavorito` + checkbox "Salvar endereço como favorito para este cliente" (habilitado só com cliente selecionado, ícone ⭐).
+- Na criação da OS, cada parada marcada é persistida via `salvarEnderecoFavoritoCliente(clienteId, ...)` com toast de quantos foram salvos (falha não derruba a OS).
+
+**4. Pré-cadastro refletindo no Supabase (`OsMobile.tsx` + `SearchableSelect.tsx`)**
+- INSERT sem `.select().single()` (RETURNING podia ser bloqueado pelo RLS e virar falso erro); ID gerado no cliente (`payload.id`) garante o vínculo com a OS; leitura de confirmação best-effort com `console.warn`.
+- Tenant resolvido por `current_tenant_id_safe()` + fallback `tenant_usuarios.user_id = auth.getUser().id`.
+- `SearchableSelect` aceita filtro por array (`.in`); seletor de cliente usa `FILTRO_CLIENTES_OS = { status: ["ativo","pre-cadastro"] }` — pré-cadastros passam a aparecer na busca.
+
+### Arquivos
+- `src/pages/OsMobile.tsx` · `src/services/clientes/historicoEnderecosCliente.ts` · `src/components/ui/SearchableSelect.tsx`
+- `src/test/fix_osmobile_pix_enderecos_precadastro.test.ts` (NOVO, 18 casos) · `src/test/fix_motor_custo_prestador_avulso.test.ts` (bloco D atualizado para a nova regra)
+
+### Pendências
+1. (QA) Criar OS avulso sem PIX (deve criar) e dar baixa sem PIX (deve bloquear) / com PIX (deve gravar em `financeiro_pagar`).
+2. (QA) Selecionar cliente → autocomplete deve listar apenas endereços daquele cliente; marcar favorito e conferir em `enderecos_clientes` + próxima OS.
+3. (QA) Pré-cadastro: salvar no mobile, reabrir e localizar o cliente na busca (status `pre-cadastro`), conferir linha em `clientes`.
+
+---
+
 ## MISSÃO FIX-CUBAGEM-RECEITA-CLIENTE-E-DASHBOARD-MOBILE — Cubagem, receita Moto e abas de gestão (2026-10-16)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · `npx eslint` 0 erros/0 warnings nos 3 arquivos da missão · teste novo **20/20 PASS** · regressão **186/186** (10 specs) · `npm run build` 36.41s.
