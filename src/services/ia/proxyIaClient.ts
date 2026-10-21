@@ -2,17 +2,10 @@
 // As chaves de API ficam APENAS no servidor (Supabase Secrets)
 // Se a Edge Function não estiver disponível, cai em modo simulado
 
-function getEnv(key: string): string {
-  try {
-    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env[key]) {
-      return import.meta.env[key] as string;
-    }
-  } catch { /* fallback */ }
-  try { return (process as any).env[key] || ""; } catch { return ""; }
-}
+import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 
-const SUPABASE_URL = getEnv("VITE_SUPABASE_URL");
-const SUPABASE_ANON_KEY = getEnv("VITE_SUPABASE_ANON_KEY");
+const SUPABASE_URL = supabaseUrl;
+const SUPABASE_ANON_KEY = supabaseAnonKey;
 const PROXY_IA_URL = `${SUPABASE_URL}/functions/v1/proxy-ia`;
 const DEFAULT_TIMEOUT = 30000;
 
