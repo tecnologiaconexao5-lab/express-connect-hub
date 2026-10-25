@@ -1,5 +1,94 @@
 # Summary
 
+## MISSÃO OS-MOBILE-UX-01 — Modal responsivo, link curto do Maps e filtros do Financeiro (2026-10-24)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros · teste novo **14/14 PASS** · regressão OsMobile **148/148** (7 specs) · `npm run build` 41.48s · suíte ampla igual à baseline (**18 arquivos falhos pré-existentes**, nenhum referencia `OsMobile`).
+
+### O que mudou (3 melhorias pedidas pelo cliente — `src/pages/OsMobile.tsx`)
+
+**1. Responsividade do modal "Alocar Prestador"**
+- `DialogContent`: `flex max-h-[85vh] w-[96vw] max-w-md flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl`.
+- Conteúdo isolado em div `min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4` (rolagem interna, nunca corta o formulário).
+- **Rodapé fixo fora da rolagem**: `shrink-0 border-t ... px-5 pt-3` + `style paddingBottom: "max(1rem, env(safe-area-inset-bottom))"` abrigando Cancelar/Alocar — sempre visíveis em celular pequeno.
+- `DialogHeader` com `pr-10` para não colidir com o botão X.
+
+**2. Link do Google Maps enxuto + encurtador (Copiar Orientação)**
+- Novo `consultaMapsDoPonto(ponto)`: query = **"Logradouro, Número, Cidade"** (sem CEP, sem UF/Estado, sem complemento); fallback para endereço pronto descarta tokens de CEP (`/^\d{5}-?\d{3}$/`) e a UF/cidade redundantes.
+- `linkMapsCurtoDoPonto` passa a usar essa consulta.
+- **Novo** `encurtarUrlMaps(url)` → `GET https://tinyurl.com/api-create.php?url=` (API gratuita, **sem token**), `AbortController` com timeout 6s, retorna `null` em falha; **novo** `encurtarLinksDoMaps(texto)` encurta todos os links do texto em paralelo (`Promise.all` + `Set`) e, se a API falhar, mantém o link longo original.
+- `copiarOrientacaoCriada` (sucesso da OS) e `copiarOrientacao` (card Em Aberto) agora exibem `toast.loading("Gerando link...")`, encurtam antes do `clipboard.writeText` e fecham o loading no `finally` (`toast.dismiss`).
+- Padrão Rota (T1) e demais cópias **não** foram tocados (fora do pedido).
+
+**3. Aba Financeiro — status + período**
+- `StatusRepasseMobile = "pendentes" | "pagos"`; toggle de 2 botões ("Valores Pendentes" laranja / "Valores Pagos" verde).
+- Query depende do status: pendentes `.in("status", ["pendente","aberto","parcial"])` ordenado por `vencimento` asc; pagos `.in("status", ["pago"])` ordenado por `data_pagamento` desc (`nullsFirst: false`). `useCallback` com dep `[ehPagos]`.
+- **Período (Início/Fim, `type="date"`) com default `hojeISO()`** nos dois campos + chips rápidas **"Hoje"** e **"Todo o período"** (limpa as datas = sem filtro).
+- Filtro aplicado em `filtrados`: pendentes por `vencimento`, pagos por `dataPagamento`; datas fora do período ou sem data são excluídas.
+- KPIs/vazio/ações dinâmicos: "Total pago no período"/"Pago hoje" no modo pagos; estado vazio "Nenhum repasse pago no período"; **"Baixar repasse" só aparece em pendentes** (em pagos vira selo "Pago em dd/mm/aaaa"); linha de data troca para `Pago em:`.
+
+### Testes
+- **NOVO** `src/test/fix_osmobile_ux_modal_maps_financeiro.test.ts` — **14 casos**: A (max-h/rolagem/rodapé após a rolagem/com pr-10), B (consulta Rua+Número+Cidade, fallback sem CEP/UF, TinyURL+timeout, toast "Gerando link..." nos 2 fluxos, fallback mantém link longo), C (toggle, default `hojeISO()`, query por status, filtro por período, KPIs/ações).
+- Regressão: 6 specs que leem `OsMobile.tsx` → **134/134** (junto com o novo, 148/148).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (OsMobile + teste novo) → ✅ 0 erros
+- `npx vitest run` (7 specs OsMobile) → ✅ **148/148**
+- `npx vitest run src/test` → 18 failed **pré-existentes** / 150 passed / 1 skipped (baseline era 18/149/1 → +1 arquivo = teste novo passando)
+- `npm run build` → ✅ 41.48s (chunk `OsMobile` 111.27 kB)
+
+### Arquivos
+- `src/pages/OsMobile.tsx` · `src/test/fix_osmobile_ux_modal_maps_financeiro.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/os-mobile` ao vivo: modal de alocação em iPhone SE / tela pequena (rodapé sempre visível, rolagem interna); "Copiar Orientação" com toast "Gerando link..." e link `tinyurl.com` clicável (se a API cair, cai para o link longo).
+2. (QA) Financeiro: alternar Pendentes/Pagos, período default = hoje, chips "Hoje"/"Todo o período" e baixa sumindo ao trocar de aba.
+3. (decisão) TinyURL é externo e sem SLA — se preferir, trocar por outro curtidor/encurtador próprio mantendo `encurtarUrlMaps` isolado.
+
+---
+
+## MISSÃO OS-MOBILE-ALOCACAO — Nova OS sem prestador + wizard 3 etapas + modal "Alocar Prestador" (2026-10-24)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (4 arquivos) · teste novo **8/8 PASS** (bloco G) · regressão **97/97** (5 specs que leem `OsMobile.tsx`) · `npm run build` 36.92s. Falha de `radar_combustivel` é **pré-existente** (teste/componente untracked, integração que nunca existiu em `OsMobile` — verificado contra `git show HEAD` e `git diff`).
+
+### O que mudou
+
+**1. Nova OS nasce SEM prestador (wizard 3 etapas) — `src/pages/OsMobile.tsx`**
+- `ETAPAS_NOVA_OS` (1 Rota · 2 Carga · 3 Resumo) + componente `EtapaNovaOSHeader` (clique só navega para etapas já validadas).
+- `validarEtapa(atual)`: etapa 1 = cliente/paradas/cidade/km; etapa 2 = valor do cliente, repasse do prestador e teto de 2.500 kg. `irParaEtapa()` valida todas as etapas intermediárias e faz `scrollTo(top)`. `validar()` (submit) mantém todas as checagens.
+- Seção "Prestador / motoboy" **removida** do formulário; criação sem `prestador`/`prestador_id`/`prestador_avulso`/`nome_motorista` no payload e **sem insert manual em `financeiro_pagar`** → OS entra com `status: "pendente"` (∈ `STATUS_EM_ABERTO`) e o trigger M80 cria **só** o `financeiro_receber` (pagar/pagamentos exigem `prestador_id IS NOT NULL`).
+- Rodapé sticky: totais + Voltar/Limpar/Continuar/Criar OS + "Etapa X de 3 · ao criar, a OS entra na aba 'Em Aberto' sem prestador".
+- Tela de sucesso ganhou aviso âmbar "A OS ainda está sem prestador" + CTA `onAbrirEmAberto` (prop nova de `NovaOSView`) → `setAba("aberto")`.
+
+**2. Aba "Em Aberto" — botão + modal "Alocar Prestador"**
+- Estados em `EmAbertoView`: `osAlocando`, `prestadorId/Nome`, `nomeMotorista`, `avulsoNome/Documento/Telefone/Origem/PixTipo/PixChave`, `repasseAlocacao`, `salvandoAlocacao`, `alocacaoTokenRef` (guard de concorrência).
+- `resetFormularioAlocacao()` / `fecharAlocacao()` / `abrirAlocacao(os)` (lê `carga` da OS e pré-preenche `carga.avulso` + `carga.motorista`) / `alocarPrestador()`.
+- Card ganhou badge **"Sem prestador"** + botão **"Alocar prestador"**/**"Trocar prestador"** (`alocado = prestadorId || prestadorNome`); `prestadorNome` agora faz fallback para `carga.avulso.nome` (avulso aparece no card e no WhatsApp).
+- Dialog: `SearchableSelect` de `prestadores` (`FILTRO_ATIVO`), nome do motorista (com preview da saudação "Olá, {...}!"), bloco avulso (Nome*, CPF/CNPJ, Telefone (WhatsApp)* `type="tel"`, Origem (local/ponto do motoboy)*, Tipo de PIX select + Chave PIX) e **"O PIX é opcional na alocação. Ele será exigido na baixa/finalização do serviço."** + repasse previsto (R$)*.
+- `alocarPrestador()` valida nome/telefone/origem só quando avulso (PIX **nunca**), repasse > 0; grava `prestador`, `prestador_id` (mesmo UUID), `custo_prestador`, `status: "agendada"`, `carga: cargaNova` (merge read-modify-write) → **trigger M80 cria Receber + Pagar + Pagamentos sozinho**.
+  - **Cadastrado:** se havia avulso, limpa `chave_pix`/`fornecedor_documento`, reescreve `descricao` e marca `observacoes` como "realocado para o cadastro".
+  - **Avulso (`prestador_id = NULL`):** trigger não cria `financeiro_pagar` → insert/update manual (`os_id`, `descricao`, `valor`, `vencimento`/`data_vencimento` (+7d), `data_emissao`, `fornecedor_nome/documento`, `chave_pix`, `observacoes` com "Prestador avulso cadastrado via /os-mobile · WhatsApp: … · Origem: … · PIX …|PIX a informar na baixa") **e** cancela `pagamentos_prestadores` órfão do prestador anterior (`status_pagamento: "cancelado"` — sem isso a realocação cadastrado→avulso deixaria pagamento fantasma, pois o trigger pula o bloco quando `prestador_id` fica NULL).
+- `metadata.prestador_avulso` **não existe mais**: a OS não tem coluna `metadata` e `criarOrdemServico` ignora `input.metadata` além de `tipo_operacao`/`veiculo_sugerido`/`enderecos` → avulso vive em **`carga.avulso`** (precedente do desktop `carga.portadorExterno`); `motorista` segue em `carga.motorista`.
+
+### Testes
+- `src/test/fix_motor_custo_prestador_avulso.test.ts` — **novo bloco G** (8 casos: OS sem prestador, card/modal, update que dispara M80, `financeiro_pagar` do avulso, `carga.avulso`, limpeza/cancelamento na realocação, CTA de sucesso, validação) · D.3/D.5 renomeados para `carga.avulso`/reset da alocação · frase PIX → "na alocação".
+- `src/test/fix_osmobile_pix_enderecos_precadastro.test.ts` (1.1/1.2) e `src/test/fix_osmobile_contato_material_whatsapp.test.ts` (8) atualizados para o novo fluxo.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (4 arquivos) → ✅ 0 erros
+- `npx vitest run` (5 specs que leem `OsMobile.tsx`) → ✅ **97/97**
+- `npm run build` → ✅ 36.92s (chunk `OsMobile` 107.19 kB)
+- Regressão ampla: 18 specs falham **todas pré-existentes** (nenhuma referencia `OsMobile.tsx` nem os 3 testes alterados — verificado por grep)
+
+### Arquivos
+- `src/pages/OsMobile.tsx` (wizard + alocação) · `src/test/fix_motor_custo_prestador_avulso.test.ts` (bloco G) · `src/test/fix_osmobile_pix_enderecos_precadastro.test.ts` · `src/test/fix_osmobile_contato_material_whatsapp.test.ts`
+
+### Pendências
+1. (QA) `/os-mobile` ao vivo: criar OS sem prestador → aba Em Aberto → alocar **cadastrado** (conferir 3 linhas financeiras via trigger) e **avulso** (conferir `financeiro_pagar` + `carga.avulso` + baixa exigindo PIX); testar realocação cadastrado↔avulso.
+2. (QA) Wizard: avançar/voltar etapas com campos obrigatórios vazios (toast do 1º erro) e CTA da tela de sucesso levando à alocação.
+3. (pré-existente) `src/test/radar_combustivel.test.ts` falha: exige integração `RadarCombustivelView` em `OsMobile` que nunca existiu neste repositório (fora do escopo desta missão).
+
+---
+
 ## MISSÃO FIX-MAPBOX-TOKEN-PRODUCAO — Autocomplete/rotas sem env na Vercel (2026-10-21)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos · teste novo **4/4 PASS** · regressão autocomplete **37/37** · `npm run build` ok. Token **não** fica no repositório.

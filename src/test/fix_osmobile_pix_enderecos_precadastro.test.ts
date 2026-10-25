@@ -8,16 +8,16 @@ const osMobile = readSrc("src/pages/OsMobile.tsx");
 const historico = readSrc("src/services/clientes/historicoEnderecosCliente.ts");
 const searchable = readSrc("src/components/ui/SearchableSelect.tsx");
 
-describe("1) PIX opcional na criação da OS", () => {
+describe("1) PIX opcional na alocação da OS", () => {
   it("1.1 — criação não exige mais o PIX do avulso", () => {
     expect(osMobile).not.toContain("validarPixChave(avulsoPixTipo, avulsoPixChave)");
-    expect(osMobile).toContain("// PIX é OPCIONAL na criação da OS");
+    expect(osMobile).toContain("// PIX é OPCIONAL na alocação");
   });
 
   it("1.2 — labels de PIX sem asterisco obrigatório e com aviso", () => {
     expect(osMobile).not.toContain("Tipo de PIX *");
     expect(osMobile).not.toContain("Chave PIX *");
-    expect(osMobile).toContain("O PIX é opcional na criação da OS");
+    expect(osMobile).toContain("O PIX é opcional na alocação");
   });
 
   it("1.3 — a baixa/finalização exige PIX válido", () => {

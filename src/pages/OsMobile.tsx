@@ -128,6 +128,18 @@ const STATUS_FINALIZADAS = ["finalizada", "entregue"];
 
 const OPCOES_PIX_TIPO = ["CPF/CNPJ", "Celular", "E-mail", "Chave Aleatória"];
 
+/**
+ * Wizard da Nova OS — 3 etapas. O estado do formulário vive no componente
+ * pai (NovaOSView), então avançar/voltar nunca perde o que já foi digitado.
+ */
+const ETAPAS_NOVA_OS = [
+  { id: 1, label: "Rota", descricao: "Cliente, retirada e entrega" },
+  { id: 2, label: "Carga", descricao: "Peso, volumes e veículo" },
+  { id: 3, label: "Resumo", descricao: "Valores, observações e criar" },
+] as const;
+
+type EtapaNovaOS = (typeof ETAPAS_NOVA_OS)[number]["id"];
+
 const LOCAIS_ENTREGA = [
   "Portaria",
   "Recepção",
@@ -390,19 +402,80 @@ const formatarEnderecoSemNumeroPonto = (ponto: Record<string, unknown>): string 
 };
 
 /**
- * Link curto do Maps: codifica apenas "Logradouro, número - Cidade".
+ * Query do Maps enxuta: apenas "Logradouro, Número, Cidade".
+ * Sem CEP, sem Estado/UF e sem complemento — link curto e profissional.
  */
-const linkMapsCurtoDoPonto = (ponto: Record<string, unknown>): string => {
+const consultaMapsDoPonto = (ponto: Record<string, unknown>): string => {
   const logradouro = primeiroTexto(ponto.logradouro);
   const numero = primeiroTexto(ponto.numero);
   const cidade = primeiroTexto(ponto.cidade);
 
-  const ruaENumero = [logradouro, numero].filter(Boolean).join(", ");
-  const consulta = [ruaENumero, cidade].filter(Boolean).join(" - ");
+  const ruaComNumero = [logradouro, numero].filter(Boolean).join(", ");
+  if (ruaComNumero && cidade) return `${ruaComNumero}, ${cidade}`;
+  if (ruaComNumero) return ruaComNumero;
 
-  return `https://maps.google.com/?q=${encodeURIComponent(
-    consulta || formatarEnderecoCompletoPonto(ponto),
-  )}`;
+  // Fallback: endereço já formatado — remove CEP, UF e cidade redundante.
+  const uf = primeiroTexto(ponto.estado, ponto.uf);
+  const bruto = primeiroTexto(ponto.endereco_formatado, ponto.endereco);
+  const ehCep = (pedaco: string) => /^\d{5}-?\d{3}$/.test(pedaco) || /^CEP\s*\d/i.test(pedaco);
+
+  const limpo = bruto
+    .split(/[,;]/)
+    .map((pedaco) => pedaco.trim())
+    .filter(Boolean)
+    .filter((pedaco) => !ehCep(pedaco))
+    .filter((pedaco) => !uf || (pedaco !== uf && !pedaco.endsWith(`/${uf}`)))
+    .filter((pedaco) => !cidade || (pedaco !== cidade && !pedaco.endsWith(`/${cidade}`)));
+
+  return [limpo.join(", "), cidade].filter(Boolean).join(", ") || "Endereço não informado";
+};
+
+/**
+ * Link curto do Maps: codifica apenas "Logradouro, Número, Cidade".
+ */
+const linkMapsCurtoDoPonto = (ponto: Record<string, unknown>): string => {
+  const consulta = consultaMapsDoPonto(ponto);
+  return `https://maps.google.com/?q=${encodeURIComponent(consulta)}`;
+};
+
+/**
+ * Encurtador de URL sem autenticação (TinyURL).
+ * Retorna `null` quando a API falhar/estourar o timeout — o texto original é preservado.
+ */
+const encurtarUrlMaps = async (url: string): Promise<string | null> => {
+  try {
+    const controller = new AbortController();
+    const limite = setTimeout(() => controller.abort(), 6000);
+    const resposta = await fetch(
+      `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`,
+      { signal: controller.signal },
+    );
+    clearTimeout(limite);
+    if (!resposta.ok) return null;
+    const curto = (await resposta.text()).trim();
+    return curto.startsWith("http") ? curto : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Substitui todos os links longos do Maps do texto por links curtos,
+ * em paralelo. Se a API falhar, o link longo original permanece.
+ */
+const encurtarLinksDoMaps = async (texto: string): Promise<string> => {
+  const encontrados = texto.match(/https:\/\/maps\.google\.com\/\?q=\S+/g);
+  if (!encontrados?.length) return texto;
+
+  const unicos = [...new Set(encontrados)];
+  const pares = await Promise.all(
+    unicos.map(async (link) => [link, await encurtarUrlMaps(link)] as const),
+  );
+
+  return pares.reduce(
+    (acc, [link, curto]) => (curto ? acc.split(link).join(curto) : acc),
+    texto,
+  );
 };
 
 const rotuloFormaPagamento = (statusFaturamento?: string | null): string => {
@@ -446,7 +519,9 @@ const gerarPadraoRotaWhatsApp = (
       ? `${os.distanciaKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`
       : "—";
 
-  const valorTotal = (Number(os.valorCliente) || 0).toLocaleString("pt-BR", {
+  // O resumo operacional do WhatsApp é do MOTORISTA: imprime ESTRITAMENTE o
+  // valor do repasse (valor_prestador), nunca o valor cobrado do cliente.
+  const valorPrestador = (Number(os.custoPrestador) || 0).toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -492,7 +567,7 @@ const gerarPadraoRotaWhatsApp = (
     blocos.join("\n\n"),
     "",
     "━━━━━━━━━━━━━━━━━",
-    `💰 R$ ${valorTotal} | ${rotuloFormaPagamento(os.statusFaturamento)}`,
+    `💰 R$ ${valorPrestador} | ${rotuloFormaPagamento(os.statusFaturamento)}`,
     "",
     `⚠️ ATENÇÃO: ${observacao}`,
   ];
@@ -747,7 +822,59 @@ function LinhaResumo({
 // Aba 1 — Nova OS
 // ============================================================
 
-function NovaOSView() {
+function EtapaNovaOSHeader({
+  etapa,
+  onSelecionar,
+}: {
+  etapa: EtapaNovaOS;
+  onSelecionar: (etapa: EtapaNovaOS) => void;
+}) {
+  const etapaAtual = ETAPAS_NOVA_OS.find((item) => item.id === etapa) || ETAPAS_NOVA_OS[0];
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+          Nova OS · etapa {etapa} de {ETAPAS_NOVA_OS.length}
+        </p>
+        <p className="text-[10px] font-semibold text-slate-500">{etapaAtual.label}</p>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {ETAPAS_NOVA_OS.map((item) => {
+          const ativo = item.id === etapa;
+          const concluido = item.id < etapa;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelecionar(item.id)}
+              className={`flex-1 rounded-xl border px-1.5 py-1.5 text-[10px] font-bold transition-colors ${
+                ativo
+                  ? "border-orange-500 bg-orange-600 text-white"
+                  : concluido
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-white text-slate-500"
+              }`}
+            >
+              <span className="block truncate">
+                {item.id}. {item.label}
+              </span>
+              <span
+                className={`mt-0.5 block truncate text-[9px] font-normal ${
+                  ativo ? "text-orange-100" : "text-slate-400"
+                }`}
+              >
+                {item.descricao}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NovaOSView({ onAbrirEmAberto }: { onAbrirEmAberto?: () => void }) {
+  const [etapa, setEtapa] = useState<EtapaNovaOS>(1);
   const [osCriada, setOsCriada] = useState<OSMobileLista | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
   const [clienteNome, setClienteNome] = useState("");
@@ -780,16 +907,6 @@ function NovaOSView() {
 
   const [veiculoTipo, setVeiculoTipo] = useState("moto");
   const [veiculoManual, setVeiculoManual] = useState(false);
-  const [prestadorId, setPrestadorId] = useState<string | null>(null);
-  const [prestadorNome, setPrestadorNome] = useState("");
-  /** Nome usado na saudação do WhatsApp ("Olá, {nomeMotorista}!"). */
-  const [nomeMotorista, setNomeMotorista] = useState("");
-  const [avulsoNome, setAvulsoNome] = useState("");
-  const [avulsoDocumento, setAvulsoDocumento] = useState("");
-  const [avulsoTelefone, setAvulsoTelefone] = useState("");
-  const [avulsoOrigem, setAvulsoOrigem] = useState("");
-  const [avulsoPixTipo, setAvulsoPixTipo] = useState("CPF/CNPJ");
-  const [avulsoPixChave, setAvulsoPixChave] = useState("");
 
   const [pagamentoPrestador, setPagamentoPrestador] = useState<TipoPagamentoPrestador>("avista");
   const [custoManual, setCustoManual] = useState(false);
@@ -942,6 +1059,7 @@ function NovaOSView() {
   };
 
   const limpar = () => {
+    setEtapa(1);
     setClienteId(null);
     setClienteNome("");
     setClienteRapidoOpen(false);
@@ -966,15 +1084,6 @@ function NovaOSView() {
     setAltura("");
     setVeiculoTipo("moto");
     setVeiculoManual(false);
-    setPrestadorId(null);
-    setPrestadorNome("");
-    setNomeMotorista("");
-    setAvulsoNome("");
-    setAvulsoDocumento("");
-    setAvulsoTelefone("");
-    setAvulsoOrigem("");
-    setAvulsoPixTipo("CPF/CNPJ");
-    setAvulsoPixChave("");
     setPagamentoPrestador("avista");
     setCustoManual(false);
     setCustoPrestador("");
@@ -1078,6 +1187,44 @@ function NovaOSView() {
     }
   };
 
+  const validarEtapa = (atual: EtapaNovaOS): string[] => {
+    const erros: string[] = [];
+    if (atual === 1) {
+      if (!clienteId) erros.push("Selecione o cliente da OS");
+      if (!paradas.some((p) => p.tipo === "retirada" || p.tipo === "ambos"))
+        erros.push("Inclua pelo menos uma retirada");
+      if (!paradas.some((p) => p.tipo === "entrega" || p.tipo === "ambos"))
+        erros.push("Inclua pelo menos uma entrega");
+      if (paradas.some((p) => !enderecoTemCidade(p.endereco))) {
+        erros.push("Preencha cidade/UF de todas as paradas");
+      }
+      if (kmIda <= 0) erros.push("Calcule a rota no Mapbox antes de continuar");
+    }
+    if (atual === 2) {
+      if (totalCliente <= 0) erros.push("O valor total do cliente deve ser maior que zero");
+      if (custoPrestadorFinal <= 0) erros.push("Informe o repasse previsto do prestador");
+      if (pesoNumero > 2500) erros.push("Acima de 2.500 kg contate a operação");
+    }
+    return erros;
+  };
+
+  const irParaEtapa = (destino: EtapaNovaOS) => {
+    if (destino > etapa) {
+      for (let atual = etapa; atual < destino; atual += 1) {
+        const erros = validarEtapa(atual as EtapaNovaOS);
+        if (erros.length > 0) {
+          toast.error(erros[0], {
+            description:
+              erros.length > 1 ? `${erros.length - 1} pendência(s) adicional(is).` : undefined,
+          });
+          return;
+        }
+      }
+    }
+    setEtapa(destino);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const validar = (): string[] => {
     const erros: string[] = [];
     if (!clienteId) erros.push("Selecione o cliente da OS");
@@ -1090,15 +1237,8 @@ function NovaOSView() {
     }
     if (kmIda <= 0) erros.push("Calcule a rota no Mapbox antes de criar a OS");
     if (totalCliente <= 0) erros.push("O valor total do cliente deve ser maior que zero");
-    if (custoPrestadorFinal <= 0) erros.push("Informe o custo do prestador");
+    if (custoPrestadorFinal <= 0) erros.push("Informe o repasse previsto do prestador");
     if (pesoNumero > 2500) erros.push("Acima de 2.500 kg contate a operação");
-
-    if (!prestadorId) {
-      if (!avulsoNome.trim()) erros.push("Informe o nome do prestador avulso");
-      if (!validarTelefone(avulsoTelefone)) erros.push("Telefone (WhatsApp) do prestador inválido");
-      if (!avulsoOrigem.trim()) erros.push("Informe a origem (local/ponto do motoboy)");
-      // PIX é OPCIONAL na criação da OS — exigido apenas na baixa/finalização.
-    }
 
     return erros;
   };
@@ -1150,17 +1290,8 @@ function NovaOSView() {
         tipo_operacao: "fracionado",
         veiculo_sugerido: veiculoTipo,
         enderecos: enderecosMeta,
-        nome_motorista: nomeMotorista.trim() || undefined,
-        prestador_avulso: prestadorId
-          ? undefined
-          : {
-              nome: avulsoNome.trim(),
-              documento: avulsoDocumento.trim(),
-              telefone_whatsapp: avulsoTelefone.trim(),
-              origem: avulsoOrigem.trim(),
-              pix_tipo: avulsoPixTipo,
-              pix_chave: avulsoPixChave.trim(),
-            },
+        // A OS nasce "Em Aberto": o prestador (cadastrado ou avulso) é
+        // definido depois, na aba Em Aberto → "Alocar Prestador".
         cobranca_cliente: {
           fonte: "tabela-moto",
           franquia: RECEITA_CLIENTE_MOTO.franquia,
@@ -1218,8 +1349,6 @@ function NovaOSView() {
         observacoes: `[OS MOBILE] ${observacoes.trim()}`.trim(),
         valor_cliente: totalCliente,
         custo_prestador: custoPrestadorFinal,
-        prestador_id: prestadorId || undefined,
-        prestador_id_texto: prestadorId || undefined,
         veiculo_tipo: veiculoTipo,
         data_coleta: hojeISO(),
         distancia_km: kmTotal,
@@ -1287,38 +1416,6 @@ function NovaOSView() {
         }
       }
 
-      // Prestador avulso: o trigger só cria Receber. O Pagar é criado aqui.
-      if (!prestadorId) {
-        const vencimento = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split("T")[0];
-        const obsWhatsApp = `WhatsApp: ${avulsoTelefone.trim()}`;
-        const obsOrigem = `Origem: ${avulsoOrigem.trim()}`;
-        const obsPix = avulsoPixChave.trim()
-          ? ` · PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`
-          : " · PIX a informar na baixa";
-        const { error: erroPagar } = await supabase.from("financeiro_pagar").insert([
-          {
-            descricao: `Repasse OS Mobile · ${resultado.os_numero || resultado.os_id}`,
-            valor: custoPrestadorFinal,
-            vencimento,
-            data_vencimento: vencimento,
-            data_emissao: hojeISO(),
-            status: "pendente",
-            os_id: resultado.os_id,
-            fornecedor_nome: avulsoNome.trim() || "Prestador avulso",
-            fornecedor_documento: avulsoDocumento.trim() || null,
-            chave_pix: avulsoPixChave.trim() || null,
-            observacoes:
-              `Prestador avulso cadastrado via /os-mobile · OS ${resultado.os_numero || resultado.os_id}` +
-              ` · ${obsWhatsApp} · ${obsOrigem}${obsPix}`,
-          },
-        ]);
-        if (erroPagar) {
-          console.warn("[OsMobile] Pagar do avulso não criado:", erroPagar.message);
-        }
-      }
-
       // Snapshot da OS recém-criada para o painel de sucesso e para o
       // "Copiar Padrão Rota" — o formulário pode ser limpo em seguida.
       const osSnapshot: OSMobileLista = {
@@ -1329,8 +1426,8 @@ function NovaOSView() {
         createdAt: new Date().toISOString(),
         clienteId,
         clienteNome: clienteNome || null,
-        prestadorId,
-        prestadorNome: nomeMotorista.trim() || (prestadorId ? prestadorNome : avulsoNome.trim()) || null,
+        prestadorId: null,
+        prestadorNome: null,
         veiculoTipo,
         valorCliente: totalCliente,
         statusFaturamento: null,
@@ -1374,13 +1471,19 @@ function NovaOSView() {
 
   const copiarOrientacaoCriada = async () => {
     if (!osCriada) return;
+    const gerandoLink = toast.loading("Gerando link...", {
+      description: "Encurtando os links do Google Maps.",
+    });
     try {
-      await navigator.clipboard.writeText(gerarOrientacaoWhatsApp(osCriada));
+      const texto = await encurtarLinksDoMaps(gerarOrientacaoWhatsApp(osCriada));
+      await navigator.clipboard.writeText(texto);
       toast.success("Copiado!", {
         description: "Orientação privada pronta para enviar ao motorista.",
       });
     } catch {
       toast.error("Não foi possível copiar a Orientação");
+    } finally {
+      toast.dismiss(gerandoLink);
     }
   };
 
@@ -1415,6 +1518,26 @@ function NovaOSView() {
             </Button>
           </div>
 
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left">
+            <p className="text-[11px] font-black text-amber-800">A OS ainda está sem prestador</p>
+            <p className="mt-0.5 text-[10px] leading-tight text-amber-700">
+              Ela entrou na aba “Em Aberto”. Aloque o motoboy (cadastrado ou avulso) para gerar o
+              repasse no financeiro.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            onClick={() => {
+              limpar();
+              setOsCriada(null);
+              onAbrirEmAberto?.();
+            }}
+            className="mt-2 h-12 w-full bg-orange-600 text-sm font-bold text-white hover:bg-orange-700"
+          >
+            <Bike className="mr-2 h-4 w-4" /> Ir para “Em Aberto” e alocar prestador
+          </Button>
+
           <Button
             type="button"
             variant="outline"
@@ -1433,7 +1556,11 @@ function NovaOSView() {
 
   return (
     <div className="space-y-3">
-      <SecaoMobile icon={<UserRound className="h-4 w-4" />} titulo="Cliente" subtitulo="Quem está contratando o serviço">
+      <EtapaNovaOSHeader etapa={etapa} onSelecionar={irParaEtapa} />
+
+      {etapa === 1 && (
+        <>
+          <SecaoMobile icon={<UserRound className="h-4 w-4" />} titulo="Cliente" subtitulo="Quem está contratando o serviço">
         <SearchableSelect
           table="clientes"
           labelField="nome_fantasia"
@@ -1844,7 +1971,11 @@ function NovaOSView() {
           {rotaCalculada ? "Recalcular rota no Mapbox" : "Calcular rota no Mapbox"}
         </Button>
       </SecaoMobile>
+        </>
+      )}
 
+      {etapa === 2 && (
+        <>
       <SecaoMobile
         icon={<Package className="h-4 w-4" />}
         titulo="Carga e cubagem"
@@ -1994,11 +2125,15 @@ function NovaOSView() {
           />
         </div>
       </SecaoMobile>
+        </>
+      )}
 
+      {etapa === 3 && (
+        <>
       <SecaoMobile
         icon={<Banknote className="h-4 w-4" />}
-        titulo="Adicionais e valores"
-        subtitulo="A tabela Moto calcula a receita do cliente. O custo do prestador usa o motor de campo."
+        titulo="Resumo e valores"
+        subtitulo="Receita do cliente e repasse previsto do prestador. A alocação do prestador é feita na aba Em Aberto."
         tone="orange"
       >
         <div>
@@ -2235,138 +2370,6 @@ function NovaOSView() {
         </div>
       </SecaoMobile>
 
-      <SecaoMobile
-        icon={<Bike className="h-4 w-4" />}
-        titulo="Prestador / motoboy"
-        subtitulo="Cadastrado usa o financeiro do TMS. Avulso exige nome, WhatsApp e origem (PIX na baixa)."
-      >
-        <SearchableSelect
-          table="prestadores"
-          labelField="nome_completo"
-          searchFields={PRESTADOR_SEARCH_FIELDS}
-          placeholder="Opcional: pesquisar prestador cadastrado..."
-          value={prestadorId}
-          onChange={(value, record) => {
-            const nome = record?.nome_completo || "";
-            setPrestadorId(value);
-            setPrestadorNome(nome);
-            setNomeMotorista(value ? nome : "");
-          }}
-          secondaryField="cpf_cnpj"
-          filters={FILTRO_ATIVO}
-        />
-
-        <div className="mt-2">
-          <Label className="text-[11px] font-semibold text-slate-600">
-            Nome do motorista (saudação do WhatsApp)
-          </Label>
-          <Input
-            value={nomeMotorista}
-            onChange={(e) => setNomeMotorista(e.target.value)}
-            placeholder={
-              prestadorId
-                ? prestadorNome || "Nome do prestador"
-                : avulsoNome.trim() || "Motorista"
-            }
-            className="mt-1 h-10 bg-white"
-          />
-          <p className="mt-1 text-[10px] leading-tight text-slate-500">
-            Usado na saudação: “Olá, {nomeMotorista.trim() || (prestadorId ? prestadorNome : avulsoNome.trim()) || "Motorista"}!”
-          </p>
-        </div>
-
-        {!prestadorId && (
-          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-[11px] font-semibold text-slate-600">Nome do avulso *</Label>
-                <Input
-                  value={avulsoNome}
-                  onChange={(e) => setAvulsoNome(e.target.value)}
-                  placeholder="Nome completo"
-                  className="mt-1 h-10 bg-white"
-                />
-              </div>
-              <div>
-                <Label className="text-[11px] font-semibold text-slate-600">CPF/CNPJ</Label>
-                <Input
-                  value={avulsoDocumento}
-                  onChange={(e) => setAvulsoDocumento(e.target.value)}
-                  placeholder="Documento"
-                  className="mt-1 h-10 bg-white"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-                <Phone className="h-3.5 w-3.5" /> Telefone (WhatsApp) *
-              </Label>
-              <Input
-                type="tel"
-                inputMode="tel"
-                value={avulsoTelefone}
-                onChange={(e) => setAvulsoTelefone(e.target.value)}
-                placeholder="(11) 99999-9999"
-                className="mt-1 h-10 bg-white"
-              />
-            </div>
-
-            <div>
-              <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-                <MapPin className="h-3.5 w-3.5" /> Origem (local/ponto do motoboy) *
-              </Label>
-              <Input
-                value={avulsoOrigem}
-                onChange={(e) => setAvulsoOrigem(e.target.value)}
-                placeholder="Ex.: Base Zona Sul / Rua X"
-                className="mt-1 h-10 bg-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-                  <KeyRound className="h-3.5 w-3.5" /> Tipo de PIX
-                </Label>
-                <select
-                  value={avulsoPixTipo}
-                  onChange={(e) => setAvulsoPixTipo(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm"
-                >
-                  {OPCOES_PIX_TIPO.map((tipo) => (
-                    <option key={tipo} value={tipo}>
-                      {tipo}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label className="text-[11px] font-semibold text-slate-600">Chave PIX</Label>
-                <Input
-                  value={avulsoPixChave}
-                  onChange={(e) => setAvulsoPixChave(e.target.value)}
-                  placeholder="Opcional"
-                  className="mt-1 h-10 bg-white"
-                />
-              </div>
-            </div>
-            <p className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] leading-tight text-slate-500">
-              O PIX é opcional na criação da OS. Ele será exigido na baixa/finalização do serviço.
-            </p>
-          </div>
-        )}
-
-        {prestadorId && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
-            <p className="font-bold">{nomeMotorista.trim() || prestadorNome}</p>
-            <p className="text-emerald-700">
-              Receber e Pagar serão criados automaticamente pelo TMS ao salvar a OS.
-            </p>
-          </div>
-        )}
-      </SecaoMobile>
-
       <SecaoMobile icon={<FileText className="h-4 w-4" />} titulo="Observações da OS">
         <Textarea
           value={observacoes}
@@ -2379,6 +2382,8 @@ function NovaOSView() {
           <LockKeyhole className="h-3 w-3" /> A OS será gravada com o marcador [OS MOBILE] para o financeiro.
         </p>
       </SecaoMobile>
+        </>
+      )}
 
       <div className="sticky bottom-2 z-20 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
         <div className="mb-2 flex items-end justify-between gap-3">
@@ -2387,24 +2392,54 @@ function NovaOSView() {
             <p className="text-xl font-black text-slate-900">{fmtBRL(totalCliente)}</p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Custo prestador</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Repasse prestador</p>
             <p className="text-base font-black text-orange-700">{fmtBRL(custoPrestadorFinal)}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Button type="button" variant="outline" onClick={limpar} disabled={criando}>
-            Limpar
-          </Button>
-          <Button
-            type="button"
-            onClick={() => void criarOS()}
-            disabled={criando || calculandoRota}
-            className="bg-orange-600 text-white hover:bg-orange-700"
-          >
-            {criando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-            {criando ? "Criando..." : "Criar OS"}
-          </Button>
+          {etapa > 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => irParaEtapa((etapa - 1) as EtapaNovaOS)}
+              disabled={criando}
+            >
+              Voltar
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={limpar} disabled={criando}>
+              Limpar
+            </Button>
+          )}
+          {etapa < 3 ? (
+            <Button
+              type="button"
+              onClick={() => irParaEtapa((etapa + 1) as EtapaNovaOS)}
+              disabled={calculandoRota}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              {calculandoRota ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRight className="mr-2 h-4 w-4" />
+              )}
+              Continuar
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => void criarOS()}
+              disabled={criando || calculandoRota}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              {criando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+              {criando ? "Criando..." : "Criar OS"}
+            </Button>
+          )}
         </div>
+        <p className="mt-2 text-center text-[10px] font-semibold text-slate-500">
+          Etapa {etapa} de {ETAPAS_NOVA_OS.length} · ao criar, a OS entra na aba “Em Aberto” sem prestador.
+        </p>
       </div>
     </div>
   );
@@ -2488,6 +2523,24 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
   // Evita que o pré-carregamento assíncrono de uma OS sobrescreva outra.
   const baixaTokenRef = useRef(0);
 
+  // ============================================================
+  // Alocar prestador — a OS nasce SEM prestador (aba Nova OS) e o
+  // prestador (cadastrado ou avulso) é definido aqui, em Em Aberto.
+  // ============================================================
+  const [osAlocando, setOsAlocando] = useState<OSMobileLista | null>(null);
+  const [prestadorId, setPrestadorId] = useState<string | null>(null);
+  const [prestadorNome, setPrestadorNome] = useState("");
+  const [nomeMotorista, setNomeMotorista] = useState("");
+  const [avulsoNome, setAvulsoNome] = useState("");
+  const [avulsoDocumento, setAvulsoDocumento] = useState("");
+  const [avulsoTelefone, setAvulsoTelefone] = useState("");
+  const [avulsoOrigem, setAvulsoOrigem] = useState("");
+  const [avulsoPixTipo, setAvulsoPixTipo] = useState("CPF/CNPJ");
+  const [avulsoPixChave, setAvulsoPixChave] = useState("");
+  const [repasseAlocacao, setRepasseAlocacao] = useState("");
+  const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
+  const alocacaoTokenRef = useRef(0);
+
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
@@ -2544,6 +2597,12 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       const mapped: OSMobileLista[] = rows.map((row) => {
         const clienteId = row.cliente || row.cliente_id || null;
         const prestadorId = row.prestador || row.prestador_id || null;
+        const cargaRow = (row.carga || {}) as Record<string, unknown>;
+        const avulsoCarga = (cargaRow.avulso || null) as Record<string, unknown> | null;
+        const nomeAvulso =
+          avulsoCarga && typeof avulsoCarga.nome === "string" && avulsoCarga.nome
+            ? String(avulsoCarga.nome)
+            : null;
         return {
           id: row.id,
           numero: row.numero,
@@ -2553,7 +2612,9 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
           clienteId,
           clienteNome: clienteId ? clientesMap.get(clienteId) || null : null,
           prestadorId,
-          prestadorNome: prestadorId ? prestadoresMap.get(prestadorId) || null : null,
+          prestadorNome: prestadorId
+            ? prestadoresMap.get(prestadorId) || null
+            : nomeAvulso,
           veiculoTipo: row.veiculo_tipo,
           valorCliente: numeroOuZero(row.valor_cliente),
           statusFaturamento: row.status_faturamento,
@@ -2613,6 +2674,246 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
         .some((v) => String(v).toLowerCase().includes(termo)),
     );
   }, [osLista, busca]);
+
+  const resetFormularioAlocacao = () => {
+    setPrestadorId(null);
+    setPrestadorNome("");
+    setNomeMotorista("");
+    setAvulsoNome("");
+    setAvulsoDocumento("");
+    setAvulsoTelefone("");
+    setAvulsoOrigem("");
+    setAvulsoPixTipo("CPF/CNPJ");
+    setAvulsoPixChave("");
+    setRepasseAlocacao("");
+  };
+
+  const fecharAlocacao = () => {
+    alocacaoTokenRef.current += 1;
+    setOsAlocando(null);
+    resetFormularioAlocacao();
+  };
+
+  const abrirAlocacao = async (os: OSMobileLista) => {
+    const token = ++alocacaoTokenRef.current;
+    resetFormularioAlocacao();
+    setOsAlocando(os);
+    setPrestadorId(os.prestadorId);
+    setPrestadorNome(os.prestadorNome || "");
+    setNomeMotorista(os.prestadorNome || "");
+    setRepasseAlocacao(os.custoPrestador > 0 ? String(os.custoPrestador) : "");
+
+    // Dados do avulso/motorista ficam em `carga` (jsonb) — a OS não tem coluna metadata.
+    try {
+      const { data } = await supabase
+        .from("ordens_servico")
+        .select("carga")
+        .eq("id", os.id)
+        .maybeSingle();
+      if (alocacaoTokenRef.current !== token) return;
+      const carga = ((data as Record<string, unknown> | null)?.carga || {}) as Record<string, unknown>;
+      const avulso = (carga.avulso || null) as Record<string, unknown> | null;
+      if (avulso && typeof avulso === "object") {
+        setAvulsoNome(typeof avulso.nome === "string" ? avulso.nome : "");
+        setAvulsoDocumento(typeof avulso.documento === "string" ? avulso.documento : "");
+        setAvulsoTelefone(typeof avulso.telefone_whatsapp === "string" ? avulso.telefone_whatsapp : "");
+        setAvulsoOrigem(typeof avulso.origem === "string" ? avulso.origem : "");
+        setAvulsoPixTipo(
+          typeof avulso.pix_tipo === "string" && avulso.pix_tipo ? avulso.pix_tipo : "CPF/CNPJ",
+        );
+        setAvulsoPixChave(typeof avulso.pix_chave === "string" ? avulso.pix_chave : "");
+      }
+      if (typeof carga.motorista === "string" && carga.motorista) setNomeMotorista(carga.motorista);
+    } catch (error) {
+      console.warn("[OsMobile] Não foi possível carregar os dados da alocação:", error);
+    }
+  };
+
+  const alocarPrestador = async () => {
+    if (!osAlocando) return;
+
+    const erros: string[] = [];
+    if (!prestadorId) {
+      if (!avulsoNome.trim()) erros.push("Informe o nome do prestador avulso");
+      if (!validarTelefone(avulsoTelefone)) erros.push("Telefone (WhatsApp) do prestador inválido");
+      if (!avulsoOrigem.trim()) erros.push("Informe a origem (local/ponto do motoboy)");
+      // PIX é OPCIONAL na alocação — ele é exigido na baixa/finalização.
+    }
+    const repasse = Number(String(repasseAlocacao).replace(",", ".")) || 0;
+    if (repasse <= 0) erros.push("Informe o repasse previsto do prestador");
+    if (erros.length > 0) {
+      toast.error(erros[0], {
+        description: erros.length > 1 ? `${erros.length - 1} pendência(s) adicional(is).` : undefined,
+      });
+      return;
+    }
+
+    setSalvandoAlocacao(true);
+    try {
+      const { data: atual } = await supabase
+        .from("ordens_servico")
+        .select("carga")
+        .eq("id", osAlocando.id)
+        .maybeSingle();
+      const cargaAtual = ((atual as Record<string, unknown> | null)?.carga || {}) as Record<string, unknown>;
+      const cargaNova: Record<string, unknown> = { ...cargaAtual };
+
+      if (prestadorId) {
+        delete cargaNova.avulso;
+        if (nomeMotorista.trim()) cargaNova.motorista = nomeMotorista.trim();
+        else delete cargaNova.motorista;
+      } else {
+        cargaNova.avulso = {
+          nome: avulsoNome.trim(),
+          documento: avulsoDocumento.trim(),
+          telefone_whatsapp: avulsoTelefone.trim(),
+          origem: avulsoOrigem.trim(),
+          pix_tipo: avulsoPixTipo,
+          pix_chave: avulsoPixChave.trim(),
+        };
+        if (nomeMotorista.trim()) cargaNova.motorista = nomeMotorista.trim();
+      }
+
+      // `prestador` (uuid) e `prestador_id` (text) recebem o MESMO id: assim o
+      // trigger M80 cria financeiro_pagar + pagamentos_prestadores sozinho.
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update({
+          prestador: prestadorId,
+          prestador_id: prestadorId,
+          custo_prestador: repasse,
+          status: "agendada",
+          carga: cargaNova,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", osAlocando.id);
+      if (error) throw error;
+
+      if (prestadorId) {
+        // Cadastrado: o trigger M80 cuida do Receber + Pagar + Pagamentos.
+        // Se a OS tinha um avulso antes, limpa a chave PIX/observações antigas
+        // para a baixa não confirmar o PIX de quem saiu.
+        const { data: pagar } = await supabase
+          .from("financeiro_pagar")
+          .select("id, observacoes")
+          .eq("os_id", osAlocando.id)
+          .limit(1)
+          .maybeSingle();
+        const rowPagar = pagar as Record<string, unknown> | null;
+        const obsAntiga = typeof rowPagar?.observacoes === "string" ? rowPagar.observacoes : "";
+        if (rowPagar?.id && obsAntiga.includes("avulso cadastrado via /os-mobile")) {
+          const { error: erroLimpeza } = await supabase
+            .from("financeiro_pagar")
+            .update({
+              chave_pix: null,
+              fornecedor_documento: null,
+              descricao: `Repasse ${osAlocando.numero || osAlocando.id}`,
+              observacoes: `Prestador avulso realocado para o cadastro via /os-mobile · OS ${osAlocando.numero || osAlocando.id}`,
+            })
+            .eq("id", String(rowPagar.id));
+          if (erroLimpeza) {
+            console.warn("[OsMobile] Não foi possível limpar o Pagar do avulso:", erroLimpeza.message);
+          }
+        }
+      } else {
+        // Avulso: o trigger não cria Pagar (prestador_id NULL) — criamos aqui.
+        const vencimento = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0];
+        const obsWhatsApp = `WhatsApp: ${avulsoTelefone.trim()}`;
+        const obsOrigem = `Origem: ${avulsoOrigem.trim()}`;
+        const obsPix = avulsoPixChave.trim()
+          ? ` · PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`
+          : " · PIX a informar na baixa";
+        const descricao = `Repasse OS Mobile · ${osAlocando.numero || osAlocando.id}`;
+        const observacoes =
+          `Prestador avulso cadastrado via /os-mobile · OS ${osAlocando.numero || osAlocando.id}` +
+          ` · ${obsWhatsApp} · ${obsOrigem}${obsPix}`;
+
+        const { data: existente } = await supabase
+          .from("financeiro_pagar")
+          .select("id")
+          .eq("os_id", osAlocando.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existente?.id) {
+          const { error: erroAtualiza } = await supabase
+            .from("financeiro_pagar")
+            .update({
+              descricao,
+              valor: repasse,
+              vencimento,
+              data_vencimento: vencimento,
+              status: "pendente",
+              fornecedor_nome: avulsoNome.trim(),
+              fornecedor_documento: avulsoDocumento.trim() || null,
+              chave_pix: avulsoPixChave.trim() || null,
+              observacoes,
+            })
+            .eq("id", String(existente.id));
+          if (erroAtualiza) {
+            console.warn("[OsMobile] Pagar do avulso não atualizado:", erroAtualiza.message);
+          }
+        } else {
+          const { error: erroPagar } = await supabase.from("financeiro_pagar").insert([
+            {
+              descricao,
+              valor: repasse,
+              vencimento,
+              data_vencimento: vencimento,
+              data_emissao: hojeISO(),
+              status: "pendente",
+              os_id: osAlocando.id,
+              fornecedor_nome: avulsoNome.trim(),
+              fornecedor_documento: avulsoDocumento.trim() || null,
+              chave_pix: avulsoPixChave.trim() || null,
+              observacoes,
+            },
+          ]);
+          if (erroPagar) console.warn("[OsMobile] Pagar do avulso não criado:", erroPagar.message);
+        }
+
+        // Realocação cadastrado → avulso: o trigger M80 não atualiza
+        // `pagamentos_prestadores` quando prestador_id fica NULL, deixando uma
+        // linha órfã do prestador anterior. Cancela para não virar pagamento fantasma.
+        try {
+          const { data: pg } = await supabase
+            .from("pagamentos_prestadores")
+            .select("id")
+            .eq("os_id", osAlocando.id)
+            .limit(1)
+            .maybeSingle();
+          if (pg?.id) {
+            const { error: erroCancela } = await supabase
+              .from("pagamentos_prestadores")
+              .update({ status_pagamento: "cancelado" })
+              .eq("id", String(pg.id));
+            if (erroCancela) {
+              console.warn("[OsMobile] Pagamento do prestador anterior não cancelado:", erroCancela.message);
+            }
+          }
+        } catch (erroPagamentos) {
+          console.warn("[OsMobile] Falha ao checar pagamentos_prestadores:", erroPagamentos);
+        }
+      }
+
+      toast.success(`Prestador alocado na OS ${osAlocando.numero || osAlocando.id}`, {
+        description: prestadorId
+          ? `${nomeMotorista.trim() || prestadorNome || "Prestador cadastrado"} · repasse ${fmtBRL(repasse)}`
+          : `${avulsoNome.trim()} · repasse ${fmtBRL(repasse)}`,
+      });
+      fecharAlocacao();
+      await carregar();
+    } catch (error) {
+      console.error("[OsMobile] Erro ao alocar prestador:", error);
+      toast.error("Não foi possível alocar o prestador", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSalvandoAlocacao(false);
+    }
+  };
 
   const abrirBaixa = async (os: OSMobileLista) => {
     setOsSelecionada(os);
@@ -2702,14 +3003,19 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
   };
 
   const copiarOrientacao = async (os: OSMobileLista) => {
-    const texto = gerarOrientacaoWhatsApp(os);
+    const gerandoLink = toast.loading("Gerando link...", {
+      description: "Encurtando os links do Google Maps.",
+    });
     try {
+      const texto = await encurtarLinksDoMaps(gerarOrientacaoWhatsApp(os));
       await navigator.clipboard.writeText(texto);
       toast.success("Orientação copiada", {
         description: "Cole no WhatsApp do motorista (privado).",
       });
     } catch {
       toast.error("Não foi possível copiar a Orientação");
+    } finally {
+      toast.dismiss(gerandoLink);
     }
   };
 
@@ -2971,6 +3277,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
         {filtradas.map((os) => {
           const badge = statusBadge(os.status);
           const finalizada = STATUS_FINALIZADAS.includes(os.status);
+          const alocado = Boolean(os.prestadorId) || Boolean(os.prestadorNome);
           return (
             <article key={os.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -2983,6 +3290,11 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                     {os.isMobile && (
                       <Badge variant="outline" className="border-orange-200 bg-orange-50 text-[10px] text-orange-700">
                         OS Mobile
+                      </Badge>
+                    )}
+                    {!finalizada && !alocado && (
+                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-700">
+                        Sem prestador
                       </Badge>
                     )}
                   </div>
@@ -3030,6 +3342,25 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                 </Button>
               </div>
 
+              {!finalizada && (
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={`w-full ${
+                      alocado
+                        ? ""
+                        : "border-orange-600 bg-orange-600 text-white hover:bg-orange-700 hover:text-white"
+                    }`}
+                    onClick={() => void abrirAlocacao(os)}
+                  >
+                    <Bike className="mr-1.5 h-3.5 w-3.5" />
+                    {alocado ? "Trocar prestador" : "Alocar prestador"}
+                  </Button>
+                </div>
+              )}
+
               {finalizada ? (
                 <div className="mt-2">
                   <Button
@@ -3060,6 +3391,225 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
           );
         })}
       </div>
+
+      {/* ============================================================
+          Alocar prestador — cadastrado (trigger M80 cuida do financeiro)
+          ou avulso (Pagar criado/atualizado aqui).
+          ============================================================ */}
+      <Dialog open={Boolean(osAlocando)} onOpenChange={(v) => !v && fecharAlocacao()}>
+        <DialogContent className="flex max-h-[85vh] w-[96vw] max-w-md flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="shrink-0 border-b border-slate-200 px-5 pb-3 pr-10 pt-5">
+            <DialogTitle className="flex items-center gap-2">
+              <Bike className="h-4 w-4 text-orange-600" /> Alocar prestador
+            </DialogTitle>
+          </DialogHeader>
+
+          {osAlocando && (
+            <>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                <p className="text-sm font-black text-slate-800">
+                  {osAlocando.numero || osAlocando.id.slice(0, 8)}
+                </p>
+                <p>{osAlocando.clienteNome || "Cliente não informado"}</p>
+                <p className="mt-0.5 truncate">
+                  {osAlocando.origem || "Origem"} → {osAlocando.destino || "Destino"}
+                </p>
+              </div>
+
+              <div className="flex items-end justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <Label className="text-[11px] font-semibold text-slate-600">
+                    Prestador cadastrado (opcional)
+                  </Label>
+                  <SearchableSelect
+                    table="prestadores"
+                    labelField="nome_completo"
+                    searchFields={PRESTADOR_SEARCH_FIELDS}
+                    placeholder="Pesquisar prestador (nome, CPF, placa, telefone)..."
+                    value={prestadorId}
+                    onChange={(value, record) => {
+                      const nome = value && record?.nome_completo ? record.nome_completo : "";
+                      setPrestadorId(value);
+                      setPrestadorNome(nome);
+                      setNomeMotorista(value ? nome : "");
+                    }}
+                    secondaryField="cpf_cnpj"
+                    filters={FILTRO_ATIVO}
+                  />
+                </div>
+                {prestadorId && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setPrestadorId(null);
+                      setPrestadorNome("");
+                      setNomeMotorista("");
+                    }}
+                  >
+                    Usar avulso
+                  </Button>
+                )}
+              </div>
+
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600">
+                  Nome do motorista (saudação do WhatsApp)
+                </Label>
+                <Input
+                  value={nomeMotorista}
+                  onChange={(e) => setNomeMotorista(e.target.value)}
+                  placeholder={
+                    prestadorId
+                      ? prestadorNome || "Nome do prestador"
+                      : avulsoNome.trim() || "Motorista"
+                  }
+                  className="mt-1 h-10 bg-white"
+                />
+                <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                  Usado na saudação: “Olá, {nomeMotorista.trim() || prestadorNome || avulsoNome.trim() || "Motorista"}!”
+                </p>
+              </div>
+
+              {!prestadorId && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-600">Nome do avulso *</Label>
+                      <Input
+                        value={avulsoNome}
+                        onChange={(e) => setAvulsoNome(e.target.value)}
+                        placeholder="Nome completo"
+                        className="mt-1 h-10 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-600">CPF/CNPJ</Label>
+                      <Input
+                        value={avulsoDocumento}
+                        onChange={(e) => setAvulsoDocumento(e.target.value)}
+                        placeholder="Documento"
+                        className="mt-1 h-10 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                      <Phone className="h-3.5 w-3.5" /> Telefone (WhatsApp) *
+                    </Label>
+                    <Input
+                      type="tel"
+                      inputMode="tel"
+                      value={avulsoTelefone}
+                      onChange={(e) => setAvulsoTelefone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      className="mt-1 h-10 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                      <MapPin className="h-3.5 w-3.5" /> Origem (local/ponto do motoboy) *
+                    </Label>
+                    <Input
+                      value={avulsoOrigem}
+                      onChange={(e) => setAvulsoOrigem(e.target.value)}
+                      placeholder="Ex.: Base Zona Sul / Rua X"
+                      className="mt-1 h-10 bg-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                        <KeyRound className="h-3.5 w-3.5" /> Tipo de PIX
+                      </Label>
+                      <select
+                        value={avulsoPixTipo}
+                        onChange={(e) => setAvulsoPixTipo(e.target.value)}
+                        className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                      >
+                        {OPCOES_PIX_TIPO.map((tipo) => (
+                          <option key={tipo} value={tipo}>
+                            {tipo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] font-semibold text-slate-600">Chave PIX</Label>
+                      <Input
+                        value={avulsoPixChave}
+                        onChange={(e) => setAvulsoPixChave(e.target.value)}
+                        placeholder="Opcional"
+                        className="mt-1 h-10 bg-white"
+                      />
+                    </div>
+                  </div>
+                  <p className="rounded-lg bg-white px-2.5 py-1.5 text-[10px] leading-tight text-slate-500">
+                    O PIX é opcional na alocação. Ele será exigido na baixa/finalização do serviço.
+                  </p>
+                </div>
+              )}
+
+              {prestadorId && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+                  <p className="font-bold">{nomeMotorista.trim() || prestadorNome}</p>
+                  <p className="text-emerald-700">
+                    Receber, Pagar e Pagamentos serão criados automaticamente pelo TMS ao salvar a alocação.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-[11px] font-semibold text-slate-600">
+                  Repasse previsto ao prestador (R$) *
+                </Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={repasseAlocacao}
+                  onChange={(e) => setRepasseAlocacao(e.target.value)}
+                  placeholder="Ex.: 65,50"
+                  className="mt-1 h-10 bg-white"
+                />
+                <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                  Valor calculado na criação: {fmtBRL(osAlocando.custoPrestador)}. Ajuste aqui se o
+                  repasse for diferente.
+                </p>
+              </div>
+
+              </div>
+
+              {/* Rodapé fixo — sempre visível (fora da área de rolagem) */}
+              <div
+                className="shrink-0 border-t border-slate-200 bg-white px-5 pt-3"
+                style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" variant="outline" onClick={fecharAlocacao} disabled={salvandoAlocacao}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void alocarPrestador()}
+                    disabled={salvandoAlocacao}
+                    className="bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    {salvandoAlocacao ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Bike className="mr-1.5 h-4 w-4" />}
+                    {salvandoAlocacao ? "Alocando..." : "Alocar"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(osSelecionada)} onOpenChange={(v) => !v && setOsSelecionada(null)}>
         <DialogContent className="max-h-[92vh] w-[96vw] max-w-md overflow-y-auto p-0 gap-0">
@@ -3292,12 +3842,19 @@ interface FinanceiroRowMobile {
   data_pagamento: string | null;
 }
 
+type StatusRepasseMobile = "pendentes" | "pagos";
+
 function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
   const navigate = useNavigate();
   const [repasses, setRepasses] = useState<RepasseMobile[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [somenteMobile, setSomenteMobile] = useState(false);
   const [baixando, setBaixando] = useState<string | null>(null);
+  const [statusAba, setStatusAba] = useState<StatusRepasseMobile>("pendentes");
+  const [periodoInicio, setPeriodoInicio] = useState<string>(hojeISO());
+  const [periodoFim, setPeriodoFim] = useState<string>(hojeISO());
+
+  const ehPagos = statusAba === "pagos";
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -3307,8 +3864,11 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
         .select(
           "id, descricao, valor, vencimento, data_vencimento, status, os_id, prestador, fornecedor_nome, fornecedor_documento, chave_pix, observacoes, data_pagamento",
         )
-        .in("status", ["pendente", "aberto", "parcial"])
-        .order("vencimento", { ascending: true })
+        .in("status", ehPagos ? ["pago"] : ["pendente", "aberto", "parcial"])
+        .order(ehPagos ? "data_pagamento" : "vencimento", {
+          ascending: !ehPagos,
+          nullsFirst: false,
+        })
         .limit(300);
 
       if (error) throw error;
@@ -3391,16 +3951,25 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
     } finally {
       setCarregando(false);
     }
-  }, []);
+  }, [ehPagos]);
 
   useEffect(() => {
     if (ativo) void carregar();
   }, [ativo, carregar]);
 
-  const filtrados = useMemo(
-    () => (somenteMobile ? repasses.filter((r) => r.isMobile) : repasses),
-    [repasses, somenteMobile],
-  );
+  // Filtro de período: pendentes → vencimento; pagos → data de pagamento.
+  const filtrados = useMemo(() => {
+    const base = somenteMobile ? repasses.filter((r) => r.isMobile) : repasses;
+    if (!periodoInicio && !periodoFim) return base;
+
+    return base.filter((r) => {
+      const data = ehPagos ? r.dataPagamento : r.vencimento;
+      if (!data) return false;
+      if (periodoInicio && data < periodoInicio) return false;
+      if (periodoFim && data > periodoFim) return false;
+      return true;
+    });
+  }, [repasses, somenteMobile, ehPagos, periodoInicio, periodoFim]);
 
   const totalPendente = useMemo(
     () => filtrados.reduce((acc, item) => acc + item.valor, 0),
@@ -3410,9 +3979,12 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
   const totalHoje = useMemo(() => {
     const hoje = hojeISO();
     return filtrados
-      .filter((item) => item.vencimento && item.vencimento <= hoje)
+      .filter((item) => {
+        if (ehPagos) return (item.dataPagamento || "") === hoje;
+        return Boolean(item.vencimento && item.vencimento <= hoje);
+      })
       .reduce((acc, item) => acc + item.valor, 0);
-  }, [filtrados]);
+  }, [filtrados, ehPagos]);
 
   const totalMobile = useMemo(
     () => repasses.filter((r) => r.isMobile).reduce((acc, item) => acc + item.valor, 0),
@@ -3465,20 +4037,95 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
 
   return (
     <div className="space-y-3">
+      {/* Status (pendentes x pagos) + período — padrão: hoje */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setStatusAba("pendentes")}
+            className={`rounded-lg px-2 py-2 text-[11px] font-black transition-colors ${
+              ehPagos ? "text-slate-600" : "bg-orange-600 text-white shadow-sm"
+            }`}
+          >
+            Valores Pendentes
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusAba("pagos")}
+            className={`rounded-lg px-2 py-2 text-[11px] font-black transition-colors ${
+              ehPagos ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600"
+            }`}
+          >
+            Valores Pagos
+          </button>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-[10px] font-semibold text-slate-500">Início (de)</Label>
+            <Input
+              type="date"
+              value={periodoInicio}
+              onChange={(e) => setPeriodoInicio(e.target.value)}
+              className="mt-1 h-9 px-2 text-xs"
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] font-semibold text-slate-500">Fim (até)</Label>
+            <Input
+              type="date"
+              value={periodoFim}
+              onChange={(e) => setPeriodoFim(e.target.value)}
+              className="mt-1 h-9 px-2 text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] text-slate-500">
+            {ehPagos ? "Baixa de pagamento no período" : "Vencimento no período"} · padrão: hoje
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodoInicio(hojeISO());
+                setPeriodoFim(hojeISO());
+              }}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodoInicio("");
+                setPeriodoFim("");
+              }}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Todo o período
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
           <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-            <Banknote className="h-3 w-3" /> Total pendente
+            <Banknote className="h-3 w-3" /> {ehPagos ? "Total pago no período" : "Total pendente"}
           </p>
           <p className="mt-1 text-xl font-black text-slate-900">{fmtBRL(totalPendente)}</p>
           <p className="text-[10px] text-slate-500">{filtrados.length} repasse(s)</p>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 shadow-sm">
           <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">
-            <CalendarDays className="h-3 w-3" /> A pagar hoje
+            <CalendarDays className="h-3 w-3" /> {ehPagos ? "Pago hoje" : "A pagar hoje"}
           </p>
           <p className="mt-1 text-xl font-black text-amber-900">{fmtBRL(totalHoje)}</p>
-          <p className="text-[10px] text-amber-700">Vencidos + vencendo hoje</p>
+          <p className="text-[10px] text-amber-700">
+            {ehPagos ? "Baixados na data de hoje" : "Vencidos + vencendo hoje"}
+          </p>
         </div>
       </div>
 
@@ -3525,8 +4172,14 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
       {!carregando && filtrados.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
           <Wallet className="mx-auto mb-2 h-8 w-8 text-slate-400" />
-          <p className="text-sm font-bold text-slate-700">Nenhum repasse pendente</p>
-          <p className="text-[11px] text-slate-500">Os repasses aparecem aqui após a criação das OS.</p>
+          <p className="text-sm font-bold text-slate-700">
+            {ehPagos ? "Nenhum repasse pago no período" : "Nenhum repasse pendente"}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {ehPagos
+              ? "Ajuste o período ou registre uma baixa em Valores Pendentes."
+              : "Os repasses aparecem aqui após a criação das OS."}
+          </p>
         </div>
       )}
 
@@ -3549,7 +4202,9 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
                   {repasse.osNumero || repasse.descricao || "Repasse"}
                 </p>
                 <p className="mt-0.5 text-[10px] text-slate-400">
-                  Vencimento: {fmtData(repasse.vencimento || repasse.data_vencimento)}
+                  {ehPagos
+                    ? `Pago em: ${fmtData(repasse.dataPagamento)}`
+                    : `Vencimento: ${fmtData(repasse.vencimento || repasse.data_vencimento)}`}
                 </p>
               </div>
               <div className="shrink-0 text-right">
@@ -3561,20 +4216,26 @@ function FinanceiroMobileView({ ativo }: { ativo: boolean }) {
             </div>
 
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void baixar(repasse)}
-                disabled={baixando === repasse.id}
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
-              >
-                {baixando === repasse.id ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                Baixar repasse
-              </Button>
+              {!ehPagos ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void baixar(repasse)}
+                  disabled={baixando === repasse.id}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  {baixando === repasse.id ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Baixar repasse
+                </Button>
+              ) : (
+                <div className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-bold text-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Pago em {fmtData(repasse.dataPagamento)}
+                </div>
+              )}
               <Button type="button" size="sm" variant="outline" onClick={() => navigate("/financeiro")}>
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Abrir TMS
               </Button>
@@ -3656,7 +4317,7 @@ export default function OsMobile() {
         style={{ paddingBottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}
       >
         <div className={aba === "nova" ? "block" : "hidden"}>
-          <NovaOSView />
+          <NovaOSView onAbrirEmAberto={() => setAba("aberto")} />
         </div>
         <div className={aba === "aberto" ? "block" : "hidden"}>
           <EmAbertoView ativo={aba === "aberto"} empresa={empresa} />

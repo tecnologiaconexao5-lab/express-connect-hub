@@ -104,11 +104,11 @@ describe("OsMobile — formulário de parada e nome do motorista", () => {
     expect(src).toContain("material: p.material");
   });
 
-  it("8 — nomeMotorista alimenta a saudação e é resetado no limpar", () => {
+  it("8 — nomeMotorista alimenta a saudação e é resetado no reset do formulário", () => {
     expect(src).toContain("const [nomeMotorista, setNomeMotorista] = useState(\"\")");
     expect(src).toContain("setNomeMotorista(value ? nome : \"\")");
     expect(src).toContain("setNomeMotorista(\"\")");
-    expect(src).toContain("prestadorNome: nomeMotorista.trim()");
+    expect(src).toContain("cargaNova.motorista = nomeMotorista.trim()");
     expect(src).toContain("Olá, {nomeMotorista.trim()");
   });
 

@@ -185,12 +185,12 @@ describe("D) Prestador avulso — campos financeiros", () => {
     expect(src).toContain("OPCOES_PIX_TIPO.map");
     expect(src).toContain("Telefone (WhatsApp) *");
     expect(src).toContain("Origem (local/ponto do motoboy) *");
-    // PIX deixou de ser obrigatório na criação da OS.
+    // PIX deixou de ser obrigatório na alocação da OS.
     expect(src).toContain("Tipo de PIX");
     expect(src).toContain("Chave PIX");
     expect(src).not.toContain("Tipo de PIX *");
     expect(src).not.toContain("Chave PIX *");
-    expect(src).toContain("O PIX é opcional na criação da OS");
+    expect(src).toContain("O PIX é opcional na alocação");
   });
 
   it("D.2 — criação não exige PIX; baixa exige chave válida", () => {
@@ -205,7 +205,7 @@ describe("D) Prestador avulso — campos financeiros", () => {
     expect(src).toContain('"Chave Aleatória"');
   });
 
-  it("D.3 — persistência: metadata da OS com telefone/origem/pix", () => {
+  it("D.3 — persistência: carga.avulso da OS com telefone/origem/pix", () => {
     expect(src).toContain("telefone_whatsapp: avulsoTelefone.trim()");
     expect(src).toContain("origem: avulsoOrigem.trim()");
     expect(src).toContain("pix_tipo: avulsoPixTipo");
@@ -223,7 +223,7 @@ describe("D) Prestador avulso — campos financeiros", () => {
     expect(src).toContain('chave_pix: chavePix');
   });
 
-  it("D.5 — reset em limpar() limpa os 4 campos", () => {
+  it("D.5 — reset do formulário de alocação limpa os 4 campos", () => {
     expect(src).toContain("setAvulsoTelefone(\"\")");
     expect(src).toContain("setAvulsoOrigem(\"\")");
     expect(src).toContain('setAvulsoPixTipo("CPF/CNPJ")');
@@ -282,5 +282,66 @@ describe("F) Regressão do motor", () => {
       pagamento: "faturado",
     });
     expect(r.total).toBeCloseTo(77.5, 2);
+  });
+});
+
+// ============================================================================
+// G) Alocar Prestador na aba "Em Aberto" (OS nasce sem prestador)
+// ============================================================================
+describe("G) Alocação de prestador na aba Em Aberto", () => {
+  const src = readSrc("src/pages/OsMobile.tsx");
+
+  it("G.1 — OS nasce sem prestador (status pendente, sem avulso no metadata)", () => {
+    expect(src).toContain('status: "pendente"');
+    expect(src).toContain('A OS nasce "Em Aberto"');
+    expect(src).not.toContain("prestador_avulso");
+    expect(src).not.toContain("prestador_id_texto");
+  });
+
+  it("G.2 — card da aba Em Aberto expõe o botão e o modal", () => {
+    expect(src).toContain("const [osAlocando, setOsAlocando]");
+    expect(src).toContain("void abrirAlocacao(os)");
+    expect(src).toContain('"Alocar prestador"');
+    expect(src).toContain('"Trocar prestador"');
+    expect(src).toContain("Sem prestador");
+    expect(src).toContain("abrirAlocacao = async (os: OSMobileLista)");
+  });
+
+  it("G.3 — update dispara o trigger M80 (prestador + prestador_id + status)", () => {
+    expect(src).toContain("prestador: prestadorId,");
+    expect(src).toContain("prestador_id: prestadorId,");
+    expect(src).toContain('status: "agendada",');
+    expect(src).toContain("carga: cargaNova,");
+  });
+
+  it("G.4 — avulso: financeiro_pagar criado/atualizado manualmente", () => {
+    expect(src).toContain("os_id: osAlocando.id");
+    expect(src).toContain("fornecedor_nome: avulsoNome.trim()");
+    expect(src).toContain("chave_pix: avulsoPixChave.trim() || null");
+    expect(src).toContain("Prestador avulso cadastrado via /os-mobile");
+  });
+
+  it("G.5 — dados do avulso persistem em carga.avulso (a OS não tem metadata)", () => {
+    expect(src).toContain("cargaNova.avulso = {");
+    expect(src).toContain("telefone_whatsapp: avulsoTelefone.trim()");
+    expect(src).toContain("cargaNova.motorista = nomeMotorista.trim()");
+  });
+
+  it("G.6 — realocação limpa o PIX do avulso e cancela pagamento órfão", () => {
+    expect(src).toContain("chave_pix: null,");
+    expect(src).toContain('status_pagamento: "cancelado"');
+    expect(src).toContain("avulso cadastrado via /os-mobile");
+  });
+
+  it("G.7 — sucesso convida a alocar na aba Em Aberto", () => {
+    expect(src).toContain("onAbrirEmAberto");
+    expect(src).toContain('setAba("aberto")');
+  });
+
+  it("G.8 — validação da alocação: telefone, origem e repasse (PIX opcional)", () => {
+    expect(src).toContain("validarTelefone(avulsoTelefone)");
+    expect(src).toContain('erros.push("Informe a origem (local/ponto do motoboy)")');
+    expect(src).toContain('erros.push("Informe o repasse previsto do prestador")');
+    expect(src).not.toContain("validarPixChave(avulsoPixTipo, avulsoPixChave)");
   });
 });
