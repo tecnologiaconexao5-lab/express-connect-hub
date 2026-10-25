@@ -24,6 +24,14 @@ import {
   gerarOSDoOrcamento,
   verificarOSJaGerada,
 } from "@/services/comercial/orcamentoToOSService";
+// MISSÃO COTACAO-EXPRESS — pré-preenchimento do Novo Orçamento a partir da cotação
+import {
+  buscarCotacao,
+  buscarCotacaoPorOrcamento,
+  montarOrcamentoDaCotacao,
+  vincularCotacaoAoOrcamento,
+  marcarCotacaoAguardandoDetalhes,
+} from "@/services/cotacoes/cotacaoPublicaService";
 
 const ITEMS_PER_PAGE = 8;
 
@@ -39,6 +47,8 @@ const OrcamentosLista = () => {
   const [dialogReprovar, setDialogReprovar] = useState<Orcamento | null>(null);
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+  // MISSÃO COTACAO-EXPRESS — cotação pública aberta no modo "novo" (pré-preenchida)
+  const [cotacaoVinculada, setCotacaoVinculada] = useState<string | null>(null);
 
   // Loading por ação individual (key = orc.id)
   const [loadingAprovar, setLoadingAprovar] = useState<string | null>(null);
@@ -52,10 +62,58 @@ const OrcamentosLista = () => {
 
   useEffect(() => {
     fetchOrcamentos();
-    if (searchParams.get("action") === "novo") {
+    const acao = searchParams.get("action");
+    const cotacaoIdParam = searchParams.get("cotacao");
+    const orcamentoIdParam = searchParams.get("orcamento");
+
+    if (acao === "novo") {
       setModoForm("novo");
+      // nunca reaproveita uma seleção anterior (preview) como pré-preenchimento
+      setOrcamentoSelecionado(null);
+      setCotacaoVinculada(null);
       searchParams.delete("action");
-      setSearchParams(searchParams, { replace: true });
+      if (!cotacaoIdParam) setSearchParams(searchParams, { replace: true });
+    }
+
+    // MISSÃO COTACAO-EXPRESS — alerta Realtime / link direto: abre o
+    // "Novo Orçamento Comercial" já pré-preenchido com a cotação do site.
+    if (cotacaoIdParam) {
+      void (async () => {
+        const res = await buscarCotacao(cotacaoIdParam);
+        if (res.ok && res.dado) {
+          setCotacaoVinculada(res.dado.id);
+          setOrcamentoSelecionado(montarOrcamentoDaCotacao(res.dado));
+          setModoForm("novo");
+          toast.success("Cotação do site carregada no Novo Orçamento.", {
+            description: `${res.dado.nome_cliente || "Cliente"} · ${res.dado.paradas.length} endereço(s)`,
+          });
+        } else {
+          toast.error(res.erro || "Cotação não encontrada.");
+        }
+        searchParams.delete("cotacao");
+        setSearchParams(searchParams, { replace: true });
+      })();
+      return;
+    }
+
+    // MISSÃO COTACAO-EXPRESS — cliente completou a Fase 2 → abre o orçamento vinculado
+    if (orcamentoIdParam) {
+      void (async () => {
+        const { data, error } = await supabase
+          .from("orcamentos")
+          .select("*")
+          .eq("id", orcamentoIdParam)
+          .maybeSingle();
+        if (!error && data) {
+          setOrcamentoSelecionado(toOrcamentoDomain(data as Record<string, unknown>) as Orcamento);
+          setModoForm("editar");
+        } else {
+          toast.error("Orçamento vinculado não encontrado.");
+        }
+        searchParams.delete("orcamento");
+        setSearchParams(searchParams, { replace: true });
+      })();
+      return;
     }
   }, [searchParams]);
 
@@ -130,6 +188,11 @@ const OrcamentosLista = () => {
     try {
       const res = await aprovarOrcamento(orc);
       if (res.success) {
+        // MISSÃO COTACAO-EXPRESS — aprovado → cotação espera os detalhes da Fase 2
+        const cotacao = await buscarCotacaoPorOrcamento(orc.id);
+        if (cotacao.ok && cotacao.dado) {
+          await marcarCotacaoAguardandoDetalhes(cotacao.dado.id);
+        }
         toast.success("Orçamento aprovado com sucesso!", { id: "aprovar" });
         fetchOrcamentos();
       } else {
@@ -233,7 +296,8 @@ const OrcamentosLista = () => {
     }
   };
 
-  const saveToSupabase = async (orc: Orcamento, isNew: boolean) => {
+  /** Salva e devolve o id do orçamento (ou `false` em erro) — usado pelo vínculo da cotação. */
+  const saveToSupabase = async (orc: Orcamento, isNew: boolean): Promise<string | false> => {
     try {
       const dbPayload = toOrcamentoInsert(orc);
       const result = isNew
@@ -246,25 +310,38 @@ const OrcamentosLista = () => {
       }
       fetchOrcamentos();
       toast.success(isNew ? "Orçamento criado!" : "Orçamento atualizado!");
-      return true;
-    } catch (e: any) {
+      const linha = Array.isArray(result.data) ? (result.data as { id?: unknown }[])[0] : null;
+      return String(linha?.id ?? orc.id);
+    } catch {
       toast.error("Erro inesperado ao salvar.");
       return false;
     }
   };
 
   const handleSalvar = async (orc: Orcamento) => {
-    await saveToSupabase(orc, modoForm === "novo");
+    const idSalvo = await saveToSupabase(orc, modoForm === "novo");
+    // MISSÃO COTACAO-EXPRESS — grava o vínculo no lado da cotação
+    // (a Fase 2 e o alerta "Pronto para OS" dependem dele)
+    if (idSalvo && cotacaoVinculada) {
+      const vinculo = await vincularCotacaoAoOrcamento(cotacaoVinculada, String(idSalvo));
+      if (vinculo.ok) {
+        toast.success("Cotação do site vinculada a este orçamento.");
+      } else {
+        toast.warning("Orçamento salvo, mas o vínculo com a cotação falhou.");
+      }
+    }
     setModoForm(null);
     setOrcamentoSelecionado(null);
+    setCotacaoVinculada(null);
   };
 
   if (modoForm && (orcamentoSelecionado || modoForm === "novo")) {
     return (
       <OrcamentoForm
-        orcamento={modoForm === "novo" ? undefined : orcamentoSelecionado!}
+        orcamento={orcamentoSelecionado || undefined}
         modo={modoForm}
-        onVoltar={() => { setModoForm(null); setOrcamentoSelecionado(null); }}
+        cotacaoId={cotacaoVinculada}
+        onVoltar={() => { setModoForm(null); setOrcamentoSelecionado(null); setCotacaoVinculada(null); }}
         onSalvar={handleSalvar}
       />
     );
@@ -278,7 +355,7 @@ const OrcamentosLista = () => {
           <h2 className="text-xl font-bold text-foreground">Orçamentos</h2>
           <p className="text-sm text-muted-foreground">Gestão de propostas comerciais</p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => { setOrcamentoSelecionado(null); setModoForm("novo"); }}>
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => { setOrcamentoSelecionado(null); setCotacaoVinculada(null); setModoForm("novo"); }}>
           <Plus className="w-4 h-4 mr-1" /> Novo Orçamento
         </Button>
       </div>

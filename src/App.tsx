@@ -69,6 +69,9 @@ const RastreamentoPublico = lazy(() => import("@/pages/RastreamentoPublico"));
 const PedidoRapido = lazy(() => import("@/pages/PedidoRapido"));
 const ControlePatio = lazy(() => import("@/pages/ControlePatio"));
 const Comprovantes = lazy(() => import("@/pages/Comprovantes"));
+// MISSÃO COTACAO-EXPRESS — fluxo publico de cotacao em 2 fases
+const CotacaoExpress = lazy(() => import("@/pages/CotacaoExpress"));
+const CotacaoExpressDetalhes = lazy(() => import("@/pages/CotacaoExpressDetalhes"));
 
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 
@@ -108,6 +111,9 @@ const App = () => {
           {/* MISSÃO CRIACAO-PORTAL-PEDIDO-RAPIDO-WHATSAPP — rota pública (link WhatsApp) */}
           <Route path="/pedido-rapido" element={<Lazy><PedidoRapido /></Lazy>} />
           <Route path="/c" element={<Lazy><PedidoRapido /></Lazy>} />
+          {/* MISSÃO COTACAO-EXPRESS — rota publica (link do site/WhatsApp) */}
+          <Route path="/cotacao-express" element={<Lazy><CotacaoExpress /></Lazy>} />
+          <Route path="/cotacao-express/detalhes/:id" element={<Lazy><CotacaoExpressDetalhes /></Lazy>} />
           <Route path="/portal-cliente" element={<Lazy><PortalCliente /></Lazy>} />
           <Route path="/portal-prestador" element={<PortalPrestador />} />
           <Route path="/zoho/callback" element={<ZohoCallback />} />

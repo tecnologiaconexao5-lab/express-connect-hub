@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route, Info, AlertCircle, TrendingUp, ListChecks, Calendar, Building2, User, FileText, BarChart3, Gauge } from "lucide-react";
+import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route, Info, AlertCircle, TrendingUp, ListChecks, Calendar, Building2, User, FileText, BarChart3, Gauge, Link2, Loader2 } from "lucide-react";
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import {
@@ -49,6 +49,11 @@ import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
 import { buscarTabelaValoresCliente } from "@/services/precificacao/buscarTabelasService";
 import { gerarOSDoOrcamento, verificarOSJaGerada } from "@/services/comercial/orcamentoToOSService";
+// MISSÃO COTACAO-EXPRESS — link da Fase 2 (endereços completos) para o cliente
+import {
+  buscarCotacaoPorOrcamento,
+  gerarLinkFase2EAtualizarStatus,
+} from "@/services/cotacoes/cotacaoPublicaService";
 import { FreightCompositionService } from "@/services/freteExterno/FreightCompositionService";
 import { useTenant } from "@/contexts/TenantContext";
 
@@ -76,6 +81,8 @@ interface Props {
   modo: "ver" | "editar" | "novo";
   onVoltar: () => void;
   onSalvar: (orc: Orcamento) => void;
+  /** MISSÃO COTACAO-EXPRESS — id da cotação pública que originou este orçamento. */
+  cotacaoId?: string | null;
 }
 
 const emptyEndereco = (): EnderecoOrcamento => ({ tipo: "coleta", sequencia: 1, endereco: "", cidade: "", uf: "", cep: "", contato: "", telefone: "", instrucoes: "", janelaInicio: "", janelaFim: "" });
@@ -210,8 +217,12 @@ const obterDocStepsOrcamento = (data: Orcamento): DocStep[] => {
   ];
 };
 
-const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
+const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar, cotacaoId }: Props) => {
   const [data, setData] = useState<Orcamento>(orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
+  // MISSÃO COTACAO-EXPRESS — cotação vinculada (prop vinda da lista ou lookup pelo id)
+  const [cotacaoIdForm, setCotacaoIdForm] = useState<string | null>(cotacaoId || null);
+  const [gerandoLinkFase2, setGerandoLinkFase2] = useState(false);
+  const podeGerarLinkFase2 = Boolean(cotacaoIdForm) || modo !== "novo";
   // Guard contra perda de alterações (dirty + beforeunload + confirmação de saída).
   const [baseline] = useState<Orcamento>(() => orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
   const exitGuard = useFormExitGuard({ current: data, initial: baseline });
@@ -652,6 +663,42 @@ const recalcular = () => {
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+  // MISSÃO COTACAO-EXPRESS — gera o link público da Fase 2 e move a cotação
+  // para 'Aguardando Detalhes' (cliente completa número/complemento/contato).
+  const handleGerarLinkFase2 = async () => {
+    if (gerandoLinkFase2) return;
+    if (modo === "novo") {
+      toast.warning("Salve o orçamento antes de gerar o link da Fase 2.");
+      return;
+    }
+    setGerandoLinkFase2(true);
+    try {
+      let id = cotacaoIdForm;
+      if (!id) {
+        const busca = await buscarCotacaoPorOrcamento(data.id);
+        if (!busca.ok || !busca.dado) {
+          toast.error("Nenhuma cotação pública vinculada a este orçamento.");
+          return;
+        }
+        id = busca.dado.id;
+        setCotacaoIdForm(id);
+      }
+      const res = await gerarLinkFase2EAtualizarStatus(id);
+      if (!res.ok || !res.dado) {
+        toast.error(res.erro || "Não foi possível gerar o link da Fase 2.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(res.dado);
+        toast.success("Link da Fase 2 copiado!", { description: res.dado, duration: 60000 });
+      } catch {
+        toast.success("Link da Fase 2 gerado!", { description: res.dado, duration: 60000 });
+      }
+    } finally {
+      setGerandoLinkFase2(false);
+    }
+  };
+
   const etapasDoc = obterDocStepsOrcamento(data);
   const idxAbaAtual = etapasDoc.findIndex((s) => s.value === abaAtiva);
   const temProximaEtapa = idxAbaAtual >= 0 && idxAbaAtual < etapasDoc.length - 1;
@@ -690,6 +737,13 @@ const recalcular = () => {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* MISSÃO COTACAO-EXPRESS — abre a Fase 2 para o cliente completar os endereços */}
+          {podeGerarLinkFase2 && (
+            <Button variant="outline" size="sm" onClick={() => void handleGerarLinkFase2()} disabled={gerandoLinkFase2}>
+              {gerandoLinkFase2 ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Link2 className="w-4 h-4 mr-1" />}
+              Gerar Link da Fase 2
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={async () => await gerarPdfOrcamento(data)}><FileDown className="w-4 h-4 mr-1" /> Gerar PDF</Button>
           <Button variant="outline" size="sm" disabled>Gerar Contrato</Button>
           {data.status === "aprovado" && <Button variant="default" size="sm" onClick={() => gerarOS()}>Converter em OS</Button>}

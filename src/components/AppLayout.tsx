@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCotacoesPublicasRealtime } from "@/hooks/useCotacoesPublicasRealtime";
 import AppSidebar from "./AppSidebar";
 import AppTopbar from "./AppTopbar";
 
@@ -9,6 +10,21 @@ const AppLayout = () => {
   const [expanded, setExpanded] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // MISSÃO COTACAO-EXPRESS — 2 alertas em tempo real da Torre de Controle:
+  // nova cotação web (pré-cadastro) e cliente que já preencheu os detalhes.
+  const abrirCotacao = useCallback(
+    (cotacaoId: string, orcamentoId: string | null) => {
+      navigate(
+        orcamentoId
+          ? `/comercial?tab=orcamentos&orcamento=${orcamentoId}`
+          : `/comercial?tab=orcamentos&action=novo&cotacao=${cotacaoId}`,
+      );
+    },
+    [navigate],
+  );
+  useCotacoesPublicasRealtime({ onAbrirCotacao: abrirCotacao, habilitado: Boolean(user) });
 
   const handleMouseEnter = useCallback(() => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);

@@ -1,5 +1,57 @@
 # Summary
 
+## MISSÃO COTACAO-EXPRESS — Cotação pública de fretes em 2 fases + alertas na Torre (2026-10-24)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (8 arquivos) · teste novo **31/31 PASS** · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, +31 testes novos = 2224 pass) · `npm run build` 40.35s. **Migração NÃO aplicada** ao Supabase (pendência manual).
+
+### O que mudou (5 entregas)
+
+**1. Tabela `public.cotacoes_publicas` — `supabase/migrations/20261024000000_cotacoes_publicas.sql`**
+- Colunas: `id uuid` PK, `status text NOT NULL DEFAULT 'Pendente'` + **CHECK** `(status IN ('Pendente','Aguardando Detalhes','Pronto para OS'))`, `nome_cliente`, `telefone`, `carga_descricao`, `carga_peso`, `carga_dimensoes`, `carga_volumes`, `paradas jsonb`, `detalhes jsonb`, `data_desejada date`, `hora_desejada text`, `orcamento_id uuid`, `valor_aprovado numeric`, `metadata jsonb`, `tenant_id uuid DEFAULT current_tenant_id_safe()`, `created_at/updated_at` + trigger `updated_at`.
+- Índices: `status`, `orcamento_id`, `created_at`, `tenant_id`. RLS ON: **INSERT/SELECT/UPDATE `TO anon, authenticated` `USING/WITH CHECK (true)`** (filtro `.eq("id", …)` sempre no client), DELETE só `authenticated`; `GRANT SELECT/INSERT/UPDATE … TO anon` + `ALTER PUBLICATION supabase_realtime ADD TABLE …` em DO block idempotente + `NOTIFY pgrst, 'reload schema'`.
+
+**2. Service — `src/services/cotacoes/cotacaoPublicaService.ts` (NOVO)**
+- Tipos `StatusCotacao`/`ParadaCotacao`/`DetalheParadaCotacao`/`CotacaoPublica`/`ResultadoCotacao<T>`, `MAX_PARADAS_COTACAO = 8`.
+- Funções puras: `montarParadasFase1(enderecos[])` (1ª = `retirada`, demais `entrega`, vazias descartadas) · `extrairCep` (só 8 dígitos) · `gerarNumeroOrcamento()` (`ORC-YYYYMM-XXXX`) · `gerarLinkFase2(id)` (`/cotacao-express/detalhes/:id`).
+- CRUD: `criarCotacaoFase1` (guarda ≥2 paradas/limite 8 **antes** de rede, insert `status: "Pendente"`, `.select()` retorna id) · `buscarCotacao` / `buscarCotacaoPorOrcamento` (erro antes de rede se id vazio, sempre `.eq`) · `salvarDetalhesFase2` (update `detalhes` + `status: "Pronto para OS"`) · `vincularCotacaoAoOrcamento` · `marcarCotacaoAguardandoDetalhes` · `gerarLinkFase2EAtualizarStatus`.
+- **`montarOrcamentoDaCotacao(cotacao)`** → `Orcamento` completo pré-preenchido (`status: "em_analise"`, `numero` gerado, `cliente` = nome, `pedidoInterno` = id da cotação, `enderecos[]` com `tipo coleta/entrega` + `cep` extraído, `carga`/`observacoesGerais` com WhatsApp, `historico` com 1 entrada).
+
+**3. Fase 1 — `src/pages/CotacaoExpress.tsx` (NOVO, rota pública `/cotacao-express`)**
+- 4 passos Typeform (Etapa 1 Quem pediu · 2 A carga · 3 O trajeto · 4 Quando) + tela de sucesso; barra `Pergunta {etapa} de {TOTAL_ETAPAS}` com `TOTAL_ETAPAS = 4`.
+- **Fricção zero**: teste prova que só existem 7 ids de campo (`cot-nome/telefone/descricao/peso/dimensoes/data/hora`) — **sem número/complemento/contato**; paradas são UMA referência por parada (`CEP, bairro ou rua`) + botão "Adicionar parada"/remover, aviso "motos transportam até 40kg".
+- Sucesso exato: `Tudo certo, {primeiroNome}! 🚀 Analisaremos a rota e enviaremos o valor no WhatsApp. Após sua aprovação, pediremos os detalhes finais do endereço.`
+
+**4. Fase 2 — `src/pages/CotacaoExpressDetalhes.tsx` (NOVO, rota pública `/cotacao-express/detalhes/:id`)**
+- `useParams` + `buscarCotacao`; por parada: `Número *`, Complemento, `Nome de quem recebe / retira *`, Observações; validação dos dois obrigatórios; salvar → `salvarDetalhesFase2` (idempotente se já `Pronto para OS`); sucesso exato `Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.`
+
+**5. Rotas + alertas + integração comercial**
+- `src/App.tsx`: 2 `lazy` + `<Route path="/cotacao-express">` e `/cotacao-express/detalhes/:id` **fora** do `ProtectedRoute`.
+- `src/hooks/useCotacoesPublicasRealtime.ts` (NOVO): canal `cotacoes-publicas-alertas`, `INSERT`/`UPDATE` em `cotacoes_publicas`, dedup por `useRef<Set>`, `duration: 60000`, `removeChannel` no cleanup; avisos **`🚨 Nova Cotação Web (Pré-cadastro)!`** (INSERT) e **`✅ Detalhes preenchidos pelo cliente!`** (UPDATE para `Pronto para OS`).
+- `src/components/AppLayout.tsx`: `useNavigate` + `useCallback abrirCotacao` + hook com `habilitado: Boolean(user)` (antes dos early-returns): INSERT → `` `/comercial?tab=orcamentos&action=novo&cotacao=${id}` ``, `Pronto para OS` → `` `…&orcamento=${orcamentoId}` `` (nenhum consumidor pré-existente desses params; `action=novo` já é usado pelo `DashboardTopbar`).
+- `OrcamentosLista.tsx`: efeito lê `action`/`cotacao`/`orcamento` → **prefill via `montarOrcamentoDaCotacao`** / edição via `toOrcamentoDomain` (clonado **antes do mount** do form) e limpa params com `replace`; `saveToSupabase` agora retorna `Promise<string|false>`; `handleSalvar` chama `vincularCotacaoAoOrcamento`; `handleAprovar` chama `buscarCotacaoPorOrcamento` + `marcarCotacaoAguardandoDetalhes`; render passa `orcamento={orcamentoSelecionado || undefined}` e `cotacaoId={cotacaoVinculada}`.
+- `OrcamentoForm.tsx`: botão **"Gerar Link da Fase 2"** no header (antes de "Gerar PDF"), bloqueado em modo `novo`, `gerarLinkFase2EAtualizarStatus` + copia para clipboard (`navigator.clipboard.writeText`).
+
+### Testes
+- **NOVO** `src/test/cotacao_express_fluxo.test.ts` — **31 casos** em 6 blocos: A) migration (tabela/CHECK 3 status/jsonb/RLS anon/publication) · B) service (1ª parada retirada, guardas de rede, limite 8, `extrairCep`, `ORC-`, link Fase 2, `montarOrcamentoDaCotacao`, `.eq("id", …)`) · C) Fase 1 (ids exatos sem complemento/contato, 4 passos, 40kg, frase de sucesso, rota pública sem sidebar) · D) Fase 2 (URL/ids por parada/validação/`Pronto para OS`/frase) · E) rotas em `App.tsx` · F) hook (canal/2 avisos/cleanup) + `AppLayout` (URLs) + lista (prefill/vínculo/aprovação) + form (botão/clipboard).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (8 arquivos da missão) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts` → ✅ **31/31**
+- `npx vitest run` → 18 failed **pré-existentes** / 151 passed / 1 skipped (2224 passed, +31 vs baseline)
+- `npm run build` → ✅ 40.35s
+
+### Arquivos
+- `supabase/migrations/20261024000000_cotacoes_publicas.sql` (NOVO) · `src/services/cotacoes/cotacaoPublicaService.ts` (NOVO) · `src/pages/CotacaoExpress.tsx` (NOVO) · `src/pages/CotacaoExpressDetalhes.tsx` (NOVO) · `src/hooks/useCotacoesPublicasRealtime.ts` (NOVO) · `src/App.tsx` · `src/components/AppLayout.tsx` · `src/components/comercial/OrcamentosLista.tsx` · `src/components/comercial/OrcamentoForm.tsx` · `src/test/cotacao_express_fluxo.test.ts` (NOVO, 31 casos) · `AGENTS.md`
+
+### Pendências
+1. (Banco) **Aplicar a migration `20261024000000_cotacoes_publicas.sql` no Supabase** (SQL Editor ou `supabase db push`) — sem ela as 2 fases públicas falham no insert; sem `DATABASE_URL` garantido, fica para o usuário.
+2. (QA) `/cotacao-express` ao vivo: 4 passos → sucesso → verificar linha em `cotacoes_publicas` (`status Pendente`) e toast `🚨` na Torre (usuário logado).
+3. (QA) Link Fase 2 gerado no orçamento → preencher números/contatos → conferir `Pronto para OS` + toast `✅` + navegação para `?orcamento=`.
+4. (QA) Novo Orçamento com `?action=novo&cotacao=` abre pré-preenchido e, ao salvar, vincula `orcamento_id` na cotação.
+5. (decisão) A Fase 1 avisa "Número e complemento pedimos depois" — se a operação preferir esconder até esse texto, ajustar o hint.
+
+---
+
 ## MISSÃO OS-MOBILE-UX-01 — Modal responsivo, link curto do Maps e filtros do Financeiro (2026-10-24)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros · teste novo **14/14 PASS** · regressão OsMobile **148/148** (7 specs) · `npm run build` 41.48s · suíte ampla igual à baseline (**18 arquivos falhos pré-existentes**, nenhum referencia `OsMobile`).
