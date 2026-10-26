@@ -2,22 +2,40 @@
 // MISSÃO COTACAO-EXPRESS — service público de cotações
 // Fonte única de leitura/escrita de `cotacoes_publicas`.
 //
-// Fluxo em 2 fases (CRO: baixa fricção inicial → dados completos
-// só depois da aprovação do valor no WhatsApp):
-//   FASE 1 (/cotacao-express)             → status 'Pendente'
-//   aprovação + "Gerar Link da Fase 2"    → status 'Aguardando Detalhes'
-//   FASE 2 (/cotacao-express/detalhes/:id) → status 'Pronto para OS'
+// Fluxo em 2 fases (CRO: preço na hora → dados completos depois da
+// aprovação do próprio cliente na tela):
+//   FASE 1 (/cotacao-express)              → 'Pendente de Aprovação pelo Cliente'
+//                                             (com rota + preço em metadata)
+//   aprovação do cliente (botão verde)     → 'Aguardando Detalhes' + valor_aprovado
+//   FASE 2 (/cotacao-express/detalhes/:id) → 'Pronto para OS'
+//   legado 'Pendente' continua aceito (cotações antigas sem preço)
 //
 // REGRA DE OURO: toda escrita/anonima passa por aqui e SEMPRE
 // filtra por .eq("id", id) — nunca varre a tabela inteira.
 // ============================================================
 import { supabase } from "@/lib/supabase";
 import type { Orcamento, EnderecoOrcamento } from "@/components/comercial/types";
+import type { PrecificacaoCotacao, PontoRotaCotacao } from "./cotacaoCalculoService";
 
 export const TABELA_COTACOES = "cotacoes_publicas";
 export const MAX_PARADAS_COTACAO = 8;
 
-export type StatusCotacao = "Pendente" | "Aguardando Detalhes" | "Pronto para OS";
+export type StatusCotacao =
+  | "Pendente"
+  | "Pendente de Aprovação pelo Cliente"
+  | "Aguardando Detalhes"
+  | "Pronto para OS";
+
+export const STATUS_PENDENTE = "Pendente";
+export const STATUS_AGUARDANDO_APROVACAO = "Pendente de Aprovação pelo Cliente";
+export const STATUS_AGUARDANDO_DETALHES = "Aguardando Detalhes";
+export const STATUS_PRONTO_PARA_OS = "Pronto para OS";
+
+export interface MetadataCotacao {
+  precificacao?: PrecificacaoCotacao | null;
+  rota?: { pontos: PontoRotaCotacao[]; km?: number; duracao_min?: number } | null;
+  origem?: string;
+}
 
 export interface ParadaCotacao {
   sequencia: number;
@@ -48,6 +66,8 @@ export interface CotacaoPublica {
   detalhes: DetalheParadaCotacao[];
   orcamento_id: string | null;
   valor_aprovado: number | null;
+  /** Precificação + rota gravadas na Fase 1 V2 (opcional em linhas antigas). */
+  metadata?: MetadataCotacao;
   created_at?: string;
 }
 
@@ -66,6 +86,12 @@ export interface CriarCotacaoFase1Input {
   paradas: string[];
   data_desejada: string;
   hora_desejada: string;
+  /** Status inicial (default legado 'Pendente'). */
+  status?: StatusCotacao;
+  /** Precificação calculada em tempo real (Fase 1 V2). */
+  precificacao?: PrecificacaoCotacao | null;
+  /** Coordenadas das paradas usadas no cálculo da rota. */
+  pontosRota?: PontoRotaCotacao[] | null;
 }
 
 // ------------------------------------------------------------
@@ -109,6 +135,22 @@ export function gerarLinkFase2(cotacaoId: string): string {
 
 const erroDe = (mensagem: string): string => mensagem;
 
+/** Monta o `metadata` (precificação + rota) persistido junto da Fase 1. */
+export function montarMetadataCotacao(
+  input: Pick<CriarCotacaoFase1Input, "precificacao" | "pontosRota">,
+): MetadataCotacao {
+  const metadata: MetadataCotacao = { origem: "cotacao-express" };
+  if (input.precificacao) metadata.precificacao = input.precificacao;
+  if (input.pontosRota && input.pontosRota.length >= 2) {
+    metadata.rota = {
+      pontos: input.pontosRota,
+      km: input.precificacao?.distancia_km ?? null,
+      duracao_min: input.precificacao?.duracao_min ?? null,
+    };
+  }
+  return metadata;
+}
+
 // ------------------------------------------------------------
 // FASE 1 — criação (INSERT anônimo)
 // ------------------------------------------------------------
@@ -128,7 +170,7 @@ export async function criarCotacaoFase1(
     .from(TABELA_COTACOES)
     .insert([
       {
-        status: "Pendente",
+        status: input.status || STATUS_PENDENTE,
         nome_cliente: input.nome_cliente.trim(),
         telefone: input.telefone.trim(),
         carga_descricao: input.carga_descricao.trim(),
@@ -138,6 +180,7 @@ export async function criarCotacaoFase1(
         data_desejada: input.data_desejada || null,
         hora_desejada: input.hora_desejada || null,
         detalhes: [],
+        metadata: montarMetadataCotacao(input),
       },
     ])
     .select("id")
@@ -147,6 +190,45 @@ export async function criarCotacaoFase1(
     return { ok: false, erro: error?.message || erroDe("Não foi possível enviar a cotação.") };
   }
   return { ok: true, dado: String((data as { id: unknown }).id) };
+}
+
+// ------------------------------------------------------------
+// APROVAÇÃO PELO CLIENTE (Fase 1 → Fase 2)
+// ------------------------------------------------------------
+
+export interface AprovarCotacaoInput {
+  valor: number;
+  dataDesejada?: string;
+  horaDesejada?: string;
+}
+
+/**
+ * Cliente aprovou o valor na tela → grava `valor_aprovado` e libera a
+ * Fase 2 (`Aguardando Detalhes`). Só escreve pela linha do id.
+ */
+export async function aprovarCotacao(
+  cotacaoId: string,
+  input: AprovarCotacaoInput,
+): Promise<ResultadoCotacao<void>> {
+  if (!cotacaoId) return { ok: false, erro: erroDe("Cotação não informada.") };
+  if (!Number.isFinite(input.valor) || input.valor <= 0) {
+    return { ok: false, erro: erroDe("Valor da cotação inválido.") };
+  }
+
+  const payload: Record<string, unknown> = {
+    status: STATUS_AGUARDANDO_DETALHES,
+    valor_aprovado: Math.round(input.valor * 100) / 100,
+  };
+  if (input.dataDesejada) payload.data_desejada = input.dataDesejada;
+  if (input.horaDesejada) payload.hora_desejada = input.horaDesejada;
+
+  const { error } = await supabase
+    .from(TABELA_COTACOES)
+    .update(payload)
+    .eq("id", cotacaoId);
+
+  if (error) return { ok: false, erro: error.message };
+  return { ok: true };
 }
 
 // ------------------------------------------------------------
@@ -189,9 +271,13 @@ export async function buscarCotacaoPorOrcamento(
 function normalizarCotacao(row: Record<string, unknown>): CotacaoPublica {
   const paradas = Array.isArray(row.paradas) ? (row.paradas as ParadaCotacao[]) : [];
   const detalhes = Array.isArray(row.detalhes) ? (row.detalhes as DetalheParadaCotacao[]) : [];
+  const metadata =
+    row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as MetadataCotacao)
+      : {};
   return {
     id: String(row.id),
-    status: (row.status as StatusCotacao) || "Pendente",
+    status: (row.status as StatusCotacao) || STATUS_PENDENTE,
     nome_cliente: (row.nome_cliente as string) || null,
     telefone: (row.telefone as string) || null,
     carga_descricao: (row.carga_descricao as string) || null,
@@ -208,6 +294,7 @@ function normalizarCotacao(row: Record<string, unknown>): CotacaoPublica {
       row.valor_aprovado === null || row.valor_aprovado === undefined
         ? null
         : Number(row.valor_aprovado),
+    metadata,
     created_at: row.created_at ? String(row.created_at) : undefined,
   };
 }
@@ -340,9 +427,15 @@ export function montarOrcamentoDaCotacao(cotacao: CotacaoPublica): Orcamento {
     .filter(Boolean)
     .join(" · ");
 
+  const preco = cotacao.metadata?.precificacao || null;
+  const km = preco?.distancia_km ?? null;
+
   const observacoes = [
     `Cotação web (Fase 1) — cliente ${cotacao.nome_cliente || "não informado"}`,
     cotacao.telefone ? `WhatsApp: ${cotacao.telefone}` : "",
+    preco ? `Valor calculado na cotação: R$ ${preco.valor.toFixed(2).replace(".", ",")}` : "",
+    km ? `Distância estimada: ${km} km (${preco?.paradas || cotacao.paradas.length} paradas)` : "",
+    preco?.rotulo_veiculo ? `Veículo sugerido: ${preco.rotulo_veiculo}` : "",
     janela,
     `ID da cotação: ${cotacao.id}`,
   ]
@@ -385,18 +478,22 @@ export function montarOrcamentoDaCotacao(cotacao: CotacaoPublica): Orcamento {
         : "",
       dimensoes: [],
     },
-    veiculo: { tipo: "", subcategoria: "", carroceria: "" },
+    veiculo: {
+      tipo: preco?.tipo_veiculo || "",
+      subcategoria: preco?.rotulo_veiculo || "",
+      carroceria: "",
+    },
     valores: {
-      tabelaVinculada: "",
-      valorBase: 0,
+      tabelaVinculada: preco?.tabela || "",
+      valorBase: preco?.valor || 0,
       adicionais: 0,
       pedagio: 0,
-      kmExcedente: 0,
+      kmExcedente: preco?.formula?.kmExcedente || 0,
       ajudante: 0,
       devolucao: 0,
       reentrega: 0,
       descontos: 0,
-      valorFinal: 0,
+      valorFinal: preco?.valor || 0,
       custoEstimado: 0,
       margemEstimada: 0,
       lucroEstimado: 0,

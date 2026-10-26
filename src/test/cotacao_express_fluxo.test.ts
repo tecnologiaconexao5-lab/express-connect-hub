@@ -13,23 +13,38 @@ import {
   salvarDetalhesFase2,
   vincularCotacaoAoOrcamento,
   gerarLinkFase2EAtualizarStatus,
+  aprovarCotacao,
   MAX_PARADAS_COTACAO,
+  STATUS_PENDENTE,
+  STATUS_AGUARDANDO_APROVACAO,
+  STATUS_AGUARDANDO_DETALHES,
   type CotacaoPublica,
 } from "@/services/cotacoes/cotacaoPublicaService";
+import {
+  valorLocalCotacao,
+  veiculoSugeridoCotacao,
+  candidatosVeiculo,
+  formatarBrl,
+} from "@/services/cotacoes/cotacaoCalculoService";
 
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 
 // ============================================================================
 // MISSÃO COTACAO-EXPRESS — fluxo público de cotação em 2 fases:
 // A) Migration cotacoes_publicas (RLS anônimo + Realtime)
+// A2) Migration V2 de precificação (status de aprovação + metadata)
 // B) Service (guardas, mapeamentos, pré-preenchimento do orçamento)
-// C) Fase 1 — /cotacao-express (4 passos, sem fricção)
+// C) Fase 1 — /cotacao-express (conversa + preço na hora + aprovação)
 // D) Fase 2 — /cotacao-express/detalhes/:id (endereços completos)
 // E) Rotas públicas no App.tsx
 // F) Alertas Realtime na Torre de Controle + integração comercial
+// G) Cálculo de rota + preço (motor da Fase 1)
 // ============================================================================
 
 const migration = readSrc("supabase/migrations/20261024000000_cotacoes_publicas.sql");
+const migrationV2 = readSrc(
+  "supabase/migrations/20261025000000_cotacoes_precificacao_fase1.sql",
+);
 const fase1 = readSrc("src/pages/CotacaoExpress.tsx");
 const fase2 = readSrc("src/pages/CotacaoExpressDetalhes.tsx");
 const app = readSrc("src/App.tsx");
@@ -38,6 +53,7 @@ const layout = readSrc("src/components/AppLayout.tsx");
 const lista = readSrc("src/components/comercial/OrcamentosLista.tsx");
 const form = readSrc("src/components/comercial/OrcamentoForm.tsx");
 const service = readSrc("src/services/cotacoes/cotacaoPublicaService.ts");
+const calculo = readSrc("src/services/cotacoes/cotacaoCalculoService.ts");
 
 const cotacaoExemplo = (): CotacaoPublica => ({
   id: "cota-0001",
@@ -98,6 +114,31 @@ describe("A) Migration cotacoes_publicas — RLS anônimo + Realtime", () => {
       "ALTER PUBLICATION supabase_realtime ADD TABLE public.cotacoes_publicas",
     );
     expect(migration).toContain("current_tenant_id_safe");
+  });
+});
+
+describe("A2) Migration V2 — preço na Fase 1 (status de aprovação + metadata)", () => {
+  it("A2.1 — CHECK de status agora aceita os 4 valores do fluxo", () => {
+    expect(migrationV2).toContain("cotacoes_publicas_status_check");
+    expect(migrationV2).toContain(STATUS_PENDENTE);
+    expect(migrationV2).toContain(STATUS_AGUARDANDO_APROVACAO);
+    expect(migrationV2).toContain(STATUS_AGUARDANDO_DETALHES);
+    expect(migrationV2).toContain("'Pronto para OS'");
+    expect(migrationV2).toContain("CHECK (status IN (");
+  });
+
+  it("A2.2 — guarda a precificação em metadata jsonb + índice GIN", () => {
+    expect(migrationV2).toContain(
+      "ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+    );
+    expect(migrationV2).toContain("idx_cotacoes_publicas_metadata");
+    expect(migrationV2).toContain("USING GIN (metadata)");
+  });
+
+  it("A2.3 — é idempotente e recarrega o PostgREST", () => {
+    expect(migrationV2).toContain("DROP CONSTRAINT");
+    expect(migrationV2).toContain("ADD CONSTRAINT cotacoes_publicas_status_check");
+    expect(migrationV2).toContain("NOTIFY pgrst, 'reload schema'");
   });
 });
 
@@ -191,13 +232,19 @@ describe("B) Service — guardas, mapeamentos e pré-preenchimento", () => {
   it("B.9 — fonte grava sempre pelo id da cotação (nunca varre a tabela)", () => {
     expect(service).toContain('.eq("id", id)');
     expect(service).toContain('.eq("id", cotacaoId)');
-    expect(service).toContain('status: "Pendente"');
+    expect(service).toContain(`export const STATUS_PENDENTE = "${STATUS_PENDENTE}"`);
+    expect(service).toContain(
+      `export const STATUS_AGUARDANDO_APROVACAO = "${STATUS_AGUARDANDO_APROVACAO}"`,
+    );
+    expect(service).toContain(
+      `export const STATUS_AGUARDANDO_DETALHES = "${STATUS_AGUARDANDO_DETALHES}"`,
+    );
     expect(service).toContain('"Pronto para OS"');
-    expect(service).toContain('"Aguardando Detalhes"');
+    expect(service).toContain("export async function aprovarCotacao");
   });
 });
 
-describe("C) Fase 1 — /cotacao-express (4 passos, sem fricção)", () => {
+describe("C) Fase 1 V2 — /cotacao-express (conversa + preço na hora)", () => {
   it("C.1 — coleta exatamente os campos de baixa fricção (sem número/complemento)", () => {
     const ids = [...fase1.matchAll(/id="([^"]+)"/g)].map((m) => m[1]).sort();
     expect(ids).toEqual([
@@ -211,22 +258,29 @@ describe("C) Fase 1 — /cotacao-express (4 passos, sem fricção)", () => {
     ]);
   });
 
-  it("C.2 — trajeto dinâmico com uma única referência por parada", () => {
+  it("C.2 — conversa 1 pergunta por vez, com autocomplete e loop de paradas", () => {
+    // Ritmo de chat (framer-motion) em vez de wizard
+    expect(fase1).toContain('from "framer-motion"');
+    expect(fase1).toContain("AnimatePresence");
+    // Autocomplete de endereço (Mapbox) compartilhado
+    expect(fase1).toContain("CampoEnderecoChat");
+    // Uma referência por parada + loop até o limite
     expect(fase1).toContain("CEP, bairro ou rua");
-    expect(fase1).toContain("Adicionar parada");
+    expect(fase1).toContain("Outro ponto");
     expect(fase1).toContain("MAX_PARADAS_COTACAO");
     expect(fase1).toContain("rotuloParada");
-    expect(fase1).toContain("removerParada");
+    expect(fase1).toContain("removerUltimaParada");
+    // Perguntas (uma por etapa)
+    for (const titulo of ["Quem pediu", "A carga", "A retirada", "A entrega", "Pontos extras"]) {
+      expect(fase1).toContain(`titulo="${titulo}"`);
+    }
   });
 
-  it("C.3 — 4 passos com barra de progresso estilo Typeform", () => {
+  it("C.3 — barra de progresso estilo Typeform com 4 perguntas principais", () => {
     expect(fase1).toContain("const TOTAL_ETAPAS = 4;");
     expect(fase1).toContain("Pergunta {etapa} de {TOTAL_ETAPAS}");
     expect(fase1).toContain('style={{ width: `${progresso}%` }}');
-    expect(fase1).toContain("Etapa 1 · Quem pediu");
-    expect(fase1).toContain("Etapa 2 · A carga");
-    expect(fase1).toContain("Etapa 3 · O trajeto");
-    expect(fase1).toContain("Etapa 4 · Quando");
+    expect(fase1).toContain("rotuloProgresso");
   });
 
   it("C.4 — aviso sutil da capacidade de moto (40kg)", () => {
@@ -234,18 +288,34 @@ describe("C) Fase 1 — /cotacao-express (4 passos, sem fricção)", () => {
     expect(fase1).toContain("40kg");
   });
 
-  it("C.5 — mensagem de sucesso exata combinada com a operação", () => {
-    expect(fase1).toContain("Tudo certo, ");
-    expect(fase1).toContain("! 🚀");
-    expect(fase1).toContain("Analisaremos a rota e enviaremos o valor no WhatsApp.");
-    expect(fase1).toContain("pediremos os detalhes finais do endereço.");
+  it("C.5 — preço exibido na hora + botão verde de aprovação que segue para a Fase 2", () => {
+    // Frase combinada com a operação
+    expect(fase1).toContain("Prontinho, ");
+    expect(fase1).toContain("! O valor do seu frete fica em ");
+    expect(fase1).toContain("formatarBrl(preco.valor)");
+    // Cartão de proposta
+    expect(fase1).toContain("Proposta instantânea");
+    expect(fase1).toContain("formatarBrl(precificacao.valor)");
+    // Botão verde EXATO
+    expect(fase1).toContain("Aprovar e Solicitar Motorista");
+    expect(fase1).toContain("bg-emerald-600");
+    // Aprovação → Fase 2
+    expect(fase1).toContain("navigate(`/cotacao-express/detalhes/${cotacaoId}`)");
+    expect(fase1).toContain("Aprovação registrada");
   });
 
-  it("C.6 — envia via service com status inicial 'Pendente'", () => {
+  it("C.6 — grava já com preço e aprova pelo service (sem varrer a tabela)", () => {
     expect(fase1).toContain("criarCotacaoFase1");
     expect(fase1).toContain("nome_cliente: nome");
     expect(fase1).toContain("paradas,");
-    expect(fase1).toContain("setEtapa(5)");
+    expect(fase1).toContain("STATUS_AGUARDANDO_APROVACAO");
+    expect(fase1).toContain("precificacao: preco");
+    expect(fase1).toContain("aprovarCotacao(id, {");
+    expect(fase1).toContain("valor: precificacao.valor");
+    // Etapas do fluxo: cálculo (6) → proposta (7) → sucesso (8)
+    expect(fase1).toContain("setEtapa(6)");
+    expect(fase1).toContain("setEtapa(7)");
+    expect(fase1).toContain("setEtapa(8)");
   });
 
   it("C.7 — rota pública sem sidebar/topbar do TMS", () => {
@@ -311,10 +381,12 @@ describe("F) Alertas Realtime + integração com o Orçamento Comercial", () => 
     expect(hook).toContain("avisados.current.add");
   });
 
-  it("F.2 — os 2 avisos têm o texto combinado com a operação", () => {
+  it("F.2 — os 3 avisos têm o texto combinado com a operação", () => {
     expect(hook).toContain("🚨 Nova Cotação Web (Pré-cadastro)!");
+    expect(hook).toContain("💰 Cotação aprovada pelo cliente!");
     expect(hook).toContain("✅ Detalhes preenchidos pelo cliente!");
     expect(hook).toContain('"Pronto para OS"');
+    expect(hook).toContain(STATUS_AGUARDANDO_APROVACAO);
   });
 
   it("F.3 — AppLayout dispara os alertas e navega para o lugar certo", () => {
@@ -341,5 +413,57 @@ describe("F) Alertas Realtime + integração com o Orçamento Comercial", () => 
     expect(form).toContain("gerarLinkFase2EAtualizarStatus");
     expect(form).toContain("navigator.clipboard.writeText(res.dado)");
     expect(form).toContain("Link da Fase 2 copiado!");
+  });
+});
+
+describe("G) Motor de cálculo da Fase 1 — rota + preço", () => {
+  it("G.1 — usa a edge oficial `estimar` com timeout e cai para a tabela local", () => {
+    expect(calculo).toContain('action: "estimar"');
+    expect(calculo).toContain("supabase.functions.invoke");
+    expect(calculo).toContain("AbortController");
+    expect(calculo).toContain("TIMEOUT_PRECIFICACAO_MS");
+    expect(calculo).toContain("valorLocalCotacao");
+    expect(calculo).toContain("TABELA_TESTE_VEICULOS_SP");
+  });
+
+  it("G.2 — fórmula local idêntica à da edge (base + km excedente + 10% por parada)", () => {
+    expect(calculo).toContain("base + max(0, km - franquia) × excedente + base × 10% × paradasExtras");
+
+    // moto 10 km / 1 parada → faixa até 10 km = R$ 35,00 e nada de excedente
+    const moto10 = valorLocalCotacao({ tipoVeiculo: "moto", distanciaKm: 10, paradas: 1 });
+    expect(moto10?.valor).toBe(35);
+    expect(moto10?.formula).toEqual({
+      valorBase: 35,
+      franquiaKm: 10,
+      kmExcedente: 0,
+      valorKmExcedente: 2.5,
+      acrescimoParadasExtras: 0,
+    });
+
+    // moto 25 km / 3 paradas → 55 + (5 × 2,50) + (55 × 10% × 2) = 78,50
+    const moto25 = valorLocalCotacao({ tipoVeiculo: "moto", distanciaKm: 25, paradas: 3 });
+    expect(moto25?.valor).toBe(78.5);
+    expect(moto25?.fonte).toBe("tabela_local");
+  });
+
+  it("G.3 — alias de veículo mapeia para a tabela real e veículo sugerido por peso", () => {
+    expect(valorLocalCotacao({ tipoVeiculo: "passeio", distanciaKm: 6, paradas: 1 })?.valor).toBe(45);
+    expect(valorLocalCotacao({ tipoVeiculo: "kombi", distanciaKm: 10, paradas: 1 })?.valor).toBe(120);
+    expect(valorLocalCotacao({ tipoVeiculo: "sem-tabela-abc", distanciaKm: 10, paradas: 1 })).toBeNull();
+
+    expect(veiculoSugeridoCotacao(10)?.tipo).toBe("moto");
+    expect(veiculoSugeridoCotacao(90)?.tipo).toBe("passeio");
+    expect(veiculoSugeridoCotacao(null)?.tipo).toBe("passeio");
+    expect(veiculoSugeridoCotacao(3000)?.tipo).toBe("truck");
+
+    expect(candidatosVeiculo("passeio")).toEqual(["passeio", "carro"]);
+    expect(candidatosVeiculo("")).toEqual([]);
+  });
+
+  it("G.4 — a página encadeia rota + preço e formata em BRL", () => {
+    expect(fase1).toContain("calcularRotaEFreteCotacao(pontos, peso ? Number(peso) : null)");
+    expect(fase1).toContain("MENSAGEM_CALCULO");
+    expect(fase1).toContain("MENSAGEM_ERRO_CALCULO");
+    expect(formatarBrl(78.5)).toMatch(/R\$\s?78,50/);
   });
 });

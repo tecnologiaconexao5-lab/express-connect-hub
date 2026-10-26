@@ -1,8 +1,62 @@
 # Summary
 
+## MISSÃO COTACAO-EXPRESS-V2 — Fase 1 conversacional com preço na hora + aprovação do cliente (2026-10-25)
+
+**Status:** ✅ Concluída (código) + **migration V2 APLICADA no Supabase de produção** (2026-10-25, 6/6 provas + `--check` idempotente). `npx tsc --noEmit` 0 erros · ESLint 0 erros (7 arquivos) · teste **38/38 PASS** (31 → 38) · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, 2231 pass = baseline 2224 + 7 novos) · `npm run build` 46.28s (chunk `CotacaoExpress` 27.2 kB).
+
+### O que mudou (Fase 1 redesenhada — pedido do cliente)
+
+**1. Migração `supabase/migrations/20261025000000_cotacoes_precificacao_fase1.sql` (NOVA, aplicada)**
+- CHECK de `status` substituído (varredura `pg_get_constraintdef ILIKE '%status%'` + drop idempotente) para os **4 valores**: `'Pendente'` (legado) · `'Pendente de Aprovação pelo Cliente'` (Fase 1 com preço) · `'Aguardando Detalhes'` · `'Pronto para OS'`.
+- **`metadata JSONB NOT NULL DEFAULT '{}'`** (a tabela **não tinha** `metadata` — AGENTS estava errado) + índice **GIN** `idx_cotacoes_publicas_metadata` + `NOTIFY pgrst, 'reload schema'`. Aplicada via `scripts/_apply_cotacoes_precificacao.cjs` (`pg` + `DATABASE_URL`, transação única) e confirmada `--check`.
+
+**2. Motor de cálculo — `src/services/cotacoes/cotacaoCalculoService.ts` (NOVO)**
+- `calcularRotaCotacao(pontos)` → Mapbox Directions **multi-ponto** (geocodifica pontos sem lat/lng; `null` se falhar → a página mostra "não foi possível calcular" em vez de inventar preço) → `{km, duracaoMin, paradas}`.
+- `estimarFreteCotacao(input)` → **edge `pedido-rapido` `action:"estimar"`** via `supabase.functions.invoke` com **`AbortController`** (timeout 7s), testando `candidatosVeiculo()` (ILIKE exato da edge) e **caindo para `valorLocalCotacao()`** com `TABELA_TESTE_VEICULOS_SP` (única tabela universal é `moto`).
+- Fórmula local idêntica à edge: `valor = base + max(0, km − franquia) × excedente + base × 10% × paradasExtras` (validado: moto 10 km/1 parada = **35,00**; moto 25 km/3 paradas = **78,50**).
+- `veiculoSugeridoCotacao(peso)` reusa `veiculoPorPeso` (≤40 moto … >2500 → `truck` + `avulso: true`; peso nulo → `passeio`), `ALIAS_TABELA_LOCAL` (`passeio/carro→carro_passeio`, `kombi→fiorino`, `van→hr`, `bitruck→truck`, `bitrem→carreta`), `calcularRotaEFreteCotacao(pontos, peso)` e `formatarBrl`.
+
+**3. Service — `src/services/cotacoes/cotacaoPublicaService.ts`**
+- `StatusCotacao` com os 4 valores + `STATUS_PENDENTE/STATUS_AGUARDANDO_APROVACAO/STATUS_AGUARDANDO_DETALHES/STATUS_PRONTO_PARA_OS`; `MetadataCotacao` (`precificacao` + `pontosRota`) + `montarMetadataCotacao`; `metadata?` em `CotacaoPublica` (parseado em `normalizarCotacao`).
+- `criarCotacaoFase1` aceita `status?`/`precificacao?`/`pontosRota?` (default continua `STATUS_PENDENTE`); **nova `aprovarCotacao(id, {valor, dataDesejada, horaDesejada})`** → `Aguardando Detalhes` + `valor_aprovado` (grava data/hora opcionais); `montarOrcamentoDaCotacao` pré-preenche `veiculo`, `valores` (tabela/valorBase/valorFinal/kmExcedente) e observações com preço/km/veículo.
+
+**4. Fase 1 — `src/pages/CotacaoExpress.tsx` (REESCRITO — chat Typeform)**
+- **Conversa**: bolhas bot/usuário + `AnimatePresence` (1 pergunta por vez), transcrição rolável, barra `Pergunta {etapa} de {TOTAL_ETAPAS}` (`TOTAL_ETAPAS = 4`).
+- **Etapa 1** nome+WhatsApp (`mascararTelefone`) · **2** descrição/peso/dimensões + aviso 40kg · **3** retirada · **4** entrega (+ botão "Outro ponto") · **5** pontos extras (chips com `rotuloParada`, remover, limite `MAX_PARADAS_COTACAO`) · **6** tela de cálculo (dots animados + resumo dos pontos) · **7** proposta · **8** sucesso.
+- **Preço na hora**: `calcularRotaEFreteCotacao` → se OK, **fala no chat** `Prontinho, {nome}! O valor do seu frete fica em R$ …` e abre o cartão "Proposta instantânea" (valor grande, km/duração/veículo/paradas, aviso da fonte, data/hora **opcionais**) com **botão verde `Aprovar e Solicitar Motorista`**.
+- **Pré-registro**: o INSERT (`criarCotacaoFase1` com `STATUS_AGUARDANDO_APROVACAO` + metadata) acontece **no momento em que o preço fica pronto** → a Torre é alertada mesmo se o cliente abandonar; se falhar, `avisoCadastro` + retry em `aprovar()`.
+- **Aprovação**: `aprovarCotacao` → `setEtapa(8)` → `navigate(/cotacao-express/detalhes/:id)` (Fase 2). Voltar liberado só até a etapa 5.
+
+**5. `src/components/cotacao/CampoEnderecoChat.tsx` (NOVO)** — autocomplete Mapbox controlado (`id/texto/sugestao/onTexto/onSelecionar/placeholder/autoFocus`), debounce 300ms, descarte de respostas velhas (`sequenciaRef`), fecha ao clicar fora, Enter escolhe a 1ª sugestão. Fallback: sem sugestão → `calcularRotaCotacao` geocoda pelo texto.
+
+**6. Hook `useCotacoesPublicasRealtime.ts`** — INSERT com descrição enriquecida ("proposta de R$ X enviada ao cliente" quando status novo) + **3º toast** UPDATE → `Aguardando Detalhes` com `valor_aprovado`: **`💰 Cotação aprovada pelo cliente!`** (dedup `aprovada:{id}`).
+
+### Testes
+- `src/test/cotacao_express_fluxo.test.ts` **31 → 38 casos**: `A2` novo (migration V2: 4 status · metadata jsonb + GIN · idempotência/PostgREST) · `B.9` reescrito (constantes de status + `aprovarCotacao`) · **`C` reescrito** (C.1 ids exatos inalterados · C.2 chat/autocomplete/loop · C.3 progresso 4 perguntas · C.4 40kg · C.5 frase + botão verde + navegação · C.6 gravação com preço + etapas 6/7/8 · C.7 sem sidebar) · `F.2` agora os **3 avisos** · **`G` novo** (edge `estimar`/timeout/fallback · fórmula local 35,00 e 78,50 · alias/peso/candidatos · encadeamento na página + BRL).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (7 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts` → ✅ **38/38**
+- `npx vitest run` → 18 failed **pré-existentes** / 44 testes falhando (baseline exata) · 151 passed / 1 skipped · **2231 pass** (+7 vs baseline 2224)
+- `npm run build` → ✅ 46.28s (`CotacaoExpress` 27.20 kB, `CotacaoExpressDetalhes` 7.28 kB)
+- **Migration V2 aplicada no banco remoto** (2026-10-25) via `scripts/_apply_cotacoes_precificacao.cjs` → **6/6 provas** (CHECK 4 status · `metadata` jsonb · índice GIN · realtime · INSERT anônimo com status novo + transição p/ `Aguardando Detalhes` · INSERT legado `'Pendente'` ainda aceito) + re-execução `--check` idempotente.
+
+### Arquivos
+- `supabase/migrations/20261025000000_cotacoes_precificacao_fase1.sql` (NOVO) · `scripts/_apply_cotacoes_precificacao.cjs` (NOVO) · `scripts/_cotacao_v2_inspect.cjs` (NOVO)
+- `src/services/cotacoes/cotacaoCalculoService.ts` (NOVO) · `src/components/cotacao/CampoEnderecoChat.tsx` (NOVO)
+- `src/services/cotacoes/cotacaoPublicaService.ts` · `src/pages/CotacaoExpress.tsx` (REESCRITO) · `src/hooks/useCotacoesPublicasRealtime.ts` · `src/test/cotacao_express_fluxo.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: chat 1→7 com endereço real (sugestão Mapbox), conferir km/valor na tela, botão verde → Fase 2 e linha em `cotacoes_publicas` com `metadata.precificacao` + status `Aguardando Detalhes`.
+2. (QA) Torre: toast `🚨` no pré-registro (mesmo sem aprovar) e toast `💰` na aprovação do cliente.
+3. (decisão) Preço exibido é **estimado** (aviso "sujeito a confirmação operacional" na tela) — se a operação quiser preço fechado, travar origem do cálculo.
+4. (pré-existente) `npx supabase db push` segue bloqueado por drift de histórico — aplicar arquivo a arquivo via script `pg`.
+
+---
+
 ## MISSÃO COTACAO-EXPRESS — Cotação pública de fretes em 2 fases + alertas na Torre (2026-10-24)
 
-**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (8 arquivos) · teste novo **31/31 PASS** · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, +31 testes novos = 2224 pass) · `npm run build` 40.35s. **Migração NÃO aplicada** ao Supabase (pendência manual).
+**Status:** ✅ Concluída (código) + **migration APLICADA no Supabase de produção** (2026-10-24). `npx tsc --noEmit` 0 erros · ESLint 0 erros (8 arquivos) · teste novo **31/31 PASS** · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, +31 testes novos = 2224 pass) · `npm run build` 40.35s · **prova da migration 10/10 + prova E2E REST 6/6**.
 
 ### O que mudou (5 entregas)
 
@@ -39,12 +93,15 @@
 - `npx vitest run src/test/cotacao_express_fluxo.test.ts` → ✅ **31/31**
 - `npx vitest run` → 18 failed **pré-existentes** / 151 passed / 1 skipped (2224 passed, +31 vs baseline)
 - `npm run build` → ✅ 40.35s
+- **Migration aplicada no banco remoto** (2026-10-24) via `scripts/_apply_cotacoes_publicas.cjs` (`pg` + `DATABASE_URL`, transação única) → **10/10 provas** (17 colunas · CHECK 3 status · RLS · 4 policies · INSERT anon · grants · **prova funcional: anon insere e não consegue deletar** · publicação `supabase_realtime` · 4 índices · trigger `updated_at`) e re-execução `--check` idempotente (10/10, transação revertida).
+- **Histórico da Supabase CLI reparado**: `supabase migration repair --status applied 20261024000000 --linked` → `migration list` mostra Local + Remote ✓.
+- **Prova E2E REST (PostgREST/anon, exatamente como o front)** → **6/6**: POST 201 (Fase 1) · SELECT por id `Pendente` · PATCH `Pronto para OS` + 2 detalhes (Fase 2) · CHECK 400 em status inválido · DELETE anon bloqueado (linha permanece) · limpeza 100% (tabela vazia).
 
 ### Arquivos
 - `supabase/migrations/20261024000000_cotacoes_publicas.sql` (NOVO) · `src/services/cotacoes/cotacaoPublicaService.ts` (NOVO) · `src/pages/CotacaoExpress.tsx` (NOVO) · `src/pages/CotacaoExpressDetalhes.tsx` (NOVO) · `src/hooks/useCotacoesPublicasRealtime.ts` (NOVO) · `src/App.tsx` · `src/components/AppLayout.tsx` · `src/components/comercial/OrcamentosLista.tsx` · `src/components/comercial/OrcamentoForm.tsx` · `src/test/cotacao_express_fluxo.test.ts` (NOVO, 31 casos) · `AGENTS.md`
 
 ### Pendências
-1. (Banco) **Aplicar a migration `20261024000000_cotacoes_publicas.sql` no Supabase** (SQL Editor ou `supabase db push`) — sem ela as 2 fases públicas falham no insert; sem `DATABASE_URL` garantido, fica para o usuário.
+1. (Banco) ✅ **Migration `20261024000000_cotacoes_publicas.sql` aplicada** no Supabase de produção (2026-10-24) + histórico da CLI reparado. **Atenção DevOps**: `npx supabase db push` continua **bloqueado por drift de histórico** — 3 versões só existem no remoto (`20260728`, `20260923093000`, `20260923160000`; o CLI sugere `supabase migration repair --status reverted …`) e **296** migrations locais nunca foram registradas na tabela `supabase_migrations` (foram aplicadas por `pg`/SQL Editor). Um `db push` ingênuo tentaria reaplicar as 296 → **não rodar `db push` sem reconciliar o histórico**; seguir o padrão do projeto: aplicar arquivo a arquivo via `scripts/_apply_cotacoes_publicas.cjs` (`pg` + `DATABASE_URL`).
 2. (QA) `/cotacao-express` ao vivo: 4 passos → sucesso → verificar linha em `cotacoes_publicas` (`status Pendente`) e toast `🚨` na Torre (usuário logado).
 3. (QA) Link Fase 2 gerado no orçamento → preencher números/contatos → conferir `Pronto para OS` + toast `✅` + navegação para `?orcamento=`.
 4. (QA) Novo Orçamento com `?action=novo&cotacao=` abre pré-preenchido e, ao salvar, vincula `orcamento_id` na cotação.
