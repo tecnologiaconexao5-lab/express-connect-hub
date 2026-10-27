@@ -75,6 +75,7 @@ export const sidebarItems: SidebarItem[] = [
     modulo: "clientes",
     children: [
       { title: "Orçamentos", path: "/comercial?tab=orcamentos", modulo: "clientes" },
+      { title: "Leads / Cotações Site", path: "/comercial?tab=leads", modulo: "clientes" },
       { title: "CRM", path: "/comercial?tab=crm", modulo: "clientes" },
       { title: "Marketing", path: "/comercial?tab=marketing", modulo: "clientes" },
       { title: "Propostas", path: "/comercial?tab=propostas", modulo: "clientes" },

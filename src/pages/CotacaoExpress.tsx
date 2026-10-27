@@ -1,15 +1,22 @@
 // ============================================================
-// MISSAO COTACAO-EXPRESS-V2 — FASE 1 (fluxo conversacional com preço)
+// MISSAO COTACAO-EXPRESS-V2 PREMIUM — FASE 1 (fluxo conversacional)
 // Rota pública /cotacao-express — link do WhatsApp/site.
 //
 // CRO: 1 pergunta por vez, no ritmo de um chat, com o VALOR do frete
 // calculado em tempo real (rota Mapbox + precificação oficial) exibido
 // na mesma tela, e botão verde de aprovação que libera a Fase 2.
 // SEM menu do TMS, SEM campos de complemento/contato (fricção zero —
-// esses dados entram só na Fase 2, depois da aprovação).
+// esses dados entram só na Fase 2, depois da aprovacao).
 //
-// Etapas: 1 quem pediu → 2 a carga → 3 retirada → 4 entrega
-//         → 5 pontos extras → 6 cálculo → 7 proposta → 8 sucesso.
+// PREMIUM: a carga é capturada em 3 perguntas (o que / peso /
+// dimensões) e o motor `analisarCargaCotacao` (peso + cubagem)
+// indica o veículo ao cliente com a regra de SLA (moto imediata,
+// demais 24h) — sem aviso genérico de 40kg. Endereços com
+// destrinchamento visual e modo manual (perguntas naturais).
+//
+// Etapas: 1 quem pediu → 2 o que transportar → 3 peso →
+//         4 dimensões → 5 retirada → 6 entrega → 7 pontos extras
+//         → 8 cálculo → 9 proposta → 10 sucesso.
 // ============================================================
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -21,12 +28,15 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   ArrowRight,
+  CalendarClock,
   CheckCircle2,
   Clock,
-  Info,
+  Gauge,
   MapPin,
   Navigation,
+  Package,
   Plus,
+  Ruler,
   Sparkles,
   Truck,
   X,
@@ -44,9 +54,14 @@ import {
   type PontoRotaCotacao,
   type PrecificacaoCotacao,
 } from "@/services/cotacoes/cotacaoCalculoService";
+import {
+  analisarCargaCotacao,
+  formatarLitros,
+  type RecomendacaoVeiculoCotacao,
+} from "@/lib/veiculoCotacao";
 import type { SugestaoEndereco } from "@/services/maps/mapboxProvider";
 
-const TOTAL_ETAPAS = 4;
+const TOTAL_ETAPAS = 7;
 
 const MENSAGEM_ABERTURA =
   "Olá! Vamos calcular o seu frete rapidinho. Como posso te chamar?";
@@ -92,12 +107,17 @@ export default function CotacaoExpress() {
   ]);
   const seqMensagemRef = useRef(1);
   const fimRef = useRef<HTMLDivElement | null>(null);
+  const timersRef = useRef<number[]>([]);
 
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [descricao, setDescricao] = useState("");
   const [peso, setPeso] = useState("");
-  const [dimensoes, setDimensoes] = useState("");
+  const [altura, setAltura] = useState("");
+  const [largura, setLargura] = useState("");
+  const [profundidade, setProfundidade] = useState("");
+  const [dimensoesIgnoradas, setDimensoesIgnoradas] = useState(false);
+  const [recomendacao, setRecomendacao] = useState<RecomendacaoVeiculoCotacao | null>(null);
   const [paradas, setParadas] = useState<ParadaEstado[]>([paradaVazia(), paradaVazia()]);
   const [dataDesejada, setDataDesejada] = useState("");
   const [horaDesejada, setHoraDesejada] = useState("");
@@ -116,11 +136,25 @@ export default function CotacaoExpress() {
     fimRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mensagens, etapa]);
 
+  // Limpa timers pendentes (fala atrasada da recomendação) no unmount.
+  useEffect(
+    () => () => {
+      timersRef.current.forEach((t) => window.clearTimeout(t));
+    },
+    [],
+  );
+
   const falar = (texto: string) =>
     setMensagens((prev) => [...prev, { id: seqMensagemRef.current++, autor: "bot", texto }]);
 
   const responder = (texto: string) =>
     setMensagens((prev) => [...prev, { id: seqMensagemRef.current++, autor: "eu", texto }]);
+
+  /** Fala do bot com pausa natural (indicação de veículo "digitando…"). */
+  const falarApos = (texto: string, ms = 900) => {
+    const timer = window.setTimeout(() => falar(texto), ms);
+    timersRef.current.push(timer);
+  };
 
   const progresso = useMemo(
     () =>
@@ -133,11 +167,19 @@ export default function CotacaoExpress() {
   const rotuloProgresso =
     etapa <= TOTAL_ETAPAS
       ? `Pergunta ${etapa} de ${TOTAL_ETAPAS}`
-      : etapa === 5
-        ? `Rota · ${paradas.filter((p) => enderecoDaParada(p)).length} pontos`
-        : etapa === 6
-          ? "Calculando o preço…"
-          : "Proposta pronta";
+      : etapa === 8
+        ? "Calculando o preço…"
+        : etapa === 9
+          ? "Proposta pronta"
+          : "Concluído";
+
+  const dimensoesTexto = useMemo(() => {
+    const a = Number(altura);
+    const l = Number(largura);
+    const p = Number(profundidade);
+    if (a > 0 && l > 0 && p > 0) return `${a}x${l}x${p} cm`;
+    return "";
+  }, [altura, largura, profundidade]);
 
   // ------------------------------------------------------------
   // Validações
@@ -149,9 +191,27 @@ export default function CotacaoExpress() {
     return "";
   };
 
-  const validarCarga = (): string => {
+  const validarDescricao = (): string => {
     if (descricao.trim().length < 3) return "Descreva brevemente o que será transportado.";
-    if (peso && !(Number(peso) > 0)) return "Peso deve ser um valor em kg.";
+    return "";
+  };
+
+  const validarPeso = (): string => {
+    if (!(Number(peso) > 0)) return "Informe o peso estimado em kg (ex.: 12).";
+    return "";
+  };
+
+  const validarDimensoes = (): string => {
+    if (dimensoesIgnoradas) return "";
+    const algumPreenchido = [altura, largura, profundidade].some((v) => Number(v) > 0);
+    if (!algumPreenchido) return ""; // todas vazias → cliente optou por não informar
+    const faltando = [
+      ["Altura", altura],
+      ["Largura", largura],
+      ["Profundidade", profundidade],
+    ].filter(([, v]) => !(Number(v) > 0));
+    if (faltando.length > 0)
+      return `Preencha ${faltando.map(([n]) => n).join(", ")} (em cm) ou use "Não sei as dimensões".`;
     return "";
   };
 
@@ -179,6 +239,9 @@ export default function CotacaoExpress() {
   const trocarParada = (idx: number, valor: Partial<ParadaEstado>) =>
     setParadas((prev) => prev.map((p, i) => (i === idx ? { ...p, ...valor } : p)));
 
+  const confirmarEnderecoManual = (idx: number, montado: string) =>
+    trocarParada(idx, { endereco: montado, sugestao: null });
+
   const adicionarParada = (): string => {
     if (paradas.length >= MAX_PARADAS_COTACAO)
       return `Limite de ${MAX_PARADAS_COTACAO} endereços por rota.`;
@@ -198,16 +261,69 @@ export default function CotacaoExpress() {
     setEtapa(2);
   };
 
-  const avancarCarga = () => {
-    const problema = validarCarga();
+  const avancarDescricao = () => {
+    const problema = validarDescricao();
     if (problema) return setErro(problema);
     setErro("");
-    const resumo = [descricao.trim(), peso ? `${peso} kg` : ""].filter(Boolean).join(" · ");
-    responder(resumo);
-    falar(
-      "Legal. E onde o nosso motorista deve retirar essa carga? (Digite o endereço, CEP ou Bairro)",
-    );
+    responder(descricao.trim());
+    falar("Certo! Qual o peso estimado da carga (em kg)?");
     setEtapa(3);
+  };
+
+  const avancarPeso = () => {
+    const problema = validarPeso();
+    if (problema) return setErro(problema);
+    setErro("");
+    responder(`${String(peso).replace(".", ",")} kg`);
+    falar("Perfeito. Quais as dimensões da mercadoria? (Altura, Largura e Profundidade)");
+    setEtapa(4);
+  };
+
+  const avancarDimensoes = () => {
+    const problema = validarDimensoes();
+    if (problema) return setErro(problema);
+    setErro("");
+    responder(
+      dimensoesTexto || (dimensoesIgnoradas ? "Não sei as dimensões" : "Dimensões não informadas"),
+    );
+
+    // Motor de indicação: peso + cubagem → veículo + SLA.
+    const rec = analisarCargaCotacao({
+      pesoKg: Number(peso) > 0 ? Number(peso) : null,
+      alturaCm: Number(altura) || null,
+      larguraCm: Number(largura) || null,
+      profundidadeCm: Number(profundidade) || null,
+    });
+    setRecomendacao(rec);
+    falarApos(rec.mensagemBot, 900);
+    falarApos(
+      "Combinado! Agora me diga onde a carga será retirada. (Digite o endereço, CEP ou bairro)",
+      1800,
+    );
+    setEtapa(5);
+  };
+
+  const avancarPularDimensoes = () => {
+    setDimensoesIgnoradas(true);
+    setAltura("");
+    setLargura("");
+    setProfundidade("");
+    setErro("");
+    // Mesmo sem dimensões, o motor indica veículo pelo peso.
+    const rec = analisarCargaCotacao({
+      pesoKg: Number(peso) > 0 ? Number(peso) : null,
+      alturaCm: null,
+      larguraCm: null,
+      profundidadeCm: null,
+    });
+    setRecomendacao(rec);
+    responder("Não sei as dimensões");
+    falarApos(rec.mensagemBot, 900);
+    falarApos(
+      "Combinado! Agora me diga onde a carga será retirada. (Digite o endereço, CEP ou bairro)",
+      1800,
+    );
+    setEtapa(5);
   };
 
   const avancarRetirada = () => {
@@ -216,7 +332,7 @@ export default function CotacaoExpress() {
     setErro("");
     responder(enderecoDaParada(paradas[0]));
     falar("Perfeito. E para onde vamos levar?");
-    setEtapa(4);
+    setEtapa(6);
   };
 
   const avancarEntrega = (adicionarOutro: boolean) => {
@@ -228,7 +344,7 @@ export default function CotacaoExpress() {
     responder(enderecoDaParada(paradas[1]));
     if (adicionarOutro) {
       falar("Certo! Precisamos de mais algum ponto no caminho?");
-      setEtapa(5);
+      setEtapa(7);
       return;
     }
     void calcular();
@@ -243,7 +359,7 @@ export default function CotacaoExpress() {
     responder(enderecoDaParada(paradas[paradas.length - 1]));
     if (adicionarOutro) {
       falar("Certo! Precisamos de mais algum ponto no caminho?");
-      setEtapa(5);
+      setEtapa(7);
       return;
     }
     void calcular();
@@ -251,7 +367,7 @@ export default function CotacaoExpress() {
 
   const voltar = () => {
     setErro("");
-    setEtapa((e) => Math.max(1, e - 1));
+    setEtapa((e) => Math.max(5, e - 1));
   };
 
   // ------------------------------------------------------------
@@ -259,7 +375,7 @@ export default function CotacaoExpress() {
   // ------------------------------------------------------------
   const calcular = async () => {
     falar(MENSAGEM_CALCULO);
-    setEtapa(6);
+    setEtapa(8);
     setErro("");
     setAvisoCadastro("");
 
@@ -272,10 +388,14 @@ export default function CotacaoExpress() {
         }))
         .filter((p) => p.endereco.length > 0);
 
-      const resultado = await calcularRotaEFreteCotacao(pontos, peso ? Number(peso) : null);
+      const resultado = await calcularRotaEFreteCotacao(
+        pontos,
+        peso ? Number(peso) : null,
+        recomendacao?.tipo ?? null,
+      );
       if (!resultado) {
         falar(MENSAGEM_ERRO_CALCULO);
-        setEtapa(5);
+        setEtapa(7);
         setErro(MENSAGEM_ERRO_CALCULO);
         return;
       }
@@ -295,7 +415,7 @@ export default function CotacaoExpress() {
         telefone,
         carga_descricao: descricao,
         carga_peso: peso ? Number(peso) : null,
-        carga_dimensoes: dimensoes,
+        carga_dimensoes: dimensoesTexto,
         paradas: pontos.map((p) => p.endereco),
         data_desejada: "",
         hora_desejada: "",
@@ -311,10 +431,10 @@ export default function CotacaoExpress() {
         );
       }
 
-      setEtapa(7);
+      setEtapa(9);
     } catch {
       falar(MENSAGEM_ERRO_CALCULO);
-      setEtapa(5);
+      setEtapa(7);
       setErro(MENSAGEM_ERRO_CALCULO);
     }
   };
@@ -342,7 +462,7 @@ export default function CotacaoExpress() {
           telefone,
           carga_descricao: descricao,
           carga_peso: peso ? Number(peso) : null,
-          carga_dimensoes: dimensoes,
+          carga_dimensoes: dimensoesTexto,
           paradas: pontos.map((p) => p.endereco),
           data_desejada: dataDesejada,
           hora_desejada: horaDesejada,
@@ -369,14 +489,14 @@ export default function CotacaoExpress() {
       }
 
       falar(`Fechou, ${primeiroNome}! Aprovação registrada ✅ Último passo rápido…`);
-      setEtapa(8);
+      setEtapa(10);
     } finally {
       setProcessando(false);
     }
   };
 
   // ------------------------------------------------------------
-  // Botão primário da barra fixa (etapas 1..5)
+  // Botão primário da barra fixa (etapas 1..7)
   // ------------------------------------------------------------
   const handleAvancar = () => {
     switch (etapa) {
@@ -384,15 +504,21 @@ export default function CotacaoExpress() {
         avancarIdentificacao();
         break;
       case 2:
-        avancarCarga();
+        avancarDescricao();
         break;
       case 3:
-        avancarRetirada();
+        avancarPeso();
         break;
       case 4:
-        avancarEntrega(false);
+        avancarDimensoes();
         break;
       case 5:
+        avancarRetirada();
+        break;
+      case 6:
+        avancarEntrega(false);
+        break;
+      case 7:
         avancarExtras(false);
         break;
       default:
@@ -401,9 +527,9 @@ export default function CotacaoExpress() {
   };
 
   // ------------------------------------------------------------
-  // ETAPA 8 — sucesso + passagem para a Fase 2
+  // ETAPA 10 — sucesso + passagem para a Fase 2
   // ------------------------------------------------------------
-  if (etapa === 8) {
+  if (etapa === 10) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
         <Cabecalho />
@@ -529,15 +655,15 @@ export default function CotacaoExpress() {
                 </div>
               )}
 
-              {/* ETAPA 2 — a carga */}
+              {/* ETAPA 2 — o que transportar */}
               {etapa === 2 && (
                 <div className="space-y-4">
                   <Rotulo
-                    titulo="A carga"
-                    subtitulo="Uma descrição rápida já nos permite calcular o frete."
+                    titulo="O que transportar"
+                    subtitulo="Uma descrição rápida já nos permite seguir."
                   />
                   <div className="space-y-1.5">
-                    <Label htmlFor="cot-descricao">Descrição da carga *</Label>
+                    <Label htmlFor="cot-descricao">O que você precisa transportar? *</Label>
                     <Textarea
                       id="cot-descricao"
                       className="min-h-[96px] rounded-xl text-base"
@@ -546,72 +672,152 @@ export default function CotacaoExpress() {
                       onChange={(e) => setDescricao(e.target.value)}
                     />
                   </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cot-peso">Peso estimado (kg)</Label>
-                      <Input
-                        id="cot-peso"
-                        type="number"
-                        min={0}
-                        inputMode="decimal"
-                        className="h-12 rounded-xl text-base"
-                        placeholder="Ex.: 12"
-                        value={peso}
-                        onChange={(e) => setPeso(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cot-dimensoes">Dimensões estimadas</Label>
-                      <Input
-                        id="cot-dimensoes"
-                        className="h-12 rounded-xl text-base"
-                        placeholder="Ex.: 40x40x40 cm"
-                        value={dimensoes}
-                        onChange={(e) => setDimensoes(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2 rounded-xl bg-orange-50 px-3 py-2.5 text-xs text-orange-700">
-                    <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      De referência: motos transportam até <strong>40kg</strong>. Acima disso,
-                      sugerimos carro ou utilitário — nós calculamos o melhor veículo para você.
-                    </span>
+                </div>
+              )}
+
+              {/* ETAPA 3 — peso */}
+              {etapa === 3 && (
+                <div className="space-y-4">
+                  <Rotulo
+                    titulo="Peso da carga"
+                    subtitulo="Com o peso certo já indicamos o veículo ideal."
+                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cot-peso">Qual o peso estimado (em kg)? *</Label>
+                    <Input
+                      id="cot-peso"
+                      type="number"
+                      min={0}
+                      inputMode="decimal"
+                      className="h-12 rounded-xl text-base"
+                      placeholder="Ex.: 12"
+                      value={peso}
+                      onChange={(e) => setPeso(e.target.value)}
+                    />
+                    <p className="text-xs text-slate-400">
+                      Um valor aproximado já serve — ajustamos depois.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* ETAPA 3 — retirada */}
-              {etapa === 3 && (
+              {/* ETAPA 4 — dimensões */}
+              {etapa === 4 && (
+                <div className="space-y-4">
+                  <Rotulo
+                    titulo="Dimensões da carga"
+                    subtitulo="Altura, Largura e Profundidade em cm. Ajuda a confirmar o veículo."
+                  />
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cot-altura" className="text-xs font-semibold text-slate-600">
+                        Altura (cm)
+                      </Label>
+                      <Input
+                        id="cot-altura"
+                        type="number"
+                        min={0}
+                        inputMode="decimal"
+                        className="h-12 rounded-xl text-base"
+                        placeholder="40"
+                        value={altura}
+                        onChange={(e) => {
+                          setAltura(e.target.value);
+                          setDimensoesIgnoradas(false);
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cot-largura" className="text-xs font-semibold text-slate-600">
+                        Largura (cm)
+                      </Label>
+                      <Input
+                        id="cot-largura"
+                        type="number"
+                        min={0}
+                        inputMode="decimal"
+                        className="h-12 rounded-xl text-base"
+                        placeholder="40"
+                        value={largura}
+                        onChange={(e) => {
+                          setLargura(e.target.value);
+                          setDimensoesIgnoradas(false);
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="cot-profundidade"
+                        className="text-xs font-semibold text-slate-600"
+                      >
+                        Prof. (cm)
+                      </Label>
+                      <Input
+                        id="cot-profundidade"
+                        type="number"
+                        min={0}
+                        inputMode="decimal"
+                        className="h-12 rounded-xl text-base"
+                        placeholder="40"
+                        value={profundidade}
+                        onChange={(e) => {
+                          setProfundidade(e.target.value);
+                          setDimensoesIgnoradas(false);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {dimensoesTexto && (
+                    <p className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                      <Ruler className="h-3.5 w-3.5 text-orange-500" />
+                      Cubagem calculada: {dimensoesTexto}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={avancarPularDimensoes}
+                    className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-orange-600 hover:underline"
+                  >
+                    Não sei as dimensões — indicar veículo só pelo peso
+                  </button>
+                </div>
+              )}
+
+              {/* ETAPA 5 — retirada */}
+              {etapa === 5 && (
                 <div className="space-y-4">
                   <Rotulo
                     titulo="A retirada"
                     subtitulo="Só a referência: CEP, bairro ou rua. Número e complemento pedimos depois, quando o valor for aprovado."
                   />
+                  <CardVeiculoIndicado recomendacao={recomendacao} />
                   <CampoEnderecoChat
                     id={`cot-parada-${0}`}
                     texto={paradas[0]?.endereco || ""}
                     sugestao={paradas[0]?.sugestao || null}
                     onTexto={(v) => trocarParada(0, { endereco: v, sugestao: null })}
                     onSelecionar={(s) => trocarParada(0, { endereco: s.place_name, sugestao: s })}
+                    onConfirmarManual={(m) => confirmarEnderecoManual(0, m)}
                     autoFocus
                   />
                 </div>
               )}
 
-              {/* ETAPA 4 — entrega */}
-              {etapa === 4 && (
+              {/* ETAPA 6 — entrega */}
+              {etapa === 6 && (
                 <div className="space-y-4">
                   <Rotulo
                     titulo="A entrega"
                     subtitulo="Quanto mais preciso, mais fiel fica o preço."
                   />
+                  <CardVeiculoIndicado recomendacao={recomendacao} />
                   <CampoEnderecoChat
                     id={`cot-parada-${1}`}
                     texto={paradas[1]?.endereco || ""}
                     sugestao={paradas[1]?.sugestao || null}
                     onTexto={(v) => trocarParada(1, { endereco: v, sugestao: null })}
                     onSelecionar={(s) => trocarParada(1, { endereco: s.place_name, sugestao: s })}
+                    onConfirmarManual={(m) => confirmarEnderecoManual(1, m)}
                     autoFocus
                   />
                   <div className="flex flex-wrap items-center gap-2">
@@ -631,13 +837,14 @@ export default function CotacaoExpress() {
                 </div>
               )}
 
-              {/* ETAPA 5 — pontos extras */}
-              {etapa === 5 && (
+              {/* ETAPA 7 — pontos extras */}
+              {etapa === 7 && (
                 <div className="space-y-4">
                   <Rotulo
                     titulo="Pontos extras"
                     subtitulo="Adicione paradas intermediárias, se houver."
                   />
+                  <CardVeiculoIndicado recomendacao={recomendacao} />
                   <ul className="space-y-1.5">
                     {paradas.map((p, idx) => (
                       <li
@@ -677,6 +884,7 @@ export default function CotacaoExpress() {
                     onSelecionar={(s) =>
                       trocarParada(paradas.length - 1, { endereco: s.place_name, sugestao: s })
                     }
+                    onConfirmarManual={(m) => confirmarEnderecoManual(paradas.length - 1, m)}
                     placeholder="Mais um endereço (CEP, bairro ou rua)"
                     autoFocus
                   />
@@ -702,8 +910,8 @@ export default function CotacaoExpress() {
                 </div>
               )}
 
-              {/* ETAPA 6 — cálculo */}
-              {etapa === 6 && (
+              {/* ETAPA 8 — cálculo */}
+              {etapa === 8 && (
                 <div className="space-y-4 py-2">
                   <div className="flex items-center gap-2">
                     <span className="flex gap-1">
@@ -733,8 +941,8 @@ export default function CotacaoExpress() {
                 </div>
               )}
 
-              {/* ETAPA 7 — proposta com preço + aprovação */}
-              {etapa === 7 && precificacao && (
+              {/* ETAPA 9 — proposta com preço + aprovação */}
+              {etapa === 9 && precificacao && (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50 to-white p-4">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-600">
@@ -757,12 +965,30 @@ export default function CotacaoExpress() {
                         {rota ? formatarDuracao(rota.duracaoMin) : "—"}
                       </InfoPrazo>
                       <InfoPrazo icone={<Truck className="h-3.5 w-3.5" />}>
-                        {precificacao.rotulo_veiculo}
+                        {recomendacao?.nome || precificacao.rotulo_veiculo}
                       </InfoPrazo>
                       <InfoPrazo icone={<MapPin className="h-3.5 w-3.5" />}>
                         {precificacao.paradas} parada(s)
                       </InfoPrazo>
                     </dl>
+
+                    {/* SLA do veículo indicado */}
+                    {recomendacao && (
+                      <div
+                        className={
+                          recomendacao.cabeMoto
+                            ? "mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-700"
+                            : "mt-3 flex items-center gap-1.5 rounded-xl bg-amber-100 px-3 py-2 text-xs font-bold text-amber-700"
+                        }
+                      >
+                        {recomendacao.cabeMoto ? (
+                          <Gauge className="h-3.5 w-3.5" />
+                        ) : (
+                          <CalendarClock className="h-3.5 w-3.5" />
+                        )}
+                        {recomendacao.slaRotulo}
+                      </div>
+                    )}
 
                     <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
                       {precificacao.aviso}
@@ -811,12 +1037,12 @@ export default function CotacaoExpress() {
           </AnimatePresence>
 
           {/* Erros */}
-          {erro && etapa !== 6 && (
+          {erro && etapa !== 8 && (
             <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">
               {erro}
             </p>
           )}
-          {avisoCadastro && etapa === 7 && (
+          {avisoCadastro && etapa === 9 && (
             <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-700">
               {avisoCadastro}
             </p>
@@ -827,7 +1053,7 @@ export default function CotacaoExpress() {
       </main>
 
       {/* Barra de ações fixa (mobile-first) */}
-      {etapa <= 5 && (
+      {etapa <= 7 && (
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3">
             <Button
@@ -835,7 +1061,7 @@ export default function CotacaoExpress() {
               variant="ghost"
               className="h-12 rounded-xl text-slate-500"
               onClick={voltar}
-              disabled={etapa === 1}
+              disabled={etapa <= 5}
             >
               <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
             </Button>
@@ -875,8 +1101,47 @@ function Rotulo({ titulo, subtitulo }: { titulo: string; subtitulo: string }) {
   );
 }
 
+/** Mini-painel "Veículo indicado" (etapas 5–7) — consultor logístico. */
+function CardVeiculoIndicado({
+  recomendacao,
+}: {
+  recomendacao: RecomendacaoVeiculoCotacao | null;
+}) {
+  if (!recomendacao) return null;
+  return (
+    <div
+      className={
+        recomendacao.cabeMoto
+          ? "flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3"
+          : "flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/70 p-3"
+      }
+    >
+      <Package
+        className={`mt-0.5 h-4 w-4 shrink-0 ${recomendacao.cabeMoto ? "text-emerald-600" : "text-amber-600"}`}
+      />
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          Veículo indicado
+        </p>
+        <p className="mt-0.5 text-sm font-bold text-slate-800">{recomendacao.nome}</p>
+        <p
+          className={`mt-0.5 text-xs font-semibold ${recomendacao.cabeMoto ? "text-emerald-700" : "text-amber-700"}`}
+        >
+          {recomendacao.slaRotulo}
+        </p>
+        {recomendacao.litros !== null && (
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Cubagem: {formatarLitros(recomendacao.litros)}
+          </p>
+        )}
+        <p className="mt-0.5 text-[11px] text-slate-400">{recomendacao.justificativa}</p>
+      </div>
+    </div>
+  );
+}
+
 function BotaoPrincipal({ etapa, onAvancar }: { etapa: number; onAvancar: () => void }) {
-  const calcular = etapa === 4 || etapa === 5;
+  const calcular = etapa === 6 || etapa === 7;
   return (
     <Button
       type="button"

@@ -360,15 +360,28 @@ export async function estimarFreteCotacao(
 /**
  * Caminho completo usado pela página: rota + preço.
  * `rota === null` → sem distância confiável (a página não mostra preço).
+ * `tipoVeiculoForcado` (opcional): veículo indicado pelo motor de
+ * análise de carga (peso + dimensões) — quando presente, tem prioridade
+ * sobre a sugestão puramente por peso.
  */
 export async function calcularRotaEFreteCotacao(
   pontos: PontoRotaCotacao[],
   pesoKg: number | null | undefined,
+  tipoVeiculoForcado?: string | null,
 ): Promise<{ rota: RotaCotacao; veiculo: SugestaoVeiculoCotacao; precificacao: PrecificacaoCotacao } | null> {
   const rota = await calcularRotaCotacao(pontos);
   if (!rota) return null;
 
-  const veiculo = veiculoSugeridoCotacao(pesoKg);
+  const veiculoBase = veiculoSugeridoCotacao(pesoKg);
+  const veiculo: SugestaoVeiculoCotacao =
+    tipoVeiculoForcado && tipoVeiculoForcado.trim().length > 0
+      ? {
+          tipo: tipoVeiculoForcado.trim(),
+          rotulo: labelVeiculo(tipoVeiculoForcado.trim()) || tipoVeiculoForcado.trim(),
+          avulso: tipoVeiculoForcado.trim() === "truck",
+        }
+      : veiculoBase;
+
   const precificacao = await estimarFreteCotacao({
     distanciaKm: rota.km,
     tipoVeiculo: veiculo.tipo,

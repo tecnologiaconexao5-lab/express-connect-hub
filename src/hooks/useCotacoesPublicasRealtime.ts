@@ -73,10 +73,11 @@ export function useCotacoesPublicasRealtime({
           const data = nova.data_desejada ? String(nova.data_desejada) : "";
           const preco = precoDaLinha(nova);
           const statusNovo = String(nova.status || "");
+          const valorTxt = preco !== null ? ` · ${formatarBrl(preco)}` : "";
           const rotuloStatus =
             statusNovo === "Pendente de Aprovação pelo Cliente"
               ? `· proposta de ${formatarBrl(preco ?? 0)} enviada ao cliente`
-              : `· ${paradas} endereço(s)${data ? ` · coleta em ${data}` : ""}`;
+              : `· ${paradas} endereço(s)${data ? ` · coleta em ${data}` : ""}${valorTxt}`;
 
           toast.warning("🚨 Nova Cotação Web (Pré-cadastro)!", {
             id: chave,

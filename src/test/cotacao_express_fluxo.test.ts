@@ -39,6 +39,7 @@ const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel
 // E) Rotas públicas no App.tsx
 // F) Alertas Realtime na Torre de Controle + integração comercial
 // G) Cálculo de rota + preço (motor da Fase 1)
+// H) Motor premium de indicação de veículo + SLA (peso + cubagem)
 // ============================================================================
 
 const migration = readSrc("supabase/migrations/20261024000000_cotacoes_publicas.sql");
@@ -54,6 +55,8 @@ const lista = readSrc("src/components/comercial/OrcamentosLista.tsx");
 const form = readSrc("src/components/comercial/OrcamentoForm.tsx");
 const service = readSrc("src/services/cotacoes/cotacaoPublicaService.ts");
 const calculo = readSrc("src/services/cotacoes/cotacaoCalculoService.ts");
+const veiculoCotacaoSrc = readSrc("src/lib/veiculoCotacao.ts");
+const campoEnderecoSrc = readSrc("src/components/cotacao/CampoEnderecoChat.tsx");
 
 const cotacaoExemplo = (): CotacaoPublica => ({
   id: "cota-0001",
@@ -244,16 +247,18 @@ describe("B) Service — guardas, mapeamentos e pré-preenchimento", () => {
   });
 });
 
-describe("C) Fase 1 V2 — /cotacao-express (conversa + preço na hora)", () => {
+describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)", () => {
   it("C.1 — coleta exatamente os campos de baixa fricção (sem número/complemento)", () => {
     const ids = [...fase1.matchAll(/id="([^"]+)"/g)].map((m) => m[1]).sort();
     expect(ids).toEqual([
+      "cot-altura",
       "cot-data",
       "cot-descricao",
-      "cot-dimensoes",
       "cot-hora",
+      "cot-largura",
       "cot-nome",
       "cot-peso",
+      "cot-profundidade",
       "cot-telefone",
     ]);
   });
@@ -270,22 +275,48 @@ describe("C) Fase 1 V2 — /cotacao-express (conversa + preço na hora)", () => 
     expect(fase1).toContain("MAX_PARADAS_COTACAO");
     expect(fase1).toContain("rotuloParada");
     expect(fase1).toContain("removerUltimaParada");
-    // Perguntas (uma por etapa)
-    for (const titulo of ["Quem pediu", "A carga", "A retirada", "A entrega", "Pontos extras"]) {
+    // Perguntas (uma por etapa) — carga em 3 perguntas separadas
+    for (const titulo of [
+      "Quem pediu",
+      "O que transportar",
+      "Peso da carga",
+      "Dimensões da carga",
+      "A retirada",
+      "A entrega",
+      "Pontos extras",
+    ]) {
       expect(fase1).toContain(`titulo="${titulo}"`);
     }
+    // Perguntas exatas da carga
+    expect(fase1).toContain("O que você precisa transportar? *");
+    expect(fase1).toContain("Qual o peso estimado (em kg)? *");
+    expect(fase1).toContain("Quais as dimensões da mercadoria? (Altura, Largura e Profundidade)");
+    expect(fase1).toContain("Não sei as dimensões");
   });
 
-  it("C.3 — barra de progresso estilo Typeform com 4 perguntas principais", () => {
-    expect(fase1).toContain("const TOTAL_ETAPAS = 4;");
+  it("C.3 — barra de progresso estilo Typeform com 7 perguntas principais", () => {
+    expect(fase1).toContain("const TOTAL_ETAPAS = 7;");
     expect(fase1).toContain("Pergunta {etapa} de {TOTAL_ETAPAS}");
     expect(fase1).toContain('style={{ width: `${progresso}%` }}');
     expect(fase1).toContain("rotuloProgresso");
   });
 
-  it("C.4 — aviso sutil da capacidade de moto (40kg)", () => {
-    expect(fase1).toContain("motos transportam até");
-    expect(fase1).toContain("40kg");
+  it("C.4 — motor indica veículo com SLA (sem aviso genérico de 40kg)", () => {
+    // Usa o motor premium (peso + cubagem → veículo + SLA)
+    expect(fase1).toContain("analisarCargaCotacao");
+    expect(fase1).toContain("rec.mensagemBot");
+    expect(fase1).toContain("CardVeiculoIndicado");
+    expect(fase1).toContain("slaRotulo");
+    // Frases combinadas com a operação (fonte: veiculoCotacao.ts)
+    expect(veiculoCotacaoSrc).toContain(
+      "Conforme peso e dimensões da sua mercadoria, o veículo indicado é: Moto. Este veículo você já consegue pedir de imediato.",
+    );
+    expect(veiculoCotacaoSrc).toContain(
+      "Para este veículo, você precisa agendar com ao menos 24 horas de antecedência.",
+    );
+    // O aviso genérico de 40kg foi REMOVIDO do fluxo
+    expect(fase1).not.toContain("motos transportam até");
+    expect(fase1).not.toContain("Acima disso,");
   });
 
   it("C.5 — preço exibido na hora + botão verde de aprovação que segue para a Fase 2", () => {
@@ -296,6 +327,8 @@ describe("C) Fase 1 V2 — /cotacao-express (conversa + preço na hora)", () => 
     // Cartão de proposta
     expect(fase1).toContain("Proposta instantânea");
     expect(fase1).toContain("formatarBrl(precificacao.valor)");
+    // Chip de SLA no cartão de proposta
+    expect(fase1).toContain("recomendacao.slaRotulo");
     // Botão verde EXATO
     expect(fase1).toContain("Aprovar e Solicitar Motorista");
     expect(fase1).toContain("bg-emerald-600");
@@ -312,10 +345,12 @@ describe("C) Fase 1 V2 — /cotacao-express (conversa + preço na hora)", () => 
     expect(fase1).toContain("precificacao: preco");
     expect(fase1).toContain("aprovarCotacao(id, {");
     expect(fase1).toContain("valor: precificacao.valor");
-    // Etapas do fluxo: cálculo (6) → proposta (7) → sucesso (8)
-    expect(fase1).toContain("setEtapa(6)");
-    expect(fase1).toContain("setEtapa(7)");
+    // Etapas do fluxo: cálculo (8) → proposta (9) → sucesso (10)
     expect(fase1).toContain("setEtapa(8)");
+    expect(fase1).toContain("setEtapa(9)");
+    expect(fase1).toContain("setEtapa(10)");
+    // Dimensões viram texto canônico para a coluna carga_dimensoes
+    expect(fase1).toContain("carga_dimensoes: dimensoesTexto");
   });
 
   it("C.7 — rota pública sem sidebar/topbar do TMS", () => {
@@ -460,10 +495,147 @@ describe("G) Motor de cálculo da Fase 1 — rota + preço", () => {
     expect(candidatosVeiculo("")).toEqual([]);
   });
 
-  it("G.4 — a página encadeia rota + preço e formata em BRL", () => {
-    expect(fase1).toContain("calcularRotaEFreteCotacao(pontos, peso ? Number(peso) : null)");
+  it("G.4 — a página encadeia rota + preço (com veículo do motor de carga) e formata em BRL", () => {
+    // A chamada passa o veículo indicado pelo analisarCargaCotacao (3º argumento)
+    expect(fase1).toContain("const resultado = await calcularRotaEFreteCotacao(");
+    expect(fase1).toContain("recomendacao?.tipo ?? null");
+    expect(calculo).toContain("tipoVeiculoForcado?: string | null");
     expect(fase1).toContain("MENSAGEM_CALCULO");
     expect(fase1).toContain("MENSAGEM_ERRO_CALCULO");
     expect(formatarBrl(78.5)).toMatch(/R\$\s?78,50/);
+  });
+});
+
+// ============================================================================
+// H) Motor premium de indicação de veículo + SLA (peso + cubagem)
+// ============================================================================
+describe("H) Motor de indicação de veículo + SLA (analisarCargaCotacao)", () => {
+  const importar = () => import("@/lib/veiculoCotacao");
+
+  it("H.1 — carga leve na moto → 'imediato' com a frase exata da operação", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: 12, alturaCm: 40, larguraCm: 40, profundidadeCm: 40 });
+    expect(r.tipo).toBe("moto");
+    expect(r.cabeMoto).toBe(true);
+    expect(r.agendamentoHoras).toBe(0);
+    expect(r.slaRotulo).toBe("Atendimento imediato");
+    expect(r.litros).toBe(64);
+    expect(r.mensagemBot).toBe(
+      "Conforme peso e dimensões da sua mercadoria, o veículo indicado é: Moto. Este veículo você já consegue pedir de imediato.",
+    );
+  });
+
+  it("H.2 — acima de 40kg → veículo maior com SLA de 24h (frase exata)", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: 80, alturaCm: null, larguraCm: null, profundidadeCm: null });
+    expect(r.tipo).toBe("passeio");
+    expect(r.cabeMoto).toBe(false);
+    expect(r.agendamentoHoras).toBe(24);
+    expect(r.slaRotulo).toBe("Agende com 24h de antecedência");
+    expect(r.mensagemBot).toBe(
+      "Conforme peso e dimensões da sua mercadoria, o veículo indicado é: Veículo de Passeio. Para este veículo, você precisa agendar com ao menos 24 horas de antecedência.",
+    );
+  });
+
+  it("H.3 — cubagem grande derruba a moto mesmo com peso leve (30kg/1000L → Fiorino)", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: 30, alturaCm: 100, larguraCm: 100, profundidadeCm: 100 });
+    expect(r.litros).toBe(1000);
+    expect(r.tipo).toBe("fiorino");
+    expect(r.cabeMoto).toBe(false);
+  });
+
+  it("H.4 — cubagem acima de 160L → Fiorino direto (regra do baú)", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: 20, alturaCm: 80, larguraCm: 60, profundidadeCm: 50 });
+    expect(r.litros).toBe(240);
+    expect(r.tipo).toBe("fiorino");
+    expect(r.cabeMoto).toBe(false);
+  });
+
+  it("H.5 — peso acima de 2.500kg → Caminhão (truck) com SLA de 24h", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: 3000, alturaCm: null, larguraCm: null, profundidadeCm: null });
+    expect(r.tipo).toBe("truck");
+    expect(r.nome).toBe("Caminhão");
+    expect(r.cabeMoto).toBe(false);
+    expect(r.agendamentoHoras).toBe(24);
+  });
+
+  it("H.6 — sem peso informado → passeio (não inventa moto)", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const r = analisarCargaCotacao({ pesoKg: null, alturaCm: null, larguraCm: null, profundidadeCm: null });
+    expect(r.tipo).toBe("passeio");
+    expect(r.cabeMoto).toBe(false);
+    expect(r.litros).toBeNull();
+  });
+
+  it("H.7 — a página usa o motor premium e não repete o aviso genérico de 40kg", async () => {
+    const { analisarCargaCotacao } = await importar();
+    const moto = analisarCargaCotacao({ pesoKg: 35, alturaCm: null, larguraCm: null, profundidadeCm: null });
+    const maior = analisarCargaCotacao({ pesoKg: 45, alturaCm: null, larguraCm: null, profundidadeCm: null });
+    expect(moto.mensagemBot).toContain("Moto");
+    expect(maior.mensagemBot).toContain("Veículo de Passeio");
+    expect(maior.mensagemBot).toContain("24 horas de antecedência");
+    // Nunca a frase genérica antiga
+    expect(maior.mensagemBot).not.toContain("40kg");
+    expect(maior.mensagemBot).not.toContain("Acima disso");
+  });
+});
+
+// ============================================================================
+// I) ViaCEP — busca automática de endereço no modo manual do CampoEnderecoChat
+// ============================================================================
+
+describe("I) ViaCEP — auto-busca de CEP no modo manual", () => {
+  it("I.1 — consulta a API do ViaCEP com o CEP limpo (8 dígitos)", () => {
+    expect(campoEnderecoSrc).toContain("https://viacep.com.br/ws/");
+    expect(campoEnderecoSrc).toContain("/json/");
+    // Só dispara com 8 dígitos (ignora traço)
+    expect(campoEnderecoSrc).toContain("somenteDigitos(manual.cep)");
+    expect(campoEnderecoSrc).toContain("digitos.length < 8");
+  });
+
+  it("I.2 — mostra indicador visual de carregamento ('Buscando endereço...')", () => {
+    expect(campoEnderecoSrc).toContain("Buscando endereço...");
+    expect(campoEnderecoSrc).toContain('cepStatus === "buscando"');
+  });
+
+  it("I.3 — preenche Rua (logradouro), Bairro e Cidade-UF vindos do ViaCEP", () => {
+    expect(campoEnderecoSrc).toContain("json.logradouro");
+    expect(campoEnderecoSrc).toContain("json.bairro");
+    expect(campoEnderecoSrc).toContain("json.localidade");
+    expect(campoEnderecoSrc).toContain("json.uf");
+  });
+
+  it("I.4 — erro do ViaCEP mostra mensagem amigável + toast e mantém campos abertos", () => {
+    expect(campoEnderecoSrc).toContain(
+      "CEP não encontrado. Por favor, preencha o endereço manualmente.",
+    );
+    expect(campoEnderecoSrc).toContain("toast.error");
+    // Mensagem de falha de rede/timeout também amigável
+    expect(campoEnderecoSrc).toContain(
+      "Não conseguimos consultar o CEP agora. Preencha o endereço manualmente.",
+    );
+  });
+
+  it("I.5 — sem loops infinitos: guarda por CEP já buscado + AbortController + descarte por sequência", () => {
+    // Não rebusca o mesmo CEP
+    expect(campoEnderecoSrc).toContain("cepUltimoBuscadoRef.current = digitos");
+    expect(campoEnderecoSrc).toContain("if (digitos === cepUltimoBuscadoRef.current) return");
+    // Cancela requisição anterior ao desmontar/alterar
+    expect(campoEnderecoSrc).toContain("AbortController");
+    expect(campoEnderecoSrc).toContain("controle.abort()");
+    // Descarta resposta obsoleta
+    expect(campoEnderecoSrc).toContain("cepSequenciaRef");
+  });
+
+  it("I.6 — foco avança para o campo de Rua (não existe 'Número' nesta etapa)", () => {
+    expect(campoEnderecoSrc).toContain("ruaManualRef");
+    expect(campoEnderecoSrc).toContain("ruaManualRef.current?.focus()");
+  });
+
+  it("I.7 — CEP pré-carregado pela sugestão Mapbox não dispara ViaCEP ao abrir o manual", () => {
+    expect(campoEnderecoSrc).toContain("cepUltimoBuscadoRef.current = somenteDigitos(sugestao.cep");
   });
 });

@@ -1,5 +1,131 @@
 # Summary
 
+## FIX VIACEP-COTACAO-MANUAL — Busca automática de CEP no modo manual do endereço (2026-10-27)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` **52/52 PASS** (45 → 52, bloco I novo com 7 casos) · regressão `cotacao_leads_comercial` **19/19** intacta.
+
+### Causa
+No modo manual do `CampoEnderecoChat` (perguntas "Qual o CEP? / Rua / Bairro / Município"), o CEP era só um input de texto — o cliente digitava 8 dígitos e nada acontecia; rua/bairro/cidade ficavam 100% manuais.
+
+### O que mudou (`src/components/cotacao/CampoEnderecoChat.tsx`)
+- **Efeito ViaCEP** disparado quando `manual.cep` chega a 8 dígitos (ignora traço via `somenteDigitos`): `GET https://viacep.com.br/ws/{cep}/json/` com **timeout 250ms debounce + AbortController**.
+- **Anti-loop (4 guardas):** (1) só com `digitos.length >= 8`; (2) `cepUltimoBuscadoRef` não rebusca o mesmo CEP; (3) `AbortController` cancela requisição anterior no cleanup do efeito (desmontar/alterar CEP/sair do modo manual/confirmar); (4) respostas obsoletas descartadas por `cepSequenciaRef`.
+- **Loading:** spinner no canto do input + linha "Buscando endereço..." (estado `cepStatus === "buscando"`).
+- **Sucesso:** preenche Rua (`logradouro`), Bairro e Município (`localidade - uf`) **apenas nos campos vazios** (não sobrescreve o digitado) + chip verde "Endereço encontrado ✓" + **foco automático no campo Rua** (não existe campo "Número" nesta etapa — Fase 2 pede números depois).
+- **Erro (CEP inexistente `json.erro` ou falha de rede/timeout):** toast + mensagem inline amigável **"CEP não encontrado. Por favor, preencha o endereço manualmente."** (rede: "Não conseguimos consultar o CEP agora…") e campos seguem abertos para digitação.
+- CEP pré-carregado pela sugestão Mapbox (`abrirManual`) **não dispara ViaCEP** (`cepUltimoBuscadoRef` pré-marcado).
+
+### Testes
+- `src/test/cotacao_express_fluxo.test.ts` **45 → 52**: novo bloco **I) ViaCEP** (7 casos fonte-based: endpoint/8 dígitos · loading · preenchimento logradouro/bairro/localidade-uf · mensagens amigáveis + toast · guardas anti-loop/AbortController/sequência · foco na Rua · pré-carregado não dispara).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (2 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts` → ✅ **52/52**
+- `npx vitest run src/test/cotacao_leads_comercial.test.ts` → ✅ **19/19** (regressão)
+
+### Arquivos
+- `src/components/cotacao/CampoEnderecoChat.tsx` (ViaCEP + UI loading/erro/sucesso + foco) · `src/test/cotacao_express_fluxo.test.ts` (bloco I) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: modo manual → digitar CEP real (ex.: 05016-000) → rua/bairro/cidade preenchidos sozinhos + foco na Rua; CEP inexistente (ex.: 00000-000) → toast de erro + campos editáveis.
+2. (decisão) ViaCEP é público/sem token e sem SLA — se a operação quiser, adicionar fallback ViaCEP→Mapbox reverse ou cache local.
+
+---
+
+## MISSÃO COTACAO-LEADS — Leads / Cotações Site no Comercial: triagem + conversão 1-click (2026-10-26)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (6 arquivos) · teste novo **19/19 PASS** (`cotacao_leads_comercial`) · regressão `cotacao_express_fluxo` **45/45** intacta (contrato F.2 dos títulos preservado) · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, 2257 pass = baseline 2238 + 19 novos) · `npm run build` 39.40s.
+
+### O que mudou (pedido do cliente: integrar cotacoes_publicas ao painel Comercial)
+
+**1. Service — `src/services/cotacoes/cotacaoPublicaService.ts` (triagem)**
+- `STATUS_LEADS_TRIAGEM` (4 status: `Pendente` legado · `Pendente de Aprovação pelo Cliente` · `Aguardando Detalhes` = aprovada · `Pronto para OS`).
+- **`buscarLeadsCotacoes()`** → SELECT `*` com `.in("status", STATUS_LEADS_TRIAGEM)` + `.order("created_at", desc)` + `.limit(100)` → `ResultadoCotacao<CotacaoPublica[]>` via `normalizarCotacao` (mesmo módulo, sem export extra).
+- Helpers puros: **`valorExibidoCotacao`** (`valor_aprovado` tem prioridade → fallback `metadata.precificacao.valor` → `null`), **`resumoRotaCotacao`** (1ª parada → última, "—" se vazia), **`veiculoSugeridoCotacao`** (`metadata.precificacao.rotulo_veiculo`), **`STATUS_LEAD_LABEL`** (`Aguardando Detalhes` → "Aprovada pelo Cliente") e **`STATUS_LEAD_COR`** (badges slate/amber/blue/emerald).
+
+**2. Componente — `src/components/comercial/cotacoes/LeadsCotacoesLista.tsx` (NOVO)**
+- KPIs (total · sem orçamento · aprovadas) + busca (nome/WhatsApp/carga/rota) + filtro por status (os 4).
+- Tabela: Cliente · WhatsApp · Origem/Destino · Veículo Sugerido · Valor · Status (badges + chip "Orçamento" quando `orcamento_id`) · Ações.
+- **Conversão 1-click**: lead sem orçamento → botão verde **"Converter em Orçamento/OS"** → `navigate(/comercial?tab=orcamentos&action=novo&cotacao=${id})` — o prefill (`montarOrcamentoDaCotacao`) e o vínculo no save (`vincularCotacaoAoOrcamento`) **já existiam** no `OrcamentosLista`; lead com `orcamento_id` → "Ver Orçamento" (`?tab=orcamentos&orcamento=`). Botão extra copia o link da Fase 2 (`gerarLinkFase2`).
+- **Realtime próprio** (canal `leads-cotacoes-site`, `postgres_changes` `*` em `cotacoes_publicas`) → recarrega a lista sem F5; cleanup com `removeChannel`.
+
+**3. Aba — `src/pages/Comercial.tsx`**
+- `TabsTrigger value="leads"` (ícone `Inbox`) **logo após Orçamentos**, label exato **"Leads / Cotações Site"** + `TabsContent` com `LeadsCotacoesLista`.
+
+**4. Sidebar — `src/lib/sidebarData.ts`**
+- Subitem `{ title: "Leads / Cotações Site", path: "/comercial?tab=leads", modulo: "clientes" }` em Gestão Comercial (após Orçamentos) — mantém paridade menu↔tabs (8=8, teste E2E `m136c2-comercial-auditoria` segue coerente).
+
+**5. Alerta realtime na Torre — `src/hooks/useCotacoesPublicasRealtime.ts` (enriquecimento mínimo)**
+- INSERT: description ganhou **`${valorTxt}`** (` · R$ X`) quando há precificação em qualquer status — os **3 títulos exatos permanecem intactos** (contrato F.2 de `cotacao_express_fluxo.test.ts`, que roda 45/45).
+
+### Testes
+- **NOVO** `src/test/cotacao_leads_comercial.test.ts` — **19 casos** (fonte-based, padrão do repo): A) `buscarLeadsCotacoes` + `.in("status")` + order + 4 status + helpers de exibição/label/cor · B) colunas exatas, botão Converter com `?action=novo&cotacao=`, "Ver Orçamento" condicional a `orcamento_id`, Realtime com `removeChannel`, uso dos helpers do service, busca+filtro · C) aba `leads` na página + item na sidebar · D) regressão da conversão (`OrcamentosLista` com `cotacao`/`orcamento` params, `montarOrcamentoDaCotacao`, `vincularCotacaoAoOrcamento`) · E) contrato F.2 dos 3 títulos do hook + `valorTxt` + `onAbrirCotacao`.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (6 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_leads_comercial.test.ts src/test/cotacao_express_fluxo.test.ts` → ✅ **64/64** (19 + 45)
+- `npx vitest run` → **18 failed / 44 testes** = baseline exata (rec03_1 · radar_combustivel · ag07h · rec02 · ag07f · adm_app_02d2_sign_real · f0l · rec04 — **nenhuma referencia** `cotacaoPublicaService`/`LeadsCotacoesLista`/`useCotacoesPublicasRealtime`/`Comercial`/`sidebarData`; verificado por grep: só os 2 testes de cotação os referenciam) · 2257 pass (+19)
+- `npm run build` → ✅ 39.40s
+
+### Arquivos
+- `src/services/cotacoes/cotacaoPublicaService.ts` (triagem + helpers) · `src/components/comercial/cotacoes/LeadsCotacoesLista.tsx` (NOVO) · `src/pages/Comercial.tsx` (aba leads) · `src/lib/sidebarData.ts` (subitem) · `src/hooks/useCotacoesPublicasRealtime.ts` (valorTxt) · `src/test/cotacao_leads_comercial.test.ts` (NOVO, 19 casos) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/comercial?tab=leads` ao vivo: fila com leads reais, filtro/busca, badges de status, Realtime sem F5.
+2. (QA) Conversão 1-click: lead → "Converter em Orçamento/OS" → form pré-preenchido (cliente, endereços, carga, valor) → salvar grava `orcamento_id` na cotação e o card vira "Ver Orçamento".
+3. (QA) Torre: toast INSERT com ` · R$ X` no description quando a Fase 1 calculou preço; os 3 títulos inalterados.
+4. (decisão) Se a operação quiser esconder leads já vinculados a orçamento da fila, adicionar filtro default "sem orçamento".
+
+---
+
+## MISSÃO COTACAO-EXPRESS-PREMIUM — Fluxo premium conversacional: carga em 3 perguntas, motor de veículo+SLA e endereços destrinchados (2026-10-26)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (5 arquivos) · teste `cotacao_express_fluxo` **45/45 PASS** (38 → 45) · suíte ampla igual à baseline (**falhas pré-existentes/ambientais**, nenhuma referencia o código alterado — 2 extras confirmadas flaky, 9/9 ao isolá-las) · `npm run build` 56.74s.
+
+### O que mudou (pedido do cliente: fluxo premium)
+
+**1. Motor de indicação de veículo + SLA — `src/lib/veiculoCotacao.ts` (NOVO)**
+- `analisarCargaCotacao({pesoKg, alturaCm, larguraCm, profundidadeCm})` → `RecomendacaoVeiculoCotacao` `{tipo, nome, cabeMoto, agendamentoHoras, slaRotulo, litros, mensagemBot, justificativa}`.
+- Peso via `veiculoPorPeso` (≤40 moto · ≤150 passeio · ≤600 fiorino · ≤1000 kombi · ≤1800 hr · ≤2500 vuc · >2500 truck); **dimensões podem ELEVAR o veículo** (moto + litros >90 → passeio; moto + litros >160 → fiorino; qualquer leve com >160L → fiorino); peso null → `passeio` (nunca inventa moto); litros = `A×L×P/1000` via `calcularLitros`.
+- **Frases EXATAS** combinadas com a operação: moto → "Conforme peso e dimensões da sua mercadoria, o veículo indicado é: Moto. Este veículo você já consegue pedir de imediato."; maior → "…é: [Nome]. Para este veículo, você precisa agendar com ao menos 24 horas de antecedência."
+- `NOMES_VEICULO_COTACAO` (moto→"Moto", passeio→"Veículo de Passeio", fiorino→"Fiorino", kombi→"Kombi", hr→"Van / HR", vuc→"VUC", truck→"Caminhão") + `formatarLitros`.
+- SLA: moto = `agendamentoHoras 0` → "Atendimento imediato"; demais = 24 → "Agende com 24h de antecedência".
+- Mensagens genéricas de 40kg ("motos transportam até", "Acima disso,") **REMOVIDAS** do fluxo.
+
+**2. Página — `src/pages/CotacaoExpress.tsx` (fluxo renumerado, TOTAL_ETAPAS = 7)**
+- Etapas: 1 Quem pediu · 2 O que transportar · 3 Peso (obrigatório >0) · 4 Dimensões (**opcionais** — botão "Não sei as dimensões — indicar veículo só pelo peso"; se algum campo preenchido, exigir os 3 >0; `carga_dimensoes` = `${altura}x${largura}x${profundidade} cm`) · 5 Retirada · 6 Entrega · 7 Pontos extras · 8 cálculo · 9 proposta · 10 sucesso.
+- Falha de cálculo volta para a etapa 7; barra fixa `etapa <= 7`; voltar desabilitado abaixo da etapa 5 (`Math.max(5, e-1)`).
+- `CardVeiculoIndicado` (nome, SLA, litros via `formatarLitros`, justificativa) + botão "falar" da recomendação nas etapas 5-7 (`falarApos` com timers, limpos em unmount via `timersRef`); chip SLA (emerald/amber) + veículo no cartão de proposta (etapa 9).
+- Pré-registro (`criarCotacaoFase1` com `STATUS_AGUARDANDO_APROVACAO` + metadata) continua no momento em que o preço fica pronto.
+
+**3. Cálculo — `src/services/cotacoes/cotacaoCalculoService.ts`**
+- `calcularRotaEFreteCotacao(pontos, pesoKg, tipoVeiculoForcado?: string | null)` — 3º parâmetro opcional com prioridade sobre `veiculoSugeridoCotacao`; página chama `calcularRotaEFreteCotacao(pontos, peso ? Number(peso) : null, recomendacao?.tipo ?? null)`.
+
+**4. Endereços destrinchados + modo manual — `src/components/cotacao/CampoEnderecoChat.tsx` (REESCRITO)**
+- Autocomplete Mapbox + **card destrinchado** (Rua/AV, Bairro, Cidade, UF, CEP) com botões "Corrigir manualmente" e "Trocar".
+- **Modo manual**: prop nova `onConfirmarManual?: (enderecoMontado: string) => void`; inputs "Qual o CEP?", "Qual o nome da rua ou AV? *", "Qual o bairro?", "Em qual município? *"; validação rua ≥3 + município ≥2.
+- Pai compõe a string → `trocarParada(idx, { endereco: montado, sugestao: null })` (geocodificação por texto no cálculo). Placeholder padrão mantido "CEP, bairro ou rua".
+
+### Testes
+- `src/test/cotacao_express_fluxo.test.ts` **38 → 45 casos**: C reescrito (ids sorted `["cot-altura","cot-data","cot-descricao","cot-hora","cot-largura","cot-nome","cot-peso","cot-profundidade","cot-telefone"]` · títulos/perguntas novos · `TOTAL_ETAPAS = 7` · motor de veículo com frases exatas conferidas em `veiculoCotacao.ts` + `.not.toContain("motos transportam até")`/`"Acima disso,"` · chip SLA · `setEtapa(8/9/10)` · `carga_dimensoes: dimensoesTexto`); G.4 reescrito (3º argumento `recomendacao?.tipo ?? null` + `tipoVeiculoForcado?`); **bloco H NOVO** (7 casos unitários de `analisarCargaCotacao`: 12kg/64L→moto imediato · 80kg→passeio 24h · 30kg/1000L→fiorino · 240L→fiorino · 3000kg→truck · peso null→passeio · frases exatas sem "40kg").
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (5 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts` → ✅ **45/45**
+- `npx vitest run` → falhas **todas pré-existentes/ambientais** (nenhuma referencia `CotacaoExpress`/`CampoEnderecoChat`/`veiculoCotacao`/`cotacaoCalculoService` — verificado por grep nos 20 arquivos falhos); 2 extras da 2ª execução (`fat_pdf_cabecalho_03`, `fin_prog05c3b`) confirmadas flaky → **9/9 PASS** ao isolá-las; `radar_combustivel` segue falha pré-existente (teste untracked)
+- `npm run build` → ✅ 56.74s
+
+### Arquivos
+- `src/lib/veiculoCotacao.ts` (NOVO) · `src/pages/CotacaoExpress.tsx` (fluxo renumerado) · `src/components/cotacao/CampoEnderecoChat.tsx` (destrinchado + manual) · `src/services/cotacoes/cotacaoCalculoService.ts` (3º param) · `src/test/cotacao_express_fluxo.test.ts` (C + G.4 + H) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: 7 perguntas → recomendação de veículo com SLA → endereço manual (CEP/rua/bairro/cidade) → preço → aprovação; conferir que o aviso genérico de 40kg não aparece mais.
+2. (QA) Cartão de proposta: chip SLA correto (moto = "Atendimento imediato" verde; demais = amber 24h) e veículo coerente com peso/dimensões.
+3. (QA) Endereço manual: digitar rua + município sem sugestão → rota calcula por texto e o card exibe os campos destrinchados na proposta.
+4. (decisão) Dimensões opcionais: se a operação quiser obrigar, trocar o botão "Não sei as dimensões" por validação obrigatória.
+
+---
+
 ## MISSÃO COTACAO-EXPRESS-V2 — Fase 1 conversacional com preço na hora + aprovação do cliente (2026-10-25)
 
 **Status:** ✅ Concluída (código) + **migration V2 APLICADA no Supabase de produção** (2026-10-25, 6/6 provas + `--check` idempotente). `npx tsc --noEmit` 0 erros · ESLint 0 erros (7 arquivos) · teste **38/38 PASS** (31 → 38) · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, 2231 pass = baseline 2224 + 7 novos) · `npm run build` 46.28s (chunk `CotacaoExpress` 27.2 kB).

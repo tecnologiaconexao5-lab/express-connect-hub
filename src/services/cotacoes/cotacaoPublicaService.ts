@@ -372,6 +372,78 @@ export async function marcarCotacaoAguardandoDetalhes(
 }
 
 // ------------------------------------------------------------
+// TRIAGEM COMERCIAL — leads vindos do site (Gestão Comercial)
+// ------------------------------------------------------------
+
+/**
+ * Status que aparecem na fila de triagem do comercial:
+ * leads abertos (aguardando proposta/aprovação) e os que já têm
+ * preço aprovado mas ainda não viraram OS.
+ */
+export const STATUS_LEADS_TRIAGEM: StatusCotacao[] = [
+  STATUS_PENDENTE,
+  STATUS_AGUARDANDO_APROVACAO,
+  STATUS_AGUARDANDO_DETALHES,
+  STATUS_PRONTO_PARA_OS,
+];
+
+/** Lista os leads públicos em aberto para a aba "Leads / Cotações Site". */
+export async function buscarLeadsCotacoes(): Promise<ResultadoCotacao<CotacaoPublica[]>> {
+  const { data, error } = await supabase
+    .from(TABELA_COTACOES)
+    .select("*")
+    .in("status", STATUS_LEADS_TRIAGEM)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) return { ok: false, erro: error.message };
+  return { ok: true, dado: ((data as Record<string, unknown>[]) || []).map(normalizarCotacao) };
+}
+
+/**
+ * Valor exibido ao comercial: aprovado tem prioridade sobre o
+ * estimado na Fase 1. `null` quando não há preço calculado (lead legado).
+ */
+export function valorExibidoCotacao(cotacao: CotacaoPublica): number | null {
+  if (cotacao.valor_aprovado !== null && cotacao.valor_aprovado !== undefined) {
+    return cotacao.valor_aprovado;
+  }
+  const estimado = cotacao.metadata?.precificacao?.valor;
+  return typeof estimado === "number" && Number.isFinite(estimado) ? estimado : null;
+}
+
+/** "Origem → Destino" derivado das paradas (1ª = retirada, última = entrega). */
+export function resumoRotaCotacao(cotacao: CotacaoPublica): string {
+  const paradas = cotacao.paradas.filter((p) => p.endereco.trim().length > 0);
+  if (paradas.length === 0) return "—";
+  const origem = paradas[0].endereco;
+  if (paradas.length === 1) return origem;
+  const destino = paradas[paradas.length - 1].endereco;
+  return `${origem} → ${destino}`;
+}
+
+/** Veículo sugerido pelo motor de carga da Fase 1 (quando houver). */
+export function veiculoSugeridoCotacao(cotacao: CotacaoPublica): string {
+  return cotacao.metadata?.precificacao?.rotulo_veiculo || "—";
+}
+
+/** Rótulos exibidos na triagem (legado + V2). */
+export const STATUS_LEAD_LABEL: Record<StatusCotacao, string> = {
+  [STATUS_PENDENTE]: "Pendente",
+  [STATUS_AGUARDANDO_APROVACAO]: "Aguardando aprovação",
+  [STATUS_AGUARDANDO_DETALHES]: "Aprovada pelo Cliente",
+  [STATUS_PRONTO_PARA_OS]: "Pronto para OS",
+};
+
+/** Cores dos badges de status na triagem. */
+export const STATUS_LEAD_COR: Record<StatusCotacao, string> = {
+  [STATUS_PENDENTE]: "bg-slate-100 text-slate-700",
+  [STATUS_AGUARDANDO_APROVACAO]: "bg-amber-100 text-amber-800",
+  [STATUS_AGUARDANDO_DETALHES]: "bg-blue-100 text-blue-800",
+  [STATUS_PRONTO_PARA_OS]: "bg-emerald-100 text-emerald-800",
+};
+
+// ------------------------------------------------------------
 // PRÉ-PREENCHIMENTO DO ORÇAMENTO (Fase 1 → Novo Orçamento)
 // ------------------------------------------------------------
 

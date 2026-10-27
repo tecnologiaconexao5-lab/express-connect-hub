@@ -1,8 +1,9 @@
 import { useSearchParams } from "react-router-dom";
-import { Briefcase, Users, Calculator, BarChart3, FileText, Megaphone } from "lucide-react";
+import { Briefcase, Users, Calculator, BarChart3, FileText, Megaphone, Inbox } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrcamentosLista from "@/components/comercial/OrcamentosLista";
+import LeadsCotacoesLista from "@/components/comercial/cotacoes/LeadsCotacoesLista";
 import TabelasValoresLista from "@/components/comercial/TabelasValoresLista";
 import SimuladorFrete from "@/components/comercial/SimuladorFrete";
 import CrmBase from "@/components/comercial/crm/CrmBase";
@@ -29,6 +30,7 @@ const Comercial = () => {
       <Tabs value={activeTab} onValueChange={(v) => setSearchParams({ tab: v })}>
         <TabsList className="mb-4">
           <TabsTrigger value="orcamentos" className="gap-2"><Briefcase className="w-4 h-4"/>Orçamentos</TabsTrigger>
+          <TabsTrigger value="leads" className="gap-2"><Inbox className="w-4 h-4"/>Leads / Cotações Site</TabsTrigger>
           <TabsTrigger value="crm" className="gap-2"><Users className="w-4 h-4"/>CRM</TabsTrigger>
           <TabsTrigger value="marketing" className="gap-2"><Megaphone className="w-4 h-4"/>Marketing</TabsTrigger>
           <TabsTrigger value="propostas" className="gap-2"><FileText className="w-4 h-4"/>Propostas</TabsTrigger>
@@ -39,6 +41,10 @@ const Comercial = () => {
 
         <TabsContent value="orcamentos">
           <OrcamentosLista />
+        </TabsContent>
+
+        <TabsContent value="leads">
+          <LeadsCotacoesLista />
         </TabsContent>
 
         <TabsContent value="crm" className="mt-0 pt-2">
