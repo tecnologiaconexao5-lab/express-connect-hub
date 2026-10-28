@@ -34,7 +34,7 @@ const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel
 // A) Migration cotacoes_publicas (RLS anônimo + Realtime)
 // A2) Migration V2 de precificação (status de aprovação + metadata)
 // B) Service (guardas, mapeamentos, pré-preenchimento do orçamento)
-// C) Fase 1 — /cotacao-express (conversa + preço na hora + aprovação)
+// C) Fase 1 — /cotacao-express (wizard + resumo + aprovação → Fase 2)
 // D) Fase 2 — /cotacao-express/detalhes/:id (endereços completos)
 // E) Rotas públicas no App.tsx
 // F) Alertas Realtime na Torre de Controle + integração comercial
@@ -247,7 +247,7 @@ describe("B) Service — guardas, mapeamentos e pré-preenchimento", () => {
   });
 });
 
-describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)", () => {
+describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", () => {
   it("C.1 — coleta exatamente os campos de baixa fricção (sem número/complemento)", () => {
     const ids = [...fase1.matchAll(/id="([^"]+)"/g)].map((m) => m[1]).sort();
     expect(ids).toEqual([
@@ -263,8 +263,8 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)"
     ]);
   });
 
-  it("C.2 — conversa 1 pergunta por vez, com autocomplete e loop de paradas", () => {
-    // Ritmo de chat (framer-motion) em vez de wizard
+  it("C.2 — wizard minimalista: 1 etapa por vez, autocomplete e loop de paradas", () => {
+    // Wizard minimalista: uma etapa por vez com animação (framer-motion)
     expect(fase1).toContain('from "framer-motion"');
     expect(fase1).toContain("AnimatePresence");
     // Autocomplete de endereço (Mapbox) compartilhado
@@ -277,7 +277,7 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)"
     expect(fase1).toContain("removerUltimaParada");
     // Perguntas (uma por etapa) — carga em 3 perguntas separadas
     for (const titulo of [
-      "Quem pediu",
+      "Como posso te chamar?",
       "O que transportar",
       "Peso da carga",
       "Dimensões da carga",
@@ -294,17 +294,22 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)"
     expect(fase1).toContain("Não sei as dimensões");
   });
 
-  it("C.3 — barra de progresso estilo Typeform com 7 perguntas principais", () => {
-    expect(fase1).toContain("const TOTAL_ETAPAS = 7;");
-    expect(fase1).toContain("Pergunta {etapa} de {TOTAL_ETAPAS}");
-    expect(fase1).toContain('style={{ width: `${progresso}%` }}');
-    expect(fase1).toContain("rotuloProgresso");
+  it("C.3 — sem indicadores de sistema: sem barra de progresso, sem contador de perguntas, sem rótulo de etapa", () => {
+    // UX premium: a tela NÃO exibe nada de "Pergunta X de Y" / % / "Etapa · ..."
+    expect(fase1).not.toContain("TOTAL_ETAPAS");
+    expect(fase1).not.toContain("Pergunta {etapa} de");
+    expect(fase1).not.toContain("rotuloProgresso");
+    expect(fase1).not.toContain('style={{ width: `${progresso}%` }}');
+    expect(fase1).not.toContain("Etapa · ");
+    // Saudação humana + pergunta direta na etapa 1
+    expect(fase1).toContain("Olá! Que bom ter você aqui");
+    expect(fase1).toContain('titulo="Como posso te chamar?"');
   });
 
   it("C.4 — motor indica veículo com SLA (sem aviso genérico de 40kg)", () => {
     // Usa o motor premium (peso + cubagem → veículo + SLA)
     expect(fase1).toContain("analisarCargaCotacao");
-    expect(fase1).toContain("rec.mensagemBot");
+    expect(fase1).toContain("recomendacao.mensagemBot");
     expect(fase1).toContain("CardVeiculoIndicado");
     expect(fase1).toContain("slaRotulo");
     // Frases combinadas com a operação (fonte: veiculoCotacao.ts)
@@ -319,21 +324,22 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)"
     expect(fase1).not.toContain("Acima disso,");
   });
 
-  it("C.5 — preço exibido na hora + botão verde de aprovação que segue para a Fase 2", () => {
+  it("C.5 — resumo com valor em destaque + botão verde que segue direto para a Fase 2", () => {
     // Frase combinada com a operação
     expect(fase1).toContain("Prontinho, ");
     expect(fase1).toContain("! O valor do seu frete fica em ");
     expect(fase1).toContain("formatarBrl(preco.valor)");
-    // Cartão de proposta
+    // Resumo da cotação (carga + veículo + valor)
+    expect(fase1).toContain('titulo="Resumo da Cotação"');
     expect(fase1).toContain("Proposta instantânea");
     expect(fase1).toContain("formatarBrl(precificacao.valor)");
-    // Chip de SLA no cartão de proposta
+    // Chip de SLA no resumo
     expect(fase1).toContain("recomendacao.slaRotulo");
     // Botão verde EXATO
-    expect(fase1).toContain("Aprovar e Solicitar Motorista");
+    expect(fase1).toContain("Aprovar Frete");
     expect(fase1).toContain("bg-emerald-600");
-    // Aprovação → Fase 2
-    expect(fase1).toContain("navigate(`/cotacao-express/detalhes/${cotacaoId}`)");
+    // Aprovação → Fase 2 (mesmo fluxo do link comercial "Gerar Link da Fase 2")
+    expect(fase1).toContain("navigate(`/cotacao-express/detalhes/${id}`)");
     expect(fase1).toContain("Aprovação registrada");
   });
 
@@ -345,10 +351,12 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (conversa + veículo + preço)"
     expect(fase1).toContain("precificacao: preco");
     expect(fase1).toContain("aprovarCotacao(id, {");
     expect(fase1).toContain("valor: precificacao.valor");
-    // Etapas do fluxo: cálculo (8) → proposta (9) → sucesso (10)
+    // Etapas do fluxo: cálculo (8) → resumo (9) → Fase 2 via navigate
     expect(fase1).toContain("setEtapa(8)");
     expect(fase1).toContain("setEtapa(9)");
-    expect(fase1).toContain("setEtapa(10)");
+    expect(fase1).not.toContain("setEtapa(10)");
+    // O formulário final (número/complemento) é da Fase 2 — sem duplicar
+    expect(fase1).not.toContain("salvarDetalhesFase2");
     // Dimensões viram texto canônico para a coluna carga_dimensoes
     expect(fase1).toContain("carga_dimensoes: dimensoesTexto");
   });

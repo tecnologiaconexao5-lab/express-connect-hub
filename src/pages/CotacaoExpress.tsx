@@ -1,26 +1,29 @@
 // ============================================================
-// MISSAO COTACAO-EXPRESS-V2 PREMIUM — FASE 1 (fluxo conversacional)
+// MISSAO COTACAO-EXPRESS-PREMIUM-WIZARD — FASE 1 (wizard premium)
 // Rota pública /cotacao-express — link do WhatsApp/site.
 //
-// CRO: 1 pergunta por vez, no ritmo de um chat, com o VALOR do frete
-// calculado em tempo real (rota Mapbox + precificação oficial) exibido
-// na mesma tela, e botão verde de aprovação que libera a Fase 2.
-// SEM menu do TMS, SEM campos de complemento/contato (fricção zero —
-// esses dados entram só na Fase 2, depois da aprovacao).
-//
-// PREMIUM: a carga é capturada em 3 perguntas (o que / peso /
-// dimensões) e o motor `analisarCargaCotacao` (peso + cubagem)
-// indica o veículo ao cliente com a regra de SLA (moto imediata,
+// CRO: wizard minimalista — 1 etapa por vez com animação suave de
+// entrada/saída (framer-motion), SEM histórico de chat. Carga capturada
+// em 3 perguntas (o que / peso / dimensões) e o motor `analisarCargaCotacao`
+// (peso + cubagem) indica o veículo com a regra de SLA (moto imediata,
 // demais 24h) — sem aviso genérico de 40kg. Endereços com
 // destrinchamento visual e modo manual (perguntas naturais).
 //
+// Após o cálculo, o cliente vê o RESUMO da cotação (carga, veículo
+// indicado + SLA e o VALOR do frete em destaque) e aprova com o botão
+// verde "Aprovar Frete" — que segue direto para a Fase 2
+// (/cotacao-express/detalhes/:id), onde número e contato são pedidos.
+// SEM menu do TMS (fricção zero — esses dados entram só na Fase 2,
+// depois da aprovacao).
+//
 // Etapas: 1 quem pediu → 2 o que transportar → 3 peso →
 //         4 dimensões → 5 retirada → 6 entrega → 7 pontos extras
-//         → 8 cálculo → 9 proposta → 10 sucesso.
+//         → 8 cálculo → 9 resumo da cotação → Fase 2 (detalhes/:id).
 // ============================================================
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +32,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarClock,
-  CheckCircle2,
   Clock,
   Gauge,
   MapPin,
@@ -61,11 +63,6 @@ import {
 } from "@/lib/veiculoCotacao";
 import type { SugestaoEndereco } from "@/services/maps/mapboxProvider";
 
-const TOTAL_ETAPAS = 7;
-
-const MENSAGEM_ABERTURA =
-  "Olá! Vamos calcular o seu frete rapidinho. Como posso te chamar?";
-
 const MENSAGEM_CALCULO = "Deixa comigo — calculando a rota e o melhor preço ⚡";
 
 const MENSAGEM_ERRO_CALCULO =
@@ -74,12 +71,6 @@ const MENSAGEM_ERRO_CALCULO =
 interface ParadaEstado {
   endereco: string;
   sugestao: SugestaoEndereco | null;
-}
-
-interface MensagemChat {
-  id: number;
-  autor: "bot" | "eu";
-  texto: string;
 }
 
 const paradaVazia = (): ParadaEstado => ({ endereco: "", sugestao: null });
@@ -102,12 +93,6 @@ export default function CotacaoExpress() {
   const navigate = useNavigate();
 
   const [etapa, setEtapa] = useState(1);
-  const [mensagens, setMensagens] = useState<MensagemChat[]>([
-    { id: 0, autor: "bot", texto: MENSAGEM_ABERTURA },
-  ]);
-  const seqMensagemRef = useRef(1);
-  const fimRef = useRef<HTMLDivElement | null>(null);
-  const timersRef = useRef<number[]>([]);
 
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -124,6 +109,7 @@ export default function CotacaoExpress() {
 
   const [rota, setRota] = useState<{ km: number; duracaoMin: number; paradas: number } | null>(null);
   const [precificacao, setPrecificacao] = useState<PrecificacaoCotacao | null>(null);
+  const [frasePreco, setFrasePreco] = useState("");
   const [cotacaoId, setCotacaoId] = useState<string | null>(null);
 
   const [erro, setErro] = useState("");
@@ -131,47 +117,6 @@ export default function CotacaoExpress() {
   const [processando, setProcessando] = useState(false);
 
   const primeiroNome = nome.trim().split(" ")[0] || "";
-
-  useEffect(() => {
-    fimRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [mensagens, etapa]);
-
-  // Limpa timers pendentes (fala atrasada da recomendação) no unmount.
-  useEffect(
-    () => () => {
-      timersRef.current.forEach((t) => window.clearTimeout(t));
-    },
-    [],
-  );
-
-  const falar = (texto: string) =>
-    setMensagens((prev) => [...prev, { id: seqMensagemRef.current++, autor: "bot", texto }]);
-
-  const responder = (texto: string) =>
-    setMensagens((prev) => [...prev, { id: seqMensagemRef.current++, autor: "eu", texto }]);
-
-  /** Fala do bot com pausa natural (indicação de veículo "digitando…"). */
-  const falarApos = (texto: string, ms = 900) => {
-    const timer = window.setTimeout(() => falar(texto), ms);
-    timersRef.current.push(timer);
-  };
-
-  const progresso = useMemo(
-    () =>
-      etapa <= TOTAL_ETAPAS
-        ? Math.min(100, Math.round((etapa / TOTAL_ETAPAS) * 100))
-        : 100,
-    [etapa],
-  );
-
-  const rotuloProgresso =
-    etapa <= TOTAL_ETAPAS
-      ? `Pergunta ${etapa} de ${TOTAL_ETAPAS}`
-      : etapa === 8
-        ? "Calculando o preço…"
-        : etapa === 9
-          ? "Proposta pronta"
-          : "Concluído";
 
   const dimensoesTexto = useMemo(() => {
     const a = Number(altura);
@@ -256,8 +201,6 @@ export default function CotacaoExpress() {
     const problema = validarIdentificacao();
     if (problema) return setErro(problema);
     setErro("");
-    responder(`${nome.trim()} · ${telefone.trim()}`);
-    falar(`Muito prazer, ${primeiroNome}! O que você precisa transportar hoje?`);
     setEtapa(2);
   };
 
@@ -265,8 +208,6 @@ export default function CotacaoExpress() {
     const problema = validarDescricao();
     if (problema) return setErro(problema);
     setErro("");
-    responder(descricao.trim());
-    falar("Certo! Qual o peso estimado da carga (em kg)?");
     setEtapa(3);
   };
 
@@ -274,8 +215,6 @@ export default function CotacaoExpress() {
     const problema = validarPeso();
     if (problema) return setErro(problema);
     setErro("");
-    responder(`${String(peso).replace(".", ",")} kg`);
-    falar("Perfeito. Quais as dimensões da mercadoria? (Altura, Largura e Profundidade)");
     setEtapa(4);
   };
 
@@ -283,9 +222,6 @@ export default function CotacaoExpress() {
     const problema = validarDimensoes();
     if (problema) return setErro(problema);
     setErro("");
-    responder(
-      dimensoesTexto || (dimensoesIgnoradas ? "Não sei as dimensões" : "Dimensões não informadas"),
-    );
 
     // Motor de indicação: peso + cubagem → veículo + SLA.
     const rec = analisarCargaCotacao({
@@ -295,11 +231,6 @@ export default function CotacaoExpress() {
       profundidadeCm: Number(profundidade) || null,
     });
     setRecomendacao(rec);
-    falarApos(rec.mensagemBot, 900);
-    falarApos(
-      "Combinado! Agora me diga onde a carga será retirada. (Digite o endereço, CEP ou bairro)",
-      1800,
-    );
     setEtapa(5);
   };
 
@@ -317,12 +248,6 @@ export default function CotacaoExpress() {
       profundidadeCm: null,
     });
     setRecomendacao(rec);
-    responder("Não sei as dimensões");
-    falarApos(rec.mensagemBot, 900);
-    falarApos(
-      "Combinado! Agora me diga onde a carga será retirada. (Digite o endereço, CEP ou bairro)",
-      1800,
-    );
     setEtapa(5);
   };
 
@@ -330,8 +255,6 @@ export default function CotacaoExpress() {
     const problema = validarEndereco(0);
     if (problema) return setErro(problema);
     setErro("");
-    responder(enderecoDaParada(paradas[0]));
-    falar("Perfeito. E para onde vamos levar?");
     setEtapa(6);
   };
 
@@ -341,9 +264,7 @@ export default function CotacaoExpress() {
     const limite = adicionarOutro ? adicionarParada() : "";
     if (limite) return setErro(limite);
     setErro("");
-    responder(enderecoDaParada(paradas[1]));
     if (adicionarOutro) {
-      falar("Certo! Precisamos de mais algum ponto no caminho?");
       setEtapa(7);
       return;
     }
@@ -356,9 +277,7 @@ export default function CotacaoExpress() {
     const limite = adicionarOutro ? adicionarParada() : "";
     if (limite) return setErro(limite);
     setErro("");
-    responder(enderecoDaParada(paradas[paradas.length - 1]));
     if (adicionarOutro) {
-      falar("Certo! Precisamos de mais algum ponto no caminho?");
       setEtapa(7);
       return;
     }
@@ -374,7 +293,6 @@ export default function CotacaoExpress() {
   // Cálculo de rota + preço (e pré-registro da cotação)
   // ------------------------------------------------------------
   const calcular = async () => {
-    falar(MENSAGEM_CALCULO);
     setEtapa(8);
     setErro("");
     setAvisoCadastro("");
@@ -394,7 +312,6 @@ export default function CotacaoExpress() {
         recomendacao?.tipo ?? null,
       );
       if (!resultado) {
-        falar(MENSAGEM_ERRO_CALCULO);
         setEtapa(7);
         setErro(MENSAGEM_ERRO_CALCULO);
         return;
@@ -404,7 +321,7 @@ export default function CotacaoExpress() {
       setRota(rotaCalculada);
       setPrecificacao(preco);
 
-      falar(
+      setFrasePreco(
         `Prontinho, ${primeiroNome}! O valor do seu frete fica em ${formatarBrl(preco.valor)}.`,
       );
 
@@ -433,7 +350,6 @@ export default function CotacaoExpress() {
 
       setEtapa(9);
     } catch {
-      falar(MENSAGEM_ERRO_CALCULO);
       setEtapa(7);
       setErro(MENSAGEM_ERRO_CALCULO);
     }
@@ -488,8 +404,11 @@ export default function CotacaoExpress() {
         return;
       }
 
-      falar(`Fechou, ${primeiroNome}! Aprovação registrada ✅ Último passo rápido…`);
-      setEtapa(10);
+      // Aprovação registrada → Fase 2 (número, contato e observações).
+      toast.success(
+        `Aprovação registrada, ${primeiroNome}! Falta só confirmar o número de quem recebe.`,
+      );
+      navigate(`/cotacao-express/detalhes/${id}`);
     } finally {
       setProcessando(false);
     }
@@ -526,92 +445,13 @@ export default function CotacaoExpress() {
     }
   };
 
-  // ------------------------------------------------------------
-  // ETAPA 10 — sucesso + passagem para a Fase 2
-  // ------------------------------------------------------------
-  if (etapa === 10) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
-        <Cabecalho />
-        <main className="flex-1 flex items-center justify-center px-4 pb-10">
-          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl animate-fade-in">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <CheckCircle2 className="h-9 w-9" />
-            </div>
-            <h1 className="text-2xl font-bold leading-snug text-slate-900">
-              Tudo certo, {primeiroNome}! 🚀
-            </h1>
-            <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
-              Sua aprovação de <strong>{formatarBrl(precificacao?.valor || 0)}</strong> foi
-              registrada. Falta só confirmar o número e o contato de quem recebe.
-            </p>
-            <Button
-              type="button"
-              className="mt-6 h-13 w-full rounded-xl bg-orange-500 text-base font-bold text-white shadow-lg shadow-orange-500/30 hover:bg-orange-600"
-              onClick={() => cotacaoId && navigate(`/cotacao-express/detalhes/${cotacaoId}`)}
-              disabled={!cotacaoId}
-            >
-              Continuar <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <p className="mt-4 text-xs text-slate-400">
-              Leva menos de 1 minuto — é o último passo.
-            </p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
       <Cabecalho />
 
-      {/* Progresso (Typeform) */}
-      <div className="px-4">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-          <div
-            className="h-full rounded-full bg-orange-500 transition-all duration-500"
-            style={{ width: `${progresso}%` }}
-          />
-        </div>
-        <div className="mt-1.5 flex items-center justify-between text-[11px] font-semibold text-slate-500">
-          <span>
-            {etapa <= TOTAL_ETAPAS ? (
-              <>
-                Pergunta {etapa} de {TOTAL_ETAPAS}
-              </>
-            ) : (
-              rotuloProgresso
-            )}
-          </span>
-          <span>{progresso}%</span>
-        </div>
-      </div>
-
       <main className="flex-1 px-4 pt-5 pb-40">
         <div className="mx-auto w-full max-w-xl space-y-4">
-          {/* Conversa */}
-          {mensagens.map((m) => (
-            <motion.div
-              key={m.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25 }}
-              className={m.autor === "bot" ? "flex justify-start" : "flex justify-end"}
-            >
-              <div
-                className={
-                  m.autor === "bot"
-                    ? "max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-4 py-2.5 text-[15px] leading-relaxed text-slate-700 shadow-sm ring-1 ring-slate-100"
-                    : "max-w-[85%] rounded-2xl rounded-tr-sm bg-orange-500 px-4 py-2.5 text-[15px] font-medium leading-relaxed text-white shadow-md"
-                }
-              >
-                {m.texto}
-              </div>
-            </motion.div>
-          ))}
-
-          {/* Cartão da pergunta atual */}
+          {/* Cartão da etapa atual (wizard minimalista) */}
           <AnimatePresence mode="wait">
             <motion.div
               key={`pergunta-${etapa}`}
@@ -624,7 +464,13 @@ export default function CotacaoExpress() {
               {/* ETAPA 1 — quem pediu */}
               {etapa === 1 && (
                 <div className="space-y-4">
-                  <Rotulo titulo="Quem pediu" subtitulo="Leva 30 segundos. Sem cadastro, sem senha." />
+                  <p className="text-sm font-semibold text-orange-600">
+                    Olá! Que bom ter você aqui 👋
+                  </p>
+                  <Rotulo
+                    titulo="Como posso te chamar?"
+                    subtitulo="Leva 30 segundos. Sem cadastro, sem senha."
+                  />
                   <div className="space-y-1.5">
                     <Label htmlFor="cot-nome">Seu nome *</Label>
                     <Input
@@ -706,7 +552,7 @@ export default function CotacaoExpress() {
                 <div className="space-y-4">
                   <Rotulo
                     titulo="Dimensões da carga"
-                    subtitulo="Altura, Largura e Profundidade em cm. Ajuda a confirmar o veículo."
+                    subtitulo="Quais as dimensões da mercadoria? (Altura, Largura e Profundidade) em cm. Ajuda a confirmar o veículo."
                   />
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1.5">
@@ -925,7 +771,7 @@ export default function CotacaoExpress() {
                       ))}
                     </span>
                     <span className="text-sm font-semibold text-slate-600">
-                      Calculando a rota e o melhor preço…
+                      {MENSAGEM_CALCULO}
                     </span>
                   </div>
                   <ul className="space-y-1.5 text-xs text-slate-500">
@@ -941,13 +787,84 @@ export default function CotacaoExpress() {
                 </div>
               )}
 
-              {/* ETAPA 9 — proposta com preço + aprovação */}
+              {/* ETAPA 9 — RESUMO DA COTAÇÃO (aprovação → Fase 2) */}
               {etapa === 9 && precificacao && (
                 <div className="space-y-4">
+                  <Rotulo
+                    titulo="Resumo da Cotação"
+                    subtitulo="Confira a carga, o veículo indicado e o valor. Número e contato de quem recebe pedimos na próxima tela."
+                  />
+
+                  {/* O que será transportado */}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                      <Package className="h-3.5 w-3.5" /> O que será transportado
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-800">{descricao}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">
+                        {String(peso).replace(".", ",")} kg
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">
+                        {dimensoesTexto || "Dimensões não informadas"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Veículo indicado + SLA */}
+                  <div
+                    className={
+                      recomendacao?.cabeMoto
+                        ? "rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+                        : "rounded-2xl border border-amber-200 bg-amber-50/70 p-4"
+                    }
+                  >
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                      Veículo indicado
+                    </span>
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-lg font-black text-slate-900">
+                        {recomendacao?.nome || precificacao.rotulo_veiculo}
+                      </p>
+                      {recomendacao && (
+                        <span
+                          className={
+                            recomendacao.cabeMoto
+                              ? "inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white"
+                              : "inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white"
+                          }
+                        >
+                          {recomendacao.cabeMoto ? (
+                            <Gauge className="h-3.5 w-3.5" />
+                          ) : (
+                            <CalendarClock className="h-3.5 w-3.5" />
+                          )}
+                          {recomendacao.slaRotulo}
+                        </span>
+                      )}
+                    </div>
+                    {recomendacao && (
+                      <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                        {recomendacao.mensagemBot}
+                      </p>
+                    )}
+                    {recomendacao?.litros != null && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Cubagem: {formatarLitros(recomendacao.litros)}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* VALOR DO FRETE EM DESTAQUE */}
                   <div className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50 to-white p-4">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-600">
                       <Sparkles className="h-3.5 w-3.5" /> Proposta instantânea
                     </div>
+                    {frasePreco && (
+                      <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">
+                        {frasePreco}
+                      </p>
+                    )}
                     <div className="mt-2 flex items-end gap-2">
                       <span className="text-4xl font-black tracking-tight text-slate-900">
                         {formatarBrl(precificacao.valor)}
@@ -971,24 +888,6 @@ export default function CotacaoExpress() {
                         {precificacao.paradas} parada(s)
                       </InfoPrazo>
                     </dl>
-
-                    {/* SLA do veículo indicado */}
-                    {recomendacao && (
-                      <div
-                        className={
-                          recomendacao.cabeMoto
-                            ? "mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-700"
-                            : "mt-3 flex items-center gap-1.5 rounded-xl bg-amber-100 px-3 py-2 text-xs font-bold text-amber-700"
-                        }
-                      >
-                        {recomendacao.cabeMoto ? (
-                          <Gauge className="h-3.5 w-3.5" />
-                        ) : (
-                          <CalendarClock className="h-3.5 w-3.5" />
-                        )}
-                        {recomendacao.slaRotulo}
-                      </div>
-                    )}
 
                     <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
                       {precificacao.aviso}
@@ -1026,7 +925,7 @@ export default function CotacaoExpress() {
                     disabled={processando}
                   >
                     <Truck className="mr-2 h-5 w-5" />
-                    {processando ? "Registrando..." : "Aprovar e Solicitar Motorista"}
+                    {processando ? "Registrando..." : "Aprovar Frete"}
                   </Button>
                   <p className="text-center text-xs text-slate-400">
                     Sem compromisso — depois é só confirmar o número de quem recebe.
@@ -1047,8 +946,6 @@ export default function CotacaoExpress() {
               {avisoCadastro}
             </p>
           )}
-
-          <div ref={fimRef} />
         </div>
       </main>
 
@@ -1093,9 +990,7 @@ function Cabecalho() {
 function Rotulo({ titulo, subtitulo }: { titulo: string; subtitulo: string }) {
   return (
     <div>
-      <span className="text-[11px] font-bold uppercase tracking-widest text-orange-600">
-        Etapa · {titulo}
-      </span>
+      <p className="text-lg font-bold text-slate-900">{titulo}</p>
       <p className="mt-1 text-sm text-slate-500">{subtitulo}</p>
     </div>
   );

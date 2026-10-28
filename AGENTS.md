@@ -1,5 +1,81 @@
 # Summary
 
+## FIX UX-COTACAO-SEM-INDICADORES — Remoção total de rótulos de sistema do wizard `/cotacao-express` (2026-10-27)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **71/71 PASS** · `npm run build` ok (46.80s).
+
+### Causa (pedido do cliente)
+O cliente ficou frustrado com rótulos estruturais na tela: "ETAPA - QUEM PEDIU" (span laranja uppercase `Etapa · {titulo}`), contador "Pergunta 1 de 7" + barra de progresso com % no topo — a experiência parecia um inquérito burocrático, não premium.
+
+### O que mudou (`src/pages/CotacaoExpress.tsx`)
+- **Removido** o bloco de progresso Typeform inteiro: barra `h-1.5` laranja, `style={{ width: ${progresso}% }}`, spans "Pergunta {etapa} de {TOTAL_ETAPAS}" e "{progresso}%".
+- **Removidos** `const TOTAL_ETAPAS = 7`, `progresso` (useMemo) e `rotuloProgresso` — zero resquícios no arquivo.
+- **`Rotulo` reescrito**: saiu o `<span>` laranja uppercase `Etapa · {titulo}` (tracking-widest); agora é `<p className="text-lg font-bold text-slate-900">{titulo}</p>` + subtítulo cinza — a pergunta direta é o título humano.
+- **Etapa 1**: ganhou saudação humana `Olá! Que bom ter você aqui 👋` + `titulo="Como posso te chamar?"` (antes "Quem pediu" com rótulo de etapa).
+- Mantidos: `Cabecalho` (marca), títulos de conteúdo no Resumo ("O que será transportado", "Veículo indicado", "Proposta instantânea" — são cards, não fases), barra inferior Voltar/Continuar, chip "N/8 pontos" (informação de rota, não de sistema).
+
+### Teste (`src/test/cotacao_express_fluxo.test.ts`, mesmos 52 casos)
+- C.2: lista de títulos — `"Quem pediu"` → `"Como posso te chamar?"`.
+- C.3 reescrito: agora prova a **ausência** dos indicadores (`.not.toContain` de `TOTAL_ETAPAS`, `Pergunta {etapa} de`, `rotuloProgresso`, `%`, `Etapa · `) + presença da saudação e da pergunta direta.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (2 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **71/71**
+- `npm run build` → ✅ 46.80s
+
+### Arquivos
+- `src/pages/CotacaoExpress.tsx` · `src/test/cotacao_express_fluxo.test.ts` (C.2/C.3) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: conferir tela 100% limpa — só saudação, pergunta e inputs; nenhum "Etapa"/"Pergunta X de Y"/barra de progresso.
+
+---
+
+## MISSAO COTACAO-EXPRESS-PREMIUM-WIZARD — Fase 1 vira wizard minimalista com "Resumo da Cotação" e aprovação 1-clique (2026-10-27)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **71/71 PASS** · suíte ampla igual à baseline (**18 arquivos / 44 testes falhos pré-existentes**, nenhum `cotacao*`), 2264 pass · `npm run build` ok (1m12s, chunk `CotacaoExpress` 38.38 kB).
+
+### O que mudou (pedido do cliente: "tela de chat" → wizard premium + resumo antes de aprovar)
+
+**1. `src/pages/CotacaoExpress.tsx` (refator chat → wizard)**
+- **Removeu o chat**: `MENSAGEM_ABERTURA`, `interface MensagemChat`, `mensagens`/`seqMensagemRef`/`fimRef`/`timersRef`, efeitos de scroll/cleanup, `falar`/`responder`/`falarApos` com timers e o `mensagens.map` (bolhas bot/usuário). Agora só a etapa atual renderiza, com `AnimatePresence` + transições já existentes.
+- **Avanço puramente por handlers**: `avancar*` não disparam mais falas; a recomendação de veículo segue em `setRecomendacao(rec)`; frases de veiculoCotacao continuam exibidas dentro do fluxo (etapas 4/5).
+- **`frasePreco`** (state novo): gerada em `calcular()` — `` `Prontinho, ${primeiroNome}! O valor do seu frete fica em ${formatarBrl(preco.valor)}.` `` — e exibida no Resumo (contrato da frase "na hora" preservado).
+- **Etapa 4**: subtítulo do `Rotulo` contém o texto exato `Quais as dimensões da mercadoria? (Altura, Largura e Profundidade) em cm.` (contrato do teste).
+- **Etapa 8 (cálculo)**: exibe `{MENSAGEM_CALCULO}`; falha → `setEtapa(7)` + `setErro(MENSAGEM_ERRO_CALCULO)` (sem fala).
+- **Etapa 9 = "Resumo da Cotação"** (NOVA tela premium, antes do sucesso):
+  - `Rotulo titulo="Resumo da Cotação"` + `rotuloProgresso` "Resumo da cotação".
+  - Card **carga**: descrição + chips peso/dimensões.
+  - Card **veículo**: `{recomendacao?.nome || precificacao.rotulo_veiculo}` + chip SLA (`recomendacao.slaRotulo` com ícone `Gauge`/`CalendarClock`) + `{recomendacao.mensagemBot}` + litros/cubagem (`recomendacao?.litros != null`).
+  - Card **preço** (emerald): `{frasePreco}` + valor grande `{formatarBrl(precificacao.valor)}` + `InfoPrazo` (km/duração/veículo/paradas) + aviso da fonte.
+  - Campos **opcionais** data/hora preservados (`cot-data`/`cot-hora`, decisão do cliente).
+  - Botão verde **"Aprovar Frete"** (`bg-emerald-600`, ícone `Truck`), label `processando ? "Registrando..." : "Aprovar Frete"`.
+- **`aprovar()`**: sucesso → `toast.success("Aprovação registrada, ...")` (sonner — `<Toaster />`+`<Sonner />` montados no root de `App.tsx`) + **navegação direta `navigate(\`/cotacao-express/detalhes/${id}\`)** — sem tela 10 de sucesso (decisão do cliente: reusar a Fase 2 existente `CotacaoExpressDetalhes` + `salvarDetalhesFase2`); falha → `setErro("Não foi possível concluir a aprovação. Tente novamente.")`.
+- Removido `setEtapa(10)` em todo o arquivo; etapas 1..9; imports limpos (`useEffect`/`useRef`/`CheckCircle2` saíram, `toast` entrou).
+- **Fluxo Supabase intocado**: `criarCotacaoFase1` (pré-registro no momento do preço), `aprovarCotacao`, contratos F.2 (títulos do hook realtime) e G (`calcularRotaEFreteCotacao` com 3º arg `recomendacao?.tipo ?? null`).
+
+**2. `src/test/cotacao_express_fluxo.test.ts` (bloco C atualizado, mesmos 52 casos)**
+- C.2: título/comentário "wizard minimalista: 1 etapa por vez" (bolhas removidas).
+- C.4: `rec.mensagemBot` → `recomendacao.mensagemBot`.
+- C.5 reescrito: `titulo="Resumo da Cotação"`, valor/formatarBrl, botão `"Aprovar Frete"`, `navigate(\`/cotacao-express/detalhes/${id}\`)`, toast "Aprovação registrada" — **sem** tela 10.
+- C.6: `.not.toContain("setEtapa(10)")` + `.not.toContain("salvarDetalhesFase2")` (Fase 2 é página separada).
+- F.2/G/H/I intocados.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros | `npx eslint` (2 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **71/71**
+- `npx vitest run` → **18 failed / 44 testes** = baseline exata (falhas pré-existentes, nenhuma em arquivo `cotacao*`) · 2264 pass · 155 skipped
+- `npm run build` → ✅ 1m12s (chunk `CotacaoExpress` 38.38 kB)
+
+### Arquivos
+- `src/pages/CotacaoExpress.tsx` (wizard + Resumo + navegação direta à Fase 2) · `src/test/cotacao_express_fluxo.test.ts` (bloco C) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: 7 perguntas → resumo com veículo/SLA/valor → "Aprovar Frete" → toast + Fase 2 na mesma sessão.
+2. (QA) Conferir chips de SLA e cubagem no Resumo com dados reais de peso/dimensões.
+
+---
+
 ## FIX VIACEP-COTACAO-MANUAL — Busca automática de CEP no modo manual do endereço (2026-10-27)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` **52/52 PASS** (45 → 52, bloco I novo com 7 casos) · regressão `cotacao_leads_comercial` **19/19** intacta.
