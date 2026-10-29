@@ -1471,7 +1471,9 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       comprimento: Number(novaCarga.comprimento) || 0,
       largura: Number(novaCarga.largura) || 0,
       altura: Number(novaCarga.altura) || 0,
-      cubagem: Number(novaCarga.cubagem) || 0,
+      // Usa a cubagem CALCULADA (dimensões × volumes) quando não houver valor
+      // manual — antes a sugestão ignorava a cubagem real e escolhia só por peso.
+      cubagem: calcCubagem.cubagemTotal,
       tipo: novaCarga.tipo as any
     });
     setSugestoesVeiculo(novasSugestoes);
@@ -2101,6 +2103,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   </Field>
                   <Field label="Data de Emissão"><Input type="date" value={data.data} readOnly={readOnly} onChange={(e) => update("data", e.target.value)} /></Field>
                   <Field label="Cliente" required>
+                    <div className="rounded-xl border-2 border-primary/50 bg-primary/5 p-2 shadow-sm ring-1 ring-primary/10">
                     <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" secondaryField="cnpj" value={clienteNomeExibicao || data.cliente} onChange={async (v, record) => { 
                       setClienteNomeExibicao(record ? ((record as any).nome_fantasia || (record as any).razao_social || "") : "");
                       update("cliente", v); 
@@ -2125,6 +2128,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         } catch (e) { console.warn("Erro ao buscar dados do cliente:", e); }
                       }
                     }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} />
+                    </div>
                   </Field>
                   <Field label="Tipo de Operação" required>
                     <Select value={data.tipoOperacao} onValueChange={(v) => update("tipoOperacao", v)} disabled={readOnly}>
@@ -2278,7 +2282,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                             setData(p => ({ 
                               ...p, 
                               dataProgramada: dataHoje, 
-                              previsaoInicio: p.previsaoInicio || horaAgora 
+                              previsaoInicio: p.previsaoInicio || horaAgora, status: p.status === "finalizada" || p.status === "cancelada" ? p.status : "agendada" 
                             }));
                           } else {
                             setData(p => ({ ...p, dataProgramada: "", previsaoInicio: "", previsaoTermino: "" }));
@@ -2949,7 +2953,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                               value={{
                                 cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "",
                                 complemento: end.complemento || "", bairro: end.bairro || "", cidade: end.cidade || "",
-                                estado: end.estado || "", referencia: end.instrucoes || "",
+                                estado: end.estado || "", referencia: end.referencia || end.instrucoes || "",
                                 latitude: end.latitude, longitude: end.longitude,
                                 portaria: end.portaria || "", doca: end.doca || "",
                                 procedimentoEntrada: end.procedimentoEntrada || "",
@@ -2971,6 +2975,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                                 e[idx] = { 
                                   ...e[idx], 
                                   ...obj, 
+                                  instrucoes: obj.referencia ?? e[idx].instrucoes,
                                   logradouro: obj.logradouro || log,
                                   numero: obj.numero || num,
                                   bairro: obj.bairro || end.bairro || "",
@@ -3114,6 +3119,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                       <SelectTrigger><SelectValue/></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Seca">Seca</SelectItem>
+                        <SelectItem value="Fragil">Frágil</SelectItem>
+                        <SelectItem value="Documento">Documento</SelectItem>
                         <SelectItem value="Refrigerada">Refrigerada</SelectItem>
                         <SelectItem value="Congelada">Congelada</SelectItem>
                         <SelectItem value="Mista">Mista</SelectItem>
@@ -3122,7 +3129,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   </Field>
                   <Field label="Descrição" className="lg:col-span-4"><Input value={data.carga.descricao} readOnly={readOnly} onChange={(e) => updateCarga("descricao", e.target.value)} /></Field>
                   <Field label="Volumes"><Input type="number" value={data.carga.volumes} readOnly={readOnly} onChange={(e) => updateCarga("volumes", Number(e.target.value))} /></Field>
-                  <Field label="Peso (Kg)"><Input type="number" value={data.carga.peso} readOnly={readOnly} onChange={(e) => updateCarga("peso", Number(e.target.value))} /></Field>
+                  <Field label="Peso Total (Kg)"><Input type="number" value={data.carga.peso} readOnly={readOnly} onChange={(e) => updateCarga("peso", Number(e.target.value))} /></Field>
                   <Field label="Cubagem (m³)">
                     <Input type="number" value={data.carga.cubagem || resultadoCubagem?.cubagemTotal || 0} readOnly={readOnly} onChange={(e) => updateCarga("cubagem", Number(e.target.value))} />
                     {resultadoCubagem?.cubagemManual && <span className="text-xs text-amber-600 italic">Cubagem alterada manualmente</span>}
@@ -3160,7 +3167,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   <div className="lg:col-span-6">
                     <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-700">
                       <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span>Cálculo inteligente: preencha <strong>2 dos 3</strong> campos — <strong>Volumes</strong>, <strong>Peso (Kg)</strong> e <strong>Peso por Volume (kg)</strong> — e o terceiro é preenchido automaticamente.</span>
+                      <span>Cálculo inteligente: preencha <strong>2 dos 3</strong> campos — <strong>Volumes</strong>, <strong>Peso Total (Kg)</strong> e <strong>Peso por Volume (kg)</strong> — e o terceiro é preenchido automaticamente.</span>
                     </div>
                   </div>
 
@@ -3964,6 +3971,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         <EnterpriseWorkspaceFooter>
         <FormFooterBar
           onCancelar={handleVoltar}
+          cancelarLabel="Voltar"
           onSalvarRascunho={!readOnly ? handleSalvarRascunho : undefined}
           canRascunho={!readOnly && (data.status !== "rascunho" || !data.id)}
           onSalvar={!readOnly ? handleSalvar : undefined}

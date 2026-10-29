@@ -227,17 +227,6 @@ const enderecoCompleto = (e: PontoEnderecoMensagem): string => {
   return partes.join(" - ") || "—";
 };
 
-const nomeMotoboy = (data: DadosMensagemMotoboy): string => {
-  const nome = primeiroNaoVazio(
-    data?.nomeMotorista,
-    data?.prestadorNome,
-    data?.nomePrestador,
-    data?.prestador,
-    data?.avulsoNome,
-  );
-  return nome === "—" ? "Motorista" : nome;
-};
-
 const contatoPonto = (e: PontoEnderecoMensagem): string =>
   primeiroNaoVazio(
     e?.nomeContato,
@@ -301,49 +290,45 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
   const destino = pontoDestino(data);
   const numeroOS = primeiroNaoVazio(data?.numeroOS, data?.osNumero, data?.numero);
 
+  // Ponto no padrão Conexão Express: `🟣 *【 1 】 RET* • Endereço...`
+  const blocoPonto = (
+    emoji: string,
+    rotulo: string,
+    ponto: PontoEnderecoMensagem,
+    verbo: string,
+  ): string[] => [
+    "━━━━━━━━━━━━━━━━━",
+    `${emoji} *【 ${rotulo}* • ${enderecoCompleto(ponto)}`,
+    `🗺️ ${linkMaps(ponto)}`,
+    `⏰ *JANELA:* ${janela(ponto)}`,
+    `👤 *PROCURAR:* ${contatoPonto(ponto)}`,
+    `📞 *TELEFONE:* ${telefonePonto(ponto)}`,
+    `📦 *${verbo}:* ${materialPonto(ponto, data)}`,
+    `⚠️ *ATENÇÃO:* ${instrucoesPonto(ponto)}`,
+    "",
+  ];
+
   return [
-    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
-    "📋 ORIENTAÇÃO DE EXECUÇÃO",
-    `OS nº ${numeroOS}`,
+    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
+    `📋 *ORIENTAÇÃO DE EXECUÇÃO* — OS nº ${numeroOS}`,
+    `${iconeVeiculo(data)} *VEÍCULO:* ${primeiroNaoVazio(data?.veiculoTipo, data?.veiculo, data?.tipoVeiculo)} | 💰 *VALOR:* R$ ${fmtValor(data?.custoPrestador)} | 💳 *PAGAMENTO:* ${formaPagamento(data)}`,
     "",
-    `Olá, ${nomeMotoboy(data)}! Você foi selecionado para executar esta OS.`,
+    "Olá, Parceiro! Você foi selecionado para executar esta OS.",
     "",
-    `${iconeVeiculo(data)} VEÍCULO: ${primeiroNaoVazio(data?.veiculoTipo, data?.veiculo, data?.tipoVeiculo)}`,
-    `💰 VALOR: R$ ${fmtValor(data?.custoPrestador)}`,
-    `💳 PAGAMENTO: ${formaPagamento(data)}`,
+    `*${bairro(origem)} ━➤ ${bairro(destino)}* | *${distanciaKm(data)} km*`,
     "",
+    ...blocoPonto("🟣", "1 】 RET", origem, "RETIRAR"),
+    ...blocoPonto("🟠", "2 】 ENT", destino, "ENTREGAR"),
     "━━━━━━━━━━━━━━━━━",
-    "🟣 【 1 】 RETIRADA",
-    "━━━━━━━━━━━━━━━━━",
-    "",
-    `📍 ENDEREÇO: ${enderecoCompleto(origem)}`,
-    `🗺️ ${linkMaps(origem)}`,
-    `⏰ JANELA: ${janela(origem)}`,
-    `👤 PROCURAR: ${contatoPonto(origem)}`,
-    `📞 TELEFONE: ${telefonePonto(origem)}`,
-    `📦 RETIRAR: ${materialPonto(origem, data)}`,
-    `⚠️ ORIENTAÇÕES: ${instrucoesPonto(origem)}`,
-    "",
-    "━━━━━━━━━━━━━━━━━",
-    "🟠 【 2 】 ENTREGA",
-    "━━━━━━━━━━━━━━━━━",
-    "",
-    `📍 ENDEREÇO: ${enderecoCompleto(destino)}`,
-    `🗺️ ${linkMaps(destino)}`,
-    `⏰ JANELA: ${janela(destino)}`,
-    `👤 PROCURAR: ${contatoPonto(destino)}`,
-    `📞 TELEFONE: ${telefonePonto(destino)}`,
-    `📦 ENTREGAR: ${materialPonto(destino, data)}`,
-    `⚠️ ORIENTAÇÕES: ${instrucoesPonto(destino)}`,
-    "",
-    "━━━━━━━━━━━━━━━━━",
-    "📸 COMPROVAÇÃO",
+    "📸 *COMPROVAÇÃO*",
     "Enviar o comprovante de entrega pelo WhatsApp após a conclusão.",
     "",
-    "🤝 CONDUTA PROFISSIONAL",
+    "🤝 *CONDUTA PROFISSIONAL*",
     "Seja sempre educado e cordial, utilize trajes adequados à operação e mantenha uma postura profissional. Em caso de dúvida, dificuldade, atraso ou ocorrência, entre em contato com a Conexão Express imediatamente.",
     "",
-    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+    `⚠️ *ATENÇÃO:* ${atencao(data)}`,
+    "",
+    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
   ].join("\n");
 };
 

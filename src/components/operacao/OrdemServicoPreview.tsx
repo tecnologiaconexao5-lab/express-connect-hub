@@ -10,6 +10,7 @@ import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } fro
 import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
 import type { OrdemServico, OSEndereco, OSCarga, OSStatus } from "./osTypes";
 import { STATUS_CORES, obterStatusGlobalOS } from "./osTypes";
+import { HistoricoOS, type HistoricoOSItem } from "./HistoricoOS";
 import { STATUS_GLOBAL_INFO } from "./statusGlobal";
 import { supabase } from "@/lib/supabase";
 
@@ -417,21 +418,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              <div className="relative border-l-2 border-slate-200 ml-3 space-y-6">
-                {os.historico?.map((h: any, idx: number) => (
-                  <div key={idx} className="relative pl-6">
-                    <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-slate-200 border-2 border-white"></span>
-                    <div className="flex flex-col gap-1">
-                       <div className="flex items-center gap-2">
-                         <span className="text-xs text-muted-foreground font-mono">{formatarData(h.data)}</span>
-                         <Badge variant="secondary" className="text-[10px]">{h.acao}</Badge>
-                       </div>
-                       <p className="text-sm font-medium">{h.status_novo || h.acao}</p>
-                       <span className="text-xs text-muted-foreground flex items-center gap-1"><User className="w-3 h-3"/> {h.usuario}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <HistoricoOS historico={os.historico as HistoricoOSItem[] | undefined} />
             </CardContent>
           </Card>
 

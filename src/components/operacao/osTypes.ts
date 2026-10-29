@@ -196,7 +196,7 @@ export interface PortadorExterno {
 }
 
 export interface OSCarga {
-  tipo?: "Seca" | "Refrigerada" | "Congelada" | "Mista";
+  tipo?: "Seca" | "Refrigerada" | "Congelada" | "Mista" | "Fragil" | "Documento";
   descricao?: string;
   volumes?: number;
   peso?: number;

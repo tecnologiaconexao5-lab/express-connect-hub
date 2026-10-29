@@ -5,7 +5,7 @@ export interface DadosCarga {
   largura?: number;
   altura?: number;
   cubagem?: number;
-  tipo?: "Seca" | "Refrigerada" | "Congelada" | "Mista" | "";
+  tipo?: "Seca" | "Refrigerada" | "Congelada" | "Mista" | "Fragil" | "Documento" | "";
 }
 
 export interface ResultadoCubagem {
@@ -41,7 +41,7 @@ const VEICULOS_POR_PESO_CUBAGEM: Record<string, {
   kombi: { pesoMin: 121, pesoMax: 1000, cubagemMax: 5, label: "Kombi" },
   van: { pesoMin: 121, pesoMax: 1500, cubagemMax: 8, label: "Van" },
   hr: { pesoMin: 121, pesoMax: 1800, cubagemMax: 10, label: "HR" },
-  vuc: { pesoMin: 121, pesoMax: 2500, cubagemMax: 16, label: "VUC" },
+  vuc: { pesoMin: 121, pesoMax: 2500, cubagemMax: 15, label: "VUC" },
   tres_quartos: { pesoMin: 121, pesoMax: 4000, cubagemMax: 20, label: "3/4" },
   toco: { pesoMin: 121, pesoMax: 8000, cubagemMax: 35, label: "Toco" },
   truck: { pesoMin: 121, pesoMax: 14000, cubagemMax: 50, label: "Truck" },

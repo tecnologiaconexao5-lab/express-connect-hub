@@ -1,5 +1,74 @@
 # Summary
 
+## MISSÃO NOVA-OS-UX-02 — Etapa 2 de 4: Lista de OS (filtro Hoje, UI e histórico) + Template WhatsApp (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (baseline `no-explicit-any` intacto) · teste novo **13/13** · testes afetados **143/143** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2297 pass, +13) · `npm run build` ok (2m44s).
+
+### O que mudou
+
+**1. Filtro "Hoje" (timezone) — `OrdensServicoLista.tsx`**
+- Causa: `new Date("2026-10-29")` é meia-noite **UTC** (21h do dia anterior em UTC-3) e o filtro comparava com a meia-noite local → OS do dia excluídas.
+- Correção: helpers `dataLocalISO()` + `normalizarDataOS()`; o filtro compara **strings YYYY-MM-DD** (`dataOSStr === hojeStr`, `=== ontem`, `>=` semana/mês, `>=/<=` personalizado). `safeFormatDate` também formata a data por string (não desloca o dia).
+
+**2. UI/UX da listagem**
+- **Data da OS**: abaixo do número, `mt-0.5 text-xs text-gray-500` com ícone `Calendar`.
+- **Sem prestador**: badge `bg-red-100 text-red-700 border-red-200` (+ subtexto "Nenhum motorista alocado").
+- **Histórico**: botão `History` na coluna Ações → Dialog `Histórico — <nº>` com `max-h-[60vh]`; timeline extraída para **`HistoricalOS`** → componente **`HistoricoOS.tsx`** (novo), reutilizado pelo `OrdemServicoPreview` (removeu o markup duplicado).
+- **Status pulsante**: dot `h-1.5 w-1.5 rounded-full bg-current animate-pulse` dentro da badge para status ativos (exceto finalizada/cancelada/rascunho).
+
+**3. Template WhatsApp — `gerarMensagemOrientacaoExecucao` (OS Completa)**
+- Cabeçalho `🟠 *CONEXÃO ⚡ EXPRESS* 🟣`; `📋 *ORIENTAÇÃO DE EXECUÇÃO* — OS nº X`.
+- Linha financeira única: `🚚 *VEÍCULO:* ... | 💰 *VALOR:* R$ ... | 💳 *PAGAMENTO:* ...` (ícone dinâmico Moto 🏍️ / Carro 🚗 / VUC·Kombi·Van·Truck 🚚).
+- Saudação fixa **"Olá, Parceiro!"** (helper `nomeMotoboy` removido).
+- Rota: `*Bairro Origem ━➤ Bairro Destino* | *18,3 km*`.
+- Pontos: `🟣 *【 1 】 RET* • Endereço...` e `🟠 *【 2 】 ENT* • Endereço...` (bloco `blocoPonto`), com `👤 *PROCURAR:*`, `📞 *TELEFONE:*`, `📦 *RETIRAR/ENTREGAR:*`, `⚠️ *ATENÇÃO:*`.
+- Alerta global `⚠️ *ATENÇÃO:* <observações>` antes da assinatura.
+
+### Testes
+- **NOVO** `src/test/nova_os_etapa2_lista_whatsapp.test.ts` (13 casos): filtro por data local, UI (data/tag/dot/histórico), componente compartilhado e Template 2 (cabeçalho, rota, pontos, alerta, ícones).
+- Atualizados: `fix_autocomplete_whatsapp.test.ts` (Template 2) e `fix_osmobile_contato_material_whatsapp.test.ts` (saudação "Parceiro" + labels com asteriscos).
+
+### Arquivos
+- `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/HistoricoOS.tsx` (NOVO) · `src/components/operacao/OrdemServicoPreview.tsx` · `src/lib/osWhatsAppMessage.ts` · `src/test/nova_os_etapa2_lista_whatsapp.test.ts` (NOVO) · `src/test/fix_autocomplete_whatsapp.test.ts` · `src/test/fix_osmobile_contato_material_whatsapp.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (QA) Lista de OS: "Hoje" retorna as OS emitidas no dia (UTC-3), "Ontem"/"Semana"/"Mês"/personalizado coerentes; data exibida não desloca o dia.
+2. (QA) Ações → ícone de histórico abre o Dialog com a timeline; status ativos com dot pulsante; "Sem prestador" em vermelho claro.
+3. (QA) Copiar Orientação (OS Completa) → template com cabeçalho/rota/pontos/atenção no padrão e "Olá, Parceiro!".
+
+---
+
+## MISSÃO NOVA-OS-UX-01 — Etapa 1 de 4 dos ajustes cirúrgicos na Nova OS (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (`no-explicit-any` restantes = baseline) · testes afetados **220/220** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2284 pass) · `npm run build` ok (58.35s).
+
+### O que mudou (pedido da auditoria operacional)
+
+**1. Destaque do Cliente (`OrdemServicoForm.tsx`, Identificação)** — `SearchableSelect` de Cliente agora dentro de wrapper `rounded-xl border-2 border-primary/50 bg-primary/5 p-2 shadow-sm ring-1 ring-primary/10` (mesmo nível de evidência da alocação de prestador). Layout/grade preservados.
+
+**2. Botão Voltar** — `FormFooterBar` recebeu `cancelarLabel="Voltar"` (o componente já renderiza `ArrowLeft`).
+
+**3. Carga** — `Tipo Carga` ganhou **Frágil** (`Fragil`) e **Documento** (`Documento`) em `osTypes.OSCarga.tipo` + `cargaService.DadosCarga.tipo`; label **"Peso (Kg)" → "Peso Total (Kg)"** (também no hint do cálculo inteligente).
+
+**4. Toasts** — `src/components/ui/sonner.tsx`: `position="bottom-left"` (global; não cobre mais o "Avançar").
+
+**5. Bug "Referência / Instruções"** — causa raiz: o campo é controlado por `referencia`, mas o formulário da OS lia/escrevia só `instrucoes` → o value nunca mudava (parecia travado). Correção: `referencia: end.referencia || end.instrucoes` e no `onChange` grava **`instrucoes: obj.referencia`** (compatível com PDF/WhatsApp).
+
+**6. Status automático** — ativar "Serviço Programado" agora seta `status: "agendada"` (exceto se finalizada/cancelada).
+
+**7. Matemática de veículos** — duas correções: (a) `sugerirVeiculosPorCarga` passou a receber a **cubagem calculada** (`calcCubagem.cubagemTotal`, dimensões × volumes) em vez do campo manual vazio — era o que fazia escolher só por peso (VUC com 40m³); (b) `VUC.cubagemMax` 16 → **15 m³** (acima: 3/4 até 20, Toco até 35, Truck até 50).
+
+### Arquivos
+- `src/components/operacao/OrdemServicoForm.tsx` · `src/components/operacao/osTypes.ts` · `src/services/operacao/cargaService.ts` · `src/components/ui/sonner.tsx` · `AGENTS.md`
+
+### Pendências
+1. (QA) Nova OS: destaque do Cliente, "Voltar", Frágil/Documento, "Peso Total (Kg)", toast no canto inferior esquerdo.
+2. (QA) Rotas: digitar em "Referência / Instruções" (grava e persiste após salvar).
+3. (QA) Serviço Programado ON → Status "Agendado/Alocado"; OFF mantém o status.
+4. (QA) 40m³ + 2.500kg → sugestão Truck (não VUC); ≤15m³ → VUC; 16–20m³ → 3/4.
+
+---
+
 ## MISSÃO COTACAO-OS-CLIENTE-BADGE-ALOCAR — Cliente automático cotação→OS + badge de OS pendentes + Alocar Prestador (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (código novo limpo; `no-explicit-any` restantes são baseline) · `cotacao_leads_comercial` **26/26** (19 → 26, bloco F novo com 7 casos) + `cotacao_express_fluxo` **65/65** = **91/91** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2284 pass, +7 novos) · `npm run build` ok (2m56s).

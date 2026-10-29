@@ -258,36 +258,34 @@ describe("Template 2 — Orientação de Execução (OS completa)", () => {
   });
   const linhas = msg.split("\n");
 
-  it("cabeçalho, OS e saudação ao motoboy", () => {
-    expect(linhas[0]).toBe("🟠 CONEXÃO ⚡ EXPRESS 🟣");
-    expect(linhas[1]).toBe("📋 ORIENTAÇÃO DE EXECUÇÃO");
-    expect(linhas[2]).toBe("OS nº OS-202610-998877");
-    expect(linhas[4]).toBe("Olá, Carlos Motoboy! Você foi selecionado para executar esta OS.");
+  it("cabeçalho, OS e saudação ao parceiro", () => {
+    expect(linhas[0]).toBe("🟠 *CONEXÃO ⚡ EXPRESS* 🟣");
+    expect(msg).toContain("📋 *ORIENTAÇÃO DE EXECUÇÃO* — OS nº OS-202610-998877");
+    expect(msg).toContain("Olá, Parceiro! Você foi selecionado para executar esta OS.");
   });
 
   it("bloco financeiro (veículo/valor/pagamento)", () => {
-    expect(msg).toContain("🏍️ VEÍCULO: Moto");
-    expect(msg).toContain("💰 VALOR: R$ 77,50");
-    expect(msg).toContain("💳 PAGAMENTO: A faturar");
+    expect(msg).toContain("🏍️ *VEÍCULO:* Moto");
+    expect(msg).toContain("💰 *VALOR:* R$ 77,50");
+    expect(msg).toContain("💳 *PAGAMENTO:* A faturar");
   });
 
-  it("blocos RETIRADA e ENTREGA com endereço COMPLETO (com número)", () => {
-    expect(msg).toContain("🟣 【 1 】 RETIRADA");
-    expect(msg).toContain("🟠 【 2 】 ENTREGA");
-    expect(msg).toContain("📍 ENDEREÇO: Rua das Flores, 1234 - Vila Madalena, São Paulo/SP - 01310-100");
-    expect(msg).toContain("📍 ENDEREÇO: Av. Paulista, 1000 - Bela Vista, São Paulo/SP - 01310-100");
-    expect(msg).toContain("👤 PROCURAR: João Portaria");
-    expect(msg).toContain("📞 TELEFONE: (11) 90000-0000");
-    expect(msg).toContain("📦 RETIRAR: 3");
-    expect(msg).toContain("⚠️ ORIENTAÇÕES: Entrar pela doca 2");
-    expect(msg).toContain("📦 ENTREGAR: 3");
+  it("rota + blocos RET e ENT com endereço COMPLETO (com número)", () => {
+    expect(msg).toContain("*Vila Madalena ━➤ Bela Vista* | *12,5 km*");
+    expect(msg).toContain("🟣 *【 1 】 RET* • Rua das Flores, 1234 - Vila Madalena, São Paulo/SP - 01310-100");
+    expect(msg).toContain("🟠 *【 2 】 ENT* • Av. Paulista, 1000 - Bela Vista, São Paulo/SP - 01310-100");
+    expect(msg).toContain("👤 *PROCURAR:* João Portaria");
+    expect(msg).toContain("📞 *TELEFONE:* (11) 90000-0000");
+    expect(msg).toContain("📦 *RETIRAR:* 3");
+    expect(msg).toContain("⚠️ *ATENÇÃO:* Entrar pela doca 2");
+    expect(msg).toContain("📦 *ENTREGAR:* 3");
   });
 
   it("blocos de comprovação e conduta profissional + assinatura final", () => {
-    expect(msg).toContain("📸 COMPROVAÇÃO");
+    expect(msg).toContain("📸 *COMPROVAÇÃO*");
     expect(msg).toContain("Enviar o comprovante de entrega pelo WhatsApp após a conclusão.");
-    expect(msg).toContain("🤝 CONDUTA PROFISSIONAL");
-    expect(linhas[linhas.length - 1]).toBe("🟠 CONEXÃO ⚡ EXPRESS 🟣");
+    expect(msg).toContain("🤝 *CONDUTA PROFISSIONAL*");
+    expect(linhas[linhas.length - 1]).toBe("🟠 *CONEXÃO ⚡ EXPRESS* 🟣");
   });
 
   it("é DIFERENTE do Template 1 (Resumo da Rota)", () => {

@@ -43,21 +43,21 @@ describe("WhatsApp — contato e material reais da operação", () => {
       enderecos: [ORIGEM, DESTINO],
     });
 
-    expect(msg).toContain("Olá, Carlos Motoboy! Você foi selecionado para executar esta OS.");
-    expect(msg).toContain("👤 PROCURAR: João Porteiro");
-    expect(msg).toContain("📞 TELEFONE: (11) 98888-7777");
-    expect(msg).toContain("📦 RETIRAR: 2 caixas de documentos");
-    expect(msg).toContain("👤 PROCURAR: Maria Recepção");
-    expect(msg).toContain("📞 TELEFONE: (11) 97777-6666");
-    expect(msg).toContain("📦 ENTREGAR: 1 envelope lacrado");
+    expect(msg).toContain("Olá, Parceiro! Você foi selecionado para executar esta OS.");
+    expect(msg).toContain("👤 *PROCURAR:* João Porteiro");
+    expect(msg).toContain("📞 *TELEFONE:* (11) 98888-7777");
+    expect(msg).toContain("📦 *RETIRAR:* 2 caixas de documentos");
+    expect(msg).toContain("👤 *PROCURAR:* Maria Recepção");
+    expect(msg).toContain("📞 *TELEFONE:* (11) 97777-6666");
+    expect(msg).toContain("📦 *ENTREGAR:* 1 envelope lacrado");
   });
 
-  it("2 — saudação cai para 'Motorista' quando não há nome", () => {
+  it("2 — saudação é fixa em 'Olá, Parceiro!' mesmo sem nome", () => {
     const msg = gerarMensagemOrientacaoExecucao({
       numero: "OS-1",
       enderecos: [ORIGEM, DESTINO],
     });
-    expect(msg).toContain("Olá, Motorista! Você foi selecionado para executar esta OS.");
+    expect(msg).toContain("Olá, Parceiro! Você foi selecionado para executar esta OS.");
   });
 
   it("3 — material vazio mantém fallback para volumes", () => {
@@ -69,8 +69,8 @@ describe("WhatsApp — contato e material reais da operação", () => {
         { ...DESTINO, material: "" },
       ],
     });
-    expect(msg).toContain("📦 RETIRAR: 3");
-    expect(msg).toContain("📦 ENTREGAR: 3");
+    expect(msg).toContain("📦 *RETIRAR:* 3");
+    expect(msg).toContain("📦 *ENTREGAR:* 3");
   });
 });
 

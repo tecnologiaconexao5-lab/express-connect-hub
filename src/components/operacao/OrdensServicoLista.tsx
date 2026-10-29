@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import OrdemServicoForm from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
 import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
+import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
 import { notificarBaseAgregados, emRiscoSlaSemAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 import { format } from "date-fns";
@@ -28,6 +29,24 @@ import { ptBR } from "date-fns/locale";
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
+
+/** Data local no formato YYYY-MM-DD (evita o deslocamento de fuso do toISOString). */
+const dataLocalISO = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Normaliza a data da OS para YYYY-MM-DD. A coluna é `date` (sem hora), então a
+ * comparação por string elimina o bug de fuso: `new Date("2026-10-29")` é
+ * meia-noite UTC (= 21h do dia anterior em UTC-3) e excluía as OS do dia.
+ */
+const normalizarDataOS = (valor?: string | null): string => {
+  const texto = String(valor || "").trim();
+  if (!texto) return "";
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const d = new Date(texto);
+  return Number.isNaN(d.getTime()) ? "" : dataLocalISO(d);
+};
 
 const OrdensServicoLista = () => {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
@@ -39,6 +58,8 @@ const OrdensServicoLista = () => {
   const [osPreview, setOsPreview] = useState<OrdemServico | null>(null);
   // Visão DEDICADA de comprovantes/POD (não abre o formulário da OS).
   const [osComprovantes, setOsComprovantes] = useState<OrdemServico | null>(null);
+  // Histórico rápido da OS (Dialog na coluna Ações).
+  const [osHistorico, setOsHistorico] = useState<OrdemServico | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Filtros
@@ -309,6 +330,10 @@ const OrdensServicoLista = () => {
   const safeFormatDate = (dateStr?: string) => {
     if (!dateStr) return "—";
     try {
+      // Datas "YYYY-MM-DD" (coluna date) são formatadas por string: `new Date()`
+      // interpretaria como UTC e exibiria o dia anterior em UTC-3.
+      const iso = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return "—";
       return format(d, "dd/MM/yyyy", { locale: ptBR });
@@ -332,33 +357,30 @@ const OrdensServicoLista = () => {
     const matchTipoCarga = filtroTipoCarga === "todos" || (os.carga?.tipo || "") === filtroTipoCarga;
     const matchSemPrestador = !somenteSemPrestador || osSemPrestador(os);
     
-    // Filtro de período
+    // Filtro de período — comparação por data local (YYYY-MM-DD), sem fuso.
     let matchPeriodo = true;
     if (filtroPeriodo !== "todos") {
-      const dataOS = new Date(os.data);
-      if (isNaN(dataOS.getTime())) return false;
-      
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      
+      const dataOSStr = normalizarDataOS(os.data);
+      if (!dataOSStr) return false;
+
+      const agora = new Date();
+      const hojeStr = dataLocalISO(agora);
+
       if (filtroPeriodo === "hoje") {
-        matchPeriodo = dataOS >= hoje;
+        matchPeriodo = dataOSStr === hojeStr;
       } else if (filtroPeriodo === "ontem") {
-        const ontem = new Date(hoje);
-        ontem.setDate(hoje.getDate() - 1);
-        matchPeriodo = dataOS >= ontem && dataOS < hoje;
+        const ontem = new Date(agora);
+        ontem.setDate(ontem.getDate() - 1);
+        matchPeriodo = dataOSStr === dataLocalISO(ontem);
       } else if (filtroPeriodo === "semana") {
-        const umaSemanaAtras = new Date(hoje);
-        umaSemanaAtras.setDate(hoje.getDate() - 7);
-        matchPeriodo = dataOS >= umaSemanaAtras;
+        const umaSemanaAtras = new Date(agora);
+        umaSemanaAtras.setDate(agora.getDate() - 7);
+        matchPeriodo = dataOSStr >= dataLocalISO(umaSemanaAtras);
       } else if (filtroPeriodo === "mes") {
-        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-        matchPeriodo = dataOS >= inicioMes;
+        const inicioMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-01`;
+        matchPeriodo = dataOSStr >= inicioMes;
       } else if (filtroPeriodo === "personalizado" && dataInicio && dataFim) {
-        const dIni = new Date(dataInicio);
-        const dFim = new Date(dataFim);
-        dFim.setHours(23, 59, 59, 999);
-        matchPeriodo = dataOS >= dIni && dataOS <= dFim;
+        matchPeriodo = dataOSStr >= dataInicio && dataOSStr <= dataFim;
       }
     }
 
@@ -648,6 +670,7 @@ const OrdensServicoLista = () => {
                   const comOcorrencia = os.status === "ocorrencia";
                   const semPrestador = osSemPrestador(os);
                   const riscoSla = emRiscoSlaSemAlocacao((os as OSComDataCriacao).createdAt, semPrestador);
+                  const statusAtivo = !STATUS_ENCERRADOS.includes(String(os.status)) && os.status !== "rascunho";
 
                   return (
                     <TableRow
@@ -660,7 +683,7 @@ const OrdensServicoLista = () => {
                           {semPrestador && <ShieldAlert className="w-3.5 h-3.5 text-red-600 animate-pulse" />}
                           {os.numero}
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
                           <Calendar className="w-3 h-3" /> {safeFormatDate(os.data)}
                         </div>
                       </TableCell>
@@ -684,7 +707,7 @@ const OrdensServicoLista = () => {
                        <TableCell>
                         {semPrestador ? (
                           <div className="flex flex-col gap-1">
-                            <Badge className="bg-red-600 text-white text-[9px] uppercase font-bold py-0.5 px-2 w-fit gap-1">
+                            <Badge className="bg-red-100 text-red-700 border border-red-200 text-[9px] uppercase font-bold py-0.5 px-2 w-fit gap-1">
                               <ShieldAlert className="w-3 h-3" /> Sem prestador
                             </Badge>
                             <span className="text-[10px] text-red-600 font-medium">Nenhum motorista alocado</span>
@@ -704,7 +727,13 @@ const OrdensServicoLista = () => {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} text-[9px] uppercase font-bold py-0.5 px-2`}>
+                        <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} inline-flex items-center text-[9px] uppercase font-bold py-0.5 px-2`}>
+                          {statusAtivo && (
+                            <span
+                              className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse"
+                              aria-hidden="true"
+                            />
+                          )}
                           {STATUS_GLOBAL_INFO[obterStatusGlobalOS(os.status)].label}
                         </Badge>
                         {(os.dataProgramada || os.previsaoInicio) && (
@@ -770,6 +799,9 @@ const OrdensServicoLista = () => {
                               <div className="mx-1 h-6 w-px bg-border" />
                             </>
                           )}
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-100 hover:text-slate-700" title="Histórico da OS" onClick={(e) => { e.stopPropagation(); setOsHistorico(os); }}>
+                            <History className="w-4 h-4"/>
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600" title="Rastreamento" onClick={(e) => { e.stopPropagation(); setOsRastreamento(os); setShowRastreamento(true); }}>
                             <LocateFixed className="w-4 h-4"/>
                           </Button>
@@ -797,6 +829,23 @@ const OrdensServicoLista = () => {
       </Card>
 
       {/* Modal Confirmação Exclusão */}
+      {/* Modal Histórico da OS */}
+      <Dialog open={!!osHistorico} onOpenChange={(open) => { if (!open) setOsHistorico(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-slate-600" /> Histórico — {osHistorico?.numero || "OS"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto pr-1">
+            <HistoricoOS historico={osHistorico?.historico} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOsHistorico(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal Alocar Prestador */}
       <Dialog open={!!osAlocando} onOpenChange={(open) => { if (!open) fecharAlocacao(); }}>
         <DialogContent className="max-w-md">
