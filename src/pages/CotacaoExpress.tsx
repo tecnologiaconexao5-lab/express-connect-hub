@@ -501,10 +501,22 @@ export default function CotacaoExpress() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col print:bg-white">
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden print:bg-white">
+      {/* Camada 1 — gradiente suave da marca (atrás de tudo) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[-2] bg-gradient-to-br from-orange-50 via-white to-slate-100 print:hidden"
+      />
+      {/* Camada 2 — marca d'água da etapa ativa (sutil, não interfere na leitura) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[-1] bg-cover bg-center bg-no-repeat bg-fixed opacity-[0.04] print:hidden"
+        style={{ backgroundImage: `url('${bgPorEtapa(etapa)}')` }}
+      />
+
       <Cabecalho />
 
-      <main className="flex-1 px-4 pt-5 pb-40 print:px-0 print:pt-0 print:pb-0">
+      <main className="relative z-0 flex-1 px-4 pt-5 pb-40 print:px-0 print:pt-0 print:pb-0">
         <div className="mx-auto w-full max-w-2xl space-y-4">
           {/* Cartão da etapa atual (wizard minimalista) */}
           <AnimatePresence mode="wait">
@@ -1093,10 +1105,18 @@ export default function CotacaoExpress() {
 // Subcomponentes (escopo de módulo — identidade estável p/ React)
 // ------------------------------------------------------------
 
+// ETAPA-UI — marca d'água institucional por etapa do wizard (imagens em /public).
+const bgPorEtapa = (etapa: number): string => {
+  if (etapa === 1) return "/bg-callcenter.png"; // identificação
+  if (etapa === 2) return "/bg-tecnologia.png"; // origem/localização
+  if (etapa === 3) return "/bg-entregador1.jpg"; // destino/rota
+  return "/bg-motoboy.png"; // veículo, cálculo e resumo da cotação
+};
+
 function Cabecalho() {
   const [logoOk, setLogoOk] = useState(true);
   return (
-    <header className="bg-slate-900 px-4 py-3 flex items-center justify-between print:hidden">
+    <header className="relative z-10 flex items-center justify-between border-b-2 border-orange-500 bg-[#2E1065] px-4 py-3 shadow-md print:hidden">
       {logoOk ? (
         <img
           src="/logos/logo-conexao-oficial.png"
@@ -1109,7 +1129,7 @@ function Cabecalho() {
           ⚡ CONEXÃO EXPRESS
         </span>
       )}
-      <span className="rounded-full bg-orange-500/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-orange-300">
+      <span className="rounded-full bg-orange-500 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-sm">
         Cotação Express
       </span>
     </header>

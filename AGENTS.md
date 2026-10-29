@@ -1,5 +1,34 @@
 # Summary
 
+## MISSÃO COTACAO-EXPRESS-POLIMENTO-FINAL — Header corporativo + marcas d'água por etapa (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros (`CotacaoExpress` + teste) · teste novo **7/7** · cotação **98/98** (7 + 65 + 26) · suíte completa **18 arquivos / 44 testes falhos** = baseline (+ flaky `fin_prog05c3b` sob carga paralela; 5/5 isolado) · **2328 pass** (+7) · `npm run build` ok (4m57s).
+
+### O que mudou (`src/pages/CotacaoExpress.tsx`)
+
+**1. Fluxo sequencial validado**
+- A tela já estava no wizard sequencial (Etapa 1 "Como posso te chamar?" → carga → peso → dimensões → retirada → entrega → extras → cálculo → resumo). **Não havia** seletor "Tipo de Solicitação" nem botão "Falar no WhatsApp" no código atual (verificado por varredura); o novo teste garante a ausência desses elementos em regressões futuras.
+
+**2. Header corporativo**
+- Fundo passou de `bg-slate-900` para **roxo escuro da marca `bg-[#2E1065]`** com **borda inferior laranja** (`border-b-2 border-orange-500`), sombra e chip "Cotação Express" laranja sólido com texto branco; fallback textual permanece branco para alto contraste.
+
+**3. Marcas d'água responsivas por etapa**
+- `bgPorEtapa(etapa)`: 1 → `/bg-callcenter.png`; 2 → `/bg-tecnologia.png`; 3 → `/bg-entregador1.jpg`; 4+ (cálculo/resumo) → `/bg-motoboy.png`.
+- Duas camadas absolutas atrás do conteúdo: gradiente `z-[-2]` e **marca d'água `z-[-1]`** com `pointer-events-none`, `aria-hidden`, `opacity-[0.04]`, `bg-cover bg-center bg-no-repeat bg-fixed` e `print:hidden` (impressão limpa). `main` sobe para `relative z-0`; layout `max-w-2xl` intacto.
+
+### Testes
+- **NOVO** `src/test/cotacao_express_bg_header.test.ts` (7 casos fonte-based): ausência de modalidades/WhatsApp, etapa 1 didática, header roxo/laranja, mapeamento das 4 imagens, camada `z-[-1]`/opacidade/responsividade e `max-w-2xl`.
+
+### Arquivos
+- `src/pages/CotacaoExpress.tsx` · `src/test/cotacao_express_bg_header.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express`: header roxo com borda laranja e logo legível; chip laranja.
+2. (QA) Trocar de etapa 1→2→3→4/Resumo e conferir a troca sutil da marca d'água (callcenter/tecnologia/entregador/motoboy) em desktop e celular (`bg-fixed`/`bg-cover`).
+3. (QA) Imprimir/“Salvar PDF” no Resumo → sem marcas d'água no papel.
+
+---
+
 ## MISSÃO AUTO-SAVE-DRAFT — Retenção de estado, reidratação e bloqueio de navegação (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **10/10** · afetados **38/38** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (+ 1 flaky `fin_prog05c3b` só no run completo, 5/5 isolado) · 2322 pass (+10) · `npm run build` ok (1m56s).
