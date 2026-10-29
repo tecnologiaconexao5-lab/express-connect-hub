@@ -1413,7 +1413,7 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   tabelaAplicada: item.tabela_aplicada || item.tabelaAplicada,
   romaneio: item.romaneio || (item as any).romaneio,
   valorCliente: item.valor_cliente ?? item.valorCliente ?? 0,
-  custoPrestador: item.custo_prestador ?? item.custoPrestador ?? 0,
+  custoPrestador: item.custo_prestador ?? item.custoPrestador ?? (item as any).carga?.custoPrestador ?? 0,
   pedagio: item.pedagio ?? item.pedagio ?? 0,
   ajudante: item.ajudante ?? item.ajudante ?? 0,
   adicionais: item.adicionais ?? item.adicionais ?? 0,

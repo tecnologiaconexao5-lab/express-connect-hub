@@ -181,12 +181,38 @@ const OrdensServicoLista = () => {
 
         setSyncStatusMap(syncMap);
 
-        const normalizados = (data as any[]).map((item) => {
+        // FIX UUID — `ordens_servico.prestador` é uuid; resolve o nome para exibir
+        // na lista/edição (o form usa nome_completo no select).
+        const linhas = data as any[];
+        const idsPrestador = Array.from(
+          new Set(
+            linhas
+              .map((item) => item?.prestador)
+              .filter((v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v)),
+          ),
+        );
+        let nomesPrestador: Record<string, string> = {};
+        if (idsPrestador.length > 0) {
+          const { data: prestadoresRows } = await supabase
+            .from("prestadores")
+            .select("id, nome_completo")
+            .in("id", idsPrestador);
+          nomesPrestador = Object.fromEntries(
+            (prestadoresRows || []).map((p) => [(p as { id: string }).id, String((p as { nome_completo?: string | null }).nome_completo || "")]),
+          );
+        }
+
+        const normalizados = linhas.map((item) => {
           const os = fromOSRow(item);
+          const prestadorUuid =
+            typeof item.prestador === "string" && /^[0-9a-f-]{36}$/i.test(item.prestador) ? item.prestador : "";
           return {
             ...os,
             // ETAPA-4 — preserva o itinerário (dados operacionais incluídos) ao editar.
             enderecos: Array.isArray(item.enderecos) ? item.enderecos : [],
+            // Nome para exibição/edição; o uuid fica em prestadorId (gravação).
+            prestador: prestadorUuid ? (nomesPrestador[prestadorUuid] || "") : (os.prestador || ""),
+            prestadorId: prestadorUuid || undefined,
             cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado",
             createdAt: item.created_at as string | undefined,
           };
@@ -227,8 +253,14 @@ const OrdensServicoLista = () => {
     setPrestadorAlocacao(null);
     setPrestadorAlocacaoNome("");
     setMotoristaAlocacao("");
-    const repasseAtual = Number(os.custoPrestador);
-    setRepasseAlocacao(repasseAtual > 0 ? String(repasseAtual) : "");
+    // Repasse automático: usa o custo já calculado da OS (com fallbacks legados)
+    // e permanece editável manualmente no modal.
+    const repasseAtual =
+      Number(os.custoPrestador) ||
+      Number(os.carga?.custoPrestador) ||
+      Number(os.carga?.repassePrestador) ||
+      0;
+    setRepasseAlocacao(repasseAtual > 0 ? String(Number(repasseAtual.toFixed(2))) : "");
   };
 
   const handleAlocarPrestador = async () => {

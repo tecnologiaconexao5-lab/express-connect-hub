@@ -291,14 +291,14 @@ export function FormFooterBar({
             <FileText className="mr-2 h-4 w-4" /> {rascunhoLabel}
           </Button>
         )}
-        {!readOnly && onSalvar && (
-          <Button onClick={onSalvar} disabled={disabled || isSaving} className="min-w-[150px] bg-primary hover:bg-primary/90 text-primary-foreground">
-            <Save className="mr-2 h-4 w-4" /> {isSaving ? "Salvando..." : salvarLabel}
-          </Button>
-        )}
         {onAvancar && (
           <Button variant="secondary" onClick={onAvancar} disabled={!canAvancar || isSaving} className="min-w-[120px]">
             {avancarLabel} <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        )}
+        {!readOnly && onSalvar && (
+          <Button onClick={onSalvar} disabled={disabled || isSaving} className="min-w-[150px] bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? "Salvando..." : salvarLabel}
           </Button>
         )}
       </div>

@@ -1951,6 +1951,17 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     if (proxima) setAbaAtiva(proxima.value);
   };
 
+  // ETAPA-4.1 — "Voltar" do rodapé retrocede UMA etapa do wizard. O alerta de
+  // descarte só aparece quando não há etapa anterior (saída real do formulário).
+  const handleVoltarEtapa = () => {
+    const anterior = idxAbaAtual > 0 ? etapasDoc[idxAbaAtual - 1] : null;
+    if (anterior) {
+      setAbaAtiva(anterior.value);
+      return;
+    }
+    void handleVoltar();
+  };
+
   return (
     <PremiumDocumentDialog>
       {/* Cabeçalho fixo do formulário premium */}
@@ -4275,7 +4286,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         {/* Rodapé interno do workspace */}
         <EnterpriseWorkspaceFooter>
         <FormFooterBar
-          onCancelar={handleVoltar}
+          onCancelar={handleVoltarEtapa}
           cancelarLabel="Voltar"
           onSalvarRascunho={!readOnly ? handleSalvarRascunho : undefined}
           canRascunho={!readOnly && (data.status !== "rascunho" || !data.id)}

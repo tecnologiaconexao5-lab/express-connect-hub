@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { ArrowLeft, Download, FileText, Truck, MapPin, Package, Phone, Mail, Copy as CopyIcon, Send, Printer, Clock, User, Calendar, Route, CopyPlus, FileSpreadsheet, Stamp, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
+import { ArrowLeft, Download, FileText, Truck, MapPin, Package, Phone, Mail, Copy as CopyIcon, Send, Printer, Clock, User, Users, DollarSign, TrendingDown, Activity, Calendar, Route, CopyPlus, FileSpreadsheet, Stamp, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,49 @@ interface Props {
 export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const [fiscalData, setFiscalData] = useState<any>({ ctes: [], mdfes: [], nfses: [], xmls: [], timeline: [] });
   const [fiscalLoading, setFiscalLoading] = useState(true);
+  // FIX UUID — resolve nome do prestador/cliente quando o registro traz o id.
+  const [nomesResolvidos, setNomesResolvidos] = useState<{ prestador?: string; cliente?: string }>({});
+
+  useEffect(() => {
+    const ehUuid = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
+    let ativo = true;
+    (async () => {
+      const consultas: PromiseLike<void>[] = [];
+      if (ehUuid(os.prestador)) {
+        consultas.push(
+          supabase
+            .from("prestadores")
+            .select("nome_completo")
+            .eq("id", os.prestador)
+            .maybeSingle()
+            .then(({ data }) => {
+              const nome = (data as { nome_completo?: string } | null)?.nome_completo;
+              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, prestador: nome }));
+            }),
+        );
+      }
+      if (ehUuid(os.cliente)) {
+        consultas.push(
+          supabase
+            .from("clientes")
+            .select("nome_fantasia, razao_social")
+            .eq("id", os.cliente)
+            .maybeSingle()
+            .then(({ data }) => {
+              const row = data as { nome_fantasia?: string; razao_social?: string } | null;
+              const nome = row?.nome_fantasia || row?.razao_social;
+              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, cliente: nome }));
+            }),
+        );
+      }
+      await Promise.all(consultas);
+    })();
+    return () => { ativo = false; };
+  }, [os.prestador, os.cliente]);
+
+  const ehUuidTexto = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
+  const prestadorNome = nomesResolvidos.prestador || (ehUuidTexto(os.prestador) ? "" : os.prestador || "");
+  const clienteNome = nomesResolvidos.cliente || (ehUuidTexto(os.cliente) ? "" : os.cliente || "");
 
   useEffect(function() {
     if (!os?.id) { setFiscalLoading(false); return; }
@@ -31,11 +74,11 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const fetchFiscalData = async function() {
     setFiscalLoading(true);
     const [ctesRes, nfsesRes, xmlsRes, eventsRes, historicoRes] = await Promise.all([
-      sup.from("fiscal_ctes").select("*").eq("ordem_servico_id", os.id).order("created_at",{ascending:false}),
-      sup.from("fiscal_nfse").select("*").eq("ordem_servico_id", os.id).order("created_at",{ascending:false}),
-      sup.from("fiscal_documentos_vinculados").select("*").eq("ordem_servico_id", os.id),
-      sup.from("fiscal_events").select("*").eq("documento_id", os.id).order("created_at",{ascending:false}).limit(20),
-      sup.from("fiscal_historico_status").select("*").eq("documento_id", os.id).order("created_at",{ascending:false}).limit(10),
+      supabase.from("fiscal_ctes").select("*").eq("ordem_servico_id", os.id).order("created_at",{ascending:false}),
+      supabase.from("fiscal_nfse").select("*").eq("ordem_servico_id", os.id).order("created_at",{ascending:false}),
+      supabase.from("fiscal_documentos_vinculados").select("*").eq("ordem_servico_id", os.id),
+      supabase.from("fiscal_events").select("*").eq("documento_id", os.id).order("created_at",{ascending:false}).limit(20),
+      supabase.from("fiscal_historico_status").select("*").eq("documento_id", os.id).order("created_at",{ascending:false}).limit(10),
     ]);
 
     const ctes = ctesRes.data || [];
@@ -46,7 +89,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
     let mdfes: any[] = [];
     if (ctes.length > 0) {
       const cteIds = ctes.map(function(c:any){return c.id;});
-      const { data: allMdfes } = await sup.from("fiscal_mdfes").select("*").order("created_at",{ascending:false});
+      const { data: allMdfes } = await supabase.from("fiscal_mdfes").select("*").order("created_at",{ascending:false});
       mdfes = (allMdfes || []).filter(function(m:any){
         const vinc = m.metadata?.ctes_vinculados || [];
         return vinc.some(function(v:any){return cteIds.includes(v.cte_id);});
@@ -223,7 +266,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             <CardContent className="p-6">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <LabelRow label="Cliente">{os.cliente || "—"}</LabelRow>
+                  <LabelRow label="Cliente">{clienteNome || "—"}</LabelRow>
                   <LabelRow label="Unidade">{os.unidade || "—"}</LabelRow>
                   <LabelRow label="Tipo de Operação">{os.tipoOperacao || "—"}</LabelRow>
                 </div>
@@ -234,6 +277,65 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Resumo Operacional — visão executiva (cliente, prestador, valores e status) */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Card className="border-none shadow-md rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <Users className="h-3.5 w-3.5" /> Cliente
+                </div>
+                <p className="mt-1 truncate text-sm font-bold text-slate-800" title={clienteNome || undefined}>{clienteNome || "Cliente não informado"}</p>
+                <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-md rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <Truck className="h-3.5 w-3.5" /> Prestador
+                </div>
+                <p className={`mt-1 truncate text-sm font-bold ${prestadorNome ? "text-slate-800" : "text-red-600"}`} title={prestadorNome || undefined}>
+                  {prestadorNome || "Sem prestador"}
+                </p>
+                <p className="text-[11px] text-slate-500">{os.veiculoPlaca || os.veiculoTipo || "Veículo não alocado"}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-md rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <DollarSign className="h-3.5 w-3.5" /> Receita
+                </div>
+                <p className="mt-1 text-sm font-bold text-emerald-700">{formatarValor(os.valorCliente)}</p>
+                <p className="text-[11px] text-slate-500">{os.statusFaturamento || "A faturar"}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-md rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <TrendingDown className="h-3.5 w-3.5" /> Custo
+                </div>
+                <p className="mt-1 text-sm font-bold text-rose-700">{formatarValor(os.custoPrestador)}</p>
+                <p className="text-[11px] text-slate-500">Margem: {formatarValor((os.valorCliente || 0) - (os.custoPrestador || 0))}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-md rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <Activity className="h-3.5 w-3.5" /> Status
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  {getStatusBadge(os.status)}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {formatarData(os.data)} · prioridade {os.prioridade || "normal"}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Dados do Veículo */}
           <Card className="border-none shadow-md rounded-2xl">
@@ -354,11 +456,11 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              {os.prestador ? (
+              {prestadorNome ? (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Nome</p>
-                    <p className="font-semibold">{os.prestador}</p>
+                    <p className="font-semibold">{prestadorNome}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Veículo</p>

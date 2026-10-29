@@ -234,6 +234,9 @@ export interface OSCarga {
   portadorExterno?: PortadorExterno;
   /** ETAPA-4: praças de pedágio detalhadas (jsonb carga — sem migration). */
   pedagios?: { praca: string; valor: number }[];
+  /** Fallbacks legados do repasse do prestador (OS antigas). */
+  custoPrestador?: number;
+  repassePrestador?: number;
 }
 
 export interface OSVeiculoSugestao {

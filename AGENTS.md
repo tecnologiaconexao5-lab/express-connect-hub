@@ -1,5 +1,43 @@
 # Summary
 
+## AJUSTES PÓS-HOMOLOGAÇÃO — UUID do prestador, repasse automático, Preview rica, Voltar por etapa e ordem do rodapé (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · teste novo **9/9** · afetados **68/68** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2313 pass, +9) · `npm run build` ok (1m47s).
+
+### O que mudou
+
+**1. Prestador pelo NOME na lista (`OrdensServicoLista.tsx` + `OrdemServicoPreview.tsx`)**
+- `ordens_servico.prestador` é **uuid**: a lista agora coleta os ids (`/^[0-9a-f-]{36}$/`), busca `prestadores(id, nome_completo)` e exibe o **nome**; o uuid fica em `prestadorId` (usado na gravação) — corrige também a busca e a edição.
+- Preview resolve nome de prestador/cliente quando recebe uuid (efeito próprio com fallback).
+- Bônus: o Preview usava `sup.from(...)` sem alias importado (ReferenceError nos dados fiscais) → corrigido para `supabase.from(...)`.
+
+**2. Repasse automático no modal "Alocar Prestador"**
+- `abrirAlocacao` pré-carrega o repasse de `os.custoPrestador` com fallbacks legados (`carga.custoPrestador`, `carga.repassePrestador`); campo continua **editável** manualmente.
+- `fromOSRow` ganhou fallback `carga.custoPrestador` quando `custo_prestador` está vazio.
+
+**3. Preview com Resumo Operacional (`OrdemServicoPreview.tsx`)**
+- Painel executivo no topo com 5 cards: **Cliente** (unidade), **Prestador** (veículo/placa, vermelho quando vazio), **Receita** (valor cliente + faturamento), **Custo** (repasse + margem) e **Status** (badge + data + prioridade).
+
+**4. Botão Voltar por etapa (`OrdemServicoForm.tsx`)**
+- O rodapé usa `handleVoltarEtapa`: **retrocede uma etapa** do wizard; só chama o guard de descarte quando já está na primeira etapa (saída real). X/close do cabeçalho continuam com `handleVoltar` (guard).
+
+**5. Ordem dos botões no rodapé (`enterprise.tsx` — `FormFooterBar`)**
+- Da esquerda para a direita: **Salvar rascunho** → **Avançar >** → **Salvar OS** (ação principal na extrema direita).
+
+### Testes
+- **NOVO** `src/test/nova_os_etapa5_ajustes_finos.test.ts` (9 casos fonte-based): resolução do nome/uuid, repasse automático/editável, painéis do Preview + fix do `sup`, Voltar por etapa vs guard, ordem dos botões.
+
+### Arquivos
+- `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/OrdemServicoPreview.tsx` · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/operacao/osTypes.ts` · `src/components/ui/enterprise.tsx` · `src/lib/dbMappers.ts` · `src/test/nova_os_etapa5_ajustes_finos.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) Lista de OS: coluna Prestador mostra o nome; editar mantém o vínculo (`prestador_id`).
+2. (QA) Modal Alocar Prestador abre com o repasse da OS preenchido (editável).
+3. (QA) Preview: 5 cards do Resumo Operacional com nomes/valores/status; dados fiscais carregando sem erro.
+4. (QA) Rodapé: "Voltar" retrocede a etapa; na primeira etapa pede confirmação de descarte; ordem rascunho → avançar → salvar.
+
+---
+
 ## MISSÃO NOVA-OS-UX-04 — Etapa 4 de 4: Endereços salvos, Pedágio detalhado, Rastreio por WhatsApp e Payload do App (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · teste novo **7/7** · testes afetados **142/142** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2304 pass, +7) · `npm run build` ok (1m04s).
