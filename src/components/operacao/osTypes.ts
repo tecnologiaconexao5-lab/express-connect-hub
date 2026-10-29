@@ -193,6 +193,11 @@ export interface PortadorExterno {
   telefoneWhatsapp?: string;
   pixTipo?: string;
   pixChave?: string;
+  /** ETAPA-3 — dados bancários/PIX completos (persistidos no jsonb carga.portadorExterno). */
+  pixFavorecido?: string;
+  banco?: string;
+  agencia?: string;
+  conta?: string;
 }
 
 export interface OSCarga {

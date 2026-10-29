@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Download, Check, Route, AlertTriangle, Clock, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2, Link as LinkIcon, Building2, User, Info, AlertCircle, TrendingUp, ListChecks, BarChart3, Gauge, Hash, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Download, Check, Route, AlertTriangle, Clock, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2, Link as LinkIcon, Building2, User, UserCheck, UserPlus, Info, AlertCircle, TrendingUp, ListChecks, BarChart3, Gauge, Hash, Sparkles } from "lucide-react";
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import {
   Field,
@@ -257,6 +257,10 @@ const emptyPortadorExterno = (): PortadorExterno => ({
   telefoneWhatsapp: "",
   pixTipo: "CPF/CNPJ",
   pixChave: "",
+  pixFavorecido: "",
+  banco: "",
+  agencia: "",
+  conta: "",
 });
 
 const emptyCarga = (): OSCarga => ({
@@ -1501,6 +1505,51 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }));
   };
 
+  // ETAPA-3 — Novo menu de prestadores: Cadastrado | Enviar para a Rede | Externo / Avulso.
+  // A escolha é refletida nos flags persistidos (`carga.portadorExterno.ativo` e Rede).
+  type ModoAlocacao = "cadastrado" | "rede" | "externo";
+  const [modoAlocacao, setModoAlocacao] = useState<ModoAlocacao>(
+    data.carga?.portadorExterno?.ativo ? "externo" : "cadastrado",
+  );
+
+  useEffect(() => {
+    if (emRede) {
+      setModoAlocacao("rede");
+      return;
+    }
+    setModoAlocacao(data.carga?.portadorExterno?.ativo ? "externo" : "cadastrado");
+  }, [emRede, data.carga?.portadorExterno?.ativo]);
+
+  // Alocar um prestador cadastrado desativa o portador externo (estados exclusivos).
+  useEffect(() => {
+    if (data.prestador && data.carga?.portadorExterno?.ativo) {
+      setData((p) => ({
+        ...p,
+        carga: {
+          ...p.carga,
+          portadorExterno: { ...(p.carga?.portadorExterno || emptyPortadorExterno()), ativo: false },
+        },
+      }));
+    }
+  }, [data.prestador, data.carga?.portadorExterno?.ativo]);
+
+  const selecionarModoAlocacao = (modo: ModoAlocacao) => {
+    if (readOnly) return;
+    if (modo !== "rede" && emRede) {
+      toast.warning("Cancele a publicação na Rede antes de alterar a alocação (aba Torre & Financeiro).");
+      return;
+    }
+    setModoAlocacao(modo);
+    if (modo === "externo") {
+      updatePortador("ativo", true);
+      if (data.prestador) {
+        setData((p) => ({ ...p, prestador: "", veiculoPlaca: "", prestadorId: "" }) as OrdemServico);
+      }
+    } else {
+      updatePortador("ativo", false);
+    }
+  };
+
   const sanitizeOrdemServicoPayload = (rawPayload: Record<string, any>): { payload: Record<string, any>; removed: string[] } => {
     const removed: string[] = [];
     const payloadSeguro: Record<string, any> = {};
@@ -1569,10 +1618,23 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         return;
       }
 
-      if (data.status === "finalizada" && !data.prestador) {
+      if (data.status === "finalizada" && !data.prestador && !portadorExterno.ativo) {
         toast.error("Informe um prestador antes de finalizar a OS");
         setIsSaving(false);
         return;
+      }
+
+      if (portadorExterno.ativo) {
+        if (!portadorExterno.nome?.trim()) {
+          toast.error("Informe o nome completo do prestador externo");
+          setIsSaving(false);
+          return;
+        }
+        if (!portadorExterno.placaMoto?.trim()) {
+          toast.error("Informe a placa do veículo do prestador externo");
+          setIsSaving(false);
+          return;
+        }
       }
 
       if (data.id) {
@@ -2163,6 +2225,36 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 description="Selecione manualmente ou use a Sugestão Inteligente (veículo compatível com a OS + região da coleta)."
                 contentClassName="space-y-4"
               >
+                {/* ETAPA-3 — 3 modos de alocação: Cadastrado | Enviar para a Rede | Externo / Avulso */}
+                <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+                  {([
+                    { id: "cadastrado", label: "Cadastrado", icon: UserCheck },
+                    { id: "rede", label: "Enviar para a Rede", icon: Network },
+                    { id: "externo", label: "Externo / Avulso", icon: UserPlus },
+                  ] as const).map((op) => {
+                    const Icone = op.icon;
+                    const ativo = modoAlocacao === op.id;
+                    return (
+                      <button
+                        key={op.id}
+                        type="button"
+                        onClick={() => selecionarModoAlocacao(op.id)}
+                        disabled={readOnly}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                          ativo
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-slate-600 hover:bg-white hover:text-slate-900"
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        <Icone className="h-3.5 w-3.5" />
+                        {op.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {modoAlocacao === "cadastrado" && (
+                  <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="md:col-span-2">
                     <Field label="Prestador / Motorista">
@@ -2251,6 +2343,127 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         </Button>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                  </>
+                )}
+
+                {modoAlocacao === "rede" && (
+                  <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                    <div className="flex items-start gap-3">
+                      <Network className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-indigo-900">A OS será disparada no App da Conexão Express</p>
+                        <p className="text-xs text-indigo-700">
+                          A oportunidade fica disponível para os prestadores compatíveis aceitarem direto no app. O
+                          acompanhamento do aceite fica na aba <strong>Torre &amp; Financeiro</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {emRede ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className="bg-indigo-600 text-white">OS ativa na Rede</Badge>
+                        {redeOportunidade && (
+                          <span className="text-xs font-semibold text-indigo-800">
+                            Valor do repasse: R$ {redeOportunidade.valor_prestador.toFixed(2)}
+                          </span>
+                        )}
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelarRede}
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            Cancelar publicação
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {!data.id && (
+                          <p className="text-xs font-medium text-amber-700">Salve a OS antes de publicar na Rede.</p>
+                        )}
+                        {data.prestador && (
+                          <p className="text-xs font-medium text-amber-700">Remova o prestador cadastrado para publicar na Rede.</p>
+                        )}
+                        {data.custoPrestador <= 0 && (
+                          <p className="text-xs font-medium text-amber-700">Calcule o valor do repasse antes de publicar.</p>
+                        )}
+                        <Button
+                          type="button"
+                          onClick={handleEnviarParaRede}
+                          disabled={readOnly || carregandoRede || !data.id || !!data.prestador || data.custoPrestador <= 0}
+                          className="bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          {carregandoRede ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Network className="mr-2 h-4 w-4" />}
+                          {carregandoRede ? "Publicando..." : "Enviar para Rede de Prestadores"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {modoAlocacao === "externo" && (
+                  <div className="space-y-4">
+                    <div className="space-y-4 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wider text-orange-700">Identificação do prestador externo</p>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Nome Completo" required>
+                          <Input value={portadorExterno.nome} readOnly={readOnly} onChange={(e) => updatePortador("nome", e.target.value)} placeholder="Nome completo" />
+                        </Field>
+                        <Field label="Placa do Veículo" required>
+                          <Input value={portadorExterno.placaMoto} readOnly={readOnly} onChange={(e) => updatePortador("placaMoto", e.target.value.toUpperCase())} placeholder="ABC-1D23" className="font-mono" />
+                        </Field>
+                        <Field label="Documento / CPF (opcional)">
+                          <Input value={portadorExterno.cpf} readOnly={readOnly} onChange={(e) => updatePortador("cpf", e.target.value)} placeholder="000.000.000-00" />
+                        </Field>
+                        <Field label="Telefone / WhatsApp">
+                          <Input type="tel" value={portadorExterno.telefoneWhatsapp || ""} readOnly={readOnly} onChange={(e) => updatePortador("telefoneWhatsapp", e.target.value)} placeholder="(11) 99999-9999" />
+                        </Field>
+                        <Field label="Origem do Prestador" className="md:col-span-2">
+                          <Input value={portadorExterno.grupoOrigem} readOnly={readOnly} onChange={(e) => updatePortador("grupoOrigem", e.target.value)} placeholder="Ex.: Indicação, FreteBras, Grupo de WhatsApp" />
+                        </Field>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-slate-600" />
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Dados bancários / PIX</p>
+                        <span className="text-[11px] text-muted-foreground">— opcional na alocação; pode ser informado na baixa</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Tipo de PIX">
+                          <Select value={portadorExterno.pixTipo || "CPF/CNPJ"} onValueChange={(v) => updatePortador("pixTipo", v)} disabled={readOnly}>
+                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                            <SelectContent>
+                              {OPCOES_PIX_TIPO_FORM.map((t) => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Chave PIX">
+                          <Input value={portadorExterno.pixChave || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixChave", e.target.value)} placeholder="Chave PIX do prestador" />
+                        </Field>
+                        <Field label="Favorecido (se a conta não for do prestador)">
+                          <Input value={portadorExterno.pixFavorecido || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixFavorecido", e.target.value)} placeholder="Nome do titular da conta" />
+                        </Field>
+                        <Field label="Banco">
+                          <Input value={portadorExterno.banco || ""} readOnly={readOnly} onChange={(e) => updatePortador("banco", e.target.value)} placeholder="Ex.: Itaú, Bradesco, Nubank" />
+                        </Field>
+                        <Field label="Agência">
+                          <Input value={portadorExterno.agencia || ""} readOnly={readOnly} onChange={(e) => updatePortador("agencia", e.target.value)} placeholder="0000" />
+                        </Field>
+                        <Field label="Conta">
+                          <Input value={portadorExterno.conta || ""} readOnly={readOnly} onChange={(e) => updatePortador("conta", e.target.value)} placeholder="00000-0" />
+                        </Field>
+                      </div>
+                    </div>
                   </div>
                 )}
               </FormSectionCard>
@@ -3694,58 +3907,6 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         {/* UPGRADE-REGRAS: lucro (margem) estimado restrito a admin */}
                         <div className="flex justify-between text-sm pt-2"><span className="text-muted-foreground">Lucro Est.:</span><span className="font-bold text-green-600">{verReceitaMargem ? `R$ ${(data.valorCliente - data.custoPrestador).toFixed(2)}` : "---"}</span></div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* ETAPA-2: Portador Externo / Avulso */}
-                <Card className={`lg:col-span-3 border-none shadow-md rounded-2xl overflow-hidden ${portadorExterno.ativo ? "bg-orange-50/60 border border-orange-200" : ""}`}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-base font-bold flex items-center gap-2 text-orange-700"><User className="w-5 h-5"/> Portador Externo / Avulso</CardTitle>
-                        <CardDescription className="text-orange-600">Parceiro fora da base cadastrada (motoboy/avulso). Informe nome, CPF, placa da moto, grupo de origem, telefone (WhatsApp) e dados de PIX para o repasse.</CardDescription>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-xs font-medium">Ativo</Label>
-                        <Switch checked={portadorExterno.ativo} onCheckedChange={(v) => updatePortador("ativo", v)} disabled={readOnly} />
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    {portadorExterno.ativo ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Field label="Nome do Portador" required>
-                          <Input value={portadorExterno.nome} readOnly={readOnly} onChange={(e) => updatePortador("nome", e.target.value)} placeholder="Nome completo" />
-                        </Field>
-                        <Field label="CPF">
-                          <Input value={portadorExterno.cpf} readOnly={readOnly} onChange={(e) => updatePortador("cpf", e.target.value)} placeholder="000.000.000-00" />
-                        </Field>
-                        <Field label="Placa da Moto">
-                          <Input value={portadorExterno.placaMoto} readOnly={readOnly} onChange={(e) => updatePortador("placaMoto", e.target.value.toUpperCase())} placeholder="ABC-1D23" className="font-mono" />
-                        </Field>
-                        <Field label="Grupo de Origem">
-                          <Input value={portadorExterno.grupoOrigem} readOnly={readOnly} onChange={(e) => updatePortador("grupoOrigem", e.target.value)} placeholder="Ex: Grupo Centro / Parceiro X" />
-                        </Field>
-                        <Field label="Telefone (WhatsApp)">
-                          <Input type="tel" value={portadorExterno.telefoneWhatsapp || ""} readOnly={readOnly} onChange={(e) => updatePortador("telefoneWhatsapp", e.target.value)} placeholder="(11) 99999-9999" />
-                        </Field>
-                        <Field label="Tipo de PIX">
-                          <Select value={portadorExterno.pixTipo || "CPF/CNPJ"} onValueChange={(v) => updatePortador("pixTipo", v)} disabled={readOnly}>
-                            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                            <SelectContent>
-                              {OPCOES_PIX_TIPO_FORM.map((t) => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label="Chave PIX">
-                          <Input value={portadorExterno.pixChave || ""} readOnly={readOnly} onChange={(e) => updatePortador("pixChave", e.target.value)} placeholder="Chave PIX do portador" />
-                        </Field>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">Ative para registrar um portador externo/avulso nesta OS.</p>
-                    )}
                   </CardContent>
                 </Card>
 
