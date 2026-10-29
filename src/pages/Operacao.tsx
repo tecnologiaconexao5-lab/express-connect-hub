@@ -70,7 +70,7 @@ const Operacao = () => {
         <TabsContent value="solicitacoes">
           <SolicitacoesClienteLista />
         </TabsContent>
-        <TabsContent value="os">
+        <TabsContent value="os" forceMount>
           <OrdensServicoLista />
         </TabsContent>
 

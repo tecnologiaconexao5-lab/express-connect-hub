@@ -19,6 +19,8 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { toOrcamentoInsert, toOrcamentoDomain } from "@/lib/dbMappers";
+import { formatarDataBR } from "@/lib/formatDates";
+import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import {
   aprovarOrcamento,
   gerarOSDoOrcamento,
@@ -149,7 +151,13 @@ const OrcamentosLista = () => {
 
       // TMS-COM-ORC-02 — DB → domínio (contrato único): garante dataEmissao,
       // clienteCnpj, valorBase/valorFinal corretos na listagem/PDF.
-      const lista = (((data as any[]) || [])).map(toOrcamentoDomain);
+      const lista = (((data as any[]) || [])).map(toOrcamentoDomain).map((orc: Orcamento) => ({
+        ...orc,
+        clienteCotacao: clienteVeioDeCotacao({
+          pedidoInterno: orc.pedidoInterno,
+          observacoes: orc.observacoesGerais,
+        }),
+      }));
       setOrcamentos(lista as any);
 
       // Carregar OS vinculadas para orçamentos convertidos
@@ -437,11 +445,18 @@ const OrcamentosLista = () => {
                         {orc.numero}
                       </TableCell>
                       <TableCell onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }} className="cursor-pointer">
-                        <div className="font-medium">{orc.cliente}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium">{orc.cliente}</span>
+                          {orc.clienteCotacao && (
+                            <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
+                              Cliente Cotação
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{orc.clienteCnpj}</div>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {orc.dataEmissao ? (() => { try { return new Date(orc.dataEmissao).toLocaleDateString("pt-BR"); } catch { return "—"; } })() : "—"}
+                        {formatarDataBR(orc.dataEmissao) || "—"}
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         {fmt(orc.valores?.valorFinal || 0)}
@@ -575,16 +590,18 @@ const OrcamentosLista = () => {
       </Card>
 
       {/* Pagination */}
-      {totalPaginas > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{filtrados.length} orçamento(s)</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Página {pagina} de {Math.max(1, totalPaginas)} · {filtrados.length} orçamento(s)
+        </p>
+        {totalPaginas > 1 && (
           <div className="flex gap-1">
             {Array.from({ length: totalPaginas }, (_, i) => (
               <Button key={i} variant={pagina === i + 1 ? "default" : "outline"} size="sm" onClick={() => setPagina(i + 1)}>{i + 1}</Button>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Dialog Reprovar */}
       <Dialog open={!!dialogReprovar} onOpenChange={() => setDialogReprovar(null)}>

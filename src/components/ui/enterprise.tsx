@@ -407,7 +407,15 @@ export function EnterpriseWorkspaceFooter({ children, className }: { children: R
  * ============================================================ */
 export function PremiumDocumentDialog({ children, className }: { children: React.ReactNode; className?: string }) {
   const node = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[2px] sm:p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      // Modal ESTÁTICO: clique no overlay/fundo NÃO fecha (nem propaga para a página).
+      // A saída só acontece pelos botões explícitos "Voltar"/"X" (com guarda de descarte).
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[2px] sm:p-4"
+    >
       <div
         className={cn(
           "flex h-[93vh] w-[96vw] max-w-[1800px] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-slate-100/95 shadow-[0_30px_80px_rgba(2,6,23,0.55)]",

@@ -67,7 +67,7 @@ export interface OSEndereco {
   id?: string;
   os_id?: string;
   sequencia: number;
-  tipo: "coleta" | "entrega" | "apoio" | "devolucao" | "retorno" | "origem" | "destino" | "parada" | "coleta_reversa";
+  tipo: "coleta" | "entrega" | "entrega_retirada" | "apoio" | "devolucao" | "retorno" | "origem" | "destino" | "parada" | "coleta_reversa";
   nomeLocal: string;
   setor?: string;
   responsavel?: string;
@@ -287,6 +287,8 @@ export interface OrdemServico {
   unidade: string;
   centroCusto: string;
   orcamentoOrigem: string;
+  /** Cliente originado pela Cotação Express (sem cadastro completo). */
+  clienteCotacao?: boolean;
   prestador: string;
   veiculoAlocado: string;
   tipoOperacao: string;

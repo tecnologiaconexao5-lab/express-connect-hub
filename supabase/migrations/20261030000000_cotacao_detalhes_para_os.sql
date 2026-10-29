@@ -355,7 +355,7 @@ BEGIN
     created_at, updated_at
   ) VALUES (
     v_orcamento_numero, v_cliente_nome, v_cliente_id, 'São Paulo - Matriz',
-    CURRENT_DATE, NULL, 'Coleta e Entrega', 'esporadico', 'normal',
+    (now() AT TIME ZONE 'America/Sao_Paulo')::date, NULL, 'Coleta e Entrega', 'esporadico', 'normal',
     p_cotacao_id::text, v_obs, 'em_analise',
     COALESCE(v_cot.carga_descricao, ''), COALESCE(v_cot.carga_volumes, 0),
     COALESCE(v_cot.carga_peso, 0), 0, 0, 0, false, false,
@@ -406,7 +406,7 @@ BEGIN
     status_faturamento, status_pagamento,
     created_at, updated_at
   ) VALUES (
-    v_os_numero, CURRENT_DATE, v_cliente_id, v_cliente_id::text,
+    v_os_numero, (now() AT TIME ZONE 'America/Sao_Paulo')::date, v_cliente_id, v_cliente_id::text,
     'São Paulo - Matriz', 'pendente',
     'Coleta e Entrega', 'esporadico', 'normal',
     COALESCE(v_cot.carga_descricao, ''), COALESCE(v_cot.carga_peso, 0),

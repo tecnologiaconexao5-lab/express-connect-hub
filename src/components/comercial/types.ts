@@ -124,6 +124,8 @@ export interface Orcamento {
   pedidoInterno: string;
   observacoesGerais: string;
   status: OrcamentoStatus;
+  /** Cliente originado pela Cotação Express (sem cadastro completo). */
+  clienteCotacao?: boolean;
   enderecos: EnderecoOrcamento[];
   carga: CargaOrcamento;
   veiculo: {

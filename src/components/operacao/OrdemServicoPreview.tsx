@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { ArrowLeft, Download, FileText, Truck, MapPin, Package, Phone, Mail, Copy as CopyIcon, Send, Printer, Clock, User, Users, DollarSign, TrendingDown, Activity, Calendar, Route, CopyPlus, FileSpreadsheet, Stamp, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
+import { ArrowLeft, Download, FileText, Truck, MapPin, Package, Phone, Mail, Copy as CopyIcon, Send, Printer, Clock, User, Users, DollarSign, TrendingDown, Activity, Calendar, Route, CopyPlus, FileSpreadsheet, Stamp, ShieldCheck, AlertTriangle, Eye, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,106 @@ import { STATUS_CORES, obterStatusGlobalOS } from "./osTypes";
 import { HistoricoOS, type HistoricoOSItem } from "./HistoricoOS";
 import { STATUS_GLOBAL_INFO } from "./statusGlobal";
 import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
+import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
+import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 
 interface Props {
   os: OrdemServico;
   onVoltar: () => void;
+}
+
+const PASSOS_RASTREIO = [
+  { key: "pendente", label: "Pendente", icon: Clock },
+  { key: "alocado", label: "Alocado", icon: User },
+  { key: "coletado", label: "Coletado", icon: Package },
+  { key: "transito", label: "Em Trânsito", icon: Truck },
+  { key: "entregue", label: "Entregue", icon: MapPin },
+] as const;
+
+/** Índice do passo atual no rastreio (0..4). -1 = cancelada. */
+function indiceRastreio(status?: string): number {
+  const s = (status || "").toLowerCase();
+  if (s === "cancelada" || s === "cancelado") return -1;
+  if (["entregue", "finalizada", "finalizado", "faturada", "paga", "concluida"].includes(s)) return 4;
+  if (["em_rota", "em_transito", "em_transito", "ocorrencia", "saiu_para_entrega", "em_entrega"].includes(s)) return 3;
+  if (["coletado", "coletada", "carregando", "em_andamento", "em_execucao"].includes(s)) return 2;
+  if (["agendada", "agendado", "alocada", "alocado", "programada"].includes(s)) return 1;
+  return 0;
+}
+
+function TimelineRastreio({ status }: { status?: string }) {
+  const idx = indiceRastreio(status);
+  const cancelada = idx < 0;
+  const atual = cancelada ? "Cancelada" : PASSOS_RASTREIO[idx]?.label || "Pendente";
+
+  return (
+    <Card className="overflow-hidden border-none shadow-md rounded-2xl">
+      <CardContent className="p-0">
+        <div className="flex flex-col gap-2 border-b border-orange-100 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-500">Rastreio da operação</p>
+            <h2 className="text-lg font-black text-slate-800">Linha do tempo</h2>
+          </div>
+          <span
+            className={cn(
+              "inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide",
+              cancelada ? "bg-red-100 text-red-700" : "bg-orange-500 text-white shadow-sm shadow-orange-500/30",
+            )}
+          >
+            {cancelada ? <AlertTriangle className="h-3.5 w-3.5" /> : <Activity className="h-3.5 w-3.5" />}
+            {atual}
+          </span>
+        </div>
+        <div className="overflow-x-auto px-4 pb-5 pt-6">
+          <div className="flex min-w-[620px] items-start">
+            {PASSOS_RASTREIO.map((passo, i) => {
+              const concluido = !cancelada && i < idx;
+              const ativo = !cancelada && i === idx;
+              const Icone = passo.icon;
+              return (
+                <div key={passo.key} className="flex flex-1 items-start last:flex-none">
+                  <div className="flex w-24 flex-col items-center gap-2 text-center">
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all",
+                        concluido && "border-emerald-500 bg-emerald-500 text-white",
+                        ativo && "border-orange-500 bg-orange-500 text-white ring-4 ring-orange-100",
+                        !concluido && !ativo && "border-slate-200 bg-white text-slate-400",
+                      )}
+                    >
+                      {concluido ? <Check className="h-5 w-5" /> : <Icone className="h-5 w-5" />}
+                    </div>
+                    <span
+                      className={cn(
+                        "text-[11px] font-bold leading-tight",
+                        ativo ? "text-orange-700" : concluido ? "text-emerald-700" : "text-slate-400",
+                      )}
+                    >
+                      {passo.label}
+                    </span>
+                    {ativo && (
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                        Atual
+                      </span>
+                    )}
+                  </div>
+                  {i < PASSOS_RASTREIO.length - 1 && (
+                    <div
+                      className={cn(
+                        "mt-5 h-1 flex-1 rounded-full",
+                        concluido ? "bg-emerald-400" : "bg-slate-200",
+                      )}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function OrdemServicoPreview({ os, onVoltar }: Props) {
@@ -65,6 +161,10 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const ehUuidTexto = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
   const prestadorNome = nomesResolvidos.prestador || (ehUuidTexto(os.prestador) ? "" : os.prestador || "");
   const clienteNome = nomesResolvidos.cliente || (ehUuidTexto(os.cliente) ? "" : os.cliente || "");
+  const clienteCotacao = clienteVeioDeCotacao({
+    origemCotacao: (os.carga as { origem_cotacao?: unknown } | undefined)?.origem_cotacao,
+    observacoes: os.observacoesGerais,
+  });
 
   useEffect(function() {
     if (!os?.id) { setFiscalLoading(false); return; }
@@ -195,14 +295,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
     }
   };
 
-  const formatarData = (data?: string) => {
-    if (!data) return "—";
-    try {
-      return new Date(data).toLocaleString("pt-BR");
-    } catch {
-      return data;
-    }
-  };
+  const formatarData = (data?: string) => formatarDataBR(data) || "—";
 
   const formatarValor = (valor?: number) => {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor || 0);
@@ -246,6 +339,9 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
+          {/* Linha do tempo do rastreio — sempre no topo da visualização */}
+          <TimelineRastreio status={os.status} />
+
           {/* Cabeçalho da OS */}
           <Card className="border-none shadow-md rounded-2xl">
             <CardHeader className="bg-orange-50 border-b">
@@ -267,6 +363,13 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <LabelRow label="Cliente">{clienteNome || "—"}</LabelRow>
+                  {clienteCotacao && (
+                    <div className="-mt-2 mb-3">
+                      <Badge className="border border-violet-200 bg-violet-100 text-[9px] font-bold uppercase text-violet-700">
+                        Cliente Cotação
+                      </Badge>
+                    </div>
+                  )}
                   <LabelRow label="Unidade">{os.unidade || "—"}</LabelRow>
                   <LabelRow label="Tipo de Operação">{os.tipoOperacao || "—"}</LabelRow>
                 </div>
@@ -286,7 +389,14 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                   <Users className="h-3.5 w-3.5" /> Cliente
                 </div>
                 <p className="mt-1 truncate text-sm font-bold text-slate-800" title={clienteNome || undefined}>{clienteNome || "Cliente não informado"}</p>
-                <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
+                  {clienteCotacao && (
+                    <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
+                      Cliente Cotação
+                    </Badge>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -606,7 +716,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                         <div key={i} className="flex items-start gap-2 text-xs">
                           <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0" />
                           <div className="min-w-0">
-                            <span className="text-muted-foreground">{new Date(e.data).toLocaleString()}</span>
+                            <span className="text-muted-foreground">{formatarDataHoraBR(e.data)}</span>
                             <p className="font-medium">{e.tipo}</p>
                             <p className="text-muted-foreground truncate">{e.desc}</p>
                           </div>

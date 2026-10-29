@@ -24,8 +24,8 @@ import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
 import { notificarBaseAgregados, emRiscoSlaSemAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
+import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
@@ -98,7 +98,6 @@ const OrdensServicoLista = () => {
   const PAGE_SIZE = 25;
 
   useEffect(() => {
-    fetchOrdens();
     if (searchParams.get("action") === "novo") {
       setModoForm("novo");
       searchParams.delete("action");
@@ -116,7 +115,7 @@ const OrdensServicoLista = () => {
       setTimeout(async () => {
         const { data } = await supabase
           .from("ordens_servico")
-          .select("*, clientes(nome_fantasia, razao_social)")
+          .select("*, clientes(nome_fantasia, razao_social, status, origem_comercial)")
           .eq("id", osId)
           .single();
         if (data) {
@@ -139,7 +138,7 @@ const OrdensServicoLista = () => {
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       const { data, error, count } = await supabase.from("ordens_servico")
-        .select("*, clientes(nome_fantasia, razao_social)", { count: "exact" })
+        .select("*, clientes(nome_fantasia, razao_social, status, origem_comercial)", { count: "exact" })
         .order("created_at", { ascending: false })
         .range(from, to);
       if (count !== null) setTotalCount(count);
@@ -214,6 +213,11 @@ const OrdensServicoLista = () => {
             prestador: prestadorUuid ? (nomesPrestador[prestadorUuid] || "") : (os.prestador || ""),
             prestadorId: prestadorUuid || undefined,
             cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado",
+            clienteCotacao: clienteVeioDeCotacao({
+              origemCotacao: item.carga?.origem_cotacao,
+              clienteStatus: item.clientes?.status,
+              clienteOrigemComercial: item.clientes?.origem_comercial,
+            }),
             createdAt: item.created_at as string | undefined,
           };
         });
@@ -229,6 +233,11 @@ const OrdensServicoLista = () => {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void fetchOrdens();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const handleSalvar = () => {
     setModoForm(null);
@@ -362,18 +371,11 @@ const OrdensServicoLista = () => {
   };
 
   const safeFormatDate = (dateStr?: string) => {
-    if (!dateStr) return "—";
-    try {
-      // Datas "YYYY-MM-DD" (coluna date) são formatadas por string: `new Date()`
-      // interpretaria como UTC e exibiria o dia anterior em UTC-3.
-      const iso = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return "—";
-      return format(d, "dd/MM/yyyy", { locale: ptBR });
-    } catch {
-      return "—";
-    }
+    // Datas "YYYY-MM-DD" (coluna date) são formatadas por string: `new Date()`
+    // interpretaria como UTC e exibiria o dia anterior em UTC-3.
+    const iso = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    return formatarDataBR(dateStr) || "—";
   };
 
   const filtradas = ordens.filter(os => {
@@ -398,7 +400,7 @@ const OrdensServicoLista = () => {
       if (!dataOSStr) return false;
 
       const agora = new Date();
-      const hojeStr = dataLocalISO(agora);
+      const hojeStr = hojeISOSP();
 
       if (filtroPeriodo === "hoje") {
         matchPeriodo = dataOSStr === hojeStr;
@@ -722,7 +724,14 @@ const OrdensServicoLista = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                         <div className="font-semibold text-sm">{os.cliente || "—"}</div>
+                         <div className="flex items-center gap-1.5">
+                           <span className="font-semibold text-sm">{os.cliente || "—"}</span>
+                           {os.clienteCotacao && (
+                             <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
+                               Cliente Cotação
+                             </Badge>
+                           )}
+                         </div>
                          <div className="text-[10px] text-muted-foreground uppercase tracking-tight">{os.tipoOperacao || "Transporte"}</div>
                       </TableCell>
 <TableCell>
@@ -861,6 +870,17 @@ const OrdensServicoLista = () => {
           </div>
         </CardContent>
       </Card>
+
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalCount={totalCount}
+        onPageChange={(next) => {
+          setPage(next);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        loading={isLoading}
+      />
 
       {/* Modal Confirmação Exclusão */}
       {/* Modal Histórico da OS */}

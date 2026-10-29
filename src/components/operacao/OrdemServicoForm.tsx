@@ -164,8 +164,8 @@ type FiscalClassification = {
 };
 
 const classificarFiscalmente = (enderecos: OSEndereco[]): FiscalClassification => {
-  const origem = enderecos.find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
-  const destino = [...enderecos].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+  const origem = enderecos.find(e => tipoEhColeta(e.tipo) && e.cidade?.trim() && e.estado?.trim());
+  const destino = [...enderecos].reverse().find(e => tipoEhEntrega(e.tipo) && e.cidade?.trim() && e.estado?.trim());
   
   if (!origem || !destino) {
     return { tipo: 'Indefinido', exigeNFSe: false, exigeCTe: false, exigeMDFe: false };
@@ -185,6 +185,15 @@ const classificarFiscalmente = (enderecos: OSEndereco[]): FiscalClassification =
   return { tipo: 'Interestadual', exigeNFSe: false, exigeCTe: true, exigeMDFe: true };
 };
 
+const tipoEhColeta = (tipo?: string | null): boolean => {
+  const t = (tipo || "").toLowerCase();
+  return t === "coleta" || t === "coleta_reversa" || t === "entrega_retirada" || t === "origem";
+};
+const tipoEhEntrega = (tipo?: string | null): boolean => {
+  const t = (tipo || "").toLowerCase();
+  return t === "entrega" || t === "entrega_retirada" || t === "destino" || t === "delivery";
+};
+
 const FISCAL_TIPO_CORES: Record<FiscalClassification['tipo'], string> = {
   Municipal: 'bg-green-100 text-green-800 border-green-300',
   Intermunicipal: 'bg-blue-100 text-blue-800 border-blue-300',
@@ -200,8 +209,8 @@ const validarPendenciasFiscais = (
   enderecos: OSEndereco[]
 ): string[] => {
   const pendencias: string[] = [];
-  const origem = enderecos.find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
-  const destino = [...enderecos].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+  const origem = enderecos.find(e => tipoEhColeta(e.tipo) && e.cidade?.trim() && e.estado?.trim());
+  const destino = [...enderecos].reverse().find(e => tipoEhEntrega(e.tipo) && e.cidade?.trim() && e.estado?.trim());
 
   if (!data.cliente?.trim()) pendencias.push('Cliente/tomador não informado');
   if (!data.valorCliente || data.valorCliente <= 0) pendencias.push('Valor do frete/serviço não informado');
@@ -245,7 +254,7 @@ interface Props {
   onSalvar: () => void;
 }
 
-const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "", instrucoes: "", contato: "", telefone: "", email: "", enviarWhatsApp: false, notificarWhatsApp: false, janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "", observacaoPonto: "", latitude: undefined, longitude: undefined, enderecoFormatado: "", portaria: "", doca: "", procedimentoEntrada: "", procedimentoSaida: "", estacionamento: "", documentoNecessario: "", codigoAcesso: "", exigenciaEpi: false, exigeAjudante: false, restricaoVeiculo: "", restricaoAltura: "", outrasRestricoes: "", horarioLimite: "", dataPrevista: "", recebedorPrevisto: "", contatoNome: "", contatoTelefone: "" });
+const emptyEnd = (tipo: OSEndereco["tipo"] = "coleta"): OSEndereco => ({ sequencia: 1, tipo, nomeLocal: "", endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "", instrucoes: "", contato: "", telefone: "", email: "", enviarWhatsApp: false, notificarWhatsApp: false, janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "", observacaoPonto: "", latitude: undefined, longitude: undefined, enderecoFormatado: "", portaria: "", doca: "", procedimentoEntrada: "", procedimentoSaida: "", estacionamento: "", documentoNecessario: "", codigoAcesso: "", exigenciaEpi: false, exigeAjudante: false, restricaoVeiculo: "", restricaoAltura: "", outrasRestricoes: "", horarioLimite: "", dataPrevista: "", recebedorPrevisto: "", contatoNome: "", contatoTelefone: "" });
 
 const OPCOES_PIX_TIPO_FORM = ["CPF/CNPJ", "Celular", "E-mail", "Chave Aleatória"] as const;
 
@@ -952,7 +961,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     setBuscandoSugestao(true);
     try {
       const pontos = data.enderecos || [];
-      const origem = pontos.find((e) => e?.tipo === "coleta" && e?.endereco?.trim()) || pontos[0];
+      const origem = pontos.find((e) => tipoEhColeta(e?.tipo) && e?.endereco?.trim()) || pontos[0];
       const ctx: CtxMatch = {
         tipoVeiculo: data.veiculoTipo || "",
         pesoKg: Number(data.carga?.peso || 0),
@@ -1006,8 +1015,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
   const recalcularValores = async (distanciaKm: number, veiculoTipo: string, cliente: string) => {
     if (!veiculoTipo) return;
-    const enderecoOrigem = data.enderecos?.find((e: any) => e.tipo === "coleta" || e.tipo === "origem");
-    const enderecoDestino = data.enderecos?.find((e: any) => e.tipo === "entrega" || e.tipo === "destino" || e.tipo === "delivery");
+    const enderecoOrigem = data.enderecos?.find((e: any) => tipoEhColeta(e.tipo) || e.tipo === "origem");
+    const enderecoDestino = data.enderecos?.find((e: any) => tipoEhEntrega(e.tipo) || e.tipo === "destino" || e.tipo === "delivery");
     try {
       const { tabela } = await buscarTabelaValoresCliente({
         tenant_id: tenant?.id || "",
@@ -1051,8 +1060,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
  const calculaRotaEValor = async () => {
     try {
       const enderecos = data.enderecos ?? [];
-      const origem = (enderecos ?? []).find(e => e?.tipo === "coleta" && e?.endereco?.trim()) || (enderecos ?? []).find(e => e?.endereco?.trim());
-      const destino = [...(enderecos ?? [])].reverse().find(e => e?.tipo === "entrega" && e?.endereco?.trim()) || (enderecos ?? [])[(enderecos?.length ?? 1) - 1];
+      const origem = (enderecos ?? []).find(e => tipoEhColeta(e?.tipo) && e?.endereco?.trim()) || (enderecos ?? []).find(e => e?.endereco?.trim());
+      const destino = [...(enderecos ?? [])].reverse().find(e => tipoEhEntrega(e?.tipo) && e?.endereco?.trim()) || (enderecos ?? [])[(enderecos?.length ?? 1) - 1];
       
       if (!origem || !destino || !origem.endereco || !destino.endereco) {
         return;
@@ -1441,7 +1450,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
           termica: data.veiculoTermica || "seco",
           capacidade_kg: data.carga?.peso || 0,
         },
-        regiao: data.enderecos?.find(e => e.tipo === "coleta")?.cidade || "",
+        regiao: data.enderecos?.find(e => tipoEhColeta(e.tipo))?.cidade || "",
         prazo_expiracao: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
       if (res.sucesso && res.oportunidade) {
@@ -1657,12 +1666,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         setIsSaving(false);
         return;
       }
-      if (!enderecosValidos.some(e => e.tipo === "coleta")) {
+      const ehColeta = (e: OSEndereco) => tipoEhColeta(e.tipo) || e.tipo === "coleta_reversa" || e.tipo === "entrega_retirada";
+      const ehEntrega = (e: OSEndereco) => tipoEhEntrega(e.tipo) || e.tipo === "entrega_retirada";
+      if (!enderecosValidos.some(ehColeta)) {
         toast.error("Adicione um endereço de coleta");
         setIsSaving(false);
         return;
       }
-      if (!enderecosValidos.some(e => e.tipo === "entrega")) {
+      if (!enderecosValidos.some(ehEntrega)) {
         toast.error("Adicione um endereço de entrega");
         setIsSaving(false);
         return;
@@ -1862,8 +1873,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       const tipoEvento = isNovaOS ? "OS_CRIADA" : "OS_ATUALIZADA";
 
       const enderecos = data.enderecos || [];
-      const coleta = enderecos.find(e => e.tipo === "coleta");
-      const entrega = [...enderecos].reverse().find(e => e.tipo === "entrega");
+      const coleta = enderecos.find(e => tipoEhColeta(e.tipo));
+      const entrega = [...enderecos].reverse().find(e => tipoEhEntrega(e.tipo));
 
       const telefoneCliente = data.whatsappDestinatario || coleta?.telefone || "";
       const telefonePrestador = "";
@@ -2618,8 +2629,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 <CardContent className="p-6">
                   {(() => {
                     const fiscal = classificarFiscalmente(data.enderecos || []);
-                    const origem = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
-                    const destino = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                    const origem = (data.enderecos || []).find(e => tipoEhColeta(e.tipo) && e.cidade?.trim() && e.estado?.trim());
+                    const destino = [...(data.enderecos || [])].reverse().find(e => tipoEhEntrega(e.tipo) && e.cidade?.trim() && e.estado?.trim());
                     return (
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
@@ -2951,8 +2962,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                               size="sm"
                               className="text-slate-500 hover:text-slate-700"
                               onClick={async () => {
-                                const orig = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
-                                const dest = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                                const orig = (data.enderecos || []).find(e => tipoEhColeta(e.tipo) && e.cidade?.trim() && e.estado?.trim());
+                                const dest = [...(data.enderecos || [])].reverse().find(e => tipoEhEntrega(e.tipo) && e.cidade?.trim() && e.estado?.trim());
                                 const [codOrig, codDest] = await Promise.all([
                                   orig?.cidade && orig?.estado ? buscarCodigoIbge(orig.cidade, orig.estado) : null,
                                   dest?.cidade && dest?.estado ? buscarCodigoIbge(dest.cidade, dest.estado) : null,
@@ -2991,8 +3002,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   {(() => {
                     const fiscal = classificarFiscalmente(data.enderecos || []);
-                    const origem = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
-                    const destino = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                    const origem = (data.enderecos || []).find(e => tipoEhColeta(e.tipo) && e.cidade?.trim() && e.estado?.trim());
+                    const destino = [...(data.enderecos || [])].reverse().find(e => tipoEhEntrega(e.tipo) && e.cidade?.trim() && e.estado?.trim());
                     const docsExigidos: string[] = [];
                     if (fiscal.exigeNFSe) docsExigidos.push('NFS-e');
                     if (fiscal.exigeCTe) docsExigidos.push('CT-e');
@@ -3186,7 +3197,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
               <div className="flex items-center justify-between gap-3 sticky top-0 z-10 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
                 <h3 className="text-sm font-bold flex items-center gap-2"><MapPin className="w-4 h-4 text-primary"/> Itinerário da OS</h3>
                 {!readOnly && (
-                  <Button onClick={() => update("enderecos", [...(data.enderecos || []), emptyEnd()])} variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8 text-xs">
+                  <Button onClick={() => update("enderecos", [...(data.enderecos || []), emptyEnd("entrega")])} variant="outline" className="border-primary text-primary hover:bg-primary/5 h-8 text-xs">
                     <Plus className="w-4 h-4 mr-1"/> Adicionar Parada
                   </Button>
                 )}
@@ -3208,6 +3219,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                             <SelectContent>
                               <SelectItem value="coleta">Coleta</SelectItem>
                               <SelectItem value="entrega">Entrega</SelectItem>
+                              <SelectItem value="entrega_retirada">Entrega e Retirada</SelectItem>
                               <SelectItem value="apoio">Apoio Operacional</SelectItem>
                               <SelectItem value="retorno">Retorno</SelectItem>
                               <SelectItem value="devolucao">Devolução</SelectItem>
@@ -4087,7 +4099,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                            <Truck className="w-4 h-4 mr-2" /> Instruções Motorista/Prestador
                          </Button>
                          <Button variant="outline" className="justify-start text-left h-auto py-2" onClick={async () => {
-                           const col = data.enderecos?.find(e => e.tipo === "coleta") || data.enderecos?.[0];
+                           const col = data.enderecos?.find(e => tipoEhColeta(e.tipo)) || data.enderecos?.[0];
                            if (!col?.telefone) { toast.error("Telefone do cliente não encontrado"); return; }
                            const msg = `Ordem de Serviço criada.\nOS: ${data.numero}\nStatus: em programação.\nOrigem: ${col?.endereco || ""}\nDestino: ${data.enderecos?.[data.enderecos?.length - 1]?.endereco || ""}`;
                            await WhatsAppEnviar(col.telefone.replace(/\D/g, ""), msg);

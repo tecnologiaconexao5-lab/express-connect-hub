@@ -4,8 +4,10 @@
  * Colunas `date` do Postgres chegam como "YYYY-MM-DD". O construtor `new Date("YYYY-MM-DD")`
  * interpreta a string em UTC, então no fuso America/Sao_Paulo (UTC-3) a exibição via
  * `toLocaleDateString("pt-BR")` mostraria o DIA ANTERIOR. Datas puras são formatadas
- * aqui sem passar por Date; timestamps completos usam o fuso local.
+ * aqui sem passar por Date; timestamps completos usam SEMPRE o fuso America/Sao_Paulo.
  */
+export const FUSO_BR = "America/Sao_Paulo";
+
 export function formatarDataBR(valor?: string | null): string {
   if (valor === undefined || valor === null) return "";
   const texto = String(valor).trim();
@@ -19,7 +21,37 @@ export function formatarDataBR(valor?: string | null): string {
 
   const data = new Date(texto);
   if (Number.isNaN(data.getTime())) return "";
-  return data.toLocaleDateString("pt-BR");
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: FUSO_BR,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(data);
+}
+
+/** Data + hora no fuso America/Sao_Paulo (timestamps UTC do Supabase). */
+export function formatarDataHoraBR(valor?: string | null): string {
+  if (!valor) return "";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: FUSO_BR,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(data);
+}
+
+/** "Hoje" no fuso America/Sao_Paulo (YYYY-MM-DD) — comparações de colunas `date`. */
+export function hojeISOSP(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO_BR,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 /** Data local (fuso do navegador) no formato "YYYY-MM-DD" — para campos <input type="date"> e colunas `date`. */

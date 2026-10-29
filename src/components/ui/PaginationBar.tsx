@@ -47,7 +47,12 @@ export default function PaginationBar({ page, pageSize, totalCount, onPageChange
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-4 text-sm text-muted-foreground">
-      <span>{formatRangeLabel(page, pageSize, totalCount)}</span>
+      <div className="flex flex-col gap-0.5">
+        <span className="font-semibold text-foreground">
+          {totalPages !== null ? `Página ${page} de ${totalPages}` : `Página ${page}`}
+        </span>
+        <span>{formatRangeLabel(page, pageSize, totalCount)}</span>
+      </div>
       <div className="flex items-center gap-1">
         <Button
           variant="outline"
