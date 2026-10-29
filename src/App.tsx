@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, createRoutesFromElements, Route, Navigate, RouterProvider } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -81,25 +81,10 @@ const PageLoader = () => (
 
 const Lazy = ({ children }: { children: React.ReactNode }) => <Suspense fallback={<PageLoader />}>{children}</Suspense>;
 
-const queryClient = new QueryClient();
-
-const App = () => {
-  useEffect(() => {
-    eventProcessorWorker.iniciar(10000);
-    return () => eventProcessorWorker.parar();
-  }, []);
-
-  return (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-    <TenantProvider>
-    <ErrorBoundary>
-      <TooltipProvider>
-        <ThemeProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
+// Data router (React Router 6) — habilita useBlocker em useFormExitGuard.
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
             <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<Lazy><ForgotPassword /></Lazy>} />
           <Route path="/reset-password" element={<Lazy><ResetPassword /></Lazy>} />
@@ -167,8 +152,31 @@ const App = () => {
             <Route path="/comprovantes" element={<Lazy><Comprovantes /></Lazy>} />
           </Route>
           <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+
+    </>,
+  ),
+);
+
+const queryClient = new QueryClient();
+
+const App = () => {
+  useEffect(() => {
+    eventProcessorWorker.iniciar(10000);
+    return () => eventProcessorWorker.parar();
+  }, []);
+
+  return (
+  <QueryClientProvider client={queryClient}>
+    <AuthProvider>
+    <TenantProvider>
+    <ErrorBoundary>
+      <TooltipProvider>
+        <ThemeProvider>
+          <Toaster />
+          <Sonner />
+          <Suspense fallback={<PageLoader />}>
+            <RouterProvider router={router} />
+          </Suspense>
         </ThemeProvider>
       </TooltipProvider>
     </ErrorBoundary>

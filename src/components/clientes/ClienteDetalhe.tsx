@@ -20,6 +20,8 @@ import { buscarCEP, limparCEP, validarCEP, CEPResponse } from "@/services/cepSer
 import { paraInputDate } from "@/lib/formatDates";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
+import { useRouterBlocker } from "@/hooks/useRouterBlocker";
+import { lerRascunhoForm, limparRascunhoForm, descartarRascunhoForm, useAutoSaveFormDraft } from "@/lib/formDraft";
 
 interface Filial {
   id: string;
@@ -82,9 +84,23 @@ const defaultCliente: Partial<Cliente> = {
 const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const { user } = useAuth();
   const isNew = !clienteId;
-  const [c, setC] = useState<Partial<Cliente>>(defaultCliente);
-  const [baselineC, setBaselineC] = useState<Partial<Cliente>>(defaultCliente);
-  const exitGuard = useFormExitGuard({ current: c, initial: baselineC });
+  // AUTO-SAVE — rascunho do cadastro novo (localStorage) para trocar de aba sem perder.
+  const draftKey = `tms_cliente_draft_v1:${clienteId || "novo"}`;
+  const [initialC] = useState<Partial<Cliente>>(() =>
+    isNew ? (lerRascunhoForm<Partial<Cliente>>(draftKey) || defaultCliente) : defaultCliente,
+  );
+  const [c, setC] = useState<Partial<Cliente>>(initialC);
+  const [baselineC, setBaselineC] = useState<Partial<Cliente>>(initialC);
+  const exitGuard = useFormExitGuard({
+    current: c,
+    initial: baselineC,
+    onDiscard: () => descartarRascunhoForm(draftKey),
+  });
+  useAutoSaveFormDraft(draftKey, c, isNew);
+  useRouterBlocker({
+    isDirty: exitGuard.isDirty,
+    onDiscard: () => descartarRascunhoForm(draftKey),
+  });
   const handleExit = async () => {
     if (await exitGuard.confirmExit()) onBack();
   };
@@ -300,6 +316,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
       toast.success(isNew ? "Cliente cadastrado com sucesso!" : "Cliente atualizado com sucesso!");
       exitGuard.markClean();
+      if (isNew) limparRascunhoForm(draftKey);
       onBack();
     } catch (error: any) {
       toast.error("Erro ao persistir cliente no Supabase.");

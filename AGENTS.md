@@ -1,5 +1,43 @@
 # Summary
 
+## MISSÃO AUTO-SAVE-DRAFT — Retenção de estado, reidratação e bloqueio de navegação (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **10/10** · afetados **38/38** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (+ 1 flaky `fin_prog05c3b` só no run completo, 5/5 isolado) · 2322 pass (+10) · `npm run build` ok (1m56s).
+
+### O que mudou
+
+**1. Auto-save de rascunho (localStorage)**
+- `src/lib/formDraft.ts` (NOVO): envelope `{ savedAt, value }`, TTL de **48h**, `gravar/ler/limpar/descartar` e hook `useAutoSaveFormDraft` (debounce 500ms + flush no unmount).
+- **Nova OS**: `sessionStorage` → **`localStorage`** com prefixo **`tms_os_draft_v1`**, auto-save silencioso a cada alteração real (não grava formulário virgem) e flush ao desmontar.
+
+**2. Reidratação**
+- Ao abrir **Nova OS** (sem id), o rascunho é restaurado (dados + aba + coleta reversa) — trocar de aba/menu e voltar mantém o progresso. Rascunhos expirados (TTL) são descartados.
+- `OrcamentoForm` (`tms_orcamento_draft_v1:<id|novo>`) e `ClienteDetalhe` (novo — `tms_cliente_draft_v1:novo`) também restauram.
+
+**3. Limpeza do cache**
+- Salvar com sucesso (OS/Orçamento/Cliente): limpa o rascunho e reseta o baseline do guard.
+- Descarte confirmado: `onDiscard` limpa o rascunho e **bloqueia regravação** no flush de desmontagem.
+
+**4. Route blocker (React Router)**
+- `App.tsx` migrado de `<BrowserRouter>` para **`createBrowserRouter` + `RouterProvider`** (data router).
+- **NOVO `src/hooks/useRouterBlocker.ts`** (opt-in): usa **`useBlocker`** para segurar a navegação (menu lateral/links/histórico) quando `exitGuard.isDirty`; confirmar → `blocker.proceed()` + `onDiscard`; cancelar → `blocker.reset()`.
+- Aplicado em **Nova OS/Edição de OS**, **Orçamento** e **Cadastro de Cliente**. `useFormExitGuard` continua sem `useBlocker` (roda também em contextos sem data router, ex.: testes com `renderHook`).
+
+### Testes
+- **NOVO** `src/test/nova_os_auto_save_draft.test.ts` (10 casos): helpers (TTL/descarte), auto-save/restauração da Nova OS, limpeza no save/descarte, `useBlocker` + `createBrowserRouter`, e drafts de Orçamento/Cliente.
+
+### Arquivos
+- `src/App.tsx` · `src/hooks/useFormExitGuard.ts` · `src/hooks/useRouterBlocker.ts` (NOVO) · `src/lib/formDraft.ts` (NOVO) · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/comercial/OrcamentoForm.tsx` · `src/components/clientes/ClienteDetalhe.tsx` · `src/test/nova_os_auto_save_draft.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) Nova OS: preencher, clicar no menu lateral → modal de descarte; cancelar mantém na tela; confirmar descarta.
+2. (QA) Nova OS: preencher, trocar de aba/menu e voltar → formulário reidratado (toast "Rascunho local restaurado").
+3. (QA) Salvar OS → rascunho removido do `localStorage`; reabrir Nova OS vem zerada.
+4. (QA) Orçamento novo e Cliente novo: mesmo comportamento de rascunho.
+5. (decisão) TTL do rascunho = 48h; ajustar `OS_DRAFT_TTL_MS`/`FORM_DRAFT_TTL_MS` se a operação quiser outro prazo.
+
+---
+
 ## AJUSTES PÓS-HOMOLOGAÇÃO — UUID do prestador, repasse automático, Preview rica, Voltar por etapa e ordem do rodapé (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · teste novo **9/9** · afetados **68/68** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2313 pass, +9) · `npm run build` ok (1m47s).

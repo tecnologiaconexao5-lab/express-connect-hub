@@ -26,6 +26,8 @@ export interface UseFormExitGuardOptions {
   message?: string;
   /** Serializador (default: JSON.stringify). */
   serialize?: (value: unknown) => string;
+  /** Executado quando o usuário CONFIRMA o descarte (ex.: limpar rascunho local). */
+  onDiscard?: () => void;
 }
 
 export interface UseFormExitGuardResult {
@@ -49,6 +51,7 @@ export function useFormExitGuard({
   enabled = true,
   message = "Há alterações não salvas. Deseja sair e descartar?",
   serialize = defaultSerialize,
+  onDiscard,
 }: UseFormExitGuardOptions): UseFormExitGuardResult {
   const currentSerialized = useMemo(() => serialize(current), [current, serialize]);
   const initialSerializedRef = useRef<string>(serialize(initial));
@@ -86,15 +89,20 @@ export function useFormExitGuard({
     setBaseline(currentSerialized);
   }, [currentSerialized]);
 
+  const onDiscardRef = useRef(onDiscard);
+  onDiscardRef.current = onDiscard;
+
   const confirmExit = useCallback(async (): Promise<boolean> => {
     if (!isDirty) return true;
-    return confirmAction({
+    const pode = await confirmAction({
       title: "Descartar alterações?",
       description: message,
       confirmText: "Sair sem salvar",
       cancelText: "Continuar editando",
       variant: "default",
     });
+    if (pode) onDiscardRef.current?.();
+    return pode;
   }, [isDirty, message]);
 
   return { isDirty, confirmExit, markClean };

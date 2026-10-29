@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route, Info, AlertCircle, TrendingUp, ListChecks, Calendar, Building2, User, FileText, BarChart3, Gauge, Link2, Loader2 } from "lucide-react";
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
+import { useRouterBlocker } from "@/hooks/useRouterBlocker";
+import { lerRascunhoForm, limparRascunhoForm, descartarRascunhoForm, useAutoSaveFormDraft } from "@/lib/formDraft";
 import {
   Field,
   MetaChip,
@@ -217,14 +219,31 @@ const obterDocStepsOrcamento = (data: Orcamento): DocStep[] => {
 };
 
 const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar, cotacaoId }: Props) => {
-  const [data, setData] = useState<Orcamento>(orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
+  // AUTO-SAVE — rascunho local (localStorage) por orçamento; recupera ao voltar.
+  const draftKey = `tms_orcamento_draft_v1:${orcamento?.id || "novo"}`;
+  const [initialData] = useState<Orcamento>(() => {
+    const draft = modo !== "ver" ? lerRascunhoForm<Orcamento>(draftKey) : null;
+    if (draft) return draft;
+    return orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento();
+  });
+  const [data, setData] = useState<Orcamento>(initialData);
   // MISSÃO COTACAO-EXPRESS — cotação vinculada (prop vinda da lista ou lookup pelo id)
   const [cotacaoIdForm, setCotacaoIdForm] = useState<string | null>(cotacaoId || null);
   const [gerandoLinkFase2, setGerandoLinkFase2] = useState(false);
   const podeGerarLinkFase2 = Boolean(cotacaoIdForm) || modo !== "novo";
   // Guard contra perda de alterações (dirty + beforeunload + confirmação de saída).
-  const [baseline] = useState<Orcamento>(() => orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
-  const exitGuard = useFormExitGuard({ current: data, initial: baseline });
+  const [baseline] = useState<Orcamento>(initialData);
+  const exitGuard = useFormExitGuard({
+    current: data,
+    initial: baseline,
+    onDiscard: () => descartarRascunhoForm(draftKey),
+  });
+  useAutoSaveFormDraft(draftKey, data, modo !== "ver");
+  useRouterBlocker({
+    isDirty: exitGuard.isDirty,
+    enabled: modo !== "ver",
+    onDiscard: () => descartarRascunhoForm(draftKey),
+  });
   const handleExit = async () => {
     if (await exitGuard.confirmExit()) onVoltar();
   };
@@ -598,6 +617,7 @@ const recalcular = () => {
     setData(payload);
     onSalvar(payload);
     exitGuard.markClean();
+    limparRascunhoForm(draftKey);
   };
 
   const handleSalvarRascunho = () => {
@@ -605,6 +625,7 @@ const recalcular = () => {
     setData(payload);
     onSalvar(payload);
     exitGuard.markClean();
+    limparRascunhoForm(draftKey);
   };
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

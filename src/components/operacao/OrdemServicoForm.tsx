@@ -48,6 +48,7 @@ import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes
 import { verificarInadimplenciaCliente } from "@/services/financeiro/inadimplenciaService";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
+import { useRouterBlocker } from "@/hooks/useRouterBlocker";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
@@ -327,7 +328,10 @@ const aplicarCalculoPesoBidirecional = (carga: OSCarga, campoEditado: keyof OSCa
 // ETAPA-1: Persistência de rascunho local (sessionStorage)
 // Evita perda de dados ao alternar abas/recarregar o painel.
 // ============================================================
-const OS_DRAFT_PREFIX = "tms_os_rascunho_v1";
+const OS_DRAFT_PREFIX = "tms_os_draft_v1";
+const OS_DRAFT_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+/** Chaves descartadas — impedem regravação no unmount/flush. */
+const osDraftsDescartados = new Set<string>();
 
 interface OSDraft {
   data: OrdemServico;
@@ -341,10 +345,15 @@ const getDraftKey = (osId?: string | null, modo?: string | null) =>
 
 const lerRascunhoLocal = (key: string): OSDraft | null => {
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as OSDraft;
     if (!parsed || typeof parsed !== "object" || !parsed.data) return null;
+    const salvoEm = parsed.savedAt ? new Date(parsed.savedAt).getTime() : NaN;
+    if (Number.isFinite(salvoEm) && Date.now() - salvoEm > OS_DRAFT_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -352,19 +361,36 @@ const lerRascunhoLocal = (key: string): OSDraft | null => {
 };
 
 const gravarRascunhoLocal = (key: string, draft: OSDraft) => {
+  if (osDraftsDescartados.has(key)) return;
   try {
-    sessionStorage.setItem(key, JSON.stringify(draft));
+    localStorage.setItem(key, JSON.stringify(draft));
   } catch {
-    // sessionStorage indisponível ou cota excedida — ignora silenciosamente
+    // localStorage indisponível ou cota excedida — ignora silenciosamente
   }
 };
 
+/** Remove e PERMITE novas gravações (após salvar com sucesso). */
 const limparRascunhoLocal = (key: string) => {
+  osDraftsDescartados.delete(key);
   try {
-    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
   } catch {
     // ignora
   }
+};
+
+/** Remove e BLOQUEIA regravações (descarte confirmado). */
+const descartarRascunhoLocal = (key: string) => {
+  osDraftsDescartados.add(key);
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignora
+  }
+};
+
+const liberarRascunhoLocal = (key: string) => {
+  osDraftsDescartados.delete(key);
 };
 
 const obterToneGlobal = (status: string | null | undefined): Tone => {
@@ -724,10 +750,11 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   // UPGRADE-REGRAS: permissão de visualização de Receita/Margem (somente admin máximo)
   const { user } = useAuth();
   const verReceitaMargem = podeVerReceitaEMargem(user?.role);
-  // CLEAN STATE — uma "Nova OS" SEMPRE abre zerada (nunca restaura rascunho
-  // de uma OS anterior → elimina dados fantasmas). Só restaura em edição.
+  // AUTO-SAVE — restaura o rascunho local (localStorage) tanto na edição quanto
+  // na "Nova OS": ao trocar de aba/menu e voltar, o progresso é preservado.
+  // Rascunhos expirados (TTL 48h) são descartados automaticamente.
   const [rascunhoInicial] = useState<OSDraft | null>(() =>
-    modo === "ver" || modo === "novo" ? null : lerRascunhoLocal(draftKey),
+    modo === "ver" ? null : lerRascunhoLocal(draftKey),
   );
   const draftRef = useRef<OSDraft | null>(null);
   const [data, setData] = useState<OrdemServico>(() => {
@@ -800,6 +827,20 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     current: data,
     initial: osInicialRef.current,
     enabled: !readOnly,
+    onDiscard: () => {
+      draftRef.current = null;
+      descartarRascunhoLocal(draftKey);
+    },
+  });
+
+  // BLOCKER de rota — menu lateral/links também respeitam o rascunho não salvo.
+  useRouterBlocker({
+    isDirty: exitGuard.isDirty,
+    enabled: !readOnly,
+    onDiscard: () => {
+      draftRef.current = null;
+      descartarRascunhoLocal(draftKey);
+    },
   });
 
   const handleVoltar = async () => {
@@ -807,10 +848,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     if (pode) onVoltar();
   };
 
-  // CLEAN STATE — ao abrir uma "Nova OS", descarta qualquer rascunho local
-  // remanescente (evita dados fantasmas da OS anterior).
+  // AUTO-SAVE — libera a gravação de rascunho ao abrir o formulário (a chave
+  // pode ter sido bloqueada por um descarte anterior nesta sessão).
   useEffect(() => {
-    if (modo === "novo") limparRascunhoLocal(draftKey);
+    liberarRascunhoLocal(draftKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [visualizacaoOS, setVisualizacaoOS] = useState<"cliente" | "prestador">("cliente");
@@ -1210,15 +1251,17 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ETAPA-1: persiste o rascunho local (sessionStorage) a cada alteração
+  // AUTO-SAVE (localStorage): persiste silenciosamente a cada alteração real.
+  // Não grava um formulário "virgem" sem edição (evita rascunhos vazios).
   useEffect(() => {
     if (readOnly) return;
+    if (!formDirty && !rascunhoInicial) return;
     draftRef.current = { data, reversaFields, abaAtiva, savedAt: new Date().toISOString() };
     const timer = setTimeout(() => {
       if (draftRef.current) gravarRascunhoLocal(draftKey, draftRef.current);
     }, 400);
     return () => clearTimeout(timer);
-  }, [data, reversaFields, abaAtiva, readOnly, draftKey]);
+  }, [data, reversaFields, abaAtiva, readOnly, draftKey, formDirty, rascunhoInicial]);
 
   // ETAPA-1: grava o rascunho também ao desmontar (trocar de OS/aba do painel)
   useEffect(() => {
@@ -1767,7 +1810,9 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       toast.success("Ordem de Serviço salva com sucesso!");
       setFormDirty(false);
       initialDataRef.current = JSON.stringify(data);
-      // ETAPA-1: descarta o rascunho local após salvar com sucesso
+      // Baseline do guard = estado salvo (evita prompt indevido ao navegar depois).
+      exitGuard.markClean();
+      // AUTO-SAVE: descarta o rascunho local após salvar com sucesso
       draftRef.current = null;
       limparRascunhoLocal(draftKey);
 
