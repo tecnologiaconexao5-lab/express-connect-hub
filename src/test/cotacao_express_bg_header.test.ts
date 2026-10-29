@@ -66,19 +66,19 @@ describe("C) Marcas d'água responsivas por etapa", () => {
 describe("D) Tela final da cotação (Fase 2)", () => {
   it("D.1 logotipo oficial substitui o título textual genérico", () => {
     expect(detalhesSrc).toContain('src="/logos/logo-conexao-colorido.png"');
-    expect(detalhesSrc).not.toContain("⚡ CONEXÃO EXPRESS\n            </span>");
     expect(detalhesSrc).toContain("MENSAGEM_CONCLUSAO");
+    expect(detalhesSrc).not.toContain("⚡ CONEXÃO EXPRESS");
   });
 
   it("D.2 mensagem exata da conclusão da OS", () => {
-    expect(detalhesSrc).toContain('"⚡ CONEXÃO EXPRESS",');
-    expect(detalhesSrc).toContain('"Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.",');
-    expect(detalhesSrc).toContain('"Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.",');
-    expect(detalhesSrc).toContain("whitespace-pre-line");
+    expect(detalhesSrc).toContain(
+      "Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço. Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.",
+    );
   });
 
-  it("D.3 imagem de Parceria Logística no rodapé da confirmação", () => {
-    expect(detalhesSrc).toContain('src="/Parceria logistica.png"');
-    expect(detalhesSrc).toContain('alt="Parceria Logística Conexão Express"');
+  it("D.3 imagem de Parceria Logística como fundo em tela cheia", () => {
+    expect(detalhesSrc).toContain('style={{ backgroundImage: "url(\'/Parceria logistica.png\')" }}');
+    expect(detalhesSrc).toContain("absolute inset-0 bg-cover bg-center bg-no-repeat");
+    expect(detalhesSrc).not.toContain('src="/Parceria logistica.png"');
   });
 });
