@@ -1108,9 +1108,10 @@ export default function CotacaoExpress() {
 // ETAPA-UI — marca d'água institucional por etapa do wizard (imagens em /public).
 const bgPorEtapa = (etapa: number): string => {
   if (etapa === 1) return "/bg-callcenter.png"; // identificação
-  if (etapa === 2) return "/bg-tecnologia.png"; // origem/localização
-  if (etapa === 3) return "/bg-entregador1.jpg"; // destino/rota
-  return "/bg-motoboy.png"; // veículo, cálculo e resumo da cotação
+  if (etapa === 2) return "/Frota 2.png"; // o que transportar (frota/soluções)
+  if (etapa === 3 || etapa === 4) return "/bg-tecnologia.png"; // peso, dimensões e veículo
+  if (etapa === 5 || etapa === 6 || etapa === 7) return "/bg-entregador1.jpg"; // endereços e rota
+  return "/Equipe.png"; // cálculo e resumo da cotação (antes de aprovar)
 };
 
 function Cabecalho() {

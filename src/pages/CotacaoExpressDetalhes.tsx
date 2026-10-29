@@ -31,6 +31,13 @@ const vazioDetalhe = (sequencia: number): DetalheParadaCotacao => ({
   observacoes: "",
 });
 
+// Mensagem oficial da conclusão (texto exato definido pela operação).
+const MENSAGEM_CONCLUSAO = [
+  "⚡ CONEXÃO EXPRESS",
+  "Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.",
+  "Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.",
+].join("\n");
+
 export default function CotacaoExpressDetalhes() {
   const { id } = useParams<{ id: string }>();
 
@@ -132,9 +139,11 @@ export default function CotacaoExpressDetalhes() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
         <header className="px-4 py-4">
-          <span className="text-sm font-extrabold tracking-tight text-slate-900">
-            ⚡ CONEXÃO EXPRESS
-          </span>
+          <img
+            src="/logos/logo-conexao-colorido.png"
+            alt="Conexão Express"
+            className="h-10 w-auto"
+          />
         </header>
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
@@ -156,22 +165,33 @@ export default function CotacaoExpressDetalhes() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
         <header className="px-4 py-4">
-          <span className="text-sm font-extrabold tracking-tight text-slate-900">
-            ⚡ CONEXÃO EXPRESS
-          </span>
+          <img
+            src="/logos/logo-conexao-colorido.png"
+            alt="Conexão Express"
+            className="h-10 w-auto"
+          />
         </header>
         <main className="flex-1 flex items-center justify-center px-4 pb-10">
           <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl animate-fade-in">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <CheckCircle2 className="h-9 w-9" />
+            {/* Logotipo oficial substitui o título textual genérico */}
+            <img
+              src="/logos/logo-conexao-colorido.png"
+              alt="Conexão Express"
+              className="mx-auto mb-5 h-14 w-auto"
+            />
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <CheckCircle2 className="h-8 w-8" />
             </div>
-            <h1 className="text-2xl font-bold leading-snug text-slate-900">
-              Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.
-            </h1>
-            <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
-              Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e
-              você recebe a confirmação pelo WhatsApp.
+            <p className="whitespace-pre-line text-[15px] leading-relaxed text-slate-700">
+              {MENSAGEM_CONCLUSAO}
             </p>
+            <div className="mt-8 border-t border-slate-100 pt-5">
+              <img
+                src="/Parceria logistica.png"
+                alt="Parceria Logística Conexão Express"
+                className="mx-auto h-12 w-auto opacity-95"
+              />
+            </div>
           </div>
         </main>
       </div>
@@ -184,9 +204,11 @@ export default function CotacaoExpressDetalhes() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
       <header className="px-4 py-4 flex items-center justify-between">
-        <span className="text-sm font-extrabold tracking-tight text-slate-900">
-          ⚡ CONEXÃO EXPRESS
-        </span>
+        <img
+          src="/logos/logo-conexao-colorido.png"
+          alt="Conexão Express"
+          className="h-10 w-auto"
+        />
         <span className="rounded-full bg-orange-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-orange-700">
           Detalhes da rota
         </span>

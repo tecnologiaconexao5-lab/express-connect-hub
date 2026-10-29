@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 const raiz = join(__dirname, "..", "..");
 const pageSrc = readFileSync(join(raiz, "src/pages/CotacaoExpress.tsx"), "utf8");
+const detalhesSrc = readFileSync(join(raiz, "src/pages/CotacaoExpressDetalhes.tsx"), "utf8");
 
 describe("A) Fluxo sequencial (sem 'Tipo de Solicitação' e sem WhatsApp no header)", () => {
   it("A.1 não há seletor de modalidade nem CTA de WhatsApp no topo", () => {
@@ -39,11 +40,12 @@ describe("B) Header corporativo (roxo escuro + laranja)", () => {
 });
 
 describe("C) Marcas d'água responsivas por etapa", () => {
-  it("C.1 mapeia as 4 imagens institucionais por etapa", () => {
+  it("C.1 mapeia as imagens institucionais por etapa", () => {
     expect(pageSrc).toContain('if (etapa === 1) return "/bg-callcenter.png";');
-    expect(pageSrc).toContain('if (etapa === 2) return "/bg-tecnologia.png";');
-    expect(pageSrc).toContain('if (etapa === 3) return "/bg-entregador1.jpg";');
-    expect(pageSrc).toContain('return "/bg-motoboy.png";');
+    expect(pageSrc).toContain('if (etapa === 2) return "/Frota 2.png";');
+    expect(pageSrc).toContain('if (etapa === 3 || etapa === 4) return "/bg-tecnologia.png";');
+    expect(pageSrc).toContain('if (etapa === 5 || etapa === 6 || etapa === 7) return "/bg-entregador1.jpg";');
+    expect(pageSrc).toContain('return "/Equipe.png";');
   });
 
   it("C.2 camada absoluta atrás do conteúdo, sem interferir na leitura/cliques", () => {
@@ -58,5 +60,25 @@ describe("C) Marcas d'água responsivas por etapa", () => {
   it("C.3 layout centralizado (max-w-2xl) preservado e conteúdo acima do fundo", () => {
     expect(pageSrc).toContain("mx-auto w-full max-w-2xl space-y-4");
     expect(pageSrc).toContain('className="relative z-0 flex-1 px-4 pt-5 pb-40');
+  });
+});
+
+describe("D) Tela final da cotação (Fase 2)", () => {
+  it("D.1 logotipo oficial substitui o título textual genérico", () => {
+    expect(detalhesSrc).toContain('src="/logos/logo-conexao-colorido.png"');
+    expect(detalhesSrc).not.toContain("⚡ CONEXÃO EXPRESS\n            </span>");
+    expect(detalhesSrc).toContain("MENSAGEM_CONCLUSAO");
+  });
+
+  it("D.2 mensagem exata da conclusão da OS", () => {
+    expect(detalhesSrc).toContain('"⚡ CONEXÃO EXPRESS",');
+    expect(detalhesSrc).toContain('"Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.",');
+    expect(detalhesSrc).toContain('"Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.",');
+    expect(detalhesSrc).toContain("whitespace-pre-line");
+  });
+
+  it("D.3 imagem de Parceria Logística no rodapé da confirmação", () => {
+    expect(detalhesSrc).toContain('src="/Parceria logistica.png"');
+    expect(detalhesSrc).toContain('alt="Parceria Logística Conexão Express"');
   });
 });
