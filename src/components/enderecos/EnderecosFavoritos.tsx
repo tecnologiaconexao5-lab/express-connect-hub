@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { MapPin, Search, Star, Building, Home, Briefcase, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { salvarEnderecoFavoritoCliente } from "@/services/clientes/historicoEnderecosCliente";
 
 export interface EnderecoCompleto {
   cep: string;
@@ -20,6 +21,10 @@ export interface EnderecoCompleto {
   instrucoes?: string;
   janelaInicio?: string;
   janelaFim?: string;
+  /** ETAPA-4 — nome do local (ex.: "Matriz", "Fábrica X") ao salvar favorito. */
+  nomeLocal?: string;
+  /** ETAPA-4 — tipo da parada (coleta/entrega) para classificar o favorito. */
+  tipo?: string;
 }
 
 export function FavoritosDropdown({ onSelect }: { onSelect: (end: EnderecoCompleto) => void }) {
@@ -89,7 +94,7 @@ export function FavoritosDropdown({ onSelect }: { onSelect: (end: EnderecoComple
   );
 }
 
-export function SaveFavoritoButton({ endereco }: { endereco: Partial<EnderecoCompleto> }) {
+export function SaveFavoritoButton({ endereco, clienteId }: { endereco: Partial<EnderecoCompleto>; clienteId?: string }) {
   const [open, setOpen] = useState(false);
   const [nome, setNome] = useState("");
   const [saving, setSaving] = useState(false);
@@ -97,13 +102,43 @@ export function SaveFavoritoButton({ endereco }: { endereco: Partial<EnderecoCom
   // Só mostra se tiver o basico
   if (!endereco.endereco || !endereco.cep) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!nome.trim()) return;
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      if (clienteId) {
+        const res = await salvarEnderecoFavoritoCliente(clienteId, {
+          tipoEndereco: endereco.tipo === "entrega" ? "Entrega" : "Coleta",
+          nomeLocal: nome.trim(),
+          cep: endereco.cep,
+          logradouro: String(endereco.endereco).split(",")[0] || endereco.endereco,
+          numero: endereco.numero || "",
+          complemento: endereco.complemento || "",
+          bairro: endereco.bairro || "",
+          cidade: endereco.cidade || "",
+          uf: endereco.uf || "",
+          instrucoes: endereco.instrucoes || "",
+          referencia: endereco.instrucoes || "",
+          contatoLocal: endereco.contato || "",
+          telefoneLocal: endereco.telefone || "",
+        });
+        if (!res.ok) throw new Error(res.erro || "Erro ao salvar endereço");
+        toast.success(
+          res.atualizado
+            ? `Endereço "${nome.trim()}" atualizado nos favoritos do cliente! ⭐`
+            : `Endereço "${nome.trim()}" salvo nos favoritos do cliente! ⭐`,
+        );
+      } else {
+        // Sem cliente vinculado na OS: mantém a UX de favorito (sem persistência).
+        toast.success(`Endereço "${nome.trim()}" salvo nos favoritos! ⭐ Selecione um cliente para vincular à base.`);
+      }
       setOpen(false);
-      toast.success(`Endereço "${nome}" salvo nos favoritos! ⭐`);
-    }, 800);
+      setNome("");
+    } catch (erro) {
+      toast.error(erro instanceof Error ? erro.message : "Erro ao salvar endereço");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

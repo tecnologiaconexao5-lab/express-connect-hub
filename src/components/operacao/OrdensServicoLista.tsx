@@ -185,6 +185,8 @@ const OrdensServicoLista = () => {
           const os = fromOSRow(item);
           return {
             ...os,
+            // ETAPA-4 — preserva o itinerário (dados operacionais incluídos) ao editar.
+            enderecos: Array.isArray(item.enderecos) ? item.enderecos : [],
             cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado",
             createdAt: item.created_at as string | undefined,
           };

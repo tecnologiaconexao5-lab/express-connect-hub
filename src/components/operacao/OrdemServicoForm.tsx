@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Download, Check, Route, AlertTriangle, Clock, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2, Link as LinkIcon, Building2, User, UserCheck, UserPlus, Info, AlertCircle, TrendingUp, ListChecks, BarChart3, Gauge, Hash, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Download, Check, Route, AlertTriangle, Clock, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2, Link as LinkIcon, Building2, User, UserCheck, UserPlus, ChevronDown, Info, AlertCircle, TrendingUp, ListChecks, BarChart3, Gauge, Hash, Sparkles } from "lucide-react";
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import {
   Field,
@@ -244,7 +244,7 @@ interface Props {
   onSalvar: () => void;
 }
 
-const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "", instrucoes: "", contato: "", telefone: "", email: "", enviarWhatsApp: false, janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "", observacaoPonto: "", latitude: undefined, longitude: undefined, enderecoFormatado: "", portaria: "", doca: "", procedimentoEntrada: "", procedimentoSaida: "", estacionamento: "", documentoNecessario: "", codigoAcesso: "", exigenciaEpi: false, exigeAjudante: false, restricaoVeiculo: "", restricaoAltura: "", outrasRestricoes: "", horarioLimite: "", dataPrevista: "", recebedorPrevisto: "", contatoNome: "", contatoTelefone: "" });
+const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: "", instrucoes: "", contato: "", telefone: "", email: "", enviarWhatsApp: false, notificarWhatsApp: false, janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "", observacaoPonto: "", latitude: undefined, longitude: undefined, enderecoFormatado: "", portaria: "", doca: "", procedimentoEntrada: "", procedimentoSaida: "", estacionamento: "", documentoNecessario: "", codigoAcesso: "", exigenciaEpi: false, exigeAjudante: false, restricaoVeiculo: "", restricaoAltura: "", outrasRestricoes: "", horarioLimite: "", dataPrevista: "", recebedorPrevisto: "", contatoNome: "", contatoTelefone: "" });
 
 const OPCOES_PIX_TIPO_FORM = ["CPF/CNPJ", "Celular", "E-mail", "Chave Aleatória"] as const;
 
@@ -781,6 +781,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [distanciasAlternativas, setDistanciasAlternativas] = useState<RoutesResult | null>(null);
   // UPGRADE — PEDÁGIO: estado da origem do valor (API de rota x inserção manual)
   const [pedagioInfo, setPedagioInfo] = useState<PedagioInfo>({ fonte: "nao_identificado" });
+  // ETAPA-4 — detalhamento das praças de pedágio (persistido em carga.pedagios).
+  const [mostrarPedagiosDetalhe, setMostrarPedagiosDetalhe] = useState(false);
   // UPGRADE — MATCH INTELIGENTE: sugestões ordenadas de prestadores compatíveis
   const [buscandoSugestao, setBuscandoSugestao] = useState(false);
   const [sugestoesPrestador, setSugestoesPrestador] = useState<SugestaoPrestadorMatch[]>([]);
@@ -1489,6 +1491,11 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       setSugestaoVeiculo(null);
     }
   };
+
+  // ETAPA-4 — Pedágio detalhado por praça (jsonb carga.pedagios, sem migration).
+  const pedagiosDetalhe = data.carga?.pedagios || [];
+  const updatePedagios = (lista: { praca: string; valor: number }[]) =>
+    setData((p) => ({ ...p, carga: { ...p.carga, pedagios: lista } }));
 
   // ETAPA-2: atualização do Portador Externo/Avulso (persistido em carga.portadorExterno)
   const portadorExterno: PortadorExterno = data.carga?.portadorExterno || emptyPortadorExterno();
@@ -3152,11 +3159,32 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                           </Select>
                           <span className="text-sm font-semibold text-slate-700">{end.nomeLocal || "Nova Parada"}</span>
                         </div>
-                        {!readOnly && (
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 transition-colors" onClick={() => update("enderecos", (data.enderecos || []).filter((_, i) => i !== idx))}>
-                            <Trash2 className="w-4 h-4"/>
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <SaveFavoritoButton
+                            clienteId={clienteIdEfetivo || undefined}
+                            endereco={{
+                              cep: end.cep || "",
+                              endereco: end.endereco || [end.logradouro, end.numero].filter(Boolean).join(", "),
+                              numero: end.numero || "",
+                              complemento: end.complemento || "",
+                              bairro: end.bairro || "",
+                              cidade: end.cidade || "",
+                              uf: end.estado || "",
+                              contato: end.contatoNome || "",
+                              telefone: end.contatoTelefone || end.telefone || "",
+                              instrucoes: end.instrucoes || end.referencia || "",
+                              janelaInicio: end.janelaInicio || "",
+                              janelaFim: end.janelaFim || "",
+                              nomeLocal: end.nomeLocal || "",
+                              tipo: end.tipo,
+                            }}
+                          />
+                          {!readOnly && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 transition-colors" onClick={() => update("enderecos", (data.enderecos || []).filter((_, i) => i !== idx))}>
+                              <Trash2 className="w-4 h-4"/>
+                            </Button>
+                          )}
+                        </div>
                       </CardHeader>
                       <CardContent className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                          <div className="md:col-span-3">
@@ -3223,6 +3251,31 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                                  </Select>
                                </Field>
                             </div>
+
+                            {/* ETAPA-4 — Chave de notificação de rastreio (estilo Mercado Livre) */}
+                            <div className={`rounded-lg border p-2.5 transition-colors ${end.notificarWhatsApp ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50/70"}`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <Label className="flex items-center gap-1 text-xs font-bold text-slate-800">
+                                    🔔 Enviar Rastreio por WhatsApp
+                                  </Label>
+                                  <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+                                    Atualizações em tempo real e "Saiu para entrega" para o telefone/contato deste ponto.
+                                  </p>
+                                </div>
+                                <Switch
+                                  checked={!!end.notificarWhatsApp}
+                                  onCheckedChange={(v) => {
+                                    const t = [...(data.enderecos || [])];
+                                    t[idx].notificarWhatsApp = v;
+                                    update("enderecos", t);
+                                    if (v) toast.success("Rastreio por WhatsApp ativado para este ponto");
+                                  }}
+                                  disabled={readOnly}
+                                />
+                              </div>
+                            </div>
+
                             <Field label="Janela Operacional">
                               <div className="flex items-center gap-2">
                                 <Input type="time" value={end.janelaInicio || ""} readOnly={readOnly} onChange={(e) => { const t = [...(data.enderecos || [])]; t[idx].janelaInicio = e.target.value; update("enderecos", t); }} />
@@ -3299,6 +3352,97 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         </p>
                       </div>
                     </div>
+                    {/* ETAPA-4 — Detalhamento de pedágio por praça (total continua editável) */}
+                    <div className="mt-2 overflow-hidden rounded-xl border border-green-200 bg-white/70">
+                      <button
+                        type="button"
+                        onClick={() => setMostrarPedagiosDetalhe((v) => !v)}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                      >
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-green-800">
+                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${mostrarPedagiosDetalhe ? "rotate-180" : ""}`} />
+                          Detalhar pedágios
+                          <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">
+                            {pedagiosDetalhe.length} praça{pedagiosDetalhe.length === 1 ? "" : "s"}
+                          </span>
+                        </span>
+                        <span className="text-xs font-bold text-green-800">Total: R$ {(data.pedagio || 0).toFixed(2)}</span>
+                      </button>
+
+                      {mostrarPedagiosDetalhe && (
+                        <div className="space-y-2 border-t border-green-100 px-3 py-3">
+                          {pedagiosDetalhe.length === 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Nenhuma praça informada. Adicione as praças abaixo ou mantenha o valor total manual.
+                            </p>
+                          )}
+                          {pedagiosDetalhe.map((p, pi) => (
+                            <div key={pi} className="flex items-center gap-2">
+                              <Input
+                                value={p.praca}
+                                readOnly={readOnly}
+                                onChange={(e) => updatePedagios(pedagiosDetalhe.map((item, i) => (i === pi ? { ...item, praca: e.target.value } : item)))}
+                                placeholder="Praça (ex.: Anchieta KM 32)"
+                                className="h-8 flex-1 text-xs"
+                              />
+                              <div className="relative w-28 shrink-0">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={p.valor}
+                                  readOnly={readOnly}
+                                  onChange={(e) => updatePedagios(pedagiosDetalhe.map((item, i) => (i === pi ? { ...item, valor: Number(e.target.value) } : item)))}
+                                  className="h-8 pr-6 text-right text-xs font-semibold"
+                                />
+                                <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">R$</span>
+                              </div>
+                              {!readOnly && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-slate-400 hover:text-red-600"
+                                  onClick={() => updatePedagios(pedagiosDetalhe.filter((_, i) => i !== pi))}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            {!readOnly && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1 text-xs"
+                                onClick={() => updatePedagios([...pedagiosDetalhe, { praca: "", valor: 0 }])}
+                              >
+                                <Plus className="h-3.5 w-3.5" /> Adicionar praça
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 bg-green-600 text-xs text-white hover:bg-green-700"
+                              disabled={readOnly || pedagiosDetalhe.length === 0}
+                              onClick={() => {
+                                const total = pedagiosDetalhe.reduce((soma, item) => soma + (Number(item.valor) || 0), 0);
+                                update("pedagio", Number(total.toFixed(2)));
+                                setPedagioInfo({ fonte: "manual", atualizadoEm: new Date().toISOString() });
+                                toast.success(`Total de pedágio aplicado: R$ ${total.toFixed(2)}`);
+                              }}
+                            >
+                              Usar total das praças
+                            </Button>
+                            <span className="text-[10px] text-muted-foreground">O valor total acima permanece livre para edição manual.</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="mt-3 flex items-center gap-4">
                       <Select value={rotaSelecionada} onValueChange={(v) => handleTrocarRota(v as TipoRota)} disabled={readOnly || calculandoDistancia}>
                         <SelectTrigger className="w-[220px] h-8 text-xs"><SelectValue placeholder="Tipo de rota" /></SelectTrigger>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, MapPin, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -332,7 +332,43 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
   return (
     <div ref={containerRef} className="space-y-3">
       {label && <Label className="text-xs font-medium text-muted-foreground">{label}</Label>}
-      
+
+      {/* ETAPA-4 — Endereços salvos/mais usados do cliente (seleção rápida) */}
+      {clienteId && enderecosSalvos.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+            <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+            Endereços salvos do cliente
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+              {enderecosSalvos.length}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[...enderecosSalvos]
+              .sort((a, b) => (Number(b.usos) || 0) - (Number(a.usos) || 0))
+              .slice(0, 6)
+              .map((salvo) => (
+                <button
+                  key={salvo.id}
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => handleSelectEnderecoSalvo(salvo)}
+                  className="flex max-w-[220px] items-center gap-1 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  title={[salvo.logradouro, salvo.numero, salvo.bairro, salvo.cidade, salvo.uf].filter(Boolean).join(", ")}
+                >
+                  <MapPin className="h-3 w-3 shrink-0 text-amber-600" />
+                  <span className="truncate">{salvo.nomeLocal || salvo.logradouro || "Endereço"}</span>
+                  {salvo.usos > 0 && (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1 text-[9px] font-bold text-amber-700">
+                      {salvo.usos}×
+                    </span>
+                  )}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="md:col-span-1">
           <Label className="text-[10px] text-muted-foreground">CEP</Label>
@@ -341,6 +377,7 @@ export function EnderecoCompleto({ value, onChange, label, required, clienteId, 
               value={cepInput} 
               onChange={(e) => setCepInput(mascaraCep(e.target.value))}
               onBlur={handleCepBlur}
+              onFocus={() => { if (enderecosSalvosFiltrados.length > 0) setShowSuggestions(true); }}
               placeholder="00000-000"
               maxLength={9}
               disabled={readOnly}

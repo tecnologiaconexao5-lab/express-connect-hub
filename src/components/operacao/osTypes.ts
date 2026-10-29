@@ -75,6 +75,8 @@ export interface OSEndereco {
   email?: string;
   ramal?: string;
   enviarWhatsApp?: boolean;
+  /** ETAPA-4 — dispara rastreio/mensagens no WhatsApp do contato deste ponto. */
+  notificarWhatsApp?: boolean;
   observacaoPonto?: string;
   endereco: string;
   cep?: string;
@@ -230,6 +232,8 @@ export interface OSCarga {
   cubagemManual?: boolean;
   /** ETAPA-2: Portador Externo/Avulso (parceiro fora da base cadastrada) */
   portadorExterno?: PortadorExterno;
+  /** ETAPA-4: praças de pedágio detalhadas (jsonb carga — sem migration). */
+  pedagios?: { praca: string; valor: number }[];
 }
 
 export interface OSVeiculoSugestao {

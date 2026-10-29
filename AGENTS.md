@@ -1,5 +1,41 @@
 # Summary
 
+## MISSÃO NOVA-OS-UX-04 — Etapa 4 de 4: Endereços salvos, Pedágio detalhado, Rastreio por WhatsApp e Payload do App (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · teste novo **7/7** · testes afetados **142/142** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2304 pass, +7) · `npm run build` ok (1m04s).
+
+### O que mudou
+
+**A. Endereços salvos/favoritos do cliente (`EnderecoCompleto.tsx` + `EnderecosFavoritos.tsx`)**
+- Barra de **"Endereços salvos do cliente"** acima dos campos, com chips dos mais usados (`usos` desc, até 6) — nome local ("Matriz", "Fábrica X"), CEP/bairro no tooltip e badge de uso; clique aplica o endereço completo (CEP/rua/número/bairro/cidade/UF/contato/telefone/instruções).
+- O dropdown existente (salvos + recentes) agora abre também no **foco do CEP** (antes só no Logradouro).
+- **Salvar Endereço** (⭐) no cabeçalho de cada parada: persiste via `salvarEnderecoFavoritoCliente(clienteId, ...)` quando há cliente selecionado (fallback amigável sem cliente).
+
+**B. Pedágio detalhado (`OrdemServicoForm.tsx` + `osTypes.OSCarga`)**
+- Novo `carga.pedagios: { praca: string; valor: number }[]` (jsonb — sem migration).
+- Card do Pedágio ganhou **"Detalhar pedágios"** (expansível): lista de praças (nome + valor), adicionar/remover, **Total em destaque** e "Usar total das praças"; o **valor total manual continua livre** para edição.
+
+**C. Chave de notificação de rastreio (`OSEndereco.notificarWhatsApp`)**
+- Toggle chamativo **"🔔 Enviar Rastreio por WhatsApp (Atualizações em Tempo Real)"** no detalhamento de cada parada, com destaque verde quando ativo; persiste no jsonb de `ordens_servico.enderecos`.
+
+**D. Payload do App do Motorista (`dbMappers.toOSInsert`)**
+- O mapeamento de endereços (antes com whitelist mínima) agora inclui explicitamente: `portaria`, `doca`, `procedimentoEntrada/Saida`, `estacionamento`, `documentoNecessario`, `codigoAcesso`, `exigenciaEpi`, `exigeAjudante`, `restricaoVeiculo`, `restricaoAltura`, `outrasRestricoes`, `contatoNome/contato_nome`, `contatoTelefone/telefone_contato`, `setor`, `ramal`, `instrucoes`, `notificarWhatsApp/notificar_whatsapp`, `statusPonto` e `agendamento` (aliases camelCase + snake_case para o App).
+- `OrdensServicoLista` agora preserva `item.enderecos` ao normalizar a OS para edição (o itinerário não se perde ao abrir pelo botão Editar).
+
+### Testes
+- **NOVO** `src/test/nova_os_etapa4_enderecos_pedagio_rastreio.test.ts` (7 casos fonte-based): endereços salvos/CEP, favorito com cliente, `carga.pedagios` + detalhamento, `notificarWhatsApp` + toggle, e campos operacionais no payload.
+
+### Arquivos
+- `src/components/ui/EnderecoCompleto.tsx` · `src/components/enderecos/EnderecosFavoritos.tsx` · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/operacao/osTypes.ts` · `src/lib/dbMappers.ts` · `src/components/operacao/OrdensServicoLista.tsx` · `src/test/nova_os_etapa4_enderecos_pedagio_rastreio.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) Selecionar cliente → Itinerário: chips "Endereços salvos do cliente" preenchem a parada; salvar ⭐ grava em `enderecos_clientes`.
+2. (QA) Pedágio: expandir, adicionar praças, "Usar total das praças" reflete em `ordens_servico.pedagio` (e continua editável manualmente).
+3. (QA) Ativar 🔔 em uma parada e conferir `notificar_whatsapp=true` no jsonb de `ordens_servico.enderecos`.
+4. (QA/App) Dados operacionais (portaria/doca/contatos/restrições) aparecem na tela de tarefas do App do Motorista.
+
+---
+
 ## MISSÃO NOVA-OS-UX-02 — Etapa 2 de 4: Lista de OS (filtro Hoje, UI e histórico) + Template WhatsApp (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (baseline `no-explicit-any` intacto) · teste novo **13/13** · testes afetados **143/143** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2297 pass, +13) · `npm run build` ok (2m44s).
