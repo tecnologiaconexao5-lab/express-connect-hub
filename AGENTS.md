@@ -1,5 +1,271 @@
 # Summary
 
+## MISSÃO COTACAO-OS-CLIENTE-BADGE-ALOCAR — Cliente automático cotação→OS + badge de OS pendentes + Alocar Prestador (2026-10-29)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (código novo limpo; `no-explicit-any` restantes são baseline) · `cotacao_leads_comercial` **26/26** (19 → 26, bloco F novo com 7 casos) + `cotacao_express_fluxo` **65/65** = **91/91** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2284 pass, +7 novos) · `npm run build` ok (2m56s).
+
+### Causa (pedidos do cliente)
+1. **Conversão cotação → OS quebrada**: `ordens_servico.cliente` é **uuid** (baseline L3245, nullable) e o código gravava o **nome** → `invalid input syntax for type uuid`; os registros exibiam "Cliente não definido".
+2. Sem visibilidade de OS originadas de cotações web aguardando prestador.
+3. Sem ação rápida de alocação de prestador na lista de OS (só Rede/Notificar).
+
+### O que mudou
+
+**1. Cliente automático — `src/services/cotacoes/cotacaoPublicaService.ts`**
+- **NOVO `garantirClienteAvulsoCotacao({ nome, telefone, origem })`** → `ResultadoClienteAvulso { clienteId, criado, erro? }`: dedup por `nome_fantasia` → `razao_social` (`.ilike` exato) → `telefone` → `whatsapp`; senão cria `clientes` no padrão OsMobile (`toClienteInsert`, `status: "pre-cadastro"`, `origem_comercial`, id gerado no cliente via `crypto.randomUUID`, **insert sem `.select()`**, tenant por `current_tenant_id_safe` + fallback `tenant_usuarios`). Nunca lança.
+- **NOVO `ehUuid()`** (regex UUID v4) — reusado na conversão.
+
+**2. Conversão — `src/services/comercial/orcamentoToOSService.ts`**
+- `gerarOSDoOrcamento`: resolve `clienteUuid` (`orc.clienteId` → `orc.cliente` se já uuid → helper pelo nome + WhatsApp extraído de `observacoesGerais`). **Fail-fast** com mensagens claras ("Orçamento sem cliente definido…" / erro do helper).
+- `osPayload.cliente = clienteUuid` e `cliente_id = clienteUuid` — **nunca o nome** (bug raiz corrigido).
+- **Marcador `carga.origem_cotacao`** (jsonb, sem migration): detecta cotação via `orc.pedidoInterno` (uuid), regex `ID da cotação: <uuid>` ou `/Cotação web/` (fallback `"web"`).
+
+**3. Orçamentos — prefill + persistência**
+- `OrcamentosLista`: no prefill de `?cotacao=`, chama o helper e seta `orc.clienteId` (best-effort + `toast.warning`).
+- `types.ts` (`Orcamento`) e `dbMappers` (`OrcamentoForm`/`OrcamentoRow`): **`clienteId`**; `toOrcamentoInsert` agora grava **`cliente_id`** e **`pedido_interno`** (colunas confirmadas no baseline L3189/L3222); `toOrcamentoDomain`/`fromOrcamentoRow` mapeiam `cliente_id`.
+- `OrcamentoForm.gerarOS` (botão do header) passou a **delegar** a `gerarOSDoOrcamento` — removido o insert legado que mandava o nome e escrevia em `os_enderecos` (tabela inexistente) e removido `sanitizeOrcamentoPayload`/import `supabase` mortos.
+
+**4. Badge — `src/components/dashboard/AlertaOscotacaoExpress.tsx` (NOVO)**
+- Card laranja com contagem de **OS via Cotação Express pendentes de prestador** (`carga->>origem_cotacao` not-null; fallback legado via `orcamentos` com `pedido_interno`/observações "Cotação web" → `orcamento_origem IN (...)`); pendente = `prestador` vazio e status ∉ `["finalizada","cancelada"]`; link `/operacao?tab=os`. Renderizado em **`TabExecutivo`** e **`TabComercial`**.
+
+**5. Alocar Prestador — `src/components/operacao/OrdensServicoLista.tsx`**
+- Botão rotulado **"Alocar Prestador"** (laranja, UserPlus) no bloco `semPrestador` da coluna Ações + **Dialog** (`SearchableSelect` `table="prestadores"`, nome do motorista opcional, **repasse R$ obrigatório > 0**).
+- UPDATE `ordens_servico`: `prestador` + `prestador_id` (mesmo uuid), `custo_prestador`, `carga` (merge com `motorista`), `updated_at` — **status preservado** (decisão) → trigger M80 propaga financeiro; toast + `fetchOrdens()`.
+
+### Testes (`src/test/cotacao_leads_comercial.test.ts`, 19 → 26)
+- Bloco **F** (7 casos fonte-based): helper (dedup/pre-cadastro/sem `.select`/tenant) · cliente uuid na OS · marcador `origem_cotacao` · prefill `clienteId` + mapper · delegação do `OrcamentoForm` · badge (marcador + tabs) · alocação (uuid/repasse/status intocado).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros
+- `npx eslint` (arquivos da missão) → ✅ 0 erros novos (`no-explicit-any` restantes = baseline; 4 warnings exhaustive-deps pré-existentes)
+- `npx vitest run src/test/cotacao_leads_comercial.test.ts src/test/cotacao_express_fluxo.test.ts` → ✅ **91/91**
+- Regressão dos testes que leem os arquivos alterados (10 arquivos com/e2e/com_orc/com_carga) → ✅ **152/152**
+- `npx vitest run` → **18 failed / 44 testes** = baseline exata · **2284 pass** (+7)
+- `npm run build` → ✅ 2m56s
+
+### Arquivos
+- `src/services/cotacoes/cotacaoPublicaService.ts` · `src/services/comercial/orcamentoToOSService.ts` · `src/components/comercial/OrcamentosLista.tsx` · `src/components/comercial/OrcamentoForm.tsx` · `src/components/comercial/types.ts` · `src/lib/dbMappers.ts` · `src/components/dashboard/AlertaOscotacaoExpress.tsx` (NOVO) · `src/components/dashboard/TabExecutivo.tsx` · `src/components/dashboard/TabComercial.tsx` · `src/components/operacao/OrdensServicoLista.tsx` · `src/test/cotacao_leads_comercial.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` → aprovada → Comercial "Leads / Cotações Site" → "Converter em Orçamento/OS": cliente criado como `pre-cadastro` (Nome + WhatsApp), orçamento salvo com `cliente_id`/`pedido_interno`, OS criada **sem** "Cliente não definido".
+2. (QA) Dashboard Executivo/Comercial: card laranja com a contagem; clique leva a `/operacao?tab=os`; some quando não há pendentes.
+3. (QA) `/operacao?tab=os`: "Alocar Prestador" → busca prestador, repasse obrigatório → OS passa a exibir prestador, `financeiro_receber/pagar/pagamentos` criados pelo trigger, status da OS inalterado.
+4. (decisão) Alocação desktop não altera status (mobile usa `"agendada"`); se a operação quiser paridade, incluir `status` no update.
+
+---
+
+## FIX COTACAO-CEP-INTERCEPTOR — CEP 8 dígitos no autocomplete → ViaCEP direto, sem Mapbox (2026-10-28)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **84/84 PASS** (65 + 19; bloco L novo com 4 casos) · `npm run build` ok (56.55s, chunk `CotacaoExpress` 43.42 kB).
+
+### Causa (pedido do cliente)
+Bug crítico: digitar um CEP 8 dígitos (ex: "04194250") no autocomplete do `/cotacao-express` fazia o **Mapbox text search tratar o CEP como texto genérico**, devolvendo endereços errados (ex: Santa Catarina para um CEP de São Paulo). O usuário clicava na sugestão errada e o card verde exibia o endereço incorreto.
+
+### O que mudou (`src/components/cotacao/CampoEnderecoChat.tsx`)
+
+**1. `ehCepValido(texto)` — module-scope, não exportado**
+- Regex `^\d{5}-?\d{3}$` (`texto.trim()`): detecta CEP brasileiro válido de 8 dígitos com ou sem hífen (ex: "04194250" e "04194-250").
+- Parciais (5–7 dígitos, ex: "06473") NÃO casam → continuam indo ao Mapbox (comportamento do bloco J preservado).
+
+**2. Interceptor no efeito de debounce (após `setCarregando(true)`, antes de `buscarSugestoesEnderecos`)**
+- Se `ehCepValido(termo)` → **interrompe o Mapbox** e chama `consultarViaCepJson(somenteDigitos(termo))` direto.
+- Guarda `if (meu !== sequenciaRef.current) return;` após o await (descarte de respostas velhas).
+- **Sucesso (json truthy):** `setSugestoes([montarSugestaoViaCep(json)])` + `setAberto(true)` — sugestão 100% ViaCEP (Correios) como **único item** do dropdown (ex: "Rua X, Bairro Y, Cidade - UF, 04194-250").
+- **Falha (json null — CEP inexistente/erro):** `setSugestoes([])` + `setAberto(false)` — sem sugestão falsa; campo segue aberto para o cliente digitar (modo manual).
+- **CEP parcial/ausente/rua → fluxo Mapbox normal** inalterado (com `proximity=-46.6333,-23.5505`).
+
+**3. `montarSugestaoViaCep(json)` — module-scope, não exportado**
+- Monta `SugestaoEndereco` completa a partir da resposta ViaCEP: `cep: cepCompleto8(json.cep || "")` (8 dígitos estritos), `rua = json.logradouro || ""`, `bairro = json.bairro || json.complemento || json.unidade || ""`, `cidade = json.localidade`, `uf = json.uf`, `numero: ""`.
+- `place_name` = `[rua, bairro, cidadeUf, cep].filter(Boolean).join(", ")` (ex: "Avenida Sumaré, Vila Madalena, São Paulo - SP, 05435-000").
+- `lat: Number.NaN, lng: Number.NaN` — **propósito**: o cálculo de rota (`calcularRotaCotacao` em `cotacaoCalculoService.ts`) detecta coordenadas não finitas e geocoda o `place_name` completo em **background** via Mapbox (só nesse momento, pelo texto). O ViaCEP nunca devolve coordenadas; o Mapbox entra estritamente quando necessário para lat/lng.
+
+**4. Card verde "Endereço reconhecido" — 100% ViaCEP, sem chamada extra**
+- `selecionar` → `enriquecerSugestaoComViaCep(item)`: para sugestões ViaCEP completas (CEP 8 dígitos + rua + bairro preenchidos), `cepValido=true`, `faltaBairro=false`, `faltaRua=false` → retorna o item **inalterado** (sem fetch redundante ao ViaCEP).
+- O card destrinchado (Rua/AV, Bairro, Cidade, UF, CEP) é preenchido com os dados oficiais dos Correios — precisão máxima.
+
+### Contratos preservados (não regredir)
+- **I.1/I.5/I.7** (ViaCEP manual): endpoint, guards anti-loop (`cepUltimoBuscadoRef`, `cepSequenciaRef`), foco na Rua, pré-carregado não dispara.
+- **J.3/J.4** (busca reversa): endpoint reverso, `!cepValido && temBaseReversa`, `cepFinal` estrito, `cepCompleto8(c.cep)`.
+- **B.1/C.1/C.2/C.5/C.6/H/K** (fluxo, service, ids `cot-*`, veículos, tipos de parada, imprimir) — todos intactos (84/84).
+
+### Teste (`src/test/cotacao_express_fluxo.test.ts`, 61 → 65)
+- **Novo describe L** (4 casos fonte-based):
+  - L.1: `ehCepValido` + regex `^\d{5}-?\d{3}$` + `.test(texto.trim())`.
+  - L.2: `if (ehCepValido(termo))` + `await consultarViaCepJson(digitos)` + interceptor ANTES de `buscarSugestoesEnderecos` + `return;` no meio.
+  - L.3: `montarSugestaoViaCep` + `cepCompleto8(json.cep || "")` + place_name `[rua, bairro, cidadeUf, cep]` + `lat: Number.NaN` / `lng: Number.NaN` + campos Correios.
+  - L.4: sucesso → `setSugestoes([montarSugestaoViaCep(json)])` + `setAberto(true)`; falha → `setSugestoes([])` + `setAberto(false)`; guarda `sequenciaRef` antes do set.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros
+- `npx eslint src/components/cotacao/CampoEnderecoChat.tsx src/test/cotacao_express_fluxo.test.ts` → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **84/84** (65 + 19)
+- `npm run build` → ✅ 56.55s (chunk `CotacaoExpress` 43.42 kB)
+
+### Arquivos
+- `src/components/cotacao/CampoEnderecoChat.tsx` (`ehCepValido`, `montarSugestaoViaCep`, interceptor ViaCEP no debounce) · `src/test/cotacao_express_fluxo.test.ts` (bloco L) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: digitar CEP "04194250" ou "04194-250" no campo de endereço → dropdown exibe **apenas** a sugestão ViaCEP (ex: "Rua ..., Bairro ..., São Paulo - SP, 04194-250") — **nunca** endereço de Santa Catarina/estado errado; clicar → card verde 100% preciso; rota calcula km com geocodificação do endereço completo.
+2. (QA) Digitar CEP parcial (ex: "06473") → continua indo ao Mapbox (comportamento J preservado); digitar rua livre → Mapbox normal com proximity SP.
+3. (QA) Digitar CEP inexistente (ex: "00000000") → ViaCEP retorna erro → dropdown fechado sem sugestão falsa; cliente pode digitar o endereço manualmente.
+
+---
+
+## FIX UX-COTACAO-06 — Voltar passo a passo, layout, proximity, tipos de parada/retorno e imprimir (2026-10-28)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (3 arquivos limpos; 6 baseline pré-existente em `mapboxProvider.ts` intactos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **80/80 PASS** (61 + 19; bloco K novo com 5 casos) · `npm run build` ok (49.31s).
+
+### Causa (pedido do cliente)
+5 melhorias de UX/regras no wizard `/cotacao-express`:
+1. **Bug do Voltar**: o rodapé pulava de etapa (`Math.max(5, e - 1)`) — voltar da entrega aos dados de carga era impossível e o cliente perdia o contexto das etapas 1–4.
+2. Layout estreito (`max-w-xl`) e sem presença corporativa no desktop.
+3. Autocomplete Mapbox sem `proximity` — sugestões distantes de São Paulo (base da operação).
+4. Sem terceiro tipo de parada ("Retirada e Entrega" para trechos que são ambos) e sem forma de adicionar um **retorno** à origem (rota de ida e volta).
+5. Sem opção de salvar a proposta como PDF/imprimir na etapa 9.
+
+### O que mudou
+
+**1. `src/pages/CotacaoExpress.tsx` (5 melhorias)**
+- **Voltar**: `setEtapa((e) => Math.max(1, e - 1))` + `disabled={etapa <= 1}` — volta 1 etapa por vez desde a primeira, preservando todos os dados digitados (antes: clamp mínimo etapa 5).
+- **Layout**: `main` e barra inferior com `max-w-2xl` (era `max-w-xl`); cartão da etapa com `sm:rounded-xl sm:shadow-lg` (cantos+sombra corporativos no desktop, full-width no mobile). Classes `print:*` espelhadas no container para a impressão limpa.
+- **`adicionarRetorno()`**: valida origem preenchida + limite 8, clona o Ponto 1 (`endereco`/`sugestao`) como **última** parada com `{ tipo: "entrega", retorno: true }` — rotuloParada exibe "Retorno". Botão **"Adicionar Retorno"** (ícone `Undo2`) nas etapas 6 (avança para extras ao adicionar) e 7; desabilitado no limite de paradas.
+- **3 tipos de parada**: `ParadaEstado.tipo` ganhou `"retirada_entrega"`; toggle da etapa 7 em `grid-cols-3` com rótulos capitalizados via `ROTULO_TIPO_PARADA` (mantém o nome do identificador `rotuloParada`, contrato C.2 intacto); `retirada_entrega` só é aplicável à última parada.
+- **Etapa 9 (Resumo)**: grid `sm:grid-cols-2 print:hidden` com o botão verde "Aprovar Frete" (inalterado) + outline **"Salvar PDF / Imprimir"** (`Printer` + `window.print()`). Header `Cabecalho` com `print:hidden`; bloco exclusivo de impressão `hidden print:block` no topo da etapa 9 com **`/logos/logo-conexao-colorido.png`** (`h-10 w-auto`) + linha "Proposta de Cotação — Conexão Express". Erros/avisos/rodapé `print:hidden`; main `print:bg-white print:px-0`.
+- Import `Printer` e `Undo2` adicionados; cabeçalho do arquivo atualizado com as melhorias.
+
+**2. `src/services/cotacoes/cotacaoPublicaService.ts` (união do tipo)**
+- `ParadaCotacao.tipo` e `CriarCotacaoFase1Input.paradasTipos?` + parâmetro `tipos` de `montarParadasFase1` estendidos para `"retirada" | "entrega" | "retirada_entrega"` (jsonb — valor extra seguro; contratos B.1/default legado intactos; `resumoRotaCotacao` e `montarOrcamentoDaCotacao` não consomem `.tipo`).
+
+**3. `src/services/maps/mapboxProvider.ts` (proximity)**
+- `buscarSugestoesEnderecos` ganhou `&proximity=-46.6333,-23.5505` (São Paulo) — sugestões priorizam a cidade-base. `mapboxAutocomplete.ts` **não** tocado (decisão: só o provider do cotação).
+
+### Teste (`src/test/cotacao_express_fluxo.test.ts`, 56 → 61)
+- **Novo describe K** (5 casos fonte/runtime): K.1 `Math.max(1, e - 1)` + `disabled={etapa <= 1}` sem resquício do clamp 5 · K.2 `max-w-2xl` sem `max-w-xl` + `sm:rounded-xl`/`sm:shadow-lg` · K.3 `proximity=-46.6333,-23.5505` dentro de `buscarSugestoesEnderecos` · K.4 3 tipos + `adicionarRetorno`/`Retorno`/`rotuloParada`/`ROTULO_TIPO_PARADA` + pass-through runtime de `montarParadasFase1` com `retirada_entrega` + default legado B.1 · K.5 `window.print()`/`Printer`/`print:hidden`/`print:block`/`logo-conexao-colorido.png`/`Proposta de Cotação — Conexão Express`.
+- Contratos I.1–I.7, J.1–J.4, B.1, C.1–C.6 **intactos**.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros (2×)
+- `npx eslint` (CotacaoExpress · cotacaoPublicaService · cotacao_express_fluxo.test) → ✅ 0 erros; `mapboxProvider.ts` = 6 baseline pré-existente (linhas 42/183/231/234/235/242, fora da linha alterada ~221)
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **80/80** (61 + 19)
+- `npm run build` → ✅ 49.31s (chunk `CotacaoExpress` 42.97 kB, `Printer` icon novo)
+
+### Arquivos
+- `src/pages/CotacaoExpress.tsx` (Voltar, layout, tipos/retorno, imprimir) · `src/services/cotacoes/cotacaoPublicaService.ts` (união `retirada_entrega`) · `src/services/maps/mapboxProvider.ts` (proximity) · `src/test/cotacao_express_fluxo.test.ts` (bloco K) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: (a) voltar da entrega até "Quem pediu" sem perder dados; (b) desktop largura 2xl com sombra/cantos e mobile full-width; (c) sugestões Mapbox priorizando SP; (d) 3 chips de tipo na última parada + "Adicionar Retorno" nas etapas 6/7 → rota recalcula km/valor com o ponto de retorno e o `tipo` do clone é `entrega` (exibido como "Retorno"); (e) "Salvar PDF / Imprimir" → diálogo nativo do navegador, papel com logo colorido + proposta (sem botões/chrome).
+2. (decisão) Toggle de 3 tipos aparece só na última parada — se a operação quiser editar o tipo de qualquer parada, adicionar chips por parada na etapa 7.
+
+---
+
+## FIX COTACAO-EXPRESS-CEP-PARCIAL — Validação estrita de 8 dígitos + busca reversa ViaCEP (2026-10-28)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros/0 warnings (3 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **75/75 PASS** (56 + 19; bloco J novo com 4 casos) · `npm run build` ok (45.49s).
+
+### Causa (pedido do cliente)
+O Mapbox devolve CEP **parcial** (5–7 dígitos, ex.: `"06473"` — prefixo do bairro) no `postcode`/`context` de sugestões brasileiras. O wizard `/cotacao-express` aceitava esses parciais: o card destrinchado exibia CEP incompleto, `montarEnderecoManual` persistia `endereco.cep` parcial e o `place_name` mantinha o token de 5 dígitos — gerando CEP inválido salvo na cotação.
+
+### Regras aplicadas (requisitos do cliente)
+1. **Só CEPs com exatamente 8 dígitos numéricos** são aceitos/salvos (`cepCompleto8`).
+2. **CEP parcial vindo do Mapbox → ignorado** (não vira `cep` da sugestão nem do card).
+3. **CEP parcial/ausente + rua/cidade/UF presentes → busca reversa no ViaCEP** (`https://viacep.com.br/ws/{uf}/{cidade}/{logradouro}/json/`), priorizando o resultado cujo CEP casa com o prefixo parcial (mesma estratégia de `mapboxAutocomplete`).
+4. **Sem 8 dígitos → CEP vazio** (usuário digita manualmente ou usa "Corrigir manualmente"); nunca exibir CEP de 5 dígitos na UI.
+5. `npx tsc --noEmit` executado e limpo (requisito explícito).
+
+### O que mudou
+
+**1. `src/lib/cepCotacao.ts` (NOVO — helpers puros)**
+- `cepCompleto8(valor)` → só retorna `"XXXXX-XXX"` quando há **exatamente 8 dígitos** (ignora traço/qualquer separador); caso contrário `""`.
+- `limparCepParcialDoTexto(texto, parcial)` → remove token de CEP parcial (5–7 dígitos) de um `place_name`, com regex `(^|[^0-9])${esc}(?![0-9])` + limpeza de separadores órfãos (`"" `, `\s{2,}`, `^,\s*`, `,\s*$`). **Só age em 5–7 dígitos** (nunca rasga número de porta/CEP completo). `somenteDigitos` interno.
+- Extraídos para o lib para evitar o warning `react-refresh/only-export-components` (exportar função de arquivo `.tsx`); `cepCompleto8` **não** é exportado do componente.
+
+**2. `src/components/cotacao/CampoEnderecoChat.tsx`**
+- Import `import { cepCompleto8, limparCepParcialDoTexto } from "@/lib/cepCotacao";`.
+- `RespostaViaCep` ganhou campo `cep?: string` (o ViaCEP por endereço retorna `cep`).
+- `montarEnderecoManual`: `cep: cepCompleto8(c.cep)` — nunca persiste parcial.
+- **NOVA `consultarViaCepPorEndereco(uf, cidade, logradouro, prefixoParcial = "")`**: fetch `https://viacep.com.br/ws/{uf}/{cidade}/{logradouro}/json/`; exige `Array.isArray(dados)` (ViaCEP devolve `{erro:true}` para 404); filtra `c.length === 8 && !item.erro && item.localidade`; **prioriza `startsWith(prefixoParcial)`** (prefixo vindo do Mapbox, ex. `"06473"`); `null` em falha/sem base.
+- `enriquecerSugestaoComViaCep` reescrita com 2 cenários:
+  - **Cenário 1** (CEP válido de 8 dígitos + falta bairro/rua): ViaCEP por CEP (`consultarViaCepJson`) — comportamento anterior preservado.
+  - **Cenário 2** (`!cepValido && temBaseReversa`, tem rua **ou** cidade + UF): **busca reversa** por UF/cidade/logradouro com `digitosOriginais` (5–7 dígitos do Mapbox) como prefixo de priorização.
+  - `cepFinal` estrito: `cepValido ? formatarCep(digitosOriginais) : ""`, sobrescrito por `json?.cep` validado a 8 dígitos; retorno `{ ...s, cep: cepFinal }` — **CEP parcial nunca sobrevive**.
+  - `mudou` inclui comparação do `cep`; place_name reconstruído via `montarPlaceName` quando há base (rua/cidade), senão `limparCepParcialDoTexto(item.place_name || "", digitosOriginais)`.
+- `montarPlaceName`: usa `cepCompleto8(s.cep || "")` (nunca parcial).
+- `abrirManual` (preload do modo manual): `cep: cepCompleto8(sugestao.cep || "")` — CEP parcial não pré-preenche o input manual (usuário digita); linha do `cepUltimoBuscadoRef` **mantida** com `somenteDigitos(sugestao.cep || "")` (ref recebe dígitos parciais é inofensivo: <8 dígitos → early return no efeito ViaCEP — preserva o contrato I.7).
+- Card destrinchado: `<LinhaEndereco rotulo="CEP" valor={cepCompleto8(enderecoConfirmado.cep || "")} />` (defesa em profundidade — nunca exibe parcial).
+
+**3. `src/test/cotacao_express_fluxo.test.ts` (+4 casos → 56)**
+- Import `cepCompleto8, limparCepParcialDoTexto` de `@/lib/cepCotacao`.
+- Cabeçalho atualizado (blocos I e J).
+- **Novo describe J) CEP parcial do Mapbox — estrito de 8 dígitos + busca reversa:**
+  - J.1 runtime: `cepCompleto8` — `"06473"` → `""`, `"06473-000"`/`"06473000"` → `"06473-000"`, vazio/nulo → `""`.
+  - J.2 runtime: `limparCepParcialDoTexto` — remove `"06473"` de place_name, preserva CEP completo e número de porta, limpa separadores órfãos; não age fora de 5–7 dígitos.
+  - J.3 source: endpoint reverso `/ws/{uf}/{cidade}/{logradouro}/json/`, `c.length === 8`, `startsWith(prefixoParcial)`, `!Array.isArray(dados) return null`, ramo `!cepValido && temBaseReversa`, base rua/cidade/uf.
+  - J.4 source: `cepFinal` estrito, `cep: cepFinal`, `cepCompleto8(c.cep)` no manual, `cepCompleto8(enderecoConfirmado.cep`, preload `cepCompleto8(sugestao.cep`, `limparCepParcialDoTexto(item.place_name || ""`.
+- **Contratos I.1–I.7 preservados 100%** (bloco I intacto): endpoint/8 dígitos · loading · preenchimento · mensagens · guardas anti-loop (`cepUltimoBuscadoRef.current = digitos`, `if (digitos === cepUltimoBuscadoRef.current) return`, `cepSequenciaRef`) · foco na Rua · pré-carregado não dispara (`cepUltimoBuscadoRef.current = somenteDigitos(sugestao.cep`).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros (2×, inclusive após criação do lib)
+- `npx eslint src/lib/cepCotacao.ts src/components/cotacao/CampoEnderecoChat.tsx src/test/cotacao_express_fluxo.test.ts` → ✅ 0 erros/0 warnings (warning react-refresh eliminado)
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **75/75** (56 + 19; 4 novos J)
+- `npm run build` → ✅ 45.49s (chunk `CotacaoExpress` 40.84 kB)
+
+### Arquivos
+- `src/lib/cepCotacao.ts` (NOVO) · `src/components/cotacao/CampoEnderecoChat.tsx` (busca reversa + estrito 8) · `src/test/cotacao_express_fluxo.test.ts` (bloco J) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: (a) sugestão Mapbox com CEP parcial (ex.: Av. Sumaré/SP → "06473") → card exibe CEP completo resgatado via busca reversa OU campo vazio para digitação — **nunca** "06473"; (b) modo manual → digitar rua+cidade+UF sem CEP → ViaCEP reverso preenche; (c) CEP parcial não pré-preenche o input do modo manual.
+2. (decisão) ViaCEP reverso depende de rua/cidade/UF preenchidos; sugestão Mapbox sem base completa mantém CEP vazio (usuário preenche manualmente).
+
+---
+
+## FIX UX-COTACAO-05-MELHORIAS — ViaCEP, botões mobile, Sparkles, tipo de parada e logo (2026-10-28)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (3 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **71/71 PASS**.
+
+### Causa (pedido do cliente)
+5 melhorias de UX no wizard `/cotacao-express`:
+1. **ViaCEP**: bairro/CEP "—" quando o Mapbox omite o bairro do `context` (e o preenchimento manual deixava bairro vazio).
+2. **Botões Buscar/Confirmar** no modo manual do endereço empilhados/estranhos no mobile.
+3. **Ícone Sparkles** no botão "Calcular agora" (etapas 6/7) — cliente pediu remoção.
+4. **Sem tipo de parada** nos pontos extras — todas viravam "entrega" sem como marcar uma nova retirada.
+5. **Cabeçalho** com texto "⚡ CONEXÃO EXPRESS" — cliente forneceu o logo oficial (branco) para usar no lugar.
+
+### O que mudou
+
+**1. `src/components/cotacao/CampoEnderecoChat.tsx` (ViaCEP + botões)**
+- **`enriquecerSugestaoComViaCep` (NOVA)**: antes de `onSelecionar`, se a sugestão Mapbox tem CEP de 8 dígitos mas **falta bairro e/ou rua**, consulta ViaCEP e preenche os campos vazios (`bairro: json.bairro || json.complemento || json.unidade` — o ViaCEP às vezes devolve o bairro em `complemento`/`unidade`). Rebuild do `place_name` via `montarPlaceName`. Guarda: se nada mudou, retorna o item original.
+- **`consultarViaCepJson` (NOVA)**: wrapper tipado do fetch ViaCEP com `AbortSignal` opcional.
+- **`selecionar`**: agora é async — mostra spinner (`carregando`), enriquece via ViaCEP, depois chama `onSelecionar`.
+- **ViaCEP manual**: fallback de bairro expandido para `json.bairro || json.complemento || json.unidade`.
+- **Botões**: container `flex w-full flex-row gap-2`, ambos `h-11 flex-1` (Confirmar laranja + Buscar outline) — largura/altura iguais no mobile. Label encurtado para "Confirmar" (era "Confirmar endereço").
+
+**2. `src/pages/CotacaoExpress.tsx` (Sparkles, tipo de parada, logo)**
+- **`BotaoPrincipal`**: branch `calcular` (etapas 6/7) não renderiza mais ícone — só o texto "Calcular agora". `Sparkles` permanece importado e em uso na etapa 9 ("Proposta instantânea").
+- **`ParadaEstado`** ganhou `tipo: "retirada" | "entrega"`; `paradaVazia(tipo)` com default `"entrega"`; estado inicial `[paradaVazia("retirada"), paradaVazia("entrega")]`.
+- **`rotuloParada(p)`** agora lê `p.tipo` (era por índice).
+- **Etapa 7**: toggle [Retirada | Entrega] (`grid-cols-2`, chips laranja quando selecionado) acima do campo do último endereço — permite marcar um ponto extra como nova retirada.
+- **`calcular()`/`aprovar()`**: montam `pontosComTipo` (filtra vazios mantendo o tipo alinhado) e passam `paradasTipos` ao `criarCotacaoFase1`.
+- **`Cabecalho`**: fundo `bg-slate-900`, `<img src="/logos/logo-conexao-oficial.png" className="h-8 w-auto">` com fallback de texto no `onError`; chip "Cotação Express" em laranja claro sobre o fundo escuro.
+
+**3. `src/services/cotacoes/cotacaoPublicaService.ts` (tipos opcionais)**
+- **`montarParadasFase1(enderecos, tipos?)`**: 2º parâmetro opcional — se fornecido, usa `tipos[idx]`; senão mantém o default legado (1ª = retirada, demais = entrega). **Contrato B.1 intacto** (array sem tipos → mesmo resultado).
+- **`CriarCotacaoFase1Input.paradasTipos?: Array<"retirada"|"entrega">`** — alinhado com o array `paradas` ANTES do filtro de vazias.
+- `criarCotacaoFase1` repassa `input.paradasTipos` a `montarParadasFase1`.
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros
+- `npx eslint` (3 arquivos) → ✅ 0 erros
+- `npx vitest run src/test/cotacao_express_fluxo.test.ts src/test/cotacao_leads_comercial.test.ts` → ✅ **71/71**
+
+### Arquivos
+- `src/components/cotacao/CampoEnderecoChat.tsx` (ViaCEP enriquecimento + botões flex) · `src/pages/CotacaoExpress.tsx` (Sparkles, tipo parada, logo) · `src/services/cotacoes/cotacaoPublicaService.ts` (paradasTipos) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: (a) selecionar sugestão Mapbox sem bairro → bairro preenchido via ViaCEP, sem "—"; (b) modo manual → botões Confirmar/Buscar lado a lado com a mesma altura; (c) "Calcular agora" sem ícone; (d) ponto extra marcado como "Retirada" → gravado no `paradas` do Supabase com `tipo: "retirada"`; (e) logo branco visível no header escuro.
+2. (decisão) Header passou a fundo escuro (`bg-slate-900`) para o logo branco não sumir — se a operação preferir fundo claro, usar o logo colorido (`logo-conexao-colorido.png`) e reverter o fundo.
+
+---
+
 ## FIX UX-COTACAO-SEM-INDICADORES — Remoção total de rótulos de sistema do wizard `/cotacao-express` (2026-10-27)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (2 arquivos) · `cotacao_express_fluxo` + `cotacao_leads_comercial` **71/71 PASS** · `npm run build` ok (46.80s).

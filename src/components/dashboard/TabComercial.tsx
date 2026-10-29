@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "@/lib/supabase";
+import AlertaOscotacaoExpress from "@/components/dashboard/AlertaOscotacaoExpress";
 import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
@@ -140,6 +141,9 @@ const TabComercial = () => {
           <KpiCard title="Oportunidades" value="—" icon={Target} color="bg-indigo-500" sub="CRM em implantação" />
         </div>
       </div>
+
+      {/* OS via Cotação Express pendentes de prestador */}
+      <AlertaOscotacaoExpress />
 
       {/* KPIs Operacional */}
       <div>

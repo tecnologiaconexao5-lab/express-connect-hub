@@ -43,7 +43,6 @@ import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto
 import { toast } from "sonner";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
 import { calcularDistancia, type DistanceResult } from "@/services/maps";
-import { supabase } from "@/lib/supabase";
 import { verificarInadimplenciaCliente } from "@/services/financeiro/inadimplenciaService";
 import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
@@ -511,34 +510,9 @@ const recalcular = () => {
     setData((prev) => ({ ...prev, enderecos: prev.enderecos.filter((_, i) => i !== idx).map((e, i) => ({ ...e, sequencia: i + 1 })) }));
   };
 
-  const sanitizeOrcamentoPayload = (rawPayload: Record<string, any>): { payload: Record<string, any>; removed: string[] } => {
-    const payloadSeguro: Record<string, any> = {
-      numero: rawPayload.numero,
-      data_emissao: rawPayload.data_emissao,
-      cliente: rawPayload.cliente,
-      cliente_id: rawPayload.cliente_id,
-      status: rawPayload.status,
-      valor_cliente: rawPayload.valor_cliente,
-      custo_prestador: rawPayload.custo_prestador,
-      distancia_km: rawPayload.distancia_km,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    const allKeys = Object.keys(rawPayload);
-    const usedKeys = Object.keys(payloadSeguro);
-    const removed = allKeys.filter(k => !usedKeys.includes(k));
-
-    console.log("[ORC SAVE] Payload original:", rawPayload);
-    console.log("[ORC SAVE] Payload final enviado:", payloadSeguro);
-    console.log("[ORC SAVE] Campos removidos:", removed);
-
-    return { payload: payloadSeguro, removed };
-  };
-
   const gerarOS = async () => {
     try {
-      // Bloquear se cliente estiver inadimplente
+      // Bloquear se cliente estiver inadimplente (checagem prévia por uuid)
       if (data.clienteId) {
         const inadimplencia = await verificarInadimplenciaCliente(data.clienteId);
         if (inadimplencia.inadimplente) {
@@ -547,51 +521,23 @@ const recalcular = () => {
         }
       }
 
-      const rawPayload = {
-        numero: `OS-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
-        data: new Date().toISOString().split('T')[0],
-        cliente: data.cliente,
-        cliente_id: data.clienteId,
-        status: "em_analise",
-        valor_cliente: data.valor_cliente,
-        custo_prestador: data.custo_prestador,
-        distancia_km: data.distancia_rota?.distancia_km || 0,
-        veiculo_tipo: data.veiculo_tipo,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      const { payload, removed } = sanitizeOrcamentoPayload(rawPayload);
-      
-      const { data: osResult, error } = await supabase.from("ordens_servico").insert([payload]).select().single();
-      
-      if (error) {
-        console.error("[gerarOS] Erro ao criar OS:", error);
-        toast.error("Erro ao gerar OS: " + error.message);
+      // Fonte única de conversão: o serviço resolve o cliente (uuid — cadastra o
+      // cliente da cotação quando necessário), grava endereços/carga/histórico e
+      // atualiza o status do orçamento. Elimina o insert legado que mandava o
+      // NOME em `ordens_servico.cliente` (uuid) e escrevia em `os_enderecos`.
+      const resultado = await gerarOSDoOrcamento(comDerivadosCarga(data));
+      if (!resultado.success) {
+        toast.error(resultado.erro || "Erro ao gerar OS.");
         return;
       }
-      
-      for (const end of data.enderecos) {
-        const logradouro = end.logradouro || "";
-        const numero = end.numero || "";
-        
-        const enderecoFormatado = `${logradouro}${numero ? ', ' + numero : ''}${end.bairro ? ' - ' + end.bairro : ''}, ${end.cidade || ''}/${(end.uf || '').toUpperCase()}`;
-        
-        await supabase.from("os_enderecos").insert([{
-          os_id: osResult.id,
-          sequencia: end.sequencia,
-          tipo: end.tipo,
-          nome_local: end.nome_local,
-          logradouro: logradouro,
-          numero: numero,
-          bairro: end.bairro,
-          cidade: end.cidade,
-          estado: (end.uf || '').toUpperCase(),
-          endereco: enderecoFormatado
-        }]);
-      }
-      
-      toast.success("Ordem de Serviço criada com sucesso!");
+
+      setData((prev) => ({
+        ...prev,
+        status: "convertido" as OrcamentoStatus,
+        osVinculadaId: resultado.osId,
+        osVinculadaNumero: resultado.osNumero,
+      }));
+      toast.success(`Ordem de Serviço ${resultado.osNumero || ""} criada com sucesso!`);
     } catch (e: any) {
       console.error("[gerarOS] Erro catch:", e);
       toast.error("Erro ao gerar OS: " + e.message);

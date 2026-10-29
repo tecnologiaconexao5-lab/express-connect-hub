@@ -218,7 +218,8 @@ export async function buscarSugestoesEnderecos(query: string): Promise<SugestaoE
   if (!token || !query || query.trim().length < 3) return [];
 
   const encodedQuery = encodeURIComponent(query);
-  const url = `${MAPBOX_GEOCODING_URL}/${encodedQuery}.json?access_token=${token}&country=br&autocomplete=true&limit=5`;
+  // proximity prioriza sugestões próximas a São Paulo (cidade-base da operação).
+  const url = `${MAPBOX_GEOCODING_URL}/${encodedQuery}.json?access_token=${token}&country=br&autocomplete=true&limit=5&proximity=-46.6333,-23.5505`;
 
   try {
     const response = await fetch(url);

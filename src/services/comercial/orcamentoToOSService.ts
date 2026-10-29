@@ -6,6 +6,10 @@
 import { supabase } from "@/lib/supabase";
 import type { Orcamento } from "@/components/comercial/types";
 import { verificarInadimplenciaEName } from "@/services/financeiro/inadimplenciaService";
+import {
+  garantirClienteAvulsoCotacao,
+  ehUuid,
+} from "@/services/cotacoes/cotacaoPublicaService";
 
 export interface GerarOSResult {
   success: boolean;
@@ -117,6 +121,24 @@ export const verificarOSJaGerada = async (
   }
 };
 
+// ─── Cliente da OS: resolve o uuid e cadastra o cliente da cotação se preciso ─
+const extrairWhatsAppDaObservacao = (texto: string | null | undefined): string => {
+  if (!texto) return "";
+  const match = texto.match(/WhatsApp:\s*([^·|]+)/i);
+  return match ? match[1].trim() : "";
+};
+
+/** Identifica a cotação de origem (marcador do badge "OS via Cotação Express"). */
+const extrairCotacaoIdDoOrcamento = (orc: Orcamento): string | null => {
+  const pedidoInterno = (orc.pedidoInterno || "").trim();
+  if (ehUuid(pedidoInterno)) return pedidoInterno;
+  const texto = orc.observacoesGerais || "";
+  const porId = texto.match(/ID da cotação:\s*([0-9a-f-]{36})/i);
+  if (porId?.[1]) return porId[1];
+  if (/Cotação web/i.test(texto)) return "web";
+  return null;
+};
+
 // ─── Converter orçamento em OS ───────────────────────────────────────────────
 export const gerarOSDoOrcamento = async (
   orc: Orcamento
@@ -135,6 +157,40 @@ export const gerarOSDoOrcamento = async (
         erro: `OS já gerada: ${check.osNumero}`,
         osId: check.osId,
         osNumero: check.osNumero,
+      };
+    }
+
+    // 2.1 Resolver o cliente (uuid). `ordens_servico.cliente` é uuid — gravar o
+    // nome causava "invalid input syntax for type uuid" e a OS ficava sem
+    // cliente ("Cliente não definido"). Cliente da cotação é cadastrado
+    // automaticamente aqui, se ainda não existir.
+    const nomeCliente = (orc.cliente || "").trim();
+    const clienteIdOrcamento = (orc.clienteId || "").trim();
+    let clienteUuid: string;
+
+    if (ehUuid(clienteIdOrcamento)) {
+      clienteUuid = clienteIdOrcamento;
+    } else if (ehUuid(nomeCliente)) {
+      clienteUuid = nomeCliente;
+    } else if (nomeCliente) {
+      const cliente = await garantirClienteAvulsoCotacao({
+        nome: nomeCliente,
+        telefone: extrairWhatsAppDaObservacao(orc.observacoesGerais),
+        origem: "Cotação Express",
+      });
+      if (!cliente.clienteId) {
+        return {
+          success: false,
+          erro:
+            cliente.erro ||
+            "Não foi possível cadastrar/identificar o cliente do orçamento.",
+        };
+      }
+      clienteUuid = cliente.clienteId;
+    } else {
+      return {
+        success: false,
+        erro: "Orçamento sem cliente definido. Selecione o cliente antes de gerar a OS.",
       };
     }
 
@@ -162,6 +218,9 @@ export const gerarOSDoOrcamento = async (
     }));
 
     // 5. Mapear carga do orçamento
+    // Marcador de origem (cotação) no jsonb — alimenta o badge
+    // "OS via Cotação Express" do Dashboard sem exigir migration.
+    const cotacaoOrigemId = extrairCotacaoIdDoOrcamento(orc);
     const carga = {
       tipo: orc.carga?.refrigerado ? "Refrigerada" : "Seca",
       descricao: orc.carga?.descricao || "",
@@ -188,6 +247,7 @@ export const gerarOSDoOrcamento = async (
       temperaturaMinima: 0,
       temperaturaMaxima: 0,
       observacoesCarga: orc.carga?.observacoes || "",
+      ...(cotacaoOrigemId ? { origem_cotacao: cotacaoOrigemId } : {}),
     };
 
     // 6. Histórico inicial da OS
@@ -204,7 +264,9 @@ export const gerarOSDoOrcamento = async (
     const osPayload: Record<string, any> = {
       numero: novoNumeroOS,
       data: new Date().toISOString().split("T")[0],
-      cliente: orc.cliente || "",
+      // `ordens_servico.cliente` é uuid (FK) — NUNCA gravar o nome aqui.
+      cliente: clienteUuid,
+      cliente_id: clienteUuid,
       unidade: orc.unidade || "",
       centro_custo: orc.centroCusto || "",
       tipo_operacao: orc.tipoOperacao || "Coleta e Entrega",

@@ -19,6 +19,11 @@
 // Etapas: 1 quem pediu → 2 o que transportar → 3 peso →
 //         4 dimensões → 5 retirada → 6 entrega → 7 pontos extras
 //         → 8 cálculo → 9 resumo da cotação → Fase 2 (detalhes/:id).
+//
+// UX avançada: Voltar passo a passo (preserva dados), layout centralizado
+// responsivo, autocomplete Mapbox com proximity SP, tipos de parada
+// (Retirada / Entrega / Retirada e Entrega) + "Adicionar Retorno" (clona a
+// origem como último ponto) e "Salvar PDF / Imprimir" no resumo.
 // ============================================================
 import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -38,9 +43,10 @@ import {
   Navigation,
   Package,
   Plus,
+  Printer,
   Ruler,
-  Sparkles,
   Truck,
+  Undo2,
   X,
 } from "lucide-react";
 import CampoEnderecoChat from "@/components/cotacao/CampoEnderecoChat";
@@ -68,12 +74,27 @@ const MENSAGEM_CALCULO = "Deixa comigo — calculando a rota e o melhor preço �
 const MENSAGEM_ERRO_CALCULO =
   "Ops, não conseguimos calcular essa rota agora. Confira os endereços e tente de novo.";
 
+type TipoParada = "retirada" | "entrega" | "retirada_entrega";
+
 interface ParadaEstado {
   endereco: string;
   sugestao: SugestaoEndereco | null;
+  tipo: TipoParada;
+  /** true quando a parada foi clonada da origem pelo "Adicionar Retorno". */
+  retorno?: boolean;
 }
 
-const paradaVazia = (): ParadaEstado => ({ endereco: "", sugestao: null });
+const paradaVazia = (tipo: TipoParada = "entrega"): ParadaEstado => ({
+  endereco: "",
+  sugestao: null,
+  tipo,
+});
+
+const ROTULO_TIPO_PARADA: Record<TipoParada, string> = {
+  retirada: "Retirada",
+  entrega: "Entrega",
+  retirada_entrega: "Retirada e Entrega",
+};
 
 const mascararTelefone = (valor: string): string => {
   const d = valor.replace(/\D/g, "").slice(0, 11);
@@ -83,8 +104,8 @@ const mascararTelefone = (valor: string): string => {
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 };
 
-const rotuloParada = (idx: number) =>
-  idx === 0 ? "retirada" : `entrega ${idx}`;
+const rotuloParada = (p: ParadaEstado) =>
+  p.retorno ? "Retorno" : (ROTULO_TIPO_PARADA[p.tipo] ?? "Entrega");
 
 const enderecoDaParada = (p: ParadaEstado): string =>
   p.sugestao?.place_name?.trim() || p.endereco.trim();
@@ -103,7 +124,10 @@ export default function CotacaoExpress() {
   const [profundidade, setProfundidade] = useState("");
   const [dimensoesIgnoradas, setDimensoesIgnoradas] = useState(false);
   const [recomendacao, setRecomendacao] = useState<RecomendacaoVeiculoCotacao | null>(null);
-  const [paradas, setParadas] = useState<ParadaEstado[]>([paradaVazia(), paradaVazia()]);
+  const [paradas, setParadas] = useState<ParadaEstado[]>([
+    paradaVazia("retirada"),
+    paradaVazia("entrega"),
+  ]);
   const [dataDesejada, setDataDesejada] = useState("");
   const [horaDesejada, setHoraDesejada] = useState("");
 
@@ -197,6 +221,31 @@ export default function CotacaoExpress() {
   const removerUltimaParada = () =>
     setParadas((prev) => (prev.length <= 2 ? prev : prev.slice(0, -1)));
 
+  /**
+   * "Adicionar Retorno": clona o Ponto 1 (origem) como último ponto com
+   * tipo Entrega (exibido como "Retorno") — a rota passa a retornar à
+   * origem e o cliente vê km/valor recalculados na etapa de cálculo.
+   */
+  const adicionarRetorno = (): string => {
+    const origem = paradas[0];
+    if (!origem || enderecoDaParada(origem).length < 3)
+      return "Preencha a retirada (Ponto 1) antes de adicionar o retorno.";
+    if (paradas.length >= MAX_PARADAS_COTACAO)
+      return `Limite de ${MAX_PARADAS_COTACAO} endereços por rota.`;
+    setParadas((prev) => [
+      ...prev,
+      { endereco: origem.endereco, sugestao: origem.sugestao, tipo: "entrega", retorno: true },
+    ]);
+    return "";
+  };
+
+  const handleAdicionarRetorno = (irParaExtras: boolean) => {
+    const limite = adicionarRetorno();
+    if (limite) return setErro(limite);
+    setErro("");
+    if (irParaExtras) setEtapa(7);
+  };
+
   const avancarIdentificacao = () => {
     const problema = validarIdentificacao();
     if (problema) return setErro(problema);
@@ -286,7 +335,7 @@ export default function CotacaoExpress() {
 
   const voltar = () => {
     setErro("");
-    setEtapa((e) => Math.max(5, e - 1));
+    setEtapa((e) => Math.max(1, e - 1));
   };
 
   // ------------------------------------------------------------
@@ -298,13 +347,15 @@ export default function CotacaoExpress() {
     setAvisoCadastro("");
 
     try {
-      const pontos: PontoRotaCotacao[] = paradas
+      const pontosComTipo = paradas
         .map((p) => ({
           endereco: enderecoDaParada(p),
           lat: p.sugestao?.lat ?? null,
           lng: p.sugestao?.lng ?? null,
+          tipo: p.tipo,
         }))
         .filter((p) => p.endereco.length > 0);
+      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, ...resto }) => resto);
 
       const resultado = await calcularRotaEFreteCotacao(
         pontos,
@@ -334,6 +385,7 @@ export default function CotacaoExpress() {
         carga_peso: peso ? Number(peso) : null,
         carga_dimensoes: dimensoesTexto,
         paradas: pontos.map((p) => p.endereco),
+        paradasTipos: pontosComTipo.map((p) => p.tipo),
         data_desejada: "",
         hora_desejada: "",
         status: STATUS_AGUARDANDO_APROVACAO,
@@ -363,13 +415,15 @@ export default function CotacaoExpress() {
     setProcessando(true);
     setErro("");
     try {
-      const pontos = paradas
+      const pontosComTipo = paradas
         .map((p) => ({
           endereco: enderecoDaParada(p),
           lat: p.sugestao?.lat ?? null,
           lng: p.sugestao?.lng ?? null,
+          tipo: p.tipo,
         }))
         .filter((p) => p.endereco.length > 0);
+      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, ...resto }) => resto);
 
       let id = cotacaoId;
       if (!id) {
@@ -380,6 +434,7 @@ export default function CotacaoExpress() {
           carga_peso: peso ? Number(peso) : null,
           carga_dimensoes: dimensoesTexto,
           paradas: pontos.map((p) => p.endereco),
+          paradasTipos: pontosComTipo.map((p) => p.tipo),
           data_desejada: dataDesejada,
           hora_desejada: horaDesejada,
           status: STATUS_AGUARDANDO_APROVACAO,
@@ -446,11 +501,11 @@ export default function CotacaoExpress() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col print:bg-white">
       <Cabecalho />
 
-      <main className="flex-1 px-4 pt-5 pb-40">
-        <div className="mx-auto w-full max-w-xl space-y-4">
+      <main className="flex-1 px-4 pt-5 pb-40 print:px-0 print:pt-0 print:pb-0">
+        <div className="mx-auto w-full max-w-2xl space-y-4">
           {/* Cartão da etapa atual (wizard minimalista) */}
           <AnimatePresence mode="wait">
             <motion.div
@@ -459,7 +514,7 @@ export default function CotacaoExpress() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -32 }}
               transition={{ duration: 0.28 }}
-              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:rounded-xl sm:shadow-lg print:rounded-none print:border-0 print:p-0 print:shadow-none"
             >
               {/* ETAPA 1 — quem pediu */}
               {etapa === 1 && (
@@ -676,6 +731,15 @@ export default function CotacaoExpress() {
                     >
                       <Plus className="mr-1.5 h-4 w-4" /> Outro ponto
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl border-slate-300 text-slate-600 hover:bg-slate-50"
+                      onClick={() => handleAdicionarRetorno(true)}
+                      disabled={paradas.length >= MAX_PARADAS_COTACAO}
+                    >
+                      <Undo2 className="mr-1.5 h-4 w-4" /> Adicionar Retorno
+                    </Button>
                     <span className="text-xs font-semibold text-slate-400">
                       {paradas.length}/{MAX_PARADAS_COTACAO} pontos
                     </span>
@@ -702,7 +766,7 @@ export default function CotacaoExpress() {
                         </span>
                         <span className="flex shrink-0 items-center gap-2">
                           <span className="rounded-full bg-white px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                            {rotuloParada(idx)}
+                            {rotuloParada(p)}
                           </span>
                           {idx >= 2 && (
                             <button
@@ -734,6 +798,23 @@ export default function CotacaoExpress() {
                     placeholder="Mais um endereço (CEP, bairro ou rua)"
                     autoFocus
                   />
+                  {/* Tipo da última parada (retirada / entrega / retirada e entrega) */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["retirada", "entrega", "retirada_entrega"] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => trocarParada(paradas.length - 1, { tipo: t })}
+                        className={
+                          paradas[paradas.length - 1]?.tipo === t
+                            ? "h-10 rounded-xl bg-orange-500 px-1 text-xs font-bold uppercase tracking-wide text-white"
+                            : "h-10 rounded-xl border border-slate-300 bg-white px-1 text-xs font-bold uppercase tracking-wide text-slate-500 hover:border-orange-400"
+                        }
+                      >
+                        {ROTULO_TIPO_PARADA[t]}
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
@@ -743,6 +824,15 @@ export default function CotacaoExpress() {
                       disabled={paradas.length >= MAX_PARADAS_COTACAO}
                     >
                       <Plus className="mr-1.5 h-4 w-4" /> Outro ponto
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl border-slate-300 text-slate-600 hover:bg-slate-50"
+                      onClick={() => handleAdicionarRetorno(false)}
+                      disabled={paradas.length >= MAX_PARADAS_COTACAO}
+                    >
+                      <Undo2 className="mr-1.5 h-4 w-4" /> Adicionar Retorno
                     </Button>
                     <button
                       type="button"
@@ -790,10 +880,28 @@ export default function CotacaoExpress() {
               {/* ETAPA 9 — RESUMO DA COTAÇÃO (aprovação → Fase 2) */}
               {etapa === 9 && precificacao && (
                 <div className="space-y-4">
-                  <Rotulo
-                    titulo="Resumo da Cotação"
-                    subtitulo="Confira a carga, o veículo indicado e o valor. Número e contato de quem recebe pedimos na próxima tela."
-                  />
+                  {/* Cabeçalho exclusivo da impressão (versão colorida do logo) */}
+                  <div className="hidden print:mb-4 print:block">
+                    <img
+                      src="/logos/logo-conexao-colorido.png"
+                      alt="Conexão Express"
+                      className="h-10 w-auto print:h-20"
+                    />
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                      Proposta de Cotação — Conexão Express
+                    </p>
+                  </div>
+                  <div className="flex items-start justify-between gap-3 print:hidden">
+                    <Rotulo
+                      titulo="Resumo da Cotação"
+                      subtitulo="Confira a carga, o veículo indicado e o valor. Número e contato de quem recebe pedimos na próxima tela."
+                    />
+                    <img
+                      src="/logos/logo-conexao-oficial.png"
+                      alt="Conexão Express"
+                      className="h-12 w-auto shrink-0"
+                    />
+                  </div>
 
                   {/* O que será transportado */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -815,7 +923,7 @@ export default function CotacaoExpress() {
                   <div
                     className={
                       recomendacao?.cabeMoto
-                        ? "rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+                        ? "rounded-2xl border border-orange-200 bg-orange-50/70 p-4"
                         : "rounded-2xl border border-amber-200 bg-amber-50/70 p-4"
                     }
                   >
@@ -830,7 +938,7 @@ export default function CotacaoExpress() {
                         <span
                           className={
                             recomendacao.cabeMoto
-                              ? "inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white"
+                              ? "inline-flex items-center gap-1 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-bold text-white"
                               : "inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white"
                           }
                         >
@@ -856,9 +964,9 @@ export default function CotacaoExpress() {
                   </div>
 
                   {/* VALOR DO FRETE EM DESTAQUE */}
-                  <div className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50 to-white p-4">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-600">
-                      <Sparkles className="h-3.5 w-3.5" /> Proposta instantânea
+                  <div className="rounded-2xl border border-orange-200 bg-gradient-to-b from-orange-50 to-white p-4">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-orange-600">
+                      Proposta instantânea
                     </div>
                     {frasePreco && (
                       <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">
@@ -918,16 +1026,27 @@ export default function CotacaoExpress() {
                     </div>
                   </div>
 
-                  <Button
-                    type="button"
-                    className="h-13 w-full rounded-xl bg-emerald-600 text-base font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-700"
-                    onClick={() => void aprovar()}
-                    disabled={processando}
-                  >
-                    <Truck className="mr-2 h-5 w-5" />
-                    {processando ? "Registrando..." : "Aprovar Frete"}
-                  </Button>
-                  <p className="text-center text-xs text-slate-400">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 print:hidden">
+                    <Button
+                      type="button"
+                      className="h-13 w-full rounded-xl bg-orange-500 text-base font-bold text-white shadow-lg shadow-orange-500/30 hover:bg-orange-600"
+                      onClick={() => void aprovar()}
+                      disabled={processando}
+                    >
+                      <Truck className="mr-2 h-5 w-5" />
+                      {processando ? "Registrando..." : "Aprovar Frete"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-13 w-full rounded-xl border-slate-300 text-base font-bold text-slate-700 hover:bg-slate-50"
+                      onClick={() => window.print()}
+                    >
+                      <Printer className="mr-2 h-5 w-5" />
+                      Salvar PDF / Imprimir
+                    </Button>
+                  </div>
+                  <p className="text-center text-xs text-slate-400 print:hidden">
                     Sem compromisso — depois é só confirmar o número de quem recebe.
                   </p>
                 </div>
@@ -937,12 +1056,12 @@ export default function CotacaoExpress() {
 
           {/* Erros */}
           {erro && etapa !== 8 && (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600 print:hidden">
               {erro}
             </p>
           )}
           {avisoCadastro && etapa === 9 && (
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-700">
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-700 print:hidden">
               {avisoCadastro}
             </p>
           )}
@@ -951,14 +1070,14 @@ export default function CotacaoExpress() {
 
       {/* Barra de ações fixa (mobile-first) */}
       {etapa <= 7 && (
-        <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3">
+        <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur print:hidden">
+          <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3">
             <Button
               type="button"
               variant="ghost"
               className="h-12 rounded-xl text-slate-500"
               onClick={voltar}
-              disabled={etapa <= 5}
+              disabled={etapa <= 1}
             >
               <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
             </Button>
@@ -975,12 +1094,22 @@ export default function CotacaoExpress() {
 // ------------------------------------------------------------
 
 function Cabecalho() {
+  const [logoOk, setLogoOk] = useState(true);
   return (
-    <header className="px-4 py-4 flex items-center justify-between">
-      <span className="text-sm font-extrabold tracking-tight text-slate-900">
-        ⚡ CONEXÃO EXPRESS
-      </span>
-      <span className="rounded-full bg-orange-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-orange-700">
+    <header className="bg-slate-900 px-4 py-3 flex items-center justify-between print:hidden">
+      {logoOk ? (
+        <img
+          src="/logos/logo-conexao-oficial.png"
+          alt="Conexão Express"
+          className="h-12 w-auto"
+          onError={() => setLogoOk(false)}
+        />
+      ) : (
+        <span className="text-sm font-extrabold tracking-tight text-white">
+          ⚡ CONEXÃO EXPRESS
+        </span>
+      )}
+      <span className="rounded-full bg-orange-500/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-orange-300">
         Cotação Express
       </span>
     </header>
@@ -1007,12 +1136,12 @@ function CardVeiculoIndicado({
     <div
       className={
         recomendacao.cabeMoto
-          ? "flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3"
+          ? "flex items-start gap-2.5 rounded-2xl border border-orange-200 bg-orange-50/70 p-3"
           : "flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/70 p-3"
       }
     >
       <Package
-        className={`mt-0.5 h-4 w-4 shrink-0 ${recomendacao.cabeMoto ? "text-emerald-600" : "text-amber-600"}`}
+        className={`mt-0.5 h-4 w-4 shrink-0 ${recomendacao.cabeMoto ? "text-orange-600" : "text-amber-600"}`}
       />
       <div className="min-w-0">
         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1020,7 +1149,7 @@ function CardVeiculoIndicado({
         </p>
         <p className="mt-0.5 text-sm font-bold text-slate-800">{recomendacao.nome}</p>
         <p
-          className={`mt-0.5 text-xs font-semibold ${recomendacao.cabeMoto ? "text-emerald-700" : "text-amber-700"}`}
+          className={`mt-0.5 text-xs font-semibold ${recomendacao.cabeMoto ? "text-orange-600" : "text-amber-700"}`}
         >
           {recomendacao.slaRotulo}
         </p>
@@ -1040,15 +1169,11 @@ function BotaoPrincipal({ etapa, onAvancar }: { etapa: number; onAvancar: () => 
   return (
     <Button
       type="button"
-      className={
-        calcular
-          ? "h-12 flex-1 rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-700"
-          : "h-12 flex-1 rounded-xl bg-orange-500 font-bold text-white hover:bg-orange-600"
-      }
+      className="h-12 flex-1 rounded-xl bg-orange-500 font-bold text-white hover:bg-orange-600"
       onClick={onAvancar}
     >
       {calcular ? "Calcular agora" : "Continuar"}
-      {calcular ? <Sparkles className="ml-2 h-4 w-4" /> : <ArrowRight className="ml-2 h-4 w-4" />}
+      {!calcular && <ArrowRight className="ml-2 h-4 w-4" />}
     </Button>
   );
 }
@@ -1062,7 +1187,7 @@ function InfoPrazo({
 }) {
   return (
     <div className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1.5 font-semibold text-slate-600 ring-1 ring-slate-200">
-      <span className="text-emerald-600">{icone}</span>
+      <span className="text-orange-600">{icone}</span>
       <span className="min-w-0 truncate">{children}</span>
     </div>
   );

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
+import AlertaOscotacaoExpress from "@/components/dashboard/AlertaOscotacaoExpress";
 import { useDashboardFilters } from "@/contexts/DashboardFilterContext";
 
 const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
@@ -170,6 +171,9 @@ const TabExecutivo = () => {
         <KpiCard title="OS em Aberto" value={fmtN(osEmAberto)} icon={Clock} />
         <KpiCard title="SLA no Prazo" value={`${slaPct}%`} icon={Star} trend={slaPct >= 80 ? "up" : "down"} />
       </div>
+
+      {/* OS via Cotação Express pendentes de prestador */}
+      <AlertaOscotacaoExpress />
 
       {/* KPIs Cadastrais */}
       <div className="grid grid-cols-3 gap-4">

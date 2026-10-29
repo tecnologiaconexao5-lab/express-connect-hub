@@ -31,6 +31,7 @@ import {
   montarOrcamentoDaCotacao,
   vincularCotacaoAoOrcamento,
   marcarCotacaoAguardandoDetalhes,
+  garantirClienteAvulsoCotacao,
 } from "@/services/cotacoes/cotacaoPublicaService";
 
 const ITEMS_PER_PAGE = 8;
@@ -82,7 +83,23 @@ const OrcamentosLista = () => {
         const res = await buscarCotacao(cotacaoIdParam);
         if (res.ok && res.dado) {
           setCotacaoVinculada(res.dado.id);
-          setOrcamentoSelecionado(montarOrcamentoDaCotacao(res.dado));
+          const orcamento = montarOrcamentoDaCotacao(res.dado);
+          // Cadastra/reaproveita o cliente da cotação (Nome + WhatsApp da Etapa 1)
+          // para que a conversão em OS grave o uuid — nunca o nome — em
+          // `ordens_servico.cliente` ("Cliente não definido" deixa de ocorrer).
+          const cliente = await garantirClienteAvulsoCotacao({
+            nome: res.dado.nome_cliente || "",
+            telefone: res.dado.telefone,
+            origem: "Cotação Express",
+          });
+          if (cliente.clienteId) {
+            orcamento.clienteId = cliente.clienteId;
+          } else if (cliente.erro) {
+            toast.warning("Cliente da cotação não pôde ser cadastrado automaticamente.", {
+              description: cliente.erro,
+            });
+          }
+          setOrcamentoSelecionado(orcamento);
           setModoForm("novo");
           toast.success("Cotação do site carregada no Novo Orçamento.", {
             description: `${res.dado.nome_cliente || "Cliente"} · ${res.dado.paradas.length} endereço(s)`,

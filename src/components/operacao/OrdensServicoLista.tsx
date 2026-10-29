@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import PaginationBar from "@/components/ui/PaginationBar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -66,6 +67,13 @@ const OrdensServicoLista = () => {
   // REFINAMENTO-FLUXO-ALOCACAO-TMS: foco rápido em OSs órfãs (sem prestador).
   const [somenteSemPrestador, setSomenteSemPrestador] = useState(false);
   const [acaoOrfa, setAcaoOrfa] = useState<{ osId: string; tipo: "rede" | "base" } | null>(null);
+  // Alocação rápida de prestador para OS sem prestador (coluna Ações).
+  const [osAlocando, setOsAlocando] = useState<OrdemServico | null>(null);
+  const [prestadorAlocacao, setPrestadorAlocacao] = useState<string | null>(null);
+  const [prestadorAlocacaoNome, setPrestadorAlocacaoNome] = useState("");
+  const [motoristaAlocacao, setMotoristaAlocacao] = useState("");
+  const [repasseAlocacao, setRepasseAlocacao] = useState("");
+  const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
   const PAGE_SIZE = 25;
 
   useEffect(() => {
@@ -182,6 +190,74 @@ const OrdensServicoLista = () => {
   /** OS órfã: sem prestador vinculado e ainda não encerrada. */
   const osSemPrestador = (os: OrdemServico) =>
     !(os.prestador || "").trim() && !STATUS_ENCERRADOS.includes(String(os.status));
+
+  const fecharAlocacao = () => {
+    setOsAlocando(null);
+    setPrestadorAlocacao(null);
+    setPrestadorAlocacaoNome("");
+    setMotoristaAlocacao("");
+    setRepasseAlocacao("");
+  };
+
+  const abrirAlocacao = (os: OrdemServico) => {
+    setOsAlocando(os);
+    setPrestadorAlocacao(null);
+    setPrestadorAlocacaoNome("");
+    setMotoristaAlocacao("");
+    const repasseAtual = Number(os.custoPrestador);
+    setRepasseAlocacao(repasseAtual > 0 ? String(repasseAtual) : "");
+  };
+
+  const handleAlocarPrestador = async () => {
+    if (!osAlocando) return;
+    if (!prestadorAlocacao) {
+      toast.error("Selecione o prestador.");
+      return;
+    }
+    const repasse = Number(String(repasseAlocacao).replace(",", "."));
+    if (!Number.isFinite(repasse) || repasse <= 0) {
+      toast.error("Informe o repasse do prestador (maior que zero).");
+      return;
+    }
+
+    setSalvandoAlocacao(true);
+    try {
+      const cargaAtual =
+        osAlocando.carga && typeof osAlocando.carga === "object" ? osAlocando.carga : {};
+      const cargaNova = {
+        ...cargaAtual,
+        ...(motoristaAlocacao.trim() ? { motorista: motoristaAlocacao.trim() } : {}),
+      };
+
+      // `prestador` e `prestador_id` recebem o mesmo UUID (padrão OsMobile) —
+      // o gatilho financeiro cria Receber/Pagar/Pagamentos no UPDATE.
+      // O status da OS é preservado (decisão desta missão).
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update({
+          prestador: prestadorAlocacao,
+          prestador_id: prestadorAlocacao,
+          custo_prestador: repasse,
+          carga: cargaNova,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", osAlocando.id);
+
+      if (error) throw error;
+
+      toast.success(
+        `Prestador${prestadorAlocacaoNome ? ` ${prestadorAlocacaoNome}` : ""} alocado na OS ${osAlocando.numero || ""}.`
+      );
+      fecharAlocacao();
+      fetchOrdens();
+    } catch (err) {
+      toast.error(
+        "Erro ao alocar prestador: " + (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setSalvandoAlocacao(false);
+    }
+  };
 
   const handlePublicarNaRede = async (os: OrdemServico) => {
     if (!os.id) return;
@@ -662,6 +738,16 @@ const OrdensServicoLista = () => {
                           {semPrestador && (
                             <>
                               <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1 border-orange-200 bg-orange-50 px-2 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 hover:text-orange-800"
+                                title="Alocar Prestador"
+                                disabled={acaoOrfa?.osId === os.id}
+                                onClick={(e) => { e.stopPropagation(); abrirAlocacao(os); }}
+                              >
+                                <UserPlus className="w-3.5 h-3.5" /> Alocar Prestador
+                              </Button>
+                              <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 hover:bg-violet-50 hover:text-violet-600"
@@ -711,6 +797,81 @@ const OrdensServicoLista = () => {
       </Card>
 
       {/* Modal Confirmação Exclusão */}
+      {/* Modal Alocar Prestador */}
+      <Dialog open={!!osAlocando} onOpenChange={(open) => { if (!open) fecharAlocacao(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-orange-500" /> Alocar Prestador
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/40 p-3 text-xs">
+              <p className="font-semibold text-slate-800">
+                {osAlocando?.numero || "OS"}
+                {osAlocando?.cliente ? ` · ${osAlocando.cliente}` : ""}
+              </p>
+              <p className="text-muted-foreground">
+                O status da OS é preservado; ao alocar, o financeiro (receber, pagar e pagamentos) é gerado
+                automaticamente.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Prestador *</Label>
+              <SearchableSelect
+                table="prestadores"
+                labelField="nome_completo"
+                searchFields={["nome_completo", "cpf_cnpj", "telefone", "whatsapp"]}
+                placeholder="Buscar prestador (nome, CPF/CNPJ, telefone)..."
+                value={prestadorAlocacao}
+                onChange={(value, record) => {
+                  setPrestadorAlocacao(value);
+                  setPrestadorAlocacaoNome(String(record?.nome_completo || ""));
+                }}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Nome do motorista (opcional)</Label>
+              <Input
+                value={motoristaAlocacao}
+                onChange={(e) => setMotoristaAlocacao(e.target.value)}
+                placeholder="Ex.: João Silva"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Repasse do prestador (R$) *</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={repasseAlocacao}
+                onChange={(e) => setRepasseAlocacao(e.target.value)}
+                placeholder="0,00"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Obrigatório (maior que zero) — base do repasse e do financeiro gerado.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={fecharAlocacao} disabled={salvandoAlocacao}>
+              Cancelar
+            </Button>
+            <Button
+              className="gap-2 bg-orange-500 text-white hover:bg-orange-600"
+              onClick={handleAlocarPrestador}
+              disabled={salvandoAlocacao}
+            >
+              {salvandoAlocacao ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+              Alocar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!osParaExcluir} onOpenChange={() => { setOsParaExcluir(null); setSenhaAdmin(""); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

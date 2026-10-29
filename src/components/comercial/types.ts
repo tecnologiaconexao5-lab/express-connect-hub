@@ -110,6 +110,8 @@ export interface Orcamento {
   id: string;
   numero: string;
   cliente: string;
+  /** UUID do cliente em `clientes` (obrigatório para gerar OS — `ordens_servico.cliente` é uuid). */
+  clienteId?: string;
   clienteCnpj: string;
   unidade: string;
   centroCusto: string;

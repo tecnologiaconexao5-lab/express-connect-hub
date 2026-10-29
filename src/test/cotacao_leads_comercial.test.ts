@@ -16,6 +16,13 @@ const comercialSrc = readSrc("src/pages/Comercial.tsx");
 const sidebarSrc = readSrc("src/lib/sidebarData.ts");
 const hookSrc = readSrc("src/hooks/useCotacoesPublicasRealtime.ts");
 const orcamentosSrc = readSrc("src/components/comercial/OrcamentosLista.tsx");
+const orcamentoFormSrc = readSrc("src/components/comercial/OrcamentoForm.tsx");
+const orcamentoToOSSrc = readSrc("src/services/comercial/orcamentoToOSService.ts");
+const alertaOsSrc = readSrc("src/components/dashboard/AlertaOscotacaoExpress.tsx");
+const tabExecutivoSrc = readSrc("src/components/dashboard/TabExecutivo.tsx");
+const tabComercialSrc = readSrc("src/components/dashboard/TabComercial.tsx");
+const ordensListaSrc = readSrc("src/components/operacao/OrdensServicoLista.tsx");
+const dbMappersSrc = readSrc("src/lib/dbMappers.ts");
 
 describe("A) Service — buscarLeadsCotacoes + helpers de exibição", () => {
   it("A.1 exporta buscarLeadsCotacoes com filtro .in('status') + order por created_at", () => {
@@ -145,5 +152,60 @@ describe("E) Alerta realtime na Torre (contrato F.2 preservado)", () => {
 
   it("E.3 navegação continua levando ao pré-preenchimento do orçamento", () => {
     expect(hookSrc).toContain("onAbrirCotacao");
+  });
+});
+
+describe("F) Cliente avulso da cotação + badge OS + alocação de prestador", () => {
+  it("F.1 garantirClienteAvulsoCotacao deduplica e cria em pre-cadastro sem .select()", () => {
+    expect(serviceSrc).toContain("export async function garantirClienteAvulsoCotacao");
+    expect(serviceSrc).toContain('.from("clientes")');
+    expect(serviceSrc).toContain(".ilike(coluna, nome)");
+    expect(serviceSrc).toContain('status: "pre-cadastro"');
+    expect(serviceSrc).toContain("payload.id = novoId");
+    expect(serviceSrc).toContain('rpc("current_tenant_id_safe")');
+    expect(serviceSrc).not.toContain(".insert([payload]).select");
+  });
+
+  it("F.2 gerarOSDoOrcamento grava o UUID do cliente (nunca o nome)", () => {
+    expect(orcamentoToOSSrc).toContain("garantirClienteAvulsoCotacao");
+    expect(orcamentoToOSSrc).toContain("cliente: clienteUuid");
+    expect(orcamentoToOSSrc).toContain("cliente_id: clienteUuid");
+    expect(orcamentoToOSSrc).not.toContain('cliente: orc.cliente || ""');
+    expect(orcamentoToOSSrc).toContain("sem cliente definido");
+  });
+
+  it("F.3 conversão marca carga.origem_cotacao para o badge", () => {
+    expect(orcamentoToOSSrc).toContain("extrairCotacaoIdDoOrcamento");
+    expect(orcamentoToOSSrc).toContain("origem_cotacao: cotacaoOrigemId");
+    expect(orcamentoToOSSrc).toContain("ID da cotação:");
+  });
+
+  it("F.4 prefill da cotação define o clienteId do orçamento", () => {
+    expect(orcamentosSrc).toContain("garantirClienteAvulsoCotacao");
+    expect(orcamentosSrc).toContain(".clienteId = cliente.clienteId");
+    expect(dbMappersSrc).toContain("d.cliente_id = form.clienteId");
+    expect(dbMappersSrc).toContain("d.pedido_interno = form.pedidoInterno");
+  });
+
+  it("F.5 OrcamentoForm delega a conversão ao serviço (sem insert legado)", () => {
+    expect(orcamentoFormSrc).toContain("gerarOSDoOrcamento(comDerivadosCarga(data))");
+    expect(orcamentoFormSrc).not.toContain('from("os_enderecos")');
+  });
+
+  it("F.6 badge de OS via Cotação Express usa o marcador e leva para a aba OS", () => {
+    expect(alertaOsSrc).toContain("carga->>origem_cotacao");
+    expect(alertaOsSrc).toContain('"/operacao?tab=os"');
+    expect(alertaOsSrc).toContain("STATUS_ENCERRADOS");
+    expect(tabExecutivoSrc).toContain("<AlertaOscotacaoExpress />");
+    expect(tabComercialSrc).toContain("<AlertaOscotacaoExpress />");
+  });
+
+  it("F.7 Alocar Prestador grava prestador/prestador_id/repasse e preserva o status", () => {
+    expect(ordensListaSrc).toContain("Alocar Prestador");
+    expect(ordensListaSrc).toContain("prestador_id: prestadorAlocacao");
+    expect(ordensListaSrc).toContain("custo_prestador: repasse");
+    expect(ordensListaSrc).toContain('table="prestadores"');
+    expect(ordensListaSrc).toContain("repasse do prestador (maior que zero)");
+    expect(ordensListaSrc).not.toContain('status: "agendada"');
   });
 });

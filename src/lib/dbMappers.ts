@@ -1455,6 +1455,7 @@ export interface OrcamentoForm {
   id?: string;
   numero?: string;
   cliente?: string;
+  clienteId?: string;
   clienteCnpj?: string;
   unidade?: string;
   centroCusto?: string;
@@ -1492,6 +1493,7 @@ export interface OrcamentoRow {
   id?: string;
   numero?: string;
   cliente?: string;
+  cliente_id?: string;
   cliente_cnpj?: string;
   unidade?: string;
   centro_custo?: string;
@@ -1533,6 +1535,7 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
 
   if (has(form.numero)) d.numero = form.numero;
   if (has(form.cliente)) d.cliente = form.cliente;
+  if (has(form.clienteId)) d.cliente_id = form.clienteId;
   if (has(form.clienteCnpj)) d.cliente_cnpj = form.clienteCnpj;
   if (has(form.unidade)) d.unidade = form.unidade;
   if (has(form.centroCusto)) d.centro_custo = form.centroCusto;
@@ -1542,7 +1545,8 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
   if (has(form.tipoOperacao)) d.tipo_operacao = form.tipoOperacao;
   if (has(form.modalidade)) d.modalidade = form.modalidade;
   if (has(form.prioridade)) d.prioridade = form.prioridade;
-  // if (has(form.pedidoInterno)) d.pedido_interno = form.pedidoInterno; // TODO: Add column
+  // pedido_interno (coluna existente em produção) — vincula o orçamento à cotação
+  if (has(form.pedidoInterno)) d.pedido_interno = form.pedidoInterno;
   if (has(form.observacoesGerais)) d.observacoes_gerais = form.observacoesGerais;
   if (has(form.status)) d.status = form.status;
 
@@ -1638,6 +1642,7 @@ export const fromOrcamentoRow = (item: OrcamentoRow): OrcamentoForm => ({
   id: item.id,
   numero: item.numero || "",
   cliente: item.cliente || "",
+  clienteId: item.cliente_id || item.clienteId,
   clienteCnpj: item.cliente_cnpj || item.clienteCnpj || "",
   unidade: item.unidade || "",
   centroCusto: item.centro_custo || item.centroCusto || "",
@@ -1697,6 +1702,7 @@ export const toOrcamentoDomain = (row: Record<string, any>): any => {
   return {
     ...row,
     valores,
+    clienteId: row.cliente_id ?? row.clienteId,
     dataEmissao: row.data_emissao ?? row.dataEmissao ?? "",
     clienteCnpj: row.cliente_cnpj ?? row.clienteCnpj ?? "",
     valorBase: valores.valorBase ?? 0,

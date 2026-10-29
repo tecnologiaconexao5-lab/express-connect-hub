@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { buscarSugestoesEnderecos, type SugestaoEndereco } from "@/services/maps/mapboxProvider";
+import { cepCompleto8, limparCepParcialDoTexto } from "@/lib/cepCotacao";
 
 const DEBOUNCE_MS = 300;
 const VIACEP_TIMEOUT_MS = 8000;
@@ -51,10 +52,174 @@ const formatarCep = (valor: string): string => {
   return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
 };
 
+/** Detecta um CEP brasileiro válido de 8 dígitos no texto digitado (ignora traço). */
+const ehCepValido = (texto: string): boolean => /^\d{5}-?\d{3}$/.test(texto.trim());
+
+/**
+ * Monta o endereço manual confirmado — o CEP só entra na string se
+ * tiver exatamente 8 dígitos (`cepCompleto8`), nunca um parcial.
+ */
 const montarEnderecoManual = (c: CamposManual): string =>
-  [c.rua.trim(), c.bairro.trim(), c.municipio.trim(), formatarCep(c.cep)]
+  [c.rua.trim(), c.bairro.trim(), c.municipio.trim(), cepCompleto8(c.cep)]
     .filter(Boolean)
     .join(", ");
+
+interface RespostaViaCep {
+  erro?: boolean;
+  cep?: string;
+  logradouro?: string;
+  bairro?: string;
+  complemento?: string;
+  unidade?: string;
+  localidade?: string;
+  uf?: string;
+}
+
+/** Consulta o ViaCEP (ou null em falha/abort). */
+async function consultarViaCepJson(
+  digitos: string,
+  signal?: AbortSignal,
+): Promise<RespostaViaCep | null> {
+  try {
+    const resp = await fetch(`https://viacep.com.br/ws/${digitos}/json/`, { signal });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as RespostaViaCep;
+    if (json.erro || !json.localidade) return null;
+    return json;
+  } catch {
+    return null;
+  }
+}
+
+/** Monta o place_name enriquecido (rua, bairro, cidade - UF, CEP). */
+function montarPlaceName(s: SugestaoEndereco): string {
+  const rua = [s.rua, s.numero].filter(Boolean).join(", ");
+  const cidadeUf = s.cidade ? (s.uf ? `${s.cidade} - ${s.uf}` : s.cidade) : s.uf || "";
+  return [rua, s.bairro, cidadeUf, cepCompleto8(s.cep || "")].filter(Boolean).join(", ");
+}
+
+/**
+ * Monta uma SugestaoEndereco a partir de uma resposta VÁLIDA do ViaCEP
+ * (dados oficiais dos Correios). lat/lng ficam NaN de propósito: o
+ * cálculo de rota geocoda o endereço completo em background quando
+ * precisar de coordenadas (Mapbox só entra nesse momento, pelo texto).
+ */
+function montarSugestaoViaCep(json: RespostaViaCep): SugestaoEndereco {
+  const cep = cepCompleto8(json.cep || "");
+  const rua = json.logradouro || "";
+  const bairro = json.bairro || json.complemento || json.unidade || "";
+  const cidade = json.localidade || "";
+  const uf = json.uf || "";
+  const cidadeUf = cidade ? (uf ? `${cidade} - ${uf}` : cidade) : uf || "";
+  const placeName = [rua, bairro, cidadeUf, cep].filter(Boolean).join(", ");
+  return {
+    id: `viacep-${cep}`,
+    place_name: placeName,
+    rua,
+    numero: "",
+    bairro,
+    cidade,
+    uf,
+    cep,
+    lat: Number.NaN,
+    lng: Number.NaN,
+  };
+}
+
+/**
+ * Busca REVERSA no ViaCEP (UF + cidade + logradouro) — resgata o CEP
+ * completo (8 dígitos) quando o Mapbox só devolveu um CEP parcial
+ * (ex.: "06473") ou nenhum CEP. Retorna null em falha/nenhum match.
+ */
+async function consultarViaCepPorEndereco(
+  uf: string,
+  cidade: string,
+  logradouro: string,
+  prefixoParcial = "",
+): Promise<RespostaViaCep | null> {
+  try {
+    const url =
+      `https://viacep.com.br/ws/${encodeURIComponent(uf.trim().toUpperCase())}` +
+      `/${encodeURIComponent(cidade.trim())}/${encodeURIComponent(logradouro.trim())}/json/`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const dados: unknown = await resp.json();
+    if (!Array.isArray(dados)) return null;
+    const candidatos = (dados as RespostaViaCep[]).filter((item) => {
+      const c = somenteDigitos(item.cep || "");
+      return c.length === 8 && !item.erro && item.localidade;
+    });
+    if (candidatos.length === 0) return null;
+    // Prioriza o resultado cujo CEP casa com o prefixo parcial original (ex.: "06473")
+    const comPrefixo = prefixoParcial
+      ? candidatos.find((item) => somenteDigitos(item.cep || "").startsWith(prefixoParcial))
+      : undefined;
+    return comPrefixo || candidatos[0];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Corrige sugestões Mapbox consultando o ViaCEP e GARANTE CEP estrito:
+ * - CEP completo (8 dígitos) faltando bairro/rua → busca pelo CEP;
+ * - CEP parcial/ausente + rua/cidade/UF → busca reversa (UF/cidade/logradouro)
+ *   para resgatar o CEP de 8 dígitos;
+ * - se ainda não houver 8 dígitos → CEP fica vazio (nunca exibir parcial);
+ * - o place_name é reconstruído/limpo para não conter o CEP parcial.
+ */
+async function enriquecerSugestaoComViaCep(
+  item: SugestaoEndereco,
+): Promise<SugestaoEndereco> {
+  const digitosOriginais = somenteDigitos(item.cep || "");
+  const cepValido = digitosOriginais.length === 8;
+  const faltaBairro = !item.bairro?.trim();
+  const faltaRua = !item.rua?.trim();
+  const temBaseReversa = Boolean(item.rua?.trim() && item.cidade?.trim() && item.uf?.trim());
+
+  let cepFinal = cepValido ? formatarCep(digitosOriginais) : "";
+  let json: RespostaViaCep | null = null;
+
+  if (cepValido && (faltaBairro || faltaRua)) {
+    // Cenário 1: CEP completo presente mas faltando bairro/rua → busca pelo CEP
+    json = await consultarViaCepJson(digitosOriginais);
+  } else if (!cepValido && temBaseReversa) {
+    // Cenário 2: CEP parcial/ausente → busca reversa para resgatar 8 dígitos
+    json = await consultarViaCepPorEndereco(
+      item.uf as string,
+      item.cidade as string,
+      item.rua as string,
+      digitosOriginais,
+    );
+    const resgatado = somenteDigitos(json?.cep || "");
+    if (resgatado.length === 8) cepFinal = formatarCep(resgatado);
+  }
+
+  // Resultado final com CEP estrito: só 8 dígitos formatados ou ""
+  const enriquecida: SugestaoEndereco = {
+    ...item,
+    cep: cepFinal,
+    rua: item.rua?.trim() || json?.logradouro || "",
+    bairro: item.bairro?.trim() || json?.bairro || json?.complemento || json?.unidade || "",
+    cidade: item.cidade?.trim() || json?.localidade || "",
+    uf: item.uf?.trim() || json?.uf || "",
+  };
+
+  const mudou =
+    enriquecida.rua !== item.rua ||
+    enriquecida.bairro !== item.bairro ||
+    enriquecida.cidade !== item.cidade ||
+    enriquecida.uf !== item.uf ||
+    enriquecida.cep !== item.cep;
+  if (!mudou) return item;
+
+  // place_name sem CEP parcial: reconstrói quando há base; senão limpa o texto original
+  const temBase = Boolean(enriquecida.rua?.trim() || enriquecida.cidade?.trim());
+  const placeFinal = temBase
+    ? montarPlaceName(enriquecida)
+    : limparCepParcialDoTexto(item.place_name || "", digitosOriginais);
+  return { ...enriquecida, place_name: placeFinal || item.place_name };
+}
 
 /** Linha do destrinchamento (rua/bairro/cidade/CEP) do endereço confirmado. */
 function LinhaEndereco({ rotulo, valor }: { rotulo: string; valor: string }) {
@@ -119,6 +284,30 @@ export default function CampoEnderecoChat({
     const timer = window.setTimeout(async () => {
       setCarregando(true);
       try {
+        // ---- INTERCEPTADOR DE CEP (bug: Mapbox trata CEP como texto genérico) ----
+        // Um CEP de 8 dígitos (ex.: "04194250") digitado no autocomplete ia
+        // direto ao Mapbox text search, que devolve endereços absurdos (ex.:
+        // Santa Catarina para um CEP de SP). Quando o cliente digita um CEP
+        // válido, paramos o Mapbox e consultamos o ViaCEP (dados oficiais dos
+        // Correios); o Mapbox só entra depois, em background, para lat/lng.
+        if (ehCepValido(termo)) {
+          const digitos = somenteDigitos(termo);
+          const json = await consultarViaCepJson(digitos);
+          if (meu !== sequenciaRef.current) return;
+          if (json) {
+            // Sucesso: sugestão 100% oficial dos Correios no topo do dropdown.
+            setSugestoes([montarSugestaoViaCep(json)]);
+            setAberto(true);
+          } else {
+            // CEP inexistente/erro do ViaCEP → sem sugestão falsa; mantém o
+            // campo aberto para o cliente digitar o endereço (modo manual).
+            setSugestoes([]);
+            setAberto(false);
+          }
+          return;
+        }
+
+        // ---- FLUXO NORMAL MAPBOX (texto livre, com proximity SP) ----
         const resultados = await buscarSugestoesEnderecos(termo);
         if (meu !== sequenciaRef.current) return;
         setSugestoes(resultados);
@@ -179,7 +368,7 @@ export default function CampoEnderecoChat({
         setManual((m) => ({
           ...m,
           rua: m.rua.trim() || json.logradouro || "",
-          bairro: m.bairro.trim() || json.bairro || "",
+          bairro: m.bairro.trim() || json.bairro || json.complemento || json.unidade || "",
           municipio:
             m.municipio.trim() ||
             (json.localidade ? (json.uf ? `${json.localidade} - ${json.uf}` : json.localidade) : ""),
@@ -208,9 +397,18 @@ export default function CampoEnderecoChat({
     (item: SugestaoEndereco) => {
       setAberto(false);
       setSugestoes([]);
-      setModoManual(false);
-      setErroManual("");
-      onSelecionar(item);
+      setCarregando(true);
+      void (async () => {
+        try {
+          // Enriquece bairro/rua via ViaCEP quando o Mapbox omite (evita "—")
+          const enriquecida = await enriquecerSugestaoComViaCep(item);
+          setModoManual(false);
+          setErroManual("");
+          onSelecionar(enriquecida);
+        } finally {
+          setCarregando(false);
+        }
+      })();
     },
     [onSelecionar],
   );
@@ -230,7 +428,8 @@ export default function CampoEnderecoChat({
     // Pré-carrega o manual com o que já se sabe da sugestão.
     if (sugestao) {
       setManual({
-        cep: sugestao.cep || "",
+        // CEP parcial (ex.: 5 dígitos) nunca entra no manual — fica vazio p/ digitar
+        cep: cepCompleto8(sugestao.cep || ""),
         rua: [sugestao.rua, sugestao.numero].filter(Boolean).join(", "),
         bairro: sugestao.bairro || "",
         municipio: sugestao.cidade ? (sugestao.uf ? `${sugestao.cidade} - ${sugestao.uf}` : sugestao.cidade) : "",
@@ -338,7 +537,7 @@ export default function CampoEnderecoChat({
                 <LinhaEndereco rotulo="Bairro" valor={enderecoConfirmado.bairro} />
                 <LinhaEndereco rotulo="Cidade" valor={enderecoConfirmado.cidade} />
                 <LinhaEndereco rotulo="UF" valor={enderecoConfirmado.uf} />
-                <LinhaEndereco rotulo="CEP" valor={enderecoConfirmado.cep} />
+                <LinhaEndereco rotulo="CEP" valor={cepCompleto8(enderecoConfirmado.cep || "")} />
               </div>
               <div className="mt-2.5 flex items-center gap-2">
                 <Button
@@ -474,18 +673,18 @@ export default function CampoEnderecoChat({
               {erroManual}
             </p>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-row gap-2">
             <Button
               type="button"
               className="h-11 flex-1 rounded-xl bg-orange-500 font-bold text-white hover:bg-orange-600"
               onClick={confirmarManual}
             >
-              <Check className="mr-1.5 h-4 w-4" /> Confirmar endereço
+              <Check className="mr-1.5 h-4 w-4" /> Confirmar
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="h-11 rounded-xl border-slate-300 text-slate-600"
+              className="h-11 flex-1 rounded-xl border-slate-300 text-slate-600"
               onClick={voltarBusca}
             >
               <Search className="mr-1.5 h-4 w-4" /> Buscar

@@ -14,6 +14,7 @@
 // filtra por .eq("id", id) — nunca varre a tabela inteira.
 // ============================================================
 import { supabase } from "@/lib/supabase";
+import { toClienteInsert } from "@/lib/dbMappers";
 import type { Orcamento, EnderecoOrcamento } from "@/components/comercial/types";
 import type { PrecificacaoCotacao, PontoRotaCotacao } from "./cotacaoCalculoService";
 
@@ -39,7 +40,8 @@ export interface MetadataCotacao {
 
 export interface ParadaCotacao {
   sequencia: number;
-  tipo: "retirada" | "entrega";
+  /** "retirada_entrega" = parada que serve como retirada E entrega no mesmo ponto. */
+  tipo: "retirada" | "entrega" | "retirada_entrega";
   endereco: string;
 }
 
@@ -84,6 +86,12 @@ export interface CriarCotacaoFase1Input {
   carga_peso: number | null;
   carga_dimensoes: string;
   paradas: string[];
+  /**
+   * Tipos explícitos por parada (retirada/entrega/retirada_entrega). Alinha com o array
+   * `paradas` ANTES do filtro de vazias. Se omitido, o default é
+   * 1ª = retirada, demais = entrega (comportamento legado).
+   */
+  paradasTipos?: Array<"retirada" | "entrega" | "retirada_entrega">;
   data_desejada: string;
   hora_desejada: string;
   /** Status inicial (default legado 'Pendente'). */
@@ -98,12 +106,15 @@ export interface CriarCotacaoFase1Input {
 // Helpers
 // ------------------------------------------------------------
 
-/** Monta as paradas da Fase 1 (1ª = retirada, demais = entrega). */
-export function montarParadasFase1(enderecos: string[]): ParadaCotacao[] {
+/** Monta as paradas da Fase 1 (default: 1ª = retirada, demais = entrega; tipos opcionais). */
+export function montarParadasFase1(
+  enderecos: string[],
+  tipos?: Array<"retirada" | "entrega" | "retirada_entrega">,
+): ParadaCotacao[] {
   return enderecos
     .map((endereco, idx) => ({
       sequencia: idx + 1,
-      tipo: (idx === 0 ? "retirada" : "entrega") as ParadaCotacao["tipo"],
+      tipo: (tipos?.[idx] ?? (idx === 0 ? "retirada" : "entrega")) as ParadaCotacao["tipo"],
       endereco: endereco.trim(),
     }))
     .filter((p) => p.endereco.length > 0);
@@ -158,7 +169,7 @@ export function montarMetadataCotacao(
 export async function criarCotacaoFase1(
   input: CriarCotacaoFase1Input,
 ): Promise<ResultadoCotacao<string>> {
-  const paradas = montarParadasFase1(input.paradas);
+  const paradas = montarParadasFase1(input.paradas, input.paradasTipos);
   if (paradas.length < 2) {
     return { ok: false, erro: erroDe("Informe ao menos a retirada e 1 entrega.") };
   }
@@ -578,4 +589,147 @@ export function montarOrcamentoDaCotacao(cotacao: CotacaoPublica): Orcamento {
       },
     ],
   };
+}
+
+// ------------------------------------------------------------
+// CLIENTE AVULSO / MOBILE (cadastro automático cotação → OS)
+// ------------------------------------------------------------
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `true` quando o valor é um UUID válido (a coluna `clientes.id`/`ordens_servico.cliente` é uuid). */
+export function ehUuid(valor: string | null | undefined): boolean {
+  return Boolean(valor && UUID_REGEX.test(valor.trim()));
+}
+
+const uidCliente = (): string => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+/** Resolve o tenant do usuário autenticado (padrão OsMobile.resolverTenantId). */
+async function resolverTenantIdCliente(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.rpc("current_tenant_id_safe");
+    if (typeof data === "string" && data) return data;
+  } catch {
+    // segue para o fallback
+  }
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    const authUserId = authData?.user?.id;
+    if (!authUserId) return undefined;
+    const { data: vinculo } = await supabase
+      .from("tenant_usuarios")
+      .select("tenant_id")
+      .eq("user_id", authUserId)
+      .maybeSingle();
+    const tenantId = (vinculo as Record<string, unknown> | null)?.tenant_id;
+    return typeof tenantId === "string" && tenantId ? tenantId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface ResultadoClienteAvulso {
+  clienteId: string | null;
+  criado: boolean;
+  erro?: string;
+}
+
+/**
+ * Garante um cadastro de cliente a partir do Nome + WhatsApp da cotação
+ * (Etapa 1 do wizard "Como posso te chamar?").
+ *
+ * 1) dedup por nome (`nome_fantasia`/`razao_social` ilike) → reusa;
+ * 2) dedup por telefone/whatsapp → reusa;
+ * 3) cria `clientes` no padrão OsMobile: id gerado no cliente, `status:
+ *    "pre-cadastro"`, insert SEM `.select()` (RLS de SELECT pode ocultar a
+ *    linha recém-criada) e tenant via `current_tenant_id_safe`.
+ *
+ * Nunca lança: em falha devolve `erro` com `clienteId: null` para o chamador
+ * decidir se bloqueia ou segue com aviso.
+ */
+export async function garantirClienteAvulsoCotacao(input: {
+  nome: string;
+  telefone?: string | null;
+  origem?: string;
+}): Promise<ResultadoClienteAvulso> {
+  const nome = (input.nome || "").trim();
+  const telefone = (input.telefone || "").trim();
+  const origem = input.origem || "Cotação Express";
+
+  if (!nome) {
+    return {
+      clienteId: null,
+      criado: false,
+      erro: "Informe o nome do cliente para o cadastro automático.",
+    };
+  }
+
+  // 1) Dedup por nome (ilike exato, um filtro por coluna — evita `.or()` com
+  // vírgulas no valor).
+  for (const coluna of ["nome_fantasia", "razao_social"] as const) {
+    try {
+      const { data } = await supabase
+        .from("clientes")
+        .select("id")
+        .ilike(coluna, nome)
+        .limit(1);
+      const existente = Array.isArray(data) ? (data[0] as { id?: unknown } | undefined) : null;
+      if (existente && ehUuid(String(existente.id))) {
+        return { clienteId: String(existente.id), criado: false };
+      }
+    } catch {
+      // segue para o próximo critério
+    }
+  }
+
+  // 2) Dedup por telefone/whatsapp (mesmo número da cotação).
+  if (telefone) {
+    for (const coluna of ["telefone", "whatsapp"] as const) {
+      try {
+        const { data } = await supabase
+          .from("clientes")
+          .select("id")
+          .eq(coluna, telefone)
+          .limit(1);
+        const existente = Array.isArray(data) ? (data[0] as { id?: unknown } | undefined) : null;
+        if (existente && ehUuid(String(existente.id))) {
+          return { clienteId: String(existente.id), criado: false };
+        }
+      } catch {
+        // segue para o próximo critério
+      }
+    }
+  }
+
+  // 3) Criação — padrão OsMobile.salvarClienteRapido.
+  try {
+    const tenantId = await resolverTenantIdCliente();
+    const novoId = uidCliente();
+    const payload = toClienteInsert({
+      razaoSocial: nome,
+      nomeFantasia: nome,
+      telefone: telefone || undefined,
+      whatsapp: telefone || undefined,
+      status: "pre-cadastro",
+      origemComercial: origem,
+      observacoes: `Cadastro automático via ${origem} - Requer Validação`,
+      tenantId,
+    });
+    payload.id = novoId;
+
+    const { error } = await supabase.from("clientes").insert([payload]);
+    if (error) throw error;
+
+    return { clienteId: novoId, criado: true };
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    return {
+      clienteId: null,
+      criado: false,
+      erro: `Não foi possível cadastrar o cliente "${nome}": ${mensagem}`,
+    };
+  }
 }

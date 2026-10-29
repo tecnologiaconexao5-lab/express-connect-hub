@@ -26,6 +26,7 @@ import {
   candidatosVeiculo,
   formatarBrl,
 } from "@/services/cotacoes/cotacaoCalculoService";
+import { cepCompleto8, limparCepParcialDoTexto } from "@/lib/cepCotacao";
 
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 
@@ -40,6 +41,12 @@ const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel
 // F) Alertas Realtime na Torre de Controle + integração comercial
 // G) Cálculo de rota + preço (motor da Fase 1)
 // H) Motor premium de indicação de veículo + SLA (peso + cubagem)
+// I) ViaCEP — busca automática de CEP no modo manual
+// J) CEP parcial do Mapbox — validação estrita de 8 dígitos + busca reversa
+// K) UX avançada — Voltar passo a passo, layout responsivo, proximity SP,
+//    tipos de parada + Adicionar Retorno e Salvar PDF / Imprimir
+// L) Interceptador de CEP no autocomplete — CEP 8 dígitos → ViaCEP direto
+//    (sem Mapbox), sugestão oficial dos Correios no dropdown
 // ============================================================================
 
 const migration = readSrc("supabase/migrations/20261024000000_cotacoes_publicas.sql");
@@ -324,7 +331,7 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
     expect(fase1).not.toContain("Acima disso,");
   });
 
-  it("C.5 — resumo com valor em destaque + botão verde que segue direto para a Fase 2", () => {
+  it("C.5 — resumo com valor em destaque + botão laranja (paleta da marca) que segue direto para a Fase 2", () => {
     // Frase combinada com a operação
     expect(fase1).toContain("Prontinho, ");
     expect(fase1).toContain("! O valor do seu frete fica em ");
@@ -335,9 +342,14 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
     expect(fase1).toContain("formatarBrl(precificacao.valor)");
     // Chip de SLA no resumo
     expect(fase1).toContain("recomendacao.slaRotulo");
-    // Botão verde EXATO
+    // Botão de ação EXATO na paleta laranja da marca
     expect(fase1).toContain("Aprovar Frete");
-    expect(fase1).toContain("bg-emerald-600");
+    expect(fase1).toContain("bg-orange-500");
+    // Marcação antiga (verde/Sparkles) totalmente removida do wizard
+    expect(fase1).not.toContain("emerald");
+    expect(fase1).not.toContain("Sparkles");
+    // Logo maior no cabeçalho e no card do Resumo
+    expect(fase1).toContain("h-12 w-auto");
     // Aprovação → Fase 2 (mesmo fluxo do link comercial "Gerar Link da Fase 2")
     expect(fase1).toContain("navigate(`/cotacao-express/detalhes/${id}`)");
     expect(fase1).toContain("Aprovação registrada");
@@ -645,5 +657,215 @@ describe("I) ViaCEP — auto-busca de CEP no modo manual", () => {
 
   it("I.7 — CEP pré-carregado pela sugestão Mapbox não dispara ViaCEP ao abrir o manual", () => {
     expect(campoEnderecoSrc).toContain("cepUltimoBuscadoRef.current = somenteDigitos(sugestao.cep");
+  });
+});
+
+// ============================================================================
+// J) CEP parcial do Mapbox — validação estrita de 8 dígitos + busca reversa
+//     O Mapbox devolve `postcode` parcial (ex.: "06473") para ruas BR:
+//     nunca aceitar/salvar/exibir CEP < 8 dígitos; resgatar via ViaCEP
+//     reverso (UF + cidade + logradouro); senão deixar o CEP vazio.
+// ============================================================================
+
+describe("J) CEP parcial do Mapbox — estrito de 8 dígitos + busca reversa", () => {
+  const cepCotacao = readSrc("src/lib/cepCotacao.ts");
+
+  it("J.1 — cepCompleto8 só aceita exatamente 8 dígitos (parcial vira vazio)", () => {
+    expect(cepCompleto8("05016-000")).toBe("05016-000");
+    expect(cepCompleto8("05016000")).toBe("05016-000");
+    expect(cepCompleto8("06473")).toBe(""); // CEP parcial de 5 dígitos do Mapbox
+    expect(cepCompleto8("064730")).toBe(""); // 6 dígitos
+    expect(cepCompleto8("0647300")).toBe(""); // 7 dígitos
+    expect(cepCompleto8("")).toBe("");
+    expect(cepCompleto8("abc")).toBe("");
+    expect(cepCotacao).toContain("d.length === 8");
+  });
+
+  it("J.2 — limpa o CEP parcial do place_name sem rasgar números de porta", () => {
+    expect(limparCepParcialDoTexto("Avenida Sumaré, São Paulo - SP, 06473", "06473")).toBe(
+      "Avenida Sumaré, São Paulo - SP",
+    );
+    expect(limparCepParcialDoTexto("06473, Rua das Flores, Campinas - SP", "06473")).toBe(
+      "Rua das Flores, Campinas - SP",
+    );
+    // Parcial diferente do número presente → texto intacto
+    expect(limparCepParcialDoTexto("Rua 10, 12345 - Centro", "06473")).toBe(
+      "Rua 10, 12345 - Centro",
+    );
+    // Parcial curto demais/não-CEP não dispara limpeza
+    expect(limparCepParcialDoTexto("Rua 123, Centro", "12")).toBe("Rua 123, Centro");
+  });
+
+  it("J.3 — busca reversa no ViaCEP (UF/cidade/logradouro) com prioridade do prefixo parcial", () => {
+    expect(campoEnderecoSrc).toContain("consultarViaCepPorEndereco");
+    // Endpoint reverso: /ws/{uf}/{cidade}/{logradouro}/json/
+    expect(campoEnderecoSrc).toContain(
+      "https://viacep.com.br/ws/${encodeURIComponent(uf.trim().toUpperCase())}",
+    );
+    expect(campoEnderecoSrc).toContain(
+      "/${encodeURIComponent(cidade.trim())}/${encodeURIComponent(logradouro.trim())}/json/",
+    );
+    // Só resgata CEP de 8 dígitos e prioriza o match do prefixo parcial
+    expect(campoEnderecoSrc).toContain("c.length === 8");
+    expect(campoEnderecoSrc).toContain("startsWith(prefixoParcial)");
+    expect(campoEnderecoSrc).toContain("if (!Array.isArray(dados)) return null");
+    // Dispara quando o CEP é parcial/ausente E há rua + cidade + UF
+    expect(campoEnderecoSrc).toContain("!cepValido && temBaseReversa");
+    expect(campoEnderecoSrc).toContain(
+      "item.rua?.trim() && item.cidade?.trim() && item.uf?.trim()",
+    );
+  });
+
+  it("J.4 — CEP parcial nunca é aceito/salvo/exibido (só 8 dígitos ou vazio)", () => {
+    // Resultado final estrito: cep vem só de cepFinal ("" quando parcial)
+    expect(campoEnderecoSrc).toContain(
+      "let cepFinal = cepValido ? formatarCep(digitosOriginais) : \"\""
+    );
+    expect(campoEnderecoSrc).toContain("cep: cepFinal");
+    // Endereço manual salvo só com CEP de 8 dígitos
+    expect(campoEnderecoSrc).toContain("cepCompleto8(c.cep)");
+    // Card "Endereço reconhecido" nunca exibe parcial
+    expect(campoEnderecoSrc).toContain('valor={cepCompleto8(enderecoConfirmado.cep || "")}');
+    // Modo manual não pré-carrega CEP parcial da sugestão
+    expect(campoEnderecoSrc).toContain('cep: cepCompleto8(sugestao.cep || "")');
+    // place_name reconstruído/limpo sem o CEP parcial
+    expect(campoEnderecoSrc).toContain("limparCepParcialDoTexto(item.place_name || \"\"");
+  });
+});
+
+// ============================================================================
+// K) UX avançada — 5 melhorias do wizard /cotacao-express:
+//    K.1 Voltar passo a passo (setEtapa prev - 1, preserva dados)
+//    K.2 Layout responsivo centralizado (max-w-2xl + shadow/rounded no desktop)
+//    K.3 Autocomplete Mapbox com proximity São Paulo
+//    K.4 Tipos de parada (Retirada / Entrega / Retirada e Entrega) + Retorno
+//    K.5 "Salvar PDF / Imprimir" no resumo (window.print + print:hidden)
+// ============================================================================
+
+describe("K) UX avançada — Voltar, layout, proximity, tipos de parada e imprimir", () => {
+  const mapboxProviderSrc = readSrc("src/services/maps/mapboxProvider.ts");
+
+  it("K.1 — Voltar avança 1 etapa por vez (Math.max(1, e - 1)) preservando os dados", () => {
+    expect(fase1).toContain("Math.max(1, e - 1)");
+    // O clamp antigo (etapa mínima 5) foi removido
+    expect(fase1).not.toContain("Math.max(5, e - 1)");
+    // Só fica desabilitado na primeira etapa (nada anterior a ela)
+    expect(fase1).toContain("disabled={etapa <= 1}");
+    expect(fase1).not.toContain("disabled={etapa <= 5}");
+  });
+
+  it("K.2 — layout centralizado responsivo (max-w-2xl, sombra/cantos no desktop)", () => {
+    // Container do wizard e da barra inferior compartilham a mesma largura máxima
+    expect(fase1).toContain("max-w-2xl");
+    expect(fase1).not.toContain("max-w-xl");
+    // Desktop ganha cantos corporativos + sombra; mobile segue full-width
+    expect(fase1).toContain("sm:rounded-xl");
+    expect(fase1).toContain("sm:shadow-lg");
+  });
+
+  it("K.3 — autocomplete Mapbox usa proximity=-46.6333,-23.5505 (São Paulo)", () => {
+    expect(mapboxProviderSrc).toContain("proximity=-46.6333,-23.5505");
+    // Dentro da função de sugestões usada pelo CampoEnderecoChat
+    const urlLine = mapboxProviderSrc.indexOf("buscarSugestoesEnderecos");
+    const proximityLine = mapboxProviderSrc.indexOf("proximity=-46.6333,-23.5505");
+    expect(urlLine).toBeGreaterThan(0);
+    expect(proximityLine).toBeGreaterThan(urlLine);
+  });
+
+  it("K.4 — 3 tipos de parada + Adicionar Retorno clona a origem como entrega", () => {
+    // Tipos na UI (toggle da última parada) e rótulos legíveis
+    expect(fase1).toContain("retirada_entrega");
+    expect(fase1).toContain("Retirada e Entrega");
+    expect(fase1).toContain("ROTULO_TIPO_PARADA");
+    expect(fase1).toContain("rotuloParada");
+    // Botão Adicionar Retorno (etapas 6 e 7) com clone do Ponto 1
+    expect(fase1).toContain("Adicionar Retorno");
+    expect(fase1).toContain("adicionarRetorno");
+    expect(fase1).toContain('tipo: "entrega", retorno: true');
+    // Service aceita o novo tipo no pass-through
+    expect(service).toContain('"retirada" | "entrega" | "retirada_entrega"');
+    // Pass-through preserva os tipos informados (incl. retirada_entrega)
+    const comTipo = montarParadasFase1(
+      ["Origem, 10", "Destino, 20", "Origem, 10"],
+      ["retirada", "entrega", "retirada_entrega"],
+    );
+    expect(comTipo.map((p) => p.tipo)).toEqual(["retirada", "entrega", "retirada_entrega"]);
+    // Contrato legado B.1 intacto: sem tipos → 1ª retirada, demais entrega
+    const legado = montarParadasFase1(["Rua A", "Rua B"]);
+    expect(legado.map((p) => p.tipo)).toEqual(["retirada", "entrega"]);
+  });
+
+  it("K.5 — resumo oferece 'Salvar PDF / Imprimir' com layout limpo de impressão", () => {
+    expect(fase1).toContain("window.print()");
+    expect(fase1).toContain("Salvar PDF / Imprimir");
+    expect(fase1).toContain("Printer");
+    // Botões/chrome somem no papel; cabeçalho colorido só aparece na impressão
+    expect(fase1).toContain("print:hidden");
+    expect(fase1).toContain("print:block");
+    expect(fase1).toContain("logo-conexao-colorido.png");
+    // Logo da impressão ampliado (print:h-20)
+    expect(fase1).toContain("print:h-20");
+    expect(fase1).toContain("Proposta de Cotação — Conexão Express");
+  });
+});
+
+describe("L) Interceptador de CEP no autocomplete — ViaCEP direto, sem Mapbox", () => {
+  it("L.1 — regex de CEP válido (ehCepValido) casa 8 dígitos com/s sem traço", () => {
+    // Detecção de CEP no termo digitado
+    expect(campoEnderecoSrc).toContain("const ehCepValido");
+    expect(campoEnderecoSrc).toContain("/^\\d{5}-?\\d{3}$/");
+    // Fonte: a função usa a regex no .test do texto digitado
+    const fnStart = campoEnderecoSrc.indexOf("const ehCepValido");
+    const fnEnd = campoEnderecoSrc.indexOf("function", fnStart + 10);
+    const trecho = campoEnderecoSrc.slice(fnStart, fnEnd > 0 ? fnEnd : fnStart + 200);
+    expect(trecho).toContain(".test(texto.trim())");
+  });
+
+  it("L.2 — CEP válido INTERROMPE o Mapbox e chama ViaCEP direto (consultarViaCepJson)", () => {
+    // Guarda: só entra no interceptor quando o termo é um CEP de 8 dígitos
+    expect(campoEnderecoSrc).toContain("if (ehCepValido(termo))");
+    // Requisição direta ao ViaCEP por dígitos (sem hífen), reutilizando o wrapper existente
+    expect(campoEnderecoSrc).toContain("await consultarViaCepJson(digitos)");
+    // O Mapbox (buscarSugestoesEnderecos) NÃO é chamado quando é CEP válido:
+    // a chamada Mapbox fica DEPOIS do return do interceptor (fluxo normal)
+    const interceptorIdx = campoEnderecoSrc.indexOf("if (ehCepValido(termo))");
+    const mapboxIdx = campoEnderecoSrc.indexOf("await buscarSugestoesEnderecos(termo)");
+    expect(interceptorIdx).toBeGreaterThan(0);
+    expect(mapboxIdx).toBeGreaterThan(interceptorIdx);
+    // O interceptor tem return antes da chamada Mapbox
+    const trechoInterceptador = campoEnderecoSrc.slice(interceptorIdx, mapboxIdx);
+    expect(trechoInterceptador).toContain("return;");
+  });
+
+  it("L.3 — montarSugestaoViaCep monta SugestaoEndereco com CEP estrito e lat/lng NaN", () => {
+    expect(campoEnderecoSrc).toContain("function montarSugestaoViaCep");
+    // CEP sempre via cepCompleto8 (8 dígitos estritos)
+    expect(campoEnderecoSrc).toContain("const cep = cepCompleto8(json.cep || \"\")");
+    // place_name composto: rua, bairro, cidade - UF, CEP
+    const fnStart = campoEnderecoSrc.indexOf("function montarSugestaoViaCep");
+    const trecho = campoEnderecoSrc.slice(fnStart, fnStart + 700);
+    expect(trecho).toContain("const placeName = [rua, bairro, cidadeUf, cep].filter(Boolean).join(\", \")");
+    // lat/lng NaN — cálculo de rota geocoda por texto (Mapbox só em background)
+    expect(trecho).toContain("lat: Number.NaN");
+    expect(trecho).toContain("lng: Number.NaN");
+    // Sugestão 100% ViaCEP: rua/bairro/cidade/uf/cep preenchidos dos Correios
+    expect(trecho).toContain("const rua = json.logradouro || \"\"");
+    expect(trecho).toContain("const cidade = json.localidade || \"\"");
+    expect(trecho).toContain("const uf = json.uf || \"\"");
+  });
+
+  it("L.4 — sucesso ViaCEP → sugestão única no dropdown; falha → dropdown fechado", () => {
+    // Sucesso (json truthy): injeta a sugestão ViaCEP e abre o dropdown
+    expect(campoEnderecoSrc).toContain("setSugestoes([montarSugestaoViaCep(json)])");
+    expect(campoEnderecoSrc).toContain("setAberto(true)");
+    // Falha (json null): sem sugestão falsa, dropdown fechado
+    expect(campoEnderecoSrc).toContain("setSugestoes([])");
+    expect(campoEnderecoSrc).toContain("setAberto(false)");
+    // Guarda de respostas velhas preservada (sequenciaRef) antes de setar estado
+    const interceptIdx = campoEnderecoSrc.indexOf("if (ehCepValido(termo))");
+    const guardIdx = campoEnderecoSrc.indexOf("if (meu !== sequenciaRef.current) return;", interceptIdx);
+    const setIdx = campoEnderecoSrc.indexOf("setSugestoes([montarSugestaoViaCep(json)])", interceptIdx);
+    expect(guardIdx).toBeGreaterThan(interceptIdx);
+    expect(setIdx).toBeGreaterThan(guardIdx);
   });
 });
