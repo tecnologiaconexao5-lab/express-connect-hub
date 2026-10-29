@@ -275,8 +275,56 @@ export async function buscarCotacaoPorOrcamento(
     .maybeSingle();
 
   if (error) return { ok: false, erro: error.message };
-  if (!data) return { ok: false, erro: erroDe("Nenhuma cotação vinculada.") };
+  if (!data) return { ok: false, erro: erroDe("Cotação não encontrada.") };
   return { ok: true, dado: normalizarCotacao(data) };
+}
+
+export interface ConversaoCotacaoOS {
+  cotacaoId: string;
+  clienteId: string | null;
+  orcamentoId: string;
+  orcamentoNumero: string;
+  osId: string | null;
+  osNumero: string | null;
+  criado: boolean;
+}
+
+/**
+ * FASE 2 → TMS: cria (uma única vez) o Orçamento na Gestão Comercial e a
+ * OS solicitada pelo cliente. Roda em RPC `SECURITY DEFINER` porque a
+ * página é pública; a função é idempotente por cotação.
+ */
+export async function converterCotacaoEmOrcamentoEOS(
+  cotacaoId: string,
+): Promise<ResultadoCotacao<ConversaoCotacaoOS>> {
+  if (!cotacaoId) return { ok: false, erro: erroDe("Cotação não informada.") };
+
+  const { data, error } = await supabase.rpc("f_cotacao_detalhes_para_os", {
+    p_cotacao_id: cotacaoId,
+  });
+
+  if (error) return { ok: false, erro: error.message };
+
+  const payload = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+  if (!payload.success) {
+    return {
+      ok: false,
+      erro: String(payload.message || "Não foi possível gerar o orçamento e a OS da cotação."),
+    };
+  }
+
+  return {
+    ok: true,
+    dado: {
+      cotacaoId: String(payload.cotacao_id || cotacaoId),
+      clienteId: payload.cliente_id ? String(payload.cliente_id) : null,
+      orcamentoId: String(payload.orcamento_id || ""),
+      orcamentoNumero: String(payload.orcamento_numero || ""),
+      osId: payload.os_id ? String(payload.os_id) : null,
+      osNumero: payload.os_numero ? String(payload.os_numero) : null,
+      criado: Boolean(payload.created),
+    },
+  };
 }
 
 function normalizarCotacao(row: Record<string, unknown>): CotacaoPublica {

@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowRight, CheckCircle2, Loader2, MapPin } from "lucide-react";
 import {
   buscarCotacao,
+  converterCotacaoEmOrcamentoEOS,
   salvarDetalhesFase2,
   type CotacaoPublica,
   type DetalheParadaCotacao,
@@ -59,11 +60,12 @@ export default function CotacaoExpressDetalhes() {
     }
     const c = res.dado;
     setCotacao(c);
-    // Já finalizada → mostra o sucesso direto (idempotente)
+    // Já finalizada → mostra o sucesso direto (idempotente) e garante a OS
     if (c.status === "Pronto para OS") {
       setDetalhes(c.detalhes);
       setConcluido(true);
       setCarregando(false);
+      void converterCotacaoEmOrcamentoEOS(c.id);
       return;
     }
     setDetalhes(
@@ -106,6 +108,17 @@ export default function CotacaoExpressDetalhes() {
         setErro(res.erro || "Não foi possível salvar agora. Tente novamente.");
         return;
       }
+
+      // Integração TMS: cria o Orçamento (Gestão Comercial) e a OS (Operação).
+      const conversao = await converterCotacaoEmOrcamentoEOS(id);
+      if (!conversao.ok) {
+        setErro(
+          conversao.erro ||
+            "Endereços salvos, mas não foi possível abrir a OS. Tente novamente.",
+        );
+        return;
+      }
+
       setCotacao(res.dado || null);
       setErro("");
       setConcluido(true);
@@ -193,8 +206,20 @@ export default function CotacaoExpressDetalhes() {
   // FORMULÁRIO DA FASE 2
   // ------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex flex-col">
-      <header className="px-4 py-4 flex items-center justify-between">
+    <div className="relative min-h-screen overflow-x-hidden flex flex-col">
+      {/* Camada 1 — gradiente suave da marca */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[-2] bg-gradient-to-br from-orange-50 via-white to-slate-100"
+      />
+      {/* Camada 2 — marca d'água da etapa de endereços/rota */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[-1] bg-cover bg-center bg-no-repeat bg-fixed opacity-[0.05]"
+        style={{ backgroundImage: "url('/bg-entregador1.jpg')" }}
+      />
+
+      <header className="relative z-0 px-4 py-4 flex items-center justify-between">
         <img
           src="/logos/logo-conexao-colorido.png"
           alt="Conexão Express"
@@ -205,7 +230,7 @@ export default function CotacaoExpressDetalhes() {
         </span>
       </header>
 
-      <main className="flex-1 px-4 pb-40 pt-2">
+      <main className="relative z-0 flex-1 px-4 pb-40 pt-2">
         <div className="mx-auto w-full max-w-xl space-y-5 animate-fade-in">
           <div>
             <span className="text-[11px] font-bold uppercase tracking-widest text-orange-600">
@@ -301,7 +326,7 @@ export default function CotacaoExpressDetalhes() {
         </div>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto w-full max-w-xl">
           <Button
             type="button"

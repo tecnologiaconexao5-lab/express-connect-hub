@@ -9,6 +9,16 @@ import { join } from "node:path";
 const raiz = join(__dirname, "..", "..");
 const pageSrc = readFileSync(join(raiz, "src/pages/CotacaoExpress.tsx"), "utf8");
 const detalhesSrc = readFileSync(join(raiz, "src/pages/CotacaoExpressDetalhes.tsx"), "utf8");
+const serviceSrc = readFileSync(
+  join(raiz, "src/services/cotacoes/cotacaoPublicaService.ts"),
+  "utf8",
+);
+const indexHtml = readFileSync(join(raiz, "index.html"), "utf8");
+const manifest = readFileSync(join(raiz, "public/manifest.json"), "utf8");
+const migrationSrc = readFileSync(
+  join(raiz, "supabase/migrations/20261030000000_cotacao_detalhes_para_os.sql"),
+  "utf8",
+);
 
 describe("A) Fluxo sequencial (sem 'Tipo de Solicitação' e sem WhatsApp no header)", () => {
   it("A.1 não há seletor de modalidade nem CTA de WhatsApp no topo", () => {
@@ -80,5 +90,40 @@ describe("D) Tela final da cotação (Fase 2)", () => {
     expect(detalhesSrc).toContain('style={{ backgroundImage: "url(\'/Parceria logistica.png\')" }}');
     expect(detalhesSrc).toContain("absolute inset-0 bg-cover bg-center bg-no-repeat");
     expect(detalhesSrc).not.toContain('src="/Parceria logistica.png"');
+  });
+
+  it("D.4 preenchimento dos endereços tem marca d'água de rota", () => {
+    expect(detalhesSrc).toContain('style={{ backgroundImage: "url(\'/bg-entregador1.jpg\')" }}');
+    expect(detalhesSrc).toContain(
+      "absolute inset-0 z-[-1] bg-cover bg-center bg-no-repeat bg-fixed opacity-[0.05]",
+    );
+    expect(detalhesSrc).toContain("relative min-h-screen overflow-x-hidden");
+  });
+
+  it("D.5 ao enviar os endereços cria orçamento no Comercial e OS na Operação", () => {
+    expect(detalhesSrc).toContain("converterCotacaoEmOrcamentoEOS(id)");
+    expect(serviceSrc).toContain("export async function converterCotacaoEmOrcamentoEOS");
+    expect(serviceSrc).toContain('supabase.rpc("f_cotacao_detalhes_para_os"');
+    expect(migrationSrc).toContain("CREATE OR REPLACE FUNCTION public.f_cotacao_detalhes_para_os");
+    expect(migrationSrc).toContain("SECURITY DEFINER");
+    expect(migrationSrc).toContain("GRANT EXECUTE ON FUNCTION public.f_cotacao_detalhes_para_os(uuid) TO anon, authenticated");
+    expect(migrationSrc).toContain("INSERT INTO public.orcamentos");
+    expect(migrationSrc).toContain("INSERT INTO public.ordens_servico");
+    expect(migrationSrc).toContain("pg_advisory_xact_lock");
+  });
+});
+
+describe("E) Favicon e ícone do sistema com o logo oficial", () => {
+  it("E.1 index.html usa o X da Conexão Express como favicon", () => {
+    expect(indexHtml).toContain('href="/favicon-512.png"');
+    expect(indexHtml).toContain('href="/favicon-192.png"');
+    expect(indexHtml).toContain('rel="apple-touch-icon"');
+    expect(indexHtml).not.toMatch(/heart/i);
+  });
+
+  it("E.2 manifest PWA aponta para os ícones oficiais", () => {
+    expect(manifest).toContain('"/favicon-192.png"');
+    expect(manifest).toContain('"/favicon-512.png"');
+    expect(manifest).not.toContain("logo-oficial-conexao.png");
   });
 });
