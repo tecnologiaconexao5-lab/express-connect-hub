@@ -154,6 +154,9 @@ const TabExecutivo = () => {
 
   return (
     <div className="space-y-6">
+      {/* Solicitações de clientes via site — primeiro item do painel executivo */}
+      <AlertaOscotacaoExpress />
+
       <AniversariantesWidget />
 
       {/* KPIs Principais — 4 colunas */}
@@ -171,9 +174,6 @@ const TabExecutivo = () => {
         <KpiCard title="OS em Aberto" value={fmtN(osEmAberto)} icon={Clock} />
         <KpiCard title="SLA no Prazo" value={`${slaPct}%`} icon={Star} trend={slaPct >= 80 ? "up" : "down"} />
       </div>
-
-      {/* OS via Cotação Express pendentes de prestador */}
-      <AlertaOscotacaoExpress />
 
       {/* KPIs Cadastrais */}
       <div className="grid grid-cols-3 gap-4">

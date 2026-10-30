@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Bell, Search, LogOut, Radio, CheckCircle, AlertTriangle, Truck, Clock,
+  Bell, Search, LogOut, Radio, Truck, Clock,
   Megaphone, Inbox, Sun, Moon, X, Command, ChevronRight, Home,
   FileText, BarChart3, Settings,
   // Ícones adicionados para ROTA_TITULOS completo
@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { contarNaoLidasTorre, inscreverMensagensTorre } from "@/services/operacaoChatService";
+import { useOSSiteAlerts } from "@/hooks/useOSSiteAlerts";
 
 // Mapeamento completo de rotas reais (validadas em App.tsx) → título + ícone para o breadcrumb
 const ROTA_TITULOS: Record<string, { titulo: string; icone: any }> = {
@@ -73,11 +74,18 @@ const AppTopbar = () => {
   const podeOsMobile = Boolean(
     user && ["super_admin", "admin", "operador"].includes(user.role),
   );
-  const [notifs, setNotifs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const naoLidas = notifs.filter(n => !n.lida).length;
+  // ALERTAS REAIS — novas OS criadas pela Cotação Express (Realtime + polling).
+  const abrirOSSite = useCallback(
+    (osId: string) => navigate(`/operacao?tab=os&os=${osId}`),
+    [navigate],
+  );
+  const { notificacoes: notifs, naoLidas, marcarLida, marcarLidas } = useOSSiteAlerts({
+    onAbrirOS: abrirOSSite,
+    habilitado: Boolean(user),
+  });
   // A22 — badge real de mensagens operacionais não lidas (motorista → Torre)
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
 
@@ -98,14 +106,6 @@ const AppTopbar = () => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  useEffect(() => {
-    setNotifs([
-      { id: 1, tipo: "nova_os", mensagem: "OS-1045 solicitada por Tech Solutions", tempo: "5 min", lida: false },
-      { id: 2, tipo: "ocorrencia", mensagem: "Avaria registrada: OS-1040", tempo: "15 min", lida: false },
-      { id: 3, tipo: "atraso", mensagem: "OS-880 atrasada em 2h", tempo: "1 hora", lida: true }
-    ]);
-  }, []);
 
   // A22 — contagem REAL de mensagens do motorista para a Torre (badge, sem mock)
   useEffect(() => {
@@ -134,15 +134,6 @@ const AppTopbar = () => {
 
   const handleNav = (path: string) => { setShowSearch(false); navigate(path); };
   const handleLogout = async () => { await logout(); navigate("/login"); };
-
-  const IconType = (tipo: string) => {
-    switch (tipo) {
-      case "nova_os": return <CheckCircle className="w-4 h-4 text-green-500"/>
-      case "ocorrencia": return <AlertTriangle className="w-4 h-4 text-red-500"/>
-      case "atraso": return <Clock className="w-4 h-4 text-orange-500"/>
-      default: return <Truck className="w-4 h-4 text-blue-500"/>
-    }
-  };
 
   return (
     <header className="h-16 flex items-center px-6 gap-4 shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm shadow-sm">
@@ -265,16 +256,30 @@ const AppTopbar = () => {
           <DropdownMenuContent align="end" className="w-80 rounded-2xl border-slate-200 shadow-xl">
             <DropdownMenuLabel className="flex justify-between items-center">
               <span className="text-sm font-semibold">Notificações</span>
-              {naoLidas > 0 && <Button variant="ghost" size="sm" onClick={() => setNotifs(notifs.map(n => ({ ...n, lida: true })))} className="h-6 text-[10px] font-medium">Marcar lidas</Button>}
+              {naoLidas > 0 && <Button variant="ghost" size="sm" onClick={marcarLidas} className="h-6 text-[10px] font-medium">Marcar lidas</Button>}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="max-h-[300px] overflow-y-auto">
+              {notifs.length === 0 && (
+                <p className="p-6 text-center text-xs text-slate-400">Nenhuma nova OS de cliente no momento.</p>
+              )}
               {notifs.map(n => (
-                <DropdownMenuItem key={n.id} className={`p-3 border-b border-slate-50 cursor-pointer ${n.lida ? 'opacity-60' : 'bg-slate-50/50'}`} onClick={() => setNotifs(notifs.map(it => it.id === n.id ? { ...it, lida: true } : it))}>
+                <DropdownMenuItem
+                  key={n.id}
+                  className={`p-3 border-b border-slate-50 cursor-pointer items-start ${n.lida ? 'opacity-60' : 'bg-slate-50/50'}`}
+                  onClick={() => { marcarLida(n.id); navigate(`/operacao?tab=os&os=${n.osId}`); }}
+                >
                   <div className="flex items-start gap-3 w-full">
-                    <div className="mt-0.5">{IconType(n.tipo)}</div>
+                    <div className="mt-0.5">
+                      {n.agendada
+                        ? <Clock className="w-4 h-4 text-amber-500" />
+                        : <Bell className="w-4 h-4 text-red-500" />}
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm leading-tight ${n.lida ? 'font-medium' : 'font-semibold'}`}>{n.mensagem}</p>
+                      <p className={`text-sm leading-tight ${n.lida ? 'font-medium' : 'font-semibold'} ${n.agendada ? 'text-amber-700' : 'text-slate-800'}`}>
+                        {n.mensagem}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500">{n.detalhe}</p>
                       <span className="text-[10px] text-slate-400 font-medium uppercase">{n.tempo}</span>
                     </div>
                   </div>

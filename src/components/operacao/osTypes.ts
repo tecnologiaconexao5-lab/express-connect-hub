@@ -289,6 +289,9 @@ export interface OrdemServico {
   orcamentoOrigem: string;
   /** Cliente originado pela Cotação Express (sem cadastro completo). */
   clienteCotacao?: boolean;
+  /** Data/hora solicitadas pelo cliente na cotação (chamado agendado). */
+  agendadaCotacao?: boolean;
+  agendamentoCotacao?: string;
   prestador: string;
   veiculoAlocado: string;
   tipoOperacao: string;

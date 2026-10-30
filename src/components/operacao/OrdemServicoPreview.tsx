@@ -16,6 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
+import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 
 interface Props {
   os: OrdemServico;
@@ -337,13 +338,15 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Linha do tempo do rastreio — sempre no topo da visualização */}
-          <TimelineRastreio status={os.status} />
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="grid w-full grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+          {/* Linha do tempo do rastreio — sempre no topo, 100% da largura */}
+          <div className="xl:col-span-2 xl:row-start-1">
+            <TimelineRastreio status={os.status} />
+          </div>
 
           {/* Cabeçalho da OS */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-1 xl:row-start-2">
             <CardHeader className="bg-orange-50 border-b">
               <div className="flex items-center justify-between">
                 <div>
@@ -360,16 +363,21 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               </div>
             </CardHeader>
             <CardContent className="p-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
                   <LabelRow label="Cliente">{clienteNome || "—"}</LabelRow>
-                  {clienteCotacao && (
-                    <div className="-mt-2 mb-3">
+                  <div className="-mt-2 mb-3 flex flex-wrap gap-1.5">
+                    {clienteCotacao && (
                       <Badge className="border border-violet-200 bg-violet-100 text-[9px] font-bold uppercase text-violet-700">
                         Cliente Cotação
                       </Badge>
-                    </div>
-                  )}
+                    )}
+                    {agendamentoCotacao.agendada && (
+                      <Badge className="gap-1 border border-amber-200 bg-amber-100 text-[9px] font-bold uppercase text-amber-800">
+                        <Clock className="h-3 w-3" /> Agendado · {agendamentoCotacao.dataHora}
+                      </Badge>
+                    )}
+                  </div>
                   <LabelRow label="Unidade">{os.unidade || "—"}</LabelRow>
                   <LabelRow label="Tipo de Operação">{os.tipoOperacao || "—"}</LabelRow>
                 </div>
@@ -381,15 +389,15 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             </CardContent>
           </Card>
 
-          {/* Resumo Operacional — visão executiva (cliente, prestador, valores e status) */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {/* Resumo Operacional — coluna lateral direita */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-start-2 xl:row-start-2 xl:grid-cols-2">
             <Card className="border-none shadow-md rounded-2xl">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <Users className="h-3.5 w-3.5" /> Cliente
                 </div>
                 <p className="mt-1 truncate text-sm font-bold text-slate-800" title={clienteNome || undefined}>{clienteNome || "Cliente não informado"}</p>
-                <div className="mt-1 flex items-center gap-1.5">
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
                   {clienteCotacao && (
                     <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
@@ -401,7 +409,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             </Card>
 
             <Card className="border-none shadow-md rounded-2xl">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <Truck className="h-3.5 w-3.5" /> Prestador
                 </div>
@@ -413,7 +421,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             </Card>
 
             <Card className="border-none shadow-md rounded-2xl">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <DollarSign className="h-3.5 w-3.5" /> Receita
                 </div>
@@ -423,7 +431,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             </Card>
 
             <Card className="border-none shadow-md rounded-2xl">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <TrendingDown className="h-3.5 w-3.5" /> Custo
                 </div>
@@ -433,7 +441,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             </Card>
 
             <Card className="border-none shadow-md rounded-2xl">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <Activity className="h-3.5 w-3.5" /> Status
                 </div>
@@ -445,10 +453,22 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                 </p>
               </CardContent>
             </Card>
+
+            {agendamentoCotacao.agendada && (
+              <Card className="border border-amber-200 bg-amber-50/70 shadow-sm rounded-2xl">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                    <Clock className="h-3.5 w-3.5" /> Chamado agendado
+                  </div>
+                  <p className="mt-1 text-sm font-bold text-amber-900">{agendamentoCotacao.dataHora}</p>
+                  <p className="text-[11px] text-amber-700">Data/hora informadas pelo cliente na cotação.</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Dados do Veículo */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-1 xl:row-start-3">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Truck className="w-4 h-4" /> Veículo
@@ -477,7 +497,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           </Card>
 
           {/* Carga */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-1 xl:row-start-4">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Package className="w-4 h-4" /> Carga
@@ -512,7 +532,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           </Card>
 
           {/* Itinerário */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-1 xl:row-start-5">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Route className="w-4 h-4" /> Itinerário
@@ -559,7 +579,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           </Card>
 
           {/* Prestador */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-2 xl:row-start-3">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <User className="w-4 h-4" /> Prestador / Motorista
@@ -584,7 +604,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           </Card>
 
           {/* Valores */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-2 xl:row-start-4">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <span className="text-green-600">R$</span> Valores
@@ -610,7 +630,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
 
           {/* Instruções */}
           {os.instrucoesOperacionaisOS && (
-            <Card className="border-none shadow-md rounded-2xl">
+            <Card className="border-none shadow-md rounded-2xl xl:col-start-2 xl:row-start-5">
               <CardHeader className="bg-slate-50 border-b py-3">
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
                   <span className="text-orange-600">📝</span> Instruções
@@ -623,7 +643,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           )}
 
           {/* Histórico */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-2 xl:row-start-6">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Clock className="w-4 h-4" /> Histórico
@@ -635,7 +655,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           </Card>
 
           {/* Documentos */}
-          <Card className="border-none shadow-md rounded-2xl">
+          <Card className="border-none shadow-md rounded-2xl xl:col-start-1 xl:row-start-6">
             <CardHeader className="bg-slate-50 border-b py-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <FileText className="w-4 h-4" /> Documentos e Comprovantes
@@ -666,7 +686,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
 
           {/* FISCAL */}
           {!fiscalLoading && (
-            <>
+            <div className="space-y-6 xl:col-span-2 xl:row-start-7">
               {/* SEMÁFORO */}
               <Card className="border-none shadow-md rounded-2xl">
                 <CardHeader className="bg-slate-50 border-b py-3">
@@ -726,7 +746,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                   </CardContent>
                 </Card>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>

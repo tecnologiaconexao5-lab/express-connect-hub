@@ -299,6 +299,9 @@ BEGIN
     'temperaturaMinima', 0,
     'temperaturaMaxima', 0,
     'observacoesCarga', COALESCE(v_cot.carga_dimensoes, ''),
+    'data_desejada', COALESCE(to_char(v_cot.data_desejada, 'YYYY-MM-DD'), ''),
+    'hora_desejada', COALESCE(v_cot.hora_desejada, ''),
+    'agendado', (v_cot.data_desejada IS NOT NULL OR v_cot.hora_desejada IS NOT NULL),
     'origem_cotacao', v_cot.id::text
   );
 

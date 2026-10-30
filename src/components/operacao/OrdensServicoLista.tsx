@@ -26,6 +26,7 @@ import { publicarOportunidade } from "@/services/operacao/redePrestadoresService
 import { notificarBaseAgregados, emRiscoSlaSemAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
+import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
@@ -203,6 +204,10 @@ const OrdensServicoLista = () => {
 
         const normalizados = linhas.map((item) => {
           const os = fromOSRow(item);
+          const agendamento = obterAgendamentoClienteOS({
+            carga: item.carga,
+            observacoes: item.observacoes_gerais,
+          });
           const prestadorUuid =
             typeof item.prestador === "string" && /^[0-9a-f-]{36}$/i.test(item.prestador) ? item.prestador : "";
           return {
@@ -218,6 +223,8 @@ const OrdensServicoLista = () => {
               clienteStatus: item.clientes?.status,
               clienteOrigemComercial: item.clientes?.origem_comercial,
             }),
+            agendadaCotacao: agendamento.agendada,
+            agendamentoCotacao: agendamento.dataHora,
             createdAt: item.created_at as string | undefined,
           };
         });
@@ -731,6 +738,14 @@ const OrdensServicoLista = () => {
                                Cliente Cotação
                              </Badge>
                            )}
+                           {os.agendadaCotacao && (
+                             <Badge
+                               title={os.agendamentoCotacao ? `Chamado agendado: ${os.agendamentoCotacao}` : "Chamado agendado"}
+                               className="gap-1 border border-amber-200 bg-amber-100 px-1.5 py-0 text-[9px] font-bold uppercase text-amber-800"
+                             >
+                               <Clock className="h-2.5 w-2.5" /> Agendado
+                             </Badge>
+                           )}
                          </div>
                          <div className="text-[10px] text-muted-foreground uppercase tracking-tight">{os.tipoOperacao || "Transporte"}</div>
                       </TableCell>
@@ -1042,7 +1057,7 @@ const OrdensServicoLista = () => {
 
       {/* Modal Preview OS */}
       <Dialog open={showPreview} onOpenChange={(open) => { if (!open) { setShowPreview(false); setOsPreview(null); } }}>
-        <DialogContent className="max-w-[90vw] max-h-[90vh] w-full h-full overflow-hidden flex flex-col p-0">
+        <DialogContent className="w-[96vw] max-w-[1600px] max-h-[92vh] h-full overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-6 py-4 border-b">
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-blue-500" /> Visualização da Ordem de Serviço
