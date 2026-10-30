@@ -14,7 +14,7 @@ const hook = read("src/hooks/useOSSiteAlerts.ts");
 const osLista = read("src/components/operacao/OrdensServicoLista.tsx");
 const preview = read("src/components/operacao/OrdemServicoPreview.tsx");
 const dashboardCard = read("src/components/dashboard/AlertaOscotacaoExpress.tsx");
-const tabExecutivo = read("src/components/dashboard/TabExecutivo.tsx");
+const dashboardPage = read("src/pages/Dashboard.tsx");
 const service = read("src/services/operacao/osSiteService.ts");
 const migration = read("supabase/migrations/20261030000000_cotacao_detalhes_para_os.sql");
 
@@ -90,11 +90,11 @@ describe("C) Dashboard — Solicitações de Clientes Site", () => {
     expect(dashboardCard).toContain("STATUS_ENCERRADOS");
   });
 
-  it("aparece no topo do painel executivo", () => {
-    const idxBanner = tabExecutivo.indexOf("<AlertaOscotacaoExpress />");
-    const idxKpi = tabExecutivo.indexOf("Faturamento Total");
+  it("aparece no topo do Dashboard Central, antes das abas", () => {
+    const idxBanner = dashboardPage.indexOf("<AlertaOscotacaoExpress />");
+    const idxTabs = dashboardPage.indexOf("<Tabs defaultValue=");
     expect(idxBanner).toBeGreaterThan(-1);
-    expect(idxBanner).toBeLessThan(idxKpi);
+    expect(idxBanner).toBeLessThan(idxTabs);
   });
 
   it("service consulta o marcador carga->>origem_cotacao", () => {

@@ -19,7 +19,7 @@ const orcamentosSrc = readSrc("src/components/comercial/OrcamentosLista.tsx");
 const orcamentoFormSrc = readSrc("src/components/comercial/OrcamentoForm.tsx");
 const orcamentoToOSSrc = readSrc("src/services/comercial/orcamentoToOSService.ts");
 const alertaOsSrc = readSrc("src/components/dashboard/AlertaOscotacaoExpress.tsx");
-const tabExecutivoSrc = readSrc("src/components/dashboard/TabExecutivo.tsx");
+const dashboardPageSrc = readSrc("src/pages/Dashboard.tsx");
 const tabComercialSrc = readSrc("src/components/dashboard/TabComercial.tsx");
 const ordensListaSrc = readSrc("src/components/operacao/OrdensServicoLista.tsx");
 const dbMappersSrc = readSrc("src/lib/dbMappers.ts");
@@ -196,7 +196,7 @@ describe("F) Cliente avulso da cotação + badge OS + alocação de prestador", 
     expect(alertaOsSrc).toContain("carga->>origem_cotacao");
     expect(alertaOsSrc).toContain('"/operacao?tab=os"');
     expect(alertaOsSrc).toContain("STATUS_ENCERRADOS");
-    expect(tabExecutivoSrc).toContain("<AlertaOscotacaoExpress />");
+    expect(dashboardPageSrc).toContain("<AlertaOscotacaoExpress />");
     expect(tabComercialSrc).toContain("<AlertaOscotacaoExpress />");
   });
 

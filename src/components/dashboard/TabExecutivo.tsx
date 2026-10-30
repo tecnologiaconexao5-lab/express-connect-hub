@@ -154,9 +154,6 @@ const TabExecutivo = () => {
 
   return (
     <div className="space-y-6">
-      {/* Solicitações de clientes via site — primeiro item do painel executivo */}
-      <AlertaOscotacaoExpress />
-
       <AniversariantesWidget />
 
       {/* KPIs Principais — 4 colunas */}

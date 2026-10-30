@@ -1,6 +1,7 @@
 import { LayoutDashboard, Activity, TrendingUp, DollarSign, Bell, Network, Radio } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
+import AlertaOscotacaoExpress from "@/components/dashboard/AlertaOscotacaoExpress";
 import TabExecutivo from "@/components/dashboard/TabExecutivo";
 import TabOperacional from "@/components/dashboard/TabOperacional";
 import TabComercial from "@/components/dashboard/TabComercial";
@@ -24,6 +25,11 @@ const Dashboard = () => (
     </div>
 
     <DashboardTopbar />
+
+    {/* Solicitações de clientes via site — banner imediato no topo do Dashboard */}
+    <div className="mb-6">
+      <AlertaOscotacaoExpress />
+    </div>
 
     <Tabs defaultValue="operacional" className="w-full">
       <div className="border-b border-border mb-6 overflow-x-auto">
