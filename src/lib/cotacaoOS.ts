@@ -34,14 +34,18 @@ export function obterAgendamentoClienteOS(entrada: {
   if (!data || !hora) {
     const obs = String(entrada.observacoes || "");
     const dataObs = obs.match(/Data desejada:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
-    const horaObs = obs.match(/Hor[áa]rio:\s*([0-9]{2}:[0-9]{2})/i);
+    const horaObs = obs.match(
+      /Hor[áa]rio:\s*([0-9]{2}:[0-9]{2}(?:\s*[àa]s\s*[0-9]{2}:[0-9]{2})?)/i,
+    );
     if (!data && dataObs?.[1]) data = dataObs[1];
     if (!hora && horaObs?.[1]) hora = horaObs[1];
     if (data || hora) agendada = true;
   }
 
   if (data) data = formatarData(data);
-  const dataHora = [data, hora].filter(Boolean).join(" às ");
+  // Janela de horário ("09:00 às 11:00") não deve virar "às 09:00 às 11:00".
+  const horarioEhJanela = /\d{1,2}:\d{2}\s*[àa]s\s*\d{1,2}:\d{2}/i.test(hora);
+  const dataHora = [data, hora].filter(Boolean).join(horarioEhJanela ? " · " : " às ");
 
   return {
     agendada,

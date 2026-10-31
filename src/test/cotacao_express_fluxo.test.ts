@@ -53,6 +53,9 @@ const migration = readSrc("supabase/migrations/20261024000000_cotacoes_publicas.
 const migrationV2 = readSrc(
   "supabase/migrations/20261025000000_cotacoes_precificacao_fase1.sql",
 );
+const migrationJanela = readSrc(
+  "supabase/migrations/20261031000000_cotacao_janela_horario_os.sql",
+);
 const fase1 = readSrc("src/pages/CotacaoExpress.tsx");
 const fase2 = readSrc("src/pages/CotacaoExpressDetalhes.tsx");
 const app = readSrc("src/App.tsx");
@@ -393,8 +396,8 @@ describe("D) Fase 2 — /cotacao-express/detalhes/:id", () => {
     expect(fase2).toContain('id={`contato-${detalhe.sequencia}`}');
     expect(fase2).toContain('id={`obs-${detalhe.sequencia}`}');
     expect(fase2).toContain("Número *");
-    expect(fase2).toContain("Nome de quem recebe / retira *");
-    expect(fase2).toContain("Observações ou instruções");
+    expect(fase2).toContain("Quem recebe / retira *");
+    expect(fase2).toContain("Observações");
   });
 
   it("D.3 — validação exige número e contato em todas as paradas", () => {
@@ -867,5 +870,39 @@ describe("L) Interceptador de CEP no autocomplete — ViaCEP direto, sem Mapbox"
     const setIdx = campoEnderecoSrc.indexOf("setSugestoes([montarSugestaoViaCep(json)])", interceptIdx);
     expect(guardIdx).toBeGreaterThan(interceptIdx);
     expect(setIdx).toBeGreaterThan(guardIdx);
+  });
+});
+
+// ============================================================================
+// M) Cotação Express UX — margem de tempo, agendamento obrigatório com
+//    janela de horário, layout compacto da Fase 2 e fundo de conclusão
+// ============================================================================
+describe("M) Cotação Express UX — tempo, janela e layout", () => {
+  it("M.1 — tempo exibido embute +30 min para todos os veículos", () => {
+    expect(fase1).toContain("MARGEM_OPERACIONAL_MINUTOS = 30");
+    expect(fase1).toContain("rota.duracaoMin + MARGEM_OPERACIONAL_MINUTOS");
+  });
+
+  it("M.2 — data e janela de horário são obrigatórias (aprovação bloqueada)", () => {
+    expect(fase1).toContain("Quando precisa? *");
+    expect(fase1).toContain("Janela de horário *");
+    expect(fase1).toContain("const validarAgendamento");
+    expect(fase1).toContain("const problemaAgendamento = validarAgendamento();");
+    expect(fase1).toContain("JANELAS_HORARIO");
+    expect(fase1).toContain('id="cot-hora"');
+  });
+
+  it("M.3 — RPC propaga a janela para carga e endereços da OS", () => {
+    expect(migrationJanela).toContain("v_janela_inicio");
+    expect(migrationJanela).toContain("v_janela_fim");
+    expect(migrationJanela).toContain("'janela_inicio', v_janela_inicio");
+    expect(migrationJanela).toContain("'janelaInicio', v_janela_inicio");
+    expect(migrationJanela).toContain("'agendamento', v_tem_agendamento");
+  });
+
+  it("M.4 — Fase 2 compacta (grid em colunas) e fundo padrão na conclusão", () => {
+    expect(fase2).toContain("grid grid-cols-2 gap-2 md:grid-cols-4");
+    expect(fase2).toContain("mx-auto w-full max-w-2xl space-y-3");
+    expect(fase2).not.toContain("Parceria logistica.png");
   });
 });

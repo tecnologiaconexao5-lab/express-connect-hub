@@ -32,6 +32,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
@@ -74,6 +81,20 @@ const MENSAGEM_CALCULO = "Deixa comigo — calculando a rota e o melhor preço �
 const MENSAGEM_ERRO_CALCULO =
   "Ops, não conseguimos calcular essa rota agora. Confira os endereços e tente de novo.";
 
+/** Margem operacional embutida no tempo exibido ao cliente (min). */
+const MARGEM_OPERACIONAL_MINUTOS = 30;
+
+/** Janelas de horário oferecidas no agendamento (obrigatório). */
+const JANELAS_HORARIO = [
+  "08:00 às 10:00",
+  "09:00 às 11:00",
+  "10:00 às 12:00",
+  "12:00 às 14:00",
+  "14:00 às 16:00",
+  "16:00 às 18:00",
+  "18:00 às 20:00",
+] as const;
+
 type TipoParada = "retirada" | "entrega" | "retirada_entrega";
 
 interface ParadaEstado {
@@ -102,6 +123,14 @@ const mascararTelefone = (valor: string): string => {
   if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
   if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+};
+
+const dataLocalISO = (): string => {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
 };
 
 const rotuloParada = (p: ParadaEstado) =>
@@ -200,6 +229,12 @@ export default function CotacaoExpress() {
   const validarExtras = (): string => {
     const ultimo = paradas.length - 1;
     return validarEndereco(ultimo);
+  };
+
+  const validarAgendamento = (): string => {
+    if (!dataDesejada) return "Escolha a data em que você precisa do transporte.";
+    if (!horaDesejada) return "Escolha a janela de horário para a coleta/entrega.";
+    return "";
   };
 
   // ------------------------------------------------------------
@@ -412,6 +447,11 @@ export default function CotacaoExpress() {
   // ------------------------------------------------------------
   const aprovar = async () => {
     if (processando || !precificacao) return;
+    const problemaAgendamento = validarAgendamento();
+    if (problemaAgendamento) {
+      setErro(problemaAgendamento);
+      return;
+    }
     setProcessando(true);
     setErro("");
     try {
@@ -999,7 +1039,9 @@ export default function CotacaoExpress() {
                         {rota ? `${rota.km.toFixed(1).replace(".", ",")} km` : "—"}
                       </InfoPrazo>
                       <InfoPrazo icone={<Clock className="h-3.5 w-3.5" />}>
-                        {rota ? formatarDuracao(rota.duracaoMin) : "—"}
+                        {rota
+                          ? formatarDuracao(rota.duracaoMin + MARGEM_OPERACIONAL_MINUTOS)
+                          : "—"}
                       </InfoPrazo>
                       <InfoPrazo icone={<Truck className="h-3.5 w-3.5" />}>
                         {recomendacao?.nome || precificacao.rotulo_veiculo}
@@ -1017,26 +1059,38 @@ export default function CotacaoExpress() {
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label htmlFor="cot-data">Quando precisa? (opcional)</Label>
+                      <Label htmlFor="cot-data">Quando precisa? *</Label>
                       <Input
                         id="cot-data"
                         type="date"
+                        min={dataLocalISO()}
                         className="h-12 rounded-xl text-base"
                         value={dataDesejada}
                         onChange={(e) => setDataDesejada(e.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="cot-hora">Horário (opcional)</Label>
-                      <Input
-                        id="cot-hora"
-                        type="time"
-                        className="h-12 rounded-xl text-base"
-                        value={horaDesejada}
-                        onChange={(e) => setHoraDesejada(e.target.value)}
-                      />
+                      <Label htmlFor="cot-hora">Janela de horário *</Label>
+                      <Select value={horaDesejada} onValueChange={setHoraDesejada}>
+                        <SelectTrigger
+                          id="cot-hora"
+                          className="h-12 rounded-xl border-slate-200 text-base"
+                        >
+                          <SelectValue placeholder="Selecione a janela" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {JANELAS_HORARIO.map((janela) => (
+                            <SelectItem key={janela} value={janela}>
+                              Das {janela}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
+                  <p className="text-xs text-slate-400 print:hidden">
+                    Data e janela de horário são obrigatórias para reservar o veículo.
+                  </p>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 print:hidden">
                     <Button

@@ -86,10 +86,10 @@ describe("D) Tela final da cotação (Fase 2)", () => {
     );
   });
 
-  it("D.3 imagem de Parceria Logística como fundo em tela cheia", () => {
-    expect(detalhesSrc).toContain('style={{ backgroundImage: "url(\'/Parceria logistica.png\')" }}');
-    expect(detalhesSrc).toContain("absolute inset-0 bg-cover bg-center bg-no-repeat");
-    expect(detalhesSrc).not.toContain('src="/Parceria logistica.png"');
+  it("D.3 fundo padrão da Conexão Express (rota/entregador) na conclusão", () => {
+    expect(detalhesSrc).toContain('style={{ backgroundImage: "url(\'/bg-entregador1.jpg\')" }}');
+    expect(detalhesSrc).toContain("absolute inset-0 z-[-1] bg-cover bg-center bg-no-repeat bg-fixed");
+    expect(detalhesSrc).not.toContain("Parceria logistica.png");
   });
 
   it("D.4 preenchimento dos endereços tem marca d'água de rota", () => {

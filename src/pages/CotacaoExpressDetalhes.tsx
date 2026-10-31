@@ -174,18 +174,18 @@ export default function CotacaoExpressDetalhes() {
   if (concluido) {
     return (
       <div className="relative flex min-h-screen flex-col overflow-hidden">
-        {/* Fundo em tela cheia — Parceria Logística como marca d'água */}
+        {/* Fundo padrão da Conexão Express (mesmo das etapas de rota) */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/Parceria logistica.png')" }}
+          className="pointer-events-none absolute inset-0 z-[-2] bg-gradient-to-br from-orange-50 via-white to-slate-100"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/70 via-white/55 to-orange-50/70"
+          className="pointer-events-none absolute inset-0 z-[-1] bg-cover bg-center bg-no-repeat bg-fixed opacity-[0.05]"
+          style={{ backgroundImage: "url('/bg-entregador1.jpg')" }}
         />
 
-        <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10">
+        <main className="relative z-0 flex flex-1 items-center justify-center px-4 py-10">
           <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl animate-fade-in">
             <img
               src="/logos/logo-conexao-colorido.png"
@@ -231,23 +231,37 @@ export default function CotacaoExpressDetalhes() {
       </header>
 
       <main className="relative z-0 flex-1 px-4 pb-40 pt-2">
-        <div className="mx-auto w-full max-w-xl space-y-5 animate-fade-in">
+        <div className="mx-auto w-full max-w-2xl space-y-3 animate-fade-in">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-orange-600">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-orange-600">
               Etapa final · Endereços completos
             </span>
-            <h1 className="mt-1 text-2xl font-bold leading-snug text-slate-900">
+            <h1 className="mt-0.5 text-xl font-bold leading-snug text-slate-900">
               {primeiroNome ? `Último passo, ${primeiroNome}! ` : "Último passo! "}
               Precisamos dos números.
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500">
               Com esses dados fechamos a OS da sua rota e ela entra na fila.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            <span className="font-bold text-slate-700">Rota aprovada:</span>{" "}
-            {cotacao.paradas.map((p) => p.endereco).join(" → ")}
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Rota aprovada
+            </span>
+            <ol className="mt-1 flex flex-col gap-1">
+              {cotacao.paradas.map((p, idx) => (
+                <li
+                  key={`rota-${idx}`}
+                  className="flex items-center gap-2 text-xs text-slate-600"
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-[10px] font-bold text-orange-700">
+                    {idx + 1}
+                  </span>
+                  <span className="min-w-0 truncate">{p.endereco}</span>
+                </li>
+              ))}
+            </ol>
           </div>
 
           {detalhes.map((detalhe, idx) => {
@@ -256,19 +270,29 @@ export default function CotacaoExpressDetalhes() {
             return (
               <div
                 key={`detalhe-${detalhe.sequencia}`}
-                className="space-y-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+                className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
               >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                  <MapPin className="h-3.5 w-3.5 text-orange-500" />
-                  Parada {detalhe.sequencia} · {tipo} · {parada?.endereco}
+                <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                  <span className="shrink-0">
+                    Parada {detalhe.sequencia} · {tipo}
+                  </span>
+                  <span className="min-w-0 truncate font-medium text-slate-400">
+                    {parada?.endereco}
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`num-${detalhe.sequencia}`}>Número *</Label>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`num-${detalhe.sequencia}`}
+                      className="text-[11px] font-semibold text-slate-600"
+                    >
+                      Número *
+                    </Label>
                     <Input
                       id={`num-${detalhe.sequencia}`}
-                      className="h-12 rounded-xl text-base"
+                      className="h-10 rounded-lg text-sm"
                       placeholder="Ex.: 1250"
                       value={detalhe.numero}
                       onChange={(e) =>
@@ -276,49 +300,58 @@ export default function CotacaoExpressDetalhes() {
                       }
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`comp-${detalhe.sequencia}`}>Complemento</Label>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`comp-${detalhe.sequencia}`}
+                      className="text-[11px] font-semibold text-slate-600"
+                    >
+                      Complemento
+                    </Label>
                     <Input
                       id={`comp-${detalhe.sequencia}`}
-                      className="h-12 rounded-xl text-base"
-                      placeholder="Ex.: sala 12, fundos"
+                      className="h-10 rounded-lg text-sm"
+                      placeholder="Ex.: sala 12"
                       value={detalhe.complemento}
                       onChange={(e) =>
                         atualizarDetalhe(detalhe.sequencia, "complemento", e.target.value)
                       }
                     />
                   </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor={`contato-${detalhe.sequencia}`}>
-                    Nome de quem recebe / retira *
-                  </Label>
-                  <Input
-                    id={`contato-${detalhe.sequencia}`}
-                    autoComplete="name"
-                    className="h-12 rounded-xl text-base"
-                    placeholder="Ex.: João Souza"
-                    value={detalhe.contato}
-                    onChange={(e) =>
-                      atualizarDetalhe(detalhe.sequencia, "contato", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor={`obs-${detalhe.sequencia}`}>
-                    Observações ou instruções
-                  </Label>
-                  <Textarea
-                    id={`obs-${detalhe.sequencia}`}
-                    className="min-h-[72px] rounded-xl text-base"
-                    placeholder="Ex.: contato na portaria, horário de recebimento..."
-                    value={detalhe.observacoes}
-                    onChange={(e) =>
-                      atualizarDetalhe(detalhe.sequencia, "observacoes", e.target.value)
-                    }
-                  />
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`contato-${detalhe.sequencia}`}
+                      className="text-[11px] font-semibold text-slate-600"
+                    >
+                      Quem recebe / retira *
+                    </Label>
+                    <Input
+                      id={`contato-${detalhe.sequencia}`}
+                      autoComplete="name"
+                      className="h-10 rounded-lg text-sm"
+                      placeholder="Ex.: João Souza"
+                      value={detalhe.contato}
+                      onChange={(e) =>
+                        atualizarDetalhe(detalhe.sequencia, "contato", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`obs-${detalhe.sequencia}`}
+                      className="text-[11px] font-semibold text-slate-600"
+                    >
+                      Observações
+                    </Label>
+                    <Textarea
+                      id={`obs-${detalhe.sequencia}`}
+                      className="min-h-[40px] rounded-lg py-2 text-sm"
+                      placeholder="Ex.: portaria, horário"
+                      value={detalhe.observacoes}
+                      onChange={(e) =>
+                        atualizarDetalhe(detalhe.sequencia, "observacoes", e.target.value)
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             );
@@ -327,7 +360,7 @@ export default function CotacaoExpressDetalhes() {
       </main>
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto w-full max-w-xl">
+        <div className="mx-auto w-full max-w-2xl">
           <Button
             type="button"
             className="h-12 w-full rounded-xl bg-orange-500 text-base font-bold text-white shadow-lg shadow-orange-500/30 hover:bg-orange-600"
