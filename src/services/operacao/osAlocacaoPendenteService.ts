@@ -146,3 +146,33 @@ export function emRiscoSlaSemAlocacao(
   if (Number.isNaN(criada)) return false;
   return Date.now() - criada >= referenciaEmHoras * 60 * 60 * 1000;
 }
+
+
+/** Horas em status pendente/aguardando programacao para alerta de SLA. */
+export const HORAS_RISCO_SLA_PENDENTE = 2;
+
+const STATUS_SLA_PENDENTE = new Set([
+  "pendente",
+  "aguardando_programacao",
+  "aguardando programacao",
+  "aguardando programação",
+  "enviado",
+  "em_analise",
+]);
+
+/**
+ * Indica se uma OS/solicitacao segue pendente (ou aguardando programacao)
+ * alem do limite de SLA configurado.
+ */
+export function emRiscoSlaPendente(
+  status: string | null | undefined,
+  createdAt: string | null | undefined,
+  referenciaEmHoras: number = HORAS_RISCO_SLA_PENDENTE
+): boolean {
+  const s = String(status || "").toLowerCase().trim();
+  if (!STATUS_SLA_PENDENTE.has(s)) return false;
+  if (!createdAt) return false;
+  const criada = new Date(createdAt).getTime();
+  if (Number.isNaN(criada)) return false;
+  return Date.now() - criada >= referenciaEmHoras * 60 * 60 * 1000;
+}

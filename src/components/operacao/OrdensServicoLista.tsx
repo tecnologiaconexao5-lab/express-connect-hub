@@ -23,7 +23,7 @@ import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
-import { notificarBaseAgregados, emRiscoSlaSemAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
+import { notificarBaseAgregados, emRiscoSlaSemAlocacao, emRiscoSlaPendente } from "@/services/operacao/osAlocacaoPendenteService";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
@@ -713,12 +713,20 @@ const OrdensServicoLista = () => {
                   const comOcorrencia = os.status === "ocorrencia";
                   const semPrestador = osSemPrestador(os);
                   const riscoSla = emRiscoSlaSemAlocacao((os as OSComDataCriacao).createdAt, semPrestador);
+                  const riscoSlaPendente = emRiscoSlaPendente(
+                    os.status,
+                    (os as OSComDataCriacao).createdAt,
+                  );
                   const statusAtivo = !STATUS_ENCERRADOS.includes(String(os.status)) && os.status !== "rascunho";
 
                   return (
                     <TableRow
                       key={os.id}
-                      className={`transition-colors group ${semPrestador ? "bg-red-50/50 border-l-4 border-l-red-500 hover:bg-red-50" : "hover:bg-muted/30"}`}
+                      className={`transition-colors group ${
+                        semPrestador || riscoSlaPendente
+                          ? "bg-red-50/60 border-l-4 border-l-red-500 hover:bg-red-50"
+                          : "hover:bg-muted/30"
+                      }`}
                     >
                       <TableCell className="py-4">
                         <div className="flex items-center gap-1.5 font-bold text-sm">
@@ -794,6 +802,11 @@ const OrdensServicoLista = () => {
                           )}
                           {STATUS_GLOBAL_INFO[obterStatusGlobalOS(os.status)].label}
                         </Badge>
+                        {riscoSlaPendente && (
+                          <Badge className="mt-1 flex w-fit animate-pulse items-center gap-1 border border-red-300 bg-red-600 px-1.5 py-0 text-[9px] font-bold uppercase text-white">
+                            <AlertTriangle className="h-2.5 w-2.5" /> Atraso/Risco de SLA
+                          </Badge>
+                        )}
                         {(os.dataProgramada || os.previsaoInicio) && (
                           <div className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-blue-600 uppercase">
                             <Clock className="w-2.5 h-2.5" /> Agendado
