@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { buscarTalentosBanco } from "@/services/recrutamento/talentBankService";
 
 export type PerfilOperacional = "urbano" | "leve" | "pesado" | "emergencia" | "rota_fixa" | "coleta" | "viagem";
 export type StatusDocumental = "completo" | "pendente" | "parcial" | "expirado";
@@ -43,6 +44,20 @@ export interface TalentoLogistico {
   favorito: boolean;
   shortlistId: string | null;
   scoreCompatibilidade: number;
+  /** Dados da junção oficial (Talent Intelligence). */
+  statusPrestador?: string;
+  homologado?: boolean;
+  modalidades?: string[];
+  restricoesOperacionais?: Record<string, unknown>;
+  disponibilidadeJanelas?: Array<{
+    diaSemana: number;
+    horaInicio: string;
+    horaFim: string;
+    disponivel: boolean;
+  }>;
+  capacidadeKg?: number;
+  capacidadeM3?: number;
+  temperaturas?: string[];
 }
 
 export interface Shortlist {
@@ -82,6 +97,15 @@ export interface FiltrosAvancados {
   fazColeta: boolean | null;
   fazEntrega: boolean | null;
   compatibilidadeMin: number;
+  /** Filtros combinados avançados (Fase 5). */
+  capacidadeMinKg: number;
+  capacidadeMinM3: number;
+  temperaturas: string[];
+  diasSemana: number[];
+  janelaInicio: string;
+  janelaFim: string;
+  modalidades: string[];
+  statusTalento: Array<"homologado" | "ativo">;
   ordenarPor: "score" | "experiencia" | "taxaAceite" | "receita" | "compatibilidade" | "data";
   ordem: "asc" | "desc";
 }
@@ -106,6 +130,9 @@ export interface TalentBankState {
   shortlists: Shortlist[];
   filtros: FiltrosAvancados;
   modoExibicao: "grid" | "list";
+  carregando: boolean;
+  erro: string | null;
+  carregarTalentos: () => Promise<void>;
   talentoAtivo: string | null;
   metricasConversao: MetricaConversao[];
   metricasRetencao: MetricaRetencao[];
@@ -177,6 +204,9 @@ const FILTROS_PADRAO: FiltrosAvancados = {
   experienciaMin: 0, experienciaMax: 50, statusDocumental: [],
   perfisOperacionais: [], tags: [], cargasPreferidas: [],
   fazColeta: null, fazEntrega: null, compatibilidadeMin: 0,
+  capacidadeMinKg: 0, capacidadeMinM3: 0, temperaturas: [],
+  diasSemana: [], janelaInicio: "", janelaFim: "",
+  modalidades: [], statusTalento: [],
   ordenarPor: "score", ordem: "desc",
 };
 
@@ -198,14 +228,27 @@ const metricasRetencao: MetricaRetencao[] = [
 ];
 
 export const useTalentBankStore = create<TalentBankState>()((set) => ({
-  talentos: mockTalentos,
+  talentos: [],
   shortlists: mockShortlists,
   filtros: { ...FILTROS_PADRAO },
   modoExibicao: "grid",
   talentoAtivo: null,
+  carregando: false,
+  erro: null,
   metricasConversao: metricasConversao,
   metricasRetencao: metricasRetencao,
   regioesCriticas: mockRegioesCriticas,
+
+  carregarTalentos: async () => {
+    set({ carregando: true, erro: null });
+    try {
+      const talentos = await buscarTalentosBanco();
+      set({ talentos, carregando: false });
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      set({ carregando: false, erro: mensagem });
+    }
+  },
 
   setTalentoAtivo: (id) => set({ talentoAtivo: id }),
   setModoExibicao: (modo) => set({ modoExibicao: modo }),

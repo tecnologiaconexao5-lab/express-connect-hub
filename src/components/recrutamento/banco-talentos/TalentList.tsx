@@ -4,42 +4,22 @@ import { MapPin, Truck, Star, Heart, Clock, FileText, Award, User, ChevronRight,
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore, type TalentoLogistico } from "@/stores/talentBankStore";
+import { aplicarFiltrosTalentos } from "@/services/recrutamento/talentBankService";
 
 const NIVEL_CORES = { diamante: "text-cyan-500", ouro: "text-yellow-500", prata: "text-slate-400", bronze: "text-amber-700" };
 const NIVEL_BGS = { diamante: "bg-cyan-50 border-cyan-200 dark:bg-cyan-950/20", ouro: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20", prata: "bg-slate-100 border-slate-200", bronze: "bg-amber-100 border-amber-200" };
 const TAG_COLORS = ["bg-blue-100 text-blue-700 border-blue-200", "bg-purple-100 text-purple-700 border-purple-200", "bg-green-100 text-green-700 border-green-200", "bg-pink-100 text-pink-700 border-pink-200"];
 
 export default function TalentList({ onSelectProfile }: { onSelectProfile: () => void }) {
-  const { talentos, filtros, modoExibicao, setModoExibicao, setTalentoAtivo, toggleFavorito, talentoAtivo } = useTalentBankStore();
+  const {
+    talentos, filtros, modoExibicao, setModoExibicao,
+    setTalentoAtivo, toggleFavorito, talentoAtivo, carregando, erro,
+  } = useTalentBankStore();
 
-  const filtrados = useMemo(() => {
-    return talentos
-      .filter((t) => {
-        if (filtros.busca) {
-          const q = filtros.busca.toLowerCase();
-          if (!t.nome.toLowerCase().includes(q) && !t.cpf.includes(q) && !t.veiculo.placa.toLowerCase().includes(q) && !t.telefone.includes(q)) return false;
-        }
-        if (filtros.regioes.length && !filtros.regioes.some((r) => t.regioesAtuacao.includes(r))) return false;
-        if (filtros.cidades.length && !filtros.cidades.includes(t.cidade)) return false;
-        if (filtros.tiposVeiculo.length && !filtros.tiposVeiculo.includes(t.veiculo.tipo)) return false;
-        if (filtros.perfisOperacionais.length && !filtros.perfisOperacionais.some((p) => t.perfisOperacionais.includes(p))) return false;
-        if (filtros.cargasPreferidas.length && !filtros.cargasPreferidas.some((c) => t.cargaPreferida.includes(c))) return false;
-        if (filtros.statusDocumental.length && !filtros.statusDocumental.includes(t.statusDocumental)) return false;
-        if (filtros.scoreMin !== null && t.score < filtros.scoreMin) return false;
-        if (filtros.scoreMax !== null && t.score > filtros.scoreMax) return false;
-        if (filtros.disponivel !== null && t.disponivel !== filtros.disponivel) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        const dir = filtros.ordem === "desc" ? -1 : 1;
-        if (filtros.ordenarPor === "score") return (a.score - b.score) * dir;
-        if (filtros.ordenarPor === "experiencia") return (a.experienciaAnos - b.experienciaAnos) * dir;
-        if (filtros.ordenarPor === "taxaAceite") return (a.taxaAceite - b.taxaAceite) * dir;
-        if (filtros.ordenarPor === "receita") return (a.receitaMediaMes - b.receitaMediaMes) * dir;
-        if (filtros.ordenarPor === "compatibilidade") return (a.scoreCompatibilidade - b.scoreCompatibilidade) * dir;
-        return (new Date(a.dataCadastro).getTime() - new Date(b.dataCadastro).getTime()) * dir;
-      });
-  }, [talentos, filtros]);
+  const filtrados = useMemo(
+    () => aplicarFiltrosTalentos(talentos, filtros),
+    [talentos, filtros],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -58,7 +38,16 @@ export default function TalentList({ onSelectProfile }: { onSelectProfile: () =>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {filtrados.length === 0 ? (
+        {carregando ? (
+          <div className="text-center py-16">
+            <p className="text-sm text-muted-foreground">Carregando banco de talentos...</p>
+          </div>
+        ) : erro ? (
+          <div className="text-center py-16">
+            <p className="text-sm text-red-500">Não foi possível carregar o banco de talentos.</p>
+            <p className="text-xs text-muted-foreground/60">{erro}</p>
+          </div>
+        ) : filtrados.length === 0 ? (
           <div className="text-center py-16">
             <User className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">Nenhum talento encontrado</p>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,11 @@ import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
 import { notificarBaseAgregados, emRiscoSlaSemAlocacao, emRiscoSlaPendente } from "@/services/operacao/osAlocacaoPendenteService";
+import {
+  buscarSugestoesPrestadores,
+  type MatchOSContext,
+  type SugestaoMatch,
+} from "@/services/operacao/matchPrestadoresService";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
@@ -96,6 +101,8 @@ const OrdensServicoLista = () => {
   const [motoristaAlocacao, setMotoristaAlocacao] = useState("");
   const [repasseAlocacao, setRepasseAlocacao] = useState("");
   const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
+  const [sugestoesAlocacao, setSugestoesAlocacao] = useState<SugestaoMatch[]>([]);
+  const [buscandoSugestoesAlocacao, setBuscandoSugestoesAlocacao] = useState(false);
   const PAGE_SIZE = 25;
 
   useEffect(() => {
@@ -263,6 +270,8 @@ const OrdensServicoLista = () => {
     setPrestadorAlocacaoNome("");
     setMotoristaAlocacao("");
     setRepasseAlocacao("");
+    setSugestoesAlocacao([]);
+    setBuscandoSugestoesAlocacao(false);
   };
 
   const abrirAlocacao = (os: OrdemServico) => {
@@ -270,6 +279,7 @@ const OrdensServicoLista = () => {
     setPrestadorAlocacao(null);
     setPrestadorAlocacaoNome("");
     setMotoristaAlocacao("");
+    setSugestoesAlocacao([]);
     // Repasse automático: usa o custo já calculado da OS (com fallbacks legados)
     // e permanece editável manualmente no modal.
     const repasseAtual =
@@ -328,6 +338,48 @@ const OrdensServicoLista = () => {
       );
     } finally {
       setSalvandoAlocacao(false);
+    }
+  };
+
+  const sugerirPrestadoresAlocacao = async () => {
+    if (!osAlocando) return;
+    setBuscandoSugestoesAlocacao(true);
+    try {
+      const enderecos = Array.isArray(osAlocando.enderecos) ? osAlocando.enderecos : [];
+      const coleta = enderecos[0];
+      const entrega = enderecos[enderecos.length - 1];
+      const janela = String(osAlocando.janelaOperacional || "");
+      const partes = janela.split(/[-–—]|às|as/i).map((p) => p.trim());
+      const ctx: MatchOSContext = {
+        tipoVeiculo: osAlocando.veiculoTipo || "",
+        pesoKg: Number(osAlocando.carga?.peso || 0),
+        cubagemM3: Number(osAlocando.carga?.cubagem || 0),
+        temperatura: osAlocando.veiculoTermica || osAlocando.carga?.tipo || "",
+        tipoCarga: osAlocando.carga?.tipo || "",
+        cidadeColeta: coleta?.cidade || null,
+        ufColeta: coleta?.estado || coleta?.uf || null,
+        cidadeEntrega: entrega?.cidade || null,
+        ufEntrega: entrega?.estado || entrega?.uf || null,
+        data: osAlocando.dataProgramada || osAlocando.data || null,
+        janelaInicio: coleta?.janelaInicio || partes[0] || "",
+        janelaFim: coleta?.janelaFim || partes[1] || "",
+        modalidade: osAlocando.modalidade || "esporadico",
+        tipoOperacao: osAlocando.tipoOperacao || null,
+      };
+      const resultado = await buscarSugestoesPrestadores(ctx, 6);
+      setSugestoesAlocacao(resultado.sugestoes);
+      if (resultado.sugestoes.length === 0) {
+        toast.info(
+          resultado.eliminados.length > 0
+            ? `Nenhum prestador passou nos requisitos eliminatórios (${resultado.eliminados.length} descartado(s)).`
+            : "Nenhum prestador compatível com esta OS.",
+        );
+      }
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Erro ao sugerir prestadores: ${mensagem}`);
+    } finally {
+      setBuscandoSugestoesAlocacao(false);
     }
   };
 
@@ -949,6 +1001,61 @@ const OrdensServicoLista = () => {
                 automaticamente.
               </p>
             </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                onClick={() => void sugerirPrestadoresAlocacao()}
+                disabled={buscandoSugestoesAlocacao}
+              >
+                {buscandoSugestoesAlocacao ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {buscandoSugestoesAlocacao ? "Analisando..." : "Sugerir Melhores Prestadores"}
+              </Button>
+              <span className="text-[10px] text-muted-foreground">Requisitos + score (0–100)</span>
+            </div>
+
+            {sugestoesAlocacao.length > 0 && (
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-indigo-100 bg-indigo-50/40 p-2">
+                {sugestoesAlocacao.map((s, i) => (
+                  <div
+                    key={s.prestadorId}
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2"
+                  >
+                    <span className="text-[11px] font-black text-slate-500">{i + 1}º</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-slate-800">{s.nome}</p>
+                      <p className="truncate text-[10px] text-slate-500">
+                        {s.veiculo?.tipo || "—"}
+                        {s.veiculo?.capacidadeKg ? ` · ${s.veiculo.capacidadeKg}kg` : ""}
+                        {s.regiao ? ` · ${s.regiao}` : ""}
+                      </p>
+                      <p className="truncate text-[10px] text-emerald-700">{s.motivos.slice(0, 3).join(" · ")}</p>
+                    </div>
+                    <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
+                      {s.compatibilidade}%
+                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700"
+                      onClick={() => {
+                        setPrestadorAlocacao(s.prestadorId);
+                        setPrestadorAlocacaoNome(s.nome);
+                      }}
+                    >
+                      Selecionar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Prestador *</Label>

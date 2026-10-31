@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BarChart3, Users, Star, MapIcon, TrendingUp, GitMerge, Search, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import ShortlistPanel from "./ShortlistPanel";
 import RegioesCriticas from "./RegioesCriticas";
 import PipelineConversao from "./PipelineConversao";
 import AdvancedFilters from "./AdvancedFilters";
+import { useTalentBankStore } from "@/stores/talentBankStore";
 
 type ViewMode = "talentos" | "dashboard" | "shortlists" | "regioes" | "pipeline";
 
@@ -16,6 +17,11 @@ export default function BancoTalentosLayout() {
   const [view, setView] = useState<ViewMode>("talentos");
   const [showFilters, setShowFilters] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const carregarTalentos = useTalentBankStore((s) => s.carregarTalentos);
+
+  useEffect(() => {
+    void carregarTalentos();
+  }, [carregarTalentos]);
 
   const navItems = [
     { id: "talentos" as ViewMode, icon: Users, label: "Talentos", desc: "Banco inteligente" },

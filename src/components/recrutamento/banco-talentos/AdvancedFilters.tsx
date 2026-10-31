@@ -132,6 +132,143 @@ export default function AdvancedFilters({ onClose }: AdvancedFiltersProps) {
           </div>
         </Section>
 
+        <Section title="Capacidade (Peso / Volume)">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[9px] text-muted-foreground mb-1">Peso mín. (kg)</p>
+              <input
+                type="number"
+                min={0}
+                value={filtros.capacidadeMinKg || ""}
+                onChange={(e) => set({ capacidadeMinKg: Number(e.target.value) || 0 })}
+                placeholder="Ex.: 600"
+                className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <p className="text-[9px] text-muted-foreground mb-1">Volume mín. (m³)</p>
+              <input
+                type="number"
+                min={0}
+                value={filtros.capacidadeMinM3 || ""}
+                onChange={(e) => set({ capacidadeMinM3: Number(e.target.value) || 0 })}
+                placeholder="Ex.: 6"
+                className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Temperatura">
+          <div className="flex flex-wrap gap-1.5">
+            {["seco", "refrigerado", "congelado", "misto"].map((temperatura) => (
+              <Chip
+                key={temperatura}
+                selected={filtros.temperaturas.includes(temperatura)}
+                onClick={() =>
+                  set({
+                    temperaturas: filtros.temperaturas.includes(temperatura)
+                      ? filtros.temperaturas.filter((t) => t !== temperatura)
+                      : [...filtros.temperaturas, temperatura],
+                  })
+                }
+              >
+                {temperatura === "seco" ? "Seco" : temperatura === "refrigerado" ? "Refrigerado" : temperatura === "congelado" ? "Congelado" : "Misto"}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Dias da semana">
+          <div className="flex flex-wrap gap-1.5">
+            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dia, idx) => (
+              <Chip
+                key={dia}
+                selected={filtros.diasSemana.includes(idx)}
+                onClick={() =>
+                  set({
+                    diasSemana: filtros.diasSemana.includes(idx)
+                      ? filtros.diasSemana.filter((d) => d !== idx)
+                      : [...filtros.diasSemana, idx],
+                  })
+                }
+              >
+                {dia}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Janela de horário">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[9px] text-muted-foreground mb-1">Início</p>
+              <input
+                type="time"
+                value={filtros.janelaInicio}
+                onChange={(e) => set({ janelaInicio: e.target.value })}
+                className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <p className="text-[9px] text-muted-foreground mb-1">Fim</p>
+              <input
+                type="time"
+                value={filtros.janelaFim}
+                onChange={(e) => set({ janelaFim: e.target.value })}
+                className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Modalidade">
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { value: "contrato", label: "Contrato" },
+              { value: "esporadico", label: "Esporádico" },
+              { value: "rota_fixa", label: "Rota Fixa" },
+            ].map((modalidade) => (
+              <Chip
+                key={modalidade.value}
+                selected={filtros.modalidades.includes(modalidade.value)}
+                onClick={() =>
+                  set({
+                    modalidades: filtros.modalidades.includes(modalidade.value)
+                      ? filtros.modalidades.filter((m) => m !== modalidade.value)
+                      : [...filtros.modalidades, modalidade.value],
+                  })
+                }
+              >
+                {modalidade.label}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Status">
+          <div className="flex gap-1.5">
+            {([
+              { value: "homologado" as const, label: "Homologado" },
+              { value: "ativo" as const, label: "Ativo" },
+            ]).map((status) => (
+              <Chip
+                key={status.value}
+                selected={filtros.statusTalento.includes(status.value)}
+                onClick={() =>
+                  set({
+                    statusTalento: filtros.statusTalento.includes(status.value)
+                      ? filtros.statusTalento.filter((s) => s !== status.value)
+                      : [...filtros.statusTalento, status.value],
+                  })
+                }
+              >
+                {status.label}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
         <Section title="Ordenar por">
           <select value={filtros.ordenarPor} onChange={(e) => set({ ordenarPor: e.target.value as typeof filtros.ordenarPor })} className="w-full h-9 rounded-lg border border-border bg-background text-xs text-foreground px-2 focus:outline-none focus:ring-2 focus:ring-primary/30">
             <option value="score">Score</option>

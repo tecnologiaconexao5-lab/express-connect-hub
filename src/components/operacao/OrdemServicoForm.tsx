@@ -77,6 +77,10 @@ import {
   type RedeOportunidade,
   type PrestadorCompativel,
 } from "@/services/operacao/redePrestadoresService";
+import {
+  buscarSugestoesPrestadores,
+  type MatchOSContext,
+} from "@/services/operacao/matchPrestadoresService";
 import { Users, Network } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerReceitaEMargem } from "@/lib/permissoes";
@@ -625,6 +629,10 @@ export type SugestaoPrestadorMatch = {
   prestadorId: string;
   nome: string;
   telefone?: string;
+  whatsapp?: string;
+  email?: string;
+  cidade?: string;
+  uf?: string;
   regiao?: string;
   veiculo?: { placa?: string; tipo?: string; capacidadeKg?: number; capacidadeM3?: number };
   score: number;
@@ -824,6 +832,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   // UPGRADE — MATCH INTELIGENTE: sugestões ordenadas de prestadores compatíveis
   const [buscandoSugestao, setBuscandoSugestao] = useState(false);
   const [sugestoesPrestador, setSugestoesPrestador] = useState<SugestaoPrestadorMatch[]>([]);
+  const [perfilMatch, setPerfilMatch] = useState<SugestaoPrestadorMatch | null>(null);
+  const [enviandoConviteMatch, setEnviandoConviteMatch] = useState<string | null>(null);
   const [motivoAjusteManual, setMotivoAjusteManual] = useState("");
   const [showMotivoDialog, setShowMotivoDialog] = useState(false);
   const [enviandoWhatsApp, setEnviandoWhatsApp] = useState(false);
@@ -964,46 +974,54 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     try {
       const pontos = data.enderecos || [];
       const origem = pontos.find((e) => tipoEhColeta(e?.tipo) && e?.endereco?.trim()) || pontos[0];
-      const ctx: CtxMatch = {
+      const destino =
+        [...pontos].reverse().find((e) => tipoEhEntrega(e?.tipo) && e?.endereco?.trim()) ||
+        pontos[pontos.length - 1];
+
+      const janelaTexto = String(data.janelaOperacional || "");
+      const partesJanela = janelaTexto.split(/[-–—]|às|as/i).map((p) => p.trim());
+      const janelaInicio = origem?.janelaInicio || partesJanela[0] || "";
+      const janelaFim = origem?.janelaFim || partesJanela[1] || "";
+
+      const ctx: MatchOSContext = {
         tipoVeiculo: data.veiculoTipo || "",
         pesoKg: Number(data.carga?.peso || 0),
-        m3: Number(data.carga?.cubagem || 0),
-        refrigerado: normTxt(data.veiculoTermica) === "refrigerado",
-        cidade: normTxt(origem?.cidade),
-        uf: normTxt(origem?.estado),
+        cubagemM3: Number(data.carga?.cubagem || resultadoCubagem?.cubagemTotal || 0),
+        temperatura: data.veiculoTermica || data.carga?.tipo || "",
+        tipoCarga: data.carga?.tipo || "",
+        cidadeColeta: origem?.cidade || null,
+        ufColeta: origem?.estado || origem?.uf || null,
+        cidadeEntrega: destino?.cidade || null,
+        ufEntrega: destino?.estado || destino?.uf || null,
+        data: data.dataProgramada || data.data || null,
+        janelaInicio,
+        janelaFim,
+        modalidade: data.modalidade || "esporadico",
+        tipoOperacao: data.tipoOperacao || null,
       };
 
-      const { data: lista, error } = await supabase
-        .from("prestadores")
-        .select("id, nome_completo, telefone, whatsapp, status, regiao_principal, regioes_secundarias, aceita_refrigerado, aceita_refrigerada, indice_aceite, avaliacao_operacional, qtd_operacoes")
-        .eq("status", "ativo")
-        .limit(80);
-      if (error) throw error;
-
-      const ids = (lista || []).map((p) => p.id);
-      const veics = ids.length
-        ? (await supabase
-            .from("veiculos")
-            .select("id, prestador_vinculado, tipo_veiculo, tipo, capacidade_kg, capacidade_m3, placa, status, principal")
-            .in("prestador_vinculado", ids)
-            .limit(300)).data || []
-        : [];
-      const veicsPorPrestador = new Map<string, VeiculoMatchRow[]>();
-      for (const v of veics as VeiculoMatchRow[]) {
-        const arr = veicsPorPrestador.get(v.prestador_vinculado) || [];
-        arr.push(v);
-        veicsPorPrestador.set(v.prestador_vinculado, arr);
-      }
-
-      const sugestoes = (lista || [])
-        .map((p) => calcularMatchPrestador({ ...p, veiculos: veicsPorPrestador.get(p.id) || [] }, ctx))
-        .filter((s): s is SugestaoPrestadorMatch => s !== null)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 8);
+      const resultado = await buscarSugestoesPrestadores(ctx, 8);
+      const sugestoes: SugestaoPrestadorMatch[] = resultado.sugestoes.map((s) => ({
+        prestadorId: s.prestadorId,
+        nome: s.nome,
+        telefone: s.telefone,
+        whatsapp: s.whatsapp,
+        email: s.email,
+        cidade: s.cidade,
+        uf: s.uf,
+        regiao: s.regiao,
+        veiculo: s.veiculo,
+        score: s.compatibilidade,
+        motivos: s.motivos,
+      }));
 
       setSugestoesPrestador(sugestoes);
       if (sugestoes.length === 0) {
-        toast.info("Nenhum prestador compatível com a exigência desta OS.");
+        toast.info(
+          resultado.eliminados.length > 0
+            ? `Nenhum prestador passou nos requisitos eliminatórios (${resultado.eliminados.length} descartado(s)).`
+            : "Nenhum prestador compatível com a exigência desta OS.",
+        );
       } else {
         toast.success(`${sugestoes.length} sugest(ões) encontrada(s) — escolha abaixo.`);
       }
@@ -1012,6 +1030,53 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       toast.error("Erro ao buscar sugestões de prestadores.");
     } finally {
       setBuscandoSugestao(false);
+    }
+  };
+
+  const solicitarDisponibilidadeMatch = (s: SugestaoPrestadorMatch) => {
+    const numero = String(s.whatsapp || s.telefone || "").replace(/\D/g, "");
+    if (!numero) {
+      toast.error("Prestador sem telefone/WhatsApp cadastrado.");
+      return;
+    }
+    const mensagem =
+      `Olá, ${s.nome}! Aqui é a Conexão Express. ` +
+      `Temos uma oportunidade de ${data.tipoOperacao || "transporte"} ` +
+      `${data.enderecos?.[0]?.cidade ? `saindo de ${data.enderecos[0].cidade}` : ""}` +
+      `${data.enderecos?.[data.enderecos.length - 1]?.cidade ? ` para ${data.enderecos[data.enderecos.length - 1].cidade}` : ""}. ` +
+      `Você tem disponibilidade para atender?`;
+    window.open(`https://wa.me/55${numero}?text=${encodeURIComponent(mensagem)}`, "_blank");
+  };
+
+  const enviarConviteAppMatch = async (s: SugestaoPrestadorMatch) => {
+    if (!data.id) {
+      toast.error("Salve a OS antes de enviar o convite pelo App.");
+      return;
+    }
+    setEnviandoConviteMatch(s.prestadorId);
+    try {
+      const { error } = await supabase.from("portal_notificacoes").insert([
+        {
+          prestador_id: s.prestadorId,
+          os_id: data.id,
+          tipo: "convite_app",
+          titulo: "Convite para operação",
+          mensagem: `A Conexão Express selecionou você para a OS ${data.numero || data.id}. Abra o App para confirmar disponibilidade.`,
+          canal: "app",
+          lida: false,
+          prioridade: "alta",
+          referencia_id: data.id,
+          origem_id: data.id,
+          origem_tipo: "ordem_servico",
+        },
+      ]);
+      if (error) throw error;
+      toast.success(`Convite enviado para ${s.nome} no App.`);
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível enviar o convite: ${mensagem}`);
+    } finally {
+      setEnviandoConviteMatch(null);
     }
   };
 
@@ -2389,7 +2454,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     className="border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800"
                   >
                     {buscandoSugestao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                    {buscandoSugestao ? "Buscando prestadores..." : "Sugestão Inteligente"}
+                    {buscandoSugestao ? "Buscando prestadores..." : "Sugerir Melhores Prestadores"}
                   </Button>
                   {data.prestador && (
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
@@ -2415,7 +2480,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                           i === 0 ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-white"
                         }`}
                       >
-                        <span className="w-5 text-[11px] font-black text-slate-400">#{i + 1}</span>
+                        <span className="w-6 text-[12px] font-black text-slate-500">{i + 1}º</span>
                         <div className="min-w-[180px] flex-1">
                           <p className="text-sm font-bold text-slate-800">{s.nome}</p>
                           <p className="text-[11px] text-slate-500">
@@ -2435,17 +2500,52 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                           </div>
                         </div>
                         <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
-                          {Math.min(100, s.score)}% match
+                          {Math.min(100, s.score)}% de compatibilidade
                         </Badge>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleSelecionarPrestador(s.nome, { id: s.prestadorId })}
-                          disabled={readOnly || emRede}
-                          className="bg-emerald-600 text-white hover:bg-emerald-700"
-                        >
-                          Selecionar
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px]"
+                            onClick={() => setPerfilMatch(s)}
+                          >
+                            <Eye className="mr-1 h-3 w-3" /> Ver Perfil
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            onClick={() => solicitarDisponibilidadeMatch(s)}
+                          >
+                            <MessageCircle className="mr-1 h-3 w-3" /> WhatsApp
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                            disabled={enviandoConviteMatch === s.prestadorId}
+                            onClick={() => void enviarConviteAppMatch(s)}
+                          >
+                            {enviandoConviteMatch === s.prestadorId ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="mr-1 h-3 w-3" />
+                            )}
+                            Convite App
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSelecionarPrestador(s.nome, { id: s.prestadorId })}
+                            disabled={readOnly || emRede}
+                            className="h-7 bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                          >
+                            <UserCheck className="mr-1 h-3 w-3" /> Alocar
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2453,6 +2553,63 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
                   </>
                 )}
+
+                <Dialog open={!!perfilMatch} onOpenChange={(open) => { if (!open) setPerfilMatch(null); }}>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <UserCheck className="h-5 w-5 text-indigo-600" /> Perfil do parceiro sugerido
+                      </DialogTitle>
+                      <DialogDescription>
+                        Dados operacionais usados pelo motor de match. A IA apenas sugere — a alocação é sua decisão.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {perfilMatch && (
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <p className="font-bold">{perfilMatch.nome}</p>
+                          <Badge className="bg-indigo-600 text-white">
+                            {perfilMatch.score}% de compatibilidade
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Veículo</p>
+                            <p className="font-semibold">{perfilMatch.veiculo?.tipo || "—"} {perfilMatch.veiculo?.placa || ""}</p>
+                            <p className="text-muted-foreground">
+                              {perfilMatch.veiculo?.capacidadeKg ? `${perfilMatch.veiculo.capacidadeKg} kg` : "Capacidade não informada"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Região</p>
+                            <p className="font-semibold">{perfilMatch.regiao || [perfilMatch.cidade, perfilMatch.uf].filter(Boolean).join(" - ") || "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">Telefone</p>
+                            <p className="font-semibold">{perfilMatch.telefone || perfilMatch.whatsapp || "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-2">
+                            <p className="text-[10px] uppercase text-muted-foreground">E-mail</p>
+                            <p className="truncate font-semibold">{perfilMatch.email || "—"}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Por que foi sugerido</p>
+                          <ul className="space-y-1">
+                            {perfilMatch.motivos.map((motivo) => (
+                              <li key={motivo} className="flex items-center gap-1.5 text-xs text-slate-600">
+                                <Check className="h-3 w-3 text-emerald-600" /> {motivo}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setPerfilMatch(null)}>Fechar</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {modoAlocacao === "rede" && (
                   <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
