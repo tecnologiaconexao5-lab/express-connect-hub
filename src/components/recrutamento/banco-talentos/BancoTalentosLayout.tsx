@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BarChart3, Users, Star, MapIcon, TrendingUp, GitMerge, Search, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, BarChart3, Users, Star, MapIcon, TrendingUp, GitMerge, Search, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import DashboardEstrategico from "./DashboardEstrategico";
 import TalentList from "./TalentList";
@@ -10,6 +10,7 @@ import RegioesCriticas from "./RegioesCriticas";
 import PipelineConversao from "./PipelineConversao";
 import AdvancedFilters from "./AdvancedFilters";
 import { useTalentBankStore } from "@/stores/talentBankStore";
+import { useTalentAIAlerts } from "@/hooks/useTalentAIAlerts";
 
 type ViewMode = "talentos" | "dashboard" | "shortlists" | "regioes" | "pipeline";
 
@@ -18,6 +19,7 @@ export default function BancoTalentosLayout() {
   const [showFilters, setShowFilters] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const carregarTalentos = useTalentBankStore((s) => s.carregarTalentos);
+  const { alertas } = useTalentAIAlerts();
 
   useEffect(() => {
     void carregarTalentos();
@@ -61,6 +63,27 @@ export default function BancoTalentosLayout() {
           </button>
         ))}
       </div>
+
+      {view === "talentos" && alertas.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-amber-200 bg-amber-50 px-4 py-1.5">
+          <span className="flex shrink-0 items-center gap-1 text-[10px] font-black uppercase tracking-wide text-amber-800">
+            <AlertTriangle className="h-3.5 w-3.5" /> Alertas IA ({alertas.length})
+          </span>
+          {alertas.slice(0, 3).map((alerta) => (
+            <span
+              key={alerta.id}
+              title={alerta.descricao}
+              className={
+                alerta.severidade === "critical"
+                  ? "shrink-0 rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700"
+                  : "shrink-0 rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+              }
+            >
+              {alerta.titulo}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <AnimatePresence mode="wait">

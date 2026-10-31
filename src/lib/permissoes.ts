@@ -165,3 +165,16 @@ export function getModulosVisiveis(user: User): string[] {
 export function podeVerReceitaEMargem(role?: UserRole | string | null): boolean {
   return role === "super_admin" || role === "admin";
 }
+
+/**
+ * LGPD — Avaliações situacionais expõem perfil comportamental.
+ * Visíveis apenas para recrutador/admin (não para comercial, financeiro,
+ * atendimento, cliente ou prestador).
+ */
+export function podeVerAvaliacaoSituacional(
+  role?: UserRole | string | null,
+): boolean {
+  return ["super_admin", "admin", "admin_tenant", "operador", "recrutador"].includes(
+    String(role || ""),
+  );
+}

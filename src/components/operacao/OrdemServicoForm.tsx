@@ -81,6 +81,8 @@ import {
   buscarSugestoesPrestadores,
   type MatchOSContext,
 } from "@/services/operacao/matchPrestadoresService";
+import { PERFORMANCE_CORES, type CategoriaPerformance } from "@/lib/performancePrestador";
+import { registrarConviteOS } from "@/services/recrutamento/convitesOSService";
 import { Users, Network } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerReceitaEMargem } from "@/lib/permissoes";
@@ -636,6 +638,8 @@ export type SugestaoPrestadorMatch = {
   regiao?: string;
   veiculo?: { placa?: string; tipo?: string; capacidadeKg?: number; capacidadeM3?: number };
   score: number;
+  categoriaPerformance: CategoriaPerformance;
+  performanceScore?: number | null;
   motivos: string[];
 };
 
@@ -1012,6 +1016,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         regiao: s.regiao,
         veiculo: s.veiculo,
         score: s.compatibilidade,
+        categoriaPerformance: s.categoriaPerformance,
+        performanceScore: s.performanceScore,
         motivos: s.motivos,
       }));
 
@@ -1071,6 +1077,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         },
       ]);
       if (error) throw error;
+      const convite = await registrarConviteOS({
+        prestadorId: s.prestadorId,
+        osId: data.id,
+        metadata: { origem: "match_inteligente", os_numero: data.numero || null },
+      });
+      if (!convite.ok) {
+        console.warn("[MatchInteligente] Convite sem timeline:", convite.erro);
+      }
       toast.success(`Convite enviado para ${s.nome} no App.`);
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : String(error);
@@ -2482,7 +2496,16 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                       >
                         <span className="w-6 text-[12px] font-black text-slate-500">{i + 1}º</span>
                         <div className="min-w-[180px] flex-1">
-                          <p className="text-sm font-bold text-slate-800">{s.nome}</p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-bold text-slate-800">{s.nome}</p>
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] font-bold ${PERFORMANCE_CORES[s.categoriaPerformance]}`}
+                            >
+                              {s.categoriaPerformance}
+                              {s.performanceScore != null ? ` · ${s.performanceScore}` : ""}
+                            </Badge>
+                          </div>
                           <p className="text-[11px] text-slate-500">
                             {s.veiculo?.tipo
                               ? `${s.veiculo.tipo}${s.veiculo.placa ? ` · ${s.veiculo.placa}` : ""}`

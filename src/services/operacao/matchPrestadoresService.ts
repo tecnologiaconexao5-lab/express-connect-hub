@@ -12,6 +12,10 @@
 // A IA apenas sugere; a alocação é sempre uma ação humana.
 // ============================================================
 import { supabase } from "@/lib/supabase";
+import {
+  calcularCategoriaPerformance,
+  type CategoriaPerformance,
+} from "@/lib/performancePrestador";
 
 export interface MatchOSContext {
   tipoVeiculo?: string | null;
@@ -57,6 +61,7 @@ export interface PerfilTalentoMatchInput {
   distancia_max_coleta_km?: number | null;
   aceita_viagens?: boolean | null;
   restricoes_operacionais?: Record<string, unknown> | null;
+  status_disponibilidade?: "disponivel" | "indisponivel" | "em_operacao" | null;
 }
 
 export interface DisponibilidadeMatchInput {
@@ -121,6 +126,8 @@ export interface SugestaoMatch {
     modelo?: string;
   };
   compatibilidade: number;
+  categoriaPerformance: CategoriaPerformance;
+  performanceScore: number | null;
   motivos: string[];
   detalhes: ScoreDetalhesMatch;
 }
@@ -187,7 +194,10 @@ const STATUS_DOC_OK = new Set([
 ]);
 
 function documentoRegular(doc: DocumentoMatchInput): boolean {
-  if (!STATUS_DOC_OK.has(normalizar(doc.status))) return false;
+  const status = normalizar(doc.status);
+  // Legado sem status: não penaliza (a migração Fase 7 passa a preencher).
+  if (!status) return true;
+  if (!STATUS_DOC_OK.has(status)) return false;
   const validade = String(doc.data_vencimento || doc.validade || "").trim();
   if (!validade) return true;
   const data = new Date(validade);
@@ -456,6 +466,13 @@ export function calcularMatchPrestadores(
         rota * 0.1,
     );
 
+    const performance = calcularCategoriaPerformance({
+      totalEntregas: p.qtdOperacoes,
+      pontualidade: p.indiceEntregaNoPrazo,
+      ocorrencias: p.ocorrencias,
+      isCandidato: false,
+    });
+
     const motivos: string[] = ["Veículo adequado", "Documentação Ok"];
     if (proximidade >= 70) motivos.push("Próximo da coleta");
     if (regiaoEntrega >= 70) motivos.push("Atende a região de entrega");
@@ -483,6 +500,8 @@ export function calcularMatchPrestadores(
         modelo: veiculo.modelo || undefined,
       },
       compatibilidade,
+      categoriaPerformance: performance.categoria,
+      performanceScore: performance.score,
       motivos,
       detalhes,
     });
@@ -559,16 +578,13 @@ export async function carregarPrestadoresBase(limite = 200): Promise<PrestadorMa
         .limit(1000),
       supabase
         .from("prestador_perfil_talento")
-        .select("prestador_id, modalidade_preferencial, distancia_max_coleta_km, aceita_viagens, restricoes_operacionais")
+        .select("prestador_id, modalidade_preferencial, distancia_max_coleta_km, aceita_viagens, restricoes_operacionais, status_disponibilidade")
         .in("prestador_id", ids),
       supabase
         .from("prestador_disponibilidade")
         .select("prestador_id, dia_semana, hora_inicio, hora_fim, disponivel")
         .in("prestador_id", ids),
-      supabase
-        .from("documentos_prestadores")
-        .select("prestador_id, tipo, status, data_vencimento, validade")
-        .in("prestador_id", ids),
+      supabase.from("documentos_prestadores").select("*").in("prestador_id", ids),
       supabase.from("ocorrencias").select("prestador_id").in("prestador_id", ids),
     ]);
 

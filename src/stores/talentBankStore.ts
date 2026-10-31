@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { buscarTalentosBanco } from "@/services/recrutamento/talentBankService";
+import type { CategoriaPerformance } from "@/lib/performancePrestador";
+import { supabase } from "@/lib/supabase";
 
 export type PerfilOperacional = "urbano" | "leve" | "pesado" | "emergencia" | "rota_fixa" | "coleta" | "viagem";
 export type StatusDocumental = "completo" | "pendente" | "parcial" | "expirado";
@@ -58,6 +60,9 @@ export interface TalentoLogistico {
   capacidadeKg?: number;
   capacidadeM3?: number;
   temperaturas?: string[];
+  categoriaPerformance?: CategoriaPerformance;
+  performanceScore?: number | null;
+  statusDisponibilidade?: "disponivel" | "indisponivel" | "em_operacao";
 }
 
 export interface Shortlist {
@@ -133,6 +138,10 @@ export interface TalentBankState {
   carregando: boolean;
   erro: string | null;
   carregarTalentos: () => Promise<void>;
+  atualizarStatusDisponibilidade: (
+    prestadorId: string,
+    status: "disponivel" | "indisponivel" | "em_operacao",
+  ) => Promise<void>;
   talentoAtivo: string | null;
   metricasConversao: MetricaConversao[];
   metricasRetencao: MetricaRetencao[];
@@ -248,6 +257,18 @@ export const useTalentBankStore = create<TalentBankState>()((set) => ({
       const mensagem = error instanceof Error ? error.message : String(error);
       set({ carregando: false, erro: mensagem });
     }
+  },
+
+  atualizarStatusDisponibilidade: async (prestadorId, status) => {
+    const { error } = await supabase
+      .from("prestador_perfil_talento")
+      .upsert({ prestador_id: prestadorId, status_disponibilidade: status }, { onConflict: "prestador_id" });
+    if (error) throw error;
+    set((s) => ({
+      talentos: s.talentos.map((t) =>
+        t.id === prestadorId ? { ...t, statusDisponibilidade: status } : t,
+      ),
+    }));
   },
 
   setTalentoAtivo: (id) => set({ talentoAtivo: id }),

@@ -9,6 +9,7 @@ import {
   type PrestadorMatchInput,
 } from "@/services/operacao/matchPrestadoresService";
 import { aplicarFiltrosTalentos } from "@/services/recrutamento/talentBankService";
+import { calcularCategoriaPerformance } from "@/lib/performancePrestador";
 import type { FiltrosAvancados, TalentoLogistico } from "@/stores/talentBankStore";
 
 const ctxBase: MatchOSContext = {
@@ -246,5 +247,35 @@ describe("C) Filtros combinados do Banco de Talentos", () => {
     expect(
       aplicarFiltrosTalentos(lista, { ...filtrosBase, statusTalento: ["homologado"] }).map((t) => t.id),
     ).toEqual(["t1", "t2"]);
+  });
+});
+
+describe("D) Classificação de performance (Item 12)", () => {
+  it("candidato novo não recebe nota fictícia (Em desenvolvimento, score null)", () => {
+    const candidato = calcularCategoriaPerformance({ isCandidato: true, totalEntregas: 0 });
+    expect(candidato.categoria).toBe("Em desenvolvimento");
+    expect(candidato.score).toBeNull();
+    expect(candidato.amostraInsuficiente).toBe(true);
+  });
+
+  it("sem amostra operacional também é Em desenvolvimento", () => {
+    const semDados = calcularCategoriaPerformance({ totalEntregas: 0, ocorrencias: 0 });
+    expect(semDados.categoria).toBe("Em desenvolvimento");
+    expect(semDados.score).toBeNull();
+  });
+
+  it("dados reais classificam Diamante/Ouro/Prata/Bronze", () => {
+    expect(
+      calcularCategoriaPerformance({ totalEntregas: 100, pontualidade: 100, ocorrencias: 0 }).categoria,
+    ).toBe("Diamante");
+    expect(
+      calcularCategoriaPerformance({ totalEntregas: 40, pontualidade: 80, ocorrencias: 0 }).categoria,
+    ).toBe("Ouro");
+    expect(
+      calcularCategoriaPerformance({ totalEntregas: 20, pontualidade: 60, ocorrencias: 1 }).categoria,
+    ).toBe("Prata");
+    expect(
+      calcularCategoriaPerformance({ totalEntregas: 8, pontualidade: 45, ocorrencias: 3 }).categoria,
+    ).toBe("Bronze");
   });
 });

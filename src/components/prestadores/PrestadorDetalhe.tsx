@@ -28,6 +28,8 @@ import { sanitizeVeiculoPayload, camposTipoVeiculo } from "@/helpers/veiculoPayl
 import { buscarCEP } from "@/services/cepService";
 import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
 import { montarResumoTalent, MODALIDADE_LABEL } from "@/lib/talentResumo";
+import { useAuth } from "@/contexts/AuthContext";
+import { podeVerAvaliacaoSituacional } from "@/lib/permissoes";
 
 const BUCKET_PRESTADORES = "documentos_prestadores";
 const DRAFT_KEY = "conexao_prestador_draft";
@@ -119,6 +121,7 @@ interface PerfilTalentoForm {
   distanciaMaxColetaKm: string;
   aceitaViagens: boolean;
   restricoesOperacionais: string;
+  statusDisponibilidade: "disponivel" | "indisponivel" | "em_operacao";
 }
 
 interface DisponibilidadeTalentoForm {
@@ -140,11 +143,19 @@ interface AvaliacaoTalentItem {
   createdAt: string;
 }
 
+interface TreinamentoTalentItem {
+  id: string;
+  curso: string;
+  dataConclusao: string;
+  validade: string;
+}
+
 const perfilTalentoVazio = (): PerfilTalentoForm => ({
   modalidadePreferencial: [],
   distanciaMaxColetaKm: "",
   aceitaViagens: true,
   restricoesOperacionais: "",
+  statusDisponibilidade: "disponivel",
 });
 
 const DIAS_SEMANA_TALENT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -182,6 +193,8 @@ function getDefaultPrestador(): Partial<Prestador> {
 
 const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const isNew = !initial;
+  const { user } = useAuth();
+  const podeVerAvaliacao = podeVerAvaliacaoSituacional(user?.role);
 
   // Restore draft for CREATE, or use initial data for EDIT
   const getInitialState = useCallback((): Partial<Prestador> => {
@@ -227,6 +240,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [perfilTalento, setPerfilTalento] = useState<PerfilTalentoForm>(perfilTalentoVazio);
   const [disponibilidadeTalento, setDisponibilidadeTalento] = useState<DisponibilidadeTalentoForm[]>([]);
   const [avaliacoesTalento, setAvaliacoesTalento] = useState<AvaliacaoTalentItem[]>([]);
+  const [treinamentosTalento, setTreinamentosTalento] = useState<TreinamentoTalentItem[]>([]);
   const [loadingTalento, setLoadingTalento] = useState(false);
   const [salvandoPerfilTalento, setSalvandoPerfilTalento] = useState(false);
   const [salvandoDisponibilidade, setSalvandoDisponibilidade] = useState(false);
@@ -281,7 +295,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     const carregarTalento = async () => {
       setLoadingTalento(true);
       try {
-        const [perfilRes, dispoRes, avaliacoesRes] = await Promise.all([
+        const [perfilRes, dispoRes, avaliacoesRes, treinamentosRes] = await Promise.all([
           supabase
             .from("prestador_perfil_talento")
             .select("*")
@@ -297,6 +311,11 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             .select("*, recrutamento_cenarios(titulo, descricao_situacao, competencia_alvo)")
             .eq("prestador_id", p.id)
             .order("created_at", { ascending: false }),
+          supabase
+            .from("prestador_treinamentos")
+            .select("*")
+            .eq("prestador_id", p.id)
+            .order("data_conclusao", { ascending: false }),
         ]);
 
         if (!ativo) return;
@@ -315,6 +334,11 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             restricoesOperacionais: row.restricoes_operacionais
               ? JSON.stringify(row.restricoes_operacionais, null, 2)
               : "",
+            statusDisponibilidade: ["disponivel", "indisponivel", "em_operacao"].includes(
+              String(row.status_disponibilidade),
+            )
+              ? (String(row.status_disponibilidade) as PerfilTalentoForm["statusDisponibilidade"])
+              : "disponivel",
           });
         } else {
           setPerfilTalento(perfilTalentoVazio());
@@ -346,6 +370,16 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               createdAt: String(row.created_at || ""),
             };
           }),
+        );
+
+        const treinamentosRows = (treinamentosRes.data as Record<string, unknown>[]) || [];
+        setTreinamentosTalento(
+          treinamentosRows.map((row) => ({
+            id: String(row.id),
+            curso: String(row.curso || "Treinamento"),
+            dataConclusao: String(row.data_conclusao || ""),
+            validade: String(row.validade || ""),
+          })),
         );
       } finally {
         if (ativo) setLoadingTalento(false);
@@ -965,6 +999,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           distancia_max_coleta_km: distancia,
           aceita_viagens: perfilTalento.aceitaViagens,
           restricoes_operacionais: restricoes,
+          status_disponibilidade: perfilTalento.statusDisponibilidade,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "prestador_id" },
@@ -1171,7 +1206,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <TabsTrigger value="permissoes">Permissões</TabsTrigger>
               <TabsTrigger value="talent">Perfil e Preferências</TabsTrigger>
               <TabsTrigger value="disponibilidade">Disponibilidade</TabsTrigger>
-              <TabsTrigger value="avaliacao_situacional">Avaliação Situacional</TabsTrigger>
+              {podeVerAvaliacao && (
+                <TabsTrigger value="avaliacao_situacional">Avaliação Situacional</TabsTrigger>
+              )}
             </TabsList>
 
           {/* ABA 1 - DADOS GERAIS */}
@@ -1876,6 +1913,31 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 </div>
 
                 <div>
+                  <Label className="text-xs font-semibold">Status instantâneo no App</Label>
+                  <Select
+                    value={perfilTalento.statusDisponibilidade}
+                    onValueChange={(val) =>
+                      setPerfilTalento((prev) => ({
+                        ...prev,
+                        statusDisponibilidade: val as PerfilTalentoForm["statusDisponibilidade"],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="mt-1 h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="disponivel">Disponível</SelectItem>
+                      <SelectItem value="em_operacao">Em Operação</SelectItem>
+                      <SelectItem value="indisponivel">Indisponível</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Atualiza o status exibido no App do Motorista e no Banco de Talentos.
+                  </p>
+                </div>
+
+                <div>
                   <Label className="text-xs font-semibold">Restrições operacionais (JSON)</Label>
                   <Textarea
                     value={perfilTalento.restricoesOperacionais}
@@ -1901,6 +1963,44 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     Salvar perfil
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <ClipboardCheck className="h-4 w-4 text-primary" /> Treinamentos concluídos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {loadingTalento ? (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando treinamentos...
+                  </div>
+                ) : treinamentosTalento.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border/70 px-4 py-5 text-center text-sm text-muted-foreground">
+                    Nenhum treinamento concluído registrado.
+                  </p>
+                ) : (
+                  treinamentosTalento.map((treinamento) => (
+                    <div
+                      key={treinamento.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{treinamento.curso}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Conclusão: {treinamento.dataConclusao ? new Date(`${treinamento.dataConclusao}T12:00:00`).toLocaleDateString("pt-BR") : "—"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px]">
+                        {treinamento.validade
+                          ? `Válido até ${new Date(`${treinamento.validade}T12:00:00`).toLocaleDateString("pt-BR")}`
+                          : "Sem validade"}
+                      </Badge>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -2028,6 +2128,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           </TabsContent>
 
           {/* ABA — AVALIAÇÃO SITUACIONAL */}
+          {podeVerAvaliacao && (
           <TabsContent value="avaliacao_situacional" className="space-y-4 mt-4">
             <Card>
               <CardHeader className="pb-3">
@@ -2103,6 +2204,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
         </Tabs>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore, type TalentoLogistico } from "@/stores/talentBankStore";
 import { aplicarFiltrosTalentos } from "@/services/recrutamento/talentBankService";
+import { PERFORMANCE_CORES } from "@/lib/performancePrestador";
 
 const NIVEL_CORES = { diamante: "text-cyan-500", ouro: "text-yellow-500", prata: "text-slate-400", bronze: "text-amber-700" };
 const NIVEL_BGS = { diamante: "bg-cyan-50 border-cyan-200 dark:bg-cyan-950/20", ouro: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20", prata: "bg-slate-100 border-slate-200", bronze: "bg-amber-100 border-amber-200" };
@@ -95,10 +96,26 @@ function TalentCard({ talento: t, isActive, onSelect, onToggleFav }: { talento: 
         </button>
       </div>
 
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-medium border", NIVEL_BGS[t.nivel])}>{t.nivel.toUpperCase()}</span>
+        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border", PERFORMANCE_CORES[t.categoriaPerformance || "Em desenvolvimento"])}>
+          {t.categoriaPerformance || "Em desenvolvimento"}
+        </span>
         <span className={cn("text-sm font-bold", NIVEL_CORES[t.nivel])}>{t.score}</span>
         <span className="text-[10px] text-muted-foreground ml-auto">{t.veiculo.tipo}</span>
+      </div>
+      <div className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold">
+        <span className={cn(
+          "h-2 w-2 rounded-full",
+          t.statusDisponibilidade === "em_operacao" ? "bg-amber-500" : t.statusDisponibilidade === "indisponivel" ? "bg-slate-400" : "bg-emerald-500",
+        )} />
+        <span className="text-muted-foreground">
+          {t.statusDisponibilidade === "em_operacao"
+            ? "Em Operação"
+            : t.statusDisponibilidade === "indisponivel"
+              ? "Indisponível"
+              : "Disponível"}
+        </span>
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-3 text-center">

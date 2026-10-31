@@ -15,6 +15,7 @@ import type {
   StatusDocumental,
   TalentoLogistico,
 } from "@/stores/talentBankStore";
+import { calcularCategoriaPerformance } from "@/lib/performancePrestador";
 
 const normalizar = (valor?: string | null): string =>
   String(valor || "")
@@ -37,7 +38,9 @@ const STATUS_DOC_OK = new Set(["aprovado", "valido", "ok", "concluido", "vigente
 const DOCS_OBRIGATORIOS = ["cnh", "crlv", "comprovante de residencia", "foto"];
 
 function docRegular(doc: { status?: string | null; data_vencimento?: string | null; validade?: string | null }): boolean {
-  if (!STATUS_DOC_OK.has(normalizar(doc.status))) return false;
+  const status = normalizar(doc.status);
+  if (!status) return true;
+  if (!STATUS_DOC_OK.has(status)) return false;
   const validade = String(doc.data_vencimento || doc.validade || "").trim();
   if (!validade) return true;
   const d = new Date(validade);
@@ -79,6 +82,12 @@ function mapearTalento(
   const capacidadeKg = Math.max(0, ...veiculos.map((v) => Number(v.capacidade_kg || 0)));
   const capacidadeM3 = Math.max(0, ...veiculos.map((v) => Number(v.capacidade_m3 || 0)));
   const score = scorePrestador(p);
+  const performance = calcularCategoriaPerformance({
+    totalEntregas: p.qtdOperacoes,
+    pontualidade: p.indiceEntregaNoPrazo,
+    ocorrencias: p.ocorrencias,
+    isCandidato: false,
+  });
   const statusDoc = statusDocumentalDe(p);
   const modalidades = (p.perfil?.modalidade_preferencial || []).map((m) => normalizar(m));
   const temperaturas = new Set<string>();
@@ -192,6 +201,9 @@ function mapearTalento(
     capacidadeKg,
     capacidadeM3,
     temperaturas: [...temperaturas],
+    categoriaPerformance: performance.categoria,
+    performanceScore: performance.score,
+    statusDisponibilidade: p.perfil?.status_disponibilidade || "disponivel",
   };
 }
 

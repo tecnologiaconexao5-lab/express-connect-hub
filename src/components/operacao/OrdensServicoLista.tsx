@@ -29,6 +29,7 @@ import {
   type MatchOSContext,
   type SugestaoMatch,
 } from "@/services/operacao/matchPrestadoresService";
+import { PERFORMANCE_CORES } from "@/lib/performancePrestador";
 import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
@@ -1030,7 +1031,15 @@ const OrdensServicoLista = () => {
                   >
                     <span className="text-[11px] font-black text-slate-500">{i + 1}º</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-slate-800">{s.nome}</p>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <p className="truncate text-xs font-bold text-slate-800">{s.nome}</p>
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] font-bold ${PERFORMANCE_CORES[s.categoriaPerformance]}`}
+                        >
+                          {s.categoriaPerformance}
+                        </Badge>
+                      </div>
                       <p className="truncate text-[10px] text-slate-500">
                         {s.veiculo?.tipo || "—"}
                         {s.veiculo?.capacidadeKg ? ` · ${s.veiculo.capacidadeKg}kg` : ""}
