@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabase";
 import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
-  VeiculoPrestador, normalizarStatusPrestador,
+  VeiculoPrestador, normalizarStatusPrestador, STATUS_OPCOES_CANONICAS,
 } from "./types";
 import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
 import ContratoPrestadorModal from "./ContratoPrestadorModal";
@@ -27,6 +27,7 @@ import { formatarDataBR } from "@/lib/formatDates";
 import { sanitizeVeiculoPayload, camposTipoVeiculo } from "@/helpers/veiculoPayload";
 import { buscarCEP } from "@/services/cepService";
 import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
+import { montarResumoTalent, MODALIDADE_LABEL } from "@/lib/talentResumo";
 
 const BUCKET_PRESTADORES = "documentos_prestadores";
 const DRAFT_KEY = "conexao_prestador_draft";
@@ -111,6 +112,43 @@ const DOCS_TIPOS = [
   "Apólice de Seguro", "Outros",
 ];
 
+const MODALIDADES_TALENT = ["esporadico", "contrato", "rota_fixa"] as const;
+
+interface PerfilTalentoForm {
+  modalidadePreferencial: string[];
+  distanciaMaxColetaKm: string;
+  aceitaViagens: boolean;
+  restricoesOperacionais: string;
+}
+
+interface DisponibilidadeTalentoForm {
+  key: string;
+  diaSemana: string;
+  horaInicio: string;
+  horaFim: string;
+  disponivel: boolean;
+}
+
+interface AvaliacaoTalentItem {
+  id: string;
+  cenarioTitulo: string;
+  competencia: string;
+  descricaoSituacao: string;
+  resposta: string;
+  pontuacao: number | null;
+  analise: unknown;
+  createdAt: string;
+}
+
+const perfilTalentoVazio = (): PerfilTalentoForm => ({
+  modalidadePreferencial: [],
+  distanciaMaxColetaKm: "",
+  aceitaViagens: true,
+  restricoesOperacionais: "",
+});
+
+const DIAS_SEMANA_TALENT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
 const renderStars = (score: number, size = "w-5 h-5") => (
   <div className="flex items-center gap-0.5">
     {[1, 2, 3, 4, 5].map((s) => (
@@ -185,6 +223,14 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [documentosPendentes, setDocumentosPendentes] = useState<Array<{tipo: string, file: File}>>([]);
 
+  // === TALENT INTELLIGENCE (perfil, disponibilidade e avaliação situacional) ===
+  const [perfilTalento, setPerfilTalento] = useState<PerfilTalentoForm>(perfilTalentoVazio);
+  const [disponibilidadeTalento, setDisponibilidadeTalento] = useState<DisponibilidadeTalentoForm[]>([]);
+  const [avaliacoesTalento, setAvaliacoesTalento] = useState<AvaliacaoTalentItem[]>([]);
+  const [loadingTalento, setLoadingTalento] = useState(false);
+  const [salvandoPerfilTalento, setSalvandoPerfilTalento] = useState(false);
+  const [salvandoDisponibilidade, setSalvandoDisponibilidade] = useState(false);
+
   // Carregar documentos do banco ao abrir prestador existente
   useEffect(() => {
     const carregarDocumentos = async () => {
@@ -226,6 +272,91 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       ativo = false;
     };
   }, [fotoRef, p.id]);
+
+  // === TALENT INTELLIGENCE — carrega perfil, janelas e avaliações ===
+  useEffect(() => {
+    if (!p.id) return;
+    let ativo = true;
+
+    const carregarTalento = async () => {
+      setLoadingTalento(true);
+      try {
+        const [perfilRes, dispoRes, avaliacoesRes] = await Promise.all([
+          supabase
+            .from("prestador_perfil_talento")
+            .select("*")
+            .eq("prestador_id", p.id)
+            .maybeSingle(),
+          supabase
+            .from("prestador_disponibilidade")
+            .select("*")
+            .eq("prestador_id", p.id)
+            .order("dia_semana", { ascending: true }),
+          supabase
+            .from("recrutamento_avaliacoes")
+            .select("*, recrutamento_cenarios(titulo, descricao_situacao, competencia_alvo)")
+            .eq("prestador_id", p.id)
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (!ativo) return;
+
+        if (perfilRes.data) {
+          const row = perfilRes.data as Record<string, unknown>;
+          setPerfilTalento({
+            modalidadePreferencial: Array.isArray(row.modalidade_preferencial)
+              ? (row.modalidade_preferencial as string[])
+              : [],
+            distanciaMaxColetaKm:
+              row.distancia_max_coleta_km !== null && row.distancia_max_coleta_km !== undefined
+                ? String(row.distancia_max_coleta_km)
+                : "",
+            aceitaViagens: row.aceita_viagens !== false,
+            restricoesOperacionais: row.restricoes_operacionais
+              ? JSON.stringify(row.restricoes_operacionais, null, 2)
+              : "",
+          });
+        } else {
+          setPerfilTalento(perfilTalentoVazio());
+        }
+
+        const dispoRows = (dispoRes.data as Record<string, unknown>[]) || [];
+        setDisponibilidadeTalento(
+          dispoRows.map((row, idx) => ({
+            key: String(row.id || `disp-${idx}`),
+            diaSemana: String(row.dia_semana ?? 1),
+            horaInicio: String(row.hora_inicio || "08:00").slice(0, 5),
+            horaFim: String(row.hora_fim || "18:00").slice(0, 5),
+            disponivel: row.disponivel !== false,
+          })),
+        );
+
+        const avaliacoesRows = (avaliacoesRes.data as Record<string, unknown>[]) || [];
+        setAvaliacoesTalento(
+          avaliacoesRows.map((row) => {
+            const cenario = (row.recrutamento_cenarios || {}) as Record<string, unknown>;
+            return {
+              id: String(row.id),
+              cenarioTitulo: String(cenario.titulo || "Cenário situacional"),
+              competencia: String(cenario.competencia_alvo || ""),
+              descricaoSituacao: String(cenario.descricao_situacao || ""),
+              resposta: String(row.resposta_candidato || ""),
+              pontuacao: row.pontuacao === null || row.pontuacao === undefined ? null : Number(row.pontuacao),
+              analise: row.analise_ia_jsonb ?? null,
+              createdAt: String(row.created_at || ""),
+            };
+          }),
+        );
+      } finally {
+        if (ativo) setLoadingTalento(false);
+      }
+    };
+
+    void carregarTalento();
+    return () => {
+      ativo = false;
+    };
+  }, [p.id]);
 
   // === CARREGAR INDICADORES REAIS DO BANCO ===
   useEffect(() => {
@@ -763,6 +894,149 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
+  const veiculoResumoTalent = useMemo(() => {
+    const veiculo = p.veiculos?.find((v) => v.principal) || p.veiculos?.[0];
+    if (!veiculo) return "";
+    return TIPO_VEICULO_LABEL[veiculo.tipoVeiculo] || String(veiculo.tipoVeiculo || "");
+  }, [p.veiculos]);
+
+  const resumoTalent = useMemo(
+    () =>
+      montarResumoTalent({
+        veiculo: veiculoResumoTalent,
+        regiao:
+          p.regiaoPrincipal ||
+          [p.endereco?.cidade, p.endereco?.estado].filter(Boolean).join(" - "),
+        modalidades: perfilTalento.modalidadePreferencial,
+        disponibilidade: disponibilidadeTalento.map((d) => ({
+          dia_semana: Number(d.diaSemana),
+          hora_inicio: d.horaInicio,
+          hora_fim: d.horaFim,
+          disponivel: d.disponivel,
+        })),
+      }),
+    [
+      veiculoResumoTalent,
+      p.regiaoPrincipal,
+      p.endereco?.cidade,
+      p.endereco?.estado,
+      perfilTalento.modalidadePreferencial,
+      disponibilidadeTalento,
+    ],
+  );
+
+  const toggleModalidadeTalento = (modalidade: string) => {
+    setPerfilTalento((prev) => ({
+      ...prev,
+      modalidadePreferencial: prev.modalidadePreferencial.includes(modalidade)
+        ? prev.modalidadePreferencial.filter((m) => m !== modalidade)
+        : [...prev.modalidadePreferencial, modalidade],
+    }));
+  };
+
+  const salvarPerfilTalento = async () => {
+    if (!p.id) {
+      toast.error("Salve o prestador antes de editar o perfil de talento.");
+      return;
+    }
+    let restricoes: unknown = {};
+    const textoRestricoes = perfilTalento.restricoesOperacionais.trim();
+    if (textoRestricoes) {
+      try {
+        restricoes = JSON.parse(textoRestricoes);
+      } catch {
+        toast.error("Restrições operacionais: JSON inválido. Revise o conteúdo.");
+        return;
+      }
+    }
+    const distanciaTexto = perfilTalento.distanciaMaxColetaKm.trim();
+    const distancia = distanciaTexto ? Number(distanciaTexto) : null;
+    if (distancia !== null && (!Number.isFinite(distancia) || distancia < 0)) {
+      toast.error("Distância máxima de coleta inválida.");
+      return;
+    }
+
+    setSalvandoPerfilTalento(true);
+    try {
+      const { error } = await supabase.from("prestador_perfil_talento").upsert(
+        {
+          prestador_id: p.id,
+          modalidade_preferencial: perfilTalento.modalidadePreferencial,
+          distancia_max_coleta_km: distancia,
+          aceita_viagens: perfilTalento.aceitaViagens,
+          restricoes_operacionais: restricoes,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "prestador_id" },
+      );
+      if (error) throw error;
+      toast.success("Perfil e preferências salvos.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível salvar o perfil: ${mensagem}`);
+    } finally {
+      setSalvandoPerfilTalento(false);
+    }
+  };
+
+  const adicionarJanelaTalento = () => {
+    setDisponibilidadeTalento((prev) => [
+      ...prev,
+      {
+        key: `janela-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        diaSemana: "1",
+        horaInicio: "08:00",
+        horaFim: "18:00",
+        disponivel: true,
+      },
+    ]);
+  };
+
+  const salvarDisponibilidadeTalento = async () => {
+    if (!p.id) {
+      toast.error("Salve o prestador antes de editar a disponibilidade.");
+      return;
+    }
+    const janelas = disponibilidadeTalento
+      .filter((j) => j.diaSemana !== "" && j.horaInicio && j.horaFim)
+      .map((j) => ({
+        prestador_id: p.id,
+        dia_semana: Number(j.diaSemana),
+        hora_inicio: j.horaInicio,
+        hora_fim: j.horaFim,
+        disponivel: j.disponivel,
+      }));
+
+    if (janelas.some((j) => !Number.isFinite(j.dia_semana) || j.dia_semana < 0 || j.dia_semana > 6)) {
+      toast.error("Dia da semana inválido.");
+      return;
+    }
+    if (janelas.some((j) => j.hora_fim <= j.hora_inicio)) {
+      toast.error("O fim da janela deve ser depois do início.");
+      return;
+    }
+
+    setSalvandoDisponibilidade(true);
+    try {
+      const { error: deleteError } = await supabase
+        .from("prestador_disponibilidade")
+        .delete()
+        .eq("prestador_id", p.id);
+      if (deleteError) throw deleteError;
+
+      if (janelas.length > 0) {
+        const { error } = await supabase.from("prestador_disponibilidade").insert(janelas);
+        if (error) throw error;
+      }
+      toast.success("Disponibilidade atualizada.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível salvar a disponibilidade: ${mensagem}`);
+    } finally {
+      setSalvandoDisponibilidade(false);
+    }
+  };
+
   const docGeral = () => {
     if (!p.documentos?.length) return { label: "Pendente ⚠️", cls: "bg-yellow-100 text-yellow-700" };
     if (p.documentos.some((d) => d.status === "vencido")) return { label: "Vencido 🔴", cls: "bg-red-100 text-red-700" };
@@ -787,6 +1061,26 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           )}
         </div>
       </div>
+
+      {/* Resumo Operacional — Conexão Talent AI (string única consolidada) */}
+      <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background shadow-sm">
+        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                Conexão Talent AI · Resumo Operacional
+              </p>
+              <p className="text-sm font-bold text-foreground">{resumoTalent}</p>
+            </div>
+          </div>
+          <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-[10px] font-bold text-primary">
+            {loadingTalento ? "Sincronizando perfil..." : "Perfil 360º"}
+          </Badge>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-col xl:flex-row gap-6">
         {/* Card Lateral - FIXO NA ESQUERDA */}
@@ -813,8 +1107,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               </div>
 
               {p.status && (
-                <Badge className={`${STATUS_COR[p.status as StatusPrestador]} px-4 py-1 text-[10px] uppercase tracking-wider mb-4`}>
-                  {STATUS_LABEL[p.status as StatusPrestador]}
+                <Badge className={`${STATUS_COR[normalizarStatusPrestador(p.status)]} px-4 py-1 text-[10px] uppercase tracking-wider mb-4`}>
+                  {STATUS_LABEL[normalizarStatusPrestador(p.status)]}
                 </Badge>
               )}
               
@@ -875,6 +1169,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <TabsTrigger value="torre">Torre</TabsTrigger>
               <TabsTrigger value="ocorrencias">Ocorrências</TabsTrigger>
               <TabsTrigger value="permissoes">Permissões</TabsTrigger>
+              <TabsTrigger value="talent">Perfil e Preferências</TabsTrigger>
+              <TabsTrigger value="disponibilidade">Disponibilidade</TabsTrigger>
+              <TabsTrigger value="avaliacao_situacional">Avaliação Situacional</TabsTrigger>
             </TabsList>
 
           {/* ABA 1 - DADOS GERAIS */}
@@ -912,8 +1209,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardHeader className="pb-3"><CardTitle className="text-sm">Status</CardTitle></CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-3">
-                  {(Object.entries(STATUS_LABEL) as [StatusPrestador, string][]).map(([key, label]) => (
-                    <label key={key} onClick={() => handleChange('status', key)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${p.status === key ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:bg-muted"}`}>
+                  {STATUS_OPCOES_CANONICAS.map((key) => [key, STATUS_LABEL[key]] as [StatusPrestador, string]).map(([key, label]) => (
+                    <label key={key} onClick={() => handleChange('status', key)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${normalizarStatusPrestador(p.status) === key ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:bg-muted"}`}>
                       <div className={`w-3 h-3 rounded-full ${STATUS_COR[key].split(" ")[0]}`} />
                       <span className="text-sm font-medium">{label}</span>
                     </label>
@@ -1397,7 +1694,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <span className="text-sm font-medium">Status</span>
-                  <span className="text-sm">{STATUS_LABEL[p.status as StatusPrestador] || '-'}</span>
+                  <span className="text-sm">{STATUS_LABEL[normalizarStatusPrestador(p.status)] || '-'}</span>
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <span className="text-sm font-medium">Disponibilidade</span>
@@ -1511,6 +1808,298 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     )}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA — PERFIL E PREFERÊNCIAS (Talent Intelligence) */}
+          <TabsContent value="talent" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Sparkles className="h-4 w-4 text-primary" /> Perfil e Preferências
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div>
+                  <Label className="text-xs font-semibold">Modalidade preferencial</Label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {MODALIDADES_TALENT.map((modalidade) => {
+                      const ativa = perfilTalento.modalidadePreferencial.includes(modalidade);
+                      return (
+                        <button
+                          key={modalidade}
+                          type="button"
+                          onClick={() => toggleModalidadeTalento(modalidade)}
+                          className={
+                            ativa
+                              ? "rounded-full border border-primary bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground"
+                              : "rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-primary/40"
+                          }
+                        >
+                          {MODALIDADE_LABEL[modalidade] || modalidade}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Selecione uma ou mais modalidades aceitas pelo prestador.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs font-semibold">Distância máxima de coleta (km)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={perfilTalento.distanciaMaxColetaKm}
+                      onChange={(e) =>
+                        setPerfilTalento((prev) => ({ ...prev, distanciaMaxColetaKm: e.target.value }))
+                      }
+                      placeholder="Ex.: 30"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
+                    <div>
+                      <Label className="text-xs font-semibold">Aceita viagens</Label>
+                      <p className="text-[11px] text-muted-foreground">Viagens fora da região base.</p>
+                    </div>
+                    <Switch
+                      checked={perfilTalento.aceitaViagens}
+                      onCheckedChange={(val) =>
+                        setPerfilTalento((prev) => ({ ...prev, aceitaViagens: val }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold">Restrições operacionais (JSON)</Label>
+                  <Textarea
+                    value={perfilTalento.restricoesOperacionais}
+                    onChange={(e) =>
+                      setPerfilTalento((prev) => ({ ...prev, restricoesOperacionais: e.target.value }))
+                    }
+                    rows={4}
+                    className="mt-1 font-mono text-xs"
+                    placeholder='Ex.: { "nao_aceita_carga_perigosa": true }'
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Campo livre em JSON. Deixe vazio para limpar as restrições.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => void salvarPerfilTalento()}
+                    disabled={!p.id || salvandoPerfilTalento || loadingTalento}
+                    className="gap-2"
+                  >
+                    {salvandoPerfilTalento ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Salvar perfil
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA — DISPONIBILIDADE */}
+          <TabsContent value="disponibilidade" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <CalendarDays className="h-4 w-4 text-primary" /> Janelas de disponibilidade
+                  </CardTitle>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={adicionarJanelaTalento}>
+                    <Plus className="h-4 w-4" /> Adicionar janela
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {loadingTalento ? (
+                  <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando disponibilidade...
+                  </div>
+                ) : disponibilidadeTalento.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                    Nenhuma janela cadastrada. Adicione os dias e horários aceitos pelo prestador.
+                  </p>
+                ) : (
+                  disponibilidadeTalento.map((janela) => (
+                    <div
+                      key={janela.key}
+                      className="grid grid-cols-1 items-end gap-2 rounded-lg border border-border/60 p-3 sm:grid-cols-[1fr_auto_auto_auto_auto]"
+                    >
+                      <div>
+                        <Label className="text-[11px] font-semibold">Dia</Label>
+                        <Select
+                          value={janela.diaSemana}
+                          onValueChange={(val) =>
+                            setDisponibilidadeTalento((prev) =>
+                              prev.map((j) => (j.key === janela.key ? { ...j, diaSemana: val } : j)),
+                            )
+                          }
+                        >
+                          <SelectTrigger className="mt-1 h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DIAS_SEMANA_TALENT.map((dia, idx) => (
+                              <SelectItem key={dia} value={String(idx)}>
+                                {dia}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-[11px] font-semibold">Início</Label>
+                        <Input
+                          type="time"
+                          value={janela.horaInicio}
+                          onChange={(e) =>
+                            setDisponibilidadeTalento((prev) =>
+                              prev.map((j) =>
+                                j.key === janela.key ? { ...j, horaInicio: e.target.value } : j,
+                              ),
+                            )
+                          }
+                          className="mt-1 h-9 w-[110px]"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[11px] font-semibold">Fim</Label>
+                        <Input
+                          type="time"
+                          value={janela.horaFim}
+                          onChange={(e) =>
+                            setDisponibilidadeTalento((prev) =>
+                              prev.map((j) =>
+                                j.key === janela.key ? { ...j, horaFim: e.target.value } : j,
+                              ),
+                            )
+                          }
+                          className="mt-1 h-9 w-[110px]"
+                        />
+                      </div>
+                      <div className="flex flex-col items-center gap-1 pb-1">
+                        <Label className="text-[11px] font-semibold">Ativa</Label>
+                        <Switch
+                          checked={janela.disponivel}
+                          onCheckedChange={(val) =>
+                            setDisponibilidadeTalento((prev) =>
+                              prev.map((j) =>
+                                j.key === janela.key ? { ...j, disponivel: val } : j,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          setDisponibilidadeTalento((prev) => prev.filter((j) => j.key !== janela.key))
+                        }
+                        aria-label="Remover janela"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+
+                <div className="flex justify-end pt-1">
+                  <Button
+                    onClick={() => void salvarDisponibilidadeTalento()}
+                    disabled={!p.id || salvandoDisponibilidade || loadingTalento}
+                    className="gap-2"
+                  >
+                    {salvandoDisponibilidade ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Salvar disponibilidade
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA — AVALIAÇÃO SITUACIONAL */}
+          <TabsContent value="avaliacao_situacional" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <ClipboardCheck className="h-4 w-4 text-primary" /> Avaliações situacionais
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {loadingTalento ? (
+                  <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando avaliações...
+                  </div>
+                ) : avaliacoesTalento.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                    Nenhuma avaliação situacional registrada para este prestador.
+                  </p>
+                ) : (
+                  avaliacoesTalento.map((avaliacao) => (
+                    <div key={avaliacao.id} className="space-y-2 rounded-lg border border-border/60 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{avaliacao.cenarioTitulo}</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {avaliacao.competencia || "Competência não informada"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {avaliacao.pontuacao !== null && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                avaliacao.pontuacao >= 70
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : avaliacao.pontuacao >= 40
+                                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                                    : "border-red-200 bg-red-50 text-red-700"
+                              }
+                            >
+                              {avaliacao.pontuacao.toFixed(1)} pts
+                            </Badge>
+                          )}
+                          {avaliacao.createdAt && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {new Date(avaliacao.createdAt).toLocaleDateString("pt-BR")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {avaliacao.descricaoSituacao && (
+                        <p className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
+                          {avaliacao.descricaoSituacao}
+                        </p>
+                      )}
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                          Resposta do candidato
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{avaliacao.resposta || "—"}</p>
+                      </div>
+                      {avaliacao.analise ? (
+                        <details className="rounded-md border border-border/50 bg-muted/20 p-2">
+                          <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                            Análise IA
+                          </summary>
+                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
+                            {JSON.stringify(avaliacao.analise, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </TabsContent>

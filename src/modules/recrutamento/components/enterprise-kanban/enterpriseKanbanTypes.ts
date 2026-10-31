@@ -1,20 +1,55 @@
-export type PipelineStage =
-  | 'novo_cadastro'
-  | 'pre_triagem'
-  | 'interesse_confirmado'
-  | 'em_analise'
-  | 'documentacao_pendente'
-  | 'em_validacao'
-  | 'entrevista'
-  | 'em_treinamento'
-  | 'homologacao'
-  | 'confirmacao_inicio'
-  | 'aprovado'
-  | 'prestador_apto'
-  | 'ativo'
-  | 'operacao_ativa'
-  | 'bloqueado'
-  | 'reprovado'
+/**
+ * Funil oficial do Talent Intelligence — exatamente 17 etapas (Fase 3/4).
+ * A ordem abaixo é a ordem de exibição no Kanban.
+ */
+export const PIPELINE_STAGES = [
+  'novo_candidato',
+  'cadastro_iniciado',
+  'cadastro_concluido',
+  'em_triagem',
+  'em_analise_perfil',
+  'aguardando_documentacao',
+  'em_verificacao_documental',
+  'em_avaliacao_situacional',
+  'em_entrevista',
+  'em_homologacao',
+  'aprovado',
+  'reprovado',
+  'cadastro_incompleto',
+  'banco_de_talentos',
+  'homologado_disponivel',
+  'homologado_indisponivel',
+  'processo_encerrado',
+] as const
+
+export type PipelineStage = (typeof PIPELINE_STAGES)[number]
+
+/** Etapas legadas (banco antigo) → etapa canônica das 17 fases. */
+export const LEGACY_STAGE_MAP: Record<string, PipelineStage> = {
+  novo_cadastro: 'novo_candidato',
+  pre_triagem: 'em_triagem',
+  interesse_confirmado: 'em_triagem',
+  em_analise: 'em_analise_perfil',
+  documentacao_pendente: 'aguardando_documentacao',
+  em_validacao: 'em_verificacao_documental',
+  entrevista: 'em_entrevista',
+  em_treinamento: 'em_avaliacao_situacional',
+  homologacao: 'em_homologacao',
+  confirmacao_inicio: 'em_homologacao',
+  prestador_apto: 'homologado_disponivel',
+  ativo: 'homologado_disponivel',
+  operacao_ativa: 'homologado_disponivel',
+  bloqueado: 'reprovado',
+}
+
+/** Normaliza qualquer etapa (nova ou legada) para uma das 17 canônicas. */
+export function normalizePipelineStage(stage: string | null | undefined): PipelineStage {
+  const valor = String(stage || '').trim()
+  if ((PIPELINE_STAGES as readonly string[]).includes(valor)) {
+    return valor as PipelineStage
+  }
+  return LEGACY_STAGE_MAP[valor] ?? 'novo_candidato'
+}
 
 export type Prioridade = 'baixa' | 'media' | 'alta' | 'urgente'
 export type StatusDocumental = 'completo' | 'parcial' | 'pendente' | 'vencido' | 'bloqueado'
@@ -164,39 +199,41 @@ export interface KanbanFilter {
 }
 
 export const PIPELINE_COLUMNS: PipelineColumn[] = [
-  { id: 'novo_cadastro', title: 'Novo Lead', color: '#3b82f6', gradient: 'from-blue-500/20 via-blue-500/5 to-transparent', icon: 'UserPlus' },
-  { id: 'pre_triagem', title: 'Pré-Triagem', color: '#6366f1', gradient: 'from-indigo-500/20 via-indigo-500/5 to-transparent', icon: 'Filter' },
-  { id: 'interesse_confirmado', title: 'Interesse Confirmado', color: '#ec4899', gradient: 'from-pink-500/20 via-pink-500/5 to-transparent', icon: 'Heart' },
-  { id: 'em_analise', title: 'Em Análise', color: '#8b5cf6', gradient: 'from-violet-500/20 via-violet-500/5 to-transparent', icon: 'Search' },
-  { id: 'documentacao_pendente', title: 'Documentação', color: '#f59e0b', gradient: 'from-amber-500/20 via-amber-500/5 to-transparent', icon: 'FileText' },
-  { id: 'em_validacao', title: 'Em Validação', color: '#06b6d4', gradient: 'from-cyan-500/20 via-cyan-500/5 to-transparent', icon: 'ShieldCheck' },
-  { id: 'entrevista', title: 'Entrevista', color: '#a855f7', gradient: 'from-purple-500/20 via-purple-500/5 to-transparent', icon: 'MessageCircle' },
-  { id: 'em_treinamento', title: 'Treinamento', color: '#f97316', gradient: 'from-orange-500/20 via-orange-500/5 to-transparent', icon: 'BookOpen' },
-  { id: 'homologacao', title: 'Homologação', color: '#14b8a6', gradient: 'from-teal-500/20 via-teal-500/5 to-transparent', icon: 'Award' },
-  { id: 'confirmacao_inicio', title: 'Conf. de Início', color: '#0ea5e9', gradient: 'from-sky-500/20 via-sky-500/5 to-transparent', icon: 'CalendarCheck' },
+  { id: 'novo_candidato', title: 'Novo Candidato', color: '#3b82f6', gradient: 'from-blue-500/20 via-blue-500/5 to-transparent', icon: 'UserPlus' },
+  { id: 'cadastro_iniciado', title: 'Cadastro Iniciado', color: '#6366f1', gradient: 'from-indigo-500/20 via-indigo-500/5 to-transparent', icon: 'UserPen' },
+  { id: 'cadastro_concluido', title: 'Cadastro Concluído', color: '#8b5cf6', gradient: 'from-violet-500/20 via-violet-500/5 to-transparent', icon: 'UserCheck' },
+  { id: 'em_triagem', title: 'Em Triagem', color: '#ec4899', gradient: 'from-pink-500/20 via-pink-500/5 to-transparent', icon: 'Filter' },
+  { id: 'em_analise_perfil', title: 'Análise de Perfil', color: '#a855f7', gradient: 'from-purple-500/20 via-purple-500/5 to-transparent', icon: 'Search' },
+  { id: 'aguardando_documentacao', title: 'Aguardando Documentação', color: '#f59e0b', gradient: 'from-amber-500/20 via-amber-500/5 to-transparent', icon: 'FileText' },
+  { id: 'em_verificacao_documental', title: 'Verificação Documental', color: '#06b6d4', gradient: 'from-cyan-500/20 via-cyan-500/5 to-transparent', icon: 'ShieldCheck' },
+  { id: 'em_avaliacao_situacional', title: 'Avaliação Situacional', color: '#f97316', gradient: 'from-orange-500/20 via-orange-500/5 to-transparent', icon: 'ClipboardList' },
+  { id: 'em_entrevista', title: 'Entrevista', color: '#14b8a6', gradient: 'from-teal-500/20 via-teal-500/5 to-transparent', icon: 'MessageCircle' },
+  { id: 'em_homologacao', title: 'Homologação', color: '#0ea5e9', gradient: 'from-sky-500/20 via-sky-500/5 to-transparent', icon: 'Award' },
   { id: 'aprovado', title: 'Aprovado', color: '#10b981', gradient: 'from-emerald-500/20 via-emerald-500/5 to-transparent', icon: 'CheckCircle' },
-  { id: 'prestador_apto', title: 'Prestador Apto', color: '#84cc16', gradient: 'from-lime-500/20 via-lime-500/5 to-transparent', icon: 'UserCheck' },
-  { id: 'ativo', title: 'Ativo', color: '#22c55e', gradient: 'from-green-500/20 via-green-500/5 to-transparent', icon: 'Zap' },
-  { id: 'operacao_ativa', title: 'Operação Ativa', color: '#16a34a', gradient: 'from-green-600/20 via-green-600/5 to-transparent', icon: 'Truck' },
-  { id: 'bloqueado', title: 'Bloqueado', color: '#ef4444', gradient: 'from-red-500/20 via-red-500/5 to-transparent', icon: 'ShieldBan' },
   { id: 'reprovado', title: 'Reprovado', color: '#6b7280', gradient: 'from-gray-500/20 via-gray-500/5 to-transparent', icon: 'XCircle' },
+  { id: 'cadastro_incompleto', title: 'Cadastro Incompleto', color: '#ef4444', gradient: 'from-red-500/20 via-red-500/5 to-transparent', icon: 'AlertTriangle' },
+  { id: 'banco_de_talentos', title: 'Banco de Talentos', color: '#eab308', gradient: 'from-yellow-500/20 via-yellow-500/5 to-transparent', icon: 'Star' },
+  { id: 'homologado_disponivel', title: 'Homologado Disponível', color: '#22c55e', gradient: 'from-green-500/20 via-green-500/5 to-transparent', icon: 'Zap' },
+  { id: 'homologado_indisponivel', title: 'Homologado Indisponível', color: '#84cc16', gradient: 'from-lime-500/20 via-lime-500/5 to-transparent', icon: 'Clock' },
+  { id: 'processo_encerrado', title: 'Processo Encerrado', color: '#475569', gradient: 'from-slate-500/20 via-slate-500/5 to-transparent', icon: 'Lock' },
 ]
 
 export const STAGE_TRANSITIONS: Record<PipelineStage, PipelineStage[]> = {
-  novo_cadastro: ['pre_triagem', 'em_analise', 'bloqueado', 'reprovado'],
-  pre_triagem: ['interesse_confirmado', 'em_analise', 'bloqueado', 'reprovado'],
-  interesse_confirmado: ['documentacao_pendente', 'em_analise', 'bloqueado', 'reprovado'],
-  em_analise: ['documentacao_pendente', 'pre_triagem', 'entrevista', 'bloqueado', 'reprovado'],
-  documentacao_pendente: ['em_validacao', 'em_treinamento', 'bloqueado', 'reprovado'],
-  em_validacao: ['entrevista', 'aprovado', 'reprovado'],
-  entrevista: ['em_treinamento', 'aprovado', 'reprovado'],
-  em_treinamento: ['homologacao', 'aprovado', 'reprovado'],
-  homologacao: ['confirmacao_inicio', 'bloqueado'],
-  confirmacao_inicio: ['prestador_apto', 'bloqueado'],
-  aprovado: ['prestador_apto', 'ativo', 'bloqueado'],
-  prestador_apto: ['operacao_ativa', 'bloqueado'],
-  ativo: ['operacao_ativa', 'bloqueado', 'reprovado'],
-  operacao_ativa: ['bloqueado', 'reprovado'],
-  bloqueado: ['em_analise', 'pre_triagem', 'reprovado'],
-  reprovado: [],
+  novo_candidato: ['cadastro_iniciado', 'em_triagem', 'cadastro_incompleto', 'reprovado', 'processo_encerrado'],
+  cadastro_iniciado: ['cadastro_concluido', 'em_triagem', 'cadastro_incompleto', 'reprovado', 'processo_encerrado'],
+  cadastro_concluido: ['em_triagem', 'em_analise_perfil', 'cadastro_incompleto', 'reprovado', 'processo_encerrado'],
+  em_triagem: ['em_analise_perfil', 'aguardando_documentacao', 'em_avaliacao_situacional', 'banco_de_talentos', 'reprovado', 'processo_encerrado'],
+  em_analise_perfil: ['aguardando_documentacao', 'em_verificacao_documental', 'em_avaliacao_situacional', 'em_entrevista', 'banco_de_talentos', 'reprovado', 'processo_encerrado'],
+  aguardando_documentacao: ['em_verificacao_documental', 'cadastro_incompleto', 'em_avaliacao_situacional', 'reprovado', 'processo_encerrado'],
+  em_verificacao_documental: ['em_avaliacao_situacional', 'em_entrevista', 'cadastro_incompleto', 'banco_de_talentos', 'reprovado', 'processo_encerrado'],
+  em_avaliacao_situacional: ['em_entrevista', 'em_homologacao', 'banco_de_talentos', 'reprovado', 'processo_encerrado'],
+  em_entrevista: ['em_homologacao', 'aprovado', 'banco_de_talentos', 'reprovado', 'processo_encerrado'],
+  em_homologacao: ['aprovado', 'homologado_disponivel', 'homologado_indisponivel', 'cadastro_incompleto', 'reprovado', 'processo_encerrado'],
+  aprovado: ['homologado_disponivel', 'homologado_indisponivel', 'processo_encerrado'],
+  reprovado: ['banco_de_talentos', 'processo_encerrado'],
+  cadastro_incompleto: ['cadastro_iniciado', 'cadastro_concluido', 'aguardando_documentacao', 'reprovado', 'processo_encerrado'],
+  banco_de_talentos: ['em_triagem', 'em_analise_perfil', 'em_avaliacao_situacional', 'reprovado', 'processo_encerrado'],
+  homologado_disponivel: ['homologado_indisponivel', 'processo_encerrado'],
+  homologado_indisponivel: ['homologado_disponivel', 'processo_encerrado'],
+  processo_encerrado: [],
 }

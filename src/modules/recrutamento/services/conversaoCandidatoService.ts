@@ -65,10 +65,16 @@ function mapearScore(score: number): ScorePrestador {
 }
 
 function determinarStatusPrestador(stage: string): 'novo' | 'em_analise' | 'aprovado' | 'reserva' | 'agregado' | 'bloqueado' {
-  if (stage === 'ativo' || stage === 'aprovado') return 'aprovado'
-  if (stage === 'bloqueado') return 'bloqueado'
-  if (stage === 'reprovado') return 'bloqueado'
-  if (stage === 'em_treinamento' || stage === 'entrevista' || stage === 'em_validacao') return 'em_analise'
+  if (['homologado_disponivel', 'homologado_indisponivel', 'aprovado', 'ativo', 'prestador_apto'].includes(stage)) {
+    return 'aprovado'
+  }
+  if (['reprovado', 'processo_encerrado', 'bloqueado'].includes(stage)) return 'bloqueado'
+  if ([
+    'em_analise_perfil', 'em_verificacao_documental', 'em_avaliacao_situacional',
+    'em_entrevista', 'em_homologacao', 'em_treinamento', 'entrevista', 'em_validacao',
+  ].includes(stage)) {
+    return 'em_analise'
+  }
   return 'novo'
 }
 
@@ -107,7 +113,11 @@ export const conversaoCandidatoService = {
         return { success: false, candidatoId, mensagem: 'Candidato sem telefone — necessário para conversão', tipo: 'erro' }
       }
 
-      const stagesPermitidos = ['aprovado', 'ativo', 'prestador_apto']
+      const stagesPermitidos = [
+        'aprovado', 'homologado_disponivel', 'homologado_indisponivel',
+        // legado
+        'ativo', 'prestador_apto',
+      ]
       if (!stagesPermitidos.includes(candidate.stage)) {
         return {
           success: false,
@@ -265,7 +275,7 @@ export const conversaoCandidatoService = {
   async atualizarCandidatoAposConversao(candidatoId: string, prestadorId: string): Promise<void> {
     const now = new Date().toISOString()
 
-    await enterpriseKanbanService.mover(candidatoId, 'ativo')
+    await enterpriseKanbanService.mover(candidatoId, 'homologado_disponivel')
 
     const { error } = await supabase
       .from(CANDIDATOS_TABLE)
@@ -288,7 +298,9 @@ export const conversaoCandidatoService = {
   async sincronizarComOperacao(candidate: EnterpriseCandidate, prestador: Prestador): Promise<void> {
     try {
       const origemVinculo = `recrutamento:${prestador.id}`
-      const statusOperacional = candidate.stage === 'aprovado' || candidate.stage === 'ativo' ? 'ativo' : 'analise'
+      const statusOperacional = ['aprovado', 'homologado_disponivel', 'homologado_indisponivel', 'ativo'].includes(candidate.stage)
+        ? 'ativo'
+        : 'analise'
 
       // AG-07G — REUTILIZA o prestador operacional existente (ex.: criado pelo
       // App com CPF real) em vez de criar uma segunda pessoa.

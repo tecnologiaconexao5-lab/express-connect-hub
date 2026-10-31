@@ -48,7 +48,10 @@ export function useMetricasRecrutamento() {
         .map(([status, quantidade]) => ({ status, quantidade }))
 
       const total = todos.length
-      const aprovados = pipelineMap['ativo'] ?? 0 + pipelineMap['aprovado'] ?? 0
+      const aprovados =
+        (pipelineMap['homologado_disponivel'] ?? 0) +
+        (pipelineMap['homologado_indisponivel'] ?? 0) +
+        (pipelineMap['aprovado'] ?? 0)
       const taxaConversaoPipeline = total > 0 ? Math.round((aprovados / total) * 100) : 0
 
       const tempoMedioOnboarding = onboardingC.length > 0

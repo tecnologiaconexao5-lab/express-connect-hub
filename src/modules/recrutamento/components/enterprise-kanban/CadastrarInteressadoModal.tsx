@@ -16,14 +16,16 @@ interface CadastrarInteressadoModalProps {
 const VEICULO_OPTIONS = TIPOS_VEICULO
 
 const STAGE_OPTIONS: { value: PipelineStage; label: string }[] = [
-  { value: 'novo_cadastro', label: 'Novo Cadastro' },
-  { value: 'em_analise', label: 'Em Análise' },
-  { value: 'documentacao_pendente', label: 'Documentação Pendente' },
-  { value: 'em_validacao', label: 'Em Validação' },
-  { value: 'entrevista', label: 'Entrevista' },
-  { value: 'em_treinamento', label: 'Em Treinamento' },
+  { value: 'novo_candidato', label: 'Novo Candidato' },
+  { value: 'cadastro_iniciado', label: 'Cadastro Iniciado' },
+  { value: 'em_triagem', label: 'Em Triagem' },
+  { value: 'em_analise_perfil', label: 'Análise de Perfil' },
+  { value: 'aguardando_documentacao', label: 'Aguardando Documentação' },
+  { value: 'em_avaliacao_situacional', label: 'Avaliação Situacional' },
+  { value: 'em_entrevista', label: 'Entrevista' },
+  { value: 'em_homologacao', label: 'Homologação' },
   { value: 'aprovado', label: 'Aprovado' },
-  { value: 'ativo', label: 'Ativo' },
+  { value: 'banco_de_talentos', label: 'Banco de Talentos' },
 ]
 
 const ORIGEM_OPTIONS = [
@@ -45,7 +47,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
   const [placa, setPlaca] = useState('')
   const [origem, setOrigem] = useState('Fretebras')
   const [observacoes, setObservacoes] = useState('')
-  const [stage, setStage] = useState<PipelineStage>('novo_cadastro')
+  const [stage, setStage] = useState<PipelineStage>('novo_candidato')
   const [salvando, setSalvando] = useState(false)
 
   const handleSave = async (e: React.FormEvent) => {
@@ -97,7 +99,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
       setPlaca('')
       setOrigem('Fretebras')
       setObservacoes('')
-      setStage('novo_cadastro')
+      setStage('novo_candidato')
     } catch (error) {
       console.error('[CadastrarInteressadoModal] Erro ao cadastrar:', error)
       toast.error('Erro ao cadastrar candidato')

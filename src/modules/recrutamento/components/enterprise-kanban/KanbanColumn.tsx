@@ -1,4 +1,9 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  UserPlus, UserPen, UserCheck, Filter, Search, FileText, ShieldCheck,
+  ClipboardList, MessageCircle, Award, CheckCircle, XCircle,
+  AlertTriangle, Star, Zap, Clock, Lock,
+} from 'lucide-react'
 import { useDrop } from './useDrop'
 import { KanbanCard, KanbanCardSkeleton } from './KanbanCard'
 import type { EnterpriseCandidate, PipelineStage } from './enterpriseKanbanTypes'
@@ -70,6 +75,30 @@ const STAGE_ICONS: Record<string, React.ReactNode> = {
   ),
 }
 
+const STAGE_ICONS_17: Record<string, React.ReactNode> = {
+  novo_candidato: <UserPlus className="w-4 h-4" />,
+  cadastro_iniciado: <UserPen className="w-4 h-4" />,
+  cadastro_concluido: <UserCheck className="w-4 h-4" />,
+  em_triagem: <Filter className="w-4 h-4" />,
+  em_analise_perfil: <Search className="w-4 h-4" />,
+  aguardando_documentacao: <FileText className="w-4 h-4" />,
+  em_verificacao_documental: <ShieldCheck className="w-4 h-4" />,
+  em_avaliacao_situacional: <ClipboardList className="w-4 h-4" />,
+  em_entrevista: <MessageCircle className="w-4 h-4" />,
+  em_homologacao: <Award className="w-4 h-4" />,
+  aprovado: <CheckCircle className="w-4 h-4" />,
+  reprovado: <XCircle className="w-4 h-4" />,
+  cadastro_incompleto: <AlertTriangle className="w-4 h-4" />,
+  banco_de_talentos: <Star className="w-4 h-4" />,
+  homologado_disponivel: <Zap className="w-4 h-4" />,
+  homologado_indisponivel: <Clock className="w-4 h-4" />,
+  processo_encerrado: <Lock className="w-4 h-4" />,
+}
+
+function getStageIcon(stage: string): React.ReactNode {
+  return STAGE_ICONS_17[stage] ?? STAGE_ICONS[stage] ?? <UserPlus className="w-4 h-4" />
+}
+
 export function KanbanColumn({
   stage,
   candidates,
@@ -101,7 +130,7 @@ export function KanbanColumn({
       >
         <div className="flex items-center gap-2">
           <span className="text-foreground/70" style={{ color: col.color }}>
-            {STAGE_ICONS[stage]}
+            {getStageIcon(stage)}
           </span>
           <span className="text-sm font-semibold text-foreground">{col.title}</span>
         </div>

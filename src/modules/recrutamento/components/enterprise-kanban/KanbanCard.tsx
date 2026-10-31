@@ -282,9 +282,9 @@ export function KanbanCard({ candidate, onMove, possibleStages, isDragging, onCl
               variant="success"
             />
             <QuickActionButton
-              icon={<Ban className="w-3.5 h-3.5" />}
-              label="Bloquear"
-              onClick={() => possibleStages.includes('bloqueado') && onMove(candidate.id, 'bloqueado')}
+              icon={<XCircle className="w-3.5 h-3.5" />}
+              label="Reprovar"
+              onClick={() => possibleStages.includes('reprovado') && onMove(candidate.id, 'reprovado')}
               variant="danger"
             />
             <QuickActionButton
@@ -367,16 +367,23 @@ export function KanbanCardSkeleton() {
 
 function StageLabel(stage: PipelineStage): string {
   const labels: Record<string, string> = {
-    novo_cadastro: 'Novo Cadastro',
-    em_analise: 'Em Análise',
-    documentacao_pendente: 'Doc. Pendente',
-    em_validacao: 'Em Validação',
-    entrevista: 'Entrevista',
-    em_treinamento: 'Em Treinamento',
+    novo_candidato: 'Novo Candidato',
+    cadastro_iniciado: 'Cadastro Iniciado',
+    cadastro_concluido: 'Cadastro Concluído',
+    em_triagem: 'Em Triagem',
+    em_analise_perfil: 'Análise de Perfil',
+    aguardando_documentacao: 'Aguardando Doc.',
+    em_verificacao_documental: 'Verificação Doc.',
+    em_avaliacao_situacional: 'Avaliação Situacional',
+    em_entrevista: 'Entrevista',
+    em_homologacao: 'Homologação',
     aprovado: 'Aprovado',
-    ativo: 'Ativo',
-    bloqueado: 'Bloqueado',
     reprovado: 'Reprovado',
+    cadastro_incompleto: 'Cadastro Incompleto',
+    banco_de_talentos: 'Banco de Talentos',
+    homologado_disponivel: 'Homologado Disponível',
+    homologado_indisponivel: 'Homologado Indisponível',
+    processo_encerrado: 'Processo Encerrado',
   }
   return labels[stage] ?? stage
 }

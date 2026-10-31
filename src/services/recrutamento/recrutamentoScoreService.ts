@@ -33,22 +33,36 @@ export function calcularScoreComprometimento(candidato: CandidatoScoreInput): nu
   // REC-06.2D.2F — estágio vazio comporta-se como contato_inicial (etapa inicial).
   const stage = candidato.stage || "contato_inicial"
 
-  if (stage === "reprovado") return -1
+  if (stage === "reprovado" || stage === "processo_encerrado") return -1
 
   const aplicaveis: Record<string, string[]> = {
     // REC-06.2D.2F — cobertura completa dos estágios canônicos do Kanban,
     // reutilizando os mesmos conjuntos de fatores (sem fórmula nova).
     novo_cadastro: ["historicoDesistencias", "quantidadeReclamacoes"],
+    novo_candidato: ["historicoDesistencias", "quantidadeReclamacoes"],
+    cadastro_iniciado: ["historicoDesistencias", "quantidadeReclamacoes"],
     contato_inicial: ["historicoDesistencias", "quantidadeReclamacoes"],
     prospeccao: ["historicoDesistencias", "quantidadeReclamacoes"],
+    em_triagem: ["historicoDesistencias", "quantidadeReclamacoes"],
+    banco_de_talentos: ["historicoDesistencias", "quantidadeReclamacoes"],
+    cadastro_incompleto: ["historicoDesistencias", "quantidadeReclamacoes"],
     em_validacao: ["documentacao", "historicoDesistencias", "quantidadeReclamacoes"],
+    aguardando_documentacao: ["documentacao", "historicoDesistencias", "quantidadeReclamacoes"],
+    em_verificacao_documental: ["documentacao", "historicoDesistencias", "quantidadeReclamacoes"],
     em_analise: ["documentacao", "tempo", "confirmacao", "disponibilidade", "historicoDesistencias", "quantidadeReclamacoes"],
+    em_analise_perfil: ["documentacao", "tempo", "confirmacao", "disponibilidade", "historicoDesistencias", "quantidadeReclamacoes"],
+    cadastro_concluido: ["documentacao", "tempo", "confirmacao", "disponibilidade", "historicoDesistencias", "quantidadeReclamacoes"],
     em_treinamento: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "historicoDesistencias", "quantidadeReclamacoes"],
+    em_avaliacao_situacional: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "historicoDesistencias", "quantidadeReclamacoes"],
+    em_entrevista: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "historicoDesistencias", "quantidadeReclamacoes"],
     homologacao: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
+    em_homologacao: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
     aprovado: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
     prestador_apto: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
     ativo: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
     operacao_ativa: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
+    homologado_disponivel: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
+    homologado_indisponivel: ["documentacao", "confirmacao", "disponibilidade", "tempo", "comparecimento", "permanencia", "historicoDesistencias", "quantidadeReclamacoes"],
   }
 
   const fatores = aplicaveis[stage]
@@ -145,7 +159,12 @@ export function calcularRiscoDesistencia(_candidato: CandidatoScoreInput): strin
 export function gerarEtiquetasAutomaticas(_candidato: CandidatoScoreInput): string[] {
   const etiquetas: string[] = [];
 
-  if (_candidato.stage && ["em_treinamento", "homologacao", "aprovado", "ativo", "prestador_apto", "operacao_ativa"].includes(_candidato.stage)) {
+  if (_candidato.stage && [
+    "em_avaliacao_situacional", "em_entrevista", "em_homologacao", "aprovado",
+    "homologado_disponivel", "homologado_indisponivel",
+    // legado
+    "em_treinamento", "homologacao", "ativo", "prestador_apto", "operacao_ativa",
+  ].includes(_candidato.stage)) {
     etiquetas.push("Em Processo");
   }
   if (safeBool(_candidato.confirmouInteresse)) {

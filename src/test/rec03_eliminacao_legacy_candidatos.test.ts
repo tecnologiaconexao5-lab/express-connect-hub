@@ -317,7 +317,7 @@ describe("REC-03 — Migração de Services", () => {
   });
 
   it("criarCandidatoService: deve setar stage no insert", () => {
-    expect(criarCandidatoContent).toContain("stage: \"interesse_confirmado\"");
+    expect(criarCandidatoContent).toContain("stage: \"novo_candidato\"");
   });
 });
 

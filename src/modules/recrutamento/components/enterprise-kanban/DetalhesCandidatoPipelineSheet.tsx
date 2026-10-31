@@ -32,41 +32,43 @@ interface DetalhesCandidatoPipelineSheetProps {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  novo_cadastro: 'Novo Lead',
-  pre_triagem: 'Pré-Triagem',
-  interesse_confirmado: 'Interesse Confirmado',
-  em_analise: 'Em Análise',
-  documentacao_pendente: 'Documentação',
-  em_validacao: 'Em Validação',
-  entrevista: 'Entrevista',
-  em_treinamento: 'Treinamento',
-  homologacao: 'Homologação',
-  confirmacao_inicio: 'Conf. de Início',
+  novo_candidato: 'Novo Candidato',
+  cadastro_iniciado: 'Cadastro Iniciado',
+  cadastro_concluido: 'Cadastro Concluído',
+  em_triagem: 'Em Triagem',
+  em_analise_perfil: 'Análise de Perfil',
+  aguardando_documentacao: 'Aguardando Documentação',
+  em_verificacao_documental: 'Verificação Documental',
+  em_avaliacao_situacional: 'Avaliação Situacional',
+  em_entrevista: 'Entrevista',
+  em_homologacao: 'Homologação',
   aprovado: 'Aprovado',
-  prestador_apto: 'Prestador Apto',
-  ativo: 'Ativo',
-  operacao_ativa: 'Operação Ativa',
-  bloqueado: 'Bloqueado',
   reprovado: 'Reprovado',
+  cadastro_incompleto: 'Cadastro Incompleto',
+  banco_de_talentos: 'Banco de Talentos',
+  homologado_disponivel: 'Homologado Disponível',
+  homologado_indisponivel: 'Homologado Indisponível',
+  processo_encerrado: 'Processo Encerrado',
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  novo_cadastro: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  pre_triagem: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
-  interesse_confirmado: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
-  em_analise: 'text-violet-400 bg-violet-500/10 border-violet-500/30',
-  documentacao_pendente: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-  em_validacao: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
-  entrevista: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
-  em_treinamento: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
-  homologacao: 'text-teal-400 bg-teal-500/10 border-teal-500/30',
-  confirmacao_inicio: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
+  novo_candidato: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+  cadastro_iniciado: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
+  cadastro_concluido: 'text-violet-400 bg-violet-500/10 border-violet-500/30',
+  em_triagem: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
+  em_analise_perfil: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+  aguardando_documentacao: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+  em_verificacao_documental: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
+  em_avaliacao_situacional: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
+  em_entrevista: 'text-teal-400 bg-teal-500/10 border-teal-500/30',
+  em_homologacao: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
   aprovado: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  prestador_apto: 'text-lime-400 bg-lime-500/10 border-lime-500/30',
-  ativo: 'text-green-400 bg-green-500/10 border-green-500/30',
-  operacao_ativa: 'text-green-500 bg-green-600/10 border-green-600/30',
-  bloqueado: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
   reprovado: 'text-gray-400 bg-gray-500/10 border-gray-500/30',
+  cadastro_incompleto: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
+  banco_de_talentos: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+  homologado_disponivel: 'text-green-400 bg-green-500/10 border-green-500/30',
+  homologado_indisponivel: 'text-lime-400 bg-lime-500/10 border-lime-500/30',
+  processo_encerrado: 'text-slate-400 bg-slate-500/10 border-slate-500/30',
 }
 
 export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange }: DetalhesCandidatoPipelineSheetProps) {
@@ -108,19 +110,15 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
     if (!candidate) return
     // G21 — bloqueio exige motivo; persistido no historico (estrutura existente).
     let motivo: string | undefined
-    if (stage === 'bloqueado') {
+    if (stage === 'reprovado' || stage === 'processo_encerrado') {
       const input = (await promptAction({
-        title: 'Bloquear candidato',
-        description: 'Informe o motivo do bloqueio (obrigatório).',
-        inputLabel: 'Motivo do bloqueio',
+        title: stage === 'reprovado' ? 'Reprovar candidato' : 'Encerrar processo',
+        description: 'Informe o motivo (opcional, fica registrado no histórico).',
+        inputLabel: 'Motivo',
         placeholder: 'Ex.: documentação irregular',
-        confirmText: 'Bloquear',
+        confirmText: stage === 'reprovado' ? 'Reprovar' : 'Encerrar',
         cancelText: 'Cancelar',
       })) ?? ''
-      if (!input.trim()) {
-        toast.error('Informe o motivo do bloqueio.')
-        return
-      }
       motivo = input.trim()
     }
     const previousStage = candidate.stage
@@ -152,7 +150,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
       const resultado = await conversaoCandidatoService.converterCandidatoParaPrestador(candidate.id)
       if (resultado.success) {
         toast.success(resultado.mensagem)
-        store.moveCandidate(candidate.id, 'ativo')
+        store.moveCandidate(candidate.id, 'homologado_disponivel')
         if (resultado.prestadorId) {
           const prestador = await prestadoresService.obter(resultado.prestadorId)
           if (prestador) {
@@ -445,7 +443,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                       {[
                         { label: 'Respondeu em menos de 24h', ok: candidate.tempoMedioRespostaHoras !== null && candidate.tempoMedioRespostaHoras > 0 && candidate.tempoMedioRespostaHoras <= 24 },
                         { label: 'Documentação completa sem cobrança', ok: candidate.statusDocumental === 'completo' && candidate.quantidadeCobrancas === 0 },
-                        { label: 'Compareceu ao treinamento', ok: candidate.stage === 'em_treinamento' || candidate.stage === 'homologacao' || candidate.confirmouPreInicio },
+                        { label: 'Avaliação situacional / entrevista concluída', ok: candidate.stage === 'em_avaliacao_situacional' || candidate.stage === 'em_entrevista' || candidate.stage === 'em_homologacao' || candidate.confirmouPreInicio },
                         { label: 'Concluiu treinamento', ok: candidate.confirmouPreInicio },
                         { label: 'Confirmou disponibilidade pós-treinamento', ok: candidate.confirmouInteresse },
                         { label: 'Compareceu ao primeiro dia', ok: candidate.compareceuPrimeiroDia },
@@ -803,7 +801,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                         'text-[11px] px-3 py-1.5 rounded-full border font-medium transition-all',
                         stage === 'aprovado' ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/60' :
                         stage === 'reprovado' ? 'border-gray-500/40 text-gray-400 hover:bg-gray-500/15 hover:border-gray-500/60' :
-                        stage === 'bloqueado' ? 'border-rose-500/40 text-rose-400 hover:bg-rose-500/15 hover:border-rose-500/60' :
+                        stage === 'processo_encerrado' ? 'border-rose-500/40 text-rose-400 hover:bg-rose-500/15 hover:border-rose-500/60' :
                         'border-border/40 text-muted-foreground/70 hover:text-foreground hover:border-primary/30 hover:bg-primary/5',
                       )}
                     >
@@ -839,10 +837,10 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                   variant="outline"
                   size="sm"
                   className="gap-1.5 text-amber-400 border-amber-500/30 hover:bg-amber-500/10 hover:border-amber-500/50"
-                  onClick={() => possibleStages.includes('bloqueado') && handleMover('bloqueado')}
-                  disabled={!possibleStages.includes('bloqueado')}
+                  onClick={() => possibleStages.includes('banco_de_talentos') && handleMover('banco_de_talentos')}
+                  disabled={!possibleStages.includes('banco_de_talentos')}
                 >
-                  <Ban className="w-3.5 h-3.5" /> Reserva
+                  <Star className="w-3.5 h-3.5" /> Banco de Talentos
                 </Button>
                 <Button
                   variant="outline"

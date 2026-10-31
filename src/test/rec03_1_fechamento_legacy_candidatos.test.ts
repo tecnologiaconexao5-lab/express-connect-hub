@@ -323,8 +323,11 @@ describe("REC-03.1-10 — Gate documental preservado", () => {
     expect(conversaoCandidatoService).toContain("Documentação obrigatória incompleta");
   });
 
-  it("stages permitidos para conversão: aprovado, ativo, prestador_apto", () => {
-    expect(conversaoCandidatoService).toContain("'aprovado', 'ativo', 'prestador_apto'");
+  it("stages permitidos para conversão: aprovado e homologados (legado preservado)", () => {
+    expect(conversaoCandidatoService).toContain(
+      "'aprovado', 'homologado_disponivel', 'homologado_indisponivel'",
+    );
+    expect(conversaoCandidatoService).toContain("'ativo', 'prestador_apto'");
   });
 });
 

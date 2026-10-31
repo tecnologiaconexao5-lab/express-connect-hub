@@ -4,20 +4,20 @@ import type {
   DocumentoCandidato, StatusDocumental, StatusOperacional, DisponibilidadeTipo,
   OnboardingItem, OnboardingStatus, ReservaContexto,
 } from './enterpriseKanbanTypes'
-import { DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS, STAGE_TRANSITIONS } from './enterpriseKanbanTypes'
+import { DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS, STAGE_TRANSITIONS, normalizePipelineStage } from './enterpriseKanbanTypes'
 const TABLE = 'recrutamento_candidatos'
 const PRESTADORES_TABLE = 'prestadores'
 
 const ORIGEM_APP = 'app_motorista'
 
 const STATUS_APP_TO_STAGE: Record<string, PipelineStage> = {
-  em_analise: 'em_analise',
+  em_analise: 'em_analise_perfil',
   aprovado: 'aprovado',
-  ativo: 'ativo',
-  bloqueado: 'bloqueado',
-  inativo: 'reprovado',
-  novo: 'novo_cadastro',
-  analise: 'em_analise',
+  ativo: 'homologado_disponivel',
+  bloqueado: 'reprovado',
+  inativo: 'processo_encerrado',
+  novo: 'novo_candidato',
+  analise: 'em_analise_perfil',
 }
 
 function recalcularDocsValidade(docs: DocumentoCandidato[]): DocumentoCandidato[] {
@@ -99,7 +99,7 @@ function calcularStatusOperacional(
   stage: PipelineStage,
   disponibilidade: DisponibilidadeTipo,
 ): StatusOperacional {
-  if (stage === 'reprovado' || stage === 'bloqueado') return 'bloqueado'
+  if (stage === 'reprovado' || stage === 'processo_encerrado') return 'bloqueado'
   if (disponibilidade === 'indisponivel') return 'indisponivel'
   if (statusDocumental === 'bloqueado' || statusDocumental === 'vencido') return 'bloqueado'
   if (statusDocumental === 'pendente') return 'pendente'
@@ -115,7 +115,7 @@ function fromDB(row: any): EnterpriseCandidate {
   const tags: string[] = Array.isArray(row.tags) ? row.tags : []
   const dispTipo = getDisponibilidadeTipo(tags)
   const onboarding = extrairOnboarding(tags)
-  const stage = (row.stage ?? 'novo_cadastro') as PipelineStage
+  const stage = normalizePipelineStage(row.stage)
   const statusOp = calcularStatusOperacional(docCalc.status, stage, dispTipo)
   const regioes: string[] = Array.isArray(row.regioes_atuacao) ? row.regioes_atuacao
     : row.cidade ? [row.cidade, row.uf].filter(Boolean) : []
@@ -232,43 +232,42 @@ function toDB(candidate: Partial<EnterpriseCandidate>): Record<string, unknown> 
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  novo_cadastro: 'Novo Lead',
-  pre_triagem: 'Pré-Triagem',
-  interesse_confirmado: 'Interesse Confirmado',
-  em_analise: 'Em Análise',
-  documentacao_pendente: 'Documentação',
-  em_validacao: 'Em Validação',
-  entrevista: 'Entrevista',
-  em_treinamento: 'Treinamento',
-  homologacao: 'Homologação',
-  confirmacao_inicio: 'Conf. de Início',
+  novo_candidato: 'Novo Candidato',
+  cadastro_iniciado: 'Cadastro Iniciado',
+  cadastro_concluido: 'Cadastro Concluído',
+  em_triagem: 'Em Triagem',
+  em_analise_perfil: 'Análise de Perfil',
+  aguardando_documentacao: 'Aguardando Documentação',
+  em_verificacao_documental: 'Verificação Documental',
+  em_avaliacao_situacional: 'Avaliação Situacional',
+  em_entrevista: 'Entrevista',
+  em_homologacao: 'Homologação',
   aprovado: 'Aprovado',
-  prestador_apto: 'Prestador Apto',
-  ativo: 'Ativo',
-  operacao_ativa: 'Operação Ativa',
-  bloqueado: 'Bloqueado',
   reprovado: 'Reprovado',
+  cadastro_incompleto: 'Cadastro Incompleto',
+  banco_de_talentos: 'Banco de Talentos',
+  homologado_disponivel: 'Homologado Disponível',
+  homologado_indisponivel: 'Homologado Indisponível',
+  processo_encerrado: 'Processo Encerrado',
 }
 
 function verificarBloqueioPipeline(candidate: EnterpriseCandidate, novoStage: PipelineStage): string | null {
-  // Bloqueio 1: Sem confirmação de interesse, não avança para Homologação
-  if (novoStage === 'homologacao' && !candidate.confirmouInteresse) {
+  // Bloqueio 1: Sem confirmação de interesse, não avança para Homologação.
+  if (novoStage === 'em_homologacao' && !candidate.confirmouInteresse) {
     return 'É necessário confirmar o interesse do candidato antes de avançar para Homologação.'
   }
 
-  // Bloqueio 2: Sem treinamento concluído, não avança para Homologação
-  if (novoStage === 'homologacao' && candidate.stage !== 'em_treinamento' && candidate.stage !== 'aprovado') {
-    return 'O candidato precisa concluir o Treinamento antes da Homologação.'
+  // Bloqueio 2: Homologação exige entrevista/avaliação situacional concluída.
+  if (
+    novoStage === 'em_homologacao' &&
+    !['em_entrevista', 'em_avaliacao_situacional', 'aprovado'].includes(candidate.stage)
+  ) {
+    return 'O candidato precisa concluir a Avaliação Situacional/Entrevista antes da Homologação.'
   }
 
-  // Bloqueio 3: Sem confirmação de início, não avança para Prestador Apto
-  if (novoStage === 'prestador_apto' && !candidate.confirmouPreInicio) {
-    return 'É necessário confirmar o pré-início antes de tornar o candidato Prestador Apto.'
-  }
-
-  // Bloqueio 4: Sem comparecimento primeiro dia, não avança para Operação Ativa
-  if (novoStage === 'operacao_ativa' && !candidate.compareceuPrimeiroDia) {
-    return 'O candidato precisa comparecer ao primeiro dia de operação antes de avançar para Operação Ativa.'
+  // Bloqueio 3: Sem confirmação de início, não avança para Homologado Disponível.
+  if (novoStage === 'homologado_disponivel' && !candidate.confirmouPreInicio) {
+    return 'É necessário confirmar o pré-início antes de tornar o candidato Homologado Disponível.'
   }
 
   return null
@@ -306,7 +305,7 @@ function normalizeCandidate(c: any): EnterpriseCandidate {
   const docCalc = calcularStatusDocumentalOperacional(docs)
   const dispTipo = getDisponibilidadeTipo(tags)
   const onboarding = extrairOnboarding(tags)
-  const stage = (c.stage ?? 'novo_cadastro') as PipelineStage
+  const stage = normalizePipelineStage(c.stage)
 
   return {
     id: c.id ?? '',
@@ -425,7 +424,7 @@ async function buscarECadastrarAppPrestadores(): Promise<EnterpriseCandidate[]> 
       const rows = novos.map((p: any) => {
         const veiculoArr = Array.isArray(p.veiculos) ? p.veiculos : []
         const veiculo = veiculoArr[0] ?? {}
-        const stage = (STATUS_APP_TO_STAGE[p.status] ?? 'novo_cadastro') as PipelineStage
+        const stage = STATUS_APP_TO_STAGE[p.status] ?? normalizePipelineStage(p.status)
         return toDB({
           nome: p.nome_completo ?? '',
           telefone: p.telefone ?? '',
@@ -489,11 +488,8 @@ export const enterpriseKanbanService = {
 
     if (candidate.stage === novoStage) return { error: 'Candidato já está neste estágio' }
 
-    // G21 — bloqueio exige motivo (persistido no historico JSONB, sem coluna nova).
+    // Motivo é opcional (persistido no histórico JSONB quando informado).
     const motivoBloqueio = (motivo ?? '').trim()
-    if (novoStage === 'bloqueado' && !motivoBloqueio) {
-      return { error: 'MOTIVO_BLOQUEIO_OBRIGATORIO' }
-    }
 
     const allowedTransitions = STAGE_TRANSITIONS[candidate.stage] ?? []
     if (!allowedTransitions.includes(novoStage)) {
@@ -512,9 +508,11 @@ export const enterpriseKanbanService = {
 
     if (updateError) return { error: updateError.message }
 
-    const tipo = novoStage === 'bloqueado' ? 'bloqueado' as const
-      : novoStage === 'aprovado' || novoStage === 'prestador_apto' ? 'aprovado' as const
-      : 'mudou_etapa' as const
+    const tipo = novoStage === 'reprovado' || novoStage === 'processo_encerrado'
+      ? 'bloqueado' as const
+      : novoStage === 'aprovado' || novoStage === 'homologado_disponivel' || novoStage === 'homologado_indisponivel'
+        ? 'aprovado' as const
+        : 'mudou_etapa' as const
     const descricao = `${STAGE_LABELS[stageAnterior] ?? stageAnterior} → ${STAGE_LABELS[novoStage] ?? novoStage}`
 
     await registrarEvento(id, {
@@ -563,7 +561,7 @@ export const enterpriseKanbanService = {
     const dispTipo = getDisponibilidadeTipo(tags)
     const onboarding = extrairOnboarding(tags as string[])
     const statusDoc = candidate.statusDocumental ?? 'pendente' as any
-    const stage = candidate.stage ?? 'novo_cadastro'
+    const stage = normalizePipelineStage(candidate.stage)
 
     const newCandidate: EnterpriseCandidate = {
       id: `ec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

@@ -34,7 +34,25 @@ export function BancoTalentos() {
     let query = supabase
       .from("recrutamento_candidatos")
       .select("id, nome as nome_completo, veiculo as tipo_veiculo, regiao, status, telefone, email, created_at, score")
-      .in("stage", ["novo_cadastro", "pre_triagem", "interesse_confirmado", "em_analise", "documentacao_pendente", "aprovado"])
+      .in("stage", [
+        "novo_candidato",
+        "cadastro_iniciado",
+        "cadastro_concluido",
+        "em_triagem",
+        "em_analise_perfil",
+        "aguardando_documentacao",
+        "em_verificacao_documental",
+        "em_avaliacao_situacional",
+        "em_entrevista",
+        "em_homologacao",
+        "aprovado",
+        "reprovado",
+        "cadastro_incompleto",
+        "banco_de_talentos",
+        "homologado_disponivel",
+        "homologado_indisponivel",
+        "processo_encerrado",
+      ])
       .order("created_at", { ascending: false })
       .limit(100);
 

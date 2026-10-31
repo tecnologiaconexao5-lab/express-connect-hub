@@ -85,16 +85,32 @@ export {
 }
 
 const STAGE_TO_STATUS: Record<string, TalentosCandidato['status']> = {
+  novo_candidato: 'novo',
+  cadastro_iniciado: 'novo',
+  cadastro_concluido: 'em_analise',
+  em_triagem: 'em_analise',
+  em_analise_perfil: 'em_analise',
+  aguardando_documentacao: 'em_analise',
+  em_verificacao_documental: 'em_analise',
+  em_avaliacao_situacional: 'em_analise',
+  em_entrevista: 'em_analise',
+  em_homologacao: 'em_analise',
+  aprovado: 'aprovado',
+  reprovado: 'bloqueado',
+  cadastro_incompleto: 'novo',
+  banco_de_talentos: 'em_analise',
+  homologado_disponivel: 'agregado',
+  homologado_indisponivel: 'agregado',
+  processo_encerrado: 'bloqueado',
+  // legado
   novo_cadastro: 'novo',
   em_analise: 'em_analise',
   documentacao_pendente: 'em_analise',
   em_validacao: 'em_analise',
   entrevista: 'em_analise',
   em_treinamento: 'em_analise',
-  aprovado: 'aprovado',
   ativo: 'agregado',
   bloqueado: 'bloqueado',
-  reprovado: 'bloqueado',
 }
 
 function extractOrigem(tags: string[]): string {

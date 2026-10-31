@@ -142,7 +142,18 @@ export async function buscarReservasParaOperacao(
     const { data: candidatos, error } = await supabase
       .from("recrutamento_candidatos")
       .select("*, nome as nome_completo, veiculo as tipo_veiculo, stage as status, score as score_perfil")
-      .or(`stage.eq.aprovado,stage.eq.interesse_confirmado,stage.eq.bloqueado`)
+      .or(
+        [
+          "stage.eq.aprovado",
+          "stage.eq.homologado_disponivel",
+          "stage.eq.homologado_indisponivel",
+          "stage.eq.interesse_confirmado",
+          "stage.eq.em_triagem",
+          "stage.eq.em_analise_perfil",
+          "stage.eq.bloqueado",
+          "stage.eq.reprovado",
+        ].join(","),
+      )
       .order("score", { ascending: false })
       .limit(20);
 
@@ -151,8 +162,12 @@ export async function buscarReservasParaOperacao(
     const sugestoes: SugestaoReserva[] = [];
 
     const mapStageToStatus = (stage: string): "aprovado" | "interessado" | "inativo" => {
-      if (stage === "aprovado" || stage === "ativo") return "aprovado";
-      if (stage === "interesse_confirmado" || stage === "pre_triagem") return "interessado";
+      if (["aprovado", "homologado_disponivel", "homologado_indisponivel", "ativo"].includes(stage)) {
+        return "aprovado";
+      }
+      if (["interesse_confirmado", "pre_triagem", "em_triagem", "em_analise_perfil"].includes(stage)) {
+        return "interessado";
+      }
       return "inativo";
     };
 
@@ -189,7 +204,18 @@ export async function identificarCandidatosEsquecidos(): Promise<{
     const { data: candidatos } = await supabase
       .from("recrutamento_candidatos")
       .select("*, nome as nome_completo, veiculo as tipo_veiculo, stage as status, score as score_perfil")
-      .or(`stage.eq.interesse_confirmado,stage.eq.aprovado,stage.eq.bloqueado`);
+      .or(
+        [
+          "stage.eq.interesse_confirmado",
+          "stage.eq.em_triagem",
+          "stage.eq.em_analise_perfil",
+          "stage.eq.aprovado",
+          "stage.eq.homologado_disponivel",
+          "stage.eq.homologado_indisponivel",
+          "stage.eq.bloqueado",
+          "stage.eq.reprovado",
+        ].join(","),
+      );
 
     const interessados_sem_contato: Candidato[] = [];
     const aprovados_sem_ativar: Candidato[] = [];
@@ -199,11 +225,20 @@ export async function identificarCandidatosEsquecidos(): Promise<{
       const ultimaInteracao = c.ultima_interacao ? new Date(c.ultima_interacao) : new Date(c.created_at);
       const diasSemContato = Math.floor((hoje.getTime() - ultimaInteracao.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (c.status === "interesse_confirmado" && diasSemContato > DIAS_INTERESSADO) {
+      if (
+        ["interesse_confirmado", "em_triagem", "em_analise_perfil"].includes(c.status) &&
+        diasSemContato > DIAS_INTERESSADO
+      ) {
         interessados_sem_contato.push(c as Candidato);
-      } else if (c.status === "aprovado" && diasSemContato > DIAS_APROVADO) {
+      } else if (
+        ["aprovado", "homologado_disponivel", "homologado_indisponivel"].includes(c.status) &&
+        diasSemContato > DIAS_APROVADO
+      ) {
         aprovados_sem_ativar.push(c as Candidato);
-      } else if (c.status === "bloqueado" && diasSemContato > DIAS_INATIVO) {
+      } else if (
+        ["bloqueado", "reprovado", "processo_encerrado"].includes(c.status) &&
+        diasSemContato > DIAS_INATIVO
+      ) {
         inativos_sem_operacao.push(c as Candidato);
       }
     });

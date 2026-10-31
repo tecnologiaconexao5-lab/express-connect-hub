@@ -56,7 +56,7 @@ export const criarCandidatoService = {
           mensagem_livre: dados.mensagem_livre || null,
           canal_captacao: dados.canal_captacao || "onboarding_app",
           status: "interessado",
-          stage: "interesse_confirmado",
+          stage: "novo_candidato",
           data_entrada: new Date().toISOString().split("T")[0],
         }])
         .select("id")

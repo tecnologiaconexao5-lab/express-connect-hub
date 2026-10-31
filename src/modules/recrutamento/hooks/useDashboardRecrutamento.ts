@@ -64,11 +64,33 @@ const MESES_ABV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'
 
 const TABLE_CANDIDATOS = 'recrutamento_candidatos'
 
-// Mapeamento de stages do Pipeline para metricas do Dashboard
-const STAGE_ATIVOS = ['ativo', 'operacao_ativa', 'prestador_apto']
-const STAGE_APROVADOS = ['aprovado', 'ativo', 'operacao_ativa', 'prestador_apto']
-const STAGE_PENDENTES = ['novo_cadastro', 'pre_triagem', 'interesse_confirmado', 'em_analise', 'documentacao_pendente', 'em_validacao', 'entrevista']
-const STAGE_BLOQUEADOS = ['bloqueado', 'reprovado']
+// Mapeamento das 17 etapas (Fase 3/4) para os indicadores originais do Dashboard.
+// Inclui os stages legados para que registros antigos continuem contabilizados.
+const STAGE_ATIVOS = [
+  'homologado_disponivel', 'homologado_indisponivel',
+  // legado
+  'ativo', 'operacao_ativa', 'prestador_apto',
+]
+const STAGE_APROVADOS = [
+  'aprovado', 'homologado_disponivel', 'homologado_indisponivel',
+  // legado
+  'ativo', 'operacao_ativa', 'prestador_apto',
+]
+const STAGE_PENDENTES = [
+  'novo_candidato', 'cadastro_iniciado', 'cadastro_concluido', 'em_triagem',
+  'em_analise_perfil', 'aguardando_documentacao', 'em_verificacao_documental',
+  'em_avaliacao_situacional', 'em_entrevista', 'em_homologacao',
+  'cadastro_incompleto', 'banco_de_talentos',
+  // legado
+  'novo_cadastro', 'pre_triagem', 'interesse_confirmado', 'em_analise',
+  'documentacao_pendente', 'em_validacao', 'entrevista', 'em_treinamento',
+  'homologacao', 'confirmacao_inicio',
+]
+const STAGE_BLOQUEADOS = [
+  'reprovado', 'processo_encerrado',
+  // legado
+  'bloqueado',
+]
 
 async function queryCount(table: string, column = 'id'): Promise<number> {
   const { count } = await supabase.from(table).select(column, { count: 'exact', head: true })

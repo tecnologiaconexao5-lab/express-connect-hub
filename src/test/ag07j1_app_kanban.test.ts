@@ -94,7 +94,7 @@ describe("AG-07J.1 — App Kanban Bridge", () => {
     expect(appCards[0].nome).toBe("Motorista App Teste");
     expect(appCards[0].veiculo).toBe("Van");
     expect(appCards[0].placa).toBe("ABC1D23");
-    expect(appCards[0].stage).toBe("em_analise");
+    expect(appCards[0].stage).toBe("em_analise_perfil");
   });
 
   it("B) Segunda chamada não cria segundo candidato (dedup)", async () => {
@@ -180,9 +180,9 @@ describe("AG-07J.1 — App Kanban Bridge", () => {
     ];
 
     const result = await enterpriseKanbanService.listar();
-    expect(result.find((c: any) => c.prestadorId === "app_g1")?.stage).toBe("em_analise");
+    expect(result.find((c: any) => c.prestadorId === "app_g1")?.stage).toBe("em_analise_perfil");
     expect(result.find((c: any) => c.prestadorId === "app_g2")?.stage).toBe("aprovado");
-    expect(result.find((c: any) => c.prestadorId === "app_g3")?.stage).toBe("bloqueado");
+    expect(result.find((c: any) => c.prestadorId === "app_g3")?.stage).toBe("reprovado");
   });
 
   it("H) Tags automáticas: veiculo_proprio + disponivel_imediato", async () => {
