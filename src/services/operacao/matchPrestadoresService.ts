@@ -552,13 +552,19 @@ interface VeiculoRowMatch {
  * Carrega a base oficial (prestadores + veículos + perfil + disponibilidade +
  * documentação + ocorrências) e devolve o shape do motor de match.
  */
-export async function carregarPrestadoresBase(limite = 200): Promise<PrestadorMatchInput[]> {
+export async function carregarPrestadoresBase(
+  limite = 200,
+  incluirEmAnalise = false,
+): Promise<PrestadorMatchInput[]> {
+  const statusPermitidos = incluirEmAnalise
+    ? ["ativo", "aprovado", "agregado", "reserva", "em_analise", "analise"]
+    : ["ativo", "aprovado", "agregado", "reserva"];
   const { data: prestadoresData, error } = await supabase
     .from("prestadores")
     .select(
       "id, nome_completo, telefone, whatsapp, email, status, regiao_principal, regioes_secundarias, endereco, foto, data_cadastro, score_interno, avaliacao_operacional, indice_aceite, indice_comparecimento, indice_entrega_prazo, qtd_operacoes, aceita_refrigerado, aceita_refrigerada",
     )
-    .in("status", ["ativo", "aprovado", "agregado", "reserva"])
+    .in("status", statusPermitidos)
     .order("score_interno", { ascending: false })
     .limit(limite);
   if (error) throw error;

@@ -166,9 +166,9 @@ export function EnterpriseKanbanBoard() {
 
       <div className="flex-1 overflow-hidden">
         {loading ? (
-          <div className="flex gap-3 h-full overflow-x-auto pb-4">
+          <div className="flex gap-3 h-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain pb-4">
             {PIPELINE_COLUMNS.map((col) => (
-              <div key={col.id} className="flex flex-col min-w-[300px] w-[320px] shrink-0">
+              <div key={col.id} className="flex flex-col min-w-[280px] w-[280px] shrink-0 snap-start sm:min-w-[300px] sm:w-[320px]">
                 <div className="flex items-center justify-between px-3 py-2.5 rounded-t-xl border-t-2 bg-muted/10 animate-pulse" style={{ borderTopColor: col.color }}>
                   <div className="h-4 w-24 bg-muted rounded" />
                   <div className="h-5 w-8 bg-muted rounded-full" />
@@ -205,7 +205,7 @@ export function EnterpriseKanbanBoard() {
           <>
             <div
               ref={scrollRef}
-              className="flex gap-3 h-full overflow-x-auto pb-4 custom-scrollbar"
+              className="flex gap-3 h-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain pb-4 custom-scrollbar"
             >
               {PIPELINE_COLUMNS.map((col) => (
                 <KanbanColumn

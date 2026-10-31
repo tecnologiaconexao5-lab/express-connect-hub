@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +30,12 @@ import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/doc
 import { montarResumoTalent, MODALIDADE_LABEL } from "@/lib/talentResumo";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerAvaliacaoSituacional } from "@/lib/permissoes";
+import {
+  enviarWhatsAppTalent,
+  montarTemplateReativacao,
+  notificarAppTalent,
+  reativarCandidatoTalent,
+} from "@/services/recrutamento/talentComunicacaoService";
 
 const BUCKET_PRESTADORES = "documentos_prestadores";
 const DRAFT_KEY = "conexao_prestador_draft";
@@ -241,6 +247,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [disponibilidadeTalento, setDisponibilidadeTalento] = useState<DisponibilidadeTalentoForm[]>([]);
   const [avaliacoesTalento, setAvaliacoesTalento] = useState<AvaliacaoTalentItem[]>([]);
   const [treinamentosTalento, setTreinamentosTalento] = useState<TreinamentoTalentItem[]>([]);
+  const [candidateStageTalento, setCandidateStageTalento] = useState("");
   const [loadingTalento, setLoadingTalento] = useState(false);
   const [salvandoPerfilTalento, setSalvandoPerfilTalento] = useState(false);
   const [salvandoDisponibilidade, setSalvandoDisponibilidade] = useState(false);
@@ -295,7 +302,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     const carregarTalento = async () => {
       setLoadingTalento(true);
       try {
-        const [perfilRes, dispoRes, avaliacoesRes, treinamentosRes] = await Promise.all([
+        const [perfilRes, dispoRes, avaliacoesRes, treinamentosRes, candidatoRes] = await Promise.all([
           supabase
             .from("prestador_perfil_talento")
             .select("*")
@@ -316,6 +323,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             .select("*")
             .eq("prestador_id", p.id)
             .order("data_conclusao", { ascending: false }),
+          supabase
+            .from("recrutamento_candidatos")
+            .select("stage")
+            .eq("prestador_id", p.id)
+            .limit(1)
+            .maybeSingle(),
         ]);
 
         if (!ativo) return;
@@ -381,6 +394,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             validade: String(row.validade || ""),
           })),
         );
+
+        const candidatoRow = candidatoRes.data as Record<string, unknown> | null;
+        setCandidateStageTalento(String(candidatoRow?.stage || ""));
       } finally {
         if (ativo) setLoadingTalento(false);
       }
@@ -1072,6 +1088,68 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
+  const usuarioComunicacao = user?.name || user?.email || "TMS";
+  const podeReativarCandidato =
+    candidateStageTalento === "banco_de_talentos" ||
+    candidateStageTalento === "homologado_indisponivel" ||
+    normalizarStatusPrestador(p.status) === "inativo";
+
+  const comunicarWhatsAppPrestador = async () => {
+    if (!p.id) {
+      toast.error("Salve o prestador antes de enviar mensagens.");
+      return;
+    }
+    const mensagem =
+      `Olá, ${p.nomeCompleto || "parceiro"}! Aqui é a Conexão Express. ` +
+      `Estamos entrando em contato para falar sobre oportunidades de operação. Podemos conversar?`;
+    const url = await enviarWhatsAppTalent({
+      prestadorId: p.id,
+      nome: p.nomeCompleto || "Prestador",
+      telefone: p.whatsapp || p.telefone,
+      mensagem,
+      usuario: usuarioComunicacao,
+    });
+    window.open(url, "_blank");
+    toast.success("WhatsApp aberto e interação registrada no CRM.");
+  };
+
+  const notificarAppPrestador = async () => {
+    if (!p.id) {
+      toast.error("Salve o prestador antes de notificar pelo App.");
+      return;
+    }
+    try {
+      await notificarAppTalent({
+        prestadorId: p.id,
+        nome: p.nomeCompleto || "Prestador",
+        mensagem: "A Conexão Express enviou uma mensagem para você. Abra o App para verificar.",
+        usuario: usuarioComunicacao,
+      });
+      toast.success("Notificação enviada no App e registrada no CRM.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível notificar no App: ${mensagem}`);
+    }
+  };
+
+  const reativarCandidatoPrestador = async () => {
+    if (!p.id) {
+      toast.error("Salve o prestador antes de reativar o candidato.");
+      return;
+    }
+    const resultado = await reativarCandidatoTalent({
+      prestadorId: p.id,
+      nome: p.nomeCompleto || "Prestador",
+      telefone: p.whatsapp || p.telefone,
+      regiao: p.regiaoPrincipal,
+      stageAtual: candidateStageTalento,
+      usuario: usuarioComunicacao,
+    });
+    setCandidateStageTalento(resultado.novoStage);
+    window.open(resultado.whatsappUrl, "_blank");
+    toast.success("Candidato reativado e template de disponibilidade aberto no WhatsApp.");
+  };
+
   const docGeral = () => {
     if (!p.documentos?.length) return { label: "Pendente ⚠️", cls: "bg-yellow-100 text-yellow-700" };
     if (p.documentos.some((d) => d.status === "vencido")) return { label: "Vencido 🔴", cls: "bg-red-100 text-red-700" };
@@ -1082,17 +1160,30 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   return (
     <div className="w-full px-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="w-5 h-5" /></Button>
-          <h2 className="text-xl font-bold">{isNew ? "Cadastrar Prestador" : (p.nomeFantasia || p.nomeCompleto)}</h2>
+          <h2 className="truncate text-lg font-bold sm:text-xl">{isNew ? "Cadastrar Prestador" : (p.nomeFantasia || p.nomeCompleto)}</h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {p.id && (
-            <Button variant="outline" size="sm" className="gap-1.5 focus:ring-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" onClick={() => setModalContratoOpen(true)}>
-              <FileSignature className="w-4 h-4" />
-              Gerar Contrato
-            </Button>
+            <>
+              <Button variant="outline" size="sm" className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" onClick={() => void comunicarWhatsAppPrestador()}>
+                <MessageCircle className="w-4 h-4" /> Enviar WhatsApp
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" onClick={() => void notificarAppPrestador()}>
+                <BellRing className="w-4 h-4" /> Notificação App
+              </Button>
+              {podeReativarCandidato && (
+                <Button variant="outline" size="sm" className="gap-1.5 border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" onClick={() => void reativarCandidatoPrestador()}>
+                  <RefreshCw className="w-4 h-4" /> Reativar Candidato
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="gap-1.5 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-2" onClick={() => setModalContratoOpen(true)}>
+                <FileSignature className="w-4 h-4" />
+                Gerar Contrato
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1195,7 +1286,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         {/* Abas principais - DIREITA */}
         <div className="flex-1 min-w-0 order-1 xl:order-2">
           <Tabs defaultValue="dados" className="w-full">
-            <TabsList className="bg-muted/60 w-full flex flex-wrap">
+            <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1 [&>button]:px-2 [&>button]:text-[11px] sm:[&>button]:text-xs">
               <TabsTrigger value="dados">Dados Gerais</TabsTrigger>
               <TabsTrigger value="documentacao">Documentacao</TabsTrigger>
               <TabsTrigger value="veiculos">Veiculos</TabsTrigger>

@@ -63,6 +63,7 @@ export interface TalentoLogistico {
   categoriaPerformance?: CategoriaPerformance;
   performanceScore?: number | null;
   statusDisponibilidade?: "disponivel" | "indisponivel" | "em_operacao";
+  stageCandidato?: string;
 }
 
 export interface Shortlist {

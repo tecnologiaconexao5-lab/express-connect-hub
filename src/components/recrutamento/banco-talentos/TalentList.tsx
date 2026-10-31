@@ -1,11 +1,17 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { MapPin, Truck, Star, Heart, Clock, FileText, Award, User, ChevronRight, LayoutGrid, List } from "lucide-react";
+import { MapPin, Truck, Star, Heart, Clock, FileText, Award, User, ChevronRight, LayoutGrid, List, MessageCircle, BellRing, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/safe-image";
 import { useTalentBankStore, type TalentoLogistico } from "@/stores/talentBankStore";
 import { aplicarFiltrosTalentos } from "@/services/recrutamento/talentBankService";
 import { PERFORMANCE_CORES } from "@/lib/performancePrestador";
+import {
+  enviarWhatsAppTalent,
+  notificarAppTalent,
+  reativarCandidatoTalent,
+} from "@/services/recrutamento/talentComunicacaoService";
 
 const NIVEL_CORES = { diamante: "text-cyan-500", ouro: "text-yellow-500", prata: "text-slate-400", bronze: "text-amber-700" };
 const NIVEL_BGS = { diamante: "bg-cyan-50 border-cyan-200 dark:bg-cyan-950/20", ouro: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20", prata: "bg-slate-100 border-slate-200", bronze: "bg-amber-100 border-amber-200" };
@@ -73,6 +79,53 @@ export default function TalentList({ onSelectProfile }: { onSelectProfile: () =>
 }
 
 function TalentCard({ talento: t, isActive, onSelect, onToggleFav }: { talento: TalentoLogistico; isActive: boolean; onSelect: () => void; onToggleFav: () => void }) {
+  const podeReativar =
+    ["banco_de_talentos", "homologado_indisponivel"].includes(t.stageCandidato || "") ||
+    t.statusPrestador === "inativo" ||
+    t.statusDisponibilidade === "indisponivel";
+
+  const handleWhatsApp = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const mensagem = `Olá, ${t.nome}! Aqui é a Conexão Express. Estamos entrando em contato sobre oportunidades de operação. Podemos conversar?`;
+    const url = await enviarWhatsAppTalent({
+      prestadorId: t.id,
+      nome: t.nome,
+      telefone: t.telefone,
+      mensagem,
+    });
+    window.open(url, "_blank");
+    toast.success("WhatsApp aberto e interação registrada no CRM.");
+  };
+
+  const handleApp = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    try {
+      await notificarAppTalent({
+        prestadorId: t.id,
+        nome: t.nome,
+        mensagem: "A Conexão Express enviou uma mensagem para você. Abra o App para verificar.",
+      });
+      toast.success("Notificação enviada no App e registrada no CRM.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível notificar no App: ${mensagem}`);
+    }
+  };
+
+  const handleReativar = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const resultado = await reativarCandidatoTalent({
+      prestadorId: t.id,
+      nome: t.nome,
+      telefone: t.telefone,
+      regiao: t.regiao,
+      stageAtual: t.stageCandidato,
+    });
+    window.open(resultado.whatsappUrl, "_blank");
+    toast.success("Candidato reativado e template de disponibilidade aberto.");
+    await useTalentBankStore.getState().carregarTalentos();
+  };
+
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn("p-4 rounded-xl border transition-all cursor-pointer", isActive ? "border-primary ring-1 ring-primary/30 bg-primary/[0.02]" : "border-border bg-card hover:border-primary/30 hover:shadow-sm")} onClick={onSelect}>
       <div className="flex items-start justify-between mb-3">
@@ -131,6 +184,32 @@ function TalentCard({ talento: t, isActive, onSelect, onToggleFav }: { talento: 
         {t.tagsPersonalizadas.map((tag, i) => (
           <span key={tag} className={cn("px-1.5 py-0.5 rounded text-[8px] font-medium border", TAG_COLORS[i % TAG_COLORS.length])}>{tag}</span>
         ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border/40 pt-2">
+        <button
+          type="button"
+          onClick={handleWhatsApp}
+          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100"
+        >
+          <MessageCircle className="h-3 w-3" /> WhatsApp
+        </button>
+        <button
+          type="button"
+          onClick={handleApp}
+          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100"
+        >
+          <BellRing className="h-3 w-3" /> App
+        </button>
+        {podeReativar && (
+          <button
+            type="button"
+            onClick={handleReativar}
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+          >
+            <RefreshCw className="h-3 w-3" /> Reativar
+          </button>
+        )}
       </div>
     </motion.div>
   );

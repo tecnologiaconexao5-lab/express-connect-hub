@@ -204,11 +204,12 @@ function mapearTalento(
     categoriaPerformance: performance.categoria,
     performanceScore: performance.score,
     statusDisponibilidade: p.perfil?.status_disponibilidade || "disponivel",
+    stageCandidato: stageCandidato || undefined,
   };
 }
 
 export async function buscarTalentosBanco(): Promise<TalentoLogistico[]> {
-  const prestadores = await carregarPrestadoresBase(300);
+  const prestadores = await carregarPrestadoresBase(300, true);
   if (prestadores.length === 0) return [];
 
   const ids = prestadores.map((p) => p.id);
@@ -221,7 +222,10 @@ export async function buscarTalentosBanco(): Promise<TalentoLogistico[]> {
     if (c.prestador_id) stagePorPrestador.set(String(c.prestador_id), String(c.stage || ""));
   }
 
-  return prestadores.map((p) => mapearTalento(p, stagePorPrestador.get(p.id)));
+  // Defesa final contra duplicação de identidade (o PK já é único, mas a
+  // junção com candidatos pode ser reexecutada por realtime/refresh).
+  const unicos = [...new Map(prestadores.map((p) => [p.id, p])).values()];
+  return unicos.map((p) => mapearTalento(p, stagePorPrestador.get(p.id)));
 }
 
 function combinaHorario(

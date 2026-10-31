@@ -2490,7 +2490,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     {sugestoesPrestador.map((s, i) => (
                       <div
                         key={s.prestadorId}
-                        className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 ${
+                        className={`flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center ${
                           i === 0 ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-white"
                         }`}
                       >
@@ -2525,7 +2525,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         <Badge className={i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}>
                           {Math.min(100, s.score)}% de compatibilidade
                         </Badge>
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
                           <Button
                             type="button"
                             size="sm"

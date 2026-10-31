@@ -120,7 +120,7 @@ export function KanbanColumn({
   return (
     <div
       ref={dropRef}
-      className="flex flex-col min-w-[300px] w-[320px] max-w-[340px] shrink-0"
+      className="flex flex-col min-w-[280px] w-[280px] max-w-[340px] shrink-0 snap-start sm:min-w-[300px] sm:w-[320px]"
     >
       <div className={cn(
         'flex items-center justify-between px-3 py-2.5 rounded-t-xl border-t-2 bg-gradient-to-r',
