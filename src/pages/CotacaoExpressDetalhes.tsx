@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, CheckCircle2, Loader2, MapPin } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2, MapPin, MessageCircle } from "lucide-react";
 import {
   buscarCotacao,
   converterCotacaoEmOrcamentoEOS,
@@ -23,6 +23,11 @@ import {
   type CotacaoPublica,
   type DetalheParadaCotacao,
 } from "@/services/cotacoes/cotacaoPublicaService";
+import { linkConfirmacaoWhatsApp } from "@/lib/cotacaoWhatsApp";
+
+// Placeholder da central. Substituir por VITE_WHATSAPP_CENTRAL em produção.
+const WHATSAPP_CENTRAL_COTACAO =
+  (import.meta.env.VITE_WHATSAPP_CENTRAL as string | undefined) || "5511999999999";
 
 const vazioDetalhe = (sequencia: number): DetalheParadaCotacao => ({
   sequencia,
@@ -128,6 +133,11 @@ export default function CotacaoExpressDetalhes() {
     }
   };
 
+  const linkConfirmacao = useMemo(
+    () => (cotacao ? linkConfirmacaoWhatsApp(cotacao, WHATSAPP_CENTRAL_COTACAO) : ""),
+    [cotacao],
+  );
+
   const primeiroNome = (cotacao?.nome_cliente || "").trim().split(" ")[0];
 
   // ------------------------------------------------------------
@@ -196,6 +206,19 @@ export default function CotacaoExpressDetalhes() {
               <CheckCircle2 className="h-8 w-8" />
             </div>
             <p className="text-[15px] leading-relaxed text-slate-700">{MENSAGEM_CONCLUSAO}</p>
+
+            <a
+              href={linkConfirmacao}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 flex h-14 w-full items-center justify-center rounded-xl bg-[#25D366] text-base font-bold text-white shadow-lg shadow-[#25D366]/30 transition hover:bg-[#1ebe5a]"
+            >
+              <MessageCircle className="mr-2 h-5 w-5" />
+              Confirmar Pedido via WhatsApp
+            </a>
+            <p className="mt-2 text-xs text-slate-400">
+              Você será direcionado ao WhatsApp da central Conexão Express.
+            </p>
           </div>
         </main>
       </div>
