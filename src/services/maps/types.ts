@@ -28,12 +28,14 @@ export interface DistanceResult {
  * Estrutura de estado que acompanha o campo pedágio da OS para rastrear a origem
  * do valor: retornado por API, digitado manualmente ou ainda não identificado.
  */
-export type FontePedagio = "nao_identificado" | "api" | "manual";
+export type FontePedagio = "nao_identificado" | "api" | "manual" | "estimado";
 
 export interface PedagioInfo {
   fonte: FontePedagio;
   /** Provider que informou o pedágio quando fonte === "api". */
   provider?: string;
+  /** Detalhe da estimativa (eixos/praças) quando fonte === "estimado". */
+  detalhe?: string;
   /** ISO timestamp da última atualização do valor. */
   atualizadoEm?: string;
 }

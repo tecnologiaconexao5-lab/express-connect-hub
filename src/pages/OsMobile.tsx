@@ -559,7 +559,7 @@ const gerarPadraoRotaWhatsApp = (
   }
 
   const linhas = [
-    "*🟠 CONEXÃO ⚡ EXPRESS 🟣*",
+    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
     "━━━━━━━━━━━━━━━━━🏍️",
     "",
     `*${bairroRetirada} ━➤ ${bairroEntrega}* | ${distancia}`,
@@ -668,15 +668,15 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
     blocos.push(
       [
         "━━━━━━━━━━━━━━━━━",
-        `${icone} 【 ${sequencia} 】 ${tipo}`,
+        `${icone} *【 ${sequencia} 】 ${tipo}*`,
         "━━━━━━━━━━━━━━━━━",
-        `📍 ENDEREÇO: ${formatarEnderecoCompletoPonto(ponto)}`,
+        `📍 *ENDEREÇO:* ${formatarEnderecoCompletoPonto(ponto)}`,
         `🗺️ ${linkMapsCurtoDoPonto(ponto)}`,
-        `⏰ JANELA: ${horarioDoPonto(ponto)}`,
-        `👤 PROCURAR: ${procurarPor}`,
-        `📞 TELEFONE: ${telefone}`,
-        `📦 ${verboMaterial}: ${material}`,
-        `⚠️ ORIENTAÇÕES: ${orientacoes}`,
+        `⏰ *JANELA:* ${horarioDoPonto(ponto)}`,
+        `👤 *PROCURAR:* ${procurarPor}`,
+        `📞 *TELEFONE:* ${telefone}`,
+        `📦 *${verboMaterial}:* ${material}`,
+        `⚠️ *ORIENTAÇÕES:* ${orientacoes}`,
       ].join("\n"),
     );
   };
@@ -694,26 +694,26 @@ const gerarOrientacaoWhatsApp = (os: OSMobileLista): string => {
   }
 
   const linhas = [
-    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
-    "📋 ORIENTAÇÃO DE EXECUÇÃO",
+    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
+    "📋 *ORIENTAÇÃO DE EXECUÇÃO*",
     `OS nº ${os.numero || os.id}`,
     "",
     `Olá, ${os.prestadorNome || "Motorista"}! Você foi selecionado para executar esta OS.`,
     "",
-    `🚚 VEÍCULO: ${os.veiculoTipo || "Moto"}`,
-    `💰 VALOR: R$ ${valorRepasse}`,
-    `💳 PAGAMENTO: ${valorTexto(os.statusFaturamento) || "À vista"}`,
+    `🚚 *VEÍCULO:* ${os.veiculoTipo || "Moto"}`,
+    `💰 *VALOR:* R$ ${valorRepasse}`,
+    `💳 *PAGAMENTO:* ${valorTexto(os.statusFaturamento) || "À vista"}`,
     "",
     blocos.join("\n\n"),
     "",
     "━━━━━━━━━━━━━━━━━",
-    "📸 COMPROVAÇÃO",
+    "📸 *COMPROVAÇÃO*",
     "Enviar o comprovante de entrega pelo WhatsApp após a conclusão.",
     "",
-    "🤝 CONDUTA PROFISSIONAL",
+    "🤝 *CONDUTA PROFISSIONAL*",
     "Seja sempre educado e cordial, utilize trajes adequados à operação e mantenha uma postura profissional. Em caso de dúvida, dificuldade, atraso ou ocorrência, entre em contato com a Conexão Express imediatamente.",
     "",
-    "🟠 CONEXÃO ⚡ EXPRESS 🟣",
+    "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
   ];
 
   return linhas.join("\n");

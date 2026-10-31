@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
+import { ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
+import { BadgeCadastroIncompleto } from "@/components/ui/BadgeCadastroIncompleto";
 
 interface Props {
   os: OrdemServico;
@@ -120,7 +122,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const [fiscalData, setFiscalData] = useState<any>({ ctes: [], mdfes: [], nfses: [], xmls: [], timeline: [] });
   const [fiscalLoading, setFiscalLoading] = useState(true);
   // FIX UUID — resolve nome do prestador/cliente quando o registro traz o id.
-  const [nomesResolvidos, setNomesResolvidos] = useState<{ prestador?: string; cliente?: string }>({});
+  const [nomesResolvidos, setNomesResolvidos] = useState<{ prestador?: string; cliente?: string; prestadorIncompleto?: boolean; clienteIncompleto?: boolean }>({});
 
   useEffect(() => {
     const ehUuid = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
@@ -131,12 +133,13 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
         consultas.push(
           supabase
             .from("prestadores")
-            .select("nome_completo")
+            .select("nome_completo, metadata, origem, cpf_cnpj, telefone, whatsapp")
             .eq("id", os.prestador)
             .maybeSingle()
             .then(({ data }) => {
-              const nome = (data as { nome_completo?: string } | null)?.nome_completo;
-              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, prestador: nome }));
+              const row = data as { nome_completo?: string } | null;
+              const nome = row?.nome_completo;
+              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, prestador: nome, prestadorIncompleto: ehCadastroIncompletoPrestador(row) }));
             }),
         );
       }
@@ -144,13 +147,13 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
         consultas.push(
           supabase
             .from("clientes")
-            .select("nome_fantasia, razao_social")
+            .select("nome_fantasia, razao_social, status, origem_comercial, cnpj")
             .eq("id", os.cliente)
             .maybeSingle()
             .then(({ data }) => {
               const row = data as { nome_fantasia?: string; razao_social?: string } | null;
               const nome = row?.nome_fantasia || row?.razao_social;
-              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, cliente: nome }));
+              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, cliente: nome, clienteIncompleto: ehCadastroIncompletoCliente(row) }));
             }),
         );
       }
@@ -164,6 +167,11 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const clienteNome = nomesResolvidos.cliente || (ehUuidTexto(os.cliente) ? "" : os.cliente || "");
   const clienteCotacao = clienteVeioDeCotacao({
     origemCotacao: (os.carga as { origem_cotacao?: unknown } | undefined)?.origem_cotacao,
+    observacoes: os.observacoesGerais,
+  });
+  // Agendamento vindo da cotação (data/hora desejadas) — extraído de carga/observações.
+  const agendamentoCotacao = obterAgendamentoClienteOS({
+    carga: os.carga,
     observacoes: os.observacoesGerais,
   });
 
@@ -399,6 +407,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                 <p className="mt-1 truncate text-sm font-bold text-slate-800" title={clienteNome || undefined}>{clienteNome || "Cliente não informado"}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
+                  {nomesResolvidos.clienteIncompleto && <BadgeCadastroIncompleto />}
                   {clienteCotacao && (
                     <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
                       Cliente Cotação
@@ -413,9 +422,12 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <Truck className="h-3.5 w-3.5" /> Prestador
                 </div>
-                <p className={`mt-1 truncate text-sm font-bold ${prestadorNome ? "text-slate-800" : "text-red-600"}`} title={prestadorNome || undefined}>
-                  {prestadorNome || "Sem prestador"}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <p className={`truncate text-sm font-bold ${prestadorNome ? "text-slate-800" : "text-red-600"}`} title={prestadorNome || undefined}>
+                    {prestadorNome || "Sem prestador"}
+                  </p>
+                  {nomesResolvidos.prestadorIncompleto && <BadgeCadastroIncompleto />}
+                </div>
                 <p className="text-[11px] text-slate-500">{os.veiculoPlaca || os.veiculoTipo || "Veículo não alocado"}</p>
               </CardContent>
             </Card>

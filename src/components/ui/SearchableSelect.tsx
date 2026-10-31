@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, X } from "lucide-react";
+import { Search, Loader2, X, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { BadgeCadastroIncompleto } from "@/components/ui/BadgeCadastroIncompleto";
 
 interface SearchableSelectProps {
   table: string;
@@ -19,6 +20,12 @@ interface SearchableSelectProps {
   secondaryField?: string;
   /** Desabilita o campo (somente leitura, sem abertura do dropdown). */
   disabled?: boolean;
+  /** Habilita a linha "Cadastrar '<termo>'" no dropdown (cadastro rápido). */
+  allowQuickCreate?: boolean;
+  /** Cria o registro rápido a partir do termo digitado. Deve retornar o registro criado (ou null). */
+  onQuickCreate?: (termo: string) => Promise<Record<string, unknown> | null>;
+  /** Marca um registro como incompleto (exibe o badge "Cadastro Incompleto" na opção). */
+  isIncomplete?: (record: Record<string, unknown>) => boolean;
 }
 
 export function SearchableSelect({
@@ -34,6 +41,9 @@ export function SearchableSelect({
   renderOption,
   secondaryField,
   disabled = false,
+  allowQuickCreate = false,
+  onQuickCreate,
+  isIncomplete,
 }: SearchableSelectProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<any[]>([]);
@@ -41,6 +51,7 @@ export function SearchableSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [selectedValue, setSelectedValue] = useState<any>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [isQuickCreating, setIsQuickCreating] = useState(false);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -137,6 +148,25 @@ export function SearchableSelect({
     setActiveIndex(-1);
   };
 
+  const termoRapido = searchTerm.trim();
+  const podeCriarRapido =
+    allowQuickCreate && !!onQuickCreate && !disabled && !isLoading && termoRapido.length > 0;
+
+  const handleQuickCreate = async () => {
+    if (!podeCriarRapido || isQuickCreating || !onQuickCreate) return;
+    setIsQuickCreating(true);
+    try {
+      const criado = await onQuickCreate(termoRapido);
+      if (criado) {
+        handleSelect(criado);
+      }
+    } catch {
+      // Erro tratado pelo chamador (que normalmente exibe toast). Mantém o dropdown aberto.
+    } finally {
+      setIsQuickCreating(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       setIsOpen(false);
@@ -155,6 +185,8 @@ export function SearchableSelect({
       e.preventDefault();
       if (activeIndex >= 0 && results[activeIndex]) {
         handleSelect(results[activeIndex]);
+      } else if (podeCriarRapido) {
+        void handleQuickCreate();
       }
     }
   };
@@ -199,12 +231,13 @@ export function SearchableSelect({
              <div className="flex items-center justify-center gap-2 p-3 text-sm text-slate-500">
                <Loader2 className="w-4 h-4 animate-spin" /> Buscando...
              </div>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && !podeCriarRapido ? (
              <div className="p-3 text-sm text-slate-500 text-center">Nenhum resultado encontrado.</div>
           ) : (
              <ul ref={listRef} className="py-1">
                {results.map((item, idx) => {
                  const selected = !!selectedValue && item[valueField] === selectedValue[valueField];
+                 const incompleto = isIncomplete ? isIncomplete(item) : false;
                  return (
                    <li 
                      key={item[valueField] || idx}
@@ -221,14 +254,35 @@ export function SearchableSelect({
                          <span className={cn("truncate font-semibold text-slate-800", selected && "text-primary")}>
                            {item[labelField]}
                          </span>
-                         {secondaryField && item[secondaryField] ? (
-                           <span className="truncate text-xs text-slate-400">{item[secondaryField]}</span>
-                         ) : null}
+                         <span className="flex items-center gap-1.5">
+                           {secondaryField && item[secondaryField] ? (
+                             <span className="truncate text-xs text-slate-400">{item[secondaryField]}</span>
+                           ) : null}
+                           {incompleto ? <BadgeCadastroIncompleto /> : null}
+                         </span>
                        </div>
                      )}
                    </li>
                  );
                })}
+               {podeCriarRapido ? (
+                 <li
+                   onClick={() => void handleQuickCreate()}
+                   onMouseEnter={() => setActiveIndex(-1)}
+                   className="cursor-pointer border-t border-slate-100 bg-primary/5 px-3 py-2.5 text-sm transition-colors hover:bg-primary/10"
+                 >
+                   <div className="flex items-center gap-2 font-semibold text-primary">
+                     {isQuickCreating ? (
+                       <Loader2 className="h-4 w-4 animate-spin" />
+                     ) : (
+                       <UserPlus className="h-4 w-4" />
+                     )}
+                     <span className="truncate">
+                       {isQuickCreating ? "Cadastrando..." : <>Cadastrar <span className="font-bold">"{termoRapido}"</span></>}
+                     </span>
+                   </div>
+                 </li>
+               ) : null}
              </ul>
           )}
         </div>

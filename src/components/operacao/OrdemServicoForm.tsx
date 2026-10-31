@@ -52,8 +52,10 @@ import { useRouterBlocker } from "@/hooks/useRouterBlocker";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
+import { criarClienteRapido, criarPrestadorRapido, ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
 import { calcularDistancia } from "@/services/maps";
 import { calcularRotasAlternativas } from "@/services/maps/distanceService";
+import { estimarPedagio } from "@/lib/pedagioEstimativa";
 import type { DistanceResult, TipoRota, RoutesResult } from "@/services/maps/types";
 import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularCubagem, sugerirVeiculosPorCarga, verificarAlertasCubagem, type ResultadoCubagem, type SugestaoVeiculo, type AlertaCubagem } from "@/services/operacao/cargaService";
@@ -1045,14 +1047,33 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
   // UPGRADE — PEDÁGIO: aplica o valor monetário vindo da API de rota (Maplink/
   // Google Routes — DistanceResult.pedagio) quando disponível; caso contrário
-  // mantém o valor atual e sinaliza "não identificado" (inserção manual na UI).
+  // ESTIMA pelo tipo de veículo (eixos) × distância. Um valor digitado
+  // manualmente nunca é sobrescrito pela estimativa.
   const aplicarPedagioDaRota = (rota: { pedagio?: number; pedagioProvider?: string; distanciaKm?: number; duracaoMin?: number; distanciaTexto?: string; duracaoTexto?: string; provider?: string } | null | undefined) => {
     if (typeof rota?.pedagio === "number" && rota.pedagio > 0) {
       const valor = rota.pedagio;
       setData(p => ({ ...p, pedagio: valor }));
       setPedagioInfo({ fonte: "api", provider: rota.pedagioProvider || "routes", atualizadoEm: new Date().toISOString() });
       toast.success(`Pedágio identificado pela API: R$ ${valor.toFixed(2)}`);
-    } else if (!(data.pedagio > 0)) {
+      return;
+    }
+    // Sem valor da API: preserva um pedágio digitado manualmente.
+    const ehManual = (data.pedagio ?? 0) > 0 && pedagioInfo.fonte === "manual";
+    if (ehManual) {
+      return;
+    }
+    const estimativa = estimarPedagio(rota?.distanciaKm ?? data.distanciaKm ?? 0, data.veiculoTipo);
+    if (estimativa.valor > 0) {
+      setData(p => ({ ...p, pedagio: estimativa.valor }));
+      setPedagioInfo({
+        fonte: "estimado",
+        detalhe: `${estimativa.pracas} praça(s) × R$ ${estimativa.tarifaPorPraca.toFixed(2)} (${estimativa.eixos} eixos)`,
+        atualizadoEm: new Date().toISOString(),
+      });
+      toast.info(`Pedágio estimado: R$ ${estimativa.valor.toFixed(2)} (${estimativa.pracas} praça(s), ${estimativa.eixos} eixos)`);
+      return;
+    }
+    if (!(data.pedagio > 0)) {
       setPedagioInfo({ fonte: "nao_identificado" });
     }
   };
@@ -2263,7 +2284,17 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                           }
                         } catch (e) { console.warn("Erro ao buscar dados do cliente:", e); }
                       }
-                    }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} />
+                    }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} allowQuickCreate isIncomplete={ehCadastroIncompletoCliente} onQuickCreate={async (termo) => {
+                      try {
+                        const criado = await criarClienteRapido({ nome: termo });
+                        toast.success(`Cliente "${termo}" cadastrado como pré-cadastro.`);
+                        return criado;
+                      } catch (e) {
+                        toast.error("Não foi possível cadastrar o cliente rápido.");
+                        console.warn("Erro ao criar cliente rápido:", e);
+                        return null;
+                      }
+                    }} />
                     </div>
                   </Field>
                   <Field label="Tipo de Operação" required>
@@ -3416,7 +3447,9 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                             ? `Via API de rota${pedagioInfo.provider ? ` (${pedagioInfo.provider})` : ""}`
                             : pedagioInfo.fonte === "manual"
                               ? "Informe manualmente se houver"
-                              : "Não identificado — informe manualmente"}
+                              : pedagioInfo.fonte === "estimado"
+                                ? `Estimado (eixos × distância)${pedagioInfo.detalhe ? ` · ${pedagioInfo.detalhe}` : ""}`
+                                : "Não identificado — informe manualmente"}
                         </p>
                       </div>
                     </div>
@@ -3881,7 +3914,17 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     <Field label="Início Previsto"><Input type="datetime-local" value={data.previsaoInicio} readOnly={readOnly} onChange={(e) => update("previsaoInicio", e.target.value)} /></Field>
                     <Field label="Parceiro / Prestador">
                       {/* UPGRADE: handler compartilhado (mesmo usado no bloco "Alocação de Prestador") */}
-                      <SearchableSelect table="prestadores" labelField="nome_completo" valueField="nome_completo" searchFields={['nome_completo']} filters={{ status: 'ativo' }} value={emRede ? "" : data.prestador} onChange={handleSelecionarPrestador} disabled={readOnly || emRede} />
+                      <SearchableSelect table="prestadores" labelField="nome_completo" valueField="nome_completo" searchFields={['nome_completo']} filters={{ status: 'ativo' }} value={emRede ? "" : data.prestador} onChange={handleSelecionarPrestador} disabled={readOnly || emRede} allowQuickCreate isIncomplete={ehCadastroIncompletoPrestador} onQuickCreate={async (termo) => {
+                        try {
+                          const criado = await criarPrestadorRapido({ nome: termo });
+                          toast.success(`Prestador "${termo}" cadastrado (requer validação/documentação).`);
+                          return criado;
+                        } catch (e) {
+                          toast.error("Não foi possível cadastrar o prestador rápido.");
+                          console.warn("Erro ao criar prestador rápido:", e);
+                          return null;
+                        }
+                      }} />
                     </Field>
                     <Field label="Placa Alocada"><Input value={data.veiculoPlaca} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value)} placeholder="ABC-1234" /></Field>
 

@@ -41,6 +41,7 @@ import { carregarRegrasFatorCubagem } from "@/services/comercial/fatorCubagemSer
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { criarClienteRapido, ehCadastroIncompletoCliente } from "@/lib/cadastroRapido";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { toast } from "sonner";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
@@ -790,9 +791,22 @@ const recalcular = () => {
                         if (rec && rec.condicao_comercial_tabela_id) {
                            setData(p => ({ ...p, valores: { ...p.valores, tabelaVinculada: String(rec.condicao_comercial_tabela_id) }}));
                            toast.success("Tabela de Valores vinculada carregada automaticamente!");
-                        }
-                     }} 
-                   />
+                       }
+                    }} 
+                    allowQuickCreate 
+                    isIncomplete={ehCadastroIncompletoCliente}
+                    onQuickCreate={async (termo) => {
+                       try {
+                          const criado = await criarClienteRapido({ nome: termo });
+                          toast.success(`Cliente "${termo}" cadastrado como pré-cadastro.`);
+                          return criado;
+                       } catch (e) {
+                          toast.error("Não foi possível cadastrar o cliente rápido.");
+                          console.warn("Erro ao criar cliente rápido:", e);
+                          return null;
+                       }
+                    }}
+                  />
                  )}
               </Field>
               <Field label="CNPJ do Cliente"><Input value={data.clienteCnpj} readOnly={readOnly} onChange={(e) => update("clienteCnpj", e.target.value)} /></Field>

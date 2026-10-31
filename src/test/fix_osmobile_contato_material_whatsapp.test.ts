@@ -119,7 +119,7 @@ describe("OsMobile — formulário de parada e nome do motorista", () => {
     );
     expect(bloco).toContain('tipo === "ENTREGA" ? "ENTREGAR"');
     expect(bloco).toContain("ponto.material");
-    expect(bloco).toContain("`📦 ${verboMaterial}: ${material}`");
+    expect(bloco).toContain("`📦 *${verboMaterial}:* ${material}`");
     expect(bloco).not.toContain("📦 RETIRAR: ${instrucoes}");
   });
 });
