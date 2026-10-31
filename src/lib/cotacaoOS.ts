@@ -1,13 +1,19 @@
 /**
  * Metadados de OS originadas pela Cotação Express:
- * - agendamento solicitado pelo cliente (data/hora da Fase 1);
+ * - agendamento solicitado pelo cliente (data + janela de horário);
  * - nome do cliente quando a linha traz apenas o uuid/observação.
  */
 export interface AgendamentoClienteOS {
   agendada: boolean;
   data: string;
   hora: string;
-  /** "30/10/2026 às 14:00" (ou "Horário a confirmar"). */
+  /** Início da janela em HH:MM (vazio quando o cliente informou só um horário). */
+  janelaInicio: string;
+  /** Fim da janela em HH:MM. */
+  janelaFim: string;
+  /** "Das 14h às 16h" (vazio quando não há janela). */
+  janela: string;
+  /** "15/11/2026 · Das 14h às 16h" (ou "30/10/2026 às 14:30"). */
   dataHora: string;
 }
 
@@ -18,9 +24,39 @@ const formatarData = (valor: string): string => {
   return texto;
 };
 
+const horaCurta = (valor: string): string => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(valor.trim());
+  if (!m) return valor.trim();
+  const h = Number(m[1]);
+  const min = m[2];
+  return min === "00" ? `${h}h` : `${h}h${min}`;
+};
+
+/** "09:00 às 11:00" / "Das 09:00 às 11:00" → { inicio: "09:00", fim: "11:00" }. */
+export const extrairJanelaHorario = (
+  texto: string | null | undefined,
+): { inicio: string; fim: string } => {
+  const valor = String(texto || "");
+  const m = /(\d{1,2}):(\d{2})\s*(?:às|as|-|–|—)\s*(\d{1,2}):(\d{2})/i.exec(valor);
+  if (!m) return { inicio: "", fim: "" };
+  return {
+    inicio: `${m[1].padStart(2, "0")}:${m[2]}`,
+    fim: `${m[3].padStart(2, "0")}:${m[4]}`,
+  };
+};
+
+/** "Das 14h às 16h" quando há início e fim. */
+const montarJanela = (inicio: string, fim: string): string => {
+  if (inicio && fim) return `Das ${horaCurta(inicio)} às ${horaCurta(fim)}`;
+  if (inicio) return `A partir das ${horaCurta(inicio)}`;
+  return "";
+};
+
 export function obterAgendamentoClienteOS(entrada: {
   carga?: unknown;
   observacoes?: string | null;
+  /** Campo `observacao_agendamento` da OS (fallback legado). */
+  observacaoAgendamento?: string | null;
 }): AgendamentoClienteOS {
   const carga =
     entrada.carga && typeof entrada.carga === "object"
@@ -29,29 +65,64 @@ export function obterAgendamentoClienteOS(entrada: {
 
   let data = String(carga.data_desejada || carga.dataDesejada || "").trim();
   let hora = String(carga.hora_desejada || carga.horaDesejada || "").trim();
-  let agendada = Boolean(carga.agendado) || Boolean(data) || Boolean(hora);
+  let janelaInicio = String(carga.janela_inicio || carga.janelaInicio || "").trim();
+  let janelaFim = String(carga.janela_fim || carga.janelaFim || "").trim();
+  const janelaTexto = String(carga.janela_horario || carga.janelaHorario || "").trim();
 
-  if (!data || !hora) {
+  // Janela gravada explicitamente pelo RPC (carga.janela_inicio/janela_fim).
+  const janelaCarga = extrairJanelaHorario(janelaTexto || hora);
+  if (!janelaInicio && janelaCarga.inicio) janelaInicio = janelaCarga.inicio;
+  if (!janelaFim && janelaCarga.fim) janelaFim = janelaCarga.fim;
+
+  let agendada =
+    Boolean(carga.agendado) || Boolean(data) || Boolean(hora) || Boolean(janelaInicio);
+
+  if (!data || (!hora && !janelaInicio)) {
     const obs = String(entrada.observacoes || "");
     const dataObs = obs.match(/Data desejada:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
-    const horaObs = obs.match(
-      /Hor[áa]rio:\s*([0-9]{2}:[0-9]{2}(?:\s*[àa]s\s*[0-9]{2}:[0-9]{2})?)/i,
-    );
+    const horarioObs = obs.match(/(?:Hor[áa]rio|Agendamento):\s*([^·|\n]+)/i);
     if (!data && dataObs?.[1]) data = dataObs[1];
-    if (!hora && horaObs?.[1]) hora = horaObs[1];
-    if (data || hora) agendada = true;
+    if (!janelaInicio && horarioObs?.[1]) {
+      const janelaObs = extrairJanelaHorario(horarioObs[1]);
+      if (janelaObs.inicio) {
+        janelaInicio = janelaObs.inicio;
+        janelaFim = janelaFim || janelaObs.fim;
+      } else if (!hora) {
+        hora = horarioObs[1].trim();
+      }
+    }
+    if (data || hora || janelaInicio) agendada = true;
+  }
+
+  // Fallback legado: observação de agendamento da OS.
+  if (!janelaInicio && !hora && entrada.observacaoAgendamento) {
+    const janelaLegado = extrairJanelaHorario(entrada.observacaoAgendamento);
+    if (janelaLegado.inicio) {
+      janelaInicio = janelaLegado.inicio;
+      janelaFim = janelaLegado.fim;
+      agendada = true;
+    }
   }
 
   if (data) data = formatarData(data);
-  // Janela de horário ("09:00 às 11:00") não deve virar "às 09:00 às 11:00".
-  const horarioEhJanela = /\d{1,2}:\d{2}\s*[àa]s\s*\d{1,2}:\d{2}/i.test(hora);
-  const dataHora = [data, hora].filter(Boolean).join(horarioEhJanela ? " · " : " às ");
+  const janela = montarJanela(janelaInicio, janelaFim);
+
+  const dataHora = (() => {
+    if (data && janela) return `${data} · ${janela}`;
+    if (data && hora) return `${data} às ${hora}`;
+    if (janela) return janela;
+    if (hora) return data ? `${data} às ${hora}` : hora;
+    return agendada ? "Horário a confirmar" : "";
+  })();
 
   return {
     agendada,
     data,
     hora,
-    dataHora: dataHora || (agendada ? "Horário a confirmar" : ""),
+    janelaInicio,
+    janelaFim,
+    janela,
+    dataHora,
   };
 }
 

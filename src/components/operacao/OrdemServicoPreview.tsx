@@ -173,6 +173,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const agendamentoCotacao = obterAgendamentoClienteOS({
     carga: os.carga,
     observacoes: os.observacoesGerais,
+    observacaoAgendamento: os.observacaoAgendamento,
   });
 
   useEffect(function() {
@@ -347,6 +348,33 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* Destaque de agendamento — visível de imediato para a operação */}
+        {agendamentoCotacao.agendada && (
+          <div className="mb-5 rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-50 via-orange-50 to-white p-4 shadow-md">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm shadow-amber-500/40">
+                  <Clock className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+                    Chamado agendado
+                  </p>
+                  <p className="text-lg font-black leading-tight text-amber-950">
+                    {agendamentoCotacao.dataHora}
+                  </p>
+                  <p className="text-xs font-medium text-amber-700">
+                    Data e janela de horário exigidas pelo cliente na cotação.
+                  </p>
+                </div>
+              </div>
+              <Badge className="w-fit animate-pulse gap-1 border border-amber-300 bg-amber-500 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white">
+                <Clock className="h-3.5 w-3.5" /> Agendado
+              </Badge>
+            </div>
+          </div>
+        )}
+
         <div className="grid w-full grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
           {/* Linha do tempo do rastreio — sempre no topo, 100% da largura */}
           <div className="xl:col-span-2 xl:row-start-1">
@@ -473,7 +501,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                     <Clock className="h-3.5 w-3.5" /> Chamado agendado
                   </div>
                   <p className="mt-1 text-sm font-bold text-amber-900">{agendamentoCotacao.dataHora}</p>
-                  <p className="text-[11px] text-amber-700">Data/hora informadas pelo cliente na cotação.</p>
+                  <p className="text-[11px] text-amber-700">Data e janela de horário informadas pelo cliente na cotação.</p>
                 </CardContent>
               </Card>
             )}

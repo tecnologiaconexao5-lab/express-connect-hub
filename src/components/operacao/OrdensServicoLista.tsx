@@ -207,6 +207,7 @@ const OrdensServicoLista = () => {
           const agendamento = obterAgendamentoClienteOS({
             carga: item.carga,
             observacoes: item.observacoes_gerais,
+            observacaoAgendamento: os.observacaoAgendamento,
           });
           const prestadorUuid =
             typeof item.prestador === "string" && /^[0-9a-f-]{36}$/i.test(item.prestador) ? item.prestador : "";
@@ -739,7 +740,7 @@ const OrdensServicoLista = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                         <div className="flex items-center gap-1.5">
+                         <div className="flex flex-wrap items-center gap-1.5">
                            <span className="font-semibold text-sm">{os.cliente || "—"}</span>
                            {os.clienteCotacao && (
                              <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
@@ -748,10 +749,11 @@ const OrdensServicoLista = () => {
                            )}
                            {os.agendadaCotacao && (
                              <Badge
-                               title={os.agendamentoCotacao ? `Chamado agendado: ${os.agendamentoCotacao}` : "Chamado agendado"}
-                               className="gap-1 border border-amber-200 bg-amber-100 px-1.5 py-0 text-[9px] font-bold uppercase text-amber-800"
+                               title={`Agendado: ${os.agendamentoCotacao || "a confirmar"}`}
+                               className="gap-1 whitespace-nowrap border border-amber-300 bg-amber-100 px-1.5 py-0 text-[9px] font-bold normal-case tracking-normal text-amber-900"
                              >
-                               <Clock className="h-2.5 w-2.5" /> Agendado
+                               <Clock className="h-2.5 w-2.5 shrink-0" /> Agendado:{" "}
+                               {os.agendamentoCotacao || "a confirmar"}
                              </Badge>
                            )}
                          </div>

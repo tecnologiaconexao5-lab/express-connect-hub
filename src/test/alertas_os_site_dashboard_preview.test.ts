@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
+import { extrairJanelaHorario, obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 
 const raiz = join(__dirname, "..", "..");
 const read = (p: string) => readFileSync(join(raiz, p), "utf8");
@@ -17,6 +17,9 @@ const dashboardCard = read("src/components/dashboard/AlertaOscotacaoExpress.tsx"
 const dashboardPage = read("src/pages/Dashboard.tsx");
 const service = read("src/services/operacao/osSiteService.ts");
 const migration = read("supabase/migrations/20261030000000_cotacao_detalhes_para_os.sql");
+const migrationJanela = read(
+  "supabase/migrations/20261031000000_cotacao_janela_horario_os.sql",
+);
 
 describe("A) Chamado agendado (data/hora do cliente)", () => {
   it("lê data/hora do carga da OS", () => {
@@ -35,6 +38,42 @@ describe("A) Chamado agendado (data/hora do cliente)", () => {
     expect(ag.dataHora).toBe("31/10/2026 às 08:15");
   });
 
+  it("lê a janela explícita gravada em carga.janela_inicio/janela_fim", () => {
+    const ag = obterAgendamentoClienteOS({
+      carga: {
+        data_desejada: "2026-11-15",
+        janela_inicio: "14:00",
+        janela_fim: "16:00",
+        agendado: true,
+      },
+    });
+    expect(ag.agendada).toBe(true);
+    expect(ag.janelaInicio).toBe("14:00");
+    expect(ag.janelaFim).toBe("16:00");
+    expect(ag.janela).toBe("Das 14h às 16h");
+    expect(ag.dataHora).toBe("15/11/2026 · Das 14h às 16h");
+  });
+
+  it("interpreta hora_desejada como janela (Fase 1) e observação de agendamento", () => {
+    const porHora = obterAgendamentoClienteOS({
+      carga: { data_desejada: "2026-11-15", hora_desejada: "09:00 às 11:00" },
+    });
+    expect(porHora.janela).toBe("Das 9h às 11h");
+    expect(porHora.dataHora).toBe("15/11/2026 · Das 9h às 11h");
+
+    const porObs = obterAgendamentoClienteOS({
+      observacoes: "Cotação web · Data desejada: 16/11/2026 · Horário: 10:00 às 12:00",
+    });
+    expect(porObs.janela).toBe("Das 10h às 12h");
+    expect(porObs.dataHora).toBe("16/11/2026 · Das 10h às 12h");
+  });
+
+  it("extrai janela de textos com hífen ou 'às'", () => {
+    expect(extrairJanelaHorario("Das 14:00 às 16:00")).toEqual({ inicio: "14:00", fim: "16:00" });
+    expect(extrairJanelaHorario("09:00 - 11:00")).toEqual({ inicio: "09:00", fim: "11:00" });
+    expect(extrairJanelaHorario("14:30")).toEqual({ inicio: "", fim: "" });
+  });
+
   it("não trata OS imediata como agendada", () => {
     expect(obterAgendamentoClienteOS({ carga: { origem_cotacao: "abc" } }).agendada).toBe(false);
   });
@@ -45,10 +84,23 @@ describe("A) Chamado agendado (data/hora do cliente)", () => {
     expect(migration).toContain("'agendado'");
   });
 
-  it("tabela de OS exibe o badge AGENDADO ao lado do cliente", () => {
+  it("migration de janela grava janela_inicio/janela_fim no carga da OS", () => {
+    expect(migrationJanela).toContain("'janela_inicio', v_janela_inicio");
+    expect(migrationJanela).toContain("'janela_fim', v_janela_fim");
+  });
+
+  it("tabela de OS exibe data + janela no badge AGENDADO", () => {
     expect(osLista).toContain("agendadaCotacao");
-    expect(osLista).toContain("Agendado");
-    expect(osLista).toContain("agendamentoCotacao");
+    expect(osLista).toContain("Agendado:");
+    expect(osLista).toContain("os.agendamentoCotacao");
+    expect(osLista).toContain("obterAgendamentoClienteOS");
+  });
+
+  it("preview destaca o agendamento no topo do resumo", () => {
+    expect(preview).toContain("Chamado agendado");
+    expect(preview).toContain("agendamentoCotacao.dataHora");
+    expect(preview).toContain("Data e janela de horário exigidas pelo cliente");
+    expect(preview).toContain("obterAgendamentoClienteOS");
   });
 });
 
