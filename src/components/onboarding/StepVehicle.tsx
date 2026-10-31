@@ -14,13 +14,14 @@ import UploadZone from "./UploadZone";
 import { useOnboardingStore } from "./onboardingStore";
 
 const TIPOS_VEICULO = [
-  "Fiorino/Van",
-  "VUC",
-  "Truck",
-  "Bitrem",
-  "Carreta",
-  "Rodotrem",
-  "Outro",
+  { value: "Moto", label: "Moto" },
+  { value: "Fiorino/Van", label: "Fiorino/Van" },
+  { value: "VUC", label: "VUC" },
+  { value: "Truck", label: "Truck" },
+  { value: "Bitrem", label: "Bitrem" },
+  { value: "Carreta", label: "Carreta" },
+  { value: "Rodotrem", label: "Rodotrem" },
+  { value: "Outro", label: "Outro" },
 ];
 
 const CAPACIDADES = [

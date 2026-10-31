@@ -36,6 +36,17 @@ playwright/.auth/
 storageState.json
 *.storageState.json
 
+# Artefatos do épico E2E Motorista (gerados a cada execução)
+playwright-report-motorista/
+test-results/e2e-motorista/
+test-results/showcase/
+test-results/dual/
+test-results/master/
+test-results/e2e/
+playwright-report-dual/
+playwright-report-showcase/
+playwright-report-master/
+
 # Credenciais e certificados bancarios (EFI HML) - NUNCA commitar
 # Certificado .p12/.pfx da Efi, chaves e material criptografico.
 *.p12

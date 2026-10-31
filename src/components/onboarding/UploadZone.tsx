@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Upload,
-  Image,
   Camera,
   Trash2,
   Loader2,
@@ -27,7 +26,7 @@ function compressImage(file: File, maxWidth = 800, quality = 0.7): Promise<strin
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (e) => {
-      const img = new Image();
+      const img = document.createElement("img");
       img.src = e.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement("canvas");

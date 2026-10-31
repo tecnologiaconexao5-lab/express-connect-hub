@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Star, ChevronLeft, ChevronRight, Filter, Copy, Check, Eye, Trash2, AlertTriangle } from "lucide-react";
+import { Search, Plus, Star, ChevronLeft, ChevronRight, Filter, Copy, Check, Eye, Trash2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,6 +63,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
   const [adminPassword, setAdminPassword] = useState("");
   // E2E-05D — contador de novos cadastros do APP aguardando validação (vem do banco).
   const [appPendingCount, setAppPendingCount] = useState(0);
+  const [aprovandoId, setAprovandoId] = useState<string | null>(null);
 
   const fetchPrestadores = useCallback(async () => {
     try {
@@ -192,6 +193,30 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
       setIsLoading(false);
     }
   }, [busca, statusFilter, tipoFilter, regiaoFilter, scoreFilter, page]);
+
+  // Aprovação direta de cadastro vindo do APP do Motorista.
+  const handleAprovarPrestador = async (prestador: Prestador) => {
+    if (!prestador.id || aprovandoId) return;
+    setAprovandoId(prestador.id);
+    try {
+      const { error } = await supabase
+        .from("prestadores")
+        .update({ status: "ativo", liberado_app: true, updated_at: new Date().toISOString() })
+        .eq("id", prestador.id);
+      if (error) throw error;
+
+      toast.success(`Prestador ${prestador.nomeCompleto} aprovado!`, {
+        description: "Cadastro do APP liberado para operar na Rede de Oportunidades.",
+      });
+      await fetchPrestadores();
+    } catch (error) {
+      toast.error("Não foi possível aprovar o prestador.", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setAprovandoId(null);
+    }
+  };
 
   useEffect(() => {
     fetchPrestadores();
@@ -487,12 +512,26 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col items-start gap-1">
+                        {p.origemCadastro === "app_motorista" && normalizarStatusPrestador(p.status) === "analise" && (
+                          <Button
+                            size="sm"
+                            className="h-7 gap-1 bg-emerald-600 px-2 text-[10px] font-bold text-white hover:bg-emerald-700"
+                            disabled={aprovandoId === p.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleAprovarPrestador(p);
+                            }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {aprovandoId === p.id ? "Aprovando..." : "Aprovar Prestador"}
+                          </Button>
+                        )}
                         <Badge className={`text-[9px] uppercase font-bold px-2 ${STATUS_COR[normalizarStatusPrestador(p.status)] || "bg-gray-100 text-gray-600"}`}>
                           {STATUS_LABEL[normalizarStatusPrestador(p.status)] || "—"}
                         </Badge>
                         {p.origemCadastro === "app_motorista" && normalizarStatusPrestador(p.status) === "analise" && (
                           <Badge className="text-[9px] uppercase font-bold px-2 bg-amber-100 text-amber-800 border border-amber-300">
-                            Novo cadastro APP · Aguardando validação
+                            📱 Via App
                           </Badge>
                         )}
                       </div>

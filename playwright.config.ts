@@ -1,18 +1,33 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Testes visuais com backend 100% mockado (nenhum dado real é tocado):
+// dispensam o guard de produção e usam uma pasta de artefatos própria.
+const dualApp = process.argv.some((arg) => arg.includes("interacao-tms-app"));
+const showcaseVisual = process.argv.some((arg) => arg.includes("jornada-visual-motorista"));
+const masterVisual = process.argv.some((arg) => arg.includes("jornada-completa-tms-app"));
+const fluxoMockado = dualApp || showcaseVisual || masterVisual;
+const pastaArtefatos = masterVisual ? "master" : dualApp ? "dual" : "showcase";
+
 export default defineConfig({
-  testDir: "./tests/e2e",
+  testDir: ".",
+  testMatch: ["tests/e2e/**/*.spec.ts", "e2e/**/*.spec.ts"],
+  ...(fluxoMockado ? { outputDir: `./test-results/${pastaArtefatos}` } : {}),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [
-    ["html", { outputFolder: "playwright-report" }],
-    ["json", { outputFile: "test-results/e2e/results.json" }],
-    ["list"],
-  ],
+  reporter: fluxoMockado
+    ? [
+        ["html", { outputFolder: `playwright-report-${pastaArtefatos}`, open: "never" }],
+        ["list"],
+      ]
+    : [
+        ["html", { outputFolder: "playwright-report" }],
+        ["json", { outputFile: "test-results/e2e/results.json" }],
+        ["list"],
+      ],
   timeout: 120000,
-  globalSetup: "./tests/e2e/global-setup.ts",
+  globalSetup: fluxoMockado ? undefined : "./tests/e2e/global-setup.ts",
   use: {
     baseURL: "http://localhost:8800",
     trace: "on-first-retry",

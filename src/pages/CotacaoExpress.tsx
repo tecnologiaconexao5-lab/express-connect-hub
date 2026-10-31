@@ -75,6 +75,7 @@ import {
   type RecomendacaoVeiculoCotacao,
 } from "@/lib/veiculoCotacao";
 import type { SugestaoEndereco } from "@/services/maps/mapboxProvider";
+import { gerarPropostaCotacaoPDF } from "@/lib/cotacaoPdf";
 
 const MENSAGEM_CALCULO = "Deixa comigo — calculando a rota e o melhor preço ⚡";
 
@@ -445,6 +446,46 @@ export default function CotacaoExpress() {
   // ------------------------------------------------------------
   // Aprovação → Fase 2
   // ------------------------------------------------------------
+  const salvarPropostaPdf = async () => {
+    if (!precificacao) {
+      toast.error("Calcule a cotação antes de gerar a proposta.");
+      return;
+    }
+    try {
+      await gerarPropostaCotacaoPDF({
+        cotacaoId,
+        nomeCliente: nome,
+        telefone,
+        descricao,
+        peso: peso || 0,
+        dimensoes: dimensoesTexto,
+        paradas: paradas
+          .filter((p) => enderecoDaParada(p))
+          .map((p) => ({
+            endereco: enderecoDaParada(p),
+            tipo: rotuloParada(p),
+            janela: horaDesejada ? `Das ${horaDesejada}` : "",
+          })),
+        veiculo: recomendacao?.nome || precificacao.rotulo_veiculo,
+        sla: recomendacao?.slaRotulo,
+        mensagemVeiculo: recomendacao?.mensagemBot,
+        cubagem: recomendacao?.litros != null ? formatarLitros(recomendacao.litros) : undefined,
+        valor: precificacao.valor,
+        km: rota?.km ?? precificacao.distancia_km,
+        duracaoMin: rota?.duracaoMin != null ? rota.duracaoMin + MARGEM_OPERACIONAL_MINUTOS : null,
+        paradasCount: precificacao.paradas,
+        aviso: precificacao.aviso,
+        fonte: precificacao.tabela,
+        dataDesejada,
+        janelaHorario: horaDesejada ? `Das ${horaDesejada}` : "",
+      });
+      toast.success("Proposta comercial gerada em PDF.");
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error);
+      toast.error(`Não foi possível gerar a proposta: ${mensagem}`);
+    }
+  };
+
   const aprovar = async () => {
     if (processando || !precificacao) return;
     const problemaAgendamento = validarAgendamento();
@@ -943,11 +984,16 @@ export default function CotacaoExpress() {
                       Proposta de Cotação — Conexão Express
                     </p>
                   </div>
-                  <div className="flex items-start justify-between gap-3 print:hidden">
-                    <Rotulo
-                      titulo="Resumo da Cotação"
-                      subtitulo="Confira a carga, o veículo indicado e o valor. Número e contato de quem recebe pedimos na próxima tela."
-                    />
+                  <div className="flex items-start justify-between gap-3 rounded-2xl border-l-4 border-[#2E1065] bg-gradient-to-r from-violet-50 via-white to-orange-50 p-4 print:hidden">
+                    <div className="min-w-0 flex-1">
+                      <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                        Proposta Comercial
+                      </span>
+                      <Rotulo
+                        titulo="Resumo da Cotação"
+                        subtitulo="Emitida pela Conexão Express. Confira a carga, o veículo indicado e o valor. Número e contato de quem recebe pedimos na próxima tela."
+                      />
+                    </div>
                     <img
                       src="/logos/logo-conexao-oficial.png"
                       alt="Conexão Express"
@@ -972,18 +1018,12 @@ export default function CotacaoExpress() {
                   </div>
 
                   {/* Veículo indicado + SLA */}
-                  <div
-                    className={
-                      recomendacao?.cabeMoto
-                        ? "rounded-2xl border border-orange-200 bg-orange-50/70 p-4"
-                        : "rounded-2xl border border-amber-200 bg-amber-50/70 p-4"
-                    }
-                  >
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                  <div className="rounded-2xl border border-[#2E1065]/20 bg-gradient-to-br from-violet-50 via-white to-orange-50 p-4 shadow-sm">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#2E1065]">
                       Veículo indicado
                     </span>
                     <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-lg font-black text-slate-900">
+                      <p className="text-xl font-black text-[#2E1065]">
                         {recomendacao?.nome || precificacao.rotulo_veiculo}
                       </p>
                       {recomendacao && (
@@ -991,7 +1031,7 @@ export default function CotacaoExpress() {
                           className={
                             recomendacao.cabeMoto
                               ? "inline-flex items-center gap-1 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-bold text-white"
-                              : "inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white"
+                              : "inline-flex items-center gap-1 rounded-full bg-[#2E1065] px-2.5 py-1 text-[11px] font-bold text-white"
                           }
                         >
                           {recomendacao.cabeMoto ? (
@@ -1016,20 +1056,20 @@ export default function CotacaoExpress() {
                   </div>
 
                   {/* VALOR DO FRETE EM DESTAQUE */}
-                  <div className="rounded-2xl border border-orange-200 bg-gradient-to-b from-orange-50 to-white p-4">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-orange-600">
+                  <div className="rounded-2xl border border-[#2E1065]/40 bg-gradient-to-br from-[#2E1065] via-[#3b1a7a] to-[#2E1065] p-4 shadow-lg shadow-[#2E1065]/20">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-orange-300">
                       Proposta instantânea
                     </div>
                     {frasePreco && (
-                      <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">
+                      <p className="mt-2 text-sm font-semibold leading-relaxed text-violet-100">
                         {frasePreco}
                       </p>
                     )}
-                    <div className="mt-2 flex items-end gap-2">
-                      <span className="text-4xl font-black tracking-tight text-slate-900">
+                    <div className="mt-2 flex flex-wrap items-end gap-2">
+                      <span className="text-4xl font-black tracking-tight text-white">
                         {formatarBrl(precificacao.valor)}
                       </span>
-                      <span className="mb-1.5 text-xs font-semibold text-slate-500">
+                      <span className="mb-1.5 text-xs font-semibold text-violet-200">
                         frete estimado
                       </span>
                     </div>
@@ -1051,7 +1091,7 @@ export default function CotacaoExpress() {
                       </InfoPrazo>
                     </dl>
 
-                    <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                    <p className="mt-3 text-[11px] leading-relaxed text-violet-200">
                       {precificacao.aviso}
                       {precificacao.tabela ? ` Fonte: ${precificacao.tabela}.` : ""}
                     </p>
@@ -1106,7 +1146,7 @@ export default function CotacaoExpress() {
                       type="button"
                       variant="outline"
                       className="h-13 w-full rounded-xl border-slate-300 text-base font-bold text-slate-700 hover:bg-slate-50"
-                      onClick={() => window.print()}
+                      onClick={() => void salvarPropostaPdf()}
                     >
                       <Printer className="mr-2 h-5 w-5" />
                       Salvar PDF / Imprimir

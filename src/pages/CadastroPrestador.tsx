@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Truck, FileText, Map, FileSignature,
@@ -61,8 +61,12 @@ export default function CadastroPrestador() {
     return () => unsub();
   }, []);
 
+  const resumeCheckedRef = useRef(false);
+
   useEffect(() => {
-    if (hydrated && currentStep > 0 && !isComplete) {
+    if (!hydrated || resumeCheckedRef.current) return;
+    resumeCheckedRef.current = true;
+    if (currentStep > 0 && !isComplete) {
       setShowResume(true);
     }
   }, [hydrated, currentStep, isComplete]);

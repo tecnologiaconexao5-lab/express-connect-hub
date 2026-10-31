@@ -798,8 +798,9 @@ describe("K) UX avançada — Voltar, layout, proximity, tipos de parada e impri
     expect(legado.map((p) => p.tipo)).toEqual(["retirada", "entrega"]);
   });
 
-  it("K.5 — resumo oferece 'Salvar PDF / Imprimir' com layout limpo de impressão", () => {
-    expect(fase1).toContain("window.print()");
+  it("K.5 — resumo gera proposta comercial em PDF com layout de impressão limpo", () => {
+    expect(fase1).toContain("salvarPropostaPdf");
+    expect(fase1).toContain("gerarPropostaCotacaoPDF");
     expect(fase1).toContain("Salvar PDF / Imprimir");
     expect(fase1).toContain("Printer");
     // Botões/chrome somem no papel; cabeçalho colorido só aparece na impressão

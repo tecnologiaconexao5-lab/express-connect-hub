@@ -228,6 +228,9 @@ export const STATUS_COR: Record<string, string> = {
   bloqueado: "bg-red-500 text-white",
 };
 
+/** Opções canônicas (sem aliases) para selects/seletores de status — evita "Em análise" duplicado. */
+export const STATUS_OPCOES_CANONICAS: StatusPrestador[] = ["ativo", "analise", "inativo", "bloqueado"];
+
 /** Normaliza o status para o valor canônico do TMS (sem alterar dados). */
 export function normalizarStatusPrestador(status?: string | null): StatusPrestador {
   const s = String(status || "").toLowerCase().trim();

@@ -30,6 +30,16 @@ export default function CompletionScreen() {
         Cadastro Completo!
       </motion.h2>
 
+      <motion.span
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.45 }}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800"
+      >
+        <Clock className="h-3.5 w-3.5" />
+        Aguardando análise
+      </motion.span>
+
       <motion.p
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}

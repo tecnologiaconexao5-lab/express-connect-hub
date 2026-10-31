@@ -54,7 +54,8 @@ describe("E2E-05D — status canônico (aliases)", () => {
 describe("E2E-05D — cadastro APP pendente visível + contador", () => {
   it("lista identifica cadastro APP aguardando validação", () => {
     expect(LISTA).toMatch(/origemCadastro === "app_motorista"/);
-    expect(LISTA).toMatch(/Aguardando validação/);
+    expect(LISTA).toMatch(/Via App/);
+    expect(LISTA).not.toMatch(/Novo cadastro APP · Aguardando validação/);
   });
 
   it("contador vem do banco (origem_cadastro=app_motorista + status pendente)", () => {

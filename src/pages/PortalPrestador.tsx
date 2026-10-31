@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Package, FileText, GraduationCap, User,
-  Clock, Wifi, Battery, Signal, Loader2, AlertTriangle,
+  Clock, Wifi, Battery, Signal, Loader2, AlertTriangle, Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePortalPrestadorStore } from "@/stores/portalPrestadorStore";
 import { obterPrestadorPorAuth } from "@/services/portal-prestador/portalPrestadorService";
 import DashboardTab from "@/components/portal-prestador/DashboardTab";
 import OperacoesTab from "@/components/portal-prestador/OperacoesTab";
+import RedeTab from "@/components/portal-prestador/RedeTab";
 import DocumentosTab from "@/components/portal-prestador/DocumentosTab";
 import TreinamentosTab from "@/components/portal-prestador/TreinamentosTab";
 import PerfilTab from "@/components/portal-prestador/PerfilTab";
@@ -17,6 +18,7 @@ const TABS = [
   { id: "dashboard", icon: LayoutDashboard, label: "Início" },
   { id: "operacoes", icon: Package, label: "Operações" },
   { id: "documentos", icon: FileText, label: "Documentos" },
+  { id: "rede", icon: Network, label: "Rede" },
   { id: "treinamentos", icon: GraduationCap, label: "Treinamentos" },
   { id: "perfil", icon: User, label: "Perfil" },
 ] as const;
@@ -26,6 +28,7 @@ type TabId = (typeof TABS)[number]["id"];
 const TAB_COMPONENTS: Record<TabId, () => JSX.Element> = {
   dashboard: DashboardTab,
   operacoes: OperacoesTab,
+  rede: RedeTab,
   documentos: DocumentosTab,
   treinamentos: TreinamentosTab,
   perfil: PerfilTab,
@@ -35,6 +38,7 @@ const TAB_TITLES: Record<TabId, string> = {
   dashboard: "Início",
   operacoes: "Operações",
   documentos: "Documentos",
+  rede: "Rede",
   treinamentos: "Treinamentos",
   perfil: "Perfil",
 };
