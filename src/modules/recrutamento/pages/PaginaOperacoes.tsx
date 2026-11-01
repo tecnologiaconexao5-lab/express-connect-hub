@@ -141,15 +141,15 @@ export function PaginaOperacoes() {
         <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/50 bg-muted/20">
-                <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Operação</th>
-                <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider hidden md:table-cell">Cliente</th>
-                <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider hidden lg:table-cell">Região</th>
-                <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider hidden xl:table-cell">Veículo</th>
-                <th className="text-center p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Status</th>
-                <th className="text-right p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Valor Prest.</th>
-                <th className="text-right p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Vagas</th>
-                <th className="text-right p-3 w-20">Ações</th>
+              <tr className="border-b border-[#2E1065]/15 bg-[#2E1065]/5">
+                <th className="text-left p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider">Operação</th>
+                <th className="text-left p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider hidden md:table-cell">Cliente</th>
+                <th className="text-left p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider hidden lg:table-cell">Região</th>
+                <th className="text-left p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider hidden xl:table-cell">Veículo</th>
+                <th className="text-center p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider">Status</th>
+                <th className="text-right p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider">Valor Prest.</th>
+                <th className="text-right p-3 font-bold text-[#2E1065] text-xs uppercase tracking-wider">Vagas</th>
+                <th className="text-right p-3 w-20 text-[#2E1065]">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -233,17 +233,41 @@ function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover, onD
         </PremiumCardHeader>
 
         <PremiumCardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground/80">
-            <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {op.regiao}</div>
-            <div className="flex items-center gap-1.5"><Truck className="w-3 h-3" /> {op.tipoVeiculo}</div>
+          <div className="rounded-lg border border-[#2E1065]/15 bg-gradient-to-br from-violet-50 to-orange-50/70 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#2E1065]/70">
+                  Veículo / Operação
+                </p>
+                <p className="truncate text-sm font-black text-[#2E1065]">
+                  {op.logistica?.tipoVeiculoDetalhado || op.tipoVeiculo}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                <PremiumBadge variant="info" size="sm">{op.tipoCarga}</PremiumBadge>
+                {op.temperatura && (
+                  <PremiumBadge variant="warning" size="sm">{op.temperatura}</PremiumBadge>
+                )}
+                {op.logistica?.aceitaRefrigerado && (
+                  <PremiumBadge variant="success" size="sm">Refrigerada</PremiumBadge>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+              <span className="flex items-center gap-1"><MapPin className="h-3 w-3 text-orange-500" /> {op.regiao}</span>
+              <span className="flex items-center gap-1"><Target className="h-3 w-3 text-orange-500" /> {op.meta.vagasPreenchidas}/{op.meta.vagasTotais} vagas</span>
+              <span className="flex items-center gap-1"><Users className="h-3 w-3 text-orange-500" /> {op.meta.captados} captados</span>
+            </div>
             {op.rotaOrigem && (
-              <div className="flex items-center gap-1.5 col-span-2"><Route className="w-3 h-3" /> {op.rotaOrigem} → {op.rotaDestino}</div>
+              <p className="mt-1 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                <Route className="h-3 w-3 shrink-0 text-[#2E1065]" /> {op.rotaOrigem} → {op.rotaDestino}
+              </p>
             )}
           </div>
 
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Valor Prestador</span>
-            <span className="text-sm font-bold text-foreground">{formatCurrency(op.financeiro.valorPrestador)}</span>
+          <div className="flex items-center justify-between p-2.5 rounded-lg border border-[#2E1065]/10 bg-[#2E1065]/5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2E1065]/70">Repasse ao prestador</span>
+            <span className="text-sm font-black text-[#2E1065]">{formatCurrency(op.financeiro.valorPrestador)}</span>
           </div>
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
@@ -252,12 +276,18 @@ function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover, onD
             <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {op.meta.captados} captados</span>
           </div>
 
-          <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${(op.meta.vagasPreenchidas / Math.max(op.meta.vagasTotais, 1)) * 100}%` }}
-              className="h-full rounded-full bg-emerald-500"
-            />
+          <div>
+            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-slate-500">
+              <span>Funil de preenchimento</span>
+              <span>{Math.round((op.meta.vagasPreenchidas / Math.max(op.meta.vagasTotais, 1)) * 100)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-violet-100">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${(op.meta.vagasPreenchidas / Math.max(op.meta.vagasTotais, 1)) * 100}%` }}
+                className="h-full rounded-full bg-gradient-to-r from-[#2E1065] via-violet-500 to-orange-500"
+              />
+            </div>
           </div>
         </PremiumCardContent>
 

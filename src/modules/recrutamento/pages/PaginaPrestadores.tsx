@@ -13,6 +13,7 @@ import { StatusDot } from '../components/design-system/StatusDot'
 import { ScoreMeter } from '../components/score/ScoreMeter'
 import { DetalhesPrestadorSheet } from '../components/DetalhesPrestadorSheet'
 import { usePrestadores } from '../hooks/usePrestadores'
+import { calcularCategoriaPerformance, PERFORMANCE_CORES } from '@/lib/performancePrestador'
 import { useRecrutamentoStore } from '../store/recrutamentoStore'
 import { mascararTelefone } from '@/lib/masking'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
@@ -272,6 +273,12 @@ function PrestadorCard({ prestador, onClick, onAction, onToggleBlock, onRemove }
   const temDocIncompleta = docsAprovados < 3
   const ultimaOp = prestador.historico?.ultimaOperacao
   const qtdOps = prestador.historico?.quantidadeOperacoes || 0
+  const performance = calcularCategoriaPerformance({
+    totalEntregas: qtdOps,
+    pontualidade: prestador.historico?.mediaPontualidade,
+    ocorrencias: prestador.historico?.mediaOcorrencias,
+    isCandidato: prestador.status === 'novo' || prestador.status === 'em_analise',
+  })
 
   const scoreSimples = (
     (docsAprovados >= 3 ? 30 : 0) +
@@ -301,6 +308,9 @@ function PrestadorCard({ prestador, onClick, onAction, onToggleBlock, onRemove }
                 } dot size="sm">
                   {statusLabel[prestador.status]}
                 </PremiumBadge>
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${PERFORMANCE_CORES[performance.categoria]}`}>
+                  {performance.categoria}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground/60">{prestador.cpfCnpj}</p>
             </div>

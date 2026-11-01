@@ -6,6 +6,7 @@ import { StatusDot } from '../design-system/StatusDot'
 import { ScoreMeter } from '../score/ScoreMeter'
 import { cn, statusLabel, statusPrestadorColor } from '../../utils/cn'
 import type { Prestador } from '../../types/recrutamento'
+import { calcularCategoriaPerformance, PERFORMANCE_CORES } from '@/lib/performancePrestador'
 
 interface PrestadorCardProps {
   prestador: Prestador
@@ -13,6 +14,12 @@ interface PrestadorCardProps {
 }
 
 export function PrestadorCard({ prestador, onClick }: PrestadorCardProps) {
+  const performance = calcularCategoriaPerformance({
+    totalEntregas: prestador.historico?.quantidadeOperacoes || 0,
+    pontualidade: prestador.historico?.mediaPontualidade,
+    ocorrencias: prestador.historico?.mediaOcorrencias,
+    isCandidato: prestador.status === 'novo' || prestador.status === 'em_analise',
+  })
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
@@ -32,6 +39,9 @@ export function PrestadorCard({ prestador, onClick }: PrestadorCardProps) {
               } dot size="sm">
                 {statusLabel[prestador.status]}
               </PremiumBadge>
+              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${PERFORMANCE_CORES[performance.categoria]}`}>
+                {performance.categoria}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground/60">{prestador.cpfCnpj}</p>
           </div>
