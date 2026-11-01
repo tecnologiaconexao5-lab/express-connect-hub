@@ -55,6 +55,23 @@ const normalizarDataOS = (valor?: string | null): string => {
   return Number.isNaN(d.getTime()) ? "" : dataLocalISO(d);
 };
 
+/** Tempo decorrido desde a criação da OS, ex.: "2h 15m". */
+const formatarTempoParada = (createdAt?: string | null): string => {
+  if (!createdAt) return "";
+  const criada = new Date(createdAt).getTime();
+  if (Number.isNaN(criada)) return "";
+  const diffMin = Math.floor((Date.now() - criada) / (1000 * 60));
+  if (diffMin <= 0) return "agora";
+  const dias = Math.floor(diffMin / (60 * 24));
+  const horas = Math.floor((diffMin % (60 * 24)) / 60);
+  const minutos = diffMin % 60;
+  const partes: string[] = [];
+  if (dias > 0) partes.push(`${dias}d`);
+  if (horas > 0) partes.push(`${horas}h`);
+  if (minutos > 0 || partes.length === 0) partes.push(`${minutos}m`);
+  return partes.join(" ");
+};
+
 const OrdensServicoLista = () => {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [busca, setBusca] = useState("");
@@ -772,6 +789,9 @@ const OrdensServicoLista = () => {
                     (os as OSComDataCriacao).createdAt,
                   );
                   const statusAtivo = !STATUS_ENCERRADOS.includes(String(os.status)) && os.status !== "rascunho";
+                  const paradaHa = statusAtivo
+                    ? formatarTempoParada((os as OSComDataCriacao).createdAt)
+                    : "";
 
                   return (
                     <TableRow
@@ -882,6 +902,11 @@ const OrdensServicoLista = () => {
                           {os.previsaoTermino ? safeFormatDate(os.previsaoTermino) : "Sem prazo"}
                         </div>
                         {atrasada && <span className="text-[9px] font-bold text-red-500 uppercase">Atrasada</span>}
+                        {paradaHa && (
+                          <span className="mt-0.5 block text-[9px] font-semibold text-amber-700">
+                            Parada há {paradaHa}
+                          </span>
+                        )}
                         {riscoSla && (
                           <div className="mt-0.5 flex items-center gap-0.5 text-[9px] font-bold text-red-600 uppercase">
                             <ShieldAlert className="w-2.5 h-2.5" /> Risco de SLA

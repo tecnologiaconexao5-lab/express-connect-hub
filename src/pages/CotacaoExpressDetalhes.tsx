@@ -65,12 +65,20 @@ export default function CotacaoExpressDetalhes() {
     }
     const c = res.dado;
     setCotacao(c);
-    // Já finalizada → mostra o sucesso direto (idempotente) e garante a OS
+    // Já finalizada → garante a OS no Supabase ANTES de exibir o sucesso.
     if (c.status === "Pronto para OS") {
       setDetalhes(c.detalhes);
+      const conversao = await converterCotacaoEmOrcamentoEOS(c.id);
+      if (!conversao.ok) {
+        setErro(
+          conversao.erro ||
+            "Endereços salvos, mas não foi possível abrir a OS. Tente novamente.",
+        );
+        setCarregando(false);
+        return;
+      }
       setConcluido(true);
       setCarregando(false);
-      void converterCotacaoEmOrcamentoEOS(c.id);
       return;
     }
     setDetalhes(

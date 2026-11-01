@@ -32,13 +32,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
@@ -1111,21 +1104,22 @@ export default function CotacaoExpress() {
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="cot-hora">Janela de horário *</Label>
-                      <Select value={horaDesejada} onValueChange={setHoraDesejada}>
-                        <SelectTrigger
-                          id="cot-hora"
-                          className="h-12 rounded-xl border-slate-200 text-base"
-                        >
-                          <SelectValue placeholder="Selecione a janela" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {JANELAS_HORARIO.map((janela) => (
-                            <SelectItem key={janela} value={janela}>
-                              Das {janela}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Input
+                        id="cot-hora"
+                        list="cot-janelas-horario"
+                        className="h-12 rounded-xl border-slate-200 text-base"
+                        placeholder="Ex.: 09:00 às 11:00 ou 14h às 16h"
+                        value={horaDesejada}
+                        onChange={(e) => setHoraDesejada(e.target.value)}
+                      />
+                      <datalist id="cot-janelas-horario">
+                        {JANELAS_HORARIO.map((janela) => (
+                          <option key={janela} value={janela} label={`Das ${janela}`} />
+                        ))}
+                      </datalist>
+                      <p className="text-[11px] text-slate-400">
+                        Selecione uma sugestão ou digite um horário livre.
+                      </p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 print:hidden">

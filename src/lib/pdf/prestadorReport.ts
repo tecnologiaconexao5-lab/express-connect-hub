@@ -55,10 +55,9 @@ export async function generatePrestadorReport(data: any): Promise<void> {
     via: "Prestador",
   });
 
-  // ===================== PÁGINA 2+: CONTEÚDO =====================
-  doc.addPage();
-
-  let y = 20;
+  // ===================== CONTEÚDO NA MESMA PÁGINA DO CABEÇALHO =====================
+  // O conteúdo começa imediatamente abaixo da faixa institucional (75 mm).
+  let y = 84;
 
   const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
     drawContentHeader(d, pg.pageWidth, pg.margin, l, {
@@ -66,8 +65,6 @@ export async function generatePrestadorReport(data: any): Promise<void> {
       subtitle: `Via: Prestador — ${data.prestador || ""}`,
     });
   };
-
-  drawContentPageHeader(doc, page, logo);
 
   // --- DADOS DO PRESTADOR ---
   y = drawSectionTitle(doc, page.margin, y, "DADOS DO PRESTADOR", page);
@@ -132,7 +129,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
   if (data.enderecos?.length > 0) {
     if (y > 225) {
       doc.addPage();
-      y = 20;
+      y = 35;
       drawContentPageHeader(doc, page, logo);
     }
 
@@ -161,7 +158,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
   // --- CARGA ---
   if (y > 235) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -192,7 +189,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
 
   if (y > 165) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -268,7 +265,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
   if (data.instrucoesOperacionaisOS) {
     if (y > 220) {
       doc.addPage();
-      y = 20;
+      y = 35;
       drawContentPageHeader(doc, page, logo);
     }
 
@@ -285,7 +282,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
   // --- OBSERVAÇÕES ---
   if (y > 235) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -303,7 +300,7 @@ export async function generatePrestadorReport(data: any): Promise<void> {
   // --- ASSINATURA / CONFERÊNCIA ---
   if (y > 250) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 

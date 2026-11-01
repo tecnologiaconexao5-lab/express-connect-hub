@@ -62,14 +62,15 @@ describe("A) Mensagem de confirmação do pedido", () => {
     expect(mensagem).toBe(
       [
         "Olá, fiz uma cotação no sistema e quero formalizar o meu pedido:",
-        "*Nome:* Maria Silva",
-        "*Telefone:* (11) 98888-7777",
-        "*Veículo:* Fiorino",
-        "*Valor:* R$ 1.234,50",
-        "*Data:* 15/11/2026",
-        "*Horário:* Das 09:00 às 11:00",
-        "*Coleta:* Rua A, 100 - São Paulo/SP",
-        "*Entrega:* Rua B, 200 - Campinas/SP | Rua C, 300 - Jundiaí/SP",
+        "",
+        "👤 *Nome:* Maria Silva",
+        "📱 *Telefone:* (11) 98888-7777",
+        "🚚 *Veículo:* Fiorino",
+        "💰 *Valor:* R$ 1.234,50",
+        "📅 *Data:* 15/11/2026",
+        "⏰ *Horário:* Das 09:00 às 11:00",
+        "📍 *Coleta:* Rua A, 100 - São Paulo/SP",
+        "🏁 *Entrega:* Rua B, 200 - Campinas/SP | Rua C, 300 - Jundiaí/SP",
       ].join("\n"),
     );
   });

@@ -37,14 +37,15 @@ export function montarMensagemConfirmacaoCotacao(cotacao: CotacaoPublica): strin
 
   return [
     "Olá, fiz uma cotação no sistema e quero formalizar o meu pedido:",
-    `*Nome:* ${cotacao.nome_cliente || "A confirmar"}`,
-    `*Telefone:* ${cotacao.telefone || "A confirmar"}`,
-    `*Veículo:* ${veiculo}`,
-    `*Valor:* R$ ${formatarMoeda(valor)}`,
-    `*Data:* ${formatarData(cotacao.data_desejada)}`,
-    `*Horário:* ${formatarHorario(cotacao.hora_desejada)}`,
-    `*Coleta:* ${coleta}`,
-    `*Entrega:* ${entrega}`,
+    "",
+    `👤 *Nome:* ${cotacao.nome_cliente || "A confirmar"}`,
+    `📱 *Telefone:* ${cotacao.telefone || "A confirmar"}`,
+    `🚚 *Veículo:* ${veiculo}`,
+    `💰 *Valor:* R$ ${formatarMoeda(valor)}`,
+    `📅 *Data:* ${formatarData(cotacao.data_desejada)}`,
+    `⏰ *Horário:* ${formatarHorario(cotacao.hora_desejada)}`,
+    `📍 *Coleta:* ${coleta}`,
+    `🏁 *Entrega:* ${entrega}`,
   ].join("\n");
 }
 

@@ -54,10 +54,9 @@ export async function generateClientReport(data: any): Promise<void> {
     via: "Cliente",
   });
 
-  // ===================== PÁGINA 2+: CONTEÚDO =====================
-  doc.addPage();
-
-  let y = 20;
+  // ===================== CONTEÚDO NA MESMA PÁGINA DO CABEÇALHO =====================
+  // O conteúdo começa imediatamente abaixo da faixa institucional (75 mm).
+  let y = 84;
 
   const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
     drawContentHeader(d, pg.pageWidth, pg.margin, l, {
@@ -66,8 +65,6 @@ export async function generateClientReport(data: any): Promise<void> {
     });
   };
 
-  drawContentPageHeader(doc, page, logo);
-
   // --- DADOS DO CLIENTE ---
   y = drawSectionTitle(doc, page.margin, y, "DADOS DO CLIENTE", page);
 
@@ -75,7 +72,7 @@ export async function generateClientReport(data: any): Promise<void> {
     { label: "Razão Social", value: data.cliente || "—" },
     { label: "Unidade", value: data.unidade || "—" },
     { label: "Tipo de Operação", value: data.tipoOperacao || "—" },
-    { label: "Responsável", value: data.responsavel || "—" },
+    { label: "Emissor", value: "Conexão Express Transportes LTDA" },
   ];
 
   y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "IDENTIFICAÇÃO DO CONTRATANTE", clientFields);
@@ -101,7 +98,7 @@ export async function generateClientReport(data: any): Promise<void> {
   if (data.enderecos?.length > 0) {
     if (y > 230) {
       doc.addPage();
-      y = 20;
+      y = 35;
       drawContentPageHeader(doc, page, logo);
     }
 
@@ -130,7 +127,7 @@ export async function generateClientReport(data: any): Promise<void> {
   // --- CARGA ---
   if (y > 235) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -158,7 +155,7 @@ export async function generateClientReport(data: any): Promise<void> {
   // --- COMPOSIÇÃO FINANCEIRA ---
   if (y > 215) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -196,7 +193,7 @@ export async function generateClientReport(data: any): Promise<void> {
   if (data.instrucoesOperacionaisOS) {
     if (y > 220) {
       doc.addPage();
-      y = 20;
+      y = 35;
       drawContentPageHeader(doc, page, logo);
     }
 
@@ -213,7 +210,7 @@ export async function generateClientReport(data: any): Promise<void> {
   // --- OBSERVAÇÕES ---
   if (y > 235) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
@@ -230,7 +227,7 @@ export async function generateClientReport(data: any): Promise<void> {
   // --- ASSINATURA ---
   if (y > 255) {
     doc.addPage();
-    y = 20;
+    y = 35;
     drawContentPageHeader(doc, page, logo);
   }
 
