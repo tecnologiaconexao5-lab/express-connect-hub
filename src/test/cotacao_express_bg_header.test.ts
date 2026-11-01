@@ -82,7 +82,7 @@ describe("D) Tela final da cotação (Fase 2)", () => {
 
   it("D.2 mensagem exata da conclusão da OS", () => {
     expect(detalhesSrc).toContain(
-      "Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço. Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.",
+      "Quase lá! Seu pedido foi pré-reservado no nosso sistema. Para liberar o veículo, é OBRIGATÓRIO confirmar o pedido via WhatsApp no botão abaixo.",
     );
   });
 

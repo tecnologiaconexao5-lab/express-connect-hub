@@ -25,17 +25,22 @@ export type StatusCotacao =
   | "Pendente"
   | "Pendente de Aprovação pelo Cliente"
   | "Aguardando Detalhes"
-  | "Pronto para OS";
+  | "Pronto para OS"
+  | "Cancelada pelo Cliente";
 
 export const STATUS_PENDENTE = "Pendente";
 export const STATUS_AGUARDANDO_APROVACAO = "Pendente de Aprovação pelo Cliente";
 export const STATUS_AGUARDANDO_DETALHES = "Aguardando Detalhes";
 export const STATUS_PRONTO_PARA_OS = "Pronto para OS";
+export const STATUS_CANCELADA_PELO_CLIENTE = "Cancelada pelo Cliente";
 
 export interface MetadataCotacao {
   precificacao?: PrecificacaoCotacao | null;
   rota?: { pontos: PontoRotaCotacao[]; km?: number; duracao_min?: number } | null;
   origem?: string;
+  /** Blindagem operacional — cliente cancelou antes de confirmar no WhatsApp. */
+  cancelado_pelo_cliente?: boolean;
+  cancelado_em?: string;
 }
 
 export interface ParadaCotacao {
@@ -240,6 +245,70 @@ export async function aprovarCotacao(
 
   if (error) return { ok: false, erro: error.message };
   return { ok: true };
+}
+
+// ------------------------------------------------------------
+// BLINDAGEM OPERACIONAL — status do cliente na tela final
+// ------------------------------------------------------------
+
+export interface StatusClienteCotacao {
+  cotacaoId: string;
+  status?: string;
+  osId: string | null;
+}
+
+/**
+ * Cliente chegou na tela final mas ainda NÃO confirmou no WhatsApp → a OS
+ * vinculada fica em `rascunho` com o histórico/observações marcados
+ * ("Aguardando confirmação do cliente via WhatsApp"), para a operação saber
+ * que o pedido ainda não foi liberado. Idempotente.
+ */
+export async function marcarCotacaoAguardandoConfirmacao(
+  cotacaoId: string,
+): Promise<ResultadoCotacao<StatusClienteCotacao>> {
+  return executarStatusCliente(cotacaoId, "aguardando");
+}
+
+/**
+ * "Cancelar / Não preciso mais" na tela final → cotação
+ * `Cancelada pelo Cliente` e OS vinculada `cancelada` (se ainda não
+ * finalizada). Idempotente.
+ */
+export async function cancelarCotacaoPeloCliente(
+  cotacaoId: string,
+): Promise<ResultadoCotacao<StatusClienteCotacao>> {
+  return executarStatusCliente(cotacaoId, "cancelada");
+}
+
+async function executarStatusCliente(
+  cotacaoId: string,
+  acao: "aguardando" | "cancelada",
+): Promise<ResultadoCotacao<StatusClienteCotacao>> {
+  if (!cotacaoId) return { ok: false, erro: erroDe("Cotação não informada.") };
+
+  const { data, error } = await supabase.rpc("f_cotacao_status_cliente", {
+    p_cotacao_id: cotacaoId,
+    p_acao: acao,
+  });
+
+  if (error) return { ok: false, erro: error.message };
+
+  const payload = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+  if (!payload.success) {
+    return {
+      ok: false,
+      erro: String(payload.message || "Não foi possível atualizar o status do pedido."),
+    };
+  }
+
+  return {
+    ok: true,
+    dado: {
+      cotacaoId: String(payload.cotacao_id || cotacaoId),
+      status: payload.status ? String(payload.status) : undefined,
+      osId: payload.os_id ? String(payload.os_id) : null,
+    },
+  };
 }
 
 // ------------------------------------------------------------
@@ -492,6 +561,7 @@ export const STATUS_LEAD_LABEL: Record<StatusCotacao, string> = {
   [STATUS_AGUARDANDO_APROVACAO]: "Aguardando aprovação",
   [STATUS_AGUARDANDO_DETALHES]: "Aprovada pelo Cliente",
   [STATUS_PRONTO_PARA_OS]: "Pronto para OS",
+  [STATUS_CANCELADA_PELO_CLIENTE]: "Cancelada pelo cliente",
 };
 
 /** Cores dos badges de status na triagem. */
@@ -500,6 +570,7 @@ export const STATUS_LEAD_COR: Record<StatusCotacao, string> = {
   [STATUS_AGUARDANDO_APROVACAO]: "bg-amber-100 text-amber-800",
   [STATUS_AGUARDANDO_DETALHES]: "bg-blue-100 text-blue-800",
   [STATUS_PRONTO_PARA_OS]: "bg-emerald-100 text-emerald-800",
+  [STATUS_CANCELADA_PELO_CLIENTE]: "bg-red-100 text-red-700",
 };
 
 // ------------------------------------------------------------

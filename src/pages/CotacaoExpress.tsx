@@ -89,6 +89,13 @@ const JANELAS_HORARIO = [
   "18:00 às 20:00",
 ] as const;
 
+/** Última opção da lista: libera o campo de horário digitado manualmente. */
+const OPCAO_HORARIO_MANUAL = "Outro horário (Informar manualmente)";
+
+/** Rodapé fixo do card "Proposta instantânea" (texto definido pela operação). */
+const AVISO_PROPOSTA_INSTANTANEA =
+  "Valor estimado — sujeito a confirmação operacional (distância, pedágio e disponibilidade). Inclui pontos de parada e 20 minutos de aguarde por parada.";
+
 type TipoParada = "retirada" | "entrega" | "retirada_entrega";
 
 interface ParadaEstado {
@@ -153,6 +160,7 @@ export default function CotacaoExpress() {
   ]);
   const [dataDesejada, setDataDesejada] = useState("");
   const [horaDesejada, setHoraDesejada] = useState("");
+  const [horaManual, setHoraManual] = useState("");
 
   const [rota, setRota] = useState<{ km: number; duracaoMin: number; paradas: number } | null>(null);
   const [precificacao, setPrecificacao] = useState<PrecificacaoCotacao | null>(null);
@@ -172,6 +180,10 @@ export default function CotacaoExpress() {
     if (a > 0 && l > 0 && p > 0) return `${a}x${l}x${p} cm`;
     return "";
   }, [altura, largura, profundidade]);
+
+  /** Valor real usado na reserva: a opção manual libera o campo digitado. */
+  const horarioEfetivo =
+    horaDesejada === OPCAO_HORARIO_MANUAL ? horaManual.trim() : horaDesejada.trim();
 
   // ------------------------------------------------------------
   // Validações
@@ -227,7 +239,7 @@ export default function CotacaoExpress() {
 
   const validarAgendamento = (): string => {
     if (!dataDesejada) return "Escolha a data em que você precisa do transporte.";
-    if (!horaDesejada) return "Escolha a janela de horário para a coleta/entrega.";
+    if (!horarioEfetivo) return "Escolha a janela de horário para a coleta/entrega.";
     return "";
   };
 
@@ -457,7 +469,7 @@ export default function CotacaoExpress() {
           .map((p) => ({
             endereco: enderecoDaParada(p),
             tipo: rotuloParada(p),
-            janela: horaDesejada ? `Das ${horaDesejada}` : "",
+            janela: horarioEfetivo ? `Das ${horarioEfetivo}` : "",
           })),
         veiculo: recomendacao?.nome || precificacao.rotulo_veiculo,
         sla: recomendacao?.slaRotulo,
@@ -470,7 +482,7 @@ export default function CotacaoExpress() {
         aviso: precificacao.aviso,
         fonte: precificacao.tabela,
         dataDesejada,
-        janelaHorario: horaDesejada ? `Das ${horaDesejada}` : "",
+        janelaHorario: horarioEfetivo ? `Das ${horarioEfetivo}` : "",
       });
       toast.success("Proposta comercial gerada em PDF.");
     } catch (error) {
@@ -510,7 +522,7 @@ export default function CotacaoExpress() {
           paradas: pontos.map((p) => p.endereco),
           paradasTipos: pontosComTipo.map((p) => p.tipo),
           data_desejada: dataDesejada,
-          hora_desejada: horaDesejada,
+          hora_desejada: horarioEfetivo,
           status: STATUS_AGUARDANDO_APROVACAO,
           precificacao,
           pontosRota: pontos,
@@ -526,7 +538,7 @@ export default function CotacaoExpress() {
       const aprovado = await aprovarCotacao(id, {
         valor: precificacao.valor,
         dataDesejada,
-        horaDesejada,
+        horaDesejada: horarioEfetivo,
       });
       if (!aprovado.ok) {
         setErro(aprovado.erro || "Não foi possível concluir a aprovação. Tente novamente.");
@@ -1085,8 +1097,7 @@ export default function CotacaoExpress() {
                     </dl>
 
                     <p className="mt-3 text-[11px] leading-relaxed text-violet-200">
-                      {precificacao.aviso}
-                      {precificacao.tabela ? ` Fonte: ${precificacao.tabela}.` : ""}
+                      {AVISO_PROPOSTA_INSTANTANEA}
                     </p>
                   </div>
 
@@ -1116,10 +1127,30 @@ export default function CotacaoExpress() {
                         {JANELAS_HORARIO.map((janela) => (
                           <option key={janela} value={janela} label={`Das ${janela}`} />
                         ))}
+                        <option
+                          value={OPCAO_HORARIO_MANUAL}
+                          label="Informe o horário desejado"
+                        />
                       </datalist>
-                      <p className="text-[11px] text-slate-400">
-                        Selecione uma sugestão ou digite um horário livre.
-                      </p>
+                      {horaDesejada === OPCAO_HORARIO_MANUAL ? (
+                        <div className="space-y-1.5 pt-1">
+                          <Label htmlFor="cot-hora-manual">Informe o horário desejado *</Label>
+                          <Input
+                            id="cot-hora-manual"
+                            className="h-12 rounded-xl border-slate-200 text-base"
+                            placeholder="Ex.: 15:30 ou após as 18h"
+                            value={horaManual}
+                            onChange={(e) => setHoraManual(e.target.value)}
+                          />
+                          <p className="text-[11px] text-slate-400">
+                            Digite o horário livre — a operação confirma a melhor janela.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          Selecione uma sugestão ou digite um horário livre.
+                        </p>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 print:hidden">

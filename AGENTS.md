@@ -1,5 +1,44 @@
 # Summary
 
+## MISSÃO COTACAO-BLINDAGEM-PEDIDO — Texto do card, horário manual, WhatsApp oficial e cancelamento do cliente (2026-11-01)
+
+**Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros (5 arquivos) · cotação **98/98** (72 + 26) · `npm run build` ok (54,71s) · Migration aplicada em produção (dry-run 9/9 → `--apply` 9/9 + pós-COMMIT 4/4).
+
+### O que mudou
+
+**1. Texto do card "Proposta instantânea" (`CotacaoExpress.tsx`)** — rodapé agora é o texto fixo `AVISO_PROPOSTA_INSTANTANEA`: *"Valor estimado — sujeito a confirmação operacional (distância, pedágio e disponibilidade). Inclui pontos de parada e 20 minutos de aguarde por parada."* (mesmo layout; removido o `Fonte: <tabela>` só do card — o PDF continua com `fonte`).
+
+**2. Janela de horário manual** — nova opção final `Outro horário (Informar manualmente)` (`OPCAO_HORARIO_MANUAL`) na datalist; ao selecioná-la aparece o input `#cot-hora-manual` + hint. `horarioEfetivo` = valor manual quando a opção está ativa, e é ele que vai para `hora_desejada`/`aprovarCotacao`/PDF (validação também usa `horarioEfetivo`).
+
+**3. Número do WhatsApp oficial** — fallback `5511913254847` em `CotacaoExpressDetalhes.tsx` e `src/lib/cotacaoWhatsApp.ts` (era placeholder `5511999999999`); `VITE_WHATSAPP_CENTRAL` continua sobrescrevendo.
+
+**4. Blindagem operacional (tela final)**
+- Texto: *"Quase lá! Seu pedido foi pré-reservado no nosso sistema. Para liberar o veículo, é OBRIGATÓRIO confirmar o pedido via WhatsApp no botão abaixo."*
+- Botão discreto **"Cancelar / Não preciso mais"** → `cancelarCotacaoPeloCliente(id)` → volta para `/cotacao-express` (replace).
+- OS criada pela conversão nasce **`rascunho`** (status do TMS: "OS criada, aguardando preenchimento") com histórico/observações *"Aguardando confirmação do cliente via WhatsApp"* — aplicado por `marcarCotacaoAguardandoConfirmacao(id)` logo após `converterCotacaoEmOrcamentoEOS` (best-effort, tanto no envio quanto no reload da tela final).
+
+**5. Banco — `supabase/migrations/20261101000000_cotacao_cancelamento_cliente.sql` (APLICADA)**
+- CHECK de `cotacoes_publicas.status` re-varrido e recriado com **'Cancelada pelo Cliente'** (5º valor).
+- **RPC `f_cotacao_status_cliente(p_cotacao_id uuid, p_acao text)`** — SECURITY DEFINER, `search_path = public, pg_temp`, grants anon+authenticated (sem PUBLIC):
+  - `'aguardando'` → OS vinculada (por `ordens_servico.orcamento_id` ou `orcamentos.os_vinculada_id`) → `rascunho` + histórico/observações marcados (apenas se ainda em `rascunho|em_analise|pendente`).
+  - `'cancelada'` → cotação `Cancelada pelo Cliente` + `metadata.cancelado_pelo_cliente=true` + OS `cancelada` (só se `rascunho|em_analise|pendente|agendada` — **nunca** finalizada/entregue).
+- Service: `STATUS_CANCELADA_PELO_CLIENTE`, `marcarCotacaoAguardandoConfirmacao`, `cancelarCotacaoPeloCliente` (+ label/cor nos mapas da triagem; canceladas saem de `STATUS_LEADS_TRIAGEM`).
+- Aplicação: `scripts\_apply_cotacao_cancelamento.cjs` (dry-run default / `--apply`; provas P1–P7 incl. teste funcional com cotação+orçamento+OS de teste, guarda de OS finalizada e limpeza com contagens iguais ao baseline 32/19/208). sha256 `830dc3074031843f`.
+
+### Testes
+- `cotacao_express_fluxo.test.ts` 65 → **72**: C.1 ids (`cot-hora-manual`), C.8 (aviso novo + horário manual), D.4 reescrito (texto obrigatório + rascunho + cancelar + número), D.5 (migration/service), D.6 (número oficial) — `cotacao_leads_comercial` 26/26 intacto.
+
+### Arquivos
+- `src/pages/CotacaoExpress.tsx` · `src/pages/CotacaoExpressDetalhes.tsx` · `src/services/cotacoes/cotacaoPublicaService.ts` · `src/lib/cotacaoWhatsApp.ts` · `supabase/migrations/20261101000000_cotacao_cancelamento_cliente.sql` (NOVO) · `scripts\_apply_cotacao_cancelamento.cjs` (NOVO) · `src/test/cotacao_express_fluxo.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express`: card com o texto novo; escolher "Outro horário (Informar manualmente)" → input aparece e o horário digitado é o gravado (`hora_desejada`/OS).
+2. (QA) Tela final: botão WhatsApp abre `wa.me/5511913254847`; texto obrigatório; "Cancelar / Não preciso mais" → cotação `Cancelada pelo Cliente` e OS `cancelada` (conferir no TMS) + retorno ao início.
+3. (QA) Criar pedido e confirmar que a OS nasce `Rascunho` com "Aguardando confirmação do cliente via WhatsApp" no histórico/observações.
+4. (autorização) Commit git dos arquivos desta missão.
+
+---
+
 ## MISSÃO APP-S6 — Migrações do funil 17 etapas (App) aplicadas no Supabase de produção (2026-11-01)
 
 **Status:** ✅ Aplicada em produção (COMMIT). Dry-run 13/13 PASS → `--apply` 13/13 + pós-COMMIT 9/9 → prova final **10/10**. Bug do `crypt()` (search_path sem `extensions`) corrigido **no ficheiro mobile antes de aplicar**. Nada commitado em git (aguarda autorização).

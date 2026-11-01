@@ -265,6 +265,7 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
       "cot-data",
       "cot-descricao",
       "cot-hora",
+      "cot-hora-manual",
       "cot-janelas-horario",
       "cot-largura",
       "cot-nome",
@@ -382,6 +383,24 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
     expect(fase1).not.toContain("AppTopbar");
     expect(fase1).not.toContain("useAuth");
   });
+
+  it("C.8 — rodapé da proposta com o aviso operacional novo + horário manual", () => {
+    // Texto exato definido pela operação (substitui o "Fonte: ...")
+    expect(fase1).toContain(
+      "Valor estimado — sujeito a confirmação operacional (distância, pedágio e disponibilidade). Inclui pontos de parada e 20 minutos de aguarde por parada.",
+    );
+    expect(fase1).toContain("AVISO_PROPOSTA_INSTANTANEA");
+    expect(fase1).not.toContain("Fonte: ${");
+    // Opção final da lista de janelas + campo manual condicional
+    expect(fase1).toContain("Outro horário (Informar manualmente)");
+    expect(fase1).toContain("OPCAO_HORARIO_MANUAL");
+    expect(fase1).toContain('id="cot-hora-manual"');
+    expect(fase1).toContain("horaManual");
+    // A reserva (e o PDF) usa o horário efetivo (manual quando escolhido)
+    expect(fase1).toContain("horarioEfetivo");
+    expect(fase1).toContain("hora_desejada: horarioEfetivo");
+    expect(fase1).toContain("horaDesejada: horarioEfetivo");
+  });
 });
 
 describe("D) Fase 2 — /cotacao-express/detalhes/:id", () => {
@@ -406,10 +425,44 @@ describe("D) Fase 2 — /cotacao-express/detalhes/:id", () => {
     expect(fase2).toContain("Informe o nome de quem recebe em cada parada.");
   });
 
-  it("D.4 — salvar move a cotação para 'Pronto para OS' (idempotente)", () => {
+  it("D.4 — salvar move a cotação para 'Pronto para OS' e deixa a OS em 'rascunho'", () => {
     expect(fase2).toContain("salvarDetalhesFase2");
     expect(fase2).toContain('c.status === "Pronto para OS"');
-    expect(fase2).toContain("Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço.");
+    // Texto final com a obrigatoriedade do WhatsApp
+    expect(fase2).toContain("Quase lá! Seu pedido foi pré-reservado no nosso sistema.");
+    expect(fase2).toContain("é OBRIGATÓRIO confirmar o pedido via WhatsApp");
+    // Blindagem: OS em 'rascunho' até a confirmação via WhatsApp
+    expect(fase2).toContain("marcarCotacaoAguardandoConfirmacao");
+    // Cancelamento pelo cliente (cotação + OS) e volta ao início
+    expect(fase2).toContain("cancelarCotacaoPeloCliente");
+    expect(fase2).toContain("Cancelar / Não preciso mais");
+    expect(fase2).toContain('navigate("/cotacao-express", { replace: true })');
+    // Número oficial da central (não é mais o placeholder)
+    expect(fase2).toContain("5511913254847");
+    expect(fase2).not.toContain("5511999999999");
+  });
+
+  it("D.5 — service e migration expõem o status 'Cancelada pelo Cliente' + RPC de blindagem", () => {
+    const mig = readSrc(
+      "supabase/migrations/20261101000000_cotacao_cancelamento_cliente.sql",
+    );
+    expect(mig).toContain("Cancelada pelo Cliente");
+    expect(mig).toContain("f_cotacao_status_cliente");
+    expect(mig).toContain("'aguardando'");
+    expect(mig).toContain("Aguardando confirmação do cliente via WhatsApp");
+    expect(mig).toContain("GRANT EXECUTE ON FUNCTION public.f_cotacao_status_cliente");
+    // Service: constantes + funções públicas
+    expect(service).toContain('"Cancelada pelo Cliente"');
+    expect(service).toContain("STATUS_CANCELADA_PELO_CLIENTE");
+    expect(service).toContain("marcarCotacaoAguardandoConfirmacao");
+    expect(service).toContain("cancelarCotacaoPeloCliente");
+    expect(service).toContain('supabase.rpc("f_cotacao_status_cliente"');
+  });
+
+  it("D.6 — link do WhatsApp usa o número oficial da operação", () => {
+    const lib = readSrc("src/lib/cotacaoWhatsApp.ts");
+    expect(lib).toContain('|| "5511913254847"');
+    expect(lib).not.toContain("5511999999999");
   });
 });
 

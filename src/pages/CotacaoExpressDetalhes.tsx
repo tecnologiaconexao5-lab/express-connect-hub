@@ -10,7 +10,7 @@
 // Controle e orçamento aberto com os dados já preenchidos.
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,16 +18,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowRight, CheckCircle2, Loader2, MapPin, MessageCircle } from "lucide-react";
 import {
   buscarCotacao,
+  cancelarCotacaoPeloCliente,
   converterCotacaoEmOrcamentoEOS,
+  marcarCotacaoAguardandoConfirmacao,
   salvarDetalhesFase2,
   type CotacaoPublica,
   type DetalheParadaCotacao,
 } from "@/services/cotacoes/cotacaoPublicaService";
 import { linkConfirmacaoWhatsApp } from "@/lib/cotacaoWhatsApp";
 
-// Placeholder da central. Substituir por VITE_WHATSAPP_CENTRAL em produção.
+// Número oficial da central (pode ser sobrescrito por VITE_WHATSAPP_CENTRAL).
 const WHATSAPP_CENTRAL_COTACAO =
-  (import.meta.env.VITE_WHATSAPP_CENTRAL as string | undefined) || "5511999999999";
+  (import.meta.env.VITE_WHATSAPP_CENTRAL as string | undefined) || "5511913254847";
 
 const vazioDetalhe = (sequencia: number): DetalheParadaCotacao => ({
   sequencia,
@@ -37,12 +39,14 @@ const vazioDetalhe = (sequencia: number): DetalheParadaCotacao => ({
   observacoes: "",
 });
 
-// Mensagem oficial da conclusão (texto exato definido pela operação).
+// Mensagem oficial da conclusão (texto exato definido pela operação) —
+// deixa clara a OBRIGATORIEDADE da confirmação no WhatsApp.
 const MENSAGEM_CONCLUSAO =
-  "Perfeito! Tudo pronto para a emissão da sua Ordem de Serviço. Recebemos os endereços completos da rota. Nossa equipe já está montando a OS e você recebe a confirmação pelo WhatsApp.";
+  "Quase lá! Seu pedido foi pré-reservado no nosso sistema. Para liberar o veículo, é OBRIGATÓRIO confirmar o pedido via WhatsApp no botão abaixo.";
 
 export default function CotacaoExpressDetalhes() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const [carregando, setCarregando] = useState(true);
   const [cotacao, setCotacao] = useState<CotacaoPublica | null>(null);
@@ -50,6 +54,7 @@ export default function CotacaoExpressDetalhes() {
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [concluido, setConcluido] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
 
   const carregar = useCallback(async () => {
     if (!id) {
@@ -77,6 +82,8 @@ export default function CotacaoExpressDetalhes() {
         setCarregando(false);
         return;
       }
+      // Blindagem: cliente ainda NÃO confirmou no WhatsApp → OS em 'rascunho'.
+      await marcarCotacaoAguardandoConfirmacao(c.id).catch(() => undefined);
       setConcluido(true);
       setCarregando(false);
       return;
@@ -132,12 +139,33 @@ export default function CotacaoExpressDetalhes() {
         return;
       }
 
+      // Blindagem operacional: a OS nasce vinculada ao cliente mas em
+      // 'rascunho' até ele confirmar o pedido no WhatsApp.
+      await marcarCotacaoAguardandoConfirmacao(id).catch(() => undefined);
+
       setCotacao(res.dado || null);
       setErro("");
       setConcluido(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // "Cancelar / Não preciso mais" → cotação + OS canceladas e volta ao início.
+  const cancelar = async () => {
+    if (cancelando || !id) return;
+    setCancelando(true);
+    setErro("");
+    try {
+      const res = await cancelarCotacaoPeloCliente(id);
+      if (!res.ok) {
+        setErro(res.erro || "Não foi possível cancelar agora. Tente novamente.");
+        return;
+      }
+      navigate("/cotacao-express", { replace: true });
+    } finally {
+      setCancelando(false);
     }
   };
 
@@ -227,6 +255,19 @@ export default function CotacaoExpressDetalhes() {
             <p className="mt-2 text-xs text-slate-400">
               Você será direcionado ao WhatsApp da central Conexão Express.
             </p>
+
+            {erro && (
+              <p className="mt-3 text-xs font-semibold text-red-500">{erro}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => void cancelar()}
+              disabled={cancelando}
+              className="mt-4 text-sm font-semibold text-slate-500 underline decoration-slate-300 underline-offset-4 transition hover:text-red-600 disabled:opacity-60"
+            >
+              {cancelando ? "Cancelando..." : "Cancelar / Não preciso mais"}
+            </button>
           </div>
         </main>
       </div>

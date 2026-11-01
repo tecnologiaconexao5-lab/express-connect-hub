@@ -50,6 +50,6 @@ export function montarMensagemConfirmacaoCotacao(cotacao: CotacaoPublica): strin
 }
 
 export function linkConfirmacaoWhatsApp(cotacao: CotacaoPublica, telefoneCentral: string): string {
-  const numero = String(telefoneCentral || "").replace(/\D/g, "") || "5511999999999";
+  const numero = String(telefoneCentral || "").replace(/\D/g, "") || "5511913254847";
   return `https://wa.me/${numero}?text=${encodeURIComponent(montarMensagemConfirmacaoCotacao(cotacao))}`;
 }
