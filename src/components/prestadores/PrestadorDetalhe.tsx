@@ -27,7 +27,8 @@ import { formatarDataBR } from "@/lib/formatDates";
 import { sanitizeVeiculoPayload, camposTipoVeiculo } from "@/helpers/veiculoPayload";
 import { buscarCEP } from "@/services/cepService";
 import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
-import { montarResumoTalent, MODALIDADE_LABEL } from "@/lib/talentResumo";
+import { MODALIDADE_LABEL } from "@/lib/talentResumo";
+import { ConexaoTalentAIProfile } from "./ConexaoTalentAIProfile";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerAvaliacaoSituacional } from "@/lib/permissoes";
 import {
@@ -950,30 +951,15 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     return TIPO_VEICULO_LABEL[veiculo.tipoVeiculo] || String(veiculo.tipoVeiculo || "");
   }, [p.veiculos]);
 
-  const resumoTalent = useMemo(
-    () =>
-      montarResumoTalent({
-        veiculo: veiculoResumoTalent,
-        regiao:
-          p.regiaoPrincipal ||
-          [p.endereco?.cidade, p.endereco?.estado].filter(Boolean).join(" - "),
-        modalidades: perfilTalento.modalidadePreferencial,
-        disponibilidade: disponibilidadeTalento.map((d) => ({
-          dia_semana: Number(d.diaSemana),
-          hora_inicio: d.horaInicio,
-          hora_fim: d.horaFim,
-          disponivel: d.disponivel,
-        })),
-      }),
-    [
-      veiculoResumoTalent,
-      p.regiaoPrincipal,
-      p.endereco?.cidade,
-      p.endereco?.estado,
-      perfilTalento.modalidadePreferencial,
-      disponibilidadeTalento,
-    ],
-  );
+  // Regra 12: isCandidato quando o prestador está em etapas iniciais do funil
+  const isCandidatoTalento = useMemo(() => {
+    const etapasIniciais = [
+      "novo_candidato", "novo_cadastro", "cadastro_iniciado", "cadastro_concluido",
+      "em_triagem", "em_analise_perfil", "em_analise", "aguardando_documentacao",
+      "em_verificacao_documental", "em_avaliacao_situacional", "em_entrevista",
+    ];
+    return etapasIniciais.includes(candidateStageTalento);
+  }, [candidateStageTalento]);
 
   const toggleModalidadeTalento = (modalidade: string) => {
     setPerfilTalento((prev) => ({
@@ -1188,25 +1174,38 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         </div>
       </div>
 
-      {/* Resumo Operacional — Conexão Talent AI (string única consolidada) */}
-      <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background shadow-sm">
-        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Sparkles className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
-                Conexão Talent AI · Resumo Operacional
-              </p>
-              <p className="text-sm font-bold text-foreground">{resumoTalent}</p>
-            </div>
-          </div>
-          <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-[10px] font-bold text-primary">
-            {loadingTalento ? "Sincronizando perfil..." : "Perfil 360º"}
-          </Badge>
-        </CardContent>
-      </Card>
+      {/* Resumo Operacional — Conexão Talent AI (Etapa 7: perfil operacional automático) */}
+      <ConexaoTalentAIProfile
+        veiculo={veiculoResumoTalent}
+        regiao={
+          p.regiaoPrincipal ||
+          [p.endereco?.cidade, p.endereco?.estado].filter(Boolean).join(" - ")
+        }
+        modalidades={perfilTalento.modalidadePreferencial}
+        distanciaMaxColetaKm={perfilTalento.distanciaMaxColetaKm}
+        aceitaViagens={perfilTalento.aceitaViagens}
+        restricoesOperacionais={perfilTalento.restricoesOperacionais}
+        statusDisponibilidade={perfilTalento.statusDisponibilidade}
+        disponibilidade={disponibilidadeTalento.map((d) => ({
+          dia_semana: Number(d.diaSemana),
+          hora_inicio: d.horaInicio,
+          hora_fim: d.horaFim,
+          disponivel: d.disponivel,
+        }))}
+        avaliacoes={avaliacoesTalento.map((a) => ({
+          competencia: a.competencia,
+          pontuacao: a.pontuacao,
+          cenarioTitulo: a.cenarioTitulo,
+        }))}
+        treinamentos={treinamentosTalento}
+        performance={{
+          totalEntregas: qtdEntregasReais,
+          pontualidade: null,
+          ocorrencias: ocorrenciasReais.length,
+          isCandidato: isCandidatoTalento,
+        }}
+        loading={loadingTalento}
+      />
 
       <div className="flex flex-col xl:flex-row gap-6">
         {/* Card Lateral - FIXO NA ESQUERDA */}

@@ -21,6 +21,12 @@ export interface ParecerOperacional {
   proximaAcao: string
 }
 
+export interface RiscoDesistenciaDetalhado {
+  risco: "Baixo" | "Médio" | "Alto"
+  score: number
+  justificativa: string
+}
+
 function safeNum(val?: number | null): number {
   return val ?? 0
 }
@@ -148,11 +154,68 @@ export function getCorClassificacao(classificacao: string): string {
   }
 }
 
-export function calcularRiscoDesistencia(_candidato: CandidatoScoreInput): string {
+export function calcularRiscoDesistencia(candidato: CandidatoScoreInput): string
+export function calcularRiscoDesistencia(
+  candidatoId: string,
+  diasNaEtapa?: number,
+  extras?: {
+    historicoDesistencias?: number
+    tempoMedioRespostaHoras?: number
+    confirmouInteresse?: boolean
+  },
+): RiscoDesistenciaDetalhado
+export function calcularRiscoDesistencia(
+  input: CandidatoScoreInput | string,
+  diasNaEtapa = 0,
+  extras: {
+    historicoDesistencias?: number
+    tempoMedioRespostaHoras?: number
+    confirmouInteresse?: boolean
+  } = {},
+): string | RiscoDesistenciaDetalhado {
+  // Forma genérica (id + tempo na etapa) — retorno estruturado para a UI.
+  if (typeof input === "string") {
+    const dias = Math.max(0, safeNum(diasNaEtapa))
+    const historico = Math.max(0, safeNum(extras.historicoDesistencias))
+    const tempoResposta = Math.max(0, safeNum(extras.tempoMedioRespostaHoras))
+    let score = 0
+    const motivos: string[] = []
+
+    if (dias >= 30) {
+      score += 50
+      motivos.push(`${dias} dias parado na etapa`)
+    } else if (dias >= 15) {
+      score += 30
+      motivos.push(`${dias} dias parado na etapa`)
+    } else if (dias >= 7) {
+      score += 15
+      motivos.push(`${dias} dias parado na etapa`)
+    }
+
+    if (historico > 0) {
+      score += Math.min(30, historico * 10)
+      motivos.push(`${historico} desistência(s) anterior(es)`)
+    }
+    if (tempoResposta > 72) {
+      score += 15
+      motivos.push("tempo de resposta acima de 72h")
+    }
+    if (extras.confirmouInteresse === false) {
+      score += 10
+      motivos.push("interesse não confirmado")
+    }
+
+    const risco: RiscoDesistenciaDetalhado["risco"] = score >= 70 ? "Alto" : score >= 40 ? "Médio" : "Baixo"
+    return {
+      risco,
+      score: Math.min(100, score),
+      justificativa: motivos.length > 0 ? motivos.join("; ") : "Sem sinais relevantes de desistência",
+    }
+  }
+
+  // Compatibilidade com a chamada antiga (input do score) — retorna rótulo.
   const fatores: string[] = [];
-
-  if (safeNum(_candidato.historicoDesistencias) > 0) fatores.push("historico_desistencia");
-
+  if (safeNum(input.historicoDesistencias) > 0) fatores.push("historico_desistencia");
   return fatores.length >= 2 ? "Moderado" : "Baixo";
 }
 

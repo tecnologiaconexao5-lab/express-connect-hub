@@ -382,7 +382,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
               const classif = scoreComp !== null && scoreComp !== undefined
                 ? (candidate.classificacaoComprometimento || recrutamentoScoreService.classificarComprometimento(scoreComp))
                 : recrutamentoScoreService.classificarComprometimento(null)
-              const risco = candidate.riscoDesistencia || recrutamentoScoreService.calculcarRiscoDesistencia(scoreInput)
+              const risco = candidate.riscoDesistencia || recrutamentoScoreService.calcularRiscoDesistencia(scoreInput) || 'Baixo'
               const etiquetas = candidate.etiquetasAutomaticas.length > 0 ? candidate.etiquetasAutomaticas : recrutamentoScoreService.gerarEtiquetasAutomaticas(scoreInput)
               const parecer = candidate.parecerIA ? { parecer: candidate.parecerIA, riscos: candidate.principaisRiscos, pontosPositivos: candidate.principaisPontosPositivos, proximaAcao: candidate.proximaAcaoSugerida } : recrutamentoScoreService.gerarParecerOperacional(scoreInput)
               const corClassif = recrutamentoScoreService.getCorClassificacao(classif)
