@@ -1,5 +1,34 @@
 # Summary
 
+## MISSÃO APP-S6 — Migrações do funil 17 etapas (App) aplicadas no Supabase de produção (2026-11-01)
+
+**Status:** ✅ Aplicada em produção (COMMIT). Dry-run 13/13 PASS → `--apply` 13/13 + pós-COMMIT 9/9 → prova final **10/10**. Bug do `crypt()` (search_path sem `extensions`) corrigido **no ficheiro mobile antes de aplicar**. Nada commitado em git (aguarda autorização).
+
+### O que foi feito (repo mobile `C:\src\conexao_prestador`, alvo `uwrvzsjtpgaifkktpepn`)
+
+**1. Diff de segurança da bridge — mobile `000003` vs REC-06.1 (prod)**: seguro aplicar — stage default via `metadata.etapa_pipeline` validado contra as 17 etapas canônicas (coerção p/ `cadastro_concluido`), `prioridade 'media'`/`validade_cnh 'valida'` batem com defaults da coluna, branch UPDATE (refresh defensivo) é praticamente inalcançável pelo app (`app_s6_criar_prestador` tem guard de duplicatas). Sem CHECK constraints em `recrutamento_candidatos` (stage/prioridade/validade_cnh). TMS reconhece `cadastro_concluido` (kanban/labels/cores).
+
+**2. Bug real encontrado e corrigido**: pgcrypto vive no schema `extensions`; a função de 000003 declarava `SET search_path = public, auth, pg_temp` → `crypt()` falharia em runtime em **cada chamada**. Corrigido em `20261031000003...sql` (linha 37): `SET search_path = public, auth, extensions, pg_temp` (edit no ficheiro mobile, não commitado).
+
+**3. Aplicação — `scripts\_apply_app_s6.cjs` (NOVO, TMS)**: modo default **dry-run** (BEGIN → 3 migrations → provas → ROLLBACK) e `--apply` (→ COMMIT + re-verificação pós-commit). Ordem obrigatória 3→4→5 (000005 faz `ALTER FUNCTION ... RENAME TO _base`). Pré-flight idempotente (wrapper já existe → só verificação). P7 teste funcional **dentro** da transação: INSERT de prestador de teste `origem='app_prestador'` com `metadata.etapa_pipeline` → bridge cria rp+candidato `cadastro_concluido` → trigger 000004 espelha `preferencias_operacionais` no INSERT e no UPDATE → limpeza comprovada (contagens 40/24/39 == baseline). E2E do RPC com `auth.users` **omitido de propósito** (não se cria utilizadores em produção) — fica para QA em dispositivo.
+
+**4. Prova final — `scripts\_check_app_s6_prod.cjs` (corrigido: nomes reais)**: **10/10** — wrapper 4 params secdef · base `_base` sem grants anon/auth · search_path com `extensions` · grants do wrapper anon+authenticated · bridge com `etapa_pipeline` · trigger+função 000004 · 2 colunas · `crypt()` funcional sob o search_path exato da função. (Os nomes `app_s6_salvar_preferencias_operacionais`/`app_s6_salvar_avaliacao_situacional` nunca existiram — eram erro do check anterior; nomes reais: RPC `app_s6_sincronizar_cadastro_pipeline` (4-param) e trigger `app_s6_sync_preferencias_operacionais`/`..._candidato`.)
+
+### Resultados
+- Dry-run: **13/13 PASS** + ROLLBACK (falsos negativos iniciais corrigidos: `pg_get_function_identity_arguments()` retorna sem parênteses; alias `prosecdef AS secdef`).
+- `--apply`: 13/13 + **COMMIT** + 9/9 pós-COMMIT, sem resíduo de teste. sha256: `e4557e8c4f3eaed5` (000003) · `4e1f05077165c916` (000004) · `a5beae0dfd6baaa8` (000005).
+- Prova final: **10/10**.
+
+### Arquivos
+- `C:\src\conexao_prestador\supabase\migrations\tms\20261031000003_...sql` — edit search_path extensions (**não commitado**)
+- `express-connect-hub\scripts\_apply_app_s6.cjs` (NOVO) · `scripts\_check_app_s6_prod.cjs` (reescrito) · `scripts\_diag_app_s6.cjs` / `_check_prestadores_nn.cjs` (diagnósticos, untracked) · `AGENTS.md`
+
+### Pendências
+1. (autorização) Commits git: edit mobile `000003` + scripts TMS `_apply_app_s6.cjs`/`_check_app_s6_prod.cjs`.
+2. (QA dispositivo) E2E real: cadastro no App → `app_s6_criar_prestador` → sync via `app_s6_sincronizar_cadastro_pipeline` → candidato na Etapa 3 do funil TMS; editar preferências no perfil e conferir espelhamento no candidato.
+
+---
+
 ## MISSÃO COTACAO-EXPRESS-POLIMENTO-FINAL — Header corporativo + marcas d'água por etapa (2026-10-29)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros (`CotacaoExpress` + teste) · teste novo **7/7** · cotação **98/98** (7 + 65 + 26) · suíte completa **18 arquivos / 44 testes falhos** = baseline (+ flaky `fin_prog05c3b` sob carga paralela; 5/5 isolado) · **2328 pass** (+7) · `npm run build` ok (4m57s).
