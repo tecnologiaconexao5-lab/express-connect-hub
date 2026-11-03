@@ -42,6 +42,10 @@ export interface VeiculoPrestador {
   cor: string;
   capacidadeKg: number;
   capacidadeM3: number;
+  /** Unit economics — consumo médio e custo de manutenção por km. */
+  mediaConsumoKmPorL?: number;
+  custoManutencaoKm?: number;
+  tipoCombustivel?: "diesel" | "gasolina" | "etanol" | string;
   comprimento?: number;
   largura?: number;
   altura?: number;

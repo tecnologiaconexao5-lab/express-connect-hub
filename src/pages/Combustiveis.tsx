@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Fuel, TrendingUp, TrendingDown, Minus, Clock, Settings, Search, FileText, AlertTriangle, Info, MapPin, SlidersHorizontal, ArrowRight, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -49,10 +49,29 @@ export default function Combustiveis() {
     { tipo: "Carreta", km: 3.5, comb: "Diesel S10" },
   ]);
 
-  useEffect(() => {
-    setCombError("Integração de combustíveis não configurada. Configure as chaves de API em Configurações > Integrações.");
-    setLoading(false);
+  const carregarPrecos = useCallback(async () => {
+    setLoading(true);
+    setCombError(null);
+    try {
+      const painel = await combustiveisService.obterPainelPrecos("SP");
+      setComb(painel);
+      const diesel = painel["Diesel S10"];
+      if (diesel?.preco) setSimulacao(Number(diesel.preco.toFixed(2)));
+    } catch (erro) {
+      setComb(null);
+      setCombError(
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível carregar a base de preços de combustível.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void carregarPrecos();
+  }, [carregarPrecos]);
 
   const CardCombustivel = ({ nome, icone: Icon, data }: any) => {
     if (!data) {
@@ -126,7 +145,9 @@ export default function Combustiveis() {
         </div>
         <div className="flex gap-2">
            <Badge variant="outline" className="gap-2 h-9 py-0 border-orange-200 text-orange-700 bg-orange-50 px-3 cursor-pointer"><AlertTriangle className="w-4 h-4"/> 1 Alerta Ativo</Badge>
-           <Button variant="outline"><Clock className="w-4 h-4 mr-2"/> Sincronizar Agora</Button>
+           <Button variant="outline" onClick={() => void carregarPrecos()} disabled={loading}>
+             {loading ? <ProgressiveBlocksLoader size="small" /> : <Clock className="w-4 h-4 mr-2" />} Sincronizar Agora
+           </Button>
         </div>
       </div>
 
@@ -154,6 +175,25 @@ export default function Combustiveis() {
              </Card>
            ) : loading ? (
               <div className="flex justify-center py-12"><ProgressiveBlocksLoader size="normal" /></div>
+            ) : comb ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <CardCombustivel nome="Diesel S10" icone={Fuel} data={comb["Diesel S10"]} />
+                  <CardCombustivel nome="Gasolina Comum" icone={Zap} data={comb["Gasolina Comum"]} />
+                  <CardCombustivel nome="Etanol Hidratado" icone={Info} data={comb["Etanol Hidratado"]} />
+                </div>
+                <Card className="border-slate-200 bg-slate-50/50">
+                  <CardContent className="flex flex-col gap-2 p-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="flex items-center gap-2">
+                      <Info className="h-4 w-4 text-primary" />
+                      Base de preços ANP (simulada) usada pelo cálculo de custo operacional das OS e cotações.
+                    </span>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void carregarPrecos()}>
+                      <Clock className="h-3.5 w-3.5" /> Atualizar base
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             ) : null}
         </TabsContent>
 

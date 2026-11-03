@@ -14,6 +14,8 @@
 // ============================================================
 import { getMapboxToken } from "@/lib/mapboxToken";
 import { supabase } from "@/lib/supabase";
+import { estimarCustoOperacional, type ResultadoCustoOperacional } from "@/services/economia/custoOperacionalService";
+import { estimarPedagio } from "@/lib/pedagioEstimativa";
 import { geocodificarEndereco } from "@/services/maps/mapboxAutocomplete";
 import { TABELA_TESTE_VEICULOS_SP } from "@/helpers/tabelaFretePadrao";
 import { labelVeiculo, veiculoPorPeso } from "@/lib/veiculoPeso";
@@ -62,6 +64,8 @@ export interface PrecificacaoCotacao {
   fonte: FontePrecificacao;
   tabela: string | null;
   formula: FormulaPrecificacao;
+  /** Custo operacional interno estimado (combustível + manutenção + pedágio). */
+  custo_operacional_estimado?: ResultadoCustoOperacional;
   aviso: string;
   calculado_em: string;
 }
@@ -390,7 +394,18 @@ export async function calcularRotaEFreteCotacao(
   });
   if (!precificacao) return null;
 
-  return { rota, veiculo, precificacao };
+  const pedagioEstimado = estimarPedagio(rota.km, veiculo.tipo).valor;
+  const custoOperacional = await estimarCustoOperacional({
+    distanciaKm: rota.km,
+    tipoVeiculo: veiculo.tipo,
+    pedagio: pedagioEstimado,
+  });
+
+  return {
+    rota,
+    veiculo,
+    precificacao: { ...precificacao, custo_operacional_estimado: custoOperacional },
+  };
 }
 
 /** Formata BRL no padrão da página (R$ 1.234,56). */

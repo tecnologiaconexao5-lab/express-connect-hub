@@ -1,5 +1,217 @@
 # Summary
 
+## MISSÃO ESTABILIDADE-CRM-CADASTROS-CUSTOS — Realtime, Select CRM, Endereços, Exportação, Filtros e Unit Economics (2026-11-03)
+
+**Status:** ✅ Concluída (código + banco). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **11/11** · afetados **86/86** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2528 pass**, +11) · `npm run build` ok (46,04s). Migration `20261103000000_economia_operacional_crm.sql` aplicada em produção (dry-run 4/4 → `--apply` 4/4 + pós-COMMIT 4/4).
+
+### O que mudou
+1. **Estabilidade** — `AlertaOscotacaoExpress` mantém todos os `.on('postgres_changes')` antes de `.subscribe()` e passou a usar canal único por montagem (evita reutilizar canal já subscrito). `CrmLeadsTable` remove responsáveis vazios antes de renderizar `SelectItem`.
+2. **CRM** — campo **Endereço** em Novo Lead e Nova Tarefa; `crm_leads.endereco` + mapeadores from/to; endereço exibido no card da tarefa.
+3. **Propostas** — dropdown agora gera **PDF real** (`gerarPDFProfissional`), copia **Link compartilhado** (`/comercial?tab=propostas&proposta=<id>`, abre a prévia) e Excluir funciona.
+4. **Cadastros** — busca de Clientes expandida para nome, CNPJ, IE, segmento, porte, status, contatos, telefone, WhatsApp, e-mail, cidade/UF, responsáveis, origem e observações + filtros Status/Segmento. Busca de Prestadores expandida para telefone, WhatsApp, e-mail, região, tipo, status e origem.
+5. **Unit economics** — `combustiveisService.obterPainelPrecos` entrega base ANP simulada; página de Combustível carrega os cards e simulador. Campos `media_consumo_km_l`, `custo_manutencao_km`, `tipo_combustivel` em veículos/prestadores (migration + UI). `custoOperacionalService` calcula combustível + manutenção + pedágio; OS exibe **Custo Operacional Real do Frete** e cotações gravam `custo_operacional_estimado` na precificação.
+
+### Arquivos
+- `src/components/dashboard/AlertaOscotacaoExpress.tsx` · `src/components/comercial/crm/{CrmLeadsTable,CrmPipeline,AgendaComercial,CrmBase,crmTypes}.tsx/ts` · `src/components/comercial/propostas/ListaPropostas.tsx` · `src/components/clientes/ClientesLista.tsx` · `src/components/prestadores/{PrestadoresLista,PrestadorDetalhe,types}.tsx/ts` · `src/pages/Combustiveis.tsx`
+- `src/services/combustiveis.ts` · `src/services/economia/custoOperacionalService.ts` (NOVO) · `src/services/cotacoes/cotacaoCalculoService.ts` · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/veiculos/{VeiculoDetalhe,types}.tsx/ts` · `src/lib/dbMappers.ts` · `src/helpers/veiculoPayload.ts`
+- `supabase/migrations/20261103000000_economia_operacional_crm.sql` (NOVO, APLICADA) · `scripts/_apply_economia_operacional.cjs` (NOVO) · `src/test/estabilidade_crm_cadastros_custos.test.ts` (NOVO)
+
+### Pendências
+1. (QA) Realtime do banner de cotações em remontagens rápidas do Dashboard; CRM com responsável vazio.
+2. (QA) CRM: criar Lead/Tarefa com endereço e conferir persistência/exibição.
+3. (QA) Propostas: gerar PDF, copiar link e abrir a prévia pelo link; excluir item.
+4. (QA) Cadastros: buscar por status/telefone/e-mail/região e combinar com filtros.
+5. (QA) Combustível e OS: conferir custo de combustível/manutenção/pedágio e parâmetros salvos no veículo.
+
+---
+
+## MISSÃO CENTRAL-DOCUMENTOS-AVANCADA — Página dedicada, filtros combinados, ações, upload universal, versionamento e IA densa (2026-11-02)
+
+**Status:** ✅ Concluída (código + banco). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **9/9** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2517 pass**, +9) · `npm run build` ok (48,46s). Migration `20261102000002_documentos_central_avancada.sql` aplicada em produção (dry-run 4/4 → `--apply` 4/4 + pós-COMMIT 4/4); 30 documentos backfillados organizados.
+
+### O que mudou
+1. **Página + rota `/central-documentos`** — tabela avançada com filtros combinados de Nome, Categoria (Comercial/Operacional/Financeiro/Recrutamento/Administrativo), Departamento, Cliente/Entidade, Data inicial/final, Responsável e Status IA; KPIs, paginação, upload e ações.
+2. **Ações por documento (DropDown)** — Adicionar nova versão, Visualizar, Baixar, Compartilhar Internamente, Analisar com IA, Consultar Histórico e Atualizar Versão. O mesmo dropdown foi aplicado em cada documento do perfil do Prestador.
+3. **Upload universal** — dropzone com drag/drop, gerenciador de arquivos e câmera nativa (`capture="environment"`), enviando o `File` direto ao bucket `documentos_operacionais` (sem storage local intermediário).
+4. **IA densa** — modal com **Informações Verificadas, Itens Corretos, Informações Ausentes, Erros Identificados e Recomendações**; badges exatos **APROVADO NA CONFERÊNCIA / APROVADO COM RESSALVAS / NECESSITA DE CORREÇÃO / AGUARDANDO CONFERÊNCIA HUMANA**; sugestões de correção oferecem **Gerar Nova Versão**.
+5. **Versionamento e histórico** — novas versões usam `versao` + `documento_pai_id`, marcam a anterior `ativo=false` e preservam o arquivo original; histórico de ações fica em `historico` JSONB e é exibido no modal.
+6. **Infra** — migration adiciona `categoria`, `departamento`, `entidade_nome`, `responsavel(_id)`, `cliente_id`, `descricao`, `mime_type`, `tamanho_bytes`, `versao`, `documento_pai_id`, `ativo`, `historico` + índices e novos status; Edge `documentos-ia` passou a devolver o relatório estruturado completo.
+
+### Arquivos
+- `src/pages/CentralDocumentos.tsx` (NOVO) · `src/components/documentos/DocumentoAcoesDropdown.tsx` (NOVO) · `DocumentoUploadUniversal.tsx` (NOVO) · `DocumentoHistoricoModal.tsx` (NOVO) · `DocumentoCompartilharModal.tsx` (NOVO) · `DocumentoNovaVersaoDialog.tsx` (NOVO) · `DocumentoIAReportModal.tsx`
+- `src/services/documentos/documentosMetadataService.ts` · `src/components/prestadores/PrestadorDetalhe.tsx` · `src/App.tsx` · `src/lib/routePermissions.ts` · `src/lib/sidebarData.ts`
+- `supabase/migrations/20261102000002_documentos_central_avancada.sql` (NOVO, APLICADA) · `supabase/functions/documentos-ia/index.ts` · `scripts/_apply_documentos_central.cjs` (NOVO) · `src/test/central_documentos_avancada.test.ts` (NOVO)
+
+### Pendências
+1. (deploy) Publicar a Edge `documentos-ia` (`supabase functions deploy documentos-ia`); sem deploy o frontend usa a análise simulada local.
+2. (QA) Central: combinar filtros, abrir cada ação do dropdown, criar nova versão e confirmar preservação da versão anterior.
+3. (QA) Upload mobile: testar câmera e gerenciador de arquivos, envio direto e persistência de metadados.
+4. (QA) IA: rodar nos 4 cenários de status e validar "Gerar Nova Versão" a partir das recomendações.
+
+---
+
+## MISSÃO DOCUMENTOS-INTEGRADOS-IA — Cadastro rápido na OS + bucket/metadados + upload e IA (2026-11-02)
+
+**Status:** ✅ Concluída (código + banco). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **8/8** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2508 pass**, +8) · `npm run build` ok (44,44s). Migration aplicada em produção: dry-run 6/6 → `--apply` 6/6 + pós-COMMIT 6/6; backfill **30 documentos** em `documentos_metadata` e trigger App→metadata provado em transação com ROLLBACK.
+
+### O que mudou
+1. **Nova OS** — botão discreto (`UserPlus`) ao lado do Cliente abre modal **Nome/Razão Social + Telefone/WhatsApp**; cria via `criarClienteRapido` com `status: "pre-cadastro"` (telefone também em `whatsapp`), auto-seleciona o cliente na OS e grava `cliente`/`clienteId`.
+2. **Infra** — migration `20261102000001_documentos_operacionais_metadata.sql`: bucket privado `documentos_operacionais` (+4 policies), tabela `documentos_metadata` (url, nome, tipo, modulo_origem, entidade_id, status_ia, relatorio_ia, data_inclusao, tenant_id, updated_at), índice único `(modulo_origem, entidade_id, url)`, RLS/grants, backfill de `documentos_prestadores` e trigger `trg_documentos_prestadores_metadata` (documentos do App passam a aparecer no TMS).
+3. **Documentação do Prestador** — carrega `documentos_metadata` + tabela legada e mescla por tipo; upload manual vai para o bucket novo, grava metadado e espelha na tabela legada (referência `documentos_operacionais/<path>`); status da UI reflete Pendente/Em análise/Válido.
+4. **Análise IA + modal** — `documentosMetadataService.analisarDocumentoComIA()` chama a Edge `documentos-ia` e mantém fallback simulado; atualiza `status_ia`/`relatorio_ia`; `DocumentoIAReportModal` exibe **APROVADO NA CONFERÊNCIA / COM RESSALVAS / NECESSITA DE CORREÇÃO** + observações, com reanálise.
+5. **Compatibilidade** — `documentos_operacionais` adicionado ao `KNOWN_BUCKETS`; `resolverUrlDocumento` aceita o bucket novo (legado `documentos_prestadores` intacto).
+
+### Arquivos
+- `src/lib/cadastroRapido.ts` · `src/components/operacao/OrdemServicoForm.tsx` · `src/services/documentos/documentosMetadataService.ts` (NOVO) · `src/components/documentos/DocumentoIAReportModal.tsx` (NOVO) · `src/components/prestadores/PrestadorDetalhe.tsx` · `src/services/documentos/documentoStorageService.ts` · `src/services/storage/storageRefService.ts`
+- `supabase/migrations/20261102000001_documentos_operacionais_metadata.sql` (NOVO, APLICADA) · `supabase/functions/documentos-ia/index.ts` (NOVO) · `scripts/_apply_documentos_operacionais.cjs` (NOVO) · `src/test/documentos_integrados_ia.test.ts` (NOVO)
+
+### Pendências
+1. (deploy) Publicar a Edge Function `documentos-ia` (`supabase functions deploy documentos-ia`); sem deploy o frontend usa o fallback simulado local.
+2. (QA) Nova OS: criar cliente rápido com telefone e confirmar seleção + status pré-cadastro.
+3. (QA) Prestador → Documentação: upload manual, reabrir e confirmar persistência; enviar pelo App e ver o documento aparecer; rodar IA e conferir o modal/relatório.
+4. (QA) Confirmar que os 30 documentos backfillados aparecem na aba e que o status passa de Pendente para Em análise/Válido.
+
+---
+
+## MISSÃO RECRUTAMENTO-ABAS-LEGIBILIDADE — Abas do painel do candidato legíveis com scroll horizontal (2026-11-02)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste **9/9** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (2499 pass, +2 nesta missão; `fin_prog05c3b` flaky sob carga) · `npm run build` ok (1m10s).
+
+### O que mudou
+1. **`DetalhesCandidatoPipelineSheet.tsx`** — `TabsTrigger` das 7 abas passaram de `text-[10px]` para `text-sm font-medium`, com `px-3 py-2`, `gap-1.5`, ícones `h-4 w-4` e `whitespace-nowrap shrink-0`.
+2. **`TabsList`** — layout horizontal com `overflow-x-auto`, `scrollbar-none`, `!flex-nowrap` e `!justify-start` (evita corte do primeiro item quando há overflow); em telas pequenas as abas rolam em vez de espremer.
+3. **`src/index.css`** — utilitário `.scrollbar-none` (Firefox + WebKit + IE) para esconder a scrollbar mantendo a rolagem; já era referenciado em outros componentes sem definição.
+
+### Arquivos
+- `src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx` · `src/index.css` · `src/test/recrutamento_detalhes_ux.test.ts`
+
+### Pendências
+1. (QA) Painel do candidato em desktop e telemóvel: abas legíveis, clique confortável e rolagem horizontal sem quebra de texto.
+
+---
+
+## MISSÃO RECRUTAMENTO-DETALHES-UX — Comprometimento interativo + Questionário premium com defaults do App (2026-11-02)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **7/7** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2498 pass**, +7) · `npm run build` ok (36,58s).
+
+### O que mudou (`DetalhesCandidatoPipelineSheet.tsx`)
+1. **Aba Comprometimento** — tipografia ampliada (checklist em `text-sm`, parecer/riscos/pontos em `text-sm`, títulos e badges maiores). A **Checklist de Comprometimento** virou interativa: cada item é um `role="checkbox"` clicável (`aria-checked`), alterna estado e persiste em `questionario_respostas.__checklist_comprometimento` (JSONB existente, sem migration), com marca **Ajustado** para overrides manuais.
+2. **Aba Questionário** — inputs/textarea premium (`h-11`/`min-h-[88px]`, `rounded-lg`, borda `slate-300/70`, foco `border-primary` + `ring-primary/20`, `text-sm`). Perguntas longas usam `Textarea`. Inclui as 3 perguntas situacionais do App e o card **Preferências Operacionais (App)**.
+3. **Defaults reais do banco** — `enterpriseKanbanService` passou a mapear `preferencias_operacionais` e `respostas_situacionais` (fromDB/toDB/normalize). O Questionário mescla, nesta ordem: `questionario_respostas` → `respostas_situacionais` → `preferencias_operacionais` (modalidade/turnos/região), mantendo tudo editável e salvo por cima.
+
+### Arquivos
+- `src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx` · `enterpriseKanbanService.ts` · `enterpriseKanbanTypes.ts` · `src/test/recrutamento_detalhes_ux.test.ts` (NOVO)
+
+### Pendências
+1. (QA) Abrir candidato → Comprometimento: marcar/desmarcar itens e confirmar persistência após reabrir o sheet.
+2. (QA) Questionário: conferir respostas vindas do App (situacionais + preferências), editar e salvar; reabrir para validar.
+3. (QA) E2E com App Mobile: cadastro concluído no App → abrir candidato no TMS e ver o Questionário preenchido.
+
+---
+
+## MISSÃO OS-CLIENTE-PRECADASTRO-UX — Horário da solicitação, contato no Preview e gestão do pré-cadastro (2026-11-02)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · teste novo **8/8** · afetados **152/152** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2491 pass**, +8) · `npm run build` ok (47,02s).
+
+### O que mudou
+1. **Lista de OS** — a coluna Nº OS passou a exibir, abaixo da data, `Solicitada 01/11/2026 às 14h30` (`formatarDataHoraSolicitacaoBR(os.createdAt)`), com tooltip explicativo.
+2. **Preview da OS** — nova linha **Solicitação** com o timestamp exato de criação e linha **Telefone / WhatsApp** do cliente da cotação (resolve `telefone`/`whatsapp` em `clientes` pelo `clienteId`; fallback para `WhatsApp: ...` em `observacoesGerais`); telefone também aparece no card lateral do cliente.
+3. **Status do cliente** — `ClienteDetalhe` ganhou o seletor **Status do Cadastro** (Ativo/Inativo/Pré-cadastro) com aviso para concluir o cadastro da Cotação Express; `ClientesLista` exibe **Pré-cadastro** em badge âmbar (novo `src/lib/clienteStatus.ts` normaliza caixa/acento).
+4. **Nova OS** — seletor de cliente com `FILTRO_CLIENTES_OS_DESKTOP = { status: ["ativo","Ativo","pre-cadastro"] }`, garantindo que o pré-cadastro gerado pela cotação apareça na busca (inativos ficam fora).
+5. **Suporte** — `OSForm`/`OrdemServico` ganharam `createdAt` (mapeado de `created_at` em `fromOSRow`); o deep-link `?os=<id>` também carrega `createdAt`/`clienteId`.
+
+### Arquivos
+- `src/lib/clienteStatus.ts` (NOVO) · `src/lib/formatDates.ts` · `src/lib/dbMappers.ts` · `src/components/operacao/osTypes.ts` · `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/OrdemServicoPreview.tsx` · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/clientes/ClientesLista.tsx` · `src/components/clientes/ClienteDetalhe.tsx` · `src/test/os_cliente_precadastro_melhorias.test.ts` (NOVO)
+
+### Pendências
+1. (QA) `/operacao?tab=os`: conferir o horário exato na lista e no Preview (Solicitação + Telefone/WhatsApp).
+2. (QA) `Cadastros Base > Clientes`: abrir um pré-cadastro, completar CNPJ e alterar o status para Ativo; conferir o badge âmbar na lista.
+3. (QA) Nova OS: buscar o cliente pré-cadastrado pelo nome e gerar a OS; depois editar o cadastro.
+
+---
+
+## MISSÃO ABAS-OPERACAO-BUGFIX-RESET1200 — Bugfix das abas de Apoio Operacional + script único de reset (2026-11-02)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint 0 erros (3 arquivos) · teste dos 2 specs da missão **35/35** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (nenhum da missão; **2483 pass**) · `npm run build` ok (50,95s). **Dry-run do `scripts\_reset_operacao_1200.cjs` validado** (relatório completo, nada alterado) — script entregue para o utilizador aplicar.
+
+### Causa raiz (bug crítico: a lista de OS aparecia em todas as abas)
+- `src/pages/Operacao.tsx` usava `<TabsContent value="os" forceMount>` (introduzido no commit `8bf4f74`) e `src/components/ui/tabs.tsx` **não** esconde o conteúdo inativo (sem `data-[state=inactive]:hidden`).
+- Radix (`node_modules/@radix-ui/react-tabs/dist/index.mjs`): `present: forceMount || isSelected` (~linha 157) + `hidden: !present` (~164) → o `OrdensServicoLista` **permanecia montado e visível em todas as abas** (`?tab=solicitacoes|escala|roteirizacao|ocorrencias|pod|devolucoes|reentregas`). Único render fora do próprio componente: `Operacao.tsx:74`.
+
+### O que mudou
+1. **`src/pages/Operacao.tsx` (REESCRITO)** — renderização condicional via `switch (currentTab)`: `solicitacoes`→`SolicitacoesClienteLista` · `os` (default)→`OrdensServicoLista` · `escala`→`EscalaLista` · `roteirizacao`→`RoteirizadorWeb` · `ocorrencias`→`OcorrenciasLista` · `pod`→`PodLista` · `devolucoes`/`reentregas`→`PlaceholderPage`. `TabsContent value={currentTab}` envolve o switch (mantém `role=tabpanel`/spacing), mas o filho é o resultado do switch → **a OS desmonta ao trocar de aba**. Prop de montagem forçada removida; imports não usados limpos (`useState`, `useEffect`, `MapPin`, `Truck`).
+2. **`scripts/_reset_operacao_1200.cjs` (NOVO — script pedido)** — dry-run por padrão; `--apply` roda em **transação única**: (a) aplica `supabase/migrations/20261102000000_os_numero_sequencial.sql` (idempotente: `CREATE SEQUENCE IF NOT EXISTS` + `CREATE OR REPLACE`; os `BEGIN` do ficheiro estão dentro de corpos `$function$` — seguro na transação) → (b) apaga as 13 tabelas de teste → (c) `ALTER SEQUENCE public.os_numero_seq RESTART WITH 1200` → (d) verifica antes do COMMIT (`last_value=1200`/`is_called=false` + defs de `f_proximo_numero_os` e `f_cotacao_detalhes_para_os` referenciam `os_numero_seq`) → COMMIT → **próxima OS = OS-AAAAMM-1200**. Flags `--orcamentos`/`--logs` repassadas ao reset base.
+3. **`scripts/_reset_operacao.cjs` (REFATORADO)** — exporta `executar(opts)` + guard `require.main === module` (CLI original intacta: `node scripts\_reset_operacao.cjs [--apply] [--orcamentos] [--logs]`); ganhou a opção interna `aplicarSequencia` usada pelo wrapper dos 1200.
+4. **Testes** — `refinamentos_comercial_operacao.test.ts` D.1 reescrito (prova **ausência** de `forceMount` + `switch (currentTab)` + um `return <Componente />` por aba); `refino_operacao_premium.test.ts` F.1 atualizado (nova forma do guard `--apply`) + **F.4 NOVO** (wrapper `_reset_operacao_1200`: `executar({ aplicarSequencia: true })`, migration e garantia do 1200).
+
+### Validação
+- `npx tsc --noEmit` → ✅ 0 erros
+- `npx eslint` (Operacao.tsx · 2 testes) → ✅ 0 erros
+- `npx vitest run src/test/refinamentos_comercial_operacao.test.ts src/test/refino_operacao_premium.test.ts` → ✅ **35/35**
+- `npx vitest run` → **18 failed / 44 testes** = baseline exata (rec03_1 · radar_combustivel · ag07h · rec02 · ag07f · adm_app_02d2_sign_real · f0l · rec04 · f0k · f0e · fin_p0_03 · fin_prog05d1 · fin_sane_02b · ag07j3 · escala_e2e_05 · a31j11 · clientes_02 — **nenhum** `refino*`/`refinamentos*`) · **2483 pass**
+- `node scripts\_reset_operacao_1200.cjs` (dry-run) → contagens + avisos de vínculos + "plano da sequência ... próxima OS gerada: OS-AAAAMM-1200"; **nada alterado**
+- `npm run build` → ✅ 50,95s
+
+### Arquivos
+- `src/pages/Operacao.tsx` (REESCRITO) · `src/test/refinamentos_comercial_operacao.test.ts` (D.1) · `src/test/refino_operacao_premium.test.ts` (F.1 + F.4 NOVO)
+- `scripts/_reset_operacao_1200.cjs` (NOVO) · `scripts/_reset_operacao.cjs` (refatorado) · `AGENTS.md`
+
+### Pendências
+1. (utilizador) Reset da base: `node scripts\_reset_operacao_1200.cjs` (relatório) → `node scripts\_reset_operacao_1200.cjs --apply` (limpa OS/cotações/financeiro, aplica a sequência e deixa a próxima OS como **OS-[ANO][MES]-1200**; ex.: OS-202611-1200).
+2. (QA) `/operacao`: cada aba mostra **apenas** o seu componente (Solicitações/Escala/Roteirizador/Ocorrências/POD/Reversa/Reentregas sem a lista de OS); voltar a "Ordens de Serviço" → lista carrega normalmente.
+3. (autorização) Commit git dos arquivos desta missão.
+
+---
+
+## MISSÃO REFINO-OPERACAO-2026-11 — Dashboard premium, rotas dinâmicas, SLA, repasse automático e reset da operação (2026-11-02)
+
+**Status:** ✅ Frontend concluído e validado. `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto: 10 no `OrdensServicoLista`, 0 no `SolicitacoesClienteLista`) · **161/161 testes** (65 afetados + 96 de regressão dos arquivos tocados) · `npm run build` ok (50,46s). **Migration da sequência + script de limpeza entregues para o utilizador aplicar** (dry-run 4/4 da migration; nada aplicado).
+
+### O que mudou
+
+**1. Dashboard de Solicitações (`AlertaOscotacaoExpress.tsx`)**
+- Rolagem horizontal (`overflow-x-auto` + `snap-x`) com **todos** os cards (removido `slice(0, 4)`/grade fixa); cards `w-[220px] shrink-0`.
+- **Horário exato da solicitação** (`formatarHorarioSolicitacao`: HH:mm hoje; `dd/MM · HH:mm` em dias anteriores) + rota resumida + badge "Agendado".
+- Design premium: faixa gradiente roxo→laranja, ícone em gradiente, tipografia mais limpa, hover elevado.
+
+**2. Rotas dinâmicas (`src/lib/resumoRotaOS.ts` NOVO)**
+- `siglaCidade` (tabela de siglas da operação: GRU/SBC/SAO/SAN/SCS/OSA… + fallback por iniciais), `derivarBairroCidade` (extrai bairro/cidade/UF do texto do endereço quando o JSONB vem vazio — caso das OS da Cotação Express), `rotuloPontoRota` e `resumoRotaOS`:
+  - 2 paradas → `Pimentas-GRU ➡️ Demarchi-SBC`;
+  - 3+ → `Pimentas-GRU ➡️ Múltiplos destinos (X paradas)`.
+- Aplicado na **lista de OS** (coluna Rota, com tooltip), nas **solicitações** (coluna Destino) e no **Dashboard** (card). `osSiteService` passou a expor `enderecos`, `rotaResumo` e `paradas`.
+
+**3. Alertas e timers (`OrdensServicoLista.tsx`)**
+- Tags de SLA **unificadas na coluna Prazo** (`Atraso` quando vencida, senão `Risco de SLA`) com `whitespace-nowrap` — some a duplicação/sobreposição com a coluna Status.
+- Bloco **"Sem prestador"** virou alerta vermelho claro com **tempo ocioso**: "Parada há X" (`formatarTempoParada`).
+
+**4. Repasse automático no modal de alocação**
+- `abrirAlocacao` agora é async: mantém o custo da OS quando existir (`custo_prestador`/`carga.*`) e, quando zerado, calcula pela **tabela do prestador/cotação** (`buscarTabelaPrestador` + veículo/distância da OS — `carga.tipo_veiculo`/`carga.distancia_km`).
+- Ao **selecionar o motorista** (busca ou sugestões), o campo é preenchido se estiver vazio (`preencherRepasseAoSelecionar`); continua editável; spinner + hint "Pré-preenchido pela tabela/cotação da OS".
+
+**5. Exclusão de OS sem senha (temporário)**
+- Removida a exigência de `VITE_ADMIN_DELETE_PASSWORD` e o input "Senha Administrativa"; modal avisa "Exclusão liberada temporariamente". A limpeza de vínculos (escala/financeiro/pagamentos/composição) continua.
+
+**6. Sequência oficial + reset (para aplicar)**
+- **`supabase/migrations/20261102000000_os_numero_sequencial.sql` (NOVO)** — `os_numero_seq` START 1200 + `f_proximo_numero_os()` (`OS-AAAAMM-NNNN`) e substituição da geração **aleatória** em `f_cotacao_detalhes_para_os` e `converter_pedido_para_os` (funções geradas a partir das definições vivas do banco). Dry-run 4/4 PASS (ROLLBACK).
+- **`scripts/_reset_operacao.cjs` (NOVO)** — dry-run por padrão; `--apply` roda em transação única: apaga `financeiro_baixas`, `composicao_financeira_os`, `pagamentos_prestadores`, `financeiro_receber`, `financeiro_pagar`, `entregas_protocolo`, `delivery_proofs`, `rede_oportunidades`, `historico_alocacoes_escala`, `alocacoes_escala`, `os_historico`, `ordens_servico`, `cotacoes_publicas`; desvincula `orcamentos` (ou apaga com `--orcamentos`), lista vínculos remanescentes (fiscal_nfse/ctes, localização, tracking, fatura_itens…) e reinicia a sequência em 1200 (`--logs` apaga eventos oficiais/timeline). Contagens atuais no dry-run: 209 OS · 35 cotações · 150 pagar · 50 receber · 114 pagamentos · 60 composições · 212 alocações · 225 histórico de OS.
+- Frontend: `ordemServicoService.gerarNumeroOS()` chama a RPC (fallback local só enquanto a migration não estiver aplicada) e `OrdemServicoForm` busca o número definitivo ao abrir a **Nova OS**.
+
+### Testes
+- **NOVO** `src/test/refino_operacao_premium.test.ts` (6 grupos: rotas, dashboard, lista, solicitações, sequência, reset).
+- Atualizados: `solicitacoes_sla` (tag unificada), `nova_os_etapa2_lista_whatsapp` (classes do badge "Sem prestador"), `escala_e2e_08h_fix_numero_pedido` (numeração via `f_proximo_numero_os`).
+
+### Arquivos
+- `src/lib/resumoRotaOS.ts` (NOVO) · `src/services/operacao/osSiteService.ts` · `src/components/dashboard/AlertaOscotacaoExpress.tsx` · `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/SolicitacoesClienteLista.tsx` · `src/components/operacao/OrdemServicoForm.tsx` · `src/services/ordemServicoService.ts`
+- `supabase/migrations/20261102000000_os_numero_sequencial.sql` (NOVO) · `scripts/_reset_operacao.cjs` (NOVO) · `scripts/_apply_os_numero_sequencial.cjs` (NOVO) · `scripts/_gen_os_numero_migration.cjs` (gerador, NOVO) · `src/test/refino_operacao_premium.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (utilizador) Aplicar `20261102000000_os_numero_sequencial.sql` (`node scripts\_apply_os_numero_sequencial.cjs --apply`) — valida 4/4 antes do COMMIT.
+2. (utilizador) Zerar a base: `node scripts\_reset_operacao.cjs` (relatório) → `node scripts\_reset_operacao.cjs --apply`.
+3. (QA) Conferir no navegador: cards do Dashboard com scroll/horário/rota; coluna Rota nas OS; tags ATRASO/RISCO sem sobrepor; "Parada há X" nas OS sem prestador; repasse pré-preenchido ao alocar; exclusão sem senha.
+4. (autorização) Commit git dos arquivos desta missão.
+
+---
+
 ## MISSÃO COTACAO-BLINDAGEM-PEDIDO — Texto do card, horário manual, WhatsApp oficial e cancelamento do cliente (2026-11-01)
 
 **Status:** ✅ Concluída. `npx tsc --noEmit` 0 erros · ESLint 0 erros (5 arquivos) · cotação **98/98** (72 + 26) · `npm run build` ok (54,71s) · Migration aplicada em produção (dry-run 9/9 → `--apply` 9/9 + pós-COMMIT 4/4).

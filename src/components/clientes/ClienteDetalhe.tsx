@@ -18,6 +18,7 @@ import { EnderecoCompleto } from "@/components/ui/EnderecoCompleto";
 import { toClienteInsert, toClienteUpdate, fromClienteRow, ClienteRow } from "@/lib/dbMappers";
 import { buscarCEP, limparCEP, validarCEP, CEPResponse } from "@/services/cepService";
 import { paraInputDate } from "@/lib/formatDates";
+import { normalizarStatusCliente, STATUS_CLIENTE_OPCOES } from "@/lib/clienteStatus";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import { useRouterBlocker } from "@/hooks/useRouterBlocker";
@@ -73,7 +74,7 @@ const dataLocalISO = () => {
 };
 
 const defaultCliente: Partial<Cliente> = {
-  status: "Ativo",
+  status: "ativo",
   dataCadastro: dataLocalISO(),
   exigeAgendamento: false,
   exigeSla: false,
@@ -192,6 +193,8 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       console.log(`[ClienteDetalhe] Fetch OK da '${TABLE_NAME}':`, data);
       if (data) {
         const loaded = fromClienteRow(data as ClienteRow) as Partial<Cliente>;
+        // Normaliza o código do status ("Ativo"/"pre-cadastro" → código minúsculo).
+        loaded.status = normalizarStatusCliente(loaded.status);
         // data_cadastro ainda é nulo em clientes antigos → origem = created_at
         if (!loaded.dataCadastro && data.created_at) {
           loaded.dataCadastro = paraInputDate(data.created_at) || null;
@@ -382,6 +385,25 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
               <div>
                 <Label>Data de Cadastro</Label>
                 <Input type="date" value={paraInputDate(c.dataCadastro)} onChange={e => handleChange("dataCadastro", e.target.value)} />
+              </div>
+              <div>
+                <Label>Status do Cadastro</Label>
+                <Select
+                  value={normalizarStatusCliente(c.status)}
+                  onValueChange={v => handleChange("status", v)}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {STATUS_CLIENTE_OPCOES.map(op => (
+                      <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {normalizarStatusCliente(c.status) === "pre-cadastro" && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Pré-cadastro gerado pela Cotação Express. Complete os dados e altere para Ativo.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>

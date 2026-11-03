@@ -12,6 +12,9 @@ export interface Veiculo {
   chassi?: string;
   capacidadeKg?: number;
   capacidadeM3?: number;
+  mediaConsumoKmPorL?: number;
+  custoManutencaoKm?: number;
+  tipoCombustivel?: string;
   comprimento?: number;
   largura?: number;
   altura?: number;

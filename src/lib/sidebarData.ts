@@ -236,6 +236,12 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
+    title: "Central de Documentos",
+    icon: FileText,
+    path: "/central-documentos",
+    roles: ["super_admin", "admin", "operador", "financeiro", "comercial", "atendimento"],
+  },
+  {
     title: "SLA e Qualidade",
     icon: Award,
     path: "/sla",

@@ -77,8 +77,19 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
       const trimmedBusca = busca.trim();
       if (trimmedBusca) {
         const pattern = `%${trimmedBusca}%`;
-        countQuery = countQuery.or(`nome_completo.ilike.${pattern},cpf_cnpj.ilike.${pattern}`);
-        dataQuery = dataQuery.or(`nome_completo.ilike.${pattern},cpf_cnpj.ilike.${pattern}`);
+        const orFilter = [
+          `nome_completo.ilike.${pattern}`,
+          `cpf_cnpj.ilike.${pattern}`,
+          `telefone.ilike.${pattern}`,
+          `whatsapp.ilike.${pattern}`,
+          `email.ilike.${pattern}`,
+          `regiao_principal.ilike.${pattern}`,
+          `tipo_parceiro.ilike.${pattern}`,
+          `status.ilike.${pattern}`,
+          `origem_cadastro.ilike.${pattern}`,
+        ].join(",");
+        countQuery = countQuery.or(orFilter);
+        dataQuery = dataQuery.or(orFilter);
       }
       if (statusFilter !== "todos") {
         // E2E-05D — aceita aliases: 'analise' cobre 'em_analise'; 'ativo' cobre 'aprovado'.
@@ -159,6 +170,9 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
                 ano: v.ano_fabricacao,
                 capacidadeKg: v.capacidade_kg,
                 capacidadeM3: v.capacidade_m3,
+                mediaConsumoKmPorL: v.media_consumo_km_l,
+                custoManutencaoKm: v.custo_manutencao_km,
+                tipoCombustivel: v.tipo_combustivel,
                 tipoCarga: v.tipo_carga,
                 principal: v.status === "Principal",
               });
@@ -348,7 +362,7 @@ const PrestadoresLista = ({ onSelect, onNew, refreshKey }: Props) => {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome ou CPF/CNPJ..."
+            placeholder="Buscar por nome, CPF/CNPJ, telefone, e-mail, região, tipo ou status..."
             value={busca}
             onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9"

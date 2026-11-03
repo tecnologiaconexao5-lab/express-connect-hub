@@ -9,6 +9,7 @@ import {
 } from "@/services/storage/storageRefService";
 
 export const BUCKET_DOCUMENTOS_PRESTADORES = "documentos_prestadores";
+export const BUCKET_DOCUMENTOS_OPERACIONAIS = "documentos_operacionais";
 export const DOCUMENTO_TTL_SECONDS = SIGN_TTL_SECONDS;
 
 export type { SignFn, StorageRef };
@@ -62,7 +63,10 @@ export async function resolverUrlDocumento(
   const ref = parseStorageRef(value, BUCKET_DOCUMENTOS_PRESTADORES);
   if (!ref) return null;
   if (ref.external) return ref.raw;
-  if (ref.bucket !== bucketEsperado) return null;
+  // O módulo de Documentos Integrados usa o bucket `documentos_operacionais`
+  // (a referência completa carrega o bucket, ex.: "documentos_operacionais/...").
+  const permitidos = new Set([bucketEsperado, BUCKET_DOCUMENTOS_OPERACIONAIS]);
+  if (!permitidos.has(ref.bucket)) return null;
   if (!caminhoValido(ref.path)) return null;
   if (prestadorId && !caminhoPertenceAoPrestador(ref.path, prestadorId)) return null;
 

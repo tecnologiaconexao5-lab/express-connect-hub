@@ -31,6 +31,7 @@ interface Tarefa {
   tipo: "call" | "visita" | "email" | "reuniao" | "prazo";
   titulo: string;
   cliente: string;
+  endereco?: string;
   hora: string;
   responsavel: string;
   status: "pendente" | "concluida" | "cancelada";
@@ -105,6 +106,7 @@ export default function AgendaComercial() {
   const [novaTarefa, setNovaTarefa] = useState({
     titulo: "",
     cliente: "",
+    endereco: "",
     tipo: "call" as "call" | "visita" | "email" | "reuniao" | "prazo",
     prioridade: "media" as "baixa" | "media" | "alta" | "critica",
     data: "",
@@ -129,6 +131,7 @@ export default function AgendaComercial() {
     setNovaTarefa({
       titulo: "",
       cliente: "",
+      endereco: "",
       tipo: "call",
       prioridade: "media",
       data: hoje.toISOString().split("T")[0],
@@ -143,6 +146,7 @@ export default function AgendaComercial() {
     setNovaTarefa({
       titulo: "",
       cliente: "",
+      endereco: "",
       tipo: "call",
       prioridade: "media",
       data: "",
@@ -164,6 +168,7 @@ export default function AgendaComercial() {
       id: Date.now(),
       titulo: novaTarefa.titulo.trim(),
       cliente: novaTarefa.cliente.trim(),
+      endereco: novaTarefa.endereco.trim(),
       tipo: novaTarefa.tipo,
       hora: dataHora,
       responsavel: "Diego",
@@ -358,6 +363,11 @@ export default function AgendaComercial() {
                     <p className="text-xs text-muted-foreground mb-2">
                       C/ {tarefa.cliente} • {config.label}
                     </p>
+                    {tarefa.endereco && (
+                      <p className="text-[11px] text-muted-foreground mb-2 flex items-start gap-1">
+                        <MapPin className="w-3 h-3 mt-0.5 shrink-0" /> {tarefa.endereco}
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -485,6 +495,14 @@ export default function AgendaComercial() {
                 placeholder="Ex: Tech Nova S.A."
                 value={novaTarefa.cliente}
                 onChange={(e) => setNovaTarefa((prev) => ({ ...prev, cliente: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700 block mb-1">Endereço</label>
+              <Input
+                placeholder="Rua, número, bairro, cidade/UF"
+                value={novaTarefa.endereco}
+                onChange={(e) => setNovaTarefa((prev) => ({ ...prev, endereco: e.target.value }))}
               />
             </div>
             <div className="grid grid-cols-2 gap-2">

@@ -36,7 +36,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { sincronizarComEscala } from "@/services/ordemServicoService";
+import { sincronizarComEscala, gerarNumeroOS } from "@/services/ordemServicoService";
 import { useTenant } from "@/contexts/TenantContext";
 import { diagnosticarOS, type DiagnosticoSincronizacao, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
@@ -53,12 +53,14 @@ import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
 import { criarClienteRapido, criarPrestadorRapido, ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
+import { STATUS_CLIENTES_SELECIONAVEIS } from "@/lib/clienteStatus";
 import { calcularDistancia } from "@/services/maps";
 import { calcularRotasAlternativas } from "@/services/maps/distanceService";
 import { estimarPedagio } from "@/lib/pedagioEstimativa";
 import type { DistanceResult, TipoRota, RoutesResult } from "@/services/maps/types";
 import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularCubagem, sugerirVeiculosPorCarga, verificarAlertasCubagem, type ResultadoCubagem, type SugestaoVeiculo, type AlertaCubagem } from "@/services/operacao/cargaService";
+import { estimarCustoOperacional, type ResultadoCustoOperacional } from "@/services/economia/custoOperacionalService";
 import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
 import { buscarTabelaValoresCliente } from "@/services/precificacao/buscarTabelasService";
 import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } from "@/lib/pdfGenerator";
@@ -347,6 +349,8 @@ const aplicarCalculoPesoBidirecional = (carga: OSCarga, campoEditado: keyof OSCa
 // ============================================================
 const OS_DRAFT_PREFIX = "tms_os_draft_v1";
 const OS_DRAFT_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+/** Clientes selecionáveis na OS: ativos (padrão/legado) + pré-cadastro da cotação. */
+const FILTRO_CLIENTES_OS_DESKTOP = { status: STATUS_CLIENTES_SELECIONAVEIS };
 /** Chaves descartadas — impedem regravação no unmount/flush. */
 const osDraftsDescartados = new Set<string>();
 
@@ -784,8 +788,27 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     if (rascunhoInicial?.data) return rascunhoInicial.data;
     return os ? JSON.parse(JSON.stringify(os)) : emptyOS();
   });
+  // SEQUÊNCIA OFICIAL — número definitivo da OS (OS-AAAAMM-1200+) vem do banco;
+  // o valor gerado em emptyOS é apenas provisório enquanto a RPC responde.
+  const numeroSequencialBuscado = useRef(false);
+  useEffect(() => {
+    if (modo !== "novo" || data.id || rascunhoInicial || numeroSequencialBuscado.current) return;
+    numeroSequencialBuscado.current = true;
+    let ativo = true;
+    void gerarNumeroOS().then((numero) => {
+      if (ativo) setData((p) => (p.id ? p : { ...p, numero }));
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [modo, data.id, rascunhoInicial]);
   // MISSÃO ENDERECOS-INTELIGENTES — nome do cliente para exibição (data.cliente pode conter UUID)
   const [clienteNomeExibicao, setClienteNomeExibicao] = useState("");
+  // Cadastro rápido de cliente (modal: nome/razão social + telefone/WhatsApp).
+  const [clienteRapidoOpen, setClienteRapidoOpen] = useState(false);
+  const [clienteRapidoNome, setClienteRapidoNome] = useState("");
+  const [clienteRapidoTelefone, setClienteRapidoTelefone] = useState("");
+  const [salvandoClienteRapido, setSalvandoClienteRapido] = useState(false);
   useEffect(() => {
     const valor = (data.cliente || "").trim();
     if (!valor) {
@@ -816,6 +839,42 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       : data.cliente && UUID_REGEX.test(data.cliente)
         ? data.cliente
         : "";
+
+  const abrirCadastroRapidoCliente = () => {
+    setClienteRapidoNome("");
+    setClienteRapidoTelefone("");
+    setClienteRapidoOpen(true);
+  };
+
+  const salvarClienteRapido = async () => {
+    const nome = clienteRapidoNome.trim();
+    const telefone = clienteRapidoTelefone.trim();
+    if (!nome) {
+      toast.error("Informe o nome / razão social do cliente.");
+      return;
+    }
+    if (telefone.replace(/\D/g, "").length < 10) {
+      toast.error("Informe o telefone / WhatsApp com DDD.");
+      return;
+    }
+    if (salvandoClienteRapido) return;
+    try {
+      setSalvandoClienteRapido(true);
+      const criado = await criarClienteRapido({ nome, telefone });
+      const nomeExibicao = String(criado.nome_fantasia || criado.razao_social || nome);
+      const clienteId = String(criado.id || "");
+      setClienteNomeExibicao(nomeExibicao);
+      update("cliente", clienteId);
+      update("clienteId", clienteId || null);
+      setClienteRapidoOpen(false);
+      toast.success(`Cliente "${nomeExibicao}" criado como pré-cadastro e selecionado.`);
+    } catch (e) {
+      console.warn("Erro ao criar cliente rápido:", e);
+      toast.error("Não foi possível criar o cliente pré-cadastro.");
+    } finally {
+      setSalvandoClienteRapido(false);
+    }
+  };
   const osInicialRef = useRef<OrdemServico>(data);
   const statusOverrideRef = useRef<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -831,6 +890,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [distanciasAlternativas, setDistanciasAlternativas] = useState<RoutesResult | null>(null);
   // UPGRADE — PEDÁGIO: estado da origem do valor (API de rota x inserção manual)
   const [pedagioInfo, setPedagioInfo] = useState<PedagioInfo>({ fonte: "nao_identificado" });
+  const [custoOperacional, setCustoOperacional] = useState<ResultadoCustoOperacional | null>(null);
   // ETAPA-4 — detalhamento das praças de pedágio (persistido em carga.pedagios).
   const [mostrarPedagiosDetalhe, setMostrarPedagiosDetalhe] = useState(false);
   // UPGRADE — MATCH INTELIGENTE: sugestões ordenadas de prestadores compatíveis
@@ -1232,6 +1292,29 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     const timer = setTimeout(calculaRotaEValor, 2000);
     return () => clearTimeout(timer);
   }, [data.enderecos, data.veiculoTipo, data.cliente]);
+
+  // UNIT ECONOMICS — custo real do frete (combustível + manutenção + pedágio).
+  useEffect(() => {
+    let ativo = true;
+    const distancia = Number(data.distanciaKm) || 0;
+    if (distancia <= 0 || !data.veiculoTipo) {
+      setCustoOperacional(null);
+      return;
+    }
+    estimarCustoOperacional({
+      distanciaKm: distancia,
+      tipoVeiculo: data.veiculoTipo,
+      veiculoPlaca: data.veiculoPlaca,
+      prestadorId: data.prestadorId || (UUID_REGEX.test(data.prestador || "") ? data.prestador : null),
+      pedagio: data.pedagio,
+    })
+      .then((resultado) => { if (ativo) setCustoOperacional(resultado); })
+      .catch((erro) => {
+        console.warn("[OrdemServicoForm] Falha ao estimar custo operacional:", erro);
+        if (ativo) setCustoOperacional(null);
+      });
+    return () => { ativo = false; };
+  }, [data.distanciaKm, data.veiculoTipo, data.veiculoPlaca, data.prestadorId, data.pedagio]);
 
   useEffect(() => {
     osInicialRef.current = data;
@@ -2340,7 +2423,9 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   <Field label="Data de Emissão"><Input type="date" value={data.data} readOnly={readOnly} onChange={(e) => update("data", e.target.value)} /></Field>
                   <Field label="Cliente" required>
                     <div className="rounded-xl border-2 border-primary/50 bg-primary/5 p-2 shadow-sm ring-1 ring-primary/10">
-                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" secondaryField="cnpj" value={clienteNomeExibicao || data.cliente} onChange={async (v, record) => { 
+                    <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" secondaryField="cnpj" filters={FILTRO_CLIENTES_OS_DESKTOP} value={clienteNomeExibicao || data.cliente} onChange={async (v, record) => { 
                       setClienteNomeExibicao(record ? ((record as any).nome_fantasia || (record as any).razao_social || "") : "");
                       update("cliente", v); 
                       update("clienteId", record?.id || null); 
@@ -2374,6 +2459,19 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         return null;
                       }
                     }} />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 border-primary/30 bg-white hover:border-primary/60 hover:bg-primary/5"
+                      title="Cadastro rápido de cliente (nome + WhatsApp)"
+                      onClick={abrirCadastroRapidoCliente}
+                      disabled={readOnly}
+                    >
+                      <UserPlus className="h-4 w-4 text-primary" />
+                    </Button>
+                    </div>
                     </div>
                   </Field>
                   <Field label="Tipo de Operação" required>
@@ -4004,6 +4102,54 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 </CardContent>
               </Card>
 
+              <Card className="border-none shadow-md rounded-2xl overflow-hidden bg-amber-50/30 border-amber-100">
+                <CardHeader className="bg-amber-50 pb-3">
+                  <CardTitle className="flex items-center gap-2 text-sm font-bold text-amber-800">
+                    <Gauge className="h-4 w-4" /> Custo Operacional Real do Frete
+                  </CardTitle>
+                  <CardDescription className="text-xs text-amber-700">
+                    Combustível (distância ÷ consumo × preço) + manutenção + pedágio.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4">
+                  {custoOperacional ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-center md:grid-cols-5">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase text-amber-700">Combustível</p>
+                          <p className="text-base font-bold text-amber-900">R$ {custoOperacional.custoCombustivel.toFixed(2)}</p>
+                          <p className="text-[10px] text-muted-foreground">{custoOperacional.litrosEstimados} L · R$ {custoOperacional.precoCombustivel.toFixed(2)}/L</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase text-amber-700">Manutenção</p>
+                          <p className="text-base font-bold text-amber-900">R$ {custoOperacional.custoManutencao.toFixed(2)}</p>
+                          <p className="text-[10px] text-muted-foreground">R$ {custoOperacional.parametros.custoManutencaoKm.toFixed(2)}/km</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase text-amber-700">Pedágio</p>
+                          <p className="text-base font-bold text-amber-900">R$ {custoOperacional.pedagio.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase text-amber-700">Custo Total</p>
+                          <p className="text-lg font-black text-amber-900">R$ {custoOperacional.custoTotal.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase text-amber-700">Custo / Km</p>
+                          <p className="text-base font-bold text-amber-900">R$ {custoOperacional.custoPorKm.toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-[11px] text-muted-foreground">
+                        Consumo: {custoOperacional.parametros.consumoKmPorL.toFixed(1)} km/L · combustível {custoOperacional.parametros.tipoCombustivel} · origem dos parâmetros: {custoOperacional.parametros.origem}.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="py-3 text-center text-sm text-muted-foreground">
+                      Informe a rota e o veículo para calcular o custo operacional real.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-2 border-none shadow-md rounded-2xl overflow-hidden">
                   <CardHeader className="bg-slate-50/50 border-b pb-4">
@@ -4604,6 +4750,49 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+       <Dialog open={clienteRapidoOpen} onOpenChange={setClienteRapidoOpen}>
+         <DialogContent className="max-w-md">
+           <DialogHeader>
+             <DialogTitle className="flex items-center gap-2">
+               <UserPlus className="w-5 h-5 text-primary" /> Cadastro Rápido de Cliente
+             </DialogTitle>
+             <DialogDescription>
+               Cria o cliente como <strong>pré-cadastro</strong> e já o seleciona nesta OS.
+             </DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4 py-2">
+             <div className="space-y-1.5">
+               <Label htmlFor="cliente-rapido-nome">Nome / Razão Social *</Label>
+               <Input
+                 id="cliente-rapido-nome"
+                 value={clienteRapidoNome}
+                 onChange={(e) => setClienteRapidoNome(e.target.value)}
+                 placeholder="Ex.: Transportes Silva Ltda"
+                 autoFocus
+               />
+             </div>
+             <div className="space-y-1.5">
+               <Label htmlFor="cliente-rapido-telefone">Telefone / WhatsApp *</Label>
+               <Input
+                 id="cliente-rapido-telefone"
+                 type="tel"
+                 value={clienteRapidoTelefone}
+                 onChange={(e) => setClienteRapidoTelefone(e.target.value)}
+                 placeholder="(11) 99999-9999"
+                 onKeyDown={(e) => { if (e.key === "Enter") void salvarClienteRapido(); }}
+               />
+             </div>
+           </div>
+           <DialogFooter>
+             <Button variant="ghost" onClick={() => setClienteRapidoOpen(false)} disabled={salvandoClienteRapido}>Cancelar</Button>
+             <Button onClick={() => void salvarClienteRapido()} disabled={salvandoClienteRapido} className="gap-1.5">
+               {salvandoClienteRapido ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+               {salvandoClienteRapido ? "Criando..." : "Criar e Selecionar"}
+             </Button>
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
     </PremiumDocumentDialog>
    );
   };

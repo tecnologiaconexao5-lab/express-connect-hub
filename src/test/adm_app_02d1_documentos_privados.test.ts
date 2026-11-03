@@ -157,7 +157,8 @@ describe("ADM-APP-02D.1 T08-T09 — nenhum consumidor depende de URL pública", 
   it("T08b) TMS: todos os insert sites persistem referência estável", () => {
     const prestador = read("src/components/prestadores/PrestadorDetalhe.tsx");
     expect(prestador).toContain('from("documentos_prestadores")');
-    expect(prestador).toContain("url: docRefPersistida");
+    expect(prestador).toContain("enviarDocumentoOperacionalPrestador");
+    expect(prestador).not.toContain("url: docRefPersistida");
     expect(prestador).not.toContain("urlData");
     expect(prestador).not.toMatch(/url:\s*fotoUrl\b/);
 

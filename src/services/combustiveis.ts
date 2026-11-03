@@ -10,7 +10,63 @@ export interface PrecoCombustivel {
   variacaoDia?: number;
 }
 
+export const PRECOS_ANP_SIMULADOS: Record<string, number> = {
+  "Diesel S10": 6.25,
+  "Gasolina Comum": 6.09,
+  "Etanol Hidratado": 4.19,
+};
+
+const normalizarCombustivel = (tipo: string): string => {
+  const t = String(tipo || "").toLowerCase();
+  if (t.includes("diesel")) return "Diesel S10";
+  if (t.includes("etanol") || t.includes("álcool") || t.includes("alcool")) return "Etanol Hidratado";
+  return "Gasolina Comum";
+};
+
+/** Preço base para cálculo de custo operacional (ANP simulada). */
+export function precoCombustivelParaCalculo(tipo: string): number {
+  return PRECOS_ANP_SIMULADOS[normalizarCombustivel(tipo)] ?? 6.09;
+}
+
+export interface PainelPrecosCombustivel {
+  [combustivel: string]: {
+    preco: number;
+    var_dia: number;
+    var_7d: number;
+    var_30d: number;
+    data: string;
+    fonte: string;
+  };
+}
+
 export const combustiveisService = {
+  /**
+   * Base de preços atualizados das bombas (ANP/dados públicos).
+   * Hoje retorna a base simulada determinística; a integração real pode ser
+   * ligada aqui sem alterar os consumidores (página e cálculo de custos).
+   */
+  async obterPainelPrecos(uf: string = "SP"): Promise<PainelPrecosCombustivel> {
+    const variacoes: Record<string, { dia: number; d7: number; d30: number }> = {
+      "Diesel S10": { dia: 0.02, d7: 0.08, d30: -0.04 },
+      "Gasolina Comum": { dia: -0.01, d7: -0.03, d30: 0.05 },
+      "Etanol Hidratado": { dia: 0.01, d7: 0.06, d30: 0.02 },
+    };
+    const agora = new Date().toISOString();
+    return Object.fromEntries(
+      Object.entries(PRECOS_ANP_SIMULADOS).map(([nome, preco]) => [
+        nome,
+        {
+          preco,
+          var_dia: variacoes[nome]?.dia ?? 0,
+          var_7d: variacoes[nome]?.d7 ?? 0,
+          var_30d: variacoes[nome]?.d30 ?? 0,
+          data: agora,
+          fonte: `ANP (simulado · ${uf})`,
+        },
+      ]),
+    );
+  },
+
   // FONTE 1: combustivelapi.com.br
   async fetchFromCombustivelAPI(uf: string, tipo: string): Promise<PrecoCombustivel | null> {
     try {
@@ -31,11 +87,19 @@ export const combustiveisService = {
     try {
       // Setup web scraper / EDGE function logic check
       console.log("Consultando Fonte 2 (ANP)...");
-      return { estado: uf, combustivel: tipo, preco: 6.31, fonte: "ANP", data: new Date().toISOString() };
+      const combustivel = normalizarCombustivel(tipo);
+      return {
+        estado: uf,
+        combustivel,
+        preco: precoCombustivelParaCalculo(combustivel),
+        fonte: "ANP (simulado)",
+        data: new Date().toISOString(),
+      };
     } catch {
       return null;
     }
   },
+
 
   // FONTE 3: Petrobras
   async fetchFromPetrobras(uf: string, tipo: string): Promise<PrecoCombustivel | null> {
@@ -66,7 +130,6 @@ export const combustiveisService = {
   },
 
   async recordPriceHistory(data: PrecoCombustivel) {
-    if (typeof window !== "undefined") return; // Mocking so it does not err on client edge directly
     try {
       await supabase.from("combustivel_precos").insert([{
         combustivel: data.combustivel,

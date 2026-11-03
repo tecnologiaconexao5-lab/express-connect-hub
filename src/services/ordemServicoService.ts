@@ -18,6 +18,26 @@ const STATUS_OS_PARA_ESCALA: Record<string, string> = {
   ocorrencia: "ocorrencia",
 };
 
+/**
+ * Número sequencial da OS — formato oficial `OS-AAAAMM-<sequência>`.
+ * A sequência vive no banco (`os_numero_seq`, começa em 1200) e é lida pela
+ * RPC `f_proximo_numero_os`. O fallback aleatório só é usado enquanto a
+ * migration não estiver aplicada no ambiente.
+ */
+export async function gerarNumeroOS(): Promise<string> {
+  try {
+    const { data, error } = await supabase.rpc("f_proximo_numero_os");
+    if (!error && typeof data === "string" && data.trim()) return data.trim();
+  } catch {
+    // segue para o fallback
+  }
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = String(now.getMonth() + 1).padStart(2, "0");
+  const seq = String(Math.floor(Math.random() * 900000) + 100000).padStart(6, "0");
+  return `OS-${ano}${mes}-${seq}`;
+}
+
 function mapearStatusOSParaEscala(statusOS: string): string {
   return STATUS_OS_PARA_ESCALA[statusOS] || "planejada";
 }
@@ -293,12 +313,9 @@ export interface CriarOSResultado {
  */
 export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSResultado> {
   try {
-    // Gerar número da OS
-    const now = new Date();
-    const ano = now.getFullYear();
-    const mes = String(now.getMonth() + 1).padStart(2, '0');
-    const seq = String(Math.floor(Math.random() * 900000) + 100000).padStart(6, '0');
-    const numero = `OS-${ano}${mes}-${seq}`;
+    // Número da OS — sequência oficial (OS-AAAAMM-1200, 1201, ...).
+    // Fallback local apenas se a RPC ainda não estiver aplicada no banco.
+    const numero = await gerarNumeroOS();
 
     // Montar carga_descricao
     const cargaDescricao = input.descricao || input.tipo_carga || "Portal Cliente";

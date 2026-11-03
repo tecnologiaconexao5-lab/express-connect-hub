@@ -843,6 +843,9 @@ export interface VeiculoForm {
   chassi?: string;
   capacidadeKg?: number;
   capacidadeM3?: number;
+  mediaConsumoKmPorL?: number;
+  custoManutencaoKm?: number;
+  tipoCombustivel?: string;
   comprimento?: number;
   largura?: number;
   altura?: number;
@@ -880,6 +883,12 @@ export interface VeiculoRow {
   chassi?: string;
   capacidade_kg?: number;
   capacidade_m3?: number;
+  media_consumo_km_l?: number;
+  custo_manutencao_km?: number;
+  tipo_combustivel?: string;
+  mediaConsumoKmPorL?: number;
+  custoManutencaoKm?: number;
+  tipoCombustivel?: string;
   comprimento?: number;
   largura?: number;
   altura?: number;
@@ -922,6 +931,9 @@ export const toVeiculoInsert = (form: Partial<VeiculoForm>): Record<string, unkn
   if (has(form.chassi)) d.chassi = form.chassi;
   if (has(form.capacidadeKg)) d.capacidade_kg = form.capacidadeKg;
   if (has(form.capacidadeM3)) d.capacidade_m3 = form.capacidadeM3;
+  if (has(form.mediaConsumoKmPorL)) d.media_consumo_km_l = form.mediaConsumoKmPorL;
+  if (has(form.custoManutencaoKm)) d.custo_manutencao_km = form.custoManutencaoKm;
+  if (has(form.tipoCombustivel)) d.tipo_combustivel = form.tipoCombustivel;
   if (has(form.comprimento)) d.comprimento = form.comprimento;
   if (has(form.largura)) d.largura = form.largura;
   if (has(form.altura)) d.altura = form.altura;
@@ -972,6 +984,9 @@ export const fromVeiculoRow = (item: VeiculoRow): VeiculoForm => ({
   chassi: item.chassi,
   capacidadeKg: item.capacidade_kg ?? item.capacidadeKg,
   capacidadeM3: item.capacidade_m3 ?? item.capacidadeM3,
+  mediaConsumoKmPorL: item.media_consumo_km_l ?? item.mediaConsumoKmPorL,
+  custoManutencaoKm: item.custo_manutencao_km ?? item.custoManutencaoKm,
+  tipoCombustivel: item.tipo_combustivel ?? item.tipoCombustivel,
   comprimento: item.comprimento,
   largura: item.largura,
   altura: item.altura,
@@ -1002,6 +1017,8 @@ export interface OSForm {
   id?: string;
   numero?: string;
   data?: string;
+  /** Timestamp de criação da OS (solicitação) — usado na listagem/preview. */
+  createdAt?: string;
   cliente?: string;
   /** MISSÃO ENDERECOS-INTELIGENTES — UUID do cliente (cliente pode ser nome exibido) */
   clienteId?: string;
@@ -1347,6 +1364,7 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   id: item.id,
   numero: item.numero || "",
   data: item.data || new Date().toISOString().split("T")[0],
+  createdAt: item.created_at,
   cliente: item.cliente || "",
   clienteId: item.cliente_id || undefined,
   unidade: item.unidade || "",

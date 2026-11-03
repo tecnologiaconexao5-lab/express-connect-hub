@@ -57,7 +57,9 @@ describe("B) Alerta de SLA — Pendente / Aguardando Programacao", () => {
     expect(ordensSrc).toContain("const riscoSlaPendente = emRiscoSlaPendente(");
     expect(ordensSrc).toContain("(os as OSComDataCriacao).createdAt");
     expect(ordensSrc).toContain("semPrestador || riscoSlaPendente");
-    expect(ordensSrc).toContain("Atraso/Risco de SLA");
+    // Tag unificada na coluna Prazo (sem sobreposição com a coluna Status)
+    expect(ordensSrc).toContain('{atrasada ? "Atraso" : "Risco de SLA"}');
+    expect(ordensSrc).not.toContain("Atraso/Risco de SLA");
   });
 
   it("B.3 Solicitacoes Cliente tambem destacam risco e badge piscante", () => {

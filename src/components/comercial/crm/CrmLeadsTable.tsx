@@ -35,7 +35,7 @@ export default function CrmLeadsTable({ leads, onAbrirLead }: CrmLeadsTableProps
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const responsaveis = useMemo(() => {
-    return [...new Set(leads.map(l => l.responsavel))];
+    return [...new Set(leads.map(l => String(l.responsavel || "").trim()).filter(Boolean))];
   }, [leads]);
 
   const leadsFiltrados = useMemo(() => {

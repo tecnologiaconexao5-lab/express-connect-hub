@@ -174,6 +174,10 @@ export interface EnterpriseCandidate {
   principaisPontosPositivos: string[]
   proximaAcaoSugerida: string
   questionarioRespostas: Record<string, string> | null
+  /** Preferências operacionais gravadas pelo App (coluna `preferencias_operacionais`). */
+  preferenciasOperacionais?: Record<string, unknown> | null
+  /** Respostas situacionais gravadas pelo App (coluna `respostas_situacionais`). */
+  respostasSituacionais?: Record<string, string> | null
 }
 
 export interface PipelineColumn {

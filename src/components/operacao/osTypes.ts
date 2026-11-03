@@ -282,14 +282,16 @@ export interface OrdemServico {
   id?: string;
   numero: string;
   data: string;
+  /** Timestamp exato da criaÃ§Ã£o/solicitaÃ§Ã£o da OS. */
+  createdAt?: string;
   cliente: string;
   clienteId?: string;
   unidade: string;
   centroCusto: string;
   orcamentoOrigem: string;
-  /** Cliente originado pela Cotação Express (sem cadastro completo). */
+  /** Cliente originado pela Cotaï¿½ï¿½o Express (sem cadastro completo). */
   clienteCotacao?: boolean;
-  /** Data/hora solicitadas pelo cliente na cotação (chamado agendado). */
+  /** Data/hora solicitadas pelo cliente na cotaï¿½ï¿½o (chamado agendado). */
   agendadaCotacao?: boolean;
   agendamentoCotacao?: string;
   prestador: string;

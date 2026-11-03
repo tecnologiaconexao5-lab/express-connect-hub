@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,13 +20,28 @@ import {
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
   VeiculoPrestador, normalizarStatusPrestador, STATUS_OPCOES_CANONICAS,
 } from "./types";
-import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
+import { DocumentoIAReportModal } from "@/components/documentos/DocumentoIAReportModal";
+import { DocumentoAcoesDropdown } from "@/components/documentos/DocumentoAcoesDropdown";
+import { DocumentoHistoricoModal } from "@/components/documentos/DocumentoHistoricoModal";
+import { DocumentoCompartilharModal } from "@/components/documentos/DocumentoCompartilharModal";
+import { DocumentoNovaVersaoDialog } from "@/components/documentos/DocumentoNovaVersaoDialog";
+import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
+import {
+  analisarDocumentoComIA,
+  atualizarAnaliseDocumentoMetadata,
+  enviarDocumentoOperacionalPrestador,
+  listarDocumentosMetadata,
+  statusIAParaStatusDocumento,
+  statusRelatorioIAParaStatusDocumento,
+  urlAssinadaDocumentoMetadata,
+  type DocumentoMetadata,
+  type RelatorioIA,
+} from "@/services/documentos/documentosMetadataService";
 import ContratoPrestadorModal from "./ContratoPrestadorModal";
 import { toPrestadorInsert, toPrestadorUpdate, sanitizePrestadorPayload } from "@/lib/dbMappers";
 import { formatarDataBR } from "@/lib/formatDates";
 import { sanitizeVeiculoPayload, camposTipoVeiculo } from "@/helpers/veiculoPayload";
 import { buscarCEP } from "@/services/cepService";
-import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
 import { MODALIDADE_LABEL } from "@/lib/talentResumo";
 import { ConexaoTalentAIProfile } from "./ConexaoTalentAIProfile";
 import { useAuth } from "@/contexts/AuthContext";
@@ -116,10 +131,40 @@ const calculateAge = (birthDate?: string) => {
 };
 
 const DOCS_TIPOS = [
-  "CNH Frente", "CNH Verso", "Documento Pessoal", "Comprovante de Residência",
-  "Comprovante Bancário", "Contrato", "CRLV", "Documento do Veículo", "ANTT",
-  "Apólice de Seguro", "Outros",
+  "CNH Frente", "CNH Verso", "Documento Pessoal", "Comprovante de ResidǦncia",
+  "Comprovante Bancǭrio", "Contrato", "CRLV", "Documento do Ve��culo", "ANTT",
+  "Ap��lice de Seguro", "Outros",
 ];
+
+const documentoAcoesFallback = (
+  tipo: string,
+  url: string | undefined,
+  prestadorId: string | undefined,
+  entidadeNome: string | undefined,
+): DocumentoMetadata => ({
+  id: "",
+  url: url || "",
+  nome: tipo,
+  tipo,
+  modulo_origem: "prestadores",
+  entidade_id: prestadorId ?? null,
+  entidade_nome: entidadeNome ?? null,
+  status_ia: "pendente",
+  relatorio_ia: null,
+  data_inclusao: new Date().toISOString(),
+  categoria: "Recrutamento",
+  departamento: "Operações",
+  responsavel: "TMS",
+  responsavel_id: null,
+  cliente_id: null,
+  descricao: null,
+  mime_type: null,
+  tamanho_bytes: null,
+  versao: 1,
+  documento_pai_id: null,
+  ativo: true,
+  historico: [],
+});
 
 const MODALIDADES_TALENT = ["esporadico", "contrato", "rota_fixa"] as const;
 
@@ -221,7 +266,16 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   // === INDICADORES REAIS (do banco) ===
   const [qtdEntregasReais, setQtdEntregasReais] = useState<number | null>(null);
   const [ocorrenciasReais, setOcorrenciasReais] = useState<any[]>([]);
-  const [docToAnalyze, setDocToAnalyze] = useState<string | null>(null);
+  const [documentosMetadata, setDocumentosMetadata] = useState<DocumentoMetadata[]>([]);
+  const [docIAAtual, setDocIAAtual] = useState<{ tipo: string; nome?: string | null } | null>(null);
+  const [resultadoIA, setResultadoIA] = useState<RelatorioIA | null>(null);
+  const [iaModalOpen, setIaModalOpen] = useState(false);
+  const [analisandoIATipo, setAnalisandoIATipo] = useState<string | null>(null);
+  const [historyDoc, setHistoryDoc] = useState<DocumentoMetadata | null>(null);
+  const [shareDoc, setShareDoc] = useState<DocumentoMetadata | null>(null);
+  const [versionDoc, setVersionDoc] = useState<DocumentoMetadata | null>(null);
+  const [versionModo, setVersionModo] = useState<"nova" | "atualizar">("nova");
+  const [versionOpen, setVersionOpen] = useState(false);
   const [modalContratoOpen, setModalContratoOpen] = useState(false);
   const [modalVeiculoOpen, setModalVeiculoOpen] = useState(false);
   const [modalOcorrenciaOpen, setModalOcorrenciaOpen] = useState(false);
@@ -257,24 +311,57 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   useEffect(() => {
     const carregarDocumentos = async () => {
       if (!p.id) return;
-      const { data, error } = await supabase
-        .from("documentos_prestadores")
-        .select("id, tipo, url, created_at")
-        .eq("prestador_id", p.id)
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.error("[Documentos] Erro ao carregar:", error);
-      } else if (data) {
-        console.log("[Documentos] Carregados do banco:", data.length);
-        const docsFromDb = await Promise.all(
-          data.map(async (d: any) => ({
-            tipo: d.tipo,
-            url: (await resolverUrlDocumento(d.url, { prestadorId: p.id })) ?? undefined,
-            status: "valido" as const
-          }))
-        );
-        setP(prev => ({ ...prev, documentos: docsFromDb }));
+      const [legadoRes, metadata] = await Promise.all([
+        supabase
+          .from("documentos_prestadores")
+          .select("id, tipo, url, created_at")
+          .eq("prestador_id", p.id)
+          .order("created_at", { ascending: false }),
+        listarDocumentosMetadata("prestadores", p.id),
+      ]);
+
+      if (legadoRes.error) {
+        console.error("[Documentos] Erro ao carregar tabela legada:", legadoRes.error);
       }
+
+      const porTipo = new Map<string, {
+        tipo: string;
+        url?: string;
+        status: StatusDocumento;
+        dataEnvio?: string;
+      }>();
+
+      for (const d of legadoRes.data || []) {
+        const row = d as { tipo?: string; url?: string; created_at?: string };
+        if (!row.tipo) continue;
+        porTipo.set(row.tipo, {
+          tipo: row.tipo,
+          url: (await resolverUrlDocumento(row.url, { prestadorId: p.id })) ?? undefined,
+          status: "valido",
+          dataEnvio: row.created_at,
+        });
+      }
+
+      const metadataResolvida = await Promise.all(
+        metadata.map(async (m) => ({
+          metadata: m,
+          url: await urlAssinadaDocumentoMetadata(m.url, p.id),
+        })),
+      );
+
+      for (const item of metadataResolvida) {
+        const tipo = item.metadata.tipo;
+        if (!tipo) continue;
+        porTipo.set(tipo, {
+          tipo,
+          url: item.url ?? undefined,
+          status: statusIAParaStatusDocumento(item.metadata.status_ia),
+          dataEnvio: item.metadata.data_inclusao,
+        });
+      }
+
+      setDocumentosMetadata(metadata);
+      setP(prev => ({ ...prev, documentos: Array.from(porTipo.values()) }));
     };
     carregarDocumentos();
   }, [p.id]);
@@ -568,57 +655,90 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       return;
     }
 
-    const fileName = `doc_${prestadorId}_${tipoDocumento.replace(/\s+/g, "_")}_${Date.now()}.${file.name.split(".").pop()}`;
-
     try {
       setDocUploadProgress(prev => ({ ...prev, [tipoDocumento]: true }));
       setIsUploading(true);
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from(BUCKET_PRESTADORES)
-        .upload(fileName, file, { upsert: true });
-
-      if (uploadError) {
-        console.error("[Documentos] Upload error:", uploadError);
-        toast.error(`Erro ao fazer upload do ${tipoDocumento}`);
-        return;
-      }
-
-      console.log("[Documentos] Upload OK:", uploadData);
-
-      const docRefPersistida = referenciaEstavelDocumento(uploadData.path) ?? uploadData.path;
-      const docUrl = await resolverUrlDocumento(docRefPersistida, { prestadorId });
-      console.log("[Documentos] referencia persistida:", docRefPersistida);
-
-      const docPayload = {
-        prestador_id: prestadorId,
+      const { documento, urlAssinada } = await enviarDocumentoOperacionalPrestador({
+        file,
+        prestadorId,
         tipo: tipoDocumento,
-        url: docRefPersistida,
-        created_at: new Date().toISOString()
+        nome: file.name,
+      });
+
+      setDocumentosMetadata(prev => [documento, ...prev]);
+      const novoDocumento = {
+        tipo: tipoDocumento,
+        url: urlAssinada ?? undefined,
+        status: statusIAParaStatusDocumento(documento.status_ia),
+        dataEnvio: documento.data_inclusao,
       };
-      console.log("[Documentos] Insert payload:", docPayload);
-
-      const { data: dbData, error: dbError } = await supabase.from("documentos_prestadores").insert([docPayload]).select();
-
-      if (dbError) {
-        console.error("[Documentos] DB error:", dbError);
-        toast.error(`Erro ao salvar documento: ${dbError.message}`);
-      } else {
-        console.log("[Documentos] Insert OK:", dbData);
-      }
-
-      const currentDocs = p.documentos || [];
-      const updatedDocs = currentDocs.some(d => d.tipo === tipoDocumento)
-        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, url: docUrl ?? undefined, status: "valido" as const } : d)
-        : [...currentDocs, { tipo: tipoDocumento, url: docUrl ?? undefined, status: "valido" as const }];
-      setP(prev => ({ ...prev, documentos: updatedDocs }));
-      toast.success(`${tipoDocumento} enviado!`);
+      setP(prev => {
+        const atuais = prev.documentos || [];
+        const documentos = atuais.some(d => d.tipo === tipoDocumento)
+          ? atuais.map(d => d.tipo === tipoDocumento ? { ...d, ...novoDocumento } : d)
+          : [...atuais, novoDocumento];
+        return { ...prev, documentos };
+      });
+      toast.success(`${tipoDocumento} enviado e registrado. Use "IA" para conferir.`);
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
-      toast.error(`Erro ao fazer upload do ${tipoDocumento}`);
+      toast.error(error instanceof Error ? error.message : `Erro ao fazer upload do ${tipoDocumento}`);
     } finally {
       setDocUploadProgress(prev => ({ ...prev, [tipoDocumento]: false }));
       setIsUploading(false);
+    }
+  };
+
+  const handleAnalisarIA = async (tipoDocumento: string) => {
+    const prestadorId = p.id;
+    if (!prestadorId) {
+      toast.error("Salve o prestador antes de analisar documentos com IA.");
+      return;
+    }
+
+    const doc = p.documentos?.find(d => d.tipo === tipoDocumento);
+    const meta = documentosMetadata.find(m => m.tipo === tipoDocumento);
+    if (!doc?.url) {
+      toast.error("Envie o documento antes de solicitar a análise de IA.");
+      return;
+    }
+
+    setDocIAAtual({ tipo: tipoDocumento, nome: meta?.nome || doc.nomeArquivo || tipoDocumento });
+    setResultadoIA(null);
+    setIaModalOpen(true);
+    setAnalisandoIATipo(tipoDocumento);
+
+    try {
+      const relatorio = await analisarDocumentoComIA({
+        url: doc.url,
+        nome: meta?.nome || doc.nomeArquivo || tipoDocumento,
+        tipo: tipoDocumento,
+        moduloOrigem: "prestadores",
+        entidadeId: prestadorId,
+      });
+      setResultadoIA(relatorio);
+
+      if (meta?.id) {
+        const atualizado = await atualizarAnaliseDocumentoMetadata(meta.id, relatorio);
+        if (atualizado) {
+          setDocumentosMetadata(prev => prev.map(m => m.id === meta.id ? atualizado : m));
+        }
+      }
+
+      const novoStatus = statusRelatorioIAParaStatusDocumento(relatorio.status);
+      setP(prev => ({
+        ...prev,
+        documentos: (prev.documentos || []).map(d =>
+          d.tipo === tipoDocumento ? { ...d, status: novoStatus } : d,
+        ),
+      }));
+      toast.success("Análise de IA concluída.");
+    } catch (error) {
+      console.error("Erro na análise de IA:", error);
+      toast.error("Não foi possível analisar o documento com IA.");
+    } finally {
+      setAnalisandoIATipo(null);
     }
   };
 
@@ -640,6 +760,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       cor: "",
       capacidadeKg: veiculoData.capacidadeKg || 0,
       capacidadeM3: veiculoData.capacidadeM3 || 0,
+      mediaConsumoKmPorL: veiculoData.mediaConsumoKmPorL,
+      custoManutencaoKm: veiculoData.custoManutencaoKm,
+      tipoCombustivel: veiculoData.tipoCombustivel,
       proprietario: veiculoData.proprietario || "",
       cpfCnpjProprietario: veiculoData.cpfCnpjProprietario || "",
       tempMin: veiculoData.tempMin,
@@ -673,6 +796,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         proprietario_documento: veiculoData.cpfCnpjProprietario,
         capacidade_kg: veiculoData.capacidadeKg,
         capacidade_m3: veiculoData.capacidadeM3,
+        media_consumo_km_l: veiculoData.mediaConsumoKmPorL,
+        custo_manutencao_km: veiculoData.custoManutencaoKm,
+        tipo_combustivel: veiculoData.tipoCombustivel,
         comprimento_m: veiculoData.comprimento,
         largura_m: veiculoData.largura,
         altura_m: veiculoData.altura,
@@ -743,6 +869,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         proprietario_documento: veiculoData.cpfCnpjProprietario,
         capacidade_kg: veiculoData.capacidadeKg,
         capacidade_m3: veiculoData.capacidadeM3,
+        media_consumo_km_l: veiculoData.mediaConsumoKmPorL,
+        custo_manutencao_km: veiculoData.custoManutencaoKm,
+        tipo_combustivel: veiculoData.tipoCombustivel,
         comprimento_m: veiculoData.comprimento,
         largura_m: veiculoData.largura,
         altura_m: veiculoData.altura,
@@ -878,6 +1007,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             ano_fabricacao: v.ano,
             capacidade_kg: v.capacidadeKg,
             capacidade_m3: v.capacidadeM3,
+            media_consumo_km_l: v.mediaConsumoKmPorL,
+            custo_manutencao_km: v.custoManutencaoKm,
+            tipo_combustivel: v.tipoCombustivel,
             tipo_carga: v.tipoCarga,
             prestador_vinculado: persistedId,
             status: "Ativo",
@@ -890,18 +1022,15 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         if (documentosPendentes.length > 0) {
           toast.info("Enviando documentos pendentes...");
           for (const doc of documentosPendentes) {
-            const fileName = `doc_${persistedId}_${doc.tipo.replace(/\s+/g, "_")}_${Date.now()}.${doc.file.name.split(".").pop()}`;
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from(BUCKET_PRESTADORES)
-              .upload(fileName, doc.file, { upsert: true });
-
-            if (!uploadError && uploadData) {
-              await supabase.from("documentos_prestadores").insert([{
-                prestador_id: persistedId,
+            try {
+              await enviarDocumentoOperacionalPrestador({
+                file: doc.file,
+                prestadorId: persistedId,
                 tipo: doc.tipo,
-                url: referenciaEstavelDocumento(uploadData.path) ?? uploadData.path,
-                created_at: new Date().toISOString()
-              }]);
+                nome: doc.file.name,
+              });
+            } catch (erro) {
+              console.warn(`[Documentos] Falha ao enviar ${doc.tipo}:`, erro);
             }
           }
         }
@@ -1137,10 +1266,10 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   };
 
   const docGeral = () => {
-    if (!p.documentos?.length) return { label: "Pendente ⚠️", cls: "bg-yellow-100 text-yellow-700" };
-    if (p.documentos.some((d) => d.status === "vencido")) return { label: "Vencido 🔴", cls: "bg-red-100 text-red-700" };
-    if (p.documentos.some((d) => d.status === "pendente" || d.status === "vencendo")) return { label: "Pendente ⚠️", cls: "bg-yellow-100 text-yellow-700" };
-    return { label: "Completo ✅", cls: "bg-green-100 text-green-700" };
+    if (!p.documentos?.length) return { label: "Pendente", cls: "bg-yellow-100 text-yellow-700" };
+    if (p.documentos.some((d) => d.status === "vencido" || d.status === "reprovado")) return { label: "Vencido", cls: "bg-red-100 text-red-700" };
+    if (p.documentos.some((d) => d.status === "pendente" || d.status === "vencendo" || d.status === "em_analise")) return { label: "Pendente", cls: "bg-yellow-100 text-yellow-700" };
+    return { label: "Completo", cls: "bg-green-100 text-green-700" };
   };
 
   return (
@@ -1462,6 +1591,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {DOCS_TIPOS.map((tipo) => {
                 const doc = p.documentos?.find((d) => d.tipo === tipo);
+                const meta = documentosMetadata.find((m) => m.tipo === tipo);
+                const docAcoes = meta ?? (doc ? documentoAcoesFallback(tipo, doc.url, p.id, p.nomeCompleto) : null);
                 return (
                   <Card key={tipo}>
                     <CardContent className="p-4">
@@ -1480,22 +1611,10 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                       {doc?.dataVencimento && (
                         <p className="text-xs text-muted-foreground mb-2">Vencimento: {new Date(doc.dataVencimento).toLocaleDateString("pt-BR")}</p>
                       )}
-                      {docToAnalyze === tipo && p.id && (
-                        <DocumentoAnalyzer
-                          prestadorId={p.id}
-                          prestadorData={{
-                            nomeCompleto: p.nomeCompleto,
-                            cpfCnpj: p.cpfCnpj,
-                            dataNascimento: p.dataNascimento
-                          }}
-                          tipoDocumento={tipo}
-                          onAnaliseConcluida={(dados, validade) => {
-                            if (validade) {
-                              handleChange("metadata", { ...(typeof p.metadata === 'object' ? p.metadata : {}), cnh_validade: validade });
-                            }
-                            setDocToAnalyze(null);
-                          }}
-                        />
+                      {meta?.relatorio_ia && (
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                          Última análise IA: <strong>{meta.relatorio_ia.status}</strong>
+                        </p>
                       )}
                       <input
                         type="file"
@@ -1520,10 +1639,39 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           variant="outline" 
                           size="sm" 
                           className="h-7 text-xs gap-1 text-primary"
-                          onClick={() => setDocToAnalyze(tipo)}
+                          onClick={() => void handleAnalisarIA(tipo)}
+                          disabled={analisandoIATipo === tipo}
+                          title={doc?.url ? "Analisar documento com IA" : "Envie o documento primeiro"}
                         >
-                          <Sparkles className="w-3 h-3" /> IA
+                          {analisandoIATipo === tipo ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3" />
+                          )}
+                          IA
                         </Button>
+                        {docAcoes && (
+                          <DocumentoAcoesDropdown
+                            documento={docAcoes}
+                            onAnalisarIA={() => { void handleAnalisarIA(tipo); }}
+                            onNovaVersao={(d) => {
+                              if (!d.id) { toast.error("Documento sem metadados para versionar."); return; }
+                              setVersionDoc(d); setVersionModo("nova"); setVersionOpen(true);
+                            }}
+                            onAtualizarVersao={(d) => {
+                              if (!d.id) { toast.error("Documento sem metadados para versionar."); return; }
+                              setVersionDoc(d); setVersionModo("atualizar"); setVersionOpen(true);
+                            }}
+                            onCompartilhar={(d) => {
+                              if (!d.id) { toast.error("Documento sem metadados para compartilhar."); return; }
+                              setShareDoc(d);
+                            }}
+                            onHistorico={(d) => {
+                              if (!d.id) { toast.error("Documento sem histórico de metadados."); return; }
+                              setHistoryDoc(d);
+                            }}
+                          />
+                        )}
                         <Input type="date" className="h-7 text-xs w-36" defaultValue={doc?.dataVencimento} placeholder="Vencimento" />
                       </div>
                     </CardContent>
@@ -1565,6 +1713,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     <div className="space-y-1">
                       <Label className="text-[10px] uppercase text-muted-foreground font-bold">Capacidade</Label>
                       <p className="text-sm font-medium">{v.capacidadeKg} kg / {v.capacidadeM3} m³</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] uppercase text-muted-foreground font-bold">Consumo / Manutenção</Label>
+                      <p className="text-sm font-medium">
+                        {v.mediaConsumoKmPorL ? `${v.mediaConsumoKmPorL} km/L` : "—"}
+                        {v.custoManutencaoKm ? ` · R$ ${Number(v.custoManutencaoKm).toFixed(2)}/km` : ""}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] uppercase text-muted-foreground font-bold">Dimensões (CxLxA)</Label>
@@ -2488,6 +2643,51 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               </div>
             </div>
 
+            {/* Bloco 3B: Unit economics — consumo e manutenção */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-blue-600 flex items-center gap-2">
+                <Gauge className="w-4 h-4" /> Consumo e Custo Operacional
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Média de Consumo (km/L)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={novoVeiculo.mediaConsumoKmPorL || ""}
+                    onChange={(e) => setNovoVeiculo(prev => ({ ...prev, mediaConsumoKmPorL: parseFloat(e.target.value) || 0 }))}
+                    placeholder="Ex.: 9"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Custo Médio Manutenção (R$/km)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={novoVeiculo.custoManutencaoKm || ""}
+                    onChange={(e) => setNovoVeiculo(prev => ({ ...prev, custoManutencaoKm: parseFloat(e.target.value) || 0 }))}
+                    placeholder="Ex.: 0,35"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Combustível</Label>
+                  <Select
+                    value={novoVeiculo.tipoCombustivel || "diesel"}
+                    onValueChange={(v) => setNovoVeiculo(prev => ({ ...prev, tipoCombustivel: v }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="diesel">Diesel S10</SelectItem>
+                      <SelectItem value="gasolina">Gasolina Comum</SelectItem>
+                      <SelectItem value="etanol">Etanol Hidratado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
             {/* Bloco 4: Refrigeração / Tipo de Carga */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-blue-600 flex items-center gap-2">
@@ -2667,6 +2867,58 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DocumentoNovaVersaoDialog
+        open={versionOpen}
+        onOpenChange={setVersionOpen}
+        documento={versionDoc}
+        modo={versionModo}
+        onConcluido={(resultado) => {
+          setDocumentosMetadata(prev => [resultado.documento, ...prev]);
+          setP(prev => ({
+            ...prev,
+            documentos: (prev.documentos || []).map(d =>
+              d.tipo === resultado.documento.tipo
+                ? {
+                    ...d,
+                    url: resultado.urlAssinada ?? undefined,
+                    status: statusIAParaStatusDocumento(resultado.documento.status_ia),
+                    dataEnvio: resultado.documento.data_inclusao,
+                  }
+                : d,
+            ),
+          }));
+        }}
+      />
+      <DocumentoHistoricoModal
+        open={Boolean(historyDoc)}
+        onOpenChange={(v) => { if (!v) setHistoryDoc(null); }}
+        documento={historyDoc}
+      />
+      <DocumentoCompartilharModal
+        open={Boolean(shareDoc)}
+        onOpenChange={(v) => { if (!v) setShareDoc(null); }}
+        documento={shareDoc}
+      />
+      <DocumentoIAReportModal
+        open={iaModalOpen}
+        onOpenChange={setIaModalOpen}
+        documento={docIAAtual}
+        resultado={resultadoIA}
+        loading={Boolean(analisandoIATipo)}
+        onReanalisar={docIAAtual ? () => { void handleAnalisarIA(docIAAtual.tipo); } : undefined}
+        onGerarNovaVersao={docIAAtual ? () => {
+          const meta = documentosMetadata.find(m => m.tipo === docIAAtual.tipo);
+          if (!meta) {
+            toast.error("Metadados do documento não encontrados para gerar a nova versão.");
+            return;
+          }
+          setIaModalOpen(false);
+          setVersionDoc(meta);
+          setVersionModo("nova");
+          setVersionOpen(true);
+        } : undefined}
+      />
 
       {/* DISCARD CHANGES DIALOG */}
       <Dialog open={showDiscardDialog} onOpenChange={setShowDiscardDialog}>

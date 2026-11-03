@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarClock, Truck } from "lucide-react";
+import { ArrowRight, CalendarClock, Clock3, MapPin, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import {
@@ -11,6 +11,24 @@ import {
 
 const ROTA_OS = "/operacao?tab=os";
 // STATUS_ENCERRADOS (finalizada/cancelada) é aplicado em osSitePendente.
+
+const doisDigitos = (n: number) => String(n).padStart(2, "0");
+
+/** Horário exato da solicitação (HH:mm; com data quando não é de hoje). */
+const formatarHorarioSolicitacao = (iso?: string | null): string => {
+  const texto = String(iso || "").trim();
+  if (!texto) return "";
+  const d = new Date(texto);
+  if (Number.isNaN(d.getTime())) return "";
+  const hora = `${doisDigitos(d.getHours())}:${doisDigitos(d.getMinutes())}`;
+  const hoje = new Date();
+  const mesmoDia =
+    d.getDate() === hoje.getDate() &&
+    d.getMonth() === hoje.getMonth() &&
+    d.getFullYear() === hoje.getFullYear();
+  if (mesmoDia) return hora;
+  return `${doisDigitos(d.getDate())}/${doisDigitos(d.getMonth() + 1)} · ${hora}`;
+};
 
 /**
  * Banner do Dashboard: OS criadas pela Cotação Express e ainda sem prestador.
@@ -40,8 +58,11 @@ export default function AlertaOscotacaoExpress() {
       }, 800);
     };
 
+    // Nome único por montagem: evita reutilizar um canal já subscrito quando o
+    // componente remonta (o Supabase rejeitaria novos `.on()` após `.subscribe()`).
+    const nomeCanal = `os-site-solicitacoes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const canal = supabase
-      .channel("os-site-solicitacoes")
+      .channel(nomeCanal)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ordens_servico" },
@@ -64,61 +85,84 @@ export default function AlertaOscotacaoExpress() {
   if (carregando || solicitacoes.length === 0) return null;
 
   const total = solicitacoes.length;
-  const rapida = solicitacoes.slice(0, 4);
 
   return (
-    <div className="rounded-xl border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50/70 to-white p-4 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      {/* faixa da marca */}
+      <div className="h-1 w-full bg-gradient-to-r from-[#2E1065] via-violet-500 to-orange-500" />
+
+      <div className="flex flex-col gap-3 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500 text-white shadow-sm">
-            <Truck className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#2E1065] to-violet-700 text-white shadow-sm">
+            <Truck className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-500">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-600">
               Dashboard central
             </p>
-            <h3 className="text-sm font-black text-orange-950">
+            <h3 className="truncate text-sm font-black text-slate-900">
               Solicitações de Clientes Site
             </h3>
-            <p className="text-xs text-orange-700">
-              {total} {total === 1 ? "OS pendente" : "OS pendentes"} de despacho · recebidas via Cotação Express
+            <p className="truncate text-[11px] text-slate-500">
+              {total} {total === 1 ? "solicitação" : "solicitações"} aguardando despacho · Cotação Express
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className="border border-orange-300 bg-white text-orange-700">
+          <Badge className="border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-black text-orange-700">
             {total}
           </Badge>
           <Link
             to={ROTA_OS}
-            className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-orange-600"
+            className="inline-flex items-center gap-1 rounded-lg bg-[#2E1065] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-violet-800"
           >
             Abrir fila <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {rapida.map((os) => (
-          <Link
-            key={os.id}
-            to={`${ROTA_OS}&os=${os.id}`}
-            className="group rounded-lg border border-orange-200/80 bg-white/80 p-2.5 transition hover:border-orange-300 hover:bg-white"
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-black text-slate-800">{os.numero}</span>
-              <ArrowRight className="h-3 w-3 text-orange-500 transition group-hover:translate-x-0.5" />
-            </div>
-            <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-600">
-              {os.clienteNome}
-            </p>
-            {os.agendada && (
-              <Badge className="mt-1.5 border border-amber-200 bg-amber-100 px-1.5 py-0 text-[9px] font-bold uppercase text-amber-800">
-                <CalendarClock className="mr-1 h-3 w-3" /> Agendado · {os.agendamento}
-              </Badge>
-            )}
-          </Link>
-        ))}
+      {/* Cards em rolagem horizontal (todos visíveis por swipe/scroll) */}
+      <div className="mt-3 flex snap-x gap-2 overflow-x-auto px-4 pb-4 [scrollbar-width:thin]">
+        {solicitacoes.map((os) => {
+          const horario = formatarHorarioSolicitacao(os.createdAt);
+          return (
+            <Link
+              key={os.id}
+              to={`${ROTA_OS}&os=${os.id}`}
+              className="group w-[220px] shrink-0 snap-start rounded-xl border border-slate-200 bg-white p-3 transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="truncate text-[11px] font-black tracking-tight text-slate-800">
+                  {os.numero}
+                </span>
+                <ArrowRight className="h-3 w-3 shrink-0 text-orange-500 transition group-hover:translate-x-0.5" />
+              </div>
+
+              {horario && (
+                <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                  <Clock3 className="h-3 w-3 text-violet-500" /> {horario}
+                </p>
+              )}
+
+              <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-700">
+                {os.clienteNome}
+              </p>
+
+              {os.rotaResumo && (
+                <p className="mt-1 flex items-start gap-1 text-[10px] leading-snug text-slate-500">
+                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-orange-500" />
+                  <span className="line-clamp-2 break-words">{os.rotaResumo}</span>
+                </p>
+              )}
+
+              {os.agendada && (
+                <Badge className="mt-2 gap-1 whitespace-nowrap border border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] font-bold normal-case tracking-normal text-amber-800">
+                  <CalendarClock className="h-3 w-3" /> Agendado · {os.agendamento}
+                </Badge>
+              )}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

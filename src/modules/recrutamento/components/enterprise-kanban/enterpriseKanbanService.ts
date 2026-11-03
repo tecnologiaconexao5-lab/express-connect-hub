@@ -173,6 +173,8 @@ function fromDB(row: any): EnterpriseCandidate {
     principaisPontosPositivos: Array.isArray(row.principais_pontos_positivos) ? row.principais_pontos_positivos : [],
     proximaAcaoSugerida: row.proxima_acao_sugerida ?? '',
     questionarioRespostas: row.questionario_respostas ?? null,
+    preferenciasOperacionais: row.preferencias_operacionais ?? null,
+    respostasSituacionais: row.respostas_situacionais ?? null,
   }
 }
 
@@ -221,6 +223,8 @@ function toDB(candidate: Partial<EnterpriseCandidate>): Record<string, unknown> 
     ['principaisPontosPositivos', 'principais_pontos_positivos'],
     ['proximaAcaoSugerida', 'proxima_acao_sugerida'],
     ['questionarioRespostas', 'questionario_respostas'],
+    ['preferenciasOperacionais', 'preferencias_operacionais'],
+    ['respostasSituacionais', 'respostas_situacionais'],
   ]
   const row: Record<string, unknown> = {}
   for (const [camel, snake] of map) {
@@ -360,6 +364,8 @@ function normalizeCandidate(c: any): EnterpriseCandidate {
     principaisPontosPositivos: Array.isArray(c.principaisPontosPositivos) ? c.principaisPontosPositivos : [],
     proximaAcaoSugerida: c.proximaAcaoSugerida ?? '',
     questionarioRespostas: c.questionarioRespostas ?? null,
+    preferenciasOperacionais: c.preferenciasOperacionais ?? null,
+    respostasSituacionais: c.respostasSituacionais ?? null,
   }
 }
 
@@ -620,6 +626,8 @@ export const enterpriseKanbanService = {
       principaisPontosPositivos: [],
       proximaAcaoSugerida: 'Realizar primeiro contato com o candidato',
       questionarioRespostas: null,
+      preferenciasOperacionais: null,
+      respostasSituacionais: null,
     }
 
     const dbData = toDB(newCandidate)

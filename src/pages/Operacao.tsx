@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ClipboardList, Calendar, MapPin, Truck, AlertTriangle, FileCheck, ArrowRightLeft, RotateCcw, Users } from "lucide-react";
+import { ClipboardList, Calendar, AlertTriangle, FileCheck, ArrowRightLeft, RotateCcw, Users, Route as MapIconSolid } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrdensServicoLista from "@/components/operacao/OrdensServicoLista";
@@ -9,7 +8,6 @@ import EscalaLista from "@/components/operacao/EscalaLista";
 import PodLista from "@/components/operacao/PodLista";
 import RoteirizadorWeb from "@/components/operacao/RoteirizadorWeb";
 import SolicitacoesClienteLista from "@/components/operacao/SolicitacoesClienteLista";
-import { Route as MapIconSolid } from "lucide-react";
 
 const Operacao = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -17,6 +15,45 @@ const Operacao = () => {
 
   const handleTabChange = (value: string) => {
     setSearchParams({ tab: value });
+  };
+
+  // Renderização condicional por aba (bugfix): cada ?tab= monta APENAS o seu
+  // componente. Antes, o TabsContent da aba OS era forçado a permanecer montado
+  // e a lista de Ordens de Serviço aparecia em todas as abas selecionadas.
+  const renderizarConteudo = () => {
+    switch (currentTab) {
+      case "solicitacoes":
+        return <SolicitacoesClienteLista />;
+      case "escala":
+        return <EscalaLista />;
+      case "roteirizacao":
+        return <RoteirizadorWeb />;
+      case "ocorrencias":
+        return <OcorrenciasLista />;
+      case "pod":
+        return <PodLista />;
+      case "devolucoes":
+        return (
+          <PlaceholderPage
+            title="Logística Reversa / Devolução"
+            description="Tratamento de recusas e retornos à DOCA matriz."
+            icon={RotateCcw}
+            subModules={[]}
+          />
+        );
+      case "reentregas":
+        return (
+          <PlaceholderPage
+            title="Demandas de Reentrega"
+            description="Controle sistêmico de 2ª tentativa e rotas reprocessadas."
+            icon={ArrowRightLeft}
+            subModules={[]}
+          />
+        );
+      case "os":
+      default:
+        return <OrdensServicoLista />;
+    }
   };
 
   return (
@@ -67,45 +104,7 @@ const Operacao = () => {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="solicitacoes">
-          <SolicitacoesClienteLista />
-        </TabsContent>
-        <TabsContent value="os" forceMount>
-          <OrdensServicoLista />
-        </TabsContent>
-
-        <TabsContent value="escala">
-          <EscalaLista />
-        </TabsContent>
-
-        <TabsContent value="roteirizacao">
-          <RoteirizadorWeb />
-        </TabsContent>
-
-        <TabsContent value="ocorrencias">
-          <OcorrenciasLista />
-        </TabsContent>
-
-        <TabsContent value="pod">
-          <PodLista />
-        </TabsContent>
-
-        <TabsContent value="devolucoes">
-          <PlaceholderPage
-             title="Logística Reversa / Devolução"
-             description="Tratamento de recusas e retornos à DOCA matriz."
-             icon={RotateCcw}
-             subModules={[]}
-          />
-        </TabsContent>
-        <TabsContent value="reentregas">
-          <PlaceholderPage
-             title="Demandas de Reentrega"
-             description="Controle sistêmico de 2ª tentativa e rotas reprocessadas."
-             icon={ArrowRightLeft}
-             subModules={[]}
-          />
-        </TabsContent>
+        <TabsContent value={currentTab}>{renderizarConteudo()}</TabsContent>
       </Tabs>
     </div>
   );

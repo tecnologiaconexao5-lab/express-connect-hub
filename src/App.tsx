@@ -40,6 +40,7 @@ const AppPrestador = lazy(() => import("@/pages/AppPrestador"));
 const Configuracoes = lazy(() => import("@/pages/Configuracoes"));
 const Recrutamento = lazy(() => import("@/pages/Recrutamento"));
 const Biblioteca = lazy(() => import("@/pages/Biblioteca"));
+const CentralDocumentos = lazy(() => import("@/pages/CentralDocumentos"));
 const Governanca = lazy(() => import("@/pages/Governanca"));
 const IAAutomacoes = lazy(() => import("@/pages/IAAutomacoes"));
 const IaAutomacao = lazy(() => import("@/pages/IaAutomacao"));
@@ -131,6 +132,7 @@ const router = createBrowserRouter(
             <Route path="/sla" element={<Lazy><SLA /></Lazy>} />
             <Route path="/relatorios" element={<Lazy><Relatorios /></Lazy>} />
             <Route path="/biblioteca" element={<Lazy><Biblioteca /></Lazy>} />
+            <Route path="/central-documentos" element={<Lazy><CentralDocumentos /></Lazy>} />
             <Route path="/governanca" element={<Lazy><Governanca /></Lazy>} />
             <Route path="/ia-automacoes" element={<Lazy><IAAutomacoes /></Lazy>} />
             <Route path="/ia-central-automacao" element={<Lazy><IaAutomacao /></Lazy>} />

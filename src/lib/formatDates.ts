@@ -44,6 +44,16 @@ export function formatarDataHoraBR(valor?: string | null): string {
   }).format(data);
 }
 
+/**
+ * Data + hora de uma solicitação, no padrão exibido na operação:
+ * "01/11/2026 às 14h30" (timestamp vazio/inválido → "").
+ */
+export function formatarDataHoraSolicitacaoBR(valor?: string | null): string {
+  const base = formatarDataHoraBR(valor);
+  if (!base) return "";
+  return base.replace(", ", " às ").replace(/:([0-9]{2})$/, "h$1");
+}
+
 /** "Hoje" no fuso America/Sao_Paulo (YYYY-MM-DD) — comparações de colunas `date`. */
 export function hojeISOSP(): string {
   return new Intl.DateTimeFormat("en-CA", {

@@ -7,6 +7,7 @@ import {
   clienteNomeDaCotacaoOS,
   obterAgendamentoClienteOS,
 } from "@/lib/cotacaoOS";
+import { resumoRotaOS, type EnderecoResumoRota } from "@/lib/resumoRotaOS";
 
 interface OSsiteRow {
   id?: string | null;
@@ -15,6 +16,7 @@ interface OSsiteRow {
   status?: string | null;
   prestador?: string | null;
   carga?: unknown;
+  enderecos?: unknown;
   observacoes_gerais?: string | null;
   created_at?: string | null;
   clientes?: { nome_fantasia?: string | null; razao_social?: string | null } | null;
@@ -29,10 +31,13 @@ export interface OSSiteResumo {
   agendada: boolean;
   agendamento: string;
   createdAt: string;
+  /** "BairroOrigem-SIGLA ➡️ BairroDestino-SIGLA" (ou múltiplos destinos). */
+  rotaResumo: string;
+  paradas: number;
 }
 
 const SELECT_OS_SITE =
-  "id, numero, cliente, status, prestador, carga, observacoes_gerais, created_at, clientes(nome_fantasia, razao_social)";
+  "id, numero, cliente, status, prestador, carga, enderecos, observacoes_gerais, created_at, clientes(nome_fantasia, razao_social)";
 
 const mapear = (row: OSsiteRow): OSSiteResumo | null => {
   const id = row.id ? String(row.id) : "";
@@ -47,6 +52,9 @@ const mapear = (row: OSsiteRow): OSSiteResumo | null => {
     carga: row.carga,
     observacoes: row.observacoes_gerais,
   });
+  const rota = resumoRotaOS(
+    Array.isArray(row.enderecos) ? (row.enderecos as EnderecoResumoRota[]) : [],
+  );
 
   return {
     id,
@@ -57,6 +65,8 @@ const mapear = (row: OSsiteRow): OSSiteResumo | null => {
     agendada: agendamento.agendada,
     agendamento: agendamento.dataHora,
     createdAt: row.created_at || "",
+    rotaResumo: rota.texto,
+    paradas: rota.paradas,
   };
 };
 

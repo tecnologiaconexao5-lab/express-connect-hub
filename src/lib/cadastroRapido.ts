@@ -61,6 +61,7 @@ export async function criarClienteRapido(input: ClienteRapidoInput): Promise<Rec
     nomeFantasia: nome,
     cnpj: somenteDigitos(input.cnpj || "") || undefined,
     telefone: (input.telefone || "").trim() || undefined,
+    whatsapp: (input.telefone || "").trim() || undefined,
     status: "pre-cadastro",
     observacoes: "Cadastro rápido (OS/Orçamento) — requer validação.",
     origemComercial: "cadastro_rapido",
@@ -79,6 +80,7 @@ export async function criarClienteRapido(input: ClienteRapidoInput): Promise<Rec
     razao_social: String(payload.razao_social || nome),
     cnpj: (payload.cnpj as string) || "",
     telefone: (payload.telefone as string) || "",
+    whatsapp: (payload.whatsapp as string) || "",
     status: "pre-cadastro",
     origem_comercial: "cadastro_rapido",
   };

@@ -33,6 +33,7 @@ export const ROUTE_PERMISSIONS: Record<string, RoutePermission> = {
   "/sla": { modulo: "ordens_servico" },
   "/relatorios": { modulo: "relatorios" },
   "/biblioteca": { roles: ["super_admin", "admin", "operador", "financeiro", "comercial", "atendimento"] },
+  "/central-documentos": { roles: ["super_admin", "admin", "operador", "financeiro", "comercial", "atendimento"] },
   "/governanca": { modulo: "configuracoes" },
   "/ia-automacoes": { modulo: "configuracoes", roles: ["super_admin", "admin"] },
   "/ia-central-automacao": { modulo: "configuracoes", roles: ["super_admin", "admin"] },

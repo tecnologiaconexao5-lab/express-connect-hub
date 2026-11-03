@@ -146,6 +146,16 @@
     background-color: hsl(var(--muted-foreground) / 0.2);
     border-radius: 9999px;
   }
+  /* Esconde a scrollbar mantendo a rolagem (abas horizontais premium). */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;

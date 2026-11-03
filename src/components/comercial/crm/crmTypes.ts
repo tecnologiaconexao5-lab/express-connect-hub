@@ -73,6 +73,7 @@ export interface Lead {
   telefone: string;
   whatsapp: string;
   email: string;
+  endereco?: string;
   // Classificação
   segmento: string;
   regiao: string;

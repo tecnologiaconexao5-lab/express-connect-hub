@@ -32,6 +32,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { emRiscoSlaPendente } from "@/services/operacao/osAlocacaoPendenteService";
+import { resumoRotaOS, type EnderecoResumoRota } from "@/lib/resumoRotaOS";
 
 /**
  * Solicitações Cliente (Operação)
@@ -147,8 +148,10 @@ interface EnderecoOSRow {
   endereco?: string;
   logradouro?: string;
   numero?: string;
+  bairro?: string;
   cidade?: string;
   uf?: string;
+  estado?: string;
 }
 
 interface OSExternaRow {
@@ -177,6 +180,8 @@ interface Solicitacao {
   cliente: string;
   coleta: string;
   destino: string;
+  /** "BairroOrigem-SIGLA ➡️ BairroDestino-SIGLA" (ou múltiplos destinos). */
+  rotaResumo: string;
   descricao: string;
   volumes: number;
   peso: number;
@@ -293,6 +298,7 @@ export default function SolicitacoesClienteLista() {
           cliente: nomeClienteOS(row),
           coleta: localidade(coleta),
           destino: localidade(destino),
+          rotaResumo: resumoRotaOS(enderecos as EnderecoResumoRota[]).texto,
           descricao:
             textoOuTraco(row.carga_descricao) !== "—"
               ? textoOuTraco(row.carga_descricao)
@@ -326,6 +332,10 @@ export default function SolicitacoesClienteLista() {
             [pedido.coleta_cidade, pedido.coleta_uf].filter(Boolean).join("/") || "—",
           destino:
             [pedido.entrega_cidade, pedido.entrega_uf].filter(Boolean).join("/") || "—",
+          rotaResumo: resumoRotaOS([
+            { cidade: pedido.coleta_cidade, uf: pedido.coleta_uf },
+            { cidade: pedido.entrega_cidade, uf: pedido.entrega_uf },
+          ]).texto,
           descricao: textoOuTraco(pedido.descricao),
           volumes: Number(pedido.volumes || 0),
           peso: Number(pedido.peso || 0),
@@ -537,8 +547,13 @@ export default function SolicitacoesClienteLista() {
                       <TableCell className="text-xs max-w-[110px] truncate">
                         {s.coleta}
                       </TableCell>
-                      <TableCell className="text-xs max-w-[110px] truncate">
-                        {s.destino}
+                      <TableCell
+                        className="max-w-[240px]"
+                        title={s.rotaResumo || s.destino}
+                      >
+                        <span className="block text-[11px] font-semibold leading-snug break-words">
+                          {s.rotaResumo || s.destino}
+                        </span>
                       </TableCell>
                       <TableCell className="text-xs max-w-[150px] truncate">
                         {s.descricao}

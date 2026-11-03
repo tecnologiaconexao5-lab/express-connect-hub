@@ -66,7 +66,8 @@ describe("B) Lista de OS — UI/UX (data, prestador, status, histórico)", () =>
   });
 
   it("B.2 tag 'Sem prestador' em bg-red-100 text-red-700", () => {
-    expect(listaSrc).toContain("bg-red-100 text-red-700 border border-red-200");
+    expect(listaSrc).toContain("border border-red-200 bg-red-100");
+    expect(listaSrc).toContain("text-red-700");
     expect(listaSrc).toContain("Sem prestador");
   });
 

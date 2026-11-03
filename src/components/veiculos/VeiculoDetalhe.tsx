@@ -203,6 +203,21 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
                 <div><Label>Custo / Km (R$)</Label><Input type="number" step="0.01" value={v.custoKm || ""} onChange={e => handleChange("custoKm", parseFloat(e.target.value) || 0)} /></div>
                 <div><Label>Custo Diária (R$)</Label><Input type="number" step="0.01" value={v.custoDiaria || ""} onChange={e => handleChange("custoDiaria", parseFloat(e.target.value) || 0)} /></div>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Média de Consumo (km/L)</Label><Input type="number" step="0.1" min="0" value={v.mediaConsumoKmPorL || ""} onChange={e => handleChange("mediaConsumoKmPorL", parseFloat(e.target.value) || 0)} placeholder="Ex.: 9" /></div>
+                <div><Label>Custo Manutenção (R$/km)</Label><Input type="number" step="0.01" min="0" value={v.custoManutencaoKm || ""} onChange={e => handleChange("custoManutencaoKm", parseFloat(e.target.value) || 0)} placeholder="Ex.: 0,35" /></div>
+              </div>
+              <div>
+                <Label>Combustível</Label>
+                <Select value={v.tipoCombustivel || "diesel"} onValueChange={val => handleChange("tipoCombustivel", val)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="diesel">Diesel S10</SelectItem>
+                    <SelectItem value="gasolina">Gasolina Comum</SelectItem>
+                    <SelectItem value="etanol">Etanol Hidratado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
 

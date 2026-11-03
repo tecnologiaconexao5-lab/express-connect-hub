@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { promptAction } from '@/lib/confirmDialog'
 import {
   MapPin, Truck, Phone, Mail, Shield,
@@ -71,6 +71,27 @@ const STAGE_COLORS: Record<string, string> = {
   processo_encerrado: 'text-slate-400 bg-slate-500/10 border-slate-500/30',
 }
 
+/** Chave reservada em `questionario_respostas` para os ajustes manuais da checklist. */
+const CHECKLIST_OVERRIDES_KEY = '__checklist_comprometimento'
+
+function lerOverridesChecklist(
+  respostas?: Record<string, string> | null,
+): Record<string, boolean> {
+  const raw = respostas?.[CHECKLIST_OVERRIDES_KEY]
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([, valor]) => typeof valor === 'boolean')
+        .map(([chave, valor]) => [chave, Boolean(valor)]),
+    )
+  } catch {
+    return {}
+  }
+}
+
 export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange }: DetalhesCandidatoPipelineSheetProps) {
   const store = useEnterpriseKanbanStore()
   const recrutamentoStore = useRecrutamentoStore()
@@ -78,11 +99,43 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
   const [salvandoContato, setSalvandoContato] = useState(false)
   const [convertendo, setConvertendo] = useState(false)
   const [stageAlvo, setStageAlvo] = useState<PipelineStage | ''>('')
+  const [checklistSalvando, setChecklistSalvando] = useState<string | null>(null)
 
   const candidate = useMemo(
     () => store.candidates.find(c => c.id === candidateId) ?? null,
     [store.candidates, candidateId],
   )
+
+  /**
+   * Marca/desmarca um item da Checklist de Comprometimento.
+   * O ajuste manual é persistido em `questionario_respostas` sob a chave
+   * reservada `__checklist_comprometimento` (JSONB existente — sem migration),
+   * preservando todas as respostas do questionário.
+   */
+  const handleToggleChecklistComprometimento = async (key: string, marcado: boolean) => {
+    if (!candidate || checklistSalvando) return
+    const respostasAtuais = candidate.questionarioRespostas || {}
+    const overrides = {
+      ...lerOverridesChecklist(respostasAtuais),
+      [key]: !marcado,
+    }
+    const respostasNovas = {
+      ...respostasAtuais,
+      [CHECKLIST_OVERRIDES_KEY]: JSON.stringify(overrides),
+    }
+    const anterior = candidate.questionarioRespostas
+    setChecklistSalvando(key)
+    store.updateCandidate(candidate.id, { questionarioRespostas: respostasNovas })
+    try {
+      await enterpriseKanbanService.atualizar(candidate.id, { questionarioRespostas: respostasNovas })
+      toast.success('Checklist atualizado!')
+    } catch {
+      store.updateCandidate(candidate.id, { questionarioRespostas: anterior })
+      toast.error('Erro ao salvar checklist')
+    } finally {
+      setChecklistSalvando(null)
+    }
+  }
 
   // AG-07J.11.2 — Gate documental UX: estado derivado do statusDocumental
   const documentacaoApta = candidate?.statusDocumental === 'completo'
@@ -224,9 +277,9 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
     </div>
   )
 
-  const SectionDivider = ({ title }: { title: string }) => (
+  const SectionDivider = ({ title, large }: { title: string; large?: boolean }) => (
     <div className="flex items-center gap-2 py-1">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">{title}</span>
+      <span className={cn('font-semibold uppercase tracking-widest text-muted-foreground/50', large ? 'text-xs' : 'text-[10px]')}>{title}</span>
       <div className="flex-1 h-px bg-border/30" />
     </div>
   )
@@ -288,14 +341,14 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
         </div>
 
         <Tabs defaultValue="perfil" className="w-full">
-          <TabsList className="w-full grid grid-cols-7 h-9 mb-4">
-            <TabsTrigger value="perfil" className="text-[10px] gap-1"><MapPin className="w-3 h-3" /> Perfil</TabsTrigger>
-            <TabsTrigger value="comprometimento" className="text-[10px] gap-1"><TrendingUp className="w-3 h-3" /> Compromet.</TabsTrigger>
-            <TabsTrigger value="documentos" className="text-[10px] gap-1"><FileText className="w-3 h-3" /> Documentos</TabsTrigger>
-            <TabsTrigger value="questionario" className="text-[10px] gap-1"><ClipboardList className="w-3 h-3" /> Questionário</TabsTrigger>
-            <TabsTrigger value="onboarding" className="text-[10px] gap-1"><ClipboardCheck className="w-3 h-3" /> Onboarding</TabsTrigger>
-            <TabsTrigger value="historico" className="text-[10px] gap-1"><History className="w-3 h-3" /> Histórico</TabsTrigger>
-            <TabsTrigger value="acoes" className="text-[10px] gap-1"><Send className="w-3 h-3" /> Ações</TabsTrigger>
+          <TabsList className="mb-4 w-full !flex-nowrap !justify-start gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1 scrollbar-none">
+            <TabsTrigger value="perfil" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><MapPin className="h-4 w-4 shrink-0" /> Perfil</TabsTrigger>
+            <TabsTrigger value="comprometimento" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><TrendingUp className="h-4 w-4 shrink-0" /> Compromet.</TabsTrigger>
+            <TabsTrigger value="documentos" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><FileText className="h-4 w-4 shrink-0" /> Documentos</TabsTrigger>
+            <TabsTrigger value="questionario" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><ClipboardList className="h-4 w-4 shrink-0" /> Questionário</TabsTrigger>
+            <TabsTrigger value="onboarding" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><ClipboardCheck className="h-4 w-4 shrink-0" /> Onboarding</TabsTrigger>
+            <TabsTrigger value="historico" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><History className="h-4 w-4 shrink-0" /> Histórico</TabsTrigger>
+            <TabsTrigger value="acoes" className="shrink-0 gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium"><Send className="h-4 w-4 shrink-0" /> Ações</TabsTrigger>
           </TabsList>
 
           <TabsContent value="perfil" className="space-y-4 mt-0">
@@ -387,6 +440,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
               const parecer = candidate.parecerIA ? { parecer: candidate.parecerIA, riscos: candidate.principaisRiscos, pontosPositivos: candidate.principaisPontosPositivos, proximaAcao: candidate.proximaAcaoSugerida } : recrutamentoScoreService.gerarParecerOperacional(scoreInput)
               const corClassif = recrutamentoScoreService.getCorClassificacao(classif)
               const scorePercent = scoreComp ?? 0
+              const overridesChecklist = lerOverridesChecklist(candidate.questionarioRespostas)
 
               const handleConfirmarComprometimento = async () => {
                 if (!candidate) return
@@ -412,7 +466,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
               return (
                 <>
                   <div>
-                    <SectionDivider title="Score de Comprometimento" />
+                    <SectionDivider title="Score de Comprometimento" large />
                     <div className="mt-2 p-4 rounded-xl bg-muted/10 border border-border/20">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-medium">Score</span>
@@ -430,62 +484,89 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium border', corClassif)}>{classif}</span>
-                        <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium border', risco === 'Crítico' || risco === 'Alto' ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' : risco === 'Moderado' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30')}>
-                          <AlertTriangle className="w-3 h-3" /> Risco: {risco}
+                        <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border', corClassif)}>{classif}</span>
+                        <span className={cn('inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border', risco === 'Crítico' || risco === 'Alto' ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' : risco === 'Moderado' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30')}>
+                          <AlertTriangle className="w-3.5 h-3.5" /> Risco: {risco}
                         </span>
                       </div>
                     </div>
                   </div>
                   <div>
-                    <SectionDivider title="Checklist de Comprometimento" />
-                    <div className="space-y-1.5 mt-2">
+                    <SectionDivider title="Checklist de Comprometimento" large />
+                    <div className="space-y-2 mt-2">
                       {[
-                        { label: 'Respondeu em menos de 24h', ok: candidate.tempoMedioRespostaHoras !== null && candidate.tempoMedioRespostaHoras > 0 && candidate.tempoMedioRespostaHoras <= 24 },
-                        { label: 'Documentação completa sem cobrança', ok: candidate.statusDocumental === 'completo' && candidate.quantidadeCobrancas === 0 },
-                        { label: 'Avaliação situacional / entrevista concluída', ok: candidate.stage === 'em_avaliacao_situacional' || candidate.stage === 'em_entrevista' || candidate.stage === 'em_homologacao' || candidate.confirmouPreInicio },
-                        { label: 'Concluiu treinamento', ok: candidate.confirmouPreInicio },
-                        { label: 'Confirmou disponibilidade pós-treinamento', ok: candidate.confirmouInteresse },
-                        { label: 'Compareceu ao primeiro dia', ok: candidate.compareceuPrimeiroDia },
-                        { label: 'Completou 30 dias de operação', ok: candidate.completou30Dias },
-                        { label: 'Sem reclamações operacionais', ok: candidate.quantidadeReclamacoes === 0 },
-                      ].map((item, idx) => (
-                        <div key={idx} className={cn('flex items-center gap-3 p-2.5 rounded-lg border', item.ok ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-muted/10 border-border/30')}>
-                          {item.ok ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-muted-foreground/30 shrink-0" />}
-                          <span className={cn('text-xs', item.ok ? 'text-emerald-300' : 'text-muted-foreground')}>{item.label}</span>
-                        </div>
-                      ))}
+                        { key: 'respondeu_24h', label: 'Respondeu em menos de 24h', autoOk: candidate.tempoMedioRespostaHoras !== null && candidate.tempoMedioRespostaHoras > 0 && candidate.tempoMedioRespostaHoras <= 24 },
+                        { key: 'documentacao_completa', label: 'Documentação completa sem cobrança', autoOk: candidate.statusDocumental === 'completo' && candidate.quantidadeCobrancas === 0 },
+                        { key: 'avaliacao_concluida', label: 'Avaliação situacional / entrevista concluída', autoOk: candidate.stage === 'em_avaliacao_situacional' || candidate.stage === 'em_entrevista' || candidate.stage === 'em_homologacao' || candidate.confirmouPreInicio },
+                        { key: 'treinamento_concluido', label: 'Concluiu treinamento', autoOk: candidate.confirmouPreInicio },
+                        { key: 'disponibilidade_confirmada', label: 'Confirmou disponibilidade pós-treinamento', autoOk: candidate.confirmouInteresse },
+                        { key: 'compareceu_primeiro_dia', label: 'Compareceu ao primeiro dia', autoOk: candidate.compareceuPrimeiroDia },
+                        { key: 'completou_30_dias', label: 'Completou 30 dias de operação', autoOk: candidate.completou30Dias },
+                        { key: 'sem_reclamacoes', label: 'Sem reclamações operacionais', autoOk: candidate.quantidadeReclamacoes === 0 },
+                      ].map((item) => {
+                        const ajustadoManualmente = item.key in overridesChecklist
+                        const ok = ajustadoManualmente ? overridesChecklist[item.key] : item.autoOk
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={ok}
+                            aria-label={item.label}
+                            disabled={checklistSalvando === item.key}
+                            onClick={() => handleToggleChecklistComprometimento(item.key, ok)}
+                            className={cn(
+                              'flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                              'hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
+                              ok ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-muted/10 border-border/30',
+                              checklistSalvando === item.key && 'opacity-60',
+                            )}
+                          >
+                            {ok
+                              ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                              : <Circle className="w-5 h-5 text-muted-foreground/40 shrink-0" />}
+                            <span className={cn('text-sm font-medium leading-snug', ok ? 'text-emerald-300' : 'text-muted-foreground')}>
+                              {item.label}
+                            </span>
+                            {ajustadoManualmente && (
+                              <span className="ml-auto shrink-0 rounded-full border border-border/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                Ajustado
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                   {etiquetas.length > 0 && (
                     <div>
-                      <SectionDivider title="Etiquetas Automáticas" />
+                      <SectionDivider title="Etiquetas Automáticas" large />
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {etiquetas.map((etq: string, idx: number) => <span key={idx} className="px-2 py-1 rounded-md bg-muted/30 text-[10px] font-medium text-muted-foreground border border-border/30">{etq}</span>)}
+                        {etiquetas.map((etq: string, idx: number) => <span key={idx} className="px-2.5 py-1 rounded-md bg-muted/30 text-xs font-medium text-muted-foreground border border-border/30">{etq}</span>)}
                       </div>
                     </div>
                   )}
                   <div>
-                    <SectionDivider title="Parecer IA" />
-                    <div className="p-3 rounded-lg bg-muted/20 text-xs text-muted-foreground leading-relaxed mt-2">{parecer.parecer}</div>
+                    <SectionDivider title="Parecer IA" large />
+                    <div className="p-4 rounded-lg bg-muted/20 text-sm text-muted-foreground leading-relaxed mt-2">{parecer.parecer}</div>
                   </div>
                   {parecer.riscos.length > 0 && (
                     <div>
-                      <SectionDivider title="Principais Riscos" />
-                      <div className="space-y-1 mt-2">{parecer.riscos.map((r: string, idx: number) => <div key={idx} className="flex items-center gap-2 text-xs text-rose-400"><AlertTriangle className="w-3 h-3 shrink-0" /> {r}</div>)}</div>
+                      <SectionDivider title="Principais Riscos" large />
+                      <div className="space-y-1.5 mt-2">{parecer.riscos.map((r: string, idx: number) => <div key={idx} className="flex items-start gap-2 text-sm text-rose-400"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {r}</div>)}</div>
                     </div>
                   )}
                   {parecer.pontosPositivos.length > 0 && (
                     <div>
-                      <SectionDivider title="Pontos Positivos" />
-                      <div className="space-y-1 mt-2">{parecer.pontosPositivos.map((p: string, idx: number) => <div key={idx} className="flex items-center gap-2 text-xs text-emerald-400"><ThumbsUp className="w-3 h-3 shrink-0" /> {p}</div>)}</div>
+                      <SectionDivider title="Pontos Positivos" large />
+                      <div className="space-y-1.5 mt-2">{parecer.pontosPositivos.map((p: string, idx: number) => <div key={idx} className="flex items-start gap-2 text-sm text-emerald-400"><ThumbsUp className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {p}</div>)}</div>
                     </div>
                   )}
                   <div>
-                    <SectionDivider title="Próxima Ação Sugerida" />
+                    <SectionDivider title="Próxima Ação Sugerida" large />
                     <div className="flex items-start gap-2 mt-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
                       <Target className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                      <span className="text-xs text-blue-300">{parecer.proximaAcao}</span>
+                      <span className="text-sm text-blue-300">{parecer.proximaAcao}</span>
                     </div>
                   </div>
                   <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={handleConfirmarComprometimento}><Zap className="w-3.5 h-3.5" /> Recalcular Comprometimento</Button>
@@ -924,21 +1005,117 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
 }
 
 const PERGUNTAS_QUESTIONARIO = [
-  { key: 'empresas_atuais', pergunta: 'Atualmente trabalha para quais empresas?' },
+  { key: 'empresas_atuais', pergunta: 'Atualmente trabalha para quais empresas?', longo: true },
   { key: 'intencao_renda', pergunta: 'Sua intenção é renda principal ou complementar?' },
   { key: 'dias_iniciar', pergunta: 'Caso aprovado, em quantos dias consegue iniciar?' },
   { key: 'disponibilidade_tipo', pergunta: 'Disponibilidade integral ou parcial?' },
   { key: 'possui_outra_operacao', pergunta: 'Possui outra operação fixa?' },
-  { key: 'o_que_faria_desistir', pergunta: 'O que faria você desistir de uma operação?' },
+  { key: 'o_que_faria_desistir', pergunta: 'O que faria você desistir de uma operação?', longo: true },
   { key: 'restricao_regiao', pergunta: 'Tem restrição de região?' },
   { key: 'restricao_horario', pergunta: 'Tem restrição de horário?' },
   { key: 'restricao_peso', pergunta: 'Tem restrição de peso/paradas?' },
-  { key: 'ja_desistiu', pergunta: 'Já desistiu de operação após aprovado?' },
+  { key: 'ja_desistiu', pergunta: 'Já desistiu de operação após aprovado?', longo: true },
+  // Perguntas da Avaliação Situacional do App (coluna `respostas_situacionais`).
+  { key: 'atraso_na_coleta', pergunta: 'Se perceber que não chegará a tempo para a coleta, como costuma proceder?', longo: true },
+  { key: 'problema_mecanico_na_rota', pergunta: 'O que faria se o veículo apresentasse um problema mecânico grave durante a rota?', longo: true },
+  { key: 'volume_faltante_na_entrega', pergunta: 'Como agiria se o cliente apontasse que falta um volume na entrega?', longo: true },
 ]
 
-function QuestionarioTab({ candidate, onSave }: { candidate: any; onSave: (respostas: Record<string, string>) => Promise<void> }) {
-  const [respostas, setRespostas] = useState<Record<string, string>>(candidate.questionarioRespostas || {})
+type CandidateQuestionarioFonte = {
+  id?: string
+  questionarioRespostas?: Record<string, string> | null
+  respostasSituacionais?: Record<string, string> | null
+  preferenciasOperacionais?: Record<string, unknown> | null
+}
+
+function textoValor(valor: unknown): string {
+  if (typeof valor === 'string') return valor
+  if (typeof valor === 'number' || typeof valor === 'boolean') return String(valor)
+  return ''
+}
+
+/**
+ * Monta os valores iniciais do Questionário a partir de todas as fontes do
+ * candidato: `questionario_respostas` (TMS) + `respostas_situacionais` (App)
+ * + `preferencias_operacionais` (App). As respostas do TMS têm prioridade e o
+ * operador continua podendo editar e salvar por cima.
+ */
+function respostasIniciaisQuestionario(candidate: CandidateQuestionarioFonte): Record<string, string> {
+  const respostas: Record<string, string> = {}
+
+  const mergeObject = (obj: unknown) => {
+    if (!obj || typeof obj !== 'object') return
+    for (const [chave, valor] of Object.entries(obj as Record<string, unknown>)) {
+      if (respostas[chave]) continue
+      const texto = textoValor(valor)
+      if (texto) respostas[chave] = texto
+    }
+  }
+
+  mergeObject(candidate.questionarioRespostas)
+  mergeObject(candidate.respostasSituacionais)
+
+  const pref = candidate.preferenciasOperacionais
+  if (pref && typeof pref === 'object') {
+    const p = pref as Record<string, unknown>
+    if (!respostas.disponibilidade_tipo) {
+      const modalidade = textoValor(p.modalidade)
+      if (modalidade) respostas.disponibilidade_tipo = modalidade
+    }
+    if (!respostas.restricao_horario && Array.isArray(p.turnos_disponiveis)) {
+      const turnos = p.turnos_disponiveis.map(textoValor).filter(Boolean)
+      if (turnos.length) respostas.restricao_horario = turnos.join(', ')
+    }
+    if (!respostas.restricao_regiao && p.regiao_atuacao && typeof p.regiao_atuacao === 'object') {
+      const regiao = p.regiao_atuacao as Record<string, unknown>
+      const partes: string[] = []
+      const cidade = textoValor(regiao.cidade_principal)
+      if (cidade) partes.push(`Cidade: ${cidade}`)
+      const raio = textoValor(regiao.raio_km)
+      if (raio) partes.push(`Raio: ${raio} km`)
+      if (typeof regiao.aceita_viagens_interestaduais === 'boolean') {
+        partes.push(regiao.aceita_viagens_interestaduais ? 'Aceita viagens interestaduais' : 'Não aceita viagens interestaduais')
+      }
+      if (partes.length) respostas.restricao_regiao = partes.join(' · ')
+    }
+  }
+
+  return respostas
+}
+
+function resumoPreferenciasApp(candidate: CandidateQuestionarioFonte): string[] {
+  const pref = candidate.preferenciasOperacionais
+  if (!pref || typeof pref !== 'object') return []
+  const p = pref as Record<string, unknown>
+  const linhas: string[] = []
+  const modalidade = textoValor(p.modalidade)
+  if (modalidade) linhas.push(`Modalidade: ${modalidade}`)
+  if (Array.isArray(p.dias_disponiveis)) {
+    const dias = p.dias_disponiveis.map(textoValor).filter(Boolean)
+    if (dias.length) linhas.push(`Dias: ${dias.join(', ')}`)
+  }
+  if (Array.isArray(p.turnos_disponiveis)) {
+    const turnos = p.turnos_disponiveis.map(textoValor).filter(Boolean)
+    if (turnos.length) linhas.push(`Turnos: ${turnos.join(', ')}`)
+  }
+  if (p.regiao_atuacao && typeof p.regiao_atuacao === 'object') {
+    const regiao = p.regiao_atuacao as Record<string, unknown>
+    const cidade = textoValor(regiao.cidade_principal)
+    const raio = textoValor(regiao.raio_km)
+    if (cidade || raio) linhas.push(`Região: ${[cidade, raio ? `${raio} km` : ''].filter(Boolean).join(' · ')}`)
+  }
+  return linhas
+}
+
+function QuestionarioTab({ candidate, onSave }: { candidate: CandidateQuestionarioFonte; onSave: (respostas: Record<string, string>) => Promise<void> }) {
+  const [respostas, setRespostas] = useState<Record<string, string>>(() => respostasIniciaisQuestionario(candidate))
   const [salvando, setSalvando] = useState(false)
+  const preferenciasApp = useMemo(() => resumoPreferenciasApp(candidate), [candidate])
+
+  // Reidrata ao trocar de candidato ou quando o App sincroniza novas respostas.
+  useEffect(() => {
+    setRespostas(respostasIniciaisQuestionario(candidate))
+  }, [candidate])
 
   const handleChange = (key: string, value: string) => {
     setRespostas(prev => ({ ...prev, [key]: value }))
@@ -947,46 +1124,86 @@ function QuestionarioTab({ candidate, onSave }: { candidate: any; onSave: (respo
   const handleSave = async () => {
     setSalvando(true)
     try {
-      await onSave(respostas)
+      // Salva por cima do existente, preservando a checklist manual mais recente.
+      const respostasCompletas: Record<string, string> = { ...respostas }
+      const checklistAtual = candidate.questionarioRespostas?.[CHECKLIST_OVERRIDES_KEY]
+      if (checklistAtual) respostasCompletas[CHECKLIST_OVERRIDES_KEY] = checklistAtual
+      await onSave(respostasCompletas)
     } finally {
       setSalvando(false)
     }
   }
 
+  const inputPremium =
+    'w-full rounded-lg border border-slate-300/70 bg-background px-3.5 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20'
+  const textareaPremium =
+    'min-h-[88px] w-full resize-y rounded-lg border border-slate-300/70 bg-background px-3.5 py-3 text-sm leading-relaxed text-foreground shadow-sm transition-colors placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20'
+
   return (
-    <div className="space-y-4">
-      <div className="p-3 rounded-lg bg-muted/10 border border-border/20 text-xs text-muted-foreground">
-        Questionário de perfil operacional. As respostas são usadas para cálculo de score de comprometimento e risco de desistência.
+    <div className="space-y-5">
+      <div className="rounded-xl border border-border/30 bg-muted/10 p-4 text-sm leading-relaxed text-muted-foreground">
+        <p className="font-medium text-foreground">Questionário de perfil operacional</p>
+        <p className="mt-1">As respostas são usadas para cálculo de score de comprometimento e risco de desistência. Valores recebidos do App aparecem preenchidos e podem ser ajustados pela operação.</p>
       </div>
-      <div className="space-y-3">
-        {PERGUNTAS_QUESTIONARIO.map(({ key, pergunta }) => (
-          <div key={key} className="space-y-1">
-            <label className="text-[11px] font-medium text-muted-foreground">{pergunta}</label>
-            <input
-              type="text"
-              value={respostas[key] || ''}
-              onChange={e => handleChange(key, e.target.value)}
-              placeholder="Digite a resposta..."
-              className="w-full h-9 rounded-md border border-border/50 bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-            />
+
+      {preferenciasApp.length > 0 && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            Preferências Operacionais (App)
+          </p>
+          <div className="mt-2 grid grid-cols-1 gap-1 text-sm text-muted-foreground sm:grid-cols-2">
+            {preferenciasApp.map((linha, idx) => (
+              <span key={idx}>{linha}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {PERGUNTAS_QUESTIONARIO.map(({ key, pergunta, longo }) => (
+          <div key={key} className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground/80" htmlFor={`questionario-${key}`}>{pergunta}</label>
+            {longo ? (
+              <Textarea
+                id={`questionario-${key}`}
+                value={respostas[key] || ''}
+                onChange={e => handleChange(key, e.target.value)}
+                placeholder="Descreva a resposta..."
+                rows={3}
+                className={textareaPremium}
+              />
+            ) : (
+              <input
+                id={`questionario-${key}`}
+                type="text"
+                value={respostas[key] || ''}
+                onChange={e => handleChange(key, e.target.value)}
+                placeholder="Digite a resposta..."
+                autoComplete="off"
+                className={`h-11 ${inputPremium}`}
+              />
+            )}
           </div>
         ))}
       </div>
-      <Button size="sm" className="w-full gap-1.5" onClick={handleSave} disabled={salvando}>
-        <Save className="w-3.5 h-3.5" />
+
+      <Button className="w-full gap-1.5" onClick={handleSave} disabled={salvando}>
+        <Save className="w-4 h-4" />
         {salvando ? 'Salvando...' : 'Salvar Questionário'}
       </Button>
-      {Object.keys(respostas).length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 py-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Resumo</span>
+
+      {PERGUNTAS_QUESTIONARIO.some(q => respostas[q.key]) && (
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+          <div className="flex items-center gap-2 pb-2">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">Resumo</span>
             <div className="flex-1 h-px bg-border/30" />
           </div>
-          <div className="space-y-1 mt-2">
+          <div className="space-y-2">
             {PERGUNTAS_QUESTIONARIO.filter(q => respostas[q.key]).map(({ key, pergunta }) => (
-              <div key={key} className="flex items-start gap-2 text-[11px]">
-                <span className="text-muted-foreground/70 shrink-0">{pergunta}</span>
-                <span className="text-foreground font-medium">{respostas[key]}</span>
+              <div key={key} className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-start sm:gap-2">
+                <span className="shrink-0 text-muted-foreground/80">{pergunta}</span>
+                <span className="font-medium text-foreground">{respostas[key]}</span>
               </div>
             ))}
           </div>

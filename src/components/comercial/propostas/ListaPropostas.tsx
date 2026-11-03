@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { 
   Search, Plus, FileText, Star, Copy, Edit, Trash2, LayoutTemplate, Briefcase, 
   ChevronDown, Filter, CalendarDays, BarChart, Tags, Grid3X3, List, Bookmark, 
@@ -17,6 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mockPropostas } from "./mockPropostas";
+import { gerarPDFProfissional } from "@/utils/pdfGenerator";
+import { toast } from "sonner";
 
 interface ListaPropostasProps {
   onNovaProposta: (tipo: "modelo" | "personalizada", originModelo?: any) => void;
@@ -142,6 +144,18 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
+  // Link compartilhado: /comercial?tab=propostas&proposta=<id> abre a prévia.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("proposta");
+    if (!id) return;
+    const proposta = propostas.find((p) => p.id === id);
+    if (proposta) {
+      setPropostaSelecionada(proposta);
+      setShowPreviewDialog(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleFavorita = (id: string) => {
     setPropostas(prev => prev.map(p => p.id === id ? { ...p, favorita: !p.favorita } : p));
   };
@@ -212,29 +226,76 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
     setTimeout(() => setShowSaveSuccess(false), 3000);
   };
 
-  const exportarProposta = (p: Proposta,同時Guardar: boolean = false) => {
-    setPropostas(prev => prev.map(prop => {
-      if (prop.id === p.id) {
-        const now = new Date().toISOString();
-        return {
-          ...prop,
-          totalExportacoes: prop.totalExportacoes + 1,
-          ultimaExportacaoEm: now,
-          historico: [
-            ...prop.historico,
-            { data: now, acao: `Exportação #${prop.totalExportacoes + 1}`, usuario: "Sistema" },
-          ],
-        };
+  const exportarProposta = async (p: Proposta, guardarTambem: boolean = false) => {
+    try {
+      await gerarPDFProfissional({
+        titulo: `Proposta Comercial — ${p.titulo}`,
+        subtitulo: `${p.cliente || "Modelo base"} · ${p.segmento || "Segmento não informado"} · v${p.versao}.0`,
+        colunas: ["Campo", "Detalhe"],
+        linhas: [
+          ["Cliente", p.cliente || "Não informado"],
+          ["Segmento", p.segmento || "—"],
+          ["Tipo de serviço", p.tipoServico || "—"],
+          ["Status", getStatusColor(p.status).label],
+          ["Responsável", p.responsavel || "—"],
+          ["Versão", `v${p.versao}.0`],
+          ["Atualizado em", new Date(p.atualizadoEm).toLocaleDateString("pt-BR")],
+          ["Total de exportações", String(p.totalExportacoes + 1)],
+        ],
+        totais: [
+          { label: "Proposta", valor: p.titulo },
+          { label: "Emitida em", valor: new Date().toLocaleString("pt-BR") },
+        ],
+      });
+
+      setPropostas(prev => prev.map(prop => {
+        if (prop.id === p.id) {
+          const now = new Date().toISOString();
+          return {
+            ...prop,
+            totalExportacoes: prop.totalExportacoes + 1,
+            ultimaExportacaoEm: now,
+            historico: [
+              ...prop.historico,
+              { data: now, acao: `Exportação PDF #${prop.totalExportacoes + 1}`, usuario: "Sistema" },
+            ],
+          };
+        }
+        return prop;
+      }));
+
+      if (guardarTambem) {
+        guardarNaBiblioteca(p);
       }
-      return prop;
-    }));
 
-    if (同時Guardar) {
-      guardarNaBiblioteca(p);
+      setShowExportSuccess(true);
+      setTimeout(() => setShowExportSuccess(false), 3000);
+    } catch (erro) {
+      console.error("[Propostas] Falha ao exportar PDF:", erro);
+      toast.error("Não foi possível gerar o PDF da proposta.");
     }
+  };
 
-    setShowExportSuccess(true);
-    setTimeout(() => setShowExportSuccess(false), 3000);
+  const compartilharProposta = async (p: Proposta) => {
+    const link = `${window.location.origin}/comercial?tab=propostas&proposta=${encodeURIComponent(p.id)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success("Link da proposta copiado!");
+    } catch {
+      window.prompt("Copie o link da proposta:", link);
+    }
+    const now = new Date().toISOString();
+    setPropostas(prev => prev.map(prop =>
+      prop.id === p.id
+        ? { ...prop, historico: [...prop.historico, { data: now, acao: "Link compartilhado", usuario: "Sistema" }] }
+        : prop,
+    ));
+  };
+
+  const excluirProposta = (p: Proposta) => {
+    if (!window.confirm(`Excluir a proposta "${p.titulo}"?`)) return;
+    setPropostas(prev => prev.filter(prop => prop.id !== p.id));
+    toast.success("Proposta excluída.");
   };
 
   const filtradas = useMemo(() => {
@@ -617,13 +678,13 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                                     <Edit className="w-4 h-4 mr-2" /> Renomear
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => exportarProposta(p, false)}>
+                                  <DropdownMenuItem onClick={() => void exportarProposta(p, false)}>
                                     <Download className="w-4 h-4 mr-2" /> Exportar PDF
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => guardarNaBiblioteca(p)}>
                                     <Save className="w-4 h-4 mr-2" /> Guardar na Biblioteca
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => exportarProposta(p, true)}>
+                                  <DropdownMenuItem onClick={() => void exportarProposta(p, true)}>
                                     <Send className="w-4 h-4 mr-2" /> Exportar e Guardar
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
@@ -631,7 +692,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                                     <Star className="w-4 h-4 mr-2" />
                                     {p.favorita ? "Desfavoritar" : "Favoritar"}
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => void compartilharProposta(p)}>
                                     <Share2 className="w-4 h-4 mr-2" /> Compartilhar Link
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => toggleArquivar(p.id)}>
@@ -639,7 +700,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                                     {p.arquivada ? "Desarquivar" : "Arquivar"}
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-red-600">
+                                  <DropdownMenuItem className="text-red-600" onClick={() => excluirProposta(p)}>
                                     <Trash2 className="w-4 h-4 mr-2" /> Excluir
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>

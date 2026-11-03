@@ -11,6 +11,7 @@
 export const VEICULO_PAYLOAD_ALLOWLIST: string[] = [
   'placa', 'tipo', 'tipo_veiculo', 'marca', 'modelo', 'ano', 'renavam', 'antt',
   'proprietario_nome', 'proprietario_documento', 'capacidade_kg', 'capacidade_m3',
+  'media_consumo_km_l', 'custo_manutencao_km', 'tipo_combustivel',
   'comprimento_m', 'largura_m', 'altura_m', 'tipo_carga', 'temperatura_min',
   'temperatura_max', 'rastreador', 'seguro', 'restricoes_regiao', 'observacoes',
   'principal', 'status', 'prestador_vinculado', 'updated_at'

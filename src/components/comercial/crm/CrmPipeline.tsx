@@ -157,6 +157,7 @@ export default function CrmPipeline({ leads, onLeadsChange, onSalvarNovoLead, us
       telefone: form.telefone || "",
       whatsapp: form.whatsapp || "",
       email: form.email || "",
+      endereco: form.endereco || "",
       segmento: form.segmento || "",
       regiao: form.regiao || "",
       origem: (form.origem as LeadOrigem) || "outro",
@@ -505,6 +506,14 @@ export default function CrmPipeline({ leads, onLeadsChange, onSalvarNovoLead, us
                 <Label className="text-xs">E-mail</Label>
                 <Input type="email" value={form.email || ""} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Endereço</Label>
+              <Input
+                value={form.endereco || ""}
+                onChange={e => setForm(p => ({ ...p, endereco: e.target.value }))}
+                placeholder="Rua, número, bairro, cidade/UF"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

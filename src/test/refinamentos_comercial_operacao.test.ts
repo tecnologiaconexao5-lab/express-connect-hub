@@ -78,8 +78,16 @@ describe("C) Listagem de OS — ordenação e paginação", () => {
 });
 
 describe("D) Modal de Nova OS/Edição estático", () => {
-  it("a aba de OS permanece montada ao trocar de aba interna", () => {
-    expect(operacao).toContain('<TabsContent value="os" forceMount>');
+  it("cada aba da Operação monta apenas o seu componente (bugfix do forceMount)", () => {
+    // Antes: <TabsContent value="os" forceMount> mantinha a lista de OS visível em TODAS as abas
+    expect(operacao).not.toContain("forceMount");
+    expect(operacao).toContain("switch (currentTab)");
+    expect(operacao).toContain("return <SolicitacoesClienteLista />;");
+    expect(operacao).toContain("return <EscalaLista />;");
+    expect(operacao).toContain("return <RoteirizadorWeb />;");
+    expect(operacao).toContain("return <OcorrenciasLista />;");
+    expect(operacao).toContain("return <PodLista />;");
+    expect(operacao).toContain("return <OrdensServicoLista />;");
   });
 
   it("o modal não fecha por clique fora e só sai por Voltar/X com confirmação", () => {

@@ -14,6 +14,7 @@ export const KNOWN_BUCKETS = new Set<string>([
   "comprovantes-entrega",
   "documentos",
   "documentos_prestadores",
+  "documentos_operacionais",
   "prestadores",
   "veiculos",
   "contratos",

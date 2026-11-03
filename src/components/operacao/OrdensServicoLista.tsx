@@ -30,9 +30,11 @@ import {
   type SugestaoMatch,
 } from "@/services/operacao/matchPrestadoresService";
 import { PERFORMANCE_CORES } from "@/lib/performancePrestador";
-import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
+import { formatarDataBR, formatarDataHoraSolicitacaoBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
+import { resumoRotaOSTexto, resumoRotaOS } from "@/lib/resumoRotaOS";
+import { buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasService";
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
@@ -104,7 +106,6 @@ const OrdensServicoLista = () => {
   // Exclusão
   const [osParaExcluir, setOsParaExcluir] = useState<OrdemServico | null>(null);
   const [vinculosCount, setVinculosCount] = useState({ escalas: 0, financeiro: 0, pagamentos: 0 });
-  const [senhaAdmin, setSenhaAdmin] = useState("");
   const [excluindo, setExcluindo] = useState(false);
   const [syncStatusMap, setSyncStatusMap] = useState<Record<string, { label: string; classe: string }>>({});
   const [page, setPage] = useState(1);
@@ -118,6 +119,7 @@ const OrdensServicoLista = () => {
   const [prestadorAlocacaoNome, setPrestadorAlocacaoNome] = useState("");
   const [motoristaAlocacao, setMotoristaAlocacao] = useState("");
   const [repasseAlocacao, setRepasseAlocacao] = useState("");
+  const [calculandoRepasse, setCalculandoRepasse] = useState(false);
   const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
   const [sugestoesAlocacao, setSugestoesAlocacao] = useState<SugestaoMatch[]>([]);
   const [buscandoSugestoesAlocacao, setBuscandoSugestoesAlocacao] = useState(false);
@@ -145,12 +147,25 @@ const OrdensServicoLista = () => {
           .eq("id", osId)
           .single();
         if (data) {
-          const os = fromOSRow(data as any);
-          const osCompleta = {
-            ...os,
-            cliente: (data as any).clientes?.nome_fantasia || (data as any).clientes?.razao_social || os.cliente || "",
+          const row = data as OSRow & {
+            cliente?: string;
+            cliente_id?: string;
+            created_at?: string;
+            clientes?: { nome_fantasia?: string; razao_social?: string };
           };
-          setOsPreview(osCompleta as any);
+          const os = fromOSRow(row);
+          const clienteUuidDeepLink =
+            row.cliente_id ||
+            (typeof row.cliente === "string" && /^[0-9a-f-]{36}$/i.test(row.cliente)
+              ? row.cliente
+              : os.clienteId);
+          const osCompleta: OrdemServico = {
+            ...os,
+            cliente: row.clientes?.nome_fantasia || row.clientes?.razao_social || os.cliente || "",
+            clienteId: clienteUuidDeepLink,
+            createdAt: row.created_at,
+          };
+          setOsPreview(osCompleta);
           setShowPreview(true);
         }
       }, 800);
@@ -236,6 +251,12 @@ const OrdensServicoLista = () => {
           });
           const prestadorUuid =
             typeof item.prestador === "string" && /^[0-9a-f-]{36}$/i.test(item.prestador) ? item.prestador : "";
+          // `ordens_servico.cliente` é o uuid; a UI exibe o nome. Preserva o uuid
+          // em `clienteId` para o Preview resolver o telefone/WhatsApp da cotação.
+          const clienteUuidLista =
+            typeof item.cliente === "string" && /^[0-9a-f-]{36}$/i.test(item.cliente)
+              ? item.cliente
+              : os.clienteId || "";
           return {
             ...os,
             // ETAPA-4 — preserva o itinerário (dados operacionais incluídos) ao editar.
@@ -244,6 +265,7 @@ const OrdensServicoLista = () => {
             prestador: prestadorUuid ? (nomesPrestador[prestadorUuid] || "") : (os.prestador || ""),
             prestadorId: prestadorUuid || undefined,
             cliente: item.clientes?.nome_fantasia || item.clientes?.razao_social || os.cliente || "Cliente não informado",
+            clienteId: clienteUuidLista || undefined,
             clienteCotacao: clienteVeioDeCotacao({
               origemCotacao: item.carga?.origem_cotacao,
               clienteStatus: item.clientes?.status,
@@ -290,9 +312,57 @@ const OrdensServicoLista = () => {
     setRepasseAlocacao("");
     setSugestoesAlocacao([]);
     setBuscandoSugestoesAlocacao(false);
+    setCalculandoRepasse(false);
   };
 
-  const abrirAlocacao = (os: OrdemServico) => {
+  /**
+   * Repasse sugerido pela tabela de custo do prestador (cotação/OS).
+   * Fallback quando a OS não tem `custo_prestador` calculado — usa o veículo
+   * e a distância da OS (preenchidos pela Cotação Express) e, quando o
+   * prestador já foi escolhido, a tabela específica dele.
+   */
+  const calcularRepasseSugerido = async (
+    os: OrdemServico,
+    prestadorId?: string | null,
+  ): Promise<number> => {
+    const carga = (os.carga || {}) as Record<string, unknown>;
+    const tipoVeiculo = String(
+      os.veiculoTipo || carga.tipo_veiculo || carga.tipoVeiculo || "",
+    ).trim();
+    const km = Number(
+      carga.distancia_km ?? carga.km ?? carga.distanciaKm ?? 0,
+    );
+    const paradas = Array.isArray(os.enderecos) && os.enderecos.length > 0 ? os.enderecos.length : 2;
+
+    if (!tipoVeiculo || !Number.isFinite(km) || km <= 0) return 0;
+
+    try {
+      const { tabela } = await buscarTabelaPrestador({
+        tenant_id: "",
+        cliente_id: "",
+        prestador_id: prestadorId || undefined,
+        tipo_veiculo: tipoVeiculo,
+        tipo_operacao: "fracionado",
+        distancia_km: km,
+        quantidade_paradas: paradas,
+        origem: { cidade: "", uf: "" },
+        destino: { cidade: "", uf: "" },
+        modo: "preview",
+        data_operacao: os.data || undefined,
+      });
+      if (!tabela || tabela.fonte === "nao_encontrada") return 0;
+
+      const base = Number(tabela.valor_minimo || 0) + Number(tabela.valor_saida || 0);
+      const kmIncluso = Number(tabela.km_incluso || 0);
+      const kmExcedente = Math.max(0, km - kmIncluso);
+      const total = base + kmExcedente * Number(tabela.valor_km || 0);
+      return total > 0 ? Number(total.toFixed(2)) : 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const abrirAlocacao = async (os: OrdemServico) => {
     setOsAlocando(os);
     setPrestadorAlocacao(null);
     setPrestadorAlocacaoNome("");
@@ -306,6 +376,31 @@ const OrdensServicoLista = () => {
       Number(os.carga?.repassePrestador) ||
       0;
     setRepasseAlocacao(repasseAtual > 0 ? String(Number(repasseAtual.toFixed(2))) : "");
+
+    // Sem custo gravado → calcula pela tabela da cotação vinculada.
+    if (!(repasseAtual > 0)) {
+      setCalculandoRepasse(true);
+      try {
+        const sugerido = await calcularRepasseSugerido(os);
+        if (sugerido > 0) setRepasseAlocacao(String(sugerido));
+      } finally {
+        setCalculandoRepasse(false);
+      }
+    }
+  };
+
+  /** Ao escolher o motorista, completa o repasse pela tabela dele (se vazio). */
+  const preencherRepasseAoSelecionar = async (prestadorId: string) => {
+    if (!osAlocando) return;
+    const atual = Number(String(repasseAlocacao).replace(",", "."));
+    if (Number.isFinite(atual) && atual > 0) return;
+    setCalculandoRepasse(true);
+    try {
+      const sugerido = await calcularRepasseSugerido(osAlocando, prestadorId);
+      if (sugerido > 0) setRepasseAlocacao(String(sugerido));
+    } finally {
+      setCalculandoRepasse(false);
+    }
   };
 
   const handleAlocarPrestador = async () => {
@@ -522,18 +617,9 @@ const OrdensServicoLista = () => {
 
   const handleDelete = async () => {
     if (!osParaExcluir) return;
-    
-    const senhaCorreta = import.meta.env.VITE_ADMIN_DELETE_PASSWORD;
-    if (!senhaCorreta) {
-      toast.error("Exclusão de OS desativada: configure VITE_ADMIN_DELETE_PASSWORD no .env");
-      setExcluindo(false);
-      return;
-    }
-    
-    if (senhaAdmin !== senhaCorreta) {
-      toast.error("Senha administrativa incorreta.");
-      return;
-    }
+
+    // TEMPORÁRIO (limpeza de testes): exclusão liberada sem senha administrativa.
+    // Reativar a validação ao fim da homologação.
 
     try {
       setExcluindo(true);
@@ -549,10 +635,9 @@ const OrdensServicoLista = () => {
 
       const { error } = await supabase.from("ordens_servico").delete().eq("id", osId);
       if (error) throw error;
-      
+
       toast.success(`OS ${osParaExcluir.numero} excluída com sucesso.`);
       setOsParaExcluir(null);
-      setSenhaAdmin("");
       fetchOrdens();
     } catch (e: any) {
       toast.error("Erro ao excluir OS: " + e.message);
@@ -792,6 +877,11 @@ const OrdensServicoLista = () => {
                   const paradaHa = statusAtivo
                     ? formatarTempoParada((os as OSComDataCriacao).createdAt)
                     : "";
+                  const rotaTexto = resumoRotaOSTexto(
+                    os.enderecos,
+                    os.unidade || "Rota padrão",
+                  );
+                  const resumoRota = resumoRotaOS(os.enderecos);
 
                   return (
                     <TableRow
@@ -811,6 +901,15 @@ const OrdensServicoLista = () => {
                         <div className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
                           <Calendar className="w-3 h-3" /> {safeFormatDate(os.data)}
                         </div>
+                        {(os as OSComDataCriacao).createdAt && (
+                          <div
+                            className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400"
+                            title="Data e hora exatas em que a OS foi solicitada"
+                          >
+                            <Clock className="w-3 h-3" /> Solicitada{" "}
+                            {formatarDataHoraSolicitacaoBR((os as OSComDataCriacao).createdAt)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                          <div className="flex flex-wrap items-center gap-1.5">
@@ -833,10 +932,20 @@ const OrdensServicoLista = () => {
                          <div className="text-[10px] text-muted-foreground uppercase tracking-tight">{os.tipoOperacao || "Transporte"}</div>
                       </TableCell>
 <TableCell>
-                         <div className="flex items-center gap-1 text-sm font-medium">
-                           <MapPin className="w-3.5 h-3.5 text-primary"/> 
-                           <span className="truncate max-w-[150px]">{os.unidade || "Rota Padrão"}</span>
+                         <div
+                           className="flex items-start gap-1 text-xs font-semibold"
+                           title={rotaTexto}
+                         >
+                           <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                           <span className="line-clamp-2 max-w-[185px] break-words">
+                             {rotaTexto}
+                           </span>
                          </div>
+                         {resumoRota.multiplos && (
+                           <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-tight text-violet-600">
+                             {resumoRota.paradas} paradas
+                           </span>
+                         )}
                        </TableCell>
                        <TableCell>
                          <div className="text-xs font-semibold">{os.veiculoTipo || "—"}</div>
@@ -847,11 +956,18 @@ const OrdensServicoLista = () => {
                        </TableCell>
                        <TableCell>
                         {semPrestador ? (
-                          <div className="flex flex-col gap-1">
-                            <Badge className="bg-red-100 text-red-700 border border-red-200 text-[9px] uppercase font-bold py-0.5 px-2 w-fit gap-1">
+                          <div className="flex flex-col gap-1 rounded-lg border border-red-200/80 bg-red-50/70 p-2">
+                            <Badge className="w-fit gap-1 border border-red-200 bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase text-red-700">
                               <ShieldAlert className="w-3 h-3" /> Sem prestador
                             </Badge>
-                            <span className="text-[10px] text-red-600 font-medium">Nenhum motorista alocado</span>
+                            <span className="text-[10px] font-medium text-red-600">
+                              Nenhum motorista alocado
+                            </span>
+                            {paradaHa && (
+                              <span className="inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-md bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                <Clock className="h-2.5 w-2.5" /> Parada há {paradaHa}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
@@ -868,7 +984,7 @@ const OrdensServicoLista = () => {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} inline-flex items-center text-[9px] uppercase font-bold py-0.5 px-2`}>
+                        <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} inline-flex items-center whitespace-nowrap text-[9px] uppercase font-bold py-0.5 px-2`}>
                           {statusAtivo && (
                             <span
                               className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse"
@@ -877,13 +993,8 @@ const OrdensServicoLista = () => {
                           )}
                           {STATUS_GLOBAL_INFO[obterStatusGlobalOS(os.status)].label}
                         </Badge>
-                        {riscoSlaPendente && (
-                          <Badge className="mt-1 flex w-fit animate-pulse items-center gap-1 border border-red-300 bg-red-600 px-1.5 py-0 text-[9px] font-bold uppercase text-white">
-                            <AlertTriangle className="h-2.5 w-2.5" /> Atraso/Risco de SLA
-                          </Badge>
-                        )}
                         {(os.dataProgramada || os.previsaoInicio) && (
-                          <div className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-blue-600 uppercase">
+                          <div className="mt-1 flex items-center gap-0.5 whitespace-nowrap text-[9px] font-bold uppercase text-blue-600">
                             <Clock className="w-2.5 h-2.5" /> Agendado
                           </div>
                         )}
@@ -901,16 +1012,11 @@ const OrdensServicoLista = () => {
                         <div className={`text-sm font-medium ${atrasada ? 'text-red-600' : ''}`}>
                           {os.previsaoTermino ? safeFormatDate(os.previsaoTermino) : "Sem prazo"}
                         </div>
-                        {atrasada && <span className="text-[9px] font-bold text-red-500 uppercase">Atrasada</span>}
-                        {paradaHa && (
-                          <span className="mt-0.5 block text-[9px] font-semibold text-amber-700">
-                            Parada há {paradaHa}
-                          </span>
-                        )}
-                        {riscoSla && (
-                          <div className="mt-0.5 flex items-center gap-0.5 text-[9px] font-bold text-red-600 uppercase">
-                            <ShieldAlert className="w-2.5 h-2.5" /> Risco de SLA
-                          </div>
+                        {(atrasada || riscoSlaPendente || riscoSla) && (
+                          <Badge className="mt-1 flex w-fit items-center gap-1 whitespace-nowrap border border-red-300 bg-red-600 px-1.5 py-0 text-[9px] font-bold uppercase text-white">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {atrasada ? "Atraso" : "Risco de SLA"}
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -1082,6 +1188,7 @@ const OrdensServicoLista = () => {
                       onClick={() => {
                         setPrestadorAlocacao(s.prestadorId);
                         setPrestadorAlocacaoNome(s.nome);
+                        void preencherRepasseAoSelecionar(s.prestadorId);
                       }}
                     >
                       Selecionar
@@ -1102,6 +1209,7 @@ const OrdensServicoLista = () => {
                 onChange={(value, record) => {
                   setPrestadorAlocacao(value);
                   setPrestadorAlocacaoNome(String(record?.nome_completo || ""));
+                  if (value) void preencherRepasseAoSelecionar(value);
                 }}
               />
             </div>
@@ -1117,16 +1225,23 @@ const OrdensServicoLista = () => {
 
             <div className="space-y-1.5">
               <Label>Repasse do prestador (R$) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={repasseAlocacao}
-                onChange={(e) => setRepasseAlocacao(e.target.value)}
-                placeholder="0,00"
-              />
+              <div className="relative">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={repasseAlocacao}
+                  onChange={(e) => setRepasseAlocacao(e.target.value)}
+                  placeholder="0,00"
+                />
+                {calculandoRepasse && (
+                  <Loader2 className="absolute right-2.5 top-3 h-4 w-4 animate-spin text-slate-400" />
+                )}
+              </div>
               <p className="text-[11px] text-muted-foreground">
-                Obrigatório (maior que zero) — base do repasse e do financeiro gerado.
+                {calculandoRepasse
+                  ? "Calculando pela tabela da cotação vinculada..."
+                  : "Pré-preenchido pela tabela/cotação da OS — permanece editável."}
               </p>
             </div>
           </div>
@@ -1146,7 +1261,7 @@ const OrdensServicoLista = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!osParaExcluir} onOpenChange={() => { setOsParaExcluir(null); setSenhaAdmin(""); }}>
+      <Dialog open={!!osParaExcluir} onOpenChange={() => setOsParaExcluir(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-600 flex items-center gap-2">
@@ -1166,20 +1281,16 @@ const OrdensServicoLista = () => {
                 <p className="text-xs text-red-700 font-semibold mt-1">Todos serão removidos permanentemente.</p>
               </div>
             )}
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase">Senha Administrativa</Label>
-              <Input 
-                type="password" 
-                placeholder="Digite a senha para autorizar" 
-                value={senhaAdmin}
-                onChange={(e) => setSenhaAdmin(e.target.value)}
-                className="focus-visible:ring-red-500"
-              />
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-bold text-amber-800">Exclusão liberada temporariamente</p>
+              <p className="mt-0.5 text-[11px] text-amber-700">
+                A senha administrativa está desativada nesta fase (limpeza das OS de teste).
+              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setOsParaExcluir(null); setSenhaAdmin(""); }}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={!senhaAdmin || excluindo}>
+            <Button variant="outline" onClick={() => setOsParaExcluir(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={excluindo}>
               {excluindo ? "Excluindo..." : "Confirmar Exclusão"}
             </Button>
           </DialogFooter>

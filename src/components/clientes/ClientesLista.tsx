@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import PaginationBar from "@/components/ui/PaginationBar";
@@ -16,6 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ProgressiveBlocksLoader } from "@/components/ui/ProgressiveBlocksLoader";
 import { verificarReferenciasCliente } from "@/helpers/clienteReferencias";
 import { formatarDataBR } from "@/lib/formatDates";
+import { normalizarStatusCliente, rotuloStatusCliente } from "@/lib/clienteStatus";
 import { SafeImage } from "@/components/ui/safe-image";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -66,11 +68,8 @@ const mapRow = (row: ClienteRow) => ({
   ie:                     row.ie,
   segmento:               row.segmento,
   porte:                  row.porte,
-  // Normaliza status: "ativo" → "Ativo", "Ativo" → "Ativo"
-  status: (() => {
-    const s = (row.status || "ativo").toLowerCase();
-    return s === "ativo" ? "Ativo" : s === "inativo" ? "Inativo" : row.status || "Ativo";
-  })(),
+  // Normaliza o rótulo: "ativo"/"Ativo" → "Ativo"; "pre-cadastro" → "Pré-cadastro".
+  status: rotuloStatusCliente(row.status),
   contatoPrincipal:       row.contato_principal  || row.contatoPrincipal  || "",
   telefone:               row.telefone           || "",
   whatsapp:               row.whatsapp           || "",
@@ -95,6 +94,14 @@ const mapRow = (row: ClienteRow) => ({
 
 type ClienteMapped = ReturnType<typeof mapRow>;
 
+/** Cor do badge por status do cadastro (Pré-cadastro em âmbar). */
+const classeBadgeStatus = (status?: string): string => {
+  const codigo = normalizarStatusCliente(status);
+  if (codigo === "ativo") return "bg-green-100 text-green-700 border-green-200";
+  if (codigo === "pre-cadastro") return "bg-amber-100 text-amber-800 border-amber-200";
+  return "bg-gray-100 text-gray-600 border-gray-200";
+};
+
 interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -103,6 +110,8 @@ interface Props {
 const ClientesLista = ({ onSelect, onNew }: Props) => {
   const [busca, setBusca]                         = useState("");
   const [buscaDebounced, setBuscaDebounced]       = useState("");
+  const [filtroStatus, setFiltroStatus]           = useState("todos");
+  const [filtroSegmento, setFiltroSegmento]       = useState("todos");
   const [clientes, setClientes]                   = useState<ClienteMapped[]>([]);
   const [isLoading, setIsLoading]                 = useState(false);
   const [adminPassword, setAdminPassword]         = useState("");
@@ -128,7 +137,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
   useEffect(() => {
     fetchClientes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, buscaDebounced]);
+  }, [page, buscaDebounced, filtroStatus, filtroSegmento]);
 
   // ── FETCH (ordenação A→Z no banco → paginação → tela) ──────────────────────
   const fetchClientes = async () => {
@@ -146,8 +155,14 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
       if (termo) {
         const like = `%${termo}%`;
         query = query.or(
-          `razao_social.ilike.${like},nome_fantasia.ilike.${like},cnpj.ilike.${like},email.ilike.${like},telefone.ilike.${like}`
+          `razao_social.ilike.${like},nome_fantasia.ilike.${like},cnpj.ilike.${like},ie.ilike.${like},segmento.ilike.${like},porte.ilike.${like},status.ilike.${like},contato_principal.ilike.${like},telefone.ilike.${like},whatsapp.ilike.${like},email.ilike.${like},cidade.ilike.${like},uf.ilike.${like},responsavel_operacional.ilike.${like},responsavel_financeiro.ilike.${like},responsavel_comercial.ilike.${like},origem_comercial.ilike.${like},observacoes.ilike.${like}`
         );
+      }
+      if (filtroStatus !== "todos") {
+        query = query.ilike("status", filtroStatus);
+      }
+      if (filtroSegmento !== "todos") {
+        query = query.ilike("segmento", filtroSegmento);
       }
 
       const { data, error, count } = await query
@@ -302,18 +317,36 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
         </Button>
       </div>
 
-      {/* Busca */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
+      {/* Busca + filtros */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por razão social, CNPJ, e-mail ou telefone..."
+            placeholder="Buscar por nome, CNPJ, telefone, e-mail, cidade, segmento, status..."
             value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => { setBusca(e.target.value); setPage(1); }}
             className="pl-9"
           />
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Select value={filtroStatus} onValueChange={(v) => { setFiltroStatus(v); setPage(1); }}>
+          <SelectTrigger className="h-9 w-40 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os status</SelectItem>
+            <SelectItem value="ativo">Ativo</SelectItem>
+            <SelectItem value="inativo">Inativo</SelectItem>
+            <SelectItem value="pre-cadastro">Pré-cadastro</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filtroSegmento} onValueChange={(v) => { setFiltroSegmento(v); setPage(1); }}>
+          <SelectTrigger className="h-9 w-40 text-xs"><SelectValue placeholder="Segmento" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os segmentos</SelectItem>
+            {["Varejo", "Indústria", "E-commerce", "Farmacêutico", "Transportadora", "Outro"].map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" className="gap-1.5 h-9">
           <Filter className="w-4 h-4" /> Filtros
         </Button>
       </div>
@@ -358,7 +391,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                   // Localidade
                   const localidade = c.cidade && c.uf ? `${c.cidade}/${c.uf}` : c.cidade || "—";
                   // Status badge color
-                  const isAtivo = c.status?.toLowerCase() === "ativo";
+                  const statusCodigo = normalizarStatusCliente(c.status);
                   
                   return (
                     <TableRow
@@ -450,7 +483,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={isAtivo ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}>
+                        <Badge className={classeBadgeStatus(c.status)} title={statusCodigo === "pre-cadastro" ? "Gerado pela Cotação Express — complete o cadastro e altere para Ativo" : undefined}>
                           {c.status || "Ativo"}
                         </Badge>
                       </TableCell>
@@ -540,7 +573,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                     <p className="text-sm text-muted-foreground">{quickViewCliente.nomeFantasia}</p>
                   )}
                   <div className="flex items-center gap-2 mt-1">
-                    <Badge className={quickViewCliente.status === "Ativo" ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
+                    <Badge className={`border ${classeBadgeStatus(quickViewCliente.status)}`}>
                       {quickViewCliente.status || "Ativo"}
                     </Badge>
                     {quickViewCliente.segmento && <Badge variant="outline">{quickViewCliente.segmento}</Badge>}

@@ -14,7 +14,7 @@ import { HistoricoOS, type HistoricoOSItem } from "./HistoricoOS";
 import { STATUS_GLOBAL_INFO } from "./statusGlobal";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
+import { formatarDataBR, formatarDataHoraBR, formatarDataHoraSolicitacaoBR } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 import { ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
@@ -122,7 +122,14 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const [fiscalData, setFiscalData] = useState<any>({ ctes: [], mdfes: [], nfses: [], xmls: [], timeline: [] });
   const [fiscalLoading, setFiscalLoading] = useState(true);
   // FIX UUID — resolve nome do prestador/cliente quando o registro traz o id.
-  const [nomesResolvidos, setNomesResolvidos] = useState<{ prestador?: string; cliente?: string; prestadorIncompleto?: boolean; clienteIncompleto?: boolean }>({});
+  const [nomesResolvidos, setNomesResolvidos] = useState<{
+    prestador?: string;
+    cliente?: string;
+    prestadorIncompleto?: boolean;
+    clienteIncompleto?: boolean;
+    clienteTelefone?: string;
+    clienteWhatsapp?: string;
+  }>({});
 
   useEffect(() => {
     const ehUuid = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
@@ -143,24 +150,33 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
             }),
         );
       }
-      if (ehUuid(os.cliente)) {
+      const clienteUuid = ehUuid(os.cliente) ? os.cliente : ehUuid(os.clienteId) ? os.clienteId : "";
+      if (clienteUuid) {
         consultas.push(
           supabase
             .from("clientes")
-            .select("nome_fantasia, razao_social, status, origem_comercial, cnpj")
-            .eq("id", os.cliente)
+            .select("nome_fantasia, razao_social, status, origem_comercial, cnpj, telefone, whatsapp")
+            .eq("id", clienteUuid)
             .maybeSingle()
             .then(({ data }) => {
-              const row = data as { nome_fantasia?: string; razao_social?: string } | null;
+              const row = data as { nome_fantasia?: string; razao_social?: string; telefone?: string; whatsapp?: string } | null;
               const nome = row?.nome_fantasia || row?.razao_social;
-              if (ativo && nome) setNomesResolvidos((prev) => ({ ...prev, cliente: nome, clienteIncompleto: ehCadastroIncompletoCliente(row) }));
+              if (ativo) {
+                setNomesResolvidos((prev) => ({
+                  ...prev,
+                  ...(nome ? { cliente: nome } : {}),
+                  clienteIncompleto: ehCadastroIncompletoCliente(row),
+                  clienteTelefone: row?.telefone || prev.clienteTelefone,
+                  clienteWhatsapp: row?.whatsapp || prev.clienteWhatsapp,
+                }));
+              }
             }),
         );
       }
       await Promise.all(consultas);
     })();
     return () => { ativo = false; };
-  }, [os.prestador, os.cliente]);
+  }, [os.prestador, os.cliente, os.clienteId]);
 
   const ehUuidTexto = (v?: string) => Boolean(v && /^[0-9a-f-]{36}$/i.test(v));
   const prestadorNome = nomesResolvidos.prestador || (ehUuidTexto(os.prestador) ? "" : os.prestador || "");
@@ -175,6 +191,18 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
     observacoes: os.observacoesGerais,
     observacaoAgendamento: os.observacaoAgendamento,
   });
+  // Horário exato em que a solicitação/OS foi criada (ex.: "01/11/2026 às 14h30").
+  const solicitacaoEm = formatarDataHoraSolicitacaoBR(os.createdAt);
+  // Telefone/WhatsApp informado na cotação: cadastro do cliente (criado pela
+  // Cotação Express) com fallback para a observação "WhatsApp: ...".
+  const telefoneDaObservacao = (() => {
+    const m = String(os.observacoesGerais || "").match(/WhatsApp:\s*([^·|\n]+)/i);
+    return m?.[1]?.trim() || "";
+  })();
+  const contatoCliente =
+    nomesResolvidos.clienteWhatsapp ||
+    nomesResolvidos.clienteTelefone ||
+    telefoneDaObservacao;
 
   useEffect(function() {
     if (!os?.id) { setFiscalLoading(false); return; }
@@ -414,10 +442,21 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                       </Badge>
                     )}
                   </div>
+                  <LabelRow label="Telefone / WhatsApp">
+                    {contatoCliente ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                        {contatoCliente}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </LabelRow>
                   <LabelRow label="Unidade">{os.unidade || "—"}</LabelRow>
                   <LabelRow label="Tipo de Operação">{os.tipoOperacao || "—"}</LabelRow>
                 </div>
                 <div>
+                  <LabelRow label="Solicitação">{solicitacaoEm || "—"}</LabelRow>
                   <LabelRow label="Responsável">{os.responsavel || "—"}</LabelRow>
                   <LabelRow label="Prioridade">{os.prioridade || "normal"}</LabelRow>
                 </div>
@@ -435,6 +474,11 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                 <p className="mt-1 truncate text-sm font-bold text-slate-800" title={clienteNome || undefined}>{clienteNome || "Cliente não informado"}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <p className="text-[11px] text-slate-500">{os.unidade || "Unidade não definida"}</p>
+                  {contatoCliente && (
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                      <Phone className="h-3 w-3" /> {contatoCliente}
+                    </p>
+                  )}
                   {nomesResolvidos.clienteIncompleto && <BadgeCadastroIncompleto />}
                   {clienteCotacao && (
                     <Badge className="border border-violet-200 bg-violet-100 px-1.5 py-0 text-[9px] font-bold uppercase text-violet-700">
