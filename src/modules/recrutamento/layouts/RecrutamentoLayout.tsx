@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Briefcase, Truck, MessageSquare, FileText,
-  Bot, Zap, Users, HeartHandshake, Columns3, Menu, Bell, UserCircle, CheckCircle,
+  Bot, Zap, Users, HeartHandshake, Columns3, Menu, Bell, UserCircle, CheckCircle, QrCode,
 } from 'lucide-react'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
 import { cn } from '../utils/cn'
@@ -19,6 +19,7 @@ const tabs: TabItem[] = [
   { id: 'pipeline-kanban', label: 'Pipeline 17 Etapas', icon: <Columns3 className="w-4 h-4" /> },
   { id: 'prestadores', label: 'Prestadores', icon: <Truck className="w-4 h-4" /> },
   { id: 'talentos', label: 'Banco de Talentos', icon: <MessageSquare className="w-4 h-4" /> },
+  { id: 'ofertas-publicas', label: 'Ofertas Públicas', icon: <QrCode className="w-4 h-4" /> },
   { id: 'crm', label: 'CRM', icon: <HeartHandshake className="w-4 h-4" /> },
   { id: 'documentos', label: 'Documentos', icon: <FileText className="w-4 h-4" /> },
   { id: 'ia', label: 'IA Operacional', icon: <Bot className="w-4 h-4" /> },

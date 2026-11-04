@@ -23,6 +23,7 @@ import { PortalPrestadorPreview } from './components/portal/PortalPrestadorPrevi
 import { AutomacoesList } from './components/automacoes/AutomacoesList'
 import { CrmLogistico } from './components/crm/CrmLogistico'
 import { BancoTalentos } from './components/talentos/BancoTalentos'
+import { OfertasPublicas } from './components/ofertas/OfertasPublicas'
 import { useOperacoes } from './hooks/useOperacoes'
 import { usePrestadores } from './hooks/usePrestadores'
 import { prestadoresService } from './services/prestadoresService'
@@ -189,7 +190,7 @@ export function RecrutamentoModule() {
   useEffect(() => {
     const sectionParam = searchParams.get('section')
     if (sectionParam) {
-      const validSections = ['dashboard', 'pipeline-kanban', 'operacoes', 'nova-operacao', 'prestadores', 'crm', 'documentos', 'ia', 'onboarding', 'score', 'automacoes', 'portal', 'talentos', 'operacionais']
+      const validSections = ['dashboard', 'pipeline-kanban', 'operacoes', 'nova-operacao', 'prestadores', 'crm', 'documentos', 'ia', 'onboarding', 'score', 'automacoes', 'portal', 'talentos', 'operacionais', 'ofertas-publicas']
       if (validSections.includes(sectionParam)) {
         setCurrentSection(sectionParam as any)
       }
@@ -226,6 +227,9 @@ export function RecrutamentoModule() {
 
       case 'prestadores':
         return <PaginaPrestadores />
+
+      case 'ofertas-publicas':
+        return <OfertasPublicas />
 
       case 'crm': {
         return (

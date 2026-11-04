@@ -211,6 +211,7 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Portal do Prestador", path: "/recrutamento?section=portal" },
       { title: "Prestadores Aptos", path: "/recrutamento?section=operacionais" },
       { title: "Banco de Talentos", path: "/recrutamento?section=talentos" },
+      { title: "Ofertas Públicas", path: "/recrutamento?section=ofertas-publicas" },
     ],
   },
   {
