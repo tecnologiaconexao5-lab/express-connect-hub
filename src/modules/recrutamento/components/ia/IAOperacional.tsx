@@ -4,7 +4,7 @@ import {
   Bot, Sparkles, Users, MessageSquare, Send, Save, AlertTriangle,
   Truck, Award, ChevronDown, ChevronUp, Copy, CheckCircle, XCircle,
   Lightbulb, DollarSign, MapPin, UserCheck, Activity, Target, Megaphone,
-  Star, TrendingUp, Filter, Phone, MessageCircle,
+  Star, TrendingUp, Filter, Phone, MessageCircle, Clock,
 } from 'lucide-react'
 import { PremiumCard, PremiumCardContent } from '../design-system/PremiumCard'
 import { PremiumBadge } from '../design-system/PremiumBadge'
@@ -18,6 +18,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { listarPreCadastros } from '@/lib/recrutamento'
+import { avaliarMatchOferta, normalizarLogistica, veiculoCorresponde } from '@/utils/logisticaInteligente'
+import { calcularFrescorCadastro } from '@/utils/frescorCadastro'
 import type { Operacao, Prestador, StatusPrestador, TalentosCandidato } from '../../types/recrutamento'
 
 type ResultadoTipo = 'sugestoes' | 'mensagem' | 'analise' | 'anuncio' | 'risco' | 'ajustes' | 'erro'
@@ -37,6 +40,22 @@ interface SugestaoPrestador {
   motivo: string
   pontosPositivos: string[]
   pontosAtencao: string[]
+}
+
+interface PerfilRanqueado {
+  id: string
+  nome: string
+  tipo: 'Prestador' | 'Candidato' | 'Oferta'
+  veiculo: string
+  regiao: string
+  score: number
+  classificacao: string
+  motivos: string[]
+  pendencias: string[]
+  telefone: string
+  disponibilidade: string
+  tags: string[]
+  criadoEm?: string | null
 }
 
 const PERFIL_VEICULO: Record<string, string[]> = {
@@ -65,6 +84,82 @@ function compatibilidadeRegiao(regiaoOp: string, regioesPrestador: string[]): nu
     if (r.toLowerCase().includes(rOp) || rOp.includes(r.toLowerCase())) return 100
   }
   return 20
+}
+
+const CARGA_SINONIMOS: string[][] = [
+  ['refrigerada', 'refrigerado', 'refrigeracao', 'congelado', 'congelada'],
+  ['bau', 'bau fechado', 'fechado'],
+  ['sider'],
+  ['grade', 'grade baixa'],
+  ['graneleiro', 'graneleira'],
+  ['tanque'],
+  ['prancha'],
+  ['porta container', 'porta-container'],
+]
+
+function termosCarga(tipoCarga: string): string {
+  const alvo = normalizarLogistica(tipoCarga)
+  if (!alvo) return ''
+  const grupo = CARGA_SINONIMOS.find((itens) => itens.some((item) => alvo.includes(item)))
+  return grupo ? `${alvo} ${grupo.join(' ')}` : alvo
+}
+
+function cargaCorresponde(tipoCarga: string, tags: string[]): boolean {
+  const alvo = normalizarLogistica(tipoCarga)
+  if (!alvo) return true
+  const texto = normalizarLogistica(tags.join(' '))
+  if (!texto) return false
+  if (texto.includes(alvo)) return true
+  const grupo = CARGA_SINONIMOS.find((itens) => itens.some((item) => alvo.includes(item)))
+  return Boolean(grupo && grupo.some((item) => texto.includes(item)))
+}
+
+function matchPerfilOperacao(
+  op: Operacao,
+  perfil: PerfilRanqueado,
+): { match: boolean; score: number; motivos: string[]; pendencias: string[] } {
+  const perfilMatch = {
+    nome: '',
+    veiculoTipo: perfil.veiculo,
+    veiculoModelo: perfil.veiculo,
+    carroceria: perfil.tags.join(' '),
+    cidade: perfil.regiao,
+    regioes: perfil.regiao ? [perfil.regiao] : [],
+  }
+
+  const veiculoOk =
+    !op.tipoVeiculo || veiculoCorresponde(op.tipoVeiculo, perfilMatch)
+  const busca = [op.tipoVeiculo, op.regiao, termosCarga(op.tipoCarga)]
+    .filter(Boolean)
+    .join(' ')
+  const resultado = avaliarMatchOferta(perfilMatch, busca)
+  const score = Math.round(Math.min(100, resultado.score * 9 + perfil.score * 0.35))
+
+  const motivos: string[] = []
+  const pendencias = [...perfil.pendencias]
+
+  if (op.tipoVeiculo) {
+    if (veiculoOk) motivos.push(`Veículo compatível: ${perfil.veiculo || op.tipoVeiculo}`)
+    else pendencias.push(`Veículo fora do grupo de ${op.tipoVeiculo}`)
+  }
+  if (resultado.motivos.some((motivo) => motivo.startsWith('regiao:'))) {
+    motivos.push(`Atua na região: ${perfil.regiao}`)
+  }
+  if (op.tipoCarga) {
+    if (cargaCorresponde(op.tipoCarga, perfil.tags)) {
+      motivos.push(`Carga compatível: ${op.tipoCarga}`)
+    } else if (perfil.tags.length > 0) {
+      pendencias.push(`Carga ${op.tipoCarga} não confirmada no perfil`)
+    }
+  }
+  if (motivos.length === 0) motivos.push(...perfil.motivos.slice(0, 2))
+
+  return {
+    match: veiculoOk && resultado.match,
+    score,
+    motivos,
+    pendencias,
+  }
 }
 
 function calcularScoreCompatibilidade(op: Operacao, prestador: Prestador): { score: number; positivo: string[]; atencao: string[] } {
@@ -373,22 +468,14 @@ export function IAOperacional() {
   }, [operacoesAbertas, prestadores])
 
   // === MOTOR INTERNO DE RECOMENDAÇÃO ===
-  interface PerfilRanqueado {
-    id: string; nome: string; tipo: 'Prestador' | 'Candidato'; veiculo: string;
-    regiao: string; score: number; classificacao: string; motivos: string[];
-    pendencias: string[]; telefone: string; disponibilidade: string;
-  }
-
   const carregarRanking = useCallback(async () => {
     setRankingLoading(true)
     try {
-      const [prestRes, candRes, crmRes] = await Promise.all([
-        supabase.from('recrutamento_prestadores').select('*').eq('status', 'agregado').limit(50),
-        supabase.from('recrutamento_candidatos').select('*').limit(50),
-        supabase.from('crm_interacoes_prestadores').select('prestador_id').limit(200),
+      const [prestRes, candRes, ofertasRes] = await Promise.all([
+        supabase.from('recrutamento_prestadores').select('*').limit(80),
+        supabase.from('recrutamento_candidatos').select('*').limit(80),
+        listarPreCadastros(),
       ])
-
-      const interacoesIds = new Set((crmRes.data || []).map((r: any) => r.prestador_id))
 
       const ranquear = (source: any[], tipo: 'Prestador' | 'Candidato'): PerfilRanqueado[] => {
         return (source || []).map((p: any) => {
@@ -404,11 +491,11 @@ export function IAOperacional() {
           let s = 0
           const mot: string[] = []
           const pen: string[] = []
-          if (veiculo.trim()) { s += 25; mot.push('Veiculo cadastrado') } else { pen.push('Sem veiculo') }
-          if (regiao.trim()) { s += 20; mot.push('Regiao definida') } else { pen.push('Regiao nao definida') }
-          if (disp === 'imediata' || disp === 'imediato' || disp === 'parcial') { s += 20; mot.push('Disponibilidade ativa') } else { pen.push('Indisponivel') }
-          if (docsOk >= 3 || p.status_documental === 'completo') { s += 20; mot.push('Documentacao completa') } else { pen.push('Documentacao incompleta') }
-          if (status === 'agregado' || status === 'aprovado' || opsCount > 0) { s += 15; mot.push('Historico positivo') }
+          if (veiculo.trim()) { s += 25; mot.push('Veículo cadastrado') } else { pen.push('Sem veículo') }
+          if (regiao.trim()) { s += 20; mot.push('Região definida') } else { pen.push('Região não definida') }
+          if (disp === 'imediata' || disp === 'imediato' || disp === 'parcial') { s += 20; mot.push('Disponibilidade ativa') } else { pen.push('Indisponível') }
+          if (docsOk >= 3 || p.status_documental === 'completo') { s += 20; mot.push('Documentação completa') } else { pen.push('Documentação incompleta') }
+          if (status === 'agregado' || status === 'aprovado' || opsCount > 0) { s += 15; mot.push('Histórico positivo') }
           let classif = 'Baixo'
           if (s >= 80) classif = 'Excelente'
           else if (s >= 60) classif = 'Bom'
@@ -418,13 +505,49 @@ export function IAOperacional() {
             classificacao: classif, motivos: mot, pendencias: pen,
             telefone: Array.isArray(p.contatos) ? (p.contatos.find((c: any) => c.tipo === 'whatsapp' || c.tipo === 'telefone')?.valor || '') : (p.telefone || ''),
             disponibilidade: disp,
+            tags: Array.isArray(p.tags) ? p.tags : [],
+            criadoEm: p.created_at || p.data_entrada || p.dataEntrada || p.data_cadastro || null,
           }
         })
       }
 
       const prests = ranquear(prestRes.data || [], 'Prestador')
       const cands = ranquear(candRes.data || [], 'Candidato')
-      const todos = [...prests, ...cands].sort((a, b) => b.score - a.score).slice(0, 20)
+
+      const ofertas = ofertasRes.ok ? ofertasRes.ofertas : []
+      const ofertasRanqueadas: PerfilRanqueado[] = ofertas.map((o) => {
+        const veiculo = [o.veiculoTipo, o.veiculoModelo].filter(Boolean).join(' ').trim()
+        const regiao = [o.cidade, o.uf, ...o.regioes].filter(Boolean).join(', ')
+        const tags = [...o.modalidades, ...o.caracteristicas]
+        const mot: string[] = []
+        const pen: string[] = []
+        let s = 0
+        if (veiculo) { s += 25; mot.push('Veículo cadastrado') } else { pen.push('Sem veículo') }
+        if (regiao) { s += 20; mot.push('Região definida') } else { pen.push('Região não definida') }
+        if (o.telefone) { s += 15; mot.push('Contato disponível') } else { pen.push('Sem telefone') }
+        if (o.diasDisponiveis.length > 0) { s += 20; mot.push('Disponibilidade informada') } else { pen.push('Disponibilidade não informada') }
+        if (o.regioes.length > 0) { s += 20; mot.push('Regiões informadas') }
+        const classificacao = s >= 80 ? 'Excelente' : s >= 60 ? 'Bom' : s >= 40 ? 'Regular' : 'Baixo'
+        return {
+          id: o.id,
+          nome: o.nome,
+          tipo: 'Oferta',
+          veiculo: veiculo || 'Não informado',
+          regiao: regiao || 'Não informada',
+          score: Math.min(100, s),
+          classificacao,
+          motivos: mot.length > 0 ? mot : ['Oferta pública recebida'],
+          pendencias: pen.length > 0 ? pen : ['Validar disponibilidade'],
+          telefone: o.telefone,
+          disponibilidade: o.diasDisponiveis.length > 0 ? 'parcial' : '',
+          tags,
+          criadoEm: o.createdAt,
+        }
+      })
+
+      const todos = [...prests, ...cands, ...ofertasRanqueadas]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 100)
       setRanking(todos)
     } catch {
       setRanking([])
@@ -489,17 +612,39 @@ export function IAOperacional() {
     } catch (e: any) { toast.error('Erro: ' + e.message) }
   }
 
-  const rankingFiltrado = useMemo(() => {
+  const rankingComMatch = useMemo(() => {
+    if (!selectedOp) {
+      return [...ranking].sort((a, b) => b.score - a.score)
+    }
     return ranking
+      .map((perfil) => ({ perfil, match: matchPerfilOperacao(selectedOp, perfil) }))
+      .filter(({ match }) => match.match)
+      .map(({ perfil, match }) => ({
+        ...perfil,
+        score: match.score,
+        motivos: match.motivos,
+        pendencias: match.pendencias,
+      }))
+      .sort((a, b) => b.score - a.score)
+  }, [ranking, selectedOp])
+
+  const rankingFiltrado = useMemo(() => {
+    return rankingComMatch
       .filter(r => filtroVeiculo === 'todas' || r.veiculo.toLowerCase().includes(filtroVeiculo.toLowerCase()))
       .filter(r => !filtroRegiao || r.regiao.toLowerCase().includes(filtroRegiao.toLowerCase()))
       .filter(r => r.score >= filtroScoreMinimo)
-  }, [ranking, filtroVeiculo, filtroRegiao, filtroScoreMinimo])
+  }, [rankingComMatch, filtroVeiculo, filtroRegiao, filtroScoreMinimo])
 
   const tiposVeiculo = useMemo(() => {
-    const set = new Set(ranking.map(r => r.veiculo).filter(Boolean))
+    const set = new Set(rankingComMatch.map(r => r.veiculo).filter(Boolean))
     return [...set].sort()
-  }, [ranking])
+  }, [rankingComMatch])
+
+  const contagensFontes = useMemo(() => ({
+    candidatos: ranking.filter(r => r.tipo === 'Candidato').length,
+    prestadores: ranking.filter(r => r.tipo === 'Prestador').length,
+    ofertas: ranking.filter(r => r.tipo === 'Oferta').length,
+  }), [ranking])
 
   const limparResultados = useCallback(() => {
     setResultados([])
@@ -674,17 +819,88 @@ export function IAOperacional() {
 
       <PremiumCard>
         <PremiumCardContent className="p-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Target className="w-4 h-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-[220px]">
+              <p className="text-sm font-medium text-foreground">Match Operacional</p>
+              <p className="text-[10px] text-muted-foreground/50">
+                Selecione uma operação para cruzar os requisitos com Banco de Talentos, Prestadores e Ofertas Públicas.
+              </p>
+            </div>
+            {selectedOp ? (
+              <PremiumBadge variant="success" dot size="sm">Match ativo</PremiumBadge>
+            ) : (
+              <PremiumBadge variant="info" size="sm">Aguardando operação</PremiumBadge>
+            )}
+          </div>
+
+          <Select value={selectedOpId} onValueChange={v => { setSelectedOpId(v); limparResultados() }}>
+            <SelectTrigger className="h-10 text-sm focus-visible:ring-2 focus-visible:ring-primary/50">
+              <SelectValue placeholder="Selecione uma operação..." />
+            </SelectTrigger>
+            <SelectContent>
+              {operacoesAbertas.length === 0 && (
+                <SelectItem value="_none" disabled>Nenhuma operação aberta</SelectItem>
+              )}
+              {operacoesAbertas.map(op => (
+                <SelectItem key={op.id} value={op.id}>
+                  {op.nome || op.cliente || op.id.slice(0, 8)}
+                  {' '}({op.tipoVeiculo} - {formatCurrency(op.financeiro.valorPrestador)})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {selectedOp && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1">
+                <span className="text-muted-foreground">Veículo:</span> {selectedOp.tipoVeiculo || '—'}
+              </span>
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1">
+                <span className="text-muted-foreground">Região:</span> {selectedOp.regiao || '—'}
+              </span>
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1">
+                <span className="text-muted-foreground">Carga:</span> {selectedOp.tipoCarga || '—'}
+              </span>
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1">
+                <span className="text-muted-foreground">Valor:</span> {formatCurrency(selectedOp.financeiro.valorPrestador)}
+              </span>
+            </div>
+          )}
+        </PremiumCardContent>
+      </PremiumCard>
+
+      <PremiumCard>
+        <PremiumCardContent className="p-4 space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center">
               <TrendingUp className="w-4 h-4 text-violet-400" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">Motor Interno de Recomendacao</p>
+              <p className="text-sm font-medium text-foreground">
+                {selectedOp
+                  ? `Recomendações para ${selectedOp.nome || selectedOp.cliente || 'a operação'}`
+                  : 'Motor de Recomendação Unificado'}
+              </p>
               <p className="text-[10px] text-muted-foreground/50">
-                Ranking de prestadores e candidatos por aderencia — IA externa ainda nao conectada
+                Ranking unificado — Banco de Talentos, Prestadores e Ofertas Públicas
               </p>
             </div>
             <PremiumBadge variant="info" dot size="sm">Interno</PremiumBadge>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[10px]">
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+              Banco de Talentos: {contagensFontes.candidatos}
+            </span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+              Prestadores: {contagensFontes.prestadores}
+            </span>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+              Ofertas Públicas: {contagensFontes.ofertas}
+            </span>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -721,19 +937,31 @@ export function IAOperacional() {
                 const crmKey = `${r.id}_crm`
                 const preselKey = `${r.id}_presel`
                 const contatoKey = `${r.id}_contato`
+                const isOferta = r.tipo === 'Oferta'
+                const frescor = calcularFrescorCadastro(r.criadoEm)
+                const waDigitos = r.telefone.replace(/\D/g, '')
+                const waLink = waDigitos
+                  ? `https://wa.me/${waDigitos.startsWith('55') && waDigitos.length >= 12 ? waDigitos : `55${waDigitos}`}`
+                  : ''
                 return (
                 <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/30 hover:border-primary/20 transition-all">
                   <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted/40 text-xs font-bold text-muted-foreground">{idx + 1}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium truncate">{r.nome}</span>
-                      <PremiumBadge size="sm" variant={r.tipo === 'Prestador' ? 'success' : 'info'}>{r.tipo}</PremiumBadge>
+                      <PremiumBadge size="sm" variant={r.tipo === 'Prestador' ? 'success' : r.tipo === 'Candidato' ? 'info' : 'warning'}>{r.tipo}</PremiumBadge>
                       <PremiumBadge size="sm" className={
                         r.classificacao === 'Excelente' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                         r.classificacao === 'Bom' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                         r.classificacao === 'Regular' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                         'bg-red-500/10 text-red-400 border-red-500/20'
                       }>{r.classificacao}</PremiumBadge>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${frescor.className}`}
+                        title={frescor.titulo}
+                      >
+                        <Clock className="w-2.5 h-2.5" /> {frescor.label}
+                      </span>
                       {acoesRealizadas[preselKey] && <PremiumBadge size="sm" variant="warning">Pre-selecionado</PremiumBadge>}
                       {acoesRealizadas[crmKey] && <PremiumBadge size="sm" className="bg-blue-500/10 text-blue-400 border-blue-500/20">Enviado ao CRM</PremiumBadge>}
                       {acoesRealizadas[contatoKey] && <PremiumBadge size="sm" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Contato registrado</PremiumBadge>}
@@ -749,9 +977,23 @@ export function IAOperacional() {
                   </div>
                   <ScoreMeter score={r.score} size="sm" />
                   <div className="flex flex-col gap-1">
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleContatar(r)}><Phone className="w-3 h-3" />Contatar</Button>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleEnviarParaCrm(r)}><Send className="w-3 h-3" />CRM</Button>
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handlePreSelecionar(r)}><UserCheck className="w-3 h-3" />Pre-selecionar</Button>
+                    {isOferta ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] gap-1 justify-start"
+                        disabled={!waLink}
+                        onClick={() => waLink && window.open(waLink, '_blank', 'noopener,noreferrer')}
+                      >
+                        <MessageCircle className="w-3 h-3" />WhatsApp
+                      </Button>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleContatar(r)}><Phone className="w-3 h-3" />Contatar</Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleEnviarParaCrm(r)}><Send className="w-3 h-3" />CRM</Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handlePreSelecionar(r)}><UserCheck className="w-3 h-3" />Pre-selecionar</Button>
+                      </>
+                    )}
                   </div>
                 </div>
                 )
@@ -776,26 +1018,11 @@ export function IAOperacional() {
             <PremiumBadge variant="success" dot size="sm">Online</PremiumBadge>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <Select value={selectedOpId} onValueChange={v => { setSelectedOpId(v); limparResultados() }}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Selecione uma operação..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {operacoesAbertas.length === 0 && (
-                    <SelectItem value="_none" disabled>Nenhuma operação aberta</SelectItem>
-                  )}
-                  {operacoesAbertas.map(op => (
-                    <SelectItem key={op.id} value={op.id}>
-                      {op.nome || op.cliente || op.id.slice(0, 8)}
-                      {' '}({op.tipoVeiculo} - {formatCurrency(op.financeiro.valorPrestador)})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          {!selectedOp && (
+            <p className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+              Selecione uma operação no card <strong>Match Operacional</strong> acima para habilitar as ações.
+            </p>
+          )}
 
           {selectedOp && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">

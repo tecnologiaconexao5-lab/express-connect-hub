@@ -3,7 +3,7 @@ import {
   BUCKET_DOCUMENTOS_OPERACIONAIS,
   resolverUrlDocumento,
 } from "@/services/documentos/documentoStorageService";
-import { parseStorageRef } from "@/services/storage/storageRefService";
+import { parseStorageRef, KNOWN_BUCKETS } from "@/services/storage/storageRefService";
 
 export type StatusIADocumento =
   | "pendente"
@@ -550,6 +550,46 @@ export async function criarNovaVersaoDocumento(
   return resultado;
 }
 
+/**
+ * Reassocia um documento da Central a uma entidade já existente (ex.: alocação
+ * financeira) sem mover o arquivo nem recriar o metadado.
+ */
+export async function vincularDocumentoEntidade(
+  documentoId: string,
+  input: {
+    entidadeId: string;
+    entidadeNome?: string | null;
+    descricao?: string | null;
+    historico?: Omit<DocumentoHistoricoEvento, "data" | "id">;
+  },
+): Promise<DocumentoMetadata | null> {
+  if (!documentoId || !input.entidadeId) return null;
+  const payload: Record<string, unknown> = {
+    entidade_id: input.entidadeId,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.entidadeNome !== undefined) payload.entidade_nome = input.entidadeNome;
+  if (input.descricao !== undefined) payload.descricao = input.descricao;
+
+  const { data, error } = await supabase
+    .from(TABELA)
+    .update(payload)
+    .eq("id", documentoId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[DocumentosMetadata] Falha ao vincular documento:", error.message);
+    return null;
+  }
+
+  if (input.historico) {
+    await registrarEventoDocumento(documentoId, input.historico);
+  }
+
+  return data ? normalizarDocumento(data as Record<string, unknown>) : null;
+}
+
 export async function registrarEventoDocumento(
   documentoId: string,
   evento: Omit<DocumentoHistoricoEvento, "data" | "id"> & { data?: string },
@@ -607,6 +647,25 @@ export async function baixarDocumentoMetadata(doc: DocumentoMetadata): Promise<v
   link.download = doc.nome || ref.path.split("/").pop() || "documento";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/**
+ * GD-02: exclusão protegida por RLS (somente admin/super_admin no banco).
+ * A UI só expõe a ação para essas roles; o banco é a última linha de defesa.
+ */
+export async function excluirDocumentoMetadata(doc: DocumentoMetadata): Promise<void> {
+  if (!doc?.id) throw new Error("Documento inválido para exclusão.");
+  const { error } = await supabase.from(TABELA).delete().eq("id", doc.id);
+  if (error) throw new Error(error.message || "Falha ao excluir o documento.");
+
+  // Limpeza best-effort do objeto; o registro de negócio já foi removido.
+  const ref = parseStorageRef(doc.url, BUCKET_DOCUMENTOS_OPERACIONAIS);
+  if (ref && !ref.external && KNOWN_BUCKETS.has(ref.bucket)) {
+    const { error: storageError } = await supabase.storage.from(ref.bucket).remove([ref.path]);
+    if (storageError) {
+      console.warn("[DocumentosMetadata] Metadado excluído, mas o arquivo permaneceu no Storage:", storageError.message);
+    }
+  }
 }
 
 export function simularAnaliseDocumentoIA(input: {

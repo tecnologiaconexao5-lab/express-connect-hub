@@ -51,7 +51,7 @@ describe("2) Ações individuais por documento", () => {
       "Visualizar",
       "Baixar",
       "Compartilhar Internamente",
-      "Analisar com IA",
+      "Análise de Conformidade",
       "Consultar Histórico",
       "Atualizar Versão",
     ]) {
@@ -83,7 +83,7 @@ describe("3) Upload universal", () => {
   });
 });
 
-describe("4) Relatório de IA denso + versionamento", () => {
+describe("4) Relatório de Conformidade denso + versionamento", () => {
   it("modal exibe as 5 seções e os 4 status exatos", () => {
     for (const secao of [
       "Informações Verificadas",

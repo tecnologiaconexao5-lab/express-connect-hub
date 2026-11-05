@@ -1,0 +1,130 @@
+====================================================================================================
+RELATORIO GD-07 - MOTOR DE MATCH E SINONIMOS LOGISTICOS
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: frontend apenas. Nenhuma alteracao de banco, migration, storage ou deploy.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+A busca de Ofertas Publicas deixou de ser um filtro passivo de substring e passou a funcionar
+como um Motor de Match Operacional:
+
+- Veiculos equivalentes passam a dar match entre si (Fiorino x Kangoo x Partner x Doblò etc.).
+- A string digitada e interpretada como demanda: veiculo + regiao + modalidade + texto livre.
+- As ofertas sao pontuadas e ordenadas por aderencia (maior match primeiro).
+- O filtro dedicado de Veiculo tambem usa o dicionario de sinonimos.
+- O placeholder da busca foi atualizado para o formato de demanda operacional.
+
+2. DICIONARIO E MOTOR DE MATCH
+----------------------------------------------------------------------------------------------------
+Arquivo: src/utils/logisticaInteligente.ts (NOVO)
+
+2.1 Grupos de veiculos equivalentes
+- Utilitarios leves:
+  Fiorino, Kangoo, Partner, Doblò, Furgão, Utilitário, Van.
+- VUC / pesados leves:
+  VUC, HR, Kia Bongo, Iveco Daily, 3/4.
+- Motos:
+  Moto, Motoboy, CG, Motocicleta.
+
+Funcoes exportadas:
+- normalizarLogistica(valor): remove acentos, caixa e espacos duplicados.
+- grupoVeiculo(termo): retorna o grupo de equivalencia do termo.
+- termosVeiculo(termo): retorna todos os termos equivalentes.
+- veiculoCorresponde(termo, oferta): verdadeiro se o veiculo da oferta pertence ao mesmo grupo.
+
+2.2 Sinonimos de modalidade
+- urgente / urgência -> urgente
+- esporádica / esporádico / esporádicas / esporádicos -> esporadica
+- fixa / fixo / contrato -> fixa
+- recorrente / recorrentes -> recorrente
+- agregado -> agregado
+- cobertura -> cobertura
+Tambem considera caracteristicas no formato modalidade_adicional:<valor>.
+
+2.3 Sinonimos e contexto de regiao
+- Zona Sul/Norte/Leste/Oeste cruzam com Grande SP, São Paulo e SP.
+- Guarulhos cruza com Guarulhos, Grande SP e SP.
+- ABC / ABC Paulista cruza com ABC Paulista, Grande SP e SP.
+- Campinas cruza com Campinas, Interior SP e SP.
+- São Paulo cruza com Grande SP, ABC Paulista, Interior SP, Litoral SP e SP.
+- Rio de Janeiro, Belo Horizonte, Curitiba, Porto Alegre, Salvador, Recife e Fortaleza
+  tambem possuem correspondencias diretas.
+- A busca tambem compara cidade, UF e as regioes cadastradas da oferta.
+
+2.4 Pontuacao (score)
+- Texto livre (nome, protocolo, e-mail, telefone/digitos, CPF/CNPJ, cidade, UF,
+  regioes, modalidades, veiculo): +1 por termo encontrado.
+- Modalidade compativel: +3 por modalidade.
+- Veiculo compativel pelo grupo de sinonimos: +3 por grupo.
+- Regiao compativel: +2.
+- UF de 2 letras e comparada diretamente com o campo UF (sem falso positivo em palavras).
+- Stopwords comuns (de, da, do, para, com, etc.) sao ignoradas.
+- O match exige score > 0. Texto inexistente retorna lista vazia.
+
+3. FILTRAGEM E ORDENACAO
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/services/ofertasPublicasService.ts
+
+O que mudou em filtrarOfertas:
+- A busca deixou de usar apenas alvo.includes(busca).
+- Cada oferta e avaliada por avaliarMatchOferta(oferta, busca), que devolve
+  { match, score, motivos }.
+- As ofertas que nao atingem match sao removidas.
+- Apos os demais filtros, quando ha busca textual, a lista e ordenada por score
+  decrescente (maior aderencia primeiro).
+- O filtro de Veiculo passou a usar veiculoCorresponde, portanto:
+  * filtro "Fiorino" inclui Kangoo, Partner, Doblò, Furgão e Utilitário;
+  * filtro "VUC" inclui HR, Kia Bongo, Iveco Daily e 3/4;
+  * filtro "Moto" inclui Motoboy e CG.
+- Os filtros existentes (status, tipo, UF, cidade, região, modalidade, dia,
+  disponibilidade interna, capacidade e faixa de valores) foram preservados.
+- Os testes anteriores de busca por nome, telefone, e-mail, protocolo e veiculo
+  continuam passando.
+
+4. BARRA DE BUSCA INTELIGENTE
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+
+O que mudou:
+- Placeholder atualizado para:
+  "Busque por nome, veículo ou digite a demanda (Ex: urgente guarulhos baú)"
+- Texto de apoio adicionado:
+  "O motor de match cruza região, modalidade e veículo automaticamente e ordena por aderência."
+- O input mantem o icone Search e foco premium
+  (focus-visible:ring-2 focus-visible:ring-primary/50).
+- As badges de filtros ativos continuam exibindo a busca e os demais filtros.
+
+5. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+- src/utils/logisticaInteligente.ts (NOVO)
+- src/modules/recrutamento/services/ofertasPublicasService.ts
+- src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+- src/test/gd07_match_operacional.test.ts (NOVO)
+- Relatorio: RELATORIO_GD07_MATCH_OPERACIONAL.txt
+
+6. VALIDACAO
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- ESLint (arquivos da missao) ....................... 0 erros
+- Vitest novo (GD-07) .............................. 8/8 PASS
+- Vitest dos contratos de Ofertas .................. 36/36 PASS
+  (02b3 gestao_ofertas 20, 02b3 gestao_parceiros 6, 02b4 fechamento 10)
+- Vitest suite completa ............................. 18 arquivos / 44 testes falhos
+  = baseline exata do projeto; 2621 pass (+8 desta missao).
+- npm run build ..................................... OK (42,16s)
+
+7. PENDENCIAS / QA VISUAL
+----------------------------------------------------------------------------------------------------
+1. (QA) /recrutamento?section=ofertas-publicas: digitar "fiorino" e confirmar que
+   ofertas com Kangoo/Partner aparecem.
+2. (QA) Digitar "urgente guarulhos baú" e confirmar que a oferta com modalidade urgente,
+   região Grande SP/Guarulhos e carroceria Baú aparece no topo.
+3. (QA) Usar o filtro de Veículo com "VUC" e confirmar HR/Iveco Daily/3-4.
+4. (QA) Confirmar que busca inexistente continua retornando lista vazia.
+5. (OBS) Nenhuma alteracao de banco, bucket, migration, deploy ou commit foi executada.
+
+====================================================================================================
+FIM DO RELATORIO GD-07 - MOTOR DE MATCH VALIDADO; BANCO/STORAGE/MIGRATION INTACTOS.
+====================================================================================================

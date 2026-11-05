@@ -1,0 +1,244 @@
+====================================================================================================
+RELATORIO GD-01 - DIAGNOSTICO DO ESTADO ATUAL DA GESTAO DE DOCUMENTOS (SOMENTE LEITURA)
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: rota/UI, servicos/upload, banco/storage, migrations/triggers, auditoria anterior e Missao 1.
+Regra cumprida: nenhum codigo, banco, migration, bucket ou ambiente foi alterado.
+====================================================================================================
+
+1. VEREDITO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+A Gestao de Documentos JA EXISTE e deve ser EVOLUIDA, nao reconstruida.
+
+- A rota /central-documentos existe e esta protegida por permissoes.
+- A pagina CentralDocumentos.tsx ja possui KPIs, filtros combinados, tabela, paginacao e acoes.
+- O upload universal ja existe (drag-and-drop, seletor de arquivo e camera mobile).
+- O fluxo real grava o binario no bucket privado documentos_operacionais e o metadado em
+  public.documentos_metadata, com versao, historico e URL assinada.
+- A tabela documentos_metadata, o bucket e o trigger trg_documentos_prestadores_metadata
+  estao refletidos no baseline de producao lido em 2026-11-03.
+- A migration aditiva da Missao 1 (20261103000001_missao01_clientes_contratos_rls.sql)
+  existe e as 4 policies de clientes_contratos aparecem no baseline de producao.
+- O anexo de contrato de cliente e o comprovante de pedagio ja usam o fluxo real de Storage
+  e possuem prova real registrada (Missao 1: 18/18 PASS).
+- Ainda existem pendencias claras: RLS frouxo de documentos_metadata, IA simulada,
+  visualizador de documentos na aba do Recrutamento, aba de documentos estatica no
+  AppPrestador simulado e falta de prova visual de navegador para os uploads.
+
+2. ROTA E UI
+----------------------------------------------------------------------------------------------------
+2.1 Rota
+- src/App.tsx:43  -> lazy import de "@/pages/CentralDocumentos".
+- src/App.tsx:135 -> <Route path="/central-documentos" ... /> (rota autenticada).
+- src/lib/routePermissions.ts:36 -> roles permitidos: super_admin, admin, operador,
+  financeiro, comercial, atendimento.
+- src/lib/sidebarData.ts:242 -> item de menu "/central-documentos".
+
+2.2 Pagina e componentes principais
+- src/pages/CentralDocumentos.tsx (520 linhas)
+  * KPIs: Total, Aprovados, Ressalvas, Correcao, Aguardando (linhas 153-162 e 285-291).
+  * Filtros combinados: Nome, Categoria, Departamento, Entidade, Responsavel, Data inicial/final,
+    Status IA (linhas 293+).
+  * Tabela + paginacao: Table/TableRow (linhas 390-451) e PaginationBar (linha 451).
+  * Modal de upload universal (linha 466) e envio via enviarDocumentoOperacional (linhas 196-228).
+  * Acoes por documento com DocumentoAcoesDropdown (linha 433).
+  * Modais: DocumentoIAReportModal, DocumentoHistoricoModal, DocumentoCompartilharModal,
+    DocumentoNovaVersaoDialog (linhas 500-511).
+- src/components/documentos/DocumentoUploadUniversal.tsx
+  * Dropzone com drag-and-drop, seletor de arquivo e camera nativa
+    (input capture="environment", linhas 94-102).
+  * Entrega o File ao chamador; nao persiste arquivo localmente.
+- src/components/documentos/DocumentoAcoesDropdown.tsx
+  * Adicionar nova versao, Visualizar (URL assinada), Baixar, Compartilhar internamente,
+    Analisar com IA, Consultar historico e Atualizar versao (linhas 96-116).
+- Demais componentes: AnaliseDocumentoIA.tsx, AnaliseLote.tsx, DocumentoCompartilharModal.tsx,
+  DocumentoHistoricoModal.tsx, DocumentoIAReportModal.tsx, DocumentoNovaVersaoDialog.tsx,
+  StatusDocumental.tsx.
+
+3. SERVICOS E FLUXO DE UPLOAD UNIVERSAL
+----------------------------------------------------------------------------------------------------
+3.1 Camada de servico
+- src/services/documentos/documentosMetadataService.ts (789 linhas)
+  * TABELA = "documentos_metadata" (linha 136).
+  * listarDocumentosMetadata (linha 274), listarDocumentosCentral (296),
+    listarOpcoesFiltrosDocumentos (328), obterDocumentoMetadata (347).
+  * urlAssinadaDocumentoMetadata (354) -> resolverUrlDocumento com bucket esperado
+    documentos_operacionais.
+  * enviarDocumentoOperacional (373) -> upload + metadado + historico + espelho legado.
+  * enviarDocumentoOperacionalPrestador (469), listarVersoesDocumento (501),
+    criarNovaVersaoDocumento (514), vincularDocumentoEntidade (557),
+    registrarEventoDocumento (593), compartilharDocumentoInternamente (615),
+    baixarDocumentoMetadata (631), analisarDocumentoComIA (731),
+    atualizarAnaliseDocumentoMetadata (764).
+- src/services/documentos/documentoStorageService.ts
+  * BUCKET_DOCUMENTOS_OPERACIONAIS = "documentos_operacionais" (linha 12).
+  * resolverUrlDocumento/resolverDocumentos (linhas 56-83) com URL assinada e allowlist
+    de buckets (documentos_prestadores + documentos_operacionais).
+- src/services/storage/storageRefService.ts
+  * KNOWN_BUCKETS inclui documentos_operacionais (linha 17).
+  * parseStorageRef, caminhoValido, assinarStorageRef e SIGN_TTL_SECONDS.
+- src/lib/anexoDocumento.ts
+  * Validacao compartilhada: PDF/JPG/JPEG/PNG/WEBP, limite de 50 MB e inferencia de MIME.
+- src/services/clientes/contratoAnexoService.ts (Missao 1)
+  * envia o contrato ao bucket documentos_operacionais via enviarDocumentoOperacional,
+    grava referencia estavel, registra evento "vinculo_contrato" e resolve URL assinada.
+- src/services/operacao/reembolsoPedagioService.ts (Missao 1)
+  * resolve comprovante de pedagio no bucket privado com Signed URL e compatibilidade
+    com URLs antigas (if (ref.external) return ref.raw).
+
+3.2 Fluxo efetivo do upload
+1) O utilizador escolhe/arrasta/tira foto (DocumentoUploadUniversal entrega um File).
+2) enviarDocumentoOperacional monta o path:
+   doc_<entidade|central>_<tipo>_<timestamp>.<ext>.
+3) supabase.storage.from("documentos_operacionais").upload(path, file,
+   { upsert: true, contentType }).
+4) A referencia estavel "documentos_operacionais/<path>" e gravada em documentos_metadata
+   com categoria, departamento, entidade, responsavel, cliente_id, mime, tamanho, versao,
+   documento_pai_id, ativo e historico inicial.
+5) Para moduloOrigem "prestadores", o fluxo espelha tambem em documentos_prestadores
+   (tabela legada), preservando o contrato existente.
+6) Leitura/visualizacao/download usam URL assinada (TTL de storageRefService).
+
+4. BANCO E STORAGE
+----------------------------------------------------------------------------------------------------
+4.1 Tabela public.documentos_metadata
+- Migration de origem: supabase/migrations/20261102000001_documentos_operacionais_metadata.sql.
+- Complemento: supabase/migrations/20261102000002_documentos_central_avancada.sql.
+- Baseline de producao (supabase/baseline/full_production_schema_readonly_20261103.sql,
+  linhas 13084-13113) confirma colunas:
+  id, url, nome, tipo, modulo_origem, entidade_id, status_ia, relatorio_ia,
+  data_inclusao, tenant_id, updated_at, categoria, departamento, entidade_nome,
+  responsavel, responsavel_id, cliente_id, descricao, mime_type, tamanho_bytes,
+  versao, documento_pai_id, ativo, historico.
+- Indices confirmados no baseline: entidade, categoria, departamento, entidade_nome,
+  responsavel, status_ia, ativo, versao_pai e unique (modulo_origem, entidade_id, url).
+- RLS: habilitado, porem as 4 policies ainda sao USING (true) / WITH CHECK (true)
+  para qualquer authenticated (baseline linhas 31545-31569). Este e o gap de seguranca
+  mais relevante encontrado.
+
+4.2 Bucket documentos_operacionais
+- Criado e policiado pela migration 20261102000001 (linhas 5-39): bucket privado
+  (public = false) + policies de SELECT/INSERT/UPDATE/DELETE no storage.objects.
+- Missao 1 comprovou o comportamento real: upload autenticado, URL assinada abrindo os
+  bytes e acesso publico negado (HTTP 400).
+- KNOWN_BUCKETS ja reconhece o bucket (storageRefService.ts:17).
+
+4.3 Trigger de espelhamento
+- supabase/migrations/20261102000001_documentos_operacionais_metadata.sql:140-141 cria
+  trg_documentos_prestadores_metadata.
+- Baseline de producao confirma a funcao public.f_documentos_prestadores_para_metadata()
+  (linha 5656) e o trigger (linha 26747) com AFTER INSERT OR UPDATE OF url, tipo.
+- A funcao e SECURITY DEFINER, search_path public/pg_temp, e usa ON CONFLICT
+  (modulo_origem, entidade_id, url) DO NOTHING.
+
+5. MIGRATION 20261103000001 E MISSAO 1
+----------------------------------------------------------------------------------------------------
+5.1 Migration solicitada
+- Existe: supabase/migrations/20261103000001_missao01_clientes_contratos_rls.sql
+  (35 linhas, 03/11/2026 18:06).
+- Conteudo: DROP/CREATE de 4 policies aditivas em public.clientes_contratos:
+  cc_select_access, cc_insert_access, cc_update_access, cc_delete_access,
+  todas TO authenticated com f_usuarios_pode_acessar_cliente(cliente_id), + NOTIFY pgrst.
+
+5.2 Prova de aplicacao
+- Baseline de producao gerado em 03/11/2026 21:56 confirma as 4 policies (linhas
+  30582, 30589, 30605 e 30621). Portanto a migration esta aplicada em producao.
+- MISSAO_01_UPLOADS_DOCUMENTOS_RELATORIO.txt registra STATUS: CONCLUIDA e
+  "RLS aditiva aplicada".
+- MISSAO_01_EVIDENCIAS_UPLOADS.json registra 18/18 PASS na prova real.
+
+5.3 O que a Missao 1 entregou e esta reaproveitado
+- Upload real de anexo de contrato de cliente para documentos_operacionais.
+- Gravacao de anexo_url (referencia estavel) e anexo_nome em clientes_contratos.
+- Abertura/download por URL assinada e evento vinculo_contrato no historico.
+- Upload real de comprovante de pedagio no Financeiro, associado a alocacao.
+- Reuso de documentosMetadataService, storageRefService, DocumentoUploadUniversal,
+  DocumentoAcoesDropdown; nenhum bucket/servico paralelo.
+- Teste src/test/missao01_uploads_documentos.test.ts: 15/15 PASS no relatorio da Missao 1.
+- Prova real de Storage/leitura: 18/18 PASS, com limpeza (objetos residuais = 0).
+
+6. AUDITORIA ANTERIOR E COMPARACAO COM O ESTADO ATUAL
+----------------------------------------------------------------------------------------------------
+- O arquivo AUDITORIA_CENTRAL_DOCUMENTOS_RECRUTAMENTO.txt EXISTE na raiz
+  (46.816 bytes, 03/11/2026 17:38). Foi lido integralmente para esta comparacao.
+- Conteudo principal da auditoria:
+  * Central de Documentos ja existia formalmente e tinha rota/componentes/tabela/trigger.
+  * GAP critico: anexo de contrato de cliente salvava apenas nome e descartava o binario.
+  * GAP critico: comprovante de pedagio aceitava apenas link textual.
+  * RLS de documentos_metadata amplo (authenticated USING true).
+  * IA da Edge Function simulada/heuristica, sem OCR real.
+  * Aba Documentos do Recrutamento apenas com checklist; sem abrir/baixar/upload.
+  * Aba Documentos do AppPrestador 100% estatica.
+  * Plano futuro A1 (contrato) e A2 (pedagio) proposto na secao 8.
+- O que mudou para melhor desde a auditoria:
+  * A1 e A2 foram implementados na Missao 1, com prova real de Storage e RLS de
+    clientes_contratos aplicada (ver secao 5).
+- O que permanece igual/pendente:
+  * RLS de documentos_metadata continua USING (true).
+  * IA continua sem OCR real/Edge simulada (servico cai em simulacao local).
+  * Aba Documentos do Recrutamento continua sem visualizador/download/upload.
+  * Aba Documentos do AppPrestador continua estatica (mock no JSX).
+  * Exclusao de documento na Central nao possui confirmacao/role admin dedicada.
+- Limitacao registrada: a auditoria anterior foi feita antes da Missao 1; portanto os
+  gaps A1/A2 nela descritos ja estao superados pelo estado atual.
+
+7. MATRIZ DE CLASSIFICACAO OBRIGATORIA
+----------------------------------------------------------------------------------------------------
+ITEM                                                      | CLASSIFICACAO                  | EVIDENCIA / OBSERVACAO
+----------------------------------------------------------+--------------------------------+--------------------------------------------------------------
+Rota /central-documentos e permissoes                     | HOMOLOGADO                     | App.tsx:43/135; routePermissions.ts:36; sidebarData.ts:242
+Pagina Central (KPIs, filtros, tabela, paginacao)         | IMPLEMENTADO - SEM PROVA REAL  | CentralDocumentos.tsx:153-451; sem execucao visual nesta missao
+Upload universal (arquivo/drag/camera)                    | HOMOLOGADO                     | DocumentoUploadUniversal.tsx + prova real Missao 1 (18/18)
+Servico de metadados e URLs assinadas                     | HOMOLOGADO                     | documentosMetadataService.ts + documentoStorageService.ts
+Tabela documentos_metadata (schema/indices)               | HOMOLOGADO                     | migration 20261102000001/2 + baseline producao 13084-13113
+Bucket privado documentos_operacionais                    | HOMOLOGADO                     | migration 20261102000001 + prova real Missao 1 (acesso publico negado)
+Trigger trg_documentos_prestadores_metadata               | HOMOLOGADO                     | migration 20261102000001:140-141 + baseline 5656/26747
+Migration 20261103000001 (clientes_contratos RLS)         | HOMOLOGADO                     | arquivo existe + 4 policies no baseline 30582-30624
+Upload real de contrato de cliente                        | HOMOLOGADO (backend/Storage)   | Missao 1: 18/18 + teste 15/15; QA visual ainda pendente
+Upload real de comprovante de pedagio                     | HOMOLOGADO (backend/Storage)   | Missao 1: 18/18 + teste 15/15; QA visual ainda pendente
+QA visual de uploads no navegador                         | BLOQUEADO                      | MISSAO_01_1...: ambiente/credenciais QA indisponiveis; guard bloqueou
+RLS de documentos_metadata por papel/departamento         | PENDENTE                       | baseline 31545-31569: USING (true) para SELECT/INSERT/UPDATE/DELETE
+IA documental real (OCR/visao)                            | PENDENTE                       | Edge simulada + fallback local; auditoria secao 5.2
+Visualizador/upload na aba Documentos do Recrutamento     | PENDENTE                       | auditoria secao 3.8; sem DocumentoAcoesDropdown/documentos_metadata na aba
+Aba Documentos do AppPrestador                            | PENDENTE                       | AppPrestador.tsx:596-612: cards estaticos "Valido"
+Exclusao de documento com role/confirmacao admin          | PENDENTE                       | auditoria secao 7 (matriz 1); dropdown nao possui exclusao protegida
+Publicacao/deploy da Edge documentos-ia                   | PENDENTE                       | AGENTS e auditoria indicam deploy pendente; sem prova de OCR real
+
+8. O QUE FOI REAPROVEITADO (NAO RECONSTRUIR)
+----------------------------------------------------------------------------------------------------
+- Rota e pagina existentes (/central-documentos e CentralDocumentos.tsx).
+- Componentes DocumentoUploadUniversal, DocumentoAcoesDropdown, DocumentoIAReportModal,
+  DocumentoHistoricoModal, DocumentoCompartilharModal, DocumentoNovaVersaoDialog.
+- Servicos documentosMetadataService, documentoStorageService e storageRefService.
+- Tabela oficial documentos_metadata e bucket privado documentos_operacionais.
+- Trigger trg_documentos_prestadores_metadata e funcao de espelhamento.
+- Fluxo real da Missao 1: contratoAnexoService, reembolsoPedagioService, anexoDocumento.
+- Nenhum bucket, tabela, storage ou servico paralelo foi criado ou e necessario.
+
+9. ESTADO DAS INTEGRACOES - MISSAO 1
+----------------------------------------------------------------------------------------------------
+- Migration aditiva de RLS de clientes_contratos: APLICADA (4 policies no baseline).
+- Contrato de cliente: binario no Storage + anexo_url + anexo_nome + evento de vinculo.
+- Comprovante de pedagio: upload real no Financeiro + vinculo a alocacao + Signed URL.
+- Prova real: 18/18 PASS; teste de contrato: 15/15 PASS; limpeza comprovada.
+- Pendencia nao tecnica: QA visual em navegador BLOQUEADO por falta de ambiente/credenciais
+  de homologacao; a prova feita foi via API autenticada com os mesmos servicos e bucket.
+- Nenhuma alteracao no Recrutamento foi feita pela Missao 1 (confirmado no relatorio).
+
+10. PROXIMA MISSAO EXATA
+----------------------------------------------------------------------------------------------------
+MISSAO GD-02 - HOMOLOGACAO VISUAL DOS UPLOADS E BLINDAGEM DO RLS DE DOCUMENTOS
+Objetivo: executar em navegador (ambiente QA ou producao controlada) os fluxos de upload da
+Central, do contrato de cliente e do comprovante de pedagio; validar abrir/baixar por URL
+assinada; e corrigir o RLS de public.documentos_metadata com migration ADITIVA de policies
+por papel/departamento (SELECT/UPDATE/DELETE), preservando bucket, tabela, trigger e os
+servicos existentes. Nao reconstruir a Central e nao alterar o fluxo de upload.
+Criterios de aceite:
+1) Upload real pela UI em /central-documentos + abrir + baixar + nova versao + historico.
+2) Contrato de cliente e comprovante de pedagio abertos/baixados pela UI.
+3) Usuario comum nao deleta/edita documento de outro setor; admin/super_admin permanecem.
+4) Nenhuma regressao na Missao 1 (contrato/pedagio) e no trigger App -> Metadata.
+
+====================================================================================================
+FIM DO RELATORIO GD-01 - NENHUM ARQUIVO DE CODIGO, BANCO, MIGRATION OU AMBIENTE FOI ALTERADO.
+====================================================================================================

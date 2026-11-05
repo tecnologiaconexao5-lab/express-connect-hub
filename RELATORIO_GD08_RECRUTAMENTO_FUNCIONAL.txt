@@ -1,0 +1,144 @@
+====================================================================================================
+RELATORIO GD-08 - AMARRACAO LOGICA DO RECRUTAMENTO E ESTABILIDADE
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: frontend apenas. Nenhuma alteracao de banco, migration, storage ou deploy.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Foram corrigidos os três pontos apontados:
+
+1) IA Operacional reorganizada: seletor de operação movido para o topo (abaixo dos KPIs),
+   ranking reativo à operação selecionada e visualização unificada de três fontes.
+2) Indicador de frescor do cadastro (Lead Quente / Recente / Cadastro Antigo) adicionado
+   na lista de recomendações e na tabela de Ofertas Publicas.
+3) Módulo de Recrutamento protegido por ErrorBoundary + Suspense por secção, com fallback
+   local e chave por aba, evitando tela branca total.
+
+2. IA OPERACIONAL - SELETOR NO TOPO E RANKING REATIVO
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/components/ia/IAOperacional.tsx
+
+O que mudou:
+- Novo card "Match Operacional" imediatamente apos os KPIs (antes do ranking e das acoes).
+- O dropdown "Selecione uma operacao..." agora vive nesse card superior.
+- Ao selecionar a operacao, o resumo exibe badges com:
+  Veiculo, Regiao, Carga e Valor do repasse.
+- O card de ranking passou a se chamar dinamicamente:
+  * "Recomendacoes para <operacao>" quando ha operacao selecionada;
+  * "Motor de Recomendacao Unificado" quando nao ha.
+- O ranking usa `rankingComMatch`, que recalcula score, motivos e pendencias a cada mudanca
+  de operacao (useMemo dependente de selectedOp).
+- O seletor que existia dentro do card "IA Operacional" foi removido; esse card agora mostra
+  as acoes (Sugerir prestadores, Gerar mensagem, WhatsApp, Salvar modelo, Ajustes) e uma
+  mensagem orientando selecionar a operacao no card superior caso nada esteja selecionado.
+
+3. AGREGACAO DAS TRES FONTES
+----------------------------------------------------------------------------------------------------
+O `carregarRanking` passou a carregar e unificar:
+- Banco de Talentos: `recrutamento_candidatos` (mapeado para o ranking).
+- Prestadores: `recrutamento_prestadores`.
+- Ofertas Publicas: `listarPreCadastros()` (mesma camada da tela de Ofertas).
+
+Cada perfil recebeu:
+- tipo: "Prestador" | "Candidato" | "Oferta";
+- tags (para match de carga/carroceria);
+- criadoEm (para idade do cadastro).
+
+O card de ranking exibe badges de contagem por fonte:
+  "Banco de Talentos: N", "Prestadores: N", "Ofertas Publicas: N".
+
+4. MOTOR DE MATCH DA OPERACAO
+----------------------------------------------------------------------------------------------------
+Funcao `matchPerfilOperacao(op, perfil)`:
+- Veiculo: usa `veiculoCorresponde` (dicionario GD-07), garantindo equivalencias
+  Fiorino/Kangoo/Partner e VUC/HR/Iveco Daily etc.
+- Regiao/carga: usa `avaliarMatchOferta` com a string de demanda da operacao
+  (veiculo + regiao + termos de carga).
+- Carga: `cargaCorresponde` com sinonimos (refrigerada/refrigerado/congelado,
+  bau/bau fechado, sider, grade, graneleiro, tanque, prancha, porta-container).
+- Score final combina o match operacional com o score base do perfil.
+- Perfis com veiculo incompativel sao removidos do ranking quando ha operacao selecionada.
+- Motivos e pendencias sao recalculados e exibidos em cada card.
+
+Acoes por perfil:
+- Prestador/Candidato: Contatar, CRM, Pre-selecionar (comportamento anterior).
+- Oferta Publica: botao "WhatsApp" (abre wa.me com o telefone da oferta) e sem acoes de CRM/
+  pre-selecao, pois a oferta ainda nao e candidato/prestador.
+
+5. FRESCOR DO CADASTRO
+----------------------------------------------------------------------------------------------------
+Arquivo novo: src/utils/frescorCadastro.ts
+
+Regras:
+- < 30 dias  -> "Lead Quente" (verde)
+- 30 a 90 dias -> "Recente" (azul)
+- > 90 dias -> "Cadastro Antigo - Verificar Disponibilidade" (ambar)
+- Sem data/invalida -> "Data nao informada"/"Data invalida" (neutro)
+- Inclui dias calculados e tooltip explicativo.
+
+Aplicacao:
+- IA Operacional: badge com icone Clock na linha de cada recomendacao
+  (Prestador, Candidato ou Oferta).
+- Ofertas Publicas: badge abaixo da data de criacao na tabela principal.
+- Arquivo alterado: src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+
+6. ESTABILIDADE DE ROTA (TELA BRANCA)
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/index.tsx
+
+O que mudou:
+- Importados `Suspense` e o `ErrorBoundary` existente.
+- Criados fallbacks locais:
+  * SecaoRecrutamentoErro: card com mensagem "Nao foi possivel carregar esta seccao",
+    aviso de isolamento e botao Recarregar.
+  * SecaoRecrutamentoLoading: skeleton de carregamento.
+- O conteudo de `renderSection()` agora e envolvido em:
+  <ErrorBoundary key={currentSection} fallback={<SecaoRecrutamentoErro />}>
+    <Suspense fallback={<SecaoRecrutamentoLoading />}>
+      {renderSection()}
+    </Suspense>
+  </ErrorBoundary>
+- O `key={currentSection}` faz o boundary resetar ao trocar de aba, exibindo o fallback
+  apenas na secao com erro e mantendo o layout/menu do Recrutamento funcionando.
+- Estados nulos iniciais continuam tratados nos componentes (listas vazias, metricas com
+  fallback e ranking catch -> []).
+
+7. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+- src/utils/frescorCadastro.ts (NOVO)
+- src/modules/recrutamento/components/ia/IAOperacional.tsx
+- src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+- src/modules/recrutamento/index.tsx
+- src/test/gd08_recrutamento_funcional.test.ts (NOVO)
+- Relatorio: RELATORIO_GD08_RECRUTAMENTO_FUNCIONAL.txt
+
+8. VALIDACAO
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- ESLint (arquivos da missao) ....................... 0 erros novos
+  (permanecem apenas `no-explicit-any` e warnings de fast-refresh legados no
+   IAOperacional/index.tsx, pre-existentes)
+- Vitest novo GD-08 ................................ 9/9 PASS
+- Vitest contratos Ofertas/Recrutamento ............. 66/66 PASS
+  (02b3 gestao_ofertas 20, 02b3 gestao_parceiros 6, 02b4 fechamento 10,
+   gd07 match 8, talent profile 22)
+- Vitest suite completa ............................. 18 arquivos / 44 testes falhos
+  = baseline exata do projeto; 2630 pass (+9 desta missao)
+- npm run build ..................................... OK (1m 8s)
+
+9. PENDENCIAS / QA VISUAL
+----------------------------------------------------------------------------------------------------
+1. (QA) /recrutamento?section=ia: conferir seletor de operacao abaixo dos KPIs,
+   selecionar uma operacao (ex.: HR Refrigerada) e validar que o ranking muda,
+   mostrando prestadores/candidatos/ofertas aderentes e ordenados.
+2. (QA) Conferir as badges de frescor (Lead Quente/Recente/Cadastro Antigo) no ranking
+   e na tabela de Ofertas Publicas.
+3. (QA) Forcar um erro de renderizacao em uma secao (ex.: dado nulo) e confirmar que
+   aparece o fallback local, sem tela branca total, e que o menu continua funcional.
+4. (OBS) Nenhuma alteracao de banco, bucket, migration, deploy ou commit foi executada.
+
+====================================================================================================
+FIM DO RELATORIO GD-08 - RECRUTAMENTO AMARRADO E ESTAVEL; BANCO/STORAGE/MIGRATION INTACTOS.
+====================================================================================================

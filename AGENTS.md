@@ -4672,4 +4672,65 @@ cinza-claro, laranja nos destaques, **uma única coluna lateral**, conteúdo por
 - `ADM-APP-02D2-R1-REDMI-CLOSE-RELATORIO.txt` — NOVO (relatório final)
 - `ADM-APP-02D2-RELATORIO.txt` — anterior ("NAO PRONTO / BLOCKED-F-ENV", agora fechado)
 
+---
+
+## MISSÃO ADM-APP-G3 — Alinhamento de status documental TMS × APP (2026-11-03)
+
+**ADM-APP-02D.2 — HOMOLOGADO.** Evidências físicas arquivadas em **04/10/2026**
+(`test-results/02d2/d2r2_app_doc_view.png` e `d2r3_app_doc_upload.png`; ver
+`STATUS_CHECKLIST_CONEXAO_EXPRESS.txt`). **G3 — tratado nesta micro-missão.**
+
+**Status:** ✅ Concluída (implementação técnica). A prova física do estado
+aprovado/reprovado no Redmi fica pendente (dispositivo não conectado).
+
+### Causa confirmada (código atual)
+- **TMS (`PrestadorDetalhe.tsx`)**: carrega `documentos_metadata`
+  (`modulo_origem='prestadores'`) e usa `status_ia` via
+  `statusIAParaStatusDocumento()`; a tabela legada é apenas fallback.
+  Todos os 30 documentos reais de prestadores estão com `status_ia='pendente'`
+  → exibição "Pendente".
+- **APP (antes)**: lia apenas `documentos_prestadores` e `DriverDocument.status`
+  caía no default `pendente`, ignorando a fonte oficial de revisão e os estados
+  aprovado/reprovado.
+- **Schema**: `documentos_prestadores.status` existe desde
+  `20261031000002_talent_fase7.sql` (default `aprovado`), mas **não é atualizado
+  pelo fluxo de revisão**; a revisão vive em `documentos_metadata.status_ia`.
+  O default `aprovado` não pode ser usado como aprovação de revisão.
+
+### Correção (APP — sem migration, sem escrita em dados)
+- `lib/core/repositories/document_status.dart` (NOVO): fonte oficial =
+  `documentos_metadata.status_ia` > `documentos_prestadores.status` >
+  `pendente` (fail-closed).
+  - `aprovado_na_conferencia` → aprovado; `necessita_de_correcao` → reprovado;
+    demais → pendente (espelha `statusIAParaStatusDocumento`).
+- `lib/core/repositories/driver_documents_repository.dart`: `fetchByDriverId`
+  consulta `documentos_metadata` (por `entidade_id`/URL, com fallback por tipo
+  não ambíguo) e mescla via `mesclarStatusOficial()`. `DriverDocument` ganhou
+  `isRejeitado` e passou a ler `validade`/`data_vencimento`.
+- `lib/features/profile/profile_screen.dart`: exibe "Rejeitado" em vermelho e
+  só mostra "Válido até ..." quando o status é aprovado.
+- Nenhum upload, bucket, policy, signed URL ou visualizador foi alterado.
+
+### Testes
+- `flutter test test/core/repositories` → **74/74 PASS**.
+- `flutter test test/core/repositories/driver_documents_status_test.dart` →
+  **21/21 PASS** (pendente, aprovado, reprovado, legado sem status, legado com
+  status, URL pública, prefixo de bucket, fallback por tipo, ambiguidade,
+  metadata inativa, não sobrescrita).
+- `dart analyze` nos arquivos alterados → **No issues found**.
+- Consulta read-only em produção: 30 documentos de prestadores → classificação
+  esperada **pendente** (coerente com `status_ia='pendente'`); nenhum dado
+  alterado.
+- Prova física no Redmi **não executada** (dispositivo não conectado).
+  Sincronização real aprovado/reprovado fica **IMPLEMENTADO, AGUARDANDO PROVA
+  REAL**.
+
+### Arquivos
+- `lib/core/repositories/document_status.dart` (APP, NOVO)
+- `lib/core/repositories/driver_documents_repository.dart` (APP)
+- `lib/features/profile/profile_screen.dart` (APP)
+- `test/core/repositories/driver_documents_status_test.dart` (APP, NOVO)
+- `ADM-APP-G3-RELATORIO.txt` (APP, NOVO)
+- `AGENTS.md` (APP, NOVO — checkpoints 02D.2 + G3)
+
 

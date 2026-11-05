@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { 
   Upload, FileText, CheckCircle, XCircle, AlertTriangle, 
-  Loader2, Eye, Download, Sparkles, RefreshCw
+  Loader2, Eye, Download, ShieldCheck, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -276,9 +276,9 @@ export function DocumentoAnalyzer({
             {isAnalyzing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Sparkles className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4" />
             )}
-            Analisar com IA
+            Análise de Conformidade
           </Button>
         )}
       </div>
@@ -287,8 +287,8 @@ export function DocumentoAnalyzer({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
-              Resultado da Análise - IA
+              <ShieldCheck className="w-5 h-5 text-primary" />
+              Resultado da Análise de Conformidade
             </DialogTitle>
           </DialogHeader>
           
@@ -342,7 +342,7 @@ export function DocumentoAnalyzer({
               )}
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <Label className="text-xs text-blue-600 font-semibold">Observações da IA</Label>
+                <Label className="text-xs text-blue-600 font-semibold">Observações da Conformidade</Label>
                 <p className="text-sm text-blue-800 mt-1">{result.observacoes_ia}</p>
               </div>
 

@@ -4,7 +4,8 @@ import {
   Package, Hash, Search, Camera, Signature,
   AlertTriangle, XCircle, Eye, MoreHorizontal,
   Pencil, RefreshCw, Layers, FileText,
-  Receipt, CircleDollarSign, Banknote, FileWarning, Plus, Settings2, Scale, Truck, UserRound, MoveHorizontal
+  Receipt, CircleDollarSign, Banknote, FileWarning, Plus, Settings2, Scale, Truck, UserRound, MoveHorizontal,
+  Upload, Loader2, Download
 } from "lucide-react";
 import {
   PRESET_ESSENCIAL,
@@ -47,6 +48,7 @@ import { supabase } from "@/lib/supabase";
 import { mascararCPF, mascararTelefone } from "@/lib/masking";
 import { useTenant } from "@/contexts/TenantContext";
 import { buscarTabelaValoresCliente, buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasService";
+import { validarArquivoAnexo, garantirTipoAnexo, EXTENSOES_ANEXO_ACEITAS } from "@/lib/anexoDocumento";
 
 const fmtM = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -219,7 +221,11 @@ function DossieFinanceiroSheet({
   const [msgComplemento, setMsgComplemento] = useState<string | null>(null);
   const [dossieEdicaoNF, setDossieEdicaoNF] = useState<NFVinculada | null>(null);
   // A31-J1.6 — comprovante de pedágio (estrutura oficial reembolsos_prestador)
-  const [comprovantePedagio, setComprovantePedagio] = useState<{ comprovante_url: string | null; valor: number | null } | null>(null);
+  const [comprovantePedagio, setComprovantePedagio] = useState<{
+    comprovante_url: string | null;
+    valor: number | null;
+    url_assinada?: string | null;
+  } | null>(null);
   const [formEdicaoNF, setFormEdicaoNF] = useState({ numero: "", serie: "", chave_acesso: "", valor_total: "", emitente_nome: "" });
   // A31F — NF aguardando confirmação de desvinculação (AlertDialog)
   const [nfParaRemover, setNfParaRemover] = useState<NFVinculada | null>(null);
@@ -432,8 +438,18 @@ function DossieFinanceiroSheet({
         carregarComplemento(item.alocacaoId);
         // A31-J1.6 — comprovante de pedágio (reembolsos_prestador oficial)
         import("@/services/operacao/reembolsoPedagioService")
-          .then(({ buscarComprovantePedagio }) => buscarComprovantePedagio(item.alocacaoId as string))
-          .then((c) => setComprovantePedagio(c))
+          .then(async ({ buscarComprovantePedagio, resolverUrlComprovantePedagio }) => {
+            const referencia = (item.osId || item.alocacaoId) as string;
+            const c = await buscarComprovantePedagio(referencia);
+            if (!c) {
+              setComprovantePedagio(null);
+              return;
+            }
+            const assinada = c.comprovante_url
+              ? await resolverUrlComprovantePedagio(c.comprovante_url)
+              : null;
+            setComprovantePedagio({ ...c, url_assinada: assinada });
+          })
           .catch(() => setComprovantePedagio(null));
       }
       if (item.osId) {
@@ -444,7 +460,7 @@ function DossieFinanceiroSheet({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, item?.osId]);
+  }, [open, item?.osId, item?.alocacaoId]);
 
   if (!item) return null;
 
@@ -582,8 +598,8 @@ function DossieFinanceiroSheet({
                   {comprovantePedagio.valor != null && (
                     <span className="text-[11px] font-bold text-rose-700 tabular-nums">{fmtM(comprovantePedagio.valor)}</span>
                   )}
-                  <a href={comprovantePedagio.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-rose-600 hover:underline">Ver</a>
-                  <a href={comprovantePedagio.comprovante_url} download className="text-[10px] font-bold text-slate-500 hover:underline">Baixar</a>
+                  <a href={comprovantePedagio.url_assinada || comprovantePedagio.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-rose-600 hover:underline">Ver</a>
+                  <a href={comprovantePedagio.url_assinada || comprovantePedagio.comprovante_url} download className="text-[10px] font-bold text-slate-500 hover:underline">Baixar</a>
                 </span>
               </div>
             )}
@@ -1056,6 +1072,11 @@ export default function ConferenciaFinanceira() {
     comprovante_pedagio_url: "",
     observacoes: "",
   });
+  // Upload real do comprovante de pedágio (bucket privado + metadado da Central).
+  const [enviandoComprovante, setEnviandoComprovante] = useState(false);
+  const [msgComprovante, setMsgComprovante] = useState<string | null>(null);
+  const [comprovantePedagioDocId, setComprovantePedagioDocId] = useState<string | null>(null);
+  const [comprovantePedagioPreview, setComprovantePedagioPreview] = useState<string | null>(null);
 
   // A31-J1.4 — tabelas/regras da Escala para o lançamento manual (cliente e prestador)
   const { tenant } = useTenant();
@@ -1249,9 +1270,59 @@ export default function ConferenciaFinanceira() {
       valor_pedagio: "", valor_combustivel: "", valor_reembolso_outros: "", valor_ajudante: "", diarias_adicionais: "",
       valor_diaria: "", valor_adicional: "", valor_desconto: "", valor_desconto_prestador: "", pedagio_cobrar_excedente: false, comprovante_pedagio_url: "", observacoes: "",
     });
+    setComprovantePedagioDocId(null);
+    setComprovantePedagioPreview(null);
+    setMsgComprovante(null);
     setTabelaManual({ cliente: null, prestador: null });
     setFiltroPrestadorLancamento("");
     setMsgLancamento(null);
+  };
+
+  const handleComprovantePedagioFile = async (file: File | null) => {
+    if (!file) {
+      setComprovantePedagioDocId(null);
+      setComprovantePedagioPreview(null);
+      setMsgComprovante(null);
+      setFormLancamento((p) => ({ ...p, comprovante_pedagio_url: "" }));
+      return;
+    }
+    const erroArquivo = validarArquivoAnexo(file);
+    if (erroArquivo) {
+      setMsgComprovante(erroArquivo);
+      return;
+    }
+    setEnviandoComprovante(true);
+    setMsgComprovante(null);
+    try {
+      const { enviarDocumentoOperacional } = await import("@/services/documentos/documentosMetadataService");
+      const { resolverUrlComprovantePedagio } = await import("@/services/operacao/reembolsoPedagioService");
+      const descricao = [
+        formLancamento.romaneio ? `Romaneio ${formLancamento.romaneio}` : "",
+        formLancamento.prestador_nome,
+      ].filter(Boolean).join(" · ");
+      const { documento } = await enviarDocumentoOperacional({
+        file: garantirTipoAnexo(file),
+        moduloOrigem: "financeiro",
+        entidadeId: null,
+        tipo: "Comprovante de Pedágio",
+        nome: file.name,
+        categoria: "Financeiro",
+        departamento: "Financeiro",
+        descricao: descricao || "Comprovante de pedágio (lançamento manual)",
+        responsavel: "Financeiro",
+      });
+      const preview = await resolverUrlComprovantePedagio(documento.url);
+      setComprovantePedagioDocId(documento.id);
+      setComprovantePedagioPreview(preview);
+      setFormLancamento((p) => ({ ...p, comprovante_pedagio_url: documento.url }));
+      setMsgComprovante("Comprovante enviado ao Storage. Será vinculado à conferência ao salvar.");
+    } catch (erro) {
+      setMsgComprovante(
+        erro instanceof Error ? erro.message : "Falha ao enviar o comprovante de pedágio.",
+      );
+    } finally {
+      setEnviandoComprovante(false);
+    }
   };
 
   // A31-J1.4 — prévia financeira com as MESMAS fontes da Escala (tabela cliente +
@@ -1394,19 +1465,35 @@ export default function ConferenciaFinanceira() {
     });
     setSalvandoLancamento(false);
     if (res.success) {
-      // A31-J1.6 — comprovante de pedágio na estrutura OFICIAL reembolsos_prestador
-      if (res.alocacaoId && formLancamento.comprovante_pedagio_url.trim()) {
+      // A31-J1.6 / MISSÃO 1 — comprovante de pedágio fica na Central de Documentos
+      // associado à alocação (o trigger oficial do App exige prestador autenticado
+      // para gravar em reembolsos_prestador; o Financeiro não altera essa regra).
+      if (formLancamento.comprovante_pedagio_url.trim() && res.alocacaoId) {
         try {
-          const { salvarComprovantePedagio } = await import("@/services/operacao/reembolsoPedagioService");
-          await salvarComprovantePedagio({
-            os_id: res.alocacaoId,
-            prestador: formLancamento.prestador_nome || null,
-            valor: num(formLancamento.valor_pedagio) || 0,
-            data_despesa: formLancamento.data_escala,
-            comprovante_url: formLancamento.comprovante_pedagio_url.trim(),
-            tenant_id: tenant?.id || null,
-          });
-        } catch { /* comprovante opcional — não bloqueia o lançamento */ }
+          const descricao = `Comprovante de pedágio — ${formLancamento.romaneio || res.alocacaoId}`;
+          if (comprovantePedagioDocId) {
+            const { vincularDocumentoEntidade } = await import("@/services/documentos/documentosMetadataService");
+            await vincularDocumentoEntidade(comprovantePedagioDocId, {
+              entidadeId: res.alocacaoId,
+              entidadeNome: formLancamento.prestador_nome || null,
+              descricao,
+              historico: {
+                tipo: "vinculo_lancamento",
+                descricao: `Comprovante de pedágio vinculado à alocação ${res.alocacaoId}.`,
+                metadata: { alocacao_id: res.alocacaoId, os_id: res.osId || null },
+              },
+            });
+          } else {
+            const { registrarComprovantePedagioUrl } = await import("@/services/operacao/reembolsoPedagioService");
+            await registrarComprovantePedagioUrl({
+              url: formLancamento.comprovante_pedagio_url.trim(),
+              alocacaoId: res.alocacaoId,
+              descricao,
+            });
+          }
+        } catch (erroComprovante) {
+          console.warn("[ConferenciaFinanceira] Comprovante de pedágio não vinculado:", erroComprovante);
+        }
       }
       setMsgLancamento("Serviço lançado com sucesso na Programação Operacional (fonte única).");
       setMostrarLancamento(false);
@@ -2461,28 +2548,66 @@ export default function ConferenciaFinanceira() {
                     <span className="text-[11px] uppercase font-semibold text-slate-400">KM excedente (repasse)</span>
                     <span className="text-xs font-bold text-rose-700 tabular-nums">{fmtM(resumoLancamento.totalExcedentePrestador)}</span>
                   </div>
-                  <div className="mt-2 rounded-md bg-white/70 border border-rose-100 p-2.5 space-y-1.5">
-                    <Label className="text-xs font-medium">Comprovante de pedágio (PDF/JPG/PNG — link)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        className="h-8 text-sm placeholder:text-[13px]"
-                        placeholder="https://.../comprovante-pedagio.pdf"
-                        value={formLancamento.comprovante_pedagio_url}
-                        onChange={(e) => setFormLancamento((p) => ({ ...p, comprovante_pedagio_url: e.target.value }))}
+                  <div className="mt-2 rounded-md bg-white/70 border border-rose-100 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs font-medium">Comprovante de pedágio</Label>
+                      <span className="text-[10px] text-slate-400">PDF · JPG · PNG · WEBP · até 50 MB</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        id="comprovante-pedagio-input"
+                        type="file"
+                        accept={EXTENSOES_ANEXO_ACEITAS}
+                        className="hidden"
+                        onChange={async (e) => {
+                          const arquivo = e.target.files?.[0] || null;
+                          e.target.value = "";
+                          await handleComprovantePedagioFile(arquivo);
+                        }}
                       />
-                      {formLancamento.comprovante_pedagio_url.trim() ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-[12px] shrink-0"
+                        disabled={enviandoComprovante}
+                        onClick={() => document.getElementById("comprovante-pedagio-input")?.click()}
+                      >
+                        {enviandoComprovante ? (
+                          <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Enviando...</>
+                        ) : (
+                          <><Upload className="w-3.5 h-3.5 mr-1" /> Anexar arquivo</>
+                        )}
+                      </Button>
+                      {(comprovantePedagioPreview || formLancamento.comprovante_pedagio_url.trim()) ? (
                         <>
                           <Button variant="outline" size="sm" className="h-8 text-[13px] shrink-0" asChild>
-                            <a href={formLancamento.comprovante_pedagio_url.trim()} target="_blank" rel="noreferrer">Ver</a>
+                            <a href={comprovantePedagioPreview || formLancamento.comprovante_pedagio_url.trim()} target="_blank" rel="noreferrer">Ver</a>
                           </Button>
                           <Button variant="outline" size="sm" className="h-8 text-[13px] shrink-0" asChild>
-                            <a href={formLancamento.comprovante_pedagio_url.trim()} download>Baixar</a>
+                            <a href={comprovantePedagioPreview || formLancamento.comprovante_pedagio_url.trim()} download>Baixar <Download className="w-3 h-3 ml-1" /></a>
                           </Button>
                         </>
                       ) : null}
                     </div>
+                    <Input
+                      className="h-8 text-sm placeholder:text-[13px]"
+                      placeholder="ou cole um link existente (comprovantes antigos)"
+                      value={formLancamento.comprovante_pedagio_url}
+                      onChange={(e) => {
+                        setComprovantePedagioDocId(null);
+                        setComprovantePedagioPreview(null);
+                        setMsgComprovante(null);
+                        setFormLancamento((p) => ({ ...p, comprovante_pedagio_url: e.target.value }));
+                      }}
+                    />
+                    {msgComprovante ? (
+                      <p className={`text-[11px] ${msgComprovante.toLowerCase().includes("enviado") ? "text-emerald-600" : "text-rose-600"}`}>
+                        {msgComprovante}
+                      </p>
+                    ) : null}
                     <p className="text-[10px] text-slate-400">
-                      Persistido na estrutura oficial <strong>reembolsos_prestador</strong> (tipo=pedágio) ao salvar.
+                      O arquivo é enviado ao bucket privado e indexado na Central de Documentos, vinculado à alocação ao salvar. Valores e regras da conferência não são alterados.
                     </p>
                   </div>
                   <div className="mt-2 flex items-center justify-between rounded-lg bg-rose-600/10 border border-rose-300/60 px-3 py-2">

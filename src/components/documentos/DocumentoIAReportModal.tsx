@@ -3,7 +3,7 @@ import {
   AlertTriangle,
   XCircle,
   Loader2,
-  Sparkles,
+  FileCheck,
   RefreshCw,
   FilePlus2,
   ClipboardCheck,
@@ -96,8 +96,8 @@ export function DocumentoIAReportModal({
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            Relatório de IA — {documento?.tipo || "Documento"}
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            Relatório de Conformidade — {documento?.tipo || "Documento"}
           </DialogTitle>
           <DialogDescription>
             Conferência automática de {documento?.nome || documento?.tipo || "documento"}.
@@ -108,7 +108,7 @@ export function DocumentoIAReportModal({
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3 py-14 text-muted-foreground">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm font-medium">Analisando documento com IA...</p>
+            <p className="text-sm font-medium">Analisando conformidade do documento...</p>
             <p className="text-xs">Isso pode levar alguns segundos.</p>
           </div>
         ) : !resultado ? (
@@ -202,7 +202,7 @@ export function DocumentoIAReportModal({
             {(resultado.sugestao_correcao || (resultado.observacoes?.length ?? 0) > 0) && (
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Sparkles className="h-4 w-4 text-primary" /> Sugestão de Correção
+                  <FileCheck className="h-4 w-4 text-primary" /> Sugestão de Correção
                 </p>
                 {resultado.sugestao_correcao && (
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{resultado.sugestao_correcao}</p>

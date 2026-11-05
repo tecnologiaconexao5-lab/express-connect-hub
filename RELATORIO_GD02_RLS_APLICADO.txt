@@ -1,0 +1,205 @@
+====================================================================================================
+RELATORIO GD-02 - BLINDAGEM DE RLS DE DOCUMENTOS + PREPARACAO DA HOMOLOGACAO VISUAL
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Status: MIGRATION CRIADA E VALIDADA EM DRY-RUN (ROLLBACK). NAO APLICADA EM PRODUCAO.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Foi criada a migration aditiva:
+  supabase/migrations/20261105000001_blindagem_rls_documentos_metadata.sql
+
+Ela substitui as 4 policies permissivas de public.documentos_metadata por regras granulares
+por tenant, papel e departamento. A migration NAO foi aplicada em producao. Foi executada em
+uma transacao de dry-run contra o banco ativo com ROLLBACK no final; a prova pos-dry-run
+confirmou que as policies antigas (USING true) e que nenhuma funcao GD-02 permaneceu gravada.
+
+Tambem foi ajustada a UI de documentos para exibir a acao "Excluir" apenas para
+super_admin/admin, com dialogo de confirmacao. O banco continua sendo a ultima linha de defesa.
+
+2. MIGRATION CRIADA
+----------------------------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20261105000001_blindagem_rls_documentos_metadata.sql
+Tipo: aditiva (DROP POLICY + CREATE POLICY + CREATE FUNCTION), sem DDL destrutivo.
+Tabela alvo: public.documentos_metadata
+Bucket/Storage: INALTERADO (documentos_operacionais)
+Trigger: INALTERADO (trg_documentos_prestadores_metadata)
+
+Funcoes auxiliares criadas (SECURITY DEFINER, STABLE, search_path = public, pg_temp):
+  - public.f_documentos_usuario_admin()
+      true para super_admin / admin / admin_tenant ativos.
+  - public.f_documentos_pode_departamento(p_departamento text)
+      autoriza leitura/escrita conforme o departamento derivado do papel.
+      departamento NULL = documento publico da empresa (somente usuarios internos).
+
+Policies removidas:
+  - documentos_metadata_select   (USING true)
+  - documentos_metadata_insert   (WITH CHECK true)
+  - documentos_metadata_update   (USING true / WITH CHECK true)
+  - documentos_metadata_delete   (USING true)
+
+3. POLICIES CRIADAS
+----------------------------------------------------------------------------------------------------
+documentos_metadata_select (FOR SELECT TO authenticated)
+  - Exige vinculo ativo em tenant_usuarios com o mesmo tenant do documento
+    (tenant_id NULL e tratado como current_tenant_id_safe()).
+  - Permite quando: admin/super_admin/admin_tenant OU responsavel_id = auth.uid()
+    OU departamento permitido/publico pelo papel.
+
+documentos_metadata_insert (FOR INSERT TO authenticated)
+  - Exige vinculo ativo no mesmo tenant.
+  - Permite quando: admin/super_admin/admin_tenant OU departamento permitido/publico.
+
+documentos_metadata_update (FOR UPDATE TO authenticated)
+  - USING: mesma regra da leitura (admin, responsavel ou departamento permitido).
+  - WITH CHECK: mesma regra da insercao (admin ou departamento permitido).
+
+documentos_metadata_delete (FOR DELETE TO authenticated)
+  - Exige vinculo ativo no mesmo tenant.
+  - Permite SOMENTE admin/super_admin/admin_tenant.
+
+Observacao: "admin_tenant" foi incluido porque e o valor real de papel administrativo
+no banco (tenant_usuarios_papel_check). O frontend mapeia admin_tenant => admin.
+
+4. MAPEAMENTO DE DEPARTAMENTO POR PAPEL (documentado)
+----------------------------------------------------------------------------------------------------
+super_admin / admin / admin_tenant -> tudo
+financeiro                          -> financeiro
+comercial                           -> comercial, administrativo
+operacional                         -> operacional, operacoes/operações, recrutamento,
+                                       administrativo, comercial
+gestor                              -> operacional, operacoes/operações, recrutamento, administrativo
+atendimento                         -> atendimento, comercial, operacional, operacoes/operações
+
+- Departamentos sao comparados em lower(btrim(...)) e cobrem "Operações" (usado pelo
+  enviarDocumentoOperacionalPrestador) e "Operacional" (usado no upload da Central).
+- Perfis cliente/prestador/motorista NAO sao considerados usuarios internos e, portanto,
+  nao acessam documentos publicos da empresa por esta policy.
+
+5. TRIGGER DE ESPELHAMENTO
+----------------------------------------------------------------------------------------------------
+- trg_documentos_prestadores_metadata permanece intacto.
+- A funcao public.f_documentos_prestadores_para_metadata() e SECURITY DEFINER.
+  O dry-run confirmou o trigger existente apos a migration; o espelhamento do App
+  continua funcionando sem depender das policies do usuario final.
+
+6. AJUSTE DE UI (PREVENCAO DE 403)
+----------------------------------------------------------------------------------------------------
+- src/components/documentos/DocumentoAcoesDropdown.tsx
+  * Nova prop opcional onExcluir.
+  * A acao "Excluir" so e renderizada quando user.role === "super_admin" || "admin"
+    e quando onExcluir foi fornecido.
+  * Item em vermelho com separador, apos as demais acoes.
+- src/pages/CentralDocumentos.tsx
+  * Passa onExcluir apenas para super_admin/admin.
+  * Dialogo de confirmacao "Excluir documento" com nome/URL e botao destrutivo.
+- src/services/documentos/documentosMetadataService.ts
+  * Nova funcao excluirDocumentoMetadata(doc): apaga o metadado (RLS decide) e faz
+    limpeza best-effort do objeto no Storage apenas para buckets conhecidos.
+  * Se a RLS bloquear, o erro e propagado e a UI mostra toast; o objeto nao e tocado.
+- Defesa em profundidade: mesmo que alguem chame a API diretamente, a policy de DELETE
+  do banco so permite admin/super_admin/admin_tenant.
+
+7. VALIDACAO EXECUTADA
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- npx eslint (servico/dropdown/pagina) ............. 0 erros (script de dry-run e ignorado pelo lint)
+- Vitest dos modulos de documentos ................. 49/49
+  (documentos_integrados_ia 8, central_documentos_avancada 9,
+   missao01_uploads_documentos 15, adm_app_02d1_documentos_privados 17)
+- npm run build .................................... OK (44,62s)
+- Dry-run transacional da migration ............... 16/16 provas OK + ROLLBACK
+
+Provas do dry-run (16/16):
+  [OK] 4 policies recriadas (select/insert/update/delete)
+  [OK] SELECT/UPDATE/DELETE sem USING (true)
+  [OK] DELETE restrito a f_documentos_usuario_admin()
+  [OK] funcoes auxiliares SECURITY DEFINER
+  [OK] trigger trg_documentos_prestadores_metadata preservado
+  [OK] visibilidade super_admin: 3/3 documentos de teste
+  [OK] visibilidade financeiro: 2/3 (Financeiro + publico)
+  [OK] visibilidade comercial: 2/3 (Comercial + publico)
+  [OK] visibilidade operacional: 2/3 (Comercial + publico)
+  [OK] visibilidade atendimento: 2/3 (Comercial + publico)
+  [OK] visibilidade cliente: 0/3
+  [OK] DELETE bloqueado para financeiro (RLS)
+  [OK] INSERT permitido para financeiro no departamento Financeiro
+  [OK] INSERT bloqueado para financeiro no departamento Comercial
+  [OK] INSERT bloqueado para perfil cliente
+  [OK] DELETE permitido para super_admin
+  [OK] ROLLBACK executado - nenhuma alteracao persistida
+
+Confirmacao pos-dry-run (leitura no banco ativo):
+  policies atuais de documentos_metadata = documentos_metadata_select/insert/update/delete
+  com os valores antigos (USING true) e funcoes GD-02 ausentes. Nada foi aplicado.
+
+Limitacao registrada: o Supabase local/Docker nao esta disponivel neste ambiente
+(falha de conexao com o Docker Desktop). Por isso a validacao foi feita em transacao
+com ROLLBACK no banco ativo, sem persistir qualquer alteracao. A aplicacao definitiva
+continua pendente de autorizacao.
+
+8. COMO INICIAR O SERVIDOR E TESTAR VISUALMENTE
+----------------------------------------------------------------------------------------------------
+1) Subir o TMS local (se ainda nao estiver rodando):
+     npm run dev
+   A aplicacao fica em http://localhost:8800
+   (o servidor ja foi verificado em execucao nesta sessao).
+
+2) Acessar a Central:
+     http://localhost:8800/central-documentos
+   (menu lateral: Documentos > Central de Documentos)
+
+3) Como admin/super_admin:
+   - Enviar um PDF/imagem pelo botao "Novo documento" ou pelo dropzone.
+   - Abrir "Visualizar" (URL assinada), "Baixar", "Adicionar nova versao" e "Consultar Historico".
+   - Confirmar que a acao "Excluir" aparece no dropdown.
+   - Excluir um documento de teste e confirmar o dialogo; o metadado deve sumir e o
+     arquivo deve ser removido do Storage.
+
+4) Como financeiro/comercial/operacional/atendimento:
+   - A acao "Excluir" NAO deve aparecer no dropdown.
+   - A lista deve mostrar apenas documentos do departamento permitido, os documentos
+     em que o usuario e responsavel_id, e documentos publicos (departamento NULL).
+
+5) Testes de contrato da Missao 1:
+   - Clientes > abrir cliente > Contratos > anexar PDF/imagem > Abrir/Baixar.
+   - Financeiro > Conferencia > anexar comprovante de pedagio > salvar > reabrir dossie.
+
+6) Se aparecer 403 em uma acao, conferir:
+   - papel/status do usuario em tenant_usuarios;
+   - departamento gravado no documento (Financeiro/Comercial/Operacional/Recrutamento/
+     Administrativo ou NULL para publico);
+   - tenant_id do documento x tenant do usuario.
+
+9. COMO APLICAR A MIGRATION (QUANDO AUTORIZADO)
+----------------------------------------------------------------------------------------------------
+- NAO aplicar via `supabase db push` (historico do projeto tem drift).
+- Aplicar o arquivo em UMA transacao (SQL Editor do Supabase ou script `pg`), por exemplo:
+     BEGIN;
+     \i supabase/migrations/20261105000001_blindagem_rls_documentos_metadata.sql
+     COMMIT;
+  ou executar o conteudo do arquivo dentro de BEGIN/COMMIT em um script node com `pg`.
+- A migration nao contem BEGIN/COMMIT proprio para permitir o dry-run; quem aplica deve
+  envolver em transacao.
+- Validar apos aplicar:
+     SELECT policyname, cmd, qual, with_check
+       FROM pg_policies
+      WHERE schemaname='public' AND tablename='documentos_metadata';
+- Rollback: bloco comentado no fim da propria migration (recria policies USING true e
+  remove as funcoes auxiliares).
+
+10. PENDENCIAS
+----------------------------------------------------------------------------------------------------
+1. (AUTORIZACAO) Aplicar a migration no banco de producao em transacao.
+2. (QA VISUAL) Executar os passos da secao 8 com usuarios reais de cada papel.
+3. (AJUSTE) Se a operacao quiser departamentos diferentes do mapeamento atual, editar a
+   funcao f_documentos_pode_departamento antes de aplicar.
+4. (OBSERVABILIDADE) Monitorar os logs do PostgREST/Edge apos a aplicacao para confirmar
+   ausencia de 403 indevido nos fluxos existentes.
+5. (RECRUTAMENTO) A aba Documentos do Recrutamento continua sem visualizador/download;
+   nao faz parte desta missao de RLS.
+
+====================================================================================================
+FIM DO RELATORIO GD-02 - MIGRATION NAO APLICADA EM PRODUCAO; DRY-RUN COM ROLLBACK CONFIRMADO.
+====================================================================================================

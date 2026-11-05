@@ -1,5 +1,5 @@
 /**
- * Conexão Talent AI — Perfil Operacional Automático (Etapa 7).
+ * Motor de Verificação - Perfil Operacional Automático (Etapa 7).
  *
  * Processa preferências operacionais (perfil de talento + disponibilidade)
  * e respostas situacionais (avaliações + treinamentos) para gerar um

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Edit, Camera, Sparkles, Loader2, Truck, CreditCard, Users, List, ShieldAlert, ShieldCheck, CalendarDays, ClipboardCheck, MessageCircle, BellRing, RefreshCw, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +26,7 @@ import { DocumentoHistoricoModal } from "@/components/documentos/DocumentoHistor
 import { DocumentoCompartilharModal } from "@/components/documentos/DocumentoCompartilharModal";
 import { DocumentoNovaVersaoDialog } from "@/components/documentos/DocumentoNovaVersaoDialog";
 import { resolverUrlDocumento, referenciaEstavelDocumento } from "@/services/documentos/documentoStorageService";
+import { validarArquivoAnexo } from "@/lib/anexoDocumento";
 import {
   analisarDocumentoComIA,
   atualizarAnaliseDocumentoMetadata,
@@ -131,9 +132,9 @@ const calculateAge = (birthDate?: string) => {
 };
 
 const DOCS_TIPOS = [
-  "CNH Frente", "CNH Verso", "Documento Pessoal", "Comprovante de ResidǦncia",
-  "Comprovante Bancǭrio", "Contrato", "CRLV", "Documento do Ve��culo", "ANTT",
-  "Ap��lice de Seguro", "Outros",
+  "CNH Frente", "CNH Verso", "Documento Pessoal", "Comprovante de Residência",
+  "Comprovante Bancário", "Contrato", "CRLV", "Documento do Veículo", "ANTT",
+  "Apólice de Seguro", "Outros",
 ];
 
 const documentoAcoesFallback = (
@@ -293,6 +294,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [modoEdicaoVeiculo, setModoEdicaoVeiculo] = useState<"adicionar" | "editar">("adicionar");
   const [isUploading, setIsUploading] = useState(false);
   const [docUploadProgress, setDocUploadProgress] = useState<Record<string, boolean>>({});
+  const [dragOverDoc, setDragOverDoc] = useState<string | null>(null);
   const [fotoRef, setFotoRef] = useState<string | null>(initial?.foto || null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [documentosPendentes, setDocumentosPendentes] = useState<Array<{tipo: string, file: File}>>([]);
@@ -641,9 +643,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
-  const handleDocUpload = async (tipoDocumento: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleDocFile = async (tipoDocumento: string, file: File) => {
+    const erroArquivo = validarArquivoAnexo(file);
+    if (erroArquivo) {
+      toast.error(erroArquivo);
+      return;
+    }
 
     const prestadorId = p.id;
     if (!prestadorId) {
@@ -680,7 +685,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           : [...atuais, novoDocumento];
         return { ...prev, documentos };
       });
-      toast.success(`${tipoDocumento} enviado e registrado. Use "IA" para conferir.`);
+      toast.success(`${tipoDocumento} enviado e registrado. Use "Verificar" para conferir.`);
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
       toast.error(error instanceof Error ? error.message : `Erro ao fazer upload do ${tipoDocumento}`);
@@ -690,17 +695,23 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     }
   };
 
+  const handleDocUpload = (tipoDocumento: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void handleDocFile(tipoDocumento, file);
+  };
+
   const handleAnalisarIA = async (tipoDocumento: string) => {
     const prestadorId = p.id;
     if (!prestadorId) {
-      toast.error("Salve o prestador antes de analisar documentos com IA.");
+      toast.error("Salve o prestador antes de iniciar a análise de conformidade.");
       return;
     }
 
     const doc = p.documentos?.find(d => d.tipo === tipoDocumento);
     const meta = documentosMetadata.find(m => m.tipo === tipoDocumento);
     if (!doc?.url) {
-      toast.error("Envie o documento antes de solicitar a análise de IA.");
+      toast.error("Envie o documento antes de solicitar a análise de conformidade.");
       return;
     }
 
@@ -733,10 +744,10 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           d.tipo === tipoDocumento ? { ...d, status: novoStatus } : d,
         ),
       }));
-      toast.success("Análise de IA concluída.");
+      toast.success("Análise de Conformidade concluída.");
     } catch (error) {
-      console.error("Erro na análise de IA:", error);
-      toast.error("Não foi possível analisar o documento com IA.");
+      console.error("Erro na análise de conformidade:", error);
+      toast.error("Não foi possível concluir a análise de conformidade.");
     } finally {
       setAnalisandoIATipo(null);
     }
@@ -1303,7 +1314,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         </div>
       </div>
 
-      {/* Resumo Operacional — Conexão Talent AI (Etapa 7: perfil operacional automático) */}
+      {/* Resumo Operacional - Motor de Verificação (Etapa 7: perfil operacional automático) */}
       <ConexaoTalentAIProfile
         veiculo={veiculoResumoTalent}
         regiao={
@@ -1416,8 +1427,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           <Tabs defaultValue="dados" className="w-full">
             <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1 [&>button]:px-2 [&>button]:text-[11px] sm:[&>button]:text-xs">
               <TabsTrigger value="dados">Dados Gerais</TabsTrigger>
-              <TabsTrigger value="documentacao">Documentacao</TabsTrigger>
-              <TabsTrigger value="veiculos">Veiculos</TabsTrigger>
+              <TabsTrigger value="documentacao">Documentação</TabsTrigger>
+              <TabsTrigger value="veiculos">Veículos</TabsTrigger>
               <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
               <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
               <TabsTrigger value="torre">Torre</TabsTrigger>
@@ -1594,7 +1605,33 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 const meta = documentosMetadata.find((m) => m.tipo === tipo);
                 const docAcoes = meta ?? (doc ? documentoAcoesFallback(tipo, doc.url, p.id, p.nomeCompleto) : null);
                 return (
-                  <Card key={tipo}>
+                  <Card
+                    key={tipo}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDragOverDoc(tipo);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                        setDragOverDoc((atual) => (atual === tipo ? null : atual));
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDragOverDoc(null);
+                      const file = event.dataTransfer.files?.[0];
+                      if (file) void handleDocFile(tipo, file);
+                    }}
+                    className={
+                      dragOverDoc === tipo
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/30 transition-colors"
+                        : "transition-colors"
+                    }
+                  >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium">{tipo}</span>
@@ -1608,17 +1645,20 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           </span>
                         )}
                       </div>
+                      <p className="mb-2 text-[10px] text-muted-foreground">
+                        Arraste um PDF/imagem para este cartão ou use Upload.
+                      </p>
                       {doc?.dataVencimento && (
                         <p className="text-xs text-muted-foreground mb-2">Vencimento: {new Date(doc.dataVencimento).toLocaleDateString("pt-BR")}</p>
                       )}
                       {meta?.relatorio_ia && (
                         <p className="text-[11px] text-muted-foreground mb-2">
-                          Última análise IA: <strong>{meta.relatorio_ia.status}</strong>
+                          Última análise de conformidade: <strong>{meta.relatorio_ia.status}</strong>
                         </p>
                       )}
                       <input
                         type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
                         className="hidden"
                         id={`doc-upload-${tipo}`}
                         onChange={(e) => handleDocUpload(tipo, e)}
@@ -1641,14 +1681,14 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           className="h-7 text-xs gap-1 text-primary"
                           onClick={() => void handleAnalisarIA(tipo)}
                           disabled={analisandoIATipo === tipo}
-                          title={doc?.url ? "Analisar documento com IA" : "Envie o documento primeiro"}
+                          title={doc?.url ? "Análise de Conformidade" : "Envie o documento primeiro"}
                         >
                           {analisandoIATipo === tipo ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
                           ) : (
-                            <Sparkles className="w-3 h-3" />
+                            <ShieldCheck className="w-3 h-3" />
                           )}
-                          IA
+                          Verificar
                         </Button>
                         {docAcoes && (
                           <DocumentoAcoesDropdown
@@ -2436,7 +2476,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                       {avaliacao.analise ? (
                         <details className="rounded-md border border-border/50 bg-muted/20 p-2">
                           <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                            Análise IA
+                            Análise de Conformidade
                           </summary>
                           <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
                             {JSON.stringify(avaliacao.analise, null, 2)}

@@ -4,11 +4,12 @@ import {
   Eye,
   Download,
   Share2,
-  Sparkles,
+  ShieldCheck,
   History,
   FilePlus2,
   RefreshCw,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   baixarDocumentoMetadata,
   registrarEventoDocumento,
@@ -34,6 +36,8 @@ interface Props {
   onAnalisarIA?: (doc: DocumentoMetadata) => void;
   onCompartilhar?: (doc: DocumentoMetadata) => void;
   onHistorico?: (doc: DocumentoMetadata) => void;
+  onExcluir?: (doc: DocumentoMetadata) => void;
+  ocultarVisualizarBaixar?: boolean;
   align?: "start" | "end";
 }
 
@@ -44,9 +48,13 @@ export function DocumentoAcoesDropdown({
   onAnalisarIA,
   onCompartilhar,
   onHistorico,
+  onExcluir,
+  ocultarVisualizarBaixar = false,
   align = "end",
 }: Props) {
   const [carregando, setCarregando] = useState<string | null>(null);
+  const { user } = useAuth();
+  const podeExcluir = user?.role === "super_admin" || user?.role === "admin";
 
   const visualizar = async () => {
     try {
@@ -96,17 +104,21 @@ export function DocumentoAcoesDropdown({
         <DropdownMenuItem className="gap-2" onClick={() => onNovaVersao?.(documento)}>
           <FilePlus2 className="h-4 w-4" /> Adicionar nova versão
         </DropdownMenuItem>
-        <DropdownMenuItem className="gap-2" disabled={carregando === "visualizar"} onClick={() => void visualizar()}>
-          <Eye className="h-4 w-4" /> Visualizar
-        </DropdownMenuItem>
-        <DropdownMenuItem className="gap-2" disabled={carregando === "baixar"} onClick={() => void baixar()}>
-          <Download className="h-4 w-4" /> Baixar
-        </DropdownMenuItem>
+        {!ocultarVisualizarBaixar ? (
+          <>
+            <DropdownMenuItem className="gap-2" disabled={carregando === "visualizar"} onClick={() => void visualizar()}>
+              <Eye className="h-4 w-4" /> Visualizar
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" disabled={carregando === "baixar"} onClick={() => void baixar()}>
+              <Download className="h-4 w-4" /> Baixar
+            </DropdownMenuItem>
+          </>
+        ) : null}
         <DropdownMenuItem className="gap-2" onClick={() => onCompartilhar?.(documento)}>
           <Share2 className="h-4 w-4" /> Compartilhar Internamente
         </DropdownMenuItem>
         <DropdownMenuItem className="gap-2" onClick={() => onAnalisarIA?.(documento)}>
-          <Sparkles className="h-4 w-4" /> Analisar com IA
+          <ShieldCheck className="h-4 w-4" /> Análise de Conformidade
         </DropdownMenuItem>
         <DropdownMenuItem className="gap-2" onClick={() => onHistorico?.(documento)}>
           <History className="h-4 w-4" /> Consultar Histórico
@@ -114,6 +126,17 @@ export function DocumentoAcoesDropdown({
         <DropdownMenuItem className="gap-2" onClick={() => onAtualizarVersao?.(documento)}>
           <RefreshCw className="h-4 w-4" /> Atualizar Versão
         </DropdownMenuItem>
+        {podeExcluir && onExcluir ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 text-destructive focus:text-destructive"
+              onClick={() => onExcluir(documento)}
+            >
+              <Trash2 className="h-4 w-4" /> Excluir
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

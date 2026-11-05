@@ -150,5 +150,8 @@ export const gerarPDFProfissional = async ({ titulo, subtitulo, colunas, linhas,
     });
   }
 
-  doc.save(`${titulo.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+  const nomeArquivo = `${titulo.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.pdf`;
+  const blob = doc.output("blob");
+  doc.save(nomeArquivo);
+  return new File([blob], nomeArquivo, { type: "application/pdf" });
 };

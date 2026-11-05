@@ -1,0 +1,96 @@
+======================================================================
+RELATORIO UX ATUALIZADA - FORMULARIO PUBLICO DE PRESTADORES
+Conexao Express - TMS
+Data: 2026-11-04
+======================================================================
+
+STATUS: CONCLUIDO (frontend). Build validado. Deploy NAO executado
+nesta etapa, conforme instrucao.
+
+Arquivos alterados:
+  - src/components/cadastro-publico/OfertaPublicaForm.tsx
+  - src/lib/ofertaPublica.ts
+  - src/test/adm_app_02b1_oferta_publica_form.test.ts
+
+----------------------------------------------------------------------
+1. DADOS DA MOTO (ETAPA 3)
+----------------------------------------------------------------------
+  - Removido o select "Tipo de moto" (Street, Trail, Custom, Scooter, Outra).
+  - Adicionados inputs textuais:
+      * "Marca da Moto" (ex.: Honda, Yamaha)
+      * "Cilindrada (cc)" (ex.: 160, 250)
+  - O campo "Modelo da Moto" permanece.
+  - Compatibilidade de contrato: como a Edge/RPC exige tipo_moto para
+    motoboy, o payload envia "Outra" quando o campo nao e coletado.
+    Nenhuma migration/alteracao de banco foi feita.
+
+2. VALORES (ETAPA 4)
+----------------------------------------------------------------------
+  - O campo "Mensalidade (R$)" foi removido.
+  - Mantido/substituido por "Valor Semanal (R$)".
+  - O valor semanal passou a contar como valor valido no formulario.
+  - Para satisfazer a regra da Edge (valor_ou_condicao_obrigatorio),
+    quando nao houver condicoes comerciais preenchidas o valor semanal
+    tambem e refletido em condicoes_comerciais (texto).
+
+3. CLAREZA NO PERFIL PROFISSIONAL (ETAPA 4)
+----------------------------------------------------------------------
+  - Texto de apoio atualizado para exatamente:
+    "Queremos conhecer a sua realidade atual. Estas informações
+    ajudam-nos a entender o seu perfil de trabalho e expectativas,
+    não sendo uma exigência da Conexão Express."
+
+4. QUESTIONARIO COMPORTAMENTAL SUTIL (ETAPA 4)
+----------------------------------------------------------------------
+  - Duas perguntas de multipla escolha em cards/radio (mobile-first):
+
+    P1) "Quando ocorre um imprevisto ou atraso na rota, qual costuma
+         ser a sua primeira atitude?"
+         - Aviso imediatamente a base/suporte
+         - Tento resolver sozinho antes de avisar
+         - Sigo a rota e informo apenas no final
+
+    P2) "O que mais valoriza numa parceria de entregas?"
+         - Roteiros fixos e previsíveis
+         - Volume alto de entregas
+         - Suporte rápido e eficiente
+         - Flexibilidade de horários
+
+  - Perguntas opcionais, sem bloqueio de avanco.
+
+5. PERSISTENCIA DE DADOS (SEM MIGRATION)
+----------------------------------------------------------------------
+  - caracteristicas[]:
+      marca_moto:<marca>
+      cilindrada:<cc>
+      (mantidos categoria_atuacao, modalidade_adicional, compartimento,
+       busca_contrato)
+  - observacoes (string):
+      "Local principal de carregamento: ..."
+      "Media de faturamento mensal atual: ..."
+      "Valor semanal: R$ ..."
+      "Imprevisto/atraso na rota: ..."
+      "O que mais valoriza na parceria: ..."
+  - Campos oficiais do contrato preservados: tipo_oferta, nome, telefone,
+    email, cidade, uf, regioes, dias_disponiveis, horario_inicio/fim,
+    modalidades, veiculo_categoria, veiculo_tipo, veiculo_modelo,
+    possui_bau, capacidade_bau_litros, valor_diaria, valor_km,
+    valor_saida, valor_mensal, valor_negociavel, condicoes_comerciais,
+    restricoes, observacoes, lgpd_consent, lgpd_termo_versao.
+  - Nenhuma migration criada, nenhuma coluna alterada.
+
+6. VALIDACAO
+----------------------------------------------------------------------
+  - npx tsc --noEmit ......................... 0 erros
+  - ESLint (form + lib + teste) .............. 0 erros
+  - Vitest adm_app_02b1 + adm_app_02b4 ....... 21/21
+  - npm run build ............................ OK (40,17s)
+
+7. OBSERVACOES
+----------------------------------------------------------------------
+  - Teste atualizado: o antigo requisito de "tipo de moto" foi
+    substituido pela validacao da categoria do veiculo; o payload de
+    motoboy sem tipo informado passa a enviar "Outra".
+  - Deploy da Edge/migration NAO executado nesta etapa.
+
+======================================================================

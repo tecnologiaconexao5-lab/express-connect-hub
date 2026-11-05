@@ -23,6 +23,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import { useRouterBlocker } from "@/hooks/useRouterBlocker";
 import { lerRascunhoForm, limparRascunhoForm, descartarRascunhoForm, useAutoSaveFormDraft } from "@/lib/formDraft";
+import { validarArquivoAnexo, EXTENSOES_ANEXO_ACEITAS } from "@/lib/anexoDocumento";
+import {
+  enviarAnexoContrato,
+  resolverUrlAnexoContrato,
+  vincularAnexoAoContrato,
+} from "@/services/clientes/contratoAnexoService";
 
 interface Filial {
   id: string;
@@ -119,6 +125,9 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [novoCC, setNovoCC] = useState<Partial<CentroCusto>>({});
   const [novoDepto, setNovoDepto] = useState<Partial<Departamento>>({});
   const [novoContrato, setNovoContrato] = useState<Partial<Contrato>>({});
+  // Upload real do anexo do contrato (binário no Storage, referência no contrato).
+  const [contratoFile, setContratoFile] = useState<File | null>(null);
+  const [enviandoContrato, setEnviandoContrato] = useState(false);
   const [enderecos, setEnderecos] = useState<Array<{id: string; tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>>([]);
   const [modalEnderecoOpen, setModalEnderecoOpen] = useState(false);
   const [novoEndereco, setNovoEndereco] = useState<{
@@ -257,6 +266,67 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
   const handleChange = (field: keyof Cliente, value: any) => {
     setC(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleContratoFile = (file: File | null) => {
+    if (!file) {
+      setContratoFile(null);
+      setNovoContrato(prev => ({ ...prev, anexoNome: undefined, anexoUrl: undefined }));
+      return;
+    }
+    const erro = validarArquivoAnexo(file);
+    if (erro) {
+      toast.error(erro);
+      return;
+    }
+    setContratoFile(file);
+    setNovoContrato(prev => ({ ...prev, anexoNome: file.name, anexoUrl: undefined }));
+  };
+
+  const referenciaAnexoContrato = (contrato: Contrato) => contrato.anexoUrl || contrato.urlPdf || null;
+
+  const abrirAnexoContrato = async (contrato: Contrato) => {
+    const referencia = referenciaAnexoContrato(contrato);
+    if (!referencia) {
+      toast.warning("Este contrato não possui arquivo anexado.");
+      return;
+    }
+    try {
+      const url = await resolverUrlAnexoContrato(referencia);
+      if (!url) {
+        toast.error("Não foi possível abrir o anexo do contrato.");
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      toast.error("Falha ao abrir o anexo do contrato.");
+    }
+  };
+
+  const baixarAnexoContrato = async (contrato: Contrato) => {
+    const referencia = referenciaAnexoContrato(contrato);
+    if (!referencia) {
+      toast.warning("Este contrato não possui arquivo anexado.");
+      return;
+    }
+    try {
+      const url = await resolverUrlAnexoContrato(referencia);
+      if (!url) {
+        toast.error("Não foi possível baixar o anexo do contrato.");
+        return;
+      }
+      const resposta = await fetch(url);
+      if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+      const blob = await resposta.blob();
+      const objetoUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objetoUrl;
+      link.download = contrato.anexoNome || contrato.numero || "contrato";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(objetoUrl), 1500);
+    } catch (err) {
+      toast.error("Falha ao baixar o anexo do contrato.");
+    }
   };
 
   const handleSave = async () => {
@@ -885,8 +955,26 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                           <div className="flex flex-col items-end gap-2">
                             <p className="font-bold text-lg">R$ {contrato.valor.toLocaleString('pt-BR')}</p>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8"><Eye className="w-4 h-4"/></Button>
-                              {contrato.urlPdf && <Button variant="ghost" size="icon" className="h-8 w-8"><Download className="w-4 h-4"/></Button>}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                title="Abrir anexo do contrato"
+                                onClick={() => abrirAnexoContrato(contrato)}
+                              >
+                                <Eye className="w-4 h-4"/>
+                              </Button>
+                              {referenciaAnexoContrato(contrato) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Baixar anexo do contrato"
+                                  onClick={() => baixarAnexoContrato(contrato)}
+                                >
+                                  <Download className="w-4 h-4"/>
+                                </Button>
+                              )}
                               <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4"/></Button>
                             </div>
                           </div>
@@ -1016,28 +1104,55 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                   <div className="flex items-center justify-center gap-2 text-sm">
                     <FileText className="w-4 h-4 text-primary" />
                     <span className="font-medium text-primary">{novoContrato.anexoNome}</span>
-                    <button onClick={e => { e.stopPropagation(); setNovoContrato({...novoContrato, anexoNome: undefined, anexoUrl: undefined}); }} className="text-destructive ml-2">✕</button>
+                    <button onClick={e => { e.stopPropagation(); handleContratoFile(null); }} className="text-destructive ml-2">✕</button>
                   </div>
                 ) : (
                   <div className="text-muted-foreground">
                     <Upload className="w-5 h-5 mx-auto mb-1" />
-                    <p className="text-xs">Clique para selecionar PDF ou documento do contrato</p>
+                    <p className="text-xs">Clique para selecionar o PDF ou imagem do contrato</p>
                   </div>
                 )}
               </div>
-              <input id="contrato-file-input" type="file" accept=".pdf,.doc,.docx" className="hidden"
+              <input id="contrato-file-input" type="file" accept={EXTENSOES_ANEXO_ACEITAS} className="hidden"
                 onChange={e => {
-                  const f = e.target.files?.[0];
-                  if (f) setNovoContrato({...novoContrato, anexoNome: f.name, anexoUrl: URL.createObjectURL(f)});
+                  const f = e.target.files?.[0] || null;
+                  handleContratoFile(f);
+                  e.target.value = "";
                 }}
               />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                O arquivo é enviado ao Storage privado e vinculado ao contrato. Formatos: PDF, JPG, PNG ou WEBP (até 50 MB).
+              </p>
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setModalContratoOpen(false); setNovoContrato({}); }}>Cancelar</Button>
-            <Button onClick={async () => {
+            <Button variant="outline" disabled={enviandoContrato} onClick={() => { setModalContratoOpen(false); setNovoContrato({}); setContratoFile(null); }}>Cancelar</Button>
+            <Button disabled={enviandoContrato} onClick={async () => {
               try {
                 if (clienteId) {
+                  let referenciaAnexo = novoContrato.anexoUrl || null;
+                  let nomeAnexo = novoContrato.anexoNome || null;
+                  let documentoId: string | null = null;
+
+                  if (contratoFile) {
+                    const erroArquivo = validarArquivoAnexo(contratoFile);
+                    if (erroArquivo) {
+                      toast.error(erroArquivo);
+                      return;
+                    }
+                    setEnviandoContrato(true);
+                    const anexo = await enviarAnexoContrato({
+                      file: contratoFile,
+                      clienteId,
+                      clienteNome: c.nomeFantasia || c.razaoSocial || null,
+                      numero: novoContrato.numero || null,
+                      objeto: novoContrato.objeto || null,
+                    });
+                    referenciaAnexo = anexo.url;
+                    nomeAnexo = anexo.nome;
+                    documentoId = anexo.documentoId;
+                  }
+
                   const payload: Record<string, unknown> = {
                     cliente_id: clienteId,
                     numero: novoContrato.numero || null,
@@ -1048,11 +1163,25 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                     vigencia_fim: novoContrato.vigenciaFim || null,
                     status: novoContrato.status || 'ativo',
                     observacoes: novoContrato.observacoes || null,
-                    anexo_nome: novoContrato.anexoNome || null,
+                    anexo_nome: nomeAnexo,
+                    anexo_url: referenciaAnexo,
                   };
                   const { data: saved, error } = await supabase.from("clientes_contratos").insert([payload]).select();
                   if (error) throw error;
                   const row = saved?.[0];
+
+                  if (documentoId && row?.id) {
+                    try {
+                      await vincularAnexoAoContrato({
+                        documentoId,
+                        contratoId: row.id,
+                        numero: novoContrato.numero || null,
+                      });
+                    } catch (erroVinculo) {
+                      console.warn("[ClienteDetalhe] Anexo enviado, mas o vínculo com o contrato não foi registrado:", erroVinculo);
+                    }
+                  }
+
                   setContratos([...contratos, {
                     id: row?.id || String(Date.now()),
                     numero: row?.numero || novoContrato.numero || '',
@@ -1063,18 +1192,25 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                     valor: Number(row?.valor) || novoContrato.valor || 0,
                     status: row?.status || novoContrato.status || 'ativo',
                     observacoes: novoContrato.observacoes,
-                    anexoNome: novoContrato.anexoNome,
+                    anexoNome: nomeAnexo || undefined,
+                    anexoUrl: referenciaAnexo || undefined,
                   }]);
                 } else {
+                  if (contratoFile) {
+                    toast.warning("Salve o cliente antes de enviar o anexo do contrato.");
+                  }
                   setContratos([...contratos, { ...novoContrato, id: String(Date.now()) } as Contrato]);
                 }
                 setModalContratoOpen(false);
                 setNovoContrato({});
-                toast.success("Contrato adicionado!");
-              } catch (err: any) {
-                toast.error("Erro ao salvar contrato: " + err.message);
+                setContratoFile(null);
+                toast.success(contratoFile ? "Contrato e anexo salvos com sucesso!" : "Contrato adicionado!");
+              } catch (err) {
+                toast.error("Erro ao salvar contrato: " + (err instanceof Error ? err.message : "falha no upload"));
+              } finally {
+                setEnviandoContrato(false);
               }
-            }}>Salvar Contrato</Button>
+            }}>{enviandoContrato ? "Enviando anexo..." : "Salvar Contrato"}</Button>
           </div>
         </DialogContent>
       </Dialog>

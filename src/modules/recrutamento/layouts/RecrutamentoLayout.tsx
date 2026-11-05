@@ -4,6 +4,7 @@ import {
   Bot, Zap, Users, HeartHandshake, Columns3, Menu, Bell, UserCircle, CheckCircle, QrCode,
 } from 'lucide-react'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
+import { CadastroPublicoAcoes } from '../components/CadastroPublicoAcoes'
 import { cn } from '../utils/cn'
 import { useState, type CSSProperties } from 'react'
 
@@ -90,6 +91,7 @@ export function RecrutamentoLayout({ children }: RecrutamentoLayoutProps) {
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
+          <CadastroPublicoAcoes />
           {enterprise && (
             <span className="hidden rounded-full border border-orange-400/40 bg-orange-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-200 md:inline-flex">
               Enterprise

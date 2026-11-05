@@ -1,0 +1,187 @@
+====================================================================================================
+RELATORIO GD-03 - CORRECOES VISUAIS, UX E INTEGRACAO COMERCIAL
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: frontend apenas. Nenhuma alteracao de banco, migration, storage ou deploy.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Foram concluidos os 4 pontos solicitados:
+
+1) Central de Documentos: Visualizar e Baixar sairam do dropdown e viraram botoes de icone
+   (olho e download) na linha da tabela. O dropdown ficou apenas com acoes secundarias.
+2) Compartilhamento Interno: adicionado botao secundario "Compartilhar via WhatsApp",
+   gerando mensagem formatada e abrindo a API wa.me (com link seguro quando disponivel).
+3) Encoding UTF-8 no cadastro de prestador: corrigidos "Documento do Veículo",
+   "Apólice de Seguro" e rotulos proximos corrompidos na aba Documentacao.
+4) Rebranding: removidos "Conexão Talent AI" e "Status IA" da UI, substituidos por
+   "Motor de Verificação", "Análise de Conformidade" e "Status de Verificação".
+   Icones Sparkles trocados por ShieldCheck / FileCheck / Activity.
+5) Comercial > Propostas: adicionado "Fazer Upload de Proposta (PDF)" com o
+   DocumentoUploadUniversal e envio para documentos_metadata (categoria/departamento Comercial).
+
+2. CENTRAL DE DOCUMENTOS - ACOES RAPIDAS NA TABELA
+----------------------------------------------------------------------------------------------------
+Arquivos:
+- src/pages/CentralDocumentos.tsx
+- src/components/documentos/DocumentoAcoesDropdown.tsx
+
+O que mudou:
+- CentralDocumentos.tsx agora tem dois botoes de icone por linha:
+  * Eye (title "Visualizar") -> gera URL assinada e abre o documento.
+  * Download (title "Baixar") -> baixa o arquivo via baixarDocumentoMetadata.
+  * Ambos registram evento "visualizacao"/"download" no historico.
+- O dropdown recebeu a prop ocultarVisualizarBaixar (default false).
+  * A Central passa ocultarVisualizarBaixar, removendo Visualizar/Baixar do menu.
+  * Perfil do Prestador continua com Visualizar/Baixar dentro do dropdown (comportamento preservado).
+- O dropdown mantem: Adicionar nova versao, Compartilhar Internamente,
+  Analise de Conformidade, Consultar Historico, Atualizar Versao e Excluir (admin).
+- O botao "IA" da linha virou "Conformidade" com icone ShieldCheck.
+
+3. COMPARTILHAR VIA WHATSAPP
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/documentos/DocumentoCompartilharModal.tsx
+
+O que mudou:
+- Adicionado botao secundario "Compartilhar via WhatsApp" no rodape do modal.
+- A rotina chama compartilharDocumentoInternamente (registra o compartilhamento e gera
+  o link seguro) e monta a mensagem:
+    Olá! Segue o documento "<nome>" da Conexão Express.
+    <mensagem opcional>
+    Link seguro: <link>
+- Abre https://wa.me/?text=<mensagem formatada> em nova aba.
+- O botao principal "Compartilhar e copiar link" permanece inalterado.
+- O botao de WhatsApp fica desabilitado durante o envio e exibe feedback via toast.
+
+4. CORRECAO DE ENCODING NO CADASTRO DE PRESTADOR
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/prestadores/PrestadorDetalhe.tsx
+
+O que mudou:
+- DOCS_TIPOS:
+  * "Documento do Ve??culo" -> "Documento do Veículo"
+  * "Ap??lice de Seguro" -> "Apólice de Seguro"
+  * "Comprovante de ResidǦncia" -> "Comprovante de Residência"
+  * "Comprovante Bancǭrio" -> "Comprovante Bancário"
+- Abas principais corrigidas:
+  * "Documentacao" -> "Documentação"
+  * "Veiculos" -> "Veículos"
+  * "OcorrǦncias" -> "Ocorrências"
+  * "Permiss��es" -> "Permissões"
+  * "Perfil e PreferǦncias" -> "Perfil e Preferências"
+  * "Avalia��ǜo Situacional" -> "Avaliação Situacional"
+- Os tipos corrigidos tambem alinham a UI com documentosConstants/eligibilidade
+  ("Documento do Veículo" e "Apólice de Seguro").
+
+5. REBRANDING - REMOCAO DE "IA" E "CONEXAO TALENT AI"
+----------------------------------------------------------------------------------------------------
+Arquivos:
+- src/pages/CentralDocumentos.tsx
+- src/components/documentos/DocumentoAcoesDropdown.tsx
+- src/components/documentos/DocumentoIAReportModal.tsx
+- src/components/documentos/AnaliseDocumentoIA.tsx
+- src/components/documentos/AnaliseLote.tsx
+- src/components/prestadores/PrestadorDetalhe.tsx
+- src/components/prestadores/ConexaoTalentAIProfile.tsx
+- src/modules/recrutamento/components/documentos/CentralDocumentos.tsx
+- src/lib/conexaoTalentAIProfile.ts (comentario)
+- src/lib/talentResumo.ts (comentario)
+
+Textos:
+- "Status IA" / "Status da IA" -> "Status de Verificação".
+- "Analisar com IA" -> "Análise de Conformidade".
+- Botao "IA" -> "Conformidade" (Central) / "Verificar" (Prestador).
+- "Relatório de IA" -> "Relatório de Conformidade".
+- "Analisando documento com IA..." -> "Analisando conformidade do documento...".
+- "Última análise IA" -> "Última análise de conformidade".
+- "Conexão Talent AI · Perfil Operacional" -> "Motor de Verificação · Perfil Operacional".
+- "Conexão Talent AI · Resumo Operacional Automático" -> "Motor de Verificação · Resumo Operacional Automático".
+- "Recomendação da IA" -> "Recomendação Operacional".
+- "Analise múltiplos documentos com IA" -> "...com o Motor de Verificação".
+- Toasts e tooltips de analise tambem foram atualizados.
+
+Icones:
+- Sparkles (brilho magico) substituido por:
+  * ShieldCheck (verificacao/conformidade),
+  * FileCheck (sugestao de correcao/relatorio),
+  * Activity (resumo operacional).
+- Nao restam usos de Sparkles nos componentes de documentos alterados.
+
+6. INTEGRACAO COMERCIAL - UPLOAD DE PROPOSTA PDF
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/comercial/propostas/ListaPropostas.tsx
+
+O que mudou:
+- Botao "Fazer Upload de Proposta (PDF)" adicionado ao menu superior, ao lado de "Criar".
+- O botao abre um Dialog com o componente existente DocumentoUploadUniversal.
+- O dropzone aceita somente PDF (accept=".pdf,application/pdf") e limite de 50 MB.
+- Ao selecionar/arrastar o PDF, a rotina chama enviarDocumentoOperacional com:
+  * moduloOrigem: "comercial"
+  * tipo: "Proposta Comercial"
+  * nome: nome do arquivo
+  * categoria: "Comercial"
+  * departamento: "Comercial"
+  * responsavel: "Comercial"
+  * descricao: "Proposta comercial enviada pela aba Propostas."
+- O documento passa a aparecer na Central de Documentos (documentos_metadata).
+- Nenhuma migration/tabela nova foi criada.
+- Tipagem do arquivo foi ajustada (LucideIcon e Proposta) removendo os `any` do header.
+
+7. AJUSTE EXTRA DE REGRESSAO (OFERTAS PUBLICAS)
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+
+- Restaurados os botoes rapidos de contato na tabela (WhatsApp/Telefone/E-mail),
+  com disabled por disponibilidade do contato e registro no historico.
+- Objetivo: preservar o contrato funcional da tela de Ofertas Publicas apos a
+  refatoracao anterior para Data Table.
+
+8. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+- src/pages/CentralDocumentos.tsx
+- src/components/documentos/DocumentoAcoesDropdown.tsx
+- src/components/documentos/DocumentoCompartilharModal.tsx
+- src/components/documentos/DocumentoIAReportModal.tsx
+- src/components/documentos/AnaliseDocumentoIA.tsx
+- src/components/documentos/AnaliseLote.tsx
+- src/components/prestadores/PrestadorDetalhe.tsx
+- src/components/prestadores/ConexaoTalentAIProfile.tsx
+- src/modules/recrutamento/components/documentos/CentralDocumentos.tsx
+- src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+- src/components/comercial/propostas/ListaPropostas.tsx
+- src/lib/conexaoTalentAIProfile.ts
+- src/lib/talentResumo.ts
+- Testes atualizados:
+  * src/test/central_documentos_avancada.test.ts
+  * src/test/documentos_integrados_ia.test.ts
+  * src/test/talent_profile_ui_funnel.test.ts
+  * src/test/adm_app_02b3_gestao_ofertas.test.ts
+
+9. VALIDACAO
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- ESLint (arquivos alterados) ....................... 0 erros novos
+  (permanecem apenas `no-explicit-any` legados em PrestadorDetalhe/AnaliseDocumentoIA,
+   pre-existentes e fora do escopo)
+- Vitest direcionado (documentos, prestador, ofertas, IA):
+  * 5 arquivos / 74 testes .......................... 74/74 PASS
+- Vitest suite completa ............................. 18 arquivos / 44 testes falhos
+  = baseline exata do projeto; 2613 pass. Nenhuma falha nova desta missao.
+- npm run build ..................................... OK (44,73s)
+
+10. PENDENCIAS E OBSERVACOES
+----------------------------------------------------------------------------------------------------
+1. (QA visual) Abrir /central-documentos e conferir os botoes de olho/download na linha,
+   o dropdown sem Visualizar/Baixar e o botao "Compartilhar via WhatsApp".
+2. (QA visual) Prestador > Documentacao: conferir "Documento do Veículo", "Apólice de Seguro"
+   e a nova nomenclatura "Verificar"/"Análise de Conformidade".
+3. (QA visual) Comercial > Propostas > "Fazer Upload de Proposta (PDF)": enviar um PDF e
+   confirmar o registro em /central-documentos (categoria/departamento Comercial).
+4. (AUTORIZACAO) A migration da GD-02 continua NAO aplicada em producao; quando aplicada,
+   a role comercial ja esta mapeada para o departamento Comercial.
+5. Nenhuma alteracao de banco, bucket, migration, deploy ou commit foi executada nesta missao.
+
+====================================================================================================
+FIM DO RELATORIO GD-03 - FRONTEND VALIDADO; BANCO/STORAGE/MIGRATION INTACTOS.
+====================================================================================================

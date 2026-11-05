@@ -1,0 +1,535 @@
+====================================================================================================
+AUDITORIA INTEGRAL: CENTRAL INTELIGENTE DE DOCUMENTOS + MODULO DE RECRUTAMENTO
+PROJETO TMS: Express Connect Hub (C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub)
+PROJETO APP PRESTADOR: Conexao Prestador (C:\src\conexao_prestador)
+DATA DA AUDITORIA: 2026-11-03 17:40 (BRT)
+OPERADOR: Antigravity AI (Auditoria Integral em Modo Estritamente Leitura)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Esta auditoria integral foi conduzida em regime 100% de leitura (sem alteracao de schema, banco,
+telas, componentes, buckets ou permissoes). Foram auditados todos os modulos do TMS (Comercial,
+Clientes, Orcamentos, Operacional, OS, POD, Financeiro, Prestadores, Recrutamento e Administrativo),
+a infraestrutura Supabase (Storage, Buckets, RLS, Triggers, RPCs e Edge Functions) e o aplicativo
+movel Flutter Conexao Prestador (C:\src\conexao_prestador).
+
+Principais conclusoes do diagnostico:
+
+1. CENTRAL INTELIGENTE DE DOCUMENTOS:
+   - A fundacao da Central de Documentos ja existe formalmente no TMS atraves da rota `/central-documentos`
+     (pagina `src/pages/CentralDocumentos.tsx`), criada na recente migracao `20261102000002_documentos_central_avancada.sql`.
+   - Ela consome a tabela `documentos_metadata`, que indexa documentos por categoria (Comercial,
+     Operacional, Financeiro, Recrutamento, Administrativo), departamento, entidade, versao e historico.
+   - Existe uma trigger ativa no banco (`trg_documentos_prestadores_metadata`) que espelha
+     automaticamente documentos enviados pelo App (`documentos_prestadores`) para `documentos_metadata`.
+   - GAP CRITICO DE UPLOAD: Em modulos operacionais como Clientes (`ClienteDetalhe.tsx`), o anexo de
+     contrato selecionado pelo usuario gera apenas um `URL.createObjectURL(file)` local e persiste somente
+     o nome do arquivo (`anexo_nome`) na tabela `clientes_contratos`. O binario nao e enviado ao Storage!
+     No Financeiro (`ConferenciaFinanceira.tsx`), o comprovante de pedagio exige colar um link textual,
+     nao havendo upload integrado.
+   - BUCKETS HETEROGENEOS: Existem 11 buckets conhecidos. Documentos sensiveis como CNH/CRLV de
+     prestadores estao no bucket PRIVADO `documentos_prestadores`, e comprovantes operacionais no
+     bucket PRIVADO `driver-evidence` (com URLs assinadas). Porem, ha buckets legados publicos
+     (`contratos`, `documentos`, `prestadores`, `veiculos`) criados na migracao `20260630000002_m44b_storage_buckets.sql`.
+   - RLS FROUXO NA TABELA METADATA: As politicas RLS de `documentos_metadata` criadas recentemente
+     concedem SELECT, INSERT, UPDATE e DELETE para qualquer usuario `authenticated` (`USING (true)`),
+     sem isolamento por departamento, entidade ou nivel administrativo.
+   - ANALISE IA: O servico `documentosMetadataService.ts` e a Edge Function `documentos-ia` possuem o
+     contrato formal de saida (Aprovado na conferencia, Aprovado com ressalvas, Necessita de correcao,
+     Aguardando conferencia humana), mas a Edge Function roda em modo simulado deterministico (heuristica
+     de texto), sem integracao com OCR real de visao (Google Cloud Document AI, Textract ou Vision LLM).
+
+2. MODULO DE RECRUTAMENTO:
+   - O checkpoint `REC-06.2D.2F` (patch da formula de score e classificacao de comprometimento)
+     encontra-se IMPLEMENTADO no backend (`src/services/recrutamento/recrutamentoScoreService.ts`),
+     cobrindo todos os estagios canonicos e estagios reais (`novo_cadastro`, `em_validacao`, `em_analise`, etc.).
+   - Na interface visual (`/recrutamento`), o Kanban corporativo (`EnterpriseKanbanBoard.tsx`) e a gaveta
+     de detalhes do candidato (`DetalhesCandidatoPipelineSheet.tsx`) exibem as 7 abas funcionais:
+     Perfil, Comprometimento, Documentos, Questionario, Onboarding, Historico e Acoes.
+   - GAP DE VISIBILIDADE DE ARQUIVOS NO RECRUTAMENTO: A aba "Documentos" do candidato exibe apenas uma
+     checklist com icones coloridos de status (OK, Pendente, Vencido). NAO EXISTE botao de visualizar o
+     arquivo PDF/imagem, nao ha botao de baixar, nao ha acao de upload e nao ha chamada de Analisar com IA.
+     O recrutador precisa sair do Recrutamento e ir na tela de Prestadores ou na Central de Documentos.
+   - FLUXO END-TO-END DE INTEGRACAO:
+     * App Prestador -> insere em `prestadores` com `liberado_app = false` e status `em_analise`/`novo`.
+     * Arquivos sobem para bucket `documentos_prestadores` e gravam em `documentos_prestadores`.
+     * Trigger espelha em `documentos_metadata`.
+     * A tela `Admin App Prestador` (`/app-prestador`) e na verdade um simulador/ambiente de teste de
+       viagens e POD, e nao uma esteira de liberacao cadastral.
+     * A conversao de Candidato para Prestador (`conversaoCandidatoService.ts`) exige status documental
+       completo (fail-closed) e atualiza `liberado_app: statusOperacional === 'ativo'`.
+     * A liberacao de login no App e estritamente subordinada a `status = 'ativo'` e `liberado_app = true`.
+
+----------------------------------------------------------------------------------------------------
+2. INVENTARIO TECNICO DE ARMAZENAMENTO (BUCKETS SUPABASE)
+----------------------------------------------------------------------------------------------------
+Total de buckets identificados na infraestrutura: 11 buckets.
+Fonte de verdade de codigo: `src/services/storage/storageRefService.ts` (`KNOWN_BUCKETS`).
+
+1. BUCKET: documentos_operacionais
+   - Finalidade: Bucket central da Central Inteligente de Documentos (nova versao universal).
+   - Visibilidade: PRIVADO (public = false). Limite: 50 MB por arquivo.
+   - Tipos permitidos: application/pdf, image/jpeg, image/jpg, image/png, image/webp.
+   - Politicas RLS: 4 politicas para authenticated (SELECT, INSERT, UPDATE, DELETE).
+   - Tabelas relacionadas: `documentos_metadata` (coluna `url`, com prefixo `documentos_operacionais/`).
+   - Modulos que utilizam: Central de Documentos (`/central-documentos`), Prestadores (`PrestadorDetalhe.tsx`).
+   - Servico responsavel pelo upload: `enviarDocumentoOperacional` (`documentosMetadataService.ts`).
+   - Servico responsavel pela leitura: `urlAssinadaDocumentoMetadata` (gera signed URL com TTL de 600s).
+   - Riscos: Politicas do bucket permitem a qualquer usuario logado deletar ou sobrescrever arquivos.
+   - Reutilizacao na Central: E o bucket nativo da nova Central de Documentos.
+
+2. BUCKET: documentos_prestadores
+   - Finalidade: Armazenamento de CNH, CRLV, ANTT e contratos enviados pelos motoristas via App Mobile.
+   - Visibilidade: PRIVADO (tornou-se privado na migration `20260928000000_adm_app_02d2_bucket_documentos_privado.sql`).
+   - Politicas RLS: Acesso restrito a authenticated e service_role; policies legadas publicas foram expurgadas.
+   - Tabelas relacionadas: `documentos_prestadores`, `documentos_metadata` (via trigger `trg_documentos_prestadores_metadata`).
+   - Modulos que utilizam: App Prestador (Flutter `driver_documents_repository.dart`), Prestadores (`PrestadorDetalhe.tsx`).
+   - Servico responsavel pelo upload: App Prestador (`register_screen.dart`, `driver_documents_repository.dart`).
+   - Servico responsavel pela leitura: `resolverUrlDocumento` (`documentoStorageService.ts`) via signed URLs.
+   - Riscos: Preservar estritamente privado; contem documentos pessoais de identificacao (LGPD).
+   - Reutilizacao na Central: Totalmente integrado atraves de `documentos_metadata` que espelha os registros.
+
+3. BUCKET: driver-evidence
+   - Finalidade: Provas de entrega, canhotos assinados, fotos de mercadoria e ocorrencias (POD).
+   - Visibilidade: PRIVADO (public = false).
+   - Politicas RLS: authenticated (motorista autenticado envia na pasta `<uid>/pod/...`).
+   - Tabelas relacionadas: `pod_registros`, `alocacoes`, `ocorrencias`.
+   - Modulos que utilizam: App Prestador (Flutter POD), Operacional (`PodLista.tsx`, `DossieEntregaSheet.tsx`), Portal do Cliente.
+   - Servico responsavel pelo upload: App Prestador Flutter (`signature_pod_screen.dart`, `pod_repository.dart`).
+   - Servico responsavel pela leitura: `podMediaService.ts` (`resolverMidiaPod`, TTL de 600s).
+   - Riscos: Exclusao acidental ou quebra de URLs assinadas; e a base legal de faturamento da empresa.
+   - Reutilizacao na Central: Deve ser mantido ISOLADO e consultado apenas por referencia/link assinado.
+
+4. BUCKET: comprovantes-entrega
+   - Finalidade: Bucket publico historico/legado para canhotos de entrega (anterior ao driver-evidence).
+   - Visibilidade: PUBLICO (public = true).
+   - Tabelas relacionadas: `pod_registros` (registros legados).
+   - Modulos que utilizam: Fallback em `podMediaService.ts` e `podService.ts`.
+   - Riscos: Documentos publicos acessiveis sem autenticacao caso a URL vaze.
+   - Reutilizacao na Central: Leitura historica; nenhum novo upload deve ocorrer aqui.
+
+5. BUCKET: fiscal-documentos
+   - Finalidade: XMLs e DANFEs de NF-e, CT-e e MDF-e.
+   - Visibilidade: PRIVADO (public = false).
+   - Politicas RLS: authenticated restrito ao setor fiscal.
+   - Tabelas relacionadas: `documentos_fiscais`, `cte_emitidos`, `nfe_recebidas`.
+   - Modulos que utilizam: Fiscal (`EmitenteFiscalConfig.tsx`, gerador de CT-e).
+   - Riscos: Dados de sigilo fiscal da operacao e clientes.
+   - Reutilizacao na Central: Apenas consulta indexada por metadados fiscais.
+
+6. BUCKET: certificados-fiscais
+   - Finalidade: Certificados digitais A1 (.pfx, .p12) da empresa e filiais.
+   - Visibilidade: PRIVADO (public = false).
+   - Politicas RLS: Restrito a super_admin / tenant proprietario.
+   - Tabelas relacionadas: `certificados_fiscais`.
+   - Modulos que utilizam: Fiscal (`EmitenteFiscalConfig.tsx`).
+   - Servico responsavel pelo upload: `handleUploadCertificado` (`EmitenteFiscalConfig.tsx`).
+   - Riscos CRITICOS: Contem chaves privadas de faturamento da empresa. NUNCA deve ser misturado a Central de Documentos publica.
+   - Reutilizacao na Central: PROIBIDA. Deve permanecer estritamente isolado no modulo fiscal.
+
+7. BUCKET: contratos
+   - Finalidade: Armazenamento de minutas e PDFs de contratos de clientes e fornecedores.
+   - Visibilidade: PUBLICO (criado como public = true na migration `20260630000002_m44b_storage_buckets.sql`).
+   - Tabelas relacionadas: `clientes_contratos`.
+   - Modulos que utilizam: Clientes (`ClienteDetalhe.tsx` - que atualmente falha em fazer o upload).
+   - Riscos: Bucket publico para contratos comerciais e um risco de compliance e sigilo comercial.
+   - Reutilizacao na Central: Deve ser privatizado e absorvido pela Central sob categoria 'Comercial'.
+
+8. BUCKET: documentos
+   - Finalidade: Bucket generico historico de documentos diversos.
+   - Visibilidade: PUBLICO (public = true).
+   - Modulos que utilizam: Servicos legados diversos.
+   - Riscos: Ausencia de metadados e controle de versionamento.
+   - Reutilizacao na Central: Migrar referencias para `documentos_metadata`.
+
+9. BUCKET: prestadores
+   - Finalidade: Fotos de perfil e avatares de motoristas.
+   - Visibilidade: PUBLICO (public = true).
+   - Tabelas relacionadas: `prestadores.avatar_url`.
+   - Reutilizacao na Central: Manter apenas para fotos de perfil publicas.
+
+10. BUCKET: veiculos
+    - Finalidade: Fotos dos veiculos cadastrados.
+    - Visibilidade: PUBLICO (public = true).
+    - Tabelas relacionadas: `veiculos.fotos`.
+    - Reutilizacao na Central: Manter para fotos operacionais de veiculos.
+
+11. BUCKET: biblioteca-global
+    - Finalidade: Documentos institucionais, politicas de seguranca da informacao, manuais operacionais.
+    - Visibilidade: Depende da configuracao de tenant.
+    - Reutilizacao na Central: Ideal para a categoria 'Administrativo' da Central.
+
+----------------------------------------------------------------------------------------------------
+3. INVENTARIO DE TELAS E COMPONENTES POR MODULO
+----------------------------------------------------------------------------------------------------
+Legenda obrigatoria:
+🟢 Funciona na interface e possui evidencia.
+🟡 Existe na interface, mas nao foi comprovado o funcionamento real.
+🟠 Existe apenas parcialmente.
+🔴 Existe no backend, mas nao existe acesso funcional pela interface.
+⬜ Nao existe.
+
+1. MODULO CENTRAL DE DOCUMENTOS (`/central-documentos`):
+   - Tabela geral com filtros combinados (Nome, Categoria, Depto, Entidade, Datas, Status IA): 🟢 Funciona (`CentralDocumentos.tsx:84-250`).
+   - Adicionar documento universal (drag-and-drop / seletor): 🟢 Funciona (`DocumentoUploadUniversal.tsx`).
+   - Capturar pela camera nativa mobile (`capture="environment"`): 🟢 Funciona (`DocumentoUploadUniversal.tsx:98`).
+   - Dropdown de acoes por documento: 🟢 Funciona (`DocumentoAcoesDropdown.tsx`).
+   - Visualizar documento em nova aba (URL assinada): 🟢 Funciona (`DocumentoAcoesDropdown.tsx:51-68`).
+   - Baixar documento diretamente: 🟢 Funciona (`DocumentoAcoesDropdown.tsx:71-84`).
+   - Compartilhar internamente (gerar link seguro com copia): 🟢 Funciona (`DocumentoCompartilharModal.tsx`).
+   - Adicionar nova versao do documento (preservando o pai): 🟢 Funciona (`DocumentoNovaVersaoDialog.tsx`).
+   - Consultar historico de alteracoes (timeline JSONB): 🟢 Funciona (`DocumentoHistoricoModal.tsx`).
+   - Analisar com IA (abertura do relatorio estruturado): 🟢 Funciona (`DocumentoIAReportModal.tsx`).
+   - Excluir documento com autorizacao: 🟠 Existe apenas exclusao generica de linha; nao ha modal de confirmacao com senha/permissao de admin.
+
+2. MODULO CLIENTES (`/clientes` -> `ClienteDetalhe.tsx`):
+   - Cadastro e edicao de dados do cliente: 🟢 Funciona.
+   - Aba Contratos - Adicionar contrato e informar numero/vigencia: 🟢 Funciona (`ClienteDetalhe.tsx:1000-1065`).
+   - Aba Contratos - Selecionar arquivo de anexo: 🟠 Existe parcialmente. O arquivo e selecionado e gera blob local, mas no insert do banco salva apenas `anexo_nome` e NAO envia o binario ao Storage!
+   - Aba Contratos - Visualizar / Baixar anexo do contrato: 🔴 Nao funciona porque a URL nao aponta para o storage.
+   - Aba Contratos - Versoes e historico de aditivos: ⬜ Nao existe.
+
+3. MODULO ORCAMENTOS E COMERCIAL (`/comercial`):
+   - Gerador de proposta em PDF (`gerarPdfOrcamento`, `gerarPDFProfissional`): 🟢 Funciona com jsPDF.
+   - Upload de documentos do lead/cliente na proposta: 🟠 Existe aviso de dropzone no `OrcamentoForm.tsx:1085`, mas e meramente visual.
+   - CRM Comercial - Enviar proposta via WhatsApp / Email: 🟢 Funciona.
+   - CRM Comercial - Anexar documentos a proposta comercial: 🟠 Salva apenas modelos pre-formatados na tabela `crm_propostas`.
+
+4. MODULO OPERACIONAL - ORDENS DE SERVICO (`/operacao?tab=os`):
+   - Criacao de OS express e completa: 🟢 Funciona (`OrdemServicoForm.tsx`).
+   - Pre-cadastro rapido de cliente na OS: 🟢 Funciona (`cadastroRapido.ts`).
+   - Anexar arquivo de nota fiscal / romaneio direto na OS: 🟠 Existe campo `dados_adicionais` e `observacoesGerais`, mas nao ha dropzone dedicado de upload vinculado ao `documentos_metadata`.
+   - Geracao de PDF de Ordem de Servico: 🟢 Funciona.
+
+5. MODULO COMPROVANTES DE ENTREGA - POD (`/operacao?tab=pod`):
+   - Lista de comprovantes de entrega: 🟢 Funciona (`PodLista.tsx`).
+   - Visualizacao de fotos de entrega, canhotos e assinaturas: 🟢 Funciona via `podMediaService.ts` com Signed URLs de `driver-evidence`.
+   - Dossiê digital de entrega consolidado: 🟢 Funciona (`DossieEntregaSheet.tsx`).
+   - Download de comprovante: 🟢 Funciona.
+   - Upload manual de canhoto pelo operador no TMS: 🟡 Existe no componente `DossieEntregaSheet`, requer teste de gravacao direta.
+
+6. MODULO FINANCEIRO (`/financeiro`):
+   - Fechamento de faturamento e extrato do prestador: 🟢 Funciona com geracao de PDF.
+   - Conferencia Financeira - Comprovante de pedagio: 🟠 Existe campo de texto `comprovante_pedagio_url` para colar link (`ConferenciaFinanceira.tsx:550`), mas nao existe botao de upload de arquivo.
+   - Anexo de Nota Fiscal do Prestador / Recibo de pagamento: ⬜ Nao existe componente de upload vinculado ao lancamento.
+
+7. MODULO CADASTRO DE PRESTADORES (`/prestadores` -> `PrestadorDetalhe.tsx`):
+   - Aba Documentacao do Prestador: 🟢 Funciona. Carrega `documentos_metadata` + `documentos_prestadores`.
+   - Upload manual de CNH, CRLV, ANTT pelo operador: 🟢 Funciona (`DocumentoUploadUniversal` -> bucket `documentos_operacionais`).
+   - Visualizacao e Download de documentos do prestador: 🟢 Funciona (`DocumentoAcoesDropdown.tsx`).
+   - Historico, Nova Versao e Analise IA no perfil do prestador: 🟢 Funciona (`PrestadorDetalhe.tsx:2870-2920`).
+   - Aprovacao/Reprovacao de documento individual: 🟢 Funciona (`handleDocStatus`).
+
+8. MODULO RECRUTAMENTO (`/recrutamento`):
+   - Enterprise Kanban Board: 🟢 Funciona com 17 etapas canonicas (`EnterpriseKanbanBoard.tsx`).
+   - Painel do Candidato (`DetalhesCandidatoPipelineSheet.tsx`): 🟢 Funciona com 7 abas legiveis e responsivas.
+   - Aba Comprometimento (checklist interativo + score): 🟢 Funciona com persistencia em `questionario_respostas`.
+   - Aba Questionario (respostas operacionais e situacionais): 🟢 Funciona com persistencia.
+   - Aba Documentos do Candidato no Recrutamento: 🟠 Existe apenas checklist visual com status (OK, Pendente, Vencido). NAO PERMITE ABRIR, BAIXAR, VISUALIZAR, FAZER UPLOAD NEM ANALISAR COM IA!
+
+9. MODULO ADMIN APP PRESTADOR (`/app-prestador` -> `AppPrestador.tsx`):
+   - Simulador de viagens e rotas: 🟢 Funciona para homologacao local de fluxo.
+   - Simulador de envio de POD (canhoto + entrega): 🟢 Funciona com conversao em base64 e upload via `usePod`.
+   - Aba Documentos em `AppPrestador.tsx`: 🔴 100% Mock/Estatica. Lista cards fixos com badges "Valido" sem ligacao com a base de dados (`AppPrestador.tsx:602-612`).
+
+----------------------------------------------------------------------------------------------------
+4. ENVIO PELO CELULAR E COMPARTILHAMENTO NATIVO (DIAGNOSTICO DETALHADO)
+----------------------------------------------------------------------------------------------------
+1. Upload pelo navegador desktop:
+   - Status: 🟢 Existe e funciona.
+   - Onde: `DocumentoUploadUniversal.tsx`, `ClienteDetalhe.tsx`, `AppPrestador.tsx`.
+   - Mecanismo: Drag-and-drop e `<input type="file">`.
+
+2. Upload pelo navegador mobile (Chrome Mobile / Safari iOS):
+   - Status: 🟢 Existe e funciona.
+   - Mecanismo: `<input type="file">` e mapeado pelos sistemas operacionais mobile para a folha nativa
+     de selecao ("Arquivos", "Galeria", "Camera").
+
+3. Selecao pela Galeria Android/iOS:
+   - Status: 🟢 Existe e funciona no componente `DocumentoUploadUniversal.tsx`.
+   - Mecanismo: O atributo `accept="image/*"` forca o Android/iOS a abrir a galeria diretamente.
+
+4. Gerenciador de Arquivos Android/iOS:
+   - Status: 🟢 Existe e funciona no componente `DocumentoUploadUniversal.tsx`.
+   - Mecanismo: O botao "Escolher arquivo" aciona o input com tipos MIME aceitos (`.pdf,.jpg,.png,.webp`).
+
+5. Captura direta pela Camera:
+   - Status: 🟢 Existe e funciona no componente `DocumentoUploadUniversal.tsx`.
+   - Mecanismo: Usa `<input type="file" accept="image/*" capture="environment">`. O atributo `capture="environment"`
+     solicita imediatamente a abertura da camera traseira do dispositivo, sem passar pela galeria.
+
+6. Compartilhamento via WhatsApp:
+   - Status: 🟠 Parcial (apenas envio de texto/link; sem upload de arquivos).
+   - Onde: Links `https://wa.me/?text=...` em Propostas, Recrutamento e CRM.
+   - Limitacao tecnica: O protocolo Web de WhatsApp (`wa.me`) NAO suporta passagem de arquivos binarios
+     anexos por parametro de URL (suporta apenas strings de texto e URLs web). Para envio de documentos
+     PDF reais anexos via WhatsApp e necessaria uma API de mensageria (WhatsApp Cloud API oficial ou Evolution API).
+
+7. Compartilhamento pelo menu nativo do Android/iOS (Web Share Target / Intent):
+   - Status: ⬜ Nao implementado.
+   - Detalhe: Se um usuario estiver no WhatsApp do celular e clicar em "Compartilhar" num PDF recebido,
+     o App Conexao Express ou o TMS nao aparecem como receptores no menu nativo porque o `AndroidManifest.xml`
+     do Flutter nao declara a Intent Filter `android.intent.action.SEND` com MIME `application/pdf` ou `image/*`,
+     nem o PWA web possui a declaracao `"share_target"` no `manifest.json`.
+
+8. Integracao com Google Drive:
+   - Status: ⬜ Nao existe.
+   - Detalhe: Nao ha Google Picker API nem conexao OAuth com Google Drive configurada.
+
+9. Recebimento de arquivos por e-mail:
+   - Status: ⬜ Nao existe.
+   - Detalhe: Nao ha inbound email parser (SendGrid Inbound, Mailgun ou AWS SES) configurado para receber
+     arquivos via e-mail e injetar em `documentos_metadata`.
+
+----------------------------------------------------------------------------------------------------
+5. OBJETIVO B: ANALISE DE DOCUMENTOS POR IA (DIAGNOSTICO TECNICO)
+----------------------------------------------------------------------------------------------------
+1. Provedores de IA configurados no ecossistema:
+   - Supabase Edge Function `proxy-ia`: Configurada com suporte a Anthropic (`ANTHROPIC_API_KEY`),
+     Google Gemini (`GEMINI_API_KEY`), Groq e OpenAI.
+   - Servico `src/services/documentAnalysis.ts`: Contem especificacao estruturada com prompts detalhados
+     para CNH, CRLV, RNTRC, ANTT, comprovante bancario, comprovante de residencia, apolice e contrato,
+     enviando imagem Base64 para Claude 3.5 Sonnet via `proxy-ia`.
+   - Porem, `documentAnalysis.ts` nao esta acoplado a interface da Central de Documentos.
+
+2. Edge Function `documentos-ia` (`supabase/functions/documentos-ia/index.ts`):
+   - Criada na recente missao de documentos integrados.
+   - Contrato estruturado de saida:
+     * `status`: "APROVADO NA CONFERÊNCIA" | "APROVADO COM RESSALVAS" | "NECESSITA DE CORREÇÃO" | "AGUARDANDO CONFERÊNCIA HUMANA".
+     * `informacoes_verificadas`: array de `{ campo, valor }`.
+     * `itens_corretos`: array de strings.
+     * `informacoes_ausentes`: array de strings.
+     * `erros_identificados`: array de strings.
+     * `recomendacoes`: array de strings.
+     * `sugestao_correcao`: string.
+   - REALIDADE ATUAL: A Edge Function esta implementada com REGRAS DETERMINISTICAS SIMULADAS (analisa o nome
+     do arquivo para identificar termos como "ilegivel", "cnh", "crlv", etc.). NAO ESTA CONECTADA A UMA
+     LLM MULTIMODAL NEM A UM OCR REAL DE VISAO COMPUTACIONAL.
+   - Fallback local: Se a Edge Function falhar ou nao estiver implantada, o metodo `analisarDocumentoComIA`
+     em `documentosMetadataService.ts:311` possui um gerador deterministico local identico, garantindo
+     que a interface nunca quebre.
+
+3. Interface de Resultados da IA:
+   - O modal `DocumentoIAReportModal.tsx` exibe com precisao e design corporativo todos os 5 blocos:
+     Informacoes Verificadas, Itens Corretos, Informacoes Ausentes, Erros Identificados e Recomendacoes,
+     alem dos 4 badges oficiais.
+   - Possui botao funcional "Gerar Nova Versao" e botao "Reanalisar".
+
+4. Riscos, Dependencias e Responsabilidade Juridica da IA:
+   - RISCO JURIDICO: A IA documental deve ser expressamente classificada como "ASSISTENTE DE TRIAGEM
+     DOCUMENTAL", nao devendo atestar fe publica, validade juridica ou autenticidade cartorial.
+   - NECESSIDADE DE HOMOLOGACAO HUMANA: Todo documento classificado com ressalva ou pendencia deve
+     manter o status "AGUARDANDO CONFERENCIA HUMANA" ate que um operador humano valide o cadastro.
+   - CUSTO OPERACIONAL: O envio de imagens de documentos para Vision APIs (Gemini 1.5 Flash ou Claude 3.5 Sonnet)
+     gera custo por token/imagem. O uso de modelos leves como Gemini 1.5 Flash (~$0,0001 por documento)
+     e muito mais eficiente e viavel do que modelos Sonnet.
+
+----------------------------------------------------------------------------------------------------
+6. OBJETIVO C E E: DIAGNOSTICO DO MODULO DE RECRUTAMENTO
+----------------------------------------------------------------------------------------------------
+1. Ponto de retomada do checkpoint REC-06.2D.2F:
+   - O checkpoint `REC-06.2D.2F` teve como objeto a correcao do score e classificacao de comprometimento
+     para cobrir os estágios reais do banco de dados (evitando fallback silencioso para contato_inicial).
+   - STATUS DO CHECKPOINT: IMPLEMENTADO E HOMOLOGADO NO CODIGO.
+   - Evidencia: `src/services/recrutamento/recrutamentoScoreService.ts` linhas 38-75 contem o bloco
+     comentado `// REC-06.2D.2F — cobertura completa dos estágios canônicos do Kanban` mapeando
+     `novo_cadastro`, `novo_candidato`, `em_validacao`, `em_analise`, `em_treinamento`, etc.
+   - O teste unitario `src/test/recrutamento_detalhes_ux.test.ts` (9 testes passando) e o historico em
+     `ADM-APP-02A-RELATORIO.txt` confirmam a solucao matematica e funcional.
+
+2. Respostas objetivas as perguntas de diagnostico:
+   P1: O Recrutamento realmente evoluiu?
+   R: SIM. O Recrutamento deixou de ser uma tela estatica e tornou-se um subsistema com Kanban Enterprise
+      de 17 colunas, calculo inteligente de comprometimento, gerador de parecer operacional, integracao
+      com WhatsApp e fluxo estruturado de conversao para prestador.
+
+   P2: Quais mudancas sao visiveis para o usuario?
+   R: Na rota `/recrutamento`:
+      - O Enterprise Kanban com colunas arrastaveis, busca, contadores e filtros de estagio.
+      - A gaveta (Sheet) do candidato com 7 abas com tipografia legivel e navegacao horizontal.
+      - A aba "Comprometimento" com checklist interativo clicavel (marcar/desmarcar itens altera o score).
+      - A aba "Questionario" com campos completos para turnos, modalidade, regiao e perguntas situacionais.
+      - O Banco de Talentos (`/recrutamento/banco-talentos`).
+      - A lista de Prestadores Aptos na operacao.
+
+   P3: Quais mudancas estao apenas no backend?
+   R: - Trigger de auditoria `trg_audit_liberado_app` na tabela `liberado_app_audit`.
+      - RPCs de deduplicacao de CPF/CNPJ e telefone (`app_s6_criar_prestador`).
+      - Algoritmo de matching de prestadores com rotas da Torre (`matchService.ts`).
+      - A Edge Function `documentos-ia` que espelha dados em `documentos_metadata`.
+
+   P4: O que foi solicitado e ainda nao aparece na interface?
+   R: - NA ABA DOCUMENTOS DO CANDIDATO NO RECRUTAMENTO: O recrutador NAO CONSEGUE ver nem abrir a foto/PDF
+        da CNH ou CRLV que o candidato enviou pelo App! So aparece a bolinha colorida indicando se esta pendente ou OK.
+      - Fila de moderacao rapida com comparador visual lado a lado (dados extraidos vs documento).
+      - Botao direto "Analisar com IA" dentro do card do candidato no Kanban.
+
+   P5: Quais telas precisam de evolucao?
+   R: - `DetalhesCandidatoPipelineSheet.tsx` (aba Documentos): incorporar o `DocumentoAcoesDropdown`
+        e permitir visualizar o documento enviado.
+      - `AppPrestador.tsx`: substituir a aba "Documentos" estatica/mock pela integracao com `documentos_metadata`.
+      - `ClienteDetalhe.tsx`: corrigir o upload fisico do anexo de contrato no bucket `contratos`.
+      - `ConferenciaFinanceira.tsx`: adicionar upload direto do comprovante de pedagio no bucket `documentos_operacionais`.
+
+   P6: O que esta pronto e NAO deve ser refeito?
+   R: - O Kanban Enterprise (`EnterpriseKanbanBoard.tsx`).
+      - As formulas e regras de score do `recrutamentoScoreService.ts` (REC-06.2D.2F).
+      - A conversao de Candidato para Prestador (`conversaoCandidatoService.ts`).
+      - O servico central `documentosMetadataService.ts` e seus modais (Historico, Nova Versao, Compartilhar, IA).
+      - O gate de seguranca fail-closed de `liberado_app` e a consulta de midias de POD (`podMediaService.ts`).
+
+   P7: Qual e a proxima entrega visivel recomendada?
+   R: Integrar a visualizacao real dos documentos do candidato (com visualizador, download e IA)
+      DIRETAMENTE na aba "Documentos" de `DetalhesCandidatoPipelineSheet.tsx` do Recrutamento,
+      reutilizando a infraestrutura que ja funciona na Central de Documentos.
+
+   P8: Como comprovar que a entrega foi implementada?
+   R: Abrir o Recrutamento, clicar em um candidato que enviou CNH pelo App, abrir a aba "Documentos",
+      ver a miniatura/link da CNH, clicar em "Visualizar" e ver o PDF/imagem carregar via Signed URL,
+      sem erros de console.
+
+----------------------------------------------------------------------------------------------------
+7. MATRIZES OBRIGATORIAS DO RELATORIO
+----------------------------------------------------------------------------------------------------
+
+====================================================================================================
+MATRIZ 1: CENTRAL DE DOCUMENTOS
+====================================================================================================
+MODULO        | FUNCIONALIDADE              | ARQUIVO/TELA                    | SERVICO                          | TABELA / BUCKET                        | STATUS | EVIDENCIA                                 | GAP                                                        | ACAO RECOMENDADA
+--------------+-----------------------------+---------------------------------+----------------------------------+----------------------------------------+--------+-------------------------------------------+------------------------------------------------------------+--------------------------------------------------
+Central       | Listagem e filtros          | src/pages/CentralDocumentos.tsx | documentosMetadataService.ts     | public.documentos_metadata             | 🟢     | CentralDocumentos.tsx:84-250              | Nenhum                                                     | Manter
+Central       | Upload Universal            | DocumentoUploadUniversal.tsx    | documentosMetadataService.ts     | storage.objects (documentos_operacionais) | 🟢  | DocumentoUploadUniversal.tsx:1-105        | Nenhum                                                     | Manter
+Central       | Acoes de Documento          | DocumentoAcoesDropdown.tsx      | documentosMetadataService.ts     | public.documentos_metadata             | 🟢     | DocumentoAcoesDropdown.tsx:1-120          | Falta restricao de delete para admin                       | Adicionar confirmacao e role check no delete
+Central       | Analise por IA              | DocumentoIAReportModal.tsx      | documentosMetadataService.ts     | Edge function documentos-ia            | 🟡     | DocumentoIAReportModal.tsx:1-240          | Edge roda heuristica simulada sem OCR real                | Conectar Edge Function ao Gemini 1.5 Flash Vision
+Central       | Versionamento               | DocumentoNovaVersaoDialog.tsx   | documentosMetadataService.ts     | public.documentos_metadata             | 🟢     | DocumentoNovaVersaoDialog.tsx:1-180       | Nenhum                                                     | Manter
+Central       | Historico de Acoes          | DocumentoHistoricoModal.tsx     | documentosMetadataService.ts     | public.documentos_metadata (historico) | 🟢     | DocumentoHistoricoModal.tsx:1-140         | Nenhum                                                     | Manter
+Prestadores   | Documentacao do Prestador   | PrestadorDetalhe.tsx            | documentosMetadataService.ts     | doc_metadata + doc_prestadores         | 🟢     | PrestadorDetalhe.tsx:2870-2920            | Nenhum                                                     | Manter
+Clientes      | Anexo de Contrato           | ClienteDetalhe.tsx              | Nenhum (apenas state local)      | clientes_contratos / bucket contratos  | 🟠     | ClienteDetalhe.tsx:1031, 1051             | Salva apenas nome no banco; binario descartado sem storage | Integrar upload no bucket documentos_operacionais
+Comercial     | Proposta Comercial PDF      | ListaPropostas.tsx              | gerarPDFProfissional             | crm_propostas                          | 🟢     | ListaPropostas.tsx:40-120                 | Nenhum                                                     | Manter
+Operacional   | Comprovantes POD            | PodLista.tsx                    | podMediaService.ts               | pod_registros / driver-evidence        | 🟢     | PodLista.tsx:8-46, podMediaService.ts     | Nenhum                                                     | Manter
+Financeiro    | Comprovante de Pedagio      | ConferenciaFinanceira.tsx       | reembolsoPedagioService.ts       | reembolsos_prestador                   | 🟠     | ConferenciaFinanceira.tsx:550             | Apenas link em texto, sem upload de arquivo direto         | Adicionar DocumentoUploadUniversal na modal
+Recrutamento  | Documentos do Candidato     | DetalhesCandidatoPipelineSheet  | Nenhum na aba Documentos         | recrutamento_candidatos (documentos)   | 🟠     | DetalhesCandidatoPipelineSheet.tsx:620    | Apenas checklist colorido; sem visualizacao/download de arq| Acoplar DocumentoAcoesDropdown aos docs do candidato
+Admin App     | Documentos no Simulador     | AppPrestador.tsx                | Nenhum                           | Cards estaticos no JSX                 | 🔴     | AppPrestador.tsx:602-612                  | Tela 100% estatica/mockada                                 | Ligar ao documentosMetadataService
+
+====================================================================================================
+MATRIZ 2: RECRUTAMENTO
+====================================================================================================
+ETAPA                     | TELA VISIVEL                 | IMPLEMENTACAO BACKEND          | TABELA / RPC                         | PERSISTENCIA | STATUS | EVIDENCIA                             | GAP                                                      | PROXIMA ACAO
+--------------------------+------------------------------+--------------------------------+--------------------------------------+--------------+--------+---------------------------------------+----------------------------------------------------------+--------------------------------------------------
+Pre-cadastro App          | App Prestador (Flutter)      | app_s6_criar_prestador (RPC)   | prestadores, veiculos, doc_prestador | SIM          | 🟢     | register_screen.dart:726-766          | Nenhum                                                   | Manter
+Reconciliacao Recrutamento| Recrutamento Kanban          | enterpriseKanbanService.ts     | recrutamento_candidatos              | SIM          | 🟢     | enterpriseKanbanService.ts:412        | Nenhum                                                   | Manter
+Triagem e Score           | Aba Comprometimento no Sheet | recrutamentoScoreService.ts    | questionario_respostas (JSONB)       | SIM          | 🟢     | recrutamentoScoreService.ts (REC-2DF) | Nenhum                                                   | Manter
+Questionario Operacional  | Aba Questionario no Sheet    | enterpriseKanbanService.ts     | questionario_respostas (JSONB)       | SIM          | 🟢     | DetalhesCandidatoPipelineSheet:578    | Nenhum                                                   | Manter
+Analise de Documentos     | Aba Documentos no Sheet      | INEXISTENTE NO RECRUTAMENTO    | recrutamento_candidatos.documentos   | PARCIAL      | 🟠     | DetalhesCandidatoPipelineSheet:618    | Recrutador nao consegue ver o PDF/imagem da CNH enviada  | Conectar ao documentosMetadataService e exibir visualizador
+Onboarding                | Aba Onboarding no Sheet      | enterpriseKanbanService.ts     | onboarding_progresso                 | SIM          | 🟢     | DetalhesCandidatoPipelineSheet:735    | Nenhum                                                   | Manter
+Historico de Interacoes   | Aba Historico / Acoes        | enterpriseKanbanService.ts     | recrutamento_candidatos (historico)  | SIM          | 🟢     | DetalhesCandidatoPipelineSheet:817    | Nenhum                                                   | Manter
+Conversao para Prestador  | Botao "Converter em Prestador"| conversaoCandidatoService.ts  | prestadores, veiculos                | SIM          | 🟢     | conversaoCandidatoService.ts:104-200  | Exige documentacao "completa" para aprovar (fail-closed) | Manter
+Aprovacao e liberado_app  | PrestadorDetalhe.tsx         | prestadoresService.ts          | prestadores (liberado_app)           | SIM          | 🟢     | PrestadorDetalhe.tsx:1483             | Nenhum                                                   | Manter
+Desbloqueio Login App     | App Prestador (AuthGate)     | AuthStatusMapper.dart          | prestadores (status, liberado_app)   | SIM          | 🟢     | router.dart:65-72, auth_gate.dart:58  | Nenhum                                                   | Manter
+
+====================================================================================================
+MATRIZ 3: SEGURANCA E CONTROLE DE ACESSO
+====================================================================================================
+RECURSO                   | POLITICA ATUAL                                       | CONTROLE DE ACESSO                     | RISCO IDENTIFICADO                                           | AJUSTE NECESSARIO
+--------------------------+------------------------------------------------------+----------------------------------------+--------------------------------------------------------------+--------------------------------------------------
+Tabela documentos_metadata| authenticated USING (true) para SELECT, INSERT, UPD, DEL | Qualquer usuario autenticado          | Risco de vazamento entre setores e delecao indevida de dados | Restringir DELETE/UPDATE a admin; filtrar SELECT por role/depto
+Bucket documentos_operac. | authenticated USING (bucket_id = 'documentos_operac.')| Qualquer usuario autenticado          | Sobrescrita ou exclusao direta de objetos no storage         | Limitar DELETE no storage a super_admin e service_role
+Bucket documentos_prest.  | Privado; SELECT/INSERT authenticated                  | Motorista e Operador via Signed URLs   | Baixo (protegido na missao ADM-APP-02D2)                     | Manter estritamente privado; rotacionar TTL (600s)
+Bucket driver-evidence    | Privado; SELECT/INSERT authenticated                  | Operador/Cliente via Signed URLs (POD) | Baixo                                                        | Manter estritamente privado
+Bucket contratos          | PUBLICO (public = true)                              | Qualquer pessoa com a URL              | Alto: vazamento de clausulas contratuais de clientes         | Tornar bucket privado e migrar para Central
+Bucket certificados-fisc. | Privado; restrito                                    | Apenas configuracao fiscal             | Critico: chaves privadas A1 da empresa                       | NUNCA expor na Central de Documentos; isolar
+Coluna liberado_app       | Auditada por trigger `trg_audit_liberado_app`         | Apenas atualizavel por admin           | Baixo (fail-closed garantido no backend e App)               | Preservar imutavel pelo motorista
+
+====================================================================================================
+MATRIZ 4: PRESERVACAO DE CONTRATOS E SISTEMAS EXISTENTES
+====================================================================================================
+FUNCIONALIDADE EXISTENTE   | ARQUIVOS / CONTRATOS                                 | DEPENDENCIAS                           | RISCO DE ALTERACAO                                           | REGRA DE PRESERVACAO
+---------------------------+------------------------------------------------------+----------------------------------------+--------------------------------------------------------------+--------------------------------------------------
+Resolucao de Midias POD    | podMediaService.ts, PodLista.tsx, DossieEntregaSheet | bucket driver-evidence, pod_registros  | Quebra do faturamento e contestacao de entregas por clientes| PROIBIDO alterar podMediaService ou tornar bucket publico
+Auth Gate e Liberacao App  | auth_gate.dart, router.dart, PrestadorDetalhe.tsx    | prestadores.liberado_app, status       | Motoristas nao aprovados operando ou motoristas aptos presos | NUNCA setar liberado_app = true sem status 'ativo'
+Trigger App -> Metadata    | trg_documentos_prestadores_metadata (migration 01)   | documentos_prestadores                 | Desconexao de documentos do App na Central do TMS            | Preservar trigger e mapeamento de categorias
+Score REC-06.2D.2F         | recrutamentoScoreService.ts                          | questionario_respostas                 | Alteracao de scores e regressao de 18 testes unitarios       | Nao alterar os 6 conjuntos de estagios canonicos
+Estrutura de Veiculos      | veiculoPayload.ts, dbMappers.ts                      | tabela veiculos                        | Falha de escala na Torre de Controle                         | Preservar colunas de consumo e manutencao
+
+----------------------------------------------------------------------------------------------------
+8. PLANO DE IMPLEMENTACAO FUTURA (MICRO-MISSOES HOMOLOGADAS)
+----------------------------------------------------------------------------------------------------
+
+FASE A — CORRECOES DE INTEGRACAO E UPLOAD FISICO PENDENTE
+* Micro-missao A1: Upload Real de Contratos de Clientes
+  - Objetivo: Corrigir `ClienteDetalhe.tsx` para enviar o arquivo selecionado ao bucket `documentos_operacionais`
+    (com metadado na tabela `documentos_metadata`, categoria 'Comercial'), gravando a URL valida em `clientes_contratos`.
+  - Arquivos: `src/components/clientes/ClienteDetalhe.tsx`, `src/services/documentos/documentosMetadataService.ts`.
+  - Criterio de Aceite: Selecionar PDF de contrato, salvar, recarregar a pagina e conseguir abrir o PDF via Signed URL.
+
+* Micro-missao A2: Upload Direto de Comprovante de Pedagio no Financeiro
+  - Objetivo: Substituir o campo de texto de URL em `ConferenciaFinanceira.tsx` por um componente de upload
+    direto (`DocumentoUploadUniversal`), gravando em `documentos_metadata` (categoria 'Financeiro').
+  - Arquivos: `src/components/financeiro/ConferenciaFinanceira.tsx`.
+  - Criterio de Aceite: Anexar foto do pedagio e abrir preview imediato na conferencia do frete.
+
+FASE B — CENTRALIZACAO E REFORCO DE SEGURANCA (STORAGE & RLS)
+* Micro-missao B1: Blindagem de RLS em documentos_metadata e Storage
+  - Objetivo: Criar migration para restringir politicas de DELETE e UPDATE em `documentos_metadata` apenas
+    a usuarios com perfil `admin` ou `super_admin`, e filtrar SELECT por perfil/departamento.
+  - Arquivos: `supabase/migrations/20261103000001_documentos_metadata_seguranca.sql`.
+  - Criterio de Aceite: Usuarios comuns nao conseguem apagar documentos cadastrados por outro setor.
+
+* Micro-missao B2: Privatizacao do Bucket de Contratos
+  - Objetivo: Alterar o bucket `contratos` para `public = false` e unificar resolucao via Signed URLs.
+  - Criterio de Aceite: URLs publicas diretas retornam 403; apenas Signed URLs autorizadas abrem contratos.
+
+FASE C — EVOLUCAO VISIVEL DO RECRUTAMENTO (INTEGRACAO COM DOCUMENTOS)
+* Micro-missao C1: Visualizador Real de Documentos na Aba Documentos do Recrutamento
+  - Objetivo: Atualizar `DetalhesCandidatoPipelineSheet.tsx` (aba "Documentos") para listar os documentos
+    reais existentes em `documentos_metadata` e `documentos_prestadores` vinculados ao candidato/prestador,
+    adicionando botoes de Visualizar (PDF/Foto), Baixar e acoes do `DocumentoAcoesDropdown`.
+  - Arquivos: `src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx`.
+  - Criterio de Aceite: Ao abrir um candidato com CNH enviada pelo App, o recrutador clica em "Visualizar"
+    e a CNH abre em modal/nova aba com URL assinada.
+
+* Micro-missao C2: Upload e Substituicao Manual de Documentos no Recrutamento
+  - Objetivo: Permitir que o recrutador adicione ou atualize um documento do candidato caso este o envie
+    por WhatsApp ou e-mail, registrando versao e historico.
+  - Criterio de Aceite: Recrutador faz upload de novo CRLV dentro do Sheet; status documental e recalculado
+    automaticamente para "completo".
+
+FASE D — INTELIGENCIA ARTIFICIAL DOCUMENTAL REAL (EDGE FUNCTION + VISION OCR)
+* Micro-missao D1: Conexao da Edge Function documentos-ia com Gemini 1.5 Flash Vision
+  - Objetivo: Substituir as respostas simuladas da Edge Function `supabase/functions/documentos-ia/index.ts`
+    por chamada real a API multimodular do Google Gemini 1.5 Flash, extraindo campos estruturados (CNH, CRLV, etc.)
+    e detectando documentos ilegiveis, cortados ou vencidos.
+  - Arquivos: `supabase/functions/documentos-ia/index.ts`, `supabase secrets`.
+  - Criterio de Aceite: Ao clicar em "Analisar com IA", a Edge Function extrai nome, CPF e validade reais da imagem.
+
+* Micro-missao D2: Botao de Analise IA Rapida no Card do Kanban de Recrutamento
+  - Objetivo: Exibir badge com resultado da conferencia IA diretamente no card do candidato no Kanban.
+  - Criterio de Aceite: Card exibe "IA: Aprovado na Conferencia" em verde ou "IA: CNH Ilegivel" em vermelho.
+
+FASE E — MOBILE & INTENTS DE COMPARTILHAMENTO
+* Micro-missao E1: Web Share Target API no TMS
+  - Objetivo: Adicionar suporte no `manifest.json` e Service Worker para que navegadores mobile possam
+    compartilhar arquivos diretamente para a rota `/central-documentos?action=upload`.
+  - Criterio de Aceite: Menu de compartilhamento do Android exibe o TMS como destino.
+
+----------------------------------------------------------------------------------------------------
+9. CONTAGEM REGRESSIVA OFICIAL PRESERVADA
+----------------------------------------------------------------------------------------------------
+9 → 🟢 FECHADO
+8 → 🟢 FECHADO — APP/TMS E2E físico e técnico
+7 → 🟡 ATUAL — Admin APP + Cadastro Prestador + Recrutamento (MANTIDO NESTA AUDITORIA)
+6 → ⬜ CAD-PERSIST + integridade
+5 → ⬜ Fechamento Financeiro
+4 → ⬜ Comercial / Orçamento
+3 → ⬜ Fechamento TMS
+2 → ⬜ E2E completo integrado
+1 → ⬜ Master 360 / Gate Produção
+0 → 🏁 HOMOLOGADO
+
+AVISO: Conforme determinacao explicita da Missao, a contagem oficial PERMANECE rigorosamente no Nivel 7.
+Nenhuma implementacao foi iniciada. Todos os sistemas encontram-se preservados e documentados.
+====================================================================================================
+FIM DO RELATORIO DE AUDITORIA INTEGRAL
+====================================================================================================

@@ -93,7 +93,7 @@ describe("4) Análise com IA + modal de relatório", () => {
     expect(PRESTADOR).toContain("analisarDocumentoComIA");
     expect(PRESTADOR).toContain("atualizarAnaliseDocumentoMetadata");
     expect(PRESTADOR).toContain("<DocumentoIAReportModal");
-    expect(MODAL).toContain("Relatório de IA");
+    expect(MODAL).toContain("Relatório de Conformidade");
     expect(MODAL).toContain("resultado.observacoes");
     expect(MODAL).toContain("APROVADO NA CONFERÊNCIA");
     expect(MODAL).toContain("NECESSITA DE CORREÇÃO");

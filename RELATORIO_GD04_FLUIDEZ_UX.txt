@@ -1,0 +1,147 @@
+====================================================================================================
+RELATORIO GD-04 - FLUIDEZ DE UPLOAD E INTEGRACAO DE PROPOSTAS GERADAS
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: frontend apenas. Nenhuma alteracao de banco, migration, storage ou deploy.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Foram resolvidos os dois atritos reportados:
+
+1) Cadastro do Prestador: cada cartao de documento (CNH, CRLV, Contrato, etc.) agora e uma
+   Dropzone ativa. Arrastar um PDF/imagem sobre o cartao destaca o alvo e dispara o upload
+   imediatamente, sem abrir modais e sem precisar clicar em "Upload".
+
+2) Comercial > Propostas: a exportacao de PDF agora gera um File em memoria e envia
+   automaticamente para a Central de Documentos (documentos_metadata) com categoria e
+   departamento "Comercial", tentando vincular o cliente_id. A acao de compartilhamento
+   passou a buscar o telefone do Lead/Cliente no CRM e abrir a API do WhatsApp com o
+   destinatario preenchido.
+
+Nenhuma migration foi criada ou aplicada.
+
+2. DRAG-AND-DROP NATIVO NOS CARTOES DE DOCUMENTO
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/prestadores/PrestadorDetalhe.tsx
+
+O que mudou:
+- O upload foi extraido para handleDocFile(tipoDocumento, file), reutilizando o fluxo ja
+  existente (enviarDocumentoOperacionalPrestador + metadados + estado local).
+- Foi adicionada validacao compartilhada validarArquivoAnexo (PDF/JPG/JPEG/PNG/WEBP,
+  limite de 50 MB), com toast de erro quando o arquivo e invalido.
+- handleDocUpload(tipo, event) permanece como ponte para o input de arquivo e agora
+  limpa o input apos a selecao.
+- Cada cartao de DOCS_TIPOS (CNH Frente, CNH Verso, Documento Pessoal, Comprovante de
+  Residencia, Comprovante Bancario, Contrato, CRLV, Documento do Veiculo, ANTT,
+  Apolice de Seguro, Outros) recebeu:
+  * onDragOver: preventDefault + destaca o cartao.
+  * onDragLeave: limpa o destaque somente quando o ponteiro sai do cartao.
+  * onDrop: preventDefault + pega o primeiro arquivo e chama handleDocFile imediatamente.
+- Estado dragOverDoc controla o destaque visual:
+  border-primary + bg-primary/5 + ring-2 ring-primary/30.
+- Texto de apoio adicionado no cartao: "Arraste um PDF/imagem para este cartao ou use Upload."
+- O input de arquivo agora aceita tambem .webp.
+- Se o prestador ainda nao estiver salvo (sem p.id), o comportamento anterior e mantido:
+  o arquivo fica em documentosPendentes para envio apos salvar.
+- Nenhum modal adicional foi criado; o drop usa o mesmo fluxo do botao Upload.
+
+3. EXPORTACAO DE PROPOSTA -> CENTRAL DE DOCUMENTOS
+----------------------------------------------------------------------------------------------------
+Arquivos:
+- src/utils/pdfGenerator.ts
+- src/components/comercial/propostas/ListaPropostas.tsx
+- src/services/comercial/propostaContatoService.ts (NOVO)
+
+3.1 Geracao do PDF como File
+- gerarPDFProfissional agora, alem de baixar o PDF (doc.save), retorna um File:
+  new File([doc.output("blob")], "<titulo>.pdf", { type: "application/pdf" }).
+- Callers antigos continuam funcionando (ignoram o retorno).
+
+3.2 Exportar PDF / Exportar e Guardar
+- exportarProposta captura o File retornado e, apos atualizar o estado local/historico,
+  chama enviarDocumentoOperacional com:
+  * moduloOrigem: "comercial"
+  * tipo: "Proposta Comercial"
+  * nome: nome do arquivo PDF
+  * categoria: "Comercial"
+  * departamento: "Comercial"
+  * responsavel: "Comercial"
+  * clienteId/entidadeId: cliente_id resolvido (quando encontrado)
+  * descricao: "Proposta <titulo> exportada em <data/hora>."
+- Isso vale para as duas acoes do menu que geram PDF ("Exportar PDF" e
+  "Exportar e Guardar"). O download do PDF continua acontecendo.
+- Em caso de falha no upload, o PDF ja gerado e mantido e o usuario recebe toast de aviso
+  (nao bloqueia a exportacao).
+- Em caso de sucesso, toast "Proposta exportada e enviada para a Central de Documentos."
+
+3.3 Resolucao de cliente_id e telefone (CRM)
+- Novo service: src/services/comercial/propostaContatoService.ts
+- resolverContatoProposta tenta, nesta ordem:
+  1. Lead por leadId (se a proposta tiver esse campo).
+  2. Lead pela URL da proposta (crm_leads.proposta_url contem "proposta=<id>").
+  3. Cliente por clienteId.
+  4. Lead por nome/empresa (crm_leads.nome / crm_leads.empresa).
+  5. Cliente por nome_fantasia/razao_social.
+- Retorna { clienteId, telefone, origem }.
+- O telefone prioriza whatsapp e depois telefone, normalizado para a API do WhatsApp
+  (somente digitos; prefixo 55 quando necessario).
+- A proposta passa a aceitar opcionalmente clienteId/leadId/telefone no tipo Proposta;
+  os mocks atuais continuam funcionando por fallback de nome.
+
+4. COMPARTILHAR NO WHATSAPP COM TELEFONE DO CRM
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/comercial/propostas/ListaPropostas.tsx
+
+O que mudou:
+- A acao do menu passou de "Compartilhar Link" para "Compartilhar no WhatsApp".
+- compartilharProposta agora:
+  1. Resolve o contato no CRM (lead/cliente).
+  2. Copia o link da proposta para a area de transferencia (comportamento anterior).
+  3. Monta a mensagem:
+     Ola! Segue o link da proposta "<titulo>" da Conexao Express:
+     <link>
+  4. Abre https://wa.me/<telefone>?text=<mensagem> quando o telefone e encontrado.
+  5. Se nao encontrar telefone, abre https://wa.me/?text=<mensagem> e avisa via toast
+     que o WhatsApp foi aberto sem destinatario.
+- O historico da proposta registra "Link compartilhado no WhatsApp".
+
+5. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+- src/components/prestadores/PrestadorDetalhe.tsx
+- src/components/comercial/propostas/ListaPropostas.tsx
+- src/utils/pdfGenerator.ts
+- src/services/comercial/propostaContatoService.ts (NOVO)
+- Relatorio: RELATORIO_GD04_FLUIDEZ_UX.txt
+
+6. VALIDACAO
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- ESLint (arquivos alterados) ....................... 0 erros novos
+  (permanecem apenas `no-explicit-any` legados em PrestadorDetalhe/pdfGenerator,
+   pre-existentes e fora do escopo)
+- Vitest direcionado (documentos, propostas, prestador, IA):
+  * 5 arquivos / 65 testes .......................... 65/65 PASS
+- Vitest suite completa ............................. 18 arquivos / 44 testes falhos
+  = baseline exata do projeto; 2612 pass. O arquivo fin_prog05c3b apareceu como flaky
+  sob carga paralela e passou 5/5 isolado. Nenhuma falha nova desta missao.
+- npm run build ..................................... OK (41,41s)
+
+7. PENDENCIAS / QA VISUAL
+----------------------------------------------------------------------------------------------------
+1. (QA) Prestador > Documentacao: arrastar um PDF e uma imagem para cima de cartoes
+   diferentes e confirmar destaque, upload imediato e atualizacao do status.
+2. (QA) Prestador novo (sem id): arrastar arquivo e confirmar a fila
+   "Anexado (Aguardando Salvar)" e o envio apos salvar.
+3. (QA) Comercial > Propostas: acionar "Exportar e Guardar" e confirmar:
+   * download do PDF;
+   * registro em /central-documentos com categoria/departamento Comercial;
+   * cliente_id quando o cliente/lead existe no CRM.
+4. (QA) Comercial > Propostas: "Compartilhar no WhatsApp" com lead/cliente que possui
+   telefone e com proposta sem telefone (fallback wa.me sem destinatario).
+5. (OBS) A migration de RLS da GD-02 continua NAO aplicada em producao. Quando aplicada,
+   o papel comercial ja esta mapeado para o departamento Comercial.
+
+====================================================================================================
+FIM DO RELATORIO GD-04 - FRONTEND VALIDADO; BANCO/STORAGE/MIGRATION INTACTOS.
+====================================================================================================

@@ -1,13 +1,13 @@
 /**
  * ConexaoTalentAIProfile — Painel de Resumo Operacional Automático (Etapa 7).
  *
- * Exibe o perfil operacional gerado pela Conexão Talent AI a partir de
+ * Exibe o perfil operacional gerado pelo Motor de Verificação a partir de
  * preferências operacionais, respostas situacionais e dados reais de performance.
  * Design system: roxo/laranja da marca.
  */
 import { useMemo } from "react";
 import {
-  Sparkles, Truck, MapPin, Layers, Navigation, Plane, Clock, Radio,
+  ShieldCheck, Activity, Truck, MapPin, Layers, Navigation, Plane, Clock, Radio,
   Award, Package, GraduationCap, ShieldAlert, AlertTriangle, Lightbulb,
   type LucideIcon,
 } from "lucide-react";
@@ -98,11 +98,11 @@ export function ConexaoTalentAIProfile(props: ConexaoTalentAIProfileProps) {
       <Card className="border-[#2E1065]/20 bg-gradient-to-br from-[#2E1065]/5 via-background to-orange-500/5">
         <CardContent className="flex items-center gap-3 p-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2E1065]/10 text-[#2E1065]">
-            <Sparkles className="h-5 w-5 animate-pulse" />
+            <ShieldCheck className="h-5 w-5 animate-pulse" />
           </span>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#2E1065]">
-              Conexão Talent AI · Perfil Operacional
+              Motor de Verificação · Perfil Operacional
             </p>
             <p className="text-sm text-muted-foreground">Sincronizando dados operacionais...</p>
           </div>
@@ -116,8 +116,8 @@ export function ConexaoTalentAIProfile(props: ConexaoTalentAIProfileProps) {
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-sm text-[#2E1065]">
-            <Sparkles className="h-4 w-4 text-orange-500" />
-            Conexão Talent AI · Resumo Operacional Automático
+            <Activity className="h-4 w-4 text-orange-500" />
+            Motor de Verificação · Resumo Operacional Automático
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${PERFORMANCE_CORES[perfBadge.categoria]}`}>
@@ -138,7 +138,7 @@ export function ConexaoTalentAIProfile(props: ConexaoTalentAIProfileProps) {
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Indicadores</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {resumo.insights.map((insight) => {
-                const Icon = ICON_MAP[insight.icone] || Sparkles;
+                const Icon = ICON_MAP[insight.icone] || Activity;
                 return (
                   <div key={`${insight.label}-${insight.valor}`} className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${TOM_COR[insight.tom]}`}>
                     <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -200,7 +200,7 @@ export function ConexaoTalentAIProfile(props: ConexaoTalentAIProfileProps) {
         <div className="flex items-start gap-2 rounded-lg border border-[#2E1065]/20 bg-[#2E1065]/5 px-3 py-2.5">
           <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#2E1065]">Recomendação da IA</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#2E1065]">Recomendação Operacional</p>
             <p className="mt-0.5 text-xs font-medium text-foreground">{resumo.recomendacao}</p>
           </div>
         </div>

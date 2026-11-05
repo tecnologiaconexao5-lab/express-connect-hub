@@ -32,9 +32,11 @@ import { automacoesService } from './services/automacoesService'
 import { matchService } from './services/matchService'
 import { crmService } from './services/crmService'
 import { enterpriseKanbanService } from './components/enterprise-kanban/enterpriseKanbanService'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, LayoutDashboard, FileText, Bot, Award, Users, HeartHandshake, MessageSquare, Sparkles, Columns3, CheckCircle } from 'lucide-react'
+import { Truck, LayoutDashboard, FileText, Bot, Award, Users, HeartHandshake, MessageSquare, Sparkles, Columns3, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import type { DocumentoPrestador, AutomacaoRegra, StatusDocumento, CrmInteracao, TalentosCandidato } from './types/recrutamento'
 
 export {
@@ -121,6 +123,35 @@ function extractOrigem(tags: string[]): string {
     if (known.includes(normalized)) return tag
   }
   return 'manual'
+}
+
+function SecaoRecrutamentoErro() {
+  return (
+    <PremiumCard>
+      <PremiumCardContent className="flex flex-col items-center gap-3 p-8 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+          <AlertTriangle className="h-6 w-6" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Não foi possível carregar esta secção</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            A falha ficou isolada nesta aba. As demais áreas do Recrutamento continuam disponíveis.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.location.reload()}>
+          <RefreshCw className="h-4 w-4" /> Recarregar
+        </Button>
+      </PremiumCardContent>
+    </PremiumCard>
+  )
+}
+
+function SecaoRecrutamentoLoading() {
+  return (
+    <div className="p-4">
+      <div className="h-28 animate-pulse rounded-xl border border-border/60 bg-card" />
+    </div>
+  )
 }
 
 export function RecrutamentoModule() {
@@ -399,7 +430,11 @@ export function RecrutamentoModule() {
 
   return (
     <RecrutamentoLayout>
-      {renderSection()}
+      <ErrorBoundary key={currentSection} fallback={<SecaoRecrutamentoErro />}>
+        <Suspense fallback={<SecaoRecrutamentoLoading />}>
+          {renderSection()}
+        </Suspense>
+      </ErrorBoundary>
     </RecrutamentoLayout>
   )
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
   FileText, CheckCircle, XCircle, AlertTriangle, 
-  Loader2, Play, Sparkles, Filter, Search
+  Loader2, Play, ShieldCheck, Filter, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -186,7 +186,7 @@ export function AnaliseLote() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Análise em Lote de Documentos</h2>
-          <p className="text-muted-foreground">Analise múltiplos documentos com IA</p>
+          <p className="text-muted-foreground">Analise múltiplos documentos com o Motor de Verificação</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -197,7 +197,7 @@ export function AnaliseLote() {
             {isProcessing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Sparkles className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4" />
             )}
             {isProcessing ? "Analisando..." : "Analisar Selecionados"}
           </Button>

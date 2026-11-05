@@ -4,7 +4,7 @@ import {
   ChevronDown, Filter, CalendarDays, BarChart, Tags, Grid3X3, List, Bookmark, 
   Clock, Archive, Download, Share2, Eye, MoreHorizontal, Palette, RefreshCw,
   Building2, Presentation, Table2, FileCheck, FileX, Check, X, Image, Wand2,
-  Save, Send
+  Save, Send, Upload, type LucideIcon
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,11 +18,15 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mockPropostas } from "./mockPropostas";
 import { gerarPDFProfissional } from "@/utils/pdfGenerator";
+import { DocumentoUploadUniversal } from "@/components/documentos/DocumentoUploadUniversal";
+import { enviarDocumentoOperacional } from "@/services/documentos/documentosMetadataService";
+import { resolverContatoProposta } from "@/services/comercial/propostaContatoService";
+import { FiltrosAtivos, type FiltroAtivoItem } from "@/components/ui/filtros-ativos";
 import { toast } from "sonner";
 
 interface ListaPropostasProps {
-  onNovaProposta: (tipo: "modelo" | "personalizada", originModelo?: any) => void;
-  onEditar: (proposta: any) => void;
+  onNovaProposta: (tipo: "modelo" | "personalizada", originModelo?: Proposta) => void;
+  onEditar: (proposta: Proposta) => void;
 }
 
 type Categoria = "todas" | "institucionais" | "comerciais" | "tabelas" | "apresentacoes" | "modelos" | "personalizadas" | "favoritas" | "recentes" | "guardadas" | "arquivadas";
@@ -56,10 +60,13 @@ interface Proposta {
   criadoEm: string;
   atualizadoEm: string;
   modeloOrigemId?: string;
+  clienteId?: string | null;
+  leadId?: string | null;
+  telefone?: string | null;
   historico: { data: string; acao: string; usuario: string }[];
 }
 
-const categorias: { value: Categoria; label: string; icon: any }[] = [
+const categorias: { value: Categoria; label: string; icon: LucideIcon }[] = [
   { value: "todas", label: "Todas", icon: FileText },
   { value: "guardadas", label: "Guardadas", icon: Save },
   { value: "institucionais", label: "Institucionais", icon: Building2 },
@@ -143,6 +150,8 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [enviandoProposta, setEnviandoProposta] = useState(false);
 
   // Link compartilhado: /comercial?tab=propostas&proposta=<id> abre a prévia.
   useEffect(() => {
@@ -189,6 +198,35 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
     setPropostas(prev => [nova, ...prev]);
   };
 
+  const enviarPropostaPdf = async (file: File) => {
+    const ehPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!ehPdf) {
+      toast.error("Envie um arquivo PDF para a proposta.");
+      return;
+    }
+    setEnviandoProposta(true);
+    try {
+      await enviarDocumentoOperacional({
+        file,
+        moduloOrigem: "comercial",
+        entidadeId: null,
+        entidadeNome: null,
+        tipo: "Proposta Comercial",
+        nome: file.name,
+        categoria: "Comercial",
+        departamento: "Comercial",
+        responsavel: "Comercial",
+        descricao: "Proposta comercial enviada pela aba Propostas.",
+      });
+      toast.success("Proposta enviada para a Central de Documentos.");
+      setShowUploadDialog(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a proposta.");
+    } finally {
+      setEnviandoProposta(false);
+    }
+  };
+
   const guardarNaBiblioteca = (p: Proposta) => {
     const jaGuardada = propostas.find(prop => prop.origemDaGuardada === p.id && prop.guardadaNaBiblioteca);
     
@@ -228,7 +266,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
 
   const exportarProposta = async (p: Proposta, guardarTambem: boolean = false) => {
     try {
-      await gerarPDFProfissional({
+      const pdfFile = await gerarPDFProfissional({
         titulo: `Proposta Comercial — ${p.titulo}`,
         subtitulo: `${p.cliente || "Modelo base"} · ${p.segmento || "Segmento não informado"} · v${p.versao}.0`,
         colunas: ["Campo", "Detalhe"],
@@ -268,6 +306,32 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
         guardarNaBiblioteca(p);
       }
 
+      try {
+        const contato = await resolverContatoProposta({
+          propostaId: p.id,
+          leadId: p.leadId,
+          clienteId: p.clienteId,
+          clienteNome: p.cliente,
+        });
+        await enviarDocumentoOperacional({
+          file: pdfFile,
+          moduloOrigem: "comercial",
+          entidadeId: contato.clienteId,
+          entidadeNome: p.cliente,
+          tipo: "Proposta Comercial",
+          nome: pdfFile.name,
+          categoria: "Comercial",
+          departamento: "Comercial",
+          clienteId: contato.clienteId,
+          responsavel: "Comercial",
+          descricao: `Proposta ${p.titulo} exportada em ${new Date().toLocaleString("pt-BR")}.`,
+        });
+        toast.success("Proposta exportada e enviada para a Central de Documentos.");
+      } catch (uploadError) {
+        console.error("[Propostas] Falha ao enviar o PDF para a Central:", uploadError);
+        toast.warning("PDF gerado, mas não foi possível enviar para a Central de Documentos.");
+      }
+
       setShowExportSuccess(true);
       setTimeout(() => setShowExportSuccess(false), 3000);
     } catch (erro) {
@@ -278,16 +342,32 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
 
   const compartilharProposta = async (p: Proposta) => {
     const link = `${window.location.origin}/comercial?tab=propostas&proposta=${encodeURIComponent(p.id)}`;
+    const contato = await resolverContatoProposta({
+      propostaId: p.id,
+      leadId: p.leadId,
+      clienteId: p.clienteId,
+      clienteNome: p.cliente,
+    });
     try {
       await navigator.clipboard.writeText(link);
       toast.success("Link da proposta copiado!");
     } catch {
       window.prompt("Copie o link da proposta:", link);
     }
+
+    const mensagem = `Olá! Segue o link da proposta "${p.titulo}" da Conexão Express:\n${link}`;
+    const url = contato.telefone
+      ? `https://wa.me/${contato.telefone}?text=${encodeURIComponent(mensagem)}`
+      : `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    if (!contato.telefone) {
+      toast.warning("Telefone do lead/cliente não encontrado no CRM. WhatsApp aberto sem destinatário.");
+    }
+
     const now = new Date().toISOString();
     setPropostas(prev => prev.map(prop =>
       prop.id === p.id
-        ? { ...prop, historico: [...prop.historico, { data: now, acao: "Link compartilhado", usuario: "Sistema" }] }
+        ? { ...prop, historico: [...prop.historico, { data: now, acao: "Link compartilhado no WhatsApp", usuario: "Sistema" }] }
         : prop,
     ));
   };
@@ -373,6 +453,40 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
     };
   }, [propostas]);
 
+  const limparTodosFiltros = () => {
+    setBusca("");
+    setCategoria("todas");
+    setFiltroRapido("todos");
+  };
+
+  const filtrosAtivos: FiltroAtivoItem[] = [];
+  if (busca.trim()) {
+    filtrosAtivos.push({
+      id: "busca",
+      label: "Busca",
+      valor: busca.trim(),
+      onRemove: () => setBusca(""),
+    });
+  }
+  if (categoria !== "todas") {
+    const label = categorias.find((item) => item.value === categoria)?.label || categoria;
+    filtrosAtivos.push({
+      id: "categoria",
+      label: "Categoria",
+      valor: label,
+      onRemove: () => setCategoria("todas"),
+    });
+  }
+  if (filtroRapido !== "todos") {
+    const label = filtrosRapidos.find((item) => item.value === filtroRapido)?.label || filtroRapido;
+    filtrosAtivos.push({
+      id: "filtroRapido",
+      label: "Filtro",
+      valor: label,
+      onRemove: () => setFiltroRapido("todos"),
+    });
+  }
+
   return (
     <div className="space-y-6">
       {/* Header com busca e controles */}
@@ -381,7 +495,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
           <Input 
             placeholder="Buscar por nome, cliente, segmento, tipo, status, responsável, tags..." 
-            className="pl-9" 
+            className="h-10 bg-background pl-9 focus-visible:ring-2 focus-visible:ring-primary/50" 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
@@ -394,6 +508,14 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
               <TabsTrigger value="biblioteca" className="h-7 px-2"><LayoutTemplate className="w-4 h-4" /></TabsTrigger>
             </TabsList>
           </Tabs>
+          
+          <Button
+            variant="outline"
+            className="whitespace-nowrap"
+            onClick={() => setShowUploadDialog(true)}
+          >
+            <Upload className="w-4 h-4 mr-2" /> Fazer Upload de Proposta (PDF)
+          </Button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -423,6 +545,8 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
           </DropdownMenu>
         </div>
       </div>
+
+      <FiltrosAtivos filtros={filtrosAtivos} onLimpar={limparTodosFiltros} className="px-1" />
 
       {/* Categorias Laterais */}
       <div className="flex gap-4">
@@ -553,18 +677,31 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
           </div>
 
           {/* Filtros Rápidos */}
-          <div className="flex gap-2 flex-wrap">
-            {filtrosRapidos.map(f => (
-              <Button
-                key={f.value}
-                variant={filtroRapido === f.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFiltroRapido(f.value)}
-                className="text-xs"
-              >
-                {f.label}
-              </Button>
-            ))}
+          <div className="space-y-3 rounded-xl border border-border/60 bg-card p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Filtros rápidos
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                {filtradas.length} material(is)
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {filtrosRapidos.map(f => (
+                <Button
+                  key={f.value}
+                  variant={filtroRapido === f.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFiltroRapido(f.value)}
+                  className={`h-8 rounded-full px-3 text-xs ${filtroRapido === f.value ? "shadow-sm" : "bg-background"}`}
+                >
+                  {f.label}
+                </Button>
+              ))}
+            </div>
           </div>
 
           {/* Visualização */}
@@ -693,7 +830,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                                     {p.favorita ? "Desfavoritar" : "Favoritar"}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => void compartilharProposta(p)}>
-                                    <Share2 className="w-4 h-4 mr-2" /> Compartilhar Link
+                                    <Share2 className="w-4 h-4 mr-2" /> Compartilhar no WhatsApp
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => toggleArquivar(p.id)}>
                                     <Archive className="w-4 h-4 mr-2" />
@@ -885,6 +1022,45 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
       </Dialog>
 
       {/* Toast de Exportação */}
+      <Dialog
+        open={showUploadDialog}
+        onOpenChange={(aberto) => {
+          if (!enviandoProposta) setShowUploadDialog(aberto);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-primary" /> Fazer Upload de Proposta (PDF)
+            </DialogTitle>
+            <DialogDescription>
+              O PDF será indexado na Central de Documentos com categoria e departamento Comercial.
+            </DialogDescription>
+          </DialogHeader>
+          {enviandoProposta ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Enviando proposta e registrando metadados...
+            </div>
+          ) : (
+            <DocumentoUploadUniversal
+              accept=".pdf,application/pdf"
+              onFile={(file) => void enviarPropostaPdf(file)}
+              label="Arraste o PDF da proposta aqui ou escolha uma opção"
+              hint="Somente PDF · até 50 MB"
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={enviandoProposta}
+              onClick={() => setShowUploadDialog(false)}
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {showExportSuccess && (
         <div className="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
           <Download className="w-5 h-5" />

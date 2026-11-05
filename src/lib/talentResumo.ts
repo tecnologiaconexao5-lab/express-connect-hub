@@ -1,5 +1,5 @@
 /**
- * Conexão Talent AI — resumo operacional do prestador.
+ * Motor de Verificação - resumo operacional do prestador.
  * Junta dados reais do cadastro + perfil de talento + disponibilidade em uma
  * única linha para leitura rápida no topo da ficha.
  */

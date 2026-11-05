@@ -1,0 +1,104 @@
+======================================================================
+RELATORIO UX - FORMULARIO PUBLICO DE PRESTADORES (Cadastro Prestador)
+Conexao Express - TMS
+======================================================================
+
+STATUS: CONCLUIDO (frontend) + BACKEND 02B.2 (em execucao)
+
+----------------------------------------------------------------------
+1. REFATORACAO UX/UI APLICADA
+----------------------------------------------------------------------
+Arquivos:
+  - src/components/cadastro-publico/OfertaPublicaForm.tsx
+  - src/lib/ofertaPublica.ts
+
+1.1 BRANDING E COPY
+  - Logo oficial da Conexao Express (public/logos) no cabecalho.
+  - Titulo: "Seja um Prestador Parceiro".
+  - Subtitulo: "Processo seletivo Conexao Express - Motoboys, Motoristas e Frotistas".
+  - Disclaimer (rodape e tela de sucesso):
+    "Oferta comercial de disponibilidade. Nao e cadastro no APP, aprovacao
+    ou contratacao. Este e o primeiro passo para fazer parte da nossa rede."
+
+1.2 CATEGORIA DE ATUACAO (ETAPA 1)
+  - Cards mobile-first empilhados (flex-col), com icone, touch target grande
+    (min-h 112px, full width) e active feedback.
+  - Opcoes:
+      * Motoboy - "Tenho moto e disponibilidade para entregas."
+      * Motorista Agregado - "Tenho carro/furgao/caminhao proprio."
+      * Motorista - "Nao tenho veiculo, busco oportunidade para conduzir."
+      * Frotista / Dono de Veiculo - "Tenho veiculos disponiveis para a operacao."
+
+1.3 LOCALIDADE INTELIGENTE E TURNOS (ETAPA 2)
+  - UF autopreenchida a partir da Cidade (com atualizacao ao trocar a cidade e
+    limpeza de regioes incompativeis).
+  - Regioes atendidas dinamicas por UF, com estado vazio orientativo.
+  - Turnos rapidos em pills: Segunda a Sexta, Madrugada, Manha (08h-12h),
+    Tarde (14h-18h), Noite e "Horario Personalizado".
+  - Hora exata opcional (default seguro 08:00-18:00 quando nao informada).
+
+1.4 MODALIDADES E VEICULOS (ETAPA 3)
+  - Modalidades: Esporadica, Urgente, Fixa, Recorrente + extras Agregado e
+    Cobertura ("Tambem atendo").
+  - Motoboy: Marca da Moto, Modelo da Moto e Cilindrada (cc).
+  - Compartimento como radio group: Bau, Mochila, Bag, Sem compartimento
+    (capacidade em litros quando aplicavel).
+  - "Busca contrato fixo ou entregas esporadicas?" mantido.
+  - Campos inuteis para moto ocultos: tipo de carrocaria, caracteristicas de
+    carroceria, capacidade kg/m3 e dimensoes internas.
+
+1.5 PERFIL PROFISSIONAL / QUESTIONARIO SUAVE (ETAPA 4)
+  - "Qual o seu local principal de carregamento atualmente?"
+  - "Qual a sua media de faturamento mensal atual?"
+  - "Valor semanal (R$)" incluido em Valores e Condicoes.
+
+2. MAPEAMENTO DE DADOS (SEM MIGRATION)
+----------------------------------------------------------------------
+Todos os novos campos foram acomodados nos campos JSON/texto ja existentes,
+sem criar colunas novas:
+
+  - caracteristicas[]  -> categoria_atuacao:<valor>
+                          modalidade_adicional:<Agregado|Cobertura>
+                          compartimento:<bau|mochila|bag|sem>
+                          busca_contrato:<fixo|esporadico|ambos>
+                          marca_moto:<marca>
+                          cilindrada:<cc>
+
+  - observacoes        -> "Local principal de carregamento: ..."
+                          "Media de faturamento mensal atual: ..."
+                          "Valor semanal: R$ ..."
+
+  - Campos oficiais ja existentes: veiculo_modelo, possui_bau,
+    capacidade_bau_litros, valor_diaria, valor_km, valor_saida, valor_mensal,
+    condicoes_comerciais, restricoes.
+
+CONCLUSAO: nenhuma migration foi necessaria para o frontend. A Edge Function
+aceita apenas campos do contrato publico; os dados extras seguem em
+caracteristicas/observacoes (limites respeitados: itens <= 80 chars, textos
+<= 2000 chars).
+
+3. VALIDACAO LOCAL
+----------------------------------------------------------------------
+  - npx tsc --noEmit ........................ 0 erros
+  - ESLint (OfertaPublicaForm + ofertaPublica) 0 erros
+  - Vitest adm_app_02b1 + adm_app_02b4 ....... 21/21 testes
+  - npm run build ............................ OK
+
+4. BACKEND 02B.2 (EXECUTADO NESTA SESSAO)
+----------------------------------------------------------------------
+  - Migration 20261103000002_adm_app_02b2_ofertas_publicas.sql:
+      aplicada/confirmada no banco ativo (projeto uwrvzsjtpgaifkktpepn).
+      Prova: 11/11 -> 4 tabelas, coluna oferta_id em recrutamento_candidatos,
+      RPC f_registrar_oferta_publica SECURITY DEFINER, grants exclusivos de
+      service_role (anon/authenticated sem EXECUTE), RLS nas 4 tabelas,
+      4 policies internas, trigger de protecao e 26 indices.
+
+  - Secret OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=false configurado no Supabase.
+
+  - Edge Function ofertas-publicas publicada (verify_jwt=false via config.toml).
+      Probe publico (POST {}) retornou HTTP 400 {"error":"payload_invalido"}
+      -> handler executou sem JWT (nao retornou 401).
+
+  - cURL de teste entregue no terminal desta sessao.
+
+======================================================================

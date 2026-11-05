@@ -1,0 +1,129 @@
+====================================================================================================
+RELATORIO GD-06 - POLIMENTO VISUAL PREMIUM DOS FILTROS (UX/UI)
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Escopo: frontend apenas. Nenhuma alteracao de banco, migration, storage ou deploy.
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+As areas de filtro da Central de Documentos, Ofertas Publicas e Propostas Comerciais foram
+repolidas para o padrao Enterprise:
+
+- Layout em grid com gap-4, labels consistentes e foco visivel.
+- Icones sutis dentro dos inputs de busca, entidade, data, cidade, veiculo e valores.
+- Badges (pills) de filtros ativos com botao de remover individual.
+- Botao "Limpar filtros" discreto e condicional (so aparece quando ha filtro ativo).
+- Nenhuma importacao duplicada; tsc sem erros.
+
+Foi criado um componente compartilhado reutilizavel:
+  src/components/ui/filtros-ativos.tsx
+
+2. COMPONENTE COMPARTILHADO DE FILTROS ATIVOS
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/ui/filtros-ativos.tsx (NOVO)
+
+- Exporta a interface FiltroAtivoItem { id, label, valor, onRemove }.
+- Exporta o componente FiltrosAtivos({ filtros, onLimpar, className }).
+- Se a lista estiver vazia, retorna null (nada ocupa espaco no layout).
+- Cada filtro aparece como pill:
+  * borda primary/20, fundo primary/5, texto primary, sombra suave;
+  * label em muted + valor truncado em ate 220px;
+  * botao X individual para remover apenas aquele filtro.
+- O botao "Limpar filtros" aparece no final do bloco, em estilo ghost com texto rose
+  (discreto e elegante), e so existe quando ha pelo menos um filtro ativo.
+
+3. CENTRAL DE DOCUMENTOS
+----------------------------------------------------------------------------------------------------
+Arquivo: src/pages/CentralDocumentos.tsx
+
+O que mudou:
+- Card de filtros com fundo/card, sombra suave e cabecalho com icone Filter em um badge
+  primary/10 + subtitulo explicativo.
+- Contador de filtros ativos no canto direito do cabecalho.
+- Grid `grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4` (gap padronizado).
+- Inputs/Select com:
+  * altura padronizada h-10 e bg-background;
+  * foco `focus-visible:ring-2 focus-visible:ring-primary/50`;
+  * icones internos lucide: Search (Nome), Building2 (Departamento e Entidade),
+    Users (Responsavel), CalendarDays (Data inicial/final);
+  * Selects mantem o chevron nativo do shadcn.
+- Linha de badges FiltrosAtivos exibindo Nome, Categoria, Departamento, Entidade,
+  Responsavel, De, Ate e Status de Verificacao.
+- O antigo botao "Limpar filtros" fixo foi removido; agora so aparece via FiltrosAtivos
+  quando ha algum filtro aplicado.
+- Botao "Atualizar" mantido em linha separada, alinhado a direita.
+
+4. OFERTAS PUBLICAS
+----------------------------------------------------------------------------------------------------
+Arquivo: src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+
+O que mudou:
+- Filtros rapidos:
+  * grid com gap-4 e labels padronizados;
+  * selects de Categoria de veiculo e Regiao com h-10 e foco
+    `focus-visible:ring-2 focus-visible:ring-primary/50`;
+  * linha de badges FiltrosAtivos (categoria/regiao) inserida no grid somente quando
+    ha filtro rapido ativo (sem criar linha vazia);
+  * botao "Limpar filtros" fixo removido.
+- Filtros e busca:
+  * input de busca com Search e foco elegante;
+  * cidade com MapPin, veiculo com Truck, valores minimo/maximo com DollarSign;
+  * todos os inputs com h-10, bg-background e foco primary/50;
+  * grid gap-4 responsivo;
+  * badges FiltrosAtivos exibindo busca, status, tipo, UF, cidade, modalidade,
+    veiculo, valor minimo e valor maximo;
+  * contador de resultados mantido e botao "Limpar filtros" agora e condicional.
+- Os labels "Filtros rapidos", "Filtros e busca", "Ofertas recebidas" e os contratos
+  funcionais anteriores foram preservados.
+
+5. PROPOSTAS COMERCIAIS
+----------------------------------------------------------------------------------------------------
+Arquivo: src/components/comercial/propostas/ListaPropostas.tsx
+
+O que mudou:
+- Campo de busca do cabecalho:
+  * mantem o icone Search;
+  * recebeu h-10, bg-background e `focus-visible:ring-2 focus-visible:ring-primary/50`.
+- Linha de badges FiltrosAtivos logo abaixo do cabecalho, exibindo:
+  * Busca (texto digitado);
+  * Categoria (item selecionado na Biblioteca lateral);
+  * Filtro (pill de filtro rapido ativo).
+- O botao "Limpar filtros" e condicional e limpa busca + categoria + filtro rapido.
+- Os filtros rapidos foram envolvidos em um card premium:
+  * icone Filter no cabecalho;
+  * titulo "Filtros rapidos" em uppercase;
+  * contador de materiais encontrados;
+  * pills arredondadas (rounded-full) com sombra no estado ativo.
+- Nenhuma importacao duplicada foi introduzida (tsc validou).
+
+6. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+- src/components/ui/filtros-ativos.tsx (NOVO)
+- src/pages/CentralDocumentos.tsx
+- src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+- src/components/comercial/propostas/ListaPropostas.tsx
+- Relatorio: RELATORIO_GD06_FILTROS_PREMIUM.txt
+
+7. VALIDACAO
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros (sem imports duplicados)
+- ESLint (4 arquivos da missao) ..................... 0 erros
+- Vitest direcionado (Central, Ofertas, Propostas) .. 61/61 PASS
+- Vitest suite completa ............................. 18 arquivos / 44 testes falhos
+  = baseline exata do projeto; 2613 pass.
+- npm run build ..................................... OK (45,30s)
+
+8. PENDENCIAS / QA VISUAL
+----------------------------------------------------------------------------------------------------
+1. (QA) /central-documentos: conferir espacamento, foco dos inputs, badges e o botao
+   Limpar filtros aparecendo apenas com filtro ativo.
+2. (QA) /recrutamento?section=ofertas-publicas: conferir filtros rapidos, filtros
+   avancados, badges e responsividade em desktop e mobile.
+3. (QA) /comercial?tab=propostas: conferir busca, badges de busca/categoria/filtro
+   rapido e o card de filtros rapidos.
+4. (OBS) Nenhuma alteracao de banco, bucket, migration, deploy ou commit foi executada.
+
+====================================================================================================
+FIM DO RELATORIO GD-06 - FILTROS PREMIUM VALIDADOS; BANCO/STORAGE/MIGRATION INTACTOS.
+====================================================================================================

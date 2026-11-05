@@ -1,4 +1,8 @@
 import { supabase } from "@/lib/supabase";
+import {
+  avaliarMatchOferta,
+  veiculoCorresponde,
+} from "@/utils/logisticaInteligente";
 
 export type OfertaStatus =
   | "nova"
@@ -305,32 +309,23 @@ export function fromEventoRow(row: Record<string, unknown>): OfertaEvento {
 }
 
 export function filtrarOfertas(ofertas: OfertaPublica[], filtros: OfertaFiltro): OfertaPublica[] {
-  const busca = normalizarBusca(filtros.busca);
+  const buscaTexto = filtros.busca.trim();
   const cidade = normalizarBusca(filtros.cidade);
   const regiao = normalizarBusca(filtros.regiao);
-  const veiculo = normalizarBusca(filtros.veiculoTipo);
   const capacidadeMin = numero(filtros.capacidadeMinKg);
   const valorMin = numero(filtros.valorMin);
   const valorMax = numero(filtros.valorMax);
   const diaFiltro = filtros.dia === "" ? null : Number(filtros.dia);
 
-  return ofertas.filter((oferta) => {
-    if (busca) {
-      const alvo = normalizarBusca(
-        [
-          oferta.nome,
-          oferta.protocolo,
-          oferta.email,
-          oferta.telefone,
-          oferta.telefone.replace(/\D/g, ""),
-          oferta.cpfCnpj,
-          oferta.cpfCnpj.replace(/\D/g, ""),
-          oferta.cidade,
-          oferta.uf,
-        ].join(" "),
-      );
-      if (!alvo.includes(busca)) return false;
-    }
+  const avaliadas = ofertas.map((oferta) => ({
+    oferta,
+    match: buscaTexto
+      ? avaliarMatchOferta(oferta, buscaTexto)
+      : { match: true, score: 0, motivos: [] as string[] },
+  }));
+
+  const filtradas = avaliadas.filter(({ oferta, match }) => {
+    if (buscaTexto && !match.match) return false;
     if (filtros.status !== "todas" && oferta.status !== filtros.status) return false;
     if (filtros.tipoOferta !== "todos" && oferta.tipoOferta !== filtros.tipoOferta) return false;
     if (filtros.uf && oferta.uf.toUpperCase() !== filtros.uf.toUpperCase()) return false;
@@ -344,10 +339,7 @@ export function filtrarOfertas(ofertas: OfertaPublica[], filtros: OfertaFiltro):
     if (filtros.disponibilidade === "sem_interna" && oferta.disponibilidadeInterna.dias.length > 0) {
       return false;
     }
-    if (
-      veiculo &&
-      !normalizarBusca([oferta.veiculoTipo, oferta.veiculoModelo, oferta.carroceria].join(" ")).includes(veiculo)
-    ) {
+    if (filtros.veiculoTipo.trim() && !veiculoCorresponde(filtros.veiculoTipo, oferta)) {
       return false;
     }
     if (capacidadeMin !== null) {
@@ -366,6 +358,12 @@ export function filtrarOfertas(ofertas: OfertaPublica[], filtros: OfertaFiltro):
     }
     return true;
   });
+
+  if (buscaTexto) {
+    filtradas.sort((a, b) => b.match.score - a.match.score);
+  }
+
+  return filtradas.map(({ oferta }) => oferta);
 }
 
 export function calcularIndicadores(ofertas: OfertaPublica[]): OfertaIndicadores {

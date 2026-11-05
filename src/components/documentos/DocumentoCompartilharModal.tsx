@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Share2, Loader2, Copy } from "lucide-react";
+import { Share2, Loader2, Copy, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,32 @@ export function DocumentoCompartilharModal({ open, onOpenChange, documento }: Pr
     }
   };
 
+  const compartilharWhatsApp = async () => {
+    if (!documento?.id) return;
+    try {
+      setEnviando(true);
+      const link = await compartilharDocumentoInternamente(
+        documento.id,
+        destinatario.trim() || "Compartilhamento via WhatsApp",
+        mensagem.trim(),
+      );
+      const texto = [
+        `Olá! Segue o documento "${documento.nome || documento.tipo || "Documento"}" da Conexão Express.`,
+        mensagem.trim(),
+        link ? `Link seguro: ${link}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
+      toast.success("WhatsApp aberto com o link formatado.");
+      onOpenChange(false);
+    } catch {
+      toast.error("Não foi possível preparar o compartilhamento via WhatsApp.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -83,8 +109,16 @@ export function DocumentoCompartilharModal({ open, onOpenChange, documento }: Pr
             />
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-wrap gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={enviando}>Cancelar</Button>
+          <Button
+            variant="outline"
+            onClick={() => void compartilharWhatsApp()}
+            disabled={enviando}
+            className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+          >
+            <MessageCircle className="h-4 w-4" /> Compartilhar via WhatsApp
+          </Button>
           <Button onClick={() => void compartilhar()} disabled={enviando} className="gap-1.5">
             {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
             {enviando ? "Compartilhando..." : "Compartilhar e copiar link"}

@@ -35,6 +35,14 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { PremiumBadge } from "../design-system/PremiumBadge";
 import { DIAS_SEMANA, MODALIDADES } from "@/lib/ofertaPublica";
 import {
+  BUSCA_CONTRATO_LABELS,
+  COMPARTIMENTO_LABELS,
+  VINCULO_VEICULO_LABELS,
+  extrairCaracteristicas,
+  extrairTriagem,
+  rotuloCategoriaAtuacao,
+} from "@/lib/recrutamento";
+import {
   contatosDisponiveis,
   mensagemErroOferta,
   ofertasPublicasService,
@@ -166,6 +174,22 @@ export function OfertaDetalheSheet({
   const contatos = contatosDisponiveis(oferta);
   const transicoes = transicoesPermitidas(oferta.status);
   const conversaoPermitida = podeConverter(oferta);
+  const extras = extrairCaracteristicas(oferta.caracteristicas);
+  const triagem = extrairTriagem(oferta.observacoes);
+  const valorSemanal = triagem.respostas.find((resposta) => resposta.chave === "Valor semanal");
+  const respostasPerfil = triagem.respostas.filter((resposta) => resposta.chave !== "Valor semanal");
+  const categoriaAtuacao = rotuloCategoriaAtuacao(extras.categoriaAtuacao, oferta.tipoOferta);
+  const modalidadesCompletas = Array.from(
+    new Set([
+      ...oferta.modalidades.map(rotuloModalidade),
+      ...extras.modalidadesAdicionais,
+    ]),
+  );
+  const rastreador = extras.marcaRastreador
+    ? extras.marcaRastreador
+    : oferta.caracteristicas.includes("Rastreador")
+      ? "Sim (marca não informada)"
+      : "—";
 
   const recarregar = async () => {
     await onAtualizada();
@@ -349,7 +373,7 @@ export function OfertaDetalheSheet({
             )}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Contato e localização</h3>
+              <h3 className="text-sm font-semibold text-foreground">Contato e disponibilidade</h3>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <Info label="Telefone/WhatsApp" value={oferta.telefone || "—"} />
                 <Info label="E-mail" value={oferta.email || "—"} />
@@ -391,12 +415,21 @@ export function OfertaDetalheSheet({
             </section>
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Disponibilidade original</h3>
+              <h3 className="text-sm font-semibold text-foreground">Turnos e disponibilidade</h3>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <Info label="Regiões" value={oferta.regioes.join(", ") || "—"} />
                 <Info label="Dias" value={formatarDias(oferta.diasDisponiveis)} />
                 <Info label="Horário" value={formatarHorario(oferta.horarioInicio, oferta.horarioFim)} />
-                <Info label="Modalidades" value={oferta.modalidades.map(rotuloModalidade).join(", ") || "—"} />
+                <Info label="Modalidades" value={modalidadesCompletas.join(", ") || "—"} />
+                <Info label="Categoria de atuação" value={categoriaAtuacao} />
+                <Info
+                  label="Busca contrato"
+                  value={
+                    extras.buscaContrato
+                      ? BUSCA_CONTRATO_LABELS[extras.buscaContrato] || extras.buscaContrato
+                      : "—"
+                  }
+                />
               </div>
               <p className="text-[11px] text-muted-foreground">
                 Dados enviados pelo interessado. A edição abaixo grava apenas a disponibilidade interna.
@@ -491,12 +524,23 @@ export function OfertaDetalheSheet({
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Veículo e capacidade</h3>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
-                <Info label="Categoria" value={oferta.veiculoCategoria || "—"} />
+                <Info label="Categoria de atuação" value={categoriaAtuacao} />
+                <Info
+                  label="Vínculo do veículo"
+                  value={
+                    oferta.veiculoCategoria
+                      ? VINCULO_VEICULO_LABELS[oferta.veiculoCategoria] || oferta.veiculoCategoria
+                      : "—"
+                  }
+                />
                 <Info label="Tipo" value={oferta.veiculoTipo || "—"} />
-                <Info label="Carroceria" value={oferta.carroceria || "—"} />
+                <Info label="Marca" value={extras.marcaMoto || "—"} />
                 <Info label="Modelo" value={oferta.veiculoModelo || "—"} />
-                <Info label="Placa" value={oferta.veiculoPlaca || "—"} />
                 <Info label="Ano" value={oferta.veiculoAno !== null ? String(oferta.veiculoAno) : "—"} />
+                <Info label="Cilindrada" value={extras.cilindrada ? `${extras.cilindrada} cc` : "—"} />
+                <Info label="Carroceria" value={oferta.carroceria || "—"} />
+                <Info label="Placa" value={oferta.veiculoPlaca || "—"} />
+                <Info label="Rastreador" value={rastreador} />
                 <Info label="Capacidade kg" value={oferta.capacidadeKg !== null ? `${oferta.capacidadeKg} kg` : "—"} />
                 <Info label="Capacidade m³" value={oferta.capacidadeM3 !== null ? `${oferta.capacidadeM3} m³` : "—"} />
                 <Info label="Dimensões" value={formatarDimensoes(oferta.dimensoes)} />
@@ -504,45 +548,81 @@ export function OfertaDetalheSheet({
                   <>
                     <Info label="Tipo de moto" value={oferta.tipoMoto || "—"} />
                     <Info
-                      label="Baú"
+                      label="Compartimento"
                       value={
-                        oferta.possuiBau === null
-                          ? "—"
-                          : oferta.possuiBau
-                            ? `Sim${oferta.capacidadeBauLitros !== null ? ` (${oferta.capacidadeBauLitros} L)` : ""}`
-                            : "Não"
+                        extras.compartimento
+                          ? COMPARTIMENTO_LABELS[extras.compartimento] || extras.compartimento
+                          : oferta.possuiBau === null
+                            ? "—"
+                            : oferta.possuiBau
+                              ? `Baú${oferta.capacidadeBauLitros !== null ? ` (${oferta.capacidadeBauLitros} L)` : ""}`
+                              : "Sem compartimento"
                       }
                     />
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {oferta.caracteristicas.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">Nenhuma característica informada.</span>
-                ) : (
-                  oferta.caracteristicas.map((caracteristica) => (
+              {extras.outras.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {extras.outras.map((caracteristica) => (
                     <PremiumBadge key={caracteristica} variant="info">
                       {caracteristica}
                     </PremiumBadge>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Valores e condições</h3>
+              <h3 className="text-sm font-semibold text-foreground">Expectativas de Remuneração</h3>
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <Info label="Diária" value={formatarValor(oferta.valorDiaria)} />
-                <Info label="Por km" value={formatarValor(oferta.valorKm)} />
+                <Info label="Adicional por Km" value={formatarValor(oferta.valorKm)} />
                 <Info label="Saída" value={formatarValor(oferta.valorSaida)} />
                 <Info label="Mensal" value={formatarValor(oferta.valorMensal)} />
+                <Info label="Valor semanal" value={valorSemanal?.resposta || "—"} />
               </div>
               {oferta.valorNegociavel && (
                 <PremiumBadge variant="warning">Valor a negociar</PremiumBadge>
               )}
               <Info label="Condições comerciais" value={oferta.condicoesComerciais || "—"} block />
               <Info label="Restrições" value={oferta.restricoes || "—"} block />
-              <Info label="Observações do interessado" value={oferta.observacoes || "—"} block />
+            </section>
+
+            <section className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Perfil Operacional e Psicológico</h3>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Respostas da triagem informadas pelo interessado, organizadas para leitura da equipe.
+                </p>
+              </div>
+              {respostasPerfil.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma resposta de triagem informada nesta oferta.
+                </p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {respostasPerfil.map((resposta) => (
+                    <div
+                      key={resposta.chave}
+                      className="rounded-lg border border-border/60 bg-background p-3"
+                    >
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {resposta.pergunta}
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{resposta.resposta}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {triagem.textoLivre ? (
+                <div className="rounded-lg border border-border/60 bg-background p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Outras observações
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{triagem.textoLivre}</p>
+                </div>
+              ) : null}
             </section>
 
             <section className="space-y-3 rounded-xl border border-border/60 p-4">

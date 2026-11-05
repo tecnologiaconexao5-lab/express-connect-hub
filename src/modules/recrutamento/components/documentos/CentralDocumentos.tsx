@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Upload, CheckCircle, XCircle, AlertTriangle,
   Clock, Search, Eye, Plus, MessageSquare, ShieldCheck,
-  Calendar, Trash2, Check, AlertCircle, Sparkles, Filter, ChevronRight
+  Calendar, Trash2, Check, AlertCircle, Filter, ChevronRight
 } from 'lucide-react'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent } from '../design-system/PremiumCard'
 import { PremiumBadge } from '../design-system/PremiumBadge'
@@ -355,7 +355,7 @@ export function CentralDocumentos({ onStatusChange }: CentralDocumentosProps) {
 
                   {/* Fallback alert / notice box */}
                   <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex gap-2.5 text-xs text-muted-foreground/80">
-                    <Sparkles className="w-4.5 h-4.5 text-primary shrink-0 mt-0.5 animate-pulse" />
+                    <ShieldCheck className="w-4.5 h-4.5 text-primary shrink-0 mt-0.5 animate-pulse" />
                     <div>
                       <p className="font-semibold text-foreground">API Integrada (Fallback Demonstrativo)</p>
                       <p className="mt-0.5 leading-relaxed">

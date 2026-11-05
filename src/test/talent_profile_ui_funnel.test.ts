@@ -68,7 +68,7 @@ describe("A) Ficha 360º do prestador", () => {
     expect(detalhe).toContain("hora_fim");
   });
 
-  it("A.3 exibe o Resumo Operacional Automático (Conexão Talent AI — Etapa 7)", () => {
+  it("A.3 exibe o Resumo Operacional Automático (Motor de Verificação — Etapa 7)", () => {
     expect(detalhe).toContain("ConexaoTalentAIProfile");
     expect(detalhe).toContain("isCandidatoTalento");
     expect(detalhe).toContain("performance={{");
@@ -240,7 +240,7 @@ describe("E) ConexaoTalentAIProfile — Resumo Operacional Automático (Etapa 7)
     expect(fonteComponente).toContain("#2E1065");
     expect(fonteComponente).toContain("orange");
     expect(fonteComponente).toContain("PERFORMANCE_CORES");
-    expect(fonteComponente).toContain("Recomendação da IA");
+    expect(fonteComponente).toContain("Recomendação Operacional");
   });
 });
 
