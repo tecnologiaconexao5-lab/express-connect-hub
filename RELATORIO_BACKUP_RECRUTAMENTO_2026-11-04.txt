@@ -1,0 +1,92 @@
+====================================================================================================
+BACKUP DE PROTEÇÃO — ATUALIZAÇÃO DO MÓDULO RECRUTAMENTO
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA: 2026-11-04
+OPERAÇÃO: CÓPIA READ-ONLY PARA PASTA EXTERNA AO REPOSITÓRIO
+RESULTADO: 23 ARQUIVOS COPIADOS — 23/23 HASHES CONFEREM
+====================================================================================================
+
+1. DESTINO DO BACKUP
+----------------------------------------------------------------------------------------------------
+  Pasta de segurança (fora do repositório):
+    C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\
+    08_TECNOLOGIA_SISTEMAS\_BACKUPS\RECRUTAMENTO_02B_2026-11-04_13-30
+
+  A estrutura relativa de pastas foi preservada exatamente como no repositório.
+  Nenhum arquivo, pasta, rota, tabela ou função foi renomeado.
+
+2. ESCOPO COPIADO
+----------------------------------------------------------------------------------------------------
+  Foram copiados os arquivos da atualização do Recrutamento, incluindo:
+    - rota pública e formulário de cadastro;
+    - componentes de ofertas públicas;
+    - serviço de ofertas e painel interno;
+    - integração de menu/layout/store do Recrutamento;
+    - Edge Function `ofertas-publicas` e validação;
+    - migrations 02B.2 e 02B.3;
+    - testes 02B.1 a 02B.4;
+    - configuração da Edge em `supabase/config.toml`;
+    - `src/App.tsx` (ponto de integração da rota pública);
+    - `src/lib/sidebarData.ts` (item de menu Ofertas Públicas).
+
+3. TOTAIS
+----------------------------------------------------------------------------------------------------
+  Arquivos de origem identificados: 23
+  Arquivos copiados:                23
+  Arquivos com hash igual:          23
+  Arquivos com hash divergente:     0
+  Tamanho total dos arquivos:       338.155 bytes
+
+4. CONFERÊNCIA DE HASHES
+----------------------------------------------------------------------------------------------------
+  Algoritmo: SHA-256
+  Para cada arquivo, o hash da origem foi comparado ao hash da cópia.
+  Todos os 23 arquivos abaixo estão com MATCH = SIM.
+
+  RELATIVE PATH                                                          SHA-256                                                          MATCH  SIZE
+  --------------------------------------------------------------------  ----------------------------------------------------------------  -----  ------
+  src/App.tsx                                                            8773958F8D05059BA30CDAC0E1AD79AB11BE7BBFD55D64F33847E20416C29EE7  SIM    11631
+  src/components/cadastro-publico/OfertaCaptcha.tsx                      485DDCA6D7B6F79BC602E9132A53907797EFA2F463623744E1A3803BC90910F6  SIM     3541
+  src/components/cadastro-publico/OfertaPublicaForm.tsx                  74E95D87D0CBA82394CCD8560EF4B3D84819D976AF3027D905E4440684DF2097  SIM    45489
+  src/lib/ofertaCaptcha.ts                                               DE81347C213482871DBFDE99C4D842DEAE9520E2966A71919CE1BD1969B9B8D7  SIM      513
+  src/lib/ofertaPublica.ts                                               DA89A7184D49FE808FDE562CEFAF7AFC7F67D7B9D38446D70C1F4889D91709F3  SIM    11037
+  src/lib/sidebarData.ts                                                 043403D7AB42E0FAA279009FC9FBFAE30B3C2FBE5D7FABEC549D333DBF71BDE2  SIM    15968
+  src/modules/recrutamento/components/ofertas/OfertaComparacaoDialog.tsx 3E7C2CEAD78E8E56059554260075988128C75E4822DCCD4E9E0617D7FB129D5B  SIM     5610
+  src/modules/recrutamento/components/ofertas/OfertaDetalheSheet.tsx     68ED91473642F7D9CC31225C0A4493F26703FE86B8F4FAC8AC5D23EB8FA880C8  SIM    29658
+  src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx        D1889F2E5CE293D00AC56E3BE9FA640FFD19F46877B070D2018A2C8089453177  SIM    30106
+  src/modules/recrutamento/index.tsx                                     9D25BD95FEBAFFAF727F4C6DC37D7A34B282C5EF0F3F384E560C979C16C12042  SIM    15453
+  src/modules/recrutamento/layouts/RecrutamentoLayout.tsx                8E36DF5D24EC0246DAAAE95E10BA266096B104466C5F420D604381C081AFA058  SIM     9242
+  src/modules/recrutamento/services/ofertasPublicasService.ts            578C43543974D56D33DABF54845574859351C6E2AF86363E1AB46C3EC0600AF5  SIM    18776
+  src/modules/recrutamento/store/recrutamentoStore.ts                    0503E9DBA1BFD30B1065DFC47E05D53D1EF26BF6E18C25506D7F0422EEF0FA63  SIM     2905
+  src/pages/CadastroPrestador.tsx                                        31C5F5FC079E295875EA5987BC98B09C89D2C4C2067892446BB68073339BFD3B  SIM      166
+  src/test/adm_app_02b1_oferta_publica_form.test.ts                      1E64ED50ECB4CEA73B0689D23DD53C24D747507988B2D1BB401CE72E75C9DCA6  SIM     7619
+  src/test/adm_app_02b2_backend_ofertas.test.ts                          265FAFD504CA1CA36FCC1FCE704099D4038FB7B460697E8BE486DB22C7318A23  SIM    11708
+  src/test/adm_app_02b3_gestao_ofertas.test.ts                           7EC761C1B20C16CA631A7C59693AED813B09E1EF92E9ECA4FD3790674B6BDBD4  SIM    15299
+  src/test/adm_app_02b4_fechamento_recrutamento.test.ts                  AF48DE43457BB3779380A76662DA5E156C4F1D7C681076D8D8C1E5317E39C272  SIM     5259
+  supabase/config.toml                                                   A025E40F5427A753F10A3A8B41F8967EA4248D04BCA621C39270480BEF1D270B  SIM    15193
+  supabase/functions/ofertas-publicas/index.ts                           998A1FCD8A421A0FAC9C02392C047DB6A27E4C417C6C48466D645D6D14160124  SIM    10300
+  supabase/functions/ofertas-publicas/validation.ts                      46E1169188AECCC64533030F265AF7F7D88557AFA072D7A087DB5A8EF5A6E8C2  SIM    12417
+  supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql  050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9  SIM    35928
+  supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql    BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89  SIM    24337
+
+5. CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum arquivo original foi alterado; operação somente de leitura + cópia.
+  - Nenhum arquivo, pasta, rota, tabela ou função foi renomeado.
+  - Nenhum comando de banco, migration, deploy ou Supabase foi executado.
+  - Nenhum reset, clean, checkout, stash ou commit foi executado.
+  - Nenhum outro módulo foi alterado.
+  - O APP Prestador não foi acessado.
+  - O único arquivo novo dentro do repositório é este relatório.
+  - A pasta de backup está fora do repositório.
+
+6. RESTAURAÇÃO, SE NECESSÁRIA
+----------------------------------------------------------------------------------------------------
+  Em uma necessidade futura, os arquivos podem ser restaurados copiando de volta
+  a estrutura a partir de:
+    C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\
+    08_TECNOLOGIA_SISTEMAS\_BACKUPS\RECRUTAMENTO_02B_2026-11-04_13-30
+  antes de qualquer reset/limpeza no worktree. Esta missão não fez restauração.
+
+====================================================================================================

@@ -1,0 +1,74 @@
+====================================================================================================
+DUMP LÓGICO DE PROTEÇÃO — SUPABASE PRODUÇÃO
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+MODO: SOMENTE LEITURA / SEM ALTERAÇÃO DE BANCO
+RESULTADO: DUMP GERADO E VERIFICADO
+====================================================================================================
+
+1. MÉTODO
+----------------------------------------------------------------------------------------------------
+  - Ferramenta: pg_dump (PostgreSQL) 17.6.
+  - Compatibilidade: servidor de produção PostgreSQL 17.6.1.104.
+  - Execução isolada em container efêmero:
+      public.ecr.aws/supabase/postgres:17.6.1.147
+  - O container foi criado apenas para executar o pg_dump e removido com --rm.
+  - Nenhuma escrita foi feita no banco de produção.
+
+  Comando efetivo (sem credenciais):
+    pg_dump --format=plain --schema=public --no-owner --encoding=UTF8
+            --file=/backup/conexao_express_public_schema_data_2026-11-04.sql
+
+  Escopo: schema `public` — estrutura + dados de negócio do TMS.
+  Não foram incluídos auth, storage, extensões de sistema ou metadados de
+  usuários, para evitar credenciais/segredos e manter o backup no escopo do TMS.
+
+2. ARQUIVO GERADO
+----------------------------------------------------------------------------------------------------
+  Pasta (fora do repositório):
+    C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\
+    08_TECNOLOGIA_SISTEMAS\_BACKUPS\DUMP_PRODUCAO_2026-11-04_18-35
+
+  Arquivo:
+    conexao_express_public_schema_data_2026-11-04.sql
+
+  Tamanho:       8.023.553 bytes
+  Linhas:        58.413
+  Gerado em:     2026-11-04 18:37:57
+  SHA-256:       048E55BAD3FC41B636420715500941CAC303135AAE560240BEDC83519DC19B46
+
+3. INTEGRIDADE E CONTEÚDO
+----------------------------------------------------------------------------------------------------
+  - pg_dump saiu com exit code 0.
+  - Arquivo existe e não está vazio.
+  - Cabeçalho de dump PostgreSQL presente.
+  - Marcador final "PostgreSQL database dump complete" presente.
+  - CREATE TABLE: 250.
+  - CREATE FUNCTION: 161.
+  - CREATE POLICY: 614.
+  - Blocos COPY de dados: 250.
+  - Nenhum padrão de PGPASSWORD, service_role, URL com senha ou secret foi
+    encontrado no arquivo.
+
+4. ABRANGÊNCIA E LIMITAÇÃO
+----------------------------------------------------------------------------------------------------
+  - O dump cobre estrutura e dados do schema `public`, onde estão as tabelas do
+    TMS/Recrutamento.
+  - Não cobre os schemas `auth` e `storage` nem roles globais.
+  - Esse escopo protege a ativação do Recruitment e permite recuperar os dados
+    de negócio; não é um snapshot completo de autenticação/storage.
+  - Nenhum restore foi executado para testar o arquivo; a integridade foi
+    verificada por exit code, marcador final, contagens e SHA-256.
+
+5. CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhuma migration executada.
+  - Nenhum deploy executado.
+  - Nenhum restore executado.
+  - Nenhuma escrita no banco de produção: apenas leitura via pg_dump.
+  - Nenhum plano, PITR ou configuração do Supabase alterado.
+  - Nenhum secret ou senha exibido no relatório.
+  - Nenhum arquivo do projeto alterado.
+  - Único arquivo novo no repositório: este relatório.
+
+====================================================================================================

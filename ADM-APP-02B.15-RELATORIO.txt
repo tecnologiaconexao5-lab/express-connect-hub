@@ -1,0 +1,193 @@
+====================================================================================================
+ADM-APP-02B.15 — ROTACIONAR CREDENCIAL E PREPARAR PG_DUMP DIRETO
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+SUPABASE: uwrvzsjtpgaifkktpepn
+ROLE: tms_baseline_reader
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: ROTAÇÃO DE SENHA + PREPARAÇÃO DE FERRAMENTA
+RESULTADO: CREDENCIAL ROTACIONADA E PG_DUMP PREPARADO
+ZERO DUMP REAL / ZERO MIGRATIONS / ZERO DEPLOY / ZERO ALTERAÇÕES FUNCIONAIS NO TMS
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. PROJETO E ROLE CONFIRMADOS
+----------------------------------------------------------------------------------------------------
+  - Projeto autorizado: uwrvzsjtpgaifkktpepn / conexao-express-tms.
+  - Vinculação local confirmada em `supabase/.temp/linked-project.json`.
+  - Banco confirmado: postgres.
+  - Role: tms_baseline_reader.
+  - Conexão real de validação: pooler
+    aws-1-sa-east-1.pooler.supabase.com:5432, usuário de roteamento
+    tms_baseline_reader.uwrvzsjtpgaifkktpepn, SSL.
+  - Servidor: PostgreSQL 17.6 (server_version_num 170006).
+  - Nenhum `service_role` ou credencial administrativa usado como credencial
+    de extração.
+
+----------------------------------------------------------------------------------------------------
+2. ROTAÇÃO DA SENHA
+----------------------------------------------------------------------------------------------------
+Status: CONCLUÍDA.
+
+Procedimento executado:
+  1. Senha antiga recuperada do Windows Credential Manager / PasswordVault
+     (resource express-connect-tms-baseline-reader), apenas em memória.
+  2. Nova senha forte gerada localmente com RNG criptográfico (32 bytes;
+     43 caracteres em base64url).
+  3. Entrada antiga do Credential Manager substituída pela nova.
+  4. `ALTER ROLE tms_baseline_reader PASSWORD <novo>` executado pela conexão
+     administrativa de produção, somente para este DDL autorizado.
+  5. Atributos e privilégios não foram alterados.
+  6. Login real com a nova senha validado.
+  7. Login com a senha antiga testado e rejeitado
+     (`old_password_still_works=false`), comprovando a rotação.
+
+A primeira tentativa de login imediato após o ALTER recebeu 28P01
+(password authentication failed), compatível com atraso de propagação/cache
+do pooler. A operação foi repetida com nova senha e tentativas controladas
+após a alteração; a validação final passou. A senha antiga foi restaurada na
+tentativa que falhou e depois substituída pela nova na tentativa bem-sucedida.
+
+Credencial:
+  - Nova senha NÃO foi exibida, impressa, copiada para arquivo, script,
+    `.env`, Git ou relatório.
+  - Está no Windows Credential Manager (PasswordVault), no mesmo resource:
+      express-connect-tms-baseline-reader / tms_baseline_reader.
+  - Nenhuma URL completa de conexão foi registrada.
+
+----------------------------------------------------------------------------------------------------
+3. VALIDAÇÃO PÓS-ROTAÇÃO
+----------------------------------------------------------------------------------------------------
+Login real:
+  - current_user       = tms_baseline_reader
+  - current_database   = postgres
+  - old_password_still_works = false
+
+Atributos:
+  - rolcanlogin   = true
+  - rolsuper      = false
+  - rolcreatedb   = false
+  - rolcreaterole = false
+  - rolbypassrls  = false
+  - rolreplication= false
+  - rolinherit    = false
+
+Privilégios efetivos:
+  - CONNECT em postgres = true
+  - CREATE em postgres  = false
+  - USAGE em public     = true
+  - CREATE em public    = false
+  - Tabelas/views: 274; SELECT 274/274
+  - INSERT = 0; UPDATE = 0; DELETE = 0; TRUNCATE = 0
+  - Sequences: 2; SELECT 2/2; UPDATE = 0
+  - memberships = 0
+  - objetos de posse = 0
+  - nenhuma associação administrativa
+
+Conclusão: permissões permanecem exclusivamente de leitura; nenhum privilégio
+foi elevado.
+
+----------------------------------------------------------------------------------------------------
+4. PG_DUMP PREPARADO
+----------------------------------------------------------------------------------------------------
+Origem:
+  - PostgreSQL Windows x64 binaries 17.6-1 (EnterpriseDB).
+  - URL de origem:
+      https://get.enterprisedb.com/postgresql/postgresql-17.6-1-windows-x64-binaries.zip
+  - ZIP local: C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\pgsql17\
+      postgresql-17.6-1-windows-x64-binaries.zip
+  - Tamanho do ZIP: 329.891.687 bytes.
+  - SHA-256 do ZIP:
+      D378882ABD001A186735ACD6F6BA716BCA6CCD192E800412D4FD15ED25376B3E
+
+Executável:
+  - C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\pgsql17\extracted\pgsql\bin\pg_dump.exe
+  - `pg_dump --version` → PostgreSQL 17.6.
+  - Compatível com o servidor PostgreSQL 17.6.
+
+Isolamento:
+  - Nenhum serviço PostgreSQL instalado/iniciado.
+  - Nenhum instalador executado.
+  - Nenhuma alteração de PATH global.
+  - Nenhum container/Docker/Supabase local iniciado ou alterado.
+  - Extração apenas em diretório temporário do usuário.
+
+Opções verificadas no `pg_dump --help`:
+  - `--schema-only`
+  - `--schema=PATTERN`
+  - `--quote-all-identifiers`
+  - `--no-owner`
+  - `--file`
+  - `--data-only`, `--clean`, `--create`, `--role` existem, mas NÃO serão usados.
+  - ACLs/grants/comentários: pg_dump inclui por padrão; `--no-acl`/`--no-privileges`
+    NÃO serão usados.
+
+----------------------------------------------------------------------------------------------------
+5. COMANDO PLANEJADO (NÃO EXECUTADO)
+----------------------------------------------------------------------------------------------------
+Diretório/arquivo de destino planejado:
+  supabase/baseline/full_production_schema_readonly_20261103.sql
+
+Comando futuro, com credenciais omitidas e sem `--role`:
+
+  $env:PGPASSWORD = "<recuperado do Windows Credential Manager>"
+  $env:PGSSLMODE  = "require"
+  & "C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\pgsql17\extracted\pgsql\bin\pg_dump.exe" `
+      --schema-only `
+      --schema=public `
+      --quote-all-identifiers `
+      --no-owner `
+      --encoding=UTF8 `
+      --file "supabase/baseline/full_production_schema_readonly_20261103.sql" `
+      --dbname "postgresql://tms_baseline_reader.uwrvzsjtpgaifkktpepn@aws-1-sa-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
+
+Não inclui:
+  - `--role postgres`
+  - `--clean`
+  - `--create`
+  - `--data-only`
+  - `--use-copy`
+  - `--file` apontando para o baseline antigo.
+
+A senha será fornecida apenas via `PGPASSWORD` em ambiente do processo, não em
+argumento de linha de comando. Não foi executado agora.
+
+----------------------------------------------------------------------------------------------------
+6. LIMITAÇÕES PENDENTES
+----------------------------------------------------------------------------------------------------
+  1. O comando pg_dump direto ainda NÃO foi executado; a conexão/auth foi
+     validada separadamente, mas o comportamento completo do dump não.
+  2. Se o pg_dump emitir `SET row_security = off` e a role sem BYPASSRLS não
+     puder fazer isso, o dump pode falhar/omitir. NÃO conceder BYPASSRLS.
+  3. Comentários e ACLs devem ser conferidos no arquivo gerado; o pg_dump
+     padrão inclui, mas não foi validado em execução.
+  4. Role sem `--role postgres`: esperado funcionar, mas não comprovado em dump.
+  5. Escopo `--schema=public`: auth/storage/realtime, roles, buckets, usuários
+     Auth, Edge Functions e secrets não são incluídos; inventário separado.
+  6. O pipeline do Supabase CLI foi descartado para a extração porque adiciona
+     `--role "postgres"` e imprime PGPASSWORD no dry-run.
+  7. O `pg_dump` extraído não foi adicionado ao PATH; usar caminho completo.
+
+----------------------------------------------------------------------------------------------------
+7. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Rotação de senha: CONCLUÍDA.
+  - Login com a nova senha: OK.
+  - Senha antiga: rejeitada.
+  - Atributos/permissões: preservados; nenhuma escrita efetiva.
+  - pg_dump 17.6 preparado em diretório temporário, sem serviço.
+  - Nenhum dump real executado.
+  - Nenhum baseline/manifesto criado ou alterado.
+  - Nenhuma migration, `db push`, `db reset`, deploy ou Edge Function.
+  - Nenhum secret em arquivo/Git/relatório; senha não exibida.
+  - Nenhuma alteração em migrations, tabelas, policies, dados, APP ou TMS funcional.
+  - Baseline antigo `full_production_schema_20260920.sql` intacto.
+
+CLASSIFICAÇÃO FINAL: CREDENCIAL ROTACIONADA E PG_DUMP PREPARADO.
+
+Próxima etapa recomendada (somente após autorização separada):
+  ADM-APP-02B.16 — executar a extração real para o novo arquivo
+  `supabase/baseline/full_production_schema_readonly_20261103.sql`,
+  validar ausência de dados, hash/tamanho/linhas e gerar novo manifesto.
+
+====================================================================================================

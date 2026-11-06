@@ -1,0 +1,265 @@
+====================================================================================================
+ADM-APP-02B.4 — FECHAMENTO DO RECRUTAMENTO E LINK PÚBLICO
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: FECHAMENTO LOCAL DE INTEGRAÇÃO + TESTES + VERIFICAÇÃO READ-ONLY
+STATUS: CÓDIGO LOCAL PRONTO; BACKEND NÃO IMPLANTADO; RECEBIMENTO REAL NÃO COMPROVADO
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO DEPLOY / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+O link público foi conectado à Edge Function `ofertas-publicas` e o módulo de gestão
+interno já existente foi preservado. O formulário agora envia o payload real, usa
+idempotência e só exibe protocolo depois de resposta 2xx com protocolo do backend.
+Nenhuma mensagem de sucesso é exibida antes disso.
+
+A verificação read-only mostrou que o backend NÃO está disponível no ambiente conhecido:
+  - PROD: tabela `recrutamento_ofertas` inexistente (HTTP 404 / PGRST205).
+  - PROD: Edge `ofertas-publicas` inexistente (HTTP 404 / NOT_FOUND).
+  - QA: host Supabase de QA não resolve (ambiente indisponível).
+Portanto, o recebimento real, RLS real, idempotência real e conversão real NÃO foram
+comprovados. O link não pode ser liberado ao público até aplicar a migration, publicar
+a Edge e configurar tenant/CORS/IP salt/CAPTCHA.
+
+----------------------------------------------------------------------------------------------------
+2. O QUE JÁ FUNCIONAVA E FOI REAPROVEITADO
+----------------------------------------------------------------------------------------------------
+  - Rota pública /cadastro-prestador fora do ProtectedRoute.
+  - Formulário público de oferta em 5 etapas, responsivo, com validações.
+  - Contrato de payload e LGPD (`LGPD_TERMO_VERSAO = "2026-11-v1"`).
+  - Edge Function `ofertas-publicas` (02B.2), com validação, CORS, rate limit via RPC,
+    captcha server-side e chamada transacional.
+  - Migration 02B.2 (tabela, identificadores, eventos, rate limit, RLS, dedup).
+  - Migration 02B.3 (disponibilidade interna, status, observação, contato, revisão,
+    conversão em candidato).
+  - Módulo Ofertas Públicas no Recrutamento (lista, KPIs, filtros, detalhe,
+    comparação, contato, status, histórico, conversão).
+  - Design system e componentes do Recrutamento.
+  - RLS/isolamento por tenant já definidos.
+
+----------------------------------------------------------------------------------------------------
+3. O QUE FOI CORRIGIDO NESTA MISSÃO
+----------------------------------------------------------------------------------------------------
+1) Formulário público agora envia de verdade
+   - `src/components/cadastro-publico/OfertaPublicaForm.tsx`
+   - Importa `supabase`, `montarPayloadOferta`, `MENSAGEM_OFERTA_REGISTRADA`.
+   - `supabase.functions.invoke("ofertas-publicas", { body, headers })`.
+   - Header `x-idempotency-key` com UUID.
+   - Header `x-captcha-token` quando houver token.
+   - Botão “Enviando...” e bloqueio de duplo clique.
+   - Chave de idempotência é mantida para retry e resetada quando o conteúdo muda.
+
+2) Protocolo somente após confirmação real
+   - `const protocoloRecebido` é extraído de `data.protocolo`.
+   - `setConcluido(true)` somente depois de protocolo não vazio.
+   - Sem protocolo: mensagem “O backend não retornou um protocolo. A oferta não foi confirmada.”
+   - Tela final mostra “Oferta registrada”, “Protocolo recebido” e o protocolo real.
+   - Removida a tela “Integração pendente” e a mensagem de envio pendente do formulário.
+
+3) Erros reais, sem falso sucesso
+   - 404/503/configuração ausente → canal ainda não disponível.
+   - 403/CAPTCHA → proteção anti-spam inválida.
+   - 429 → muitas tentativas.
+   - 400 → validação do servidor.
+   - 413 → payload grande.
+   - Falha de rede → nenhuma confirmação recebida.
+   - Erro de backend é exibido em banner `role="alert"`; a oferta não é dada como concluída.
+
+4) CAPTCHA no cliente
+   - Novo `src/components/cadastro-publico/OfertaCaptcha.tsx`.
+   - Suporte a Turnstile e hCaptcha por `VITE_OFERTAS_CAPTCHA_PROVIDER` e
+     `VITE_OFERTAS_CAPTCHA_SITE_KEY`.
+   - Sem site key, o widget não é renderizado; se o backend exigir CAPTCHA, o envio
+     retorna erro real (não há simulação de proteção).
+   - O token é enviado no header `x-captcha-token`.
+
+5) CORS da Edge ajustado para o cliente Supabase
+   - `supabase/functions/ofertas-publicas/index.ts`
+   - `Access-Control-Allow-Headers` agora inclui:
+     `Authorization, apikey, x-client-info, Content-Type, x-captcha-token, x-idempotency-key`.
+   - Necessário porque `supabase.functions.invoke` envia `apikey`, `Authorization` e
+     `x-client-info` no preflight. NÃO foi publicado.
+
+6) Testes atualizados
+   - `src/test/adm_app_02b1_oferta_publica_form.test.ts` deixou de exigir “sem envio” e
+     passou a validar envio real para a Edge + ausência de sucesso sem protocolo.
+   - Novo `src/test/adm_app_02b4_fechamento_recrutamento.test.ts` com 10 casos.
+
+----------------------------------------------------------------------------------------------------
+4. ESTADO REAL DO LINK
+----------------------------------------------------------------------------------------------------
+  - Rota: /cadastro-prestador existe e é pública no código.
+  - Formulário: campos, validações e layout preservados; envio conectado à Edge.
+  - Payload: contrato atual, incluindo `lgpd_termo_versao`.
+  - Sucesso: somente com protocolo retornado pelo backend.
+  - Erros: rede, CAPTCHA, validação, rate limit e indisponibilidade são exibidos.
+  - Estado atual de funcionamento real: BLOQUEADO.
+    Motivo: migration não aplicada e Edge não publicada no ambiente conhecido.
+  - Nenhum protocolo real foi recebido nesta missão.
+
+----------------------------------------------------------------------------------------------------
+5. ESTADO REAL DA EDGE FUNCTION E MIGRATION
+----------------------------------------------------------------------------------------------------
+Migration 02B.2:
+  - Arquivo local reparado na 02B.3 (estava com blocos duplicados/SQL solto).
+  - 818 linhas.
+  - NÃO aplicada no ambiente conhecido.
+
+Migration 02B.3:
+  - 655 linhas.
+  - NÃO aplicada no ambiente conhecido.
+
+Edge Function `ofertas-publicas`:
+  - Código local presente.
+  - CORS atualizado localmente nesta missão.
+  - NÃO publicada no ambiente conhecido.
+  - `supabase/config.toml` tem `verify_jwt = false`, mas isso é configuração local,
+    não prova de deploy.
+
+Verificação read-only executada:
+  - GET /rest/v1/recrutamento_ofertas?select=id&limit=1 (PROD)
+    → HTTP 404, PGRST205, “Could not find the table”.
+  - OPTIONS /functions/v1/ofertas-publicas (PROD, Origin localhost)
+    → HTTP 404, “Requested function was not found”.
+  - QA: host `aqpfayildtcnrkfeeyjg.supabase.co` não resolve.
+  - Nenhum DDL/DML, nenhum deploy e nenhum secret foram executados.
+
+Configurações server-side ainda ausentes para liberar:
+  - `OFERTAS_PUBLICAS_TENANT_ID` (UUID do tenant público).
+  - `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` (domínio real do formulário).
+  - `OFERTAS_PUBLICAS_IP_SALT`.
+  - `OFERTAS_PUBLICAS_CAPTCHA_PROVIDER` / `OFERTAS_PUBLICAS_CAPTCHA_SECRET`.
+  - `OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=true` em produção.
+  - `SUPABASE_SERVICE_ROLE_KEY` no runtime da Edge (nunca no frontend).
+
+----------------------------------------------------------------------------------------------------
+6. MÓDULO RECRUTAMENTO
+----------------------------------------------------------------------------------------------------
+Preservado e mantido:
+  - Listagem de ofertas recebidas.
+  - Busca por nome/telefone/e-mail/protocolo.
+  - Filtros por tipo, cidade, UF, região, modalidade, dia, disponibilidade,
+    veículo, capacidade, valores e status.
+  - Detalhe completo, disponibilidade original e interna, veículo, capacidade,
+    valores, condições e restrições.
+  - Conflitos e revisão humana.
+  - Contato por WhatsApp, telefone e e-mail.
+  - Alteração de status com transições autorizadas.
+  - Histórico cronológico.
+  - Estado vazio/carregando/erro/backend ausente.
+  - Conversão explícita em candidato (02B.3), com idempotência e bloqueio de duplicidade.
+
+Nenhuma reconstrução do Recrutamento, nenhum novo Banco de Talentos e nenhuma
+alteração em Financeiro/Clientes.
+
+----------------------------------------------------------------------------------------------------
+7. TESTES EXECUTADOS E RESULTADOS
+----------------------------------------------------------------------------------------------------
+1) npx tsc --noEmit
+   → 0 erros.
+
+2) npx eslint nos arquivos alterados
+   - OfertaPublicaForm.tsx
+   - OfertaCaptcha.tsx
+   - ofertaCaptcha.ts
+   - adm_app_02b1_oferta_publica_form.test.ts
+   - adm_app_02b4_fechamento_recrutamento.test.ts
+   → 0 erros / 0 warnings.
+
+3) Testes focados 02B.1 + 02B.2 + 02B.3 + 02B.4
+   → 64/64 PASS (11 + 23 + 20 + 10).
+
+4) Suíte completa
+   → 19 arquivos / 45 testes falhos; 2606 passando; 155 skipped.
+   → Nenhum arquivo desta missão falhou.
+   → As falhas são preexistentes do repositório, incluindo:
+     rec03_eliminacao (arquivo de migration legado com nome antigo),
+     rec03_1, rec02, rec04, ag07f, ag07h, ag07j3, a31j11, clientes_02,
+     adm_app_02d2_sign_real, f0e, f0k, f0l, fin_p0_03, fin_prog05c3b,
+     fin_prog05d1, fin_sane_02b, escala_e2e_05, radar_combustivel.
+   → O baseline imediatamente anterior era 18/44; a diferença observada é de
+     falha preexistente/ambiental (rec03_eliminacao e flaky), não de arquivo 02B.4.
+     Os 10 testes novos passam.
+
+5) npm run build
+   → OK (52,67s).
+
+Testes de contrato/unitários:
+  - Formulário chama a Edge com payload e idempotência.
+  - Não há sucesso antes de protocolo.
+  - Erros mapeados sem falso sucesso.
+  - CAPTCHA e CORS presentes.
+  - Nenhum service_role no frontend.
+  - Módulo de ofertas continua usando RPC e leitura por RLS.
+
+Testes NÃO executados:
+  - Recebimento real via Edge.
+  - RLS real, tenant real, anon negado e cross-tenant.
+  - Idempotência/rate limit reais.
+  - Conversão real em candidato.
+  - CAPTCHA real com provedor.
+  - QA visual em navegador/celular; ambiente QA indisponível.
+  - Navegação E2E pública → TMS com oferta real.
+
+----------------------------------------------------------------------------------------------------
+8. RECEBIMENTO REAL FOI COMPROVADO?
+----------------------------------------------------------------------------------------------------
+NÃO.
+  - Não houve deploy da Edge.
+  - Não houve aplicação da migration.
+  - Não houve oferta real gravada.
+  - Não houve protocolo real.
+  - Nenhum teste de banco/RLS/conversão foi declarado como aprovado sem execução.
+
+----------------------------------------------------------------------------------------------------
+9. O QUE FALTA PARA LIBERAR O LINK AO PÚBLICO
+----------------------------------------------------------------------------------------------------
+1. Autorizar e aplicar a migration 02B.2 reparada em ambiente controlado.
+2. Autorizar e aplicar a migration 02B.3 no mesmo ambiente.
+3. Configurar os secrets server-side da Edge:
+   `OFERTAS_PUBLICAS_TENANT_ID`, `OFERTAS_PUBLICAS_ALLOWED_ORIGINS`,
+   `OFERTAS_PUBLICAS_IP_SALT`, `OFERTAS_PUBLICAS_CAPTCHA_PROVIDER`,
+   `OFERTAS_PUBLICAS_CAPTCHA_SECRET`, `OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=true`.
+4. Publicar a Edge `ofertas-publicas` com `verify_jwt=false`.
+5. Configurar no frontend `VITE_OFERTAS_CAPTCHA_PROVIDER` e
+   `VITE_OFERTAS_CAPTCHA_SITE_KEY` (site key público; secret só na Edge).
+6. Adicionar o domínio real do formulário em `OFERTAS_PUBLICAS_ALLOWED_ORIGINS`.
+7. Executar:
+   - abertura pública sem login;
+   - preenchimento e envio válido;
+   - protocolo real;
+   - consulta no TMS;
+   - busca/filtros/detalhe;
+   - contato;
+   - alteração de status;
+   - isolamento por tenant;
+   - anon sem acesso direto à tabela/RPC;
+   - idempotência/rate limit;
+   - conversão em candidato sem criar prestador/Auth/liberado_app.
+8. Só então liberar o link ao público.
+
+Próxima ação exata, como bloqueio atual:
+  - Autorizar aplicação da migration 02B.2/02B.3 e deploy da Edge com os secrets acima.
+  - Sem essa autorização, não há como sair do estado “link pronto, backend ausente”.
+
+----------------------------------------------------------------------------------------------------
+10. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL em produção/homologação.
+  - Nenhuma migration aplicada.
+  - Nenhuma Edge Function publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhuma alteração no APP Prestador.
+  - Nenhuma alteração em Financeiro/Clientes.
+  - Nenhuma reconstrução do Recrutamento.
+  - Nenhum dado real/homologação foi usado ou exposto.
+  - Nenhum protocolo foi inventado.
+  - Nenhum sucesso de gravação foi simulado.
+  - A verificação de tabela/Edge foi somente leitura.
+  - A missão para aqui; Gestão de Documentos e Propostas não foram iniciadas.
+
+====================================================================================================

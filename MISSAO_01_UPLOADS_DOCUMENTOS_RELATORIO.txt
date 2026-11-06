@@ -1,0 +1,255 @@
+====================================================================================================
+MISSÃO 1 — CORREÇÃO DOS UPLOADS DE DOCUMENTOS EXISTENTES
+PROJETO: TMS Express Connect Hub
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+MODELO: DeepSeek V4.1 Flash
+DATA/HORA DA EXECUÇÃO: 2026-11-03 (horário local da máquina)
+STATUS: CONCLUÍDA — código + prova real de Storage/leitura + RLS aditiva aplicada
+CONTAGEM REGRESSIVA OFICIAL PRESERVADA: 7
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+Os dois gaps da auditoria foram corrigidos sem criar nova Central de Documentos, sem criar outro
+serviço de Storage e sem tornar buckets públicos.
+
+GAP 1 — Contrato de cliente:
+  Antes: o arquivo selecionado gerava apenas `URL.createObjectURL(file)` (blob temporário) e o banco
+         salvava somente `anexo_nome`. O binário nunca chegava ao Storage; abrir/baixar não existia.
+  Agora: o binário é enviado ao bucket privado `documentos_operacionais` pelo serviço existente
+         `enviarDocumentoOperacional`. O contrato grava `anexo_url` (referência estável
+         `documentos_operacionais/<path>`) + `anexo_nome`; o metadado fica na Central
+         (`documentos_metadata`, módulo `clientes`, entidade = cliente) e recebe um evento de vínculo
+         com o contrato. Os botões "Abrir" (Eye) e "Baixar" (Download) resolvem a referência para
+         URL assinada (TTL 600s) e abrem/baixam o arquivo com usuário autorizado.
+
+GAP 2 — Comprovante de pedágio:
+  Antes: o campo aceitava apenas colar uma URL textual; não havia upload de arquivo.
+  Agora: além do link (compatibilidade), há upload de PDF/JPG/PNG/WEBP (até 50 MB). O binário vai ao
+         bucket privado `documentos_operacionais`, é indexado na Central (`documentos_metadata`,
+         módulo `financeiro`) e é associado à alocação da conferência (`entidade_id = alocacaoId` +
+         histórico `vinculo_lancamento`). Ver/baixar usam URL assinada. Cálculos, regras de conferência
+         e lançamentos financeiros NÃO foram alterados.
+
+Descobertas de infraestrutura durante a missão (tratadas sem quebrar regras):
+  a) `public.clientes_contratos` estava com RLS habilitada e ZERO policies em produção. O INSERT do
+     contrato falhava ("new row violates row-level security policy") e o SELECT retornava vazio.
+     Foi aplicada migration ADITIVA de policies (arquivo abaixo), sem alterar dados/colunas.
+  b) A tabela oficial `reembolsos_prestador` possui trigger `M129-C.2` que exige um prestador
+     autenticado (auth.uid() vinculado a `prestadores.auth_user_id`) para inserir. Usuário do
+     Financeiro (TMS) não consegue gravar nela. Por isso o upload do Financeiro usa a Central de
+     Documentos como fonte e associa à alocação; a regra do App Motorista permanece intacta e os
+     comprovantes antigos continuam referenciados.
+
+----------------------------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS / CRIADOS
+----------------------------------------------------------------------------------------------------
+ALTERADOS:
+  - src/components/clientes/ClienteDetalhe.tsx
+  - src/components/financeiro/ConferenciaFinanceira.tsx
+  - src/services/documentos/documentosMetadataService.ts
+  - src/services/operacao/reembolsoPedagioService.ts
+
+CRIADOS (código):
+  - src/lib/anexoDocumento.ts
+  - src/services/clientes/contratoAnexoService.ts
+  - src/test/missao01_uploads_documentos.test.ts
+
+CRIADOS (banco/evidências/scripts):
+  - supabase/migrations/20261103000001_missao01_clientes_contratos_rls.sql  (ADITIVA, aplicada)
+  - scripts/_apply_missao01_rls.cjs                                          (dry-run/--apply)
+  - scripts/_missao01_uploads_proof.cjs                                      (prova real + limpeza)
+  - MISSAO_01_EVIDENCIAS_UPLOADS.json                                        (evidência JSON)
+  - MISSAO_01_UPLOADS_DOCUMENTOS_RELATORIO.txt                               (este relatório)
+
+NÃO ALTERADOS:
+  - Nenhum arquivo de Recrutamento (src/modules/recrutamento, src/services/recrutamento,
+    src/components/recrutamento, src/components/recrutamento/*, páginas/rotas de recrutamento).
+  - Nenhum bucket público, nenhuma policy de bucket alterada, nenhuma migration destrutiva.
+
+----------------------------------------------------------------------------------------------------
+3. MIGRATION ADITIVA (motivo, impacto, aplicação)
+----------------------------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20261103000001_missao01_clientes_contratos_rls.sql
+Tipo: ADITIVA (CREATE POLICY), sem DROP de tabela/coluna, sem UPDATE/DELETE de dados.
+
+MOTIVO:
+  A tabela `clientes_contratos` estava com RLS ON e nenhuma policy no banco de produção (drift em
+  relação ao script `sql/alter_clientes_flags_comercial.sql`). O app não conseguia inserir o contrato
+  nem listar os contratos existentes. Sem isso, o anexo enviado ao Storage ficaria órfão do contrato.
+
+IMPACTO:
+  Libera SELECT/INSERT/UPDATE/DELETE de contratos apenas para usuários autenticados que já podem
+  acessar o cliente, usando a função existente `f_usuario_pode_acessar_cliente(cliente_id)`
+  (mesma função das policies de `clientes`). Não altera dados, colunas, cálculos ou registros.
+
+APLICAÇÃO:
+  - Dry-run: 4/4 policies criadas e ROLLBACK (nada alterado).
+  - Aplicação: COMMIT efetuado; pós-verificação 4/4 policies presentes:
+      cc_select_access, cc_insert_access, cc_update_access, cc_delete_access.
+  - Rollback proposto: DROP POLICY das 4 policies criadas.
+
+----------------------------------------------------------------------------------------------------
+4. SERVIÇOS REUTILIZADOS (sem storage/Central paralelos)
+----------------------------------------------------------------------------------------------------
+  - src/services/documentos/documentosMetadataService.ts
+      * `enviarDocumentoOperacional` (upload + metadado + histórico)
+      * `registrarEventoDocumento` (histórico)
+      * NOVO `vincularDocumentoEntidade` (reassocia metadado já existente; função aditiva no mesmo serviço)
+  - src/services/documentos/documentoStorageService.ts
+      * `resolverUrlDocumento` / constantes de bucket (mantidos)
+  - src/services/storage/storageRefService.ts
+      * `parseStorageRef`, `caminhoValido`, `assinarStorageRef`, `SIGN_TTL_SECONDS`, `KNOWN_BUCKETS`
+  - Bucket privado já existente: `documentos_operacionais` (RLS de authenticated inalterada)
+  - Tabelas oficiais existentes: `clientes_contratos` (anexo_url/anexo_nome), `documentos_metadata`,
+    `reembolsos_prestador` (somente leitura/compatibilidade).
+
+Nenhum `createClient` novo, nenhum bucket novo, nenhum cliente Supabase paralelo.
+
+----------------------------------------------------------------------------------------------------
+5. GAP 1 — CONTRATO DE CLIENTE (comportamento)
+----------------------------------------------------------------------------------------------------
+ANTES:
+  - `URL.createObjectURL(file)` no estado do formulário.
+  - INSERT apenas com `anexo_nome`.
+  - Botões Eye/Download sem ação.
+  - RLS de `clientes_contratos` sem policies (INSERT falhava).
+
+DEPOIS:
+  - Validação de formato/tamanho (PDF/JPG/JPEG/PNG/WEBP, até 50 MB);
+  - Upload do binário ao bucket privado `documentos_operacionais`;
+  - Metadado na Central com módulo `clientes`, entidade = cliente, categoria `Comercial`,
+    tipo `Contrato`, descrição com número/objeto, mime/tamanho;
+  - Contrato grava `anexo_url` (referência estável) + `anexo_nome`;
+  - Evento `vinculo_contrato` no histórico do metadado com `contrato_id`;
+  - Abrir/Baixar: resolve a referência para URL assinada (600s) e abre/baixa; funciona também para
+    `anexo_url` externo antigo;
+  - Erros de validação/upload/rede são exibidos via toast e NÃO gravam contrato com referência falsa.
+
+----------------------------------------------------------------------------------------------------
+6. GAP 2 — COMPROVANTE DE PEDÁGIO (comportamento)
+----------------------------------------------------------------------------------------------------
+ANTES:
+  - Somente input de URL textual.
+  - A gravação tentava `reembolsos_prestador` com `os_id = alocacaoId`, o que violava a FK oficial
+    (`os_id -> ordens_servico(id)`) e/ou o trigger M129-C.2 (prestador autenticado). O erro era
+    engolido por `catch` silencioso.
+
+DEPOIS:
+  - Upload opcional de arquivo (PDF/JPG/PNG/WEBP até 50 MB) via `enviarDocumentoOperacional`;
+  - Metadado na Central (`modulo_origem='financeiro'`, tipo `Comprovante de Pedágio`);
+  - Ao salvar o lançamento, o metadado é associado à alocação (`entidade_id = alocacaoId`) com
+    histórico `vinculo_lancamento`; link colado também gera metadado associado;
+  - Leitura no dossiê: procura primeiro em `reembolsos_prestador` por OS (compatibilidade com o App)
+    e, se não houver, retorna o comprovante da Central associado à alocação;
+  - Ver/Baixar usam URL assinada; casos antigos externos/path do App são preservados;
+  - Nenhuma alteração em `valor_pedagio`, `pedagio_cobrar_excedente`, totais, regras ou lançamentos.
+
+----------------------------------------------------------------------------------------------------
+7. TESTES REALIZADOS E RESULTADOS
+----------------------------------------------------------------------------------------------------
+  - `npx tsc --noEmit` .................................................. 0 erros
+  - `npm run build` ..................................................... OK (38,07s; warnings pré-existentes)
+  - Teste novo `src/test/missao01_uploads_documentos.test.ts` .......... 15/15 PASS
+      (contrato, pedágio, serviços reutilizados, validação pura de anexo)
+  - Regressão dos arquivos afetados (8 specs) .......................... 92/93 PASS
+      * única falha: `clientes_02_persistencia_e2e` — expectativa antiga "Exclusão bloqueada" em
+        `ClientesLista.tsx`, arquivo NÃO tocado nesta missão (falha de baseline documentada).
+  - Suíte completa `npx vitest run`:
+      * 18 arquivos falhos / 44 testes falhos = BASELINE EXATA do projeto (AGENTS.md)
+      * 2543 passed (baseline 2528 + 15 novos desta missão)
+  - Prova real de Storage/leitura (`scripts/_missao01_uploads_proof.cjs`) ... 18/18 PASS
+      (detalhes na seção 8)
+
+----------------------------------------------------------------------------------------------------
+8. EVIDÊNCIAS DE ARMAZENAMENTO E LEITURA (prova real contra o Supabase de produção)
+----------------------------------------------------------------------------------------------------
+Usuário autorizado (login real): user=323878d3-861f-4257-a0ef-8ee26f526ce0
+Tenant: 00000000-0000-0000-0000-000000000001
+Arquivo de teste: scripts/_adm_app_02d2r1_doc_teste.png
+  bytes=11755 | sha256=ac291280a331f4ee0a24942bc30e5b28ad8956540959f6d4f8354cc84132788a
+
+CONTRATO:
+  1. Upload no bucket privado:
+     documentos_operacionais/doc_3d2d079d-708b-4d4d-9c0b-1ed9b894e37e_Contrato_1793740163388.png
+     (objeto confirmado em storage.objects, 11755 bytes)
+  2. Metadado: documentos_metadata id=bddf795c-8585-413d-9dd5-eee67a976397
+  3. Contrato: clientes_contratos id=d5d1fba4-d60c-475e-b0c1-636f38a1d3a0
+     anexo_url = documentos_operacionais/doc_3d2d079d-..._Contrato_...png (referência persistida)
+  4. Abrir/baixar: URL assinada (600s) → download 200 com 11755 bytes e sha256 IDÊNTICO ao original.
+  5. Segurança: tentativa de acesso público ao bucket privado → HTTP 400 (blob não é público).
+  6. Vínculo: histórico do metadado contém evento `vinculo_contrato` com contrato_id.
+
+COMPROVANTE DE PEDÁGIO:
+  1. Upload no bucket privado:
+     documentos_operacionais/doc_24708e2f-3bca-4155-9130-12ea660086e4_Comprovante_de_Pedagio_...png
+  2. Metadado: documentos_metadata id=15e06493-ed69-4419-ad9d-3bd81d101912
+  3. Associação à conferência: entidade_id = 24708e2f-3bca-4155-9130-12ea660086e4 (alocação)
+     + histórico `vinculo_lancamento` (alocacao_id/os_id).
+  4. Leitura pela Central por alocação: doc=15e06493-... retornando a URL estável.
+  5. Abrir/baixar: URL assinada → download 200 com 11755 bytes e sha256 IDÊNTICO ao original.
+  6. Segurança: acesso público ao bucket privado → HTTP 400.
+
+ERRO DE UPLOAD / ARQUIVO INVÁLIDO:
+  - Tentativa de upload de `.exe` com `application/x-msdownload` → RECUSADO pelo bucket:
+    "mime type application/x-msdownload is not supported".
+  - Validação client-side também bloqueia arquivo vazio, >50 MB e formatos não suportados.
+  - Falhas de rede/upload são capturadas e exibidas por toast; o contrato/lançamento não é gravado
+    com referência inválida.
+
+COMPATIBILIDADE COM REGISTROS ANTIGOS:
+  - Contagens antes = depois da limpeza:
+      clientes_contratos: total=1, com_anexo_url=0, com_anexo_nome=0
+      reembolsos_prestador: total=6, com_comprovante_url=2
+      documentos_metadata: total=30
+  - Os 2 comprovantes antigos com URL continuam referenciados.
+  - Observação: a leitura HTTP de comprovantes antigos do bucket `driver-evidence` (URLs/paths do App)
+    continua sujeita à policy original do bucket (somente o prestador dono ou a pasta `pod`). Essa
+    policy NÃO foi alterada e o bucket NÃO foi tornado público. A referência e o registro são
+    preservados; a missão não relaxou a autorização de terceiros.
+
+LIMPEZA:
+  - Todos os registros e objetos de teste foram removidos.
+  - Objetos residuais do padrão do teste: 0.
+  - Contagens finais idênticas ao baseline acima.
+
+Evidência completa em JSON: MISSAO_01_EVIDENCIAS_UPLOADS.json
+
+----------------------------------------------------------------------------------------------------
+9. PENDÊNCIAS E RISCOS
+----------------------------------------------------------------------------------------------------
+1. (QA visual) Validar no navegador o modal "Novo Contrato" (selecionar PDF/imagem, salvar, abrir,
+   baixar) e a conferência financeira (anexar comprovante, salvar, reabrir dossiê, ver/baixar).
+   A prova de armazenamento/leitura foi feita via API autenticada exatamente com os mesmos serviços
+   e bucket do código; a interação de UI não foi automatizada em navegador nesta missão.
+2. (Política existente) Comprovantes antigos no bucket `driver-evidence` (App) podem não abrir para
+   usuários do Financeiro, pois a policy original restringe ao prestador/pasta `pod`. Decisão desta
+   missão: NÃO alterar a policy e NÃO tornar o bucket público (regra de preservação).
+3. (Dados legados) Registros de `reembolsos_prestador` com `os_id` nulo não têm vínculo com uma
+   conferência específica; eles continuam armazenados, mas não são associados automaticamente a um
+   item da Central. Nada foi apagado/alterado.
+4. (Contratos sem cliente) A policy aditiva exige `cliente_id` acessível; contratos com
+   `cliente_id` nulo continuam não podendo ser inseridos por usuários comuns (não há esse fluxo na UI).
+5. (Formatos) O bucket aceita PDF/JPG/JPEG/PNG/WEBP. O aceite antigo de `.doc/.docx` foi removido
+   para não gerar falha de upload; contratos antigos que só tinham nome continuam visíveis.
+6. Nenhuma alteração de cálculo, regra de conferência ou lançamento financeiro foi feita.
+
+----------------------------------------------------------------------------------------------------
+10. CONFIRMAÇÃO — RECRUTAMENTO NÃO FOI ALTERADO
+----------------------------------------------------------------------------------------------------
+`git status` não lista nenhum arquivo de Recrutamento entre as alterações desta missão.
+Foram alterados apenas: ClienteDetalhe, ConferenciaFinanceira, documentosMetadataService,
+reembolsoPedagioService, anexoDocumento (novo), contratoAnexoService (novo), teste novo,
+migration aditiva e scripts/evidências.
+
+----------------------------------------------------------------------------------------------------
+11. CONTAGEM REGRESSIVA OFICIAL
+----------------------------------------------------------------------------------------------------
+CONTAGEM REGRESSIVA OFICIAL PRESERVADA EM: 7
+
+----------------------------------------------------------------------------------------------------
+12. ENCERRAMENTO
+----------------------------------------------------------------------------------------------------
+Missão 1 concluída. A Missão 2 NÃO foi iniciada.
+====================================================================================================

@@ -1,0 +1,383 @@
+====================================================================================================
+ADM-APP-02B.3 — GESTÃO INTERNA DE OFERTAS PÚBLICAS
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: IMPLEMENTAÇÃO LOCAL DE FRONTEND + SERVIÇO + MIGRATION + TESTES
+STATUS: IMPLEMENTADO LOCALMENTE — MIGRATION NÃO APLICADA / EDGE NÃO PUBLICADA
+ZERO ESCRITAS REMOTAS / ZERO DEPLOY / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO EXECUTADO E LIMITES
+----------------------------------------------------------------------------------------------------
+Executado:
+  - Leitura dos relatórios 02B.0, 02B.1, 02B-CORRECAO-ESCOPO e 02B.2.
+  - Auditoria do Recrutamento, Banco de Talentos, design system, serviços, permissões,
+    migration 02B.2 e schema real de recrutamento_candidatos.
+  - Serviço interno de ofertas com leitura por RLS e escrita exclusivamente por RPC.
+  - Migration local 02B.3 com disponibilidade interna, status, observação, contato,
+    revisão humana e conversão explícita em candidato.
+  - Tela Recrutamento → Ofertas Públicas com listagem, indicadores, filtros, busca,
+    detalhe, comparação, contato, disponibilidade, status, histórico, conflitos e conversão.
+  - Testes locais, TypeScript, ESLint e build.
+  - Relatório técnico.
+
+Não executado (proibido nesta missão):
+  - Nenhuma migration foi aplicada em Supabase remoto.
+  - Nenhum DDL/DML foi executado em produção ou homologação.
+  - Nenhuma Edge Function foi publicada.
+  - Nenhum secret foi criado/alterado.
+  - Nenhum arquivo do APP Prestador foi alterado.
+  - Nenhum módulo Financeiro/Clientes foi alterado.
+  - Nenhuma reconstrução do Recrutamento.
+  - Nenhum início do módulo de Gestão de Documentos.
+  - Nenhuma conversão real em banco foi executada.
+
+----------------------------------------------------------------------------------------------------
+2. ARQUIVOS CRIADOS/ALTERADOS
+----------------------------------------------------------------------------------------------------
+CRIADOS:
+  - supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+      655 linhas. Coluna disponibilidade_interna, compatibilidade de colunas do
+      candidato, RPCs de status/observação/disponibilidade/contato/revisão/conversão,
+      grants e proteção contra UPDATE direto.
+      APLICADA: NÃO.
+  - src/modules/recrutamento/services/ofertasPublicasService.ts
+      576 linhas. Tipos, mapeadores, filtros, indicadores, transições, contatos e RPCs.
+  - src/modules/recrutamento/components/ofertas/OfertaDetalheSheet.tsx
+      703 linhas. Detalhe completo, contato, disponibilidade interna, status, revisão,
+      observação, histórico e conversão com confirmação.
+  - src/modules/recrutamento/components/ofertas/OfertaComparacaoDialog.tsx
+      122 linhas. Comparação de 2 a 4 ofertas.
+  - src/test/adm_app_02b3_gestao_ofertas.test.ts
+      20 testes locais.
+
+ALTERADOS:
+  - src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+      REESCRITO. Preserva link/copiar/compartilhar e adiciona a gestão real.
+  - supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+      REPARADO LOCALMENTE. O arquivo estava estruturalmente corrompido (fragmentos
+      duplicados e SQL solto após COMMIT). Foi reconstruído como migration única válida
+      (818 linhas), mantendo tabela, identificadores, eventos, rate limit, RPC,
+      grants e RLS. NÃO foi aplicado.
+  - src/test/adm_app_02b2_backend_ofertas.test.ts — não alterado nesta missão; continua
+      passando 23/23 com a migration reparada.
+
+PRESERVADOS DA 02B.1/02B.2 (sem novas alterações de UI nesta missão):
+  - src/pages/CadastroPrestador.tsx
+  - src/components/cadastro-publico/OfertaPublicaForm.tsx
+  - src/lib/ofertaPublica.ts
+  - src/modules/recrutamento/index.tsx
+  - src/modules/recrutamento/store/recrutamentoStore.ts
+  - src/modules/recrutamento/layouts/RecrutamentoLayout.tsx
+  - src/lib/sidebarData.ts
+  - supabase/config.toml ([functions.ofertas-publicas] verify_jwt=false)
+  - supabase/functions/ofertas-publicas/* (Edge continua não publicada)
+
+NÃO ALTERADOS:
+  - Nenhum arquivo do APP Prestador.
+  - Nenhum módulo Financeiro/Clientes/Operação.
+  - Nenhuma migration aplicada.
+  - Nenhum dado real/homologação.
+
+----------------------------------------------------------------------------------------------------
+3. ARQUITETURA IMPLEMENTADA
+----------------------------------------------------------------------------------------------------
+LEITURA:
+  React (Ofertas Públicas)
+    → supabase.from("recrutamento_ofertas").select(...)
+    → supabase.from("recrutamento_oferta_eventos").select(...)
+    → RLS existente da 02B.2 (tenant + tenant_usuarios)
+
+ESCRITA:
+  React
+    → ofertasPublicasService
+    → supabase.rpc(...)
+    → RPC SECURITY DEFINER
+    → validação de tenant + usuário TMS
+    → transação/auditoria
+    → recrutamento_ofertas / recrutamento_oferta_eventos /
+      recrutamento_candidatos
+
+O frontend NÃO faz INSERT/UPDATE/DELETE direto em recrutamento_ofertas.
+A 02B.3 revoga UPDATE direto do authenticated e mantém apenas SELECT.
+A conversão em candidato é a única operação que grava em recrutamento_candidatos,
+sempre pela RPC f_converter_oferta_em_candidato.
+
+----------------------------------------------------------------------------------------------------
+4. FUNCIONALIDADES ENTREGUES
+----------------------------------------------------------------------------------------------------
+1) Listagem real
+   - Lê recrutamento_ofertas via RLS, ordenada por created_at desc, limite 500.
+   - Paginação local de 9 itens.
+   - Estado de carregamento, vazio, erro e backend não implantado.
+
+2) Indicadores
+   - Total, novas, em análise, em contato, convertidas, descartadas, arquivadas
+     e ofertas com revisão humana.
+
+3) Filtros e busca
+   - Busca por nome, telefone (com/sem máscara), e-mail, CPF/CNPJ e protocolo.
+   - Status, tipo de oferta, UF, cidade, região, modalidade, dia,
+     disponibilidade interna, veículo, capacidade mínima e faixa de valores.
+   - Limpar filtros.
+
+4) Detalhe
+   - Contato, cidade/UF, regiões, dias, horário, modalidades, veículo, categoria,
+     carroceria, modelo, placa, ano, capacidades, dimensões, características,
+     tipo de moto/baú, valores, condições, restrições e observações originais.
+   - Disponibilidade original separada da disponibilidade interna.
+   - Protocolo, status, conflito/revisão e histórico cronológico.
+
+5) Comparação
+   - Seleção de 2 a 4 ofertas.
+   - Comparação de status, tipo, contato, cidade/UF, regiões, dias, horário,
+     modalidades, veículo, capacidade, diária, km, saída, mensal, condições e restrições.
+
+6) Contato
+   - WhatsApp, telefone e e-mail somente quando o dado correspondente existe.
+   - Abertura do canal e registro do contato no histórico via RPC.
+   - Falha de registro não é mascarada: mostra aviso e mantém o canal aberto.
+
+7) Disponibilidade interna e observações
+   - Grava apenas disponibilidade_interna; não altera dias/horários/modalidades originais.
+   - Registra evento disponibilidade_atualizada.
+   - Observação interna é evento auditável (observacao_interna), não sobrescreve
+     observações do interessado.
+
+8) Status
+   - Transições exatamente conforme a 02B.2:
+       nova → em_analise/em_contato/descartada/arquivada
+       em_analise → em_contato/descartada/arquivada
+       em_contato → descartada/arquivada
+       convertida → arquivada
+       duplicada → arquivada
+       descartada/arquivada → sem transição
+   - convertida não é alterada manualmente; exige RPC de conversão.
+   - Motivo opcional e evento status_alterado.
+
+9) Histórico
+   - Eventos cronológicos: recebimento, conflito, status, observação, disponibilidade,
+     contato, revisão resolvida, conversão idempotente e conversão.
+   - Estado de erro do histórico é explícito quando o backend não está implantado.
+
+10) Conflitos e revisão humana
+   - Badge de conflito e alerta na lista/detalhe.
+   - Ação “Marcar revisão como resolvida” via RPC, com observação.
+   - Conversão bloqueada enquanto revisao_humana=true.
+
+11) Conversão explícita em candidato
+   - Confirmação obrigatória antes da operação.
+   - RPC cria apenas recrutamento_candidatos com oferta_id.
+   - Verifica candidato já vinculado à oferta (idempotência).
+   - Verifica candidato relacionado por telefone/e-mail:
+       * sem vínculo anterior → reutiliza e vincula, sem duplicar;
+       * vinculado a outra oferta → bloqueia com candidato_duplicado_existente.
+   - Preserva a oferta original e o histórico.
+   - Não cria auth user, prestador operacional, liberado_app, documentos,
+     CNH, CRLV, selfie, PIX ou dados bancários.
+   - A oferta vira convertida somente na conversão.
+
+12) Backend ausente
+   - Se a migration/API não estiver disponível, a tela mostra banner explícito:
+     “Backend de ofertas ainda não implantado neste ambiente” e “Nenhuma oferta é simulada”.
+   - Nenhum dado fictício é renderizado como se fosse real.
+   - Nenhuma gravação é declarada como sucesso.
+
+----------------------------------------------------------------------------------------------------
+5. REAPROVEITAMENTO
+----------------------------------------------------------------------------------------------------
+Reutilizados:
+  - RecrutamentoLayout, seção e rota já existentes.
+  - Design system do Recrutamento: PageHeader, PremiumCard, PremiumBadge,
+    EmptyState, MetricCard, cn.
+  - Componentes shadcn/ui: Button, Input, Textarea, Select, Checkbox, Sheet, Dialog.
+  - Padrão de dashboard/KPIs, cards, filtros, detalhe lateral e timeline já usados
+    no Recrutamento/Banco de Talentos.
+  - RLS/tenant e tabelas da 02B.2.
+  - RPC/Edge da 02B.2 para recebimento público (não publicada).
+  - Testes e contratos existentes da 02B.1/02B.2.
+
+Não reutilizado por incompatibilidade:
+  - conversaoCandidatoService: ele cria/atualiza prestador, define status/liberado_app
+    e sincroniza operação. Isso violaria a regra de não criar prestador/Auth/liberado_app
+    nesta etapa. A conversão foi implementada em RPC própria, apenas para candidato.
+  - Banco de Talentos avançado: lê prestadores operacionais; não foi usado como fonte
+    de ofertas para não misturar oferta bruta com prestador operacional.
+  - Ofertas Públicas anterior: continha apenas link/compartilhamento; foi preservada
+    essa parte e substituído o estado “Em preparação” pela gestão real.
+
+----------------------------------------------------------------------------------------------------
+6. INCOMPATIBILIDADES ENCONTRADAS E DECISÕES
+----------------------------------------------------------------------------------------------------
+1) Migration 02B.2 corrompida localmente
+   - O arquivo possuía blocos duplicados, fragmentos soltos e COMMIT antes do fim.
+   - Decisão: reparar localmente antes de criar a 02B.3, pois a migration seria inválida.
+   - Não foi aplicada. Nenhum banco foi tocado.
+   - A 02B.3 depende da 02B.2 reparada.
+
+2) 02B.2 não possui disponibilidade interna
+   - A oferta original não pode ser sobrescrita.
+   - Decisão: 02B.3 adiciona disponibilidade_interna JSONB e grava apenas nela.
+
+3) 02B.2 não possui vínculo candidato_id na oferta
+   - A idempotência usa recrutamento_candidatos.oferta_id, criado na 02B.2.
+   - A conversão consulta candidato por oferta_id e por telefone/e-mail.
+
+4) Colunas de candidato vindas do App
+   - preferencias_operacionais e respostas_situacionais existem no ambiente do App,
+     mas não estavam garantidas nas migrations TMS.
+   - Decisão: 02B.3 usa ADD COLUMN IF NOT EXISTS para tenant_id,
+     preferencias_operacionais e respostas_situacionais.
+   - Também foi respeitado o schema real:
+       tags JSONB, data_entrada/data_atualizacao TEXT, historico JSONB,
+       documentos JSONB, status_documental TEXT, created_at/updated_at TIMESTAMPTZ.
+
+5) Conversão existente criava prestador/liberado_app
+   - Decisão: não reutilizar; nova RPC cria somente candidato e vínculo por oferta_id.
+
+6) Sem migration aplicada
+   - Decisão: UI detecta backend ausente e não simula ofertas nem sucesso.
+
+----------------------------------------------------------------------------------------------------
+7. TESTES EXECUTADOS E RESULTADOS REAIS
+----------------------------------------------------------------------------------------------------
+Comandos e resultados:
+  1. npx tsc --noEmit
+     → 0 erros.
+
+  2. npx eslint nos arquivos da missão
+     - ofertasPublicasService.ts
+     - OfertasPublicas.tsx
+     - OfertaDetalheSheet.tsx
+     - OfertaComparacaoDialog.tsx
+     - adm_app_02b3_gestao_ofertas.test.ts
+     → 0 erros / 0 warnings.
+
+  3. npx vitest run src/test/adm_app_02b3_gestao_ofertas.test.ts
+     → 20/20 PASS.
+
+  4. npx vitest run
+       src/test/adm_app_02b1_oferta_publica_form.test.ts
+       src/test/adm_app_02b2_backend_ofertas.test.ts
+       src/test/adm_app_02b3_gestao_ofertas.test.ts
+     → 54/54 PASS (11 + 23 + 20).
+
+  5. npx vitest run (suíte completa)
+     → 18 arquivos / 44 testes falhos = BASELINE EXATA do projeto;
+       2597 passed (+20 desta missão) / 155 skipped.
+       Nenhuma falha nos arquivos desta missão.
+
+  6. npm run build
+     → OK (49,96s).
+
+Cobertura dos critérios desta missão:
+  - Listagem/isolamento por tenant ......... código + contrato; RLS não executada em banco.
+  - Filtros e busca ........................ 20 testes runtime com dados sintéticos.
+  - Detalhamento ........................... fonte/teste de contrato.
+  - Conflito de identificadores ............ fonte/teste de contrato (02B.2 + 02B.3).
+  - Revisão humana ......................... fonte/teste de contrato; runtime pendente.
+  - Transições válidas/inválidas ........... teste runtime das transições + SQL.
+  - Histórico .............................. fonte/teste de contrato; runtime pendente.
+  - Contato sem dados ...................... teste runtime de contatos disponíveis.
+  - Conversão explícita .................... fonte/teste de contrato + UI de confirmação.
+  - Bloqueio de conversão duplicada ........ fonte/teste de contrato (oferta_id/telefone/e-mail).
+  - Preservação da oferta original ......... teste de fonte (disponibilidade interna).
+  - Ausência de prestador/Auth/liberado_app  teste de fonte da migration.
+  - Permissões/erros de backend ............ fonte/teste de contrato; RLS/RPC não executadas.
+  - Estado vazio/carregamento .............. fontes verificadas.
+  - Backend não implantado ................. fonte + UI explícita; sem falso sucesso.
+
+Testes NÃO executados:
+  - RLS real, SELECT/UPDATE, anon negado, isolamento cross-tenant.
+  - RPC real de status, observação, disponibilidade, contato, revisão e conversão.
+  - Concorrência/idempotência real e duplicidade real de candidato.
+  - QA visual em navegador/celular (ambiente QA indisponível).
+  - Build/teste do APP Prestador (fora do escopo e intocado).
+
+----------------------------------------------------------------------------------------------------
+8. FALHAS PREEXISTENTES x FALHAS DESTA MISSÃO
+----------------------------------------------------------------------------------------------------
+Preexistentes (baseline exata, nenhuma em arquivo desta missão):
+  - 18 arquivos / 44 testes da suíte completa, incluindo rec02, rec03_1, rec04,
+    radar_combustivel e outros já falhos antes desta missão.
+  - O build mantém avisos preexistentes de chunks grandes e imports dinâmicos.
+
+Desta missão:
+  - Nenhuma falha de TypeScript.
+  - Nenhuma falha de ESLint nos arquivos alterados.
+  - Nenhuma falha nos 54 testes focados.
+  - Nenhuma falha nova na suíte completa; contagem de falhas idêntica ao baseline.
+
+----------------------------------------------------------------------------------------------------
+9. ITENS IMPLEMENTADOS SEM PROVA REAL
+----------------------------------------------------------------------------------------------------
+  - RLS e isolamento por tenant: implementados por contrato, não executados em banco.
+  - RPCs de status, disponibilidade, observação, contato, revisão e conversão:
+    criadas localmente; não aplicadas, não chamadas contra banco real.
+  - Conversão idempotente e bloqueio de candidato duplicado: validados por
+    contrato/fonte e testes unitários, não por execução concorrente real.
+  - Histórico e eventos: UI e contrato implementados; não há eventos reais sem migration.
+  - Filtros/comparação: testados com dados sintéticos; não com ofertas reais.
+  - Contato/log: abertura de URL e chamada RPC implementadas; não executadas em
+    navegador/dispositivo real.
+  - Layout responsivo e acessibilidade visual: implementados, sem QA visual.
+
+Nenhum desses itens é declarado como “PASS real”.
+
+----------------------------------------------------------------------------------------------------
+10. BLOQUEIOS DE INFRAESTRUTURA
+----------------------------------------------------------------------------------------------------
+  - Migration 02B.2/02B.3 não aplicada: bloqueia listagem real, RLS, RPCs,
+    histórico real e conversão.
+  - Edge Function ofertas-publicas não publicada: o formulário público continua
+    exibindo o estado de envio pendente; nenhuma oferta real entra.
+  - Secrets/CORS/tenant/captcha da 02B.2 não configurados.
+  - Ambiente QA indisponível; QA visual bloqueada.
+  - Ausência de credenciais/ambiente para prova de banco e RLS.
+  - Deno não instalado (não houve alteração de Edge nesta missão).
+
+----------------------------------------------------------------------------------------------------
+11. PENDÊNCIAS EXATAS PARA HOMOLOGAÇÃO
+----------------------------------------------------------------------------------------------------
+1. Revisar e aplicar a migration 02B.2 reparada em ambiente QA, com autorização.
+2. Revisar e aplicar a migration 02B.3 em QA, depois da 02B.2.
+3. Confirmar no banco as colunas usadas pela conversão:
+   tenant_id, oferta_id, preferencias_operacionais, respostas_situacionais,
+   tags JSONB, data_entrada/data_atualizacao TEXT, historico/documentos JSONB.
+4. Executar testes reais de:
+   - anon sem acesso à tabela/RPC;
+   - authenticated vendo apenas o próprio tenant;
+   - cross-tenant bloqueado;
+   - transições de status válidas/inválidas;
+   - disponibilidade interna sem alterar original;
+   - observação/contato/histórico;
+   - revisão humana bloqueando conversão;
+   - conversão idempotente, duplicidade por oferta_id e por telefone/e-mail;
+   - ausência de prestador/auth/liberado_app após conversão.
+5. Publicar a Edge ofertas-publicas e configurar tenant/CORS/IP salt/captcha;
+   depois conectar o formulário público ao envio real.
+6. QA visual desktop/mobile: lista, filtros, paginação, detalhe, comparação,
+   contato, status, histórico, revisão, conversão, loading, vazio e backend ausente.
+7. Executar prova real de que a conversão não cria prestador/Auth/liberado_app.
+8. Atualizar o relatório 02B.2 com a contagem final de linhas (818) se desejado.
+
+----------------------------------------------------------------------------------------------------
+12. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL em produção ou homologação.
+  - Nenhuma migration aplicada: os arquivos 02B.2 (reparado) e 02B.3 são locais.
+  - Nenhum deploy: a Edge ofertas-publicas não foi publicada nesta missão.
+  - Nenhum secret criado/alterado.
+  - Nenhum arquivo do APP Prestador foi criado/alterado/removido.
+  - Nenhum módulo Financeiro/Clientes foi alterado.
+  - Nenhuma conversão real, nenhum candidato real e nenhuma oferta real foram criados.
+  - Nenhum dado real/homologação foi usado ou exposto.
+  - Nenhum sucesso de gravação foi simulado.
+  - A UI exibe explicitamente o estado de backend não implantado.
+  - O frontend não faz INSERT/UPDATE/DELETE direto em recrutamento_ofertas.
+  - A 02B.3 termina aqui; 02B.4 não foi iniciada.
+
+====================================================================================================

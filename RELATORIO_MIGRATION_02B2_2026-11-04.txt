@@ -1,0 +1,134 @@
+====================================================================================================
+REVISÃO DA MIGRATION 02B.2 — OFERTAS PÚBLICAS
+DATA: 2026-11-04
+ARQUIVO: supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+RESULTADO: PRONTA PARA EXECUÇÃO; NENHUM IMPEDIMENTO DESTRUTIVO ENCONTRADO
+NENHUMA EXECUÇÃO REALIZADA
+====================================================================================================
+
+1. HASH E ARQUIVO
+----------------------------------------------------------------------------------------------------
+  SHA-256 esperado: 050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+  SHA-256 calculado: 050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+  Confere: SIM
+  Tamanho: 35.928 bytes
+  Linhas: 818
+  Transação: BEGIN na linha 11 / COMMIT na linha 818.
+
+2. OBJETOS CRIADOS
+----------------------------------------------------------------------------------------------------
+  Tabelas novas (4):
+    - public.recrutamento_ofertas
+    - public.recrutamento_oferta_identificadores
+    - public.recrutamento_oferta_eventos
+    - public.recrutamento_oferta_rate_limit
+
+  Coluna nova (1):
+    - public.recrutamento_candidatos.oferta_id UUID
+      FK para public.recrutamento_ofertas(id) ON DELETE SET NULL
+
+  Índices (20):
+    - 2 UNIQUE INDEX em ofertas
+    - 12 INDEX em ofertas
+    - 2 INDEX em identificadores
+    - 2 INDEX em eventos
+    - 1 INDEX em rate limit
+    - 1 INDEX em recrutamento_candidatos
+
+  Funções (2):
+    - public.f_recrutamento_ofertas_before_update()
+    - public.f_registrar_oferta_publica(UUID, JSONB, TEXT, TEXT, TEXT)
+
+  Trigger (1):
+    - trg_recrutamento_ofertas_before_update em recrutamento_ofertas
+
+  Policies (4 criadas):
+    - ofertas_select_tms
+    - ofertas_update_tms
+    - oferta_identificadores_select_tms
+    - oferta_eventos_select_tms
+
+  RLS habilitado em 4 tabelas.
+  Comentários: 5.
+  GRANT: 8. REVOKE: 10.
+  NOTIFY pgrst: 1.
+
+3. ALTERAÇÕES E OPERAÇÕES DESTRUTIVAS
+----------------------------------------------------------------------------------------------------
+  - DROP TABLE: 0
+  - DROP COLUMN: 0
+  - DROP SCHEMA: 0
+  - TRUNCATE: 0
+  - DELETE FROM: 0
+  - UPDATE fora de função: 0
+
+  DROPs existentes:
+    - DROP TRIGGER IF EXISTS (recriação do trigger da própria migration).
+    - DROP POLICY IF EXISTS (4 policies da própria migration).
+
+  Isso não apaga dados nem tabelas. As policies/trigger são substituídos de
+  forma controlada.
+
+4. ESCOPO
+----------------------------------------------------------------------------------------------------
+  A migration atua somente em objetos do Recrutamento:
+    - cria 4 tabelas novas;
+    - adiciona uma coluna nullable em recrutamento_candidatos;
+    - cria funções/policies/trigger/índices/grants das ofertas.
+
+  Não altera tabelas de Financeiro, Clientes, Operação, Frota, APP Prestador
+  ou outros módulos.
+
+  As ocorrências de INSERT/UPDATE dentro do arquivo estão nos corpos das funções
+  (executadas apenas quando a RPC é chamada), não durante a criação da migration.
+
+5. DEPENDÊNCIAS JÁ EXISTENTES
+----------------------------------------------------------------------------------------------------
+  - public.tenants (FK)
+  - public.recrutamento_candidatos (coluna oferta_id)
+  - public.tenant_usuarios (policies)
+  - public.current_tenant_id_safe() (policies)
+  - auth.uid() (policies)
+  - papéis anon, authenticated e service_role
+  - gen_random_uuid(), pg_advisory_xact_lock(), hashtextextended()
+  - PostgREST para o NOTIFY final
+  - Tenant confirmado: 00000000-0000-0000-0000-000000000001
+
+  Não há necessidade de criar extensão nova.
+  Não há dependência de outros módulos para a criação dos objetos.
+
+6. PERMISSÕES NECESSÁRIAS PARA APLICAR
+----------------------------------------------------------------------------------------------------
+  A execução NÃO deve ser feita com a role somente leitura
+  `tms_baseline_reader`.
+
+  A role aplicadora precisa ser proprietária/privilegiada no schema public:
+    - CREATE em public;
+    - CREATE TABLE / INDEX / FUNCTION / TRIGGER / POLICY;
+    - ALTER TABLE em recrutamento_candidatos;
+    - REFERENCES em tenants;
+    - GRANT/REVOKE nos objetos criados;
+    - permissão para NOTIFY.
+  O papel `postgres` (SQL Editor/owner) atende esses requisitos.
+
+7. COMANDO EXATO PREPARADO (NÃO EXECUTADO)
+----------------------------------------------------------------------------------------------------
+  Com psql local e DATABASE_URL apenas na variável de ambiente:
+
+    psql "$env:DATABASE_URL" -v ON_ERROR_STOP=1 -f "C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub\supabase\migrations\20261103000002_adm_app_02b2_ofertas_publicas.sql"
+
+  Observação: não usar `--single-transaction`, pois o próprio arquivo já contém
+  BEGIN/COMMIT.
+  Se o psql local não estiver instalado, usar o mesmo método do dump:
+  container efêmero `public.ecr.aws/supabase/postgres:17.6.1.147` com `psql`
+  e um env-file temporário, sem expor a senha na linha de comando.
+
+8. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  A migration 02B.2 está pronta para execução e não contém operação destrutiva
+  de dados ou alteração fora do Recrutamento.
+
+  A execução exige autorização expressa, pois altera o banco de produção.
+  Nenhum SQL foi executado nesta revisão.
+
+====================================================================================================

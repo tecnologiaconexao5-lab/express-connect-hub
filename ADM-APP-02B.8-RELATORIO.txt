@@ -1,0 +1,262 @@
+====================================================================================================
+ADM-APP-02B.8 — PREPARAÇÃO DA INICIALIZAÇÃO ISOLADA DO SUPABASE LOCAL
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP PRESTADOR: NÃO ACESSADO
+PRODUÇÃO: SOMENTE LEITURA
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: PREPARAÇÃO / INSPEÇÃO DOCKER / CONFIGURAÇÃO TEMPORÁRIA
+RESULTADO: CONFIGURAÇÃO TEMPORÁRIA PREPARADA; SUPABASE NÃO INICIADO;
+           CONTAINERS/VOLUMES EXISTENTES PRESERVADOS.
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO DEPLOY / ZERO SECRETS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. REGRAS CUMPRIDAS
+----------------------------------------------------------------------------------------------------
+  - APP Prestador: NÃO acessado.
+  - Produção: nenhuma escrita; nenhuma conexão SQL.
+  - `supabase start`, `supabase db start`, `db reset`, `db push` e migrations:
+    NÃO executados.
+  - Nenhum container existente foi parado, removido, reiniciado ou recriado.
+  - `src/lib/supabase.ts`: NÃO alterado (hash preservado).
+  - `supabase/config.toml` original: NÃO alterado (hash preservado).
+  - Migrations 02B.2 e 02B.3: NÃO alteradas.
+  - Nenhum módulo fora do Recrutamento foi modificado.
+  - Nenhuma estrutura de documentos/propostas foi duplicada.
+
+----------------------------------------------------------------------------------------------------
+2. DOCKER — ESTADO E EVIDÊNCIA
+----------------------------------------------------------------------------------------------------
+  - Docker Client: 29.4.1.
+  - Docker Server/Engine: 29.4.1 (Docker Desktop 4.71.0, Linux engine).
+  - O serviço `com.docker.service` aparece como STOPPED/Manual, mas o engine
+    respondeu (`docker info` e `docker ps` funcionaram).
+  - `docker version` teve saída parcial/erro de stderr no PowerShell, porém o
+    servidor foi identificado e as consultas read-only funcionaram.
+  - Nenhum comando de start/stop/restart de container foi executado.
+
+Comandos read-only executados:
+  - docker ps -a
+  - docker inspect supabase-db-qa
+  - docker volume ls
+  - docker volume inspect <volume anônimo>
+  - docker network ls
+  - docker system df -v
+  - Get-NetTCPConnection (portas)
+  - Get-FileHash (configs)
+
+----------------------------------------------------------------------------------------------------
+3. CONTAINERS EXISTENTES PRESERVADOS
+----------------------------------------------------------------------------------------------------
+Container relevante para o QA:
+  - Nome: supabase-db-qa
+  - Imagem: postgres:15-alpine
+  - Status observado: Exited (255)
+  - Restart policy: no
+  - Porta publicada: 0.0.0.0:54322->5432/tcp
+  - Rede: bridge
+  - Volume: anônimo `8ef1bf1c6ddb1d3268e35782f5068d2165cea7f1ab77384fe09ad431b2b7e8a2`
+    montado em `/var/lib/postgresql/data`
+  - Volume criado em 2026-09-20; tamanho observado ~166 kB.
+  - NÃO foi removido, reiniciado, recriado ou aberto para inspeção de conteúdo.
+  - Deve ser preservado; pode conter dados/estado do QA antigo.
+
+Outros containers existentes (não tocados):
+  - conexao-app (docker-app) — Restarting
+  - conexao-postgres (postgres:16-alpine) — Up/healthy
+  - conexao-redis (redis:7-alpine) — Up/healthy
+  - tms (express-connect-hub) — Up/unhealthy
+  - tms_n8n (n8n) — Up
+  - tms_evolution (evolution-api) — Up
+  - evolution_postgres (postgres:16-alpine) — Up/healthy
+  - tms_redis (redis:7-alpine) — Up/healthy
+  - tms_postgres (postgres:16-alpine) — Up/healthy
+  - n8n_tms (n8n) — Exited (255), 5 months ago
+
+Volumes preservados:
+  - 8ef1bf1c6ddb1d3268e35782f5068d2165cea7f1ab77384fe09ad431b2b7e8a2
+    (volume anônimo do supabase-db-qa; ~166 kB)
+  - express-connect-hub_pg_data (~218.6 MB)
+  - evolution-api_postgres_data (~86.15 MB)
+  - express-connect-hub_n8n_data, express-connect-hub_redis_data,
+    express-connect-hub_evolution_instances, evolution-api_redis_data,
+    evolution-api_evolution_instances, docker_postgres-data,
+    docker_redis-data, temp_data, n8n_data, wf_data.
+  - Nenhum volume foi removido, recriado ou alterado.
+
+Redes existentes (preservadas):
+  - bridge, docker_conexao-net, evolution_network, host, none, tms_network.
+  - Não existe rede `supabase_network_express-connect-recruit-qa-02b8`.
+
+----------------------------------------------------------------------------------------------------
+4. CONFLITOS IDENTIFICADOS
+----------------------------------------------------------------------------------------------------
+  - Porta 54322: já mapeada pelo container `supabase-db-qa` (exited).
+  - Porta 5432: usada por `tms_postgres` e `conexao-postgres`.
+  - Porta 80: usada pelo container `tms`.
+  - Porta 6379: usada por `tms_redis`/`conexao-redis`.
+  - Porta 8080: usada por `tms_evolution`.
+  - Porta 5679: usada por `tms_n8n`.
+  - Conclusão: as portas padrão do Supabase local (54321/54322/54323/54324/
+    54320/54327/54329/8083) NÃO devem ser usadas no novo ambiente sem revisão;
+    54322 já está associada ao container antigo.
+
+Portas escolhidas para a configuração temporária:
+  - API: 55321
+  - DB: 55322
+  - Shadow DB: 55320
+  - Studio: 55323
+  - Inbucket: 55324
+  - Pooler: 55329 (desabilitado)
+  - Analytics: 55327 (desabilitado)
+  - Edge inspector: 5583
+Verificação atual: todas as 8 portas estavam FREE no momento da inspeção.
+
+Nomes:
+  - Project ID local proposto: express-connect-recruit-qa-02b8
+  - Nenhum container existente com esse nome.
+  - Nenhum volume/rede com esse nome.
+  - O container antigo `supabase-db-qa` permanece intocado.
+
+----------------------------------------------------------------------------------------------------
+5. CONFIGURAÇÃO TEMPORÁRIA ISOLADA PREPARADA
+----------------------------------------------------------------------------------------------------
+Local:
+  C:\Users\DIEGOB~1\AppData\Local\Temp\express-connect-qa-02b8
+
+Conteúdo preparado:
+  - supabase/config.toml
+  - supabase/functions/ofertas-publicas/index.ts (cópia)
+  - supabase/functions/ofertas-publicas/validation.ts (cópia)
+
+Configuração temporária:
+  - project_id = "express-connect-recruit-qa-02b8"
+  - [api] port = 55321
+  - [db] port = 55322
+  - [db] shadow_port = 55320
+  - [db.pooler] enabled = false; port = 55329
+  - [studio] port = 55323
+  - [inbucket] port = 55324
+  - [analytics] enabled = false; port = 55327
+  - [edge_runtime] inspector_port = 5583
+  - [db.migrations] enabled = false
+  - [db.seed] enabled = false
+  - sql_paths = []
+
+Garantia de não aplicar migrations/seed automaticamente:
+  - As duas chaves estão explicitamente desabilitadas na cópia temporária:
+      [db.migrations] enabled = false
+      [db.seed] enabled = false
+  - `sql_paths` foi esvaziado.
+  - Não foi criada pasta de migrations no projeto temporário.
+  - Nenhum `supabase start`/`db start`/`reset` foi executado.
+  - A cópia temporária não tem `.temp`/link de projeto remoto.
+  - O projeto temporário está fora do repositório e não substitui o original.
+
+Hashes:
+  - Original `supabase/config.toml`:
+      A025E40F5427A753F10A3A8B41F8967EA4248D04BCA621C39270480BEF1D270B
+  - Cópia temporária após edição:
+      B541ABE40B789B4340D26B36A1486180A8260555A68938BC2E22DD7728C53A90
+  - Original `src/lib/supabase.ts`:
+      A765597C6EADAEF4489CAD57132AFF84D4D8CA5B1A24802DD33CA947D25FAF91
+  - Nenhum segredo/JWT/connection string foi copiado para a configuração
+    temporária; varredura encontrou 0 padrões de secret.
+
+----------------------------------------------------------------------------------------------------
+6. BASELINE — INTEGRIDADE E PLANO SEGURO
+----------------------------------------------------------------------------------------------------
+Arquivo:
+  supabase/baseline/full_production_schema_20260920.sql
+
+Estado atual:
+  - Tamanho: 829.480 bytes.
+  - Linhas: 17.372.
+  - SHA-256 atual: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F.
+  - Sem COPY/INSERT/UPDATE/DELETE de dados de negócio (0 no scan).
+  - 1.141 ocorrências brutas de CREATE TABLE/FUNCTION/POLICY/etc.
+
+DIVERGÊNCIA NÃO RESOLVIDA:
+  - Manifesto `BASELINE_MANIFEST_20260920.txt` registra:
+      Tamanho: 812.613 bytes
+      Linhas: 17.373
+      SHA-256: 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  - O arquivo atual não corresponde ao manifesto.
+  - Portanto a integridade NÃO está comprovada.
+
+Cobertura:
+  - Contém o núcleo: tenants, tenant_usuarios, recrutamento_candidatos,
+    prestadores, documentos_prestadores, candidato_documentos, orcamentos.
+  - NÃO contém documentos_metadata nem o bucket documentos_operacionais
+    (migrations de 2026-11-02, posteriores ao snapshot).
+  - NÃO contém preferencias_operacionais/respostas_situacionais em
+    recrutamento_candidatos; a 02B.3 adiciona.
+  - NÃO contém recrutamento_candidatos.tenant_id; a 02B.3 adiciona.
+
+Plano seguro (sem aplicar agora):
+  1. Reconciliar o checksum: comparar com manifesto e decidir se o baseline
+     atual é uma versão posterior legítima ou se precisa ser regenerado.
+  2. Se a integridade não for comprovada, NÃO aplicar.
+  3. Se autorizado a regenerar, fazer extração read-only com autorização e
+     sem SQL de escrita em produção.
+  4. Aplicar somente em banco local confirmado (`--local`), nunca `--linked`.
+  5. Validar contagem de objetos e ausência de dados antes de seguir.
+  6. Aplicar 02B.2 e depois 02B.3 somente após baseline validado.
+  7. Para documentos, aplicar também 20261102000001 e 20261102000002.
+
+----------------------------------------------------------------------------------------------------
+7. MIGRATIONS 02B.2/02B.3 — PRONTIDÃO ESTÁTICA
+----------------------------------------------------------------------------------------------------
+  - Arquivos locais presentes e não alterados.
+  - Ordem: 02B.2 → 02B.3.
+  - 02B.2 depende de `tenants`, `tenant_usuarios`, `recrutamento_candidatos`
+    e `current_tenant_id_safe`, todos no baseline.
+  - 02B.3 depende dos objetos da 02B.2 e adiciona de forma idempotente
+    `tenant_id`, `preferencias_operacionais` e `respostas_situacionais`.
+  - Nenhuma execução real foi feita; compatibilidade é estática, não homologada.
+  - Nenhuma migration foi aplicada no projeto temporário.
+
+----------------------------------------------------------------------------------------------------
+8. BLOQUEIOS E PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+Bloqueios atuais:
+  1. Baseline com checksum/tamanho divergente do manifesto.
+  2. `src/lib/supabase.ts` hardcoded em PRODUÇÃO; o frontend não pode ser
+     apontado ao local sem alteração futura (não feita nesta missão).
+  3. Nenhum start local foi executado; falta autorização para iniciar.
+  4. `supabase-db-qa` e seu volume devem ser preservados; não são o novo alvo.
+
+Próxima ação exata (após autorização):
+  1. Resolver a integridade do baseline; não aplicar enquanto divergente.
+  2. Iniciar somente o banco local com a configuração temporária:
+       supabase --workdir "C:\Users\DIEGOB~1\AppData\Local\Temp\express-connect-qa-02b8" db start
+     (não executado nesta missão)
+  3. Confirmar alvo local:
+       supabase db query --local "select current_database(), current_user;"
+  4. Só então aplicar baseline e 02B.2/02B.3 via `supabase db query --local -f ...`,
+     com validação de que o banco é local.
+  5. Para Edge: `supabase functions serve ofertas-publicas --no-verify-jwt`
+     com env local; não usar secrets de produção.
+  6. O frontend só pode ser testado após autorização para trocar o cliente
+     hardcoded por seleção de ambiente; isso é fora desta missão.
+
+----------------------------------------------------------------------------------------------------
+9. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota.
+  - Nenhuma migration aplicada.
+  - Nenhum `supabase start`/`db start`/`reset`/`push`.
+  - Nenhum deploy/secret.
+  - Nenhum container parado, removido, reiniciado ou recriado.
+  - Nenhum volume removido/recriado.
+  - APP não acessado.
+  - `src/lib/supabase.ts` e `supabase/config.toml` originais preservados.
+  - Migrations 02B.2/02B.3 preservadas.
+  - QA local NÃO iniciado; homologação NÃO declarada.
+  - Contagem mantida; nenhum avanço indevido para produção.
+
+RESULTADO FINAL: CONFIGURAÇÃO TEMPORÁRIA ISOLADA PREPARADA, MAS QA LOCAL NÃO INICIADO.
+PRÓXIMO PASSO: AUTORIZAR A VALIDAÇÃO DO BASELINE E O START DB-ONLY COM A CONFIG TEMPORÁRIA.
+
+====================================================================================================

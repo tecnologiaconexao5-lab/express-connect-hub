@@ -1,0 +1,347 @@
+====================================================================================================
+DIAGNÓSTICO — INTELIGÊNCIA DE PERFIS E COMPATIBILIDADE DO RECRUTAMENTO
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+TIPO: AUDITORIA READ-ONLY / PROPOSTA TÉCNICA
+NENHUMA ALTERAÇÃO DE CÓDIGO, BANCO OU PRODUÇÃO
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+  Já existe uma base funcional para evoluir o Recruitment:
+    - formulário público com perfil operacional real;
+    - ofertas e candidatos;
+    - operações/vagas persistidas em `recrutamento_operacoes`;
+    - prestadores e veículos operacionais;
+    - ordens de serviço e escala como demanda real;
+    - gerador de anúncio operacional;
+    - dois motores de compatibilidade existentes, porém não unificados.
+
+  O principal gargalo não é falta de telas. É falta de dados estruturados
+  confiáveis em vários campos e a existência de três lógicas de match diferentes:
+    - `matchPrestadoresService` (real, usado em OS);
+    - `matchService` (localStorage, heurística simples);
+    - `IAOperacional` (heurística em memória, fonte de prestadores diferente).
+
+  A evolução deve reaproveitar o motor real e criar uma camada explicável e
+  auditável, sem inventar campos nem considerar ausência como aprovação.
+
+2. O QUE JÁ EXISTE — PERFIS PÚBLICOS
+----------------------------------------------------------------------------------------------------
+  Origem: formulário `/cadastro-prestador` → `public.recrutamento_ofertas`.
+
+  Campos coletados e já persistidos:
+    - tipo_oferta:
+        motoboy;
+        motorista_veiculo_proprio;
+        disponibilidade_veiculo.
+    - contato: nome, telefone/WhatsApp, e-mail.
+    - localização: cidade, UF e regiões atendidas (array de texto).
+    - disponibilidade: dias da semana, horário inicial e final.
+    - modalidades: esporadica, urgente, fixa, recorrente.
+    - veículo:
+        tipo (moto/veículos), tipo de moto, categoria (próprio/agregado/terceiro),
+        carroceria, modelo, placa, ano;
+        para moto: possui baú e capacidade do baú em litros.
+    - capacidade: kg, m³ e dimensões (comprimento/largura/altura).
+    - características: baú, refrigerado, congelado, rastreador, seguro, ajudante etc.
+    - comercial: diária, valor por km, saída, mensalidade, valor negociável,
+      condições comerciais.
+    - restrições e observações em texto livre.
+    - consentimento LGPD e versão do termo.
+
+  Dados reais atuais:
+    - recrutamento_ofertas: 2 registros (ambos de teste, motoboy/moto, SP/Grande SP).
+    - Não há ainda base real suficiente para medir lacunas de mercado.
+
+  Observação: restrições, condições e observações são texto livre; não podem ser
+  usados como filtros rígidos sem normalização ou revisão humana.
+
+3. CANDIDATOS E PREFERÊNCIAS
+----------------------------------------------------------------------------------------------------
+  `recrutamento_candidatos` possui:
+    - nome, cidade, UF, veículo, placa, score, stage, status documental;
+    - preferencias_operacionais (JSONB);
+    - respostas_situacionais (JSONB);
+    - questionario_respostas (JSONB);
+    - disponibilidade_recrutamento;
+    - histórico, parecer IA, pontos fortes/riscos, score de comprometimento.
+
+  A conversão de oferta grava, no caminho de candidato NOVO:
+    - preferências com regiões, dias, horários, modalidades, veículo, capacidade,
+      valores e condições;
+    - vínculo `oferta_id`;
+    - documentos vazios (correto nesta fase).
+
+  Lacuna real:
+    - 39 candidatos existentes;
+    - preferencias_operacionais preenchidas: 0;
+    - respostas_situacionais preenchidas: 0;
+    - questionario_respostas: 1;
+    - 27/39 sem veículo e sem UF.
+
+  Além disso, no caminho de conversão que REUTILIZA candidato existente por
+  telefone/e-mail, a função atualiza `oferta_id` e data, mas NÃO copia as
+  preferências da oferta para o candidato. Para inteligência, isso deixa o
+  candidato reutilizado sem o perfil operacional que originou a oferta.
+
+4. VAGAS, OPERAÇÕES E NECESSIDADES
+----------------------------------------------------------------------------------------------------
+4.1 `recrutamento_operacoes`
+  É a tabela usada pelo módulo Recruitment para vagas/operações.
+  Campos: nome, cliente, região, rota origem/destino, tipo de veículo, tipo de
+  carga, método, peso, dimensões (texto), carregamento/descarga, horários,
+  recorrência, frequência, status, prioridade, financeiro, meta, histórico.
+
+  Dados reais:
+    - 5 operações;
+    - 2 abertas com 6 vagas pendentes;
+    - 3 pausadas com 7 vagas;
+    - vagas preenchidas: 0;
+    - tipos: HR (3), Fiorino (1), 3/4 (1), VUC (1);
+    - dimensões: vazias nas 5 operações;
+    - logística detalhada não está em coluna própria.
+
+4.2 `operacoes`
+  Existe a tabela `public.operacoes`, mas está vazia (0 registros).
+  Não é fonte útil hoje; não criar nova estrutura sem confirmar uso.
+
+4.3 `rede_oportunidades`
+  - 18 oportunidades;
+  - `veiculo_necessario` preenchido em 18;
+  - região preenchida em 12;
+  - `tipo_veiculo` vazio em 18.
+  É uma fonte estruturada parcial para demanda.
+
+4.4 Ordens de serviço e escala
+  - `ordens_servico`: 207;
+  - `veiculo_tipo` nulo em 66 (grande lacuna de classificação);
+  - tipos presentes: moto, VUC, MOTO, fiorino, van, VAN, caminhão etc.;
+  - `alocacoes_escala`: 211, com VUC, fiorino, caminhão, HR, carreta e outros.
+  Servem como demanda observada, mas exigem normalização de tipo de veículo,
+  região e capacidade.
+
+5. COMPATIBILIDADE — O QUE JÁ EXISTE
+----------------------------------------------------------------------------------------------------
+5.1 `src/services/operacao/matchPrestadoresService.ts` (REAL)
+  - Carrega prestadores, veículos, perfil de talento, disponibilidade,
+    documentos e ocorrências;
+  - filtros eliminatórios de veículo, capacidade, refrigeração, documentação e
+    disponibilidade;
+  - score ponderado:
+      20% proximidade da coleta;
+      15% região de entrega;
+      15% disponibilidade;
+      20% reputação;
+      10% experiência;
+      10% modalidade;
+      10% rota/deslocamento;
+  - retorna motivos e eliminados.
+  Usado atualmente em OS/alocação.
+  Problema: depende de `prestador_perfil_talento` e
+  `prestador_disponibilidade`, que estão com 0 registros hoje.
+
+5.2 `src/modules/recrutamento/services/matchService.ts` (LOCALSTORAGE)
+  - score simples: 35% veículo, 30% região, 20% score, 15% status;
+  - grava matches apenas no localStorage;
+  - não é fonte confiável para uma inteligência compartilhada nem para auditoria.
+  Não deve ser a base da evolução.
+
+5.3 `src/modules/recrutamento/components/ia/IAOperacional.tsx` (HEURÍSTICA)
+  - calcula compatibilidade por veículo, região, score e status;
+  - gera sugestões, anúncios e mensagens;
+  - usa `recrutamento_operacoes` e `recrutamento_prestadores`.
+  Problema: `recrutamento_prestadores` tem 24 registros, 23 sem tipo de veículo;
+  não representa a base operacional completa de 40 prestadores/66 veículos.
+
+5.4 Outros recursos reutilizáveis
+  - `chaveVeiculoMatch` / aliases de veículo;
+  - `carregarPrestadoresBase`;
+  - `buildOperationAnnouncement` / `exportarAnuncioTexto`;
+  - `GeradorAnuncioWhatsApp` e `OperationJobPreview`;
+  - `prestadoresService`, `operacoesService`, `talentBankService`;
+  - `flutter`/não aplicável — este projeto é TMS.
+
+6. O QUE FALTA PARA UMA INTELIGÊNCIA CONFIÁVEL
+----------------------------------------------------------------------------------------------------
+  F1. Modelo único de perfil operacional
+      Unificar oferta, candidato e prestador em um shape normalizado:
+      veículo, capacidade, região, disponibilidade, modalidade, valores e
+      restrições, com origem e estado de preenchimento.
+
+  F2. Preenchimento de preferências dos candidatos
+      Copiar o perfil da oferta para candidato novo E para candidato reutilizado,
+      sem sobrescrever dados confirmados sem revisão.
+
+  F3. Dados de perfil dos prestadores
+      `prestador_perfil_talento`: 0 registros;
+      `prestador_disponibilidade`: 0 registros;
+      33/40 prestadores sem região principal;
+      23/24 `recrutamento_prestadores` sem tipo de veículo.
+
+  F4. Normalização geográfica e de veículo
+      Regiões em texto livre (“Variadas”, “Viagens”, “Todas as capitais”,
+      “Grande SP”), tipos em caixa variada (VUC/vuc, MOTO/moto, Fiorino/fiorino).
+
+  F5. Persistência da logística da vaga
+      `Operacao` possui `logistica` opcional, e a UI tem
+      `OperacaoFormLogistica`/`OperationJobPreview`, mas
+      `operacoesService.toDB()` e `fromDB()` não mapeiam `logistica`.
+      O anúncio detalhado pode ser perdido/reaberto incompleto.
+
+  F6. Taxonomia de compatibilidade e auditoria
+      Não existe classificação persistida nem explicação padronizada
+      (`compatível`, `com ressalvas`, `incompatível`, `insuficiente`).
+
+  F7. Lacunas de base
+      Ofertas: 2 (teste);
+      candidatos: 39, 0 com preferências, 27 sem veículo/UF;
+      prestadores: 40, 33 sem região;
+      veículos: 66, 24/28 VUC sem kg/m³, 11/12 motos sem kg/m³;
+      operações: 5, 13 vagas, 0 preenchidas;
+      OS: 207, 66 sem tipo de veículo;
+      rede: 18, todas sem `tipo_veiculo` preenchido.
+      Conclusão: ainda não há massa suficiente para afirmar lacunas regionais
+      de mercado; há lacunas comprovadas de PREENCHIMENTO da base.
+
+7. CLASSIFICAÇÃO EXPLICÁVEL PROPOSTA
+----------------------------------------------------------------------------------------------------
+  Para cada combinação vaga × profissional (oferta ou candidato), calcular:
+
+  A. Requisitos eliminatórios conhecidos:
+     - veículo necessário × veículo disponível;
+     - peso/cubagem × capacidade;
+     - refrigeração exigida × característica de refrigeração;
+     - disponibilidade declarada × janela da operação;
+     - região obrigatória × região atendida.
+     Se um requisito obrigatório estiver AUSENTE, não aprovar por suposição.
+
+  B. Score de aderência (0–100) para requisitos não eliminatórios:
+     - região 25%;
+     - veículo/capacidade 25%;
+     - disponibilidade 15%;
+     - modalidade/experiência 15%;
+     - condições comerciais/orçamento 10%;
+     - reputação/histórico 10%.
+     Pesos propostos; devem ser configuráveis e documentados.
+
+  C. Classificação:
+     - COMPATÍVEL:
+         todos os requisitos obrigatórios conhecidos e atendidos;
+         score >= 80;
+         sem ressalvas relevantes.
+     - COMPATÍVEL COM RESSALVAS:
+         requisitos obrigatórios conhecidos e atendidos;
+         score entre 60 e 79; ou ausência de campo NÃO obrigatório;
+         ou região/valor parcialmente aderente.
+     - INCOMPATÍVEL:
+         falha comprovada em requisito obrigatório (veículo, capacidade,
+         refrigeração, região obrigatória, indisponibilidade declarada).
+     - INFORMAÇÃO INSUFICIENTE:
+         falta campo obrigatório para decidir — por exemplo veículo,
+         capacidade, região, disponibilidade ou condição comercial.
+         Nunca converter ausência em “compatível”.
+
+  D. Transparência:
+     Cada resultado deve retornar:
+       - classificação;
+       - score;
+       - requisitos atendidos;
+       - requisitos violados;
+       - campos ausentes;
+       - origem de cada dado (oferta, candidato, prestador, operação);
+       - data/hora da avaliação.
+
+  E. Não fazer:
+     - inventar capacidade, região, disponibilidade ou valores;
+     - usar texto livre como confirmação;
+     - tratar candidato sem documentos como incompatível na fase pública
+       (documentos são gate posterior);
+     - reutilizar candidato sem copiar o perfil da oferta.
+
+8. ANÚNCIOS INTELIGENTES — O QUE JÁ EXISTE E O QUE FALTA
+----------------------------------------------------------------------------------------------------
+  Já existe:
+    - `buildOperationAnnouncement` + `exportarAnuncioTexto`;
+    - `OperationJobPreview`;
+    - `GeradorAnuncioWhatsApp`;
+    - `IAOperacional.gerarAnuncioVaga`;
+    - `DetalhesOperacaoSheet` com “Gerar Anúncio para Prestador”.
+
+  Falta:
+    - extrair automaticamente o “perfil procurado” a partir da operação;
+    - gerar região de captação normalizada;
+    - listar profissionais já cadastrados que atendam à necessidade;
+    - persistir a logística detalhada usada no anúncio;
+    - vincular anúncio ao resultado do match e ao histórico.
+
+  Proposta:
+    1. montar um `PerfilNecessidade` a partir da operação:
+       veículo, capacidade, refrigeração, região, janela, modalidade e orçamento;
+    2. executar o motor de compatibilidade sobre ofertas/candidatos/prestadores;
+    3. agrupar os aprovados/ressalvas e explicar os ausentes;
+    4. usar o gerador existente para o texto, sem duplicar layout;
+    5. exigir revisão humana antes de publicar.
+
+9. PROPOSTA TÉCNICA E SEQUÊNCIA
+----------------------------------------------------------------------------------------------------
+  Etapa 1 — Read model e normalização (sem nova entidade de UI)
+    - adaptar oferta/candidato/prestador para `PerfilProfissional`;
+    - normalizar veículo (reutilizar `chaveVeiculoMatch`);
+    - normalizar cidade/UF/região;
+    - marcar cada campo como `conhecido`, `ausente` ou `conflitante`.
+
+  Etapa 2 — Completar as fontes
+    - gravar preferências no candidato novo e no reutilizado;
+    - persistir `logistica` em `recrutamento_operacoes` (JSONB ou coluna;
+      decisão de schema em missão própria);
+    - normalizar dados de prestadores/veículos/regiões de forma controlada.
+
+  Etapa 3 — Motor único explicável
+    - reutilizar `calcularMatchPrestadores`/`carregarPrestadoresBase`;
+    - criar adaptador para candidatos e ofertas;
+    - retornar status, score, motivos, violações e campos ausentes;
+    - testes unitários com casos de cada classificação.
+
+  Etapa 4 — Integração no Recruitment
+    - mostrar match na vaga e no perfil do candidato/oferta;
+    - permitir contato e conversão explícita;
+    - não alocar automaticamente.
+
+  Etapa 5 — Anúncio inteligente e lacunas
+    - usar `buildOperationAnnouncement`/`GeradorAnuncioWhatsApp`;
+    - anexar shortlist real e requisitos;
+    - painel de lacunas por região/veículo/modalidade usando SQL real;
+    - somente dados preenchidos; sem mock.
+
+  Etapa 6 — QA
+    - cenários: compatível, ressalvas, incompatível, insuficiente;
+    - conferir que campo ausente não vira aprovação;
+    - conferir que oferta reutilizada propaga preferências;
+    - conferir que anúncio reflete a vaga persistida.
+
+10. LIMITAÇÕES E RISCOS
+----------------------------------------------------------------------------------------------------
+  - A base atual é pequena e contaminada por testes; não serve para conclusão
+    de mercado regional.
+  - Muitos campos operacionais estão nulos; qualquer ranking agora seria
+    frágil e pouco explicável.
+  - Não criar nova tabela de match sem antes consolidar o read model.
+  - Não usar `matchService` (localStorage) como fonte oficial.
+  - Não usar `IAOperacional` como motor único enquanto ele lê
+    `recrutamento_prestadores` incompletos.
+  - Não alterar os 39 candidatos nem os dados de ofertas sem autorização.
+
+11. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  Há infraestrutura suficiente para uma evolução incremental e de baixo risco.
+  O caminho mais seguro é:
+    1. normalizar e completar dados;
+    2. unificar o motor real já existente;
+    3. explicar cada recomendação;
+    4. só depois expor anúncios e lacunas na interface.
+
+  Nenhuma alteração de código, banco, migration, secret ou produção foi feita
+  nesta missão. A próxima etapa depende de aprovação deste relatório.
+
+====================================================================================================

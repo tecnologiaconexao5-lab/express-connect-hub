@@ -8,7 +8,7 @@
 
 ## 2. Hospedagem
 - Frontend: Vercel
-- URL atual: https://express-connect-hub.vercel.app
+- URL atual: https://app.conexaoexpress.com.br
 - Futuro domínio: tms.conexaoexpress.com.br
 
 ## 3. Banco de dados

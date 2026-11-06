@@ -1,0 +1,135 @@
+====================================================================================================
+HOMOLOGAÇÃO FUNCIONAL 02B.5 — FORMULÁRIO E PAINEL DE OFERTAS
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+URL TESTADA: https://app.conexaoexpress.com.br/cadastro-prestador
+RESULTADO: BLOQUEADO — O BUILD PUBLICADO NO VERCEL NÃO CONTÉM A ATUALIZAÇÃO 02B
+NÃO FOI POSSÍVEL HOMOLOGAR O NOVO FORMULÁRIO NEM O PAINEL
+====================================================================================================
+
+1. TESTES VISUAIS
+----------------------------------------------------------------------------------------------------
+  Desktop (1440x900) e mobile (390x844):
+    - A rota /cadastro-prestador abriu normalmente.
+    - Porém, o conteúdo exibido é o formulário ANTIGO de cadastro de prestador.
+    - Campos observados: Nome Completo, CPF, RG, Data de Nascimento, Selfie,
+      Foto da CNH.
+    - Há upload de documentos e câmera já na primeira etapa.
+    - Não foram observados os 5 passos do novo Ofertas Públicas, seleção de
+      motoboy/motorista/veículo, disponibilidade, valores, resumo ou LGPD do
+      novo fluxo.
+
+  Evidências:
+    - C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\homologacao_02b5\
+      public_desktop_step1.png
+    - C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\homologacao_02b5\
+      public_mobile_step1.png
+
+  Conclusão visual: o frontend publicado está desatualizado em relação ao
+  código novo do Recrutamento.
+
+2. TESTES FUNCIONAIS DO FORMULÁRIO NOVO
+----------------------------------------------------------------------------------------------------
+  NÃO EXECUTADOS — bloqueados pelo build antigo.
+
+  Não foi possível testar:
+    - os 5 passos do novo formulário;
+    - validações do novo fluxo;
+    - perfis motoboy/motorista/veículo;
+    - consentimento LGPD novo;
+    - protocolo após gravação;
+    - confirmação de ausência de documentos pessoais.
+
+  O formulário antigo encontrado solicita exatamente documentos pessoais
+  (CPF, RG, selfie, CNH), o que NÃO atende ao requisito do novo fluxo.
+
+3. TESTE DO PAINEL INTERNO
+----------------------------------------------------------------------------------------------------
+  Login:
+    - realizado com a conta E2E configurada no .env;
+    - login concluído e dashboard carregado;
+    - nenhuma credencial foi exibida no relatório ou terminal.
+
+  Recrutamento:
+    - rota /recrutamento?section=ofertas-publicas abriu;
+    - porém o painel exibido também é o build antigo;
+    - a interface mostra Dashboard, Operações, Pipeline 17 Etapas, Prestadores,
+      Banco de Talentos, CRM, Documentos, IA, Automações, Portal, Operacionais;
+    - NÃO foi encontrada a aba/seção "Ofertas Públicas";
+    - o protocolo OF-20261104-9E680E36 não apareceu;
+    - não foi possível testar busca, filtros, indicadores, detalhes, comparação,
+      contato, observações, disponibilidade, transições, link, WhatsApp ou
+      conversão.
+
+  Evidências:
+    - C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\homologacao_02b5\
+      panel_after_login.png
+    - C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\homologacao_02b5\
+      panel_ofertas.png
+
+4. OPERAÇÕES REALMENTE EXECUTADAS
+----------------------------------------------------------------------------------------------------
+  - Abertura e navegação no formulário público.
+  - Captura de telas desktop e mobile.
+  - Login na interface TMS com a conta E2E.
+  - Navegação até Recrutamento e parâmetro ofertas-publicas.
+  - Consulta read-only de contagens no banco.
+
+  NÃO foram executados:
+    - cadastro pelo formulário antigo;
+    - conversão em candidato;
+    - alteração de status/contato;
+    - alteração de oferta;
+    - migrations, deploy de Edge, db push ou alteração de secrets;
+    - exclusão do cadastro de teste.
+
+5. EVIDÊNCIAS DE BANCO
+----------------------------------------------------------------------------------------------------
+  Contagens após os testes:
+    recrutamento_ofertas: 1
+    recrutamento_oferta_eventos: 1
+    recrutamento_candidatos: 39
+    prestadores: 40
+    auth.users: 27
+    oferta OF-20261104-9E680E36: 1
+
+  Nenhum candidato, prestador ou usuário Auth novo foi criado nesta missão.
+
+6. ITENS APROVADOS
+----------------------------------------------------------------------------------------------------
+  - A rota pública responde no domínio Vercel.
+  - Login interno funciona.
+  - O backend/Edge e o registro de teste já estavam validados.
+  - Nenhum dado foi alterado durante esta homologação.
+
+7. ITENS PENDENTES
+----------------------------------------------------------------------------------------------------
+  - Publicar o build atualizado do frontend no Vercel.
+  - Confirmar que o novo OfertaPublicaForm substitui o formulário antigo.
+  - Confirmar a aba Ofertas Públicas no Recrutamento.
+  - Repetir os testes de busca, filtros, detalhes, comparação, contato,
+    histórico, status, disponibilidade e conversão.
+  - Testar cópia do link e envio por WhatsApp no painel novo.
+
+8. DEFEITOS ENCONTRADOS
+----------------------------------------------------------------------------------------------------
+  D1 — CRÍTICO: a URL pública serve o formulário antigo com CPF, RG, selfie e
+       CNH, contrariando o requisito de cadastro simples sem documentos.
+  D2 — CRÍTICO: o painel publicado não possui a seção Ofertas Públicas e não
+       exibe a oferta OF-20261104-9E680E36.
+  D3 — CONSEQUÊNCIA: não é possível testar conversão pela interface publicada.
+
+  Causa aparente: o build do Vercel está atrás do código local novo do
+  Recrutamento. Não foi possível confirmar a causa no painel do Vercel sem
+  acesso à conta de deploy; a evidência é o comportamento do frontend
+  publicado.
+
+9. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  A homologação NÃO foi concluída. O backend está pronto, mas a interface
+  publicada ainda é a versão antiga. Não se deve executar a conversão enquanto
+  o painel novo não estiver disponível.
+
+  Próxima ação: publicar o frontend atualizado e repetir integralmente a 02B.5.
+
+====================================================================================================

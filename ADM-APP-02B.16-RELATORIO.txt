@@ -1,0 +1,196 @@
+====================================================================================================
+ADM-APP-02B.16 — EXTRAÇÃO REAL E CERTIFICAÇÃO DO BASELINE DE PRODUÇÃO
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+SUPABASE: uwrvzsjtpgaifkktpepn
+ROLE: tms_baseline_reader
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: EXTRAÇÃO REAL DE SCHEMA / CERTIFICAÇÃO
+RESULTADO: BASELINE EXTRAÍDO COM RESSALVAS
+ZERO MIGRATIONS / ZERO DEPLOY / ZERO APLICAÇÃO EM QA / ZERO ESCRITA EM PRODUÇÃO
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. PRÉ-CHECAGEM
+----------------------------------------------------------------------------------------------------
+  - Repositório: express-connect-hub.
+  - Projeto Supabase: uwrvzsjtpgaifkktpepn / conexao-express-tms.
+  - Vinculação local confirmada em `supabase/.temp/linked-project.json`.
+  - Credencial: tms_baseline_reader, com senha lida do Windows Credential
+    Manager (PasswordVault), resource `express-connect-tms-baseline-reader`.
+  - Senha não exibida/gravada em argumento, arquivo, script, .env, Git ou
+    relatório.
+  - Login real confirmado:
+      current_user     = tms_baseline_reader
+      current_database = postgres
+      rolsuper         = false
+      rolbypassrls     = false
+  - Escrita efetiva confirmada como 0:
+      tabelas public: 274; INSERT=0; UPDATE=0; DELETE=0; TRUNCATE=0.
+  - Arquivo de destino NÃO existia antes da extração.
+  - Baseline antigo e manifesto antigo intactos.
+  - Nenhuma credencial administrativa usada para o dump; nenhum service_role.
+
+----------------------------------------------------------------------------------------------------
+2. EXTRAÇÃO EXECUTADA
+----------------------------------------------------------------------------------------------------
+Ferramenta:
+  C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\pgsql17\extracted\pgsql\bin\pg_dump.exe
+  Versão: PostgreSQL 17.6.
+  Servidor: PostgreSQL 17.6.
+
+Comando (sem segredos):
+  pg_dump --schema-only --schema=public --quote-all-identifiers
+          --no-owner --encoding=UTF8
+          --file supabase/baseline/full_production_schema_readonly_20261103.sql
+          --dbname <URL_READ_ONLY_SEM_SENHA>
+  PGPASSWORD fornecido apenas via ambiente do processo; SSL obrigatório.
+
+Resultado:
+  - Exit code: 0.
+  - Nenhum `--role`, `--clean`, `--create`, `--data-only`, `--no-acl` ou
+    `--no-privileges`.
+  - Dump real executado uma única vez.
+  - Nenhuma migration, deploy ou alteração funcional.
+
+----------------------------------------------------------------------------------------------------
+3. ARQUIVO GERADO
+----------------------------------------------------------------------------------------------------
+  supabase/baseline/full_production_schema_readonly_20261103.sql
+  - Tamanho: 1.359.006 bytes.
+  - Linhas: 40.188.
+  - SHA-256:
+      236E5AD4899A18073CC56AB4651678D462D0A1A307CD9BE84A4CC8EF648A79B3
+  - Início: cabeçalho `pg_dump` 17.6, `SET` de sessão, `SET row_security = off`.
+  - Fim: `PostgreSQL database dump complete` + `\unrestrict`.
+  - Nenhum byte NUL.
+  - Nenhum `CREATE DATABASE`.
+  - Nenhum `SET ROLE`/`SET SESSION AUTHORIZATION`.
+  - Nenhum `COPY`/`INSERT INTO`/`UPDATE`/`DELETE FROM` de dados.
+  - Nenhum padrão de secret encontrado.
+
+----------------------------------------------------------------------------------------------------
+4. CERTIFICAÇÃO ESTRUTURAL
+----------------------------------------------------------------------------------------------------
+Contagens verificadas no arquivo:
+  - CREATE TABLE: 250
+  - CREATE VIEW: 24
+  - CREATE FUNCTION: 161
+  - CREATE TRIGGER: 132
+  - CREATE POLICY: 614
+  - ALTER TABLE ... ENABLE RLS: 239
+  - CREATE INDEX: 699
+  - CREATE UNIQUE INDEX: 20
+  - ADD CONSTRAINT: 564
+      * PRIMARY KEY: 250
+      * FOREIGN KEY: 266
+      * UNIQUE: 48
+  - COMMENT ON: 205
+  - GRANT (linhas iniciadas): 1545
+  - REVOKE (linhas iniciadas): 33
+  - ALTER DEFAULT PRIVILEGES: 24
+
+Consistência com o inventário read-only anterior:
+  - Tabelas + views: 250 + 24 = 274, coerente com o inventário de 274 objetos.
+  - Funções: 161, igual ao inventário.
+  - Triggers: 132, igual.
+  - Policies: 614, igual.
+  - RLS: 239 (o baseline antigo tinha 226; diferença explicável por ser
+    extração live mais recente).
+  - Índices: 719 CREATE INDEX/UNIQUE INDEX; o inventário de 1017 inclui
+    índices de constraints, que o pg_dump representa como constraints.
+  - Constraints: 564 declaradas (PK/FK/UQ); CHECKs em definição de tabela
+    completam o inventário anterior de 670.
+  - Comentários e ACLs presentes.
+
+----------------------------------------------------------------------------------------------------
+5. RLS, ACLs E ROLES
+----------------------------------------------------------------------------------------------------
+  - RLS habilitado em 239 tabelas.
+  - 614 policies.
+  - 1545 linhas GRANT e 33 REVOKE; 24 ALTER DEFAULT PRIVILEGES.
+  - Comentários: 205.
+  - Roles referenciadas em grants: anon, authenticated, postgres,
+    service_role e tms_baseline_reader.
+  - Referências a `tms_baseline_reader`: 277.
+    Isso inclui `GRANT USAGE ON SCHEMA public` e `GRANT SELECT` nas tabelas/
+    sequences concedidos para a extração.
+  - Policies referenciam anon/authenticated/public.
+
+RESSALVA CRÍTICA:
+  O dump contém ACLs da role temporária `tms_baseline_reader`. Se a role for
+  removida após a extração, o QA que restaurar o arquivo precisará:
+    A) criar uma role com esse nome para satisfazer as ACLs; ou
+    B) remover/ajustar essas ACLs em etapa autorizada.
+  Nada foi removido do dump para fazê-lo passar nas verificações.
+
+----------------------------------------------------------------------------------------------------
+6. LIMITAÇÕES
+----------------------------------------------------------------------------------------------------
+  1. `CREATE EXTENSION`: 0 no dump. As extensões de produção não foram
+     incluídas com `--schema=public` (provavelmente no schema extensions).
+     Necessário inventário/aplicação separada no QA.
+  2. auth, storage, realtime, buckets, usuários Auth, Edge Functions, secrets,
+     CORS/CAPTCHA/tenant e histórico de migrations NÃO estão neste arquivo.
+  3. ACLs da role temporária `tms_baseline_reader` estão no arquivo (277 refs).
+  4. A restauração em QA ainda NÃO foi executada/validada.
+  5. `--no-owner` removeu ownership, mas as ACLs/grants foram preservadas.
+  6. O dump é estrutural; não contém dados de tabelas.
+  7. Diferenças de contagem em relação ao baseline antigo são explicáveis por:
+     extração live 17.6, escopo public, constraints/índices representados de
+     forma diferente e evolução real do schema.
+
+----------------------------------------------------------------------------------------------------
+7. MANIFESTO NOVO
+----------------------------------------------------------------------------------------------------
+  supabase/baseline/BASELINE_MANIFEST_readonly_20261103.txt
+  - Tamanho: 4738 bytes.
+  - SHA-256:
+      B5E58DDF09BABA76FD3F2F0AF2ED8C6EF0A1B3507661735B95127BFA233DA172
+  - Contém nome, data, projeto, schema, ferramenta/versão, tamanho, linhas,
+    SHA-256, contagens, presença de RLS/policies/ACLs/comentários, ausência
+    de dados, limitações e role read-only utilizada.
+
+----------------------------------------------------------------------------------------------------
+8. PRESERVAÇÃO
+----------------------------------------------------------------------------------------------------
+  Baseline antigo:
+    supabase/baseline/full_production_schema_20260920.sql
+    - Tamanho: 829.480 bytes.
+    - SHA-256:
+        82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F
+    - NÃO sobrescrito.
+
+  Manifesto antigo:
+    supabase/baseline/BASELINE_MANIFEST_20260920.txt
+    - SHA-256:
+        5169ADE4903DDD417C683D8F186ECB2EF25E1FE97D7635E96DA126E9146C4471
+    - NÃO alterado.
+
+  Nenhuma migration, deploy, secret, Edge Function, tabela, policy ou dado de
+  produção foi alterado. Nenhum schema foi aplicado no QA.
+
+----------------------------------------------------------------------------------------------------
+9. CLASSIFICAÇÃO E PRÓXIMO PASSO
+----------------------------------------------------------------------------------------------------
+CLASSIFICAÇÃO: BASELINE EXTRAÍDO COM RESSALVAS.
+
+  - A extração foi real, exit 0, sem dados, com estruturas/RLS/policies/ACLs/
+    comentários presentes.
+  - As ressalvas impedem declarar certificação plena sem tratamento:
+      * ACLs da role temporária `tms_baseline_reader`;
+      * extensões ausentes do escopo public;
+      * restauração em QA ainda não testada.
+
+Próximo passo:
+  1. Decidir, em etapa autorizada, como tratar as ACLs de `tms_baseline_reader`
+     no QA (criar a role temporária no QA ou remover/ajustar ACLs no dump).
+  2. Preparar o QA local isolado, com extensões necessárias e o baseline novo.
+  3. Aplicar o baseline no QA local e validar restauração, RLS, policies e ACLs.
+  4. Não aplicar migrations de produção e não usar este dump em produção.
+  5. Não remover o baseline antigo nem o manifesto antigo.
+
+Nenhuma extração adicional, migration, deploy ou alteração funcional foi
+executada além do dump autorizado.
+
+====================================================================================================

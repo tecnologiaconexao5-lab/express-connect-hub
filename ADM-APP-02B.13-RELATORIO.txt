@@ -1,0 +1,210 @@
+====================================================================================================
+ADM-APP-02B.13 — CRIAÇÃO E VALIDAÇÃO DA CREDENCIAL READ-ONLY
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: express-connect-hub
+ALVO: Supabase de produção `uwrvzsjtpgaifkktpepn`
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: DDL AUTORIZADO / VALIDAÇÃO READ-ONLY
+RESULTADO: ROLE CRIADA E VALIDADA
+ZERO EXTRAÇÃO / ZERO MIGRATIONS / ZERO DEPLOY / ZERO ALTERAÇÕES FUNCIONAIS NO TMS
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. PROJETO CONFIRMADO
+----------------------------------------------------------------------------------------------------
+  - `supabase projects list`: projeto `conexao-express-tms`,
+    ref `uwrvzsjtpgaifkktpepn`, org `dkitbsslspqjsagbevck`, região
+    South America (São Paulo), marcado como LINKED.
+  - `supabase/.temp/linked-project.json`: mesmo ref/projeto.
+  - `DATABASE_URL` usada apenas para o DDL da role:
+      banco: postgres
+      host: aws-1-sa-east-1.pooler.supabase.com
+      porta: 5432
+      usuário administrativo com ref de produção (senha não exibida)
+  - Pré-validação por conexão read-only:
+      current_database = postgres
+      host do servidor = IP privado do pooler/produção
+      role `tms_baseline_reader` NÃO existia antes da criação.
+  - Não foi usado `service_role`.
+
+----------------------------------------------------------------------------------------------------
+2. ROLE CRIADA
+----------------------------------------------------------------------------------------------------
+  Nome: tms_baseline_reader
+  Tipo: LOGIN temporário para extração de schema (não para uso funcional).
+  Senha:
+    - gerada localmente com RNG criptográfico, 32 bytes (43 caracteres em
+      base64url);
+    - NÃO exibida no terminal, relatório, Git ou logs deste processo;
+    - armazenada no Windows Credential Manager (PasswordVault) sob:
+        resource: express-connect-tms-baseline-reader
+        username: tms_baseline_reader
+    - não foi gravada em arquivo do repositório.
+  Status: ativa e disponível para a próxima etapa de extração.
+
+DDL executado (autorizado):
+  - CREATE ROLE tms_baseline_reader LOGIN NOSUPERUSER NOCREATEDB
+    NOCREATEROLE NOBYPASSRLS NOREPLICATION NOINHERIT (senha parametrizada
+    em runtime, não registrada aqui).
+  - GRANT CONNECT ON DATABASE postgres.
+  - GRANT USAGE ON SCHEMA public.
+  - GRANT SELECT ON ALL TABLES IN SCHEMA public.
+  - GRANT SELECT ON ALL SEQUENCES IN SCHEMA public.
+  - REVOKE INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER nas tabelas public.
+  - REVOKE UPDATE nas sequences public.
+  - REVOKE CREATE ON SCHEMA public.
+
+Não executado:
+  - Nenhum GRANT em auth/storage/realtime/extensions.
+  - Nenhuma associação a roles administrativas.
+  - Nenhuma alteração em PUBLIC.
+  - Nenhuma alteração de dados/tabelas/funções/triggers/policies do TMS.
+
+----------------------------------------------------------------------------------------------------
+3. VALIDAÇÃO DE ATRIBUTOS E PRIVILÉGIOS
+----------------------------------------------------------------------------------------------------
+Resultado real (consultas de catálogo read-only):
+
+Atributos:
+  - rolcanlogin   = true
+  - rolsuper      = false
+  - rolcreatedb   = false
+  - rolcreaterole = false
+  - rolbypassrls  = false
+  - rolreplication= false
+  - rolinherit    = false
+
+Banco:
+  - CONNECT em postgres = true
+  - CREATE em postgres  = false
+
+Schema public:
+  - USAGE  = true
+  - CREATE = false
+
+Tabelas/views/materialized/foreign/partitioned em public:
+  - total = 274
+  - SELECT = 274/274
+  - INSERT = 0
+  - UPDATE = 0
+  - DELETE = 0
+  - TRUNCATE = 0
+
+Sequences em public:
+  - total = 2
+  - SELECT = 2/2
+  - UPDATE = 0
+
+Associações e posse:
+  - memberships (pg_auth_members) = 0
+  - objetos pertencentes à role = 0
+
+Tabelas com escrita efetiva:
+  - nenhuma (`write_tables = []`).
+
+Login real:
+  - conexão autenticada como `tms_baseline_reader` no banco `postgres`
+    através do pooler, usando o username de roteamento
+    `tms_baseline_reader.uwrvzsjtpgaifkktpepn`.
+  - `current_user` retornado = `tms_baseline_reader`.
+  - Login comprovado: true.
+
+----------------------------------------------------------------------------------------------------
+4. VALIDAÇÃO DE METADADOS PARA FUTURA EXTRAÇÃO
+----------------------------------------------------------------------------------------------------
+A role leu, sem erro, os catálogos de definição:
+  - Extensions: 5
+  - Policies: 614 (schema public)
+  - Functions: 161 (161/161 com `pg_get_functiondef` legível)
+  - Triggers: 132 (132/132 com `pg_get_triggerdef` legível)
+  - Views: 24 (24/24 com `pg_get_viewdef` legível)
+  - Indexes: 1017 (1017/1017 com `indexdef` legível)
+  - Constraints: 670 (670/670 com `pg_get_constraintdef` legível)
+  - Tabelas/objetos com ACL não nula: 274/274
+  - Functions com ACL não nula: 161/161
+  - Schema public USAGE: true
+
+Conclusão:
+  - A credencial permite ler definições de policies, funções, triggers,
+    views, índices, constraints e ACLs no schema public.
+  - Isso é compatível com uma extração de schema via pg_dump/Supabase CLI,
+    mas NÃO prova ainda que o pg_dump completo funcionará (ver limitações).
+
+----------------------------------------------------------------------------------------------------
+5. LIMITAÇÕES CONHECIDAS
+----------------------------------------------------------------------------------------------------
+  1. `pg_dump` standalone não está instalado; a extração futura deve usar
+     `supabase db dump` (wrapper) ou instalar o cliente PostgreSQL.
+  2. Não foi executado `supabase db dump` nem `--dry-run` nesta missão.
+  3. A credencial NÃO tem BYPASSRLS. Se o pg_dump precisar desabilitar RLS
+     para alguma etapa, isso deve ser tratado como limitação; NÃO conceder
+     BYPASSRLS.
+  4. Escopo limitado a `public`. auth/storage/realtime, roles, buckets,
+     usuários Auth, Edge Functions e secrets exigem inventário separado.
+  5. A role não tem EXECUTE explícito em funções; a leitura de definições
+     funcionou via catálogo. Se o pg_dump exigir privilégios adicionais,
+     registrar a limitação antes de qualquer concessão.
+  6. O usuário administrativo usado para criar a role é de produção e foi
+     usado apenas para este DDL autorizado; a credencial de extração é a role
+     read-only.
+
+----------------------------------------------------------------------------------------------------
+6. SEGURANÇA E REVOGAÇÃO
+----------------------------------------------------------------------------------------------------
+  - A senha não foi exibida nem gravada em arquivo, relatório, Git ou log
+    persistente deste processo.
+  - A senha está no Windows Credential Manager (PasswordVault); não foi
+    copiada para o repositório.
+  - Nenhum `service_role` foi usado como credencial de leitura.
+  - A role é temporária e permanece ativa para a futura extração autorizada.
+  - Revogação/remoção futura (NÃO executada):
+      REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM tms_baseline_reader;
+      REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM tms_baseline_reader;
+      REVOKE ALL PRIVILEGES ON SCHEMA public FROM tms_baseline_reader;
+      REVOKE CONNECT ON DATABASE postgres FROM tms_baseline_reader;
+      DROP ROLE tms_baseline_reader;
+    Antes do DROP: confirmar 0 objetos de posse e 0 sessões ativas.
+  - Se a operação for abandonada, a role e a entrada do Credential Manager
+    devem ser removidas em etapa autorizada.
+
+----------------------------------------------------------------------------------------------------
+7. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+1. Autorizar a etapa de extração e o uso da credencial read-only.
+2. Executar primeiro, em janela controlada:
+     supabase db dump --dry-run --schema public --keep-comments \
+       --db-url <URL_READ_ONLY>
+   (URL read-only construída com a senha recuperada do Windows Credential
+    Manager; NÃO usar `--linked`.)
+3. Revisar o comando pg_dump gerado: sem `--data-only`, sem `--clean`, sem
+   operação de escrita.
+4. Se o dry-run estiver correto, autorizar a extração para:
+     supabase/baseline/full_production_schema_readonly_20261103.sql
+   sem sobrescrever o baseline atual.
+5. Validar o arquivo: nenhum COPY/INSERT/UPDATE/DELETE de dados, hash,
+   tamanho, linhas e contagens; gerar novo manifesto.
+6. Só depois comparar com o baseline antigo e avaliar aplicação no QA local.
+7. Revogar/remover a role após a extração autorizada.
+
+----------------------------------------------------------------------------------------------------
+8. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Projeto confirmado: uwrvzsjtpgaifkktpepn / postgres.
+  - Role criada: SIM.
+  - Role validada: SIM.
+  - Login real com a role: SIM.
+  - Escrita efetiva: NÃO (INSERT/UPDATE/DELETE/TRUNCATE = 0; sequences UPDATE=0;
+    CREATE no schema/banco = false).
+  - Nenhuma associação administrativa; nenhuma posse de objeto.
+  - Nenhuma extração executada.
+  - Nenhum `supabase db dump`/`--dry-run` executado.
+  - Nenhum baseline/manifesto gerado/alterado.
+  - Nenhuma migration/deploy/secret.
+  - Nenhuma alteração de dados ou funcionalidade do TMS.
+  - APP Prestador não acessado.
+  - Nenhuma senha/token/service_role registrada no relatório.
+  - Homologação não declarada.
+
+CLASSIFICAÇÃO FINAL: ROLE CRIADA E VALIDADA.
+
+====================================================================================================

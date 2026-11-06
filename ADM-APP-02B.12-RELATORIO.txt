@@ -1,0 +1,303 @@
+====================================================================================================
+ADM-APP-02B.12 — PLANO DE CREDENCIAL READ-ONLY PARA EXTRAÇÃO DO BASELINE
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: PLANEJAMENTO / PROPOSTA SQL / SEM EXECUÇÃO
+RESULTADO: PLANO READ-ONLY APROVÁVEL (condicionado a autorização e verificações)
+ZERO SQL EXECUTADO / ZERO START / ZERO CREDENCIAIS CRIADAS / ZERO MIGRATIONS / ZERO DEPLOY
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO E CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhuma conexão com banco de produção.
+  - Nenhum SQL executado.
+  - Nenhum usuário, role, senha ou secret criado/alterado.
+  - Nenhum grant/revoke executado.
+  - Docker/Supabase não iniciados.
+  - `supabase db dump` não executado.
+  - APP Prestador não acessado.
+  - Arquivos, migrations, configurações e baselines não alterados.
+  - Nenhuma credencial existente foi exibida.
+
+Classificação desta entrega:
+  PLANO READ-ONLY APROVÁVEL — para posterior execução humana controlada.
+
+----------------------------------------------------------------------------------------------------
+2. PROPOSTA DE ROLE E PERMISSÕES
+----------------------------------------------------------------------------------------------------
+Role proposta:
+  - Nome: tms_baseline_reader
+  - LOGIN: sim, somente para a janela de extração.
+  - Atributos: NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS,
+    NOREPLICATION, NOINHERIT.
+  - Sem associação a roles administrativas (não usar service_role,
+    pg_read_all_data, pg_write_all_data, postgres, supabase_admin etc.).
+  - Senha: gerada fora do repositório, armazenada no gerenciador de senhas,
+    nunca no Git/relatório/chat.
+  - A senha deve ser definida em sessão autorizada; não gravar em arquivo
+    versionado nem em histórico de shell.
+
+Escopo de banco:
+  - CONNECT no banco `postgres` (nome documentado no baseline de produção).
+  - Nenhum acesso a outros bancos, se existirem; revogar CONNECT específico
+    em outros bancos se necessário.
+
+Escopo de schema:
+  - USAGE em `public` (objeto principal do baseline).
+  - Não conceder USAGE/CREATE em `auth`, `storage`, `realtime` ou `extensions`
+    nesta credencial; esses objetos exigem inventário separado e autorização
+    específica.
+  - Se o pg_dump reclamar de um schema adicional necessário, registrar a
+    limitação e pedir autorização; NÃO elevar automaticamente.
+
+Escopo de leitura:
+  - SELECT nos objetos de `public` existentes na janela de extração.
+  - SELECT em sequences de `public`.
+  - Nenhum INSERT/UPDATE/DELETE/TRUNCATE/CREATE/ALTER/REFERENCES/TRIGGER.
+  - Nenhuma permissão de escrita em sequences.
+  - Nenhuma criação de objetos no schema.
+
+----------------------------------------------------------------------------------------------------
+3. SQL PROPOSTO (NÃO EXECUTADO)
+----------------------------------------------------------------------------------------------------
+ATENÇÃO: executar somente em janela autorizada, com um owner/superuser
+aprovado, e nunca em produção sem autorização explícita. O bloco abaixo é
+uma proposta; não foi executado.
+
+-- 3.1 Criar role sem privilégios administrativos
+CREATE ROLE tms_baseline_reader
+  LOGIN
+  NOSUPERUSER
+  NOCREATEDB
+  NOCREATEROLE
+  NOBYPASSRLS
+  NOREPLICATION
+  NOINHERIT;
+
+-- 3.2 Definir a senha em sessão segura (NÃO versionar; NÃO colar no chat)
+-- Preferir \password tms_baseline_reader em psql interativo.
+-- Alternativa controlada:
+-- ALTER ROLE tms_baseline_reader PASSWORD '<SENHA_GERADA_FORA_DO_REPO>';
+
+-- 3.3 Banco: somente conexão
+GRANT CONNECT ON DATABASE postgres TO tms_baseline_reader;
+
+-- 3.4 Schema public: uso, sem criação
+GRANT USAGE ON SCHEMA public TO tms_baseline_reader;
+REVOKE CREATE ON SCHEMA public FROM tms_baseline_reader;
+
+-- 3.5 Leitura dos objetos existentes
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO tms_baseline_reader;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO tms_baseline_reader;
+
+-- 3.6 Remover qualquer escrita que possa vir de grants herdados/diretos
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON ALL TABLES IN SCHEMA public FROM tms_baseline_reader;
+REVOKE UPDATE
+  ON ALL SEQUENCES IN SCHEMA public FROM tms_baseline_reader;
+REVOKE CREATE
+  ON SCHEMA public FROM tms_baseline_reader;
+
+-- 3.7 Nenhuma associação a roles administrativas
+-- (não executar GRANT pg_read_all_data, service_role ou similar)
+
+Observações:
+  - `GRANT SELECT ON ALL TABLES` cobre tabelas/views/materialized views/foreign
+    tables elegíveis; `ALL SEQUENCES` cobre sequences. Não concede DDL.
+  - Se o schema public tiver CREATE para PUBLIC (herança global), o role pode
+    tecnicamente herdar esse privilégio; isso deve ser verificado na seção 4.
+    Se ocorrer, NÃO revogar de PUBLIC sem autorização global; registrar a
+    limitação e usar `default_transaction_read_only=on` na extração.
+  - Não usar `pg_read_all_data` como atalho: ele amplia a leitura para todos os
+    schemas, contrariando o escopo mínimo.
+
+----------------------------------------------------------------------------------------------------
+4. VERIFICAÇÕES DE CATÁLOGO (SOMENTE LEITURA; NÃO EXECUTADAS)
+----------------------------------------------------------------------------------------------------
+Executar após a criação, em sessão autorizada, antes de qualquer dump:
+
+-- 4.1 Atributos da role
+SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+       rolbypassrls, rolreplication, rolinherit
+  FROM pg_roles
+ WHERE rolname = 'tms_baseline_reader';
+
+-- Esperado:
+--   rolcanlogin=true; rolsuper=false; rolcreatedb=false; rolcreaterole=false;
+--   rolbypassrls=false; rolreplication=false; rolinherit=false.
+
+-- 4.2 Conexão
+SELECT has_database_privilege('tms_baseline_reader', 'postgres', 'CONNECT');
+
+-- 4.3 Schema
+SELECT has_schema_privilege('tms_baseline_reader', 'public', 'USAGE') AS usage_ok,
+       has_schema_privilege('tms_baseline_reader', 'public', 'CREATE') AS create_ok;
+-- Esperado: usage_ok=true; create_ok=false.
+
+-- 4.4 Privilégios de tabela/visão (amostra e totais)
+SELECT c.relname,
+       has_table_privilege('tms_baseline_reader', c.oid, 'SELECT') AS select_ok,
+       has_table_privilege('tms_baseline_reader', c.oid, 'INSERT') AS insert_ok,
+       has_table_privilege('tms_baseline_reader', c.oid, 'UPDATE') AS update_ok,
+       has_table_privilege('tms_baseline_reader', c.oid, 'DELETE') AS delete_ok
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = 'public'
+   AND c.relkind IN ('r','v','m','f','p')
+ ORDER BY c.relname;
+
+-- Totais esperados:
+--   SELECT=true em todos os objetos necessários;
+--   INSERT/UPDATE/DELETE=false em todos.
+
+-- 4.5 Privilégios de sequences
+SELECT c.relname,
+       has_sequence_privilege('tms_baseline_reader', c.oid, 'SELECT') AS select_ok,
+       has_sequence_privilege('tms_baseline_reader', c.oid, 'UPDATE') AS update_ok
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = 'public' AND c.relkind = 'S'
+ ORDER BY c.relname;
+
+-- 4.6 Associações de role (deve ser vazio)
+SELECT r.rolname AS granted_role
+  FROM pg_auth_members m
+  JOIN pg_roles r ON r.oid = m.roleid
+ WHERE m.member = 'tms_baseline_reader'::regrole;
+
+-- 4.7 Nenhum objeto pertencente à role
+SELECT count(*) AS owned_objects
+  FROM pg_class c
+  JOIN pg_roles r ON r.oid = c.relowner
+ WHERE r.rolname = 'tms_baseline_reader';
+-- Esperado: 0.
+
+----------------------------------------------------------------------------------------------------
+5. LIMITAÇÕES DO PG_DUMP / SUPABASE CLI
+----------------------------------------------------------------------------------------------------
+  - `pg_dump` não está instalado no PATH; `supabase db dump` está disponível
+    e é o wrapper candidato.
+  - `supabase db dump --help` oferece `--schema`, `--keep-comments`, `--file`,
+    `--db-url`, `--dry-run`, `--role-only`, `--data-only`.
+  - Antes de extrair, executar `supabase db dump --dry-run --schema public
+    --keep-comments --db-url <read-only-url>` para confirmar o comando pg_dump
+    e que não há `--data-only`, `--clean` ou escrita.
+  - `--schema public` limita ao schema public; auth/storage/realtime não são
+    cobertos.
+  - `pg_dump` schema-only inclui tabelas, constraints, índices, sequences,
+    funções, triggers, views, policies, RLS e ACLs; roles não são incluídos
+    (inventário separado).
+  - Para preservar grants, NÃO usar `--no-acl`/`--no-privileges`; `--no-owner`
+    pode ser usado para evitar ownership, mas não deve remover ACL.
+  - `pg_dump` pode tentar `SET row_security = off`; se a role sem BYPASSRLS
+    não puder fazer isso, a extração pode falhar ou omitir definições. Nesse
+    caso, NÃO conceder BYPASSRLS automaticamente: registrar a limitação e
+    avaliar o extrator de catálogo complementar.
+  - O script customizado `scripts/qa/extract_baseline.ts` NÃO é equivalente ao
+    pg_dump: grava no baseline antigo, usa `DATABASE_URL` e não cobre
+    grants/comentários/roles/restritivas/partições/etc. Não usar como extrator
+    principal sem ajuste e autorização.
+  - Fora do escopo do dump public: roles, schemas auth/storage/realtime,
+    buckets/objetos, usuários Auth, Edge Functions, secrets, CORS/CAPTCHA/
+    tenant, histórico de migrations. Inventariar separadamente.
+
+----------------------------------------------------------------------------------------------------
+6. RISCOS E REVOGAÇÃO
+----------------------------------------------------------------------------------------------------
+Riscos:
+  - Credencial de leitura pode expor estrutura e nomes de objetos; não lê dados
+    se `--schema-only` for confirmado, mas pode ler dados se o comando for
+    errado.
+  - `SELECT ON ALL TABLES` pode permitir leitura de linhas em caso de dump
+    incorreto; mitigar com `default_transaction_read_only=on`, revisão do
+    dry-run e arquivo schema-only.
+  - CREATE herdado de PUBLIC no schema public pode existir; verificar
+    `has_schema_privilege` e não elevar privilégios para contornar.
+  - Role esquecida ativa é risco; criar e remover na mesma janela.
+  - Não usar service_role/superuser como conveniência.
+
+Revogação e remoção após a extração (proposta; NÃO executada):
+  REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM tms_baseline_reader;
+  REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM tms_baseline_reader;
+  REVOKE ALL PRIVILEGES ON SCHEMA public FROM tms_baseline_reader;
+  REVOKE CONNECT ON DATABASE postgres FROM tms_baseline_reader;
+  DROP ROLE tms_baseline_reader;
+
+  Antes do DROP:
+  - Confirmar que a role não possui objetos (consulta 4.7).
+  - Se houver posse acidental, tratar com autorização; não usar `DROP OWNED`
+    sem revisão.
+  - Confirmar que não há sessões abertas da role.
+
+----------------------------------------------------------------------------------------------------
+7. COMANDOS FUTUROS POR ETAPA (NÃO EXECUTADOS)
+----------------------------------------------------------------------------------------------------
+Etapa A — autorização humana
+  - Aprovar criação da role e o owner/superuser que executará o DDL.
+  - Definir senha fora do repositório e armazená-la no gerenciador de senhas.
+
+Etapa B — criação/controle (somente após autorização)
+  - Executar o bloco SQL da seção 3 em sessão autorizada.
+  - Executar as verificações da seção 4 e anexar resultados.
+  - Se `create_ok` ou qualquer escrita for true, NÃO prosseguir; reavaliar.
+
+Etapa C — validação do comando de extração
+  - supabase db dump --dry-run --schema public --keep-comments \
+      --db-url <read-only-url>
+  - Revisar o comando gerado; confirmar ausência de `--data-only` e de
+    operações de escrita.
+  - Definir `PGOPTIONS='-c default_transaction_read_only=on'` no ambiente
+    da extração, se suportado.
+
+Etapa D — extração (somente após C)
+  - supabase db dump --schema public --keep-comments \
+      --file supabase/baseline/full_production_schema_readonly_20261103.sql \
+      --db-url <read-only-url>
+  - NÃO usar `--linked`; usar somente a URL read-only aprovada.
+  - NÃO sobrescrever `full_production_schema_20260920.sql`.
+
+Etapa E — validação e manifesto
+  - Verificar que o novo arquivo não contém COPY/INSERT/UPDATE/DELETE de dados.
+  - Calcular SHA-256, tamanho e linhas.
+  - Contar tabelas, funções, views, triggers, policies, índices e RLS.
+  - Criar `BASELINE_MANIFEST_readonly_20261103.txt` com origem, ferramenta,
+    data, hash e contagens.
+  - Comparar estruturalmente com o baseline antigo; não substituir nenhum.
+  - Registrar limitações (schemas não-public, roles, storage/auth).
+
+Etapa F — revogação
+  - Executar a revogação/drop da seção 6 na mesma janela autorizada.
+
+Etapa G — uso no QA local
+  - Somente depois de D/E/F, avaliar aplicação no banco local isolado.
+  - Não aplicar em produção.
+
+----------------------------------------------------------------------------------------------------
+8. CLASSIFICAÇÃO E CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+CLASSIFICAÇÃO: PLANO READ-ONLY APROVÁVEL.
+
+Condições:
+  - Aprovação humana explícita para criar a role e definir a senha.
+  - Verificações de catálogo comprovando atributos e privilégios.
+  - Dry-run do `supabase db dump` confirmando schema-only e ausência de escrita.
+  - Se a role limitada não conseguir produzir o dump completo, registrar a
+    limitação e NÃO elevar privilégios automaticamente.
+  - Revogação/drop da credencial após a extração.
+
+Confirmações:
+  - Nenhum SQL executado.
+  - Nenhum usuário/role/senha/secret criado.
+  - Nenhum grant/revoke executado.
+  - Nenhum Docker/Supabase iniciado.
+  - Nenhum `supabase db dump`.
+  - Nenhuma migration/deploy.
+  - Nenhum arquivo/migration/config/baseline alterado.
+  - APP não acessado.
+  - Nenhuma credencial existente exibida.
+
+Aguardar autorização expressa antes de qualquer execução.
+
+====================================================================================================

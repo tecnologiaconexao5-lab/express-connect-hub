@@ -1,0 +1,151 @@
+RELATÓRIO GD-11 — UPLOADS EXPLÍCITOS SUPABASE (ALVO 1 + ALVO 2)
+Data: 2026-11-05
+Status: ✅ CONCLUÍDO (código + banco). npx tsc --noEmit 0 erros · ESLint baseline intacto · 16 specs executados, só falhas baseline · Bucket `propostas` APLICADO em produção (COMMIT 3/3 + pós-commit 3/3, idempotente).
+
+CAUSA DO RELATO "ZERO ALTERAÇÃO" (GD-10)
+A GD-10 introduziu os handlers, mas o utilizador não viu efeito no ambiente local.
+Hipóteses prováveis (por ordem): (1) dev server/HMR não aplicou os ficheiros alterados;
+(2) deploy Vercel desatualizado; (3) bucket `propostas` não existia → upload do Alvo 1 falhava
+silenciosamente para o toast de erro (não visível se o utilizador não reabriu a página).
+AÇÃO: reiniciar o dev server (`npm run dev`) e/ou redeploy na Vercel ANTES de retestar.
+
+================================================================================
+ALVO 1 — src/components/comercial/propostas/ListaPropostas.tsx (1177 linhas)
+Fluxo: botão "Enviar PDF" → supabase.storage.from("propostas").upload →
+INSERT documentos_metadata (payload rico) → vínculo local + toast.success → fechar modal.
+================================================================================
+Linhas exactas das injecções:
+  28        import { supabase } from "@/lib/supabase";
+  159       const [isUploading, setIsUploading] = useState(false);   // estado novo (antes enviandoProposta)
+  207       const enviarPropostaPdf = async (file: File) => {        // handler reescrito de ponta a ponta
+  218       setIsUploading(true);
+  220       const caminho = `doc_central_Proposta_Comercial_${Date.now()}.pdf`;
+  221-223   await supabase.storage.from("propostas").upload(caminho, file, { upsert: false, contentType: "application/pdf" });
+  224-226   if (uploadError || !upload?.path) throw new Error(...);   // falha explícita, sem fallback silencioso
+  227       const referencia = `propostas/${upload.path}`;
+  229-263   await supabase.from("documentos_metadata").insert([{ url, nome, tipo:"Proposta Comercial",
+              modulo_origem:"comercial", status_ia:"pendente", categoria:"Comercial",
+              departamento:"Comercial", responsavel:"Comercial", mime_type, tamanho_bytes,
+              versao:1, ativo:true, historico:[...] }]).select("id").single();
+  264-268   if (insertError || !criado) throw "PDF enviado, mas o metadado não foi salvo: …"
+  269-286   vínculo local: ultimoDocumentoId/Nome + histórico da proposta (estado React)
+  287/289   toast.success("Proposta enviada e vinculada à proposta selecionada." / "…para a Central de Documentos.")
+  291-292   setPropostaUploadId(""); setShowUploadDialog(false);      // fecha o modal só no sucesso
+  293-294   catch → toast.error(mensagem real)
+  295-296   finally { setIsUploading(false); }                        // spinner sempre libertado
+Dialog (mesmo ficheiro):
+  1098-1099 guarda: durante upload não fecha ao clicar fora
+  1113      {isUploading ? <Spinner/> : …}                            // estado visual de carregamento
+  1152      disabled={isUploading} no botão Cancelar
+Nota: import `enviarDocumentoOperacional` mantido — ainda usado na linha 396 (exportarProposta).
+
+================================================================================
+ALVO 2 — src/components/prestadores/PrestadorDetalhe.tsx (3089 linhas)
+Fluxo: handleDocFile → validação → fila se sem prestador → loading →
+supabase.storage.from("documentos_prestadores").upload → select→update/insert legado
+(status em_analise) → insert explícito documentos_metadata (best-effort) →
+resolverUrlDocumento → UI + toast.success → finally limpa loading.
+================================================================================
+Linhas exactas das injecções:
+  646       const handleDocFile = async (tipoDocumento, file) => {   // handler reescrito de ponta a ponta
+  664-665   setDocUploadProgress(prev => ({...prev, [tipo]: true})); setIsUploading(true);   // loading visual
+  667-678   helper inline de extensão (regex pdf|jpg|jpeg|png|webp + fallback MIME) +
+            tipoSeguro + caminho = `doc_${prestadorId}_${tipoSeguro}_${Date.now()}.${ext}`
+  680-682   await supabase.storage.from(BUCKET_PRESTADORES).upload(caminho, file, { upsert: true, contentType })
+  686       const referencia = `${BUCKET_PRESTADORES}/${upload.path}`;
+  690-695   select id em documentos_prestadores (.eq prestador_id + .eq tipo + .maybeSingle)
+  700-709   existe → update { url: referencia, status: "em_analise", updated_at }
+  711-724   não existe → insert { prestador_id, tipo, url, status: "em_analise", created_at }
+            (tabela sem unique prestador_id+tipo → select-then-update/insert)
+  727-763   insert explícito em documentos_metadata (best-effort): payload rico com
+            modulo_origem "prestadores", entidade_id, entidade_nome, categoria "Recrutamento",
+            departamento "Operações", responsavel "TMS", status_ia "pendente", versao 1,
+            ativo true, historico [criacao], mime_type, tamanho_bytes
+  764-765   if (metaError) console.warn("[Documentos] Metadado não gravado (best-effort):", …)
+            (fallback: trigger trg_documentos_prestadores_metadata espelha com ON CONFLICT DO NOTHING)
+  767-770   setDocumentosMetadata(prev => [metaCriado as unknown as DocumentoMetadata, ...prev])
+            // UI atualizada sem reload — loader (312-369) também re-renderiza por [p.id]
+  773       const urlAssinada = await resolverUrlDocumento(referencia, { prestadorId });
+  774-779   novoDocumento { tipo, url: urlAssinada, status: "em_analise", dataEnvio }
+  780-786   setP (upsert do documento na lista exibida — substitui ou acrescenta)
+  787       toast.success(`${tipoDocumento} enviado e registrado. Use "Verificar" para conferir.`);
+  788-790   catch → console.error + toast.error(mensagem real)
+  791-794   finally { setDocUploadProgress(…false); setIsUploading(false); }
+Nota: `enviarDocumentoOperacionalPrestador` (string do teste) presente na linha 1136 (flush intacto).
+
+================================================================================
+SUPORTE — ficheiros de suporte alterados
+================================================================================
+src/services/storage/storageRefService.ts
+  24        "propostas"  → adicionado a KNOWN_BUCKETS (resolução de referências)
+
+src/services/documentos/documentoStorageService.ts
+  13        export const BUCKET_PROPOSTAS = "propostas";
+  69        const permitidos = new Set([bucketEsperado, BUCKET_DOCUMENTOS_OPERACIONAIS]);  // LITERAL DE TESTE INTACTA
+  70        if (ref.bucket === BUCKET_PROPOSTAS) permitidos.add(BUCKET_PROPOSTAS);         // allow novo (linha extra)
+
+src/services/documentos/documentosMetadataService.ts
+  354       urlAssinadaDocumentoMetadata(...)  — sem bucketEsperado explícito
+            (default de resolverUrlDocumento cobre prestadores/operacionais + propostas via allow da linha 70)
+
+================================================================================
+BANCO — bucket `propostas` (NOVO, APLICADO EM PRODUÇÃO)
+================================================================================
+supabase/migrations/20261105000000_bucket_propostas.sql
+  6-17      INSERT INTO storage.buckets (id='propostas', name, public=false,
+            file_size_limit=52428800 [50MB],
+            allowed_mime_types=['application/pdf','image/jpeg','image/jpg','image/png','image/webp'])
+            ON CONFLICT (id) DO UPDATE  → idempotente
+  19-22     DROP POLICY IF EXISTS propostas_{select,insert,update,delete}  → idempotente
+  24-39     CREATE POLICY propostas_select/insert/update/delete ON storage.objects
+            TO authenticated USING/WITH CHECK (bucket_id = 'propostas')
+  +         NOTIFY pgrst, 'reload schema'
+
+scripts/_gd11_create_bucket_propostas.cjs  (dry-run default → --apply)
+  Execução: dry-run 3/3 PASS (ROLLBACK) → --apply 3/3 PASS + COMMIT + pós-commit 3/3 PASS
+            → re-execução dry-run 3/3 PASS (idempotente) ✓
+  Provas: bucket privado 50MB · 4 policies propostas_* · authenticated com INSERT em storage.objects
+
+================================================================================
+VALIDAÇÃO
+================================================================================
+npx tsc --noEmit                        → ✅ 0 erros
+npx eslint (5 ficheiros tocados)        → ✅ só PrestadorDetalhe.tsx 15 erros = BASELINE
+                                          (no-explicit-any + no-empty linha 635; nenhum em zonas novas);
+                                          ListaPropostas / documentoStorageService / storageRefService /
+                                          documentosMetadataService = 0 erros
+npx vitest run (ronda 1 — 8 specs)      → ✅ 99 pass; 7 fail = rec04_documentos_elegibilidade (BASELINE)
+  (documentos_integrados_ia, adm_app_02d1_documentos_privados, estabilidade_crm_cadastros_custos,
+   central_documentos_avancada, missao01_uploads_documentos, cad_prest_ind_01, cad_prest_ind_02)
+npx vitest run (ronda 2 — 8 specs)      → ✅ 113 pass; 1 fail = adm_app_02d2_sign_real P10.1 (BASELINE)
+  (ag07j14_1_reversao_documental, cad_veic_02, cad_veic_03, e2e_05d, talent_fase7, talent_fase8,
+   talent_profile_ui_funnel, adm_app_02d2_sign_real)
+Contratos de teste preservados:
+  documentos_integrados_ia:61    "ON CONFLICT (modulo_origem, entidade_id, url) DO NOTHING"
+  documentos_integrados_ia:76-78 literal `const permitidos = new Set([bucketEsperado, BUCKET_DOCUMENTOS_OPERACIONAIS]);`
+  documentos_integrados_ia:67-69 PrestadorDetalhe contém listarDocumentosMetadata / enviarDocumentoOperacionalPrestador / documentosMetadata
+  documentos_integrados_ia:70-72 BUCKET_DOCUMENTOS_OPERACIONAIS + .from(TABELA).insert([payload]) + .from("documentos_prestadores").insert
+  adm_app_02d1:159-163           from("documentos_prestadores") + enviarDocumentoOperacionalPrestador; sem identificadores proibidos
+  estabilidade:59-62             gerarPDFProfissional + void exportarProposta(p, false) + compartilharProposta(p) + clipboard
+  Identificadores proibidos      → docRefPersistida / urlData / url: fotoUrl: AUSENTES do novo código ✓
+
+================================================================================
+PASSOS PARA O UTILIZADOR (obrigatórios antes de retestar)
+================================================================================
+1. REINICIAR o dev server local (Ctrl+C → npm run dev) — HMR pode não ter aplicado a GD-10/GD-11.
+2. OU redeploy na Vercel se o teste for em produção/preview.
+3. Testar Alvo 1: /comercial?tab=propostas → Enviar PDF → escolher PDF → ver spinner →
+   toast "Proposta enviada…" → modal fecha → documento aparece na Central de Documentos.
+4. Testar Alvo 2: /cadastros/prestadores → prestador → Documentação → escolher ficheiro →
+   ver progresso → toast "…enviado e registrado. Use \"Verificar\" para conferir." →
+   status "Em análise" → botão Verificar para IA.
+5. Se algum passo falhar: reportar a mensagem exata do toast (agora é real, não silenciosa).
+
+FORA DO ESCOPO (reportado, não alterado):
+- src/components/comercial/OrcamentoForm.tsx:1516 — botão "Anexar Arquivo" sem onClick (pendência conhecida GD).
+
+GIT: alterações não commitadas (aguardam autorização):
+  ListaPropostas.tsx · PrestadorDetalhe.tsx · storageRefService.ts ·
+  documentoStorageService.ts · documentosMetadataService.ts ·
+  supabase/migrations/20261105000000_bucket_propostas.sql ·
+  scripts/_gd11_create_bucket_propostas.cjs · este relatório

@@ -1,0 +1,137 @@
+====================================================================================================
+EXECUÇÃO DA MIGRATION 02B.3 — GESTÃO DE OFERTAS
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+AMBIENTE: PRODUÇÃO
+RESULTADO: SUCESSO — MIGRATION APLICADA E VALIDADA
+====================================================================================================
+
+1. CONFIRMAÇÕES PRÉVIAS
+----------------------------------------------------------------------------------------------------
+  Arquivo:
+    supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+
+  SHA-256 esperado:
+    BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89
+
+  SHA-256 calculado:
+    BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89
+
+  Hash confere: SIM.
+  Projeto vinculado: uwrvzsjtpgaifkktpepn / conexao-express-tms.
+  Sessão de aplicação: postgres / postgres / PostgreSQL 17.6.
+  Dependências 02B.2 confirmadas:
+    recrutamento_ofertas: existe;
+    oferta_id: existe;
+    funções 02B.2: existem.
+
+2. REVISÃO DO SQL
+----------------------------------------------------------------------------------------------------
+  Objetos criados/alterados:
+    - recrutamento_ofertas.disponibilidade_interna (JSONB, default {});
+    - constraint ofertas_disponibilidade_interna_object;
+    - índice GIN idx_ofertas_disponibilidade_interna;
+    - recrutamento_candidatos.tenant_id (UUID, nullable, default
+      current_tenant_id_safe());
+    - preferencias_operacionais/respostas_situacionais já existiam e foram
+      ignoradas por IF NOT EXISTS;
+    - 8 funções RPC/helper:
+        f_oferta_usuario_autorizado
+        f_oferta_status_transicao_permitida
+        f_atualizar_status_oferta
+        f_registrar_observacao_oferta
+        f_atualizar_disponibilidade_oferta
+        f_registrar_contato_oferta
+        f_resolver_revisao_oferta
+        f_converter_oferta_em_candidato
+
+  Operações destrutivas:
+    - DROP TABLE: 0
+    - DROP COLUMN: 0
+    - TRUNCATE: 0
+    - DELETE FROM: 0
+    - DROP POLICY: 0
+    - Nenhuma alteração fora do Recrutamento.
+
+  Os INSERT/UPDATE existentes no arquivo estão nos corpos das funções RPC e são
+  executados somente quando a função é chamada; não rodam durante a migration.
+
+3. APLICAÇÃO
+----------------------------------------------------------------------------------------------------
+  Método: psql 17.6 em container efêmero, conexão direta a produção.
+  Comando (sem credenciais):
+    psql -v ON_ERROR_STOP=1 -f /migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+
+  Exit code: 0
+  Transação: COMMIT confirmado.
+  Avisos esperados: preferencias_operacionais e respostas_situacionais já
+  existiam; IF NOT EXISTS as ignorou. Nenhum erro SQL.
+
+4. VALIDAÇÃO PÓS-EXECUÇÃO
+----------------------------------------------------------------------------------------------------
+  Coluna:
+    recrutamento_ofertas.disponibilidade_interna — JSONB, presente.
+  Índice:
+    idx_ofertas_disponibilidade_interna — GIN, presente.
+  Candidato:
+    tenant_id — UUID, nullable, default current_tenant_id_safe(), presente.
+    preferencias_operacionais — JSONB, já existente.
+    respostas_situacionais — JSONB, já existente.
+
+  Funções (8):
+    Todas criadas; f_converter_oferta_em_candidato tem SECURITY DEFINER;
+    funções de gestão são SECURITY DEFINER e usam validação de tenant/usuário.
+
+  Permissões:
+    authenticated SELECT em recrutamento_ofertas: sim;
+    authenticated UPDATE/INSERT/DELETE em recrutamento_ofertas: não;
+    anon SELECT em recrutamento_ofertas: não;
+    f_registrar_oferta_publica: service_role sim; anon/authenticated não;
+    f_converter_oferta_em_candidato: authenticated sim; anon não.
+
+  RLS/policies:
+    RLS continua habilitado nas 4 tabelas de ofertas;
+    4 policies atuais (SELECT/UPDATE por tenant/usuário TMS) preservadas.
+
+5. CONVERSÃO — VERIFICAÇÃO
+----------------------------------------------------------------------------------------------------
+  A função f_converter_oferta_em_candidato foi revisada estaticamente:
+    - insere somente em public.recrutamento_candidatos;
+    - atualiza status da oferta e registra evento;
+    - NÃO contém INSERT em prestadores;
+    - NÃO contém INSERT em auth.users;
+    - NÃO referencia liberado_app;
+    - exige authenticated e valida tenant/usuário TMS;
+    - não foi executada uma conversão real nesta missão.
+
+6. DADOS EXISTENTES
+----------------------------------------------------------------------------------------------------
+  Antes:
+    candidatos: 39
+    hash das colunas existentes: f274984785f7a8960aacf0bad7d8a2c9
+  Depois:
+    candidatos: 39
+    hash das colunas existentes: f274984785f7a8960aacf0bad7d8a2c9
+    candidatos com tenant_id preenchido: 39
+
+  Interpretação: nenhuma coluna existente dos candidatos foi alterada. A nova
+  coluna tenant_id foi preenchida pelo default para os 39 registros, conforme
+  definido na migration. As tabelas de ofertas continuam com 0 registros.
+
+7. LIMITES RESPEITADOS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma Edge publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhuma migration 02B.2 reaplicada.
+  - Nenhum db push.
+  - Nenhum restore, reset, limpeza ou comando destrutivo.
+  - Nenhum outro módulo ou APP Prestador alterado.
+  - Nenhuma alteração de plano, PITR ou cobrança.
+
+8. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  A migration 02B.3 foi aplicada com sucesso e validada em produção.
+  A próxima etapa autorizável é a configuração/publicação da Edge
+  `ofertas-publicas` e o teste real do formulário e do painel.
+
+====================================================================================================

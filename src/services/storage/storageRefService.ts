@@ -21,6 +21,7 @@ export const KNOWN_BUCKETS = new Set<string>([
   "fiscal-documentos",
   "biblioteca-global",
   "certificados-fiscais",
+  "propostas",
 ]);
 
 const LOCAL_PREFIXES = ["file://", "data:", "/data/", "/var/"];

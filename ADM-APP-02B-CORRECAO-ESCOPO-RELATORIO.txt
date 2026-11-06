@@ -1,0 +1,583 @@
+====================================================================================================
+ADM-APP-02B — CORREÇÃO DE ESCOPO
+CADASTRO PÚBLICO DE OFERTA DE PRESTADORES (RECRUTAMENTO)
+PROJETO: Conexão Express — TMS + APP Prestador
+WORKSPACE TMS: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+WORKSPACE APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: AUDITORIA SOMENTE LEITURA — NENHUMA IMPLEMENTAÇÃO
+RESULTADO: ESCOPO CORRIGIDO / IMPLEMENTAÇÃO NÃO INICIADA
+ZERO ESCRITAS EM BANCO / ZERO MIGRATIONS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. OBJETIVO CORRETO DA MISSÃO
+----------------------------------------------------------------------------------------------------
+A ADM-APP-02B NÃO é a correção do cadastro do APP nem a criação de um segundo APP.
+Ela trata do CANAL 2 — LINK PÚBLICO NO RECRUTAMENTO DO TMS — cuja finalidade é:
+
+  Captar e mapear a OFERTA de profissionais e veículos disponíveis para a
+  Conexão Express (motoboys, motoristas e veículos), com contato, regiões,
+  disponibilidade, valores/condições e características do veículo.
+
+Esse canal:
+  - NÃO substitui o APP Prestador.
+  - NÃO significa contratação, aprovação, cadastro operacional ou liberação de
+    acesso ao APP.
+  - Alimenta o Recrutamento para consulta, filtro, comparação, contato,
+    atualização de disponibilidade e acompanhamento do candidato.
+  - Deve permanecer separado de: cadastro administrativo do prestador,
+    avaliação, aprovação, contratação e `liberado_app`.
+
+Os dois canais são independentes:
+  CANAL 1 — APP PRESTADOR (Flutter, autenticado): cadastro, documentos,
+            aprovação, liberação de acesso, operação. Deve ser preservado.
+  CANAL 2 — LINK PÚBLICO TMS (/cadastro-prestador): oferta/lead de profissionais
+            e veículos. Não cria acesso operacional.
+
+Correção de entendimento em relação à leitura anterior:
+  - A versão anterior tentou tratar o link público como um "cadastro de APP"
+    (selfie, CNH, CRLV, comprovante, PIX, banco, assinatura e "Cadastro Completo").
+    Isso está ERRADO para o objetivo do canal público de oferta.
+  - O link público deve ser um formulário de OFERTA, não um onboarding do APP.
+  - Documentos/assinatura podem existir em etapa posterior do Recrutamento/APP,
+    mas não são pré-requisitos para registrar a oferta pública.
+
+----------------------------------------------------------------------------------------------------
+2. O QUE JÁ EXISTE E FUNCIONA
+----------------------------------------------------------------------------------------------------
+2.1 ROTA PÚBLICA E DIVULGAÇÃO
+  - Rota pública: src/App.tsx:92 — `/cadastro-prestador` (fora de ProtectedRoute).
+  - Link divulgado em Recrutamento/Captação: src/components/recrutamento/Captacao.tsx:19
+    (`https://conexoexpress.app/cadastro-prestador`).
+  - Wizard: src/pages/CadastroPrestador.tsx (5 etapas).
+  - O link e a rota existem e são públicos. (Funcionalidade de gravação NÃO funciona;
+    ver Seção 3.)
+
+2.2 APP PRESTADOR (CANAL 1) — PRESERVADO
+  - Cadastro do APP: `lib/features/auth/register_screen.dart`
+      * signUp no Supabase Auth;
+      * RPC `app_s6_criar_prestador` com `p_liberado_app: false`;
+      * sincronização do pipeline (`app_s6_sincronizar_cadastro_pipeline`);
+      * upload real de documentos em `documentos_prestadores`;
+      * checagem de CPF duplicado via `app_s6_cpf_cnpj_ja_cadastrado`.
+  - Gate de acesso: `lib/core/supabase/auth_status_mapper.dart`
+      * somente `status == ativo` (ou Aprovado) E `liberado_app == true`;
+      * fallback `prestadores_app` nunca libera (fail-closed).
+  - Documentos/Storage/visualizador: `driver_documents_repository.dart`,
+    `document_status.dart`, `profile_screen.dart`.
+  - ADM-APP-02D.2 homologado; G3 implementado/testado (aguardando prova física).
+  - Nenhum arquivo do APP foi alterado nesta auditoria.
+
+2.3 RECRUTAMENTO — CONSULTA AVANÇADA EXISTE (mas não é a rota padrão)
+  - Existe uma página avançada de Banco de Talentos em
+    `/recrutamento/banco-talentos` (`src/pages/BancoTalentos.tsx` →
+    `BancoTalentosLayout`), com:
+      * TalentList, TalentProfile, AdvancedFilters, ShortlistPanel,
+        RegioesCriticas, DashboardEstrategico, PipelineConversao;
+      * filtros por região, cidade, tipo de veículo, perfil operacional,
+        tipo de carga, score, status documental, disponibilidade,
+        capacidade (kg/m³), temperatura, dias da semana, janela de horário e
+        modalidade (contrato/esporádico/rota fixa);
+      * ações de contato: WhatsApp, notificar App e reativar candidato;
+      * `atualizarStatusDisponibilidade` no store.
+  - Fonte de dados dessa página: `prestadores` + `prestador_perfil_talento` +
+    `prestador_disponibilidade` + `veiculos` + documentos + ocorrências
+    (`matchPrestadoresService.carregarPrestadoresBase` + `talentBankService`).
+  - Portanto, os filtros avançados existem, mas operam sobre PRESTADORES
+    OPERACIONAIS, não sobre ofertas públicas/candidatos.
+
+2.4 RECRUTAMENTO — BANCO SIMPLES DE CANDIDATOS
+  - `RecrutamentoModule` (`/recrutamento?section=talentos`) usa
+    `recrutamento_candidatos` via `enterpriseKanbanService.listar()`.
+  - `BancoTalentos` (componente do módulo) exibe nome, telefone, e-mail, veículo,
+    região (cidade/UF), disponibilidade (por tags), score, documentos e canal.
+  - Filtros: busca, faixa de score e ordenação; NÃO há filtros dedicados por
+    região, modalidade, veículo, disponibilidade ou valores.
+  - A ação de contato do componente simples é apenas visual ("Contatar" sem ação).
+
+2.5 CADASTRO ADMINISTRATIVO / APROVAÇÃO
+  - `Cadastros > Prestadores` (`PrestadoresLista`/`PrestadorDetalhe`) funciona:
+      * aprovação direta de `app_motorista` (status ativo + liberado_app true);
+      * toggle de liberação com coerência status ativo;
+      * triggers de auditoria/guarda de privilégios no banco.
+  - `/app-prestador` continua sendo painel/simulador de viagens/POD; não é o
+    console de aprovação (A-6).
+
+2.6 DADOS OPERACIONAIS JÁ EXISTENTES PARA OFERTA (modelo rico)
+  - `prestadores`: `regiao_principal`, `regioes_secundarias`, `endereco`,
+    `disponibilidade_padrao`, `turnos_preferenciais`, `aceita_viagem`,
+    `aceita_esporadica`, `aceita_dedicada`, `aceita_urbana`, `aceita_refrigerada`,
+    `restricoes_operacionais`, `valor_diaria`, `valor_km`, `valor_saida`,
+    `fixo_mensal`, `valor_ajudante`, `valor_espera`, `forma_preferencial`,
+    `periodicidade_pagamento`, `prazo_pagamento`, etc.
+  - `veiculos`: tipo, modelo, placa, capacidade_kg, capacidade_m3,
+    comprimento/largura/altura, tipo_carga, temperatura, rastreador, seguro,
+    restrições, custos, etc.
+  - `prestador_perfil_talento`: modalidade_preferencial (array),
+    distancia_max_coleta_km, aceita_viagens, restricoes_operacionais,
+    status_disponibilidade.
+  - `prestador_disponibilidade`: dia_semana, hora_inicio, hora_fim, disponivel.
+  - `recrutamento_prestadores`: nome, contatos (jsonb), endereco (jsonb),
+    tipo_veiculo, placa_veiculo, capacidade_kg, capacidade_m3,
+    tipo_carga_veiculo, disponibilidade, regioes_atuacao (jsonb), status,
+    origem, tags, etc. (não tem valores/preços nem dias/horários detalhados).
+  - Conclusão: o modelo operacional já tem quase todos os campos de oferta;
+    o link público atual NÃO os utiliza.
+
+----------------------------------------------------------------------------------------------------
+3. O QUE EXISTE, MAS ESTÁ QUEBRADO
+----------------------------------------------------------------------------------------------------
+3.1 O LINK PÚBLICO NÃO GRAVA (A-1 CONFIRMADO)
+  - src/services/recrutamento/criarCandidatoService.ts (~linhas 42-62) insere em
+    `recrutamento_candidatos` colunas que NÃO EXISTEM:
+      nome_completo, cpf, whatsapp, regiao, tipo_veiculo, tipo_carroceria,
+      mensagem_livre, canal_captacao, status.
+  - Colunas reais (information_schema): nome, telefone, email, cidade, uf,
+    veiculo, placa, stage, data_entrada, observacoes_ia, tags, documentos,
+    questionario_respostas, preferencias_operacionais, respostas_situacionais,
+    disponibilidade_recrutamento, etc.
+  - PostgREST rejeita o INSERT (400). Nenhum candidato nasce do link público.
+  - O teste `rec03_eliminacao_legacy_candidatos.test.ts` valida apenas o texto do
+    arquivo e exige as colunas inválidas — falso verde.
+
+3.2 BLOQUEIO ADICIONAL DE SEGURANÇA (ANON)
+  - `recrutamento_candidatos` tem RLS ON e policies apenas para `authenticated`
+    (com `tenant_usuarios`); NÃO há policy/grant para `anon`.
+  - `candidato_documentos` também é apenas `authenticated`.
+  - Bucket `documentos_prestadores` é privado e as policies são `authenticated`.
+  - O link público é anônimo: mesmo corrigindo as colunas, o INSERT direto e o
+    upload de documentos continuam bloqueados.
+  - Conclusão: é necessária uma decisão de arquitetura (RPC pública
+    SECURITY DEFINER / Edge Function, ou aposentar o link, ou exigir login).
+    O escopo original "não mexe em schema" não se sustenta no estado atual.
+
+3.3 CAMPOS DE OFERTA AUSENTES NO FORMULÁRIO PÚBLICO
+  - Contato: não há telefone/WhatsApp/e-mail no wizard/store; o submit envia
+    strings vazias hardcoded.
+  - Disponibilidade: apenas um intervalo início/fim; NÃO há dias da semana.
+  - Modalidade: NÃO há esporádico/urgente/contrato fixo/recorrente.
+  - Valores/condições: NÃO há campo de valor, diária, km, saída, mensal,
+    condições ou limitações.
+  - Veículo: tipo (lista curta), modelo, placa, ano, faixa de capacidade e fotos;
+    NÃO há dimensões (C×L×A), carroceria, refrigeração, baú de moto, etc.
+  - Documentos/assinatura: o wizard pede selfie, CNH, CRLV, comprovante, ANTT,
+    MOPP, seguro, PIX, banco e assinatura — excesso para oferta pública e
+    impossível de persistir no caminho anônimo atual.
+
+3.4 PERSISTÊNCIA DE DISPONIBILIDADE/REGIÕES NOS CANDIDATOS
+  - `toDB` do `enterpriseKanbanService` NÃO mapeia `regioesAtuacao`,
+    `horariosDisponiveis` nem `diasDisponiveis`.
+  - `fromDB` lê `row.regioes_atuacao`, `row.horarios_disponiveis`,
+    `row.dias_disponiveis` — colunas que NÃO existem em
+    `recrutamento_candidatos`; caem em fallback vazio/cidade-uf.
+  - Portanto, mesmo que a UI colete regiões/horários, eles não são gravados de
+    forma estruturada nem lidos de volta.
+
+3.5 CONSULTA/COMPARAÇÃO DE OFERTAS
+  - Banco simples (candidatos): sem filtros de região/modalidade/veículo/
+    disponibilidade e sem valores.
+  - Banco avançado (`/recrutamento/banco-talentos`): tem filtros ricos e contato,
+    mas só lê `prestadores` operacionais; ofertas públicas/candidatos não
+    aparecem nele.
+  - O banco avançado NÃO carrega `valor_diaria`, `valor_km`, `fixo_mensal`,
+    `valor_saida`, `forma_preferencial` (o select de
+    `carregarPrestadoresBase` não inclui esses campos) → não há comparação de
+    valores/condições.
+  - A rota avançada NÃO está na sidebar; a sidebar aponta para o banco simples
+    (`/recrutamento?section=talentos`). `/recrutamento/banco-talentos` é acesso
+    direto por URL.
+  - Partes do banco avançado são mock (shortlists, regiões críticas, métricas de
+    conversão/retenção) no `talentBankStore`; a lista de talentos usa dados reais.
+
+3.6 LEITURAS LEGADAS COM COLUNAS INVÁLIDAS
+  - `src/components/recrutamento/AcompanhamentoDocs.tsx` seleciona
+    `tipo_veiculo`/`regiao` de `recrutamento_candidatos` (não existem).
+  - `src/components/recrutamento/Homologacao.tsx` seleciona `cpf`, `whatsapp`,
+    `regiao`, `tipo_veiculo` (não existem).
+  - `src/components/recrutamento/BancoTalentos.tsx` (legado, não é a rota
+    `/recrutamento/banco-talentos`) seleciona `regiao`/`status` (não existem).
+  - Essas telas podem falhar se acessadas; a rota avançada usa outro layout.
+
+3.7 ENTRADA RÁPIDA INTERNA
+  - `Captacao.tsx` tem um card "Entrada Rápida Interna" com campos visuais, mas
+    o botão "Salvar na Fila de Talentos" só dispara toast; não há estado/handler
+    de persistência. É decorativo.
+
+3.8 SUCESSO DO LINK PÚBLICO CONFUNDE OS CANAIS
+  - `CompletionScreen` exibe "Cadastro Completo!", "Aguardando análise" e
+    "Seus documentos estão seguros e serão analisados".
+  - Isso comunica onboarding/aprovação do APP, não registro de oferta. Precisa ser
+    reescrito para "Oferta registrada" e explicar que não há acesso/contratação
+    automática.
+
+----------------------------------------------------------------------------------------------------
+4. O QUE FALTA IMPLEMENTAR (ESCOPO CORRIGIDO)
+----------------------------------------------------------------------------------------------------
+4.1 DECISÃO DE ARQUITETURA (PRÉ-REQUISITO)
+  - Escolher: (A) manter link público com RPC/Edge Function pública segura;
+    (B) redirecionar o link para o APP/oficial; (C) exigir login.
+  - Definir o modelo de dados da oferta:
+      * opção 1: nova tabela de oferta/lead no Recrutamento;
+      * opção 2: usar `recrutamento_prestadores` com campos adicionais;
+      * opção 3: usar `recrutamento_candidatos` com JSONB estruturado + índices.
+  - Definir se documentos fazem parte do link público (recomendação: NÃO; coletar
+    depois no Recrutamento/APP, com autenticação).
+
+4.2 FORMULÁRIO PÚBLICO DE OFERTA
+  - Ramo Motoboy / Motorista / Veículo.
+  - Identificação e contato: nome, CPF/CNPJ, telefone/WhatsApp, e-mail, cidade/UF.
+  - Regiões atendidas (múltiplas).
+  - Dias da semana e horários disponíveis.
+  - Modalidade: esporádico, urgente, contrato fixo, recorrente.
+  - Valores/condições: diária, km, saída, mensal, condições e limitações.
+  - Veículo: categoria/tipo, modelo, placa, ano, capacidade kg/m³, dimensões,
+    carroceria, refrigeração, baú (moto), características.
+  - LGPD: consentimento explícito e finalidade; sem documentos obrigatórios.
+  - Anti-spam: rate limit/captcha e validação de contato.
+
+4.3 PERSISTÊNCIA SEGURA
+  - RPC/Edge Function pública (SECURITY DEFINER) com validação/normalização de
+    CPF/CNPJ, telefone e e-mail, dedup e limite de tentativas.
+  - Gravar apenas em tabela de oferta/lead do Recrutamento; NUNCA criar
+    `auth.users`, `prestadores`, `liberado_app`, `status='ativo'` ou documentos
+    aprovados.
+  - Nenhum grant direto de INSERT em tabelas para `anon`; apenas EXECUTE na RPC.
+  - Não usar o bucket privado para upload anônimo.
+
+4.4 CONSULTA/FILTROS/COMPARAÇÃO NO RECRUTAMENTO
+  - Tornar a oferta visível no Recrutamento (banco simples e/ou avançado).
+  - Filtros: região, modalidade, tipo de veículo, disponibilidade, dias/horários,
+    capacidade, valores/faixa de preço.
+  - Comparação lado a lado de valores/condições.
+  - Contato (WhatsApp/telefone/e-mail) e registro no CRM.
+  - Atualização de disponibilidade e informações pelo recrutador.
+  - Acompanhamento do candidato no funil (lead → avaliação → aprovação →
+    contratação → APP), sem automatismos.
+
+4.5 SEPARAÇÃO DE CANAIS
+  - Link público: oferta/lead; sem login, sem acesso, sem documentos aprovados.
+  - APP: autenticado, documentos, aprovação, liberado_app, operação.
+  - Cadastro administrativo: operacional; pode converter a oferta após avaliação.
+  - Recrutamento: avalia, contata, acompanha e converte.
+  - Nenhuma etapa do link público concede acesso ao APP.
+
+----------------------------------------------------------------------------------------------------
+5. PROBLEMAS DE SEGURANÇA E DEPENDÊNCIAS
+----------------------------------------------------------------------------------------------------
+5.1 RLS/GRANTS
+  - `recrutamento_candidatos` e `candidato_documentos`: apenas authenticated.
+  - Bucket `documentos_prestadores`: privado/authenticated.
+  - Link público anônimo não pode inserir/uploadar diretamente.
+  - Dependência: RPC/Edge pública + validação/rate limit/captcha, ou remoção do
+    canal anônimo.
+
+5.2 DEDUPLICAÇÃO E DADOS
+  - `app_s6_criar_prestador` dedupa por `auth_user_id`; o APP checa CPF via RPC.
+  - `identidadePrestadorService` (dedup por CPF/telefone/e-mail) está quebrado por
+    `cnh_validade` inexistente (A-5).
+  - Não há UNIQUE em `prestadores.cpf_cnpj`; existem 3 grupos de CPF duplicado.
+  - O link público precisa de dedup por CPF/CNPJ/e-mail/telefone antes de gravar.
+
+5.3 DOWNSTREAM (A-3/A-4/A-5/A-7)
+  - A-3: escritores/leitores usam `veiculos`/`cidade`/`uf` em `prestadores`
+    (colunas inexistentes).
+  - A-4: gate documental exige `recrutamento_candidatos.documentos`; 0/39
+    candidatos têm docs; `candidato_documentos` = 0; conversão bloqueada.
+  - A-5: dedup por `cnh_validade` inexistente; duplicidades.
+  - A-7: bridge `trg_bridge_prestador_para_recrutamento` só AFTER INSERT;
+    status/liberado_app não propagam em UPDATE.
+  - A-11: mecanismo de liberação/auditoria presente, mas 1 registro incoerente.
+
+5.4 LGPD / PRIVACIDADE
+  - O formulário público coleta CPF e documentos (selfie/CNH/CRLV), mas não
+    persiste consentimento nem documentos. Para oferta pública, minimizar dados:
+    contato + oferta + consentimento; documentos somente em etapa autenticada.
+  - Dados de contato exigem finalidade, retenção e base legal explícitas.
+
+5.5 RISCOS DE PRODUTO
+  - Confundir "oferta" com "cadastro aprovado" gera expectativa errada no
+    candidato.
+  - Aprovação direta em PrestadoresLista ignora o gate documental (A-4), mas é
+    ação TMS auditada; não é o link público.
+  - Banco avançado não está na sidebar; usuários podem não encontrar os filtros.
+
+----------------------------------------------------------------------------------------------------
+6. CAMPOS NECESSÁRIOS PARA O CADASTRO DE OFERTA (MAPA)
+----------------------------------------------------------------------------------------------------
+Legenda: [OK] existe na UI; [PARCIAL] existe de forma limitada; [FALTA] não existe.
+
+MOTOBOYS
+  - Identificação/contato:
+      nome [OK] · CPF/CNPJ [OK] · telefone/WhatsApp [FALTA] · e-mail [FALTA]
+  - Regiões atendidas: [PARCIAL] multi-select fixo, mas NÃO persistido.
+  - Dias disponíveis: [FALTA] (só um intervalo de horário).
+  - Horários: [PARCIAL] início/fim, mas NÃO persistido.
+  - Esporádico/urgente/contrato fixo: [FALTA].
+  - Valores/condições: [FALTA] (não há preço/diária/km/condições).
+  - Tipo de moto/capacidade: [PARCIAL] "Moto" + faixa de capacidade; sem baú.
+  - Condições/limitações: [PARCIAL] distância máxima; sem texto de restrições.
+
+MOTORISTAS E VEÍCULOS
+  - Profissional/contato: nome/CPF [OK]; telefone/WhatsApp/e-mail [FALTA].
+  - Categorias/tipos de veículo: [PARCIAL] lista curta; sem carroceria/
+    refrigeração/rodado.
+  - Capacidade de carga: [PARCIAL] faixa; sem kg/m³ exatos nem dimensões.
+  - Dimensões: [FALTA].
+  - Regiões: [PARCIAL] multi-select fixo, NÃO persistido.
+  - Dias/horários: [PARCIAL] um intervalo, NÃO persistido; sem dias.
+  - Valores/condições: [FALTA].
+  - Avulso/recorrente/contrato: [FALTA].
+  - Documentos/assinatura/LGPD: [PARCIAL] UI pede, mas NÃO persiste; excesso
+    para oferta pública.
+
+Persistência real:
+  - `recrutamento_candidatos`: nome, telefone, email, cidade, uf, veiculo, placa,
+    stage, tags, documentos, questionario_respostas, preferencias_operacionais,
+    respostas_situacionais, disponibilidade_recrutamento, etc.
+  - NÃO existem colunas de: cpf, whatsapp, regiao, dias/horários, modalidade,
+    valores, dimensões, capacidade.
+  - `recrutamento_prestadores`: contatos/endereço/tipo_veiculo/placa/
+    capacidade_kg/capacidade_m3/tipo_carga/disponibilidade/regioes_atuacao —
+    melhor base estruturada, mas sem valores/dias/horários.
+  - `prestadores`/`veiculos`/`prestador_perfil_talento`/
+    `prestador_disponibilidade`: modelo operacional rico, com valores, regiões,
+    modalidades, dias/horários, dimensões e capacidades — usar como referência
+    para o modelo de oferta, sem criar prestador operacional no link público.
+
+----------------------------------------------------------------------------------------------------
+7. COMO OS DADOS SERÃO CONSULTADOS NO RECRUTAMENTO
+----------------------------------------------------------------------------------------------------
+7.1 O QUE JÁ EXISTE
+  - Banco avançado `/recrutamento/banco-talentos`: filtros ricos (região, cidade,
+    veículo, perfil, carga, score, docs, disponibilidade, capacidade,
+    temperatura, dias, horário, modalidade), perfil do talento, contato WhatsApp/
+    App, shortlists. Fonte: prestadores operacionais.
+  - Banco simples `/recrutamento?section=talentos`: candidatos do pipeline;
+    busca/score/ordenação; sem filtros de oferta/valores.
+  - `PaginaPrestadores` (`/recrutamento?section=prestadores`): prestadores do
+    recrutamento; busca/status/origem; detalhe mostra regiões/disponibilidade/
+    capacidade; sem valores.
+  - `PrestadoresAptos`: filtros região/veículo/disponibilidade; apenas aptos.
+
+7.2 O QUE FALTA PARA A OFERTA
+  - Unificar a fonte: oferta pública deve aparecer em uma consulta de
+    Recrutamento (banco simples e/ou avançado), sem virar prestador operacional.
+  - Filtrar por: região, modalidade, veículo, dias/horários, disponibilidade,
+    capacidade e faixa de valores.
+  - Comparar valores/condições lado a lado.
+  - Contatar (WhatsApp/telefone/e-mail) e registrar no CRM.
+  - Atualizar disponibilidade/informações.
+  - Acompanhar o candidato no funil e converter somente após avaliação.
+  - Recomendação: usar o banco avançado como base de UX (já tem filtros e
+    contato), mas trocar/estender a fonte para incluir ofertas públicas; ou
+    promover o banco simples com os mesmos filtros. Decisão na 02B.0.
+
+----------------------------------------------------------------------------------------------------
+8. COMO PRESERVAR A SEPARAÇÃO ENTRE CADASTRO PÚBLICO E APP
+----------------------------------------------------------------------------------------------------
+  - Link público:
+      * grava oferta/lead no Recrutamento;
+      * NÃO cria auth user;
+      * NÃO cria prestador;
+      * NÃO define status ativo;
+      * NÃO define liberado_app;
+      * NÃO aprova documentos;
+      * NÃO promete acesso ao APP.
+  - Recrutamento:
+      * consulta, filtra, compara, contata e acompanha;
+      * avalia e decide avançar;
+      * coleta documentos em etapa autenticada/controlada;
+      * converte para prestador somente após aprovação explícita.
+  - APP:
+      * canal autenticado de onboarding/operação;
+      * documentos, aprovação, liberado_app e operações;
+      * permanece intacto.
+
+  - A tela de sucesso do link público deve dizer "Oferta registrada" e explicar
+    que a equipe entrará em contato; não deve dizer "Cadastro Completo" nem
+    "Aguardando análise de documentos".
+
+----------------------------------------------------------------------------------------------------
+9. PLANO DE IMPLEMENTAÇÃO EM MICROETAPAS
+----------------------------------------------------------------------------------------------------
+02B.0 — DECISÃO DE ARQUITETURA E MODELO DE DADOS (READ-ONLY / ESPECIFICAÇÃO)
+  - Escolher canal (RPC pública, Edge Function, APP-only ou login).
+  - Escolher modelo de oferta (tabela nova, `recrutamento_prestadores` estendido
+    ou `recrutamento_candidatos` com JSONB estruturado + índices).
+  - Definir se documentos entram no link público (recomendação: não).
+  - Definir a tela de consulta (banco avançado x banco simples) e os filtros.
+  - Entregar migration proposta/rollback (se houver) e matriz de riscos.
+
+02B.1 — REDESENHO DO FORMULÁRIO PÚBLICO DE OFERTA
+  - Remover documentos/selfie/CNH/CRLV/PIX/banco/assinatura do link público.
+  - Criar ramos Motoboy/Motorista/Veículo.
+  - Adicionar contato, regiões, dias/horários, modalidade, valores/condições,
+    capacidade/dimensões/características, LGPD.
+  - Ajustar tela de sucesso para "Oferta registrada".
+
+02B.2 — BACKEND DE CAPTAÇÃO PÚBLICA
+  - RPC/Edge Function SECURITY DEFINER com validação/normalização/dedup,
+    rate limit/captcha e LGPD.
+  - Gravar na entidade de oferta definida; sem grants diretos para anon.
+  - Testes negativos de RLS e de abuso.
+
+02B.3 — CONSULTA/FILTROS/COMPARAÇÃO NO RECRUTAMENTO
+  - Exibir ofertas na consulta escolhida.
+  - Filtros de região, modalidade, veículo, dias/horários, disponibilidade,
+    capacidade e valores.
+  - Comparação de valores/condições; contato; atualização de disponibilidade.
+  - CRM e acompanhamento no funil.
+
+02B.4 — AVALIAÇÃO E CONVERSÃO
+  - Oferecer conversão oferta → candidato → prestador somente após avaliação.
+  - Coletar documentos em etapa autenticada/controlada.
+  - Nenhum acesso automático ao APP.
+
+02B.5 — TESTES, QA E HOMOLOGAÇÃO
+  - Testes de schema, RPC, RLS, dedup, filtros, contato, comparação,
+    separação e E2E visual em QA.
+
+02B.6 — OPERAÇÃO
+  - Monitorar abuso/SPAM, taxa de conversão, qualidade dos dados.
+  - Definir retenção/LGPD e limpeza de ofertas inativas.
+
+----------------------------------------------------------------------------------------------------
+10. TESTES NECESSÁRIOS E CRITÉRIOS DE HOMOLOGAÇÃO
+----------------------------------------------------------------------------------------------------
+  - Formulário público:
+      * validação de contato/CPF/CNPJ/regiões/dias/horários/valores;
+      * ramo motoboy x motorista/veículo;
+      * consentimento LGPD obrigatório;
+      * tela de sucesso sem promessa de acesso ao APP.
+  - Segurança:
+      * INSERT anônimo direto em tabelas = NEGADO;
+      * upload anônimo no bucket = NEGADO;
+      * RPC pública valida, deduplica e limita abuso;
+      * nenhuma criação de auth user/prestador/liberado_app pelo link.
+  - Persistência:
+      * todos os campos de oferta recuperáveis no Recrutamento;
+      * campos estruturados para filtros (não apenas texto/JSONB opaco);
+      * dedup por CPF/CNPJ/e-mail/telefone.
+  - Consulta:
+      * filtros por região, modalidade, veículo, disponibilidade e valores;
+      * comparação de valores/condições;
+      * contato via WhatsApp/telefone/e-mail e registro no CRM;
+      * atualização de disponibilidade.
+  - Separação:
+      * oferta pública NÃO aparece como prestador apto/liberado;
+      * conversão só após avaliação/aprovação explícita;
+      * APP permanece com gate status + liberado_app.
+  - Qualidade:
+      * E2E visual em ambiente QA com evidências;
+      * testes negativos de RLS;
+      * nenhuma regressão no APP/02D2/G3.
+
+Critérios de homologação:
+  - Oferta pública registrada e consultável no Recrutamento.
+  - Filtros/comparação/contato funcionando com dados reais de teste.
+  - Nenhum acesso/liberação automática.
+  - RLS/anti-abuso comprovados.
+  - APP e 02D2/G3 preservados.
+  - Evidências visuais e de banco anexadas.
+
+----------------------------------------------------------------------------------------------------
+11. BACKLOG CONSOLIDADO (SEM APAGAR PENDÊNCIAS ANTERIORES)
+----------------------------------------------------------------------------------------------------
+GAPS HISTÓRICOS (mantidos):
+  A-1  Pré-cadastro público TMS quebrado (colunas inválidas + anon RLS).
+  A-2  Documentos/assinatura do onboarding não persistem.
+  A-3  Sync Recrutamento→Prestador com colunas inexistentes (`veiculos`/cidade/uf).
+  A-4  Gate documental inatingível (documentos jsonb vazio; candidato_documentos 0).
+  A-5  Dedup por `cnh_validade` inexistente; 3 grupos de CPF duplicado.
+  A-6  `/app-prestador` é simulador, não console de aprovação.
+  A-7  Bridge só AFTER INSERT; status/liberado_app não propagam.
+  A-8  Auditoria de liberado_app: estrutura presente; falta prova de escrita.
+  A-9  Guard de privilégios: estrutura presente; falta prova de escrita.
+  A-10 Bucket documentos_prestadores privado — HOMOLOGADO/PRESERVADO.
+  A-11 Coerência liberado_app: mecanismo presente; 1 registro incoerente.
+  A-12 RLS de recrutamento com tenant — implementado; bloqueia anon.
+  A-13 Órfãos/duplicidades/integridade (não reaberto).
+  A-14 `interesse_confirmado` fora do score (não reaberto).
+
+ITENS NOVOS DO ESCOPO CORRIGIDO:
+  P-01 Definir arquitetura do link público (RPC/Edge/APP-only/login).
+  P-02 Definir modelo de dados da oferta (tabela/estrutura/JSONB+índices).
+  P-03 Redesenhar formulário público de oferta (motoboy/motorista/veículo).
+  P-04 Implementar captação pública segura (validação/dedup/rate limit/LGPD).
+  P-05 Exibir ofertas no Recrutamento com filtros de região/modalidade/veículo/
+       disponibilidade/valores.
+  P-06 Comparar valores/condições lado a lado.
+  P-07 Contatar/registrar CRM e atualizar disponibilidade.
+  P-08 Separar formalmente oferta pública x cadastro x APP (sem liberado_app).
+  P-09 Definir se/como documentos entram em etapa posterior.
+  P-10 Testes/QA/evidências e critérios de homologação.
+
+PRESERVADOS (não reabrir sem regressão):
+  - ADM-APP-02D.2 (bucket privado, upload, signed URL, visualizador).
+  - G3 (status documental oficial/rejeitado) — aguardando prova física.
+  - Gate do APP (status ativo + liberado_app, fail-closed).
+  - Pré-cadastro do APP (signUp/RPC/docs/pipeline) — implementado; prova
+    operacional do estágio `cadastro_concluido` não evidenciada nos dados atuais.
+  - A-10/A-12 e a separação de buckets.
+
+----------------------------------------------------------------------------------------------------
+12. CLASSIFICAÇÃO FINAL
+----------------------------------------------------------------------------------------------------
+HOMOLOGADO:
+  - ADM-APP-02D.2 (documentos/Storage/visualizador; evidências documentadas).
+  - Controle de privilégios/auditoria de `liberado_app` (estrutura de banco;
+    ressalva: sem teste de escrita nesta auditoria).
+  - Bucket `documentos_prestadores` privado.
+
+IMPLEMENTADO, AGUARDANDO PROVA REAL:
+  - APP Prestador: cadastro, documentos, gate e G3 (código/testes; prova física
+    pendente).
+  - Banco avançado de talentos (`/recrutamento/banco-talentos`): filtros ricos e
+    contato; fonte operacional, sem ofertas públicas e sem valores.
+  - Banco simples de candidatos (`/recrutamento?section=talentos`): listagem
+    básica; filtros limitados.
+  - Aprovação/liberação em Cadastros > Prestadores (ação real; `/app-prestador`
+    continua simulador).
+
+PENDENTE:
+  - Rota/link público funcional para oferta.
+  - Campos de contato, regiões persistidas, dias/horários, modalidade,
+    valores/condições, capacidade/dimensões/características.
+  - Persistência de LGPD/consentimento.
+  - Consulta/filtros/comparação de ofertas.
+  - Dedup e validação do link público.
+  - Testes/QA do canal público.
+
+BLOQUEADO:
+  - Gravação anônima direta em `recrutamento_candidatos`/`candidato_documentos`
+    e upload anônimo (RLS/grants + bucket privado).
+  - Implementação do link público sem decisão de arquitetura.
+  - Uso do caminho atual para criar oferta (A-1 + anon).
+  - Comparação de valores (não há campo/modelo no recrutamento).
+
+NÃO LOCALIZADO:
+  - Requisito de valores/condições no link público atual (não existe).
+  - Filtros de valores no Recrutamento (não existem).
+  - Tela pública de sucesso orientada a "oferta" (a atual é "Cadastro Completo").
+
+----------------------------------------------------------------------------------------------------
+13. CONFIRMAÇÃO DE ZERO ESCRITAS / ZERO ALTERAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum INSERT/UPDATE/DELETE/DDL foi executado.
+  - Nenhuma migration foi criada/aplicada.
+  - Nenhuma tabela, policy RLS, bucket, RPC ou trigger foi alterado.
+  - Nenhum arquivo de código do TMS foi editado.
+  - Nenhum arquivo do APP foi criado/alterado/removido.
+  - Nenhum dado real de cliente/prestador foi usado ou exposto; apenas leitura
+    de schema/agregados e código.
+  - Scripts temporários de leitura foram removidos; o único arquivo entregue é
+    este relatório.
+
+CONCLUSÃO: o escopo correto é OFERTA PÚBLICA DE PRESTADORES NO RECRUTAMENTO,
+separada do APP. O link existe, mas está quebrado (A-1 + anon RLS) e desenhado
+como onboarding do APP (docs/selfie/PIX). A consulta avançada existe, mas lê
+prestadores operacionais e não ofertas públicas, e não compara valores. A próxima
+micro-missão deve ser a 02B.0 (decisão de arquitetura/modelo de dados), sem
+implementação antes da autorização.
+====================================================================================================

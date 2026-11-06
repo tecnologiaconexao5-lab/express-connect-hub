@@ -1,0 +1,230 @@
+====================================================================================================
+ADM-APP-02B.5 — RECUPERAÇÃO E DIAGNÓSTICO DO SUPABASE QA
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador — NÃO ACESSADO
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: DIAGNÓSTICO READ-ONLY
+RESULTADO: BLOQUEADO — HOST QA INDISPONÍVEL / QA NÃO CONFIRMADO
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO DEPLOY / ZERO SECRETS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. O QUE FOI VERIFICADO
+----------------------------------------------------------------------------------------------------
+  - Relatórios 02B.0, 02B.1, 02B.2, 02B.3 e 02B.4.
+  - `supabase/config.toml`.
+  - Migrations 02B.2 e 02B.3.
+  - Edge Function `ofertas-publicas`.
+  - Formulário público (`OfertaPublicaForm`, `OfertaCaptcha`).
+  - Serviço e telas internas de Ofertas Públicas.
+  - Instalação e versão do Supabase CLI.
+  - Autenticação do CLI (sem revelar tokens).
+  - Projeto vinculado ao workspace.
+  - Organizações e projetos visíveis na conta autenticada.
+  - Nomes de variáveis locais (sem valores).
+  - Project Ref/URL declarados para QA e produção.
+  - Resolução DNS e conectividade HTTP read-only.
+  - Estado local da ordenação das migrations e da Edge.
+  - Nenhuma operação de escrita, migration, deploy ou secret.
+
+Comandos executados (todos read-only):
+  - `supabase --version`
+  - `supabase projects list`
+  - `supabase orgs list`
+  - `Resolve-DnsName`
+  - `curl` GET/OPTIONS nos hosts documentados
+  - leitura estática de arquivos
+Não executados:
+  - `supabase status` — evita exibir chaves locais.
+  - `supabase migration list` — o projeto vinculado é PROD, não QA confirmado.
+  - `supabase db push`, `migration up`, `functions deploy`, `secrets set`.
+  - Qualquer SQL remoto.
+  - Qualquer alteração de projeto/URL/link.
+
+----------------------------------------------------------------------------------------------------
+2. O QUE FOI ENCONTRADO
+----------------------------------------------------------------------------------------------------
+2.1 Supabase CLI
+  - Instalado: SIM.
+  - Versão: 2.117.0.
+  - Atualização disponível informada pelo CLI: 3.0.0 (não atualizada nesta missão).
+  - Autenticação: VÁLIDA. `supabase projects list` respondeu com sucesso, sem erro de login.
+  - Nenhum token, senha, JWT ou service_role foi impresso.
+
+2.2 Organização autenticada
+  - Org ID: dkitbsslspqjsagbevck
+  - Nome: tecnologiaconexao5@gmail.com's Org
+  - Projetos visíveis na listagem: 1.
+
+2.3 Projeto atualmente vinculado
+  - Project Ref: uwrvzsjtpgaifkktpepn
+  - Nome: conexao-express-tms
+  - Organização: dkitbsslspqjsagbevck
+  - Região: South America (São Paulo)
+  - Vínculo local confirmado por `supabase/.temp/project-ref` e `supabase/.temp/linked-project.json`.
+  - Este é o projeto de PRODUÇÃO já conhecido. NÃO foi tratado como QA.
+
+2.4 Divergência de configuração local
+  - `supabase/config.toml` usa `project_id = "express-connect-hub"` (identificador local), não o Project Ref remoto.
+  - O vínculo remoto é PROD (`uwrvzsjtpgaifkktpepn`).
+  - Isso não é erro de código, mas é uma divergência documental que deve ser considerada
+    ao executar qualquer comando `--linked`.
+
+----------------------------------------------------------------------------------------------------
+3. PROJECT REF E HOST QA
+----------------------------------------------------------------------------------------------------
+QA declarado no arquivo `.env.qa`:
+  - `ENVIRONMENT=qa` (presente).
+  - `SUPABASE_QA_PROJECT_REF=aqpfayildtcnrkfeeyjg` (presente).
+  - `VITE_SUPABASE_URL=https://aqpfayildtcnrkfeeyjg.supabase.co` (presente).
+  - O Project Ref declarado corresponde ao host da URL declarada (match textual).
+  - `SUPABASE_QA_DB_PASSWORD` presente (valor NÃO exibido).
+  - `DATABASE_URL` presente (valor NÃO exibido; host do pooler).
+  - `SUPABASE_SERVICE_ROLE_KEY` presente (valor NÃO exibido).
+  - `VITE_SUPABASE_ANON_KEY` presente (valor NÃO exibido).
+
+Classificação do QA:
+  - Project Ref declarado: aqpfayildtcnrkfeeyjg
+  - URL declarada: https://aqpfayildtcnrkfeeyjg.supabase.co
+  - Organização do QA: NÃO identificada.
+  - Evidência de que seja o QA correto: apenas `ENVIRONMENT=qa` no `.env.qa`.
+  - O Project Ref NÃO aparece em `supabase projects list` da conta autenticada.
+  - O host NÃO resolve em DNS.
+  - Conclusão: QA NÃO confirmado como projeto existente/acessível.
+
+----------------------------------------------------------------------------------------------------
+4. ESTADO DE AUTENTICAÇÃO DO CLI
+----------------------------------------------------------------------------------------------------
+  - CLI autenticado: SIM.
+  - `supabase projects list` funcionou.
+  - `supabase orgs list` funcionou.
+  - Não é necessário `supabase login` neste momento para a conta atual.
+  - Porém, o QA declarado não pertence (ou não está visível) à organização autenticada.
+  - Se o QA estiver em outra conta/organização, será necessário login interativo nessa conta.
+  - Nenhuma credencial foi solicitada, copiada ou exibida.
+
+----------------------------------------------------------------------------------------------------
+5. DNS E CONECTIVIDADE
+----------------------------------------------------------------------------------------------------
+QA:
+  - Host: aqpfayildtcnrkfeeyjg.supabase.co
+  - DNS: NÃO RESOLVE (sem registro A).
+  - HTTP GET /rest/v1/: HTTP 000.
+  - Erro: `curl: (6) Could not resolve host`.
+  - Resultado: HOST QA INDISPONÍVEL.
+
+PRODUÇÃO (apenas para diferenciar, NÃO tratar como QA):
+  - Host: uwrvzsjtpgaifkktpepn.supabase.co
+  - DNS: resolve para IPs Cloudflare (104.18.38.10 / 172.64.149.246).
+  - GET /rest/v1/recrutamento_ofertas?select=id&limit=1:
+    HTTP 404 / PGRST205 — tabela `public.recrutamento_ofertas` não existe.
+  - OPTIONS /functions/v1/ofertas-publicas:
+    HTTP 404 / NOT_FOUND — “Requested function was not found”.
+  - Conclusão: PROD acessível, mas SEM a migration e SEM a Edge desta missão.
+
+Pooler:
+  - `aws-1-sa-east-1.pooler.supabase.com` resolve para IPs AWS.
+  - O pooler é compartilhado; resolução do host NÃO prova que o projeto QA exista.
+  - Nenhuma conexão de banco foi aberta, para evitar escrita/autenticação desnecessária.
+
+----------------------------------------------------------------------------------------------------
+6. CONFIGURAÇÕES AUSENTES (APENAS NOMES)
+----------------------------------------------------------------------------------------------------
+Verificadas em `.env` e `.env.qa`; todas AUSENTES em ambos:
+  - OFERTAS_PUBLICAS_TENANT_ID
+  - OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+  - OFERTAS_PUBLICAS_IP_SALT
+  - OFERTAS_PUBLICAS_CAPTCHA_PROVIDER
+  - OFERTAS_PUBLICAS_CAPTCHA_SECRET
+  - OFERTAS_PUBLICAS_REQUIRE_CAPTCHA
+  - VITE_OFERTAS_CAPTCHA_PROVIDER
+  - VITE_OFERTAS_CAPTCHA_SITE_KEY
+
+Presenças relevantes (sem valores):
+  - `.env`: DATABASE_URL presente; SUPABASE_SERVICE_ROLE_KEY declarado, mas sem valor útil.
+  - `.env.qa`: DATABASE_URL, SUPABASE_QA_PROJECT_REF, SUPABASE_QA_DB_PASSWORD,
+    SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_ANON_KEY e VITE_SUPABASE_URL presentes.
+  - Nenhum valor de secret foi exibido no relatório.
+
+Configuração local da Edge:
+  - `supabase/config.toml` contém `[functions.ofertas-publicas]`.
+  - `verify_jwt = false` presente localmente.
+  - CORS local da Edge inclui `Authorization`, `apikey`, `x-client-info`,
+    `Content-Type`, `x-captcha-token` e `x-idempotency-key`.
+  - Edge NÃO publicada.
+
+----------------------------------------------------------------------------------------------------
+7. PRONTIDÃO PARA RECEBER AS MIGRATIONS
+----------------------------------------------------------------------------------------------------
+Estado local:
+  - Migration 02B.2 presente: 20261103000002_adm_app_02b2_ofertas_publicas.sql
+  - Migration 02B.3 presente: 20261103000003_adm_app_02b3_gestao_ofertas.sql
+  - Ordem de aplicação obrigatória: 02B.2 → 02B.3.
+  - A 02B.2 foi reparada localmente na 02B.3 (estava com blocos duplicados/SQL solto).
+  - Edge Function local presente (`index.ts`, `validation.ts`).
+  - Frontend local presente (formulário, captcha, serviço, detalhe, comparação, lista).
+  - `02B.2/02B.3` NÃO aplicadas; Edge NÃO publicada.
+
+Classificação:
+  - Prontidão de arquivos locais: OK.
+  - Prontidão do ambiente QA: BLOQUEADA.
+  - Motivo: QA não identificado/acessível; host não resolve e ref não aparece na conta CLI.
+  - Não é seguro aplicar migrations no PROD por presunção.
+  - Não foi executado `migration list` porque o vínculo atual é PROD, não QA confirmado.
+
+----------------------------------------------------------------------------------------------------
+8. COMANDO EXATO PARA O USUÁRIO CONFIRMAR/AUTENTICAR
+----------------------------------------------------------------------------------------------------
+Cenário A — o QA existe em outra conta/organização:
+  1. No terminal, executar login interativo (sem colar token no chat):
+       supabase login
+  2. Conferir se o Project Ref aparece:
+       supabase projects list
+  3. Se aparecer e for confirmado como QA, vincular localmente:
+       supabase link --project-ref aqpfayildtcnrkfeeyjg
+
+Cenário B — o QA deveria estar na organização atual, mas não aparece:
+  - O projeto pode ter sido removido, pausado ou pertencer a outra organização.
+  - Confirmar no painel Supabase qual é o projeto de homologação correto.
+  - NÃO criar um novo projeto automaticamente.
+  - NÃO substituir a URL por tentativa.
+
+Cenário C — host continua sem DNS:
+  - O projeto QA está indisponível/removido.
+  - É necessário restaurar/recriar o projeto no painel Supabase com autorização explícita.
+  - Depois, atualizar `.env.qa` e confirmar o Project Ref.
+
+Nenhum desses comandos foi executado nesta missão.
+
+----------------------------------------------------------------------------------------------------
+9. PRÓXIMA AÇÃO TÉCNICA
+----------------------------------------------------------------------------------------------------
+1. Usuário confirma qual é o projeto QA correto e em qual conta/organização ele está.
+2. Se necessário, autenticar a conta correta via `supabase login` interativo.
+3. Confirmar o Project Ref e o host QA em `supabase projects list` e no painel.
+4. Restaurar a resolução DNS do host QA.
+5. Somente depois, com autorização específica:
+   - aplicar 02B.2 e depois 02B.3 no QA;
+   - configurar secrets da Edge;
+   - publicar `ofertas-publicas`;
+   - executar testes reais de recebimento, RLS, idempotência, rate limit e conversão.
+6. Não reduzir a contagem regressiva nesta missão:
+   `3 Fechamento TMS → 2 E2E completo → 1 Master 360/Gate Produção → 0 Homologado`.
+
+----------------------------------------------------------------------------------------------------
+10. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL.
+  - Nenhuma migration aplicada.
+  - Nenhuma Edge Function publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhum comando de deploy executado.
+  - Nenhum acesso ao APP Prestador.
+  - Nenhuma alteração no código funcional do formulário/gestão nesta missão de diagnóstico.
+  - Nenhum token, senha, service_role ou conteúdo de `.env` foi impresso.
+  - A verificação de produção foi somente leitura e serviu apenas para diferenciar PROD de QA.
+  - O QA NÃO foi declarado aprovado, homologado ou pronto.
+  - Resultado final: BLOQUEADO — HOST QA INDISPONÍVEL / QA NÃO CONFIRMADO.
+
+====================================================================================================

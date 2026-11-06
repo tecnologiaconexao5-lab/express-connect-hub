@@ -1,0 +1,131 @@
+====================================================================================================
+EXECUÇÃO DA MIGRATION 02B.2 — OFERTAS PÚBLICAS
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+AMBIENTE: PRODUÇÃO
+RESULTADO: SUCESSO — MIGRATION APLICADA E VALIDADA
+====================================================================================================
+
+1. CONFIRMAÇÕES PRÉVIAS
+----------------------------------------------------------------------------------------------------
+  Arquivo:
+    supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+
+  SHA-256 esperado:
+    050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+
+  SHA-256 calculado:
+    050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+
+  Hash confere: SIM.
+
+  Projeto vinculado:
+    ref: uwrvzsjtpgaifkktpepn
+    nome: conexao-express-tms
+
+  Sessão de aplicação:
+    current_user: postgres
+    current_database: postgres
+    servidor: PostgreSQL 17.6
+
+  Permissões confirmadas antes da execução:
+    CREATE no schema public: sim;
+    REFERENCES em tenants: sim;
+    ownership de recrutamento_candidatos: postgres;
+    EXECUTE em current_tenant_id_safe: sim.
+
+  Objetos 02B.2 previamente ausentes:
+    recrutamento_ofertas: ausente;
+    recrutamento_oferta_identificadores: ausente;
+    recrutamento_oferta_eventos: ausente;
+    recrutamento_oferta_rate_limit: ausente;
+    recrutamento_candidatos.oferta_id: ausente;
+    funções 02B.2: ausentes.
+
+2. EXECUÇÃO
+----------------------------------------------------------------------------------------------------
+  Método: psql 17.6 em container efêmero, conexão direta ao banco de produção.
+  O arquivo possui BEGIN/COMMIT próprios.
+
+  Comando (sem credenciais):
+    psql -v ON_ERROR_STOP=1 -f /migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+
+  Exit code: 0
+  Transação: COMMIT confirmado.
+
+  Ocorrências esperadas:
+    - DROP TRIGGER IF EXISTS: aviso de trigger inexistente, seguido de criação;
+    - DROP POLICY IF EXISTS: avisos de policies inexistentes, seguidas de criação.
+
+  Não houve erro.
+
+3. OBJETOS VERIFICADOS APÓS A EXECUÇÃO
+----------------------------------------------------------------------------------------------------
+  Tabelas (4):
+    - recrutamento_ofertas — RLS habilitado
+    - recrutamento_oferta_identificadores — RLS habilitado
+    - recrutamento_oferta_eventos — RLS habilitado
+    - recrutamento_oferta_rate_limit — RLS habilitado
+    Owner: postgres.
+
+  Coluna:
+    - recrutamento_candidatos.oferta_id — UUID, nullable.
+    - FK: recrutamento_candidatos_oferta_id_fkey
+      REFERENCES recrutamento_ofertas(id) ON DELETE SET NULL.
+
+  Funções:
+    - f_recrutamento_ofertas_before_update()
+    - f_registrar_oferta_publica(uuid, jsonb, text, text, text)
+      SECURITY DEFINER: sim.
+    Owner: postgres.
+
+  Trigger:
+    - trg_recrutamento_ofertas_before_update
+      BEFORE UPDATE em recrutamento_ofertas, enabled.
+
+  Policies (4):
+    - ofertas_select_tms — SELECT, authenticated
+    - ofertas_update_tms — UPDATE, authenticated
+    - oferta_identificadores_select_tms — SELECT, authenticated
+    - oferta_eventos_select_tms — SELECT, authenticated
+
+  Índices:
+    - 20 índices explícitos criados pela migration;
+    - 26 índices totais no conjunto (incluindo PK/UNIQUE de constraints).
+
+  Grants validados:
+    - authenticated SELECT em recrutamento_ofertas: sim;
+    - authenticated UPDATE em recrutamento_ofertas: sim;
+    - anon SELECT em recrutamento_ofertas: não;
+    - service_role SELECT/INSERT/UPDATE/DELETE: sim;
+    - f_registrar_oferta_publica: anon não, authenticated não,
+      service_role sim.
+
+4. DADOS E ESCOPO
+----------------------------------------------------------------------------------------------------
+  - Novas tabelas estão vazias: 0 registros.
+  - recrutamento_candidatos continua com 39 registros.
+  - Candidatos com oferta_id preenchido: 0.
+  - Nenhum dado de candidato foi alterado; a operação foi somente ALTER TABLE
+    ADD COLUMN nullable.
+  - Nenhuma alteração fora do Recrutamento.
+  - 02B.3 NÃO foi aplicada:
+      recrutamento_ofertas.disponibilidade_interna: ausente;
+      recrutamento_candidatos.tenant_id: ausente.
+
+5. LIMITES RESPEITADOS
+----------------------------------------------------------------------------------------------------
+  - Nenhum db push.
+  - Nenhum deploy de Edge Function.
+  - Nenhuma configuração de secret.
+  - Nenhuma alteração de plano, PITR ou cobrança.
+  - Nenhum restore.
+  - Nenhuma alteração no APP Prestador ou outros módulos.
+
+6. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  A migration 02B.2 foi aplicada com sucesso em produção e os objetos foram
+  verificados. O estado está consistente para a próxima etapa: revisão e
+  aplicação autorizada da 02B.3.
+
+====================================================================================================

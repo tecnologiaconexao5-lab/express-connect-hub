@@ -1,0 +1,75 @@
+====================================================================================================
+VERIFICAÇÃO DE BACKUP — SUPABASE PRODUÇÃO
+DATA: 2026-11-04
+MODO: SOMENTE LEITURA
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+TENANT RELACIONADO: 00000000-0000-0000-0000-000000000001 — Conexao Express
+====================================================================================================
+
+1. RESULTADO
+----------------------------------------------------------------------------------------------------
+  NÃO FOI POSSÍVEL CONFIRMAR BACKUP AUTOMÁTICO RECUPERÁVEL PELO PAINEL.
+
+  A verificação foi feita pela API/CLI do Supabase, não pelo painel web autenticado.
+  A CLI não listou nenhum backup físico disponível:
+
+    backups: null
+    physical_backup_data: {}
+    pitr_enabled: false
+    walg_enabled: true
+    region: sa-east-1
+
+  Não há, portanto, data, tipo ou identificador de backup recente para informar.
+  Também não há evidência de restauração disponível.
+
+2. O QUE ISSO SIGNIFICA
+----------------------------------------------------------------------------------------------------
+  - `backups: null`: nenhum backup físico listado pela API consultada.
+  - `physical_backup_data: {}`: nenhum metadado de backup físico retornado.
+  - `pitr_enabled: false`: restauração point-in-time não está habilitada.
+  - `walg_enabled: true`: WAL-G está habilitado, mas isso não comprova que exista
+    um backup restaurável disponível.
+  - O comando de restore existe na CLI, mas não foi executado e não há backup
+    listado que comprove sua utilização.
+
+  Conclusão: não é seguro declarar que existe backup automático recente nem que
+  há restauração comprovada. O estado é PENDENTE DE CONFIRMAÇÃO NO PAINEL.
+
+3. INFORMAÇÃO QUE FALTA
+----------------------------------------------------------------------------------------------------
+  Para confirmar objetivamente pelo painel, falta acesso autenticado ao:
+    - projeto uwrvzsjtpgaifkktpepn;
+    - seção Database > Backups (ou equivalente);
+    - plano/recursos de backup do projeto;
+    - data e tipo do backup mais recente;
+    - confirmação de que o restore está disponível e qual é o procedimento;
+    - teste de restauração autorizado em ambiente seguro, se necessário.
+
+  Sem essa confirmação, qualquer implantação em produção continua sem proteção
+  de rollback comprovada.
+
+4. PRÓXIMA AÇÃO
+----------------------------------------------------------------------------------------------------
+  Acessar o painel Supabase com a conta proprietária e confirmar:
+    1. se há backup automático no plano atual;
+    2. a data do backup mais recente;
+    3. o tipo de backup;
+    4. se a restauração está disponível;
+    5. como acionar o restore com segurança.
+
+  Se não houver backup automático, decidir com o proprietário se será necessário
+  criar/contratar uma proteção antes de aplicar 02B.2/02B.3.
+
+5. CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum plano alterado.
+  - Nenhum PITR habilitado.
+  - Nenhum restore executado.
+  - Nenhuma migration executada.
+  - Nenhum deploy executado.
+  - Nenhum secret configurado ou exibido.
+  - Nenhuma escrita no banco.
+  - Nenhum arquivo do sistema alterado.
+  - Único arquivo criado: este relatório.
+
+====================================================================================================

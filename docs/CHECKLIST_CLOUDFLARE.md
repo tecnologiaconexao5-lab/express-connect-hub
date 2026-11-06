@@ -2,8 +2,8 @@
 
 ## 1. DNS
 
-- [ ] `tms.conexaoexpress.com.br` — CNAME → `express-connect-hub.vercel.app`
-- [ ] `www.conexaoexpress.com.br` — CNAME → `express-connect-hub.vercel.app` (opcional)
+- [ ] `tms.conexaoexpress.com.br` — CNAME → `app.conexaoexpress.com.br`
+- [ ] `www.conexaoexpress.com.br` — CNAME → `app.conexaoexpress.com.br` (opcional)
 - [ ] `portal.conexaoexpress.com.br` — CNAME → Vercel
 - [ ] `api.conexaoexpress.com.br` — A → IP Oracle
 - [ ] `prestador.conexaoexpress.com.br` — CNAME → `prestador-app.pages.dev`

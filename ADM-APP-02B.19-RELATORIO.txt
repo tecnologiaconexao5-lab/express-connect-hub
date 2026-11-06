@@ -1,0 +1,191 @@
+====================================================================================================
+ADM-APP-02B.19 — IDENTIFICAÇÃO E PREPARAÇÃO DO QA DO RECRUITMENT
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA: 2026-11-04
+TIPO: INVENTÁRIO READ-ONLY / DIAGNÓSTICO
+RESULTADO: CENÁRIO B — NÃO EXISTE QA ATIVO UTILIZÁVEL
+NENHUMA ALTERAÇÃO REALIZADA
+====================================================================================================
+
+1. CONCLUSÃO OBJETIVA
+----------------------------------------------------------------------------------------------------
+  Não existe, na organização acessível pela CLI, nenhum projeto Supabase de
+  QA ativo e utilizável.
+
+  Existe apenas 1 (um) projeto na organização:
+    - uwrvzsjtpgaifkktpepn — conexao-express-tms — PRODUÇÃO.
+
+  O QA remoto histórico `aqpfayildtcnrkfeeyjg` não resolve DNS e não aparece na
+  listagem de projetos. Ele não deve ser reutilizado sem recuperação comprovada
+  pela Supabase; não há evidência de que esteja acessível.
+
+  Não foi criado nenhum projeto, não houve cobrança, não houve migration, não
+  houve deploy de Edge e produção permaneceu intocada.
+
+2. ORGANIZAÇÃO E PROJETOS ACESSÍVEIS
+----------------------------------------------------------------------------------------------------
+2.1 Organização
+  Comando consultado (somente leitura):
+    npx supabase orgs list --output json
+
+  Resultado:
+    id:   dkitbsslspqjsagbevck
+    name: tecnologiaconex5@gmail.com's Org
+    slug: dkitbsslspqjsagbevck
+
+  A CLI autenticada enxerga somente essa organização.
+
+2.2 Projetos
+  Comando consultado (somente leitura):
+    npx supabase projects list
+
+  Resultado resumido:
+    LINKED: sim
+    ORG ID: dkitbsslspqjsagbevck
+    REF:    uwrvzsjtpgaifkktpepn
+    NOME:   conexao-express-tms
+    REGIÃO: South America (São Paulo) / sa-east-1
+    CRIADO: 2026-04-17 23:50:43 UTC
+    STATUS: ACTIVE_HEALTHY
+    POSTGRES: 17
+    VERSÃO: 17.6.1.104
+
+  Não há segundo projeto listado. Não há projeto de QA, staging ou preview
+  acessível pela CLI nesta organização.
+
+2.3 QA histórico referenciado no repositório
+  - `.env.qa` aponta para o ref `aqpfayildtcnrkfeeyjg`.
+  - `SUPABASE_QA_PROJECT_REF` está presente no arquivo, mas o projeto não está
+    na listagem da CLI.
+  - Resolução DNS: NXDOMAIN para
+    `aqpfayildtcnrkfeeyjg.supabase.co`.
+  - Conclusão: o QA remoto foi removido/inacessível; NÃO é um QA utilizável.
+  - Não foi feita tentativa de reutilizar, recriar ou alterar esse projeto.
+
+3. CLASSIFICAÇÃO DO PROJETO DE PRODUÇÃO
+----------------------------------------------------------------------------------------------------
+  Produção confirmada:
+    ref:     uwrvzsjtpgaifkktpepn
+    nome:    conexao-express-tms
+    org:     dkitbsslspqjsagbevck
+    região:  sa-east-1
+    status:  ACTIVE_HEALTHY
+    engine:  PostgreSQL 17 / 17.6.1.104
+    vínculo: linked no workspace atual
+
+  Este projeto é PRODUÇÃO e NÃO foi tocado.
+  Nenhuma operação de escrita, migration, deploy, secret ou configuração foi
+  executada nele.
+
+4. EXISTE QA RECUPERÁVEL?
+----------------------------------------------------------------------------------------------------
+  Com as evidências disponíveis: NÃO.
+
+  - O ref antigo não resolve DNS.
+  - O ref antigo não aparece em `projects list`.
+  - Não há projeto alternativo na organização.
+  - Não foi acessado nenhum backup de produção para tentar recuperar o QA.
+  - Uma eventual recuperação do projeto antigo dependeria de suporte/backup da
+    Supabase e de decisão do proprietário; não é possível pela CLI com os dados
+    atuais.
+
+5. POSSIBILIDADE DE CRIAR UM NOVO QA
+----------------------------------------------------------------------------------------------------
+  A CLI expõe o comando de criação e a organização está autenticada, mas NÃO é
+  possível confirmar pela CLI, sem executar a criação, se o plano atual permite
+  novo projeto, qual o limite de projetos ou qual será o custo.
+
+  O comando `projects create` exige, no mínimo:
+    - nome do projeto;
+    - `--org-id dkitbsslspqjsagbevck`;
+    - `--region sa-east-1` (recomendada, mesma de produção);
+    - `--db-password` (a definir pelo proprietário);
+    - `--size` (a definir; micro/small etc. dependem do plano).
+  A criação é uma mutação e foi PROIBIDA nesta missão. Nenhum projeto foi
+  criado, nenhuma cobrança foi gerada e nenhum plano foi contratado.
+
+  Requisitos funcionais para o QA do Recruitment:
+    - PostgreSQL 17 (compatível com produção e com o baseline);
+    - API/PostgREST habilitada;
+    - Edge Functions habilitadas;
+    - schema base do TMS já existente ou autorização para preparar uma cópia
+      mínima necessária;
+    - credenciais de QA e gestão de secrets;
+    - região sa-east-1 recomendada para latência;
+    - plano/dimensão suficiente para banco, Storage e Edge.
+
+  Custo: NÃO verificável pela CLI. Depende do plano, região, tamanho e uso;
+  qualquer contratação/cobrança exige decisão explícita do proprietário.
+
+6. O QUE BLOQUEIA A MISSÃO 02B.18
+----------------------------------------------------------------------------------------------------
+  B1. Não há projeto QA ativo/utilizável.
+  B2. O QA remoto antigo está deletado/inacessível.
+  B3. O QA local 02B.8 não está iniciado e não fornece API/Edge completa.
+  B4. O projeto vinculado é produção; migrations 02B.2/02B.3 não podem ser
+      aplicadas nele sem autorização expressa.
+  B5. Não há Edge `ofertas-publicas` publicada em QA.
+  B6. Não há secrets de QA configurados:
+        OFERTAS_PUBLICAS_TENANT_ID
+        OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+        OFERTAS_PUBLICAS_IP_SALT
+  B7. O frontend `src/lib/supabase.ts` está hardcoded em produção; um teste de
+      UI em QA exigiria configuração/autorização adicional.
+
+7. DECISÕES QUE DEPENDEM DO USUÁRIO
+----------------------------------------------------------------------------------------------------
+  D1. Criar um novo projeto Supabase de QA na organização
+      `dkitbsslspqjsagbevck` (recomendado: PostgreSQL 17, região sa-east-1),
+      aceitando o plano/custo correspondente.
+  D2. Ou informar/credenciar um projeto QA externo já existente, com ref,
+      acesso e confirmação de que não é produção.
+  D3. Ou autorizar explicitamente o uso controlado de produção para aplicar
+      02B.2/02B.3 e publicar a Edge, com backup/rollback e escopo aprovado.
+  D4. Definir as credenciais do QA e quem pode criar os secrets da Edge.
+  D5. Definir se o CAPTCHA será exigido ou permanecerá opcional.
+
+  Nenhuma dessas decisões foi tomada por esta missão.
+
+8. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+  Opção recomendada:
+    1. O proprietário cria/autoriza um projeto QA Supabase isolado, Postgres 17,
+       região sa-east-1, com API e Edge.
+    2. Informar ao TMS o ref e as credenciais do QA, sem expor em arquivo.
+    3. Em uma missão seguinte, aplicar 02B.2 e depois 02B.3 no QA.
+    4. Validar objetos e RLS.
+    5. Publicar a Edge no QA e configurar os três secrets obrigatórios.
+    6. Executar o cadastro real de teste e comprovar a oferta no painel e a
+       conversão em candidato com `oferta_id`.
+  Não usar produção como QA.
+  Não reutilizar o ref `aqpfayildtcnrkfeeyjg` sem recuperação comprovada.
+
+9. PRESERVAÇÃO E CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum projeto Supabase criado, alterado ou removido.
+  - Nenhum plano contratado.
+  - Nenhuma cobrança gerada.
+  - Nenhuma migration 02B.2/02B.3 aplicada.
+  - Nenhuma Edge publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhum container iniciado/parado/modificado.
+  - Nenhum arquivo de código, migration ou configuração alterado.
+  - Produção `uwrvzsjtpgaifkktpepn` intocada.
+  - APP Prestador não acessado.
+  - As migrations existentes foram preservadas:
+      supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+      supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+
+10. EVIDÊNCIAS
+----------------------------------------------------------------------------------------------------
+  - CLI Supabase: 2.117.0 (aviso de versão 3.0.0 disponível; nada atualizado).
+  - `orgs list`: 1 organização — dkitbsslspqjsagbevck.
+  - `projects list`: 1 projeto — uwrvzsjtpgaifkktpepn / conexao-express-tms,
+    ACTIVE_HEALTHY, PostgreSQL 17, sa-east-1, linked.
+  - `.env.qa`: ref aqpfayildtcnrkfeeyjg.
+  - DNS aqpfayildtcnrkfeeyjg.supabase.co: NXDOMAIN.
+  - Nenhum token, senha, service_role key ou credencial foi exibido neste
+    relatório ou no terminal.
+
+====================================================================================================

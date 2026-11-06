@@ -40,7 +40,7 @@ Vercel detecta o push e faz deploy automático.
 
 - [ ] Build passa no Vercel (0 erros)
 - [ ] Logs de build sem warnings de variáveis ausentes
-- [ ] URL `https://express-connect-hub.vercel.app` carrega
+- [ ] URL `https://app.conexaoexpress.com.br` carrega
 - [ ] Login funcional
 - [ ] Navegação entre páginas funciona
 

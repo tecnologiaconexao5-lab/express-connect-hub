@@ -1,0 +1,131 @@
+{
+  "missao": "MISSÃO 1 — uploads de documentos existentes",
+  "executado_em": "2026-11-03T21:09:27.095Z",
+  "bucket": "documentos_operacionais",
+  "arquivo_teste": {
+    "caminho": "C:\\Users\\DIEGO BALBINO\\Desktop\\Pasta Compartilhada\\DOCUMENTOS EMPRESA\\08_TECNOLOGIA_SISTEMAS\\express-connect-hub\\scripts\\_adm_app_02d2r1_doc_teste.png",
+    "bytes": 11755,
+    "sha256": "ac291280a331f4ee0a24942bc30e5b28ad8956540959f6d4f8354cc84132788a"
+  },
+  "resultados": [
+    {
+      "etapa": "0) contagens antes",
+      "ok": true,
+      "detalhe": "{\"contratos\":{\"total\":1,\"com_url\":0,\"com_nome\":0},\"reembolsos\":{\"total\":6,\"com_url\":2},\"metadata\":{\"total\":30}}"
+    },
+    {
+      "etapa": "0) alvos de prova",
+      "ok": true,
+      "detalhe": "cliente=3d2d079d-708b-4d4d-9c0b-1ed9b894e37e alocacao=24708e2f-3bca-4155-9130-12ea660086e4 os=OS-202607-919619"
+    },
+    {
+      "etapa": "0) usuário autorizado",
+      "ok": true,
+      "detalhe": "user=323878d3-861f-4257-a0ef-8ee26f526ce0 tenant=00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "etapa": "1.2 binário no Storage",
+      "ok": true,
+      "detalhe": "documentos_operacionais/doc_3d2d079d-708b-4d4d-9c0b-1ed9b894e37e_Contrato_1793740163388.png (11755 b)"
+    },
+    {
+      "etapa": "1.3 metadado do contrato",
+      "ok": true,
+      "detalhe": "id=bddf795c-8585-413d-9dd5-eee67a976397"
+    },
+    {
+      "etapa": "1.4 contrato com referência",
+      "ok": true,
+      "detalhe": "contrato=d5d1fba4-d60c-475e-b0c1-636f38a1d3a0 anexo_url=documentos_operacionais/doc_3d2d079d-708b-4d4d-9c0b-1ed9b894e37e_Contrato_1793740163388.png"
+    },
+    {
+      "etapa": "1.5 abrir/baixar contrato (URL assinada + bytes) — bucket privado nega acesso público",
+      "ok": true,
+      "detalhe": "HTTP 400"
+    },
+    {
+      "etapa": "1.5 abrir/baixar contrato (URL assinada + bytes)",
+      "ok": true,
+      "detalhe": "sha256=ac291280a331f4ee… (11755 b)"
+    },
+    {
+      "etapa": "1.6 vínculo documento↔contrato",
+      "ok": true,
+      "detalhe": "historico.vinculo_contrato presente"
+    },
+    {
+      "etapa": "2.2 metadado do comprovante",
+      "ok": true,
+      "detalhe": "id=15e06493-ed69-4419-ad9d-3bd81d101912"
+    },
+    {
+      "etapa": "2.3 associação à conferência (alocação)",
+      "ok": true,
+      "detalhe": "entidade_id=24708e2f-3bca-4155-9130-12ea660086e4"
+    },
+    {
+      "etapa": "2.4 leitura da Central por alocação",
+      "ok": true,
+      "detalhe": "doc=15e06493-ed69-4419-ad9d-3bd81d101912"
+    },
+    {
+      "etapa": "2.5 abrir/baixar comprovante (URL assinada + bytes) — bucket privado nega acesso público",
+      "ok": true,
+      "detalhe": "HTTP 400"
+    },
+    {
+      "etapa": "2.5 abrir/baixar comprovante (URL assinada + bytes)",
+      "ok": true,
+      "detalhe": "sha256=ac291280a331f4ee… (11755 b)"
+    },
+    {
+      "etapa": "2.6 comprovante antigo permanece referenciado",
+      "ok": true,
+      "detalhe": "URL externa · HTTP 400 (policy driver-evidence inalterada)"
+    },
+    {
+      "etapa": "8) upload de formato inválido é recusado",
+      "ok": true,
+      "detalhe": "mime type application/x-msdownload is not supported"
+    },
+    {
+      "etapa": "7) registros antigos preservados",
+      "ok": true,
+      "detalhe": "contratos com URL (fora do teste)=0; reembolsos com URL (fora do teste)=2"
+    },
+    {
+      "etapa": "9) limpeza",
+      "ok": true,
+      "detalhe": "objetos residuais=0"
+    }
+  ],
+  "erro_fatal": null,
+  "contagens_depois": {
+    "contratos": {
+      "total": 1,
+      "com_url": 0,
+      "com_nome": 0
+    },
+    "reembolsos": {
+      "total": 6,
+      "com_url": 2
+    },
+    "metadata": {
+      "total": 30
+    }
+  },
+  "criados": {
+    "objetos": [
+      "doc_3d2d079d-708b-4d4d-9c0b-1ed9b894e37e_Contrato_1793740163388.png",
+      "doc_24708e2f-3bca-4155-9130-12ea660086e4_Comprovante_de_Pedagio_1793740163388.png"
+    ],
+    "metadataIds": [
+      "bddf795c-8585-413d-9dd5-eee67a976397",
+      "15e06493-ed69-4419-ad9d-3bd81d101912"
+    ],
+    "contratos": [
+      "d5d1fba4-d60c-475e-b0c1-636f38a1d3a0"
+    ],
+    "reembolsos": []
+  }
+}

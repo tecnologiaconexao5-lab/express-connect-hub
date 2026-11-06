@@ -1,0 +1,74 @@
+====================================================================================================
+VERIFICAÇÕES — TENANT E BACKUP PARA ATIVAÇÃO DO RECRUTAMENTO
+DATA: 2026-11-04
+MODO: SOMENTE LEITURA
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms (PRODUÇÃO)
+====================================================================================================
+
+1. TENANT CONFIRMADO
+----------------------------------------------------------------------------------------------------
+  Consulta read-only em `public.tenants`.
+
+  Resultado — única linha encontrada:
+    id:     00000000-0000-0000-0000-000000000001
+    nome:   Conexao Express
+    slug:   conexao-express
+    plano:  enterprise
+    status: ativo
+
+  Conclusão: o tenant que corresponde à operação Conexão Express é
+  `00000000-0000-0000-0000-000000000001` (Conexao Express / conexao-express).
+
+  Não houve suposição: a confirmação veio da consulta real à tabela `tenants`.
+
+2. BACKUP / SNAPSHOT
+----------------------------------------------------------------------------------------------------
+  Consulta read-only:
+    npx supabase backups list --output json
+
+  Resultado:
+    backups: null
+    physical_backup_data: {}
+    pitr_enabled: false
+    walg_enabled: true
+    region: sa-east-1
+
+  Interpretação:
+    - Nenhum backup físico aparece na listagem da CLI.
+    - Não há data, tipo ou identificador de backup recente para informar.
+    - PITR (restauração para um instante) está desabilitado.
+    - WAL-G está habilitado, mas não há evidência de backup restaurável
+      listado pela CLI.
+    - O comando de restore existe, porém sua disponibilidade prática não foi
+      comprovada por nenhum backup ou teste de restauração.
+
+  Conclusão: backup recente e recuperável NÃO CONFIRMADO. Status: PENDENTE.
+
+  Observação: um backup diário do provedor pode existir no painel e não estar
+  exposto por esta CLI; mesmo assim, não há evidência suficiente para declarar
+  que ele é recente, restaurável ou adequado para rollback. Isso precisa ser
+  confirmado no painel/Supabase Support antes de qualquer escrita em produção.
+
+3. PRÓXIMA AÇÃO NECESSÁRIA
+----------------------------------------------------------------------------------------------------
+  Antes de aplicar 02B.2/02B.3 ou publicar a Edge em produção:
+    1. Confirmar no painel Supabase a existência de backup/snapshot recente,
+       com data e tipo.
+    2. Comprovar que o restore é possível (procedimento, permissão e teste
+       autorizado em ambiente seguro; não executar restore em produção agora).
+    3. Se não houver backup comprovado, criar/contratar a proteção adequada
+       antes da implantação.
+
+4. CONFIRMAÇÕES DE SEGURANÇA
+----------------------------------------------------------------------------------------------------
+  - Nenhuma migration executada.
+  - Nenhuma Edge publicada.
+  - Nenhum secret configurado ou exibido.
+  - Nenhuma escrita no banco.
+  - Nenhum projeto ou plano alterado.
+  - Nenhum arquivo do sistema alterado.
+  - A consulta ao banco foi somente SELECT.
+  - O arquivo de conexão não foi exibido neste relatório.
+  - Único arquivo criado: este relatório.
+
+====================================================================================================

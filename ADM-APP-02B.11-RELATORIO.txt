@@ -1,0 +1,259 @@
+====================================================================================================
+ADM-APP-02B.11 — PLANEJAMENTO DA NOVA EXTRAÇÃO READ-ONLY
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: PLANEJAMENTO / DIAGNÓSTICO DE FERRAMENTAS E CREDENCIAIS
+RESULTADO: PLANO PARCIAL — LIMITAÇÕES IDENTIFICADAS
+ZERO SQL / ZERO START / ZERO DOCKER/SUPABASE / ZERO MIGRATIONS / ZERO DEPLOY / ZERO SECRETS
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO E CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum SQL foi executado.
+  - Nenhum Docker/Supabase/container foi iniciado.
+  - Nenhum `db push`, `db reset`, `migration up`, `migration repair` foi executado.
+  - Nenhuma Edge Function foi publicada.
+  - Nenhum secret foi criado/alterado.
+  - Baseline atual e manifesto NÃO foram alterados.
+  - `supabase/config.toml`, `src/lib/supabase.ts` e migrations NÃO foram alterados.
+  - APP Prestador NÃO foi acessado.
+  - Nenhuma escrita em produção.
+  - Nenhum token/senha/service_role foi exibido neste relatório.
+
+----------------------------------------------------------------------------------------------------
+2. FERRAMENTAS DISPONÍVEIS
+----------------------------------------------------------------------------------------------------
+2.1 `pg_dump` / `pg_dumpall` / `psql`
+  - `pg_dump`: NÃO instalado no PATH.
+  - `pg_dumpall`: NÃO encontrado no PATH.
+  - `psql`: NÃO encontrado no PATH.
+  - Portanto, uma extração direta por binário PostgreSQL não está pronta hoje.
+
+2.2 Supabase CLI
+  - Supabase CLI instalado: 2.117.0.
+  - `supabase db dump` está disponível.
+  - Flags relevantes comprovadas pelo `--help`:
+      --dry-run
+      --schema, -s
+      --keep-comments
+      --file, -f
+      --db-url (connection string)
+      --data-only
+      --role-only
+      --linked / --local / --project-ref
+  - O comando é o wrapper oficial do CLI para pg_dump e é o candidato
+    preferencial para uma extração futura.
+  - A extração NÃO foi executada nesta missão.
+  - Antes de qualquer extração real, deve-se rodar `--dry-run` para inspecionar
+    o comando pg_dump que seria executado, sem conectar/executar.
+
+2.3 Script customizado existente
+  - `scripts/qa/extract_baseline.ts` (Node + `pg`).
+  - Usa SELECTs nos catálogos, portanto é read-only por natureza.
+  - NÃO é equivalente a `pg_dump --schema-only`:
+      * grava em caminho fixo do baseline antigo;
+      * usa `DATABASE_URL` de produção;
+      * não inclui grants/ACL, comentários de tabelas/colunas, roles,
+        políticas restritivas (polpermissive ignorado), partições,
+        foreign tables, domains, publication etc.;
+      * não cobre schemas auth/storage/realtime;
+      * não tem validação de credencial read-only.
+  - Serve como referência/segunda opinião, NÃO como extrator principal sem
+    modificação e autorização.
+
+2.4 Docker
+  - Docker engine está acessível (verificado na 02B.8), mas nenhum container
+    foi iniciado ou alterado nesta missão.
+  - O CLI pode usar pg_dump em imagem/container; isso deve ser confirmado no
+    `--dry-run` antes de executar qualquer extração.
+
+----------------------------------------------------------------------------------------------------
+3. OPÇÃO EQUIVALENTE A `pg_dump --schema-only`
+----------------------------------------------------------------------------------------------------
+Recomendação principal:
+  Usar `supabase db dump` com:
+    --db-url <connection string de um usuário READ-ONLY>
+    --schema public
+    --keep-comments
+    --file <novo arquivo>
+    --dry-run   (primeiro, para inspecionar o comando)
+
+Equivalência:
+  - O `supabase db dump` é documentado como wrapper do pg_dump.
+  - `--schema public` limita ao schema public.
+  - `--keep-comments` preserva comentários.
+  - O padrão sem `--data-only` e sem `--role-only` é extração de schema
+    (deve ser confirmado no dry-run e no início do arquivo).
+  - NÃO usar `--data-only`.
+  - NÃO usar `--no-acl`/`--no-privileges` se o objetivo é preservar grants.
+  - `--no-owner` pode ser usado para evitar dependência de ownership, mas
+    não deve remover ACL/grants.
+  - Se o pg_dump for usado diretamente no futuro:
+      pg_dump --schema-only --no-owner --encoding=UTF8
+        --file <novo arquivo> <connection string read-only>
+    (inclui tabelas, colunas, constraints, índices, sequences, funções,
+     triggers, views, policies, RLS e ACLs; roles e objetos de outros schemas
+     precisam de inventário separado).
+
+Limitação:
+  - O binário pg_dump standalone não está instalado localmente.
+  - O caminho via `supabase db dump` precisa ser validado com `--dry-run`
+    em uma janela autorizada, pois o CLI pode usar Docker/Management API.
+
+----------------------------------------------------------------------------------------------------
+4. CREDENCIAL — SITUAÇÃO ATUAL
+----------------------------------------------------------------------------------------------------
+  - `.env` contém `DATABASE_URL` para produção:
+      usuário: postgres.uwrvzsjtpgaifkktpepn
+      host: aws-1-sa-east-1.pooler.supabase.com
+      porta: 5432
+    (senha não exibida)
+  - `.env.qa` contém `DATABASE_URL` para o QA antigo:
+      usuário: postgres.aqpfayildtcnrkfeeyjg
+      host: aws-1-sa-east-1.pooler.supabase.com
+      porta: 5432
+    (QA antigo está inacessível; senha não exibida)
+  - Nenhuma variável de credencial read-only foi encontrada:
+      DATABASE_URL_READONLY ......... AUSENTE
+      READONLY_DATABASE_URL ......... AUSENTE
+      PG_READONLY_URL ............... AUSENTE
+      SUPABASE_READONLY_URL ......... AUSENTE
+      DATABASE_READ_ONLY_URL ........ AUSENTE
+      PG_DUMP_URL ................... AUSENTE
+  - `SUPABASE_SERVICE_ROLE_KEY` não é credencial de banco read-only e NÃO deve
+    ser usada para essa extração.
+  - O usuário `postgres.*` do pooler é administrativo por convenção; não foi
+    tratado como read-only e NÃO deve ser usado para a extração.
+
+Conclusão de credencial:
+  - NÃO há credencial read-only apropriada comprovada.
+  - A extração está BLOQUEADA até:
+      A) existir um role dedicado somente leitura, com LOGIN, sem SUPERUSER,
+         sem CREATEDB/CREATEROLE, sem BYPASSRLS, com CONNECT/USAGE nos schemas
+         e SELECT nos objetos necessários; ou
+      B) a operação confirmar formalmente uma credencial read-only já existente.
+  - Criar esse role seria DDL e exigiria autorização específica; NÃO foi feito.
+
+----------------------------------------------------------------------------------------------------
+5. COBERTURA DA EXTRAÇÃO CONVENCIONAL
+----------------------------------------------------------------------------------------------------
+Coberto por pg_dump schema-only (esperado):
+  - Tabelas e colunas.
+  - Constraints (PK, UNIQUE, CHECK, FK, exclusion quando suportado).
+  - Índices.
+  - Sequences e defaults.
+  - Funções/procedures.
+  - Triggers.
+  - Views e materialized views (quando presentes).
+  - Policies RLS e estado de RLS.
+  - Grants/ACL dos objetos (se não usar `--no-acl`).
+  - Comentários (com `--keep-comments` no CLI).
+  - Extensões.
+  - Publication/subscription quando suportado pelo pg_dump.
+  - Não inclui dados de tabelas quando schema-only.
+
+Itens que exigem inventário separado:
+  - Roles/atributos de login e grants de roles (pg_dumpall --roles-only ou
+    `supabase db dump --role-only`; nunca senhas).
+  - Schemas `auth`, `storage`, `realtime` e configurações do projeto.
+  - Buckets, objetos e policies de Storage.
+  - Usuários/configurações de Auth; dados de auth (não exportar PII).
+  - Edge Functions (código) e secrets de Edge.
+  - Configuração de CORS, CAPTCHA, tenant público e demais secrets.
+  - `supabase_migrations` (histórico) e metadados operacionais.
+  - Publicações/replicação lógica e extensões específicas (pg_cron/vault etc.),
+    se existirem e não forem representadas pelo dump.
+  - Comentários/ACLs em schemas não-public, se o dump for limitado a public.
+
+----------------------------------------------------------------------------------------------------
+6. VALIDAÇÃO DE QUE A EXTRAÇÃO É READ-ONLY
+----------------------------------------------------------------------------------------------------
+Controles planejados:
+  1. Credencial dedicada read-only, sem privilégios de escrita/DDL.
+  2. `PGOPTIONS='-c default_transaction_read_only=on'` no ambiente do processo
+     de extração (quando suportado pelo caminho escolhido).
+  3. Executar primeiro `supabase db dump --dry-run` para inspecionar o comando
+     pg_dump e confirmar que não há `--data-only`, `--clean`, `CREATE DATABASE`
+     ou operação de escrita.
+  4. Confirmar que o usuário não tem `SUPERUSER`, `CREATEDB`, `CREATEROLE` ou
+     `BYPASSRLS` (verificação read-only de catálogo, feita apenas na janela
+     autorizada).
+  5. Confirmar permissões: CONNECT no banco, USAGE nos schemas, SELECT nos
+     objetos necessários; nenhum INSERT/UPDATE/DELETE/DDL.
+  6. Extrair contra uma conexão de leitura; nunca usar `--linked` como atalho
+     sem confirmar projeto/credencial.
+  7. Validar o arquivo gerado:
+       - nenhum bloco COPY/INSERT/UPDATE/DELETE de dados;
+       - hash/tamanho/linhas registrados;
+       - contagens de tabelas/funções/views/triggers/policies/índices/RLS;
+       - diff estrutural contra o baseline atual, sem substituí-lo.
+  8. Se o pg_dump exigir privilégios não disponíveis para policies/grants,
+     registrar a limitação e complementar com inventário separado, sem elevar
+     a credencial para admin.
+
+----------------------------------------------------------------------------------------------------
+7. ARMAZENAMENTO E NOMES PREVISTOS (NÃO CRIADOS)
+----------------------------------------------------------------------------------------------------
+  - Novo baseline:
+      supabase/baseline/full_production_schema_readonly_20261103.sql
+  - Novo manifesto:
+      supabase/baseline/BASELINE_MANIFEST_readonly_20261103.txt
+  - Relatório de extração:
+      ADM-APP-02B.12-RELATORIO.txt (ou nome da missão que autorizar)
+  - Comparativo:
+      gerado em memória/arquivo temporário e anexado ao relatório; NÃO
+      substituir `full_production_schema_20260920.sql`.
+  - Nenhum desses arquivos foi criado nesta missão.
+
+Regra de preservação:
+  - O baseline atual `full_production_schema_20260920.sql` permanece intocado.
+  - O novo arquivo terá nome próprio e não será promovido automaticamente.
+  - O `BASELINE_MANIFEST_20260920.txt` permanece intocado.
+
+----------------------------------------------------------------------------------------------------
+8. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+1. Autorizar a criação/obtenção de uma credencial READ-ONLY dedicada
+   (role com LOGIN, sem SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS, CONNECT/USAGE
+   e SELECT nos objetos; sem service_role).
+2. Confirmar por catálogo que a credencial é read-only.
+3. Autorizar a execução do `supabase db dump --dry-run` com `--db-url` read-only
+   para validar o comando pg_dump, sem extrair.
+4. Após validação, autorizar a extração para o novo arquivo com
+   `--schema public --keep-comments --file <novo>` (ou pg_dump equivalente).
+5. Gerar novo manifesto com hash/tamanho/linhas/contagens.
+6. Comparar estruturalmente com o baseline antigo, sem substituir nenhum.
+7. Aplicar no QA local somente o baseline novo certificado.
+8. Não iniciar Supabase/Docker nem aplicar migrations nesta missão.
+
+Comando futuro planejado (NÃO executado):
+  supabase db dump --dry-run --schema public --keep-comments --db-url <read-only-url>
+  supabase db dump --schema public --keep-comments --file supabase/baseline/full_production_schema_readonly_20261103.sql --db-url <read-only-url>
+
+----------------------------------------------------------------------------------------------------
+9. CLASSIFICAÇÃO E CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+CLASSIFICAÇÃO: PLANO PARCIAL — LIMITAÇÕES IDENTIFICADAS.
+
+Motivos:
+  - Ferramenta viável identificada (`supabase db dump`, wrapper pg_dump).
+  - Falta credencial read-only comprovada; não há variável/role read-only.
+  - `pg_dump` standalone não está instalado.
+  - O script customizado atual não cobre todos os objetos nem é read-only
+    por garantia de role; não deve ser usado como extrator principal sem ajuste.
+  - A extração não foi executada; nenhuma prova real foi gerada.
+
+Confirmações:
+  - Nenhum SQL executado.
+  - Nenhum Docker/Supabase iniciado.
+  - Nenhuma migration/DB write/deploy.
+  - Nenhum secret alterado/exibido.
+  - Nenhum baseline/manifesto/config/cliente/migrations alterado.
+  - APP não acessado.
+  - Homologação não declarada.
+
+Aguarda autorização posterior para credencial read-only e execução da extração.
+
+====================================================================================================

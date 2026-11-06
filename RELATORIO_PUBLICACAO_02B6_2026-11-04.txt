@@ -1,0 +1,178 @@
+====================================================================================================
+PUBLICAÇÃO 02B.6 — FRONTEND ATUALIZADO DO RECRUTAMENTO NO VERCEL
+DATA: 2026-11-04
+PROJETO SUPABASE: uwrvzsjtpgaifkktpepn — conexao-express-tms
+DOMÍNIO: https://app.conexaoexpress.com.br
+RESULTADO: FRONTEND PUBLICADO E HOMOLOGAÇÃO FUNCIONAL CONCLUÍDA
+====================================================================================================
+
+1. DIAGNÓSTICO E CAUSA
+----------------------------------------------------------------------------------------------------
+  Estado local:
+    branch: main
+    HEAD antes do deploy: 9865cfac421083b94aaffb3f7ecbb211985383cc
+    remoto origin/main: mesmo commit antes da publicação.
+
+  Código local confirmado:
+    - rota /cadastro-prestador usando CadastroPrestador e OfertaPublicaForm;
+    - formulário novo de 5 etapas;
+    - painel Ofertas Públicas no Recrutamento;
+    - integração com ofertasPublicasService;
+    - acesso pela navegação do Recrutamento;
+    - item de menu Ofertas Públicas.
+
+  Causa do frontend antigo:
+    os arquivos novos estavam untracked e as alterações do Recrutamento não
+    estavam commitadas no branch main. O Vercel entrega o commit publicado no
+    GitHub; por isso permanecia no build antigo.
+
+  Vercel:
+    - não havia .vercel/project.json local;
+    - a CLI do Vercel não tinha credenciais (whoami sem login);
+    - a configuração do painel Vercel não pôde ser inspecionada diretamente;
+    - o domínio ativo é https://app.conexaoexpress.com.br;
+    - a publicação foi feita pelo push no repositório GitHub conectado ao
+      projeto (origin: tecnologiaconexao5-lab/express-connect-hub);
+    - a atualização do domínio após o push confirmou o deploy automático.
+
+2. PREPARAÇÃO
+----------------------------------------------------------------------------------------------------
+  TypeScript:
+    npm run typecheck → falhou, com erros preexistentes em outros módulos e
+    testes. Não foi feita correção fora do escopo.
+
+  ESLint:
+    arquivos do Recrutamento apresentaram 3 erros preexistentes de
+    no-explicit-any e avisos de fast-refresh. Não foram alterados fora do
+    escopo.
+
+  Build:
+    npm run build → SUCESSO em 58,74s
+    (Vite 5.4.19; bundle do Recrutamento gerado).
+
+  Commit seletivo:
+    b67c99a — feat(recrutamento): publicar ofertas publicas e painel interno
+    13 arquivos alterados; somente arquivos do Recrutamento foram staged/commitados.
+    Alterações de outros módulos permaneceram não commitadas.
+
+3. PUBLICAÇÃO
+----------------------------------------------------------------------------------------------------
+  Push realizado:
+    git push origin main
+    9865cfa..b67c99a main -> main
+    exit code: 0
+
+  Vercel:
+    o domínio passou a servir o formulário novo;
+    confirmado por nova carga da URL após o deploy.
+    Nenhum outro projeto ou domínio foi criado.
+
+4. TESTES VISUAIS E FUNCIONAIS — FORMULÁRIO PÚBLICO
+----------------------------------------------------------------------------------------------------
+  URL testada:
+    https://app.conexaoexpress.com.br/cadastro-prestador
+
+  Desktop e mobile:
+    - novo formulário de 5 etapas confirmado;
+    - perfis visíveis: Motoboy, Motorista com veículo próprio,
+      Disponibilidade de veículo;
+    - etapas: Oferta e contato, Região e disponibilidade,
+      Modalidades e veículo, Capacidade e valores, Restrições e consentimento;
+    - NÃO solicita CPF, RG, selfie, CNH, CRLV, PIX ou dados bancários;
+    - LGPD com consentimento explícito;
+    - resumo da oferta na etapa final;
+    - mensagem de sucesso somente após protocolo real.
+
+  Cadastro real pelo formulário:
+    protocolo: OF-20261104-9085364D
+    resultado: Oferta registrada
+    o protocolo só apareceu após a resposta válida do backend.
+
+  Evidências visuais:
+    C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\homologacao_02b5\
+    public_after_deploy.png
+    public_mobile_new.png
+    public_form_success.png
+
+5. TESTES DO PAINEL INTERNO
+----------------------------------------------------------------------------------------------------
+  Login e navegação:
+    - painel Recrutamento → Ofertas Públicas acessível;
+    - duas ofertas aparecem:
+        OF-20261104-9E680E36 — convertida;
+        OF-20261104-9085364D — nova.
+
+  Funcionalidades exercitadas:
+    - busca por protocolo;
+    - indicadores/kpis;
+    - filtros disponíveis;
+    - comparação entre as duas ofertas;
+    - detalhe da oferta;
+    - disponibilidade interna;
+    - observação interna;
+    - contato por telefone;
+    - histórico de eventos;
+    - transição de status de nova → em análise;
+    - conversão em candidato;
+    - link público e ações Copiar link e Enviar no WhatsApp.
+
+  Ações de compartilhamento:
+    - link exato: https://app.conexaoexpress.com.br/cadastro-prestador;
+    - Copiar link: copiou o mesmo valor para o clipboard;
+    - WhatsApp: abriu URL com texto e link da oferta.
+
+6. CONVERSÃO E DADOS
+----------------------------------------------------------------------------------------------------
+  Oferta OF-20261104-9E680E36:
+    - passou de nova para em_analise;
+    - foi convertida;
+    - candidato vinculado por oferta_id:
+      ba6d9449-1a75-4481-98d3-7264fd0b4145
+      nome: PRESTADOR TESTE E2E-11
+    - o candidato já existia com o mesmo telefone de teste; a função reutilizou
+      o candidato em vez de criar duplicata;
+    - não houve novo candidato nesta oferta.
+
+  Contagens finais:
+    recrutamento_ofertas: 2
+    recrutamento_oferta_eventos: 7
+    recrutamento_candidatos: 39
+    prestadores: 40
+    auth.users: 27
+
+  Portanto:
+    - nenhum prestador operacional novo;
+    - nenhum usuário Auth novo;
+    - nenhuma liberação de APP;
+    - nenhuma duplicação de candidato;
+    - oferta original preservada.
+
+7. ITENS APROVADOS
+----------------------------------------------------------------------------------------------------
+  - Frontend atualizado publicado no domínio correto.
+  - Formulário público novo, sem documentos pessoais.
+  - Cinco etapas funcionais e cadastro real com protocolo.
+  - Painel Ofertas Públicas visível no Recrutamento.
+  - Busca, comparação, detalhe, status, observação, contato, disponibilidade
+    e histórico funcionais.
+  - Conversão com vínculo oferta_id e sem duplicação.
+  - Compartilhamento por link e WhatsApp funcional.
+
+8. PENDÊNCIAS / OBSERVAÇÕES
+----------------------------------------------------------------------------------------------------
+  - O candidato da conversão foi reutilizado por coincidência de telefone com
+    um candidato de teste existente. Para provar o caminho de criação de um
+    novo candidato, usar uma oferta com telefone/e-mail inéditos.
+  - A configuração do projeto Vercel não foi inspecionada diretamente por falta
+    de credenciais da CLI; a publicação foi comprovada pelo domínio após push.
+  - Oferta de teste OF-20261104-9085364D permanece com status nova.
+
+9. CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhum backend, migration, Edge Function ou secret foi alterado nesta missão.
+  - Nenhum outro projeto Vercel foi criado.
+  - Nenhum outro módulo foi alterado.
+  - Nenhuma operação destrutiva foi executada.
+  - O cadastro de teste não foi excluído.
+
+====================================================================================================

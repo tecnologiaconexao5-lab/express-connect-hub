@@ -1,0 +1,103 @@
+====================================================================================================
+DESTRAVAR A ATUALIZAÇÃO DO RECRUTAMENTO
+DATA: 2026-11-04
+MODO: DIAGNÓSTICO READ-ONLY
+RESULTADO: CAMINHO VIÁVEL EM PRODUÇÃO; NADA EXECUTADO
+====================================================================================================
+
+1. O QUE JÁ ESTÁ PRONTO
+----------------------------------------------------------------------------------------------------
+  - Rota pública `/cadastro-prestador`, fora do login.
+  - Formulário público em 5 etapas, sem documentos pessoais na captação.
+  - Envio para a Edge `ofertas-publicas` com idempotência e protocolo real.
+  - Edge Function e `validation.ts` presentes.
+  - Painel "Ofertas Públicas" no Recrutamento.
+  - Busca, filtros, comparação, detalhe, histórico, contato, status,
+    disponibilidade interna e revisão humana.
+  - Conversão explícita em `recrutamento_candidatos` com `oferta_id`.
+  - Migrations 02B.2 (818 linhas) e 02B.3 (655 linhas), com hashes preservados.
+  - Testes 02B.1 a 02B.4 no repositório.
+  - Tenant confirmado: 00000000-0000-0000-0000-000000000001 (Conexao Express).
+  - Backup externo dos 23 arquivos conferido.
+  - `src/lib/supabase.ts` já aponta para o projeto de produção.
+
+2. O QUE REALMENTE FALTA
+----------------------------------------------------------------------------------------------------
+  A. Aplicar 02B.2 no banco de produção.
+  B. Validar as tabelas, funções, policies e grants criados.
+  C. Aplicar 02B.3 no banco de produção.
+  D. Validar as colunas e as funções de gestão/conversão.
+  E. Configurar os secrets da Edge:
+       OFERTAS_PUBLICAS_TENANT_ID
+       OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+       OFERTAS_PUBLICAS_IP_SALT
+  F. Publicar a Edge `ofertas-publicas`.
+  G. Confirmar a origem pública exata do TMS para o CORS.
+  H. Executar o teste real: cadastro → oferta → painel → contato/status →
+     conversão em candidato.
+
+  Não é necessário alterar código-fonte, criar tabela paralela, criar novo
+  projeto ou restaurar o banco inteiro.
+
+3. A FALTA DE BACKUP BLOQUEIA TECNICAMENTE?
+----------------------------------------------------------------------------------------------------
+  NÃO.
+
+  A ausência de backup comprovado aumenta o risco de rollback, mas não cria
+  uma dependência técnica que impeça o SQL aditivo de ser aplicado. As migrations
+  02B.2/02B.3 criam estruturas do Recruitment e não reescrevem tabelas de outros
+  módulos.
+
+  Ainda assim, sem backup/snapshot confirmado, uma falha operacional teria
+  recuperação mais difícil. Isso é uma decisão de risco do proprietário, não
+  um requisito técnico obrigatório.
+
+4. MENOR CAMINHO PARA CONCLUIR
+----------------------------------------------------------------------------------------------------
+  Usar o projeto de produção existente, sem novo QA, sem troca de plano:
+
+  1. Autorizar a escrita em produção.
+  2. Se desejado, gerar um dump lógico/backup antes (mitigação de risco; não é
+     troca de plano nem restore).
+  3. Aplicar 02B.2 diretamente, sem `db push` (o histórico de migrations do
+     projeto é divergente).
+  4. Validar as 4 tabelas, as colunas do candidato, funções, policies e grants.
+  5. Aplicar 02B.3.
+  6. Validar as funções de status/contato/disponibilidade/revisão/conversão.
+  7. Configurar os três secrets da Edge com a origem pública real.
+  8. Publicar a Edge `ofertas-publicas` mantendo `verify_jwt = false`.
+  9. Testar uma oferta real e confirmar o fluxo no painel e a conversão.
+  10. Remover o registro de teste, se autorizado.
+
+  A aplicação direta dos dois arquivos SQL evita o bloqueio de `db push`/drift;
+  não é necessário criar uma migration nova.
+
+5. AÇÕES QUE EXIGEM AUTORIZAÇÃO
+----------------------------------------------------------------------------------------------------
+  - Aplicar 02B.2 em produção.
+  - Aplicar 02B.3 em produção.
+  - Criar/configurar secrets da Edge em produção.
+  - Publicar a Edge em produção.
+  - Criar uma oferta/candidato de teste em produção e removê-los depois.
+  - Opcionalmente, gerar dump lógico/backup antes da escrita.
+
+6. O QUE NÃO É NECESSÁRIO
+----------------------------------------------------------------------------------------------------
+  - Criar outro projeto Supabase.
+  - Trocar plano ou habilitar PITR.
+  - Restaurar o banco inteiro.
+  - Recriar o formulário, painel, tabelas de candidatos ou documentos.
+  - Alterar o APP Prestador.
+  - Alterar outros módulos do TMS.
+  - Refazer migrations ou componentes existentes.
+
+7. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  O caminho mais simples e tecnicamente viável é a ativação controlada no
+  projeto de produção existente, usando as migrations e a Edge já prontas.
+
+  A ausência de backup comprovado não impede tecnicamente a atualização, mas
+  deve ser registrada como risco e, se possível, mitigada com dump lógico antes
+  da escrita. Nenhuma alteração foi executada nesta missão.
+
+====================================================================================================

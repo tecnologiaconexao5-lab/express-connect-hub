@@ -1,0 +1,283 @@
+====================================================================================================
+ADM-APP-02B.6 — IDENTIFICAÇÃO DO BACKEND DO RECRUTAMENTO
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador — NÃO ACESSADO
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: DIAGNÓSTICO READ-ONLY / IDENTIFICAÇÃO DE BACKEND
+RESULTADO: BACKEND ATIVO = PRODUÇÃO; QA ANTIGO = DELETADO/INACESSÍVEL;
+           NÃO EXISTE QA REMOTO ACESSÍVEL PARA O RECRUTAMENTO.
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO DEPLOY / ZERO SECRETS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. RESPOSTA OBJETIVA — QUAL É O BACKEND CORRETO DO RECRUTAMENTO?
+----------------------------------------------------------------------------------------------------
+Hoje, o backend efetivamente usado pelo Recrutamento e pelo formulário público é a
+PRODUÇÃO Supabase:
+
+  Project Ref: uwrvzsjtpgaifkktpepn
+  Nome:        conexao-express-tms
+  URL:         https://uwrvzsjtpgaifkktpepn.supabase.co
+  Organização: dkitbsslspqjsagbevck
+
+Isso não significa que produção seja QA. Significa que:
+  - o cliente Supabase do TMS está hardcoded para produção em `src/lib/supabase.ts`;
+  - todos os serviços do Recrutamento importam esse cliente;
+  - o formulário público usa o mesmo cliente para `functions.invoke("ofertas-publicas")`;
+  - o `.env.qa` aponta para outro Project Ref, mas NÃO troca o cliente da aplicação.
+
+Portanto:
+  - Backend de runtime do Recrutamento: PRODUÇÃO.
+  - Backend de homologação do Recrutamento: INEXISTENTE/INACESSÍVEL.
+  - Não foi presumido que produção é QA.
+  - Não foi feita nenhuma alteração de URL, cliente, link ou projeto.
+
+----------------------------------------------------------------------------------------------------
+2. O QUE FOI VERIFICADO
+----------------------------------------------------------------------------------------------------
+  - Relatórios 02B.0 a 02B.5.
+  - `supabase/config.toml`.
+  - Migrations 02B.2 e 02B.3.
+  - Edge Function `ofertas-publicas` (código local).
+  - `src/lib/supabase.ts`.
+  - Serviços/telas do Recrutamento e do formulário público.
+  - `.env`, `.env.qa`, `.env.qa.example` (somente nomes/presença; valores não exibidos).
+  - `supabase/.temp/project-ref` e `supabase/.temp/linked-project.json`.
+  - Supabase CLI: versão, autenticação, projetos e organizações visíveis.
+  - DNS e HTTP GET/OPTIONS dos hosts documentados.
+  - Documentação interna de QA/HML (`docs/qa`, `ENV-QA-01`, `ENV-QA-02`, `ENV-QA-03`,
+    `HML-RECOVER-01`).
+  - Estruturas existentes de documentos, anexos e propostas no código/migrations.
+
+Comandos read-only executados:
+  - `supabase --version`
+  - `supabase projects list`
+  - `supabase orgs list`
+  - `Resolve-DnsName`
+  - `curl` GET/OPTIONS
+  - leitura estática de arquivos/migrations
+Não executados:
+  - `supabase status` (evita exibir chaves locais).
+  - `supabase migration list` (o vínculo atual é PROD, não QA confirmado).
+  - `supabase link`, `db push`, `migration up`, `functions deploy`, `secrets set`.
+  - Qualquer SQL remoto ou escrita.
+
+----------------------------------------------------------------------------------------------------
+3. O QA ANTIGO EXISTE E PODE SER RECUPERADO?
+----------------------------------------------------------------------------------------------------
+QA documentado:
+  - Nome: conexao-express-qa
+  - Project Ref: aqpfayildtcnrkfeeyjg
+  - URL: https://aqpfayildtcnrkfeeyjg.supabase.co
+  - Criado em ~2026-07-23, tier FREE.
+  - Org documentada: dkitbsslspqjsagbevck.
+
+Evidências atuais:
+  - `supabase projects list` mostra APENAS `uwrvzsjtpgaifkktpepn` (produção).
+  - O QA NÃO aparece na lista de projetos da conta autenticada.
+  - `supabase orgs list` mostra apenas a organização dkitbsslspqjsagbevck.
+  - DNS de `aqpfayildtcnrkfeeyjg.supabase.co`: NÃO RESOLVE.
+  - HTTP GET: HTTP 000 / `curl: (6) Could not resolve host`.
+  - Documentação anterior (`ENV-QA-01-QA-RECOVERY-PREFLIGHT.txt`, 2026-09-21)
+    classificou: `QA_CURRENT_STATE = DELETED`.
+  - `HML-RECOVER-01-AUDIT.txt` (2026-09-23) repete: HML/QA antigo inexistente/inacessível.
+  - Causa provável documentada: projeto Free tier sem atividade, pausado/removido.
+
+Conclusão:
+  - O QA antigo NÃO está acessível hoje.
+  - Não é possível distinguir com as evidências atuais entre:
+      A) deletado definitivamente;
+      B) pausado e ainda restaurável no painel;
+      C) pertencente a outra conta/organização.
+  - Não foi criado projeto novo, não foi trocada URL e não foi feito link.
+  - Recuperação exige ação humana no painel Supabase da organização correta.
+
+----------------------------------------------------------------------------------------------------
+4. EXISTE AMBIENTE ALTERNATIVO JÁ UTILIZADO PELO PROJETO?
+----------------------------------------------------------------------------------------------------
+  - Produção: SIM, ativo (`uwrvzsjtpgaifkktpepn`). É o único backend remoto visível.
+  - Desenvolvimento: o próprio projeto documenta que usa o MESMO Supabase de produção
+    (`docs/VARIAVEIS_AMBIENTE_HIBRIDAS.md`).
+  - QA local: previsto/documentado (`ENV-QA-03-LOCAL-QA-PREFLIGHT.txt`), com baseline
+    completo de produção (`supabase/baseline/full_production_schema_20260920.sql`).
+    Porém:
+      * Docker Desktop/engine está parado na última verificação documentada;
+      * o stack local não está rodando;
+      * o cliente da aplicação continua hardcoded para produção;
+      * portanto o QA local não está pronto nem conectado hoje.
+  - HML/QA remoto alternativo: NÃO identificado.
+  - Nenhum outro Project Ref Supabase foi encontrado no repositório além de:
+      * `uwrvzsjtpgaifkktpepn` (produção);
+      * `aqpfayildtcnrkfeeyjg` (QA antigo, inacessível);
+      * placeholder `xxxxxxxxxxxxxxxxxxxx` na documentação.
+
+----------------------------------------------------------------------------------------------------
+5. REFERÊNCIAS SUPABASE DO RECRUTAMENTO E DO FORMULÁRIO
+----------------------------------------------------------------------------------------------------
+5.1 Cliente central
+  - `src/lib/supabase.ts`
+      * URL e anon key de PRODUÇÃO hardcoded.
+      * `createServiceClient()` também usa a URL de produção.
+      * O cliente NÃO lê `VITE_SUPABASE_URL`; `.env.qa` não troca o backend do app.
+      * A anon key é pública; nenhuma service_role está no frontend.
+
+5.2 Formulário público
+  - `src/components/cadastro-publico/OfertaPublicaForm.tsx`
+      * `supabase.functions.invoke("ofertas-publicas")`.
+      * Headers `x-idempotency-key` e, quando aplicável, `x-captcha-token`.
+  - `src/components/cadastro-publico/OfertaCaptcha.tsx` / `src/lib/ofertaCaptcha.ts`
+      * Configuração pública de CAPTCHA.
+  - Rota pública: `/cadastro-prestador` (fora do ProtectedRoute).
+
+5.3 Serviço de Ofertas Públicas
+  - `src/modules/recrutamento/services/ofertasPublicasService.ts`
+      * Leitura: `recrutamento_ofertas`, `recrutamento_oferta_eventos`.
+      * RPCs:
+          - f_atualizar_status_oferta
+          - f_registrar_observacao_oferta
+          - f_atualizar_disponibilidade_oferta
+          - f_registrar_contato_oferta
+          - f_resolver_revisao_oferta
+          - f_converter_oferta_em_candidato
+
+5.4 Serviços/telas do Recrutamento
+  - `enterpriseKanbanService`: `recrutamento_candidatos`, `prestadores`.
+  - `prestadoresService`: `recrutamento_prestadores` (+ fallback localStorage legado).
+  - `operacoesService`: `recrutamento_operacoes`.
+  - `crmService`: `crm_interacoes_prestadores`.
+  - `candidato_documentos`: leitura em AcompanhamentoDocs.
+  - `homologacoes`, `reservas_banco`, `portal_notificacoes`, `automacoes_logs`.
+  - `talentBankService`/Banco de Talentos avançado: `prestadores`,
+    `prestador_perfil_talento`, `prestador_disponibilidade`, `veiculos`.
+  - `conversaoCandidatoService` (legado): `prestadores` e `recrutamento_candidatos`;
+    NÃO foi reutilizado pela conversão 02B.3 para evitar criar prestador/liberado_app.
+
+5.5 Guards e testes
+  - `tests/e2e/helpers/ambiente.ts` e `scripts/check-ambiente.cjs` conhecem o ref QA
+    antigo, mas isso é apenas guard/detecção; não troca o cliente do app.
+  - O cliente hardcoded em produção é a razão pela qual um `npm run dev:qa` ainda
+    falaria com produção.
+
+5.6 Configuração local da Edge
+  - `supabase/config.toml`: `[functions.ofertas-publicas] verify_jwt = false`.
+  - Edge local: `index.ts`, `validation.ts`.
+  - CORS local inclui `Authorization`, `apikey`, `x-client-info`, `Content-Type`,
+    `x-captcha-token`, `x-idempotency-key`.
+  - NÃO publicada.
+
+----------------------------------------------------------------------------------------------------
+6. O MENOR PRÓXIMO PASSO PARA RECEBER OFERTAS REAIS
+----------------------------------------------------------------------------------------------------
+Não existe, hoje, um caminho seguro e imediato usando QA, porque:
+  - o QA remoto está deletado/inacessível;
+  - o app não tem switch de backend por ambiente (cliente hardcoded em PROD);
+  - as migrations 02B.2/02B.3 e a Edge não estão em nenhum ambiente remoto;
+  - publicar direto em produção seria usar produção como piloto, o que exige
+    autorização específica e aceitação de risco — não é homologação.
+
+Menor passo seguro, em ordem de decisão:
+  A) Confirmar no painel Supabase se o QA antigo está pausado ou deletado.
+     - Se pausado: reativar e então planejar o switch de ambiente no código.
+     - Se deletado: autorizar a criação de um novo QA (não criar automaticamente).
+  B) Corrigir a seleção de backend por ambiente (hoje `src/lib/supabase.ts` força PROD).
+     Essa mudança é fora do escopo desta missão e não foi feita.
+  C) Aplicar 02B.2 e depois 02B.3 no QA; configurar secrets; publicar a Edge.
+  D) Executar recebimento real, RLS, idempotência, rate limit e conversão.
+  Alternativa de velocidade, somente com autorização explícita:
+  - piloto controlado em PRODUÇÃO (aplicar migrations + Edge + secrets no projeto
+    `uwrvzsjtpgaifkktpepn`), com risco e rollback definidos. Isso NÃO deve ser
+    chamado de QA nem de homologação.
+
+O menor próximo passo técnico real, portanto, é uma decisão de ambiente:
+  "restaurar/recriar QA e ligar o app a ele" OU "autorizar piloto controlado em PROD".
+Sem essa decisão, o link público deve permanecer bloqueado.
+
+----------------------------------------------------------------------------------------------------
+7. ESTRUTURAS EXISTENTES PARA DOCUMENTOS E PROPOSTAS
+----------------------------------------------------------------------------------------------------
+Documentos (reutilizáveis pelo Recrutamento):
+  - `documentos_metadata` (migration 20261102000001/20261102000002)
+      * Tabela genérica: url, nome, tipo, modulo_origem, entidade_id, status_ia,
+        relatorio_ia, data_inclusao, tenant_id, categoria, departamento,
+        entidade_nome, responsavel, cliente_id, descricao, mime_type,
+        tamanho_bytes, versao, documento_pai_id, ativo, historico.
+      * Bucket privado `documentos_operacionais`.
+      * Serviço: `documentosMetadataService`.
+      * Storage: `documentoStorageService` (signed URL).
+      * UI: `CentralDocumentos`, `DocumentoAcoesDropdown`, `DocumentoHistoricoModal`,
+        `DocumentoNovaVersaoDialog`, `DocumentoCompartilharModal`.
+      * Observação: a RLS atual é permissiva para authenticated (`USING(true)`);
+        reutilizar no Recrutamento exige política/tenant adequada, que NÃO foi
+        alterada nesta missão.
+  - `documentos_prestadores` (legado canônico operacional)
+      * id, prestador_id, tipo, url, created_at.
+      * Bucket privado `documentos_prestadores`.
+      * Serviços: `documentosPrestadorService`, `PrestadorDetalhe`,
+        `eligibilidadeOperacionalService`.
+  - `candidato_documentos` (legado do Recrutamento)
+      * Mantida por FK para `candidatos`/`recrutamento_candidatos`.
+      * Leitura em `AcompanhamentoDocs`; campos próprios (arquivo_url,
+        dados_extraidos, analise_ia_id).
+  - Conclusão: para o Recrutamento, o caminho de reuso preferencial é
+    `documentos_metadata` + `documentos_operacionais` + `documentosMetadataService`;
+    `candidato_documentos`/`documentos_prestadores` são legados a preservar.
+
+Propostas:
+  - `orcamentos` é a estrutura REAL de propostas/orçamentos comerciais
+      * cliente_id, numero, pedido_interno, valores, enderecos, carga, historico,
+        os_vinculada_id, etc.
+  - `src/services/comercial/propostaService.ts` NÃO é uma camada de persistência
+    de propostas; ele gera estimativa em memória e, na conversão, grava
+    `ordens_servico`/`crm_leads`.
+  - `src/components/comercial/propostas/ListaPropostas.tsx` usa `mockPropostas`
+    e estado local; NÃO é armazenamento real.
+  - `crm_interacoes_prestadores` guarda interações/relacionamento, podendo
+    referenciar proposta em texto/anexos, mas não é tabela de propostas.
+  - Conclusão: se o Recrutamento precisar de propostas reais, a única estrutura
+    persistente existente é `orcamentos`; não há tabela de "propostas de
+    recrutamento" e nenhum módulo novo foi criado nesta missão.
+
+----------------------------------------------------------------------------------------------------
+8. O QUE JÁ ESTÁ IMPLEMENTADO E O QUE FALTA (EXCLUSIVAMENTE RECRUTAMENTO)
+----------------------------------------------------------------------------------------------------
+Implementado e preservado:
+  - Formulário público `/cadastro-prestador` com validações, LGPD, CAPTCHA opcional.
+  - Envio para Edge `ofertas-publicas` com idempotência e protocolo real.
+  - Gestão Ofertas Públicas: lista, busca, filtros, detalhe, comparação, contato,
+    disponibilidade interna, status, histórico, revisão e conversão em candidato.
+  - Edge local e migrations 02B.2/02B.3 (não aplicadas).
+  - Estruturas de documentos e propostas identificadas para reuso futuro.
+  - Testes locais da 02B.1 a 02B.4.
+
+Falta para concluir o Recrutamento:
+  - Um ambiente remoto autorizado (QA restaurado/recriado ou piloto PROD autorizado).
+  - Switch real de backend por ambiente (hoje o cliente força PROD).
+  - Aplicação de 02B.2 e 02B.3 (nessa ordem) no ambiente escolhido.
+  - Configuração dos secrets/CAPTCHA/CORS/tenant.
+  - Publicação da Edge `ofertas-publicas`.
+  - Teste real de recebimento/protocolo, RLS, isolamento por tenant, idempotência,
+    rate limit e conversão.
+  - Integração futura de documentos/propostas, se a operação decidir; não é
+    pré-requisito para receber ofertas e não foi feita aqui.
+
+----------------------------------------------------------------------------------------------------
+9. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL.
+  - Nenhuma migration aplicada.
+  - Nenhuma Edge Function publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhum projeto criado, nenhuma URL trocada, nenhum link alterado.
+  - Nenhum acesso ao APP Prestador.
+  - Nenhuma alteração de código nesta missão de diagnóstico.
+  - Nenhum valor de token/senha/service_role foi exibido.
+  - Produção foi usada apenas para leitura e diferenciação; NÃO foi tratada como QA.
+  - Nenhum teste real de recebimento foi declarado como aprovado.
+  - Contagem regressiva mantida:
+      3 Fechamento TMS → 2 E2E completo → 1 Master 360/Gate Produção → 0 Homologado
+
+RESULTADO FINAL: BACKEND ATIVO = PRODUÇÃO; QA ANTIGO = DELETADO/INACESSÍVEL;
+NÃO HÁ QA REMOTO ACESSÍVEL PARA O RECRUTAMENTO; RECEBIMENTO REAL NÃO LIBERADO.
+
+====================================================================================================

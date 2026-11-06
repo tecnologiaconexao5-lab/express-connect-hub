@@ -1,0 +1,131 @@
+MISSAO GD-10 — CONEXAO DOS UPLOADS (COMERCIAL + PRESTADORES)
+Data: 2026-11-05
+Status: CONCLUIDA (codigo)
+
+===============================================================
+1. ALCANCE
+===============================================================
+Confirmar/fechar a ligacao do motor real de upload (drag-and-drop +
+input file) ao Supabase Storage nos dois componentes-alvo:
+
+  A) ListaPropostas.tsx  — modal de upload da aba Comercial > Propostas
+  B) PrestadorDetalhe.tsx — cards de documentacao do Cadastro de Prestadores
+
+===============================================================
+2. A) COMERCIAL > PROPOSTAS — ListaPropostas.tsx
+===============================================================
+Fluxo do modal "Enviar PDF" (botao da toolbar, linha ~520):
+
+  Dialog (onOpenChange bloqueia fechamento durante envio)
+    -> Select opcional "Vincular a uma proposta" (propostaUploadId;
+       sentinela __nenhuma__ porque o Select shadcn nao aceita value vazio)
+    -> DocumentoUploadUniversal (drag-and-drop + input file + camera)
+    -> enviarPropostaPdf(file):
+         1. validarArquivoAnexo(file)      -> toast.error se vazio /
+            > 50 MB / tipo invalido          (lib/anexoDocumento.ts)
+         2. checagem extra de PDF           -> "Envie um arquivo PDF..."
+         3. enviarDocumentoOperacional(...) -> SUPABASE STORAGE real
+            bucket documentos_operacionais + insert documentos_metadata
+            (categoria/departamento "Comercial")
+         4. estado enviandoProposta -> rotulo "Enviando proposta e
+            registrando metadados..."
+         5. SUCESSO:
+            - sem vinculo  -> toast "Proposta enviada para a Central de
+                              Documentos"
+            - com vinculo  -> atualiza a proposta no estado local:
+                              ultimoDocumentoId (id do documento),
+                              ultimoDocumentoNome, atualizadoEm e evento
+                              em historico ("PDF enviado para a Central de
+                              Documentos (<arquivo>)") => tabela
+                              "dá refresh" + toast especifico
+            - limpa propostaUploadId e fecha o Dialog
+         6. FALHA -> toast.error com a mensagem do erro
+         7. finally -> enviandoProposta = false
+
+Observacoes:
+- A lista de propostas e estado local (mockPropostas) — nao ha query de
+  servidor para invalidar; o refresh = atualizar o estado local da
+  proposta vinculada (campos ultimoDocumento* + historico).
+- Select/propostaUploadId/ultimoDocumento* estavam importados/declarados
+  mas orfaos no working tree; agora plenamente utilizados.
+
+===============================================================
+3. B) CADASTRO DE PRESTADORES — PrestadorDetalhe.tsx
+===============================================================
+Fluxo por card de documento (CNH, RG, comprovante etc.):
+
+  Card onDragOver/onDragLeave/onDrop (destaque border-primary + ring)
+    -> handleDocFile(tipo, file)
+       -> validarArquivoAnexo(file)          -> toast.error (50 MB/tipo)
+       -> prestador sem id -> anexo em documentosPendentes
+          ("Aguardando Salvar")
+       -> com id: docUploadProgress[tipo] + isUploading = true
+       -> enviarDocumentoOperacionalPrestador({file, prestadorId, tipo})
+          = SUPABASE STORAGE bucket documentos_operacionais
+            + insert documentos_metadata + espelho na tabela legada
+              documentos_prestadores
+       -> atualiza documentosMetadata + estado local do prestador
+          com status fixo "em_analise" (fonte oficial de revisao)
+       -> toast.success "...enviado e registrado"
+       -> ERRO -> toast.error (mensagem real do erro)
+       -> finally -> libera docUploadProgress + isUploading
+
+  Feedback visual: badge "Enviando..." (animate-pulse) no card durante o
+  envio + spinner no botao Upload; input file disabled durante o envio.
+
+Nao ha lacunas pendentes neste componente.
+
+===============================================================
+4. NOTA DE DIVERGENCIA DE NOMENCLATURA
+===============================================================
+A descricao da missao menciona bucket "documentos_prestadores" e tabela
+"prestadores_documentos" — NENHUMA das duas existe. Foi seguido o padrao
+canonico do projeto (AGENTS.md / missao DOCUMENTOS-INTEGRADOS-IA):
+bucket privado "documentos_operacionais" via servicos de
+documentosMetadataService, com espelho automatico na tabela legada real
+"documentos_prestadores" (migracao 20260509000006_tabelas_faltantes.sql).
+Nenhuma tabela nova foi criada.
+
+===============================================================
+5. FORA DE ESCOPO (APENAS INFORMADO)
+===============================================================
+- OrcamentoForm.tsx linha ~1516: botao "Anexar Arquivo" ainda e
+  placeholder sem onClick (modulo Orcutos, fora da GD-10).
+
+===============================================================
+6. VALIDACAO
+===============================================================
+- npx tsc --noEmit                        -> 0 erros
+- npx eslint ListaPropostas.tsx           -> 0 erros
+- npx eslint PrestadorDetalhe.tsx         -> 15 erros = BASELINE
+  identica ao HEAD (comprovado via git stash + re-execucao: mesmas 15
+  linhas de no-explicit-any/no-empty pre-existentes; 0 novos)
+- Testes que leem os dois arquivos (14 specs):
+    missao01_uploads_documentos ......... 15/15
+    central_documentos_avancada .........  9/9
+    documentos_integrados_ia ............  8/8
+    estabilidade_crm_cadastros_custos ... 11/11
+    adm_app_02d1_documentos_privados .... 17/17
+    ag07j14_1_reversao_documental ....... 32/32
+    cad_prest_ind_01/02 ................. 11/11
+    talent_fase7/8/profile_ui_funnel .... 38/38
+    cad_veic_02/03 + e2e_05d ............ 38/38
+    TOTAL ............................... 179/179 PASS (0 falhas)
+
+===============================================================
+7. ARQUIVOS ALTERADOS NESTA MISSAO
+===============================================================
+- src/components/comercial/propostas/ListaPropostas.tsx
+  (validarArquivoAnexo + Select de vinculo + refresh local da proposta +
+   reset no fechar do Dialog)
+- src/components/prestadores/PrestadorDetalhe.tsx (concluido na sessao
+  anterior: status em_analise + badge "Enviando...")
+- RELATORIO_GD10_UPLOADS_2026-11-05.txt (este relatorio)
+
+Pendencias de QA (nao-bloqueantes):
+1) /comercial?tab=propostas -> enviar PDF > 50 MB (erro), PDF valido
+   vinculado a proposta (badge/linha atualizada + historico), fechar
+   dialog durante envio (bloqueado).
+2) Cadastros > Prestadores > Documentacao -> arrastar arquivo ao card e
+   usar Upload; confirmar badge "Enviando..." e persistencia ao reabrir.
+3) Commit git (aguarda autorizacao).

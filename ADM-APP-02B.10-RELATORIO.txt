@@ -1,0 +1,210 @@
+====================================================================================================
+ADM-APP-02B.10 — LOCALIZAÇÃO DO BASELINE ORIGINAL 4b384522
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: BUSCA LOCAL READ-ONLY DE ARTEFATO
+RESULTADO: ORIGINAL NÃO LOCALIZADO
+ZERO ESCRITAS / ZERO CONTAINERS / ZERO SQL / ZERO MIGRATIONS / ZERO ALTERAÇÕES
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. REGRAS CUMPRIDAS
+----------------------------------------------------------------------------------------------------
+  - Nenhum arquivo foi alterado, sobrescrito, renomeado ou regenerado.
+  - Manifesto original não foi alterado.
+  - Docker/Supabase/containers não foram iniciados.
+  - `supabase-db-qa` não foi iniciado nem inspecionado internamente.
+  - Nenhum banco remoto/produção foi acessado.
+  - Nenhum SQL foi executado.
+  - APP Prestador não foi acessado.
+  - Configurações, migrations e código do projeto não foram alterados.
+  - Nenhum arquivo externo foi baixado ou substituído.
+  - Nenhuma varredura indiscriminada de todo o disco.
+
+----------------------------------------------------------------------------------------------------
+2. ALVO PROCURADO
+----------------------------------------------------------------------------------------------------
+  - Nome esperado: full_production_schema_20260920.sql
+  - SHA-256 esperado:
+      4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  - Tamanho esperado: 812.613 bytes
+  - Linhas esperadas: 17.373
+
+Critério:
+  - Só seria considerado localizado se o SHA-256 batesse integralmente.
+  - Nome e tamanho isolados NÃO foram aceitos como prova.
+
+----------------------------------------------------------------------------------------------------
+3. RESULTADO DA BUSCA
+----------------------------------------------------------------------------------------------------
+Nenhum arquivo com o hash esperado foi encontrado.
+
+Nenhum arquivo com tamanho 812.613 bytes foi encontrado nos diretórios pesquisados.
+
+O único arquivo com o nome esperado é o baseline atual do repositório:
+  C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\
+  08_TECNOLOGIA_SISTEMAS\express-connect-hub\supabase\baseline\
+  full_production_schema_20260920.sql
+
+  - Tamanho: 829.480 bytes (CRLF no Windows).
+  - Linhas via Get-Content: 17.372.
+  - SHA-256: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F.
+  - Normalizado para LF: 812.108 bytes; SHA-256
+    CF36FD8174383868B5ED1B67ED057B443082627E1D1B1CA4B18C4E744BE058AD.
+  - NÃO corresponde ao hash esperado.
+
+----------------------------------------------------------------------------------------------------
+4. DIRETÓRIOS E ESCOPO PESQUISADO
+----------------------------------------------------------------------------------------------------
+Pesquisados (somente leitura):
+  - Workspace do TMS:
+      C:\...\express-connect-hub
+  - `supabase/baseline` e `supabase` (incluindo subpastas).
+  - `Pasta Compartilhada\DOCUMENTOS EMPRESA` (recursivo).
+  - `Pasta Compartilhada\DOCUMENTOS EMPRESA\99_BACKUP_AUDITORIA`.
+  - `Desktop\TMS conexão`.
+  - `Desktop` (recursivo, excluindo node_modules/.git/dist/test-results).
+  - `Documents`.
+  - `Downloads`.
+  - `OneDrive`.
+  - `%TEMP%` e `%TEMP%\opencode`.
+  - `C:\Backup`, `C:\Backups`, `C:\backup` (ausentes).
+  - D:\ e E:\ (ausentes; apenas drive C: existe).
+
+Arquivos compactados:
+  - 355 arquivos ZIP abertos em modo leitura; entradas procuradas por
+    `full_production_schema_20260920` e tamanho 812.613. Nenhum candidato.
+  - 16 arquivos RAR/7z listados com `tar -tf`/`tar -tvf`; entradas procuradas
+    por nome e tamanho. Nenhum candidato.
+  - Nenhuma extração foi feita; nenhum arquivo existente foi sobrescrito.
+
+Git:
+  - Baseline e manifesto são rastreados.
+  - Único commit que os adiciona:
+      e5ad8e0f6e417ebbd9bd73a6cfa17ad01205da79
+      “fix: bypass de login para acesso imediato”
+      2026-10-17 23:53:46 -0300
+  - Pai: f91dcf16b5d44e31dc0662b4e34690bba4d41a6b.
+  - O pai NÃO contém o baseline.
+  - `git diff HEAD --` para baseline/manifesto está vazio: o working tree
+    corresponde ao commit atual.
+  - Blob Git do baseline: e1ed1457cef10f6d70bfe2c4976d9ed3fa51a916
+    (812.108 bytes).
+  - Nenhum blob Git com tamanho 812.613 foi encontrado em
+    `git cat-file --batch-all-objects`.
+  - Nenhum reflog/objeto adicional com versão anterior do baseline foi achado.
+  - Não há cópia histórica recuperável no Git local.
+
+----------------------------------------------------------------------------------------------------
+5. CANDIDATOS E VALIDAÇÕES
+----------------------------------------------------------------------------------------------------
+5.1 Arquivo atual (único com o nome esperado)
+  - Caminho: conforme seção 3.
+  - Tamanho: 829.480 bytes.
+  - Linhas: 17.372.
+  - SHA-256: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F.
+  - Correspondência exata: NÃO.
+  - Cópia independente: NÃO; é o arquivo oficial atual do repositório.
+
+5.2 Arquivos candidatos com tamanho 812.613
+  - Nenhum encontrado nos diretórios pesquisados.
+  - Nenhum hash pôde ser calculado porque não houve candidato.
+
+5.3 Entradas em arquivos compactados
+  - Nenhuma entrada com nome esperado ou tamanho 812.613 foi encontrada.
+  - Nenhuma extração ou sobrescrita.
+
+5.4 Histórico documental
+  - `RELATORIO_ENV_QA_04_LOCAL_BUILD.md` (2026-09-20) afirma que o hash
+    4b384522 foi aplicado ao container `supabase-db-qa`.
+  - Esse relatório contém contagens diferentes (221 tabelas, 13 views,
+    184 functions, 866 indexes), que não coincidem com o manifesto
+    (237/24/135/683) nem com o arquivo atual (237/24/135/667).
+  - O relatório é evidência histórica de uso do hash esperado, mas não é
+    o arquivo e não permite recuperá-lo.
+  - `ENV-QA-02-BASELINE-PACKAGE.txt` e `MISSAO-01.2-DIAGNOSTICO-QA.txt`
+    também citam o hash esperado, mas não contêm uma cópia do arquivo.
+
+----------------------------------------------------------------------------------------------------
+6. DIFERENÇAS DO ARQUIVO ATUAL
+----------------------------------------------------------------------------------------------------
+  - Hash/tamanho atuais não correspondem ao manifesto.
+  - Normalização de CRLF para LF não resolve: o hash LF continua diferente.
+  - Contagens atuais:
+      237 tabelas, 135 funções, 24 views, 120 triggers, 543 policies,
+      667 CREATE INDEX, 226 ENABLE ROW LEVEL SECURITY, 631 constraints.
+  - Manifesto:
+      237 tabelas, 135 funções, 24 views, 120 triggers, 543 policies,
+      683 indexes, 237 RLS.
+  - 11 tabelas atuais aparecem sem `ENABLE ROW LEVEL SECURITY`:
+      _hml_seed_checkpoint, automacoes_gatilhos,
+      automacoes_gatilhos_execucao, automacoes_instrucoes,
+      automacoes_regras_operacao, escala_operacional,
+      fin_sane_02b_snapshot, fiscal_xml_recebidos, ia_custos_ia,
+      motorista_app_sessoes, motorista_checkins.
+  - Não há evidência documental de que essas diferenças sejam intencionais.
+
+----------------------------------------------------------------------------------------------------
+7. CLASSIFICAÇÃO E DECISÃO
+----------------------------------------------------------------------------------------------------
+CLASSIFICAÇÃO: ORIGINAL NÃO LOCALIZADO.
+
+  - Nenhum arquivo com SHA-256 4b384522 foi encontrado.
+  - Nenhum arquivo com tamanho 812.613 foi encontrado.
+  - Nenhuma cópia independente em backup, ZIP, RAR, Git ou pasta de missão.
+  - O arquivo atual é a única cópia, mas não corresponde ao manifesto.
+
+DECISÃO:
+  - NÃO copiar o arquivo atual para o baseline oficial.
+  - NÃO alterar/renomear/regenerar o baseline.
+  - NÃO alterar o manifesto.
+  - NÃO aplicar o baseline atual no QA.
+  - Manter o bloqueio de integridade até decisão humana.
+
+Limitações da busca:
+  - A busca foi direcionada aos diretórios do projeto, backups conhecidos,
+    Desktop, Documents, Downloads, OneDrive e TEMP; NÃO foi uma varredura
+    indiscriminada de todo o volume C:.
+  - Lixeira, Volume Shadow Copy, backups corporativos externos e mídias
+    removíveis não foram acessados.
+  - Nenhum arquivo compactado foi extraído; a análise foi por listagem/stream.
+  - O container `supabase-db-qa` e seu volume não foram inspecionados por
+    dentro, conforme regra da missão.
+
+----------------------------------------------------------------------------------------------------
+8. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+1. O usuário deve indicar uma fonte adicional de backup (HD externo, nuvem,
+   pasta de backup corporativa, snapshot, lixeira etc.) onde o artefato
+   `4b384522` possa estar.
+2. Se o arquivo for fornecido, validar antes de qualquer uso:
+     Get-FileHash <arquivo> -Algorithm SHA256
+     # deve resultar em 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+     # tamanho 812.613 bytes
+     # 17.373 linhas
+3. Se o arquivo original não for recuperável, autorizar uma nova extração
+   read-only do schema live e a criação de um novo manifesto; essa extração
+   NÃO foi feita nesta missão e não deve executar DDL/DML.
+4. Não aplicar baseline/migrations no QA até a integridade ser comprovada.
+5. Não iniciar Supabase/Docker nesta missão.
+
+----------------------------------------------------------------------------------------------------
+9. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota.
+  - Nenhuma conexão com banco remoto/produção.
+  - Nenhum SQL.
+  - Nenhum start de Docker/Supabase/container.
+  - Nenhum deploy/secret.
+  - Nenhum acesso ao APP.
+  - Nenhum arquivo alterado/renomeado/regenerado.
+  - Manifesto e baseline preservados.
+  - Nenhuma extração de arquivo compactado.
+  - Nenhum candidato declarado como original sem hash.
+  - Homologação não declarada.
+
+RESULTADO FINAL: ORIGINAL NÃO LOCALIZADO.
+PRÓXIMA DECISÃO: INDICAR BACKUP EXTERNO OU AUTORIZAR NOVA EXTRAÇÃO READ-ONLY.
+
+====================================================================================================

@@ -1,0 +1,305 @@
+====================================================================================================
+ADM-APP-02B.21 — PROTEÇÃO DO SISTEMA E PLANO MÍNIMO DO RECRUITMENT
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA: 2026-11-04
+TIPO: DIAGNÓSTICO READ-ONLY / PROTEÇÃO DO ESTADO ATUAL
+RESULTADO: NENHUMA ALTERAÇÃO REALIZADA; CONCLUSÃO DEPENDE DE AUTORIZAÇÃO EXPRESSA PARA PRODUÇÃO
+====================================================================================================
+
+1. CONCLUSÃO DIRETA
+----------------------------------------------------------------------------------------------------
+  O Recruitment está implementado no código e nos testes locais, mas ainda não
+  tem backend real implantado. O único projeto Supabase disponível e vinculado é
+  a PRODUÇÃO `uwrvzsjtpgaifkktpepn`; não existe QA ativo/utilizável.
+
+  Com a infraestrutura atual e sem criar projeto/trocar plano, a única forma de
+  concluir funcionalmente o link público é uma implantação controlada em
+  PRODUÇÃO: aplicar 02B.2, validar, aplicar 02B.3, validar e publicar a Edge
+  `ofertas-publicas` com os três secrets obrigatórios.
+
+  Isso exige escrita em produção e, portanto, AUTORIZAÇÃO EXPRESSA. Nada foi
+  aplicado nesta missão.
+
+2. PROTEÇÃO DO ESTADO ATUAL — GIT
+----------------------------------------------------------------------------------------------------
+  Branch atual:
+    main
+
+  HEAD:
+    9865cfac421083b94aaffb3f7ecbb211985383cc
+
+  Estado:
+    worktree com alterações não commitadas e arquivos untracked.
+    Os arquivos do Recruitment 02B estão majoritariamente untracked e não
+    possuem commit de segurança.
+
+  Arquivos modificados no escopo Recruitment:
+    M src/modules/recrutamento/index.tsx
+    M src/modules/recrutamento/layouts/RecrutamentoLayout.tsx
+    M src/modules/recrutamento/store/recrutamentoStore.ts
+    M src/pages/CadastroPrestador.tsx
+
+  Arquivos novos/untracked do Recruitment:
+    ?? src/components/cadastro-publico/OfertaCaptcha.tsx
+    ?? src/components/cadastro-publico/OfertaPublicaForm.tsx
+    ?? src/lib/ofertaCaptcha.ts
+    ?? src/lib/ofertaPublica.ts
+    ?? src/modules/recrutamento/components/ofertas/OfertaComparacaoDialog.tsx
+    ?? src/modules/recrutamento/components/ofertas/OfertaDetalheSheet.tsx
+    ?? src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+    ?? src/modules/recrutamento/services/ofertasPublicasService.ts
+    ?? supabase/functions/ofertas-publicas/index.ts
+    ?? supabase/functions/ofertas-publicas/validation.ts
+    ?? supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+    ?? supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+    ?? src/test/adm_app_02b1_oferta_publica_form.test.ts
+    ?? src/test/adm_app_02b2_backend_ofertas.test.ts
+    ?? src/test/adm_app_02b3_gestao_ofertas.test.ts
+    ?? src/test/adm_app_02b4_fechamento_recrutamento.test.ts
+
+  Existem também alterações não relacionadas ao Recruitment no worktree
+  (AGENTS.md, financeiro, clientes, documentos, sidebar, relatórios, artefatos
+  de teste etc.). Elas pertencem ao usuário e NÃO foram tocadas.
+
+  Commits recentes:
+    9865cfa feat: add document center, CRM fixes and operational cost engine
+    db95feb feat: refine cotacao UI, fix whatsapp number and add operational safeguards
+    c695645 chore: add prod verification scripts and update AGENTS.md
+    8a873f0 feat: implement Conexao Talent AI summaries and enforce strict performance rules
+    81db5e4 feat: apply enterprise talent intelligence UI to all recruitment tabs
+
+  Nenhum dos commits recentes contém as migrations 02B.2/02B.3; elas permanecem
+  untracked. O trabalho atual não está protegido por commit.
+
+  Stashes existentes (apenas listados, não aplicados):
+    stash@{0}: filter-branch: rewrite
+    stash@{1}: WIP on main: 905946e ...
+
+  Não foi executado reset, checkout destrutivo, clean, stash, merge, commit ou
+  qualquer operação Git que altere o worktree.
+
+3. RECUPERAÇÃO E BACKUP
+----------------------------------------------------------------------------------------------------
+  - O estado atual do Recruitment está no worktree, com arquivos untracked.
+    Não há commit específico dessa implementação.
+  - Existem stashes antigos, mas não foram aplicados nem usados como backup
+    desta missão.
+  - Existem artefatos de backup/temporários na raiz, mas não foi comprovado que
+    eles contenham este trabalho de Recruitment.
+  - Recomendação de proteção ANTES de qualquer implantação: fazer commit ou
+    cópia de segurança autorizada dos arquivos do Recruitment, sem incluir
+    segredos. Isso não foi feito agora porque a missão proíbe alterações.
+  - Enquanto o worktree não for protegido, qualquer reset/clean seria destrutivo.
+
+4. AUDITORIA DO RECRUITMENT — O QUE JÁ EXISTE
+----------------------------------------------------------------------------------------------------
+4.1 Rota pública
+  - `/cadastro-prestador` existe em `src/App.tsx`.
+  - Está fora do `ProtectedRoute`; não exige login.
+  - `CadastroPrestador.tsx` usa `OfertaPublicaForm`.
+
+4.2 Formulário público
+  - Coleta perfil e disponibilidade em 5 etapas:
+      tipo de oferta/contato, região/disponibilidade, modalidades/veículo,
+      capacidade/valores, restrições/consentimento LGPD.
+  - Não exige documentos pessoais, CPF, CNH, CRLV, selfie, PIX ou dados
+    bancários nesta fase.
+  - Valida nome, contato, região, dias, horários, modalidades, veículo,
+    capacidade, valores e consentimento.
+  - Envia para `supabase.functions.invoke("ofertas-publicas")`.
+  - Usa idempotência (`x-idempotency-key`) e só considera sucesso após
+    protocolo real.
+  - Não faz INSERT direto no banco e não simula sucesso.
+
+4.3 Edge Function
+  - `supabase/functions/ofertas-publicas/index.ts` existe.
+  - `validation.ts` existe.
+  - A Edge valida payload, CORS, tamanho, método, CAPTCHA opcional, rate limit
+    e tenant server-side.
+  - Usa service_role apenas no runtime; a chave não vai ao navegador.
+  - Ainda NÃO está publicada em nenhum ambiente.
+  - `supabase/config.toml` define `verify_jwt = false` para ela.
+
+4.4 Migrations
+  - 02B.2: 818 linhas, SHA-256
+    050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+  - 02B.3: 655 linhas, SHA-256
+    BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89
+  - 02B.2 cria 4 tabelas, `recrutamento_candidatos.oferta_id`, 2 funções,
+    índices, trigger, policies, grants e rate limit.
+  - 02B.3 adiciona disponibilidade interna, tenant do candidato, compatibilidade
+    de preferências e 8 funções de gestão/conversão.
+  - A ordem é obrigatória: 02B.2 → validação → 02B.3.
+
+4.5 Painel interno
+  - Aba "Ofertas Públicas" no Recrutamento.
+  - Link público, copiar/compartilhar/WhatsApp.
+  - KPIs, busca, filtros, paginação.
+  - Detalhe, histórico, comparação de até 4 ofertas.
+  - Contato, status, disponibilidade interna, observação e revisão humana.
+  - Conversão explícita em `recrutamento_candidatos`; sem criar prestador/Auth.
+  - Se a tabela/RPC não existir, o painel mostra backend indisponível, sem
+    fingir sucesso.
+
+4.6 Testes existentes
+  - 02B.1, 02B.2, 02B.3 e 02B.4 existem em `src/test/`.
+  - São testes de contrato/fonte e regras locais; não substituem prova real de
+    banco/Edge/RLS.
+
+5. O QUE AINDA NÃO ESTÁ COMPROVADO
+----------------------------------------------------------------------------------------------------
+  - Criação real de `recrutamento_ofertas`.
+  - Funcionamento real de RLS/policies/grants.
+  - Execução real de `f_registrar_oferta_publica`.
+  - Rate limit e CAPTCHA em execução.
+  - Leitura real do painel com usuário autenticado.
+  - Atualização real de status/contato/disponibilidade.
+  - Conversão real em candidato com `oferta_id`.
+  - CORS/origem, tenant e secrets da Edge em ambiente publicado.
+  - Teste ponta a ponta público → painel → conversão.
+
+6. BLOQUEIO REAL
+----------------------------------------------------------------------------------------------------
+  Não é falta de código ou de UI.
+
+  O bloqueio é de infraestrutura:
+    - Não há QA ativo (o antigo `aqpf...` está NXDOMAIN e ausente da CLI).
+    - O projeto vinculado é produção.
+    - As tabelas/funções de ofertas não existem no baseline atual.
+    - A Edge não foi publicada.
+    - Os secrets de QA/produção não estão configurados para esta função.
+    - O frontend está hardcoded para produção; isso é correto para produção,
+      mas impede teste de UI em QA sem configuração adicional.
+
+7. EXISTE CAMINHO SEM NOVO PROJETO/PLANO?
+----------------------------------------------------------------------------------------------------
+  Sim, tecnicamente: usar a infraestrutura de PRODUÇÃO existente.
+
+  Isso significa:
+    1. aplicar 02B.2 em produção;
+    2. validar;
+    3. aplicar 02B.3;
+    4. publicar a Edge `ofertas-publicas`;
+    5. configurar tenant, origem permitida e IP salt;
+    6. executar o teste real.
+
+  Porém isso é escrita em produção e não está autorizado nesta missão.
+  Não há como completar o fluxo real somente com leitura ou com o código local.
+
+  Alternativas:
+    A) Produção controlada — menor caminho, usa a infraestrutura atual, mas
+       exige autorização, backup e janela controlada.
+    B) Criar QA novo — mais seguro para teste, mas exige projeto/plano e não é
+       a infraestrutura atual; não autorizado aqui.
+    C) QA local — exigiria iniciar/restaurar containers e banco; proibido nesta
+       missão e não entrega Edge real pronta.
+    D) Não implantar — mantém risco zero, mas não conclui o Recruitment.
+
+8. RECOMENDAÇÃO ÚNICA
+----------------------------------------------------------------------------------------------------
+  Estratégia recomendada para concluir com a infraestrutura atual:
+
+    PRODUÇÃO CONTROLADA, COM AUTORIZAÇÃO EXPRESSA E BACKUP.
+
+  Justificativa:
+    - É o único caminho que usa a infraestrutura existente sem criar projeto
+      nem trocar plano.
+    - Não exige alteração de código: o frontend já aponta para produção.
+    - O caminho de dados é aditivo e usa apenas as migrations 02B.2/02B.3 e a
+      Edge já escrita.
+    - É o menor caminho para entregar link público + painel + conversão.
+
+  Condições obrigatórias antes de executar:
+    1. Autorização expressa do proprietário para escrita em produção.
+    2. Backup/snapshot do banco de produção e plano de rollback.
+    3. Confirmar o tenant padrão que a Edge usará.
+    4. Confirmar a origem pública real para CORS.
+    5. Definir IP salt e, se aplicável, CAPTCHA.
+    6. Teste com uma oferta controlada; limpar o dado de teste depois.
+    7. Registrar evidências de oferta, painel e candidato.
+    8. Nenhum arquivo de código precisa ser alterado; apenas migrations,
+       deploy da Edge e secrets.
+
+  Se a autorização de produção não for concedida:
+    - Não há como concluir o fluxo real nas regras atuais.
+    - A única alternativa segura é criar/credenciar um QA novo, o que exige
+      decisão de plano/projeto e uma missão separada.
+
+9. MENOR ALTERAÇÃO INDISPENSÁVEL
+----------------------------------------------------------------------------------------------------
+  Nenhuma alteração de código-fonte é indispensável.
+
+  A menor implantação é:
+    - executar 02B.2;
+    - validar tabelas/funções/policies/grants;
+    - executar 02B.3;
+    - validar;
+    - publicar `ofertas-publicas`;
+    - configurar os secrets da Edge.
+
+  Arquivos existentes que serão usados, sem alteração de conteúdo:
+    - supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+    - supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+    - supabase/functions/ofertas-publicas/index.ts
+    - supabase/functions/ofertas-publicas/validation.ts
+    - src/lib/supabase.ts (já aponta para produção; não alterar)
+    - src/lib/ofertaPublica.ts
+    - src/components/cadastro-publico/OfertaPublicaForm.tsx
+    - src/modules/recrutamento/.../OfertasPublicas.tsx
+    - src/modules/recrutamento/services/ofertasPublicasService.ts
+
+  Se houver necessidade de testar em QA no futuro, aí sim será preciso decidir
+  sobre configuração do cliente; isso não é necessário para produção.
+
+10. RISCOS DA ALTERNATIVA RECOMENDADA
+----------------------------------------------------------------------------------------------------
+  - Escrita em produção sem QA prévio; exige backup/rollback.
+  - Criação de tabelas e funções em produção; migrations são aditivas, mas não
+    foram executadas em ambiente real.
+  - Exposição de endpoint público; CORS, rate limit, CAPTCHA e validação
+    precisam estar corretos.
+  - Possibilidade de dados de teste em produção; devem ser identificados e
+    removidos com autorização.
+  - O worktree atual não está commitado; uma falha operacional não deve ser
+    tratada com reset/clean.
+  - Dependência de secrets/tenant/origem; sem eles a Edge retorna indisponível.
+
+11. ARQUIVOS QUE PODERÃO SER ALTERADOS NA PRÓXIMA MISSÃO
+----------------------------------------------------------------------------------------------------
+  Em princípio, NENHUM arquivo de código.
+
+  Apenas serão usados/aplicados:
+    - migrations 02B.2 e 02B.3 (já existentes);
+    - Edge Function (já existente);
+    - secrets de ambiente (criados no painel/CLI, não no código).
+
+  Uma eventual alteração de configuração do cliente para QA fica fora desta
+  estratégia de produção e só seria feita se o QA fosse aprovado.
+
+12. CONFIRMAÇÃO DE PRESERVAÇÃO
+----------------------------------------------------------------------------------------------------
+  - Nenhuma migration aplicada.
+  - Nenhum `db push`, `db reset` ou comando equivalente executado.
+  - Nenhuma Edge publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhum projeto criado, alterado ou removido.
+  - Nenhum plano contratado.
+  - Nenhum container/volume/banco alterado.
+  - Nenhum arquivo de código/configuração alterado.
+  - Nenhuma escrita em produção.
+  - APP Prestador não acessado.
+  - Único artefato criado: este relatório.
+
+13. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+  Aguardar uma destas decisões do usuário:
+    A) AUTORIZAR produção: então executar a implantação controlada (com backup
+       e janela), 02B.2 → 02B.3 → Edge → teste real.
+    B) NÃO AUTORIZAR produção: então não há caminho de conclusão com a infra
+       atual; será necessário aprovar a criação/credenciamento de um QA novo
+       em missão separada.
+
+  Não executar nada antes dessa decisão.
+
+====================================================================================================

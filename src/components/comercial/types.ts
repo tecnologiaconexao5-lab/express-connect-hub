@@ -106,6 +106,13 @@ export interface FreteSugerido {
   distancia_km: number;
 }
 
+export interface AnexoOrcamento {
+  nome: string;
+  path: string;
+  referencia: string;
+  url: string;
+}
+
 export interface Orcamento {
   id: string;
   numero: string;
@@ -124,7 +131,7 @@ export interface Orcamento {
   pedidoInterno: string;
   observacoesGerais: string;
   status: OrcamentoStatus;
-  /** Cliente originado pela Cotação Express (sem cadastro completo). */
+  /** Cliente originado pela Cotaï¿½ï¿½o Express (sem cadastro completo). */
   clienteCotacao?: boolean;
   enderecos: EnderecoOrcamento[];
   carga: CargaOrcamento;
@@ -138,6 +145,8 @@ export interface Orcamento {
     recomendacaoMotivos?: string[];
   };
   valores: ValoresOrcamento;
+  /** PDF anexado no formulÃ¡rio (bucket privado `propostas`, GD-11) â€” fica no estado atÃ© salvar. */
+  anexo?: AnexoOrcamento | null;
   distancia_rota?: DistanciaRota;
   frete_sugerido?: FreteSugerido;
   motivoReprovacao?: string;

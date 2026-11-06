@@ -1,0 +1,217 @@
+====================================================================================================
+ADM-APP-02B.9 — AUDITORIA E RECONCILIAÇÃO DO BASELINE
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: AUDITORIA READ-ONLY DE ARTEFATO / GIT / CHECKSUM
+RESULTADO: BLOQUEADO — BASELINE NÃO CERTIFICADO
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO START / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO E REGRAS CUMPRIDAS
+----------------------------------------------------------------------------------------------------
+  - Nenhum Supabase/container foi iniciado.
+  - Nenhum SQL foi executado em produção.
+  - Nenhuma conexão com banco remoto.
+  - Nenhuma migration aplicada.
+  - Baseline e manifesto NÃO foram regenerados/sobrescritos.
+  - `src/lib/supabase.ts`, `supabase/config.toml` e migrations NÃO foram alterados.
+  - APP Prestador NÃO foi acessado.
+  - Containers e volumes NÃO foram tocados.
+  - Apenas leitura de arquivos, Git local, hashes e contagens estáticas.
+
+----------------------------------------------------------------------------------------------------
+2. ARTEFATOS LOCALIZADOS
+----------------------------------------------------------------------------------------------------
+2.1 Baseline principal
+  supabase/baseline/full_production_schema_20260920.sql
+
+  Estado atual (worktree):
+    - Tamanho: 829.480 bytes (CRLF no Windows).
+    - Linhas via Get-Content: 17.372.
+    - SHA-256 do arquivo atual: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F.
+    - SHA-256 normalizado para LF: CF36FD8174383868B5ED1B67ED057B443082627E1D1B1CA4B18C4E744BE058AD.
+    - Bytes normalizados para LF: 812.108.
+    - Cabeçalho: extração declarada em 2026-09-20T20:14:50.408Z.
+    - 237 CREATE TABLE, 135 CREATE FUNCTION, 24 views, 120 triggers,
+      543 policies, 226 ENABLE ROW LEVEL SECURITY, 667 CREATE INDEX.
+
+2.2 Manifesto
+  supabase/baseline/BASELINE_MANIFEST_20260920.txt
+
+  - Tamanho atual: 3.532 bytes (working tree).
+  - SHA-256 atual: 5169ADE4903DDD417C683D8F186ECB2EF25E1FE97D7635E96DA126E9146C4471.
+  - Declara baseline:
+      Tamanho: 812.613 bytes
+      Linhas: 17.373
+      SHA-256: 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  - Declara contagens:
+      237 tabelas, 631 constraints, 683 indexes, 135 funções, 24 views,
+      120 triggers, 237 tabelas com RLS, 543 policies.
+
+2.3 Outros artefatos encontrados
+  - supabase/baseline/01_core_tables.sql
+      15.806 bytes, 467 linhas,
+      SHA-256 605719A78EB8369ECC4594B7732765A820255D34E6A19CE798AE48856D581CF6.
+      É um baseline parcial de 6 tabelas; NÃO substitui o full baseline.
+  - RELATORIO_ENV_QA_04_LOCAL_BUILD.md
+      Relatório de 2026-09-20 que afirma:
+        * SHA-256 4b384522... — MATCH;
+        * container `supabase-db-qa` (postgres:15-alpine, porta 54322);
+        * baseline aplicado e validado;
+        * 221 tabelas, 13 views, 184 functions, 866 indexes.
+      Esse relatório é evidência histórica de que o hash esperado foi usado
+      naquele momento, mas NÃO contém o arquivo correspondente.
+  - ENV-QA-02-BASELINE-PACKAGE.txt e MISSAO-01.2-DIAGNOSTICO-QA.txt
+      Também registram o hash esperado 4b384522... e o tamanho 812.613 bytes.
+  - Nenhum arquivo com tamanho 812.613 bytes foi encontrado no repositório.
+  - Nenhum blob Git com tamanho 812.613 bytes foi encontrado.
+
+----------------------------------------------------------------------------------------------------
+3. HISTÓRICO GIT
+----------------------------------------------------------------------------------------------------
+  - Caminho do baseline e manifesto: rastreado no Git.
+  - Commit que adiciona os arquivos:
+      e5ad8e0f6e417ebbd9bd73a6cfa17ad01205da79
+      “fix: bypass de login para acesso imediato”
+      Data: 2026-10-17 23:53:46 -0300
+  - Pai: f91dcf16b5d44e31dc0662b4e34690bba4d41a6b.
+  - No pai NÃO existe `supabase/baseline/full_production_schema_20260920.sql`.
+  - O baseline e o manifesto foram ADICIONADOS juntos em e5ad8e0 (status “A”).
+  - Não há commit anterior com uma versão anterior do baseline.
+  - Não há reflog mostrando outra versão do baseline.
+  - `git diff HEAD --` para baseline/manifesto está vazio; o working tree corresponde
+    ao commit atual.
+  - Blob Git atual do baseline: e1ed1457cef10f6d70bfe2c4976d9ed3fa51a916
+    (812.108 bytes; representação LF).
+  - Blob Git atual do manifesto: f9e3ee2602dc00ab5101d8ac9dd80cf7ceafcfd7
+    (3.459 bytes; representação LF).
+  - Não foi encontrado blob Git com o tamanho esperado 812.613.
+  - Não há versão histórica recuperável do arquivo esperado.
+
+Conclusão do Git:
+  A divergência não pode ser explicada por um commit anterior, porque não existe
+  versão anterior rastreada. O par baseline+manifesto foi commitado já divergente
+  (ou foi alterado antes do commit, sem histórico).
+
+----------------------------------------------------------------------------------------------------
+4. DIFERENÇAS IDENTIFICADAS
+----------------------------------------------------------------------------------------------------
+4.1 Integridade
+  - Manifesto esperado: 812.613 bytes / 17.373 linhas / SHA-256 4b384522...
+  - Arquivo atual (working): 829.480 bytes / 17.372 linhas / SHA-256 82BCD0...
+  - Arquivo atual normalizado LF: 812.108 bytes / SHA-256 CF36FD...
+  - A diferença NÃO é apenas CRLF: mesmo normalizado para LF, o hash é diferente
+    do manifesto.
+
+4.2 Contagens de objetos
+  - Tables:           manifesto 237 | atual 237
+  - Functions:        manifesto 135 | atual 135
+  - Views:            manifesto 24  | atual 24
+  - Triggers:         manifesto 120 | atual 120
+  - Policies:         manifesto 543 | atual 543
+  - Constraints:      manifesto 631 | atual 631
+  - Indexes:          manifesto 683 | atual 667 (16 a menos pelo padrão analisado)
+  - RLS habilitado:   manifesto 237 | atual 226 (11 tabelas sem ENABLE RLS)
+
+  Tabelas atuais SEM `ENABLE ROW LEVEL SECURITY` no arquivo:
+    _hml_seed_checkpoint
+    automacoes_gatilhos
+    automacoes_gatilhos_execucao
+    automacoes_instrucoes
+    automacoes_regras_operacao
+    escala_operacional
+    fin_sane_02b_snapshot
+    fiscal_xml_recebidos
+    ia_custos_ia
+    motorista_app_sessoes
+    motorista_checkins
+
+  Não há evidência documental de que essas 11 exclusões sejam intencionais.
+  Também não há evidência de que os 16 índices a menos sejam intencionais.
+
+4.3 Relatório ENV-QA-04
+  - Afirma que o hash 4b384522 foi aplicado com sucesso no `supabase-db-qa`.
+  - As contagens do relatório (221 tabelas, 13 views, 184 functions, 866 indexes)
+    NÃO coincidem com o manifesto (237/24/135/683) nem com o arquivo atual
+    (237/24/135/667).
+  - Isso indica que o relatório, o manifesto e o arquivo atual não descrevem
+    exatamente o mesmo artefato/estado.
+  - O container `supabase-db-qa` está exited; não foi iniciado nem inspecionado
+    por dentro nesta missão. O volume anônimo existe (~166 kB) e foi preservado.
+
+----------------------------------------------------------------------------------------------------
+5. ORIGEM — COMPROVADA OU NÃO
+----------------------------------------------------------------------------------------------------
+Não comprovada.
+  - O arquivo atual é o único artefato de baseline completo presente no repositório.
+  - O artefato esperado pelo manifesto (4b384522 / 812.613) NÃO foi localizado
+    em cópia, commit, blob Git ou arquivo de backup.
+  - O histórico Git não tem versão anterior do baseline.
+  - O relatório ENV-QA-04 confirma que o hash esperado foi usado no passado,
+    mas não prova que o arquivo atual seja uma versão posterior legítima.
+  - A divergência de contagens (RLS/indexes) reforça que não se trata apenas de
+    uma diferença de line ending.
+
+Não é possível classificar com segurança como:
+  A) versão posterior legítima;
+  B) alteração não documentada;
+  C) versão inconsistente/corrompida.
+As evidências apontam para uma inconsistência entre manifesto e arquivo,
+mas não permitem escolher uma versão por suposição.
+
+----------------------------------------------------------------------------------------------------
+6. DECISÃO
+----------------------------------------------------------------------------------------------------
+DECISÃO: BLOQUEADO — BASELINE NÃO CERTIFICADO.
+
+  - Não foi declarado BASELINE VALIDADO.
+  - Nenhuma versão foi escolhida por suposição.
+  - O baseline atual NÃO deve ser aplicado no QA local.
+  - O manifesto original NÃO deve ser alterado.
+  - O arquivo atual NÃO deve ser regenerado/sobrescrito nesta missão.
+  - O `supabase-db-qa` e seu volume NÃO devem ser usados como fonte sem
+    autorização específica.
+
+----------------------------------------------------------------------------------------------------
+7. PRÓXIMA AÇÃO EXATA
+----------------------------------------------------------------------------------------------------
+1. Preservar o baseline atual e o manifesto como estão.
+2. Obter autorização para uma das opções:
+   A) localizar o artefato original 4b384522 em backup/artefato externo e
+      comprovar seu hash; ou
+   B) realizar uma nova extração read-only do schema live com autorização
+      específica, gerando um novo baseline e um novo manifesto; ou
+   C) autorizar a inspeção controlada do volume/container `supabase-db-qa`
+      para verificar se ele contém o schema do hash esperado.
+3. Se a opção B for escolhida, a extração deve ser read-only e não pode executar
+   DDL/DML em produção; o novo arquivo deve ser validado por hash e contagens.
+4. Somente depois de um artefato certificado, aplicar no QA local isolado.
+5. Não iniciar Supabase nem aplicar migrations até essa certificação.
+
+Comando de verificação seguro que poderá ser usado após obter o artefato
+esperado (não executado agora):
+  Get-FileHash <arquivo> -Algorithm SHA256
+  # deve retornar 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  # tamanho deve ser 812.613 bytes e 17.373 linhas
+
+----------------------------------------------------------------------------------------------------
+8. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota.
+  - Nenhuma migration.
+  - Nenhum start local/container.
+  - Nenhum deploy.
+  - Nenhum secret.
+  - Nenhum acesso ao APP.
+  - Nenhum container/volume alterado.
+  - Baseline/manifesto/config/cliente/migrations preservados.
+  - Nenhuma versão do baseline foi escolhida sem evidência.
+  - Nenhuma homologação declarada.
+
+RESULTADO FINAL: BLOQUEADO — BASELINE NÃO CERTIFICADO.
+NÃO APLICAR O BASELINE ATUAL. PRÓXIMA DECISÃO: LOCALIZAR O ARTEFATO 4b384522
+OU AUTORIZAR NOVA EXTRAÇÃO READ-ONLY.
+
+====================================================================================================

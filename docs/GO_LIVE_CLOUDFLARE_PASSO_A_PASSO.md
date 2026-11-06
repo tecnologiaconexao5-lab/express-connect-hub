@@ -11,8 +11,8 @@ No Cloudflare Dashboard → DNS → Records, adicionar:
 
 | Tipo | Nome | Valor | Proxy |
 |:----:|:----:|-------|:-----:|
-| CNAME | `tms` | `express-connect-hub.vercel.app` | ☁️ Laranja |
-| CNAME | `portal` | `express-connect-hub.vercel.app` | ☁️ Laranja |
+| CNAME | `tms` | `app.conexaoexpress.com.br` | ☁️ Laranja |
+| CNAME | `portal` | `app.conexaoexpress.com.br` | ☁️ Laranja |
 
 > Sempre usar proxy laranja (☁️) para proteger IP real e habilitar WAF/SSL.
 

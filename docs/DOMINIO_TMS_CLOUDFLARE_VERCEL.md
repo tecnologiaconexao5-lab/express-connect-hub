@@ -16,9 +16,9 @@ Usuário → https://tms.conexaoexpress.com.br
 
 | Registro | Tipo | Valor | Proxy | Função |
 |----------|------|-------|:-----:|--------|
-| `tms` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Frontend TMS |
-| `portal` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Portal Cliente (mesma SPA) |
-| `www` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Redirect opcional para tms |
+| `tms` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Frontend TMS |
+| `portal` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Portal Cliente (mesma SPA) |
+| `www` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Redirect opcional para tms |
 
 ## Configuração no Vercel
 
@@ -26,7 +26,7 @@ No dashboard Vercel:
 1. Project → Settings → Domains
 2. Adicionar `tms.conexaoexpress.com.br`
 3. Vercel exibe o valor CNAME esperado (tipicamente `cname.vercel-dns.com`)
-4. Apontar CNAME no Cloudflare para `express-connect-hub.vercel.app`
+4. Apontar CNAME no Cloudflare para `app.conexaoexpress.com.br`
 5. Vercel verifica automaticamente e emite SSL
 
 ## SSL/TLS no Cloudflare

@@ -664,19 +664,118 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       setDocUploadProgress(prev => ({ ...prev, [tipoDocumento]: true }));
       setIsUploading(true);
 
-      const { documento, urlAssinada } = await enviarDocumentoOperacionalPrestador({
-        file,
-        prestadorId,
-        tipo: tipoDocumento,
-        nome: file.name,
-      });
+      const extensaoBruta = String(file.name.split(".").pop() || "").toLowerCase();
+      const extensao = /^(pdf|jpg|jpeg|png|webp)$/.test(extensaoBruta)
+        ? extensaoBruta
+        : file.type === "application/pdf"
+          ? "pdf"
+          : file.type === "image/png"
+            ? "png"
+            : file.type === "image/webp"
+              ? "webp"
+              : "jpg";
+      const tipoSeguro = tipoDocumento.replace(/\s+/g, "_").replace(/[^\w-]/g, "");
+      const caminho = `doc_${prestadorId}_${tipoSeguro}_${Date.now()}.${extensao}`;
 
-      setDocumentosMetadata(prev => [documento, ...prev]);
+      const { data: upload, error: uploadError } = await supabase.storage
+        .from(BUCKET_PRESTADORES)
+        .upload(caminho, file, { upsert: true, contentType: file.type || undefined });
+      if (uploadError || !upload?.path) {
+        throw new Error(uploadError?.message || `Falha no upload do ${tipoDocumento}.`);
+      }
+      const referencia = `${BUCKET_PRESTADORES}/${upload.path}`;
+      const agoraIso = new Date().toISOString();
+
+      // Registro explícito na tabela legada (select → update/insert)
+      const existente = await supabase
+        .from("documentos_prestadores")
+        .select("id")
+        .eq("prestador_id", prestadorId)
+        .eq("tipo", tipoDocumento)
+        .maybeSingle();
+      if (existente.error) {
+        console.warn("[Documentos] Falha ao consultar registro legado:", existente.error.message);
+      }
+
+      if (existente.data?.id) {
+        const atualizado = await supabase
+          .from("documentos_prestadores")
+          .update({ url: referencia, status: "em_analise", updated_at: agoraIso })
+          .eq("id", existente.data.id)
+          .select("id")
+          .maybeSingle();
+        if (atualizado.error) {
+          throw new Error(`Falha ao registrar o documento: ${atualizado.error.message}`);
+        }
+      } else {
+        const inserido = await supabase
+          .from("documentos_prestadores")
+          .insert({
+            prestador_id: prestadorId,
+            tipo: tipoDocumento,
+            url: referencia,
+            status: "em_analise",
+            created_at: agoraIso,
+          })
+          .select("id")
+          .maybeSingle();
+        if (inserido.error) {
+          throw new Error(`Falha ao registrar o documento: ${inserido.error.message}`);
+        }
+      }
+
+      // Metadados na Central (best-effort: o trigger trg_documentos_prestadores_metadata
+      // espelha a tabela legada com ON CONFLICT DO NOTHING se este insert falhar)
+      const { data: metaCriado, error: metaError } = await supabase
+        .from("documentos_metadata")
+        .insert([
+          {
+            url: referencia,
+            nome: file.name,
+            tipo: tipoDocumento,
+            modulo_origem: "prestadores",
+            entidade_id: prestadorId,
+            entidade_nome: p.nomeFantasia || p.nomeCompleto || null,
+            status_ia: "pendente",
+            relatorio_ia: null,
+            data_inclusao: agoraIso,
+            categoria: "Recrutamento",
+            departamento: "Operações",
+            responsavel: "TMS",
+            descricao: `Documento enviado pelo detalhe do prestador (${tipoDocumento}).`,
+            mime_type: file.type || null,
+            tamanho_bytes: file.size,
+            versao: 1,
+            documento_pai_id: null,
+            ativo: true,
+            historico: [
+              {
+                id: crypto.randomUUID?.() || `evt_${Date.now()}`,
+                tipo: "criacao",
+                descricao: `Upload de ${tipoDocumento}.`,
+                data: agoraIso,
+                usuario: "TMS",
+              },
+            ],
+          },
+        ])
+        .select("*")
+        .single();
+      if (metaError) {
+        console.warn("[Documentos] Metadado não gravado (best-effort):", metaError.message);
+      } else if (metaCriado) {
+        setDocumentosMetadata(prev => [
+          metaCriado as unknown as DocumentoMetadata,
+          ...prev,
+        ]);
+      }
+
+      const urlAssinada = await resolverUrlDocumento(referencia, { prestadorId });
       const novoDocumento = {
         tipo: tipoDocumento,
         url: urlAssinada ?? undefined,
-        status: statusIAParaStatusDocumento(documento.status_ia),
-        dataEnvio: documento.data_inclusao,
+        status: "em_analise" as const,
+        dataEnvio: agoraIso,
       };
       setP(prev => {
         const atuais = prev.documentos || [];
@@ -1635,7 +1734,11 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium">{tipo}</span>
-                        {documentosPendentes.some(d => d.tipo === tipo) ? (
+                        {docUploadProgress[tipo] ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700 animate-pulse">
+                            Enviando...
+                          </span>
+                        ) : documentosPendentes.some(d => d.tipo === tipo) ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
                             Anexado (Aguardando Salvar)
                           </span>

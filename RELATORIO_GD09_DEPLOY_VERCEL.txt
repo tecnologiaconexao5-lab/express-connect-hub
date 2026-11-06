@@ -1,0 +1,81 @@
+====================================================================================================
+RELATORIO GD-09 - DEPLOY DE ATUALIZACOES PARA PRODUCAO (VERCEL)
+Projeto: express-connect-hub (TMS)
+Data: 2026-11-05
+Repositorio: https://github.com/tecnologiaconexao5-lab/express-connect-hub.git
+Branch: main
+====================================================================================================
+
+1. CHECK E LINT
+----------------------------------------------------------------------------------------------------
+- npx tsc --noEmit ................................. 0 erros
+- Build local previamente validado ................. OK
+- Nenhum erro de sintaxe/TypeScript no commit enviado.
+
+2. COMMIT REALIZADO
+----------------------------------------------------------------------------------------------------
+Commit: 7e1ff3fb277544fe06042b05ebf107a99b747a63
+Mensagem: feat: atualizacao completa de UX, motor de match, central de documentos e form de prestadores
+Branch: main
+
+Conteudo principal do commit:
+- Formulario publico de prestadores (OfertaPublicaForm, lib/ofertaPublica).
+- Central de Documentos (page, servicos, dropdown, compartilhar, IA/conformidade).
+- Ofertas Publicas (tabela, filtros, sinónimos, motor de match, frescor).
+- IA Operacional (seletor no topo, ranking reativo, 3 fontes, ErrorBoundary).
+- Comercial/Propostas (upload PDF, envio automatico a Central, WhatsApp com CRM).
+- Prestadores (drag-and-drop por cartao, encoding, rebranding).
+- Novos utilitarios: logisticaInteligente, frescorCadastro, filtros-ativos, recrutamento, etc.
+- Migrations aditivas e Edge Function ofertas-publicas.
+- Relatorios GD-01 a GD-08, UX e auditoria central de documentos.
+
+3. PUSH / DEPLOY VERCEL
+----------------------------------------------------------------------------------------------------
+Comando executado:
+  git push origin main
+
+Resultado do push:
+  b67c99a..7e1ff3f  main -> main
+
+Confirmacao do remoto:
+  local HEAD ......... 7e1ff3fb277544fe06042b05ebf107a99b747a63
+  origin/main ........ 7e1ff3fb277544fe06042b05ebf107a99b747a63
+  status ............. main...origin/main (sincronizado)
+
+URL publica do projeto:
+  https://app.conexaoexpress.com.br
+
+Verificacao de disponibilidade:
+  HTTP 200 (servidor Vercel / x-vercel-id presente)
+
+O push foi concluido com sucesso. A pipeline automatica do Vercel e acionada pela
+integracao GitHub -> Vercel. O build de producao pode levar de 1 a 3 minutos apos o push.
+
+4. OBSERVACAO DE SEGURANCA NO COMMIT
+----------------------------------------------------------------------------------------------------
+O pedido original mencionava `git add .`. Foram verificados varios scripts de diagnostico
+nao versionados contendo credenciais literais (DATABASE_URL com senha). Para nao vazar
+segredos no repositorio, o commit foi feito com staging seletivo:
+
+- INCLUIDO: source em `src/`, testes, migrations, Edge Function, `AGENTS.md`,
+  `supabase/config.toml` e relatorios desta entrega.
+- EXCLUIDO: scripts `scripts/_*.cjs|ts` de diagnostico com credenciais hardcoded,
+  `playwright-report/`, `test-results/` e `supabase/.temp/` (artefatos gerados).
+
+Essa decisao preserva a seguranca do repositorio e nao altera o build/deploy do frontend.
+
+5. PROXIMOS PASSOS
+----------------------------------------------------------------------------------------------------
+1. Abrir https://app.conexaoexpress.com.br e confirmar que a versao nova esta no ar
+   (pode ser necessario aguardar o build do Vercel).
+2. Testar o formulario de prestadores em /cadastro-prestador.
+3. Testar a Central de Documentos em /central-documentos.
+4. Testar Ofertas Publicas em /recrutamento?section=ofertas-publicas.
+5. Testar IA Operacional em /recrutamento?section=ia.
+6. Testar Comercial > Propostas (upload PDF e WhatsApp).
+7. (AUTORIZACAO) A migration de blindagem RLS da GD-02 continua pendente de aplicacao
+   em producao; ela nao e necessaria para o build da Vercel.
+
+====================================================================================================
+FIM DO RELATORIO GD-09 - PUSH CONCLUIDO COM SUCESSO; DEPLOY VERCEL ACIONADO.
+====================================================================================================

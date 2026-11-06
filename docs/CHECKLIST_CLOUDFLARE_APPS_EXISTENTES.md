@@ -96,8 +96,8 @@ Necessário configurar:
 
 | App | Plataforma | URL | Cloudflare? |
 |-----|-----------|-----|-------------|
-| TMS (frontend) | Vercel | `express-connect-hub.vercel.app` | ⏳ Futuro proxy |
-| Portal Cliente | Vercel (mesmo SPA) | `express-connect-hub.vercel.app/portal-cliente` | ⏳ Futuro proxy |
+| TMS (frontend) | Vercel | `app.conexaoexpress.com.br` | ⏳ Futuro proxy |
+| Portal Cliente | Vercel (mesmo SPA) | `app.conexaoexpress.com.br/portal-cliente` | ⏳ Futuro proxy |
 | App Prestador (temporário) | Cloudflare Worker | `tight-truth-4707...workers.dev` | ✅ Sim |
 | App Prestador (oficial) | Cloudflare Pages | `prestador-app.pages.dev` | ✅ Sim |
 | App Motorista (DreamFlow) | Firebase? | `express-hub.web.app` | ❌ Firebase |

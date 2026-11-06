@@ -1,0 +1,33 @@
+﻿AMBIENTE_DETECTADO={"nome":"producao","ref":"uwrvzsjtpgaifkktpepn","url":"https://uwrvzsjtpgaifkktpepn.supabase.co","modo":"producao"}
+
+============================================================
+  TESTE E2E ÔÇö VERIFICACAO DE AMBIENTE
+============================================================
+  Ambiente  : PRODUCAO
+  Project   : uwrvzsjtpgaifkktpepn
+  URL       : https://uwrvzsjtpgaifkktpepn.supabase.co
+  Modo      : producao
+============================================================
+GUARD=BLOQUEOU
+
+============================================================
+  ­ƒÜ½ PRODUCAO DETECTADA.
+  ­ƒÜ½ EXECUCAO BLOQUEADA.
+
+  Testes E2E nao podem ser executados em producao.
+  Crie um ambiente de QA/desenvolvimento antes de testar.
+
+  Bypass via PLAYWRIGHT_QA removido (R6 fix).
+============================================================
+
+Ôùç injected env (7) from .env.qa // tip: Ôîÿ override existing { override: true }
+QA_HOST=aqpfayildtcnrkfeeyjg.supabase.co
+QA_RESOLVE=FALHOU:ENOTFOUND
+Ôùç injected env (23) from .env // tip: Ôùê encrypted .env [www.dotenvx.com]
+--- ESTADO READ-ONLY (antes da tentativa de QA) ---
+clientes_contratos={"total":1,"com_url":0}
+documentos_metadata={"total":30}
+reembolsos_prestador={"total":6,"com_url":2}
+storage_objetos_documentos_operacionais=0
+policies_clientes_contratos=[{"policyname":"cc_delete_access","cmd":"DELETE"},{"policyname":"cc_insert_access","cmd":"INSERT"},{"policyname":"cc_select_access","cmd":"SELECT"},{"policyname":"cc_update_access","cmd":"UPDATE"}]
+bucket_documentos_operacionais={"id":"documentos_operacionais","public":false}

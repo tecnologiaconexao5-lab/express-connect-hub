@@ -1,0 +1,298 @@
+====================================================================================================
+ADM-APP-02B.7 — PREPARAÇÃO DO RECRUTAMENTO EM QA LOCAL ISOLADO
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP PRESTADOR: NÃO ACESSADO
+PRODUÇÃO: SOMENTE LEITURA
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: PREPARAÇÃO / DIAGNÓSTICO READ-ONLY
+RESULTADO: DOCKER PARADO — QA LOCAL AINDA NÃO PODE SER INICIADO
+ZERO ESCRITAS REMOTAS / ZERO MIGRATIONS / ZERO DEPLOY / ZERO SECRETS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. LEITURA E PRESERVAÇÃO
+----------------------------------------------------------------------------------------------------
+Foram considerados os relatórios 02B.0 a 02B.6 e o estado atual do repositório.
+
+Preservados sem alteração:
+  - `/cadastro-prestador` e `OfertaPublicaForm`.
+  - `OfertaCaptcha` e configuração pública de CAPTCHA.
+  - Gestão de Ofertas Públicas (lista, busca, filtros, detalhe, comparação,
+    contato, disponibilidade, status, histórico e conversão).
+  - `src/lib/supabase.ts` — cliente de produção intocado.
+  - `supabase/config.toml` — não alterado.
+  - Migrations 02B.2 e 02B.3 — não alteradas.
+  - Edge `ofertas-publicas` — não publicada.
+  - Nenhum módulo Financeiro/Comercial/Clientes/APP alterado.
+  - Nenhuma estrutura de documentos/propostas duplicada.
+
+Não foram executados:
+  - `supabase start`, `supabase db start`, `supabase db reset`.
+  - Aplicação de baseline ou migrations.
+  - `supabase functions serve`, deploy ou secrets.
+  - Nenhuma escrita remota.
+  - Nenhum teste real de recebimento.
+
+----------------------------------------------------------------------------------------------------
+2. DOCKER — ESTADO REAL
+----------------------------------------------------------------------------------------------------
+  - Docker Client instalado: SIM.
+  - Versão do cliente: 29.4.1.
+  - Contexto: desktop-linux.
+  - Docker Desktop instalado em:
+      C:\Program Files\Docker\Docker\Docker Desktop.exe
+  - Serviço `com.docker.service`: STOPPED / Manual.
+  - `docker version`: falha ao conectar ao pipe:
+      npipe:////./pipe/dockerDesktopLinuxEngine
+  - `docker info`: daemon indisponível.
+  - Portanto, o Docker NÃO está operacional no momento.
+
+  Nenhum start automático foi feito, conforme a regra da missão.
+
+Comando necessário para o usuário iniciar o Docker (NÃO executado):
+  Start-Process -FilePath "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+  # aguardar o Docker Desktop terminar de iniciar
+  docker info
+
+----------------------------------------------------------------------------------------------------
+3. SUPABASE LOCAL — PODE SER INICIADO COM SEGURANÇA?
+----------------------------------------------------------------------------------------------------
+Ainda NÃO, sem preparação adicional:
+  - Docker daemon parado.
+  - `supabase/config.toml` tem:
+      * project_id local = "express-connect-hub";
+      * API local 54321;
+      * DB local 54322;
+      * Studio local 54323;
+      * Inbucket 54324;
+      * `[db.migrations] enabled = true`;
+      * `[db.seed] enabled = true`;
+      * `sql_paths = ["./seed.sql"]`;
+      * `[edge_runtime] enabled = true`, Deno 2.
+  - `supabase/seed.sql` NÃO existe. Um `db reset` que tente aplicar o seed falhará
+    ou avisará.
+  - `supabase start` pode aplicar migrations locais dependendo do estado do stack;
+    como o repositório tem 248 migrations e algumas contêm DML destrutivo/rollbacks
+    históricos, NÃO se deve rodar `supabase start` às cegas.
+  - `psql` NÃO está instalado no PATH. O CLI tem `supabase db query --local`, que
+    pode ser usado para aplicar arquivos SQL no banco local.
+
+Estado: NÃO iniciado / NÃO aplicado. O ambiente local precisa de uma preparação
+controlada, preferencialmente DB-only primeiro.
+
+----------------------------------------------------------------------------------------------------
+4. BASELINE EXISTENTE — É SUFICIENTE?
+----------------------------------------------------------------------------------------------------
+Arquivo:
+  supabase/baseline/full_production_schema_20260920.sql
+
+Estado atual:
+  - Existe: SIM.
+  - Tamanho atual: 829.480 bytes.
+  - Linhas: 17.372.
+  - SHA-256 atual: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F.
+  - Contém 1.141 ocorrências de CREATE TABLE/FUNCTION/POLICY/etc. (contagem bruta).
+  - Não contém COPY/INSERT/UPDATE/DELETE de dados de negócio (0 blocos de dados).
+
+DIVERGÊNCIA IMPORTANTE:
+  - O manifesto `BASELINE_MANIFEST_20260920.txt` registra:
+      Tamanho: 812.613 bytes
+      Linhas: 17.373
+      SHA-256: 4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  - O arquivo atual NÃO corresponde ao manifesto (tamanho e hash diferentes).
+  - Portanto o baseline atual deve ser verificado/regenerado antes de ser usado;
+    não deve ser tratado como artefato certificado sem nova conferência.
+
+Suficiência:
+  - Para o núcleo do Recrutamento: o baseline contém `tenants`, `tenant_usuarios`,
+    `recrutamento_candidatos`, `prestadores`, `documentos_prestadores`,
+    `candidato_documentos` e `orcamentos`.
+  - NÃO contém `documentos_metadata` nem o bucket/configuração
+    `documentos_operacionais` (migrations de 2026-11-02, posteriores ao snapshot
+    de 2026-09-20).
+  - NÃO contém `preferencias_operacionais` nem `respostas_situacionais` em
+    `recrutamento_candidatos`; a 02B.3 adiciona essas colunas.
+  - NÃO contém `recrutamento_candidatos.tenant_id`; a 02B.3 também adiciona.
+  - Conclusão: suficiente para o núcleo de ofertas/candidatos, mas NÃO suficiente
+    para a Central de Documentos atual. Para documentos, seria necessário aplicar
+    também as migrations 20261102000001 e 20261102000002 ou gerar baseline novo.
+
+----------------------------------------------------------------------------------------------------
+5. MIGRATIONS 02B.2 E 02B.3 — COMPATIBILIDADE E ORDEM
+----------------------------------------------------------------------------------------------------
+Arquivos locais:
+  20261103000002_adm_app_02b2_ofertas_publicas.sql
+  20261103000003_adm_app_02b3_gestao_ofertas.sql
+
+Ordem obrigatória:
+  02B.2 primeiro; 02B.3 depois.
+
+Dependências da 02B.2:
+  - `public.tenants` — presente no baseline.
+  - `public.tenant_usuarios` — presente no baseline.
+  - `public.recrutamento_candidatos` — presente no baseline.
+  - `public.current_tenant_id_safe()` — presente no baseline.
+  - `auth.uid()`, `gen_random_uuid()`, `hashtextextended()` — ambiente Supabase local.
+  - `recrutamento_candidatos.oferta_id` é criado pela própria 02B.2.
+
+Dependências da 02B.3:
+  - Objetos criados pela 02B.2: `recrutamento_ofertas`,
+    `recrutamento_oferta_identificadores`, `recrutamento_oferta_eventos`.
+  - `recrutamento_candidatos` com `oferta_id` criado pela 02B.2.
+  - `tenant_id`, `preferencias_operacionais` e `respostas_situacionais` são
+    adicionados de forma idempotente pela própria 02B.3.
+  - `documentos`, `historico`, `questionario_respostas`, `status_documental`,
+    `data_entrada` e `data_atualizacao` existem no baseline.
+
+Conclusão de compatibilidade:
+  - Compatibilidade estática: OK para o núcleo do Recrutamento, na ordem 02B.2 → 02B.3.
+  - Não houve execução real em banco local; portanto não há prova de runtime.
+  - O baseline precisa ser validado antes; o checksum divergente impede tratá-lo
+    como certificado.
+  - Se a Central de Documentos for necessária no mesmo QA, aplicar também as
+    migrations 20261102000001 e 20261102000002.
+
+----------------------------------------------------------------------------------------------------
+6. COMO TESTAR FORMULÁRIO, EDGE E GESTÃO NO LOCAL
+----------------------------------------------------------------------------------------------------
+6.1 Banco local
+  - Iniciar Docker Desktop manualmente (comando da seção 2).
+  - Preferir `supabase db start` para subir somente o Postgres local e evitar
+    aplicação automática de migrations.
+  - Confirmar que o alvo é local antes de qualquer SQL:
+      supabase db query --local "select current_database(), current_user;"
+  - Aplicar baseline/estruturas via CLI local:
+      supabase db query --local -f supabase/baseline/full_production_schema_20260920.sql
+  - Somente depois:
+      supabase db query --local -f supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+      supabase db query --local -f supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+  - Para documentos:
+      supabase db query --local -f supabase/migrations/20261102000001_documentos_operacionais_metadata.sql
+      supabase db query --local -f supabase/migrations/20261102000002_documentos_central_avancada.sql
+  - Não usar `--linked`, `--project-ref` ou `db push` nesta preparação.
+
+6.2 Edge local
+  - `supabase functions serve ofertas-publicas --no-verify-jwt --env-file <arquivo-local>`.
+  - O arquivo local deve conter apenas valores locais:
+      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY local, OFERTAS_PUBLICAS_TENANT_ID
+      sintético, OFERTAS_PUBLICAS_ALLOWED_ORIGINS local,
+      OFERTAS_PUBLICAS_IP_SALT local.
+  - CAPTCHA pode ficar desativado no local, ou usar chave de teste; não usar
+    secrets de produção.
+  - A Edge local precisa que o stack local esteja ativo. Se for necessário
+    `supabase start`, usar uma configuração local temporária com
+    `[db.migrations] enabled=false` e `[db.seed] enabled=false` para não aplicar
+    as 248 migrations/seed acidentalmente.
+
+6.3 Formulário e gestão de ofertas
+  - BLOQUEIO ATUAL: `src/lib/supabase.ts` tem URL/anon key de PRODUÇÃO
+    hardcoded e ignora `VITE_SUPABASE_URL`/`.env.qa`.
+  - Portanto, `npm run dev:qa` NÃO aponta o cliente para o QA local.
+  - Sem alterar esse cliente nesta missão, o frontend não pode ser testado contra
+    o banco local. O teste possível hoje é:
+      * banco local + Edge local via `curl`/testes de contrato;
+      * RPCs/RLS via SQL local.
+  - Ajuste futuro necessário (fora desta missão): permitir que o cliente Supabase
+    selecione URL/chave por ambiente, com guard que rejeite produção no modo QA.
+  - Não alterar `src/lib/supabase.ts` agora.
+
+----------------------------------------------------------------------------------------------------
+7. DOCUMENTOS — COMO O RECRUTAMENTO PODE REUTILIZAR
+----------------------------------------------------------------------------------------------------
+Estruturas existentes a preservar:
+  - `documentos_metadata` + bucket `documentos_operacionais`
+      * Tabela genérica com `modulo_origem`, `entidade_id`, `categoria`,
+        `departamento`, `cliente_id`, `responsavel`, `versao`,
+        `documento_pai_id`, `status_ia`, `relatorio_ia`, `historico`, `ativo`.
+      * Serviço `documentosMetadataService` e storage `documentoStorageService`.
+      * UI `CentralDocumentos` e componentes de ações/histórico/versão.
+  - `candidato_documentos` — legado do Recrutamento; preservar.
+  - `documentos_prestadores` — fonte canônica operacional legada; preservar.
+  - `documentos_prestadores` e `candidato_documentos` já se relacionam com
+    candidatos/prestadores; não criar tabela paralela.
+
+Reuso recomendado:
+  - Usar `documentos_metadata` com `modulo_origem = 'recrutamento'` e
+    `entidade_id = candidato_id` (ou entidade equivalente), mantendo
+    `documentos_operacionais` como bucket privado e URLs assinadas.
+  - Não criar módulo/tabela duplicada.
+  - Antes de reutilizar em produção, revisar políticas: a migration atual de
+    `documentos_metadata` usa `USING(true)` para authenticated; para o
+    Recrutamento, é necessário escopo por tenant/entidade e permissões
+    apropriadas. Nenhuma policy foi alterada nesta missão.
+
+Propostas:
+  - `orcamentos` é a estrutura real persistente de propostas/orçamentos.
+  - `propostaService` não é camada de persistência de propostas; ele gera
+    estimativa e, na conversão, grava `ordens_servico`/`crm_leads`.
+  - `ListaPropostas` usa `mockPropostas`/estado local; NÃO é armazenamento real.
+  - Não há tabela de propostas específica de Recrutamento. Nenhum módulo novo
+    foi criado.
+
+----------------------------------------------------------------------------------------------------
+8. RESUMO DO ESTADO
+----------------------------------------------------------------------------------------------------
+  - Docker disponível: SIM (cliente), mas daemon parado.
+  - Supabase local iniciável com segurança agora: NÃO.
+  - Baseline existente: SIM, mas com divergência de checksum/tamanho; não
+    certificado; não inclui documentos atuais.
+  - Migrations 02B.2/02B.3: estruturalmente compatíveis com o núcleo do baseline,
+    na ordem 02B.2 → 02B.3; sem prova de runtime.
+  - Formulário/gestão contra local: bloqueado pelo cliente hardcoded em PROD.
+  - Documentos: estruturas existentes identificadas; reuso futuro exige policy
+    de tenant/entidade; nada alterado.
+  - Propostas: `orcamentos` é a única estrutura persistente; `ListaPropostas`
+    é mock.
+  - Recebimento real homologado: NÃO.
+
+----------------------------------------------------------------------------------------------------
+9. COMANDOS EXATOS PARA DESBLOQUEAR (NÃO EXECUTADOS)
+----------------------------------------------------------------------------------------------------
+1) Iniciar Docker Desktop manualmente:
+     Start-Process -FilePath "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+     # aguardar
+     docker info
+
+2) Subir somente o banco local (evita migrations automáticas):
+     supabase db start
+
+3) Confirmar alvo local:
+     supabase db query --local "select current_database(), current_user;"
+     # deve retornar o banco local, nunca produção
+
+4) Aplicar baseline e migrations locais (somente após confirmação):
+     supabase db query --local -f supabase/baseline/full_production_schema_20260920.sql
+     supabase db query --local -f supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+     supabase db query --local -f supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+
+5) Para Edge local, se necessitar stack completo:
+     # usar uma cópia/temporária da config com db.migrations.enabled=false
+     # e db.seed.enabled=false antes de iniciar
+     supabase functions serve ofertas-publicas --no-verify-jwt --env-file <env-local>
+
+6) Só depois de autorização específica, tratar o switch de cliente por ambiente
+   para testar o frontend contra o local.
+
+----------------------------------------------------------------------------------------------------
+10. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL.
+  - Nenhuma migration aplicada, nem local nem remota.
+  - Nenhum `supabase start`/`db start`/`db reset` executado.
+  - Nenhuma Edge publicada.
+  - Nenhum secret criado/alterado.
+  - Nenhum projeto criado; nenhuma URL trocada; nenhum link alterado.
+  - Nenhum arquivo do APP acessado ou alterado.
+  - Nenhuma alteração fora do Recrutamento.
+  - Nenhuma estrutura de documentos/propostas duplicada.
+  - Produção foi apenas consultada/analisada, nunca escrita.
+  - Recebimento real NÃO foi declarado homologado.
+  - Contagem mantida: 02B.0–02B.4 implementação local; 02B.5–02B.6 diagnóstico;
+    02B.7 preparação local; nenhum avanço indevido para homologação.
+
+RESULTADO FINAL: DOCKER PARADO — QA LOCAL AINDA NÃO INICIADO.
+PRÓXIMA AÇÃO: iniciar Docker Desktop manualmente e autorizar `supabase db start`,
+seguido da validação local do baseline e das migrations.
+
+====================================================================================================

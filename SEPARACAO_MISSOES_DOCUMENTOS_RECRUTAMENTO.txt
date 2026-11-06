@@ -1,0 +1,116 @@
+====================================================================================================
+RELATORIO DE SEPARACAO DE MISSOES: AUDITORIA DOCUMENTOS E RECRUTAMENTO
+PROJETO TMS: Express Connect Hub (C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub)
+DATA: 2026-11-03 09:12 (BRT)
+OPERADOR: Antigravity AI
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. O QUE JA FOI EXECUTADO NESTA SESSAO
+----------------------------------------------------------------------------------------------------
+
+1.1 ARQUIVOS ANALISADOS (MODO ESTRITAMENTE LEITURA):
+
+A) Infraestrutura, Storage e Seguranca:
+- `src/services/storage/storageRefService.ts` (constante KNOWN_BUCKETS com 11 buckets e parser de refs).
+- `src/services/comprovantes/podMediaService.ts` (resolucao de midias com TTL 600s para driver-evidence).
+- `supabase/functions/documentos-ia/index.ts` (contrato estruturado de relatorio e motor deterministico simulado).
+- `supabase/functions/proxy-ia/index.ts` (orquestrador de secrets para Gemini, OpenAI, Anthropic e Groq).
+- `src/services/documentAnalysis.ts` (prompts de analise documental estruturada por tipo de documento).
+
+B) Central Inteligente de Documentos:
+- `src/pages/CentralDocumentos.tsx` (pagina com tabela universal, filtros combinados, paginacao e acoes).
+- `src/services/documentos/documentosMetadataService.ts` (servico de metadados, upload, signed URLs e historico).
+- `src/services/documentos/documentoStorageService.ts` (resolucao de URLs de documentos).
+- `src/components/documentos/DocumentoUploadUniversal.tsx` (dropzone desktop/mobile com camera nativa).
+- `src/components/documentos/DocumentoAcoesDropdown.tsx` (menu de acoes por documento).
+- `src/components/documentos/DocumentoIAReportModal.tsx` (modal com 5 blocos do relatorio IA e badges).
+- `src/components/documentos/DocumentoHistoricoModal.tsx` (timeline de eventos JSONB do documento).
+- `src/components/documentos/DocumentoCompartilharModal.tsx` (gerador e copiador de link seguro).
+- `src/components/documentos/DocumentoNovaVersaoDialog.tsx` (upload de nova versao com preservacao do pai).
+
+C) Documentos nos Demais Modulos:
+- `src/components/clientes/ClienteDetalhe.tsx` (auditoria do upload de contrato - anexo descartado sem storage).
+- `src/components/financeiro/ConferenciaFinanceira.tsx` (auditoria de comprovante de pedagio - link textual).
+- `src/components/operacao/PodLista.tsx` (auditoria de visualizacao de canhotos e fotos POD).
+- `src/components/fiscal/EmitenteFiscalConfig.tsx` (upload e armazenamento seguro de certificados A1 .pfx).
+- `src/components/prestadores/PrestadorDetalhe.tsx` (aba Documentacao do Prestador integrada a documentos_metadata).
+
+D) Recrutamento e Integracao Mobile:
+- `src/services/recrutamento/recrutamentoScoreService.ts` (verificacao do patch REC-06.2D.2F para estagios reais).
+- `src/modules/recrutamento/index.tsx` (estrutura de secoes e estados da tela `/recrutamento`).
+- `src/modules/recrutamento/components/enterprise-kanban/EnterpriseKanbanBoard.tsx` (Kanban de 17 estagios).
+- `src/modules/recrutamento/components/enterprise-kanban/DetalhesCandidatoPipelineSheet.tsx` (as 7 abas do Sheet).
+- `src/modules/recrutamento/services/conversaoCandidatoService.ts` (gate documental fail-closed).
+- `src/pages/AppPrestador.tsx` (analise da tela de simulacao e aba estatica de documentos).
+- `C:\src\conexao_prestador\lib\features\auth\register_screen.dart` (RPC app_s6_criar_prestador e upload).
+- `C:\src\conexao_prestador\lib\features\auth\auth_gate.dart` e `router.dart` (gate de liberado_app e status).
+- `C:\src\conexao_prestador\lib\core\repositories\driver_documents_repository.dart` (modelo DriverDocument).
+
+1.2 ARQUIVOS CRIADOS OU MODIFICADOS:
+- NENHUM arquivo de codigo, componente, servico ou estilo foi criado ou alterado.
+- NENHUM dado ou registro do banco foi alterado ou excluido.
+- Foi gerado apenas o relatorio consolidado anterior (`AUDITORIA_CENTRAL_DOCUMENTOS_RECRUTAMENTO.txt`).
+
+1.3 MIGRATIONS CONSULTADAS OU EXECUTADAS:
+- CONSULTADAS (Modo Leitura):
+  * `supabase/migrations/20260630000002_m44b_storage_buckets.sql` (criacao dos buckets legados).
+  * `supabase/migrations/20260928000000_adm_app_02d2_bucket_documentos_privado.sql` (privatizacao de documentos_prestadores).
+  * `supabase/migrations/20261102000001_documentos_operacionais_metadata.sql` (bucket documentos_operacionais, tabela documentos_metadata e trigger).
+  * `supabase/migrations/20261102000002_documentos_central_avancada.sql` (colunas categoria, versao, historico).
+- EXECUTADAS:
+  * NENHUMA migration foi criada ou executada. 0 alteracoes no schema do banco.
+
+1.4 TESTES REALIZADOS E RESULTADOS:
+- Execucao de testes unitarios de baseline puramente locais:
+  `npx vitest run src/test/central_documentos_avancada.test.ts src/test/recrutamento_detalhes_ux.test.ts`
+  Resultado: 2 arquivos de teste / 18 testes executados / 18 APROVADOS (100% PASS).
+  Nenhum teste de escrita ou homologacao em banco de producao foi executado.
+
+1.5 INVESTIGACOES CONCLUIDAS:
+- Mapeamento integral dos 11 buckets de storage, suas visibilidades (publico vs privado) e servicos responsaveis.
+- Identificacao do gap critico de upload fisico de contratos em `ClienteDetalhe.tsx` (gera blob local e descarta).
+- Identificacao do gap de comprovante de pedagio em `ConferenciaFinanceira.tsx` (apenas string URL).
+- Identificacao do estado da Edge Function `documentos-ia` (estrutura pronta, operando com motor simulado deterministico).
+- Confirmacao de que o checkpoint `REC-06.2D.2F` no Recrutamento ja esta implementado no backend.
+- Identificacao do gap na aba Documentos do Recrutamento (falta visualizador de arquivo real).
+
+1.6 INVESTIGACOES AINDA PENDENTES (A SEREM REALIZADAS NO NOVO ESCOPO):
+- Central Inteligente de Documentos:
+  * Auditoria profunda de politicas RLS granulares da tabela `documentos_metadata` por perfil de usuario.
+  * Levantamento da viabilidade de conexao direta da Edge Function `documentos-ia` com Google Gemini 1.5 Flash Vision.
+  * Mapeamento de todas as tabelas de anexos existentes nos modulos Operacional (OS) e Administrativo para unificacao sem quebra.
+
+----------------------------------------------------------------------------------------------------
+2. DEFINICAO DA ORDEM DE TRABALHO E CONFIRMACAO DE ESCOPO
+----------------------------------------------------------------------------------------------------
+
+ORDEM DE EXECUCAO APROVADA:
+
+ETAPA IMEDIATA: MISSÃO 1 — CENTRAL INTELIGENTE DE DOCUMENTOS
+- Escopo: Foco 100% exclusivo no modulo Central Inteligente de Documentos.
+- Regra: O modulo de Recrutamento NAO sera investigado, alterado ou tocado durante esta missao.
+- Objetivo: Fechar a auditoria detalhada de storage, upload/download, visualizacao, politicas RLS,
+  integracao dos modulos (Comercial, Clientes, Operacional, Financeiro, Administrativo) e motor de IA documental.
+- Sem alteracoes de codigo ou banco durante a fase de auditoria.
+
+ETAPA POSTERIOR: MISSÃO 2 — RECRUTAMENTO
+- Escopo: Iniciar a auditoria do modulo de Recrutamento SOMENTE apos o fechamento e registro completo da Missao 1.
+- Preservar integralmente o Kanban Enterprise existente, formulas de score e regras de negocio.
+
+----------------------------------------------------------------------------------------------------
+3. CONTAGEM REGRESSIVA OFICIAL PRESERVADA
+----------------------------------------------------------------------------------------------------
+9 → 🟢 FECHADO
+8 → 🟢 FECHADO — APP/TMS E2E físico e técnico
+7 → 🟡 ATUAL — Admin APP + Cadastro Prestador + Recrutamento (MANTIDO NESTA SESSAO)
+6 → ⬜ CAD-PERSIST + integridade
+5 → ⬜ Fechamento Financeiro
+4 → ⬜ Comercial / Orçamento
+3 → ⬜ Fechamento TMS
+2 → ⬜ E2E completo integrado
+1 → ⬜ Master 360 / Gate Produção
+0 → 🏁 HOMOLOGADO
+====================================================================================================
+FIM DO RELATORIO DE SEPARACAO DE MISSOES
+====================================================================================================

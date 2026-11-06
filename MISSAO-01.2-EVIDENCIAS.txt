@@ -1,0 +1,139 @@
+================================================================================
+MISSÃO 1.2 — EVIDÊNCIAS DE DIAGNÓSTICO DO AMBIENTE QA
+READ-ONLY: nenhuma escrita em produção, nenhuma migration, nenhum recurso criado
+Data: 2026-11-03
+================================================================================
+
+1. ARQUIVOS DE AMBIENTE (chaves e tamanho; valores secretos omitidos)
+--------------------------------------------------------------------------------
+.env:
+  VITE_SUPABASE_URL ................ len=40
+  VITE_SUPABASE_ANON_KEY ........... len=208
+  SUPABASE_SERVICE_ROLE_KEY ........ len=0 (vazio)
+  VITE_SUPABASE_PROJECT_ID ......... len=0 (vazio)
+  DATABASE_URL ..................... len=121
+  E2E_LIVE_EMAIL ................... len=21
+  E2E_LIVE_PASSWORD ................ len=9
+
+.env.qa:
+  ENVIRONMENT ...................... len=2 (qa)
+  VITE_SUPABASE_URL ................ len=40
+  VITE_SUPABASE_ANON_KEY ........... len=208
+  SUPABASE_QA_PROJECT_REF .......... len=20
+  SUPABASE_QA_DB_PASSWORD .......... len=15
+  SUPABASE_SERVICE_ROLE_KEY ........ len=219
+  DATABASE_URL ..................... len=108
+
+.env.qa.example (modelo):
+  VITE_SUPABASE_URL ................ len=37
+  VITE_SUPABASE_ANON_KEY ........... len=24 (placeholder)
+  ENVIRONMENT ...................... len=2
+  NODE_ENV ......................... len=2
+  PLAYWRIGHT_BASE_URL .............. len=21
+  PLAYWRIGHT_TAMIRIS_PASSWORD ...... len=16 (placeholder)
+  PLAYWRIGHT_FINANCEIRO_PASSWORD ... len=21 (placeholder)
+  PLAYWRIGHT_COMERCIAL_PASSWORD .... len=20 (placeholder)
+  PLAYWRIGHT_OPERACIONAL_PASSWORD .. len=22 (placeholder)
+  PLAYWRIGHT_ATENDIMENTO_PASSWORD .. len=22 (placeholder)
+
+.gitignore:
+  Ignora .env, .env.local, .env.*.local, .env.* (exceto .env.example).
+  .env.qa é ignorado pelo Git (não versionado) — bom para segredos.
+  .env.qa.example também é ignorado pela regra .env.* e NÃO está no git
+  (git ls-files ".env*" => apenas .env.example).
+
+2. PROJETOS SUPABASE
+--------------------------------------------------------------------------------
+PRODUÇÃO:
+  ref = uwrvzsjtpgaifkktpepn
+  URL = https://uwrvzsjtpgaifkktpepn.supabase.co
+  DNS = RESOLVE (host ativo)
+
+QA:
+  ref = aqpfayildtcnrkfeeyjg
+  URL = https://aqpfayildtcnrkfeeyjg.supabase.co
+  DNS = ENOTFOUND
+  DATABASE_URL (host) = aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+  (o pooler resolve, mas o usuário postgres.<QA_REF> pertence a um projeto inexistente)
+  Supabase CLI .temp/project-ref = uwrvzsjtpgaifkktpepn (PRODUÇÃO)
+  .temp/linked-project.json = projeto "conexao-express-tms" (PRODUÇÃO)
+
+3. GUARD OFICIAL DO PLAYWRIGHT (execução read-only)
+--------------------------------------------------------------------------------
+Com .env (produção):
+  AMBIENTE_DETECTADO={"nome":"producao","ref":"uwrvzsjtpgaifkktpepn",
+                     "url":"https://uwrvzsjtpgaifkktpepn.supabase.co","modo":"producao"}
+  GUARD=BLOQUEOU
+  "PRODUCAO DETECTADA. EXECUCAO BLOQUEADA."
+
+Com .env.qa (script check-ambiente.cjs qa):
+  ENVIRONMENT=qa
+  Project Ref=aqpfayildtcnrkfeeyjg
+  Ambiente=QA
+  "Ambiente OK para execucao."
+  OBS: o guard NÃO testa DNS/conectividade. Ele aprova o QA mesmo com o host
+       inexistente (ENOTFOUND). É um falso positivo de segurança.
+
+Com node scripts/check-ambiente.cjs (sem argumento):
+  AMBIENTE=PRODUCAO
+  Apenas aviso "ATENCAO: AMBIENTE DE PRODUCAO DETECTADO" e "Ambiente OK".
+  (não falha; usado apenas como informativo)
+
+4. DOCKER / SUPABASE CLI / PORTAS
+--------------------------------------------------------------------------------
+Docker version ......... 29.4.1 (instalado)
+Docker service ......... com.docker.service = Stopped (Manual)
+Docker engine .......... inacessível: npipe:////./pipe/dockerDesktopLinuxEngine
+Supabase CLI ........... 2.117.0
+Portas 54321/54322/54323/54324/8800 = LIVRES
+
+5. BASELINE E MIGRATIONS
+--------------------------------------------------------------------------------
+Baseline: supabase/baseline/full_production_schema_20260920.sql
+  Manifest (BASELINE_MANIFEST): bytes=812.613 | sha256=4b384522c336038417334806f610f810775a85c2414cb12cff8060505ae6449f
+  Arquivo atual:                bytes=829.480 | sha256=82bcd0fcfda2b3533542d462eb0c4a7a2b08b1016bb795145cab52492c430b4f
+  => DIVERGÊNCIA de bytes e checksum em relação ao manifesto.
+  Contém: 237 tabelas, 543 policies, funções críticas, clientes_contratos (tabela)
+  NÃO contém: schema storage/buckets, documentos_metadata, policies de clientes_contratos.
+
+Migrations locais: 308 arquivos.
+Migrations posteriores ao baseline (>= 20260920): 73 arquivos.
+Mínimo adicional para os fluxos da MISSÃO 1.1:
+  - 20261102000001_documentos_operacionais_metadata.sql (bucket privado + tabela)
+  - 20261102000002_documentos_central_avancada.sql (campos/versões da Central)
+  - 20261103000001_missao01_clientes_contratos_rls.sql (4 policies de contratos)
+  - (avaliar) 20260928000000_adm_app_02d2_bucket_documentos_privado.sql
+
+6. SCRIPTS QA EXISTENTES
+--------------------------------------------------------------------------------
+scripts/qa/extract_baseline.ts
+scripts/qa/extract_schema.ts
+scripts/qa/inspect_baseline.ts
+scripts/qa/apply_baseline_to_qa.ts  -> aceita APENAS host localhost/127.0.0.1
+scripts/qa/assert-qa-environment.ts -> bloqueia ref de produção
+scripts/qa/seed_rls_test_data.sql   -> tenant/usuários sintéticos/cliente/prestadores/
+                                       OS/títulos/pagamentos (NÃO inclui auth.users,
+                                       NÃO inclui alocacoes_escala de conferência,
+                                       NÃO inclui contratos/documentos/buckets).
+
+7. RISCO CRÍTICO IDENTIFICADO NO CAMINHO playwright:qa
+--------------------------------------------------------------------------------
+package.json:
+  "playwright:qa": "node scripts/check-ambiente.cjs qa && playwright test"
+  1) check-ambiente.cjs carrega .env + .env.qa apenas no SEU processo e sai com OK.
+  2) Os envs NÃO são exportados para o processo seguinte (&& não exporta variáveis).
+  3) playwright.config.ts NÃO carrega dotenv; globalSetup lê process.env.
+  4) Sem VITE_SUPABASE_URL/ENVIRONMENT no processo, detectarAmbiente() retorna
+     "desconhecido" (não "producao") e o guard PERMITE.
+  5) O webServer do playwright.config.ts executa "npm run dev" (mode development),
+     que carrega o .env base (PRODUÇÃO) no Vite.
+  6) reuseExistingServer: !CI pode até reutilizar um dev server já em produção.
+  => O comando playwright:qa pode executar a UI contra PRODUÇÃO. NÃO EXECUTAR.
+
+8. CONCLUSÃO EVIDENCIADA
+--------------------------------------------------------------------------------
+CAUSA DO BLOQUEIO = projeto QA na nuvem inexistente (DNS ENOTFOUND), somado ao
+guard do Playwright que impede execução em produção e ao caminho playwright:qa
+inseguro (falso positivo). QA local está bloqueado pelo Docker Engine parado.
+Nenhuma escrita em produção foi realizada nesta missão.
+================================================================================

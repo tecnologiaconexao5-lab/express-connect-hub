@@ -1,0 +1,116 @@
+====================================================================================================
+MISSÃO 02B.9 — REVISÃO FINAL LOCAL DO RECRUTAMENTO
+DATA: 2026-11-04
+AMBIENTE: http://localhost:8800
+RESULTADO: NAVEGAÇÃO, BUILD E TESTES OK; SEM PUBLICAÇÃO
+====================================================================================================
+
+1. TELAS VALIDADAS
+----------------------------------------------------------------------------------------------------
+  Foram abertas diretamente por seção:
+    - Dashboard;
+    - Operações;
+    - Pipeline 17 Etapas / Candidatos;
+    - Prestadores;
+    - Banco de Talentos;
+    - Ofertas Públicas;
+    - CRM;
+    - Documentos;
+    - IA Operacional;
+    - Automações;
+    - Portal do Prestador;
+    - Operacionais;
+    - Nova Operação.
+
+  Em todas:
+    - a tela abriu;
+    - o header do Recrutamento permaneceu renderizado;
+    - o botão "Cadastro Público de Prestadores" permaneceu visível;
+    - não houve exceção de página/React que impedisse a tela.
+
+  O menu do novo acesso foi aberto e continha:
+    - Abrir cadastro público;
+    - Copiar link;
+    - Compartilhar no WhatsApp.
+
+  Teste de ação já validado na 02B.8:
+    - link copiado para o clipboard;
+    - WhatsApp com mensagem e link;
+    - abertura do cadastro público local.
+
+2. CONSOLE
+----------------------------------------------------------------------------------------------------
+  Foram observadas respostas de rede preexistentes, não originadas pela 02B.8:
+    - 401 em `recrutamento_automacoes`;
+    - 400 em consultas de `prestadores`;
+    - 404 em `documento_analises`;
+    - aviso React de ref em componente do Kanban.
+
+  Não houve erro de execução da nova ação.
+  O componente novo não faz chamada de rede ao renderizar; só executa ação
+  quando o usuário clica em abrir/copiar/WhatsApp.
+
+3. DIFF — ARQUIVOS DA 02B.8
+----------------------------------------------------------------------------------------------------
+  Novos:
+    ?? src/modules/recrutamento/components/CadastroPublicoAcoes.tsx
+
+  Modificados:
+     M src/lib/ofertaPublica.ts
+     M src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+     M src/modules/recrutamento/layouts/RecrutamentoLayout.tsx
+
+  Alterações:
+    - helper `mensagemConviteOfertas` centralizado;
+    - Ofertas Públicas passa a usar o helper;
+    - header do Recrutamento importa e renderiza `CadastroPublicoAcoes`;
+    - novo menu com abrir, copiar e WhatsApp.
+
+  Não há arquivos 02B.8 staged.
+  Nenhum commit/push foi feito.
+
+4. ALTERAÇÕES PREEXISTENTES QUE NÃO DEVEM ENTRAR NA PUBLICAÇÃO
+----------------------------------------------------------------------------------------------------
+  O worktree possui alterações de outros escopos, incluindo:
+    - AGENTS.md;
+    - src/components/clientes/ClienteDetalhe.tsx;
+    - src/components/financeiro/ConferenciaFinanceira.tsx;
+    - src/services/documentos/documentosMetadataService.ts;
+    - src/services/operacao/reembolsoPedagioService.ts;
+    - supabase/config.toml;
+    - relatórios/test-results/playwright-report e outros artefatos.
+
+  Essas alterações NÃO fazem parte da 02B.8 e não devem ser publicadas sem
+  decisão separada.
+
+5. BUILD E TESTES
+----------------------------------------------------------------------------------------------------
+  npm run build:
+    SUCESSO — 1m10s.
+
+  Testes específicos do Recrutamento:
+    adm_app_02b1_oferta_publica_form.test.ts — 11/11
+    adm_app_02b3_gestao_ofertas.test.ts — 20/20
+    adm_app_02b4_fechamento_recrutamento.test.ts — 10/10
+    Total: 41/41.
+
+  ESLint dos arquivos envolvidos:
+    - 2 erros preexistentes de no-explicit-any em RecrutamentoLayout;
+    - nenhuma regressão nova no componente criado.
+
+6. IMPEDIMENTOS PARA PUBLICAÇÃO
+----------------------------------------------------------------------------------------------------
+  Não há impedimento técnico específico da 02B.8.
+  A publicação continua não autorizada nesta missão.
+
+  Antes do deploy, a decisão necessária é apenas autorizar a publicação do
+  conjunto 02B.8 e garantir que os arquivos de outros módulos não sejam
+  incluídos no commit.
+
+7. PRÓXIMA ETAPA
+----------------------------------------------------------------------------------------------------
+  Aguardar autorização expressa para publicação no Vercel.
+  Após autorização, revisar novamente o diff, publicar somente o frontend do
+  Recrutamento e repetir a validação da URL pública.
+
+====================================================================================================

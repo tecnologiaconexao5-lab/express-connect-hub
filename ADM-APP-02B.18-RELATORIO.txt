@@ -1,0 +1,235 @@
+====================================================================================================
+ADM-APP-02B.18 — IMPLANTAÇÃO CONTROLADA DO RECRUITMENT
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA: 2026-11-04
+RESULTADO: IMPLANTAÇÃO BLOQUEADA — QA ISOLADO INDISPONÍVEL
+NENHUMA MIGRATION APLICADA / NENHUMA EDGE PUBLICADA / NENHUMA ESCRITA EM PRODUÇÃO
+====================================================================================================
+
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+  A missão foi interrompida antes de qualquer alteração porque o único projeto
+  Supabase atualmente vinculado é PRODUÇÃO e o ambiente QA isolado não está
+  disponível/operacional.
+
+  Não foi aplicada nenhuma migration 02B.2 ou 02B.3.
+  Não foi publicada a Edge `ofertas-publicas`.
+  Não foi executado cadastro real de teste.
+  Não foi criada oferta, candidato ou qualquer outro dado.
+  Produção não foi alterada.
+
+2. ETAPA 1 — VERIFICAÇÃO DE SEGURANÇA
+----------------------------------------------------------------------------------------------------
+2.1 Projeto vinculado
+  - `supabase/.temp/linked-project.json`:
+      ref: uwrvzsjtpgaifkktpepn
+      name: conexao-express-tms
+  - Esse é o projeto de PRODUÇÃO, não um QA.
+  - Nenhum comando `--linked`, `db push`, `db reset`, `--project-ref` ou deploy
+    foi executado nesta missão.
+
+2.2 Identificação de QA
+  - QA remoto histórico: aqpfayildtcnrkfeeyjg.supabase.co
+  - Resolução DNS: NXDOMAIN — o nome não existe. O QA remoto está removido/
+    inacessível.
+  - QA local temporário da 02B.8:
+      C:\Users\DIEGOB~1\AppData\Local\Temp\express-connect-qa-02b8\supabase\config.toml
+      project_id: express-connect-recruit-qa-02b8
+      hash SHA-256: B541ABE40B789B4340D26B36A1486180A8260555A68938BC2E22DD7728C53A90
+      portas configuradas:
+        API: 55321
+        DB: 55322
+        shadow: 55320
+        Studio: 55323
+        Inbucket: 55324
+      migrations: disabled
+      seed: disabled
+      major_version: 17
+      ofertas-publicas: verify_jwt = false
+  - O arquivo de configuração está íntegro, mas o ambiente NÃO está em execução:
+      porta 55321: nenhum listener;
+      porta 55322: nenhum listener;
+      nenhum serviço Supabase/API/Edge local ativo.
+  - Container antigo `supabase-db-qa`:
+      status: exited (ExitCode 255);
+      imagem: postgres:15-alpine;
+      volume: 8ef1bf1c6ddb1d3268e35782f5068d2165cea7f1ab77384fe09ad431b2b7e8a2;
+      porta host: 54322;
+      possui somente banco, não é um Supabase completo (sem API/Kong/Edge).
+  - Conclusão: não existe QA isolado utilizável para aplicar migrations e
+    testar o endpoint real. Um arquivo de configuração parado e um container
+    Postgres parado não constituem ambiente de teste confiável.
+
+2.3 Containers preservados
+  - Nenhum container foi iniciado, parado, recriado ou modificado.
+  - `supabase-db-qa` continua exatamente como estava: exited.
+  - Containers de TMS/Connexão e volumes existentes não foram tocados.
+
+2.4 Estado dos objetos necessários
+  - Consulta ao baseline local atual:
+      supabase/baseline/full_production_schema_readonly_20261103.sql
+      SHA-256 confirmado:
+        236E5AD4899A18073CC56AB4651678D462D0A1A307CD9BE84A4CC8EF648A79B3
+  - Não existe `public.recrutamento_ofertas`.
+  - Não existem `public.recrutamento_oferta_identificadores`,
+    `public.recrutamento_oferta_eventos` ou
+    `public.recrutamento_oferta_rate_limit`.
+  - Não existe `recrutamento_candidatos.oferta_id`.
+  - Não existe `recrutamento_candidatos.tenant_id`.
+  - Não existe nenhuma das 10 funções do fluxo 02B.2/02B.3.
+  - Portanto, não há evidência de aplicação parcial das migrations.
+  - `recrutamento_candidatos` existe com as colunas antigas; `preferencias_operacionais`
+    e `respostas_situacionais` já existem no baseline.
+
+2.5 Hashes e conteúdo das migrations
+  - 02B.2:
+      arquivo: supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+      bytes: 35.928
+      linhas: 818
+      SHA-256: 050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+  - 02B.3:
+      arquivo: supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+      bytes: 24.337
+      linhas: 655
+      SHA-256: BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89
+  - Conteúdo conferido:
+      * 02B.2 cria 4 tabelas, adiciona `oferta_id`, 2 funções,
+        índices/trigger/policies/grants e rate limit;
+      * 02B.3 depende da 02B.2, adiciona `disponibilidade_interna`,
+        `recrutamento_candidatos.tenant_id`, compatibilidade de preferências/
+        respostas e 8 funções;
+      * a ordem obrigatória é 02B.2 e depois 02B.3.
+
+2.6 Edge Function
+  - Arquivos locais existem:
+      supabase/functions/ofertas-publicas/index.ts
+      supabase/functions/ofertas-publicas/validation.ts
+  - A função NÃO foi publicada em QA nem em produção.
+  - `supabase/config.toml` define `verify_jwt = false` para ela; o deploy deve
+    preservar essa configuração ou ser validado com JWT anon.
+  - Secrets obrigatórios ainda não estão configurados em nenhum ambiente QA
+    utilizável:
+      OFERTAS_PUBLICAS_TENANT_ID
+      OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+      OFERTAS_PUBLICAS_IP_SALT
+  - CAPTCHA permanece opcional; não foi exigido sem decisão operacional.
+  - Nenhum valor secreto foi lido, exibido ou gravado.
+
+3. ETAPA 2 — AMBIENTE DE TESTE
+----------------------------------------------------------------------------------------------------
+  Status: BLOQUEADO.
+
+  Motivo exato:
+    - Não há projeto QA Supabase ativo;
+    - O QA remoto histórico não resolve DNS;
+    - O QA local temporário não está iniciado;
+    - O container `supabase-db-qa` está parado e é somente PostgreSQL 15,
+      sem API/PostgREST/Edge de Supabase;
+    - O projeto vinculado é produção e não foi autorizado aplicar migrations
+      nele nesta missão.
+
+  Decisão: não iniciar um novo ambiente, não iniciar o container antigo, não
+  restaurar o baseline e não aplicar nada. Isso cumpre a regra de parar antes
+  de qualquer alteração quando não há ambiente seguro.
+
+4. ETAPA 3 — EDGE FUNCTION
+----------------------------------------------------------------------------------------------------
+  - A função existe localmente e está pronta para deploy.
+  - Não foi publicado nada porque não há QA autorizado.
+  - Não foi verificada a existência de secrets em produção.
+  - Nenhum secret foi criado/alterado.
+  - Para a próxima tentativa, o deploy deve ocorrer somente no QA e depois de
+    aplicar 02B.2/02B.3.
+
+5. ETAPA 4 — TESTE REAL
+----------------------------------------------------------------------------------------------------
+  NÃO EXECUTADO.
+
+  Nenhum dos itens abaixo foi produzido ou comprovado:
+    1. protocolo real;
+    2. registro em `recrutamento_ofertas`;
+    3. leitura pelo painel/consulta autenticada;
+    4. atualização de status/contato;
+    5. conversão em `recrutamento_candidatos`;
+    6. vínculo `oferta_id`;
+    7. ausência de prestador/Auth/liberado_app.
+
+  Não foi usado o frontend de QA porque `src/lib/supabase.ts` está hardcoded
+  para produção. O arquivo não foi alterado. Também não foi feita chamada HTTP
+  porque não existe Edge/QA ativo.
+
+6. ALTERAÇÕES REALIZADAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma migration aplicada.
+  - Nenhuma Edge publicada.
+  - Nenhum secret criado.
+  - Nenhuma tabela/RPC/candidato/oferta criada.
+  - Nenhum arquivo de código, migration, configuração, baseline ou manifesto
+    alterado.
+  - Nenhum container iniciado/parado/modificado.
+  - Nenhuma escrita em produção.
+  - Único artefato criado: este relatório.
+
+7. EVIDÊNCIAS COLETADAS (READ-ONLY)
+----------------------------------------------------------------------------------------------------
+  - `linked-project.json` aponta para uwrvzsjtpgaifkktpepn / conexao-express-tms.
+  - DNS de aqpfayildtcnrkfeeyjg.supabase.co: NXDOMAIN.
+  - Nenhum listener nas portas 55321/55322.
+  - `docker inspect supabase-db-qa`: Status=exited, ExitCode=255,
+    Image=postgres:15-alpine, volume 8ef1bf1c6ddb1d3268e35782f5068d2165cea7f1ab77384fe09ad431b2b7e8a2,
+    porta 54322.
+  - Baseline novo com SHA-256 236E5AD4899A18073CC56AB4651678D462D0A1A307CD9BE84A4CC8EF648A79B3.
+  - Migrations 02B.2/02B.3 com hashes registrados na seção 2.5.
+  - Edge local presente, sem publicação.
+
+8. BLOQUEIOS E DEPENDÊNCIAS
+----------------------------------------------------------------------------------------------------
+  B1. Falta um ambiente QA Supabase isolado, ativo e confiável, com:
+      - PostgreSQL 17;
+      - API/PostgREST;
+      - Edge Functions;
+      - schema base do TMS já existente (sem necessidade de restaurar o banco
+        inteiro nesta missão);
+      - credenciais de QA.
+  B2. O QA remoto `aqpf...` está deletado.
+  B3. O QA local da 02B.8 não está iniciado; apenas a configuração existe.
+  B4. O container `supabase-db-qa` é um PostgreSQL 15 parado; não substitui um
+      Supabase completo e não foi iniciado.
+  B5. A Edge `ofertas-publicas` ainda não foi publicada.
+  B6. Os secrets de tenant/origem/IP salt não existem em QA.
+  B7. `src/lib/supabase.ts` hardcoded em produção impede teste de UI em QA sem
+      uma autorização específica para alterar configuração/cliente.
+
+9. PRÓXIMA AÇÃO RECOMENDADA
+----------------------------------------------------------------------------------------------------
+  1. Provisionar ou reativar um QA Supabase isolado, com PostgreSQL 17 e Edge,
+     contendo o schema base do TMS.
+  2. Confirmar o projeto QA por ref e credenciais próprias; não usar `--linked`
+     sem conferir o destino.
+  3. Aplicar 02B.2 e depois 02B.3 no QA.
+  4. Configurar no QA:
+       OFERTAS_PUBLICAS_TENANT_ID
+       OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+       OFERTAS_PUBLICAS_IP_SALT
+     (avaliar CAPTCHA apenas se houver decisão operacional.)
+  5. Publicar a Edge no QA ou testar o endpoint do QA.
+  6. Executar um cadastro real e comprovar:
+       protocolo → oferta → painel → status/contato → candidato com oferta_id.
+  7. Somente depois de QA validado, solicitar autorização expressa para
+     produção e repetir a implantação com os mesmos artefatos.
+
+  Alternativa autorizada:
+    Se a operação autorizar explicitamente o uso de produção, aplicar as duas
+    migrations e publicar a Edge em produção, com backup/rollback e registro
+    de evidências. Isso NÃO foi autorizado nesta missão.
+
+10. CLASSIFICAÇÃO
+----------------------------------------------------------------------------------------------------
+  IMPLANTAÇÃO BLOQUEADA POR AMBIENTE.
+
+  O código e as migrations estão prontos para a próxima tentativa, mas não há
+  QA isolado utilizável e produção não foi autorizada. Nenhuma prova real foi
+  declarada e nenhuma alteração foi feita.
+
+====================================================================================================

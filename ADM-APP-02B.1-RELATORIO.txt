@@ -1,0 +1,373 @@
+====================================================================================================
+ADM-APP-02B.1 — REDESENHO DO FORMULÁRIO PÚBLICO DE OFERTAS
+PROJETO: Conexão Express — TMS + APP Prestador
+WORKSPACE TMS: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: IMPLEMENTAÇÃO FRONTEND (TMS) — SEM BACKEND/DB
+STATUS: FORMULÁRIO PÚBLICO REDESENHADO + ÁREA INTERNA DE OFERTAS
+ZERO ESCRITAS EM BANCO / ZERO MIGRATIONS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. SITUAÇÃO ENCONTRADA ANTES DA ALTERAÇÃO
+----------------------------------------------------------------------------------------------------
+1.1 Rota pública /cadastro-prestador
+  - A rota existia em src/App.tsx:92 e era pública.
+  - O componente src/pages/CadastroPrestador.tsx usava o wizard de onboarding do
+    APP (components/onboarding/*), com 5 etapas: dados pessoais, veículo,
+    documentos, disponibilidade e assinatura.
+  - O wizard pedia selfie, CNH, CRLV, comprovante, ANTT, MOPP, seguro, PIX, banco
+    e assinatura/LGPD — perfil de onboarding do APP, não de oferta pública.
+  - O submit chamava criarCandidatoService.criar(), que insere colunas
+    inexistentes em recrutamento_candidatos (A-1) e não persiste documentos.
+  - Telefone/WhatsApp/e-mail eram enviados vazios hardcoded.
+  - O sucesso exibia "Cadastro Completo!" / "Aguardando análise" (CompletionScreen),
+    misturando oferta com aprovação/cadastro do APP.
+1.2 Área interna do Recrutamento
+  - Não existia uma área "Ofertas Públicas" no Recrutamento.
+  - Existia apenas o card em Captacao.tsx (link https://conexoexpress.app/cadastro-prestador)
+    e a rota pública; não havia ação interna organizada de copiar/compartilhar.
+  - O menu do Recrutamento tinha Dashboard, Pipeline, Operações, Prestadores,
+    CRM, Documentos, IA, Onboarding, Score, Automações, Portal, Prestadores Aptos
+    e Banco de Talentos.
+1.3 Backend
+  - Não existe Edge Function ofertas-publicas, RPC f_registrar_oferta_publica nem
+    tabela recrutamento_ofertas (conforme ADM-APP-02B.0).
+  - RLS/grants de recrutamento_candidatos/candidato_documentos são apenas para
+    authenticated; o bucket documentos_prestadores é privado. Não há caminho
+    anônimo seguro para gravar ofertas/documentos.
+1.4 Complemento de escopo recebido
+  - A funcionalidade pertence ao TMS, em Recrutamento → Ofertas Públicas.
+  - A equipe interna deve encontrar o acesso ao formulário, copiar e compartilhar
+    o link; o interessado preenche externamente.
+  - O formulário é independente do APP; não há tela isolada sem acesso pelo
+    Recrutamento. Este complemento foi incorporado nesta execução.
+
+----------------------------------------------------------------------------------------------------
+2. ARQUIVOS INSPECIONADOS
+----------------------------------------------------------------------------------------------------
+TMS:
+  - src/App.tsx (rota pública /cadastro-prestador)
+  - src/pages/CadastroPrestador.tsx (versão anterior)
+  - src/components/onboarding/* (StepPersonal, StepVehicle, StepDocuments,
+    StepAvailability, StepSignature, CompletionScreen, onboardingStore)
+  - src/services/recrutamento/criarCandidatoService.ts (A-1)
+  - src/components/recrutamento/Captacao.tsx (link público)
+  - src/modules/recrutamento/index.tsx, store/recrutamentoStore.ts,
+    layouts/RecrutamentoLayout.tsx, components/design-system/*
+  - src/lib/sidebarData.ts
+  - src/modules/recrutamento/components/talentos/BancoTalentos.tsx e
+    src/components/recrutamento/banco-talentos/* (consulta existente)
+  - schema real de recrutamento_candidatos, recrutamento_prestadores,
+    prestadores, veiculos, prestador_perfil_talento, prestador_disponibilidade,
+    buckets e RLS (leitura).
+APP (somente leitura):
+  - lib/features/auth/register_screen.dart
+  - lib/core/supabase/auth_status_mapper.dart, auth_provider.dart
+  - lib/core/repositories/driver_documents_repository.dart, document_status.dart
+  - lib/features/profile/profile_screen.dart
+  - relatórios ADM-APP-02D.2 / G3 e AGENTS.md (preservação).
+Documentos:
+  - ADM-APP-02B-CORRECAO-ESCOPO-RELATORIO.txt
+  - ADM-APP-02B.0-ARQUITETURA-RELATORIO.txt
+
+----------------------------------------------------------------------------------------------------
+3. ARQUIVOS EFETIVAMENTE ALTERADOS/CRIADOS
+----------------------------------------------------------------------------------------------------
+ALTERADOS:
+  - src/pages/CadastroPrestador.tsx
+      * Agora renderiza o novo formulário público de ofertas.
+      * Não importa mais onboardingStore/Step*/CompletionScreen/criarCandidatoService.
+  - src/modules/recrutamento/index.tsx
+      * Nova seção `ofertas-publicas` (import, validSections, switch).
+  - src/modules/recrutamento/store/recrutamentoStore.ts
+      * Section inclui `ofertas-publicas`.
+  - src/modules/recrutamento/layouts/RecrutamentoLayout.tsx
+      * Nova aba "Ofertas Públicas" com ícone QrCode.
+  - src/lib/sidebarData.ts
+      * Novo subitem "Ofertas Públicas" em Recrutamento, rota
+        `/recrutamento?section=ofertas-publicas`.
+
+CRIADOS:
+  - src/lib/ofertaPublica.ts
+      * Tipos, constantes, validações, payload, link público e mensagens.
+  - src/components/cadastro-publico/OfertaPublicaForm.tsx
+      * Novo formulário público em 5 etapas (10 blocos de requisitos).
+  - src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+      * Painel interno de Ofertas Públicas: link, copiar, compartilhar,
+        WhatsApp, abrir formulário e orientações. Sem leitura/gravação no banco.
+  - src/test/adm_app_02b1_oferta_publica_form.test.ts
+      * 11 testes (validação runtime + contrato de fonte/segurança).
+
+NÃO ALTERADOS:
+  - Nenhum arquivo do APP Prestador.
+  - Nenhum SQL, migration, RPC, Edge Function, policy, grant, bucket ou tabela.
+  - Nenhum dado real ou de homologação.
+  - Nenhum componente de onboarding antigo foi removido (ficaram sem uso na rota).
+  - criarCandidatoService.ts não foi alterado e não é mais chamado pela rota
+    pública; A-1 permanece para a etapa de conversão (02B.2+).
+
+----------------------------------------------------------------------------------------------------
+4. ETAPAS E CAMPOS IMPLEMENTADOS
+----------------------------------------------------------------------------------------------------
+O formulário público foi organizado em 5 etapas claras, cobrindo os 10 blocos
+do escopo:
+
+ETAPA 1 — Oferta e contato
+  - Tipo de oferta (cards): Motoboy, Motorista com veículo próprio,
+    Disponibilidade de veículo.
+  - Nome completo.
+  - Telefone/WhatsApp.
+  - E-mail (opcional, validado quando preenchido).
+  - Nota: não é cadastro no APP, não é aprovação e não garante contratação.
+
+ETAPA 2 — Região e disponibilidade
+  - Cidade, UF.
+  - Regiões atendidas: chips (Grande SP, ABC, Interior SP, Litoral SP, RJ, BH,
+    Paraná, SC, RS, Centro-Oeste, Nordeste, Norte) + campo "Outras regiões".
+  - Dias da semana: Dom a Sáb (múltipla seleção).
+  - Horário de início e fim.
+  - Validação de ao menos uma região, ao menos um dia e fim > início.
+
+ETAPA 3 — Modalidades e veículo
+  - Modalidades (múltipla seleção): esporádica, urgente, fixa, recorrente.
+  - Motoboy:
+      * Categoria da moto (própria/agregada/terceira).
+      * Tipo de moto (Street, Trail, Custom, Scooter, Outra).
+      * Possui baú (checkbox) + capacidade do baú em litros (condicional).
+  - Motorista/veículo:
+      * Categoria do veículo (própria/agregada/terceira).
+      * Tipo de veículo (Moto, Passeio, Fiorino, Kangoo, Kombi, Van, HR, VUC,
+        3/4, Toco, Truck, Bitruck, Carreta, Bitrem, Outro).
+      * Carroceria (Baú fechado, Sider, Graneleiro, Grade baixa, Prancha,
+        Tanque, Refrigerado, Porta-container, Outra).
+      * Modelo, placa e ano (opcionais).
+  - Características do veículo: Baú, Refrigerado, Congelado, Rastreador,
+    Seguro, Ajudante disponível, Acesso a doca etc. (múltipla seleção).
+  - Orientação: enviar ofertas separadas para veículos com capacidades,
+    regiões ou condições diferentes.
+
+ETAPA 4 — Capacidade e valores
+  - Capacidade de carga (kg) e capacidade cúbica (m³).
+  - Dimensões internas: comprimento, largura, altura (m) — opcionais.
+  - Valores: diária (R$), valor por km (R$), saída (R$), mensalidade (R$).
+  - Checkbox "Valor a negociar" (desabilita/limpa os valores numéricos).
+  - Condições comerciais (textarea).
+  - Validação de valores >= 0 e de ao menos um valor/condição quando não for
+    "a negociar".
+  - Orientação de ofertas separadas.
+
+ETAPA 5 — Restrições e consentimento
+  - Restrições e condições de atendimento (textarea).
+  - Observações (textarea).
+  - Resumo completo da oferta.
+  - Consentimento LGPD obrigatório, com finalidade de análise/contato e aviso de
+    que não há aprovação/contratação/liberação de APP.
+  - Aviso de que o envio seguro depende da integração da ADM-APP-02B.2; nesta
+    versão nenhum dado é enviado/gravado.
+
+O QUE NÃO É SOLICITADO
+  - CPF, CNH, CRLV, selfie, documentos pessoais, chave PIX, dados bancários e
+    assinatura de contrato. Esses dados ficam para etapas posteriores,
+    autenticadas e controladas.
+
+----------------------------------------------------------------------------------------------------
+5. COMPORTAMENTO RESPONSIVO E VALIDAÇÕES
+----------------------------------------------------------------------------------------------------
+5.1 Responsividade
+  - Layout `max-w-3xl`, padding responsivo, grids `sm:grid-cols-2/3`.
+  - Chips de regiões/dias/modalidades/características com `flex-wrap`.
+  - Botões em coluna no mobile e linha no desktop (`flex-col-reverse sm:flex-row`).
+  - Etapas em pills com `flex-wrap`; conteúdo em cards brancos com sombra leve.
+  - Tipografia e campos com altura confortável (h-11) para toque.
+  - Observação: a responsividade foi implementada em classes Tailwind, mas NÃO
+    houve QA visual em navegador nesta execução (ambiente QA indisponível —
+    MISSÃO 1.1 bloqueada). Classificação: IMPLEMENTADO, AGUARDANDO PROVA REAL.
+
+5.2 Validações implementadas (runtime, testadas)
+  - Tipo de oferta obrigatório.
+  - Nome >= 3 caracteres.
+  - Telefone/WhatsApp: 10 ou 11 dígitos, DDD 11–99.
+  - E-mail: formato válido quando preenchido.
+  - Cidade, UF e ao menos uma região.
+  - Ao menos um dia e horário de início/fim; fim > início.
+  - Ao menos uma modalidade.
+  - Motoboy: tipo de moto obrigatório; categoria da moto obrigatória.
+  - Motorista/veículo: categoria, tipo de veículo e carroceria obrigatórios.
+  - Capacidades/dimensões/valores: números >= 0 quando preenchidos.
+  - Valores: ao menos um valor/condição quando "Valor a negociar" estiver
+    desmarcado.
+  - Consentimento LGPD obrigatório.
+  - Erros exibidos em lista `role="alert"` com `aria-live`.
+  - Nenhum envio/gravação: a conclusão leva a uma tela de "envio pendente de
+    integração", sem mensagem de sucesso.
+
+5.3 Separação de fluxos
+  - Tela de conclusão: NÃO usa "Cadastro Completo", "Prestador aprovado" ou
+    promessa de contratação.
+  - Texto final pendente: "Oferta preenchida. O envio ainda depende da integração
+    segura prevista na ADM-APP-02B.2 (Edge Function/RPC). Nenhum dado foi enviado
+    ou gravado."
+  - Mensagem futura (constante em src/lib/ofertaPublica.ts, ainda NÃO exibida):
+    "Oferta registrada com sucesso. A equipe da Conexão Express poderá entrar em
+    contato para conhecer melhor sua disponibilidade e as condições de
+    atendimento. O envio desta oferta não representa aprovação, contratação ou
+    liberação de acesso ao APP."
+  - Nenhuma criação de auth user, prestador, status ativo ou liberado_app pelo
+    formulário.
+
+----------------------------------------------------------------------------------------------------
+6. ÁREA INTERNA — RECRUTAMENTO → OFERTAS PÚBLICAS (COMPLEMENTO)
+----------------------------------------------------------------------------------------------------
+  - Nova aba no layout do Recrutamento: "Ofertas Públicas" (ícone QrCode).
+  - Novo subitem na sidebar: Recrutamento → Ofertas Públicas
+    (`/recrutamento?section=ofertas-publicas`).
+  - Novo painel `OfertasPublicas`:
+      * Exibe o link público em campo read-only.
+      * Botão "Copiar link" (clipboard + toast + estado "Copiado").
+      * Botão "Compartilhar" (Web Share API, fallback para cópia).
+      * Botão "Enviar no WhatsApp" (`wa.me` com mensagem pronta).
+      * Botão "Abrir formulário" em nova aba.
+      * "Como funciona" (4 passos), "O que o formulário não faz", orientação de
+        ofertas separadas.
+      * Card "Ofertas recebidas" com estado "Em preparação": explica que a
+        consulta/filtros/comparação entram na 02B.2/02B.3 e que nada é lido ou
+        gravado nesta versão.
+  - O link é obtido por `obterLinkPublicoOfertas()`:
+      * usa `VITE_PUBLIC_OFFER_URL` se definido;
+      * senão `window.location.origin + /cadastro-prestador`;
+      * fallback `https://conexoexpress.app/cadastro-prestador`.
+  - A área é TMS-only (rota /recrutamento protegida por permissões existentes).
+  - Nenhuma consulta ao banco foi adicionada; o painel não inventa contagens.
+
+----------------------------------------------------------------------------------------------------
+7. RESULTADO REAL DOS TESTES
+----------------------------------------------------------------------------------------------------
+Comandos executados e resultados:
+  1. `npx tsc --noEmit`
+     → 0 erros.
+  2. `npx eslint` nos arquivos novos:
+     `src/components/cadastro-publico/OfertaPublicaForm.tsx`,
+     `src/lib/ofertaPublica.ts`, `src/pages/CadastroPrestador.tsx`,
+     `src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx`,
+     `src/test/adm_app_02b1_oferta_publica_form.test.ts`
+     → 0 erros / 0 warnings.
+  3. `npx eslint` nos arquivos de integração alterados:
+     `src/modules/recrutamento/index.tsx`, `.../layouts/RecrutamentoLayout.tsx`,
+     `.../store/recrutamentoStore.ts`, `src/lib/sidebarData.ts`
+     → erros/warnings PRÉ-EXISTENTES (`no-explicit-any` em index.tsx:195,
+       Layout:132/187; warnings react-refresh/exhaustive-deps). Nenhum erro novo
+       nos arquivos novos; não foram corrigidos por estarem fora do escopo.
+  4. `npx vitest run src/test/adm_app_02b1_oferta_publica_form.test.ts`
+     → 11/11 PASS.
+       * fonte: rota usa o novo formulário, não usa criarCandidatoService/supabase;
+       * não solicita CPF/CNH/CRLV/selfie/PIX/banco/assinatura;
+       * valida telefone/e-mail;
+       * oferta vazia rejeitada com mensagens;
+       * oferta completa aceita;
+       * dias/horários/modalidades;
+       * campos condicionais motoboy/veículo;
+       * valor/condição ou "a negociar";
+       * payload sem dados de APP/documentos;
+       * mensagem futura/pendente;
+       * Ofertas Públicas no Recrutamento com copiar/compartilhar/WhatsApp.
+  5. `npx vitest run src/test/sidebarData.test.ts
+       src/test/tms_layout_01_sidebar.test.tsx
+       src/test/adm_app_02b1_oferta_publica_form.test.ts`
+     → 35/35 PASS (21 + 4 + 11).
+  6. `npx vitest run` (suíte completa)
+     → 18 arquivos / 44 testes falhos = BASELINE EXATA do projeto;
+       2554 passed (+11 desta missão) / 155 skipped.
+       Nenhuma falha nos arquivos desta missão.
+  7. `npm run build`
+     → OK (37,24s). Chunk `CadastroPrestador` 23,05 kB; `ofertaPublica` 4,80 kB.
+
+NÃO TESTADO / AGUARDANDO PROVA REAL:
+  - QA visual em navegador (celular/desktop). O ambiente QA está indisponível e
+    o guard do Playwright bloqueia produção (MISSÃO 1.1). Não foi declarado PASS.
+  - Envio real de oferta (backend não implementado).
+  - Clipboard/Share/WhatsApp em dispositivo real (somente código e fallback;
+    não houve execução em navegador).
+
+----------------------------------------------------------------------------------------------------
+8. ESTADO DO ENVIO E DEPENDÊNCIAS DE BACKEND
+----------------------------------------------------------------------------------------------------
+  - O formulário NÃO faz chamada de rede, NÃO usa supabase, NÃO grava nada.
+  - O botão final "Concluir oferta" valida e abre a tela de envio pendente.
+  - Nenhum sucesso é simulado. Nenhuma confirmação de "Oferta registrada" é
+    exibida enquanto a integração segura não existir.
+  - Dependências para o envio real (ADM-APP-02B.2):
+      1. Edge Function `ofertas-publicas` (CORS, captcha, rate limit, validação).
+      2. RPC `f_registrar_oferta_publica` (SECURITY DEFINER, EXECUTE service_role).
+      3. Tabela `recrutamento_ofertas` + índices/RLS (proposta na 02B.0).
+      4. `oferta_id` em `recrutamento_candidatos` (proposta na 02B.0).
+      5. Tenant público configurado (env server-side) e domínio CORS.
+      6. Definição de captcha/rate limit e retenção LGPD.
+  - A mensagem final exata de sucesso está preparada em
+    `MENSAGEM_OFERTA_REGISTRADA` para ser exibida SOMENTE após o envio real
+    validado.
+
+----------------------------------------------------------------------------------------------------
+9. CONFIRMAÇÃO EXPRESSA — O QUE NÃO FOI ALTERADO
+----------------------------------------------------------------------------------------------------
+  - APP Prestador: NENHUM arquivo criado/alterado/removido.
+    `git status` do APP (somente leitura) não mostra modificações tracked.
+  - Banco de dados: NENHUM INSERT/UPDATE/DELETE/DDL executado.
+  - Migrations: NENHUMA criada ou aplicada.
+  - RLS/policies/grants/RPCs/triggers: NENHUM alterado.
+  - Storage/buckets: NENHUM alterado.
+  - Dados reais/homologação: NENHUM alterado.
+  - Demais telas do TMS: preservadas; apenas Recrutamento ganhou a seção Ofertas
+    Públicas e a rota /cadastro-prestador passou a usar o novo formulário.
+  - Componentes antigos de onboarding: mantidos no repositório, sem uso pela
+    rota pública atual; não foram removidos nem alterados.
+
+----------------------------------------------------------------------------------------------------
+10. PENDÊNCIAS PARA ADM-APP-02B.2
+----------------------------------------------------------------------------------------------------
+  1. Implementar Edge Function `ofertas-publicas` com CORS/captcha/rate limit.
+  2. Implementar RPC `f_registrar_oferta_publica` (service_role) e tabela
+     `recrutamento_ofertas` + índices/RLS/`oferta_id`.
+  3. Conectar o formulário ao envio real e exibir a mensagem final exata apenas
+     após resposta 200 da integração.
+  4. Definir `VITE_PUBLIC_OFFER_URL`/tenant público e domínio CORS.
+  5. Implementar consulta/filtros/comparação das ofertas no Recrutamento
+     (02B.3) e remover o estado "Em preparação".
+  6. Implementar dedup/validação server-side (CPF/CNPJ/telefone/e-mail) e LGPD.
+  7. Executar QA visual em ambiente QA (celular/desktop) e testes negativos de
+     RLS/anti-abuso.
+  8. Não iniciar 02B.2 até autorização.
+
+----------------------------------------------------------------------------------------------------
+11. RISCOS E LIMITAÇÕES ENCONTRADOS
+----------------------------------------------------------------------------------------------------
+  1. ENVIO NÃO IMPLEMENTADO: o formulário apenas valida e mostra a pendência;
+     nenhum dado é recebido pela Conexão Express nesta versão.
+  2. LINK: em produção, o link copiado usa `window.location.origin`; se o link
+     oficial for outro domínio, definir `VITE_PUBLIC_OFFER_URL`. O fallback é
+     `https://conexoexpress.app/cadastro-prestador`.
+  3. E-MAIL OPCIONAL: telefone/WhatsApp é obrigatório; e-mail é opcional e
+     validado. Se a operação exigir e-mail obrigatório, ajustar na 02B.2.
+  4. SEM QA VISUAL: responsividade e ações de clipboard/share/WhatsApp foram
+     implementadas, mas não executadas em navegador/dispositivo nesta missão.
+  5. COMPONENTES ANTIGOS: o wizard antigo e criarCandidatoService permanecem no
+     código (sem uso pela rota). A-1 continua pendente para o fluxo de conversão.
+  6. ÁREA INTERNA SEM DADOS: "Ofertas recebidas" está em preparação; não há
+     listagem/filtros/comparação até 02B.2/02B.3.
+  7. LGPD: consentimento explícito já é exigido no formulário; retenção e
+     finalidade detalhada ainda precisam ser definidas no backend.
+
+----------------------------------------------------------------------------------------------------
+12. RESUMO FINAL
+----------------------------------------------------------------------------------------------------
+  - Formulário público redesenhado para OFERTA (não cadastro do APP).
+  - 5 etapas, campos condicionais, multi-seleção de dias/modalidades/regiões,
+    valores/condições, capacidade/dimensões, restrições e LGPD.
+  - Sem CPF/CNH/CRLV/selfie/PIX/banco/assinatura.
+  - Área interna Recrutamento → Ofertas Públicas com copiar/compartilhar/WhatsApp
+    e acesso ao formulário.
+  - Envio real não implementado; nenhum sucesso simulado; nenhuma escrita.
+  - APP, banco, RLS, Storage, migrations e dados preservados.
+  - ADM-APP-02B.2 NÃO iniciada.
+====================================================================================================

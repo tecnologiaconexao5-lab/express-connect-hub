@@ -10,7 +10,7 @@
 ## 2. Vercel
 - Projeto: express-connect-hub
 - URL produção:
-https://express-connect-hub.vercel.app
+https://app.conexaoexpress.com.br
 
 - Hospeda:
   - Frontend TMS

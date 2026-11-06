@@ -1,0 +1,179 @@
+====================================================================================================
+MISSÃO 1.1 — VALIDAÇÃO VISUAL DOS UPLOADS DE DOCUMENTOS
+PROJETO: TMS Express Connect Hub
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+MODELO: DeepSeek V4.1 Flash
+DATA/HORA DA EXECUÇÃO: 2026-11-03 (horário local da máquina)
+TIPO: QA visual/funcional — NENHUMA IMPLEMENTAÇÃO
+RESULTADO GERAL: BLOQUEADO POR AMBIENTE (nenhum dado real foi tocado)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. RESUMO EXECUTIVO
+----------------------------------------------------------------------------------------------------
+A validação pela interface real do TMS NÃO pôde ser executada de forma segura e autorizada.
+
+Motivos objetivos:
+  1. O único ambiente configurado para o app (.env) é PRODUÇÃO
+     (uwrvzsjtpgaifkktpepn.supabase.co).
+  2. O ambiente de QA configurado em .env.qa (aqpfayildtcnrkfeeyjg.supabase.co) NÃO existe/answer:
+     o DNS retorna ENOTFOUND. Não há schema, usuários ou dados de QA acessíveis.
+  3. O próprio repositório possui um guard de ambiente no Playwright que BLOQUEIA execução E2E em
+     produção (R6 fix). O guard foi executado e bloqueou antes de qualquer login/upload.
+  4. A missão proíbe executar testes contra dados reais sem autorização e proíbe usar clientes,
+     contratos, conferências ou lançamentos reais quando não há ambiente/dados de teste adequados.
+     Portanto, NÃO foi usado o ambiente de produção, mesmo existindo registros rotulados de
+     homologação, e o guard NÃO foi contornado.
+
+Consequência: todos os cenários estão classificados como BLOQUEADO (ou NÃO TESTADO para os itens de
+erro que dependem de interação visual). Nenhum documento, contrato, comprovante, lançamento,
+migration, policy, bucket ou cálculo foi criado/alterado/apagado nesta missão.
+
+----------------------------------------------------------------------------------------------------
+2. AMBIENTE UTILIZADO
+----------------------------------------------------------------------------------------------------
+  - Aplicação (.env): PRODUÇÃO
+      VITE_SUPABASE_URL = https://uwrvzsjtpgaifkktpepn.supabase.co
+      Detectado por tests/e2e/helpers/ambiente.ts como nome="producao".
+  - Homologação/QA (.env.qa): INDISPONÍVEL
+      VITE_SUPABASE_URL = https://aqpfayildtcnrkfeeyjg.supabase.co
+      Resolução DNS: FALHOU:ENOTFOUND (host inexistente).
+      Não há credenciais Playwright (PLAYWRIGHT_*_PASSWORD) no .env.qa.
+  - Navegador/Playwright: NÃO EXECUTADO contra produção — o globalSetup bloqueia.
+  - Redmi/ADB: NÃO utilizado (conforme regra 7).
+  - APP Prestador: NÃO utilizado (conforme regra 6).
+
+----------------------------------------------------------------------------------------------------
+3. REGISTROS DE TESTE
+----------------------------------------------------------------------------------------------------
+  - Nenhum registro de teste foi criado/utilizado.
+  - Nenhum cliente, contrato, conferência, alocação, lançamento, metadado ou objeto de Storage foi
+    criado, alterado ou removido nesta missão.
+  - Registros rotulados de homologação existentes em produção (ex.: "HOMOLOGAÇÃO APP",
+    "PRESTADOR TESTE APP") NÃO foram usados, pois o ambiente de produção está bloqueado pelo guard e
+    não houve autorização explícita para escrita em produção.
+
+----------------------------------------------------------------------------------------------------
+4. PASSOS EXECUTADOS
+----------------------------------------------------------------------------------------------------
+  1. Inspeção dos arquivos de ambiente:
+       - .env → produção
+       - .env.qa → URL de QA + chave, porém host inexistente (DNS ENOTFOUND)
+  2. Execução do guard oficial de ambiente do repositório
+     (tests/e2e/helpers/ambiente.ts → detectarAmbiente/verificarAmbiente):
+       - Ambiente detectado: PRODUCAO (ref uwrvzsjtpgaifkktpepn)
+       - Resultado: GUARD=BLOQUEOU ("PRODUCAO DETECTADA / EXECUCAO BLOQUEADA")
+  3. Verificação de conectividade do QA:
+       - QA_HOST=aqpfayildtcnrkfeeyjg.supabase.co
+       - QA_RESOLVE=FALHOU:ENOTFOUND
+  4. Leitura READ-ONLY do estado atual do banco (para provar que nada foi tocado):
+       - clientes_contratos: total=1, com anexo_url=0
+       - documentos_metadata: total=30
+       - reembolsos_prestador: total=6, com comprovante_url=2
+       - storage.objects (bucket documentos_operacionais): 0
+       - policies de clientes_contratos: cc_select_access, cc_insert_access, cc_update_access,
+         cc_delete_access (as 4 da Missão 1; nenhuma criada/alterada agora)
+       - bucket documentos_operacionais: public=false (privado, inalterado)
+  5. Nenhuma tentativa de login, upload, salvamento, download ou exclusão foi realizada.
+
+----------------------------------------------------------------------------------------------------
+5. RESULTADO DE CADA CENÁRIO
+----------------------------------------------------------------------------------------------------
+A. CONTRATO DE CLIENTE
+   A1. Abrir um cliente de teste autorizado ......................... BLOQUEADO
+       (sem ambiente QA; guard bloqueia produção; sem autorização para dados reais)
+   A2. Abrir o formulário de novo contrato .......................... BLOQUEADO
+   A3. Selecionar um PDF de teste ................................... BLOQUEADO
+   A4. Salvar o contrato ............................................ BLOQUEADO
+   A5. Confirmar que o registro aparece na interface ................ BLOQUEADO
+   A6. Abrir o documento ............................................ BLOQUEADO
+   A7. Baixar o documento ........................................... BLOQUEADO
+   A8. Confirmar legibilidade/correspondência do arquivo ............ BLOQUEADO
+   A9. Reabrir o contrato e verificar persistência do vínculo ....... BLOQUEADO
+
+B. COMPROVANTE DE PEDÁGIO
+   B1. Abrir uma conferência de teste autorizada .................... BLOQUEADO
+   B2. Selecionar PDF/imagem de teste ............................... BLOQUEADO
+   B3. Salvar o lançamento .......................................... BLOQUEADO
+   B4. Reabrir o dossiê ............................................. BLOQUEADO
+   B5. Confirmar que o comprovante aparece .......................... BLOQUEADO
+   B6. Abrir e baixar o documento ................................... BLOQUEADO
+   B7. Confirmar correspondência do arquivo ......................... BLOQUEADO
+
+C. TRATAMENTO DE ERROS (visual)
+   C1. Arquivo vazio ................................................ NÃO TESTADO (sem UI segura)
+   C2. Formato não permitido ........................................ NÃO TESTADO (sem UI segura)
+   C3. Arquivo acima do limite ...................................... NÃO TESTADO (sem UI segura)
+   C4. Falha de rede ................................................ NÃO TESTADO (sem UI segura)
+
+Observação: os itens C já possuem validação implementada na Missão 1 (código + teste automatizado),
+mas esta missão exige evidência VISUAL; como a UI não pôde ser aberta com segurança, não são
+declarados homologados.
+
+----------------------------------------------------------------------------------------------------
+6. EVIDÊNCIAS
+----------------------------------------------------------------------------------------------------
+  - MISSAO_01_1_EVIDENCIAS_QA.txt (na raiz do projeto):
+      * Saída do guard de ambiente (AMBIENTE_DETECTADO=producao, GUARD=BLOQUEOU com a mensagem
+        "PRODUCAO DETECTADA / EXECUCAO BLOQUEADA").
+      * Verificação DNS do QA (ENOTFOUND).
+      * Estado READ-ONLY do banco (contagens, policies e bucket privado) provando que nada foi
+        alterado nesta missão.
+  - Scripts de apoio (artefatos de QA, não alteram a aplicação):
+      * scripts/_missao01_1_guard_check.ts
+      * scripts/_missao01_1_inspect_qa.cjs
+      * scripts/_missao01_1_estado_readonly.cjs
+  - Não foi possível anexar capturas de tela da UI porque o guard aborta antes do login e o acesso
+    direto à interface de produção foi deliberadamente não realizado.
+
+----------------------------------------------------------------------------------------------------
+7. FALHAS ENCONTRADAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma falha funcional de produto foi observada nesta missão (a UI não foi executada).
+  - BLOQUEIO DE AMBIENTE: não existe ambiente de homologação/QA operacional. O host de .env.qa não
+    resolve (ENOTFOUND) e o guard do repositório proíbe E2E em produção.
+  - Bloqueio de autorização: não houve autorização explícita para criar/alterar registros em produção.
+
+----------------------------------------------------------------------------------------------------
+8. PENDÊNCIAS
+----------------------------------------------------------------------------------------------------
+1. Provisionar um ambiente de QA/homologação real (host Supabase ativo, schema, buckets, usuários e
+   credenciais Playwright), ou autorizar formalmente a execução em produção com registros próprios
+   de teste e roteiro de limpeza controlada.
+2. Com o ambiente disponível, executar o roteiro desta missão (A1–A9, B1–B7, C1–C4), anexando
+   screenshots e os arquivos baixados para comparação de hash/legibilidade.
+3. Nenhuma correção deve ser feita antes do QA; se o QA encontrar falha, registrar e parar.
+
+----------------------------------------------------------------------------------------------------
+9. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+  - Código de aplicação: NENHUM.
+  - Componentes/serviços/funcionalidades: NENHUM.
+  - Migrations: NENHUMA criada nesta missão.
+  - Policies/RLS/RPCs/buckets: NENHUM alterado nesta missão.
+  - Cálculos/regras financeiras: NENHUM alterado.
+  - Recrutamento: NÃO alterado.
+  - APP Prestador: NÃO alterado.
+  - Artefatos criados apenas para QA/evidência:
+      MISSAO_01_1_EVIDENCIAS_QA.txt
+      MISSAO_01_1_QA_VISUAL_UPLOADS_RELATORIO.txt (este relatório)
+      scripts/_missao01_1_guard_check.ts
+      scripts/_missao01_1_inspect_qa.cjs
+      scripts/_missao01_1_estado_readonly.cjs
+
+----------------------------------------------------------------------------------------------------
+10. CONFIRMAÇÃO — NENHUMA MIGRATION OU POLICY FOI ALTERADA
+----------------------------------------------------------------------------------------------------
+  - Nenhuma migration foi criada/aplicada nesta missão.
+  - A migration aditiva `20261103000001_missao01_clientes_contratos_rls.sql` é da MISSÃO 1 e
+    permanece inalterada.
+  - As 4 policies de clientes_contratos permanecem exatamente as da Missão 1.
+  - O bucket `documentos_operacionais` permanece PRIVADO (public=false).
+  - Nenhum registro foi inserido/atualizado/excluído nesta missão.
+
+----------------------------------------------------------------------------------------------------
+11. ENCERRAMENTO
+----------------------------------------------------------------------------------------------------
+Missão 1.1 encerrada como BLOQUEADA POR AMBIENTE, sem alterações e sem tocar em dados reais.
+Nenhuma outra missão foi iniciada.
+====================================================================================================

@@ -10,9 +10,9 @@
 
 | Registro | Tipo | Valor | Proxy | Função |
 |----------|------|-------|-------|--------|
-| `tms` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Frontend TMS |
-| `www` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Site institucional (ou TMS) |
-| `portal` | CNAME | `express-connect-hub.vercel.app` | ☁️ Laranja | Portal Cliente (SPA mesmo) |
+| `tms` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Frontend TMS |
+| `www` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Site institucional (ou TMS) |
+| `portal` | CNAME | `app.conexaoexpress.com.br` | ☁️ Laranja | Portal Cliente (SPA mesmo) |
 | `api` | A | `<IP_ORACLE>` | ☁️ Laranja | API Oracle (n8n/workers) |
 | `n8n` | A | `<IP_ORACLE>` | ☁️ Laranja | n8n (se exposto) |
 | `evolution` | A | `<IP_ORACLE>` | ☁️ Laranja | Evolution API (se exposto) |

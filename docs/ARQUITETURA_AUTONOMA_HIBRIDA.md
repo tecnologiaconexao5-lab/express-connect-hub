@@ -53,7 +53,7 @@ Usuário → navegador → Cloudflare DNS → Vercel (SPA)
 
 ## Serviços que PERMANECEM na Vercel
 
-- `https://express-connect-hub.vercel.app` → TMS principal
+- `https://app.conexaoexpress.com.br` → TMS principal
 - Portal Cliente (dentro do mesmo SPA, rota `/portal-cliente`)
 - Futuro site institucional
 

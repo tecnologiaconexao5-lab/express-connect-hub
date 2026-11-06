@@ -7,7 +7,7 @@
 ### URLs
 | Ambiente | URL |
 |----------|-----|
-| Produção | `https://express-connect-hub.vercel.app` |
+| Produção | `https://app.conexaoexpress.com.br` |
 | Futuro domínio | `https://tms.conexaoexpress.com.br` (via Cloudflare proxy) |
 
 ### Configuração
@@ -34,8 +34,8 @@ Todas as `VITE_*` públicas do `.env.production`. Ver `docs/VARIAVEIS_AMBIENTE_H
 ### DNS
 Registrar no Cloudflare:
 ```
-tms.conexaoexpress.com.br  CNAME  express-connect-hub.vercel.app  (proxy: laranja ☁️)
-portal.conexaoexpress.com.br  CNAME  express-connect-hub.vercel.app  (proxy: laranja ☁️)
+tms.conexaoexpress.com.br  CNAME  app.conexaoexpress.com.br  (proxy: laranja ☁️)
+portal.conexaoexpress.com.br  CNAME  app.conexaoexpress.com.br  (proxy: laranja ☁️)
 prestador.conexaoexpress.com.br  → Cloudflare Pages (prestador-app.pages.dev)
 api.conexaoexpress.com.br  → Oracle VM IP (proxy: laranja ☁️)
 ```

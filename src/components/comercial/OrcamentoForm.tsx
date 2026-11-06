@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route, Info, AlertCircle, TrendingUp, ListChecks, Calendar, Building2, User, FileText, BarChart3, Gauge, Link2, Loader2 } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route, Info, AlertCircle, TrendingUp, ListChecks, Calendar, Building2, User, FileText, BarChart3, Gauge, Link2, Loader2, UploadCloud, X, ExternalLink } from "lucide-react";
 import { FormSectionCard, DocStepNavigation, type DocStep } from "@/components/ui/premium-document";
 import { useFormExitGuard } from "@/hooks/useFormExitGuard";
 import { useRouterBlocker } from "@/hooks/useRouterBlocker";
@@ -32,7 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus, DistanciaRota, DimensaoCarga } from "./types";
+import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus, DistanciaRota, DimensaoCarga, type AnexoOrcamento } from "./types";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { calcularValoresDoOrcamento, montarPayloadOrcamento } from "./orcamentoCalculo";
 import { calcularDerivadosCarga, volumeM3PorGrupo, avaliarCompatibilidadeVeiculo, catalogoPadraoVeiculo, type DerivadosCarga, type VeiculoCapacidade, type RegraFatorCubagem } from "./cargaCalculo";
@@ -58,6 +58,11 @@ import {
 } from "@/services/cotacoes/cotacaoPublicaService";
 import { FreightCompositionService } from "@/services/freteExterno/FreightCompositionService";
 import { useTenant } from "@/contexts/TenantContext";
+// PROP-ANEXO (GD-11) — upload de PDF para o bucket privado `propostas`.
+import { supabase } from "@/lib/supabase";
+import { validarArquivoAnexo } from "@/lib/anexoDocumento";
+import { BUCKET_PROPOSTAS } from "@/services/documentos/documentoStorageService";
+import { SIGN_TTL_SECONDS } from "@/services/storage/storageRefService";
 
 const gerarNumeroOrcamento = () => {
   const now = new Date();
@@ -282,6 +287,83 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar, cotacaoId }: Props
   const [isCotandoExterno, setIsCotandoExterno] = useState(false);
   const [resultadoCotacaoExterna, setResultadoCotacaoExterna] = useState<any>(null);
   const [margemExterna, setMargemExterna] = useState<number>(20);
+
+  // PROP-ANEXO (GD-11) — estado do anexo no formulário (referência gravada ao salvar).
+  const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
+  const [arrastandoAnexo, setArrastandoAnexo] = useState(false);
+  const anexoInputRef = useRef<HTMLInputElement>(null);
+
+  const anexarArquivoOrcamento = async (file: File | null | undefined) => {
+    if (!file || isUploadingAnexo) return;
+    const erroArquivo = validarArquivoAnexo(file);
+    if (erroArquivo) {
+      toast.error(erroArquivo);
+      return;
+    }
+    const ehPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!ehPdf) {
+      toast.error("Envie um arquivo PDF para anexar ao orçamento.");
+      return;
+    }
+    setIsUploadingAnexo(true);
+    try {
+      const slug =
+        file.name
+          .replace(/\.pdf$/i, "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "")
+          .slice(0, 40) || "anexo";
+      const caminho = `orcamento_${Date.now()}_${slug}.pdf`;
+      const { data: upload, error: uploadError } = await supabase.storage
+        .from(BUCKET_PROPOSTAS)
+        .upload(caminho, file, { upsert: false, contentType: "application/pdf" });
+      if (uploadError || !upload?.path) {
+        throw new Error(uploadError?.message || "Falha no upload do PDF do orçamento.");
+      }
+      const path = upload.path;
+      const referencia = `${BUCKET_PROPOSTAS}/${path}`;
+      const { data: signed } = await supabase.storage
+        .from(BUCKET_PROPOSTAS)
+        .createSignedUrl(path, SIGN_TTL_SECONDS);
+      const anexo: AnexoOrcamento = {
+        nome: file.name,
+        path,
+        referencia,
+        url: signed?.signedUrl || "",
+      };
+      setData((prev) => ({ ...prev, anexo }));
+      toast.success("PDF anexado ao orçamento!", {
+        description: `${file.name} · pronto para envio por e-mail.`,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível anexar o PDF.");
+    } finally {
+      setIsUploadingAnexo(false);
+    }
+  };
+
+  const abrirAnexoOrcamento = async () => {
+    const anexo = data.anexo;
+    if (!anexo) return;
+    try {
+      const { data: signed, error } = await supabase.storage
+        .from(BUCKET_PROPOSTAS)
+        .createSignedUrl(anexo.path, SIGN_TTL_SECONDS);
+      if (error || !signed?.signedUrl) {
+        throw new Error(error?.message || "Link temporário indisponível.");
+      }
+      window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível abrir o anexo.");
+    }
+  };
+
+  const removerAnexoOrcamento = () => {
+    setData((prev) => ({ ...prev, anexo: null }));
+    toast.info("Anexo removido do orçamento.");
+  };
 
   // useEffect para buscar distância quando endereços mudam
   useEffect(() => {
@@ -1509,12 +1591,85 @@ const recalcular = () => {
               <CardTitle className="text-sm text-primary">Documentos Anexos e Geração de Proposta</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="border border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/10">
-                 <FileDown className="w-8 h-8 opacity-50 mb-2" />
-                 <p className="text-sm font-medium">Nenhum anexo encontrado.</p>
-                 <p className="text-xs">Faça upload de cotações, fotos da carga ou referências aqui.</p>
-                 {!readOnly && <Button variant="outline" size="sm" className="mt-4">Anexar Arquivo</Button>}
+              <input
+                ref={anexoInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                data-testid="orc-anexo-input"
+                onChange={(e) => {
+                  const arquivo = e.target.files?.[0];
+                  e.target.value = "";
+                  void anexarArquivoOrcamento(arquivo);
+                }}
+              />
+              <div
+                data-testid="orc-anexo-dropzone"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!readOnly && !isUploadingAnexo) setArrastandoAnexo(true);
+                }}
+                onDragLeave={() => setArrastandoAnexo(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setArrastandoAnexo(false);
+                  if (readOnly || isUploadingAnexo) return;
+                  void anexarArquivoOrcamento(e.dataTransfer.files?.[0]);
+                }}
+                className={`border rounded-lg p-10 flex flex-col items-center justify-center text-center bg-muted/10 ${
+                  arrastandoAnexo
+                    ? "border-dashed border-primary bg-primary/5 text-primary"
+                    : "border-dashed border-muted-foreground/30 text-muted-foreground"
+                }`}
+              >
+                {isUploadingAnexo ? (
+                  <>
+                    <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
+                    <p className="text-sm font-medium">Enviando PDF para o bucket propostas...</p>
+                    <p className="text-xs">Aguarde alguns segundos.</p>
+                  </>
+                ) : data.anexo ? (
+                  <>
+                    <FileText className="w-8 h-8 text-emerald-600 mb-2" />
+                    <p className="text-sm font-medium text-slate-800">{data.anexo.nome}</p>
+                    <p className="text-xs text-emerald-700/80 break-all">{data.anexo.referencia}</p>
+                    <p className="text-xs mt-1">Clique em "Anexar Arquivo" para substituir.</p>
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-8 h-8 opacity-50 mb-2" />
+                    <p className="text-sm font-medium">Nenhum anexo encontrado.</p>
+                    <p className="text-xs">Arraste o PDF aqui ou faça upload de cotações, fotos da carga ou referências.</p>
+                  </>
+                )}
+                {!readOnly && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    disabled={isUploadingAnexo}
+                    onClick={() => anexoInputRef.current?.click()}
+                  >
+                    <UploadCloud className="w-4 h-4 mr-2" /> Anexar Arquivo
+                  </Button>
+                )}
               </div>
+
+              {data.anexo && (
+                <div className="flex flex-wrap items-center gap-2" data-testid="orc-anexo-chip">
+                  <Button type="button" variant="outline" size="sm" onClick={() => void abrirAnexoOrcamento()} disabled={isUploadingAnexo}>
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> Abrir anexo
+                  </Button>
+                  {!readOnly && (
+                    <Button type="button" variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={removerAnexoOrcamento} disabled={isUploadingAnexo}>
+                      <X className="w-3.5 h-3.5 mr-1" /> Remover
+                    </Button>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    A referência do arquivo é gravada com o orçamento ao salvar e fica pronta para envio por e-mail.
+                  </span>
+                </div>
+              )}
               
               <div className="mt-4 flex gap-2 w-full">
                         <Button

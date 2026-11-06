@@ -1,0 +1,906 @@
+====================================================================================================
+ADM-APP-02B.0 — DEFINIÇÃO DE ARQUITETURA E MODELO DE DADOS DA OFERTA PÚBLICA
+PROJETO: Conexão Express — TMS + APP Prestador
+WORKSPACE TMS: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: ESPECIFICAÇÃO TÉCNICA / DECISÃO DE ARQUITETURA
+STATUS: NÃO IMPLEMENTADO — AGUARDANDO AUTORIZAÇÃO
+ZERO ESCRITAS / ZERO MIGRATIONS / ZERO ALTERAÇÕES DE CÓDIGO OU DO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+0. BASE E LIMITES DESTA MISSÃO
+----------------------------------------------------------------------------------------------------
+Este documento usa integralmente ADM-APP-02B-CORRECAO-ESCOPO-RELATORIO.txt.
+Nada foi implementado. Nenhum SQL foi executado. Nenhuma migration foi criada.
+Nenhum arquivo do APP foi alterado. O link público atual NÃO foi removido nem
+substituído. As pendências A-1..A-14 e P-01..P-10 foram preservadas.
+
+Decisão em uma frase:
+  RECOMENDA-SE EDGE FUNCTION PÚBLICA + RPC SECURITY DEFINER (service_role) +
+  NOVA TABELA `recrutamento_ofertas`, mantendo `recrutamento_candidatos` como
+  funil e `prestadores` como cadastro operacional. O APP permanece intocado.
+
+----------------------------------------------------------------------------------------------------
+1. O QUE FOI ANALISADO
+----------------------------------------------------------------------------------------------------
+1.1 Código/rotas atuais
+  - Rota pública /cadastro-prestador (src/App.tsx:92) e link em Captacao.tsx:19.
+  - Wizard CadastroPrestador.tsx + components/onboarding/* (steps/store).
+  - Serviço de criação atual: criarCandidatoService.ts (A-1).
+  - RecrutamentoModule (/recrutamento?section=...), Banco de Talentos simples
+    (candidatos) e Banco de Talentos avançado (/recrutamento/banco-talentos).
+  - talentBankService.ts + prestador_perfil_talento + prestador_disponibilidade.
+  - PrestadoresLista/PrestadorDetalhe (aprovação e liberado_app).
+  - APP: register_screen.dart, auth_status_mapper.dart, driver_documents_repository.dart,
+    document_status.dart, profile_screen.dart.
+1.2 Banco (schema real, leitura)
+  - recrutamento_candidatos: nome, telefone, email, cidade, uf, veiculo, placa,
+    stage, tags, documentos, questionario_respostas, preferencias_operacionais,
+    respostas_situacionais, disponibilidade_recrutamento, etc.
+    NÃO tem: cpf, whatsapp, regiao, dias/horários, modalidades, valores,
+    dimensões, capacidade.
+  - recrutamento_prestadores: nome, contatos (jsonb), endereco (jsonb),
+    tipo_veiculo, placa_veiculo, capacidade_kg, capacidade_m3,
+    tipo_carga_veiculo, disponibilidade, regioes_atuacao (jsonb), status,
+    tags, etc. NÃO tem valores/preços nem dias/horários detalhados.
+  - prestadores: modelo operacional rico, com região, disponibilidade, turnos,
+    aceites (esporádica/dedicada/urbana/refrigerada/viagem), valores
+    (valor_diaria, valor_km, valor_saida, fixo_mensal, valor_ajudante,
+    valor_espera, etc.), restrições, endereço, status, liberado_app.
+  - veiculos: tipo, modelo, placa, capacidade_kg/m3, comprimento/largura/altura,
+    tipo_carga, temperatura, rastreador, seguro, restrições, custos.
+  - prestador_perfil_talento: modalidade_preferencial (array),
+    distancia_max_coleta_km, aceita_viagens, restricoes_operacionais,
+    status_disponibilidade.
+  - prestador_disponibilidade: dia_semana, hora_inicio, hora_fim, disponivel.
+  - RLS: recrutamento_candidatos e candidato_documentos apenas authenticated;
+    bucket documentos_prestadores privado/authenticated; sem grants para anon.
+  - pgcrypto/uuid-ossp estão no schema `extensions`.
+  - current_tenant_id_safe() existe.
+1.3 Dados/evidências de problemas
+  - A-1: INSERT público usa 9 colunas inexistentes → 400; nenhum candidato nasce
+    do link público.
+  - A-2: documentos/assinatura do wizard não persistem.
+  - A-3: escritores/leitores usam veiculos/cidade/uf em prestadores (inexistentes).
+  - A-4: gate documental exige documentos jsonb; 0/39 candidatos com docs;
+    candidato_documentos = 0.
+  - A-5: dedup por cnh_validade inexistente; 3 grupos de CPF duplicado.
+  - A-7: bridge prestadores→recrutamento só AFTER INSERT.
+  - A-11: 1 registro liberado sem auth/ativo.
+  - A-10: bucket documentos_prestadores privado (preservado).
+  - 02D2/G3: preservados; G3 aguardando prova física.
+1.4 O que a consulta avançada já oferece
+  - /recrutamento/banco-talentos: filtros por região, cidade, veículo, perfil,
+    carga, score, docs, disponibilidade, capacidade, temperatura, dias, horário,
+    modalidade; contato WhatsApp/App; perfil; shortlists.
+  - Fonte: prestadores operacionais (não ofertas públicas/candidatos).
+  - Não carrega valores/preços; partes da UI (shortlists/regiões/dashboard/
+    retenção) usam mock no store.
+
+----------------------------------------------------------------------------------------------------
+2. COMPARAÇÃO — RPC SECURITY DEFINER x EDGE FUNCTION
+----------------------------------------------------------------------------------------------------
+2.1 RPC SECURITY DEFINER (Postgres)
+  VANTAGENS
+    - Transação atômica: validação + dedup + INSERT/UPDATE no mesmo commit.
+    - Integridade forte: CHECK constraints, unique indexes, FKs e normalização SQL.
+    - Sem deploy de runtime separado; versiona junto da migration.
+    - Baixa latência; sem cold start.
+    - Reutilizável pelo TMS e por scripts.
+    - Fácil de testar com SQL/pgTAP.
+  RISCOS
+    - EXECUTE para anon expõe a função publicamente; qualquer cliente pode
+      chamá-la (inclusive fora do formulário).
+    - Captcha/rate limit/anti-spam são difíceis em PL/pgSQL; exigiriam tabela de
+      rate limit, extensão HTTP (pg_net) ou validação no Edge.
+    - Lógica de validação longa e mais difícil de evoluir.
+    - SECURITY DEFINER exige cuidado com search_path e privilégios.
+    - Observabilidade/telemetria mais pobre.
+    - DoS: payloads grandes/loops podem consumir banco; precisa statement_timeout
+      e limites.
+  CONTROLES
+    - `SET search_path = public, pg_temp`, sem SQL dinâmico.
+    - EXECUTE apenas para service_role (Edge), nunca anon/authenticated.
+    - Validação de enums, tamanhos, formatos e LGPD.
+    - Unique parcial de identidade ativa + normalização.
+    - `statement_timeout`, limites de tamanho.
+    - Se anon for permitido: rate-limit table + captcha via Edge obrigatório.
+
+2.2 EDGE FUNCTION (Deno/TypeScript)
+  VANTAGENS
+    - Endpoint HTTP controlado (CORS, método POST, limite de corpo).
+    - Captcha (Turnstile/hCaptcha) e rate limit por IP hash no Edge.
+    - Validação Zod/TS, mensagens claras e logs sem PII.
+    - Segredos (service role) ficam no runtime do Edge, nunca no browser.
+    - Pode chamar RPC transacional ou inserir com service_role.
+    - Fácil de versionar/deployar e testar com Deno.
+    - Permite bloquear/limitar abuso antes de tocar o banco.
+  RISCOS
+    - Deploy/versionamento separado; dependência de runtime.
+    - Se usar service_role para INSERT direto, pode burlar RLS; precisa validação
+      estrita e allowlist de colunas.
+    - Se chamar RPC com anon, o atacante pode chamar a RPC direto; por isso a RPC
+      deve ser service_role-only e o Edge a única entrada pública.
+    - Cold start e indisponibilidade do Edge bloqueiam o canal.
+    - Sem transação multi-statement se fizer várias chamadas; usar RPC para isso.
+  CONTROLES
+    - CORS restrito ao domínio público.
+    - Rate limit por IP hash (tabela/RPC ou Upstash/Redis).
+    - Captcha obrigatório.
+    - Zod + validação de enums/limites.
+    - Chamar RPC SECURITY DEFINER com service_role; nenhum INSERT direto.
+    - Não logar PII; retornar apenas protocolo/id.
+    - Timeout, limite de body e de campos.
+
+2.3 RECOMENDAÇÃO
+  HÍBRIDO: Edge Function pública `ofertas-publicas` + RPC
+  `f_registrar_oferta_publica` (SECURITY DEFINER, EXECUTE somente service_role).
+  - O browser chama somente a Edge Function.
+  - A Edge valida/captcha/rate limit e chama a RPC com service_role.
+  - A RPC é a única que escreve, com validação/dedup/transação.
+  - `anon` NÃO recebe EXECUTE da RPC nem INSERT direto em tabela.
+  Isso combina anti-abuso (Edge) com integridade (RPC/DB).
+  Custo: um deploy de Edge; benefício: segurança e integridade muito superiores
+  ao RPC público puro.
+
+  Alternativa aceitável para MVP sem Edge: RPC pública com rate-limit table e
+  captcha via proxy, mas é inferior em anti-spam/observabilidade. Não recomendada
+  para produção.
+
+----------------------------------------------------------------------------------------------------
+3. COMPARAÇÃO — MODELO DE DADOS
+----------------------------------------------------------------------------------------------------
+3.1 NOVA TABELA `recrutamento_ofertas` (RECOMENDADA)
+  VANTAGENS
+    - Separação explícita: oferta bruta ≠ candidato ≠ prestador operacional.
+    - Colunas estruturadas para filtros/comparação de valores e disponibilidade.
+    - Unique parcial de identidade ativa e constraints de LGPD.
+    - Status próprio da oferta (nova/em_analise/em_contato/convertida/...).
+    - Não polui o funil até a avaliação; conversão explícita.
+    - Fácil de auditar, expirar e aplicar LGPD.
+  DESVANTAGENS
+    - Nova tabela + service + tela + conversão.
+    - Alguma duplicação conceitual com recrutamento_prestadores.
+3.2 EXTENSÃO DE `recrutamento_prestadores`
+  VANTAGENS
+    - Já tem nome/contato/endereço/veículo/capacidade/regiões/status/tags.
+    - Já usado pelo Recrutamento.
+  DESVANTAGENS
+    - Mistura oferta bruta com registro de recrutamento já avaliado.
+    - Faltam valores, dias/horários, modalidades, LGPD, protocolo, status de
+      oferta e histórico de captação.
+    - Exigiria muitas colunas e mudaria o significado da tabela.
+    - Dedup/unique e ciclo de vida ficam ambíguos.
+3.3 `recrutamento_candidatos` + JSONB
+  VANTAGENS
+    - Sem nova tabela; usa o funil existente.
+  DESVANTAGENS
+    - JSONB opaco para filtros/comparação de valores; exige GIN/expression
+      indexes e SQL mais complexo.
+    - Fraca integridade (campos obrigatórios só em código).
+    - Mistura lead bruto com pipeline; status/LGPD/documentos ficam confusos.
+    - Repete o problema atual (colunas ausentes/mapeamento quebrado).
+    - Histórico A-1 e A-5 mostram o custo de improvisar no funil.
+3.4 DECISÃO
+  NOVA TABELA `recrutamento_ofertas` + `oferta_id` nullable em
+  `recrutamento_candidatos` para rastreabilidade. `recrutamento_candidatos`
+  continua sendo o funil; `prestadores` continua sendo o cadastro operacional;
+  o APP continua sendo o canal autenticado. A oferta NÃO cria prestador, NÃO
+  cria auth user, NÃO define liberado_app.
+
+----------------------------------------------------------------------------------------------------
+4. MODELO DE DADOS PROPOSTO (ESPECIFICAÇÃO)
+----------------------------------------------------------------------------------------------------
+4.1 TABELA `recrutamento_ofertas`
+  Campos comuns:
+    id uuid PK
+    protocolo text NOT NULL UNIQUE (ex.: OF-20261103-AB12CD34)
+    tenant_id uuid NOT NULL (Edge envia o tenant público configurado; RLS TMS
+      usa current_tenant_id_safe())
+    tipo_oferta text NOT NULL CHECK (motoboy | motorista | veiculo)
+    status text NOT NULL DEFAULT 'nova' CHECK (nova | em_analise | em_contato |
+      convertida | descartada | arquivada | duplicada)
+    nome text NOT NULL
+    cpf_cnpj text NULL
+    cpf_cnpj_norm text NULL
+    telefone text NULL
+    telefone_norm text NULL
+    email text NULL
+    email_norm text NULL
+    cidade text NULL
+    uf char(2) NULL
+    regioes jsonb NOT NULL DEFAULT '[]' (ex.: ["Grande SP","ABC Paulista"])
+    dias_disponiveis jsonb NOT NULL DEFAULT '[]' (0=Dom..6=Sáb)
+    horario_inicio time NULL
+    horario_fim time NULL
+    modalidades text[] NOT NULL DEFAULT '{}' CHECK subset
+      (esporadica | urgente | fixa | recorrente)
+    valor_diaria numeric NULL
+    valor_km numeric NULL
+    valor_saida numeric NULL
+    valor_mensal numeric NULL
+    condicoes text NULL
+    restricoes text NULL
+    origem text NOT NULL DEFAULT 'link_publico'
+    chave_identidade text NULL
+    ip_hash text NULL
+    user_agent_hash text NULL
+    lgpd_consent boolean NOT NULL DEFAULT false
+    lgpd_consent_em timestamptz NULL
+    lgpd_termo_versao text NULL
+    historico jsonb NOT NULL DEFAULT '[]'
+    created_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now()
+    candidato_id uuid NULL (preenchido na conversão)
+    prestador_id uuid NULL (preenchido após aprovação/operacional)
+  Campos de veículo:
+    veiculo_tipo text NULL (moto | passeio | fiorino | kangoo | kombi | van | hr |
+      vuc | 3_4 | toco | truck | bitruck | carreta | bitrem | outro)
+    veiculo_categoria text NULL (próprio | agregado | terceiro)
+    veiculo_modelo text NULL
+    veiculo_placa text NULL
+    veiculo_ano int NULL
+    capacidade_kg numeric NULL
+    capacidade_m3 numeric NULL
+    dimensoes jsonb NOT NULL DEFAULT '{}' (comprimento_m, largura_m, altura_m)
+    caracteristicas jsonb NOT NULL DEFAULT '[]' (baú, refrigerado, sider,
+      graneleiro, rastreador, seguro, acessibilidade, etc.)
+  Motoboy:
+    usar veiculo_tipo='moto', capacidade_kg, e caracteristicas incluindo
+    "bau_90l", "bau_120l", "bau_140l", "sem_bau" ou capacidade_bau_litros
+    (campo específico opcional no JSONB `caracteristicas` ou coluna
+    `capacidade_bau_litros`; recomenda-se coluna numérica para filtro).
+  Restrições:
+    - CHECK de contato: telefone_norm ou email_norm não vazio.
+    - CHECK de LGPD: lgpd_consent = true.
+    - CHECK de valores >= 0.
+    - CHECK de modalidades válidas.
+    - CHECK de tipo_oferta válido.
+    - CHECK de UF com 2 letras quando informado.
+    - CHECK de dias entre 0 e 6.
+4.2 `recrutamento_candidatos`
+  Adicionar `oferta_id uuid NULL REFERENCES recrutamento_ofertas(id) ON DELETE SET NULL`.
+  A conversão cria candidato com colunas REAIS (nome, telefone, email, cidade,
+  uf, veiculo, placa, stage, data_entrada, tags, observacoes_ia, questionario_respostas,
+  preferencias_operacionais, respostas_situacionais, disponibilidade_recrutamento).
+  NÃO usar `nome_completo`, `cpf`, `whatsapp`, `regiao`, `tipo_veiculo`,
+  `tipo_carroceria`, `mensagem_livre`, `canal_captacao`, `status` (A-1).
+4.3 `prestadores` / `veiculos` / `prestador_perfil_talento` /
+    `prestador_disponibilidade`
+  Permanecem como destino OPERACIONAL após aprovação. Nenhuma escrita pública
+  direta. A conversão para prestador usa o fluxo existente (corrigido por A-3/
+  A-4/A-5/A-7) e só então pode liberar o APP por ação administrativa.
+
+----------------------------------------------------------------------------------------------------
+5. DEDUPLICAÇÃO (CPF/CNPJ, TELEFONE, E-MAIL)
+----------------------------------------------------------------------------------------------------
+5.1 NORMALIZAÇÃO
+  - CPF/CNPJ: apenas dígitos; validar 11/14 e, idealmente, dígitos verificadores.
+  - Telefone: apenas dígitos; DDD + número (10/11 dígitos).
+  - E-mail: trim + lower.
+  - Nome/cidade: trim + normalização de acentos para busca; preservar original.
+5.2 CHAVE DE IDENTIDADE
+  Prioridade:
+    1. cpf:<11 dígitos> ou cnpj:<14 dígitos>;
+    2. tel:<10/11 dígitos>;
+    3. email:<lower>.
+  Se nenhuma existir, rejeitar (contato obrigatório).
+  `chave_identidade` é gravada na oferta.
+5.3 REGRA DE UNICIDADE ATIVA
+  - Unique parcial:
+      UNIQUE (tenant_id, chave_identidade)
+      WHERE status IN ('nova','em_analise','em_contato');
+  - Se já existir oferta ativa com a mesma chave: atualizar a oferta existente
+    (merge), registrar evento no `historico`, retornar o mesmo protocolo e
+    `deduplicada: true`.
+  - Se existirem múltiplas ofertas históricas/arquivadas, permitir nova oferta
+    ativa; não apagar histórico.
+  - Se houver conflito entre identidades (ex.: mesmo telefone, CPF diferente),
+    NÃO fundir automaticamente: marcar `revisao_humana=true` no retorno/histórico.
+5.4 A-5 E DADOS HISTÓRICOS
+  - Não executar limpeza. Os 3 grupos de CPF duplicado em `prestadores` ficam.
+  - A conversão oferta→candidato→prestador deve usar
+    `identidadePrestadorService` SOMENTE após corrigir o select de
+    `cnh_validade` (A-5) e com revisão humana quando houver >1 match.
+  - A oferta nova não cria prestador; portanto não piora a base operacional.
+5.5 CONCORRÊNCIA
+  - RPC com `FOR UPDATE`/upsert e unique parcial; Edge pode repetir a chamada
+    idempotente pelo protocolo/dedup.
+  - Nunca usar “SELECT depois INSERT” sem constraint/transação.
+
+----------------------------------------------------------------------------------------------------
+6. CONSULTA NO RECRUTAMENTO
+----------------------------------------------------------------------------------------------------
+6.1 DECISÃO DE UX
+  - NÃO duplicar a tela avançada inteira. Criar uma visão "Ofertas Públicas"
+    dentro do Recrutamento (ex.: `/recrutamento?section=ofertas`), reutilizando
+    os componentes visuais/padrões do Banco de Talentos avançado
+    (AdvancedFilters, tabela/cards, perfil lateral, comparação).
+  - O Banco de Talentos avançado continua sendo o banco OPERACIONAL
+    (prestadores + perfil + disponibilidade + veículos). A visão de ofertas é a
+    entrada bruta, separada.
+  - O banco simples de candidatos continua para o funil.
+  - A sidebar deve apontar para a visão de ofertas (ou adicionar item), sem
+    remover as existentes.
+6.2 FILTROS DA VISÃO DE OFERTAS
+  - Busca: nome, CPF/CNPJ, telefone, e-mail, cidade, placa.
+  - Região/UF/cidade.
+  - Tipo de oferta (motoboy/motorista/veículo).
+  - Tipo de veículo/categoria/carroceria/refrigeração/baú.
+  - Modalidade (esporádica/urgente/fixa/recorrente).
+  - Dias da semana e janela de horário.
+  - Disponibilidade/status da oferta.
+  - Capacidade mínima kg/m³ e dimensões.
+  - Faixa de valores: diária, km, saída, mensal.
+  - Data de entrada/atualização.
+6.3 COMPARAÇÃO
+  - Selecionar 2–4 ofertas e comparar: contato, região, modalidade, dias/horário,
+    veículo/capacidade, valores (diária/km/saída/mensal), condições/restrições.
+  - Exportar/compartilhar (opcional, etapa futura).
+6.4 AÇÕES
+  - Contatar via WhatsApp/telefone/e-mail; registrar no CRM.
+  - Atualizar status da oferta (em_analise/em_contato/descartada/arquivada).
+  - Atualizar disponibilidade/informações (TMS autenticado).
+  - "Criar candidato" (conversão explícita) → `recrutamento_candidatos` com
+    `oferta_id`; sem documentos; stage `novo_candidato`/`em_triagem`.
+  - "Converter em prestador" somente após aprovação e gate documental (A-4).
+6.5 O QUE NÃO FAZER
+  - Não exibir ofertas como "prestador apto" ou "liberado".
+  - Não usar o banco avançado como se ofertas fossem prestadores operacionais.
+  - Não criar telas duplicadas de filtros; compartilhar componentes.
+
+----------------------------------------------------------------------------------------------------
+7. CICLO DE VIDA E DOCUMENTOS
+----------------------------------------------------------------------------------------------------
+7.1 FLUXO
+  oferta pública (anon)
+    → recrutamento_ofertas (status nova)
+    → triagem/contato (em_analise/em_contato)
+    → candidato (recrutamento_candidatos, oferta_id, stage novo_candidato/em_triagem)
+    → avaliação (entrevista/avaliação situacional/homologação)
+    → aprovação (stage aprovado/homologado)
+    → prestador (prestadores, status em_analise/ativo conforme fluxo)
+    → documentos/gate (A-4)
+    → liberado_app (ação administrativa explícita)
+    → APP/operação.
+  Em nenhum ponto o link público cria auth user, prestador, status ativo ou
+  liberado_app.
+7.2 DOCUMENTOS
+  - NÃO coletar documentos no link público.
+  - Coletar após a criação do candidato, em etapa autenticada/controlada:
+      * TMS (PrestadorDetalhe/Recrutamento) ou APP (após convite/login);
+      * bucket privado `documentos_prestadores`/`documentos_operacionais`;
+      * `candidato_documentos`/`documentos_prestadores` com URL estável;
+      * status oficial/G3 e auditoria.
+  - LGPD: consentimento da oferta cobre contato/oferta; documentos exigem
+    consentimento/finalidade próprios na etapa autenticada.
+7.3 CONVERSÃO
+  - Criar candidato com colunas reais (A-1) e `oferta_id`.
+  - Não copiar documentos (não existem na oferta).
+  - Não criar prestador automaticamente; usar o fluxo de conversão existente
+    após corrigir A-3/A-4/A-5/A-7.
+  - `liberado_app` somente por ação TMS auditada (A-8/A-9/A-11).
+
+----------------------------------------------------------------------------------------------------
+8. SEGURANÇA, LGPD E ANTI-ABUSO
+----------------------------------------------------------------------------------------------------
+8.1 EDGE FUNCTION (PÚBLICA)
+  - POST apenas; CORS restrito ao domínio do formulário.
+  - Limite de corpo (ex.: 32 KB) e de campos.
+  - Zod: enums, tamanhos, formatos, valores >= 0, dias 0..6, UF 2 letras.
+  - Captcha obrigatório (Turnstile/hCaptcha) verificado no Edge.
+  - Rate limit por IP hash (ex.: 5/min, 20/dia) em tabela/Redis.
+  - Honeypot/field timing (opcional).
+  - Não logar PII; logar protocolo, status, ip_hash, latência.
+  - Em sucesso, retornar apenas `{ protocolo }`.
+  - Chama RPC com service_role; nunca expõe service role ao browser.
+8.2 RPC (SERVICE_ROLE ONLY)
+  - SECURITY DEFINER, `SET search_path = public, pg_temp`.
+  - EXECUTE somente `service_role`; `REVOKE` de PUBLIC/anon/authenticated.
+  - Sem SQL dinâmico; validação explícita; `statement_timeout`.
+  - Normalização/dedup/upsert na mesma transação.
+  - Não retorna dados de outras ofertas; retorna protocolo/id/flag dedup.
+8.3 TABELA/RLS
+  - RLS ON.
+  - SELECT/UPDATE somente `authenticated` TMS com
+    `tenant_id = current_tenant_id_safe()`.
+  - Sem policies/grants para `anon`.
+  - INSERT apenas via RPC/service_role (sem policy de INSERT para authenticated,
+    a menos que se queira entrada manual TMS; decidir na 02B.1).
+  - DELETE somente service_role/admin (se necessário); preferir arquivar.
+8.4 LGPD
+  - Consentimento explícito, finalidade, versão do termo e data.
+  - Minimização: sem documentos no público; apenas contato/oferta.
+  - Retenção definida (ex.: 12 meses após último contato; arquivar/anonymizar).
+  - Direito de exclusão/atualização via canal de contato/TMS.
+  - IP apenas em hash; não armazenar IP puro.
+  - Acesso TMS por tenant; auditoria de leitura/exportação (futuro).
+
+----------------------------------------------------------------------------------------------------
+9. PROPOSTA DE MIGRATION (NÃO EXECUTAR)
+----------------------------------------------------------------------------------------------------
+-- ATENÇÃO: script apenas ilustrativo; NÃO criar arquivo nem executar nesta missão.
+-- Nome sugerido: 20261104000000_adm_app_02b0_ofertas_publicas.sql
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.recrutamento_ofertas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  protocolo TEXT NOT NULL UNIQUE,
+  tenant_id UUID NOT NULL,
+  tipo_oferta TEXT NOT NULL CHECK (tipo_oferta IN ('motoboy','motorista','veiculo')),
+  status TEXT NOT NULL DEFAULT 'nova'
+    CHECK (status IN ('nova','em_analise','em_contato','convertida','descartada','arquivada','duplicada')),
+  nome TEXT NOT NULL,
+  cpf_cnpj TEXT,
+  cpf_cnpj_norm TEXT,
+  telefone TEXT,
+  telefone_norm TEXT,
+  email TEXT,
+  email_norm TEXT,
+  cidade TEXT,
+  uf CHAR(2),
+  regioes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  dias_disponiveis JSONB NOT NULL DEFAULT '[]'::jsonb,
+  horario_inicio TIME,
+  horario_fim TIME,
+  modalidades TEXT[] NOT NULL DEFAULT '{}',
+  valor_diaria NUMERIC,
+  valor_km NUMERIC,
+  valor_saida NUMERIC,
+  valor_mensal NUMERIC,
+  condicoes TEXT,
+  restricoes TEXT,
+  veiculo_tipo TEXT,
+  veiculo_categoria TEXT,
+  veiculo_modelo TEXT,
+  veiculo_placa TEXT,
+  veiculo_ano INTEGER,
+  capacidade_kg NUMERIC,
+  capacidade_m3 NUMERIC,
+  capacidade_bau_litros NUMERIC,
+  dimensoes JSONB NOT NULL DEFAULT '{}'::jsonb,
+  caracteristicas JSONB NOT NULL DEFAULT '[]'::jsonb,
+  origem TEXT NOT NULL DEFAULT 'link_publico',
+  chave_identidade TEXT,
+  ip_hash TEXT,
+  user_agent_hash TEXT,
+  lgpd_consent BOOLEAN NOT NULL DEFAULT FALSE,
+  lgpd_consent_em TIMESTAMPTZ,
+  lgpd_termo_versao TEXT,
+  historico JSONB NOT NULL DEFAULT '[]'::jsonb,
+  candidato_id UUID,
+  prestador_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ofertas_contato_obrigatorio
+    CHECK (coalesce(telefone_norm,'') <> '' OR coalesce(email_norm,'') <> ''),
+  CONSTRAINT ofertas_lgpd_obrigatorio CHECK (lgpd_consent = TRUE),
+  CONSTRAINT ofertas_valores_nao_negativos CHECK (
+    coalesce(valor_diaria,0) >= 0 AND coalesce(valor_km,0) >= 0
+    AND coalesce(valor_saida,0) >= 0 AND coalesce(valor_mensal,0) >= 0
+    AND coalesce(capacidade_kg,0) >= 0 AND coalesce(capacidade_m3,0) >= 0
+  ),
+  CONSTRAINT ofertas_modalidades_validas CHECK (
+    modalidades <@ ARRAY['esporadica','urgente','fixa','recorrente']::TEXT[]
+  ),
+  CONSTRAINT ofertas_uf_valida CHECK (uf IS NULL OR uf ~ '^[A-Z]{2}$')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ofertas_chave_ativa
+  ON public.recrutamento_ofertas (tenant_id, chave_identidade)
+  WHERE status IN ('nova','em_analise','em_contato');
+
+CREATE INDEX IF NOT EXISTS idx_ofertas_status ON public.recrutamento_ofertas (status);
+CREATE INDEX IF NOT EXISTS idx_ofertas_uf_cidade ON public.recrutamento_ofertas (uf, cidade);
+CREATE INDEX IF NOT EXISTS idx_ofertas_tipo_veiculo ON public.recrutamento_ofertas (tipo_oferta, veiculo_tipo);
+CREATE INDEX IF NOT EXISTS idx_ofertas_regioes ON public.recrutamento_ofertas USING GIN (regioes);
+CREATE INDEX IF NOT EXISTS idx_ofertas_dias ON public.recrutamento_ofertas USING GIN (dias_disponiveis);
+CREATE INDEX IF NOT EXISTS idx_ofertas_modalidades ON public.recrutamento_ofertas USING GIN (modalidades);
+CREATE INDEX IF NOT EXISTS idx_ofertas_valores ON public.recrutamento_ofertas (valor_diaria, valor_km, valor_mensal);
+CREATE INDEX IF NOT EXISTS idx_ofertas_cpf ON public.recrutamento_ofertas (cpf_cnpj_norm);
+CREATE INDEX IF NOT EXISTS idx_ofertas_tel ON public.recrutamento_ofertas (telefone_norm);
+CREATE INDEX IF NOT EXISTS idx_ofertas_email ON public.recrutamento_ofertas (email_norm);
+CREATE INDEX IF NOT EXISTS idx_ofertas_created ON public.recrutamento_ofertas (created_at DESC);
+
+ALTER TABLE public.recrutamento_candidatos
+  ADD COLUMN IF NOT EXISTS oferta_id UUID
+  REFERENCES public.recrutamento_ofertas(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_recrutamento_candidatos_oferta
+  ON public.recrutamento_candidatos (oferta_id);
+
+ALTER TABLE public.recrutamento_ofertas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ofertas_select_tms ON public.recrutamento_ofertas;
+CREATE POLICY ofertas_select_tms ON public.recrutamento_ofertas
+  FOR SELECT TO authenticated
+  USING (tenant_id = public.current_tenant_id_safe());
+
+DROP POLICY IF EXISTS ofertas_update_tms ON public.recrutamento_ofertas;
+CREATE POLICY ofertas_update_tms ON public.recrutamento_ofertas
+  FOR UPDATE TO authenticated
+  USING (tenant_id = public.current_tenant_id_safe())
+  WITH CHECK (tenant_id = public.current_tenant_id_safe());
+
+REVOKE ALL ON public.recrutamento_ofertas FROM anon;
+GRANT SELECT, UPDATE ON public.recrutamento_ofertas TO authenticated;
+GRANT ALL ON public.recrutamento_ofertas TO service_role;
+
+CREATE OR REPLACE FUNCTION public.f_registrar_oferta_publica(
+  p_tenant_id UUID,
+  p_tipo_oferta TEXT,
+  p_nome TEXT,
+  p_cpf_cnpj TEXT DEFAULT NULL,
+  p_telefone TEXT DEFAULT NULL,
+  p_email TEXT DEFAULT NULL,
+  p_cidade TEXT DEFAULT NULL,
+  p_uf TEXT DEFAULT NULL,
+  p_regioes JSONB DEFAULT '[]'::jsonb,
+  p_dias_disponiveis JSONB DEFAULT '[]'::jsonb,
+  p_horario_inicio TIME DEFAULT NULL,
+  p_horario_fim TIME DEFAULT NULL,
+  p_modalidades TEXT[] DEFAULT '{}',
+  p_valor_diaria NUMERIC DEFAULT NULL,
+  p_valor_km NUMERIC DEFAULT NULL,
+  p_valor_saida NUMERIC DEFAULT NULL,
+  p_valor_mensal NUMERIC DEFAULT NULL,
+  p_condicoes TEXT DEFAULT NULL,
+  p_restricoes TEXT DEFAULT NULL,
+  p_veiculo_tipo TEXT DEFAULT NULL,
+  p_veiculo_categoria TEXT DEFAULT NULL,
+  p_veiculo_modelo TEXT DEFAULT NULL,
+  p_veiculo_placa TEXT DEFAULT NULL,
+  p_veiculo_ano INTEGER DEFAULT NULL,
+  p_capacidade_kg NUMERIC DEFAULT NULL,
+  p_capacidade_m3 NUMERIC DEFAULT NULL,
+  p_capacidade_bau_litros NUMERIC DEFAULT NULL,
+  p_dimensoes JSONB DEFAULT '{}'::jsonb,
+  p_caracteristicas JSONB DEFAULT '[]'::jsonb,
+  p_lgpd_consent BOOLEAN DEFAULT FALSE,
+  p_lgpd_termo_versao TEXT DEFAULT NULL,
+  p_ip_hash TEXT DEFAULT NULL,
+  p_user_agent_hash TEXT DEFAULT NULL
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_cpf TEXT;
+  v_tel TEXT;
+  v_email TEXT;
+  v_chave TEXT;
+  v_protocolo TEXT;
+  v_id UUID;
+  v_existente RECORD;
+  v_hist JSONB;
+  v_agora TIMESTAMPTZ := now();
+BEGIN
+  IF p_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'tenant_obrigatorio';
+  END IF;
+  IF p_lgpd_consent IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'lgpd_obrigatorio';
+  END IF;
+  IF p_tipo_oferta NOT IN ('motoboy','motorista','veiculo') THEN
+    RAISE EXCEPTION 'tipo_oferta_invalido';
+  END IF;
+  IF length(trim(coalesce(p_nome,''))) < 3 THEN
+    RAISE EXCEPTION 'nome_invalido';
+  END IF;
+
+  v_cpf := nullif(regexp_replace(coalesce(p_cpf_cnpj,''), '\D', '', 'g'), '');
+  v_tel := nullif(regexp_replace(coalesce(p_telefone,''), '\D', '', 'g'), '');
+  v_email := nullif(lower(trim(coalesce(p_email,''))), '');
+
+  IF v_cpf IS NOT NULL AND length(v_cpf) NOT IN (11,14) THEN
+    RAISE EXCEPTION 'cpf_cnpj_invalido';
+  END IF;
+  IF v_tel IS NOT NULL AND length(v_tel) NOT BETWEEN 10 AND 11 THEN
+    RAISE EXCEPTION 'telefone_invalido';
+  END IF;
+  IF v_email IS NOT NULL AND v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN
+    RAISE EXCEPTION 'email_invalido';
+  END IF;
+  IF v_cpf IS NULL AND v_tel IS NULL AND v_email IS NULL THEN
+    RAISE EXCEPTION 'contato_obrigatorio';
+  END IF;
+
+  v_chave := CASE
+    WHEN v_cpf IS NOT NULL THEN CASE WHEN length(v_cpf)=11 THEN 'cpf:' ELSE 'cnpj:' END || v_cpf
+    WHEN v_tel IS NOT NULL THEN 'tel:' || v_tel
+    ELSE 'email:' || v_email
+  END;
+
+  v_protocolo := 'OF-' || to_char(v_agora, 'YYYYMMDD') || '-' ||
+    upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+
+  v_hist := jsonb_build_array(jsonb_build_object(
+    'tipo', 'oferta_recebida',
+    'descricao', 'Oferta recebida pelo link público.',
+    'data', v_agora
+  ));
+
+  SELECT * INTO v_existente
+  FROM public.recrutamento_ofertas
+  WHERE tenant_id = p_tenant_id
+    AND chave_identidade = v_chave
+    AND status IN ('nova','em_analise','em_contato')
+  FOR UPDATE
+  LIMIT 1;
+
+  IF v_existente.id IS NOT NULL THEN
+    UPDATE public.recrutamento_ofertas
+       SET nome = trim(p_nome),
+           cpf_cnpj = nullif(trim(coalesce(p_cpf_cnpj,'')), ''),
+           cpf_cnpj_norm = v_cpf,
+           telefone = nullif(trim(coalesce(p_telefone,'')), ''),
+           telefone_norm = v_tel,
+           email = nullif(trim(coalesce(p_email,'')), ''),
+           email_norm = v_email,
+           cidade = nullif(trim(coalesce(p_cidade,'')), ''),
+           uf = nullif(upper(trim(coalesce(p_uf,''))), ''),
+           regioes = coalesce(p_regioes, '[]'::jsonb),
+           dias_disponiveis = coalesce(p_dias_disponiveis, '[]'::jsonb),
+           horario_inicio = p_horario_inicio,
+           horario_fim = p_horario_fim,
+           modalidades = coalesce(p_modalidades, '{}'),
+           valor_diaria = p_valor_diaria,
+           valor_km = p_valor_km,
+           valor_saida = p_valor_saida,
+           valor_mensal = p_valor_mensal,
+           condicoes = nullif(trim(coalesce(p_condicoes,'')), ''),
+           restricoes = nullif(trim(coalesce(p_restricoes,'')), ''),
+           veiculo_tipo = nullif(trim(coalesce(p_veiculo_tipo,'')), ''),
+           veiculo_categoria = nullif(trim(coalesce(p_veiculo_categoria,'')), ''),
+           veiculo_modelo = nullif(trim(coalesce(p_veiculo_modelo,'')), ''),
+           veiculo_placa = nullif(upper(trim(coalesce(p_veiculo_placa,''))), ''),
+           veiculo_ano = p_veiculo_ano,
+           capacidade_kg = p_capacidade_kg,
+           capacidade_m3 = p_capacidade_m3,
+           capacidade_bau_litros = p_capacidade_bau_litros,
+           dimensoes = coalesce(p_dimensoes, '{}'::jsonb),
+           caracteristicas = coalesce(p_caracteristicas, '[]'::jsonb),
+           lgpd_consent = TRUE,
+           lgpd_consent_em = coalesce(lgpd_consent_em, v_agora),
+           lgpd_termo_versao = p_lgpd_termo_versao,
+           ip_hash = p_ip_hash,
+           user_agent_hash = p_user_agent_hash,
+           historico = coalesce(historico, '[]'::jsonb) || v_hist,
+           updated_at = v_agora
+     WHERE id = v_existente.id
+     RETURNING id INTO v_id;
+
+    RETURN jsonb_build_object(
+      'success', true, 'oferta_id', v_id,
+      'protocolo', v_existente.protocolo, 'deduplicada', true
+    );
+  END IF;
+
+  INSERT INTO public.recrutamento_ofertas (
+    protocolo, tenant_id, tipo_oferta, status, nome, cpf_cnpj, cpf_cnpj_norm,
+    telefone, telefone_norm, email, email_norm, cidade, uf, regioes,
+    dias_disponiveis, horario_inicio, horario_fim, modalidades,
+    valor_diaria, valor_km, valor_saida, valor_mensal, condicoes, restricoes,
+    veiculo_tipo, veiculo_categoria, veiculo_modelo, veiculo_placa, veiculo_ano,
+    capacidade_kg, capacidade_m3, capacidade_bau_litros, dimensoes,
+    caracteristicas, lgpd_consent, lgpd_consent_em, lgpd_termo_versao,
+    chave_identidade, ip_hash, user_agent_hash, historico
+  ) VALUES (
+    v_protocolo, p_tenant_id, p_tipo_oferta, 'nova', trim(p_nome),
+    nullif(trim(coalesce(p_cpf_cnpj,'')), ''), v_cpf,
+    nullif(trim(coalesce(p_telefone,'')), ''), v_tel,
+    nullif(trim(coalesce(p_email,'')), ''), v_email,
+    nullif(trim(coalesce(p_cidade,'')), ''), nullif(upper(trim(coalesce(p_uf,''))), ''),
+    coalesce(p_regioes, '[]'::jsonb), coalesce(p_dias_disponiveis, '[]'::jsonb),
+    p_horario_inicio, p_horario_fim, coalesce(p_modalidades, '{}'),
+    p_valor_diaria, p_valor_km, p_valor_saida, p_valor_mensal,
+    nullif(trim(coalesce(p_condicoes,'')), ''), nullif(trim(coalesce(p_restricoes,'')), ''),
+    nullif(trim(coalesce(p_veiculo_tipo,'')), ''),
+    nullif(trim(coalesce(p_veiculo_categoria,'')), ''),
+    nullif(trim(coalesce(p_veiculo_modelo,'')), ''),
+    nullif(upper(trim(coalesce(p_veiculo_placa,''))), ''),
+    p_veiculo_ano, p_capacidade_kg, p_capacidade_m3, p_capacidade_bau_litros,
+    coalesce(p_dimensoes, '{}'::jsonb), coalesce(p_caracteristicas, '[]'::jsonb),
+    TRUE, v_agora, p_lgpd_termo_versao, v_chave, p_ip_hash, p_user_agent_hash, v_hist
+  ) RETURNING id INTO v_id;
+
+  RETURN jsonb_build_object(
+    'success', true, 'oferta_id', v_id,
+    'protocolo', v_protocolo, 'deduplicada', false
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.f_registrar_oferta_publica(
+  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, JSONB, TIME, TIME,
+  TEXT[], NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT,
+  TEXT, INTEGER, NUMERIC, NUMERIC, NUMERIC, JSONB, JSONB, BOOLEAN, TEXT, TEXT, TEXT
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.f_registrar_oferta_publica(
+  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, JSONB, TIME, TIME,
+  TEXT[], NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT,
+  TEXT, INTEGER, NUMERIC, NUMERIC, NUMERIC, JSONB, JSONB, BOOLEAN, TEXT, TEXT, TEXT
+) TO service_role;
+
+COMMIT;
+
+Observações da proposta:
+  - O nome/assinatura da função deve ser ajustado no momento da implementação
+    (a lista de argumentos acima é extensa; pode-se usar JSONB payload validado
+    para reduzir a assinatura, mantendo colunas explícitas no INSERT).
+  - A Edge Function deve enviar `p_tenant_id` de uma env server-side
+    (`PUBLIC_OFFER_TENANT_ID`), nunca do browser.
+  - Não conceder EXECUTE a anon; a entrada pública é a Edge.
+  - Se a operação preferir RPC pública pura, será necessário um rate-limit table
+    e captcha via Edge/proxy; não recomendado como primeira opção.
+
+----------------------------------------------------------------------------------------------------
+10. PROPOSTA DE EDGE FUNCTION (NÃO EXECUTAR)
+----------------------------------------------------------------------------------------------------
+Arquivo sugerido: supabase/functions/ofertas-publicas/index.ts
+
+  - Método: POST; OPTIONS para CORS restrito.
+  - Body JSON limitado (ex.: 32 KB), Zod schema com enums/limites.
+  - Verificar captcha (Turnstile/hCaptcha) com secret em env.
+  - Rate limit por `ip_hash` (tabela `ofertas_rate_limit` ou Redis/Upstash).
+  - Calcular `ip_hash = sha256(ip + salt)` e `user_agent_hash`.
+  - Chamar `supabase.rpc('f_registrar_oferta_publica', { ... })` com
+    service_role client.
+  - Logar apenas protocolo/status/ip_hash/latência; nunca PII.
+  - Retornar `{ protocolo }` (200) ou erro genérico (400/429).
+  - Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_OFFER_TENANT_ID,
+    TURNSTILE_SECRET, ALLOWED_ORIGIN, RATE_LIMIT_*.
+  - Nenhum INSERT direto em tabela; nenhuma exposição de service role.
+
+Rate limit sugerido (proposta):
+  - Tabela `ofertas_rate_limit (ip_hash text, janela timestamptz, contador int, PK(ip_hash, janela))`;
+  - 5 req/min e 20/dia por IP hash; 429 ao exceder.
+  - Alternativa: Redis/Upstash no Edge.
+
+----------------------------------------------------------------------------------------------------
+11. ÍNDICES, POLÍTICAS E GRANTS (RESUMO)
+----------------------------------------------------------------------------------------------------
+  - Unique parcial de identidade ativa (tenant_id, chave_identidade).
+  - B-tree: status, uf/cidade, tipo_oferta/veiculo_tipo, created_at.
+  - GIN: regioes, dias_disponiveis, modalidades, caracteristicas.
+  - B-tree: valores (diária/km/mensal), capacidade_kg/m3.
+  - B-tree: cpf_cnpj_norm, telefone_norm, email_norm (dedup/busca).
+  - RLS: SELECT/UPDATE authenticated com tenant; sem anon.
+  - Grants: SELECT/UPDATE authenticated; ALL service_role; sem anon.
+  - RPC: EXECUTE somente service_role.
+  - Nenhum grant direto de INSERT em tabelas para anon.
+
+----------------------------------------------------------------------------------------------------
+12. TESTES E CRITÉRIOS DE HOMOLOGAÇÃO
+----------------------------------------------------------------------------------------------------
+12.1 TESTES NEGATIVOS (OBRIGATÓRIOS)
+  - anon SELECT/INSERT/UPDATE direto em recrutamento_ofertas → NEGADO.
+  - anon EXECUTE da RPC → NEGADO.
+  - anon upload no bucket → NEGADO.
+  - Payload sem LGPD → rejeitado.
+  - Payload sem contato → rejeitado.
+  - Tipo de oferta inválido, CPF/telefone/e-mail inválidos → rejeitado.
+  - Valores negativos/dias fora de 0..6/modalidade inválida → rejeitado.
+  - Rate limit/captcha → 429/403.
+  - Tenant errado/ausente → rejeitado.
+12.2 TESTES POSITIVOS
+  - Oferta motoboy/motorista/veículo válida → protocolo retornado.
+  - Dedup por CPF/telefone/e-mail: segunda oferta ativa atualiza a mesma e
+    retorna `deduplicada=true`.
+  - Oferta aparece na visão de ofertas do Recrutamento.
+  - Filtros por região/modalidade/veículo/disponibilidade/valores funcionam.
+  - Comparação de 2–4 ofertas exibe valores/condições.
+  - Contato via WhatsApp/e-mail registra CRM.
+  - Atualização de disponibilidade/status persiste.
+  - Conversão em candidato cria `recrutamento_candidatos` com colunas REAIS e
+    `oferta_id`; não cria prestador/auth/liberado_app.
+  - Documentos só em etapa autenticada; upload privado/signed URL.
+  - APP/02D2/G3 sem regressão.
+12.3 CRITÉRIOS DE HOMOLOGAÇÃO
+  - Fluxo público funcional com captcha/rate limit e LGPD.
+  - Nenhum acesso direto anon a tabela/bucket.
+  - Oferta consultável/comparável/contatável no Recrutamento.
+  - Dedup comprovado; duplicidades históricas não pioradas.
+  - Separação comprovada: oferta ≠ candidato ≠ prestador ≠ APP.
+  - Conversão somente após avaliação; liberado_app só por ação TMS.
+  - Evidências visuais + SQL de prova + testes negativos.
+  - Nenhuma alteração no APP.
+
+----------------------------------------------------------------------------------------------------
+13. ROLLBACK (PROPOSTA)
+----------------------------------------------------------------------------------------------------
+  Ordem segura:
+    1. Desativar/despublicar a Edge Function (feature flag) — entrada pública
+       para de gravar.
+    2. REVOKE EXECUTE da RPC de service_role (se necessário).
+    3. Manter a tabela e os dados (não dropar em produção com ofertas reais).
+    4. Se ambiente de teste sem dados:
+         DROP FUNCTION IF EXISTS public.f_registrar_oferta_publica(...);
+         DROP TABLE IF EXISTS public.recrutamento_ofertas CASCADE;
+         ALTER TABLE public.recrutamento_candidatos DROP COLUMN IF EXISTS oferta_id;
+    5. Em produção, rollback = desligar entrada + manter tabela para auditoria/
+       exportação; só dropar após aprovação e backup.
+  - Nenhum rollback foi executado nesta missão.
+
+----------------------------------------------------------------------------------------------------
+14. BACKLOG ATUALIZADO (PRESERVANDO A-1..A-14 E P-01..P-10)
+----------------------------------------------------------------------------------------------------
+RESOLVIDOS/ENCAMINHADOS POR ESTA SEQUÊNCIA (após implementação futura):
+  P-01 Arquitetura do link público ...................... definida neste doc.
+  P-02 Modelo de dados da oferta ....................... definido neste doc.
+  P-03 Formulário público de oferta .................... a implementar na 02B.1.
+  P-04 Captação pública segura ......................... a implementar na 02B.2.
+  P-05 Consulta/filtros no Recrutamento ................ a implementar na 02B.3.
+  P-06 Comparação de valores/condições ................. a implementar na 02B.3.
+  P-07 Contato/CRM/atualização de disponibilidade ...... a implementar na 02B.3.
+  P-08 Separação oferta x cadastro x APP ............... definida neste doc.
+  P-09 Documentos em etapa posterior ................... definido neste doc.
+  P-10 Testes/QA/homologação ........................... a implementar na 02B.5.
+  A-1  Pré-cadastro público quebrado .................... resolvido ao substituir
+       o INSERT direto pela oferta + criação posterior de candidato com colunas
+       reais (a implementar).
+  A-2  Documentos do onboarding não persistem ........... reescopo: oferta pública
+       não coleta docs; persistência de docs permanece para onboarding/APP.
+DEPENDEM DESTA SEQUÊNCIA (NÃO RESOLVIDOS AQUI):
+  A-3  Sync Recrutamento→Prestador (veiculos/cidade/uf) . 02E.
+  A-4  Gate documental inatingível ...................... 02F.
+  A-5  Dedup por cnh_validade + duplicados .............. 02E (pré-requisito da
+       conversão oferta→candidato→prestador).
+  A-6  /app-prestador simulador ......................... 02G (independente).
+  A-7  Bridge só INSERT ................................. 02E.
+  A-8  Auditoria liberado_app ........................... preservado; prova de
+       escrita pendente.
+  A-9  Guard de privilégios ............................. preservado; prova de
+       escrita pendente.
+  A-10 Bucket documentos_prestadores privado ............ preservado/homologado.
+  A-11 Coerência liberado_app ........................... mecanismo presente;
+       1 registro incoerente pendente.
+  A-12 RLS recrutamento com tenant ...................... preservado; é o motivo
+       de o link público precisar de Edge/RPC.
+  A-13 Órfãos/duplicidades .............................. independente; não limpar.
+  A-14 interesse_confirmado no score ................... independente.
+PRESERVADOS (NÃO REABRIR):
+  - ADM-APP-02D.2, G3, gate do APP, documentos/Storage/visualizador.
+  - Link público atual (não remover sem decisão explícita).
+
+----------------------------------------------------------------------------------------------------
+15. O QUE CONTINUA PENDENTE APÓS ESTA DECISÃO
+----------------------------------------------------------------------------------------------------
+  1. Autorização para implementar 02B.1..02B.5.
+  2. Definir o tenant público (env `PUBLIC_OFFER_TENANT_ID`) e o domínio CORS.
+  3. Definir provedor de captcha (Turnstile/hCaptcha) e rate limit.
+  4. Definir a retenção LGPD e o texto/versão do termo.
+  5. Implementar nova tabela/RPC/Edge (proposta neste doc, não executada).
+  6. Redesenhar o formulário público (sem docs; com oferta).
+  7. Implementar consulta/filtros/comparação/conversão no Recrutamento.
+  8. Corrigir A-3/A-4/A-5/A-7 para a conversão ponta a ponta.
+  9. Testes negativos/QA visual em ambiente QA (MISSÃO 1.1 ainda bloqueada por
+     ambiente; ver relatório de QA).
+ 10. Não iniciar 02B.1 antes da autorização.
+
+----------------------------------------------------------------------------------------------------
+16. CONFIRMAÇÃO DE ZERO ALTERAÇÕES / ZERO ESCRITAS
+----------------------------------------------------------------------------------------------------
+  - Nenhum INSERT/UPDATE/DELETE/DDL foi executado.
+  - Nenhuma migration foi criada (os SQL acima são apenas texto de proposta).
+  - Nenhuma tabela, policy, bucket, RPC, trigger ou função foi alterada.
+  - Nenhum arquivo de código do TMS foi editado.
+  - Nenhum arquivo do APP foi criado/alterado/removido.
+  - Nenhum dado real foi usado ou exposto; apenas leitura de schema/código.
+  - Scripts temporários de leitura foram removidos; o único arquivo entregue é
+    este relatório.
+
+DECISÃO FINAL RECOMENDADA:
+  Edge Function pública `ofertas-publicas` + RPC
+  `f_registrar_oferta_publica` (service_role) + tabela `recrutamento_ofertas`
+  + `oferta_id` em `recrutamento_candidatos`.
+  Alternativas avaliadas: RPC pública pura (simples, porém fraca em anti-abuso);
+  Edge com INSERT direto (duplica validação e risco de bypass); extensão de
+  `recrutamento_prestadores` (mistura oferta/candidato); JSONB em
+  `recrutamento_candidatos` (fraco para filtros/valores/integridade).
+
+Aguardar autorização antes de iniciar ADM-APP-02B.1.
+====================================================================================================

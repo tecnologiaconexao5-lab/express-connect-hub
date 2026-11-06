@@ -355,9 +355,11 @@ export async function urlAssinadaDocumentoMetadata(
   url: string | null | undefined,
   prestadorId?: string | null,
 ): Promise<string | null> {
+  // Sem bucketEsperado explícito: o default de resolverUrlDocumento é
+  // BUCKET_DOCUMENTOS_PRESTADORES e a allow-list interna também aceita
+  // documentos_operacionais e propostas (GD-11).
   return resolverUrlDocumento(url, {
     prestadorId,
-    bucketEsperado: BUCKET_DOCUMENTOS_OPERACIONAIS,
   });
 }
 

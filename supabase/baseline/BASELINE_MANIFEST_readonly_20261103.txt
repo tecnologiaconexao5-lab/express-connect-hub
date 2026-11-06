@@ -1,0 +1,106 @@
+================================================================================
+MANIFESTO DE BASELINE ESTRUTURAL READ-ONLY — 2026-11-03
+================================================================================
+
+1. IDENTIFICAÇÃO GERAL
+   Data/Hora:              2026-11-03 (horário local)
+   Projeto Supabase:       uwrvzsjtpgaifkktpepn
+   Nome do projeto:        conexao-express-tms
+   Banco:                  postgres
+   Schema extraído:        public
+   Ferramenta:             pg_dump (PostgreSQL) 17.6
+   Servidor:               PostgreSQL 17.6
+   Executável:             C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\
+                           pgsql17\extracted\pgsql\bin\pg_dump.exe
+   Credencial:             tms_baseline_reader (role read-only)
+   Arquivo gerado:         supabase/baseline/
+                           full_production_schema_readonly_20261103.sql
+   Tamanho:                1.359.006 bytes
+   Linhas:                 40.188
+   SHA-256:                236E5AD4899A18073CC56AB4651678D462D0A1A307CD9BE84A4CC8EF648A79B3
+   Modo:                   schema-only / sem dados de tabelas
+
+2. COMANDO DE EXTRAÇÃO (SEM SEGREDOS)
+   pg_dump --schema-only --schema=public --quote-all-identifiers
+           --no-owner --encoding=UTF8
+           --file supabase/baseline/full_production_schema_readonly_20261103.sql
+           --dbname <URL_READ_ONLY_SEM_SENHA>
+   Senha fornecida via PGPASSWORD no ambiente do processo.
+
+3. ESTRUTURAS PRESENTES
+   CREATE TABLE:                     250
+   CREATE VIEW:                      24
+   CREATE FUNCTION:                  161
+   CREATE TRIGGER:                   132
+   CREATE POLICY:                    614
+   ALTER TABLE ... ENABLE RLS:       239
+   CREATE INDEX:                     699
+   CREATE UNIQUE INDEX:              20
+   ADD CONSTRAINT:                   564
+     - PRIMARY KEY:                  250
+     - FOREIGN KEY:                  266
+     - UNIQUE:                       48
+   COMMENT ON:                       205
+   GRANT (linhas iniciadas):         1545
+   REVOKE (linhas iniciadas):        33
+   ALTER DEFAULT PRIVILEGES:         24
+   Tabelas + views no escopo:        274
+   CREATE EXTENSION:                 0 (extensões em schema extensions;
+                                        inventário separado necessário)
+
+4. AUSÊNCIA DE DADOS
+   COPY de dados:                    0
+   INSERT INTO:                      0
+   UPDATE:                           0
+   DELETE FROM:                      0
+   CREATE DATABASE:                  0
+   SET ROLE/SESSION AUTHORIZATION:   0
+   NUL bytes:                        0
+   Padrões de segredo encontrados:   0
+
+5. ACLs, GRANTS E ROLES
+   ACLs/grants presentes:            SIM (1545 GRANT, 33 REVOKE)
+   Comentários presentes:            SIM (205 COMMENT ON)
+   Roles referenciadas em grants:    anon, authenticated, postgres,
+                                     service_role, tms_baseline_reader
+   Referências a tms_baseline_reader: 277
+   Observação: a role temporária de extração aparece nas ACLs do dump.
+   O QA que restaurar este arquivo precisará criar essa role ou remover
+   as ACLs correspondentes em etapa autorizada; nada foi alterado no dump.
+
+6. RLS E POLICIES
+   RLS habilitado:                   239 tabelas
+   Policies:                         614
+   Policies referenciam roles:       anon, authenticated, public
+   Scope:                            schema public
+
+7. LIMITAÇÕES CONHECIDAS
+   - Extensões não foram incluídas pelo pg_dump com --schema=public (0
+     CREATE EXTENSION); inventariar extensions separadamente.
+   - auth, storage, realtime, roles, buckets, usuários Auth, Edge Functions,
+     secrets e configurações de projeto NÃO estão neste arquivo.
+   - ACLs/grants de `tms_baseline_reader` foram incluídas; a role é
+     temporária e pode não existir no QA.
+   - O dump foi certificado estruturalmente, mas NÃO foi restaurado em QA
+     nesta missão.
+   - Comentários, ACLs e policies foram contados no arquivo, mas a restauração
+     real ainda precisa ser validada em ambiente isolado.
+
+8. PRESERVAÇÃO
+   Baseline antigo:
+     supabase/baseline/full_production_schema_20260920.sql
+     Tamanho: 829.480 bytes
+     SHA-256: 82BCD0FCFDA2B3533542D462EB0C4A7A2B08B1016BB795145CAB52492C430B4F
+     NÃO foi sobrescrito.
+   Manifesto antigo:
+     supabase/baseline/BASELINE_MANIFEST_20260920.txt
+     SHA-256: 5169ADE4903DDD417C683D8F186ECB2EF25E1FE97D7635E96DA126E9146C4471
+     NÃO foi alterado.
+
+9. STATUS
+   EXTRAÇÃO: CONCLUÍDA (exit 0)
+   CERTIFICAÇÃO: ESTRUTURAL COM RESSALVAS
+   APLICAÇÃO NO QA: NÃO EXECUTADA
+   PRODUÇÃO: NENHUMA ESCRITA
+
+================================================================================

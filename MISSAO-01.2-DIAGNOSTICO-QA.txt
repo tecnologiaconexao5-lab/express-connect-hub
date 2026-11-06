@@ -1,0 +1,346 @@
+====================================================================================================
+MISSÃO 1.2 — DIAGNÓSTICO E PREPARAÇÃO DO AMBIENTE QA
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA/HORA DA EXECUÇÃO: 2026-11-03 (horário local)
+TIPO: DIAGNÓSTICO + PLANEJAMENTO DE INFRAESTRUTURA (READ-ONLY)
+WRITES EM PRODUÇÃO: ZERO
+MIGRATIONS APLICADAS: ZERO
+RECURSOS EXTERNOS CRIADOS: ZERO
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO E MÉTODO
+----------------------------------------------------------------------------------------------------
+Esta missão foi executada em regime estritamente READ-ONLY. Foram inspecionados arquivos de
+configuração, scripts de QA, configuração do Vite/Playwright, CLI do Supabase, serviço do Docker,
+baseline estrutural, migrations e documentação existente. Nenhum login, upload, seed, migration,
+policy, bucket, registro ou recurso externo foi criado/alterado/excluído.
+
+A MISSÃO 1.1 NÃO é declarada homologada. A MISSÃO 2 NÃO foi iniciada.
+
+----------------------------------------------------------------------------------------------------
+2. O QUE FOI INSPECIONADO
+----------------------------------------------------------------------------------------------------
+  - .env, .env.qa, .env.qa.example e .env.development (chaves/tamanho; segredos omitidos).
+  - .gitignore e arquivos de ambiente rastreados pelo Git.
+  - package.json (scripts de dev/QA/Playwright).
+  - vite.config.ts (envDir e carregamento de .env.[mode]).
+  - playwright.config.ts, playwright.e2e.config.ts e tests/e2e/helpers/ambiente.ts.
+  - scripts/check-ambiente.cjs.
+  - scripts/qa/extract_baseline.ts, inspect_baseline.ts, apply_baseline_to_qa.ts,
+    assert-qa-environment.ts e seed_rls_test_data.sql.
+  - supabase/config.toml, supabase/.temp/project-ref e linked-project.json.
+  - supabase/baseline/full_production_schema_20260920.sql e BASELINE_MANIFEST_20260920.txt.
+  - Migrations locais (308) e lista das posteriores ao baseline (73).
+  - Docker (versão, serviço e engine), Supabase CLI (versão) e portas locais.
+  - Documentos ENV-QA-01/02/03, HML-RECOVER-01 e docs/VARIAVEIS_AMBIENTE_HIBRIDAS.md.
+
+----------------------------------------------------------------------------------------------------
+3. O QUE FOI ENCONTRADO
+----------------------------------------------------------------------------------------------------
+3.1 PRODUÇÃO
+  - Ref: uwrvzsjtpgaifkktpepn (host resolve).
+  - .env aponta o app para produção (VITE_SUPABASE_URL).
+  - SUPABASE_SERVICE_ROLE_KEY no .env está vazio.
+  - DATABASE_URL de produção presente (não exibida).
+  - Supabase CLI está vinculada à produção:
+      supabase/.temp/project-ref = uwrvzsjtpgaifkktpepn
+      linked-project.json = "conexao-express-tms" (produção)
+  - RISCO: qualquer `supabase db push`, `db reset`, `migration up` sem alvo local/QA pode
+    atingir a produção. NÃO executar.
+
+3.2 QA
+  - Ref: aqpfayildtcnrkfeeyjg (20 caracteres).
+  - URL: https://aqpfayildtcnrkfeeyjg.supabase.co
+  - DNS: ENOTFOUND. O host não existe.
+  - .env.qa tem ENVIRONMENT=qa, URL, anon key, service role, project ref, DB password e
+    DATABASE_URL, porém NÃO tem credenciais Playwright (PLAYWRIGHT_*_PASSWORD) nem
+    PLAYWRIGHT_BASE_URL.
+  - O DATABASE_URL de QA aponta para o pooler genérico; o usuário postgres.<QA_REF> não
+    existe porque o projeto foi removido. Conexão falharia.
+  - .env.qa é ignorado pelo Git (bom). .env.qa.example também é ignorado e não está versionado.
+
+3.3 CAUSA EXATA DO BLOQUEIO (já documentada em ENV-QA-01)
+  - O projeto QA foi criado em 2026-07-23 como Free tier.
+  - O Free tier do Supabase pausa/remove projetos após inatividade.
+  - O projeto QA não tinha migrations/dados (0 migrations aplicadas, 0 inserts).
+  - O host foi removido (DNS ENOTFOUND). Não é possível distinguir automaticamente entre
+    "pausado" e "deletado" sem acesso ao dashboard Supabase.
+  - Ação humana necessária: abrir https://supabase.com/dashboard/projects e verificar se
+    "conexao-express-qa" (aqpfayildtcnrkfeeyjg) aparece; se pausado, reativar; se não existir,
+    criar um novo projeto QA.
+
+3.4 GUARD DO PLAYWRIGHT
+  - O guard oficial (tests/e2e/helpers/ambiente.ts) bloqueia PRODUÇÃO quando o processo vê a
+    URL de produção. Evidência: GUARD=BLOQUEOU com "PRODUCAO DETECTADA / EXECUCAO BLOQUEADA".
+  - O guard NÃO valida DNS/conectividade. O script check-ambiente.cjs aprova QA mesmo com o
+    host inexistente (falso positivo).
+
+3.5 RISCO CRÍTICO NO CAMINHO `npm run playwright:qa`
+  - package.json: "playwright:qa": "node scripts/check-ambiente.cjs qa && playwright test".
+  - check-ambiente.cjs carrega .env + .env.qa apenas no seu próprio processo e sai com OK.
+  - Os envs NÃO são exportados para o processo do Playwright (`&&` não exporta variáveis).
+  - playwright.config.ts não carrega dotenv; globalSetup lê process.env. Sem URL/ENVIRONMENT,
+    detectarAmbiente() retorna "desconhecido" e o guard PERMITE.
+  - O webServer do playwright.config.ts executa "npm run dev" (mode development), que carrega
+    o .env base (PRODUÇÃO) no Vite.
+  - reuseExistingServer: !CI pode até reaproveitar um dev server já apontando para produção.
+  - CONCLUSÃO: `npm run playwright:qa` pode executar a UI contra PRODUÇÃO. NÃO EXECUTAR até
+    que exista um config QA fail-closed.
+
+3.6 DOCKER / QA LOCAL
+  - Docker instalado (29.4.1), mas o serviço com.docker.service está Stopped e o engine está
+    inacessível (npipe dockerDesktopLinuxEngine).
+  - Supabase CLI 2.117.0 instalada.
+  - Portas 54321, 54322, 54323, 54324 e 8800 livres.
+  - Conclusão: QA local é viável, mas está BLOQUEADO até o Docker Desktop ser iniciado.
+
+3.7 BASELINE E MIGRATIONS
+  - Baseline full_production_schema_20260920.sql existe, mas há DIVERGÊNCIA em relação ao
+    manifesto:
+        Manifesto: 812.613 bytes | sha256 4b384522...
+        Atual:     829.480 bytes | sha256 82bcd0fc...
+  - Conteúdo do baseline: 237 tabelas, 543 policies, funções/triggers críticos.
+  - NÃO contém: schema storage/buckets, documentos_metadata e policies de clientes_contratos.
+  - Migrations locais: 308. Posteriores ao baseline: 73.
+  - Mínimo adicional para os fluxos da MISSÃO 1.1:
+        * 20261102000001_documentos_operacionais_metadata.sql (bucket privado + documentos_metadata)
+        * 20261102000002_documentos_central_avancada.sql (campos/versões da Central)
+        * 20261103000001_missao01_clientes_contratos_rls.sql (4 policies de contratos)
+        * avaliar 20260928000000_adm_app_02d2_bucket_documentos_privado.sql
+  - O seed sintético scripts/qa/seed_rls_test_data.sql cria tenant/usuários sintéticos na
+    tabela tenant_usuarios (sem auth.users reais), cliente, prestadores, OS, títulos e
+    pagamentos. NÃO cria:
+        * usuários no Auth com senha (necessário para login no Playwright);
+        * linha de alocacoes_escala que alimenta a Conferência Financeira;
+        * contrato, documentos_metadata ou objetos de Storage;
+        * buckets.
+
+----------------------------------------------------------------------------------------------------
+4. DISPONÍVEL x FALTANDO
+----------------------------------------------------------------------------------------------------
+DISPONÍVEL:
+  [x] Baseline estrutural de produção (com ressalva de checksum).
+  [x] Scripts de extração, inspeção e aplicação de baseline.
+  [x] Seed sintético parcial (tenant, cliente, prestadores, OS, financeiro).
+  [x] Guards básicos (produção bloqueada no Playwright; assert QA; apply somente localhost).
+  [x] Docker + Supabase CLI instalados; portas livres.
+  [x] .env.qa.example como modelo de variáveis.
+  [x] Scripts dev:qa/build:qa/preview:qa/test:qa no package.json.
+
+FALTANDO:
+  [ ] Projeto QA cloud existente (foi removido) OU Docker Engine iniciado para QA local.
+  [ ] Credenciais Playwright de QA (usuários Auth reais + PLAYWRIGHT_*_PASSWORD).
+  [ ] Config Playwright QA fail-closed (não existe playwright.qa.config.ts).
+  [ ] Verificação de conectividade no guard (DNS/HTTP) antes de permitir testes.
+  [ ] Seed com auth.users, alocação de conferência, contrato e documentos/bucket.
+  [ ] Aplicação das migrations de documentos/Central/RLS no QA.
+  [ ] Baseline reconciliado com o manifesto (checksum divergente).
+  [ ] Processo/rotina de limpeza limitada aos IDs de teste.
+
+----------------------------------------------------------------------------------------------------
+5. CAMINHO RECOMENDADO
+----------------------------------------------------------------------------------------------------
+RECOMENDAÇÃO PRINCIPAL: QA LOCAL (Supabase CLI + Docker) — mais seguro, isolado e sem custo
+externo. Não cria recursos externos. Requer apenas iniciar o Docker Desktop e aplicar o baseline
+e migrations no banco LOCAL (127.0.0.1:54322).
+
+ALTERNATIVA: novo projeto Supabase Cloud QA (se a operação preferir nuvem). Requer autorização
+humana para criar o projeto e obter URL/anon/service role/DB URL. Não usar o projeto de produção.
+
+Para os dois caminhos, o ponto crítico é criar um Playwright QA fail-closed que:
+  - use `npm run dev:qa` (mode qa) no webServer;
+  - não reutilize servidor existente (reuseExistingServer: false);
+  - use porta dedicada (ex.: 8801) para não colidir com dev de produção;
+  - exija ENVIRONMENT=qa;
+  - recuse explicitamente a URL/ref de produção;
+  - valide DNS/HTTP do QA antes do primeiro teste;
+  - nunca seja executado como `playwright test` puro (que usa o config padrão).
+
+----------------------------------------------------------------------------------------------------
+6. PASSOS NECESSÁRIOS, NA ORDEM CORRETA — OPÇÃO LOCAL (RECOMENDADA)
+----------------------------------------------------------------------------------------------------
+Pré-requisito humano: iniciar o Docker Desktop (com.docker.service está Stopped).
+
+1. Iniciar Docker Desktop e confirmar:
+     docker info
+2. Subir o Supabase local (não fala com a nuvem/produção):
+     npx supabase start
+3. Obter as chaves locais e a URL do banco local:
+     npx supabase status
+     (API: http://127.0.0.1:54321 | DB: postgresql://postgres:postgres@127.0.0.1:54322/postgres)
+4. Validar que o alvo é local (guarda já existente no script):
+     $env:QA_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+     npx tsx scripts/qa/apply_baseline_to_qa.ts
+   (o script aceita apenas localhost/127.0.0.1 e recusa o ref de produção)
+5. Aplicar as migrations pós-baseline necessárias no banco LOCAL (via psql -f, na ordem):
+     - 20261102000001_documentos_operacionais_metadata.sql
+     - 20261102000002_documentos_central_avancada.sql
+     - 20261103000001_missao01_clientes_contratos_rls.sql
+     - (se necessário) 20260928000000_adm_app_02d2_bucket_documentos_privado.sql
+6. Criar os usuários Auth locais (Admin API do Supabase local ou Studio em
+   http://127.0.0.1:54323):
+     - qa.admin@conexaoexpress.local
+     - qa.financeiro@conexaoexpress.local
+   Vincular os user_id em tenant_usuarios ao tenant sintético com papéis super_admin/financeiro.
+7. Aplicar o seed sintético:
+     psql "$env:QA_DATABASE_URL" -f scripts/qa/seed_rls_test_data.sql
+   Complementar o seed (em script separado, novo) com:
+     - 1 alocacao_escala sintética concluída/finalizada, vinculada a OS + prestador + cliente;
+     - 1 bucket privado documentos_operacionais + policies (já vem da migration do passo 5);
+     - IDs/prefixos exclusivos (ex.: QA-MISSAO11-*) para limpeza segura.
+8. Criar `.env.qa.local` (maior prioridade do Vite no mode qa) com:
+     ENVIRONMENT=qa
+     VITE_SUPABASE_URL=http://127.0.0.1:54321
+     VITE_SUPABASE_ANON_KEY=<anon key local>
+     PLAYWRIGHT_BASE_URL=http://127.0.0.1:8801
+     PLAYWRIGHT_TAMIRIS_PASSWORD=...
+     PLAYWRIGHT_FINANCEIRO_PASSWORD=...
+   (não usar SUPABASE_SERVICE_ROLE_KEY no frontend; service role só em scripts de setup)
+9. Criar `playwright.qa.config.ts` fail-closed:
+     - globalSetup que exige ENVIRONMENT=qa e host localhost/127.0.0.1;
+     - recusa explicitamente uwrvzsjtpgaifkktpepn e *.supabase.co;
+     - webServer: `npm run dev:qa -- --host 127.0.0.1 --port 8801 --strictPort`;
+     - reuseExistingServer: false;
+     - baseURL: http://127.0.0.1:8801;
+     - outputDir próprio (ex.: test-results/qa).
+10. Atualizar o script (em missão futura, não agora) para:
+     `node scripts/check-ambiente.cjs qa && playwright test -c playwright.qa.config.ts`
+     ou usar cross-env para exportar ENVIRONMENT=qa ao processo do Playwright.
+11. Executar a MISSÃO 1.1 (A1–A9, B1–B7, C1–C4) com screenshots e comparação de hash.
+12. Limpar somente os registros/objetos criados com prefixo/IDs de teste; nunca apagar
+    registros preexistentes.
+
+OBS.: o passo 4 (baseline) tem ressalva de checksum (manifesto x arquivo atual). Antes de aplicar,
+reconciliar: re-extrair o baseline ou validar a diferença (bytes/linhas) e atualizar o manifesto.
+
+----------------------------------------------------------------------------------------------------
+7. PASSOS NECESSÁRIOS — ALTERNATIVA CLOUD QA
+----------------------------------------------------------------------------------------------------
+1. Ação humana no dashboard Supabase: criar/recuperar o projeto QA (não usar produção).
+2. Obter: project ref, URL, anon key, service role (somente scripts), DB URL do pooler.
+3. Validar DNS/HTTP do novo host (ex.: curl https://<qa-ref>.supabase.co/rest/v1/).
+4. Aplicar o baseline no QA cloud. O script `apply_baseline_to_qa.ts` atual só aceita
+   localhost; será necessário um script cloud-safe que:
+     - exija explicitamente o ref QA;
+     - recuse o ref de produção;
+     - recuse hosts desconhecidos;
+     - registre o alvo antes de qualquer DDL.
+5. Aplicar as migrations mínimas (documentos/Central/RLS).
+6. Criar o bucket privado documentos_operacionais e policies (migration).
+7. Criar usuários Auth de teste e vinculá-los ao tenant sintético.
+8. Aplicar seed sintético + alocação de conferência + dados de contrato.
+9. Atualizar .env.qa com URL/anon e PLAYWRIGHT_*_PASSWORD; manter service role apenas em
+   scripts de setup fora do Vite.
+10. Criar playwright.qa.config.ts fail-closed (mesmas regras do item 9 local, apontando para
+    o novo QA e validando o ref antes de qualquer teste).
+11. Executar a MISSÃO 1.1 e limpar apenas os registros de teste.
+
+----------------------------------------------------------------------------------------------------
+8. VARIÁVEIS E RECURSOS NECESSÁRIOS PARA OS TESTES VISUAIS
+----------------------------------------------------------------------------------------------------
+  - ENVIRONMENT=qa
+  - VITE_SUPABASE_URL (QA/local, nunca produção)
+  - VITE_SUPABASE_ANON_KEY (QA/local)
+  - PLAYWRIGHT_BASE_URL (ex.: http://127.0.0.1:8801)
+  - PLAYWRIGHT_TAMIRIS_PASSWORD / PLAYWRIGHT_FINANCEIRO_PASSWORD (usuários de teste)
+  - SUPABASE_SERVICE_ROLE_KEY (somente scripts de setup/seed, nunca no bundle Vite)
+  - DATABASE_URL/QA_DATABASE_URL (somente scripts de setup/migrations locais)
+  - Bucket privado `documentos_operacionais` + policies de authenticated.
+  - Tabelas: clientes, clientes_contratos, documentos_metadata, alocacoes_escala,
+    ordens_servico, reembolsos_prestador, tenant_usuarios, tenants.
+  - Usuários Auth de teste + vínculo tenant_usuarios.
+  - Dados sintéticos: cliente, prestador, OS, alocação de conferência, contrato.
+  - Playwright QA config fail-closed + porta dedicada + reuseExistingServer: false.
+
+----------------------------------------------------------------------------------------------------
+9. RISCOS E PROTEÇÕES CONTRA ACESSO À PRODUÇÃO
+----------------------------------------------------------------------------------------------------
+RISCO 1 (CRÍTICO): `npm run playwright:qa` pode rodar contra produção.
+  Proteção: NÃO executar esse comando. Criar `playwright.qa.config.ts` fail-closed, usar
+  `dev:qa`, `reuseExistingServer: false`, porta dedicada e validar URL/ref no globalSetup.
+
+RISCO 2: Supabase CLI vinculada à produção (`supabase/.temp/project-ref` e linked-project.json).
+  Proteção: não rodar `supabase db push/reset/migration up/link` sem alvo QA explícito. Para QA
+  local, usar `supabase start` (local) e `psql` no 127.0.0.1. Para cloud QA, re-linkar somente
+  ao ref QA e validar antes.
+
+RISCO 3: Guard atual não verifica DNS/conectividade (falso positivo de QA).
+  Proteção: adicionar no novo globalSetup uma checagem de DNS + HTTP 200 do QA e recusar se
+  falhar.
+
+RISCO 4: Baseline divergente do manifesto (bytes/checksum).
+  Proteção: reconciliar/re-extrair o baseline antes de aplicar; registrar o hash usado.
+
+RISCO 5: `reuseExistingServer: !CI` pode reaproveitar dev server de produção.
+  Proteção: no config QA, `reuseExistingServer: false` e porta diferente (8801).
+
+RISCO 6: Seed atual não cria auth.users nem alocação de conferência.
+  Proteção: complementar o seed e criar usuários Auth com senha; usar IDs/prefixos de teste.
+
+RISCO 7: `.env.qa.example` não está versionado (regra .env.* no .gitignore).
+  Proteção: adicionar exceção `!.env.qa.example` ou renomear o modelo para algo versionável,
+  sem incluir segredos.
+
+RISCO 8: service role no .env.qa (lado servidor/scripts).
+  Proteção: manter apenas em scripts; Vite expõe somente VITE_*; nunca importar service role
+  no código do frontend.
+
+----------------------------------------------------------------------------------------------------
+10. O QUE DEPENDE DE AUTORIZAÇÃO OU INFORMAÇÃO EXTERNA
+----------------------------------------------------------------------------------------------------
+  - Autorização para iniciar o Docker Desktop e subir o Supabase local (recomendado).
+  - OU autorização/acesso ao dashboard Supabase para criar/recuperar o projeto QA cloud.
+  - Definição dos usuários de teste e senhas (podem ser sintéticos, mas precisam ser aprovados).
+  - Aprovação para aplicar baseline + migrations no QA (nunca na produção).
+  - Aprovação para criar os dados sintéticos e o roteiro de limpeza dos IDs de teste.
+  - Confirmação sobre reconciliar o baseline (checksum divergente) ou re-extrair do zero.
+  - Definição se o QA será local (Docker) ou cloud (novo projeto Supabase).
+
+----------------------------------------------------------------------------------------------------
+11. CLASSIFICAÇÃO FINAL
+----------------------------------------------------------------------------------------------------
+HOMOLOGADO:
+  - Diagnóstico da configuração de ambientes (.env/.env.qa) e identificação dos project refs.
+  - Causa raiz do bloqueio (projeto QA removido; DNS ENOTFOUND; Docker parado; guard bloqueia
+    produção).
+  - Confirmação de que nenhuma escrita em produção foi feita nesta missão.
+
+IMPLEMENTADO, AGUARDANDO PROVA REAL:
+  - Pacote de baseline estrutural (com ressalva de checksum).
+  - Scripts de extração/inspeção/aplicação de baseline (aplicação ainda não executada).
+  - Seed sintético parcial (falta auth.users, alocação de conferência, contrato/documentos).
+  - Scripts npm dev:qa/build:qa/preview:qa/test:qa.
+
+PENDENTE:
+  - Playwright QA config fail-closed + guard de conectividade.
+  - Credenciais Playwright de QA e usuários Auth de teste.
+  - Complemento do seed (alocação de conferência, contrato, documentos, bucket).
+  - Reconciliar baseline/manifesto.
+  - Rotina de limpeza limitada aos IDs de teste.
+
+BLOQUEADO:
+  - Projeto QA cloud (aqpfayildtcnrkfeeyjg) — inexistente/removido (DNS ENOTFOUND).
+  - QA local — Docker Engine parado.
+  - MISSÃO 1.1 (QA visual dos uploads) — não executada e NÃO homologada.
+  - `npm run playwright:qa` — inseguro no estado atual; não executar.
+
+----------------------------------------------------------------------------------------------------
+12. CONFIRMAÇÃO DE ZERO WRITES
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita no Supabase de produção.
+  - Nenhuma migration aplicada.
+  - Nenhuma alteração de tabela, policy RLS, bucket, RPC ou registro.
+  - Nenhum arquivo de produção criado/modificado/excluído.
+  - Nenhum login, upload ou exclusão executado.
+  - Nenhum recurso externo criado.
+  - Apenas leitura de configuração, arquivos, catálogos e serviços.
+
+----------------------------------------------------------------------------------------------------
+13. ENCERRAMENTO
+----------------------------------------------------------------------------------------------------
+Missão 1.2 concluída como diagnóstico + plano. A MISSÃO 1.1 permanece NÃO homologada (bloqueada
+por ambiente). A MISSÃO 2 NÃO foi iniciada.
+Evidências complementares: MISSAO-01.2-EVIDENCIAS.txt
+====================================================================================================

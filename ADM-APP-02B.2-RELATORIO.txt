@@ -1,0 +1,453 @@
+====================================================================================================
+ADM-APP-02B.2 — BACKEND SEGURO PARA RECEBIMENTO DE OFERTAS PÚBLICAS
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: IMPLEMENTAÇÃO LOCAL DE BACKEND/MIGRATION/EDGE/TESTES
+STATUS: CÓDIGO CRIADO — NÃO APLICADO, NÃO PUBLICADO
+ZERO ESCRITAS REMOTAS / ZERO DEPLOY / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO E LIMITES EXECUTADOS
+----------------------------------------------------------------------------------------------------
+Autorizado e executado:
+  - Criação do arquivo de migration SQL local.
+  - Criação da Edge Function ofertas-publicas e validação compartilhada.
+  - Criação de testes locais (Vitest) e validação pura de payload.
+  - Atualização do contrato de payload do formulário (versão LGPD).
+  - Configuração local da função no supabase/config.toml (verify_jwt=false).
+  - Documentação técnica neste relatório.
+
+Não executado (proibido nesta missão):
+  - Nenhuma migration foi aplicada em Supabase remoto.
+  - Nenhum DDL/DML foi executado em banco.
+  - Nenhuma Edge Function foi publicada/deployada.
+  - Nenhum segredo foi criado/alterado.
+  - Nenhum arquivo do APP foi alterado.
+  - Nenhum dado real ou de homologação foi tocado.
+  - ADM-APP-02B.3 não foi iniciada.
+
+----------------------------------------------------------------------------------------------------
+2. ARQUIVOS INSPECIONADOS
+----------------------------------------------------------------------------------------------------
+Documentos:
+  - ADM-APP-02B.0-ARQUITETURA-RELATORIO.txt
+  - ADM-APP-02B.1-RELATORIO.txt
+  - ADM-APP-02B-CORRECAO-ESCOPO-RELATORIO.txt
+Frontend/contrato:
+  - src/lib/ofertaPublica.ts
+  - src/components/cadastro-publico/OfertaPublicaForm.tsx
+  - src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+Infra existente:
+  - supabase/config.toml
+  - supabase/functions/* (cotacao-frete, pedido-rapido, whatsapp-recrutamento-webhook,
+    documentos-ia, etc.)
+  - supabase/migrations/* (padrões SECURITY DEFINER, RLS, tenant, idempotência)
+  - schema real de recrutamento_candidatos, recrutamento_prestadores, prestadores,
+    veiculos, prestador_perfil_talento, prestador_disponibilidade, tenants,
+    tenant_usuarios (leitura)
+APP (somente leitura):
+  - register_screen.dart, auth_status_mapper.dart, driver_documents_repository.dart,
+    document_status.dart, profile_screen.dart
+  - relatórios 02D.2/G3 e AGENTS.md (preservação)
+
+----------------------------------------------------------------------------------------------------
+3. ARQUIVOS CRIADOS/ALTERADOS
+----------------------------------------------------------------------------------------------------
+CRIADOS:
+  - supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+      1497 linhas — tabela/índices/RLS/RPC/triggers/auditoria/rate limit.
+  - supabase/functions/ofertas-publicas/index.ts
+      289 linhas — Edge Function pública.
+  - supabase/functions/ofertas-publicas/validation.ts
+      386 linhas — validação pura compartilhada com testes.
+  - src/test/adm_app_02b2_backend_ofertas.test.ts
+      23 testes locais (runtime de validação + contrato/fonte).
+
+ALTERADOS:
+  - supabase/config.toml
+      + [functions.ofertas-publicas] verify_jwt = false
+  - src/lib/ofertaPublica.ts
+      + LGPD_TERMO_VERSAO = "2026-11-v1"
+      + payload passa a enviar lgpd_termo_versao
+      - payload deixa de enviar origem (definida pelo backend)
+  - src/test/adm_app_02b1_oferta_publica_form.test.ts
+      + asserção do lgpd_termo_versao (substitui origem)
+  - src/pages/CadastroPrestador.tsx, src/components/cadastro-publico/OfertaPublicaForm.tsx,
+    src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx,
+    src/modules/recrutamento/index.tsx, src/modules/recrutamento/store/recrutamentoStore.ts,
+    src/modules/recrutamento/layouts/RecrutamentoLayout.tsx, src/lib/sidebarData.ts
+      (permanecem da ADM-APP-02B.1; sem novas alterações de UI nesta missão)
+
+NÃO ALTERADOS:
+  - Nenhum arquivo do APP Prestador.
+  - Nenhuma tabela/policy/bucket/RPC/trigger existente.
+  - Nenhum dado real/homologação.
+  - Nenhuma migration aplicada.
+
+----------------------------------------------------------------------------------------------------
+4. ESTRUTURA FINAL PROPOSTA DA MIGRATION
+----------------------------------------------------------------------------------------------------
+Arquivo: supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+APLICADA: NÃO. (Criada apenas no repositório; nenhum DDL executado.)
+
+4.1 Tabela principal `public.recrutamento_ofertas`
+  - id uuid PK; protocolo text UNIQUE (OF-AAAAMMDD-XXXXXXXX, não sequencial).
+  - tenant_id uuid NOT NULL REFERENCES tenants(id).
+  - tipo_oferta: motoboy | motorista_veiculo_proprio | disponibilidade_veiculo.
+  - status: nova | em_analise | em_contato | convertida | descartada | arquivada | duplicada.
+  - revisao_humana boolean.
+  - nome, cpf_cnpj/cpf_cnpj_norm (opcionais; não coletados no canal público),
+    telefone/telefone_norm, email/email_norm, cidade, uf.
+  - regioes jsonb, dias_disponiveis jsonb, horario_inicio/fim, modalidades text[].
+  - tipo_moto, possui_bau, capacidade_bau_litros.
+  - veiculo_categoria, veiculo_tipo, carroceria, veiculo_modelo, veiculo_placa,
+    veiculo_ano, caracteristicas jsonb.
+  - capacidade_kg, capacidade_m3, dimensoes jsonb.
+  - valor_diaria, valor_km, valor_saida, valor_mensal, valor_negociavel,
+    condicoes_comerciais, restricoes, observacoes.
+  - origem (default link_publico), idempotency_key, dedup_hash, ip_hash,
+    user_agent_hash.
+  - lgpd_consent (CHECK true), lgpd_consent_em (CHECK not null),
+    lgpd_termo_versao, lgpd_finalidade.
+  - created_at, updated_at.
+  - CHECKs: contato obrigatório, modalidades válidas, veículo coerente
+    (motoboy=moto; demais tipo+carroceria), UF, tamanhos.
+  - NÃO armazena CNH, CRLV, selfie, PIX, dados bancários ou assinatura.
+
+4.2 Tabelas auxiliares
+  - `recrutamento_oferta_identificadores`
+      (oferta_id, tenant_id, tipo telefone|email|cpf|cnpj, valor_norm).
+      Permite múltiplas ofertas legítimas do mesmo contato e consulta de conflitos.
+  - `recrutamento_oferta_eventos`
+      Auditoria imutável: oferta_recebida, conflito_identificadores, conversão futura.
+      Usuário interno só SELECT; escrita via RPC/service_role.
+  - `recrutamento_oferta_rate_limit`
+      PK (tenant_id, ip_hash, janela) + contador. Sem acesso anon/authenticated.
+
+4.3 Vínculo opcional
+  - `ALTER TABLE recrutamento_candidatos ADD COLUMN oferta_id uuid`
+    REFERENCES recrutamento_ofertas(id) ON DELETE SET NULL.
+  - Não converte automaticamente; apenas rastreabilidade futura.
+
+4.4 Índices
+  - UNIQUE (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL.
+  - UNIQUE (tenant_id, dedup_hash) WHERE status IN ('nova','em_analise','em_contato').
+  - tenant/status/created_at, uf/cidade, tipo_oferta/veiculo_tipo.
+  - GIN: regioes, dias_disponiveis, modalidades, caracteristicas.
+  - valores, telefone_norm, email_norm, cpf_cnpj_norm, created_at.
+  - identificadores (tenant_id,tipo,valor_norm) e eventos.
+
+4.5 RLS e grants
+  - `recrutamento_ofertas`: RLS ON; SELECT/UPDATE apenas authenticated com
+    tenant_id = current_tenant_id_safe() AND EXISTS tenant_usuarios; WITH CHECK
+    idêntico. Sem INSERT/DELETE para authenticated; anon revogado; service_role ALL.
+  - `recrutamento_oferta_identificadores`: SELECT authenticated por tenant;
+    escrita apenas service_role.
+  - `recrutamento_oferta_eventos`: SELECT authenticated por tenant; escrita
+    apenas service_role (auditoria não editável por usuário).
+  - `recrutamento_oferta_rate_limit`: sem grants authenticated/anon; service_role.
+
+4.6 Trigger de proteção
+  - `f_recrutamento_ofertas_before_update`:
+      * bloqueia alteração de tenant_id, protocolo, created_at, idempotency_key,
+        dedup_hash, ip_hash, user_agent_hash, origem e campos LGPD;
+      * valida transições de status (nova→em_analise/em_contato/descartada/
+        arquivada; em_analise→em_contato/convertida/descartada/arquivada;
+        em_contato→convertida/descartada/arquivada; convertida→arquivada;
+        duplicada→arquivada);
+      * atualiza updated_at.
+
+----------------------------------------------------------------------------------------------------
+5. EDGE FUNCTION ofertas-publicas
+----------------------------------------------------------------------------------------------------
+Arquivo: supabase/functions/ofertas-publicas/index.ts
+PUBLICADA: NÃO. (Código criado; nenhum deploy executado.)
+
+5.1 Controles implementados
+  - POST only; OPTIONS CORS; 405 para outros métodos.
+  - CORS restrito por `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` (fallback localhost).
+    Origem não autorizada → 403.
+  - Limite de corpo: 32 KB (Content-Length + bytes reais) → 413.
+  - JSON object obrigatório; arrays/primitivos → 400.
+  - Validação rigorosa via validation.ts (campos, tipos, tamanhos, enums,
+    telefone/e-mail, dias, horários, modalidades, veículo, valores, LGPD).
+  - Campos inesperados (tenant_id, status, protocolo, id, liberado_app etc.)
+    → 400; tenant/status/protocolo nunca vêm do navegador.
+  - Tenant: exclusivamente `OFERTAS_PUBLICAS_TENANT_ID` (server-side), validado
+    como UUID; ausência → 503.
+  - service_role: somente `SUPABASE_SERVICE_ROLE_KEY` no runtime da Edge; nunca
+    retornado ao browser.
+  - IP: `cf-connecting-ip`/`x-real-ip`/`x-forwarded-for`; hash SHA-256 com
+    `OFERTAS_PUBLICAS_IP_SALT`; ausência do salt → 503.
+  - User-Agent: hash SHA-256; opcional.
+  - Idempotência: `x-idempotency-key` ou `request_id` (UUID) → p_request_id.
+  - CAPTCHA: suporte Turnstile/hCaptcha; verificação server-side com timeout 5s.
+    `OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=true` + sem secret → 503 (não simula).
+    Token inválido/expirado/reutilizado → 403 (provedor valida uso único).
+  - Rate limit: aplicado dentro da RPC por tenant+IP hash (5/min); Edge mapeia
+    erro `rate_limit` para 429.
+  - Respostas de erro genéricas; nenhum detalhe interno/PII retornado.
+  - Logs: protocolo, ip_hash_prefix, captcha_status, latência; sem CPF, telefone,
+    e-mail, endereço ou payload.
+  - Sucesso retorna apenas `{ success: true, protocolo }`.
+
+5.2 Variáveis de ambiente necessárias (server-side)
+  - `SUPABASE_URL` (runtime Supabase)
+  - `SUPABASE_SERVICE_ROLE_KEY` (runtime Supabase; NUNCA no frontend)
+  - `OFERTAS_PUBLICAS_TENANT_ID` (UUID do tenant público)
+  - `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` (lista separada por vírgula)
+  - `OFERTAS_PUBLICAS_IP_SALT` (segredo aleatório para hash de IP)
+  - `OFERTAS_PUBLICAS_CAPTCHA_PROVIDER` = turnstile | hcaptcha
+  - `OFERTAS_PUBLICAS_CAPTCHA_SECRET`
+  - `OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=true` (produção)
+  - Nenhum destes valores está hardcoded no código.
+
+5.3 Config local
+  - supabase/config.toml:
+      [functions.ofertas-publicas]
+      verify_jwt = false
+  - Necessário para endpoint público; NÃO é deploy.
+
+----------------------------------------------------------------------------------------------------
+6. RPC f_registrar_oferta_publica
+----------------------------------------------------------------------------------------------------
+Assinatura:
+  f_registrar_oferta_publica(
+    p_tenant_id uuid,
+    p_payload jsonb,
+    p_request_id text DEFAULT NULL,
+    p_ip_hash text DEFAULT NULL,
+    p_user_agent_hash text DEFAULT NULL
+  ) RETURNS jsonb
+
+Segurança:
+  - SECURITY DEFINER; SET search_path = public, pg_temp.
+  - REVOKE ALL FROM PUBLIC, anon, authenticated.
+  - GRANT EXECUTE apenas TO service_role.
+  - Não há EXECUTE para anon/authenticated; o navegador não chama a RPC.
+
+Validação/transação:
+  - p_payload precisa ser objeto; allowlist de campos; rejeita tenant/status/
+    protocolo/id/liberado_app e outros campos inesperados.
+  - tenant existe em tenants; senão `tenant_invalido`.
+  - telefone/e-mail normalizados; ao menos um contato; e-mail válido.
+  - cidade/UF/regiões/dias/horários/modalidades/veículo/valores validados.
+  - LGPD obrigatório; versão do termo obrigatória.
+  - Protocolo não sequencial (OF-AAAAMMDD-XXXXXXXX).
+  - Gravação atômica de oferta + identificadores + evento(s).
+  - Retorno mínimo: success, oferta_id, protocolo, deduplicada, revisao_humana.
+  - Erros por códigos genéricos (sem PII); Edge mapeia status HTTP.
+
+Permissões:
+  - Tabelas: authenticated somente SELECT/UPDATE com RLS por tenant;
+    service_role ALL; anon revogado.
+  - RPC: service_role only.
+  - Nenhum INSERT direto para anon ou authenticated.
+
+----------------------------------------------------------------------------------------------------
+7. DEDUPLICAÇÃO E CONCORRÊNCIA (CORREÇÃO DO 02B.0)
+----------------------------------------------------------------------------------------------------
+Estratégia implementada:
+  1. Normalização: telefone (dígitos), e-mail (lower), nome/cidade (trim/espaços),
+     UF (upper), placa (upper), arrays ordenados, valores numéricos.
+  2. Chave de identidade: não apenas a prioridade mais alta. O RPC monta
+     `v_identificadores` com TODOS os disponíveis (`telefone:`, `email:`, `cpf:`/`cnpj:`)
+     e adquire advisory locks transacionais para cada um, em ordem, mais o lock
+     do `dedup_hash`.
+  3. Duplicidade exata: `dedup_hash` canônico (tipo, nome, contato, cidade/UF,
+     regiões, dias, modalidades, horário, veículo, capacidade, dimensões,
+     características, valores, condições) + unique parcial `(tenant_id, dedup_hash)`
+     para status ativos. Reenvio retorna o mesmo protocolo com `deduplicada=true`.
+  4. Idempotência: `request_id` (UUID) em `idempotency_key` + unique parcial
+     `(tenant_id, idempotency_key)`; reenvio do mesmo request retorna a mesma
+     oferta/protocolo.
+  5. Conflito de identificadores: consulta `recrutamento_oferta_identificadores`.
+     Se telefone/e-mail/CPF apontam para mais de uma oferta distinta, a oferta é
+     gravada com `revisao_humana=true` e evento `conflito_identificadores`;
+     não é bloqueada automaticamente.
+  6. Mesmo contato com ofertas legítimas diferentes: `dedup_hash` diferente
+     (veículo/condições diferentes) e sobreposição em apenas uma oferta existente
+     → oferta nova aceita sem revisão.
+  7. Concorrência: advisory locks por identificador + dedup, unique parciais e
+     tratamento de `unique_violation` retornando a oferta vencedora. Não depende
+     de SELECT FOR UPDATE em registros inexistentes.
+
+Limitação conhecida:
+  - Os testes de concorrência reais dependem de banco com a migration aplicada.
+    Nesta missão, a estratégia foi validada por contrato/fonte, não por execução
+    concorrente em banco (migration não aplicada).
+
+----------------------------------------------------------------------------------------------------
+8. CAPTCHA E RATE LIMIT
+----------------------------------------------------------------------------------------------------
+CAPTCHA:
+  - Código implementado para Turnstile e hCaptcha, verificação server-side.
+  - Token inválido/expirado/reutilizado: o provedor responde success=false e a
+    Edge retorna 403; tokens são de uso único no provedor.
+  - Sem `OFERTAS_PUBLICAS_CAPTCHA_SECRET` e com REQUIRE_CAPTCHA=true → 503.
+  - ESTADO: BLOQUEADO PARA PRODUÇÃO por falta de credenciais/provedor definido.
+    Nenhuma proteção de captcha foi simulada; o código não afirma captcha ativo
+    quando não há segredo.
+
+RATE LIMIT:
+  - Tabela persistente `recrutamento_oferta_rate_limit` por tenant + IP hash.
+  - RPC incrementa por minuto e rejeita acima de 5 (`rate_limit`); Edge → 429.
+  - ESTADO: IMPLEMENTADO, AGUARDANDO PROVA REAL (migration não aplicada).
+  - Não depende de memória do isolate; funciona entre instâncias da Edge após
+    aplicação da migration.
+
+----------------------------------------------------------------------------------------------------
+9. LGPD E AUDITORIA
+----------------------------------------------------------------------------------------------------
+LGPD:
+  - `lgpd_consent=true` obrigatório no payload/RPC; CHECK no banco.
+  - `lgpd_consent_em=now()`, `lgpd_termo_versao` obrigatório (contrato atual
+    "2026-11-v1"), `lgpd_finalidade='analise_e_contato_sobre_oferta'`.
+  - Sem documentos pessoais/CNH/CRLV/selfie/PIX/banco/assinatura neste fluxo.
+  - IP somente em hash SHA-256 com salt; user-agent também em hash.
+  - Retenção e texto jurídico definitivo NÃO foram inventados; ficam pendentes de
+    validação da empresa.
+
+Auditoria:
+  - Tabela `recrutamento_oferta_eventos` (não JSON editável da oferta):
+    oferta_recebida, conflito_identificadores, conversão futura.
+  - Eventos só SELECT para authenticated do tenant; escrita service_role/RPC.
+  - `historico` JSONB não foi usado como fonte única de auditoria.
+
+----------------------------------------------------------------------------------------------------
+10. INTEGRAÇÃO COM O FORMULÁRIO
+----------------------------------------------------------------------------------------------------
+  - O formulário da ADM-APP-02B.1 continua exibindo o estado de envio pendente.
+  - NÃO foi conectado à Edge nesta missão porque a Edge não está publicada e as
+    variáveis de ambiente/tenant/CORS/captcha não estão configuradas.
+  - Nenhum sucesso foi simulado; nenhuma gravação foi feita.
+  - Contrato do payload foi alinhado: `lgpd_termo_versao` incluído
+    (`LGPD_TERMO_VERSAO = "2026-11-v1"`) e `origem` removida do payload do
+    navegador (definida pelo backend).
+  - Quando a Edge estiver publicada e configurada, a confirmação de sucesso
+    deverá ser exibida SOMENTE após resposta 200 com protocolo, usando a
+    mensagem exata:
+    "Oferta registrada com sucesso. A equipe da Conexão Express poderá entrar em
+    contato para conhecer melhor sua disponibilidade e as condições de
+    atendimento. O envio desta oferta não representa aprovação, contratação ou
+    liberação de acesso ao APP."
+
+----------------------------------------------------------------------------------------------------
+11. TESTES EXECUTADOS E RESULTADOS
+----------------------------------------------------------------------------------------------------
+Comandos e resultados reais:
+  1. `npx tsc --noEmit`
+     → 0 erros.
+  2. `npx esbuild supabase/functions/ofertas-publicas/index.ts --bundle
+     --format=esm --platform=neutral --external:https://* --outfile=<temp>`
+     → bundle gerado (18.3 kb) em 21 ms; sintaxe da Edge válida.
+     (Deno não está instalado; não houve type-check Deno.)
+  3. `npx vitest run src/test/adm_app_02b2_backend_ofertas.test.ts`
+     → 23/23 PASS.
+  4. `npx vitest run src/test/adm_app_02b1_oferta_publica_form.test.ts
+     src/test/adm_app_02b2_backend_ofertas.test.ts
+     src/test/sidebarData.test.ts src/test/tms_layout_01_sidebar.test.tsx`
+     → 59/59 PASS (11 + 23 + 21 + 4).
+  5. `npx vitest run` (suíte completa)
+     → 18 arquivos / 44 testes falhos = BASELINE EXATA do projeto;
+       2577 passed (+23 desta missão) / 155 skipped.
+       Nenhuma falha nos arquivos desta missão.
+  6. `npm run build`
+     → OK (50,04s).
+  7. `npx eslint` nos arquivos de contrato/teste em src
+     → 0 erros (validation.ts em supabase é ignorado pelo ESLint do projeto).
+
+Cobertura dos 20 testes obrigatórios:
+  1. Payload válido ......................... PASS runtime (validation.ts)
+  2. Campos obrigatórios ausentes .......... PASS runtime
+  3. Telefone inválido ..................... PASS runtime
+  4. E-mail inválido ....................... PASS runtime
+  5. Consentimento ausente ................. PASS runtime
+  6. Campos inesperados .................... PASS runtime
+  7. Payload acima do limite ............... PASS parcial runtime (campo) +
+     contrato Edge (MAX_BODY_BYTES); HTTP real não executado
+  8. CAPTCHA inválido/expirado ............. CONTRATO/FONTE; runtime bloqueado
+     (sem credenciais/provedor e sem Edge publicada)
+  9. Rate limit ............................ CONTRATO/FONTE; runtime pendente
+     (migration não aplicada)
+ 10. Tenant definido pelo navegador ........ PASS runtime (rejeita tenant_id) +
+     contrato Edge (tenant server-side)
+ 11. INSERT direto por anon ................ CONTRATO/FONTE; runtime pendente
+ 12. SELECT público ........................ CONTRATO/FONTE; runtime pendente
+ 13. Execução indevida da RPC .............. CONTRATO/FONTE; runtime pendente
+ 14. Conflito telefone/e-mail .............. CONTRATO/FONTE; runtime pendente
+ 15. Requisições simultâneas ............... CONTRATO/FONTE; runtime pendente
+ 16. Reenvio idempotente ................... CONTRATO/FONTE; runtime pendente
+ 17. Mesmo contato com ofertas diferentes .. CONTRATO/FONTE; runtime pendente
+ 18. Isolamento entre tenants .............. CONTRATO/FONTE; runtime pendente
+ 19. Proteção de campos/status ............. CONTRATO/FONTE; runtime pendente
+ 20. Ausência de PII nos logs .............. CONTRATO/FONTE; PASS de fonte
+
+Testes NÃO executados e motivos:
+  - RLS/anon/RPC/concorrência/idempotência reais: exigem migration aplicada em
+    banco (não autorizado nesta missão).
+  - Edge HTTP real: exige deploy da função (não autorizado) e configuração de
+    secrets/CORS/tenant/captcha.
+  - CAPTCHA real: sem provedor/credenciais definidos.
+  - QA visual: ambiente QA indisponível (MISSÃO 1.1 bloqueada).
+  - Deno type-check: Deno não instalado; foi usado esbuild para sintaxe.
+
+----------------------------------------------------------------------------------------------------
+12. BLOQUEIOS POR CREDENCIAIS/INFRAESTRUTURA
+----------------------------------------------------------------------------------------------------
+  - CAPTCHA: BLOQUEADO — sem provedor/secret definidos; nenhuma proteção
+    simulada.
+  - Migration: BLOQUEADA para aplicação — aguarda autorização separada.
+  - Edge: BLOQUEADA para publicação — aguarda autorização e secrets.
+  - Tenant/CORS/IP salt: PENDENTES de configuração no ambiente seguro.
+  - Testes de RLS/concorrência/rate limit: PENDENTES de banco com migration.
+  - Serviço role: somente no runtime da Edge; nunca exposto ao frontend.
+
+----------------------------------------------------------------------------------------------------
+13. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Nenhuma escrita remota: NÃO houve INSERT/UPDATE/DELETE/DDL em produção ou
+    homologação.
+  - Nenhuma migration aplicada: o arquivo SQL é apenas proposta local.
+  - Nenhum deploy: a Edge Function não foi publicada.
+  - Nenhum segredo criado/alterado.
+  - Nenhum arquivo do APP foi criado/alterado/removido; git status do APP não
+    mostra modificações tracked.
+  - Nenhum acesso anon direto foi liberado.
+  - Nenhum service_role foi exposto no frontend.
+  - Nenhuma alteração em Recrutamento/Clientes/Financeiro/outras áreas além dos
+    arquivos desta missão.
+  - ADM-APP-02B.3 NÃO iniciada.
+
+----------------------------------------------------------------------------------------------------
+14. PENDÊNCIAS PARA 02B.2 (APÓS AUTORIZAÇÃO) E 02B.3
+----------------------------------------------------------------------------------------------------
+02B.2 — execução remota/controlada:
+  1. Revisar/aplicar a migration em ambiente QA com autorização separada.
+  2. Configurar secrets/env da Edge: tenant, CORS, IP salt, captcha.
+  3. Publicar a Edge `ofertas-publicas` (com verify_jwt=false).
+  4. Executar testes reais: payload válido, anon insert/select negado, RPC
+     service_role, rate limit, idempotência, concorrência, conflito, isolamento
+     por tenant e logs sem PII.
+  5. Conectar o formulário à Edge somente após 3/4; exibir a mensagem exata de
+     sucesso apenas com protocolo confirmado.
+  6. Definir retenção LGPD e texto jurídico aprovado.
+  7. QA visual e testes negativos em ambiente QA.
+
+02B.3 — consulta/filtros/comparação:
+  1. Visão de ofertas no Recrutamento (reutilizando padrões do Banco de Talentos).
+  2. Filtros por região, modalidade, veículo, disponibilidade, capacidade e
+     valores.
+  3. Comparação de valores/condições; contato/CRM; atualização de disponibilidade.
+  4. Conversão explícita oferta → candidato, sem criar prestador/Auth/liberado_app.
+  5. Documentos somente em etapa posterior autenticada.
+
+Backlog preservado:
+  - A-1..A-14 e P-01..P-10 continuam no backlog; esta missão criou a base de
+    backend (P-02/P-04 parcial, P-10 parcial), sem apagar pendências anteriores.
+  - A-1 não é resolvido para o fluxo de candidato até a integração/conversão;
+    o link público agora tem contrato de oferta, não de cadastro de candidato.
+====================================================================================================

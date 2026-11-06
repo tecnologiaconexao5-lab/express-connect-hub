@@ -1,5 +1,28 @@
 # Summary
 
+## MISSÃO PROP-ANEXO-PDF — Upload de PDF no Editor de Propostas + botão "Anexar Arquivo" do Orçamento (2026-11-06)
+
+**Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint sem erros novos (`no-explicit-any` restantes = baseline) · teste novo **14/14** · 12 specs que leem `OrcamentoForm` **250/250** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2644 pass**, +14) · `npm run build` ok (1m02s). Sem migration (anexo do orçamento vive só no estado do formulário).
+
+### O que mudou (pedido GD-11: botão "Anexar Arquivo" sem onClick em `OrcamentoForm.tsx`)
+1. **`EditorProposta.tsx` (alvo primário)** — novo Card **"Anexo PDF da Proposta"** no topo da coluna principal: dropzone com drag & drop + input oculto (`accept="application/pdf,.pdf"`, testids `prop-anexo-input/-dropzone/-chip`); `anexarPdf()` valida com `validarArquivoAnexo` + guard MIME PDF, envia para o bucket privado **`propostas`** (`contentType: "application/pdf"`, `upsert: false`), gera signed URL (`SIGN_TTL_SECONDS`), grava `{ nome, path, referencia, url }` em `formData.anexo` e **preenche o "Título Oficial da Proposta" só se estiver vazio** (nome do ficheiro sem `.pdf`). Chip com **Abrir** (re-sign lazy + `window.open` seguro) e **Remover**; estados `isUploading`/`arrastando` no dropzone, no botão ("Anexando PDF...") e no **guard do Salvar** ("Aguarde o upload do PDF terminar antes de salvar."); toast de sucesso menciona a referência gravada **pronta para envio por e-mail**; `handleSave` desabilitado com `loading || isUploading`.
+2. **`OrcamentoForm.tsx` (GD-11)** — botão **"Anexar Arquivo"** deixou de ser morto: `onClick={() => anexoInputRef.current?.click()}` + dropzone com drag & drop (testids `orc-anexo-input/-dropzone/-chip`), upload para o **mesmo** bucket `propostas` (só PDF), estado `isUploadingAnexo`, chip **Abrir anexo**/**Remover**, anexo guardado em `data.anexo` (novo campo opcional) com nota de que a referência fica gravada com o orçamento ao salvar.
+3. **`types.ts`** — `export interface AnexoOrcamento { nome; path; referencia; url }` + `anexo?: AnexoOrcamento | null` em `Orcamento`. **`toOrcamentoInsert` (whitelist) não recebe anexo** — sem migration, sem coluna nova em `orcamentos`.
+4. **Decisões**: não criar `documentos_metadata` aqui (já coberto em `ListaPropostas`); guardar `path`+`referencia` estáveis e re-sign lazy ao abrir; bloquear Salvar durante upload; `OrcamentoForm` aceita só PDF.
+
+### Testes
+- **NOVO** `src/test/prop_anexo_pdf_editor_orcamento.test.ts` (**14**): A) bucket/MIME/signed URL, título só se vazio, guard PDF + `isUploading`, estado do anexo, dropzone/chip/Abrir/Remover, toast de e-mail; B) botão com `onClick`, mesmo upload, `data.anexo` + chip; C) tipos `AnexoOrcamento`, `toOrcamentoInsert` sem `anexo`, `validarArquivoAnexo` com arquivo >50MB.
+
+### Arquivos
+- `src/components/comercial/propostas/EditorProposta.tsx` (REESCRITO parcialmente) · `src/components/comercial/OrcamentoForm.tsx` · `src/components/comercial/types.ts` · `src/test/prop_anexo_pdf_editor_orcamento.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/comercial?tab=propostas` → nova/edição: arrastar PDF → título preenchido se vazio, chip com Abrir/Remover, Salvar bloqueado durante upload e toast com referência; conferir que a proposta salva carrega o anexo ao reabrir (`normalizarAnexo`).
+2. (QA) `OrcamentoForm`: botão "Anexar Arquivo" + drag & drop, chip Abrir/Remover, PDF >50MB/não-PDF rejeitado.
+3. (decisão) Anexo do orçamento **não persiste em DB** (sem coluna em `orcamentos`) — se a operação quiser reabrir com o anexo, adicionar coluna/migration.
+
+---
+
 ## MISSÃO ESTABILIDADE-CRM-CADASTROS-CUSTOS — Realtime, Select CRM, Endereços, Exportação, Filtros e Unit Economics (2026-11-03)
 
 **Status:** ✅ Concluída (código + banco). `npx tsc --noEmit` 0 erros · ESLint sem erros novos · teste novo **11/11** · afetados **86/86** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2528 pass**, +11) · `npm run build` ok (46,04s). Migration `20261103000000_economia_operacional_crm.sql` aplicada em produção (dry-run 4/4 → `--apply` 4/4 + pós-COMMIT 4/4).

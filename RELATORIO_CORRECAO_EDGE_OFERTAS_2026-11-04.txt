@@ -1,0 +1,122 @@
+====================================================================================================
+CORREÇÃO PONTUAL — EDGE FUNCTION OFERTAS-PUBLICAS
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+RESULTADO: CORREÇÃO APLICADA, EDGE V2 PUBLICADA E FLUXO REAL VALIDADO
+====================================================================================================
+
+1. CORREÇÃO LOCAL
+----------------------------------------------------------------------------------------------------
+  Arquivo alterado:
+    supabase/functions/ofertas-publicas/index.ts
+
+  Alteração mínima:
+    - mantida a validação UUID atual para os demais valores;
+    - adicionado o tenant sentinela legítimo:
+        00000000-0000-0000-0000-000000000001
+    - a checagem do tenant passou a aceitar esse valor explicitamente,
+      sem afrouxar o regex dos outros UUIDs.
+
+  Nenhuma outra validação foi alterada.
+  Nenhuma migration, tabela, função SQL ou policy foi alterada.
+  Nenhum secret foi alterado.
+
+  Arquivo corrigido:
+    bytes: 10.404
+    linhas: 290
+    SHA-256: B7FF37D947EBBDAB50B0AA3D1C1E36157835DB8DD16AA21537557A123CF078C7
+
+2. TESTES LOCAIS
+----------------------------------------------------------------------------------------------------
+  Teste da regra de aceitação:
+    - 00000000-0000-0000-0000-000000000001: ACEITO;
+    - UUID v4 válido: ACEITO;
+    - string vazia: REJEITADA;
+    - UUID sem hífens: REJEITADO;
+    - terceiro grupo inválido: REJEITADO;
+    - UUID nil não autorizado: REJEITADO;
+    - UUID curto: REJEITADO.
+
+  Testes de validação do payload:
+    - payload válido: VÁLIDO;
+    - payload vazio: INVÁLIDO;
+    - campo inesperado: INVÁLIDO;
+    - LGPD ausente: INVÁLIDO.
+
+  Deploy bundling também passou sem erro de sintaxe.
+
+3. DEPLOY
+----------------------------------------------------------------------------------------------------
+  Comando:
+    supabase functions deploy ofertas-publicas --project-ref uwrvzsjtpgaifkktpepn --no-verify-jwt
+
+  Resultado:
+    - deploy exit 0;
+    - função ofertas-publicas ACTIVE;
+    - versão: 2;
+    - verify_jwt: false;
+    - nenhuma outra função publicada;
+    - nenhum db push ou migration executado.
+
+4. TESTES REAIS EM PRODUÇÃO
+----------------------------------------------------------------------------------------------------
+  Origem usada:
+    https://app.conexaoexpress.com.br
+
+  OPTIONS/CORS:
+    - HTTP 204;
+    - Access-Control-Allow-Origin correto.
+
+  POST:
+    - payload vazio: HTTP 400 payload_invalido;
+    - campo inesperado: HTTP 400 payload_invalido;
+    - payload acima do limite: HTTP 413 payload_muito_grande;
+    - cadastro válido: HTTP 200;
+    - protocolo: OF-20261104-9E680E36;
+    - replay idempotente: HTTP 200, mesmo protocolo;
+    - rate limit: HTTP 429 muitas_tentativas após o limite de 5/min.
+
+  O cadastro válido só retornou sucesso após resposta válida do backend.
+
+5. OFERTA GRAVADA
+----------------------------------------------------------------------------------------------------
+  Consulta real em public.recrutamento_ofertas:
+    protocolo: OF-20261104-9E680E36
+    nome: TESTE EDGE 02B4
+    status: nova
+    origem: link_publico
+    revisao_humana: false
+
+  Total de ofertas gravadas: 1
+  Eventos de oferta: 1
+
+6. AUSÊNCIA DE EFEITOS COLATERAIS
+----------------------------------------------------------------------------------------------------
+  Contagens antes/depois:
+    recrutamento_ofertas: 0 → 1
+    recrutamento_candidatos: 39 → 39
+    prestadores: 40 → 40
+    auth.users: 27 → 27
+
+  Portanto:
+    - nenhum candidato novo foi criado;
+    - nenhum prestador operacional foi criado;
+    - nenhum usuário Auth foi criado;
+    - nenhuma liberação no APP foi feita;
+    - nenhuma conversão foi executada.
+
+7. OBSERVAÇÕES
+----------------------------------------------------------------------------------------------------
+  - O cadastro de teste permanece em produção com o nome TESTE EDGE 02B4.
+    Não foi removido nesta missão para não executar operação destrutiva.
+  - Migrations 02B.2 e 02B.3 permanecem aplicadas e intactas.
+  - Nenhuma alteração em APP Prestador, Financeiro ou outros módulos.
+  - Nenhum secret exibido.
+
+8. CLASSIFICAÇÃO
+----------------------------------------------------------------------------------------------------
+  CORREÇÃO CONCLUÍDA E VALIDADA.
+  O formulário/endpoint público está funcional; o próximo passo é a
+  homologação da tela pública e do painel interno.
+
+====================================================================================================

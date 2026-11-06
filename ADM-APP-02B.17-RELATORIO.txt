@@ -1,0 +1,455 @@
+====================================================================================================
+ADM-APP-02B.17 — AUDITORIA DE ESCOPO E MENOR CAMINHO DO RECRUITMENT
+PROJETO: Conexão Express — TMS
+REPOSITÓRIO: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+DATA: 2026-11-04
+TIPO: AUDITORIA READ-ONLY / DIAGNÓSTICO / SEM IMPLEMENTAÇÃO
+RESULTADO: DIAGNÓSTICO CONCLUÍDO — RECRUITMENT TEM UI E CONTRATO LOCAL, MAS O BACKEND REAL NÃO ESTÁ IMPLANTADO.
+====================================================================================================
+
+1. ESCOPO E CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Auditoria exclusivamente de leitura no repositório TMS.
+  - Nenhum acesso ao APP Prestador.
+  - Nenhum código, migration, configuração ou arquivo existente alterado.
+  - Nenhuma migration executada.
+  - Nenhum Supabase local iniciado/restaurado.
+  - Nenhum container Docker iniciado, parado ou modificado.
+  - Nenhuma conexão de escrita com produção.
+  - Nenhuma Edge Function publicada.
+  - Nenhuma tabela, RPC, service ou componente criado.
+  - O único arquivo criado nesta missão é este relatório.
+
+  Baseline consultado:
+    supabase/baseline/full_production_schema_readonly_20261103.sql
+    SHA-256: 236E5AD4899A18073CC56AB4651678D462D0A1A307CD9BE84A4CC8EF648A79B3
+    O hash foi reconferido e está igual ao baseline autorizado.
+    Nenhuma restauração do baseline foi necessária para esta auditoria.
+
+2. DIAGNÓSTICO DO QUE JÁ ESTÁ PRONTO
+----------------------------------------------------------------------------------------------------
+2.1 Rota pública
+  - `/cadastro-prestador` existe em src/App.tsx:92.
+  - Está fora do ProtectedRoute, portanto não exige login.
+  - `CadastroPrestador.tsx` renderiza `OfertaPublicaForm`.
+  - A rota usa o formulário novo; não usa o serviço antigo `criarCandidatoService`.
+  - O formulário tem 5 etapas: oferta/contato, região/disponibilidade, modalidades/veículo,
+    capacidade/valores e restrições/LGPD.
+  - Não solicita documentos pessoais, CNH, CRLV, selfie, PIX ou dados bancários nesta fase.
+    Isso está coerente com a proposta de cadastro inicial simples e está coberto por teste.
+
+2.2 Formulário público e contrato de envio
+  - `OfertaPublicaForm.tsx` usa:
+      supabase.functions.invoke("ofertas-publicas", ...)
+  - Envia `x-idempotency-key` e payload de oferta.
+  - Só aceita sucesso quando a Edge devolve um `protocolo` real.
+  - Não simula cadastro, não mostra sucesso antes do protocolo e trata:
+      indisponibilidade do backend, CAPTCHA, rate limit, payload grande,
+      validação do servidor, erro de rede e resposta sem protocolo.
+  - O formulário mantém o mesmo `requestId` para retry idempotente e o descarta
+    quando o conteúdo muda.
+  - `modulo_origem`/tenant não são definidos pelo navegador; o tenant deve vir do
+    servidor (Edge).
+  - O formulário não faz INSERT direto em tabela.
+
+2.3 Biblioteca de domínio e validação
+  - `src/lib/ofertaPublica.ts` contém:
+      * tipos de oferta, modalidades, regiões, UFs, dias;
+      * criação de draft vazio;
+      * validação por etapa e validação global;
+      * montagem do payload;
+      * versão do termo LGPD (`2026-11-v1`);
+      * geração do link público.
+  - `src/components/cadastro-publico/OfertaCaptcha.tsx` existe e o CAPTCHA é opcional
+    no cliente; a verificação real deve ocorrer na Edge.
+  - `validation.ts` da Edge espelha as regras essenciais de validação do payload.
+
+2.4 Painel interno
+  - `OfertasPublicas.tsx` está integrado ao Recrutamento em:
+      src/modules/recrutamento/index.tsx (seção `ofertas-publicas`);
+      src/modules/recrutamento/layouts/RecrutamentoLayout.tsx (aba "Ofertas Públicas").
+  - O painel oferece:
+      * link público, copiar, compartilhar e WhatsApp;
+      * KPIs;
+      * busca por nome, telefone, e-mail e protocolo;
+      * filtros combinados por status, tipo, UF, cidade, região, modalidade, dia,
+        disponibilidade interna, veículo, capacidade e valores;
+      * paginação;
+      * detalhe da oferta;
+      * comparação de 2 a 4 ofertas;
+      * histórico/eventos;
+      * contato por WhatsApp/telefone/e-mail;
+      * alteração de status;
+      * disponibilidade interna;
+      * observações;
+      * revisão humana de conflito;
+      * conversão explícita em candidato.
+  - O painel lê a tabela real `recrutamento_ofertas` e usa RPCs para escrita;
+    não faz UPDATE direto em `recrutamento_ofertas`.
+  - Se a tabela/RPC não existir, o painel mostra explicitamente
+    "Backend de ofertas ainda não implantado neste ambiente", sem simular sucesso.
+
+2.5 Conversão para o funil interno
+  - `OfertaDetalheSheet.tsx` chama
+    `ofertasPublicasService.converterEmCandidato(oferta.id)`.
+  - A conversão cria somente `recrutamento_candidatos`; não cria prestador,
+    usuário Auth ou `liberado_app`.
+  - O candidato nasce em `novo_candidato`, com documentos vazios, preferências e
+    questionário derivados da oferta, e vínculo `oferta_id`.
+  - A conversão é explícita, idempotente e sujeita a revisão humana de conflito.
+  - A conversão é o ponto correto para "avançar o interessado para o processo
+    interno de recrutamento".
+
+2.6 Testes existentes
+  - Existem quatro arquivos de teste locais:
+      src/test/adm_app_02b1_oferta_publica_form.test.ts
+      src/test/adm_app_02b2_backend_ofertas.test.ts
+      src/test/adm_app_02b3_gestao_ofertas.test.ts
+      src/test/adm_app_02b4_fechamento_recrutamento.test.ts
+  - Eles cobrem forma, validação, contrato da Edge, segurança, RPCs, filtros,
+    comparação, estados de backend indisponível e conversão.
+  - Esses testes são majoritariamente baseados em fonte/contrato (source-based).
+    Eles NÃO comprovam INSERT real, RLS real, Edge real ou restauração de banco.
+
+3. O QUE ESTÁ IMPLEMENTADO SEM PROVA REAL
+----------------------------------------------------------------------------------------------------
+  - Envio público real para a Edge `ofertas-publicas`.
+  - Criação real de `recrutamento_ofertas` e tabelas auxiliares.
+  - RPC `f_registrar_oferta_publica` em execução.
+  - Rate limit real e CAPTCHA real.
+  - Leitura real do painel via RLS.
+  - RPCs de status, observação, disponibilidade, contato, revisão e conversão.
+  - Conversão real em `recrutamento_candidatos`.
+  - Comportamento de CORS/origem, tenant e idempotência em produção.
+
+  Motivo: o backend abaixo não está implantado e a Edge não está publicada.
+
+4. COMPARAÇÃO COM O BASELINE ATUAL
+----------------------------------------------------------------------------------------------------
+4.1 Objetos que já existem e podem ser reutilizados
+  - `public.tenants`
+      Tenant e FK usada pela oferta. O tenant padrão documentado no schema é
+      `00000000-0000-0000-0000-000000000001`.
+  - `public.tenant_usuarios`
+      Autorização de usuário TMS por tenant.
+  - `public.current_tenant_id_safe()`
+      Já existe no baseline e é usada pelas RPCs/RLS.
+  - `public.recrutamento_candidatos`
+      Tabela principal do funil. Já possui, entre outras:
+        nome, telefone, email, cidade, uf, veiculo, placa, stage,
+        status_documental, documentos, questionario_respostas,
+        preferencias_operacionais, respostas_situacionais,
+        disponibilidade_recrutamento, historico.
+      Não possui `tenant_id` nem `oferta_id` neste baseline.
+  - `public.recrutamento_prestadores`
+      Já existe; não é criada nem alterada pelo fluxo público e não é necessária
+      para a conversão em candidato.
+  - `public.candidato_documentos`
+      Já existe, com `arquivo_url`, `status`, `validade` e `dados_extraidos`.
+      Serve para documentos do candidato no Recrutamento.
+  - `public.documentos_metadata`
+      Já existe no baseline atual, com categoria `Recrutamento`, `entidade_id`,
+      `modulo_origem`, status IA, versão, histórico etc.
+      Pode ser reutilizada em etapa futura de documentos.
+  - `public.documentos_prestadores`
+      Já existe e é a fonte canônica pós-conversão; não deve ser usada para o
+      cadastro público inicial.
+  - `public.orcamentos`
+      Já existe, mas NÃO é necessária para o link público de Recrutamento.
+      Não reutilizar para armazenar ofertas.
+
+4.2 Objetos que realmente faltam no baseline
+  - Não existe `public.recrutamento_ofertas`.
+  - Não existe `public.recrutamento_oferta_identificadores`.
+  - Não existe `public.recrutamento_oferta_eventos`.
+  - Não existe `public.recrutamento_oferta_rate_limit`.
+  - Não existe `recrutamento_candidatos.oferta_id`.
+  - Não existe `recrutamento_candidatos.tenant_id`.
+  - Não existe nenhuma das 10 funções do fluxo:
+      02B.2:
+        f_recrutamento_ofertas_before_update
+        f_registrar_oferta_publica
+      02B.3:
+        f_oferta_usuario_autorizado
+        f_oferta_status_transicao_permitida
+        f_atualizar_status_oferta
+        f_registrar_observacao_oferta
+        f_atualizar_disponibilidade_oferta
+        f_registrar_contato_oferta
+        f_resolver_revisao_oferta
+        f_converter_oferta_em_candidato
+  - Não existem as policies/grants/indexes/trigger específicos das ofertas.
+
+4.3 O que é redundante ou já está coberto
+  - `recrutamento_candidatos.preferencias_operacionais` já existe no baseline.
+  - `recrutamento_candidatos.respostas_situacionais` já existe no baseline.
+    A 02B.3 contém `ADD COLUMN IF NOT EXISTS` para essas duas colunas por
+    compatibilidade; no baseline atual elas são no-op, não criam estrutura duplicada.
+  - `recrutamento_candidatos.documentos` (JSONB) e `candidato_documentos` já
+    existem; NÃO criar uma nova tabela de documentos para o link público.
+  - `documentos_metadata` já existe; NÃO criar um segundo catálogo documental.
+  - `recrutamento_prestadores` já existe; NÃO criar prestador no cadastro público.
+  - `orcamentos` existe, mas NÃO é necessário para o link público.
+  - Não criar uma tabela "ofertas" paralela à `recrutamento_ofertas` nem um
+    serviço de armazenamento concorrente.
+
+5. DEPENDÊNCIAS REAIS DA MIGRAÇÃO
+----------------------------------------------------------------------------------------------------
+  A 02B.2 (818 linhas) cria:
+    - 4 tabelas;
+    - coluna `recrutamento_candidatos.oferta_id`;
+    - 2 funções;
+    - índices, trigger, policies, grants e comentários;
+    - rate limit persistente.
+  A 02B.3 (655 linhas) depende da 02B.2 e adiciona:
+    - `recrutamento_ofertas.disponibilidade_interna`;
+    - `recrutamento_candidatos.tenant_id`;
+    - compatibilidade para `preferencias_operacionais`/`respostas_situacionais`;
+    - 8 funções de gestão/conversão;
+    - grants/revogações e comentários.
+
+  Dependências já existentes no baseline:
+    - `tenants` com o tenant padrão;
+    - `tenant_usuarios` com usuário TMS vinculado;
+    - `current_tenant_id_safe()`;
+    - `auth.uid()`;
+    - `recrutamento_candidatos`;
+    - `recrutamento_candidatos.preferencias_operacionais` e
+      `respostas_situacionais`;
+    - `recrutamento_prestadores`, `candidato_documentos`,
+      `documentos_metadata`, `documentos_prestadores` para etapas posteriores.
+  Extensões:
+    - O SQL das duas migrations usa `gen_random_uuid` e funções nativas do
+      PostgreSQL/Supabase; não foi encontrada dependência de extensão exótica.
+    - O baseline não trouxe `CREATE EXTENSION` (limitação já registrada), mas
+      isso não é uma dependência nova criada pela 02B.2/02B.3.
+
+  Ordem obrigatória:
+    1) 02B.2;
+    2) 02B.3.
+    A 02B.3 não deve ser aplicada antes da 02B.2.
+
+6. DEPENDÊNCIAS DE IMPLANTAÇÃO DA EDGE
+----------------------------------------------------------------------------------------------------
+  A Edge `ofertas-publicas` está implementada localmente, mas não publicada.
+  Para funcionar, precisa de:
+    - `OFERTAS_PUBLICAS_TENANT_ID` com UUID válido;
+    - `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` com a origem pública real;
+    - `OFERTAS_PUBLICAS_IP_SALT`;
+    - `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` fornecidos pelo runtime;
+    - CAPTCHA opcional: se exigido, `OFERTAS_PUBLICAS_REQUIRE_CAPTCHA=true` e
+      `OFERTAS_PUBLICAS_CAPTCHA_SECRET`; sem segredo e com exigência, a Edge
+      retorna indisponibilidade.
+  - O default de CORS é apenas `localhost:8800`/`127.0.0.1:8800`. Produção
+    não funcionará sem configurar a origem real.
+  - A Edge usa service_role somente no runtime; o frontend continua com anon key.
+  - `supabase/config.toml` define `verify_jwt = false` para essa função; o deploy
+    deve preservar essa configuração ou ser testado com JWT anon.
+  - O endpoint público não deve ser declarado funcionando antes de uma submissão
+    real e de uma leitura real no painel.
+
+7. DEPENDÊNCIA DO CLIENTE FRONTEND NO QA
+----------------------------------------------------------------------------------------------------
+  - `src/lib/supabase.ts` está hardcoded para produção:
+    `https://uwrvzsjtpgaifkktpepn.supabase.co`.
+  - Portanto, o frontend atual NÃO aponta automaticamente para um QA local.
+  - Para testar o formulário/painel em QA local via UI, será necessária uma
+    configuração de ambiente/pequena alteração de cliente; isso NÃO foi feito
+    nesta auditoria.
+  - Alternativa mínima para 02B.18: validar o backend/Edge por chamada HTTP
+    direta ao QA e validar o painel/UI depois, sem alterar `src/lib/supabase.ts`
+    nesta missão.
+  - Para produção, o cliente hardcoded já aponta para o projeto correto, mas a
+    Edge e as tabelas ainda precisam existir.
+
+8. DOCUMENTOS E PERFIL DOS INTERESSADOS
+----------------------------------------------------------------------------------------------------
+  - O cadastro público permanece simples: perfil, contato, região,
+    disponibilidade, modalidades, veículo, capacidade, valores, restrições e LGPD.
+  - Não há upload de documentos no link público; isso está correto para a fase de
+    captação e evita coletar dados sensíveis antes de contato.
+  - O baseline já possui estruturas para documentos:
+      * `candidato_documentos` para documentos do candidato no Recrutamento;
+      * `documentos_metadata` para o catálogo documental;
+      * `documentos_prestadores` para a fase pós-conversão.
+  - A conversão atual grava `documentos = []` e não exige documentos.
+  - O envio de documentos pode ficar para etapa futura, reutilizando
+    `candidato_documentos`/`documentos_metadata` e sem criar novo bucket/tabela
+    nesta entrega.
+  - Não foi identificado motivo para exigir CPF/CNH/CRLV no link público.
+
+9. PENDÊNCIAS COMPROVADAS
+----------------------------------------------------------------------------------------------------
+  P1. Aplicar 02B.2 no ambiente de teste e depois em produção, com autorização.
+  P2. Aplicar 02B.3 no mesmo ambiente, após 02B.2.
+  P3. Publicar a Edge `ofertas-publicas` e configurar as variáveis obrigatórias.
+  P4. Configurar a origem pública no CORS da Edge.
+  P5. Fazer um cadastro real e confirmar o protocolo retornado.
+  P6. Abrir o painel interno e confirmar a oferta recebida.
+  P7. Testar status, observação, contato, disponibilidade e revisão.
+  P8. Converter uma oferta e confirmar o candidato com `oferta_id`.
+  P9. Confirmar que a conversão não cria prestador, Auth ou `liberado_app`.
+  P10. Definir a estratégia de teste de UI no QA, por causa do cliente hardcoded
+       em produção.
+
+10. RISCOS E LIMITAÇÕES
+----------------------------------------------------------------------------------------------------
+  R1. Sem a Edge publicada e as tabelas/RPCs aplicadas, o link público não
+      registra nada; o formulário retorna indisponibilidade.
+  R2. Sem `OFERTAS_PUBLICAS_TENANT_ID` válido, a Edge retorna 503.
+  R3. Sem `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` com o domínio real, o navegador
+      será bloqueado por CORS.
+  R4. Sem `OFERTAS_PUBLICAS_IP_SALT`, a Edge retorna 503.
+  R5. CAPTCHA não é obrigatório no código; se a operação quiser proteção real,
+      precisa configurar segredo e exigência.
+  R6. O painel e o formulário foram validados por testes source-based; não há
+      prova real de DB/RLS/Edge nesta auditoria.
+  R7. O cliente hardcoded em produção impede um teste de UI direto no QA local.
+  R8. A conversão depende de `recrutamento_candidatos.tenant_id`; a migração
+      adiciona a coluna com default de tenant, mas a consistência em multi-tenant
+      precisa ser testada. O baseline atual não possui essa coluna.
+  R9. O link fallback `https://conexoexpress.app/cadastro-prestador` não foi
+      validado por DNS/produção; em navegador normal o link usa a origem atual.
+  R10. O baseline de produção tem ressalvas de ACL/role temporária e não foi
+       restaurado nesta missão; isso não impede a entrega, mas impede declarar
+       validação completa do banco inteiro.
+  R11. Não foi feita prova de carga concorrente, rate limit real nem abuso de
+       payload contra a Edge publicada.
+
+11. MENOR CAMINHO DE ENTREGA
+----------------------------------------------------------------------------------------------------
+11.1 Já implementado e testado localmente
+  - Formulário público com 5 etapas e validação.
+  - Payload normalizado, LGPD, idempotência e tratamento de erros.
+  - Rota pública fora do login.
+  - Painel interno, filtros, comparação, detalhe, histórico e conversão.
+  - Serviço com leitura autorizada e RPCs para escrita.
+  - Testes source-based 02B.1, 02B.2, 02B.3 e 02B.4.
+  - Migrations 02B.2/02B.3 escritas, ainda não aplicadas.
+
+11.2 Implementado, mas sem comprovação real
+  - Submissão pública chegar à Edge.
+  - Insert em `recrutamento_ofertas`.
+  - Rate limit e CAPTCHA reais.
+  - RLS e grants em runtime.
+  - Painel lendo RLS.
+  - Atualização de status/contato/disponibilidade/revisão.
+  - Conversão em candidato.
+  - CORS e tenant no ambiente publicado.
+
+11.3 Realmente pendente
+  - Aplicar 02B.2 e 02B.3 no ambiente alvo (QA primeiro; produção somente com
+    autorização separada).
+  - Publicar a Edge.
+  - Configurar tenant, CORS e IP salt; CAPTCHA se exigido.
+  - Executar a prova end-to-end mínima.
+  - Confirmar o candidato no funil interno.
+  - Resolver a estratégia de UI no QA por causa do cliente hardcoded.
+
+11.4 Bloqueado por dependência técnica
+  - UI de QA local: cliente Supabase hardcoded em produção.
+  - Produção: Edge não publicada; tabelas/RPCs ausentes.
+  - Link público em produção: CORS/tenant/salt ainda não configurados.
+  - Baseline completo em QA: ressalvas de ACL/role e extensões; não é pré-requisito
+    para a entrega do Recruitment.
+
+11.5 Desnecessário para entregar o Recruitment
+  - Restaurar o banco inteiro apenas para entregar o link.
+  - Criar nova tabela de documentos, novo bucket ou novo fluxo de upload.
+  - Criar prestador ou usuário Auth no cadastro público.
+  - Criar nova UI de ofertas; a existente já cobre o fluxo.
+  - Criar tabela paralela de ofertas ou novo serviço de armazenamento.
+  - IA de score, onboarding completo, notificações e conversão automática.
+  - Alterar `documentos_prestadores` ou `documentos_metadata` para esta fase.
+
+12. RESPOSTAS EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  Precisamos restaurar o banco inteiro?
+    NÃO para implementar/entregar o Recruitment. O necessário é aplicar 02B.2 e
+    02B.3 no ambiente alvo e publicar a Edge. A restauração completa do baseline
+    serve para validação ampla do TMS, não é pré-requisito desta entrega.
+
+  Quais objetos do banco precisam ser criados ou alterados?
+    Criar 4 tabelas: recrutamento_ofertas, recrutamento_oferta_identificadores,
+    recrutamento_oferta_eventos, recrutamento_oferta_rate_limit.
+    Alterar:
+      - recrutamento_candidatos: adicionar oferta_id;
+      - recrutamento_candidatos: adicionar tenant_id;
+      - recrutamento_ofertas: adicionar disponibilidade_interna (na 02B.3).
+    Criar 10 funções (2 da 02B.2 + 8 da 02B.3), policies, índices, trigger,
+    grants e comentários já definidos nas migrations.
+
+  Podemos reaproveitar estruturas existentes?
+    SIM:
+      - tenants, tenant_usuarios, current_tenant_id_safe e auth.uid();
+      - recrutamento_candidatos e suas colunas de preferências/respostas;
+      - recrutamento_prestadores para a fase seguinte;
+      - candidato_documentos, documentos_metadata e documentos_prestadores
+        para documentos em etapa futura.
+    NÃO é necessário criar uma nova tabela de candidatos, de documentos ou de
+    prestadores.
+
+  Menor sequência para o link público funcionar:
+    1. Aplicar 02B.2.
+    2. Aplicar 02B.3.
+    3. Publicar a Edge `ofertas-publicas`.
+    4. Configurar `OFERTAS_PUBLICAS_TENANT_ID`,
+       `OFERTAS_PUBLICAS_ALLOWED_ORIGINS` e `OFERTAS_PUBLICAS_IP_SALT`.
+    5. Abrir `/cadastro-prestador`, enviar uma oferta de teste e exigir protocolo.
+    6. Abrir "Recrutamento > Ofertas Públicas" e localizar a oferta.
+    7. Testar contato/status e converter em candidato.
+    Nenhuma nova tela ou tabela é necessária.
+
+  Teste mínimo que comprova que o cadastro chega ao painel:
+    - uma submissão válida pelo link público, com origem permitida;
+    - retorno de protocolo real da Edge;
+    - uma linha correspondente em `recrutamento_ofertas`;
+    - leitura da mesma linha no painel autenticado;
+    - conversão dessa oferta em `recrutamento_candidatos` com o mesmo `oferta_id`.
+    Sem essas quatro provas, o fluxo está implementado, mas não homologado.
+
+  O que pode ficar para etapa futura:
+    - upload/validação de documentos;
+    - IA de triagem/score;
+    - onboarding completo do candidato;
+    - criação de prestador e liberação do APP;
+    - notificações automáticas;
+    - otimizações de comparação/filtros além do que já existe;
+    - restauração integral do baseline e validação do TMS inteiro.
+
+13. PRÓXIMA MISSÃO RECOMENDADA
+----------------------------------------------------------------------------------------------------
+  ADM-APP-02B.18 — Implantação controlada e prova mínima do Recruitment.
+
+  Ordem recomendada:
+    1. Aplicar 02B.2 e 02B.3 em QA isolado, sem migrations adicionais.
+    2. Publicar a Edge em QA ou testar o endpoint diretamente.
+    3. Configurar tenant/origem/salt e, se aplicável, CAPTCHA.
+    4. Executar o teste mínimo de ponta a ponta.
+    5. Somente depois solicitar autorização para produção.
+    6. Na produção, aplicar as duas migrations, publicar a Edge e configurar
+       as variáveis; então repetir o teste mínimo real.
+    7. Não incluir documentos, IA, prestador ou onboarding nesta missão.
+
+  Critério de aceite da 02B.18:
+    - oferta pública real registrada com protocolo;
+    - oferta visível e consultável no painel interno;
+    - status/contato funcionando;
+    - conversão explícita em candidato com `oferta_id`;
+    - ausência de criação de prestador/Auth/liberado_app;
+    - nenhuma escrita em produção fora do ambiente expressamente autorizado.
+
+14. CONCLUSÃO
+----------------------------------------------------------------------------------------------------
+  O módulo Recruitment está bem avançado no frontend e no contrato de backend.
+  A lacuna real não é de UI: é a ausência das tabelas/RPCs de ofertas no banco
+  e da Edge publicada, mais a configuração de tenant/CORS/salt.
+  O caminho mínimo é aplicar as duas migrations já existentes, publicar a Edge,
+  configurar o ambiente e provar um único fluxo ponta a ponta. Não é necessário
+  reconstruir o TMS, restaurar o banco inteiro, criar documentos no link público
+  ou duplicar estruturas de candidato/documentos.
+
+  Esta auditoria NÃO declara o Recruitment homologado e NÃO executou nenhuma
+  alteração de código, migration, banco ou produção.
+
+====================================================================================================

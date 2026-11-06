@@ -1,0 +1,95 @@
+====================================================================================================
+ATIVAÇÃO DO RECRUTAMENTO — VERIFICAÇÃO OBJETIVA
+DATA: 2026-11-04
+RESULTADO: PRONTO PARA IMPLANTAÇÃO CONTROLADA; NADA FOI EXECUTADO
+====================================================================================================
+
+1. PROJETO SUPABASE CONECTADO
+----------------------------------------------------------------------------------------------------
+  - Ref: uwrvzsjtpgaifkktpepn
+  - Nome: conexao-express-tms
+  - Região: sa-east-1
+  - Status: ACTIVE_HEALTHY
+  - Classificação: PRODUÇÃO
+  - É o único projeto acessível na organização.
+
+  Conclusão: é o projeto correto SOMENTE se a ativação for em produção.
+  Não existe QA ativo/utilizável no momento.
+
+2. MIGRATIONS 02B.2 E 02B.3
+----------------------------------------------------------------------------------------------------
+  Arquivos presentes, preservados e com hashes conferidos:
+
+  02B.2
+    supabase/migrations/20261103000002_adm_app_02b2_ofertas_publicas.sql
+    bytes: 35.928 | linhas: 818
+    SHA-256: 050C47B45E68117DCE7B9CBCB0EA8CAD587EEB1779CE8FA30A2D1ACE3B6455C9
+
+  02B.3
+    supabase/migrations/20261103000003_adm_app_02b3_gestao_ofertas.sql
+    bytes: 24.337 | linhas: 655
+    SHA-256: BEB3F6556C55A29629B25648559A403D7DA98382B475E20ABEFF3FF2227F3A89
+
+  Estrutura estática:
+    - Ambas possuem BEGIN/COMMIT.
+    - 02B.2 cria as 4 tabelas de ofertas, adiciona oferta_id, 2 funções,
+      policies, grants, índices, trigger e rate limit.
+    - 02B.3 adiciona disponibilidade_interna, tenant_id do candidato e 8 funções
+      de gestão/conversão.
+    - Ordem obrigatória: 02B.2 → validar → 02B.3.
+
+  Dependências já existentes no baseline:
+    - tenants;
+    - tenant_usuarios;
+    - current_tenant_id_safe();
+    - recrutamento_candidatos;
+    - preferencias_operacionais;
+    - respostas_situacionais.
+
+  Não foi identificada dependência de extensão exótica nas migrations.
+  Ainda NÃO foram aplicadas; não há prova de execução real.
+
+3. EDGE FUNCTION
+----------------------------------------------------------------------------------------------------
+  Arquivos presentes:
+    - supabase/functions/ofertas-publicas/index.ts
+    - supabase/functions/ofertas-publicas/validation.ts
+
+  Prontidão estática:
+    - valida método, CORS, tamanho, payload, tenant, CAPTCHA opcional e rate limit;
+    - usa service_role somente no runtime;
+    - `supabase/config.toml` define `verify_jwt = false` para ofertas-publicas;
+    - ainda NÃO foi publicada.
+
+  Secrets necessários no ambiente de destino:
+    - OFERTAS_PUBLICAS_TENANT_ID
+    - OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+    - OFERTAS_PUBLICAS_IP_SALT
+
+  CAPTCHA é opcional; só exigir se houver decisão operacional e secret próprio.
+  Esses secrets não estão definidos no repositório.
+
+4. O QUE FALTA — ORDEM MAIS SIMPLES
+----------------------------------------------------------------------------------------------------
+  1. Autorização expressa para executar em produção, com backup/snapshot e
+     plano de rollback.
+  2. Confirmar o tenant que será usado pela Edge.
+  3. Aplicar 02B.2 em produção e validar.
+  4. Aplicar 02B.3 em produção e validar.
+  5. Configurar os três secrets da Edge.
+  6. Publicar `ofertas-publicas` com `verify_jwt = false`.
+  7. Fazer um cadastro real de teste pelo endpoint público.
+  8. Confirmar a oferta no painel interno.
+  9. Testar status/contato e converter em candidato com `oferta_id`.
+  10. Limpar o registro de teste, se autorizado.
+
+5. OBSERVAÇÕES FINAIS
+----------------------------------------------------------------------------------------------------
+  - Nenhum arquivo de código precisa ser alterado para a ativação.
+  - `src/lib/supabase.ts` já aponta para produção.
+  - Sem QA, a ativação exige escrita em produção e autorização expressa.
+  - Nenhuma migration, deploy, secret, migration ou escrita foi executada.
+  - Nenhum arquivo do sistema foi alterado.
+  - Único arquivo criado: este relatório.
+
+====================================================================================================

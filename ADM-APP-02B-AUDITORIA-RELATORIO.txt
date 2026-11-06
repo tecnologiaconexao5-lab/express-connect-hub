@@ -1,0 +1,529 @@
+====================================================================================================
+AUDITORIA ADM-APP-02B — PRÉ-CADASTRO
+PROJETO: Conexão Express — TMS + APP Prestador
+WORKSPACE TMS: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+WORKSPACE APP: C:\src\conexao_prestador (SOMENTE LEITURA)
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: AUDITORIA SOMENTE LEITURA — NENHUMA IMPLEMENTAÇÃO
+RESULTADO: ADM-APP-02B NÃO IMPLEMENTADA / BLOQUEADA POR DECISÃO DE ARQUITETURA
+ZERO ESCRITAS EM BANCO / ZERO MIGRATIONS / ZERO ALTERAÇÕES NO APP
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. ESCOPO ORIGINAL ENCONTRADO
+----------------------------------------------------------------------------------------------------
+Fonte primária: ADM-APP-02A-RELATORIO.txt (2026-09-27), Seção 9 — Micro-missões propostas.
+Texto original da micro-missão:
+
+  "[ADM-APP-02B] PRÉ-CADASTRO PÚBLICO FUNCIONAL (P0, 1–2d)
+   Corrigir criarCandidatoService para as 46 colunas reais (nome, telefone,
+   email, cidade, uf, veiculo, placa, stage, ...); adicionar campos de contato
+   no wizard; persistir uploads (selfie/CNH/CRLV/comprovante/fotos) no bucket
+   `documentos_prestadores` + `candidato_documentos`, assinatura/LGPD em
+   `recrutamento_candidatos.questionario_respostas` ou metadata; criar teste
+   unitário de colunas (previne regressão do tipo A-1).
+   Fecha A-1, A-2. Não mexe em schema."
+
+Objetivo original:
+  Tornar funcional o canal público de pré-cadastro do TMS (/cadastro-prestador),
+  fazendo o candidato nascer em `recrutamento_candidatos` com dados e documentos
+  persistidos, corrigindo os gaps A-1 (INSERT quebrado) e A-2 (documentos/assinatura
+  não persistidos).
+
+Requisitos funcionais originais (R1–R6):
+  R1. Corrigir o INSERT de `criarCandidatoService` para usar apenas colunas reais.
+  R2. Adicionar campos de contato (telefone/WhatsApp/e-mail) no wizard.
+  R3. Persistir uploads (selfie, CNH, CRLV, comprovante, fotos) no bucket
+      `documentos_prestadores` + `candidato_documentos`.
+  R4. Persistir assinatura e aceites LGPD/contrato/responsabilidade.
+  R5. Criar teste unitário que valide as colunas reais (anti-regressão A-1).
+  R6. Fechar A-1 e A-2 SEM alterar schema.
+
+Critérios de aceite originais:
+  - Candidato criado a partir de /cadastro-prestador sem erro 400.
+  - Contatos não vazios.
+  - Documentos e assinatura recuperáveis no TMS.
+  - Nenhum "falso sucesso".
+  - Teste de colunas impedindo regressão.
+
+Dependências originais:
+  - `recrutamento_candidatos` (colunas reais), `candidato_documentos`,
+    bucket `documentos_prestadores`.
+  - Wizard `CadastroPrestador.tsx` + `components/onboarding/*`.
+  - `criarCandidatoService.ts`.
+  - A-3/A-4/A-5/A-7 não faziam parte do escopo direto, mas limitam a conversão
+    posterior (Recrutamento → Prestador).
+  - A missão original dizia "não mexe em schema" — premissa que se mostrou
+    incompatível com o estado atual de RLS/grants (ver Seção 3.3).
+
+Relação com missões anteriores/posteriores:
+  - ADM_APP_01 (2026-09-10): mapa do fluxo e classificação REAL/MOCK.
+  - ADM-APP-02A (2026-09-27): auditoria que criou os IDs A-1..A-14 e definiu 02B.
+  - ADM-APP-02C1/C2: segurança RLS/auditoria (A-8/A-9/A-12).
+  - ADM-APP-02D1/D2/R1/R2 e G3: documentos/Storage/status (A-10 e G3).
+  - E2E-COMPLETO-01/03: provas parciais do fluxo APP→Admin→Recrutamento.
+  - 02B permaneceu sem implementação; 02E/02F/02G também pendentes.
+
+----------------------------------------------------------------------------------------------------
+2. EVIDÊNCIAS DOCUMENTAIS
+----------------------------------------------------------------------------------------------------
+  - ADM-APP-02A-RELATORIO.txt:
+      * Matriz: "3 | Pré-cadastro público TMS | CadastroPrestador.tsx:135 →
+        criarCandidatoService.criar | recrutamento_candidatos | QUEBRADO | A-1 |
+        micro-missão ADM-APP-02B".
+      * Matriz: "4 | Documentos do onboarding | StepDocuments/StepSignature
+        coletam; submit não envia | (nada) | NÃO PERSISTE | A-2 | 02B".
+      * Achado A-1: 9 colunas inexistentes; PostgREST 400; nenhum candidato nasce
+        do canal público TMS.
+      * Achado A-2: submit envia apenas 11 campos textuais; telefone/whatsapp/email
+        hardcoded vazios; nenhum upload/INSERT de documento/assinatura.
+      * Seção 9: escopo 02B textual (acima).
+  - ADM_APP_01_AUDITORIA_PRE_CADASTRO_APP.txt:
+      * Rotas /cadastro-prestador, /cadastros/prestadores, /app-prestador,
+        /portal-prestador; classificação REAL/MOCK.
+      * "Pré-cadastro público" e "Admin App" como partes distintas do fluxo.
+  - E2E-COMPLETO-01-PLANO.txt:
+      * Etapa 1 (Pré-cadastro APP) = PARCIAL; falta bridge upload→documentos e
+        motivo_bloqueio.
+  - E2E-COMPLETO-03-ADMIN-PRECADASTRO-RECRUTAMENTO.txt:
+      * G02_DOCUMENT_BRIDGE=PASS; PRECADASTRO_TO_ADMIN=PASS.
+      * Importante: esse PASS é do APP (documentos do candidato → documentos do
+        prestador), NÃO do link público TMS /cadastro-prestador.
+  - STATUS-GERAL-PROJETO.txt:
+      * 02D2 (bucket privado) PASS; 02C2 segurança PASS; 02A auditoria concluída.
+      * 02B não aparece como concluída.
+  - AGENTS.md (ADM-APP-02D.2-R1-REDMI-CLOSE e G3):
+      * 02D2 HOMOLOGADO (evidências físicas 04/10/2026).
+      * G3 implementado/testado, aguardando prova física.
+  - ADM-APP-02C1/02C2/02D1/02D2:
+      * A-8/A-9/A-12 tratados; A-10 bucket privado; A-1..A-7/A-11 mantidos no backlog.
+
+----------------------------------------------------------------------------------------------------
+3. SITUAÇÃO ATUAL DO TMS (com evidência de código/banco, sem escrita)
+----------------------------------------------------------------------------------------------------
+3.1 LINK PÚBLICO E ROTA
+  - Rota pública: src/App.tsx:92 — `<Route path="/cadastro-prestador"
+    element={<CadastroPrestador />} />`, FORA de ProtectedRoute.
+  - Link compartilhado: src/components/recrutamento/Captacao.tsx:19 —
+    `https://conexoexpress.app/cadastro-prestador`.
+  - Componente: src/pages/CadastroPrestador.tsx.
+  - STATUS: rota existe e é pública, mas o fluxo de gravação está quebrado
+    (A-1) e o caminho anônimo está bloqueado por RLS/grants (ver 3.3).
+
+3.2 PAYLOAD DO PRÉ-CADASTRO PÚBLICO
+  - CadastroPrestador.tsx handleSubmit (~linhas 135-170) envia:
+      nome_completo, cpf, telefone: "", whatsapp: "", email: "",
+      tipo_veiculo, placa, regiao, tipo_carroceria, mensagem_livre,
+      canal_captacao: "onboarding_app".
+  - Não há campos de telefone/e-mail/WhatsApp no wizard/store; os valores são
+    hardcoded vazios (R2 NÃO ATENDIDO).
+  - `src/components/onboarding/onboardingStore.ts` guarda nome, cpf, rg,
+    dataNascimento, selfieUrl, cnhUrl, crlvUrl, comprovanteUrl, assinaturaDataUrl,
+    etc., mas NÃO telefone/e-mail.
+  - StepDocuments/StepPersonal apenas gravam URLs/dataURLs locais no store; não há
+    chamada de Storage, `candidato_documentos` ou `documentos_prestadores`
+    (R3/R4 NÃO ATENDIDOS).
+  - O submit NÃO envia selfie/CNH/CRLV/comprovante/fotos/assinatura/LGPD; apenas
+    texto. O usuário pode concluir a UI sem persistir documentos (falso sucesso
+    funcional para documentos).
+
+3.3 INSERT DE `criarCandidatoService` — A-1 CONFIRMADO
+  Arquivo: src/services/recrutamento/criarCandidatoService.ts (linhas ~42-62).
+  O INSERT envia hoje:
+      nome (válido), nome_completo (INEXISTENTE), cpf (INEXISTENTE),
+      telefone (válido), whatsapp (INEXISTENTE), email (válido),
+      cidade (válido), uf (válido), regiao (INEXISTENTE),
+      veiculo (válido), tipo_veiculo (INEXISTENTE), placa (válido),
+      tipo_carroceria (INEXISTENTE), mensagem_livre (INEXISTENTE),
+      canal_captacao (INEXISTENTE), status (INEXISTENTE),
+      stage (válido), data_entrada (válido).
+  Schema real de `recrutamento_candidatos` (information_schema, leitura):
+      id, nome, foto, score, cidade, uf, veiculo, placa, status_documental,
+      prioridade, validade_cnh, data_validade_cnh, tags, observacoes_ia, telefone,
+      email, stage, data_entrada, data_atualizacao, documentos, created_at,
+      updated_at, prestador_id, historico, reserva_contexto, score_comprometimento,
+      classificacao_comprometimento, risco_desistencia, tempo_medio_resposta_horas,
+      quantidade_cobrancas, confirmou_interesse, data_confirmacao_interesse,
+      confirmou_pre_inicio, data_confirmacao_pre_inicio, compareceu_primeiro_dia,
+      completou_30_dias, quantidade_reclamacoes, possui_outra_operacao_fixa,
+      disponibilidade_recrutamento, historico_desistencias, etiquetas_automaticas,
+      parecer_ia, principais_riscos, principais_pontos_positivos,
+      proxima_acao_sugerida, questionario_respostas, pipeline_validacoes,
+      preferencias_operacionais, respostas_situacionais.
+  => Colunas `nome_completo`, `cpf`, `whatsapp`, `regiao`, `tipo_veiculo`,
+     `tipo_carroceria`, `mensagem_livre`, `canal_captacao` e `status` NÃO EXISTEM.
+  => PostgREST rejeita o INSERT (400). `criar()` retorna erro e o wizard mostra
+     toast de erro. Nenhum candidato nasce do canal público TMS.
+  => O teste `src/test/rec03_eliminacao_legacy_candidatos.test.ts` (linhas ~304-320)
+     valida apenas o TEXTO do arquivo e exige `nome_completo` e `tipo_veiculo` no
+     insert — ou seja, o teste "protege" o comportamento quebrado. Falso verde.
+
+3.4 BLOQUEIO ADICIONAL: RLS/GRANTS PARA ANON (CRÍTICO)
+  Mesmo corrigindo as colunas, o link público (anônimo) continua bloqueado:
+  - `recrutamento_candidatos` tem RLS ON (relrowsecurity=true) e 4 policies
+    (select/insert/update/delete) apenas para role `authenticated`, com
+    `EXISTS (SELECT 1 FROM tenant_usuarios WHERE user_id = auth.uid())`.
+  - NÃO há policies para `anon`; NÃO há grants de tabela para `anon`
+    (information_schema.role_table_grants: apenas authenticated).
+  - `candidato_documentos` tem RLS ON e policies apenas para `authenticated`.
+  - Bucket `documentos_prestadores`: PRIVADO (public=false), policies de Storage
+    apenas `authenticated`; upload anônimo não é permitido.
+  - Conclusão: o pré-cadastro web público, como desenhado (anon + INSERT direto +
+    upload), é incompatível com o modelo de segurança atual. A premissa original
+    "não mexe em schema" não se sustenta: é necessária uma decisão de arquitetura
+    (RPC pública SECURITY DEFINER, ou aposentar o link, ou exigir login).
+
+3.5 FUNÇÃO `app_s6_criar_prestador` (APP — caminho que funciona)
+  - Existe em produção, SECURITY DEFINER, search_path `public, pg_temp`.
+  - Assinatura com 11 parâmetros; usa `auth.uid()`; exige autenticação.
+  - Reusa prestador por `auth_user_id`; NÃO deduplica por CPF/CNPJ/e-mail no banco.
+  - Hardcodes `status='em_analise'` e `liberado_app=false` (não confia no payload).
+  - `app_s6_cpf_cnpj_ja_cadastrado(cpf)` existe (SECURITY DEFINER, grant
+    anon/authenticated) e é chamado pelo APP ANTES do signUp.
+  - `app_s6_sincronizar_cadastro_pipeline` e a base existem; a base usa
+    search_path `public, auth, extensions, pg_temp` e grava
+    `recrutamento_candidatos` com colunas válidas (nome, telefone, email, cidade,
+    uf, veiculo, placa, stage, documentos, historico, etc.).
+  - O APP (`register_screen.dart`) chama `app_s6_criar_prestador`, envia
+    `p_liberado_app: false`, depois sincroniza o pipeline e envia documentos.
+  - STATUS: caminho APP IMPLEMENTADO; parte de pipeline/documentos tem prova
+    documental (E2E-COMPLETO-03), mas a base atual NÃO contém candidatos em
+    `cadastro_concluido` (0/39) — prova operacional do estágio 3 não evidenciada
+    nos dados atuais.
+
+3.6 ADMIN APP / APROVAÇÃO / `liberado_app`
+  - `/app-prestador` (src/pages/AppPrestador.tsx) continua sendo painel/simulador
+    de viagens/POD. Ele apenas LÊ uma lista de prestadores para um seletor
+    (~linha 68); NÃO tem ações de aprovar/reprovar/bloquear/liberar e NÃO grava
+    `liberado_app` (A-6 confirmado).
+  - A ação real de aprovação está em `Cadastros > Prestadores`:
+      * `PrestadoresLista.tsx` (~linhas 212-230) — botão "Aprovar Prestador" para
+        `origem_cadastro='app_motorista'` e status de análise; UPDATE direto
+        `status='ativo', liberado_app=true`.
+      * `PrestadorDetalhe.tsx` (~linhas 946-949) — coerência: `liberado_app` só
+        pode ser true quando status canônico é ativo; toggle em ~1482-1488.
+  - Camada de banco:
+      * `trg_audit_liberado_app` (AFTER UPDATE) e tabela `liberado_app_audit`
+        existem.
+      * `trg_guardar_privilegio_prestador` (BEFORE UPDATE) existe e bloqueia
+        alteração de campos privilegiados (inclui `liberado_app`, `status`,
+        `auth_user_id`) por quem não é TMS/service_role/owner; RAISE EXCEPTION.
+      * `fn_block_self_liberado_app` não existe com esse nome (substituída pelo
+        guard acima).
+  - Dados atuais (leitura): 40 prestadores, 4 liberados, 6 com auth_user_id,
+    4 com origem `app_motorista` (3 em análise, 1 ativo).
+    Coerência: 1 registro liberado sem auth/ativo; 0 auth+ativo sem liberação.
+  - STATUS: mecanismo de liberação IMPLEMENTADO; auditoria/bloqueio de
+    autoatribuição presentes. Falta prova de escrita (proibida nesta auditoria) e
+    limpeza do registro incoerente.
+
+3.7 RECRUTAMENTO / CONVERSÃO (dependências A-3/A-4/A-5/A-7)
+  - A-3 CONFIRMADO: escritores ainda enviam colunas inexistentes em `prestadores`
+    (`veiculos`, `cidade`, `uf`):
+      * `src/modules/recrutamento/services/conversaoCandidatoService.ts`
+        (~linhas 338-355) — INSERT com `veiculos`.
+      * `src/modules/recrutamento/services/prestadoresService.ts`
+        (~linhas 381-397 e ~601-615) — UPDATE/INSERT com `veiculos`.
+      * `src/services/recrutamentoIntegracao.ts`
+        (~linhas 150-151 e ~213-227) — UPDATE com `cidade`/`uf` e INSERT com
+        `veiculos`/`cidade`/`uf`.
+      * `src/modules/recrutamento/components/enterprise-kanban/enterpriseKanbanService.ts`
+        (~linha 412) — SELECT `veiculos` de `prestadores`.
+    `prestadores` real não tem `veiculos`, `cidade`, `uf`, `cnh_validade`.
+  - A-4 CONFIRMADO: gate documental exige `statusDocumental === 'completo'`
+    (`conversaoCandidatoService.ts` ~linha 134), calculado de
+    `recrutamento_candidatos.documentos` (jsonb). Dados atuais:
+    `documentos` não vazio = 0/39; `candidato_documentos` = 0 linhas. Não há
+    escritor desse jsonb; a conversão fica bloqueada para todos.
+  - A-5 CONFIRMADO: `identidadePrestadorService.ts` (~linhas 66 e 75) seleciona
+    `cnh_validade` (coluna inexistente) → dedup por CPF/telefone/e-mail falha.
+    Dados: 3 grupos de CPF duplicado; NÃO existe constraint UNIQUE em
+    `prestadores.cpf_cnpj`.
+  - A-7 CONFIRMADO: `trg_bridge_prestador_para_recrutamento` é apenas AFTER INSERT
+    (definição lida do catálogo). Alterações posteriores de status/liberado_app
+    não propagam para `recrutamento_prestadores`.
+
+3.8 DOCUMENTOS/STORAGE
+  - Bucket `documentos_prestadores` = PRIVADO (public=false); 02D2 preservado.
+  - `documentos_prestadores` tabela: id, prestador_id, tipo, url, created_at,
+    status, data_vencimento, validade, observacoes, updated_at.
+  - `candidato_documentos`: id, candidato_id, tipo, arquivo_url, status,
+    validade, dados_extraidos, created_at, updated_at; RLS apenas authenticated.
+  - `documentos_operacionais` = privado; `documentos_metadata` existe (Missão 1).
+  - O APP usa bucket privado + signed URL; o TMS público (anon) não consegue
+    upload direto.
+
+----------------------------------------------------------------------------------------------------
+4. SITUAÇÃO ATUAL DO APP (SOMENTE LEITURA)
+----------------------------------------------------------------------------------------------------
+Workspace: C:\src\conexao_prestador
+Branch: main | HEAD: 52f3427 (fix search_path extensions)
+Alterações de arquivos tracked pelo Git: NENHUMA (git status filtrado por M = vazio).
+Nenhum arquivo do APP foi criado/alterado/removido por esta auditoria.
+
+4.1 PRÉ-CADASTRO DO APP
+  - `lib/features/auth/register_screen.dart`:
+      * Coleta nome, CPF/CNPJ, telefone, e-mail, endereço, veículo, docs, PIX,
+        referências, LGPD.
+      * Verifica CPF duplicado via RPC `app_s6_cpf_cnpj_ja_cadastrado`
+        (~linhas 541-548).
+      * `signUp` no Supabase Auth e depois `app_s6_criar_prestador`
+        (~linhas 693-751) com `p_liberado_app: false`.
+      * Sincroniza pipeline via `talent_pipeline_repository.dart`
+        (`app_s6_sincronizar_cadastro_pipeline`, etapa `cadastro_concluido`).
+      * Envia documentos reais via `DriverDocumentsRepository.uploadAndLink`
+        (~linha 766 / 842+), vinculando `prestador_id`.
+  - Conclusão: o canal APP é o fluxo funcional de pré-cadastro do prestador.
+
+4.2 GATE DE ACESSO / liberado_app
+  - `lib/core/supabase/auth_status_mapper.dart`:
+      * Acesso operacional SOMENTE com `status == 'ativo'` (ou 'Aprovado') E
+        `liberado_app == true`.
+      * Fallback `prestadores_app` nunca libera (fail-closed).
+  - `lib/core/supabase/auth_provider.dart` (~linhas 130-175) lê
+    `prestadores.status/liberado_app` por `auth_user_id`; falha de leitura →
+    análise (não libera).
+  - STATUS: implementado e testado (testes citados no próprio APP).
+
+4.3 DOCUMENTOS / VISUALIZADOR / G3
+  - `lib/core/repositories/driver_documents_repository.dart`:
+      * bucket/tabela `documentos_prestadores`; upload real + vínculo; signed URL
+        com TTL 600s; guarda de propriedade por prefixo `doc_<id>_`/`foto_<id>_`.
+  - `lib/core/repositories/document_status.dart`:
+      * status oficial `documentos_metadata.status_ia` > status legado
+        `documentos_prestadores.status` > pendente (fail-closed).
+      * `aprovado_na_conferencia` → aprovado; `necessita_de_correcao` → reprovado.
+  - `lib/features/profile/profile_screen.dart`:
+      * Upload pós-cadastro (~1165+) e visualizador (~1095+).
+      * Exibe "Rejeitado" e validade apenas quando aprovado.
+  - Testes existentes no APP: `driver_documents_status_test.dart`,
+    `auth_status_mapper_test.dart`, `authgate_e2e_06b_test.dart`, etc.
+  - STATUS: 02D.2 preservado (bucket privado, upload, signed URL, visualizador);
+    G3 implementado/testado, aguardando prova física (conforme AGENTS).
+
+4.4 O QUE O APP CONSOME DO TMS
+  - `prestadores` (status, liberado_app, nome, auth_user_id).
+  - `documentos_prestadores` + `documentos_metadata` (status oficial).
+  - `app_s6_criar_prestador` e `app_s6_sincronizar_cadastro_pipeline`.
+  - `alocacoes_escala`/`vw_app_motorista_operacoes` (após liberação).
+  - Nenhum desses contratos foi alterado. O APP permanece funcional.
+
+----------------------------------------------------------------------------------------------------
+5. GAPS A-1 A A-7 E A-11 — CONFIRMAÇÃO
+----------------------------------------------------------------------------------------------------
+A-1  P0  CONFIRMADO ABERTO. Canal público TMS quebrado por 9 colunas inexistentes.
+         Além disso, RLS/grants bloqueiam anon. Nenhum candidato nasce do link web.
+A-2  P0  CONFIRMADO ABERTO. Documentos/assinatura/LGPD não persistem; contatos
+         enviados vazios; não há upload no submit.
+A-3  P0  CONFIRMADO ABERTO. Escritores/leitores ainda usam `veiculos`/`cidade`/`uf`
+         em `prestadores`; sync Recrutamento→Prestador falha silenciosamente.
+A-4  P0  CONFIRMADO ABERTO. Gate documental exige `documentos` jsonb; 0/39
+         candidatos têm docs; `candidato_documentos` = 0; conversão bloqueada.
+A-5  P1  CONFIRMADO ABERTO. Dedup por `cnh_validade` (inexistente); 3 grupos de
+         CPF duplicado; sem UNIQUE em `cpf_cnpj`.
+A-6  P0  CONFIRMADO ABERTO. `/app-prestador` continua simulador; não aprova nem
+         altera `liberado_app`. A ação real está em Cadastros > Prestadores.
+A-7  P1  CONFIRMADO ABERTO. Bridge `trg_bridge_prestador_para_recrutamento` só
+         AFTER INSERT; UPDATE de status/liberado_app não propaga.
+A-11 P1  PARCIALMENTE FECHADO. Guard de código + trigger de banco + auditoria
+         existem; resta 1 registro incoerente (liberado sem auth/ativo) e prova
+         de escrita não executada nesta auditoria.
+
+Itens correlatos verificados (não solicitados diretamente, mas relevantes):
+  A-8  IMPLEMENTADO/ESTRUTURAL: `liberado_app_audit` + `trg_audit_liberado_app`
+       existem (prova de escrita não executada — proibida).
+  A-9  IMPLEMENTADO/ESTRUTURAL: `trg_guardar_privilegio_prestador` bloqueia
+       campos privilegiados para não-TMS; `fn_block_self_liberado_app` não existe
+       com esse nome (substituída).
+  A-10 HOMOLOGADO: bucket `documentos_prestadores` privado; 02D2 preservado.
+  A-12 HOMOLOGADO (autenticado): RLS de recrutamento com tenant_usuarios.
+       Efeito colateral: fecha o caminho anônimo do pré-cadastro público.
+
+----------------------------------------------------------------------------------------------------
+6. DEPENDÊNCIAS E RISCOS
+----------------------------------------------------------------------------------------------------
+6.1 DEPENDÊNCIA CRÍTICA DE ARQUITETURA (BLOQUEIA 02B)
+  O link público é anônimo, mas:
+    - `recrutamento_candidatos` não tem grant/policy para anon;
+    - `candidato_documentos` não tem grant/policy para anon;
+    - bucket `documentos_prestadores` é privado e só aceita authenticated.
+  Portanto, o 02B original ("corrigir colunas, sem schema") NÃO é suficiente.
+  É necessário decidir:
+    (A) Aposentar o link web e direcionar o candidato ao APP (que já funciona).
+    (B) Criar RPC pública SECURITY DEFINER para o pré-cadastro (campos mínimos,
+        validação/normalização/dedup, rate limit/captcha, sem grants diretos de
+        tabela) e um fluxo seguro para documentos (ex.: link autenticado/WhatsApp);
+        exige migration e revisão de segurança.
+    (C) Exigir login para o pré-cadastro web (deixa de ser público).
+  Sem essa decisão, qualquer implementação de 02B ficará bloqueada.
+
+6.2 DEDUPLICAÇÃO
+  - O APP faz checagem client-side de CPF via RPC; o RPC de criação só dedupa por
+    auth_user_id. Não há UNIQUE em `prestadores.cpf_cnpj`.
+  - `identidadePrestadorService` (dedup CPF/telefone/e-mail) está quebrado por
+    `cnh_validade`. 3 grupos de CPF duplicado já existem.
+  - Risco: duplicidade em concorrência/retry e conversão para prestador errado.
+
+6.3 CONVERSÃO RECRUTAMENTO→PRESTADOR
+  - A-3 + A-4 + A-5 + A-7 impedem a conversão e a sincronização. Corrigir 02B sem
+    esses itens melhora a entrada, mas o candidato não chega a prestador.
+
+6.4 ADMIN APP / APROVAÇÃO
+  - A aprovação direta em PrestadoresLista ignora o gate documental (A-4) e não
+    exige conferência; é uma ação TMS auditada, mas sem console dedicado.
+  - `/app-prestador` continua com rótulo "Admin App Prestador" sem entregar a
+    função (A-6), gerando expectativa incorreta.
+
+6.5 TESTES
+  - O teste `rec03_eliminacao_legacy_candidatos` valida o comportamento errado
+    (colunas inexistentes), criando falso verde.
+  - Não existe teste que compare o payload do INSERT com information_schema.
+  - Testes do APP são bons para gate/documentos, mas não cobrem o link web TMS.
+
+6.6 DADOS ATUAIS (leitura; apenas agregados)
+  - `prestadores`: 40 total; 4 liberados; 6 com auth; 4 app_motorista
+    (3 em_analise, 1 ativo); 1 liberado sem auth/ativo.
+  - `recrutamento_candidatos`: 39; 24 com prestador_id; estágios:
+    novo_cadastro 29, em_treinamento 4, em_validacao 2, reprovado 2, ativo 1,
+    processo_encerrado 1; `cadastro_concluido` = 0.
+  - `documentos` jsonb não vazio = 0; `candidato_documentos` = 0.
+  - 3 grupos de CPF duplicado.
+
+----------------------------------------------------------------------------------------------------
+7. ITENS HOMOLOGADOS QUE FORAM PRESERVADOS
+----------------------------------------------------------------------------------------------------
+  - ADM-APP-02D.2: HOMOLOGADO (evidências físicas arquivadas; bucket privado;
+    upload/visualizador/signed URL). Nenhum arquivo do APP alterado.
+  - G3: IMPLEMENTADO, AGUARDANDO PROVA REAL FÍSICA (status oficial de documentos;
+    "Rejeitado"; testes no APP). Preservado.
+  - Gate de acesso do APP (status ativo + liberado_app): HOMOLOGADO
+    (código/testes fail-closed). Preservado.
+  - Pré-cadastro do APP (signUp + app_s6_criar_prestador + docs + pipeline):
+    IMPLEMENTADO, AGUARDANDO PROVA REAL (o caminho funciona por código; a base
+    atual não exibe estágio `cadastro_concluido`).
+  - A-10 (bucket privado) e A-12 (RLS tenant autenticado): preservados.
+  - A-8/A-9 (auditoria e guard de privilégios): estrutura presente; sem prova de
+    escrita nesta auditoria.
+  - Nenhuma alteração em Recrutamento, APP, Storage, buckets, policies, RPCs,
+    migrations ou cálculos.
+
+----------------------------------------------------------------------------------------------------
+8. O QUE REALMENTE FALTA IMPLEMENTAR (02B)
+----------------------------------------------------------------------------------------------------
+Pré-requisito (decisão):
+  1. Escolher o canal público: (A) APP-only, (B) RPC pública SECURITY DEFINER,
+     ou (C) login obrigatório. Sem isso, 02B não pode ser implementada com
+     segurança.
+
+Se a opção for manter o link web (B):
+  2. Criar RPC pública `...precadastro...` SECURITY DEFINER com:
+       - campos mínimos (nome, CPF/CNPJ, telefone/WhatsApp, e-mail, cidade/UF,
+         veículo/placa, LGPD);
+       - validação/normalização de CPF/CNPJ/telefone/e-mail;
+       - dedup por CPF/CNPJ e e-mail;
+       - INSERT em `recrutamento_candidatos` com colunas REAIS;
+       - grants apenas EXECUTE para anon; nenhum grant direto de tabela;
+       - rate limit/captcha (infra ou tabela de controle);
+       - retorno do candidato/etapa.
+     (Isso exige migration nova e autorização — NÃO implementar agora.)
+  3. Definir fluxo de documentos: o anon não pode gravar no bucket privado.
+     Opções: link autenticado pós-WhatsApp, upload via Edge Function com token,
+     ou adiar documentos para o primeiro acesso do APP.
+  4. Corrigir `criarCandidatoService`/substituto para o payload real; remover
+     colunas inexistentes; mapear campos extras para `observacoes_ia`, `tags`,
+     `historico` ou `questionario_respostas`.
+  5. Adicionar telefone/WhatsApp/e-mail ao wizard/store.
+  6. Persistir assinatura/LGPD em `questionario_respostas`/metadata.
+  7. Criar teste que valide o payload contra o schema real (não apenas texto).
+  8. Se optar por APP-only: retirar/redirecionar `/cadastro-prestador` e o link
+     de Captacao; não criar RPC pública; documentar A-1/A-2 como não aplicáveis
+     ao canal web.
+
+Dependências posteriores (não são 02B, mas bloqueiam o ciclo):
+  9. A-3/A-5/A-7 (02E): remover `veiculos`/`cidade`/`uf`/`cnh_validade` dos
+     payloads/selects; adicionar sync UPDATE no bridge; limpar duplicidades.
+ 10. A-4 (02F): escrever `recrutamento_candidatos.documentos` a partir de
+     `documentos_prestadores`/`candidato_documentos`; liberar o gate.
+ 11. A-6 (02G): console de aprovação real ou migrar a ação para Cadastros.
+ 12. A-11: corrigir o registro incoerente e provar a regra de liberação.
+
+----------------------------------------------------------------------------------------------------
+9. QUAL WORKSPACE RECEBERÁ CADA FUTURA ALTERAÇÃO
+----------------------------------------------------------------------------------------------------
+TMS (express-connect-hub):
+  - src/pages/CadastroPrestador.tsx
+  - src/components/onboarding/* (StepPersonal/StepDocuments/StepSignature/store)
+  - src/services/recrutamento/criarCandidatoService.ts (ou substituto)
+  - src/services/documentos/* (se houver upload de candidato)
+  - src/modules/recrutamento/services/* e src/services/recrutamentoIntegracao.ts
+    (A-3/A-4/A-5/A-7)
+  - src/components/prestadores/* e/ou src/pages/AppPrestador.tsx (A-6/A-11)
+  - supabase/migrations/* (SOMENTE se a opção B for aprovada: RPC pública/RLS)
+APP (C:\src\conexao_prestador):
+  - NENHUMA alteração necessária para 02B. O APP já possui o fluxo funcional,
+    documentos, gate e G3. Preservar 02D.2/G3.
+  - Se a decisão for APP-only, no máximo ajustar links/comunicação (sem tocar no
+    fluxo de cadastro/documentos) — decisão de produto, não técnica.
+
+----------------------------------------------------------------------------------------------------
+10. PRÓXIMA MICRO-MISSÃO RECOMENDADA
+----------------------------------------------------------------------------------------------------
+ADM-APP-02B.0 — DECISÃO DE ARQUITETURA DO PRÉ-CADASTRO PÚBLICO (READ-ONLY)
+  Objetivo: escolher formalmente entre:
+    (A) APP-only (aposentar o link web) — menor risco, zero migration.
+    (B) RPC pública SECURITY DEFINER + fluxo seguro de documentos — exige
+        migration/security review.
+    (C) Login obrigatório — reduz alcance do canal público.
+  Entregáveis: decisão, matriz de risco, proposta de migration (se B), plano de
+  testes e rollback. NÃO implementar código nesta micro-missão.
+
+Depois da decisão:
+  ADM-APP-02B.1 — Implementação do canal escolhido (TMS), com teste de schema real
+  e prova de erro/reenvio.
+  Em seguida: ADM-APP-02E (A-3/A-5/A-7) → 02F (A-4) → 02G (A-6).
+
+----------------------------------------------------------------------------------------------------
+11. CLASSIFICAÇÃO FINAL POR REQUISITO
+----------------------------------------------------------------------------------------------------
+R1  Corrigir colunas do INSERT ..................... PENDENTE (A-1 aberto)
+R2  Campos de contato no wizard .................... PENDENTE
+R3  Persistir uploads de documentos ................ PENDENTE
+R4  Persistir assinatura/LGPD ...................... PENDENTE
+R5  Teste unitário de colunas reais ................ PENDENTE (teste atual é falso verde)
+R6  Fechar A-1 e A-2 sem schema .................... BLOQUEADO (RLS/anon exige decisão)
+Link público /cadastro-prestador ................... BLOQUEADO
+Cadastro administrativo TMS ........................ HOMOLOGADO (funciona; aprovação em Prestadores)
+Admin App (/app-prestador) ......................... PENDENTE (A-6; simulador)
+Recrutamento (Kanban/pipeline) ..................... IMPLEMENTADO, AGUARDANDO PROVA REAL (A-4 bloqueia)
+liberado_app (controle/auditoria) .................. IMPLEMENTADO, AGUARDANDO PROVA REAL (sem teste de escrita)
+App pré-cadastro + documentos + gate ............... IMPLEMENTADO, AGUARDANDO PROVA REAL (APP)
+ADM-APP-02D.2 ...................................... HOMOLOGADO (preservado)
+G3 ................................................. IMPLEMENTADO, AGUARDANDO PROVA REAL FÍSICA
+A-1 ................................................ CONFIRMADO ABERTO (P0)
+A-2 ................................................ CONFIRMADO ABERTO (P0)
+A-3 ................................................ CONFIRMADO ABERTO (P0)
+A-4 ................................................ CONFIRMADO ABERTO (P0)
+A-5 ................................................ CONFIRMADO ABERTO (P1)
+A-6 ................................................ CONFIRMADO ABERTO (P0 produto)
+A-7 ................................................ CONFIRMADO ABERTO (P1)
+A-11 ............................................... PARCIALMENTE FECHADO (mecanismo ok; 1 dado incoerente)
+
+----------------------------------------------------------------------------------------------------
+12. CONFIRMAÇÃO DE ZERO ESCRITAS / ZERO ALTERAÇÕES FUNCIONAIS
+----------------------------------------------------------------------------------------------------
+  - Nenhum INSERT/UPDATE/DELETE/DDL foi executado.
+  - Nenhuma migration foi criada/aplicada.
+  - Nenhuma tabela, policy RLS, bucket, RPC ou trigger foi alterado.
+  - Nenhum arquivo de código do TMS foi editado nesta auditoria.
+  - Nenhum arquivo do APP foi criado/alterado/removido; `git status` do APP não
+    mostra modificações tracked.
+  - Nenhum dado real de cliente/prestador foi usado ou exposto; consultas foram
+    apenas de schema/agregados.
+  - Scripts temporários de leitura usados na auditoria foram removidos ao final.
+  - O único arquivo entregue é este relatório.
+
+CONCLUSÃO: ADM-APP-02B NÃO está homologada nem implementada. O caminho APP já
+funciona e deve ser preservado. O caminho web público está quebrado e bloqueado
+por uma decisão de arquitetura de segurança (RLS/anon + Storage privado). Nenhuma
+implementação deve começar antes da decisão da micro-missão ADM-APP-02B.0.
+====================================================================================================

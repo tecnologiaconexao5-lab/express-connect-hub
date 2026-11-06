@@ -15,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { validarArquivoAnexo } from "@/lib/anexoDocumento";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mockPropostas } from "./mockPropostas";
 import { gerarPDFProfissional } from "@/utils/pdfGenerator";
@@ -23,6 +25,7 @@ import { enviarDocumentoOperacional } from "@/services/documentos/documentosMeta
 import { resolverContatoProposta } from "@/services/comercial/propostaContatoService";
 import { FiltrosAtivos, type FiltroAtivoItem } from "@/components/ui/filtros-ativos";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 interface ListaPropostasProps {
   onNovaProposta: (tipo: "modelo" | "personalizada", originModelo?: Proposta) => void;
@@ -63,6 +66,8 @@ interface Proposta {
   clienteId?: string | null;
   leadId?: string | null;
   telefone?: string | null;
+  ultimoDocumentoId?: string | null;
+  ultimoDocumentoNome?: string | null;
   historico: { data: string; acao: string; usuario: string }[];
 }
 
@@ -151,7 +156,8 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [enviandoProposta, setEnviandoProposta] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [propostaUploadId, setPropostaUploadId] = useState("");
 
   // Link compartilhado: /comercial?tab=propostas&proposta=<id> abre a prévia.
   useEffect(() => {
@@ -199,31 +205,95 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   };
 
   const enviarPropostaPdf = async (file: File) => {
+    const erroArquivo = validarArquivoAnexo(file);
+    if (erroArquivo) {
+      toast.error(erroArquivo);
+      return;
+    }
     const ehPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
     if (!ehPdf) {
       toast.error("Envie um arquivo PDF para a proposta.");
       return;
     }
-    setEnviandoProposta(true);
+    setIsUploading(true);
     try {
-      await enviarDocumentoOperacional({
-        file,
-        moduloOrigem: "comercial",
-        entidadeId: null,
-        entidadeNome: null,
-        tipo: "Proposta Comercial",
-        nome: file.name,
-        categoria: "Comercial",
-        departamento: "Comercial",
-        responsavel: "Comercial",
-        descricao: "Proposta comercial enviada pela aba Propostas.",
-      });
-      toast.success("Proposta enviada para a Central de Documentos.");
+      const caminho = `doc_central_Proposta_Comercial_${Date.now()}.pdf`;
+      const { data: upload, error: uploadError } = await supabase.storage
+        .from("propostas")
+        .upload(caminho, file, { upsert: false, contentType: "application/pdf" });
+      if (uploadError || !upload?.path) {
+        throw new Error(uploadError?.message || "Falha no upload do PDF da proposta.");
+      }
+      const referencia = `propostas/${upload.path}`;
+      const agora = new Date().toISOString();
+      const { data: criado, error: insertError } = await supabase
+        .from("documentos_metadata")
+        .insert([
+          {
+            url: referencia,
+            nome: file.name,
+            tipo: "Proposta Comercial",
+            modulo_origem: "comercial",
+            entidade_id: null,
+            entidade_nome: null,
+            status_ia: "pendente",
+            relatorio_ia: null,
+            data_inclusao: agora,
+            categoria: "Comercial",
+            departamento: "Comercial",
+            responsavel: "Comercial",
+            descricao: "Proposta comercial enviada pela aba Propostas.",
+            mime_type: file.type || "application/pdf",
+            tamanho_bytes: file.size,
+            versao: 1,
+            documento_pai_id: null,
+            ativo: true,
+            historico: [
+              {
+                id: crypto.randomUUID?.() || `evt_${Date.now()}`,
+                tipo: "criacao",
+                descricao: "Documento enviado para a Central de Documentos.",
+                data: agora,
+                usuario: "Comercial",
+              },
+            ],
+          },
+        ])
+        .select("id")
+        .single();
+      if (insertError || !criado) {
+        throw new Error(
+          `PDF enviado, mas o metadado não foi salvo: ${insertError?.message || "resposta vazia"}`,
+        );
+      }
+      const documentoId = (criado as { id?: string }).id || null;
+      if (propostaUploadId) {
+        setPropostas(prev =>
+          prev.map(prop =>
+            prop.id === propostaUploadId
+              ? {
+                  ...prop,
+                  ultimoDocumentoId: documentoId,
+                  ultimoDocumentoNome: file.name,
+                  atualizadoEm: new Date().toISOString(),
+                  historico: [
+                    ...prop.historico,
+                    { data: new Date().toISOString(), acao: `PDF enviado para a Central de Documentos (${file.name})`, usuario: "Comercial" },
+                  ],
+                }
+              : prop
+          )
+        );
+        toast.success("Proposta enviada e vinculada à proposta selecionada.");
+      } else {
+        toast.success("Proposta enviada para a Central de Documentos.");
+      }
+      setPropostaUploadId("");
       setShowUploadDialog(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível enviar a proposta.");
     } finally {
-      setEnviandoProposta(false);
+      setIsUploading(false);
     }
   };
 
@@ -1025,7 +1095,10 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
       <Dialog
         open={showUploadDialog}
         onOpenChange={(aberto) => {
-          if (!enviandoProposta) setShowUploadDialog(aberto);
+          if (!isUploading) {
+            setShowUploadDialog(aberto);
+            if (!aberto) setPropostaUploadId("");
+          }
         }}
       >
         <DialogContent className="max-w-lg">
@@ -1037,22 +1110,46 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
               O PDF será indexado na Central de Documentos com categoria e departamento Comercial.
             </DialogDescription>
           </DialogHeader>
-          {enviandoProposta ? (
+          {isUploading ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
               Enviando proposta e registrando metadados...
             </div>
           ) : (
-            <DocumentoUploadUniversal
-              accept=".pdf,application/pdf"
-              onFile={(file) => void enviarPropostaPdf(file)}
-              label="Arraste o PDF da proposta aqui ou escolha uma opção"
-              hint="Somente PDF · até 50 MB"
-            />
+            <div className="space-y-4">
+              <div>
+                <Label>Vincular a uma proposta (opcional)</Label>
+                <Select
+                  value={propostaUploadId || "__nenhuma__"}
+                  onValueChange={(v) => setPropostaUploadId(v === "__nenhuma__" ? "" : v)}
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="Selecionar proposta da lista" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__nenhuma__">Nenhuma (só Central de Documentos)</SelectItem>
+                    {propostas.map((prop) => (
+                      <SelectItem key={prop.id} value={prop.id}>
+                        {prop.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Ao vincular, a lista é atualizada com o documento enviado e um evento no histórico da proposta.
+                </p>
+              </div>
+              <DocumentoUploadUniversal
+                accept=".pdf,application/pdf"
+                onFile={(file) => void enviarPropostaPdf(file)}
+                label="Arraste o PDF da proposta aqui ou escolha uma opção"
+                hint="Somente PDF · até 50 MB"
+              />
+            </div>
           )}
           <DialogFooter>
             <Button
               variant="outline"
-              disabled={enviandoProposta}
+              disabled={isUploading}
               onClick={() => setShowUploadDialog(false)}
             >
               Fechar

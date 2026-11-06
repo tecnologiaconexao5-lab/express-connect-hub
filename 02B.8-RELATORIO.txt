@@ -1,0 +1,102 @@
+====================================================================================================
+MISSÃO 02B.8 — ACESSO AO CADASTRO PÚBLICO NO RECRUTAMENTO
+DATA: 2026-11-04
+AMBIENTE VALIDADO: LOCAL — http://localhost:8800
+RESULTADO: IMPLEMENTADO E VALIDADO LOCALMENTE
+NENHUMA PUBLICAÇÃO NO VERCEL
+====================================================================================================
+
+1. ARQUIVOS ALTERADOS
+----------------------------------------------------------------------------------------------------
+  NOVO:
+    src/modules/recrutamento/components/CadastroPublicoAcoes.tsx
+
+  ALTERADOS:
+    src/modules/recrutamento/layouts/RecrutamentoLayout.tsx
+    src/lib/ofertaPublica.ts
+    src/modules/recrutamento/components/ofertas/OfertasPublicas.tsx
+
+  O helper `mensagemConviteOfertas()` foi centralizado em `ofertaPublica.ts` e
+  reutilizado no painel Ofertas Públicas e no novo acesso do header.
+
+2. ONDE O ACESSO FOI INCLUÍDO
+----------------------------------------------------------------------------------------------------
+  Header global do módulo Recrutamento, em `RecrutamentoLayout`, ao lado do
+  selo Enterprise.
+
+  O botão fica visível em todas as seções do Recrutamento, não apenas em
+  Ofertas Públicas.
+
+  Texto:
+    - Desktop: "Cadastro Público de Prestadores"
+    - Mobile: "Cadastro Público" (com aria-label/título completo)
+
+  Menu de ações:
+    - Abrir cadastro público;
+    - Copiar link;
+    - Compartilhar no WhatsApp.
+
+  O link é obtido por `obterLinkPublicoOfertas()`, sem hardcode de domínio.
+  Em produção ele usa a origem pública atual; em local, o próprio localhost.
+
+3. TESTES LOCAIS REALIZADOS
+----------------------------------------------------------------------------------------------------
+  Servidor local:
+    http://localhost:8800 (já em execução)
+
+  Navegação:
+    - login com conta E2E;
+    - abertura de Recrutamento → Dashboard;
+    - header renderizado sem erros.
+
+  Visibilidade:
+    - botão encontrado e visível no desktop;
+    - botão encontrado e visível no mobile (390px);
+    - menu com as três ações.
+
+  Ação Copiar link:
+    - clipboard recebeu http://localhost:8800/cadastro-prestador;
+    - toast "Link do cadastro público copiado." exibido.
+
+  Ação WhatsApp:
+    - popup abriu com URL do WhatsApp contendo a mensagem profissional
+      e o link do cadastro.
+
+  Ação Abrir cadastro:
+    - popup abriu http://localhost:8800/cadastro-prestador.
+
+  Evidências visuais:
+    C:\Users\DIEGOB~1\AppData\Local\Temp\opencode\02b8_local\
+    header.png
+    menu.png
+    mobile.png
+
+4. VERIFICAÇÕES TÉCNICAS
+----------------------------------------------------------------------------------------------------
+  - npm run build: SUCESSO (1m10s).
+  - Testes de Recrutamento executados:
+      adm_app_02b1_oferta_publica_form.test.ts — 11/11
+      adm_app_02b3_gestao_ofertas.test.ts — 20/20
+      adm_app_02b4_fechamento_recrutamento.test.ts — 10/10
+      Total: 41/41.
+  - ESLint dos arquivos envolvidos: 2 erros preexistentes de
+    no-explicit-any em RecrutamentoLayout; nenhuma regressão nova no
+    componente criado.
+  - Nenhum erro de navegação observado no fluxo testado.
+
+5. CONFIRMAÇÕES
+----------------------------------------------------------------------------------------------------
+  - Nenhuma alteração em banco, migration, Edge Function ou dados.
+  - Nenhuma alteração no APP Prestador, Financeiro ou outros módulos.
+  - Nenhum git reset, clean, checkout ou stash executado.
+  - Nenhum commit ou push realizado.
+  - Nenhuma publicação no Vercel.
+  - O backend de ofertas/candidatos permaneceu intocado.
+
+6. PRÓXIMA ETAPA RECOMENDADA
+----------------------------------------------------------------------------------------------------
+  Revisar o diff local e, após autorização, publicar o frontend. Antes da
+  publicação, executar uma validação de navegação nas seções principais do
+  Recrutamento para confirmar o acesso em produção.
+
+====================================================================================================

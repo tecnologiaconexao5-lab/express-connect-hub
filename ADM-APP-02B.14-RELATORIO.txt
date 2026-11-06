@@ -1,0 +1,211 @@
+====================================================================================================
+ADM-APP-02B.14 — DRY-RUN CONTROLADO DA EXTRAÇÃO DO BASELINE
+PROJETO: Conexão Express — TMS
+WORKSPACE: C:\Users\DIEGO BALBINO\Desktop\Pasta Compartilhada\DOCUMENTOS EMPRESA\08_TECNOLOGIA_SISTEMAS\express-connect-hub
+PROJETO SUPABASE ALVO: uwrvzsjtpgaifkktpepn
+CREDENCIAL: tms_baseline_reader
+DATA/HORA: 2026-11-03 (horário local)
+TIPO: DRY-RUN DO CLI / AUDITORIA DO COMANDO
+RESULTADO: DRY-RUN BLOQUEADO POR PRIVILÉGIOS
+ZERO DUMP REAL / ZERO MIGRATIONS / ZERO DEPLOY / ZERO ALTERAÇÕES FUNCIONAIS
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1. PROJETO E USUÁRIO CONFIRMADOS
+----------------------------------------------------------------------------------------------------
+  - CLI: Supabase 2.117.0 (update 3.0.0 disponível, não aplicado).
+  - Projeto: uwrvzsjtpgaifkktpepn / conexao-express-tms.
+  - Vinculação: `supabase/.temp/linked-project.json` confirma o mesmo ref.
+  - Credencial usada: `tms_baseline_reader`.
+  - Pooler: aws-1-sa-east-1.pooler.supabase.com:5432.
+  - Banco: postgres.
+  - Usuário de roteamento usado no teste: tms_baseline_reader.uwrvzsjtpgaifkktpepn.
+  - Pré-validação real por conexão read-only:
+      current_user       = tms_baseline_reader
+      current_database   = postgres
+      rolsuper           = false
+      rolbypassrls       = false
+  - Nenhuma consulta de escrita executada.
+  - Nenhum uso de `--linked`, service_role ou credencial administrativa para o dry-run.
+
+Senha:
+  - Recuperada do Windows Credential Manager (PasswordVault), resource
+    `express-connect-tms-baseline-reader`, em memória.
+  - Não foi impressa, gravada em arquivo, script, `.env`, relatório ou Git.
+  - Foi passada ao processo via variável de ambiente, não via argumento visível.
+  - A saída do dry-run foi redigida antes deste relatório.
+
+----------------------------------------------------------------------------------------------------
+2. EXECUÇÃO DO DRY-RUN
+----------------------------------------------------------------------------------------------------
+Comando executado, sem `--linked`, sem `--data-only`, sem `--clean`, sem `--create`,
+sem `--role-only`, sem `--file` de baseline definitivo:
+
+  supabase db dump --dry-run --schema public --keep-comments \
+    --db-url <CONEXAO_READ_ONLY>
+
+Resultado:
+  - Exit code: 0.
+  - O CLI gerou o script de pg_dump e não executou dump real.
+  - Nenhum arquivo de baseline foi criado/alterado.
+  - Nenhuma conexão de escrita foi realizada.
+
+----------------------------------------------------------------------------------------------------
+3. COMANDO GERADO (SEGREDOS REDIGIDOS)
+----------------------------------------------------------------------------------------------------
+O CLI gerou um script bash contendo (senha substituída por <REDACTED>):
+
+  export PGHOST="aws-1-sa-east-1.pooler.supabase.com"
+  export PGPORT="5432"
+  export PGUSER="tms_baseline_reader.uwrvzsjtpgaifkktpepn"
+  export PGPASSWORD="<REDACTED>"
+  export PGDATABASE="postgres"
+
+  pg_dump \
+      --schema-only \
+      --quote-all-identifier \
+      --role "postgres" \
+      --exclude-schema "" \
+      --schema=public \
+    | sed ... (pipeline de normalização do CLI)
+
+O script contém transformações sed para:
+  - não emitir metacomandos psql;
+  - não alterar o role “supabase_admin”;
+  - não incluir ACLs de schemas internos;
+  - não incluir policies do schema cron;
+  - não incluir event triggers;
+  - não criar pgtle/pgsodium/pgmq comments;
+  - não criar publication “supabase_realtime”;
+  - não emitir transaction_timeout.
+
+----------------------------------------------------------------------------------------------------
+4. AUDITORIA DO COMANDO
+----------------------------------------------------------------------------------------------------
+  - `--schema-only`: PRESENTE. O dump é estrutural, sem dados de tabelas.
+  - `--schema=public`: PRESENTE. Escopo limitado ao schema public.
+  - `--data-only`: AUSENTE.
+  - `--clean`: AUSENTE.
+  - `--create`: AUSENTE.
+  - `--use-copy`: AUSENTE.
+  - `--role-only`: AUSENTE.
+  - `--file` de baseline: AUSENTE.
+  - `--no-owner`: NÃO aparece explicitamente.
+  - `--no-acl`/`--no-privileges`: NÃO aparece; ACLs devem ser emitidas, sujeitas
+    ao pipeline sed do CLI.
+  - `--keep-comments`: foi passado ao CLI, mas NÃO aparece no comando pg_dump
+    gerado; portanto a preservação de comentários NÃO está comprovada.
+  - `--quote-all-identifier`: aparece no comando (grafia singular; validar
+    compatibilidade com a versão de pg_dump usada).
+  - `--exclude-schema ""`: aparece vazio; sem efeito prático; o escopo real é
+    `--schema=public`.
+  - RLS/policies: o comando não inclui opção que desabilite RLS; o CLI remove
+    policies apenas do schema cron. As policies de public devem ser emitidas,
+    mas isso não foi executado.
+  - Outros schemas: o comando limita a public; auth/storage/realtime não são
+    incluídos.
+  - O pipeline sed remove/commenta alguns grants/ACLs de roles internos
+    (supabase_admin, publication realtime); isso pode reduzir a fidelidade de
+    ACLs.
+  - O CLI gerou uma linha `export PGPASSWORD="<REDACTED>"` com o valor real.
+    Isso é um risco de exposição em terminal compartilhado; o valor foi
+    redigido neste relatório e não foi salvo em arquivo.
+
+----------------------------------------------------------------------------------------------------
+5. BLOQUEIO PRINCIPAL — PRIVILÉGIO `--role "postgres"`
+----------------------------------------------------------------------------------------------------
+O comando gerado inclui:
+
+  --role "postgres"
+
+Isso exige que a credencial possa executar `SET ROLE postgres` (ou seja,
+pertencer a postgres/ser superuser). A role `tms_baseline_reader` foi criada
+explicitamente com NOSUPERUSER, sem associação a postgres e sem role
+administrativa. Portanto:
+
+  - o dry-run prova apenas que o CLI consegue montar o script;
+  - a extração real com essa role tende a falhar no `SET ROLE postgres`;
+  - não é permitido conceder essa associação/privilégio;
+  - não se deve usar a credencial administrativa só para contornar isso.
+
+Tentativa de executar o pg_dump gerado com o usuário read-only seria, portanto,
+uma extração não autorizada/incompatível. Não foi executada.
+
+----------------------------------------------------------------------------------------------------
+6. O QUE O DRY-RUN COMPROVA E O QUE NÃO COMPROVA
+----------------------------------------------------------------------------------------------------
+Comprova:
+  - O CLI 2.117.0 aceita o banco/usuário read-only e gera um script de pg_dump.
+  - O comando base é `--schema-only --schema=public`.
+  - O CLI inclui `--role "postgres"`, que é incompatível com a role limitada.
+  - O CLI imprime a senha no script de dry-run (risco de segurança).
+  - O escopo é public; schemas internos não são incluídos.
+
+NÃO comprova:
+  - Que a role read-only consegue executar o dump real.
+  - Que o `SET ROLE postgres` é permitido (não é, pela configuração da role).
+  - Que comentários são preservados.
+  - Que ACLs/grants completos são preservados após o pipeline sed.
+  - Que RLS/policies são emitidas sem exigir BYPASSRLS.
+  - Que o dump real funciona em Windows/bash/Docker.
+  - Que o baseline novo seria íntegro/certificável.
+
+----------------------------------------------------------------------------------------------------
+7. RISCOS E INCOMPATIBILIDADES
+----------------------------------------------------------------------------------------------------
+  1. `--role "postgres"` no comando gerado: bloqueio de privilégio.
+  2. Senha impressa no dry-run: risco de exposição; não deve ser copiada.
+  3. `--keep-comments` não visível no pg_dump: comentários podem ser perdidos.
+  4. Pipeline sed do CLI remove/commenta ACLs/objetos internos; fidelidade de
+     ACLs pode ser menor.
+  5. `--exclude-schema ""` vazio; não exclui nada, mas o escopo public já limita.
+  6. `--quote-all-identifier` singular; validar contra o pg_dump real.
+  7. Role sem BYPASSRLS; se pg_dump precisar desabilitar RLS, o dump pode
+     falhar; não elevar privilégios.
+  8. Script gerado é bash + sed; no Windows depende do ambiente de execução do
+     CLI (Docker/WSL/Git Bash), não validado aqui.
+
+----------------------------------------------------------------------------------------------------
+8. DECISÃO E PRÓXIMA AÇÃO
+----------------------------------------------------------------------------------------------------
+CLASSIFICAÇÃO: DRY-RUN BLOQUEADO POR PRIVILÉGIOS.
+
+  - O dry-run executou e gerou o comando.
+  - O comando gerado exige `--role "postgres"`, que a credencial read-only não
+    possui e que NÃO deve ser concedido.
+  - Nenhum dump real foi executado.
+  - Nenhuma role/permissão foi alterada.
+  - Nenhuma credencial administrativa foi usada para o dry-run.
+
+Próxima ação exata (após autorização):
+  1. NÃO usar `supabase db dump` com essa role enquanto ele gerar
+     `--role "postgres"`.
+  2. Avaliar uma extração direta com `pg_dump` SEM `--role postgres`, usando a
+     role read-only e `PGPASSWORD` via ambiente; `pg_dump` standalone não está
+     instalado, então seria necessário instalar o cliente PostgreSQL ou usar
+     uma imagem/ferramenta aprovada, sem iniciar serviços do TMS.
+  3. Validar o pg_dump com `--schema-only --schema=public` e
+     `--quote-all-identifiers`; revisar ACLs/comentários/RLS.
+  4. Se o pg_dump direto também exigir privilégios maiores, registrar a
+     limitação e NÃO elevar a credencial.
+  5. Só depois de uma extração válida gerar o novo baseline/manifesto.
+  6. A senha do dry-run deve ser considerada exposta ao terminal local; evitar
+     reutilizar a saída e não copiar o script para arquivos.
+
+----------------------------------------------------------------------------------------------------
+9. CONFIRMAÇÕES EXPRESSAS
+----------------------------------------------------------------------------------------------------
+  - Projeto confirmado: uwrvzsjtpgaifkktpepn.
+  - Usuário confirmado: tms_baseline_reader.
+  - current_database = postgres.
+  - rolsuper = false; rolbypassrls = false.
+  - Nenhum dump real.
+  - Nenhum `supabase db dump` sem `--dry-run`.
+  - Nenhuma migration, `db push`, `db reset`, deploy ou Edge Function.
+  - Nenhum secret criado/alterado.
+  - Nenhum baseline/manifesto alterado/gerado.
+  - Nenhum arquivo do TMS/APP alterado.
+  - Nenhuma senha exibida no relatório; `<REDACTED>` usado.
+  - Homologação não declarada.
+
+====================================================================================================

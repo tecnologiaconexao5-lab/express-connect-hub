@@ -1,0 +1,118 @@
+====================================================================================================
+ATIVAÇÃO DA EDGE FUNCTION OFERTAS-PUBLICAS
+DATA: 2026-11-04
+PROJETO: uwrvzsjtpgaifkktpepn — conexao-express-tms
+RESULTADO: EDGE PUBLICADA, MAS BLOQUEADA POR INCOMPATIBILIDADE DO TENANT ID
+NENHUM CADASTRO REAL FOI GRAVADO
+====================================================================================================
+
+1. PROJETO E ORIGEM PÚBLICA
+----------------------------------------------------------------------------------------------------
+  Projeto vinculado confirmado:
+    uwrvzsjtpgaifkktpepn — conexao-express-tms
+
+  Origem pública verificada:
+    https://app.conexaoexpress.com.br
+
+  Evidência:
+    - GET /cadastro-prestador retornou HTTP 200;
+    - título "Conexao Express TMS";
+    - app Vercel servindo o formulário.
+  Os domínios `tms.conexaoexpress.com.br` e `conexoexpress.app` não
+  resolveram neste ambiente e não foram usados por suposição.
+
+2. CONFIGURAÇÃO REALIZADA
+----------------------------------------------------------------------------------------------------
+  Secrets criados/confirmados, sem exibir valores:
+    - OFERTAS_PUBLICAS_TENANT_ID
+    - OFERTAS_PUBLICAS_ALLOWED_ORIGINS
+    - OFERTAS_PUBLICAS_IP_SALT
+
+  - Tenant configurado: 00000000-0000-0000-0000-000000000001.
+  - Origem CORS: https://app.conexaoexpress.com.br.
+  - IP salt: gerado aleatoriamente com crypto.randomBytes(32); não exibido.
+  - CAPTCHA permaneceu opcional; nenhum secret adicional foi configurado.
+  - Nenhum secret existente foi alterado.
+
+3. DEPLOY
+----------------------------------------------------------------------------------------------------
+  Comando:
+    supabase functions deploy ofertas-publicas --project-ref uwrvzsjtpgaifkktpepn --no-verify-jwt
+
+  Resultado:
+    - Deploy exit 0.
+    - Função `ofertas-publicas` ativa, versão 1.
+    - verify_jwt=false.
+    - Nenhuma outra função foi publicada.
+    - Nenhum db push ou migration executado.
+
+4. TESTES REALIZADOS
+----------------------------------------------------------------------------------------------------
+  OPTIONS/CORS:
+    - HTTP 204.
+    - Access-Control-Allow-Origin:
+      https://app.conexaoexpress.com.br
+    - CORS funcionando para a origem confirmada.
+
+  POSTs:
+    - payload vazio: HTTP 503 `configuracao_indisponivel`;
+    - campo inesperado: HTTP 503 `configuracao_indisponivel`;
+    - payload acima do limite: HTTP 503 `configuracao_indisponivel`;
+    - cadastro válido: HTTP 503 `configuracao_indisponivel`;
+    - replay idempotente: HTTP 503 `configuracao_indisponivel`;
+    - tentativas de rate limit: HTTP 503 `configuracao_indisponivel`.
+
+  Nenhum protocolo foi retornado. Nenhuma oferta foi criada.
+
+5. CAUSA EXATA
+----------------------------------------------------------------------------------------------------
+  O Edge rejeita o tenant ID antes de chamar a RPC.
+
+  Código atual:
+    const UUID_REGEX =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  O tenant correto é:
+    00000000-0000-0000-0000-000000000001
+
+  O terceiro grupo é `0000`, que não atende a `[1-5]`; portanto o regex
+  rejeita o tenant correto e o código retorna 503 antes de qualquer RPC.
+
+  Isso é uma incompatibilidade de implementação/configuração, não um problema
+  de CORS. A RPC não foi chamada; o banco não recebeu ofertas.
+
+6. ESTADO DO BANCO E DO AMBIENTE
+----------------------------------------------------------------------------------------------------
+  Antes e depois das tentativas:
+    recrutamento_ofertas: 0
+    recrutamento_candidatos: 39
+    prestadores: 40
+    auth.users: 27
+
+  Nenhum prestador operacional, usuário Auth ou candidato novo foi criado.
+  Migrations 02B.2/02B.3 permanecem aplicadas e intactas.
+  Nenhum outro módulo foi alterado.
+
+7. CORREÇÃO MÍNIMA NECESSÁRIA — NÃO EXECUTADA
+----------------------------------------------------------------------------------------------------
+  Alterar somente a validação do UUID para aceitar o tenant nil UUID
+  `00000000-0000-0000-0000-000000000001` — por exemplo, remover a restrição
+  de versão `[1-5]` no terceiro grupo ou tratar explicitamente esse UUID.
+
+  Depois:
+    1. redeployar somente `ofertas-publicas`;
+    2. repetir OPTIONS/CORS, validação, tamanho, idempotência, rate limit
+       e cadastro controlado;
+    3. confirmar oferta no banco e ausência de prestador/Auth.
+
+  Essa alteração de código não foi feita nesta missão porque a instrução era
+  parar e relatar erro de configuração sem improvisar correções.
+
+8. CLASSIFICAÇÃO
+----------------------------------------------------------------------------------------------------
+  EDGE PUBLICADA, MAS NÃO FUNCIONAL.
+  Cadastro público: BLOQUEADO.
+  Painel: sem ofertas reais para exibir.
+  Pendência: correção do regex de UUID e redeploy autorizado.
+
+====================================================================================================
