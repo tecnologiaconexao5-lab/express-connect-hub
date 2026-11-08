@@ -4,8 +4,9 @@
 //
 // CRO: wizard minimalista — 1 etapa por vez com animação suave de
 // entrada/saída (framer-motion), SEM histórico de chat. Carga capturada
-// em 3 perguntas (o que / peso / dimensões) e o motor `analisarCargaCotacao`
-// (peso + cubagem) indica o veículo com a regra de SLA (moto imediata,
+// em 3 perguntas (o que / peso total / itens+dimensões) e o motor
+// `analisarCargaCotacao` (peso + cubagem total dos volumes) indica o
+// veículo com a regra de SLA (moto imediata,
 // demais 24h) — sem aviso genérico de 40kg. Endereços com
 // destrinchamento visual e modo manual (perguntas naturais).
 //
@@ -64,9 +65,12 @@ import {
 } from "@/services/cotacoes/cotacaoCalculoService";
 import {
   analisarCargaCotacao,
+  formatarCubagem,
   formatarLitros,
   type RecomendacaoVeiculoCotacao,
+  type VolumeCarga,
 } from "@/lib/veiculoCotacao";
+import { calcularLitros } from "@/lib/cubagem";
 import type { SugestaoEndereco } from "@/services/maps/mapboxProvider";
 import { gerarPropostaCotacaoPDF } from "@/lib/cotacaoPdf";
 
@@ -112,6 +116,32 @@ const paradaVazia = (tipo: TipoParada = "entrega"): ParadaEstado => ({
   tipo,
 });
 
+/** Linha da etapa 4 — item/volume com quantidade, dimensões e peso opcional. */
+interface VolumeEstado {
+  qtd: string;
+  altura: string;
+  largura: string;
+  profundidade: string;
+  peso: string;
+}
+
+/** Limite de itens/volumes por cotação. */
+const MAX_VOLUMES = 10;
+
+const itemVolumeVazio = (): VolumeEstado => ({
+  qtd: "1",
+  altura: "",
+  largura: "",
+  profundidade: "",
+  peso: "",
+});
+
+/** Quantidade efetiva da linha: vazia/0/inválida conta como 1. */
+const qtdEfetiva = (v: VolumeEstado): number => {
+  const n = Math.floor(Number(v.qtd));
+  return n >= 1 ? n : 1;
+};
+
 const ROTULO_TIPO_PARADA: Record<TipoParada, string> = {
   retirada: "Retirada",
   entrega: "Entrega",
@@ -149,9 +179,7 @@ export default function CotacaoExpress() {
   const [telefone, setTelefone] = useState("");
   const [descricao, setDescricao] = useState("");
   const [peso, setPeso] = useState("");
-  const [altura, setAltura] = useState("");
-  const [largura, setLargura] = useState("");
-  const [profundidade, setProfundidade] = useState("");
+  const [volumes, setVolumes] = useState<VolumeEstado[]>([itemVolumeVazio()]);
   const [dimensoesIgnoradas, setDimensoesIgnoradas] = useState(false);
   const [recomendacao, setRecomendacao] = useState<RecomendacaoVeiculoCotacao | null>(null);
   const [paradas, setParadas] = useState<ParadaEstado[]>([
@@ -173,13 +201,52 @@ export default function CotacaoExpress() {
 
   const primeiroNome = nome.trim().split(" ")[0] || "";
 
-  const dimensoesTexto = useMemo(() => {
-    const a = Number(altura);
-    const l = Number(largura);
-    const p = Number(profundidade);
-    if (a > 0 && l > 0 && p > 0) return `${a}x${l}x${p} cm`;
-    return "";
-  }, [altura, largura, profundidade]);
+  /** Itens com as 3 dimensões preenchidas (linhas parcialmente vazias ficam de fora). */
+  const volumesAtivos = useMemo(
+    () =>
+      volumes
+        .map((v) => ({
+          qtd: qtdEfetiva(v),
+          a: Number(v.altura),
+          l: Number(v.largura),
+          p: Number(v.profundidade),
+          peso: Number(v.peso) > 0 ? Number(v.peso) : 0,
+        }))
+        .filter((v) => v.a > 0 && v.l > 0 && v.p > 0),
+    [volumes],
+  );
+
+  /** Texto canônico das dimensões (itens ativos) para carga_dimensoes. */
+  const dimensoesTexto = useMemo(
+    () =>
+      volumesAtivos
+        .map((v) => (v.qtd > 1 ? `${v.qtd}x${v.a}x${v.l}x${v.p} cm` : `${v.a}x${v.l}x${v.p} cm`))
+        .join("; "),
+    [volumesAtivos],
+  );
+
+  /** Cubagem total em litros (Σ qtd × A×L×P) para o resumo do wizard. */
+  const litrosTotal = useMemo(
+    () =>
+      volumesAtivos.reduce(
+        (soma, v) => soma + calcularLitros({ comprimento: v.p, largura: v.l, altura: v.a }) * v.qtd,
+        0,
+      ),
+    [volumesAtivos],
+  );
+
+  /** Soma do "Peso por item" (qtd × peso) — atualiza o Peso Total Estimado. */
+  const somaPesoItens = useMemo(
+    () =>
+      volumes.reduce((soma, v) => soma + (Number(v.peso) > 0 ? Number(v.peso) * qtdEfetiva(v) : 0), 0),
+    [volumes],
+  );
+
+  /** Total de itens/volumes ativos para a coluna carga_volumes. */
+  const totalVolumes = useMemo(
+    () => volumesAtivos.reduce((soma, v) => soma + v.qtd, 0),
+    [volumesAtivos],
+  );
 
   /** Valor real usado na reserva: a opção manual libera o campo digitado. */
   const horarioEfetivo =
@@ -207,15 +274,23 @@ export default function CotacaoExpress() {
 
   const validarDimensoes = (): string => {
     if (dimensoesIgnoradas) return "";
-    const algumPreenchido = [altura, largura, profundidade].some((v) => Number(v) > 0);
-    if (!algumPreenchido) return ""; // todas vazias → cliente optou por não informar
-    const faltando = [
-      ["Altura", altura],
-      ["Largura", largura],
-      ["Profundidade", profundidade],
-    ].filter(([, v]) => !(Number(v) > 0));
-    if (faltando.length > 0)
-      return `Preencha ${faltando.map(([n]) => n).join(", ")} (em cm) ou use "Não sei as dimensões".`;
+    // Nenhuma linha com dimensão → cliente optou por não informar (ok).
+    const temAlgumaDimensao = volumes.some(
+      (v) => Number(v.altura) > 0 || Number(v.largura) > 0 || Number(v.profundidade) > 0,
+    );
+    if (!temAlgumaDimensao) return "";
+    for (let i = 0; i < volumes.length; i++) {
+      const v = volumes[i];
+      const alguma = Number(v.altura) > 0 || Number(v.largura) > 0 || Number(v.profundidade) > 0;
+      if (!alguma) continue; // linha totalmente vazia é ignorada
+      const faltando = [
+        ["Altura", v.altura],
+        ["Largura", v.largura],
+        ["Profundidade", v.profundidade],
+      ].filter(([, valor]) => !(Number(valor) > 0));
+      if (faltando.length > 0)
+        return `Preencha ${faltando.map(([n]) => n).join(", ")} do item ${i + 1} (em cm).`;
+    }
     return "";
   };
 
@@ -313,12 +388,27 @@ export default function CotacaoExpress() {
     if (problema) return setErro(problema);
     setErro("");
 
-    // Motor de indicação: peso + cubagem → veículo + SLA.
+    // "Peso por item" (qtd × kg) soma ao Peso Total Estimado da etapa 3.
+    const pesoEfetivo =
+      somaPesoItens > 0
+        ? Math.round((somaPesoItens + Number.EPSILON) * 100) / 100
+        : Number(peso);
+    if (somaPesoItens > 0 && Number(peso) !== pesoEfetivo) {
+      setPeso(String(pesoEfetivo));
+      toast.info(
+        `Peso Total Estimado atualizado para ${String(pesoEfetivo).replace(".", ",")} kg (soma dos itens).`,
+      );
+    }
+
+    // Motor de indicação: peso + cubagem total dos volumes → veículo + SLA.
     const rec = analisarCargaCotacao({
-      pesoKg: Number(peso) > 0 ? Number(peso) : null,
-      alturaCm: Number(altura) || null,
-      larguraCm: Number(largura) || null,
-      profundidadeCm: Number(profundidade) || null,
+      pesoKg: pesoEfetivo > 0 ? pesoEfetivo : null,
+      volumes: volumesAtivos.map((v) => ({
+        qtd: v.qtd,
+        alturaCm: v.a,
+        larguraCm: v.l,
+        profundidadeCm: v.p,
+      })),
     });
     setRecomendacao(rec);
     setEtapa(5);
@@ -326,20 +416,30 @@ export default function CotacaoExpress() {
 
   const avancarPularDimensoes = () => {
     setDimensoesIgnoradas(true);
-    setAltura("");
-    setLargura("");
-    setProfundidade("");
+    setVolumes([itemVolumeVazio()]);
     setErro("");
     // Mesmo sem dimensões, o motor indica veículo pelo peso.
     const rec = analisarCargaCotacao({
       pesoKg: Number(peso) > 0 ? Number(peso) : null,
-      alturaCm: null,
-      larguraCm: null,
-      profundidadeCm: null,
     });
     setRecomendacao(rec);
     setEtapa(5);
   };
+
+  const trocarVolume = (idx: number, campo: keyof VolumeEstado, valor: string) => {
+    setDimensoesIgnoradas(false);
+    setVolumes((prev) => prev.map((v, i) => (i === idx ? { ...v, [campo]: valor } : v)));
+  };
+
+  const adicionarVolume = (): string => {
+    if (volumes.length >= MAX_VOLUMES)
+      return `Limite de ${MAX_VOLUMES} itens/volumes por cotação.`;
+    setVolumes((prev) => [...prev, itemVolumeVazio()]);
+    return "";
+  };
+
+  const removerVolume = (idx: number) =>
+    setVolumes((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
 
   const avancarRetirada = () => {
     const problema = validarEndereco(0);
@@ -425,6 +525,7 @@ export default function CotacaoExpress() {
         carga_descricao: descricao,
         carga_peso: peso ? Number(peso) : null,
         carga_dimensoes: dimensoesTexto,
+        carga_volumes: totalVolumes > 0 ? totalVolumes : null,
         paradas: pontos.map((p) => p.endereco),
         paradasTipos: pontosComTipo.map((p) => p.tipo),
         data_desejada: "",
@@ -682,7 +783,7 @@ export default function CotacaoExpress() {
                     subtitulo="Com o peso certo já indicamos o veículo ideal."
                   />
                   <div className="space-y-1.5">
-                    <Label htmlFor="cot-peso">Qual o peso estimado (em kg)? *</Label>
+                    <Label htmlFor="cot-peso">Peso Total Estimado (em kg)? *</Label>
                     <Input
                       id="cot-peso"
                       type="number"
@@ -694,82 +795,153 @@ export default function CotacaoExpress() {
                       onChange={(e) => setPeso(e.target.value)}
                     />
                     <p className="text-xs text-slate-400">
-                      Um valor aproximado já serve — ajustamos depois.
+                      Um valor aproximado já serve — ajustamos depois. Na próxima etapa o peso por
+                      item soma aqui automaticamente.
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* ETAPA 4 — dimensões */}
+              {/* ETAPA 4 — itens/volumes + dimensões */}
               {etapa === 4 && (
                 <div className="space-y-4">
                   <Rotulo
                     titulo="Dimensões da carga"
-                    subtitulo="Quais as dimensões da mercadoria? (Altura, Largura e Profundidade) em cm. Ajuda a confirmar o veículo."
+                    subtitulo="Quais as dimensões de cada item/volume? (Altura, Largura e Profundidade) em cm. Ajuda a confirmar o veículo."
                   />
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cot-altura" className="text-xs font-semibold text-slate-600">
-                        Altura (cm)
-                      </Label>
-                      <Input
-                        id="cot-altura"
-                        type="number"
-                        min={0}
-                        inputMode="decimal"
-                        className="h-12 rounded-xl text-base"
-                        placeholder="40"
-                        value={altura}
-                        onChange={(e) => {
-                          setAltura(e.target.value);
-                          setDimensoesIgnoradas(false);
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cot-largura" className="text-xs font-semibold text-slate-600">
-                        Largura (cm)
-                      </Label>
-                      <Input
-                        id="cot-largura"
-                        type="number"
-                        min={0}
-                        inputMode="decimal"
-                        className="h-12 rounded-xl text-base"
-                        placeholder="40"
-                        value={largura}
-                        onChange={(e) => {
-                          setLargura(e.target.value);
-                          setDimensoesIgnoradas(false);
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="cot-profundidade"
-                        className="text-xs font-semibold text-slate-600"
+                  <div className="space-y-3">
+                    {volumes.map((vol, idx) => (
+                      <div
+                        key={idx}
+                        className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3"
                       >
-                        Prof. (cm)
-                      </Label>
-                      <Input
-                        id="cot-profundidade"
-                        type="number"
-                        min={0}
-                        inputMode="decimal"
-                        className="h-12 rounded-xl text-base"
-                        placeholder="40"
-                        value={profundidade}
-                        onChange={(e) => {
-                          setProfundidade(e.target.value);
-                          setDimensoesIgnoradas(false);
-                        }}
-                      />
-                    </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-500">
+                            Item / volume {idx + 1}
+                          </span>
+                          {volumes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removerVolume(idx)}
+                              className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-red-600"
+                            >
+                              <X className="h-3.5 w-3.5" /> Remover
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`cot-vol-${idx}-qtd`}
+                              className="text-xs font-semibold text-slate-600"
+                            >
+                              Quantidade
+                            </Label>
+                            <Input
+                              id={`cot-vol-${idx}-qtd`}
+                              type="number"
+                              min={1}
+                              inputMode="numeric"
+                              className="h-12 rounded-xl text-base"
+                              placeholder="1"
+                              value={vol.qtd}
+                              onChange={(e) => trocarVolume(idx, "qtd", e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`cot-vol-${idx}-peso`}
+                              className="text-xs font-semibold text-slate-600"
+                            >
+                              Peso por item (kg) — opcional
+                            </Label>
+                            <Input
+                              id={`cot-vol-${idx}-peso`}
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              className="h-12 rounded-xl text-base"
+                              placeholder="Ex.: 5"
+                              value={vol.peso}
+                              onChange={(e) => trocarVolume(idx, "peso", e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`cot-vol-${idx}-alt`}
+                              className="text-xs font-semibold text-slate-600"
+                            >
+                              Altura (cm)
+                            </Label>
+                            <Input
+                              id={`cot-vol-${idx}-alt`}
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              className="h-12 rounded-xl text-base"
+                              placeholder="40"
+                              value={vol.altura}
+                              onChange={(e) => trocarVolume(idx, "altura", e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`cot-vol-${idx}-lar`}
+                              className="text-xs font-semibold text-slate-600"
+                            >
+                              Largura (cm)
+                            </Label>
+                            <Input
+                              id={`cot-vol-${idx}-lar`}
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              className="h-12 rounded-xl text-base"
+                              placeholder="40"
+                              value={vol.largura}
+                              onChange={(e) => trocarVolume(idx, "largura", e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`cot-vol-${idx}-prof`}
+                              className="text-xs font-semibold text-slate-600"
+                            >
+                              Prof. (cm)
+                            </Label>
+                            <Input
+                              id={`cot-vol-${idx}-prof`}
+                              type="number"
+                              min={0}
+                              inputMode="decimal"
+                              className="h-12 rounded-xl text-base"
+                              placeholder="40"
+                              value={vol.profundidade}
+                              onChange={(e) => trocarVolume(idx, "profundidade", e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {dimensoesTexto && (
+                  <button
+                    type="button"
+                    disabled={volumes.length >= MAX_VOLUMES}
+                    onClick={() => {
+                      const limite = adicionarVolume();
+                      setErro(limite);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-3.5 py-2.5 text-xs font-semibold text-orange-600 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Adicionar outro item/volume
+                  </button>
+                  {litrosTotal > 0 && (
                     <p className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
                       <Ruler className="h-3.5 w-3.5 text-orange-500" />
-                      Cubagem calculada: {dimensoesTexto}
+                      Cubagem calculada: {formatarCubagem(litrosTotal)}
                     </p>
                   )}
                   <button

@@ -1,5 +1,30 @@
 # Summary
 
+## MISSÃO COTACAO-VOLUMES-ITENS — Peso Total Estimado, lista de itens/volumes e cross-check de cubagem em m³ (2026-11-08)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (5 ficheiros) · teste novo **13/13** · `cotacao_express_fluxo` **72/72** (C.1/C.2 atualizados) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata (**2657 pass** = 2644 + 13 novos; 1º run com 45 foi flaky) · `npm run build` ok (58,09s). Sem migration (`carga_volumes INT` já existia desde `20261024000000`).
+
+### O que mudou (pedido do cliente: "Peso Total Estimado" + volumes)
+1. **Etapa 3 (`CotacaoExpress.tsx`)** — label passou a **"Peso Total Estimado (em kg)? *"** (id `cot-peso` mantido); hint avisa que "soma dos itens" preenche automaticamente.
+2. **Etapa 4 reescrita — lista dinâmica de itens/volumes** — estado `volumes: VolumeEstado[]` (`{qtd, altura, largura, profundidade, peso}` strings) substitui os 3 inputs únicos; cada item tem cabeçalho "Item / volume N", Quantidade, Peso por item (opcional) e Altura/Largura/Profundidade (ids `cot-vol-${idx}-*` — template literals, fora do regex do C.1); botão **"+ Adicionar outro item/volume"** (limite `MAX_VOLUMES = 10`) e remover por linha (mín. 1); linhas vazias ignoradas na validação (`... do item N (em cm).`); `dimensoesTexto` une itens como `2x40x40x40 cm; 10x30x20x15 cm` (C.6 preservado); hint **"Cubagem calculada: X"** (`formatarCubagem(litrosTotal)`, m³ se ≥1000 L).
+3. **Soma do peso por item → etapa 3** — `avancarDimensoes` calcula `pesoEfetivo = Σ(qtd × peso)` (>0) e, se diferente do digitado, faz `setPeso` + toast "Peso Total Estimado atualizado para X kg (soma dos itens)"; o motor recebe `pesoEfetivo`.
+4. **Motor (`veiculoCotacao.ts`) — cross-check de cubagem em m³** — novo `VolumeCarga {qtd, alturaCm, larguraCm, profundidadeCm}` + `volumes[]` na entrada (legado A×L×P preservado — bloco H intacto); `CAPACIDADE_VEICULO_M3` (passeio 1 · fiorino 3 · kombi 6 · hr 12 · vuc 15 · truck 35 · **carreta 70**) + `ORDEM_CAPACIDADE`; litros = Σ volumes (arredondados a 2) ou legado; cross-check `cubagemM3 = litros/1000` vs capacidade do veículo atual — **só eleva** (nunca rebaixa, até Carreta; sem encaixe mantém; moto fora da tabela → regras 90/160 L antes), motivo registado em `motivos`; `formatarCubagem` exportado; `NOMES_VEICULO_COTACAO.carreta = "Carreta"`.
+5. **Persistência** — payload `criarCotacaoFase1` envia `carga_volumes: totalVolumes > 0 ? totalVolumes : null` (Σ qtd dos itens ativos); `CriarCotacaoFase1Input.carga_volumes?: number | null` + insert `input.carga_volumes ?? null` em `cotacaoPublicaService.ts` (coluna `carga_volumes INT` já existia; interface/normalizador já a mapeavam).
+
+### Testes
+- **NOVO** `src/test/cotacao_express_volumes_itens.test.ts` (**13**): A) motor (volumes, cross-check m³/carreta, regras moto, `formatarCubagem`); B) etapa 3 (label + soma/`pesoEfetivo`); C) etapa 4 (ids `cot-vol-*`, campos, adicionar/remover, subtítulo/cubagem/opt-out, validação por linha); D) `carga_volumes` no payload e no service.
+- **Atualizado** `cotacao_express_fluxo.test.ts`: C.1 → 8 ids (`cot-altura/largura/profundidade` removidos); C.2 → label "Peso Total Estimado (em kg)? *" + subtítulo "Quais as dimensões de cada item/volume?...".
+
+### Arquivos
+- `src/lib/veiculoCotacao.ts` · `src/pages/CotacaoExpress.tsx` · `src/services/cotacoes/cotacaoPublicaService.ts` · `src/test/cotacao_express_fluxo.test.ts` (C.1/C.2) · `src/test/cotacao_express_volumes_itens.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` ao vivo: etapa 3 com "Peso Total Estimado"; etapa 4 → adicionar 2+ itens com qtd/peso/dims, confirmar toast de soma na etapa 3, cubagem no hint e botão desabilitado no limite de 10.
+2. (QA) Moto com 1 item 40×40×40 (64 L) → moto; 40 m³ → sugestão que considera cubagem (VUC/Truck); conferir motivo "excede os X m³".
+3. (QA) Salvar cotação → conferir `carga_volumes` = Σ qtd na tabela `cotacoes_publicas`.
+
+---
+
 ## MISSÃO OG-IMAGE-PREVIEW — Preview de partilha (WhatsApp/redes) com logótipo oficial (2026-11-08)
 
 **Status:** ✅ Concluída (código + asset). `npm run build` ok (50,41s) · `dist/og-image.png` (107,7 KB) presente · sem testes unitários afetados (só `index.html` + asset estático).

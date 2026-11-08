@@ -261,16 +261,13 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
   it("C.1 — coleta exatamente os campos de baixa fricção (sem número/complemento)", () => {
     const ids = [...fase1.matchAll(/id="([^"]+)"/g)].map((m) => m[1]).sort();
     expect(ids).toEqual([
-      "cot-altura",
       "cot-data",
       "cot-descricao",
       "cot-hora",
       "cot-hora-manual",
       "cot-janelas-horario",
-      "cot-largura",
       "cot-nome",
       "cot-peso",
-      "cot-profundidade",
       "cot-telefone",
     ]);
   });
@@ -301,8 +298,10 @@ describe("C) Fase 1 PREMIUM — /cotacao-express (wizard + veículo + resumo)", 
     }
     // Perguntas exatas da carga
     expect(fase1).toContain("O que você precisa transportar? *");
-    expect(fase1).toContain("Qual o peso estimado (em kg)? *");
-    expect(fase1).toContain("Quais as dimensões da mercadoria? (Altura, Largura e Profundidade)");
+    expect(fase1).toContain("Peso Total Estimado (em kg)? *");
+    expect(fase1).toContain(
+      "Quais as dimensões de cada item/volume? (Altura, Largura e Profundidade)",
+    );
     expect(fase1).toContain("Não sei as dimensões");
   });
 

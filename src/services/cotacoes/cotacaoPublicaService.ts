@@ -90,6 +90,8 @@ export interface CriarCotacaoFase1Input {
   carga_descricao: string;
   carga_peso: number | null;
   carga_dimensoes: string;
+  /** Total de itens/volumes informados na etapa 4 (null = não informado). */
+  carga_volumes?: number | null;
   paradas: string[];
   /**
    * Tipos explícitos por parada (retirada/entrega/retirada_entrega). Alinha com o array
@@ -192,6 +194,7 @@ export async function criarCotacaoFase1(
         carga_descricao: input.carga_descricao.trim(),
         carga_peso: input.carga_peso,
         carga_dimensoes: input.carga_dimensoes.trim() || null,
+        carga_volumes: input.carga_volumes ?? null,
         paradas,
         data_desejada: input.data_desejada || null,
         hora_desejada: input.hora_desejada || null,
