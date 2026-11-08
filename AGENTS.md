@@ -1,5 +1,26 @@
 # Summary
 
+## MISSÃO OG-IMAGE-PREVIEW — Preview de partilha (WhatsApp/redes) com logótipo oficial (2026-11-08)
+
+**Status:** ✅ Concluída (código + asset). `npm run build` ok (50,41s) · `dist/og-image.png` (107,7 KB) presente · sem testes unitários afetados (só `index.html` + asset estático).
+
+### O que mudou
+1. **`public/og-image.png` (NOVO)** — imagem 1200×630/107,7 KB gerada com PowerShell `System.Drawing`: gradiente violeta `#2E1065`→laranja, logo colorido (`public/logos/logo-conexao-colorido.png`) centralizado, faixa laranja inferior com "Conexão Express Transportes · TMS". *(nota: `New-Object System.Drawing.Image` falha em PS 5.1 — usar `New-Object System.Drawing.Bitmap`; criar o ficheiro vazio antes de o abrir para escrita.)* Não usar `logos/logo-conexao-oficial.png` (logo branco → invisível em fundo claro do WhatsApp).
+2. **`index.html` (head)** — `og:image` e `twitter:image` passaram do preview Lovable no R2 para `https://app.conexaoexpress.com.br/og-image.png`; adicionados `og:image:type/width/height/alt`, `og:site_name=Conexão Express`, `twitter:card=summary_large_image`, `twitter:image:alt`; removidos `twitter:site @Lovable`. Title/description (`Conexão Express TMS` / `Portal Conexão Express Transportes`) mantidos.
+
+### Validação
+- `npm run build` → ✅ 50,41s; `dist/index.html` sem URLs Lovable; `dist/og-image.png` copiado.
+- Nenhuma migration, nenhum teste unitário tocado.
+
+### Arquivos
+- `public/og-image.png` (NOVO) · `index.html` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel; depois **Facebook Sharing Debugger** (`developers.facebook.com/tools/debug/`) → colar `https://app.conexaoexpress.com.br/` → **Scrape Again** (WhatsApp/Facebook cacheiam o preview por ~24h) e confirmar a imagem nova.
+2. (decisão) URL base `https://app.conexaoexpress.com.br` fixada nas meta tags — se o domínio público mudar (ex.: `conexaoexpress.com.br`), atualizar `og:image`/`twitter:image`.
+
+---
+
 ## MISSÃO PROP-ANEXO-PDF — Upload de PDF no Editor de Propostas + botão "Anexar Arquivo" do Orçamento (2026-11-06)
 
 **Status:** ✅ Concluída (código). `npx tsc --noEmit` 0 erros · ESLint sem erros novos (`no-explicit-any` restantes = baseline) · teste novo **14/14** · 12 specs que leem `OrcamentoForm` **250/250** · suíte completa **18 arquivos / 44 testes falhos** = baseline exata (**2644 pass**, +14) · `npm run build` ok (1m02s). Sem migration (anexo do orçamento vive só no estado do formulário).
