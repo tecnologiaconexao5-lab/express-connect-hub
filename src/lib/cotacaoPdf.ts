@@ -18,9 +18,7 @@ import {
   WHITE,
   TEXT_DARK,
   TEXT_BODY,
-  BORDER,
   BG_WARM,
-  BG_LIGHT,
 } from "./pdf/foundation";
 import { empresaConfig } from "@/utils/empresaConfig";
 
@@ -47,10 +45,16 @@ export interface CotacaoPropostaPdfInput {
 }
 
 const numeroProposta = (input: CotacaoPropostaPdfInput): string => {
-  const base = (input.cotacaoId || "").replace(/-/g, "").slice(0, 8).toUpperCase();
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return `PROP-${stamp}-${base || String(Date.now()).slice(-6)}`;
+  const hex = (input.cotacaoId || "").replace(/[^0-9a-f]/gi, "").slice(0, 8);
+  const sufixo = hex
+    ? String(parseInt(hex, 16) % 10000).padStart(4, "0")
+    : String(Date.now() % 10000).padStart(4, "0");
+  return `PROP-${stamp}-${sufixo}`;
 };
+
+/** E-mail de contato institucional da proposta (único e-mail exibido no PDF). */
+const EMAIL_CONTATO_PROPOSTA = "comercial@conexaoexpress.com.br";
 
 const dataHoraEmissao = (): string =>
   new Date().toLocaleString("pt-BR", {
@@ -88,6 +92,7 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
     status: "COTAÇÃO INSTANTÂNEA",
     date: emissao,
     via: "Cliente",
+    emailContato: EMAIL_CONTATO_PROPOSTA,
   });
 
   // ===================== CONTEÚDO =====================
@@ -119,6 +124,21 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
           .filter(Boolean)
           .join(" · ") || "A confirmar",
     },
+  ]);
+
+  // --- Carga (antes da rota, conforme pedido) ---
+  if (y > 235) {
+    doc.addPage();
+    drawHeader();
+    y = 35;
+  }
+
+  y = drawSectionTitle(doc, page.margin, y, "DADOS DA CARGA", page);
+  y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "CARGA DECLARADA", [
+    { label: "Descrição", value: input.descricao || "—" },
+    { label: "Peso", value: `${String(input.peso).replace(".", ",")} kg` },
+    { label: "Dimensões", value: input.dimensoes || "Não informadas" },
+    { label: "Paradas", value: String(input.paradasCount) },
   ]);
 
   // --- Rota ---
@@ -215,21 +235,6 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
   doc.text("Cotação estimada — sujeita a confirmação operacional.", page.margin + 5, y + 30);
   y += valorH + 7;
 
-  // --- Carga ---
-  if (y > 235) {
-    doc.addPage();
-    drawHeader();
-    y = 35;
-  }
-
-  y = drawSectionTitle(doc, page.margin, y, "DADOS DA CARGA", page);
-  y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "CARGA DECLARADA", [
-    { label: "Descrição", value: input.descricao || "—" },
-    { label: "Peso", value: `${String(input.peso).replace(".", ",")} kg` },
-    { label: "Dimensões", value: input.dimensoes || "Não informadas" },
-    { label: "Paradas", value: String(input.paradasCount) },
-  ]);
-
   // --- Condições comerciais ---
   y = drawSectionTitle(doc, page.margin, y, "CONDIÇÕES COMERCIAIS", page);
   doc.setFont("helvetica", "normal");
@@ -245,39 +250,6 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
     doc.text(`• ${linha}`, page.margin, y, { maxWidth: page.contentWidth });
     y += doc.getTextDimensions(linha, { maxWidth: page.contentWidth }).h + 2;
   }
-
-  y += 4;
-
-  // --- Emissor institucional ---
-  if (y > 235) {
-    doc.addPage();
-    drawHeader();
-    y = 35;
-  }
-
-  doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
-  doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
-  doc.setLineWidth(0.2);
-  doc.roundedRect(page.margin, y, page.contentWidth, 24, 2, 2, "FD");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-  doc.text(empresaConfig.razaoSocial, page.margin + 5, y + 7);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(TEXT_BODY[0], TEXT_BODY[1], TEXT_BODY[2]);
-  doc.text(
-    `CNPJ: ${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
-    page.margin + 5,
-    y + 13,
-  );
-  doc.text(
-    `${empresaConfig.endereco} — ${empresaConfig.cidade}/${empresaConfig.uf}  •  ${empresaConfig.site}`,
-    page.margin + 5,
-    y + 18,
-  );
 
   doc.save(`proposta-conexao-express-${limparNomeArquivo(input.nomeCliente)}-${numero}.pdf`);
 }

@@ -20,7 +20,6 @@ describe("A) Proposta comercial em PDF", () => {
 
   it("A.2 documento usa a identidade institucional da Conexão Express", () => {
     expect(pdf).toContain("empresaConfig.razaoSocial");
-    expect(pdf).toContain("empresaConfig.cnpj");
     expect(pdf).toContain("PROPOSTA COMERCIAL");
     expect(pdf).toContain("drawCoverPage");
     expect(pdf).toContain("doc.save(");
@@ -44,5 +43,31 @@ describe("A) Proposta comercial em PDF", () => {
     expect(page).toContain("Proposta Comercial");
     expect(page).toContain("Veículo indicado");
     expect(page).toContain("Proposta instantânea");
+  });
+});
+
+describe("D) Revisão 2026-11-08 — e-mail comercial, nº numérico, ordem e card removido", () => {
+  it("D.1 capa da proposta usa exclusivamente comercial@conexaoexpress.com.br", () => {
+    expect(pdf).toContain("comercial@conexaoexpress.com.br");
+    expect(pdf).toContain("emailContato: EMAIL_CONTATO_PROPOSTA");
+    expect(pdf).not.toContain("empresaConfig.email");
+  });
+
+  it("D.2 numeroProposta: PROP-AAAAMMDD-<4 dígitos> (sem letras após a data)", () => {
+    expect(pdf).toContain("PROP-${stamp}-${sufixo}");
+    expect(pdf).toContain('padStart(4, "0")');
+    expect(pdf).not.toContain(".toUpperCase()");
+  });
+
+  it("D.3 DADOS DA CARGA vem antes de ROTA COTADA", () => {
+    expect(pdf.indexOf("DADOS DA CARGA")).toBeLessThan(pdf.indexOf("ROTA COTADA"));
+  });
+
+  it("D.4 card final 'Emissor institucional' removido por completo", () => {
+    expect(pdf).not.toContain("Emissor institucional");
+    expect(pdf).not.toContain("empresaConfig.cnpj");
+    expect(pdf).not.toContain("empresaConfig.endereco");
+    expect(pdf).not.toContain("BG_LIGHT");
+    expect(pdf).toContain("doc.save(");
   });
 });

@@ -1,5 +1,28 @@
 # Summary
 
+## MISSÃO PROPOSTA-PDF-REVISAO — E-mail comercial, nº numérico, ordem das seções e card do emissor removido (2026-11-08)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (6 `no-explicit-any`/`prefer-const` baseline em `foundation.ts`, fora das linhas alteradas) · teste **8/8** (+4 novos D.1–D.4) · regressão `cotacao_express_fluxo` **72/72** + `e2e_completo_05_pdf_guards` **17/17** · suíte completa **19 ficheiros / 45 testes falhos** = baseline + 1 flaky (`fin_prog05c3b` **5/5 isolado** ✓) · **2660 pass** (2657 + 4 novos − 1 flaky) · `npm run build` ok (40,76s).
+
+### O que mudou (4 tarefas pedidas no PDF da proposta — `src/lib/cotacaoPdf.ts`)
+1. **E-mail de contato exclusivo `comercial@conexaoexpress.com.br`** — novo campo opcional `emailContato?: string` em `CoverOptions` (`foundation.ts`); `drawCoverPage` usa `opts.emailContato ?? empresaConfig.email`. A proposta passa `emailContato: EMAIL_CONTATO_PROPOSTA`. **`empresaConfig.email` NÃO foi alterado** (financeiro@ segue exigido por `tms_s04_fatura_cliente_pdf` e outros testes de fatura).
+2. **`numeroProposta` só numérico após a data** — `PROP-AAAAMMDD-<4 dígitos>` (ex.: `PROP-20261108-1054`): sufixo = `parseInt(hex do cotacaoId, 16) % 10000` com `padStart(4, "0")` (determinístico por cotação; fallback `Date.now() % 10000` sem `cotacaoId`). Removido o base alfanumérico de 8 chars + `.toUpperCase()`.
+3. **Bloco "DADOS DA CARGA" movido para ANTES de "ROTA COTADA"** (ordem: DADOS DA PROPOSTA → DADOS DA CARGA → ROTA COTADA → VEÍCULO → VALOR → CONDIÇÕES); guarda de page-break mantida. **Não existe mapa no PDF** (nenhum `addImage`/mapa em `cotacaoPdf.ts` — só o logo na capa/cabeçalho), portanto "antes do mapa" ficou satisfeito por omissão.
+4. **Card cinzento final "Emissor institucional" removido por completo** (razão social, CNPJ, telefone, e-mail, endereço, site) — já constam no cabeçalho (`Emitida por {razaoSocial}`) e na capa (CNPJ/telefone/e-mail/endereço via `drawCoverPage`). Imports órfãos `BG_LIGHT`/`BORDER` removidos do ficheiro.
+
+### Testes (`src/test/cotacao_proposta_pdf.test.ts`, 4 → 8)
+- **A.2 atualizado**: removido assert `empresaConfig.cnpj` (só existia no card removido); mantidos razaoSocial/PROPOSTA COMERCIAL/drawCoverPage/doc.save/sem "diego"/"balbino".
+- **NOVO describe D** (4 casos): D.1 e-mail comercial + `emailContato` + ausência de `empresaConfig.email` · D.2 formato `PROP-${stamp}-${sufixo}` + `padStart(4,"0")` + sem `.toUpperCase()` · D.3 `indexOf("DADOS DA CARGA") < indexOf("ROTA COTADA")` · D.4 card removido (`Emissor institucional`/`empresaConfig.cnpj`/`empresaConfig.endereco`/`BG_LIGHT` ausentes).
+
+### Arquivos
+- `src/lib/cotacaoPdf.ts` (4 tarefas) · `src/lib/pdf/foundation.ts` (`CoverOptions.emailContato` + capa) · `src/test/cotacao_proposta_pdf.test.ts` (A.2 + describe D) · `AGENTS.md`
+
+### Pendências
+1. (QA) `/cotacao-express` → Resumo → "Salvar PDF / Imprimir": conferir capa com **comercial@conexaoexpress.com.br**, nº `PROP-AAAAAMMDD-0000`, seção Carga antes da Rota e ausência do card final.
+2. (decisão) Sufixo de 4 dígitos (10 000 combinações/dia, derivado do UUID) — se colisões incomodarem, ampliar para 6 dígitos alterando o `% 10000`/`padStart(4)`.
+
+---
+
 ## MISSÃO COTACAO-VOLUMES-ITENS — Peso Total Estimado, lista de itens/volumes e cross-check de cubagem em m³ (2026-11-08)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (5 ficheiros) · teste novo **13/13** · `cotacao_express_fluxo` **72/72** (C.1/C.2 atualizados) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata (**2657 pass** = 2644 + 13 novos; 1º run com 45 foi flaky) · `npm run build` ok (58,09s). Sem migration (`carga_volumes INT` já existia desde `20261024000000`).

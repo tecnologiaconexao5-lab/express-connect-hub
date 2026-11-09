@@ -160,6 +160,8 @@ export interface CoverOptions {
   status?: string;
   date?: string;
   via?: "Cliente" | "Prestador";
+  /** E-mail de contato exibido na capa (default: empresaConfig.email). */
+  emailContato?: string;
 }
 
 /**
@@ -198,7 +200,7 @@ export async function drawCoverPage(
   doc.setFontSize(7.5);
   doc.setTextColor(180, 190, 205);
   doc.text(`CNPJ: ${empresaConfig.cnpj}`, M, 60);
-  doc.text(`${empresaConfig.telefone}  •  ${empresaConfig.email}`, M, 65);
+  doc.text(`${empresaConfig.telefone}  •  ${opts.emailContato ?? empresaConfig.email}`, M, 65);
 
   // Bloco direito: tipo do documento + número
   const rightX = W - M;
