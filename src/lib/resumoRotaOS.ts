@@ -175,6 +175,59 @@ export function rotuloPontoRota(endereco?: EnderecoResumoRota | null): string {
   return bairro ? `${bairro}-${sigla}` : sigla;
 }
 
+/**
+ * Rótulo detalhado (coluna Rota): "Bairro Cidade" — mostra o bairro E a
+ * cidade de cada ponta. Fallback para "Bairro UF" ou o texto do endereço.
+ */
+export function rotuloPontoRotaDetalhado(endereco?: EnderecoResumoRota | null): string {
+  if (!endereco) return "";
+  let bairro = String(endereco.bairro || "").trim();
+  let cidade = String(endereco.cidade || "").trim();
+  let uf = String(endereco.uf || endereco.estado || "").trim();
+
+  if (!bairro || !cidade) {
+    const derivado = derivarBairroCidade(endereco.endereco || endereco.logradouro || "");
+    if (!bairro) bairro = derivado.bairro;
+    if (!cidade) cidade = derivado.cidade;
+    if (!uf) uf = derivado.uf;
+  }
+
+  if (bairro && cidade) return `${bairro} ${cidade}`;
+  if (bairro) return uf ? `${bairro} ${uf}` : bairro;
+  if (cidade) return uf ? `${cidade}-${uf}` : cidade;
+  return uf || String(endereco.endereco || endereco.logradouro || "").trim();
+}
+
+/** Igual a `resumoRotaOS`, mas com bairro + cidade nas duas pontas. */
+export function resumoRotaOSDetalhado(enderecos?: EnderecoResumoRota[] | null): ResumoRota {
+  const lista = (Array.isArray(enderecos) ? enderecos : []).filter(
+    (e) => e && (String(e.endereco || "").trim() || String(e.bairro || "").trim() || String(e.cidade || "").trim()),
+  );
+  if (lista.length === 0) return { texto: "", multiplos: false, paradas: 0 };
+
+  const origem = rotuloPontoRotaDetalhado(lista[0]);
+  if (lista.length === 1) return { texto: origem, multiplos: false, paradas: 1 };
+
+  if (lista.length === 2) {
+    const destino = rotuloPontoRotaDetalhado(lista[lista.length - 1]);
+    return { texto: `${origem} ➡️ ${destino}`, multiplos: false, paradas: 2 };
+  }
+
+  return {
+    texto: `${origem} ➡️ Múltiplos destinos (${lista.length} paradas)`,
+    multiplos: true,
+    paradas: lista.length,
+  };
+}
+
+/** Atalho detalhado com fallback (coluna Rota da lista de OS). */
+export function resumoRotaOSTextoDetalhado(
+  enderecos?: EnderecoResumoRota[] | null,
+  fallback = "",
+): string {
+  return resumoRotaOSDetalhado(enderecos).texto || fallback;
+}
+
 export interface ResumoRota {
   /** Texto pronto para exibição ("" quando não há paradas). */
   texto: string;

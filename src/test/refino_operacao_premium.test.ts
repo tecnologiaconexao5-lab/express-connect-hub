@@ -7,8 +7,10 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   resumoRotaOS,
+  resumoRotaOSDetalhado,
   resumoRotaOSTexto,
   rotuloPontoRota,
+  rotuloPontoRotaDetalhado,
   siglaCidade,
   derivarBairroCidade,
 } from "@/lib/resumoRotaOS";
@@ -95,10 +97,28 @@ describe("B) Dashboard — cards premium com horário e rolagem horizontal", () 
 });
 
 describe("C) Lista de OS — rota, tags de SLA e aviso de ociosidade", () => {
-  it("C.1 coluna Rota usa o resumo dinâmico (sem 'São Paulo - Matriz' fixo)", () => {
-    expect(ordensLista).toContain("resumoRotaOSTexto(");
+  it("C.1 coluna Rota usa o resumo dinâmico detalhado (bairro+cidade, sem unidade fixa)", () => {
+    expect(ordensLista).toContain("resumoRotaOSDetalhado(");
     expect(ordensLista).toContain("resumoRota.multiplos");
+    expect(ordensLista).toContain("max-w-[360px]");
     expect(ordensLista).not.toContain('os.unidade || "Rota Padrão"');
+  });
+
+  it("C.1b rótulo detalhado mostra bairro E cidade nas duas pontas", () => {
+    expect(
+      rotuloPontoRotaDetalhado({ bairro: "Jardim Paulista", cidade: "São Paulo", uf: "SP" }),
+    ).toBe("Jardim Paulista São Paulo");
+    const rota = resumoRotaOSDetalhado([
+      { bairro: "Jardim Paulista", cidade: "São Paulo", uf: "SP" },
+      { bairro: "Piraporinha", cidade: "Diadema", uf: "SP" },
+    ]);
+    expect(rota.texto).toBe("Jardim Paulista São Paulo ➡️ Piraporinha Diadema");
+  });
+
+  it("C.1c lápis de edição sempre visível na coluna de ações", () => {
+    expect(ordensLista).toContain('title={os.status === "finalizada" || os.status === "cancelada" ? "OS finalizada/cancelada não pode ser editada" : "Editar"}');
+    // Ações não dependem mais de hover (regressão do lápis).
+    expect(ordensLista).not.toContain("opacity-0 group-hover:opacity-100");
   });
 
   it("C.2 tag única de atraso/SLA (sem sobreposição) com nowrap", () => {

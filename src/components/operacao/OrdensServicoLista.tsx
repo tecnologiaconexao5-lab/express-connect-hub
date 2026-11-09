@@ -33,7 +33,7 @@ import { PERFORMANCE_CORES } from "@/lib/performancePrestador";
 import { formatarDataBR, formatarDataHoraSolicitacaoBR, hojeISOSP } from "@/lib/formatDates";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
-import { resumoRotaOSTexto, resumoRotaOS } from "@/lib/resumoRotaOS";
+import { resumoRotaOSDetalhado } from "@/lib/resumoRotaOS";
 import { buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasService";
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
@@ -900,11 +900,10 @@ const OrdensServicoLista = () => {
                   const paradaHa = statusAtivo
                     ? formatarTempoParada((os as OSComDataCriacao).createdAt)
                     : "";
-                  const rotaTexto = resumoRotaOSTexto(
-                    os.enderecos,
-                    os.unidade || "Rota padrão",
-                  );
-                  const resumoRota = resumoRotaOS(os.enderecos);
+                  // BUG 2 (refino): coluna Rota com bairro + cidade nas DUAS pontas
+                  // (antes só a origem cabia / era truncada).
+                  const resumoRota = resumoRotaOSDetalhado(os.enderecos);
+                  const rotaTexto = resumoRota.texto || os.unidade || "Rota padrão";
 
                   return (
                     <TableRow
@@ -962,9 +961,9 @@ const OrdensServicoLista = () => {
                            title={rotaTexto}
                          >
                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                           <span className="line-clamp-2 max-w-[185px] break-words">
-                             {rotaTexto}
-                           </span>
+                            <span className="line-clamp-2 max-w-[360px] break-words leading-snug">
+                              {rotaTexto}
+                            </span>
                          </div>
                          {resumoRota.multiplos && (
                            <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-tight text-violet-600">
@@ -1045,7 +1044,9 @@ const OrdensServicoLista = () => {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className={`flex items-center justify-end gap-1 transition-opacity ${semPrestador ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                        {/* Ações sempre visíveis — o lápis de edição não pode
+                            depender de hover (regressão reportada). */}
+                        <div className="flex items-center justify-end gap-1">
                           {semPrestador && (
                             <>
                               <Button

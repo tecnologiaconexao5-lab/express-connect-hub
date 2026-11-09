@@ -338,10 +338,11 @@ describe("G) Alocação de prestador na aba Em Aberto", () => {
     expect(src).toContain('setAba("aberto")');
   });
 
-  it("G.8 — validação da alocação: telefone, origem e repasse (PIX opcional)", () => {
+  it("G.8 — validação da alocação: telefone/origem (repasse e PIX opcionais)", () => {
     expect(src).toContain("validarTelefone(avulsoTelefone)");
     expect(src).toContain('erros.push("Informe a origem (local/ponto do motoboy)")');
-    expect(src).toContain('erros.push("Informe o repasse previsto do prestador")');
+    expect(src).not.toContain('erros.push("Informe o repasse previsto do prestador")');
+    expect(src).toContain("custo_prestador: repasse > 0 ? repasse : null");
     expect(src).not.toContain("validarPixChave(avulsoPixTipo, avulsoPixChave)");
   });
 });

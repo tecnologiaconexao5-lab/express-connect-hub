@@ -1,5 +1,27 @@
 # Summary
 
+## MISSÃO REGRESSOES-OS-LISTA — Lápis sempre visível, rota com destino e alocação sem repasse (2026-11-09)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **95/95** (refino 22 + lote2 11 + motor 38 + etapa2 13 + sla 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga — **5/5 isolado**) · **2704 pass** (+2) · `npm run build` ok (54,07s).
+
+### O que mudou
+1. **BUG 1 — lápis de edição (`OrdensServicoLista.tsx`)** — a coluna de ações deixou de depender de hover (removido `opacity-0 group-hover:opacity-100`). O ícone **Editar** (lápis) e as demais ações ficam **sempre visíveis**.
+2. **BUG 2 — coluna Rota (`src/lib/resumoRotaOS.ts` + lista)** — novos `rotuloPontoRotaDetalhado` e `resumoRotaOSDetalhado` mostram **bairro + cidade nas DUAS pontas** (ex.: `Jardim Paulista São Paulo ➡️ Piraporinha Diadema`). O truncamento passou de `max-w-[185px]` para **`max-w-[360px]`** (`line-clamp-2`), deixando o destino visível. `rotuloPontoRota`/`resumoRotaOS` originais permanecem (Dashboard/Solicitações).
+3. **BUG 3 — alocação sem valor do prestador** — desktop (`custoFinal` nullable, do Lote 2) e **mobile (`OsMobile`)**: removida a validação `Informe o repasse previsto do prestador` (criação e alocação); `custo_prestador` grava `null` quando vazio; no prestador avulso, a conta a pagar só é criada se `repasse > 0`; campo editável com label "— opcional". O trigger M80 já não cria Pagar/Pagamentos com custo 0.
+
+### Testes/validação
+- Atualizados: `refino_operacao_premium.test.ts` (C.1/C.1b/C.1c), `fix_motor_custo_prestador_avulso.test.ts` (G.8).
+- `npx vitest run` (5 alvos) → **95/95**; suíte completa → **18/44** baseline · **2704 pass**; `npm run build` ok.
+
+### Arquivos
+- `src/lib/resumoRotaOS.ts` · `src/components/operacao/OrdensServicoLista.tsx` · `src/pages/OsMobile.tsx` · `src/test/refino_operacao_premium.test.ts` · `src/test/fix_motor_custo_prestador_avulso.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push).
+2. (QA) Conferir lápis visível, Rota com origem+destino e alocação sem repasse (desktop e mobile).
+
+---
+
 ## MISSÃO REFINO-PDF-401 — Correção do erro cotação→OS (função de numeração ausente) e ajustes do cabeçalho do PDF (2026-11-09)
 
 **Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **29/29** (proposta 14 + rpc_fix 4 + lote2 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata · **2702 pass** (+7) · `npm run build` ok (46,54s) · migration **aplicada em produção** (dry-run **7/7** → `--apply` **7/7** + `--check` **7/7**).

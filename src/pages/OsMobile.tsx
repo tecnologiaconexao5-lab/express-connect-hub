@@ -1202,7 +1202,8 @@ function NovaOSView({ onAbrirEmAberto }: { onAbrirEmAberto?: () => void }) {
     }
     if (atual === 2) {
       if (totalCliente <= 0) erros.push("O valor total do cliente deve ser maior que zero");
-      if (custoPrestadorFinal <= 0) erros.push("Informe o repasse previsto do prestador");
+      // Repasse é opcional: a OS pode ser criada sem prestador/valor e
+      // alocada depois (o operador informa ou ajusta na hora).
       if (pesoNumero > 2500) erros.push("Acima de 2.500 kg contate a operação");
     }
     return erros;
@@ -1237,7 +1238,6 @@ function NovaOSView({ onAbrirEmAberto }: { onAbrirEmAberto?: () => void }) {
     }
     if (kmIda <= 0) erros.push("Calcule a rota no Mapbox antes de criar a OS");
     if (totalCliente <= 0) erros.push("O valor total do cliente deve ser maior que zero");
-    if (custoPrestadorFinal <= 0) erros.push("Informe o repasse previsto do prestador");
     if (pesoNumero > 2500) erros.push("Acima de 2.500 kg contate a operação");
 
     return erros;
@@ -2739,8 +2739,9 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
       if (!avulsoOrigem.trim()) erros.push("Informe a origem (local/ponto do motoboy)");
       // PIX é OPCIONAL na alocação — ele é exigido na baixa/finalização.
     }
+    // Repasse OPCIONAL: não bloqueia a alocação. Se a tabela não puxar o
+    // valor, o operador pode informar depois (ou deixar sem repasse).
     const repasse = Number(String(repasseAlocacao).replace(",", ".")) || 0;
-    if (repasse <= 0) erros.push("Informe o repasse previsto do prestador");
     if (erros.length > 0) {
       toast.error(erros[0], {
         description: erros.length > 1 ? `${erros.length - 1} pendência(s) adicional(is).` : undefined,
@@ -2781,7 +2782,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
         .update({
           prestador: prestadorId,
           prestador_id: prestadorId,
-          custo_prestador: repasse,
+          custo_prestador: repasse > 0 ? repasse : null,
           status: "agendada",
           carga: cargaNova,
           updated_at: new Date().toISOString(),
@@ -2817,61 +2818,65 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
         }
       } else {
         // Avulso: o trigger não cria Pagar (prestador_id NULL) — criamos aqui.
-        const vencimento = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split("T")[0];
-        const obsWhatsApp = `WhatsApp: ${avulsoTelefone.trim()}`;
-        const obsOrigem = `Origem: ${avulsoOrigem.trim()}`;
-        const obsPix = avulsoPixChave.trim()
-          ? ` · PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`
-          : " · PIX a informar na baixa";
-        const descricao = `Repasse OS Mobile · ${osAlocando.numero || osAlocando.id}`;
-        const observacoes =
-          `Prestador avulso cadastrado via /os-mobile · OS ${osAlocando.numero || osAlocando.id}` +
-          ` · ${obsWhatsApp} · ${obsOrigem}${obsPix}`;
+        // Sem repasse informado (0), a alocação é permitida; a conta a pagar
+        // pode ser criada depois, quando o valor for definido.
+        if (repasse > 0) {
+          const vencimento = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split("T")[0];
+          const obsWhatsApp = `WhatsApp: ${avulsoTelefone.trim()}`;
+          const obsOrigem = `Origem: ${avulsoOrigem.trim()}`;
+          const obsPix = avulsoPixChave.trim()
+            ? ` · PIX ${avulsoPixTipo}: ${avulsoPixChave.trim()}`
+            : " · PIX a informar na baixa";
+          const descricao = `Repasse OS Mobile · ${osAlocando.numero || osAlocando.id}`;
+          const observacoes =
+            `Prestador avulso cadastrado via /os-mobile · OS ${osAlocando.numero || osAlocando.id}` +
+            ` · ${obsWhatsApp} · ${obsOrigem}${obsPix}`;
 
-        const { data: existente } = await supabase
-          .from("financeiro_pagar")
-          .select("id")
-          .eq("os_id", osAlocando.id)
-          .limit(1)
-          .maybeSingle();
-
-        if (existente?.id) {
-          const { error: erroAtualiza } = await supabase
+          const { data: existente } = await supabase
             .from("financeiro_pagar")
-            .update({
-              descricao,
-              valor: repasse,
-              vencimento,
-              data_vencimento: vencimento,
-              status: "pendente",
-              fornecedor_nome: avulsoNome.trim(),
-              fornecedor_documento: avulsoDocumento.trim() || null,
-              chave_pix: avulsoPixChave.trim() || null,
-              observacoes,
-            })
-            .eq("id", String(existente.id));
-          if (erroAtualiza) {
-            console.warn("[OsMobile] Pagar do avulso não atualizado:", erroAtualiza.message);
+            .select("id")
+            .eq("os_id", osAlocando.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (existente?.id) {
+            const { error: erroAtualiza } = await supabase
+              .from("financeiro_pagar")
+              .update({
+                descricao,
+                valor: repasse,
+                vencimento,
+                data_vencimento: vencimento,
+                status: "pendente",
+                fornecedor_nome: avulsoNome.trim(),
+                fornecedor_documento: avulsoDocumento.trim() || null,
+                chave_pix: avulsoPixChave.trim() || null,
+                observacoes,
+              })
+              .eq("id", String(existente.id));
+            if (erroAtualiza) {
+              console.warn("[OsMobile] Pagar do avulso não atualizado:", erroAtualiza.message);
+            }
+          } else {
+            const { error: erroPagar } = await supabase.from("financeiro_pagar").insert([
+              {
+                descricao,
+                valor: repasse,
+                vencimento,
+                data_vencimento: vencimento,
+                data_emissao: hojeISO(),
+                status: "pendente",
+                os_id: osAlocando.id,
+                fornecedor_nome: avulsoNome.trim(),
+                fornecedor_documento: avulsoDocumento.trim() || null,
+                chave_pix: avulsoPixChave.trim() || null,
+                observacoes,
+              },
+            ]);
+            if (erroPagar) console.warn("[OsMobile] Pagar do avulso não criado:", erroPagar.message);
           }
-        } else {
-          const { error: erroPagar } = await supabase.from("financeiro_pagar").insert([
-            {
-              descricao,
-              valor: repasse,
-              vencimento,
-              data_vencimento: vencimento,
-              data_emissao: hojeISO(),
-              status: "pendente",
-              os_id: osAlocando.id,
-              fornecedor_nome: avulsoNome.trim(),
-              fornecedor_documento: avulsoDocumento.trim() || null,
-              chave_pix: avulsoPixChave.trim() || null,
-              observacoes,
-            },
-          ]);
-          if (erroPagar) console.warn("[OsMobile] Pagar do avulso não criado:", erroPagar.message);
         }
 
         // Realocação cadastrado → avulso: o trigger M80 não atualiza
@@ -2900,8 +2905,8 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
 
       toast.success(`Prestador alocado na OS ${osAlocando.numero || osAlocando.id}`, {
         description: prestadorId
-          ? `${nomeMotorista.trim() || prestadorNome || "Prestador cadastrado"} · repasse ${fmtBRL(repasse)}`
-          : `${avulsoNome.trim()} · repasse ${fmtBRL(repasse)}`,
+          ? `${nomeMotorista.trim() || prestadorNome || "Prestador cadastrado"} · ${repasse > 0 ? `repasse ${fmtBRL(repasse)}` : "sem repasse definido"}`
+          : `${avulsoNome.trim()} · ${repasse > 0 ? `repasse ${fmtBRL(repasse)}` : "sem repasse definido"}`,
       });
       fecharAlocacao();
       await carregar();
@@ -3566,7 +3571,7 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
 
               <div>
                 <Label className="text-[11px] font-semibold text-slate-600">
-                  Repasse previsto ao prestador (R$) *
+                  Repasse previsto ao prestador (R$) — opcional
                 </Label>
                 <Input
                   type="number"
@@ -3579,8 +3584,8 @@ function EmAbertoView({ ativo, empresa }: { ativo: boolean; empresa: DadosEmpres
                   className="mt-1 h-10 bg-white"
                 />
                 <p className="mt-1 text-[10px] leading-tight text-slate-500">
-                  Valor calculado na criação: {fmtBRL(osAlocando.custoPrestador)}. Ajuste aqui se o
-                  repasse for diferente.
+                  Valor calculado na criação: {fmtBRL(osAlocando.custoPrestador)}. Pode ficar vazio —
+                  a alocação é permitida e o repasse pode ser informado depois.
                 </p>
               </div>
 
