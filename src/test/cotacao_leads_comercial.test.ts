@@ -207,12 +207,13 @@ describe("F) Cliente avulso da cotação + badge OS + alocação de prestador", 
     expect(tabComercialSrc).toContain("<AlertaOscotacaoExpress />");
   });
 
-  it("F.7 Alocar Prestador grava prestador/prestador_id/repasse e preserva o status", () => {
+  it("F.7 Alocar Prestador grava prestador/prestador_id e repasse opcional preservando o status", () => {
     expect(ordensListaSrc).toContain("Alocar Prestador");
     expect(ordensListaSrc).toContain("prestador_id: prestadorAlocacao");
-    expect(ordensListaSrc).toContain("custo_prestador: repasse");
+    expect(ordensListaSrc).toContain("custo_prestador: custoFinal");
     expect(ordensListaSrc).toContain('table="prestadores"');
-    expect(ordensListaSrc).toContain("repasse do prestador (maior que zero)");
+    expect(ordensListaSrc).toContain("Repasse do prestador (R$) — opcional");
+    expect(ordensListaSrc).not.toContain("Informe o repasse do prestador (maior que zero).");
     expect(ordensListaSrc).not.toContain('status: "agendada"');
   });
 });

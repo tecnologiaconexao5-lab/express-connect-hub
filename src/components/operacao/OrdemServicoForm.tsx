@@ -1220,17 +1220,27 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
  const calculaRotaEValor = async () => {
     try {
       const enderecos = data.enderecos ?? [];
-      const origem = (enderecos ?? []).find(e => tipoEhColeta(e?.tipo) && e?.endereco?.trim()) || (enderecos ?? []).find(e => e?.endereco?.trim());
-      const destino = [...(enderecos ?? [])].reverse().find(e => tipoEhEntrega(e?.tipo) && e?.endereco?.trim()) || (enderecos ?? [])[(enderecos?.length ?? 1) - 1];
+      // BUG 1 (Lote 2): o roteirizador precisa do endereço COMPLETO (rua,
+      // número, bairro, cidade, UF, CEP) ou das coordenadas — nunca só a
+      // cidade/CEP (gerava rotas em linha reta/2.300 km).
+      const temEnderecoParaRota = (e?: OSEndereco) =>
+        Boolean(
+          e &&
+            ((e.endereco || "").trim() ||
+              (e.logradouro || "").trim() ||
+              (Number(e.latitude) && Number(e.longitude))),
+        );
+      const origem = (enderecos ?? []).find(e => tipoEhColeta(e?.tipo) && temEnderecoParaRota(e)) || (enderecos ?? []).find(e => temEnderecoParaRota(e));
+      const destino = [...(enderecos ?? [])].reverse().find(e => tipoEhEntrega(e?.tipo) && temEnderecoParaRota(e)) || (enderecos ?? [])[(enderecos?.length ?? 1) - 1];
       
-      if (!origem || !destino || !origem.endereco || !destino.endereco) {
+      if (!origem || !destino || !temEnderecoParaRota(origem) || !temEnderecoParaRota(destino)) {
         return;
       }
       
       setCalculandoDistancia(true);
       toast.info("Calculando rotas disponiveis...");
 
-      const alternativas = await calcularRotasAlternativas(origem.endereco, destino.endereco);
+      const alternativas = await calcularRotasAlternativas(origem, destino);
 
       if (alternativas) {
         setDistanciasAlternativas(alternativas);
@@ -1249,7 +1259,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         recalcularValores(rotaUsar.distanciaKm, data.veiculoTipo, data.cliente);
         toast.success(`Rotas calculadas: ${alternativas.rapida?.distanciaTexto || '—'} (rapida) | ${alternativas.curta?.distanciaTexto || '—'} (curta)`);
       } else {
-        const resultado = await calcularDistancia(origem.endereco, destino.endereco);
+        const resultado = await calcularDistancia(origem, destino);
         if (!resultado) {
           toast.error("Nao foi possivel calcular a rota.");
           return;

@@ -113,12 +113,13 @@ describe("C) Lista de OS — rota, tags de SLA e aviso de ociosidade", () => {
     expect(ordensLista).toContain("border-red-200/80 bg-red-50/70");
   });
 
-  it("C.4 repasse automático pela tabela da cotação (editável)", () => {
+  it("C.4 repasse automático pela tabela da cotação (editável e opcional)", () => {
     expect(ordensLista).toContain("calcularRepasseSugerido");
     expect(ordensLista).toContain("buscarTabelaPrestador(");
     expect(ordensLista).toContain("preencherRepasseAoSelecionar");
     expect(ordensLista).toContain("calculandoRepasse");
-    expect(ordensLista).toContain("Pré-preenchido pela tabela/cotação da OS");
+    expect(ordensLista).toContain("Repasse do prestador (R$) — opcional");
+    expect(ordensLista).toContain("Se vazio, usa a tabela/cotação");
   });
 
   it("C.5 exclusão sem senha administrativa (temporário)", () => {

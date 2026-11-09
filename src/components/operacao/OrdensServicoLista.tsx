@@ -23,7 +23,7 @@ import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
-import { notificarBaseAgregados, emRiscoSlaSemAlocacao, emRiscoSlaPendente } from "@/services/operacao/osAlocacaoPendenteService";
+import { notificarBaseAgregados, classificarSlaAlocacao, emRiscoSlaPendente, type NivelSlaAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 import {
   buscarSugestoesPrestadores,
   type MatchOSContext,
@@ -72,6 +72,19 @@ const formatarTempoParada = (createdAt?: string | null): string => {
   if (horas > 0) partes.push(`${horas}h`);
   if (minutos > 0 || partes.length === 0) partes.push(`${minutos}m`);
   return partes.join(" ");
+};
+
+// LOTE 2 — farol de SLA de alocação (OS sem prestador):
+// até 20 min verde · 20–40 amarelo · >40 vermelho.
+const FAROL_SLA_CLASSES: Record<NivelSlaAlocacao, string> = {
+  ok: "bg-emerald-600 text-white",
+  atencao: "bg-amber-500 text-white",
+  atrasado: "bg-red-600 text-white",
+};
+const FAROL_SLA_ROW: Record<NivelSlaAlocacao, string> = {
+  ok: "bg-emerald-50/50 border-l-4 border-l-emerald-400 hover:bg-emerald-50",
+  atencao: "bg-amber-50/60 border-l-4 border-l-amber-400 hover:bg-amber-50",
+  atrasado: "bg-red-50/60 border-l-4 border-l-red-500 hover:bg-red-50",
 };
 
 const OrdensServicoLista = () => {
@@ -409,11 +422,14 @@ const OrdensServicoLista = () => {
       toast.error("Selecione o prestador.");
       return;
     }
-    const repasse = Number(String(repasseAlocacao).replace(",", "."));
-    if (!Number.isFinite(repasse) || repasse <= 0) {
-      toast.error("Informe o repasse do prestador (maior que zero).");
-      return;
-    }
+    // BUG 3 (Lote 2): repasse OPCIONAL. Quando vazio, preserva o custo já
+    // existente da OS (se houver); nunca bloqueia a alocação.
+    const repasseInformado = Number(String(repasseAlocacao).replace(",", "."));
+    const repasse =
+      Number.isFinite(repasseInformado) && repasseInformado > 0 ? repasseInformado : null;
+    const repasseAnterior = Number(osAlocando.custoPrestador);
+    const custoFinal =
+      repasse ?? (Number.isFinite(repasseAnterior) && repasseAnterior > 0 ? repasseAnterior : null);
 
     setSalvandoAlocacao(true);
     try {
@@ -432,7 +448,7 @@ const OrdensServicoLista = () => {
         .update({
           prestador: prestadorAlocacao,
           prestador_id: prestadorAlocacao,
-          custo_prestador: repasse,
+          custo_prestador: custoFinal,
           carga: cargaNova,
           updated_at: new Date().toISOString(),
         })
@@ -441,7 +457,12 @@ const OrdensServicoLista = () => {
       if (error) throw error;
 
       toast.success(
-        `Prestador${prestadorAlocacaoNome ? ` ${prestadorAlocacaoNome}` : ""} alocado na OS ${osAlocando.numero || ""}.`
+        `Prestador${prestadorAlocacaoNome ? ` ${prestadorAlocacaoNome}` : ""} alocado na OS ${osAlocando.numero || ""}.`,
+        {
+          description: custoFinal
+            ? `Repasse: R$ ${custoFinal.toFixed(2)}`
+            : "Sem repasse definido — pode ser informado depois.",
+        },
       );
       fecharAlocacao();
       fetchOrdens();
@@ -534,7 +555,9 @@ const OrdensServicoLista = () => {
 
   const isAtrasada = (os: OrdemServico) => {
     if (os.status === "finalizada" || os.status === "cancelada") return false;
-    const dateStr = os.previsaoTermino || os.data;
+    // BUG 2 (Lote 2): NÃO usar `os.data` (coluna date, vira 00:00 e marca
+    // "Atraso" horas depois da criação). O atraso real depende do prazo.
+    const dateStr = os.previsaoTermino;
     if (!dateStr) return false;
     try {
       return new Date(dateStr).getTime() < new Date().getTime();
@@ -868,7 +891,7 @@ const OrdensServicoLista = () => {
                   const atrasada = isAtrasada(os);
                   const comOcorrencia = os.status === "ocorrencia";
                   const semPrestador = osSemPrestador(os);
-                  const riscoSla = emRiscoSlaSemAlocacao((os as OSComDataCriacao).createdAt, semPrestador);
+                  const farolSla = classificarSlaAlocacao((os as OSComDataCriacao).createdAt, semPrestador);
                   const riscoSlaPendente = emRiscoSlaPendente(
                     os.status,
                     (os as OSComDataCriacao).createdAt,
@@ -887,9 +910,11 @@ const OrdensServicoLista = () => {
                     <TableRow
                       key={os.id}
                       className={`transition-colors group ${
-                        semPrestador || riscoSlaPendente
-                          ? "bg-red-50/60 border-l-4 border-l-red-500 hover:bg-red-50"
-                          : "hover:bg-muted/30"
+                        semPrestador
+                          ? FAROL_SLA_ROW[farolSla?.nivel ?? "ok"]
+                          : riscoSlaPendente
+                            ? "bg-red-50/60 border-l-4 border-l-red-500 hover:bg-red-50"
+                            : "hover:bg-muted/30"
                       }`}
                     >
                       <TableCell className="py-4">
@@ -963,9 +988,9 @@ const OrdensServicoLista = () => {
                             <span className="text-[10px] font-medium text-red-600">
                               Nenhum motorista alocado
                             </span>
-                            {paradaHa && (
-                              <span className="inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-md bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                                <Clock className="h-2.5 w-2.5" /> Parada há {paradaHa}
+                            {paradaHa && farolSla && (
+                              <span className={`inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[9px] font-bold text-white ${FAROL_SLA_CLASSES[farolSla.nivel]}`}>
+                                <Clock className="h-2.5 w-2.5" /> {farolSla.label} · Parada há {paradaHa}
                               </span>
                             )}
                           </div>
@@ -1012,7 +1037,7 @@ const OrdensServicoLista = () => {
                         <div className={`text-sm font-medium ${atrasada ? 'text-red-600' : ''}`}>
                           {os.previsaoTermino ? safeFormatDate(os.previsaoTermino) : "Sem prazo"}
                         </div>
-                        {(atrasada || riscoSlaPendente || riscoSla) && (
+                        {(atrasada || riscoSlaPendente) && (
                           <Badge className="mt-1 flex w-fit items-center gap-1 whitespace-nowrap border border-red-300 bg-red-600 px-1.5 py-0 text-[9px] font-bold uppercase text-white">
                             <AlertTriangle className="h-2.5 w-2.5" />
                             {atrasada ? "Atraso" : "Risco de SLA"}
@@ -1224,7 +1249,7 @@ const OrdensServicoLista = () => {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Repasse do prestador (R$) *</Label>
+              <Label>Repasse do prestador (R$) — opcional</Label>
               <div className="relative">
                 <Input
                   type="number"
@@ -1241,7 +1266,7 @@ const OrdensServicoLista = () => {
               <p className="text-[11px] text-muted-foreground">
                 {calculandoRepasse
                   ? "Calculando pela tabela da cotação vinculada..."
-                  : "Pré-preenchido pela tabela/cotação da OS — permanece editável."}
+                  : "Se vazio, usa a tabela/cotação quando existir. Pode ficar em branco — não bloqueia a alocação."}
               </p>
             </div>
           </div>

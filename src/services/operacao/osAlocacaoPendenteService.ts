@@ -176,3 +176,41 @@ export function emRiscoSlaPendente(
   if (Number.isNaN(criada)) return false;
   return Date.now() - criada >= referenciaEmHoras * 60 * 60 * 1000;
 }
+
+// ==========================================================================
+// LOTE 2 — FAROL DE SLA DE ALOCAÇÃO (OS sem prestador)
+//
+// Regra baseada no `created_at` (minutos desde a solicitação):
+//   • até 20 min  → "ok"       (verde — recente/no prazo)
+//   • 20 a 40 min → "atencao"  (amarelo)
+//   • acima de 40 → "atrasado" (vermelho)
+// ==========================================================================
+export const MINUTOS_SLA_ALOCACAO_ATENCAO = 20;
+export const MINUTOS_SLA_ALOCACAO_ATRASADO = 40;
+
+export type NivelSlaAlocacao = "ok" | "atencao" | "atrasado";
+
+export interface SlaAlocacao {
+  nivel: NivelSlaAlocacao;
+  minutos: number;
+  label: string;
+}
+
+/** Classifica o farol de SLA de uma OS ainda sem prestador. */
+export function classificarSlaAlocacao(
+  createdAt: string | null | undefined,
+  semPrestador: boolean,
+): SlaAlocacao | null {
+  if (!semPrestador || !createdAt) return null;
+  const criada = new Date(createdAt).getTime();
+  if (Number.isNaN(criada)) return null;
+  const minutos = Math.max(0, Math.floor((Date.now() - criada) / (1000 * 60)));
+
+  if (minutos <= MINUTOS_SLA_ALOCACAO_ATENCAO) {
+    return { nivel: "ok", minutos, label: "No prazo" };
+  }
+  if (minutos <= MINUTOS_SLA_ALOCACAO_ATRASADO) {
+    return { nivel: "atencao", minutos, label: "Atenção" };
+  }
+  return { nivel: "atrasado", minutos, label: "Atrasado" };
+}

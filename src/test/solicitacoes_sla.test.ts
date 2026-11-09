@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { emRiscoSlaPendente } from "@/services/operacao/osAlocacaoPendenteService";
+import { emRiscoSlaPendente, classificarSlaAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 
@@ -52,11 +52,12 @@ describe("B) Alerta de SLA — Pendente / Aguardando Programacao", () => {
     expect(emRiscoSlaPendente("pendente", null)).toBe(false);
   });
 
-  it("B.2 Ordens de Servico usam o helper, destacam a linha e exibem o badge", () => {
+  it("B.2 Ordens de Servico usam o helper e o farol de alocação", () => {
     expect(ordensSrc).toContain("emRiscoSlaPendente");
     expect(ordensSrc).toContain("const riscoSlaPendente = emRiscoSlaPendente(");
     expect(ordensSrc).toContain("(os as OSComDataCriacao).createdAt");
-    expect(ordensSrc).toContain("semPrestador || riscoSlaPendente");
+    expect(ordensSrc).toContain("classificarSlaAlocacao(");
+    expect(ordensSrc).toContain("FAROL_SLA_ROW");
     // Tag unificada na coluna Prazo (sem sobreposição com a coluna Status)
     expect(ordensSrc).toContain('{atrasada ? "Atraso" : "Risco de SLA"}');
     expect(ordensSrc).not.toContain("Atraso/Risco de SLA");
@@ -67,5 +68,36 @@ describe("B) Alerta de SLA — Pendente / Aguardando Programacao", () => {
     expect(solicitacoesSrc).toContain("border-l-4 border-l-red-500 bg-red-50/70");
     expect(solicitacoesSrc).toContain("animate-pulse");
     expect(solicitacoesSrc).toContain("Atraso/Risco de SLA");
+  });
+});
+
+describe("C) LOTE 2 — Farol de SLA de alocação (OS sem prestador): 20/40 min", () => {
+  const minutosAtras = (min: number) => new Date(Date.now() - min * 60 * 1000).toISOString();
+
+  it("C.1 até 20 minutos = ok (verde)", () => {
+    expect(classificarSlaAlocacao(minutosAtras(5), true)?.nivel).toBe("ok");
+    expect(classificarSlaAlocacao(minutosAtras(20), true)?.nivel).toBe("ok");
+  });
+
+  it("C.2 de 20 a 40 minutos = atenção (amarelo)", () => {
+    expect(classificarSlaAlocacao(minutosAtras(21), true)?.nivel).toBe("atencao");
+    expect(classificarSlaAlocacao(minutosAtras(40), true)?.nivel).toBe("atencao");
+  });
+
+  it("C.3 acima de 40 minutos = atrasado (vermelho)", () => {
+    expect(classificarSlaAlocacao(minutosAtras(41), true)?.nivel).toBe("atrasado");
+  });
+
+  it("C.4 OS com prestador ou created_at inválido → sem farol", () => {
+    expect(classificarSlaAlocacao(minutosAtras(60), false)).toBeNull();
+    expect(classificarSlaAlocacao(null, true)).toBeNull();
+    expect(classificarSlaAlocacao("invalida", true)).toBeNull();
+  });
+
+  it("C.5 a lista usa as 3 cores do farol", () => {
+    expect(ordensSrc).toContain("FAROL_SLA_CLASSES");
+    expect(ordensSrc).toContain("bg-emerald-600");
+    expect(ordensSrc).toContain("bg-amber-500");
+    expect(ordensSrc).toContain("bg-red-600");
   });
 });

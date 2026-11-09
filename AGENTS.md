@@ -1,5 +1,32 @@
 # Summary
 
+## MISSÃO LOTE-2-INTELIGENCIA-OPERACIONAL — Rota com endereço completo, farol de SLA 20/40 min, repasse opcional e alerta de nova OS (2026-11-09)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **68/68** (lote2 11 + leads 26 + sla 11 + refino 20) · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga — **5/5 isolado**) · **2695 pass** (+16) · `npm run build` ok (47,19s). **Sem migration** (`ordens_servico` não está na publicação realtime → alerta por polling).
+
+### O que mudou
+1. **BUG 1 — Rota real (`src/services/maps/distanceService.ts` + `OrdemServicoForm.tsx`)** — `calcularDistancia`/`calcularRotasAlternativas` agora aceitam `PontoRota` (string **ou** objeto com `lat/lng` + endereço desmembrado). `montarTextoLivreEndereco()` monta **"Rua, Número, Bairro, Cidade - UF, CEP"** sem duplicar; coordenadas têm prioridade. O botão "Calcular Rota" passa o objeto `origem`/`destino` completo (nunca só `.endereco`), eliminando rotas por cidade/CEP.
+2. **BUG 2 — Farol de SLA de alocação (`osAlocacaoPendenteService.ts` + `OrdensServicoLista.tsx`)** — novo `classificarSlaAlocacao(createdAt, semPrestador)`: **≤20 min verde (`ok`) · 20–40 amarelo (`atencao`) · >40 vermelho (`atrasado`)**. A lista colore a linha (`FAROL_SLA_ROW`) e o badge "Parada há X" (`FAROL_SLA_CLASSES`). `isAtrasada()` deixou de usar `os.data` (date-only) — não marca mais "Atraso" horas após a criação.
+3. **BUG 3 — Repasse opcional no modal "Alocar Prestador"** — removida a validação bloqueante; `custo_prestador` usa `custoFinal` (repasse informado ou custo já existente; `null` se vazio). O auto-preenchimento pela tabela/cotação (`calcularRepasseSugerido`/`preencherRepasseAoSelecionar`) permanece. Label → "Repasse do prestador (R$) — opcional".
+4. **MELHORIA 4 — Alerta de nova OS (`src/hooks/useNovaOSAlerta.ts` NOVO + `AppLayout.tsx`)** — polling curto (**25s**) em `ordens_servico`; ao detectar INSERT novo emite toast **`🆕 Nova OS recebida`** (nº + cliente) com ação **"Abrir OS"** → `/operacao?tab=os&os=<id>`. As OS existentes na montagem são seedadas como vistas (sem toasts em loop). Montado no `AppLayout` (cobre Operação/Dashboard e demais painéis).
+
+### Testes/validação
+- **NOVO** `src/test/operacional_lote2.test.ts` (11 casos: rota, farol, repasse e alerta).
+- Atualizados: `solicitacoes_sla.test.ts` (B.2 + describe C com 5 casos do farol), `refino_operacao_premium.test.ts` (C.4 repasse opcional), `cotacao_leads_comercial.test.ts` (F.7 `custo_prestador: custoFinal`).
+- `npx vitest run` (4 alvos) → **68/68**; suíte completa → **18/44** baseline · **2695 pass**.
+
+### Arquivos
+- `src/services/maps/distanceService.ts` · `src/components/operacao/OrdemServicoForm.tsx` · `src/services/operacao/osAlocacaoPendenteService.ts` · `src/components/operacao/OrdensServicoLista.tsx` · `src/hooks/useNovaOSAlerta.ts` (NOVO) · `src/components/AppLayout.tsx`
+- `src/test/operacional_lote2.test.ts` (NOVO) · `src/test/solicitacoes_sla.test.ts` · `src/test/refino_operacao_premium.test.ts` · `src/test/cotacao_leads_comercial.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel.
+2. (QA) "Calcular Rota" com endereço completo → distância real; OS sem prestador com farol 20/40; alocar prestador sem repasse; toast de nova OS → "Abrir OS".
+3. (decisão) Alerta por polling 25s. Para Realtime puro seria necessária migration adicionando `ordens_servico` à publicação `supabase_realtime`.
+4. (autorização) Commit git dos ficheiros desta missão.
+
+---
+
 ## MISSÃO LOTE-1-BASE-OS-PDF — Fuso da OS, cliente herdado, endereços desmembrados, status Em Análise e faixa azul no PDF (2026-11-09)
 
 **Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any`/`prefer-const` intacto) · testes alvo **124/124** (lote1 14 + fluxo 73 + leads 26 + proposta 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata · **2679 pass** (+17) · `npm run build` ok (57,09s) · migration **aplicada em produção** (dry-run **13/13** → `--apply` **13/13** + `--check` **13/13**).

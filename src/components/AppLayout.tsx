@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCotacoesPublicasRealtime } from "@/hooks/useCotacoesPublicasRealtime";
+import { useNovaOSAlerta } from "@/hooks/useNovaOSAlerta";
 import AppSidebar from "./AppSidebar";
 import AppTopbar from "./AppTopbar";
 
@@ -25,6 +26,15 @@ const AppLayout = () => {
     [navigate],
   );
   useCotacoesPublicasRealtime({ onAbrirCotacao: abrirCotacao, habilitado: Boolean(user) });
+
+  // LOTE 2 — alerta de nova OS (polling curto) no painel Operação/Dashboard.
+  const abrirOS = useCallback(
+    (osId: string) => {
+      navigate(`/operacao?tab=os&os=${osId}`);
+    },
+    [navigate],
+  );
+  useNovaOSAlerta({ habilitado: Boolean(user), onAbrirOS: abrirOS });
 
   const handleMouseEnter = useCallback(() => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
