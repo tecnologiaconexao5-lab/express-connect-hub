@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,8 +14,8 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import PaginationBar from "@/components/ui/PaginationBar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { OrdemServico, obterStatusGlobalOS } from "./osTypes";
-import { STATUS_GLOBAL_INFO, obterClasseBadgeGlobal, STATUS_FILTRO_OPCOES } from "./statusGlobal";
+import { OrdemServico, obterStatusGlobalOS, statusesOSParaGlobalFiltro } from "./osTypes";
+import { STATUS_GLOBAL_INFO, obterClasseBadgeGlobal, STATUS_FILTRO_OPCOES, type StatusGlobal } from "./statusGlobal";
 import { obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import OrdemServicoForm, { limparRascunhoNovaOS } from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
@@ -43,20 +43,6 @@ type OSComDataCriacao = OrdemServico & { createdAt?: string };
 /** Data local no formato YYYY-MM-DD (evita o deslocamento de fuso do toISOString). */
 const dataLocalISO = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-/**
- * Normaliza a data da OS para YYYY-MM-DD. A coluna é `date` (sem hora), então a
- * comparação por string elimina o bug de fuso: `new Date("2026-10-29")` é
- * meia-noite UTC (= 21h do dia anterior em UTC-3) e excluía as OS do dia.
- */
-const normalizarDataOS = (valor?: string | null): string => {
-  const texto = String(valor || "").trim();
-  if (!texto) return "";
-  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const d = new Date(texto);
-  return Number.isNaN(d.getTime()) ? "" : dataLocalISO(d);
-};
 
 /** Tempo decorrido desde a criação da OS, ex.: "2h 15m". */
 const formatarTempoParada = (createdAt?: string | null): string => {
@@ -124,6 +110,10 @@ const OrdensServicoLista = () => {
   const [syncStatusMap, setSyncStatusMap] = useState<Record<string, { label: string; classe: string }>>({});
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  // Busca aplicada (debounce) — vai para a QUERY, antes do `.range()`.
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  // Opções do filtro de cliente (independentes da página atual).
+  const [clientesFiltro, setClientesFiltro] = useState<string[]>([]);
   // REFINAMENTO-FLUXO-ALOCACAO-TMS: foco rápido em OSs órfãs (sem prestador).
   const [somenteSemPrestador, setSomenteSemPrestador] = useState(false);
   const [acaoOrfa, setAcaoOrfa] = useState<{ osId: string; tipo: "rede" | "base" } | null>(null);
@@ -138,6 +128,42 @@ const OrdensServicoLista = () => {
   const [sugestoesAlocacao, setSugestoesAlocacao] = useState<SugestaoMatch[]>([]);
   const [buscandoSugestoesAlocacao, setBuscandoSugestoesAlocacao] = useState(false);
   const PAGE_SIZE = 25;
+
+  // Debounce da busca livre (evita uma query a cada tecla).
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaAplicada(busca.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [busca]);
+
+  // Opções do filtro de cliente — vêm de `clientes`, não só da página actual.
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("clientes")
+          .select("nome_fantasia, razao_social")
+          .limit(1000);
+        if (!ativo) return;
+        const nomes = Array.from(
+          new Set(
+            (data || [])
+              .map((c) => {
+                const row = c as { nome_fantasia?: string | null; razao_social?: string | null };
+                return String(row.nome_fantasia || row.razao_social || "").trim();
+              })
+              .filter(Boolean),
+          ),
+        ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        setClientesFiltro(nomes);
+      } catch {
+        // mantém opções vazias
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (searchParams.get("action") === "novo") {
@@ -189,13 +215,120 @@ const OrdensServicoLista = () => {
   }, [searchParams]);
 
 
-  const fetchOrdens = async () => {
+  const fetchOrdens = async (paginaSolicitada?: number) => {
     try {
       setIsLoading(true);
-      const from = (page - 1) * PAGE_SIZE;
+      const pagina = paginaSolicitada ?? page;
+      const from = (pagina - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
-      const { data, error, count } = await supabase.from("ordens_servico")
-        .select("*, clientes(nome_fantasia, razao_social, status, origem_comercial)", { count: "exact" })
+
+      const termoBusca = buscaAplicada.replace(/[%,()*]/g, " ").trim();
+      const statusFiltrados =
+        filtroStatus !== "todos"
+          ? statusesOSParaGlobalFiltro(filtroStatus as StatusGlobal)
+          : null;
+
+      // Filtro de cliente por nome → ids (aplicado no backend).
+      let clientesFiltroIds: string[] | null = null;
+      if (filtroCliente !== "todos") {
+        const [porFantasia, porRazao] = await Promise.all([
+          supabase.from("clientes").select("id").eq("nome_fantasia", filtroCliente).limit(100),
+          supabase.from("clientes").select("id").eq("razao_social", filtroCliente).limit(100),
+        ]);
+        clientesFiltroIds = Array.from(
+          new Set(
+            [...(porFantasia.data || []), ...(porRazao.data || [])]
+              .map((c) => String((c as { id?: unknown }).id || ""))
+              .filter(Boolean),
+          ),
+        );
+        if (clientesFiltroIds.length === 0) {
+          setOrdens([]);
+          setTotalCount(0);
+          return;
+        }
+      }
+
+      // Busca livre → ids de clientes/prestadores + colunas simples.
+      let clientesBuscaIds: string[] = [];
+      let prestadoresBuscaIds: string[] = [];
+      if (termoBusca.length > 0) {
+        const [clientesRes, prestadoresRes] = await Promise.all([
+          supabase
+            .from("clientes")
+            .select("id")
+            .or(`nome_fantasia.ilike.%${termoBusca}%,razao_social.ilike.%${termoBusca}%`)
+            .limit(200),
+          supabase
+            .from("prestadores")
+            .select("id")
+            .ilike("nome_completo", `%${termoBusca}%`)
+            .limit(200),
+        ]);
+        clientesBuscaIds = Array.from(
+          new Set(
+            (clientesRes.data || [])
+              .map((c) => String((c as { id?: unknown }).id || ""))
+              .filter(Boolean),
+          ),
+        );
+        prestadoresBuscaIds = Array.from(
+          new Set(
+            (prestadoresRes.data || [])
+              .map((p) => String((p as { id?: unknown }).id || ""))
+              .filter(Boolean),
+          ),
+        );
+      }
+
+      let query = supabase
+        .from("ordens_servico")
+        .select("*, clientes(nome_fantasia, razao_social, status, origem_comercial)", { count: "exact" });
+
+      if (statusFiltrados) query = query.in("status", statusFiltrados);
+      if (clientesFiltroIds) query = query.in("cliente", clientesFiltroIds);
+      if (filtroTipo !== "todos") query = query.eq("tipo_operacao", filtroTipo);
+      if (filtroTipoVeiculo !== "todos") query = query.ilike("veiculo_tipo", filtroTipoVeiculo);
+      if (filtroTipoCarga !== "todos") query = query.ilike("carga_tipo", filtroTipoCarga);
+      if (somenteSemPrestador) query = query.is("prestador", null);
+
+      if (filtroPeriodo !== "todos") {
+        const agora = new Date();
+        if (filtroPeriodo === "hoje") {
+          query = query.eq("data", hojeISOSP());
+        } else if (filtroPeriodo === "ontem") {
+          const ontem = new Date(agora);
+          ontem.setDate(ontem.getDate() - 1);
+          query = query.eq("data", dataLocalISO(ontem));
+        } else if (filtroPeriodo === "semana") {
+          const umaSemanaAtras = new Date(agora);
+          umaSemanaAtras.setDate(agora.getDate() - 7);
+          query = query.gte("data", dataLocalISO(umaSemanaAtras));
+        } else if (filtroPeriodo === "mes") {
+          const inicioMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-01`;
+          query = query.gte("data", inicioMes);
+        } else if (filtroPeriodo === "personalizado" && dataInicio && dataFim) {
+          query = query.gte("data", dataInicio).lte("data", dataFim);
+        }
+      }
+
+      if (termoBusca.length > 0) {
+        const orParts = [
+          `numero.ilike.%${termoBusca}%`,
+          `veiculo_placa.ilike.%${termoBusca}%`,
+        ];
+        if (clientesBuscaIds.length > 0) {
+          const ids = clientesBuscaIds.join(",");
+          orParts.push(`cliente.in.(${ids})`, `cliente_id.in.(${ids})`);
+        }
+        if (prestadoresBuscaIds.length > 0) {
+          const ids = prestadoresBuscaIds.join(",");
+          orParts.push(`prestador.in.(${ids})`, `prestador_id.in.(${ids})`);
+        }
+        query = query.or(orParts.join(","));
+      }
+
+      const { data, error, count } = await query
         .order("created_at", { ascending: false })
         .range(from, to);
       if (count !== null) setTotalCount(count);
@@ -305,10 +438,32 @@ const OrdensServicoLista = () => {
     }
   };
 
+  // Chave estável de filtros: quando muda, a paginação volta para a página 1
+  // e a QUERY é refeita com os filtros no backend.
+  const filtrosKey = [
+    filtroStatus,
+    filtroCliente,
+    filtroTipo,
+    filtroTipoVeiculo,
+    filtroTipoCarga,
+    filtroPeriodo,
+    dataInicio,
+    dataFim,
+    somenteSemPrestador ? "1" : "0",
+    buscaAplicada,
+  ].join("\u0001");
+  const filtrosKeyAnterior = useRef(filtrosKey);
+
   useEffect(() => {
+    const mudou = filtrosKeyAnterior.current !== filtrosKey;
+    filtrosKeyAnterior.current = filtrosKey;
+    if (mudou && page !== 1) {
+      setPage(1);
+      return;
+    }
     void fetchOrdens();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, filtrosKey]);
 
   const handleSalvar = () => {
     setModoForm(null);
@@ -577,50 +732,10 @@ const OrdensServicoLista = () => {
     return formatarDataBR(dateStr) || "—";
   };
 
-  const filtradas = ordens.filter(os => {
-    const searchLower = busca.toLowerCase();
-    const matchBusca = 
-      os.numero.toLowerCase().includes(searchLower) || 
-      (os.cliente || "").toLowerCase().includes(searchLower) ||
-      (os.prestador || "").toLowerCase().includes(searchLower) ||
-      (os.veiculoPlaca || "").toLowerCase().includes(searchLower);
-
-    const matchStatus = filtroStatus === "todos" || obterStatusGlobalOS(os.status) === filtroStatus;
-    const matchCliente = filtroCliente === "todos" || os.cliente === filtroCliente;
-    const matchTipo = filtroTipo === "todos" || os.tipoOperacao === filtroTipo;
-    const matchTipoVeiculo = filtroTipoVeiculo === "todos" || (os.veiculoTipo || "").toLowerCase() === (filtroTipoVeiculo || "todos").toLowerCase();
-    const matchTipoCarga = filtroTipoCarga === "todos" || (os.carga?.tipo || "") === filtroTipoCarga;
-    const matchSemPrestador = !somenteSemPrestador || osSemPrestador(os);
-    
-    // Filtro de período — comparação por data local (YYYY-MM-DD), sem fuso.
-    let matchPeriodo = true;
-    if (filtroPeriodo !== "todos") {
-      const dataOSStr = normalizarDataOS(os.data);
-      if (!dataOSStr) return false;
-
-      const agora = new Date();
-      const hojeStr = hojeISOSP();
-
-      if (filtroPeriodo === "hoje") {
-        matchPeriodo = dataOSStr === hojeStr;
-      } else if (filtroPeriodo === "ontem") {
-        const ontem = new Date(agora);
-        ontem.setDate(ontem.getDate() - 1);
-        matchPeriodo = dataOSStr === dataLocalISO(ontem);
-      } else if (filtroPeriodo === "semana") {
-        const umaSemanaAtras = new Date(agora);
-        umaSemanaAtras.setDate(agora.getDate() - 7);
-        matchPeriodo = dataOSStr >= dataLocalISO(umaSemanaAtras);
-      } else if (filtroPeriodo === "mes") {
-        const inicioMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-01`;
-        matchPeriodo = dataOSStr >= inicioMes;
-      } else if (filtroPeriodo === "personalizado" && dataInicio && dataFim) {
-        matchPeriodo = dataOSStr >= dataInicio && dataOSStr <= dataFim;
-      }
-    }
-
-    return matchBusca && matchStatus && matchCliente && matchTipo && matchPeriodo && matchTipoVeiculo && matchTipoCarga && matchSemPrestador;
-  });
+  // Filtros, contagem e paginação são aplicados no BACKEND (antes do .range()).
+  // A lista já chega filtrada — NÃO repetir o filtro no frontend (isso causava
+  // páginas quase vazias quando o total absoluto era usado na paginação).
+  const filtradas = ordens;
 
   const totalOrfas = ordens.filter(osSemPrestador).length;
 
@@ -672,7 +787,7 @@ const OrdensServicoLista = () => {
     }
   };
 
-  const clientesDisponiveis = Array.from(new Set(ordens.map(o => o.cliente).filter(Boolean)));
+  const clientesDisponiveis = clientesFiltro;
 
   if (modoForm) {
     return (
@@ -691,7 +806,7 @@ const OrdensServicoLista = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold">Ordens de Serviço</h2>
-          <p className="text-sm text-muted-foreground">{filtradas.length} OS encontrada(s)</p>
+          <p className="text-sm text-muted-foreground">{totalCount ?? filtradas.length} OS encontrada(s)</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowFiltros(!showFiltros)} className={showFiltros ? "bg-muted" : ""}>

@@ -1,5 +1,33 @@
 # Summary
 
+## MISSÃO FILTROS-PAGINACAO-OS — Filtros da lista de OS aplicados na query antes da paginação (2026-11-09)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **108/108** (8 ficheiros) + 6 ficheiros extra que leem a lista **todos verdes** · suíte completa **20 ficheiros / 46 testes falhos** = baseline + flaky `fin_prog05c3b` sob carga (**5/5 isolado**) · **2747 pass** · `npm run build` ok (2m16s).
+
+### Causa
+A lista filtrava **depois** de buscar apenas a página actual (`.range(0, 24)`): filtro/busca só viam 25 linhas, o contador ignorava os filtros e a página 2 mostrava dados errados. Também existia filtro de período no cliente (`normalizarDataOS`) e o select de cliente era populado só com a página.
+
+### O que mudou
+1. **Filtros no backend (`fetchOrdens`)** — status (`.in` via `statusesOSParaGlobalFiltro`), cliente por nome (resolve `id` em `clientes` e aplica `.in("cliente", ids)`), tipo de operação, tipo de veículo/carga (`ilike`), “sem prestador” (`.is`), período (`eq` hoje/ontem · `gte` semana/mês · `gte/lte` personalizado). Tudo aplicado **antes** de `.order("created_at", desc).range(from, to)`.
+2. **Busca livre server-side** — `.or(...)` com `numero.ilike`, `veiculo_placa.ilike` + ids resolvidos de `clientes` (`nome_fantasia`/`razao_social`) e `prestadores` (`nome_completo`), cobrindo `cliente`/`cliente_id` e `prestador`/`prestador_id`.
+3. **Contagem/paginação** — `count: "exact"` passa a refletir os filtros; cabeçalho usa `totalCount`; `PaginationBar` mostra “Exibindo X–Y de N”. Nova `filtrosKey` faz `setPage(1)` quando um filtro muda e refaz a query (`[page, filtrosKey]`).
+4. **Filtro no cliente removido** — `const filtradas = ordens`; `normalizarDataOS` eliminado; opções de cliente vêm de `clientes` (`limit 1000`), não só da página. Busca com debounce de 350 ms (`buscaAplicada`).
+
+### Testes/validação
+- **NOVO** `src/test/filtros_paginacao_os.test.ts` (10 casos: filtros antes do `.range`, status global, cliente/busca por ids, período, reset de página, `count` exact).
+- Atualizados: `nova_os_etapa2_lista_whatsapp.test.ts` (A.1/A.2 agora provam `.eq("data", …)` na query antes do `.range`), `refinamentos_comercial_operacao.test.ts` (deps `[page, filtrosKey]` + `setPage(1)`).
+- `npx vitest run` (8 alvos) → **108/108**; 6 ficheiros extra que leem `OrdensServicoLista` → todos verdes; suíte completa → **20/46** baseline (+ flaky `fin_prog05c3b`) · **2747 pass**; `npm run build` ok.
+
+### Arquivos
+- `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/osTypes.ts` · `src/test/filtros_paginacao_os.test.ts` (NOVO) · `src/test/nova_os_etapa2_lista_whatsapp.test.ts` · `src/test/refinamentos_comercial_operacao.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push).
+2. (QA) Filtrar por status/cliente/tipo/período e buscar por nº/placa/cliente/prestador: conferir que “Exibindo X–Y de N” reflecte o filtro e que a página 2 mantém o filtro.
+3. (nota) A busca livre resolve ids com `limit 200` em clientes/prestadores; se a base crescer muito, ampliar o limite ou usar full-text.
+
+---
+
 ## MISSÃO CORRECAO2-PEDAGIO-ROTAS-WHATSAPP-TELEMETRIA — Pedágio/rotas, negrito WhatsApp, telemetria/toast e isolamento da Nova OS (2026-11-09)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **70/70** · regressão **254/254** · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga) · **2738 pass** · `npm run build` ok (2m27s).

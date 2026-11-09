@@ -71,9 +71,10 @@ describe("C) Listagem de OS — ordenação e paginação", () => {
     expect(pagination).toContain("Página ${page} de ${totalPages}");
   });
 
-  it("refaz a busca ao trocar de página", () => {
+  it("refaz a busca ao trocar de página (e volta à página 1 ao mudar filtros)", () => {
     expect(osLista).toContain("void fetchOrdens();");
-    expect(osLista).toContain("}, [page]);");
+    expect(osLista).toContain("setPage(1);");
+    expect(osLista).toContain("}, [page, filtrosKey]);");
   });
 });
 

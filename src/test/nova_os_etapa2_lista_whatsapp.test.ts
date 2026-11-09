@@ -37,20 +37,24 @@ const DESTINO = {
   instrucoes: "Ligar ao chegar",
 };
 
-describe("A) Filtro de período — timezone (comparação por data local)", () => {
+describe("A) Filtro de período — timezone (aplicado na query antes da paginação)", () => {
   it("A.1 existe normalização para YYYY-MM-DD sem passar pelo toISOString", () => {
     expect(listaSrc).toContain("const dataLocalISO = (d: Date): string =>");
     expect(listaSrc).toContain("getFullYear()");
-    expect(listaSrc).toContain("const normalizarDataOS = (valor?: string | null): string =>");
-    expect(listaSrc).toContain("const iso = texto.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);");
+    expect(listaSrc).toContain('hojeISOSP');
+    expect(listaSrc).not.toContain("toISOString().slice(0, 10)");
   });
 
-  it("A.2 filtro Hoje compara strings de data (nunca `new Date(os.data)`)", () => {
-    expect(listaSrc).toContain("const dataOSStr = normalizarDataOS(os.data);");
-    expect(listaSrc).toContain("matchPeriodo = dataOSStr === hojeStr;");
-    expect(listaSrc).toContain("matchPeriodo = dataOSStr === dataLocalISO(ontem);");
-    expect(listaSrc).toContain("matchPeriodo = dataOSStr >= dataInicio && dataOSStr <= dataFim;");
-    expect(listaSrc).not.toContain("const dataOS = new Date(os.data);");
+  it("A.2 filtro Hoje aplica `.eq(\"data\", …)` na query (nunca filtra no cliente)", () => {
+    expect(listaSrc).toContain('query = query.eq("data", hojeISOSP());');
+    expect(listaSrc).toContain('query = query.eq("data", dataLocalISO(ontem));');
+    expect(listaSrc).toContain('query = query.gte("data", dataInicio).lte("data", dataFim);');
+    expect(listaSrc).toContain('.range(from, to)');
+    expect(listaSrc.indexOf('query = query.eq("data", hojeISOSP());')).toBeLessThan(
+      listaSrc.indexOf('.range(from, to)'),
+    );
+    expect(listaSrc).not.toContain("const dataOSStr = normalizarDataOS(os.data);");
+    expect(listaSrc).not.toContain("matchPeriodo");
   });
 
   it("A.3 safeFormatDate formata YYYY-MM-DD por string (sem deslocar o dia)", () => {

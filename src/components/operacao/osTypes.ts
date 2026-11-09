@@ -30,23 +30,41 @@ export function obterStatusInfoOS(statusOS: string): StatusInfo {
   return STATUS_OPERACIONAL[statusOS as OSStatus] || { label: statusOS, twClass: "bg-slate-400 text-white" };
 }
 
+const MAPA_STATUS_OS_GLOBAL: Record<string, StatusGlobal> = {
+  rascunho: "rascunho",
+  em_analise: "em_analise",
+  pendente: "pendente",
+  agendada: "alocado",
+  em_andamento: "carregando",
+  em_rota: "em_rota",
+  coletado: "carregando",
+  entregue: "entregue",
+  finalizada: "finalizado",
+  finalizado: "finalizado",
+  encerrada: "finalizado",
+  cancelada: "cancelado",
+  cancelado: "cancelado",
+  recusada: "cancelado",
+  ocorrencia: "em_rota",
+  faturada: "faturado",
+  faturado: "faturado",
+  paga: "pago_prestador",
+  pago: "pago_prestador",
+};
+
 export function obterStatusGlobalOS(statusOS: string): StatusGlobal {
-  const mapa: Record<string, StatusGlobal> = {
-    rascunho: "rascunho",
-    em_analise: "em_analise",
-    pendente: "pendente",
-    agendada: "alocado",
-    em_andamento: "carregando",
-    em_rota: "em_rota",
-    coletado: "carregando",
-    entregue: "entregue",
-    finalizada: "finalizado",
-    cancelada: "cancelado",
-    ocorrencia: "em_rota",
-    faturada: "faturado",
-    paga: "pago_prestador",
-  };
-  return mapa[statusOS] || "pendente";
+  return MAPA_STATUS_OS_GLOBAL[statusOS] || "pendente";
+}
+
+/**
+ * Status brutos da coluna `ordens_servico.status` que pertencem a um status
+ * global do filtro (ex.: "finalizado" → ["finalizada","finalizado","encerrada"]).
+ * Usado para aplicar o filtro na QUERY do Supabase antes do `.range()`.
+ */
+export function statusesOSParaGlobalFiltro(statusGlobal: StatusGlobal): string[] {
+  return Object.entries(MAPA_STATUS_OS_GLOBAL)
+    .filter(([, global]) => global === statusGlobal)
+    .map(([statusOS]) => statusOS);
 }
 
 export type TipoOperacao = 
