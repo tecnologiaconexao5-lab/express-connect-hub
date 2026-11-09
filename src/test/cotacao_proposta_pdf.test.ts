@@ -9,6 +9,7 @@ import path from "node:path";
 const readSrc = (rel: string) => fs.readFileSync(path.resolve(process.cwd(), rel), "utf8");
 const page = readSrc("src/pages/CotacaoExpress.tsx");
 const pdf = readSrc("src/lib/cotacaoPdf.ts");
+const foundation = readSrc("src/lib/pdf/foundation.ts");
 
 describe("A) Proposta comercial em PDF", () => {
   it("A.1 botão do Resumo gera PDF Enterprise (sem window.print)", () => {
@@ -78,5 +79,18 @@ describe("D) Revisão 2026-11-08 — e-mail comercial, nº numérico, ordem e ca
     expect(pdf).not.toContain("empresaConfig.endereco");
     expect(pdf).not.toContain("BG_LIGHT");
     expect(pdf).toContain("doc.save(");
+  });
+});
+
+describe("E) LOTE 1 — faixa superior azul escuro com logo branco", () => {
+  it("E.1 cabeçalho usa fundo NAVY e textos brancos no tema dark", () => {
+    expect(foundation).toContain('theme?: "light" | "dark"');
+    expect(foundation).toContain('opts.theme === "dark"');
+    expect(foundation).toContain("doc.setFillColor(NAVY[0], NAVY[1], NAVY[2])");
+    expect(foundation).toContain("WHITE[0]");
+  });
+
+  it("E.2 a proposta comercial ativa o tema dark (logo branco visível)", () => {
+    expect(pdf).toContain('theme: "dark"');
   });
 });

@@ -1,5 +1,46 @@
 # Summary
 
+## MISSÃO LOTE-1-BASE-OS-PDF — Fuso da OS, cliente herdado, endereços desmembrados, status Em Análise e faixa azul no PDF (2026-11-09)
+
+**Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any`/`prefer-const` intacto) · testes alvo **124/124** (lote1 14 + fluxo 73 + leads 26 + proposta 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata · **2679 pass** (+17) · `npm run build` ok (57,09s) · migration **aplicada em produção** (dry-run **13/13** → `--apply` **13/13** + `--check` **13/13**).
+
+### Causa raiz (5 pontos)
+- A OS da Cotação Express é criada pela RPC **`f_cotacao_detalhes_para_os`** (migration `20261102000000`), não pelo TS (`gerarOSDoOrcamento` é o caminho do Orçamento).
+- **Fuso:** `ordens_servico.created_at` é `timestamp without time zone`; a RPC gravava `now()` (UTC) → tela somava **+3h** em "Solicitada".
+- **Cliente:** dedup por telefone reutilizava o cadastro sem atualizar o nome (podia manter a conta administrativa) e `OrcamentoForm` não sincronizava `clienteId` ao trocar o cliente.
+- **Endereços:** a RPC punha o place-name inteiro em `logradouro` e deixava `bairro/cidade/uf/cep` vazios; o wizard **não persistia** a sugestão estruturada (`montarParadasFase1` descartava `SugestaoEndereco`).
+- **Status:** a RPC criava `pendente` e `f_cotacao_status_cliente('aguardando')` rebaixava para `rascunho`.
+- **PDF:** `loadLogo()` devolve o logo **branco** e `drawContentHeader` desenhava fundo **branco**.
+
+### O que mudou
+1. **Fuso (BUG 1)** — RPC grava `(now() AT TIME ZONE 'America/Sao_Paulo')` em `created_at`/`updated_at`/histórico da OS; `orcamentoToOSService` usa `agoraSaoPauloISO()` (helper) para `data`/`created_at`/`updated_at`.
+2. **Cliente (BUG 2)** — RPC: casa por nome exato; se casar **só por telefone**, renomeia `nome_fantasia`/`razao_social` para o nome da cotação e sincroniza `telefone`/`whatsapp`. `garantirClienteAvulsoCotacao` espelha a regra (`casouPorTelefone` + `patch`). `OrcamentoForm` grava `clienteId` do `rec.id` no `onChange`.
+3. **Endereços (BUG 3)** — `ParadaCotacao.enderecoDetalhado` + `CriarCotacaoFase1Input.paradasDetalhes`; o wizard envia `detalheDaParada()` (rua/número/bairro/cidade/UF/CEP/lat/lng). RPC usa **`f_endereco_cotacao_os`** + **`f_parse_endereco_cotacao`** (fallback legado) e preenche `logradouro/numero/complemento/bairro/cidade/uf/estado/cep` + `endereco` completo; `origem`/`destino` passam a ter o endereço completo (roteirizador/GPS corretos). `montarOrcamentoDaCotacao` usa os campos estruturados.
+4. **Status (BUG 4)** — OS nasce **`em_analise`**; a blindagem `aguardando` mantém `em_analise` (só adiciona a marca de confirmação).
+5. **PDF (MELHORIA 5)** — `ContentHeaderOptions.theme: "light" | "dark"`; no tema dark `drawContentHeader` pinta a faixa com **NAVY** e escreve título/subtítulo/página em **branco**. `cotacaoPdf.ts` passa `theme: "dark"` (logo branco visível).
+
+### Banco (migration aplicada)
+- `supabase/migrations/20261109000000_cotacao_os_correcoes_base.sql` (NOVA) — `CREATE OR REPLACE` de `f_cotacao_detalhes_para_os` e `f_cotacao_status_cliente` + helpers `f_parse_endereco_cotacao`/`f_endereco_cotacao_os`.
+- `scripts/_apply_cotacao_os_correcoes.cjs` (NOVO) — dry-run por padrão (`BEGIN` → provas → `ROLLBACK`), `--apply` (COMMIT) e `--check` (read-only). Prova funcional do parser: `"Rua das Flores, 100 - Centro, São Paulo - SP, 05016-000"` → rua/100/Centro/São Paulo/SP/05016-000.
+
+### Testes/validação
+- **NOVO** `src/test/cotacao_os_lote1_base.test.ts` (14 casos: fuso, cliente, endereços, status e PDF).
+- Atualizados: `cotacao_express_fluxo.test.ts` (novo B.9 + D.4 "Em Análise"), `cotacao_leads_comercial.test.ts` (F.1/F.4), `cotacao_proposta_pdf.test.ts` (describe E tema dark).
+- `npx vitest run` (4 alvos) → **124/124**; suíte completa → **18/44** = baseline · **2679 pass**.
+
+### Arquivos
+- `src/services/cotacoes/cotacaoPublicaService.ts` · `src/pages/CotacaoExpress.tsx` · `src/components/comercial/OrcamentoForm.tsx` · `src/services/comercial/orcamentoToOSService.ts` · `src/lib/pdf/foundation.ts` · `src/lib/cotacaoPdf.ts`
+- `supabase/migrations/20261109000000_cotacao_os_correcoes_base.sql` (NOVA, APLICADA) · `scripts/_apply_cotacao_os_correcoes.cjs` (NOVO)
+- `src/test/cotacao_os_lote1_base.test.ts` (NOVO) · `src/test/cotacao_express_fluxo.test.ts` · `src/test/cotacao_leads_comercial.test.ts` · `src/test/cotacao_proposta_pdf.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel — sem redeploy o browser continua no bundle antigo (endereço estruturado/PDF).
+2. (QA) `/cotacao-express` → Fase 2 → conferir no TMS: "Solicitada" no horário local, cliente com o nome/telefone digitados, Coleta/Entrega desmembradas (Rua/Nº/Bairro/Cidade/UF/CEP), OS em **"Em Análise"** e PDF com faixa azul + logo branco.
+3. (decisão) OS criadas antes desta migration permanecem com `created_at` UTC naive (sem backfill); se necessário, corrigir em lote à parte.
+4. (autorização) Commit git dos ficheiros desta missão.
+
+---
+
 ## MISSÃO POS-DEPLOY-PDF-PESO-WHATSAPP — Peso por item, página 1 do PDF sem capa e ícone 📞 no WhatsApp (2026-11-08)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (6 ficheiros) · testes alvo **114/114** (proposta 9 + volumes 13 + whatsapp 3 + fluxo 72 + pdf_guards 17) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata (19/45 menos o flaky `fin_prog05c3b` que passou nesta run) · **2662 pass** (2660 + 1 novo A.5 + 1 flaky recuperado) · `npm run build` ok (51,34s).

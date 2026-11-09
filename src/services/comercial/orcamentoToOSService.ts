@@ -19,6 +19,26 @@ export interface GerarOSResult {
   erro?: string;
 }
 
+/**
+ * `ordens_servico.created_at` é `timestamp without time zone`. Gravar UTC
+ * (`toISOString`) fazia a tela somar +3h em "Solicitada". Geramos o valor já
+ * no fuso local de São Paulo (UTC-3) para a coluna naive.
+ */
+const agoraSaoPauloISO = (): string => {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
+};
+
 // ─── Gerador de número OS (formato: OS-AAAAMM-NNNNNN) ─────────────────────────
 const gerarNumeroOS = async (): Promise<string> => {
   const agora = new Date();
@@ -253,7 +273,7 @@ export const gerarOSDoOrcamento = async (
     // 6. Histórico inicial da OS
     const historicoOS = [
       {
-        data: new Date().toISOString(),
+        data: agoraSaoPauloISO(),
         acao: `OS gerada automaticamente do orçamento ${orc.numero}`,
         status_novo: "em_analise",
         usuario: "Sistema",
@@ -263,7 +283,7 @@ export const gerarOSDoOrcamento = async (
     // 7. Payload da OS (apenas campos seguros para o banco)
     const osPayload: Record<string, any> = {
       numero: novoNumeroOS,
-      data: new Date().toISOString().split("T")[0],
+      data: agoraSaoPauloISO().slice(0, 10),
       // `ordens_servico.cliente` é uuid (FK) — NUNCA gravar o nome aqui.
       cliente: clienteUuid,
       cliente_id: clienteUuid,
@@ -306,8 +326,8 @@ export const gerarOSDoOrcamento = async (
       enderecos,
       carga,
       historico: historicoOS,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: agoraSaoPauloISO(),
+      updated_at: agoraSaoPauloISO(),
     };
 
     // Tentar adicionar orcamento_id se a coluna existir

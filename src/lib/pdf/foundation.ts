@@ -241,6 +241,8 @@ export interface ContentHeaderOptions {
   title: string;
   subtitle?: string;
   pageLabel?: string;
+  /** "dark" aplica a faixa azul-marinho da marca (logo branco visível). */
+  theme?: "light" | "dark";
 }
 
 /**
@@ -256,9 +258,14 @@ export function drawContentHeader(
 ): number {
   const headerH = 25;
   const pageNum = doc.getNumberOfPages();
+  const dark = opts.theme === "dark";
 
-  // Fundo branco com borda inferior fina
-  doc.setFillColor(255, 255, 255);
+  // Fundo: branco (padrão) ou azul-marinho da marca (tema dark).
+  if (dark) {
+    doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
+  } else {
+    doc.setFillColor(255, 255, 255);
+  }
   doc.rect(0, 0, pageWidth, headerH, "F");
   doc.setDrawColor(ORANGE[0], ORANGE[1], ORANGE[2]);
   doc.setLineWidth(0.8);
@@ -277,7 +284,11 @@ export function drawContentHeader(
   } else {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.setTextColor(
+      dark ? WHITE[0] : NAVY[0],
+      dark ? WHITE[1] : NAVY[1],
+      dark ? WHITE[2] : NAVY[2]
+    );
     doc.text("CONEXÃO EXPRESS", margin, 12);
   }
 
@@ -285,20 +296,32 @@ export function drawContentHeader(
   const rightX = pageWidth - margin;
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+  doc.setTextColor(
+    dark ? WHITE[0] : NAVY[0],
+    dark ? WHITE[1] : NAVY[1],
+    dark ? WHITE[2] : NAVY[2]
+  );
   doc.text(opts.title, rightX, 10, { align: "right" });
 
   if (opts.subtitle) {
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(TEXT_BODY[0], TEXT_BODY[1], TEXT_BODY[2]);
+    doc.setTextColor(
+      dark ? 220 : TEXT_BODY[0],
+      dark ? 225 : TEXT_BODY[1],
+      dark ? 235 : TEXT_BODY[2]
+    );
     doc.text(opts.subtitle, rightX, 16, { align: "right" });
   }
 
   // Número da página
   doc.setFontSize(6.5);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+  doc.setTextColor(
+    dark ? 190 : TEXT_MUTED[0],
+    dark ? 200 : TEXT_MUTED[1],
+    dark ? 215 : TEXT_MUTED[2]
+  );
   const pageText = opts.pageLabel ? `${opts.pageLabel} — Pág. ${pageNum}` : `Página ${pageNum}`;
   doc.text(pageText, rightX, 21, { align: "right" });
 

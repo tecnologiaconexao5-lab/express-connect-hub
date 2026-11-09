@@ -164,6 +164,11 @@ describe("F) Cliente avulso da cotação + badge OS + alocação de prestador", 
     expect(serviceSrc).toContain("payload.id = novoId");
     expect(serviceSrc).toContain('rpc("current_tenant_id_safe")');
     expect(serviceSrc).not.toContain(".insert([payload]).select");
+    // LOTE 1 — herda exatamente o nome/telefone da cotação no cadastro reusado.
+    expect(serviceSrc).toContain("casouPorTelefone");
+    expect(serviceSrc).toContain("patch.nome_fantasia = nome");
+    expect(serviceSrc).toContain("patch.razao_social = nome");
+    expect(serviceSrc).toContain("patch.telefone = telefone");
   });
 
   it("F.2 gerarOSDoOrcamento grava o UUID do cliente (nunca o nome)", () => {
@@ -185,6 +190,8 @@ describe("F) Cliente avulso da cotação + badge OS + alocação de prestador", 
     expect(orcamentosSrc).toContain(".clienteId = cliente.clienteId");
     expect(dbMappersSrc).toContain("d.cliente_id = form.clienteId");
     expect(dbMappersSrc).toContain("d.pedido_interno = form.pedidoInterno");
+    // LOTE 1 — trocar o cliente na tela também atualiza o uuid usado pela OS.
+    expect(orcamentoFormSrc).toContain('update("clienteId"');
   });
 
   it("F.5 OrcamentoForm delega a conversão ao serviço (sem insert legado)", () => {

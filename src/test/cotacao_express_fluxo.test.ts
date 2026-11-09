@@ -168,6 +168,27 @@ describe("B) Service — guardas, mapeamentos e pré-preenchimento", () => {
     expect(paradas[1].sequencia).toBe(2);
   });
 
+  it("B.9 — montarParadasFase1 persiste o endereço estruturado (sugestão CEP/GPS)", () => {
+    const detalhe = {
+      logradouro: "Av. Paulista",
+      numero: "1000",
+      bairro: "Bela Vista",
+      cidade: "São Paulo",
+      uf: "SP",
+      cep: "01310-100",
+      lat: -23.56,
+      lng: -46.65,
+      place_name: "Av. Paulista, 1000, Bela Vista, São Paulo - SP, 01310-100",
+    };
+    const paradas = montarParadasFase1(["Av. Paulista, 1000"], ["retirada"], [detalhe]);
+    expect(paradas[0].enderecoDetalhado).toEqual(detalhe);
+
+    // Sem detalhe, o contrato legado (3 chaves) permanece intacto.
+    const legado = montarParadasFase1(["Rua A", "Rua B"]);
+    expect(legado[0]).toEqual({ sequencia: 1, tipo: "retirada", endereco: "Rua A" });
+    expect(legado[0].enderecoDetalhado).toBeUndefined();
+  });
+
   it("B.2 — criacao exige ao menos retirada + 1 entrega (sem rede)", async () => {
     const r1 = await criarCotacaoFase1({
       nome_cliente: "Ana",
@@ -424,13 +445,13 @@ describe("D) Fase 2 — /cotacao-express/detalhes/:id", () => {
     expect(fase2).toContain("Informe o nome de quem recebe em cada parada.");
   });
 
-  it("D.4 — salvar move a cotação para 'Pronto para OS' e deixa a OS em 'rascunho'", () => {
+  it("D.4 — salvar move a cotação para 'Pronto para OS' e mantém a OS em 'Em Análise'", () => {
     expect(fase2).toContain("salvarDetalhesFase2");
     expect(fase2).toContain('c.status === "Pronto para OS"');
     // Texto final com a obrigatoriedade do WhatsApp
     expect(fase2).toContain("Quase lá! Seu pedido foi pré-reservado no nosso sistema.");
     expect(fase2).toContain("é OBRIGATÓRIO confirmar o pedido via WhatsApp");
-    // Blindagem: OS em 'rascunho' até a confirmação via WhatsApp
+    // Blindagem: OS permanece em 'em_analise' até a confirmação via WhatsApp
     expect(fase2).toContain("marcarCotacaoAguardandoConfirmacao");
     // Cancelamento pelo cliente (cotação + OS) e volta ao início
     expect(fase2).toContain("cancelarCotacaoPeloCliente");

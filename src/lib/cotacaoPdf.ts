@@ -92,6 +92,9 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
     drawContentHeader(doc, page.pageWidth, page.margin, logo, {
       title: `PROPOSTA COMERCIAL — ${numero}`,
       subtitle: `Emitida por ${empresaConfig.razaoSocial}`,
+      // Fundo azul-marinho da marca: o logo oficial é branco e precisa
+      // de contraste (textos da faixa em branco).
+      theme: "dark",
     });
   };
 

@@ -56,6 +56,7 @@ import {
   criarCotacaoFase1,
   MAX_PARADAS_COTACAO,
   STATUS_AGUARDANDO_APROVACAO,
+  type EnderecoEstruturadoCotacao,
 } from "@/services/cotacoes/cotacaoPublicaService";
 import {
   calcularRotaEFreteCotacao,
@@ -169,6 +170,26 @@ const rotuloParada = (p: ParadaEstado) =>
 
 const enderecoDaParada = (p: ParadaEstado): string =>
   p.sugestao?.place_name?.trim() || p.endereco.trim();
+
+/**
+ * Endereço desmembrado pela API de CEP/Geocoding (Mapbox/ViaCEP) para ser
+ * persistido na Fase 1 e consumido pela conversão cotação → OS.
+ */
+const detalheDaParada = (p: ParadaEstado): EnderecoEstruturadoCotacao | null => {
+  const s = p.sugestao;
+  if (!s) return null;
+  return {
+    logradouro: s.rua || "",
+    numero: s.numero || "",
+    bairro: s.bairro || "",
+    cidade: s.cidade || "",
+    uf: s.uf || "",
+    cep: s.cep || "",
+    lat: Number.isFinite(s.lat) ? s.lat : null,
+    lng: Number.isFinite(s.lng) ? s.lng : null,
+    place_name: s.place_name || "",
+  };
+};
 
 export default function CotacaoExpress() {
   const navigate = useNavigate();
@@ -494,9 +515,10 @@ export default function CotacaoExpress() {
           lat: p.sugestao?.lat ?? null,
           lng: p.sugestao?.lng ?? null,
           tipo: p.tipo,
+          detalhe: detalheDaParada(p),
         }))
         .filter((p) => p.endereco.length > 0);
-      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, ...resto }) => resto);
+      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, detalhe: _detalhe, ...resto }) => resto);
 
       const resultado = await calcularRotaEFreteCotacao(
         pontos,
@@ -528,6 +550,7 @@ export default function CotacaoExpress() {
         carga_volumes: totalVolumes > 0 ? totalVolumes : null,
         paradas: pontos.map((p) => p.endereco),
         paradasTipos: pontosComTipo.map((p) => p.tipo),
+        paradasDetalhes: pontosComTipo.map((p) => p.detalhe),
         data_desejada: "",
         hora_desejada: "",
         status: STATUS_AGUARDANDO_APROVACAO,
@@ -608,9 +631,10 @@ export default function CotacaoExpress() {
           lat: p.sugestao?.lat ?? null,
           lng: p.sugestao?.lng ?? null,
           tipo: p.tipo,
+          detalhe: detalheDaParada(p),
         }))
         .filter((p) => p.endereco.length > 0);
-      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, ...resto }) => resto);
+      const pontos: PontoRotaCotacao[] = pontosComTipo.map(({ tipo: _tipo, detalhe: _detalhe, ...resto }) => resto);
 
       let id = cotacaoId;
       if (!id) {
@@ -622,6 +646,7 @@ export default function CotacaoExpress() {
           carga_dimensoes: dimensoesTexto,
           paradas: pontos.map((p) => p.endereco),
           paradasTipos: pontosComTipo.map((p) => p.tipo),
+          paradasDetalhes: pontosComTipo.map((p) => p.detalhe),
           data_desejada: dataDesejada,
           hora_desejada: horarioEfetivo,
           status: STATUS_AGUARDANDO_APROVACAO,

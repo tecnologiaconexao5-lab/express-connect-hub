@@ -869,6 +869,9 @@ const recalcular = () => {
                      value={data.cliente} 
                      onChange={(v, rec) => {
                         update("cliente", v || "");
+                        // A OS usa o uuid: manter clienteId em sincronia com a
+                        // seleção evita herdar o cliente anterior/conta admin.
+                        update("clienteId", rec?.id ? String(rec.id) : undefined);
                         if (rec && rec.cnpj) update("clienteCnpj", rec.cnpj);
                         if (rec && rec.condicao_comercial_tabela_id) {
                            setData(p => ({ ...p, valores: { ...p.valores, tabelaVinculada: String(rec.condicao_comercial_tabela_id) }}));

@@ -43,11 +43,29 @@ export interface MetadataCotacao {
   cancelado_em?: string;
 }
 
+/** Endereço já desmembrado pela API de CEP/Geocoding (Mapbox/ViaCEP). */
+export interface EnderecoEstruturadoCotacao {
+  logradouro: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+  lat?: number | null;
+  lng?: number | null;
+  place_name?: string;
+}
+
 export interface ParadaCotacao {
   sequencia: number;
   /** "retirada_entrega" = parada que serve como retirada E entrega no mesmo ponto. */
   tipo: "retirada" | "entrega" | "retirada_entrega";
   endereco: string;
+  /**
+   * Dados estruturados da sugestão (Rua/Número/Bairro/Cidade/UF/CEP/lat/lng)
+   * persistidos na Fase 1 para a OS nascer com os endereços desmembrados.
+   */
+  enderecoDetalhado?: EnderecoEstruturadoCotacao | null;
 }
 
 export interface DetalheParadaCotacao {
@@ -99,6 +117,8 @@ export interface CriarCotacaoFase1Input {
    * 1ª = retirada, demais = entrega (comportamento legado).
    */
   paradasTipos?: Array<"retirada" | "entrega" | "retirada_entrega">;
+  /** Endereços estruturados por parada (alinhados ao array `paradas`). */
+  paradasDetalhes?: Array<EnderecoEstruturadoCotacao | null | undefined>;
   data_desejada: string;
   hora_desejada: string;
   /** Status inicial (default legado 'Pendente'). */
@@ -117,13 +137,18 @@ export interface CriarCotacaoFase1Input {
 export function montarParadasFase1(
   enderecos: string[],
   tipos?: Array<"retirada" | "entrega" | "retirada_entrega">,
+  detalhes?: Array<EnderecoEstruturadoCotacao | null | undefined>,
 ): ParadaCotacao[] {
   return enderecos
-    .map((endereco, idx) => ({
-      sequencia: idx + 1,
-      tipo: (tipos?.[idx] ?? (idx === 0 ? "retirada" : "entrega")) as ParadaCotacao["tipo"],
-      endereco: endereco.trim(),
-    }))
+    .map((endereco, idx) => {
+      const detalhe = detalhes?.[idx];
+      const base: ParadaCotacao = {
+        sequencia: idx + 1,
+        tipo: (tipos?.[idx] ?? (idx === 0 ? "retirada" : "entrega")) as ParadaCotacao["tipo"],
+        endereco: endereco.trim(),
+      };
+      return detalhe ? { ...base, enderecoDetalhado: detalhe } : base;
+    })
     .filter((p) => p.endereco.length > 0);
 }
 
@@ -176,7 +201,7 @@ export function montarMetadataCotacao(
 export async function criarCotacaoFase1(
   input: CriarCotacaoFase1Input,
 ): Promise<ResultadoCotacao<string>> {
-  const paradas = montarParadasFase1(input.paradas, input.paradasTipos);
+  const paradas = montarParadasFase1(input.paradas, input.paradasTipos, input.paradasDetalhes);
   if (paradas.length < 2) {
     return { ok: false, erro: erroDe("Informe ao menos a retirada e 1 entrega.") };
   }
@@ -605,19 +630,29 @@ export function montarOrcamentoDaCotacao(cotacao: CotacaoPublica): Orcamento {
   const enderecos: EnderecoOrcamento[] = cotacao.paradas.map((parada, idx) => {
     const detalhe = detalhesMap.get(parada.sequencia);
     const base = enderecoVazio();
+    // Endereço estruturado (sugestão Mapbox/ViaCEP persistida na Fase 1).
+    const estruturado = parada.enderecoDetalhado;
+    const rua = (estruturado?.logradouro || "").trim();
+    const numero = (detalhe?.numero || estruturado?.numero || "").trim();
+    const linhaEndereco = [rua, numero].filter(Boolean).join(", ");
     return {
       ...base,
       tipo: idx === 0 ? "coleta" : "entrega",
       sequencia: parada.sequencia,
-      endereco: parada.endereco,
-      cep: extrairCep(parada.endereco),
+      endereco: linhaEndereco || parada.endereco,
+      cep: estruturado?.cep || extrairCep(parada.endereco),
+      cidade: estruturado?.cidade || "",
+      uf: estruturado?.uf || "",
       contato: detalhe?.contato || "",
       telefone: "",
-      instrucoes: detalhe
-        ? [detalhe.numero ? `Nº ${detalhe.numero}` : "", detalhe.complemento, detalhe.observacoes]
-            .filter(Boolean)
-            .join(" · ")
-        : "",
+      instrucoes: [
+        estruturado?.bairro ? `Bairro: ${estruturado.bairro}` : "",
+        detalhe?.numero ? `Nº ${detalhe.numero}` : "",
+        detalhe?.complemento,
+        detalhe?.observacoes,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     };
   });
 
@@ -790,7 +825,9 @@ export async function garantirClienteAvulsoCotacao(input: {
   }
 
   // 1) Dedup por nome (ilike exato, um filtro por coluna — evita `.or()` com
-  // vírgulas no valor).
+  // vírgulas no valor). Ao reutilizar, garante o telefone informado na cotação.
+  let existenteId: string | null = null;
+  let casouPorTelefone = false;
   for (const coluna of ["nome_fantasia", "razao_social"] as const) {
     try {
       const { data } = await supabase
@@ -800,7 +837,8 @@ export async function garantirClienteAvulsoCotacao(input: {
         .limit(1);
       const existente = Array.isArray(data) ? (data[0] as { id?: unknown } | undefined) : null;
       if (existente && ehUuid(String(existente.id))) {
-        return { clienteId: String(existente.id), criado: false };
+        existenteId = String(existente.id);
+        break;
       }
     } catch {
       // segue para o próximo critério
@@ -808,7 +846,7 @@ export async function garantirClienteAvulsoCotacao(input: {
   }
 
   // 2) Dedup por telefone/whatsapp (mesmo número da cotação).
-  if (telefone) {
+  if (!existenteId && telefone) {
     for (const coluna of ["telefone", "whatsapp"] as const) {
       try {
         const { data } = await supabase
@@ -818,12 +856,37 @@ export async function garantirClienteAvulsoCotacao(input: {
           .limit(1);
         const existente = Array.isArray(data) ? (data[0] as { id?: unknown } | undefined) : null;
         if (existente && ehUuid(String(existente.id))) {
-          return { clienteId: String(existente.id), criado: false };
+          existenteId = String(existente.id);
+          casouPorTelefone = true;
+          break;
         }
       } catch {
         // segue para o próximo critério
       }
     }
+  }
+
+  if (existenteId) {
+    // A OS DEVE herdar exatamente o nome e o telefone digitados na cotação:
+    // - casou por telefone → renomeia o cadastro para o nome da cotação;
+    // - casou por nome → apenas garante o telefone mais recente.
+    const patch: Record<string, unknown> = {};
+    if (casouPorTelefone) {
+      patch.nome_fantasia = nome;
+      patch.razao_social = nome;
+    }
+    if (telefone) {
+      patch.telefone = telefone;
+      patch.whatsapp = telefone;
+    }
+    if (Object.keys(patch).length > 0) {
+      try {
+        await supabase.from("clientes").update(patch).eq("id", existenteId);
+      } catch {
+        // best-effort: não impede a conversão
+      }
+    }
+    return { clienteId: existenteId, criado: false };
   }
 
   // 3) Criação — padrão OsMobile.salvarClienteRapido.
