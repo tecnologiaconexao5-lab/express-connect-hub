@@ -5,7 +5,7 @@ import {
   type DetalhesEntregaCompleto,
 } from "@/services/portalCliente/portalClienteService";
 import { normalizarEvento, type EventoNormalizado } from "@/components/torre-controle/eventAdapter";
-import { resolverMidiasPod } from "@/services/comprovantes/podMediaService";
+import { resolverMidiasPod, resolverMidiasPods } from "@/services/comprovantes/podMediaService";
 
 /* ============================================================
  * MISSÃO A23 — FASE A — Central Profissional de Comprovantes
@@ -676,6 +676,10 @@ export interface EntregaOS {
   volume_entregue: number | null;
   observacao: string | null;
   sequencia: number | null;
+  /** URLs das evidências do POD (já resolvidas para signed URL quando privadas). */
+  foto_entrega_url: string | null;
+  foto_canhoto_url: string | null;
+  assinatura_url: string | null;
 }
 
 /**
@@ -744,6 +748,9 @@ export function montarEntregaOS(raw: {
     volume_entregue: parada?.volumes_entregues ?? null,
     observacao: pod?.observacao || null,
     sequencia: parada?.sequencia ?? null,
+    foto_entrega_url: pod?.foto_entrega_url || null,
+    foto_canhoto_url: pod?.foto_canhoto_url || null,
+    assinatura_url: pod?.assinatura_url || null,
   };
 }
 
@@ -784,9 +791,21 @@ export async function buscarEntregasDaOS(osId: string): Promise<EntregaOS[]> {
         .in("alocacao_id", alocacaoIds),
     ]);
 
+    // Resolve as mídias (bucket privado → signed URL; público → mantém).
+    type PodResolvivel = {
+      alocacao_id?: string | null;
+      foto_entrega_url?: string | null;
+      foto_canhoto_url?: string | null;
+      assinatura_url?: string | null;
+      [key: string]: unknown;
+    };
+    const podsResolvidos = await resolverMidiasPods(
+      (podsRes.data || []) as PodResolvivel[],
+    );
     const podMap = new Map<string, any>();
-    (podsRes.data || []).forEach((p: any) => {
-      if (p.alocacao_id && !podMap.has(p.alocacao_id)) podMap.set(p.alocacao_id, p);
+    (podsResolvidos || []).forEach((p) => {
+      const alocacaoId = typeof p.alocacao_id === "string" ? p.alocacao_id : "";
+      if (alocacaoId && !podMap.has(alocacaoId)) podMap.set(alocacaoId, p);
     });
     const prestadoresMap = new Map((prestadoresRes.data || []).map((p: any) => [p.id, p]));
     const paradasMap = new Map<string, any>();

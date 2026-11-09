@@ -1,5 +1,71 @@
 # Summary
 
+## MISSÃO REFINO-OS-DADOS — Composição two-way, POD visível, rastreamento real, distância e observações limpas (2026-11-09)
+
+**Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **128/128** (refino_os 11 + POD 50 + lote2 11 + refino 22 + os_pdf 5 + nova_os 29) · suíte completa **18 ficheiros / 44 testes falhos** = baseline · **2724 pass** · `npm run build` ok (7m41s) · migration aplicada em produção (dry-run **5/5** → `--apply` **5/5**).
+
+### O que mudou
+1. **Composição Financeira two-way (`OrdemServicoForm.tsx`)** — novo `aplicarTabelaPrestador()` puxa o valor inicial do repasse pela **tabela de preços DO PRESTADOR** ao selecioná-lo (e no recálculo de rota, enquanto não editado). Novo campo **Margem (%)**: editar a % recalcula `custoPrestador`; editar o valor recalcula a % (derivada). `recalcularValores()` respeita `valorClienteEditado`/`custoPrestadorEditado` e não sobrescreve mais valores manuais.
+2. **POD visível (`comprovantesService` + `EntregasComprovantes` + `OrdemServicoPreview`)** — `buscarEntregasDaOS` resolve as mídias via `resolverMidiasPods` (signed URL quando privado) e `EntregaOS` passou a devolver `foto_entrega_url`/`foto_canhoto_url`/`assinatura_url`. O modal "Comprovantes da Entrega" renderiza **thumbnails** de foto/canhoto/assinatura, e a Visualização da OS inclui **Comprovantes (POD)** na secção Documentos.
+3. **Rastreamento + distância (`RastreamentoOSDialog.tsx` NOVO + `dbMappers`)** — o modal lê `portal_tracking_realtime` por `os_id`/`alocacao_id`, atualiza a cada 8s, mostra mapa Mapbox, velocidade, precisão, bateria, status e link Google Maps; o placeholder "aguardando integração" foi removido. `fromOSRow` mapeia `distanciaKm` (coluna → `distancia_rota` → `carga` → observações antigas) e `tempoEstimado`.
+4. **Observações limpas + distância na OS (`20261109040000_os_obs_limpas_distancia.sql`)** — trigger **`trg_os_normalizar_cotacao`**: limpa o texto "Cotação web (Fase 2)..." da OS (mantém apenas "Coleta agendada: ... · Horário: ..."), remove sufixos de blindagem ("Aguardando confirmação..."/"Cancelada...") e preenche `distancia_km`/`carga.distancia_km` a partir do metadata da cotação vinculada. Backfill executado: **208 OS**, **0 observações sujas**, **42 OS com km** preenchido.
+
+### Testes/validação
+- **NOVO** `src/test/refino_os_dados_pod_tracking.test.ts` (11 casos: margem two-way, tabela do prestador, POD/URLs, rastreamento, distância e migration).
+- `npx vitest run` (11 alvos) → **128/128**; suíte completa → **18/44** baseline · **2724 pass**; `npm run build` ok.
+- Migration: `node scripts/_apply_os_obs_limpas_distancia.cjs` → dry-run **5/5** → `--apply` **5/5**; verificação em produção: `OS-202611-1200` → observações `Coleta agendada: 09/11/2026 · Horário: 16:00 às 18:00`, `distancia_km=22.6`.
+
+### Arquivos
+- `src/components/operacao/OrdemServicoForm.tsx` · `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/OrdemServicoPreview.tsx` · `src/components/operacao/RastreamentoOSDialog.tsx` (NOVO) · `src/components/comprovantes/EntregasComprovantes.tsx` · `src/services/comprovantes/comprovantesService.ts` · `src/lib/dbMappers.ts`
+- `supabase/migrations/20261109040000_os_obs_limpas_distancia.sql` (NOVA, APLICADA) · `scripts/_apply_os_obs_limpas_distancia.cjs` (NOVO) · `src/test/refino_os_dados_pod_tracking.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push).
+2. (QA) Margem % two-way + repasse pela tabela do prestador; POD com foto/assinatura; rastreamento em tempo real; observações limpas e km na OS.
+
+---
+
+## MISSÃO PUSH-MOTORISTA-BRIDGE — Diagnóstico e ponte de push FCM (tokens, fila e Edge Function) (2026-11-09)
+
+**Status:** ⚠️ Backend implementado e aplicado (dry-run **11/11** → `--apply` **11/11**). O **push real ainda não dispara** porque o app Flutter não possui Firebase/FCM nem lê `portal_notificacoes`. Teste novo **9/9**; `tsc` 0 erros nos ficheiros da missão.
+
+### Diagnóstico (causa raiz)
+- O app (`C:\src\conexao_prestador`) **não tem `firebase_messaging`/`firebase_core`/OneSignal** no `pubspec.yaml` nem `google-services.json`; a doc `MISSAO102` confirma "Sem push notifications (FCM/OneSignal)".
+- Não existia **tabela de tokens** nem **função de envio** no Supabase.
+- O app lê notificações de **`eventos_oficiais`** (Comunicados); o TMS gravava as notificações operacionais em **`portal_notificacoes`** — tabela que o app não consulta. A ponte estava, portanto, desligada nas duas pontas.
+
+### O que foi implementado e aplicado no Supabase
+- `supabase/migrations/20261109030000_push_motorista_bridge.sql` (APLICADA):
+  - `motorista_push_tokens` (prestador_id, token FCM único, platform, ativo) + RLS **own** + RPC **`f_registrar_push_token`** (resolve `prestadores.auth_user_id = auth.uid()` e faz upsert) + `f_remover_push_token`.
+  - `push_notificacoes_fila` (outbox) + trigger **`trg_enfileirar_push_notificacao`** em `portal_notificacoes` (cada notificação gera 1 job de push).
+  - Títulos: alocação direta → **"Novo chamado em aberto"**; Rede → **"Nova OS disponível"**, ambos com `os_id`/rota no `metadata`.
+- `supabase/migrations/20261109030001_portal_notificacoes_prestador_update.sql` (APLICADA): policy **`pn_update_prestador_own`** (o motorista marca as suas notificações como lidas).
+- `supabase/functions/enviar-push/index.ts` (NOVO, **não deployado**): consome a fila, obtém access token FCM (service account RS256), envia para todos os tokens ativos com payload Android `icon: ic_notification`, cor `#2E1065`, `click_action FLUTTER_NOTIFICATION_CLICK` e `data {tipo, os_id, rota}`; desativa tokens inválidos (UNREGISTERED).
+- `supabase/config.toml`: `[functions.enviar-push] verify_jwt = false` (auth por service role ou `x-internal-token`).
+- `scripts/_apply_push_motorista_bridge.cjs` (dry-run/`--apply`/`--check`).
+
+### Bloqueios externos para o push aparecer no telemóvel
+1. **App Flutter**: adicionar `firebase_core`/`firebase_messaging`, `google-services.json` + plugin Gradle, `Firebase.initializeApp`, pedir permissão, obter token (`getToken`) e chamar `f_registrar_push_token`; `onTokenRefresh` idem; `onBackgroundMessage`/`onMessage` devem mostrar via `flutter_local_notifications` (ícone `ic_notification`, canal `conexao_express_alertas`). Sem isto, o FCM não tem token para onde enviar.
+2. **Credenciais FCM**: configurar o secret `FCM_SERVICE_ACCOUNT_JSON` (ou `FCM_ACCESS_TOKEN`+`FCM_PROJECT_ID`) no Supabase e **deployar** a Edge Function (`npx supabase login` + `functions deploy enviar-push --project-ref uwrvzsjtpgaifkktpepn --no-verify-jwt`).
+3. **Agendamento**: invocar `/functions/v1/enviar-push` (Supabase Cron/Database Webhook) com `Authorization: Bearer <SERVICE_ROLE_KEY>` após cada INSERT na fila.
+
+### Testes/validação
+- **NOVO** `src/test/push_motorista_bridge.test.ts` (9 casos: tokens/RPC/fila/trigger/títulos/RLS/Edge Function/payload/config).
+- `npx vitest run src/test/push_motorista_bridge.test.ts` → **9/9**.
+- Aplicação: dry-run **11/11** → `--apply` **11/11** (prova funcional: INSERT em `portal_notificacoes` → +1 na fila).
+
+### Arquivos
+- `supabase/migrations/20261109030000_push_motorista_bridge.sql` (NOVA, APLICADA) · `supabase/migrations/20261109030001_portal_notificacoes_prestador_update.sql` (NOVA, APLICADA)
+- `supabase/functions/enviar-push/index.ts` (NOVO) · `supabase/config.toml` · `scripts/_apply_push_motorista_bridge.cjs` (NOVO) · `src/test/push_motorista_bridge.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (credenciais) Firebase project + `google-services.json` + service account JSON.
+2. (app) Patch Flutter (FCM + registo de token + handler de notificação) e rebuild/instalação do APK.
+3. (deploy) `supabase login` + deploy da Edge Function + agendamento/cron.
+4. (decisão) Alternativa sem FCM: o app pode consultar `portal_notificacoes` e mostrar notificações locais (RLS select/update já pronta), mas só funciona com o app vivo/em background.
+
+---
+
 ## MISSÃO REGRESSOES-OS-LISTA — Lápis sempre visível, rota com destino e alocação sem repasse (2026-11-09)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **95/95** (refino 22 + lote2 11 + motor 38 + etapa2 13 + sla 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga — **5/5 isolado**) · **2704 pass** (+2) · `npm run build` ok (54,07s).

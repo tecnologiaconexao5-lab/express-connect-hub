@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/e
 import OrdemServicoForm from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
 import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
+import RastreamentoOSDialog from "@/components/operacao/RastreamentoOSDialog";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
 import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
@@ -1323,30 +1324,15 @@ const OrdensServicoLista = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Rastreamento */}
-      <Dialog open={showRastreamento} onOpenChange={setShowRastreamento}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Navigation className="w-5 h-5 text-blue-500" /> Rastreamento em Tempo Real
-            </DialogTitle>
-          </DialogHeader>
-          <div className="py-8 flex flex-col items-center text-center space-y-4">
-            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center animate-pulse">
-              <LocateFixed className="w-8 h-8 text-blue-500" />
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-bold">OS {osRastreamento?.numero}</h4>
-              <p className="text-sm text-muted-foreground px-4">
-                Rastreamento em tempo real ainda não disponível para este prestador. Aguardando integração com o aplicativo Conexão Express para habilitar telemetria.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowRastreamento(false)}>Fechar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Rastreamento — telemetria real do App (portal_tracking_realtime) */}
+      <RastreamentoOSDialog
+        open={showRastreamento}
+        onOpenChange={(open) => {
+          setShowRastreamento(open);
+          if (!open) setOsRastreamento(null);
+        }}
+        os={osRastreamento}
+      />
 
       {/* Modal Preview OS */}
       <Dialog open={showPreview} onOpenChange={(open) => { if (!open) { setShowPreview(false); setOsPreview(null); } }}>

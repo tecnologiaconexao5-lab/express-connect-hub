@@ -62,7 +62,7 @@ import type { ResultadoCalculo } from "@/services/financeiro/calculoService";
 import { calcularCubagem, sugerirVeiculosPorCarga, verificarAlertasCubagem, type ResultadoCubagem, type SugestaoVeiculo, type AlertaCubagem } from "@/services/operacao/cargaService";
 import { estimarCustoOperacional, type ResultadoCustoOperacional } from "@/services/economia/custoOperacionalService";
 import { calcularPrecoRapido } from "@/services/precificacao/precificacaoEngineService";
-import { buscarTabelaValoresCliente } from "@/services/precificacao/buscarTabelasService";
+import { buscarTabelaValoresCliente, buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasService";
 import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } from "@/lib/pdfGenerator";
 import {
   gerarMensagemOrientacaoExecucao,
@@ -788,6 +788,13 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     if (rascunhoInicial?.data) return rascunhoInicial.data;
     return os ? JSON.parse(JSON.stringify(os)) : emptyOS();
   });
+  // Item 1 (refino): margem percentual derivada — two-way com o valor do
+  // prestador (editar % recalcula o valor; editar o valor recalcula a %).
+  const margemPercentualAtual = (() => {
+    const valorCliente = Number(data.valorCliente) || 0;
+    if (valorCliente <= 0) return 0;
+    return ((valorCliente - (Number(data.custoPrestador) || 0)) / valorCliente) * 100;
+  })();
   // SEQUÊNCIA OFICIAL — número definitivo da OS (OS-AAAAMM-1200+) vem do banco;
   // o valor gerado em emptyOS é apenas provisório enquanto a RPC responde.
   const numeroSequencialBuscado = useRef(false);
@@ -1020,6 +1027,12 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
           if (vp.placa) update("veiculoPlaca", vp.placa);
           if (vp.tipo_carga === "refrigerada" || vp.tipo_carga === "refrigerado") update("veiculoTermica", "refrigerado");
         }
+        // Item 1 (refino): valor inicial do repasse pela tabela DO PRESTADOR.
+        await aplicarTabelaPrestador(
+          record.id,
+          (veiculoPrest as { tipo_veiculo?: string | null } | null)?.tipo_veiculo ||
+            data.veiculoTipo,
+        );
         const { data: ultimaOS } = await supabase.from("ordens_servico").select("data, valor_cliente").eq("prestador", v).order("data", { ascending: false }).limit(1).maybeSingle();
         if (ultimaOS) {
           setUltimaOperacaoPrestador({ data: ultimaOS.data, valor: ultimaOS.valor_cliente });
@@ -1154,6 +1167,60 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   };
 
+  /**
+   * Item 1 (refino): puxa o valor do prestador pela TABELA DE PREÇOS do
+   * prestador selecionado (não pela tabela do cliente).
+   */
+  const aplicarTabelaPrestador = async (
+    prestadorId: string,
+    veiculoTipo?: string,
+    distanciaKmInformada?: number,
+  ): Promise<number> => {
+    if (!prestadorId) return 0;
+    const km = Number(
+      distanciaKmInformada ?? data.distanciaKm ?? data.distanciaRota?.distanciaKm ?? 0,
+    );
+    if (!Number.isFinite(km) || km <= 0) return 0;
+    const veiculo = String(veiculoTipo || data.veiculoTipo || "").trim();
+    if (!veiculo) return 0;
+
+    const enderecos = data.enderecos || [];
+    const coleta =
+      enderecos.find((e: OSEndereco) => tipoEhColeta(e.tipo) || e.tipo === "origem") || enderecos[0];
+    const entrega =
+      [...enderecos].reverse().find((e: OSEndereco) => tipoEhEntrega(e.tipo) || e.tipo === "destino") ||
+      enderecos[enderecos.length - 1];
+
+    try {
+      const { tabela } = await buscarTabelaPrestador({
+        tenant_id: tenant?.id || "",
+        cliente_id: data.clienteId || "",
+        prestador_id: prestadorId,
+        tipo_veiculo: veiculo,
+        tipo_operacao: "fracionado",
+        distancia_km: Math.ceil(km),
+        quantidade_paradas: enderecos.length || 2,
+        origem: { cidade: coleta?.cidade || "", uf: coleta?.uf || coleta?.estado || "" },
+        destino: { cidade: entrega?.cidade || "", uf: entrega?.uf || entrega?.estado || "" },
+        modo: "preview",
+        data_operacao: data.data || undefined,
+      });
+      if (!tabela || (tabela.fonte as string) === "nao_encontrada") return 0;
+
+      const base = Number(tabela.valor_minimo || 0) + Number(tabela.valor_saida || 0);
+      const kmIncluso = Number(tabela.km_incluso || 0);
+      const total = base + Math.max(0, km - kmIncluso) * Number(tabela.valor_km || 0);
+      if (total <= 0) return 0;
+
+      const valor = Number(total.toFixed(2));
+      setData((p) => ({ ...p, custoPrestador: valor, custoPrestadorEditado: false }));
+      return valor;
+    } catch (e) {
+      console.warn("[OrdemServicoForm] Tabela do prestador indisponível:", e);
+      return 0;
+    }
+  };
+
   const recalcularValores = async (distanciaKm: number, veiculoTipo: string, cliente: string) => {
     if (!veiculoTipo) return;
     const enderecoOrigem = data.enderecos?.find((e: any) => tipoEhColeta(e.tipo) || e.tipo === "origem");
@@ -1172,8 +1239,18 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       });
       if (tabela && (tabela.fonte === "tabelas_valores" || tabela.fonte === "universal")) {
         const calc = calcularPrecoRapido(tabela, distanciaKm);
-        setData(p => ({ ...p, valorCliente: calc.valorCliente, custoPrestador: calc.valorPrestador, tabelaAplicada: tabela.nome || "Tabela Padrão", faixaAplicada: calc.descricao }));
+        setData(p => ({
+          ...p,
+          valorCliente: p.valorClienteEditado ? p.valorCliente : calc.valorCliente,
+          custoPrestador: p.custoPrestadorEditado ? p.custoPrestador : calc.valorPrestador,
+          tabelaAplicada: tabela.nome || "Tabela Padrão",
+          faixaAplicada: calc.descricao,
+        }));
         setFaixaCalculada(calc.descricao);
+        // Prestador selecionado → repasse vem da tabela DO PRESTADOR.
+        if (data.prestadorId && !data.custoPrestadorEditado) {
+          await aplicarTabelaPrestador(data.prestadorId, veiculoTipo, distanciaKm);
+        }
       } else {
         console.warn("[OrdemServicoForm] Nenhuma tabela ativa encontrada para", veiculoTipo, distanciaKm);
         setFaixaCalculada("Tabela não encontrada");
@@ -1690,6 +1767,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   };
 
   const update = (field: keyof OrdemServico, value: any) => setData(p => ({ ...p, [field]: value ?? (typeof p[field] === 'number' ? 0 : '') }));
+
+  // Item 1 (refino): editar a % de margem recalcula o valor do prestador.
+  const aplicarMargemPercentual = (pct: number) => {
+    const valor = Number(data.valorCliente) || 0;
+    const pctClamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+    const custo = Number((valor * (1 - pctClamped / 100)).toFixed(2));
+    setData((p) => ({ ...p, custoPrestador: custo, custoPrestadorEditado: true }));
+  };
   const updateCarga = (field: keyof OSCarga, value: any) => {
     const cargaBase = { ...data.carga, [field]: value ?? (typeof (data.carga as any)[field] === 'number' ? 0 : '') };
     const novaCarga = aplicarCalculoPesoBidirecional(cargaBase, field);
@@ -4188,6 +4273,23 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-orange-400">R$</span>
                           </div>
                         </Field>
+                        {verReceitaMargem && (
+                          <Field label="Margem (%)">
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                readOnly={readOnly}
+                                value={Number.isFinite(margemPercentualAtual) ? Number(margemPercentualAtual.toFixed(1)) : 0}
+                                onChange={(e) => aplicarMargemPercentual(Number(e.target.value))}
+                                className="text-lg font-bold text-purple-600 pr-8"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-purple-400">%</span>
+                            </div>
+                          </Field>
+                        )}
                       </div>
                       <div className="p-4 bg-slate-50 rounded-xl border space-y-4">
                         <h4 className="text-xs font-bold uppercase text-slate-500">Adicionais e Taxas</h4>

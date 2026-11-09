@@ -19,6 +19,7 @@ import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 import { ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
 import { BadgeCadastroIncompleto } from "@/components/ui/BadgeCadastroIncompleto";
+import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
 
 interface Props {
   os: OrdemServico;
@@ -763,6 +764,16 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                 <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg bg-slate-50">
                   <FileText className="w-8 h-8 mx-auto mb-2 opacity-20"/>
                   <p className="text-sm">Nenhum documento anexado</p>
+                </div>
+              )}
+
+              {/* Comprovantes/POD reais (entregas_protocolo) — fotos/assinatura */}
+              {os.id && (
+                <div className="mt-4 border-t pt-4">
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Comprovantes (POD)
+                  </p>
+                  <EntregasComprovantes osId={os.id} numeroOs={os.numero} />
                 </div>
               )}
             </CardContent>

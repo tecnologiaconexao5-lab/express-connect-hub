@@ -1164,6 +1164,9 @@ export interface OSRow {
   notificar_destinatario?: boolean;
   eventos_tracker?: string;
   distancia_rota?: { distancia_km?: number; duracao_min?: number; distancia_texto?: string; duracao_texto?: string };
+  distancia_km?: number;
+  carga?: Record<string, unknown>;
+  tempo_estimado?: string;
   faixa_aplicada?: string;
   lucro_estimado?: number;
   margem_lucro?: number;
@@ -1360,11 +1363,37 @@ export const toOSUpdate = (form: Partial<OSForm>): Record<string, any> => {
   return payload;
 };
 
+/**
+ * Distância (km) da OS — prioriza a coluna dedicada e cai para
+ * `distancia_rota`, `carga.distancia_km` e (OS antigas) o texto das
+ * observações ("Distância estimada: 22.6 km").
+ */
+const extrairDistanciaKmOS = (item: OSRow): number => {
+  const candidatos = [
+    Number(item.distancia_km),
+    Number(item.distancia_rota?.distancia_km),
+    Number(item.carga?.distancia_km),
+  ];
+  for (const n of candidatos) {
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const match = String(item.observacoes_gerais || "").match(
+    /Dist[âa]ncia estimada:\s*([\d.,]+)\s*km/i,
+  );
+  if (match) {
+    const n = Number(match[1].replace(",", "."));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+};
+
 export const fromOSRow = (item: OSRow): OSForm => ({
   id: item.id,
   numero: item.numero || "",
   data: item.data || new Date().toISOString().split("T")[0],
   createdAt: item.created_at,
+  distanciaKm: extrairDistanciaKmOS(item),
+  tempoEstimado: item.tempo_estimado || item.distancia_rota?.duracao_texto || "",
   cliente: item.cliente || "",
   clienteId: item.cliente_id || undefined,
   unidade: item.unidade || "",

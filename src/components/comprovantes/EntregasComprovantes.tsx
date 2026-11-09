@@ -197,6 +197,38 @@ export default function EntregasComprovantes({ osId, numeroOs }: EntregasComprov
                 </div>
               </div>
 
+              {/* Evidências do POD — foto, canhoto e assinatura (render direto) */}
+              {(entrega.foto_entrega_url || entrega.foto_canhoto_url || entrega.assinatura_url) && (
+                <div className="flex flex-wrap gap-2 px-4 pb-3">
+                  {[
+                    { url: entrega.foto_entrega_url, label: "Foto da entrega" },
+                    { url: entrega.foto_canhoto_url, label: "Canhoto" },
+                    { url: entrega.assinatura_url, label: "Assinatura" },
+                  ]
+                    .filter((m) => Boolean(m.url))
+                    .map((m) => (
+                      <a
+                        key={m.label}
+                        href={m.url!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group relative block overflow-hidden rounded-lg border border-slate-200 bg-white"
+                        title={`Abrir ${m.label}`}
+                      >
+                        <img
+                          src={m.url!}
+                          alt={m.label}
+                          loading="lazy"
+                          className="h-24 w-32 object-cover transition group-hover:opacity-90"
+                        />
+                        <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                          {m.label}
+                        </span>
+                      </a>
+                    ))}
+                </div>
+              )}
+
               {/* Volumes — apenas quando existirem de verdade */}
               {(entrega.volume_previsto != null || entrega.volume_entregue != null) && (
                 <div className="flex items-center gap-2 px-4 pb-2">
