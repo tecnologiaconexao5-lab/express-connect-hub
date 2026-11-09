@@ -853,7 +853,7 @@ export default function CotacaoExpress() {
                               htmlFor={`cot-vol-${idx}-peso`}
                               className="text-xs font-semibold text-slate-600"
                             >
-                              Peso por item (kg) — opcional
+                              Peso de CADA item (kg) — opcional
                             </Label>
                             <Input
                               id={`cot-vol-${idx}-peso`}
@@ -861,7 +861,7 @@ export default function CotacaoExpress() {
                               min={0}
                               inputMode="decimal"
                               className="h-12 rounded-xl text-base"
-                              placeholder="Ex.: 5"
+                              placeholder="Ex.: 5 (× Qtd)"
                               value={vol.peso}
                               onChange={(e) => trocarVolume(idx, "peso", e.target.value)}
                             />

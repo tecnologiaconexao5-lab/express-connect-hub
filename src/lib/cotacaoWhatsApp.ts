@@ -39,7 +39,7 @@ export function montarMensagemConfirmacaoCotacao(cotacao: CotacaoPublica): strin
     "Olá, fiz uma cotação no sistema e quero formalizar o meu pedido:",
     "",
     `👤 *Nome:* ${cotacao.nome_cliente || "A confirmar"}`,
-    `📱 *Telefone:* ${cotacao.telefone || "A confirmar"}`,
+    `📞 *Telefone:* ${cotacao.telefone || "A confirmar"}`,
     `🚚 *Veículo:* ${veiculo}`,
     `💰 *Valor:* R$ ${formatarMoeda(valor)}`,
     `📅 *Data:* ${formatarData(cotacao.data_desejada)}`,

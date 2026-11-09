@@ -21,10 +21,19 @@ describe("A) Proposta comercial em PDF", () => {
   it("A.2 documento usa a identidade institucional da Conexão Express", () => {
     expect(pdf).toContain("empresaConfig.razaoSocial");
     expect(pdf).toContain("PROPOSTA COMERCIAL");
-    expect(pdf).toContain("drawCoverPage");
+    expect(pdf).toContain("drawContentHeader");
     expect(pdf).toContain("doc.save(");
     expect(pdf.toLowerCase()).not.toContain("diego");
     expect(pdf.toLowerCase()).not.toContain("balbino");
+  });
+
+  it("A.5 sem capa: página 1 inicia com o conteúdo logo abaixo do cabeçalho", () => {
+    expect(pdf).not.toContain("drawCoverPage");
+    expect(pdf).toContain("loadLogo");
+    const headerIdx = pdf.indexOf("drawHeader();");
+    const firstAddPage = pdf.indexOf("doc.addPage()");
+    expect(headerIdx).toBeGreaterThan(-1);
+    expect(firstAddPage).toBeGreaterThan(headerIdx);
   });
 
   it("A.3 PDF respeita a marca e destaca veículo + valor", () => {
@@ -47,9 +56,9 @@ describe("A) Proposta comercial em PDF", () => {
 });
 
 describe("D) Revisão 2026-11-08 — e-mail comercial, nº numérico, ordem e card removido", () => {
-  it("D.1 capa da proposta usa exclusivamente comercial@conexaoexpress.com.br", () => {
+  it("D.1 conteúdo da proposta usa exclusivamente comercial@conexaoexpress.com.br", () => {
     expect(pdf).toContain("comercial@conexaoexpress.com.br");
-    expect(pdf).toContain("emailContato: EMAIL_CONTATO_PROPOSTA");
+    expect(pdf).toContain("value: EMAIL_CONTATO_PROPOSTA");
     expect(pdf).not.toContain("empresaConfig.email");
   });
 

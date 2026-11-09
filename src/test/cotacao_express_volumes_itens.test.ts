@@ -100,12 +100,12 @@ describe("C) CotacaoExpress — etapa 4 lista dinâmica de itens/volumes", () =>
     expect(fase1).toContain('id={`cot-vol-${idx}-qtd`}');
   });
 
-  it("C.2 — cada item tem Quantidade, Altura, Largura, Profundidade e Peso por item (opcional)", () => {
+  it("C.2 — cada item tem Quantidade, Peso de CADA item, Altura, Largura e Profundidade", () => {
     expect(fase1).toContain("Quantidade");
     expect(fase1).toContain("Altura (cm)");
     expect(fase1).toContain("Largura (cm)");
     expect(fase1).toContain("Prof. (cm)");
-    expect(fase1).toContain("Peso por item (kg) — opcional");
+    expect(fase1).toContain("Peso de CADA item (kg) — opcional");
     expect(fase1).toContain("Item / volume");
   });
 

@@ -5,7 +5,7 @@
 // ============================================================
 import { jsPDF } from "jspdf";
 import {
-  drawCoverPage,
+  loadLogo,
   drawContentHeader,
   drawCorporateTable,
   drawSectionTitle,
@@ -83,20 +83,10 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   );
 
-  // ===================== CAPA CORPORATIVA =====================
-  const logo = await drawCoverPage(doc, {
-    documentType: "PROPOSTA COMERCIAL",
-    documentNumber: numero,
-    entityName: input.nomeCliente || "Cliente",
-    entitySubtitle: "Transporte de cargas",
-    status: "COTAÇÃO INSTANTÂNEA",
-    date: emissao,
-    via: "Cliente",
-    emailContato: EMAIL_CONTATO_PROPOSTA,
-  });
-
-  // ===================== CONTEÚDO =====================
-  doc.addPage();
+  // ===================== PÁGINA 1 (sem capa) =====================
+  // O conteúdo começa logo abaixo do cabeçalho — sem página de capa e
+  // sem quebra de página inicial (evita a página 1 quase em branco).
+  const logo = await loadLogo();
 
   const drawHeader = () => {
     drawContentHeader(doc, page.pageWidth, page.margin, logo, {
@@ -117,6 +107,7 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
     { label: "Emissão", value: emissao },
     { label: "Validade", value: `${validade} (7 dias)` },
     { label: "Referência", value: numero },
+    { label: "E-mail comercial", value: EMAIL_CONTATO_PROPOSTA },
     {
       label: "Agendamento",
       value:

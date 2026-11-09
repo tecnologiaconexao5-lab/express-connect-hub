@@ -64,7 +64,7 @@ describe("A) Mensagem de confirmação do pedido", () => {
         "Olá, fiz uma cotação no sistema e quero formalizar o meu pedido:",
         "",
         "👤 *Nome:* Maria Silva",
-        "📱 *Telefone:* (11) 98888-7777",
+        "📞 *Telefone:* (11) 98888-7777",
         "🚚 *Veículo:* Fiorino",
         "💰 *Valor:* R$ 1.234,50",
         "📅 *Data:* 15/11/2026",

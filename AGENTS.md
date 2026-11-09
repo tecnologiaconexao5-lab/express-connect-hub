@@ -1,5 +1,29 @@
 # Summary
 
+## MISSÃO POS-DEPLOY-PDF-PESO-WHATSAPP — Peso por item, página 1 do PDF sem capa e ícone 📞 no WhatsApp (2026-11-08)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros (6 ficheiros) · testes alvo **114/114** (proposta 9 + volumes 13 + whatsapp 3 + fluxo 72 + pdf_guards 17) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata (19/45 menos o flaky `fin_prog05c3b` que passou nesta run) · **2662 pass** (2660 + 1 novo A.5 + 1 flaky recuperado) · `npm run build` ok (51,34s).
+
+### O que mudou (3 bugs pós-deploy)
+1. **BUG 1 — campo de peso explícito (`src/pages/CotacaoExpress.tsx`)** — label → **"Peso de CADA item (kg) — opcional"** (id `cot-peso` mantido); placeholder → **"Ex.: 5 (× Qtd)"**. Esclarece que o peso é **por item** e a multiplicação é por Quantidade (o hint "soma dos itens preenche automaticamente" já existia na etapa 3).
+2. **BUG 2 — página 1 do PDF da proposta quase em branco (`src/lib/cotacaoPdf.ts`)** — **capa removida**: saiu o bloco `drawCoverPage` + `doc.addPage()` iniciais; `gerarPropostaCotacaoPDF` agora começa `const logo = await loadLogo();` e o conteúdo (IDENTIFICAÇÃO + ROTA + …) renderiza **na página 1 logo abaixo do `drawHeader()`** (guarda de page-break mantida). Import `drawCoverPage` → `loadLogo` de `@/lib/pdf/foundation` (`drawCoverPage` mantido no foundation para outros PDFs). O **e-mail comercial continua visível**: nova linha `{ label: "E-mail comercial", value: EMAIL_CONTATO_PROPOSTA }` no bloco IDENTIFICAÇÃO (antes só aparecia no card removido da capa).
+3. **BUG 3 — ícone quebrado na mensagem WhatsApp (`src/lib/cotacaoWhatsApp.ts`)** — `📱 *Telefone:*` → **`📞 *Telefone:*`** (o `📱` tofu/quebrado em builds antigos). `encodeURIComponent` na URL `wa.me` **já existia desde o commit inicial** (`0240a2d`) — sem alteração; se o QA ainda vir tofu, a hipótese restante é **build deployed antigo → redeploy Vercel**.
+
+### Testes
+- `cotacao_proposta_pdf.test.ts` 8 → **9**: A.2 `drawCoverPage` → `drawContentHeader`; **NOVO A.5** ("sem capa: página 1 inicia com o conteúdo logo abaixo do cabeçalho" — `not.toContain("drawCoverPage")`, `toContain("loadLogo")`, `indexOf("drawHeader();")` < `indexOf("doc.addPage()")`); D.1 → `toContain("value: EMAIL_CONTATO_PROPOSTA")`.
+- `cotacao_whatsapp_confirmacao.test.ts` A.1: `📱` → `📞 *Telefone:* (11) 98888-7777`.
+- `cotacao_express_volumes_itens.test.ts` C.2: assert → `"Peso de CADA item (kg) — opcional"` + título atualizado.
+
+### Arquivos
+- `src/lib/cotacaoPdf.ts` (capa removida, `loadLogo`, e-mail comercial) · `src/lib/cotacaoWhatsApp.ts` (📞) · `src/pages/CotacaoExpress.tsx` (label/placeholder) · `src/test/cotacao_proposta_pdf.test.ts` (A.2/A.5/D.1) · `src/test/cotacao_whatsapp_confirmacao.test.ts` (A.1) · `src/test/cotacao_express_volumes_itens.test.ts` (C.2) · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel — sem redeploy o QA continua vendo o build antigo (PDF com capa/etiqueta de peso antiga/emoji tofu).
+2. (QA) `/cotacao-express`: etapa 3 com label/placeholder novos; `/comercial?tab=propostas` → gerar PDF → **página 1 começa no conteúdo** (sem capa), com "E-mail comercial: comercial@conexaoexpress.com.br" na IDENTIFICAÇÃO; template WhatsApp com `📞 *Telefone:*`.
+3. (autorização) Commit git dos 6 ficheiros desta missão.
+
+---
+
 ## MISSÃO PROPOSTA-PDF-REVISAO — E-mail comercial, nº numérico, ordem das seções e card do emissor removido (2026-11-08)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros · ESLint 0 erros novos (6 `no-explicit-any`/`prefer-const` baseline em `foundation.ts`, fora das linhas alteradas) · teste **8/8** (+4 novos D.1–D.4) · regressão `cotacao_express_fluxo` **72/72** + `e2e_completo_05_pdf_guards` **17/17** · suíte completa **19 ficheiros / 45 testes falhos** = baseline + 1 flaky (`fin_prog05c3b` **5/5 isolado** ✓) · **2660 pass** (2657 + 4 novos − 1 flaky) · `npm run build` ok (40,76s).
