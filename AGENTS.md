@@ -1,5 +1,37 @@
 # Summary
 
+## MISSÃO REFINO-PDF-401 — Correção do erro cotação→OS (função de numeração ausente) e ajustes do cabeçalho do PDF (2026-11-09)
+
+**Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **29/29** (proposta 14 + rpc_fix 4 + lote2 11) · suíte completa **18 ficheiros / 44 testes falhos** = baseline exata · **2702 pass** (+7) · `npm run build` ok (46,54s) · migration **aplicada em produção** (dry-run **7/7** → `--apply` **7/7** + `--check` **7/7**).
+
+### Causa raiz do erro na conversão ("Não foi possível abrir a OS agora" + 401)
+- A RPC **`f_cotacao_detalhes_para_os`** (Lote 1) chama **`public.f_proximo_numero_os()`**.
+- A migration **`20261102000000_os_numero_sequencial.sql`** — que cria a `sequence os_numero_seq` + essa função — **nunca foi aplicada em produção**.
+- Sem a função, a RPC caía no `EXCEPTION` e devolvia erro; o browser ainda registava 401s de requests concorrentes. **O RLS não era o bloqueio** (a RPC é `SECURITY DEFINER` e os grants `anon` estavam corretos).
+
+### O que mudou
+1. **FIX 401 (banco)** — NOVA `supabase/migrations/20261109020000_fix_f_proximo_numero_os.sql` cria **apenas** `os_numero_seq` (START 1200) + `f_proximo_numero_os()` (idempotente), **sem** reescrever a RPC do Lote 1 (não regride fuso/cliente/endereço/status). `scripts/_apply_fix_f_proximo_numero_os.cjs` (dry-run/`--apply`/`--check`) prova sequence, função, grants e as correções do Lote 1.
+2. **PDF — logo 2× (`foundation.ts`)** — no tema dark (`theme: "dark"`) o logo passa de **10mm → 20mm** e a faixa de **25mm → 30mm** (light inalterado).
+3. **PDF — sem nº de página na faixa** — no tema dark o "Página N" não é desenhado (o rodapé do `drawCorporateTable` continua a numerar).
+4. **PDF — CNPJ** — `ContentHeaderOptions.showCnpj` imprime `CNPJ: 31.227.975/0001-80` logo abaixo de "Conexão Express Transportes LTDA"; `cotacaoPdf.ts` passa `showCnpj: true`. O `y` do conteúdo passou a usar o retorno de `drawHeader()`.
+
+### Testes/validação
+- **NOVO** `src/test/cotacao_os_rpc_fix_401.test.ts` (4 casos: sequence/função, SECURITY DEFINER, não-regressão do Lote 1 e script de aplicação).
+- `src/test/cotacao_proposta_pdf.test.ts` +3 (E.3 logo 2×, E.4 página fora da faixa, E.5 CNPJ).
+- `npx vitest run` (3 alvos) → **29/29**; suíte completa → **18/44** baseline · **2702 pass**.
+- Prova funcional em transação (role `anon`): a RPC criou a OS (`OS-202611-1200`), status `em_analise`, cliente `Ferreira Teste 401`, endereços desmembrados. A sequence **não foi consumida** em produção (permanece pronta para começar em 1200).
+
+### Arquivos
+- `supabase/migrations/20261109020000_fix_f_proximo_numero_os.sql` (NOVA, APLICADA) · `scripts/_apply_fix_f_proximo_numero_os.cjs` (NOVO)
+- `src/lib/pdf/foundation.ts` · `src/lib/cotacaoPdf.ts` · `src/test/cotacao_proposta_pdf.test.ts` · `src/test/cotacao_os_rpc_fix_401.test.ts` (NOVO) · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (bundle antigo continua a falhar até ao deploy).
+2. (QA) Reenviar os dados da rota da cotação → deve criar a OS (1ª = `OS-AAAAMM-1200`); PDF com logo 2×, sem nº na faixa azul e com CNPJ abaixo do nome.
+3. (autorização) Commit/push dos ficheiros desta missão.
+
+---
+
 ## MISSÃO LOTE-2-INTELIGENCIA-OPERACIONAL — Rota com endereço completo, farol de SLA 20/40 min, repasse opcional e alerta de nova OS (2026-11-09)
 
 **Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **68/68** (lote2 11 + leads 26 + sla 11 + refino 20) · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga — **5/5 isolado**) · **2695 pass** (+16) · `npm run build` ok (47,19s). **Sem migration** (`ordens_servico` não está na publicação realtime → alerta por polling).

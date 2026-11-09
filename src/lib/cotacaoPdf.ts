@@ -88,19 +88,18 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
   // sem quebra de página inicial (evita a página 1 quase em branco).
   const logo = await loadLogo();
 
-  const drawHeader = () => {
+  const drawHeader = () =>
     drawContentHeader(doc, page.pageWidth, page.margin, logo, {
       title: `PROPOSTA COMERCIAL — ${numero}`,
       subtitle: `Emitida por ${empresaConfig.razaoSocial}`,
       // Fundo azul-marinho da marca: o logo oficial é branco e precisa
-      // de contraste (textos da faixa em branco).
+      // de contraste (textos da faixa em branco). O CNPJ entra logo
+      // abaixo do nome da empresa.
       theme: "dark",
+      showCnpj: true,
     });
-  };
 
-  drawHeader();
-
-  let y = 35;
+  let y = drawHeader();
 
   // --- Dados da proposta ---
   y = drawSectionTitle(doc, page.margin, y, "DADOS DA PROPOSTA", page);
@@ -123,8 +122,7 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
   // --- Carga (antes da rota, conforme pedido) ---
   if (y > 235) {
     doc.addPage();
-    drawHeader();
-    y = 35;
+    y = drawHeader();
   }
 
   y = drawSectionTitle(doc, page.margin, y, "DADOS DA CARGA", page);
@@ -155,8 +153,7 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
 
   if (y > 225) {
     doc.addPage();
-    drawHeader();
-    y = 35;
+    y = drawHeader();
   }
 
   // --- Veículo em destaque ---
@@ -194,8 +191,7 @@ export async function gerarPropostaCotacaoPDF(input: CotacaoPropostaPdfInput): P
   // --- Valor em destaque ---
   if (y > 210) {
     doc.addPage();
-    drawHeader();
-    y = 35;
+    y = drawHeader();
   }
 
   y = drawSectionTitle(doc, page.margin, y, "VALOR DA PROPOSTA", page);

@@ -93,4 +93,19 @@ describe("E) LOTE 1 — faixa superior azul escuro com logo branco", () => {
   it("E.2 a proposta comercial ativa o tema dark (logo branco visível)", () => {
     expect(pdf).toContain('theme: "dark"');
   });
+
+  it("E.3 logótipo no DOBRO do tamanho no tema dark (10mm → 20mm)", () => {
+    expect(foundation).toContain("let logoH = dark ? 20 : 10;");
+  });
+
+  it("E.4 número da página removido da faixa azul (só no tema claro)", () => {
+    expect(foundation).toContain("if (!dark) {");
+    expect(foundation).toContain("Página ${pageNum}");
+  });
+
+  it("E.5 CNPJ abaixo do nome da empresa no cabeçalho", () => {
+    expect(foundation).toContain("showCnpj?: boolean");
+    expect(foundation).toContain("CNPJ: ${empresaConfig.cnpj}");
+    expect(pdf).toContain("showCnpj: true");
+  });
 });

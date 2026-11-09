@@ -243,6 +243,8 @@ export interface ContentHeaderOptions {
   pageLabel?: string;
   /** "dark" aplica a faixa azul-marinho da marca (logo branco visível). */
   theme?: "light" | "dark";
+  /** Tema dark: imprime o CNPJ abaixo do nome da empresa. */
+  showCnpj?: boolean;
 }
 
 /**
@@ -256,9 +258,11 @@ export function drawContentHeader(
   logo: PdfLogo | null,
   opts: ContentHeaderOptions
 ): number {
-  const headerH = 25;
-  const pageNum = doc.getNumberOfPages();
   const dark = opts.theme === "dark";
+  // No tema dark (proposta comercial) a faixa é mais alta para caber o logo
+  // no DOBRO do tamanho e a linha do CNPJ.
+  const headerH = dark ? 30 : 25;
+  const pageNum = doc.getNumberOfPages();
 
   // Fundo: branco (padrão) ou azul-marinho da marca (tema dark).
   if (dark) {
@@ -271,13 +275,19 @@ export function drawContentHeader(
   doc.setLineWidth(0.8);
   doc.line(margin, headerH, pageWidth - margin, headerH);
 
-  // Logo pequeno à esquerda
+  // Logo à esquerda — DOBRO do tamanho no tema dark (10mm → 20mm).
   if (logo) {
     const ratio = logo.naturalWidth / logo.naturalHeight;
-    const logoH = 10;
-    const logoW = logoH * ratio;
+    let logoH = dark ? 20 : 10;
+    let logoW = logoH * ratio;
+    const maxLogoW = dark ? 70 : Number.POSITIVE_INFINITY;
+    if (logoW > maxLogoW) {
+      logoW = maxLogoW;
+      logoH = logoW / ratio;
+    }
+    const logoY = dark ? (headerH - logoH) / 2 : 4;
     try {
-      doc.addImage(logo.base64, "PNG", margin, 4, logoW, logoH, undefined, "FAST");
+      doc.addImage(logo.base64, "PNG", margin, logoY, logoW, logoH, undefined, "FAST");
     } catch {
       /* ignora */
     }
@@ -289,7 +299,7 @@ export function drawContentHeader(
       dark ? WHITE[1] : NAVY[1],
       dark ? WHITE[2] : NAVY[2]
     );
-    doc.text("CONEXÃO EXPRESS", margin, 12);
+    doc.text("CONEXÃO EXPRESS", margin, dark ? headerH / 2 + 3 : 12);
   }
 
   // Título à direita
@@ -301,7 +311,7 @@ export function drawContentHeader(
     dark ? WHITE[1] : NAVY[1],
     dark ? WHITE[2] : NAVY[2]
   );
-  doc.text(opts.title, rightX, 10, { align: "right" });
+  doc.text(opts.title, rightX, dark ? 11 : 10, { align: "right" });
 
   if (opts.subtitle) {
     doc.setFontSize(7);
@@ -311,19 +321,25 @@ export function drawContentHeader(
       dark ? 225 : TEXT_BODY[1],
       dark ? 235 : TEXT_BODY[2]
     );
-    doc.text(opts.subtitle, rightX, 16, { align: "right" });
+    doc.text(opts.subtitle, rightX, dark ? 17 : 16, { align: "right" });
   }
 
-  // Número da página
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(
-    dark ? 190 : TEXT_MUTED[0],
-    dark ? 200 : TEXT_MUTED[1],
-    dark ? 215 : TEXT_MUTED[2]
-  );
-  const pageText = opts.pageLabel ? `${opts.pageLabel} — Pág. ${pageNum}` : `Página ${pageNum}`;
-  doc.text(pageText, rightX, 21, { align: "right" });
+  // CNPJ logo abaixo do nome da empresa (tema dark).
+  if (dark && opts.showCnpj) {
+    doc.setFontSize(6.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(190, 200, 215);
+    doc.text(`CNPJ: ${empresaConfig.cnpj}`, rightX, 23, { align: "right" });
+  }
+
+  // Número da página: removido da faixa dark (o rodapé já numera).
+  if (!dark) {
+    doc.setFontSize(6.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+    const pageText = opts.pageLabel ? `${opts.pageLabel} — Pág. ${pageNum}` : `Página ${pageNum}`;
+    doc.text(pageText, rightX, 21, { align: "right" });
+  }
 
   return headerH + 8;
 }
