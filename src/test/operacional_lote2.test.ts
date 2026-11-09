@@ -102,7 +102,7 @@ describe("4) Alerta de nova OS (polling curto)", () => {
   it("4.1 hook consulta ordens_servico e exibe toast", () => {
     expect(hookSrc).toContain("setInterval");
     expect(hookSrc).toContain('from("ordens_servico")');
-    expect(hookSrc).toContain("Nova OS recebida");
+    expect(hookSrc).toContain("Nova Ordem de Serviço");
     expect(hookSrc).toContain("avisadosRef");
     expect(hookSrc).toContain("intervaloMs");
   });

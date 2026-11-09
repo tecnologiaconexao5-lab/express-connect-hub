@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { OrdemServico, obterStatusGlobalOS } from "./osTypes";
 import { STATUS_GLOBAL_INFO, obterClasseBadgeGlobal, STATUS_FILTRO_OPCOES } from "./statusGlobal";
 import { obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
-import OrdemServicoForm from "./OrdemServicoForm";
+import OrdemServicoForm, { limparRascunhoNovaOS } from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
 import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes";
 import RastreamentoOSDialog from "@/components/operacao/RastreamentoOSDialog";
@@ -141,6 +141,8 @@ const OrdensServicoLista = () => {
 
   useEffect(() => {
     if (searchParams.get("action") === "novo") {
+      setOsSelecionada(null);
+      limparRascunhoNovaOS();
       setModoForm("novo");
       searchParams.delete("action");
       setSearchParams(searchParams, { replace: true });
@@ -675,6 +677,7 @@ const OrdensServicoLista = () => {
   if (modoForm) {
     return (
       <OrdemServicoForm
+        key={`${modoForm}-${osSelecionada?.id || "novo"}`}
         os={osSelecionada || undefined}
         modo={modoForm}
         onVoltar={() => { setModoForm(null); setOsSelecionada(null); fetchOrdens(); }}
@@ -694,7 +697,15 @@ const OrdensServicoLista = () => {
           <Button variant="outline" onClick={() => setShowFiltros(!showFiltros)} className={showFiltros ? "bg-muted" : ""}>
             <Filter className="w-4 h-4 mr-1" /> Filtros
           </Button>
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setModoForm("novo")}>
+          <Button
+            className="bg-orange-500 hover:bg-orange-600 text-white"
+            onClick={() => {
+              // Isola a nova criação: sem OS anterior e sem rascunho antigo.
+              setOsSelecionada(null);
+              limparRascunhoNovaOS();
+              setModoForm("novo");
+            }}
+          >
             <Plus className="w-4 h-4 mr-1" /> Nova OS
           </Button>
         </div>

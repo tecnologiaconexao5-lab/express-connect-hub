@@ -35,6 +35,28 @@ const DISTANCIA_MINIMA_PEDAGIO_KM = 40;
 // Distância média entre praças em rodovias (km) usada para estimar a quantidade.
 const KM_ENTRE_PRACAS = 45;
 
+/** Normaliza o tipo de veículo (aceita snake_case e os labels do catálogo). */
+const normalizarVeiculo = (valor?: string | null): string => {
+  const chave = String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const alias: Record<string, string> = {
+    veiculo_de_passeio: "carro_passeio",
+    passeio: "carro_passeio",
+    carro: "carro_passeio",
+    carro_passeio: "carro_passeio",
+    "3_4": "tres_quartos",
+    tres_quartos: "tres_quartos",
+    van_hr: "hr",
+    hr: "hr",
+    caminhao: "truck",
+  };
+  return alias[chave] || chave;
+};
+
 export interface EstimativaPedagio {
   /** Valor estimado do pedágio (R$). 0 quando não estimável. */
   valor: number;
@@ -54,7 +76,8 @@ export function estimarPedagio(
   distanciaKm: number,
   veiculoTipo?: string | null,
 ): EstimativaPedagio {
-  const eixos = veiculoTipo ? EIXOS_POR_VEICULO[veiculoTipo] : undefined;
+  const chave = normalizarVeiculo(veiculoTipo);
+  const eixos = chave ? EIXOS_POR_VEICULO[chave] : undefined;
   if (!eixos) {
     return { valor: 0, eixos: 0, pracas: 0, tarifaPorPraca: 0 };
   }

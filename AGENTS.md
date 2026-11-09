@@ -1,5 +1,32 @@
 # Summary
 
+## MISSÃO CORRECAO2-PEDAGIO-ROTAS-WHATSAPP-TELEMETRIA — Pedágio/rotas, negrito WhatsApp, telemetria/toast e isolamento da Nova OS (2026-11-09)
+
+**Status:** ✅ Concluída (código + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **70/70** · regressão **254/254** · suíte completa **18 ficheiros / 44 testes falhos** = baseline (+1 flaky `fin_prog05c3b` sob carga) · **2738 pass** · `npm run build` ok (2m27s).
+
+### O que mudou
+1. **Pedágio (`pedagioEstimativa` + `OrdemServicoForm`)** — normalização do tipo de veículo (snake_case e labels, ex.: "Veículo de Passeio" → 2 eixos); rota urbana de **16 km não cobra** pedágio; valor da API é validado por **R$/km** (2,5 leve · 4 até 3 eixos · 8 ≥5 eixos) e **ignorado com aviso** quando irreal (ex.: R$ 567/16 km). Valor manual continua soberano.
+2. **Seletor de rotas (`OrdemServicoForm`)** — `handleTrocarRota` agora **força o recálculo** (`recalcularValores(..., { forcar: true })`) e actualiza distância/tempo/valor na UI ao trocar "Rápida/Curta/Operacional"; seletor desabilitado com hint quando não há alternativas.
+3. **WhatsApp (`osWhatsAppMessage`)** — identificadores em negrito WhatsApp: **`*【 1 】 RET*`**, **`*【 2 】 ENT*`** e **`*ATENÇÃO:*`** (T1 e T2), mantendo os emojis da marca (🟣 RET · 🟠 ENT · ⚠️ atenção · ícone por veículo).
+4. **Telemetria (`RastreamentoOSDialog`)** — `bateria = 0/ausente` → **"Não informada"** (nunca "0%"); `gpsState` calculado pela **idade real** do último ponto (`atualizado` ≤2 min · `antigo` ≤15 min · `muito_antigo`); status lido de `metadata.status_operacional` e humanizado (`em_deslocamento` → "Em deslocamento").
+5. **Toast global (`useNovaOSAlerta`)** — polling 25s comparando **IDs** (boot 40 / ciclo 20) para não perder OS no mesmo segundo; toast **`🆕 Nova Ordem de Serviço`** (60s, ação "Abrir OS"), montado no `AppLayout`.
+6. **Isolamento da Nova OS (`OrdemServicoForm` + `OrdensServicoLista`)** — `limparRascunhoNovaOS()` limpa `tms_os_draft_v1:nova:novo`; o botão "Nova OS" e o deep-link `?action=novo` limpam `osSelecionada` + rascunho; `key` no formulário força remount. Fim do vazamento de observações/paradas/pedágio entre OS.
+
+### Testes/validação
+- **NOVO** `src/test/correcao2_pedagio_rotas_whatsapp_telemetria.test.ts` (15 casos).
+- Atualizados: `fix_autocomplete_whatsapp.test.ts` (T1 em negrito), `operacional_lote2.test.ts` (título do toast).
+- `npx vitest run` (17 alvos) → **254/254**; suíte completa → **18/44** baseline (+1 flaky `fin_prog05c3b`) · **2738 pass**; `npm run build` ok.
+
+### Arquivos
+- `src/lib/pedagioEstimativa.ts` · `src/lib/osWhatsAppMessage.ts` · `src/components/operacao/OrdemServicoForm.tsx` · `src/components/operacao/OrdensServicoLista.tsx` · `src/components/operacao/RastreamentoOSDialog.tsx` · `src/hooks/useNovaOSAlerta.ts`
+- `src/test/correcao2_pedagio_rotas_whatsapp_telemetria.test.ts` (NOVO) · `src/test/fix_autocomplete_whatsapp.test.ts` · `src/test/operacional_lote2.test.ts` · `AGENTS.md`
+
+### Pendências
+1. (deploy) Republicar na Vercel (push).
+2. (QA) Trocar rotas e conferir distância/tempo/valor; pedágio urbano/leve/moto; WhatsApp com negrito; bateria/GPS do App; toast global de nova OS; criar Nova OS sem dados da anterior.
+
+---
+
 ## MISSÃO REFINO-OS-DADOS — Composição two-way, POD visível, rastreamento real, distância e observações limpas (2026-11-09)
 
 **Status:** ✅ Concluída (código + banco + testes). `npx tsc --noEmit` 0 erros nos ficheiros da missão · ESLint sem erros novos (baseline `no-explicit-any` intacto) · testes alvo **128/128** (refino_os 11 + POD 50 + lote2 11 + refino 22 + os_pdf 5 + nova_os 29) · suíte completa **18 ficheiros / 44 testes falhos** = baseline · **2724 pass** · `npm run build` ok (7m41s) · migration aplicada em produção (dry-run **5/5** → `--apply` **5/5**).

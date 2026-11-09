@@ -40,6 +40,19 @@ interface Telemetria {
   atualizadoEm: string | null;
 }
 
+/** Rótulos operacionais enviados pelo App (metadata.status_operacional). */
+const STATUS_OPERACIONAL_LABEL: Record<string, string> = {
+  em_deslocamento: "Em deslocamento",
+  em_coleta: "Em coleta",
+  na_coleta: "Na coleta",
+  em_entrega: "Em entrega",
+  na_entrega: "Na entrega",
+  parado: "Parado",
+  ocorrencia: "Ocorrência",
+  finalizado: "Finalizado",
+  online: "Online",
+};
+
 /**
  * LOTE 2 — Rastreamento real da OS.
  * Lê a telemetria que o App envia para `portal_tracking_realtime`
@@ -123,12 +136,40 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
     posicao?.velocidade != null && Number.isFinite(posicao.velocidade)
       ? posicao.velocidade * 3.6
       : null;
+  // Bateria 0/ausente = NÃO informada pelo App (não exibir "0%").
   const bateriaPct =
-    posicao?.bateria != null
+    posicao?.bateria != null && posicao.bateria > 0
       ? posicao.bateria <= 1
         ? posicao.bateria * 100
         : posicao.bateria
       : null;
+
+  // GPS: classifica pela idade real do último ponto (não pela origem).
+  const minutosGps =
+    posicao?.atualizadoEm != null
+      ? Math.max(0, Math.floor((Date.now() - new Date(posicao.atualizadoEm).getTime()) / 60000))
+      : null;
+  const gpsState: "atualizado" | "antigo" | "muito_antigo" | "sem_rastreamento" =
+    minutosGps == null
+      ? "sem_rastreamento"
+      : minutosGps <= 2
+        ? "atualizado"
+        : minutosGps <= 15
+          ? "antigo"
+          : "muito_antigo";
+  const gpsLabel =
+    gpsState === "atualizado"
+      ? "GPS OK"
+      : gpsState === "antigo"
+        ? "GPS desatualizado"
+        : gpsState === "muito_antigo"
+          ? "GPS muito antigo"
+          : "Sem GPS";
+  const statusLabel =
+    STATUS_OPERACIONAL_LABEL[String(posicao?.statusOperacional || posicao?.status || "")] ||
+    posicao?.statusOperacional ||
+    posicao?.status ||
+    "online";
 
   const localizacao: MapLocation | null = posicao
     ? {
@@ -143,8 +184,8 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
         bateria: bateriaPct ?? undefined,
         lastLocationAt: posicao.atualizadoEm || undefined,
         osNumero: os?.numero || undefined,
-        currentStage: posicao.statusOperacional || posicao.status || undefined,
-        gpsState: posicao.origem || undefined,
+        currentStage: statusLabel,
+        gpsState,
       }
     : null;
 
@@ -208,8 +249,27 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
                   <Battery className="h-3 w-3" /> Bateria
                 </p>
                 <p className="mt-1 text-sm font-bold text-slate-800">
-                  {bateriaPct != null ? `${bateriaPct.toFixed(0)}%` : "—"}
+                  {bateriaPct != null ? `${bateriaPct.toFixed(0)}%` : "Não informada"}
                 </p>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-400">
+                  <Satellite className="h-3 w-3" /> GPS
+                </p>
+                <p className={`mt-1 text-sm font-bold ${
+                  gpsState === "atualizado"
+                    ? "text-emerald-600"
+                    : gpsState === "antigo"
+                      ? "text-amber-600"
+                      : "text-rose-600"
+                }`}>
+                  {gpsLabel}
+                </p>
+                {minutosGps != null && (
+                  <p className="text-[10px] text-slate-500">
+                    há {minutosGps < 60 ? `${minutosGps} min` : `${Math.floor(minutosGps / 60)}h`}
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border bg-slate-50 p-3">
                 <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-slate-400">
@@ -222,7 +282,7 @@ export default function RastreamentoOSDialog({ open, onOpenChange, os }: Props) 
               <div className="rounded-lg border bg-slate-50 p-3">
                 <p className="text-[10px] font-bold uppercase text-slate-400">Status</p>
                 <Badge className="mt-1 bg-emerald-100 text-emerald-700">
-                  {posicao.statusOperacional || posicao.status || "online"}
+                  {statusLabel}
                 </Badge>
               </div>
               <div className="rounded-lg border bg-slate-50 p-3">

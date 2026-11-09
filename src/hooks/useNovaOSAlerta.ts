@@ -1,10 +1,14 @@
 // ============================================================
-// LOTE 2 — ALERTA DE NOVA OS (Dashboard / Operação / CCO)
+// LOTE 2 / REFINO — ALERTA GLOBAL DE NOVA OS
 //
 // `ordens_servico` NÃO está na publicação `supabase_realtime`, então o
-// alerta usa POLLING CURTO (padrão 25s) — sem exigir migration. Na
-// inicialização, as OS já existentes são marcadas como vistas para não
-// disparar toast em loop; a partir daí, cada INSERT novo gera um toast.
+// alerta usa POLLING CURTO (padrão 25s). A comparação é feita por ID
+// (não por timestamp) para não perder OS criadas no mesmo segundo nem
+// sofrer com created_at em fusos diferentes.
+//
+// Na inicialização, as OS já existentes são marcadas como vistas para
+// não disparar toasts em loop; a partir daí, cada OS nova gera um toast
+// global "Nova Ordem de Serviço" com ação para abrir a OS.
 // ============================================================
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -28,13 +32,16 @@ interface LinhaOS {
 }
 
 const INTERVALO_PADRAO_MS = 25000;
+/** Quantidade de OS conhecidas no boot (sem toast). */
+const MAX_CONHECIDAS = 40;
+/** Quantidade consultada por ciclo. */
+const MAX_POR_CICLO = 20;
 
 export function useNovaOSAlerta({
   habilitado = true,
   intervaloMs = INTERVALO_PADRAO_MS,
   onAbrirOS,
 }: OpcoesNovaOSAlerta) {
-  const cursorRef = useRef<string | null>(null);
   const avisadosRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -43,42 +50,34 @@ export function useNovaOSAlerta({
     let pronto = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
-    const iniciarCursor = async () => {
+    const iniciarConhecidas = async () => {
       try {
         const { data } = await supabase
           .from("ordens_servico")
-          .select("id, created_at")
+          .select("id")
           .order("created_at", { ascending: false })
-          .limit(20);
-        const linhas = Array.isArray(data) ? (data as LinhaOS[]) : [];
-        for (const linha of linhas) {
+          .limit(MAX_CONHECIDAS);
+        for (const linha of (data || []) as LinhaOS[]) {
           if (linha.id) avisadosRef.current.add(String(linha.id));
         }
-        const maisRecente = linhas[0]?.created_at;
-        cursorRef.current = maisRecente ? String(maisRecente) : new Date().toISOString();
       } catch {
-        cursorRef.current = new Date().toISOString();
+        // silencioso — o polling continua
       } finally {
         pronto = true;
       }
     };
 
     const verificar = async () => {
-      if (!ativo || !pronto || !cursorRef.current) return;
+      if (!ativo || !pronto) return;
       try {
         const { data, error } = await supabase
           .from("ordens_servico")
           .select("id, numero, cliente, created_at, clientes(nome_fantasia, razao_social)")
-          .gte("created_at", cursorRef.current)
-          .order("created_at", { ascending: true })
-          .limit(20);
-        if (error || !ativo || !Array.isArray(data) || data.length === 0) return;
+          .order("created_at", { ascending: false })
+          .limit(MAX_POR_CICLO);
+        if (error || !ativo || !Array.isArray(data)) return;
 
-        let ultimoCursor = cursorRef.current;
         for (const linha of data as LinhaOS[]) {
-          const criado = linha.created_at ? String(linha.created_at) : "";
-          if (criado && criado > ultimoCursor) ultimoCursor = criado;
-
           const id = linha.id ? String(linha.id) : "";
           if (!id || avisadosRef.current.has(id)) continue;
           avisadosRef.current.add(id);
@@ -90,23 +89,22 @@ export function useNovaOSAlerta({
             "Cliente";
           const numero = linha.numero ? String(linha.numero) : id.slice(0, 8);
 
-          toast("🆕 Nova OS recebida", {
+          toast.success("🆕 Nova Ordem de Serviço", {
             id: `nova-os:${id}`,
             description: `${numero} · ${cliente}`,
-            duration: 45000,
+            duration: 60000,
             action: onAbrirOS
               ? { label: "Abrir OS", onClick: () => onAbrirOS(id) }
               : undefined,
             onClick: onAbrirOS ? () => onAbrirOS(id) : undefined,
           });
         }
-        cursorRef.current = ultimoCursor;
       } catch {
         // Silencioso: o polling tenta novamente no próximo ciclo.
       }
     };
 
-    void iniciarCursor();
+    void iniciarConhecidas();
     timer = setInterval(() => void verificar(), intervaloMs);
 
     return () => {

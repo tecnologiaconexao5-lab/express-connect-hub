@@ -110,18 +110,18 @@ describe("Template 1 — Resumo da Rota (padrão obrigatório)", () => {
     expect(linhas[2]).toBe("");
     expect(linhas[3]).toBe("Vila Madalena ━➤ Bela Vista | 12,5 km");
     expect(linhas[4]).toBe("");
-    expect(linhas[5]).toBe("🟣 【 1 】 RET • Rua das Flores - CEP: 01310-100");
+    expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua das Flores - CEP: 01310-100");
     expect(linhas[6]).toBe("⏰ 09:00–10:00");
     expect(linhas[7]).toBe("🗺️ https://maps.google.com/?q=Rua+das+Flores+São+Paulo");
     expect(linhas[8]).toBe("");
-    expect(linhas[9]).toBe("🟠 【 2 】 ENT • Av. Paulista - CEP: 01310-100");
+    expect(linhas[9]).toBe("🟠 *【 2 】 ENT* • Av. Paulista - CEP: 01310-100");
     expect(linhas[10]).toBe("⏰ 14:00–15:00");
     expect(linhas[11]).toBe("🗺️ https://maps.google.com/?q=Av.+Paulista+São+Paulo");
     expect(linhas[12]).toBe("");
     expect(linhas[13]).toBe("━━━━━━━━━━━━━━━━━");
     expect(linhas[14]).toBe("💰 R$ 77,50 | A faturar");
     expect(linhas[15]).toBe("");
-    expect(linhas[16]).toBe("⚠️ ATENÇÃO: Encaixe às 14h após a 1ª retirada");
+    expect(linhas[16]).toBe("⚠️ *ATENÇÃO:* Encaixe às 14h após a 1ª retirada");
   });
 
   it("PRIVACIDADE: nunca exibe o número da porta/local", () => {
@@ -191,12 +191,12 @@ describe("Template WhatsApp — MESMO gerador no /os-mobile (snake_case)", () =>
   it("preenche rota, janelas e CEP a partir do jsonb enderecos do mobile", () => {
     expect(linhas[1]).toBe("━━━━━━━━━━━━━━━━━🏍️");
     expect(linhas[3]).toBe("Centro ━➤ Jardim Paulista | 10 km");
-    expect(linhas[5]).toBe("🟣 【 1 】 RET • Rua Alegre - CEP: 07010-000");
+    expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua Alegre - CEP: 07010-000");
     expect(linhas[6]).toBe("⏰ 08:00–09:00");
-    expect(linhas[9]).toBe("🟠 【 2 】 ENT • Rua do Campo - CEP: 02000-000");
+    expect(linhas[9]).toBe("🟠 *【 2 】 ENT* • Rua do Campo - CEP: 02000-000");
     expect(linhas[10]).toBe("⏰ 11:00"); // só janela fim
     expect(linhas[14]).toBe("💰 R$ 25,00 | À vista");
-    expect(linhas[16]).toBe("⚠️ ATENÇÃO: Retirar na portaria B");
+    expect(linhas[16]).toBe("⚠️ *ATENÇÃO:* Retirar na portaria B");
   });
 
   it("PRIVACIDADE também no mobile: sem números 777/888", () => {

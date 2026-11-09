@@ -400,6 +400,15 @@ const limparRascunhoLocal = (key: string) => {
   }
 };
 
+/**
+ * Isola a criação de uma NOVA OS: limpa o rascunho compartilhado
+ * `tms_os_draft_v1:nova:novo` (evita observações/paradas/pedágio de uma
+ * OS anterior vazarem para a próxima).
+ */
+export const limparRascunhoNovaOS = () => {
+  limparRascunhoLocal(`${OS_DRAFT_PREFIX}:nova:novo`);
+};
+
 /** Remove e BLOQUEIA regravações (descarte confirmado). */
 const descartarRascunhoLocal = (key: string) => {
   osDraftsDescartados.add(key);
@@ -1221,8 +1230,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   };
 
-  const recalcularValores = async (distanciaKm: number, veiculoTipo: string, cliente: string) => {
+  const recalcularValores = async (
+    distanciaKm: number,
+    veiculoTipo: string,
+    cliente: string,
+    opts?: { forcar?: boolean },
+  ) => {
     if (!veiculoTipo) return;
+    const forcar = Boolean(opts?.forcar);
     const enderecoOrigem = data.enderecos?.find((e: any) => tipoEhColeta(e.tipo) || e.tipo === "origem");
     const enderecoDestino = data.enderecos?.find((e: any) => tipoEhEntrega(e.tipo) || e.tipo === "destino" || e.tipo === "delivery");
     try {
@@ -1241,14 +1256,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         const calc = calcularPrecoRapido(tabela, distanciaKm);
         setData(p => ({
           ...p,
-          valorCliente: p.valorClienteEditado ? p.valorCliente : calc.valorCliente,
-          custoPrestador: p.custoPrestadorEditado ? p.custoPrestador : calc.valorPrestador,
+          valorCliente: forcar ? calc.valorCliente : p.valorClienteEditado ? p.valorCliente : calc.valorCliente,
+          custoPrestador: forcar ? calc.valorPrestador : p.custoPrestadorEditado ? p.custoPrestador : calc.valorPrestador,
           tabelaAplicada: tabela.nome || "Tabela Padrão",
           faixaAplicada: calc.descricao,
         }));
         setFaixaCalculada(calc.descricao);
         // Prestador selecionado → repasse vem da tabela DO PRESTADOR.
-        if (data.prestadorId && !data.custoPrestadorEditado) {
+        if (data.prestadorId && (forcar || !data.custoPrestadorEditado)) {
           await aplicarTabelaPrestador(data.prestadorId, veiculoTipo, distanciaKm);
         }
       } else {
@@ -1262,23 +1277,35 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   };
 
   // UPGRADE — PEDÁGIO: aplica o valor monetário vindo da API de rota (Maplink/
-  // Google Routes — DistanceResult.pedagio) quando disponível; caso contrário
-  // ESTIMA pelo tipo de veículo (eixos) × distância. Um valor digitado
-  // manualmente nunca é sobrescrito pela estimativa.
+  // Google Routes — DistanceResult.pedagio) quando disponível e PLAUSÍVEL;
+  // caso contrário ESTIMA pelo tipo de veículo (eixos) × distância. Um valor
+  // digitado manualmente nunca é sobrescrito pela estimativa.
   const aplicarPedagioDaRota = (rota: { pedagio?: number; pedagioProvider?: string; distanciaKm?: number; duracaoMin?: number; distanciaTexto?: string; duracaoTexto?: string; provider?: string } | null | undefined) => {
-    if (typeof rota?.pedagio === "number" && rota.pedagio > 0) {
-      const valor = rota.pedagio;
-      setData(p => ({ ...p, pedagio: valor }));
-      setPedagioInfo({ fonte: "api", provider: rota.pedagioProvider || "routes", atualizadoEm: new Date().toISOString() });
-      toast.success(`Pedágio identificado pela API: R$ ${valor.toFixed(2)}`);
-      return;
-    }
-    // Sem valor da API: preserva um pedágio digitado manualmente.
+    const km = Number(rota?.distanciaKm ?? data.distanciaKm ?? 0);
+
+    // Valor digitado manualmente tem prioridade absoluta.
     const ehManual = (data.pedagio ?? 0) > 0 && pedagioInfo.fonte === "manual";
-    if (ehManual) {
-      return;
+    if (ehManual) return;
+
+    if (typeof rota?.pedagio === "number" && rota.pedagio > 0) {
+      // Sanidade: rejeita valores irreais por km (ex.: R$ 567 para 16 km).
+      const estimativaBase = estimarPedagio(km, data.veiculoTipo);
+      const eixos = estimativaBase.eixos || 2;
+      const maxPorKm = eixos >= 5 ? 8 : eixos >= 3 ? 4 : 2.5;
+      const plausivel =
+        km <= 0 ? rota.pedagio <= 50 : rota.pedagio / km <= maxPorKm;
+
+      if (plausivel) {
+        const valor = rota.pedagio;
+        setData(p => ({ ...p, pedagio: valor }));
+        setPedagioInfo({ fonte: "api", provider: rota.pedagioProvider || "routes", atualizadoEm: new Date().toISOString() });
+        toast.success(`Pedágio identificado pela API: R$ ${valor.toFixed(2)}`);
+        return;
+      }
+      toast.warning("Pedágio da API ignorado: valor incompatível com a distância/veículo.");
     }
-    const estimativa = estimarPedagio(rota?.distanciaKm ?? data.distanciaKm ?? 0, data.veiculoTipo);
+
+    const estimativa = estimarPedagio(km, data.veiculoTipo);
     if (estimativa.valor > 0) {
       setData(p => ({ ...p, pedagio: estimativa.valor }));
       setPedagioInfo({
@@ -1367,11 +1394,17 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
     if (rota) {
       setDistanciaRota(rota);
-      setData(p => ({ ...p, distanciaKm: rota!.distanciaKm, tempoEstimado: rota!.duracaoTexto, tipoRota: tipo }));
+      setData(p => ({
+        ...p,
+        distanciaKm: rota!.distanciaKm,
+        tempoEstimado: rota!.duracaoTexto,
+        tipoRota: tipo,
+        // Trocar a rota recalcula o valor (binding dinâmico na UI).
+        valorClienteEditado: false,
+        custoPrestadorEditado: false,
+      }));
       aplicarPedagioDaRota(rota);
-      if (!data.valorClienteEditado && !data.custoPrestadorEditado) {
-        recalcularValores(rota!.distanciaKm, data.veiculoTipo, data.cliente);
-      }
+      recalcularValores(rota!.distanciaKm, data.veiculoTipo, data.cliente, { forcar: true });
     }
   };
 
@@ -3918,7 +3951,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     </div>
 
                     <div className="mt-3 flex items-center gap-4">
-                      <Select value={rotaSelecionada} onValueChange={(v) => handleTrocarRota(v as TipoRota)} disabled={readOnly || calculandoDistancia}>
+                      <Select value={rotaSelecionada} onValueChange={(v) => handleTrocarRota(v as TipoRota)} disabled={readOnly || calculandoDistancia || !distanciasAlternativas}>
                         <SelectTrigger className="w-[220px] h-8 text-xs"><SelectValue placeholder="Tipo de rota" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="rapida">Rota mais rapida</SelectItem>
@@ -3926,12 +3959,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                           <SelectItem value="operacional">Rota operacional recomendada</SelectItem>
                         </SelectContent>
                       </Select>
-                      {distanciasAlternativas && (
+                      {distanciasAlternativas ? (
                         <span className="text-xs text-green-700">
                           {rotaSelecionada === "rapida" && `Rapida: ${distanciasAlternativas.rapida?.distanciaTexto || "—"} (${distanciasAlternativas.rapida?.duracaoTexto || "—"})`}
                           {rotaSelecionada === "curta" && `Curta: ${distanciasAlternativas.curta?.distanciaTexto || "—"} (${distanciasAlternativas.curta?.duracaoTexto || "—"})`}
                           {rotaSelecionada === "operacional" && `Operacional: ${distanciasAlternativas.operacional?.distanciaTexto || "—"} (${distanciasAlternativas.operacional?.duracaoTexto || "—"})`}
                         </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600">Alternativas indisponíveis — rota calculada única.</span>
                       )}
                     </div>
                   </CardContent>

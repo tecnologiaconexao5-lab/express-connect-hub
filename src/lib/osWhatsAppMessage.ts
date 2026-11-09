@@ -267,18 +267,18 @@ export const gerarMensagemWhatsAppMotoboy = (data: DadosMensagemMotoboy): string
     "",
     `${bairro(origem)} ━➤ ${bairro(destino)} | ${distanciaKm(data)} km`,
     "",
-    `🟣 【 1 】 RET • ${ruaSemNumero(origem)} - CEP: ${cepFormatado(origem)}`,
+    `🟣 *【 1 】 RET* • ${ruaSemNumero(origem)} - CEP: ${cepFormatado(origem)}`,
     `⏰ ${janela(origem)}`,
     `🗺️ ${linkMaps(origem)}`,
     "",
-    `🟠 【 2 】 ENT • ${ruaSemNumero(destino)} - CEP: ${cepFormatado(destino)}`,
+    `🟠 *【 2 】 ENT* • ${ruaSemNumero(destino)} - CEP: ${cepFormatado(destino)}`,
     `⏰ ${janela(destino)}`,
     `🗺️ ${linkMaps(destino)}`,
     "",
     "━━━━━━━━━━━━━━━━━",
     `💰 R$ ${fmtValor(data?.custoPrestador)} | ${formaPagamento(data)}`,
     "",
-    `⚠️ ATENÇÃO: ${atencao(data)}`,
+    `⚠️ *ATENÇÃO:* ${atencao(data)}`,
   ].join("\n");
 };
 
