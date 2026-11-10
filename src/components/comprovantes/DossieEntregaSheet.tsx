@@ -15,6 +15,11 @@ import { gerarPDFProfissional } from "@/utils/pdfGenerator";
 import { buscarDossieComprovante, type DossieComprovante } from "@/services/comprovantes/comprovantesService";
 import { Lightbox, type LightboxMedia } from "@/components/ui/lightbox";
 import {
+  formatarDataBR,
+  formatarDataHoraBR,
+  formatarHoraBR,
+} from "@/lib/formatDates";
+import {
   eventTypeToLabel,
   eventTypeToCategory,
 } from "@/components/torre-controle/eventAdapter";
@@ -26,28 +31,10 @@ interface DossieEntregaSheetProps {
   numeroOs?: string | null;
 }
 
-const fmtData = (d: string | null | undefined) => {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-};
-
-const fmtHora = (d: string | null | undefined) => {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return "—";
-  return dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-};
-
-const fmtDataHora = (d: string | null | undefined) => {
-  if (!d) return "—";
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
-};
+/** Todas as datas/horas são exibidas em America/Sao_Paulo (UTC-3). */
+const fmtData = (d: string | null | undefined) => formatarDataBR(d) || "—";
+const fmtHora = (d: string | null | undefined) => formatarHoraBR(d) || "—";
+const fmtDataHora = (d: string | null | undefined) => formatarDataHoraBR(d) || "—";
 
 const SITUACAO_BADGE: Record<string, string> = {
   entregue: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -77,6 +64,8 @@ export default function DossieEntregaSheet({ open, onOpenChange, podId, numeroOs
     const pod = dossie?.pod;
     const aloc = dossie?.alocacao;
     const list: LightboxMedia[] = [];
+    if (aloc?.foto_coleta_url) list.push({ url: aloc.foto_coleta_url, label: "Foto da Coleta" });
+    if (aloc?.foto_chegada_url) list.push({ url: aloc.foto_chegada_url, label: "Foto de Chegada (Coleta)" });
     if (pod?.foto_entrega_url) list.push({ url: pod.foto_entrega_url, label: "Foto da Entrega" });
     if (pod?.foto_canhoto_url) list.push({ url: pod.foto_canhoto_url, label: "Canhoto Digital" });
     if (pod?.assinatura_url) list.push({ url: pod.assinatura_url, label: "Assinatura do Recebedor" });

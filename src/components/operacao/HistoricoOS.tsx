@@ -1,5 +1,6 @@
 import { Clock, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { formatarDataHoraBR } from "@/lib/formatDates";
 
 export interface HistoricoOSItem {
   data?: string;
@@ -17,13 +18,8 @@ interface HistoricoOSProps {
 
 const formatarDataHistorico = (valor?: string): string => {
   if (!valor) return "—";
-  try {
-    const d = new Date(valor);
-    if (Number.isNaN(d.getTime())) return String(valor);
-    return d.toLocaleString("pt-BR");
-  } catch {
-    return String(valor);
-  }
+  const formatado = formatarDataHoraBR(valor);
+  return formatado || String(valor);
 };
 
 /**

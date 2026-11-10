@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import DossieEntregaSheet from "@/components/comprovantes/DossieEntregaSheet";
 import { buscarEntregasDaOS, type EntregaOS } from "@/services/comprovantes/comprovantesService";
+import { formatarDataBR, formatarHoraBR } from "@/lib/formatDates";
 
 interface EntregasComprovantesProps {
   osId: string;
@@ -177,10 +178,10 @@ export default function EntregasComprovantes({ osId, numeroOs }: EntregasComprov
                     <div className="min-w-0">
                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Data/Hora</p>
                       <p className="text-xs font-bold text-slate-800">
-                        {new Date(entrega.data_hora_entrega).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                        {formatarDataBR(entrega.data_hora_entrega)}
                       </p>
                       <p className="text-[10px] text-slate-500">
-                        {new Date(entrega.data_hora_entrega).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        {formatarHoraBR(entrega.data_hora_entrega)}
                       </p>
                     </div>
                   </div>
@@ -197,10 +198,16 @@ export default function EntregasComprovantes({ osId, numeroOs }: EntregasComprov
                 </div>
               </div>
 
-              {/* Evidências do POD — foto, canhoto e assinatura (render direto) */}
-              {(entrega.foto_entrega_url || entrega.foto_canhoto_url || entrega.assinatura_url) && (
+              {/* Evidências do POD — coleta, chegada, entrega, canhoto e assinatura */}
+              {(entrega.foto_coleta_url ||
+                entrega.foto_chegada_url ||
+                entrega.foto_entrega_url ||
+                entrega.foto_canhoto_url ||
+                entrega.assinatura_url) && (
                 <div className="flex flex-wrap gap-2 px-4 pb-3">
                   {[
+                    { url: entrega.foto_coleta_url, label: "Foto da coleta" },
+                    { url: entrega.foto_chegada_url, label: "Foto de chegada" },
                     { url: entrega.foto_entrega_url, label: "Foto da entrega" },
                     { url: entrega.foto_canhoto_url, label: "Canhoto" },
                     { url: entrega.assinatura_url, label: "Assinatura" },

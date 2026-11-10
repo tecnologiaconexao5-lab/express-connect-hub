@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, CalendarClock, Clock3, MapPin, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import { FUSO_BR, formatarHoraBR, hojeISOSP, parseDataHoraSP } from "@/lib/formatDates";
 import {
   listarOSSite,
   osSitePendente,
@@ -12,22 +13,24 @@ import {
 const ROTA_OS = "/operacao?tab=os";
 // STATUS_ENCERRADOS (finalizada/cancelada) é aplicado em osSitePendente.
 
-const doisDigitos = (n: number) => String(n).padStart(2, "0");
-
-/** Horário exato da solicitação (HH:mm; com data quando não é de hoje). */
+/** Horário exato da solicitação em America/Sao_Paulo (HH:mm; com data fora de hoje). */
 const formatarHorarioSolicitacao = (iso?: string | null): string => {
-  const texto = String(iso || "").trim();
-  if (!texto) return "";
-  const d = new Date(texto);
-  if (Number.isNaN(d.getTime())) return "";
-  const hora = `${doisDigitos(d.getHours())}:${doisDigitos(d.getMinutes())}`;
-  const hoje = new Date();
-  const mesmoDia =
-    d.getDate() === hoje.getDate() &&
-    d.getMonth() === hoje.getMonth() &&
-    d.getFullYear() === hoje.getFullYear();
-  if (mesmoDia) return hora;
-  return `${doisDigitos(d.getDate())}/${doisDigitos(d.getMonth() + 1)} · ${hora}`;
+  const d = parseDataHoraSP(iso);
+  if (!d) return "";
+  const hora = formatarHoraBR(iso);
+  const dia = new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO_BR,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  if (dia === hojeISOSP()) return hora;
+  const diaMes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: FUSO_BR,
+    day: "2-digit",
+    month: "2-digit",
+  }).format(d);
+  return `${diaMes} · ${hora}`;
 };
 
 /**

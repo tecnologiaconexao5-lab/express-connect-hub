@@ -97,6 +97,9 @@ export interface DetalhesEntregaCompleto {
     comprovante_url: string | null;
     assinatura_url: string | null;
     fotos_entrega: string[] | null;
+    /** Evidências do App gravadas na etapa de coleta (metadata.app_motorista). */
+    foto_chegada_url: string | null;
+    foto_coleta_url: string | null;
     observacoes: string | null;
     km_realizados: number | null;
     prestador_nome: string | null;
@@ -677,6 +680,13 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
         .eq("id", pod.alocacao_id)
         .maybeSingle();
       if (aloc) {
+        const appMotorista = (aloc.metadata as Record<string, unknown> | null)?.app_motorista as
+          | Record<string, unknown>
+          | undefined;
+        const fotoChegadaRaw =
+          typeof appMotorista?.foto_chegada_url === "string" ? appMotorista.foto_chegada_url : null;
+        const fotoColetaRaw =
+          typeof appMotorista?.foto_coleta_url === "string" ? appMotorista.foto_coleta_url : null;
         alocacao = {
           id: aloc.id, status: aloc.status, aceite_prestador: aloc.aceite_prestador,
           data_aceite: aloc.data_aceite, finalizada: aloc.finalizada,
@@ -687,6 +697,8 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
           fotos_entrega: aloc.fotos_entrega, observacoes: aloc.observacoes,
           km_realizados: aloc.km_realizados, prestador_nome: aloc.prestador_nome,
           origem: aloc.origem, destino: aloc.destino,
+          foto_chegada_url: fotoChegadaRaw,
+          foto_coleta_url: fotoColetaRaw,
         };
 
         if (aloc.ordem_servico_id) {
@@ -742,6 +754,8 @@ export async function buscarDetalhesEntregaCompleto(podId: string): Promise<Deta
           ...alocacao,
           comprovante_url: await podMedia.resolverMidiaPod(alocacao.comprovante_url),
           assinatura_url: await podMedia.resolverMidiaPod(alocacao.assinatura_url),
+          foto_chegada_url: await podMedia.resolverMidiaPod(alocacao.foto_chegada_url),
+          foto_coleta_url: await podMedia.resolverMidiaPod(alocacao.foto_coleta_url),
           fotos_entrega: alocacao.fotos_entrega
             ? (await Promise.all(alocacao.fotos_entrega.map((u) => podMedia.resolverMidiaPod(u))))
                 .filter((u): u is string => !!u)

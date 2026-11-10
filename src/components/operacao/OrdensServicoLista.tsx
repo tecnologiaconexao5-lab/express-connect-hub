@@ -313,10 +313,15 @@ const OrdensServicoLista = () => {
       }
 
       if (termoBusca.length > 0) {
+        // Partial match: "1202", "OS-1202" e "OS 1202" localizam OS-202611-1202.
+        const termoNumeros = termoBusca.replace(/\D/g, "");
         const orParts = [
           `numero.ilike.%${termoBusca}%`,
           `veiculo_placa.ilike.%${termoBusca}%`,
         ];
+        if (termoNumeros && termoNumeros !== termoBusca) {
+          orParts.push(`numero.ilike.%${termoNumeros}%`);
+        }
         if (clientesBuscaIds.length > 0) {
           const ids = clientesBuscaIds.join(",");
           orParts.push(`cliente.in.(${ids})`, `cliente_id.in.(${ids})`);

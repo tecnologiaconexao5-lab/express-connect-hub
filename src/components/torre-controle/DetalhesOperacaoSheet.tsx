@@ -23,15 +23,16 @@ import { TIMELINE_LABELS, TIMELINE_ICONS, TIMELINE_COLORS, SEVERIDADE_BADGE } fr
 import { ChatOperacaoPanel } from "./ChatOperacaoPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { podeVerReceitaEMargem } from "@/lib/permissoes";
+import { formatarDataBR, formatarDataHoraBR } from "@/lib/formatDates";
 
 const fmtFin = (v: number | null | undefined) =>
   v != null ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "Não informado";
 
 const fmtData = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleString("pt-BR") : "Não informado";
+  formatarDataHoraBR(d) || "Não informado";
 
 const fmtDataShort = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+  formatarDataBR(d) || "—";
 
 const timeAgo = (timestamp: string): string => {
   const diffMs = Date.now() - new Date(timestamp).getTime();

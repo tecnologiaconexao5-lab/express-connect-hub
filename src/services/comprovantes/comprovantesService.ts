@@ -5,7 +5,7 @@ import {
   type DetalhesEntregaCompleto,
 } from "@/services/portalCliente/portalClienteService";
 import { normalizarEvento, type EventoNormalizado } from "@/components/torre-controle/eventAdapter";
-import { resolverMidiasPod, resolverMidiasPods } from "@/services/comprovantes/podMediaService";
+import { resolverMidiaPod, resolverMidiasPod, resolverMidiasPods } from "@/services/comprovantes/podMediaService";
 
 /* ============================================================
  * MISSÃO A23 — FASE A — Central Profissional de Comprovantes
@@ -680,6 +680,9 @@ export interface EntregaOS {
   foto_entrega_url: string | null;
   foto_canhoto_url: string | null;
   assinatura_url: string | null;
+  /** Evidências das etapas de coleta do App (metadata.app_motorista), já resolvidas. */
+  foto_chegada_url: string | null;
+  foto_coleta_url: string | null;
 }
 
 /**
@@ -696,7 +699,11 @@ export function montarEntregaOS(raw: {
     tipo_veiculo?: string | null;
     prestador_id?: string | null;
     destino?: string | null;
+    metadata?: Record<string, unknown> | null;
   };
+  /** Evidências de coleta já resolvidas (extraídas de metadata.app_motorista). */
+  foto_chegada_url?: string | null;
+  foto_coleta_url?: string | null;
   pod?: {
     id?: string;
     nome_recebedor?: string | null;
@@ -751,6 +758,8 @@ export function montarEntregaOS(raw: {
     foto_entrega_url: pod?.foto_entrega_url || null,
     foto_canhoto_url: pod?.foto_canhoto_url || null,
     assinatura_url: pod?.assinatura_url || null,
+    foto_chegada_url: raw.foto_chegada_url || null,
+    foto_coleta_url: raw.foto_coleta_url || null,
   };
 }
 
@@ -763,7 +772,7 @@ export async function buscarEntregasDaOS(osId: string): Promise<EntregaOS[]> {
   try {
     const { data: alocacoes, error } = await supabase
       .from("alocacoes_escala")
-      .select("id, ordem_servico_id, prestador_id, cliente_id, status, finalizada, placa, tipo_veiculo, origem, destino, created_at")
+      .select("id, ordem_servico_id, prestador_id, cliente_id, status, finalizada, placa, tipo_veiculo, origem, destino, metadata, created_at")
       .eq("ordem_servico_id", osId)
       .order("created_at", { ascending: true })
       .limit(50);
@@ -813,14 +822,37 @@ export async function buscarEntregasDaOS(osId: string): Promise<EntregaOS[]> {
       if (pa.alocacao_id && !paradasMap.has(pa.alocacao_id)) paradasMap.set(pa.alocacao_id, pa);
     });
 
-    return (alocacoes as any[]).map((aloc: any) =>
-      montarEntregaOS({
+    // Evidências das etapas de coleta (foto_chegada/foto_coleta) vivem em
+    // `alocacoes_escala.metadata.app_motorista` — resolver para signed URL.
+    const midiasColetaMap = new Map<string, { chegada: string | null; coleta: string | null }>();
+    await Promise.all(
+      (alocacoes as any[]).map(async (aloc: any) => {
+        const appMotorista = (aloc.metadata as Record<string, unknown> | null)?.app_motorista as
+          | Record<string, unknown>
+          | undefined;
+        const rawChegada =
+          typeof appMotorista?.foto_chegada_url === "string" ? appMotorista.foto_chegada_url : null;
+        const rawColeta =
+          typeof appMotorista?.foto_coleta_url === "string" ? appMotorista.foto_coleta_url : null;
+        const [chegada, coleta] = await Promise.all([
+          resolverMidiaPod(rawChegada),
+          resolverMidiaPod(rawColeta),
+        ]);
+        midiasColetaMap.set(aloc.id, { chegada, coleta });
+      }),
+    );
+
+    return (alocacoes as any[]).map((aloc: any) => {
+      const extras = midiasColetaMap.get(aloc.id);
+      return montarEntregaOS({
         alocacao: aloc,
         pod: podMap.get(aloc.id) || null,
         prestador_nome: aloc.prestador_id ? prestadoresMap.get(aloc.prestador_id)?.nome_completo || null : null,
         parada: paradasMap.get(aloc.id) || null,
-      })
-    );
+        foto_chegada_url: extras?.chegada || null,
+        foto_coleta_url: extras?.coleta || null,
+      });
+    });
   } catch (e) {
     console.error("[ComprovantesService] Exceção ao buscar entregas da OS:", e);
     return [];

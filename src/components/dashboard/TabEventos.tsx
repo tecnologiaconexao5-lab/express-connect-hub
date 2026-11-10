@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useEventosRealtime } from "@/hooks/useEventosRealtime";
 import { toDashboardEvent } from "@/services/eventBus/adapters/dashboardAdapter";
+import { formatarDataHoraBR } from "@/lib/formatDates";
 
 const severidadeIcone: Record<string, any> = {
   baixa: Activity,
@@ -105,7 +106,7 @@ export default function TabEventos() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(ev.timestamp).toLocaleString("pt-BR")}
+                      {formatarDataHoraBR(ev.timestamp)}
                     </p>
                   </div>
                   <Badge

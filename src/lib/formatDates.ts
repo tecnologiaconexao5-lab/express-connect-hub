@@ -8,6 +8,37 @@
  */
 export const FUSO_BR = "America/Sao_Paulo";
 
+/** Offset fixo do Brasil (sem horário de verão desde 2019). */
+const OFFSET_BR = "-03:00";
+
+/**
+ * Converte uma data/hora persistida num `Date` real no fuso America/Sao_Paulo.
+ *
+ * - `timestamp with time zone` (ISO com `Z`/offset) → instante preservado.
+ * - `timestamp without time zone` (ex.: `ordens_servico.created_at`) → o valor
+ *   É o horário local de São Paulo; interpretar como UTC deslocaria a exibição.
+ * - data pura (`YYYY-MM-DD`) → meio-dia local (nunca desloca o dia).
+ */
+export function parseDataHoraSP(valor?: string | null): Date | null {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return null;
+
+  const somenteData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+  if (somenteData) {
+    return new Date(`${somenteData[1]}-${somenteData[2]}-${somenteData[3]}T12:00:00${OFFSET_BR}`);
+  }
+
+  // Datetime sem fuso (com espaço ou "T", fração de 1 a 6 dígitos).
+  const naive = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.(\d{1,6}))?$/.exec(texto);
+  if (naive) {
+    const fracao = naive[3] ? `.${naive[3].slice(0, 3).padEnd(3, "0")}` : "";
+    return new Date(`${naive[1]}T${naive[2]}${fracao}${OFFSET_BR}`);
+  }
+
+  const data = new Date(texto);
+  return Number.isNaN(data.getTime()) ? null : data;
+}
+
 export function formatarDataBR(valor?: string | null): string {
   if (valor === undefined || valor === null) return "";
   const texto = String(valor).trim();
@@ -19,8 +50,8 @@ export function formatarDataBR(valor?: string | null): string {
     return `${dia}/${mes}/${ano}`;
   }
 
-  const data = new Date(texto);
-  if (Number.isNaN(data.getTime())) return "";
+  const data = parseDataHoraSP(texto);
+  if (!data) return "";
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: FUSO_BR,
     day: "2-digit",
@@ -29,11 +60,21 @@ export function formatarDataBR(valor?: string | null): string {
   }).format(data);
 }
 
+/** Hora (HH:mm) sempre no fuso America/Sao_Paulo. */
+export function formatarHoraBR(valor?: string | null): string {
+  const data = parseDataHoraSP(valor);
+  if (!data) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: FUSO_BR,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(data);
+}
+
 /** Data + hora no fuso America/Sao_Paulo (timestamps UTC do Supabase). */
 export function formatarDataHoraBR(valor?: string | null): string {
-  if (!valor) return "";
-  const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) return "";
+  const data = parseDataHoraSP(valor);
+  if (!data) return "";
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: FUSO_BR,
     day: "2-digit",
@@ -52,6 +93,21 @@ export function formatarDataHoraSolicitacaoBR(valor?: string | null): string {
   const base = formatarDataHoraBR(valor);
   if (!base) return "";
   return base.replace(", ", " às ").replace(/:([0-9]{2})$/, "h$1");
+}
+
+/** Data + hora curta: "dd/MM · HH:mm" (hoje) ou "dd/MM · HH:mm" (sempre SP). */
+export function formatarDataHoraCurtaSP(valor?: string | null): string {
+  const data = parseDataHoraSP(valor);
+  if (!data) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: FUSO_BR,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+    .format(data)
+    .replace(",", " ·");
 }
 
 /** "Hoje" no fuso America/Sao_Paulo (YYYY-MM-DD) — comparações de colunas `date`. */
