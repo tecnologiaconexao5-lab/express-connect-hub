@@ -131,6 +131,10 @@ const OrdensServicoLista = () => {
   // REFINAMENTO-FLUXO-ALOCACAO-TMS: foco rápido em OSs órfãs (sem prestador).
   const [somenteSemPrestador, setSomenteSemPrestador] = useState(false);
   const [acaoOrfa, setAcaoOrfa] = useState<{ osId: string; tipo: "rede" | "base" } | null>(null);
+  // Cooldown de 5s do botão "Notificar base/agregados" (evita duplo clique).
+  const [baseCooldown, setBaseCooldown] = useState<Record<string, boolean>>({});
+  const baseCooldownTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const baseCooldownAtivoRef = useRef<Set<string>>(new Set());
   // Alocação rápida de prestador para OS sem prestador (coluna Ações).
   const [osAlocando, setOsAlocando] = useState<OrdemServico | null>(null);
   const [prestadorAlocacao, setPrestadorAlocacao] = useState<string | null>(null);
@@ -713,8 +717,31 @@ const OrdensServicoLista = () => {
     }
   };
 
+  const iniciarCooldownBase = (osId: string) => {
+    baseCooldownAtivoRef.current.add(osId);
+    setBaseCooldown((prev) => ({ ...prev, [osId]: true }));
+    const existente = baseCooldownTimers.current[osId];
+    if (existente) clearTimeout(existente);
+    baseCooldownTimers.current[osId] = setTimeout(() => {
+      baseCooldownAtivoRef.current.delete(osId);
+      setBaseCooldown((prev) => ({ ...prev, [osId]: false }));
+      delete baseCooldownTimers.current[osId];
+    }, 5000);
+  };
+
+  // Limpa os timers de cooldown ao desmontar a listagem.
+  useEffect(() => {
+    const timers = baseCooldownTimers.current;
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
+
   const handleNotificarBase = async (os: OrdemServico) => {
     if (!os.id) return;
+    if (baseCooldown[os.id] || baseCooldownAtivoRef.current.has(os.id)) return;
+    // Desativa o botão por 5s já no clique (proteção contra duplo clique).
+    iniciarCooldownBase(os.id);
     setAcaoOrfa({ osId: os.id, tipo: "base" });
     try {
       const res = await notificarBaseAgregados(os.id);
@@ -723,7 +750,7 @@ const OrdensServicoLista = () => {
       } else if (res.total === 0) {
         toast.warning("Nenhum prestador compatível elegível encontrado para notificar.");
       } else {
-        toast.success(`Base/agregados notificados (${res.total} prestador${res.total > 1 ? "es" : ""}).`);
+        toast.success("Base notificada com sucesso!");
       }
     } finally {
       setAcaoOrfa(null);
@@ -1223,7 +1250,7 @@ const OrdensServicoLista = () => {
                                 size="icon"
                                 className="h-8 w-8 hover:bg-amber-50 hover:text-amber-600"
                                 title="Notificar base/agregados"
-                                disabled={acaoOrfa?.osId === os.id}
+                                disabled={acaoOrfa?.osId === os.id || Boolean(baseCooldown[os.id])}
                                 onClick={(e) => { e.stopPropagation(); handleNotificarBase(os); }}
                               >
                                 {acaoOrfa?.osId === os.id && acaoOrfa?.tipo === "base" ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}

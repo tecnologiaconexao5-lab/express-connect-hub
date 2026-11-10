@@ -42,6 +42,7 @@ interface OsResumo {
   veiculo_tipo: string | null;
   carga_refrigerada: boolean | null;
   peso: number | null;
+  custo_prestador: number | null;
   enderecos: EnderecoOS[] | null;
 }
 
@@ -55,6 +56,23 @@ function cidadeColeta(enderecos: OsResumo["enderecos"]): string {
   }
 }
 
+function cidadeEntrega(enderecos: OsResumo["enderecos"]): string {
+  try {
+    const lista = Array.isArray(enderecos) ? enderecos : [];
+    const entrega =
+      [...lista].reverse().find((e) => e?.tipo === "entrega" || e?.tipo === "destino") ||
+      lista[lista.length - 1];
+    return entrega?.cidade || entrega?.uf || "";
+  } catch {
+    return "";
+  }
+}
+
+function formatarValorBR(valor: number): string {
+  if (!Number.isFinite(valor) || valor <= 0) return "";
+  return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /**
  * Notifica prestadores cadastrados (base) e agregados elegíveis para uma OS
  * que ainda não possui prestador. Cria uma notificação no app do prestador
@@ -66,7 +84,7 @@ export async function notificarBaseAgregados(osId: string): Promise<NotificacaoB
 
     const { data: os, error: osErr } = await supabase
       .from("ordens_servico")
-      .select("id, numero, tipo_operacao, veiculo_tipo, carga_refrigerada, peso, enderecos, prestador, prestador_id")
+      .select("id, numero, tipo_operacao, veiculo_tipo, carga_refrigerada, peso, custo_prestador, enderecos, prestador, prestador_id")
       .eq("id", osId)
       .single();
     if (osErr) throw osErr;
@@ -85,7 +103,9 @@ export async function notificarBaseAgregados(osId: string): Promise<NotificacaoB
     if (pErr) throw pErr;
 
     const tipoNecessario = osResumo.veiculo_tipo || "";
-    const cidade = cidadeColeta(osResumo.enderecos);
+    const cidadeOrigem = cidadeColeta(osResumo.enderecos);
+    const cidadeDestino = cidadeEntrega(osResumo.enderecos);
+    const valorPrestador = Number(osResumo.custo_prestador) || 0;
 
     const elegiveis = ((prestadores || []) as PrestadorCandidato[]).filter((p) => {
       // Elegibilidade operacional básica: liberado para o app (quando informado).
@@ -99,10 +119,26 @@ export async function notificarBaseAgregados(osId: string): Promise<NotificacaoB
     }
 
     const numero = osResumo.numero || osId;
+    const rota = [cidadeOrigem, cidadeDestino].filter(Boolean).join(" ━➤ ");
+    const valorTexto = formatarValorBR(valorPrestador);
     const titulo = "Operação aguardando alocação";
-    const mensagem = cidade
-      ? `OS ${numero} ainda não possui prestador. Região: ${cidade}. Verifique a Rede de Oportunidades.`
-      : `OS ${numero} ainda não possui prestador. Verifique a Rede de Oportunidades.`;
+    const detalheRota = rota ? ` Rota: ${rota}.` : "";
+    const detalheValor = valorTexto ? ` Repasse: R$ ${valorTexto}.` : "";
+    const mensagem = `OS ${numero} ainda não possui prestador.${detalheRota}${detalheValor} Verifique a Rede de Oportunidades.`;
+
+    // PAYLOAD DO ALERTA — dados formatados consumidos pelo payload de push/FCM
+    // e pelo broadcast Realtime. O trigger de `portal_notificacoes` copia este
+    // `metadata` para `push_notificacoes_fila.payload`.
+    const alertaPayload = {
+      os_id: osId,
+      numero,
+      cidade_origem: cidadeOrigem,
+      cidade_destino: cidadeDestino,
+      valor_prestador: valorPrestador,
+      rota,
+      click_action: "FLUTTER_NOTIFICATION_CLICK",
+      routing: "/notifications",
+    };
 
     const registros = elegiveis.map((p) => ({
       prestador_id: p.id,
@@ -116,10 +152,38 @@ export async function notificarBaseAgregados(osId: string): Promise<NotificacaoB
       referencia_id: osId,
       origem_id: osId,
       origem_tipo: "ordem_servico",
+      metadata: alertaPayload,
     }));
 
     const { error: nErr } = await supabase.from("portal_notificacoes").insert(registros);
     if (nErr) throw nErr;
+
+    // 1) Broadcast Realtime para a rede de prestadores (app pode escutar online).
+    try {
+      const canal = supabase.channel(`rede-prestadores-${osId}`);
+      canal.subscribe();
+      await canal.send({
+        type: "broadcast",
+        event: "notificar_base",
+        payload: alertaPayload,
+      });
+      await supabase.removeChannel(canal);
+    } catch (broadcastErr) {
+      console.warn("[OSAlocacaoPendente] Broadcast Realtime indisponível:", broadcastErr);
+    }
+
+    // 2) Aciona a Edge Function FCM para consumir a fila (melhor esforço).
+    // Se não estiver deployada/configurada, a fila permanece para o cron/webhook.
+    try {
+      const { error: pushErr } = await supabase.functions.invoke("enviar-push", {
+        body: { motivo: "notificar_base", os_id: osId },
+      });
+      if (pushErr) {
+        console.warn("[OSAlocacaoPendente] Edge enviar-push indisponível:", pushErr.message);
+      }
+    } catch (pushErr) {
+      console.warn("[OSAlocacaoPendente] Falha ao acionar enviar-push:", pushErr);
+    }
 
     await supabase.from("os_historico").insert([{
       os_id: osId,

@@ -412,3 +412,7 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 verify_jwt = false
 
 
+
+# LOTE PUSH — protegida por service role / x-internal-token dentro da funcao
+[functions.enviar-push]
+verify_jwt = false
