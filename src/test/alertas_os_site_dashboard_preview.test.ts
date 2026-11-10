@@ -119,10 +119,11 @@ describe("B) Header / sino — alertas persistentes de OS do site", () => {
 
   it("dispara toast persistente (Infinity) nos dois formatos", () => {
     expect(hook).toContain("duration: Infinity");
-    expect(hook).toContain("🚨 Nova OS de Cliente Recebida!");
+    expect(hook).toContain("Nova oportunidade! OS de Cliente Recebida");
     expect(hook).toContain("⚠️ CHAMADO AGENDADO -");
     expect(hook).toContain("toast.warning");
-    expect(hook).toContain("toast.error");
+    expect(hook).toContain("toast.success");
+    expect(hook).toContain("#10B981");
   });
 
   it("o sino usa badge vermelho com a contagem não lida", () => {

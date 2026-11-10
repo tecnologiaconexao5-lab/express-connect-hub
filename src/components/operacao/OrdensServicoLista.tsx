@@ -23,7 +23,7 @@ import EntregasComprovantes from "@/components/comprovantes/EntregasComprovantes
 import RastreamentoOSDialog from "@/components/operacao/RastreamentoOSDialog";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
 import { HistoricoOS } from "./HistoricoOS";
-import { publicarOportunidade } from "@/services/operacao/redePrestadoresService";
+import { publicarOportunidade, MSG_REDE_JA_EXISTE } from "@/services/operacao/redePrestadoresService";
 import { notificarBaseAgregados, classificarSlaAlocacao, emRiscoSlaPendente, type NivelSlaAlocacao } from "@/services/operacao/osAlocacaoPendenteService";
 import {
   buscarSugestoesPrestadores,
@@ -707,11 +707,15 @@ const OrdensServicoLista = () => {
     setAcaoOrfa({ osId: os.id, tipo: "rede" });
     try {
       const res = await publicarOportunidade({ os_id: os.id, valor_prestador: os.custoPrestador });
-      if (res.sucesso) {
-        toast.success(`OS ${os.numero} publicada na Rede de Prestadores.`);
-      } else {
-        toast.error(res.erro || "Não foi possível publicar na Rede.");
-      }
+        if (res.sucesso) {
+          toast.success(`OS ${os.numero} publicada na Rede de Prestadores.`);
+        } else {
+          const erro = res.erro || "";
+          const amigavel = /duplicate key|unique constraint|23505/i.test(erro)
+            ? MSG_REDE_JA_EXISTE
+            : erro || "Não foi possível publicar na Rede.";
+          toast.error(amigavel);
+        }
     } finally {
       setAcaoOrfa(null);
     }

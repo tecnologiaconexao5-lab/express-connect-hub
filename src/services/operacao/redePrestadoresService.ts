@@ -6,6 +6,17 @@ import { veiculoCompativel, tiposVeiculoDoPrestador } from "@/services/operacao/
 // ============================================================
 // Tipos
 // ============================================================
+export const MSG_REDE_JA_EXISTE = "Esta OS já está na rede de prestadores";
+
+const ehErroDuplicidade = (err: unknown): boolean => {
+  const codigo = (err as { code?: string } | null)?.code;
+  const mensagem = err instanceof Error ? err.message : String((err as { message?: unknown })?.message || "");
+  return (
+    codigo === "23505" ||
+    /duplicate key|unique constraint|23505/i.test(mensagem)
+  );
+};
+
 export type RedeOportunidadeStatus =
   | "publicada"
   | "visualizada"
@@ -78,7 +89,7 @@ export async function publicarOportunidade(
       .maybeSingle();
 
     if (existente) {
-      return { sucesso: false, erro: "Já existe uma oportunidade ativa para esta OS" };
+      return { sucesso: false, erro: MSG_REDE_JA_EXISTE };
     }
 
     // Buscar dados da OS para preencher automaticamente
@@ -145,6 +156,10 @@ export async function publicarOportunidade(
     return { sucesso: true, oportunidade: data };
   } catch (err: any) {
     console.error("[RedePrestadores] Erro ao publicar oportunidade:", err);
+    // Conflito de unicidade (OS já publicada) → mensagem amigável, sem SQL técnico.
+    if (ehErroDuplicidade(err)) {
+      return { sucesso: false, erro: MSG_REDE_JA_EXISTE };
+    }
     return { sucesso: false, erro: err.message };
   }
 }

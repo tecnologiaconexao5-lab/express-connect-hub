@@ -51,8 +51,8 @@ const tempoRelativo = (iso: string): string => {
 
 function montarNotificacao(os: OSSiteResumo, lida: boolean): NotificacaoOSSite {
   const mensagem = os.agendada
-    ? `⚠️ CHAMADO AGENDADO - ${os.agendamento}`
-    : `🚨 Nova OS de Cliente Recebida! (${os.clienteNome})`;
+    ? `📅 CHAMADO AGENDADO - ${os.agendamento}`
+    : `💰 Nova oportunidade! OS de Cliente Recebida (${os.clienteNome})`;
 
   return {
     id: `os-site-${os.id}`,
@@ -106,7 +106,11 @@ export function useOSSiteAlerts({ onAbrirOS, habilitado = true }: Opcoes) {
     if (os.agendada) {
       toast.warning(`⚠️ CHAMADO AGENDADO - ${os.agendamento}`, base);
     } else {
-      toast.error(`🚨 Nova OS de Cliente Recebida! (${os.clienteNome})`, base);
+      // Oportunidade/dinheiro: destaque verde sólido (não vermelho de erro).
+      toast.success(`💰 Nova oportunidade! OS de Cliente Recebida (${os.clienteNome})`, {
+        ...base,
+        style: { background: "#10B981", color: "#ffffff", border: "1px solid #10B981" },
+      });
     }
   }, []);
 

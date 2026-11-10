@@ -10,6 +10,8 @@
 // ============================================================
 
 // ---------- Tipos (aceita payload desktop e /os-mobile) ----------
+import { municipioComSigla } from "@/lib/resumoRotaOS";
+
 export interface PontoEnderecoMensagem {
   sequencia?: number;
   tipo?: string;
@@ -158,7 +160,20 @@ const ruaSemNumero = (e: PontoEnderecoMensagem): string => {
   return antesDaVirgula || "—";
 };
 
-const bairro = (e: PontoEnderecoMensagem): string => String(e?.bairro || "").trim() || "—";
+/**
+ * Município no formato "São Caetano do Sul (SCS)".
+ * O cabeçalho usa SEMPRE município — nunca bairro cortado ("Taboão"/"Santa Maria").
+ */
+const municipio = (e: PontoEnderecoMensagem): string => {
+  const texto = municipioComSigla({
+    cidade: e?.cidade,
+    estado: e?.estado,
+    bairro: e?.bairro,
+    endereco: e?.endereco,
+    logradouro: e?.logradouro,
+  });
+  return texto || "—";
+};
 
 const cepFormatado = (e: PontoEnderecoMensagem): string => {
   const digitos = String(e?.cep || "").replace(/\D/g, "");
@@ -265,7 +280,7 @@ export const gerarMensagemWhatsAppMotoboy = (data: DadosMensagemMotoboy): string
     "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
     `━━━━━━━━━━━━━━━━━${iconeVeiculo(data)}`,
     "",
-    `*${bairro(origem)} ━➤ ${bairro(destino)}* | *${distanciaKm(data)} km*`,
+    `*${municipio(origem)} ━➤ ${municipio(destino)}* | *${distanciaKm(data)} km*`,
     "",
     `🟣 *【 1 】 RET* • ${ruaSemNumero(origem)} - CEP: ${cepFormatado(origem)}`,
     `⏰ ${janela(origem)}`,
@@ -315,7 +330,7 @@ export const gerarMensagemOrientacaoExecucao = (data: DadosMensagemMotoboy): str
     "",
     "Olá, Parceiro! Você foi selecionado para executar esta OS.",
     "",
-    `*${bairro(origem)} ━➤ ${bairro(destino)}* | *${distanciaKm(data)} km*`,
+    `*${municipio(origem)} ━➤ ${municipio(destino)}* | *${distanciaKm(data)} km*`,
     "",
     ...blocoPonto("🟣", "1 】 RET", origem, "RETIRAR"),
     ...blocoPonto("🟠", "2 】 ENT", destino, "ENTREGAR"),

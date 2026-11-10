@@ -56,7 +56,12 @@ const CEP_OU_NUMERO = /^(\d{5}-?\d{3}|\d+)$/;
 const capitalizar = (valor: string): string =>
   valor
     .toLowerCase()
-    .replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase());
+    .split(/\s+/)
+    .map((palavra, indice) => {
+      if (indice > 0 && IGNORADOS.has(palavra)) return palavra;
+      return palavra.replace(/^\p{L}/u, (letra) => letra.toUpperCase());
+    })
+    .join(" ");
 
 /**
  * Deriva bairro/cidade/UF do texto do endereço quando a OS não trouxe os
@@ -151,6 +156,39 @@ export function siglaCidade(cidade?: string | null, uf?: string | null): string 
   const primeira = palavras[0] || chave.replace(/\s/g, "");
   const completar = primeira.slice(1).replace(/[^a-z]/g, "");
   return (iniciais + completar).slice(0, 3).toUpperCase() || String(uf || "").toUpperCase();
+}
+
+/**
+ * Município + sigla a partir de um endereço estruturado: "São Caetano do Sul (SCS)".
+ * Usado no cabeçalho do WhatsApp e no alerta da rede (nunca o bairro).
+ */
+export function municipioComSigla(endereco?: EnderecoResumoRota | null): string {
+  if (!endereco) return "";
+  let cidade = String(endereco.cidade || "").trim();
+  let uf = String(endereco.uf || endereco.estado || "").trim();
+  if (!cidade) {
+    const derivado = derivarBairroCidade(endereco.endereco || endereco.logradouro || "");
+    cidade = derivado.cidade;
+    if (!uf) uf = derivado.uf;
+  }
+  const fallback = String(endereco.endereco || endereco.logradouro || "").trim();
+  if (!cidade) return fallback;
+  const sigla = siglaCidade(cidade, uf);
+  return sigla ? `${cidade} (${sigla})` : cidade;
+}
+
+/**
+ * Município + sigla a partir de texto livre ("Bairro, Cidade - UF").
+ * Usado quando só existe `origem`/`destino` textual (cards da Rede).
+ */
+export function municipioComSiglaDeTexto(texto?: string | null): string {
+  const bruto = String(texto || "").trim();
+  if (!bruto) return "";
+  const derivado = derivarBairroCidade(bruto);
+  const cidade = derivado.cidade || bruto.replace(/\s*[-–]\s*[A-Za-z]{2}$/, "").trim();
+  if (!cidade) return bruto;
+  const sigla = siglaCidade(cidade, derivado.uf);
+  return sigla ? `${cidade} (${sigla})` : cidade;
 }
 
 /** "Bairro-SIGLA" (ou apenas "SIGLA" quando o bairro não veio no endereço). */

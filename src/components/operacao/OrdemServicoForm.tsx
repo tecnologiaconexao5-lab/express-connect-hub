@@ -78,6 +78,7 @@ import {
   cancelarOportunidade,
   obterOportunidadePorOS,
   obterStatusRedeInfo,
+  MSG_REDE_JA_EXISTE,
   type RedeOportunidade,
   type PrestadorCompativel,
 } from "@/services/operacao/redePrestadoresService";
@@ -807,20 +808,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     if (valorCliente <= 0) return 0;
     return ((valorCliente - (Number(data.custoPrestador) || 0)) / valorCliente) * 100;
   })();
-  // SEQUÊNCIA OFICIAL — número definitivo da OS (OS-AAAAMM-1200+) vem do banco;
-  // o valor gerado em emptyOS é apenas provisório enquanto a RPC responde.
+  // SEQUÊNCIA OFICIAL — o número (OS-AAAAMM-1200+) só é consumido no clique
+  // em "Salvar OS". Abrir/fechar a tela de Nova OS sem salvar NÃO pode queimar
+  // a sequência (bug dos pulos 1206 → 1208). O valor de `emptyOS` é provisório.
   const numeroSequencialBuscado = useRef(false);
-  useEffect(() => {
-    if (modo !== "novo" || data.id || rascunhoInicial || numeroSequencialBuscado.current) return;
-    numeroSequencialBuscado.current = true;
-    let ativo = true;
-    void gerarNumeroOS().then((numero) => {
-      if (ativo) setData((p) => (p.id ? p : { ...p, numero }));
-    });
-    return () => {
-      ativo = false;
-    };
-  }, [modo, data.id, rascunhoInicial]);
   // MISSÃO ENDERECOS-INTELIGENTES — nome do cliente para exibição (data.cliente pode conter UUID)
   const [clienteNomeExibicao, setClienteNomeExibicao] = useState("");
   // Cadastro rápido de cliente (modal: nome/razão social + telefone/WhatsApp).
@@ -1776,10 +1767,20 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
           toast.info(`${compRes.prestadores.length} prestadores compatíveis encontrados`);
         }
       } else {
-        toast.error(res.erro || "Erro ao publicar oportunidade");
+        const erro = res.erro || "";
+        toast.error(
+          /duplicate key|unique constraint|23505/i.test(erro)
+            ? MSG_REDE_JA_EXISTE
+            : erro || "Erro ao publicar oportunidade",
+        );
       }
     } catch (e: any) {
-      toast.error("Erro: " + e.message);
+      const mensagem = String(e?.message || "");
+      toast.error(
+        /duplicate key|unique constraint|23505/i.test(mensagem)
+          ? MSG_REDE_JA_EXISTE
+          : "Erro: " + mensagem,
+      );
     } finally {
       setCarregandoRede(false);
     }
@@ -2043,14 +2044,31 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         }
       }
 
-      if (!data.id && data.numero) {
+      // Número definitivo gerado APENAS aqui (clique em Salvar), nunca na
+      // montagem da tela — garante que a sequência só é consumida ao criar.
+      let numeroFinal = data.numero;
+      if (!data.id) {
+        if (numeroSequencialBuscado.current) {
+          toast.warning("Aguarde, a OS já está a ser salva.");
+          setIsSaving(false);
+          return;
+        }
+        numeroSequencialBuscado.current = true;
+        try {
+          numeroFinal = await gerarNumeroOS();
+        } finally {
+          numeroSequencialBuscado.current = false;
+        }
+      }
+
+      if (!data.id && numeroFinal) {
         const { data: osExistente } = await supabase
           .from("ordens_servico")
           .select("id")
-          .eq("numero", data.numero)
+          .eq("numero", numeroFinal)
           .maybeSingle();
         if (osExistente) {
-          toast.error(`Já existe uma OS com o número "${data.numero}". Recarregue para gerar um novo.`);
+          toast.error(`Já existe uma OS com o número "${numeroFinal}". Tente salvar novamente.`);
           setIsSaving(false);
           return;
         }
@@ -2068,6 +2086,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       const rawPayload = data.id ? toOSUpdate(data) : toOSInsert(data);
       
       const { payload: sanitizedPayload, removed } = sanitizeOrdemServicoPayload(rawPayload);
+
+      // Garante que o insert usa o número sequencial gerado no clique em Salvar
+      // (e nunca o número provisório/aleatório da montagem da tela).
+      sanitizedPayload.numero = numeroFinal;
 
       // Aplicar override de status (ex: "Salvar rascunho" força status="rascunho")
       if (statusFinal !== data.status) {

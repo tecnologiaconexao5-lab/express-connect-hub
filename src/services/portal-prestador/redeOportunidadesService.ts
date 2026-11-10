@@ -5,6 +5,7 @@
 // ============================================================
 
 import { supabase } from "@/lib/supabase";
+import { municipioComSigla, municipioComSiglaDeTexto } from "@/lib/resumoRotaOS";
 
 export interface OportunidadeRedeMobile {
   id: string;
@@ -22,6 +23,16 @@ export interface OportunidadeRedeMobile {
   prazoExpiracao: string | null;
 }
 
+interface EnderecoOS {
+  tipo?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  estado?: string | null;
+  bairro?: string | null;
+  endereco?: string | null;
+  logradouro?: string | null;
+}
+
 interface OsRelacionada {
   numero?: string | null;
   origem?: string | null;
@@ -29,6 +40,7 @@ interface OsRelacionada {
   distancia_km?: number | string | null;
   tipo_carga?: string | null;
   peso?: number | string | null;
+  enderecos?: EnderecoOS[] | null;
 }
 
 interface OportunidadeRow {
@@ -68,7 +80,7 @@ export async function buscarOportunidadesRede(): Promise<OportunidadeRedeMobile[
   const { data, error } = await supabase
     .from("rede_oportunidades")
     .select(
-      "id, os_id, status, valor_prestador, veiculo_necessario, regiao, prazo_expiracao, ordens_servico:os_id(numero, origem, destino, distancia_km, tipo_carga, peso)",
+      "id, os_id, status, valor_prestador, veiculo_necessario, regiao, prazo_expiracao, ordens_servico:os_id(numero, origem, destino, distancia_km, tipo_carga, peso, enderecos)",
     )
     .in("status", ["publicada", "visualizada", "interessada"])
     .order("created_at", { ascending: false })
@@ -78,13 +90,25 @@ export async function buscarOportunidadesRede(): Promise<OportunidadeRedeMobile[
 
   return ((data || []) as unknown as OportunidadeRow[]).map((row) => {
     const os = osDaOportunidade(row.ordens_servico);
+    const enderecos = Array.isArray(os.enderecos) ? os.enderecos : [];
+    const coleta = enderecos.find((e) => e?.tipo === "coleta") || enderecos[0];
+    const entrega =
+      [...enderecos].reverse().find((e) => e?.tipo === "entrega" || e?.tipo === "destino") ||
+      enderecos[enderecos.length - 1];
     return {
       id: row.id,
       osId: row.os_id || null,
       osNumero: texto(os.numero) || null,
       status: texto(row.status) || "publicada",
-      origem: texto(os.origem) || "Origem não informada",
-      destino: texto(os.destino) || "Destino não informado",
+      // Cabeçalho sempre no formato "Município (Sigla)" — nunca bairro cortado.
+      origem:
+        municipioComSigla(coleta) ||
+        municipioComSiglaDeTexto(os.origem) ||
+        "Origem não informada",
+      destino:
+        municipioComSigla(entrega) ||
+        municipioComSiglaDeTexto(os.destino) ||
+        "Destino não informado",
       regiao: texto(row.regiao) || null,
       distanciaKm: numero(os.distancia_km),
       valorPrestador: numero(row.valor_prestador),

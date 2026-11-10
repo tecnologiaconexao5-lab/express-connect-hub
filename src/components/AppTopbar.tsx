@@ -273,7 +273,7 @@ const AppTopbar = () => {
                     <div className="mt-0.5">
                       {n.agendada
                         ? <Clock className="w-4 h-4 text-amber-500" />
-                        : <Bell className="w-4 h-4 text-red-500" />}
+                        : <Bell className="w-4 h-4 text-emerald-500" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm leading-tight ${n.lida ? 'font-medium' : 'font-semibold'} ${n.agendada ? 'text-amber-700' : 'text-slate-800'}`}>

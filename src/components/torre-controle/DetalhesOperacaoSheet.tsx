@@ -138,6 +138,9 @@ export function DetalhesOperacaoSheet({
 
   useEffect(() => {
     if (!open || !osId) return;
+    // Abre sempre na aba "Geral" — evita herdar uma aba de outra operação
+    // e deixa o cabeçalho/conteúdo consistentes na transição.
+    setTab("visao-geral");
     setLoading(true);
     Promise.all([
       fetchAlocacoes(),
@@ -377,9 +380,9 @@ export function DetalhesOperacaoSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-xl lg:max-w-2xl overflow-y-auto p-0">
-        <div className="flex flex-col h-full">
-          <SheetHeader className="px-5 pt-5 pb-2 border-b shrink-0">
+        <SheetContent side="right" className="w-full sm:max-w-xl lg:max-w-2xl overflow-hidden p-0">
+          <div className="flex flex-col h-full">
+          <SheetHeader className="sticky top-0 z-20 px-5 pt-5 pb-2 border-b bg-background shrink-0">
             <div className="flex items-center gap-2 mb-1">
               <Package className="w-5 h-5 text-indigo-500" />
               <SheetTitle className="text-base">
@@ -429,7 +432,7 @@ export function DetalhesOperacaoSheet({
           </SheetHeader>
 
           {!loading && (
-            <div className="px-5 py-2 border-b bg-muted/20 flex items-center gap-1.5 flex-wrap shrink-0">
+              <div className="px-5 py-2 border-b bg-muted/20 flex items-center gap-1.5 flex-wrap shrink-0">
               <Badge className={slaInfo.cls}>{slaInfo.label}</Badge>
               {alocacaoAtiva?.status === "em_rota" && (
                 gpsBadgeInfo
@@ -469,7 +472,7 @@ export function DetalhesOperacaoSheet({
             </div>
           ) : (
             <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0">
-              <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-5 py-0 h-auto gap-0 shrink-0 overflow-x-auto">
+              <TabsList className="w-full justify-start rounded-none border-b bg-background px-5 py-0 h-auto gap-0 shrink-0 overflow-x-auto">
                 {[
                   { value: "visao-geral", label: "Geral", icon: Package },
                   { value: "detalhes", label: "Detalhes", icon: Building },
