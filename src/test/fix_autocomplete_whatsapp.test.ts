@@ -108,7 +108,7 @@ describe("Template 1 — Resumo da Rota (padrão obrigatório)", () => {
     expect(linhas[0]).toBe("🟠 *CONEXÃO ⚡ EXPRESS* 🟣");
     expect(linhas[1]).toBe("━━━━━━━━━━━━━━━━━🏍️");
     expect(linhas[2]).toBe("");
-    expect(linhas[3]).toBe("Vila Madalena ━➤ Bela Vista | 12,5 km");
+    expect(linhas[3]).toBe("*Vila Madalena ━➤ Bela Vista* | *12,5 km*");
     expect(linhas[4]).toBe("");
     expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua das Flores - CEP: 01310-100");
     expect(linhas[6]).toBe("⏰ 09:00–10:00");
@@ -190,7 +190,7 @@ describe("Template WhatsApp — MESMO gerador no /os-mobile (snake_case)", () =>
 
   it("preenche rota, janelas e CEP a partir do jsonb enderecos do mobile", () => {
     expect(linhas[1]).toBe("━━━━━━━━━━━━━━━━━🏍️");
-    expect(linhas[3]).toBe("Centro ━➤ Jardim Paulista | 10 km");
+    expect(linhas[3]).toBe("*Centro ━➤ Jardim Paulista* | *10 km*");
     expect(linhas[5]).toBe("🟣 *【 1 】 RET* • Rua Alegre - CEP: 07010-000");
     expect(linhas[6]).toBe("⏰ 08:00–09:00");
     expect(linhas[9]).toBe("🟠 *【 2 】 ENT* • Rua do Campo - CEP: 02000-000");

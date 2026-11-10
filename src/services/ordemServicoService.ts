@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { agoraSaoPauloISO, hojeISOSP } from "@/lib/formatDates";
 import { buscarTabelaPrestador } from "./precificacao/buscarTabelasService";
 // M104: Eventos publicados automaticamente por SQL triggers no banco
 // import { publicarEvento } from "./eventBus/eventBusService";
@@ -324,7 +325,8 @@ export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSRes
     // input.cliente_id contém o UUID do cliente
     const payload: Record<string, any> = {
       numero,
-      data: new Date().toISOString().split('T')[0],
+      // Data (coluna `date`) e timestamps naive SEMPRE no fuso America/Sao_Paulo.
+      data: hojeISOSP(),
       cliente_id: input.cliente_id,
       cliente: input.cliente_id,
       unidade: input.filial || null,
@@ -367,9 +369,9 @@ export async function criarOrdemServico(input: CriarOSInput): Promise<CriarOSRes
       retorno_obrigatorio: input.retorno_obrigatorio ?? false,
       tempo_estimado: input.tempo_estimado ?? 0,
 
-      // Controle
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      // Controle — timestamp without time zone no fuso local de São Paulo.
+      created_at: agoraSaoPauloISO(),
+      updated_at: agoraSaoPauloISO(),
     };
 
     // MISSAO OS-MOBILE (item 4) — prestador + veículo alocado (aditivo):
@@ -547,7 +549,7 @@ export async function finalizarOrdemServico(osId: string): Promise<FinalizarOSRe
     // 5. Atualizar OS para status finalizada
     const updatePayload: any = {
       status: "finalizada",
-      updated_at: new Date().toISOString()
+      updated_at: agoraSaoPauloISO()
     };
 
     // Atualizar campos financeiros calculados
@@ -672,7 +674,7 @@ export async function sincronizarOSEscala(alocacaoData: Record<string, any>): Pr
       custo_prestador: alocacao.valor_repasse || undefined,
       instrucoes_operacionais_os: alocacao.instrucoes_operacionais || undefined,
       observacoes_gerais: alocacao.observacoes || undefined,
-      updated_at: new Date().toISOString(),
+      updated_at: agoraSaoPauloISO(),
     };
 
     if (alocacao.status && alocacao.status !== osAtual.status) {

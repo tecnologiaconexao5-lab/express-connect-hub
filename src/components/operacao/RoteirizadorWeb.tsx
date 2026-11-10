@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { formatarDistanciaKm } from "@/lib/formatNumbers";
 import { 
   LayoutDashboard, 
   Upload, 
@@ -1230,7 +1231,7 @@ const RoteirizadorWeb = () => {
                                 <p className="text-slate-500 text-xs uppercase font-semibold">Distância / Tempo</p>
                                 {rotasCalculadas.get(idx) ? (
                                   <div>
-                                    <p className="font-bold text-slate-700">{rotasCalculadas.get(idx)?.distanciaKm} km</p>
+                                    <p className="font-bold text-slate-700">{formatarDistanciaKm(rotasCalculadas.get(idx)?.distanciaKm)} km</p>
                                     <p className="text-xs text-slate-500">{rotasCalculadas.get(idx)?.tempoMin} min</p>
                                     <Badge variant={rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'default' : 'outline'} className="text-[10px] mt-1">
                                       {rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'Mapbox' : 'Estimado'}

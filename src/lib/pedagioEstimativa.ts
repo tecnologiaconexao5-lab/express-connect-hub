@@ -77,6 +77,10 @@ export function estimarPedagio(
   veiculoTipo?: string | null,
 ): EstimativaPedagio {
   const chave = normalizarVeiculo(veiculoTipo);
+  // TRAVA RÍGIDA: moto não paga pedágio (0), independentemente da distância.
+  if (chave === "moto") {
+    return { valor: 0, eixos: 2, pracas: 0, tarifaPorPraca: 0 };
+  }
   const eixos = chave ? EIXOS_POR_VEICULO[chave] : undefined;
   if (!eixos) {
     return { valor: 0, eixos: 0, pracas: 0, tarifaPorPraca: 0 };

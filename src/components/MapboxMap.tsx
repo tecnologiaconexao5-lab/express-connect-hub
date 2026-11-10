@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Map, { Marker, Popup, NavigationControl, FullscreenControl, ScaleControl, Source, Layer, MapRef } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Truck, AlertTriangle, AlertCircle, CheckCircle, MapPin, X, Settings, Package, Clock } from "lucide-react";
+import { Truck, Bike, Car, AlertTriangle, AlertCircle, CheckCircle, MapPin, X, Settings, Package, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { MAPBOX_ACCESS_TOKEN } from "@/lib/mapboxToken";
@@ -60,18 +60,23 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case "em_rota": return Truck;
-    case "em_coleta": return Package;
-    case "em_entrega": return MapPin;
-    case "parado": return Clock;
-    case "aguardando": return Truck;
-    case "ocorrencia": return AlertCircle;
-    case "atrasado": return AlertTriangle;
-    case "concluida": return CheckCircle;
-    default: return Truck;
-  }
+// Ícone do marcador de acordo com o veículo alocado (moto ≠ caminhão).
+const getVehicleIcon = (vehicleType?: string | null) => {
+  const t = String(vehicleType || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (t.includes("moto")) return Bike;
+  if (t.includes("carro") || t.includes("passeio") || t.includes("automovel")) return Car;
+  return Truck;
+};
+
+// Alertas/conclusão continuam com prioridade visual sobre o tipo de veículo.
+const getMarkerIcon = (location: MapLocation) => {
+  if (location.status === "ocorrencia") return AlertCircle;
+  if (location.status === "atrasado") return AlertTriangle;
+  if (location.status === "concluida") return CheckCircle;
+  return getVehicleIcon(location.vehicleType);
 };
 
 const getStatusLabel = (status: string) => {
@@ -326,7 +331,7 @@ export default function MapboxMap({
           </Source>
         ) : (
           locations.map((location) => {
-            const IconMarker = getStatusIcon(location.status);
+            const IconMarker = getMarkerIcon(location);
             return (
               <Marker
                 key={location.id}

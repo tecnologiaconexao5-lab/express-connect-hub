@@ -52,6 +52,8 @@ import { useRouterBlocker } from "@/hooks/useRouterBlocker";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO, sugerirVeiculo, VEICULO_PARAMETROS } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
+import { formatarDataBR, hojeISOSP } from "@/lib/formatDates";
+import { formatarDistanciaKm } from "@/lib/formatNumbers";
 import { criarClienteRapido, criarPrestadorRapido, ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
 import { STATUS_CLIENTES_SELECIONAVEIS } from "@/lib/clienteStatus";
 import { calcularDistancia } from "@/services/maps";
@@ -293,7 +295,8 @@ const emptyCarga = (): OSCarga => ({
 
 const emptyOS = (): OrdemServico => {
   const agora = new Date();
-  const dataHoje = agora.toISOString().split("T")[0];
+  // Data de emissão no fuso de São Paulo (evita "dia anterior/seguinte" no UTC).
+  const dataHoje = hojeISOSP();
   return {
     numero: `OS-${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
     data: dataHoje, cliente: "", unidade: "", centroCusto: "", orcamentoOrigem: "", prestador: "", veiculoAlocado: "", veiculoPlaca: "",
@@ -541,7 +544,7 @@ const ResumoOperacionalPanel = ({
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
             <p className="text-[10px] font-semibold uppercase text-slate-400">Distância</p>
-            <p className="text-sm font-black text-slate-800">{data.distanciaKm || 0} km</p>
+            <p className="text-sm font-black text-slate-800">{formatarDistanciaKm(data.distanciaKm)} km</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-2 text-center">
             <p className="text-[10px] font-semibold uppercase text-slate-400">Tempo</p>
@@ -571,7 +574,7 @@ const ResumoOperacionalPanel = ({
         )}
         <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
           <Building2 className="h-3 w-3 text-slate-400" />
-          Emitida em {data.data ? new Date(data.data).toLocaleDateString("pt-BR") : "—"}
+          Emitida em {data.data ? formatarDataBR(data.data) : "—"}
         </div>
       </PanelSection>
     </div>
@@ -1282,6 +1285,13 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   // digitado manualmente nunca é sobrescrito pela estimativa.
   const aplicarPedagioDaRota = (rota: { pedagio?: number; pedagioProvider?: string; distanciaKm?: number; duracaoMin?: number; distanciaTexto?: string; duracaoTexto?: string; provider?: string } | null | undefined) => {
     const km = Number(rota?.distanciaKm ?? data.distanciaKm ?? 0);
+
+    // TRAVA RÍGIDA: moto é isenta de pedágio. Nunca herda o valor da API/estimativa.
+    if (String(data.veiculoTipo || "").toLowerCase().includes("moto")) {
+      setData(p => ({ ...p, pedagio: 0 }));
+      setPedagioInfo({ fonte: "isento", detalhe: "Moto isenta de pedágio", atualizadoEm: new Date().toISOString() });
+      return;
+    }
 
     // Valor digitado manualmente tem prioridade absoluta.
     const ehManual = (data.pedagio ?? 0) > 0 && pedagioInfo.fonte === "manual";
@@ -2514,7 +2524,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
             <PanelRow label="Operacional" value={<span className="flex items-center justify-end gap-1.5"><span className={`h-2 w-2 rounded-full ${obterClasseDotGlobal(obterStatusGlobalOS(data.status))}`} />{STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label}</span>} />
             <PanelRow label="Financeiro" value={<span className="flex items-center justify-end gap-1.5"><span className={`h-2 w-2 rounded-full ${(data.statusFaturamento === "faturada" || data.statusFaturamento === "paga") ? "bg-green-500" : data.statusFaturamento === "a faturar" ? "bg-amber-500" : "bg-slate-400"}`} />{(data.statusFaturamento || "N/I").toUpperCase()}</span>} />
             <PanelRow label="Programação" value={obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")} valueClass={diagnosticoEscala?.status === "sincronizada" ? "text-emerald-700" : "text-amber-700"} />
-            <PanelRow label="Emissão" value={data.data ? new Date(data.data).toLocaleDateString("pt-BR") : "—"} />
+            <PanelRow label="Emissão" value={data.data ? formatarDataBR(data.data) : "—"} />
           </PanelSection>
           <ResumoOperacionalPanel
             data={data}
@@ -3819,7 +3829,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="text-center p-3 bg-white rounded-lg border border-green-100">
                         <p className="text-xs text-green-600 font-medium">Distância Total</p>
-                        <p className="text-xl font-bold text-green-800">{distanciaRota?.distanciaTexto || `${data.distanciaKm || 0} km`}</p>
+                        <p className="text-xl font-bold text-green-800">{distanciaRota?.distanciaTexto || `${formatarDistanciaKm(data.distanciaKm)} km`}</p>
                       </div>
                       <div className="text-center p-3 bg-white rounded-lg border border-green-100">
                         <p className="text-xs text-green-600 font-medium">Tempo Estimado</p>
@@ -4216,7 +4226,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 font-medium">Distância</p>
-                      <p className="text-lg font-bold text-slate-700">{distanciaRota?.distanciaKm?.toFixed(1) || data.distanciaKm || 0} km</p>
+                      <p className="text-lg font-bold text-slate-700">{formatarDistanciaKm(distanciaRota?.distanciaKm ?? data.distanciaKm)} km</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 font-medium">Tabela</p>
@@ -4743,7 +4753,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                       </div>
                       <div>
                         <p className="text-xs text-slate-500 font-medium">Distância</p>
-                        <p className="text-lg font-bold text-slate-700">{distanciaRota?.distanciaKm?.toFixed(1) || data.distanciaKm || 0} km</p>
+                        <p className="text-lg font-bold text-slate-700">{formatarDistanciaKm(distanciaRota?.distanciaKm ?? data.distanciaKm)} km</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500 font-medium">Tempo</p>

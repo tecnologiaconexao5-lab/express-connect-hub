@@ -110,6 +110,28 @@ export function formatarDataHoraCurtaSP(valor?: string | null): string {
     .replace(",", " ·");
 }
 
+/**
+ * Agora no fuso America/Sao_Paulo, como datetime NAIVE (`YYYY-MM-DDTHH:mm:ss`),
+ * para gravar em colunas `timestamp without time zone` (ex.: `ordens_servico.created_at`).
+ *
+ * Gravar `new Date().toISOString()` (UTC) nessa coluna fazia a tela somar +3h
+ * (17:37 local virava 20:37). Aqui o valor já sai no horário local de São Paulo.
+ */
+export function agoraSaoPauloISO(): string {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO_BR,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
 /** "Hoje" no fuso America/Sao_Paulo (YYYY-MM-DD) — comparações de colunas `date`. */
 export function hojeISOSP(): string {
   return new Intl.DateTimeFormat("en-CA", {

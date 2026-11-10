@@ -265,7 +265,7 @@ export const gerarMensagemWhatsAppMotoboy = (data: DadosMensagemMotoboy): string
     "🟠 *CONEXÃO ⚡ EXPRESS* 🟣",
     `━━━━━━━━━━━━━━━━━${iconeVeiculo(data)}`,
     "",
-    `${bairro(origem)} ━➤ ${bairro(destino)} | ${distanciaKm(data)} km`,
+    `*${bairro(origem)} ━➤ ${bairro(destino)}* | *${distanciaKm(data)} km*`,
     "",
     `🟣 *【 1 】 RET* • ${ruaSemNumero(origem)} - CEP: ${cepFormatado(origem)}`,
     `⏰ ${janela(origem)}`,

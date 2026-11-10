@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import { estimarPedagio, EIXOS_POR_VEICULO } from "@/lib/pedagioEstimativa";
 
 describe("estimarPedagio (FIX 4 — pedágio por eixos × distância)", () => {
-  it("estima moto em 100 km como 2 praças × R$ 13,50 (2 eixos)", () => {
+  it("TRAVA: moto é isenta de pedágio (0) em 100 km", () => {
     const r = estimarPedagio(100, "moto");
     expect(r.eixos).toBe(2);
-    expect(r.pracas).toBe(2);
-    expect(r.tarifaPorPraca).toBe(13.5);
-    expect(r.valor).toBe(27);
+    expect(r.pracas).toBe(0);
+    expect(r.tarifaPorPraca).toBe(0);
+    expect(r.valor).toBe(0);
   });
 
   it("estima toco (3 eixos) em 100 km como 2 praças × R$ 20,00", () => {

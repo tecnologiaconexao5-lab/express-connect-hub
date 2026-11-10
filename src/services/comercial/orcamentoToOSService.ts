@@ -303,7 +303,8 @@ export const gerarOSDoOrcamento = async (
       orcamento_origem: orc.numero,
       // Financeiro herdado do orçamento
       valor_cliente: orc.valores?.valorFinal || 0,
-      pedagio: orc.valores?.pedagio || 0,
+      // TRAVA RÍGIDA: moto é isenta de pedágio mesmo que o orçamento tenha herdado valor.
+      pedagio: String(orc.veiculo?.tipo || "").toLowerCase().includes("moto") ? 0 : (orc.valores?.pedagio || 0),
       adicionais: orc.valores?.adicionais || 0,
       descontos: orc.valores?.descontos || 0,
       tabela_aplicada: orc.valores?.tabelaVinculada || "",

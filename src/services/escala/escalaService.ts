@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { agoraSaoPauloISO } from '@/lib/formatDates';
 import { mapearStatusEscalaParaAppPrestador } from './escalaAppPrestadorAdapter';
 // M104: Eventos publicados automaticamente por SQL triggers no banco
 // import { publicarEvento } from '@/services/eventBus/eventBusService';
@@ -568,6 +569,23 @@ export async function aceitarAlocacao(
     };
 
     const resultado = await atualizarAlocacao(id, atualizacao);
+
+    // STATUS OPERACIONAL IMEDIATO: ao aceitar, a OS vinculada sai de
+    // Pendente/Em Análise para "Alocado" (status interno `agendada`).
+    // Mantém o comportamento do trigger do banco, mas sem depender de refresh.
+    if (resultado.sucesso) {
+      const osId = resultado.dados?.ordem_servico_id;
+      if (osId) {
+        const { error: erroOs } = await supabase
+          .from('ordens_servico')
+          .update({ status: 'agendada', updated_at: agoraSaoPauloISO() })
+          .eq('id', osId)
+          .in('status', ['rascunho', 'em_analise', 'pendente']);
+        if (erroOs) {
+          console.warn('[EscalaService] Falha ao sincronizar status da OS no aceite:', erroOs.message);
+        }
+      }
+    }
 
     // M104: Evento escala.alocacao.aceita publicado pelo trigger SQL trg_evento_prestador_aceitou
 

@@ -221,7 +221,19 @@ const TorreControle = () => {
 
     channelsRef.current = [osChannel, ocChannel, alocChannel, escChannel, trackingChannel];
 
+    // AUTO-REFRESH (sem F5): mesmo com Realtime, garante recarga periódica do
+    // painel (contadores/KPIs) a cada 30s. `clearInterval` no unmount evita leak.
+    const refreshInterval = setInterval(() => {
+      fetchData();
+    }, 30000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") fetchData();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
+      clearInterval(refreshInterval);
+      document.removeEventListener("visibilitychange", onVisibility);
       channelsRef.current.forEach((ch) => ch.unsubscribe());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -343,7 +355,7 @@ const TorreControle = () => {
       
       // Guarda final no cliente (cobre edge cases como prestador_id = "" que o PostgREST
       // não distingue de NULL). O corte de órfãs já ocorreu no servidor, portanto não há truncamento.
-      const listaOS = osData ? (osData as OSRow[])
+      const listaBase = osData ? (osData as OSRow[])
         .filter(temPrestadorVinculado)
         .map((item) => ({
           ...fromOSRow(item),
@@ -352,13 +364,54 @@ const TorreControle = () => {
           enderecos: (item as any).enderecos,
           localizacaoEntregaJson: (item as any).localizacao_entrega_json,
         })) : [];
+
+      // Status real da alocação + etapa do App por OS. Sem isto o marcador/KPI
+      // usa só `ordens_servico.status` (que pode continuar "Pendente" após o
+      // aceite) e "Em Rota" aparecia 0 mesmo com OS em rota.
+      const { data: alocStats } = await supabase
+        .from("alocacoes_escala")
+        .select("ordem_servico_id, status, finalizada, data_finalizacao, metadata")
+        .not("status", "in", '("cancelada","recusada")');
+
+      type AlocStatTorre = {
+        ordem_servico_id: string | null;
+        status: string | null;
+        finalizada: boolean | null;
+        data_finalizacao: string | null;
+        metadata: { app_motorista?: { etapa_atual?: string } } | null;
+      };
+      type OSComAlocacao = (typeof listaBase)[number] & {
+        alocStatus?: string;
+        etapaApp?: string;
+      };
+
+      const alocStatsTipado = (alocStats || []) as AlocStatTorre[];
+      const alocPorOS: Record<string, { alocStatus?: string; etapaApp?: string }> = {};
+      for (const a of alocStatsTipado) {
+        if (!a.ordem_servico_id) continue;
+        alocPorOS[a.ordem_servico_id] = {
+          alocStatus: a.status || undefined,
+          etapaApp: a.metadata?.app_motorista?.etapa_atual || undefined,
+        };
+      }
+
+      const listaOS = listaBase.map((item) => ({
+        ...item,
+        ...(alocPorOS[item.id] || {}),
+      })) as OSComAlocacao[];
       setOsAtivas(listaOS as OSRecord[]);
 
       carregarNomes(listaOS as OSRecord[]);
       fetchOcorrencias();
       fetchTimeline();
 
-      const today = new Date().toISOString().slice(0, 10);
+      // "Hoje" no fuso local de São Paulo (evita deslocamento de dia em UTC).
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
 
       // MISSÃO A23-B: POD pendente = operação concluída/finalizada SEM POD real
       // em entregas_protocolo (fonte oficial). NÃO usa comprovante_url da alocação.
@@ -377,25 +430,31 @@ const TorreControle = () => {
 
       setComprovantesPendentes(comprovDetalhados);
 
-      const { data: alocStats } = await supabase
-        .from("alocacoes_escala")
-        .select("status, finalizada, data_finalizacao")
-        .not("status", "in", '("cancelada","recusada")');
-
       const hoje = today;
-      const emRotaAloc = (alocStats || []).filter((a: any) => a.status === "em_rota").length;
-      const agAceiteAloc = (alocStats || []).filter((a: any) => a.status === "aguardando_aceite").length;
-      const ocorrAloc = (alocStats || []).filter((a: any) => a.status === "ocorrencia").length;
-      const concluidasHojeAloc = (alocStats || []).filter((a: any) =>
-        a.status === "concluida" && a.data_finalizacao?.startsWith(hoje)
+      const emRotaAloc = alocStatsTipado.filter((a) => a.status === "em_rota").length;
+      const agAceiteAloc = alocStatsTipado.filter((a) => a.status === "aguardando_aceite").length;
+      const ocorrAloc = alocStatsTipado.filter((a) => a.status === "ocorrencia").length;
+      const concluidasHojeAloc = alocStatsTipado.filter((a) =>
+        a.status === "concluida" && (a.data_finalizacao || "").startsWith(hoje)
+      ).length;
+
+      const emRotaOS = listaOS.filter(o =>
+        ["em_rota", "saiu para rota", "em operacao"].includes(String(o.status)) ||
+        o.alocStatus === "em_rota"
+      ).length;
+      const aguardandoAceiteOS = listaOS.filter(o =>
+        o.status === "aguardando parceiro" || o.alocStatus === "aguardando_aceite"
+      ).length;
+      const comOcorrenciaOS = listaOS.filter(o =>
+        o.status === "com ocorrencia" || o.alocStatus === "ocorrencia"
       ).length;
 
       setStats({
-        emRota: emRotaAloc || listaOS.filter(o => o.status === "saiu para rota" || o.status === "em operacao").length,
-        aguardandoAceite: agAceiteAloc || listaOS.filter(o => o.status === "aguardando parceiro").length,
-        comOcorrencia: ocorrAloc || listaOS.filter(o => o.status === "com ocorrencia").length,
+        emRota: Math.max(emRotaAloc, emRotaOS),
+        aguardandoAceite: Math.max(agAceiteAloc, aguardandoAceiteOS),
+        comOcorrencia: Math.max(ocorrAloc, comOcorrenciaOS),
         atrasadas: listaOS.filter(o => isOSAtrasada(o.previsaoTermino, o.status)).length || 0,
-        concluidasHoje: concluidasHojeAloc || listaOS.filter(o => o.status === "finalizada").length,
+        concluidasHoje: Math.max(concluidasHojeAloc, listaOS.filter(o => o.status === "finalizada").length),
         semComprovante: totalSemComprovante ?? 0,
         emRisco: listaOS.filter(o => calcularRiscoOperacional(o.previsaoTermino, o.status)).length || 0,
         semPrevisao: listaOS.filter(o => !o.previsaoTermino && !isOSConcluida(o.status)).length || 0,
@@ -744,7 +803,12 @@ const TorreControle = () => {
 
   const executiveKpis = useMemo<KpiItem[]>(() => {
     const ativas = osAtivas.filter(o => !isOSConcluida(o.status)).length;
-    const emRota = markers.filter(m => m.status === "em_rota").length;
+    // Fonte primária: alocações em rota (independe de o GPS/coordenada existir).
+    // Fallback: marcadores no mapa.
+    const emRota = Math.max(
+      stats.emRota,
+      markers.filter(m => m.status === "em_rota").length,
+    );
     const emColeta = markers.filter(m => m.status === "em_coleta").length;
     const emEntrega = markers.filter(m => m.status === "em_entrega").length;
     const parados = mapCounters.parados;

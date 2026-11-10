@@ -7,7 +7,7 @@
 
 // TMS-ORC-PDF-01 — total efetivo do orçamento (regra canônica, fonte única).
 import { resolverValorFinal } from "../components/comercial/orcamentoCalculo";
-import { hojeISO } from "./formatDates";
+import { agoraSaoPauloISO, hojeISO } from "./formatDates";
 
 // ---------------- UTILITÁRIOS ----------------
 const safeString = (value: unknown, defaultValue = ""): string => {
@@ -1349,8 +1349,10 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
     };
   }
 
-  d.created_at = new Date().toISOString();
-  d.updated_at = new Date().toISOString();
+  // `ordens_servico.created_at`/`updated_at` são timestamp WITHOUT time zone:
+  // gravar UTC (`toISOString`) somava +3h na tela. Persistimos o horário local SP.
+  d.created_at = agoraSaoPauloISO();
+  d.updated_at = agoraSaoPauloISO();
 
   return d;
 };
@@ -1359,7 +1361,7 @@ export const toOSUpdate = (form: Partial<OSForm>): Record<string, any> => {
   const payload = toOSInsert(form);
   delete payload.created_at;
   delete payload.id;
-  payload.updated_at = new Date().toISOString();
+  payload.updated_at = agoraSaoPauloISO();
   return payload;
 };
 

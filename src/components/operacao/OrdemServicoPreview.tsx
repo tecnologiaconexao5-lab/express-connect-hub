@@ -15,6 +15,7 @@ import { STATUS_GLOBAL_INFO } from "./statusGlobal";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { formatarDataBR, formatarDataHoraBR, formatarDataHoraSolicitacaoBR } from "@/lib/formatDates";
+import { formatarDistanciaKm } from "@/lib/formatNumbers";
 import { clienteVeioDeCotacao } from "@/lib/clienteCotacao";
 import { obterAgendamentoClienteOS } from "@/lib/cotacaoOS";
 import { ehCadastroIncompletoCliente, ehCadastroIncompletoPrestador } from "@/lib/cadastroRapido";
@@ -653,7 +654,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
               <div className="mt-4 flex gap-4">
                 <div className="flex-1 p-3 bg-blue-50 rounded-lg text-center">
                   <p className="text-xs text-blue-600">Distância</p>
-                  <p className="font-bold text-blue-800">{os.distanciaKm || 0} km</p>
+                  <p className="font-bold text-blue-800">{formatarDistanciaKm(os.distanciaKm)} km</p>
                 </div>
                 <div className="flex-1 p-3 bg-blue-50 rounded-lg text-center">
                   <p className="text-xs text-blue-600">Tempo Estimado</p>

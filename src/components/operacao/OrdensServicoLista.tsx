@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, Bike, Car, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, LocateFixed, Loader2, FileCheck, Network, BellRing, ShieldAlert, UserPlus, History, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,20 @@ import { buscarTabelaPrestador } from "@/services/precificacao/buscarTabelasServ
 
 const STATUS_ENCERRADOS = ["finalizada", "cancelada"];
 type OSComDataCriacao = OrdemServico & { createdAt?: string };
+
+/** Ícone do veículo conforme o tipo (moto ≠ caminhão) na listagem. */
+const IconeVeiculo = ({ tipo }: { tipo?: string | null }) => {
+  const t = String(tipo || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (!t) return null;
+  if (t.includes("moto")) return <Bike className="w-3.5 h-3.5 text-orange-600" />;
+  if (t.includes("carro") || t.includes("passeio") || t.includes("automovel")) {
+    return <Car className="w-3.5 h-3.5 text-blue-600" />;
+  }
+  return <Truck className="w-3.5 h-3.5 text-slate-600" />;
+};
 
 /** Data local no formato YYYY-MM-DD (evita o deslocamento de fuso do toISOString). */
 const dataLocalISO = (d: Date): string =>
@@ -1104,7 +1118,10 @@ const OrdensServicoLista = () => {
                          )}
                        </TableCell>
                        <TableCell>
-                         <div className="text-xs font-semibold">{os.veiculoTipo || "—"}</div>
+                          <div className="flex items-center gap-1 text-xs font-semibold">
+                            <IconeVeiculo tipo={os.veiculoTipo} />
+                            <span>{os.veiculoTipo || "—"}</span>
+                          </div>
                        </TableCell>
                        <TableCell>
                          <div className="text-xs font-semibold">{os.carga?.tipo || "Seca"}</div>

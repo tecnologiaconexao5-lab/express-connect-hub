@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { agoraSaoPauloISO } from "@/lib/formatDates";
 import { calculateScore, type ScoreResult } from "@/services/scoreEngine";
 import { resolverUrlDocumento } from "@/services/documentos/documentoStorageService";
 
@@ -396,7 +397,7 @@ export async function buscarDashboardCompleto(prestadorId: string): Promise<Dash
 }
 
 export async function aceitarOperacao(alocacaoId: string, prestadorId: string): Promise<boolean> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("alocacoes_escala")
     .update({
       status: "aceita",
@@ -404,11 +405,26 @@ export async function aceitarOperacao(alocacaoId: string, prestadorId: string): 
       data_aceite: new Date().toISOString(),
     })
     .eq("id", alocacaoId)
-    .eq("prestador_id", prestadorId);
+    .eq("prestador_id", prestadorId)
+    .select("ordem_servico_id")
+    .maybeSingle();
 
   if (error) {
     console.error("[PortalPrestador] Erro ao aceitar operação:", error);
     return false;
+  }
+
+  // Aceite → OS imediatamente "Alocado" (agendada), saindo de Pendente/Em Análise.
+  const osId = data?.ordem_servico_id;
+  if (osId) {
+    const { error: erroOs } = await supabase
+      .from("ordens_servico")
+      .update({ status: "agendada", updated_at: agoraSaoPauloISO() })
+      .eq("id", osId)
+      .in("status", ["rascunho", "em_analise", "pendente"]);
+    if (erroOs) {
+      console.warn("[PortalPrestador] Falha ao sincronizar status da OS:", erroOs.message);
+    }
   }
   return true;
 }
